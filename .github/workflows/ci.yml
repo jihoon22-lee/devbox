@@ -39,8 +39,6 @@ jobs:
   rust:
     name: Rust (Cargo workspace)
     runs-on: ubuntu-latest
-    # 앱/크레이트가 하나도 없으면(계획 단계) 이 잡은 실행하지 않는다.
-    if: ${{ hashFiles('apps/*/src-tauri/Cargo.toml', 'crates/**/Cargo.toml') != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -48,7 +46,9 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      # 계획 단계에는 앱/크레이트가 없어서 Cargo 단계는 전부 건너뛴다.
       - name: Install Linux system libs
+        if: ${{ hashFiles('apps/*/src-tauri/Cargo.toml', 'crates/**/Cargo.toml') != '' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -56,13 +56,17 @@ jobs:
             libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Check
+        if: ${{ hashFiles('apps/*/src-tauri/Cargo.toml', 'crates/**/Cargo.toml') != '' }}
         run: cargo check --workspace
 
       - name: Clippy
+        if: ${{ hashFiles('apps/*/src-tauri/Cargo.toml', 'crates/**/Cargo.toml') != '' }}
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Format
+        if: ${{ hashFiles('apps/*/src-tauri/Cargo.toml', 'crates/**/Cargo.toml') != '' }}
         run: cargo fmt --all --check
 
       - name: Test
+        if: ${{ hashFiles('apps/*/src-tauri/Cargo.toml', 'crates/**/Cargo.toml') != '' }}
         run: cargo test --workspace
