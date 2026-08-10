@@ -4,13 +4,13 @@ devbox — Tauri 8개 데스크톱 앱 모노레포. 모든 규약의 기준은 
 
 ## 저장소 사실
 - 원격: `https://github.com/jihoon22-lee/devbox` (로컬 디렉터리명 `devbox`와 동일)
-- **로컬에 git이 아직 초기화되지 않음**: 작업 시작 전 `git init` + `git remote add origin https://github.com/jihoon22-lee/devbox.git`
+- git 초기화·원격 연결 완료 (`main`), CI 워크플로 동작 중
 - `gh` CLI로 jihoon22-lee 로그인 완료 (원격 작업 가능)
-- git identity(`user.name`/`user.email`) 미설정 — 커밋 전에 설정 필요
+- git identity: `jihoon22.lee <zkemzld1004@gmail.com>` (전역·로컬 설정됨)
 
-## 현재 상태 (계획 단계)
-- `apps/*/PLAN.md`만 존재, **실제 코드 없음**. `packages/`, `crates/`는 비어 있음
-- 루트 `Cargo.toml`의 `[workspace] members = []` — 앱/크레이트 생성 시 반드시 멤버에 추가
+## 현재 상태
+- `apps/port-manager`부터 개발 진행 중. `crates/`, `packages/`는 아직 비어 있음
+- 루트 `Cargo.toml`의 `[workspace] members`에 앱/크레이트가 생길 때마다 추가해야 함
 - 프론트 워크스페이스는 `pnpm-workspace.yaml` + 루트 `package.json` (packageManager: pnpm@9)
 
 ## 명령
