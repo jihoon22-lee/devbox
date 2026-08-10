@@ -4,6 +4,7 @@ resolver = "2"
 # 예:
 members = [
     "apps/port-manager/src-tauri",
+    "apps/developer-toolbox/src-tauri",
     # "crates/process",
     # "crates/wsl",
     # "crates/database",
