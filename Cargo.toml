@@ -2,14 +2,12 @@
 resolver = "2"
 # 앱과 공용 크레이트가 생길 때마다 추가한다.
 # 예:
-# members = [
-#     "apps/port-manager/src-tauri",
-#     "apps/wsl-dashboard/src-tauri",
-#     "crates/process",
-#     "crates/wsl",
-#     "crates/database",
-# ]
-members = []
+members = [
+    "apps/port-manager/src-tauri",
+    # "crates/process",
+    # "crates/wsl",
+    # "crates/database",
+]
 
 [workspace.package]
 edition = "2021"
