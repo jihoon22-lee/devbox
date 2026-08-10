@@ -1,51 +1,35 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
+import { GROUPS, TOOLS } from "./tools";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+export default function App() {
+  const [activeId, setActiveId] = useState(TOOLS[0].id);
+  const active = TOOLS.find((t) => t.id === activeId) ?? TOOLS[0];
+  const ActiveComponent = active.component;
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+    <div className="app">
+      <aside className="sidebar">
+        <h1 className="app-title">Dev Toolbox</h1>
+        {GROUPS.map((group) => (
+          <div key={group} className="group">
+            <div className="group-name">{group}</div>
+            {TOOLS.filter((t) => t.group === group).map((tool) => (
+              <button
+                key={tool.id}
+                className={`tool-link ${tool.id === activeId ? "active" : ""}`}
+                onClick={() => setActiveId(tool.id)}
+              >
+                {tool.name}
+              </button>
+            ))}
+          </div>
+        ))}
+      </aside>
+      <main className="content">
+        <h2 className="tool-title">{active.name}</h2>
+        <ActiveComponent />
+      </main>
+    </div>
   );
 }
-
-export default App;
