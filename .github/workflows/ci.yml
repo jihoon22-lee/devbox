@@ -18,8 +18,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        # 버전은 package.json의 "packageManager" 필드를 따름 (여기서 중복 지정 금지)
 
       - uses: actions/setup-node@v4
         with:
