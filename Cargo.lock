@@ -872,6 +872,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "devbox-manager"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+]
+
+[[package]]
 name = "developer-toolbox"
 version = "0.1.0"
 dependencies = [
