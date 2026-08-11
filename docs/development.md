@@ -1,0 +1,50 @@
+# 개발자 가이드
+
+devbox는 Tauri 8개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소다.
+
+- **pnpm workspace** — `apps/*`, `packages/*`
+- **Cargo workspace** — 앱(src-tauri) + 공용 crates
+- **공통화 원칙** — 두 번 이상 실제로 필요해진 코드만 `crates/`·`packages/`로 추출
+
+## 구조
+
+```
+apps/        독립 Tauri 앱 (각각 독립 .exe)
+  port-manager        Port & Process Manager
+  wsl-dashboard       WSL/Docker/git 대시보드
+  developer-toolbox   개발 도구 모음
+  activity-timeline   PC 사용 타임라인
+  everything-plus     로컬 파일 검색
+  knowledge-base      마크다운 지식 저장소
+  api-playground      REST API 테스트
+  life-log            자동 일일 로그
+packages/    공용 React 패키지 (필요 시)
+crates/      공용 Rust 크레이트 (필요 시)
+docs/        architecture / roadmap / projects
+```
+
+## 시작하기
+
+```bash
+corepack enable pnpm        # 최초 1회
+pnpm install                # 워크스페이스 의존성
+```
+
+앱 실행/빌드는 각 앱 디렉터리에서:
+
+```bash
+cd apps/port-manager
+pnpm tauri dev              # Windows에서
+pnpm tauri build            # Windows에서 (배포)
+```
+
+WSL에서는 `cargo test`(core 로직) / `pnpm build`(프론트 검증)로 개발한다.
+
+## 참고 문서
+
+- [CONVENTIONS.md](../CONVENTIONS.md) — 공통 규약 (스택, 개발 워크플로, git 규칙)
+- [docs/architecture.md](./architecture.md) — 아키텍처
+- [docs/roadmap.md](./roadmap.md) — 로드맵 / 진행 상황
+- [docs/projects.md](./projects.md) — 앱별 요약
+- [docs/windows-guide.md](./windows-guide.md) — Windows 사용/빌드 가이드
+- 각 `apps/<앱>/PLAN.md` — 앱별 상세 계획
