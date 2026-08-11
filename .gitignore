@@ -27,3 +27,6 @@ build/
 !.vscode/extensions.json
 .idea
 .DS_Store
+
+# Tooling
+.claude/worktrees/
