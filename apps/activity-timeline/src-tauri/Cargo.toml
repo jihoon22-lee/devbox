@@ -1,6 +1,6 @@
 [package]
 name = "activity-timeline"
-version = "0.1.0"
+version = "0.2.0"
 description = "PC Activity Timeline"
 authors = ["jihoon22.lee"]
 edition = "2021"

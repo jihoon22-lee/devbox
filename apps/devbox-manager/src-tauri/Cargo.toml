@@ -1,6 +1,6 @@
 [package]
 name = "devbox-manager"
-version = "0.1.0"
+version = "0.2.0"
 description = "Devbox Manager"
 authors = ["jihoon22.lee"]
 edition = "2021"

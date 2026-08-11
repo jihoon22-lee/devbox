@@ -18,15 +18,19 @@
 - [x] **knowledge-base** — frontmatter/태그, 파일 저장소, FTS5 검색, 데일리 노트
 - [x] **life-log** — 활동·git 집계 허브 (activity DB + 커밋 수)
 
+## 추가 앱 ✅
+- [x] **wsl-desktop** — 임베디드 WSL 터미널 (분할 레이아웃, 동시 명령)
+- [x] **devbox-manager** — 앱 버전 체크·설치·업데이트·실행
+
 ## 후속 작업
 - [ ] **공통 추출** — `crates/process`(포트/프로세스), `crates/database`, `crates/search` 등 2개 앱 이상에서
   실제 중복이 확인되면 추출
-- [ ] **everything-plus v2** — 내용(FTS5) 인덱싱, 파일 watcher
-- [ ] **activity-timeline v2** — 유휴 감지, 자동 시작
-- [ ] **Windows 빌드 검증** — 집에서 `pnpm tauri build` (MSVC 툴체인)
+- [ ] **everything-plus** — 파일 watcher(실시간 증분), 내용 인덱싱 최적화
+- [ ] **activity-timeline** — 유휴 감지, 자동 시작
+- [ ] **Windows 빌드 검증** — 10개 앱 `pnpm tauri build` (MSVC 툴체인)
 - [ ] **통합 앱 (선택)** — `apps/workbench` 대시보드
 
 ## 현재 상태
-- 8개 앱 모두 WSL에서 구현 완료 (Rust 유닛 테스트 + clippy + 프론트 빌드 통과)
-- 각 앱은 backend/UI 2개씩 총 16개 PR로 main에 머지됨
-- Windows 실제 실행/배포는 아직 미검증
+- 10개 앱 모두 WSL에서 구현 완료 (Rust 유닛 테스트 + clippy + 프론트 빌드 통과)
+- 각 앱은 기능 단위 PR로 main에 머지됨
+- Windows 실제 실행/배포는 Releases(v0.2.0)로 제공 중

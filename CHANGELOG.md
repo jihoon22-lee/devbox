@@ -3,6 +3,28 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [v0.2.0] - 2026-08-11
+
+기능 추가 릴리스. 신규 앱 2종(WSL Desktop, Devbox Manager)이 추가되어 총 10개 앱이 되었다.
+
+### Added
+
+- **wsl-desktop (신규)** — 임베디드 터미널(xterm.js + PTY). WSL 배포판 선택·지정 경로로 터미널 열기, 격자/세로/가로 분할, 여러 터미널에 동시 명령(broadcast).
+- **devbox-manager (신규)** — devbox 앱 버전 체크·설치·업데이트·실행. 휴대용 exe 또는 설치 패키지 방식 선택.
+- **life-log** — 캘린더 날짜 선택, 로딩 표시, 주간/월간 조회(일별 사용량 차트), 지난 날짜 세션 캐시.
+- **api-playground** — 현재 요청을 curl 명령으로 변환·복사.
+- **activity-timeline** — 30초 자동 새로고침.
+- **everything-plus** — re-index 진행률 표시, 정규식 검색 모드, 텍스트 내용 검색(확장자 선택·루트별 옵션).
+- **wsl-dashboard** — Docker 미설치 안내 배너, 프로젝트 경로 입력 수정·localStorage 저장.
+
+### Changed
+
+- 모든 앱 버전을 0.2.0으로 통일.
+
+### Fixed
+
+- (v0.1.1에서 수정된 항목 유지)
+
 ## [v0.1.1] - 2026-08-11
 
 Windows에서 발견된 버그 수정 릴리스. port-manager / wsl-dashboard / knowledge-base / life-log의 버전을 0.1.1로 올렸다.
