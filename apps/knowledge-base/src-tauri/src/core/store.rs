@@ -1,12 +1,13 @@
 use std::path::{Component, Path, PathBuf};
 
 /// 루트 외부로 벗어나지 않는 안전한 상대 경로 결합.
+///
+/// 주의: RootDir 컴포넌트는 절대경로라면 항상 존재하므로(예: `C:\`) 거부하면 안 된다.
+/// 탈출 여부는 `..`(ParentDir) 유무와, 절대 경로 삽입 시 루트 밖으로 벗어나는지를
+/// `starts_with(root)`로 판단한다.
 pub fn safe_join(root: &Path, rel: &str) -> Result<PathBuf, String> {
     let path = root.join(rel);
-    if path
-        .components()
-        .any(|c| matches!(c, Component::ParentDir | Component::RootDir))
-    {
+    if path.components().any(|c| matches!(c, Component::ParentDir)) {
         return Err("경로가 루트 밖을 벗어납니다".into());
     }
     if !path.starts_with(root) {
@@ -79,6 +80,16 @@ mod tests {
         assert!(safe_join(root, "../evil").is_err());
         assert!(safe_join(root, "/etc/passwd").is_err());
         assert!(safe_join(root, "Notes/a.md").is_ok());
+    }
+
+    #[test]
+    fn safe_join_allows_absolute_root() {
+        // 절대경로 루트에는 RootDir(루트 구분자)이 항상 포함되므로 거부하면 안 된다.
+        // (Windows의 `C:\`처럼 Prefix + RootDir 형태. 이전 버그 회귀 방지)
+        let root = std::env::temp_dir().join("kb-root-test");
+        assert!(safe_join(&root, "Journal/2026-08-11.md").is_ok());
+        assert!(safe_join(&root, "Notes/a.md").is_ok());
+        assert!(safe_join(&root, "../evil").is_err());
     }
 
     #[test]
