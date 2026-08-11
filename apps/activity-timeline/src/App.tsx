@@ -47,6 +47,9 @@ export default function App() {
 
   useEffect(() => {
     void load();
+    // 지난 세션이 닫히더라도 추적 중에는 화면을 주기적으로 갱신
+    const id = setInterval(() => void load(), 30_000);
+    return () => clearInterval(id);
   }, [load]);
 
   const totals = useMemo(() => {
