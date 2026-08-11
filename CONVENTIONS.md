@@ -103,12 +103,14 @@ devbox/
 - 중복 발견 시 → `packages/<name>`으로 추출
 
 ### 데이터 위치 규약
+Tauri의 `app_local_data_dir()`을 사용하며, 이는 **번들 identifier 기준 폴더**다.
 ```
-%LOCALAPPDATA%\Workbench\<App>\    # 예: %LOCALAPPDATA%\Workbench\activity-timeline\
+%LOCALAPPDATA%\{identifier}\    # 예: %LOCALAPPDATA%\com.workbench.activitytimeline\
 ```
-- SQLite: `%LOCALAPPDATA%\Workbench\<App>\data.db`, 설정: `config.json`
-- life-log는 다른 앱의 DB를 읽기 위해 이 경로 규약을 전제로 한다
-- `tauri`의 `path::app_data_dir()` 대신 `app_local_data_dir`을 사용해 이 공통 루트를 잡는다
+- SQLite: `%LOCALAPPDATA%\{identifier}\data.db`, 설정: `config.json`
+- 앱별 identifier: `com.workbench.activitytimeline`, `com.workbench.everythingplus`,
+  `com.workbench.knowledgebase`, `com.workbench.lifelog` 등
+- life-log는 다른 앱의 DB를 읽기 위해 이 실제 경로를 기본값으로 사용한다
 
 ## 4. 코드 규약
 

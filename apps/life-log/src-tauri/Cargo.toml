@@ -1,6 +1,6 @@
 [package]
 name = "life-log"
-version = "0.2.0"
+version = "0.2.2"
 description = "Auto Life Log"
 authors = ["jihoon22.lee"]
 edition = "2021"
