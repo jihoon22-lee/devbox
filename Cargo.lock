@@ -2272,7 +2272,7 @@ dependencies = [
 
 [[package]]
 name = "knowledge-base"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dirs",
  "rusqlite",
@@ -2374,7 +2374,7 @@ dependencies = [
 
 [[package]]
 name = "life-log"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rusqlite",
  "serde",
@@ -3052,7 +3052,7 @@ dependencies = [
 
 [[package]]
 name = "port-manager"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -5839,7 +5839,7 @@ dependencies = [
 
 [[package]]
 name = "wsl-dashboard"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
