@@ -225,7 +225,7 @@ pub fn render(body: &str, load_image: &dyn Fn(&str) -> ImageResult) -> (String, 
 | 이미지 부재 / 크기 2MB 초과 / 루트 밖 상대경로 | 대체 표시(이유가 보이는 placeholder). 이미지 하나의 실패가 전체 렌더를 실패시키지 않는다 — `render()`는 `Result`가 아니라 항상 `(String, Vec<String>)`을 반환하므로 이미지 로더 실패는 그 이미지 자리만 대체 표시로 바뀔 뿐 나머지 문서 렌더에 영향을 주지 않는다 |
 | `render_markdown` 자체 실패(예: DB 락, 루트 미설정) | `Result<RenderedDoc, String>`의 `Err`로 전파. 프론트는 기존 에러 배너 패턴(`App.tsx:28`의 `error` state, `:137`의 렌더)을 그대로 재사용해 표시 |
 | `.md`가 아닌 파일 | `render_markdown`을 호출하지 않는다 — 분할/프리뷰 버튼을 비활성화하고 편집 모드로 고정 |
-| 문서 전환 중 인플라이트 렌더 응답 | 미결 항목 3 참고 |
+| 문서 전환 중 인플라이트 렌더 응답 | "확정된 세부 결정" 3번 참고 — 요청 시점 `rel`을 캡처해 응답 시점에 현재 선택 문서와 비교, 다르면 버린다 |
 
 ## 테스트
 
@@ -254,28 +254,51 @@ pub fn render(body: &str, load_image: &dyn Fn(&str) -> ImageResult) -> (String, 
 - PDF/HTML 내보내기
 - 이미지 asset protocol 전환 (결정 7 — 근거는 유지되는 한 재검토 대상 아님)
 
-## 미결
+## 확정된 세부 결정
 
-이 설계 브리핑에는 없지만 구현 시 결정해야 하는 항목들이다.
+이 설계 브리핑에는 없었지만 구현 전 확정된 항목들이다.
 
-1. **`render_markdown`의 위치**: 기존 `commands/docs.rs`에 추가할지, 신규
-   `commands/markdown.rs`로 분리할지. 둘 다 CONVENTIONS §4의 "command 레이어는
-   얇게" 원칙과 충돌하지 않는다. `resolve_root`가 현재 `commands/docs.rs`의 private
-   함수(`fn resolve_root`, `commands/docs.rs:20`)라서 분리할 경우 가시성을
-   `pub(crate)`로 넓혀야 한다는 점만 결정에 영향을 준다.
-2. **`.md` 확장자 검증을 서버에서도 할지**: 프론트가 `.md`가 아니면 버튼을
-   비활성화하는 것으로 막지만, `render_markdown` 커맨드 자체가 방어적으로
-   `rel.ends_with(".md")`를 검사해 에러를 반환할지는 정해지지 않았다.
-3. **문서 전환 중 인플라이트 렌더 응답 처리**: 사용자가 렌더 요청을 보낸 직후
-   다른 문서를 열면, 늦게 도착한 응답이 새로 연 문서의 프리뷰를 덮어쓸 수 있는
-   race condition이 있다. 요청 시점의 `rel`과 응답을 비교해 현재 선택된 문서와
-   다르면 버리는 방식이 유력해 보이지만 이 설계에서 확정하지 않는다.
-4. **이미지 인코딩 캐싱 여부**: 같은 이미지를 참조하는 문서를 300ms마다 다시
-   렌더할 때마다 디스크에서 다시 읽고 base64로 다시 인코딩할지, 아니면
-   `(경로, mtime)` 기준 캐시를 둘지 정해지지 않았다.
-5. **`ImageResult`의 정확한 variant 구성**: 성공/부재/크기초과/루트밖을 각각 구분해
-   서로 다른 대체 표시 문구를 낼지, 단순 `Option<(Vec<u8>, &str)>` 정도로 뭉뚱그리고
-   이유 문자열은 별도로 들려줄지는 이 설계에서 정하지 않았다.
+1. **`render_markdown`의 위치 → 신규 `commands/markdown.rs`로 분리한다.**
+
+   근거: `commands/docs.rs`가 이미 200줄이고 파일 저장소 CRUD가 관심사다. 마크다운
+   렌더링은 별개 관심사이고, CONVENTIONS §4가 규정한 `commands/<feature>.rs` 구조에도
+   맞는다. `resolve_root`의 가시성을 `pub(crate)`로 넓혀 두 파일이 공유한다.
+
+2. **`.md` 확장자를 서버에서 검증하지 않는다.**
+
+   근거: 프론트가 분할·프리뷰 버튼을 비활성화하는 것으로 충분하다. Rust가 임의
+   텍스트를 마크다운으로 렌더하는 것 자체는 무해하고, 나중에 `.mmd`나 `.markdown`을
+   지원할 때 불필요한 장벽이 된다.
+
+3. **인플라이트 렌더 응답 race를 처리한다.**
+
+   렌더를 요청할 때의 `rel`을 캡처해두고, 응답이 도착하면 그 시점의 선택 문서와
+   비교해 다르면 결과를 버린다. React에서는 최신 선택값을 `useRef`로 추적해
+   비교한다. 근거: 문서를 빠르게 전환하면 늦게 도착한 이전 문서의 렌더 결과가 새
+   문서의 프리뷰를 덮어쓴다.
+
+4. **이미지 인코딩을 캐싱한다.**
+
+   `AppState`에 `Mutex<HashMap<PathBuf, (SystemTime, String)>>` 캐시를 두고
+   `(경로, mtime)`이 같으면 재사용한다. 항목 수 상한 32개, 초과하면 캐시를 통째로
+   비운다(LRU까지 갈 필요 없다). 근거: 300ms 디바운스마다 최대 2MB 파일을 다시
+   읽고 base64로 다시 인코딩하는 것은 실낭비다. 상한은 캐시가 무한히 자라지 않게
+   하는 최소 장치다.
+
+5. **`ImageResult`를 실패 사유별로 구분한다.**
+
+   ```rust
+   pub enum ImageResult {
+       Inlined(String),   // data URI
+       Passthrough,       // http/https — 원본 src를 그대로 둔다
+       NotFound,
+       TooLarge,
+       OutsideRoot,
+   }
+   ```
+
+   근거: 이미지가 안 보일 때 사용자가 이유를 알아야 고칠 수 있다. 대체 표시
+   문구가 사유마다 달라야 한다.
 
 ## 구현 순서
 
