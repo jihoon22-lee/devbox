@@ -1,6 +1,6 @@
 [package]
 name = "everything-plus"
-version = "0.1.0"
+version = "0.2.0"
 description = "Everything+ Local Search"
 authors = ["jihoon22.lee"]
 edition = "2021"

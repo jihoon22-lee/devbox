@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "activity-timeline"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rusqlite",
  "serde",
@@ -76,7 +76,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "api-playground"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -873,7 +873,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-manager"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -885,7 +885,7 @@ dependencies = [
 
 [[package]]
 name = "developer-toolbox"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "md-5",
  "regex",
@@ -1164,7 +1164,7 @@ dependencies = [
 
 [[package]]
 name = "everything-plus"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "notify",
  "rusqlite",
@@ -2307,7 +2307,7 @@ dependencies = [
 
 [[package]]
 name = "knowledge-base"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "dirs",
  "rusqlite",
@@ -2415,7 +2415,7 @@ dependencies = [
 
 [[package]]
 name = "life-log"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "rusqlite",
  "serde",
@@ -3105,7 +3105,7 @@ dependencies = [
 
 [[package]]
 name = "port-manager"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5949,7 +5949,7 @@ dependencies = [
 
 [[package]]
 name = "wsl-dashboard"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5961,7 +5961,7 @@ dependencies = [
 
 [[package]]
 name = "wsl-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "portable-pty",
  "serde",
