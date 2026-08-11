@@ -53,11 +53,18 @@ pub fn list_ports() -> Result<Vec<PortRow>, String> {
 
 #[cfg(target_os = "windows")]
 fn run_netstat() -> Result<String, String> {
-    let output = Command::new("netstat")
-        .args(["-ano"])
+    use std::os::windows::process::CommandExt;
+
+    let mut cmd = Command::new("netstat");
+    cmd.args(["-ano"]);
+    // 콘솔 프로그램이 새 창을 띄우는 것을 방지 (CREATE_NO_WINDOW)
+    cmd.creation_flags(0x0800_0000);
+    let output = cmd
         .output()
         .map_err(|e| format!("netstat 실행 실패: {e}"))?;
-    String::from_utf8(output.stdout).map_err(|e| format!("netstat 출력 인코딩 실패: {e}"))
+    // 한국어 Windows에서는 netstat 출력이 OEM 코드페이지(예: CP949)라
+    // strict UTF-8 디코딩이 실패할 수 있다. 데이터 행은 ASCII이므로 lossy로 충분하다.
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 #[cfg(not(target_os = "windows"))]

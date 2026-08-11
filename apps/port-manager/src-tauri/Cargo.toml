@@ -1,6 +1,6 @@
 [package]
 name = "port-manager"
-version = "0.1.0"
+version = "0.1.1"
 description = "Port & Process Manager"
 authors = ["jihoon22.lee"]
 edition = "2021"
