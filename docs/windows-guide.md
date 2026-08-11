@@ -237,17 +237,18 @@ SmartScreen 경고("인식할 수 없는 앱")가 뜨면:
 
 ## 10. 데이터 위치 (앱들이 저장하는 곳)
 
-공통 규약: `%LOCALAPPDATA%\Workbench\<앱>\`
+Tauri의 `app_local_data_dir()`은 번들 identifier 기준 폴더를 사용한다.
 
 ```
-%LOCALAPPDATA%\Workbench\activity-timeline\data.db   ← 활동 기록
-%LOCALAPPDATA%\Workbench\everything-plus\data.db     ← 파일 인덱스
-%LOCALAPPDATA%\Workbench\knowledge-base\data.db      ← 문서 인덱스
-%LOCALAPPDATA%\Workbench\life-log\data.db            ← life-log 설정
+%LOCALAPPDATA%\com.workbench.activitytimeline\data.db   ← 활동 기록
+%LOCALAPPDATA%\com.workbench.everythingplus\data.db     ← 파일 인덱스
+%LOCALAPPDATA%\com.workbench.knowledgebase\data.db      ← 문서 인덱스
+%LOCALAPPDATA%\com.workbench.lifelog\data.db            ← life-log 설정
 ```
 
 - **집 ↔ 회사 데이터 공유**: 위 폴더를 통째로 복사하면 기록/인덱스가 이전된다.
 - Knowledge 문서 파일 자체는 `Documents\Knowledge`에 있으므로, 이 폴더만 복사해도 됨.
+- Life Log는 Settings 탭에서 활동 데이터 소스 경로를 변경할 수 있다 (기본값은 activity-timeline 경로).
 
 ---
 
