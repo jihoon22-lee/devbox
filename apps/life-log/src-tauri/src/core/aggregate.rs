@@ -25,17 +25,18 @@ pub async fn collect_git(projects: &[String], day_start: i64, day_end: i64) -> G
 }
 
 async fn git_commit_count(path: &str, since: i64, until: i64) -> u32 {
-    let output = Command::new("git")
-        .args([
-            "-C",
-            path,
-            "log",
-            &format!("--since=@{since}"),
-            &format!("--until=@{until}"),
-            "--pretty=oneline",
-        ])
-        .output()
-        .await;
+    let mut cmd = Command::new("git");
+    cmd.args([
+        "-C",
+        path,
+        "log",
+        &format!("--since=@{since}"),
+        &format!("--until=@{until}"),
+        "--pretty=oneline",
+    ]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: 콘솔 창 깜빡임 방지
+    let output = cmd.output().await;
     match output {
         Ok(out) if out.status.success() => {
             String::from_utf8_lossy(&out.stdout).lines().count() as u32
