@@ -1,6 +1,6 @@
 [package]
 name = "wsl-desktop"
-version = "0.2.1"
+version = "0.2.2"
 description = "WSL Desktop"
 authors = ["jihoon22.lee"]
 edition = "2021"

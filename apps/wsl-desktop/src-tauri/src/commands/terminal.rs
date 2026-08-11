@@ -15,6 +15,11 @@ pub struct SessionHandle {
     pub distro: String,
     pub writer: Box<dyn Write + Send>,
     pub child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
+    /// ConPTY(HPCON)를 보관하는 master. drop 되면 ConPTY가 닫히므로
+    /// 세션 수명 동안 유지해야 한다 (일찍 닫으면 자식이 0xc0000142로 실패).
+    /// 읽지 않는 것이 의도: 보관만으로 수명을 유지한다.
+    #[allow(dead_code)]
+    pub master: Option<Box<dyn portable_pty::MasterPty>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,6 +89,10 @@ pub fn start_session(
     // Windows에서만 ConPTY DSR 응답을 쓰므로 그 외 OS에서는 mut 불필요
     #[allow(unused_mut)]
     let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    // ConPTY(HPCON)를 보유한 master를 세션 핸들에 보관한다.
+    // (reader/writer는 파이프 fd 클론이라 ConPTY 수명을 유지하지 못한다.
+    //  master를 drop 하면 ConPTY가 닫히고, 시작 중인 자식이 0xc0000142로 실패한다)
+    let master = pair.master;
 
     #[cfg(target_os = "windows")]
     {
@@ -106,6 +115,7 @@ pub fn start_session(
         distro: distro.clone(),
         writer,
         child: Some(child),
+        master: Some(master),
     }));
     state
         .sessions
