@@ -68,6 +68,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: windows-installers
@@ -83,19 +85,28 @@ jobs:
             echo "tag=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Extract changelog section
+        id: notes
+        shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          awk -v h="## [$TAG]" '
+            index($0, h) == 1 { flag = 1; next }
+            flag && index($0, "## [") == 1 { exit }
+            flag { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "CHANGELOG.md에 [$TAG] 섹션이 없습니다. 버전에 맞는 변경점을 기록해주세요." > /tmp/release-notes.md
+          fi
+          echo "path=/tmp/release-notes.md" >> "$GITHUB_OUTPUT"
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: devbox ${{ steps.tag.outputs.tag }}
-          body: |
-            Windows 11용 설치 패키지 8종입니다.
-
-            - PortManager / DevToolbox / WSLDashboard / ApiPlayground
-            - ActivityTimeline / EverythingPlus / Knowledge / LifeLog
-
-            `*-setup.exe`를 다운로드해 설치하거나, 실행 파일(`*.exe`)을 바로 실행하면 됩니다.
-            WebView2 런타임(Windows 11 기본 포함)만 있으면 별도 도구 설치가 필요 없습니다.
+          body_path: ${{ steps.notes.outputs.path }}
           files: installers/**/*.exe
           draft: false
           make_latest: true
