@@ -1,0 +1,98 @@
+import mermaid from "mermaid";
+import { useEffect, useRef } from "react";
+import { openExternal } from "../api";
+import type { RenderedDoc } from "../types";
+
+mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "loose" });
+
+/** `href`를 `baseRel` 문서가 위치한 디렉터리 기준으로 해석한다. (POSIX 스타일 상대 경로) */
+function resolveRelativePath(baseRel: string, href: string): string {
+  const stack = baseRel.split("/").slice(0, -1);
+  for (const part of href.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") stack.pop();
+    else stack.push(part);
+  }
+  return stack.join("/");
+}
+
+interface MarkdownPreviewProps {
+  doc: RenderedDoc | null;
+  /** 현재 문서의 루트 상대 경로 — 상대 링크/이미지 해석 기준 */
+  baseRel: string;
+  /** 상대 링크 클릭 시 호출된다 (기존 openFile 재사용) */
+  onNavigate: (rel: string) => void;
+}
+
+export default function MarkdownPreview({ doc, baseRel, onNavigate }: MarkdownPreviewProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  // 인덱스별 마지막 성공 SVG. mermaid 문법 오류가 나도 지우지 않고 유지한다(설계 결정 6).
+  const lastGoodSvg = useRef<Map<number, string>>(new Map());
+  const renderSeq = useRef(0);
+
+  // 문서를 전환하면 이전 문서의 인덱스 기준 SVG는 더 이상 의미가 없다.
+  useEffect(() => {
+    lastGoodSvg.current.clear();
+  }, [baseRel]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !doc) return;
+    const blocks = container.querySelectorAll<HTMLDivElement>(".mermaid-block[data-idx]");
+    blocks.forEach((el) => {
+      const idx = Number(el.dataset.idx);
+      const src = doc.mermaid[idx];
+      if (src === undefined) return;
+      const svgId = `mermaid-preview-${idx}-${renderSeq.current++}`;
+      mermaid
+        .render(svgId, src)
+        .then(({ svg }) => {
+          lastGoodSvg.current.set(idx, svg);
+          el.innerHTML = svg;
+        })
+        .catch(() => {
+          const cached = lastGoodSvg.current.get(idx);
+          el.innerHTML = `${cached ?? ""}<span class="mermaid-error-badge" title="mermaid 구문 오류">⚠ 구문 오류</span>`;
+        });
+    });
+  }, [doc]);
+
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const anchor = (e.target as HTMLElement).closest("a[href]");
+    if (!anchor) return;
+    const href = anchor.getAttribute("href");
+    if (!href || href.startsWith("#")) return;
+    e.preventDefault();
+    if (href.startsWith("http://") || href.startsWith("https://")) {
+      void openExternal(href);
+      return;
+    }
+    onNavigate(resolveRelativePath(baseRel, href));
+  };
+
+  if (!doc) {
+    return <div className="preview empty">렌더링 중...</div>;
+  }
+
+  return (
+    <div className="preview">
+      {(doc.title || doc.tags.length > 0) && (
+        <div className="preview-meta">
+          {doc.title && <span className="preview-title">{doc.title}</span>}
+          {doc.tags.map((t) => (
+            <span key={t} className="tag">
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        className="preview-body md-body"
+        onClick={handleClick}
+        // html은 Rust 쪽 ammonia로 이미 살균되어 도착한다.
+        dangerouslySetInnerHTML={{ __html: doc.html }}
+      />
+    </div>
+  );
+}

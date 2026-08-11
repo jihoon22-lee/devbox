@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createFile,
   dailyNote,
@@ -7,14 +7,24 @@ import {
   listTree,
   readFile,
   renameFile,
+  renderMarkdown,
   searchDocs,
   writeFile,
 } from "./api";
-import type { SearchResult, TreeEntry } from "./types";
+import MarkdownPreview from "./components/MarkdownPreview";
+import type { RenderedDoc, SearchResult, TreeEntry } from "./types";
 import "./App.css";
+
+type ViewMode = "edit" | "split" | "preview";
+
+const RENDER_DEBOUNCE_MS = 300;
 
 function indent(path: string): number {
   return path.split("/").length - 1;
+}
+
+function isMarkdown(path: string | null): boolean {
+  return !!path && path.endsWith(".md");
 }
 
 export default function App() {
@@ -26,6 +36,42 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<ViewMode>("edit");
+  const [rendered, setRendered] = useState<RenderedDoc | null>(null);
+
+  // 인플라이트 렌더 응답이 도착했을 때 "그사이 다른 문서로 전환했는지"를 판단하기 위해
+  // 최신 선택값을 ref로도 들고 있는다(설계 결정 3 — 응답 시점에 최신값과 비교).
+  const selectedRef = useRef<string | null>(selected);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
+
+  // .md가 아닌 파일로 전환되면 분할/프리뷰를 유지할 수 없으므로 편집 모드로 되돌린다.
+  useEffect(() => {
+    if (!isMarkdown(selected) && mode !== "edit") setMode("edit");
+  }, [selected, mode]);
+
+  // 300ms 디바운스 후 렌더 요청. 요청 시점의 rel을 캡처해두고, 응답이 도착했을 때
+  // 그 시점의 선택 문서와 다르면 버린다(늦게 도착한 이전 문서의 결과가 덮어쓰지 않도록).
+  useEffect(() => {
+    if (mode === "edit" || !isMarkdown(selected)) {
+      setRendered(null);
+      return;
+    }
+    const rel = selected as string;
+    const timer = setTimeout(() => {
+      void renderMarkdown(rel, content)
+        .then((doc) => {
+          if (selectedRef.current !== rel) return;
+          setRendered(doc);
+        })
+        .catch((e) => {
+          if (selectedRef.current !== rel) return;
+          setError(e instanceof Error ? e.message : String(e));
+        });
+    }, RENDER_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [content, selected, mode]);
 
   const loadMeta = useCallback(async () => {
     try {
@@ -202,27 +248,58 @@ export default function App() {
           <>
             <div className="editor-head">
               <span className="path">{selected}</span>
+              <div className="mode-toggle">
+                <button
+                  className={`btn small ${mode === "edit" ? "active" : ""}`}
+                  onClick={() => setMode("edit")}
+                >
+                  편집
+                </button>
+                <button
+                  className={`btn small ${mode === "split" ? "active" : ""}`}
+                  disabled={!isMarkdown(selected)}
+                  title={isMarkdown(selected) ? undefined : "마크다운(.md) 파일에서만 프리뷰를 볼 수 있습니다"}
+                  onClick={() => setMode("split")}
+                >
+                  분할
+                </button>
+                <button
+                  className={`btn small ${mode === "preview" ? "active" : ""}`}
+                  disabled={!isMarkdown(selected)}
+                  title={isMarkdown(selected) ? undefined : "마크다운(.md) 파일에서만 프리뷰를 볼 수 있습니다"}
+                  onClick={() => setMode("preview")}
+                >
+                  프리뷰
+                </button>
+              </div>
               <span className="spacer" />
               {dirty && <span className="dirty">● unsaved</span>}
               <button className="btn" onClick={() => void save()}>
                 Save
               </button>
             </div>
-            <textarea
-              className="editor"
-              value={content}
-              onChange={(e) => {
-                setContent(e.currentTarget.value);
-                setDirty(true);
-              }}
-              onKeyDown={(e) => {
-                if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-                  e.preventDefault();
-                  void save();
-                }
-              }}
-              spellCheck={false}
-            />
+            <div className={`editor-body mode-${mode}`}>
+              {mode !== "preview" && (
+                <textarea
+                  className="editor"
+                  value={content}
+                  onChange={(e) => {
+                    setContent(e.currentTarget.value);
+                    setDirty(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+                      e.preventDefault();
+                      void save();
+                    }
+                  }}
+                  spellCheck={false}
+                />
+              )}
+              {mode !== "edit" && (
+                <MarkdownPreview doc={rendered} baseRel={selected} onNavigate={(rel) => void openFile(rel)} />
+              )}
+            </div>
           </>
         ) : (
           <div className="empty">Select a note or create a daily note</div>

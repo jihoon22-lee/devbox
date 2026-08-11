@@ -192,6 +192,23 @@ body {
   font-size: 11px;
 }
 
+.mode-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.mode-toggle .btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(79, 140, 255, 0.1);
+}
+
+.editor-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
 .editor {
   flex: 1;
   background: var(--bg);
@@ -204,6 +221,191 @@ body {
   line-height: 1.6;
   resize: none;
   white-space: pre-wrap;
+}
+
+.editor-body.mode-split .editor {
+  border-right: 1px solid var(--border);
+}
+
+/* ── 마크다운 프리뷰 ───────────────────────────────────────────── */
+
+.preview {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.preview.empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+}
+
+.preview-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.preview-title {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.preview-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+}
+
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+  margin: 1.2em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.md-body h1 {
+  font-size: 1.6em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3em;
+}
+
+.md-body h2 {
+  font-size: 1.35em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.25em;
+}
+
+.md-body h3 {
+  font-size: 1.15em;
+}
+
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+  font-size: 1em;
+  color: var(--dim);
+}
+
+.md-body p {
+  margin: 0.6em 0;
+  line-height: 1.65;
+}
+
+.md-body a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.md-body a:hover {
+  text-decoration: underline;
+}
+
+.md-body ul,
+.md-body ol {
+  margin: 0.5em 0;
+  padding-left: 1.6em;
+  line-height: 1.6;
+}
+
+.md-body blockquote {
+  margin: 0.8em 0;
+  padding: 2px 14px;
+  border-left: 3px solid var(--accent);
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.md-body pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.md-body :not(pre) > code {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.md-body table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  width: 100%;
+  font-size: 0.95em;
+}
+
+.md-body th,
+.md-body td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.md-body th {
+  background: var(--panel);
+  font-weight: 600;
+}
+
+.md-body img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+.md-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.4em 0;
+}
+
+.md-image-missing {
+  display: inline-block;
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.9em;
+}
+
+.mermaid-block {
+  margin: 1em 0;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.mermaid-block svg {
+  max-width: 100%;
+}
+
+.mermaid-error-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: rgba(248, 81, 73, 0.15);
+  color: var(--red);
+  border: 1px solid var(--red);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 11px;
 }
 
 .empty {
