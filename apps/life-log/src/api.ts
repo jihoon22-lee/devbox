@@ -57,7 +57,7 @@ export async function getRange(label: string, dayStart: number, dayEnd: number):
 }
 
 export async function getActivityDb(): Promise<string> {
-  if (!isTauri()) return "%LOCALAPPDATA%\\Workbench\\activity-timeline\\data.db";
+  if (!isTauri()) return "%LOCALAPPDATA%\\com.workbench.activitytimeline\\data.db";
   return invoke<string>("get_activity_db");
 }
 

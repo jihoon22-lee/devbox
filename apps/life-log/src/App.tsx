@@ -168,7 +168,7 @@ export default function App() {
                 Save
               </button>
             </div>
-            <div className="dim">Other apps store data under %LOCALAPPDATA%\\Workbench\\&lt;app&gt;\\data.db</div>
+            <div className="dim">Other apps store data under %LOCALAPPDATA%\&lt;identifier&gt;\data.db (e.g. com.workbench.activitytimeline)</div>
           </section>
 
           <section className="panel">
