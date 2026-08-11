@@ -1,5 +1,5 @@
 use crate::core::aggregate::{collect_git, summarize_activity};
-use crate::core::models::DaySummary;
+use crate::core::models::{DayPoint, DaySummary, RangeSummary};
 use crate::core::readers;
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
@@ -84,4 +84,43 @@ pub async fn get_day(
     let mut summary = summarize_activity(&date, day_start, day_end, &activity_db);
     summary.git = collect_git(&projects, day_start, day_end).await;
     Ok(summary)
+}
+
+/// 기간(주/월) 요약. 일별 사용량 + 합계 + git을 한 번에 조회한다.
+#[tauri::command]
+pub async fn get_range(
+    state: tauri::State<'_, Arc<AppState>>,
+    label: String,
+    day_start: i64,
+    day_end: i64,
+) -> Result<RangeSummary, String> {
+    let (activity_db, projects) = {
+        let conn = state.db.lock().unwrap();
+        let activity_db = get_setting(&conn, "activity_db", &readers::default_activity_db());
+        let projects = get_setting(&conn, "projects", "")
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
+        (activity_db, projects)
+    };
+
+    let (pc_usage_ms, app_totals) =
+        readers::activity::read_activity(&activity_db, day_start, day_end);
+    let daily = readers::activity::read_activity_daily(&activity_db, day_start, day_end)
+        .into_iter()
+        .map(|(day_ms, pc_usage_ms)| DayPoint {
+            day_ms,
+            pc_usage_ms,
+        })
+        .collect();
+    let git = collect_git(&projects, day_start, day_end).await;
+
+    Ok(RangeSummary {
+        label,
+        pc_usage_ms,
+        app_totals,
+        git,
+        daily,
+    })
 }
