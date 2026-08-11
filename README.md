@@ -1,42 +1,39 @@
 # devbox
 
-Tauri 8개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소.
+Tauri 8개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소. 각 앱은 **독립적으로 실행되고 독립적으로 `.exe`가 만들어집니다.**
 
-- **pnpm workspace** — `apps/*`, `packages/*`
-- **Cargo workspace** — 앱(src-tauri) + 공용 crates
-- **공통화 원칙** — 두 번 이상 실제로 필요해진 코드만 `crates/`·`packages/`로 추출
+## 앱 소개
 
-## 구조
+| 앱 | 설명 |
+|---|---|
+| 🔥 **Port Manager** | 포트·프로세스 조회/검색/필터, 프로세스 종료, localhost 열기 |
+| 🧰 **Developer Toolbox** | 개발용 소형 도구 14종 — JSON/Base64/URL/타임스탬프/Case, Hash/UUID/Regex/Diff( Rust), JWT 디코더 |
+| 🐧 **WSL Dashboard** | WSL 배포판·Docker·git 상태 대시보드, 컨테이너 start/stop/restart |
+| 🧪 **API Playground** | REST 요청 빌더. Rust가 직접 요청해 **CORS 제약 없음**, 응답 확인, 요청 history |
+| 🖥 **Activity Timeline** | PC 사용 기록 자동 추적(트레이 상시 실행), 하루 타임라인·앱별 사용 통계 |
+| 🔍 **Everything+** | 파일명 초고속 검색(FTS5 인덱스), 검색 루트 관리 |
+| 🗂 **Knowledge** | 마크다운 기반 지식 저장소 — 태그, 본문 검색, 데일리 노트 |
+| 🕐 **Life Log** | 다른 앱의 활동·git 데이터를 모아 하루 요약 제공 |
+
+## 다운로드 / 설치
+
+Windows 11에서 실행 파일만 받아 바로 쓰려면 **Releases** 페이지를 이용하세요.
 
 ```
-apps/        독립 Tauri 앱 (각각 독립 .exe)
-  port-manager        Port & Process Manager
-  wsl-dashboard       WSL/Docker/git 대시보드
-  developer-toolbox   개발 도구 모음
-  activity-timeline   PC 사용 타임라인
-  everything-plus     로컬 파일 검색
-  knowledge-base      마크다운 지식 저장소
-  api-playground      REST API 테스트
-  life-log            자동 일일 로그
-packages/    공용 React 패키지 (필요 시)
-crates/      공용 Rust 크레이트 (필요 시)
-docs/        architecture / roadmap / projects
+https://github.com/jihoon22-lee/devbox/releases
 ```
 
-## 시작하기
+- 각 앱의 `*-setup.exe`를 내려받아 설치하면 됩니다. WebView2 런타임(Windows 11 기본 포함)만 있으면 별도 도구 설치가 필요 없습니다.
+- 자세한 사용/설치/트러블슈팅: [docs/windows-guide.md](./docs/windows-guide.md)
 
-```bash
-corepack enable pnpm        # 최초 1회
-pnpm install                # 워크스페이스 의존성
-```
+## 문서
 
-앱 실행/빌드는 각 앱 디렉터리에서:
-
-```bash
-cd apps/port-manager
-pnpm tauri dev              # Windows에서
-pnpm tauri build            # Windows에서 (배포)
-```
-
-WSL에서는 `cargo test`(core 로직) / `pnpm build`(프론트 검증)로 개발한다.
-상세 규약은 [CONVENTIONS.md](./CONVENTIONS.md), 계획은 [docs](./docs/), 앱별 상세는 각 `PLAN.md` 참조.
+| 문서 | 내용 |
+|---|---|
+| [사용 가이드](./docs/windows-guide.md) | Windows 11에서 설치·사용·빌드·문제 해결 |
+| [개발자 가이드](./docs/development.md) | 구조, 시작하기, 개발 워크플로 |
+| [아키텍처](./docs/architecture.md) | 모노레포 구조, 레이어, 데이터 흐름 |
+| [로드맵](./docs/roadmap.md) | 진행 상황 / 계획 |
+| [프로젝트 요약](./docs/projects.md) | 앱별 상세 요약 |
+| [공통 규약](./CONVENTIONS.md) | 스택, 개발 워크플로, git 규칙 |
+| [변경 이력](./CHANGELOG.md) | 버전별 변경점 |
