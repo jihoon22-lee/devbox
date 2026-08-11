@@ -1,24 +1,30 @@
 use crate::core::db::{
-    add_root as db_add_root, clear_files, list_roots as db_list_roots,
-    remove_root as db_remove_root, total_files, upsert_file,
+    add_root as db_add_root, clear_all, list_roots as db_list_roots, remove_root as db_remove_root,
+    total_files, upsert_content, upsert_file,
 };
-use crate::core::indexer::collect;
+use crate::core::indexer::{collect, is_text_ext, MAX_CONTENT_BYTES};
 use crate::core::models::IndexStatus;
 use rusqlite::Connection;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// 앱 전역 상태
 pub struct AppState {
     pub db: Mutex<Connection>,
     pub indexing: AtomicBool,
+    pub indexed: AtomicI64,
 }
 
 /// 인덱스 루트를 추가하고 인덱싱을 시작한다.
 #[tauri::command]
-pub fn add_root(state: tauri::State<'_, Arc<AppState>>, path: String) -> Result<(), String> {
+pub fn add_root(
+    state: tauri::State<'_, Arc<AppState>>,
+    path: String,
+    index_content: bool,
+) -> Result<(), String> {
     let conn = state.db.lock().unwrap();
-    db_add_root(&conn, &path).map_err(|e| e.to_string())?;
+    db_add_root(&conn, &path, index_content).map_err(|e| e.to_string())?;
     let path_for_index = path.clone();
     let st = state.inner().clone();
     drop(conn);
@@ -32,7 +38,9 @@ pub fn remove_root(state: tauri::State<'_, Arc<AppState>>, path: String) -> Resu
 }
 
 #[tauri::command]
-pub fn list_roots(state: tauri::State<'_, Arc<AppState>>) -> Result<Vec<String>, String> {
+pub fn list_roots(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::core::models::RootInfo>, String> {
     db_list_roots(&state.db.lock().unwrap()).map_err(|e| e.to_string())
 }
 
@@ -52,6 +60,7 @@ pub fn index_status(state: tauri::State<'_, Arc<AppState>>) -> Result<IndexStatu
     Ok(IndexStatus {
         indexing: state.indexing.load(Ordering::SeqCst),
         total_files: total,
+        indexed_files: state.indexed.load(Ordering::SeqCst),
         roots: roots.len(),
         last_indexed_at: None,
     })
@@ -61,25 +70,40 @@ fn spawn_index(state: Arc<AppState>, only_roots: Vec<String>) {
     if state.indexing.swap(true, Ordering::SeqCst) {
         return; // 이미 인덱싱 중
     }
+    state.indexed.store(0, Ordering::SeqCst);
     std::thread::spawn(move || {
         let conn = state.db.lock().unwrap();
         let roots = db_list_roots(&conn).unwrap_or_default();
-        let targets: Vec<String> = if only_roots.is_empty() {
+        let targets: Vec<_> = if only_roots.is_empty() {
             roots
         } else {
-            only_roots
+            roots
+                .into_iter()
+                .filter(|r| only_roots.contains(&r.path))
+                .collect()
         };
 
         let result = (|| -> rusqlite::Result<()> {
-            clear_files(&conn)?;
+            clear_all(&conn)?;
+            let mut count: i64 = 0;
             for root in &targets {
-                let files = collect(std::path::Path::new(root));
+                let files = collect(Path::new(&root.path));
                 conn.execute("BEGIN TRANSACTION", [])?;
                 for f in files {
                     let path_str = f.path.to_string_lossy().into_owned();
-                    let _ = upsert_file(&conn, &path_str, f.size, f.modified_ts, 0);
+                    let file_id = upsert_file(&conn, &path_str, f.size, f.modified_ts, 0)?;
+                    if root.content
+                        && is_text_ext(&ext_of(&path_str))
+                        && f.size <= MAX_CONTENT_BYTES as i64
+                    {
+                        if let Ok(content) = std::fs::read_to_string(&f.path) {
+                            let _ = upsert_content(&conn, file_id, &content);
+                        }
+                    }
+                    count += 1;
                 }
                 conn.execute("COMMIT", [])?;
+                state.indexed.store(count, Ordering::SeqCst);
             }
             Ok(())
         })();
@@ -89,4 +113,12 @@ fn spawn_index(state: Arc<AppState>, only_roots: Vec<String>) {
         }
         state.indexing.store(false, Ordering::SeqCst);
     });
+}
+
+fn ext_of(path: &str) -> String {
+    path.rsplit('.')
+        .next()
+        .filter(|e| *e != path && e.len() <= 10)
+        .unwrap_or("")
+        .to_lowercase()
 }

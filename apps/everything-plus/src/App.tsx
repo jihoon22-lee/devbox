@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addRoot, indexNow, indexStatus, listRoots, removeRoot, searchFiles } from "./api";
-import type { FileEntry, IndexStatus } from "./types";
+import { addRoot, indexNow, indexStatus, listRoots, removeRoot, searchContent, searchFiles } from "./api";
+import type { ContentResult, FileEntry, IndexStatus, RootInfo } from "./types";
 import "./App.css";
 
 function fmtSize(bytes: number): string {
@@ -11,10 +11,15 @@ function fmtSize(bytes: number): string {
 
 export default function App() {
   const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<"name" | "content">("name");
+  const [regexMode, setRegexMode] = useState(false);
   const [results, setResults] = useState<FileEntry[]>([]);
-  const [status, setStatus] = useState<IndexStatus>({ indexing: false, total_files: 0, roots: 0, last_indexed_at: null });
-  const [roots, setRoots] = useState<string[]>([]);
+  const [contentResults, setContentResults] = useState<ContentResult[]>([]);
+  const [status, setStatus] = useState<IndexStatus>({ indexing: false, total_files: 0, indexed_files: 0, roots: 0, last_indexed_at: null });
+  const [roots, setRoots] = useState<RootInfo[]>([]);
   const [newRoot, setNewRoot] = useState("");
+  const [newRootContent, setNewRootContent] = useState(false);
+  const [regexError, setRegexError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const seq = useRef(0);
 
@@ -28,6 +33,13 @@ export default function App() {
     }
   }, []);
 
+  // 인덱싱 중에는 진행률을 주기적으로 갱신
+  useEffect(() => {
+    if (!status.indexing) return;
+    const id = setInterval(() => void loadMeta(), 500);
+    return () => clearInterval(id);
+  }, [status.indexing, loadMeta]);
+
   useEffect(() => {
     void loadMeta();
   }, [loadMeta]);
@@ -37,13 +49,30 @@ export default function App() {
     const q = query.trim();
     if (!q) {
       setResults([]);
+      setContentResults([]);
+      setRegexError(null);
       return;
     }
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
-        const r = await searchFiles(q);
-        if (!cancelled && seq.current === current) setResults(r);
+        if (mode === "content") {
+          setContentResults(await searchContent(q));
+        } else if (regexMode) {
+          let re: RegExp;
+          try {
+            re = new RegExp(q, "i");
+          } catch (e) {
+            setRegexError(e instanceof Error ? e.message : String(e));
+            return;
+          }
+          setRegexError(null);
+          const all = await searchFiles(q.replace(/[^a-zA-Z0-9\s]/g, ""), 2000);
+          if (!cancelled && seq.current === current) setResults(all.filter((f) => re.test(f.name)));
+        } else {
+          setRegexError(null);
+          setResults(await searchFiles(q));
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       }
@@ -52,14 +81,15 @@ export default function App() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [query]);
+  }, [query, mode, regexMode]);
 
   const onAddRoot = async () => {
     if (!newRoot.trim()) return;
     setError(null);
     try {
-      await addRoot(newRoot.trim());
+      await addRoot(newRoot.trim(), newRootContent);
       setNewRoot("");
+      setNewRootContent(false);
       await loadMeta();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -70,39 +100,65 @@ export default function App() {
     setError(null);
     try {
       await indexNow();
-      setTimeout(() => void loadMeta(), 800);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
 
+  const pct = status.total_files > 0 ? Math.round((status.indexed_files / status.total_files) * 100) : 0;
+
   return (
     <div className="app">
       <header className="toolbar">
         <h1 className="title">Everything+</h1>
+        <div className="mode-tabs">
+          <button className={`mode-tab ${mode === "name" ? "active" : ""}`} onClick={() => setMode("name")}>
+            Name
+          </button>
+          <button className={`mode-tab ${mode === "content" ? "active" : ""}`} onClick={() => setMode("content")}>
+            Content
+          </button>
+        </div>
         <input
           className="search"
-          placeholder="Search file names..."
+          placeholder={mode === "content" ? "Search file contents..." : "Search file names..."}
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
           autoFocus
         />
+        {mode === "name" && (
+          <label className="regex-toggle">
+            <input type="checkbox" checked={regexMode} onChange={(e) => setRegexMode(e.currentTarget.checked)} />
+            regex
+          </label>
+        )}
         <span className="status">
-          {status.indexing ? "Indexing..." : `${status.total_files.toLocaleString()} files`}
+          {status.indexing
+            ? `Indexing... ${status.indexed_files.toLocaleString()} files`
+            : `${status.total_files.toLocaleString()} files`}
         </span>
         <button className="btn" onClick={() => void onReindex()}>
           Re-index
         </button>
       </header>
 
+      {status.indexing && (
+        <div className="progress">
+          <div className="progress-bar" style={{ width: `${Math.max(4, pct)}%` }} />
+          <span className="progress-text">{pct}% ({status.indexed_files.toLocaleString()})</span>
+        </div>
+      )}
+
       {error && <div className="error">{error}</div>}
+      {regexError && <div className="error">{regexError}</div>}
 
       <div className="roots">
         <span className="dim">Roots:</span>
         {roots.map((r) => (
-          <span key={r} className="root-chip">
-            {r}
-            <button className="root-del" title="Remove root" onClick={() => void removeRoot(r).then(loadMeta)}>
+          <span key={r.path} className="root-chip" title={r.content ? "content index on" : "name only"}>
+            {r.path}
+            {r.content && <span className="root-tag">content</span>}
+            <button className="root-del" title="Remove root" onClick={() => void removeRoot(r.path).then(loadMeta)}>
               ✕
             </button>
           </span>
@@ -116,46 +172,87 @@ export default function App() {
             if (e.key === "Enter") void onAddRoot();
           }}
         />
+        <label className="regex-toggle">
+          <input type="checkbox" checked={newRootContent} onChange={(e) => setNewRootContent(e.currentTarget.checked)} />
+          index content
+        </label>
         <button className="btn" onClick={() => void onAddRoot()}>
           Add
         </button>
       </div>
 
       <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>NAME</th>
-              <th>PATH</th>
-              <th>SIZE</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((f) => (
-              <tr key={f.id}>
-                <td>
-                  <span className="name">{f.name}</span>
-                </td>
-                <td className="mono dim">{f.path}</td>
-                <td className="mono">{fmtSize(f.size)}</td>
-              </tr>
-            ))}
-            {query.trim() && results.length === 0 && (
+        {mode === "content" ? (
+          <table>
+            <thead>
               <tr>
-                <td colSpan={3} className="empty">
-                  No results for "{query}"
-                </td>
+                <th>NAME</th>
+                <th>SNIPPET</th>
+                <th>PATH</th>
               </tr>
-            )}
-            {!query.trim() && (
+            </thead>
+            <tbody>
+              {contentResults.map((f, i) => (
+                <tr key={`${f.path}-${i}`}>
+                  <td>
+                    <span className="name">{f.name}</span>
+                  </td>
+                  <td className="snippet">{f.snippet}</td>
+                  <td className="mono dim">{f.path}</td>
+                </tr>
+              ))}
+              {query.trim() && contentResults.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="empty">
+                    No content matches for "{query}"
+                  </td>
+                </tr>
+              )}
+              {!query.trim() && (
+                <tr>
+                  <td colSpan={3} className="empty">
+                    Type to search file contents
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        ) : (
+          <table>
+            <thead>
               <tr>
-                <td colSpan={3} className="empty">
-                  Type to search
-                </td>
+                <th>NAME</th>
+                <th>PATH</th>
+                <th>SIZE</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {results.map((f) => (
+                <tr key={f.id}>
+                  <td>
+                    <span className="name">{f.name}</span>
+                  </td>
+                  <td className="mono dim">{f.path}</td>
+                  <td className="mono">{fmtSize(f.size)}</td>
+                </tr>
+              ))}
+              {query.trim() && results.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="empty">
+                    No results for "{query}"
+                  </td>
+                </tr>
+              )}
+              {!query.trim() && (
+                <tr>
+                  <td colSpan={3} className="empty">
+                    Type to search
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

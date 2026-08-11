@@ -2,7 +2,7 @@ mod commands;
 mod core;
 
 use commands::indexing::AppState;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
@@ -17,6 +17,7 @@ pub fn run() {
             commands::indexing::index_now,
             commands::indexing::index_status,
             commands::search::search_files,
+            commands::search::search_content,
         ])
         .setup(|app| {
             let dir = app.path().app_local_data_dir()?;
@@ -25,6 +26,7 @@ pub fn run() {
             let state = Arc::new(AppState {
                 db: Mutex::new(conn),
                 indexing: AtomicBool::new(false),
+                indexed: AtomicI64::new(0),
             });
             app.manage(state);
             Ok(())
