@@ -81,7 +81,18 @@ pub fn start_session(
     drop(pair.slave);
 
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    // Windows에서만 ConPTY DSR 응답을 쓰므로 그 외 OS에서는 mut 불필요
+    #[allow(unused_mut)]
+    let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    {
+        // ConPTY는 시작 시 커서 위치 조회(ESC[6n)를 보내고 응답이 올 때까지
+        // 자식 프로세스를 정지시킨다 (PSEUDOCONSOLE_INHERIT_CURSOR 교착 상태).
+        // 커서 위치 보고(ESC[1;1R)를 입력 파이프로 보내 차단을 해제한다.
+        let _ = writer.write_all(b"\x1b[1;1R");
+        let _ = writer.flush();
+    }
 
     let session_id = format!(
         "s{}",
