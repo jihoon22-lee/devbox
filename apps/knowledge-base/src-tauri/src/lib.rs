@@ -2,6 +2,7 @@ mod commands;
 mod core;
 
 use commands::docs::AppState;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
@@ -21,6 +22,7 @@ pub fn run() {
             commands::docs::search_docs,
             commands::docs::list_tags,
             commands::docs::daily_note,
+            commands::markdown::render_markdown,
         ])
         .setup(|app| {
             let dir = app.path().app_local_data_dir()?;
@@ -28,6 +30,7 @@ pub fn run() {
             let conn = core::db::init(&dir.join("data.db"))?;
             let state = Arc::new(AppState {
                 db: Mutex::new(conn),
+                image_cache: Mutex::new(HashMap::new()),
             });
             app.manage(state);
             Ok(())
