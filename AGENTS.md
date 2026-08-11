@@ -1,6 +1,6 @@
 # AGENTS.md
 
-devbox — Tauri 8개 데스크톱 앱 모노레포. 모든 규약의 기준은 루트 `CONVENTIONS.md` (반드시 먼저 읽을 것). 앱별 상세는 `apps/<app>/PLAN.md`.
+devbox — Tauri 10개 데스크톱 앱 모노레포. 모든 규약의 기준은 루트 `CONVENTIONS.md` (반드시 먼저 읽을 것). 앱별 상세는 `apps/<app>/PLAN.md` (wsl-desktop·devbox-manager는 `README.md`).
 
 ## 저장소 사실
 - 원격: `https://github.com/jihoon22-lee/devbox` (로컬 디렉터리명 `devbox`와 동일)
@@ -9,7 +9,7 @@ devbox — Tauri 8개 데스크톱 앱 모노레포. 모든 규약의 기준은 
 - git identity: `jihoon22.lee <zkemzld1004@gmail.com>` (전역·로컬 설정됨)
 
 ## 현재 상태
-- `apps/port-manager`부터 개발 진행 중. `crates/`, `packages/`는 아직 비어 있음
+- 10개 앱 모두 구현 완료 (v0.2.x 릴리스 중). `crates/`, `packages/`는 아직 비어 있음
 - 루트 `Cargo.toml`의 `[workspace] members`에 앱/크레이트가 생길 때마다 추가해야 함
 - 프론트 워크스페이스는 `pnpm-workspace.yaml` + 루트 `package.json` (packageManager: pnpm@9)
 

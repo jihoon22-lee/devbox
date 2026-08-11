@@ -1,11 +1,12 @@
 # Windows 11에서 devbox 앱 사용 가이드
 
-이 가이드는 **Windows 11 PC(예: 회사 PC)에서 8개 앱을 직접 빌드하고 실행**하는 방법을 설명한다.
+이 가이드는 **Windows 11 PC(예: 회사 PC)에서 10개 앱을 직접 빌드하고 실행**하는 방법을 설명한다.
 개발은 WSL에서 했지만, 앱 자체는 Windows 데스크톱 앱(Tauri)이므로 Windows PC에서 `.exe`로 빌드하면 그대로 쓸 수 있다.
 
 > 저장소: `https://github.com/jihoon22-lee/devbox` (공개 저장소)
 > 앱별 산출물: `PortManager.exe` `DevToolbox.exe` `WSLDashboard.exe` `ApiPlayground.exe`
 > `ActivityTimeline.exe` `EverythingPlus.exe` `Knowledge.exe` `LifeLog.exe`
+> `WSLDesktop.exe` `DevboxManager.exe`
 
 ---
 
@@ -23,7 +24,7 @@
 > 1. 루트 `CHANGELOG.md`에 새 버전 섹션(`## [vX.Y.Z] - 날짜`)으로 변경점 기록
 > 2. **방법 1 (태그로 배포, 권장)**: WSL/로컬에서 `git tag v0.1.1 && git push origin v0.1.1`
 >    - **방법 2 (수동)**: GitHub → Actions 탭 → **Release** → **Run workflow** → 버전 입력(예: `v0.1.1`)
-> 3. 그러면 Windows CI가 8개 앱을 빌드해 **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 새 릴리스를 만든다.
+> 3. 그러면 Windows CI가 10개 앱을 빌드해 **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 새 릴리스를 만든다.
 >    버전(tag)은 **매번 새로** 써야 한다(기존 tag 재사용 불가).
 
 > 참고: 개인 빌드라 코드 서명이 없어 SmartScreen 경고가 뜨면 `추가 정보 → 실행`을 누르면 된다.
@@ -157,7 +158,7 @@ cd devbox
 pnpm install
 ```
 
-- `pnpm install`은 8개 앱의 의존성을 한 번에 설치한다 (몇 분).
+- `pnpm install`은 10개 앱의 의존성을 한 번에 설치한다 (몇 분).
 - `node_modules`는 워크스페이스 루트에 통합 관리된다.
 
 ---
@@ -177,7 +178,7 @@ pnpm tauri build
 
 ```powershell
 cd C:\devbox
-$apps = "port-manager","developer-toolbox","wsl-dashboard","api-playground","activity-timeline","everything-plus","knowledge-base","life-log"
+$apps = "port-manager","developer-toolbox","wsl-dashboard","api-playground","activity-timeline","everything-plus","knowledge-base","life-log","wsl-desktop","devbox-manager"
 foreach ($a in $apps) {
   Write-Host "===== BUILDING $a =====" -ForegroundColor Cyan
   Push-Location "apps\$a"
@@ -206,6 +207,8 @@ ProductName 매핑:
 | everything-plus | EverythingPlus |
 | knowledge-base | Knowledge |
 | life-log | LifeLog |
+| wsl-desktop | WSLDesktop |
+| devbox-manager | DevboxManager |
 
 ---
 
@@ -232,6 +235,8 @@ SmartScreen 경고("인식할 수 없는 앱")가 뜨면:
 | **EverythingPlus** | 첫 실행 시 `+`로 검색 루트 추가(예: `C:\`, `D:\`) → 자동 인덱싱. |
 | **Knowledge** | 기본 저장 위치: `Documents\Knowledge`. 우측에서 작성, Ctrl+S 저장. Daily note 버튼으로 오늘 메모. |
 | **LifeLog** | 설정 탭에서 **활동 데이터 소스**(activity-timeline의 data.db)와 **git 프로젝트 경로**를 등록해야 값이 채워짐. |
+| **WSLDesktop** | 임베디드 WSL 터미널. WSL2 필요: `wsl --install` 후 재부팅. |
+| **DevboxManager** | devbox 앱 설치·업데이트·실행을 한 곳에서 관리. |
 
 ---
 

@@ -56,7 +56,7 @@ life-log:         React → commands → readers(타 앱 DB) → 집계 → Reac
 
 ## 통합 앱 (Workbench)
 
-8개 앱 완성 후 `apps/workbench`를 추가한다. 기존 `crates/`·`packages/`를 재사용하므로
-통합은 "새 앱 하나 + 메뉴 구성" 수준으로 끝난다. 결과물은 **독립 앱 8개 + 통합 앱 1개**.
+10개 앱 완성 후 `apps/workbench`를 추가한다. 기존 `crates/`·`packages/`를 재사용하므로
+통합은 "새 앱 하나 + 메뉴 구성" 수준으로 끝난다. 결과물은 **독립 앱 10개 + 통합 앱 1개**.
 
 상세 규약: [CONVENTIONS.md](../CONVENTIONS.md)
