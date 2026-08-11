@@ -69,6 +69,7 @@ export default function App() {
   const [resp, setResp] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [showCurl, setShowCurl] = useState(false);
   const [tab, setTab] = useState<"params" | "headers" | "body" | "auth">("params");
   const [showHeaders, setShowHeaders] = useState(false);
   const [pretty, setPretty] = useState(true);
@@ -161,7 +162,22 @@ export default function App() {
           <button className="btn send" onClick={() => void onSend()} disabled={sending || !req.url}>
             {sending ? "Sending..." : "Send"}
           </button>
+          <button className={`btn ${showCurl ? "active" : ""}`} onClick={() => setShowCurl((v) => !v)} disabled={!req.url}>
+            cURL
+          </button>
         </div>
+
+        {showCurl && (
+          <div className="curl-panel">
+            <div className="io-label">
+              cURL
+              <button className="copy-btn" onClick={() => void navigator.clipboard.writeText(buildCurl(req))}>
+                Copy
+              </button>
+            </div>
+            <pre className="curl-text">{buildCurl(req) || " "}</pre>
+          </div>
+        )}
 
         <div className="tabs">
           {(["params", "headers", "body", "auth"] as const).map((t) => (
@@ -276,4 +292,39 @@ function tryPretty(json: string): string {
   } catch {
     return json;
   }
+}
+
+/** 요청 구성을 curl 명령 문자열로 만든다 (타인에게 전달·디버깅용). */
+function buildCurl(req: ApiRequest): string {
+  if (!req.url) return "";
+
+  const params = new URLSearchParams();
+  for (const p of req.params) if (p.key) params.append(p.key, p.value);
+  const sep = req.url.includes("?") ? "&" : "?";
+  const url = params.size ? req.url + sep + params.toString() : req.url;
+
+  const lines = [`curl --request ${req.method} ${shellQuote(url)}`];
+
+  const headers: [string, string][] = [];
+  for (const h of req.headers) if (h.key) headers.push([h.key, h.value]);
+  if (req.auth?.kind === "basic" && req.auth.username) {
+    headers.push(["Authorization", `Basic ${btoa(`${req.auth.username}:${req.auth.password}`)}`]);
+  } else if (req.auth?.kind === "bearer" && req.auth.token) {
+    headers.push(["Authorization", `Bearer ${req.auth.token}`]);
+  } else if (req.auth?.kind === "apikey" && req.auth.api_key) {
+    headers.push([req.auth.api_key, req.auth.api_value]);
+  }
+  for (const [k, v] of headers) {
+    lines.push(`  --header ${shellQuote(`${k}: ${v}`)}`);
+  }
+
+  if (req.body_kind !== "none" && req.body) {
+    lines.push(`  --data ${shellQuote(req.body)}`);
+  }
+
+  return lines.join(" \\\n");
+}
+
+function shellQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
