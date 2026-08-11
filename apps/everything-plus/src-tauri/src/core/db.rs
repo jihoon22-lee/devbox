@@ -7,20 +7,49 @@ use rusqlite::{params, Connection};
 const SCHEMA_VERSION: i64 = 1;
 
 /// DB를 열고 스키마(FTS5 외부 콘텐츠 테이블 + 트리거)를 준비한다.
-pub fn init(path: &std::path::Path) -> rusqlite::Result<Connection> {
+/// 반환하는 `bool`은 `migrate()`가 스키마 버전 상승으로 파생 인덱스를
+/// 비웠는지 여부다. 호출자(`lib.rs`의 setup)는 이 값이 `true`이고 등록된
+/// 루트가 있으면 전체 재인덱싱을 걸어야 한다 — 그렇지 않으면 사용자가 빈
+/// 검색 결과만 보고 앱이 고장났다고 오해한다.
+pub fn init(path: &std::path::Path) -> rusqlite::Result<(Connection, bool)> {
     let conn = Connection::open(path)?;
-    migrate(&conn)?;
-    Ok(conn)
+    let cleared = migrate(&conn)?;
+    Ok((conn, cleared))
 }
 
 /// 경로 구분자를 `/`로 통일하고 끝의 구분자를 제거한다.
 /// Windows(`\`)와 유닉스(`/`) 구분자를 동일하게 취급하기 위해 저장 진입점
 /// (`add_root`, `upsert_file`)에서 공통으로 사용한다.
+///
+/// 드라이브 루트(`C:\` → `C:/`)와 유닉스 루트(`/`)는 예외로, 구분자를
+/// 제거하지 않는다. Windows에서 `C:`(구분자 없음)는 "그 드라이브의 현재
+/// 디렉터리 기준 상대 경로"를 뜻하는 별개의 의미(드라이브 상대 경로)라
+/// `C:/`(그 드라이브의 루트)와 다르다 — 구분자를 지우면 걷는 대상 디렉터리
+/// 자체가 바뀐다.
 pub fn normalize_path(path: &str) -> String {
-    path.replace('\\', "/").trim_end_matches('/').to_string()
+    let unified = path.replace('\\', "/");
+    let trimmed = unified.trim_end_matches('/');
+    if trimmed.is_empty() {
+        // 입력이 "/"류(유닉스 루트)뿐이었던 경우
+        return "/".to_string();
+    }
+    if is_drive_letter(trimmed) && unified.len() > trimmed.len() {
+        // "C:" + 구분자가 하나 이상 있었다면 드라이브 루트다: 구분자를 보존한다.
+        return format!("{trimmed}/");
+    }
+    trimmed.to_string()
 }
 
-pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+/// `s`가 드라이브 문자 형태("C:", "d:" 등 정확히 2글자)인지 확인한다.
+fn is_drive_letter(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
+}
+
+/// 반환값은 `clear_all()`이 실행되어 파생 인덱스(`files`/`file_content`)가
+/// 비워졌는지 여부다. `init()`을 거쳐 호출자가 전체 재인덱싱을 걸어야 하는지
+/// 판단하는 데 쓰인다.
+pub fn migrate(conn: &Connection) -> rusqlite::Result<bool> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS roots (
             id INTEGER PRIMARY KEY,
@@ -87,7 +116,8 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
-    if current_version < SCHEMA_VERSION {
+    let cleared = current_version < SCHEMA_VERSION;
+    if cleared {
         clear_all(conn)?;
         conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
@@ -95,16 +125,20 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             params![SCHEMA_VERSION.to_string()],
         )?;
     }
-    Ok(())
+    Ok(cleared)
 }
 
-pub fn add_root(conn: &Connection, path: &str, index_content: bool) -> rusqlite::Result<()> {
+/// 루트를 등록하고, 실제로 저장된(정규화된) 경로를 반환한다.
+/// 호출자(커맨드 계층)는 이 반환값을 그대로 인덱싱 대상으로 써야 한다 —
+/// 원본 입력 문자열을 다시 쓰면 정규화 전후 값이 어긋나 `run_index`의
+/// 루트 필터가 아무 것도 매치하지 못할 수 있다.
+pub fn add_root(conn: &Connection, path: &str, index_content: bool) -> rusqlite::Result<String> {
     let path = normalize_path(path);
     conn.execute(
         "INSERT OR IGNORE INTO roots (path, content) VALUES (?1, ?2)",
         params![path, index_content],
     )?;
-    Ok(())
+    Ok(path)
 }
 
 pub fn list_roots(conn: &Connection) -> rusqlite::Result<Vec<RootInfo>> {
@@ -129,7 +163,15 @@ pub fn remove_root(conn: &Connection, path: &str) -> rusqlite::Result<()> {
 /// 특정 루트 아래의 인덱스 데이터를 지운다 (`file_content` → `files` 순, FK
 /// CASCADE가 없으므로 순서가 중요하다). `remove_root`과 부분 재인덱싱이 공유한다.
 pub fn clear_root(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
-    let pattern = format!("{}/%", normalize_path(root_path));
+    let normalized = normalize_path(root_path);
+    // 드라이브 루트("C:/")와 유닉스 루트("/")는 normalize_path가 이미 끝에
+    // 구분자를 남겨두므로, 여기서 또 붙이면 "C://%"가 되어 매치가 0건이 된다.
+    let prefix = if normalized.ends_with('/') {
+        normalized
+    } else {
+        format!("{normalized}/")
+    };
+    let pattern = format!("{prefix}%");
     conn.execute(
         "DELETE FROM file_content WHERE file_id IN (SELECT id FROM files WHERE path LIKE ?1)",
         params![pattern],
@@ -339,6 +381,20 @@ mod tests {
     }
 
     #[test]
+    fn normalize_path_preserves_drive_and_unix_root_separator() {
+        // 드라이브 루트: 구분자를 지우면 "C:"(드라이브 상대 경로, 다른 의미)가
+        // 되어버리므로 반드시 유지해야 한다.
+        assert_eq!(normalize_path("C:\\"), "C:/");
+        assert_eq!(normalize_path("C:/"), "C:/");
+        assert_eq!(normalize_path("d:\\"), "d:/");
+        // 구분자가 아예 없는 "C:"는 드라이브 상대 경로이므로 그대로 둔다
+        // (없던 구분자를 새로 붙이지 않는다).
+        assert_eq!(normalize_path("C:"), "C:");
+        // 유닉스 루트
+        assert_eq!(normalize_path("/"), "/");
+    }
+
+    #[test]
     fn upsert_file_preserves_id_on_reindex() {
         let conn = mem();
         let id1 = upsert_file(&conn, "C:/projects/foo/bar.rs", 10, 100, 1).unwrap();
@@ -405,10 +461,54 @@ mod tests {
     #[test]
     fn migrate_is_idempotent_and_does_not_wipe_current_schema() {
         let conn = Connection::open_in_memory().unwrap();
-        migrate(&conn).unwrap();
+        let first = migrate(&conn).unwrap();
+        assert!(
+            first,
+            "최초 migrate는 schema_version을 0→SCHEMA_VERSION으로 올리며 clear_all을 실행해야 한다"
+        );
         upsert_file(&conn, "C:/a/b.rs", 1, 0, 1).unwrap();
         // 같은 schema_version으로 다시 migrate를 호출해도 인덱스가 지워지지 않는다.
-        migrate(&conn).unwrap();
+        let second = migrate(&conn).unwrap();
+        assert!(
+            !second,
+            "이미 최신 버전이면 clear_all을 다시 실행하면 안 된다"
+        );
         assert_eq!(total_files(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn add_root_round_trips_backslash_path_through_list_and_clear() {
+        // R1 회귀 재현: add_root에 역슬래시 경로를 넣고, DB에 실제로 저장된
+        // (list_roots가 돌려주는) 값으로 clear_root를 호출해야 매치된다.
+        // add_root의 반환값도 list_roots가 돌려주는 값과 같아야 한다 —
+        // 커맨드 계층이 원본 대신 이 반환값을 재인덱싱에 써야 하는 이유다.
+        let conn = mem();
+        let stored = add_root(&conn, "C:\\projects\\foo", false).unwrap();
+        assert_eq!(stored, "C:/projects/foo");
+
+        let roots = list_roots(&conn).unwrap();
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].path, stored);
+
+        upsert_file(&conn, "C:\\projects\\foo\\bar.rs", 1, 0, 1).unwrap();
+        clear_root(&conn, &roots[0].path).unwrap();
+        assert!(search(&conn, "bar", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn clear_root_matches_files_under_drive_root() {
+        // R2 회귀 재현: 루트가 "C:/"(드라이브 루트)일 때 clear_root의 LIKE
+        // 패턴이 "C://%"가 되어 매치 0건이 되지 않는지 확인한다.
+        let conn = mem();
+        let stored = add_root(&conn, "C:\\", false).unwrap();
+        assert_eq!(stored, "C:/");
+
+        upsert_file(&conn, "C:\\readme.txt", 1, 0, 1).unwrap();
+        upsert_file(&conn, "C:\\projects\\foo\\bar.rs", 1, 0, 1).unwrap();
+
+        clear_root(&conn, &stored).unwrap();
+        assert!(search(&conn, "readme", 10).unwrap().is_empty());
+        assert!(search(&conn, "bar", 10).unwrap().is_empty());
+        assert_eq!(total_files(&conn).unwrap(), 0);
     }
 }

@@ -28,11 +28,13 @@ pub fn add_root(
     index_content: bool,
 ) -> Result<(), String> {
     let conn = state.db.lock().unwrap();
-    db_add_root(&conn, &path, index_content).map_err(|e| e.to_string())?;
-    let path_for_index = path.clone();
+    // db_add_root가 반환하는 정규화된 경로를 그대로 재인덱싱 대상으로 쓴다.
+    // 원본 입력(`path`)을 다시 쓰면 DB에 저장된 정규화 값과 어긋나
+    // run_index의 루트 필터가 아무 것도 매치하지 못할 수 있다.
+    let stored_path = db_add_root(&conn, &path, index_content).map_err(|e| e.to_string())?;
     let st = state.inner().clone();
     drop(conn);
-    spawn_index(st, vec![path_for_index]);
+    spawn_index(st, vec![stored_path]);
     Ok(())
 }
 
@@ -71,7 +73,9 @@ pub fn index_status(state: tauri::State<'_, Arc<AppState>>) -> Result<IndexStatu
 }
 
 /// `only_roots`가 비어 있으면 전체 재인덱싱, 아니면 해당 루트만 부분 재인덱싱한다.
-fn spawn_index(state: Arc<AppState>, only_roots: Vec<String>) {
+/// `pub(crate)`인 이유: 스키마 버전이 올라가 `migrate()`가 인덱스를 비운 직후
+/// `lib.rs`의 setup에서 전체 재인덱싱을 걸 때도 이 함수를 재사용한다.
+pub(crate) fn spawn_index(state: Arc<AppState>, only_roots: Vec<String>) {
     if state.indexing.swap(true, Ordering::SeqCst) {
         return; // 이미 인덱싱 중
     }
