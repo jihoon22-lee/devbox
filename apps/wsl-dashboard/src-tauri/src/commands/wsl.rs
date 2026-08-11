@@ -49,10 +49,11 @@ pub async fn docker_action(
 pub async fn git_status(projects: Vec<String>) -> Result<Vec<GitStatus>, String> {
     let mut out = Vec::new();
     for path in projects {
-        let result = Command::new("git")
-            .args(["-C", &path, "status", "--porcelain", "--branch"])
-            .output()
-            .await;
+        let mut cmd = Command::new("git");
+        cmd.args(["-C", &path, "status", "--porcelain", "--branch"]);
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        let result = cmd.output().await;
         match result {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -92,10 +93,12 @@ pub fn open_terminal(distro: String) -> Result<(), String> {
     Ok(())
 }
 
-/// `wsl.exe` 명령을 실행하고 stdout을 UTF-8로 반환한다.
+/// `wsl.exe` 명령을 실행하고 stdout을 반환한다.
 async fn run_wsl(args: &[&str], cwd: Option<&str>) -> Result<String, String> {
     let mut cmd = Command::new("wsl.exe");
     cmd.args(args);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: 콘솔 창 깜빡임 방지
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
@@ -107,5 +110,67 @@ async fn run_wsl(args: &[&str], cwd: Option<&str>) -> Result<String, String> {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("명령 실패 ({}): {}", output.status, stderr.trim()));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(decode_output(&output.stdout))
+}
+
+/// wsl.exe 출력 디코딩.
+///
+/// 파이프로 실행된 `wsl.exe -l -v`는 UTF-16LE(BOM 또는 다량의 NUL)로 출력한다.
+/// 이 경우 UTF-16LE로, 그 외에는 UTF-8로 해석한다. (distro 이름에 NUL이 남아
+/// 다음 명령의 인자가 되면 "null byte found in provided data" 오류가 발생한다)
+fn decode_output(bytes: &[u8]) -> String {
+    let bom = bytes.starts_with(&[0xFF, 0xFE]);
+    let null_ratio = if bytes.is_empty() {
+        0
+    } else {
+        bytes.iter().filter(|b| **b == 0).count() * 4 / bytes.len()
+    };
+    if bom || (bytes.len() >= 2 && null_ratio >= 1) {
+        let start = if bom { 2 } else { 0 };
+        let units: Vec<u16> = bytes[start..]
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16_lossy(&units)
+            .trim_end_matches('\0')
+            .to_string()
+    } else {
+        String::from_utf8_lossy(bytes).into_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_output;
+
+    #[test]
+    fn decodes_plain_utf8() {
+        assert_eq!(decode_output(b"Ubuntu\n"), "Ubuntu\n");
+    }
+
+    #[test]
+    fn decodes_utf16le_with_bom() {
+        let mut bytes = vec![0xFF, 0xFE];
+        for ch in "Ubuntu".encode_utf16() {
+            bytes.extend_from_slice(&ch.to_le_bytes());
+        }
+        let s = decode_output(&bytes);
+        assert_eq!(s, "Ubuntu");
+    }
+
+    #[test]
+    fn decodes_utf16le_without_bom() {
+        let mut bytes = Vec::new();
+        for ch in "docker-desktop".encode_utf16() {
+            bytes.extend_from_slice(&ch.to_le_bytes());
+        }
+        let s = decode_output(&bytes);
+        assert_eq!(s, "docker-desktop");
+    }
+
+    #[test]
+    fn keeps_utf8_with_non_ascii() {
+        let s = decode_output("프로토콜".as_bytes());
+        assert!(s.contains("프로토콜"));
+    }
 }
