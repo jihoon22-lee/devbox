@@ -188,11 +188,10 @@ foreach ($a in $apps) {
 
 ### 7.3 산출물 위치
 
-각 앱의:
+devbox는 **Cargo workspace**이므로, 어떤 앱에서 빌드하든 산출물이 **저장소 루트의 `target\`** 아래에 모인다:
 ```
-apps\<앱>\src-tauri\target\release\<ProductName>.exe     ← 실행 파일 (단일)
-apps\<앱>\src-tauri\target\release\bundle\nsis\<ProductName>_0.1.0_x64-setup.exe   ← 설치 패키지
-apps\<앱>\src-tauri\target\release\bundle\msi\<ProductName>_0.1.0_x64.msi          ← MSI 설치본
+C:\devbox\target\release\<ProductName>.exe                                        ← 실행 파일 (단일)
+C:\devbox\target\release\bundle\nsis\<ProductName>_0.1.0_x64-setup.exe             ← 설치 패키지
 ```
 
 ProductName 매핑:
@@ -299,5 +298,5 @@ cd apps\port-manager
 pnpm tauri build
 
 # 4. 실행
-.\src-tauri\target\release\bundle\nsis\PortManager_0.1.0_x64-setup.exe
+.\target\release\bundle\nsis\PortManager_0.1.0_x64-setup.exe
 ```
