@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag (e.g. v0.1.0). Use a new tag each run."
+        required: true
+        default: "v0.1.0"
+
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Build Windows installers
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all apps (NSIS installers)
+        shell: pwsh
+        run: |
+          $apps = @(
+            "port-manager","developer-toolbox","wsl-dashboard","api-playground",
+            "activity-timeline","everything-plus","knowledge-base","life-log"
+          )
+          foreach ($a in $apps) {
+            Write-Host "===== Building $a =====" -ForegroundColor Cyan
+            Push-Location "apps/$a"
+            pnpm tauri build --bundles nsis
+            if ($LASTEXITCODE -ne 0) { throw "build failed: $a" }
+            Pop-Location
+          }
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers
+          path: |
+            apps/*/src-tauri/target/release/*.exe
+            apps/*/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: build-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installers
+          path: installers
+
+      - name: Determine tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: devbox ${{ steps.tag.outputs.tag }}
+          body: |
+            Windows 11용 설치 패키지 8종입니다.
+
+            - PortManager / DevToolbox / WSLDashboard / ApiPlayground
+            - ActivityTimeline / EverythingPlus / Knowledge / LifeLog
+
+            `*-setup.exe`를 다운로드해 설치하거나, 실행 파일(`*.exe`)을 바로 실행하면 됩니다.
+            WebView2 런타임(Windows 11 기본 포함)만 있으면 별도 도구 설치가 필요 없습니다.
+          files: installers/**/*.exe
+          draft: false
+          make_latest: true
