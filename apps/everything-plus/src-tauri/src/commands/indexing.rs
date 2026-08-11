@@ -1,0 +1,92 @@
+use crate::core::db::{
+    add_root as db_add_root, clear_files, list_roots as db_list_roots,
+    remove_root as db_remove_root, total_files, upsert_file,
+};
+use crate::core::indexer::collect;
+use crate::core::models::IndexStatus;
+use rusqlite::Connection;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+/// 앱 전역 상태
+pub struct AppState {
+    pub db: Mutex<Connection>,
+    pub indexing: AtomicBool,
+}
+
+/// 인덱스 루트를 추가하고 인덱싱을 시작한다.
+#[tauri::command]
+pub fn add_root(state: tauri::State<'_, Arc<AppState>>, path: String) -> Result<(), String> {
+    let conn = state.db.lock().unwrap();
+    db_add_root(&conn, &path).map_err(|e| e.to_string())?;
+    let path_for_index = path.clone();
+    let st = state.inner().clone();
+    drop(conn);
+    spawn_index(st, vec![path_for_index]);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn remove_root(state: tauri::State<'_, Arc<AppState>>, path: String) -> Result<(), String> {
+    db_remove_root(&state.db.lock().unwrap(), &path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_roots(state: tauri::State<'_, Arc<AppState>>) -> Result<Vec<String>, String> {
+    db_list_roots(&state.db.lock().unwrap()).map_err(|e| e.to_string())
+}
+
+/// 전체 루트를 다시 인덱싱한다 (백그라운드 실행).
+#[tauri::command]
+pub fn index_now(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    let st = state.inner().clone();
+    spawn_index(st, Vec::new());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn index_status(state: tauri::State<'_, Arc<AppState>>) -> Result<IndexStatus, String> {
+    let conn = state.db.lock().unwrap();
+    let roots = db_list_roots(&conn).map_err(|e| e.to_string())?;
+    let total = total_files(&conn).map_err(|e| e.to_string())?;
+    Ok(IndexStatus {
+        indexing: state.indexing.load(Ordering::SeqCst),
+        total_files: total,
+        roots: roots.len(),
+        last_indexed_at: None,
+    })
+}
+
+fn spawn_index(state: Arc<AppState>, only_roots: Vec<String>) {
+    if state.indexing.swap(true, Ordering::SeqCst) {
+        return; // 이미 인덱싱 중
+    }
+    std::thread::spawn(move || {
+        let conn = state.db.lock().unwrap();
+        let roots = db_list_roots(&conn).unwrap_or_default();
+        let targets: Vec<String> = if only_roots.is_empty() {
+            roots
+        } else {
+            only_roots
+        };
+
+        let result = (|| -> rusqlite::Result<()> {
+            clear_files(&conn)?;
+            for root in &targets {
+                let files = collect(std::path::Path::new(root));
+                conn.execute("BEGIN TRANSACTION", [])?;
+                for f in files {
+                    let path_str = f.path.to_string_lossy().into_owned();
+                    let _ = upsert_file(&conn, &path_str, f.size, f.modified_ts, 0);
+                }
+                conn.execute("COMMIT", [])?;
+            }
+            Ok(())
+        })();
+
+        if let Err(e) = result {
+            eprintln!("indexing error: {e}");
+        }
+        state.indexing.store(false, Ordering::SeqCst);
+    });
+}
