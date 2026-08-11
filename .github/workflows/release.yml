@@ -42,7 +42,8 @@ jobs:
         run: |
           $apps = @(
             "port-manager","developer-toolbox","wsl-dashboard","api-playground",
-            "activity-timeline","everything-plus","knowledge-base","life-log"
+            "activity-timeline","everything-plus","knowledge-base","life-log",
+            "wsl-desktop","devbox-manager"
           )
           foreach ($a in $apps) {
             Write-Host "===== Building $a =====" -ForegroundColor Cyan
