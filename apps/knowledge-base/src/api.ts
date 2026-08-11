@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./lib/isTauri";
-import type { SearchResult, TreeEntry } from "./types";
+import type { RenderedDoc, SearchResult, TreeEntry } from "./types";
 
 const MOCK_TREE: TreeEntry[] = [
   { path: "Projects", is_dir: true },
@@ -63,4 +63,26 @@ export async function listTags(): Promise<string[]> {
 export async function dailyNote(): Promise<[string, string]> {
   if (!isTauri()) return ["Journal/2026-08-11.md", "# Today\n"];
   return invoke<[string, string]>("daily_note");
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+export async function renderMarkdown(rel: string, content: string): Promise<RenderedDoc> {
+  if (!isTauri()) {
+    // 목업: 실제 마크다운 파서 없이도 프리뷰 레이아웃을 확인할 수 있게 원문을 그대로 보여준다.
+    return { title: null, tags: [], html: `<pre>${escapeHtml(content)}</pre>`, mermaid: [] };
+  }
+  return invoke<RenderedDoc>("render_markdown", { rel, content });
+}
+
+/** 외부 URL을 기본 브라우저로 연다. Tauri 밖(브라우저 미리보기)에서는 새 탭으로 대신 연다. */
+export async function openExternal(url: string): Promise<void> {
+  if (!isTauri()) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(url);
 }
