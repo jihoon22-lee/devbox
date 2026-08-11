@@ -11,6 +11,7 @@ members = [
     "apps/everything-plus/src-tauri",
     "apps/knowledge-base/src-tauri",
     "apps/life-log/src-tauri",
+    "apps/wsl-desktop/src-tauri",
     # "crates/process",
     # "crates/wsl",
     # "crates/database",
