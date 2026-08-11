@@ -19,3 +19,16 @@ export interface DaySummary {
   app_totals: AppTotal[];
   git: GitDay;
 }
+
+export interface DayPoint {
+  day_ms: number;
+  pc_usage_ms: number;
+}
+
+export interface RangeSummary {
+  label: string;
+  pc_usage_ms: number;
+  app_totals: AppTotal[];
+  git: GitDay;
+  daily: DayPoint[];
+}

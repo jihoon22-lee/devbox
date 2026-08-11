@@ -16,6 +16,7 @@ pub fn run() {
             commands::life::set_projects,
             commands::life::get_projects,
             commands::life::get_day,
+            commands::life::get_range,
         ])
         .setup(|app| {
             let dir = app.path().app_local_data_dir()?;

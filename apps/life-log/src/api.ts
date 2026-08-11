@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./lib/isTauri";
-import type { DaySummary } from "./types";
+import type { DaySummary, RangeSummary } from "./types";
+
+const DAY_MS = 86_400_000;
 
 function mockDay(date: string): DaySummary {
   return {
@@ -18,9 +20,40 @@ function mockDay(date: string): DaySummary {
   };
 }
 
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// 지난 날짜는 변경될 일이 없으므로 세션 동안 캐시한다. 오늘은 항상 새로 조회.
+const dayCache = new Map<string, DaySummary>();
+
 export async function getDay(date: string, dayStart: number, dayEnd: number): Promise<DaySummary> {
   if (!isTauri()) return mockDay(date);
-  return invoke<DaySummary>("get_day", { date, dayStart, dayEnd });
+  if (date < todayStr() && dayCache.has(date)) return dayCache.get(date)!;
+  const summary = await invoke<DaySummary>("get_day", { date, dayStart, dayEnd });
+  dayCache.set(date, summary);
+  return summary;
+}
+
+export async function getRange(label: string, dayStart: number, dayEnd: number): Promise<RangeSummary> {
+  if (!isTauri()) {
+    const days: RangeSummary["daily"] = [];
+    let pc = 0;
+    for (let t = dayStart; t < dayEnd; t += DAY_MS) {
+      const d = 5 * 3600_000 + (t % 5) * 600_000;
+      pc += d;
+      days.push({ day_ms: t, pc_usage_ms: d });
+    }
+    return {
+      label,
+      pc_usage_ms: pc,
+      app_totals: mockDay("x").app_totals,
+      git: mockDay("x").git,
+      daily: days,
+    };
+  }
+  return invoke<RangeSummary>("get_range", { label, dayStart, dayEnd });
 }
 
 export async function getActivityDb(): Promise<string> {
