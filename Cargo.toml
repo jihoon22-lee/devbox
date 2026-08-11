@@ -8,6 +8,7 @@ members = [
     "apps/wsl-dashboard/src-tauri",
     "apps/api-playground/src-tauri",
     "apps/activity-timeline/src-tauri",
+    "apps/everything-plus/src-tauri",
     # "crates/process",
     # "crates/wsl",
     # "crates/database",
