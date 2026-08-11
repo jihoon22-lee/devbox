@@ -17,8 +17,8 @@ pub struct SessionHandle {
     pub child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     /// ConPTY(HPCON)를 보관하는 master. drop 되면 ConPTY가 닫히므로
     /// 세션 수명 동안 유지해야 한다 (일찍 닫으면 자식이 0xc0000142로 실패).
-    /// 읽지 않는 것이 의도: 보관만으로 수명을 유지한다.
-    #[allow(dead_code)]
+    /// v0.2.2에서는 보관 용도로만 썼지만, 이제 `resize_session`이
+    /// `MasterPty::resize()`를 호출하는 데도 쓰인다.
     pub master: Option<Box<dyn portable_pty::MasterPty>>,
 }
 
@@ -173,14 +173,50 @@ pub fn write_session(
     Ok(())
 }
 
-/// 모든 세션에 동일한 입력을 전달한다 (동시 명령).
+/// 지정한 세션들에만 동일한 입력을 전달한다 (동시 명령).
+/// 탭 도입 전에는 등록된 모든 세션을 대상으로 했지만, 탭이 생기면서
+/// 다른 탭의 세션에도 입력이 새는 문제가 됐다. 프론트는 활성 탭의
+/// 세션 id만 넘긴다.
 #[tauri::command]
-pub fn broadcast(state: tauri::State<'_, Arc<SessionState>>, data: String) -> Result<(), String> {
+pub fn broadcast(
+    state: tauri::State<'_, Arc<SessionState>>,
+    session_ids: Vec<String>,
+    data: String,
+) -> Result<(), String> {
     let sessions = state.sessions.lock().unwrap();
-    for h in sessions.values() {
-        let mut h = h.lock().unwrap();
-        let _ = h.writer.write_all(data.as_bytes());
-        let _ = h.writer.flush();
+    for id in &session_ids {
+        if let Some(h) = sessions.get(id) {
+            let mut h = h.lock().unwrap();
+            let _ = h.writer.write_all(data.as_bytes());
+            let _ = h.writer.flush();
+        }
+    }
+    Ok(())
+}
+
+/// PTY 크기를 바꾼다. 탭 전환·분할 변경·창 크기 변경 시 프론트가
+/// 실제 패인 크기(rows/cols)로 맞춰 호출한다. `openpty`가 세션 시작 시
+/// 고정 크기(30x100)로 한 번만 설정하던 것을 세션 생존 동안 갱신 가능하게 한다.
+#[tauri::command]
+pub fn resize_session(
+    state: tauri::State<'_, Arc<SessionState>>,
+    session_id: String,
+    rows: u16,
+    cols: u16,
+) -> Result<(), String> {
+    let sessions = state.sessions.lock().unwrap();
+    if let Some(h) = sessions.get(&session_id) {
+        let h = h.lock().unwrap();
+        if let Some(master) = &h.master {
+            master
+                .resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }

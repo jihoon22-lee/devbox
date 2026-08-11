@@ -14,6 +14,7 @@ pub fn run() {
             commands::terminal::start_session,
             commands::terminal::write_session,
             commands::terminal::broadcast,
+            commands::terminal::resize_session,
             commands::terminal::close_session,
             commands::terminal::list_sessions,
         ])
