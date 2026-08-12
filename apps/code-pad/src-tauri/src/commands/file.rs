@@ -134,6 +134,13 @@ pub struct OpenFileRequest {
     pub encoding: Option<Encoding>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidateEncodingRequest {
+    pub text: String,
+    pub encoding: Encoding,
+}
+
 #[derive(Debug)]
 pub enum FileError {
     Io {
@@ -383,6 +390,20 @@ pub async fn save_file(request: SaveFileRequest) -> Result<SavedFileWire, String
     })
     .await
     .map_err(|error| format!("save file worker failed: {error}"))?
+}
+
+/// Validates a prospective save encoding without touching the target file.
+/// This is used by the status-bar conversion control so a metadata change is
+/// only committed after CP949 (or another strict encoder) accepts the buffer.
+#[tauri::command]
+pub async fn validate_encoding(request: ValidateEncodingRequest) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        encoding::encode(&request.text, request.encoding)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("인코딩 검증 작업이 중단되었습니다: {error}"))?
 }
 
 pub fn canonical_file(path: &Path) -> Result<PathBuf, FileError> {

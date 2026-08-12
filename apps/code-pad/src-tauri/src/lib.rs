@@ -16,6 +16,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::file::open_file,
             commands::file::save_file,
+            commands::file::validate_encoding,
             commands::folder::list_workspace_files,
             commands::folder::canonicalize_workspace,
             commands::preview::render_preview,

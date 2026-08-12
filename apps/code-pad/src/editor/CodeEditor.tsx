@@ -12,6 +12,14 @@ import {
   type EditorCompartments,
 } from "./extensions";
 import { panelIdForDoc } from "../types";
+import {
+  bookmarkField,
+  nextBookmark,
+  previousBookmark,
+  setBookmarkLines,
+  toggleBookmark,
+  type BookmarkCommands,
+} from "./bookmarks";
 
 interface CodeEditorProps {
   docId: string;
@@ -25,9 +33,12 @@ interface CodeEditorProps {
   tabId?: string;
   onChange: (text: string) => void;
   cursor?: number;
+  bookmarks?: number[];
   onCursorChange?: (cursor: number) => void;
+  onBookmarksChange?: (bookmarks: number[]) => void;
   onFocus?: () => void;
   onReplaceCommandReady?: (docId: string, command: (() => boolean) | null) => void;
+  onBookmarkCommandsReady?: (docId: string, commands: BookmarkCommands | null) => void;
 }
 
 /** One long-lived CodeMirror 6 instance for one document ID. */
@@ -43,9 +54,12 @@ export default function CodeEditor({
   tabId,
   onChange,
   cursor = 0,
+  bookmarks = [],
   onCursorChange,
+  onBookmarksChange,
   onFocus,
   onReplaceCommandReady,
+  onBookmarkCommandsReady,
 }: CodeEditorProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -63,6 +77,10 @@ export default function CodeEditor({
   onReplaceCommandReadyRef.current = onReplaceCommandReady;
   const onCursorChangeRef = useRef(onCursorChange);
   onCursorChangeRef.current = onCursorChange;
+  const onBookmarksChangeRef = useRef(onBookmarksChange);
+  onBookmarksChangeRef.current = onBookmarksChange;
+  const onBookmarkCommandsReadyRef = useRef(onBookmarkCommandsReady);
+  onBookmarkCommandsReadyRef.current = onBookmarkCommandsReady;
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -75,8 +93,10 @@ export default function CodeEditor({
           language: languageForPath(path),
           syntaxHighlightingEnabled,
           readOnly,
+          bookmarks,
           onChange: (text) => onChangeRef.current(text),
           onCursorChange: (position) => onCursorChangeRef.current?.(position),
+          onBookmarksChange: (next) => onBookmarksChangeRef.current?.(next),
           compartments,
         }),
       }),
@@ -84,8 +104,15 @@ export default function CodeEditor({
     });
     viewRef.current = view;
     onReplaceCommandReadyRef.current?.(docId, () => openSearchPanel(view));
+    const bookmarkCommands: BookmarkCommands = {
+      toggle: () => toggleBookmark(view),
+      next: () => nextBookmark(view),
+      previous: () => previousBookmark(view),
+    };
+    onBookmarkCommandsReadyRef.current?.(docId, bookmarkCommands);
     return () => {
       onReplaceCommandReadyRef.current?.(docId, null);
+      onBookmarkCommandsReadyRef.current?.(docId, null);
       view.destroy();
       viewRef.current = null;
     };
@@ -93,6 +120,15 @@ export default function CodeEditor({
     // the active view only alter the wrapper style, never this EditorView.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const current = [...view.state.field(bookmarkField)];
+    const next = [...new Set(bookmarks)].sort((a, b) => a - b);
+    if (current.length === next.length && current.every((line, index) => line === next[index])) return;
+    view.dispatch({ effects: setBookmarkLines.of(next), annotations: externalValueSync.of(true) });
+  }, [bookmarks]);
 
   useEffect(() => {
     const view = viewRef.current;

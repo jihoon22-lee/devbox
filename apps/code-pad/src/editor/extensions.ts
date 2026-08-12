@@ -10,6 +10,7 @@ import { sql } from "@codemirror/lang-sql";
 import { python } from "@codemirror/lang-python";
 import { defaultHighlightStyle, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting } from "@codemirror/language";
 import {
+  crosshairCursor,
   drawSelection,
   dropCursor,
   EditorView,
@@ -17,12 +18,26 @@ import {
   highlightSpecialChars,
   keymap,
   lineNumbers,
+  rectangularSelection,
   type KeyBinding,
 } from "@codemirror/view";
 import { Annotation, Compartment, EditorState, type Extension } from "@codemirror/state";
 import { history, historyKeymap } from "@codemirror/commands";
-import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
+import {
+  openSearchPanel,
+  search,
+  searchKeymap,
+  selectNextOccurrence,
+  selectSelectionMatches,
+} from "@codemirror/search";
 import type { EncodingKind } from "../types";
+import {
+  bookmarkExtension,
+  bookmarkField,
+  nextBookmark,
+  previousBookmark,
+  toggleBookmark,
+} from "./bookmarks";
 
 export type SupportedLanguage =
   | "css"
@@ -132,8 +147,10 @@ export interface EditorExtensionOptions {
   language: SupportedLanguage;
   syntaxHighlightingEnabled: boolean;
   readOnly: boolean;
+  bookmarks?: number[];
   onChange: (text: string) => void;
   onCursorChange?: (position: number) => void;
+  onBookmarksChange?: (bookmarks: number[]) => void;
   compartments?: EditorCompartments;
 }
 
@@ -151,16 +168,14 @@ export const replaceKeymap: KeyBinding[] = [
   { key: "Mod-h", run: openSearchPanel, scope: "editor search-panel", preventDefault: true },
 ];
 
-/**
- * Explicit CM6 extensions keep the editor shell small and avoid enabling the
- * multicursor/rectangular-selection/bookmark features reserved for a later PR.
- */
 export function editorExtensions({
   language,
   syntaxHighlightingEnabled,
   readOnly,
+  bookmarks = [],
   onChange,
   onCursorChange,
+  onBookmarksChange,
   compartments,
 }: EditorExtensionOptions): Extension[] {
   const languageMode = syntaxHighlightingEnabled ? languageExtensionFor(language) : [];
@@ -168,6 +183,13 @@ export function editorExtensions({
   const readOnlyMode = readOnlyExtension(readOnly);
   return [
     lineNumbers(),
+    // CM6 rejects additional ranges unless this facet is explicitly enabled.
+    // The default keymap plus search keymap then provide the expected
+    // Mod-Alt-Arrow and Mod-D multicursor actions.
+    EditorState.allowMultipleSelections.of(true),
+    rectangularSelection(),
+    crosshairCursor(),
+    bookmarkExtension(bookmarks),
     highlightSpecialChars(),
     history(),
     foldGutter(),
@@ -182,6 +204,11 @@ export function editorExtensions({
       ...searchKeymap,
       ...replaceKeymap,
       indentWithTab,
+      { key: "F2", run: nextBookmark },
+      { key: "Shift-F2", run: previousBookmark },
+      { key: "Mod-F2", run: toggleBookmark },
+      { key: "Mod-d", run: selectNextOccurrence, preventDefault: true },
+      { key: "Mod-Shift-l", run: selectSelectionMatches, preventDefault: true },
     ]),
     search({ top: true }),
     autocompletion({ override: [currentDocumentWordCompletion] }),
@@ -195,10 +222,16 @@ export function editorExtensions({
         onChange(update.state.doc.toString());
       }
       if (
-        update.selectionSet &&
+        (update.docChanged || update.selectionSet) &&
         !update.transactions.some((transaction) => transaction.annotation(externalValueSync))
       ) {
         onCursorChange?.(update.state.selection.main.head);
+      }
+      if (
+        update.state.field(bookmarkField) !== update.startState.field(bookmarkField)
+        && !update.transactions.some((transaction) => transaction.annotation(externalValueSync))
+      ) {
+        onBookmarksChange?.([...update.state.field(bookmarkField)]);
       }
     }),
     compartments?.language.of(languageMode) ?? languageMode,

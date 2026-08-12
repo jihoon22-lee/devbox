@@ -8,6 +8,7 @@ import {
   renderPreview,
   saveFile,
   saveSession,
+  validateEncoding,
   unwatchFile,
   watchFile,
 } from "./api";
@@ -16,6 +17,8 @@ import PreviewPane from "./components/PreviewPane";
 import QuickOpen from "./components/QuickOpen";
 import StatusBar from "./components/StatusBar";
 import ViewPane from "./components/ViewPane";
+import type { BookmarkCommands } from "./editor/bookmarks";
+import { normalizeBookmarkLines } from "./editor/bookmarks";
 import {
   createInitialEditorState,
   docIdForPath,
@@ -28,6 +31,8 @@ import type {
   DocId,
   EditorState,
   FileChangedEvent,
+  Encoding,
+  LineEnding,
   OpenedFile,
   PreviewResponse,
   SavedFile,
@@ -51,7 +56,7 @@ function docFromOpenedFile(file: OpenedFile, metadata?: SessionState["docs"][num
     dirty: false,
     revision: 0,
     cursor: Math.min(metadata?.cursor ?? 0, file.text.length),
-    bookmarks: metadata?.bookmarks.slice() ?? [],
+    bookmarks: normalizeBookmarkLines(file.text, metadata?.bookmarks ?? []),
   };
 }
 
@@ -67,7 +72,10 @@ function isPreviewable(path: string): boolean {
 
 function snapshotMatches(
   doc: Doc | undefined,
-  snapshot: Pick<Doc, "revision" | "text" | "mtimeNanos" | "size" | "contentHash" | "dirty">,
+  snapshot: Pick<
+    Doc,
+    "revision" | "text" | "mtimeNanos" | "size" | "contentHash" | "dirty" | "encoding" | "lineEnding"
+  >,
 ): boolean {
   return (
     doc !== undefined &&
@@ -76,7 +84,10 @@ function snapshotMatches(
     doc.text === snapshot.text &&
     doc.mtimeNanos === snapshot.mtimeNanos &&
     doc.size === snapshot.size &&
-    doc.contentHash === snapshot.contentHash
+    doc.contentHash === snapshot.contentHash &&
+    doc.lineEnding === snapshot.lineEnding &&
+    doc.encoding.encodingKind === snapshot.encoding.encodingKind &&
+    doc.encoding.bom === snapshot.encoding.bom
   );
 }
 
@@ -103,6 +114,10 @@ export default function App() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [externalChanges, setExternalChanges] = useState<string[]>([]);
   const [pendingCloseDocId, setPendingCloseDocId] = useState<DocId | null>(null);
+  const [pendingEncodingReopen, setPendingEncodingReopen] = useState<{
+    docId: DocId;
+    encoding: Encoding;
+  } | null>(null);
 
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -113,6 +128,7 @@ export default function App() {
   const busyRef = useRef(false);
   const operationTokenRef = useRef(0);
   const replaceCommandsRef = useRef(new Map<DocId, () => boolean>());
+  const bookmarkCommandsRef = useRef(new Map<DocId, BookmarkCommands>());
   const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSessionRef = useRef<SessionState | null>(null);
   const sessionSaveInFlightRef = useRef<Promise<void> | null>(null);
@@ -341,6 +357,94 @@ export default function App() {
   const handleReplaceCommandReady = (docId: DocId, command: (() => boolean) | null) => {
     if (command) replaceCommandsRef.current.set(docId, command);
     else replaceCommandsRef.current.delete(docId);
+  };
+
+  const handleBookmarkCommandsReady = (docId: DocId, commands: BookmarkCommands | null) => {
+    if (commands) bookmarkCommandsRef.current.set(docId, commands);
+    else bookmarkCommandsRef.current.delete(docId);
+  };
+
+  const invokeBookmarkCommand = (kind: keyof BookmarkCommands) => {
+    if (!activeDoc) return;
+    bookmarkCommandsRef.current.get(activeDoc.id)?.[kind]();
+  };
+
+  const handleLineEndingChange = (docId: DocId, lineEnding: LineEnding) => {
+    const doc = stateRef.current.docs.find((item) => item.id === docId);
+    if (doc?.readOnly) {
+      setError("읽기 전용 문서는 저장 형식을 바꿀 수 없습니다.");
+      return;
+    }
+    dispatchAction({ type: "setLineEnding", docId, lineEnding });
+  };
+
+  const handleEncodingConversion = (docId: DocId, encoding: Encoding) => {
+    const doc = stateRef.current.docs.find((item) => item.id === docId);
+    if (!doc) return;
+    if (doc.readOnly) {
+      setError("읽기 전용 문서는 저장 형식을 바꿀 수 없습니다.");
+      return;
+    }
+    if (doc.lossy) {
+      setError("손실 디코딩된 문서는 먼저 명시적 인코딩으로 다시 열어야 합니다.");
+      return;
+    }
+    if (
+      doc.encoding.encodingKind === encoding.encodingKind
+      && doc.encoding.bom === encoding.bom
+    ) {
+      return;
+    }
+    void runFileOperation(async () => {
+      await validateEncoding(doc.text, encoding);
+      const latest = stateRef.current.docs.find((item) => item.id === docId);
+      if (!latest || !snapshotMatches(latest, doc)) {
+        throw new Error("인코딩 변환 중 문서가 변경되었습니다. 다시 시도하세요.");
+      }
+      dispatchAction({ type: "setEncoding", docId, encoding });
+    });
+  };
+
+  const reopenWithEncoding = async (docId: DocId, encoding: Encoding): Promise<boolean> => {
+    const before = stateRef.current.docs.find((doc) => doc.id === docId);
+    if (!before) return false;
+    const expectedChangeVersion = externalChangeVersionRef.current.get(before.path);
+    const opened = await openFile(before.path, encoding);
+    const latest = stateRef.current.docs.find((doc) => doc.id === docId);
+    // Explicit reopen is intentionally transactional. A response arriving
+    // after another edit must not discard that edit or its metadata.
+    if (!latest || !snapshotMatches(latest, before)) {
+      throw new Error("인코딩을 다시 여는 동안 문서가 변경되었습니다. 다시 시도하세요.");
+    }
+    dispatchAction({
+      type: "replaceDoc",
+      doc: {
+        ...docFromOpenedFile(opened),
+        id: latest.id,
+        cursor: latest.cursor,
+        bookmarks: latest.bookmarks.slice(),
+      },
+    });
+    removeExternalChange(before.path, expectedChangeVersion);
+    return true;
+  };
+
+  const requestEncodingReopen = (docId: DocId, encoding: Encoding) => {
+    const doc = stateRef.current.docs.find((item) => item.id === docId);
+    if (!doc) return;
+    if (doc.dirty) {
+      setPendingEncodingReopen({ docId, encoding });
+      return;
+    }
+    void runFileOperation(() => reopenWithEncoding(docId, encoding));
+  };
+
+  const confirmEncodingReopen = () => {
+    if (!pendingEncodingReopen) return;
+    const request = pendingEncodingReopen;
+    void runFileOperation(() => reopenWithEncoding(request.docId, request.encoding)).then((opened) => {
+      if (opened !== undefined) setPendingEncodingReopen(null);
+    });
   };
 
   const handleOpenFromQuickOpen = (path: string) => {
@@ -697,6 +801,33 @@ export default function App() {
         <button type="button" className="toolbar-button" aria-label="편집기 글꼴 크기 확대" onClick={() => setZoom((value) => Math.min(200, value + 10))} disabled={!hydrated}>
           A+
         </button>
+        <span className="toolbar-divider" />
+        <button
+          type="button"
+          className="toolbar-button"
+          onClick={() => invokeBookmarkCommand("toggle")}
+          disabled={!hydrated || !activeDoc}
+        >
+          북마크
+        </button>
+        <button
+          type="button"
+          className="toolbar-button"
+          onClick={() => invokeBookmarkCommand("previous")}
+          disabled={!hydrated || !activeDoc}
+          aria-label="이전 북마크"
+        >
+          ◀
+        </button>
+        <button
+          type="button"
+          className="toolbar-button"
+          onClick={() => invokeBookmarkCommand("next")}
+          disabled={!hydrated || !activeDoc}
+          aria-label="다음 북마크"
+        >
+          ▶
+        </button>
         {canPreview && (
           <button type="button" className={`toolbar-button ${previewOpen ? "selected" : ""}`} onClick={() => setPreviewOpen((open) => !open)} aria-pressed={previewOpen}>
             프리뷰
@@ -752,8 +883,10 @@ export default function App() {
             fontSize={(13 * zoom) / 100}
             onChange={(docId, text) => dispatchAction({ type: "setDocText", docId, text })}
             onCursorChange={(docId, cursor) => dispatchAction({ type: "setCursor", docId, cursor })}
+            onBookmarksChange={(docId, bookmarks) => dispatchAction({ type: "setBookmarks", docId, bookmarks })}
             onFocusDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
             onReplaceCommandReady={handleReplaceCommandReady}
+            onBookmarkCommandsReady={handleBookmarkCommandsReady}
           />
         </section>
         {previewOpen && activeDoc && (
@@ -761,7 +894,13 @@ export default function App() {
         )}
       </section>
 
-      <StatusBar doc={activeDoc} zoom={zoom} />
+      <StatusBar
+        doc={activeDoc}
+        zoom={zoom}
+        onEncodingReopen={requestEncodingReopen}
+        onEncodingConvert={handleEncodingConversion}
+        onLineEndingChange={handleLineEndingChange}
+      />
       <p className="scope-note">
         작업 폴더: {state.workspaceFolder ?? "지정되지 않음"} · {workspaceFiles.length}개 파일
         {workspaceTruncated && " · 일부 목록만 표시"}
@@ -787,6 +926,34 @@ export default function App() {
               <button type="button" className="toolbar-button" autoFocus onClick={() => setPendingCloseDocId(null)}>취소</button>
               <button type="button" className="toolbar-button" onClick={handleDiscardClose}>변경 내용 버리고 닫기</button>
               <button type="button" className="toolbar-button selected" onClick={handleSaveAndClose} disabled={busy}>저장 후 닫기</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingEncodingReopen && (
+        <div className="modal-backdrop" role="presentation">
+          <div
+            className="confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="인코딩 다시 열기"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setPendingEncodingReopen(null);
+              }
+            }}
+          >
+            <h2>인코딩을 바꿔 다시 열까요?</h2>
+            <p>저장되지 않은 변경 사항이 버려집니다. 선택한 인코딩으로 디스크 파일을 엄격하게 다시 읽습니다.</p>
+            <div className="confirm-dialog-actions">
+              <button type="button" className="toolbar-button" autoFocus onClick={() => setPendingEncodingReopen(null)}>
+                취소
+              </button>
+              <button type="button" className="toolbar-button selected" onClick={confirmEncodingReopen} disabled={busy}>
+                변경 내용 버리고 다시 열기
+              </button>
             </div>
           </div>
         </div>
