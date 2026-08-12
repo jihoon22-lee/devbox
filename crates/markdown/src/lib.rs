@@ -4,6 +4,8 @@
 //! 실제 파일시스템 접근 로더는 각 소비자의 command 레이어가 만든다.
 
 use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use std::borrow::Cow;
+use std::collections::HashSet;
 
 /// 이미지 로더가 하나의 `src`를 처리한 결과.
 ///
@@ -171,16 +173,76 @@ fn html_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// ammonia로 살균한다.
-///
-/// 기본 허용 URL 스킴에 `data:`가 없다 — 명시적으로 허용하지 않으면 인라인한
-/// 이미지가 여기서 통째로 잘려 나간다(img[src]에 한정해서 허용).
+fn is_safe_inline_raster(value: &str) -> bool {
+    const PREFIXES: [&str; 6] = [
+        "data:image/png;base64,",
+        "data:image/jpeg;base64,",
+        "data:image/gif;base64,",
+        "data:image/webp;base64,",
+        "data:image/bmp;base64,",
+        "data:image/x-icon;base64,",
+    ];
+    let Some(payload) = PREFIXES
+        .iter()
+        .find_map(|prefix| value.strip_prefix(prefix))
+    else {
+        return false;
+    };
+    let padding = payload
+        .bytes()
+        .rev()
+        .take_while(|byte| *byte == b'=')
+        .count();
+    !payload.is_empty()
+        && payload.len().is_multiple_of(4)
+        && padding <= 2
+        && payload[..payload.len() - padding]
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/'))
+}
+
+fn filter_url_attribute<'a>(
+    element: &str,
+    attribute: &str,
+    value: &'a str,
+) -> Option<Cow<'a, str>> {
+    let is_url_attribute = matches!(attribute, "href" | "xlink:href" | "src")
+        || (element == "form" && attribute == "action")
+        || (element == "object" && attribute == "data")
+        || (matches!(element, "button" | "input") && attribute == "formaction")
+        || (element == "a" && attribute == "ping")
+        || (element == "video" && attribute == "poster");
+    if !is_url_attribute {
+        return Some(Cow::Borrowed(value));
+    }
+    let normalized = value.trim_matches(|character: char| {
+        character.is_ascii_whitespace() || character.is_ascii_control()
+    });
+    match ammonia::Url::parse(normalized) {
+        Ok(url) if url.scheme() == "data" => {
+            (element == "img" && attribute == "src" && is_safe_inline_raster(normalized))
+                .then_some(Cow::Borrowed(value))
+        }
+        Ok(url) if matches!(url.scheme(), "http" | "https") => Some(Cow::Borrowed(value)),
+        Ok(_) => None,
+        Err(ammonia::url::ParseError::RelativeUrlWithoutBase)
+            if !normalized.starts_with("//") && !normalized.starts_with('\u{5c}') =>
+        {
+            Some(Cow::Borrowed(value))
+        }
+        Err(_) => None,
+    }
+}
+
+/// ammonia로 살균한다. 외부 URL은 HTTP(S), 상대 URL은 그대로 허용한다.
+/// `data:`는 검증된 raster image의 `img[src]`에서만 살아남는다.
 fn sanitize(raw_html: &str) -> String {
     let mut builder = ammonia::Builder::default();
     builder
         .add_generic_attributes(["class", "data-idx", "data-reason"])
         .add_tag_attributes("img", ["data-idx"])
-        .add_url_schemes(["data"])
+        .url_schemes(HashSet::from(["http", "https", "data"]))
+        .attribute_filter(filter_url_attribute)
         .url_relative(ammonia::UrlRelative::PassThrough);
     builder.clean(raw_html).to_string()
 }
@@ -259,6 +321,46 @@ mod tests {
         let (html, _) = render(body, &|_| {
             ImageResult::Inlined("data:image/png;base64,AAAA".to_string())
         });
+        assert!(html.contains(r#"src="data:image/png;base64,AAAA""#));
+    }
+
+    #[test]
+    fn unsafe_link_schemes_are_removed() {
+        let body =
+            "[ftp](ftp://example.com/file) [ssh](ssh://example.com) [data](data:text/html,boom)";
+        let (html, _) = render(body, &no_images);
+        assert!(!html.contains("ftp://"));
+        assert!(!html.contains("ssh://"));
+        assert!(!html.contains("data:text/html"));
+        assert_eq!(html.matches("href=").count(), 0);
+    }
+
+    #[test]
+    fn network_path_and_obfuscated_data_links_are_removed() {
+        let body = r#"<a href="//example.com/path">network</a>
+<a href=" data:text/html,boom">data</a>"#;
+        let (html, _) = render(body, &no_images);
+        assert!(!html.contains("//example.com"));
+        assert!(!html.contains("data:text/html"));
+        assert_eq!(html.matches("href=").count(), 0);
+    }
+
+    #[test]
+    fn http_and_relative_links_are_preserved() {
+        let body = "[secure](https://example.com) [relative](notes/today.md)";
+        let (html, _) = render(body, &no_images);
+        assert!(html.contains(r#"href="https://example.com""#));
+        assert!(html.contains(r#"href="notes/today.md""#));
+    }
+
+    #[test]
+    fn data_uri_is_limited_to_raster_image_sources() {
+        let body = r#"<a href="data:image/png;base64,AAAA">link</a>
+<img src="data:image/svg+xml;base64,PHN2Zz4=" alt="svg">
+<img src="data:image/png;base64,AAAA" alt="png">"#;
+        let (html, _) = render(body, &no_images);
+        assert!(!html.contains(r#"href="data:"#));
+        assert!(!html.contains("image/svg+xml"));
         assert!(html.contains(r#"src="data:image/png;base64,AAAA""#));
     }
 
