@@ -48,6 +48,7 @@ pub fn run() {
             commands::delete_job,
             commands::get_run,
             commands::list_runs,
+            commands::preview_cron,
         ])
         .setup(|app| {
             let data_dir = app.path().app_local_data_dir()?;

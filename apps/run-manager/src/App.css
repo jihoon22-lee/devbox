@@ -14,7 +14,7 @@
 
 body {
   margin: 0;
-  min-width: 760px;
+  min-width: 900px;
   min-height: 520px;
   background:
     radial-gradient(circle at 80% 0%, rgb(59 130 246 / 12%), transparent 35%),
@@ -24,6 +24,14 @@ body {
 button {
   color: inherit;
   font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
 }
 
 .app-shell {
@@ -175,6 +183,445 @@ h2 {
   background: #2a1218;
 }
 
+.subtitle {
+  margin-top: 7px;
+  color: #91a0b5;
+  font-size: 13px;
+}
+
+.jobs-section {
+  margin-top: 28px;
+}
+
+.section-toolbar,
+.editor-header,
+.section-heading,
+.job-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.button-primary,
+.button-secondary,
+.button-danger,
+.icon-button {
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 9px 14px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.button-primary {
+  border-color: #3b82f6;
+  color: #eff6ff;
+  background: #2563eb;
+  box-shadow: 0 8px 24px rgb(37 99 235 / 20%);
+}
+
+.button-secondary {
+  border-color: #334155;
+  color: #cbd5e1;
+  background: #172131;
+}
+
+.button-danger {
+  border-color: #5f2935;
+  color: #fda4af;
+  background: #28151d;
+}
+
+.button-primary:disabled,
+.button-secondary:disabled,
+.button-danger:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.button-secondary.small {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.job-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.job-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+  border: 1px solid #253246;
+  border-radius: 14px;
+  padding: 18px 20px;
+  background: rgb(17 26 39 / 86%);
+  box-shadow: 0 14px 40px rgb(0 0 0 / 14%);
+}
+
+.job-card-main {
+  min-width: 0;
+}
+
+.job-card h3 {
+  font-size: 17px;
+}
+
+.job-state,
+.secret-badge,
+.preview-count {
+  border: 1px solid #344155;
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.job-state.enabled {
+  border-color: #14532d;
+  color: #86efac;
+  background: #0b2619;
+}
+
+.job-state.disabled {
+  color: #94a3b8;
+  background: #172131;
+}
+
+.job-card code {
+  display: block;
+  max-width: min(660px, 60vw);
+  margin-top: 12px;
+  overflow: hidden;
+  color: #bfdbfe;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 14px;
+  color: #8290a5;
+  font-size: 12px;
+}
+
+.secret-badge {
+  border-color: #34564d;
+  color: #86efac;
+}
+
+.job-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.empty-card.compact {
+  min-height: 130px;
+}
+
+.empty-card .button-primary {
+  margin-top: 22px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  align-items: start;
+  gap: 18px;
+  margin-top: 27px;
+}
+
+.editor-main {
+  min-width: 0;
+}
+
+.editor-header {
+  margin-bottom: 18px;
+}
+
+.editor-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.form-card,
+.preview-card {
+  border: 1px solid #253246;
+  border-radius: 15px;
+  background: rgb(15 23 35 / 90%);
+  box-shadow: 0 20px 70px rgb(0 0 0 / 16%);
+}
+
+.form-card {
+  padding: 22px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 17px;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+.field,
+.toggle-field {
+  display: grid;
+  gap: 7px;
+}
+
+.field > span,
+.form-section legend {
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.field em {
+  color: #718096;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.field input,
+.field textarea,
+.field select,
+.environment-row input,
+.environment-row select {
+  width: 100%;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px 11px;
+  color: #e2e8f0;
+  background: #0c1420;
+  font: inherit;
+  font-size: 13px;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.field input[aria-invalid="true"],
+.field textarea[aria-invalid="true"],
+.field select[aria-invalid="true"] {
+  border-color: #b45359;
+}
+
+.field-help,
+.field-error,
+.section-description {
+  color: #8290a5;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.field-error {
+  color: #fca5a5;
+}
+
+.form-section {
+  min-width: 0;
+  margin: 22px 0 0;
+  border: 0;
+  border-top: 1px solid #283345;
+  padding: 20px 0 0;
+}
+
+.form-section legend {
+  padding: 0 8px 0 0;
+}
+
+.target-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 13px;
+}
+
+.target-option,
+.toggle-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid #29374b;
+  border-radius: 10px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.target-option.selected {
+  border-color: #3b82f6;
+  background: #12213a;
+}
+
+.target-option input,
+.toggle-field input {
+  margin-top: 3px;
+  accent-color: #3b82f6;
+}
+
+.target-option span,
+.toggle-field span {
+  display: grid;
+  gap: 4px;
+}
+
+.target-option strong,
+.toggle-field strong {
+  font-size: 12px;
+}
+
+.target-option small,
+.toggle-field small {
+  color: #8290a5;
+  font-size: 11px;
+}
+
+.target-distro-field {
+  max-width: 360px;
+  margin-top: 14px;
+}
+
+.section-heading h3 {
+  margin-top: 4px;
+  font-size: 17px;
+}
+
+.section-description {
+  margin-top: 5px;
+}
+
+.adapter-warning {
+  margin-top: 14px;
+  border: 1px solid #5c4a24;
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: #fcd34d;
+  background: #251d0e;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.muted {
+  color: #718096;
+  font-size: 12px;
+}
+
+.environment-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.environment-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.8fr) minmax(120px, 1fr) 32px;
+  align-items: center;
+  gap: 8px;
+}
+
+.environment-row.persisted {
+  grid-template-columns: 1fr 1fr auto;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.masked-value {
+  letter-spacing: 0.2em;
+}
+
+.icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: #fda4af;
+  background: #28151d;
+}
+
+.policy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 13px;
+}
+
+.policy-grid .field {
+  grid-column: 1 / -1;
+  max-width: 360px;
+  margin-top: 4px;
+}
+
+.preview-card {
+  position: sticky;
+  top: 26px;
+  padding: 20px;
+}
+
+.preview-card h3 {
+  margin-top: 4px;
+  font-size: 18px;
+}
+
+.preview-card > .muted,
+.preview-card > .field-error {
+  margin-top: 16px;
+}
+
+.preview-list {
+  display: grid;
+  gap: 9px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.preview-list li {
+  display: grid;
+  gap: 3px;
+  border-bottom: 1px solid #243044;
+  padding-bottom: 9px;
+}
+
+.preview-list li:last-child {
+  border-bottom: 0;
+}
+
+.preview-list time {
+  color: #dbeafe;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-list li span {
+  color: #718096;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+}
+
 .empty-card {
   display: grid;
   min-height: 360px;
@@ -248,5 +695,15 @@ dd {
 
   .content {
     padding-inline: 24px;
+  }
+}
+
+@media (max-width: 1120px) {
+  .editor-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-card {
+    position: static;
   }
 }

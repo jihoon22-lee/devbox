@@ -200,6 +200,8 @@ impl JobInput {
                 return Err(ModelError::NulByte("target_distro"));
             }
         }
+        crate::core::cron::validate_cron(&self.cron_expr)
+            .map_err(|error| ModelError::InvalidCron(error.to_string()))?;
         match self.target_kind {
             TargetKind::Windows if self.target_distro.is_some() => {
                 Err(ModelError::UnexpectedTargetDistro)
@@ -343,6 +345,7 @@ impl std::error::Error for EnvironmentProtectionError {}
 pub enum ModelError {
     EmptyField(&'static str),
     NulByte(&'static str),
+    InvalidCron(String),
     UnexpectedTargetDistro,
     MissingTargetDistro,
 }
@@ -352,6 +355,9 @@ impl fmt::Display for ModelError {
         match self {
             Self::EmptyField(field) => write!(formatter, "{field} must not be empty"),
             Self::NulByte(field) => write!(formatter, "{field} contains a NUL byte"),
+            Self::InvalidCron(error) => {
+                write!(formatter, "cron_expr: invalid cron expression ({error})")
+            }
             Self::UnexpectedTargetDistro => {
                 formatter.write_str("target_distro is only valid for WSL jobs")
             }
@@ -398,6 +404,13 @@ mod tests {
         let mut value = input(TargetKind::Windows, None);
         value.command.push('\0');
         assert_eq!(value.validate(), Err(ModelError::NulByte("command")));
+    }
+
+    #[test]
+    fn save_validation_rejects_invalid_cron_expressions() {
+        let mut value = input(TargetKind::Windows, None);
+        value.cron_expr = "61 * * * *".to_string();
+        assert!(matches!(value.validate(), Err(ModelError::InvalidCron(_))));
     }
 
     #[test]
