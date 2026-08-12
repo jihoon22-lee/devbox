@@ -2,12 +2,17 @@ use crate::core::db;
 use crate::core::store;
 use rusqlite::Connection;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 /// 앱 전역 상태
 pub struct AppState {
     pub db: Mutex<Connection>,
+    /// 렌더 프리뷰용 이미지 인라인 캐시: (경로, mtime)이 같으면 base64 재인코딩을
+    /// 건너뛴다. 항목 32개를 넘기면 통째로 비운다(LRU까지 갈 필요 없음).
+    pub image_cache: Mutex<HashMap<PathBuf, (SystemTime, String)>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -17,7 +22,10 @@ pub struct TreeEntry {
 }
 
 /// KnowledgeRoot 경로를 반환한다. 미설정이면 Documents/Knowledge로 초기화.
-fn resolve_root(conn: &Connection) -> Result<PathBuf, String> {
+///
+/// `commands::markdown`도 이미지·링크 해석을 위해 루트 경로가 필요해 `pub(crate)`로
+/// 공개한다.
+pub(crate) fn resolve_root(conn: &Connection) -> Result<PathBuf, String> {
     if let Some(root) = db::get_setting(conn, "root").map_err(|e| e.to_string())? {
         return Ok(PathBuf::from(root));
     }
