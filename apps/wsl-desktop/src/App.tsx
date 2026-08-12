@@ -4,6 +4,7 @@ import PaneCanvas from "./components/PaneCanvas";
 import TabBar from "./components/TabBar";
 import { makeId } from "./lib/id";
 import { matchShortcut, type ShortcutAction } from "./lib/shortcuts";
+import { loadPinned, loadPinnedCwd, loadRecentPaths, pushRecentPath, savePinned, savePinnedCwd } from "./lib/storage";
 import { nextTabTitle } from "./lib/tabTitle";
 import type { Layout, Pane, Tab } from "./types";
 import "./App.css";
@@ -11,7 +12,9 @@ import "./App.css";
 export default function App() {
   const [distros, setDistros] = useState<string[]>([]);
   const [selected, setSelected] = useState("");
-  const [cwd, setCwd] = useState("");
+  const [pinned, setPinned] = useState<boolean>(loadPinned);
+  const [cwd, setCwd] = useState<string>(() => (loadPinned() ? loadPinnedCwd() : ""));
+  const [recentPaths, setRecentPaths] = useState<string[]>(loadRecentPaths);
   const [panes, setPanes] = useState<Pane[]>([]);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>("");
@@ -82,6 +85,20 @@ export default function App() {
     return () => unsubs.forEach((u) => u());
   }, [dropPane]);
 
+  // 핀이 켜져 있는 동안은 cwd가 바뀔 때마다 localStorage에 저장한다 (핀을 막 켠
+  // 순간도 pinned가 deps에 있어 여기서 함께 처리된다).
+  useEffect(() => {
+    if (pinned) savePinnedCwd(cwd);
+  }, [pinned, cwd]);
+
+  const togglePinned = () => {
+    setPinned((prev) => {
+      const next = !prev;
+      savePinned(next);
+      return next;
+    });
+  };
+
   /** tabId가 null이면 새 탭을, 아니면 그 탭에 분할 팬을 추가한다. 세션 시작이
    * 성공해야만 탭/팬을 만든다 — "탭은 항상 팬을 최소 1개 갖는다" 불변식의 근거. */
   const startInTab = async (tabId: string | null, distro: string) => {
@@ -100,7 +117,9 @@ export default function App() {
         setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, paneIds: [...t.paneIds, id] } : t)));
       }
       setActivePaneId(id);
-      setCwd("");
+
+      if (usedCwd) setRecentPaths(pushRecentPath(usedCwd));
+      if (!pinned) setCwd("");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -244,11 +263,24 @@ export default function App() {
         </select>
         <input
           className="cwd"
+          list="cwd-recent"
           placeholder="Open path (optional, e.g. /mnt/c/projects)"
           value={cwd}
           onChange={(e) => setCwd(e.currentTarget.value)}
           onKeyDown={(e) => e.key === "Enter" && void addPane()}
         />
+        <datalist id="cwd-recent">
+          {recentPaths.map((p) => (
+            <option key={p} value={p} />
+          ))}
+        </datalist>
+        <button
+          className={`btn pin-btn ${pinned ? "active" : ""}`}
+          title={pinned ? "경로 고정됨 — 클릭하면 해제" : "경로 고정 — 켜면 열어도 입력칸이 비워지지 않습니다"}
+          onClick={togglePinned}
+        >
+          📌
+        </button>
         <button className="btn" onClick={() => void addPane()}>
           + Terminal
         </button>

@@ -99,6 +99,17 @@ select {
   font-size: 12px;
 }
 
+.pin-btn {
+  padding: 6px 8px;
+  opacity: 0.55;
+}
+
+.pin-btn.active {
+  opacity: 1;
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.12);
+}
+
 .tab-bar {
   display: flex;
   align-items: center;
