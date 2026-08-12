@@ -1,7 +1,7 @@
 //! 마크다운 본문을 살균된 HTML로 렌더링한다.
 //!
 //! OS 의존 없음(CONVENTIONS §4) — 이미지 로딩은 클로저로 주입받아 순수 함수로 유지한다.
-//! 실제 파일시스템 접근 로더는 `commands/markdown.rs`가 만든다.
+//! 실제 파일시스템 접근 로더는 각 소비자의 command 레이어가 만든다.
 
 use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
@@ -17,7 +17,7 @@ pub enum ImageResult {
     Passthrough,
     /// 경로에 파일이 없다.
     NotFound,
-    /// 크기 상한(2MB)을 초과한다.
+    /// 소비자가 정한 크기 상한을 초과한다.
     TooLarge,
     /// 루트 밖을 벗어나는 경로다.
     OutsideRoot,
@@ -188,24 +188,12 @@ fn sanitize(raw_html: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::frontmatter;
 
     fn no_images(_src: &str) -> ImageResult {
         ImageResult::NotFound
     }
 
-    /// 1. frontmatter가 분리되어 body만 렌더된다
-    #[test]
-    fn frontmatter_is_stripped_before_render() {
-        let content = "---\ntitle: Hello\ntags: [rust]\n---\n\n# Body\n";
-        let (_, body) = frontmatter::parse(content);
-        let (html, _) = render(body, &no_images);
-        assert!(!html.contains("title: Hello"));
-        assert!(!html.contains("tags:"));
-        assert!(html.contains("<h1>Body</h1>"));
-    }
-
-    /// 2. mermaid 블록이 placeholder로 치환되고 원문이 순서대로 Vec<String>에 반환된다
+    /// 1. mermaid 블록이 placeholder로 치환되고 원문이 순서대로 Vec<String>에 반환된다
     #[test]
     fn mermaid_block_becomes_placeholder() {
         let body = "# T\n\n```mermaid\ngraph TD; A-->B;\n```\n";
@@ -214,7 +202,7 @@ mod tests {
         assert_eq!(mermaid, vec!["graph TD; A-->B;\n".to_string()]);
     }
 
-    /// 3. mermaid 블록이 여러 개일 때 data-idx가 0, 1, 2…로 매겨진다
+    /// 2. mermaid 블록이 여러 개일 때 data-idx가 0, 1, 2…로 매겨진다
     #[test]
     fn multiple_mermaid_blocks_are_indexed_in_order() {
         let body = "```mermaid\nA\n```\n\ntext\n\n```mermaid\nB\n```\n\n```mermaid\nC\n```\n";
@@ -228,7 +216,7 @@ mod tests {
         );
     }
 
-    /// 4. <script>가 살균된다
+    /// 3. <script>가 살균된다
     #[test]
     fn script_tags_are_sanitized() {
         let body = "Hello\n\n<script>alert('xss')</script>\n\nWorld";
@@ -237,7 +225,7 @@ mod tests {
         assert!(!html.contains("alert("));
     }
 
-    /// 5. 상대 링크 href가 유지된다
+    /// 4. 상대 링크 href가 유지된다
     #[test]
     fn relative_link_href_is_preserved() {
         let body = "[다른 문서](../Notes/other.md)";
@@ -245,7 +233,7 @@ mod tests {
         assert!(html.contains(r#"href="../Notes/other.md""#));
     }
 
-    /// 6. javascript: href가 제거된다
+    /// 5. javascript: href가 제거된다
     #[test]
     fn javascript_href_is_removed() {
         let body = "[클릭](javascript:alert(1))";
@@ -253,7 +241,7 @@ mod tests {
         assert!(!html.contains("javascript:"));
     }
 
-    /// 7. 이미지 로더가 실패를 반환하면 대체 표시가 들어간다
+    /// 6. 이미지 로더가 실패를 반환하면 대체 표시가 들어간다
     #[test]
     fn failed_image_load_shows_fallback() {
         let body = "![대체텍스트](missing.png)";
@@ -264,7 +252,7 @@ mod tests {
         assert!(html.contains("대체텍스트"));
     }
 
-    /// 8. 이미지 로더가 성공하면 src에 data: URI가 들어간다
+    /// 7. 이미지 로더가 성공하면 src에 data: URI가 들어간다
     #[test]
     fn successful_image_load_inlines_data_uri() {
         let body = "![로고](logo.png)";
@@ -274,7 +262,7 @@ mod tests {
         assert!(html.contains(r#"src="data:image/png;base64,AAAA""#));
     }
 
-    /// 9. 일반 코드블록(예: ```rust)은 mermaid로 취급되지 않는다
+    /// 8. 일반 코드블록(예: ```rust)은 mermaid로 취급되지 않는다
     #[test]
     fn non_mermaid_code_block_is_untouched() {
         let body = "```rust\nfn main() {}\n```\n";
