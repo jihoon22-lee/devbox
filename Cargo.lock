@@ -616,6 +616,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tempfile",
+ "url",
  "windows 0.58.0",
 ]
 
