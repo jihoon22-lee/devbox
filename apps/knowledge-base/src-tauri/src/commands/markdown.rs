@@ -86,7 +86,11 @@ fn load_image(state: &AppState, root: &Path, doc_dir: &Path, src: &str) -> Image
     let Ok(bytes) = std::fs::read(&path) else {
         return ImageResult::NotFound;
     };
-    let data_uri = format!("data:{};base64,{}", mime_from_ext(&path), BASE64.encode(bytes));
+    let data_uri = format!(
+        "data:{};base64,{}",
+        mime_from_ext(&path),
+        BASE64.encode(bytes)
+    );
 
     let mut cache = state.image_cache.lock().unwrap();
     if cache.len() >= IMAGE_CACHE_CAP {
