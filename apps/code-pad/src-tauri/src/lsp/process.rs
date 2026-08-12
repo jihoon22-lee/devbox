@@ -7,7 +7,7 @@
 
 use super::transport::{
     FrameLimits, JsonRpcMessage, JsonRpcReader, JsonRpcWriter, PendingError, PendingRequests,
-    PendingResultError, RequestCancellation, RequestId, RpcError, TransportError,
+    PendingResultError, RequestCancellation, RequestId, RpcError, RpcId, TransportError,
 };
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, VecDeque};
@@ -470,6 +470,18 @@ impl LspProcess {
     ) -> Result<(), ProcessError> {
         self.write_message(JsonRpcMessage::notification(method, params))
             .await
+    }
+
+    /// Reply to a server-initiated JSON-RPC request. The client layer keeps
+    /// the allowlist of supported methods; the process layer only serializes
+    /// the already-decided response.
+    pub async fn respond(&self, id: RpcId, result: Value) -> Result<(), ProcessError> {
+        self.write_message(JsonRpcMessage::response(id, result))
+            .await
+    }
+
+    pub async fn respond_error(&self, id: RpcId, error: RpcError) -> Result<(), ProcessError> {
+        self.write_message(JsonRpcMessage::error(id, error)).await
     }
 
     pub async fn request(
