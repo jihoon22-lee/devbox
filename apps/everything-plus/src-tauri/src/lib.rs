@@ -22,12 +22,21 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&dir)?;
-            let conn = core::db::init(&dir.join("data.db"))?;
+            let (conn, index_cleared) = core::db::init(&dir.join("data.db"))?;
             let state = Arc::new(AppState {
                 db: Mutex::new(conn),
                 indexing: AtomicBool::new(false),
                 indexed: AtomicI64::new(0),
             });
+            // 스키마 버전이 올라가 migrate()가 인덱스를 비웠다면, 등록된
+            // 루트가 있는 한 사용자가 빈 검색 결과만 보지 않도록 전체
+            // 재인덱싱을 자동으로 걸어준다.
+            if index_cleared {
+                let roots = core::db::list_roots(&state.db.lock().unwrap()).unwrap_or_default();
+                if !roots.is_empty() {
+                    commands::indexing::spawn_index(state.clone(), Vec::new());
+                }
+            }
             app.manage(state);
             Ok(())
         })
