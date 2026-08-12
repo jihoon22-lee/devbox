@@ -13,6 +13,7 @@ members = [
     "apps/life-log/src-tauri",
     "apps/wsl-desktop/src-tauri",
     "apps/devbox-manager/src-tauri",
+    "crates/filesystem",
     # "crates/process",
     # "crates/wsl",
     # "crates/database",
