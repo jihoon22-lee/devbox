@@ -3,7 +3,13 @@ import { useEffect, useRef } from "react";
 import { openExternal } from "../api";
 import type { RenderedDoc } from "../types";
 
-mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "loose" });
+// 주의: securityLevel을 "loose"/"antiscript"로 낮추지 말 것. mermaid 블록 원문은
+// Rust의 ammonia 살균을 거치지 않고 그대로 이 컴포넌트로 전달되어 mermaid.render()에
+// 들어간다(설계 문서 "살균 계층" 절 참고). "strict"(mermaid 기본값)의 내부 DOMPurify가
+// 이 경로의 유일한 방어선이다 — 여기는 Tauri 웹뷰라 주입된 스크립트가 invoke()로
+// read_file/write_file/delete_file은 물론 set_root로 루트를 임의 경로로 재지정할 수
+// 있어, 이 값을 낮추면 곧바로 임의 파일 조작으로 이어진다.
+mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "strict" });
 
 /** `href`를 `baseRel` 문서가 위치한 디렉터리 기준으로 해석한다. (POSIX 스타일 상대 경로) */
 function resolveRelativePath(baseRel: string, href: string): string {

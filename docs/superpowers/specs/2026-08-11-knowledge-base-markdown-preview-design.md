@@ -227,6 +227,35 @@ pub fn render(body: &str, load_image: &dyn Fn(&str) -> ImageResult) -> (String, 
 | `.md`가 아닌 파일 | `render_markdown`을 호출하지 않는다 — 분할/프리뷰 버튼을 비활성화하고 편집 모드로 고정 |
 | 문서 전환 중 인플라이트 렌더 응답 | "확정된 세부 결정" 3번 참고 — 요청 시점 `rel`을 캡처해 응답 시점에 현재 선택 문서와 비교, 다르면 버린다 |
 
+## 살균 계층
+
+이 기능에는 살균이 필요한 HTML 투입 지점이 둘 있고, 서로 다른 방어선이 지킨다. 하나로
+뭉뚱그려 "살균됨"이라고 생각하면 안 된다 — 어느 지점이 무엇으로 지켜지는지 정확히
+구분해야 한다.
+
+| 데이터 | 방어선 | 위치 |
+|---|---|---|
+| 마크다운 본문(mermaid 블록 제외) | Rust `ammonia`가 살균한 뒤 `html` 필드로 전달 | `core/markdown.rs`의 `sanitize()` |
+| mermaid 블록 원문 | **ammonia를 거치지 않는다.** 설계상 원문 그대로 `mermaid[]` 배열에 담겨 프론트로 전달되고, 프론트가 `mermaid.render()`에 그대로 먹인다 | `core/markdown.rs`의 `rewrite_events`(placeholder 치환만 하고 원문은 그대로 보존) → `MarkdownPreview.tsx`의 `mermaid.render()` |
+
+mermaid 블록 경로의 유일한 방어선은 mermaid 자체가 내장한 DOMPurify이고, 이는
+`mermaid.initialize({ securityLevel: ... })`로 켜고 끌 수 있다. **`securityLevel`을
+`"strict"`(mermaid 기본값) 밑으로 낮추지 마라 — `"loose"`나 `"antiscript"`로 바꾸면
+이 경로의 살균이 통째로 사라진다.**
+
+이게 왜 치명적인지: knowledge-base는 브라우저 탭이 아니라 Tauri 웹뷰에서 돈다.
+`tauri.conf.json`의 `csp`가 `null`이라 CSP 백스톱도 없다. mermaid 블록에 주입된
+스크립트는 `invoke()`로 이 앱이 등록한 커맨드를 전부 호출할 수 있다 —
+`read_file`/`write_file`/`create_file`/`delete_file`은 물론 `set_root`로 루트를
+파일시스템 어디로든 재지정할 수 있어, 살균이 뚫리면 임의 파일 읽기·쓰기·삭제로
+곧바로 이어진다. 노트 저장소를 클론하거나 웹에서 노트를 복사해 오는 것은 흔한
+일이라 "내가 직접 쓴 노트만 연다"는 전제도 방어가 되지 않는다.
+
+`strict` 모드에서는 노드 라벨의 HTML을 텍스트로 취급한다 — 클릭 콜백이나 HTML
+라벨을 쓰지 않는 이 기능의 범위(마크다운 본문/mermaid/링크/이미지, "범위 밖" 절
+참고)에서는 잃는 기능이 없다. DOMPurify를 프론트 의존성으로 별도 추가하지 않는다
+— `strict` 모드의 mermaid가 이미 내장 DOMPurify로 자체 살균하므로 중복이다.
+
 ## 테스트
 
 전부 `apps/knowledge-base/src-tauri/src/core/markdown.rs`의 `#[cfg(test)] mod tests`에
