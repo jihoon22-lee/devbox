@@ -15,7 +15,7 @@ members = [
     "apps/devbox-manager/src-tauri",
     "crates/filesystem",
     "crates/markdown",
-    # "crates/process",
+    "crates/process",
     # "crates/wsl",
     # "crates/database",
 ]

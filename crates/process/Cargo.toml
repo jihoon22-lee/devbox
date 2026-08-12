@@ -1,0 +1,11 @@
+[package]
+name = "process"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+sysinfo = "0.39.6"
+
+[dev-dependencies]
+serde_json = "1"
