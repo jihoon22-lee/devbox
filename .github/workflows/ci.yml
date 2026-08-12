@@ -69,3 +69,35 @@ jobs:
       - name: Test
         if: ${{ hashFiles('apps/*/src-tauri/Cargo.toml', 'crates/**/Cargo.toml') != '' }}
         run: cargo test --workspace
+
+  rust-windows:
+    name: Rust (Windows compile check)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # devbox는 Windows 타깃 Tauri 앱 모노레포지만 위 rust 잡은 ubuntu에서만
+      # 돈다. #[cfg(target_os = "windows")] 코드는 여기서만 실제로 컴파일된다.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # Windows는 WebView2를 쓰므로 ubuntu 잡의 GTK/webkit 시스템 라이브러리
+      # 설치 단계가 필요 없다.
+
+      # 캐시가 없으면 Tauri 의존성을 매번 새로 빌드해 20분 이상 걸린다.
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check
+        if: ${{ hashFiles('apps/*/src-tauri/Cargo.toml', 'crates/**/Cargo.toml') != '' }}
+        run: cargo check --workspace
+
+      - name: Clippy
+        if: ${{ hashFiles('apps/*/src-tauri/Cargo.toml', 'crates/**/Cargo.toml') != '' }}
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # fmt 검사는 위 rust(ubuntu) 잡이 이미 수행하므로 여기서는 생략한다.
+
+      - name: Test
+        if: ${{ hashFiles('apps/*/src-tauri/Cargo.toml', 'crates/**/Cargo.toml') != '' }}
+        run: cargo test --workspace
