@@ -27,9 +27,15 @@ export async function writeSession(sessionId: string, data: string): Promise<voi
   await invoke("write_session", { sessionId, data });
 }
 
-export async function broadcast(data: string): Promise<void> {
+/** 활성 탭의 세션 id만 넘겨야 한다 — 등록된 모든 세션이 아니라 대상만 받는다. */
+export async function broadcast(sessionIds: string[], data: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("broadcast", { data });
+  await invoke("broadcast", { sessionIds, data });
+}
+
+export async function resizeSession(sessionId: string, rows: number, cols: number): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("resize_session", { sessionId, rows, cols });
 }
 
 export async function closeSession(sessionId: string): Promise<void> {
