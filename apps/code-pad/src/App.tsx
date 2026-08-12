@@ -1,19 +1,43 @@
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { openFile, saveFile } from "./api";
+import {
+  canonicalizeWorkspace,
+  listWorkspaceFiles,
+  loadSession,
+  openFile,
+  renderPreview,
+  saveFile,
+  saveSession,
+  unwatchFile,
+  watchFile,
+} from "./api";
 import DocHost from "./components/DocHost";
+import PreviewPane from "./components/PreviewPane";
+import QuickOpen from "./components/QuickOpen";
 import StatusBar from "./components/StatusBar";
 import ViewPane from "./components/ViewPane";
 import {
   createInitialEditorState,
   docIdForPath,
   editorReducer,
+  stateToSession,
   type EditorAction,
 } from "./store/documentStore";
-import type { Doc, DocId, EditorState, OpenedFile, SavedFile } from "./types";
+import type {
+  Doc,
+  DocId,
+  EditorState,
+  FileChangedEvent,
+  OpenedFile,
+  PreviewResponse,
+  SavedFile,
+  SessionState,
+  WorkspaceFile,
+} from "./types";
 
-function docFromOpenedFile(file: OpenedFile): Doc {
+function docFromOpenedFile(file: OpenedFile, metadata?: SessionState["docs"][number]): Doc {
   return {
-    id: docIdForPath(file.path),
+    id: metadata?.id ?? docIdForPath(file.path),
     path: file.path,
     text: file.text,
     encoding: file.encoding,
@@ -21,13 +45,13 @@ function docFromOpenedFile(file: OpenedFile): Doc {
     readOnly: file.readOnly,
     size: file.size,
     mtimeNanos: file.mtimeNanos,
-    contentHash: file.contentHash ?? "",
+    contentHash: file.contentHash,
     lossy: file.lossy,
     durabilityWarning: file.durabilityWarning ?? null,
     dirty: false,
     revision: 0,
-    cursor: 0,
-    bookmarks: [],
+    cursor: Math.min(metadata?.cursor ?? 0, file.text.length),
+    bookmarks: metadata?.bookmarks.slice() ?? [],
   };
 }
 
@@ -36,8 +60,24 @@ function activeDocForState(state: EditorState): Doc | null {
   return state.docs.find((doc) => doc.id === activeId) ?? null;
 }
 
-function matchesSnapshot(doc: Doc | undefined, revision: number, text: string): boolean {
-  return doc !== undefined && doc.revision === revision && doc.text === text;
+function isPreviewable(path: string): boolean {
+  const normalized = path.split("\\").join("/").toLowerCase();
+  return normalized.endsWith(".md") || normalized.endsWith(".markdown") || normalized.endsWith(".mmd");
+}
+
+function snapshotMatches(
+  doc: Doc | undefined,
+  snapshot: Pick<Doc, "revision" | "text" | "mtimeNanos" | "size" | "contentHash" | "dirty">,
+): boolean {
+  return (
+    doc !== undefined &&
+    doc.dirty === snapshot.dirty &&
+    doc.revision === snapshot.revision &&
+    doc.text === snapshot.text &&
+    doc.mtimeNanos === snapshot.mtimeNanos &&
+    doc.size === snapshot.size &&
+    doc.contentHash === snapshot.contentHash
+  );
 }
 
 interface SaveOutcome {
@@ -51,20 +91,60 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [zoom, setZoom] = useState(100);
+  const [hydrated, setHydrated] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
+  const [workspaceListingRoot, setWorkspaceListingRoot] = useState<string | null>(null);
+  const [workspaceTruncated, setWorkspaceTruncated] = useState(false);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [sessionPersistenceAllowed, setSessionPersistenceAllowed] = useState(true);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [preview, setPreview] = useState<PreviewResponse | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [externalChanges, setExternalChanges] = useState<string[]>([]);
   const [pendingCloseDocId, setPendingCloseDocId] = useState<DocId | null>(null);
+
   const stateRef = useRef(state);
   stateRef.current = state;
+  const hydratedRef = useRef(hydrated);
+  hydratedRef.current = hydrated;
+  const persistenceAllowedRef = useRef(sessionPersistenceAllowed);
+  persistenceAllowedRef.current = sessionPersistenceAllowed;
   const busyRef = useRef(false);
   const operationTokenRef = useRef(0);
   const replaceCommandsRef = useRef(new Map<DocId, () => boolean>());
+  const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSessionRef = useRef<SessionState | null>(null);
+  const sessionSaveInFlightRef = useRef<Promise<void> | null>(null);
+  const watchOperationRef = useRef(new Map<string, Promise<void>>());
+  const externalChangeVersionRef = useRef(new Map<string, number>());
+
+  const externalChange = externalChanges[0] ?? null;
+  const enqueueExternalChange = (path: string) => {
+    externalChangeVersionRef.current.set(
+      path,
+      (externalChangeVersionRef.current.get(path) ?? 0) + 1,
+    );
+    setExternalChanges((current) => current.includes(path) ? current : [...current, path]);
+  };
+  const removeExternalChange = (path: string, expectedVersion?: number) => {
+    if (
+      expectedVersion !== undefined
+      && externalChangeVersionRef.current.get(path) !== expectedVersion
+    ) {
+      return;
+    }
+    externalChangeVersionRef.current.delete(path);
+    setExternalChanges((current) => current.filter((item) => item !== path));
+  };
+
   const activeDoc = useMemo(() => activeDocForState(state), [state]);
   const pendingCloseDoc = pendingCloseDocId
     ? state.docs.find((doc) => doc.id === pendingCloseDocId) ?? null
     : null;
+  const canPreview = Boolean(activeDoc && state.workspaceFolder && isPreviewable(activeDoc.path));
 
   async function runFileOperation<T>(operation: () => Promise<T>): Promise<T | undefined> {
-    // React state updates are asynchronous. The ref is the immediate lock that
-    // closes the click + keyboard race before a rerender can disable buttons.
     if (busyRef.current) return undefined;
     const token = ++operationTokenRef.current;
     busyRef.current = true;
@@ -83,15 +163,79 @@ export default function App() {
     }
   }
 
+  const dispatchAction = (action: EditorAction) => {
+    // Keep the ref in lockstep before React commits the reducer update. This
+    // closes promise-resolution races for save/reload and makes the session
+    // scheduler always see the latest logical state.
+    stateRef.current = editorReducer(stateRef.current, action);
+    dispatch(action);
+    if (
+      hydratedRef.current &&
+      !persistenceAllowedRef.current &&
+      action.type !== "restoreSession"
+    ) {
+      persistenceAllowedRef.current = true;
+      setSessionPersistenceAllowed(true);
+    }
+  };
+
+  const enqueueWatchOperation = (path: string, operation: () => Promise<void>) => {
+    const previous = watchOperationRef.current.get(path) ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(operation)
+      .finally(() => {
+        if (watchOperationRef.current.get(path) === next) {
+          watchOperationRef.current.delete(path);
+        }
+      });
+    watchOperationRef.current.set(path, next);
+    return next;
+  };
+
+  const registerWatch = async (path: string) => {
+    await enqueueWatchOperation(path, async () => {
+      try {
+        await watchFile(path);
+      } catch {
+        // File saves still use the native snapshot conflict check if watching
+        // is unavailable for this one path.
+      }
+    });
+  };
+
+  const unregisterWatch = (path: string) => {
+    void enqueueWatchOperation(path, async () => {
+      try {
+        await unwatchFile(path);
+      } catch {
+        // Closing a document remains successful even if its watcher was
+        // already unavailable; no native resources are held by the UI.
+      }
+    });
+  };
+
+  const openPath = async (path: string, metadata?: SessionState["docs"][number]) => {
+    const opened = await openFile(path, null);
+    // The document registry is global across both views. Reopening an
+    // already-open path only activates its existing entry; it must not add a
+    // second native watch reference that a single close could not release.
+    if (!stateRef.current.docs.some((doc) => doc.path === opened.path)) {
+      await registerWatch(opened.path);
+    }
+    dispatchAction({ type: "addDoc", doc: docFromOpenedFile(opened, metadata) });
+    return opened;
+  };
+
   const handleOpen = () => {
+    if (!hydrated) return;
     const path = pathInput.trim();
     if (!path) {
       setError("열 파일 경로를 입력하세요.");
       return;
     }
     void runFileOperation(async () => {
-      const opened = await openFile(path);
-      dispatch({ type: "addDoc", doc: docFromOpenedFile(opened) });
+      await openPath(path);
       setPathInput("");
     });
   };
@@ -120,12 +264,12 @@ export default function App() {
         doc.lineEnding,
         doc.mtimeNanos,
         doc.size,
-        doc.contentHash ?? "",
+        doc.contentHash,
         doc.lossy,
       ),
     );
     if (!saved) return undefined;
-    dispatch({
+    dispatchAction({
       type: "saveDoc",
       docId,
       submittedRevision,
@@ -138,11 +282,15 @@ export default function App() {
     const latestDoc = stateRef.current.docs.find((item) => item.id === docId);
     return {
       saved,
-      matchedSnapshot: matchesSnapshot(latestDoc, submittedRevision, submittedText),
+      matchedSnapshot:
+        latestDoc !== undefined &&
+        latestDoc.revision === submittedRevision &&
+        latestDoc.text === submittedText,
     };
   };
 
   const handleSave = () => {
+    if (!hydrated) return;
     if (!activeDoc) {
       setError("저장할 문서가 없습니다.");
       return;
@@ -150,19 +298,28 @@ export default function App() {
     void saveDocument(activeDoc.id);
   };
 
+  const removeDocument = (docId: DocId) => {
+    const doc = stateRef.current.docs.find((item) => item.id === docId);
+    dispatchAction({ type: "removeDoc", docId });
+    if (doc) unregisterWatch(doc.path);
+    if (doc) removeExternalChange(doc.path);
+    if (activeDoc?.id === docId) setPreview(null);
+  };
+
   const handleCloseRequest = (docId: DocId) => {
+    if (!hydrated) return;
     const doc = stateRef.current.docs.find((item) => item.id === docId);
     if (!doc) return;
     if (doc.dirty) {
       setPendingCloseDocId(docId);
       return;
     }
-    dispatch({ type: "removeDoc", docId });
+    removeDocument(docId);
   };
 
   const handleDiscardClose = () => {
     if (!pendingCloseDocId) return;
-    dispatch({ type: "removeDoc", docId: pendingCloseDocId });
+    removeDocument(pendingCloseDocId);
     setPendingCloseDocId(null);
   };
 
@@ -173,7 +330,7 @@ export default function App() {
       const outcome = await saveDocument(docId);
       if (!outcome) return;
       if (outcome.matchedSnapshot) {
-        dispatch({ type: "removeDoc", docId });
+        removeDocument(docId);
         setPendingCloseDocId(null);
       } else {
         setError("저장 중 새 편집이 발생해 탭을 닫지 않았습니다.");
@@ -186,8 +343,270 @@ export default function App() {
     else replaceCommandsRef.current.delete(docId);
   };
 
+  const handleOpenFromQuickOpen = (path: string) => {
+    if (!hydrated) return;
+    setQuickOpen(false);
+    void runFileOperation(async () => {
+      await openPath(path);
+    });
+  };
+
+  const loadWorkspaceSnapshot = async (root: string) => {
+    setWorkspaceLoading(true);
+    try {
+      const listing = await listWorkspaceFiles(root);
+      setWorkspaceFiles(listing.files);
+      setWorkspaceTruncated(listing.truncated);
+      setWorkspaceListingRoot(root);
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  };
+
+  const handleSetWorkspace = () => {
+    if (!hydrated) return;
+    const path = pathInput.trim();
+    if (!path) {
+      setError("작업 폴더 경로를 입력하세요.");
+      return;
+    }
+    void runFileOperation(async () => {
+      const root = await canonicalizeWorkspace(path);
+      const listing = await listWorkspaceFiles(root);
+      dispatchAction({ type: "setWorkspace", workspaceFolder: root });
+      setWorkspaceFiles(listing.files);
+      setWorkspaceTruncated(listing.truncated);
+      setWorkspaceListingRoot(root);
+      setPathInput("");
+    });
+  };
+
+  const handleQuickOpen = () => {
+    if (!hydrated) return;
+    setQuickOpen(true);
+    if (state.workspaceFolder && workspaceListingRoot !== state.workspaceFolder) {
+      void loadWorkspaceSnapshot(state.workspaceFolder).catch((cause) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    }
+  };
+
+  const reloadExternallyChanged = (path: string) => {
+    const before = stateRef.current.docs.find((doc) => doc.path === path);
+    if (!before) {
+      removeExternalChange(path);
+      return;
+    }
+    const expected = { ...before };
+    const expectedChangeVersion = externalChangeVersionRef.current.get(path);
+    void runFileOperation(async () => {
+      const opened = await openFile(path, null);
+      const current = stateRef.current.docs.find((doc) => doc.path === path);
+      // An explicit reload is allowed to discard the dirty buffer, but never
+      // clobbers an edit made while the asynchronous open was in flight.
+      if (!current || !snapshotMatches(current, expected)) {
+        enqueueExternalChange(path);
+        return;
+      }
+      dispatchAction({
+        type: "replaceDoc",
+        doc: {
+          ...docFromOpenedFile(opened),
+          id: current.id,
+          cursor: current.cursor,
+          bookmarks: current.bookmarks.slice(),
+        },
+      });
+      removeExternalChange(path, expectedChangeVersion);
+    });
+  };
+
   const handleSaveRef = useRef(handleSave);
   handleSaveRef.current = handleSave;
+
+  // Restore only metadata from session.json. Every buffer is read fresh from
+  // disk; missing files are skipped individually. The UI remains gated until
+  // all restore reads and watcher registrations have settled.
+  useEffect(() => {
+    let cancelled = false;
+    const hydrationWatchPaths = new Set<string>();
+    void loadSession()
+      .then(async (loaded) => {
+        if (cancelled) return;
+        persistenceAllowedRef.current = loaded.persistAllowed;
+        setSessionPersistenceAllowed(loaded.persistAllowed);
+        const restored = await Promise.all(
+          loaded.session.docs.map(async (metadata) => {
+          try {
+            const opened = await openFile(metadata.path, null);
+            if (cancelled) return null;
+            if (hydrationWatchPaths.has(opened.path)) return null;
+            hydrationWatchPaths.add(opened.path);
+            await registerWatch(opened.path);
+            if (cancelled) return null;
+            return docFromOpenedFile(opened, metadata);
+          } catch {
+            return null;
+          }
+          }),
+        );
+        if (cancelled) return;
+        dispatchAction({
+          type: "restoreSession",
+          session: loaded.session,
+          docs: restored.filter((doc): doc is Doc => doc !== null),
+        });
+        hydratedRef.current = true;
+        setHydrated(true);
+      })
+      .catch((cause) => {
+        if (cancelled) return;
+        setError(cause instanceof Error ? cause.message : String(cause));
+        // A failed read may be a permission or filesystem error rather than
+        // an empty session. Preserve the on-disk evidence until the user
+        // performs a meaningful action, just as for corrupt JSON.
+        persistenceAllowedRef.current = false;
+        setSessionPersistenceAllowed(false);
+        hydratedRef.current = true;
+        setHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+      for (const path of hydrationWatchPaths) unregisterWatch(path);
+      hydrationWatchPaths.clear();
+    };
+    // Session restoration is one app-lifetime operation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Native watcher events are authoritative only for disk metadata. A clean
+  // document reloads automatically; a dirty document gets an explicit choice.
+  useEffect(() => {
+    if (!hydrated) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const handleEvent = (payload: FileChangedEvent) => {
+      const current = stateRef.current.docs.find((doc) => doc.path === payload.path);
+      if (!current) return;
+      if (
+        current.mtimeNanos === payload.mtimeNanos &&
+        current.size === payload.size &&
+        current.contentHash === payload.contentHash
+      ) {
+        return;
+      }
+      if (current.dirty) {
+        enqueueExternalChange(payload.path);
+        return;
+      }
+      const expected = { ...current };
+      void openFile(payload.path, null)
+        .then((opened) => {
+          const latest = stateRef.current.docs.find((doc) => doc.path === payload.path);
+          // Recheck every in-memory condition immediately before applying the
+          // response. The user may have typed while open_file was pending.
+          if (!latest || !snapshotMatches(latest, expected)) {
+            enqueueExternalChange(payload.path);
+            return;
+          }
+          dispatchAction({
+            type: "replaceDoc",
+            doc: {
+              ...docFromOpenedFile(opened),
+              id: latest.id,
+              cursor: latest.cursor,
+              bookmarks: latest.bookmarks.slice(),
+            },
+          });
+        })
+        .catch(() => enqueueExternalChange(payload.path));
+    };
+    // In browser/Vitest the Tauri bridge is absent; treat that as a disabled
+    // watcher rather than creating an unhandled rejection during mount.
+    void Promise.resolve()
+      .then(() => listen<FileChangedEvent>("file-changed", (event) => handleEvent(event.payload)))
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [hydrated]);
+
+  // Preview requests are tied to the document revision and discarded if a
+  // newer edit arrives before the native render returns.
+  useEffect(() => {
+    if (!previewOpen || !activeDoc || !state.workspaceFolder || !isPreviewable(activeDoc.path)) {
+      setPreview(null);
+      setPreviewError(null);
+      return;
+    }
+    const expected = { ...activeDoc };
+    let cancelled = false;
+    setPreviewError(null);
+    void renderPreview(activeDoc.path, activeDoc.text, state.workspaceFolder)
+      .then((response) => {
+        const latest = stateRef.current.docs.find((doc) => doc.id === expected.id);
+        if (cancelled || !latest || !snapshotMatches(latest, expected)) return;
+        setPreview(response);
+      })
+      .catch((cause) => {
+        const latest = stateRef.current.docs.find((doc) => doc.id === expected.id);
+        if (cancelled || !latest || !snapshotMatches(latest, expected)) return;
+        setPreviewError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [previewOpen, activeDoc?.id, activeDoc?.revision, activeDoc?.text, state.workspaceFolder]);
+
+  // A single debounced, serialized writer means a slow save cannot let an old
+  // request finish after a newer request and overwrite the newest session.
+  useEffect(() => {
+    if (!hydrated || !sessionPersistenceAllowed) return;
+    if (sessionSaveTimerRef.current) clearTimeout(sessionSaveTimerRef.current);
+    pendingSessionRef.current = stateToSession(state);
+    const startDrain = () => {
+      if (sessionSaveInFlightRef.current) return;
+      const drain = async () => {
+        while (pendingSessionRef.current) {
+          const next = pendingSessionRef.current;
+          pendingSessionRef.current = null;
+          try {
+            await saveSession(next);
+          } catch (cause) {
+            setError(cause instanceof Error ? cause.message : String(cause));
+          }
+        }
+      };
+      const inFlight = drain();
+      sessionSaveInFlightRef.current = inFlight;
+      void inFlight.finally(() => {
+        if (sessionSaveInFlightRef.current === inFlight) sessionSaveInFlightRef.current = null;
+        if (pendingSessionRef.current && !sessionSaveTimerRef.current) {
+          // Keep the same quiet debounce for edits that arrived while the
+          // previous native write was in flight.
+          sessionSaveTimerRef.current = setTimeout(() => {
+            sessionSaveTimerRef.current = null;
+            startDrain();
+          }, 1_000);
+        }
+      });
+    };
+    sessionSaveTimerRef.current = setTimeout(() => {
+      sessionSaveTimerRef.current = null;
+      startDrain();
+    }, 1_000);
+    return () => {
+      if (sessionSaveTimerRef.current) {
+        clearTimeout(sessionSaveTimerRef.current);
+        sessionSaveTimerRef.current = null;
+      }
+    };
+  }, [hydrated, sessionPersistenceAllowed, state]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -198,7 +617,12 @@ export default function App() {
         handleSaveRef.current();
       } else if (key === "o") {
         event.preventDefault();
-        document.getElementById("path-input")?.focus();
+        if (hydratedRef.current) document.getElementById("path-input")?.focus();
+      } else if (key === "p") {
+        if (hydratedRef.current) {
+          event.preventDefault();
+          setQuickOpen(true);
+        }
       } else if (key === "h") {
         const current = activeDocForState(stateRef.current);
         const command = current ? replaceCommandsRef.current.get(current.id) : undefined;
@@ -218,27 +642,6 @@ export default function App() {
     }
   }, [pendingCloseDocId, state.docs]);
 
-  const dispatchAction = (action: EditorAction) => {
-    // Keep the snapshot ref current even before React commits the reducer
-    // update. This closes the small promise-resolution race in Save & Close.
-    if (action.type === "setDocText") {
-      const current = stateRef.current;
-      const currentDoc = current.docs.find((doc) => doc.id === action.docId);
-      if (currentDoc && currentDoc.text !== action.text) {
-        stateRef.current = {
-          ...current,
-          docs: current.docs.map((doc) =>
-            doc.id === action.docId
-              ? { ...doc, text: action.text, dirty: true, revision: doc.revision + 1 }
-              : doc,
-          ),
-        };
-      }
-    }
-    dispatch(action);
-  };
-  const activeView = state.activeView;
-
   return (
     <main className="app-shell">
       <header className="app-header">
@@ -251,21 +654,30 @@ export default function App() {
             id="path-input"
             className="path-input"
             value={pathInput}
-            placeholder="파일 경로를 입력하세요 (dev shell)"
+            placeholder="파일 또는 작업 폴더 경로"
             aria-label="열 파일 경로"
+            disabled={!hydrated}
             onChange={(event) => setPathInput(event.currentTarget.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") handleOpen();
             }}
           />
-          <button type="button" className="toolbar-button" onClick={handleOpen} disabled={busy}>
+          <button type="button" className="toolbar-button" onClick={handleOpen} disabled={busy || !hydrated}>
             파일 열기
           </button>
-          <button type="button" className="toolbar-button" onClick={handleSave} disabled={busy || !activeDoc}>
+          <button type="button" className="toolbar-button" onClick={handleSetWorkspace} disabled={busy || !hydrated}>
+            작업 폴더
+          </button>
+          <button type="button" className="toolbar-button" onClick={handleQuickOpen} disabled={!hydrated || !state.workspaceFolder}>
+            빠른 열기
+          </button>
+          <button type="button" className="toolbar-button" onClick={handleSave} disabled={busy || !hydrated || !activeDoc}>
             저장
           </button>
         </div>
       </header>
+
+      {!hydrated && <p className="hydration-banner" role="status">세션을 복원하는 중...</p>}
 
       <div className="editor-toolbar" role="toolbar" aria-label="편집기 도구">
         <button
@@ -273,74 +685,87 @@ export default function App() {
           className={`toolbar-button ${state.split ? "selected" : ""}`}
           onClick={() => dispatchAction({ type: "toggleSplit" })}
           aria-pressed={state.split}
+          disabled={!hydrated}
         >
           {state.split ? "분할 닫기" : "뷰 분할"}
         </button>
         <span className="toolbar-divider" />
-        <button
-          type="button"
-          className="toolbar-button"
-          aria-label="편집기 글꼴 크기 축소"
-          title="편집기 글꼴 크기 축소"
-          onClick={() => setZoom((value) => Math.max(75, value - 10))}
-        >
+        <button type="button" className="toolbar-button" aria-label="편집기 글꼴 크기 축소" onClick={() => setZoom((value) => Math.max(75, value - 10))} disabled={!hydrated}>
           A−
         </button>
-        <output className="zoom-label" aria-label={`편집기 확대 ${zoom}%`} aria-live="polite">
-          {zoom}%
-        </output>
-        <button
-          type="button"
-          className="toolbar-button"
-          aria-label="편집기 글꼴 크기 확대"
-          title="편집기 글꼴 크기 확대"
-          onClick={() => setZoom((value) => Math.min(200, value + 10))}
-        >
+        <output className="zoom-label" aria-label={`편집기 확대 ${zoom}%`} aria-live="polite">{zoom}%</output>
+        <button type="button" className="toolbar-button" aria-label="편집기 글꼴 크기 확대" onClick={() => setZoom((value) => Math.min(200, value + 10))} disabled={!hydrated}>
           A+
         </button>
-        <span className="toolbar-hint">Ctrl/⌘+F 찾기 · Ctrl/⌘+H 바꾸기 · Ctrl/⌘+S 저장</span>
+        {canPreview && (
+          <button type="button" className={`toolbar-button ${previewOpen ? "selected" : ""}`} onClick={() => setPreviewOpen((open) => !open)} aria-pressed={previewOpen}>
+            프리뷰
+          </button>
+        )}
+        <span className="toolbar-hint">Ctrl/⌘+P 빠른 열기 · Ctrl/⌘+H 바꾸기 · Ctrl/⌘+S 저장</span>
       </div>
 
       {error && (
         <div className="error-banner" role="alert">
           <span>{error}</span>
-          <button type="button" aria-label="오류 닫기" onClick={() => setError(null)}>
-            ×
-          </button>
+          <button type="button" aria-label="오류 닫기" onClick={() => setError(null)}>×</button>
         </div>
       )}
 
-      <section className={`editor-area ${state.split ? "split" : "single"}`}>
-        <ViewPane
-          view={0}
-          docs={state.docs}
-          docIds={state.views[0]}
-          activeDocId={state.activeDocByView[0]}
-          onActivateDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
-          onCloseDoc={handleCloseRequest}
-          onMoveDoc={(docId, toView) => dispatchAction({ type: "moveDoc", docId, toView })}
-        />
-        <ViewPane
-          view={1}
-          docs={state.docs}
-          docIds={state.views[1]}
-          activeDocId={state.activeDocByView[1]}
-          hidden={!state.split}
-          onActivateDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
-          onCloseDoc={handleCloseRequest}
-          onMoveDoc={(docId, toView) => dispatchAction({ type: "moveDoc", docId, toView })}
-        />
-        <DocHost
-          docs={state.docs}
-          views={state.views}
-          activeDocByView={state.activeDocByView}
-          split={state.split}
-          fontSize={13 * zoom / 100}
-          onChange={(docId, text) => dispatchAction({ type: "setDocText", docId, text })}
-          onFocusDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
-          onReplaceCommandReady={handleReplaceCommandReady}
-        />
+      {externalChange && (
+        <div className="external-change-banner" role="alert">
+          <span>
+            디스크에서 파일이 변경되었습니다: <code>{externalChange}</code> · 현재 편집 내용을 어떻게 할까요?
+            {externalChanges.length > 1 && ` (대기 중 ${externalChanges.length - 1}개)`}
+          </span>
+          <button type="button" onClick={() => reloadExternallyChanged(externalChange)}>다시 읽기</button>
+          <button type="button" onClick={() => removeExternalChange(externalChange)}>현재 내용 유지</button>
+        </div>
+      )}
+
+      <section className={`content-area ${previewOpen ? "with-preview" : ""}`}>
+        <section className={`editor-area ${state.split ? "split" : "single"}`}>
+          <ViewPane
+            view={0}
+            docs={state.docs}
+            docIds={state.views[0]}
+            activeDocId={state.activeDocByView[0]}
+            onActivateDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
+            onCloseDoc={handleCloseRequest}
+            onMoveDoc={(docId, toView) => dispatchAction({ type: "moveDoc", docId, toView })}
+          />
+          <ViewPane
+            view={1}
+            docs={state.docs}
+            docIds={state.views[1]}
+            activeDocId={state.activeDocByView[1]}
+            hidden={!state.split}
+            onActivateDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
+            onCloseDoc={handleCloseRequest}
+            onMoveDoc={(docId, toView) => dispatchAction({ type: "moveDoc", docId, toView })}
+          />
+          <DocHost
+            docs={state.docs}
+            views={state.views}
+            activeDocByView={state.activeDocByView}
+            split={state.split}
+            fontSize={(13 * zoom) / 100}
+            onChange={(docId, text) => dispatchAction({ type: "setDocText", docId, text })}
+            onCursorChange={(docId, cursor) => dispatchAction({ type: "setCursor", docId, cursor })}
+            onFocusDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
+            onReplaceCommandReady={handleReplaceCommandReady}
+          />
+        </section>
+        {previewOpen && activeDoc && (
+          <PreviewPane docPath={activeDoc.path} response={preview} error={previewError} />
+        )}
       </section>
+
+      <StatusBar doc={activeDoc} zoom={zoom} />
+      <p className="scope-note">
+        작업 폴더: {state.workspaceFolder ?? "지정되지 않음"} · {workspaceFiles.length}개 파일
+        {workspaceTruncated && " · 일부 목록만 표시"}
+      </p>
 
       {pendingCloseDoc && (
         <div className="modal-backdrop" role="presentation">
@@ -348,57 +773,35 @@ export default function App() {
             className="confirm-dialog"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="close-dialog-title"
-            aria-describedby="close-dialog-description"
+            aria-label="저장되지 않은 변경 사항"
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
                 setPendingCloseDocId(null);
-                return;
-              }
-              if (event.key === "Tab") {
-                const focusable = Array.from(
-                  event.currentTarget.querySelectorAll<HTMLElement>(
-                    "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
-                  ),
-                );
-                const first = focusable[0];
-                const last = focusable[focusable.length - 1];
-                if (!first || !last) return;
-                if (event.shiftKey && document.activeElement === first) {
-                  event.preventDefault();
-                  last.focus();
-                } else if (!event.shiftKey && document.activeElement === last) {
-                  event.preventDefault();
-                  first.focus();
-                }
               }
             }}
           >
-            <h2 id="close-dialog-title">저장되지 않은 변경 사항</h2>
-            <p id="close-dialog-description">
-              {pendingCloseDoc.path}에 저장되지 않은 변경 사항이 있습니다. 어떻게 하시겠습니까?
-            </p>
+            <h2>저장되지 않은 변경 사항</h2>
+            <p>{pendingCloseDoc.path}에 저장되지 않은 변경 사항이 있습니다. 어떻게 하시겠습니까?</p>
             <div className="confirm-dialog-actions">
-              <button type="button" className="toolbar-button" autoFocus onClick={() => setPendingCloseDocId(null)}>
-                취소
-              </button>
-              <button type="button" className="toolbar-button" onClick={handleDiscardClose}>
-                변경 내용 버리고 닫기
-              </button>
-              <button type="button" className="toolbar-button selected" onClick={handleSaveAndClose} disabled={busy}>
-                저장 후 닫기
-              </button>
+              <button type="button" className="toolbar-button" autoFocus onClick={() => setPendingCloseDocId(null)}>취소</button>
+              <button type="button" className="toolbar-button" onClick={handleDiscardClose}>변경 내용 버리고 닫기</button>
+              <button type="button" className="toolbar-button selected" onClick={handleSaveAndClose} disabled={busy}>저장 후 닫기</button>
             </div>
           </div>
         </div>
       )}
 
-      <StatusBar doc={activeDoc} zoom={zoom} />
-      <p className="scope-note">
-        경로 입력으로 파일을 열 수 있습니다. 파일 대화상자·미리보기·감시·북마크·LSP는 다음 단계에서 연결됩니다.
-        {activeView === 1 && " 현재 2번 뷰가 활성화되어 있습니다."}
-      </p>
+      {quickOpen && (
+        <QuickOpen
+          files={workspaceFiles}
+          truncated={workspaceTruncated}
+          loading={workspaceLoading}
+          workspaceFolder={state.workspaceFolder}
+          onOpen={handleOpenFromQuickOpen}
+          onClose={() => setQuickOpen(false)}
+        />
+      )}
     </main>
   );
 }

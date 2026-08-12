@@ -607,8 +607,12 @@ dependencies = [
 name = "code-pad"
 version = "0.2.0"
 dependencies = [
+ "base64 0.22.1",
  "chardetng",
  "encoding_rs",
+ "filesystem",
+ "markdown",
+ "notify",
  "serde",
  "serde_json",
  "sha2 0.11.0",

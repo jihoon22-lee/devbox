@@ -48,6 +48,7 @@ function props(overrides: Partial<Parameters<typeof DocHost>[0]> = {}) {
     split: true,
     fontSize: 13,
     onChange: vi.fn(),
+    onCursorChange: vi.fn(),
     onFocusDoc: vi.fn(),
     ...overrides,
   };

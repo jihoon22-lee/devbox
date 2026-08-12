@@ -2,11 +2,16 @@ import type { Doc, DocId, EditorState, SessionState, ViewId } from "../types";
 
 export type EditorAction =
   | { type: "addDoc"; doc: Doc; view?: ViewId }
+  | { type: "restoreSession"; session: SessionState; docs: Doc[] }
   | { type: "removeDoc"; docId: DocId }
   | { type: "activateView"; view: ViewId }
   | { type: "activateDoc"; view: ViewId; docId: DocId }
   | { type: "moveDoc"; docId: DocId; toView: ViewId }
   | { type: "setDocText"; docId: DocId; text: string }
+  | { type: "replaceDoc"; doc: Doc }
+  | { type: "setCursor"; docId: DocId; cursor: number }
+  | { type: "setBookmarks"; docId: DocId; bookmarks: number[] }
+  | { type: "setWorkspace"; workspaceFolder: string | null }
   | {
       type: "saveDoc";
       docId: DocId;
@@ -164,6 +169,47 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       };
     }
 
+    case "restoreSession": {
+      const docsById = new Map(action.docs.map((doc) => [doc.id, doc]));
+      const docs = action.docs.slice();
+      const views: [DocId[], DocId[]] = [
+        uniqueIds(action.session.views[0].filter((id) => docsById.has(id))),
+        uniqueIds(action.session.views[1].filter((id) => docsById.has(id))),
+      ];
+      const placed = new Set([...views[0], ...views[1]]);
+      // Missing files are skipped during hydration. Keep the remaining docs
+      // reachable so the runtime state still has exact view coverage.
+      for (const doc of docs) {
+        if (!placed.has(doc.id)) views[0].push(doc.id);
+      }
+      const activeDocByView: [DocId | null, DocId | null] = [
+        action.session.active_doc_by_view[0] && views[0].includes(action.session.active_doc_by_view[0])
+          ? action.session.active_doc_by_view[0]
+          : lastId(views[0]),
+        action.session.active_doc_by_view[1] && views[1].includes(action.session.active_doc_by_view[1])
+          ? action.session.active_doc_by_view[1]
+          : lastId(views[1]),
+      ];
+      const preferredView = action.session.active_view === 1 ? 1 : 0;
+      const activeView = (
+        views[preferredView].length > 0
+          ? preferredView
+          : views[1 - preferredView].length > 0
+            ? 1 - preferredView
+            : preferredView
+      ) as ViewId;
+      return {
+        ...state,
+        docs,
+        views,
+        activeView,
+        activeDocByView,
+        workspaceFolder: action.session.workspace_folder,
+        recentFiles: action.session.recent_files.slice(),
+        split: views[1].length > 0,
+      };
+    }
+
     case "removeDoc": {
       if (!state.docs.some((doc) => doc.id === action.docId)) return state;
       const views: [DocId[], DocId[]] = [
@@ -291,6 +337,45 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
             ),
           }
         : state;
+
+    case "replaceDoc":
+      return state.docs.some((doc) => doc.id === action.doc.id)
+        ? {
+            ...state,
+            docs: state.docs.map((doc) =>
+              doc.id === action.doc.id
+                ? { ...action.doc, cursor: Math.min(action.doc.cursor, action.doc.text.length) }
+                : doc,
+            ),
+          }
+        : state;
+
+    case "setCursor":
+      return state.docs.some((doc) => doc.id === action.docId)
+        ? {
+            ...state,
+            docs: state.docs.map((doc) =>
+              doc.id === action.docId
+                ? { ...doc, cursor: Math.min(Math.max(0, action.cursor), doc.text.length) }
+                : doc,
+            ),
+          }
+        : state;
+
+    case "setBookmarks":
+      return state.docs.some((doc) => doc.id === action.docId)
+        ? {
+            ...state,
+            docs: state.docs.map((doc) =>
+              doc.id === action.docId
+                ? { ...doc, bookmarks: Array.from(new Set(action.bookmarks)).sort((a, b) => a - b) }
+                : doc,
+            ),
+          }
+        : state;
+
+    case "setWorkspace":
+      return { ...state, workspaceFolder: action.workspaceFolder };
 
     case "saveDoc":
       return state.docs.some((doc) => doc.id === action.docId)

@@ -24,6 +24,8 @@ interface CodeEditorProps {
   visible?: boolean;
   tabId?: string;
   onChange: (text: string) => void;
+  cursor?: number;
+  onCursorChange?: (cursor: number) => void;
   onFocus?: () => void;
   onReplaceCommandReady?: (docId: string, command: (() => boolean) | null) => void;
 }
@@ -40,6 +42,8 @@ export default function CodeEditor({
   visible = true,
   tabId,
   onChange,
+  cursor = 0,
+  onCursorChange,
   onFocus,
   onReplaceCommandReady,
 }: CodeEditorProps) {
@@ -57,6 +61,8 @@ export default function CodeEditor({
   onChangeRef.current = onChange;
   const onReplaceCommandReadyRef = useRef(onReplaceCommandReady);
   onReplaceCommandReadyRef.current = onReplaceCommandReady;
+  const onCursorChangeRef = useRef(onCursorChange);
+  onCursorChangeRef.current = onCursorChange;
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -64,11 +70,13 @@ export default function CodeEditor({
     const view = new EditorView({
       state: EditorState.create({
         doc: value,
+        selection: { anchor: Math.min(Math.max(0, cursor), value.length) },
         extensions: editorExtensions({
           language: languageForPath(path),
           syntaxHighlightingEnabled,
           readOnly,
           onChange: (text) => onChangeRef.current(text),
+          onCursorChange: (position) => onCursorChangeRef.current?.(position),
           compartments,
         }),
       }),
@@ -109,6 +117,17 @@ export default function CodeEditor({
       annotations: [externalValueSync.of(true), Transaction.addToHistory.of(false)],
     });
   }, [value]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const next = Math.min(Math.max(0, cursor), view.state.doc.length);
+    if (view.state.selection.main.head === next) return;
+    view.dispatch({
+      selection: { anchor: next },
+      annotations: [externalValueSync.of(true), Transaction.addToHistory.of(false)],
+    });
+  }, [cursor]);
 
   return (
     <div
