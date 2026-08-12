@@ -3,8 +3,9 @@
 - 날짜: 2026-08-12
 - 브랜치: `docs/code-pad/design-spec`
 - 범위: 신규 앱 `apps/code-pad`의 설계. **이 문서 자체가 산출물이며 구현은 하지 않는다.**
-- 전제: `crates/filesystem`, `crates/markdown` 추출 PR 2개가 code-pad 구현 PR보다 먼저 머지되어야
-  한다. 근거는 "공통 추출"과 "구현 순서" 절에 있다.
+- 전제: `crates/filesystem`의 현재 무제한 `collect` API는 PR #48로 이미 머지됐다.
+  code-pad 구현보다 별도 `crates/filesystem` 제한 순회 후속 PR과 `crates/markdown`
+  추출 PR이 먼저 머지되어야 한다. 근거는 "공통 추출"과 "구현 순서" 절에 있다.
 
 ## 배경
 
@@ -90,24 +91,30 @@ CONVENTIONS의 공통화 원칙 — "두 번 이상 실제로 필요해진 코�
 
 | 대상 | 첫 소비자 | code-pad의 쓰임 | 판정 |
 |---|---|---|---|
-| `crates/filesystem` | everything-plus (사용 중) | Ctrl+P 폴더 순회 | 지금 추출 — 두 번째 소비자 도달 |
-| `crates/markdown` | knowledge-base (사용 중) | 프리뷰 패널 | 지금 추출 — 두 번째 소비자 도달 |
+| `crates/filesystem` | everything-plus (사용 중) | Ctrl+P 폴더 순회 | **이미 추출됨 (#48)** — 현재 API는 무제한, 제한 순회 후속 PR 필요 |
+| `crates/markdown` | knowledge-base (사용 중) | 프리뷰 패널 | **미래 추출** — code-pad 전에 별도 PR로 머지 |
 | `packages/editor` | code-pad (최초) | — | **추출 안 함** — 첫 소비자 |
 
 근거를 코드로 확인한 내용:
 
-- **`crates/filesystem`**: everything-plus의 실제 폴더 순회는 `core/indexer.rs`의
-  `collect()`(`indexer.rs:14-39`)가 `walkdir::WalkDir`로 순회하며
-  `core/ignore.rs`의 `is_ignored_dir()`(`ignore.rs:1-24`, `.git`/`node_modules`/
-  `target` 등 18개 이름 매치)로 디렉터리를 걸러낸다. code-pad의 Ctrl+P가 같은 walk+
-  ignore 조합을 두 번째로 실제 사용하므로, 지금이 "두 번째 소비자가 필요해진" 시점이다.
-  추출 PR에서는 everything-plus의 무제한 인덱싱과 code-pad의 제한된 빠른 열기를 모두
-  지원하도록 공통 API를 나눈다. 구체적으로 `walk_files(root, max_entries)`가 파일
-  경로·크기·mtime 목록과 `truncated`를 반환하고, `max_entries`에 도달하면 Rust
-  순회 루프에서 즉시 중단한다. everything-plus는 기존처럼 제한 없이 호출하고,
-  code-pad는 `50_000`을 넘긴다. 기존 `IndexedFile`(크기·mtime을 담은 인덱싱 특화
-  구조체, `indexer.rs:6-11`)를 그대로 빠른 열기 API로 노출하지는 않는다.
-- **watcher는 옮기지 않는다**: everything-plus의 `Cargo.toml:26`에 `notify = "8.2.0"`이
+- **`crates/filesystem`**: PR #48이 everything-plus의 walk+ignore 로직을 공용
+  크레이트로 옮겼다. `crates/filesystem/src/lib.rs:17-21`이 `collect`와
+  `IndexedFile`을 re-export하고, `crates/filesystem/src/walk.rs:13-39`의 현재
+  API는 `collect(root: &Path) -> Vec<IndexedFile>` 하나뿐이다. 이 구현은
+  `WalkDir` 순회 중 제한이나 `truncated` 반환 없이 전체 파일을 수집한다.
+  everything-plus는 `apps/everything-plus/src-tauri/Cargo.toml:27`의 path 의존과
+  `commands/indexing.rs:7,116-118`의 `collect` 호출을 통해 이 무제한 동작을 계속
+  사용한다. 제외 규칙은 `crates/filesystem/src/ignore.rs:1-24`의 18개 이름 매치다.
+  code-pad의 Ctrl+P에는 제한 순회가 필요하지만 현재 API에는 그 기능이 없다. 따라서
+  code-pad 구현 전에 별도 후속 PR(브랜치 `feat/crates/filesystem-limited-walk`)을
+  둔다. 이 PR은 기존 `collect(root) -> Vec<IndexedFile>`를 그대로 유지하면서
+  `collect_limited(root, max_entries) -> LimitedCollect` 호환 API를 추가한다.
+  `LimitedCollect`는 `files: Vec<IndexedFile>`와 `truncated: bool`를 가지며, 제한에
+  도달한 Rust 순회와 `truncated` 의미를 테스트한다.
+  everything-plus는 계속 기존 `collect`를 호출하고, code-pad만 후속 PR이 머지된
+  뒤 제한 API를 사용한다. 기존 `IndexedFile` 구조체의 필드는
+  `crates/filesystem/src/walk.rs:5-11`에 정의돼 있다.
+- **watcher는 옮기지 않는다**: everything-plus의 `Cargo.toml:25`에 `notify = "8.2.0"`이
   선언돼 있지만, `apps/everything-plus/src-tauri/src/` 전체에서 `notify::`를 참조하는
   코드가 **0건**이다(확인: `grep -rn "notify::" apps/everything-plus/src-tauri/src`).
   즉 notify/watcher는 실제 소비자가 code-pad 하나뿐이라 추출 기준(두 번째 소비자)을
@@ -117,26 +124,27 @@ CONVENTIONS의 공통화 원칙 — "두 번 이상 실제로 필요해진 코�
   `apps/knowledge-base/src-tauri/src/core/markdown.rs`를 `crates/markdown/`으로
   옮기고 루트 `Cargo.toml`의 `workspace.members`에 추가하는 ... 절차를 따른다"
   (`docs/superpowers/specs/2026-08-11-knowledge-base-markdown-preview-design.md:50-65`).
-  code-pad가 프리뷰 패널에서 이 렌더러를 쓰는 지금이 그 "차례"다. 현재 파일의
+  code-pad가 프리뷰 패널에서 이 렌더러를 쓰게 되는 것이 그 "차례"다. 현재 파일의
   테스트 첫 항목은 `crate::core::frontmatter`를 가져오므로
   (`apps/knowledge-base/src-tauri/src/core/markdown.rs:188-203`), generic crate로
   옮길 때는 frontmatter가 이미 제거된 body를 직접 넘기는 테스트로 바꾼다.
   frontmatter 제거와 이미지 경로 해석은 각 앱의 command 레이어 책임으로 남긴다.
+  이 `crates/markdown` 추출은 아직 미래의 별도 prerequisite이며, 그 PR이 머지되기
+  전에는 code-pad가 crate를 의존하지 않는다.
 - **`packages/editor`는 추출하지 않는다**: code-pad가 CodeMirror의 첫 소비자다(배경
   절 참고). CONVENTIONS §4의 추출 기준 문구 그대로 "같은 도메인 코드가 **두 번째
   앱**에서 필요해지면"(`CONVENTIONS.md:137-139`) 옮기므로, 첫 소비자 단계에서는
   `apps/code-pad/src/editor/`에 코드를 둔다. knowledge-base가 나중에 CodeMirror로
   옮겨 오는 시점이 두 번째 소비자다.
 
-두 crate 모두 아직 존재하지 않는다 — `find crates`/`find packages`가 디렉터리 자체를
-찾지 못하고(`No such file or directory`), 루트 `Cargo.toml`의 `members` 목록도
-현재 10개 앱의 `src-tauri`만 나열하고 있으며 주석 처리된 예시 3개(`crates/process`,
-`crates/wsl`, `crates/database`, `Cargo.toml:16-18`)에는 `filesystem`도 `markdown`도
-없다. CONVENTIONS §2의 저장소 구조 스케치(`CONVENTIONS.md:61-67`)는 `crates/filesystem`의
-예상 소비자로 "everything-plus, knowledge-base, life-log"를 적어 뒀지만, 이는 저장소
-초기 설계 시점의 가상 표이고 code-pad는 물론 `markdown` crate 자체도 그 표에 없다.
-실제 추출을 결정하는 근거는 이 가상 표가 아니라 지금 코드에 실재하는 소비자 수이며,
-`packages/`는 이번에도 비어 있게 되고 `crates/`가 이 두 PR로 처음 채워진다.
+`crates/filesystem`은 PR #48로 이미 생성돼 루트 `Cargo.toml:16`의 workspace member가
+됐고, 현재는 위에서 확인한 무제한 `collect` API를 제공한다. 반면 `crates/markdown`은
+아직 디렉터리와 workspace member가 없으며, code-pad 구현 전에 별도 추출 PR로
+추가할 미래 prerequisite다. CONVENTIONS §2의 저장소 구조 스케치(`CONVENTIONS.md:61-67`)
+는 `crates/filesystem`의 예상 소비자로 "everything-plus, knowledge-base, life-log"를
+적어 뒀지만, 이는 초기 설계 시점의 가상 표이고 현재 구현 사실을 대신하지 않는다.
+실제 순회 API와 추출 시점은 현재 코드와 각 prerequisite PR의 계약을 기준으로 하며,
+`packages/`는 이번에도 비어 있게 된다.
 
 ## 모듈 구조
 
@@ -237,8 +245,8 @@ UTF-16BE에는 `FE FF`를 각각 앞에 붙이고 `bom: false`면 붙이지 않�
 - **외부 변경**: watcher → 디바운스 → `app.emit("file-changed")` → 프론트가 그
   문서의 dirty 여부로 자동 리로드/배너를 분기한다(결정 4). 자동 리로드하거나
   사용자가 리로드를 선택하면 새 metadata snapshot도 함께 교체한다.
-- **Ctrl+P**: 작업 폴더를 지정하면 `crates/filesystem`의
-  `walk_files(root, 50_000)`으로 **1회** 목록을 만든다. 이 상한은 프론트에서
+- **Ctrl+P**: filesystem-limited-walk 후속 PR이 머지된 뒤 `crates/filesystem`의
+  `collect_limited(root, 50_000)`으로 **1회** 목록을 만든다. 이 상한은 프론트에서
   자른 뒤가 아니라 Rust walk 루프에서 적용하며, 반환된 `truncated`가 true면
   "폴더가 커서 일부만 색인했습니다" 배너로 안내한다(거부하지 않는다 — 근거는
   "확정된 세부 결정" 2번). 타이핑에 따른 필터링은 전부 프론트에서 한다.
@@ -250,7 +258,7 @@ UTF-16BE에는 `FE FF`를 각각 앞에 붙이고 `bom: false`면 붙이지 않�
 ### 프리뷰 흐름
 
 `.md` 프리뷰는 `commands/preview.rs`의 `render_preview(path, content)`가 담당한다.
-추출된 `crates/markdown`의 `render()`는 frontmatter가 제거된 본문을 받는 API이므로
+예정된 `crates/markdown`의 `render()`는 frontmatter가 제거된 본문을 받는 API이므로
 preview command가 본문 앞의 YAML frontmatter 블록(`---`부터 닫는 `---`까지)을
 앱 로컬 helper로 먼저 제거하고, 메타데이터는 표시하지 않는다. 이는 현재
 knowledge-base renderer의 계약(`apps/knowledge-base/src-tauri/src/core/markdown.rs:26-35`)
@@ -391,7 +399,7 @@ knowledge-base 마크다운 프리뷰 설계 문서(2026-08-11)와 wsl-desktop �
 **근거**: CodeMirror 6은 뷰포트 단위로만 DOM을 그리므로 문서 크기 자체는 큰
 파일도 버티지만, 문법 하이라이팅을 담당하는 Lezer 증분 파서는 문서가 커질수록
 파싱 비용이 늘어나 수 MB급 파일에서 입력 지연으로 체감된다. 이 상한을
-everything-plus의 `MAX_CONTENT_BYTES`(1MB, `apps/everything-plus/src-tauri/src/core/indexer.rs:53`)나
+everything-plus의 `MAX_CONTENT_BYTES`(1MB, `apps/everything-plus/src-tauri/src/core/indexer.rs:13`)나
 knowledge-base의 이미지 인라인 2MB 상한(`docs/superpowers/specs/2026-08-11-knowledge-base-markdown-preview-design.md:112`)과
 다르게 잡는 이유: 그 두 값은 "인덱싱 대상 파일 전체" 또는 "문서 하나에 박힌
 이미지 여러 개"에 반복 적용되는 **누적** 비용 기준이고, code-pad의 5MB는
@@ -400,14 +408,15 @@ knowledge-base의 이미지 인라인 2MB 상한(`docs/superpowers/specs/2026-08
 
 ### 2. Ctrl+P 목록 상한 → 50,000개, 초과 시 잘라내고 배너 안내
 
-**결정**: `crates/filesystem`의 Rust walk에 `max_entries = 50_000`을 넘겨
-순회 중 그 수에 도달하면 즉시 중단한다. 프론트에는 그때까지의 목록과
-`truncated` 플래그만 전달하고, 그 이상을 거부하지 않는다. 잘렸으면 "폴더가 커서
-일부만 색인했습니다" 배너로 안내한다.
+**결정**: filesystem-limited-walk 후속 PR의 `collect_limited`에
+`max_entries = 50_000`을 넘겨 순회 중 그 수에 도달하면 즉시 중단한다. 프론트에는
+그때까지의 목록과 `truncated` 플래그만 전달하고, 그 이상을 거부하지 않는다.
+잘렸으면 "폴더가 커서 일부만 색인했습니다" 배너로 안내한다.
 
-**근거**: `crates/filesystem`으로 옮겨질 ignore 규칙이 `node_modules`/`target`/
-`.git` 등 대용량 디렉터리를 이미 걸러낸다(everything-plus `core/ignore.rs:1-24`의
-18개 이름 매치가 그대로 재사용된다). 일반적인 프로젝트 폴더는 이 필터를 거치면
+**근거**: PR #48로 현재 `crates/filesystem`에 들어온 ignore 규칙이
+`node_modules`/`target`/`.git` 등 대용량 디렉터리를 이미 걸러낸다
+(`crates/filesystem/src/ignore.rs:1-24`의 18개 이름 매치). 일반적인 프로젝트 폴더는
+이 필터를 거치면
 5만 개 근처에도 가지 않는다. 드물게 닿는 경우(모노레포 루트를 통째로 여는 등)에도
 Ctrl+P를 완전히 못 쓰게 거부하는 것보다 앞부분만으로라도 동작하는 편이 낫다.
 앞부분의 순서는 파일시스템 walk 순서이며 최근 수정 파일 우선이라는 보장은 하지
@@ -529,18 +538,24 @@ mtime과 함께 나온다) 일부 도구가 mtime을 보존한 채 내용만 바
 
 기존 앱(everything-plus, knowledge-base)을 건드리는 리팩터이기 때문에 code-pad
 구현과 한 PR에 섞으면 문제가 생겼을 때 원인이 "추출 자체의 실수"인지 "code-pad가
-새 인터페이스를 잘못 썼는지" 분리할 수 없다. 두 PR을 먼저 merge한다.
+새 인터페이스를 잘못 썼는지" 분리할 수 없다. 현재 `crates/filesystem`의 무제한
+API는 이미 #48로 머지됐지만, 아래 두 prerequisite PR을 code-pad 구현보다 먼저
+merge한다.
 
-0. **`crates/filesystem` 추출 PR** — everything-plus의 `core/indexer.rs`/
-   `core/ignore.rs`에서 walk+ignore 로직만 이동(watcher는 이동하지 않음, "공통
-   추출" 절 참고). `walk_files(root, max_entries)`와 `truncated` 반환을 정의하고,
-   everything-plus는 무제한, code-pad는 50,000 제한으로 호출한다. everything-plus가 `path`
-   의존으로 재연결. 검증:
-   everything-plus의 기존 테스트(`indexer.rs`의 `collects_files_but_skips_ignored_dirs`,
-   `text_ext_detection`, `ignore.rs`의 `ignores_common_dirs`, `keeps_normal_dirs`)가
-   이동 후에도 그대로 통과해야 한다 + `cargo check --workspace`.
-0. **`crates/markdown` 추출 PR** — knowledge-base의 `core/markdown.rs`를 이동,
-   knowledge-base가 `path` 의존으로 재연결. generic crate에 없는
+0a. **filesystem 제한 순회 후속 PR** — 현재 `crates/filesystem`의
+   `collect(root) -> Vec<IndexedFile>`는 그대로 두고, 브랜치
+   `feat/crates/filesystem-limited-walk`에서 `collect_limited(root, max_entries)`와
+   `LimitedCollect { files: Vec<IndexedFile>, truncated: bool }` 반환 타입을
+   추가한다. Rust walk 루프에서 상한을 적용하고, 기존 `collect`를 호출하는 everything-plus의 무제한
+   인덱싱 동작과 `apps/everything-plus/src-tauri/Cargo.toml:27` path 의존은 바꾸지
+   않는다. 검증: 현재 crate의 `crates/filesystem/src/walk.rs:58-71` 순회 테스트와
+   새 제한·`truncated` 테스트, everything-plus의
+   `apps/everything-plus/src-tauri/src/core/indexer.rs:19-27` 텍스트 확장자 테스트,
+   `crates/filesystem/src/ignore.rs:30-43` 제외 규칙 테스트가 통과해야 한다 +
+   `cargo check --workspace`.
+0b. **`crates/markdown` 추출 PR** — 아직 존재하지 않는 future prerequisite다.
+   code-pad 구현 전에 knowledge-base의 `core/markdown.rs`를 `crates/markdown/`으로
+   이동하고 knowledge-base를 path 의존으로 재연결한다. generic crate에 없는
    `crate::core::frontmatter` 테스트 import는 body-only fixture로 바꾼다. 검증: 기존 9개 테스트
    (`core/markdown.rs`의 `#[cfg(test)] mod tests`, 이 문서에서 읽어 확인한
    `frontmatter_is_stripped_before_render`부터 `non_mermaid_code_block_is_untouched`까지)가
@@ -564,7 +579,7 @@ mtime과 함께 나온다) 일부 도구가 mtime을 보존한 채 내용만 바
 4. `core/guard.rs`: 임계치 경계 테스트(5MB, "확정된 세부 결정" 1번) → `cargo test`.
 5. `core/session.rs`: JSON 왕복 + 손상 입력 테스트 → `cargo test`.
 6. `commands/file.rs`: open/save 커맨드, `expectedMtime`+`expectedSize` 비교,
-   성공 후 새 snapshot 반환, `crates/filesystem` 연결 → `cargo check`.
+   성공 후 새 snapshot 반환 → `cargo check`.
 7. `commands/preview.rs` + `watcher.rs`: `.md` frontmatter 제거·이미지 loader·
    `crates/markdown` 연결, 그리고 앱 상태가 소유하는 watcher manager의 부모
    디렉터리 감시·파일명 필터링·동적 register/unregister·디바운스(함정 ② 반영) →
@@ -579,8 +594,9 @@ mtime과 함께 나온다) 일부 도구가 mtime을 보존한 채 내용만 바
     패턴을 그대로 적용(아래 "뷰 사이 문서 이동" 참고) → vitest(뷰 간 이동/마지막
     탭 닫기/활성 탭 이동/ID 중복 방지) +
     컴포넌트 테스트(`PaneCanvas.test.tsx` 패턴 재사용).
-11. `QuickOpen.tsx`: `crates/filesystem`의 Rust-side `walk_files(..., 50_000)`
-    목록과 `truncated` banner + 프론트 필터링 → vitest 필터 매칭.
+11. `QuickOpen.tsx`: filesystem-limited-walk 후속 PR의 Rust-side
+    `collect_limited(..., 50_000)` 목록과 `truncated` banner + 프론트 필터링 →
+    vitest 필터 매칭.
 12. `PreviewPane.tsx`: `commands/preview.rs` 응답과 `crates/markdown` 연결(`.md`),
     strict mermaid `.mmd` 단독 파일 렌더 분기 → `pnpm build`.
 13. `StatusBar.tsx`: 인코딩/줄바꿈/읽기전용 표시 배선.
@@ -647,7 +663,7 @@ code-pad에서는 CodeMirror 인스턴스를 감싸는 컴포넌트를 모킹해
 ## 의존성
 
 - Rust: `encoding_rs = "0.8"`, `chardetng = "1"`, `notify = "8"`(everything-plus의
-  `Cargo.toml:26`과 동일 계열 메이저 버전 — 이미 이 저장소 Cargo 워크스페이스에
+  `Cargo.toml:25`와 동일 계열 메이저 버전 — 이미 이 저장소 Cargo 워크스페이스에
   8.x가 들어와 있으므로 맞춰 둔다), `serde`/`serde_json`.
 - 프론트: `codemirror` 6과 직접 import하는 `@codemirror/state`,
   `@codemirror/view`, `@codemirror/commands`, `@codemirror/language`,
