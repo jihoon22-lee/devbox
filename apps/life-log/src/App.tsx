@@ -16,7 +16,7 @@ function shortApp(app: string): string {
   return app.replace(/\.exe$/i, "").slice(0, 22);
 }
 
-function toDateStr(d: Date): string {
+export function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
@@ -27,7 +27,7 @@ function fmtDay(dayMs: number): string {
 
 type ViewTab = "day" | "week" | "month" | "settings";
 
-function weekRange(date: Date): { start: number; end: number } {
+export function weekRange(date: Date): { start: number; end: number } {
   const d = new Date(date);
   const day = (d.getDay() + 6) % 7; // 월요일 시작
   d.setDate(d.getDate() - day);
@@ -35,7 +35,7 @@ function weekRange(date: Date): { start: number; end: number } {
   return { start, end: start + 7 * DAY_MS };
 }
 
-function monthRange(date: Date): { start: number; end: number } {
+export function monthRange(date: Date): { start: number; end: number } {
   const start = new Date(date.getFullYear(), date.getMonth(), 1).getTime();
   const end = new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime();
   return { start, end };

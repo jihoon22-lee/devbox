@@ -1,17 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { dockerAction, dockerPs, gitStatus, listDistros, openTerminal } from "./api";
+import { addPath as addPathToList, loadSavedPaths, removePath as removePathFromList, savePaths } from "./lib/projectPaths";
 import type { ContainerInfo, DistroInfo, GitStatus } from "./types";
 import "./App.css";
-
-const LS_KEY = "wsld-projects";
-
-function loadSavedPaths(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(LS_KEY) ?? "[]");
-  } catch {
-    return [];
-  }
-}
 
 export default function App() {
   const [distros, setDistros] = useState<DistroInfo[]>([]);
@@ -59,19 +50,17 @@ export default function App() {
 
   const persist = (paths: string[]) => {
     setSavedPaths(paths);
-    localStorage.setItem(LS_KEY, JSON.stringify(paths));
+    savePaths(paths);
   };
 
   const addPath = () => {
-    const p = newPath.trim();
-    if (!p) return;
-    const next = savedPaths.includes(p) ? savedPaths : [...savedPaths, p];
-    persist(next);
+    if (!newPath.trim()) return;
+    persist(addPathToList(savedPaths, newPath));
     setNewPath("");
   };
 
   const removePath = (p: string) => {
-    persist(savedPaths.filter((x) => x !== p));
+    persist(removePathFromList(savedPaths, p));
   };
 
   const onAction = async (id: string, action: "start" | "stop" | "restart") => {

@@ -58,7 +58,7 @@ function KeyValueEditor({
   );
 }
 
-function statusClass(status: number) {
+export function statusClass(status: number) {
   if (status >= 200 && status < 300) return "status-2xx";
   if (status >= 400) return "status-4xx";
   return "status-other";
@@ -286,7 +286,7 @@ export default function App() {
   );
 }
 
-function tryPretty(json: string): string {
+export function tryPretty(json: string): string {
   try {
     return JSON.stringify(JSON.parse(json), null, 2);
   } catch {
@@ -295,7 +295,7 @@ function tryPretty(json: string): string {
 }
 
 /** 요청 구성을 curl 명령 문자열로 만든다 (타인에게 전달·디버깅용). */
-function buildCurl(req: ApiRequest): string {
+export function buildCurl(req: ApiRequest): string {
   if (!req.url) return "";
 
   const params = new URLSearchParams();
@@ -325,6 +325,6 @@ function buildCurl(req: ApiRequest): string {
   return lines.join(" \\\n");
 }
 
-function shellQuote(s: string): string {
+export function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
