@@ -195,7 +195,7 @@ watcher의 수명은 `WatcherManager`가 소유한다. `lib.rs`의 앱 상태에
 `register(path)`, 파일을 닫을 때 `unregister(path)`를 호출하고, 같은 부모 디렉터리를
 여러 문서가 쓰면 등록을 합친다. 마지막 문서가 닫힌 부모 디렉터리는 감시를 해제한다.
 각 이벤트는 파일명 필터 → debounce → `file-changed` emit 순서를 거친다. watcher
-기동 또는 개별 등록에 실패하면 해당 등록만 비활성화하고 mtime+size 저장 검사를
+기동 또는 개별 등록에 실패하면 해당 등록만 비활성화하고 mtime+size+content hash 저장 검사를
 계속 사용한다.
 
 `editor/`를 `components/`와 분리해 별도 디렉터리로 둔 이유는 주석 그대로다: 두 번째
@@ -218,7 +218,7 @@ CRLF 파일을 그대로 CodeMirror에 넣으면 문서 길이와 커서 오프�
 단위로 watch를 걸면 첫 변경 이벤트 이후 그 inode/handle에 대한 감시가 끊긴다.
 **부모 디렉터리를 감시하고 파일명으로 필터링**해야 한다. 한 번의 저장이 여러 이벤트
 (삭제, 생성, 수정)를 내므로 디바운스도 필요하다 — 여기서 놓친 이벤트가 있어도
-치명적이지 않은 이유는 아래 저장 흐름의 mtime+size 비교가 2차 방어선이기 때문이다.
+치명적이지 않은 이유는 아래 저장 흐름의 snapshot 비교가 2차 방어선이기 때문이다.
 
 ### 함정 ③ — BOM은 인코딩과 별도로 보존해야 한다
 
@@ -243,19 +243,32 @@ UTF-16BE에는 `FE FF`를 각각 앞에 붙이고 `bom: false`면 붙이지 않�
 
 ### 흐름
 
-- **열기**: `openFile(path)` → metadata(크기·mtime) 조회 → 임계치 초과면
-  `read_only` 확정 → 바이트 읽기 → `encoding::detect()` → 디코딩 →
+- **열기**: `openFile(path, optionalEncoding)` → metadata(크기·mtime) 조회 →
+  64MiB 초과면 읽기 전에 거부, 5MiB 초과면 `read_only` 확정 → 바이트 읽기 →
+  encoding이 없으면 `encoding::detect()`, 있으면 BOM까지 엄격히 일치하는 명시적 디코딩 →
   `line_ending::detect()` → LF 정규화 → `OpenedFile { text, encoding, line_ending,
-  read_only, size, mtime }` 반환. `size`와 `mtime`은 프론트가 파일 snapshot으로
-  함께 보관한다.
-- **저장**: `saveFile(path, text, encoding, lineEnding, expectedMtime, expectedSize)`
-  → 디스크의 현재 mtime 또는 크기가 각각의 expected 값과 다르면
-  `Err(Conflict)` → LF를 `lineEnding`으로 변환 → `encoding`으로 인코딩 → 쓰기
-  → 다시 metadata를 조회해 `SavedFile { mtime, size }`를 반환한다. 저장 성공 시
-  프론트는 이 새 snapshot을 다음 저장의 expected 값으로 교체하고, 충돌 시에는
-  기존 snapshot과 dirty 내용을 그대로 유지한다. 이 mtime+size 비교는 watcher가
-  놓친 레이스(함정 ②)에 대한 2차 방어선이다 — watcher가 죽어 있어도(아래 에러 처리
-  표 참고) 남의 변경을 덮어쓰지 않는다.
+  read_only, size, mtimeNanos, contentHash, lossy }` 반환. Rust 내부 snapshot의 mtime은 epoch 나노초
+  `i64`로 보관하되 Tauri/JavaScript wire의 `mtimeNanos`는 lossless decimal
+  `string`으로 직렬화한다. `contentHash`는 읽은 원본 바이트의 SHA-256이다.
+  `size`, `mtimeNanos`, `contentHash`를 프론트가 파일 snapshot으로 함께 보관한다.
+  자동 감지 실패의 lossy buffer는 저장할 수 없고, 사용자가 지원 인코딩을 골라 같은
+  파일을 엄격하게 다시 연 결과만 `lossy = false`가 된다.
+- **저장**: `saveFile(path, text, encoding, lineEnding, expectedMtimeNanos,
+  expectedSize, expectedContentHash, sourceLossy)` → lossy source는 즉시 거부 →
+  `expectedMtimeNanos` decimal string을 Rust가 epoch nanos `i64`로 엄격하게 파싱한
+  뒤 디스크의 현재 mtime·크기·SHA-256 중 하나라도 expected 값과 다르면
+  `Err(Conflict)` → LF를 `lineEnding`으로 변환 → `encoding`으로 인코딩 → 권한을
+  적용한 sibling temporary file에 write/flush/sync → target snapshot을 다시 읽어
+  세 값을 재검사 → 같은 filesystem의 atomic replace를 수행한다. Windows에서는
+  target ACL/attributes를 보존하는 `ReplaceFileW`를 사용한다. commit 뒤 metadata를
+  조회해 `SavedFile { mtimeNanos, size, contentHash, durabilityWarning }`를 반환한다.
+  반환 snapshot의 `mtimeNanos`도 decimal string이며, 저장 성공 시 프론트는 이 새
+  snapshot을 다음 저장의 expected 값으로 교체하고, 충돌 시에는 기존 snapshot과
+  dirty 내용을 그대로 유지한다. atomic commit 뒤 directory sync나 metadata refresh가
+  실패하면 저장 자체를 실패로 오인하지 않고 성공 결과에 `durabilityWarning`을 싣는다.
+  이 snapshot 비교는 watcher가 놓친 레이스(함정
+  ②)에 대한 2차 방어선이다 — watcher가 죽어 있어도(아래 에러 처리 표 참고) 남의
+  변경을 덮어쓰지 않는다.
 - **외부 변경**: watcher → 디바운스 → `app.emit("file-changed")` → 프론트가 그
   문서의 dirty 여부로 자동 리로드/배너를 분기한다(결정 4). 자동 리로드하거나
   사용자가 리로드를 선택하면 새 metadata snapshot도 함께 교체한다.
@@ -327,10 +340,11 @@ code-pad에는 그런 요구가 없으므로 SQLite를 들이지 않는다 — "
 | 상황 | 처리 |
 |---|---|
 | 파일 없음·권한 없음 | `Err` → 배너 (기존 앱들의 `error` state 패턴, 예: `apps/knowledge-base/src/App.tsx`의 `error` state) |
-| 큰 파일(5MB 초과) | 읽기 전용 + 하이라이팅 비활성, 상태바에 사유 표시(임계치 근거는 "확정된 세부 결정" 1번) |
-| 인코딩 감지 실패 | UTF-8 lossy로 열고 표시 + 수동 인코딩 선택 제공(선택 목록은 "확정된 세부 결정" 5번) |
+| 큰 파일(5MiB 초과~64MiB 이하) | 읽기 전용 + 하이라이팅 비활성, 상태바에 사유 표시(임계치 근거는 "확정된 세부 결정" 1번) |
+| 매우 큰 파일(64MiB 초과) | 내용을 메모리에 읽기 전에 열기를 거부하고 외부 대용량 파일 도구 사용 안내 |
+| 인코딩 감지 실패 | UTF-8 lossy로 열고 표시 + 수동 인코딩 선택 제공. lossy 버퍼는 저장을 거부하고 명시적 인코딩으로 다시 열어야 함(선택 목록은 "확정된 세부 결정" 5번) |
 | 저장 시 인코딩 불가 문자 | **저장 중단** + UTF-8 전환 제안. 조용한 손실 금지(CP949 파일에 이모지를 넣는 실제 시나리오) |
-| 저장 시 mtime/크기 충돌 | 저장 중단 + 배너. dirty 버퍼와 기존 expected snapshot은 유지 |
+| 저장 시 mtime/크기/content hash 충돌 | 저장 중단 + 배너. 임시 파일 작성 직후에도 같은 snapshot을 다시 검사하고, dirty 버퍼와 기존 expected snapshot은 유지 |
 | watcher 기동·개별 등록 실패 | 해당 감시만 비활성화. mtime+크기 검사가 폴백이라 치명적이지 않음 |
 | `session.json` 손상 | 무시하고 빈 세션 시작 |
 | 세션 속 파일 소실 | 그 항목만 건너뛰고 나머지 복원 |
@@ -367,7 +381,9 @@ knowledge-base 마크다운 프리뷰 설계 문서(2026-08-11)와 wsl-desktop �
   UTF-8·CP949 감지, **왕복 검증** — BOM을 포함한 지원 바이트가 디코딩→인코딩 후
   동일, CP949 표현 불가 문자 검출),
   `line_ending`(감지 + LF↔CRLF 왕복), `guard`(임계치 경계), `session`(JSON 왕복,
-  손상 입력)
+  손상 입력), `commands/file`(canonical path + LF buffer, atomic save,
+  mtime/size/SHA-256 conflict와 pre-replace 재검사, lossy 저장 거부, 내부 epoch nanos `i64`와 wire decimal string의 왕복,
+  빈 문자열·음수·overflow timestamp 거부)
 - **vitest**: 전역 `docs`와 뷰별 ID 배열의 상태 전이(뷰 간 이동, 마지막 탭 닫기,
   활성 탭 이동, 문서 ID 중복 방지), Ctrl+P 필터 매칭
 - **컴포넌트 테스트**: 뷰 사이 문서 이동 시 CodeMirror 인스턴스 유지.
@@ -407,9 +423,10 @@ knowledge-base 마크다운 프리뷰 설계 문서(2026-08-11)와 wsl-desktop �
 
 이 브리핑에는 구체적인 값 없이 남아 있던 항목들이다. 아래 8건을 모두 확정한다.
 
-### 1. 큰 파일 임계치 → 5MB
+### 1. 큰 파일 임계치 → 편집 5MiB, 열기 64MiB
 
-**결정**: 5MB를 넘으면 읽기 전용 + 하이라이팅 비활성으로 연다.
+**결정**: 5MiB를 넘고 64MiB 이하면 읽기 전용 + 하이라이팅 비활성으로 연다.
+64MiB를 넘으면 전체 버퍼를 할당하기 전에 열기를 거부한다.
 
 **근거**: CodeMirror 6은 뷰포트 단위로만 DOM을 그리므로 문서 크기 자체는 큰
 파일도 버티지만, 문법 하이라이팅을 담당하는 Lezer 증분 파서는 문서가 커질수록
@@ -417,9 +434,13 @@ knowledge-base 마크다운 프리뷰 설계 문서(2026-08-11)와 wsl-desktop �
 everything-plus의 `MAX_CONTENT_BYTES`(1MB, `apps/everything-plus/src-tauri/src/core/indexer.rs:13`)나
 knowledge-base의 이미지 인라인 2MB 상한(`docs/superpowers/specs/2026-08-11-knowledge-base-markdown-preview-design.md:112`)과
 다르게 잡는 이유: 그 두 값은 "인덱싱 대상 파일 전체" 또는 "문서 하나에 박힌
-이미지 여러 개"에 반복 적용되는 **누적** 비용 기준이고, code-pad의 5MB는
+이미지 여러 개"에 반복 적용되는 **누적** 비용 기준이고, code-pad의 5MiB는
 "사용자가 지금 연 파일 하나"에 대한 **단발** 비용 기준이다 — 적용되는 횟수
 자체가 다르므로 같은 값을 재사용할 근거가 없다.
+
+64MiB 절대 상한은 편집 성능 기준이 아니라 메모리 안전 경계다. 파일 크기를 먼저
+조회하고 상한을 넘으면 `fs::read`를 호출하지 않으므로 sparse/로그/덤프 파일을 잘못
+선택해 프로세스 메모리를 고갈시키는 일을 막는다.
 
 ### 2. Ctrl+P 목록 상한 → 50,000개, 초과 시 잘라내고 배너 안내
 
@@ -519,28 +540,33 @@ code-pad의 경우는 오히려 더 단순하게 처리할 수 있다 — everyt
 미저장 버퍼만 예외로 뒀을 뿐, 그 외엔 전부 파생 가능하다는 것이 이미 전제였다).
 그래서 버전 불일치 시 부분 보존 없이 통째로 버려도 무손실이다.
 
-### 8. expected file snapshot → epoch nanos `i64` + 파일 크기 병행 비교
+### 8. expected file snapshot → epoch nanos + 크기 + SHA-256 병행 비교
 
-**결정**: `SystemTime`을 epoch 나노초 기준 `i64`로 직렬화해 `expectedMtime`에
-담고, 열 때 읽은 파일 크기를 `expectedSize: u64`로 함께 보관한다. 저장 커맨드는
-`saveFile(path, text, encoding, lineEnding, expectedMtime, expectedSize)` 형태로
-두 값을 모두 받아 디스크의 현재 mtime 또는 크기가 하나라도 다르면
-충돌(`Err(Conflict)`)로 처리한다. 저장에 성공하면 커맨드가 실제로 다시 조회한
-`{ mtime, size }`를 반환하고, 프론트는 이를 다음 저장의 새 expected snapshot으로
-교체한다. 외부 변경을 리로드한 경우에도 같은 방식으로 snapshot을 갱신한다.
+**결정**: `SystemTime`을 epoch 나노초 기준 `i64`로 변환해 Rust 내부 snapshot의
+mtime으로 보관한다. 단, epoch nanos는 JavaScript `number`의 safe integer 범위를
+넘으므로 Tauri/JavaScript wire의 `mtimeNanos`와 `expectedMtimeNanos`는 반드시
+십진수 `string`으로 직렬화한다. 열 때 읽은 파일 크기는 `expectedSize: u64`, 원본
+바이트 SHA-256은 `expectedContentHash: string`으로 함께 보관한다. 저장 커맨드는
+`saveFile(path, text, encoding, lineEnding, expectedMtimeNanos, expectedSize,
+expectedContentHash, sourceLossy)` 형태로 세 snapshot 값과 lossy provenance를 받아 Rust에서
+mtime string을 엄격하게 non-negative decimal `i64`로 파싱한다. 빈 문자열·음수·
+숫자가 아닌 값·`i64` 범위 초과는 metadata 비교나 쓰기 전에 거부한다. 디스크의
+현재 mtime·크기·content hash가 하나라도 다르면 충돌(`Err(Conflict)`)로 처리한다.
+temporary file을 완성한 직후에도 target의 세 값을 다시 검사한다. 저장에
+성공하면 커맨드가 실제로 다시 조회한 `{ mtimeNanos: string, size, contentHash,
+durabilityWarning }`를 반환하고,
+프론트는 이를 다음 저장의 새 expected snapshot으로 교체한다. 외부 변경을
+리로드한 경우에도 같은 방식으로 snapshot을 갱신한다.
 
 **근거**: 밀리초 단위로는 같은 밀리초 안에서 연속으로 파일이 쓰였을 때(예:
 빌드 스크립트가 파일을 빠르게 여러 번 저장하는 경우) 서로 다른 두 저장을
 같은 값으로 오인할 수 있다. 나노초 단위 `i64`는 1970년부터 약 292년(2262년경)
 까지 표현 가능해 이 앱의 수명 안에서 오버플로를 걱정할 필요가 없다.
 
-파일시스템별 mtime 정밀도 차이(NTFS는 100ns 단위, FAT류는 2초 단위)는 문제가
-되지 않는다 — 비교 대상이 "절대 시각이 정확한가"가 아니라 "열 때 읽어서 들고
-있던 값과 지금 디스크의 값이 같은가"이므로, 정밀도가 어느 수준으로 잘려도 열
-때와 저장할 때 동일한 방식으로 잘리는 한 대칭적이라 비교가 깨지지 않는다.
-크기 비교를 곁들이는 이유는 비용이 거의 들지 않으면서(메타데이터 조회 한 번에
-mtime과 함께 나온다) 일부 도구가 mtime을 보존한 채 내용만 바꾸는 드문 경우까지
-추가로 막아 주기 때문이다. snapshot 갱신을 저장 성공의 일부로 명시하는 이유는
+파일시스템별 mtime 정밀도 차이(NTFS는 100ns 단위, FAT류는 2초 단위) 때문에 같은
+mtime과 크기를 유지한 채 내용만 바뀔 수 있다. SHA-256을 함께 비교해 이 경우도
+막는다. 저장 가능한 파일은 최대 5MiB라 두 번의 hash 비용은 경계가 명확하다.
+snapshot 갱신을 저장 성공의 일부로 명시하는 이유는
 첫 저장 후에도 이전 open 시점의 expected 값을 계속 쓰면 앱 자신의 저장을 다음
 저장의 외부 충돌로 오인하기 때문이다.
 
@@ -591,9 +617,11 @@ merge한다.
    엔디언 인코딩 + BOM 보존, 왕복 검증 테스트 →
    `cargo test`.
 3. `core/line_ending.rs`: 감지 + LF↔CRLF 왕복 테스트 → `cargo test`.
-4. `core/guard.rs`: 임계치 경계 테스트(5MB, "확정된 세부 결정" 1번) → `cargo test`.
+4. `core/guard.rs`: 편집 5MiB·열기 64MiB 임계치 경계 테스트("확정된 세부 결정" 1번) → `cargo test`.
 5. `core/session.rs`: JSON 왕복 + 손상 입력 테스트 → `cargo test`.
-6. `commands/file.rs`: open/save 커맨드, `expectedMtime`+`expectedSize` 비교,
+6. `commands/file.rs`: open/save 커맨드, 내부 `i64` snapshot과 wire
+   `mtimeNanos`/`expectedMtimeNanos` decimal string 변환,
+   `expectedSize`/`expectedContentHash` 비교와 lossy 저장 거부,
    성공 후 새 snapshot 반환 → `cargo check`.
 7. `commands/preview.rs` + `watcher.rs`: `.md` frontmatter 제거·이미지 loader·
    `crates/markdown` 연결, 그리고 앱 상태가 소유하는 watcher manager의 부모
