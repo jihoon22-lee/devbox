@@ -17,6 +17,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1.53.1", features = ["io-std", "io-util", "macros", "process", "rt", "sync", "time"] }
 encoding_rs = "0.8"
 chardetng = "1"
 base64 = "0.22"
@@ -29,8 +30,16 @@ devbox-markdown = { package = "markdown", path = "../../../crates/markdown" }
 [dev-dependencies]
 tempfile = "3"
 
+[[bin]]
+name = "fake-lsp-server"
+path = "tests/fixtures/fake_lsp_server.rs"
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Security",
     "Win32_Storage_FileSystem",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
 ]
 }
