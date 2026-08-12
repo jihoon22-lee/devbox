@@ -146,41 +146,74 @@ interface Tab {
 탭을 오갈 때마다 모든 팬이 이 경로를 타 스크롤백이 날아간다 — 터미널 앱으로서
 치명적이다.
 
-### 채택한 해법: React Portal로 마운트 위치만 옮긴다
+### 처음 시도했다가 실측으로 폐기한 해법: React Portal
 
-일반적인 "모든 탭의 grid를 항상 렌더링하고 `display:none`으로 숨긴다" 방식은 탭
-전환에는 통하지만, **팬을 다른 탭으로 드래그 이동**할 때는 통하지 않는다 — 팬이
-속한 그리드(부모 DOM)가 바뀌면 React는 그 컴포넌트를 다른 부모 아래로 옮긴 것으로
-보고 여전히 언마운트 후 재마운트한다(자식이 트리에서 위치를 옮기면 재조정 대상이
-아니라 제거+삽입으로 처리됨). 탭 전환과 팬 이동, 두 시나리오 모두를 한 메커니즘으로
-풀기 위해 `ReactDOM.createPortal`을 쓴다.
+처음에는 `ReactDOM.createPortal`로 풀려고 했다 — `PaneCanvas`가 활성 탭의 grid
+컨테이너와 항상 화면 밖에 있는 holding pen(`display:none`) 두 DOM 노드를 갖고,
+각 팬마다 `createPortal(<TermPane .../>, target, paneId)`로 감싸 `target`을
+활성 탭 여부에 따라 둘 중 하나로 정하는 방식이었다. "portal은 렌더링 위치만 바꿀
+뿐 컴포넌트 인스턴스는 유지된다"고 가정했는데, 이 가정이 **틀렸다** — 코드 리뷰에서
+지적받고 브라우저에서 직접 재현해 확인했다(아래 "실측으로 검증" 참고).
 
-- `PaneCanvas` 컴포넌트가 DOM 노드 2개를 갖는다: 활성 탭의 grid 컨테이너(`.panes`,
-  콜백 ref로 상태에 저장)와 항상 화면 밖에 있는 holding pen(`.pane-holding`,
-  `display:none`).
-- `panes` 배열의 각 세션마다 `TermPane`을 정확히 한 번 렌더링하되, `createPortal(
-  <TermPane .../>, target, paneId)`로 감싼다. `target`은 그 팬이 속한 탭이
-  `activeTabId`와 같으면 grid 컨테이너, 다르면 holding pen이다.
-- 탭을 전환하면 각 팬의 `target`이 바뀌지만 `<TermPane key={paneId}>` React 엘리먼트
-  자체는 이전과 "같은" 자리(같은 `.map()` 호출 안, 같은 key)에서 계속 리턴되므로
-  React는 재조정만 하고 언마운트하지 않는다 — portal은 정확히 "같은 컴포넌트 인스턴스를
-  유지한 채 렌더링 위치만 바꾸는" 용도로 설계된 API라 이 문제에 들어맞는다.
-- 팬을 다른 탭으로 드래그하면(뒤에서 설명) `tabs` 상태에서 `paneIds` 소속만 바뀌고,
-  세션 자체는 Rust `SessionState`가 들고 있으므로 프론트는 어느 탭에 "보여줄지"만
-  바꾸면 된다. 이 경우도 `target`이 바뀔 뿐 `TermPane` 엘리먼트는 유지된다.
+문제는 이거다: `createPortal(children, container, key)`는 **DOM 출력 위치**만
+바꿀 뿐, **React 엘리먼트 트리상의 위치**(그 portal 호출이 어느 JSX의 자식으로
+등장하는가)는 그대로 유지한다. 활성 탭의 팬은 `activePaneIds.map(...)`(그리드
+컨테이너의 자식), 비활성 탭의 팬은 `inactivePaneIds.map(...)`(holding pen의 자식)
+에서 각각 `createPortal`을 호출했으므로, 탭을 전환하면 같은 `key`의 portal
+엘리먼트가 **서로 다른 부모(다른 `.map()` 호출)의 children 배열 사이를 이동**한다.
+React는 children을 부모 단위로 재조정하고 `key`는 같은 부모 안에서만 유효하므로,
+이전 부모는 그 key를 더 이상 반환하지 않는 것으로 보고 해당 fiber를 제거하고,
+새 부모는 처음 보는 key로 보고 새로 삽입한다 — 결과적으로 언마운트 후 재마운트다.
+(portal의 `containerInfo`가 바뀌는 것도 별도로 같은 결과를 유발한다 — React가 portal
+fiber를 재사용할지 판단할 때 이전/이후 `containerInfo`가 같은지 비교하기 때문이다.)
+막으려던 바로 그 버그가 그대로 남아 있었던 것이다.
 
-`activeGridEl`/`holdingEl`은 `useState<HTMLDivElement | null>` + 콜백 ref로 관리한다
-(첫 렌더에는 ref가 아직 null이라 어떤 팬도 portal되지 않지만, `.panes`/`.pane-holding`
-div 자체는 항상 렌더링되므로 마운트 직후 ref가 채워지고 재렌더링되어 이후 생성되는
-모든 팬에는 영향이 없다).
+### 채택한 해법: 하나의 안정된 부모 + CSS `display`/`order`
+
+portal 없이, 모든 팬을 **`panes` 배열 순서 그대로 하나의 부모(`.panes`) 아래**
+렌더링한다. 비활성 탭의 팬은 `style={{ display: "none" }}`로 숨기고, 활성 탭 안에서
+보이는 팬들의 화면 순서는 `style={{ order: activeTab.paneIds.indexOf(pane.id) }}`
+(CSS Grid의 `order`, `display:none`인 항목은 grid 흐름에서 자동으로 빠진다)로만
+준다.
+
+핵심은 **`panes` 배열 자체의 순서를 절대 바꾸지 않는 것**이다(`App.tsx`는 추가는
+`[...prev, pane]`으로 append만, 제거는 `filter`만 쓴다 — 상대 순서가 보존된다).
+`.panes`의 자식 목록이 항상 "지금까지 만들어진 모든 팬, 생성 순서 그대로"이고
+탭 전환·팬 이동으로 바뀌는 것은 각 자식의 `style`(과 그에 실려 가는 `active` prop)
+뿐이라면, React는 매번 같은 부모의 같은 위치에서 같은 key를 발견하므로 재조정만
+하고 fiber를 옮길 일 자체가 없다 — 언마운트가 구조적으로 불가능해진다. 탭을 다른
+탭으로 드래그 이동해도 마찬가지다: 바뀌는 것은 `tabs` 상태의 `paneIds` 소속(어느
+탭이 이 팬을 "활성"으로 볼지)뿐이고, `panes` 배열의 위치는 그대로다.
+
+### 실측으로 검증
+
+이건 타입체커도 빌드도 잡지 못하는 런타임 동작이라 `pnpm dev` + 브라우저 자동화로
+직접 확인했다. `TermPane` 마운트/언마운트 시점에 임시로 `console.log`를 남기고
+`window`에 `Terminal` 인스턴스·DOM 엘리먼트 참조를 노출한 뒤:
+
+1. **수정 전(portal) 코드로 먼저 재현했다.** 탭 A에서 터미널을 열고
+   `term.write("HELLO_FROM_A")`로 표시를 남긴 뒤 탭 B를 만들었더니, 콘솔에 탭 A
+   팬의 `unmount` → `mount` 로그가 그대로 찍혔다. 전후 `Terminal` 인스턴스 참조를
+   비교한 결과 `sameInstance: false`, `markerSurvived: false`, 스크롤백 조회 결과
+   `nonEmptyLines: []` — 완전히 새 인스턴스로 교체되어 내용이 사라졌다.
+2. **수정 후(안정된 부모 + CSS) 코드로 같은 시나리오를 재실행했다.** 탭 B 생성 시
+   탭 A 팬에 대한 `unmount`/`mount` 로그가 전혀 찍히지 않았고, `sameInstance: true`,
+   `markerSurvived: true`, `nonEmptyLines: ["HELLO_FROM_A"]`, 탭 A로 돌아왔을 때
+   `getComputedStyle(...).display`가 `"none"` → `"flex"`로만 바뀌었다(엘리먼트
+   교체 없음).
+3. 팬을 다른 탭으로 드래그 이동하는 경로도 `DataTransfer` + `DragEvent`를 합성해
+   같은 방식으로 확인했다 — 이동 후에도 `unmount`/`mount` 로그 없이 인스턴스가
+   유지됐고, 원래 탭(마지막 팬을 잃음)은 불변식대로 자동으로 닫혔다.
+
+검증에 쓴 임시 코드(`console.log`, `window.__wsldDebug`)는 확인 후 제거했다.
 
 ### 탭이 다시 보일 때
 
 `TermPane`은 `active: boolean` prop(자신이 속한 탭이 `activeTabId`인지)을 받는다.
 `active`가 바뀔 때 실행되는 별도 effect가 `fit()` 재계산 + `resize_session` 재전송을
-명시적으로 수행한다 — `display:none`이던 holding pen에서 grid로 옮겨진 직후
-`ResizeObserver`가 확실히 발화한다는 브라우저 스펙상의 보장이 약하므로(구현체마다
-차이가 있었던 이력이 있다), 이 경로를 유일한 신호원으로 삼지 않는다.
+명시적으로 수행한다 — `display:none`이던 팬이 다시 보이게 된 직후 `ResizeObserver`가
+확실히 발화한다는 브라우저 스펙상의 보장이 약하므로(구현체마다 차이가 있었던 이력이
+있다), 이 경로를 유일한 신호원으로 삼지 않는다.
 
 ## broadcast 범위 — 동작 변경, 근거를 남긴다
 
@@ -234,7 +267,8 @@ pub fn broadcast(state: tauri::State<'_, Arc<SessionState>>, data: String) -> Re
 `paneIds`가 비면 [불변식](#불변식-탭은-항상-팬을-최소-1개-가진다)에 따라 원래 탭도
 닫는다). 옮긴 뒤 대상 탭을 활성화하고 `activePaneId`도 그 팬으로 옮긴다. 세션은
 Rust `SessionState`가 계속 들고 있으므로 이동은 프론트 상태(`paneIds` 소속)만
-바꾸는 일이고, `TermPane` 인스턴스는 (portal 덕에) 유지된다.
+바꾸는 일이고, `panes` 배열에서의 위치는 그대로이므로 `TermPane` 인스턴스는
+(앞 절의 "하나의 안정된 부모" 구조 덕에) 유지된다.
 
 시각 피드백: 드롭 가능한 탭 pill 위에 드래그 중인 요소가 올라가면(`onDragOver`에서
 `e.dataTransfer.types`를 확인해 우리 mime 타입일 때만) `.drag-over` 클래스를 붙여
@@ -338,10 +372,16 @@ export function nextTabTitle(existingTitles: string[], distro: string): string {
 
 ## 테스트에 대한 솔직한 서술
 
-이 변경은 대부분 프론트 상태 관리(탭 배열 조작, portal 배선, DOM 이벤트 배선)이고,
+이 변경은 대부분 프론트 상태 관리(탭 배열 조작, DOM 이벤트 배선)이고,
 `apps/wsl-desktop`을 포함해 이 저장소에는 프론트 테스트 인프라가 전혀 없다
 (vitest/jest 0, `package.json`에 관련 devDependency 없음). 이번 작업에서도 도입하지
 않는다(브리핑의 명시적 범위 밖 항목).
+
+인스턴스 유지 여부(위 "실측으로 검증" 참고)처럼 타입체커·빌드로 못 잡는 런타임
+동작은 `pnpm dev` + 브라우저 자동화 + 임시 계측 코드로 1회성으로 직접 확인했다 —
+이건 회귀 방지용 자동 테스트가 아니라 이번 구현이 실제로 그렇게 동작하는지에 대한
+증거이며, 검증 후 계측 코드는 제거했으므로 재실행할 수 없다. 같은 종류의 의심이
+생기면(예: 나중에 리팩터하면서 다시 portal 유혹이 들면) 같은 방법을 다시 쓰면 된다.
 
 `terminal.rs`는 대부분 OS I/O(PTY open/read/write/resize, 프로세스 spawn)라 실제로
 단위 테스트가 가능한 순수 로직은 원래부터 `parse_distros`(`terminal.rs:219-225`)와

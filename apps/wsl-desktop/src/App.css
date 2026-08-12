@@ -198,12 +198,6 @@ select {
   overflow: hidden;
 }
 
-/* 비활성 탭의 팬들이 마운트된 채 숨어 있는 곳. TermPane 인스턴스를 유지하기 위해
-   언마운트하는 대신 여기로 portal된다 (design doc "최대 함정" 참고). */
-.pane-holding {
-  display: none;
-}
-
 .pane {
   display: flex;
   flex-direction: column;

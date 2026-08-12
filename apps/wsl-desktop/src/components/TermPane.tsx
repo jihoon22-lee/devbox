@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -8,7 +8,7 @@ import { matchShortcut, type ShortcutAction } from "../lib/shortcuts";
 interface TermPaneProps {
   sessionId: string;
   title: string;
-  /** 이 팬이 속한 탭이 활성 탭인가. false면 컨테이너가 display:none인 holding pen에 있다. */
+  /** 이 팬이 속한 탭이 활성 탭인가. false면 PaneCanvas가 style로 display:none을 준다. */
   active: boolean;
   /** 이 팬이 activePaneId인가 (Ctrl+Shift+W 등 "활성 팬" 단축키의 대상). */
   isFocusedPane: boolean;
@@ -20,6 +20,8 @@ interface TermPaneProps {
   onClose: () => void;
   onFocusPane: () => void;
   onShortcut: (action: ShortcutAction) => void;
+  /** PaneCanvas가 display:none(비활성) 또는 order(활성 탭 안에서의 시각적 순서)를 준다. */
+  style?: CSSProperties;
 }
 
 const THEME = {
@@ -43,6 +45,7 @@ export default function TermPane({
   onClose,
   onFocusPane,
   onShortcut,
+  style,
 }: TermPaneProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -149,7 +152,7 @@ export default function TermPane({
   }, [active]);
 
   return (
-    <div className={`pane ${isFocusedPane ? "pane-focused" : ""}`} onMouseDownCapture={onFocusPane}>
+    <div className={`pane ${isFocusedPane ? "pane-focused" : ""}`} style={style} onMouseDownCapture={onFocusPane}>
       <div
         className="pane-head"
         draggable
