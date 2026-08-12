@@ -1189,6 +1189,7 @@ dependencies = [
 name = "everything-plus"
 version = "0.2.0"
 dependencies = [
+ "filesystem",
  "notify",
  "rusqlite",
  "serde",
@@ -1196,7 +1197,6 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
- "walkdir",
 ]
 
 [[package]]
@@ -1245,6 +1245,13 @@ dependencies = [
  "libc",
  "thiserror 1.0.69",
  "winapi",
+]
+
+[[package]]
+name = "filesystem"
+version = "0.1.0"
+dependencies = [
+ "walkdir",
 ]
 
 [[package]]

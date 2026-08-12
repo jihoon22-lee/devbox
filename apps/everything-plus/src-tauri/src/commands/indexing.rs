@@ -2,8 +2,9 @@ use crate::core::db::{
     add_root as db_add_root, clear_all, clear_root, list_roots as db_list_roots,
     remove_root as db_remove_root, total_files, upsert_content, upsert_file,
 };
-use crate::core::indexer::{collect, is_text_ext, MAX_CONTENT_BYTES};
+use crate::core::indexer::{is_text_ext, MAX_CONTENT_BYTES};
 use crate::core::models::IndexStatus;
+use filesystem::collect;
 use rusqlite::Connection;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
