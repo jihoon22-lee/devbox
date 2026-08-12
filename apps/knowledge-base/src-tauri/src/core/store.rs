@@ -17,6 +17,11 @@ pub fn safe_join(root: &Path, rel: &str) -> Result<PathBuf, String> {
 }
 
 /// 루트 내부의 파일·폴더 트리를 상대 경로로 수집한다.
+///
+/// 반환하는 상대 경로는 항상 `/` 구분자를 쓴다. 프론트(`App.tsx`)가
+/// `path.split("/")`로 들여쓰기 깊이를 계산하고 파일명을 뽑아 쓰므로, OS
+/// 네이티브 구분자(Windows는 `\`)를 그대로 넘기면 트리 들여쓰기가 무너지고
+/// 파일명 자리에 전체 상대 경로가 나온다.
 pub fn tree(root: &Path) -> Result<Vec<(String, bool)>, String> {
     let mut out = Vec::new();
     fn walk(dir: &Path, root: &Path, out: &mut Vec<(String, bool)>) -> std::io::Result<()> {
@@ -29,7 +34,7 @@ pub fn tree(root: &Path) -> Result<Vec<(String, bool)>, String> {
                 .strip_prefix(root)
                 .unwrap_or(&e.path())
                 .to_string_lossy()
-                .into_owned();
+                .replace('\\', "/");
             let is_dir = ft.is_dir();
             out.push((rel, is_dir));
             if is_dir {
