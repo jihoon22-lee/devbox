@@ -3,6 +3,8 @@
 //! - [`is_ignored_dir`]: gitignore 스타일로 흔히 제외되는 디렉터리 이름 판정
 //! - [`collect`] / [`IndexedFile`]: 루트 디렉터리를 순회하며 제외 규칙을 적용한
 //!   파일 목록 수집
+//! - [`collect_limited`] / [`WalkResult`]: 같은 순회를 상한과 `truncated` 상태와
+//!   함께 수행하는 빠른 열기용 API
 //!
 //! 이 크레이트가 담지 않는 것:
 //! - **watcher (파일 변경 감시)**: 아직 실제 소비자가 없다. `notify` 등으로
@@ -18,4 +20,4 @@ pub mod ignore;
 pub mod walk;
 
 pub use ignore::is_ignored_dir;
-pub use walk::{collect, IndexedFile};
+pub use walk::{collect, collect_limited, IndexedFile, WalkResult};
