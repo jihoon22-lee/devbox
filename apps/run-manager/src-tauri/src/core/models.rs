@@ -1,0 +1,413 @@
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::fmt;
+
+/// The kinds supported by the shared database table. Phase 1 command handlers
+/// deliberately accept only `Job`; the service variant is reserved for Phase 2.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum JobKind {
+    Job,
+    Service,
+}
+
+impl JobKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Job => "job",
+            Self::Service => "service",
+        }
+    }
+}
+
+impl fmt::Display for JobKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str((*self).as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum TargetKind {
+    Windows,
+    Wsl,
+}
+
+impl TargetKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Windows => "windows",
+            Self::Wsl => "wsl",
+        }
+    }
+}
+
+impl fmt::Display for TargetKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str((*self).as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum OverlapPolicy {
+    #[default]
+    Skip,
+    Queue,
+    KillPrevious,
+}
+
+impl OverlapPolicy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Skip => "skip",
+            Self::Queue => "queue",
+            Self::KillPrevious => "kill-previous",
+        }
+    }
+}
+
+impl fmt::Display for OverlapPolicy {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str((*self).as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum RunStatus {
+    Queued,
+    Starting,
+    Running,
+    Stopping,
+    Succeeded,
+    Failed,
+    Cancelled,
+    Skipped,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceInstanceState {
+    Stopped,
+    Starting,
+    Running,
+    Stopping,
+    RetryWaiting,
+}
+
+impl ServiceInstanceState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Stopped => "stopped",
+            Self::Starting => "starting",
+            Self::Running => "running",
+            Self::Stopping => "stopping",
+            Self::RetryWaiting => "retry_waiting",
+        }
+    }
+}
+
+impl fmt::Display for ServiceInstanceState {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str((*self).as_str())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceInstance {
+    pub job_id: String,
+    pub generation: i64,
+    pub active_run_id: Option<String>,
+    pub state: ServiceInstanceState,
+    pub owner_instance_id: Option<String>,
+    pub attempt_token: Option<String>,
+    pub next_retry_at: Option<i64>,
+    pub consecutive_failures: i64,
+    pub updated_at: i64,
+}
+
+impl RunStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Starting => "starting",
+            Self::Running => "running",
+            Self::Stopping => "stopping",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
+impl fmt::Display for RunStatus {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str((*self).as_str())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct JobInput {
+    pub name: String,
+    pub command: String,
+    pub cwd: Option<String>,
+    pub target_kind: TargetKind,
+    pub target_distro: Option<String>,
+    /// This is already encrypted by the future platform/DPAPI adapter. The
+    /// current PR never accepts or persists a plaintext environment map.
+    #[serde(default, skip_serializing)]
+    pub env_ciphertext: Option<Vec<u8>>,
+    pub cron_expr: String,
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub overlap_policy: OverlapPolicy,
+    #[serde(default)]
+    pub catch_up: bool,
+}
+
+impl JobInput {
+    pub fn validate(&self) -> Result<(), ModelError> {
+        if self.name.trim().is_empty() {
+            return Err(ModelError::EmptyField("name"));
+        }
+        if self.command.is_empty() {
+            return Err(ModelError::EmptyField("command"));
+        }
+        if self.cron_expr.trim().is_empty() {
+            return Err(ModelError::EmptyField("cron_expr"));
+        }
+        for (field, value) in [
+            ("name", self.name.as_str()),
+            ("command", self.command.as_str()),
+            ("cron_expr", self.cron_expr.as_str()),
+        ] {
+            if value.contains('\0') {
+                return Err(ModelError::NulByte(field));
+            }
+        }
+        if let Some(cwd) = &self.cwd {
+            if cwd.contains('\0') {
+                return Err(ModelError::NulByte("cwd"));
+            }
+        }
+        if let Some(distro) = &self.target_distro {
+            if distro.contains('\0') {
+                return Err(ModelError::NulByte("target_distro"));
+            }
+        }
+        match self.target_kind {
+            TargetKind::Windows if self.target_distro.is_some() => {
+                Err(ModelError::UnexpectedTargetDistro)
+            }
+            TargetKind::Wsl if self.target_distro.as_deref().is_none_or(str::is_empty) => {
+                Err(ModelError::MissingTargetDistro)
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Job {
+    pub id: String,
+    pub kind: JobKind,
+    pub name: String,
+    pub command: String,
+    pub cwd: Option<String>,
+    pub target_kind: TargetKind,
+    pub target_distro: Option<String>,
+    /// Only presence is exposed to the UI; ciphertext bytes never round-trip
+    /// through a read DTO.
+    pub env_configured: bool,
+    pub cron_expr: Option<String>,
+    pub enabled: bool,
+    pub overlap_policy: OverlapPolicy,
+    pub catch_up: bool,
+    pub last_evaluated_at: Option<i64>,
+    pub next_queue_sequence: i64,
+    pub restart_policy: Option<String>,
+    pub auto_start: Option<bool>,
+    pub health_tcp_address: Option<String>,
+    pub health_tcp_port: Option<u16>,
+    pub health_start_grace_ms: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Run {
+    pub id: String,
+    pub job_id: String,
+    pub scheduled_at: Option<i64>,
+    pub occurrence_wall_key: Option<String>,
+    pub queue_sequence: i64,
+    pub blocked_by_run_id: Option<String>,
+    pub started_at: Option<i64>,
+    pub ended_at: Option<i64>,
+    pub exit_code: Option<i32>,
+    pub status: RunStatus,
+    pub owner_instance_id: Option<String>,
+    pub attempt_token: Option<String>,
+    pub error_message: Option<String>,
+    pub target_pid: Option<i64>,
+    pub target_process_created_at: Option<i64>,
+    pub target_pgid: Option<i64>,
+    pub target_sid: Option<i64>,
+    pub process_marker: Option<String>,
+    pub log_dir: Option<String>,
+    pub logs_deleted_at: Option<i64>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimResult {
+    pub inserted: bool,
+    pub run: Run,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationOutboxItem {
+    pub id: String,
+    pub kind: String,
+    pub job_id: Option<String>,
+    pub run_id: Option<String>,
+    pub error_code: String,
+    pub idempotency_key: String,
+    pub created_at: i64,
+    pub delivered_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewNotification {
+    pub job_id: Option<String>,
+    pub run_id: Option<String>,
+    pub error_code: String,
+    pub idempotency_key: String,
+    pub created_at: i64,
+}
+
+impl NewNotification {
+    pub fn validate(&self) -> Result<(), ModelError> {
+        if self.error_code.trim().is_empty() {
+            return Err(ModelError::EmptyField("error_code"));
+        }
+        if self.idempotency_key.trim().is_empty() {
+            return Err(ModelError::EmptyField("idempotency_key"));
+        }
+        if self.error_code.contains('\0') || self.idempotency_key.contains('\0') {
+            return Err(ModelError::NulByte("notification"));
+        }
+        Ok(())
+    }
+}
+
+/// Storage-facing boundary for the future Windows DPAPI CurrentUser adapter.
+/// No implementation is provided in this PR and no plaintext is stored in
+/// SQLite. Implementations should validate/redact and best-effort zeroize
+/// plaintext in their own platform layer.
+pub trait EnvironmentProtector: Send + Sync {
+    fn encrypt(
+        &self,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<Vec<u8>, EnvironmentProtectionError>;
+
+    fn decrypt(
+        &self,
+        ciphertext: &[u8],
+    ) -> Result<BTreeMap<String, String>, EnvironmentProtectionError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnvironmentProtectionError {
+    pub message: String,
+}
+
+impl fmt::Display for EnvironmentProtectionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for EnvironmentProtectionError {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelError {
+    EmptyField(&'static str),
+    NulByte(&'static str),
+    UnexpectedTargetDistro,
+    MissingTargetDistro,
+}
+
+impl fmt::Display for ModelError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyField(field) => write!(formatter, "{field} must not be empty"),
+            Self::NulByte(field) => write!(formatter, "{field} contains a NUL byte"),
+            Self::UnexpectedTargetDistro => {
+                formatter.write_str("target_distro is only valid for WSL jobs")
+            }
+            Self::MissingTargetDistro => {
+                formatter.write_str("target_distro is required for WSL jobs")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ModelError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn input(target_kind: TargetKind, target_distro: Option<&str>) -> JobInput {
+        JobInput {
+            name: "backup".to_string(),
+            command: "echo backup".to_string(),
+            cwd: None,
+            target_kind,
+            target_distro: target_distro.map(str::to_string),
+            env_ciphertext: None,
+            cron_expr: "0 * * * *".to_string(),
+            enabled: false,
+            overlap_policy: OverlapPolicy::default(),
+            catch_up: false,
+        }
+    }
+
+    #[test]
+    fn target_distro_matches_target_kind() {
+        assert!(input(TargetKind::Windows, Some("Ubuntu"))
+            .validate()
+            .is_err());
+        assert!(input(TargetKind::Wsl, None).validate().is_err());
+        assert!(input(TargetKind::Wsl, Some("Ubuntu")).validate().is_ok());
+        assert!(input(TargetKind::Windows, None).validate().is_ok());
+    }
+
+    #[test]
+    fn command_boundary_rejects_nul_bytes() {
+        let mut value = input(TargetKind::Windows, None);
+        value.command.push('\0');
+        assert_eq!(value.validate(), Err(ModelError::NulByte("command")));
+    }
+
+    #[test]
+    fn service_instance_state_uses_durable_snake_case_values() {
+        let state = ServiceInstanceState::RetryWaiting;
+        assert_eq!(state.to_string(), "retry_waiting");
+        assert_eq!(serde_json::to_string(&state).unwrap(), "\"retry_waiting\"");
+        assert_eq!(
+            serde_json::from_str::<ServiceInstanceState>("\"retry_waiting\"").unwrap(),
+            state
+        );
+    }
+}

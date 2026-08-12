@@ -1,7 +1,8 @@
 mod commands;
+pub mod core;
 mod lifecycle;
 mod platform;
-mod storage;
+pub mod storage;
 
 use lifecycle::{is_background_launch, request_orderly_exit, RuntimeState};
 use serde::Serialize;
@@ -39,6 +40,14 @@ pub fn run() {
             commands::show_main_window,
             commands::hide_main_window,
             commands::quit_app,
+            commands::list_jobs,
+            commands::get_job,
+            commands::create_job,
+            commands::update_job,
+            commands::set_job_enabled,
+            commands::delete_job,
+            commands::get_run,
+            commands::list_runs,
         ])
         .setup(|app| {
             let data_dir = app.path().app_local_data_dir()?;
