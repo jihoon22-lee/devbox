@@ -1,5 +1,5 @@
-/// 포그라운드 창 감지. Windows에서만 실제 동작하고, 그 외 OS에서는 None을 반환한다.
-/// (이 앱의 타깃은 Windows이며, 다른 OS는 컴파일·테스트 용도)
+//! 포그라운드 창 감지. Windows에서만 실제 동작하고, 그 외 OS에서는 None을 반환한다.
+//! (이 앱의 타깃은 Windows이며, 다른 OS는 컴파일·테스트 용도)
 
 #[cfg(target_os = "windows")]
 mod imp {
