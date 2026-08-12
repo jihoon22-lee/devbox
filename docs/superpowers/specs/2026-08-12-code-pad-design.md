@@ -1,7 +1,7 @@
 # code-pad — 경량 코드 에디터 설계
 
 - 날짜: 2026-08-12
-- 브랜치: `docs/code-pad/design-spec`
+- 브랜치: `docs/code-pad/lsp-phase2`
 - 범위: 신규 앱 `apps/code-pad`의 설계. **이 문서 자체가 산출물이며 구현은 하지 않는다.**
 - 전제: `crates/filesystem`의 현재 무제한 `collect` API는 PR #48로 이미 머지됐다.
   code-pad 구현보다 별도 `crates/filesystem` 제한 순회 후속 PR과 `crates/markdown`
@@ -43,8 +43,14 @@ Notepad++를 대체할 가벼운 코드 에디터. 기반은 CodeMirror 6이다.
 항목은 최초 브리핑의 기능 목록·제외 목록 어디에도 없던 설계 누락이었다 — 근거는
 "확정된 세부 결정" 6번.
 
-**Phase 2**: LSP(`crates/lsp`, Windows 로컬 경로 한정). 이 문서는 Phase 1 설계이므로
-LSP의 인터페이스는 정하지 않는다.
+**Phase 2**: 언어 중립 LSP 클라이언트와 Windows 로컬 stdio 서버 관리. 초기 카탈로그는
+Rust/rust-analyzer, TypeScript·JavaScript/typescript-language-server,
+Python/basedpyright, JSON·HTML·CSS/vscode-langservers-extracted를 제공한다. 서버
+바이너리는 번들하지 않고, 사용자가 명시적으로 선택한 고정 버전만 검증·설치한다.
+LSP 공통 구현은 아직 두 번째 실제 소비자가 없으므로
+`apps/code-pad/src-tauri/src/lsp/`에 둔다. 두 번째 앱이 실제로 같은 구현을 소비할
+때만 `crates/lsp`로 추출한다. 상세 인터페이스와 Phase 2 구현 순서는 아래
+"Phase 2 — LSP" 절에서 정한다.
 
 **제외**: 매크로, PDF, 바이너리/hex 편집, 터미널 내장, git 통합, 파일 트리 사이드바.
 
@@ -156,6 +162,14 @@ CONVENTIONS §4의 앱별 Rust 모듈 구조(`CONVENTIONS.md:126-140`, `core/`�
 apps/code-pad/src-tauri/src/
   lib.rs              run(), command 등록, 앱 상태와 watcher manager 보관
   commands/{file,folder,preview,session}.rs
+  lsp/                 ← Phase 2; 두 번째 소비자 전까지 앱 로컬
+    catalog.rs         관리형·사용자 정의 서버 manifest
+    install.rs         다운로드·SHA-256·안전한 archive 설치
+    transport.rs       Content-Length stdio JSON-RPC framing
+    client.rs          initialize/capability/request/notification
+    documents.rs       URI·version·sync·workspace 경계
+    positions.rs       LSP position encoding/Windows URI 변환
+    process.rs         child lifecycle, stderr, timeout/backoff
   core/               ← 전부 OS 비의존, cargo test 대상
     encoding.rs  line_ending.rs  guard.rs  session.rs
   watcher.rs          notify 기반 manager (IO — core 아님, 앱 상태가 수명 보장)
@@ -377,8 +391,9 @@ knowledge-base 마크다운 프리뷰 설계 문서(2026-08-11)와 wsl-desktop �
 
 - 매크로, PDF, 바이너리/hex 편집, 터미널 내장, git 통합, 파일 트리 사이드바 —
   Phase 1 제외 목록. 파일 트리는 결정 1의 근거(다른 두 앱이 이미 담당)로 제외.
-- LSP — Phase 2로 유보(`crates/lsp`, Windows 로컬 경로 한정). 이 문서는 인터페이스를
-  정하지 않는다.
+- LSP 구현 자체는 Phase 2 이후의 코드 PR 범위다. 이 문서에는 Phase 2의 인터페이스와
+  운영·보안 계약을 정하지만, 서버 바이너리와 앱 코드는 추가하지 않는다. 공통
+  `crates/lsp`는 두 번째 실제 소비자가 생긴 뒤에만 추출한다.
 - `packages/editor` 추출 — code-pad가 CodeMirror의 첫 소비자인 동안은 대상이
   아니다("공통 추출" 절).
 - 미저장 버퍼 내용의 세션 복원 — 결정 3의 근거로 제외.
@@ -660,7 +675,539 @@ code-pad에서는 CodeMirror 인스턴스를 감싸는 컴포넌트를 모킹해
 그대로인지도 확인한다. 이 전역 registry 불변식 없이는 결정 2의 `views` 모델이
 안정된 부모 패턴을 우회하게 되므로 구현 전에 이 테스트를 먼저 고정한다.
 
-## 의존성
+## Phase 2 — LSP
+
+### 목표와 불변식
+
+Phase 2는 CodeMirror에 특정 언어의 분석기를 심는 작업이 아니라, LSP 3.17을 말하는
+언어 중립 클라이언트와 로컬 서버 수명 관리자를 추가하는 단계다. 클라이언트는 서버가
+무엇을 분석하는지 알 필요 없이 URI, 문서 버전, capability, JSON-RPC 요청을 전달한다.
+언어별 차이는 카탈로그의 `language_id`, 파일 확장자, 실행 명령, 런타임, 초기화 옵션으로
+한정한다. 표준 LSP가 아닌 서버별 확장은 카탈로그 어댑터에 격리하고, Phase 2의
+공통 API에는 넣지 않는다.
+
+초기 사용자 기능은 diagnostics, completion, hover, definition, references, rename,
+formatting이다. 단어 기반 CodeMirror 자동완성은 서버가 없거나 completion capability를
+광고하지 않을 때도 계속 동작한다. 다른 기능도 서버가 없으면 버튼을 숨기거나
+"언어 서버를 설치·활성화하세요"라는 상태만 표시하며, 파일 열기·편집·저장·프리뷰·찾기/
+바꾸기를 막지 않는다. LSP는 편집기의 보조 기능이지 파일 편집 경로의 선행 조건이
+아니다.
+
+실행 중인 서버의 네트워크 endpoint(TCP/remote LSP)는 지원하지 않는다. 관리형
+artifact를 HTTPS로 내려받는 설치 경로는 아래 보안 절차로 명시적으로 허용하지만,
+실행 대상은 (a) code-pad가 명시적으로
+설치한 로컬 서버, (b) 사용자가 이미 설치한 로컬 실행 파일, (c) 사용자가 직접 등록한
+stdio 실행 파일뿐이다. 서버 설치·업데이트는 항상 사용자가 누른 확인 동작으로
+시작하며, 앱 시작·파일 열기·백그라운드 타이머가 자동으로 다운로드하거나 "latest"를
+따라가지 않는다. 설치 화면에는 서버 이름, 고정 버전, source, license, artifact,
+SHA-256, 필요한 런타임, 설치 크기를 표시하고 사용자가 확인한 뒤에만 진행한다.
+
+### 현재 검증된 초기 카탈로그
+
+아래는 2026-08-12에 package metadata와 각 프로젝트의 공식 release/source를 조회해
+확인한 **설계 기준 스냅샷**이다. URL은 조회 결과에 존재하는 주소만 적는다. 구현 시
+카탈로그 항목을 갱신할 때도 먼저 같은 메타데이터와 release asset을 조회하고, URL을
+버전·플랫폼별 manifest에 그대로 복사한 뒤 digest를 별도로 검증한다. URL 패턴을
+문자열로 조합해 추측하지 않는다. SHA-256은 다운로드한 바이트의 `sha256sum`과
+registry/GitHub가 제공한 artifact를 대조한 값이다.
+
+| 언어·파일 | source / license | 고정 artifact와 SHA-256 | 실행·런타임 확인 |
+|---|---|---|---|
+| Rust (`.rs`) | [rust-analyzer](https://github.com/rust-lang/rust-analyzer) / MIT OR Apache-2.0 | [2026-08-10.1 Windows x64 zip](https://github.com/rust-lang/rust-analyzer/releases/download/2026-08-10.1/rust-analyzer-x86_64-pc-windows-msvc.zip) / `f667620d3af202f480faf9e407374509ebddef3b8611922e463aeaa7e6985fc8` | archive 안 `rust-analyzer.exe`; native Windows 실행 파일, 별도 Node 불필요 |
+| TypeScript·JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`) | [typescript-language-server](https://github.com/typescript-language-server/typescript-language-server) / Apache-2.0 | [npm `typescript-language-server@5.3.0`](https://registry.npmjs.org/typescript-language-server/-/typescript-language-server-5.3.0.tgz) / `398cacc17fff2108652e7b4050e3182008d17063246b3fea7dcf5fae2ce1560e`; paired [TypeScript `6.0.3`](https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz) / `33cd0ee1beaa8c9e9d15a9da836c62ddea4c34a42d7c2d349dbc80d94165d22a` | `typescript-language-server --stdio`; server package metadata의 Node `>=20`, paired TypeScript metadata의 Node `>=14.17`. upstream README가 두 package를 함께 설치하므로 두 artifact 모두 reviewed lock에 고정 |
+| Python (`.py`, `.pyi`) | [basedpyright](https://github.com/DetachHead/basedpyright) / MIT | [npm `basedpyright@1.39.9`](https://registry.npmjs.org/basedpyright/-/basedpyright-1.39.9.tgz) / `5e92f462d04d91fe1370d65cbb1ac241c0c62b3f2c893c4e0b1bf9a82c9e99b2` | `basedpyright-langserver --stdio`; package metadata의 Node `>=14`. `pyright-langserver` alias도 제공되지만 catalog은 `basedpyright-langserver`를 사용 |
+| JSON·HTML·CSS (`.json`, `.jsonc`, `.html`, `.htm`, `.css`, `.scss`, `.less`) | [vscode-langservers-extracted](https://github.com/hrsh7th/vscode-langservers-extracted) / MIT | [npm `vscode-langservers-extracted@4.10.0`](https://registry.npmjs.org/vscode-langservers-extracted/-/vscode-langservers-extracted-4.10.0.tgz) / `d6e2d090d09c4b91daa74e9e7462a3d3f244efb96aa5111004cfffa49d6dc9ef` | `vscode-json-language-server`, `vscode-html-language-server`, `vscode-css-language-server`; package `bin` entry가 `createConnection()`의 stdio 기본값으로 시작하며 dependency 목록을 기준으로 reviewed Node lock 필요 |
+
+`typescript-language-server`와 `vscode-langservers-extracted`의 npm tarball은 실행 파일과
+모든 dependency를 하나의 self-contained binary로 만들지 않는다. 전자는 README에서
+TypeScript를 함께 설치하도록 하고, 후자는 package metadata에 `vscode-*-languageservice`,
+`vscode-languageserver`, `typescript` 등의 dependency를 명시한다. 따라서 installer가
+root tarball 하나만 풀어 "설치 완료"로 표시하면 안 된다. 이 두 항목은 카탈로그에
+reviewed npm lock manifest(모든 transitive package의 exact version, registry URL,
+SHA-256)를 함께 넣고, 그 lock에 기록된 tarball만 내려받는다. lock이 없거나 digest가
+없는 dependency가 있으면 설치를 거부한다. `basedpyright` npm package는 `bin`에
+`basedpyright-langserver`와 `pyright-langserver`를 내보내며, 공식 문서도 stdio 인자를
+사용한 IDE 설정을 보여 주므로 위 명령을 사용한다. Node 자체는 앱에 번들하지 않는다;
+시스템 Node 또는 사용자가 지정한 Node 경로가 없으면 해당 서버만 unavailable로
+표시한다.
+
+이 스냅샷에서 `typescript-language-server@5.3.0`은 workspace에
+`typescript@6.0.3`을 둔 임시 프로젝트로 `initialize` smoke를 통과했고 서버가
+workspace TypeScript 경로를 선택한다는 log를 남겼다. 반대로 registry의 더 최신
+TypeScript `7.0.2`는 같은 server의 "valid TypeScript installation" 검사에서
+거부됐으므로 기본 paired runtime으로 선택하지 않는다. 향후 server가 바뀌면 이
+호환성 smoke를 다시 통과한 exact TypeScript version만 lock에 넣는다. 서버가
+workspace의 TypeScript를 선택할 때도 허용 범위 검사를 하고, 임의의 global
+TypeScript를 조용히 사용하지 않는다.
+
+향후 추가 가능한 항목은 같은 schema의 catalog entry로만 확장한다. 예시는 Go의
+`gopls`, C/C++의 `clangd`, Java의 `jdtls`, C# 서버, Lua 서버, YAML 서버다. 각 entry는
+그 시점의 공식 release/package metadata와 Windows 실행 방법을 확인한 뒤 version,
+license, source, artifact, digest, runtime, command를 채워야 하며, 현재 Phase 2에서
+미리 URL이나 버전을 결정하지 않는다.
+
+### 서버 manifest와 설정 경계
+
+카탈로그 entry는 다음 필드를 갖는 Rust 구조체(저장 시 JSON)로 정의한다. `id`와
+`version`은 설치 경로와 상태의 key이며, `platform`은 `windows-x86_64`처럼 명시한다.
+
+```text
+ServerManifest {
+  id: string,                         // rust-analyzer, typescript-language-server, ...
+  version: string,                    // exact, never a range or latest
+  platform: string,
+  languages: [{ language_id, extensions }],
+  source_url: https URL,              // upstream source/repository
+  license: SPDX string,
+  artifact: { kind, url, sha256, size_bytes, archive_root },
+  runtime: { kind: native | node, executable, min_version? },
+  command: { executable, args: [string] },
+  files: { entrypoint: relative path, package_lock_sha256? },
+  capabilities_hint: optional,        // UI hint only; server response wins
+  generated_at: RFC3339,
+}
+```
+
+`capabilities_hint`는 미리 UI를 그리기 위한 정보일 뿐 실제 사용 가능 여부를 결정하지
+않는다. `initialize` 응답이 권위 있는 capability source다. manifest의 `source_url`,
+`license`, `version`, `sha256`는 설치 metadata와 UI에 그대로 보존한다. license가
+불명확하거나 source와 artifact의 관계를 확인할 수 없는 항목은 카탈로그에 추가하지
+않는다.
+
+서버 종류는 세 가지다.
+
+1. **managed** — catalog manifest와 reviewed dependency lock으로 설치한 서버. 앱은
+   실행 파일과 package tree를 `%LOCALAPPDATA%\\com.workbench.codepad\\lsp\\servers\\`
+   아래 versioned directory에 저장한다. 실제 파일은 번들에 들어가지 않는다.
+2. **local** — 사용자가 이미 설치한 executable/runtime 경로를 선택한 서버. 앱은
+   `canonicalize`와 실행 권한을 확인하지만 파일을 복사하거나 업데이트하지 않는다.
+3. **custom** — 사용자가 `executable`과 고정 `args`를 등록한 stdio 서버. shell 문자열,
+   pipe 문법, TCP 주소는 받지 않고 `Command`의 argv로만 실행한다. custom 서버도
+   source/license/version을 사용자가 입력하게 하며, 모르는 값은 "사용자 제공/확인 안 됨"
+   으로 표시한다. 임의의 remote download를 custom entry로 우회할 수 없다.
+
+`apps/code-pad/src-tauri/src/lsp/`가 Phase 2의 구현 경계다. 현재 저장소에는 두 번째
+실제 LSP 소비자가 없고, CONVENTIONS의 "두 번째 앱에서 실제로 필요해진 코드만
+`crates/`로 추출" 규칙과 기존 문구 `crates/lsp`가 충돌한다. 이 설계에서는 규칙을
+우선해 `crates/lsp`를 만들지 않는다. 향후 두 번째 앱이 같은 client/transport를
+실제로 import하는 별도 PR이 생기면, 이 디렉터리에서 protocol-independent 모듈과
+테스트를 `crates/lsp`로 옮기고 두 앱을 path dependency로 연결한다. 그때까지
+code-pad 전용 workspace/session 정책은 앱에 남긴다.
+
+### 런타임 아키텍처
+
+```text
+CodeMirror document
+       │ editor transaction / cursor
+       ▼
+frontend LspAdapter ── Tauri invoke/event ──► LspManager (Rust)
+                                                │ one Session per language/workspace
+                                                ▼
+                                         LspClient + DocumentStore
+                                                │ JSON-RPC 2.0 over stdio
+                                                ▼
+                                      managed/local/custom child process
+                                      stdin = protocol, stdout = protocol
+                                      stderr = bounded diagnostic log only
+```
+
+`LspManager`는 workspace root와 현재 열린 문서를 기준으로 lazy session을 만든다. 같은
+언어·같은 workspace에는 하나의 server process를 재사용하고, 다른 workspace는 별도
+process를 갖는다. 첫 문서가 열릴 때만 활성화된 manifest를 실행하며, 서버가 설치되지
+않았거나 사용자가 LSP를 끈 경우 process를 만들지 않는다. Tauri command는 짧은
+상태 조회·설정 변경·명시적 install/start/stop만 담당하고, 오래 걸리는 process IO는
+Rust async task가 담당한다.
+
+권장 command/event 계약은 다음과 같다.
+
+| 방향 | 계약 | 의미 |
+|---|---|---|
+| UI → Rust | `lsp_catalog`, `lsp_installed`, `lsp_configure` | 카탈로그·설치 metadata 조회, 서버 유형/활성화 설정 |
+| UI → Rust | `lsp_install(manifest_id, version)` | 사용자가 확인한 exact manifest만 설치; `version`이 manifest와 다르면 거부 |
+| UI → Rust | `lsp_start(language_id)`, `lsp_stop(language_id)` | 명시적 수동 시작/중지; lazy start는 파일을 편집할 때만 설정이 이미 enabled인 경우 |
+| UI → Rust | `lsp_document_open|change|close`, `lsp_request` | document sync 및 기능 요청; request에는 client request id와 document version 포함 |
+| Rust → UI | `lsp/status` | starting/ready/degraded/stopped/crashed, server metadata, backoff, capability |
+| Rust → UI | `lsp/diagnostics` | URI, document version, diagnostics, stale 여부 |
+| Rust → UI | `lsp/response` | request id, result/error, response document version |
+| Rust → UI | `lsp/stderr` (debug log) | 사용자 동의/로그 레벨에 따른 최근 stderr; protocol data와 분리 |
+
+프론트는 서버의 arbitrary JSON-RPC를 직접 실행하지 않는다. `LspAdapter`가 CodeMirror
+위치와 DocId를 LSP URI·Position으로 바꾸고, Tauri event의 response id를 pending
+completion/hover/etc.와 연결한다. 서버가 없어도 adapter는 no-op/fallback 구현을
+제공한다.
+
+### 프로세스와 JSON-RPC transport
+
+LSP base protocol의 framing을 그대로 사용한다. writer는 UTF-8 JSON 한 개를 직렬화한
+뒤 `Content-Length: <UTF-8 byte length>\r\n\r\n` 헤더와 정확히 그 byte 수의 body를
+stdout에 쓴다. reader는 `\r\n\r\n`까지 header를 읽고, header name은
+case-insensitive로 처리하되 `Content-Length`를 양의 정수로 반드시 확인한 후
+`read_exact`한다. body를 줄 단위로 분할하거나 Unicode scalar 수로 길이를 세지 않는다.
+빈 body, 중복/음수 Content-Length, 최대 message size(기본 16 MiB)를 넘는 frame,
+잘못된 UTF-8/JSON은 protocol error로 session을 degraded 처리한다. 서버가 보내는
+`Content-Type`은 검증 가능한 `application/vscode-jsonrpc; charset=utf-8` 또는
+생략만 허용하고, 알 수 없는 header는 보존하지 않고 로그에 남긴다.
+
+`Command::new(executable).args(args)`로만 child를 만든다. `cmd.exe /C`, PowerShell,
+shell interpolation은 사용하지 않는다. managed entrypoint는 설치 디렉터리 안의
+manifest-relative path인지 확인하고, local/custom executable은 canonical path를
+저장해 실행 때 다시 존재·파일 여부를 확인한다. `current_dir`은 workspace root로
+고정하고 환경 변수는 `PATH`, 언어 서버가 요구하는 명시적 runtime 변수, 사용자가
+허용한 항목만 전달한다. 비밀 환경 변수 전체를 서버에 복사하지 않는다.
+
+child의 stdin/stdout/stderr를 모두 pipe한다. stdout에는 protocol writer 외의 로그를
+한 바이트도 섞지 않는다. stderr reader는 line/byte stream을 bounded ring buffer
+(기본 64 KiB)로 수집하고 `log::debug!/warn!`와 선택적인 `lsp/stderr` event로만
+전달한다. ring buffer가 차면 오래된 내용을 버리고 process를 죽이지 않는다. Windows
+에서는 창을 만들지 않고 child process tree를 Job Object로 묶어 stop/crash 시 자식
+Node process도 남지 않게 한다.
+
+request id는 session마다 증가하는 `u64`이며 response가 오면 pending map에서 꺼낸다.
+notification은 response를 기다리지 않는다. `initialize` 전에는 document request를
+보내지 않고, `shutdown` response를 기다린 뒤 `exit` notification을 보낸다. graceful
+shutdown이 2초 안에 끝나지 않으면 process tree를 강제 종료한다.
+
+### 초기화·capability 협상
+
+client는 LSP initialize request에 다음을 보낸다.
+
+- `processId`, `clientInfo` (`code-pad`, 앱 버전), `rootUri`와 단일 `workspaceFolders`
+  (둘 다 canonical workspace root를 가리킴)
+- `capabilities.workspace.workspaceFolders`, `didChangeConfiguration`,
+  `applyEdit`; `textDocument` 아래 synchronization, completion, hover, definition,
+  references, rename, formatting 관련 client capability
+- `general.positionEncodings: ["utf-16", "utf-8"]` (구현한 순서대로 선호)
+- 서버별 `initializationOptions`는 manifest가 명시한 JSON object만 전달하고,
+  custom 서버가 임의의 파일 읽기를 요구하면 UI에서 명시 확인한다.
+
+서버 응답의 `capabilities`는 `serde(untagged)` 타입으로 bool/object 두 형태를 모두
+읽는다. `textDocumentSync`, `completionProvider`, `hoverProvider`,
+`definitionProvider`, `referencesProvider`, `renameProvider`,
+`documentFormattingProvider`, `diagnosticProvider`를 실제 capability set으로
+정규화하고, capability가 false/없으면 해당 UI 기능을 호출하지 않는다. 서버가
+dynamic registration(`client/registerCapability`)을 보내면 등록된 method를 set에
+추가하고 `unregisterCapability`로 제거한다. unsupported method에 대한 호출은
+실패로 알리지 않고 fallback/disabled 상태로 표시한다. 서버가 반환한
+`positionEncoding`을 session에 고정한다. 서버가 협상을 응답하지 않는 구형 구현은
+LSP 호환 기본값인 UTF-16으로 시작하고 status에 `legacy position encoding`을 표시한다.
+
+`initialize` timeout은 10초다. 성공 뒤 `initialized` notification을 보내고 모든
+열린 문서를 순서대로 `didOpen`한다. 실패하면 process를 unavailable로 표시하고
+editor는 즉시 Phase 1 상태로 돌아간다.
+
+### Windows URI와 position 변환
+
+LSP 위치는 파일 byte offset이 아니라 `line`과 `character`이며, server가 선택한
+encoding을 따른다. CodeMirror 내부 문서는 Phase 1 불변식대로 LF와 JavaScript UTF-16
+index를 사용하므로 다음 변환을 한 모듈에서만 구현한다.
+
+- Windows `Path`는 canonicalize한 뒤 `Url::from_file_path`로 `file:///C:/...` 또는
+  UNC URI를 만든다. drive letter 대소문자, backslash, percent encoding, UNC share를
+  문자열 치환으로 직접 조립하지 않는다. URI → Path 변환도 `Url::to_file_path` 후
+  canonicalize한다.
+- `utf-16`이면 한 줄의 UTF-16 code unit 수를 계산한다. emoji/서로게이트 쌍은
+  character 두 개이며, Rust `char` count나 UTF-8 byte count로 대신하지 않는다.
+- `utf-8`이면 code point가 아닌 UTF-8 byte offset을 LSP character로 사용한다.
+  편집기가 서버로 보내는 위치는 항상 유효 boundary에서 생성한다. 서버가 반환한
+  `Position`이 중간 byte/code unit을 가리키면 diagnostic 표시만 가장 가까운 유효
+  boundary로 clamp하고 로그에 남긴다. text edit, rename, formatting처럼 내용을
+  바꾸는 응답은 임의 보정하지 않고 해당 edit 전체를 거부한다.
+- CRLF는 buffer에서 이미 LF로 정규화돼 있으므로 LSP line은 `\n` 기준이다. 저장 시
+  CRLF로 다시 바꾸는 것은 LSP 위치 계산 뒤의 file command가 담당한다.
+- 서버가 반환한 range가 현재 line/text 범위를 벗어나면 diagnostic 표시만 clamp하고,
+  edit는 전체 작업을 거부한다. 위치 변환 테스트에는 `a😀b`, 한글, 빈 줄, CRLF 원본,
+  multi-code-unit rename을 반드시 포함한다.
+
+### workspace 및 document sync
+
+LSP session의 경계는 현재 code-pad의 작업 폴더 하나다. root를 정한 뒤 모든 document
+path는 canonical path가 root 아래인지 확인한다. Windows drive/UNC 비교는
+case-insensitive한 `Path` component 비교를 사용하고, `..`, junction, symlink를
+확인한 real path가 root 밖이면 거부한다. workspace 밖에 있는 dependency의
+definition/reference location은 결과 목록에서 제외하거나 "workspace 밖이라 열 수
+없음"으로 표시한다. 사용자가 별도 폴더를 작업 폴더로 열면 기존 session을 멈추고
+새 workspace session을 만든다. 다만 로컬 LSP process는 사용자 계정의 파일 권한으로
+실행되므로 클라이언트가 서버 자체의 임의 파일 읽기를 sandbox로 차단한다고 약속할 수
+없다. 설치·활성화 화면에서 이 trust boundary를 알리고, code-pad가 서버에 보내거나
+서버 결과로 여는 URI만 workspace 내부로 제한한다.
+
+문서마다 `{ uri, language_id, version, text, dirty }`를 유지한다.
+
+1. `didOpen`은 session당 URI 한 번만 보내며, `version = 1`과 현재 LF text를 full
+   content로 보낸다. 같은 URI를 다른 workspace session에 재사용할 수는 있지만 각
+   session의 version은 독립적이다.
+2. CodeMirror transaction마다 version을 1 증가시킨다. 서버가
+   `TextDocumentSyncKind::Incremental`을 선택했으면 transaction 전후 text의 공통
+   prefix/suffix를 기준으로 바뀐 최소 연속 range 하나를 계산한다. range는 변경 전
+   document 기준 UTF-16/UTF-8 위치이고 replacement는 변경 후 text의 해당 구간이다.
+   이 방식은 여러 cursor와 여러 줄 변경도 순서 의존적인 복수 edit 없이 정확히 한
+   `contentChanges` 항목으로 표현한다. Full이면 새 전체 text 하나를 보낸다. 전송은
+   version 순서대로 직렬화한다.
+3. `didChange`에 version을 포함한다. pending response에는 요청 시점 version을
+   함께 저장해 현재 version보다 낮은 결과를 버린다. diagnostics도 URI와
+   `version`이 일치하지 않으면 stale로 표시하고 새 결과가 올 때까지 화면의 최신
+   진단을 덮어쓰지 않는다.
+4. `didSave`는 실제 `saveFile` 성공 뒤에만 보낸다. 외부 변경을 reload하면 local
+   document version을 새로 시작하지 않고 1 증가시켜 full `didChange`를 보내며,
+   server가 저장 후 상태를 다시 계산하게 한다. 사용자가 "유지"를 선택한 dirty
+   buffer는 디스크 snapshot과 무관하게 계속 sync한다.
+5. `didClose`는 문서가 마지막 탭에서 닫힐 때 보내고, process restart 뒤에는 열린
+   문서를 모두 `didOpen`으로 재동기화한다. server가 죽거나 timeout돼 재시작할 때
+   프론트 buffer와 undo history는 건드리지 않는다.
+
+### 기능별 요청과 결과 적용
+
+| 기능 | LSP method | 적용 규칙 |
+|---|---|---|
+| 진단 | server notification `textDocument/publishDiagnostics` | URI/version을 확인한 뒤 severity/range를 CodeMirror lint로 변환. 최신 version만 표시 |
+| 자동완성 | `textDocument/completion` (+ optional resolve) | cursor position과 current version을 보내고 다음 입력 시 취소. 실패/미지원이면 단어 완성 유지 |
+| hover | `textDocument/hover` | 현재 position에 해당하는 markdown/plaintext만 표시; timeout이면 닫힘 |
+| 정의 | `textDocument/definition` | workspace 내부 Location만 탭/Quick Open으로 연결 |
+| references | `textDocument/references` | workspace 내부 결과만 목록에 표시; 결과는 요청 version snapshot과 함께 보관 |
+| rename | `textDocument/rename` | WorkspaceEdit를 preflight하여 모든 URI·range·version을 검증한 뒤 한 번에 editor buffers에 적용. 자동 저장하지 않음 |
+| formatting | `textDocument/formatting` | 사용자가 명시적으로 실행할 때만 TextEdit 적용; 범위를 벗어난 edit는 거부 |
+
+WorkspaceEdit는 문서별 현재 version과 비교한 뒤 충돌하면 전체 적용을 중단하고
+사용자에게 재시도하도록 한다. 한 파일만 일부 적용해 rename을 망가뜨리지 않는다.
+server의 custom command/code action은 Phase 2 API에 노출하지 않으며, 위 표 밖의
+method는 capability와 무관하게 무시한다. LSP server가 `diagnosticProvider`만 광고하면
+`textDocument/diagnostic` pull을 Phase 2에서 구현해 열기·변경·저장 뒤 debounce하여
+호출한다. push와 pull을 모두 제공하면 version이 확인되는 최신 결과 하나만 화면에
+적용하고 중복 진단은 합치지 않는다.
+
+### install/update 보안과 원자성
+
+managed installer는 `reqwest`로 HTTPS artifact를 streaming download하고 다음 순서를
+지킨다.
+
+1. 사용자가 catalog의 exact `id`와 `version`을 선택한다. catalog에 없는 version,
+   플랫폼, URL host, license/source 누락은 요청 단계에서 거부한다. redirect의 최종
+   host도 manifest allowlist와 다르면 거부한다.
+2. `%LOCALAPPDATA%\\com.workbench.codepad\\lsp\\downloads\\<nonce>.part`에 쓰고
+   응답 크기·manifest `size_bytes`·최대 설치 크기를 검사한다. 취소/네트워크 실패는
+   `.part`를 설치 경로로 승격하지 않는다.
+3. 스트림을 끝까지 읽은 뒤 SHA-256을 계산해 manifest의 lowercase digest와
+   constant-time 비교한다. 불일치하면 파일을 폐기하고 기존 설치는 그대로 둔다.
+   npm registry의 integrity(SHA-512)가 함께 있는 경우에도 최종 설치 계약은
+   SHA-256 필드를 반드시 검증한다.
+4. archive는 별도 nonce staging directory에만 푼다. zip/tar/gzip entry마다
+   archive-relative path를 검사해 `/x`, `\\x`, drive prefix(`C:`), 빈 component,
+   `..`를 거부하고, canonicalized destination이 staging root 아래인지 매 entry마다
+   재확인한다. symlink, hardlink, device/fifo entry는 Phase 2에서 모두 거부한다.
+   `archive_root` 밖의 executable이나 manifest가 기대한 entrypoint와 다른 파일은
+   설치하지 않는다. 이 검사는 zip slip과 Windows path traversal을 모두 막는다.
+5. staging에서 entrypoint 존재·파일 종류·manifest version·license/source metadata와
+   dependency lock digest를 다시 검사하고, Node package의 모든 lock entry가 exact
+   URL/digest를 만족하는지 확인한다. 실행 파일은 검증 전 절대 실행하지 않는다.
+6. 검증된 staging을 `servers/<id>/<version>/<platform>/`의 새 immutable directory로
+   rename한다. 활성 pointer/installed index는 `index.json.tmp-<nonce>`에 JSON을
+   쓰고 flush한 뒤 같은 디렉터리 안에서 atomic replace한다(Windows에서는
+   `ReplaceFileW`/동등한 atomic replace primitive를 사용하고, 기존 파일을 먼저
+   삭제하지 않는다). 기존 version을 덮어쓰지 않으며, pointer 교체가 성공한 뒤에만
+   이전 version을 사용자가 요청한 경우 삭제한다. crash가 어느 단계에서 나도 이전
+   index와 active install은 유효해야 한다.
+
+설치·업데이트는 자동 실행되지 않는다. 앱 시작 때 index만 읽고, catalog version이
+달라져도 update badge를 표시할 뿐 다운로드하지 않는다. 사용자가 Update를 누르면
+새 manifest의 version/digest/license/source를 다시 확인하고 위 절차를 거친다.
+기존 local/custom server는 이 installer를 거치지 않으며 경로·args·runtime을
+설정에서 명시적으로 보여 준다. managed package의 uninstall도 사용자가 확인한
+경우에만 실행하고 활성 session은 먼저 stop한다.
+
+### 상태 저장
+
+기존 Phase 1의 `session.json`에는 LSP process object나 binary content를 넣지 않는다.
+다음 두 파일을 `app_local_data_dir()` 아래에 둔다.
+
+```text
+session.json       # 열린 문서, view, cursor, bookmark, workspace (기존 schema)
+lsp/config.json    # 사용자가 선택한 server source/id/version/enable 상태
+lsp/installed.json # managed install metadata와 exact digest/entrypoint
+```
+
+`lsp/config.json`은 schema `version`을 가지며 다음 필드를 저장한다.
+
+```text
+LspConfig {
+  version: 1,
+  enabled: bool,
+  workspace_root: canonical path,
+  server_by_language: { language_id: ServerRef },
+  custom_servers: [{ language_ids, executable, args, runtime, source, license, version }],
+  update_policy: "manual",
+}
+ServerRef { kind, manifest_id?, version?, installed_path?, executable?, args? }
+```
+
+`lsp/installed.json`의 각 entry는 `manifest_id`, exact `version`, `platform`,
+`sha256`, `source_url`, `license`, `artifact_url`, `installed_path`, `entrypoint`,
+`runtime`, `installed_at`, `package_lock_sha256`를 저장한다. 경로는 app data 아래
+versioned directory로 canonicalize할 수 있어야 하며, index metadata와 실제 파일이
+불일치하면 installed가 아닌 `needs reinstall`로 표시한다. session 손상과 동일하게
+schema version이 맞지 않거나 JSON이 깨지면 empty LSP config로 시작하되, 파일을
+자동으로 보정해 덮어쓰지는 않고 오류를 로그에 남긴다.
+
+process 상태와 pending request는 메모리에만 둔다. 앱 재시작 시 server를 복원하지
+않고, 사용자가 enable한 서버가 있으면 첫 문서에서 다시 시작한 뒤 현재 열린 문서를
+`didOpen`한다. 서버의 새 session에서는 document version을 1부터 다시 시작한다;
+editor의 dirty/undo/session state는 유지한다. `stderr` ring buffer와 crash count는
+재시작 시 초기화하되 현재 run의 diagnostics log에는 남긴다.
+
+### 실패·취소·재시작 정책
+
+| 상황 | 처리 |
+|---|---|
+| catalog/lock에 없는 version 또는 source/license 누락 | install 전 거부; 기존 설치와 editor는 영향 없음 |
+| HTTPS/redirect/size/checksum 실패 | staging/partial만 폐기, 기존 active version 유지, 사용자가 Retry할 때만 재시도 |
+| archive traversal/link/entrypoint 검증 실패 | install 실패로 표시; 어떠한 파일도 active로 승격하지 않음 |
+| Node/native runtime 또는 executable 없음 | 해당 language session만 unavailable; CodeMirror 기능은 계속 사용 |
+| initialize 실패/잘못된 framing/invalid JSON | process 종료 후 status degraded; 마지막 diagnostics는 stale 표시하고 자동 기능 비활성 |
+| request timeout | `$/cancelRequest`를 보내고 pending을 error로 완료. completion/hover 2초, definition/references/rename/formatting 5초, initialize 10초 |
+| 새 입력이 도착한 completion/hover | 이전 request를 취소하고 current document version만 적용 |
+| server crash/비정상 exit | stderr와 exit code를 기록하고 현재 버퍼는 보존. 짧은 자동 재시작 backoff 후 문서 재동기화 |
+| 반복 crash | 1s, 2s, 4s, 8s, 최대 30s의 exponential backoff; 5분 안에 3회 실패하면 자동 재시작 중지, 명시적 Restart만 허용 |
+| server stop | `shutdown`→2초 대기→`exit`→필요하면 process tree kill; pending 요청은 cancelled |
+| workspace 밖 URI/path 또는 malformed edit | 해당 result/edit만 거부하고 보안 로그에 남김; 전체 session은 유지 |
+| stale diagnostics/response | 현재 document version보다 낮으면 화면에 적용하지 않음 |
+| `WorkspaceEdit` 중 한 문서 충돌 | 모든 edit를 preflight에서 폐기하고 partial rename/formatting을 하지 않음 |
+
+자동 재시작은 사용자가 이미 활성화한 managed/local/custom server에만 적용하며,
+다운로드나 version 변경을 포함하지 않는다. backoff가 끝난 뒤에도 process가 죽으면
+status banner에서 `Restart server`를 제공한다. 사용자가 LSP를 끄면 process를 즉시
+stop하고 이후 파일 편집은 서버와 무관하게 작동한다.
+
+### Phase 2 테스트와 검증
+
+네트워크와 실제 catalog artifact에 의존하는 테스트를 CI의 기본 경로로 만들지 않는다.
+installer는 고정된 local fixture archive와 fake HTTP response를 사용하고, 실제
+release/package metadata의 검증은 catalog update 작업에서 별도로 수행한다.
+
+- **Rust transport/process**: header와 body가 여러 read로 분할되는 경우, multi-byte
+  UTF-8 body의 byte length, malformed/oversized frame, 여러 request의 response 순서,
+  notification, stderr ring buffer, shutdown timeout, `$/cancelRequest`, crash
+  backoff를 테스트한다. fake LSP child는 stdin/stdout만 사용해 `initialize`,
+  `didOpen`, `didChange`, `publishDiagnostics`, completion을 deterministic하게
+  응답한다.
+- **Rust protocol/document**: capability bool/object와 dynamic registration,
+  unsupported feature fallback, URI round-trip(`C:\\work`, UNC, percent-encoded name),
+  UTF-16 surrogate pair/한글/emoji, UTF-8 byte position, CRLF→LF, monotonic document
+  version, stale response/diagnostic discard를 테스트한다.
+- **Rust security/install**: wrong SHA-256, interrupted download, size limit,
+  absolute/drive/`..` archive names, symlink/hardlink/device entries, symlinked staging
+  path, wrong entrypoint, dependency lock mismatch, atomic index replacement과 crash
+  recovery를 테스트한다. fixture에서 검증 전 entrypoint가 실행되지 않았음을
+  확인한다.
+- **Vitest**: server 미설치/disabled에서 CodeMirror editor·word completion·save가
+  정상인 경우, capability별 UI 노출, diagnostics mapping, completion cancellation,
+  stale response, definition/references workspace filtering, rename/formatting
+  preflight, install confirmation과 version/license/source/SHA 표시를 테스트한다.
+- **Windows 수동 smoke**: 검증된 rust-analyzer와 Node 서버를 사용자가 직접 설치한
+  뒤 실제 Windows path/UTF-16 위치, Rust/TS/Python/JSON·HTML·CSS의 diagnostics와
+  completion/hover/definition/references/rename/formatting, server stop/restart,
+  workspace 밖 definition rejection을 확인한다. 네트워크 없는 CI에서는 이 단계를
+  실행하지 않는다.
+- **저장소 gate**: implementation PR마다 `cargo test`, `cargo check`, `pnpm build`,
+  `pnpm test`와 기존 Windows `cargo test --workspace`를 통과시키며, Phase 2 설계
+  변경 자체는 문서 파일만 포함해야 한다.
+
+### 구현 순서
+
+Phase 1의 두 prerequisite PR( filesystem 제한 순회와 `crates/markdown` 추출)이 먼저
+main에 들어간다는 전제를 유지한다. 이후에도 기능별 PR 하나에 하나의 책임만 둔다.
+
+1. **앱 로컬 경계와 schema** — `apps/code-pad/src-tauri/src/lsp/` 모듈,
+   `LspConfig`/`InstalledServer`/`ServerManifest`, 초기 catalog fixture, UI의
+   metadata/explicit-confirmation 상태를 먼저 만든다. `crates/lsp`는 만들지 않는다.
+   JSON schema 왕복·version mismatch 테스트와 `cargo check`를 통과시킨다.
+2. **stdio transport/process** — no-shell Windows child spawn, Content-Length framing,
+   request map, stderr ring, graceful stop, timeout/cancel, fake-server fixture를
+   구현한다. framing/process Rust tests와 Windows compile check를 통과시킨다.
+3. **URI/position/document store** — workspace boundary, Windows file URI,
+   negotiated position encoding, document version/full/incremental sync, stale result
+   rules를 구현한다. emoji/CRLF/UNC/escape tests를 통과시킨다.
+4. **initialize/capability** — initialize/initialized, static/dynamic capability
+   normalization, status events와 no-server fallback을 붙인다. fake server capability
+   matrix와 `pnpm build`를 통과시킨다.
+5. **기능 adapter** — diagnostics와 completion부터 연결한 뒤 hover, definition,
+   references, rename, formatting 순서로 붙인다. WorkspaceEdit preflight와
+   cancellation을 포함하고 CodeMirror/vitest를 기능별로 추가한다.
+6. **managed installer** — catalog exact manifest, dependency lock, HTTPS allowlist,
+   streaming SHA-256, safe archive extraction, atomic install/index, explicit update/
+   uninstall UI를 구현한다. 실제 네트워크 없이 fixture 보안 tests를 통과한 뒤,
+   Windows에서 위 검증 artifact의 manual install을 수행한다.
+7. **local/custom runtime** — existing path 검사, Node runtime 선택, argv-only
+   custom stdio 등록, source/license/version unknown metadata와 workspace cwd를
+   연결한다. shell injection/path escape 테스트를 통과시킨다.
+8. **복원·운영성** — `lsp/config.json`/`installed.json` 복원, lazy session, crash
+   backoff, status/log UI, stale diagnostics banner를 붙인다. 재시작 중 dirty buffer·
+   undo history가 유지되는 component/integration tests를 통과시킨다.
+9. **최종 검증** — CI 전체 gate와 Windows manual smoke를 실행하고, catalog의
+   version/license/source/digest가 실제 metadata/release asset과 일치하는지 기록한다.
+   이 문서는 구현 PR에서 변경된 command/schema와 함께 동기화한다.
+10. **두 번째 소비자 발생 시에만 추출** — 다른 앱이 같은 LSP transport/client를
+    실제로 import하는 PR이 생긴 때에 한해 `apps/code-pad/.../lsp`의 공통 부분을
+    `crates/lsp`로 옮긴다. 추출 PR에는 두 앱의 tests와 workspace member/path
+    dependency를 포함하며, 그 전에는 선제적으로 공용 crate를 만들지 않는다.
+
+### 의존성 및 공식 사실 확인 기록
+
+#### Phase 2 의존성
+
+- Rust LSP core: `lsp-types`(LSP 3.17 data types), `serde`/`serde_json`, `url`(file URI
+  round-trip), `sha2`(SHA-256), `reqwest`(HTTPS streaming; 기존 workspace의 reqwest
+  사용 패턴과 맞추되 code-pad `Cargo.toml`에 직접 선언), `zip`, `tar`, `flate2`(검증된
+  archive fixture), `tempfile`(test only). async child IO는 Tauri가 제공하는
+  `tauri::async_runtime`를 우선 사용하고, 직접 tokio API가 필요할 때만 `tokio`를
+  직접 의존한다. Windows Job Object와 no-window spawn은 `windows` crate를
+  `cfg(windows)` 명령 계층에만 둔다.
+- Rust protocol reference: [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
+  의 base protocol framing, initialize, text document synchronization, position
+  encoding, WorkspaceEdit 계약을 따른다. 표준에 없는 서버별 request는 catalog
+  adapter로 격리한다.
+- Frontend: 기존 Phase 1의 CodeMirror 직접 import 목록(`codemirror`,
+  `@codemirror/state`, `@codemirror/view`, `@codemirror/commands`,
+  `@codemirror/language`, `@codemirror/search`, `@codemirror/autocomplete`,
+  `@codemirror/lang-*`)과 LSP adapter용 TypeScript types. Tauri event/invoke를
+  직접 호출하는 파일은 `src/api.ts`에 두고 컴포넌트에는 typed wrapper만 노출한다.
+- Managed Node servers: Node는 code-pad에 번들하지 않는다. catalog의 `runtime`
+  조건을 만족하는 시스템 Node 또는 사용자가 고른 Node executable을 사용하고,
+  npm package root와 transitive dependency를 exact lock manifest로 설치한다. npm
+  semver range를 설치 시점에 해석하지 않으며, reviewed lock이 없는 패키지는
+  managed catalog에 넣지 않는다.
+
+#### 공식 사실 확인 기록 (2026-08-12)
+
+다음 명령과 primary source로 catalog 표의 version, license, repository, artifact,
+entrypoint, runtime, checksum을 확인했다. 이는 구현 시 다시 실행해야 하는 갱신
+절차이지, 서버 version을 자동으로 추적하는 런타임 동작이 아니다.
+
+```text
+npm view typescript-language-server@5.3.0 version license repository dist.tarball dist.integrity bin engines --json
+npm view typescript@6.0.3 version license repository dist.tarball dist.integrity engines --json
+npm view basedpyright@1.39.9 version license repository dist.tarball dist.integrity bin engines --json
+npm view vscode-langservers-extracted@4.10.0 version license repository dist.tarball dist.integrity bin engines --json
+gh api repos/rust-lang/rust-analyzer/releases/latest
+```
+
+조회 결과에서 TypeScript server는 `typescript-language-server` bin, `--stdio`, Node
+`>=20`, Apache-2.0 metadata를 제공하고 upstream [README의 Installing/Running
+절](https://github.com/typescript-language-server/typescript-language-server#installing)은
+TypeScript package를 함께 설치하도록 한다. basedpyright npm metadata는
+`basedpyright-langserver`와 `pyright-langserver` 두 bin, Node `>=14.0.0`, MIT를
+제공하며 공식 [language-server 문서](https://docs.basedpyright.com/latest/installation/command-line-and-language-server/)
+와 [IDE 설정 예](https://docs.basedpyright.com/latest/installation/ides/)는
+`basedpyright-langserver --stdio`를 사용한다. vscode-langservers-extracted metadata는
+JSON/HTML/CSS bin과 MIT, 그리고 별도 dependency 목록을 제공하므로 reviewed lock이
+필요하다는 결론을 냈다. rust-analyzer 공식 latest release API는 2026-08-10.1의
+Windows x64 zip asset과 digest를 제공하며, 설치 전에 그 exact asset만 사용한다.
+
+실제 다운로드한 네 개의 root artifact에 대해 SHA-256을 계산한 값은 카탈로그 표에
+기록했다. npm registry가 제공하는 SHA-512 integrity는 보조 검증으로 저장하되,
+installer 계약의 필수 값은 표의 SHA-256이다. source/license/artifact가 나중에
+바뀌면 기존 installed version은 유지하고, 새 manifest와 새 checksum을 검토한
+명시적 update만 허용한다.
+
+#### Phase 1 의존성
 
 - Rust: `encoding_rs = "0.8"`, `chardetng = "1"`, `notify = "8"`(everything-plus의
   `Cargo.toml:25`와 동일 계열 메이저 버전 — 이미 이 저장소 Cargo 워크스페이스에
