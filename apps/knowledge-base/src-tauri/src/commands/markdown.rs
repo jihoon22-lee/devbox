@@ -1,6 +1,6 @@
 use crate::commands::docs::{resolve_root, AppState};
-use crate::core::markdown::{self, ImageResult};
 use crate::core::{frontmatter, store};
+use ::markdown::{self, ImageResult};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde::Serialize;
@@ -58,7 +58,7 @@ pub fn render_markdown(
 
 /// 실제 이미지 로더: `safe_join` 기반 경로 검증 → 크기 검사 → `fs::read` →
 /// 확장자→MIME 추론 → base64 인코딩. 전부 IO/OS 의존이므로 core가 아니라
-/// command 레이어에 둔다(`core/markdown.rs`의 `render`는 이 함수를 클로저로
+/// command 레이어에 둔다(`markdown` crate의 `render`는 이 함수를 클로저로
 /// 주입받을 뿐 직접 알지 못한다).
 fn load_image(state: &AppState, root: &Path, doc_dir: &Path, src: &str) -> ImageResult {
     let rel_path = doc_dir.join(src);
@@ -116,5 +116,21 @@ fn mime_from_ext(path: &Path) -> &'static str {
         "bmp" => "image/bmp",
         "ico" => "image/x-icon",
         _ => "application/octet-stream",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// frontmatter는 앱의 메타데이터 계층에서 분리한 뒤 공용 렌더러에 넘긴다.
+    #[test]
+    fn frontmatter_is_stripped_before_render() {
+        let content = "---\ntitle: Hello\ntags: [rust]\n---\n\n# Body\n";
+        let (_, body) = frontmatter::parse(content);
+        let (html, _) = markdown::render(body, &|_| ImageResult::NotFound);
+        assert!(!html.contains("title: Hello"));
+        assert!(!html.contains("tags:"));
+        assert!(html.contains("<h1>Body</h1>"));
     }
 }

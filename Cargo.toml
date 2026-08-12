@@ -14,6 +14,7 @@ members = [
     "apps/wsl-desktop/src-tauri",
     "apps/devbox-manager/src-tauri",
     "crates/filesystem",
+    "crates/markdown",
     # "crates/process",
     # "crates/wsl",
     # "crates/database",
