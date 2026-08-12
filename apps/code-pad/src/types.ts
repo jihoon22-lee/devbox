@@ -34,6 +34,40 @@ export interface SavedFile {
   durabilityWarning: string | null;
 }
 
+export interface WorkspaceFile {
+  path: string;
+  relativePath: string;
+  size: number;
+}
+
+export interface WorkspaceFiles {
+  files: WorkspaceFile[];
+  truncated: boolean;
+}
+
+export interface FileChangedEvent {
+  path: string;
+  mtimeNanos: string;
+  contentHash: string;
+  size: number;
+}
+
+export interface MarkdownPreviewResponse {
+  kind: "markdown";
+  html: string;
+  mermaid: string[];
+  source?: null;
+}
+
+export interface MermaidPreviewResponse {
+  kind: "mermaid";
+  html?: null;
+  mermaid?: [];
+  source: string;
+}
+
+export type PreviewResponse = MarkdownPreviewResponse | MermaidPreviewResponse;
+
 /** The two editor views are fixed; a third split is deliberately impossible. */
 export type ViewId = 0 | 1;
 export type DocId = string;
@@ -94,6 +128,11 @@ export interface SessionState {
   active_view: ViewId;
   active_doc_by_view: [DocId | null, DocId | null];
   recent_files: string[];
+}
+
+export interface LoadedSession {
+  session: SessionState;
+  persistAllowed: boolean;
 }
 
 export function displayNameForPath(path: string): string {

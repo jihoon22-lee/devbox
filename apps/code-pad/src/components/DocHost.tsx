@@ -9,6 +9,7 @@ interface DocHostProps {
   split: boolean;
   fontSize: number;
   onChange: (docId: DocId, text: string) => void;
+  onCursorChange?: (docId: DocId, cursor: number) => void;
   onFocusDoc: (view: ViewId, docId: DocId) => void;
   onReplaceCommandReady?: (docId: DocId, command: (() => boolean) | null) => void;
 }
@@ -50,6 +51,7 @@ export default function DocHost({
   split,
   fontSize,
   onChange,
+  onCursorChange,
   onFocusDoc,
   onReplaceCommandReady,
 }: DocHostProps) {
@@ -75,6 +77,8 @@ export default function DocHost({
             visible={placement?.style.display !== "none"}
             tabId={tabIdForDoc(doc.id)}
             onChange={(text) => onChange(doc.id, text)}
+            cursor={doc.cursor}
+            onCursorChange={(cursor) => onCursorChange?.(doc.id, cursor)}
             onFocus={() => onFocusDoc(view, doc.id)}
             onReplaceCommandReady={onReplaceCommandReady}
           />

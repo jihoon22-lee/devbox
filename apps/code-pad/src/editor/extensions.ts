@@ -133,6 +133,7 @@ export interface EditorExtensionOptions {
   syntaxHighlightingEnabled: boolean;
   readOnly: boolean;
   onChange: (text: string) => void;
+  onCursorChange?: (position: number) => void;
   compartments?: EditorCompartments;
 }
 
@@ -159,6 +160,7 @@ export function editorExtensions({
   syntaxHighlightingEnabled,
   readOnly,
   onChange,
+  onCursorChange,
   compartments,
 }: EditorExtensionOptions): Extension[] {
   const languageMode = syntaxHighlightingEnabled ? languageExtensionFor(language) : [];
@@ -191,6 +193,12 @@ export function editorExtensions({
         !update.transactions.some((transaction) => transaction.annotation(externalValueSync))
       ) {
         onChange(update.state.doc.toString());
+      }
+      if (
+        update.selectionSet &&
+        !update.transactions.some((transaction) => transaction.annotation(externalValueSync))
+      ) {
+        onCursorChange?.(update.state.selection.main.head);
       }
     }),
     compartments?.language.of(languageMode) ?? languageMode,

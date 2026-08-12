@@ -87,6 +87,52 @@ describe("document registry transitions", () => {
     expect(JSON.stringify(session)).not.toContain("const one");
   });
 
+  it("hydrates only existing documents while preserving exact view coverage", () => {
+    const session = {
+      version: 1 as const,
+      workspace_folder: "/workspace",
+      docs: [
+        { id: "one", path: "/workspace/one.ts", cursor: 4, bookmarks: [] },
+        { id: "missing", path: "/workspace/missing.ts", cursor: 0, bookmarks: [] },
+      ],
+      views: [["missing", "one"], []] as [string[], string[]],
+      active_view: 0 as const,
+      active_doc_by_view: ["one", null] as [string | null, string | null],
+      recent_files: [],
+    };
+    const restored = editorReducer(createInitialEditorState(), {
+      type: "restoreSession",
+      session,
+      docs: [doc("one")],
+    });
+
+    expect(restored.docs.map((item) => item.id)).toEqual(["one"]);
+    expect(restored.views).toEqual([["one"], []]);
+    expect(restored.activeDocByView).toEqual(["one", null]);
+    expect(isEditorStateInvariantValid(restored)).toBe(true);
+  });
+
+  it("moves the active view to the surviving pane when its preferred pane is empty", () => {
+    const session = {
+      version: 1 as const,
+      workspace_folder: null,
+      docs: [{ id: "two", path: "/workspace/two.ts", cursor: 0, bookmarks: [] }],
+      views: [[], ["two"]] as [string[], string[]],
+      active_view: 0 as const,
+      active_doc_by_view: [null, "two"] as [string | null, string | null],
+      recent_files: [],
+    };
+    const restored = editorReducer(createInitialEditorState(), {
+      type: "restoreSession",
+      session,
+      docs: [doc("two")],
+    });
+
+    expect(restored.activeView).toBe(1);
+    expect(restored.activeDocByView).toEqual([null, "two"]);
+    expect(isEditorStateInvariantValid(restored)).toBe(true);
+  });
+
   it("keeps a newer edit dirty while adopting the completed save snapshot", () => {
     let state = withDocs(doc("one"));
     state = editorReducer(state, { type: "setDocText", docId: "one", text: "first save\n" });

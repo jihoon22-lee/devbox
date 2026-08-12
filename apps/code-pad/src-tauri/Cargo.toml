@@ -19,8 +19,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 encoding_rs = "0.8"
 chardetng = "1"
+base64 = "0.22"
 sha2 = "0.11.0"
 url = "2"
+notify = "8.2.0"
+devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+devbox-markdown = { package = "markdown", path = "../../../crates/markdown" }
 
 [dev-dependencies]
 tempfile = "3"
