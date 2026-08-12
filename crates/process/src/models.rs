@@ -1,19 +1,22 @@
+use crate::ProcessId;
 use serde::Serialize;
 
-/// 네트워크 포트 하나를 나타내는 구조체.
-/// Rust 커맨드와 프론트(serde) 사이에서 그대로 JSON으로 직렬화된다.
+/// A single network port entry returned by a netstat-style data source.
+///
+/// This value contains only parsed data. It intentionally does not contain
+/// UI-specific process details or any platform command state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PortInfo {
-    /// 프로토콜 (예: "TCP", "TCP6", "UDP")
+    /// Protocol (for example, `TCP`, `TCP6`, or `UDP`).
     pub proto: String,
-    /// 로컬 주소 문자열 (예: "0.0.0.0:3000", "[::1]:3000")
+    /// Local address string (for example, `0.0.0.0:3000` or `[::1]:3000`).
     pub local_addr: String,
-    /// 파싱된 포트 번호 (추출 불가 시 0)
+    /// Parsed port number; `0` means the address did not contain a port.
     pub port: u16,
-    /// 연결 상태 (TCP: LISTENING/ESTABLISHED 등, UDP는 빈 문자열)
+    /// Connection state (`LISTENING`, `ESTABLISHED`, or empty for UDP).
     pub state: String,
-    /// 소유 프로세스 PID (없으면 None)
-    pub pid: Option<u32>,
+    /// Owning process ID, if the source provided one.
+    pub pid: Option<ProcessId>,
 }
 
 #[cfg(test)]

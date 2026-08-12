@@ -1,8 +1,7 @@
 #[cfg(target_os = "windows")]
 use std::process::Command;
 
-use crate::core::netstat::parse_netstat_output;
-use crate::core::PortInfo;
+use devbox_process::{parse_netstat_output, PortInfo, ProcessSnapshot};
 use serde::Serialize;
 use sysinfo::{Pid, System};
 use tauri_plugin_opener::OpenerExt;
@@ -27,7 +26,7 @@ pub struct PortRow {
 
 /// `netstat`로 현재 열린 포트 목록을 조회한다.
 ///
-/// Windows: `netstat -ano` (PID 포함). 파싱은 core가 담당.
+/// Windows: `netstat -ano` (PID 포함). 파싱은 공용 process crate가 담당.
 /// 그 외 OS: 빈 목록을 반환한다 (이 앱의 타깃은 Windows이며, 타 OS는 컴파일 확인용).
 #[tauri::command]
 pub fn list_ports() -> Result<Vec<PortRow>, String> {
@@ -35,15 +34,13 @@ pub fn list_ports() -> Result<Vec<PortRow>, String> {
     let ports = parse_netstat_output(&output);
 
     // PID → 프로세스명 매핑을 위한 스냅샷
-    let system = System::new_all();
+    let process_snapshot = ProcessSnapshot::new();
     let rows = ports
         .into_iter()
         .map(|port| {
-            let process_name = port.pid.and_then(|pid| {
-                system
-                    .process(Pid::from_u32(pid))
-                    .map(|p| p.name().to_string_lossy().into_owned())
-            });
+            let process_name = port
+                .pid
+                .and_then(|pid| process_snapshot.lookup(pid).map(|summary| summary.name));
             PortRow { port, process_name }
         })
         .collect();

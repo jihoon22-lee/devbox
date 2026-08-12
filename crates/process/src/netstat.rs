@@ -1,20 +1,9 @@
-use crate::core::models::PortInfo;
+use crate::PortInfo;
 
-/// `netstat -ano` (Windows) 출력을 파싱한다.
+/// Parses `netstat -ano` output.
 ///
-/// 파싱만 담당하는 순수 함수라서 OS 의존성이 없어 어느 환경에서든 유닛 테스트할 수 있다.
-/// 실제 실행은 src-tauri 쪽 command에서 `netstat -ano`를 호출하고 이 함수에 넘긴다.
-///
-/// 예상 형식 (헤더/빈 줄은 건너뜀):
-/// ```text
-/// Active Connections
-///
-///   Proto  Local Address          Foreign Address        State           PID
-///   TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1168
-///   TCP    [::1]:3000             [::]:0                 LISTENING       18231
-///   UDP    0.0.0.0:5353           *:*                                    1829
-///   TCP    10.0.0.5:50261         52.142.120.23:443      ESTABLISHED     1044
-/// ```
+/// Parsing is deliberately separate from executing `netstat`: callers own the
+/// platform-specific command and pass its text to this pure function.
 pub fn parse_netstat_output(input: &str) -> Vec<PortInfo> {
     let mut out = Vec::new();
     for line in input.lines() {
@@ -39,10 +28,10 @@ pub fn parse_netstat_output(input: &str) -> Vec<PortInfo> {
 
         let local_addr = fields[1].to_string();
         let state = if proto.starts_with("TCP") {
-            // TCP: Proto Local Foreign State PID (5필드)
+            // TCP: Proto Local Foreign State PID (5 fields)
             fields.get(3).map(|s| s.to_string()).unwrap_or_default()
         } else {
-            // UDP: Proto Local Foreign PID (4필드, 상태 없음)
+            // UDP: Proto Local Foreign PID (4 fields, no state)
             String::new()
         };
         let pid = fields.last().and_then(|s| s.parse::<u32>().ok());
@@ -58,13 +47,12 @@ pub fn parse_netstat_output(input: &str) -> Vec<PortInfo> {
     out
 }
 
-/// 주소 문자열에서 포트 번호를 추출한다.
-/// - `0.0.0.0:3000` → 3000
-/// - `[::1]:3000` → 3000
-/// - `*:*` → 0 (추출 불가)
+/// Extracts a port number from an address string.
+///
+/// Returns `0` when the address does not contain a parseable port.
 pub fn extract_port(addr: &str) -> u16 {
     let port_str = if let Some(close) = addr.find(']') {
-        // IPv6: "[...]:port" 에서 ']' 뒤의 ":port"만 취한다
+        // IPv6: take only the ":port" after the closing bracket.
         addr[close + 1..].trim_start_matches(':')
     } else {
         match addr.rfind(':') {
