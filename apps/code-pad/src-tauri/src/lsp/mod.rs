@@ -5,6 +5,8 @@
 //! parsing or child lifecycle policy behind catalog-specific types.
 
 pub mod catalog;
+pub mod documents;
+pub mod positions;
 pub mod process;
 pub mod transport;
 
@@ -14,6 +16,14 @@ pub use catalog::{
     RuntimeSpec, SchemaError, ServerCatalog, ServerManifest, ServerRef, UpdatePolicy,
     ValidationError, LSP_CONFIG_SCHEMA_VERSION, LSP_INSTALLED_SCHEMA_VERSION,
     WINDOWS_X86_64_PLATFORM,
+};
+pub use documents::{
+    DidChange, DidClose, DidOpen, DidSave, DocumentError, DocumentSnapshot, DocumentStore,
+    RequestSnapshot, SyncKind, TextChange, WorkspaceRoot,
+};
+pub use positions::{
+    offset_to_position, position_to_offset, position_to_offset_clamped, LspPosition, LspRange,
+    PositionEncoding, PositionError,
 };
 pub use process::{
     BoundedStderr, IncomingMessage, LspProcess, ProcessError, ProcessSpec, ProcessState,
