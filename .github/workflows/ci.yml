@@ -31,6 +31,9 @@ jobs:
       - name: Build frontends
         run: pnpm build
 
+      - name: Test frontends
+        run: pnpm test
+
       - name: Type check
         if: ${{ hashFiles('apps/*/tsconfig.json', 'packages/*/tsconfig.json') != '' }}
         run: pnpm -r exec tsc --noEmit

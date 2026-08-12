@@ -15,7 +15,7 @@ const STATE_FILTERS: { value: StateFilter; label: string }[] = [
   { value: "established", label: "ESTABLISHED" },
 ];
 
-function matches(row: PortRow, query: string): boolean {
+export function matches(row: PortRow, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   return (
