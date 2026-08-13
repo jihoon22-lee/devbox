@@ -156,6 +156,30 @@ pub struct ServiceInstance {
     pub updated_at: i64,
 }
 
+/// Redacted read DTO for the service-instance UI boundary. Ownership tokens
+/// and internal identity never round-trip to the frontend.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceInstanceView {
+    pub job_id: String,
+    pub generation: i64,
+    pub state: ServiceInstanceState,
+    pub consecutive_failures: i64,
+    pub next_retry_at: Option<i64>,
+}
+
+impl ServiceInstanceView {
+    pub fn from_instance(instance: &ServiceInstance) -> Self {
+        Self {
+            job_id: instance.job_id.clone(),
+            generation: instance.generation,
+            state: instance.state,
+            consecutive_failures: instance.consecutive_failures,
+            next_retry_at: instance.next_retry_at,
+        }
+    }
+}
+
 impl RunStatus {
     pub const fn as_str(self) -> &'static str {
         match self {

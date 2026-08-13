@@ -1,5 +1,6 @@
 use crate::core::models::{
     EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, RunView, ServiceInput,
+    ServiceInstanceView,
 };
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
 use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse};
@@ -198,6 +199,65 @@ pub fn update_service(
 #[tauri::command]
 pub fn delete_service(id: String, state: State<'_, Arc<DatabaseState>>) -> Result<bool, String> {
     state.delete_service(&id).map_err(storage_command_error)
+}
+
+#[tauri::command]
+pub fn get_service_instance(
+    id: String,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<Option<ServiceInstanceView>, String> {
+    state
+        .get_service_instance(&id)
+        .map(|instance| instance.as_ref().map(ServiceInstanceView::from_instance))
+        .map_err(|_| "run-storage-failed".to_string())
+}
+
+fn service_command_error(error: SchedulerError) -> String {
+    match error {
+        SchedulerError::Adapter { source, .. } => source.message,
+        SchedulerError::Storage(StorageError::NotFound(_)) => "service-not-found".to_string(),
+        SchedulerError::Storage(_) => "run-storage-failed".to_string(),
+        SchedulerError::Cron(_) | SchedulerError::Join(_) => "scheduler-unavailable".to_string(),
+    }
+}
+
+#[tauri::command]
+pub async fn start_service(
+    id: String,
+    state: State<'_, Arc<RuntimeState>>,
+) -> Result<ServiceInstanceView, String> {
+    state
+        .coordinator()
+        .start_service_at(&id, current_epoch_millis())
+        .await
+        .map(|instance| ServiceInstanceView::from_instance(&instance))
+        .map_err(service_command_error)
+}
+
+#[tauri::command]
+pub async fn stop_service(
+    id: String,
+    state: State<'_, Arc<RuntimeState>>,
+) -> Result<Option<ServiceInstanceView>, String> {
+    state
+        .coordinator()
+        .stop_service_at(&id, current_epoch_millis())
+        .await
+        .map(|instance| instance.as_ref().map(ServiceInstanceView::from_instance))
+        .map_err(service_command_error)
+}
+
+#[tauri::command]
+pub async fn restart_service(
+    id: String,
+    state: State<'_, Arc<RuntimeState>>,
+) -> Result<ServiceInstanceView, String> {
+    state
+        .coordinator()
+        .restart_service_at(&id, current_epoch_millis())
+        .await
+        .map(|instance| ServiceInstanceView::from_instance(&instance))
+        .map_err(service_command_error)
 }
 
 #[tauri::command]

@@ -285,6 +285,13 @@ impl DatabaseState {
         fetch_phase1_job(&connection, id).map_err(StorageError::from)
     }
 
+    /// Kind-agnostic row lookup for the execution layer, which spawns runs for
+    /// both jobs and services.
+    pub fn get_run_job(&self, id: &str) -> Result<Option<Job>, StorageError> {
+        let connection = self.lock()?;
+        fetch_job(&connection, id).map_err(StorageError::from)
+    }
+
     /// Return ciphertext only for the execution layer. The normal read DTO
     /// deliberately exposes only `env_configured`.
     pub fn get_job_environment_ciphertext(
@@ -480,6 +487,145 @@ impl DatabaseState {
         fetch_service_instance(&connection, service_id).map_err(StorageError::from)
     }
 
+    /// Claim a stopped service for a fresh generation. Only a `stopped`
+    /// instance transitions; the generation is bumped in the same statement so
+    /// a concurrent start/restart always observes a distinct generation.
+    pub fn claim_service_start(
+        &self,
+        service_id: &str,
+        owner_instance_id: &str,
+        attempt_token: &str,
+        now: i64,
+    ) -> Result<Option<ServiceInstance>, StorageError> {
+        validate_token("owner_instance_id", owner_instance_id)?;
+        validate_token("attempt_token", attempt_token)?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = transaction.execute(
+            "UPDATE service_instances
+             SET state = 'starting', generation = generation + 1,
+                 owner_instance_id = ?, attempt_token = ?, active_run_id = NULL,
+                 next_retry_at = NULL, consecutive_failures = 0, updated_at = ?
+             WHERE job_id = ? AND state = 'stopped'",
+            params![owner_instance_id, attempt_token, now, service_id],
+        )?;
+        let instance = if changed == 1 {
+            fetch_service_instance(&transaction, service_id)?
+        } else {
+            None
+        };
+        transaction.commit()?;
+        Ok(instance)
+    }
+
+    /// Record the active run for a claimed generation once the process handshake
+    /// has succeeded. The generation/owner/token CAS keeps a stale attempt from
+    /// linking a run into a newer generation.
+    pub fn mark_service_running(
+        &self,
+        service_id: &str,
+        generation: i64,
+        owner_instance_id: &str,
+        attempt_token: &str,
+        run_id: &str,
+        now: i64,
+    ) -> Result<bool, StorageError> {
+        validate_token("owner_instance_id", owner_instance_id)?;
+        validate_token("attempt_token", attempt_token)?;
+        validate_token("run_id", run_id)?;
+        let connection = self.lock_mut()?;
+        let changed = connection.execute(
+            "UPDATE service_instances
+             SET state = 'running', active_run_id = ?, updated_at = ?
+             WHERE job_id = ? AND generation = ? AND state = 'starting'
+               AND owner_instance_id = ? AND attempt_token = ?",
+            params![
+                run_id,
+                now,
+                service_id,
+                generation,
+                owner_instance_id,
+                attempt_token
+            ],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// Transition a running/starting service into `stopping` before the
+    /// termination boundary. Returns the instance when the service was active.
+    pub fn begin_service_stop(
+        &self,
+        service_id: &str,
+        now: i64,
+    ) -> Result<Option<ServiceInstance>, StorageError> {
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = transaction.execute(
+            "UPDATE service_instances SET state = 'stopping', updated_at = ?
+             WHERE job_id = ? AND state IN ('running', 'starting')",
+            params![now, service_id],
+        )?;
+        let instance = if changed == 1 {
+            fetch_service_instance(&transaction, service_id)?
+        } else {
+            None
+        };
+        transaction.commit()?;
+        Ok(instance)
+    }
+
+    /// Finalize a service back to `stopped` after its run has terminated. The
+    /// generation CAS prevents a stop from an older generation from clobbering
+    /// a newer start.
+    pub fn mark_service_stopped(
+        &self,
+        service_id: &str,
+        generation: i64,
+        now: i64,
+    ) -> Result<bool, StorageError> {
+        let connection = self.lock_mut()?;
+        let changed = connection.execute(
+            "UPDATE service_instances
+             SET state = 'stopped', active_run_id = NULL,
+                 owner_instance_id = NULL, attempt_token = NULL, updated_at = ?
+             WHERE job_id = ? AND generation = ?",
+            params![now, service_id, generation],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// Terminal-hook variant keyed by run id: mark a service stopped when its
+    /// active run reached a terminal state, regardless of the stop origin.
+    pub fn mark_service_stopped_for_run(
+        &self,
+        run_id: &str,
+        now: i64,
+    ) -> Result<bool, StorageError> {
+        validate_token("run_id", run_id)?;
+        let connection = self.lock_mut()?;
+        let changed = connection.execute(
+            "UPDATE service_instances
+             SET state = 'stopped', active_run_id = NULL,
+                 owner_instance_id = NULL, attempt_token = NULL, updated_at = ?
+             WHERE active_run_id = ? AND state IN ('running', 'stopping')",
+            params![now, run_id],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// Services marked to start with the daemon. Only `auto_start` services are
+    /// returned; the caller claims each instance before spawning.
+    pub fn list_auto_start_services(&self) -> Result<Vec<Job>, StorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT {JOB_COLUMNS} FROM jobs WHERE kind = 'service' AND auto_start = 1
+             ORDER BY name COLLATE NOCASE, id"
+        ))?;
+        let rows = statement.query_map([], row_to_job)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(StorageError::from)
+    }
+
     pub fn update_job(&self, id: &str, input: JobInput) -> Result<Job, StorageError> {
         self.update_job_at(id, input, current_epoch_millis())
     }
@@ -612,6 +758,27 @@ impl DatabaseState {
         )?;
         let run = fetch_run(&transaction, &id)?
             .ok_or_else(|| StorageError::NotFound(format!("newly created run {id}")))?;
+        transaction.commit()?;
+        Ok(run)
+    }
+
+    /// Create a manual queued run for a service. Services bypass the Phase 1
+    /// overlap policy; their single-instance claim is owned by
+    /// `service_instances` instead.
+    pub fn create_service_run_at(&self, service_id: &str, now: i64) -> Result<Run, StorageError> {
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_service(&transaction, service_id)?;
+        let sequence = allocate_queue_sequence(&transaction, service_id)?;
+        let id = Uuid::new_v4().to_string();
+        transaction.execute(
+            "INSERT INTO runs (id, job_id, scheduled_at, occurrence_wall_key,
+                queue_sequence, status, created_at)
+             VALUES (?, ?, NULL, NULL, ?, 'queued', ?)",
+            params![id, service_id, sequence, now],
+        )?;
+        let run = fetch_run(&transaction, &id)?
+            .ok_or_else(|| StorageError::NotFound(format!("newly created service run {id}")))?;
         transaction.commit()?;
         Ok(run)
     }
@@ -1536,7 +1703,7 @@ fn allocate_queue_sequence(
     job_id: &str,
 ) -> Result<i64, StorageError> {
     let current: i64 = transaction.query_row(
-        "SELECT next_queue_sequence FROM jobs WHERE id = ? AND kind = 'job'",
+        "SELECT next_queue_sequence FROM jobs WHERE id = ?",
         [job_id],
         |row| row.get(0),
     )?;
@@ -1544,7 +1711,7 @@ fn allocate_queue_sequence(
         .checked_add(1)
         .ok_or_else(|| StorageError::Validation("queue sequence overflow".to_string()))?;
     transaction.execute(
-        "UPDATE jobs SET next_queue_sequence = ? WHERE id = ? AND kind = 'job'",
+        "UPDATE jobs SET next_queue_sequence = ? WHERE id = ?",
         params![sequence, job_id],
     )?;
     Ok(sequence)
