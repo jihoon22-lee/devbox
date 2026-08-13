@@ -192,4 +192,33 @@ describe("document registry transitions", () => {
     expect(removed.activeDocByView[0]).toBe("two");
     expect(isEditorStateInvariantValid(removed)).toBe(true);
   });
+
+  it("marks encoding and line-ending conversions dirty without changing the LF buffer", () => {
+    let state = withDocs(doc("one"));
+    const originalText = state.docs[0].text;
+    const originalRevision = state.docs[0].revision;
+    state = editorReducer(state, {
+      type: "setEncoding",
+      docId: "one",
+      encoding: { encodingKind: "cp949", bom: false },
+    });
+    state = editorReducer(state, { type: "setLineEnding", docId: "one", lineEnding: "crlf" });
+
+    expect(state.docs[0].text).toBe(originalText);
+    expect(state.docs[0].encoding).toEqual({ encodingKind: "cp949", bom: false });
+    expect(state.docs[0].lineEnding).toBe("crlf");
+    expect(state.docs[0].dirty).toBe(true);
+    expect(state.docs[0].revision).toBe(originalRevision + 2);
+  });
+
+  it("keeps persisted bookmark lines unique and within the current buffer", () => {
+    let state = withDocs(doc("one"));
+    state = editorReducer(state, {
+      type: "setBookmarks",
+      docId: "one",
+      bookmarks: [99, 1, 0, 1],
+    });
+    expect(state.docs[0].bookmarks).toEqual([0, 1]);
+    expect(stateToSession(state).docs[0].bookmarks).toEqual([0, 1]);
+  });
 });

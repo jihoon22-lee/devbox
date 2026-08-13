@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { loadSession, openFile, saveFile, unwatchFile, watchFile } from "./api";
+import { loadSession, openFile, saveFile, unwatchFile, validateEncoding, watchFile } from "./api";
 
 vi.mock("./components/DocHost", () => ({
   default: (props: {
@@ -38,6 +38,7 @@ vi.mock("./components/DocHost", () => ({
 vi.mock("./api", () => ({
   openFile: vi.fn(),
   saveFile: vi.fn(),
+  validateEncoding: vi.fn().mockResolvedValue(undefined),
   loadSession: vi.fn().mockResolvedValue({
     session: {
       version: 1,
@@ -60,6 +61,7 @@ vi.mock("./api", () => ({
 
 const openFileMock = vi.mocked(openFile);
 const saveFileMock = vi.mocked(saveFile);
+const validateEncodingMock = vi.mocked(validateEncoding);
 const loadSessionMock = vi.mocked(loadSession);
 const watchFileMock = vi.mocked(watchFile);
 const unwatchFileMock = vi.mocked(unwatchFile);
@@ -102,6 +104,7 @@ function savedFile() {
 beforeEach(() => {
   openFileMock.mockReset();
   saveFileMock.mockReset();
+  validateEncodingMock.mockReset().mockResolvedValue(undefined);
   loadSessionMock.mockReset().mockResolvedValue({
     session: {
       version: 1,
@@ -209,5 +212,36 @@ describe("App editor shell operations", () => {
     fireEvent.click(rendered.getByRole("button", { name: "/tmp/one.ts 닫기" }));
     fireEvent.click(rendered.getByRole("button", { name: "변경 내용 버리고 닫기" }));
     await waitFor(() => expect(rendered.queryByRole("tab", { name: /one\.ts/ })).toBeNull());
+  });
+
+  it("guards explicit encoding reopen behind the dirty-choice dialog", async () => {
+    const rendered = await openOne();
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+    const reopen = rendered.getByRole("combobox", { name: "인코딩 다시 열기" });
+    fireEvent.change(reopen, { target: { value: "utf16-le" } });
+
+    expect(rendered.getByRole("dialog", { name: "인코딩 다시 열기" })).toBeTruthy();
+    expect(openFileMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(rendered.getByRole("button", { name: "취소" }));
+    expect(rendered.queryByRole("dialog", { name: "인코딩 다시 열기" })).toBeNull();
+
+    fireEvent.change(reopen, { target: { value: "utf16-le" } });
+    openFileMock.mockResolvedValue({ ...openedFile(), encoding: { encodingKind: "utf16Le", bom: false } });
+    fireEvent.click(rendered.getByRole("button", { name: "변경 내용 버리고 다시 열기" }));
+    await waitFor(() => expect(openFileMock).toHaveBeenCalledTimes(2));
+    expect(openFileMock.mock.calls[1][1]).toEqual({ encodingKind: "utf16Le", bom: false });
+  });
+
+  it("validates an encoding conversion before changing save metadata", async () => {
+    const rendered = await openOne();
+    const conversion = rendered.getByRole("combobox", { name: "저장 인코딩" });
+    fireEvent.change(conversion, { target: { value: "cp949" } });
+    await waitFor(() => expect(validateEncodingMock).toHaveBeenCalledWith(
+      "before",
+      { encodingKind: "cp949", bom: false },
+    ));
+    expect((rendered.getByRole("combobox", { name: "줄바꿈 변환" }) as HTMLSelectElement).value).toBe("lf");
+    fireEvent.change(rendered.getByRole("combobox", { name: "줄바꿈 변환" }), { target: { value: "crlf" } });
+    expect((rendered.getByRole("combobox", { name: "줄바꿈 변환" }) as HTMLSelectElement).value).toBe("crlf");
   });
 });

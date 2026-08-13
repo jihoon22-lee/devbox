@@ -38,6 +38,10 @@ export function saveFile(
   });
 }
 
+export function validateEncoding(text: string, encoding: Encoding): Promise<void> {
+  return invoke<void>("validate_encoding", { request: { text, encoding } });
+}
+
 export function listWorkspaceFiles(path: string): Promise<WorkspaceFiles> {
   return invoke<WorkspaceFiles>("list_workspace_files", { path });
 }

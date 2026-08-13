@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { tabIdForDoc, type Doc, type DocId, type ViewId } from "../types";
 import CodeEditor from "../editor/CodeEditor";
+import type { BookmarkCommands } from "../editor/bookmarks";
 
 interface DocHostProps {
   docs: Doc[];
@@ -10,8 +11,10 @@ interface DocHostProps {
   fontSize: number;
   onChange: (docId: DocId, text: string) => void;
   onCursorChange?: (docId: DocId, cursor: number) => void;
+  onBookmarksChange?: (docId: DocId, bookmarks: number[]) => void;
   onFocusDoc: (view: ViewId, docId: DocId) => void;
   onReplaceCommandReady?: (docId: DocId, command: (() => boolean) | null) => void;
+  onBookmarkCommandsReady?: (docId: DocId, commands: BookmarkCommands | null) => void;
 }
 
 function placementForDoc(
@@ -52,8 +55,10 @@ export default function DocHost({
   fontSize,
   onChange,
   onCursorChange,
+  onBookmarksChange,
   onFocusDoc,
   onReplaceCommandReady,
+  onBookmarkCommandsReady,
 }: DocHostProps) {
   return (
     <div
@@ -78,9 +83,12 @@ export default function DocHost({
             tabId={tabIdForDoc(doc.id)}
             onChange={(text) => onChange(doc.id, text)}
             cursor={doc.cursor}
+            bookmarks={doc.bookmarks}
             onCursorChange={(cursor) => onCursorChange?.(doc.id, cursor)}
+            onBookmarksChange={(bookmarks) => onBookmarksChange?.(doc.id, bookmarks)}
             onFocus={() => onFocusDoc(view, doc.id)}
             onReplaceCommandReady={onReplaceCommandReady}
+            onBookmarkCommandsReady={onBookmarkCommandsReady}
           />
         );
       })}

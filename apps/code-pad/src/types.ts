@@ -93,7 +93,7 @@ export interface Doc {
   dirty: boolean;
   /** Incremented for each local buffer change; used to match an in-flight save. */
   revision: number;
-  /** Session-compatible cursor and bookmark metadata. Bookmarks are not edited in Phase 1. */
+  /** Session-compatible cursor and bookmark metadata. */
   cursor: number;
   bookmarks: number[];
 }

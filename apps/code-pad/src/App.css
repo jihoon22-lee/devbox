@@ -365,6 +365,27 @@ h1 {
   background: #131923;
 }
 
+.cm-bookmark-gutter {
+  width: 16px;
+  border-right: 0;
+  color: #e9b84a;
+  background: #131923;
+}
+
+.cm-bookmark-gutter .cm-gutterElement {
+  display: grid;
+  width: 16px;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+
+.cm-bookmark-marker-dot {
+  color: #e9b84a;
+  font-size: 10px;
+  line-height: 1;
+}
+
 .cm-activeLine,
 .cm-activeLineGutter {
   background: #1a2432;
@@ -402,6 +423,27 @@ h1 {
   overflow: hidden;
   color: #6f8198;
   text-overflow: ellipsis;
+}
+
+.status-control select {
+  max-width: 118px;
+  padding: 2px 4px;
+  border: 1px solid #344153;
+  border-radius: 3px;
+  color: #b8c8dc;
+  background: #10161f;
+  font-size: 10px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .scope-note {

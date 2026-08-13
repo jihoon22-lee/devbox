@@ -1,4 +1,6 @@
 import type { Doc, DocId, EditorState, SessionState, ViewId } from "../types";
+import { normalizeBookmarkLines } from "../editor/bookmarks";
+import type { Encoding, LineEnding } from "../types";
 
 export type EditorAction =
   | { type: "addDoc"; doc: Doc; view?: ViewId }
@@ -11,6 +13,8 @@ export type EditorAction =
   | { type: "replaceDoc"; doc: Doc }
   | { type: "setCursor"; docId: DocId; cursor: number }
   | { type: "setBookmarks"; docId: DocId; bookmarks: number[] }
+  | { type: "setEncoding"; docId: DocId; encoding: Encoding }
+  | { type: "setLineEnding"; docId: DocId; lineEnding: LineEnding }
   | { type: "setWorkspace"; workspaceFolder: string | null }
   | {
       type: "saveDoc";
@@ -344,7 +348,11 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
             ...state,
             docs: state.docs.map((doc) =>
               doc.id === action.doc.id
-                ? { ...action.doc, cursor: Math.min(action.doc.cursor, action.doc.text.length) }
+                ? {
+                    ...action.doc,
+                    cursor: Math.min(Math.max(0, action.doc.cursor), action.doc.text.length),
+                    bookmarks: normalizeBookmarkLines(action.doc.text, action.doc.bookmarks),
+                  }
                 : doc,
             ),
           }
@@ -368,7 +376,32 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
             ...state,
             docs: state.docs.map((doc) =>
               doc.id === action.docId
-                ? { ...doc, bookmarks: Array.from(new Set(action.bookmarks)).sort((a, b) => a - b) }
+                ? { ...doc, bookmarks: normalizeBookmarkLines(doc.text, action.bookmarks) }
+                : doc,
+            ),
+          }
+        : state;
+
+    case "setEncoding":
+      return state.docs.some((doc) => doc.id === action.docId)
+        ? {
+            ...state,
+            docs: state.docs.map((doc) =>
+              doc.id === action.docId &&
+              (doc.encoding.encodingKind !== action.encoding.encodingKind || doc.encoding.bom !== action.encoding.bom)
+                ? { ...doc, encoding: action.encoding, dirty: true, revision: (doc.revision ?? 0) + 1 }
+                : doc,
+            ),
+          }
+        : state;
+
+    case "setLineEnding":
+      return state.docs.some((doc) => doc.id === action.docId)
+        ? {
+            ...state,
+            docs: state.docs.map((doc) =>
+              doc.id === action.docId && doc.lineEnding !== action.lineEnding
+                ? { ...doc, lineEnding: action.lineEnding, dirty: true, revision: (doc.revision ?? 0) + 1 }
                 : doc,
             ),
           }
