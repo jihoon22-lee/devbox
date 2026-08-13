@@ -528,6 +528,7 @@ describe("LspControlPanel", () => {
       (rendered.getByRole("option", { name: "설치된 관리형 서버" }) as HTMLOptionElement).disabled,
     ).toBe(false));
     const executable = rendered.getByLabelText("실행 파일 절대 경로") as HTMLInputElement;
+    await waitFor(() => expect(executable.disabled).toBe(false));
     fireEvent.change(executable, { target: { value: "C:\\local\\server.exe" } });
     fireEvent.click(rendered.getByRole("button", { name: "제거" }));
     fireEvent.click(await rendered.findByRole("button", { name: "제거 확인" }));
