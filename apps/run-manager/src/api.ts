@@ -7,6 +7,7 @@ import type {
   LogStream,
   Run,
   RuntimeStatus,
+  StartupShortcutStatus,
   TailResponse,
 } from "./types";
 
@@ -33,6 +34,22 @@ export function hideMainWindow(): Promise<void> {
 export function quitApp(): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   return invoke<void>("quit_app");
+}
+
+export function loadStartupShortcutStatus(): Promise<StartupShortcutStatus> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      supported: false,
+      enabled: false,
+      shortcutPath: "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Run Manager.lnk",
+    });
+  }
+  return invoke<StartupShortcutStatus>("startup_shortcut_status");
+}
+
+export function setStartupShortcutEnabled(enabled: boolean): Promise<StartupShortcutStatus> {
+  if (!isTauri()) return loadStartupShortcutStatus();
+  return invoke<StartupShortcutStatus>("set_startup_shortcut_enabled", { enabled });
 }
 
 export function listJobs(): Promise<Job[]> {

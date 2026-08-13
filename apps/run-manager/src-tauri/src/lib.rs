@@ -42,6 +42,8 @@ pub fn run() {
             commands::show_main_window,
             commands::hide_main_window,
             commands::quit_app,
+            commands::startup_shortcut_status,
+            commands::set_startup_shortcut_enabled,
             commands::list_jobs,
             commands::get_job,
             commands::create_job,

@@ -5,6 +5,12 @@ export interface RuntimeStatus {
   databasePath: string;
 }
 
+export interface StartupShortcutStatus {
+  supported: boolean;
+  enabled: boolean;
+  shortcutPath: string;
+}
+
 export type TargetKind = "windows" | "wsl";
 export type OverlapPolicy = "skip" | "queue" | "kill-previous";
 export type RunStatus =
