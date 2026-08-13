@@ -1542,6 +1542,11 @@ mod tests {
                 command: None,
             }],
         );
+        // The installer hands the launch boundary its canonical, process-owned
+        // root. Windows temp directories may otherwise use an 8.3 alias while
+        // `fs::canonicalize` returns the long `\\?\` spelling, which correctly
+        // fails the identity check below.
+        let installed = fs::canonicalize(installed).unwrap();
         let resolved = RuntimeResolver::with_path("")
             .resolve_managed(&manifest, "rust", &installed, None, &workspace)
             .await
