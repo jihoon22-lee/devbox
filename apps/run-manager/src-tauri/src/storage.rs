@@ -1,8 +1,8 @@
 use crate::core::models::{
     ClaimResult, EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, JobKind,
-    NewNotification, NotificationOutboxItem, OverlapPolicy, RestartPolicy, Run, RunStatus,
-    ServiceInput, ServiceInstance, ServiceInstanceState, TargetKind,
-    DEFAULT_SERVICE_START_GRACE_MS,
+    NewNotification, NotificationOutboxItem, OverlapPolicy, RestartPolicy, Run,
+    RunExecutionMetadata, RunStatus, ServiceInput, ServiceInstance, ServiceInstanceState,
+    TargetKind, DEFAULT_SERVICE_START_GRACE_MS,
 };
 use crate::core::policies::{
     decide_overlap, OverlapAction, OverlapPolicyInput, RunPolicySnapshot, StopAction,
@@ -748,14 +748,82 @@ impl DatabaseState {
         attempt_token: &str,
         started_at: i64,
     ) -> Result<bool, StorageError> {
+        self.mark_run_running_with_metadata(
+            run_id,
+            owner_instance_id,
+            attempt_token,
+            started_at,
+            &RunExecutionMetadata::default(),
+        )
+    }
+
+    /// Persist the app-owned log directory while a run is still `starting`.
+    /// This CAS is deliberately separate from process identity because a
+    /// failed spawn still has useful lossless logs (for example, adapter
+    /// diagnostics) but must never be marked running.
+    pub fn mark_run_log_dir(
+        &self,
+        run_id: &str,
+        owner_instance_id: &str,
+        attempt_token: &str,
+        log_dir: &str,
+    ) -> Result<bool, StorageError> {
         validate_token("owner_instance_id", owner_instance_id)?;
         validate_token("attempt_token", attempt_token)?;
+        validate_optional_text("log_dir", Some(log_dir))?;
+        if Path::new(log_dir).is_absolute()
+            || log_dir.contains("..")
+            || !log_dir.starts_with("logs/runs/")
+        {
+            return Err(StorageError::Validation(
+                "log_dir must be an app-owned relative path".to_string(),
+            ));
+        }
         let connection = self.lock_mut()?;
         let changed = connection.execute(
-            "UPDATE runs SET status = 'running', started_at = ?
+            "UPDATE runs SET log_dir = ?, logs_deleted_at = NULL
              WHERE id = ? AND status = 'starting'
                AND owner_instance_id = ? AND attempt_token = ?",
-            params![started_at, run_id, owner_instance_id, attempt_token],
+            params![log_dir, run_id, owner_instance_id, attempt_token],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// Complete the owner/attempt CAS after the platform handshake and log
+    /// setup have succeeded. All identity columns are written together so a
+    /// stale attempt can never leave a partially trusted process identity.
+    pub fn mark_run_running_with_metadata(
+        &self,
+        run_id: &str,
+        owner_instance_id: &str,
+        attempt_token: &str,
+        started_at: i64,
+        metadata: &RunExecutionMetadata,
+    ) -> Result<bool, StorageError> {
+        validate_token("owner_instance_id", owner_instance_id)?;
+        validate_token("attempt_token", attempt_token)?;
+        validate_optional_text("log_dir", metadata.log_dir.as_deref())?;
+        validate_optional_text("process_marker", metadata.process_marker.as_deref())?;
+        let connection = self.lock_mut()?;
+        let changed = connection.execute(
+            "UPDATE runs SET status = 'running', started_at = ?,
+                    log_dir = COALESCE(?, log_dir),
+                    target_pid = ?, target_process_created_at = ?,
+                    target_pgid = ?, target_sid = ?, process_marker = ?
+             WHERE id = ? AND status = 'starting'
+               AND owner_instance_id = ? AND attempt_token = ?",
+            params![
+                started_at,
+                metadata.log_dir,
+                metadata.target_pid,
+                metadata.target_process_created_at,
+                metadata.target_pgid,
+                metadata.target_sid,
+                metadata.process_marker,
+                run_id,
+                owner_instance_id,
+                attempt_token,
+            ],
         )?;
         Ok(changed == 1)
     }
@@ -2182,6 +2250,41 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn running_metadata_requires_owner_attempt_and_persists_identity_atomically() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let job = database.create_job_at(input(true), 100).unwrap();
+        let run = database.create_manual_run_at(&job.id, 101).unwrap();
+        assert!(database
+            .claim_run_starting(&run.id, "owner", "attempt")
+            .unwrap());
+        assert!(database
+            .mark_run_log_dir(&run.id, "owner", "attempt", "logs/runs/run-1")
+            .unwrap());
+        assert!(!database
+            .mark_run_log_dir(&run.id, "other", "attempt", "logs/runs/run-1")
+            .unwrap());
+        let metadata = RunExecutionMetadata {
+            log_dir: Some("logs/runs/run-1".to_owned()),
+            target_pid: Some(42),
+            target_process_created_at: Some(1234),
+            target_pgid: Some(41),
+            target_sid: Some(40),
+            process_marker: Some("123e4567-e89b-12d3-a456-426614174000".to_owned()),
+        };
+        assert!(database
+            .mark_run_running_with_metadata(&run.id, "owner", "attempt", 102, &metadata)
+            .unwrap());
+        let stored = database.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(stored.status, RunStatus::Running);
+        assert_eq!(stored.log_dir, metadata.log_dir);
+        assert_eq!(stored.target_pid, Some(42));
+        assert_eq!(stored.target_process_created_at, Some(1234));
+        assert_eq!(stored.target_pgid, Some(41));
+        assert_eq!(stored.target_sid, Some(40));
+        assert_eq!(stored.process_marker, metadata.process_marker);
     }
 
     #[test]

@@ -2,6 +2,7 @@
 pub mod windows;
 
 pub mod environment;
+pub mod execution;
 pub mod wsl;
 
 use serde::Serialize;
