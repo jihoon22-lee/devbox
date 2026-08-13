@@ -6,7 +6,7 @@
 //! cwd, exact argv values, and an explicitly allowlisted environment suitable
 //! for `LspProcess::spawn`.
 
-use super::catalog::{CustomServer, RuntimeKind, RuntimeSpec, ServerRef};
+use super::catalog::{CustomServer, RuntimeKind, RuntimeSpec, ServerManifest, ServerRef};
 use super::process::ProcessSpec;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -15,6 +15,14 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
+use std::process::Stdio;
+use tokio::io::AsyncReadExt;
+use tokio::process::Command;
+use tokio::time::{timeout, Duration};
+
+const RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const RUNTIME_PROBE_OUTPUT_LIMIT: usize = 8 * 1024;
+const RUNTIME_PROBE_REAP_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Environment values that may cross the child-process boundary.
 ///
@@ -272,9 +280,9 @@ impl VersionRequirement {
     }
 }
 
-/// A runtime path resolved to an existing regular file.  Version checks are
-/// explicit and consume a caller-provided version string; they never execute
-/// `node`, `cmd.exe`, PowerShell, or any other shell/runtime discovery command.
+/// A runtime path resolved to an existing regular file. Version checks for
+/// user-defined runtimes remain explicit and consume a caller-provided
+/// version string. Managed Node servers use the bounded direct probe below.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedRuntime {
     pub kind: RuntimeKind,
@@ -530,6 +538,202 @@ impl RuntimeResolver {
         })
     }
 
+    /// Resolve one already-validated managed catalog entry. The installer
+    /// supplies the canonical, process-owned install root; all command and
+    /// server arguments come from the reviewed manifest. Node is invoked
+    /// directly for a bounded `--version` probe before the process spec is
+    /// returned, never through a shell.
+    pub async fn resolve_managed(
+        &self,
+        manifest: &ServerManifest,
+        language_id: &str,
+        installed_root: impl AsRef<Path>,
+        node_path: Option<&str>,
+        workspace: impl AsRef<Path>,
+    ) -> Result<ResolvedProcess, RuntimeError> {
+        manifest
+            .validate_for_install()
+            .map_err(|error| RuntimeError::InvalidSpec(error.to_string()))?;
+        let workspace = canonical_workspace_root(workspace.as_ref())?;
+        // `ManagedInstaller::resolve_managed_install` returns this path after
+        // checking the process-owned index and install tree. Treat that
+        // canonical spelling as an identity: if the directory is replaced by
+        // a junction/symlink between those checks and this launch boundary,
+        // re-canonicalization must not silently accept the replacement.
+        let expected_root = installed_root.as_ref().to_path_buf();
+        let installed_root = canonical_file_or_directory(&expected_root, "managed root")?;
+        if !canonical_paths_equal(&expected_root, &installed_root) {
+            return Err(RuntimeError::PathEscape {
+                base: expected_root,
+                path: installed_root,
+            });
+        }
+        let root_metadata =
+            fs::symlink_metadata(&installed_root).map_err(|source| RuntimeError::PathIo {
+                field: "managed root".into(),
+                path: installed_root.clone(),
+                source,
+            })?;
+        if metadata_has_reparse_point(&root_metadata) {
+            return Err(RuntimeError::PathEscape {
+                base: installed_root.clone(),
+                path: installed_root.clone(),
+            });
+        }
+        if !installed_root.is_dir() {
+            return Err(RuntimeError::NotFileOrDirectory {
+                field: "managed root".into(),
+                path: installed_root,
+            });
+        }
+
+        let language = manifest
+            .languages
+            .iter()
+            .find(|language| language.language_id == language_id)
+            .ok_or_else(|| {
+                RuntimeError::InvalidSpec(format!(
+                    "managed manifest does not declare language {language_id:?}"
+                ))
+            })?;
+        let command = language.command.as_ref().unwrap_or(&manifest.command);
+        let command_path = resolve_managed_file(
+            &installed_root,
+            &command.executable,
+            "managed.command.executable",
+        )?;
+        let args = validate_args("managed.command.args", &command.args)?;
+        let runtime = match manifest.runtime.kind {
+            RuntimeKind::Native => {
+                return Ok(ResolvedProcess {
+                    executable: command_path,
+                    args,
+                    current_dir: workspace,
+                    env: self.environment.clone().into_map(),
+                    runtime: None,
+                });
+            }
+            RuntimeKind::Node => {
+                let version_requirement = manifest
+                    .runtime
+                    .min_version
+                    .as_deref()
+                    .map(VersionRequirement::parse)
+                    .transpose()?;
+                let executable = if let Some(node_path) = node_path {
+                    validate_argv_value("managed.node_path", node_path)?;
+                    let path = Path::new(node_path);
+                    if !path.is_absolute() {
+                        return Err(RuntimeError::InvalidSpec(
+                            "managed.node_path must be an absolute path".into(),
+                        ));
+                    }
+                    self.canonical_executable(path, "managed.node_path")?
+                } else {
+                    self.resolve_executable(
+                        &manifest.runtime.executable,
+                        None,
+                        "managed.runtime.executable",
+                    )?
+                };
+                ResolvedRuntime {
+                    kind: RuntimeKind::Node,
+                    executable,
+                    version_requirement,
+                }
+            }
+        };
+        self.probe_runtime(&runtime).await?;
+        let mut process_args = Vec::with_capacity(args.len() + 1);
+        process_args.push(command_path.into_os_string());
+        process_args.extend(args);
+        Ok(ResolvedProcess {
+            executable: runtime.executable.clone(),
+            args: process_args,
+            current_dir: workspace,
+            env: self.environment.clone().into_map(),
+            runtime: Some(runtime),
+        })
+    }
+
+    async fn probe_runtime(&self, runtime: &ResolvedRuntime) -> Result<(), RuntimeError> {
+        let mut command = Command::new(&runtime.executable);
+        command
+            .arg("--version")
+            .env_clear()
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        for (key, value) in self.environment.iter() {
+            command.env(key, value);
+        }
+        let mut child = command
+            .spawn()
+            .map_err(|_| RuntimeError::RuntimeProbeFailed)?;
+        let Some(stdout) = child.stdout.take() else {
+            kill_and_reap(&mut child).await;
+            return Err(RuntimeError::RuntimeProbeFailed);
+        };
+        let Some(stderr) = child.stderr.take() else {
+            kill_and_reap(&mut child).await;
+            return Err(RuntimeError::RuntimeProbeFailed);
+        };
+        let probe = async {
+            let stdout_future = read_probe_output(stdout);
+            let stderr_future = read_probe_output(stderr);
+            tokio::pin!(stdout_future);
+            tokio::pin!(stderr_future);
+            let mut stdout_bytes = None;
+            let mut stderr_bytes = None;
+            while stdout_bytes.is_none() || stderr_bytes.is_none() {
+                tokio::select! {
+                    result = &mut stdout_future, if stdout_bytes.is_none() => {
+                        stdout_bytes = Some(result?);
+                    }
+                    result = &mut stderr_future, if stderr_bytes.is_none() => {
+                        stderr_bytes = Some(result?);
+                    }
+                }
+            }
+            let stdout = stdout_bytes.ok_or(RuntimeError::RuntimeProbeFailed)?;
+            let status = child
+                .wait()
+                .await
+                .map_err(|_| RuntimeError::RuntimeProbeFailed)?;
+            if !status.success() {
+                return Err(RuntimeError::RuntimeProbeFailed);
+            }
+            let version = std::str::from_utf8(&stdout)
+                .map_err(|_| RuntimeError::RuntimeProbeInvalidOutput)?
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .ok_or(RuntimeError::RuntimeProbeInvalidOutput)?;
+            let parsed = RuntimeVersion::parse(version)
+                .map_err(|_| RuntimeError::RuntimeProbeInvalidOutput)?;
+            if let Some(requirement) = &runtime.version_requirement {
+                if !requirement.matches(&parsed) {
+                    return Err(RuntimeError::RuntimeVersionMismatch {
+                        requirement: format_requirement(requirement),
+                        actual: version.trim().to_owned(),
+                    });
+                }
+            }
+            Ok(())
+        };
+        match timeout(RUNTIME_PROBE_TIMEOUT, probe).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => {
+                kill_and_reap(&mut child).await;
+                Err(error)
+            }
+            Err(_) => {
+                kill_and_reap(&mut child).await;
+                Err(RuntimeError::RuntimeProbeTimeout)
+            }
+        }
+    }
+
     /// Resolve a `custom` reference from the compact `server_by_language`
     /// map.  It has no runtime metadata, so it is intentionally direct/native.
     pub fn resolve_custom_ref(
@@ -692,6 +896,180 @@ fn canonical_file_or_directory(path: &Path, field: &str) -> Result<PathBuf, Runt
     Ok(canonical)
 }
 
+fn resolve_managed_file(root: &Path, relative: &str, field: &str) -> Result<PathBuf, RuntimeError> {
+    validate_argv_value(field, relative)?;
+    let path = Path::new(relative);
+    if path.is_absolute()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::Prefix(_) | Component::RootDir | Component::ParentDir
+            )
+        })
+    {
+        return Err(RuntimeError::PathEscape {
+            base: root.to_path_buf(),
+            path: path.to_path_buf(),
+        });
+    }
+    let candidate = root.join(path);
+    let metadata = fs::symlink_metadata(&candidate).map_err(|source| RuntimeError::PathIo {
+        field: field.to_owned(),
+        path: candidate.clone(),
+        source,
+    })?;
+    if metadata_has_reparse_point(&metadata) || !metadata.is_file() {
+        return Err(RuntimeError::ExecutableNotFile {
+            field: field.to_owned(),
+            path: candidate.clone(),
+        });
+    }
+    reject_managed_hard_link(&candidate, root)?;
+    let canonical = fs::canonicalize(&candidate).map_err(|source| RuntimeError::PathIo {
+        field: field.to_owned(),
+        path: candidate.clone(),
+        source,
+    })?;
+    if !path_is_within(root, &canonical) {
+        return Err(RuntimeError::PathEscape {
+            base: root.to_path_buf(),
+            path: canonical.clone(),
+        });
+    }
+    // Recheck after canonicalization as a narrow race guard: a regular file
+    // can be replaced by a reparse point or hardlink between the two checks.
+    let canonical_metadata =
+        fs::symlink_metadata(&canonical).map_err(|source| RuntimeError::PathIo {
+            field: field.to_owned(),
+            path: canonical.clone(),
+            source,
+        })?;
+    if metadata_has_reparse_point(&canonical_metadata) || !canonical_metadata.is_file() {
+        return Err(RuntimeError::ExecutableNotFile {
+            field: field.to_owned(),
+            path: canonical,
+        });
+    }
+    reject_managed_hard_link(&canonical, root)?;
+    Ok(canonical)
+}
+
+fn metadata_has_reparse_point(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+fn reject_managed_hard_link(path: &Path, root: &Path) -> Result<(), RuntimeError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        let metadata = fs::symlink_metadata(path).map_err(|source| RuntimeError::PathIo {
+            field: "managed command".into(),
+            path: path.to_path_buf(),
+            source,
+        })?;
+        if metadata.nlink() != 1 {
+            return Err(RuntimeError::PathEscape {
+                base: root.to_path_buf(),
+                path: path.to_path_buf(),
+            });
+        }
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::core::PCWSTR;
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::Storage::FileSystem::{
+            CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+            FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
+            FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+            OPEN_EXISTING,
+        };
+
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        let handle = unsafe {
+            CreateFileW(
+                PCWSTR(wide.as_ptr()),
+                FILE_READ_ATTRIBUTES.0,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                None,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+                None,
+            )
+        }
+        .map_err(|_| RuntimeError::PathEscape {
+            base: root.to_path_buf(),
+            path: path.to_path_buf(),
+        })?;
+        let mut information = BY_HANDLE_FILE_INFORMATION::default();
+        let result = unsafe { GetFileInformationByHandle(handle, &mut information) };
+        let close_result = unsafe { CloseHandle(handle) };
+        if result.is_err()
+            || close_result.is_err()
+            || information.nNumberOfLinks != 1
+            || information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
+        {
+            return Err(RuntimeError::PathEscape {
+                base: root.to_path_buf(),
+                path: path.to_path_buf(),
+            });
+        }
+        Ok(())
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (path, root);
+        Err(RuntimeError::PathEscape {
+            base: root.to_path_buf(),
+            path: path.to_path_buf(),
+        })
+    }
+}
+
+async fn read_probe_output<R>(mut reader: R) -> Result<Vec<u8>, RuntimeError>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut output = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .await
+            .map_err(|_| RuntimeError::RuntimeProbeFailed)?;
+        if read == 0 {
+            return Ok(output);
+        }
+        if output.len().saturating_add(read) > RUNTIME_PROBE_OUTPUT_LIMIT {
+            return Err(RuntimeError::RuntimeProbeOutputLimit);
+        }
+        output.extend_from_slice(&buffer[..read]);
+    }
+}
+
+async fn kill_and_reap(child: &mut tokio::process::Child) {
+    let _ = child.start_kill();
+    let _ = timeout(RUNTIME_PROBE_REAP_TIMEOUT, child.wait()).await;
+}
+
 fn contains_path_separator(value: &str) -> bool {
     value.contains('/') || value.contains('\\')
 }
@@ -772,6 +1150,33 @@ fn path_is_within(root: &Path, candidate: &Path) -> bool {
     }
 }
 
+fn canonical_paths_equal(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        windows_path_key(left) == windows_path_key(right)
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+#[cfg(windows)]
+fn windows_path_key(path: &Path) -> String {
+    let mut value = path.to_string_lossy().replace('/', "\\");
+    if let Some(rest) = value.strip_prefix("\\\\?\\UNC\\") {
+        value = format!("\\\\{rest}");
+    } else if let Some(rest) = value.strip_prefix("\\\\?\\") {
+        value = rest.to_owned();
+    } else if let Some(rest) = value.strip_prefix("\\\\.\\") {
+        value = rest.to_owned();
+    }
+    while value.len() > 3 && value.ends_with('\\') {
+        value.pop();
+    }
+    value.to_ascii_lowercase()
+}
+
 #[cfg(windows)]
 fn components_equal(left: Component<'_>, right: Component<'_>) -> bool {
     use std::os::windows::ffi::OsStrExt;
@@ -842,6 +1247,10 @@ pub enum RuntimeError {
         base: PathBuf,
         path: PathBuf,
     },
+    RuntimeProbeFailed,
+    RuntimeProbeTimeout,
+    RuntimeProbeOutputLimit,
+    RuntimeProbeInvalidOutput,
     ManagedServerUnsupported,
 }
 
@@ -904,6 +1313,14 @@ impl fmt::Display for RuntimeError {
                 path.display(),
                 base.display()
             ),
+            Self::RuntimeProbeFailed => f.write_str("managed runtime version probe failed"),
+            Self::RuntimeProbeTimeout => f.write_str("managed runtime version probe timed out"),
+            Self::RuntimeProbeOutputLimit => {
+                f.write_str("managed runtime version probe output exceeded its limit")
+            }
+            Self::RuntimeProbeInvalidOutput => {
+                f.write_str("managed runtime returned an invalid version")
+            }
             Self::ManagedServerUnsupported => {
                 f.write_str("managed LSP servers are not resolved by the local runtime boundary")
             }
@@ -923,9 +1340,65 @@ impl std::error::Error for RuntimeError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lsp::{CustomServer, RuntimeKind, RuntimeSpec};
+    use crate::lsp::{
+        Artifact, ArtifactKind, CommandSpec, CustomServer, LanguageSupport, ManifestFiles,
+        RuntimeKind, RuntimeSpec, ServerManifest, WINDOWS_X86_64_PLATFORM,
+    };
     use std::fs;
     use tempfile::tempdir;
+
+    fn managed_manifest(
+        runtime: RuntimeKind,
+        command: &str,
+        languages: Vec<LanguageSupport>,
+    ) -> ServerManifest {
+        ServerManifest {
+            id: "fixture-managed".into(),
+            version: "1.0.0".into(),
+            platform: WINDOWS_X86_64_PLATFORM.into(),
+            languages,
+            source_url: "https://example.com/source".into(),
+            license: "MIT".into(),
+            artifact: Artifact {
+                kind: ArtifactKind::NpmTarball,
+                url: "https://registry.npmjs.org/fixture-managed/-/fixture-managed-1.0.0.tgz"
+                    .into(),
+                sha256: "11".repeat(32),
+                size_bytes: Some(1),
+                allowed_redirect_hosts: Vec::new(),
+                archive_root: "package".into(),
+            },
+            runtime: RuntimeSpec {
+                kind: runtime,
+                executable: if runtime == RuntimeKind::Node {
+                    "node".into()
+                } else {
+                    command.into()
+                },
+                min_version: (runtime == RuntimeKind::Node).then(|| ">=20".into()),
+            },
+            command: CommandSpec {
+                executable: command.into(),
+                args: vec!["--stdio".into()],
+            },
+            files: ManifestFiles {
+                entrypoint: command.into(),
+                package_lock_sha256: (runtime == RuntimeKind::Node).then(|| "22".repeat(32)),
+            },
+            capabilities_hint: None,
+            generated_at: "2026-08-13T00:00:00Z".into(),
+        }
+    }
+
+    #[cfg(unix)]
+    fn executable_fixture(path: &std::path::Path, contents: &str) {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::write(path, contents).unwrap();
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(path, permissions).unwrap();
+    }
 
     #[test]
     fn version_requirements_parse_and_match_without_process_execution() {
@@ -1050,6 +1523,254 @@ mod tests {
             .unwrap()
             .validate_reported_version("v20.1.0")
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn managed_native_resolution_uses_reviewed_command_and_workspace() {
+        let directory = tempdir().unwrap();
+        let workspace = directory.path().join("workspace");
+        let installed = directory.path().join("installed");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&installed).unwrap();
+        fs::write(installed.join("rust-analyzer.exe"), b"fixture").unwrap();
+        let manifest = managed_manifest(
+            RuntimeKind::Native,
+            "rust-analyzer.exe",
+            vec![LanguageSupport {
+                language_id: "rust".into(),
+                extensions: vec![".rs".into()],
+                command: None,
+            }],
+        );
+        // The installer hands the launch boundary its canonical, process-owned
+        // root. Windows temp directories may otherwise use an 8.3 alias while
+        // `fs::canonicalize` returns the long `\\?\` spelling, which correctly
+        // fails the identity check below.
+        let installed = fs::canonicalize(installed).unwrap();
+        let resolved = RuntimeResolver::with_path("")
+            .resolve_managed(&manifest, "rust", &installed, None, &workspace)
+            .await
+            .unwrap();
+        assert_eq!(
+            resolved.executable,
+            fs::canonicalize(installed.join("rust-analyzer.exe")).unwrap()
+        );
+        assert_eq!(resolved.args, vec![OsString::from("--stdio")]);
+        assert_eq!(resolved.current_dir, fs::canonicalize(workspace).unwrap());
+        assert!(resolved.env.is_empty() || resolved.env.contains_key(OsStr::new("PATH")));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_root_replacement_is_rejected_before_command_resolution() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempdir().unwrap();
+        let workspace = directory.path().join("workspace");
+        let installed = directory.path().join("installed");
+        let outside = directory.path().join("outside");
+        let moved = directory.path().join("moved-installed");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&installed).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(installed.join("rust-analyzer.exe"), b"fixture").unwrap();
+        let expected_root = fs::canonicalize(&installed).unwrap();
+        fs::rename(&installed, &moved).unwrap();
+        symlink(&outside, &installed).unwrap();
+
+        let manifest = managed_manifest(
+            RuntimeKind::Native,
+            "rust-analyzer.exe",
+            vec![LanguageSupport {
+                language_id: "rust".into(),
+                extensions: vec![".rs".into()],
+                command: None,
+            }],
+        );
+        let result = RuntimeResolver::with_path("")
+            .resolve_managed(&manifest, "rust", &expected_root, None, &workspace)
+            .await;
+        assert!(matches!(result, Err(RuntimeError::PathEscape { .. })));
+        assert!(moved.join("rust-analyzer.exe").is_file());
+        assert!(outside.is_dir());
+    }
+
+    #[cfg(any(unix, windows))]
+    #[tokio::test]
+    async fn managed_command_hardlink_is_rejected_at_launch_boundary() {
+        use std::fs::hard_link;
+
+        let directory = tempdir().unwrap();
+        let workspace = directory.path().join("workspace");
+        let installed = directory.path().join("installed");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&installed).unwrap();
+        let command = installed.join("rust-analyzer.exe");
+        fs::write(&command, b"fixture").unwrap();
+        hard_link(&command, installed.join("alias.exe")).unwrap();
+        let manifest = managed_manifest(
+            RuntimeKind::Native,
+            "rust-analyzer.exe",
+            vec![LanguageSupport {
+                language_id: "rust".into(),
+                extensions: vec![".rs".into()],
+                command: None,
+            }],
+        );
+        let result = RuntimeResolver::with_path("")
+            .resolve_managed(&manifest, "rust", &installed, None, &workspace)
+            .await;
+        assert!(matches!(result, Err(RuntimeError::PathEscape { .. })));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_node_selects_each_declared_language_command() {
+        let directory = tempdir().unwrap();
+        let workspace = directory.path().join("workspace");
+        let installed = directory.path().join("installed");
+        let bin = directory.path().join("bin");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(installed.join("bin")).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        executable_fixture(
+            &bin.join("node"),
+            "#!/bin/sh\n[ \"$1\" = \"--version\" ] && echo v20.11.1\n",
+        );
+        for executable in [
+            "vscode-json-language-server",
+            "vscode-html-language-server",
+            "vscode-css-language-server",
+        ] {
+            fs::write(installed.join("bin").join(executable), b"fixture").unwrap();
+        }
+        let manifest = managed_manifest(
+            RuntimeKind::Node,
+            "bin/vscode-json-language-server",
+            vec![
+                LanguageSupport {
+                    language_id: "json".into(),
+                    extensions: vec![".json".into()],
+                    command: None,
+                },
+                LanguageSupport {
+                    language_id: "html".into(),
+                    extensions: vec![".html".into()],
+                    command: Some(CommandSpec {
+                        executable: "bin/vscode-html-language-server".into(),
+                        args: vec!["--stdio".into()],
+                    }),
+                },
+                LanguageSupport {
+                    language_id: "css".into(),
+                    extensions: vec![".css".into()],
+                    command: Some(CommandSpec {
+                        executable: "bin/vscode-css-language-server".into(),
+                        args: vec!["--stdio".into()],
+                    }),
+                },
+            ],
+        );
+        let resolver = RuntimeResolver::with_path(bin.as_os_str().to_os_string());
+        for (language, executable) in [
+            ("json", "vscode-json-language-server"),
+            ("html", "vscode-html-language-server"),
+            ("css", "vscode-css-language-server"),
+        ] {
+            let resolved = resolver
+                .resolve_managed(&manifest, language, &installed, None, &workspace)
+                .await
+                .unwrap();
+            assert_eq!(
+                resolved.args[0],
+                installed
+                    .join("bin")
+                    .join(executable)
+                    .canonicalize()
+                    .unwrap()
+                    .into_os_string()
+            );
+            assert_eq!(resolved.args[1], OsString::from("--stdio"));
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_node_rejects_old_missing_and_hanging_runtimes() {
+        let directory = tempdir().unwrap();
+        let workspace = directory.path().join("workspace");
+        let installed = directory.path().join("installed");
+        let bin = directory.path().join("bin");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&installed).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(installed.join("server.js"), b"fixture").unwrap();
+        let manifest = managed_manifest(
+            RuntimeKind::Node,
+            "server.js",
+            vec![LanguageSupport {
+                language_id: "javascript".into(),
+                extensions: vec![".js".into()],
+                command: None,
+            }],
+        );
+
+        executable_fixture(
+            &bin.join("node"),
+            "#!/bin/sh\n[ \"$1\" = \"--version\" ] && echo v19.0.0\n",
+        );
+        let resolver = RuntimeResolver::with_path(bin.as_os_str().to_os_string());
+        assert!(matches!(
+            resolver
+                .resolve_managed(&manifest, "javascript", &installed, None, &workspace)
+                .await,
+            Err(RuntimeError::RuntimeVersionMismatch { .. })
+        ));
+
+        executable_fixture(
+            &bin.join("node"),
+            "#!/bin/sh\n[ \"$1\" = \"--version\" ] && echo v20.11.1\n",
+        );
+        let explicit_node = bin.join("node");
+        let explicit_resolver = RuntimeResolver::with_path("");
+        let resolved = explicit_resolver
+            .resolve_managed(
+                &manifest,
+                "javascript",
+                &installed,
+                Some(explicit_node.to_str().unwrap()),
+                &workspace,
+            )
+            .await
+            .unwrap();
+        assert_eq!(resolved.executable, explicit_node.canonicalize().unwrap());
+
+        fs::remove_file(bin.join("node")).unwrap();
+        assert!(matches!(
+            resolver
+                .resolve_managed(&manifest, "javascript", &installed, None, &workspace)
+                .await,
+            Err(RuntimeError::ExecutableNotFound { .. })
+        ));
+
+        executable_fixture(
+            &bin.join("node"),
+            "#!/bin/sh\ni=0\nwhile [ $i -lt 9000 ]; do printf x; i=$((i+1)); done\n",
+        );
+        assert!(matches!(
+            resolver
+                .resolve_managed(&manifest, "javascript", &installed, None, &workspace)
+                .await,
+            Err(RuntimeError::RuntimeProbeOutputLimit)
+        ));
+
+        executable_fixture(&bin.join("node"), "#!/bin/sh\nwhile true; do :; done\n");
+        let started = std::time::Instant::now();
+        let hanging = resolver
+            .resolve_managed(&manifest, "javascript", &installed, None, &workspace)
+            .await;
+        assert!(matches!(hanging, Err(RuntimeError::RuntimeProbeTimeout)));
+        assert!(started.elapsed() < Duration::from_secs(7));
     }
 
     #[test]

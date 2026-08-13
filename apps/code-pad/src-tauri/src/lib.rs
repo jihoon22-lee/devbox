@@ -12,10 +12,14 @@ pub fn run() {
         .setup(|app| {
             app.manage(watcher::WatcherManager::new(app.handle().clone()));
             let app_local_data_dir = app.path().app_local_data_dir()?;
-            app.manage(std::sync::Arc::new(lsp::LspManager::new(
+            let installer = std::sync::Arc::new(lsp::ManagedInstaller::new(&app_local_data_dir)?);
+            let manager = std::sync::Arc::new(lsp::LspManager::with_installer(
                 app_local_data_dir,
                 env!("CARGO_PKG_VERSION"),
-            )));
+                std::sync::Arc::clone(&installer),
+            ));
+            app.manage(manager);
+            app.manage(installer);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -24,6 +28,11 @@ pub fn run() {
             commands::file::validate_encoding,
             commands::folder::list_workspace_files,
             commands::folder::canonicalize_workspace,
+            commands::installer::lsp_catalog,
+            commands::installer::lsp_installed,
+            commands::installer::lsp_recover_installed,
+            commands::installer::lsp_install,
+            commands::installer::lsp_uninstall,
             commands::preview::render_preview,
             commands::session::load_session,
             commands::session::save_session,

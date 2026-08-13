@@ -193,7 +193,10 @@ export type LspServerRef =
       kind: "managed";
       manifest_id: string;
       version: string;
-      installed_path?: string | null;
+      /** Optional explicit Node runtime executable. The install path is never
+       * persisted at the UI boundary; the native side resolves it from its
+       * process-owned index. */
+      node_path?: string | null;
     }
   | {
       kind: "local";
@@ -235,6 +238,61 @@ export interface LoadedLspConfig {
   config: LspConfig;
   persist_allowed: boolean;
   error: string | null;
+}
+
+export type ManagedInstallState = "not_installed" | "installed" | "needs_reinstall";
+
+export interface ManagedArtifact {
+  kind: "zip" | "npm_tarball";
+  url: string;
+  sha256: string;
+  size_bytes: number | null;
+  allowed_redirect_hosts: string[];
+  archive_root: string;
+}
+
+export interface ManagedServerManifest {
+  id: string;
+  version: string;
+  platform: string;
+  languages: Array<{
+    language_id: string;
+    extensions: string[];
+    command?: { executable: string; args: string[] } | null;
+  }>;
+  source_url: string;
+  license: string;
+  artifact: ManagedArtifact;
+  runtime: { kind: "native" | "node"; executable: string; min_version: string | null };
+  command: { executable: string; args: string[] };
+  files: { entrypoint: string; package_lock_sha256: string | null };
+  capabilities_hint: Record<string, boolean> | null;
+  generated_at: string;
+}
+
+/** Safe managed-install metadata returned by lsp_installed. Paths stay in the
+ * process-owned index and are never exposed to the UI. */
+export interface InstalledServerMetadata {
+  manifest_id: string;
+  version: string;
+  platform: string;
+  sha256: string;
+  source_url: string;
+  license: string;
+  artifact_url: string;
+  entrypoint: string;
+  runtime: { kind: "native" | "node"; executable: string; min_version: string | null };
+  installed_at: string;
+  package_lock_sha256: string | null;
+}
+
+export interface ManagedInstallStatus {
+  manifest_id: string;
+  version: string;
+  platform: string;
+  state: ManagedInstallState;
+  reason: string | null;
+  installed: InstalledServerMetadata | null;
 }
 
 export function displayNameForPath(path: string): string {

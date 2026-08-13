@@ -52,7 +52,8 @@ pub use features::{
     SanitizedHover, ValidatedDiagnostic, ValidatedTextEdit, WorkspaceEditPlan,
 };
 pub use installer::{
-    InstallError, InstallLimits, InstallResult, ManagedInstaller, NodePackageArchive,
+    InstallError, InstallLimits, InstallResult, InstalledServerMetadata, ManagedInstallResolution,
+    ManagedInstallState, ManagedInstallStatus, ManagedInstaller, NodePackageArchive,
     DEFAULT_MAX_ARCHIVE_ENTRIES, DEFAULT_MAX_INSTALL_BYTES,
 };
 pub use manager::{LanguageServerStatus, LspManager, LspManagerError};

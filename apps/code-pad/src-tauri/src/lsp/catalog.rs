@@ -43,6 +43,10 @@ pub enum RuntimeKind {
 pub struct LanguageSupport {
     pub language_id: String,
     pub extensions: Vec<String>,
+    /// Optional reviewed command for this language. When absent, the
+    /// manifest-level command is used.
+    #[serde(default)]
+    pub command: Option<CommandSpec>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,7 +155,7 @@ pub enum ServerRef {
         manifest_id: String,
         version: String,
         #[serde(default)]
-        installed_path: Option<String>,
+        node_path: Option<String>,
     },
     Local {
         installed_path: String,
@@ -172,7 +176,7 @@ impl ServerRef {
         Self::Managed {
             manifest_id: manifest_id.into(),
             version: version.into(),
-            installed_path: None,
+            node_path: None,
         }
     }
 
@@ -196,12 +200,12 @@ impl ServerRef {
             Self::Managed {
                 manifest_id,
                 version,
-                installed_path,
+                node_path,
             } => {
                 validate_identifier("server_ref.manifest_id", manifest_id)?;
                 validate_exact_version("server_ref.version", version)?;
-                if let Some(path) = installed_path {
-                    validate_canonical_path("server_ref.installed_path", path)?;
+                if let Some(path) = node_path {
+                    validate_canonical_path("server_ref.node_path", path)?;
                 }
             }
             Self::Local {
@@ -448,6 +452,11 @@ impl ServerManifest {
                     ));
                 }
             }
+            if let Some(command) = &language.command {
+                command
+                    .validate()
+                    .map_err(|error| error.with_prefix(&format!("{field}.command")))?;
+            }
         }
         validate_https_url("source_url", &self.source_url)?;
         validate_spdx("license", &self.license)?;
@@ -657,6 +666,7 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
             languages: vec![LanguageSupport {
                 language_id: "rust".into(),
                 extensions: vec![".rs".into()],
+                command: None,
             }],
             source_url: "https://github.com/rust-lang/rust-analyzer".into(),
             license: "MIT OR Apache-2.0".into(),
@@ -692,10 +702,12 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 LanguageSupport {
                     language_id: "typescript".into(),
                     extensions: vec![".ts".into(), ".tsx".into()],
+                    command: None,
                 },
                 LanguageSupport {
                     language_id: "javascript".into(),
                     extensions: vec![".js".into(), ".jsx".into()],
+                    command: None,
                 },
             ],
             source_url: "https://github.com/typescript-language-server/typescript-language-server".into(),
@@ -714,7 +726,7 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 min_version: Some(">=20".into()),
             },
             command: CommandSpec {
-                executable: "typescript-language-server".into(),
+                executable: "lib/cli.mjs".into(),
                 args: vec!["--stdio".into()],
             },
             files: ManifestFiles {
@@ -733,6 +745,7 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
             languages: vec![LanguageSupport {
                 language_id: "python".into(),
                 extensions: vec![".py".into(), ".pyi".into()],
+                command: None,
             }],
             source_url: "https://github.com/DetachHead/basedpyright".into(),
             license: "MIT".into(),
@@ -750,7 +763,7 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 min_version: Some(">=14".into()),
             },
             command: CommandSpec {
-                executable: "basedpyright-langserver".into(),
+                executable: "langserver.index.js".into(),
                 args: vec!["--stdio".into()],
             },
             files: ManifestFiles {
@@ -770,14 +783,26 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 LanguageSupport {
                     language_id: "json".into(),
                     extensions: vec![".json".into(), ".jsonc".into()],
+                    command: Some(CommandSpec {
+                        executable: "bin/vscode-json-language-server".into(),
+                        args: vec!["--stdio".into()],
+                    }),
                 },
                 LanguageSupport {
                     language_id: "html".into(),
                     extensions: vec![".html".into(), ".htm".into()],
+                    command: Some(CommandSpec {
+                        executable: "bin/vscode-html-language-server".into(),
+                        args: vec!["--stdio".into()],
+                    }),
                 },
                 LanguageSupport {
                     language_id: "css".into(),
                     extensions: vec![".css".into(), ".scss".into(), ".less".into()],
+                    command: Some(CommandSpec {
+                        executable: "bin/vscode-css-language-server".into(),
+                        args: vec!["--stdio".into()],
+                    }),
                 },
             ],
             source_url: "https://github.com/hrsh7th/vscode-langservers-extracted".into(),
@@ -796,7 +821,7 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 min_version: Some(">=22".into()),
             },
             command: CommandSpec {
-                executable: "vscode-json-language-server".into(),
+                executable: "bin/vscode-json-language-server".into(),
                 args: vec!["--stdio".into()],
             },
             files: ManifestFiles {
@@ -1356,6 +1381,28 @@ mod tests {
             "f667620d3af202f480faf9e407374509ebddef3b8611922e463aeaa7e6985fc8"
         );
         assert_eq!(rust_analyzer.artifact.size_bytes, Some(17_430_385));
+        let vscode = catalog
+            .find(
+                "vscode-langservers-extracted",
+                "4.10.0",
+                WINDOWS_X86_64_PLATFORM,
+            )
+            .unwrap();
+        assert_eq!(
+            vscode
+                .languages
+                .iter()
+                .map(|language| language
+                    .command
+                    .as_ref()
+                    .map(|command| command.executable.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                Some("bin/vscode-json-language-server"),
+                Some("bin/vscode-html-language-server"),
+                Some("bin/vscode-css-language-server"),
+            ]
+        );
         assert!(catalog
             .manifests
             .iter()
@@ -1492,7 +1539,7 @@ mod tests {
             ServerRef::Managed {
                 manifest_id: "rust-analyzer".into(),
                 version: "2026-08-10.1".into(),
-                installed_path: Some(r"C:\CodePad\rust-analyzer".into()),
+                node_path: Some(r"C:\Program Files\nodejs\node.exe".into()),
             },
             ServerRef::Local {
                 installed_path: r"C:\Tools\language-server.exe".into(),
@@ -1510,6 +1557,21 @@ mod tests {
             assert_eq!(serde_json::from_str::<ServerRef>(&json).unwrap(), value);
             value.validate().unwrap();
         }
+    }
+
+    #[test]
+    fn managed_server_ref_keeps_schema_v1_compatibility_without_persisting_install_path() {
+        let legacy = serde_json::json!({
+            "kind": "managed",
+            "manifest_id": "rust-analyzer",
+            "version": "2026-08-10.1",
+            "installed_path": "C:\\CodePad\\lsp\\servers\\rust-analyzer"
+        });
+        let decoded: ServerRef = serde_json::from_value(legacy).unwrap();
+        assert_eq!(decoded, ServerRef::managed("rust-analyzer", "2026-08-10.1"));
+        assert!(!serde_json::to_string(&decoded)
+            .unwrap()
+            .contains("installed_path"));
     }
 
     #[test]
