@@ -13,9 +13,12 @@ pub fn run() {
             app.manage(watcher::WatcherManager::new(app.handle().clone()));
             let app_local_data_dir = app.path().app_local_data_dir()?;
             app.manage(std::sync::Arc::new(lsp::LspManager::new(
-                app_local_data_dir,
+                app_local_data_dir.clone(),
                 env!("CARGO_PKG_VERSION"),
             )));
+            app.manage(std::sync::Arc::new(lsp::ManagedInstaller::new(
+                app_local_data_dir,
+            )?));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -24,6 +27,11 @@ pub fn run() {
             commands::file::validate_encoding,
             commands::folder::list_workspace_files,
             commands::folder::canonicalize_workspace,
+            commands::installer::lsp_catalog,
+            commands::installer::lsp_installed,
+            commands::installer::lsp_recover_installed,
+            commands::installer::lsp_install,
+            commands::installer::lsp_uninstall,
             commands::preview::render_preview,
             commands::session::load_session,
             commands::session::save_session,

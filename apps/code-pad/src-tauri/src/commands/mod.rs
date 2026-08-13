@@ -1,5 +1,6 @@
 pub mod file;
 pub mod folder;
+pub mod installer;
 pub mod lsp;
 pub mod preview;
 pub mod session;

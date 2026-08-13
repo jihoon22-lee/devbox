@@ -15,6 +15,8 @@ import type {
   LspDidClose,
   LspDidOpen,
   LspDidSave,
+  ManagedInstallStatus,
+  ManagedServerManifest,
 } from "./types";
 
 export function openFile(path: string, encoding: Encoding | null = null): Promise<OpenedFile> {
@@ -136,4 +138,32 @@ export function saveLspDocument(languageId: string, uri: string): Promise<LspDid
 
 export function closeLspDocument(languageId: string, uri: string): Promise<LspDidClose> {
   return invoke<LspDidClose>("close_lsp_document", { languageId, uri });
+}
+
+export function lspCatalog(): Promise<ManagedServerManifest[]> {
+  return invoke<ManagedServerManifest[]>("lsp_catalog");
+}
+
+export function lspInstalled(): Promise<ManagedInstallStatus[]> {
+  return invoke<ManagedInstallStatus[]>("lsp_installed");
+}
+
+export function installLsp(
+  manifestId: string,
+  version: string,
+  platform: string,
+): Promise<void> {
+  return invoke<void>("lsp_install", { manifestId, version, platform });
+}
+
+export function uninstallLsp(
+  manifestId: string,
+  version: string,
+  platform: string,
+): Promise<void> {
+  return invoke<void>("lsp_uninstall", { manifestId, version, platform });
+}
+
+export function recoverInstalledLsp(): Promise<void> {
+  return invoke<void>("lsp_recover_installed");
 }

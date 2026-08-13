@@ -652,6 +652,147 @@ h1 {
   white-space: pre-wrap;
 }
 
+.lsp-installer-section {
+  margin: 0 18px 14px;
+  padding-top: 12px;
+  border-top: 1px solid #344153;
+  overflow-y: auto;
+}
+
+.lsp-installer-heading,
+.lsp-installer-card-head,
+.lsp-installer-actions,
+.lsp-confirmation-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lsp-installer-heading h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.lsp-installer-heading p,
+.lsp-confirmation p {
+  margin: 4px 0 0;
+  color: #8fa1b7;
+  font-size: 11px;
+}
+
+.lsp-installer-state {
+  padding: 3px 7px;
+  border-radius: 99px;
+  color: #b6c7dc;
+  background: #273346;
+  font-size: 10px;
+}
+
+.lsp-installer-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  color: #ffc5c5;
+  background: #3a2026;
+  font-size: 11px;
+}
+
+.lsp-installer-card {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #2f3d50;
+  border-radius: 5px;
+  background: #121923;
+}
+
+.lsp-installer-card-head strong,
+.lsp-installer-card-head span {
+  display: block;
+}
+
+.lsp-installer-card-head strong {
+  color: #e1eaf6;
+  font-size: 12px;
+}
+
+.lsp-installer-card-head div > span {
+  margin-top: 3px;
+  color: #91a1b8;
+  font-size: 11px;
+}
+
+.lsp-installer-metadata,
+.lsp-confirmation-metadata {
+  display: grid;
+  gap: 5px;
+  margin: 9px 0;
+}
+
+.lsp-installer-metadata div,
+.lsp-confirmation-metadata div {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 8px;
+  min-width: 0;
+  font-size: 10px;
+}
+
+.lsp-installer-metadata dt,
+.lsp-confirmation-metadata dt {
+  color: #718097;
+}
+
+.lsp-installer-metadata dd,
+.lsp-confirmation-metadata dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #bdc9d8;
+}
+
+.lsp-installer-digest {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.lsp-installer-actions,
+.lsp-confirmation-actions {
+  justify-content: flex-end;
+}
+
+.lsp-confirmation-backdrop {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgb(3 6 10 / 70%);
+}
+
+.lsp-confirmation {
+  width: min(620px, 100%);
+  padding: 18px;
+  border: 1px solid #536b89;
+  border-radius: 8px;
+  color: #e5edf8;
+  background: #18212d;
+  box-shadow: 0 18px 70px rgb(0 0 0 / 60%);
+}
+
+.lsp-confirmation h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.lsp-confirmation-metadata {
+  margin: 16px 0;
+}
+
 @media (max-width: 760px) {
   .lsp-config-grid {
     grid-template-columns: 1fr;

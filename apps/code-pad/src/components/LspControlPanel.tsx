@@ -12,6 +12,7 @@ import type {
   LspConfig,
   LspServerRef,
 } from "../types";
+import ManagedInstallerPanel from "./ManagedInstallerPanel";
 
 const LANGUAGE_OPTIONS = [
   ["rust", "Rust"],
@@ -326,6 +327,8 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
             );
           })}
         </section>
+
+        <ManagedInstallerPanel onError={setError} />
 
         <footer className="lsp-panel-footer">
           <span>{formDirty ? "먼저 이 언어 설정을 적용하세요." : hasUnsavedChanges ? "변경 사항을 저장해야 서버를 시작할 수 있습니다." : "설정을 저장하면 실행 중인 서버는 안전하게 종료됩니다."}</span>

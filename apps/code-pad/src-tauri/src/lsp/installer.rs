@@ -5,7 +5,10 @@
 //! not active until the installed index has been atomically replaced.
 
 use crate::commands::session::atomic_write;
-use crate::lsp::catalog::{ArtifactKind, InstalledServer, InstalledServerIndex, ServerManifest};
+use crate::lsp::catalog::{
+    initial_catalog, ArtifactKind, InstalledServer, InstalledServerIndex, RuntimeSpec,
+    ServerManifest,
+};
 use crate::lsp::node_lock::{
     reviewed_node_lock, NodeDependencyLock, NodeLockError, NodePackageLock,
     REVIEWED_NODE_LOCK_SHA256,
@@ -14,6 +17,7 @@ use base64::Engine;
 use flate2::read::GzDecoder;
 use reqwest::header::LOCATION;
 use reqwest::{Client, StatusCode, Url};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256, Sha512};
 use std::collections::BTreeMap;
@@ -23,7 +27,7 @@ use std::io::{self, BufReader, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use subtle::ConstantTimeEq;
 use tar::EntryType;
 use tokio::io::AsyncWriteExt;
@@ -64,10 +68,67 @@ impl InstallLimits {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstallResult {
     pub server: InstalledServer,
     pub already_installed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManagedInstallState {
+    NotInstalled,
+    Installed,
+    NeedsReinstall,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManagedInstallStatus {
+    pub manifest_id: String,
+    pub version: String,
+    pub platform: String,
+    pub state: ManagedInstallState,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub installed: Option<InstalledServerMetadata>,
+}
+
+/// Safe status metadata exposed to the UI. The process keeps the canonical
+/// install path in the private index, but never sends it over the Tauri
+/// boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstalledServerMetadata {
+    pub manifest_id: String,
+    pub version: String,
+    pub platform: String,
+    pub sha256: String,
+    pub source_url: String,
+    pub license: String,
+    pub artifact_url: String,
+    pub entrypoint: String,
+    pub runtime: RuntimeSpec,
+    pub installed_at: String,
+    #[serde(default)]
+    pub package_lock_sha256: Option<String>,
+}
+
+impl From<&InstalledServer> for InstalledServerMetadata {
+    fn from(server: &InstalledServer) -> Self {
+        Self {
+            manifest_id: server.manifest_id.clone(),
+            version: server.version.clone(),
+            platform: server.platform.clone(),
+            sha256: server.sha256.clone(),
+            source_url: server.source_url.clone(),
+            license: server.license.clone(),
+            artifact_url: server.artifact_url.clone(),
+            entrypoint: server.entrypoint.clone(),
+            runtime: server.runtime.clone(),
+            installed_at: server.installed_at.clone(),
+            package_lock_sha256: server.package_lock_sha256.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +164,13 @@ pub enum InstallError {
     InstallConflict,
     InstallBusy,
     IndexCorrupt,
+    CatalogManifestNotFound {
+        manifest_id: String,
+        version: String,
+        platform: String,
+    },
+    NotInstalled,
+    MetadataMismatch(String),
     Io {
         operation: &'static str,
         kind: io::ErrorKind,
@@ -165,7 +233,20 @@ impl fmt::Display for InstallError {
                 formatter.write_str("immutable install destination already exists")
             }
             Self::InstallBusy => formatter.write_str("another managed installation is active"),
-            Self::IndexCorrupt => formatter.write_str("installed server index is corrupt"),
+            Self::IndexCorrupt => formatter
+                .write_str("installed server index is corrupt; explicit recovery is required"),
+            Self::CatalogManifestNotFound {
+                manifest_id,
+                version,
+                platform,
+            } => write!(
+                formatter,
+                "catalog has no exact manifest for {manifest_id}@{version} on {platform}"
+            ),
+            Self::NotInstalled => formatter.write_str("managed server is not installed"),
+            Self::MetadataMismatch(reason) => {
+                write!(formatter, "managed installation needs reinstall: {reason}")
+            }
             Self::Io { operation, kind } => {
                 write!(formatter, "installer I/O failed while {operation}: {kind}")
             }
@@ -205,6 +286,8 @@ impl ManagedInstaller {
         reject_symlink_tree(&lsp_root)?;
         let client = Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(10 * 60))
             .build()
             .map_err(|error| InstallError::Network(error.without_url().to_string()))?;
         Ok(Self {
@@ -217,6 +300,176 @@ impl ManagedInstaller {
 
     pub fn lsp_root(&self) -> &Path {
         &self.lsp_root
+    }
+
+    /// Resolve an install request against the reviewed catalog. The caller
+    /// supplies only exact lookup keys; the manifest, URL, digest, and all
+    /// other install facts always come from this process-owned catalog.
+    pub fn catalog_manifest(
+        manifest_id: &str,
+        version: &str,
+        platform: &str,
+    ) -> Result<ServerManifest, InstallError> {
+        initial_catalog()
+            .into_iter()
+            .find(|manifest| {
+                manifest.id == manifest_id
+                    && manifest.version == version
+                    && manifest.platform == platform
+            })
+            .ok_or_else(|| InstallError::CatalogManifestNotFound {
+                manifest_id: manifest_id.to_owned(),
+                version: version.to_owned(),
+                platform: platform.to_owned(),
+            })
+    }
+
+    /// Install the exact reviewed catalog entry. The timestamp is generated
+    /// here rather than accepted from the UI.
+    pub async fn install_catalog(
+        &self,
+        manifest_id: &str,
+        version: &str,
+        platform: &str,
+    ) -> Result<InstallResult, InstallError> {
+        let manifest = Self::catalog_manifest(manifest_id, version, platform)?;
+        self.install(&manifest, &manifest.version, &current_rfc3339())
+            .await
+    }
+
+    /// Return the reviewed catalog's install state without changing the
+    /// on-disk index. A corrupt index is an explicit error; it is never
+    /// replaced as a side effect of reading status.
+    pub fn installed_status(&self) -> Result<Vec<ManagedInstallStatus>, InstallError> {
+        let _operation = self
+            .operation_lock
+            .try_lock()
+            .map_err(|_| InstallError::InstallBusy)?;
+        let index = self.read_index()?;
+        let catalog = initial_catalog();
+        let mut statuses = Vec::with_capacity(catalog.len() + index.servers.len());
+        let mut seen = BTreeMap::new();
+        for manifest in &catalog {
+            let key = manifest_key(&manifest.id, &manifest.version, &manifest.platform);
+            let installed = index.servers.iter().find(|server| {
+                manifest_key(&server.manifest_id, &server.version, &server.platform) == key
+            });
+            let status = match installed {
+                None => ManagedInstallStatus {
+                    manifest_id: manifest.id.clone(),
+                    version: manifest.version.clone(),
+                    platform: manifest.platform.clone(),
+                    state: ManagedInstallState::NotInstalled,
+                    reason: None,
+                    installed: None,
+                },
+                Some(server) => match self.validate_installed_entry(manifest, server) {
+                    Ok(()) => ManagedInstallStatus {
+                        manifest_id: manifest.id.clone(),
+                        version: manifest.version.clone(),
+                        platform: manifest.platform.clone(),
+                        state: ManagedInstallState::Installed,
+                        reason: None,
+                        installed: Some(InstalledServerMetadata::from(server)),
+                    },
+                    Err(error) => ManagedInstallStatus {
+                        manifest_id: manifest.id.clone(),
+                        version: manifest.version.clone(),
+                        platform: manifest.platform.clone(),
+                        state: ManagedInstallState::NeedsReinstall,
+                        reason: Some(error.to_string()),
+                        installed: Some(InstalledServerMetadata::from(server)),
+                    },
+                },
+            };
+            seen.insert(key, ());
+            statuses.push(status);
+        }
+        for server in &index.servers {
+            let key = manifest_key(&server.manifest_id, &server.version, &server.platform);
+            if !seen.contains_key(&key) {
+                statuses.push(ManagedInstallStatus {
+                    manifest_id: server.manifest_id.clone(),
+                    version: server.version.clone(),
+                    platform: server.platform.clone(),
+                    state: ManagedInstallState::NeedsReinstall,
+                    reason: Some("installed entry is not present in the reviewed catalog".into()),
+                    installed: Some(InstalledServerMetadata::from(server)),
+                });
+            }
+        }
+        Ok(statuses)
+    }
+
+    /// Explicitly recover a corrupt index. This is never called by a status
+    /// read or an install attempt; the UI exposes it as a user-confirmed
+    /// recovery action.
+    pub fn recover_installed_index(&self) -> Result<(), InstallError> {
+        let _operation = self
+            .operation_lock
+            .try_lock()
+            .map_err(|_| InstallError::InstallBusy)?;
+        self.ensure_index_path_safe()?;
+        self.write_index(&InstalledServerIndex::default())
+    }
+
+    /// Remove one exact indexed entry. The catalog is intentionally not needed
+    /// here: an older or locally missing catalog version must still be
+    /// explicitly recoverable. The recorded key and canonical app-owned
+    /// destination are the only removal authority; metadata drift is handled
+    /// by the separate status validator.
+    pub fn uninstall_catalog(
+        &self,
+        manifest_id: &str,
+        version: &str,
+        platform: &str,
+    ) -> Result<(), InstallError> {
+        self.uninstall_indexed(manifest_id, version, platform)
+    }
+
+    pub fn uninstall(&self, manifest: &ServerManifest) -> Result<(), InstallError> {
+        manifest
+            .validate_for_install()
+            .map_err(|error| InstallError::InvalidManifest(error.to_string()))?;
+        self.uninstall_indexed(&manifest.id, &manifest.version, &manifest.platform)
+    }
+
+    /// Remove an exact key from the process-owned installed index. This is the
+    /// command boundary used by the UI: callers cannot supply a manifest,
+    /// artifact URL, or destination path.
+    pub fn uninstall_indexed(
+        &self,
+        manifest_id: &str,
+        version: &str,
+        platform: &str,
+    ) -> Result<(), InstallError> {
+        let _operation = self
+            .operation_lock
+            .try_lock()
+            .map_err(|_| InstallError::InstallBusy)?;
+        let mut index = self.read_index()?;
+        let position = index.servers.iter().position(|server| {
+            server.manifest_id == manifest_id
+                && server.version == version
+                && server.platform == platform
+        });
+        let position = position.ok_or(InstallError::NotInstalled)?;
+        let server = index.servers[position].clone();
+        let destination = self.safe_removal_destination(&server)?;
+        let previous = index.clone();
+        index.servers.remove(position);
+        self.write_index(&index)?;
+        match fs::remove_dir_all(&destination) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => {
+                let rollback = self.write_index(&previous);
+                if rollback.is_err() {
+                    return Err(InstallError::io("rolling back uninstall index", error));
+                }
+                Err(InstallError::io("removing managed installation", error))
+            }
+        }
     }
 
     /// Download, verify, extract, and promote the exact version confirmed by
@@ -232,6 +485,7 @@ impl ManagedInstaller {
             .try_lock()
             .map_err(|_| InstallError::InstallBusy)?;
         self.validate_request(manifest, requested_version)?;
+        self.read_index()?;
         let nonce = unique_nonce();
         if manifest.runtime.kind == crate::lsp::catalog::RuntimeKind::Node {
             let lock = reviewed_node_lock().map_err(node_lock_error)?;
@@ -279,6 +533,7 @@ impl ManagedInstaller {
             .try_lock()
             .map_err(|_| InstallError::InstallBusy)?;
         self.validate_request(manifest, requested_version)?;
+        self.read_index()?;
         if manifest.runtime.kind == crate::lsp::catalog::RuntimeKind::Node {
             return Err(InstallError::DependencyLock(
                 "Node installs require the complete reviewed package archive set".into(),
@@ -309,6 +564,7 @@ impl ManagedInstaller {
             .try_lock()
             .map_err(|_| InstallError::InstallBusy)?;
         self.validate_request(manifest, requested_version)?;
+        self.read_index()?;
         if manifest.runtime.kind != crate::lsp::catalog::RuntimeKind::Node {
             return Err(InstallError::InvalidManifest(
                 "Node package archives require a Node runtime".into(),
@@ -681,6 +937,200 @@ impl ManagedInstaller {
         result
     }
 
+    fn index_path(&self) -> PathBuf {
+        self.lsp_root.join(INDEX_FILE)
+    }
+
+    fn ensure_index_path_safe(&self) -> Result<(), InstallError> {
+        reject_symlink_tree(&self.lsp_root)?;
+        match fs::symlink_metadata(self.index_path()) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                Err(InstallError::UnsafeArchivePath)
+            }
+            Ok(metadata) if !metadata.file_type().is_file() => Err(InstallError::IndexCorrupt),
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(InstallError::io("checking installed index", error)),
+        }
+    }
+
+    fn read_index(&self) -> Result<InstalledServerIndex, InstallError> {
+        self.ensure_index_path_safe()?;
+        match fs::read_to_string(self.index_path()) {
+            Ok(json) => {
+                InstalledServerIndex::from_json(&json).map_err(|_| InstallError::IndexCorrupt)
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                Ok(InstalledServerIndex::default())
+            }
+            Err(error) => Err(InstallError::io("reading installed index", error)),
+        }
+    }
+
+    fn write_index(&self, index: &InstalledServerIndex) -> Result<(), InstallError> {
+        self.ensure_index_path_safe()?;
+        index.validate().map_err(|_| InstallError::IndexCorrupt)?;
+        let json = index.to_json().map_err(|_| InstallError::IndexCorrupt)?;
+        atomic_write(&self.index_path(), json.as_bytes())
+            .map_err(|error| InstallError::io("committing installed index", error))
+    }
+
+    fn expected_destination(&self, manifest: &ServerManifest) -> Result<PathBuf, InstallError> {
+        manifest
+            .validate_for_install()
+            .map_err(|error| InstallError::InvalidManifest(error.to_string()))?;
+        let (servers_root, _canonical_servers) = self.managed_servers_root()?;
+        let destination = self
+            .lsp_root
+            .join("servers")
+            .join(&manifest.id)
+            .join(&manifest.version)
+            .join(&manifest.platform);
+        if !destination.starts_with(&servers_root) {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+        Ok(destination)
+    }
+
+    fn managed_servers_root(&self) -> Result<(PathBuf, PathBuf), InstallError> {
+        let servers_root = self.lsp_root.join("servers");
+        let servers_metadata = fs::symlink_metadata(&servers_root)
+            .map_err(|error| InstallError::io("checking managed server root", error))?;
+        if servers_metadata.file_type().is_symlink() || !servers_metadata.is_dir() {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+        let canonical_lsp_root = fs::canonicalize(&self.lsp_root)
+            .map_err(|error| InstallError::io("validating installer root", error))?;
+        let canonical_servers = fs::canonicalize(&servers_root)
+            .map_err(|error| InstallError::io("validating managed server root", error))?;
+        if !canonical_servers.starts_with(&canonical_lsp_root) {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+        Ok((servers_root, canonical_servers))
+    }
+
+    /// Validate only the removal boundary. Catalog metadata and entrypoint
+    /// drift make a status `needs_reinstall`, but must not strand an otherwise
+    /// safe app-owned directory. Path escape and symlinked trees remain hard
+    /// failures.
+    fn safe_removal_destination(&self, server: &InstalledServer) -> Result<PathBuf, InstallError> {
+        server
+            .validate()
+            .map_err(|error| InstallError::MetadataMismatch(error.to_string()))?;
+        let (_servers_root, canonical_servers) = self.managed_servers_root()?;
+        let destination = canonical_servers
+            .join(&server.manifest_id)
+            .join(&server.version)
+            .join(&server.platform);
+        if !destination.starts_with(&canonical_servers) {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+
+        let recorded = PathBuf::from(&server.installed_path);
+        if !is_same_path(&recorded, &destination) {
+            return Err(InstallError::MetadataMismatch(
+                "recorded install path is not the managed canonical directory".into(),
+            ));
+        }
+
+        // All existing components are checked before canonicalization, so a
+        // symlink cannot redirect the removal outside the immutable root.
+        reject_symlink_tree(&destination)?;
+        match fs::symlink_metadata(&destination) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(InstallError::UnsafeArchivePath);
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(InstallError::UnsafeArchivePath);
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(destination),
+            Err(error) => {
+                return Err(InstallError::io("checking managed installation", error));
+            }
+        }
+        let canonical_destination = fs::canonicalize(&destination)
+            .map_err(|error| InstallError::io("validating managed installation", error))?;
+        if !canonical_destination.starts_with(&canonical_servers)
+            || !is_same_path(&canonical_destination, &destination)
+        {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+        validate_install_tree(&canonical_destination)?;
+        Ok(destination)
+    }
+
+    fn validate_installed_entry(
+        &self,
+        manifest: &ServerManifest,
+        server: &InstalledServer,
+    ) -> Result<(), InstallError> {
+        manifest
+            .validate_for_install()
+            .map_err(|error| InstallError::InvalidManifest(error.to_string()))?;
+        server
+            .validate()
+            .map_err(|error| InstallError::MetadataMismatch(error.to_string()))?;
+        if server.manifest_id != manifest.id
+            || server.version != manifest.version
+            || server.platform != manifest.platform
+            || server.sha256 != manifest.artifact.sha256
+            || server.source_url != manifest.source_url
+            || server.license != manifest.license
+            || server.artifact_url != manifest.artifact.url
+            || server.entrypoint != manifest.files.entrypoint
+            || server.runtime != manifest.runtime
+            || server.package_lock_sha256 != manifest.files.package_lock_sha256
+        {
+            return Err(InstallError::MetadataMismatch(
+                "installed metadata differs from the reviewed catalog".into(),
+            ));
+        }
+
+        let destination = self.expected_destination(manifest)?;
+        reject_symlink_tree(&self.lsp_root)?;
+        let destination_metadata = fs::symlink_metadata(&destination)
+            .map_err(|_| InstallError::MetadataMismatch("managed directory is missing".into()))?;
+        if destination_metadata.file_type().is_symlink() || !destination_metadata.is_dir() {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+        let canonical_destination = fs::canonicalize(&destination)
+            .map_err(|_| InstallError::MetadataMismatch("managed directory is missing".into()))?;
+        let canonical_servers = fs::canonicalize(self.lsp_root.join("servers"))
+            .map_err(|_| InstallError::MetadataMismatch("managed server root is missing".into()))?;
+        if !canonical_destination.starts_with(&canonical_servers) {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+        let recorded = PathBuf::from(&server.installed_path);
+        let canonical_recorded = fs::canonicalize(&recorded).map_err(|_| {
+            InstallError::MetadataMismatch("recorded install path is missing".into())
+        })?;
+        if !is_same_path(&canonical_recorded, &canonical_destination) {
+            return Err(InstallError::MetadataMismatch(
+                "recorded install path is not the managed canonical directory".into(),
+            ));
+        }
+        validate_install_tree(&canonical_destination)?;
+
+        let entrypoint = safe_relative_path(&manifest.files.entrypoint)?;
+        let entrypoint_path = canonical_destination.join(entrypoint);
+        let entrypoint_metadata = fs::symlink_metadata(&entrypoint_path)
+            .map_err(|_| InstallError::MetadataMismatch("entrypoint is missing".into()))?;
+        if !entrypoint_metadata.file_type().is_file()
+            || entrypoint_metadata.file_type().is_symlink()
+        {
+            return Err(InstallError::MetadataMismatch(
+                "entrypoint is not a regular file".into(),
+            ));
+        }
+        let canonical_entrypoint = fs::canonicalize(&entrypoint_path)
+            .map_err(|_| InstallError::MetadataMismatch("entrypoint is missing".into()))?;
+        if !canonical_entrypoint.starts_with(&canonical_destination) {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+        Ok(())
+    }
+
     fn persist_installed(
         &self,
         manifest: &ServerManifest,
@@ -707,26 +1157,14 @@ impl ManagedInstaller {
         server
             .validate()
             .map_err(|error| InstallError::InvalidManifest(error.to_string()))?;
-        let index_path = self.lsp_root.join(INDEX_FILE);
-        let mut index = match fs::read_to_string(&index_path) {
-            Ok(json) => {
-                InstalledServerIndex::from_json(&json).map_err(|_| InstallError::IndexCorrupt)?
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                InstalledServerIndex::default()
-            }
-            Err(error) => return Err(InstallError::io("reading installed index", error)),
-        };
+        let mut index = self.read_index()?;
         index.servers.retain(|entry| {
             !(entry.manifest_id == server.manifest_id
                 && entry.version == server.version
                 && entry.platform == server.platform)
         });
         index.servers.push(server.clone());
-        index.validate().map_err(|_| InstallError::IndexCorrupt)?;
-        let json = index.to_json().map_err(|_| InstallError::IndexCorrupt)?;
-        atomic_write(&index_path, json.as_bytes())
-            .map_err(|error| InstallError::io("committing installed index", error))?;
+        self.write_index(&index)?;
         Ok(InstallResult {
             server,
             already_installed,
@@ -740,6 +1178,41 @@ fn unique_nonce() -> String {
         .map_or(0, |duration| duration.as_nanos());
     let sequence = NONCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     format!("{}-{nanos}-{sequence}", std::process::id())
+}
+
+fn current_rfc3339() -> String {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs());
+    let days = seconds / 86_400;
+    let day_seconds = seconds % 86_400;
+    let (year, month, day) = civil_date_from_days(days as i64);
+    let hour = day_seconds / 3_600;
+    let minute = (day_seconds % 3_600) / 60;
+    let second = day_seconds % 60;
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+// Inverse of the proleptic Gregorian day-count formula. Keeping this tiny
+// formatter local avoids adding a date dependency solely for an install
+// metadata timestamp.
+fn civil_date_from_days(days_since_1970: i64) -> (i64, u32, u32) {
+    let shifted = days_since_1970 + 719_468;
+    let era = if shifted >= 0 {
+        shifted / 146_097
+    } else {
+        (shifted - 146_096) / 146_097
+    };
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_part = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_part + 2) / 5 + 1;
+    let month = month_part + if month_part < 10 { 3 } else { -9 };
+    let year = year + if month <= 2 { 1 } else { 0 };
+    (year, month as u32, day as u32)
 }
 
 fn verify_archive_file(
@@ -1260,6 +1733,109 @@ fn reject_symlink_tree(path: &Path) -> Result<(), InstallError> {
     Ok(())
 }
 
+fn validate_install_tree(root: &Path) -> Result<(), InstallError> {
+    let metadata = fs::symlink_metadata(root)
+        .map_err(|_| InstallError::MetadataMismatch("managed directory is missing".into()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(InstallError::UnsafeArchivePath);
+    }
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory)
+            .map_err(|error| InstallError::io("reading managed install tree", error))?
+        {
+            let entry =
+                entry.map_err(|error| InstallError::io("reading managed install entry", error))?;
+            let metadata = fs::symlink_metadata(entry.path())
+                .map_err(|error| InstallError::io("checking managed install entry", error))?;
+            if metadata.file_type().is_symlink() {
+                return Err(InstallError::UnsafeArchivePath);
+            }
+            if metadata.is_dir() {
+                pending.push(entry.path());
+            } else if metadata.is_file() {
+                reject_hard_link(&entry.path())?;
+            } else {
+                return Err(InstallError::UnsupportedArchiveEntry);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Managed trees are immutable regular-file trees. A regular file with more
+/// than one link could alias content outside the tree and make an otherwise
+/// local removal mutate unrelated user data, so all platforms fail closed
+/// unless the platform can prove the link count is exactly one.
+fn reject_hard_link(path: &Path) -> Result<(), InstallError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        let metadata = fs::symlink_metadata(path)
+            .map_err(|error| InstallError::io("checking managed file links", error))?;
+        if metadata.nlink() != 1 {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::core::PCWSTR;
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::Storage::FileSystem::{
+            CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+            FILE_ATTRIBUTE_NORMAL, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+            FILE_SHARE_WRITE, OPEN_EXISTING,
+        };
+
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        let handle = unsafe {
+            CreateFileW(
+                PCWSTR(wide.as_ptr()),
+                FILE_READ_ATTRIBUTES.0,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                None,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                None,
+            )
+        }
+        .map_err(|_| InstallError::UnsafeArchivePath)?;
+        let mut information = BY_HANDLE_FILE_INFORMATION::default();
+        let result = unsafe { GetFileInformationByHandle(handle, &mut information) };
+        let close_result = unsafe { CloseHandle(handle) };
+        if result.is_err() || close_result.is_err() || information.nNumberOfLinks != 1 {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+        Ok(())
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = path;
+        Err(InstallError::UnsafeArchivePath)
+    }
+}
+
+fn is_same_path(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        left.to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy())
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+fn manifest_key(manifest_id: &str, version: &str, platform: &str) -> String {
+    format!("{manifest_id}\u{001f}{version}\u{001f}{platform}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1758,6 +2334,257 @@ mod tests {
             installer.install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path),
             Err(InstallError::DependencyLock(_))
         ));
+    }
+
+    #[test]
+    fn catalog_install_lookup_accepts_only_exact_process_owned_keys() {
+        let manifest = ManagedInstaller::catalog_manifest(
+            "rust-analyzer",
+            "2026-08-10.1",
+            WINDOWS_X86_64_PLATFORM,
+        )
+        .unwrap();
+        assert_eq!(manifest.artifact.url, "https://github.com/rust-lang/rust-analyzer/releases/download/2026-08-10.1/rust-analyzer-x86_64-pc-windows-msvc.zip");
+        for (manifest_id, version, platform) in [
+            (
+                "rust-analyzer; invoke",
+                "2026-08-10.1",
+                WINDOWS_X86_64_PLATFORM,
+            ),
+            ("rust-analyzer", "latest", WINDOWS_X86_64_PLATFORM),
+            ("rust-analyzer", "2026-08-10.1", "windows-x86_64;url"),
+        ] {
+            assert!(matches!(
+                ManagedInstaller::catalog_manifest(manifest_id, version, platform),
+                Err(InstallError::CatalogManifestNotFound { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn corrupt_index_requires_explicit_recovery_and_is_not_overwritten_by_status() {
+        let temp = TempDir::new().unwrap();
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        let index_path = installer.lsp_root().join(INDEX_FILE);
+        fs::write(&index_path, b"{not-json").unwrap();
+        assert!(matches!(
+            installer.installed_status(),
+            Err(InstallError::IndexCorrupt)
+        ));
+        assert_eq!(fs::read(&index_path).unwrap(), b"{not-json");
+        installer.recover_installed_index().unwrap();
+        let statuses = installer.installed_status().unwrap();
+        assert!(statuses
+            .iter()
+            .all(|status| status.state == ManagedInstallState::NotInstalled));
+    }
+
+    #[test]
+    fn status_marks_metadata_drift_but_safe_removal_allows_reinstall() {
+        let archive = zip(&[("server.exe", b"fixture")]);
+        let manifest = manifest(&archive, "server.exe");
+        let temp = TempDir::new().unwrap();
+        let archive_path = write_fixture(&temp, "fixture.zip", &archive);
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        let result = installer
+            .install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path)
+            .unwrap();
+        installer
+            .validate_installed_entry(&manifest, &result.server)
+            .unwrap();
+
+        let mut index = installer.read_index().unwrap();
+        index.servers[0].sha256 = "00".repeat(32);
+        atomic_write(
+            &installer.lsp_root().join(INDEX_FILE),
+            index.to_json().unwrap().as_bytes(),
+        )
+        .unwrap();
+        let status = installer
+            .installed_status()
+            .unwrap()
+            .into_iter()
+            .find(|status| status.manifest_id == manifest.id)
+            .unwrap();
+        assert_eq!(status.state, ManagedInstallState::NeedsReinstall);
+        assert!(status.reason.is_some());
+        assert!(matches!(
+            installer.validate_installed_entry(&manifest, &index.servers[0]),
+            Err(InstallError::MetadataMismatch(_))
+        ));
+        installer
+            .uninstall_indexed(&manifest.id, &manifest.version, &manifest.platform)
+            .unwrap();
+        assert!(!Path::new(&result.server.installed_path).exists());
+        assert!(installer.read_index().unwrap().servers.is_empty());
+
+        // Removing the drifted indexed entry clears the immutable destination,
+        // so the exact reviewed version can be installed again explicitly.
+        installer
+            .install_archive(&manifest, "1.2.3", "2026-08-13T01:04:03Z", &archive_path)
+            .unwrap();
+        assert!(installer
+            .lsp_root()
+            .join("servers/fixture-server/1.2.3/windows-x86_64/server.exe")
+            .is_file());
+
+        let mut index = installer.read_index().unwrap();
+        index.servers[0].entrypoint = "missing.exe".into();
+        atomic_write(
+            &installer.lsp_root().join(INDEX_FILE),
+            index.to_json().unwrap().as_bytes(),
+        )
+        .unwrap();
+        let status = installer
+            .installed_status()
+            .unwrap()
+            .into_iter()
+            .find(|status| status.manifest_id == manifest.id)
+            .unwrap();
+        assert_eq!(status.state, ManagedInstallState::NeedsReinstall);
+        installer
+            .uninstall_indexed(&manifest.id, &manifest.version, &manifest.platform)
+            .unwrap();
+        assert!(!installer
+            .lsp_root()
+            .join("servers/fixture-server/1.2.3/windows-x86_64")
+            .exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_install_destination_is_never_removed() {
+        use std::os::unix::fs::symlink;
+        let archive = zip(&[("server.exe", b"fixture")]);
+        let manifest = manifest(&archive, "server.exe");
+        let temp = TempDir::new().unwrap();
+        let archive_path = write_fixture(&temp, "fixture.zip", &archive);
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        installer
+            .install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path)
+            .unwrap();
+        let destination = installer
+            .lsp_root()
+            .join("servers/fixture-server/1.2.3/windows-x86_64");
+        let outside = temp.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::remove_dir_all(&destination).unwrap();
+        symlink(&outside, &destination).unwrap();
+        assert!(matches!(
+            installer.uninstall(&manifest),
+            Err(InstallError::UnsafeArchivePath)
+        ));
+        assert!(fs::symlink_metadata(&destination)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(outside.is_dir());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_managed_server_root_is_never_followed() {
+        use std::os::unix::fs::symlink;
+        let archive = zip(&[("server.exe", b"fixture")]);
+        let manifest = manifest(&archive, "server.exe");
+        let temp = TempDir::new().unwrap();
+        let archive_path = write_fixture(&temp, "fixture.zip", &archive);
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        installer
+            .install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path)
+            .unwrap();
+        let servers = installer.lsp_root().join("servers");
+        let outside = temp.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        let moved = temp.path().join("moved-servers");
+        fs::rename(&servers, &moved).unwrap();
+        symlink(&outside, &servers).unwrap();
+        assert!(matches!(
+            installer.uninstall(&manifest),
+            Err(InstallError::UnsafeArchivePath)
+        ));
+        assert!(moved
+            .join("fixture-server/1.2.3/windows-x86_64/server.exe")
+            .is_file());
+        assert!(outside.is_dir());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hardlinked_install_file_is_never_removed() {
+        use std::fs::hard_link;
+
+        let archive = zip(&[("server.exe", b"fixture")]);
+        let manifest = manifest(&archive, "server.exe");
+        let temp = TempDir::new().unwrap();
+        let archive_path = write_fixture(&temp, "fixture.zip", &archive);
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        let result = installer
+            .install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path)
+            .unwrap();
+        let entrypoint = Path::new(&result.server.installed_path).join("server.exe");
+        let alias = Path::new(&result.server.installed_path).join("alias.exe");
+        hard_link(&entrypoint, &alias).unwrap();
+
+        let status = installer
+            .installed_status()
+            .unwrap()
+            .into_iter()
+            .find(|status| status.manifest_id == manifest.id)
+            .unwrap();
+        assert_eq!(status.state, ManagedInstallState::NeedsReinstall);
+        assert!(matches!(
+            installer.uninstall(&manifest),
+            Err(InstallError::UnsafeArchivePath)
+        ));
+        assert!(entrypoint.is_file());
+        assert!(alias.is_file());
+        assert_eq!(installer.read_index().unwrap().servers.len(), 1);
+    }
+
+    #[test]
+    fn uninstall_commits_one_exact_version_and_preserves_other_versions() {
+        let archive_v1 = zip(&[("server.exe", b"v1")]);
+        let archive_v2 = zip(&[("server.exe", b"v2")]);
+        let manifest_v1 = manifest(&archive_v1, "server.exe");
+        let mut manifest_v2 = manifest(&archive_v2, "server.exe");
+        manifest_v2.version = "1.2.4".into();
+        manifest_v2.artifact.url = "https://example.com/server-v2.zip".into();
+        let temp = TempDir::new().unwrap();
+        let archive_v1_path = write_fixture(&temp, "fixture-v1.zip", &archive_v1);
+        let archive_v2_path = write_fixture(&temp, "fixture-v2.zip", &archive_v2);
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        installer
+            .install_archive(
+                &manifest_v1,
+                "1.2.3",
+                "2026-08-13T01:02:03Z",
+                &archive_v1_path,
+            )
+            .unwrap();
+        installer
+            .install_archive(
+                &manifest_v2,
+                "1.2.4",
+                "2026-08-13T01:03:03Z",
+                &archive_v2_path,
+            )
+            .unwrap();
+        installer.uninstall(&manifest_v1).unwrap();
+        let index = installer.read_index().unwrap();
+        assert_eq!(index.servers.len(), 1);
+        assert_eq!(index.servers[0].version, manifest_v2.version);
+        installer
+            .validate_installed_entry(&manifest_v2, &index.servers[0])
+            .unwrap();
+        assert!(!installer
+            .lsp_root()
+            .join("servers/fixture-server/1.2.3/windows-x86_64")
+            .exists());
+        assert!(installer
+            .lsp_root()
+            .join("servers/fixture-server/1.2.4/windows-x86_64/server.exe")
+            .is_file());
     }
 
     #[cfg(unix)]

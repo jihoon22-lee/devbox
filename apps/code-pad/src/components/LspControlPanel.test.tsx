@@ -2,24 +2,39 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   languageServerStatuses,
+  installLsp,
+  lspCatalog,
+  lspInstalled,
   loadLspConfig,
+  recoverInstalledLsp,
   saveLspConfig,
   startLanguageServer,
   stopLanguageServer,
+  uninstallLsp,
 } from "../api";
-import type { LoadedLspConfig } from "../types";
+import type { LoadedLspConfig, ManagedInstallStatus, ManagedServerManifest } from "../types";
 import LspControlPanel from "./LspControlPanel";
 
 vi.mock("../api", () => ({
   languageServerStatuses: vi.fn(),
+  installLsp: vi.fn(),
+  lspCatalog: vi.fn(),
+  lspInstalled: vi.fn(),
   loadLspConfig: vi.fn(),
+  recoverInstalledLsp: vi.fn(),
   saveLspConfig: vi.fn(),
   startLanguageServer: vi.fn(),
   stopLanguageServer: vi.fn(),
+  uninstallLsp: vi.fn(),
 }));
 
 const loadMock = vi.mocked(loadLspConfig);
 const statusesMock = vi.mocked(languageServerStatuses);
+const catalogMock = vi.mocked(lspCatalog);
+const installedMock = vi.mocked(lspInstalled);
+const installMock = vi.mocked(installLsp);
+const uninstallMock = vi.mocked(uninstallLsp);
+const recoverMock = vi.mocked(recoverInstalledLsp);
 const saveMock = vi.mocked(saveLspConfig);
 const startMock = vi.mocked(startLanguageServer);
 const stopMock = vi.mocked(stopLanguageServer);
@@ -43,6 +58,11 @@ function loadedConfig(overrides: Partial<LoadedLspConfig> = {}): LoadedLspConfig
 beforeEach(() => {
   loadMock.mockReset().mockResolvedValue(loadedConfig());
   statusesMock.mockReset().mockResolvedValue([]);
+  catalogMock.mockReset().mockResolvedValue([]);
+  installedMock.mockReset().mockResolvedValue([]);
+  installMock.mockReset().mockResolvedValue(undefined);
+  uninstallMock.mockReset().mockResolvedValue(undefined);
+  recoverMock.mockReset().mockResolvedValue(undefined);
   saveMock.mockReset().mockResolvedValue(undefined);
   startMock.mockReset().mockResolvedValue(undefined);
   stopMock.mockReset().mockResolvedValue(undefined);
@@ -113,5 +133,184 @@ describe("LspControlPanel", () => {
     expect((start as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(start);
     expect(startMock).not.toHaveBeenCalled();
+  });
+
+  it("shows reviewed metadata and requires an explicit install confirmation", async () => {
+    const manifest: ManagedServerManifest = {
+      id: "rust-analyzer",
+      version: "2026-08-10.1",
+      platform: "windows-x86_64",
+      languages: [{ language_id: "rust", extensions: [".rs"] }],
+      source_url: "https://github.com/rust-lang/rust-analyzer",
+      license: "MIT OR Apache-2.0",
+      artifact: {
+        kind: "zip",
+        url: "https://github.com/rust-lang/rust-analyzer/releases/download/2026-08-10.1/rust-analyzer-x86_64-pc-windows-msvc.zip",
+        sha256: "f667620d3af202f480faf9e407374509ebddef3b8611922e463aeaa7e6985fc8",
+        size_bytes: 17_430_385,
+        allowed_redirect_hosts: ["release-assets.githubusercontent.com"],
+        archive_root: "",
+      },
+      runtime: { kind: "native", executable: "rust-analyzer.exe", min_version: null },
+      command: { executable: "rust-analyzer.exe", args: [] },
+      files: { entrypoint: "rust-analyzer.exe", package_lock_sha256: null },
+      capabilities_hint: null,
+      generated_at: "2026-08-12T00:00:00Z",
+    };
+    const notInstalled: ManagedInstallStatus = {
+      manifest_id: manifest.id,
+      version: manifest.version,
+      platform: manifest.platform,
+      state: "not_installed",
+      reason: null,
+      installed: null,
+    };
+    catalogMock.mockResolvedValue([manifest]);
+    installedMock.mockResolvedValue([notInstalled]);
+    const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
+    expect(await rendered.findByText(manifest.artifact.sha256)).toBeTruthy();
+    expect(rendered.getByText("17,430,385 bytes")).toBeTruthy();
+    const install = rendered.getByRole("button", { name: "설치" });
+    expect((install as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(install);
+    expect(await rendered.findByRole("dialog", { name: "관리형 서버 작업 확인" })).toBeTruthy();
+    expect(rendered.getAllByText(manifest.artifact.url).length).toBeGreaterThanOrEqual(2);
+    expect(rendered.getByRole("button", { name: "설치 확인" })).toBeTruthy();
+    fireEvent.click(rendered.getByRole("button", { name: "설치 확인" }));
+    await waitFor(() => expect(installMock).toHaveBeenCalledWith(
+      manifest.id,
+      manifest.version,
+      manifest.platform,
+    ));
+  });
+
+  it("disables mutation controls for installed entries and exposes reinstall state", async () => {
+    const manifest: ManagedServerManifest = {
+      id: "fixture-server",
+      version: "1.2.3",
+      platform: "windows-x86_64",
+      languages: [{ language_id: "fixture", extensions: [".fixture"] }],
+      source_url: "https://example.com/source",
+      license: "MIT",
+      artifact: {
+        kind: "zip",
+        url: "https://example.com/server.zip",
+        sha256: "11".repeat(32),
+        size_bytes: 42,
+        allowed_redirect_hosts: [],
+        archive_root: "",
+      },
+      runtime: { kind: "native", executable: "server.exe", min_version: null },
+      command: { executable: "server.exe", args: [] },
+      files: { entrypoint: "server.exe", package_lock_sha256: null },
+      capabilities_hint: null,
+      generated_at: "2026-08-13T00:00:00Z",
+    };
+    catalogMock.mockResolvedValue([manifest]);
+    installedMock.mockResolvedValue([{
+      manifest_id: manifest.id,
+      version: manifest.version,
+      platform: manifest.platform,
+      state: "installed",
+      reason: null,
+      installed: null,
+    }]);
+    const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
+    await rendered.findByText("설치됨");
+    expect((rendered.getByRole("button", { name: "최신 버전" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((rendered.getByRole("button", { name: "제거" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(rendered.getByRole("button", { name: "제거" }));
+    expect(await rendered.findByRole("button", { name: "제거 확인" })).toBeTruthy();
+    expect(rendered.queryByRole("button", { name: "설치 확인" })).toBeNull();
+  });
+
+  it("requires removal before repairing a needs-reinstall destination", async () => {
+    const manifest: ManagedServerManifest = {
+      id: "fixture-server",
+      version: "1.2.3",
+      platform: "windows-x86_64",
+      languages: [{ language_id: "fixture", extensions: [".fixture"] }],
+      source_url: "https://example.com/source",
+      license: "MIT",
+      artifact: {
+        kind: "zip",
+        url: "https://example.com/server.zip",
+        sha256: "11".repeat(32),
+        size_bytes: 42,
+        allowed_redirect_hosts: [],
+        archive_root: "",
+      },
+      runtime: { kind: "native", executable: "server.exe", min_version: null },
+      command: { executable: "server.exe", args: [] },
+      files: { entrypoint: "server.exe", package_lock_sha256: null },
+      capabilities_hint: null,
+      generated_at: "2026-08-13T00:00:00Z",
+    };
+    catalogMock.mockResolvedValue([manifest]);
+    installedMock.mockResolvedValue([{
+      manifest_id: manifest.id,
+      version: manifest.version,
+      platform: manifest.platform,
+      state: "needs_reinstall",
+      reason: "managed metadata differs",
+      installed: {
+        manifest_id: manifest.id,
+        version: manifest.version,
+        platform: manifest.platform,
+        sha256: "00".repeat(32),
+        source_url: manifest.source_url,
+        license: manifest.license,
+        artifact_url: manifest.artifact.url,
+        entrypoint: manifest.files.entrypoint,
+        runtime: manifest.runtime,
+        installed_at: "2026-08-13T00:00:00Z",
+        package_lock_sha256: null,
+      },
+    }]);
+    const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
+    await rendered.findByText("재설치 필요");
+    expect((rendered.getByRole("button", { name: "먼저 제거" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(rendered.getByRole("button", { name: "제거" }));
+    fireEvent.click(await rendered.findByRole("button", { name: "제거 확인" }));
+    await waitFor(() => expect(uninstallMock).toHaveBeenCalledWith(
+      manifest.id,
+      manifest.version,
+      manifest.platform,
+    ));
+  });
+
+  it("renders catalog-orphaned indexed versions with explicit removal", async () => {
+    catalogMock.mockResolvedValue([]);
+    installedMock.mockResolvedValue([{
+      manifest_id: "old-server",
+      version: "0.9.0",
+      platform: "windows-x86_64",
+      state: "needs_reinstall",
+      reason: "installed entry is not present in the reviewed catalog",
+      installed: {
+        manifest_id: "old-server",
+        version: "0.9.0",
+        platform: "windows-x86_64",
+        sha256: "22".repeat(32),
+        source_url: "https://example.com/old-source",
+        license: "Apache-2.0",
+        artifact_url: "https://example.com/old-server.zip",
+        entrypoint: "old-server.exe",
+        runtime: { kind: "native", executable: "old-server.exe", min_version: null },
+        installed_at: "2026-08-13T00:00:00Z",
+        package_lock_sha256: null,
+      },
+    }]);
+    const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
+    expect(await rendered.findByText("0.9.0 · windows-x86_64")).toBeTruthy();
+    expect(rendered.getByText("https://example.com/old-source")).toBeTruthy();
+    expect(rendered.getByText("카탈로그 없음")).toBeTruthy();
+    fireEvent.click(rendered.getByRole("button", { name: "제거" }));
+    fireEvent.click(await rendered.findByRole("button", { name: "제거 확인" }));
+    await waitFor(() => expect(uninstallMock).toHaveBeenCalledWith(
+      "old-server",
+      "0.9.0",
+      "windows-x86_64",
+    ));
   });
 });
