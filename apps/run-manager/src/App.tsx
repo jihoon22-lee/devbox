@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createService,
   createJob,
@@ -7,17 +7,20 @@ import {
   hideMainWindow,
   listServices,
   listJobs,
+  listActiveRuns,
   loadStartupShortcutStatus,
   loadRuntimeStatus,
   quitApp,
+  runJobNow,
   setStartupShortcutEnabled,
+  stopActiveRun,
   updateService,
   updateJob,
 } from "./api";
 import JobEditor from "./components/JobEditor";
 import RunHistory from "./components/RunHistory";
 import ServiceEditor from "./components/ServiceEditor";
-import type { Job, JobInput, RuntimeStatus, ServiceInput, StartupShortcutStatus } from "./types";
+import type { Job, JobInput, Run, RuntimeStatus, ServiceInput, StartupShortcutStatus } from "./types";
 import "./App.css";
 
 type Screen = "jobs" | "editor" | "services" | "service-editor" | "history";
@@ -43,16 +46,67 @@ export default function App() {
   const [startupStatus, setStartupStatus] = useState<StartupShortcutStatus | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [services, setServices] = useState<Job[]>([]);
+  const [activeRuns, setActiveRuns] = useState<Record<string, Run | null>>({});
   const [screen, setScreen] = useState<Screen>("jobs");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [activeSnapshotError, setActiveSnapshotError] = useState<string | null>(null);
+  const [activeSnapshotFresh, setActiveSnapshotFresh] = useState(false);
+  const activeRefresh = useRef<{ promise: Promise<void> | null; pending: boolean; generation: number }>({
+    promise: null,
+    pending: false,
+    generation: 0,
+  });
+
+  const refreshActiveRuns = useCallback(async () => {
+    const existing = activeRefresh.current.promise;
+    if (existing) {
+      activeRefresh.current.pending = true;
+      await existing;
+      return;
+    }
+    const operation = (async () => {
+      do {
+        activeRefresh.current.pending = false;
+        const generation = ++activeRefresh.current.generation;
+        try {
+          const runs = await listActiveRuns();
+          if (generation !== activeRefresh.current.generation) continue;
+          setActiveRuns(Object.fromEntries(runs.map((run) => [run.jobId, run])));
+          setActiveSnapshotFresh(true);
+          setActiveSnapshotError(null);
+        } catch (cause) {
+          if (generation === activeRefresh.current.generation) {
+            setActiveRuns({});
+            setActiveSnapshotFresh(false);
+            setActiveSnapshotError(cause instanceof Error ? cause.message : String(cause));
+          }
+        }
+      } while (activeRefresh.current.pending);
+    })();
+    activeRefresh.current.promise = operation;
+    try {
+      await operation;
+    } finally {
+      if (activeRefresh.current.promise === operation) {
+        activeRefresh.current.promise = null;
+        if (activeRefresh.current.pending) {
+          activeRefresh.current.pending = false;
+          await refreshActiveRuns();
+        }
+      }
+    }
+  }, []);
 
   const refreshJobs = useCallback(async () => {
-    setJobs(await listJobs());
-  }, []);
+    const nextJobs = await listJobs();
+    setJobs(nextJobs);
+    await refreshActiveRuns();
+  }, [refreshActiveRuns]);
 
   const refreshServices = useCallback(async () => {
     setServices(await listServices());
@@ -61,9 +115,9 @@ export default function App() {
   const refreshStatus = useCallback(async () => {
     try {
       setStatus(await loadRuntimeStatus());
-      setError(null);
+      setStatusError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setStatusError(cause instanceof Error ? cause.message : String(cause));
     }
   }, []);
 
@@ -76,7 +130,8 @@ export default function App() {
         setJobs(nextJobs);
         setServices(nextServices);
         setStartupStatus(nextStartupStatus);
-        setError(null);
+        void refreshActiveRuns();
+        setStatusError(null);
       })
       .catch((cause: unknown) => {
         if (active) setError(cause instanceof Error ? cause.message : String(cause));
@@ -87,12 +142,43 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [refreshActiveRuns]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => void refreshStatus(), 1_000);
+    const timer = window.setInterval(() => {
+      void refreshStatus();
+      void refreshActiveRuns();
+    }, 1_000);
     return () => window.clearInterval(timer);
-  }, [refreshStatus]);
+  }, [refreshActiveRuns, refreshStatus]);
+
+  const handleRunNow = async (job: Job) => {
+    setBusy(true);
+    try {
+      await runJobNow(job.id);
+      // The overlap policy may return a queued/skipped row. Refresh the
+      // process-only snapshot so the card is never marked running by guess.
+      await refreshActiveRuns();
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleStopRun = async (job: Job) => {
+    setBusy(true);
+    try {
+      await stopActiveRun(job.id);
+      await refreshActiveRuns();
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const editingJob = useMemo(
     () => (editingJobId ? jobs.find((job) => job.id === editingJobId) ?? null : null),
@@ -271,7 +357,7 @@ export default function App() {
           </span>
         </header>
 
-        {error ? <div className="error-banner" role="alert">오류: {error}</div> : null}
+        {(error ?? statusError ?? activeSnapshotError) ? <div className="error-banner" role="alert">오류: {error ?? statusError ?? activeSnapshotError}</div> : null}
 
         {screen === "editor" ? (
           <JobEditor job={editingJob} onSave={handleSave} onCancel={closeEditor} />
@@ -355,8 +441,8 @@ export default function App() {
                     <div className="job-card-main">
                       <div className="job-title-row">
                         <h3>{job.name}</h3>
-                        <span className={`job-state ${job.enabled ? "enabled" : "disabled"}`}>
-                          {job.enabled ? "활성" : "비활성"}
+                        <span className={`job-state ${activeRuns[job.id] ? "running" : job.enabled ? "enabled" : "disabled"}`}>
+                          {activeRuns[job.id] ? "실행 중" : job.enabled ? "활성" : "비활성"}
                         </span>
                       </div>
                       <code title={job.command}>{job.command}</code>
@@ -368,6 +454,8 @@ export default function App() {
                       </div>
                     </div>
                     <div className="job-actions">
+                      <button type="button" className="button-primary" disabled={busy} onClick={() => void handleRunNow(job)}>지금 실행</button>
+      <button type="button" className="button-secondary" disabled={busy || !activeSnapshotFresh || !activeRuns[job.id]} onClick={() => void handleStopRun(job)}>중지</button>
                       <button type="button" className="button-secondary" onClick={() => openEdit(job)}>편집</button>
                       <button type="button" className="button-danger" disabled={busy} onClick={() => void handleDelete(job)}>삭제</button>
                     </div>

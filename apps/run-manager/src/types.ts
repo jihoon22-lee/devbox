@@ -87,21 +87,12 @@ export interface Run {
   scheduledAt: number | null;
   occurrenceWallKey: string | null;
   queueSequence: number;
-  blockedByRunId: string | null;
   startedAt: number | null;
   endedAt: number | null;
   exitCode: number | null;
   status: RunStatus;
-  ownerInstanceId: string | null;
-  attemptToken: string | null;
-  errorMessage: string | null;
-  targetPid: number | null;
-  targetProcessCreatedAt: number | null;
-  targetPgid: number | null;
-  targetSid: number | null;
-  processMarker: string | null;
-  logDir: string | null;
-  logsDeletedAt: number | null;
+  logsAvailable: boolean;
+  failureCode: string | null;
   createdAt: number;
 }
 

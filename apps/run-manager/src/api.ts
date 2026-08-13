@@ -14,6 +14,7 @@ import type {
 
 let mockJobs: Job[] = [];
 let mockServices: Job[] = [];
+let mockRuns: Record<string, Run[]> = {};
 let mockSequence = 0;
 
 export function loadRuntimeStatus(): Promise<RuntimeStatus> {
@@ -218,13 +219,70 @@ export function listRuns(
   jobId: string,
   options: { limit?: number; startAt?: number | null; endAt?: number | null } = {},
 ): Promise<Run[]> {
-  if (!isTauri()) return Promise.resolve([]);
+  if (!isTauri()) {
+    return Promise.resolve([...(mockRuns[jobId] ?? [])].slice(0, options.limit ?? 50));
+  }
   return invoke<Run[]>("list_runs", {
     jobId,
     limit: options.limit ?? 50,
     startAt: options.startAt ?? null,
     endAt: options.endAt ?? null,
   });
+}
+
+export function runJobNow(jobId: string): Promise<Run> {
+  if (!isTauri()) {
+    const now = Date.now();
+    const run: Run = {
+      id: `mock-run-${++mockSequence}`,
+      jobId,
+      scheduledAt: null,
+      occurrenceWallKey: null,
+      queueSequence: (mockRuns[jobId]?.length ?? 0) + 1,
+      startedAt: now,
+      endedAt: null,
+      exitCode: null,
+      status: "running",
+      logsAvailable: false,
+      failureCode: null,
+      createdAt: now,
+    };
+    mockRuns = { ...mockRuns, [jobId]: [run, ...(mockRuns[jobId] ?? [])] };
+    return Promise.resolve(run);
+  }
+  return invoke<Run>("run_job_now", { id: jobId });
+}
+
+export function stopActiveRun(jobId: string): Promise<Run | null> {
+  if (!isTauri()) {
+    const current = mockRuns[jobId] ?? [];
+    const active = current.find((run) => ["starting", "running", "stopping"].includes(run.status));
+    if (!active) return Promise.resolve(null);
+    const stopped: Run = { ...active, status: "cancelled", endedAt: Date.now() };
+    mockRuns = { ...mockRuns, [jobId]: current.map((run) => (run.id === active.id ? stopped : run)) };
+    return Promise.resolve(stopped);
+  }
+  return invoke<Run | null>("stop_active_run", { id: jobId });
+}
+
+export function getActiveRun(jobId: string): Promise<Run | null> {
+  if (!isTauri()) {
+    return Promise.resolve(
+      (mockRuns[jobId] ?? []).find((run) => ["starting", "running", "stopping"].includes(run.status)) ?? null,
+    );
+  }
+  return invoke<Run | null>("get_active_run", { id: jobId });
+}
+
+export function listActiveRuns(): Promise<Run[]> {
+  if (!isTauri()) {
+    return Promise.resolve(
+      Object.values(mockRuns)
+        .flat()
+        .filter((run) => ["starting", "running", "stopping"].includes(run.status)),
+    );
+  }
+  return invoke<Run[]>("list_active_runs");
 }
 
 export function tailLog(

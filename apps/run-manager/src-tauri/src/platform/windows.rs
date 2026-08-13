@@ -12,10 +12,11 @@ use std::ptr::null_mut;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::AppHandle;
-use windows::core::{Interface, PCWSTR, PWSTR};
+use windows::core::{Interface, HRESULT, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, SetHandleInformation, FILETIME, HANDLE, HANDLE_FLAGS, HANDLE_FLAG_INHERIT, HWND,
-    LPARAM, LRESULT, RPC_E_CHANGED_MODE, WAIT_OBJECT_0, WAIT_TIMEOUT, WPARAM,
+    CloseHandle, SetHandleInformation, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, HANDLE_FLAGS,
+    HANDLE_FLAG_INHERIT, HWND, LPARAM, LRESULT, RPC_E_CHANGED_MODE, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    WPARAM,
 };
 use windows::Win32::Security::SECURITY_ATTRIBUTES;
 use windows::Win32::Storage::FileSystem::{ReplaceFileW, REPLACEFILE_WRITE_THROUGH};
@@ -31,9 +32,10 @@ use windows::Win32::System::JobObjects::{
 use windows::Win32::System::Pipes::CreatePipe;
 use windows::Win32::System::Threading::{
     CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess, GetProcessTimes,
-    InitializeProcThreadAttributeList, ResumeThread, TerminateProcess, UpdateProcThreadAttribute,
-    WaitForSingleObject, CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
-    EXTENDED_STARTUPINFO_PRESENT, LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION,
+    InitializeProcThreadAttributeList, OpenProcess, ResumeThread, TerminateProcess,
+    UpdateProcThreadAttribute, WaitForSingleObject, CREATE_NO_WINDOW, CREATE_SUSPENDED,
+    CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT, LPPROC_THREAD_ATTRIBUTE_LIST,
+    PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
     PROC_THREAD_ATTRIBUTE_HANDLE_LIST, STARTF_USESTDHANDLES, STARTUPINFOEXW,
 };
 use windows::Win32::UI::Shell::{
@@ -593,6 +595,18 @@ impl WindowsChild {
         };
         Ok(exit_code)
     }
+
+    /// Confirm that a naturally exited root left no descendant in the job.
+    /// If the job is still signalled false, terminate the remaining members
+    /// through the same owned Job Object and wait for its zero-process signal
+    /// before the scheduler can publish success.
+    pub fn ensure_tree_gone(&self, timeout: Duration) -> Result<(), WindowsExecutionError> {
+        if wait_for_handle(self.job.raw(), Duration::ZERO)?.is_some() {
+            return Ok(());
+        }
+        let _ = self.terminate_and_wait(timeout)?;
+        Ok(())
+    }
 }
 
 fn wait_for_handle(handle: HANDLE, timeout: Duration) -> Result<Option<()>, WindowsExecutionError> {
@@ -720,6 +734,43 @@ pub fn spawn(
         stderr_read,
         identity,
     })
+}
+
+/// Recover a persisted root only after opening it and comparing the creation
+/// FILETIME. A previous app crash normally closes its Job Object and applies
+/// KILL_ON_JOB_CLOSE. If the PID is already absent, that is the successful
+/// cleanup result. A surviving root is deliberately fail-closed: the Job
+/// Object handle was lost with the old process, so terminating only the root
+/// cannot prove that descendants are gone.
+pub fn recover_stale(
+    pid: u32,
+    created_at: i64,
+    timeout: Duration,
+) -> Result<(), WindowsExecutionError> {
+    let process = match unsafe {
+        OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+            false,
+            pid,
+        )
+    } {
+        Ok(process) => process,
+        Err(error) if process_open_is_absent(&error) => return Ok(()),
+        Err(error) => return Err(win32_error("OpenProcess", error)),
+    };
+    let process = OwnedWindowsHandle::new(process, "stale process")?;
+    let observed = process_creation_identity(pid, process.raw())?;
+    if observed.created_at != created_at {
+        return Err(WindowsExecutionError::Win32(
+            "stale process identity mismatch".to_owned(),
+        ));
+    }
+    let _ = timeout;
+    Err(WindowsExecutionError::ProcessStillAlive)
+}
+
+fn process_open_is_absent(error: &windows::core::Error) -> bool {
+    error.code() == HRESULT::from_win32(ERROR_INVALID_PARAMETER.0)
 }
 
 fn create_pipe_pair(

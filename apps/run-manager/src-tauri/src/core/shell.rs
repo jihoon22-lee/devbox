@@ -11,6 +11,7 @@ use std::fmt;
 use uuid::Uuid;
 
 pub const DEVBOX_RUN_MARKER: &str = "DEVBOX_RUN_MARKER";
+const DEVBOX_WRAPPER_ARG0: &str = "devbox-run-supervisor";
 pub const HANDSHAKE_START: &str = "__DEVBOX_RUN_HANDSHAKE_V1__";
 pub const HANDSHAKE_END: &str = "__DEVBOX_RUN_HANDSHAKE_END__";
 
@@ -205,22 +206,52 @@ fn quote_windows_argv_argument(argument: &str) -> String {
     quoted
 }
 
-/// The WSL command is passed to `Command::arg` as exactly one `-lc` value.
-/// Secrets never appear in this script; they are supplied through the child
-/// environment by [`prepare_wsl_environment`].
+/// The WSL command is passed as a separate `bash -c` positional argument.
+/// Secrets never appear in this fixed supervisor script; they are supplied
+/// through the child environment by [`prepare_wsl_environment`].
 pub fn build_wsl_wrapper(run_id: &str, command: &str) -> Result<String, ShellError> {
-    let run_id = validate_uuid("run ID", run_id)?.to_string();
+    validate_uuid("run ID", run_id)?;
     validate_nul_free("command", command)?;
     if command.is_empty() {
         return Err(ShellError::EmptyField("command"));
     }
 
-    // All literals in this prefix are fixed protocol values.  The run marker
-    // is read from the initial environment so a secret value is never copied
-    // into the `bash -lc` argument.
-    Ok(format!(
-        "printf '%s\\n' '{HANDSHAKE_START}' '{run_id}' \"$$\" \"$(ps -o pgid= -p \\\"$$\\\")\" \"$(ps -o sid= -p \\\"$$\\\")\" '{HANDSHAKE_END}'; exec {command}"
-    ))
+    // Keep a fixed supervisor shell as the process-group leader.  The user
+    // command is consumed from `$1` by a nested bash, never interpolated into
+    // this script.  Thus trailing `#`, unmatched `)`, heredocs, and other
+    // shell syntax cannot comment out or rebalance the fixed cleanup code.
+    // TERM is sent to every observed member except the supervisor; stubborn
+    // descendants are escalated to KILL before the supervisor exits with the
+    // user's original status.
+    const SUPERVISOR: &str = r#"
+printf '%s\n' '__DEVBOX_RUN_HANDSHAKE_V1__' "$DEVBOX_RUN_MARKER" "$$" "$(ps -o pgid= -p \"$$\")" "$(ps -o sid= -p \"$$\")" '__DEVBOX_RUN_HANDSHAKE_END__';
+set +e;
+bash --noprofile --norc -lc "$1";
+__devbox_status=$?;
+trap '' TERM;
+__devbox_group_pids() {
+  ps -eo pid=,pgid= | awk -v group="$$" '$2 == group && $1 != group { print $1 }';
+};
+for __devbox_pid in $(__devbox_group_pids); do
+  kill -TERM "$__devbox_pid" 2>/dev/null || true;
+done;
+for __devbox_attempt in 1 2 3 4 5 6 7 8 9 10; do
+  __devbox_pids=$(__devbox_group_pids);
+  [ -z "$__devbox_pids" ] && break;
+  sleep 0.05;
+done;
+for __devbox_pid in $(__devbox_group_pids); do
+  kill -KILL "$__devbox_pid" 2>/dev/null || true;
+done;
+wait 2>/dev/null || true;
+exit "$__devbox_status"
+"#;
+    // Keep these protocol literals in sync with the parser while avoiding any
+    // user-controlled interpolation into the shell source.
+    let wrapper = SUPERVISOR
+        .replace("__DEVBOX_RUN_HANDSHAKE_V1__", HANDSHAKE_START)
+        .replace("__DEVBOX_RUN_HANDSHAKE_END__", HANDSHAKE_END);
+    Ok(wrapper)
 }
 
 /// The complete WSL argv and child environment.  `environment` contains the
@@ -262,6 +293,8 @@ pub fn build_wsl_command(
         "--norc".to_owned(),
         "-lc".to_owned(),
         wrapper.clone(),
+        DEVBOX_WRAPPER_ARG0.to_owned(),
+        command.to_owned(),
     ]);
 
     Ok(WslCommandSpec {
@@ -773,7 +806,13 @@ mod tests {
                 "-lc",
             ]
         );
-        assert!(spec.wrapper.contains("exec printf '%s' \"$SECRET\" | cat"));
+        assert!(spec.wrapper.contains("bash --noprofile --norc -lc \"$1\""));
+        assert!(spec.wrapper.contains("__devbox_group_pids"));
+        assert!(!spec.wrapper.contains("printf '%s' \"$SECRET\" | cat"));
+        assert_eq!(
+            spec.argv.last().map(String::as_str),
+            Some("printf '%s' \"$SECRET\" | cat")
+        );
         assert!(!spec.wrapper.contains("value with spaces"));
         assert_eq!(
             spec.environment.get("SECRET"),
@@ -788,6 +827,56 @@ mod tests {
             Some(&String::from("PATH/l:SECRET/w:DEVBOX_RUN_MARKER/w"))
         );
         assert!(!spec.wrapper.contains("value with spaces"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn supervisor_keeps_shell_syntax_out_of_fixed_cleanup_and_reaps_descendants() {
+        let directory = tempfile::tempdir().unwrap();
+        let pid_file = directory.path().join("background.pid");
+        let command = format!("sleep 30 & echo $! > {}", pid_file.to_string_lossy());
+        let run = |command: &str| {
+            let wrapper = build_wsl_wrapper(run_id(), command).unwrap();
+            assert!(!wrapper.contains(command));
+            std::process::Command::new("setsid")
+                .args([
+                    "bash",
+                    "--noprofile",
+                    "--norc",
+                    "-lc",
+                    &wrapper,
+                    DEVBOX_WRAPPER_ARG0,
+                    command,
+                ])
+                .env(DEVBOX_RUN_MARKER, run_id())
+                .output()
+                .expect("setsid/bash fixture must be available")
+        };
+        let syntax = run("printf '%s' 'literal # and )'");
+        assert!(syntax.status.success(), "syntax output: {syntax:?}");
+        let heredoc = run("cat <<'EOF'\nliteral # and )\nEOF");
+        assert!(heredoc.status.success(), "heredoc output: {heredoc:?}");
+        assert!(String::from_utf8_lossy(&heredoc.stdout).contains("literal # and )"));
+        let output = run(&command);
+        assert!(output.status.success(), "supervisor output: {:?}", output);
+        let pid = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse::<u32>()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while std::time::Instant::now() < deadline {
+            let alive = std::process::Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false);
+            if !alive {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        panic!("background group member {pid} survived supervisor exit");
     }
 
     #[test]

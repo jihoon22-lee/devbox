@@ -218,6 +218,51 @@ pub async fn terminate_group(
     Ok(())
 }
 
+/// Startup recovery boundary. A missing leader is safe only when its process
+/// group probe is also gone; otherwise the persisted identity is retained and
+/// the caller must keep the run blocked rather than guessing at a recycled
+/// PGID.
+pub async fn recover_stale_group(
+    distro: &str,
+    identity: &WslProcessIdentity,
+    grace: Duration,
+) -> Result<(), WslExecutionError> {
+    let leader_probe = build_wsl_proc_dir_probe_argv(distro, identity.pid)?;
+    let leader = run_helper_output(&leader_probe).await?;
+    if !leader.status.success() {
+        let plan = build_wsl_termination_plan(distro, identity)?;
+        let group = run_helper_output(&plan.probe).await?;
+        if group.status.success() {
+            return Err(WslExecutionError::ProcessGroupStillAlive);
+        }
+        return Ok(());
+    }
+    terminate_group(distro, identity, grace).await
+}
+
+/// Confirm the post-exit supervisor invariant without issuing a signal.  A
+/// natural wrapper exit is publishable only after the exact persisted process
+/// group is absent; an alive group is reported as a cleanup failure rather
+/// than guessed-away after the leader has disappeared.
+pub async fn confirm_group_gone(
+    distro: &str,
+    identity: &WslProcessIdentity,
+    timeout: Duration,
+) -> Result<(), WslExecutionError> {
+    let plan = build_wsl_termination_plan(distro, identity)?;
+    let deadline = Instant::now() + timeout;
+    let probe = run_helper_output_until(&plan.probe, deadline).await?;
+    if probe.status.success() {
+        return Err(WslExecutionError::ProcessGroupStillAlive);
+    }
+    let leader = build_wsl_proc_dir_probe_argv(distro, identity.pid)?;
+    let leader = run_helper_output_until(&leader, deadline).await?;
+    if leader.status.success() {
+        return Err(WslExecutionError::ProcessGroupStillAlive);
+    }
+    Ok(())
+}
+
 /// Construct and spawn the WSL command.  `Command::arg` is used for every
 /// argv boundary; environment values are never interpolated into the `-lc`
 /// script.
