@@ -10,11 +10,12 @@ use crate::lsp::node_lock::{
     reviewed_node_lock, NodeDependencyLock, NodeLockError, NodePackageLock,
     REVIEWED_NODE_LOCK_SHA256,
 };
+use base64::Engine;
 use flate2::read::GzDecoder;
 use reqwest::header::LOCATION;
 use reqwest::{Client, StatusCode, Url};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha512};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
@@ -801,7 +802,8 @@ fn verify_node_package_archive(
     }
     let mut file = File::open(archive)
         .map_err(|error| InstallError::io("opening Node package archive", error))?;
-    let mut hasher = Sha256::new();
+    let mut sha256 = Sha256::new();
+    let mut sha512 = Sha512::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
         let read = file
@@ -810,9 +812,11 @@ fn verify_node_package_archive(
         if read == 0 {
             break;
         }
-        hasher.update(&buffer[..read]);
+        sha256.update(&buffer[..read]);
+        sha512.update(&buffer[..read]);
     }
-    verify_digest(&hasher.finalize(), &package.sha256)
+    verify_digest(&sha256.finalize(), &package.sha256)?;
+    verify_integrity(&sha512.finalize(), &package.integrity)
 }
 
 fn node_package_supported(package: &NodePackageLock, platform: &str) -> bool {
@@ -969,6 +973,24 @@ fn node_lock_error(error: NodeLockError) -> InstallError {
 fn verify_digest(actual: &[u8], expected_hex: &str) -> Result<(), InstallError> {
     let expected = decode_sha256(expected_hex)
         .ok_or_else(|| InstallError::InvalidManifest("artifact SHA-256 is invalid".to_string()))?;
+    if bool::from(actual.ct_eq(expected.as_slice())) {
+        Ok(())
+    } else {
+        Err(InstallError::DigestMismatch)
+    }
+}
+
+fn verify_integrity(actual: &[u8], expected_integrity: &str) -> Result<(), InstallError> {
+    let encoded = expected_integrity.strip_prefix("sha512-").ok_or_else(|| {
+        InstallError::DependencyLock("Node package SHA-512 integrity is invalid".into())
+    })?;
+    let expected = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()
+        .filter(|digest| digest.len() == 64)
+        .ok_or_else(|| {
+            InstallError::DependencyLock("Node package SHA-512 integrity is invalid".into())
+        })?;
     if bool::from(actual.ct_eq(expected.as_slice())) {
         Ok(())
     } else {
@@ -1258,6 +1280,13 @@ mod tests {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect()
+    }
+
+    fn integrity(bytes: &[u8]) -> String {
+        format!(
+            "sha512-{}",
+            base64::engine::general_purpose::STANDARD.encode(Sha512::digest(bytes))
+        )
     }
 
     fn manifest(bytes: &[u8], entrypoint: &str) -> ServerManifest {
@@ -1619,7 +1648,7 @@ mod tests {
             tarball: "https://registry.npmjs.org/fixture-server/-/fixture-server-1.2.3.tgz".into(),
             sha256: digest(&archive),
             size_bytes: archive.len() as u64,
-            integrity: "sha512-fixture".into(),
+            integrity: integrity(&archive),
             dependencies: BTreeMap::from([("fixture-dependency".into(), "0.1.0".into())]),
             optional_dependencies: BTreeMap::new(),
             optional: false,
@@ -1635,7 +1664,7 @@ mod tests {
                 .into(),
             sha256: digest(&dependency_archive),
             size_bytes: dependency_archive.len() as u64,
-            integrity: "sha512-fixture".into(),
+            integrity: integrity(&dependency_archive),
             dependencies: BTreeMap::new(),
             optional_dependencies: BTreeMap::new(),
             optional: false,
@@ -1678,7 +1707,7 @@ mod tests {
                     NodePackageArchive {
                         name: "fixture-server".into(),
                         version: "1.2.3".into(),
-                        archive: archive_path,
+                        archive: archive_path.clone(),
                     },
                     NodePackageArchive {
                         name: "fixture-dependency".into(),
@@ -1689,6 +1718,12 @@ mod tests {
                 &staging,
             )
             .unwrap();
+        let mut wrong_integrity = lock.packages[0].clone();
+        wrong_integrity.integrity = integrity(&dependency_archive);
+        assert!(matches!(
+            verify_node_package_archive(&wrong_integrity, &archive_path, InstallLimits::default()),
+            Err(InstallError::DigestMismatch)
+        ));
         let root = Path::new(&result.server.installed_path);
         assert_eq!(fs::read(root.join("bin/server.js")).unwrap(), b"fixture");
         assert_eq!(

@@ -6,6 +6,7 @@
 //! npm or a package lifecycle script; it only downloads and extracts the
 //! reviewed tarballs into the paths described by this lock.
 
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -168,6 +169,22 @@ impl NodeDependencyLock {
             }
             self.packages_for_server(server)?;
         }
+        let mut reachable = BTreeSet::new();
+        for server in self.roots.keys() {
+            for package in self.packages_for_server(server)? {
+                reachable.insert(package_key(&package.name, &package.version));
+            }
+        }
+        if let Some(package) = self
+            .packages
+            .iter()
+            .find(|package| !reachable.contains(&package_key(&package.name, &package.version)))
+        {
+            return Err(NodeLockError::Invalid(format!(
+                "package {}@{} is not reachable from a root",
+                package.name, package.version
+            )));
+        }
         Ok(())
     }
 
@@ -197,7 +214,11 @@ impl NodeDependencyLock {
         {
             Ok(std::path::PathBuf::new())
         } else {
-            std::path::PathBuf::from(package.path.strip_prefix("node_modules/").ok_or_else(
+            let package_path = package
+                .path
+                .strip_prefix(&format!("{}/", primary.path))
+                .unwrap_or(&package.path);
+            std::path::PathBuf::from(package_path.strip_prefix("node_modules/").ok_or_else(
                 || NodeLockError::Invalid(format!("invalid npm install path {}", package.path)),
             )?)
             .components()
@@ -297,9 +318,19 @@ fn validate_package(package: &NodePackageLock) -> Result<(), NodeLockError> {
         )));
     }
     validate_sha256(&package.sha256)?;
-    if !package.integrity.starts_with("sha512-") {
+    let Some(encoded_integrity) = package.integrity.strip_prefix("sha512-") else {
         return Err(NodeLockError::Invalid(format!(
             "integrity for {} must be npm SHA-512",
+            package.name
+        )));
+    };
+    let decoded_integrity = base64::engine::general_purpose::STANDARD
+        .decode(encoded_integrity)
+        .ok()
+        .filter(|digest| digest.len() == 64);
+    if decoded_integrity.is_none() {
+        return Err(NodeLockError::Invalid(format!(
+            "integrity for {} must be a base64-encoded 64-byte SHA-512 digest",
             package.name
         )));
     }
@@ -451,5 +482,34 @@ mod tests {
             lock.validate(),
             Err(NodeLockError::Invalid(reason)) if reason.contains("exact official")
         ));
+    }
+
+    #[test]
+    fn primary_package_prefix_is_remapped_at_the_managed_root() {
+        let lock = reviewed_node_lock().unwrap();
+        let nested_typescript = lock
+            .package("typescript", "4.9.5")
+            .expect("vscode nested TypeScript package");
+        assert_eq!(
+            lock.install_path("vscode-langservers-extracted", nested_typescript)
+                .unwrap(),
+            std::path::PathBuf::from("node_modules/typescript")
+        );
+    }
+
+    #[test]
+    fn lock_rejects_non_base64_or_wrong_length_integrity() {
+        let mut lock = reviewed_node_lock().unwrap();
+        lock.packages[0].integrity = "sha512-fixture".into();
+        assert!(
+            matches!(lock.validate(), Err(NodeLockError::Invalid(reason)) if reason.contains("base64-encoded"))
+        );
+
+        let mut lock = reviewed_node_lock().unwrap();
+        lock.packages[0].integrity =
+            "sha512-".to_string() + &base64::engine::general_purpose::STANDARD.encode([0_u8; 63]);
+        assert!(
+            matches!(lock.validate(), Err(NodeLockError::Invalid(reason)) if reason.contains("64-byte"))
+        );
     }
 }

@@ -55,11 +55,11 @@ pub use installer::{
     InstallError, InstallLimits, InstallResult, ManagedInstaller, NodePackageArchive,
     DEFAULT_MAX_ARCHIVE_ENTRIES, DEFAULT_MAX_INSTALL_BYTES,
 };
+pub use manager::{LanguageServerStatus, LspManager, LspManagerError};
 pub use node_lock::{
     reviewed_node_lock, NodeDependencyLock, NodeLockError, NodePackageLock, NodePackageRef,
     NODE_LOCK_SCHEMA_VERSION, REVIEWED_NODE_LOCK_SHA256,
 };
-pub use manager::{LanguageServerStatus, LspManager, LspManagerError};
 pub use positions::{
     offset_to_position, position_to_offset, position_to_offset_clamped, LspPosition, LspRange,
     PositionEncoding, PositionError,
