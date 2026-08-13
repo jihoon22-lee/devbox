@@ -449,3 +449,215 @@ h1 {
 .scope-note {
   display: none;
 }
+
+.lsp-panel {
+  display: flex;
+  width: min(820px, 100%);
+  max-height: min(820px, 92vh);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #3d4e66;
+  border-radius: 9px;
+  color: #e5edf8;
+  background: #18212d;
+  box-shadow: 0 18px 70px rgb(0 0 0 / 50%);
+}
+
+.lsp-panel-header,
+.lsp-panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #344153;
+}
+
+.lsp-panel-header h2,
+.lsp-status-section h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.lsp-panel-footer {
+  border-top: 1px solid #344153;
+  border-bottom: 0;
+  color: #93a4ba;
+  font-size: 11px;
+}
+
+.lsp-error,
+.lsp-warning,
+.lsp-trust-note,
+.lsp-toggle,
+.lsp-config-grid,
+.lsp-config-actions,
+.lsp-status-section {
+  margin-right: 18px;
+  margin-left: 18px;
+}
+
+.lsp-error,
+.lsp-warning,
+.lsp-trust-note {
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.lsp-error {
+  color: #ffc5c5;
+  background: #3a2026;
+}
+
+.lsp-warning {
+  color: #f7d39a;
+  background: #3b3020;
+}
+
+.lsp-trust-note {
+  color: #aebcd0;
+  background: #111821;
+}
+
+.lsp-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  font-size: 13px;
+}
+
+.lsp-config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.lsp-config-grid label {
+  display: grid;
+  gap: 5px;
+  color: #9fb0c7;
+  font-size: 11px;
+}
+
+.lsp-config-grid input,
+.lsp-config-grid textarea,
+.lsp-config-grid select {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #344153;
+  border-radius: 4px;
+  outline: none;
+  color: #e5edf8;
+  background: #10161f;
+  font: inherit;
+}
+
+.lsp-config-grid textarea {
+  resize: vertical;
+}
+
+.lsp-wide-field {
+  grid-column: 1 / -1;
+}
+
+.lsp-config-actions,
+.lsp-status-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.lsp-config-actions {
+  padding: 10px 0 14px;
+}
+
+.lsp-status-section {
+  min-height: 120px;
+  flex: 1;
+  padding: 4px 0 14px;
+  overflow-y: auto;
+}
+
+.lsp-status-section h3 {
+  margin-bottom: 9px;
+  font-size: 13px;
+}
+
+.lsp-empty {
+  color: #718097;
+  font-size: 12px;
+}
+
+.lsp-status-card {
+  position: relative;
+  margin-bottom: 8px;
+  padding: 10px;
+  border: 1px solid #2f3d50;
+  border-radius: 5px;
+  background: #121923;
+}
+
+.lsp-status-main,
+.lsp-capabilities {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #91a1b8;
+  font-size: 11px;
+}
+
+.lsp-status-main strong {
+  color: #e1eaf6;
+  font-size: 12px;
+}
+
+.lsp-state,
+.lsp-capabilities span {
+  padding: 2px 6px;
+  border-radius: 99px;
+  background: #273346;
+}
+
+.lsp-state.ready {
+  color: #9be7b2;
+  background: #183827;
+}
+
+.lsp-state.degraded,
+.lsp-state.crashed {
+  color: #ffc3a0;
+  background: #4a2923;
+}
+
+.lsp-capabilities {
+  margin-top: 8px;
+}
+
+.lsp-stderr {
+  margin: 8px 0;
+  color: #8fa1b7;
+  font-size: 11px;
+}
+
+.lsp-stderr pre {
+  max-height: 130px;
+  padding: 8px;
+  overflow: auto;
+  color: #bdc9d8;
+  background: #0b1017;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 760px) {
+  .lsp-config-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lsp-wide-field {
+    grid-column: auto;
+  }
+}

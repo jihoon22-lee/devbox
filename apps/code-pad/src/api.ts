@@ -8,6 +8,9 @@ import type {
   LoadedSession,
   SessionState,
   WorkspaceFiles,
+  LanguageServerStatus,
+  LoadedLspConfig,
+  LspConfig,
 } from "./types";
 
 export function openFile(path: string, encoding: Encoding | null = null): Promise<OpenedFile> {
@@ -76,4 +79,24 @@ export function renderPreview(
     content,
     workspaceRoot,
   });
+}
+
+export function loadLspConfig(): Promise<LoadedLspConfig> {
+  return invoke<LoadedLspConfig>("load_lsp_config");
+}
+
+export function saveLspConfig(config: LspConfig, recoverInvalid = false): Promise<void> {
+  return invoke<void>("save_lsp_config", { config, recoverInvalid });
+}
+
+export function startLanguageServer(languageId: string): Promise<void> {
+  return invoke<void>("start_language_server", { languageId });
+}
+
+export function stopLanguageServer(languageId: string): Promise<void> {
+  return invoke<void>("stop_language_server", { languageId });
+}
+
+export function languageServerStatuses(): Promise<LanguageServerStatus[]> {
+  return invoke<LanguageServerStatus[]>("language_server_statuses");
 }
