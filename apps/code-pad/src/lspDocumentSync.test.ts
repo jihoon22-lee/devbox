@@ -452,4 +452,25 @@ describe("LspDocumentSync", () => {
     resolveSecond({ metadata: { uri: "file:///work/src/main.rs", version: 1 }, value: { isIncomplete: false, items: [] }, stale: false });
     await expect(second).resolves.toMatchObject({ value: { items: [] } });
   });
+
+  it("does not let a pending diagnostics pull block later document changes", async () => {
+    const calls: string[] = [];
+    const transport = transportFor(calls);
+    transport.statuses = vi.fn().mockResolvedValue([readyStatus()]);
+    transport.pullDiagnostics = vi.fn(
+      () => new Promise<LspFeatureResponse<LspDiagnosticResult>>(() => undefined),
+    );
+    const sync = new LspDocumentSync(transport);
+    await sync.setWorkspace("/work");
+    await sync.setConfig(config());
+    await sync.open(document());
+    void sync.pullDiagnostics("doc-1");
+    await sync.change(document("edited", { dirty: true }));
+    expect(transport.change).toHaveBeenCalledWith(
+      "rust",
+      "file:///work/src/main.rs",
+      "edited",
+      true,
+    );
+  });
 });

@@ -602,7 +602,7 @@ export class LspDocumentSync {
     const state = this.documents.get(documentId);
     if (!state || !state.active || state.closing || !state.languageId) return Promise.resolve(null);
     const generation = state.generation;
-    return this.enqueueResult(state, async () => {
+    const execute = async () => {
       if (!this.isCurrent(state, generation, true) || !state.languageId) return null;
       const opened = await this.ensureOpen(state, generation, state.languageId, state.doc.text);
       if (!opened || !this.isCurrent(state, generation, true)) return null;
@@ -629,7 +629,21 @@ export class LspDocumentSync {
       };
       this.publishState();
       return response;
-    }).then((response) => response ?? null);
+    };
+    // Diagnostics is a read request like completion/hover: it must observe the
+    // settled document queue without ever blocking it. A slow or hanging pull
+    // would otherwise stall rename, formatting, and navigation requests that
+    // serialize behind it.
+    const previous = state.queue;
+    return this.transition
+      .catch(() => undefined)
+      .then(() => previous.catch(() => undefined))
+      .then(execute)
+      .catch((cause) => {
+        this.recordError(cause);
+        return null;
+      })
+      .then((response) => response ?? null);
   }
 
   /** Send the final didClose for a logical document and forget its queue. */
