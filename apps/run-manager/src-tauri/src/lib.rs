@@ -1,6 +1,7 @@
 mod commands;
 pub mod core;
 mod lifecycle;
+pub mod logs;
 mod platform;
 pub mod storage;
 
@@ -49,10 +50,12 @@ pub fn run() {
             commands::get_run,
             commands::list_runs,
             commands::preview_cron,
+            commands::tail_log,
         ])
         .setup(|app| {
             let data_dir = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+            std::fs::create_dir_all(data_dir.join("logs/runs"))?;
             let background = is_background_launch(&std::env::args_os().collect::<Vec<_>>());
             let database_path = data_dir.join("data.db");
             let database = Arc::new(storage::DatabaseState::open(&database_path)?);
