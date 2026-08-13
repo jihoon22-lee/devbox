@@ -207,6 +207,71 @@ async fn read_features_fail_closed_on_capability_and_cancel_on_timeout() {
     slow_manager.stop("rust").await.unwrap();
 }
 
+#[tokio::test]
+async fn newer_completion_and_hover_cancel_the_previous_request() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let document = workspace.path().join("main.rs");
+    fs::write(&document, "fixture\n").unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    save_to_app_local_data_dir(
+        app_data.path(),
+        &feature_config(workspace.path(), &executable, "supersede_features"),
+    )
+    .unwrap();
+
+    let manager = Arc::new(LspManager::new(app_data.path(), "0.3.0"));
+    manager.start("rust").await.unwrap();
+    let opened = manager
+        .open_document("rust", &document, "fixture\n".into())
+        .await
+        .unwrap();
+
+    let first_manager = Arc::clone(&manager);
+    let first_uri = opened.uri.clone();
+    let first_completion = tokio::spawn(async move {
+        first_manager
+            .completion("rust", &first_uri, LspPosition::new(0, 0))
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    let current_completion = manager
+        .completion("rust", &opened.uri, LspPosition::new(0, 1))
+        .await
+        .unwrap();
+    assert_eq!(current_completion.value.items[0].label, "fixture");
+    assert!(first_completion
+        .await
+        .unwrap()
+        .unwrap_err()
+        .to_string()
+        .to_ascii_lowercase()
+        .contains("cancelled"));
+
+    let first_manager = Arc::clone(&manager);
+    let first_uri = opened.uri.clone();
+    let first_hover = tokio::spawn(async move {
+        first_manager
+            .hover("rust", &first_uri, LspPosition::new(0, 0))
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    let current_hover = manager
+        .hover("rust", &opened.uri, LspPosition::new(0, 1))
+        .await
+        .unwrap();
+    assert_eq!(current_hover.value.unwrap().text, "**fixture**");
+    assert!(first_hover
+        .await
+        .unwrap()
+        .unwrap_err()
+        .to_string()
+        .to_ascii_lowercase()
+        .contains("cancelled"));
+
+    manager.stop("rust").await.unwrap();
+}
+
 #[test]
 fn corrupt_config_requires_explicit_recovery_before_replacement() {
     let app_data = tempdir().unwrap();

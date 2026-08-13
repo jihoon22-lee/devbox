@@ -22,6 +22,7 @@ use super::features::{
 use super::positions::{position_to_offset, LspPosition, PositionEncoding};
 use super::process::{LspProcess, ProcessState};
 use super::runtime::RuntimeResolver;
+use super::transport::RequestCancellation;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -104,6 +105,25 @@ struct LanguageSession {
     client: LspClient,
     process: LspProcess,
     documents: Mutex<DocumentStore>,
+    cancelable_requests: Mutex<CancelableRequests>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CancelableFeature {
+    Completion,
+    Hover,
+}
+
+struct ActiveCancelableRequest {
+    token: u64,
+    cancellation: RequestCancellation,
+}
+
+#[derive(Default)]
+struct CancelableRequests {
+    next_token: u64,
+    completion: Option<ActiveCancelableRequest>,
+    hover: Option<ActiveCancelableRequest>,
 }
 
 struct FeatureRequestContext {
@@ -272,6 +292,7 @@ impl LspManager {
                 capabilities.position_encoding,
                 sync_kind,
             )),
+            cancelable_requests: Mutex::new(CancelableRequests::default()),
         })
     }
 
@@ -512,16 +533,14 @@ impl LspManager {
             .feature_context(language_id, uri, "textDocument/completion")
             .await?;
         validate_request_position(&context.snapshot, position, context.encoding)?;
-        let raw = context
-            .session
-            .client
-            .request(
-                "textDocument/completion",
-                build_completion_params(&context.metadata, position),
-                COMPLETION_TIMEOUT,
-            )
-            .await
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let raw = cancelable_feature_request(
+            &context.session,
+            CancelableFeature::Completion,
+            "textDocument/completion",
+            build_completion_params(&context.metadata, position),
+            COMPLETION_TIMEOUT,
+        )
+        .await?;
         let parsed = parse_completion_response(&raw).map_err(feature_error)?;
         let value = validate_completion_response(
             parsed,
@@ -544,16 +563,14 @@ impl LspManager {
             .feature_context(language_id, uri, "textDocument/hover")
             .await?;
         validate_request_position(&context.snapshot, position, context.encoding)?;
-        let raw = context
-            .session
-            .client
-            .request(
-                "textDocument/hover",
-                build_hover_params(&context.metadata, position),
-                HOVER_TIMEOUT,
-            )
-            .await
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let raw = cancelable_feature_request(
+            &context.session,
+            CancelableFeature::Hover,
+            "textDocument/hover",
+            build_hover_params(&context.metadata, position),
+            HOVER_TIMEOUT,
+        )
+        .await?;
         let parsed = parse_hover_response(&raw).map_err(feature_error)?;
         let value = parsed.map(sanitize_hover);
         let stale = current_feature_metadata(&context).await.1;
@@ -657,6 +674,49 @@ impl LspManager {
             .cloned()
             .ok_or(LspManagerError::NotRunning(language_id))
     }
+}
+
+async fn cancelable_feature_request(
+    session: &Arc<LanguageSession>,
+    feature: CancelableFeature,
+    method: &str,
+    params: serde_json::Value,
+    timeout: Duration,
+) -> Result<serde_json::Value, LspManagerError> {
+    let (token, cancellation) = {
+        let mut requests = session.cancelable_requests.lock().await;
+        requests.next_token = requests.next_token.wrapping_add(1).max(1);
+        let token = requests.next_token;
+        let slot = match feature {
+            CancelableFeature::Completion => &mut requests.completion,
+            CancelableFeature::Hover => &mut requests.hover,
+        };
+        if let Some(previous) = slot.take() {
+            previous.cancellation.cancel();
+        }
+        let cancellation = RequestCancellation::new();
+        *slot = Some(ActiveCancelableRequest {
+            token,
+            cancellation: cancellation.clone(),
+        });
+        (token, cancellation)
+    };
+
+    let result = session
+        .client
+        .request_with_cancel(method, params, timeout, cancellation)
+        .await
+        .map_err(|error| LspManagerError::Protocol(error.to_string()));
+
+    let mut requests = session.cancelable_requests.lock().await;
+    let slot = match feature {
+        CancelableFeature::Completion => &mut requests.completion,
+        CancelableFeature::Hover => &mut requests.hover,
+    };
+    if slot.as_ref().is_some_and(|active| active.token == token) {
+        *slot = None;
+    }
+    result
 }
 
 async fn current_feature_metadata(

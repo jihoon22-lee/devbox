@@ -154,7 +154,7 @@ async fn handle_request(
                     "referencesProvider": {},
                     "diagnosticProvider": {}
                 }),
-                "stale_features" => json!({
+                "stale_features" | "supersede_features" => json!({
                     "positionEncoding": "utf-8",
                     "textDocumentSync": { "openClose": true, "change": 2, "save": true },
                     "completionProvider": true,
@@ -229,6 +229,18 @@ async fn handle_request(
         | "textDocument/references" => {
             if mode == "stale_features" && method == "textDocument/completion" {
                 tokio::time::sleep(Duration::from_millis(120)).await;
+            } else if mode == "supersede_features"
+                && matches!(
+                    method.as_str(),
+                    "textDocument/completion" | "textDocument/hover"
+                )
+                && params
+                    .as_ref()
+                    .and_then(|params| params.pointer("/position/character"))
+                    .and_then(Value::as_u64)
+                    == Some(0)
+            {
+                tokio::time::sleep(Duration::from_millis(400)).await;
             } else if mode == "slow_features"
                 && matches!(
                     method.as_str(),

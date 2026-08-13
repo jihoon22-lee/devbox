@@ -3,7 +3,7 @@
 use super::documents::{SyncKind, WorkspaceRoot};
 use super::positions::{PositionEncoding, PositionError};
 use super::process::{IncomingMessage, LspProcess, ProcessError, RequestError};
-use super::transport::{JsonRpcMessage, RpcError, RpcId};
+use super::transport::{JsonRpcMessage, RequestCancellation, RpcError, RpcId};
 use lsp_types::TextDocumentSyncKind;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -324,6 +324,28 @@ impl LspClient {
         self.inner
             .process
             .request(method, Some(params), timeout)
+            .await
+            .map_err(ClientError::Request)
+    }
+
+    /// Send a feature request that can be superseded by newer editor input.
+    /// Capability and ready-state checks intentionally match `request`; only
+    /// the cooperative cancellation signal differs.
+    pub async fn request_with_cancel(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+        cancellation: RequestCancellation,
+    ) -> Result<Value, ClientError> {
+        if self.status() != ClientStatus::Ready
+            || !self.inner.capabilities.read().await.supports(method)
+        {
+            return Err(ClientError::NotReady);
+        }
+        self.inner
+            .process
+            .request_with_cancel(method, Some(params), timeout, cancellation)
             .await
             .map_err(ClientError::Request)
     }
