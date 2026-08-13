@@ -24,7 +24,7 @@ export function loadRuntimeStatus(): Promise<RuntimeStatus> {
       backgroundLaunch: false,
       schedulerRunning: true,
       shutdownRequested: false,
-      databasePath: "%LOCALAPPDATA%\\com.workbench.runmanager\\data.db",
+      databasePath: "%LOCALAPPDATA%\\com.devbox.runmanager\\data.db",
     });
   }
   return invoke<RuntimeStatus>("runtime_status");
