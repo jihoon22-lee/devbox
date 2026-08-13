@@ -6,10 +6,16 @@
 
 use crate::commands::session::atomic_write;
 use crate::lsp::catalog::{ArtifactKind, InstalledServer, InstalledServerIndex, ServerManifest};
+use crate::lsp::node_lock::{
+    reviewed_node_lock, NodeDependencyLock, NodeLockError, NodePackageLock,
+    REVIEWED_NODE_LOCK_SHA256,
+};
 use flate2::read::GzDecoder;
 use reqwest::header::LOCATION;
 use reqwest::{Client, StatusCode, Url};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, Read, Write};
@@ -63,6 +69,13 @@ pub struct InstallResult {
     pub already_installed: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct NodePackageArchive {
+    pub name: String,
+    pub version: String,
+    pub archive: PathBuf,
+}
+
 #[derive(Debug)]
 pub enum InstallError {
     InvalidManifest(String),
@@ -78,6 +91,10 @@ pub enum InstallError {
     },
     SizeLimitExceeded,
     DigestMismatch,
+    DependencyLock(String),
+    NodePackageMismatch(String),
+    UnsupportedNodePackage(String),
+    PackageJsonInvalid(String),
     InvalidArchive(String),
     UnsafeArchivePath,
     UnsupportedArchiveEntry,
@@ -124,6 +141,19 @@ impl fmt::Display for InstallError {
             }
             Self::SizeLimitExceeded => formatter.write_str("installer size limit exceeded"),
             Self::DigestMismatch => formatter.write_str("artifact SHA-256 mismatch"),
+            Self::DependencyLock(reason) => {
+                write!(formatter, "invalid Node dependency lock: {reason}")
+            }
+            Self::NodePackageMismatch(reason) => {
+                write!(formatter, "Node package does not match its lock: {reason}")
+            }
+            Self::UnsupportedNodePackage(package) => write!(
+                formatter,
+                "required Node package is unsupported on this platform: {package}"
+            ),
+            Self::PackageJsonInvalid(reason) => {
+                write!(formatter, "invalid installed package.json: {reason}")
+            }
             Self::InvalidArchive(reason) => write!(formatter, "invalid artifact archive: {reason}"),
             Self::UnsafeArchivePath => formatter.write_str("artifact contains an unsafe path"),
             Self::UnsupportedArchiveEntry => {
@@ -202,6 +232,21 @@ impl ManagedInstaller {
             .map_err(|_| InstallError::InstallBusy)?;
         self.validate_request(manifest, requested_version)?;
         let nonce = unique_nonce();
+        if manifest.runtime.kind == crate::lsp::catalog::RuntimeKind::Node {
+            let lock = reviewed_node_lock().map_err(node_lock_error)?;
+            let download_dir = self.lsp_root.join("downloads").join(&nonce);
+            let staging = self.lsp_root.join("staging").join(&nonce);
+            let result = self
+                .install_node_downloads(manifest, installed_at, &lock, &download_dir, &staging)
+                .await;
+            if download_dir.exists() {
+                let _ = fs::remove_dir_all(&download_dir);
+            }
+            if staging.exists() {
+                let _ = fs::remove_dir_all(&staging);
+            }
+            return result;
+        }
         let partial = self
             .lsp_root
             .join("downloads")
@@ -233,6 +278,11 @@ impl ManagedInstaller {
             .try_lock()
             .map_err(|_| InstallError::InstallBusy)?;
         self.validate_request(manifest, requested_version)?;
+        if manifest.runtime.kind == crate::lsp::catalog::RuntimeKind::Node {
+            return Err(InstallError::DependencyLock(
+                "Node installs require the complete reviewed package archive set".into(),
+            ));
+        }
         verify_archive_file(manifest, archive.as_ref(), self.limits.max_download_bytes)?;
         let staging = self.lsp_root.join("staging").join(unique_nonce());
         let result =
@@ -241,6 +291,144 @@ impl ManagedInstaller {
             let _ = fs::remove_dir_all(&staging);
         }
         result
+    }
+
+    /// Install a reviewed Node package closure from local fixture archives.
+    /// Production downloads use the same extraction path; this boundary keeps
+    /// security tests completely independent from the network.
+    pub fn install_node_archives(
+        &self,
+        manifest: &ServerManifest,
+        requested_version: &str,
+        installed_at: &str,
+        archives: &[NodePackageArchive],
+    ) -> Result<InstallResult, InstallError> {
+        let _operation = self
+            .operation_lock
+            .try_lock()
+            .map_err(|_| InstallError::InstallBusy)?;
+        self.validate_request(manifest, requested_version)?;
+        if manifest.runtime.kind != crate::lsp::catalog::RuntimeKind::Node {
+            return Err(InstallError::InvalidManifest(
+                "Node package archives require a Node runtime".into(),
+            ));
+        }
+        let lock = reviewed_node_lock().map_err(node_lock_error)?;
+        let staging = self.lsp_root.join("staging").join(unique_nonce());
+        let result =
+            self.install_node_archives_with_lock(manifest, installed_at, &lock, archives, &staging);
+        if staging.exists() {
+            let _ = fs::remove_dir_all(&staging);
+        }
+        result
+    }
+
+    async fn install_node_downloads(
+        &self,
+        manifest: &ServerManifest,
+        installed_at: &str,
+        lock: &NodeDependencyLock,
+        download_dir: &Path,
+        staging: &Path,
+    ) -> Result<InstallResult, InstallError> {
+        fs::create_dir_all(download_dir)
+            .map_err(|error| InstallError::io("creating Node download directory", error))?;
+        reject_symlink_tree(download_dir)?;
+        let mut archives = Vec::new();
+        for (index, package) in lock
+            .packages_for_server(&manifest.id)
+            .map_err(node_lock_error)?
+            .into_iter()
+            .enumerate()
+        {
+            if !node_package_supported(package, &manifest.platform) {
+                if package.optional {
+                    continue;
+                }
+                return Err(InstallError::UnsupportedNodePackage(format!(
+                    "{}@{}",
+                    package.name, package.version
+                )));
+            }
+            let archive = download_dir.join(format!("{index}.tgz"));
+            self.download_package(package, &archive).await?;
+            archives.push(NodePackageArchive {
+                name: package.name.clone(),
+                version: package.version.clone(),
+                archive,
+            });
+        }
+        self.install_node_archives_with_lock(manifest, installed_at, lock, &archives, staging)
+    }
+
+    fn install_node_archives_with_lock(
+        &self,
+        manifest: &ServerManifest,
+        installed_at: &str,
+        lock: &NodeDependencyLock,
+        archives: &[NodePackageArchive],
+        staging: &Path,
+    ) -> Result<InstallResult, InstallError> {
+        lock.validate().map_err(node_lock_error)?;
+        let packages = lock
+            .packages_for_server(&manifest.id)
+            .map_err(node_lock_error)?;
+        let mut archive_by_package = BTreeMap::new();
+        for archive in archives {
+            let key = package_key(&archive.name, &archive.version);
+            if archive_by_package.insert(key, archive).is_some() {
+                return Err(InstallError::DependencyLock(format!(
+                    "duplicate archive for {}@{}",
+                    archive.name, archive.version
+                )));
+            }
+        }
+        let mut expected_keys = BTreeMap::new();
+        let mut extracted_entries = 0_usize;
+        let mut extracted_bytes = 0_u64;
+        fs::create_dir(staging)
+            .map_err(|error| InstallError::io("creating Node staging directory", error))?;
+        reject_symlink_tree(staging)?;
+        for package in packages {
+            let key = package_key(&package.name, &package.version);
+            if !node_package_supported(package, &manifest.platform) {
+                if package.optional {
+                    continue;
+                }
+                return Err(InstallError::UnsupportedNodePackage(key));
+            }
+            expected_keys.insert(key.clone(), ());
+            let archive = archive_by_package.get(&key).ok_or_else(|| {
+                InstallError::DependencyLock(format!("missing archive for {key}"))
+            })?;
+            verify_node_package_archive(package, &archive.archive, self.limits)?;
+            let relative = lock
+                .install_path(&manifest.id, package)
+                .map_err(node_lock_error)?;
+            let (entries, bytes) =
+                extract_node_package(package, &archive.archive, staging, &relative, self.limits)?;
+            extracted_entries = extracted_entries
+                .checked_add(entries)
+                .ok_or(InstallError::SizeLimitExceeded)?;
+            extracted_bytes = extracted_bytes
+                .checked_add(bytes)
+                .ok_or(InstallError::SizeLimitExceeded)?;
+            if extracted_entries > self.limits.max_archive_entries
+                || extracted_bytes > self.limits.max_extracted_bytes
+            {
+                return Err(InstallError::SizeLimitExceeded);
+            }
+            sanitize_node_package_json(staging, &relative, package)?;
+        }
+        if archive_by_package
+            .keys()
+            .any(|key| !expected_keys.contains_key(key))
+        {
+            return Err(InstallError::DependencyLock(
+                "archive set contains a package outside the reviewed closure".into(),
+            ));
+        }
+        self.promote_staging(manifest, installed_at, staging)
     }
 
     fn validate_request(
@@ -261,9 +449,32 @@ impl ManagedInstaller {
             return Err(InstallError::SizeLimitExceeded);
         }
         if manifest.runtime.kind == crate::lsp::catalog::RuntimeKind::Node {
-            return Err(InstallError::InvalidManifest(
-                "reviewed Node dependency lock installation is not available".to_string(),
-            ));
+            if manifest.artifact.kind != ArtifactKind::NpmTarball
+                || manifest.artifact.archive_root != "package"
+            {
+                return Err(InstallError::DependencyLock(
+                    "Node manifests must use a package-root npm tarball".into(),
+                ));
+            }
+            let lock = reviewed_node_lock().map_err(node_lock_error)?;
+            let primary = lock.primary_root(&manifest.id).map_err(node_lock_error)?;
+            let package = lock
+                .package(&primary.name, &primary.version)
+                .ok_or_else(|| InstallError::DependencyLock("primary package is missing".into()))?;
+            if primary.version != manifest.version
+                || package.tarball != manifest.artifact.url
+                || package.sha256 != manifest.artifact.sha256
+                || package.size_bytes != expected
+            {
+                return Err(InstallError::DependencyLock(
+                    "manifest artifact does not match the reviewed primary package".into(),
+                ));
+            }
+            if manifest.files.package_lock_sha256.as_deref() != Some(REVIEWED_NODE_LOCK_SHA256) {
+                return Err(InstallError::DependencyLock(
+                    "manifest package lock digest does not match reviewed lock".into(),
+                ));
+            }
         }
         let url = Url::parse(&manifest.artifact.url)
             .map_err(|_| InstallError::InvalidManifest("artifact URL is invalid".to_string()))?;
@@ -281,7 +492,40 @@ impl ManagedInstaller {
         let expected_size = manifest.artifact.size_bytes.ok_or_else(|| {
             InstallError::InvalidManifest("artifact size is required".to_string())
         })?;
-        let initial = Url::parse(&manifest.artifact.url)
+        self.download_verified(
+            &manifest.artifact.url,
+            expected_size,
+            &manifest.artifact.sha256,
+            &manifest.artifact.allowed_redirect_hosts,
+            partial,
+        )
+        .await
+    }
+
+    async fn download_package(
+        &self,
+        package: &NodePackageLock,
+        partial: &Path,
+    ) -> Result<(), InstallError> {
+        self.download_verified(
+            &package.tarball,
+            package.size_bytes,
+            &package.sha256,
+            &[],
+            partial,
+        )
+        .await
+    }
+
+    async fn download_verified(
+        &self,
+        url: &str,
+        expected_size: u64,
+        expected_sha256: &str,
+        allowed_redirect_hosts: &[String],
+        partial: &Path,
+    ) -> Result<(), InstallError> {
+        let initial = Url::parse(url)
             .map_err(|_| InstallError::InvalidManifest("artifact URL is invalid".to_string()))?;
         let initial_host = initial
             .host_str()
@@ -310,11 +554,7 @@ impl ManagedInstaller {
                     .map_err(|_| InstallError::RedirectRejected)?;
                 let next_host = next.host_str().ok_or(InstallError::RedirectRejected)?;
                 let host_allowed = next_host == initial_host
-                    || manifest
-                        .artifact
-                        .allowed_redirect_hosts
-                        .iter()
-                        .any(|host| host == next_host);
+                    || allowed_redirect_hosts.iter().any(|host| host == next_host);
                 if next.scheme() != "https"
                     || !next.username().is_empty()
                     || next.password().is_some()
@@ -377,7 +617,7 @@ impl ManagedInstaller {
                 actual,
             });
         }
-        verify_digest(&hasher.finalize(), &manifest.artifact.sha256)
+        verify_digest(&hasher.finalize(), expected_sha256)
     }
 
     fn install_verified_archive(
@@ -391,6 +631,15 @@ impl ManagedInstaller {
             .map_err(|error| InstallError::io("creating staging directory", error))?;
         reject_symlink_tree(staging)?;
         extract_archive(manifest, archive, staging, self.limits)?;
+        self.promote_staging(manifest, installed_at, staging)
+    }
+
+    fn promote_staging(
+        &self,
+        manifest: &ServerManifest,
+        installed_at: &str,
+        staging: &Path,
+    ) -> Result<InstallResult, InstallError> {
         let entrypoint = safe_relative_path(&manifest.files.entrypoint)?;
         let entrypoint_path = staging.join(&entrypoint);
         let metadata =
@@ -526,6 +775,195 @@ fn verify_archive_file(
         hasher.update(&buffer[..read]);
     }
     verify_digest(&hasher.finalize(), &manifest.artifact.sha256)
+}
+
+fn verify_node_package_archive(
+    package: &NodePackageLock,
+    archive: &Path,
+    limits: InstallLimits,
+) -> Result<(), InstallError> {
+    let metadata = fs::symlink_metadata(archive)
+        .map_err(|error| InstallError::io("reading Node package metadata", error))?;
+    if !metadata.file_type().is_file() {
+        return Err(InstallError::InvalidArchive(format!(
+            "{} archive is not a regular file",
+            package.name
+        )));
+    }
+    if metadata.len() > limits.max_download_bytes {
+        return Err(InstallError::SizeLimitExceeded);
+    }
+    if metadata.len() != package.size_bytes {
+        return Err(InstallError::SizeMismatch {
+            expected: package.size_bytes,
+            actual: metadata.len(),
+        });
+    }
+    let mut file = File::open(archive)
+        .map_err(|error| InstallError::io("opening Node package archive", error))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| InstallError::io("hashing Node package archive", error))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    verify_digest(&hasher.finalize(), &package.sha256)
+}
+
+fn node_package_supported(package: &NodePackageLock, platform: &str) -> bool {
+    if let Some(os) = &package.os {
+        let target = if platform.starts_with("windows-") {
+            "win32"
+        } else if platform.starts_with("linux-") {
+            "linux"
+        } else if platform.starts_with("macos-") {
+            "darwin"
+        } else {
+            platform
+        };
+        if !os.iter().any(|value| value == target) {
+            return false;
+        }
+    }
+    if let Some(cpu) = &package.cpu {
+        let target = if platform.ends_with("x86_64") {
+            "x64"
+        } else {
+            "arm64"
+        };
+        if !cpu.iter().any(|value| value == target) {
+            return false;
+        }
+    }
+    true
+}
+
+fn extract_node_package(
+    package: &NodePackageLock,
+    archive: &Path,
+    staging: &Path,
+    install_path: &Path,
+    limits: InstallLimits,
+) -> Result<(usize, u64), InstallError> {
+    let file = File::open(archive)
+        .map_err(|error| InstallError::io("opening Node package archive", error))?;
+    let decoder = GzDecoder::new(BufReader::new(file));
+    let mut tar = tar::Archive::new(decoder);
+    let entries = tar
+        .entries()
+        .map_err(|error| InstallError::InvalidArchive(error.to_string()))?;
+    let mut count = 0_usize;
+    let mut total = 0_u64;
+    let mut saw_package_json = false;
+    for entry in entries {
+        count = count
+            .checked_add(1)
+            .ok_or(InstallError::SizeLimitExceeded)?;
+        if count > limits.max_archive_entries {
+            return Err(InstallError::SizeLimitExceeded);
+        }
+        let mut entry = entry.map_err(|error| InstallError::InvalidArchive(error.to_string()))?;
+        let entry_type = entry.header().entry_type();
+        if !matches!(entry_type, EntryType::Regular | EntryType::Directory) {
+            return Err(InstallError::UnsupportedArchiveEntry);
+        }
+        let raw_path = entry.path().map_err(|_| InstallError::UnsafeArchivePath)?;
+        let raw_path = raw_path.to_str().ok_or(InstallError::UnsafeArchivePath)?;
+        let archive_path = strict_archive_path(raw_path)?;
+        let Some(relative) = strip_archive_root(&archive_path, "package")? else {
+            continue;
+        };
+        if relative.as_os_str().is_empty() {
+            continue;
+        }
+        if relative
+            .components()
+            .any(|component| matches!(component, Component::Normal(name) if name == "node_modules"))
+        {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+        let destination = checked_destination(staging, &install_path.join(&relative))?;
+        if entry_type == EntryType::Directory {
+            create_checked_dir_all(staging, &destination)?;
+            continue;
+        }
+        let size = entry.size();
+        total = total
+            .checked_add(size)
+            .ok_or(InstallError::SizeLimitExceeded)?;
+        if total > limits.max_extracted_bytes {
+            return Err(InstallError::SizeLimitExceeded);
+        }
+        if relative == Path::new("package.json") {
+            saw_package_json = true;
+        }
+        write_new_entry(staging, &destination, &mut entry, size)?;
+    }
+    if !saw_package_json {
+        return Err(InstallError::PackageJsonInvalid(format!(
+            "{}@{} has no package.json",
+            package.name, package.version
+        )));
+    }
+    Ok((count, total))
+}
+
+fn sanitize_node_package_json(
+    staging: &Path,
+    install_path: &Path,
+    package: &NodePackageLock,
+) -> Result<(), InstallError> {
+    let package_json = staging.join(install_path).join("package.json");
+    let bytes = fs::read(&package_json)
+        .map_err(|error| InstallError::io("reading Node package.json", error))?;
+    let mut value: Value = serde_json::from_slice(&bytes).map_err(|error| {
+        InstallError::PackageJsonInvalid(format!("{}@{}: {error}", package.name, package.version))
+    })?;
+    let object = value.as_object_mut().ok_or_else(|| {
+        InstallError::PackageJsonInvalid(format!(
+            "{}@{} package.json must be an object",
+            package.name, package.version
+        ))
+    })?;
+    let actual_name = object.get("name").and_then(Value::as_str);
+    let actual_version = object.get("version").and_then(Value::as_str);
+    if actual_name != Some(package.name.as_str())
+        || actual_version != Some(package.version.as_str())
+    {
+        return Err(InstallError::NodePackageMismatch(format!(
+            "expected {}@{}, got {actual_name:?}@{actual_version:?}",
+            package.name, package.version
+        )));
+    }
+    // Never run npm. Removing scripts from the staged metadata also prevents
+    // a later accidental package-manager invocation from running lifecycle
+    // hooks inside an otherwise immutable managed install.
+    object.remove("scripts");
+    let mut output = serde_json::to_vec_pretty(&value)
+        .map_err(|error| InstallError::PackageJsonInvalid(error.to_string()))?;
+    output.push(b'\n');
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&package_json)
+        .map_err(|error| InstallError::io("sanitizing Node package.json", error))?;
+    file.write_all(&output)
+        .and_then(|_| file.flush())
+        .and_then(|_| file.sync_all())
+        .map_err(|error| InstallError::io("sanitizing Node package.json", error))
+}
+
+fn package_key(name: &str, version: &str) -> String {
+    format!("{name}\u{001f}{version}")
+}
+
+fn node_lock_error(error: NodeLockError) -> InstallError {
+    InstallError::DependencyLock(error.to_string())
 }
 
 fn verify_digest(actual: &[u8], expected_hex: &str) -> Result<(), InstallError> {
@@ -807,6 +1245,7 @@ mod tests {
         Artifact, CommandSpec, LanguageSupport, ManifestFiles, RuntimeKind, RuntimeSpec,
         WINDOWS_X86_64_PLATFORM,
     };
+    use crate::lsp::node_lock::NodePackageRef;
     use flate2::write::GzEncoder;
     use flate2::Compression;
     use std::io::Cursor;
@@ -896,16 +1335,22 @@ mod tests {
     }
 
     fn tar_gz_file(path: &str, contents: &[u8]) -> Vec<u8> {
+        tar_gz_files(&[(path, contents)])
+    }
+
+    fn tar_gz_files(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let encoder = GzEncoder::new(Vec::new(), Compression::default());
         let mut builder = Builder::new(encoder);
-        let mut header = Header::new_gnu();
-        header.set_entry_type(EntryType::Regular);
-        header.set_mode(0o644);
-        header.set_size(contents.len() as u64);
-        header.set_cksum();
-        builder
-            .append_data(&mut header, path, Cursor::new(contents))
-            .unwrap();
+        for (path, contents) in entries {
+            let mut header = Header::new_gnu();
+            header.set_entry_type(EntryType::Regular);
+            header.set_mode(0o644);
+            header.set_size(contents.len() as u64);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, *path, Cursor::new(*contents))
+                .unwrap();
+        }
         builder.into_inner().unwrap().finish().unwrap()
     }
 
@@ -1140,7 +1585,132 @@ mod tests {
     }
 
     #[test]
-    fn node_manifest_cannot_bypass_missing_dependency_lock_installation() {
+    fn node_fixture_installs_under_node_modules_without_lifecycle_scripts() {
+        let package_json = br#"{
+  "name": "fixture-server",
+  "version": "1.2.3",
+  "bin": { "fixture-server": "bin/server.js" },
+  "dependencies": { "fixture-dependency": "0.1.0" },
+  "scripts": { "install": "echo SHOULD_NOT_RUN > marker.txt" }
+}"#;
+        let archive = tar_gz_files(&[
+            ("package/package.json", package_json),
+            ("package/bin/server.js", b"fixture"),
+        ]);
+        let dependency_archive = tar_gz_files(&[
+            (
+                "package/package.json",
+                br#"{
+  "name": "fixture-dependency",
+  "version": "0.1.0",
+  "scripts": { "install": "echo SHOULD_NOT_RUN > dependency-marker.txt" }
+}"#,
+            ),
+            ("package/lib/dependency.js", b"dependency"),
+        ]);
+        let temp = TempDir::new().unwrap();
+        let archive_path = write_fixture(&temp, "fixture.tgz", &archive);
+        let dependency_archive_path =
+            write_fixture(&temp, "fixture-dependency.tgz", &dependency_archive);
+        let package = NodePackageLock {
+            name: "fixture-server".into(),
+            version: "1.2.3".into(),
+            path: "node_modules/fixture-server".into(),
+            tarball: "https://registry.npmjs.org/fixture-server/-/fixture-server-1.2.3.tgz".into(),
+            sha256: digest(&archive),
+            size_bytes: archive.len() as u64,
+            integrity: "sha512-fixture".into(),
+            dependencies: BTreeMap::from([("fixture-dependency".into(), "0.1.0".into())]),
+            optional_dependencies: BTreeMap::new(),
+            optional: false,
+            os: None,
+            cpu: None,
+            has_install_script: true,
+        };
+        let dependency_package = NodePackageLock {
+            name: "fixture-dependency".into(),
+            version: "0.1.0".into(),
+            path: "node_modules/fixture-dependency".into(),
+            tarball: "https://registry.npmjs.org/fixture-dependency/-/fixture-dependency-0.1.0.tgz"
+                .into(),
+            sha256: digest(&dependency_archive),
+            size_bytes: dependency_archive.len() as u64,
+            integrity: "sha512-fixture".into(),
+            dependencies: BTreeMap::new(),
+            optional_dependencies: BTreeMap::new(),
+            optional: false,
+            os: None,
+            cpu: None,
+            has_install_script: true,
+        };
+        let lock = NodeDependencyLock {
+            schema: 1,
+            generated_at: "2026-08-13T00:00:00Z".into(),
+            registry: "https://registry.npmjs.org".into(),
+            roots: BTreeMap::from([(
+                "fixture-server".into(),
+                vec![NodePackageRef {
+                    name: "fixture-server".into(),
+                    version: "1.2.3".into(),
+                    path: "node_modules/fixture-server".into(),
+                    primary: true,
+                }],
+            )]),
+            packages: vec![package, dependency_package],
+        };
+        let mut manifest = manifest(&archive, "bin/server.js");
+        manifest.id = "fixture-server".into();
+        manifest.runtime.kind = RuntimeKind::Node;
+        manifest.runtime.executable = "node".into();
+        manifest.artifact.kind = ArtifactKind::NpmTarball;
+        manifest.artifact.archive_root = "package".into();
+        manifest.artifact.url =
+            "https://registry.npmjs.org/fixture-server/-/fixture-server-1.2.3.tgz".into();
+        manifest.files.package_lock_sha256 = Some(REVIEWED_NODE_LOCK_SHA256.into());
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        let staging = installer.lsp_root().join("staging/fixture");
+        let result = installer
+            .install_node_archives_with_lock(
+                &manifest,
+                "2026-08-13T01:02:03Z",
+                &lock,
+                &[
+                    NodePackageArchive {
+                        name: "fixture-server".into(),
+                        version: "1.2.3".into(),
+                        archive: archive_path,
+                    },
+                    NodePackageArchive {
+                        name: "fixture-dependency".into(),
+                        version: "0.1.0".into(),
+                        archive: dependency_archive_path,
+                    },
+                ],
+                &staging,
+            )
+            .unwrap();
+        let root = Path::new(&result.server.installed_path);
+        assert_eq!(fs::read(root.join("bin/server.js")).unwrap(), b"fixture");
+        assert_eq!(
+            fs::read(root.join("node_modules/fixture-dependency/lib/dependency.js")).unwrap(),
+            b"dependency"
+        );
+        let installed_json: Value =
+            serde_json::from_slice(&fs::read(root.join("package.json")).unwrap()).unwrap();
+        assert!(installed_json.get("scripts").is_none());
+        assert!(!root.join("marker.txt").exists());
+        let dependency_json: Value = serde_json::from_slice(
+            &fs::read(root.join("node_modules/fixture-dependency/package.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(dependency_json.get("scripts").is_none());
+        assert!(!root
+            .join("node_modules/fixture-dependency/dependency-marker.txt")
+            .exists());
+    }
+
+    #[test]
+    fn node_manifest_cannot_bypass_reviewed_dependency_lock() {
         let archive = zip(&[("server.js", b"fixture")]);
         let mut manifest = manifest(&archive, "server.js");
         manifest.runtime.kind = RuntimeKind::Node;
@@ -1150,14 +1720,8 @@ mod tests {
         let archive_path = write_fixture(&temp, "node.zip", &archive);
         let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
         assert!(matches!(
-            installer.install_archive(
-                &manifest,
-                "1.2.3",
-                "2026-08-13T01:02:03Z",
-                &archive_path
-            ),
-            Err(InstallError::InvalidManifest(reason))
-                if reason.contains("dependency lock installation")
+            installer.install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path),
+            Err(InstallError::DependencyLock(_))
         ));
     }
 

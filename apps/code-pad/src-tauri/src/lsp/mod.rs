@@ -11,6 +11,7 @@ pub mod documents;
 pub mod features;
 pub mod installer;
 pub mod manager;
+pub mod node_lock;
 pub mod positions;
 pub mod process;
 pub mod runtime;
@@ -51,8 +52,12 @@ pub use features::{
     ValidatedTextEdit, WorkspaceEditPlan,
 };
 pub use installer::{
-    InstallError, InstallLimits, InstallResult, ManagedInstaller, DEFAULT_MAX_ARCHIVE_ENTRIES,
-    DEFAULT_MAX_INSTALL_BYTES,
+    InstallError, InstallLimits, InstallResult, ManagedInstaller, NodePackageArchive,
+    DEFAULT_MAX_ARCHIVE_ENTRIES, DEFAULT_MAX_INSTALL_BYTES,
+};
+pub use node_lock::{
+    reviewed_node_lock, NodeDependencyLock, NodeLockError, NodePackageLock, NodePackageRef,
+    NODE_LOCK_SCHEMA_VERSION, REVIEWED_NODE_LOCK_SHA256,
 };
 pub use manager::{LanguageServerStatus, LspManager, LspManagerError};
 pub use positions::{
