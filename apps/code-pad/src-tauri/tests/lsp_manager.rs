@@ -130,6 +130,11 @@ async fn crash_backoff_replays_the_latest_open_change_close_snapshot_atomically(
     let second = workspace.path().join("second.rs");
     fs::write(&first, "first\n").unwrap();
     fs::write(&second, "second\n").unwrap();
+    // Canonicalize so the test URIs match the manager's canonical document
+    // URIs. On Windows `tempdir` may return an 8.3 short path while the
+    // manager resolves the long path via `fs::canonicalize`.
+    let first = fs::canonicalize(&first).unwrap();
+    let second = fs::canonicalize(&second).unwrap();
     let executable = fixture_binary().canonicalize().unwrap();
     let config = feature_config_with_args(
         workspace.path(),

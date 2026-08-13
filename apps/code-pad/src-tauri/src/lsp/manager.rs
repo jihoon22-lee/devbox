@@ -701,12 +701,19 @@ impl LspManager {
         text: String,
     ) -> Result<DidOpen, LspManagerError> {
         let session = self.session(language_id).await?;
-        let mut documents = session.documents.lock().await;
-        let mut staged = documents.clone();
-        let opened = staged
-            .open(path, language_id, text)
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
-        let notify_result = if session
+        // Commit the authoritative document store before notifying the server:
+        // a slow or dead child must not delay the store that a replacement
+        // session later replays from.
+        let opened = {
+            let mut documents = session.documents.lock().await;
+            let mut staged = documents.clone();
+            let opened = staged
+                .open(path, language_id, text)
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            *documents = staged;
+            opened
+        };
+        if session
             .client
             .capabilities()
             .await
@@ -726,12 +733,8 @@ impl LspManager {
                     })),
                 )
                 .await
-                .map_err(|error| LspManagerError::Protocol(error.to_string()))
-        } else {
-            Ok(())
-        };
-        *documents = staged;
-        notify_result?;
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        }
         Ok(opened)
     }
 
@@ -743,12 +746,16 @@ impl LspManager {
         dirty: bool,
     ) -> Result<DidChange, LspManagerError> {
         let session = self.session(language_id).await?;
-        let mut documents = session.documents.lock().await;
-        let mut staged = documents.clone();
-        let changed = staged
-            .change(uri, text, dirty)
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
-        let notify_result = if session
+        let changed = {
+            let mut documents = session.documents.lock().await;
+            let mut staged = documents.clone();
+            let changed = staged
+                .change(uri, text, dirty)
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            *documents = staged;
+            changed
+        };
+        if session
             .client
             .capabilities()
             .await
@@ -764,12 +771,8 @@ impl LspManager {
                     })),
                 )
                 .await
-                .map_err(|error| LspManagerError::Protocol(error.to_string()))
-        } else {
-            Ok(())
-        };
-        *documents = staged;
-        notify_result?;
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        }
         Ok(changed)
     }
 
@@ -780,12 +783,16 @@ impl LspManager {
         text: String,
     ) -> Result<DidChange, LspManagerError> {
         let session = self.session(language_id).await?;
-        let mut documents = session.documents.lock().await;
-        let mut staged = documents.clone();
-        let changed = staged
-            .reload(uri, text)
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
-        let notify_result = if session
+        let changed = {
+            let mut documents = session.documents.lock().await;
+            let mut staged = documents.clone();
+            let changed = staged
+                .reload(uri, text)
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            *documents = staged;
+            changed
+        };
+        if session
             .client
             .capabilities()
             .await
@@ -801,12 +808,8 @@ impl LspManager {
                     })),
                 )
                 .await
-                .map_err(|error| LspManagerError::Protocol(error.to_string()))
-        } else {
-            Ok(())
-        };
-        *documents = staged;
-        notify_result?;
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        }
         Ok(changed)
     }
 
@@ -816,12 +819,16 @@ impl LspManager {
         uri: &str,
     ) -> Result<DidSave, LspManagerError> {
         let session = self.session(language_id).await?;
-        let mut documents = session.documents.lock().await;
-        let mut staged = documents.clone();
-        let saved = staged
-            .mark_saved(uri)
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
-        let notify_result = if session
+        let saved = {
+            let mut documents = session.documents.lock().await;
+            let mut staged = documents.clone();
+            let saved = staged
+                .mark_saved(uri)
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            *documents = staged;
+            saved
+        };
+        if session
             .client
             .capabilities()
             .await
@@ -834,12 +841,8 @@ impl LspManager {
                     Some(json!({ "textDocument": { "uri": saved.uri } })),
                 )
                 .await
-                .map_err(|error| LspManagerError::Protocol(error.to_string()))
-        } else {
-            Ok(())
-        };
-        *documents = staged;
-        notify_result?;
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        }
         Ok(saved)
     }
 
@@ -849,12 +852,16 @@ impl LspManager {
         uri: &str,
     ) -> Result<DidClose, LspManagerError> {
         let session = self.session(language_id).await?;
-        let mut documents = session.documents.lock().await;
-        let mut staged = documents.clone();
-        let closed = staged
-            .close(uri)
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
-        let notify_result = if session
+        let closed = {
+            let mut documents = session.documents.lock().await;
+            let mut staged = documents.clone();
+            let closed = staged
+                .close(uri)
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            *documents = staged;
+            closed
+        };
+        if session
             .client
             .capabilities()
             .await
@@ -867,12 +874,8 @@ impl LspManager {
                     Some(json!({ "textDocument": { "uri": closed.uri } })),
                 )
                 .await
-                .map_err(|error| LspManagerError::Protocol(error.to_string()))
-        } else {
-            Ok(())
-        };
-        *documents = staged;
-        notify_result?;
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        }
         Ok(closed)
     }
 
