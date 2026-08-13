@@ -11,12 +11,12 @@ import type {
   LanguageServerStatus,
   LoadedLspConfig,
   LspConfig,
+  AppliedDocumentEdits,
+  LspPosition,
   LspDidChange,
   LspDidClose,
   LspDidOpen,
   LspDidSave,
-  ManagedInstallStatus,
-  ManagedServerManifest,
 } from "./types";
 
 export function openFile(path: string, encoding: Encoding | null = null): Promise<OpenedFile> {
@@ -140,30 +140,30 @@ export function closeLspDocument(languageId: string, uri: string): Promise<LspDi
   return invoke<LspDidClose>("close_lsp_document", { languageId, uri });
 }
 
-export function lspCatalog(): Promise<ManagedServerManifest[]> {
-  return invoke<ManagedServerManifest[]>("lsp_catalog");
+export function requestLspRename(
+  languageId: string,
+  uri: string,
+  position: LspPosition,
+  newName: string,
+): Promise<AppliedDocumentEdits> {
+  return invoke<AppliedDocumentEdits>("request_lsp_rename", {
+    languageId,
+    uri,
+    position,
+    newName,
+  });
 }
 
-export function lspInstalled(): Promise<ManagedInstallStatus[]> {
-  return invoke<ManagedInstallStatus[]>("lsp_installed");
-}
-
-export function installLsp(
-  manifestId: string,
-  version: string,
-  platform: string,
-): Promise<void> {
-  return invoke<void>("lsp_install", { manifestId, version, platform });
-}
-
-export function uninstallLsp(
-  manifestId: string,
-  version: string,
-  platform: string,
-): Promise<void> {
-  return invoke<void>("lsp_uninstall", { manifestId, version, platform });
-}
-
-export function recoverInstalledLsp(): Promise<void> {
-  return invoke<void>("lsp_recover_installed");
+export function requestLspFormatting(
+  languageId: string,
+  uri: string,
+  tabSize: number,
+  insertSpaces: boolean,
+): Promise<AppliedDocumentEdits> {
+  return invoke<AppliedDocumentEdits>("request_lsp_formatting", {
+    languageId,
+    uri,
+    tabSize,
+    insertSpaces,
+  });
 }

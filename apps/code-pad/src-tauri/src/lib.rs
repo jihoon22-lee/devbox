@@ -54,6 +54,8 @@ pub fn run() {
             commands::lsp::request_lsp_hover,
             commands::lsp::request_lsp_definition,
             commands::lsp::request_lsp_references,
+            commands::lsp::request_lsp_rename,
+            commands::lsp::request_lsp_formatting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

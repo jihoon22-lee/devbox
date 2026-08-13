@@ -12,18 +12,21 @@ use super::documents::{
     DidChange, DidClose, DidOpen, DidSave, DocumentSnapshot, DocumentStore, SyncKind, WorkspaceRoot,
 };
 use super::features::{
-    build_completion_params, build_definition_params, build_hover_params,
-    build_pull_diagnostics_params, build_reference_params, filter_definition_response,
+    apply_workspace_edit, build_completion_params, build_definition_params,
+    build_formatting_params, build_hover_params, build_pull_diagnostics_params,
+    build_reference_params, build_rename_params, filter_definition_response,
     filter_reference_locations, parse_completion_response, parse_definition_response,
-    parse_hover_response, parse_pull_diagnostics, parse_reference_locations, sanitize_hover,
+    parse_hover_response, parse_pull_diagnostics, parse_reference_locations,
+    preflight_formatting_edits, preflight_workspace_edit, sanitize_hover,
     validate_completion_response, validate_pull_diagnostics, CompletionResult, DiagnosticResult,
-    FeatureError, FeatureResponse, FilteredLocations, SanitizedHover,
+    FeatureError, FeatureResponse, FilteredLocations, SanitizedHover, WorkspaceEditPlan,
 };
 use super::installer::ManagedInstaller;
 use super::positions::{position_to_offset, LspPosition, PositionEncoding};
 use super::process::{LspProcess, ProcessState};
 use super::runtime::RuntimeResolver;
 use super::transport::RequestCancellation;
+use lsp_types as lsp;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -38,6 +41,8 @@ const COMPLETION_TIMEOUT: Duration = Duration::from_secs(2);
 const HOVER_TIMEOUT: Duration = Duration::from_secs(2);
 const DEFINITION_TIMEOUT: Duration = Duration::from_secs(5);
 const REFERENCES_TIMEOUT: Duration = Duration::from_secs(5);
+const MUTATION_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_RENAME_BYTES: usize = 1_024;
 
 #[derive(Debug)]
 pub enum LspManagerError {
@@ -102,6 +107,23 @@ pub struct LanguageServerStatus {
     pub stderr_dropped_bytes: u64,
 }
 
+/// Complete buffers returned after one atomic rename or formatting action.
+/// The frontend replaces these buffers together and deliberately does not
+/// save them; every returned document is dirty in the LSP document store.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppliedDocumentEdits {
+    pub documents: Vec<EditedDocument>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EditedDocument {
+    pub uri: String,
+    pub version: i32,
+    pub text: String,
+}
+
 struct LanguageSession {
     client: LspClient,
     process: LspProcess,
@@ -132,6 +154,14 @@ struct FeatureRequestContext {
     snapshot: DocumentSnapshot,
     metadata: super::features::RequestMetadata,
     workspace: WorkspaceRoot,
+    encoding: PositionEncoding,
+}
+
+struct MutationRequestContext {
+    session: Arc<LanguageSession>,
+    snapshot: DocumentSnapshot,
+    request_documents: DocumentStore,
+    metadata: super::features::RequestMetadata,
     encoding: PositionEncoding,
 }
 
@@ -698,6 +728,82 @@ impl LspManager {
         Ok(FeatureResponse::new(context.metadata, value, stale))
     }
 
+    /// Request and atomically apply a text-only WorkspaceEdit. Every open
+    /// document version is captured before the request, preflighted against
+    /// that snapshot, and checked again against the live store at commit.
+    pub async fn rename(
+        &self,
+        language_id: &str,
+        uri: &str,
+        position: LspPosition,
+        new_name: String,
+    ) -> Result<AppliedDocumentEdits, LspManagerError> {
+        validate_rename_name(&new_name)?;
+        let context = self
+            .mutation_context(language_id, uri, "textDocument/rename")
+            .await?;
+        validate_request_position(&context.snapshot, position, context.encoding)?;
+        let raw = context
+            .session
+            .client
+            .request(
+                "textDocument/rename",
+                build_rename_params(&context.metadata, position, new_name),
+                MUTATION_TIMEOUT,
+            )
+            .await
+            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        if raw.is_null() {
+            return Ok(AppliedDocumentEdits {
+                documents: Vec::new(),
+            });
+        }
+        let edit: lsp::WorkspaceEdit = serde_json::from_value(raw).map_err(|error| {
+            LspManagerError::Protocol(format!("invalid rename WorkspaceEdit: {error}"))
+        })?;
+        let plan =
+            preflight_workspace_edit(&context.request_documents, &edit).map_err(feature_error)?;
+        apply_mutation_plan(&context.session, &plan).await
+    }
+
+    /// Formatting is only run for an explicit command. A null response is a
+    /// successful no-op and malformed/out-of-range edits fail closed.
+    pub async fn formatting(
+        &self,
+        language_id: &str,
+        uri: &str,
+        tab_size: u32,
+        insert_spaces: bool,
+    ) -> Result<AppliedDocumentEdits, LspManagerError> {
+        if tab_size == 0 || tab_size > 32 {
+            return Err(LspManagerError::Protocol(
+                "formatting tab size must be between 1 and 32".into(),
+            ));
+        }
+        let context = self
+            .mutation_context(language_id, uri, "textDocument/formatting")
+            .await?;
+        let raw = context
+            .session
+            .client
+            .request(
+                "textDocument/formatting",
+                build_formatting_params(&context.metadata, (tab_size, insert_spaces)),
+                MUTATION_TIMEOUT,
+            )
+            .await
+            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let edits = if raw.is_null() { json!([]) } else { raw };
+        let plan = preflight_formatting_edits(
+            &context.request_documents,
+            uri,
+            context.metadata.version,
+            edits,
+        )
+        .map_err(feature_error)?;
+        apply_mutation_plan(&context.session, &plan).await
+    }
+
     async fn feature_context(
         &self,
         language_id: &str,
@@ -732,6 +838,36 @@ impl LspManager {
         })
     }
 
+    async fn mutation_context(
+        &self,
+        language_id: &str,
+        uri: &str,
+        method: &str,
+    ) -> Result<MutationRequestContext, LspManagerError> {
+        let language_id = normalized_language_id(language_id)?;
+        let session = self.session(&language_id).await?;
+        if !session.client.capabilities().await.supports(method) {
+            return Err(LspManagerError::UnsupportedFeature {
+                language_id,
+                method: method.to_owned(),
+            });
+        }
+        let (snapshot, request_documents, encoding) = {
+            let documents = session.documents.lock().await;
+            let snapshot = documents
+                .snapshot(uri)
+                .ok_or_else(|| LspManagerError::Protocol(format!("document is not open: {uri}")))?;
+            (snapshot, documents.clone(), documents.position_encoding())
+        };
+        Ok(MutationRequestContext {
+            session,
+            metadata: super::features::RequestMetadata::new(snapshot.uri.clone(), snapshot.version),
+            snapshot,
+            request_documents,
+            encoding,
+        })
+    }
+
     async fn session(&self, language_id: &str) -> Result<Arc<LanguageSession>, LspManagerError> {
         let language_id = normalized_language_id(language_id)?;
         self.state
@@ -742,6 +878,62 @@ impl LspManager {
             .cloned()
             .ok_or(LspManagerError::NotRunning(language_id))
     }
+}
+
+async fn apply_mutation_plan(
+    session: &Arc<LanguageSession>,
+    plan: &WorkspaceEditPlan,
+) -> Result<AppliedDocumentEdits, LspManagerError> {
+    if plan.changes.is_empty() {
+        return Ok(AppliedDocumentEdits {
+            documents: Vec::new(),
+        });
+    }
+
+    let mut documents = session.documents.lock().await;
+    let mut staged = documents.clone();
+    let applied = apply_workspace_edit(&mut staged, plan).map_err(feature_error)?;
+
+    if session
+        .client
+        .capabilities()
+        .await
+        .supports("textDocument/didChange")
+    {
+        for change in &applied.changes {
+            session
+                .process
+                .notify(
+                    "textDocument/didChange",
+                    Some(json!({
+                        "textDocument": { "uri": change.uri, "version": change.version },
+                        "contentChanges": change.content_changes,
+                    })),
+                )
+                .await
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        }
+    }
+
+    let edited = plan
+        .changes
+        .iter()
+        .map(|change| {
+            let snapshot = staged.snapshot(&change.uri).ok_or_else(|| {
+                LspManagerError::Protocol(format!(
+                    "edited document disappeared before commit: {}",
+                    change.uri
+                ))
+            })?;
+            Ok(EditedDocument {
+                uri: snapshot.uri,
+                version: snapshot.version,
+                text: snapshot.text,
+            })
+        })
+        .collect::<Result<Vec<_>, LspManagerError>>()?;
+    *documents = staged;
+    Ok(AppliedDocumentEdits { documents: edited })
 }
 
 async fn cancelable_feature_request(
@@ -813,6 +1005,28 @@ fn validate_request_position(
 
 fn feature_error(error: FeatureError) -> LspManagerError {
     LspManagerError::Protocol(error.to_string())
+}
+
+fn validate_rename_name(new_name: &str) -> Result<(), LspManagerError> {
+    if new_name.is_empty() {
+        return Err(LspManagerError::Protocol(
+            "rename target cannot be empty".into(),
+        ));
+    }
+    if new_name.len() > MAX_RENAME_BYTES {
+        return Err(LspManagerError::Protocol(format!(
+            "rename target exceeds {MAX_RENAME_BYTES} UTF-8 bytes"
+        )));
+    }
+    if new_name
+        .chars()
+        .any(|value| matches!(value, '\0' | '\r' | '\n'))
+    {
+        return Err(LspManagerError::Protocol(
+            "rename target cannot contain NUL or line breaks".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn normalized_language_id(language_id: &str) -> Result<String, LspManagerError> {

@@ -138,6 +138,21 @@ export interface LoadedSession {
 export type LspClientStatus = "starting" | "ready" | "degraded" | "stopped" | "crashed";
 export type LspPositionEncoding = "utf-16" | "utf-8";
 
+export interface LspPosition {
+  line: number;
+  character: number;
+}
+
+export interface EditedLspDocument {
+  uri: string;
+  version: number;
+  text: string;
+}
+
+export interface AppliedDocumentEdits {
+  documents: EditedLspDocument[];
+}
+
 export interface LspCapabilities {
   positionEncoding: LspPositionEncoding;
   legacyPositionEncoding: boolean;

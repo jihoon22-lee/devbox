@@ -281,6 +281,135 @@ async fn newer_completion_and_hover_cancel_the_previous_request() {
     manager.stop("rust").await.unwrap();
 }
 
+#[tokio::test]
+async fn rename_and_formatting_apply_complete_dirty_buffers_atomically() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let main = workspace.path().join("main.rs");
+    let library = workspace.path().join("lib.rs");
+    fs::write(&main, "fixture\n").unwrap();
+    fs::write(&library, "fixture library\n").unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    save_to_app_local_data_dir(
+        app_data.path(),
+        &feature_config(workspace.path(), &executable, "mutation_features"),
+    )
+    .unwrap();
+
+    let manager = LspManager::new(app_data.path(), "0.3.0");
+    manager.start("rust").await.unwrap();
+    let main_opened = manager
+        .open_document("rust", &main, "fixture\n".into())
+        .await
+        .unwrap();
+    manager
+        .open_document("rust", &library, "fixture library\n".into())
+        .await
+        .unwrap();
+
+    let renamed = manager
+        .rename(
+            "rust",
+            &main_opened.uri,
+            LspPosition::new(0, 0),
+            "renamed".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(renamed.documents.len(), 2);
+    assert!(renamed
+        .documents
+        .iter()
+        .all(|document| document.version == 2 && document.text.starts_with("renamed")));
+
+    let formatted = manager
+        .formatting("rust", &main_opened.uri, 4, true)
+        .await
+        .unwrap();
+    assert_eq!(formatted.documents.len(), 1);
+    assert_eq!(formatted.documents[0].version, 3);
+    assert_eq!(formatted.documents[0].text, "formattednamedxture\n");
+    assert!(manager
+        .rename(
+            "rust",
+            &main_opened.uri,
+            LspPosition::new(0, 0),
+            "bad\nname".into(),
+        )
+        .await
+        .is_err());
+    assert!(manager
+        .formatting("rust", &main_opened.uri, 0, true)
+        .await
+        .is_err());
+    manager.stop("rust").await.unwrap();
+}
+
+#[tokio::test]
+async fn mutation_version_race_rejects_every_document_without_partial_commit() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let main = workspace.path().join("main.rs");
+    let library = workspace.path().join("lib.rs");
+    fs::write(&main, "fixture\n").unwrap();
+    fs::write(&library, "fixture library\n").unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    save_to_app_local_data_dir(
+        app_data.path(),
+        &feature_config(workspace.path(), &executable, "stale_mutations"),
+    )
+    .unwrap();
+
+    let manager = Arc::new(LspManager::new(app_data.path(), "0.3.0"));
+    manager.start("rust").await.unwrap();
+    let main_opened = manager
+        .open_document("rust", &main, "fixture\n".into())
+        .await
+        .unwrap();
+    manager
+        .open_document("rust", &library, "fixture library\n".into())
+        .await
+        .unwrap();
+
+    let request_manager = Arc::clone(&manager);
+    let request_uri = main_opened.uri.clone();
+    let request = tokio::spawn(async move {
+        request_manager
+            .rename(
+                "rust",
+                &request_uri,
+                LspPosition::new(0, 0),
+                "renamed".into(),
+            )
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    manager
+        .change_document("rust", &main_opened.uri, "changed\n".into(), true)
+        .await
+        .unwrap();
+    let error = request.await.unwrap().unwrap_err().to_string();
+    assert!(error.contains("version conflict"));
+
+    let retry = manager
+        .rename(
+            "rust",
+            &main_opened.uri,
+            LspPosition::new(0, 0),
+            "renamed".into(),
+        )
+        .await
+        .unwrap();
+    let library = retry
+        .documents
+        .iter()
+        .find(|document| document.uri.ends_with("/lib.rs"))
+        .unwrap();
+    assert_eq!(library.version, 2, "the rejected request changed lib.rs");
+    assert_eq!(library.text, "renamedxture library\n");
+    manager.stop("rust").await.unwrap();
+}
+
 #[test]
 fn corrupt_config_requires_explicit_recovery_before_replacement() {
     let app_data = tempdir().unwrap();

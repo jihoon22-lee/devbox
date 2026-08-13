@@ -1,9 +1,9 @@
 //! Thin Tauri commands for persisted LSP settings and live sessions.
 
 use crate::lsp::{
-    CompletionResult, DiagnosticResult, DidChange, DidClose, DidOpen, DidSave, FeatureResponse,
-    FilteredLocations, LanguageServerStatus, LoadedLspConfig, LspConfig, LspManager, LspPosition,
-    SanitizedHover,
+    AppliedDocumentEdits, CompletionResult, DiagnosticResult, DidChange, DidClose, DidOpen,
+    DidSave, FeatureResponse, FilteredLocations, LanguageServerStatus, LoadedLspConfig, LspConfig,
+    LspManager, LspPosition, SanitizedHover,
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -187,6 +187,34 @@ pub async fn request_lsp_references(
 ) -> Result<FeatureResponse<FilteredLocations>, String> {
     manager
         .references(&language_id, &uri, position, include_declaration)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn request_lsp_rename(
+    manager: State<'_, Arc<LspManager>>,
+    language_id: String,
+    uri: String,
+    position: LspPosition,
+    new_name: String,
+) -> Result<AppliedDocumentEdits, String> {
+    manager
+        .rename(&language_id, &uri, position, new_name)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn request_lsp_formatting(
+    manager: State<'_, Arc<LspManager>>,
+    language_id: String,
+    uri: String,
+    tab_size: u32,
+    insert_spaces: bool,
+) -> Result<AppliedDocumentEdits, String> {
+    manager
+        .formatting(&language_id, &uri, tab_size, insert_spaces)
         .await
         .map_err(|error| error.to_string())
 }

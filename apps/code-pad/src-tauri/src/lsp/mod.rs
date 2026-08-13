@@ -44,19 +44,22 @@ pub use features::{
     build_reference_params, build_rename_params, cancel_request, filter_definition_response,
     filter_reference_locations, parse_completion_response, parse_definition_response,
     parse_hover_response, parse_publish_diagnostics, parse_pull_diagnostics,
-    parse_reference_locations, preflight_workspace_edit, sanitize_hover,
-    validate_completion_response, validate_pull_diagnostics, validate_push_diagnostics,
-    AppliedWorkspaceEdit, CancelRequestId, CompletionResult, DiagnosticOrigin, DiagnosticResult,
-    DiagnosticStore, FeatureError, FeatureResponse, FilteredLocations, FormattingEditsInput,
-    FormattingOptionsInput, HoverResult, HoverText, LocationTarget, RequestMetadata, RequestTarget,
-    SanitizedHover, ValidatedDiagnostic, ValidatedTextEdit, WorkspaceEditPlan,
+    parse_reference_locations, preflight_formatting_edits, preflight_workspace_edit,
+    sanitize_hover, validate_completion_response, validate_pull_diagnostics,
+    validate_push_diagnostics, AppliedWorkspaceEdit, CancelRequestId, CompletionResult,
+    DiagnosticOrigin, DiagnosticResult, DiagnosticStore, FeatureError, FeatureResponse,
+    FilteredLocations, FormattingEditsInput, FormattingOptionsInput, HoverResult, HoverText,
+    LocationTarget, RequestMetadata, RequestTarget, SanitizedHover, ValidatedDiagnostic,
+    ValidatedTextEdit, WorkspaceEditPlan,
 };
 pub use installer::{
     InstallError, InstallLimits, InstallResult, InstalledServerMetadata, ManagedInstallResolution,
     ManagedInstallState, ManagedInstallStatus, ManagedInstaller, NodePackageArchive,
     DEFAULT_MAX_ARCHIVE_ENTRIES, DEFAULT_MAX_INSTALL_BYTES,
 };
-pub use manager::{LanguageServerStatus, LspManager, LspManagerError};
+pub use manager::{
+    AppliedDocumentEdits, EditedDocument, LanguageServerStatus, LspManager, LspManagerError,
+};
 pub use node_lock::{
     reviewed_node_lock, NodeDependencyLock, NodeLockError, NodePackageLock, NodePackageRef,
     NODE_LOCK_SCHEMA_VERSION, REVIEWED_NODE_LOCK_SHA256,

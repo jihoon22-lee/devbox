@@ -3,7 +3,7 @@
 //! stderr, matching the boundary required of real language servers.
 
 use code_pad_lib::lsp::{JsonRpcMessage, JsonRpcReader, JsonRpcWriter, RpcError, RpcId};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::env;
 use std::sync::Arc;
@@ -154,7 +154,8 @@ async fn handle_request(
                     "referencesProvider": {},
                     "diagnosticProvider": {}
                 }),
-                "stale_features" | "supersede_features" => json!({
+                "stale_features" | "supersede_features" | "mutation_features"
+                | "stale_mutations" => json!({
                     "positionEncoding": "utf-8",
                     "textDocumentSync": { "openClose": true, "change": 2, "save": true },
                     "completionProvider": true,
@@ -226,7 +227,9 @@ async fn handle_request(
         | "textDocument/completion"
         | "textDocument/hover"
         | "textDocument/definition"
-        | "textDocument/references" => {
+        | "textDocument/references"
+        | "textDocument/rename"
+        | "textDocument/formatting" => {
             if mode == "stale_features" && method == "textDocument/completion" {
                 tokio::time::sleep(Duration::from_millis(120)).await;
             } else if mode == "supersede_features"
@@ -248,6 +251,13 @@ async fn handle_request(
                 )
             {
                 tokio::time::sleep(Duration::from_secs(3)).await;
+            } else if mode == "stale_mutations"
+                && matches!(
+                    method.as_str(),
+                    "textDocument/rename" | "textDocument/formatting"
+                )
+            {
+                tokio::time::sleep(Duration::from_millis(120)).await;
             }
             if cancellations.lock().await.remove(&id.as_u64().unwrap_or(0)) {
                 send(
@@ -288,6 +298,26 @@ async fn handle_request(
                     { "uri": uri, "range": range.clone() },
                     { "uri": "file:///outside-workspace.rs", "range": range }
                 ]),
+                "textDocument/rename" => {
+                    let sibling = uri
+                        .rsplit_once('/')
+                        .map(|(directory, _)| format!("{directory}/lib.rs"))
+                        .unwrap_or_else(|| uri.to_owned());
+                    let mut changes = Map::new();
+                    changes.insert(
+                        uri.to_owned(),
+                        json!([{ "range": range.clone(), "newText": "renamed" }]),
+                    );
+                    changes.insert(
+                        sibling,
+                        json!([{ "range": range.clone(), "newText": "renamed" }]),
+                    );
+                    json!({ "changes": changes })
+                }
+                "textDocument/formatting" => json!([{
+                    "range": range,
+                    "newText": "formatted"
+                }]),
                 _ => Value::Null,
             };
             send(&writer, JsonRpcMessage::response(id, result)).await;

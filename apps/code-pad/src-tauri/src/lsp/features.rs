@@ -1155,6 +1155,19 @@ pub fn apply_formatting_edits<I: FormattingEditsInput>(
     expected_version: i32,
     edits: I,
 ) -> Result<AppliedWorkspaceEdit, FeatureError> {
+    let plan = preflight_formatting_edits(store, uri, expected_version, edits)?;
+    apply_workspace_edit(store, &plan)
+}
+
+/// Validate formatting edits without changing the store. This mirrors
+/// [`preflight_workspace_edit`] so callers can recheck request-time versions
+/// immediately before committing a server response.
+pub fn preflight_formatting_edits<I: FormattingEditsInput>(
+    store: &DocumentStore,
+    uri: &str,
+    expected_version: i32,
+    edits: I,
+) -> Result<WorkspaceEditPlan, FeatureError> {
     let snapshot = store
         .snapshot(uri)
         .ok_or_else(|| FeatureError::DocumentNotOpen(uri.to_owned()))?;
@@ -1170,8 +1183,9 @@ pub fn apply_formatting_edits<I: FormattingEditsInput>(
         .map_err(|_| FeatureError::InvalidUri(uri.to_owned()))?;
     let edits = edits.into_edits()?;
     if edits.is_empty() {
-        return Ok(AppliedWorkspaceEdit {
+        return Ok(WorkspaceEditPlan {
             changes: Vec::new(),
+            edits: Vec::new(),
         });
     }
     let workspace_edit = lsp::WorkspaceEdit {
@@ -1179,8 +1193,7 @@ pub fn apply_formatting_edits<I: FormattingEditsInput>(
         document_changes: None,
         change_annotations: None,
     };
-    let plan = preflight_workspace_edit(store, &workspace_edit)?;
-    apply_workspace_edit(store, &plan)
+    preflight_workspace_edit(store, &workspace_edit)
 }
 
 struct StagedDocument {
