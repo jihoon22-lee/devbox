@@ -617,7 +617,7 @@ dependencies = [
 
 [[package]]
 name = "code-pad"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "chardetng",
@@ -3831,7 +3831,7 @@ dependencies = [
 
 [[package]]
 name = "run-manager"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "chrono-tz",

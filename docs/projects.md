@@ -14,6 +14,8 @@
 | 8 | life-log | `apps/life-log` | 자동 일일 로그 (집계 허브) | 4 | 전 앱 데이터 |
 | 9 | wsl-desktop | `apps/wsl-desktop` | 임베디드 WSL 터미널 (분할·동시 명령) | 추가 | wsl-dashboard |
 | 10 | devbox-manager | `apps/devbox-manager` | devbox 앱 설치·업데이트·실행 | 추가 | 전 앱 |
+| 11 | code-pad | `apps/code-pad` | CodeMirror 6 경량 코드 에디터 (LSP) | 추가 | filesystem/markdown crate |
+| 12 | run-manager | `apps/run-manager` | 예약 실행·서비스 관리 (cron + service) | 추가 | process crate |
 
 ## 공유 후보 매트릭스
 
@@ -29,8 +31,10 @@
 | api-playground | ui, settings, http |
 | life-log | activity, database, filesystem, git |
 | devbox-manager | http, update |
+| code-pad | filesystem, markdown, (lsp — 두 번째 소비자 시 `crates/lsp`) |
+| run-manager | process, database |
 
 ## 산출물 (각각 독립 .exe)
 `PortManager.exe` `WSLDashboard.exe` `DevToolbox.exe` `ActivityTimeline.exe`
 `EverythingPlus.exe` `Knowledge.exe` `ApiPlayground.exe` `LifeLog.exe`
-`WSLDesktop.exe` `DevboxManager.exe`
+`WSLDesktop.exe` `DevboxManager.exe` `CodePad.exe` `RunManager.exe`
