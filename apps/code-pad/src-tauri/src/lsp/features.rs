@@ -39,7 +39,7 @@ impl RequestMetadata {
 }
 
 /// A response paired with the request snapshot that it belongs to.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FeatureResponse<T> {
     pub metadata: RequestMetadata,
     pub value: T,
@@ -47,7 +47,7 @@ pub struct FeatureResponse<T> {
 }
 
 impl<T> FeatureResponse<T> {
-    fn new(metadata: RequestMetadata, value: T, stale: bool) -> Self {
+    pub fn new(metadata: RequestMetadata, value: T, stale: bool) -> Self {
         Self {
             metadata,
             value,
@@ -386,6 +386,14 @@ pub fn build_reference_params<T: RequestTarget>(
     let mut params = position_params(target, position);
     params["context"] = json!({ "includeDeclaration": include_declaration });
     params
+}
+
+/// Build a document diagnostic pull request.  The request snapshot version is
+/// intentionally kept in `RequestMetadata`; LSP pull reports do not echo it.
+pub fn build_pull_diagnostics_params<T: RequestTarget>(target: T) -> Value {
+    json!({
+        "textDocument": { "uri": target.uri() },
+    })
 }
 
 pub fn build_rename_params<T: RequestTarget>(
@@ -735,11 +743,12 @@ pub fn parse_completion_response(value: &Value) -> Result<CompletionResult, Feat
             items: list.items,
         },
     };
-    // Completion commands are server-provided executable instructions.  The
-    // bounded adapter exposes text/documentation only and never forwards a
-    // command to the editor or a process runner.
+    // Completion commands and opaque `data` are server-provided instructions
+    // for a later resolve/execute round trip.  The bounded adapter exposes
+    // text/documentation only and never forwards either to the UI.
     for item in &mut result.items {
         item.command = None;
+        item.data = None;
     }
     Ok(result)
 }
@@ -756,6 +765,7 @@ pub fn validate_completion_response(
     let mut result = result.into();
     for item in &mut result.items {
         item.command = None;
+        item.data = None;
     }
     for item in &result.items {
         if item.label.trim().is_empty() {
@@ -1523,12 +1533,17 @@ mod tests {
     fn completion_and_hover_are_normalized_without_executing_commands() {
         let completion = parse_completion_response(&json!({
             "isIncomplete": true,
-            "items": [{ "label": "println!", "command": { "command": "unsafe", "title": "run" } }]
+            "items": [{
+                "label": "println!",
+                "command": { "command": "unsafe", "title": "run" },
+                "data": { "opaque": "must-not-cross-ui-boundary" }
+            }]
         }))
         .unwrap();
         assert!(completion.is_incomplete);
         assert_eq!(completion.items[0].label, "println!");
         assert!(completion.items[0].command.is_none());
+        assert!(completion.items[0].data.is_none());
         assert!(validate_completion_response(
             completion,
             "pri",

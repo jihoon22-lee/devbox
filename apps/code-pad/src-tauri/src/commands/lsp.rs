@@ -1,8 +1,9 @@
 //! Thin Tauri commands for persisted LSP settings and live sessions.
 
 use crate::lsp::{
-    DidChange, DidClose, DidOpen, DidSave, LanguageServerStatus, LoadedLspConfig, LspConfig,
-    LspManager,
+    CompletionResult, DiagnosticResult, DidChange, DidClose, DidOpen, DidSave, FeatureResponse,
+    FilteredLocations, LanguageServerStatus, LoadedLspConfig, LspConfig, LspManager, LspPosition,
+    SanitizedHover,
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -108,6 +109,71 @@ pub async fn close_lsp_document(
 ) -> Result<DidClose, String> {
     manager
         .close_document(&language_id, &uri)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn pull_lsp_diagnostics(
+    manager: State<'_, Arc<LspManager>>,
+    language_id: String,
+    uri: String,
+) -> Result<FeatureResponse<DiagnosticResult>, String> {
+    manager
+        .pull_diagnostics(&language_id, &uri)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn request_lsp_completion(
+    manager: State<'_, Arc<LspManager>>,
+    language_id: String,
+    uri: String,
+    position: LspPosition,
+) -> Result<FeatureResponse<CompletionResult>, String> {
+    manager
+        .completion(&language_id, &uri, position)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn request_lsp_hover(
+    manager: State<'_, Arc<LspManager>>,
+    language_id: String,
+    uri: String,
+    position: LspPosition,
+) -> Result<FeatureResponse<Option<SanitizedHover>>, String> {
+    manager
+        .hover(&language_id, &uri, position)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn request_lsp_definition(
+    manager: State<'_, Arc<LspManager>>,
+    language_id: String,
+    uri: String,
+    position: LspPosition,
+) -> Result<FeatureResponse<FilteredLocations>, String> {
+    manager
+        .definition(&language_id, &uri, position)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn request_lsp_references(
+    manager: State<'_, Arc<LspManager>>,
+    language_id: String,
+    uri: String,
+    position: LspPosition,
+    include_declaration: bool,
+) -> Result<FeatureResponse<FilteredLocations>, String> {
+    manager
+        .references(&language_id, &uri, position, include_declaration)
         .await
         .map_err(|error| error.to_string())
 }

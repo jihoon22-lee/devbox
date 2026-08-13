@@ -9,8 +9,17 @@ use super::catalog::{LspConfig, ServerRef};
 use super::client::{CapabilitySet, ClientStatus, InitializeConfig, LspClient, ServerInfo};
 use super::config::{load_from_app_local_data_dir, save_to_app_local_data_dir, LoadedLspConfig};
 use super::documents::{
-    DidChange, DidClose, DidOpen, DidSave, DocumentStore, SyncKind, WorkspaceRoot,
+    DidChange, DidClose, DidOpen, DidSave, DocumentSnapshot, DocumentStore, SyncKind, WorkspaceRoot,
 };
+use super::features::{
+    build_completion_params, build_definition_params, build_hover_params,
+    build_pull_diagnostics_params, build_reference_params, filter_definition_response,
+    filter_reference_locations, parse_completion_response, parse_definition_response,
+    parse_hover_response, parse_pull_diagnostics, parse_reference_locations, sanitize_hover,
+    validate_completion_response, validate_pull_diagnostics, CompletionResult, DiagnosticResult,
+    FeatureError, FeatureResponse, FilteredLocations, SanitizedHover,
+};
+use super::positions::{position_to_offset, LspPosition, PositionEncoding};
 use super::process::{LspProcess, ProcessState};
 use super::runtime::RuntimeResolver;
 use serde::Serialize;
@@ -19,7 +28,14 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
+
+const PULL_DIAGNOSTICS_TIMEOUT: Duration = Duration::from_secs(5);
+const COMPLETION_TIMEOUT: Duration = Duration::from_secs(2);
+const HOVER_TIMEOUT: Duration = Duration::from_secs(2);
+const DEFINITION_TIMEOUT: Duration = Duration::from_secs(5);
+const REFERENCES_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
 pub enum LspManagerError {
@@ -31,6 +47,7 @@ pub enum LspManagerError {
     AlreadyRunning(String),
     StartInProgress(String),
     NotRunning(String),
+    UnsupportedFeature { language_id: String, method: String },
     Protocol(String),
 }
 
@@ -55,6 +72,13 @@ impl fmt::Display for LspManagerError {
             Self::NotRunning(language_id) => {
                 write!(formatter, "{language_id} 언어 서버가 실행 중이 아닙니다")
             }
+            Self::UnsupportedFeature {
+                language_id,
+                method,
+            } => write!(
+                formatter,
+                "{language_id} 언어 서버가 {method} 기능을 협상하지 않았습니다"
+            ),
             Self::Protocol(message) => formatter.write_str(message),
         }
     }
@@ -80,6 +104,14 @@ struct LanguageSession {
     client: LspClient,
     process: LspProcess,
     documents: Mutex<DocumentStore>,
+}
+
+struct FeatureRequestContext {
+    session: Arc<LanguageSession>,
+    snapshot: DocumentSnapshot,
+    metadata: super::features::RequestMetadata,
+    workspace: WorkspaceRoot,
+    encoding: PositionEncoding,
 }
 
 #[derive(Default)]
@@ -439,6 +471,182 @@ impl LspManager {
         Ok(closed)
     }
 
+    /// Pull diagnostics for one open document.  The version is captured before
+    /// the request is sent and is compared again after the server responds;
+    /// stale results are returned for observability but are never treated as
+    /// current by the feature adapter.
+    pub async fn pull_diagnostics(
+        &self,
+        language_id: &str,
+        uri: &str,
+    ) -> Result<FeatureResponse<DiagnosticResult>, LspManagerError> {
+        let context = self
+            .feature_context(language_id, uri, "textDocument/diagnostic")
+            .await?;
+        let raw = context
+            .session
+            .client
+            .request(
+                "textDocument/diagnostic",
+                build_pull_diagnostics_params(&context.metadata),
+                PULL_DIAGNOSTICS_TIMEOUT,
+            )
+            .await
+            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let parsed = parse_pull_diagnostics(&raw, &context.metadata).map_err(feature_error)?;
+        let (current, document_is_stale) = current_feature_metadata(&context).await;
+        let mut response = validate_pull_diagnostics(parsed, &current).map_err(feature_error)?;
+        response.metadata = context.metadata;
+        response.stale |= document_is_stale;
+        response.value.stale = response.stale;
+        Ok(response)
+    }
+
+    pub async fn completion(
+        &self,
+        language_id: &str,
+        uri: &str,
+        position: LspPosition,
+    ) -> Result<FeatureResponse<CompletionResult>, LspManagerError> {
+        let context = self
+            .feature_context(language_id, uri, "textDocument/completion")
+            .await?;
+        validate_request_position(&context.snapshot, position, context.encoding)?;
+        let raw = context
+            .session
+            .client
+            .request(
+                "textDocument/completion",
+                build_completion_params(&context.metadata, position),
+                COMPLETION_TIMEOUT,
+            )
+            .await
+            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let parsed = parse_completion_response(&raw).map_err(feature_error)?;
+        let value = validate_completion_response(
+            parsed,
+            &context.snapshot.text,
+            position,
+            context.encoding,
+        )
+        .map_err(feature_error)?;
+        let stale = current_feature_metadata(&context).await.1;
+        Ok(FeatureResponse::new(context.metadata, value, stale))
+    }
+
+    pub async fn hover(
+        &self,
+        language_id: &str,
+        uri: &str,
+        position: LspPosition,
+    ) -> Result<FeatureResponse<Option<SanitizedHover>>, LspManagerError> {
+        let context = self
+            .feature_context(language_id, uri, "textDocument/hover")
+            .await?;
+        validate_request_position(&context.snapshot, position, context.encoding)?;
+        let raw = context
+            .session
+            .client
+            .request(
+                "textDocument/hover",
+                build_hover_params(&context.metadata, position),
+                HOVER_TIMEOUT,
+            )
+            .await
+            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let parsed = parse_hover_response(&raw).map_err(feature_error)?;
+        let value = parsed.map(sanitize_hover);
+        let stale = current_feature_metadata(&context).await.1;
+        Ok(FeatureResponse::new(context.metadata, value, stale))
+    }
+
+    pub async fn definition(
+        &self,
+        language_id: &str,
+        uri: &str,
+        position: LspPosition,
+    ) -> Result<FeatureResponse<FilteredLocations>, LspManagerError> {
+        let context = self
+            .feature_context(language_id, uri, "textDocument/definition")
+            .await?;
+        validate_request_position(&context.snapshot, position, context.encoding)?;
+        let raw = context
+            .session
+            .client
+            .request(
+                "textDocument/definition",
+                build_definition_params(&context.metadata, position),
+                DEFINITION_TIMEOUT,
+            )
+            .await
+            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let parsed = parse_definition_response(&raw).map_err(feature_error)?;
+        let value = filter_definition_response(&context.workspace, &parsed);
+        let stale = current_feature_metadata(&context).await.1;
+        Ok(FeatureResponse::new(context.metadata, value, stale))
+    }
+
+    pub async fn references(
+        &self,
+        language_id: &str,
+        uri: &str,
+        position: LspPosition,
+        include_declaration: bool,
+    ) -> Result<FeatureResponse<FilteredLocations>, LspManagerError> {
+        let context = self
+            .feature_context(language_id, uri, "textDocument/references")
+            .await?;
+        validate_request_position(&context.snapshot, position, context.encoding)?;
+        let raw = context
+            .session
+            .client
+            .request(
+                "textDocument/references",
+                build_reference_params(&context.metadata, position, include_declaration),
+                REFERENCES_TIMEOUT,
+            )
+            .await
+            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let parsed = parse_reference_locations(&raw).map_err(feature_error)?;
+        let value = filter_reference_locations(&context.workspace, &parsed);
+        let stale = current_feature_metadata(&context).await.1;
+        Ok(FeatureResponse::new(context.metadata, value, stale))
+    }
+
+    async fn feature_context(
+        &self,
+        language_id: &str,
+        uri: &str,
+        method: &str,
+    ) -> Result<FeatureRequestContext, LspManagerError> {
+        let language_id = normalized_language_id(language_id)?;
+        let session = self.session(&language_id).await?;
+        if !session.client.capabilities().await.supports(method) {
+            return Err(LspManagerError::UnsupportedFeature {
+                language_id,
+                method: method.to_owned(),
+            });
+        }
+        let (snapshot, workspace, encoding) = {
+            let documents = session.documents.lock().await;
+            let snapshot = documents
+                .snapshot(uri)
+                .ok_or_else(|| LspManagerError::Protocol(format!("document is not open: {uri}")))?;
+            (
+                snapshot,
+                documents.workspace().clone(),
+                documents.position_encoding(),
+            )
+        };
+        Ok(FeatureRequestContext {
+            session,
+            metadata: super::features::RequestMetadata::new(snapshot.uri.clone(), snapshot.version),
+            snapshot,
+            workspace,
+            encoding,
+        })
+    }
+
     async fn session(&self, language_id: &str) -> Result<Arc<LanguageSession>, LspManagerError> {
         let language_id = normalized_language_id(language_id)?;
         self.state
@@ -449,6 +657,34 @@ impl LspManager {
             .cloned()
             .ok_or(LspManagerError::NotRunning(language_id))
     }
+}
+
+async fn current_feature_metadata(
+    context: &FeatureRequestContext,
+) -> (super::features::RequestMetadata, bool) {
+    let documents = context.session.documents.lock().await;
+    let Some(snapshot) = documents.snapshot(&context.metadata.uri) else {
+        return (context.metadata.clone(), true);
+    };
+    let stale = snapshot.version != context.metadata.version;
+    (
+        super::features::RequestMetadata::new(snapshot.uri, snapshot.version),
+        stale,
+    )
+}
+
+fn validate_request_position(
+    snapshot: &DocumentSnapshot,
+    position: LspPosition,
+    encoding: PositionEncoding,
+) -> Result<(), LspManagerError> {
+    position_to_offset(&snapshot.text, position, encoding)
+        .map(|_| ())
+        .map_err(|error| LspManagerError::Protocol(format!("invalid LSP position: {error}")))
+}
+
+fn feature_error(error: FeatureError) -> LspManagerError {
+    LspManagerError::Protocol(error.to_string())
 }
 
 fn normalized_language_id(language_id: &str) -> Result<String, LspManagerError> {
