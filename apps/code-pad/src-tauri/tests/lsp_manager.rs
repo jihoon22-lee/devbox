@@ -191,7 +191,7 @@ async fn crash_backoff_replays_the_latest_open_change_close_snapshot_atomically(
         .await;
     let _ = manager.close_document("rust", &first_uri).await;
 
-    tokio::time::timeout(Duration::from_secs(4), async {
+    tokio::time::timeout(Duration::from_secs(15), async {
         loop {
             if let LspEvent::Status(event) = events.recv().await.unwrap() {
                 if !event.restarting

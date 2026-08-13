@@ -638,6 +638,10 @@ describe("App editor shell operations", () => {
     expect(rendered.getByText("/tmp/target.ts")).toBeTruthy();
     fireEvent.click(rendered.getByRole("button", { name: "닫기" }));
 
+    // The definition request owns the busy guard until its status resolves;
+    // wait for the toolbar to re-enable before starting the next request.
+    await waitFor(() => expect((rendered.getByRole("button", { name: "참조" }) as HTMLButtonElement).disabled).toBe(false));
+
     fireEvent.click(rendered.getByRole("button", { name: "참조" }));
     expect(await rendered.findByRole("region", { name: "참조 결과" })).toBeTruthy();
     expect(rendered.getByText("/tmp/target.ts")).toBeTruthy();
