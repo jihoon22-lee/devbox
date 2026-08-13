@@ -963,7 +963,7 @@ fn metadata_has_reparse_point(metadata: &fs::Metadata) -> bool {
         use std::os::windows::fs::MetadataExt;
         use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
 
-        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0;
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
     }
     #[cfg(not(windows))]
     {
