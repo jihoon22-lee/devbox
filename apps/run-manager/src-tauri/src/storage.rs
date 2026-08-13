@@ -440,6 +440,53 @@ impl DatabaseState {
             .map_err(StorageError::from)
     }
 
+    /// Return the complete run metadata snapshot used by the bounded
+    /// retention planner. Log contents remain on disk and are never loaded by
+    /// this query.
+    pub fn list_runs_for_retention(&self) -> Result<Vec<Run>, StorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT {RUN_COLUMNS} FROM runs ORDER BY created_at, id"
+        ))?;
+        let rows = statement.query_map([], row_to_run)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(StorageError::from)
+    }
+
+    /// Clear a terminal run's log reference only after the caller has removed
+    /// the app-owned directory or confirmed that it no longer exists.
+    pub fn mark_run_logs_deleted(
+        &self,
+        run_id: &str,
+        deleted_at: i64,
+    ) -> Result<bool, StorageError> {
+        let connection = self.lock_mut()?;
+        let changed = connection.execute(
+            "UPDATE runs
+             SET log_dir = NULL, logs_deleted_at = COALESCE(logs_deleted_at, ?2)
+             WHERE id = ?1
+               AND status IN ('succeeded', 'failed', 'cancelled', 'skipped')
+               AND log_dir IS NOT NULL",
+            params![run_id, deleted_at],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// Delete old terminal metadata only when no log reference remains. This
+    /// SQL guard is the final protection against orphaning a directory if a
+    /// cleanup plan becomes stale between its filesystem and DB phases.
+    pub fn delete_terminal_run_without_logs(&self, run_id: &str) -> Result<bool, StorageError> {
+        let connection = self.lock_mut()?;
+        let changed = connection.execute(
+            "DELETE FROM runs
+             WHERE id = ?1
+               AND status IN ('succeeded', 'failed', 'cancelled', 'skipped')
+               AND log_dir IS NULL",
+            [run_id],
+        )?;
+        Ok(changed == 1)
+    }
+
     pub fn enqueue_notification(
         &self,
         notification: NewNotification,

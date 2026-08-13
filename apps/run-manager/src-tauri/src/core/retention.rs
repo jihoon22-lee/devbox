@@ -102,6 +102,16 @@ pub fn plan_retention(runs: &[RetentionRun], limits: RetentionLimits) -> Retenti
     let mut row_deletions = BTreeSet::<&str>::new();
     let mut missing_log_references = BTreeSet::<&str>::new();
 
+    // Reconcile every terminal row whose referenced directory disappeared,
+    // even when it is still inside the recent-history window. This makes a
+    // crash between filesystem deletion and the DB update self-healing on the
+    // very next pass.
+    for run in &terminal {
+        if run.has_log_reference && !run.log_files_exist {
+            missing_log_references.insert(&run.run_id);
+        }
+    }
+
     for job_runs in by_job.values_mut() {
         job_runs.sort_by_key(|run| Reverse(run.recency_key()));
         for run in job_runs.iter().skip(limits.terminal_rows_per_job) {
@@ -111,10 +121,6 @@ pub fn plan_retention(runs: &[RetentionRun], limits: RetentionLimits) -> Retenti
                         .entry(&run.run_id)
                         .or_default()
                         .insert(LogDeletionReason::ExcessTerminalHistory);
-                } else {
-                    // The command layer clears the stale reference first. A
-                    // following pass can then safely delete the metadata row.
-                    missing_log_references.insert(&run.run_id);
                 }
             } else {
                 row_deletions.insert(&run.run_id);
@@ -308,6 +314,22 @@ mod tests {
             },
         );
         assert_eq!(plan.missing_log_references, vec!["missing"]);
+        assert!(plan.row_deletions.is_empty());
+    }
+
+    #[test]
+    fn recent_missing_log_reference_is_reconciled_after_a_crash() {
+        let runs = vec![run(
+            "recent-missing",
+            "job",
+            RunStatus::Succeeded,
+            100,
+            true,
+            false,
+            0,
+        )];
+        let plan = plan_retention(&runs, RetentionLimits::default());
+        assert_eq!(plan.missing_log_references, vec!["recent-missing"]);
         assert!(plan.row_deletions.is_empty());
     }
 

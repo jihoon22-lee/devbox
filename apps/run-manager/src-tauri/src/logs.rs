@@ -23,7 +23,7 @@ pub const DEFAULT_MAX_SEGMENTS: usize = 5;
 /// The maximum number of bytes one tail response can return.
 pub const MAX_TAIL_BYTES: usize = 256 * 1024;
 
-const LOG_RELATIVE_ROOT: &str = "logs/runs";
+pub const LOG_RELATIVE_ROOT: &str = "logs/runs";
 const SEGMENT_EXTENSION: &str = ".log";
 const MANIFEST_SCHEMA_VERSION: u32 = 1;
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
