@@ -270,7 +270,7 @@ impl DatabaseState {
         let changed = transaction.execute(
             "UPDATE jobs SET
                 name = ?, command = ?, cwd = ?, target_kind = ?, target_distro = ?,
-                env_ciphertext = ?, cron_expr = ?, enabled = ?, overlap_policy = ?,
+                env_ciphertext = COALESCE(?, env_ciphertext), cron_expr = ?, enabled = ?, overlap_policy = ?,
                 catch_up = ?, last_evaluated_at = ?, updated_at = ?
              WHERE id = ? AND kind = 'job'",
             params![
@@ -958,6 +958,28 @@ mod tests {
         );
         assert!(database.delete_job(&created.id).unwrap());
         assert!(database.get_job(&created.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn metadata_updates_keep_existing_ciphertext_when_no_adapter_payload_is_supplied() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let created = database.create_job_at(input(false), 100).unwrap();
+        let mut renamed = input(false);
+        renamed.name = "renamed".to_string();
+        renamed.env_ciphertext = None;
+        database.update_job_at(&created.id, renamed, 200).unwrap();
+
+        let ciphertext: Vec<u8> = database
+            .connection
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT env_ciphertext FROM jobs WHERE id = ?",
+                [&created.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(ciphertext, vec![0xde, 0xad, 0xbe, 0xef]);
     }
 
     #[test]

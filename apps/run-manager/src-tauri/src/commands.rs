@@ -1,6 +1,7 @@
 use crate::core::models::{Job, JobInput, Run};
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
 use crate::storage::DatabaseState;
+use chrono::Local;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
@@ -82,4 +83,41 @@ pub fn list_runs(
     state
         .list_runs(&job_id, limit.unwrap_or(50), start_at, end_at)
         .map_err(|error| error.to_string())
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CronPreviewInput {
+    pub cron_expr: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CronPreviewItem {
+    pub timestamp_millis: i64,
+    pub datetime: String,
+    pub wall_time: String,
+    pub wall_key: String,
+}
+
+/// Return the next five system-local occurrences from the shared cron core.
+/// The command deliberately accepts only an expression; the reference clock
+/// remains the daemon's local system clock so preview and scheduling use the
+/// same timezone semantics.
+#[tauri::command]
+pub fn preview_cron(input: CronPreviewInput) -> Result<Vec<CronPreviewItem>, String> {
+    let after = Local::now();
+    crate::core::cron::preview_occurrences(&input.cron_expr, after)
+        .map(|occurrences| {
+            occurrences
+                .into_iter()
+                .map(|occurrence| CronPreviewItem {
+                    timestamp_millis: occurrence.timestamp_millis(),
+                    datetime: occurrence.datetime.to_rfc3339(),
+                    wall_time: occurrence.wall_time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    wall_key: occurrence.wall_key,
+                })
+                .collect()
+        })
+        .map_err(|error| format!("cron_expr: invalid cron expression ({error})"))
 }

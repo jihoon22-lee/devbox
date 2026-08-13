@@ -1,0 +1,71 @@
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { previewCron } from "../api";
+import JobEditor from "./JobEditor";
+import type { CronPreviewItem } from "../types";
+
+vi.mock("../api", () => ({
+  previewCron: vi.fn(),
+}));
+
+const previewCronMock = vi.mocked(previewCron);
+
+function previewItems(): CronPreviewItem[] {
+  return Array.from({ length: 5 }, (_, index) => ({
+    timestampMillis: 1_000 + index * 60_000,
+    datetime: `2026-08-13T0${index + 1}:00:00+09:00`,
+    wallTime: `2026-08-13 0${index + 1}:00:00`,
+    wallKey: `2026-08-13T0${index + 1}:00:00`,
+  }));
+}
+
+beforeEach(() => {
+  previewCronMock.mockReset().mockResolvedValue(previewItems());
+});
+
+afterEach(() => cleanup());
+
+describe("JobEditor", () => {
+  it("renders all five next-run preview rows from the shared preview API", async () => {
+    const { getByRole, getAllByRole } = render(<JobEditor job={null} onSave={vi.fn()} onCancel={vi.fn()} />);
+
+    await waitFor(() => expect(previewCronMock).toHaveBeenCalled());
+    await waitFor(() => expect(getAllByRole("listitem")).toHaveLength(5));
+    expect(getByRole("heading", { name: "다음 실행" })).toBeTruthy();
+    expect(getAllByRole("listitem")[0].textContent).toContain("2026-08-13 01:00:00");
+  });
+
+  it("shows field errors and does not save an invalid cron expression", async () => {
+    const onSave = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    const { getByRole, getByLabelText } = render(<JobEditor job={null} onSave={onSave} onCancel={vi.fn()} />);
+
+    fireEvent.change(getByLabelText("작업 이름"), { target: { value: "backup" } });
+    fireEvent.change(getByLabelText("실행 명령"), { target: { value: "echo backup" } });
+    fireEvent.change(getByLabelText("cron 표현식"), { target: { value: "@reboot" } });
+    fireEvent.click(getByRole("button", { name: "작업 저장" }));
+
+    expect(await getByRole("alert")).toBeTruthy();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("requires a WSL distro before saving a WSL-targeted job", async () => {
+    const onSave = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    const { getByRole, getByLabelText } = render(<JobEditor job={null} onSave={onSave} onCancel={vi.fn()} />);
+
+    fireEvent.change(getByLabelText("작업 이름"), { target: { value: "backup" } });
+    fireEvent.change(getByLabelText("실행 명령"), { target: { value: "echo backup" } });
+    fireEvent.click(getByRole("radio", { name: /WSL/ }));
+    fireEvent.click(getByRole("button", { name: "작업 저장" }));
+
+    expect(await getByTextSafe(getByRole, "WSL 배포판을 입력하세요.")).toBeTruthy();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+});
+
+function getByTextSafe(getByRole: ReturnType<typeof render>["getByRole"], text: string): HTMLElement {
+  // Keep the assertion helper independent of a global `screen`, which makes
+  // this test easier to embed in the app's existing RTL setup.
+  const alert = getByRole("alert");
+  if (alert.textContent?.includes(text)) return alert;
+  throw new Error(`expected alert to contain ${text}`);
+}

@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./lib/isTauri";
-import type { RuntimeStatus } from "./types";
+import type { CronPreviewItem, Job, JobInput, RuntimeStatus } from "./types";
+
+let mockJobs: Job[] = [];
+let mockSequence = 0;
 
 export function loadRuntimeStatus(): Promise<RuntimeStatus> {
   if (!isTauri()) {
@@ -22,4 +25,100 @@ export function hideMainWindow(): Promise<void> {
 export function quitApp(): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   return invoke<void>("quit_app");
+}
+
+export function listJobs(): Promise<Job[]> {
+  if (!isTauri()) return Promise.resolve([...mockJobs]);
+  return invoke<Job[]>("list_jobs");
+}
+
+export function createJob(input: JobInput): Promise<Job> {
+  if (!isTauri()) {
+    const now = Date.now();
+    const job: Job = {
+      id: `mock-${++mockSequence}`,
+      kind: "job",
+      name: input.name,
+      command: input.command,
+      cwd: input.cwd,
+      targetKind: input.targetKind,
+      targetDistro: input.targetDistro,
+      envConfigured: false,
+      cronExpr: input.cronExpr,
+      enabled: input.enabled,
+      overlapPolicy: input.overlapPolicy,
+      catchUp: input.catchUp,
+      lastEvaluatedAt: input.enabled ? now : null,
+      nextQueueSequence: 0,
+      restartPolicy: null,
+      autoStart: null,
+      healthTcpAddress: null,
+      healthTcpPort: null,
+      healthStartGraceMs: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    mockJobs = [...mockJobs, job];
+    return Promise.resolve(job);
+  }
+  return invoke<Job>("create_job", { input });
+}
+
+export function updateJob(id: string, input: JobInput): Promise<Job> {
+  if (!isTauri()) {
+    const index = mockJobs.findIndex((job) => job.id === id);
+    if (index < 0) return Promise.reject(new Error("작업을 찾을 수 없습니다."));
+    const current = mockJobs[index];
+    const updated: Job = {
+      ...current,
+      ...input,
+      targetDistro: input.targetKind === "wsl" ? input.targetDistro : null,
+      lastEvaluatedAt:
+        current.cronExpr !== input.cronExpr || current.catchUp !== input.catchUp || current.enabled !== input.enabled
+          ? Date.now()
+          : current.lastEvaluatedAt,
+      updatedAt: Date.now(),
+    };
+    mockJobs = mockJobs.map((job) => (job.id === id ? updated : job));
+    return Promise.resolve(updated);
+  }
+  return invoke<Job>("update_job", { id, input });
+}
+
+export function deleteJob(id: string): Promise<boolean> {
+  if (!isTauri()) {
+    const before = mockJobs.length;
+    mockJobs = mockJobs.filter((job) => job.id !== id);
+    return Promise.resolve(before !== mockJobs.length);
+  }
+  return invoke<boolean>("delete_job", { id });
+}
+
+export function previewCron(cronExpr: string): Promise<CronPreviewItem[]> {
+  if (!isTauri()) return Promise.resolve(mockPreview(cronExpr));
+  return invoke<CronPreviewItem[]>("preview_cron", { input: { cronExpr } });
+}
+
+/**
+ * Browser preview data is only a development fallback; the Tauri command
+ * above is authoritative and uses core::cron. Keeping a small fallback makes
+ * the editor usable in Vite/RTL without pretending JavaScript is the scheduler.
+ */
+function mockPreview(cronExpr: string): CronPreviewItem[] {
+  const value = cronExpr.trim();
+  if (!value || value.startsWith("@") || (value.split(/\s+/).length !== 5 && value.split(/\s+/).length !== 6)) {
+    throw new Error("cron_expr: invalid cron expression");
+  }
+  const now = new Date();
+  return Array.from({ length: 5 }, (_, index) => {
+    const next = new Date(now.getTime() + (index + 1) * 60_000);
+    const pad = (number: number) => String(number).padStart(2, "0");
+    const wallTime = `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())} ${pad(next.getHours())}:${pad(next.getMinutes())}:00`;
+    return {
+      timestampMillis: next.getTime(),
+      datetime: next.toISOString(),
+      wallTime,
+      wallKey: wallTime.replace(" ", "T"),
+    };
+  });
 }
