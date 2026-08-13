@@ -97,6 +97,11 @@ nav {
   cursor: pointer;
 }
 
+.sidebar-actions button:disabled {
+  color: #687386;
+  cursor: not-allowed;
+}
+
 .nav-item span {
   float: right;
   color: #64748b;

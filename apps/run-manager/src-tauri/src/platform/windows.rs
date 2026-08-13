@@ -1,23 +1,27 @@
 use crate::core::shell::{self, ShellError};
 use crate::lifecycle::{complete_system_shutdown, RuntimeState};
 use std::collections::BTreeMap;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::mem::{size_of, MaybeUninit};
-use std::os::windows::ffi::OsStrExt;
-use std::path::Path;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::path::{Path, PathBuf};
 use std::ptr::null_mut;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::AppHandle;
-use windows::core::{PCWSTR, PWSTR};
+use windows::core::{Interface, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
     CloseHandle, SetHandleInformation, FILETIME, HANDLE, HANDLE_FLAGS, HANDLE_FLAG_INHERIT, HWND,
-    LPARAM, LRESULT, WAIT_OBJECT_0, WAIT_TIMEOUT, WPARAM,
+    LPARAM, LRESULT, RPC_E_CHANGED_MODE, WAIT_OBJECT_0, WAIT_TIMEOUT, WPARAM,
 };
 use windows::Win32::Security::SECURITY_ATTRIBUTES;
 use windows::Win32::Storage::FileSystem::{ReplaceFileW, REPLACEFILE_WRITE_THROUGH};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+    COINIT_APARTMENTTHREADED, STGM_READ,
+};
 use windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
     SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
@@ -31,8 +35,205 @@ use windows::Win32::System::Threading::{
     EXTENDED_STARTUPINFO_PRESENT, LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION,
     PROC_THREAD_ATTRIBUTE_HANDLE_LIST, STARTF_USESTDHANDLES, STARTUPINFOEXW,
 };
-use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
+use windows::Win32::UI::Shell::{
+    DefSubclassProc, IShellLinkW, RemoveWindowSubclass, SetWindowSubclass, ShellLink, SLGP_RAWPATH,
+};
 use windows::Win32::UI::WindowsAndMessaging::{WM_ENDSESSION, WM_NCDESTROY, WM_QUERYENDSESSION};
+
+use super::{
+    StartupShortcut, StartupShortcutStatus, STARTUP_SHORTCUT_ARGUMENTS, STARTUP_SHORTCUT_FILE_NAME,
+};
+
+const STARTUP_SHORTCUT_DESCRIPTION: &str = "Run Manager background scheduler";
+const SHELL_STRING_CAPACITY: usize = 32_768;
+
+struct ComApartment {
+    uninitialize: bool,
+}
+
+impl ComApartment {
+    fn enter() -> Result<Self, String> {
+        let result = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+        if result.is_ok() {
+            Ok(Self { uninitialize: true })
+        } else if result == RPC_E_CHANGED_MODE {
+            // Tauri may already own this worker thread as an MTA. Shell Link is
+            // usable from that apartment; only a successful initialization is
+            // balanced with CoUninitialize.
+            Ok(Self {
+                uninitialize: false,
+            })
+        } else {
+            Err(format!("failed to initialize Windows COM: {result:?}"))
+        }
+    }
+}
+
+impl Drop for ComApartment {
+    fn drop(&mut self) {
+        if self.uninitialize {
+            unsafe { CoUninitialize() };
+        }
+    }
+}
+
+pub fn startup_shortcut_status(
+    shortcut: &StartupShortcut,
+) -> Result<StartupShortcutStatus, String> {
+    let enabled = if shortcut.shortcut_path().exists() {
+        shortcut_matches(shortcut)?
+    } else {
+        false
+    };
+    Ok(StartupShortcutStatus {
+        supported: true,
+        enabled,
+        shortcut_path: shortcut.shortcut_path().display().to_string(),
+    })
+}
+
+pub fn set_startup_shortcut_enabled(
+    shortcut: &StartupShortcut,
+    enabled: bool,
+) -> Result<StartupShortcutStatus, String> {
+    if enabled {
+        create_or_update_startup_shortcut(shortcut)?;
+    } else {
+        remove_startup_shortcut(shortcut)?;
+    }
+    startup_shortcut_status(shortcut)
+}
+
+fn create_or_update_startup_shortcut(shortcut: &StartupShortcut) -> Result<(), String> {
+    let parent = shortcut
+        .shortcut_path()
+        .parent()
+        .ok_or_else(|| "the Startup shortcut has no parent directory".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+
+    let _apartment = ComApartment::enter()?;
+    let link = new_shell_link()?;
+    let executable = wide_path(shortcut.executable());
+    let arguments = wide_str(STARTUP_SHORTCUT_ARGUMENTS);
+    let description = wide_str(STARTUP_SHORTCUT_DESCRIPTION);
+    let working_directory = shortcut
+        .executable()
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let working_directory = wide_path(working_directory);
+
+    unsafe {
+        link.SetPath(PCWSTR::from_raw(executable.as_ptr()))
+            .map_err(shell_error)?;
+        link.SetArguments(PCWSTR::from_raw(arguments.as_ptr()))
+            .map_err(shell_error)?;
+        link.SetDescription(PCWSTR::from_raw(description.as_ptr()))
+            .map_err(shell_error)?;
+        link.SetWorkingDirectory(PCWSTR::from_raw(working_directory.as_ptr()))
+            .map_err(shell_error)?;
+        link.SetIconLocation(PCWSTR::from_raw(executable.as_ptr()), 0)
+            .map_err(shell_error)?;
+    }
+
+    let temporary = parent.join(format!(
+        ".{}.{}.tmp.lnk",
+        STARTUP_SHORTCUT_FILE_NAME.trim_end_matches(".lnk"),
+        uuid::Uuid::new_v4()
+    ));
+    let temporary_wide = wide_path(&temporary);
+    let persist: IPersistFile = link.cast().map_err(shell_error)?;
+    let save_result = unsafe { persist.Save(PCWSTR::from_raw(temporary_wide.as_ptr()), true) }
+        .map_err(shell_error)
+        .and_then(|()| {
+            replace_file_atomic(&temporary, shortcut.shortcut_path())
+                .map_err(|error| error.to_string())
+        });
+    if save_result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    save_result
+}
+
+fn remove_startup_shortcut(shortcut: &StartupShortcut) -> Result<(), String> {
+    if !shortcut.shortcut_path().exists() {
+        return Ok(());
+    }
+    if !shortcut_is_owned(shortcut.shortcut_path())? {
+        return Err("the existing Startup shortcut is not owned by Run Manager".to_string());
+    }
+    fs::remove_file(shortcut.shortcut_path()).map_err(|error| error.to_string())
+}
+
+fn shortcut_matches(shortcut: &StartupShortcut) -> Result<bool, String> {
+    let (target, arguments, description) = load_shortcut(shortcut.shortcut_path())?;
+    Ok(same_windows_path(&target, shortcut.executable())
+        && arguments == STARTUP_SHORTCUT_ARGUMENTS
+        && description == STARTUP_SHORTCUT_DESCRIPTION)
+}
+
+fn shortcut_is_owned(path: &Path) -> Result<bool, String> {
+    let (_, arguments, description) = load_shortcut(path)?;
+    Ok(arguments == STARTUP_SHORTCUT_ARGUMENTS && description == STARTUP_SHORTCUT_DESCRIPTION)
+}
+
+fn load_shortcut(path: &Path) -> Result<(PathBuf, String, String), String> {
+    let _apartment = ComApartment::enter()?;
+    let link = new_shell_link()?;
+    let persist: IPersistFile = link.cast().map_err(shell_error)?;
+    let path_wide = wide_path(path);
+    unsafe { persist.Load(PCWSTR::from_raw(path_wide.as_ptr()), STGM_READ) }
+        .map_err(shell_error)?;
+
+    let mut target = vec![0_u16; SHELL_STRING_CAPACITY];
+    let mut arguments = vec![0_u16; SHELL_STRING_CAPACITY];
+    let mut description = vec![0_u16; SHELL_STRING_CAPACITY];
+    unsafe {
+        link.GetPath(&mut target, std::ptr::null_mut(), SLGP_RAWPATH.0 as u32)
+            .map_err(shell_error)?;
+        link.GetArguments(&mut arguments).map_err(shell_error)?;
+        link.GetDescription(&mut description).map_err(shell_error)?;
+    }
+    Ok((
+        PathBuf::from(os_string_from_wide(&target)),
+        os_string_from_wide(&arguments)
+            .to_string_lossy()
+            .into_owned(),
+        os_string_from_wide(&description)
+            .to_string_lossy()
+            .into_owned(),
+    ))
+}
+
+fn new_shell_link() -> Result<IShellLinkW, String> {
+    unsafe { CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER) }.map_err(shell_error)
+}
+
+fn same_windows_path(left: &Path, right: &Path) -> bool {
+    let left = fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
+    let right = fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
+    left.to_string_lossy()
+        .to_lowercase()
+        .eq(&right.to_string_lossy().to_lowercase())
+}
+
+fn os_string_from_wide(value: &[u16]) -> OsString {
+    let end = value
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(value.len());
+    OsString::from_wide(&value[..end])
+}
+
+fn wide_str(value: &str) -> Vec<u16> {
+    OsStr::new(value)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
+}
+
+fn shell_error(error: windows::core::Error) -> String {
+    format!("Windows Startup shortcut operation failed: {error}")
+}
 
 /// Replace the manifest in one filesystem operation. `std::fs::rename` does
 /// not replace an existing destination on Windows, while `ReplaceFileW` does

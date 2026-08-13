@@ -1,6 +1,7 @@
 use crate::core::models::{Job, JobInput, Run};
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
 use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse};
+use crate::platform::{StartupShortcut, StartupShortcutStatus};
 use crate::storage::DatabaseState;
 use chrono::Local;
 use serde::Deserialize;
@@ -34,6 +35,33 @@ pub fn hide_main_window(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn quit_app(app: AppHandle, state: State<'_, Arc<RuntimeState>>) {
     lifecycle::request_orderly_exit(&app, state.inner().clone());
+}
+
+fn startup_shortcut(app: &AppHandle) -> Result<StartupShortcut, String> {
+    let startup_directory = app
+        .path()
+        .data_dir()
+        .map_err(|error| error.to_string())?
+        .join("Microsoft")
+        .join("Windows")
+        .join("Start Menu")
+        .join("Programs")
+        .join("Startup");
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    StartupShortcut::new(&startup_directory, &executable)
+}
+
+#[tauri::command]
+pub fn startup_shortcut_status(app: AppHandle) -> Result<StartupShortcutStatus, String> {
+    crate::platform::startup_shortcut_status(&startup_shortcut(&app)?)
+}
+
+#[tauri::command]
+pub fn set_startup_shortcut_enabled(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<StartupShortcutStatus, String> {
+    crate::platform::set_startup_shortcut_enabled(&startup_shortcut(&app)?, enabled)
 }
 
 #[tauri::command]

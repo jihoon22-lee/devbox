@@ -4,13 +4,15 @@ import {
   deleteJob,
   hideMainWindow,
   listJobs,
+  loadStartupShortcutStatus,
   loadRuntimeStatus,
   quitApp,
+  setStartupShortcutEnabled,
   updateJob,
 } from "./api";
 import JobEditor from "./components/JobEditor";
 import RunHistory from "./components/RunHistory";
-import type { Job, JobInput, RuntimeStatus } from "./types";
+import type { Job, JobInput, RuntimeStatus, StartupShortcutStatus } from "./types";
 import "./App.css";
 
 type Screen = "jobs" | "editor" | "history";
@@ -25,6 +27,7 @@ function scheduleLabel(job: Job): string {
 
 export default function App() {
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
+  const [startupStatus, setStartupStatus] = useState<StartupShortcutStatus | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [screen, setScreen] = useState<Screen>("jobs");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
@@ -47,11 +50,12 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([loadRuntimeStatus(), listJobs()])
-      .then(([nextStatus, nextJobs]) => {
+    void Promise.all([loadRuntimeStatus(), listJobs(), loadStartupShortcutStatus()])
+      .then(([nextStatus, nextJobs, nextStartupStatus]) => {
         if (!active) return;
         setStatus(nextStatus);
         setJobs(nextJobs);
+        setStartupStatus(nextStartupStatus);
         setError(null);
       })
       .catch((cause: unknown) => {
@@ -122,6 +126,19 @@ export default function App() {
     }
   };
 
+  const toggleStartup = async () => {
+    if (!startupStatus?.supported) return;
+    setBusy(true);
+    try {
+      setStartupStatus(await setStartupShortcutEnabled(!startupStatus.enabled));
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -142,6 +159,16 @@ export default function App() {
           </button>
         </nav>
         <div className="sidebar-actions">
+          <button
+            type="button"
+            disabled={busy || !startupStatus?.supported}
+            title={startupStatus?.shortcutPath}
+            onClick={() => void toggleStartup()}
+          >
+            {startupStatus?.supported
+              ? `로그인 시 자동 시작: ${startupStatus.enabled ? "켜짐" : "꺼짐"}`
+              : "자동 시작: Windows 전용"}
+          </button>
           <button type="button" onClick={() => void hideMainWindow()}>트레이로 숨기기</button>
           <button className="danger" type="button" onClick={() => void quitApp()}>안전하게 종료</button>
         </div>
