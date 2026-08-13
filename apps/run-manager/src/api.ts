@@ -5,6 +5,7 @@ import type {
   Job,
   JobInput,
   LogStream,
+  ServiceInput,
   Run,
   RuntimeStatus,
   StartupShortcutStatus,
@@ -12,6 +13,7 @@ import type {
 } from "./types";
 
 let mockJobs: Job[] = [];
+let mockServices: Job[] = [];
 let mockSequence = 0;
 
 export function loadRuntimeStatus(): Promise<RuntimeStatus> {
@@ -130,6 +132,81 @@ export function deleteJob(id: string): Promise<boolean> {
     return Promise.resolve(before !== mockJobs.length);
   }
   return invoke<boolean>("delete_job", { id });
+}
+
+export function listServices(): Promise<Job[]> {
+  if (!isTauri()) return Promise.resolve([...mockServices]);
+  return invoke<Job[]>("list_services");
+}
+
+export function getService(id: string): Promise<Job | null> {
+  if (!isTauri()) return Promise.resolve(mockServices.find((service) => service.id === id) ?? null);
+  return invoke<Job | null>("get_service", { id });
+}
+
+export function createService(input: ServiceInput): Promise<Job> {
+  if (!isTauri()) {
+    const now = Date.now();
+    const service: Job = {
+      id: `mock-service-${++mockSequence}`,
+      kind: "service",
+      name: input.name,
+      command: input.command,
+      cwd: input.cwd,
+      targetKind: input.targetKind,
+      targetDistro: input.targetDistro,
+      envConfigured: input.environment.action === "replace" && Object.keys(input.environment.values).length > 0,
+      cronExpr: null,
+      enabled: false,
+      overlapPolicy: "skip",
+      catchUp: false,
+      lastEvaluatedAt: null,
+      nextQueueSequence: 0,
+      restartPolicy: input.restartPolicy,
+      autoStart: input.autoStart,
+      healthTcpAddress: input.healthTcpAddress,
+      healthTcpPort: input.healthTcpPort,
+      healthStartGraceMs: 10_000,
+      createdAt: now,
+      updatedAt: now,
+    };
+    mockServices = [...mockServices, service];
+    return Promise.resolve(service);
+  }
+  return invoke<Job>("create_service", { input });
+}
+
+export function updateService(id: string, input: ServiceInput): Promise<Job> {
+  if (!isTauri()) {
+    const index = mockServices.findIndex((service) => service.id === id);
+    if (index < 0) return Promise.reject(new Error("서비스를 찾을 수 없습니다."));
+    const current = mockServices[index];
+    const updated: Job = {
+      ...current,
+      ...input,
+      targetDistro: input.targetKind === "wsl" ? input.targetDistro : null,
+      envConfigured:
+        input.environment.action === "clear"
+          ? false
+          : input.environment.action === "replace"
+            ? Object.keys(input.environment.values).length > 0
+            : current.envConfigured,
+      healthStartGraceMs: 10_000,
+      updatedAt: Date.now(),
+    };
+    mockServices = mockServices.map((service) => (service.id === id ? updated : service));
+    return Promise.resolve(updated);
+  }
+  return invoke<Job>("update_service", { id, input });
+}
+
+export function deleteService(id: string): Promise<boolean> {
+  if (!isTauri()) {
+    const before = mockServices.length;
+    mockServices = mockServices.filter((service) => service.id !== id);
+    return Promise.resolve(before !== mockServices.length);
+  }
+  return invoke<boolean>("delete_service", { id });
 }
 
 export function previewCron(cronExpr: string): Promise<CronPreviewItem[]> {

@@ -1,4 +1,6 @@
-use crate::core::models::{EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, Run};
+use crate::core::models::{
+    EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, Run, ServiceInput,
+};
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
 use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse};
 use crate::platform::environment::{EnvironmentProtectorState, SecretEnvironment};
@@ -82,7 +84,7 @@ pub fn create_job(
     state: State<'_, Arc<DatabaseState>>,
 ) -> Result<Job, String> {
     let mut input = input;
-    let environment = consume_environment(&mut input, protector.inner())?;
+    let environment = consume_environment(&mut input.environment, protector.inner())?;
     let ciphertext = match environment {
         EnvironmentCiphertextUpdate::Replace(ciphertext) => Some(ciphertext),
         EnvironmentCiphertextUpdate::Keep | EnvironmentCiphertextUpdate::Clear => None,
@@ -100,17 +102,17 @@ pub fn update_job(
     state: State<'_, Arc<DatabaseState>>,
 ) -> Result<Job, String> {
     let mut input = input;
-    let environment = consume_environment(&mut input, protector.inner())?;
+    let environment = consume_environment(&mut input.environment, protector.inner())?;
     state
         .update_job_with_ciphertext_at(&id, input, environment, current_epoch_millis())
         .map_err(|error| error.to_string())
 }
 
 fn consume_environment(
-    input: &mut JobInput,
+    update: &mut EnvironmentUpdate,
     protector: &EnvironmentProtectorState,
 ) -> Result<EnvironmentCiphertextUpdate, String> {
-    let update = std::mem::take(&mut input.environment);
+    let update = std::mem::take(update);
     match update {
         EnvironmentUpdate::Keep => Ok(EnvironmentCiphertextUpdate::Keep),
         EnvironmentUpdate::Clear => Ok(EnvironmentCiphertextUpdate::Clear),
@@ -142,6 +144,51 @@ pub fn set_job_enabled(
 #[tauri::command]
 pub fn delete_job(id: String, state: State<'_, Arc<DatabaseState>>) -> Result<bool, String> {
     state.delete_job(&id).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_services(state: State<'_, Arc<DatabaseState>>) -> Result<Vec<Job>, String> {
+    state.list_services().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_service(
+    id: String,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<Option<Job>, String> {
+    state.get_service(&id).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn create_service(
+    input: ServiceInput,
+    protector: State<'_, EnvironmentProtectorState>,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<Job, String> {
+    let mut input = input;
+    let environment = consume_environment(&mut input.environment, protector.inner())?;
+    state
+        .create_service_with_ciphertext_at(input, environment, current_epoch_millis())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn update_service(
+    id: String,
+    input: ServiceInput,
+    protector: State<'_, EnvironmentProtectorState>,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<Job, String> {
+    let mut input = input;
+    let environment = consume_environment(&mut input.environment, protector.inner())?;
+    state
+        .update_service_with_ciphertext_at(&id, input, environment, current_epoch_millis())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn delete_service(id: String, state: State<'_, Arc<DatabaseState>>) -> Result<bool, String> {
+    state.delete_service(&id).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

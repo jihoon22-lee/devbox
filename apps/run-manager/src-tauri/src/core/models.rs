@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::net::IpAddr;
+
+pub const DEFAULT_SERVICE_START_GRACE_MS: i64 = 10_000;
 
 /// The kinds supported by the shared database table. Phase 1 command handlers
 /// deliberately accept only `Job`; the service variant is reserved for Phase 2.
@@ -68,6 +71,31 @@ impl OverlapPolicy {
 }
 
 impl fmt::Display for OverlapPolicy {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str((*self).as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum RestartPolicy {
+    #[default]
+    Never,
+    OnFailure,
+    Always,
+}
+
+impl RestartPolicy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Never => "never",
+            Self::OnFailure => "on-failure",
+            Self::Always => "always",
+        }
+    }
+}
+
+impl fmt::Display for RestartPolicy {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str((*self).as_str())
     }
@@ -251,6 +279,97 @@ impl EnvironmentUpdate {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceInput {
+    pub name: String,
+    pub command: String,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    pub target_kind: TargetKind,
+    #[serde(default)]
+    pub target_distro: Option<String>,
+    #[serde(default)]
+    pub environment: EnvironmentUpdate,
+    #[serde(default)]
+    pub restart_policy: RestartPolicy,
+    #[serde(default)]
+    pub auto_start: bool,
+    #[serde(default)]
+    pub health_tcp_address: Option<String>,
+    #[serde(default)]
+    pub health_tcp_port: Option<u16>,
+}
+
+impl ServiceInput {
+    pub fn validate(&self) -> Result<(), ModelError> {
+        if self.name.trim().is_empty() {
+            return Err(ModelError::EmptyField("name"));
+        }
+        if self.command.trim().is_empty() {
+            return Err(ModelError::EmptyField("command"));
+        }
+        for (field, value) in [
+            ("name", self.name.as_str()),
+            ("command", self.command.as_str()),
+        ] {
+            if value.contains('\0') {
+                return Err(ModelError::NulByte(field));
+            }
+        }
+        if let Some(cwd) = &self.cwd {
+            if cwd.contains('\0') {
+                return Err(ModelError::NulByte("cwd"));
+            }
+        }
+        if let Some(distro) = &self.target_distro {
+            if distro.contains('\0') {
+                return Err(ModelError::NulByte("target_distro"));
+            }
+        }
+        match self.target_kind {
+            TargetKind::Windows if self.target_distro.is_some() => {
+                return Err(ModelError::UnexpectedTargetDistro);
+            }
+            TargetKind::Wsl
+                if self
+                    .target_distro
+                    .as_deref()
+                    .is_none_or(|distro| distro.trim().is_empty()) =>
+            {
+                return Err(ModelError::MissingTargetDistro);
+            }
+            _ => {}
+        }
+
+        match (&self.health_tcp_address, self.health_tcp_port) {
+            (None, None) => {}
+            (Some(address), Some(port)) => {
+                if address.trim().is_empty() {
+                    return Err(ModelError::EmptyField("health_tcp_address"));
+                }
+                if address.contains('\0') {
+                    return Err(ModelError::NulByte("health_tcp_address"));
+                }
+                if port == 0 {
+                    return Err(ModelError::InvalidServicePort);
+                }
+                if !address.eq_ignore_ascii_case("localhost")
+                    && address
+                        .parse::<IpAddr>()
+                        .map_or(true, |ip| !ip.is_loopback())
+                {
+                    return Err(ModelError::NonLocalServiceAddress);
+                }
+            }
+            (Some(_), None) => return Err(ModelError::MissingServicePort),
+            (None, Some(_)) => return Err(ModelError::MissingServiceAddress),
+        }
+        self.environment.validate()?;
+        Ok(())
+    }
+}
+
 /// Storage receives only the result of the protector. This type is not
 /// deserializable and therefore cannot be supplied by a frontend caller.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -279,7 +398,7 @@ pub struct Job {
     pub catch_up: bool,
     pub last_evaluated_at: Option<i64>,
     pub next_queue_sequence: i64,
-    pub restart_policy: Option<String>,
+    pub restart_policy: Option<RestartPolicy>,
     pub auto_start: Option<bool>,
     pub health_tcp_address: Option<String>,
     pub health_tcp_port: Option<u16>,
@@ -406,6 +525,10 @@ pub enum ModelError {
     InvalidEnvironment(String),
     UnexpectedTargetDistro,
     MissingTargetDistro,
+    MissingServiceAddress,
+    MissingServicePort,
+    InvalidServicePort,
+    NonLocalServiceAddress,
 }
 
 impl fmt::Display for ModelError {
@@ -422,6 +545,18 @@ impl fmt::Display for ModelError {
             }
             Self::MissingTargetDistro => {
                 formatter.write_str("target_distro is required for WSL jobs")
+            }
+            Self::MissingServiceAddress => {
+                formatter.write_str("health_tcp_address is required when health_tcp_port is set")
+            }
+            Self::MissingServicePort => {
+                formatter.write_str("health_tcp_port is required when health_tcp_address is set")
+            }
+            Self::InvalidServicePort => {
+                formatter.write_str("health_tcp_port must be between 1 and 65535")
+            }
+            Self::NonLocalServiceAddress => {
+                formatter.write_str("health_tcp_address must be localhost or a loopback IP")
             }
         }
     }
@@ -498,5 +633,70 @@ mod tests {
             .unwrap(),
             EnvironmentUpdate::Clear
         );
+    }
+
+    fn service_input() -> ServiceInput {
+        ServiceInput {
+            name: "web".to_string(),
+            command: "node server.js".to_string(),
+            cwd: None,
+            target_kind: TargetKind::Windows,
+            target_distro: None,
+            environment: EnvironmentUpdate::Keep,
+            restart_policy: RestartPolicy::OnFailure,
+            auto_start: true,
+            health_tcp_address: Some("127.0.0.1".to_string()),
+            health_tcp_port: Some(8080),
+        }
+    }
+
+    #[test]
+    fn service_input_uses_explicit_restart_policies() {
+        let input = service_input();
+        assert!(input.validate().is_ok());
+        assert_eq!(
+            serde_json::to_string(&RestartPolicy::OnFailure).unwrap(),
+            "\"on-failure\""
+        );
+        let defaulted: ServiceInput = serde_json::from_str(
+            r#"{
+                "name":"web",
+                "command":"node server.js",
+                "cwd":null,
+                "targetKind":"windows",
+                "targetDistro":null,
+                "healthTcpAddress":null,
+                "healthTcpPort":null
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(defaulted.restart_policy, RestartPolicy::Never);
+        assert!(!defaulted.auto_start);
+    }
+
+    #[test]
+    fn service_input_rejects_non_local_or_partial_health_endpoints() {
+        let mut input = service_input();
+        input.health_tcp_address = Some("8.8.8.8".to_string());
+        assert_eq!(input.validate(), Err(ModelError::NonLocalServiceAddress));
+
+        let mut input = service_input();
+        input.health_tcp_port = None;
+        assert_eq!(input.validate(), Err(ModelError::MissingServicePort));
+
+        let mut input = service_input();
+        input.health_tcp_address = None;
+        assert_eq!(input.validate(), Err(ModelError::MissingServiceAddress));
+    }
+
+    #[test]
+    fn service_input_rejects_invalid_port_and_shell_like_address() {
+        let mut input = service_input();
+        input.health_tcp_port = Some(0);
+        assert_eq!(input.validate(), Err(ModelError::InvalidServicePort));
+
+        let mut input = service_input();
+        input.health_tcp_address = Some("127.0.0.1;curl evil".to_string());
+        assert_eq!(input.validate(), Err(ModelError::NonLocalServiceAddress));
     }
 }
