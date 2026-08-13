@@ -4,6 +4,7 @@ version = "0.3.0"
 description = "Code Pad"
 authors = ["jihoon22.lee"]
 edition = "2021"
+default-run = "code-pad"
 
 [lib]
 name = "code_pad_lib"
