@@ -162,6 +162,35 @@ impl DiagnosticStore {
         let response = validate_pull_diagnostics(result, current)?;
         Ok(self.apply(response))
     }
+
+    /// Mark every cached report stale when its server session disappears. The
+    /// stale response is emitted to the UI, but remains in the cache so the
+    /// last useful messages can still be inspected while the server restarts.
+    pub fn mark_all_stale(
+        &mut self,
+        current: &[(String, i32)],
+    ) -> Vec<FeatureResponse<DiagnosticResult>> {
+        let versions = current
+            .iter()
+            .map(|(uri, version)| (uri.as_str(), *version))
+            .collect::<BTreeMap<_, _>>();
+        self.latest
+            .values_mut()
+            .map(|result| {
+                result.stale = true;
+                let version = versions
+                    .get(result.uri.as_str())
+                    .copied()
+                    .or(result.version)
+                    .unwrap_or_default();
+                FeatureResponse::new(
+                    RequestMetadata::new(result.uri.clone(), version),
+                    result.clone(),
+                    true,
+                )
+            })
+            .collect()
+    }
 }
 
 impl From<&DiagnosticResult> for DiagnosticResult {
@@ -659,6 +688,11 @@ fn validate_diagnostics(
             "expected {expected_origin:?} diagnostics, got {:?}",
             result.origin
         )));
+    }
+    if expected_origin == DiagnosticOrigin::Push && result.version.is_none() {
+        return Err(FeatureError::InvalidParams(
+            "versionless publishDiagnostics is ignored".into(),
+        ));
     }
     if result.uri != current.uri {
         return Err(FeatureError::ResponseForDifferentDocument {
@@ -1518,6 +1552,18 @@ mod tests {
             validate_push_diagnostics(invalid, &current),
             Err(FeatureError::InvalidRange { .. })
         ));
+    }
+
+    #[test]
+    fn versionless_publish_diagnostics_is_rejected_fail_closed() {
+        let current = RequestMetadata::new("file:///workspace/main.rs", 1);
+        let result = parse_publish_diagnostics(&json!({
+            "uri": current.uri,
+            "diagnostics": []
+        }))
+        .unwrap();
+        let error = validate_push_diagnostics(result, &current).unwrap_err();
+        assert!(error.to_string().contains("versionless"));
     }
 
     #[test]

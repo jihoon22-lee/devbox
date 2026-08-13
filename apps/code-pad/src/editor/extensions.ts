@@ -22,6 +22,8 @@ import {
   type KeyBinding,
 } from "@codemirror/view";
 import { Annotation, Compartment, EditorState, type Extension } from "@codemirror/state";
+import { lintGutter } from "@codemirror/lint";
+import { hoverTooltip } from "@codemirror/view";
 import { history, historyKeymap } from "@codemirror/commands";
 import {
   openSearchPanel,
@@ -151,6 +153,8 @@ export interface EditorExtensionOptions {
   onChange: (text: string) => void;
   onCursorChange?: (position: number) => void;
   onBookmarksChange?: (bookmarks: number[]) => void;
+  completionSource?: CompletionSource;
+  hoverSource?: NonNullable<Parameters<typeof hoverTooltip>[0]>;
   compartments?: EditorCompartments;
 }
 
@@ -176,6 +180,8 @@ export function editorExtensions({
   onChange,
   onCursorChange,
   onBookmarksChange,
+  completionSource,
+  hoverSource,
   compartments,
 }: EditorExtensionOptions): Extension[] {
   const languageMode = syntaxHighlightingEnabled ? languageExtensionFor(language) : [];
@@ -211,7 +217,9 @@ export function editorExtensions({
       { key: "Mod-Shift-l", run: selectSelectionMatches, preventDefault: true },
     ]),
     search({ top: true }),
-    autocompletion({ override: [currentDocumentWordCompletion] }),
+    lintGutter(),
+    autocompletion({ override: [completionSource ?? currentDocumentWordCompletion] }),
+    ...(hoverSource ? [hoverTooltip(hoverSource)] : []),
     compartments?.syntax.of(syntaxMode) ?? syntaxMode,
     compartments?.readOnly.of(readOnlyMode) ?? readOnlyMode,
     EditorView.updateListener.of((update) => {

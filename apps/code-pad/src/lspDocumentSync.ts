@@ -4,6 +4,14 @@ import {
   languageServerStatuses,
   loadLspConfig,
   openLspDocument,
+  pullLspDiagnostics,
+  requestLspCompletion,
+  requestLspDefinition,
+  requestLspFormatting,
+  requestLspHover,
+  requestLspReferences,
+  requestLspRename,
+  restartLanguageServer,
   reloadLspDocument,
   saveLspDocument,
   startLanguageServer,
@@ -11,13 +19,25 @@ import {
 } from "./api";
 import type {
   LanguageServerStatus,
+  AppliedDocumentEdits,
   LoadedLspConfig,
   LspConfig,
+  LspCompletionResult,
+  LspDiagnosticResult,
   LspDidChange,
   LspDidClose,
   LspDidOpen,
   LspDidSave,
+  LspFeatureResponse,
+  LspFilteredLocations,
+  LspHoverResult,
+  LspPosition,
 } from "./types";
+import type {
+  LspDiagnosticsEvent,
+  LspStatusEvent,
+} from "./types";
+import { positionForOffset } from "./lspFeatures";
 
 /** The document-facing language IDs understood by the LSP boundary. */
 export const LSP_LANGUAGE_IDS = {
@@ -71,6 +91,14 @@ export interface LspDocumentTransport {
   reload: (languageId: string, uri: string, text: string) => Promise<LspDidChange>;
   save: (languageId: string, uri: string) => Promise<LspDidSave>;
   close: (languageId: string, uri: string) => Promise<LspDidClose>;
+  pullDiagnostics: (languageId: string, uri: string) => Promise<LspFeatureResponse<LspDiagnosticResult>>;
+  completion: (languageId: string, uri: string, position: LspPosition) => Promise<LspFeatureResponse<LspCompletionResult>>;
+  hover: (languageId: string, uri: string, position: LspPosition) => Promise<LspFeatureResponse<LspHoverResult | null>>;
+  definition: (languageId: string, uri: string, position: LspPosition) => Promise<LspFeatureResponse<LspFilteredLocations>>;
+  references: (languageId: string, uri: string, position: LspPosition, includeDeclaration: boolean) => Promise<LspFeatureResponse<LspFilteredLocations>>;
+  rename: (languageId: string, uri: string, position: LspPosition, newName: string) => Promise<AppliedDocumentEdits>;
+  formatting: (languageId: string, uri: string, tabSize: number, insertSpaces: boolean) => Promise<AppliedDocumentEdits>;
+  restart: (languageId: string) => Promise<void>;
 }
 
 export const nativeLspDocumentTransport: LspDocumentTransport = {
@@ -83,7 +111,20 @@ export const nativeLspDocumentTransport: LspDocumentTransport = {
   reload: reloadLspDocument,
   save: saveLspDocument,
   close: closeLspDocument,
+  pullDiagnostics: pullLspDiagnostics,
+  completion: requestLspCompletion,
+  hover: requestLspHover,
+  definition: requestLspDefinition,
+  references: requestLspReferences,
+  rename: requestLspRename,
+  formatting: requestLspFormatting,
+  restart: restartLanguageServer,
 };
+
+export interface LspDiagnosticsSnapshot {
+  documentId: string;
+  response: LspFeatureResponse<LspDiagnosticResult>;
+}
 
 export interface LspDocumentSyncState {
   enabled: boolean;
@@ -92,11 +133,14 @@ export interface LspDocumentSyncState {
   configuredLanguages: string[];
   runningLanguages: string[];
   lastError: string | null;
+  staleDiagnostics: boolean;
 }
 
 interface OpenDocument {
   languageId: LspLanguageId;
   uri: string;
+  version: number;
+  text: string;
   generation: number;
 }
 
@@ -183,6 +227,10 @@ export class LspDocumentSync {
   private readonly transport: LspDocumentTransport;
   private readonly documents = new Map<string, DocumentState>();
   private readonly listeners = new Set<(state: LspDocumentSyncState) => void>();
+  private readonly diagnosticsListeners = new Set<(snapshot: LspDiagnosticsSnapshot) => void>();
+  private readonly diagnostics = new Map<string, LspDiagnosticsSnapshot>();
+  private readonly diagnosticsTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly featureTokens = new Map<string, number>();
   private config: LspConfig | null = null;
   private configLoaded = false;
   private contextLoadPromise: Promise<void> | null = null;
@@ -199,6 +247,7 @@ export class LspDocumentSync {
     configuredLanguages: [],
     runningLanguages: [],
     lastError: null,
+    staleDiagnostics: false,
   };
 
   constructor(transport: LspDocumentTransport = nativeLspDocumentTransport) {
@@ -217,6 +266,120 @@ export class LspDocumentSync {
     this.listeners.add(listener);
     listener(this.getState());
     return () => this.listeners.delete(listener);
+  }
+
+  subscribeDiagnostics(listener: (snapshot: LspDiagnosticsSnapshot) => void): () => void {
+    this.diagnosticsListeners.add(listener);
+    for (const snapshot of this.diagnostics.values()) listener(snapshot);
+    return () => this.diagnosticsListeners.delete(listener);
+  }
+
+  getDiagnostics(documentId: string): LspDiagnosticsSnapshot | null {
+    return this.diagnostics.get(documentId) ?? null;
+  }
+
+  statusForDocument(documentId: string): LanguageServerStatus | null {
+    const state = this.documents.get(documentId);
+    return state?.languageId
+      ? this.statusesSnapshot.find((status) => status.languageId === state.languageId) ?? null
+      : null;
+  }
+
+  documentIdForUri(uri: string): string | null {
+    for (const [documentId, state] of this.documents) {
+      if (state.opened?.uri === uri) return documentId;
+    }
+    return null;
+  }
+
+  documentVersion(documentId: string): number | null {
+    return this.documents.get(documentId)?.opened?.version ?? null;
+  }
+
+  documentText(documentId: string): string | null {
+    return this.documents.get(documentId)?.opened?.text ?? null;
+  }
+
+  acceptStatusEvent(event: LspStatusEvent): void {
+    const index = this.statusesSnapshot.findIndex((status) => status.languageId === event.languageId);
+    if (index === -1) this.statusesSnapshot = [...this.statusesSnapshot, event.status];
+    else {
+      const next = this.statusesSnapshot.slice();
+      next[index] = event.status;
+      this.statusesSnapshot = next;
+    }
+    if (event.reason) this.recordError(event.reason);
+    else this.publishState();
+  }
+
+  acceptDiagnosticsEvent(event: LspDiagnosticsEvent): void {
+    // A push report without a server document version has no safe generation
+    // boundary. Pull reports carry the request snapshot metadata instead;
+    // ignore versionless pushes rather than presenting a late report as
+    // current after an editor mutation.
+    if (event.response.value.origin === "push" && event.response.value.version == null) return;
+    const entry = [...this.documents.entries()].find(([, state]) =>
+      state.languageId === event.languageId && state.opened?.uri === event.response.metadata.uri,
+    );
+    if (!entry) return;
+    const [documentId, state] = entry;
+    const currentVersion = state.opened?.version;
+    const payloadVersion = event.response.value.version;
+    const stale = currentVersion !== undefined && (
+      event.response.metadata.version !== currentVersion
+      || (payloadVersion !== null && payloadVersion !== undefined && payloadVersion !== currentVersion)
+      || state.opened?.text !== state.doc.text
+    );
+    const previous = this.diagnostics.get(documentId);
+    const incomingStale = event.response.stale || stale;
+    const previousMatchesCurrent = Boolean(
+      previous
+      && currentVersion !== undefined
+      && !previous.response.stale
+      && previous.response.metadata.version === currentVersion
+      && (previous.response.value.version === null
+        || previous.response.value.version === undefined
+        || previous.response.value.version === currentVersion)
+      && state.opened?.text === state.doc.text,
+    );
+    // A late push must never replace or stale-mark a diagnostic result that
+    // already describes the current native mirror.  This is common when a
+    // server's push queue races with a newer pull result.  Once the editor
+    // text has changed, the previous result is genuinely old and remains
+    // visible only as stale until a fresh result arrives.
+    if (incomingStale && previousMatchesCurrent) return;
+    if (incomingStale && previous?.response.stale && state.opened?.text !== state.doc.text) return;
+    // Do not let a stale-only first event create a banner or an empty lint
+    // snapshot for a document that has never had a current result.
+    if (incomingStale && !previous) return;
+    const staleVersion = currentVersion ?? previous?.response.metadata.version ?? event.response.metadata.version;
+    const response = incomingStale && previous
+      ? {
+          ...previous.response,
+          metadata: { ...previous.response.metadata, version: staleVersion },
+          value: { ...previous.response.value, version: staleVersion, stale: true },
+          stale: true,
+        }
+      : {
+          ...event.response,
+          value: { ...event.response.value, stale: event.response.value.stale || incomingStale },
+          stale: incomingStale,
+        };
+    const snapshot = { documentId, response };
+    this.diagnostics.set(documentId, snapshot);
+    this.publishDiagnostics(snapshot);
+    this.stateSnapshot = {
+      ...this.stateSnapshot,
+      staleDiagnostics: [...this.diagnostics.values()].some((item) => item.response.stale),
+    };
+    this.publishState();
+  }
+
+  /** Native restart reopens documents; the status event is the UI boundary. */
+  restart(languageId: string): Promise<void> {
+    return this.transport.restart(languageId).catch((cause) => {
+      this.recordError(cause);
+    });
   }
 
   /** Change the active workspace and safely close/reopen all registered docs. */
@@ -271,7 +434,8 @@ export class LspDocumentSync {
     return this.enqueue(state, async () => {
       if (!this.isCurrent(state, generation, true) || state.languageId !== languageId) return;
       try {
-        await this.ensureOpen(state, generation, languageId, document.text);
+        const opened = await this.ensureOpen(state, generation, languageId, document.text);
+        if (opened) this.scheduleDiagnostics(document.id, generation);
       } catch (cause) {
         if (this.isCurrent(state, generation, true)) this.recordError(cause);
       }
@@ -292,6 +456,10 @@ export class LspDocumentSync {
     const state = this.documents.get(document.id);
     if (!state || !state.active || state.closing) return Promise.resolve();
     state.doc = document;
+    // Invalidate editor lint immediately when its text changes. A versionless
+    // push is deliberately ignored at the native boundary, so retaining an
+    // old snapshot as current would leave stale ranges visible indefinitely.
+    this.invalidateDiagnostics(document.id);
     const languageId = state.languageId;
     if (!languageId) return Promise.resolve();
     const generation = state.generation;
@@ -303,8 +471,12 @@ export class LspDocumentSync {
       try {
         const opened = await this.ensureOpen(state, generation, languageId, text);
         if (!opened || !this.isCurrent(state, generation, true)) return;
-        if (dirty) await this.transport.change(languageId, opened.uri, text, true);
-        else await this.transport.reload(languageId, opened.uri, text);
+        const changed = dirty
+          ? await this.transport.change(languageId, opened.uri, text, true)
+          : await this.transport.reload(languageId, opened.uri, text);
+        opened.version = changed.version;
+        opened.text = text;
+        this.scheduleDiagnostics(document.id, generation);
       } catch (cause) {
         if (this.isCurrent(state, generation, true)) this.recordError(cause);
       }
@@ -322,17 +494,157 @@ export class LspDocumentSync {
       try {
         const opened = await this.ensureOpen(state, generation, languageId, state.doc.text);
         if (!opened || !this.isCurrent(state, generation, true)) return;
-        await this.transport.save(languageId, opened.uri);
+        const saved = await this.transport.save(languageId, opened.uri);
+        opened.version = saved.version;
+        this.scheduleDiagnostics(documentId, generation);
       } catch (cause) {
         if (this.isCurrent(state, generation, true)) this.recordError(cause);
       }
     });
   }
 
+  requestCompletion(documentId: string, offset: number): Promise<LspFeatureResponse<LspCompletionResult> | null> {
+    const token = this.nextFeatureToken(documentId);
+    return this.requestFeature(documentId, token, async (state, opened, status) => {
+      if (status?.capabilities.completion === false) return null;
+      const position = positionForOffset(state.doc.text, offset, status?.capabilities.positionEncoding);
+      const response = await this.transport.completion(state.languageId!, opened.uri, position);
+      return this.isFeatureCurrent(documentId, token) ? response : null;
+    }, true);
+  }
+
+  requestHover(documentId: string, offset: number): Promise<LspFeatureResponse<LspHoverResult | null> | null> {
+    const token = this.nextFeatureToken(documentId);
+    return this.requestFeature(documentId, token, async (state, opened, status) => {
+      if (status?.capabilities.hover === false) return null;
+      const position = positionForOffset(state.doc.text, offset, status?.capabilities.positionEncoding);
+      const response = await this.transport.hover(state.languageId!, opened.uri, position);
+      return this.isFeatureCurrent(documentId, token) ? response : null;
+    }, true);
+  }
+
+  requestDefinition(documentId: string, offset: number): Promise<LspFeatureResponse<LspFilteredLocations> | null> {
+    const token = this.nextFeatureToken(documentId);
+    return this.requestFeature(documentId, token, async (state, opened, status) => {
+      if (status?.capabilities.definition === false) return null;
+      const position = positionForOffset(state.doc.text, offset, status?.capabilities.positionEncoding);
+      const response = await this.transport.definition(state.languageId!, opened.uri, position);
+      return this.isFeatureCurrent(documentId, token) ? response : null;
+    });
+  }
+
+  requestReferences(
+    documentId: string,
+    offset: number,
+    includeDeclaration = true,
+  ): Promise<LspFeatureResponse<LspFilteredLocations> | null> {
+    const token = this.nextFeatureToken(documentId);
+    return this.requestFeature(documentId, token, async (state, opened, status) => {
+      if (status?.capabilities.references === false) return null;
+      const position = positionForOffset(state.doc.text, offset, status?.capabilities.positionEncoding);
+      const response = await this.transport.references(
+        state.languageId!,
+        opened.uri,
+        position,
+        includeDeclaration,
+      );
+      return this.isFeatureCurrent(documentId, token) ? response : null;
+    });
+  }
+
+  requestRename(documentId: string, offset: number, newName: string): Promise<AppliedDocumentEdits | null> {
+    const token = this.nextFeatureToken(documentId);
+    return this.requestFeature(documentId, token, async (state, opened, status) => {
+      if (status?.capabilities.rename === false) return null;
+      const position = positionForOffset(state.doc.text, offset, status?.capabilities.positionEncoding);
+      const result = await this.transport.rename(state.languageId!, opened.uri, position, newName);
+      return this.isFeatureCurrent(documentId, token) ? result : null;
+    });
+  }
+
+  requestFormatting(
+    documentId: string,
+    tabSize = 4,
+    insertSpaces = true,
+  ): Promise<AppliedDocumentEdits | null> {
+    const token = this.nextFeatureToken(documentId);
+    return this.requestFeature(documentId, token, async (state, opened, status) => {
+      if (status?.capabilities.formatting === false) return null;
+      const result = await this.transport.formatting(state.languageId!, opened.uri, tabSize, insertSpaces);
+      return this.isFeatureCurrent(documentId, token) ? result : null;
+    });
+  }
+
+  /** Advance the native mirror after App atomically accepts a mutation result. */
+  applyDocuments(documents: AppliedDocumentEdits["documents"]): void {
+    for (const edited of documents) {
+      const match = [...this.documents.values()].find((state) => state.opened?.uri === edited.uri);
+      if (match?.opened) {
+        match.opened.version = edited.version;
+        match.opened.text = edited.text;
+        match.doc = { ...match.doc, text: edited.text, dirty: true };
+      }
+    }
+    for (const [documentId, snapshot] of this.diagnostics) {
+      if (documents.some((edited) => edited.uri === snapshot.response.metadata.uri)) {
+        this.invalidateDiagnostics(documentId);
+        this.diagnostics.delete(documentId);
+      }
+    }
+    this.stateSnapshot = {
+      ...this.stateSnapshot,
+      staleDiagnostics: [...this.diagnostics.values()].some((item) => item.response.stale),
+    };
+    this.publishState();
+  }
+
+  pullDiagnostics(documentId: string): Promise<LspFeatureResponse<LspDiagnosticResult> | null> {
+    const state = this.documents.get(documentId);
+    if (!state || !state.active || state.closing || !state.languageId) return Promise.resolve(null);
+    const generation = state.generation;
+    return this.enqueueResult(state, async () => {
+      if (!this.isCurrent(state, generation, true) || !state.languageId) return null;
+      const opened = await this.ensureOpen(state, generation, state.languageId, state.doc.text);
+      if (!opened || !this.isCurrent(state, generation, true)) return null;
+      const status = this.statusesSnapshot.find((item) => item.languageId === state.languageId);
+      if (status?.capabilities.diagnostics === false) return null;
+      const response = await this.transport.pullDiagnostics(state.languageId, opened.uri);
+      if (!this.isCurrent(state, generation, true)) return null;
+      const stale = opened.version !== response.metadata.version
+        || opened.text !== state.doc.text
+        || (response.value.version !== null && response.value.version !== opened.version);
+      const currentResponse = stale
+        ? {
+            ...response,
+            value: { ...response.value, stale: true },
+            stale: true,
+          }
+        : response;
+      const snapshot = { documentId, response: currentResponse };
+      this.diagnostics.set(documentId, snapshot);
+      this.publishDiagnostics(snapshot);
+      this.stateSnapshot = {
+        ...this.stateSnapshot,
+        staleDiagnostics: [...this.diagnostics.values()].some((item) => item.response.stale),
+      };
+      this.publishState();
+      return response;
+    }).then((response) => response ?? null);
+  }
+
   /** Send the final didClose for a logical document and forget its queue. */
   close(documentId: string): Promise<void> {
     const state = this.documents.get(documentId);
     if (!state) return Promise.resolve();
+    const diagnosticsTimer = this.diagnosticsTimers.get(documentId);
+    if (diagnosticsTimer) clearTimeout(diagnosticsTimer);
+    this.diagnosticsTimers.delete(documentId);
+    this.diagnostics.delete(documentId);
+    this.stateSnapshot = {
+      ...this.stateSnapshot,
+      staleDiagnostics: [...this.diagnostics.values()].some((item) => item.response.stale),
+    };
+    this.publishState();
     if (!state.active && state.closing) return state.queue;
     state.active = false;
     state.closing = true;
@@ -385,15 +697,109 @@ export class LspDocumentSync {
     return state;
   }
 
+  private scheduleDiagnostics(documentId: string, generation: number): void {
+    const current = this.diagnosticsTimers.get(documentId);
+    if (current) clearTimeout(current);
+    const timer = setTimeout(() => {
+      this.diagnosticsTimers.delete(documentId);
+      const state = this.documents.get(documentId);
+      if (!state || state.generation !== generation || !state.active || state.closing) return;
+      void this.pullDiagnostics(documentId);
+    }, 150);
+    this.diagnosticsTimers.set(documentId, timer);
+  }
+
+  private publishDiagnostics(snapshot: LspDiagnosticsSnapshot): void {
+    for (const listener of this.diagnosticsListeners) listener(snapshot);
+  }
+
+  private invalidateDiagnostics(documentId: string): void {
+    const previous = this.diagnostics.get(documentId);
+    if (!previous || previous.response.stale) return;
+    const snapshot: LspDiagnosticsSnapshot = {
+      documentId,
+      response: {
+        ...previous.response,
+        value: { ...previous.response.value, stale: true },
+        stale: true,
+      },
+    };
+    this.diagnostics.set(documentId, snapshot);
+    this.publishDiagnostics(snapshot);
+    this.stateSnapshot = {
+      ...this.stateSnapshot,
+      staleDiagnostics: true,
+    };
+    this.publishState();
+  }
+
+  private nextFeatureToken(documentId: string): number {
+    const token = (this.featureTokens.get(documentId) ?? 0) + 1;
+    this.featureTokens.set(documentId, token);
+    return token;
+  }
+
+  private isFeatureCurrent(documentId: string, token: number): boolean {
+    return this.featureTokens.get(documentId) === token
+      && Boolean(this.documents.get(documentId)?.active);
+  }
+
+  private requestFeature<T>(
+    documentId: string,
+    token: number,
+    operation: (
+      state: DocumentState,
+      opened: OpenDocument,
+      status: LanguageServerStatus | undefined,
+    ) => Promise<T | null>,
+    parallel = false,
+  ): Promise<T | null> {
+    const state = this.documents.get(documentId);
+    if (!state || !state.active || state.closing || !state.languageId) return Promise.resolve(null);
+    const generation = state.generation;
+    const execute = async () => {
+      if (!this.isCurrent(state, generation, true) || !state.languageId) return null;
+      const opened = await this.ensureOpen(state, generation, state.languageId, state.doc.text);
+      if (!opened || !this.isCurrent(state, generation, true)) return null;
+      if (!this.isFeatureCurrent(documentId, token)) return null;
+      const status = this.statusesSnapshot.find((item) => item.languageId === state.languageId);
+      if (status?.status === "crashed" || status?.status === "stopped") return null;
+      return operation(state, opened, status);
+    };
+    if (parallel) {
+      const previous = state.queue;
+      return this.transition
+        .catch(() => undefined)
+        .then(() => previous.catch(() => undefined))
+        .then(execute)
+        .catch((cause) => {
+          this.recordError(cause);
+          return null;
+        })
+        .then((result) => result ?? null);
+    }
+    return this.enqueueResult(state, execute).then((result) => result ?? null);
+  }
+
   private enqueue(state: DocumentState, operation: () => Promise<void>): Promise<void> {
+    return this.enqueueResult(state, async () => {
+      await operation();
+      return undefined;
+    }).then(() => undefined);
+  }
+
+  private enqueueResult<T>(state: DocumentState, operation: () => Promise<T>): Promise<T | undefined> {
     const previous = state.queue;
     const transition = this.transition;
     const next = transition
       .catch(() => undefined)
       .then(() => previous.catch(() => undefined))
       .then(operation)
-      .catch((cause) => this.recordError(cause));
-    state.queue = next;
+      .catch((cause) => {
+        this.recordError(cause);
+        return undefined;
+      });
+    state.queue = next.then(() => undefined);
     return next;
   }
 
@@ -422,10 +828,16 @@ export class LspDocumentSync {
     }
     const opened = await this.transport.open(languageId, state.doc.path, text);
     if (!this.isCurrent(state, generation, true) || state.languageId !== languageId) {
-      await this.closeWithoutReporting({ languageId, uri: opened.uri, generation });
+      await this.closeWithoutReporting({
+        languageId,
+        uri: opened.uri,
+        version: opened.version,
+        text: opened.text,
+        generation,
+      });
       return null;
     }
-    state.opened = { languageId, uri: opened.uri, generation };
+    state.opened = { languageId, uri: opened.uri, version: opened.version, text, generation };
     return state.opened;
   }
 
@@ -544,6 +956,9 @@ export class LspDocumentSync {
           }
         }
         this.statusesSnapshot = [];
+        this.diagnostics.clear();
+        for (const timer of this.diagnosticsTimers.values()) clearTimeout(timer);
+        this.diagnosticsTimers.clear();
         this.publishState();
       });
     this.transition = transition;
@@ -585,6 +1000,7 @@ export class LspDocumentSync {
         .map((status) => status.languageId)
         .sort(),
       lastError: this.stateSnapshot.lastError,
+      staleDiagnostics: [...this.diagnostics.values()].some((item) => item.response.stale),
     };
     this.stateSnapshot = next;
     for (const listener of this.listeners) listener(this.getState());

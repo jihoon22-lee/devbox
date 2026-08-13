@@ -175,9 +175,95 @@ export interface LanguageServerStatus {
   serverInfo: { name: string; version: string | null } | null;
   capabilities: LspCapabilities;
   documentCount: number;
-  stderr: string;
-  stderrTruncated: boolean;
-  stderrDroppedBytes: number;
+  restartAttempt?: number;
+  restartFailures?: number;
+  restartDelayMs?: number | null;
+  autoRestartDisabled?: boolean;
+}
+
+export interface LspRequestMetadata {
+  uri: string;
+  version: number;
+}
+
+export interface LspDiagnosticRange {
+  start: LspPosition;
+  end: LspPosition;
+}
+
+export interface LspDiagnostic {
+  range: LspDiagnosticRange;
+  severity?: number | null;
+  code?: string | null;
+  source?: string | null;
+  message: string;
+}
+
+export type LspDiagnosticOrigin = "push" | "pull";
+
+export interface LspDiagnosticResult {
+  uri: string;
+  version: number | null;
+  diagnostics: LspDiagnostic[];
+  origin: LspDiagnosticOrigin;
+  resultId?: string | null;
+  unchanged?: boolean;
+  stale?: boolean;
+}
+
+export interface LspFeatureResponse<T> {
+  metadata: LspRequestMetadata;
+  value: T;
+  stale: boolean;
+}
+
+export interface LspCompletionItem {
+  label: string;
+  kind?: number | null;
+  detail?: string | null;
+  documentation?: string | { kind: "markdown" | "plaintext"; value: string } | null;
+  sortText?: string | null;
+  filterText?: string | null;
+  insertText?: string | null;
+  /** LSP InsertTextFormat: 2 is a snippet, which Code Pad treats as plain label text. */
+  insertTextFormat?: number | null;
+  textEdit?: unknown;
+  /** Deliberately ignored until a multi-range completion transaction exists. */
+  additionalTextEdits?: unknown;
+}
+
+export interface LspCompletionResult {
+  isIncomplete: boolean;
+  items: LspCompletionItem[];
+}
+
+export interface LspHoverResult {
+  text: string;
+  markdown: boolean;
+  range?: LspDiagnosticRange | null;
+}
+
+export interface LspLocationTarget {
+  uri: string;
+  range: LspDiagnosticRange;
+  selectionRange?: LspDiagnosticRange | null;
+}
+
+export interface LspFilteredLocations {
+  locations: LspLocationTarget[];
+  rejected: number;
+}
+
+export interface LspDiagnosticsEvent {
+  languageId: string;
+  response: LspFeatureResponse<LspDiagnosticResult>;
+}
+
+export interface LspStatusEvent {
+  languageId: string;
+  status: LanguageServerStatus;
+  reason: string | null;
+  restarting: boolean;
 }
 
 /** Results returned by the native document-sync boundary. */

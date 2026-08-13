@@ -1,6 +1,6 @@
 use code_pad_lib::lsp::{
     initial_catalog, save_to_app_local_data_dir, InstalledServer, InstalledServerIndex, LspConfig,
-    LspManager, LspManagerError, LspPosition, ServerRef, LSP_CONFIG_SCHEMA_VERSION,
+    LspEvent, LspManager, LspManagerError, LspPosition, ServerRef, LSP_CONFIG_SCHEMA_VERSION,
     LSP_INSTALLED_SCHEMA_VERSION,
 };
 use std::collections::BTreeMap;
@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::tempdir;
+use url::Url;
 
 fn fixture_binary() -> PathBuf {
     std::env::current_exe()
@@ -76,6 +77,242 @@ async fn session_lifecycle_and_document_notifications_are_coordinated() {
     assert_eq!(manager.statuses().await[0].document_count, 0);
     manager.stop("rust").await.unwrap();
     assert!(manager.statuses().await.is_empty());
+    manager.shutdown_for_exit().await.unwrap();
+    assert!(manager.start("rust").await.is_err());
+}
+
+#[tokio::test]
+async fn push_diagnostics_are_cached_and_published_with_current_version() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let document = workspace.path().join("main.rs");
+    fs::write(&document, "fn main() {}\n").unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    save_to_app_local_data_dir(
+        app_data.path(),
+        &feature_config(workspace.path(), &executable, "push_diagnostics"),
+    )
+    .unwrap();
+    let manager = LspManager::new(app_data.path(), "0.3.0");
+    let mut events = manager.subscribe_events();
+    manager.start("rust").await.unwrap();
+    let opened = manager
+        .open_document("rust", &document, "fn main() {}\n".into())
+        .await
+        .unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let LspEvent::Diagnostics(event) = events.recv().await.unwrap() {
+                break event;
+            }
+        }
+    })
+    .await
+    .expect("push diagnostics event");
+    assert_eq!(event.language_id, "rust");
+    assert_eq!(event.response.metadata.uri, opened.uri);
+    assert_eq!(event.response.metadata.version, 1);
+    assert_eq!(
+        event.response.value.origin,
+        code_pad_lib::lsp::DiagnosticOrigin::Push
+    );
+    assert!(!event.response.stale);
+    manager.stop("rust").await.unwrap();
+}
+
+#[tokio::test]
+async fn crash_backoff_replays_the_latest_open_change_close_snapshot_atomically() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let marker = app_data.path().join("crash-once.marker");
+    let log = app_data.path().join("did-open.jsonl");
+    let first = workspace.path().join("first.rs");
+    let second = workspace.path().join("second.rs");
+    fs::write(&first, "first\n").unwrap();
+    fs::write(&second, "second\n").unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    let config = feature_config_with_args(
+        workspace.path(),
+        &executable,
+        "crash_once",
+        [
+            format!("--fake-marker={}", marker.display()),
+            format!("--fake-log={}", log.display()),
+        ],
+    );
+    save_to_app_local_data_dir(app_data.path(), &config).unwrap();
+
+    let manager = LspManager::new(app_data.path(), "0.3.0");
+    let mut events = manager.subscribe_events();
+    manager.start("rust").await.unwrap();
+    let first_uri = Url::from_file_path(&first).unwrap().to_string();
+    let second_uri = Url::from_file_path(&second).unwrap().to_string();
+    let _ = manager
+        .open_document("rust", &first, "first\n".into())
+        .await;
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let LspEvent::Status(event) = events.recv().await.unwrap() {
+                if event.restarting
+                    && event.status.status == code_pad_lib::lsp::ClientStatus::Crashed
+                {
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .expect("crash status");
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if fs::read_to_string(&log)
+                .map(|contents| contents.lines().count() >= 1)
+                .unwrap_or(false)
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("initial didOpen log");
+
+    // Every mutation commits its authoritative store before reporting that
+    // the dead process could not receive the notification.
+    let _ = manager
+        .change_document("rust", &first_uri, "latest first\n".into(), true)
+        .await;
+    let _ = manager
+        .open_document("rust", &second, "latest second\n".into())
+        .await;
+    let _ = manager
+        .change_document("rust", &second_uri, "latest second\n".into(), true)
+        .await;
+    let _ = manager.close_document("rust", &first_uri).await;
+
+    tokio::time::timeout(Duration::from_secs(4), async {
+        loop {
+            if let LspEvent::Status(event) = events.recv().await.unwrap() {
+                if !event.restarting
+                    && event.status.status == code_pad_lib::lsp::ClientStatus::Ready
+                    && event.status.document_count == 1
+                {
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .expect("replacement session");
+
+    let lines = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let lines = fs::read_to_string(&log)
+                .unwrap_or_default()
+                .lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .collect::<Vec<_>>();
+            if lines.len() >= 2 {
+                break lines;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("initial and replacement didOpen entries");
+    assert!(lines.len() >= 2, "initial and replacement didOpen entries");
+    let replay = lines.last().unwrap();
+    assert_eq!(replay["uri"], second_uri);
+    assert_eq!(replay["version"], 1);
+    assert_eq!(replay["text"], "latest second\n");
+    assert!(lines[1..].iter().all(|entry| entry["uri"] != first_uri));
+
+    manager.close_document("rust", &second_uri).await.unwrap();
+    manager.stop("rust").await.unwrap();
+}
+
+#[tokio::test]
+async fn circuit_open_allows_explicit_restart_after_repeated_crashes() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let marker = app_data.path().join("always-crash.marker");
+    let document = workspace.path().join("main.rs");
+    fs::write(&document, "fixture\n").unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    save_to_app_local_data_dir(
+        app_data.path(),
+        &feature_config_with_args(
+            workspace.path(),
+            &executable,
+            "crash_on_open",
+            [format!("--fake-marker={}", marker.display())],
+        ),
+    )
+    .unwrap();
+
+    let manager = LspManager::new(app_data.path(), "0.3.0");
+    manager.start("rust").await.unwrap();
+    let _ = manager
+        .open_document("rust", &document, "fixture\n".into())
+        .await;
+    tokio::time::timeout(Duration::from_secs(7), async {
+        loop {
+            let status = manager
+                .statuses()
+                .await
+                .into_iter()
+                .find(|status| status.language_id == "rust");
+            if status.is_some_and(|status| status.auto_restart_disabled) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("automatic restart circuit open");
+
+    manager.restart("rust").await.unwrap();
+    let status = manager
+        .statuses()
+        .await
+        .into_iter()
+        .find(|status| status.language_id == "rust")
+        .unwrap();
+    assert_eq!(status.status, code_pad_lib::lsp::ClientStatus::Ready);
+    assert!(!status.auto_restart_disabled);
+    manager.stop("rust").await.unwrap();
+}
+
+#[tokio::test]
+async fn canceled_start_releases_its_reservation_before_orderly_shutdown() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    save_to_app_local_data_dir(
+        app_data.path(),
+        &feature_config_with_args(
+            workspace.path(),
+            &executable,
+            "slow_initialize",
+            std::iter::empty::<String>(),
+        ),
+    )
+    .unwrap();
+    let manager = LspManager::new(app_data.path(), "0.3.0");
+    let pending = tokio::spawn({
+        let manager = manager.clone();
+        async move { manager.start("rust").await }
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    pending.abort();
+    let _ = pending.await;
+
+    tokio::time::timeout(Duration::from_secs(2), manager.shutdown_for_exit())
+        .await
+        .expect("canceled start must not keep shutdown waiting")
+        .unwrap();
+    assert!(manager.start("rust").await.is_err());
 }
 
 fn feature_config(
@@ -83,6 +320,20 @@ fn feature_config(
     executable: &std::path::Path,
     mode: &str,
 ) -> LspConfig {
+    feature_config_with_args(workspace, executable, mode, std::iter::empty::<String>())
+}
+
+fn feature_config_with_args<I>(
+    workspace: &std::path::Path,
+    executable: &std::path::Path,
+    mode: &str,
+    additional_args: I,
+) -> LspConfig
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut args = vec![format!("--fake-mode={mode}")];
+    args.extend(additional_args);
     LspConfig {
         version: LSP_CONFIG_SCHEMA_VERSION,
         enabled: true,
@@ -92,7 +343,7 @@ fn feature_config(
             ServerRef::Local {
                 installed_path: executable.to_string_lossy().into_owned(),
                 executable: None,
-                args: vec![format!("--fake-mode={mode}")],
+                args,
             },
         )]),
         custom_servers: Vec::new(),
@@ -407,6 +658,114 @@ async fn mutation_version_race_rejects_every_document_without_partial_commit() {
         .unwrap();
     assert_eq!(library.version, 2, "the rejected request changed lib.rs");
     assert_eq!(library.text, "renamedxture library\n");
+    manager.stop("rust").await.unwrap();
+}
+
+#[tokio::test]
+async fn failed_multi_document_mutation_restarts_and_replays_the_authoritative_snapshot() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let marker = app_data.path().join("mutation-count");
+    let log = app_data.path().join("did-open.jsonl");
+    let main = workspace.path().join("main.rs");
+    let library = workspace.path().join("lib.rs");
+    fs::write(&main, "fixture\n").unwrap();
+    fs::write(&library, "fixture library\n").unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    save_to_app_local_data_dir(
+        app_data.path(),
+        &feature_config_with_args(
+            workspace.path(),
+            &executable,
+            "mutation_partial_failure",
+            [
+                format!("--fake-marker={}", marker.display()),
+                format!("--fake-log={}", log.display()),
+            ],
+        ),
+    )
+    .unwrap();
+
+    let manager = LspManager::new(app_data.path(), "0.3.0");
+    manager.start("rust").await.unwrap();
+    let main_opened = manager
+        .open_document("rust", &main, "fixture\n".into())
+        .await
+        .unwrap();
+    manager
+        .open_document("rust", &library, "fixture library\n".into())
+        .await
+        .unwrap();
+
+    let error = manager
+        .rename(
+            "rust",
+            &main_opened.uri,
+            LspPosition::new(0, 0),
+            "renamed".into(),
+        )
+        .await
+        .expect_err("the second didChange must fail");
+    assert!(
+        error.to_string().contains("workspace edit notification"),
+        "unexpected partial mutation error: {error}"
+    );
+
+    tokio::time::timeout(Duration::from_secs(4), async {
+        loop {
+            let status = manager
+                .statuses()
+                .await
+                .into_iter()
+                .find(|status| status.language_id == "rust");
+            if status.is_some_and(|status| {
+                status.status == code_pad_lib::lsp::ClientStatus::Ready
+                    && status.document_count == 2
+            }) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("replacement session after partial mutation");
+
+    let lines = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let lines = fs::read_to_string(&log)
+                .unwrap_or_default()
+                .lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .collect::<Vec<_>>();
+            if lines.len() >= 4 {
+                break lines;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("replacement didOpen entries");
+    let replay = &lines[lines.len() - 2..];
+    let main_replay = replay
+        .iter()
+        .find(|entry| {
+            entry["uri"]
+                .as_str()
+                .is_some_and(|uri| uri.ends_with("/main.rs"))
+        })
+        .unwrap();
+    let library_replay = replay
+        .iter()
+        .find(|entry| {
+            entry["uri"]
+                .as_str()
+                .is_some_and(|uri| uri.ends_with("/lib.rs"))
+        })
+        .unwrap();
+    assert_eq!(main_replay["version"], 1);
+    assert_eq!(main_replay["text"], "fixture\n");
+    assert_eq!(library_replay["version"], 1);
+    assert_eq!(library_replay["text"], "fixture library\n");
     manager.stop("rust").await.unwrap();
 }
 

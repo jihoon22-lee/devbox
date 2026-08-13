@@ -637,21 +637,6 @@ h1 {
   margin-top: 8px;
 }
 
-.lsp-stderr {
-  margin: 8px 0;
-  color: #8fa1b7;
-  font-size: 11px;
-}
-
-.lsp-stderr pre {
-  max-height: 130px;
-  padding: 8px;
-  overflow: auto;
-  color: #bdc9d8;
-  background: #0b1017;
-  white-space: pre-wrap;
-}
-
 .lsp-installer-section {
   margin: 0 18px 14px;
   padding-top: 12px;
@@ -791,6 +776,83 @@ h1 {
 
 .lsp-confirmation-metadata {
   margin: 16px 0;
+}
+
+.lsp-navigation-panel {
+  position: absolute;
+  right: 16px;
+  bottom: 42px;
+  z-index: 4;
+  width: min(560px, calc(100% - 32px));
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid #3d4e66;
+  border-radius: 7px;
+  color: #dce6f4;
+  background: #18212d;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 40%);
+}
+
+.lsp-navigation-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-bottom: 1px solid #344153;
+  color: #aebdd0;
+  font-size: 11px;
+}
+
+.lsp-navigation-header strong {
+  color: #e5edf8;
+}
+
+.lsp-navigation-header .toolbar-button {
+  margin-left: auto;
+}
+
+.lsp-navigation-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+
+.lsp-location-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 4px;
+  color: #c9d5e4;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.lsp-location-button:hover {
+  background: #27364a;
+}
+
+.lsp-location-button small {
+  flex: 0 0 auto;
+  color: #8fa1b7;
+}
+
+.lsp-hover-tooltip {
+  max-width: min(620px, 70vw);
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  color: #dce6f4;
+  background: #18212d;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 760px) {

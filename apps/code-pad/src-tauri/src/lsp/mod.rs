@@ -58,7 +58,8 @@ pub use installer::{
     DEFAULT_MAX_ARCHIVE_ENTRIES, DEFAULT_MAX_INSTALL_BYTES,
 };
 pub use manager::{
-    AppliedDocumentEdits, EditedDocument, LanguageServerStatus, LspManager, LspManagerError,
+    AppliedDocumentEdits, EditedDocument, LanguageServerStatus, LspDiagnosticsEvent, LspEvent,
+    LspManager, LspManagerError, LspStatusEvent,
 };
 pub use node_lock::{
     reviewed_node_lock, NodeDependencyLock, NodeLockError, NodePackageLock, NodePackageRef,

@@ -3,11 +3,16 @@ pub mod core;
 pub mod lsp;
 pub mod watcher;
 
-use tauri::Manager;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let shutdown_started = std::sync::Arc::new(AtomicBool::new(false));
+    let exit_authorized = std::sync::Arc::new(AtomicBool::new(false));
+    let shutdown_started_for_run = std::sync::Arc::clone(&shutdown_started);
+    let exit_authorized_for_run = std::sync::Arc::clone(&exit_authorized);
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             app.manage(watcher::WatcherManager::new(app.handle().clone()));
@@ -18,6 +23,25 @@ pub fn run() {
                 env!("CARGO_PKG_VERSION"),
                 std::sync::Arc::clone(&installer),
             ));
+            let mut events = manager.subscribe_events();
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    let event = match events.recv().await {
+                        Ok(event) => event,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    };
+                    match event {
+                        lsp::LspEvent::Diagnostics(payload) => {
+                            let _ = app_handle.emit("lsp/diagnostics", payload);
+                        }
+                        lsp::LspEvent::Status(payload) => {
+                            let _ = app_handle.emit("lsp/status", payload);
+                        }
+                    }
+                }
+            });
             app.manage(manager);
             app.manage(installer);
             Ok(())
@@ -42,6 +66,7 @@ pub fn run() {
             commands::lsp::save_lsp_config,
             commands::lsp::start_language_server,
             commands::lsp::stop_language_server,
+            commands::lsp::restart_language_server,
             commands::lsp::stop_all_language_servers,
             commands::lsp::language_server_statuses,
             commands::lsp::open_lsp_document,
@@ -57,6 +82,38 @@ pub fn run() {
             commands::lsp::request_lsp_rename,
             commands::lsp::request_lsp_formatting,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building Code Pad");
+
+    app.run(move |handle, event| {
+        if let tauri::RunEvent::ExitRequested { api, .. } = event {
+            if exit_authorized_for_run.load(Ordering::Acquire) {
+                return;
+            }
+            api.prevent_exit();
+            if shutdown_started_for_run
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                let manager = handle
+                    .state::<std::sync::Arc<lsp::LspManager>>()
+                    .inner()
+                    .clone();
+                let exit_authorized = std::sync::Arc::clone(&exit_authorized_for_run);
+                let shutdown_started = std::sync::Arc::clone(&shutdown_started_for_run);
+                let app_handle = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if manager.shutdown_for_exit().await.is_ok() {
+                        exit_authorized.store(true, Ordering::Release);
+                        app_handle.exit(0);
+                    } else {
+                        // Fail closed: keep the app alive while an owned child
+                        // is not termination-confirmed. A later exit request
+                        // retries the same idempotent shutdown boundary.
+                        shutdown_started.store(false, Ordering::Release);
+                    }
+                });
+            }
+        }
+    });
 }

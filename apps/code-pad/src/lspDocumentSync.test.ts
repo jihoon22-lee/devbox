@@ -1,5 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import type { LanguageServerStatus, LspConfig, LspDidOpen } from "./types";
+import type {
+  AppliedDocumentEdits,
+  LanguageServerStatus,
+  LspCompletionResult,
+  LspConfig,
+  LspDiagnosticResult,
+  LspDidOpen,
+  LspFeatureResponse,
+  LspFilteredLocations,
+  LspHoverResult,
+} from "./types";
 import {
   languageIdForPath,
   LspDocumentSync,
@@ -27,6 +37,31 @@ function document(text = "fn main() {}", overrides: Partial<LspDocumentSnapshot>
     path: "/work/src/main.rs",
     text,
     dirty: text !== "fn main() {}",
+    ...overrides,
+  };
+}
+
+function readyStatus(overrides: Partial<LanguageServerStatus> = {}): LanguageServerStatus {
+  return {
+    languageId: "rust",
+    status: "ready",
+    processState: "running",
+    serverInfo: null,
+    capabilities: {
+      positionEncoding: "utf-16",
+      legacyPositionEncoding: false,
+      syncKind: "full",
+      openClose: true,
+      save: true,
+      completion: true,
+      hover: true,
+      definition: true,
+      references: true,
+      rename: true,
+      formatting: true,
+      diagnostics: true,
+    },
+    documentCount: 1,
     ...overrides,
   };
 }
@@ -63,6 +98,36 @@ function transportFor(
     close: vi.fn(async (languageId: string, uri: string) => {
       calls.push(`close:${languageId}:${uri}`);
       return { uri };
+    }),
+    pullDiagnostics: vi.fn(async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspDiagnosticResult>> => ({
+      metadata: { uri, version: 1 },
+      value: { uri, version: 1, diagnostics: [], origin: "pull" },
+      stale: false,
+    })),
+    completion: vi.fn(async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspCompletionResult>> => ({
+      metadata: { uri, version: 1 },
+      value: { isIncomplete: false, items: [] },
+      stale: false,
+    })),
+    hover: vi.fn(async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspHoverResult | null>> => ({
+      metadata: { uri, version: 1 },
+      value: null,
+      stale: false,
+    })),
+    definition: vi.fn(async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspFilteredLocations>> => ({
+      metadata: { uri, version: 1 },
+      value: { locations: [], rejected: 0 },
+      stale: false,
+    })),
+    references: vi.fn(async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspFilteredLocations>> => ({
+      metadata: { uri, version: 1 },
+      value: { locations: [], rejected: 0 },
+      stale: false,
+    })),
+    rename: vi.fn(async (): Promise<AppliedDocumentEdits> => ({ documents: [] })),
+    formatting: vi.fn(async (): Promise<AppliedDocumentEdits> => ({ documents: [] })),
+    restart: vi.fn(async (languageId: string) => {
+      calls.push(`restart:${languageId}`);
     }),
   };
 }
@@ -214,5 +279,175 @@ describe("LspDocumentSync", () => {
     await sync.setConfig(config());
     await expect(sync.open(document())).resolves.toBeUndefined();
     expect(sync.getState().lastError).toBe("server exited");
+  });
+
+  it("debounces diagnostics after open, change, and save into one pull", async () => {
+    vi.useFakeTimers();
+    try {
+      const calls: string[] = [];
+      const transport = transportFor(calls);
+      transport.statuses = vi.fn().mockResolvedValue([readyStatus()]);
+      const sync = new LspDocumentSync(transport);
+      await sync.setWorkspace("/work");
+      await sync.setConfig(config());
+      await sync.open(document());
+      await sync.change(document("edited", { dirty: true }));
+      await sync.save("doc-1");
+      await vi.advanceTimersByTimeAsync(151);
+      await sync.flush();
+      expect(transport.pullDiagnostics).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("marks a late diagnostic event stale after the native mirror advances", async () => {
+    const calls: string[] = [];
+    const transport = transportFor(calls);
+    transport.statuses = vi.fn().mockResolvedValue([readyStatus()]);
+    const sync = new LspDocumentSync(transport);
+    await sync.setWorkspace("/work");
+    await sync.setConfig(config());
+    await sync.open(document());
+    const received: boolean[] = [];
+    sync.subscribeDiagnostics((snapshot) => received.push(snapshot.response.stale));
+    sync.acceptDiagnosticsEvent({
+      languageId: "rust",
+      response: {
+        metadata: { uri: "file:///work/src/main.rs", version: 1 },
+        value: {
+          uri: "file:///work/src/main.rs",
+          version: 1,
+          diagnostics: [{
+            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
+            message: "old",
+          }],
+          origin: "push",
+        },
+        stale: false,
+      },
+    });
+    await sync.change(document("edited", { dirty: true }));
+    sync.acceptDiagnosticsEvent({
+      languageId: "rust",
+      response: {
+        metadata: { uri: "file:///work/src/main.rs", version: 1 },
+        value: {
+          uri: "file:///work/src/main.rs",
+          version: 1,
+          diagnostics: [],
+          origin: "push",
+        },
+        stale: false,
+      },
+    });
+    expect(sync.getDiagnostics("doc-1")?.response.stale).toBe(true);
+    expect(sync.getDiagnostics("doc-1")?.response.value.diagnostics[0]?.message).toBe("old");
+    expect(received).toEqual([false, true]);
+    sync.applyDocuments([{ uri: "file:///work/src/main.rs", version: 3, text: "new" }]);
+    expect(sync.getDiagnostics("doc-1")).toBeNull();
+    expect(sync.getState().staleDiagnostics).toBe(false);
+  });
+
+  it("ignores a lower-version push while the cached diagnostics are current", async () => {
+    const calls: string[] = [];
+    const transport = transportFor(calls);
+    transport.statuses = vi.fn().mockResolvedValue([readyStatus()]);
+    const sync = new LspDocumentSync(transport);
+    await sync.setWorkspace("/work");
+    await sync.setConfig(config());
+    await sync.open(document());
+    const received: boolean[] = [];
+    sync.subscribeDiagnostics((snapshot) => received.push(snapshot.response.stale));
+    sync.acceptDiagnosticsEvent({
+      languageId: "rust",
+      response: {
+        metadata: { uri: "file:///work/src/main.rs", version: 1 },
+        value: {
+          uri: "file:///work/src/main.rs",
+          version: 1,
+          diagnostics: [{
+            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
+            message: "current",
+          }],
+          origin: "push",
+        },
+        stale: false,
+      },
+    });
+    sync.acceptDiagnosticsEvent({
+      languageId: "rust",
+      response: {
+        metadata: { uri: "file:///work/src/main.rs", version: 0 },
+        value: {
+          uri: "file:///work/src/main.rs",
+          version: 0,
+          diagnostics: [],
+          origin: "push",
+        },
+        stale: false,
+      },
+    });
+
+    expect(sync.getDiagnostics("doc-1")?.response.value.diagnostics[0]?.message).toBe("current");
+    expect(sync.getDiagnostics("doc-1")?.response.stale).toBe(false);
+    expect(sync.getState().staleDiagnostics).toBe(false);
+    expect(received).toEqual([false]);
+  });
+
+  it("ignores versionless push diagnostics even for the initial document", async () => {
+    const calls: string[] = [];
+    const transport = transportFor(calls);
+    const sync = new LspDocumentSync(transport);
+    await sync.setWorkspace("/work");
+    await sync.setConfig(config());
+    await sync.open(document());
+
+    const received: unknown[] = [];
+    sync.subscribeDiagnostics((snapshot) => received.push(snapshot));
+    sync.acceptDiagnosticsEvent({
+      languageId: "rust",
+      response: {
+        metadata: { uri: "file:///work/src/main.rs", version: 1 },
+        value: {
+          uri: "file:///work/src/main.rs",
+          version: null,
+          diagnostics: [],
+          origin: "push",
+        },
+        stale: false,
+      },
+    });
+
+    expect(received).toEqual([]);
+    expect(sync.getDiagnostics("doc-1")).toBeNull();
+  });
+
+  it("cancels completion results when the next input arrives", async () => {
+    const calls: string[] = [];
+    const transport = transportFor(calls);
+    transport.statuses = vi.fn().mockResolvedValue([readyStatus()]);
+    let resolveFirst!: (value: LspFeatureResponse<LspCompletionResult>) => void;
+    let resolveSecond!: (value: LspFeatureResponse<LspCompletionResult>) => void;
+    let completionCalls = 0;
+    transport.completion = vi.fn(async (_languageId, _uri, _position): Promise<LspFeatureResponse<LspCompletionResult>> => {
+      completionCalls += 1;
+      return new Promise((resolve) => {
+        if (completionCalls === 1) resolveFirst = resolve;
+        else resolveSecond = resolve;
+      });
+    });
+    const sync = new LspDocumentSync(transport);
+    await sync.setWorkspace("/work");
+    await sync.setConfig(config());
+    await sync.open(document());
+    const first = sync.requestCompletion("doc-1", 1);
+    await vi.waitFor(() => expect(transport.completion).toHaveBeenCalledTimes(1));
+    const second = sync.requestCompletion("doc-1", 2);
+    resolveFirst({ metadata: { uri: "file:///work/src/main.rs", version: 1 }, value: { isIncomplete: false, items: [] }, stale: false });
+    await expect(first).resolves.toBeNull();
+    await vi.waitFor(() => expect(transport.completion).toHaveBeenCalledTimes(2));
+    resolveSecond({ metadata: { uri: "file:///work/src/main.rs", version: 1 }, value: { isIncomplete: false, items: [] }, stale: false });
+    await expect(second).resolves.toMatchObject({ value: { items: [] } });
   });
 });

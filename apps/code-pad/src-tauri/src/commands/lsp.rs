@@ -51,6 +51,17 @@ pub async fn stop_language_server(
 }
 
 #[tauri::command]
+pub async fn restart_language_server(
+    manager: State<'_, Arc<LspManager>>,
+    language_id: String,
+) -> Result<(), String> {
+    manager
+        .restart(&language_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn stop_all_language_servers(manager: State<'_, Arc<LspManager>>) -> Result<(), String> {
     manager.stop_all().await.map_err(|error| error.to_string())
 }

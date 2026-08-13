@@ -596,7 +596,7 @@ impl LspProcess {
         Ok(())
     }
 
-    async fn wait_for_exit(&self, timeout: Duration) -> bool {
+    pub async fn wait_for_exit(&self, timeout: Duration) -> bool {
         if is_finished(&self.state().await) {
             return true;
         }
