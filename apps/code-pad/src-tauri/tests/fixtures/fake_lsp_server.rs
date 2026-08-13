@@ -62,9 +62,57 @@ async fn main() {
                         handle_request(writer, cancellations, mode, RpcId::Null, method, params)
                             .await;
                     });
+                } else if method == "initialized" && mode == "dynamic_capabilities" {
+                    send(
+                        &writer,
+                        JsonRpcMessage::request(
+                            700_u64,
+                            "client/registerCapability",
+                            Some(json!({
+                                "registrations": [{
+                                    "id": "hover-registration",
+                                    "method": "textDocument/hover"
+                                }]
+                            })),
+                        ),
+                    )
+                    .await;
                 } else if method == "exit" && mode != "hang_shutdown" {
                     break;
                 }
+            }
+            JsonRpcMessage::Response { id, .. }
+                if mode == "dynamic_capabilities" && id.as_u64() == Some(700) =>
+            {
+                send(
+                    &writer,
+                    JsonRpcMessage::notification("fixture/registered", Some(json!({}))),
+                )
+                .await;
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                send(
+                    &writer,
+                    JsonRpcMessage::request(
+                        701_u64,
+                        "client/unregisterCapability",
+                        Some(json!({
+                            "unregisterations": [{
+                                "id": "hover-registration",
+                                "method": "textDocument/hover"
+                            }]
+                        })),
+                    ),
+                )
+                .await;
+            }
+            JsonRpcMessage::Response { id, .. }
+                if mode == "dynamic_capabilities" && id.as_u64() == Some(701) =>
+            {
+                send(
+                    &writer,
+                    JsonRpcMessage::notification("fixture/unregistered", Some(json!({}))),
+                )
+                .await;
             }
             JsonRpcMessage::Response { .. } | JsonRpcMessage::Error { .. } => {}
         }
@@ -82,15 +130,36 @@ async fn handle_request(
     match method.as_str() {
         "initialize" => {
             let argv: Vec<String> = env::args().skip(1).collect();
+            if mode == "validate_initialize" && !valid_initialize_params(params.as_ref()) {
+                send(
+                    &writer,
+                    JsonRpcMessage::error(id, RpcError::new(-32602, "invalid initialize contract")),
+                )
+                .await;
+                return;
+            }
+            let capabilities = match mode.as_str() {
+                "invalid_position" => json!({ "positionEncoding": "utf-32" }),
+                "dynamic_capabilities" => json!({ "hoverProvider": false }),
+                _ => json!({
+                    "positionEncoding": "utf-8",
+                    "textDocumentSync": { "openClose": true, "change": 2, "save": true },
+                    "completionProvider": true,
+                    "hoverProvider": false,
+                    "definitionProvider": true,
+                    "referencesProvider": {},
+                    "renameProvider": { "prepareProvider": true },
+                    "documentFormattingProvider": true,
+                    "diagnosticProvider": {}
+                }),
+            };
             send(
                 &writer,
                 JsonRpcMessage::response(
                     id,
                     json!({
-                        "capabilities": {
-                            "completionProvider": true,
-                            "hoverProvider": false
-                        },
+                        "capabilities": capabilities,
+                        "serverInfo": { "name": "fake-lsp", "version": "1.0.0" },
                         "argv": argv
                     }),
                 ),
@@ -162,6 +231,31 @@ async fn handle_request(
             }
         }
     }
+}
+
+fn valid_initialize_params(params: Option<&Value>) -> bool {
+    let Some(params) = params else {
+        return false;
+    };
+    params.get("processId").and_then(Value::as_u64) == Some(4242)
+        && params.pointer("/clientInfo/name").and_then(Value::as_str) == Some("code-pad")
+        && params
+            .pointer("/clientInfo/version")
+            .and_then(Value::as_str)
+            == Some("0.3.0")
+        && params.get("rootUri").and_then(Value::as_str).is_some()
+        && params
+            .pointer("/workspaceFolders/0/uri")
+            .and_then(Value::as_str)
+            == params.get("rootUri").and_then(Value::as_str)
+        && params
+            .pointer("/capabilities/general/positionEncodings")
+            .and_then(Value::as_array)
+            == Some(&vec![json!("utf-16"), json!("utf-8")])
+        && params
+            .pointer("/capabilities/workspace/applyEdit")
+            .and_then(Value::as_bool)
+            == Some(true)
 }
 
 async fn send(writer: &Writer, message: JsonRpcMessage) {

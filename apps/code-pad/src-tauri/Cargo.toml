@@ -23,6 +23,7 @@ chardetng = "1"
 base64 = "0.22"
 sha2 = "0.11.0"
 url = "2"
+lsp-types = "0.97.0"
 notify = "8.2.0"
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
 devbox-markdown = { package = "markdown", path = "../../../crates/markdown" }
