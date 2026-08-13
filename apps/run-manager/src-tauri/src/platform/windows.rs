@@ -6,6 +6,7 @@ use std::fs;
 use std::io;
 use std::mem::{size_of, MaybeUninit};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::os::windows::io::FromRawHandle;
 use std::path::{Path, PathBuf};
 use std::ptr::null_mut;
 use std::sync::Arc;
@@ -39,6 +40,7 @@ use windows::Win32::UI::Shell::{
     DefSubclassProc, IShellLinkW, RemoveWindowSubclass, SetWindowSubclass, ShellLink, SLGP_RAWPATH,
 };
 use windows::Win32::UI::WindowsAndMessaging::{WM_ENDSESSION, WM_NCDESTROY, WM_QUERYENDSESSION};
+use zeroize::{Zeroize, Zeroizing};
 
 use super::{
     StartupShortcut, StartupShortcutStatus, STARTUP_SHORTCUT_ARGUMENTS, STARTUP_SHORTCUT_FILE_NAME,
@@ -413,6 +415,13 @@ impl OwnedWindowsHandle {
         self.handle
     }
 
+    fn take_raw(&mut self, name: &'static str) -> Result<HANDLE, WindowsExecutionError> {
+        if self.handle.is_invalid() {
+            return Err(WindowsExecutionError::InvalidHandle(name));
+        }
+        Ok(std::mem::take(&mut self.handle))
+    }
+
     fn close(&mut self) {
         if !self.handle.is_invalid() {
             // Each handle is owned by exactly one OwnedWindowsHandle.  The
@@ -537,6 +546,19 @@ impl WindowsChild {
         self.stderr_read.raw()
     }
 
+    /// Transfer the parent read end to a blocking reader exactly once. The
+    /// `File` becomes the sole owner of the kernel handle; the child wrapper
+    /// is left with an invalid slot and therefore cannot double-close it.
+    pub fn take_stdout_file(&mut self) -> Result<std::fs::File, WindowsExecutionError> {
+        let handle = self.stdout_read.take_raw("stdout pipe")?;
+        Ok(unsafe { std::fs::File::from_raw_handle(handle.0) })
+    }
+
+    pub fn take_stderr_file(&mut self) -> Result<std::fs::File, WindowsExecutionError> {
+        let handle = self.stderr_read.take_raw("stderr pipe")?;
+        Ok(unsafe { std::fs::File::from_raw_handle(handle.0) })
+    }
+
     /// Wait for the process root.  The Job Object remains owned by this
     /// handle until the caller drops the child, after log readers have flushed.
     pub fn wait(&self, timeout: Option<Duration>) -> Result<Option<u32>, WindowsExecutionError> {
@@ -585,10 +607,10 @@ fn wait_for_handle(handle: HANDLE, timeout: Duration) -> Result<Option<()>, Wind
 }
 
 /// Spawn a Windows job through the explicit CreateProcessW contract:
-/// suspended creation, inherited stdout/stderr write handles only, Job Object
-/// assignment, then resume.  Any failure after process creation terminates
-/// and reaps the suspended child before returning; it never falls back to an
-/// unsupervised process.
+/// suspended creation, inherited EOF stdin-read plus stdout/stderr write
+/// handles only, Job Object assignment, then resume. Any failure after process
+/// creation terminates and reaps the suspended child before returning; it
+/// never falls back to an unsupervised process.
 pub fn spawn(
     command: &str,
     cwd: Option<&Path>,
@@ -604,6 +626,11 @@ pub fn spawn(
     let mut stdout_write = OwnedWindowsHandle::empty();
     let mut stderr_read = OwnedWindowsHandle::empty();
     let mut stderr_write = OwnedWindowsHandle::empty();
+    let mut stdin_read = OwnedWindowsHandle::empty();
+    let mut stdin_write = OwnedWindowsHandle::empty();
+    // The child inherits only `stdin_read`; the parent owns `stdin_write`
+    // until CreateProcessW returns and then closes it to deliver EOF.
+    create_pipe_pair(&mut stdin_read, &mut stdin_write)?;
     create_pipe_pair(&mut stdout_read, &mut stdout_write)?;
     create_pipe_pair(&mut stderr_read, &mut stderr_write)?;
     unsafe {
@@ -618,12 +645,16 @@ pub fn spawn(
         &shell_command,
         cwd,
         environment,
+        stdin_read.raw(),
         stdout_write.raw(),
         stderr_write.raw(),
     );
-    // The child-side write handles are never retained by the parent after
-    // CreateProcessW returns.  Closing both paths is safe because ownership is
-    // established in this function, not shared with WindowsChild.
+    // None of the anonymous-pipe ends used for stdio are retained by the
+    // parent after CreateProcessW returns. The child owns the inherited
+    // handles; each parent-side OwnedWindowsHandle is invalidated exactly once
+    // here, including the stdin write end that deliberately produces EOF.
+    stdin_read.close();
+    stdin_write.close();
     stdout_write.close();
     stderr_write.close();
     let process_info = match child {
@@ -748,20 +779,21 @@ fn create_suspended_process(
     shell_command: &shell::WindowsShellCommand,
     cwd: Option<&Path>,
     environment: &BTreeMap<String, String>,
+    stdin_read: HANDLE,
     stdout_write: HANDLE,
     stderr_write: HANDLE,
 ) -> Result<PROCESS_INFORMATION, WindowsExecutionError> {
     let mut command_line = wide_nul(&shell_command.command_line);
     let application_name = wide_nul(&shell_command.application_name);
     let current_directory = cwd.map(|path| wide_os_nul(path.as_os_str()));
-    let environment_block = build_environment_block(environment)?;
+    let mut environment_block = build_environment_block(environment)?;
     let mut startup = STARTUPINFOEXW::default();
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
     startup.StartupInfo.hStdOutput = stdout_write;
     startup.StartupInfo.hStdError = stderr_write;
-    startup.StartupInfo.hStdInput = HANDLE::default();
-    let inherited = [stdout_write, stderr_write];
+    startup.StartupInfo.hStdInput = stdin_read;
+    let inherited = [stdin_read, stdout_write, stderr_write];
     let attributes = ProcessAttributeList::with_handles(&inherited)?;
     startup.lpAttributeList = attributes.raw();
     let mut process_info = PROCESS_INFORMATION::default();
@@ -790,6 +822,7 @@ fn create_suspended_process(
             &mut process_info,
         )
     };
+    environment_block.zeroize();
     if let Err(error) = created {
         return Err(win32_error("CreateProcessW", error));
     }
@@ -798,9 +831,9 @@ fn create_suspended_process(
 
 fn build_environment_block(
     overrides: &BTreeMap<String, String>,
-) -> Result<Vec<u16>, WindowsExecutionError> {
+) -> Result<Zeroizing<Vec<u16>>, WindowsExecutionError> {
     if overrides.is_empty() {
-        return Ok(Vec::new());
+        return Ok(Zeroizing::new(Vec::new()));
     }
     let mut environment = Vec::<(OsString, OsString)>::new();
     for (key, value) in std::env::vars_os() {
@@ -819,7 +852,7 @@ fn build_environment_block(
     // environment names are case-insensitive, so override removal and sort
     // order use the same folded representation.
     environment.sort_by_cached_key(|(key, _)| key.to_string_lossy().to_uppercase());
-    let mut block = Vec::new();
+    let mut block = Zeroizing::new(Vec::new());
     for (key, value) in environment {
         let mut entry = key;
         entry.push("=");
@@ -915,5 +948,26 @@ mod execution_tests {
         assert_eq!(block.last(), Some(&0));
         assert_eq!(block[block.len() - 2], 0);
         assert!(String::from_utf16_lossy(&block).contains("DEVBOX_TEST_EXECUTION=value"));
+    }
+
+    #[test]
+    fn anonymous_stdio_pipe_parent_ends_are_invalidated_after_close() {
+        let mut read = OwnedWindowsHandle::empty();
+        let mut write = OwnedWindowsHandle::empty();
+        create_pipe_pair(&mut read, &mut write).unwrap();
+        assert!(!read.raw().is_invalid());
+        assert!(!write.raw().is_invalid());
+
+        read.close();
+        write.close();
+        assert!(read.raw().is_invalid());
+        assert!(write.raw().is_invalid());
+
+        // A repeated close is a no-op, which keeps every error path exactly
+        // once-owned even when a caller performs defensive cleanup.
+        read.close();
+        write.close();
+        assert!(read.raw().is_invalid());
+        assert!(write.raw().is_invalid());
     }
 }

@@ -433,6 +433,19 @@ pub struct Run {
     pub created_at: i64,
 }
 
+/// Identity and app-owned log reference returned by a platform spawn. This
+/// is persisted only after the same owner/attempt CAS that moves a run to
+/// `running`; an empty identity is valid only for a failed pre-spawn path.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RunExecutionMetadata {
+    pub log_dir: Option<String>,
+    pub target_pid: Option<i64>,
+    pub target_process_created_at: Option<i64>,
+    pub target_pgid: Option<i64>,
+    pub target_sid: Option<i64>,
+    pub process_marker: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimResult {

@@ -6,12 +6,13 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::process::Stdio;
+use std::process::{Output, Stdio};
 use std::time::{Duration, Instant};
 
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use tokio::time::sleep;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::core::shell::{
     build_wsl_command, build_wsl_proc_dir_probe_argv, build_wsl_proc_environ_argv,
@@ -22,6 +23,8 @@ use crate::core::shell::{
 
 const HANDSHAKE_BUFFER_LIMIT: usize = 64 * 1024;
 const TERMINATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const HELPER_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
+const HELPER_REAP_TIMEOUT: Duration = Duration::from_millis(250);
 
 #[derive(Debug)]
 pub enum WslExecutionError {
@@ -34,6 +37,7 @@ pub enum WslExecutionError {
     HandshakeOutputTooLarge,
     HandshakeEof,
     ProcessGroupStillAlive,
+    HelperTimeout,
 }
 
 impl fmt::Display for WslExecutionError {
@@ -54,6 +58,7 @@ impl fmt::Display for WslExecutionError {
             Self::ProcessGroupStillAlive => {
                 formatter.write_str("WSL process group did not terminate before the deadline")
             }
+            Self::HelperTimeout => formatter.write_str("WSL helper command timed out"),
         }
     }
 }
@@ -82,6 +87,13 @@ pub struct WslChild {
     stderr: Option<ChildStderr>,
 }
 
+/// Bytes consumed while locating the handshake are returned to the adapter
+/// so startup noise and the frame itself are written to stdout losslessly.
+pub struct WslHandshakeRead {
+    pub identity: WslProcessIdentity,
+    pub consumed_stdout: Vec<u8>,
+}
+
 impl WslChild {
     pub fn take_stdout(&mut self) -> Option<BufReader<ChildStdout>> {
         self.stdout.take()
@@ -101,11 +113,12 @@ impl WslChild {
     pub async fn read_handshake(
         &mut self,
         expected_run_id: &str,
-    ) -> Result<WslProcessIdentity, WslExecutionError> {
+    ) -> Result<WslHandshakeRead, WslExecutionError> {
         let mut stdout = self.stdout.take().ok_or(WslExecutionError::HandshakeEof)?;
-        let mut bytes = Vec::with_capacity(1024);
-        let mut line = Vec::with_capacity(128);
+        let mut bytes = Zeroizing::new(Vec::with_capacity(1024));
+        let mut line = Zeroizing::new(Vec::with_capacity(128));
         loop {
+            line.zeroize();
             line.clear();
             let read = stdout.read_until(b'\n', &mut line).await?;
             if read == 0 {
@@ -127,12 +140,38 @@ impl WslChild {
                     // the frame; returning this BufReader preserves every
                     // such byte for the log adapter.
                     self.stdout = Some(stdout);
-                    return Ok(identity);
+                    let consumed_stdout = bytes.to_vec();
+                    bytes.zeroize();
+                    return Ok(WslHandshakeRead {
+                        identity,
+                        consumed_stdout,
+                    });
                 }
                 Err(ShellError::HandshakeNotFound | ShellError::HandshakeMalformed) => continue,
                 Err(error) => return Err(error.into()),
             }
         }
+    }
+
+    /// Move the child and remaining readers to the production monitor. The
+    /// monitor becomes the sole owner after handshake validation.
+    pub fn into_parts(
+        self,
+    ) -> (
+        String,
+        Child,
+        Option<BufReader<ChildStdout>>,
+        Option<ChildStderr>,
+    ) {
+        (self.distro, self.child, self.stdout, self.stderr)
+    }
+
+    /// Best-effort cleanup for a spawn attempt that never obtained a trusted
+    /// PID/PGID/SID/marker tuple. Without an exact identity, no destructive
+    /// group signal is constructed; the Windows-side wrapper is still reaped.
+    pub async fn abort_spawn(mut self) {
+        let _ = self.child.start_kill();
+        let _ = self.child.wait().await;
     }
 
     pub async fn wait(&mut self) -> Result<std::process::ExitStatus, WslExecutionError> {
@@ -147,24 +186,36 @@ impl WslChild {
         identity: &WslProcessIdentity,
         grace: Duration,
     ) -> Result<std::process::ExitStatus, WslExecutionError> {
-        let observed = validate_identity(&self.distro, identity).await?;
-        validate_wsl_identity(identity, &observed)?;
-        let plan = build_wsl_termination_plan(&self.distro, identity)?;
-        run_helper_status(&plan.term).await?;
-
-        if !wait_for_group_gone(&self.distro, &plan, grace).await? {
-            // TERM may leave a process alive long enough for its session or
-            // group identity to change.  Re-read all four identity fields
-            // before escalating; a marker-only check is not sufficient for a
-            // destructive group signal.
-            validate_identity(&self.distro, identity).await?;
-            run_helper_status(&plan.kill).await?;
-            if !wait_for_group_gone(&self.distro, &plan, grace).await? {
-                return Err(WslExecutionError::ProcessGroupStillAlive);
-            }
-        }
+        terminate_group(&self.distro, identity, grace).await?;
         self.child.wait().await.map_err(Into::into)
     }
+}
+
+/// Validate and terminate a WSL process group without borrowing the child.
+/// The production monitor can therefore wait on the child concurrently while
+/// this path performs TERM, identity re-check, timeout, and KILL escalation.
+pub async fn terminate_group(
+    distro: &str,
+    identity: &WslProcessIdentity,
+    grace: Duration,
+) -> Result<(), WslExecutionError> {
+    let term_deadline = Instant::now() + grace;
+    let observed = validate_identity_until(distro, identity, term_deadline).await?;
+    validate_wsl_identity(identity, &observed)?;
+    let plan = build_wsl_termination_plan(distro, identity)?;
+    run_helper_status_until(&plan.term, term_deadline).await?;
+
+    if !wait_for_group_gone(distro, &plan, term_deadline).await? {
+        // TERM may leave a process alive long enough for its session or group
+        // identity to change. Re-read all identity fields before KILL.
+        let kill_deadline = Instant::now() + grace;
+        validate_identity_until(distro, identity, kill_deadline).await?;
+        run_helper_status_until(&plan.kill, kill_deadline).await?;
+        if !wait_for_group_gone(distro, &plan, kill_deadline).await? {
+            return Err(WslExecutionError::ProcessGroupStillAlive);
+        }
+    }
+    Ok(())
 }
 
 /// Construct and spawn the WSL command.  `Command::arg` is used for every
@@ -191,16 +242,23 @@ pub fn spawn(
 
 pub fn spawn_spec(spec: WslCommandSpec) -> Result<WslChild, WslExecutionError> {
     let distro = spec.argv.get(2).cloned().ok_or(ShellError::InvalidDistro)?;
+    let mut environment = spec.environment;
     let mut argv = spec.argv.into_iter();
     let program = argv.next().ok_or(ShellError::EmptyField("WSL program"))?;
     let mut command = Command::new(program);
     command
         .args(argv)
-        .envs(spec.environment)
+        .envs(environment.iter())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = command.spawn()?;
+        .stderr(Stdio::piped())
+        // A monitor timeout must not leave the Windows-side wrapper alive
+        // after its wait owner is aborted. Descendants are still controlled
+        // only through the validated process-group path below.
+        .kill_on_drop(true);
+    let spawned = command.spawn();
+    zeroize_environment(&mut environment);
+    let mut child = spawned?;
     let stdout = child.stdout.take().map(BufReader::new);
     let stderr = child.stderr.take();
     Ok(WslChild {
@@ -209,6 +267,14 @@ pub fn spawn_spec(spec: WslCommandSpec) -> Result<WslChild, WslExecutionError> {
         stdout,
         stderr,
     })
+}
+
+fn zeroize_environment(environment: &mut BTreeMap<String, String>) {
+    let environment = std::mem::take(environment);
+    for (mut key, mut value) in environment {
+        key.zeroize();
+        value.zeroize();
+    }
 }
 
 /// Spawn a spec while retaining the distribution needed for termination.
@@ -280,6 +346,22 @@ async fn read_process_environ(distro: &str, pid: u32) -> Result<Vec<u8>, WslExec
     Ok(output.stdout)
 }
 
+async fn read_process_environ_until(
+    distro: &str,
+    pid: u32,
+    deadline: Instant,
+) -> Result<Vec<u8>, WslExecutionError> {
+    let argv = build_wsl_proc_environ_argv(distro, pid)?;
+    let output = run_helper_output_until(&argv, deadline).await?;
+    if !output.status.success() {
+        return Err(WslExecutionError::CommandFailed {
+            argv,
+            code: output.status.code(),
+        });
+    }
+    Ok(output.stdout)
+}
+
 async fn read_process_identity(
     distro: &str,
     expected: &WslProcessIdentity,
@@ -295,8 +377,41 @@ async fn read_process_identity(
     parse_proc_stat_identity(expected.pid, &output.stdout, &expected.marker).map_err(Into::into)
 }
 
-async fn run_helper_status(argv: &[String]) -> Result<(), WslExecutionError> {
-    let output = run_helper_output(argv).await?;
+async fn read_process_identity_until(
+    distro: &str,
+    expected: &WslProcessIdentity,
+    deadline: Instant,
+) -> Result<WslProcessIdentity, WslExecutionError> {
+    let argv = build_wsl_proc_stat_argv(distro, expected.pid)?;
+    let output = run_helper_output_until(&argv, deadline).await?;
+    if !output.status.success() {
+        return Err(WslExecutionError::CommandFailed {
+            argv,
+            code: output.status.code(),
+        });
+    }
+    parse_proc_stat_identity(expected.pid, &output.stdout, &expected.marker).map_err(Into::into)
+}
+
+async fn validate_identity_until(
+    distro: &str,
+    expected: &WslProcessIdentity,
+    deadline: Instant,
+) -> Result<WslProcessIdentity, WslExecutionError> {
+    let environ = read_process_environ_until(distro, expected.pid, deadline).await?;
+    if !crate::core::shell::environ_contains_exact_marker(&environ, &expected.marker)? {
+        return Err(WslExecutionError::Shell(ShellError::MarkerMismatch));
+    }
+    let observed = read_process_identity_until(distro, expected, deadline).await?;
+    validate_wsl_identity(expected, &observed)?;
+    Ok(observed)
+}
+
+async fn run_helper_status_until(
+    argv: &[String],
+    deadline: Instant,
+) -> Result<(), WslExecutionError> {
+    let output = run_helper_output_until(argv, deadline).await?;
     if output.status.success() {
         Ok(())
     } else {
@@ -307,7 +422,46 @@ async fn run_helper_status(argv: &[String]) -> Result<(), WslExecutionError> {
     }
 }
 
-async fn run_helper_output(argv: &[String]) -> Result<std::process::Output, WslExecutionError> {
+async fn run_helper_output(argv: &[String]) -> Result<Output, WslExecutionError> {
+    run_helper_output_with_timeout(argv, HELPER_COMMAND_TIMEOUT).await
+}
+
+async fn run_helper_output_until(
+    argv: &[String],
+    deadline: Instant,
+) -> Result<Output, WslExecutionError> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return Err(WslExecutionError::HelperTimeout);
+    }
+    run_helper_output_with_timeout(argv, remaining).await
+}
+
+async fn collect_helper_output(
+    child: &mut Child,
+    mut stdout: ChildStdout,
+) -> Result<Output, std::io::Error> {
+    let mut stdout_bytes = Vec::new();
+    let (read_result, status_result) =
+        tokio::join!(stdout.read_to_end(&mut stdout_bytes), child.wait(),);
+    read_result?;
+    let status = status_result?;
+    Ok(Output {
+        status,
+        stdout: stdout_bytes,
+        stderr: Vec::new(),
+    })
+}
+
+async fn kill_and_reap_helper(child: &mut Child) {
+    let _ = child.start_kill();
+    let _ = tokio::time::timeout(HELPER_REAP_TIMEOUT, child.wait()).await;
+}
+
+async fn run_helper_output_with_timeout(
+    argv: &[String],
+    timeout: Duration,
+) -> Result<Output, WslExecutionError> {
     let Some(program) = argv.first() else {
         return Err(WslExecutionError::Shell(ShellError::EmptyField(
             "helper program",
@@ -318,28 +472,56 @@ async fn run_helper_output(argv: &[String]) -> Result<std::process::Output, WslE
         .args(&argv[1..])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    command.output().await.map_err(Into::into)
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    let mut child = command.spawn()?;
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let error = std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "helper stdout was not piped",
+            );
+            kill_and_reap_helper(&mut child).await;
+            return Err(error.into());
+        }
+    };
+    match tokio::time::timeout(timeout, collect_helper_output(&mut child, stdout)).await {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(error)) => {
+            kill_and_reap_helper(&mut child).await;
+            Err(error.into())
+        }
+        Err(_) => {
+            // The collection future is dropped before this branch, so the
+            // child is available for an explicit kill and reap. `kill_on_drop`
+            // remains a final fallback if the runtime cannot reap promptly.
+            kill_and_reap_helper(&mut child).await;
+            Err(WslExecutionError::HelperTimeout)
+        }
+    }
 }
 
 async fn wait_for_group_gone(
     distro: &str,
     plan: &WslTerminationPlan,
-    timeout: Duration,
+    deadline: Instant,
 ) -> Result<bool, WslExecutionError> {
-    let deadline = Instant::now() + timeout;
     loop {
-        let probe = run_helper_output(&plan.probe).await?;
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        let probe = run_helper_output_until(&plan.probe, deadline).await?;
         if !probe.status.success() {
             // A failed kill -0 is followed by a numeric /proc check.  If the
             // marker-bearing PID still exists, it must not be treated as a
             // vanished group (it may have escaped the group).
             let proc_probe = build_wsl_proc_dir_probe_argv(distro, plan.pid)?;
-            let proc = run_helper_output(&proc_probe).await?;
+            let proc = run_helper_output_until(&proc_probe, deadline).await?;
             if !proc.status.success() {
                 return Ok(true);
             }
-            let environ = read_process_environ(distro, plan.pid).await?;
+            let environ = read_process_environ_until(distro, plan.pid, deadline).await?;
             if !crate::core::shell::environ_contains_exact_marker(&environ, &plan.marker)? {
                 return Err(WslExecutionError::Shell(ShellError::MarkerMismatch));
             }
@@ -348,7 +530,8 @@ async fn wait_for_group_gone(
         if Instant::now() >= deadline {
             return Ok(false);
         }
-        sleep(TERMINATION_POLL_INTERVAL).await;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        sleep(TERMINATION_POLL_INTERVAL.min(remaining)).await;
     }
 }
 
@@ -392,5 +575,20 @@ mod tests {
             spawn_spec_for_distro("Debian", spec),
             Err(WslExecutionError::Shell(ShellError::InvalidDistro))
         ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn helper_timeout_kills_and_reaps_the_helper() {
+        let argv = vec!["sleep".to_owned(), "60".to_owned()];
+        let error = tokio::time::timeout(
+            Duration::from_secs(1),
+            run_helper_output_with_timeout(&argv, Duration::from_millis(10)),
+        )
+        .await
+        .expect("helper cleanup must be bounded")
+        .unwrap_err();
+        assert!(matches!(error, WslExecutionError::HelperTimeout));
+        assert_eq!(error.to_string(), "WSL helper command timed out");
     }
 }

@@ -8,7 +8,7 @@
 //! target without importing Windows or WSL APIs.
 
 use crate::core::cron::CronSchedule;
-use crate::core::models::{Job, Run, RunStatus};
+use crate::core::models::{Job, Run, RunExecutionMetadata, RunStatus};
 use crate::core::policies::select_occurrences;
 use crate::storage::{
     current_epoch_millis, ClaimedRunAction, DatabaseState, PolicyClaim, StorageError,
@@ -87,6 +87,13 @@ pub struct ExecutionExit {
 pub trait ExecutionHandle: Send + Sync {
     fn terminate(&self) -> AdapterFuture<'_, ExecutionExit>;
     fn wait(&self) -> AdapterFuture<'_, ExecutionExit>;
+
+    /// Metadata is captured before the adapter returns. The default keeps
+    /// existing pure scheduler fixtures source-compatible; production
+    /// handles override it with their app-owned log/identity snapshot.
+    fn metadata(&self) -> RunExecutionMetadata {
+        RunExecutionMetadata::default()
+    }
 }
 
 /// Platform-neutral spawn boundary.  The scheduler never invokes
@@ -653,16 +660,27 @@ impl SchedulerCoordinator {
                 });
             }
         };
-        if !self.inner.database.mark_run_running(
+        let metadata = handle.metadata();
+        if !self.inner.database.mark_run_running_with_metadata(
             &run.id,
             &owner,
             attempt_token,
             current_epoch_millis(),
+            &metadata,
         )? {
             let _ = handle.terminate().await;
+            let _ = self.inner.database.finish_run(
+                &run.id,
+                &owner,
+                attempt_token,
+                RunStatus::Failed,
+                None,
+                Some("execution-metadata-cas"),
+                current_epoch_millis(),
+            );
             drop(permit);
             return Err(SchedulerError::Storage(StorageError::ConcurrentChange(
-                "run starting CAS".into(),
+                "run metadata CAS".into(),
             )));
         }
 
@@ -992,6 +1010,55 @@ mod tests {
         }
     }
 
+    struct CasInvalidatingAdapter {
+        database: Arc<DatabaseState>,
+        terminated: Arc<AtomicBool>,
+    }
+
+    struct CasInvalidatingHandle {
+        terminated: Arc<AtomicBool>,
+    }
+
+    impl ExecutionHandle for CasInvalidatingHandle {
+        fn terminate(&self) -> AdapterFuture<'_, ExecutionExit> {
+            self.terminated.store(true, Ordering::SeqCst);
+            Box::pin(async { Ok(ExecutionExit { exit_code: None }) })
+        }
+
+        fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
+            Box::pin(async { Ok(ExecutionExit { exit_code: Some(0) }) })
+        }
+
+        fn metadata(&self) -> RunExecutionMetadata {
+            RunExecutionMetadata {
+                target_pid: Some(4242),
+                target_process_created_at: Some(7),
+                ..RunExecutionMetadata::default()
+            }
+        }
+    }
+
+    impl ExecutionAdapter for CasInvalidatingAdapter {
+        fn spawn(&self, request: ExecutionRequest) -> AdapterFuture<'_, Arc<dyn ExecutionHandle>> {
+            let database = Arc::clone(&self.database);
+            let terminated = Arc::clone(&self.terminated);
+            Box::pin(async move {
+                assert!(database
+                    .finish_run(
+                        &request.run.id,
+                        &request.owner_instance_id,
+                        &request.attempt_token,
+                        RunStatus::Failed,
+                        None,
+                        Some("fixture-cas-invalidated"),
+                        2,
+                    )
+                    .unwrap());
+                Ok(Arc::new(CasInvalidatingHandle { terminated }) as Arc<dyn ExecutionHandle>)
+            })
+        }
+    }
+
     fn input(name: &str, enabled: bool, overlap_policy: OverlapPolicy) -> JobInput {
         JobInput {
             name: name.to_string(),
@@ -1198,6 +1265,36 @@ mod tests {
         .await
         .unwrap();
         scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn metadata_cas_failure_terminates_spawned_child_fixture() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("metadata-cas", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let terminated = Arc::new(AtomicBool::new(false));
+        let adapter = Arc::new(CasInvalidatingAdapter {
+            database: Arc::clone(&database),
+            terminated: Arc::clone(&terminated),
+        });
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter);
+
+        let result = scheduler.trigger_manual_at(&job.id, 1_001).await;
+        assert!(matches!(
+            result,
+            Err(SchedulerError::Storage(StorageError::ConcurrentChange(message)))
+                if message == "run metadata CAS"
+        ));
+        assert!(terminated.load(Ordering::SeqCst));
+        assert_eq!(
+            database
+                .list_runs(&job.id, 10, None, None)
+                .unwrap()
+                .first()
+                .map(|run| run.status),
+            Some(RunStatus::Failed)
+        );
     }
 
     #[tokio::test]
