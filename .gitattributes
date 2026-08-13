@@ -1,0 +1,3 @@
+# Reviewed npm lock bytes are hashed as an embedded artifact. Keep the blob
+# and every checkout LF-normalized on all platforms.
+apps/code-pad/src-tauri/src/lsp/node-lock.json text eol=lf
