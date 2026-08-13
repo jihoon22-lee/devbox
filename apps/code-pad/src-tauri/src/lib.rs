@@ -39,6 +39,11 @@ pub fn run() {
             commands::lsp::change_lsp_document,
             commands::lsp::save_lsp_document,
             commands::lsp::close_lsp_document,
+            commands::lsp::pull_lsp_diagnostics,
+            commands::lsp::request_lsp_completion,
+            commands::lsp::request_lsp_hover,
+            commands::lsp::request_lsp_definition,
+            commands::lsp::request_lsp_references,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

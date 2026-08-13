@@ -16,7 +16,11 @@ type Cancellations = Arc<Mutex<HashSet<u64>>>;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let mode = env::var("FAKE_LSP_MODE").unwrap_or_default();
+    let argument_mode =
+        env::args().find_map(|argument| argument.strip_prefix("--fake-mode=").map(str::to_owned));
+    let mode = argument_mode
+        .or_else(|| env::var("FAKE_LSP_MODE").ok())
+        .unwrap_or_default();
     if mode == "stderr" {
         let mut stderr = tokio::io::stderr();
         let bytes = vec![b'x'; 100 * 1024];
@@ -141,6 +145,26 @@ async fn handle_request(
             let capabilities = match mode.as_str() {
                 "invalid_position" => json!({ "positionEncoding": "utf-32" }),
                 "dynamic_capabilities" => json!({ "hoverProvider": false }),
+                "no_hover" => json!({
+                    "positionEncoding": "utf-8",
+                    "textDocumentSync": { "openClose": true, "change": 2, "save": true },
+                    "completionProvider": true,
+                    "hoverProvider": false,
+                    "definitionProvider": true,
+                    "referencesProvider": {},
+                    "diagnosticProvider": {}
+                }),
+                "stale_features" => json!({
+                    "positionEncoding": "utf-8",
+                    "textDocumentSync": { "openClose": true, "change": 2, "save": true },
+                    "completionProvider": true,
+                    "hoverProvider": true,
+                    "definitionProvider": true,
+                    "referencesProvider": {},
+                    "renameProvider": { "prepareProvider": true },
+                    "documentFormattingProvider": true,
+                    "diagnosticProvider": {}
+                }),
                 _ => json!({
                     "positionEncoding": "utf-8",
                     "textDocumentSync": { "openClose": true, "change": 2, "save": true },
@@ -197,6 +221,64 @@ async fn handle_request(
             } else {
                 send(&writer, JsonRpcMessage::response(id, json!("slow"))).await;
             }
+        }
+        "textDocument/diagnostic"
+        | "textDocument/completion"
+        | "textDocument/hover"
+        | "textDocument/definition"
+        | "textDocument/references" => {
+            if mode == "stale_features" && method == "textDocument/completion" {
+                tokio::time::sleep(Duration::from_millis(120)).await;
+            } else if mode == "slow_features"
+                && matches!(
+                    method.as_str(),
+                    "textDocument/completion" | "textDocument/hover"
+                )
+            {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
+            if cancellations.lock().await.remove(&id.as_u64().unwrap_or(0)) {
+                send(
+                    &writer,
+                    JsonRpcMessage::error(id, RpcError::new(-32800, "request cancelled")),
+                )
+                .await;
+                return;
+            }
+            let uri = params
+                .as_ref()
+                .and_then(|params| params.get("textDocument"))
+                .and_then(|document| document.get("uri"))
+                .and_then(Value::as_str)
+                .unwrap_or("file:///fixture.rs");
+            let range = json!({
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 2 }
+            });
+            let result = match method.as_str() {
+                "textDocument/diagnostic" => json!({
+                    "kind": "full",
+                    "resultId": "fixture-diagnostics",
+                    "items": [{ "range": range.clone(), "severity": 2, "message": "fixture diagnostic" }]
+                }),
+                "textDocument/completion" => json!({
+                    "isIncomplete": false,
+                    "items": [{ "label": "fixture" }]
+                }),
+                "textDocument/hover" => json!({
+                    "contents": { "kind": "markdown", "value": "**fixture**" }
+                }),
+                "textDocument/definition" => json!([
+                    { "uri": uri, "range": range.clone() },
+                    { "uri": "file:///outside-workspace.rs", "range": range }
+                ]),
+                "textDocument/references" => json!([
+                    { "uri": uri, "range": range.clone() },
+                    { "uri": "file:///outside-workspace.rs", "range": range }
+                ]),
+                _ => Value::Null,
+            };
+            send(&writer, JsonRpcMessage::response(id, result)).await;
         }
         "crash" => {
             std::process::exit(17);

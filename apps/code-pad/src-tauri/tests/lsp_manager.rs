@@ -1,9 +1,12 @@
 use code_pad_lib::lsp::{
-    save_to_app_local_data_dir, LspConfig, LspManager, ServerRef, LSP_CONFIG_SCHEMA_VERSION,
+    save_to_app_local_data_dir, LspConfig, LspManager, LspManagerError, LspPosition, ServerRef,
+    LSP_CONFIG_SCHEMA_VERSION,
 };
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 use tempfile::tempdir;
 
 fn fixture_binary() -> PathBuf {
@@ -64,6 +67,144 @@ async fn session_lifecycle_and_document_notifications_are_coordinated() {
     assert_eq!(manager.statuses().await[0].document_count, 0);
     manager.stop("rust").await.unwrap();
     assert!(manager.statuses().await.is_empty());
+}
+
+fn feature_config(
+    workspace: &std::path::Path,
+    executable: &std::path::Path,
+    mode: &str,
+) -> LspConfig {
+    LspConfig {
+        version: LSP_CONFIG_SCHEMA_VERSION,
+        enabled: true,
+        workspace_root: workspace.to_string_lossy().into_owned(),
+        server_by_language: BTreeMap::from([(
+            "rust".into(),
+            ServerRef::Local {
+                installed_path: executable.to_string_lossy().into_owned(),
+                executable: None,
+                args: vec![format!("--fake-mode={mode}")],
+            },
+        )]),
+        custom_servers: Vec::new(),
+        update_policy: Default::default(),
+    }
+}
+
+#[tokio::test]
+async fn read_features_use_typed_adapters_stale_versions_and_workspace_filters() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let document = workspace.path().join("main.rs");
+    fs::write(&document, "fixture\n").unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    let config = feature_config(workspace.path(), &executable, "stale_features");
+    save_to_app_local_data_dir(app_data.path(), &config).unwrap();
+
+    let manager = Arc::new(LspManager::new(app_data.path(), "0.3.0"));
+    manager.start("rust").await.unwrap();
+    let opened = manager
+        .open_document("rust", &document, "fixture\n".into())
+        .await
+        .unwrap();
+
+    let diagnostics = manager.pull_diagnostics("rust", &opened.uri).await.unwrap();
+    assert!(!diagnostics.stale);
+    assert_eq!(diagnostics.value.diagnostics.len(), 1);
+    assert_eq!(diagnostics.metadata.version, 1);
+
+    let completion = manager
+        .completion("rust", &opened.uri, LspPosition::new(0, 0))
+        .await
+        .unwrap();
+    assert_eq!(completion.value.items[0].label, "fixture");
+
+    let hover = manager
+        .hover("rust", &opened.uri, LspPosition::new(0, 0))
+        .await
+        .unwrap();
+    assert_eq!(hover.value.unwrap().text, "**fixture**");
+
+    let definition = manager
+        .definition("rust", &opened.uri, LspPosition::new(0, 0))
+        .await
+        .unwrap();
+    assert_eq!(definition.value.locations.len(), 1);
+    assert_eq!(definition.value.rejected, 1);
+
+    let references = manager
+        .references("rust", &opened.uri, LspPosition::new(0, 0), true)
+        .await
+        .unwrap();
+    assert_eq!(references.value.locations.len(), 1);
+    assert_eq!(references.value.rejected, 1);
+
+    let request_manager = Arc::clone(&manager);
+    let request_uri = opened.uri.clone();
+    let request = tokio::spawn(async move {
+        request_manager
+            .completion("rust", &request_uri, LspPosition::new(0, 0))
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    manager
+        .change_document("rust", &opened.uri, "changed\n".into(), true)
+        .await
+        .unwrap();
+    let stale = request.await.unwrap().unwrap();
+    assert!(stale.stale);
+    assert_eq!(stale.metadata.version, 1);
+
+    manager.stop("rust").await.unwrap();
+}
+
+#[tokio::test]
+async fn read_features_fail_closed_on_capability_and_cancel_on_timeout() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let document = workspace.path().join("main.rs");
+    fs::write(&document, "fixture\n").unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    save_to_app_local_data_dir(
+        app_data.path(),
+        &feature_config(workspace.path(), &executable, "no_hover"),
+    )
+    .unwrap();
+    let manager = LspManager::new(app_data.path(), "0.3.0");
+    manager.start("rust").await.unwrap();
+    let opened = manager
+        .open_document("rust", &document, "fixture\n".into())
+        .await
+        .unwrap();
+    assert!(matches!(
+        manager
+            .hover("rust", &opened.uri, LspPosition::new(0, 0))
+            .await,
+        Err(LspManagerError::UnsupportedFeature { method, .. }) if method == "textDocument/hover"
+    ));
+    manager.stop("rust").await.unwrap();
+
+    let slow_app_data = tempdir().unwrap();
+    let slow_workspace = tempdir().unwrap();
+    let slow_document = slow_workspace.path().join("main.rs");
+    fs::write(&slow_document, "fixture\n").unwrap();
+    save_to_app_local_data_dir(
+        slow_app_data.path(),
+        &feature_config(slow_workspace.path(), &executable, "slow_features"),
+    )
+    .unwrap();
+    let slow_manager = LspManager::new(slow_app_data.path(), "0.3.0");
+    slow_manager.start("rust").await.unwrap();
+    let slow_opened = slow_manager
+        .open_document("rust", &slow_document, "fixture\n".into())
+        .await
+        .unwrap();
+    let error = slow_manager
+        .completion("rust", &slow_opened.uri, LspPosition::new(0, 0))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().to_ascii_lowercase().contains("timed out"));
+    slow_manager.stop("rust").await.unwrap();
 }
 
 #[test]
