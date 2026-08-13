@@ -1,3 +1,4 @@
+pub mod cleanup;
 mod commands;
 pub mod core;
 mod lifecycle;
@@ -61,6 +62,11 @@ pub fn run() {
             let database = Arc::new(storage::DatabaseState::open(&database_path)?);
             if !database.is_ready() {
                 return Err(std::io::Error::other("database connection is not ready").into());
+            }
+            if let Err(error) = cleanup::RetentionCleaner::new(&data_dir)
+                .run(&database, storage::current_epoch_millis())
+            {
+                eprintln!("Run Manager retention cleanup will retry later: {error}");
             }
             app.manage(database);
             let state = Arc::new(RuntimeState::new(database_path, background));
