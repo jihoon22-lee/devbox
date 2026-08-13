@@ -56,6 +56,10 @@ pub struct Artifact {
     /// installer gate validate_for_install rejects an absent size.
     #[serde(default)]
     pub size_bytes: Option<u64>,
+    /// Additional HTTPS hosts reviewed for redirects from the artifact URL.
+    /// The artifact URL's own host is always allowed and need not be listed.
+    #[serde(default)]
+    pub allowed_redirect_hosts: Vec<String>,
     /// Archive-relative root. An empty root means entries are directly below
     /// the staging root (as with the rust-analyzer zip).
     pub archive_root: String,
@@ -395,6 +399,16 @@ impl Artifact {
                 "must be positive when supplied",
             ));
         }
+        let mut redirect_hosts = BTreeSet::new();
+        for (index, host) in self.allowed_redirect_hosts.iter().enumerate() {
+            validate_redirect_host(&format!("artifact.allowed_redirect_hosts[{index}]"), host)?;
+            if !redirect_hosts.insert(host) {
+                return Err(ValidationError::new(
+                    format!("artifact.allowed_redirect_hosts[{index}]"),
+                    "duplicate redirect host",
+                ));
+            }
+        }
         validate_relative_path("artifact.archive_root", &self.archive_root, true)
     }
 }
@@ -655,6 +669,7 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 url: "https://github.com/rust-lang/rust-analyzer/releases/download/2026-08-10.1/rust-analyzer-x86_64-pc-windows-msvc.zip".into(),
                 sha256: "f667620d3af202f480faf9e407374509ebddef3b8611922e463aeaa7e6985fc8".into(),
                 size_bytes: None,
+                allowed_redirect_hosts: vec!["release-assets.githubusercontent.com".into()],
                 archive_root: String::new(),
             },
             runtime: RuntimeSpec {
@@ -694,6 +709,7 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 url: "https://registry.npmjs.org/typescript-language-server/-/typescript-language-server-5.3.0.tgz".into(),
                 sha256: "398cacc17fff2108652e7b4050e3182008d17063246b3fea7dcf5fae2ce1560e".into(),
                 size_bytes: None,
+                allowed_redirect_hosts: Vec::new(),
                 archive_root: "package".into(),
             },
             runtime: RuntimeSpec {
@@ -727,6 +743,7 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 url: "https://registry.npmjs.org/basedpyright/-/basedpyright-1.39.9.tgz".into(),
                 sha256: "5e92f462d04d91fe1370d65cbb1ac241c0c62b3f2c893c4e0b1bf9a82c9e99b2".into(),
                 size_bytes: None,
+                allowed_redirect_hosts: Vec::new(),
                 archive_root: "package".into(),
             },
             runtime: RuntimeSpec {
@@ -770,6 +787,7 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 url: "https://registry.npmjs.org/vscode-langservers-extracted/-/vscode-langservers-extracted-4.10.0.tgz".into(),
                 sha256: "d6e2d090d09c4b91daa74e9e7462a3d3f244efb96aa5111004cfffa49d6dc9ef".into(),
                 size_bytes: None,
+                allowed_redirect_hosts: Vec::new(),
                 archive_root: "package".into(),
             },
             runtime: RuntimeSpec {
@@ -926,6 +944,28 @@ fn validate_user_version(field: &str, value: &str) -> Result<(), ValidationError
         return Ok(());
     }
     validate_exact_version(field, value)
+}
+
+fn validate_redirect_host(field: &str, value: &str) -> Result<(), ValidationError> {
+    if value.is_empty()
+        || value != value.to_ascii_lowercase()
+        || value.starts_with('.')
+        || value.ends_with('.')
+        || value.split('.').any(|label| {
+            label.is_empty()
+                || label.starts_with('-')
+                || label.ends_with('-')
+                || !label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        })
+    {
+        return Err(ValidationError::new(
+            field,
+            "must be a lowercase DNS host without a port",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_https_url(field: &str, value: &str) -> Result<(), ValidationError> {
@@ -1324,6 +1364,28 @@ mod tests {
         assert_eq!(decoded, manifest);
         assert!(json.contains("\"source_url\""));
         assert!(json.contains("\"sha256\""));
+    }
+
+    #[test]
+    fn redirect_hosts_are_explicit_unique_lowercase_dns_names() {
+        let mut manifest = valid_manifest();
+        assert_eq!(
+            manifest.artifact.allowed_redirect_hosts,
+            vec!["release-assets.githubusercontent.com"]
+        );
+        for invalid in [
+            "HTTPS://example.com",
+            "Example.com",
+            "example.com:443",
+            ".example.com",
+            "example..com",
+            "-example.com",
+        ] {
+            manifest.artifact.allowed_redirect_hosts = vec![invalid.to_string()];
+            assert!(manifest.validate().is_err(), "accepted {invalid:?}");
+        }
+        manifest.artifact.allowed_redirect_hosts = vec!["cdn.example.com".to_string(); 2];
+        assert!(manifest.validate().is_err());
     }
 
     #[test]

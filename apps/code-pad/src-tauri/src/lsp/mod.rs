@@ -7,6 +7,7 @@
 pub mod catalog;
 pub mod client;
 pub mod documents;
+pub mod installer;
 pub mod positions;
 pub mod process;
 pub mod transport;
@@ -25,6 +26,10 @@ pub use client::{
 pub use documents::{
     DidChange, DidClose, DidOpen, DidSave, DocumentError, DocumentSnapshot, DocumentStore,
     RequestSnapshot, SyncKind, TextChange, WorkspaceRoot,
+};
+pub use installer::{
+    InstallError, InstallLimits, InstallResult, ManagedInstaller, DEFAULT_MAX_ARCHIVE_ENTRIES,
+    DEFAULT_MAX_INSTALL_BYTES,
 };
 pub use positions::{
     offset_to_position, position_to_offset, position_to_offset_clamped, LspPosition, LspRange,
