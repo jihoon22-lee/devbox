@@ -1,5 +1,6 @@
 import type {
   EnvironmentDraft,
+  EnvironmentAction,
   Job,
   JobFieldErrors,
   JobInput,
@@ -25,6 +26,7 @@ export interface JobDraft {
   catchUp: boolean;
   overlapPolicy: JobInput["overlapPolicy"];
   environment: EnvironmentDraft[];
+  environmentAction: EnvironmentAction;
 }
 
 export const EMPTY_JOB_DRAFT: JobDraft = {
@@ -38,6 +40,7 @@ export const EMPTY_JOB_DRAFT: JobDraft = {
   catchUp: false,
   overlapPolicy: "skip",
   environment: [],
+  environmentAction: "keep",
 };
 
 export function draftFromJob(job: Job): JobDraft {
@@ -57,10 +60,22 @@ export function draftFromJob(job: Job): JobDraft {
     environment: job.envConfigured
       ? [{ id: "persisted", key: "", value: "", persisted: true }]
       : [],
+    environmentAction: "keep",
   };
 }
 
 export function toJobInput(draft: JobDraft): JobInput {
+  const values = Object.fromEntries(
+    draft.environment
+      .filter((entry) => !entry.persisted && entry.key.trim())
+      .map((entry) => [entry.key.trim(), entry.value]),
+  );
+  const environment =
+    draft.environmentAction === "clear"
+      ? { action: "clear" as const }
+      : draft.environmentAction === "replace"
+        ? { action: "replace" as const, values }
+        : { action: "keep" as const };
   return {
     name: draft.name.trim(),
     command: draft.command,
@@ -71,6 +86,7 @@ export function toJobInput(draft: JobDraft): JobInput {
     enabled: draft.enabled,
     catchUp: draft.catchUp,
     overlapPolicy: draft.overlapPolicy,
+    environment,
   };
 }
 
@@ -99,8 +115,10 @@ export function validateJobDraft(draft: JobDraft): JobFieldErrors {
     errors.targetDistro = "Windows 대상에는 WSL 배포판을 지정할 수 없습니다.";
   }
 
+  if (draft.environmentAction !== "replace") return errors;
+
   const keys = new Set<string>();
-  const hasNewEnvironment = draft.environment.some((entry) => {
+  draft.environment.some((entry) => {
     if (entry.persisted) return false;
     const key = entry.key.trim();
     const valuePresent = entry.value.length > 0;
@@ -113,24 +131,18 @@ export function validateJobDraft(draft: JobDraft): JobFieldErrors {
       errors.env = "환경변수 이름은 영문자·숫자·밑줄만 사용할 수 있습니다.";
       return true;
     }
-    if (key === "WSLENV" || key === "DEVBOX_RUN_MARKER") {
+    const foldedKey = key.toUpperCase();
+    if (foldedKey === "WSLENV" || foldedKey === "DEVBOX_RUN_MARKER") {
       errors.env = `${key}는 Run Manager가 관리하는 예약 키입니다.`;
       return true;
     }
-    if (keys.has(key)) {
+    if (keys.has(foldedKey)) {
       errors.env = "환경변수 이름은 중복될 수 없습니다.";
       return true;
     }
-    keys.add(key);
-    // Values remain in the form only. The DPAPI adapter is the only allowed
-    // path to persistence, so this is an intentional fail-safe until it is
-    // available.
-    errors.env = "환경변수 저장에는 Windows DPAPI 어댑터가 필요합니다.";
-    return true;
+    keys.add(foldedKey);
+    return false;
   });
-  if (hasNewEnvironment && !errors.env) {
-    errors.env = "환경변수 저장에는 Windows DPAPI 어댑터가 필요합니다.";
-  }
   return errors;
 }
 

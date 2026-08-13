@@ -20,6 +20,7 @@ pub enum ShellError {
     EmptyField(&'static str),
     NulByte(&'static str),
     InvalidEnvironmentKey(String),
+    DuplicateEnvironmentKey(String),
     ReservedEnvironmentKey(String),
     InvalidUuid(&'static str),
     InvalidNumericField(&'static str),
@@ -38,6 +39,9 @@ impl fmt::Display for ShellError {
             Self::NulByte(field) => write!(formatter, "{field} contains a NUL byte"),
             Self::InvalidEnvironmentKey(key) => {
                 write!(formatter, "invalid environment key `{key}`")
+            }
+            Self::DuplicateEnvironmentKey(key) => {
+                write!(formatter, "duplicate environment key `{key}`")
             }
             Self::ReservedEnvironmentKey(key) => {
                 write!(formatter, "reserved environment key `{key}`")
@@ -112,8 +116,12 @@ pub fn validate_environment_key(key: &str) -> Result<(), ShellError> {
 
 /// Validate an environment map before it is passed to either adapter.
 pub fn validate_environment(environment: &BTreeMap<String, String>) -> Result<(), ShellError> {
+    let mut folded_keys = BTreeSet::new();
     for (key, value) in environment {
         validate_environment_key(key)?;
+        if !folded_keys.insert(key.to_ascii_uppercase()) {
+            return Err(ShellError::DuplicateEnvironmentKey(key.clone()));
+        }
         validate_nul_free("environment value", value)?;
     }
     Ok(())
@@ -699,6 +707,14 @@ mod tests {
         assert!(matches!(
             validate_environment(&environment),
             Err(ShellError::ReservedEnvironmentKey(_))
+        ));
+
+        environment.clear();
+        environment.insert(String::from("TOKEN"), String::from("first"));
+        environment.insert(String::from("token"), String::from("second"));
+        assert!(matches!(
+            validate_environment(&environment),
+            Err(ShellError::DuplicateEnvironmentKey(_))
         ));
     }
 

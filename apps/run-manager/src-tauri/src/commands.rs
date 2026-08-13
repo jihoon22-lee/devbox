@@ -1,8 +1,9 @@
-use crate::core::models::{Job, JobInput, Run};
+use crate::core::models::{EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, Run};
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
 use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse};
+use crate::platform::environment::{EnvironmentProtectorState, SecretEnvironment};
 use crate::platform::{StartupShortcut, StartupShortcutStatus};
-use crate::storage::DatabaseState;
+use crate::storage::{current_epoch_millis, DatabaseState};
 use chrono::Local;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -75,19 +76,56 @@ pub fn get_job(id: String, state: State<'_, Arc<DatabaseState>>) -> Result<Optio
 }
 
 #[tauri::command]
-pub fn create_job(input: JobInput, state: State<'_, Arc<DatabaseState>>) -> Result<Job, String> {
-    state.create_job(input).map_err(|error| error.to_string())
+pub fn create_job(
+    input: JobInput,
+    protector: State<'_, EnvironmentProtectorState>,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<Job, String> {
+    let mut input = input;
+    let environment = consume_environment(&mut input, protector.inner())?;
+    let ciphertext = match environment {
+        EnvironmentCiphertextUpdate::Replace(ciphertext) => Some(ciphertext),
+        EnvironmentCiphertextUpdate::Keep | EnvironmentCiphertextUpdate::Clear => None,
+    };
+    state
+        .create_job_with_ciphertext_at(input, ciphertext, current_epoch_millis())
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 pub fn update_job(
     id: String,
     input: JobInput,
+    protector: State<'_, EnvironmentProtectorState>,
     state: State<'_, Arc<DatabaseState>>,
 ) -> Result<Job, String> {
+    let mut input = input;
+    let environment = consume_environment(&mut input, protector.inner())?;
     state
-        .update_job(&id, input)
+        .update_job_with_ciphertext_at(&id, input, environment, current_epoch_millis())
         .map_err(|error| error.to_string())
+}
+
+fn consume_environment(
+    input: &mut JobInput,
+    protector: &EnvironmentProtectorState,
+) -> Result<EnvironmentCiphertextUpdate, String> {
+    let update = std::mem::take(&mut input.environment);
+    match update {
+        EnvironmentUpdate::Keep => Ok(EnvironmentCiphertextUpdate::Keep),
+        EnvironmentUpdate::Clear => Ok(EnvironmentCiphertextUpdate::Clear),
+        EnvironmentUpdate::Replace { values } => {
+            let environment = SecretEnvironment::new(values);
+            if environment.is_empty() {
+                drop(environment);
+                return Ok(EnvironmentCiphertextUpdate::Clear);
+            }
+            protector
+                .encrypt_owned(environment)
+                .map(EnvironmentCiphertextUpdate::Replace)
+                .map_err(|error| error.to_string())
+        }
+    }
 }
 
 #[tauri::command]

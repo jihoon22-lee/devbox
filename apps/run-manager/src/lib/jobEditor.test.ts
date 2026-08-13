@@ -38,20 +38,38 @@ describe("job save validation", () => {
     expect(validateJobDraft({ ...valid, targetKind: "wsl", targetDistro: "Ubuntu" }).targetDistro).toBeUndefined();
   });
 
-  it("never includes environment values in the persistence DTO", () => {
+  it("sends a complete replacement map to the protected command boundary", () => {
     const input = toJobInput({
       ...valid,
       environment: [{ id: "new", key: "TOKEN", value: "secret", persisted: false }],
+      environmentAction: "replace",
     });
-    expect(input).not.toHaveProperty("environment");
-    expect(input).not.toHaveProperty("envCiphertext");
+    expect(input.environment).toEqual({ action: "replace", values: { TOKEN: "secret" } });
   });
 
-  it("requires the explicit DPAPI boundary before new values can be saved", () => {
+  it("keeps masked values unless the user explicitly clears or replaces them", () => {
+    const persisted = [{ id: "persisted", key: "", value: "", persisted: true }];
+    expect(toJobInput({ ...valid, environment: persisted, environmentAction: "keep" }).environment).toEqual({
+      action: "keep",
+    });
+    expect(toJobInput({ ...valid, environment: [], environmentAction: "clear" }).environment).toEqual({
+      action: "clear",
+    });
+    expect(
+      toJobInput({
+        ...valid,
+        environment: [{ id: "new", key: "TOKEN", value: "rotated", persisted: false }],
+        environmentAction: "replace",
+      }).environment,
+    ).toEqual({ action: "replace", values: { TOKEN: "rotated" } });
+  });
+
+  it("validates new values without blocking on platform availability", () => {
     const errors = validateJobDraft({
       ...valid,
       environment: [{ id: "new", key: "TOKEN", value: "secret", persisted: false }],
+      environmentAction: "replace",
     });
-    expect(errors.env).toContain("DPAPI");
+    expect(errors.env).toBeUndefined();
   });
 });

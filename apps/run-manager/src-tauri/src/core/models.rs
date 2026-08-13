@@ -157,10 +157,11 @@ pub struct JobInput {
     pub cwd: Option<String>,
     pub target_kind: TargetKind,
     pub target_distro: Option<String>,
-    /// This is already encrypted by the future platform/DPAPI adapter. The
-    /// current PR never accepts or persists a plaintext environment map.
-    #[serde(default, skip_serializing)]
-    pub env_ciphertext: Option<Vec<u8>>,
+    /// Plaintext values are accepted only at the command boundary. Commands
+    /// consume this field immediately and pass ciphertext to storage; the
+    /// database and read DTOs never contain this map.
+    #[serde(default)]
+    pub environment: EnvironmentUpdate,
     pub cron_expr: String,
     #[serde(default)]
     pub enabled: bool,
@@ -202,6 +203,7 @@ impl JobInput {
         }
         crate::core::cron::validate_cron(&self.cron_expr)
             .map_err(|error| ModelError::InvalidCron(error.to_string()))?;
+        self.environment.validate()?;
         match self.target_kind {
             TargetKind::Windows if self.target_distro.is_some() => {
                 Err(ModelError::UnexpectedTargetDistro)
@@ -212,6 +214,50 @@ impl JobInput {
             _ => Ok(()),
         }
     }
+}
+
+/// The only environment operation exposed by the create/update command DTO.
+/// `keep` preserves an existing ciphertext, `clear` explicitly removes it,
+/// and `replace` supplies a complete new map for immediate encryption.
+#[derive(Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(tag = "action", rename_all = "camelCase")]
+pub enum EnvironmentUpdate {
+    #[serde(rename = "keep")]
+    #[default]
+    Keep,
+    #[serde(rename = "replace")]
+    Replace { values: BTreeMap<String, String> },
+    #[serde(rename = "clear")]
+    Clear,
+}
+
+impl fmt::Debug for EnvironmentUpdate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Keep => formatter.write_str("Keep"),
+            Self::Clear => formatter.write_str("Clear"),
+            Self::Replace { .. } => formatter.write_str("Replace { values: <redacted> }"),
+        }
+    }
+}
+
+impl EnvironmentUpdate {
+    pub fn validate(&self) -> Result<(), ModelError> {
+        if let Self::Replace { values } = self {
+            crate::core::shell::validate_environment(values)
+                .map_err(|error| ModelError::InvalidEnvironment(error.to_string()))?;
+        }
+        Ok(())
+    }
+}
+
+/// Storage receives only the result of the protector. This type is not
+/// deserializable and therefore cannot be supplied by a frontend caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnvironmentCiphertextUpdate {
+    Keep,
+    Replace(Vec<u8>),
+    Clear,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -312,11 +358,14 @@ impl NewNotification {
     }
 }
 
-/// Storage-facing boundary for the future Windows DPAPI CurrentUser adapter.
-/// No implementation is provided in this PR and no plaintext is stored in
-/// SQLite. Implementations should validate/redact and best-effort zeroize
-/// plaintext in their own platform layer.
+/// Storage-facing boundary for the platform environment protector. The
+/// Windows implementation uses DPAPI CurrentUser; non-Windows builds return a
+/// stable unavailable error rather than silently persisting plaintext.
 pub trait EnvironmentProtector: Send + Sync {
+    fn is_available(&self) -> bool {
+        true
+    }
+
     fn encrypt(
         &self,
         environment: &BTreeMap<String, String>,
@@ -328,14 +377,22 @@ pub trait EnvironmentProtector: Send + Sync {
     ) -> Result<BTreeMap<String, String>, EnvironmentProtectionError>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EnvironmentProtectionError {
-    pub message: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnvironmentProtectionError {
+    Unavailable,
+    InvalidInput,
+    InvalidCiphertext,
+    CryptoFailure,
 }
 
 impl fmt::Display for EnvironmentProtectionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
+        formatter.write_str(match self {
+            Self::Unavailable => "environment protection is unavailable on this platform",
+            Self::InvalidInput => "environment values are invalid",
+            Self::InvalidCiphertext => "stored environment data is invalid",
+            Self::CryptoFailure => "environment protection failed",
+        })
     }
 }
 
@@ -346,6 +403,7 @@ pub enum ModelError {
     EmptyField(&'static str),
     NulByte(&'static str),
     InvalidCron(String),
+    InvalidEnvironment(String),
     UnexpectedTargetDistro,
     MissingTargetDistro,
 }
@@ -358,6 +416,7 @@ impl fmt::Display for ModelError {
             Self::InvalidCron(error) => {
                 write!(formatter, "cron_expr: invalid cron expression ({error})")
             }
+            Self::InvalidEnvironment(error) => write!(formatter, "environment: {error}"),
             Self::UnexpectedTargetDistro => {
                 formatter.write_str("target_distro is only valid for WSL jobs")
             }
@@ -381,7 +440,7 @@ mod tests {
             cwd: None,
             target_kind,
             target_distro: target_distro.map(str::to_string),
-            env_ciphertext: None,
+            environment: EnvironmentUpdate::Keep,
             cron_expr: "0 * * * *".to_string(),
             enabled: false,
             overlap_policy: OverlapPolicy::default(),
@@ -421,6 +480,23 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<ServiceInstanceState>("\"retry_waiting\"").unwrap(),
             state
+        );
+    }
+
+    #[test]
+    fn environment_update_wire_shape_is_explicit_and_debug_is_redacted() {
+        let update = serde_json::from_value::<EnvironmentUpdate>(serde_json::json!({
+            "action": "replace",
+            "values": { "TOKEN": "secret" }
+        }))
+        .unwrap();
+        assert!(!format!("{update:?}").contains("secret"));
+        assert_eq!(
+            serde_json::from_value::<EnvironmentUpdate>(serde_json::json!({
+                "action": "clear"
+            }))
+            .unwrap(),
+            EnvironmentUpdate::Clear
         );
     }
 }

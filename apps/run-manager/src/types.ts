@@ -23,6 +23,12 @@ export type RunStatus =
   | "cancelled"
   | "skipped";
 export type LogStream = "stdout" | "stderr";
+export type EnvironmentAction = "keep" | "replace" | "clear";
+
+export type EnvironmentUpdate =
+  | { action: "keep" }
+  | { action: "replace"; values: Record<string, string> }
+  | { action: "clear" };
 
 export interface Job {
   id: string;
@@ -58,6 +64,7 @@ export interface JobInput {
   enabled: boolean;
   overlapPolicy: OverlapPolicy;
   catchUp: boolean;
+  environment: EnvironmentUpdate;
 }
 
 export interface Run {

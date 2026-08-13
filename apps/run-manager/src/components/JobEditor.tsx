@@ -79,8 +79,35 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
   const updateEnvironment = (id: string, field: "key" | "value", value: string) => {
     setDraft((current) => ({
       ...current,
+      environmentAction: "replace",
       environment: current.environment.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry)),
     }));
+    setErrors((current) => ({ ...current, env: undefined }));
+  };
+
+  const addEnvironment = () => {
+    setDraft((current) => ({
+      ...current,
+      environmentAction: "replace",
+      // A read DTO intentionally has no existing names or values. Once a
+      // replacement starts, the masked placeholder cannot be sent back as a
+      // fake key, so the user supplies the complete replacement map.
+      environment: [...current.environment.filter((entry) => !entry.persisted), newEnvironmentRow()],
+    }));
+    setErrors((current) => ({ ...current, env: undefined }));
+  };
+
+  const replacePersistedEnvironment = () => {
+    setDraft((current) => ({
+      ...current,
+      environmentAction: "replace",
+      environment: [newEnvironmentRow()],
+    }));
+    setErrors((current) => ({ ...current, env: undefined }));
+  };
+
+  const clearPersistedEnvironment = () => {
+    setDraft((current) => ({ ...current, environmentAction: "clear", environment: [] }));
     setErrors((current) => ({ ...current, env: undefined }));
   };
 
@@ -212,13 +239,13 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
               <button
                 type="button"
                 className="button-secondary small"
-                onClick={() => setDraft((current) => ({ ...current, environment: [...current.environment, newEnvironmentRow()] }))}
+                onClick={addEnvironment}
               >
                 변수 추가
               </button>
             </div>
             <div className="adapter-warning" role="note">
-              Windows DPAPI 어댑터가 연결되기 전에는 새 환경변수 값을 저장할 수 없습니다. 기존 값은 마스킹 상태로 유지됩니다.
+              값은 Windows 사용자 계정에 연결된 DPAPI로 보호됩니다. 기존 값은 유지하거나 전체 교체·삭제할 수 있습니다.
             </div>
             {draft.environment.length === 0 ? <p className="muted">설정된 환경변수가 없습니다.</p> : null}
             <div className="environment-list">
@@ -228,6 +255,30 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
                     <span className="masked-key">저장된 환경변수</span>
                     <span className="masked-value" aria-label="마스킹된 환경변수 값">••••••••</span>
                     <span className="muted">DPAPI 보호됨</span>
+                    <button
+                      type="button"
+                      className="button-secondary small"
+                      aria-label="기존 환경변수 유지"
+                      onClick={() => setDraft((current) => ({ ...current, environmentAction: "keep" }))}
+                    >
+                      유지
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary small"
+                      aria-label="기존 환경변수 교체"
+                      onClick={replacePersistedEnvironment}
+                    >
+                      교체
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary small"
+                      aria-label="기존 환경변수 삭제"
+                      onClick={clearPersistedEnvironment}
+                    >
+                      삭제
+                    </button>
                   </div>
                 ) : (
                   <div className="environment-row" key={entry.id}>
@@ -248,7 +299,10 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
                       type="button"
                       className="icon-button"
                       aria-label="환경변수 삭제"
-                      onClick={() => setDraft((current) => ({ ...current, environment: current.environment.filter((item) => item.id !== entry.id) }))}
+                      onClick={() => setDraft((current) => ({
+                        ...current,
+                        environment: current.environment.filter((item) => item.id !== entry.id),
+                      }))}
                     >
                       ×
                     </button>

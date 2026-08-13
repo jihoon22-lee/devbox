@@ -214,7 +214,7 @@ fn sanitize_job_name(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::models::{JobInput, OverlapPolicy, TargetKind};
+    use crate::core::models::{EnvironmentUpdate, JobInput, OverlapPolicy, TargetKind};
     use std::sync::Mutex;
 
     #[derive(Default)]
@@ -239,7 +239,7 @@ mod tests {
             name: name.to_string(),
             command: "echo ok".to_string(),
             cwd: None,
-            env_ciphertext: None,
+            environment: EnvironmentUpdate::Keep,
             cron_expr: "0 * * * *".to_string(),
             enabled: true,
             overlap_policy: OverlapPolicy::Skip,

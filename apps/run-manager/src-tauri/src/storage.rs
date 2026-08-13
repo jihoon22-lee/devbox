@@ -1,6 +1,6 @@
 use crate::core::models::{
-    ClaimResult, Job, JobInput, JobKind, NewNotification, NotificationOutboxItem, OverlapPolicy,
-    Run, RunStatus, TargetKind,
+    ClaimResult, EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, JobKind,
+    NewNotification, NotificationOutboxItem, OverlapPolicy, Run, RunStatus, TargetKind,
 };
 use crate::core::policies::{
     decide_overlap, OverlapAction, OverlapPolicyInput, RunPolicySnapshot, StopAction,
@@ -232,6 +232,16 @@ impl DatabaseState {
     }
 
     pub fn create_job_at(&self, input: JobInput, now: i64) -> Result<Job, StorageError> {
+        self.create_job_with_ciphertext_at(input, None, now)
+    }
+
+    pub(crate) fn create_job_with_ciphertext_at(
+        &self,
+        input: JobInput,
+        env_ciphertext: Option<Vec<u8>>,
+        now: i64,
+    ) -> Result<Job, StorageError> {
+        ensure_encrypted_input(&input)?;
         input
             .validate()
             .map_err(|error| StorageError::Validation(error.to_string()))?;
@@ -252,7 +262,7 @@ impl DatabaseState {
                 input.cwd,
                 input.target_kind.as_str(),
                 input.target_distro,
-                input.env_ciphertext,
+                env_ciphertext,
                 input.cron_expr,
                 bool_to_sql(input.enabled),
                 input.overlap_policy.as_str(),
@@ -273,6 +283,23 @@ impl DatabaseState {
         fetch_phase1_job(&connection, id).map_err(StorageError::from)
     }
 
+    /// Return ciphertext only for the execution layer. The normal read DTO
+    /// deliberately exposes only `env_configured`.
+    pub fn get_job_environment_ciphertext(
+        &self,
+        id: &str,
+    ) -> Result<Option<Vec<u8>>, StorageError> {
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT env_ciphertext FROM jobs WHERE id = ? AND kind = 'job'",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| StorageError::NotFound(format!("job {id}")))
+    }
+
     pub fn list_jobs(&self) -> Result<Vec<Job>, StorageError> {
         let connection = self.lock()?;
         let mut statement = connection.prepare(&format!(
@@ -288,6 +315,17 @@ impl DatabaseState {
     }
 
     pub fn update_job_at(&self, id: &str, input: JobInput, now: i64) -> Result<Job, StorageError> {
+        self.update_job_with_ciphertext_at(id, input, EnvironmentCiphertextUpdate::Keep, now)
+    }
+
+    pub(crate) fn update_job_with_ciphertext_at(
+        &self,
+        id: &str,
+        input: JobInput,
+        environment: EnvironmentCiphertextUpdate,
+        now: i64,
+    ) -> Result<Job, StorageError> {
+        ensure_encrypted_input(&input)?;
         input
             .validate()
             .map_err(|error| StorageError::Validation(error.to_string()))?;
@@ -302,10 +340,20 @@ impl DatabaseState {
         } else {
             current.last_evaluated_at
         };
+        let (environment_action, environment_ciphertext) = match environment {
+            EnvironmentCiphertextUpdate::Keep => ("keep", None),
+            EnvironmentCiphertextUpdate::Replace(ciphertext) => ("replace", Some(ciphertext)),
+            EnvironmentCiphertextUpdate::Clear => ("clear", None),
+        };
         let changed = transaction.execute(
             "UPDATE jobs SET
                 name = ?, command = ?, cwd = ?, target_kind = ?, target_distro = ?,
-                env_ciphertext = COALESCE(?, env_ciphertext), cron_expr = ?, enabled = ?, overlap_policy = ?,
+                env_ciphertext = CASE ?
+                    WHEN 'keep' THEN env_ciphertext
+                    WHEN 'replace' THEN ?
+                    ELSE NULL
+                END,
+                cron_expr = ?, enabled = ?, overlap_policy = ?,
                 catch_up = ?, last_evaluated_at = ?, updated_at = ?
              WHERE id = ? AND kind = 'job'",
             params![
@@ -314,7 +362,8 @@ impl DatabaseState {
                 input.cwd,
                 input.target_kind.as_str(),
                 input.target_distro,
-                input.env_ciphertext,
+                environment_action,
+                environment_ciphertext,
                 input.cron_expr,
                 bool_to_sql(input.enabled),
                 input.overlap_policy.as_str(),
@@ -1132,6 +1181,16 @@ fn bool_to_sql(value: bool) -> i64 {
     i64::from(value)
 }
 
+fn ensure_encrypted_input(input: &JobInput) -> Result<(), StorageError> {
+    if matches!(input.environment, EnvironmentUpdate::Keep) {
+        Ok(())
+    } else {
+        Err(StorageError::Validation(
+            "environment must be protected before storage".to_string(),
+        ))
+    }
+}
+
 fn ensure_job(transaction: &Transaction<'_>, id: &str) -> Result<Job, StorageError> {
     let job =
         fetch_job(transaction, id)?.ok_or_else(|| StorageError::NotFound(format!("job {id}")))?;
@@ -1434,7 +1493,7 @@ fn conversion_error<T: fmt::Display>(column: &str, value: T) -> rusqlite::Error 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::models::{JobInput, NewNotification, TargetKind};
+    use crate::core::models::{EnvironmentUpdate, JobInput, NewNotification, TargetKind};
     use rusqlite::OptionalExtension;
     use std::sync::{Arc, Barrier};
     use tempfile::NamedTempFile;
@@ -1446,7 +1505,7 @@ mod tests {
             cwd: None,
             target_kind: TargetKind::Windows,
             target_distro: None,
-            env_ciphertext: Some(vec![0xde, 0xad, 0xbe, 0xef]),
+            environment: EnvironmentUpdate::Keep,
             cron_expr: "0 * * * *".to_string(),
             enabled,
             overlap_policy: OverlapPolicy::Queue,
@@ -1541,7 +1600,9 @@ mod tests {
     #[test]
     fn job_crud_masks_ciphertext_and_resets_checkpoint_only_for_schedule_changes() {
         let database = DatabaseState::open_in_memory().unwrap();
-        let created = database.create_job_at(input(true), 100).unwrap();
+        let created = database
+            .create_job_with_ciphertext_at(input(true), Some(vec![0xde, 0xad, 0xbe, 0xef]), 100)
+            .unwrap();
         assert_eq!(created.last_evaluated_at, Some(100));
         assert!(created.env_configured);
         let raw_ciphertext: Vec<u8> = database
@@ -1585,10 +1646,11 @@ mod tests {
     #[test]
     fn metadata_updates_keep_existing_ciphertext_when_no_adapter_payload_is_supplied() {
         let database = DatabaseState::open_in_memory().unwrap();
-        let created = database.create_job_at(input(false), 100).unwrap();
+        let created = database
+            .create_job_with_ciphertext_at(input(false), Some(vec![0xde, 0xad, 0xbe, 0xef]), 100)
+            .unwrap();
         let mut renamed = input(false);
         renamed.name = "renamed".to_string();
-        renamed.env_ciphertext = None;
         database.update_job_at(&created.id, renamed, 200).unwrap();
 
         let ciphertext: Vec<u8> = database
@@ -1602,6 +1664,54 @@ mod tests {
             )
             .unwrap();
         assert_eq!(ciphertext, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn explicit_environment_replace_and_clear_are_distinct_from_keep() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let created = database
+            .create_job_with_ciphertext_at(input(false), Some(vec![1, 2, 3]), 100)
+            .unwrap();
+
+        let mut replacement = input(false);
+        replacement.name = "replaced".to_string();
+        database
+            .update_job_with_ciphertext_at(
+                &created.id,
+                replacement,
+                EnvironmentCiphertextUpdate::Replace(vec![4, 5, 6]),
+                200,
+            )
+            .unwrap();
+        assert_eq!(
+            database
+                .get_job_environment_ciphertext(&created.id)
+                .unwrap(),
+            Some(vec![4, 5, 6])
+        );
+
+        let cleared = input(false);
+        database
+            .update_job_with_ciphertext_at(
+                &created.id,
+                cleared,
+                EnvironmentCiphertextUpdate::Clear,
+                300,
+            )
+            .unwrap();
+        assert_eq!(
+            database
+                .get_job_environment_ciphertext(&created.id)
+                .unwrap(),
+            None
+        );
+        assert!(
+            !database
+                .get_job(&created.id)
+                .unwrap()
+                .unwrap()
+                .env_configured
+        );
     }
 
     #[test]

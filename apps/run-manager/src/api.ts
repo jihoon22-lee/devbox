@@ -68,11 +68,11 @@ export function createJob(input: JobInput): Promise<Job> {
       cwd: input.cwd,
       targetKind: input.targetKind,
       targetDistro: input.targetDistro,
-      envConfigured: false,
       cronExpr: input.cronExpr,
       enabled: input.enabled,
       overlapPolicy: input.overlapPolicy,
       catchUp: input.catchUp,
+      envConfigured: input.environment.action === "replace" && Object.keys(input.environment.values).length > 0,
       lastEvaluatedAt: input.enabled ? now : null,
       nextQueueSequence: 0,
       restartPolicy: null,
@@ -96,8 +96,21 @@ export function updateJob(id: string, input: JobInput): Promise<Job> {
     const current = mockJobs[index];
     const updated: Job = {
       ...current,
-      ...input,
+      name: input.name,
+      command: input.command,
+      cwd: input.cwd,
+      targetKind: input.targetKind,
       targetDistro: input.targetKind === "wsl" ? input.targetDistro : null,
+      cronExpr: input.cronExpr,
+      enabled: input.enabled,
+      overlapPolicy: input.overlapPolicy,
+      catchUp: input.catchUp,
+      envConfigured:
+        input.environment.action === "clear"
+          ? false
+          : input.environment.action === "replace"
+            ? Object.keys(input.environment.values).length > 0
+            : current.envConfigured,
       lastEvaluatedAt:
         current.cronExpr !== input.cronExpr || current.catchUp !== input.catchUp || current.enabled !== input.enabled
           ? Date.now()

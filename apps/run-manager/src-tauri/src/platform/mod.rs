@@ -1,6 +1,7 @@
 #[cfg(target_os = "windows")]
 pub mod windows;
 
+pub mod environment;
 pub mod wsl;
 
 use serde::Serialize;
