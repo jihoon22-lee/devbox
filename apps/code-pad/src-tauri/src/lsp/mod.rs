@@ -6,11 +6,13 @@
 
 pub mod catalog;
 pub mod client;
+pub mod config;
 pub mod documents;
 pub mod features;
 pub mod installer;
 pub mod positions;
 pub mod process;
+pub mod runtime;
 pub mod transport;
 
 pub use catalog::{
@@ -23,6 +25,12 @@ pub use catalog::{
 pub use client::{
     CapabilitySet, ClientError, ClientStatus, InitializeConfig, LspClient, ServerInfo,
     INITIALIZE_TIMEOUT,
+};
+pub use config::{
+    config_path_from_app_local_data_dir, load_from_app_local_data_dir, load_from_path,
+    load_from_path_with_status, lsp_config_path, save_to_app_local_data_dir, save_to_path,
+    LoadedLspConfig, LspConfigLoadError, LspConfigSaveError, LSP_CONFIG_DIRECTORY,
+    LSP_CONFIG_FILE_NAME,
 };
 pub use documents::{
     AtomicDocumentChange, DidChange, DidClose, DidOpen, DidSave, DocumentError, DocumentSnapshot,
@@ -52,6 +60,10 @@ pub use positions::{
 pub use process::{
     BoundedStderr, IncomingMessage, LspProcess, ProcessError, ProcessSpec, ProcessState,
     RequestError, StderrEvent,
+};
+pub use runtime::{
+    canonical_workspace_root, EnvironmentAllowlist, ResolvedProcess, ResolvedRuntime, RuntimeError,
+    RuntimeResolver, RuntimeVersion, VersionOperator, VersionRequirement,
 };
 pub use transport::{
     FrameLimits, JsonRpcMessage, JsonRpcReader, JsonRpcWriter, PendingError, PendingRequests,
