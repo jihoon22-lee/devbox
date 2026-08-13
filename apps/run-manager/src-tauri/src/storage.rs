@@ -109,6 +109,8 @@ CREATE INDEX IF NOT EXISTS idx_runs_status
     ON runs (status);
 CREATE INDEX IF NOT EXISTS idx_notification_outbox_pending
     ON notification_outbox (delivered_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_notification_outbox_job_created
+    ON notification_outbox (job_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_service_instances_state_retry
     ON service_instances (state, next_retry_at);
 "#;
@@ -517,6 +519,57 @@ impl DatabaseState {
         Ok(item)
     }
 
+    /// Insert one failure event unless the same idempotency key was already
+    /// observed or this job already produced an event inside the exact
+    /// deduplication window. The immediate transaction makes the decision
+    /// stable across concurrent scheduler callbacks.
+    pub fn enqueue_notification_if_not_recent(
+        &self,
+        notification: NewNotification,
+        recent_after: i64,
+    ) -> Result<Option<NotificationOutboxItem>, StorageError> {
+        notification
+            .validate()
+            .map_err(|error| StorageError::Validation(error.to_string()))?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if fetch_notification_by_key(&transaction, &notification.idempotency_key)?.is_some() {
+            transaction.commit()?;
+            return Ok(None);
+        }
+        let recent_exists: bool = transaction.query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM notification_outbox
+                WHERE kind = 'run-failed' AND job_id IS ?1 AND created_at > ?2
+             )",
+            params![notification.job_id.as_deref(), recent_after],
+            |row| row.get(0),
+        )?;
+        if recent_exists {
+            transaction.commit()?;
+            return Ok(None);
+        }
+
+        let id = Uuid::new_v4().to_string();
+        transaction.execute(
+            "INSERT INTO notification_outbox (
+                id, kind, job_id, run_id, error_code, idempotency_key, created_at
+             ) VALUES (?, 'run-failed', ?, ?, ?, ?, ?)",
+            params![
+                id,
+                notification.job_id,
+                notification.run_id,
+                notification.error_code,
+                notification.idempotency_key,
+                notification.created_at,
+            ],
+        )?;
+        let item = fetch_notification_by_key(&transaction, &notification.idempotency_key)?
+            .ok_or_else(|| StorageError::NotFound("notification outbox item".to_string()))?;
+        transaction.commit()?;
+        Ok(Some(item))
+    }
+
     pub fn list_pending_notifications(
         &self,
         limit: u32,
@@ -543,6 +596,20 @@ impl DatabaseState {
             params![delivered_at, id],
         )?;
         Ok(changed == 1)
+    }
+
+    pub fn delete_delivered_notifications_before(
+        &self,
+        cutoff: i64,
+    ) -> Result<usize, StorageError> {
+        let connection = self.lock_mut()?;
+        connection
+            .execute(
+                "DELETE FROM notification_outbox
+                 WHERE delivered_at IS NOT NULL AND delivered_at < ?1",
+                [cutoff],
+            )
+            .map_err(StorageError::from)
     }
 
     fn lock(&self) -> Result<MutexGuard<'_, Connection>, StorageError> {
@@ -1191,6 +1258,78 @@ mod tests {
             .mark_notification_delivered(&first.id, 300)
             .unwrap());
         assert!(database.list_pending_notifications(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn notification_deduplication_uses_an_exact_rolling_window() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let job = database.create_job_at(input(true), 100).unwrap();
+        let first = NewNotification {
+            job_id: Some(job.id.clone()),
+            run_id: None,
+            error_code: "spawn_failed".to_string(),
+            idempotency_key: "first".to_string(),
+            created_at: 1_000,
+        };
+        assert!(database
+            .enqueue_notification_if_not_recent(first, 700)
+            .unwrap()
+            .is_some());
+        assert!(database
+            .enqueue_notification_if_not_recent(
+                NewNotification {
+                    job_id: Some(job.id.clone()),
+                    run_id: None,
+                    error_code: "nonzero_exit".to_string(),
+                    idempotency_key: "inside-window".to_string(),
+                    created_at: 1_299,
+                },
+                999,
+            )
+            .unwrap()
+            .is_none());
+        assert!(database
+            .enqueue_notification_if_not_recent(
+                NewNotification {
+                    job_id: Some(job.id),
+                    run_id: None,
+                    error_code: "nonzero_exit".to_string(),
+                    idempotency_key: "at-boundary".to_string(),
+                    created_at: 1_300,
+                },
+                1_000,
+            )
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn delivered_notification_retention_keeps_pending_rows() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let old = database
+            .enqueue_notification(NewNotification {
+                job_id: None,
+                run_id: None,
+                error_code: "spawn_failed".to_string(),
+                idempotency_key: "old".to_string(),
+                created_at: 10,
+            })
+            .unwrap();
+        database.mark_notification_delivered(&old.id, 20).unwrap();
+        database
+            .enqueue_notification(NewNotification {
+                job_id: None,
+                run_id: None,
+                error_code: "spawn_failed".to_string(),
+                idempotency_key: "pending".to_string(),
+                created_at: 30,
+            })
+            .unwrap();
+        assert_eq!(
+            database.delete_delivered_notifications_before(21).unwrap(),
+            1
+        );
+        assert_eq!(database.list_pending_notifications(10).unwrap().len(), 1);
     }
 
     #[test]

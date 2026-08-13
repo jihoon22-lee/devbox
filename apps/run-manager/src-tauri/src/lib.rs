@@ -3,6 +3,7 @@ mod commands;
 pub mod core;
 mod lifecycle;
 pub mod logs;
+pub mod notifications;
 pub mod platform;
 pub mod storage;
 
@@ -69,6 +70,9 @@ pub fn run() {
                 .run(&database, storage::current_epoch_millis())
             {
                 eprintln!("Run Manager retention cleanup will retry later: {error}");
+            }
+            if let Err(error) = notifications::drain_pending(app.handle(), &database) {
+                eprintln!("Run Manager notification outbox will retry later: {error}");
             }
             app.manage(database);
             let state = Arc::new(RuntimeState::new(database_path, background));
