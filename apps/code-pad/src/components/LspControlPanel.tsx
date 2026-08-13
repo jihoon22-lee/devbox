@@ -77,9 +77,10 @@ function statusLabel(status: LanguageServerStatus["status"]): string {
 interface Props {
   workspaceRoot: string | null;
   onClose: () => void;
+  onConfigChanged?: (config: LspConfig) => void;
 }
 
-export default function LspControlPanel({ workspaceRoot, onClose }: Props) {
+export default function LspControlPanel({ workspaceRoot, onClose, onConfigChanged }: Props) {
   const [loaded, setLoaded] = useState<LoadedLspConfig | null>(null);
   const [config, setConfig] = useState<LspConfig>(() => emptyConfig(workspaceRoot));
   const [statuses, setStatuses] = useState<LanguageServerStatus[]>([]);
@@ -195,6 +196,7 @@ export default function LspControlPanel({ workspaceRoot, onClose }: Props) {
     setLoaded({ config: next, persist_allowed: true, error: null });
     setStatuses([]);
     setHasUnsavedChanges(false);
+    onConfigChanged?.(next);
   });
 
   const handleStart = (languageId: string) => void run(async () => {

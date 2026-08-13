@@ -2,7 +2,36 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { loadSession, openFile, saveFile, unwatchFile, validateEncoding, watchFile } from "./api";
+import {
+  changeLspDocument,
+  closeLspDocument,
+  languageServerStatuses,
+  loadLspConfig,
+  loadSession,
+  openFile,
+  openLspDocument,
+  reloadLspDocument,
+  saveFile,
+  saveLspDocument,
+  startLanguageServer,
+  stopLanguageServer,
+  unwatchFile,
+  validateEncoding,
+  watchFile,
+} from "./api";
+
+const fileChangedHandlerRef: {
+  current: ((event: { payload: { path: string; mtimeNanos: string; contentHash: string; size: number } }) => void) | null;
+} = { current: null };
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (_event: string, handler: typeof fileChangedHandlerRef.current) => {
+    fileChangedHandlerRef.current = handler;
+    return () => {
+      if (fileChangedHandlerRef.current === handler) fileChangedHandlerRef.current = null;
+    };
+  }),
+}));
 
 vi.mock("./components/DocHost", () => ({
   default: (props: {
@@ -57,6 +86,26 @@ vi.mock("./api", () => ({
   canonicalizeWorkspace: vi.fn(),
   listWorkspaceFiles: vi.fn(),
   renderPreview: vi.fn(),
+  loadLspConfig: vi.fn().mockResolvedValue({
+    config: {
+      version: 1,
+      enabled: false,
+      workspace_root: "",
+      server_by_language: {},
+      custom_servers: [],
+      update_policy: "manual",
+    },
+    persist_allowed: true,
+    error: null,
+  }),
+  languageServerStatuses: vi.fn().mockResolvedValue([]),
+  startLanguageServer: vi.fn().mockResolvedValue(undefined),
+  stopLanguageServer: vi.fn().mockResolvedValue(undefined),
+  openLspDocument: vi.fn(),
+  reloadLspDocument: vi.fn(),
+  changeLspDocument: vi.fn(),
+  saveLspDocument: vi.fn(),
+  closeLspDocument: vi.fn(),
 }));
 
 const openFileMock = vi.mocked(openFile);
@@ -65,6 +114,15 @@ const validateEncodingMock = vi.mocked(validateEncoding);
 const loadSessionMock = vi.mocked(loadSession);
 const watchFileMock = vi.mocked(watchFile);
 const unwatchFileMock = vi.mocked(unwatchFile);
+const loadLspConfigMock = vi.mocked(loadLspConfig);
+const languageServerStatusesMock = vi.mocked(languageServerStatuses);
+const startLanguageServerMock = vi.mocked(startLanguageServer);
+const stopLanguageServerMock = vi.mocked(stopLanguageServer);
+const openLspDocumentMock = vi.mocked(openLspDocument);
+const reloadLspDocumentMock = vi.mocked(reloadLspDocument);
+const changeLspDocumentMock = vi.mocked(changeLspDocument);
+const saveLspDocumentMock = vi.mocked(saveLspDocument);
+const closeLspDocumentMock = vi.mocked(closeLspDocument);
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -119,6 +177,27 @@ beforeEach(() => {
   });
   watchFileMock.mockClear();
   unwatchFileMock.mockClear();
+  loadLspConfigMock.mockReset().mockResolvedValue({
+    config: {
+      version: 1,
+      enabled: false,
+      workspace_root: "",
+      server_by_language: {},
+      custom_servers: [],
+      update_policy: "manual",
+    },
+    persist_allowed: true,
+    error: null,
+  });
+  languageServerStatusesMock.mockReset().mockResolvedValue([]);
+  startLanguageServerMock.mockReset().mockResolvedValue(undefined);
+  stopLanguageServerMock.mockReset().mockResolvedValue(undefined);
+  openLspDocumentMock.mockReset();
+  reloadLspDocumentMock.mockReset();
+  changeLspDocumentMock.mockReset();
+  saveLspDocumentMock.mockReset();
+  closeLspDocumentMock.mockReset();
+  fileChangedHandlerRef.current = null;
 });
 
 afterEach(() => cleanup());
@@ -161,6 +240,161 @@ describe("App editor shell operations", () => {
     expect(saveFileMock).toHaveBeenCalledTimes(1);
     request.resolve(savedFile());
     await waitFor(() => expect(rendered.getByRole("tab").textContent).toContain("●"));
+  });
+
+  it("sends didSave only after the native file save succeeds", async () => {
+    loadSessionMock.mockResolvedValue({
+      session: {
+        version: 1,
+        workspace_folder: "/tmp",
+        docs: [],
+        views: [[], []],
+        active_view: 0,
+        active_doc_by_view: [null, null],
+        recent_files: [],
+      },
+      persistAllowed: true,
+    });
+    loadLspConfigMock.mockResolvedValue({
+      config: {
+        version: 1,
+        enabled: true,
+        workspace_root: "/tmp",
+        server_by_language: {
+          typescript: { kind: "local", installed_path: "/tools/tsls", args: [] },
+        },
+        custom_servers: [],
+        update_policy: "manual",
+      },
+      persist_allowed: true,
+      error: null,
+    });
+    languageServerStatusesMock.mockResolvedValue([]);
+    openLspDocumentMock.mockResolvedValue({
+      uri: "file:///tmp/one.ts",
+      languageId: "typescript",
+      version: 1,
+      text: "before",
+    });
+    changeLspDocumentMock.mockResolvedValue({
+      uri: "file:///tmp/one.ts",
+      version: 2,
+      contentChanges: [{ text: "before!" }],
+    });
+    saveLspDocumentMock.mockResolvedValue({ uri: "file:///tmp/one.ts", version: 2 });
+    const events: string[] = [];
+    saveFileMock.mockImplementation(async () => {
+      events.push("file-save");
+      return savedFile();
+    });
+    saveLspDocumentMock.mockImplementation(async () => {
+      events.push("did-save");
+      return { uri: "file:///tmp/one.ts", version: 2 };
+    });
+
+    const rendered = await openOne();
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+    await waitFor(() => expect(saveLspDocumentMock).toHaveBeenCalledTimes(1));
+    expect(events).toEqual(["file-save", "did-save"]);
+  });
+
+  it("uses the full reload boundary for clean external changes", async () => {
+    loadSessionMock.mockResolvedValue({
+      session: {
+        version: 1,
+        workspace_folder: "/tmp",
+        docs: [],
+        views: [[], []],
+        active_view: 0,
+        active_doc_by_view: [null, null],
+        recent_files: [],
+      },
+      persistAllowed: true,
+    });
+    loadLspConfigMock.mockResolvedValue({
+      config: {
+        version: 1,
+        enabled: true,
+        workspace_root: "/tmp",
+        server_by_language: {
+          typescript: { kind: "local", installed_path: "/tools/tsls", args: [] },
+        },
+        custom_servers: [],
+        update_policy: "manual",
+      },
+      persist_allowed: true,
+      error: null,
+    });
+    openLspDocumentMock.mockResolvedValue({
+      uri: "file:///tmp/one.ts",
+      languageId: "typescript",
+      version: 1,
+      text: "before",
+    });
+    reloadLspDocumentMock.mockResolvedValue({
+      uri: "file:///tmp/one.ts",
+      version: 2,
+      contentChanges: [{ text: "from disk" }],
+    });
+
+    await openOne();
+    openFileMock.mockResolvedValue(openedFile("from disk"));
+    await waitFor(() => expect(fileChangedHandlerRef.current).not.toBeNull());
+    fileChangedHandlerRef.current?.({ payload: {
+      path: "/tmp/one.ts",
+      mtimeNanos: "2",
+      contentHash: "hash-2",
+      size: 9,
+    } });
+    await waitFor(() => expect(reloadLspDocumentMock).toHaveBeenCalledWith(
+      "typescript",
+      "file:///tmp/one.ts",
+      "from disk",
+    ));
+    expect(changeLspDocumentMock).not.toHaveBeenCalled();
+  });
+
+  it("does not send didSave when the native file save fails", async () => {
+    loadSessionMock.mockResolvedValue({
+      session: {
+        version: 1,
+        workspace_folder: "/tmp",
+        docs: [],
+        views: [[], []],
+        active_view: 0,
+        active_doc_by_view: [null, null],
+        recent_files: [],
+      },
+      persistAllowed: true,
+    });
+    loadLspConfigMock.mockResolvedValue({
+      config: {
+        version: 1,
+        enabled: true,
+        workspace_root: "/tmp",
+        server_by_language: {
+          typescript: { kind: "local", installed_path: "/tools/tsls", args: [] },
+        },
+        custom_servers: [],
+        update_policy: "manual",
+      },
+      persist_allowed: true,
+      error: null,
+    });
+    openLspDocumentMock.mockResolvedValue({
+      uri: "file:///tmp/one.ts",
+      languageId: "typescript",
+      version: 1,
+      text: "before",
+    });
+    saveFileMock.mockRejectedValue(new Error("disk is read-only"));
+
+    const rendered = await openOne();
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+    await waitFor(() => expect(rendered.getByRole("alert").textContent).toContain("disk is read-only"));
+    expect(saveLspDocumentMock).not.toHaveBeenCalled();
   });
 
   it("does not leak a second native watch when reopening an existing document", async () => {

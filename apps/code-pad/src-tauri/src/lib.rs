@@ -37,6 +37,7 @@ pub fn run() {
             commands::lsp::language_server_statuses,
             commands::lsp::open_lsp_document,
             commands::lsp::change_lsp_document,
+            commands::lsp::reload_lsp_document,
             commands::lsp::save_lsp_document,
             commands::lsp::close_lsp_document,
             commands::lsp::pull_lsp_diagnostics,

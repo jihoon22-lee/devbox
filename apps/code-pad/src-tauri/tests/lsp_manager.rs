@@ -61,6 +61,14 @@ async fn session_lifecycle_and_document_notifications_are_coordinated() {
         .await
         .unwrap();
     assert_eq!(changed.version, 2);
+    let reloaded = manager
+        .reload_document("rust", &opened.uri, "reloaded from disk\n".into())
+        .await
+        .unwrap();
+    assert_eq!(reloaded.version, 3);
+    assert!(reloaded.content_changes[0].range.is_none());
+    let reload_wire = serde_json::to_value(&reloaded).unwrap();
+    assert!(reload_wire["contentChanges"][0].get("range").is_none());
     assert_eq!(manager.statuses().await[0].document_count, 1);
     manager.save_document("rust", &opened.uri).await.unwrap();
     manager.close_document("rust", &opened.uri).await.unwrap();
