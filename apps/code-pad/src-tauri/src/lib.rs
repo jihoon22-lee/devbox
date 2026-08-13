@@ -11,6 +11,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             app.manage(watcher::WatcherManager::new(app.handle().clone()));
+            let app_local_data_dir = app.path().app_local_data_dir()?;
+            app.manage(std::sync::Arc::new(lsp::LspManager::new(
+                app_local_data_dir,
+                env!("CARGO_PKG_VERSION"),
+            )));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -24,6 +29,16 @@ pub fn run() {
             commands::session::save_session,
             commands::watch::watch_file,
             commands::watch::unwatch_file,
+            commands::lsp::load_lsp_config,
+            commands::lsp::save_lsp_config,
+            commands::lsp::start_language_server,
+            commands::lsp::stop_language_server,
+            commands::lsp::stop_all_language_servers,
+            commands::lsp::language_server_statuses,
+            commands::lsp::open_lsp_document,
+            commands::lsp::change_lsp_document,
+            commands::lsp::save_lsp_document,
+            commands::lsp::close_lsp_document,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
