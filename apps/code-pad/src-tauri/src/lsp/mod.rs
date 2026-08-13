@@ -7,6 +7,7 @@
 pub mod catalog;
 pub mod client;
 pub mod documents;
+pub mod features;
 pub mod installer;
 pub mod positions;
 pub mod process;
@@ -24,8 +25,21 @@ pub use client::{
     INITIALIZE_TIMEOUT,
 };
 pub use documents::{
-    DidChange, DidClose, DidOpen, DidSave, DocumentError, DocumentSnapshot, DocumentStore,
-    RequestSnapshot, SyncKind, TextChange, WorkspaceRoot,
+    AtomicDocumentChange, DidChange, DidClose, DidOpen, DidSave, DocumentError, DocumentSnapshot,
+    DocumentStore, RequestSnapshot, SyncKind, TextChange, WorkspaceRoot,
+};
+pub use features::{
+    apply_formatting_edits, apply_workspace_edit, build_completion_params, build_definition_params,
+    build_formatting_params, build_hover_params, build_reference_params, build_rename_params,
+    cancel_request, filter_definition_response, filter_reference_locations,
+    parse_completion_response, parse_definition_response, parse_hover_response,
+    parse_publish_diagnostics, parse_pull_diagnostics, parse_reference_locations,
+    preflight_workspace_edit, sanitize_hover, validate_completion_response,
+    validate_pull_diagnostics, validate_push_diagnostics, AppliedWorkspaceEdit, CancelRequestId,
+    CompletionResult, DiagnosticOrigin, DiagnosticResult, DiagnosticStore, FeatureError,
+    FeatureResponse, FilteredLocations, FormattingEditsInput, FormattingOptionsInput, HoverResult,
+    HoverText, LocationTarget, RequestMetadata, RequestTarget, SanitizedHover, ValidatedDiagnostic,
+    ValidatedTextEdit, WorkspaceEditPlan,
 };
 pub use installer::{
     InstallError, InstallLimits, InstallResult, ManagedInstaller, DEFAULT_MAX_ARCHIVE_ENTRIES,
