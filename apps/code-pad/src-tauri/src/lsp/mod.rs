@@ -10,6 +10,7 @@ pub mod config;
 pub mod documents;
 pub mod features;
 pub mod installer;
+pub mod manager;
 pub mod positions;
 pub mod process;
 pub mod runtime;
@@ -53,6 +54,7 @@ pub use installer::{
     InstallError, InstallLimits, InstallResult, ManagedInstaller, DEFAULT_MAX_ARCHIVE_ENTRIES,
     DEFAULT_MAX_INSTALL_BYTES,
 };
+pub use manager::{LanguageServerStatus, LspManager, LspManagerError};
 pub use positions::{
     offset_to_position, position_to_offset, position_to_offset_clamped, LspPosition, LspRange,
     PositionEncoding, PositionError,

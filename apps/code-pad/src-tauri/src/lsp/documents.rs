@@ -270,7 +270,7 @@ struct DocumentState {
     dirty: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DocumentStore {
     workspace: WorkspaceRoot,
     encoding: PositionEncoding,
