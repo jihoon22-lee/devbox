@@ -1498,11 +1498,6 @@ impl LspManager {
                 state.starting.insert(language_id.to_owned(), token);
                 token
             };
-            // Lifecycle commands continue to commit the authoritative
-            // document store while this session is unavailable. Capture it
-            // immediately before each attempt so edits, opens, and closes
-            // made during backoff are reflected in the replacement session.
-            let snapshots = failed_session.documents.lock().await.clone();
             let still_reserved =
                 self.state.lock().await.starting.get(language_id) == Some(&replacement_token);
             if !still_reserved {
@@ -1514,6 +1509,12 @@ impl LspManager {
             match result {
                 Ok(session) => {
                     let session = Arc::new(session);
+                    // Lifecycle commands continue to commit the authoritative
+                    // document store while this session is unavailable. Capture
+                    // the snapshot as late as possible — after the replacement
+                    // child has spawned and initialized — so edits, opens, and
+                    // closes made during backoff and startup are reflected.
+                    let snapshots = failed_session.documents.lock().await.clone();
                     // Replay is staged entirely in the replacement session.
                     // Do not publish it as the current session until every
                     // didOpen has been written successfully.
