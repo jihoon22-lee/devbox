@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { previewCron } from "../api";
 import JobEditor from "./JobEditor";
-import type { CronPreviewItem } from "../types";
+import type { CronPreviewItem, Job, JobInput } from "../types";
 
 vi.mock("../api", () => ({
   previewCron: vi.fn(),
@@ -36,7 +36,7 @@ describe("JobEditor", () => {
   });
 
   it("shows field errors and does not save an invalid cron expression", async () => {
-    const onSave = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    const onSave = vi.fn<(input: JobInput) => Promise<void>>().mockResolvedValue(undefined);
     const { getByRole, getByLabelText } = render(<JobEditor job={null} onSave={onSave} onCancel={vi.fn()} />);
 
     fireEvent.change(getByLabelText("작업 이름"), { target: { value: "backup" } });
@@ -49,7 +49,7 @@ describe("JobEditor", () => {
   });
 
   it("requires a WSL distro before saving a WSL-targeted job", async () => {
-    const onSave = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    const onSave = vi.fn<(input: JobInput) => Promise<void>>().mockResolvedValue(undefined);
     const { getByRole, getByLabelText } = render(<JobEditor job={null} onSave={onSave} onCancel={vi.fn()} />);
 
     fireEvent.change(getByLabelText("작업 이름"), { target: { value: "backup" } });
@@ -59,6 +59,56 @@ describe("JobEditor", () => {
 
     expect(await getByTextSafe(getByRole, "WSL 배포판을 입력하세요.")).toBeTruthy();
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("keeps, replaces, or clears a masked environment through explicit actions", async () => {
+    const job: Job = {
+      id: "job-1",
+      kind: "job",
+      name: "backup",
+      command: "echo backup",
+      cwd: null,
+      targetKind: "windows",
+      targetDistro: null,
+      envConfigured: true,
+      cronExpr: "0 * * * *",
+      enabled: false,
+      overlapPolicy: "skip",
+      catchUp: false,
+      lastEvaluatedAt: null,
+      nextQueueSequence: 0,
+      restartPolicy: null,
+      autoStart: null,
+      healthTcpAddress: null,
+      healthTcpPort: null,
+      healthStartGraceMs: null,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const onSave = vi.fn<(input: JobInput) => Promise<void>>().mockResolvedValue(undefined);
+    const { getByRole, getByLabelText, unmount } = render(
+      <JobEditor job={job} onSave={onSave} onCancel={vi.fn()} />,
+    );
+
+    fireEvent.click(getByRole("button", { name: "기존 환경변수 교체" }));
+    fireEvent.change(getByLabelText("환경변수 이름"), { target: { value: "TOKEN" } });
+    fireEvent.change(getByLabelText("환경변수 값"), { target: { value: "rotated" } });
+    fireEvent.click(getByRole("button", { name: "작업 저장" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].environment).toEqual({
+      action: "replace",
+      values: { TOKEN: "rotated" },
+    });
+
+    onSave.mockClear();
+    unmount();
+    const { getByRole: getByRoleAfterClear } = render(
+      <JobEditor job={job} onSave={onSave} onCancel={vi.fn()} />,
+    );
+    fireEvent.click(getByRoleAfterClear("button", { name: "기존 환경변수 삭제" }));
+    fireEvent.click(getByRoleAfterClear("button", { name: "작업 저장" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].environment).toEqual({ action: "clear" });
   });
 });
 

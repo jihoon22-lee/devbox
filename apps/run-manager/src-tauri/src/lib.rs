@@ -76,6 +76,7 @@ pub fn run() {
                 eprintln!("Run Manager notification outbox will retry later: {error}");
             }
             app.manage(database);
+            app.manage(platform::environment::EnvironmentProtectorState::new());
             let state = Arc::new(RuntimeState::new(database_path, background));
             app.manage(state.clone());
             let main_window = app

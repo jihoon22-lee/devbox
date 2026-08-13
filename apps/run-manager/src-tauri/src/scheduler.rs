@@ -882,7 +882,7 @@ impl SchedulerCoordinator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::models::{JobInput, OverlapPolicy, TargetKind};
+    use crate::core::models::{EnvironmentUpdate, JobInput, OverlapPolicy, TargetKind};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::sync::oneshot;
 
@@ -999,7 +999,7 @@ mod tests {
             cwd: None,
             target_kind: TargetKind::Windows,
             target_distro: None,
-            env_ciphertext: None,
+            environment: EnvironmentUpdate::Keep,
             cron_expr: "* * * * * *".to_string(),
             enabled,
             overlap_policy,

@@ -230,7 +230,7 @@ fn remove_orphan_directories(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::models::{JobInput, OverlapPolicy, TargetKind};
+    use crate::core::models::{EnvironmentUpdate, JobInput, OverlapPolicy, TargetKind};
     use crate::logs::{LogStream, LogStreams};
     use rusqlite::params;
     use tempfile::tempdir;
@@ -242,7 +242,7 @@ mod tests {
             cwd: None,
             target_kind: TargetKind::Windows,
             target_distro: None,
-            env_ciphertext: None,
+            environment: EnvironmentUpdate::Keep,
             cron_expr: "0 * * * *".into(),
             enabled: false,
             overlap_policy: OverlapPolicy::Skip,
