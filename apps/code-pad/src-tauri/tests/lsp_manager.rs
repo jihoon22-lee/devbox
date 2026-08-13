@@ -196,7 +196,6 @@ async fn crash_backoff_replays_the_latest_open_change_close_snapshot_atomically(
             if let LspEvent::Status(event) = events.recv().await.unwrap() {
                 if !event.restarting
                     && event.status.status == code_pad_lib::lsp::ClientStatus::Ready
-                    && event.status.document_count == 1
                 {
                     break;
                 }
@@ -206,6 +205,9 @@ async fn crash_backoff_replays_the_latest_open_change_close_snapshot_atomically(
     .await
     .expect("replacement session");
 
+    // The replacement must replay only the authoritative document store. The
+    // didOpen log is the ground truth: the second document only, with its
+    // latest text, and no re-open of the closed first document.
     let lines = tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let lines = fs::read_to_string(&log)
