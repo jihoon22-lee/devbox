@@ -13,6 +13,7 @@ export interface StartupShortcutStatus {
 
 export type TargetKind = "windows" | "wsl";
 export type OverlapPolicy = "skip" | "queue" | "kill-previous";
+export type RestartPolicy = "never" | "on-failure" | "always";
 export type RunStatus =
   | "queued"
   | "starting"
@@ -45,7 +46,7 @@ export interface Job {
   catchUp: boolean;
   lastEvaluatedAt: number | null;
   nextQueueSequence: number;
-  restartPolicy: string | null;
+  restartPolicy: RestartPolicy | null;
   autoStart: boolean | null;
   healthTcpAddress: string | null;
   healthTcpPort: number | null;
@@ -64,6 +65,19 @@ export interface JobInput {
   enabled: boolean;
   overlapPolicy: OverlapPolicy;
   catchUp: boolean;
+  environment: EnvironmentUpdate;
+}
+
+export interface ServiceInput {
+  name: string;
+  command: string;
+  cwd: string | null;
+  targetKind: TargetKind;
+  targetDistro: string | null;
+  restartPolicy: RestartPolicy;
+  autoStart: boolean;
+  healthTcpAddress: string | null;
+  healthTcpPort: number | null;
   environment: EnvironmentUpdate;
 }
 
@@ -125,3 +139,17 @@ export type JobField =
   | "env";
 
 export type JobFieldErrors = Partial<Record<JobField, string>>;
+
+export type ServiceField =
+  | "name"
+  | "command"
+  | "cwd"
+  | "targetKind"
+  | "targetDistro"
+  | "restartPolicy"
+  | "autoStart"
+  | "healthTcpAddress"
+  | "healthTcpPort"
+  | "env";
+
+export type ServiceFieldErrors = Partial<Record<ServiceField, string>>;

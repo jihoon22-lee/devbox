@@ -1,6 +1,8 @@
 use crate::core::models::{
     ClaimResult, EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, JobKind,
-    NewNotification, NotificationOutboxItem, OverlapPolicy, Run, RunStatus, TargetKind,
+    NewNotification, NotificationOutboxItem, OverlapPolicy, RestartPolicy, Run, RunStatus,
+    ServiceInput, ServiceInstance, ServiceInstanceState, TargetKind,
+    DEFAULT_SERVICE_START_GRACE_MS,
 };
 use crate::core::policies::{
     decide_overlap, OverlapAction, OverlapPolicyInput, RunPolicySnapshot, StopAction,
@@ -308,6 +310,171 @@ impl DatabaseState {
         let rows = statement.query_map([], row_to_job)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(StorageError::from)
+    }
+
+    pub fn create_service(&self, input: ServiceInput) -> Result<Job, StorageError> {
+        self.create_service_at(input, current_epoch_millis())
+    }
+
+    pub fn create_service_at(&self, input: ServiceInput, now: i64) -> Result<Job, StorageError> {
+        self.create_service_with_ciphertext_at(input, EnvironmentCiphertextUpdate::Clear, now)
+    }
+
+    pub(crate) fn create_service_with_ciphertext_at(
+        &self,
+        input: ServiceInput,
+        environment: EnvironmentCiphertextUpdate,
+        now: i64,
+    ) -> Result<Job, StorageError> {
+        ensure_encrypted_service_input(&input)?;
+        input
+            .validate()
+            .map_err(|error| StorageError::Validation(error.to_string()))?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let id = Uuid::new_v4().to_string();
+        let env_ciphertext = match environment {
+            EnvironmentCiphertextUpdate::Keep | EnvironmentCiphertextUpdate::Clear => None,
+            EnvironmentCiphertextUpdate::Replace(ciphertext) => Some(ciphertext),
+        };
+        transaction.execute(
+            "INSERT INTO jobs (
+                id, kind, name, command, cwd, target_kind, target_distro,
+                env_ciphertext, cron_expr, enabled, overlap_policy, catch_up,
+                last_evaluated_at, next_queue_sequence, restart_policy, auto_start,
+                health_tcp_address, health_tcp_port, health_start_grace_ms,
+                created_at, updated_at
+             ) VALUES (?, 'service', ?, ?, ?, ?, ?, ?, NULL, 0, 'skip', 0,
+                       NULL, 0, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                id,
+                input.name,
+                input.command,
+                input.cwd,
+                input.target_kind.as_str(),
+                input.target_distro,
+                env_ciphertext,
+                input.restart_policy.as_str(),
+                bool_to_sql(input.auto_start),
+                input.health_tcp_address,
+                input.health_tcp_port,
+                DEFAULT_SERVICE_START_GRACE_MS,
+                now,
+                now,
+            ],
+        )?;
+        transaction.execute(
+            "INSERT INTO service_instances (job_id, updated_at) VALUES (?, ?)",
+            params![id, now],
+        )?;
+        let service = fetch_service(&transaction, &id)?
+            .ok_or_else(|| StorageError::NotFound(format!("newly created service {id}")))?;
+        transaction.commit()?;
+        Ok(service)
+    }
+
+    pub fn get_service(&self, id: &str) -> Result<Option<Job>, StorageError> {
+        let connection = self.lock()?;
+        fetch_service(&connection, id).map_err(StorageError::from)
+    }
+
+    pub fn list_services(&self) -> Result<Vec<Job>, StorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT {JOB_COLUMNS} FROM jobs WHERE kind = 'service' ORDER BY name COLLATE NOCASE, id"
+        ))?;
+        let rows = statement.query_map([], row_to_job)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(StorageError::from)
+    }
+
+    pub fn update_service(&self, id: &str, input: ServiceInput) -> Result<Job, StorageError> {
+        self.update_service_at(id, input, current_epoch_millis())
+    }
+
+    pub fn update_service_at(
+        &self,
+        id: &str,
+        input: ServiceInput,
+        now: i64,
+    ) -> Result<Job, StorageError> {
+        self.update_service_with_ciphertext_at(id, input, EnvironmentCiphertextUpdate::Keep, now)
+    }
+
+    pub(crate) fn update_service_with_ciphertext_at(
+        &self,
+        id: &str,
+        input: ServiceInput,
+        environment: EnvironmentCiphertextUpdate,
+        now: i64,
+    ) -> Result<Job, StorageError> {
+        ensure_encrypted_service_input(&input)?;
+        input
+            .validate()
+            .map_err(|error| StorageError::Validation(error.to_string()))?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_service(&transaction, id)?;
+        let (environment_action, environment_ciphertext) = match environment {
+            EnvironmentCiphertextUpdate::Keep => ("keep", None),
+            EnvironmentCiphertextUpdate::Replace(ciphertext) => ("replace", Some(ciphertext)),
+            EnvironmentCiphertextUpdate::Clear => ("clear", None),
+        };
+        let changed = transaction.execute(
+            "UPDATE jobs SET
+                name = ?, command = ?, cwd = ?, target_kind = ?, target_distro = ?,
+                env_ciphertext = CASE ?
+                    WHEN 'keep' THEN env_ciphertext
+                    WHEN 'replace' THEN ?
+                    ELSE NULL
+                END,
+                restart_policy = ?, auto_start = ?, health_tcp_address = ?, health_tcp_port = ?,
+                health_start_grace_ms = ?, updated_at = ?
+             WHERE id = ? AND kind = 'service'",
+            params![
+                input.name,
+                input.command,
+                input.cwd,
+                input.target_kind.as_str(),
+                input.target_distro,
+                environment_action,
+                environment_ciphertext,
+                input.restart_policy.as_str(),
+                bool_to_sql(input.auto_start),
+                input.health_tcp_address,
+                input.health_tcp_port,
+                DEFAULT_SERVICE_START_GRACE_MS,
+                now,
+                id,
+            ],
+        )?;
+        if changed != 1 {
+            return Err(StorageError::NotFound(format!("service {id}")));
+        }
+        let service = fetch_service(&transaction, id)?
+            .ok_or_else(|| StorageError::NotFound(format!("updated service {id}")))?;
+        transaction.execute(
+            "INSERT INTO service_instances (job_id, updated_at) VALUES (?, ?)
+             ON CONFLICT(job_id) DO UPDATE SET updated_at = excluded.updated_at",
+            params![id, now],
+        )?;
+        transaction.commit()?;
+        Ok(service)
+    }
+
+    pub fn delete_service(&self, id: &str) -> Result<bool, StorageError> {
+        let connection = self.lock_mut()?;
+        let deleted =
+            connection.execute("DELETE FROM jobs WHERE id = ? AND kind = 'service'", [id])?;
+        Ok(deleted == 1)
+    }
+
+    pub fn get_service_instance(
+        &self,
+        service_id: &str,
+    ) -> Result<Option<ServiceInstance>, StorageError> {
+        let connection = self.lock()?;
+        fetch_service_instance(&connection, service_id).map_err(StorageError::from)
     }
 
     pub fn update_job(&self, id: &str, input: JobInput) -> Result<Job, StorageError> {
@@ -1191,6 +1358,16 @@ fn ensure_encrypted_input(input: &JobInput) -> Result<(), StorageError> {
     }
 }
 
+fn ensure_encrypted_service_input(input: &ServiceInput) -> Result<(), StorageError> {
+    if matches!(input.environment, EnvironmentUpdate::Keep) {
+        Ok(())
+    } else {
+        Err(StorageError::Validation(
+            "environment must be protected before storage".to_string(),
+        ))
+    }
+}
+
 fn ensure_job(transaction: &Transaction<'_>, id: &str) -> Result<Job, StorageError> {
     let job =
         fetch_job(transaction, id)?.ok_or_else(|| StorageError::NotFound(format!("job {id}")))?;
@@ -1223,6 +1400,12 @@ fn validate_optional_text(field: &str, value: Option<&str>) -> Result<(), Storag
         )));
     }
     Ok(())
+}
+
+fn ensure_service(transaction: &Transaction<'_>, id: &str) -> Result<Job, StorageError> {
+    let service = fetch_service(transaction, id)?
+        .ok_or_else(|| StorageError::NotFound(format!("service {id}")))?;
+    Ok(service)
 }
 
 fn allocate_queue_sequence(
@@ -1288,6 +1471,31 @@ fn fetch_phase1_job(connection: &Connection, id: &str) -> rusqlite::Result<Optio
             &format!("SELECT {JOB_COLUMNS} FROM jobs WHERE id = ? AND kind = 'job'"),
             [id],
             row_to_job,
+        )
+        .optional()
+}
+
+fn fetch_service(connection: &Connection, id: &str) -> rusqlite::Result<Option<Job>> {
+    connection
+        .query_row(
+            &format!("SELECT {JOB_COLUMNS} FROM jobs WHERE id = ? AND kind = 'service'"),
+            [id],
+            row_to_job,
+        )
+        .optional()
+}
+
+fn fetch_service_instance(
+    connection: &Connection,
+    service_id: &str,
+) -> rusqlite::Result<Option<ServiceInstance>> {
+    connection
+        .query_row(
+            "SELECT job_id, generation, active_run_id, state, owner_instance_id,
+                    attempt_token, next_retry_at, consecutive_failures, updated_at
+             FROM service_instances WHERE job_id = ?",
+            [service_id],
+            row_to_service_instance,
         )
         .optional()
 }
@@ -1377,6 +1585,7 @@ fn row_to_job(row: &Row<'_>) -> rusqlite::Result<Job> {
         .get::<_, Option<i64>>("health_tcp_port")?
         .map(|value| u16::try_from(value).map_err(|_| conversion_error("health_tcp_port", value)))
         .transpose()?;
+    let restart_policy = parse_restart_policy(&row.get("restart_policy")?)?;
     Ok(Job {
         id: row.get("id")?,
         kind,
@@ -1392,12 +1601,26 @@ fn row_to_job(row: &Row<'_>) -> rusqlite::Result<Job> {
         catch_up: row.get::<_, i64>("catch_up")? != 0,
         last_evaluated_at: row.get("last_evaluated_at")?,
         next_queue_sequence: row.get("next_queue_sequence")?,
-        restart_policy: row.get("restart_policy")?,
+        restart_policy,
         auto_start,
         health_tcp_address: row.get("health_tcp_address")?,
         health_tcp_port,
         health_start_grace_ms: row.get("health_start_grace_ms")?,
         created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+    })
+}
+
+fn row_to_service_instance(row: &Row<'_>) -> rusqlite::Result<ServiceInstance> {
+    Ok(ServiceInstance {
+        job_id: row.get("job_id")?,
+        generation: row.get("generation")?,
+        active_run_id: row.get("active_run_id")?,
+        state: parse_service_instance_state(&row.get::<_, String>("state")?)?,
+        owner_instance_id: row.get("owner_instance_id")?,
+        attempt_token: row.get("attempt_token")?,
+        next_retry_at: row.get("next_retry_at")?,
+        consecutive_failures: row.get("consecutive_failures")?,
         updated_at: row.get("updated_at")?,
     })
 }
@@ -1466,6 +1689,29 @@ fn parse_overlap_policy(value: &str) -> rusqlite::Result<OverlapPolicy> {
     }
 }
 
+fn parse_restart_policy(value: &Option<String>) -> rusqlite::Result<Option<RestartPolicy>> {
+    value
+        .as_deref()
+        .map(|value| match value {
+            "never" => Ok(RestartPolicy::Never),
+            "on-failure" => Ok(RestartPolicy::OnFailure),
+            "always" => Ok(RestartPolicy::Always),
+            _ => Err(conversion_error("restart_policy", value)),
+        })
+        .transpose()
+}
+
+fn parse_service_instance_state(value: &str) -> rusqlite::Result<ServiceInstanceState> {
+    match value {
+        "stopped" => Ok(ServiceInstanceState::Stopped),
+        "starting" => Ok(ServiceInstanceState::Starting),
+        "running" => Ok(ServiceInstanceState::Running),
+        "stopping" => Ok(ServiceInstanceState::Stopping),
+        "retry_waiting" => Ok(ServiceInstanceState::RetryWaiting),
+        _ => Err(conversion_error("service_instances.state", value)),
+    }
+}
+
 fn parse_run_status(value: &str) -> rusqlite::Result<RunStatus> {
     match value {
         "queued" => Ok(RunStatus::Queued),
@@ -1493,7 +1739,10 @@ fn conversion_error<T: fmt::Display>(column: &str, value: T) -> rusqlite::Error 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::models::{EnvironmentUpdate, JobInput, NewNotification, TargetKind};
+    use crate::core::models::{
+        EnvironmentUpdate, JobInput, NewNotification, RestartPolicy, ServiceInput,
+        ServiceInstanceState, TargetKind,
+    };
     use rusqlite::OptionalExtension;
     use std::sync::{Arc, Barrier};
     use tempfile::NamedTempFile;
@@ -1510,6 +1759,21 @@ mod tests {
             enabled,
             overlap_policy: OverlapPolicy::Queue,
             catch_up: false,
+        }
+    }
+
+    fn service_input() -> ServiceInput {
+        ServiceInput {
+            name: "web".to_string(),
+            command: "node server.js".to_string(),
+            cwd: Some("C:\\work\\web".to_string()),
+            target_kind: TargetKind::Windows,
+            target_distro: None,
+            environment: EnvironmentUpdate::Keep,
+            restart_policy: RestartPolicy::Always,
+            auto_start: true,
+            health_tcp_address: Some("localhost".to_string()),
+            health_tcp_port: Some(3000),
         }
     }
 
@@ -1595,6 +1859,142 @@ mod tests {
             })
             .unwrap();
         assert_eq!(service_count, 0);
+    }
+
+    #[test]
+    fn service_crud_persists_policy_health_and_instance_without_leaking_secrets() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let job = database.create_job_at(input(true), 100).unwrap();
+        let service = database
+            .create_service_with_ciphertext_at(
+                service_input(),
+                EnvironmentCiphertextUpdate::Replace(vec![0xca, 0xfe]),
+                200,
+            )
+            .unwrap();
+
+        assert_eq!(service.kind, JobKind::Service);
+        assert_eq!(service.cron_expr, None);
+        assert_eq!(service.restart_policy, Some(RestartPolicy::Always));
+        assert_eq!(service.auto_start, Some(true));
+        assert_eq!(service.health_tcp_address.as_deref(), Some("localhost"));
+        assert_eq!(service.health_tcp_port, Some(3000));
+        assert_eq!(
+            service.health_start_grace_ms,
+            Some(DEFAULT_SERVICE_START_GRACE_MS)
+        );
+        assert!(service.env_configured);
+        assert_eq!(database.list_jobs().unwrap().len(), 1);
+        assert_eq!(database.list_services().unwrap(), vec![service.clone()]);
+        assert!(database.get_job(&service.id).unwrap().is_none());
+        assert_eq!(database.get_service(&job.id).unwrap(), None);
+
+        let instance = database.get_service_instance(&service.id).unwrap().unwrap();
+        assert_eq!(instance.job_id, service.id);
+        assert_eq!(instance.state, ServiceInstanceState::Stopped);
+        assert_eq!(instance.generation, 0);
+
+        let mut updated = service_input();
+        updated.name = "web-renamed".to_string();
+        updated.restart_policy = RestartPolicy::Never;
+        updated.auto_start = false;
+        updated.health_tcp_address = Some("127.0.0.1".to_string());
+        updated.health_tcp_port = Some(8080);
+        let service = database
+            .update_service_with_ciphertext_at(
+                &service.id,
+                updated,
+                EnvironmentCiphertextUpdate::Keep,
+                300,
+            )
+            .unwrap();
+        assert_eq!(service.name, "web-renamed");
+        assert_eq!(service.restart_policy, Some(RestartPolicy::Never));
+        assert_eq!(service.auto_start, Some(false));
+        assert_eq!(service.health_tcp_port, Some(8080));
+        assert_eq!(service.updated_at, 300);
+        let raw_ciphertext: Vec<u8> = database
+            .connection
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT env_ciphertext FROM jobs WHERE id = ?",
+                [&service.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(raw_ciphertext, vec![0xca, 0xfe]);
+        let wire = serde_json::to_value(&service).unwrap();
+        assert!(wire.get("envCiphertext").is_none());
+        assert_eq!(wire.get("restartPolicy"), Some(&serde_json::json!("never")));
+
+        let mut replaced = service_input();
+        replaced.name = "web-replaced".to_string();
+        database
+            .update_service_with_ciphertext_at(
+                &service.id,
+                replaced,
+                EnvironmentCiphertextUpdate::Replace(vec![0xba, 0xbe]),
+                350,
+            )
+            .unwrap();
+        let replaced_ciphertext: Vec<u8> = database
+            .connection
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT env_ciphertext FROM jobs WHERE id = ?",
+                [&service.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(replaced_ciphertext, vec![0xba, 0xbe]);
+
+        let cleared = service_input();
+        database
+            .update_service_with_ciphertext_at(
+                &service.id,
+                cleared,
+                EnvironmentCiphertextUpdate::Clear,
+                400,
+            )
+            .unwrap();
+        let cleared_ciphertext: Option<Vec<u8>> = database
+            .connection
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT env_ciphertext FROM jobs WHERE id = ?",
+                [&service.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(cleared_ciphertext, None);
+
+        assert!(database.delete_service(&service.id).unwrap());
+        assert!(database.get_service(&service.id).unwrap().is_none());
+        assert!(database
+            .list_jobs()
+            .unwrap()
+            .iter()
+            .all(|item| item.id == job.id));
+        let connection = database.connection.lock().unwrap();
+        let instance_count: i64 = connection
+            .query_row("SELECT count(*) FROM service_instances", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(instance_count, 0);
+    }
+
+    #[test]
+    fn service_updates_do_not_accept_job_rows() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let job = database.create_job_at(input(false), 100).unwrap();
+        let error = database
+            .update_service_at(&job.id, service_input(), 200)
+            .unwrap_err();
+        assert!(matches!(error, StorageError::NotFound(_)));
     }
 
     #[test]

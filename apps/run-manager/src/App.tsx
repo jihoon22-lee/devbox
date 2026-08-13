@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  createService,
   createJob,
+  deleteService,
   deleteJob,
   hideMainWindow,
+  listServices,
   listJobs,
   loadStartupShortcutStatus,
   loadRuntimeStatus,
   quitApp,
   setStartupShortcutEnabled,
+  updateService,
   updateJob,
 } from "./api";
 import JobEditor from "./components/JobEditor";
 import RunHistory from "./components/RunHistory";
-import type { Job, JobInput, RuntimeStatus, StartupShortcutStatus } from "./types";
+import ServiceEditor from "./components/ServiceEditor";
+import type { Job, JobInput, RuntimeStatus, ServiceInput, StartupShortcutStatus } from "./types";
 import "./App.css";
 
-type Screen = "jobs" | "editor" | "history";
+type Screen = "jobs" | "editor" | "services" | "service-editor" | "history";
 
 function targetLabel(job: Job): string {
   return job.targetKind === "wsl" ? `WSL · ${job.targetDistro ?? "배포판 없음"}` : "Windows";
@@ -25,18 +30,32 @@ function scheduleLabel(job: Job): string {
   return job.cronExpr ?? "일정 없음";
 }
 
+function restartLabel(job: Job): string {
+  return job.restartPolicy === "on-failure"
+    ? "실패 시 재시작"
+    : job.restartPolicy === "always"
+      ? "항상 재시작"
+      : "재시작 안 함";
+}
+
 export default function App() {
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
   const [startupStatus, setStartupStatus] = useState<StartupShortcutStatus | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [services, setServices] = useState<Job[]>([]);
   const [screen, setScreen] = useState<Screen>("jobs");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refreshJobs = useCallback(async () => {
     setJobs(await listJobs());
+  }, []);
+
+  const refreshServices = useCallback(async () => {
+    setServices(await listServices());
   }, []);
 
   const refreshStatus = useCallback(async () => {
@@ -50,11 +69,12 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([loadRuntimeStatus(), listJobs(), loadStartupShortcutStatus()])
-      .then(([nextStatus, nextJobs, nextStartupStatus]) => {
+    void Promise.all([loadRuntimeStatus(), listJobs(), listServices(), loadStartupShortcutStatus()])
+      .then(([nextStatus, nextJobs, nextServices, nextStartupStatus]) => {
         if (!active) return;
         setStatus(nextStatus);
         setJobs(nextJobs);
+        setServices(nextServices);
         setStartupStatus(nextStartupStatus);
         setError(null);
       })
@@ -79,6 +99,11 @@ export default function App() {
     [editingJobId, jobs],
   );
 
+  const editingService = useMemo(
+    () => (editingServiceId ? services.find((service) => service.id === editingServiceId) ?? null : null),
+    [editingServiceId, services],
+  );
+
   const openCreate = () => {
     setEditingJobId(null);
     setError(null);
@@ -91,9 +116,27 @@ export default function App() {
     setScreen("editor");
   };
 
+  const openServiceCreate = () => {
+    setEditingServiceId(null);
+    setError(null);
+    setScreen("service-editor");
+  };
+
+  const openServiceEdit = (service: Job) => {
+    setEditingServiceId(service.id);
+    setError(null);
+    setScreen("service-editor");
+  };
+
   const closeEditor = () => {
     setScreen("jobs");
     setEditingJobId(null);
+    setError(null);
+  };
+
+  const closeServiceEditor = () => {
+    setScreen("services");
+    setEditingServiceId(null);
     setError(null);
   };
 
@@ -139,6 +182,35 @@ export default function App() {
     }
   };
 
+  const handleServiceSave = async (input: ServiceInput) => {
+    setBusy(true);
+    try {
+      if (editingServiceId) {
+        await updateService(editingServiceId, input);
+      } else {
+        await createService(input);
+      }
+      await refreshServices();
+      closeServiceEditor();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleServiceDelete = async (service: Job) => {
+    if (!window.confirm(`'${service.name}' 서비스를 삭제할까요? 저장된 정의와 실행 기록도 함께 삭제됩니다.`)) return;
+    setBusy(true);
+    try {
+      await deleteService(service.id);
+      await refreshServices();
+      if (editingServiceId === service.id) closeServiceEditor();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -151,8 +223,8 @@ export default function App() {
           <button className={`nav-item ${screen === "jobs" || screen === "editor" ? "active" : ""}`} type="button" onClick={() => setScreen("jobs")}>
             작업 <span>{jobs.length}</span>
           </button>
-          <button className="nav-item" type="button" disabled>
-            서비스 <span>Phase 2</span>
+          <button className={`nav-item ${screen === "services" || screen === "service-editor" ? "active" : ""}`} type="button" onClick={() => setScreen("services")}>
+            서비스 <span>{services.length}</span>
           </button>
           <button className={`nav-item ${screen === "history" ? "active" : ""}`} type="button" onClick={() => setScreen("history")}>
             실행 기록
@@ -178,7 +250,21 @@ export default function App() {
         <header>
           <div>
             <span className="eyebrow">LOCAL SCHEDULER</span>
-            <h2>{screen === "editor" ? (editingJob ? "작업 편집" : "새 작업") : screen === "history" ? "실행 기록" : "작업"}</h2>
+            <h2>
+              {screen === "editor"
+                ? editingJob
+                  ? "작업 편집"
+                  : "새 작업"
+                : screen === "service-editor"
+                  ? editingService
+                    ? "서비스 편집"
+                    : "새 서비스"
+                  : screen === "history"
+                    ? "실행 기록"
+                    : screen === "services"
+                      ? "서비스"
+                      : "작업"}
+            </h2>
           </div>
           <span className={status?.schedulerRunning ? "status ready" : "status waiting"}>
             {status?.schedulerRunning ? "스케줄러 준비됨" : "스케줄러 시작 중"}
@@ -189,8 +275,57 @@ export default function App() {
 
         {screen === "editor" ? (
           <JobEditor job={editingJob} onSave={handleSave} onCancel={closeEditor} />
+        ) : screen === "service-editor" ? (
+          <ServiceEditor service={editingService} onSave={handleServiceSave} onCancel={closeServiceEditor} />
         ) : screen === "history" ? (
           <RunHistory jobs={jobs.filter((job) => job.kind === "job")} />
+        ) : screen === "services" ? (
+          <section className="jobs-section" aria-labelledby="services-title">
+            <div className="section-toolbar">
+              <div>
+                <p className="subtitle">서비스 정의와 자동 시작·재시작·로컬 헬스체크 정책을 관리합니다.</p>
+                <h3 id="services-title" className="visually-hidden">서비스 목록</h3>
+              </div>
+              <button type="button" className="button-primary" onClick={openServiceCreate}>+ 새 서비스</button>
+            </div>
+            {loading ? <div className="empty-card compact"><div className="pulse" /><p>서비스를 불러오는 중…</p></div> : null}
+            {!loading && services.length === 0 ? (
+              <section className="empty-card" aria-labelledby="empty-service-title">
+                <div className="pulse" aria-hidden="true" />
+                <h3 id="empty-service-title">등록된 서비스가 아직 없습니다</h3>
+                <p>계속 실행할 명령을 서비스로 저장하고 자동 시작·재시작 정책을 준비할 수 있습니다.</p>
+                <button type="button" className="button-primary" onClick={openServiceCreate}>첫 서비스 만들기</button>
+              </section>
+            ) : null}
+            {!loading && services.length > 0 ? (
+              <div className="job-list service-list">
+                {services.map((service) => (
+                  <article className="job-card service-card" key={service.id}>
+                    <div className="job-card-main">
+                      <div className="job-title-row">
+                        <h3>{service.name}</h3>
+                        <span className="job-state disabled">정지됨</span>
+                      </div>
+                      <code title={service.command}>{service.command}</code>
+                      <div className="job-meta">
+                        <span>{targetLabel(service)}</span>
+                        <span>{restartLabel(service)}</span>
+                        <span>{service.autoStart ? "자동 시작" : "수동 시작"}</span>
+                        {service.healthTcpAddress && service.healthTcpPort ? (
+                          <span>TCP {service.healthTcpAddress}:{service.healthTcpPort}</span>
+                        ) : <span>TCP probe 없음</span>}
+                        {service.envConfigured ? <span className="secret-badge">환경변수 보호됨</span> : null}
+                      </div>
+                    </div>
+                    <div className="job-actions">
+                      <button type="button" className="button-secondary" onClick={() => openServiceEdit(service)}>편집</button>
+                      <button type="button" className="button-danger" disabled={busy} onClick={() => void handleServiceDelete(service)}>삭제</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </section>
         ) : (
           <section className="jobs-section" aria-labelledby="jobs-title">
             <div className="section-toolbar">
