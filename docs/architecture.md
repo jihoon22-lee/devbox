@@ -15,47 +15,75 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 
 ```
 ┌──────────────────────────────┐
-│ apps/*   독립 Tauri 앱 (.exe) │
+│ apps/*   독립 Tauri 앱 (.exe) │  10개 (병합 후)
 ├──────────────────────────────┤
-│ packages/*  React 공용       │  @devbox/ui, types, utils, config
+│ packages/*  React 공용       │  tokens, editor (추출 예정)
 ├──────────────────────────────┤
 │ crates/*    Rust 공용        │  filesystem, markdown, process (추출 완료)
-│                              │  wsl, database, search, activity (후보)
+│                              │  wsl, search (추출 예정)
 ├──────────────────────────────┤
 │ 공통 인프라: Cargo workspace, │
-│ pnpm workspace, git 모노레포   │
+│ pnpm workspace, git 모노레포,  │
+│ apps/catalog.json (앱 단일 원본)│
 └──────────────────────────────┘
 ```
 
-## 크레이트 의존 관계 (추출 완료/후보)
+## 크레이트 의존 관계 (추출 완료/예정)
 
 ```
   crates/filesystem ◄── everything-plus, code-pad
   crates/markdown   ◄── knowledge-base, code-pad
   crates/process    ◄── port-manager, run-manager
-           wsl      ◄── wsl-dashboard, wsl-desktop, life-log (후보)
-       database     ◄── activity-timeline, everything-plus, ... (후보)
-        search      ◄── everything-plus, knowledge-base (후보)
-      activity      ◄── activity-timeline, life-log (후보)
+           wsl      ◄── wsl-desktop, run-manager (추출 예정 — PR 14)
+        search      ◄── everything-plus, knowledge-base (추출 예정 — PR 15)
 ```
 
 ## 앱별 데이터 흐름
 
 ```
 port-manager:    React → invoke → commands → process crate → OS netstat
-wsl-dashboard:   React → invoke → commands → wsl crate → wsl.exe
-activity-timeline: poller(tray 상시) → activity crate → SQLite → commands → React
+wsl-desktop:     React → invoke → commands → wsl crate → wsl.exe (wsl-dashboard 흡수)
+                   └ distro·docker 패널 + gitStatus(Workbench 이관 예정)
+life-log:        tray/poller(상시) → sessionizer → SQLite → commands → React
+                   (activity-timeline 흡수. 외부 DB 직접 조회 없음 → integration snapshot 계약)
 everything-plus:  indexer/watcher → filesystem crate → search crate(FTS5) → React
 knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror)
 api-playground:   React → commands → reqwest → HTTP
-life-log:         React → commands → readers(타 앱 DB) → 집계 → React
 code-pad:         React(CodeMirror) → commands → LSP stdio 서버, filesystem/markdown crate → React
 run-manager:      React → commands → scheduler → platform 실행 어댑터(Windows Job Object/WSL) → SQLite
+devbox-manager:   React → commands → catalog/manifest → GitHub release asset
 ```
+
+## 앱 간 데이터 교환
+
+상대 앱의 `app_local_data_dir`을 직접 읽지 않는다. producer가
+`%LOCALAPPDATA%\devbox\integration\<app-id>\v<n>\`에 privacy-safe snapshot을 원자적으로
+기록하고 consumer는 읽기만 한다. (상세: `docs/product-opportunities.md` §10.1)
+
+## 보안 경계
+
+각 앱이 다루는 외부 입력과 그 방어선:
+
+| 방어선 | 위치 | 무엇을 막는가 |
+|---|---|---|
+| `ammonia` HTML 살균 | `crates/markdown` `sanitize()` | 마크다운 HTML의 `<script>` 제거, `javascript:` URI 차단 |
+| mermaid `securityLevel: "strict"` | code-pad `PreviewPane`, knowledge-base `MarkdownPreview` | 다이어그램 HTML의 XSS |
+| CSP (`csp` 정책) | 각 앱 `tauri.conf.json` | DOM injection 시에도 임의 `invoke`/네트워크 접근 차단 |
+
+`csp: null` + `core:default` 조합은 DOM injection이 성립하면 곧바로 `invoke`에 닿게 만든다.
+앱들이 임의 로컬 파일(code-pad, knowledge-base, everything-plus)과 임의 원격 응답
+(api-playground)을 다루므로 명시적 CSP 정책을 둔다. (상세: `docs/product-opportunities.md` §7.5)
+
+## 앱 카탈로그
+
+`apps/catalog.json`이 앱 식별자의 단일 원본이다 — 배포 대상 목록이자 런타임 discovery의
+단일 원본. 앱 ID·productName·bundle identifier·Cargo package·앱 디렉터리를 소유한다.
+버전은 카탈로그가 소유하지 않는다(세 파일 `Cargo.toml`/`tauri.conf.json`/`package.json`이 원본).
 
 ## 통합 앱 (Workbench)
 
-12개 앱 완성 후 `apps/workbench`를 추가한다. 기존 `crates/`·`packages/`를 재사용하므로
-통합은 "새 앱 하나 + 메뉴 구성" 수준으로 끝난다. 결과물은 **독립 앱 12개 + 통합 앱 1개**.
+기존 앱을 어느 정도 완성한 뒤 `apps/workbench`를 추가한다. 기존 `crates/`·`packages/`를
+재사용하며, 결과물은 **독립 앱 10개 + orchestration 앱 1개** 구조다.
+상세: `docs/product-opportunities.md` §15.2
 
 상세 규약: [CONVENTIONS.md](../CONVENTIONS.md)

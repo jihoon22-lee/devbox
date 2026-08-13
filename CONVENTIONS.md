@@ -1,6 +1,6 @@
-# devbox — Tauri 12개 데스크톱 앱 모노레포 공통 규약
+# devbox — Tauri 10개 데스크톱 앱 모노레포 공통 규약
 
-12개 앱(port-manager, wsl-dashboard, developer-toolbox, activity-timeline, everything-plus, knowledge-base, api-playground, life-log, wsl-desktop, devbox-manager, code-pad, run-manager)을 하나의 저장소에서 관리하되,
+10개 앱(port-manager, developer-toolbox, wsl-desktop, api-playground, everything-plus, knowledge-base, life-log, devbox-manager, code-pad, run-manager)을 하나의 저장소에서 관리하되,
 각각은 **독립적으로 실행되고 독립적으로 .exe가 만들어지는 Tauri 앱**이다. 소스 저장소와 공통 코드만 공유한다.
 
 ```
@@ -42,32 +42,28 @@ devbox/
 devbox/
 ├─ apps/
 │  ├─ port-manager/        # Port & Process Manager (최초)
-│  ├─ wsl-dashboard/       # WSL/Docker/git 대시보드
 │  ├─ developer-toolbox/   # 개발 도구 모음
-│  ├─ activity-timeline/   # PC 사용 타임라인
+│  ├─ wsl-desktop/         # 임베디드 WSL 터미널 (wsl-dashboard 흡수)
+│  ├─ api-playground/      # REST API 테스트
 │  ├─ everything-plus/     # 로컬 파일 검색
 │  ├─ knowledge-base/      # 마크다운 지식 저장소
-│  ├─ api-playground/      # REST API 테스트
-│  ├─ life-log/            # 자동 일일 로그 (집계 허브)
-│  ├─ wsl-desktop/         # 임베디드 WSL 터미널
+│  ├─ life-log/            # 자동 일일 로그 (집계 허브, activity-timeline 흡수)
 │  ├─ devbox-manager/      # devbox 앱 설치·업데이트·실행
 │  ├─ code-pad/            # CodeMirror 6 경량 코드 에디터 (LSP)
 │  └─ run-manager/         # 예약 실행·서비스 관리
 │
 ├─ packages/               # React 공용 (필요 시)
-│  ├─ ui/                  # Button, Card, DataTable, Sidebar, ...
-│  ├─ types/               # 공통 TS 타입
-│  ├─ utils/               # 포맷터 등
-│  └─ config/              # 공통 설정/상수
+│  ├─ tokens/              # 공용 CSS 커스텀 프로퍼티 (추출 예정 — PR 16)
+│  ├─ editor/              # CodeMirror 공용 설정 (추출 예정 — PR 24)
+│  └─ ...
 │
 ├─ crates/                 # Rust 공용 (추출 완료/필요 시)
 │  ├─ filesystem/          # 파일 walk/검색 순회  (everything-plus, code-pad)
 │  ├─ markdown/            # 마크다운 렌더          (knowledge-base, code-pad)
 │  ├─ process/             # 프로세스/포트 조회·kill  (port-manager, run-manager)
-│  ├─ wsl/                 # WSL 명령 실행/파싱        (wsl-dashboard, life-log) [필요 시]
-│  ├─ database/            # SQLite 마이그레이션 헬퍼   (activity-timeline, everything-plus, ...) [필요 시]
-│  ├─ search/              # FTS5 검색                 (everything-plus, knowledge-base) [필요 시]
-│  └─ activity/            # 세션 집계                 (activity-timeline, life-log) [필요 시]
+│  ├─ wsl/                 # WSL argv·경로 정규화    (wsl-desktop, run-manager) [추출 예정 — PR 14]
+│  ├─ search/              # FTS5 쿼리 빌더          (everything-plus, knowledge-base) [추출 예정 — PR 15]
+│  └─ database/            # SQLite 마이그레이션 헬퍼 (후보 — 소비자 확정 시) [필요 시]
 │
 ├─ docs/
 │  ├─ architecture.md
@@ -83,7 +79,7 @@ devbox/
 
 - 앱 이름은 **kebab-case** (`port-manager`) — 디렉터리·git 브랜치·crate 의존에 사용
 - 앱별 Rust 크레이트 이름은 `_` → `-` 변환 후 사용: `port-manager` → `port_manager`
-- 각 앱의 산출물: `PortManager.exe`, `WSLDashboard.exe`, `DevToolbox.exe`, `ActivityTimeline.exe`, `EverythingPlus.exe`, `Knowledge.exe`, `ApiPlayground.exe`, `LifeLog.exe`, `WSLDesktop.exe`, `DevboxManager.exe`, `CodePad.exe`, `RunManager.exe`
+- 각 앱의 산출물: `PortManager.exe`, `DevToolbox.exe`, `WSLDesktop.exe`, `ApiPlayground.exe`, `EverythingPlus.exe`, `Knowledge.exe`, `LifeLog.exe`, `DevboxManager.exe`, `CodePad.exe`, `RunManager.exe`
 
 ## 3. 공통 기술 스택
 
@@ -101,21 +97,25 @@ devbox/
 
 ### 프론트엔드 (React, apps/<app>/src/)
 - Vite + **React 19 + TypeScript(엄격 모드)**
-- 스타일: **Tailwind CSS** (Vite 플러그인)
-- 아이콘: `lucide-react` / 상태: `zustand` / 테이블: `@tanstack/react-table`
-- 차트: `recharts` / 라우팅: `react-router-dom` / 편집기: `@uiw/react-codemirror`
+- 스타일: **순수 CSS (앱별 `App.css`)**. 공용 토큰은 `packages/tokens` (추출 예정 — PR 16)
+- 편집기: `@codemirror/*` 직접 사용 (code-pad). 공용 설정은 `packages/editor` (추출 예정 — PR 24)
+- 다이어그램: `mermaid` (code-pad, knowledge-base만)
 - Tauri API: `@tauri-apps/api`
+- **선언했으나 실제 사용이 없는 라이브러리**(`lucide-react`, `zustand`, `@tanstack/react-table`,
+  `recharts`, `react-router-dom`)는 **필요해지면 그때 도입한다.** 미리 선언하지 않는다.
 - 중복 발견 시 → `packages/<name>`으로 추출
 
 ### 데이터 위치 규약
 Tauri의 `app_local_data_dir()`을 사용하며, 이는 **번들 identifier 기준 폴더**다.
 ```
-%LOCALAPPDATA%\{identifier}\    # 예: %LOCALAPPDATA%\com.workbench.activitytimeline\
+%LOCALAPPDATA%\{identifier}\    # 예: %LOCALAPPDATA%\com.devbox.lifelog\
 ```
 - SQLite: `%LOCALAPPDATA%\{identifier}\data.db`, 설정: `config.json`
-- 앱별 identifier: `com.workbench.activitytimeline`, `com.workbench.everythingplus`,
-  `com.workbench.knowledgebase`, `com.workbench.lifelog` 등
-- life-log는 다른 앱의 DB를 읽기 위해 이 실제 경로를 기본값으로 사용한다
+- 앱별 identifier: `com.devbox.activitytimeline`, `com.devbox.everythingplus`,
+  `com.devbox.knowledgebase`, `com.devbox.lifelog` 등
+- 앱 간 데이터 교환은 상대 앱의 `app_local_data_dir`을 직접 읽지 않고
+  `%LOCALAPPDATA%\devbox\integration\<app-id>\v<n>\`의 read-only snapshot을 사용한다.
+  (상세: `docs/product-opportunities.md` §10.1)
 
 ## 4. 코드 규약
 
@@ -151,13 +151,20 @@ src/
   api.ts          # invoke() 래퍼 함수 모음
   pages/          # 페이지
   components/     # 공용/도메인 컴포넌트
-  store/          # zustand 스토어 (해당 시)
+  store/          # 상태 관리 스토어 (해당 시)
   lib/            # 순수 유틸 (포맷터 등)
 ```
 
 ### 명명/스타일
 - UI 문구: 한국어, 코드·식별자·git 메시지: 영어
 - 앱 이름: kebab-case, Rust 크레이트: snake_case, 패키지: `@devbox/<name>`
+
+### 버전 규칙 (단일 원본)
+> 앱 버전은 `src-tauri/Cargo.toml`을 원본으로 하고, `src-tauri/tauri.conf.json`과
+> `package.json`은 항상 같은 값을 갖는다. 버전을 올릴 때 세 파일을 함께 수정한다.
+
+- 앱 버전은 release tag와 독립적이다. release tag는 배포 일괄 단위일 뿐 앱 버전이 아니다.
+- `package.json`의 버전이 `Cargo.toml`과 어긋난 상태로 커밋하지 않는다.
 
 ## 5. 개발 워크플로 (WSL-first)
 
@@ -183,7 +190,7 @@ corepack enable pnpm            # 또는 pnpm 직접 설치
 
 # 앱 스캐폴드 (apps/ 밑에)
 cd apps
-pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnpm --identifier com.workbench.<appname> --yes
+pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnpm --identifier com.devbox.<appname> --yes
 ```
 > 주의: `--yes` 대신 `--` 구분자를 쓰면 `--name`이 리터럴 폴더로 생성되는 이슈가 있다.
 > 생성 직후 파일 4곳의 `--name`을 실제 이름으로 교체한다:
@@ -195,17 +202,16 @@ pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnp
 3. 두 번째 앱에서 중복 코드 발생 시 → `crates/`·`packages/`로 추출
 4. 최종: Windows에서 `pnpm tauri dev/build`
 
-## 7. 개발 순서 (12개 전체)
+## 7. 개발 순서 (10개 전체)
 ```
 Phase 1: port-manager → developer-toolbox     # Tauri 기본기 (IPC, Rust 기초, 설정)
-Phase 2: wsl-dashboard → api-playground        # 자식 프로세스, async, HTTP, 상태관리
-Phase 3: activity-timeline → everything-plus   # SQLite, 백그라운드, watcher, 검색
-Phase 4: knowledge-base → life-log             # 개인 데이터 플랫폼 통합
+Phase 2: api-playground → everything-plus      # 자식 프로세스, async, HTTP, 상태관리
+Phase 3: knowledge-base → life-log             # 개인 데이터 플랫폼 통합
 추가:    wsl-desktop, devbox-manager           # PTY 터미널, 앱 설치·업데이트
 추가:    code-pad, run-manager                 # 경량 코드 에디터(LSP), 예약 실행·서비스
 ```
-- 12개 앱 모두 구현 완료. 진행 상황은 [docs/roadmap.md](./docs/roadmap.md) 참조
-- 공통 코드 발견 시점에 `packages/ui`, `crates/process`, `crates/wsl` 등을 하나씩 추출
+- 10개 앱 모두 구현 완료. 진행 상황은 [docs/roadmap.md](./docs/roadmap.md) 참조
+- 공통 코드 발견 시점에 `crates/process`, `crates/wsl`, `packages/tokens` 등을 하나씩 추출
 - 각 프로젝트 상세는 `apps/<AppName>/PLAN.md` 참조 (wsl-desktop·devbox-manager·code-pad·run-manager는 `README.md` 또는 설계 문서)
 
 ## 8. Git 규약 (모노레포: `devbox/` 루트 1개 저장소)
@@ -218,7 +224,7 @@ Phase 4: knowledge-base → life-log             # 개인 데이터 플랫폼 �
 ### 브랜치 규칙
 ```
 feat/<app>/<scope>     기능 개발   예: feat/port-manager/core-parser
-fix/<app>/<scope>      버그 수정   예: fix/wsl-dashboard/docker-parse
+fix/<app>/<scope>      버그 수정   예: fix/run-manager/docker-parse
 chore/<scope>          잡다한 작업 예: chore/workspace/pnpm-setup
 docs/<scope>           문서 작업   예: docs/roadmap
 ```
@@ -238,7 +244,21 @@ docs/<scope>           문서 작업   예: docs/roadmap
 - 1커밋 = 1논리적 단위. WIP 커밋 금지
 - 완료 정의(`cargo test`/`cargo check`/`pnpm build` 통과)를 커밋 전에 확인
 
-## 9. 통합 전략 (Workbench)
-- 12개 앱을 어느 정도 완성한 뒤, `apps/workbench`를 추가해 통합 대시보드로 묶는다
+## 9. 기술 스택 정책
+
+> **스택 추가 기준.** 새 언어·프레임워크는 다음 셋을 **모두** 만족할 때만 도입한다.
+> 1. Rust/TypeScript로 구현이 불가능하거나 비합리적인 능력이 필요하다
+> 2. 그 능력에 막혀 있는 **구체적인 사용자 기능**이 존재한다 (가정이 아니라 실제 항목)
+> 3. 배포·CI·업데이트 경로에 미치는 영향을 문서화했다
+>
+> **UI 프레임워크는 Tauri v2 하나로 고정한다.** 두 번째 UI 스택은 디자인 시스템·패키징·
+> Manager 설치 모델을 전부 분기시킨다.
+>
+> **탈출구.** 라이브러리 접근이 목적이면 sidecar 프로세스로 도입한다. 버전 있는 JSON
+> 계약, 타임아웃, 종료 보장을 갖춘다.
+
+## 10. 통합 전략 (Workbench)
+- 기존 앱을 어느 정도 완성한 뒤, `apps/workbench`를 추가해 프로젝트 기반 orchestration 셸로 묶는다
 - workbench는 기존 `crates/`·`packages/`를 그대로 재사용 → 공통화가 통합을 쉽게 만든다
-- 결과적으로 "독립 앱 12개 + 통합 앱 1개" 구조
+- 결과적으로 "독립 앱 10개 + orchestration 앱 1개" 구조
+- 상세: `docs/product-opportunities.md` §15.2

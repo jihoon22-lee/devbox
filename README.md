@@ -1,6 +1,6 @@
 # devbox
 
-Tauri 12개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소. 각 앱은 **독립적으로 실행되고 독립적으로 `.exe`가 만들어집니다.**
+Tauri 10개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소. 각 앱은 **독립적으로 실행되고 독립적으로 `.exe`가 만들어집니다.**
 
 ## 앱 소개
 
@@ -8,13 +8,11 @@ Tauri 12개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소
 |---|---|
 | 🔥 **Port Manager** | 포트·프로세스 조회/검색/필터, 프로세스 종료, localhost 열기 |
 | 🧰 **Developer Toolbox** | 개발용 소형 도구 14종 — JSON/Base64/URL/타임스탬프/Case, Hash/UUID/Regex/Diff( Rust), JWT 디코더 |
-| 🐧 **WSL Dashboard** | WSL 배포판·Docker·git 상태 대시보드, 컨테이너 start/stop/restart |
+| 🐧 **WSL Desktop** | 앱 안의 임베디드 WSL 터미널 — 경로 지정 실행, 분할 레이아웃, 동시 명령, distro·Docker·git 상태 패널 |
 | 🧪 **API Playground** | REST 요청 빌더. CORS 제약 없음, 응답 확인, 요청 history, curl 생성 |
-| 🖥 **Activity Timeline** | PC 사용 기록 자동 추적(트레이 상시), 타임라인·앱 통계, 30초 자동 갱신 |
 | 🔍 **Everything+** | 파일명/내용 초고속 검색(FTS5), 정규식 모드, re-index 진행률 |
 | 🗂 **Knowledge** | 마크다운 기반 지식 저장소 — 태그, 본문 검색, 데일리 노트 |
-| 🕐 **Life Log** | 활동·git 데이터로 하루/주/월 요약, 캘린더 이동 |
-| 🐧 **WSL Desktop** | 앱 안의 임베디드 WSL 터미널 — 경로 지정 실행, 분할 레이아웃, 동시 명령 |
+| 🕐 **Life Log** | 활동·git 데이터로 하루/주/월 요약 (활동 자동 추적 흡수), 캘린더 이동 |
 | 📦 **Devbox Manager** | devbox 앱 버전 체크·설치·업데이트·실행 (휴대용/설치 패키지) |
 | ✍️ **Code Pad** | CodeMirror 6 경량 코드 에디터 — 문법 하이라이팅, 탭·분할 2뷰, LSP(진단·자동완성·hover·정의·참조·이름 변경·포맷), 프리뷰 |
 | ⏱ **Run Manager** | 예약 실행(크론 잡)과 상시 실행(서비스) 관리 — 실행 이력, 회전 로그 tail, 서비스 재시작·헬스체크 |
