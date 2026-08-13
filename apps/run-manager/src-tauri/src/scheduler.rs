@@ -19,9 +19,9 @@ use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
-use tokio::sync::{Mutex, Notify, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{watch, Mutex, Notify, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 use uuid::Uuid;
@@ -45,13 +45,32 @@ pub type AdapterFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, AdapterErr
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdapterError {
     pub message: String,
+    /// A failed adapter result may still be a cleanup witness.  For example,
+    /// log persistence can fail after the process tree has already been
+    /// confirmed gone.  Callers must never infer this from the error code.
+    pub cleanup_confirmed: bool,
 }
 
 impl AdapterError {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            cleanup_confirmed: false,
         }
+    }
+
+    /// Construct a sanitized failure after the adapter has independently
+    /// confirmed that the complete process tree is gone.
+    pub fn confirmed(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            cleanup_confirmed: true,
+        }
+    }
+
+    pub fn with_cleanup_confirmed(mut self) -> Self {
+        self.cleanup_confirmed = true;
+        self
     }
 }
 
@@ -100,6 +119,66 @@ pub trait ExecutionHandle: Send + Sync {
 /// `std::process::Command`, `wsl.exe`, or a shell itself.
 pub trait ExecutionAdapter: Send + Sync {
     fn spawn(&self, request: ExecutionRequest) -> AdapterFuture<'_, Arc<dyn ExecutionHandle>>;
+
+    /// Reconcile a non-terminal row left by a previous process. Production
+    /// adapters exact-check the persisted identity and clean the old tree
+    /// before the scheduler writes stale-recovery. The default fixture path is
+    /// intentionally a no-op so pure scheduler tests do not need a platform.
+    fn recover_stale(&self, _request: ExecutionRequest) -> AdapterFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// Fixed failure categories emitted after a durable terminal transition. The
+/// scheduler never forwards adapter text to the notification/UI boundary;
+/// listeners receive one of these stable codes instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalFailureCode {
+    SpawnFailed,
+    NonzeroExit,
+    LogWriteFailed,
+    EnvironmentUnavailable,
+    TerminationTimeout,
+    WslUnavailable,
+    ProcessCrashed,
+    StorageFailed,
+}
+
+impl TerminalFailureCode {
+    pub const fn as_db_message(self) -> &'static str {
+        match self {
+            Self::SpawnFailed => "spawn-failed",
+            Self::NonzeroExit => "nonzero-exit",
+            Self::LogWriteFailed => "log-write-failed",
+            Self::EnvironmentUnavailable => "environment-unavailable",
+            Self::TerminationTimeout => "termination-timeout",
+            Self::WslUnavailable => "wsl-unavailable",
+            Self::ProcessCrashed => "process-crashed",
+            Self::StorageFailed => "storage-failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerminalRunEvent {
+    pub job_id: String,
+    pub run_id: String,
+    pub status: RunStatus,
+    pub failure_code: Option<TerminalFailureCode>,
+}
+
+/// Receives sanitized terminal transitions. Delivery is deliberately
+/// synchronous and non-fatal: a listener may enqueue a durable outbox row or
+/// attempt a native notification, but it must never roll back the run.
+pub trait TerminalRunListener: Send + Sync {
+    fn on_terminal(&self, event: TerminalRunEvent);
+}
+
+#[derive(Debug, Default)]
+struct NoopTerminalRunListener;
+
+impl TerminalRunListener for NoopTerminalRunListener {
+    fn on_terminal(&self, _event: TerminalRunEvent) {}
 }
 
 /// A safe default for runtime wiring before a platform adapter is installed.
@@ -207,19 +286,194 @@ impl From<StorageError> for SchedulerError {
 }
 
 struct ActiveExecution {
+    job_id: String,
     owner_instance_id: String,
     attempt_token: String,
     handle: Arc<dyn ExecutionHandle>,
+    /// True only after the adapter has confirmed the complete process tree is
+    /// gone. This lets a retry repair a terminal CAS failure without asking a
+    /// finished actor to terminate a second time.
+    cleanup_confirmed: bool,
     _permit: OwnedSemaphorePermit,
+}
+
+#[derive(Clone)]
+struct PendingTerminal {
+    status: RunStatus,
+    exit_code: Option<i32>,
+    error_message: Option<String>,
+    failure_code: Option<TerminalFailureCode>,
+}
+
+/// A synchronous ownership ledger protects active executions while shutdown
+/// termination futures are polled in spawned tasks. If a task panics or is
+/// cancelled before returning its result, the guard's `Drop` puts the handle
+/// back in the ledger. The ledger itself has a synchronous orphan sink owned
+/// by the coordinator, so cancelling the enclosing shutdown future cannot
+/// drop the last process witness before the next retry.
+struct ShutdownExecutionLedger {
+    entries: StdMutex<HashMap<String, ActiveExecution>>,
+    orphan_sink: Arc<StdMutex<HashMap<String, ActiveExecution>>>,
+}
+
+impl ShutdownExecutionLedger {
+    fn new(orphan_sink: Arc<StdMutex<HashMap<String, ActiveExecution>>>) -> Arc<Self> {
+        Arc::new(Self {
+            entries: StdMutex::new(HashMap::new()),
+            orphan_sink,
+        })
+    }
+
+    fn insert(&self, run_id: String, execution: ActiveExecution) {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        entries.insert(run_id, execution);
+    }
+
+    fn take(&self, run_id: &str) -> Option<ActiveExecution> {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        entries.remove(run_id)
+    }
+
+    fn drain(&self) -> Vec<(String, ActiveExecution)> {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        entries.drain().collect()
+    }
+}
+
+impl Drop for ShutdownExecutionLedger {
+    fn drop(&mut self) {
+        let entries = self
+            .entries
+            .get_mut()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if entries.is_empty() {
+            return;
+        }
+        let mut orphan_sink = self
+            .orphan_sink
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        orphan_sink.extend(entries.drain());
+    }
+}
+
+struct ShutdownExecutionGuard {
+    run_id: String,
+    ledger: Arc<ShutdownExecutionLedger>,
+    execution: Option<ActiveExecution>,
+}
+
+type StopResultSender = watch::Sender<Option<Result<Run, String>>>;
+
+/// A manual-stop task is intentionally detached from the command future so a
+/// dropped IPC request cannot cancel cleanup. If the task is aborted or
+/// panics, this synchronous lease releases the stop slot and publishes a
+/// fixed failure; the durable row remains `stopping` and the next stop call
+/// retries the retained active handle.
+struct StopOperationGuard {
+    inner: Arc<SchedulerInner>,
+    run_id: String,
+    job_id: String,
+    result_tx: StopResultSender,
+    completed: bool,
+}
+
+impl StopOperationGuard {
+    fn new(
+        inner: Arc<SchedulerInner>,
+        run_id: String,
+        job_id: String,
+        result_tx: StopResultSender,
+    ) -> Self {
+        Self {
+            inner,
+            run_id,
+            job_id,
+            result_tx,
+            completed: false,
+        }
+    }
+
+    fn complete(&mut self, result: Result<Run, String>) {
+        self.finish(result, false);
+    }
+
+    fn complete_cleanup_confirmed(&mut self, result: Result<Run, String>) {
+        self.finish(result, true);
+    }
+
+    fn finish(&mut self, result: Result<Run, String>, cleanup_confirmed: bool) {
+        let _ = self.result_tx.send(Some(result));
+        self.inner
+            .stops
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&self.run_id);
+        let mut recovery = self
+            .inner
+            .stop_recovery_required
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if cleanup_confirmed {
+            recovery.remove(&self.run_id);
+        } else {
+            recovery.insert(self.run_id.clone(), self.job_id.clone());
+        }
+        self.completed = true;
+    }
+}
+
+impl Drop for StopOperationGuard {
+    fn drop(&mut self) {
+        if self.completed {
+            return;
+        }
+        let _ = self
+            .result_tx
+            .send(Some(Err("run-stop-failed".to_string())));
+        self.inner
+            .stops
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&self.run_id);
+        self.inner
+            .stop_recovery_required
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(self.run_id.clone(), self.job_id.clone());
+    }
+}
+
+impl Drop for ShutdownExecutionGuard {
+    fn drop(&mut self) {
+        if let Some(execution) = self.execution.take() {
+            self.ledger.insert(self.run_id.clone(), execution);
+        }
+    }
 }
 
 struct SchedulerInner {
     database: Arc<DatabaseState>,
     adapter: Arc<dyn ExecutionAdapter>,
+    terminal_listener: Arc<dyn TerminalRunListener>,
     config: SchedulerConfig,
     permits: Arc<Semaphore>,
     job_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     active: Mutex<HashMap<String, ActiveExecution>>,
+    stops: StdMutex<HashMap<String, StopResultSender>>,
+    stop_recovery_required: StdMutex<HashMap<String, String>>,
+    pending_terminal: Mutex<HashMap<String, PendingTerminal>>,
+    cleanup_pending: Mutex<std::collections::HashSet<String>>,
+    shutdown_orphans: Arc<StdMutex<HashMap<String, ActiveExecution>>>,
     shutdown_requested: AtomicBool,
     shutdown_notify: Notify,
 }
@@ -254,7 +508,24 @@ impl SchedulerCoordinator {
     pub fn with_config(
         database: Arc<DatabaseState>,
         adapter: Arc<dyn ExecutionAdapter>,
+        config: SchedulerConfig,
+    ) -> Self {
+        Self::with_config_and_listener(database, adapter, config, Arc::new(NoopTerminalRunListener))
+    }
+
+    pub fn with_terminal_listener(
+        database: Arc<DatabaseState>,
+        adapter: Arc<dyn ExecutionAdapter>,
+        listener: Arc<dyn TerminalRunListener>,
+    ) -> Self {
+        Self::with_config_and_listener(database, adapter, SchedulerConfig::default(), listener)
+    }
+
+    pub fn with_config_and_listener(
+        database: Arc<DatabaseState>,
+        adapter: Arc<dyn ExecutionAdapter>,
         mut config: SchedulerConfig,
+        terminal_listener: Arc<dyn TerminalRunListener>,
     ) -> Self {
         if config.owner_instance_id.trim().is_empty() {
             config.owner_instance_id = Uuid::new_v4().to_string();
@@ -266,10 +537,16 @@ impl SchedulerCoordinator {
             inner: Arc::new(SchedulerInner {
                 database,
                 adapter,
+                terminal_listener,
                 config,
                 permits,
                 job_locks: Mutex::new(HashMap::new()),
                 active: Mutex::new(HashMap::new()),
+                stops: StdMutex::new(HashMap::new()),
+                stop_recovery_required: StdMutex::new(HashMap::new()),
+                pending_terminal: Mutex::new(HashMap::new()),
+                cleanup_pending: Mutex::new(std::collections::HashSet::new()),
+                shutdown_orphans: Arc::new(StdMutex::new(HashMap::new())),
                 shutdown_requested: AtomicBool::new(false),
                 shutdown_notify: Notify::new(),
             }),
@@ -300,9 +577,13 @@ impl SchedulerCoordinator {
     }
 
     /// Run the fixed one-second orchestration loop until shutdown is requested.
-    /// Startup recovery happens once before the first interval tick.
+    /// Recovery runs before startup and on every later tick so fail-closed
+    /// orphan rows get another exact-identity cleanup opportunity.
     pub async fn run_until_shutdown(&self) -> Result<(), SchedulerError> {
-        self.recover_stale_at(current_epoch_millis()).await?;
+        // Recovery is retried at every tick. A platform cleanup failure keeps
+        // the row blocked and must not terminate the daemon (or turn the
+        // shutdown path into an infinite retry that never invokes recovery).
+        let _ = self.recover_stale_at(current_epoch_millis()).await;
         let mut interval = tokio::time::interval(self.inner.config.tick_interval);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
@@ -313,6 +594,7 @@ impl SchedulerCoordinator {
                     if self.is_shutdown_requested() {
                         break;
                     }
+                    let _ = self.recover_stale_at(current_epoch_millis()).await;
                     // A malformed/tampered job must not kill the daemon. The
                     // next tick retries it while other jobs continue.
                     let _ = self.tick_at(current_epoch_millis()).await;
@@ -364,6 +646,12 @@ impl SchedulerCoordinator {
             .ok_or_else(|| StorageError::NotFound(format!("job {job_id}")))?;
         let lock = self.job_mutex(job_id).await;
         let _guard = lock.lock().await;
+        if self.is_cleanup_pending(job_id).await {
+            return Err(SchedulerError::Adapter {
+                run_id: job_id.to_string(),
+                source: AdapterError::new("termination-unverified"),
+            });
+        }
         let claim = self.inner.database.claim_manual_run(job_id, now)?;
         self.process_claim_locked(&job, claim.clone(), now).await?;
         self.inner
@@ -372,8 +660,416 @@ impl SchedulerCoordinator {
             .ok_or_else(|| StorageError::NotFound(format!("run {}", claim.run.id)).into())
     }
 
+    /// Stop the current process run for one job. The database `running` /
+    /// `starting` -> `stopping` CAS happens before the adapter boundary, and
+    /// the row is marked cancelled only after the adapter confirms the whole
+    /// process tree is gone. A missing in-memory handle is fail-closed: the
+    /// coordinator never guesses at a PID from a durable row.
+    pub async fn stop_active_at(
+        &self,
+        job_id: &str,
+        now: i64,
+    ) -> Result<Option<Run>, SchedulerError> {
+        let lock = self.job_mutex(job_id).await;
+        let (run_id, mut result_rx, start_operation) = {
+            let _guard = lock.lock().await;
+            self.restore_shutdown_orphans_for_job(job_id).await;
+            let pending_cleanup = self.is_cleanup_pending(job_id).await;
+            let active_run = match self.inner.database.active_process_run(job_id)? {
+                Some(run) => run,
+                None if !pending_cleanup => return Ok(None),
+                None => {
+                    let pending = self
+                        .inner
+                        .active
+                        .lock()
+                        .await
+                        .iter()
+                        .find(|(_, execution)| execution.job_id == job_id)
+                        .map(|(run_id, _)| run_id.clone())
+                        .ok_or_else(|| SchedulerError::Adapter {
+                            run_id: job_id.to_string(),
+                            source: AdapterError::new("termination-unverified"),
+                        })?;
+                    self.inner
+                        .database
+                        .get_run(&pending)?
+                        .ok_or_else(|| SchedulerError::Storage(StorageError::NotFound(pending)))?
+                }
+            };
+            let existing_stop = self
+                .inner
+                .stops
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .get(&active_run.id)
+                .cloned();
+            if let Some(sender) = existing_stop {
+                (active_run.id.clone(), sender.subscribe(), None)
+            } else {
+                let active = self
+                    .inner
+                    .active
+                    .lock()
+                    .await
+                    .get(&active_run.id)
+                    .map(|execution| {
+                        (
+                            execution.owner_instance_id.clone(),
+                            execution.attempt_token.clone(),
+                            Arc::clone(&execution.handle),
+                            execution.cleanup_confirmed,
+                        )
+                    })
+                    .ok_or_else(|| SchedulerError::Adapter {
+                        run_id: active_run.id.clone(),
+                        source: AdapterError::new("active-handle-unavailable"),
+                    })?;
+                let (sender, receiver) = watch::channel(None);
+                self.inner
+                    .stops
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .insert(active_run.id.clone(), sender.clone());
+                (
+                    active_run.id.clone(),
+                    receiver,
+                    Some((
+                        active_run.id,
+                        job_id.to_string(),
+                        active.0,
+                        active.1,
+                        active.2,
+                        active.3,
+                        sender,
+                        now,
+                        pending_cleanup,
+                    )),
+                )
+            }
+        };
+
+        if let Some((
+            run_id,
+            job_id,
+            owner,
+            attempt_token,
+            handle,
+            cleanup_confirmed,
+            result_tx,
+            now,
+            pending_cleanup,
+        )) = start_operation
+        {
+            let coordinator = self.clone();
+            tokio::spawn(async move {
+                coordinator
+                    .complete_stop_operation(
+                        run_id,
+                        job_id,
+                        owner,
+                        attempt_token,
+                        handle,
+                        cleanup_confirmed,
+                        result_tx,
+                        now,
+                        pending_cleanup,
+                    )
+                    .await;
+            });
+        }
+
+        loop {
+            if let Some(result) = result_rx.borrow().clone() {
+                return result.map(Some).map_err(|_| SchedulerError::Adapter {
+                    run_id,
+                    source: AdapterError::new("run-stop-failed"),
+                });
+            }
+            result_rx
+                .changed()
+                .await
+                .map_err(|_| SchedulerError::Adapter {
+                    run_id: run_id.clone(),
+                    source: AdapterError::new("run-stop-failed"),
+                })?;
+        }
+    }
+
+    /// Return the durable active process row for command/UI polling. This is
+    /// a read-only snapshot and never exposes environment ciphertext.
+    pub fn active_run(&self, job_id: &str) -> Result<Option<Run>, SchedulerError> {
+        self.inner.database.active_run(job_id).map_err(Into::into)
+    }
+
+    pub fn active_process_run(&self, job_id: &str) -> Result<Option<Run>, SchedulerError> {
+        self.inner
+            .database
+            .active_process_run(job_id)
+            .map_err(Into::into)
+    }
+
+    pub fn active_process_runs(&self) -> Result<Vec<Run>, SchedulerError> {
+        self.inner
+            .database
+            .list_active_process_runs()
+            .map_err(Into::into)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn complete_stop_operation(
+        &self,
+        run_id: String,
+        job_id: String,
+        owner: String,
+        attempt_token: String,
+        handle: Arc<dyn ExecutionHandle>,
+        cleanup_confirmed: bool,
+        result_tx: watch::Sender<Option<Result<Run, String>>>,
+        now: i64,
+        pending_cleanup: bool,
+    ) {
+        let mut stop_guard = StopOperationGuard::new(
+            Arc::clone(&self.inner),
+            run_id.clone(),
+            job_id.clone(),
+            result_tx,
+        );
+        if !pending_cleanup {
+            match self
+                .inner
+                .database
+                .request_run_stop(&run_id, &owner, &attempt_token)
+            {
+                Ok(true) => {}
+                Ok(false) => {
+                    let current = self.inner.database.get_run(&run_id).ok().flatten();
+                    if current.as_ref().is_some_and(|run| {
+                        matches!(
+                            run.status,
+                            RunStatus::Queued
+                                | RunStatus::Starting
+                                | RunStatus::Running
+                                | RunStatus::Stopping
+                        )
+                    }) {
+                        self.mark_cleanup_pending(&job_id).await;
+                        stop_guard.complete(Err("run-stop-failed".to_string()));
+                    } else {
+                        stop_guard.complete_cleanup_confirmed(
+                            current.ok_or_else(|| "run-stop-failed".to_string()),
+                        );
+                    }
+                    return;
+                }
+                Err(_) => {
+                    self.mark_cleanup_pending(&job_id).await;
+                    stop_guard.complete(Err("run-stop-failed".to_string()));
+                    return;
+                }
+            }
+        }
+        let result = if cleanup_confirmed {
+            Ok(Ok(ExecutionExit { exit_code: None }))
+        } else {
+            tokio::time::timeout(self.inner.config.shutdown_timeout, handle.terminate()).await
+        };
+        let operation = match result {
+            Ok(Ok(exit)) => {
+                let pending = self
+                    .inner
+                    .pending_terminal
+                    .lock()
+                    .await
+                    .get(&run_id)
+                    .cloned();
+                let pending = pending.unwrap_or(PendingTerminal {
+                    status: RunStatus::Cancelled,
+                    exit_code: exit.exit_code,
+                    error_message: Some("manual-stop".to_string()),
+                    failure_code: None,
+                });
+                self.finish_run_and_notify(
+                    &run_id,
+                    &job_id,
+                    &owner,
+                    &attempt_token,
+                    pending.status,
+                    pending.exit_code,
+                    pending.error_message.as_deref(),
+                    now,
+                    pending.failure_code,
+                )
+                .and_then(|confirmed| {
+                    if confirmed {
+                        Ok(())
+                    } else {
+                        Err(SchedulerError::Storage(StorageError::ConcurrentChange(
+                            "run terminal CAS".into(),
+                        )))
+                    }
+                })
+            }
+            Ok(Err(error)) if error.cleanup_confirmed => {
+                let pending = self
+                    .inner
+                    .pending_terminal
+                    .lock()
+                    .await
+                    .get(&run_id)
+                    .cloned()
+                    .unwrap_or(PendingTerminal {
+                        status: RunStatus::Cancelled,
+                        exit_code: None,
+                        error_message: Some("manual-stop".to_string()),
+                        failure_code: None,
+                    });
+                self.finish_run_and_notify(
+                    &run_id,
+                    &job_id,
+                    &owner,
+                    &attempt_token,
+                    pending.status,
+                    pending.exit_code,
+                    pending.error_message.as_deref(),
+                    now,
+                    pending.failure_code,
+                )
+                .and_then(|confirmed| {
+                    if confirmed {
+                        Ok(())
+                    } else {
+                        Err(SchedulerError::Storage(StorageError::ConcurrentChange(
+                            "run terminal CAS".into(),
+                        )))
+                    }
+                })
+            }
+            Ok(Err(error)) => Err(SchedulerError::Adapter {
+                run_id: run_id.clone(),
+                source: AdapterError::new(failure_code_from_adapter(&error).as_db_message()),
+            }),
+            Err(_) => Err(SchedulerError::Adapter {
+                run_id: run_id.clone(),
+                source: AdapterError::new(TerminalFailureCode::TerminationTimeout.as_db_message()),
+            }),
+        };
+        if operation.is_ok() {
+            self.inner.pending_terminal.lock().await.remove(&run_id);
+            self.clear_cleanup_pending(&job_id).await;
+            let result = self
+                .inner
+                .database
+                .get_run(&run_id)
+                .ok()
+                .flatten()
+                .ok_or_else(|| "run-stop-failed".to_string());
+            // Keep all fallible/awaiting work before this removal. Once the
+            // active permit is released, the guard publishes/removes the
+            // stop lease synchronously in the same poll, so cancellation
+            // cannot strand a terminal row without its completion signal.
+            self.remove_active_and_complete_stop(&run_id, result, &mut stop_guard)
+                .await;
+            if !self.is_shutdown_requested() {
+                let _ = self.drain_queue_locked_by_id(&job_id).await;
+            }
+            return;
+        } else {
+            self.mark_cleanup_pending(&job_id).await;
+        }
+        stop_guard.complete(Err("run-stop-failed".to_string()));
+    }
+
     pub async fn recover_stale_at(&self, now: i64) -> Result<usize, SchedulerError> {
-        Ok(self.inner.database.recover_stale_runs(now)?)
+        let stale = self
+            .inner
+            .database
+            .list_runs_for_retention()?
+            .into_iter()
+            .filter(|run| {
+                // A periodic recovery pass must never treat a run owned by
+                // this coordinator as an orphan. Its monitor is still the
+                // authoritative in-memory owner; only rows from a previous
+                // owner (or rows with no owner at all) cross this boundary.
+                run.owner_instance_id.as_deref()
+                    != Some(self.inner.config.owner_instance_id.as_str())
+                    && matches!(
+                        run.status,
+                        RunStatus::Starting | RunStatus::Running | RunStatus::Stopping
+                    )
+            })
+            .collect::<Vec<_>>();
+        let mut recovered = 0;
+        let mut blocked_jobs = std::collections::HashSet::new();
+        let stale_job_ids = stale
+            .iter()
+            .map(|run| run.job_id.clone())
+            .collect::<std::collections::HashSet<_>>();
+        for run in stale {
+            let Some(job) = self.inner.database.get_job(&run.job_id)? else {
+                continue;
+            };
+            let owner = run
+                .owner_instance_id
+                .clone()
+                .unwrap_or_else(|| self.inner.config.owner_instance_id.clone());
+            let attempt_token = run
+                .attempt_token
+                .clone()
+                .unwrap_or_else(|| format!("stale-{}", run.id));
+            let request = ExecutionRequest {
+                job,
+                run: run.clone(),
+                owner_instance_id: owner.clone(),
+                attempt_token: attempt_token.clone(),
+            };
+            if self.inner.adapter.recover_stale(request).await.is_err() {
+                // Fail closed: retain the non-terminal row and its queue
+                // barrier until an exact adapter cleanup succeeds.  The
+                // pending marker also prevents a same-process tick from
+                // respawning while a later recovery attempt retries cleanup.
+                self.mark_cleanup_pending(&run.job_id).await;
+                blocked_jobs.insert(run.job_id.clone());
+                continue;
+            }
+            let terminal = self.inner.database.finish_run(
+                &run.id,
+                &owner,
+                &attempt_token,
+                RunStatus::Failed,
+                None,
+                Some("scheduler-stale-recovery"),
+                now,
+            );
+            let terminalized = match terminal {
+                Ok(true) => true,
+                Ok(false) => self.inner.database.get_run(&run.id)?.is_none_or(|current| {
+                    matches!(
+                        current.status,
+                        RunStatus::Succeeded
+                            | RunStatus::Failed
+                            | RunStatus::Cancelled
+                            | RunStatus::Skipped
+                    )
+                }),
+                Err(_) => false,
+            };
+            if !terminalized {
+                self.mark_cleanup_pending(&run.job_id).await;
+                blocked_jobs.insert(run.job_id.clone());
+                continue;
+            }
+            if terminalized {
+                recovered += 1;
+                self.emit_failure(&run.job_id, &run.id, TerminalFailureCode::ProcessCrashed);
+            }
+        }
+        for job_id in stale_job_ids {
+            if !blocked_jobs.contains(&job_id) {
+                self.clear_cleanup_pending(&job_id).await;
+            }
+        }
+        Ok(recovered)
     }
 
     /// Request shutdown and confirm termination for every known active handle.
@@ -389,6 +1085,12 @@ impl SchedulerCoordinator {
         let _guard = lock.lock().await;
         if self.is_shutdown_requested() {
             return Ok(());
+        }
+        if self.is_cleanup_pending(&job.id).await {
+            return Err(SchedulerError::Adapter {
+                run_id: job.id.clone(),
+                source: AdapterError::new("termination-unverified"),
+            });
         }
         let due = self.due_occurrences(&job, now)?;
         for occurrence in due {
@@ -522,16 +1224,8 @@ impl SchedulerCoordinator {
                 .get(old_run_id)
                 .map(|active| Arc::clone(&active.handle));
             let Some(handle) = handle else {
-                adapter_error = Some(AdapterError::new(
-                    "active execution handle is unavailable for kill-previous",
-                ));
-                let _ = self.inner.database.resolve_kill_previous(
-                    old_run_id,
-                    queued_run_id,
-                    false,
-                    adapter_error.as_ref().map(|error| error.message.as_str()),
-                    now,
-                )?;
+                adapter_error = Some(AdapterError::new("active-handle-unavailable"));
+                self.mark_cleanup_pending(&job.id).await;
                 return Err(SchedulerError::Adapter {
                     run_id: old_run_id.to_string(),
                     source: adapter_error.expect("error is set above"),
@@ -540,25 +1234,16 @@ impl SchedulerCoordinator {
             match tokio::time::timeout(self.inner.config.shutdown_timeout, handle.terminate()).await
             {
                 Ok(Ok(_)) => {}
+                Ok(Err(error)) if error.cleanup_confirmed => {}
                 Ok(Err(error)) => adapter_error = Some(error),
-                Err(error) => {
-                    adapter_error = Some(AdapterError::new(format!(
-                        "kill-previous termination timed out: {error}"
-                    )))
-                }
+                Err(_) => adapter_error = Some(AdapterError::new("termination-timeout")),
             }
         }
         if let Some(error) = adapter_error {
-            let _ = self.inner.database.resolve_kill_previous(
-                old_run_id,
-                queued_run_id,
-                false,
-                Some(&error.message),
-                now,
-            )?;
+            self.mark_cleanup_pending(&job.id).await;
             return Err(SchedulerError::Adapter {
                 run_id: old_run_id.to_string(),
-                source: error,
+                source: AdapterError::new(failure_code_from_adapter(&error).as_db_message()),
             });
         }
         if !self
@@ -566,10 +1251,12 @@ impl SchedulerCoordinator {
             .database
             .resolve_kill_previous(old_run_id, queued_run_id, true, None, now)?
         {
+            self.mark_cleanup_pending(&job.id).await;
             return Err(SchedulerError::Storage(StorageError::ConcurrentChange(
                 "kill-previous cleanup pair".into(),
             )));
         }
+        self.clear_cleanup_pending(&job.id).await;
         self.remove_active(old_run_id).await;
         self.drain_queue_locked(job).await
     }
@@ -612,25 +1299,36 @@ impl SchedulerCoordinator {
             return Ok(None);
         }
         // A waiter may already be queued on the semaphore when shutdown is
-        // requested.  It is safe to let it acquire a released permit: the
-        // immediately-following shutdown check performs the durable cancel
-        // CAS before the adapter boundary, so no process can be spawned.
-        let permit = self
-            .inner
-            .permits
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|error| SchedulerError::Join(error.to_string()))?;
+        // requested.  Wake it directly so it can durably cancel its starting
+        // row instead of waiting for a permit that will never be released.
+        let shutdown = self.inner.shutdown_notify.notified();
+        tokio::pin!(shutdown);
+        shutdown.as_mut().enable();
         if self.is_shutdown_requested() {
-            let _ = self.inner.database.finish_run(
+            self.cancel_starting_run(run, &owner, attempt_token);
+            return Ok(None);
+        }
+        let permit = tokio::select! {
+            biased;
+            _ = &mut shutdown => {
+                self.cancel_starting_run(run, &owner, attempt_token);
+                return Ok(None);
+            }
+            acquired = self.inner.permits.clone().acquire_owned() => {
+                acquired.map_err(|error| SchedulerError::Join(error.to_string()))?
+            }
+        };
+        if self.is_shutdown_requested() {
+            let _ = self.finish_run_and_notify(
                 &run.id,
+                &run.job_id,
                 &owner,
                 attempt_token,
                 RunStatus::Cancelled,
                 None,
                 Some("scheduler-shutdown"),
                 current_epoch_millis(),
+                None,
             );
             drop(permit);
             return Ok(None);
@@ -644,14 +1342,17 @@ impl SchedulerCoordinator {
         let handle = match self.inner.adapter.spawn(request).await {
             Ok(handle) => handle,
             Err(error) => {
-                self.inner.database.finish_run(
+                let code = failure_code_from_adapter(&error);
+                self.finish_run_and_notify(
                     &run.id,
+                    &run.job_id,
                     &owner,
                     attempt_token,
                     RunStatus::Failed,
                     None,
-                    Some(&error.message),
+                    Some(code.as_db_message()),
                     current_epoch_millis(),
+                    Some(code),
                 )?;
                 drop(permit);
                 return Err(SchedulerError::Adapter {
@@ -661,35 +1362,85 @@ impl SchedulerCoordinator {
             }
         };
         let metadata = handle.metadata();
-        if !self.inner.database.mark_run_running_with_metadata(
+        let metadata_cas = self.inner.database.mark_run_running_with_metadata(
             &run.id,
             &owner,
             attempt_token,
             current_epoch_millis(),
             &metadata,
-        )? {
-            let _ = handle.terminate().await;
-            let _ = self.inner.database.finish_run(
-                &run.id,
-                &owner,
-                attempt_token,
-                RunStatus::Failed,
-                None,
-                Some("execution-metadata-cas"),
-                current_epoch_millis(),
-            );
-            drop(permit);
-            return Err(SchedulerError::Storage(StorageError::ConcurrentChange(
-                "run metadata CAS".into(),
-            )));
+        );
+        let metadata_error = match metadata_cas {
+            Ok(true) => None,
+            Ok(false) => Some(StorageError::ConcurrentChange("run metadata CAS".into())),
+            Err(error) => Some(error),
+        };
+        if let Some(metadata_error) = metadata_error {
+            let termination =
+                tokio::time::timeout(self.inner.config.shutdown_timeout, handle.terminate()).await;
+            let cleanup_confirmed = match &termination {
+                Ok(Ok(_)) => true,
+                Ok(Err(error)) => error.cleanup_confirmed,
+                Err(_) => false,
+            };
+            let code = TerminalFailureCode::StorageFailed;
+            let terminal = if cleanup_confirmed {
+                self.finish_run_and_notify(
+                    &run.id,
+                    &run.job_id,
+                    &owner,
+                    attempt_token,
+                    RunStatus::Failed,
+                    None,
+                    Some(code.as_db_message()),
+                    current_epoch_millis(),
+                    Some(code),
+                )
+            } else {
+                Ok(false)
+            };
+            if !cleanup_confirmed || !matches!(terminal, Ok(true)) {
+                self.inner.pending_terminal.lock().await.insert(
+                    run.id.clone(),
+                    PendingTerminal {
+                        status: RunStatus::Failed,
+                        exit_code: None,
+                        error_message: Some(code.as_db_message().to_string()),
+                        failure_code: Some(code),
+                    },
+                );
+                self.mark_cleanup_pending(&run.job_id).await;
+                self.inner.active.lock().await.insert(
+                    run.id.clone(),
+                    ActiveExecution {
+                        job_id: run.job_id.clone(),
+                        owner_instance_id: owner.clone(),
+                        attempt_token: attempt_token.to_string(),
+                        handle: Arc::clone(&handle),
+                        cleanup_confirmed,
+                        _permit: permit,
+                    },
+                );
+                self.spawn_monitor(
+                    run.id.clone(),
+                    run.job_id.clone(),
+                    owner.clone(),
+                    attempt_token.to_string(),
+                    Arc::clone(&handle),
+                );
+            } else {
+                drop(permit);
+            }
+            return Err(SchedulerError::Storage(metadata_error));
         }
 
         self.inner.active.lock().await.insert(
             run.id.clone(),
             ActiveExecution {
+                job_id: run.job_id.clone(),
                 owner_instance_id: owner.clone(),
                 attempt_token: attempt_token.to_string(),
                 handle: Arc::clone(&handle),
+                cleanup_confirmed: false,
                 _permit: permit,
             },
         );
@@ -733,6 +1484,54 @@ impl SchedulerCoordinator {
         handle: Arc<dyn ExecutionHandle>,
     ) {
         let result = handle.wait().await;
+        if self.is_cleanup_pending(&job_id).await {
+            // A failed manual stop/shutdown keeps the handle as a fail-closed
+            // witness.  A later successful wait is the adapter's confirmation
+            // that the process tree is now gone; only then retry terminal CAS
+            // and release the guard.  In particular, a storage error after a
+            // successful terminate must not be mistaken for cleanup success.
+            if cleanup_confirmed_for_result(&result) {
+                let pending = self
+                    .inner
+                    .pending_terminal
+                    .lock()
+                    .await
+                    .get(&run_id)
+                    .cloned()
+                    .unwrap_or(PendingTerminal {
+                        status: RunStatus::Failed,
+                        exit_code: None,
+                        error_message: Some(
+                            TerminalFailureCode::StorageFailed
+                                .as_db_message()
+                                .to_string(),
+                        ),
+                        failure_code: Some(TerminalFailureCode::StorageFailed),
+                    });
+                let terminal = self.finish_run_and_notify(
+                    &run_id,
+                    &job_id,
+                    &owner,
+                    &attempt_token,
+                    pending.status,
+                    pending.exit_code,
+                    pending.error_message.as_deref(),
+                    current_epoch_millis(),
+                    pending.failure_code,
+                );
+                if matches!(terminal, Ok(true)) {
+                    self.inner.pending_terminal.lock().await.remove(&run_id);
+                    self.remove_active(&run_id).await;
+                    self.clear_cleanup_pending(&job_id).await;
+                    if !self.is_shutdown_requested() {
+                        let lock = self.job_mutex(&job_id).await.lock_owned().await;
+                        let _guard = lock;
+                        let _ = self.drain_queue_locked_by_id(&job_id).await;
+                    }
+                }
+            }
+            return;
+        }
         let current = self.inner.database.get_run(&run_id).ok().flatten();
         // A stop/shutdown path owns terminalization of a `stopping` row only
         // after adapter-confirmed termination; do not let the passive monitor
@@ -743,29 +1542,81 @@ impl SchedulerCoordinator {
         {
             return;
         }
-        let (status, exit_code, error): (RunStatus, Option<i32>, Option<String>) = match result {
-            Ok(exit) if exit.exit_code == Some(0) => (RunStatus::Succeeded, exit.exit_code, None),
+        let cleanup_witness = cleanup_confirmed_for_result(&result);
+        let (status, exit_code, error, failure_code): (
+            RunStatus,
+            Option<i32>,
+            Option<String>,
+            Option<TerminalFailureCode>,
+        ) = match result {
+            Ok(exit) if exit.exit_code == Some(0) => {
+                (RunStatus::Succeeded, exit.exit_code, None, None)
+            }
             Ok(exit) => (
                 RunStatus::Failed,
                 exit.exit_code,
                 Some("process-exit-nonzero".to_string()),
+                Some(TerminalFailureCode::NonzeroExit),
             ),
-            Err(error) => (RunStatus::Failed, None, Some(error.message)),
+            Err(error) => (
+                RunStatus::Failed,
+                None,
+                Some(
+                    failure_code_from_adapter(&error)
+                        .as_db_message()
+                        .to_string(),
+                ),
+                Some(failure_code_from_adapter(&error)),
+            ),
         };
-        let _ = self.inner.database.finish_run(
+        let pending = PendingTerminal {
+            status,
+            exit_code,
+            error_message: error.clone(),
+            failure_code,
+        };
+        if !cleanup_witness {
+            // A wait/protocol error is not proof that the tree disappeared.
+            // Keep the non-terminal row and the actor as a retry witness; a
+            // later stop/shutdown request must still own the destructive
+            // identity-checked cleanup boundary.
+            self.inner
+                .pending_terminal
+                .lock()
+                .await
+                .insert(run_id.clone(), pending);
+            self.mark_cleanup_pending(&job_id).await;
+            return;
+        }
+        let terminal = self.finish_run_and_notify(
             &run_id,
+            &job_id,
             &owner,
             &attempt_token,
             status,
             exit_code,
             error.as_deref(),
             current_epoch_millis(),
+            failure_code,
         );
-        self.remove_active(&run_id).await;
-        let lock = self.job_mutex(&job_id).await.lock_owned().await;
-        let _guard = lock;
-        if !self.is_shutdown_requested() {
-            let _ = self.drain_queue_locked_by_id(&job_id).await;
+        if matches!(terminal, Ok(true)) {
+            self.inner.pending_terminal.lock().await.remove(&run_id);
+            self.remove_active(&run_id).await;
+            let lock = self.job_mutex(&job_id).await.lock_owned().await;
+            let _guard = lock;
+            if !self.is_shutdown_requested() {
+                let _ = self.drain_queue_locked_by_id(&job_id).await;
+            }
+        } else {
+            self.inner
+                .pending_terminal
+                .lock()
+                .await
+                .insert(run_id.clone(), pending);
+            self.mark_cleanup_pending(&job_id).await;
+            if let Some(active) = self.inner.active.lock().await.get_mut(&run_id) {
+                active.cleanup_confirmed = cleanup_witness;
+            }
         }
     }
 
@@ -829,50 +1680,235 @@ impl SchedulerCoordinator {
     }
 
     async fn shutdown_active_runs(&self) -> Result<(), SchedulerError> {
+        // Create the synchronous sink before taking the async active map. If
+        // this enclosing future is cancelled after the take, every witness is
+        // already owned by the ledger/sink and can be retried by the next
+        // shutdown call.
+        let ledger = ShutdownExecutionLedger::new(Arc::clone(&self.inner.shutdown_orphans));
         let active = std::mem::take(&mut *self.inner.active.lock().await);
-        let mut first_error = None;
+        let deadline = tokio::time::Instant::now() + self.inner.config.shutdown_timeout;
         for (run_id, execution) in active {
-            let result = tokio::time::timeout(
-                self.inner.config.shutdown_timeout,
-                execution.handle.terminate(),
-            )
-            .await;
+            ledger.insert(run_id, execution);
+        }
+        let orphan_ids = {
+            let orphan_sink = self
+                .inner
+                .shutdown_orphans
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            orphan_sink.keys().cloned().collect::<Vec<_>>()
+        };
+        for run_id in orphan_ids {
+            if let Some(execution) = self
+                .inner
+                .shutdown_orphans
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(&run_id)
+            {
+                ledger.insert(run_id, execution);
+            }
+        }
+        // The ledger now owns all local execution values. Requesting `stopping`
+        // is synchronous DB work and happens before any task is spawned, so an
+        // enclosing cancellation cannot lose this durable non-terminal barrier.
+        let entries = ledger.drain();
+        for (run_id, execution) in entries {
+            if !execution.cleanup_confirmed {
+                let _ = self.inner.database.request_run_stop(
+                    &run_id,
+                    &execution.owner_instance_id,
+                    &execution.attempt_token,
+                );
+            }
+            ledger.insert(run_id, execution);
+        }
+        let mut tasks = tokio::task::JoinSet::new();
+        let run_ids = ledger
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        for run_id in run_ids {
+            let ledger_for_task = Arc::clone(&ledger);
+            tasks.spawn(async move {
+                let Some(execution) = ledger_for_task.take(&run_id) else {
+                    // This is only reachable if the in-memory active map had
+                    // duplicate keys, which HashMap cannot represent. Keep
+                    // the task non-panicking so the outer ledger remains the
+                    // fail-closed owner if a future implementation changes
+                    // that invariant.
+                    return (run_id, None);
+                };
+                let guard = ShutdownExecutionGuard {
+                    run_id: run_id.clone(),
+                    ledger: ledger_for_task,
+                    execution: Some(execution),
+                };
+                let handle = Arc::clone(
+                    &guard
+                        .execution
+                        .as_ref()
+                        .expect("execution guard initialized")
+                        .handle,
+                );
+                let cleanup_already_confirmed = guard
+                    .execution
+                    .as_ref()
+                    .expect("execution guard initialized")
+                    .cleanup_confirmed;
+                let result = if cleanup_already_confirmed {
+                    Some(Ok(Ok(ExecutionExit { exit_code: None })))
+                } else {
+                    let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                    if remaining.is_zero() {
+                        None
+                    } else {
+                        Some(tokio::time::timeout(remaining, handle.terminate()).await)
+                    }
+                };
+                // Keep the process witness in the synchronous ledger until
+                // the join owner explicitly takes it. A completed JoinSet
+                // output must never itself be the only owner: dropping an
+                // enclosing shutdown future can drop completed outputs.
+                drop(guard);
+                (run_id, result)
+            });
+        }
+        let mut first_error = None;
+        while let Some(joined) = tasks.join_next().await {
+            let Ok((run_id, result)) = joined else {
+                if first_error.is_none() {
+                    first_error = Some(SchedulerError::Join(
+                        "shutdown termination task failed".to_string(),
+                    ));
+                }
+                continue;
+            };
+            let Some(execution) = ledger.take(&run_id) else {
+                if first_error.is_none() {
+                    first_error = Some(SchedulerError::Join(
+                        "shutdown execution ownership unavailable".to_string(),
+                    ));
+                }
+                continue;
+            };
+            let mut execution_guard = ShutdownExecutionGuard {
+                run_id: run_id.clone(),
+                ledger: Arc::clone(&ledger),
+                execution: Some(execution),
+            };
+            let job_id = execution_guard
+                .execution
+                .as_ref()
+                .expect("shutdown execution guard initialized")
+                .job_id
+                .clone();
+            let owner = execution_guard
+                .execution
+                .as_ref()
+                .expect("shutdown execution guard initialized")
+                .owner_instance_id
+                .clone();
+            let attempt_token = execution_guard
+                .execution
+                .as_ref()
+                .expect("shutdown execution guard initialized")
+                .attempt_token
+                .clone();
+            // A secondary adapter error (for example a log-write failure)
+            // can arrive after the process tree was confirmed gone. Treat it
+            // as the same cleanup-confirmed branch while retaining any
+            // pending terminal status captured by the monitor.
+            let result = match result {
+                Some(Ok(Err(error))) if error.cleanup_confirmed => {
+                    Some(Ok(Ok(ExecutionExit { exit_code: None })))
+                }
+                other => other,
+            };
             match result {
-                Ok(Ok(exit)) => {
-                    self.inner.database.finish_run(
+                Some(Ok(Ok(exit))) => {
+                    execution_guard
+                        .execution
+                        .as_mut()
+                        .expect("shutdown execution guard initialized")
+                        .cleanup_confirmed = true;
+                    let pending = self
+                        .inner
+                        .pending_terminal
+                        .lock()
+                        .await
+                        .get(&run_id)
+                        .cloned()
+                        .unwrap_or(PendingTerminal {
+                            status: RunStatus::Cancelled,
+                            exit_code: exit.exit_code,
+                            error_message: Some("scheduler-shutdown".to_string()),
+                            failure_code: None,
+                        });
+                    let finished = self.finish_run_and_notify(
                         &run_id,
-                        &execution.owner_instance_id,
-                        &execution.attempt_token,
-                        RunStatus::Cancelled,
-                        exit.exit_code,
-                        Some("scheduler-shutdown"),
+                        &job_id,
+                        &owner,
+                        &attempt_token,
+                        pending.status,
+                        pending.exit_code,
+                        pending.error_message.as_deref(),
                         current_epoch_millis(),
-                    )?;
+                        pending.failure_code,
+                    );
+                    match finished {
+                        Ok(true) => {
+                            self.inner.pending_terminal.lock().await.remove(&run_id);
+                            self.clear_cleanup_pending(&job_id).await;
+                            // No await follows this take in the successful
+                            // branch, so the guard cannot be cancelled with a
+                            // missing process witness.
+                            let _ = execution_guard.execution.take();
+                        }
+                        Ok(false) => {
+                            self.mark_cleanup_pending(&job_id).await;
+                            self.restore_shutdown_guard(&mut execution_guard).await;
+                            if first_error.is_none() {
+                                first_error = Some(SchedulerError::Storage(
+                                    StorageError::ConcurrentChange("run terminal CAS".into()),
+                                ));
+                            }
+                        }
+                        Err(error) => {
+                            // The process tree is gone, but durable
+                            // terminalization is not confirmed. Keep the
+                            // execution witness and cleanup barrier so a
+                            // later shutdown/retry can CAS the row without
+                            // authorizing exit early.
+                            self.mark_cleanup_pending(&job_id).await;
+                            self.restore_shutdown_guard(&mut execution_guard).await;
+                            if first_error.is_none() {
+                                first_error = Some(error);
+                            }
+                        }
+                    }
                 }
-                Ok(Err(error)) => {
-                    self.inner.database.finish_run(
-                        &run_id,
-                        &execution.owner_instance_id,
-                        &execution.attempt_token,
-                        RunStatus::Failed,
-                        None,
-                        Some(&error.message),
-                        current_epoch_millis(),
-                    )?;
+                Some(Ok(Err(error))) => {
+                    let code = failure_code_from_adapter(&error);
+                    self.mark_cleanup_pending(&job_id).await;
+                    self.restore_shutdown_guard(&mut execution_guard).await;
+                    if first_error.is_none() {
+                        first_error = Some(SchedulerError::Adapter {
+                            run_id: run_id.clone(),
+                            source: AdapterError::new(code.as_db_message()),
+                        });
+                    }
                 }
-                Err(error) => {
-                    self.inner.database.finish_run(
-                        &run_id,
-                        &execution.owner_instance_id,
-                        &execution.attempt_token,
-                        RunStatus::Failed,
-                        None,
-                        Some("scheduler-shutdown-timeout"),
-                        current_epoch_millis(),
-                    )?;
+                Some(Err(_)) | None => {
+                    let code = TerminalFailureCode::TerminationTimeout;
+                    self.mark_cleanup_pending(&job_id).await;
+                    self.restore_shutdown_guard(&mut execution_guard).await;
                     let shutdown_error = SchedulerError::Adapter {
                         run_id,
-                        source: AdapterError::new(format!("shutdown timeout: {error}")),
+                        source: AdapterError::new(code.as_db_message()),
                     };
                     if first_error.is_none() {
                         first_error = Some(shutdown_error);
@@ -880,11 +1916,254 @@ impl SchedulerCoordinator {
                 }
             }
         }
+        // Tasks that never started, or that unwound before producing their
+        // tuple, remain in the synchronous ledger. Preserve every witness.
+        for (run_id, execution) in ledger.drain() {
+            let mut execution_guard = ShutdownExecutionGuard {
+                run_id: run_id.clone(),
+                ledger: Arc::clone(&ledger),
+                execution: Some(execution),
+            };
+            let job_id = execution_guard
+                .execution
+                .as_ref()
+                .expect("shutdown execution guard initialized")
+                .job_id
+                .clone();
+            self.mark_cleanup_pending(&job_id).await;
+            self.restore_shutdown_guard(&mut execution_guard).await;
+            if first_error.is_none() {
+                first_error = Some(SchedulerError::Join(
+                    "shutdown execution ownership unavailable".to_string(),
+                ));
+            }
+        }
         first_error.map_or(Ok(()), Err)
     }
 
     async fn remove_active(&self, run_id: &str) {
         self.inner.active.lock().await.remove(run_id);
+    }
+
+    async fn remove_active_and_complete_stop(
+        &self,
+        run_id: &str,
+        result: Result<Run, String>,
+        stop_guard: &mut StopOperationGuard,
+    ) {
+        let mut active = self.inner.active.lock().await;
+        active.remove(run_id);
+        // No await occurs after the active witness is removed. A cancellation
+        // point before this lock acquisition leaves it in `active`; a
+        // cancellation point after it has been acquired cannot strand the
+        // terminal result because both operations are synchronous here.
+        stop_guard.complete_cleanup_confirmed(result);
+    }
+
+    async fn restore_shutdown_guard(&self, guard: &mut ShutdownExecutionGuard) {
+        let Some(execution) = guard.execution.take() else {
+            return;
+        };
+        let duplicate = self.inner.active.lock().await.contains_key(&guard.run_id);
+        if duplicate {
+            self.inner
+                .shutdown_orphans
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .insert(guard.run_id.clone(), execution);
+        } else {
+            self.inner
+                .active
+                .lock()
+                .await
+                .insert(guard.run_id.clone(), execution);
+        }
+    }
+
+    async fn restore_shutdown_orphans_for_job(&self, job_id: &str) {
+        let restored = {
+            let mut orphan_sink = self
+                .inner
+                .shutdown_orphans
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let run_ids = orphan_sink
+                .iter()
+                .filter(|(_, execution)| execution.job_id == job_id)
+                .map(|(run_id, _)| run_id.clone())
+                .collect::<Vec<_>>();
+            run_ids
+                .into_iter()
+                .filter_map(|run_id| {
+                    orphan_sink
+                        .remove(&run_id)
+                        .map(|execution| (run_id, execution))
+                })
+                .collect::<Vec<_>>()
+        };
+        if !restored.is_empty() {
+            self.inner.active.lock().await.extend(restored);
+        }
+    }
+
+    fn has_shutdown_orphan(&self, job_id: &str) -> bool {
+        self.inner
+            .shutdown_orphans
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .values()
+            .any(|execution| execution.job_id == job_id)
+    }
+
+    async fn is_cleanup_pending(&self, job_id: &str) -> bool {
+        self.inner.cleanup_pending.lock().await.contains(job_id)
+            || self.has_shutdown_orphan(job_id)
+            || self
+                .inner
+                .stop_recovery_required
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .values()
+                .any(|recovery_job_id| recovery_job_id == job_id)
+    }
+
+    async fn mark_cleanup_pending(&self, job_id: &str) {
+        self.inner
+            .cleanup_pending
+            .lock()
+            .await
+            .insert(job_id.to_string());
+    }
+
+    async fn clear_cleanup_pending(&self, job_id: &str) {
+        self.inner.cleanup_pending.lock().await.remove(job_id);
+        let run_ids = self
+            .inner
+            .stop_recovery_required
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .filter_map(|(run_id, recovery_job_id)| {
+                (recovery_job_id == job_id).then_some(run_id.clone())
+            })
+            .collect::<Vec<_>>();
+        let mut recovery = self
+            .inner
+            .stop_recovery_required
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for run_id in run_ids {
+            recovery.remove(&run_id);
+        }
+    }
+
+    /// Shutdown may only authorize application exit after every adapter handle
+    /// has confirmed cleanup. Failed termination deliberately leaves the
+    /// handle owned by the coordinator and keeps this predicate false.
+    pub async fn cleanup_confirmed(&self) -> bool {
+        self.inner.active.lock().await.is_empty()
+            && self.inner.cleanup_pending.lock().await.is_empty()
+            && self.inner.pending_terminal.lock().await.is_empty()
+            && self
+                .inner
+                .stop_recovery_required
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .is_empty()
+            && self
+                .inner
+                .shutdown_orphans
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .is_empty()
+    }
+
+    pub fn cleanup_confirmed_sync(&self) -> bool {
+        let Ok(active) = self.inner.active.try_lock() else {
+            return false;
+        };
+        if !active.is_empty() {
+            return false;
+        }
+        if !self
+            .inner
+            .shutdown_orphans
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_empty()
+        {
+            return false;
+        }
+        if !self
+            .inner
+            .stop_recovery_required
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_empty()
+        {
+            return false;
+        }
+        let Ok(pending) = self.inner.cleanup_pending.try_lock() else {
+            return false;
+        };
+        pending.is_empty()
+            && self
+                .inner
+                .pending_terminal
+                .try_lock()
+                .is_ok_and(|terminals| terminals.is_empty())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finish_run_and_notify(
+        &self,
+        run_id: &str,
+        job_id: &str,
+        owner: &str,
+        attempt_token: &str,
+        status: RunStatus,
+        exit_code: Option<i32>,
+        error_message: Option<&str>,
+        ended_at: i64,
+        failure_code: Option<TerminalFailureCode>,
+    ) -> Result<bool, SchedulerError> {
+        let changed = self.inner.database.finish_run(
+            run_id,
+            owner,
+            attempt_token,
+            status,
+            exit_code,
+            error_message,
+            ended_at,
+        )?;
+        if changed {
+            self.inner.terminal_listener.on_terminal(TerminalRunEvent {
+                job_id: job_id.to_string(),
+                run_id: run_id.to_string(),
+                status,
+                failure_code,
+            });
+            return Ok(true);
+        }
+        let already_terminal = self.inner.database.get_run(run_id)?.is_some_and(|run| {
+            matches!(
+                run.status,
+                RunStatus::Succeeded
+                    | RunStatus::Failed
+                    | RunStatus::Cancelled
+                    | RunStatus::Skipped
+            )
+        });
+        Ok(already_terminal)
+    }
+
+    fn emit_failure(&self, job_id: &str, run_id: &str, failure_code: TerminalFailureCode) {
+        self.inner.terminal_listener.on_terminal(TerminalRunEvent {
+            job_id: job_id.to_string(),
+            run_id: run_id.to_string(),
+            status: RunStatus::Failed,
+            failure_code: Some(failure_code),
+        });
     }
 
     async fn job_mutex(&self, job_id: &str) -> Arc<Mutex<()>> {
@@ -897,12 +2176,49 @@ impl SchedulerCoordinator {
     }
 }
 
+fn failure_code_from_adapter(error: &AdapterError) -> TerminalFailureCode {
+    match error.message.as_str() {
+        "environment-unavailable" => TerminalFailureCode::EnvironmentUnavailable,
+        "log-open-failed" | "log-write-failed" => TerminalFailureCode::LogWriteFailed,
+        "handshake-failed" | "target-unavailable" => TerminalFailureCode::WslUnavailable,
+        "termination-timeout" => TerminalFailureCode::TerminationTimeout,
+        "wait-failed" => TerminalFailureCode::ProcessCrashed,
+        "storage-failed" | "metadata-cas-failed" | "execution-metadata-cas" => {
+            TerminalFailureCode::StorageFailed
+        }
+        _ => TerminalFailureCode::SpawnFailed,
+    }
+}
+
+/// Successful adapter results are cleanup witnesses by contract. An error is
+/// a witness only when the platform completed tree cleanup before reporting a
+/// secondary failure such as log persistence; wait/identity errors otherwise
+/// remain retryable and must keep the active handle owned.
+fn cleanup_confirmed_for_result(result: &Result<ExecutionExit, AdapterError>) -> bool {
+    match result {
+        Ok(_) => true,
+        Err(error) => error.cleanup_confirmed,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::models::{EnvironmentUpdate, JobInput, OverlapPolicy, TargetKind};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex as StdMutex;
     use tokio::sync::oneshot;
+
+    #[derive(Default)]
+    struct RecordingListener {
+        events: StdMutex<Vec<TerminalRunEvent>>,
+    }
+
+    impl TerminalRunListener for RecordingListener {
+        fn on_terminal(&self, event: TerminalRunEvent) {
+            self.events.lock().unwrap().push(event);
+        }
+    }
 
     struct MockHandle {
         wait_rx: Mutex<Option<oneshot::Receiver<ExecutionExit>>>,
@@ -1059,6 +2375,169 @@ mod tests {
         }
     }
 
+    struct HangingTerminateHandle;
+
+    impl ExecutionHandle for HangingTerminateHandle {
+        fn terminate(&self) -> AdapterFuture<'_, ExecutionExit> {
+            Box::pin(async { std::future::pending().await })
+        }
+
+        fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
+            Box::pin(async { std::future::pending().await })
+        }
+    }
+
+    struct HangingTerminateAdapter;
+
+    impl ExecutionAdapter for HangingTerminateAdapter {
+        fn spawn(&self, _request: ExecutionRequest) -> AdapterFuture<'_, Arc<dyn ExecutionHandle>> {
+            Box::pin(async { Ok(Arc::new(HangingTerminateHandle) as Arc<dyn ExecutionHandle>) })
+        }
+    }
+
+    struct RetryTerminateHandle {
+        attempts: Arc<AtomicUsize>,
+    }
+
+    impl ExecutionHandle for RetryTerminateHandle {
+        fn terminate(&self) -> AdapterFuture<'_, ExecutionExit> {
+            let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move {
+                if attempt == 0 {
+                    std::future::pending().await
+                } else {
+                    Ok(ExecutionExit { exit_code: None })
+                }
+            })
+        }
+
+        fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
+            Box::pin(async { std::future::pending().await })
+        }
+    }
+
+    struct RetryTerminateAdapter {
+        attempts: Arc<AtomicUsize>,
+    }
+
+    impl ExecutionAdapter for RetryTerminateAdapter {
+        fn spawn(&self, _request: ExecutionRequest) -> AdapterFuture<'_, Arc<dyn ExecutionHandle>> {
+            let attempts = Arc::clone(&self.attempts);
+            Box::pin(async move {
+                Ok(Arc::new(RetryTerminateHandle { attempts }) as Arc<dyn ExecutionHandle>)
+            })
+        }
+    }
+
+    struct MetadataErrorHangingAdapter;
+
+    struct MetadataErrorHangingHandle;
+
+    impl ExecutionHandle for MetadataErrorHangingHandle {
+        fn terminate(&self) -> AdapterFuture<'_, ExecutionExit> {
+            Box::pin(async { std::future::pending().await })
+        }
+
+        fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
+            Box::pin(async { std::future::pending().await })
+        }
+
+        fn metadata(&self) -> RunExecutionMetadata {
+            RunExecutionMetadata {
+                process_marker: Some("bad\0marker".to_string()),
+                ..RunExecutionMetadata::default()
+            }
+        }
+    }
+
+    impl ExecutionAdapter for MetadataErrorHangingAdapter {
+        fn spawn(&self, _request: ExecutionRequest) -> AdapterFuture<'_, Arc<dyn ExecutionHandle>> {
+            Box::pin(async { Ok(Arc::new(MetadataErrorHangingHandle) as Arc<dyn ExecutionHandle>) })
+        }
+    }
+
+    struct WaitOutcomeAdapter {
+        wait_error: AdapterError,
+    }
+
+    struct WaitOutcomeHandle {
+        wait_error: AdapterError,
+    }
+
+    impl ExecutionHandle for WaitOutcomeHandle {
+        fn terminate(&self) -> AdapterFuture<'_, ExecutionExit> {
+            Box::pin(async { Ok(ExecutionExit { exit_code: None }) })
+        }
+
+        fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
+            let error = self.wait_error.clone();
+            Box::pin(async move { Err(error) })
+        }
+    }
+
+    impl ExecutionAdapter for WaitOutcomeAdapter {
+        fn spawn(&self, _request: ExecutionRequest) -> AdapterFuture<'_, Arc<dyn ExecutionHandle>> {
+            let wait_error = self.wait_error.clone();
+            Box::pin(async move {
+                Ok(Arc::new(WaitOutcomeHandle { wait_error }) as Arc<dyn ExecutionHandle>)
+            })
+        }
+    }
+
+    struct TransientStaleRecoveryAdapter {
+        attempts: AtomicUsize,
+        starts: AtomicUsize,
+    }
+
+    impl ExecutionAdapter for TransientStaleRecoveryAdapter {
+        fn spawn(&self, _request: ExecutionRequest) -> AdapterFuture<'_, Arc<dyn ExecutionHandle>> {
+            self.starts.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Err(AdapterError::new("spawn-must-not-run")) })
+        }
+
+        fn recover_stale(&self, _request: ExecutionRequest) -> AdapterFuture<'_, ()> {
+            let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move {
+                if attempt == 0 {
+                    Err(AdapterError::new("transient-cleanup-failed"))
+                } else {
+                    Ok(())
+                }
+            })
+        }
+    }
+
+    struct StopRaceHandle {
+        release: Arc<Notify>,
+    }
+
+    impl ExecutionHandle for StopRaceHandle {
+        fn terminate(&self) -> AdapterFuture<'_, ExecutionExit> {
+            let release = Arc::clone(&self.release);
+            Box::pin(async move {
+                release.notified().await;
+                Ok(ExecutionExit { exit_code: Some(0) })
+            })
+        }
+
+        fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
+            Box::pin(async { std::future::pending().await })
+        }
+    }
+
+    struct StopRaceAdapter {
+        release: Arc<Notify>,
+    }
+
+    impl ExecutionAdapter for StopRaceAdapter {
+        fn spawn(&self, _request: ExecutionRequest) -> AdapterFuture<'_, Arc<dyn ExecutionHandle>> {
+            let release = Arc::clone(&self.release);
+            Box::pin(
+                async move { Ok(Arc::new(StopRaceHandle { release }) as Arc<dyn ExecutionHandle>) },
+            )
+        }
+    }
+
     fn input(name: &str, enabled: bool, overlap_policy: OverlapPolicy) -> JobInput {
         JobInput {
             name: name.to_string(),
@@ -1079,6 +2558,14 @@ mod tests {
         let config = SchedulerConfig::default();
         assert_eq!(config.tick_interval, SCHEDULER_TICK);
         assert_eq!(config.max_concurrent_runs, DEFAULT_MAX_CONCURRENT_RUNS);
+    }
+
+    #[test]
+    fn metadata_cas_failure_uses_the_storage_failure_code() {
+        assert_eq!(
+            failure_code_from_adapter(&AdapterError::new("metadata-cas-failed")),
+            TerminalFailureCode::StorageFailed
+        );
     }
 
     #[test]
@@ -1128,6 +2615,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stale_recovery_retries_after_transient_cleanup_failure() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("stale-retry", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let run = database.create_manual_run_at(&job.id, 1_001).unwrap();
+        assert!(database
+            .claim_run_starting(&run.id, "owner", "token")
+            .unwrap());
+        assert!(database
+            .mark_run_running(&run.id, "owner", "token", 1_002)
+            .unwrap());
+        let adapter = Arc::new(TransientStaleRecoveryAdapter {
+            attempts: AtomicUsize::new(0),
+            starts: AtomicUsize::new(0),
+        });
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        assert_eq!(scheduler.recover_stale_at(2_000).await.unwrap(), 0);
+        assert!(!scheduler.cleanup_confirmed().await);
+        assert!(scheduler.trigger_manual_at(&job.id, 2_001).await.is_err());
+        assert_eq!(
+            database.get_run(&run.id).unwrap().unwrap().status,
+            RunStatus::Running
+        );
+
+        assert_eq!(scheduler.recover_stale_at(2_002).await.unwrap(), 1);
+        assert!(scheduler.cleanup_confirmed().await);
+        assert_eq!(
+            database.get_run(&run.id).unwrap().unwrap().status,
+            RunStatus::Failed
+        );
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn stale_recovery_does_not_terminate_current_owner_runs() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("current-owner", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let run = database.create_manual_run_at(&job.id, 1_001).unwrap();
+        assert!(database
+            .claim_run_starting(&run.id, "current-owner", "attempt")
+            .unwrap());
+        assert!(database
+            .mark_run_running(&run.id, "current-owner", "attempt", 1_002)
+            .unwrap());
+        let adapter = Arc::new(TransientStaleRecoveryAdapter {
+            attempts: AtomicUsize::new(0),
+            starts: AtomicUsize::new(0),
+        });
+        let scheduler = SchedulerCoordinator::with_config(
+            database.clone(),
+            adapter.clone(),
+            SchedulerConfig::default().with_owner_instance_id("current-owner"),
+        );
+
+        assert_eq!(scheduler.recover_stale_at(2_000).await.unwrap(), 0);
+        assert_eq!(adapter.attempts.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            database.get_run(&run.id).unwrap().unwrap().status,
+            RunStatus::Running
+        );
+    }
+
+    #[tokio::test]
     async fn manual_claim_uses_overlap_policy_and_skip_is_terminal() {
         let database = Arc::new(DatabaseState::open_in_memory().unwrap());
         let job = database
@@ -1156,8 +2710,7 @@ mod tests {
         let job = database
             .create_job_at(input("manual-disabled", false, OverlapPolicy::Queue), 1_000)
             .unwrap();
-        let adapter = MockAdapter::new();
-        let scheduler = SchedulerCoordinator::new(database.clone(), adapter);
+        let scheduler = SchedulerCoordinator::new(database.clone(), MockAdapter::new());
         let run = scheduler.trigger_manual_at(&job.id, 1_001).await.unwrap();
         assert_eq!(run.status, RunStatus::Running);
         scheduler.shutdown().await.unwrap();
@@ -1165,6 +2718,119 @@ mod tests {
             database.get_run(&run.id).unwrap().unwrap().status,
             RunStatus::Cancelled
         );
+    }
+
+    #[tokio::test]
+    async fn manual_stop_confirms_terminal_state_and_emits_sanitized_event() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("manual-stop", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let listener = Arc::new(RecordingListener::default());
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::with_terminal_listener(
+            database.clone(),
+            adapter,
+            listener.clone(),
+        );
+
+        let run = scheduler.trigger_manual_at(&job.id, 1_001).await.unwrap();
+        assert_eq!(run.status, RunStatus::Running);
+        let stopped = scheduler
+            .stop_active_at(&job.id, 1_002)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stopped.status, RunStatus::Cancelled);
+        let events = listener.events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].job_id, job.id);
+        assert_eq!(events[0].run_id, run.id);
+        assert_eq!(events[0].status, RunStatus::Cancelled);
+        assert_eq!(events[0].failure_code, None);
+    }
+
+    #[tokio::test]
+    async fn dropping_manual_stop_waiter_does_not_strand_stopping_row() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("stop-drop", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let release = Arc::new(Notify::new());
+        let scheduler = SchedulerCoordinator::new(
+            database.clone(),
+            Arc::new(StopRaceAdapter {
+                release: Arc::clone(&release),
+            }),
+        );
+        let run = scheduler.trigger_manual_at(&job.id, 1_001).await.unwrap();
+
+        let stop_task = tokio::spawn({
+            let scheduler = scheduler.clone();
+            let job_id = job.id.clone();
+            async move { scheduler.stop_active_at(&job_id, 1_002).await }
+        });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if database.get_run(&run.id).unwrap().unwrap().status == RunStatus::Stopping {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "run after release: {:?}",
+                database.get_run(&run.id).unwrap()
+            )
+        });
+        stop_task.abort();
+        let _ = stop_task.await;
+        release.notify_one();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if database.get_run(&run.id).unwrap().unwrap().status == RunStatus::Cancelled {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "run after release: {:?}",
+                database.get_run(&run.id).unwrap()
+            )
+        });
+    }
+
+    #[tokio::test]
+    async fn adapter_failure_emits_fixed_notification_code_without_adapter_text() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("spawn-failure", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let listener = Arc::new(RecordingListener::default());
+        let scheduler = SchedulerCoordinator::with_terminal_listener(
+            database.clone(),
+            Arc::new(UnavailableExecutionAdapter),
+            listener.clone(),
+        );
+
+        assert!(scheduler.trigger_manual_at(&job.id, 1_001).await.is_err());
+        let events = listener.events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].failure_code,
+            Some(TerminalFailureCode::SpawnFailed)
+        );
+        let run = database
+            .list_runs(&job.id, 1, None, None)
+            .unwrap()
+            .remove(0);
+        assert_eq!(run.status, RunStatus::Failed);
+        assert_eq!(run.error_message.as_deref(), Some("spawn-failed"));
     }
 
     #[tokio::test]
@@ -1199,6 +2865,119 @@ mod tests {
             database.get_run(&run.id).unwrap().unwrap().status,
             RunStatus::Cancelled
         );
+    }
+
+    #[tokio::test]
+    async fn shutdown_uses_one_global_deadline_and_preserves_timeout_rows_for_recovery() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let first_job = database
+            .create_job_at(input("timeout-one", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let second_job = database
+            .create_job_at(input("timeout-two", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let scheduler = SchedulerCoordinator::with_config(
+            database.clone(),
+            Arc::new(HangingTerminateAdapter),
+            SchedulerConfig::default().with_shutdown_timeout(Duration::from_millis(50)),
+        );
+        let first = scheduler
+            .trigger_manual_at(&first_job.id, 1_001)
+            .await
+            .unwrap();
+        let second = scheduler
+            .trigger_manual_at(&second_job.id, 1_001)
+            .await
+            .unwrap();
+
+        let started = std::time::Instant::now();
+        assert!(scheduler.shutdown().await.is_err());
+        assert!(started.elapsed() < Duration::from_millis(250));
+        assert_eq!(
+            database.get_run(&first.id).unwrap().unwrap().status,
+            RunStatus::Stopping
+        );
+        assert_eq!(
+            database.get_run(&second.id).unwrap().unwrap().status,
+            RunStatus::Stopping
+        );
+        assert_eq!(
+            database
+                .get_run(&first.id)
+                .unwrap()
+                .unwrap()
+                .error_message
+                .as_deref(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn termination_timeout_keeps_nonterminal_row_until_retry_confirms_cleanup() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("retry-stop", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let scheduler = SchedulerCoordinator::with_config(
+            database.clone(),
+            Arc::new(RetryTerminateAdapter {
+                attempts: Arc::clone(&attempts),
+            }),
+            SchedulerConfig::default().with_shutdown_timeout(Duration::from_millis(20)),
+        );
+        let run = scheduler.trigger_manual_at(&job.id, 1_001).await.unwrap();
+        assert!(scheduler.shutdown().await.is_err());
+        assert_eq!(
+            database.get_run(&run.id).unwrap().unwrap().status,
+            RunStatus::Stopping
+        );
+        assert!(!scheduler.cleanup_confirmed().await);
+
+        scheduler.shutdown().await.unwrap();
+        assert_eq!(
+            database.get_run(&run.id).unwrap().unwrap().status,
+            RunStatus::Cancelled
+        );
+        assert!(scheduler.cleanup_confirmed().await);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn cancelled_enclosing_shutdown_preserves_handle_for_next_retry() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("shutdown-cancel", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let scheduler = SchedulerCoordinator::with_config(
+            database.clone(),
+            Arc::new(RetryTerminateAdapter {
+                attempts: Arc::clone(&attempts),
+            }),
+            SchedulerConfig::default().with_shutdown_timeout(Duration::from_millis(100)),
+        );
+        let run = scheduler.trigger_manual_at(&job.id, 1_001).await.unwrap();
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(5), scheduler.shutdown())
+                .await
+                .is_err()
+        );
+        tokio::task::yield_now().await;
+        assert!(!scheduler.cleanup_confirmed().await);
+        assert_eq!(
+            database.get_run(&run.id).unwrap().unwrap().status,
+            RunStatus::Stopping
+        );
+
+        scheduler.shutdown().await.unwrap();
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            database.get_run(&run.id).unwrap().unwrap().status,
+            RunStatus::Cancelled
+        );
+        assert!(scheduler.cleanup_confirmed().await);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1295,6 +3074,86 @@ mod tests {
                 .map(|run| run.status),
             Some(RunStatus::Failed)
         );
+    }
+
+    #[tokio::test]
+    async fn metadata_storage_error_retains_unverified_handle_for_shutdown_retry() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(
+                input("metadata-storage-error", true, OverlapPolicy::Queue),
+                1_000,
+            )
+            .unwrap();
+        let scheduler = SchedulerCoordinator::with_config(
+            database.clone(),
+            Arc::new(MetadataErrorHangingAdapter),
+            SchedulerConfig::default().with_shutdown_timeout(Duration::from_millis(20)),
+        );
+        let result = scheduler.trigger_manual_at(&job.id, 1_001).await;
+        assert!(matches!(
+            result,
+            Err(SchedulerError::Storage(StorageError::Validation(_)))
+        ));
+        assert!(!scheduler.cleanup_confirmed().await);
+        assert!(scheduler.trigger_manual_at(&job.id, 1_002).await.is_err());
+        assert!(scheduler.shutdown().await.is_err());
+        assert!(!scheduler.cleanup_confirmed().await);
+    }
+
+    #[tokio::test]
+    async fn wait_error_without_cleanup_witness_is_retried_by_stop() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("wait-error", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let scheduler = SchedulerCoordinator::new(
+            database.clone(),
+            Arc::new(WaitOutcomeAdapter {
+                wait_error: AdapterError::new("wait-failed"),
+            }),
+        );
+        let run = scheduler.trigger_manual_at(&job.id, 1_001).await.unwrap();
+        let stopped = scheduler.stop_active_at(&job.id, 1_002).await.unwrap();
+        assert!(stopped.is_some());
+        let terminal = database.get_run(&run.id).unwrap().unwrap();
+        assert!(matches!(
+            terminal.status,
+            RunStatus::Failed | RunStatus::Cancelled
+        ));
+        assert!(scheduler.cleanup_confirmed().await);
+    }
+
+    #[tokio::test]
+    async fn confirmed_wait_error_can_terminalize_after_tree_cleanup() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(
+                input("confirmed-wait-error", true, OverlapPolicy::Queue),
+                1_000,
+            )
+            .unwrap();
+        let scheduler = SchedulerCoordinator::new(
+            database.clone(),
+            Arc::new(WaitOutcomeAdapter {
+                wait_error: AdapterError::confirmed("log-write-failed"),
+            }),
+        );
+        let run = scheduler.trigger_manual_at(&job.id, 1_001).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if matches!(
+                    database.get_run(&run.id).unwrap().unwrap().status,
+                    RunStatus::Failed | RunStatus::Cancelled
+                ) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(scheduler.cleanup_confirmed().await);
     }
 
     #[tokio::test]

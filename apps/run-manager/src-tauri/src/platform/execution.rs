@@ -22,7 +22,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Child;
-use tokio::sync::{mpsc, oneshot, watch, Notify};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -44,7 +44,6 @@ enum FailureCode {
     Storage,
     LogOpen,
     LogWrite,
-    #[cfg(not(windows))]
     TargetUnavailable,
     Spawn,
     Handshake,
@@ -60,7 +59,6 @@ impl FailureCode {
             Self::Storage => "storage-failed",
             Self::LogOpen => "log-open-failed",
             Self::LogWrite => "log-write-failed",
-            #[cfg(not(windows))]
             Self::TargetUnavailable => "target-unavailable",
             Self::Spawn => "spawn-failed",
             Self::Handshake => "handshake-failed",
@@ -153,9 +151,9 @@ impl Drop for SecretRedactor {
     }
 }
 
-/// The scheduler-facing process adapter. It is intentionally not registered
-/// with lifecycle's idle scheduler in this phase; setup/wiring can inject the
-/// same value when the lifecycle replacement lands in its own feature.
+/// The scheduler-facing process adapter. Tauri setup installs one instance for
+/// the process-wide coordinator so manual and scheduled runs share this exact
+/// environment/log/process boundary.
 #[derive(Clone)]
 pub struct PlatformExecutionAdapter {
     database: Arc<DatabaseState>,
@@ -396,26 +394,133 @@ impl ExecutionAdapter for PlatformExecutionAdapter {
         let adapter = self.clone();
         Box::pin(async move { adapter.spawn_request(request).await })
     }
+
+    fn recover_stale(&self, request: ExecutionRequest) -> AdapterFuture<'_, ()> {
+        let adapter = self.clone();
+        Box::pin(async move {
+            match request.job.target_kind {
+                TargetKind::Wsl => {
+                    let pid = u32::try_from(
+                        request
+                            .run
+                            .target_pid
+                            .ok_or_else(|| failure(FailureCode::Storage))?,
+                    )
+                    .map_err(|_| failure(FailureCode::Storage))?;
+                    let pgid = u32::try_from(
+                        request
+                            .run
+                            .target_pgid
+                            .ok_or_else(|| failure(FailureCode::Storage))?,
+                    )
+                    .map_err(|_| failure(FailureCode::Storage))?;
+                    let sid = u32::try_from(
+                        request
+                            .run
+                            .target_sid
+                            .ok_or_else(|| failure(FailureCode::Storage))?,
+                    )
+                    .map_err(|_| failure(FailureCode::Storage))?;
+                    let marker = request
+                        .run
+                        .process_marker
+                        .clone()
+                        .ok_or_else(|| failure(FailureCode::Storage))?;
+                    let distro = request
+                        .job
+                        .target_distro
+                        .as_deref()
+                        .ok_or_else(|| failure(FailureCode::TargetUnavailable))?;
+                    let identity = crate::core::shell::WslProcessIdentity {
+                        pid,
+                        pgid,
+                        sid,
+                        marker,
+                    };
+                    wsl::recover_stale_group(distro, &identity, adapter.termination_grace)
+                        .await
+                        .map_err(|_| failure(FailureCode::Termination))
+                }
+                TargetKind::Windows => {
+                    #[cfg(windows)]
+                    {
+                        let pid = u32::try_from(
+                            request
+                                .run
+                                .target_pid
+                                .ok_or_else(|| failure(FailureCode::Storage))?,
+                        )
+                        .map_err(|_| failure(FailureCode::Storage))?;
+                        let created_at = request
+                            .run
+                            .target_process_created_at
+                            .ok_or_else(|| failure(FailureCode::Storage))?;
+                        windows::recover_stale(pid, created_at, adapter.termination_grace)
+                            .map_err(|_| failure(FailureCode::Termination))
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        Err(failure(FailureCode::TargetUnavailable))
+                    }
+                }
+            }
+        })
+    }
 }
 
 struct SharedTerminal {
     result: watch::Sender<Option<Result<ExecutionExit, AdapterError>>>,
-    terminate: Arc<Notify>,
+    terminate_requests: mpsc::UnboundedSender<TerminateRequest>,
+}
+
+type TerminalWatchReceiver = watch::Receiver<Option<Result<ExecutionExit, AdapterError>>>;
+type TerminateRequestReceiver = mpsc::UnboundedReceiver<TerminateRequest>;
+
+struct TerminateRequest {
+    response: oneshot::Sender<Result<ExecutionExit, AdapterError>>,
 }
 
 impl SharedTerminal {
-    fn new() -> (
-        Self,
-        watch::Receiver<Option<Result<ExecutionExit, AdapterError>>>,
-    ) {
+    fn new() -> (Self, TerminalWatchReceiver, TerminateRequestReceiver) {
         let (result, receiver) = watch::channel(None);
+        let (terminate_requests, terminate_rx) = mpsc::unbounded_channel();
         (
             Self {
                 result,
-                terminate: Arc::new(Notify::new()),
+                terminate_requests,
             },
             receiver,
+            terminate_rx,
         )
+    }
+
+    fn request_terminate(&self) -> AdapterFuture<'static, ExecutionExit> {
+        let terminal = self.result.subscribe();
+        if let Some(result) = terminal.borrow().clone() {
+            return Box::pin(async move { result });
+        }
+        let (response, receiver) = oneshot::channel();
+        if self
+            .terminate_requests
+            .send(TerminateRequest { response })
+            .is_err()
+        {
+            return Box::pin(async move {
+                SharedTerminal::wait(terminal)
+                    .await
+                    .map_err(|_| failure(FailureCode::Termination))
+            });
+        }
+        let terminal_for_response = terminal.clone();
+        Box::pin(async move {
+            tokio::select! {
+                response = receiver => match response {
+                    Ok(result) => result,
+                    Err(_) => SharedTerminal::wait(terminal_for_response).await,
+                },
+                terminal = SharedTerminal::wait(terminal) => terminal,
+            }
+        })
     }
 
     async fn wait(
@@ -438,50 +543,55 @@ type ChildWaitResult = Result<ExecutionExit, AdapterError>;
 /// Own the WSL wrapper in one task so a monitor can request direct wrapper
 /// reaping without borrowing the child while the normal wait is pending.
 /// Process-group termination remains a separate, identity-checked operation.
+struct ReapRequest {
+    response: oneshot::Sender<ChildWaitResult>,
+}
+
 fn spawn_wsl_wait_owner(
     mut child: Child,
-    mut reap_rx: oneshot::Receiver<()>,
+    mut reap_rx: mpsc::UnboundedReceiver<ReapRequest>,
     wait_tx: oneshot::Sender<ChildWaitResult>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let result = tokio::select! {
-            result = child.wait() => result
-                .map(|status| ExecutionExit { exit_code: status.code() })
-                .map_err(|_| failure(FailureCode::Wait)),
-            reap_request = &mut reap_rx => match reap_request {
+        loop {
+            let event = tokio::select! {
+                result = child.wait() => {
+                    let result = result
+                        .map(|status| ExecutionExit { exit_code: status.code() })
+                        .map_err(|_| failure(FailureCode::Wait));
+                    let _ = wait_tx.send(result);
+                    return;
+                }
+                Some(request) = reap_rx.recv() => request,
+                else => {
+                    let result = child
+                        .wait()
+                        .await
+                        .map(|status| ExecutionExit { exit_code: status.code() })
+                        .map_err(|_| failure(FailureCode::Wait));
+                    let _ = wait_tx.send(result);
+                    return;
+                }
+            };
+            let result = match child.start_kill() {
                 Ok(()) => {
-                    // Group termination has already validated the WSL
-                    // identity. The direct wrapper is ours to reap only for
-                    // this explicit request after that validation.
-                    let kill_result = child.start_kill();
-                    let wait_result = child.wait().await;
-                    match kill_result {
-                        Ok(()) => wait_result
-                            .map(|status| ExecutionExit { exit_code: status.code() })
-                            .map_err(|_| failure(FailureCode::Wait)),
+                    match tokio::time::timeout(WAIT_OWNER_ABORT_TIMEOUT, child.wait()).await {
+                        Ok(Ok(status)) => Ok(ExecutionExit {
+                            exit_code: status.code(),
+                        }),
+                        Ok(Err(_)) => Err(failure(FailureCode::Wait)),
                         Err(_) => Err(failure(FailureCode::Termination)),
                     }
                 }
-                // A dropped sender means group validation failed. Do not
-                // signal the wrapper in that fail-closed path; let it exit
-                // naturally while the detached owner preserves ownership.
-                Err(_) => child
-                    .wait()
-                    .await
-                    .map(|status| ExecutionExit { exit_code: status.code() })
-                    .map_err(|_| failure(FailureCode::Wait)),
-            },
-        };
-        let _ = wait_tx.send(result);
+                Err(_) => Err(failure(FailureCode::Termination)),
+            };
+            let retryable = result.is_err();
+            let _ = event.response.send(result);
+            if !retryable {
+                return;
+            }
+        }
     })
-}
-
-/// Cancel a wait owner without making a failed identity/termination path wait
-/// forever. The WSL child was spawned with `kill_on_drop`, so a task that does
-/// not acknowledge cancellation still cannot retain the wrapper indefinitely.
-async fn abort_wsl_wait_owner(wait_task: &mut JoinHandle<()>) {
-    wait_task.abort();
-    let _ = tokio::time::timeout(WAIT_OWNER_ABORT_TIMEOUT, &mut *wait_task).await;
 }
 
 async fn finish_wsl_wait_owner(wait_task: &mut JoinHandle<()>) {
@@ -497,27 +607,21 @@ async fn finish_wsl_wait_owner(wait_task: &mut JoinHandle<()>) {
 /// Aborting the owner is a final fallback; the WSL spawn path sets
 /// `kill_on_drop`, so dropping its child cannot leave a wrapper orphaned.
 async fn reap_wsl_wrapper(
-    reap_tx: &mut Option<oneshot::Sender<()>>,
-    wait_rx: &mut oneshot::Receiver<ChildWaitResult>,
+    reap_tx: &mpsc::UnboundedSender<ReapRequest>,
     wait_task: &mut JoinHandle<()>,
     timeout: Duration,
 ) -> Result<ExecutionExit, AdapterError> {
-    if let Some(sender) = reap_tx.take() {
-        let _ = sender.send(());
+    let (response, wait_rx) = oneshot::channel();
+    if reap_tx.send(ReapRequest { response }).is_err() {
+        return Err(failure(FailureCode::Wait));
     }
-    match tokio::time::timeout(timeout, &mut *wait_rx).await {
+    match tokio::time::timeout(timeout, wait_rx).await {
         Ok(Ok(result)) => {
             finish_wsl_wait_owner(wait_task).await;
             result
         }
-        Ok(Err(_)) => {
-            finish_wsl_wait_owner(wait_task).await;
-            Err(failure(FailureCode::Wait))
-        }
-        Err(_) => {
-            abort_wsl_wait_owner(wait_task).await;
-            Err(failure(FailureCode::Termination))
-        }
+        Ok(Err(_)) => Err(failure(FailureCode::Wait)),
+        Err(_) => Err(failure(FailureCode::Termination)),
     }
 }
 
@@ -533,18 +637,18 @@ fn abort_drain_tasks(tasks: &mut [JoinHandle<Result<(), AdapterError>>]) {
 
 enum DrainControl {
     Complete(Result<(), AdapterError>),
-    Terminate,
+    Terminate(TerminateRequest),
     Failure,
 }
 
 async fn join_drains_with_control(
     tasks: &mut [JoinHandle<Result<(), AdapterError>>],
-    terminate: &Notify,
+    terminate_rx: &mut mpsc::UnboundedReceiver<TerminateRequest>,
     failure_rx: &mut mpsc::UnboundedReceiver<()>,
 ) -> DrainControl {
     tokio::select! {
         result = join_drain_tasks(tasks) => DrainControl::Complete(result),
-        _ = terminate.notified() => DrainControl::Terminate,
+        Some(request) = terminate_rx.recv() => DrainControl::Terminate(request),
         Some(_) = failure_rx.recv() => DrainControl::Failure,
     }
 }
@@ -687,7 +791,7 @@ impl WindowsExecutionHandle {
         grace: Duration,
     ) -> Self {
         let child = Arc::new(child);
-        let (shared, _receiver) = SharedTerminal::new();
+        let (shared, _receiver, mut terminate_rx) = SharedTerminal::new();
         let (failure_tx, mut failure_rx) = spawn_drain_error_channel();
         let mut drains = vec![
             spawn_windows_drain(
@@ -705,7 +809,6 @@ impl WindowsExecutionHandle {
         ];
         let result_tx = shared.result.clone();
         let child_for_wait = Arc::clone(&child);
-        let term = Arc::clone(&shared.terminate);
         tokio::spawn(async move {
             let (wait_tx, mut wait_rx) = tokio::sync::oneshot::channel();
             tokio::task::spawn_blocking(move || {
@@ -717,43 +820,141 @@ impl WindowsExecutionHandle {
                     .map_err(|_| failure(FailureCode::Wait));
                 let _ = wait_tx.send(result);
             });
-            let (mut outcome, process_waited) = tokio::select! {
-                result = &mut wait_rx => (
-                    result.unwrap_or_else(|_| Err(failure(FailureCode::Wait))),
-                    true,
-                ),
-                _ = term.notified() => {
-                    let child_for_term = Arc::clone(&child);
-                    let killed = tokio::task::spawn_blocking(move || child_for_term.terminate_and_wait(grace)).await;
-                    let outcome = match killed {
-                        Ok(Ok(code)) => {
-                            let _ = wait_rx.await;
-                            Ok(ExecutionExit { exit_code: Some(code as i32) })
-                        }
-                        _ => {
-                            abort_drain_tasks(&mut drains);
-                            Err(failure(FailureCode::Termination))
-                        }
-                    };
-                    (outcome, false)
+            let mut termination_response = None;
+            let mut log_failure = false;
+            let mut wait_complete = false;
+            let mut natural_result = None;
+            let mut retry_tick = tokio::time::interval(Duration::from_millis(100));
+            retry_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let (mut outcome, process_waited) = loop {
+                enum MonitorEvent {
+                    Wait(ChildWaitResult),
+                    Terminate(TerminateRequest),
+                    LogFailure,
+                    RetryTree,
                 }
-                Some(_) = failure_rx.recv() => {
-                    let child_for_term = Arc::clone(&child);
-                    let killed = tokio::task::spawn_blocking(move || child_for_term.terminate_and_wait(grace)).await;
-                    let killed_ok = matches!(&killed, Ok(Ok(_)));
-                    if !killed_ok {
-                        abort_drain_tasks(&mut drains);
+                let event = tokio::select! {
+                    result = &mut wait_rx, if !wait_complete => MonitorEvent::Wait(
+                        result.unwrap_or_else(|_| Err(failure(FailureCode::Wait)))
+                    ),
+                    Some(request) = terminate_rx.recv() => MonitorEvent::Terminate(request),
+                    Some(_) = failure_rx.recv() => MonitorEvent::LogFailure,
+                    _ = retry_tick.tick(), if wait_complete => MonitorEvent::RetryTree,
+                };
+                match event {
+                    MonitorEvent::Wait(mut result) => {
+                        wait_complete = true;
+                        natural_result = Some(result.clone());
+                        let child_for_tree = Arc::clone(&child);
+                        let tree_gone = matches!(
+                            tokio::task::spawn_blocking(move || {
+                                child_for_tree.ensure_tree_gone(grace)
+                            })
+                            .await,
+                            Ok(Ok(()))
+                        );
+                        if !tree_gone {
+                            // The root has exited (or wait itself failed), but
+                            // the Job Object still has members or could not be
+                            // queried. Keep the actor alive for an explicit
+                            // retry; publishing a terminal result here would
+                            // lose the only safe tree owner.
+                            continue;
+                        }
+                        if let Err(error) = result {
+                            result = Err(error.with_cleanup_confirmed());
+                        }
+                        if log_failure && result.is_ok() {
+                            result = Err(AdapterError::confirmed(FailureCode::LogWrite.as_str()));
+                        }
+                        break (result, true);
                     }
-                    if killed_ok {
-                        let _ = wait_rx.await;
+                    MonitorEvent::RetryTree => {
+                        let Some(mut result) = natural_result.clone() else {
+                            continue;
+                        };
+                        let child_for_tree = Arc::clone(&child);
+                        let tree_gone = matches!(
+                            tokio::task::spawn_blocking(move || {
+                                child_for_tree.ensure_tree_gone(grace)
+                            })
+                            .await,
+                            Ok(Ok(()))
+                        );
+                        if !tree_gone {
+                            continue;
+                        }
+                        if let Err(error) = result {
+                            result = Err(error.with_cleanup_confirmed());
+                        }
+                        if log_failure && result.is_ok() {
+                            result = Err(AdapterError::confirmed(FailureCode::LogWrite.as_str()));
+                        }
+                        break (result, true);
                     }
-                    (Err(failure(FailureCode::LogWrite)), false)
+                    MonitorEvent::Terminate(request) => {
+                        let killed = if wait_complete {
+                            let child_for_tree = Arc::clone(&child);
+                            tokio::task::spawn_blocking(move || {
+                                child_for_tree.ensure_tree_gone(grace)
+                            })
+                            .await
+                            .map(|result| result.map(|()| 0))
+                        } else {
+                            let child_for_term = Arc::clone(&child);
+                            tokio::task::spawn_blocking(move || {
+                                child_for_term.terminate_and_wait(grace)
+                            })
+                            .await
+                        };
+                        match killed {
+                            Ok(Ok(code)) => {
+                                let result = if log_failure {
+                                    Err(AdapterError::confirmed(FailureCode::LogWrite.as_str()))
+                                } else {
+                                    Ok(ExecutionExit {
+                                        exit_code: Some(code as i32),
+                                    })
+                                };
+                                termination_response = Some(request.response);
+                                break (result, false);
+                            }
+                            _ => {
+                                let _ = request
+                                    .response
+                                    .send(Err(failure(FailureCode::Termination)));
+                                // Keep the process/job and reader ownership in
+                                // this actor so a later stop/shutdown request
+                                // performs a real second attempt.
+                            }
+                        }
+                    }
+                    MonitorEvent::LogFailure => {
+                        log_failure = true;
+                        let child_for_term = Arc::clone(&child);
+                        let killed = tokio::task::spawn_blocking(move || {
+                            child_for_term.terminate_and_wait(grace)
+                        })
+                        .await;
+                        if matches!(&killed, Ok(Ok(_))) {
+                            break (
+                                Err(AdapterError::confirmed(FailureCode::LogWrite.as_str())),
+                                false,
+                            );
+                        }
+                        // Do not abort the readers or publish a terminal
+                        // error while the process tree is unverified.  The
+                        // next terminate request, or the natural wait path,
+                        // retries with the same Job Object.
+                    }
                 }
             };
             let drains_result = if process_waited {
-                match join_drains_with_control(&mut drains, &term, &mut failure_rx).await {
+                match join_drains_with_control(&mut drains, &mut terminate_rx, &mut failure_rx)
+                    .await
+                {
                     DrainControl::Complete(result) => result,
-                    DrainControl::Terminate => {
+                    DrainControl::Terminate(request) => {
                         let child_for_term = Arc::clone(&child);
                         let killed = tokio::task::spawn_blocking(move || {
                             child_for_term.terminate_and_wait(grace)
@@ -761,11 +962,15 @@ impl WindowsExecutionHandle {
                         .await;
                         if matches!(&killed, Ok(Ok(_))) {
                             outcome = Ok(ExecutionExit { exit_code: None });
+                            termination_response = Some(request.response);
                         } else {
+                            let _ = request
+                                .response
+                                .send(Err(failure(FailureCode::Termination)));
                             outcome = Err(failure(FailureCode::Termination));
                             abort_drain_tasks(&mut drains);
                         }
-                        join_drain_tasks(&mut drains).await
+                        join_drain_tasks_bounded(&mut drains, grace).await
                     }
                     DrainControl::Failure => {
                         let child_for_term = Arc::clone(&child);
@@ -776,18 +981,25 @@ impl WindowsExecutionHandle {
                         if !matches!(&killed, Ok(Ok(_))) {
                             abort_drain_tasks(&mut drains);
                         }
-                        outcome = Err(failure(FailureCode::LogWrite));
-                        join_drain_tasks(&mut drains).await
+                        outcome = Err(AdapterError::confirmed(FailureCode::LogWrite.as_str()));
+                        join_drain_tasks_bounded(&mut drains, grace).await
                     }
                 }
             } else {
-                join_drain_tasks(&mut drains).await
+                join_drain_tasks_bounded(&mut drains, grace).await
             };
             let final_result = match (outcome, drains_result) {
                 (Err(error), _) => Err(error),
                 (Ok(exit), Ok(())) => Ok(exit),
-                (Ok(_), Err(error)) => Err(error),
+                // Once the process/tree wait path has completed, a log
+                // drain failure is still a cleanup witness. Preserve that
+                // fact explicitly instead of making the scheduler guess
+                // from the error category.
+                (Ok(_), Err(error)) => Err(error.with_cleanup_confirmed()),
             };
+            if let Some(response) = termination_response {
+                let _ = response.send(final_result.clone());
+            }
             let _ = result_tx.send(Some(final_result));
         });
         Self {
@@ -800,11 +1012,7 @@ impl WindowsExecutionHandle {
 #[cfg(windows)]
 impl ExecutionHandle for WindowsExecutionHandle {
     fn terminate(&self) -> AdapterFuture<'_, ExecutionExit> {
-        // `notify_one` retains a permit if terminate races monitor startup;
-        // `notify_waiters` would lose that request before the monitor polls.
-        self.shared.terminate.notify_one();
-        let receiver = self.shared.result.subscribe();
-        Box::pin(async move { SharedTerminal::wait(receiver).await })
+        self.shared.request_terminate()
     }
 
     fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
@@ -836,7 +1044,7 @@ impl WslExecutionHandle {
         metadata: RunExecutionMetadata,
         grace: Duration,
     ) -> Self {
-        let (shared, _receiver) = SharedTerminal::new();
+        let (shared, _receiver, mut terminate_rx) = SharedTerminal::new();
         let (failure_tx, mut failure_rx) = spawn_drain_error_channel();
         let mut drains = vec![
             tokio::spawn(drain_async_reader(
@@ -853,85 +1061,143 @@ impl WslExecutionHandle {
             )),
         ];
         let result_tx = shared.result.clone();
-        let term = Arc::clone(&shared.terminate);
         tokio::spawn(async move {
             let (wait_tx, mut wait_rx) = oneshot::channel();
-            let (reap_tx, reap_rx) = oneshot::channel();
-            let mut reap_tx = Some(reap_tx);
+            let (reap_tx, reap_rx) = mpsc::unbounded_channel();
             let mut wait_task = spawn_wsl_wait_owner(child, reap_rx, wait_tx);
-            enum MonitorEvent {
-                Wait(ChildWaitResult),
-                Terminate,
-                LogFailure,
-            }
-            let event = tokio::select! {
-                result = &mut wait_rx => MonitorEvent::Wait(
-                    result.unwrap_or_else(|_| Err(failure(FailureCode::Wait)))
-                ),
-                _ = term.notified() => MonitorEvent::Terminate,
-                Some(_) = failure_rx.recv() => MonitorEvent::LogFailure,
-            };
-            let mut detached_cleanup = false;
-            let (mut outcome, process_waited) = match event {
-                MonitorEvent::Wait(result) => {
-                    finish_wsl_wait_owner(&mut wait_task).await;
-                    (result, true)
+            let mut log_failure = false;
+            let mut wait_complete = false;
+            let mut termination_response = None;
+            let mut natural_result = None;
+            let mut retry_tick = tokio::time::interval(Duration::from_millis(100));
+            retry_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let (mut outcome, process_waited) = loop {
+                enum MonitorEvent {
+                    Wait(ChildWaitResult),
+                    Terminate(TerminateRequest),
+                    LogFailure,
+                    RetryTree,
                 }
-                MonitorEvent::Terminate => {
-                    let group_terminated = wsl::terminate_group(&distro, &identity, grace)
-                        .await
-                        .is_ok();
-                    if !group_terminated {
-                        reap_tx.take();
-                        detached_cleanup = true;
-                        (Err(failure(FailureCode::Termination)), false)
-                    } else {
-                        let wrapper_reaped =
-                            reap_wsl_wrapper(&mut reap_tx, &mut wait_rx, &mut wait_task, grace)
+                let event = tokio::select! {
+                    result = &mut wait_rx, if !wait_complete => MonitorEvent::Wait(
+                        result.unwrap_or_else(|_| Err(failure(FailureCode::Wait)))
+                    ),
+                    Some(request) = terminate_rx.recv() => MonitorEvent::Terminate(request),
+                    Some(_) = failure_rx.recv() => MonitorEvent::LogFailure,
+                    _ = retry_tick.tick(), if wait_complete => MonitorEvent::RetryTree,
+                };
+                match event {
+                    MonitorEvent::Wait(mut result) => {
+                        wait_complete = true;
+                        natural_result = Some(result.clone());
+                        if wsl::confirm_group_gone(&distro, &identity, grace)
+                            .await
+                            .is_err()
+                        {
+                            // The wrapper exited (or its wait failed) before
+                            // its supervisor proved that the exact group was
+                            // empty. Keep the actor alive for a bounded probe
+                            // retry instead of terminalizing an unverified
+                            // descendant tree.
+                            continue;
+                        }
+                        if let Err(error) = result {
+                            result = Err(error.with_cleanup_confirmed());
+                        }
+                        if log_failure && result.is_ok() {
+                            result = Err(AdapterError::confirmed(FailureCode::LogWrite.as_str()));
+                        }
+                        finish_wsl_wait_owner(&mut wait_task).await;
+                        break (result, true);
+                    }
+                    MonitorEvent::RetryTree => {
+                        let Some(mut result) = natural_result.clone() else {
+                            continue;
+                        };
+                        if wsl::confirm_group_gone(&distro, &identity, grace)
+                            .await
+                            .is_err()
+                        {
+                            continue;
+                        }
+                        if let Err(error) = result {
+                            result = Err(error.with_cleanup_confirmed());
+                        }
+                        if log_failure && result.is_ok() {
+                            result = Err(AdapterError::confirmed(FailureCode::LogWrite.as_str()));
+                        }
+                        finish_wsl_wait_owner(&mut wait_task).await;
+                        break (result, true);
+                    }
+                    MonitorEvent::Terminate(request) => {
+                        let cleaned = if wait_complete {
+                            wsl::confirm_group_gone(&distro, &identity, grace)
                                 .await
-                                .is_ok();
-                        if !wrapper_reaped {
-                            abort_drain_tasks(&mut drains);
-                            (Err(failure(FailureCode::Termination)), false)
+                                .map(|()| ExecutionExit { exit_code: None })
+                                .map_err(|_| failure(FailureCode::Termination))
+                        } else if wsl::terminate_group(&distro, &identity, grace)
+                            .await
+                            .is_ok()
+                        {
+                            reap_wsl_wrapper(&reap_tx, &mut wait_task, grace).await
                         } else {
-                            (Ok(ExecutionExit { exit_code: None }), false)
-                        }
+                            Err(failure(FailureCode::Termination))
+                        };
+                        let result = match cleaned {
+                            Ok(_) if log_failure => {
+                                Err(AdapterError::confirmed(FailureCode::LogWrite.as_str()))
+                            }
+                            Ok(exit) => Ok(exit),
+                            Err(error) => {
+                                let _ = request.response.send(Err(error));
+                                continue;
+                            }
+                        };
+                        termination_response = Some(request.response);
+                        break (result, false);
                     }
-                }
-                MonitorEvent::LogFailure => {
-                    let group_terminated = wsl::terminate_group(&distro, &identity, grace)
-                        .await
-                        .is_ok();
-                    if !group_terminated {
-                        reap_tx.take();
-                        detached_cleanup = true;
-                    } else {
-                        let wrapper_reaped =
-                            reap_wsl_wrapper(&mut reap_tx, &mut wait_rx, &mut wait_task, grace)
+                    MonitorEvent::LogFailure => {
+                        log_failure = true;
+                        let cleaned = if wait_complete {
+                            wsl::confirm_group_gone(&distro, &identity, grace)
                                 .await
-                                .is_ok();
-                        if !wrapper_reaped {
-                            abort_drain_tasks(&mut drains);
+                                .is_ok()
+                        } else if wsl::terminate_group(&distro, &identity, grace)
+                            .await
+                            .is_ok()
+                        {
+                            reap_wsl_wrapper(&reap_tx, &mut wait_task, grace)
+                                .await
+                                .is_ok()
+                        } else {
+                            false
+                        };
+                        if cleaned {
+                            break (
+                                Err(AdapterError::confirmed(FailureCode::LogWrite.as_str())),
+                                false,
+                            );
                         }
+                        // Preserve the wait owner and readers while identity
+                        // or group cleanup is unverified.  A later stop or
+                        // natural wrapper event can retry the same boundary.
                     }
-                    (Err(failure(FailureCode::LogWrite)), false)
                 }
             };
-            let drains_result = if detached_cleanup {
-                // The identity/group check failed, so closing pipes or
-                // force-aborting readers could perturb an unverified process.
-                // Drop JoinHandles to detach both drains and let their owned
-                // streams finish naturally.
-                drop(drains);
-                Ok(())
-            } else if process_waited {
-                match join_drains_with_control(&mut drains, &term, &mut failure_rx).await {
+            let drains_result = if process_waited {
+                match join_drains_with_control(&mut drains, &mut terminate_rx, &mut failure_rx)
+                    .await
+                {
                     DrainControl::Complete(result) => result,
-                    DrainControl::Terminate => {
+                    DrainControl::Terminate(request) => {
                         let killed = wsl::terminate_group(&distro, &identity, grace).await;
                         if killed.is_ok() {
                             outcome = Ok(ExecutionExit { exit_code: None });
+                            termination_response = Some(request.response);
                         } else {
+                            let _ = request
+                                .response
+                                .send(Err(failure(FailureCode::Termination)));
                             outcome = Err(failure(FailureCode::Termination));
                             abort_drain_tasks(&mut drains);
                         }
@@ -942,7 +1208,7 @@ impl WslExecutionHandle {
                         if killed.is_err() {
                             abort_drain_tasks(&mut drains);
                         }
-                        outcome = Err(failure(FailureCode::LogWrite));
+                        outcome = Err(AdapterError::confirmed(FailureCode::LogWrite.as_str()));
                         join_drain_tasks_bounded(&mut drains, grace).await
                     }
                 }
@@ -952,8 +1218,11 @@ impl WslExecutionHandle {
             let final_result = match (outcome, drains_result) {
                 (Err(error), _) => Err(error),
                 (Ok(exit), Ok(())) => Ok(exit),
-                (Ok(_), Err(error)) => Err(error),
+                (Ok(_), Err(error)) => Err(error.with_cleanup_confirmed()),
             };
+            if let Some(response) = termination_response {
+                let _ = response.send(final_result.clone());
+            }
             let _ = result_tx.send(Some(final_result));
         });
         Self {
@@ -965,9 +1234,7 @@ impl WslExecutionHandle {
 
 impl ExecutionHandle for WslExecutionHandle {
     fn terminate(&self) -> AdapterFuture<'_, ExecutionExit> {
-        self.shared.terminate.notify_one();
-        let receiver = self.shared.result.subscribe();
-        Box::pin(async move { SharedTerminal::wait(receiver).await })
+        self.shared.request_terminate()
     }
 
     fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
@@ -1042,14 +1309,15 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_wait_and_terminate_share_one_terminal_result() {
-        let (shared, _receiver) = SharedTerminal::new();
+        let (shared, _receiver, mut terminate_rx) = SharedTerminal::new();
         let monitor = Arc::new(shared);
         let monitor_for_task = Arc::clone(&monitor);
         tokio::spawn(async move {
-            monitor_for_task.terminate.notified().await;
-            let _ = monitor_for_task
-                .result
-                .send(Some(Ok(ExecutionExit { exit_code: Some(0) })));
+            if let Some(request) = terminate_rx.recv().await {
+                let result = Ok(ExecutionExit { exit_code: Some(0) });
+                let _ = request.response.send(result.clone());
+                let _ = monitor_for_task.result.send(Some(result));
+            }
         });
         let handle = Arc::new(TestSharedHandle { shared: monitor });
         let wait = Arc::clone(&handle);
@@ -1057,6 +1325,64 @@ mod tests {
         let (wait, terminated) = tokio::join!(wait.wait(), terminate.terminate());
         assert_eq!(wait.unwrap().exit_code, Some(0));
         assert_eq!(terminated.unwrap().exit_code, Some(0));
+    }
+
+    #[tokio::test]
+    async fn terminate_failure_does_not_cache_and_second_request_retries_actor() {
+        let (shared, _receiver, mut terminate_rx) = SharedTerminal::new();
+        let monitor = Arc::new(shared);
+        let monitor_for_task = Arc::clone(&monitor);
+        tokio::spawn(async move {
+            let first = terminate_rx.recv().await.expect("first terminate request");
+            let _ = first.response.send(Err(failure(FailureCode::Termination)));
+            let second = terminate_rx.recv().await.expect("second terminate request");
+            let result = Ok(ExecutionExit { exit_code: Some(7) });
+            let _ = second.response.send(result.clone());
+            let _ = monitor_for_task.result.send(Some(result));
+        });
+        let handle = TestSharedHandle { shared: monitor };
+        assert!(handle.terminate().await.is_err());
+        let retry = handle.terminate().await.unwrap();
+        assert_eq!(retry.exit_code, Some(7));
+        assert_eq!(handle.wait().await.unwrap().exit_code, Some(7));
+    }
+
+    #[tokio::test]
+    async fn terminate_after_terminal_returns_the_published_result() {
+        let (shared, _receiver, mut terminate_rx) = SharedTerminal::new();
+        let monitor = Arc::new(shared);
+        let monitor_for_task = Arc::clone(&monitor);
+        tokio::spawn(async move {
+            let request = terminate_rx.recv().await.expect("terminate request");
+            let result = Ok(ExecutionExit { exit_code: Some(3) });
+            let _ = request.response.send(result.clone());
+            let _ = monitor_for_task.result.send(Some(result));
+        });
+        let handle = TestSharedHandle {
+            shared: Arc::clone(&monitor),
+        };
+        assert_eq!(handle.terminate().await.unwrap().exit_code, Some(3));
+        assert_eq!(handle.terminate().await.unwrap().exit_code, Some(3));
+    }
+
+    #[tokio::test]
+    async fn concurrent_terminate_requests_share_terminal_result() {
+        let (shared, _receiver, mut terminate_rx) = SharedTerminal::new();
+        let monitor = Arc::new(shared);
+        let monitor_for_task = Arc::clone(&monitor);
+        tokio::spawn(async move {
+            let request = terminate_rx.recv().await.expect("terminate request");
+            let result = Ok(ExecutionExit { exit_code: Some(4) });
+            let _ = request.response.send(result.clone());
+            let _ = monitor_for_task.result.send(Some(result));
+        });
+        let first = TestSharedHandle {
+            shared: Arc::clone(&monitor),
+        };
+        let second = TestSharedHandle { shared: monitor };
+        let (first, second) = tokio::join!(first.terminate(), second.terminate());
+        assert_eq!(first.unwrap().exit_code, Some(4));
+        assert_eq!(second.unwrap().exit_code, Some(4));
     }
 
     #[cfg(unix)]
@@ -1070,19 +1396,13 @@ mod tests {
             .stderr(Stdio::null())
             .kill_on_drop(true);
         let child = command.spawn().unwrap();
-        let (wait_tx, mut wait_rx) = oneshot::channel();
-        let (reap_tx, reap_rx) = oneshot::channel();
-        let mut reap_tx = Some(reap_tx);
+        let (wait_tx, _wait_rx) = oneshot::channel();
+        let (reap_tx, reap_rx) = mpsc::unbounded_channel();
         let mut wait_task = spawn_wsl_wait_owner(child, reap_rx, wait_tx);
 
         let result = tokio::time::timeout(
             Duration::from_secs(1),
-            reap_wsl_wrapper(
-                &mut reap_tx,
-                &mut wait_rx,
-                &mut wait_task,
-                Duration::from_millis(250),
-            ),
+            reap_wsl_wrapper(&reap_tx, &mut wait_task, Duration::from_millis(250)),
         )
         .await
         .expect("wrapper reap must be bounded")
@@ -1103,7 +1423,7 @@ mod tests {
             .kill_on_drop(true);
         let child = command.spawn().unwrap();
         let (wait_tx, mut wait_rx) = oneshot::channel();
-        let (reap_tx, reap_rx) = oneshot::channel();
+        let (reap_tx, reap_rx) = mpsc::unbounded_channel();
         drop(reap_tx);
         let mut wait_task = spawn_wsl_wait_owner(child, reap_rx, wait_tx);
         let result = tokio::time::timeout(Duration::from_secs(1), &mut wait_rx)
@@ -1127,7 +1447,7 @@ mod tests {
             .kill_on_drop(true);
         let child = command.spawn().unwrap();
         let (wait_tx, mut wait_rx) = oneshot::channel();
-        let (_reap_tx, reap_rx) = oneshot::channel();
+        let (_reap_tx, reap_rx) = mpsc::unbounded_channel();
         let mut wait_task = spawn_wsl_wait_owner(child, reap_rx, wait_tx);
         let result = tokio::time::timeout(Duration::from_secs(1), &mut wait_rx)
             .await
@@ -1144,9 +1464,7 @@ mod tests {
 
     impl ExecutionHandle for TestSharedHandle {
         fn terminate(&self) -> AdapterFuture<'_, ExecutionExit> {
-            self.shared.terminate.notify_one();
-            let receiver = self.shared.result.subscribe();
-            Box::pin(async move { SharedTerminal::wait(receiver).await })
+            self.shared.request_terminate()
         }
 
         fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {

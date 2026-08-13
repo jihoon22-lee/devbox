@@ -52,6 +52,10 @@ pub fn run() {
             commands::update_job,
             commands::set_job_enabled,
             commands::delete_job,
+            commands::run_job_now,
+            commands::stop_active_run,
+            commands::get_active_run,
+            commands::list_active_runs,
             commands::list_services,
             commands::get_service,
             commands::create_service,
@@ -80,16 +84,39 @@ pub fn run() {
             if let Err(error) = notifications::drain_pending(app.handle(), &database) {
                 eprintln!("Run Manager notification outbox will retry later: {error}");
             }
-            app.manage(database);
-            app.manage(platform::environment::EnvironmentProtectorState::new());
-            let state = Arc::new(RuntimeState::new(database_path, background));
+            let protector = platform::environment::EnvironmentProtectorState::new();
+            let adapter = Arc::new(platform::execution::PlatformExecutionAdapter::new(
+                Arc::clone(&database),
+                protector.clone(),
+                data_dir.clone(),
+            ));
+            let listener = Arc::new(notifications::SchedulerNotificationListener::new(
+                app.handle().clone(),
+                Arc::clone(&database),
+            ));
+            let coordinator = scheduler::SchedulerCoordinator::with_config_and_listener(
+                Arc::clone(&database),
+                adapter,
+                scheduler::SchedulerConfig::default()
+                    .with_shutdown_timeout(std::time::Duration::from_secs(5)),
+                listener,
+            );
+            app.manage(Arc::clone(&database));
+            app.manage(protector);
+            let state = Arc::new(RuntimeState::new(database_path, background, coordinator));
             app.manage(state.clone());
             let main_window = app
                 .get_webview_window("main")
                 .ok_or_else(|| std::io::Error::other("main window is unavailable"))?;
             platform::install_session_end_hook(&main_window, app.handle(), state.clone())
                 .map_err(std::io::Error::other)?;
-            lifecycle::spawn_idle_scheduler(state);
+            lifecycle::spawn_scheduler(Arc::clone(&state));
+            lifecycle::spawn_maintenance(
+                Arc::clone(&state),
+                Arc::clone(&database),
+                app.handle().clone(),
+                data_dir,
+            );
             setup_tray(app)?;
             if !background {
                 lifecycle::show_main_window(app.handle()).map_err(std::io::Error::other)?;

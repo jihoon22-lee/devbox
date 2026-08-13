@@ -433,6 +433,63 @@ pub struct Run {
     pub created_at: i64,
 }
 
+/// Stable, redacted read DTO for Tauri/UI boundaries. Process identity,
+/// ownership tokens, raw adapter/storage text, and filesystem paths remain
+/// inside the scheduler/storage layers. `logs_available` is only a boolean;
+/// `tail_log` resolves the app-owned directory from the run id server-side.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunView {
+    pub id: String,
+    pub job_id: String,
+    pub scheduled_at: Option<i64>,
+    pub occurrence_wall_key: Option<String>,
+    pub queue_sequence: i64,
+    pub started_at: Option<i64>,
+    pub ended_at: Option<i64>,
+    pub exit_code: Option<i32>,
+    pub status: RunStatus,
+    pub logs_available: bool,
+    pub failure_code: Option<String>,
+    pub created_at: i64,
+}
+
+impl RunView {
+    pub fn from_run(run: &Run) -> Self {
+        Self {
+            id: run.id.clone(),
+            job_id: run.job_id.clone(),
+            scheduled_at: run.scheduled_at,
+            occurrence_wall_key: run.occurrence_wall_key.clone(),
+            queue_sequence: run.queue_sequence,
+            started_at: run.started_at,
+            ended_at: run.ended_at,
+            exit_code: run.exit_code,
+            status: run.status,
+            logs_available: run.log_dir.is_some(),
+            failure_code: (run.status == RunStatus::Failed)
+                .then(|| public_failure_code(run.error_message.as_deref()))
+                .flatten(),
+            created_at: run.created_at,
+        }
+    }
+}
+
+fn public_failure_code(value: Option<&str>) -> Option<String> {
+    let code = match value? {
+        "spawn-failed"
+        | "nonzero-exit"
+        | "log-write-failed"
+        | "environment-unavailable"
+        | "termination-timeout"
+        | "wsl-unavailable"
+        | "process-crashed"
+        | "storage-failed" => value?,
+        _ => return None,
+    };
+    Some(code.to_string())
+}
+
 /// Identity and app-owned log reference returned by a platform spawn. This
 /// is persisted only after the same owner/attempt CAS that moves a run to
 /// `running`; an empty identity is valid only for a failed pre-spawn path.
@@ -611,6 +668,47 @@ mod tests {
         let mut value = input(TargetKind::Windows, None);
         value.command.push('\0');
         assert_eq!(value.validate(), Err(ModelError::NulByte("command")));
+    }
+
+    #[test]
+    fn run_view_redacts_identity_paths_and_raw_errors() {
+        let run = Run {
+            id: "run".to_string(),
+            job_id: "job".to_string(),
+            scheduled_at: None,
+            occurrence_wall_key: None,
+            queue_sequence: 1,
+            blocked_by_run_id: Some("blocked".to_string()),
+            started_at: Some(1),
+            ended_at: None,
+            exit_code: None,
+            status: RunStatus::Failed,
+            owner_instance_id: Some("owner-secret".to_string()),
+            attempt_token: Some("token-secret".to_string()),
+            error_message: Some("spawn-failed".to_string()),
+            target_pid: Some(42),
+            target_process_created_at: Some(7),
+            target_pgid: Some(42),
+            target_sid: Some(42),
+            process_marker: Some("marker-secret".to_string()),
+            log_dir: Some("logs/runs/run".to_string()),
+            logs_deleted_at: None,
+            created_at: 1,
+        };
+        let view = RunView::from_run(&run);
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(json.contains("logsAvailable"));
+        assert!(json.contains("spawn-failed"));
+        for secret in ["owner-secret", "token-secret", "marker-secret", "logs/runs"] {
+            assert!(!json.contains(secret));
+        }
+
+        let cancelled = Run {
+            status: RunStatus::Cancelled,
+            error_message: Some("manual-stop".to_string()),
+            ..run
+        };
+        assert_eq!(RunView::from_run(&cancelled).failure_code, None);
     }
 
     #[test]

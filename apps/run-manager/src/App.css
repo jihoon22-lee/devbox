@@ -483,6 +483,12 @@ h2 {
   background: #0b2619;
 }
 
+.job-state.running {
+  border-color: #1d4ed8;
+  color: #bfdbfe;
+  background: #10203d;
+}
+
 .job-state.disabled {
   color: #94a3b8;
   background: #172131;
@@ -516,7 +522,14 @@ h2 {
 
 .job-actions {
   display: flex;
+  flex-wrap: wrap;
   flex-shrink: 0;
+  gap: 8px;
+}
+
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 

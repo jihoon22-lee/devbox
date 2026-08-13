@@ -1,11 +1,12 @@
 use crate::core::models::{
-    EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, Run, ServiceInput,
+    EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, RunView, ServiceInput,
 };
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
 use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse};
 use crate::platform::environment::{EnvironmentProtectorState, SecretEnvironment};
 use crate::platform::{StartupShortcut, StartupShortcutStatus};
-use crate::storage::{current_epoch_millis, DatabaseState};
+use crate::scheduler::SchedulerError;
+use crate::storage::{current_epoch_millis, DatabaseState, StorageError};
 use chrono::Local;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -143,7 +144,15 @@ pub fn set_job_enabled(
 
 #[tauri::command]
 pub fn delete_job(id: String, state: State<'_, Arc<DatabaseState>>) -> Result<bool, String> {
-    state.delete_job(&id).map_err(|error| error.to_string())
+    state.delete_job(&id).map_err(storage_command_error)
+}
+
+fn storage_command_error(error: StorageError) -> String {
+    match error {
+        StorageError::Validation(code) if code == "active-run-must-stop" => code,
+        StorageError::NotFound(_) => "job-not-found".to_string(),
+        _ => "run-storage-failed".to_string(),
+    }
 }
 
 #[tauri::command]
@@ -188,12 +197,18 @@ pub fn update_service(
 
 #[tauri::command]
 pub fn delete_service(id: String, state: State<'_, Arc<DatabaseState>>) -> Result<bool, String> {
-    state.delete_service(&id).map_err(|error| error.to_string())
+    state.delete_service(&id).map_err(storage_command_error)
 }
 
 #[tauri::command]
-pub fn get_run(id: String, state: State<'_, Arc<DatabaseState>>) -> Result<Option<Run>, String> {
-    state.get_run(&id).map_err(|error| error.to_string())
+pub fn get_run(
+    id: String,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<Option<RunView>, String> {
+    state
+        .get_run(&id)
+        .map(|run| run.as_ref().map(RunView::from_run))
+        .map_err(|_| "run-storage-failed".to_string())
 }
 
 #[tauri::command]
@@ -203,10 +218,71 @@ pub fn list_runs(
     start_at: Option<i64>,
     end_at: Option<i64>,
     state: State<'_, Arc<DatabaseState>>,
-) -> Result<Vec<Run>, String> {
+) -> Result<Vec<RunView>, String> {
     state
         .list_runs(&job_id, limit.unwrap_or(50), start_at, end_at)
-        .map_err(|error| error.to_string())
+        .map(|runs| runs.iter().map(RunView::from_run).collect())
+        .map_err(|_| "run-storage-failed".to_string())
+}
+
+fn scheduler_command_error(error: SchedulerError) -> String {
+    match error {
+        SchedulerError::Storage(_) => "run-storage-failed".to_string(),
+        SchedulerError::Cron(_) => "job-schedule-invalid".to_string(),
+        SchedulerError::Adapter { .. } => "run-execution-failed".to_string(),
+        SchedulerError::Join(_) => "scheduler-unavailable".to_string(),
+    }
+}
+
+/// Start one explicit run through the same overlap policy, protected
+/// environment boundary, logs, and process adapter as scheduled work.
+#[tauri::command]
+pub async fn run_job_now(
+    id: String,
+    state: State<'_, Arc<RuntimeState>>,
+) -> Result<RunView, String> {
+    state
+        .coordinator()
+        .trigger_manual_at(&id, current_epoch_millis())
+        .await
+        .map(|run| RunView::from_run(&run))
+        .map_err(scheduler_command_error)
+}
+
+/// Stop the active process tree for one job. A null result means the job has
+/// no active process run; durable queued intents are left untouched.
+#[tauri::command]
+pub async fn stop_active_run(
+    id: String,
+    state: State<'_, Arc<RuntimeState>>,
+) -> Result<Option<RunView>, String> {
+    state
+        .coordinator()
+        .stop_active_at(&id, current_epoch_millis())
+        .await
+        .map(|run| run.as_ref().map(RunView::from_run))
+        .map_err(scheduler_command_error)
+}
+
+#[tauri::command]
+pub fn get_active_run(
+    id: String,
+    state: State<'_, Arc<RuntimeState>>,
+) -> Result<Option<RunView>, String> {
+    state
+        .coordinator()
+        .active_process_run(&id)
+        .map(|run| run.as_ref().map(RunView::from_run))
+        .map_err(scheduler_command_error)
+}
+
+#[tauri::command]
+pub fn list_active_runs(state: State<'_, Arc<RuntimeState>>) -> Result<Vec<RunView>, String> {
+    state
+        .coordinator()
+        .active_process_runs()
+        .map(|runs| runs.iter().map(RunView::from_run).collect())
+        .map_err(scheduler_command_error)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -259,19 +335,17 @@ pub async fn tail_log(
 ) -> Result<TailResponse, String> {
     let run = state
         .get_run(&input.run_id)
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| "run not found".to_string())?;
-    let log_dir = run
-        .log_dir
-        .ok_or_else(|| "run has no log directory".to_string())?;
+        .map_err(|_| "run-storage-failed".to_string())?
+        .ok_or_else(|| "run-not-found".to_string())?;
+    let log_dir = run.log_dir.ok_or_else(|| "logs-unavailable".to_string())?;
     let data_root = app
         .path()
         .app_local_data_dir()
-        .map_err(|error| error.to_string())?;
+        .map_err(|_| "logs-unavailable".to_string())?;
     crate::logs::resolve_run_directory(&data_root, &log_dir, &input.run_id)
-        .map_err(|error| error.to_string())?;
-    let streams =
-        LogStreams::open_default(&data_root, &input.run_id).map_err(|error| error.to_string())?;
+        .map_err(|_| "logs-unavailable".to_string())?;
+    let streams = LogStreams::open_default(&data_root, &input.run_id)
+        .map_err(|_| "logs-unavailable".to_string())?;
     streams
         .tail(TailRequest {
             stream: input.stream,
@@ -279,5 +353,5 @@ pub async fn tail_log(
             max_bytes: input.max_bytes,
         })
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|_| "logs-read-failed".to_string())
 }

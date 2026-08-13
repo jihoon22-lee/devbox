@@ -1,6 +1,8 @@
 use crate::core::models::{NewNotification, NotificationOutboxItem};
+use crate::scheduler::{TerminalFailureCode, TerminalRunEvent, TerminalRunListener};
 use crate::storage::DatabaseState;
 use std::fmt;
+use std::sync::Arc;
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
@@ -18,6 +20,7 @@ pub enum FailureCode {
     TerminationTimeout,
     WslUnavailable,
     ProcessCrashed,
+    StorageFailed,
 }
 
 impl FailureCode {
@@ -30,6 +33,7 @@ impl FailureCode {
             Self::TerminationTimeout => "termination_timeout",
             Self::WslUnavailable => "wsl_unavailable",
             Self::ProcessCrashed => "process_crashed",
+            Self::StorageFailed => "storage_failed",
         }
     }
 
@@ -42,6 +46,7 @@ impl FailureCode {
             Self::TerminationTimeout => "프로세스 종료 제한 시간을 초과했습니다",
             Self::WslUnavailable => "WSL 실행 환경을 사용할 수 없습니다",
             Self::ProcessCrashed => "프로세스가 예기치 않게 종료되었습니다",
+            Self::StorageFailed => "실행 상태를 저장하지 못했습니다",
         }
     }
 }
@@ -58,6 +63,7 @@ impl TryFrom<&str> for FailureCode {
             "termination_timeout" => Ok(Self::TerminationTimeout),
             "wsl_unavailable" => Ok(Self::WslUnavailable),
             "process_crashed" => Ok(Self::ProcessCrashed),
+            "storage_failed" => Ok(Self::StorageFailed),
             _ => Err(UnknownFailureCode),
         }
     }
@@ -78,6 +84,48 @@ pub struct FailureEvent {
     pub run_id: String,
     pub code: FailureCode,
     pub occurred_at: i64,
+}
+
+/// Bridges scheduler terminal events to the sanitized durable outbox/native
+/// delivery boundary. Delivery is synchronous only at the small DB/native
+/// boundary; any failure is ignored and cannot change the committed run.
+pub struct SchedulerNotificationListener {
+    app: AppHandle,
+    database: Arc<DatabaseState>,
+}
+
+impl SchedulerNotificationListener {
+    pub fn new(app: AppHandle, database: Arc<DatabaseState>) -> Self {
+        Self { app, database }
+    }
+}
+
+impl TerminalRunListener for SchedulerNotificationListener {
+    fn on_terminal(&self, event: TerminalRunEvent) {
+        let Some(code) = event.failure_code else {
+            return;
+        };
+        let code = match code {
+            TerminalFailureCode::SpawnFailed => FailureCode::SpawnFailed,
+            TerminalFailureCode::NonzeroExit => FailureCode::NonzeroExit,
+            TerminalFailureCode::LogWriteFailed => FailureCode::LogWriteFailed,
+            TerminalFailureCode::EnvironmentUnavailable => FailureCode::EnvironmentUnavailable,
+            TerminalFailureCode::TerminationTimeout => FailureCode::TerminationTimeout,
+            TerminalFailureCode::WslUnavailable => FailureCode::WslUnavailable,
+            TerminalFailureCode::ProcessCrashed => FailureCode::ProcessCrashed,
+            TerminalFailureCode::StorageFailed => FailureCode::StorageFailed,
+        };
+        let event = FailureEvent {
+            job_id: event.job_id,
+            run_id: event.run_id,
+            code,
+            occurred_at: crate::storage::current_epoch_millis(),
+        };
+        // Persist before returning to the scheduler. Native delivery is
+        // best-effort inside this same fixed-code boundary; failure leaves the
+        // sanitized outbox item pending for the next maintenance drain.
+        let _ = notify_run_failure(&self.app, &self.database, event);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -331,5 +379,15 @@ mod tests {
             MAX_JOB_NAME_CHARS + 1
         );
         assert!(sanitize_job_name(&long).ends_with('…'));
+    }
+
+    #[test]
+    fn storage_failure_code_round_trips_without_freeform_text() {
+        assert_eq!(FailureCode::StorageFailed.as_str(), "storage_failed");
+        assert_eq!(
+            FailureCode::try_from("storage_failed").unwrap(),
+            FailureCode::StorageFailed
+        );
+        assert!(!FailureCode::StorageFailed.user_label().contains("secret"));
     }
 }

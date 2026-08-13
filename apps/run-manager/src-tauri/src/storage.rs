@@ -463,9 +463,12 @@ impl DatabaseState {
     }
 
     pub fn delete_service(&self, id: &str) -> Result<bool, StorageError> {
-        let connection = self.lock_mut()?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_no_active_runs(&transaction, id)?;
         let deleted =
-            connection.execute("DELETE FROM jobs WHERE id = ? AND kind = 'service'", [id])?;
+            transaction.execute("DELETE FROM jobs WHERE id = ? AND kind = 'service'", [id])?;
+        transaction.commit()?;
         Ok(deleted == 1)
     }
 
@@ -579,8 +582,12 @@ impl DatabaseState {
     }
 
     pub fn delete_job(&self, id: &str) -> Result<bool, StorageError> {
-        let connection = self.lock_mut()?;
-        let deleted = connection.execute("DELETE FROM jobs WHERE id = ? AND kind = 'job'", [id])?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_no_active_runs(&transaction, id)?;
+        let deleted =
+            transaction.execute("DELETE FROM jobs WHERE id = ? AND kind = 'job'", [id])?;
+        transaction.commit()?;
         Ok(deleted == 1)
     }
 
@@ -652,6 +659,20 @@ impl DatabaseState {
     pub fn active_process_run(&self, job_id: &str) -> Result<Option<Run>, StorageError> {
         let connection = self.lock()?;
         fetch_active_process_run(&connection, job_id).map_err(StorageError::from)
+    }
+
+    /// Return one consistent snapshot of every job-owned process run. The UI
+    /// uses this instead of issuing one IPC request per job on every poll.
+    pub fn list_active_process_runs(&self) -> Result<Vec<Run>, StorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT {RUN_COLUMNS} FROM runs
+             WHERE status IN ('starting', 'running', 'stopping')
+             ORDER BY created_at, id"
+        ))?;
+        let rows = statement.query_map([], row_to_run)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(StorageError::from)
     }
 
     /// Advance a job checkpoint without claiming an occurrence.  This is
@@ -736,6 +757,27 @@ impl DatabaseState {
             "UPDATE runs SET status = 'starting', owner_instance_id = ?, attempt_token = ?
              WHERE id = ? AND status = 'queued' AND blocked_by_run_id IS NULL",
             params![owner_instance_id, attempt_token, run_id],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// Mark an owned process run as stopping before invoking the external
+    /// termination boundary. The owner/attempt CAS prevents a late manual
+    /// stop from changing a new generation after a monitor has completed.
+    pub fn request_run_stop(
+        &self,
+        run_id: &str,
+        owner_instance_id: &str,
+        attempt_token: &str,
+    ) -> Result<bool, StorageError> {
+        validate_token("owner_instance_id", owner_instance_id)?;
+        validate_token("attempt_token", attempt_token)?;
+        let connection = self.lock_mut()?;
+        let changed = connection.execute(
+            "UPDATE runs SET status = 'stopping'
+             WHERE id = ? AND status IN ('starting', 'running')
+               AND owner_instance_id = ? AND attempt_token = ?",
+            params![run_id, owner_instance_id, attempt_token],
         )?;
         Ok(changed == 1)
     }
@@ -1474,6 +1516,19 @@ fn ensure_service(transaction: &Transaction<'_>, id: &str) -> Result<Job, Storag
     let service = fetch_service(transaction, id)?
         .ok_or_else(|| StorageError::NotFound(format!("service {id}")))?;
     Ok(service)
+}
+
+fn ensure_no_active_runs(transaction: &Transaction<'_>, job_id: &str) -> Result<(), StorageError> {
+    let active: i64 = transaction.query_row(
+        "SELECT count(*) FROM runs
+         WHERE job_id = ? AND status IN ('starting', 'running', 'stopping')",
+        [job_id],
+        |row| row.get(0),
+    )?;
+    if active > 0 {
+        return Err(StorageError::Validation("active-run-must-stop".to_string()));
+    }
+    Ok(())
 }
 
 fn allocate_queue_sequence(
@@ -2561,6 +2616,67 @@ mod tests {
             .flatten();
         assert_eq!(runs, 0);
         assert_eq!(notification_refs, None);
+    }
+
+    #[test]
+    fn deleting_job_or_service_is_rejected_while_a_process_run_is_active() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let job = database.create_job_at(input(true), 100).unwrap();
+        let run = database.create_manual_run_at(&job.id, 101).unwrap();
+        assert!(database
+            .claim_run_starting(&run.id, "owner", "attempt")
+            .unwrap());
+        assert!(matches!(
+            database.delete_job(&job.id),
+            Err(StorageError::Validation(code)) if code == "active-run-must-stop"
+        ));
+        assert!(database.get_job(&job.id).unwrap().is_some());
+        assert!(database
+            .finish_run(
+                &run.id,
+                "owner",
+                "attempt",
+                RunStatus::Cancelled,
+                None,
+                Some("test-stop"),
+                102,
+            )
+            .unwrap());
+        assert!(database.delete_job(&job.id).unwrap());
+
+        let service = database
+            .create_service_with_ciphertext_at(
+                service_input(),
+                EnvironmentCiphertextUpdate::Clear,
+                200,
+            )
+            .unwrap();
+        {
+            let connection = database.connection.lock().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO runs (id, job_id, queue_sequence, status, created_at)
+                     VALUES ('service-active-run', ?, 1, 'running', 201)",
+                    [&service.id],
+                )
+                .unwrap();
+        }
+        assert!(matches!(
+            database.delete_service(&service.id),
+            Err(StorageError::Validation(code)) if code == "active-run-must-stop"
+        ));
+        assert!(database.get_service(&service.id).unwrap().is_some());
+        {
+            let connection = database.connection.lock().unwrap();
+            connection
+                .execute(
+                    "UPDATE runs SET status = 'succeeded', ended_at = 202,
+                            exit_code = 0 WHERE id = 'service-active-run'",
+                    [],
+                )
+                .unwrap();
+        }
+        assert!(database.delete_service(&service.id).unwrap());
     }
 
     #[test]

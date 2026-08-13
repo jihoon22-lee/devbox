@@ -1,14 +1,21 @@
+use crate::scheduler::{SchedulerCoordinator, SchedulerError};
 use serde::Serialize;
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::sync::Mutex;
+use std::time::Duration;
+#[cfg(target_os = "windows")]
+use std::time::Instant;
 use tauri::{AppHandle, Manager};
 use tokio::sync::Notify;
 
-const SCHEDULER_TICK: Duration = Duration::from_secs(1);
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+// The production scheduler uses a five-second per-run/global termination
+// budget. Keep the synchronous OS hook bounded with margin, while the normal
+// async exit path remains fail-closed and retries until cleanup is confirmed.
+#[cfg(target_os = "windows")]
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,25 +26,35 @@ pub struct RuntimeStatus {
     pub database_path: String,
 }
 
-/// Process-wide lifecycle state. Later scheduler PRs replace the idle tick body
-/// while preserving this shutdown contract.
 pub struct RuntimeState {
     database_path: PathBuf,
     background_launch: bool,
+    coordinator: SchedulerCoordinator,
+    scheduler_task: Mutex<Option<tokio::task::JoinHandle<Result<(), SchedulerError>>>>,
+    maintenance_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     scheduler_running: AtomicBool,
     scheduler_stopped: AtomicBool,
+    maintenance_stopped: AtomicBool,
     shutdown_requested: AtomicBool,
     exit_authorized: AtomicBool,
     shutdown_notify: Notify,
 }
 
 impl RuntimeState {
-    pub fn new(database_path: PathBuf, background_launch: bool) -> Self {
+    pub fn new(
+        database_path: PathBuf,
+        background_launch: bool,
+        coordinator: SchedulerCoordinator,
+    ) -> Self {
         Self {
             database_path,
             background_launch,
+            coordinator,
+            scheduler_task: Mutex::new(None),
+            maintenance_task: Mutex::new(None),
             scheduler_running: AtomicBool::new(false),
-            scheduler_stopped: AtomicBool::new(false),
+            scheduler_stopped: AtomicBool::new(true),
+            maintenance_stopped: AtomicBool::new(true),
             shutdown_requested: AtomicBool::new(false),
             exit_authorized: AtomicBool::new(false),
             shutdown_notify: Notify::new(),
@@ -54,9 +71,10 @@ impl RuntimeState {
     }
 
     pub fn request_shutdown(&self) -> bool {
+        self.coordinator.request_shutdown();
         let first_request = !self.shutdown_requested.swap(true, Ordering::AcqRel);
         if first_request {
-            self.shutdown_notify.notify_one();
+            self.shutdown_notify.notify_waiters();
         }
         first_request
     }
@@ -68,50 +86,177 @@ impl RuntimeState {
     pub fn shutdown_requested(&self) -> bool {
         self.shutdown_requested.load(Ordering::Acquire)
     }
+
+    fn authorize_exit(&self) {
+        self.exit_authorized.store(true, Ordering::Release);
+    }
+
+    pub fn coordinator(&self) -> SchedulerCoordinator {
+        self.coordinator.clone()
+    }
+
+    pub fn install_scheduler_task(
+        &self,
+        task: tokio::task::JoinHandle<Result<(), SchedulerError>>,
+    ) {
+        self.scheduler_stopped.store(false, Ordering::Release);
+        if let Ok(mut slot) = self.scheduler_task.lock() {
+            *slot = Some(task);
+        }
+    }
+
+    pub fn install_maintenance_task(&self, task: tokio::task::JoinHandle<()>) {
+        self.maintenance_stopped.store(false, Ordering::Release);
+        if let Ok(mut slot) = self.maintenance_task.lock() {
+            *slot = Some(task);
+        }
+    }
+
+    fn take_scheduler_task(&self) -> Option<tokio::task::JoinHandle<Result<(), SchedulerError>>> {
+        self.scheduler_task.lock().ok()?.take()
+    }
+
+    fn take_maintenance_task(&self) -> Option<tokio::task::JoinHandle<()>> {
+        self.maintenance_task.lock().ok()?.take()
+    }
+
+    pub async fn wait_for_shutdown(&self) {
+        self.shutdown_notify.notified().await;
+    }
+
+    pub async fn cleanup_confirmed(&self) -> bool {
+        self.coordinator.cleanup_confirmed().await
+    }
+
+    #[cfg(target_os = "windows")]
+    fn cleanup_confirmed_sync(&self) -> bool {
+        self.coordinator.cleanup_confirmed_sync()
+    }
 }
 
 pub fn is_background_launch(args: &[OsString]) -> bool {
     args.iter().any(|arg| arg == OsStr::new("--background"))
 }
 
-pub fn spawn_idle_scheduler(state: Arc<RuntimeState>) {
-    tauri::async_runtime::spawn(async move {
-        state.scheduler_running.store(true, Ordering::Release);
-        let mut tick = tokio::time::interval(SCHEDULER_TICK);
+pub fn spawn_scheduler(state: Arc<RuntimeState>) {
+    state.scheduler_running.store(true, Ordering::Release);
+    let task_state = Arc::clone(&state);
+    let task = tokio::spawn(async move {
+        let result = task_state.coordinator.run_until_shutdown().await;
+        task_state.scheduler_running.store(false, Ordering::Release);
+        task_state.scheduler_stopped.store(true, Ordering::Release);
+        result
+    });
+    state.install_scheduler_task(task);
+}
+
+pub fn spawn_maintenance(
+    state: Arc<RuntimeState>,
+    database: Arc<crate::storage::DatabaseState>,
+    app: AppHandle,
+    data_dir: PathBuf,
+) {
+    let task_state = Arc::clone(&state);
+    let task = tokio::spawn(async move {
+        let cleaner = crate::cleanup::RetentionCleaner::new(&data_dir);
+        let mut tick = tokio::time::interval(Duration::from_secs(60));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        while !state.shutdown_requested() {
+        while !task_state.shutdown_requested() {
             tokio::select! {
                 biased;
-                _ = state.shutdown_notify.notified() => {}
+                _ = task_state.shutdown_notify.notified() => {}
                 _ = tick.tick() => {}
             }
+            if task_state.shutdown_requested() {
+                break;
+            }
+            let now = crate::storage::current_epoch_millis();
+            let _ = cleaner.run(&database, now);
+            let _ = crate::notifications::drain_pending(&app, &database);
         }
-        state.scheduler_running.store(false, Ordering::Release);
-        state.scheduler_stopped.store(true, Ordering::Release);
+        task_state
+            .maintenance_stopped
+            .store(true, Ordering::Release);
     });
+    state.install_maintenance_task(task);
 }
 
-fn wait_for_shutdown(state: &RuntimeState) {
+#[cfg(target_os = "windows")]
+fn wait_for_shutdown(state: &RuntimeState) -> bool {
     let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
-    while !state.scheduler_stopped.load(Ordering::Acquire) && Instant::now() < deadline {
+    while (!state.scheduler_stopped.load(Ordering::Acquire)
+        || !state.maintenance_stopped.load(Ordering::Acquire)
+        || !state.cleanup_confirmed_sync())
+        && Instant::now() < deadline
+    {
         std::thread::sleep(Duration::from_millis(25));
     }
-    state.exit_authorized.store(true, Ordering::Release);
+    let confirmed = state.scheduler_stopped.load(Ordering::Acquire)
+        && state.maintenance_stopped.load(Ordering::Acquire)
+        && state.cleanup_confirmed_sync();
+    if confirmed {
+        state.exit_authorized.store(true, Ordering::Release);
+    }
+    confirmed
 }
 
-/// Starts the idempotent orderly-exit path. The scheduler gets one full tick to
-/// observe shutdown before the app exits; later PRs extend this coordinator with
-/// process-tree termination and log flushing.
+async fn wait_for_scheduler_cleanup(
+    state: &RuntimeState,
+    scheduler_task: Option<tokio::task::JoinHandle<Result<(), SchedulerError>>>,
+    maintenance_task: Option<tokio::task::JoinHandle<()>>,
+) -> bool {
+    // Maintenance only observes the shutdown notification and has no process
+    // ownership, so it is safe to join it before retrying process cleanup.
+    if let Some(task) = maintenance_task {
+        let _ = task.await;
+    }
+    // Never abort the scheduler task: it owns the durable terminal CAS and may
+    // still be finishing a bounded adapter termination. The coordinator's
+    // semaphore and adapter paths are themselves shutdown-aware.
+    if let Some(task) = scheduler_task {
+        while !task.is_finished() {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        let _ = task.await;
+    }
+
+    // A timeout/error leaves the handle in the coordinator's fail-closed
+    // active set. Retry its bounded termination; only a confirmed empty set
+    // allows application exit. This loop intentionally has no unsafe timeout.
+    loop {
+        if state.cleanup_confirmed().await {
+            return true;
+        }
+        let coordinator = state.coordinator();
+        let retry = tokio::time::timeout(
+            coordinator.config().shutdown_timeout,
+            coordinator.shutdown(),
+        )
+        .await;
+        if retry.is_err() {
+            // The adapter call itself exceeded its budget. The next iteration
+            // retries without dropping its retained handle.
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+/// Starts the idempotent orderly-exit path. The production coordinator owns
+/// process-tree termination and terminal CAS; maintenance is stopped at the
+/// same boundary before the app is allowed to exit.
 pub fn request_orderly_exit(app: &AppHandle, state: Arc<RuntimeState>) {
     if !state.request_shutdown() {
         return;
     }
 
     let app = app.clone();
+    let scheduler_task = state.take_scheduler_task();
+    let maintenance_task = state.take_maintenance_task();
     tauri::async_runtime::spawn(async move {
-        let state_for_wait = state.clone();
-        let _ = tokio::task::spawn_blocking(move || wait_for_shutdown(&state_for_wait)).await;
-        app.exit(0);
+        if wait_for_scheduler_cleanup(&state, scheduler_task, maintenance_task).await {
+            state.authorize_exit();
+            app.exit(0);
+        }
     });
 }
 
@@ -120,7 +265,7 @@ pub fn request_orderly_exit(app: &AppHandle, state: Arc<RuntimeState>) {
 #[cfg(target_os = "windows")]
 pub fn complete_system_shutdown(state: &RuntimeState) {
     state.request_shutdown();
-    wait_for_shutdown(state);
+    let _ = wait_for_shutdown(state);
 }
 
 pub fn show_main_window(app: &AppHandle) -> Result<(), String> {
@@ -157,7 +302,13 @@ mod tests {
 
     #[test]
     fn shutdown_request_is_idempotent() {
-        let state = RuntimeState::new(PathBuf::from("data.db"), false);
+        let database =
+            std::sync::Arc::new(crate::storage::DatabaseState::open_in_memory().unwrap());
+        let coordinator = SchedulerCoordinator::new(
+            database,
+            std::sync::Arc::new(crate::scheduler::UnavailableExecutionAdapter),
+        );
+        let state = RuntimeState::new(PathBuf::from("data.db"), false, coordinator);
         assert!(state.request_shutdown());
         assert!(!state.request_shutdown());
         assert!(state.status().shutdown_requested);
