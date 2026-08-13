@@ -50,10 +50,8 @@ pub struct Artifact {
     pub kind: ArtifactKind,
     pub url: String,
     pub sha256: String,
-    /// The design requires this for an installable manifest. The checked-in
-    /// design snapshot does not publish byte sizes, so the initial catalog
-    /// keeps this explicitly absent rather than inventing a value. The
-    /// installer gate validate_for_install rejects an absent size.
+    /// Exact compressed artifact size, reviewed from the registry/download.
+    /// Installable manifests must always provide it.
     #[serde(default)]
     pub size_bytes: Option<u64>,
     /// Additional HTTPS hosts reviewed for redirects from the artifact URL.
@@ -461,10 +459,8 @@ impl ServerManifest {
         Ok(())
     }
 
-    /// A second gate used by a future installer. The structural schema can
-    /// represent the design snapshot's missing artifact sizes/lock digests,
-    /// while installation must refuse to proceed until those reviewed facts
-    /// are present.
+    /// A second gate for managed installation. Structural catalog fixtures may
+    /// omit reviewed artifact facts, but the installer must never accept one.
     pub fn validate_for_install(&self) -> Result<(), ValidationError> {
         self.validate()?;
         if self.artifact.size_bytes.is_none() {
@@ -649,9 +645,9 @@ impl ServerCatalog {
     }
 }
 
-/// The 2026-08-12 design snapshot. Artifact sizes and reviewed npm lock
-/// digests are intentionally absent because the specification did not pin
-/// those facts; validate_for_install keeps them from being treated as ready.
+/// The reviewed managed-server catalog. Node artifact sizes and the combined
+/// npm dependency-lock digest come from the exact registry tarballs recorded
+/// in lsp/node-lock.json.
 pub fn initial_catalog() -> Vec<ServerManifest> {
     vec![
         ServerManifest {
@@ -708,7 +704,7 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 kind: ArtifactKind::NpmTarball,
                 url: "https://registry.npmjs.org/typescript-language-server/-/typescript-language-server-5.3.0.tgz".into(),
                 sha256: "398cacc17fff2108652e7b4050e3182008d17063246b3fea7dcf5fae2ce1560e".into(),
-                size_bytes: None,
+                size_bytes: Some(501633),
                 allowed_redirect_hosts: Vec::new(),
                 archive_root: "package".into(),
             },
@@ -723,7 +719,9 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
             },
             files: ManifestFiles {
                 entrypoint: "lib/cli.mjs".into(),
-                package_lock_sha256: None,
+                package_lock_sha256: Some(
+                    "eda1314445a932cfa1a6c6662ce068700212a0bdb051d31c23bf30697f04a4dd".into(),
+                ),
             },
             capabilities_hint: None,
             generated_at: "2026-08-12T00:00:00Z".into(),
@@ -742,7 +740,7 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 kind: ArtifactKind::NpmTarball,
                 url: "https://registry.npmjs.org/basedpyright/-/basedpyright-1.39.9.tgz".into(),
                 sha256: "5e92f462d04d91fe1370d65cbb1ac241c0c62b3f2c893c4e0b1bf9a82c9e99b2".into(),
-                size_bytes: None,
+                size_bytes: Some(6123958),
                 allowed_redirect_hosts: Vec::new(),
                 archive_root: "package".into(),
             },
@@ -756,8 +754,10 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 args: vec!["--stdio".into()],
             },
             files: ManifestFiles {
-                entrypoint: "index.js".into(),
-                package_lock_sha256: None,
+                entrypoint: "langserver.index.js".into(),
+                package_lock_sha256: Some(
+                    "eda1314445a932cfa1a6c6662ce068700212a0bdb051d31c23bf30697f04a4dd".into(),
+                ),
             },
             capabilities_hint: None,
             generated_at: "2026-08-12T00:00:00Z".into(),
@@ -786,14 +786,14 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 kind: ArtifactKind::NpmTarball,
                 url: "https://registry.npmjs.org/vscode-langservers-extracted/-/vscode-langservers-extracted-4.10.0.tgz".into(),
                 sha256: "d6e2d090d09c4b91daa74e9e7462a3d3f244efb96aa5111004cfffa49d6dc9ef".into(),
-                size_bytes: None,
+                size_bytes: Some(135843),
                 allowed_redirect_hosts: Vec::new(),
                 archive_root: "package".into(),
             },
             runtime: RuntimeSpec {
                 kind: RuntimeKind::Node,
                 executable: "node".into(),
-                min_version: None,
+                min_version: Some(">=22".into()),
             },
             command: CommandSpec {
                 executable: "vscode-json-language-server".into(),
@@ -801,7 +801,9 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
             },
             files: ManifestFiles {
                 entrypoint: "bin/vscode-json-language-server".into(),
-                package_lock_sha256: None,
+                package_lock_sha256: Some(
+                    "eda1314445a932cfa1a6c6662ce068700212a0bdb051d31c23bf30697f04a4dd".into(),
+                ),
             },
             capabilities_hint: None,
             generated_at: "2026-08-12T00:00:00Z".into(),
@@ -1350,10 +1352,10 @@ mod tests {
         assert!(catalog
             .find("rust-analyzer", "2026-08-10.1", WINDOWS_X86_64_PLATFORM)
             .is_some());
-        assert!(catalog
-            .manifests
+        assert!(catalog.manifests[0].validate_for_install().is_err());
+        assert!(catalog.manifests[1..]
             .iter()
-            .all(|manifest| manifest.validate_for_install().is_err()));
+            .all(|manifest| manifest.validate_for_install().is_ok()));
     }
 
     #[test]
