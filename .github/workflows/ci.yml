@@ -3,8 +3,11 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
+  # `main` requires this workflow's three compiler gates through GitHub branch
+  # protection. Running the same change again after a reviewed PR is merged
+  # only duplicates the verified work. Manual runs remain available for an
+  # explicit repository-wide audit.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -29,7 +32,14 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: bash .github/scripts/ci-scope.sh "$BASE_SHA" "$HEAD_SHA"
+        run: |
+          if [[ -z "$BASE_SHA" ]]; then
+            # An explicit manual run is a full repository audit. Passing the
+            # same SHA yields an empty diff, which ci-scope maps fail-safe to
+            # both full scopes.
+            BASE_SHA="$HEAD_SHA"
+          fi
+          bash .github/scripts/ci-scope.sh "$BASE_SHA" "$HEAD_SHA"
 
   frontend:
     name: Frontend (pnpm)
