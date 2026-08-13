@@ -6,6 +6,7 @@ import type {
   JobInput,
   LogStream,
   ServiceInput,
+  ServiceInstance,
   Run,
   RuntimeStatus,
   StartupShortcutStatus,
@@ -208,6 +209,51 @@ export function deleteService(id: string): Promise<boolean> {
     return Promise.resolve(before !== mockServices.length);
   }
   return invoke<boolean>("delete_service", { id });
+}
+
+export function getServiceInstance(id: string): Promise<ServiceInstance | null> {
+  if (!isTauri()) {
+    return Promise.resolve(mockServiceInstance(id));
+  }
+  return invoke<ServiceInstance | null>("get_service_instance", { id });
+}
+
+export function startService(id: string): Promise<ServiceInstance> {
+  if (!isTauri()) {
+    mockServiceState.set(id, "running");
+    return Promise.resolve(mockServiceInstance(id)!);
+  }
+  return invoke<ServiceInstance>("start_service", { id });
+}
+
+export function stopService(id: string): Promise<ServiceInstance | null> {
+  if (!isTauri()) {
+    mockServiceState.set(id, "stopped");
+    return Promise.resolve(mockServiceInstance(id));
+  }
+  return invoke<ServiceInstance | null>("stop_service", { id });
+}
+
+export function restartService(id: string): Promise<ServiceInstance> {
+  if (!isTauri()) {
+    mockServiceState.set(id, "running");
+    return Promise.resolve(mockServiceInstance(id)!);
+  }
+  return invoke<ServiceInstance>("restart_service", { id });
+}
+
+const mockServiceState = new Map<string, "stopped" | "running">();
+
+function mockServiceInstance(id: string): ServiceInstance | null {
+  const service = mockServices.find((item) => item.id === id);
+  if (!service) return null;
+  return {
+    jobId: id,
+    generation: 0,
+    state: mockServiceState.get(id) ?? "stopped",
+    consecutiveFailures: 0,
+    nextRetryAt: null,
+  };
 }
 
 export function previewCron(cronExpr: string): Promise<CronPreviewItem[]> {

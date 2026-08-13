@@ -4,6 +4,7 @@ import {
   createJob,
   deleteService,
   deleteJob,
+  getServiceInstance,
   hideMainWindow,
   listServices,
   listJobs,
@@ -11,16 +12,27 @@ import {
   loadStartupShortcutStatus,
   loadRuntimeStatus,
   quitApp,
+  restartService,
   runJobNow,
   setStartupShortcutEnabled,
+  startService,
   stopActiveRun,
+  stopService,
   updateService,
   updateJob,
 } from "./api";
 import JobEditor from "./components/JobEditor";
 import RunHistory from "./components/RunHistory";
 import ServiceEditor from "./components/ServiceEditor";
-import type { Job, JobInput, Run, RuntimeStatus, ServiceInput, StartupShortcutStatus } from "./types";
+import type {
+  Job,
+  JobInput,
+  Run,
+  RuntimeStatus,
+  ServiceInput,
+  ServiceInstance,
+  StartupShortcutStatus,
+} from "./types";
 import "./App.css";
 
 type Screen = "jobs" | "editor" | "services" | "service-editor" | "history";
@@ -41,11 +53,22 @@ function restartLabel(job: Job): string {
       : "재시작 안 함";
 }
 
+function serviceStateLabel(state: ServiceInstance["state"]): string {
+  switch (state) {
+    case "running": return "실행 중";
+    case "starting": return "시작 중";
+    case "stopping": return "정지 중";
+    case "retry_waiting": return "재시작 대기";
+    case "stopped": return "정지됨";
+  }
+}
+
 export default function App() {
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
   const [startupStatus, setStartupStatus] = useState<StartupShortcutStatus | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [services, setServices] = useState<Job[]>([]);
+  const [serviceInstances, setServiceInstances] = useState<Record<string, ServiceInstance>>({});
   const [activeRuns, setActiveRuns] = useState<Record<string, Run | null>>({});
   const [screen, setScreen] = useState<Screen>("jobs");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
@@ -109,7 +132,15 @@ export default function App() {
   }, [refreshActiveRuns]);
 
   const refreshServices = useCallback(async () => {
-    setServices(await listServices());
+    const nextServices = await listServices();
+    setServices(nextServices);
+    const entries = await Promise.all(
+      nextServices.map(async (service): Promise<[string, ServiceInstance] | null> => {
+        const instance = await getServiceInstance(service.id);
+        return instance ? [service.id, instance] : null;
+      }),
+    );
+    setServiceInstances(Object.fromEntries(entries.filter((entry): entry is [string, ServiceInstance] => entry !== null)));
   }, []);
 
   const refreshStatus = useCallback(async () => {
@@ -172,6 +203,45 @@ export default function App() {
     try {
       await stopActiveRun(job.id);
       await refreshActiveRuns();
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleServiceStart = async (service: Job) => {
+    setBusy(true);
+    try {
+      await startService(service.id);
+      await refreshServices();
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleServiceStop = async (service: Job) => {
+    setBusy(true);
+    try {
+      await stopService(service.id);
+      await refreshServices();
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleServiceRestart = async (service: Job) => {
+    setBusy(true);
+    try {
+      await restartService(service.id);
+      await refreshServices();
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -385,12 +455,16 @@ export default function App() {
             ) : null}
             {!loading && services.length > 0 ? (
               <div className="job-list service-list">
-                {services.map((service) => (
+                {services.map((service) => {
+                  const instance = serviceInstances[service.id];
+                  const state = instance?.state ?? "stopped";
+                  const running = state === "running" || state === "starting";
+                  return (
                   <article className="job-card service-card" key={service.id}>
                     <div className="job-card-main">
                       <div className="job-title-row">
                         <h3>{service.name}</h3>
-                        <span className="job-state disabled">정지됨</span>
+                        <span className={`job-state ${running ? "ready" : "disabled"}`}>{serviceStateLabel(state)}</span>
                       </div>
                       <code title={service.command}>{service.command}</code>
                       <div className="job-meta">
@@ -400,15 +474,27 @@ export default function App() {
                         {service.healthTcpAddress && service.healthTcpPort ? (
                           <span>TCP {service.healthTcpAddress}:{service.healthTcpPort}</span>
                         ) : <span>TCP probe 없음</span>}
+                        {instance && instance.consecutiveFailures > 0 ? (
+                          <span>연속 실패 {instance.consecutiveFailures}회</span>
+                        ) : null}
                         {service.envConfigured ? <span className="secret-badge">환경변수 보호됨</span> : null}
                       </div>
                     </div>
                     <div className="job-actions">
+                      {running ? (
+                        <>
+                          <button type="button" className="button-secondary" disabled={busy} onClick={() => void handleServiceRestart(service)}>재시작</button>
+                          <button type="button" className="button-danger" disabled={busy} onClick={() => void handleServiceStop(service)}>정지</button>
+                        </>
+                      ) : (
+                        <button type="button" className="button-secondary" disabled={busy} onClick={() => void handleServiceStart(service)}>시작</button>
+                      )}
                       <button type="button" className="button-secondary" onClick={() => openServiceEdit(service)}>편집</button>
-                      <button type="button" className="button-danger" disabled={busy} onClick={() => void handleServiceDelete(service)}>삭제</button>
+                      <button type="button" className="button-danger" disabled={busy || running} onClick={() => void handleServiceDelete(service)}>삭제</button>
                     </div>
                   </article>
-                ))}
+                  );
+                })}
               </div>
             ) : null}
           </section>

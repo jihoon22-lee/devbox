@@ -8,7 +8,9 @@
 //! target without importing Windows or WSL APIs.
 
 use crate::core::cron::CronSchedule;
-use crate::core::models::{Job, Run, RunExecutionMetadata, RunStatus};
+use crate::core::models::{
+    Job, RestartPolicy, Run, RunExecutionMetadata, RunStatus, ServiceInstance, ServiceInstanceState,
+};
 use crate::core::policies::select_occurrences;
 use crate::storage::{
     current_epoch_millis, ClaimedRunAction, DatabaseState, PolicyClaim, StorageError,
@@ -30,6 +32,18 @@ pub const SCHEDULER_TICK: Duration = Duration::from_secs(1);
 pub const DEFAULT_MAX_CONCURRENT_RUNS: usize = 4;
 pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const DUE_BATCH_SIZE: usize = 1024;
+
+/// Service restart backoff steps, indexed by consecutive failure count and
+/// capped at 30 seconds (mirrors the code-pad LSP restart policy).
+const SERVICE_RESTART_DELAYS_MS: [i64; 6] = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
+/// Service health probe cadence and failure threshold.
+const SERVICE_HEALTH_INTERVAL: Duration = Duration::from_secs(10);
+const SERVICE_HEALTH_FAILURE_LIMIT: i64 = 3;
+
+fn service_restart_delay_ms(consecutive_failures: i64) -> i64 {
+    let index = (consecutive_failures.max(0) as usize).min(SERVICE_RESTART_DELAYS_MS.len() - 1);
+    SERVICE_RESTART_DELAYS_MS[index]
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ScheduledOccurrence {
@@ -584,8 +598,12 @@ impl SchedulerCoordinator {
         // the row blocked and must not terminate the daemon (or turn the
         // shutdown path into an infinite retry that never invokes recovery).
         let _ = self.recover_stale_at(current_epoch_millis()).await;
+        // Bring up auto-start services once recovery has settled the durable
+        // state. A failing service must not prevent the scheduler from running.
+        let _ = self.auto_start_services(current_epoch_millis()).await;
         let mut interval = tokio::time::interval(self.inner.config.tick_interval);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let mut last_health_check = current_epoch_millis();
         loop {
             tokio::select! {
                 biased;
@@ -594,10 +612,16 @@ impl SchedulerCoordinator {
                     if self.is_shutdown_requested() {
                         break;
                     }
-                    let _ = self.recover_stale_at(current_epoch_millis()).await;
+                    let now = current_epoch_millis();
+                    let _ = self.recover_stale_at(now).await;
+                    let _ = self.supervise_services(now).await;
+                    if now - last_health_check >= SERVICE_HEALTH_INTERVAL.as_millis() as i64 {
+                        last_health_check = now;
+                        let _ = self.run_service_health_checks(now).await;
+                    }
                     // A malformed/tampered job must not kill the daemon. The
                     // next tick retries it while other jobs continue.
-                    let _ = self.tick_at(current_epoch_millis()).await;
+                    let _ = self.tick_at(now).await;
                 }
             }
         }
@@ -814,6 +838,313 @@ impl SchedulerCoordinator {
             .database
             .list_active_process_runs()
             .map_err(Into::into)
+    }
+
+    /// Start a service through its durable single-instance claim. A `stopped`
+    /// instance moves to a fresh generation, spawns a manual process run, and
+    /// links that run into `active_run_id` once the process handshake succeeds.
+    pub async fn start_service_at(
+        &self,
+        service_id: &str,
+        now: i64,
+    ) -> Result<ServiceInstance, SchedulerError> {
+        let service = self
+            .inner
+            .database
+            .get_service(service_id)?
+            .ok_or_else(|| StorageError::NotFound(format!("service {service_id}")))?;
+        let owner = self.inner.config.owner_instance_id.clone();
+        let attempt_token = Uuid::new_v4().to_string();
+        let lock = self.job_mutex(service_id).await;
+        let _guard = lock.lock().await;
+        if self.is_cleanup_pending(service_id).await {
+            return Err(service_adapter_error(service_id, "termination-unverified"));
+        }
+        let instance = self
+            .inner
+            .database
+            .claim_service_start(service_id, &owner, &attempt_token, now)?
+            .ok_or_else(|| service_adapter_error(service_id, "service-already-running"))?;
+        let generation = instance.generation;
+        let run = self.inner.database.create_service_run_at(service_id, now)?;
+        let handle = match self.start_owned_claim(&service, &run).await {
+            Ok(Some(handle)) => handle,
+            Ok(None) => {
+                let _ = self
+                    .inner
+                    .database
+                    .mark_service_stopped(service_id, generation, now);
+                return Err(service_adapter_error(service_id, "service-start-cancelled"));
+            }
+            Err(error) => {
+                let _ = self
+                    .inner
+                    .database
+                    .mark_service_stopped(service_id, generation, now);
+                return Err(error);
+            }
+        };
+        if !self.inner.database.mark_service_running(
+            service_id,
+            generation,
+            &owner,
+            &attempt_token,
+            &run.id,
+            now,
+        )? {
+            let _ =
+                tokio::time::timeout(self.inner.config.shutdown_timeout, handle.terminate()).await;
+            return Err(service_adapter_error(service_id, "service-start-conflict"));
+        }
+        self.inner
+            .database
+            .get_service_instance(service_id)?
+            .ok_or_else(|| StorageError::NotFound(format!("service instance {service_id}")).into())
+    }
+
+    /// Stop an active service by terminating its linked process run. The
+    /// instance returns to `stopped` only after the run reaches a terminal
+    /// state; a service with no active run is a no-op.
+    pub async fn stop_service_at(
+        &self,
+        service_id: &str,
+        now: i64,
+    ) -> Result<Option<ServiceInstance>, SchedulerError> {
+        let instance = {
+            let lock = self.job_mutex(service_id).await;
+            let _guard = lock.lock().await;
+            self.inner.database.begin_service_stop(service_id, now)?
+        };
+        let Some(instance) = instance else {
+            return Ok(None);
+        };
+        let generation = instance.generation;
+        let _ = self.stop_active_at(service_id, now).await;
+        let _ = self
+            .inner
+            .database
+            .mark_service_stopped(service_id, generation, now);
+        Ok(self.inner.database.get_service_instance(service_id)?)
+    }
+
+    /// Stop and immediately restart an active service. An already-stopped
+    /// service is simply started.
+    pub async fn restart_service_at(
+        &self,
+        service_id: &str,
+        now: i64,
+    ) -> Result<ServiceInstance, SchedulerError> {
+        if self
+            .inner
+            .database
+            .get_service_instance(service_id)?
+            .is_some_and(|instance| instance.state != ServiceInstanceState::Stopped)
+        {
+            let _ = self.stop_service_at(service_id, now).await?;
+        }
+        self.start_service_at(service_id, now).await
+    }
+
+    /// Start every `auto_start` service that is currently stopped. Best-effort:
+    /// one failing service must not prevent the others from starting.
+    pub async fn auto_start_services(&self, now: i64) -> usize {
+        let services = match self.inner.database.list_auto_start_services() {
+            Ok(services) => services,
+            Err(_) => return 0,
+        };
+        let mut started = 0;
+        for service in services {
+            if self.start_service_at(&service.id, now).await.is_ok() {
+                started += 1;
+            }
+        }
+        started
+    }
+
+    /// Sync terminal hook invoked for every terminal run. For a service run it
+    /// decides, from the restart policy, whether to leave the instance stopped
+    /// or schedule a backoff retry. Intentional stops (`cancelled`) never
+    /// restart.
+    fn handle_service_terminal(&self, job_id: &str, run_id: &str, status: RunStatus, now: i64) {
+        let Ok(Some(service)) = self.inner.database.get_service(job_id) else {
+            return;
+        };
+        let Ok(Some(instance)) = self.inner.database.get_service_instance(job_id) else {
+            return;
+        };
+        if instance.active_run_id.as_deref() != Some(run_id) {
+            return;
+        }
+        let restart_policy = service.restart_policy.unwrap_or(RestartPolicy::Never);
+        let should_restart = match status {
+            RunStatus::Cancelled => false,
+            RunStatus::Succeeded => restart_policy == RestartPolicy::Always,
+            RunStatus::Failed => restart_policy != RestartPolicy::Never,
+            _ => false,
+        };
+        if should_restart {
+            let delay = service_restart_delay_ms(instance.consecutive_failures);
+            let _ = self.inner.database.mark_service_retry_waiting(
+                job_id,
+                instance.generation,
+                now.saturating_add(delay),
+                now,
+            );
+        } else {
+            let _ = self
+                .inner
+                .database
+                .mark_service_stopped(job_id, instance.generation, now);
+        }
+    }
+
+    /// Restart a `retry_waiting` service whose backoff deadline has elapsed.
+    async fn restart_retry_service_at(
+        &self,
+        service_id: &str,
+        now: i64,
+    ) -> Result<ServiceInstance, SchedulerError> {
+        let service = self
+            .inner
+            .database
+            .get_service(service_id)?
+            .ok_or_else(|| StorageError::NotFound(format!("service {service_id}")))?;
+        let owner = self.inner.config.owner_instance_id.clone();
+        let attempt_token = Uuid::new_v4().to_string();
+        let lock = self.job_mutex(service_id).await;
+        let _guard = lock.lock().await;
+        if self.is_cleanup_pending(service_id).await {
+            return Err(service_adapter_error(service_id, "termination-unverified"));
+        }
+        let instance = self
+            .inner
+            .database
+            .claim_service_retry(service_id, &owner, &attempt_token, now)?
+            .ok_or_else(|| service_adapter_error(service_id, "service-retry-unavailable"))?;
+        let generation = instance.generation;
+        let run = self.inner.database.create_service_run_at(service_id, now)?;
+        let handle = match self.start_owned_claim(&service, &run).await {
+            Ok(Some(handle)) => handle,
+            Ok(None) => {
+                let _ = self
+                    .inner
+                    .database
+                    .mark_service_stopped(service_id, generation, now);
+                return Err(service_adapter_error(service_id, "service-start-cancelled"));
+            }
+            Err(error) => {
+                let _ = self
+                    .inner
+                    .database
+                    .mark_service_stopped(service_id, generation, now);
+                return Err(error);
+            }
+        };
+        if !self.inner.database.mark_service_running(
+            service_id,
+            generation,
+            &owner,
+            &attempt_token,
+            &run.id,
+            now,
+        )? {
+            let _ =
+                tokio::time::timeout(self.inner.config.shutdown_timeout, handle.terminate()).await;
+            return Err(service_adapter_error(service_id, "service-start-conflict"));
+        }
+        // A successful restart restores the shortest backoff.
+        let _ = self
+            .inner
+            .database
+            .reset_service_health(service_id, generation, now);
+        self.inner
+            .database
+            .get_service_instance(service_id)?
+            .ok_or_else(|| StorageError::NotFound(format!("service instance {service_id}")).into())
+    }
+
+    /// One supervisor pass: restart due retries. Best-effort per service so one
+    /// failing service does not block the others.
+    pub async fn supervise_services(&self, now: i64) {
+        let due = match self.inner.database.list_due_service_retries(now) {
+            Ok(due) => due,
+            Err(_) => return,
+        };
+        for instance in due {
+            let _ = self.restart_retry_service_at(&instance.job_id, now).await;
+        }
+    }
+
+    /// One health pass: probe every running service and restart it after the
+    /// consecutive-failure limit is reached. Best-effort and non-fatal.
+    pub async fn run_service_health_checks(&self, now: i64) {
+        let running = match self.inner.database.list_running_services() {
+            Ok(running) => running,
+            Err(_) => return,
+        };
+        for (service, instance) in running {
+            let healthy = self.service_healthy(&service, &instance).await;
+            if healthy {
+                let _ = self.inner.database.reset_service_health(
+                    &instance.job_id,
+                    instance.generation,
+                    now,
+                );
+                continue;
+            }
+            let Some(failures) = self
+                .inner
+                .database
+                .record_service_health_failure(&instance.job_id, instance.generation, now)
+                .ok()
+                .flatten()
+            else {
+                continue;
+            };
+            if failures >= SERVICE_HEALTH_FAILURE_LIMIT {
+                // Unhealthy: schedule a backoff retry and terminate the linked
+                // process. Clearing `active_run_id` disconnects the run so the
+                // cancellation terminal hook cannot re-enter this instance.
+                let delay = service_restart_delay_ms(failures);
+                let scheduled = self.inner.database.mark_service_retry_waiting(
+                    &instance.job_id,
+                    instance.generation,
+                    now.saturating_add(delay),
+                    now,
+                );
+                if matches!(scheduled, Ok(true)) {
+                    let _ = self.stop_active_at(&instance.job_id, now).await;
+                }
+            }
+        }
+    }
+
+    async fn service_healthy(&self, service: &Job, instance: &ServiceInstance) -> bool {
+        let Some(active_run_id) = instance.active_run_id.as_deref() else {
+            return false;
+        };
+        let Ok(Some(run)) = self.inner.database.get_run(active_run_id) else {
+            return false;
+        };
+        if !matches!(run.status, RunStatus::Running) {
+            return false;
+        }
+        let (Some(address), Some(port)) = (
+            service.health_tcp_address.as_deref(),
+            service.health_tcp_port,
+        ) else {
+            return true;
+        };
+        let Ok(address) = address.parse::<std::net::IpAddr>() else {
+            return false;
+        };
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            tokio::net::TcpStream::connect((address, port)),
+        )
+        .await
+        .map(|result| result.is_ok())
+        .unwrap_or(false)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1262,6 +1593,18 @@ impl SchedulerCoordinator {
     }
 
     async fn start_claimed_run(&self, job: &Job, run: Run) -> Result<(), SchedulerError> {
+        let _ = self.start_owned_claim(job, &run).await?;
+        Ok(())
+    }
+
+    /// Claim a queued run into `starting` and drive it through the adapter.
+    /// Returns the running handle, or `None` when the claim was lost or the run
+    /// was cancelled by shutdown.
+    async fn start_owned_claim(
+        &self,
+        job: &Job,
+        run: &Run,
+    ) -> Result<Option<Arc<dyn ExecutionHandle>>, SchedulerError> {
         let owner = self.inner.config.owner_instance_id.clone();
         let attempt_token = Uuid::new_v4().to_string();
         if !self
@@ -1269,7 +1612,7 @@ impl SchedulerCoordinator {
             .database
             .claim_run_starting(&run.id, &owner, &attempt_token)?
         {
-            return Ok(());
+            return Ok(None);
         }
         let claimed = self
             .inner
@@ -1277,10 +1620,16 @@ impl SchedulerCoordinator {
             .get_run(&run.id)?
             .ok_or_else(|| StorageError::NotFound(format!("run {}", run.id)))?;
         let Some(handle) = self.start_owned_run(&claimed, &attempt_token).await? else {
-            return Ok(());
+            return Ok(None);
         };
-        self.spawn_monitor(claimed.id, job.id.clone(), owner, attempt_token, handle);
-        Ok(())
+        self.spawn_monitor(
+            claimed.id,
+            job.id.clone(),
+            owner,
+            attempt_token,
+            Arc::clone(&handle),
+        );
+        Ok(Some(handle))
     }
 
     async fn start_owned_run(
@@ -1291,7 +1640,7 @@ impl SchedulerCoordinator {
         let job = self
             .inner
             .database
-            .get_job(&run.job_id)?
+            .get_run_job(&run.job_id)?
             .ok_or_else(|| StorageError::NotFound(format!("job {}", run.job_id)))?;
         let owner = self.inner.config.owner_instance_id.clone();
         if self.is_shutdown_requested() {
@@ -2143,6 +2492,10 @@ impl SchedulerCoordinator {
                 status,
                 failure_code,
             });
+            // A service whose linked run terminated either returns to `stopped`
+            // or schedules a restart retry according to its restart policy.
+            // This is a no-op for ordinary job runs, which have no instance row.
+            self.handle_service_terminal(job_id, run_id, status, ended_at);
             return Ok(true);
         }
         let already_terminal = self.inner.database.get_run(run_id)?.is_some_and(|run| {
@@ -2201,10 +2554,20 @@ fn cleanup_confirmed_for_result(result: &Result<ExecutionExit, AdapterError>) ->
     }
 }
 
+/// A stable service-lifecycle error with a fixed, UI-safe code.
+fn service_adapter_error(service_id: &str, code: &'static str) -> SchedulerError {
+    SchedulerError::Adapter {
+        run_id: service_id.to_string(),
+        source: AdapterError::new(code),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::models::{EnvironmentUpdate, JobInput, OverlapPolicy, TargetKind};
+    use crate::core::models::{
+        EnvironmentUpdate, JobInput, OverlapPolicy, RestartPolicy, ServiceInput, TargetKind,
+    };
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex as StdMutex;
     use tokio::sync::oneshot;
@@ -2551,6 +2914,49 @@ mod tests {
             overlap_policy,
             catch_up: true,
         }
+    }
+
+    fn service_input(name: &str, auto_start: bool) -> ServiceInput {
+        ServiceInput {
+            name: name.to_string(),
+            command: "node server.js".to_string(),
+            cwd: None,
+            target_kind: TargetKind::Windows,
+            target_distro: None,
+            environment: EnvironmentUpdate::Keep,
+            restart_policy: RestartPolicy::Never,
+            auto_start,
+            health_tcp_address: None,
+            health_tcp_port: None,
+        }
+    }
+
+    fn service_with_policy(name: &str, restart_policy: RestartPolicy) -> ServiceInput {
+        let mut input = service_input(name, false);
+        input.restart_policy = restart_policy;
+        input
+    }
+
+    async fn await_service_state(
+        database: &DatabaseState,
+        service_id: &str,
+        expected: ServiceInstanceState,
+    ) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if database
+                    .get_service_instance(service_id)
+                    .unwrap()
+                    .map(|instance| instance.state)
+                    == Some(expected)
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("service instance did not reach the expected state");
     }
 
     #[test]
@@ -3178,6 +3584,303 @@ mod tests {
         );
         assert_eq!(replacement.blocked_by_run_id, None);
         adapter.finish_next(0).await;
+        adapter.finish_next(0).await;
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn service_start_links_run_and_transitions_to_running() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_input("web", false), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        let instance = scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        assert_eq!(instance.state, ServiceInstanceState::Running);
+        assert!(instance.generation >= 1);
+        let run_id = instance.active_run_id.clone().unwrap();
+        assert_eq!(
+            database.get_run(&run_id).unwrap().unwrap().status,
+            RunStatus::Running
+        );
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 1);
+        adapter.finish_next(0).await;
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn service_start_is_rejected_when_already_running() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_input("web", false), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        let error = scheduler
+            .start_service_at(&service.id, 1_002)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            SchedulerError::Adapter { source, .. } if source.message == "service-already-running"
+        ));
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 1);
+        adapter.finish_next(0).await;
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn service_stop_returns_to_stopped_after_termination() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_input("web", false), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        let instance = scheduler
+            .stop_service_at(&service.id, 1_002)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(instance.state, ServiceInstanceState::Stopped);
+        assert_eq!(
+            database
+                .get_service_instance(&service.id)
+                .unwrap()
+                .unwrap()
+                .state,
+            ServiceInstanceState::Stopped
+        );
+        assert_eq!(database.active_process_run(&service.id).unwrap(), None);
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn service_stop_without_active_run_is_a_noop() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_input("web", false), 1_000)
+            .unwrap();
+        let scheduler =
+            SchedulerCoordinator::new(database.clone(), Arc::new(UnavailableExecutionAdapter));
+        assert!(scheduler
+            .stop_service_at(&service.id, 1_001)
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn service_restart_advances_generation_and_restarts() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_input("web", false), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        let first = scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        let first_run = first.active_run_id.clone().unwrap();
+        let second = scheduler
+            .restart_service_at(&service.id, 1_002)
+            .await
+            .unwrap();
+        assert_eq!(second.state, ServiceInstanceState::Running);
+        assert!(second.generation > first.generation);
+        let second_run = second.active_run_id.clone().unwrap();
+        assert_ne!(first_run, second_run);
+        assert_eq!(
+            database.get_run(&first_run).unwrap().unwrap().status,
+            RunStatus::Cancelled
+        );
+        adapter.finish_next(0).await;
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_service_run_schedules_retry_for_on_failure_policy() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_with_policy("web", RestartPolicy::OnFailure), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        adapter.finish_next(1).await;
+        await_service_state(&database, &service.id, ServiceInstanceState::RetryWaiting).await;
+        let instance = database.get_service_instance(&service.id).unwrap().unwrap();
+        assert!(instance.next_retry_at.is_some());
+        assert_eq!(instance.consecutive_failures, 1);
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn clean_service_exit_stops_without_retry_for_on_failure_policy() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_with_policy("web", RestartPolicy::OnFailure), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        adapter.finish_next(0).await;
+        await_service_state(&database, &service.id, ServiceInstanceState::Stopped).await;
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn never_policy_stops_on_failed_run() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_with_policy("web", RestartPolicy::Never), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        adapter.finish_next(1).await;
+        await_service_state(&database, &service.id, ServiceInstanceState::Stopped).await;
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn always_policy_retries_clean_exit() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_with_policy("web", RestartPolicy::Always), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        adapter.finish_next(0).await;
+        await_service_state(&database, &service.id, ServiceInstanceState::RetryWaiting).await;
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn due_retry_is_restarted_into_a_new_generation() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_with_policy("web", RestartPolicy::OnFailure), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        let first = scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        adapter.finish_next(1).await;
+        await_service_state(&database, &service.id, ServiceInstanceState::RetryWaiting).await;
+
+        // Fast-forward past the 1-second backoff and run one supervisor pass.
+        scheduler
+            .supervise_services(crate::storage::current_epoch_millis() + 2_000)
+            .await;
+        await_service_state(&database, &service.id, ServiceInstanceState::Running).await;
+        let second = database.get_service_instance(&service.id).unwrap().unwrap();
+        assert!(second.generation > first.generation);
+        assert_eq!(second.consecutive_failures, 0);
+        adapter.finish_next(0).await;
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn service_run_terminal_marks_instance_stopped() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_input("web", false), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        adapter.finish_next(0).await;
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if database
+                    .get_service_instance(&service.id)
+                    .unwrap()
+                    .unwrap()
+                    .state
+                    == ServiceInstanceState::Stopped
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("service instance should return to stopped after run exit");
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn auto_start_brings_up_only_stopped_auto_start_services() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let auto = database
+            .create_service_at(service_input("auto", true), 1_000)
+            .unwrap();
+        let manual = database
+            .create_service_at(service_input("manual", false), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        let started = scheduler.auto_start_services(1_001).await;
+        assert_eq!(started, 1);
+        assert_eq!(
+            database
+                .get_service_instance(&auto.id)
+                .unwrap()
+                .unwrap()
+                .state,
+            ServiceInstanceState::Running
+        );
+        assert_eq!(
+            database
+                .get_service_instance(&manual.id)
+                .unwrap()
+                .unwrap()
+                .state,
+            ServiceInstanceState::Stopped
+        );
         adapter.finish_next(0).await;
         scheduler.shutdown().await.unwrap();
     }

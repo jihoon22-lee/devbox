@@ -144,3 +144,18 @@ export type ServiceField =
   | "env";
 
 export type ServiceFieldErrors = Partial<Record<ServiceField, string>>;
+
+export type ServiceInstanceState =
+  | "stopped"
+  | "starting"
+  | "running"
+  | "stopping"
+  | "retry_waiting";
+
+export interface ServiceInstance {
+  jobId: string;
+  generation: number;
+  state: ServiceInstanceState;
+  consecutiveFailures: number;
+  nextRetryAt: number | null;
+}
