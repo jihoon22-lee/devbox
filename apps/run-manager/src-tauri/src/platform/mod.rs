@@ -1,5 +1,7 @@
 #[cfg(target_os = "windows")]
-mod windows;
+pub mod windows;
+
+pub mod wsl;
 
 #[cfg(target_os = "windows")]
 pub use windows::install_session_end_hook;
