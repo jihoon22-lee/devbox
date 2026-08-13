@@ -286,7 +286,7 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
             <div className="adapter-warning" role="note">
               {service?.envConfigured
                 ? "저장된 환경변수는 DPAPI 보호 상태입니다. 기존 값은 마스킹 상태로 유지됩니다."
-                : "새 환경변수 값은 Windows DPAPI 어댑터 연결 후 저장할 수 있습니다."}
+                : "새 환경변수 값은 Windows 사용자 범위 DPAPI로 암호화되어 저장되며 다시 표시되지 않습니다."}
             </div>
             <div className="section-heading">
               <button type="button" className="button-secondary small" onClick={addEnvironment}>변수 추가</button>
