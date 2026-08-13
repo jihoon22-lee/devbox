@@ -4,6 +4,7 @@ pub mod core;
 mod lifecycle;
 pub mod logs;
 pub mod platform;
+pub mod scheduler;
 pub mod storage;
 
 use lifecycle::{is_background_launch, request_orderly_exit, RuntimeState};

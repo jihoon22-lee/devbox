@@ -2,6 +2,9 @@ use crate::core::models::{
     ClaimResult, Job, JobInput, JobKind, NewNotification, NotificationOutboxItem, OverlapPolicy,
     Run, RunStatus, TargetKind,
 };
+use crate::core::policies::{
+    decide_overlap, OverlapAction, OverlapPolicyInput, RunPolicySnapshot, StopAction,
+};
 use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, TransactionBehavior};
 use std::fmt;
 use std::path::Path;
@@ -125,7 +128,34 @@ pub enum StorageError {
     Validation(String),
     NotFound(String),
     JobDisabled(String),
+    ConcurrentChange(String),
     ConnectionPoisoned,
+}
+
+/// The durable result of applying the same overlap policy to a scheduled or
+/// manual run.  A queued result is only an intent; the scheduler must still
+/// win the `queued -> starting` CAS before it asks an adapter to spawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimedRunAction {
+    Existing,
+    Start,
+    Queue,
+    Skip,
+    KillPrevious,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PolicyClaim {
+    pub inserted: bool,
+    pub run: Run,
+    pub action: ClaimedRunAction,
+    pub previous_run_id: Option<String>,
+    /// Status observed for the previous active row before the claim's
+    /// kill-previous transition.  A queued previous row has no process/tree
+    /// to terminate; starting/running/stopping rows require adapter
+    /// confirmation before the new row can be unblocked.
+    pub previous_run_status: Option<RunStatus>,
+    pub stop_requested: bool,
 }
 
 impl fmt::Display for StorageError {
@@ -135,6 +165,9 @@ impl fmt::Display for StorageError {
             Self::Validation(error) => formatter.write_str(error),
             Self::NotFound(entity) => write!(formatter, "{entity} not found"),
             Self::JobDisabled(id) => write!(formatter, "job {id} is disabled"),
+            Self::ConcurrentChange(entity) => {
+                write!(formatter, "concurrent change while updating {entity}")
+            }
             Self::ConnectionPoisoned => formatter.write_str("database connection is poisoned"),
         }
     }
@@ -356,6 +389,427 @@ impl DatabaseState {
             .ok_or_else(|| StorageError::NotFound(format!("newly created run {id}")))?;
         transaction.commit()?;
         Ok(run)
+    }
+
+    /// List enabled Phase 1 jobs for one scheduler tick.  Services remain
+    /// excluded until the Phase 2 service coordinator owns their lifecycle.
+    pub fn list_enabled_jobs(&self) -> Result<Vec<Job>, StorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT {JOB_COLUMNS} FROM jobs
+             WHERE kind = 'job' AND enabled = 1
+             ORDER BY id"
+        ))?;
+        let rows = statement.query_map([], row_to_job)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(StorageError::from)
+    }
+
+    /// Return all queued rows in durable FIFO order.  A blocked first row is
+    /// intentionally included so the coordinator cannot let a later row
+    /// overtake a kill-previous cleanup barrier.
+    pub fn list_queued_runs(&self, job_id: &str) -> Result<Vec<Run>, StorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT {RUN_COLUMNS} FROM runs
+             WHERE job_id = ? AND status = 'queued'
+             ORDER BY queue_sequence, id"
+        ))?;
+        let rows = statement.query_map([job_id], row_to_run)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(StorageError::from)
+    }
+
+    /// Return the earliest active row that currently blocks a job.  The
+    /// durable active set is deliberately the same set used by the pure
+    /// overlap policy (`queued`, `starting`, `running`, `stopping`).
+    pub fn active_run(&self, job_id: &str) -> Result<Option<Run>, StorageError> {
+        let connection = self.lock()?;
+        fetch_active_run(&connection, job_id).map_err(StorageError::from)
+    }
+
+    /// Return an active process row, excluding durable queued intents.  Queue
+    /// workers use this guard before their starting CAS; the policy-facing
+    /// `active_run` above intentionally includes queued rows.
+    pub fn active_process_run(&self, job_id: &str) -> Result<Option<Run>, StorageError> {
+        let connection = self.lock()?;
+        fetch_active_process_run(&connection, job_id).map_err(StorageError::from)
+    }
+
+    /// Advance a job checkpoint without claiming an occurrence.  This is
+    /// used when a startup gap is intentionally skipped (`catch_up = false`)
+    /// and when a tick has no due rows.  The update is monotonic and remains a
+    /// short transaction, never held across an adapter await.
+    pub fn advance_job_checkpoint_at(
+        &self,
+        job_id: &str,
+        checkpoint: i64,
+        now: i64,
+    ) -> Result<Job, StorageError> {
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_job(&transaction, job_id)?;
+        transaction.execute(
+            "UPDATE jobs SET last_evaluated_at = CASE
+                WHEN last_evaluated_at IS NULL OR last_evaluated_at < ?1 THEN ?1
+                ELSE last_evaluated_at END,
+                updated_at = ?2
+             WHERE id = ?3 AND kind = 'job'",
+            params![checkpoint, now, job_id],
+        )?;
+        let job = fetch_job(&transaction, job_id)?
+            .ok_or_else(|| StorageError::NotFound(format!("job {job_id}")))?;
+        transaction.commit()?;
+        Ok(job)
+    }
+
+    /// Claim one automatic occurrence and apply its overlap policy inside the
+    /// same `BEGIN IMMEDIATE` transaction.  The unique wall key prevents a
+    /// second daemon/tick from creating a duplicate row; the active-run CAS
+    /// prevents a kill-previous request from racing a terminal transition.
+    pub fn claim_scheduled_run(
+        &self,
+        job_id: &str,
+        scheduled_at: i64,
+        occurrence_wall_key: &str,
+        now: i64,
+    ) -> Result<PolicyClaim, StorageError> {
+        if occurrence_wall_key.is_empty() {
+            return Err(StorageError::Validation(
+                "occurrence_wall_key must not be empty".to_string(),
+            ));
+        }
+        if occurrence_wall_key.contains('\0') {
+            return Err(StorageError::Validation(
+                "occurrence_wall_key contains a NUL byte".to_string(),
+            ));
+        }
+        self.claim_run_with_policy(
+            job_id,
+            Some(scheduled_at),
+            Some(occurrence_wall_key),
+            now,
+            false,
+        )
+    }
+
+    /// Claim one manual run through exactly the same overlap-policy/queue/CAS
+    /// path as scheduled runs.  Manual runs keep NULL occurrence columns so
+    /// SQLite permits multiple explicit invocations.
+    pub fn claim_manual_run(&self, job_id: &str, now: i64) -> Result<PolicyClaim, StorageError> {
+        // `enabled` gates automatic scheduling only.  An explicit manual
+        // invocation is still allowed for a disabled job, but it must use the
+        // exact same overlap/queue decision and CAS path as scheduled work.
+        self.claim_run_with_policy(job_id, None, None, now, true)
+    }
+
+    /// CAS a durable queued intent into an owned starting attempt.  A false
+    /// result is not an error: another coordinator already won the row.
+    pub fn claim_run_starting(
+        &self,
+        run_id: &str,
+        owner_instance_id: &str,
+        attempt_token: &str,
+    ) -> Result<bool, StorageError> {
+        validate_token("owner_instance_id", owner_instance_id)?;
+        validate_token("attempt_token", attempt_token)?;
+        let connection = self.lock_mut()?;
+        let changed = connection.execute(
+            "UPDATE runs SET status = 'starting', owner_instance_id = ?, attempt_token = ?
+             WHERE id = ? AND status = 'queued' AND blocked_by_run_id IS NULL",
+            params![owner_instance_id, attempt_token, run_id],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// CAS the external spawn handshake into `running`.
+    pub fn mark_run_running(
+        &self,
+        run_id: &str,
+        owner_instance_id: &str,
+        attempt_token: &str,
+        started_at: i64,
+    ) -> Result<bool, StorageError> {
+        validate_token("owner_instance_id", owner_instance_id)?;
+        validate_token("attempt_token", attempt_token)?;
+        let connection = self.lock_mut()?;
+        let changed = connection.execute(
+            "UPDATE runs SET status = 'running', started_at = ?
+             WHERE id = ? AND status = 'starting'
+               AND owner_instance_id = ? AND attempt_token = ?",
+            params![started_at, run_id, owner_instance_id, attempt_token],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// CAS a normal monitor completion.  `Cancelled` is reserved for an
+    /// adapter-confirmed stop; a process exit before that confirmation is
+    /// recorded as succeeded/failed by the caller.
+    #[allow(clippy::too_many_arguments)]
+    pub fn finish_run(
+        &self,
+        run_id: &str,
+        owner_instance_id: &str,
+        attempt_token: &str,
+        status: RunStatus,
+        exit_code: Option<i32>,
+        error_message: Option<&str>,
+        ended_at: i64,
+    ) -> Result<bool, StorageError> {
+        if !matches!(
+            status,
+            RunStatus::Succeeded | RunStatus::Failed | RunStatus::Cancelled
+        ) {
+            return Err(StorageError::Validation(
+                "finish_run requires a terminal status".to_string(),
+            ));
+        }
+        validate_optional_text("error_message", error_message)?;
+        let connection = self.lock_mut()?;
+        let changed = connection.execute(
+            "UPDATE runs SET status = ?, ended_at = ?, exit_code = ?, error_message = ?
+             WHERE id = ? AND status IN ('starting', 'running', 'stopping')
+               AND owner_instance_id = ? AND attempt_token = ?",
+            params![
+                status.as_str(),
+                ended_at,
+                exit_code,
+                error_message,
+                run_id,
+                owner_instance_id,
+                attempt_token,
+            ],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// Apply the result of an adapter-confirmed kill-previous cleanup.  Both
+    /// rows are updated in one transaction; no new spawn is allowed until the
+    /// confirmed path has unblocked the queued row.
+    pub fn resolve_kill_previous(
+        &self,
+        old_run_id: &str,
+        queued_run_id: &str,
+        confirmed: bool,
+        error_message: Option<&str>,
+        now: i64,
+    ) -> Result<bool, StorageError> {
+        validate_optional_text("error_message", error_message)?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (old_status, queued_status, blocker): (String, String, Option<String>) = transaction
+            .query_row(
+                "SELECT old.status, queued.status, queued.blocked_by_run_id
+                 FROM runs AS old JOIN runs AS queued
+                   ON queued.id = ?2
+                 WHERE old.id = ?1",
+                params![old_run_id, queued_run_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?
+            .ok_or_else(|| StorageError::NotFound("kill-previous run pair".to_string()))?;
+        if old_status != RunStatus::Stopping.as_str()
+            || queued_status != RunStatus::Queued.as_str()
+            || blocker.as_deref() != Some(old_run_id)
+        {
+            return Ok(false);
+        }
+
+        let (old_status, queued_status, queued_blocker, old_error, queued_error) = if confirmed {
+            (RunStatus::Cancelled, RunStatus::Queued, None, None, None)
+        } else {
+            (
+                RunStatus::Failed,
+                RunStatus::Failed,
+                Some(old_run_id),
+                error_message,
+                error_message,
+            )
+        };
+        let old_changed = transaction.execute(
+            "UPDATE runs SET status = ?, ended_at = ?, error_message = ?
+             WHERE id = ? AND status = 'stopping'",
+            params![old_status.as_str(), now, old_error, old_run_id],
+        )?;
+        let queued_changed = transaction.execute(
+            "UPDATE runs SET status = ?, ended_at = CASE WHEN ? = 'failed' THEN ? ELSE ended_at END,
+                    blocked_by_run_id = ?, error_message = ?
+             WHERE id = ? AND status = 'queued' AND blocked_by_run_id = ?",
+            params![
+                queued_status.as_str(),
+                queued_status.as_str(),
+                now,
+                queued_blocker,
+                queued_error,
+                queued_run_id,
+                old_run_id,
+            ],
+        )?;
+        if old_changed != 1 || queued_changed != 1 {
+            return Err(StorageError::ConcurrentChange(
+                "kill-previous cleanup pair".to_string(),
+            ));
+        }
+        transaction.commit()?;
+        Ok(true)
+    }
+
+    /// Startup is fail-safe: rows from a previous daemon that were in
+    /// `starting`, `running`, or `stopping` are terminalized as failed and
+    /// never respawned.  Blocked queued rows linked to stale stopping rows are
+    /// failed in the same transaction; unblocked queued rows remain durable
+    /// resume work for the normal FIFO worker.
+    pub fn recover_stale_runs(&self, now: i64) -> Result<usize, StorageError> {
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut statement = transaction.prepare(&format!(
+            "SELECT {RUN_COLUMNS} FROM runs
+             WHERE status IN ('starting', 'running', 'stopping')
+             ORDER BY queue_sequence, id"
+        ))?;
+        let stale = statement
+            .query_map([], row_to_run)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(statement);
+        let mut changed = 0;
+        for run in stale {
+            let updated = transaction.execute(
+                "UPDATE runs SET status = 'failed', ended_at = ?,
+                        error_message = 'scheduler-stale-recovery'
+                 WHERE id = ? AND status IN ('starting', 'running', 'stopping')",
+                params![now, run.id],
+            )?;
+            if updated == 1 {
+                changed += 1;
+                transaction.execute(
+                    "UPDATE runs SET status = 'failed', ended_at = ?,
+                            error_message = 'scheduler-stale-recovery'
+                     WHERE status = 'queued' AND blocked_by_run_id = ?",
+                    params![now, run.id],
+                )?;
+            }
+        }
+        transaction.commit()?;
+        Ok(changed)
+    }
+
+    fn claim_run_with_policy(
+        &self,
+        job_id: &str,
+        scheduled_at: Option<i64>,
+        occurrence_wall_key: Option<&str>,
+        now: i64,
+        allow_disabled: bool,
+    ) -> Result<PolicyClaim, StorageError> {
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let job = ensure_job(&transaction, job_id)?;
+        if !job.enabled && !allow_disabled {
+            return Err(StorageError::JobDisabled(job_id.to_string()));
+        }
+        let overlap_policy = job.overlap_policy;
+
+        if let Some(occurrence_wall_key) = occurrence_wall_key {
+            if let Some(run) = fetch_run_by_occurrence(&transaction, job_id, occurrence_wall_key)? {
+                advance_checkpoint(&transaction, job_id, scheduled_at.unwrap_or(now))?;
+                transaction.commit()?;
+                return Ok(PolicyClaim {
+                    inserted: false,
+                    run,
+                    action: ClaimedRunAction::Existing,
+                    previous_run_id: None,
+                    previous_run_status: None,
+                    stop_requested: false,
+                });
+            }
+        }
+
+        let active_run = fetch_active_run(&transaction, job_id)?;
+        let sequence = allocate_queue_sequence(&transaction, job_id)?;
+        let decision = decide_overlap(&OverlapPolicyInput {
+            enabled: job.enabled || allow_disabled,
+            overlap_policy,
+            scheduled_at,
+            queue_sequence: sequence,
+            active_run: active_run.as_ref().map(|run| {
+                RunPolicySnapshot::new(
+                    run.id.clone(),
+                    run.status,
+                    run.queue_sequence,
+                    run.blocked_by_run_id.clone(),
+                )
+            }),
+        });
+        let intent = decision.run_intent.ok_or_else(|| {
+            StorageError::Validation("enabled overlap decision did not produce an intent".into())
+        })?;
+        let previous_run_status = decision.stop_intent.as_ref().map(|_| {
+            active_run
+                .as_ref()
+                .expect("stop intent has active run")
+                .status
+        });
+        let mut stop_requested = false;
+        if let Some(stop) = &decision.stop_intent {
+            if stop.action == StopAction::RequestStop {
+                let changed = transaction.execute(
+                    "UPDATE runs SET status = 'stopping'
+                     WHERE id = ? AND status = ?",
+                    params![stop.run_id, stop.from_status.as_str()],
+                )?;
+                if changed != 1 {
+                    return Err(StorageError::ConcurrentChange(
+                        "kill-previous active run".to_string(),
+                    ));
+                }
+                stop_requested = true;
+            }
+        }
+
+        let id = Uuid::new_v4().to_string();
+        let (status, ended_at) = if intent.status == RunStatus::Skipped {
+            (RunStatus::Skipped, Some(now))
+        } else {
+            (RunStatus::Queued, None)
+        };
+        transaction.execute(
+            "INSERT INTO runs (
+                id, job_id, scheduled_at, occurrence_wall_key, queue_sequence,
+                blocked_by_run_id, status, ended_at, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                id,
+                job_id,
+                scheduled_at,
+                occurrence_wall_key,
+                sequence,
+                intent.blocked_by_run_id,
+                status.as_str(),
+                ended_at,
+                now,
+            ],
+        )?;
+        if let Some(scheduled_at) = scheduled_at {
+            advance_checkpoint(&transaction, job_id, scheduled_at)?;
+        }
+        let run = fetch_run(&transaction, &id)?
+            .ok_or_else(|| StorageError::NotFound(format!("newly claimed run {id}")))?;
+        transaction.commit()?;
+        let action = match decision.action {
+            OverlapAction::Start => ClaimedRunAction::Start,
+            OverlapAction::Skip => ClaimedRunAction::Skip,
+            OverlapAction::Queue => ClaimedRunAction::Queue,
+            OverlapAction::KillPrevious => ClaimedRunAction::KillPrevious,
+            OverlapAction::Disabled => return Err(StorageError::JobDisabled(job_id.to_string())),
+        };
+        Ok(PolicyClaim {
+            inserted: true,
+            run,
+            action,
+            previous_run_id: decision.stop_intent.map(|stop| stop.run_id),
+            previous_run_status,
+            stop_requested,
+        })
     }
 
     /// Atomically advances the scheduler checkpoint and claims one automatic
@@ -622,6 +1076,29 @@ fn ensure_job(transaction: &Transaction<'_>, id: &str) -> Result<Job, StorageErr
     Ok(job)
 }
 
+fn validate_token(field: &str, value: &str) -> Result<(), StorageError> {
+    if value.trim().is_empty() {
+        return Err(StorageError::Validation(format!(
+            "{field} must not be empty"
+        )));
+    }
+    if value.contains('\0') {
+        return Err(StorageError::Validation(format!(
+            "{field} contains a NUL byte"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_optional_text(field: &str, value: Option<&str>) -> Result<(), StorageError> {
+    if value.is_some_and(|value| value.contains('\0')) {
+        return Err(StorageError::Validation(format!(
+            "{field} contains a NUL byte"
+        )));
+    }
+    Ok(())
+}
+
 fn allocate_queue_sequence(
     transaction: &Transaction<'_>,
     job_id: &str,
@@ -711,6 +1188,37 @@ fn fetch_run_by_occurrence(
                  WHERE job_id = ? AND occurrence_wall_key = ?"
             ),
             params![job_id, occurrence_wall_key],
+            row_to_run,
+        )
+        .optional()
+}
+
+fn fetch_active_run(connection: &Connection, job_id: &str) -> rusqlite::Result<Option<Run>> {
+    connection
+        .query_row(
+            &format!(
+                "SELECT {RUN_COLUMNS} FROM runs
+                 WHERE job_id = ? AND status IN ('queued', 'starting', 'running', 'stopping')
+                 ORDER BY queue_sequence, id LIMIT 1"
+            ),
+            [job_id],
+            row_to_run,
+        )
+        .optional()
+}
+
+fn fetch_active_process_run(
+    connection: &Connection,
+    job_id: &str,
+) -> rusqlite::Result<Option<Run>> {
+    connection
+        .query_row(
+            &format!(
+                "SELECT {RUN_COLUMNS} FROM runs
+                 WHERE job_id = ? AND status IN ('starting', 'running', 'stopping')
+                 ORDER BY queue_sequence, id LIMIT 1"
+            ),
+            [job_id],
             row_to_run,
         )
         .optional()
@@ -1097,6 +1605,86 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn scheduled_and_manual_claims_share_overlap_decision_and_start_cas() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let job = database.create_job_at(input(true), 100).unwrap();
+        let first = database
+            .claim_scheduled_run(&job.id, 200, "2026-08-12T00:00:00", 201)
+            .unwrap();
+        assert_eq!(first.action, ClaimedRunAction::Start);
+        assert!(first.inserted);
+        assert_eq!(first.previous_run_status, None);
+
+        let manual = database.claim_manual_run(&job.id, 202).unwrap();
+        assert_eq!(manual.action, ClaimedRunAction::Queue);
+        assert!(manual.inserted);
+        assert_eq!(manual.run.status, RunStatus::Queued);
+
+        assert!(database
+            .claim_run_starting(&first.run.id, "owner", "token")
+            .unwrap());
+        assert!(!database
+            .claim_run_starting(&first.run.id, "other", "other-token")
+            .unwrap());
+        assert!(!database
+            .mark_run_running(&first.run.id, "owner", "wrong-token", 203)
+            .unwrap());
+        assert!(database
+            .mark_run_running(&first.run.id, "owner", "token", 203)
+            .unwrap());
+        assert!(!database
+            .finish_run(
+                &first.run.id,
+                "other",
+                "token",
+                RunStatus::Succeeded,
+                Some(0),
+                None,
+                204,
+            )
+            .unwrap());
+        assert!(database
+            .finish_run(
+                &first.run.id,
+                "owner",
+                "token",
+                RunStatus::Succeeded,
+                Some(0),
+                None,
+                204,
+            )
+            .unwrap());
+    }
+
+    #[test]
+    fn kill_previous_claim_records_queued_previous_status_without_spawn_permission() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let mut job_input = input(true);
+        job_input.overlap_policy = OverlapPolicy::KillPrevious;
+        let job = database.create_job_at(job_input, 100).unwrap();
+        let old = database.create_manual_run_at(&job.id, 101).unwrap();
+        let claim = database
+            .claim_scheduled_run(&job.id, 200, "2026-08-12T00:00:00", 201)
+            .unwrap();
+        assert_eq!(claim.action, ClaimedRunAction::KillPrevious);
+        assert_eq!(claim.previous_run_id.as_deref(), Some(old.id.as_str()));
+        assert_eq!(claim.previous_run_status, Some(RunStatus::Queued));
+        assert!(claim.stop_requested);
+        assert_eq!(claim.run.blocked_by_run_id, Some(old.id.clone()));
+
+        assert!(database
+            .resolve_kill_previous(&old.id, &claim.run.id, true, None, 202)
+            .unwrap());
+        assert_eq!(
+            database.get_run(&old.id).unwrap().unwrap().status,
+            RunStatus::Cancelled
+        );
+        let replacement = database.get_run(&claim.run.id).unwrap().unwrap();
+        assert_eq!(replacement.status, RunStatus::Queued);
+        assert_eq!(replacement.blocked_by_run_id, None);
     }
 
     #[test]
