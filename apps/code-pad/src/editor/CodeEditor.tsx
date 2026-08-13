@@ -1,6 +1,10 @@
 import { useEffect, useRef, type CSSProperties } from "react";
 import { Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import type { HoverTooltipSource } from "@codemirror/view";
+import { setDiagnostics } from "@codemirror/lint";
+import type { Diagnostic } from "@codemirror/lint";
+import type { CompletionSource } from "@codemirror/autocomplete";
 import { openSearchPanel } from "@codemirror/search";
 import {
   editorExtensions,
@@ -9,6 +13,7 @@ import {
   languageForPath,
   readOnlyExtension,
   syntaxHighlightingExtension,
+  currentDocumentWordCompletion,
   type EditorCompartments,
 } from "./extensions";
 import { panelIdForDoc } from "../types";
@@ -39,6 +44,9 @@ interface CodeEditorProps {
   onFocus?: () => void;
   onReplaceCommandReady?: (docId: string, command: (() => boolean) | null) => void;
   onBookmarkCommandsReady?: (docId: string, commands: BookmarkCommands | null) => void;
+  diagnostics?: Diagnostic[];
+  completionSource?: CompletionSource;
+  hoverSource?: HoverTooltipSource;
 }
 
 /** One long-lived CodeMirror 6 instance for one document ID. */
@@ -60,6 +68,9 @@ export default function CodeEditor({
   onFocus,
   onReplaceCommandReady,
   onBookmarkCommandsReady,
+  diagnostics = [],
+  completionSource,
+  hoverSource,
 }: CodeEditorProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -81,6 +92,10 @@ export default function CodeEditor({
   onBookmarksChangeRef.current = onBookmarksChange;
   const onBookmarkCommandsReadyRef = useRef(onBookmarkCommandsReady);
   onBookmarkCommandsReadyRef.current = onBookmarkCommandsReady;
+  const completionSourceRef = useRef(completionSource);
+  completionSourceRef.current = completionSource;
+  const hoverSourceRef = useRef(hoverSource);
+  hoverSourceRef.current = hoverSource;
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -97,6 +112,15 @@ export default function CodeEditor({
           onChange: (text) => onChangeRef.current(text),
           onCursorChange: (position) => onCursorChangeRef.current?.(position),
           onBookmarksChange: (next) => onBookmarksChangeRef.current?.(next),
+          completionSource: async (context) => {
+            try {
+              const result = await completionSourceRef.current?.(context);
+              return result ?? currentDocumentWordCompletion(context);
+            } catch {
+              return currentDocumentWordCompletion(context);
+            }
+          },
+          hoverSource: (view, pos, side) => hoverSourceRef.current?.(view, pos, side) ?? null,
           compartments,
         }),
       }),
@@ -120,6 +144,12 @@ export default function CodeEditor({
     // the active view only alter the wrapper style, never this EditorView.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch(setDiagnostics(view.state, diagnostics));
+  }, [diagnostics]);
 
   useEffect(() => {
     const view = viewRef.current;

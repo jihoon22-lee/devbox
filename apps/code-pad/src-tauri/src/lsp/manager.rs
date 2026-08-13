@@ -12,32 +12,48 @@ use super::documents::{
     DidChange, DidClose, DidOpen, DidSave, DocumentSnapshot, DocumentStore, SyncKind, WorkspaceRoot,
 };
 use super::features::{
-    build_completion_params, build_definition_params, build_hover_params,
-    build_pull_diagnostics_params, build_reference_params, filter_definition_response,
+    apply_workspace_edit, build_completion_params, build_definition_params,
+    build_formatting_params, build_hover_params, build_pull_diagnostics_params,
+    build_reference_params, build_rename_params, filter_definition_response,
     filter_reference_locations, parse_completion_response, parse_definition_response,
-    parse_hover_response, parse_pull_diagnostics, parse_reference_locations, sanitize_hover,
-    validate_completion_response, validate_pull_diagnostics, CompletionResult, DiagnosticResult,
-    FeatureError, FeatureResponse, FilteredLocations, SanitizedHover,
+    parse_hover_response, parse_publish_diagnostics, parse_pull_diagnostics,
+    parse_reference_locations, preflight_formatting_edits, preflight_workspace_edit,
+    sanitize_hover, validate_completion_response, validate_pull_diagnostics, CompletionResult,
+    DiagnosticResult, DiagnosticStore, FeatureError, FeatureResponse, FilteredLocations,
+    SanitizedHover, WorkspaceEditPlan,
 };
 use super::installer::ManagedInstaller;
 use super::positions::{position_to_offset, LspPosition, PositionEncoding};
-use super::process::{LspProcess, ProcessState};
+use super::process::{IncomingMessage, LspProcess, ProcessState};
 use super::runtime::RuntimeResolver;
 use super::transport::RequestCancellation;
+use lsp_types as lsp;
 use serde::Serialize;
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::Mutex;
+use std::time::{Duration, Instant};
+use tokio::sync::{broadcast, Mutex};
 
 const PULL_DIAGNOSTICS_TIMEOUT: Duration = Duration::from_secs(5);
 const COMPLETION_TIMEOUT: Duration = Duration::from_secs(2);
 const HOVER_TIMEOUT: Duration = Duration::from_secs(2);
 const DEFINITION_TIMEOUT: Duration = Duration::from_secs(5);
 const REFERENCES_TIMEOUT: Duration = Duration::from_secs(5);
+const MUTATION_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_RENAME_BYTES: usize = 1_024;
+const RESTART_WINDOW: Duration = Duration::from_secs(5 * 60);
+const RESTART_DELAYS: [Duration; 6] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+    Duration::from_secs(16),
+    Duration::from_secs(30),
+];
 
 #[derive(Debug)]
 pub enum LspManagerError {
@@ -97,16 +113,62 @@ pub struct LanguageServerStatus {
     pub server_info: Option<ServerInfo>,
     pub capabilities: CapabilitySet,
     pub document_count: usize,
-    pub stderr: String,
-    pub stderr_truncated: bool,
-    pub stderr_dropped_bytes: u64,
+    pub restart_attempt: u32,
+    pub restart_failures: u32,
+    pub restart_delay_ms: Option<u64>,
+    pub auto_restart_disabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LspDiagnosticsEvent {
+    pub language_id: String,
+    pub response: FeatureResponse<DiagnosticResult>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LspStatusEvent {
+    pub language_id: String,
+    pub status: LanguageServerStatus,
+    pub reason: Option<String>,
+    pub restarting: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum LspEvent {
+    Diagnostics(LspDiagnosticsEvent),
+    Status(LspStatusEvent),
+}
+
+/// Complete buffers returned after one atomic rename or formatting action.
+/// The frontend replaces these buffers together and deliberately does not
+/// save them; every returned document is dirty in the LSP document store.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppliedDocumentEdits {
+    pub documents: Vec<EditedDocument>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EditedDocument {
+    pub uri: String,
+    pub version: i32,
+    pub text: String,
 }
 
 struct LanguageSession {
     client: LspClient,
     process: LspProcess,
     documents: Mutex<DocumentStore>,
+    diagnostics: Mutex<DiagnosticStore>,
     cancelable_requests: Mutex<CancelableRequests>,
+    failure_handled: AtomicBool,
+    /// Explicit stop/restart owns this session until its child has been
+    /// reaped. Failure monitors must not replace it while that ownership is
+    /// active.
+    stopping: AtomicBool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -127,6 +189,15 @@ struct CancelableRequests {
     hover: Option<ActiveCancelableRequest>,
 }
 
+#[derive(Debug, Clone, Default)]
+struct RestartTracker {
+    failures: VecDeque<Instant>,
+    attempt: u32,
+    next_restart_at: Option<Instant>,
+    disabled: bool,
+    reason: Option<String>,
+}
+
 struct FeatureRequestContext {
     session: Arc<LanguageSession>,
     snapshot: DocumentSnapshot,
@@ -135,19 +206,92 @@ struct FeatureRequestContext {
     encoding: PositionEncoding,
 }
 
+struct MutationRequestContext {
+    session: Arc<LanguageSession>,
+    snapshot: DocumentSnapshot,
+    request_documents: DocumentStore,
+    metadata: super::features::RequestMetadata,
+    encoding: PositionEncoding,
+}
+
 #[derive(Default)]
 struct ManagerState {
     sessions: BTreeMap<String, Arc<LanguageSession>>,
     starting: BTreeMap<String, u64>,
     next_start_token: u64,
+    restart: BTreeMap<String, RestartTracker>,
 }
 
+struct StartActivity {
+    count: Arc<std::sync::atomic::AtomicUsize>,
+    finished: Arc<tokio::sync::Notify>,
+}
+
+impl Drop for StartActivity {
+    fn drop(&mut self) {
+        if self.count.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.finished.notify_one();
+        }
+    }
+}
+
+struct StartReservation {
+    state: Arc<Mutex<ManagerState>>,
+    language_id: String,
+    token: u64,
+    activity: Option<StartActivity>,
+    completed: bool,
+}
+
+impl StartReservation {
+    fn token(&self) -> u64 {
+        self.token
+    }
+
+    fn complete(mut self) {
+        self.completed = true;
+        self.activity.take();
+    }
+}
+
+impl Drop for StartReservation {
+    fn drop(&mut self) {
+        if self.completed {
+            return;
+        }
+        let state = Arc::clone(&self.state);
+        let language_id = self.language_id.clone();
+        let token = self.token;
+        if let Ok(mut state) = state.try_lock() {
+            if state.starting.get(&language_id) == Some(&token) {
+                state.starting.remove(&language_id);
+            }
+            return;
+        }
+        let cleanup = async move {
+            let mut state = state.lock().await;
+            if state.starting.get(&language_id) == Some(&token) {
+                state.starting.remove(&language_id);
+            }
+        };
+        // A canceled start cannot await its reservation cleanup in Drop. The
+        // task is intentionally tiny and runs before a subsequent start can
+        // observe the old token.
+        tokio::spawn(cleanup);
+    }
+}
+
+#[derive(Clone)]
 pub struct LspManager {
     app_local_data_dir: PathBuf,
     app_version: String,
     resolver: RuntimeResolver,
     installer: Arc<ManagedInstaller>,
-    state: Mutex<ManagerState>,
+    state: Arc<Mutex<ManagerState>>,
+    events: broadcast::Sender<LspEvent>,
+    active_starts: Arc<std::sync::atomic::AtomicUsize>,
+    start_finished: Arc<tokio::sync::Notify>,
+    shutting_down: Arc<AtomicBool>,
 }
 
 impl LspManager {
@@ -165,13 +309,22 @@ impl LspManager {
         app_version: impl Into<String>,
         installer: Arc<ManagedInstaller>,
     ) -> Self {
+        let (events, _) = broadcast::channel(128);
         Self {
             app_local_data_dir: app_local_data_dir.into(),
             app_version: app_version.into(),
             resolver: RuntimeResolver::new(),
             installer,
-            state: Mutex::new(ManagerState::default()),
+            state: Arc::new(Mutex::new(ManagerState::default())),
+            events,
+            active_starts: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            start_finished: Arc::new(tokio::sync::Notify::new()),
+            shutting_down: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    pub fn subscribe_events(&self) -> broadcast::Receiver<LspEvent> {
+        self.events.subscribe()
     }
 
     pub fn load_config(&self) -> Result<LoadedLspConfig, LspManagerError> {
@@ -194,25 +347,39 @@ impl LspManager {
 
     pub async fn start(&self, language_id: &str) -> Result<(), LspManagerError> {
         let language_id = normalized_language_id(language_id)?;
-        let start_token = self.reserve_start(&language_id).await?;
+        let reservation = self.reserve_start(&language_id).await?;
+        let start_token = reservation.token();
+        let result = self.start_reserved(&language_id, start_token).await;
+        reservation.complete();
+        result
+    }
 
-        let result = self.create_session(&language_id).await;
+    async fn start_reserved(
+        &self,
+        language_id: &str,
+        start_token: u64,
+    ) -> Result<(), LspManagerError> {
+        let result = self.create_session(language_id).await;
         match result {
             Ok(session) => {
                 let session = Arc::new(session);
                 let accepted = {
                     let mut state = self.state.lock().await;
-                    if state.starting.get(&language_id) == Some(&start_token) {
-                        state.starting.remove(&language_id);
+                    if !self.shutting_down.load(Ordering::Acquire)
+                        && state.starting.get(language_id) == Some(&start_token)
+                    {
+                        state.starting.remove(language_id);
                         state
                             .sessions
-                            .insert(language_id.clone(), Arc::clone(&session));
+                            .insert(language_id.to_owned(), Arc::clone(&session));
                         true
                     } else {
                         false
                     }
                 };
                 if accepted {
+                    self.spawn_session_monitor(language_id, Arc::clone(&session));
+                    self.emit_status(language_id, None, false).await;
                     Ok(())
                 } else {
                     let _ = session.client.stop().await;
@@ -223,16 +390,29 @@ impl LspManager {
             }
             Err(error) => {
                 let mut state = self.state.lock().await;
-                if state.starting.get(&language_id) == Some(&start_token) {
-                    state.starting.remove(&language_id);
+                if state.starting.get(language_id) == Some(&start_token) {
+                    state.starting.remove(language_id);
                 }
                 Err(error)
             }
         }
     }
 
-    async fn reserve_start(&self, language_id: &str) -> Result<u64, LspManagerError> {
+    async fn reserve_start(&self, language_id: &str) -> Result<StartReservation, LspManagerError> {
+        if self.shutting_down.load(Ordering::Acquire) {
+            return Err(LspManagerError::Protocol(
+                "LSP 서버 종료가 진행 중입니다".into(),
+            ));
+        }
         let mut state = self.state.lock().await;
+        // Recheck after taking the state lock. This is the linearization
+        // point shared with stop_all/shutdown_for_exit, so a shutdown racing
+        // the initial atomic read cannot reserve a new child.
+        if self.shutting_down.load(Ordering::Acquire) {
+            return Err(LspManagerError::Protocol(
+                "LSP 서버 종료가 진행 중입니다".into(),
+            ));
+        }
         if state.sessions.contains_key(language_id) {
             return Err(LspManagerError::AlreadyRunning(language_id.to_owned()));
         }
@@ -242,7 +422,25 @@ impl LspManager {
         state.next_start_token = state.next_start_token.wrapping_add(1).max(1);
         let token = state.next_start_token;
         state.starting.insert(language_id.to_owned(), token);
-        Ok(token)
+        self.active_starts.fetch_add(1, Ordering::AcqRel);
+        Ok(StartReservation {
+            state: Arc::clone(&self.state),
+            language_id: language_id.to_owned(),
+            token,
+            activity: Some(StartActivity {
+                count: Arc::clone(&self.active_starts),
+                finished: Arc::clone(&self.start_finished),
+            }),
+            completed: false,
+        })
+    }
+
+    fn begin_start_activity(&self) -> StartActivity {
+        self.active_starts.fetch_add(1, Ordering::AcqRel);
+        StartActivity {
+            count: Arc::clone(&self.active_starts),
+            finished: Arc::clone(&self.start_finished),
+        }
     }
 
     async fn create_session(&self, language_id: &str) -> Result<LanguageSession, LspManagerError> {
@@ -326,7 +524,10 @@ impl LspManager {
                 capabilities.position_encoding,
                 sync_kind,
             )),
+            diagnostics: Mutex::new(DiagnosticStore::new()),
             cancelable_requests: Mutex::new(CancelableRequests::default()),
+            failure_handled: AtomicBool::new(false),
+            stopping: AtomicBool::new(false),
         })
     }
 
@@ -334,34 +535,112 @@ impl LspManager {
         let language_id = normalized_language_id(language_id)?;
         let session = {
             let mut state = self.state.lock().await;
-            if state.starting.remove(&language_id).is_some() {
+            state.restart.remove(&language_id);
+            if let Some(session) = state.sessions.get(&language_id).cloned() {
+                // Linearize ownership before releasing the manager lock. An
+                // auto-restart attempt uses the same starting map and must
+                // observe this flag before it can create a replacement.
+                session.stopping.store(true, Ordering::Release);
+                state.starting.remove(&language_id);
+                session
+            } else if state.starting.remove(&language_id).is_some() {
                 return Ok(());
+            } else {
+                return Err(LspManagerError::NotRunning(language_id));
             }
-            state
-                .sessions
-                .remove(&language_id)
-                .ok_or_else(|| LspManagerError::NotRunning(language_id.clone()))?
         };
-        session
-            .client
-            .stop()
-            .await
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))
+        self.terminate_session(&language_id, &session).await
+    }
+
+    /// Explicit restart clears the automatic backoff circuit and starts a
+    /// fresh session. The frontend's buffers remain untouched.
+    pub async fn restart(&self, language_id: &str) -> Result<(), LspManagerError> {
+        let language_id = normalized_language_id(language_id)?;
+        let session = {
+            let mut state = self.state.lock().await;
+            state.restart.remove(&language_id);
+            let session = state.sessions.get(&language_id).cloned();
+            if let Some(session) = &session {
+                session.stopping.store(true, Ordering::Release);
+                state.starting.remove(&language_id);
+            }
+            session
+        };
+        if let Some(session) = session {
+            self.terminate_session(&language_id, &session).await?;
+        }
+        self.start(&language_id).await
     }
 
     pub async fn stop_all(&self) -> Result<(), LspManagerError> {
         let sessions = {
             let mut state = self.state.lock().await;
             state.starting.clear();
-            std::mem::take(&mut state.sessions)
+            state.restart.clear();
+            state
+                .sessions
+                .iter()
+                .map(|(language_id, session)| {
+                    session.stopping.store(true, Ordering::Release);
+                    (language_id.clone(), Arc::clone(session))
+                })
+                .collect::<Vec<_>>()
         };
         let mut first_error = None;
-        for session in sessions.into_values() {
-            if let Err(error) = session.client.stop().await {
+        for (language_id, session) in sessions {
+            if let Err(error) = self.terminate_session(&language_id, &session).await {
                 first_error.get_or_insert_with(|| LspManagerError::Protocol(error.to_string()));
             }
         }
         first_error.map_or(Ok(()), Err)
+    }
+
+    /// Stop a session while retaining ownership until the process wait task
+    /// confirms that the child is reaped. A failed/slow kill leaves the
+    /// session in the manager, so neither a replacement start nor an exit
+    /// race can orphan the old child.
+    async fn terminate_session(
+        &self,
+        language_id: &str,
+        session: &Arc<LanguageSession>,
+    ) -> Result<(), LspManagerError> {
+        let _ = session.client.stop().await;
+        if !session
+            .process
+            .wait_for_exit(Duration::from_millis(250))
+            .await
+        {
+            return Err(LspManagerError::Protocol(
+                "language server termination was not confirmed".into(),
+            ));
+        }
+        self.emit_status_override(language_id, None, false, Some(ClientStatus::Stopped))
+            .await;
+        let mut state = self.state.lock().await;
+        if state
+            .sessions
+            .get(language_id)
+            .is_some_and(|current| Arc::ptr_eq(current, session))
+        {
+            state.sessions.remove(language_id);
+        }
+        Ok(())
+    }
+
+    /// Stop every child during application exit and wait for any reserved
+    /// start to either publish its session or hit the cancellation cleanup
+    /// path. Normal config changes use [`Self::stop_all`] and remain reusable.
+    pub async fn shutdown_for_exit(&self) -> Result<(), LspManagerError> {
+        self.shutting_down.store(true, Ordering::Release);
+        let result = self.stop_all().await;
+        while self.active_starts.load(Ordering::Acquire) != 0 {
+            let notified = self.start_finished.notified();
+            if self.active_starts.load(Ordering::Acquire) == 0 {
+                break;
+            }
+            notified.await;
+        }
+        result
     }
 
     pub async fn statuses(&self) -> Vec<LanguageServerStatus> {
@@ -373,21 +652,43 @@ impl LspManager {
                 .map(|(language_id, session)| (language_id.clone(), Arc::clone(session)))
                 .collect()
         };
+        let restart_state: BTreeMap<_, _> = {
+            let state = self.state.lock().await;
+            state
+                .restart
+                .iter()
+                .map(|(language_id, tracker)| (language_id.clone(), tracker.clone()))
+                .collect()
+        };
         let mut statuses = Vec::with_capacity(sessions.len());
         for (language_id, session) in sessions {
-            let process_state = process_state_label(session.process.state().await);
-            let stderr = session.process.stderr().await;
+            let process = session.process.state().await;
+            let process_state = process_state_label(process.clone());
             let document_count = session.documents.lock().await.len();
             statuses.push(LanguageServerStatus {
-                language_id,
-                status: session.client.status(),
+                language_id: language_id.clone(),
+                // The process state is the authoritative failure boundary.
+                // The client consumer and manager monitor receive the same
+                // broadcast independently, so ClientStatus alone can race an
+                // exit notification and publish Ready for a crashed child.
+                status: effective_client_status(session.client.status(), &process),
                 process_state,
                 server_info: session.client.server_info().await,
                 capabilities: session.client.capabilities().await,
                 document_count,
-                stderr: stderr.text(),
-                stderr_truncated: stderr.truncated(),
-                stderr_dropped_bytes: stderr.dropped_bytes(),
+                restart_attempt: restart_state
+                    .get(&language_id)
+                    .map_or(0, |tracker| tracker.attempt),
+                restart_failures: restart_state
+                    .get(&language_id)
+                    .map_or(0, |tracker| tracker.failures.len() as u32),
+                restart_delay_ms: restart_state
+                    .get(&language_id)
+                    .and_then(|tracker| tracker.next_restart_at)
+                    .map(|at| at.saturating_duration_since(Instant::now()).as_millis() as u64),
+                auto_restart_disabled: restart_state
+                    .get(&language_id)
+                    .is_some_and(|tracker| tracker.disabled),
             });
         }
         statuses
@@ -400,11 +701,18 @@ impl LspManager {
         text: String,
     ) -> Result<DidOpen, LspManagerError> {
         let session = self.session(language_id).await?;
-        let mut documents = session.documents.lock().await;
-        let mut staged = documents.clone();
-        let opened = staged
-            .open(path, language_id, text)
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        // Commit the authoritative document store before notifying the server:
+        // a slow or dead child must not delay the store that a replacement
+        // session later replays from.
+        let opened = {
+            let mut documents = session.documents.lock().await;
+            let mut staged = documents.clone();
+            let opened = staged
+                .open(path, language_id, text)
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            *documents = staged;
+            opened
+        };
         if session
             .client
             .capabilities()
@@ -427,7 +735,6 @@ impl LspManager {
                 .await
                 .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
         }
-        *documents = staged;
         Ok(opened)
     }
 
@@ -439,11 +746,15 @@ impl LspManager {
         dirty: bool,
     ) -> Result<DidChange, LspManagerError> {
         let session = self.session(language_id).await?;
-        let mut documents = session.documents.lock().await;
-        let mut staged = documents.clone();
-        let changed = staged
-            .change(uri, text, dirty)
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let changed = {
+            let mut documents = session.documents.lock().await;
+            let mut staged = documents.clone();
+            let changed = staged
+                .change(uri, text, dirty)
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            *documents = staged;
+            changed
+        };
         if session
             .client
             .capabilities()
@@ -462,7 +773,6 @@ impl LspManager {
                 .await
                 .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
         }
-        *documents = staged;
         Ok(changed)
     }
 
@@ -473,11 +783,15 @@ impl LspManager {
         text: String,
     ) -> Result<DidChange, LspManagerError> {
         let session = self.session(language_id).await?;
-        let mut documents = session.documents.lock().await;
-        let mut staged = documents.clone();
-        let changed = staged
-            .reload(uri, text)
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let changed = {
+            let mut documents = session.documents.lock().await;
+            let mut staged = documents.clone();
+            let changed = staged
+                .reload(uri, text)
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            *documents = staged;
+            changed
+        };
         if session
             .client
             .capabilities()
@@ -496,7 +810,6 @@ impl LspManager {
                 .await
                 .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
         }
-        *documents = staged;
         Ok(changed)
     }
 
@@ -506,11 +819,15 @@ impl LspManager {
         uri: &str,
     ) -> Result<DidSave, LspManagerError> {
         let session = self.session(language_id).await?;
-        let mut documents = session.documents.lock().await;
-        let mut staged = documents.clone();
-        let saved = staged
-            .mark_saved(uri)
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let saved = {
+            let mut documents = session.documents.lock().await;
+            let mut staged = documents.clone();
+            let saved = staged
+                .mark_saved(uri)
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            *documents = staged;
+            saved
+        };
         if session
             .client
             .capabilities()
@@ -526,7 +843,6 @@ impl LspManager {
                 .await
                 .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
         }
-        *documents = staged;
         Ok(saved)
     }
 
@@ -536,11 +852,15 @@ impl LspManager {
         uri: &str,
     ) -> Result<DidClose, LspManagerError> {
         let session = self.session(language_id).await?;
-        let mut documents = session.documents.lock().await;
-        let mut staged = documents.clone();
-        let closed = staged
-            .close(uri)
-            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let closed = {
+            let mut documents = session.documents.lock().await;
+            let mut staged = documents.clone();
+            let closed = staged
+                .close(uri)
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            *documents = staged;
+            closed
+        };
         if session
             .client
             .capabilities()
@@ -556,7 +876,6 @@ impl LspManager {
                 .await
                 .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
         }
-        *documents = staged;
         Ok(closed)
     }
 
@@ -588,6 +907,11 @@ impl LspManager {
         response.metadata = context.metadata;
         response.stale |= document_is_stale;
         response.value.stale = response.stale;
+        let response = {
+            let mut diagnostics = context.session.diagnostics.lock().await;
+            diagnostics.apply(response)
+        };
+        self.emit_diagnostics(language_id, response.clone());
         Ok(response)
     }
 
@@ -698,6 +1022,84 @@ impl LspManager {
         Ok(FeatureResponse::new(context.metadata, value, stale))
     }
 
+    /// Request and atomically apply a text-only WorkspaceEdit. Every open
+    /// document version is captured before the request, preflighted against
+    /// that snapshot, and checked again against the live store at commit.
+    pub async fn rename(
+        &self,
+        language_id: &str,
+        uri: &str,
+        position: LspPosition,
+        new_name: String,
+    ) -> Result<AppliedDocumentEdits, LspManagerError> {
+        validate_rename_name(&new_name)?;
+        let context = self
+            .mutation_context(language_id, uri, "textDocument/rename")
+            .await?;
+        validate_request_position(&context.snapshot, position, context.encoding)?;
+        let raw = context
+            .session
+            .client
+            .request(
+                "textDocument/rename",
+                build_rename_params(&context.metadata, position, new_name),
+                MUTATION_TIMEOUT,
+            )
+            .await
+            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        if raw.is_null() {
+            return Ok(AppliedDocumentEdits {
+                documents: Vec::new(),
+            });
+        }
+        let edit: lsp::WorkspaceEdit = serde_json::from_value(raw).map_err(|error| {
+            LspManagerError::Protocol(format!("invalid rename WorkspaceEdit: {error}"))
+        })?;
+        let plan =
+            preflight_workspace_edit(&context.request_documents, &edit).map_err(feature_error)?;
+        self.apply_mutation_plan(language_id, &context.session, &plan)
+            .await
+    }
+
+    /// Formatting is only run for an explicit command. A null response is a
+    /// successful no-op and malformed/out-of-range edits fail closed.
+    pub async fn formatting(
+        &self,
+        language_id: &str,
+        uri: &str,
+        tab_size: u32,
+        insert_spaces: bool,
+    ) -> Result<AppliedDocumentEdits, LspManagerError> {
+        if tab_size == 0 || tab_size > 32 {
+            return Err(LspManagerError::Protocol(
+                "formatting tab size must be between 1 and 32".into(),
+            ));
+        }
+        let context = self
+            .mutation_context(language_id, uri, "textDocument/formatting")
+            .await?;
+        let raw = context
+            .session
+            .client
+            .request(
+                "textDocument/formatting",
+                build_formatting_params(&context.metadata, (tab_size, insert_spaces)),
+                MUTATION_TIMEOUT,
+            )
+            .await
+            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        let edits = if raw.is_null() { json!([]) } else { raw };
+        let plan = preflight_formatting_edits(
+            &context.request_documents,
+            uri,
+            context.metadata.version,
+            edits,
+        )
+        .map_err(feature_error)?;
+        self.apply_mutation_plan(language_id, &context.session, &plan)
+            .await
+    }
+
     async fn feature_context(
         &self,
         language_id: &str,
@@ -732,6 +1134,556 @@ impl LspManager {
         })
     }
 
+    async fn apply_mutation_plan(
+        &self,
+        language_id: &str,
+        session: &Arc<LanguageSession>,
+        plan: &WorkspaceEditPlan,
+    ) -> Result<AppliedDocumentEdits, LspManagerError> {
+        let result = apply_mutation_plan(session, plan).await;
+        if let Err(error) = &result {
+            // A notification can fail after an earlier document in the same
+            // workspace edit was already written. The authoritative store is
+            // intentionally still uncommitted, but the server mirror may be
+            // partial. Treat the session as failed so recovery tears down that
+            // mirror and replays the old snapshot atomically.
+            self.handle_session_failure(
+                language_id,
+                session,
+                format!("LSP mutation notification failed: {error}"),
+            )
+            .await;
+        }
+        result
+    }
+
+    async fn mutation_context(
+        &self,
+        language_id: &str,
+        uri: &str,
+        method: &str,
+    ) -> Result<MutationRequestContext, LspManagerError> {
+        let language_id = normalized_language_id(language_id)?;
+        let session = self.session(&language_id).await?;
+        if !session.client.capabilities().await.supports(method) {
+            return Err(LspManagerError::UnsupportedFeature {
+                language_id,
+                method: method.to_owned(),
+            });
+        }
+        let (snapshot, request_documents, encoding) = {
+            let documents = session.documents.lock().await;
+            let snapshot = documents
+                .snapshot(uri)
+                .ok_or_else(|| LspManagerError::Protocol(format!("document is not open: {uri}")))?;
+            (snapshot, documents.clone(), documents.position_encoding())
+        };
+        Ok(MutationRequestContext {
+            session,
+            metadata: super::features::RequestMetadata::new(snapshot.uri.clone(), snapshot.version),
+            snapshot,
+            request_documents,
+            encoding,
+        })
+    }
+
+    fn spawn_session_monitor(&self, language_id: &str, session: Arc<LanguageSession>) {
+        let manager = self.clone();
+        let language_id = language_id.to_owned();
+        let mut incoming = session.process.subscribe();
+        tokio::spawn(async move {
+            // Initialization can fail before the manager gets a chance to
+            // subscribe. Check the process state immediately, then continue
+            // consuming the broadcast stream for notifications and exits.
+            if matches!(
+                session.process.state().await,
+                ProcessState::Exited { .. } | ProcessState::Failed { .. }
+            ) {
+                manager
+                    .handle_session_failure(
+                        &language_id,
+                        &session,
+                        "language server exited during startup".into(),
+                    )
+                    .await;
+                return;
+            }
+            loop {
+                let message = match incoming.recv().await {
+                    Ok(message) => message,
+                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                        if matches!(
+                            session.process.state().await,
+                            ProcessState::Exited { .. } | ProcessState::Failed { .. }
+                        ) {
+                            manager
+                                .handle_session_failure(
+                                    &language_id,
+                                    &session,
+                                    "language server exited after monitor lag".into(),
+                                )
+                                .await;
+                            break;
+                        }
+                        continue;
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        if !matches!(session.process.state().await, ProcessState::Stopping) {
+                            manager
+                                .handle_session_failure(
+                                    &language_id,
+                                    &session,
+                                    "language server monitor closed".into(),
+                                )
+                                .await;
+                        }
+                        break;
+                    }
+                };
+                match message {
+                    IncomingMessage::Message(super::transport::JsonRpcMessage::Notification {
+                        method,
+                        params,
+                    }) if method == "textDocument/publishDiagnostics" => {
+                        manager
+                            .handle_push_diagnostics(&language_id, &session, params)
+                            .await;
+                    }
+                    IncomingMessage::ProtocolError(reason) => {
+                        manager
+                            .handle_session_failure(&language_id, &session, reason)
+                            .await;
+                        break;
+                    }
+                    IncomingMessage::Exited { code } => {
+                        let reason = format!("language server exited with code {code:?}");
+                        manager
+                            .handle_session_failure(&language_id, &session, reason)
+                            .await;
+                        break;
+                    }
+                    IncomingMessage::Eof => {
+                        manager
+                            .handle_session_failure(
+                                &language_id,
+                                &session,
+                                "language server closed its stdio stream".into(),
+                            )
+                            .await;
+                        break;
+                    }
+                    IncomingMessage::Message(_) | IncomingMessage::UnknownResponse(_) => {}
+                }
+            }
+        });
+    }
+
+    async fn handle_push_diagnostics(
+        &self,
+        language_id: &str,
+        session: &Arc<LanguageSession>,
+        params: Option<serde_json::Value>,
+    ) {
+        let Some(params) = params else {
+            return;
+        };
+        let Ok(result) = parse_publish_diagnostics(&params) else {
+            return;
+        };
+        let Some(snapshot) = session.documents.lock().await.snapshot(&result.uri) else {
+            return;
+        };
+        // A versionless push cannot be tied to the current editor generation:
+        // after a local change it could be an arbitrarily late report. Pull
+        // diagnostics remain usable because their request metadata supplies
+        // the version. Fail closed for every versionless push, including the
+        // initial document notification.
+        if result.version.is_none() {
+            return;
+        }
+        let current = super::features::RequestMetadata::new(snapshot.uri, snapshot.version);
+        let Ok(response) = session
+            .diagnostics
+            .lock()
+            .await
+            .accept_push(result, &current)
+        else {
+            return;
+        };
+        self.emit_diagnostics(language_id, response);
+    }
+
+    fn emit_diagnostics(&self, language_id: &str, response: FeatureResponse<DiagnosticResult>) {
+        let _ = self.events.send(LspEvent::Diagnostics(LspDiagnosticsEvent {
+            language_id: language_id.to_owned(),
+            response,
+        }));
+    }
+
+    async fn emit_status(&self, language_id: &str, reason: Option<String>, restarting: bool) {
+        self.emit_status_override(language_id, reason, restarting, None)
+            .await;
+    }
+
+    async fn emit_status_override(
+        &self,
+        language_id: &str,
+        reason: Option<String>,
+        restarting: bool,
+        override_status: Option<ClientStatus>,
+    ) {
+        let Some(status) = self
+            .statuses()
+            .await
+            .into_iter()
+            .find(|status| status.language_id == language_id)
+        else {
+            return;
+        };
+        let mut status = status;
+        if let Some(override_status) = override_status {
+            status.status = override_status;
+        }
+        let _ = self.events.send(LspEvent::Status(LspStatusEvent {
+            language_id: language_id.to_owned(),
+            status,
+            // JSON-RPC/OS errors can contain executable paths, arguments, or
+            // server stderr. Keep that detail in the native diagnostic path;
+            // the public event only carries a stable, user-facing message.
+            reason: safe_status_reason(reason.as_deref(), restarting),
+            restarting,
+        }));
+    }
+
+    async fn handle_session_failure(
+        &self,
+        language_id: &str,
+        session: &Arc<LanguageSession>,
+        reason: String,
+    ) {
+        if session.stopping.load(Ordering::Acquire) {
+            return;
+        }
+        if session
+            .failure_handled
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+        let snapshots = {
+            let state = self.state.lock().await;
+            let Some(current) = state.sessions.get(language_id) else {
+                return;
+            };
+            if !Arc::ptr_eq(current, session) {
+                return;
+            }
+            drop(state);
+            session.documents.lock().await.clone()
+        };
+        let stale_events = {
+            let mut diagnostics = session.diagnostics.lock().await;
+            diagnostics.mark_all_stale(
+                &snapshots
+                    .snapshots()
+                    .into_iter()
+                    .map(|snapshot| (snapshot.uri, snapshot.version))
+                    .collect::<Vec<_>>(),
+            )
+        };
+        for response in stale_events {
+            self.emit_diagnostics(language_id, response);
+        }
+        // EOF can race the process wait task: the manager's monitor receives
+        // the stream-close message before the child exit code is published.
+        // Synchronize that boundary so a non-zero exit is reported as
+        // crashed rather than a transient Ready status. If the child remains
+        // alive after EOF, classify the failure as stopped below.
+        if matches!(session.process.state().await, ProcessState::Running) {
+            let _ = session
+                .process
+                .wait_for_exit(Duration::from_millis(250))
+                .await;
+        }
+        let failure_status = match session.process.state().await {
+            ProcessState::Exited { code: Some(0) } | ProcessState::Stopping => {
+                ClientStatus::Stopped
+            }
+            ProcessState::Exited { .. } => ClientStatus::Crashed,
+            ProcessState::Failed { .. } => ClientStatus::Degraded,
+            // EOF with a still-running child is an unusable protocol
+            // session, not a user-requested stop. Keep the restart control
+            // visible and classify it as degraded.
+            ProcessState::Running => ClientStatus::Degraded,
+        };
+        if session.stopping.load(Ordering::Acquire) {
+            return;
+        }
+        let (delay, disabled) = {
+            let mut state = self.state.lock().await;
+            let tracker = state.restart.entry(language_id.to_owned()).or_default();
+            let now = Instant::now();
+            while tracker
+                .failures
+                .front()
+                .is_some_and(|failure| now.duration_since(*failure) > RESTART_WINDOW)
+            {
+                tracker.failures.pop_front();
+            }
+            if tracker.failures.is_empty() {
+                tracker.attempt = 0;
+                tracker.disabled = false;
+                tracker.reason = None;
+            }
+            tracker.failures.push_back(now);
+            tracker.reason = Some(reason.clone());
+            if tracker.failures.len() >= 3 {
+                tracker.disabled = true;
+                tracker.next_restart_at = None;
+                (None, true)
+            } else {
+                let index = tracker.attempt.min((RESTART_DELAYS.len() - 1) as u32) as usize;
+                let delay = RESTART_DELAYS[index];
+                tracker.attempt = tracker.attempt.saturating_add(1);
+                tracker.next_restart_at = Some(now + delay);
+                (Some(delay), false)
+            }
+        };
+        self.emit_status_override(
+            language_id,
+            Some(reason.clone()),
+            !disabled,
+            Some(failure_status),
+        )
+        .await;
+        if let Some(delay) = delay {
+            let manager = self.clone();
+            let language_id = language_id.to_owned();
+            let session = Arc::clone(session);
+            tokio::spawn(async move {
+                manager
+                    .restart_after_failure(&language_id, &session, delay)
+                    .await;
+            });
+        }
+    }
+
+    async fn restart_after_failure(
+        &self,
+        language_id: &str,
+        failed_session: &Arc<LanguageSession>,
+        mut delay: Duration,
+    ) {
+        loop {
+            tokio::time::sleep(delay).await;
+            if self.shutting_down.load(Ordering::Acquire) {
+                return;
+            }
+            let _activity = self.begin_start_activity();
+            let replacement_token = {
+                let mut state = self.state.lock().await;
+                let Some(current) = state.sessions.get(language_id) else {
+                    return;
+                };
+                if !Arc::ptr_eq(current, failed_session)
+                    || failed_session.stopping.load(Ordering::Acquire)
+                    || self.shutting_down.load(Ordering::Acquire)
+                    || state
+                        .restart
+                        .get(language_id)
+                        .is_some_and(|tracker| tracker.disabled)
+                {
+                    return;
+                }
+                state.next_start_token = state.next_start_token.wrapping_add(1).max(1);
+                let token = state.next_start_token;
+                state.starting.insert(language_id.to_owned(), token);
+                token
+            };
+            let still_reserved =
+                self.state.lock().await.starting.get(language_id) == Some(&replacement_token);
+            if !still_reserved {
+                self.clear_start_reservation(language_id, replacement_token)
+                    .await;
+                return;
+            }
+            let result = self.create_session(language_id).await;
+            match result {
+                Ok(session) => {
+                    let session = Arc::new(session);
+                    // Lifecycle commands continue to commit the authoritative
+                    // document store while this session is unavailable. Capture
+                    // the snapshot as late as possible — after the replacement
+                    // child has spawned and initialized — so edits, opens, and
+                    // closes made during backoff and startup are reflected.
+                    let snapshots = failed_session.documents.lock().await.clone();
+                    // Replay is staged entirely in the replacement session.
+                    // Do not publish it as the current session until every
+                    // didOpen has been written successfully.
+                    if let Err(error) = self.replay_documents(&session, &snapshots).await {
+                        self.clear_start_reservation(language_id, replacement_token)
+                            .await;
+                        let reason = error.to_string();
+                        let _ = session.client.stop().await;
+                        let (next_delay, disabled) = self
+                            .record_restart_failure(language_id, reason.clone())
+                            .await;
+                        self.emit_status(language_id, Some(reason), !disabled).await;
+                        let Some(next_delay) = next_delay else {
+                            return;
+                        };
+                        delay = next_delay;
+                        continue;
+                    }
+                    if matches!(
+                        session.process.state().await,
+                        ProcessState::Exited { .. } | ProcessState::Failed { .. }
+                    ) {
+                        self.clear_start_reservation(language_id, replacement_token)
+                            .await;
+                        let reason =
+                            "replacement language server exited during document replay".to_owned();
+                        let _ = session.client.stop().await;
+                        let (next_delay, disabled) = self
+                            .record_restart_failure(language_id, reason.clone())
+                            .await;
+                        self.emit_status(language_id, Some(reason), !disabled).await;
+                        let Some(next_delay) = next_delay else {
+                            return;
+                        };
+                        delay = next_delay;
+                        continue;
+                    }
+                    let accepted = {
+                        let mut state = self.state.lock().await;
+                        match state.sessions.get(language_id) {
+                            Some(current)
+                                if Arc::ptr_eq(current, failed_session)
+                                    && !self.shutting_down.load(Ordering::Acquire)
+                                    && !failed_session.stopping.load(Ordering::Acquire)
+                                    && state.starting.get(language_id)
+                                        == Some(&replacement_token) =>
+                            {
+                                state.starting.remove(language_id);
+                                state
+                                    .sessions
+                                    .insert(language_id.to_owned(), Arc::clone(&session));
+                                if let Some(tracker) = state.restart.get_mut(language_id) {
+                                    tracker.next_restart_at = None;
+                                    tracker.reason = None;
+                                }
+                                true
+                            }
+                            _ => false,
+                        }
+                    };
+                    if !accepted {
+                        self.clear_start_reservation(language_id, replacement_token)
+                            .await;
+                        let _ = session.client.stop().await;
+                        return;
+                    }
+                    self.spawn_session_monitor(language_id, Arc::clone(&session));
+                    self.emit_status(language_id, None, false).await;
+                    return;
+                }
+                Err(error) => {
+                    self.clear_start_reservation(language_id, replacement_token)
+                        .await;
+                    let reason = error.to_string();
+                    let (next_delay, disabled) = self
+                        .record_restart_failure(language_id, reason.clone())
+                        .await;
+                    self.emit_status(language_id, Some(reason), !disabled).await;
+                    let Some(next_delay) = next_delay else {
+                        return;
+                    };
+                    delay = next_delay;
+                }
+            }
+        }
+    }
+
+    async fn record_restart_failure(
+        &self,
+        language_id: &str,
+        reason: String,
+    ) -> (Option<Duration>, bool) {
+        let mut state = self.state.lock().await;
+        let tracker = state.restart.entry(language_id.to_owned()).or_default();
+        let now = Instant::now();
+        while tracker
+            .failures
+            .front()
+            .is_some_and(|failure| now.duration_since(*failure) > RESTART_WINDOW)
+        {
+            tracker.failures.pop_front();
+        }
+        if tracker.failures.is_empty() {
+            tracker.attempt = 0;
+            tracker.disabled = false;
+            tracker.reason = None;
+        }
+        tracker.failures.push_back(now);
+        tracker.reason = Some(reason);
+        if tracker.failures.len() >= 3 {
+            tracker.disabled = true;
+            tracker.next_restart_at = None;
+            (None, true)
+        } else {
+            let index = tracker.attempt.min((RESTART_DELAYS.len() - 1) as u32) as usize;
+            let delay = RESTART_DELAYS[index];
+            tracker.attempt = tracker.attempt.saturating_add(1);
+            tracker.next_restart_at = Some(now + delay);
+            (Some(delay), false)
+        }
+    }
+
+    async fn clear_start_reservation(&self, language_id: &str, token: u64) {
+        let mut state = self.state.lock().await;
+        if state.starting.get(language_id) == Some(&token) {
+            state.starting.remove(language_id);
+        }
+    }
+
+    async fn replay_documents(
+        &self,
+        session: &Arc<LanguageSession>,
+        snapshots: &DocumentStore,
+    ) -> Result<(), LspManagerError> {
+        let mut staged = session.documents.lock().await.clone();
+        for snapshot in snapshots.snapshots() {
+            let opened = staged
+                .open_snapshot(&snapshot)
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            if session
+                .client
+                .capabilities()
+                .await
+                .supports("textDocument/didOpen")
+            {
+                session
+                    .process
+                    .notify(
+                        "textDocument/didOpen",
+                        Some(json!({
+                            "textDocument": {
+                                "uri": opened.uri,
+                                "languageId": opened.language_id,
+                                "version": opened.version,
+                                "text": opened.text,
+                            }
+                        })),
+                    )
+                    .await
+                    .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            }
+        }
+        *session.documents.lock().await = staged;
+        Ok(())
+    }
+
     async fn session(&self, language_id: &str) -> Result<Arc<LanguageSession>, LspManagerError> {
         let language_id = normalized_language_id(language_id)?;
         self.state
@@ -742,6 +1694,76 @@ impl LspManager {
             .cloned()
             .ok_or(LspManagerError::NotRunning(language_id))
     }
+}
+
+async fn apply_mutation_plan(
+    session: &Arc<LanguageSession>,
+    plan: &WorkspaceEditPlan,
+) -> Result<AppliedDocumentEdits, LspManagerError> {
+    if plan.changes.is_empty() {
+        return Ok(AppliedDocumentEdits {
+            documents: Vec::new(),
+        });
+    }
+
+    let mut documents = session.documents.lock().await;
+    let mut staged = documents.clone();
+    let applied = apply_workspace_edit(&mut staged, plan).map_err(feature_error)?;
+
+    if session
+        .client
+        .capabilities()
+        .await
+        .supports("textDocument/didChange")
+    {
+        for change in &applied.changes {
+            session
+                .process
+                .notify(
+                    "textDocument/didChange",
+                    Some(json!({
+                        "textDocument": { "uri": change.uri, "version": change.version },
+                        "contentChanges": change.content_changes,
+                    })),
+                )
+                .await
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+            // A child can consume a notification and exit before the writer
+            // observes a broken pipe. Give the process wait task a bounded
+            // chance to publish that failure before sending the next edit;
+            // this keeps a partial server mirror from being committed as a
+            // successful atomic mutation.
+            let _ = session
+                .process
+                .wait_for_exit(Duration::from_millis(10))
+                .await;
+            if !matches!(session.process.state().await, ProcessState::Running) {
+                return Err(LspManagerError::Protocol(
+                    "language server exited during workspace edit notification".into(),
+                ));
+            }
+        }
+    }
+
+    let edited = plan
+        .changes
+        .iter()
+        .map(|change| {
+            let snapshot = staged.snapshot(&change.uri).ok_or_else(|| {
+                LspManagerError::Protocol(format!(
+                    "edited document disappeared before commit: {}",
+                    change.uri
+                ))
+            })?;
+            Ok(EditedDocument {
+                uri: snapshot.uri,
+                version: snapshot.version,
+                text: snapshot.text,
+            })
+        })
+        .collect::<Result<Vec<_>, LspManagerError>>()?;
+    *documents = staged;
+    Ok(AppliedDocumentEdits { documents: edited })
 }
 
 async fn cancelable_feature_request(
@@ -815,6 +1837,28 @@ fn feature_error(error: FeatureError) -> LspManagerError {
     LspManagerError::Protocol(error.to_string())
 }
 
+fn validate_rename_name(new_name: &str) -> Result<(), LspManagerError> {
+    if new_name.is_empty() {
+        return Err(LspManagerError::Protocol(
+            "rename target cannot be empty".into(),
+        ));
+    }
+    if new_name.len() > MAX_RENAME_BYTES {
+        return Err(LspManagerError::Protocol(format!(
+            "rename target exceeds {MAX_RENAME_BYTES} UTF-8 bytes"
+        )));
+    }
+    if new_name
+        .chars()
+        .any(|value| matches!(value, '\0' | '\r' | '\n'))
+    {
+        return Err(LspManagerError::Protocol(
+            "rename target cannot contain NUL or line breaks".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn normalized_language_id(language_id: &str) -> Result<String, LspManagerError> {
     let language_id = language_id.trim();
     if language_id.is_empty() || language_id.chars().any(char::is_whitespace) {
@@ -829,7 +1873,89 @@ fn process_state_label(state: ProcessState) -> String {
     match state {
         ProcessState::Running => "running".into(),
         ProcessState::Stopping => "stopping".into(),
-        ProcessState::Exited { code } => format!("exited:{code:?}"),
-        ProcessState::Failed { reason } => format!("failed:{reason}"),
+        ProcessState::Exited { .. } => "exited".into(),
+        ProcessState::Failed { .. } => "failed".into(),
+    }
+}
+
+fn safe_status_reason(reason: Option<&str>, restarting: bool) -> Option<String> {
+    reason.map(|_| {
+        if restarting {
+            "언어 서버가 중단되어 재시작합니다".into()
+        } else {
+            "언어 서버를 사용할 수 없습니다".into()
+        }
+    })
+}
+
+fn effective_client_status(client: ClientStatus, process: &ProcessState) -> ClientStatus {
+    match process {
+        // A stop request is still in flight. Treat it as degraded so the UI
+        // does not offer Start while the owned child may still be alive.
+        ProcessState::Stopping => ClientStatus::Degraded,
+        ProcessState::Exited { code: Some(0) } => ClientStatus::Stopped,
+        ProcessState::Exited { .. } => ClientStatus::Crashed,
+        ProcessState::Failed { .. } => ClientStatus::Degraded,
+        ProcessState::Running => client,
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    #[test]
+    fn unconfirmed_stop_is_not_reported_as_stopped() {
+        assert_eq!(
+            effective_client_status(ClientStatus::Ready, &ProcessState::Stopping),
+            ClientStatus::Degraded
+        );
+        assert_eq!(
+            effective_client_status(
+                ClientStatus::Degraded,
+                &ProcessState::Exited { code: Some(0) }
+            ),
+            ClientStatus::Stopped
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn restart_backoff_resets_after_the_failure_window() {
+        let manager = LspManager::new("/tmp/code-pad-lsp-test", "test");
+        assert_eq!(
+            manager.record_restart_failure("rust", "one".into()).await.0,
+            Some(Duration::from_secs(1))
+        );
+        assert_eq!(
+            manager.record_restart_failure("rust", "two".into()).await.0,
+            Some(Duration::from_secs(2))
+        );
+        {
+            let mut state = manager.state.lock().await;
+            let tracker = state.restart.get_mut("rust").unwrap();
+            for failure in &mut tracker.failures {
+                *failure = Instant::now() - RESTART_WINDOW - Duration::from_secs(1);
+            }
+        }
+        let (delay, disabled) = manager
+            .record_restart_failure("rust", "new sequence".into())
+            .await;
+        assert_eq!(delay, Some(Duration::from_secs(1)));
+        assert!(!disabled);
+    }
+
+    #[tokio::test]
+    async fn restart_backoff_opens_after_three_recent_failures() {
+        let manager = LspManager::new("/tmp/code-pad-lsp-test", "test");
+        assert!(!manager.record_restart_failure("rust", "one".into()).await.1);
+        assert!(!manager.record_restart_failure("rust", "two".into()).await.1);
+        let (delay, disabled) = manager.record_restart_failure("rust", "three".into()).await;
+        assert!(delay.is_none());
+        assert!(disabled);
     }
 }

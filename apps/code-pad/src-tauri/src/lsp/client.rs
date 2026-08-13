@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
-use tokio::sync::{watch, Mutex, RwLock};
+use tokio::sync::{broadcast, watch, Mutex, RwLock};
 
 pub const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -242,7 +242,12 @@ impl LspClient {
         });
         let weak = Arc::downgrade(&inner);
         tokio::spawn(async move {
-            while let Ok(message) = incoming.recv().await {
+            loop {
+                let message = match incoming.recv().await {
+                    Ok(message) => message,
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                };
                 let Some(inner) = Weak::upgrade(&weak) else {
                     break;
                 };
@@ -352,7 +357,12 @@ impl LspClient {
 
     pub async fn stop(&self) -> Result<(), ClientError> {
         let result = self.inner.process.shutdown().await;
-        self.inner.status.send_replace(ClientStatus::Stopped);
+        // Do not publish a normal stopped state while the child is still
+        // alive. The manager retains the session on that path and exposes a
+        // degraded/retry boundary instead of allowing a replacement start.
+        if result.is_ok() || self.inner.process.wait_for_exit(Duration::ZERO).await {
+            self.inner.status.send_replace(ClientStatus::Stopped);
+        }
         result.map_err(ClientError::Process)
     }
 }

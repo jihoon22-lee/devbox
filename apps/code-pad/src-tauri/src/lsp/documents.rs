@@ -330,6 +330,23 @@ impl DocumentStore {
         })
     }
 
+    /// Import an authoritative buffer into a fresh server session. The new
+    /// session always starts at version one, while the editor's dirty state is
+    /// retained for the eventual didSave boundary.
+    pub fn open_snapshot(&mut self, snapshot: &DocumentSnapshot) -> Result<DidOpen, DocumentError> {
+        let opened = self.open(
+            &snapshot.path,
+            snapshot.language_id.clone(),
+            snapshot.text.clone(),
+        )?;
+        if snapshot.dirty {
+            if let Some(state) = self.documents.get_mut(&opened.uri) {
+                state.dirty = true;
+            }
+        }
+        Ok(opened)
+    }
+
     pub fn change(
         &mut self,
         uri: &str,
@@ -465,6 +482,15 @@ impl DocumentStore {
 
     pub fn snapshot(&self, uri: &str) -> Option<DocumentSnapshot> {
         self.documents.get(uri).map(DocumentState::snapshot)
+    }
+
+    /// Return all open buffers in the store's stable URI order for session
+    /// replay and crash recovery.
+    pub fn snapshots(&self) -> Vec<DocumentSnapshot> {
+        self.documents
+            .values()
+            .map(DocumentState::snapshot)
+            .collect()
     }
 
     pub fn request_snapshot(&self, uri: &str) -> Result<RequestSnapshot, DocumentError> {
@@ -682,6 +708,23 @@ mod tests {
         let snapshot = store.snapshot(&opened.uri).unwrap();
         assert_eq!(snapshot.version, 1);
         assert!(snapshot.dirty);
+    }
+
+    #[test]
+    fn open_snapshot_imports_dirty_buffer_at_version_one() {
+        let (_directory, path, mut source) = store(PositionEncoding::Utf16, SyncKind::Full);
+        let opened = source.open(&path, "rust", "one").unwrap();
+        source.change(&opened.uri, "dirty", true).unwrap();
+        let snapshot = source.snapshot(&opened.uri).unwrap();
+        let workspace = source.workspace().clone();
+        let mut replacement =
+            DocumentStore::new(workspace, PositionEncoding::Utf8, SyncKind::Incremental);
+
+        let replay = replacement.open_snapshot(&snapshot).unwrap();
+        assert_eq!(replay.version, 1);
+        assert_eq!(replay.text, "dirty");
+        assert_eq!(replacement.snapshot(&replay.uri).unwrap().version, 1);
+        assert!(replacement.snapshot(&replay.uri).unwrap().dirty);
     }
 
     #[test]

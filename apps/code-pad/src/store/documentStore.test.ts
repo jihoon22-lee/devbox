@@ -160,6 +160,48 @@ describe("document registry transitions", () => {
     });
   });
 
+  it("applies a multi-document LSP edit atomically and rejects unknown targets", () => {
+    const state = withDocs(doc("one"), doc("two"));
+    const edited = editorReducer(state, {
+      type: "applyLspDocuments",
+      documents: [
+        { docId: "one", uri: "file:///workspace/one.ts", version: 2, text: "one changed\n" },
+        { docId: "two", uri: "file:///workspace/two.ts", version: 3, text: "two changed\n" },
+      ],
+      expectedRevisions: { one: 0, two: 0 },
+    });
+
+    expect(edited.docs.map((item) => item.text)).toEqual(["one changed\n", "two changed\n"]);
+    expect(edited.docs.every((item) => item.dirty)).toBe(true);
+    expect(edited.docs.map((item) => item.revision)).toEqual([1, 1]);
+
+    const rejected = editorReducer(edited, {
+      type: "applyLspDocuments",
+      documents: [
+        { docId: "one", uri: "file:///workspace/one.ts", version: 4, text: "partial\n" },
+        { docId: "missing", uri: "file:///workspace/missing.ts", version: 1, text: "must not apply\n" },
+      ],
+      expectedRevisions: { one: 1, missing: 0 },
+    });
+    expect(rejected).toBe(edited);
+  });
+
+  it("rejects an LSP batch when any expected revision is stale", () => {
+    const state = withDocs(doc("one"), doc("two"));
+    const changed = editorReducer(state, { type: "setDocText", docId: "two", text: "newer local edit\n" });
+    const rejected = editorReducer(changed, {
+      type: "applyLspDocuments",
+      documents: [
+        { docId: "one", uri: "file:///workspace/one.ts", version: 2, text: "one changed\n" },
+        { docId: "two", uri: "file:///workspace/two.ts", version: 3, text: "two changed\n" },
+      ],
+      expectedRevisions: { one: 0, two: 0 },
+    });
+
+    expect(rejected).toBe(changed);
+    expect(rejected.docs.map((item) => item.text)).toEqual(["const one = true;\n", "newer local edit\n"]);
+  });
+
   it("clears dirty only when both save revision and text still match", () => {
     let state = withDocs(doc("one"));
     state = editorReducer(state, { type: "setDocText", docId: "one", text: "saved\n" });

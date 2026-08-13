@@ -3,16 +3,22 @@
 //! stderr, matching the boundary required of real language servers.
 
 use code_pad_lib::lsp::{JsonRpcMessage, JsonRpcReader, JsonRpcWriter, RpcError, RpcId};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::env;
-use std::sync::Arc;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use std::time::Duration;
 use tokio::io::{AsyncWriteExt, Stdout};
 use tokio::sync::Mutex;
 
 type Writer = Arc<Mutex<JsonRpcWriter<Stdout>>>;
 type Cancellations = Arc<Mutex<HashSet<u64>>>;
+type MutationChanges = Arc<Mutex<u32>>;
+
+static FAKE_LOG_LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -21,6 +27,10 @@ async fn main() {
     let mode = argument_mode
         .or_else(|| env::var("FAKE_LSP_MODE").ok())
         .unwrap_or_default();
+    let fake_marker =
+        env::args().find_map(|argument| argument.strip_prefix("--fake-marker=").map(PathBuf::from));
+    let fake_log =
+        env::args().find_map(|argument| argument.strip_prefix("--fake-log=").map(PathBuf::from));
     if mode == "stderr" {
         let mut stderr = tokio::io::stderr();
         let bytes = vec![b'x'; 100 * 1024];
@@ -30,6 +40,7 @@ async fn main() {
 
     let writer: Writer = Arc::new(Mutex::new(JsonRpcWriter::new(tokio::io::stdout())));
     let cancellations: Cancellations = Arc::new(Mutex::new(HashSet::new()));
+    let mutation_changes: MutationChanges = Arc::new(Mutex::new(0));
     let mut reader = JsonRpcReader::new(tokio::io::stdin());
     loop {
         let message = match reader.read_message().await {
@@ -45,8 +56,22 @@ async fn main() {
                 let writer = Arc::clone(&writer);
                 let cancellations = Arc::clone(&cancellations);
                 let mode = mode.clone();
+                let fake_marker = fake_marker.clone();
+                let fake_log = fake_log.clone();
+                let mutation_changes = Arc::clone(&mutation_changes);
                 tokio::spawn(async move {
-                    handle_request(writer, cancellations, mode, id, method, params).await;
+                    handle_request(
+                        writer,
+                        cancellations,
+                        mode,
+                        fake_marker,
+                        fake_log,
+                        mutation_changes,
+                        id,
+                        method,
+                        params,
+                    )
+                    .await;
                 });
             }
             JsonRpcMessage::Notification { method, params } => {
@@ -62,9 +87,22 @@ async fn main() {
                     let writer = Arc::clone(&writer);
                     let cancellations = Arc::clone(&cancellations);
                     let mode = mode.clone();
+                    let fake_marker = fake_marker.clone();
+                    let fake_log = fake_log.clone();
+                    let mutation_changes = Arc::clone(&mutation_changes);
                     tokio::spawn(async move {
-                        handle_request(writer, cancellations, mode, RpcId::Null, method, params)
-                            .await;
+                        handle_request(
+                            writer,
+                            cancellations,
+                            mode,
+                            fake_marker,
+                            fake_log,
+                            mutation_changes,
+                            RpcId::Null,
+                            method,
+                            params,
+                        )
+                        .await;
                     });
                 } else if method == "initialized" && mode == "dynamic_capabilities" {
                     send(
@@ -123,10 +161,14 @@ async fn main() {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_request(
     writer: Writer,
     cancellations: Cancellations,
     mode: String,
+    fake_marker: Option<PathBuf>,
+    fake_log: Option<PathBuf>,
+    mutation_changes: MutationChanges,
     id: RpcId,
     method: String,
     params: Option<Value>,
@@ -134,6 +176,9 @@ async fn handle_request(
     match method.as_str() {
         "initialize" => {
             let argv: Vec<String> = env::args().skip(1).collect();
+            if mode == "slow_initialize" {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
             if mode == "validate_initialize" && !valid_initialize_params(params.as_ref()) {
                 send(
                     &writer,
@@ -154,7 +199,11 @@ async fn handle_request(
                     "referencesProvider": {},
                     "diagnosticProvider": {}
                 }),
-                "stale_features" | "supersede_features" => json!({
+                "stale_features"
+                | "supersede_features"
+                | "mutation_features"
+                | "stale_mutations"
+                | "mutation_partial_failure" => json!({
                     "positionEncoding": "utf-8",
                     "textDocumentSync": { "openClose": true, "change": 2, "save": true },
                     "completionProvider": true,
@@ -226,8 +275,16 @@ async fn handle_request(
         | "textDocument/completion"
         | "textDocument/hover"
         | "textDocument/definition"
-        | "textDocument/references" => {
-            if mode == "stale_features" && method == "textDocument/completion" {
+        | "textDocument/references"
+        | "textDocument/rename"
+        | "textDocument/formatting" => {
+            if mode == "mutation_partial_failure" && method == "textDocument/didChange" {
+                let mut changes = mutation_changes.lock().await;
+                *changes += 1;
+                if *changes >= 2 {
+                    std::process::exit(17);
+                }
+            } else if mode == "stale_features" && method == "textDocument/completion" {
                 tokio::time::sleep(Duration::from_millis(120)).await;
             } else if mode == "supersede_features"
                 && matches!(
@@ -248,6 +305,13 @@ async fn handle_request(
                 )
             {
                 tokio::time::sleep(Duration::from_secs(3)).await;
+            } else if mode == "stale_mutations"
+                && matches!(
+                    method.as_str(),
+                    "textDocument/rename" | "textDocument/formatting"
+                )
+            {
+                tokio::time::sleep(Duration::from_millis(120)).await;
             }
             if cancellations.lock().await.remove(&id.as_u64().unwrap_or(0)) {
                 send(
@@ -288,6 +352,26 @@ async fn handle_request(
                     { "uri": uri, "range": range.clone() },
                     { "uri": "file:///outside-workspace.rs", "range": range }
                 ]),
+                "textDocument/rename" => {
+                    let sibling = uri
+                        .rsplit_once('/')
+                        .map(|(directory, _)| format!("{directory}/lib.rs"))
+                        .unwrap_or_else(|| uri.to_owned());
+                    let mut changes = Map::new();
+                    changes.insert(
+                        uri.to_owned(),
+                        json!([{ "range": range.clone(), "newText": "renamed" }]),
+                    );
+                    changes.insert(
+                        sibling,
+                        json!([{ "range": range.clone(), "newText": "renamed" }]),
+                    );
+                    json!({ "changes": changes })
+                }
+                "textDocument/formatting" => json!([{
+                    "range": range,
+                    "newText": "formatted"
+                }]),
                 _ => Value::Null,
             };
             send(&writer, JsonRpcMessage::response(id, result)).await;
@@ -305,19 +389,56 @@ async fn handle_request(
         }
         _ => {
             if method == "textDocument/didOpen" || method == "textDocument/didChange" {
+                if method == "textDocument/didOpen" {
+                    if let Some(log) = fake_log.as_ref() {
+                        append_fake_log(log, params.as_ref());
+                    }
+                    if mode == "crash_on_open"
+                        || (mode == "crash_once"
+                            && match fake_marker.as_ref() {
+                                None => true,
+                                Some(marker) => !marker.exists(),
+                            })
+                    {
+                        if let Some(marker) = fake_marker.as_ref() {
+                            let _ = fs::write(marker, b"crashed");
+                        }
+                        std::process::exit(17);
+                    }
+                } else if mode == "mutation_partial_failure" {
+                    let mut changes = mutation_changes.lock().await;
+                    *changes += 1;
+                    if *changes >= 1 {
+                        std::process::exit(17);
+                    }
+                }
                 let uri = params
                     .as_ref()
                     .and_then(|params| params.get("textDocument"))
                     .and_then(|document| document.get("uri"))
                     .and_then(Value::as_str)
                     .unwrap_or("file:///fixture");
+                let version = params
+                    .as_ref()
+                    .and_then(|params| params.get("textDocument"))
+                    .and_then(|document| document.get("version"))
+                    .cloned()
+                    .unwrap_or(Value::Null);
                 send(
                     &writer,
                     JsonRpcMessage::notification(
                         "textDocument/publishDiagnostics",
                         Some(json!({
                             "uri": uri,
-                            "diagnostics": [{ "message": "fixture diagnostic", "severity": 2 }]
+                            "version": version,
+                            "diagnostics": [{
+                                "range": {
+                                    "start": { "line": 0, "character": 0 },
+                                    "end": { "line": 0, "character": 2 }
+                                },
+                                "message": "fixture diagnostic",
+                                "severity": 2
+                            }]
                         })),
                     ),
                 )
@@ -325,6 +446,23 @@ async fn handle_request(
             }
         }
     }
+}
+
+fn append_fake_log(path: &PathBuf, params: Option<&Value>) {
+    let Some(document) = params.and_then(|value| value.get("textDocument")) else {
+        return;
+    };
+    let lock = FAKE_LOG_LOCK.get_or_init(|| StdMutex::new(()));
+    let Ok(_guard) = lock.lock() else {
+        return;
+    };
+    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
+        return;
+    };
+    let line = format!("{}\n", document);
+    let _ = file.write_all(line.as_bytes());
+    let _ = file.flush();
+    let _ = file.sync_data();
 }
 
 fn valid_initialize_params(params: Option<&Value>) -> bool {

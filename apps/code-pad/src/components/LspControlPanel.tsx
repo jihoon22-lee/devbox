@@ -4,6 +4,7 @@ import {
   lspCatalog,
   lspInstalled,
   loadLspConfig,
+  restartLanguageServer,
   saveLspConfig,
   startLanguageServer,
   stopLanguageServer,
@@ -37,12 +38,6 @@ const CAPABILITY_LABELS: Array<[keyof LanguageServerStatus["capabilities"], stri
   ["rename", "이름 변경"],
   ["formatting", "포맷"],
 ];
-
-const LIVE_SERVER_STATUSES = new Set<LanguageServerStatus["status"]>([
-  "starting",
-  "ready",
-  "degraded",
-]);
 
 function emptyConfig(workspaceRoot: string | null): LspConfig {
   return {
@@ -117,14 +112,10 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
   const [formDirty, setFormDirty] = useState(false);
   const busyRef = useRef(false);
 
-  const runningLanguages = useMemo(
-    () => new Set(
-      statuses
-        .filter((status) => LIVE_SERVER_STATUSES.has(status.status))
-        .map((status) => status.languageId),
-    ),
-    [statuses],
-  );
+  const configuredLanguageIds = [...new Set([
+    ...Object.keys(config.server_by_language),
+    ...config.custom_servers.flatMap((server) => server.language_ids),
+  ])].sort();
 
   const managedOptions = useMemo(() => managedCatalog.filter((manifest) => {
     if (!manifest.languages.some((language) => language.language_id === selectedLanguage)) {
@@ -297,6 +288,11 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
     await refreshStatuses();
   });
 
+  const handleRestart = (languageId: string) => void run(async () => {
+    await restartLanguageServer(languageId);
+    await refreshStatuses();
+  });
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="lsp-panel" role="dialog" aria-modal="true" aria-label="언어 서버 설정">
@@ -418,11 +414,13 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
 
         <section className="lsp-status-section" aria-label="언어 서버 상태">
           <h3>현재 상태</h3>
-          {Object.keys(config.server_by_language).length === 0 && (
+          {configuredLanguageIds.length === 0 && (
             <p className="lsp-empty">등록된 언어 서버가 없습니다.</p>
           )}
-          {Object.keys(config.server_by_language).sort().map((languageId) => {
+          {configuredLanguageIds.map((languageId) => {
             const status = statuses.find((item) => item.languageId === languageId);
+            const server = config.server_by_language[languageId]
+              ?? config.custom_servers.find((item) => item.language_ids.includes(languageId));
             return (
               <article className="lsp-status-card" key={languageId}>
                 <div className="lsp-status-main">
@@ -430,7 +428,7 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
                   <span className={`lsp-state ${status?.status ?? "stopped"}`}>
                     {status ? statusLabel(status.status) : "중지됨"}
                   </span>
-                  <span>{status?.serverInfo?.name ?? config.server_by_language[languageId].kind}</span>
+                  <span>{status?.serverInfo?.name ?? server?.kind ?? "custom"}</span>
                   <span>문서 {status?.documentCount ?? 0}</span>
                 </div>
                 {status && (
@@ -442,16 +440,15 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
                     {status.capabilities.legacyPositionEncoding && <span>레거시 위치</span>}
                   </div>
                 )}
-                {status?.stderr && (
-                  <details className="lsp-stderr">
-                    <summary>최근 stderr{status.stderrTruncated ? " (일부 생략)" : ""}</summary>
-                    <pre>{status.stderr}</pre>
-                  </details>
-                )}
                 <div className="lsp-status-actions">
-                  {runningLanguages.has(languageId)
-                    ? <button type="button" className="toolbar-button" disabled={busy} onClick={() => handleStop(languageId)}>중지</button>
-                    : <button type="button" className="toolbar-button" disabled={busy || !config.enabled || hasUnsavedChanges} onClick={() => handleStart(languageId)}>시작</button>}
+                  {!status || status.status === "stopped"
+                    ? <button type="button" className="toolbar-button" disabled={busy || !config.enabled || hasUnsavedChanges} onClick={() => handleStart(languageId)}>시작</button>
+                    : status.status === "crashed" || status.status === "degraded" || status.autoRestartDisabled
+                      ? <>
+                          <button type="button" className="toolbar-button" disabled={busy || !config.enabled || hasUnsavedChanges} onClick={() => handleRestart(languageId)}>재시작</button>
+                          <button type="button" className="toolbar-button" disabled={busy} onClick={() => handleStop(languageId)}>중지</button>
+                        </>
+                      : <button type="button" className="toolbar-button" disabled={busy} onClick={() => handleStop(languageId)}>중지</button>}
                 </div>
               </article>
             );

@@ -1,5 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import type { CompletionSource } from "@codemirror/autocomplete";
+import type { HoverTooltipSource } from "@codemirror/view";
 import {
   canonicalizeWorkspace,
   listWorkspaceFiles,
@@ -18,6 +20,9 @@ import QuickOpen from "./components/QuickOpen";
 import StatusBar from "./components/StatusBar";
 import ViewPane from "./components/ViewPane";
 import LspControlPanel from "./components/LspControlPanel";
+import LspNavigationPanel from "./components/LspNavigationPanel";
+import { currentDocumentWordCompletion } from "./editor/extensions";
+import { completionOptions, diagnosticsForCodeMirror, hoverText, offsetForPosition, pathFromFileUri } from "./lspFeatures";
 import type { BookmarkCommands } from "./editor/bookmarks";
 import { normalizeBookmarkLines } from "./editor/bookmarks";
 import { LspDocumentSync } from "./lspDocumentSync";
@@ -40,6 +45,9 @@ import type {
   SavedFile,
   SessionState,
   WorkspaceFile,
+  EditedLspDocument,
+  LspDiagnosticsEvent,
+  LspStatusEvent,
 } from "./types";
 
 function docFromOpenedFile(file: OpenedFile, metadata?: SessionState["docs"][number]): Doc {
@@ -123,6 +131,13 @@ export default function App() {
   const [lspPanelOpen, setLspPanelOpen] = useState(false);
   const [lspSync] = useState(() => new LspDocumentSync());
   const [lspSyncState, setLspSyncState] = useState(lspSync.getState());
+  const [lspDiagnostics, setLspDiagnostics] = useState<Record<DocId, import("@codemirror/lint").Diagnostic[]>>({});
+  const [lspNavigation, setLspNavigation] = useState<{
+    kind: "definition" | "references";
+    locations: import("./types").LspLocationTarget[];
+    rejected: number;
+  } | null>(null);
+  const [lspBusy, setLspBusy] = useState(false);
 
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -139,8 +154,52 @@ export default function App() {
   const sessionSaveInFlightRef = useRef<Promise<void> | null>(null);
   const watchOperationRef = useRef(new Map<string, Promise<void>>());
   const externalChangeVersionRef = useRef(new Map<string, number>());
+  const lspFeatureRequestRef = useRef(0);
+  const lspBusyRef = useRef(false);
 
   useEffect(() => lspSync.subscribe(setLspSyncState), [lspSync]);
+
+  useEffect(() => lspSync.subscribeDiagnostics((snapshot) => {
+    const doc = stateRef.current.docs.find((item) => item.id === snapshot.documentId);
+    if (!doc) return;
+    if (snapshot.response.stale) {
+      setLspDiagnostics((current) => {
+        if (!(snapshot.documentId in current)) return current;
+        const next = { ...current };
+        delete next[snapshot.documentId];
+        return next;
+      });
+      return;
+    }
+    const encoding = lspSync.statusForDocument(doc.id)?.capabilities.positionEncoding ?? "utf-16";
+    setLspDiagnostics((current) => ({
+      ...current,
+      [doc.id]: diagnosticsForCodeMirror(doc.text, snapshot.response.value, encoding),
+    }));
+  }), [lspSync]);
+
+  useEffect(() => {
+    let disposed = false;
+    let stopDiagnostics: (() => void) | undefined;
+    let stopStatus: (() => void) | undefined;
+    void Promise.all([
+      listen<LspDiagnosticsEvent>("lsp/diagnostics", (event) => lspSync.acceptDiagnosticsEvent(event.payload)),
+      listen<LspStatusEvent>("lsp/status", (event) => lspSync.acceptStatusEvent(event.payload)),
+    ]).then(([diagnosticsStop, statusStop]) => {
+      if (disposed) {
+        diagnosticsStop();
+        statusStop();
+      } else {
+        stopDiagnostics = diagnosticsStop;
+        stopStatus = statusStop;
+      }
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      stopDiagnostics?.();
+      stopStatus?.();
+    };
+  }, [lspSync]);
 
   const externalChange = externalChanges[0] ?? null;
   const enqueueExternalChange = (path: string) => {
@@ -186,11 +245,12 @@ export default function App() {
     }
   }
 
-  const dispatchAction = (action: EditorAction) => {
+  const dispatchAction = (action: EditorAction): EditorState => {
     // Keep the ref in lockstep before React commits the reducer update. This
     // closes promise-resolution races for save/reload and makes the session
     // scheduler always see the latest logical state.
-    stateRef.current = editorReducer(stateRef.current, action);
+    const nextState = editorReducer(stateRef.current, action);
+    stateRef.current = nextState;
     dispatch(action);
     if (
       hydratedRef.current &&
@@ -200,6 +260,7 @@ export default function App() {
       persistenceAllowedRef.current = true;
       setSessionPersistenceAllowed(true);
     }
+    return nextState;
   };
 
   const enqueueWatchOperation = (path: string, operation: () => Promise<void>) => {
@@ -250,7 +311,7 @@ export default function App() {
     const doc = docFromOpenedFile(opened, metadata);
     dispatchAction({ type: "addDoc", doc });
     if (!alreadyOpen) void lspSync.open(doc);
-    return opened;
+    return stateRef.current.docs.find((item) => item.id === doc.id) ?? doc;
   };
 
   const handleOpen = () => {
@@ -379,6 +440,159 @@ export default function App() {
   const invokeBookmarkCommand = (kind: keyof BookmarkCommands) => {
     if (!activeDoc) return;
     bookmarkCommandsRef.current.get(activeDoc.id)?.[kind]();
+  };
+
+  const lspCapability = (capability: keyof NonNullable<ReturnType<LspDocumentSync["statusForDocument"]>>["capabilities"]) => {
+    if (!activeDoc) return false;
+    return Boolean(lspSync.statusForDocument(activeDoc.id)?.capabilities[capability]);
+  };
+
+  const runLspOperation = async <T,>(operation: () => Promise<T>): Promise<T | undefined> => {
+    if (lspBusyRef.current) return undefined;
+    lspBusyRef.current = true;
+    setLspBusy(true);
+    setError(null);
+    try {
+      return await operation();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      return undefined;
+    } finally {
+      lspBusyRef.current = false;
+      setLspBusy(false);
+    }
+  };
+
+  const openLspLocation = async (target: import("./types").LspLocationTarget) => {
+    const path = pathFromFileUri(target.uri);
+    if (!path) {
+      setError("LSP가 파일이 아닌 탐색 대상을 반환했습니다.");
+      return;
+    }
+    const doc = await openPath(path);
+    const status = lspSync.statusForDocument(doc.id);
+    const position = target.selectionRange?.start ?? target.range.start;
+    dispatchAction({
+      type: "setCursor",
+      docId: doc.id,
+      cursor: offsetForPosition(doc.text, position, status?.capabilities.positionEncoding ?? "utf-16"),
+    });
+  };
+
+  const handleLspNavigation = (kind: "definition" | "references") => {
+    if (!activeDoc) return;
+    const requestId = ++lspFeatureRequestRef.current;
+    void runLspOperation(async () => {
+      const response = kind === "definition"
+        ? await lspSync.requestDefinition(activeDoc.id, activeDoc.cursor)
+        : await lspSync.requestReferences(activeDoc.id, activeDoc.cursor);
+      if (requestId !== lspFeatureRequestRef.current || !response || response.stale) return;
+      setLspNavigation({ kind, locations: response.value.locations, rejected: response.value.rejected });
+    });
+  };
+
+  const applyLspEdits = (result: { documents: EditedLspDocument[] }, snapshots: Map<DocId, number>) => {
+    const documents = result.documents.map((edited) => ({
+      ...edited,
+      docId: lspSync.documentIdForUri(edited.uri),
+    }));
+    if (documents.some((edited) => !edited.docId)) {
+      throw new Error("LSP가 열려 있지 않은 문서에 변경을 반환했습니다.");
+    }
+    const typed = documents as Array<EditedLspDocument & { docId: DocId }>;
+    if (typed.some((edited) => stateRef.current.docs.find((doc) => doc.id === edited.docId)?.revision !== snapshots.get(edited.docId))) {
+      throw new Error("LSP 변경을 적용하는 동안 문서가 변경되었습니다. 다시 시도하세요.");
+    }
+    const expectedRevisions = Object.fromEntries(
+      typed.map((edited) => [edited.docId, snapshots.get(edited.docId)]),
+    ) as Record<DocId, number>;
+    const before = stateRef.current;
+    const next = dispatchAction({ type: "applyLspDocuments", documents: typed, expectedRevisions });
+    if (next === before) {
+      throw new Error("LSP 변경을 적용하는 동안 문서가 변경되었습니다. 다시 시도하세요.");
+    }
+    lspSync.applyDocuments(result.documents);
+    setLspDiagnostics((current) => {
+      const next = { ...current };
+      for (const edited of typed) next[edited.docId] = [];
+      return next;
+    });
+  };
+
+  const handleLspRename = () => {
+    if (!activeDoc || !lspCapability("rename")) return;
+    const requestedName = window.prompt("새 이름", "");
+    if (!requestedName?.trim()) return;
+    const snapshots = new Map(stateRef.current.docs.map((doc) => [doc.id, doc.revision]));
+    void runLspOperation(async () => {
+      const result = await lspSync.requestRename(activeDoc.id, activeDoc.cursor, requestedName.trim());
+      if (result) applyLspEdits(result, snapshots);
+    });
+  };
+
+  const handleLspFormatting = () => {
+    if (!activeDoc || !lspCapability("formatting")) return;
+    const snapshots = new Map(stateRef.current.docs.map((doc) => [doc.id, doc.revision]));
+    void runLspOperation(async () => {
+      const result = await lspSync.requestFormatting(activeDoc.id);
+      if (result) applyLspEdits(result, snapshots);
+    });
+  };
+
+  const handleLspRestart = () => {
+    if (!activeDoc) return;
+    const status = lspSync.statusForDocument(activeDoc.id);
+    if (status) void runLspOperation(() => lspSync.restart(status.languageId));
+  };
+
+  const canManuallyRestartLsp = (() => {
+    if (!activeDoc) return false;
+    const status = lspSync.statusForDocument(activeDoc.id);
+    return Boolean(status && (
+      status.autoRestartDisabled
+      || status.status === "crashed"
+      || status.status === "degraded"
+      || status.status === "stopped"
+    ));
+  })();
+
+  const completionSourceFor = (docId: DocId): CompletionSource => async (context) => {
+    const response = await lspSync.requestCompletion(docId, context.pos);
+    if (!response || response.stale || response.value.items.length === 0) {
+      return currentDocumentWordCompletion(context);
+    }
+    const text = context.state.doc.toString();
+    const version = lspSync.documentVersion(docId);
+    const encoding = lspSync.statusForDocument(docId)?.capabilities.positionEncoding ?? "utf-16";
+    const options = completionOptions(response.value, {
+      text,
+      encoding,
+      isCurrent: () => lspSync.documentVersion(docId) === version && lspSync.documentText(docId) === text,
+    });
+    if (options.length === 0) return currentDocumentWordCompletion(context);
+    const word = context.matchBefore(/[\w$-]*/u);
+    return {
+      from: word?.from ?? context.pos,
+      options,
+    };
+  };
+
+  const hoverSourceFor = (docId: DocId): HoverTooltipSource => async (_view, pos) => {
+    const response = await lspSync.requestHover(docId, pos);
+    if (!response || response.stale) return null;
+    const text = hoverText(response.value);
+    if (!text) return null;
+    return {
+      pos,
+      end: pos,
+      above: true,
+      create: () => {
+        const dom = document.createElement("pre");
+        dom.className = "lsp-hover-tooltip";
+        dom.textContent = text;
+        return { dom };
+      },
+    };
   };
 
   const handleLineEndingChange = (docId: DocId, lineEnding: LineEnding) => {
@@ -809,6 +1023,11 @@ export default function App() {
           LSP 동기화가 일시적으로 비활성화되었습니다: {lspSyncState.lastError}
         </p>
       )}
+      {lspSyncState.staleDiagnostics && (
+        <p className="lsp-warning" role="status" aria-live="polite">
+          LSP 진단이 최신 문서 상태와 맞지 않아 갱신 중입니다.
+        </p>
+      )}
 
       <div className="editor-toolbar" role="toolbar" aria-label="편집기 도구">
         <button
@@ -868,6 +1087,23 @@ export default function App() {
         >
           언어 서버
         </button>
+        <button type="button" className="toolbar-button" onClick={() => handleLspNavigation("definition")} disabled={!hydrated || !lspCapability("definition") || lspBusy}>
+          정의
+        </button>
+        <button type="button" className="toolbar-button" onClick={() => handleLspNavigation("references")} disabled={!hydrated || !lspCapability("references") || lspBusy}>
+          참조
+        </button>
+        <button type="button" className="toolbar-button" onClick={handleLspRename} disabled={!hydrated || !lspCapability("rename") || lspBusy}>
+          이름 변경
+        </button>
+        <button type="button" className="toolbar-button" onClick={handleLspFormatting} disabled={!hydrated || !lspCapability("formatting") || lspBusy}>
+          포맷
+        </button>
+        {canManuallyRestartLsp && (
+          <button type="button" className="toolbar-button" onClick={handleLspRestart} disabled={lspBusy}>
+            LSP 재시작
+          </button>
+        )}
         <span className="toolbar-hint">Ctrl/⌘+P 빠른 열기 · Ctrl/⌘+H 바꾸기 · Ctrl/⌘+S 저장</span>
       </div>
 
@@ -927,6 +1163,9 @@ export default function App() {
             onFocusDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
             onReplaceCommandReady={handleReplaceCommandReady}
             onBookmarkCommandsReady={handleBookmarkCommandsReady}
+            diagnostics={(docId) => lspDiagnostics[docId] ?? []}
+            completionSource={completionSourceFor}
+            hoverSource={hoverSourceFor}
           />
         </section>
         {previewOpen && activeDoc && (
@@ -941,6 +1180,18 @@ export default function App() {
         onEncodingConvert={handleEncodingConversion}
         onLineEndingChange={handleLineEndingChange}
       />
+      {lspNavigation && (
+        <LspNavigationPanel
+          kind={lspNavigation.kind}
+          locations={lspNavigation.locations}
+          rejected={lspNavigation.rejected}
+          onOpen={(location) => {
+            setLspNavigation(null);
+            void runFileOperation(() => openLspLocation(location));
+          }}
+          onClose={() => setLspNavigation(null)}
+        />
+      )}
       <p className="scope-note">
         작업 폴더: {state.workspaceFolder ?? "지정되지 않음"} · {workspaceFiles.length}개 파일
         {workspaceTruncated && " · 일부 목록만 표시"}

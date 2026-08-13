@@ -1,4 +1,4 @@
-import type { Doc, DocId, EditorState, SessionState, ViewId } from "../types";
+import type { Doc, DocId, EditedLspDocument, EditorState, SessionState, ViewId } from "../types";
 import { normalizeBookmarkLines } from "../editor/bookmarks";
 import type { Encoding, LineEnding } from "../types";
 
@@ -16,6 +16,12 @@ export type EditorAction =
   | { type: "setEncoding"; docId: DocId; encoding: Encoding }
   | { type: "setLineEnding"; docId: DocId; lineEnding: LineEnding }
   | { type: "setWorkspace"; workspaceFolder: string | null }
+  | {
+      type: "applyLspDocuments";
+      documents: Array<EditedLspDocument & { docId: DocId }>;
+      /** Rechecked by the reducer so a queued React action cannot overwrite a newer edit. */
+      expectedRevisions?: Readonly<Record<DocId, number>>;
+    }
   | {
       type: "saveDoc";
       docId: DocId;
@@ -409,6 +415,25 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 
     case "setWorkspace":
       return { ...state, workspaceFolder: action.workspaceFolder };
+
+    case "applyLspDocuments": {
+      const byId = new Map(state.docs.map((doc) => [doc.id, doc]));
+      if (action.documents.some((edited) => !byId.has(edited.docId))) return state;
+      if (action.expectedRevisions && action.documents.some((edited) => {
+        const expectedRevision = action.expectedRevisions?.[edited.docId];
+        return expectedRevision === undefined || byId.get(edited.docId)?.revision !== expectedRevision;
+      })) return state;
+      const edits = new Map(action.documents.map((edited) => [edited.docId, edited]));
+      return {
+        ...state,
+        docs: state.docs.map((doc) => {
+          const edited = edits.get(doc.id);
+          return edited
+            ? { ...doc, text: edited.text, dirty: true, revision: doc.revision + 1 }
+            : doc;
+        }),
+      };
+    }
 
     case "saveDoc":
       return state.docs.some((doc) => doc.id === action.docId)

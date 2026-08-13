@@ -1,4 +1,7 @@
 import type { CSSProperties } from "react";
+import type { CompletionSource } from "@codemirror/autocomplete";
+import type { Diagnostic } from "@codemirror/lint";
+import type { HoverTooltipSource } from "@codemirror/view";
 import { tabIdForDoc, type Doc, type DocId, type ViewId } from "../types";
 import CodeEditor from "../editor/CodeEditor";
 import type { BookmarkCommands } from "../editor/bookmarks";
@@ -15,6 +18,9 @@ interface DocHostProps {
   onFocusDoc: (view: ViewId, docId: DocId) => void;
   onReplaceCommandReady?: (docId: DocId, command: (() => boolean) | null) => void;
   onBookmarkCommandsReady?: (docId: DocId, commands: BookmarkCommands | null) => void;
+  diagnostics?: (docId: string) => Diagnostic[];
+  completionSource?: (docId: string) => CompletionSource | undefined;
+  hoverSource?: (docId: string) => HoverTooltipSource | undefined;
 }
 
 function placementForDoc(
@@ -59,6 +65,9 @@ export default function DocHost({
   onFocusDoc,
   onReplaceCommandReady,
   onBookmarkCommandsReady,
+  diagnostics,
+  completionSource,
+  hoverSource,
 }: DocHostProps) {
   return (
     <div
@@ -89,6 +98,9 @@ export default function DocHost({
             onFocus={() => onFocusDoc(view, doc.id)}
             onReplaceCommandReady={onReplaceCommandReady}
             onBookmarkCommandsReady={onBookmarkCommandsReady}
+            diagnostics={diagnostics?.(doc.id)}
+            completionSource={completionSource?.(doc.id)}
+            hoverSource={hoverSource?.(doc.id)}
           />
         );
       })}

@@ -7,6 +7,7 @@ import {
   lspInstalled,
   loadLspConfig,
   recoverInstalledLsp,
+  restartLanguageServer,
   saveLspConfig,
   startLanguageServer,
   stopLanguageServer,
@@ -31,6 +32,7 @@ vi.mock("../api", () => ({
   startLanguageServer: vi.fn(),
   stopLanguageServer: vi.fn(),
   uninstallLsp: vi.fn(),
+  restartLanguageServer: vi.fn(),
 }));
 
 const loadMock = vi.mocked(loadLspConfig);
@@ -43,6 +45,7 @@ const recoverMock = vi.mocked(recoverInstalledLsp);
 const saveMock = vi.mocked(saveLspConfig);
 const startMock = vi.mocked(startLanguageServer);
 const stopMock = vi.mocked(stopLanguageServer);
+const restartMock = vi.mocked(restartLanguageServer);
 
 function loadedConfig(overrides: Partial<LoadedLspConfig> = {}): LoadedLspConfig {
   return {
@@ -134,9 +137,6 @@ function fixtureServerStatus(
       diagnostics: false,
     },
     documentCount: 0,
-    stderr: "",
-    stderrTruncated: false,
-    stderrDroppedBytes: 0,
   };
 }
 
@@ -151,6 +151,7 @@ beforeEach(() => {
   saveMock.mockReset().mockResolvedValue(undefined);
   startMock.mockReset().mockResolvedValue(undefined);
   stopMock.mockReset().mockResolvedValue(undefined);
+  restartMock.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => cleanup());
@@ -230,7 +231,7 @@ describe("LspControlPanel", () => {
     expect(startMock).not.toHaveBeenCalled();
   });
 
-  it("offers start for stopped or crashed servers and stop only for live sessions", async () => {
+  it("offers restart for crashed servers and stop only for live sessions", async () => {
     loadMock.mockResolvedValue(loadedConfig({
       config: {
         ...loadedConfig().config,
@@ -247,10 +248,9 @@ describe("LspControlPanel", () => {
       fixtureServerStatus("typescript", "ready"),
     ]);
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
-    expect(await rendered.findByRole("button", { name: "시작" })).toBeTruthy();
-    expect(rendered.getByRole("button", { name: "중지" })).toBeTruthy();
-    expect(rendered.getAllByRole("button", { name: "시작" })).toHaveLength(1);
-    expect(rendered.getAllByRole("button", { name: "중지" })).toHaveLength(1);
+    expect(await rendered.findByRole("button", { name: "재시작" })).toBeTruthy();
+    expect(rendered.getAllByRole("button", { name: "중지" })).toHaveLength(2);
+    expect(rendered.queryByRole("button", { name: "시작" })).toBeNull();
   });
 
   it("shows reviewed metadata and requires an explicit install confirmation", async () => {
@@ -535,5 +535,44 @@ describe("LspControlPanel", () => {
     await waitFor(() => expect(uninstallMock).toHaveBeenCalled());
     expect((rendered.getByLabelText("실행 파일 절대 경로") as HTMLInputElement).value)
       .toBe("C:\\local\\server.exe");
+  });
+
+  it("offers restart for degraded or circuit-open servers and start only for stopped servers", async () => {
+    loadMock.mockResolvedValue(loadedConfig({
+      config: {
+        ...loadedConfig().config,
+        enabled: true,
+        workspace_root: "/work",
+        server_by_language: {
+          rust: { kind: "local", installed_path: "/server", args: [] },
+        },
+      },
+    }));
+    statusesMock.mockResolvedValue([{
+      languageId: "rust",
+      status: "degraded",
+      processState: "failed",
+      serverInfo: null,
+      capabilities: {
+        positionEncoding: "utf-16",
+        legacyPositionEncoding: false,
+        syncKind: "full",
+        openClose: true,
+        save: true,
+        completion: true,
+        hover: true,
+        definition: true,
+        references: true,
+        rename: true,
+        formatting: true,
+        diagnostics: true,
+      },
+      documentCount: 0,
+      autoRestartDisabled: true,
+    }]);
+    const rendered = render(<LspControlPanel workspaceRoot="/work" onClose={() => undefined} />);
+    const restart = await rendered.findByRole("button", { name: "재시작" });
+    fireEvent.click(restart);
+    await waitFor(() => expect(restartMock).toHaveBeenCalledWith("rust"));
   });
 });

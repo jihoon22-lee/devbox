@@ -11,10 +11,17 @@ import type {
   LanguageServerStatus,
   LoadedLspConfig,
   LspConfig,
+  AppliedDocumentEdits,
+  LspPosition,
   LspDidChange,
   LspDidClose,
   LspDidOpen,
   LspDidSave,
+  LspFeatureResponse,
+  LspDiagnosticResult,
+  LspCompletionResult,
+  LspHoverResult,
+  LspFilteredLocations,
   ManagedInstallStatus,
   ManagedServerManifest,
 } from "./types";
@@ -103,6 +110,10 @@ export function stopLanguageServer(languageId: string): Promise<void> {
   return invoke<void>("stop_language_server", { languageId });
 }
 
+export function restartLanguageServer(languageId: string): Promise<void> {
+  return invoke<void>("restart_language_server", { languageId });
+}
+
 export function languageServerStatuses(): Promise<LanguageServerStatus[]> {
   return invoke<LanguageServerStatus[]>("language_server_statuses");
 }
@@ -166,4 +177,92 @@ export function uninstallLsp(
 
 export function recoverInstalledLsp(): Promise<void> {
   return invoke<void>("lsp_recover_installed");
+}
+
+export function requestLspRename(
+  languageId: string,
+  uri: string,
+  position: LspPosition,
+  newName: string,
+): Promise<AppliedDocumentEdits> {
+  return invoke<AppliedDocumentEdits>("request_lsp_rename", {
+    languageId,
+    uri,
+    position,
+    newName,
+  });
+}
+
+export function requestLspFormatting(
+  languageId: string,
+  uri: string,
+  tabSize: number,
+  insertSpaces: boolean,
+): Promise<AppliedDocumentEdits> {
+  return invoke<AppliedDocumentEdits>("request_lsp_formatting", {
+    languageId,
+    uri,
+    tabSize,
+    insertSpaces,
+  });
+}
+
+export function pullLspDiagnostics(
+  languageId: string,
+  uri: string,
+): Promise<LspFeatureResponse<LspDiagnosticResult>> {
+  return invoke<LspFeatureResponse<LspDiagnosticResult>>("pull_lsp_diagnostics", {
+    languageId,
+    uri,
+  });
+}
+
+export function requestLspCompletion(
+  languageId: string,
+  uri: string,
+  position: LspPosition,
+): Promise<LspFeatureResponse<LspCompletionResult>> {
+  return invoke<LspFeatureResponse<LspCompletionResult>>("request_lsp_completion", {
+    languageId,
+    uri,
+    position,
+  });
+}
+
+export function requestLspHover(
+  languageId: string,
+  uri: string,
+  position: LspPosition,
+): Promise<LspFeatureResponse<LspHoverResult | null>> {
+  return invoke<LspFeatureResponse<LspHoverResult | null>>("request_lsp_hover", {
+    languageId,
+    uri,
+    position,
+  });
+}
+
+export function requestLspDefinition(
+  languageId: string,
+  uri: string,
+  position: LspPosition,
+): Promise<LspFeatureResponse<LspFilteredLocations>> {
+  return invoke<LspFeatureResponse<LspFilteredLocations>>("request_lsp_definition", {
+    languageId,
+    uri,
+    position,
+  });
+}
+
+export function requestLspReferences(
+  languageId: string,
+  uri: string,
+  position: LspPosition,
+  includeDeclaration = true,
+): Promise<LspFeatureResponse<LspFilteredLocations>> {
+  return invoke<LspFeatureResponse<LspFilteredLocations>>("request_lsp_references", {
+    languageId,
+    uri,
+    position,
+    includeDeclaration,
+  });
 }
