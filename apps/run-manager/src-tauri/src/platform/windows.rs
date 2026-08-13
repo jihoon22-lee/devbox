@@ -1,9 +1,53 @@
 use crate::lifecycle::{complete_system_shutdown, RuntimeState};
+use std::fs;
+use std::io;
+use std::os::windows::ffi::OsStrExt;
+use std::path::Path;
 use std::sync::Arc;
 use tauri::AppHandle;
+use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Storage::FileSystem::{ReplaceFileW, REPLACEFILE_WRITE_THROUGH};
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{WM_ENDSESSION, WM_NCDESTROY, WM_QUERYENDSESSION};
+
+/// Replace the manifest in one filesystem operation. `std::fs::rename` does
+/// not replace an existing destination on Windows, while `ReplaceFileW` does
+/// and preserves the crash-safe temp-file + atomic-swap contract.
+pub(crate) fn replace_file_atomic(replacement: &Path, destination: &Path) -> io::Result<()> {
+    let replacement_wide = wide_path(replacement);
+    let destination_wide = wide_path(destination);
+
+    // ReplaceFileW requires an existing destination. The first manifest is a
+    // create-only rename; if a racing writer creates the destination, retrying
+    // with ReplaceFileW below preserves the replacement contract.
+    if !destination.exists() {
+        match fs::rename(replacement, destination) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() != io::ErrorKind::AlreadyExists => return Err(error),
+            Err(_) => {}
+        }
+    }
+
+    unsafe {
+        ReplaceFileW(
+            PCWSTR::from_raw(destination_wide.as_ptr()),
+            PCWSTR::from_raw(replacement_wide.as_ptr()),
+            PCWSTR::null(),
+            REPLACEFILE_WRITE_THROUGH,
+            None,
+            None,
+        )
+    }
+    .map_err(|error| io::Error::other(error.to_string()))
+}
+
+fn wide_path(path: &Path) -> Vec<u16> {
+    path.as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
+}
 
 const SESSION_END_SUBCLASS_ID: usize = 0x4456_4258;
 
