@@ -664,7 +664,7 @@ pub fn initial_catalog() -> Vec<ServerManifest> {
                 kind: ArtifactKind::Zip,
                 url: "https://github.com/rust-lang/rust-analyzer/releases/download/2026-08-10.1/rust-analyzer-x86_64-pc-windows-msvc.zip".into(),
                 sha256: "f667620d3af202f480faf9e407374509ebddef3b8611922e463aeaa7e6985fc8".into(),
-                size_bytes: None,
+                size_bytes: Some(17_430_385),
                 allowed_redirect_hosts: vec!["release-assets.githubusercontent.com".into()],
                 archive_root: String::new(),
             },
@@ -1340,7 +1340,7 @@ mod tests {
     }
 
     #[test]
-    fn initial_catalog_has_pinned_entries_and_validates_structurally() {
+    fn initial_catalog_has_pinned_entries_and_is_install_ready() {
         let catalog = ServerCatalog::initial();
         assert_eq!(catalog.manifests.len(), 4);
         catalog.validate().unwrap();
@@ -1348,12 +1348,16 @@ mod tests {
             ServerCatalog::from_json(&catalog.to_json().unwrap()).unwrap(),
             catalog
         );
-        assert_eq!(catalog.manifests[0].artifact.sha256.len(), 64);
-        assert!(catalog
+        let rust_analyzer = catalog
             .find("rust-analyzer", "2026-08-10.1", WINDOWS_X86_64_PLATFORM)
-            .is_some());
-        assert!(catalog.manifests[0].validate_for_install().is_err());
-        assert!(catalog.manifests[1..]
+            .expect("initial catalog must include rust-analyzer");
+        assert_eq!(
+            rust_analyzer.artifact.sha256,
+            "f667620d3af202f480faf9e407374509ebddef3b8611922e463aeaa7e6985fc8"
+        );
+        assert_eq!(rust_analyzer.artifact.size_bytes, Some(17_430_385));
+        assert!(catalog
+            .manifests
             .iter()
             .all(|manifest| manifest.validate_for_install().is_ok()));
     }
@@ -1394,6 +1398,7 @@ mod tests {
     fn install_gate_requires_size_and_node_lock_but_schema_does_not_invent_them() {
         let mut manifest = valid_manifest();
         assert!(manifest.validate().is_ok());
+        manifest.artifact.size_bytes = None;
         assert!(matches!(
             manifest.validate_for_install(),
             Err(ValidationError { field, .. }) if field == "artifact.size_bytes"
