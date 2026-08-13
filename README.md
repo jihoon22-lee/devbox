@@ -39,5 +39,6 @@ https://github.com/jihoon22-lee/devbox/releases
 | [아키텍처](./docs/architecture.md) | 모노레포 구조, 레이어, 데이터 흐름 |
 | [로드맵](./docs/roadmap.md) | 진행 상황 / 계획 |
 | [프로젝트 요약](./docs/projects.md) | 앱별 상세 요약 |
+| [제품 기회 및 개선 제안](./docs/product-opportunities.md) | 기존 앱 개선, 앱 간 통합, 신규 앱 후보와 권장 실행 순서 |
 | [공통 규약](./CONVENTIONS.md) | 스택, 개발 워크플로, git 규칙 |
 | [변경 이력](./CHANGELOG.md) | 버전별 변경점 |
