@@ -1,7 +1,7 @@
 # Roadmap
 
-10개 앱을 순차적으로 완성하고, 공통 코드가 실제로 필요해지면 그때 `crates/`·`packages/`로 추출한다.
-이후 에디터(code-pad)와 예약 실행·서비스 관리자(run-manager)를 추가해 총 12개 앱이 되었다.
+12개 앱을 순차적으로 완성하고, 공통 코드가 실제로 필요해지면 그때 `crates/`·`packages/`로 추출한다.
+처음 10개 앱(port-manager~devbox-manager)을 완성한 뒤 에디터(code-pad)와 예약 실행·서비스 관리자(run-manager)를 추가했다.
 
 ## Phase 1 — Tauri 기본기 ✅
 - [x] **port-manager** — IPC, Rust 기초, netstat 파싱, 포트/프로세스 관리

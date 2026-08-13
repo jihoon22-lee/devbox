@@ -19,27 +19,24 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 ├──────────────────────────────┤
 │ packages/*  React 공용       │  @devbox/ui, types, utils, config
 ├──────────────────────────────┤
-│ crates/*    Rust 공용        │  process, wsl, database, filesystem,
-│                              │  search, activity
+│ crates/*    Rust 공용        │  filesystem, markdown, process (추출 완료)
+│                              │  wsl, database, search, activity (후보)
 ├──────────────────────────────┤
 │ 공통 인프라: Cargo workspace, │
 │ pnpm workspace, git 모노레포   │
 └──────────────────────────────┘
 ```
 
-## 크레이트 의존 관계 (후보)
+## 크레이트 의존 관계 (추출 완료/후보)
 
 ```
-                     process ──┬─ port-manager
-                     wsl ──┬───┴─ wsl-dashboard
-    crates/process ◄───────┤
-        ▲                   ├─ activity-timeline
-        │                   └─ life-log
-        │
-  database ◄── activity-timeline, everything-plus, knowledge-base
- filesystem ◄── everything-plus, knowledge-base, life-log
-    search ◄── everything-plus, knowledge-base
-  activity ◄── activity-timeline, life-log
+  crates/filesystem ◄── everything-plus, code-pad
+  crates/markdown   ◄── knowledge-base, code-pad
+  crates/process    ◄── port-manager, run-manager
+           wsl      ◄── wsl-dashboard, wsl-desktop, life-log (후보)
+       database     ◄── activity-timeline, everything-plus, ... (후보)
+        search      ◄── everything-plus, knowledge-base (후보)
+      activity      ◄── activity-timeline, life-log (후보)
 ```
 
 ## 앱별 데이터 흐름
@@ -52,11 +49,13 @@ everything-plus:  indexer/watcher → filesystem crate → search crate(FTS5) �
 knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror)
 api-playground:   React → commands → reqwest → HTTP
 life-log:         React → commands → readers(타 앱 DB) → 집계 → React
+code-pad:         React(CodeMirror) → commands → LSP stdio 서버, filesystem/markdown crate → React
+run-manager:      React → commands → scheduler → platform 실행 어댑터(Windows Job Object/WSL) → SQLite
 ```
 
 ## 통합 앱 (Workbench)
 
-10개 앱 완성 후 `apps/workbench`를 추가한다. 기존 `crates/`·`packages/`를 재사용하므로
-통합은 "새 앱 하나 + 메뉴 구성" 수준으로 끝난다. 결과물은 **독립 앱 10개 + 통합 앱 1개**.
+12개 앱 완성 후 `apps/workbench`를 추가한다. 기존 `crates/`·`packages/`를 재사용하므로
+통합은 "새 앱 하나 + 메뉴 구성" 수준으로 끝난다. 결과물은 **독립 앱 12개 + 통합 앱 1개**.
 
 상세 규약: [CONVENTIONS.md](../CONVENTIONS.md)

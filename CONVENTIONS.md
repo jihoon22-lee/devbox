@@ -1,6 +1,6 @@
-# devbox — Tauri 10개 데스크톱 앱 모노레포 공통 규약
+# devbox — Tauri 12개 데스크톱 앱 모노레포 공통 규약
 
-10개 앱(port-manager, wsl-dashboard, developer-toolbox, activity-timeline, everything-plus, knowledge-base, api-playground, life-log, wsl-desktop, devbox-manager)을 하나의 저장소에서 관리하되,
+12개 앱(port-manager, wsl-dashboard, developer-toolbox, activity-timeline, everything-plus, knowledge-base, api-playground, life-log, wsl-desktop, devbox-manager, code-pad, run-manager)을 하나의 저장소에서 관리하되,
 각각은 **독립적으로 실행되고 독립적으로 .exe가 만들어지는 Tauri 앱**이다. 소스 저장소와 공통 코드만 공유한다.
 
 ```
@@ -50,7 +50,9 @@ devbox/
 │  ├─ api-playground/      # REST API 테스트
 │  ├─ life-log/            # 자동 일일 로그 (집계 허브)
 │  ├─ wsl-desktop/         # 임베디드 WSL 터미널
-│  └─ devbox-manager/      # devbox 앱 설치·업데이트·실행
+│  ├─ devbox-manager/      # devbox 앱 설치·업데이트·실행
+│  ├─ code-pad/            # CodeMirror 6 경량 코드 에디터 (LSP)
+│  └─ run-manager/         # 예약 실행·서비스 관리
 │
 ├─ packages/               # React 공용 (필요 시)
 │  ├─ ui/                  # Button, Card, DataTable, Sidebar, ...
@@ -58,13 +60,14 @@ devbox/
 │  ├─ utils/               # 포맷터 등
 │  └─ config/              # 공통 설정/상수
 │
-├─ crates/                 # Rust 공용 (필요 시)
-│  ├─ process/             # 프로세스/포트 조회·kill  (port-manager, wsl-dashboard, activity-timeline)
-│  ├─ wsl/                 # WSL 명령 실행/파싱        (wsl-dashboard, life-log)
-│  ├─ database/            # SQLite 마이그레이션 헬퍼   (activity-timeline, everything-plus, ...)
-│  ├─ filesystem/          # 파일 walk/watcher          (everything-plus, knowledge-base, life-log)
-│  ├─ search/              # FTS5 검색                 (everything-plus, knowledge-base)
-│  └─ activity/            # 세션 집계                 (activity-timeline, life-log)
+├─ crates/                 # Rust 공용 (추출 완료/필요 시)
+│  ├─ filesystem/          # 파일 walk/검색 순회  (everything-plus, code-pad)
+│  ├─ markdown/            # 마크다운 렌더          (knowledge-base, code-pad)
+│  ├─ process/             # 프로세스/포트 조회·kill  (port-manager, run-manager)
+│  ├─ wsl/                 # WSL 명령 실행/파싱        (wsl-dashboard, life-log) [필요 시]
+│  ├─ database/            # SQLite 마이그레이션 헬퍼   (activity-timeline, everything-plus, ...) [필요 시]
+│  ├─ search/              # FTS5 검색                 (everything-plus, knowledge-base) [필요 시]
+│  └─ activity/            # 세션 집계                 (activity-timeline, life-log) [필요 시]
 │
 ├─ docs/
 │  ├─ architecture.md
@@ -80,7 +83,7 @@ devbox/
 
 - 앱 이름은 **kebab-case** (`port-manager`) — 디렉터리·git 브랜치·crate 의존에 사용
 - 앱별 Rust 크레이트 이름은 `_` → `-` 변환 후 사용: `port-manager` → `port_manager`
-- 각 앱의 산출물: `PortManager.exe`, `WSLDashboard.exe`, `DevToolbox.exe`, `ActivityTimeline.exe`, `EverythingPlus.exe`, `Knowledge.exe`, `ApiPlayground.exe`, `LifeLog.exe`, `WSLDesktop.exe`, `DevboxManager.exe`
+- 각 앱의 산출물: `PortManager.exe`, `WSLDashboard.exe`, `DevToolbox.exe`, `ActivityTimeline.exe`, `EverythingPlus.exe`, `Knowledge.exe`, `ApiPlayground.exe`, `LifeLog.exe`, `WSLDesktop.exe`, `DevboxManager.exe`, `CodePad.exe`, `RunManager.exe`
 
 ## 3. 공통 기술 스택
 
@@ -192,17 +195,18 @@ pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnp
 3. 두 번째 앱에서 중복 코드 발생 시 → `crates/`·`packages/`로 추출
 4. 최종: Windows에서 `pnpm tauri dev/build`
 
-## 7. 개발 순서 (10개 전체)
+## 7. 개발 순서 (12개 전체)
 ```
 Phase 1: port-manager → developer-toolbox     # Tauri 기본기 (IPC, Rust 기초, 설정)
 Phase 2: wsl-dashboard → api-playground        # 자식 프로세스, async, HTTP, 상태관리
 Phase 3: activity-timeline → everything-plus   # SQLite, 백그라운드, watcher, 검색
 Phase 4: knowledge-base → life-log             # 개인 데이터 플랫폼 통합
 추가:    wsl-desktop, devbox-manager           # PTY 터미널, 앱 설치·업데이트
+추가:    code-pad, run-manager                 # 경량 코드 에디터(LSP), 예약 실행·서비스
 ```
-- 10개 앱 모두 구현 완료. 진행 상황은 [docs/roadmap.md](./docs/roadmap.md) 참조
+- 12개 앱 모두 구현 완료. 진행 상황은 [docs/roadmap.md](./docs/roadmap.md) 참조
 - 공통 코드 발견 시점에 `packages/ui`, `crates/process`, `crates/wsl` 등을 하나씩 추출
-- 각 프로젝트 상세는 `apps/<AppName>/PLAN.md` 참조 (wsl-desktop·devbox-manager는 `README.md`)
+- 각 프로젝트 상세는 `apps/<AppName>/PLAN.md` 참조 (wsl-desktop·devbox-manager·code-pad·run-manager는 `README.md` 또는 설계 문서)
 
 ## 8. Git 규약 (모노레포: `devbox/` 루트 1개 저장소)
 
@@ -235,6 +239,6 @@ docs/<scope>           문서 작업   예: docs/roadmap
 - 완료 정의(`cargo test`/`cargo check`/`pnpm build` 통과)를 커밋 전에 확인
 
 ## 9. 통합 전략 (Workbench)
-- 10개 앱을 어느 정도 완성한 뒤, `apps/workbench`를 추가해 통합 대시보드로 묶는다
+- 12개 앱을 어느 정도 완성한 뒤, `apps/workbench`를 추가해 통합 대시보드로 묶는다
 - workbench는 기존 `crates/`·`packages/`를 그대로 재사용 → 공통화가 통합을 쉽게 만든다
-- 결과적으로 "독립 앱 10개 + 통합 앱 1개" 구조
+- 결과적으로 "독립 앱 12개 + 통합 앱 1개" 구조
