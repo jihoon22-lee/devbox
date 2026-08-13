@@ -1,6 +1,6 @@
 # 개발자 가이드
 
-devbox는 Tauri 10개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소다.
+devbox는 Tauri 12개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소다.
 
 - **pnpm workspace** — `apps/*`, `packages/*`
 - **Cargo workspace** — 앱(src-tauri) + 공용 crates
@@ -20,8 +20,10 @@ apps/        독립 Tauri 앱 (각각 독립 .exe)
   life-log            자동 일일 로그
   wsl-desktop         임베디드 WSL 터미널
   devbox-manager      devbox 앱 설치·업데이트·실행
+  code-pad            CodeMirror 6 경량 코드 에디터 (LSP)
+  run-manager         예약 실행·서비스 관리
 packages/    공용 React 패키지 (필요 시)
-crates/      공용 Rust 크레이트 (필요 시)
+crates/      공용 Rust 크레이트 (filesystem·markdown·process 추출 완료)
 docs/        architecture / roadmap / projects
 ```
 
