@@ -9,10 +9,11 @@ import {
   updateJob,
 } from "./api";
 import JobEditor from "./components/JobEditor";
+import RunHistory from "./components/RunHistory";
 import type { Job, JobInput, RuntimeStatus } from "./types";
 import "./App.css";
 
-type Screen = "jobs" | "editor";
+type Screen = "jobs" | "editor" | "history";
 
 function targetLabel(job: Job): string {
   return job.targetKind === "wsl" ? `WSL · ${job.targetDistro ?? "배포판 없음"}` : "Windows";
@@ -136,7 +137,7 @@ export default function App() {
           <button className="nav-item" type="button" disabled>
             서비스 <span>Phase 2</span>
           </button>
-          <button className="nav-item" type="button" disabled>
+          <button className={`nav-item ${screen === "history" ? "active" : ""}`} type="button" onClick={() => setScreen("history")}>
             실행 기록
           </button>
         </nav>
@@ -150,7 +151,7 @@ export default function App() {
         <header>
           <div>
             <span className="eyebrow">LOCAL SCHEDULER</span>
-            <h2>{screen === "editor" ? (editingJob ? "작업 편집" : "새 작업") : "작업"}</h2>
+            <h2>{screen === "editor" ? (editingJob ? "작업 편집" : "새 작업") : screen === "history" ? "실행 기록" : "작업"}</h2>
           </div>
           <span className={status?.schedulerRunning ? "status ready" : "status waiting"}>
             {status?.schedulerRunning ? "스케줄러 준비됨" : "스케줄러 시작 중"}
@@ -161,6 +162,8 @@ export default function App() {
 
         {screen === "editor" ? (
           <JobEditor job={editingJob} onSave={handleSave} onCancel={closeEditor} />
+        ) : screen === "history" ? (
+          <RunHistory jobs={jobs.filter((job) => job.kind === "job")} />
         ) : (
           <section className="jobs-section" aria-labelledby="jobs-title">
             <div className="section-toolbar">

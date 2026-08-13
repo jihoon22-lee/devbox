@@ -7,6 +7,16 @@ export interface RuntimeStatus {
 
 export type TargetKind = "windows" | "wsl";
 export type OverlapPolicy = "skip" | "queue" | "kill-previous";
+export type RunStatus =
+  | "queued"
+  | "starting"
+  | "running"
+  | "stopping"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "skipped";
+export type LogStream = "stdout" | "stderr";
 
 export interface Job {
   id: string;
@@ -42,6 +52,37 @@ export interface JobInput {
   enabled: boolean;
   overlapPolicy: OverlapPolicy;
   catchUp: boolean;
+}
+
+export interface Run {
+  id: string;
+  jobId: string;
+  scheduledAt: number | null;
+  occurrenceWallKey: string | null;
+  queueSequence: number;
+  blockedByRunId: string | null;
+  startedAt: number | null;
+  endedAt: number | null;
+  exitCode: number | null;
+  status: RunStatus;
+  ownerInstanceId: string | null;
+  attemptToken: string | null;
+  errorMessage: string | null;
+  targetPid: number | null;
+  targetProcessCreatedAt: number | null;
+  targetPgid: number | null;
+  targetSid: number | null;
+  processMarker: string | null;
+  logDir: string | null;
+  logsDeletedAt: number | null;
+  createdAt: number;
+}
+
+export interface TailResponse {
+  data: number[];
+  retainedStartOffset: string;
+  nextCursor: string;
+  truncated: boolean;
 }
 
 export interface EnvironmentDraft {

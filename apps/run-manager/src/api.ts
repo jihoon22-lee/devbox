@@ -1,6 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./lib/isTauri";
-import type { CronPreviewItem, Job, JobInput, RuntimeStatus } from "./types";
+import type {
+  CronPreviewItem,
+  Job,
+  JobInput,
+  LogStream,
+  Run,
+  RuntimeStatus,
+  TailResponse,
+} from "./types";
 
 let mockJobs: Job[] = [];
 let mockSequence = 0;
@@ -97,6 +105,38 @@ export function deleteJob(id: string): Promise<boolean> {
 export function previewCron(cronExpr: string): Promise<CronPreviewItem[]> {
   if (!isTauri()) return Promise.resolve(mockPreview(cronExpr));
   return invoke<CronPreviewItem[]>("preview_cron", { input: { cronExpr } });
+}
+
+export function listRuns(
+  jobId: string,
+  options: { limit?: number; startAt?: number | null; endAt?: number | null } = {},
+): Promise<Run[]> {
+  if (!isTauri()) return Promise.resolve([]);
+  return invoke<Run[]>("list_runs", {
+    jobId,
+    limit: options.limit ?? 50,
+    startAt: options.startAt ?? null,
+    endAt: options.endAt ?? null,
+  });
+}
+
+export function tailLog(
+  runId: string,
+  stream: LogStream,
+  cursor: string | null,
+  maxBytes = 256 * 1024,
+): Promise<TailResponse> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      data: [],
+      retainedStartOffset: cursor ?? "0",
+      nextCursor: cursor ?? "0",
+      truncated: false,
+    });
+  }
+  return invoke<TailResponse>("tail_log", {
+    input: { runId, stream, cursor, maxBytes },
+  });
 }
 
 /**
