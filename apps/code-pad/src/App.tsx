@@ -17,6 +17,7 @@ import PreviewPane from "./components/PreviewPane";
 import QuickOpen from "./components/QuickOpen";
 import StatusBar from "./components/StatusBar";
 import ViewPane from "./components/ViewPane";
+import LspControlPanel from "./components/LspControlPanel";
 import type { BookmarkCommands } from "./editor/bookmarks";
 import { normalizeBookmarkLines } from "./editor/bookmarks";
 import {
@@ -118,6 +119,7 @@ export default function App() {
     docId: DocId;
     encoding: Encoding;
   } | null>(null);
+  const [lspPanelOpen, setLspPanelOpen] = useState(false);
 
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -833,6 +835,14 @@ export default function App() {
             프리뷰
           </button>
         )}
+        <button
+          type="button"
+          className={`toolbar-button ${lspPanelOpen ? "selected" : ""}`}
+          onClick={() => setLspPanelOpen(true)}
+          disabled={!hydrated}
+        >
+          언어 서버
+        </button>
         <span className="toolbar-hint">Ctrl/⌘+P 빠른 열기 · Ctrl/⌘+H 바꾸기 · Ctrl/⌘+S 저장</span>
       </div>
 
@@ -967,6 +977,12 @@ export default function App() {
           workspaceFolder={state.workspaceFolder}
           onOpen={handleOpenFromQuickOpen}
           onClose={() => setQuickOpen(false)}
+        />
+      )}
+      {lspPanelOpen && (
+        <LspControlPanel
+          workspaceRoot={state.workspaceFolder}
+          onClose={() => setLspPanelOpen(false)}
         />
       )}
     </main>

@@ -135,6 +135,85 @@ export interface LoadedSession {
   persistAllowed: boolean;
 }
 
+export type LspClientStatus = "starting" | "ready" | "degraded" | "stopped" | "crashed";
+export type LspPositionEncoding = "utf-16" | "utf-8";
+
+export interface LspCapabilities {
+  positionEncoding: LspPositionEncoding;
+  legacyPositionEncoding: boolean;
+  syncKind: "none" | "full" | "incremental" | null;
+  openClose: boolean;
+  save: boolean;
+  completion: boolean;
+  hover: boolean;
+  definition: boolean;
+  references: boolean;
+  rename: boolean;
+  formatting: boolean;
+  diagnostics: boolean;
+}
+
+export interface LanguageServerStatus {
+  languageId: string;
+  status: LspClientStatus;
+  processState: string;
+  serverInfo: { name: string; version: string | null } | null;
+  capabilities: LspCapabilities;
+  documentCount: number;
+  stderr: string;
+  stderrTruncated: boolean;
+  stderrDroppedBytes: number;
+}
+
+export type LspServerRef =
+  | {
+      kind: "managed";
+      manifest_id: string;
+      version: string;
+      installed_path?: string | null;
+    }
+  | {
+      kind: "local";
+      installed_path: string;
+      executable?: string | null;
+      args: string[];
+    }
+  | {
+      kind: "custom";
+      executable: string;
+      args: string[];
+    };
+
+export interface LspCustomServer {
+  language_ids: string[];
+  executable: string;
+  args: string[];
+  runtime: {
+    kind: "native" | "node";
+    executable: string;
+    min_version?: string | null;
+  };
+  source: string;
+  license: string;
+  version: string;
+}
+
+/** Persisted schema intentionally uses snake_case and is passed through unchanged. */
+export interface LspConfig {
+  version: 1;
+  enabled: boolean;
+  workspace_root: string;
+  server_by_language: Record<string, LspServerRef>;
+  custom_servers: LspCustomServer[];
+  update_policy: "manual";
+}
+
+export interface LoadedLspConfig {
+  config: LspConfig;
+  persist_allowed: boolean;
+  error: string | null;
+}
+
 export function displayNameForPath(path: string): string {
   const normalized = path.split("\\").join("/");
   return normalized.split("/").pop() || path;
