@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   languageServerStatuses,
+  lspCatalog,
+  lspInstalled,
   loadLspConfig,
   saveLspConfig,
   startLanguageServer,
@@ -11,6 +13,8 @@ import type {
   LoadedLspConfig,
   LspConfig,
   LspServerRef,
+  ManagedInstallStatus,
+  ManagedServerManifest,
 } from "../types";
 import ManagedInstallerPanel from "./ManagedInstallerPanel";
 
@@ -34,6 +38,12 @@ const CAPABILITY_LABELS: Array<[keyof LanguageServerStatus["capabilities"], stri
   ["formatting", "포맷"],
 ];
 
+const LIVE_SERVER_STATUSES = new Set<LanguageServerStatus["status"]>([
+  "starting",
+  "ready",
+  "degraded",
+]);
+
 function emptyConfig(workspaceRoot: string | null): LspConfig {
   return {
     version: 1,
@@ -56,7 +66,15 @@ function editableCommand(server: LspServerRef | undefined): { executable: string
   if (server.kind === "custom") {
     return { executable: server.executable, args: server.args.join("\n") };
   }
-  return { executable: server.installed_path ?? "", args: "" };
+  return { executable: "", args: "" };
+}
+
+function managedKey(manifest: Pick<ManagedServerManifest, "id" | "version" | "platform">): string {
+  return `${manifest.id}\u001f${manifest.version}\u001f${manifest.platform}`;
+}
+
+function managedSelectionKey(manifest: Pick<ManagedServerManifest, "id" | "version">): string {
+  return `${manifest.id}\u001f${manifest.version}`;
 }
 
 function parseArgs(value: string): string[] {
@@ -85,10 +103,14 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
   const [loaded, setLoaded] = useState<LoadedLspConfig | null>(null);
   const [config, setConfig] = useState<LspConfig>(() => emptyConfig(workspaceRoot));
   const [statuses, setStatuses] = useState<LanguageServerStatus[]>([]);
+  const [managedCatalog, setManagedCatalog] = useState<ManagedServerManifest[]>([]);
+  const [managedStatuses, setManagedStatuses] = useState<ManagedInstallStatus[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState("rust");
-  const [serverKind, setServerKind] = useState<"local" | "custom">("local");
+  const [serverKind, setServerKind] = useState<"managed" | "local" | "custom">("local");
   const [executable, setExecutable] = useState("");
   const [args, setArgs] = useState("");
+  const [managedSelection, setManagedSelection] = useState("");
+  const [nodePath, setNodePath] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -96,8 +118,29 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
   const busyRef = useRef(false);
 
   const runningLanguages = useMemo(
-    () => new Set(statuses.map((status) => status.languageId)),
+    () => new Set(
+      statuses
+        .filter((status) => LIVE_SERVER_STATUSES.has(status.status))
+        .map((status) => status.languageId),
+    ),
     [statuses],
+  );
+
+  const managedOptions = useMemo(() => managedCatalog.filter((manifest) => {
+    if (!manifest.languages.some((language) => language.language_id === selectedLanguage)) {
+      return false;
+    }
+    return managedStatuses.some((status) => (
+      status.manifest_id === manifest.id
+      && status.version === manifest.version
+      && status.platform === manifest.platform
+      && status.state === "installed"
+      && status.installed !== null
+    ));
+  }), [managedCatalog, managedStatuses, selectedLanguage]);
+
+  const selectedManagedManifest = managedOptions.find(
+    (manifest) => managedSelectionKey(manifest) === managedSelection,
   );
 
   const refreshStatuses = async () => {
@@ -125,6 +168,16 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
       .catch((cause) => {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
       });
+    void Promise.all([lspCatalog(), lspInstalled()])
+      .then(([catalog, installed]) => {
+        if (cancelled) return;
+        setManagedCatalog(catalog);
+        setManagedStatuses(installed);
+      })
+      .catch(() => {
+        // Managed catalog availability must not prevent local/custom server
+        // configuration from remaining usable.
+      });
     const timer = window.setInterval(() => void refreshStatuses(), 2_000);
     return () => {
       cancelled = true;
@@ -137,11 +190,22 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
   useEffect(() => {
     const command = editableCommand(config.server_by_language[selectedLanguage]);
     const selected = config.server_by_language[selectedLanguage];
-    setServerKind(selected?.kind === "custom" ? "custom" : "local");
+    setServerKind(selected?.kind ?? "local");
     setExecutable(command.executable);
     setArgs(command.args);
+    setManagedSelection(selected?.kind === "managed"
+      ? `${selected.manifest_id}\u001f${selected.version}`
+      : "");
+    setNodePath(selected?.kind === "managed" ? selected.node_path ?? "" : "");
     setFormDirty(false);
   }, [config.server_by_language, selectedLanguage]);
+
+  useEffect(() => {
+    if (serverKind !== "managed" || managedOptions.length === 0) return;
+    if (!managedOptions.some((manifest) => managedSelectionKey(manifest) === managedSelection)) {
+      setManagedSelection(managedSelectionKey(managedOptions[0]));
+    }
+  }, [managedOptions, managedSelection, serverKind]);
 
   const run = async (operation: () => Promise<void>) => {
     if (busyRef.current) return;
@@ -159,6 +223,29 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
   };
 
   const updateServer = () => {
+    if (serverKind === "managed") {
+      const selected = managedOptions.find((manifest) => managedSelectionKey(manifest) === managedSelection);
+      if (!selected) {
+        setError("현재 언어에 대해 검증된 설치 관리형 서버를 선택하세요.");
+        return;
+      }
+      const next: LspServerRef = {
+        kind: "managed",
+        manifest_id: selected.id,
+        version: selected.version,
+        ...(selected.runtime.kind === "node" && nodePath.trim()
+          ? { node_path: nodePath.trim() }
+          : {}),
+      };
+      setConfig((current) => ({
+        ...current,
+        server_by_language: { ...current.server_by_language, [selectedLanguage]: next },
+      }));
+      setHasUnsavedChanges(true);
+      setFormDirty(false);
+      setError(null);
+      return;
+    }
     const command = executable.trim();
     if (!command) {
       setError("실행 파일의 절대 경로를 입력하세요.");
@@ -218,7 +305,6 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
             <p className="eyebrow">LSP 3.17 · LOCAL STDIO</p>
             <h2>언어 서버</h2>
           </div>
-          <button type="button" className="toolbar-button" onClick={onClose}>닫기</button>
         </header>
 
         {error && <p className="lsp-error" role="alert">{error}</p>}
@@ -259,27 +345,71 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
           <label>
             서버 종류
             <select disabled={!loaded} value={serverKind} onChange={(event) => {
-              setServerKind(event.currentTarget.value as "local" | "custom");
+              setServerKind(event.currentTarget.value as "managed" | "local" | "custom");
               setFormDirty(true);
             }}>
+              <option value="managed" disabled={managedOptions.length === 0}>설치된 관리형 서버</option>
               <option value="local">설치된 로컬 서버</option>
               <option value="custom">사용자 정의 stdio 서버</option>
             </select>
           </label>
-          <label className="lsp-wide-field">
-            실행 파일 절대 경로
-            <input disabled={!loaded} value={executable} onChange={(event) => {
-              setExecutable(event.currentTarget.value);
-              setFormDirty(true);
-            }} placeholder="C:\\Tools\\rust-analyzer.exe" />
-          </label>
-          <label className="lsp-wide-field">
-            인자 (한 줄에 하나, 셸 문법 사용 안 함)
-            <textarea disabled={!loaded} value={args} onChange={(event) => {
-              setArgs(event.currentTarget.value);
-              setFormDirty(true);
-            }} placeholder={"--stdio\n--log-level=info"} rows={3} />
-          </label>
+          {serverKind === "managed" ? (
+            <>
+              <label className="lsp-wide-field">
+                관리형 서버 버전
+                <select
+                  disabled={!loaded || managedOptions.length === 0}
+                  value={managedSelection}
+                  onChange={(event) => {
+                    setManagedSelection(event.currentTarget.value);
+                    setFormDirty(true);
+                  }}
+                >
+                  {managedOptions.map((manifest) => (
+                    <option key={managedKey(manifest)} value={managedSelectionKey(manifest)}>
+                      {manifest.id}@{manifest.version} · {manifest.platform}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedManagedManifest?.runtime.kind === "node" && (
+                <label className="lsp-wide-field">
+                  Node 실행 파일 경로 (선택)
+                  <input
+                    disabled={!loaded}
+                    value={nodePath}
+                    onChange={(event) => {
+                      setNodePath(event.currentTarget.value);
+                      setFormDirty(true);
+                    }}
+                    placeholder="비워 두면 허용된 PATH에서 node(.exe)를 찾습니다"
+                  />
+                </label>
+              )}
+              {!selectedManagedManifest && (
+                <p className="lsp-warning lsp-wide-field">
+                  이 언어에 사용할 수 있는 검증된 설치 관리형 서버가 없습니다. 먼저 명시적으로 설치하세요.
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <label className="lsp-wide-field">
+                실행 파일 절대 경로
+                <input disabled={!loaded} value={executable} onChange={(event) => {
+                  setExecutable(event.currentTarget.value);
+                  setFormDirty(true);
+                }} placeholder="C:\\Tools\\rust-analyzer.exe" />
+              </label>
+              <label className="lsp-wide-field">
+                인자 (한 줄에 하나, 셸 문법 사용 안 함)
+                <textarea disabled={!loaded} value={args} onChange={(event) => {
+                  setArgs(event.currentTarget.value);
+                  setFormDirty(true);
+                }} placeholder={"--stdio\n--log-level=info"} rows={3} />
+              </label>
+            </>
+          )}
         </div>
         <div className="lsp-config-actions">
           <button type="button" className="toolbar-button" disabled={!loaded} onClick={removeServer}>이 언어 설정 제거</button>
@@ -328,10 +458,17 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
           })}
         </section>
 
-        <ManagedInstallerPanel onError={setError} />
+        <ManagedInstallerPanel
+          onError={setError}
+          onChanged={(nextCatalog, nextStatuses) => {
+            setManagedCatalog(nextCatalog);
+            setManagedStatuses(nextStatuses);
+          }}
+        />
 
         <footer className="lsp-panel-footer">
           <span>{formDirty ? "먼저 이 언어 설정을 적용하세요." : hasUnsavedChanges ? "변경 사항을 저장해야 서버를 시작할 수 있습니다." : "설정을 저장하면 실행 중인 서버는 안전하게 종료됩니다."}</span>
+          <button type="button" className="toolbar-button" onClick={onClose}>닫기</button>
           <button type="button" className="toolbar-button selected" disabled={busy || !loaded || formDirty} onClick={handleSave}>
             설정 저장
           </button>

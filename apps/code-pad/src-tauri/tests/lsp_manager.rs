@@ -1,6 +1,7 @@
 use code_pad_lib::lsp::{
-    save_to_app_local_data_dir, LspConfig, LspManager, LspManagerError, LspPosition, ServerRef,
-    LSP_CONFIG_SCHEMA_VERSION,
+    initial_catalog, save_to_app_local_data_dir, InstalledServer, InstalledServerIndex, LspConfig,
+    LspManager, LspManagerError, LspPosition, ServerRef, LSP_CONFIG_SCHEMA_VERSION,
+    LSP_INSTALLED_SCHEMA_VERSION,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -290,4 +291,79 @@ fn corrupt_config_requires_explicit_recovery_before_replacement() {
     assert!(manager.save_config(&LspConfig::empty(), false).is_err());
     manager.save_config(&LspConfig::empty(), true).unwrap();
     assert!(manager.load_config().unwrap().persist_allowed);
+}
+
+#[tokio::test]
+async fn managed_start_revalidates_index_and_starts_only_the_reviewed_native_command() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let workspace_root = workspace.path().canonicalize().unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    let manager = LspManager::new(app_data.path(), "0.3.0");
+    let manifest = initial_catalog()
+        .into_iter()
+        .find(|manifest| manifest.id == "rust-analyzer")
+        .unwrap();
+    let destination = app_data
+        .path()
+        .join("lsp/servers")
+        .join(&manifest.id)
+        .join(&manifest.version)
+        .join(&manifest.platform);
+    fs::create_dir_all(&destination).unwrap();
+    let command_path = destination.join(&manifest.command.executable);
+    fs::copy(&executable, &command_path).unwrap();
+    let installed_path = destination.canonicalize().unwrap();
+    let installed = InstalledServer {
+        manifest_id: manifest.id.clone(),
+        version: manifest.version.clone(),
+        platform: manifest.platform.clone(),
+        sha256: manifest.artifact.sha256.clone(),
+        source_url: manifest.source_url.clone(),
+        license: manifest.license.clone(),
+        artifact_url: manifest.artifact.url.clone(),
+        installed_path: installed_path.to_string_lossy().into_owned(),
+        entrypoint: manifest.files.entrypoint.clone(),
+        runtime: manifest.runtime.clone(),
+        installed_at: "2026-08-13T00:00:00Z".into(),
+        package_lock_sha256: manifest.files.package_lock_sha256.clone(),
+    };
+    let index_path = app_data.path().join("lsp/installed.json");
+    let write_index = |server: InstalledServer| {
+        let index = InstalledServerIndex {
+            version: LSP_INSTALLED_SCHEMA_VERSION,
+            servers: vec![server],
+        };
+        fs::write(&index_path, index.to_json().unwrap()).unwrap();
+    };
+    write_index(installed.clone());
+    save_to_app_local_data_dir(
+        app_data.path(),
+        &LspConfig {
+            version: LSP_CONFIG_SCHEMA_VERSION,
+            enabled: true,
+            workspace_root: workspace_root.to_string_lossy().into_owned(),
+            server_by_language: BTreeMap::from([(
+                "rust".into(),
+                ServerRef::managed(&manifest.id, &manifest.version),
+            )]),
+            custom_servers: Vec::new(),
+            update_policy: Default::default(),
+        },
+    )
+    .unwrap();
+
+    manager.start("rust").await.unwrap();
+    assert_eq!(manager.statuses().await[0].language_id, "rust");
+    manager.stop("rust").await.unwrap();
+
+    let mut tampered_path = installed.clone();
+    tampered_path.installed_path = workspace_root.to_string_lossy().into_owned();
+    write_index(tampered_path);
+    assert!(manager.start("rust").await.is_err());
+
+    let mut tampered_entrypoint = installed;
+    tampered_entrypoint.entrypoint = "missing.exe".into();
+    write_index(tampered_entrypoint);
+    assert!(manager.start("rust").await.is_err());
 }

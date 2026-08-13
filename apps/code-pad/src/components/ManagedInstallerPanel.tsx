@@ -173,9 +173,13 @@ function ManagedInstallCard({
 
 interface Props {
   onError?: (message: string) => void;
+  onChanged?: (
+    catalog: ManagedServerManifest[],
+    statuses: ManagedInstallStatus[],
+  ) => void;
 }
 
-export default function ManagedInstallerPanel({ onError }: Props) {
+export default function ManagedInstallerPanel({ onError, onChanged }: Props) {
   const [catalog, setCatalog] = useState<ManagedServerManifest[]>([]);
   const [statuses, setStatuses] = useState<ManagedInstallStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,7 +210,9 @@ export default function ManagedInstallerPanel({ onError }: Props) {
     try {
       const nextCatalog = await lspCatalog();
       setCatalog(nextCatalog);
-      setStatuses(await lspInstalled());
+      const nextStatuses = await lspInstalled();
+      setStatuses(nextStatuses);
+      onChanged?.(nextCatalog, nextStatuses);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       setError(message);

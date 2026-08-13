@@ -7,7 +7,7 @@
 use crate::commands::session::atomic_write;
 use crate::lsp::catalog::{
     initial_catalog, ArtifactKind, InstalledServer, InstalledServerIndex, RuntimeSpec,
-    ServerManifest,
+    ServerManifest, WINDOWS_X86_64_PLATFORM,
 };
 use crate::lsp::node_lock::{
     reviewed_node_lock, NodeDependencyLock, NodeLockError, NodePackageLock,
@@ -72,6 +72,15 @@ impl InstallLimits {
 pub struct InstallResult {
     pub server: InstalledServer,
     pub already_installed: bool,
+}
+
+/// The only managed-server data that the process-launch boundary receives.
+/// The path is derived from the private installed index and the reviewed
+/// catalog; it is never accepted from the UI or persisted in `ServerRef`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManagedInstallResolution {
+    pub manifest: ServerManifest,
+    pub installed_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -302,6 +311,13 @@ impl ManagedInstaller {
         &self.lsp_root
     }
 
+    /// Return the platform key supported by the current reviewed catalog.
+    /// Platform is intentionally derived inside the native process rather
+    /// than persisted in a UI-selected `ServerRef`.
+    pub const fn current_platform() -> &'static str {
+        WINDOWS_X86_64_PLATFORM
+    }
+
     /// Resolve an install request against the reviewed catalog. The caller
     /// supplies only exact lookup keys; the manifest, URL, digest, and all
     /// other install facts always come from this process-owned catalog.
@@ -322,6 +338,40 @@ impl ManagedInstaller {
                 version: version.to_owned(),
                 platform: platform.to_owned(),
             })
+    }
+
+    /// Resolve one exact, currently supported managed installation for process
+    /// launch. Every start re-reads the private index and revalidates the
+    /// reviewed manifest, metadata, canonical destination, tree, and
+    /// entrypoint. No caller-supplied path, URL, or argv participates.
+    pub fn resolve_managed_install(
+        &self,
+        manifest_id: &str,
+        version: &str,
+    ) -> Result<ManagedInstallResolution, InstallError> {
+        let _operation = self
+            .operation_lock
+            .try_lock()
+            .map_err(|_| InstallError::InstallBusy)?;
+        let platform = Self::current_platform();
+        let manifest = Self::catalog_manifest(manifest_id, version, platform)?;
+        let index = self.read_index()?;
+        let server = index
+            .servers
+            .iter()
+            .find(|server| {
+                server.manifest_id == manifest_id
+                    && server.version == version
+                    && server.platform == platform
+            })
+            .ok_or(InstallError::NotInstalled)?;
+        self.validate_installed_entry(&manifest, server)?;
+        let installed_path = fs::canonicalize(self.expected_destination(&manifest)?)
+            .map_err(|_| InstallError::MetadataMismatch("managed directory is missing".into()))?;
+        Ok(ManagedInstallResolution {
+            manifest,
+            installed_path,
+        })
     }
 
     /// Install the exact reviewed catalog entry. The timestamp is generated
@@ -901,7 +951,7 @@ impl ManagedInstaller {
         let entrypoint_path = staging.join(&entrypoint);
         let metadata =
             fs::symlink_metadata(&entrypoint_path).map_err(|_| InstallError::EntrypointMissing)?;
-        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        if !metadata.file_type().is_file() || metadata_has_reparse_point(&metadata) {
             return Err(InstallError::EntrypointMissing);
         }
         let canonical_staging = fs::canonicalize(staging)
@@ -911,6 +961,7 @@ impl ManagedInstaller {
         if !canonical_entrypoint.starts_with(&canonical_staging) {
             return Err(InstallError::UnsafeArchivePath);
         }
+        validate_manifest_command_files(manifest, &canonical_staging)?;
 
         let destination = self
             .lsp_root
@@ -944,7 +995,7 @@ impl ManagedInstaller {
     fn ensure_index_path_safe(&self) -> Result<(), InstallError> {
         reject_symlink_tree(&self.lsp_root)?;
         match fs::symlink_metadata(self.index_path()) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
+            Ok(metadata) if metadata_has_reparse_point(&metadata) => {
                 Err(InstallError::UnsafeArchivePath)
             }
             Ok(metadata) if !metadata.file_type().is_file() => Err(InstallError::IndexCorrupt),
@@ -996,7 +1047,7 @@ impl ManagedInstaller {
         let servers_root = self.lsp_root.join("servers");
         let servers_metadata = fs::symlink_metadata(&servers_root)
             .map_err(|error| InstallError::io("checking managed server root", error))?;
-        if servers_metadata.file_type().is_symlink() || !servers_metadata.is_dir() {
+        if metadata_has_reparse_point(&servers_metadata) || !servers_metadata.is_dir() {
             return Err(InstallError::UnsafeArchivePath);
         }
         let canonical_lsp_root = fs::canonicalize(&self.lsp_root)
@@ -1037,7 +1088,7 @@ impl ManagedInstaller {
         // symlink cannot redirect the removal outside the immutable root.
         reject_symlink_tree(&destination)?;
         match fs::symlink_metadata(&destination) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
+            Ok(metadata) if metadata_has_reparse_point(&metadata) => {
                 return Err(InstallError::UnsafeArchivePath);
             }
             Ok(metadata) if !metadata.is_dir() => {
@@ -1091,7 +1142,7 @@ impl ManagedInstaller {
         reject_symlink_tree(&self.lsp_root)?;
         let destination_metadata = fs::symlink_metadata(&destination)
             .map_err(|_| InstallError::MetadataMismatch("managed directory is missing".into()))?;
-        if destination_metadata.file_type().is_symlink() || !destination_metadata.is_dir() {
+        if metadata_has_reparse_point(&destination_metadata) || !destination_metadata.is_dir() {
             return Err(InstallError::UnsafeArchivePath);
         }
         let canonical_destination = fs::canonicalize(&destination)
@@ -1117,7 +1168,7 @@ impl ManagedInstaller {
         let entrypoint_metadata = fs::symlink_metadata(&entrypoint_path)
             .map_err(|_| InstallError::MetadataMismatch("entrypoint is missing".into()))?;
         if !entrypoint_metadata.file_type().is_file()
-            || entrypoint_metadata.file_type().is_symlink()
+            || metadata_has_reparse_point(&entrypoint_metadata)
         {
             return Err(InstallError::MetadataMismatch(
                 "entrypoint is not a regular file".into(),
@@ -1128,6 +1179,7 @@ impl ManagedInstaller {
         if !canonical_entrypoint.starts_with(&canonical_destination) {
             return Err(InstallError::UnsafeArchivePath);
         }
+        validate_manifest_command_files(manifest, &canonical_destination)?;
         Ok(())
     }
 
@@ -1170,6 +1222,45 @@ impl ManagedInstaller {
             already_installed,
         })
     }
+}
+
+/// Every reviewed command, including language-specific overrides, must point
+/// to a regular file inside the immutable install tree. This is checked before
+/// promotion and again at every status/start boundary so a missing HTML/CSS
+/// server cannot silently fall back to another language's executable.
+fn validate_manifest_command_files(
+    manifest: &ServerManifest,
+    root: &Path,
+) -> Result<(), InstallError> {
+    let mut commands = Vec::with_capacity(manifest.languages.len() + 1);
+    commands.push(&manifest.command);
+    commands.extend(
+        manifest
+            .languages
+            .iter()
+            .filter_map(|language| language.command.as_ref()),
+    );
+    for command in commands {
+        let relative = safe_relative_path(&command.executable)?;
+        let path = root.join(relative);
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|_| InstallError::MetadataMismatch("reviewed command is missing".into()))?;
+        if metadata_has_reparse_point(&metadata) {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+        if !metadata.is_file() {
+            return Err(InstallError::MetadataMismatch(
+                "reviewed command is not a regular file".into(),
+            ));
+        }
+        reject_hard_link(&path)?;
+        let canonical = fs::canonicalize(&path)
+            .map_err(|_| InstallError::MetadataMismatch("reviewed command is missing".into()))?;
+        if !canonical.starts_with(root) {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+    }
+    Ok(())
 }
 
 fn unique_nonce() -> String {
@@ -1672,7 +1763,7 @@ fn create_checked_dir_all(staging: &Path, destination: &Path) -> Result<(), Inst
         };
         current.push(name);
         match fs::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            Ok(metadata) if metadata_has_reparse_point(&metadata) || !metadata.is_dir() => {
                 return Err(InstallError::UnsafeArchivePath);
             }
             Ok(_) => {}
@@ -1719,8 +1810,14 @@ fn reject_symlink_tree(path: &Path) -> Result<(), InstallError> {
     let mut current = PathBuf::new();
     for component in path.components() {
         current.push(component.as_os_str());
+        if matches!(component, Component::Prefix(_) | Component::RootDir) {
+            // On Windows, probing the Prefix component alone (for example
+            // C:) is not a valid filesystem path. Check only after the
+            // drive/UNC root has been joined with a normal component.
+            continue;
+        }
         match fs::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
+            Ok(metadata) if metadata_has_reparse_point(&metadata) => {
                 return Err(InstallError::UnsafeArchivePath);
             }
             Ok(_) => {}
@@ -1736,7 +1833,7 @@ fn reject_symlink_tree(path: &Path) -> Result<(), InstallError> {
 fn validate_install_tree(root: &Path) -> Result<(), InstallError> {
     let metadata = fs::symlink_metadata(root)
         .map_err(|_| InstallError::MetadataMismatch("managed directory is missing".into()))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if metadata_has_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(InstallError::UnsafeArchivePath);
     }
     let mut pending = vec![root.to_path_buf()];
@@ -1748,7 +1845,7 @@ fn validate_install_tree(root: &Path) -> Result<(), InstallError> {
                 entry.map_err(|error| InstallError::io("reading managed install entry", error))?;
             let metadata = fs::symlink_metadata(entry.path())
                 .map_err(|error| InstallError::io("checking managed install entry", error))?;
-            if metadata.file_type().is_symlink() {
+            if metadata_has_reparse_point(&metadata) {
                 return Err(InstallError::UnsafeArchivePath);
             }
             if metadata.is_dir() {
@@ -1761,6 +1858,23 @@ fn validate_install_tree(root: &Path) -> Result<(), InstallError> {
         }
     }
     Ok(())
+}
+
+fn metadata_has_reparse_point(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+
+        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0;
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 /// Managed trees are immutable regular-file trees. A regular file with more
@@ -1787,8 +1901,9 @@ fn reject_hard_link(path: &Path) -> Result<(), InstallError> {
         use windows::Win32::Foundation::CloseHandle;
         use windows::Win32::Storage::FileSystem::{
             CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
-            FILE_ATTRIBUTE_NORMAL, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
-            FILE_SHARE_WRITE, OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
+            FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+            OPEN_EXISTING,
         };
 
         let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
@@ -1799,7 +1914,7 @@ fn reject_hard_link(path: &Path) -> Result<(), InstallError> {
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                 None,
                 OPEN_EXISTING,
-                FILE_ATTRIBUTE_NORMAL,
+                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
                 None,
             )
         }
@@ -1807,7 +1922,11 @@ fn reject_hard_link(path: &Path) -> Result<(), InstallError> {
         let mut information = BY_HANDLE_FILE_INFORMATION::default();
         let result = unsafe { GetFileInformationByHandle(handle, &mut information) };
         let close_result = unsafe { CloseHandle(handle) };
-        if result.is_err() || close_result.is_err() || information.nNumberOfLinks != 1 {
+        if result.is_err()
+            || close_result.is_err()
+            || information.nNumberOfLinks != 1
+            || information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
+        {
             return Err(InstallError::UnsafeArchivePath);
         }
         Ok(())
@@ -1873,6 +1992,7 @@ mod tests {
             languages: vec![LanguageSupport {
                 language_id: "fixture".to_string(),
                 extensions: vec![".fixture".to_string()],
+                command: None,
             }],
             source_url: "https://example.com/source".to_string(),
             license: "MIT".to_string(),
@@ -2451,6 +2571,36 @@ mod tests {
             .exists());
     }
 
+    #[test]
+    fn missing_language_command_override_marks_install_needs_reinstall() {
+        let archive = zip(&[("server.exe", b"fixture"), ("html-server.exe", b"html")]);
+        let mut manifest = manifest(&archive, "server.exe");
+        manifest.languages[0].command = Some(CommandSpec {
+            executable: "html-server.exe".into(),
+            args: vec!["--stdio".into()],
+        });
+        let temp = TempDir::new().unwrap();
+        let archive_path = write_fixture(&temp, "fixture.zip", &archive);
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        installer
+            .install_archive(&manifest, "1.2.3", "2026-08-13T01:05:03Z", &archive_path)
+            .unwrap();
+        fs::remove_file(
+            installer
+                .lsp_root()
+                .join("servers/fixture-server/1.2.3/windows-x86_64/html-server.exe"),
+        )
+        .unwrap();
+        let status = installer
+            .installed_status()
+            .unwrap()
+            .into_iter()
+            .find(|status| status.manifest_id == manifest.id)
+            .unwrap();
+        assert_eq!(status.state, ManagedInstallState::NeedsReinstall);
+        assert!(status.reason.is_some());
+    }
+
     #[cfg(unix)]
     #[test]
     fn symlinked_install_destination_is_never_removed() {
@@ -2509,7 +2659,7 @@ mod tests {
         assert!(outside.is_dir());
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn hardlinked_install_file_is_never_removed() {
         use std::fs::hard_link;

@@ -19,6 +19,7 @@ use super::features::{
     validate_completion_response, validate_pull_diagnostics, CompletionResult, DiagnosticResult,
     FeatureError, FeatureResponse, FilteredLocations, SanitizedHover,
 };
+use super::installer::ManagedInstaller;
 use super::positions::{position_to_offset, LspPosition, PositionEncoding};
 use super::process::{LspProcess, ProcessState};
 use super::runtime::RuntimeResolver;
@@ -145,15 +146,30 @@ pub struct LspManager {
     app_local_data_dir: PathBuf,
     app_version: String,
     resolver: RuntimeResolver,
+    installer: Arc<ManagedInstaller>,
     state: Mutex<ManagerState>,
 }
 
 impl LspManager {
     pub fn new(app_local_data_dir: impl Into<PathBuf>, app_version: impl Into<String>) -> Self {
+        let app_local_data_dir = app_local_data_dir.into();
+        let installer = Arc::new(
+            ManagedInstaller::new(&app_local_data_dir)
+                .expect("app-local LSP installer state must be creatable"),
+        );
+        Self::with_installer(app_local_data_dir, app_version, installer)
+    }
+
+    pub fn with_installer(
+        app_local_data_dir: impl Into<PathBuf>,
+        app_version: impl Into<String>,
+        installer: Arc<ManagedInstaller>,
+    ) -> Self {
         Self {
             app_local_data_dir: app_local_data_dir.into(),
             app_version: app_version.into(),
             resolver: RuntimeResolver::new(),
+            installer,
             state: Mutex::new(ManagerState::default()),
         }
     }
@@ -249,14 +265,32 @@ impl LspManager {
         let workspace = WorkspaceRoot::new(&config.workspace_root)
             .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
         let resolved = if let Some(server) = config.server_by_language.get(language_id) {
-            if matches!(server, ServerRef::Managed { .. }) {
-                return Err(LspManagerError::Protocol(
-                    "관리형 언어 서버의 설치 확인이 아직 완료되지 않았습니다".into(),
-                ));
+            match server {
+                ServerRef::Managed {
+                    manifest_id,
+                    version,
+                    node_path,
+                } => {
+                    let installation = self
+                        .installer
+                        .resolve_managed_install(manifest_id, version)
+                        .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+                    self.resolver
+                        .resolve_managed(
+                            &installation.manifest,
+                            language_id,
+                            &installation.installed_path,
+                            node_path.as_deref(),
+                            workspace.path(),
+                        )
+                        .await
+                        .map_err(|error| LspManagerError::Protocol(error.to_string()))?
+                }
+                _ => self
+                    .resolver
+                    .resolve_server_ref(server, workspace.path())
+                    .map_err(|error| LspManagerError::Protocol(error.to_string()))?,
             }
-            self.resolver
-                .resolve_server_ref(server, workspace.path())
-                .map_err(|error| LspManagerError::Protocol(error.to_string()))?
         } else if let Some(server) = config
             .custom_servers
             .iter()

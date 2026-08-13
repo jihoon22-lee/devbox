@@ -193,7 +193,10 @@ export type LspServerRef =
       kind: "managed";
       manifest_id: string;
       version: string;
-      installed_path?: string | null;
+      /** Optional explicit Node runtime executable. The install path is never
+       * persisted at the UI boundary; the native side resolves it from its
+       * process-owned index. */
+      node_path?: string | null;
     }
   | {
       kind: "local";
@@ -252,7 +255,11 @@ export interface ManagedServerManifest {
   id: string;
   version: string;
   platform: string;
-  languages: Array<{ language_id: string; extensions: string[] }>;
+  languages: Array<{
+    language_id: string;
+    extensions: string[];
+    command?: { executable: string; args: string[] } | null;
+  }>;
   source_url: string;
   license: string;
   artifact: ManagedArtifact;
