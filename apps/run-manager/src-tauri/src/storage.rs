@@ -594,25 +594,6 @@ impl DatabaseState {
         Ok(changed == 1)
     }
 
-    /// Terminal-hook variant keyed by run id: mark a service stopped when its
-    /// active run reached a terminal state, regardless of the stop origin.
-    pub fn mark_service_stopped_for_run(
-        &self,
-        run_id: &str,
-        now: i64,
-    ) -> Result<bool, StorageError> {
-        validate_token("run_id", run_id)?;
-        let connection = self.lock_mut()?;
-        let changed = connection.execute(
-            "UPDATE service_instances
-             SET state = 'stopped', active_run_id = NULL,
-                 owner_instance_id = NULL, attempt_token = NULL, updated_at = ?
-             WHERE active_run_id = ? AND state IN ('running', 'stopping')",
-            params![now, run_id],
-        )?;
-        Ok(changed == 1)
-    }
-
     /// Services marked to start with the daemon. Only `auto_start` services are
     /// returned; the caller claims each instance before spawning.
     pub fn list_auto_start_services(&self) -> Result<Vec<Job>, StorageError> {
@@ -624,6 +605,139 @@ impl DatabaseState {
         let rows = statement.query_map([], row_to_job)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(StorageError::from)
+    }
+
+    /// Move a terminated service into `retry_waiting`, bumping its consecutive
+    /// failure counter to drive the restart backoff. The generation CAS keeps a
+    /// stale terminal hook from clobbering a newer start.
+    pub fn mark_service_retry_waiting(
+        &self,
+        service_id: &str,
+        generation: i64,
+        next_retry_at: i64,
+        now: i64,
+    ) -> Result<bool, StorageError> {
+        let connection = self.lock_mut()?;
+        let changed = connection.execute(
+            "UPDATE service_instances
+             SET state = 'retry_waiting', next_retry_at = ?, active_run_id = NULL,
+                 consecutive_failures = consecutive_failures + 1, updated_at = ?
+             WHERE job_id = ? AND generation = ? AND state IN ('running', 'stopping')",
+            params![next_retry_at, now, service_id, generation],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// Claim a due retry for a fresh generation. Only a `retry_waiting` instance
+    /// whose deadline has passed transitions.
+    pub fn claim_service_retry(
+        &self,
+        service_id: &str,
+        owner_instance_id: &str,
+        attempt_token: &str,
+        now: i64,
+    ) -> Result<Option<ServiceInstance>, StorageError> {
+        validate_token("owner_instance_id", owner_instance_id)?;
+        validate_token("attempt_token", attempt_token)?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = transaction.execute(
+            "UPDATE service_instances
+             SET state = 'starting', generation = generation + 1,
+                 owner_instance_id = ?, attempt_token = ?, active_run_id = NULL,
+                 next_retry_at = NULL, updated_at = ?
+             WHERE job_id = ? AND state = 'retry_waiting' AND next_retry_at <= ?",
+            params![owner_instance_id, attempt_token, now, service_id, now],
+        )?;
+        let instance = if changed == 1 {
+            fetch_service_instance(&transaction, service_id)?
+        } else {
+            None
+        };
+        transaction.commit()?;
+        Ok(instance)
+    }
+
+    /// Retry-waiting instances whose backoff deadline has elapsed, in due order.
+    pub fn list_due_service_retries(&self, now: i64) -> Result<Vec<ServiceInstance>, StorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT job_id, generation, active_run_id, state, owner_instance_id,
+                    attempt_token, next_retry_at, consecutive_failures, updated_at
+             FROM service_instances
+             WHERE state = 'retry_waiting' AND next_retry_at IS NOT NULL AND next_retry_at <= ?
+             ORDER BY next_retry_at, job_id",
+        )?;
+        let rows = statement.query_map([now], row_to_service_instance)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(StorageError::from)
+    }
+
+    /// Running service instances joined with their health configuration, for the
+    /// periodic supervisor probe.
+    pub fn list_running_services(&self) -> Result<Vec<(Job, ServiceInstance)>, StorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT job_id, generation, active_run_id, state, owner_instance_id,
+                    attempt_token, next_retry_at, consecutive_failures, updated_at
+             FROM service_instances WHERE state = 'running' ORDER BY job_id",
+        )?;
+        let instances = statement
+            .query_map([], row_to_service_instance)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut result = Vec::with_capacity(instances.len());
+        for instance in instances {
+            if let Some(job) = fetch_service(&connection, &instance.job_id)? {
+                result.push((job, instance));
+            }
+        }
+        Ok(result)
+    }
+
+    /// Record one health-probe failure and return the new consecutive-failure
+    /// count, or `None` when the instance is no longer running in this generation.
+    pub fn record_service_health_failure(
+        &self,
+        service_id: &str,
+        generation: i64,
+        now: i64,
+    ) -> Result<Option<i64>, StorageError> {
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = transaction.execute(
+            "UPDATE service_instances
+             SET consecutive_failures = consecutive_failures + 1, updated_at = ?
+             WHERE job_id = ? AND generation = ? AND state = 'running'",
+            params![now, service_id, generation],
+        )?;
+        let count = if changed == 1 {
+            transaction.query_row(
+                "SELECT consecutive_failures FROM service_instances WHERE job_id = ?",
+                [service_id],
+                |row| row.get::<_, i64>(0),
+            )?
+        } else {
+            return Ok(None);
+        };
+        transaction.commit()?;
+        Ok(Some(count))
+    }
+
+    /// Reset the failure counter for a service that is currently running in the
+    /// given generation. A successful probe restores the shortest backoff.
+    pub fn reset_service_health(
+        &self,
+        service_id: &str,
+        generation: i64,
+        now: i64,
+    ) -> Result<bool, StorageError> {
+        let connection = self.lock_mut()?;
+        let changed = connection.execute(
+            "UPDATE service_instances SET consecutive_failures = 0, updated_at = ?
+             WHERE job_id = ? AND generation = ? AND state = 'running'",
+            params![now, service_id, generation],
+        )?;
+        Ok(changed == 1)
     }
 
     pub fn update_job(&self, id: &str, input: JobInput) -> Result<Job, StorageError> {
