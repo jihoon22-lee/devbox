@@ -2,7 +2,7 @@
 
 use super::positions::{offset_to_position, LspRange, PositionEncoding, PositionError};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -15,6 +15,12 @@ pub enum DocumentError {
     PathOutsideWorkspace(PathBuf),
     DocumentAlreadyOpen(String),
     DocumentNotOpen(String),
+    DuplicateAtomicChange(String),
+    VersionMismatch {
+        uri: String,
+        expected: i32,
+        actual: i32,
+    },
     EmptyLanguageId,
     NonNormalizedLineEndings,
     VersionOverflow,
@@ -31,6 +37,20 @@ impl fmt::Display for DocumentError {
             }
             Self::DocumentAlreadyOpen(uri) => write!(f, "document is already open: {uri}"),
             Self::DocumentNotOpen(uri) => write!(f, "document is not open: {uri}"),
+            Self::DuplicateAtomicChange(uri) => {
+                write!(
+                    f,
+                    "document appears more than once in an atomic change: {uri}"
+                )
+            }
+            Self::VersionMismatch {
+                uri,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "document version conflict for {uri}: expected {expected}, current {actual}"
+            ),
             Self::EmptyLanguageId => f.write_str("language id cannot be empty"),
             Self::NonNormalizedLineEndings => {
                 f.write_str("LSP documents must contain LF-normalized text")
@@ -230,6 +250,16 @@ pub struct RequestSnapshot {
     pub version: i32,
 }
 
+/// A fully computed replacement used by a protocol adapter that must update
+/// several documents atomically.  The text is still LF-normalized; callers
+/// should validate ranges and replacements before constructing this value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AtomicDocumentChange {
+    pub uri: String,
+    pub expected_version: i32,
+    pub text: String,
+}
+
 #[derive(Debug, Clone)]
 struct DocumentState {
     path: PathBuf,
@@ -260,6 +290,10 @@ impl DocumentStore {
 
     pub fn workspace(&self) -> &WorkspaceRoot {
         &self.workspace
+    }
+
+    pub fn position_encoding(&self) -> PositionEncoding {
+        self.encoding
     }
 
     pub fn open(
@@ -359,6 +393,65 @@ impl DocumentStore {
             uri: uri.to_owned(),
             version: state.version,
         })
+    }
+
+    /// Applies already-computed document replacements as one transaction.
+    ///
+    /// Every URI, version, and replacement is checked against a cloned state
+    /// first.  If any check fails, neither the live document map nor its
+    /// versions are changed.  This is the mutation boundary used by rename
+    /// and formatting adapters so a multi-document edit cannot partially
+    /// apply.
+    pub fn apply_atomic_changes(
+        &mut self,
+        changes: &[AtomicDocumentChange],
+    ) -> Result<Vec<DidChange>, DocumentError> {
+        let mut staged = self.documents.clone();
+        let mut seen = HashSet::with_capacity(changes.len());
+        let mut notifications = Vec::with_capacity(changes.len());
+
+        for change in changes {
+            if !seen.insert(change.uri.clone()) {
+                return Err(DocumentError::DuplicateAtomicChange(change.uri.clone()));
+            }
+            validate_text(&change.text)?;
+            let state = staged
+                .get_mut(&change.uri)
+                .ok_or_else(|| DocumentError::DocumentNotOpen(change.uri.clone()))?;
+            if state.version != change.expected_version {
+                return Err(DocumentError::VersionMismatch {
+                    uri: change.uri.clone(),
+                    expected: change.expected_version,
+                    actual: state.version,
+                });
+            }
+            let version = state
+                .version
+                .checked_add(1)
+                .ok_or(DocumentError::VersionOverflow)?;
+            let content_changes = match self.sync_kind {
+                SyncKind::Full => vec![TextChange {
+                    range: None,
+                    text: change.text.clone(),
+                }],
+                SyncKind::Incremental => vec![incremental_change(
+                    &state.text,
+                    &change.text,
+                    self.encoding,
+                )?],
+            };
+            state.version = version;
+            state.text = change.text.clone();
+            state.dirty = true;
+            notifications.push(DidChange {
+                uri: change.uri.clone(),
+                version,
+                content_changes,
+            });
+        }
+
+        self.documents = staged;
+        Ok(notifications)
     }
 
     pub fn close(&mut self, uri: &str) -> Result<DidClose, DocumentError> {
