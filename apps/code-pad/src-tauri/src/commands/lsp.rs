@@ -90,6 +90,19 @@ pub async fn change_lsp_document(
 }
 
 #[tauri::command]
+pub async fn reload_lsp_document(
+    manager: State<'_, Arc<LspManager>>,
+    language_id: String,
+    uri: String,
+    text: String,
+) -> Result<DidChange, String> {
+    manager
+        .reload_document(&language_id, &uri, text)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn save_lsp_document(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,

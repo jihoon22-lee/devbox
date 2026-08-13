@@ -165,6 +165,29 @@ export interface LanguageServerStatus {
   stderrDroppedBytes: number;
 }
 
+/** Results returned by the native document-sync boundary. */
+export interface LspDidOpen {
+  uri: string;
+  languageId: string;
+  version: number;
+  text: string;
+}
+
+export interface LspDidChange {
+  uri: string;
+  version: number;
+  contentChanges: Array<{ range?: unknown; text: string }>;
+}
+
+export interface LspDidSave {
+  uri: string;
+  version: number;
+}
+
+export interface LspDidClose {
+  uri: string;
+}
+
 export type LspServerRef =
   | {
       kind: "managed";

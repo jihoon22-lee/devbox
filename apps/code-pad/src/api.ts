@@ -11,6 +11,10 @@ import type {
   LanguageServerStatus,
   LoadedLspConfig,
   LspConfig,
+  LspDidChange,
+  LspDidClose,
+  LspDidOpen,
+  LspDidSave,
 } from "./types";
 
 export function openFile(path: string, encoding: Encoding | null = null): Promise<OpenedFile> {
@@ -99,4 +103,37 @@ export function stopLanguageServer(languageId: string): Promise<void> {
 
 export function languageServerStatuses(): Promise<LanguageServerStatus[]> {
   return invoke<LanguageServerStatus[]>("language_server_statuses");
+}
+
+export function openLspDocument(
+  languageId: string,
+  path: string,
+  text: string,
+): Promise<LspDidOpen> {
+  return invoke<LspDidOpen>("open_lsp_document", { languageId, path, text });
+}
+
+export function changeLspDocument(
+  languageId: string,
+  uri: string,
+  text: string,
+  dirty: boolean,
+): Promise<LspDidChange> {
+  return invoke<LspDidChange>("change_lsp_document", { languageId, uri, text, dirty });
+}
+
+export function reloadLspDocument(
+  languageId: string,
+  uri: string,
+  text: string,
+): Promise<LspDidChange> {
+  return invoke<LspDidChange>("reload_lsp_document", { languageId, uri, text });
+}
+
+export function saveLspDocument(languageId: string, uri: string): Promise<LspDidSave> {
+  return invoke<LspDidSave>("save_lsp_document", { languageId, uri });
+}
+
+export function closeLspDocument(languageId: string, uri: string): Promise<LspDidClose> {
+  return invoke<LspDidClose>("close_lsp_document", { languageId, uri });
 }

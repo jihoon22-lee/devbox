@@ -432,6 +432,40 @@ impl LspManager {
         Ok(changed)
     }
 
+    pub async fn reload_document(
+        &self,
+        language_id: &str,
+        uri: &str,
+        text: String,
+    ) -> Result<DidChange, LspManagerError> {
+        let session = self.session(language_id).await?;
+        let mut documents = session.documents.lock().await;
+        let mut staged = documents.clone();
+        let changed = staged
+            .reload(uri, text)
+            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        if session
+            .client
+            .capabilities()
+            .await
+            .supports("textDocument/didChange")
+        {
+            session
+                .process
+                .notify(
+                    "textDocument/didChange",
+                    Some(json!({
+                        "textDocument": { "uri": changed.uri, "version": changed.version },
+                        "contentChanges": changed.content_changes,
+                    })),
+                )
+                .await
+                .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        }
+        *documents = staged;
+        Ok(changed)
+    }
+
     pub async fn save_document(
         &self,
         language_id: &str,

@@ -20,6 +20,7 @@ import ViewPane from "./components/ViewPane";
 import LspControlPanel from "./components/LspControlPanel";
 import type { BookmarkCommands } from "./editor/bookmarks";
 import { normalizeBookmarkLines } from "./editor/bookmarks";
+import { LspDocumentSync } from "./lspDocumentSync";
 import {
   createInitialEditorState,
   docIdForPath,
@@ -120,6 +121,8 @@ export default function App() {
     encoding: Encoding;
   } | null>(null);
   const [lspPanelOpen, setLspPanelOpen] = useState(false);
+  const [lspSync] = useState(() => new LspDocumentSync());
+  const [lspSyncState, setLspSyncState] = useState(lspSync.getState());
 
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -136,6 +139,8 @@ export default function App() {
   const sessionSaveInFlightRef = useRef<Promise<void> | null>(null);
   const watchOperationRef = useRef(new Map<string, Promise<void>>());
   const externalChangeVersionRef = useRef(new Map<string, number>());
+
+  useEffect(() => lspSync.subscribe(setLspSyncState), [lspSync]);
 
   const externalChange = externalChanges[0] ?? null;
   const enqueueExternalChange = (path: string) => {
@@ -241,7 +246,10 @@ export default function App() {
     if (!stateRef.current.docs.some((doc) => doc.path === opened.path)) {
       await registerWatch(opened.path);
     }
-    dispatchAction({ type: "addDoc", doc: docFromOpenedFile(opened, metadata) });
+    const alreadyOpen = stateRef.current.docs.some((doc) => doc.path === opened.path);
+    const doc = docFromOpenedFile(opened, metadata);
+    dispatchAction({ type: "addDoc", doc });
+    if (!alreadyOpen) void lspSync.open(doc);
     return opened;
   };
 
@@ -297,6 +305,7 @@ export default function App() {
       contentHash: saved.contentHash,
       durabilityWarning: saved.durabilityWarning,
     });
+    void lspSync.save(docId);
     const latestDoc = stateRef.current.docs.find((item) => item.id === docId);
     return {
       saved,
@@ -318,6 +327,7 @@ export default function App() {
 
   const removeDocument = (docId: DocId) => {
     const doc = stateRef.current.docs.find((item) => item.id === docId);
+    void lspSync.close(docId);
     dispatchAction({ type: "removeDoc", docId });
     if (doc) unregisterWatch(doc.path);
     if (doc) removeExternalChange(doc.path);
@@ -427,6 +437,8 @@ export default function App() {
         bookmarks: latest.bookmarks.slice(),
       },
     });
+    const reloaded = stateRef.current.docs.find((doc) => doc.id === docId);
+    if (reloaded) void lspSync.reload(reloaded);
     removeExternalChange(before.path, expectedChangeVersion);
     return true;
   };
@@ -480,6 +492,7 @@ export default function App() {
       const root = await canonicalizeWorkspace(path);
       const listing = await listWorkspaceFiles(root);
       dispatchAction({ type: "setWorkspace", workspaceFolder: root });
+      void lspSync.setWorkspace(root);
       setWorkspaceFiles(listing.files);
       setWorkspaceTruncated(listing.truncated);
       setWorkspaceListingRoot(root);
@@ -523,6 +536,8 @@ export default function App() {
           bookmarks: current.bookmarks.slice(),
         },
       });
+      const reloaded = stateRef.current.docs.find((doc) => doc.id === current.id);
+      if (reloaded) void lspSync.reload(reloaded);
       removeExternalChange(path, expectedChangeVersion);
     });
   };
@@ -557,11 +572,14 @@ export default function App() {
           }),
         );
         if (cancelled) return;
+        const restoredDocs = restored.filter((doc): doc is Doc => doc !== null);
         dispatchAction({
           type: "restoreSession",
           session: loaded.session,
-          docs: restored.filter((doc): doc is Doc => doc !== null),
+          docs: restoredDocs,
         });
+        for (const doc of restoredDocs) void lspSync.open(doc);
+        void lspSync.setWorkspace(loaded.session.workspace_folder);
         hydratedRef.current = true;
         setHydrated(true);
       })
@@ -624,6 +642,8 @@ export default function App() {
               bookmarks: latest.bookmarks.slice(),
             },
           });
+          const reloaded = stateRef.current.docs.find((doc) => doc.id === latest.id);
+          if (reloaded) void lspSync.reload(reloaded);
         })
         .catch(() => enqueueExternalChange(payload.path));
     };
@@ -784,6 +804,11 @@ export default function App() {
       </header>
 
       {!hydrated && <p className="hydration-banner" role="status">세션을 복원하는 중...</p>}
+      {lspSyncState.lastError && (
+        <p className="lsp-sync-status" role="status" aria-live="polite">
+          LSP 동기화가 일시적으로 비활성화되었습니다: {lspSyncState.lastError}
+        </p>
+      )}
 
       <div className="editor-toolbar" role="toolbar" aria-label="편집기 도구">
         <button
@@ -891,7 +916,12 @@ export default function App() {
             activeDocByView={state.activeDocByView}
             split={state.split}
             fontSize={(13 * zoom) / 100}
-            onChange={(docId, text) => dispatchAction({ type: "setDocText", docId, text })}
+            onChange={(docId, text) => {
+              const before = stateRef.current.docs.find((doc) => doc.id === docId);
+              dispatchAction({ type: "setDocText", docId, text });
+              const latest = stateRef.current.docs.find((doc) => doc.id === docId);
+              if (before && latest && latest.revision !== before.revision) void lspSync.change(latest);
+            }}
             onCursorChange={(docId, cursor) => dispatchAction({ type: "setCursor", docId, cursor })}
             onBookmarksChange={(docId, bookmarks) => dispatchAction({ type: "setBookmarks", docId, bookmarks })}
             onFocusDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
@@ -983,6 +1013,7 @@ export default function App() {
         <LspControlPanel
           workspaceRoot={state.workspaceFolder}
           onClose={() => setLspPanelOpen(false)}
+          onConfigChanged={(config) => void lspSync.setConfig(config)}
         />
       )}
     </main>
