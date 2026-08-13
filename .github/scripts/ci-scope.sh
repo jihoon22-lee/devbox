@@ -60,7 +60,7 @@ while IFS= read -r path; do
       rust_all=true
       ;;
   esac
-done < <(git diff --name-only --diff-filter=ACMRTUXB "$diff_base" "$head_sha")
+done < <(git diff --name-only --diff-filter=ACDMRTUXB "$diff_base" "$head_sha")
 
 if (( changed_count == 0 )); then
   frontend_all=true
