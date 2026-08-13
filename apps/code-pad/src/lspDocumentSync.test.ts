@@ -343,7 +343,9 @@ describe("LspDocumentSync", () => {
     });
     expect(sync.getDiagnostics("doc-1")?.response.stale).toBe(true);
     expect(sync.getDiagnostics("doc-1")?.response.value.diagnostics[0]?.message).toBe("old");
-    expect(received).toEqual([false, true]);
+    // The editor mutation itself marks the previous result stale before the
+    // late push arrives, so the subscriber observes two stale snapshots.
+    expect(received).toEqual([false, true, true]);
     sync.applyDocuments([{ uri: "file:///work/src/main.rs", version: 3, text: "new" }]);
     expect(sync.getDiagnostics("doc-1")).toBeNull();
     expect(sync.getState().staleDiagnostics).toBe(false);
