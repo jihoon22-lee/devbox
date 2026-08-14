@@ -1,5 +1,6 @@
 mod commands;
 mod core;
+mod integration;
 
 use commands::docs::AppState;
 use commands::watcher::KnowledgeWatcher;
@@ -64,6 +65,8 @@ pub fn run() {
             if let Ok(root) = commands::docs::resolve_root(&state.db.lock().unwrap()) {
                 let _ = watcher.set_root(&root);
             }
+            // integration snapshot producer (두 번째, §10.1)
+            let _ = integration::write_snapshot(&state.db.lock().unwrap());
             app.manage(state);
             app.manage(watcher);
             Ok(())

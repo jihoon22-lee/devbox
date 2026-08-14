@@ -18,6 +18,7 @@ members = [
     "crates/process",
     "crates/wsl",
     "crates/search",
+    "crates/integration",
     # "crates/database",
 ]
 
