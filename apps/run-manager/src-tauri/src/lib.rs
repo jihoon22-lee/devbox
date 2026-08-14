@@ -82,6 +82,7 @@ pub fn run() {
             commands::list_active_runs,
             commands::list_services,
             commands::get_service,
+            commands::service_observability,
             commands::create_service,
             commands::update_service,
             commands::delete_service,

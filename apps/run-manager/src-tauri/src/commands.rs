@@ -169,6 +169,65 @@ pub fn get_service(
     state.get_service(&id).map_err(|error| error.to_string())
 }
 
+/// 서비스 관찰성 요약 (§13.1). definition과 runtime instance를 명확히 분리한다.
+/// DB state는 실제 프로세스 생존을 단정하지 않는다 — PID는 DB 기록 기준 표시.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceObservability {
+    pub id: String,
+    pub definition: Job,
+    pub instance: Option<ServiceInstanceView>,
+    /// 활성 run (DB 기준). PID는 여기서 안전하게 노출한다 (재사용 위험 주의 주석은 프론트).
+    pub current: Option<RunView>,
+    /// 현재 run의 프로세스 PID (DB 기록 기준 — 재사용 위험이 있으므로 표시만).
+    pub current_pid: Option<i64>,
+    pub recent: Vec<RunView>,
+    pub restart_count: i64,
+    /// 다음 retry 시각 (instance.next_retry_at) — backoff 단계는 consecutive_failures로 유추
+    pub next_retry_at: Option<i64>,
+}
+
+#[tauri::command]
+pub fn service_observability(
+    id: String,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<Option<ServiceObservability>, String> {
+    let Some(definition) = state.get_service(&id).map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
+    let instance = state.get_service_instance(&id).map_err(|e| e.to_string())?;
+    let instance_view = instance.as_ref().map(ServiceInstanceView::from_instance);
+    let restart_count = instance_view
+        .as_ref()
+        .map(|i| i.consecutive_failures)
+        .unwrap_or(0);
+    let next_retry_at = instance_view.as_ref().and_then(|i| i.next_retry_at);
+
+    let current_full = instance
+        .as_ref()
+        .and_then(|i| i.active_run_id.clone())
+        .and_then(|rid| state.get_run(&rid).ok().flatten());
+    let current = current_full.as_ref().map(RunView::from_run);
+    let current_pid = current_full.as_ref().and_then(|r| r.target_pid);
+    let recent = state
+        .list_runs(&id, 8, None, None)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|r| RunView::from_run(&r))
+        .collect();
+
+    Ok(Some(ServiceObservability {
+        id,
+        definition,
+        instance: instance_view,
+        current,
+        current_pid,
+        recent,
+        restart_count,
+        next_retry_at,
+    }))
+}
+
 #[tauri::command]
 pub fn create_service(
     input: ServiceInput,

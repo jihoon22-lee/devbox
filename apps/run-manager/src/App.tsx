@@ -5,6 +5,8 @@ import {
   deleteService,
   deleteJob,
   getServiceInstance,
+  getServiceObservability,
+  type ServiceObservability,
   hideMainWindow,
   listServices,
   listJobs,
@@ -69,6 +71,8 @@ export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [services, setServices] = useState<Job[]>([]);
   const [serviceInstances, setServiceInstances] = useState<Record<string, ServiceInstance>>({});
+  const [obsMap, setObsMap] = useState<Record<string, ServiceObservability | null>>({});
+  const [obsOpen, setObsOpen] = useState<Record<string, boolean>>({});
   const [activeRuns, setActiveRuns] = useState<Record<string, Run | null>>({});
   const [screen, setScreen] = useState<Screen>("jobs");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
@@ -142,6 +146,26 @@ export default function App() {
     );
     setServiceInstances(Object.fromEntries(entries.filter((entry): entry is [string, ServiceInstance] => entry !== null)));
   }, []);
+
+  const onToggleObs = async (id: string) => {
+    setObsOpen((prev) => ({ ...prev, [id]: !prev[id] }));
+    if (!obsMap[id]) {
+      try {
+        const obs = await getServiceObservability(id);
+        setObsMap((prev) => ({ ...prev, [id]: obs }));
+      } catch {
+        setObsMap((prev) => ({ ...prev, [id]: null }));
+      }
+    }
+  };
+
+  const fmtUptime = (startedAt: number | null): string => {
+    if (!startedAt) return "-";
+    const s = Math.floor(Math.max(0, Date.now() - startedAt) / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -459,6 +483,7 @@ export default function App() {
                   const instance = serviceInstances[service.id];
                   const state = instance?.state ?? "stopped";
                   const running = state === "running" || state === "starting";
+                  const obs = obsMap[service.id];
                   return (
                   <article className="job-card service-card" key={service.id}>
                     <div className="job-card-main">
@@ -489,9 +514,52 @@ export default function App() {
                       ) : (
                         <button type="button" className="button-secondary" disabled={busy} onClick={() => void handleServiceStart(service)}>시작</button>
                       )}
+                      <button type="button" className="button-secondary" onClick={() => void onToggleObs(service.id)}>
+                        {obsOpen[service.id] ? "상세 닫기" : "상세"}
+                      </button>
                       <button type="button" className="button-secondary" onClick={() => openServiceEdit(service)}>편집</button>
                       <button type="button" className="button-danger" disabled={busy || running} onClick={() => void handleServiceDelete(service)}>삭제</button>
                     </div>
+                    {obsOpen[service.id] && obs && (
+                      <div className="obs-panel">
+                        <div className="obs-row">
+                          <span className="obs-label">정의</span>
+                          <span>{obs.definition.enabled ? "활성" : "비활성"} · {obs.definition.autoStart ? "자동 시작" : "수동 시작"}</span>
+                        </div>
+                        <div className="obs-row">
+                          <span className="obs-label">인스턴스 (DB 상태)</span>
+                          <span>{obs.instance ? serviceStateLabel(obs.instance.state) : "없음"} · 재시작 {obs.restartCount}회</span>
+                        </div>
+                        {obs.current && (
+                          <div className="obs-row">
+                            <span className="obs-label">현재 실행</span>
+                            <span>
+                              {obs.current.status} · {fmtUptime(obs.current.startedAt)}
+                              {obs.currentPid != null && ` · PID ${obs.currentPid} (DB 기록)`}
+                            </span>
+                          </div>
+                        )}
+                        {obs.nextRetryAt != null && (
+                          <div className="obs-row">
+                            <span className="obs-label">다음 재시도</span>
+                            <span>{new Date(obs.nextRetryAt).toLocaleTimeString()}</span>
+                          </div>
+                        )}
+                        {obs.recent.length > 0 && (
+                          <div className="obs-row">
+                            <span className="obs-label">최근 실행</span>
+                            <span className="obs-recent">
+                              {obs.recent.slice(0, 5).map((r) => (
+                                <span key={r.id} className={`obs-run ${r.status === "failed" ? "obs-fail" : ""}`}>
+                                  {r.status}{r.exitCode != null ? `(${r.exitCode})` : ""}
+                                </span>
+                              ))}
+                            </span>
+                          </div>
+                        )}
+                        <div className="obs-note">인스턴스 상태는 DB 기록 기준입니다. PID는 실제 프로세스 생존과 다를 수 있습니다.</div>
+                      </div>
+                    )}
                   </article>
                   );
                 })}

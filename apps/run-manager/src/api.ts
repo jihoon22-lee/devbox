@@ -218,6 +218,48 @@ export function getServiceInstance(id: string): Promise<ServiceInstance | null> 
   return invoke<ServiceInstance | null>("get_service_instance", { id });
 }
 
+export interface ServiceObservability {
+  id: string;
+  definition: Job;
+  instance: ServiceInstance | null;
+  current: Run | null;
+  currentPid: number | null;
+  recent: Run[];
+  restartCount: number;
+  nextRetryAt: number | null;
+}
+
+export function getServiceObservability(id: string): Promise<ServiceObservability | null> {
+  if (!isTauri()) {
+    const inst = mockServiceInstance(id);
+    const current: Run = {
+      id: "run-1",
+      jobId: id,
+      scheduledAt: Date.now() - 3600000,
+      occurrenceWallKey: null,
+      queueSequence: 1,
+      startedAt: Date.now() - 3600000,
+      endedAt: null,
+      exitCode: null,
+      status: "running",
+      logsAvailable: true,
+      failureCode: null,
+      createdAt: Date.now() - 3600000,
+    };
+    return Promise.resolve({
+      id,
+      definition: inst as unknown as Job,
+      instance: inst,
+      current,
+      currentPid: 12345,
+      recent: [],
+      restartCount: 1,
+      nextRetryAt: null,
+    });
+  }
+  return invoke<ServiceObservability | null>("service_observability", { id });
+}
+
 export function startService(id: string): Promise<ServiceInstance> {
   if (!isTauri()) {
     mockServiceState.set(id, "running");
