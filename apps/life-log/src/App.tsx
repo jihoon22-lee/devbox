@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getActivityDb, getDay, getProjects, getRange, setActivityDb, setProjects } from "./api";
-import type { DaySummary, RangeSummary } from "./types";
+import {
+  getAppStats,
+  getDay,
+  getProjects,
+  getRange,
+  getTimeline,
+  isTracking,
+  setProjects,
+  startTracking,
+  stopTracking,
+} from "./api";
+import type { AppTotal, DaySummary, RangeSummary, Session } from "./types";
 import "./App.css";
 
 const DAY_MS = 86_400_000;
@@ -25,7 +35,11 @@ function fmtDay(dayMs: number): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-type ViewTab = "day" | "week" | "month" | "settings";
+function fmtTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+type ViewTab = "day" | "week" | "month" | "timeline" | "settings";
 
 export function weekRange(date: Date): { start: number; end: number } {
   const d = new Date(date);
@@ -47,7 +61,9 @@ export default function App() {
   const [day, setDay] = useState<DaySummary | null>(null);
   const [range, setRange] = useState<RangeSummary | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activityDb, setActivityDbState] = useState("");
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [stats, setStats] = useState<AppTotal[]>([]);
+  const [tracking, setTracking] = useState(false);
   const [projects, setProjectsState] = useState<string[]>([]);
   const [projectInput, setProjectInput] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -56,8 +72,7 @@ export default function App() {
 
   const loadSettings = useCallback(async () => {
     try {
-      const [db, pr] = await Promise.all([getActivityDb(), getProjects()]);
-      setActivityDbState(db);
+      const pr = await getProjects();
       setProjectsState(pr);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -77,6 +92,16 @@ export default function App() {
       } else if (view === "month") {
         const { start, end } = monthRange(date);
         setRange(await getRange(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`, start, end));
+      } else if (view === "timeline") {
+        const start = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+        const [ts, st, tr] = await Promise.all([
+          getTimeline(start, start + DAY_MS),
+          getAppStats(start, start + DAY_MS),
+          isTracking(),
+        ]);
+        setSessions(ts);
+        setStats(st);
+        setTracking(tr);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -90,10 +115,23 @@ export default function App() {
     void loadSettings();
   }, [load, loadSettings]);
 
-  const saveActivityDb = async () => {
+  // 타임라인은 추적 중에는 주기적으로 갱신한다 (세션 자동 반영).
+  useEffect(() => {
+    if (view !== "timeline") return;
+    const id = setInterval(() => void load(), 30_000);
+    return () => clearInterval(id);
+  }, [view, load]);
+
+  const toggleTracking = async () => {
     setError(null);
     try {
-      await setActivityDb(activityDb);
+      if (tracking) {
+        await stopTracking();
+        setTracking(false);
+      } else {
+        await startTracking();
+        setTracking(true);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -146,7 +184,7 @@ export default function App() {
         </button>
         <span className="spacer" />
         {loading && <span className="loading">Loading...</span>}
-        {(["day", "week", "month", "settings"] as const).map((t) => (
+        {(["day", "week", "month", "timeline", "settings"] as const).map((t) => (
           <button key={t} className={`btn ${view === t ? "active" : ""}`} onClick={() => setView(t)}>
             {t[0].toUpperCase() + t.slice(1)}
           </button>
@@ -160,17 +198,6 @@ export default function App() {
 
       {view === "settings" ? (
         <div className="settings">
-          <section className="panel">
-            <h2>Activity data source</h2>
-            <div className="row">
-              <input value={activityDb} onChange={(e) => setActivityDbState(e.currentTarget.value)} />
-              <button className="btn" onClick={() => void saveActivityDb()}>
-                Save
-              </button>
-            </div>
-            <div className="dim">Other apps store data under %LOCALAPPDATA%\&lt;identifier&gt;\data.db (e.g. com.devbox.activitytimeline)</div>
-          </section>
-
           <section className="panel">
             <h2>Git project paths</h2>
             {projects.map((p) => (
@@ -187,7 +214,43 @@ export default function App() {
                 Add
               </button>
             </div>
+            <div className="dim">활동 추적은 Life Log에 통합되어 있으며, 세션은 자동으로 기록됩니다.</div>
           </section>
+        </div>
+      ) : view === "timeline" ? (
+        <div className="timeline">
+          <div className="timeline-head">
+            <span className={tracking ? "status-on" : "status-off"}>● {tracking ? "Tracking" : "Stopped"}</span>
+            <button className={`btn ${tracking ? "danger" : ""}`} onClick={() => void toggleTracking()}>
+              {tracking ? "Stop" : "Start"} tracking
+            </button>
+            <span className="dim">Total: {fmtDuration(sessions.reduce((acc, s) => acc + s.duration_ms, 0))}</span>
+          </div>
+          {sessions.map((s) => (
+            <div key={s.id} className="session">
+              <span className="time">{fmtTime(s.start_ts)}</span>
+              <span className="app">{shortApp(s.app)}</span>
+              <span className="title dim">{s.title || "-"}</span>
+              <span className="dur dim">{fmtDuration(s.duration_ms)}</span>
+            </div>
+          ))}
+          {sessions.length === 0 && <div className="empty">No activity recorded this day</div>}
+
+          {stats.length > 0 && (
+            <section className="panel">
+              <h2>App usage</h2>
+              {stats.map((a) => (
+                <div key={a.app} className="stat-row">
+                  <span className="stat-app">{shortApp(a.app)}</span>
+                  <div className="stat-bar">
+                    <div className="stat-fill" style={{ width: `${Math.min(100, (a.duration_ms / stats[0].duration_ms) * 100)}%` }} />
+                  </div>
+                  <span className="stat-dur">{fmtDuration(a.duration_ms)}</span>
+                  <span className="dim">{a.sessions} sessions</span>
+                </div>
+              ))}
+            </section>
+          )}
         </div>
       ) : (
         <div className="day">
