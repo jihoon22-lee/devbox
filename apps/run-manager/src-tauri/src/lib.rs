@@ -1,6 +1,7 @@
 pub mod cleanup;
 mod commands;
 pub mod core;
+pub mod integration;
 mod lifecycle;
 pub mod logs;
 pub mod notifications;
@@ -147,6 +148,8 @@ pub fn run() {
                 app.handle().clone(),
                 data_dir,
             );
+            // integration snapshot producer (파일럿, §10.1)
+            integration::spawn_snapshot_writer(Arc::clone(&database));
             setup_tray(app)?;
             if !background {
                 lifecycle::show_main_window(app.handle()).map_err(std::io::Error::other)?;

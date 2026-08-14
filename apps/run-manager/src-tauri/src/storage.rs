@@ -1506,6 +1506,36 @@ impl DatabaseState {
     /// Return the complete run metadata snapshot used by the bounded
     /// retention planner. Log contents remain on disk and are never loaded by
     /// this query.
+    /// 성공/실패한 실행 수 (integration snapshot용). `since_ms` 이후 시작한 실행만 센다.
+    pub fn run_counts_since(&self, since_ms: i64) -> Result<(i64, i64), StorageError> {
+        let connection = self.lock()?;
+        let succeeded: i64 = connection.query_row(
+            "SELECT count(*) FROM runs
+             WHERE status = 'succeeded' AND COALESCE(started_at, created_at) >= ?1",
+            params![since_ms],
+            |r| r.get(0),
+        )?;
+        let failed: i64 = connection.query_row(
+            "SELECT count(*) FROM runs
+             WHERE status = 'failed' AND COALESCE(started_at, created_at) >= ?1",
+            params![since_ms],
+            |r| r.get(0),
+        )?;
+        Ok((succeeded, failed))
+    }
+
+    /// 마지막 실행 시작 시각 (integration snapshot용).
+    pub fn last_run_at(&self) -> Result<Option<i64>, StorageError> {
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT MAX(COALESCE(started_at, created_at)) FROM runs",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(StorageError::from)
+    }
+
     pub fn list_runs_for_retention(&self) -> Result<Vec<Run>, StorageError> {
         let connection = self.lock()?;
         let mut statement = connection.prepare(&format!(
