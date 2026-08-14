@@ -28,3 +28,4 @@ base64 = "0.22"
 markdown = { path = "../../../crates/markdown" }
 search = { path = "../../../crates/search" }
 notify = "8.2.0"
+devbox-integration = { package = "integration", path = "../../../crates/integration" }

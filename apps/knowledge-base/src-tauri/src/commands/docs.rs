@@ -88,7 +88,11 @@ pub fn write_file(
     let root = resolve_root(&conn)?;
     let path = store::safe_join(&root, &rel)?;
     store::write_file(&path, &content)?;
-    db::index_doc(&conn, &rel, &content).map_err(|e| e.to_string())
+    db::index_doc(&conn, &rel, &content).map_err(|e| e.to_string())?;
+    drop(conn);
+    // integration snapshot 갱신 (best-effort — 실패해도 저장은 유지)
+    let _ = crate::integration::write_snapshot(&state.db.lock().unwrap());
+    Ok(())
 }
 
 #[tauri::command]
@@ -105,7 +109,10 @@ pub fn create_file(
     }
     let content = content.unwrap_or_default();
     store::write_file(&path, &content)?;
-    db::index_doc(&conn, &rel, &content).map_err(|e| e.to_string())
+    db::index_doc(&conn, &rel, &content).map_err(|e| e.to_string())?;
+    drop(conn);
+    let _ = crate::integration::write_snapshot(&state.db.lock().unwrap());
+    Ok(())
 }
 
 #[tauri::command]

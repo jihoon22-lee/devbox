@@ -2255,6 +2255,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "integration"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2495,6 +2503,7 @@ version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "dirs",
+ "integration",
  "markdown",
  "notify",
  "rusqlite",
@@ -3830,6 +3839,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "croner",
+ "integration",
  "rusqlite",
  "serde",
  "serde_json",
