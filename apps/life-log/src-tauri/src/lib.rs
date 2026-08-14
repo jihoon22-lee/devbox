@@ -50,6 +50,7 @@ pub fn run() {
             commands::privacy::redact_existing,
             commands::autostart::autostart_status,
             commands::autostart::set_autostart,
+            commands::life::integration_sources,
             commands::queries::timeline,
             commands::queries::app_stats,
         ])

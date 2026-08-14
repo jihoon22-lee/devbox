@@ -2,7 +2,75 @@ use crate::commands::tracking::AppState;
 use crate::core::aggregate::collect_git;
 use crate::core::db;
 use crate::core::models::{DayPoint, DaySummary, RangeSummary};
+use serde::Serialize;
 use std::sync::Arc;
+
+/// integration snapshot source 상태 (UI 표시용).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceStatus {
+    pub producer: String,
+    pub available: bool,
+    pub schema_version: Option<u32>,
+    pub producer_version: Option<String>,
+    pub generated_at: Option<String>,
+    /// 마지막 갱신 이후 경과 (ms). snapshot이 없으면 None.
+    pub freshness_ms: Option<i64>,
+    pub error: Option<String>,
+}
+
+/// 등록된 integration source의 상태를 반환한다.
+#[tauri::command]
+pub fn integration_sources() -> Vec<SourceStatus> {
+    vec![run_manager_source_status()]
+}
+
+fn run_manager_source_status() -> SourceStatus {
+    match crate::core::readers::read_snapshot(crate::core::readers::PRODUCER_RUN_MANAGER, 1) {
+        Ok(Some(envelope)) => {
+            let path =
+                crate::core::readers::snapshot_path(crate::core::readers::PRODUCER_RUN_MANAGER, 1);
+            let freshness_ms = std::fs::metadata(&path)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|n| n.as_millis() as i64)
+                        .unwrap_or(0);
+                    (now - d.as_millis() as i64).max(0)
+                });
+            SourceStatus {
+                producer: envelope.producer.clone(),
+                available: true,
+                schema_version: Some(envelope.schema_version),
+                producer_version: Some(envelope.producer_version),
+                generated_at: Some(envelope.generated_at),
+                freshness_ms,
+                error: None,
+            }
+        }
+        Ok(None) => SourceStatus {
+            producer: crate::core::readers::PRODUCER_RUN_MANAGER.into(),
+            available: false,
+            schema_version: None,
+            producer_version: None,
+            generated_at: None,
+            freshness_ms: None,
+            error: Some("snapshot이 없다 (run-manager를 실행하면 생성된다)".into()),
+        },
+        Err(error) => SourceStatus {
+            producer: crate::core::readers::PRODUCER_RUN_MANAGER.into(),
+            available: false,
+            schema_version: None,
+            producer_version: None,
+            generated_at: None,
+            freshness_ms: None,
+            error: Some(error),
+        },
+    }
+}
 
 /// 프로젝트 경로 목록 설정 (줄바꿈 구분).
 #[tauri::command]
