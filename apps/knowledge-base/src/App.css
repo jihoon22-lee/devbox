@@ -229,6 +229,29 @@ body {
   border-right: 1px solid var(--border);
 }
 
+.codemirror-editor {
+  padding: 0;
+  overflow: hidden;
+}
+
+.codemirror-editor .cm-editor {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+
+.codemirror-editor .cm-scroller {
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 8px 0;
+}
+
+.codemirror-editor .cm-line {
+  padding-left: 8px;
+}
+
 /* ── 마크다운 프리뷰 ───────────────────────────────────────────── */
 
 .preview {

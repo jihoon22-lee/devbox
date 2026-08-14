@@ -11,6 +11,7 @@ import {
   searchDocs,
   writeFile,
 } from "./api";
+import MarkdownEditor from "./components/MarkdownEditor";
 import MarkdownPreview from "./components/MarkdownPreview";
 import type { RenderedDoc, SearchResult, TreeEntry } from "./types";
 import "./App.css";
@@ -280,20 +281,13 @@ export default function App() {
             </div>
             <div className={`editor-body mode-${mode}`}>
               {mode !== "preview" && (
-                <textarea
-                  className="editor"
+                <MarkdownEditor
                   value={content}
-                  onChange={(e) => {
-                    setContent(e.currentTarget.value);
+                  onChange={(text) => {
+                    setContent(text);
                     setDirty(true);
                   }}
-                  onKeyDown={(e) => {
-                    if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-                      e.preventDefault();
-                      void save();
-                    }
-                  }}
-                  spellCheck={false}
+                  onSave={() => void save()}
                 />
               )}
               {mode !== "edit" && (

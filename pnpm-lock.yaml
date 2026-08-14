@@ -262,6 +262,24 @@ importers:
 
   apps/knowledge-base:
     dependencies:
+      '@codemirror/commands':
+        specifier: ^6.0.0
+        version: 6.10.4
+      '@codemirror/lang-markdown':
+        specifier: ^6.0.0
+        version: 6.5.2
+      '@codemirror/language':
+        specifier: ^6.0.0
+        version: 6.12.4
+      '@codemirror/search':
+        specifier: ^6.0.0
+        version: 6.7.1
+      '@codemirror/state':
+        specifier: ^6.0.0
+        version: 6.7.1
+      '@codemirror/view':
+        specifier: ^6.0.0
+        version: 6.43.8
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
