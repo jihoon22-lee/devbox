@@ -284,6 +284,9 @@ importers:
 
   apps/life-log:
     dependencies:
+      '@devbox/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -352,6 +355,9 @@ importers:
 
   apps/run-manager:
     dependencies:
+      '@devbox/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -420,6 +426,8 @@ importers:
       vite:
         specifier: ^7.0.4
         version: 7.3.6
+
+  packages/tokens: {}
 
 packages:
 

@@ -35,7 +35,11 @@ fi
 
 if [[ $action == typecheck ]]; then
   if [[ $scope == all ]]; then
-    pnpm -r exec tsc --noEmit
+    # CSS-only 패키지(packages/tokens 등)는 tsconfig가 없으므로 건너뛴다.
+    for dir in apps/* packages/*; do
+      [[ -d $dir && -f $dir/tsconfig.json ]] || continue
+      (cd "$dir" && pnpm exec tsc --noEmit)
+    done
   else
     pnpm "${filters[@]}" exec tsc --noEmit
   fi

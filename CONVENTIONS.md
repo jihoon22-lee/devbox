@@ -97,7 +97,7 @@ devbox/
 
 ### 프론트엔드 (React, apps/<app>/src/)
 - Vite + **React 19 + TypeScript(엄격 모드)**
-- 스타일: **순수 CSS (앱별 `App.css`)**. 공용 토큰은 `packages/tokens` (추출 예정 — PR 16)
+- 스타일: **순수 CSS (앱별 `App.css`)**. 공용 토큰은 `packages/tokens` (`@devbox/tokens`)
 - 편집기: `@codemirror/*` 직접 사용 (code-pad). 공용 설정은 `packages/editor` (추출 예정 — PR 24)
 - 다이어그램: `mermaid` (code-pad, knowledge-base만)
 - Tauri API: `@tauri-apps/api`

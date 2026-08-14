@@ -1,0 +1,12 @@
+{
+  "name": "@devbox/tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "tokens.css",
+  "style": "tokens.css",
+  "exports": {
+    ".": "./tokens.css",
+    "./tokens.css": "./tokens.css"
+  }
+}

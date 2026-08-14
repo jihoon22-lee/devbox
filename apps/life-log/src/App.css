@@ -1,11 +1,14 @@
+@import "@devbox/tokens/tokens.css";
+
 :root {
-  --bg: #111418;
-  --panel: #171b21;
-  --border: #262c36;
-  --text: #e6e9ef;
-  --dim: #8b93a1;
-  --accent: #4f8cff;
-  --red: #f85149;
+  --bg: var(--db-color-bg);
+  --panel: var(--db-color-surface);
+  --border: var(--db-color-border);
+  --text: var(--db-color-text);
+  --dim: var(--db-color-text-muted);
+  --accent: var(--db-color-accent);
+  --red: var(--db-color-danger);
+  --green: var(--db-color-ok);
 }
 
 * {
