@@ -112,3 +112,25 @@ export async function setIdleThreshold(thresholdMs: number): Promise<void> {
   if (!isTauri()) return;
   await invoke("set_idle_threshold", { thresholdMs });
 }
+
+export interface PrivacyRules {
+  excludedProcesses: string[];
+  excludedTitlePatterns: string[];
+  redactTitlePatterns: string[];
+  maskAllTitles: boolean;
+}
+
+export async function getPrivacyRules(): Promise<PrivacyRules> {
+  if (!isTauri()) return { excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false };
+  return invoke<PrivacyRules>("get_privacy_rules");
+}
+
+export async function setPrivacyRules(rules: PrivacyRules): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("set_privacy_rules", { rules });
+}
+
+export async function redactExisting(): Promise<number> {
+  if (!isTauri()) return 0;
+  return invoke<number>("redact_existing");
+}
