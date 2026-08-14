@@ -213,7 +213,8 @@ mod windows_impl {
             // v1 envelope 시도 → 실패 시 legacy(버전 byte 없음) raw blob fallback
             let plaintext = match devbox_secrets::unseal_v1(self, ciphertext) {
                 Ok(text) => Zeroizing::new(text.as_bytes().to_vec()),
-                Err(_) => unprotect_blob(ciphertext).map_err(|_| EnvironmentProtectionError::InvalidCiphertext)?,
+                Err(_) => unprotect_blob(ciphertext)
+                    .map_err(|_| EnvironmentProtectionError::InvalidCiphertext)?,
             };
             let environment = serde_json::from_slice(&plaintext)
                 .map_err(|_| EnvironmentProtectionError::InvalidCiphertext)?;
