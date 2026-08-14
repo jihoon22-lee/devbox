@@ -35,3 +35,15 @@ pub struct IndexStatus {
     pub roots: usize,
     pub last_indexed_at: Option<i64>,
 }
+
+/// watcher 루트별 상태
+#[derive(Debug, Clone, Serialize)]
+pub struct RootStatus {
+    pub root: String,
+    /// 마지막으로 증분 반영한 시각 (epoch ms)
+    pub last_synced_at: Option<i64>,
+    /// 아직 반영 대기 중인 이벤트 수
+    pub pending: u32,
+    /// 최근 오류 (있으면)
+    pub error: Option<String>,
+}

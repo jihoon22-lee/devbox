@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addRoot, indexNow, indexStatus, listRoots, removeRoot, searchContent, searchFiles } from "./api";
-import type { ContentResult, FileEntry, IndexStatus, RootInfo } from "./types";
+import { addRoot, indexNow, indexStatus, listRoots, removeRoot, searchContent, searchFiles, watcherStatuses } from "./api";
+import type { ContentResult, FileEntry, IndexStatus, RootInfo, RootStatus } from "./types";
 import "./App.css";
 
 function fmtSize(bytes: number): string {
@@ -17,6 +17,7 @@ export default function App() {
   const [contentResults, setContentResults] = useState<ContentResult[]>([]);
   const [status, setStatus] = useState<IndexStatus>({ indexing: false, total_files: 0, indexed_files: 0, roots: 0, last_indexed_at: null });
   const [roots, setRoots] = useState<RootInfo[]>([]);
+  const [watchStatus, setWatchStatus] = useState<RootStatus[]>([]);
   const [newRoot, setNewRoot] = useState("");
   const [newRootContent, setNewRootContent] = useState(false);
   const [regexError, setRegexError] = useState<string | null>(null);
@@ -25,9 +26,10 @@ export default function App() {
 
   const loadMeta = useCallback(async () => {
     try {
-      const [st, rs] = await Promise.all([indexStatus(), listRoots()]);
+      const [st, rs, ws] = await Promise.all([indexStatus(), listRoots(), watcherStatuses()]);
       setStatus(st);
       setRoots(rs);
+      setWatchStatus(ws);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -154,15 +156,23 @@ export default function App() {
 
       <div className="roots">
         <span className="dim">Roots:</span>
-        {roots.map((r) => (
-          <span key={r.path} className="root-chip" title={r.content ? "content index on" : "name only"}>
-            {r.path}
-            {r.content && <span className="root-tag">content</span>}
-            <button className="root-del" title="Remove root" onClick={() => void removeRoot(r.path).then(loadMeta)}>
-              ✕
-            </button>
-          </span>
-        ))}
+        {roots.map((r) => {
+          const ws = watchStatus.find((w) => w.root === r.path);
+          return (
+            <span key={r.path} className="root-chip" title={r.content ? "content index on" : "name only"}>
+              {r.path}
+              {r.content && <span className="root-tag">content</span>}
+              {ws && (
+                <span className={`watch-state ${ws.error ? "watch-error" : ""}`} title={ws.error ?? "watcher"}>
+                  {ws.error ? "!" : ws.pending > 0 ? `${ws.pending} pending` : "live"}
+                </span>
+              )}
+              <button className="root-del" title="Remove root" onClick={() => void removeRoot(r.path).then(loadMeta)}>
+                ✕
+              </button>
+            </span>
+          );
+        })}
         <input
           className="root-input"
           placeholder="Add root path (e.g. C:\projects)"

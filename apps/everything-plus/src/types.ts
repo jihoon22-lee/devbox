@@ -25,3 +25,10 @@ export interface IndexStatus {
   roots: number;
   last_indexed_at: number | null;
 }
+
+export interface RootStatus {
+  root: string;
+  lastSyncedAt: number | null;
+  pending: number;
+  error: string | null;
+}

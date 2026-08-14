@@ -255,3 +255,15 @@ td {
   padding: 40px;
   white-space: normal;
 }
+
+.watch-state {
+  font-size: 10px;
+  color: var(--db-color-ok, #3fb950);
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.watch-state.watch-error {
+  color: var(--db-color-danger, #f85149);
+}

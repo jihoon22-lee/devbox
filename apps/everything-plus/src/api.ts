@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./lib/isTauri";
-import type { ContentResult, FileEntry, IndexStatus, RootInfo } from "./types";
+import type { ContentResult, FileEntry, IndexStatus, RootInfo, RootStatus } from "./types";
 
 const MOCK_FILES: FileEntry[] = [
   { id: 1, path: "C:\\projects\\devbox\\PLAN.md", name: "PLAN.md", ext: "md", size: 3555, modified_ts: 0 },
@@ -51,4 +51,11 @@ export async function indexStatus(): Promise<IndexStatus> {
 export async function indexNow(): Promise<void> {
   if (!isTauri()) return;
   await invoke("index_now");
+}
+
+export async function watcherStatuses(): Promise<RootStatus[]> {
+  if (!isTauri()) {
+    return [{ root: "C:\\projects\\devbox", lastSyncedAt: Date.now(), pending: 0, error: null }];
+  }
+  return invoke<RootStatus[]>("watcher_statuses");
 }

@@ -9,6 +9,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 /// 한 트랜잭션에 담아 커밋할 파일 개수. 이 단위로 락을 반납해 `index_status`가
 /// 인덱싱 도중에도 응답할 수 있게 한다.
@@ -24,6 +25,7 @@ pub struct AppState {
 /// 인덱스 루트를 추가하고 인덱싱을 시작한다.
 #[tauri::command]
 pub fn add_root(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Arc<AppState>>,
     path: String,
     index_content: bool,
@@ -33,15 +35,28 @@ pub fn add_root(
     // 원본 입력(`path`)을 다시 쓰면 DB에 저장된 정규화 값과 어긋나
     // run_index의 루트 필터가 아무 것도 매치하지 못할 수 있다.
     let stored_path = db_add_root(&conn, &path, index_content).map_err(|e| e.to_string())?;
-    let st = state.inner().clone();
     drop(conn);
+    // watcher 등록 (이미 있으면 no-op)
+    let watcher = app.state::<Arc<crate::commands::watcher::WatcherManager>>();
+    watcher.add(&stored_path)?;
+    let st = state.inner().clone();
     spawn_index(st, vec![stored_path]);
     Ok(())
 }
 
 #[tauri::command]
-pub fn remove_root(state: tauri::State<'_, Arc<AppState>>, path: String) -> Result<(), String> {
-    db_remove_root(&state.db.lock().unwrap(), &path).map_err(|e| e.to_string())
+pub fn remove_root(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<AppState>>,
+    path: String,
+) -> Result<(), String> {
+    let conn = state.db.lock().unwrap();
+    db_remove_root(&conn, &path).map_err(|e| e.to_string())?;
+    drop(conn);
+    // watcher 해제 (루트와 함께 pending 해제)
+    let watcher = app.state::<Arc<crate::commands::watcher::WatcherManager>>();
+    watcher.remove(&path);
+    Ok(())
 }
 
 #[tauri::command]
