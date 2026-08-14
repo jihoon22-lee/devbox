@@ -6,6 +6,7 @@ import {
   deleteJob,
   getServiceInstance,
   getServiceObservability,
+  exportDefinitions,
   type ServiceObservability,
   hideMainWindow,
   listServices,
@@ -165,6 +166,22 @@ export default function App() {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  const onExportDefs = async () => {
+    try {
+      const doc = await exportDefinitions();
+      if (!doc) return;
+      const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `run-manager-definitions-v${doc.schemaVersion}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setStatusError(cause instanceof Error ? cause.message : String(cause));
+    }
   };
 
   const refreshStatus = useCallback(async () => {
@@ -467,6 +484,7 @@ export default function App() {
                 <h3 id="services-title" className="visually-hidden">서비스 목록</h3>
               </div>
               <button type="button" className="button-primary" onClick={openServiceCreate}>+ 새 서비스</button>
+              <button type="button" className="button-secondary" onClick={() => void onExportDefs()}>정의 내보내기</button>
             </div>
             {loading ? <div className="empty-card compact"><div className="pulse" /><p>서비스를 불러오는 중…</p></div> : null}
             {!loading && services.length === 0 ? (
