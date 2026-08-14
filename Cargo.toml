@@ -15,6 +15,7 @@ members = [
     "apps/run-manager/src-tauri",
     "apps/workbench/src-tauri",
     "apps/webhook-lab/src-tauri",
+    "apps/repo-manager/src-tauri",
     "crates/filesystem",
     "crates/markdown",
     "crates/process",

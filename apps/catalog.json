@@ -132,6 +132,17 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false
+    },
+    {
+      "id": "repo-manager",
+      "displayName": "Repo Manager",
+      "productName": "RepoManager",
+      "identifier": "com.devbox.repomanager",
+      "cargoPackage": "repo-manager",
+      "appDir": "apps/repo-manager",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false
     }
   ]
 }
