@@ -1,20 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { installApp, installed, launchApp, latest } from "./api";
-import type { InstalledApp, LatestRelease } from "./types";
+import { available, catalog, installApp, installed, launchApp } from "./api";
+import type { CatalogApp, InstalledApp, ReleaseManifest } from "./types";
 import "./App.css";
 
-const APPS = [
-  { crate: "port-manager", product: "PortManager", name: "Port Manager" },
-  { crate: "developer-toolbox", product: "DevToolbox", name: "Developer Toolbox" },
-  { crate: "api-playground", product: "ApiPlayground", name: "API Playground" },
-  { crate: "everything-plus", product: "EverythingPlus", name: "Everything+" },
-  { crate: "knowledge-base", product: "Knowledge", name: "Knowledge" },
-  { crate: "life-log", product: "LifeLog", name: "Life Log" },
-  { crate: "wsl-desktop", product: "WSLDesktop", name: "WSL Desktop" },
-];
-
 export default function App() {
-  const [latestRel, setLatestRel] = useState<LatestRelease | null>(null);
+  const [apps, setApps] = useState<CatalogApp[]>([]);
+  const [manifest, setManifest] = useState<ReleaseManifest | null>(null);
   const [installedList, setInstalledList] = useState<InstalledApp[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,8 +14,9 @@ export default function App() {
   const refresh = useCallback(async () => {
     setError(null);
     try {
-      const [lt, inst] = await Promise.all([latest(), installed()]);
-      setLatestRel(lt);
+      const [cat, av, inst] = await Promise.all([catalog(), available(), installed()]);
+      setApps(cat.filter((a) => a.managerVisible));
+      setManifest(av);
       setInstalledList(inst);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -35,27 +27,23 @@ export default function App() {
     void refresh();
   }, [refresh]);
 
-  const findAsset = (appCrate: string, product: string, kind: "portable" | "installer") => {
-    if (!latestRel) return null;
-    const tagNoV = latestRel.tag.replace(/^v/, "");
-    if (kind === "portable") {
-      const a = latestRel.assets.find((x) => x.name === `${appCrate}.exe`);
-      return a?.url ?? null;
-    }
-    const a = latestRel.assets.find((x) => x.name.startsWith(`${product}_`) && x.name.includes(`${tagNoV}_x64-setup.exe`));
-    return a?.url ?? null;
+  const manifestOf = (appId: string) => manifest?.apps.find((a) => a.id === appId);
+  const installedOf = (appId: string) => installedList.find((i) => i.app === appId);
+
+  const isUpToDate = (appId: string) => {
+    const inst = installedOf(appId);
+    const app = manifestOf(appId);
+    if (!inst || !app) return false;
+    return inst.version === app.version;
   };
 
-  const installedOf = (crate: string) => installedList.find((i) => i.app === crate);
-
-  const onInstall = async (crate: string, url: string, mode: "portable" | "installer") => {
-    if (!latestRel) return;
-    setBusy(`${crate}:${mode}`);
+  const onInstall = async (appId: string, mode: "portable" | "installer") => {
+    setBusy(`${appId}:${mode}`);
     setError(null);
     setNotice(null);
     try {
-      const msg = await installApp(crate, latestRel.tag, url, mode);
-      setNotice(`${crate}: ${msg}`);
+      const msg = await installApp(appId, mode);
+      setNotice(`${appId}: ${msg}`);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -64,27 +52,21 @@ export default function App() {
     }
   };
 
-  const onLaunch = async (crate: string) => {
+  const onLaunch = async (appId: string) => {
     setError(null);
     setNotice(null);
     try {
-      await launchApp(crate);
+      await launchApp(appId);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  };
-
-  const isUpToDate = (crate: string) => {
-    const inst = installedOf(crate);
-    if (!inst || !latestRel) return false;
-    return inst.version === latestRel.tag.replace(/^v/, "");
   };
 
   return (
     <div className="app">
       <header className="toolbar">
         <h1 className="title">Devbox Manager</h1>
-        <span className="latest">Latest: {latestRel ? latestRel.tag : "..."}</span>
+        <span className="latest">Latest: {manifest ? manifest.releaseTag : "..."}</span>
         <span className="spacer" />
         <button className="btn refresh" onClick={() => void refresh()}>
           Refresh
@@ -105,34 +87,29 @@ export default function App() {
             </tr>
           </thead>
           <tbody>
-            {APPS.map((a) => {
-              const inst = installedOf(a.crate);
-              const upToDate = isUpToDate(a.crate);
-              const portableUrl = findAsset(a.crate, a.product, "portable");
-              const installerUrl = findAsset(a.crate, a.product, "installer");
+            {apps.map((a) => {
+              const inst = installedOf(a.id);
+              const app = manifestOf(a.id);
+              const upToDate = isUpToDate(a.id);
               return (
-                <tr key={a.crate}>
-                  <td className="app-name">{a.name}</td>
+                <tr key={a.id}>
+                  <td className="app-name">{a.displayName}</td>
                   <td>{inst ? `${inst.version} (${inst.mode})` : <span className="dim">-</span>}</td>
-                  <td>{latestRel ? latestRel.tag.replace(/^v/, "") : "-"}</td>
+                  <td>{app ? app.version : "-"}</td>
                   <td className="actions">
                     {inst && (
-                      <button className="btn" disabled={busy === a.crate} onClick={() => void onLaunch(a.crate)}>
+                      <button className="btn" disabled={busy === a.id} onClick={() => void onLaunch(a.id)}>
                         Launch
                       </button>
                     )}
-                    {!upToDate && (
+                    {!upToDate && app && (
                       <>
-                        {portableUrl && (
-                          <button className="btn" disabled={busy === `${a.crate}:portable`} onClick={() => void onInstall(a.crate, portableUrl, "portable")}>
-                            {busy === `${a.crate}:portable` ? "..." : inst ? "Update (portable)" : "Install (portable)"}
-                          </button>
-                        )}
-                        {installerUrl && (
-                          <button className="btn" disabled={busy === `${a.crate}:installer`} onClick={() => void onInstall(a.crate, installerUrl, "installer")}>
-                            {busy === `${a.crate}:installer` ? "..." : inst ? "Update (setup)" : "Install (setup)"}
-                          </button>
-                        )}
+                        <button className="btn" disabled={busy === `${a.id}:portable`} onClick={() => void onInstall(a.id, "portable")}>
+                          {busy === `${a.id}:portable` ? "..." : inst ? "Update (portable)" : "Install (portable)"}
+                        </button>
+                        <button className="btn" disabled={busy === `${a.id}:installer`} onClick={() => void onInstall(a.id, "installer")}>
+                          {busy === `${a.id}:installer` ? "..." : inst ? "Update (setup)" : "Install (setup)"}
+                        </button>
                       </>
                     )}
                     {upToDate && <span className="dim tag">up to date</span>}
@@ -146,6 +123,7 @@ export default function App() {
 
       <footer className="foot">
         <div className="dim">휴대용(portable): exe를 자체 폴더에 받아 관리. 설치 마법사(setup): 공식 설치 프로그램 실행.</div>
+        <div className="dim">각 앱의 최신 버전은 release-manifest.json에서 읽는다 (release tag와 독립적).</div>
         <div className="dim">자세한 사용법: docs/windows-guide.md</div>
       </footer>
     </div>

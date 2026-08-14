@@ -37,7 +37,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::manager::latest,
+            commands::manager::catalog,
+            commands::manager::available,
             commands::manager::installed,
             commands::manager::install,
             commands::manager::launch,
