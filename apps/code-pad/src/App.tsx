@@ -109,6 +109,12 @@ interface SaveOutcome {
   matchedSnapshot: boolean;
 }
 
+export interface NavEntry {
+  docId: DocId;
+  path: string;
+  cursor: number;
+}
+
 export default function App() {
   const [state, dispatch] = useReducer(editorReducer, undefined, createInitialEditorState);
   const [pathInput, setPathInput] = useState("");
@@ -133,6 +139,8 @@ export default function App() {
   } | null>(null);
   const [lspPanelOpen, setLspPanelOpen] = useState(false);
   const [problemsOpen, setProblemsOpen] = useState(false);
+  const [navBack, setNavBack] = useState<NavEntry[]>([]);
+  const [navForward, setNavForward] = useState<NavEntry[]>([]);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryChecked, setRecoveryChecked] = useState(false);
   const [lspSync] = useState(() => new LspDocumentSync());  const [lspSyncState, setLspSyncState] = useState(lspSync.getState());
@@ -488,6 +496,11 @@ export default function App() {
       setError("LSP가 파일이 아닌 탐색 대상을 반환했습니다.");
       return;
     }
+    // 내비게이션 히스토리 기록 (정의/참조 이동 전 현재 위치 저장)
+    if (activeDoc) {
+      setNavBack((prev) => [...prev, { docId: activeDoc.id, path: activeDoc.path, cursor: activeDoc.cursor }]);
+      setNavForward([]);
+    }
     const doc = await openPath(path);
     const status = lspSync.statusForDocument(doc.id);
     const position = target.selectionRange?.start ?? target.range.start;
@@ -497,12 +510,41 @@ export default function App() {
       cursor: offsetForPosition(doc.text, position, status?.capabilities.positionEncoding ?? "utf-16"),
     });
   };
-
   const handleProblemsNavigate = async (docId: string, offset: number) => {
     const doc = stateRef.current.docs.find((d) => d.id === docId);
     if (!doc) return;
+    if (activeDoc) {
+      setNavBack((prev) => [...prev, { docId: activeDoc.id, path: activeDoc.path, cursor: activeDoc.cursor }]);
+      setNavForward([]);
+    }
     await openPath(doc.path);
     dispatchAction({ type: "setCursor", docId, cursor: offset });
+  };
+
+  const navigateTo = async (entry: NavEntry) => {
+    const doc = stateRef.current.docs.find((d) => d.id === entry.docId);
+    if (doc) {
+      dispatchAction({ type: "setCursor", docId: entry.docId, cursor: entry.cursor });
+      return;
+    }
+    const opened = await openPath(entry.path);
+    dispatchAction({ type: "setCursor", docId: opened.id, cursor: entry.cursor });
+  };
+
+  const goNav = (dir: "back" | "forward") => {
+    if (dir === "back") {
+      const entry = navBack[navBack.length - 1];
+      if (!entry) return;
+      setNavBack((prev) => prev.slice(0, -1));
+      if (activeDoc) setNavForward((prev) => [...prev, { docId: activeDoc.id, path: activeDoc.path, cursor: activeDoc.cursor }]);
+      void navigateTo(entry);
+    } else {
+      const entry = navForward[navForward.length - 1];
+      if (!entry) return;
+      setNavForward((prev) => prev.slice(0, -1));
+      if (activeDoc) setNavBack((prev) => [...prev, { docId: activeDoc.id, path: activeDoc.path, cursor: activeDoc.cursor }]);
+      void navigateTo(entry);
+    }
   };
 
   const problemsServerStatus = lspSyncState.lastError
@@ -1134,6 +1176,12 @@ export default function App() {
           disabled={!hydrated}
         >
           Problems
+        </button>
+        <button type="button" className="toolbar-button" onClick={() => goNav("back")} disabled={navBack.length === 0} title="뒤로">
+          ←
+        </button>
+        <button type="button" className="toolbar-button" onClick={() => goNav("forward")} disabled={navForward.length === 0} title="앞으로">
+          →
         </button>
         <button type="button" className="toolbar-button" onClick={() => handleLspNavigation("definition")} disabled={!hydrated || !lspCapability("definition") || lspBusy}>
           정의
