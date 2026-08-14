@@ -5,6 +5,9 @@ use crate::core::catalog::CatalogApp;
 use serde::Serialize;
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 const CATALOG_JSON: &str = include_str!("../../../../catalog.json");
 
 #[derive(Debug, Clone, Serialize)]
