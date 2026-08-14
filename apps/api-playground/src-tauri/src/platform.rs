@@ -8,7 +8,7 @@ use zeroize::Zeroizing;
 pub fn platform_sealer() -> Box<dyn devbox_secrets::Sealer> {
     #[cfg(target_os = "windows")]
     {
-        Box::new(DpapiSealer)
+        Box::new(windows_impl::DpapiSealer)
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -27,7 +27,7 @@ mod windows_impl {
 
     const ENTROPY: &[u8] = b"devbox.api-playground.secrets.v1";
 
-    pub(super) struct DpapiSealer;
+    pub(crate) struct DpapiSealer;
 
     impl devbox_secrets::Sealer for DpapiSealer {
         fn seal(&self, plaintext: &str) -> Result<Vec<u8>, SealError> {
@@ -92,9 +92,6 @@ mod windows_impl {
         }
     }
 }
-
-#[cfg(target_os = "windows")]
-pub use windows_impl::DpapiSealer;
 
 struct UnsupportedSealer;
 
