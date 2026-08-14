@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  autostartStatus,
   getAppStats,
   getDay,
   getIdleThreshold,
@@ -9,11 +10,13 @@ import {
   getTimeline,
   isTracking,
   redactExisting,
+  setAutostart,
   setIdleThreshold,
   setPrivacyRules,
   setProjects,
   startTracking,
   stopTracking,
+  type AutostartStatus,
   type PrivacyRules,
 } from "./api";
 import type { AppTotal, DaySummary, RangeSummary, Session } from "./types";
@@ -74,6 +77,7 @@ export default function App() {
   const [projectInput, setProjectInput] = useState("");
   const [idleThreshold, setIdleThresholdState] = useState(300000);
   const [privacy, setPrivacy] = useState<PrivacyRules>({ excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false });
+  const [autoStart, setAutoStart] = useState<AutostartStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -81,10 +85,11 @@ export default function App() {
 
   const loadSettings = useCallback(async () => {
     try {
-      const [pr, idle, privacyRules] = await Promise.all([getProjects(), getIdleThreshold(), getPrivacyRules()]);
+      const [pr, idle, privacyRules, ast] = await Promise.all([getProjects(), getIdleThreshold(), getPrivacyRules(), autostartStatus()]);
       setProjectsState(pr);
       setIdleThresholdState(idle);
       setPrivacy(privacyRules);
+      setAutoStart(ast);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -247,6 +252,33 @@ export default function App() {
               />
             </div>
             <div className="dim">이 시간 이상 입력이 없으면 해당 구간을 사용 시간에서 제외합니다.</div>
+          </section>
+
+          <section className="panel">
+            <h2>Auto start</h2>
+            {autoStart?.supported ? (
+              <label className="row">
+                <input
+                  type="checkbox"
+                  checked={autoStart.enabled}
+                  onChange={(e) => {
+                    setError(null);
+                    setNotice(null);
+                    void (async () => {
+                      try {
+                        const next = await setAutostart(e.currentTarget.checked);
+                        setAutoStart(next);
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : String(err));
+                      }
+                    })();
+                  }}
+                />
+                Windows 로그인 시 자동 시작
+              </label>
+            ) : (
+              <div className="dim">이 플랫폼에서는 자동 시작을 지원하지 않습니다.</div>
+            )}
           </section>
 
           <section className="panel">

@@ -48,6 +48,8 @@ pub fn run() {
             commands::privacy::get_privacy_rules,
             commands::privacy::set_privacy_rules,
             commands::privacy::redact_existing,
+            commands::autostart::autostart_status,
+            commands::autostart::set_autostart,
             commands::queries::timeline,
             commands::queries::app_stats,
         ])
