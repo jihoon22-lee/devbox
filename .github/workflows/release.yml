@@ -42,7 +42,7 @@ jobs:
         run: |
           $apps = @(
             "port-manager","developer-toolbox","api-playground",
-            "activity-timeline","everything-plus","knowledge-base","life-log",
+            "everything-plus","knowledge-base","life-log",
             "wsl-desktop","devbox-manager","code-pad","run-manager"
           )
           foreach ($a in $apps) {

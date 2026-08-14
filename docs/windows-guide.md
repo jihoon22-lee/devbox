@@ -245,15 +245,14 @@ SmartScreen 경고("인식할 수 없는 앱")가 뜨면:
 Tauri의 `app_local_data_dir()`은 번들 identifier 기준 폴더를 사용한다.
 
 ```
-%LOCALAPPDATA%\com.workbench.activitytimeline\data.db   ← 활동 기록
-%LOCALAPPDATA%\com.workbench.everythingplus\data.db     ← 파일 인덱스
-%LOCALAPPDATA%\com.workbench.knowledgebase\data.db      ← 문서 인덱스
-%LOCALAPPDATA%\com.workbench.lifelog\data.db            ← life-log 설정
+%LOCALAPPDATA%\com.devbox.lifelog\data.db              ← 활동 세션 + life-log 설정
+%LOCALAPPDATA%\com.devbox.everythingplus\data.db       ← 파일 인덱스
+%LOCALAPPDATA%\com.devbox.knowledgebase\data.db        ← 문서 인덱스
 ```
 
 - **집 ↔ 회사 데이터 공유**: 위 폴더를 통째로 복사하면 기록/인덱스가 이전된다.
 - Knowledge 문서 파일 자체는 `Documents\Knowledge`에 있으므로, 이 폴더만 복사해도 됨.
-- Life Log는 Settings 탭에서 활동 데이터 소스 경로를 변경할 수 있다 (기본값은 activity-timeline 경로).
+- Life Log는 활동 추적이 앱에 통합되어 별도 데이터 소스 설정이 필요 없다.
 
 ---
 

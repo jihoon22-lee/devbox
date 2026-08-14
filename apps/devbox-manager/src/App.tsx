@@ -7,7 +7,6 @@ const APPS = [
   { crate: "port-manager", product: "PortManager", name: "Port Manager" },
   { crate: "developer-toolbox", product: "DevToolbox", name: "Developer Toolbox" },
   { crate: "api-playground", product: "ApiPlayground", name: "API Playground" },
-  { crate: "activity-timeline", product: "ActivityTimeline", name: "Activity Timeline" },
   { crate: "everything-plus", product: "EverythingPlus", name: "Everything+" },
   { crate: "knowledge-base", product: "Knowledge", name: "Knowledge" },
   { crate: "life-log", product: "LifeLog", name: "Life Log" },

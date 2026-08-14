@@ -1,4 +1,4 @@
-use crate::core::models::{DaySummary, GitDay, ProjectCommit};
+use crate::core::models::{GitDay, ProjectCommit};
 use tokio::process::Command;
 
 /// 프로젝트 경로들에서 하루 동안의 커밋 수를 집계한다.
@@ -42,22 +42,5 @@ async fn git_commit_count(path: &str, since: i64, until: i64) -> u32 {
             String::from_utf8_lossy(&out.stdout).lines().count() as u32
         }
         _ => 0,
-    }
-}
-
-/// 동기 부분(활동 DB)만 요약한다. git은 호출부에서 async로 채운다.
-pub fn summarize_activity(
-    date: &str,
-    day_start: i64,
-    day_end: i64,
-    activity_db: &str,
-) -> DaySummary {
-    let (pc_usage, app_totals) =
-        crate::core::readers::activity::read_activity(activity_db, day_start, day_end);
-    DaySummary {
-        date: date.to_string(),
-        pc_usage_ms: pc_usage,
-        app_totals,
-        git: GitDay::default(),
     }
 }

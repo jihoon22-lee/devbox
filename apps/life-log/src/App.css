@@ -259,3 +259,69 @@ body {
 .mini:hover {
   color: var(--red);
 }
+
+/* ── 타임라인 (activity-timeline 흡수) ─────────────────────────── */
+
+.timeline {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.timeline-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.status-on {
+  color: var(--green, #3fb950);
+  font-size: 12px;
+}
+
+.status-off {
+  color: var(--red);
+  font-size: 12px;
+}
+
+.btn.danger {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.session {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.session .time {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  min-width: 52px;
+}
+
+.session .app {
+  font-weight: 600;
+  min-width: 120px;
+}
+
+.session .title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session .dur {
+  font-variant-numeric: tabular-nums;
+}
