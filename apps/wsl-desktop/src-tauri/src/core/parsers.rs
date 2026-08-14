@@ -1,4 +1,4 @@
-use crate::core::models::{ContainerInfo, DistroInfo, GitStatus};
+use crate::core::models::{ContainerInfo, DistroInfo};
 
 /// `wsl.exe -l -v` 출력 파싱.
 /// 형식:
@@ -98,31 +98,6 @@ fn extract_docker_ports(line: &str) -> String {
         .join(" ")
 }
 
-/// `git status --porcelain --branch` 출력 파싱.
-/// 형식:
-/// ```text
-/// ## main...origin/main
-///  M file.txt
-/// ?? new.txt
-/// ```
-pub fn parse_git_status(path: &str, input: &str) -> GitStatus {
-    let mut branch = "(detached)".to_string();
-    let mut changes = 0u32;
-    for line in input.lines() {
-        if let Some(rest) = line.strip_prefix("## ") {
-            branch = rest.split("...").next().unwrap_or(rest).to_string();
-        } else if !line.trim().is_empty() {
-            changes += 1;
-        }
-    }
-    GitStatus {
-        path: path.to_string(),
-        branch,
-        changes,
-        clean: changes == 0,
-    }
-}
-
 /// wsl.exe 출력 디코딩.
 ///
 /// 파이프로 실행된 `wsl.exe -l -v`는 UTF-16LE(BOM 또는 다량의 NUL)로 출력한다.
@@ -184,22 +159,6 @@ mod tests {
         assert_eq!(containers[0].name, "pg");
         assert!(containers[0].status.contains("Up"));
         assert!(containers[1].status.contains("Exited"));
-    }
-
-    #[test]
-    fn parses_git_status_clean() {
-        let s = parse_git_status("C:/proj", "## main...origin/main\n");
-        assert_eq!(s.branch, "main");
-        assert_eq!(s.changes, 0);
-        assert!(s.clean);
-    }
-
-    #[test]
-    fn parses_git_status_dirty() {
-        let s = parse_git_status("C:/proj", "## dev...origin/dev\n M a.rs\n?? b.txt\n");
-        assert_eq!(s.branch, "dev");
-        assert_eq!(s.changes, 2);
-        assert!(!s.clean);
     }
 
     #[test]

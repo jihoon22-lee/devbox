@@ -17,12 +17,3 @@ pub struct ContainerInfo {
     pub status: String,
     pub ports: String,
 }
-
-/// git 저장소 상태
-#[derive(Debug, Clone, Serialize)]
-pub struct GitStatus {
-    pub path: String,
-    pub branch: String,
-    pub changes: u32,
-    pub clean: bool,
-}

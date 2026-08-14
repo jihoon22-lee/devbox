@@ -38,7 +38,6 @@ pub fn run() {
             commands::dashboard::run_wsl_command,
             commands::dashboard::docker_ps,
             commands::dashboard::docker_action,
-            commands::dashboard::git_status,
             commands::terminal::start_session,
             commands::terminal::write_session,
             commands::terminal::broadcast,

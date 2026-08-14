@@ -3,7 +3,6 @@ import {
   closeSession,
   dockerAction,
   dockerPs,
-  gitStatus,
   listDistros,
   onTerminalClosed,
   onTerminalOutput,
@@ -11,22 +10,18 @@ import {
 } from "./api";
 import DistroPanel from "./components/DistroPanel";
 import PaneCanvas from "./components/PaneCanvas";
-import ProjectPanel from "./components/ProjectPanel";
 import TabBar from "./components/TabBar";
 import { makeId } from "./lib/id";
-import { addPath as addSavedPath, loadSavedPaths, removePath as removeSavedPath, savePaths } from "./lib/projectPaths";
 import { matchShortcut, type ShortcutAction } from "./lib/shortcuts";
 import { loadPinned, loadPinnedCwd, loadRecentPaths, pushRecentPath, savePinned, savePinnedCwd } from "./lib/storage";
 import { nextTabTitle } from "./lib/tabTitle";
-import type { ContainerInfo, DistroInfo, GitStatus, Layout, Pane, Tab } from "./types";
+import type { ContainerInfo, DistroInfo, Layout, Pane, Tab } from "./types";
 import "./App.css";
 
 export default function App() {
   const [distros, setDistros] = useState<DistroInfo[]>([]);
   const [selected, setSelected] = useState("");
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
-  const [projects, setProjects] = useState<GitStatus[]>([]);
-  const [newPath, setNewPath] = useState("");
   const [dockerMissing, setDockerMissing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -78,25 +73,12 @@ export default function App() {
         setError(msg);
       }
     }
-    setProjects(await gitStatus(loadSavedPaths()));
   }, []);
 
   useEffect(() => {
     void refreshDashboard().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const addPath = () => {
-    if (!newPath.trim()) return;
-    savePaths(addSavedPath(loadSavedPaths(), newPath));
-    setNewPath("");
-    void refreshDashboard();
-  };
-
-  const removePath = (p: string) => {
-    savePaths(removeSavedPath(loadSavedPaths(), p));
-    void refreshDashboard();
-  };
 
   const onDockerAction = async (id: string, action: "start" | "stop" | "restart") => {
     setBusy(`${id}:${action}`);
@@ -388,13 +370,6 @@ export default function App() {
               busy={busy}
               onAction={onDockerAction}
               onRefresh={() => void refreshDashboard().catch(() => undefined)}
-            />
-            <ProjectPanel
-              projects={projects}
-              newPath={newPath}
-              onNewPathChange={setNewPath}
-              onAddPath={addPath}
-              onRemovePath={removePath}
             />
           </aside>
         )}
