@@ -328,3 +328,31 @@ body {
 .session .dur {
   font-variant-numeric: tabular-nums;
 }
+
+.notice {
+  background: rgba(63, 185, 80, 0.12);
+  border-bottom: 1px solid var(--green, #3fb950);
+  color: var(--green, #3fb950);
+  padding: 8px 14px;
+}
+
+.privacy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.privacy-row span {
+  min-width: 260px;
+}
+
+.privacy-row input {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  outline: none;
+}

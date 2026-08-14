@@ -2604,6 +2604,7 @@ dependencies = [
 name = "life-log"
 version = "0.2.2"
 dependencies = [
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

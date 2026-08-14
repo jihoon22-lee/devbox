@@ -45,6 +45,9 @@ pub fn run() {
             commands::tracking::is_tracking,
             commands::tracking::set_idle_threshold,
             commands::tracking::get_idle_threshold,
+            commands::privacy::get_privacy_rules,
+            commands::privacy::set_privacy_rules,
+            commands::privacy::redact_existing,
             commands::queries::timeline,
             commands::queries::app_stats,
         ])

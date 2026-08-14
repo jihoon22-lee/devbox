@@ -1,5 +1,7 @@
 use crate::core::db::insert_session;
 use crate::core::idle::DEFAULT_IDLE_THRESHOLD_MS;
+use crate::core::models::ClosedSession;
+use crate::core::privacy::{apply as apply_privacy, parse_rules, PrivacyRules};
 use crate::core::sessionizer::Sessionizer;
 use rusqlite::Connection;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -33,7 +35,9 @@ pub fn stop_tracking(state: tauri::State<'_, Arc<AppState>>) -> Result<(), Strin
     state.tracking.store(false, Ordering::SeqCst);
     let closed = state.sessionizer.lock().unwrap().finish(now_ms());
     if let Some(c) = closed {
-        insert_session(&state.db.lock().unwrap(), &c).map_err(|e| e.to_string())?;
+        let conn = state.db.lock().unwrap();
+        let rules = privacy_rules(&conn);
+        insert_filtered(&conn, &c, &rules).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -67,6 +71,10 @@ pub fn spawn_poller(app: &tauri::AppHandle) {
                 )
             };
             let threshold = crate::core::idle::parse_threshold_ms(&threshold);
+            let rules = {
+                let conn = state.db.lock().unwrap();
+                privacy_rules(&conn)
+            };
 
             let idle_end = crate::core::idle::session_end_on_idle(
                 now,
@@ -76,7 +84,8 @@ pub fn spawn_poller(app: &tauri::AppHandle) {
             if let Some(end_ts) = idle_end {
                 // idle 시작: 열린 세션을 idle 직전까지로 마감 (idle 시간 미집계)
                 if let Some(closed) = state.sessionizer.lock().unwrap().finish(end_ts) {
-                    let _ = insert_session(&state.db.lock().unwrap(), &closed);
+                    let conn = state.db.lock().unwrap();
+                    let _ = insert_filtered(&conn, &closed, &rules);
                 }
                 idle_active = true;
                 continue;
@@ -94,10 +103,38 @@ pub fn spawn_poller(app: &tauri::AppHandle) {
             };
             let closed = state.sessionizer.lock().unwrap().observe(app, title, now);
             if let Some(c) = closed {
-                let _ = insert_session(&state.db.lock().unwrap(), &c);
+                let conn = state.db.lock().unwrap();
+                let _ = insert_filtered(&conn, &c, &rules);
             }
         }
     });
+}
+
+/// 설정에서 privacy rules를 읽는다 (없으면 기본값).
+fn privacy_rules(conn: &Connection) -> PrivacyRules {
+    let json = crate::core::db::get_setting(conn, "privacy_rules", "{}");
+    parse_rules(&json)
+}
+
+/// privacy rule을 **insert 전에** 적용해 저장하거나 건너뛴다.
+fn insert_filtered(
+    conn: &Connection,
+    closed: &ClosedSession,
+    rules: &PrivacyRules,
+) -> rusqlite::Result<()> {
+    let Some((app, title)) = apply_privacy(rules, &closed.app, &closed.title) else {
+        // 제외 대상 세션 — 저장하지 않는다
+        return Ok(());
+    };
+    insert_session(
+        conn,
+        &ClosedSession {
+            app,
+            title,
+            start_ts: closed.start_ts,
+            end_ts: closed.end_ts,
+        },
+    )
 }
 
 /// idle threshold 설정 (ms).

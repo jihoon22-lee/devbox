@@ -3,14 +3,18 @@ import {
   getAppStats,
   getDay,
   getIdleThreshold,
+  getPrivacyRules,
   getProjects,
   getRange,
   getTimeline,
   isTracking,
+  redactExisting,
   setIdleThreshold,
+  setPrivacyRules,
   setProjects,
   startTracking,
   stopTracking,
+  type PrivacyRules,
 } from "./api";
 import type { AppTotal, DaySummary, RangeSummary, Session } from "./types";
 import "./App.css";
@@ -69,15 +73,18 @@ export default function App() {
   const [projects, setProjectsState] = useState<string[]>([]);
   const [projectInput, setProjectInput] = useState("");
   const [idleThreshold, setIdleThresholdState] = useState(300000);
+  const [privacy, setPrivacy] = useState<PrivacyRules>({ excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false });
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const dateStr = useMemo(() => toDateStr(date), [date]);
 
   const loadSettings = useCallback(async () => {
     try {
-      const [pr, idle] = await Promise.all([getProjects(), getIdleThreshold()]);
+      const [pr, idle, privacyRules] = await Promise.all([getProjects(), getIdleThreshold(), getPrivacyRules()]);
       setProjectsState(pr);
       setIdleThresholdState(idle);
+      setPrivacy(privacyRules);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -199,6 +206,7 @@ export default function App() {
       </header>
 
       {error && <div className="error">{error}</div>}
+      {notice && <div className="notice">{notice}</div>}
 
       {view === "settings" ? (
         <div className="settings">
@@ -239,6 +247,65 @@ export default function App() {
               />
             </div>
             <div className="dim">이 시간 이상 입력이 없으면 해당 구간을 사용 시간에서 제외합니다.</div>
+          </section>
+
+          <section className="panel">
+            <h2>Privacy rules</h2>
+            <div className="privacy-row">
+              <span className="dim">제외할 프로세스 (쉼표 구분, 정확 일치):</span>
+              <input
+                value={privacy.excludedProcesses.join(", ")}
+                onChange={(e) => {
+                  const next = { ...privacy, excludedProcesses: e.currentTarget.value.split(",").map((s) => s.trim()).filter(Boolean) };
+                  setPrivacy(next);
+                  void setPrivacyRules(next);
+                }}
+              />
+            </div>
+            <div className="privacy-row">
+              <span className="dim">제목 미저장 정규식 (쉼표 구분):</span>
+              <input
+                value={privacy.excludedTitlePatterns.join(", ")}
+                onChange={(e) => {
+                  const next = { ...privacy, excludedTitlePatterns: e.currentTarget.value.split(",").map((s) => s.trim()).filter(Boolean) };
+                  setPrivacy(next);
+                  void setPrivacyRules(next);
+                }}
+              />
+            </div>
+            <div className="privacy-row">
+              <span className="dim">제목 치환 정규식 → [redacted] (쉼표 구분):</span>
+              <input
+                value={privacy.redactTitlePatterns.join(", ")}
+                onChange={(e) => {
+                  const next = { ...privacy, redactTitlePatterns: e.currentTarget.value.split(",").map((s) => s.trim()).filter(Boolean) };
+                  setPrivacy(next);
+                  void setPrivacyRules(next);
+                }}
+              />
+            </div>
+            <label className="row">
+              <input type="checkbox" checked={privacy.maskAllTitles} onChange={(e) => {
+                const next = { ...privacy, maskAllTitles: e.currentTarget.checked };
+                setPrivacy(next);
+                void setPrivacyRules(next);
+              }} />
+              모든 제목을 저장하지 않음
+            </label>
+            <div className="row">
+              <button className="btn" onClick={() => void (async () => {
+                setError(null);
+                try {
+                  const n = await redactExisting();
+                  setNotice(`기존 세션 ${n}개에 규칙을 적용했습니다.`);
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                }
+              })()}>
+                기존 세션에 적용
+              </button>
+            </div>
+            <div className="dim">규칙은 DB 저장 전에 적용됩니다. 제외한 원문은 어디에도 남지 않습니다.</div>
           </section>
         </div>
       ) : view === "timeline" ? (
