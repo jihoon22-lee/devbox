@@ -981,3 +981,116 @@ h1 {
   padding: 10px 12px;
   border-top: 1px solid var(--border, #262c36);
 }
+
+/* ── problems panel (§12.2) ───────────────────────────────────── */
+
+.problems-panel {
+  border-top: 1px solid var(--border, #262c36);
+  background: #0f1319;
+  display: flex;
+  flex-direction: column;
+  max-height: 30vh;
+}
+
+.problems-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border, #262c36);
+}
+
+.problems-title {
+  font-weight: 600;
+}
+
+.problems-counts {
+  display: flex;
+  gap: 6px;
+}
+
+.problems-errors {
+  color: #f85149;
+}
+
+.problems-warnings {
+  color: #d29922;
+}
+
+.problems-filters {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.problems-filters input {
+  width: 90px;
+  background: #0b0f16;
+  color: #e8eef8;
+  border: 1px solid var(--border, #262c36);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
+.problems-filters select {
+  background: #0b0f16;
+  color: #e8eef8;
+  border: 1px solid var(--border, #262c36);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.problems-server {
+  padding: 4px 10px;
+  color: var(--dim, #8b93a1);
+  font-size: 11px;
+  border-bottom: 1px solid var(--border, #262c36);
+}
+
+.problems-list {
+  overflow-y: auto;
+}
+
+.problem-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.problem-row:hover {
+  background: rgba(79, 140, 255, 0.06);
+}
+
+.problem-severity {
+  width: 10px;
+}
+
+.severity-error .problem-severity {
+  color: #f85149;
+}
+
+.severity-warning .problem-severity {
+  color: #d29922;
+}
+
+.problem-msg {
+  flex: 1;
+}
+
+.problem-meta {
+  color: var(--dim, #8b93a1);
+  font-size: 11px;
+}
+
+.problem-path {
+  color: var(--dim, #8b93a1);
+  font-size: 11px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
