@@ -197,13 +197,7 @@ pub async fn install(
     write_current(&base, &app_id, &current)?;
     // 이전 버전 디렉터리는 삭제하지 않는다 (rollback 보존)
 
-    upsert_registry(
-        &app,
-        app_id,
-        version,
-        "portable",
-        current.exe_path.clone(),
-    )?;
+    upsert_registry(&app, app_id, version, "portable", current.exe_path.clone())?;
     Ok("휴대용 앱을 설치했습니다.".into())
 }
 
@@ -216,10 +210,7 @@ pub fn current(app: tauri::AppHandle, app_id: String) -> Option<crate::core::lay
 
 /// 직전 정상 버전으로 되돌린다 (portable만).
 #[tauri::command]
-pub fn rollback(
-    app: tauri::AppHandle,
-    app_id: String,
-) -> Result<String, String> {
+pub fn rollback(app: tauri::AppHandle, app_id: String) -> Result<String, String> {
     let base = data_dir(&app)?;
     let current = read_current(&base, &app_id)
         .ok_or_else(|| "current.json이 없다 (portable 설치 필요)".to_string())?;
@@ -248,20 +239,24 @@ pub fn rollback(
         });
         write_registry(&app, &reg)?;
     }
-    Ok(format!("{app_id}를 버전 {}으로 되돌렸습니다.", next.version))
+    Ok(format!(
+        "{app_id}를 버전 {}으로 되돌렸습니다.",
+        next.version
+    ))
 }
 
 /// versions/ 아래에서 실행 파일이 실제 존재하는 버전 목록.
 fn installed_versions_with_exe(base: &std::path::Path, app_id: &str) -> Vec<String> {
-    let mut versions: Vec<String> = std::fs::read_dir(crate::core::layout::versions_root(base, app_id))
-        .map(|entries| {
-            entries
-                .flatten()
-                .filter(|e| e.path().is_dir())
-                .filter_map(|e| e.file_name().into_string().ok())
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut versions: Vec<String> =
+        std::fs::read_dir(crate::core::layout::versions_root(base, app_id))
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter(|e| e.path().is_dir())
+                    .filter_map(|e| e.file_name().into_string().ok())
+                    .collect()
+            })
+            .unwrap_or_default();
     versions.sort();
     versions.retain(|v| crate::core::layout::version_exe(base, app_id, v).exists());
     versions
@@ -274,10 +269,7 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-fn read_current(
-    base: &std::path::Path,
-    app_id: &str,
-) -> Option<crate::core::layout::Current> {
+fn read_current(base: &std::path::Path, app_id: &str) -> Option<crate::core::layout::Current> {
     let path = crate::core::layout::current_json(base, app_id);
     let text = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&text).ok()

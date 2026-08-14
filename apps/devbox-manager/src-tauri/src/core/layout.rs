@@ -33,20 +33,12 @@ pub fn versions_root(base: &std::path::Path, app_id: &str) -> std::path::PathBuf
 }
 
 /// `base/apps/<app-id>/versions/<version>`
-pub fn version_dir(
-    base: &std::path::Path,
-    app_id: &str,
-    version: &str,
-) -> std::path::PathBuf {
+pub fn version_dir(base: &std::path::Path, app_id: &str, version: &str) -> std::path::PathBuf {
     versions_root(base, app_id).join(version)
 }
 
 /// `base/apps/<app-id>/versions/<version>/<app-id>.exe`
-pub fn version_exe(
-    base: &std::path::Path,
-    app_id: &str,
-    version: &str,
-) -> std::path::PathBuf {
+pub fn version_exe(base: &std::path::Path, app_id: &str, version: &str) -> std::path::PathBuf {
     version_dir(base, app_id, version).join(format!("{app_id}.exe"))
 }
 
@@ -56,11 +48,7 @@ pub fn current_json(base: &std::path::Path, app_id: &str) -> std::path::PathBuf 
 }
 
 /// `base/apps/<app-id>/download/<version>.partial`
-pub fn partial_file(
-    base: &std::path::Path,
-    app_id: &str,
-    version: &str,
-) -> std::path::PathBuf {
+pub fn partial_file(base: &std::path::Path, app_id: &str, version: &str) -> std::path::PathBuf {
     apps_root(base, app_id)
         .join("download")
         .join(format!("{version}.partial"))
