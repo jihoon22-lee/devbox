@@ -17,90 +17,84 @@ pub fn platform_sealer() -> Box<dyn devbox_secrets::Sealer> {
 }
 
 #[cfg(target_os = "windows")]
-struct DpapiSealer;
+mod windows_impl {
+    use super::*;
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{LocalFree, HLOCAL};
+    use windows::Win32::Security::Cryptography::{
+        CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+    };
 
-#[cfg(target_os = "windows")]
-impl devbox_secrets::Sealer for DpapiSealer {
-    fn seal(&self, plaintext: &str) -> Result<Vec<u8>, SealError> {
-        use windows::core::PCWSTR;
-        use windows::Win32::Foundation::{LocalFree, HLOCAL};
-        use windows::Win32::Security::Cryptography::{
-            CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
-        };
+    const ENTROPY: &[u8] = b"devbox.api-playground.secrets.v1";
 
-        const ENTROPY: &[u8] = b"devbox.api-playground.secrets.v1";
+    pub(super) struct DpapiSealer;
 
-        unsafe {
-            let input = blob(plaintext.as_bytes())?;
-            let entropy = blob(ENTROPY)?;
-            let mut output = CRYPT_INTEGER_BLOB::default();
-            CryptProtectData(
-                &input,
-                PCWSTR::null(),
-                Some(&entropy as *const _),
-                None,
-                None,
-                CRYPTPROTECT_UI_FORBIDDEN,
-                &mut output,
-            )
-            .map_err(|_| SealError::CryptoFailure)?;
-            if output.pbData.is_null() {
-                return Err(SealError::CryptoFailure);
+    impl devbox_secrets::Sealer for DpapiSealer {
+        fn seal(&self, plaintext: &str) -> Result<Vec<u8>, SealError> {
+            unsafe {
+                let input = blob(plaintext.as_bytes())?;
+                let entropy = blob(ENTROPY)?;
+                let mut output = CRYPT_INTEGER_BLOB::default();
+                CryptProtectData(
+                    &input,
+                    PCWSTR::null(),
+                    Some(&entropy as *const _),
+                    None,
+                    None,
+                    CRYPTPROTECT_UI_FORBIDDEN,
+                    &mut output,
+                )
+                .map_err(|_| SealError::CryptoFailure)?;
+                copy_and_free(output)
             }
-            let copied = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
-            let _ = LocalFree(Some(HLOCAL(output.pbData.cast())));
+        }
+
+        fn unseal(&self, ciphertext: &[u8]) -> Result<Zeroizing<String>, SealError> {
+            unsafe {
+                let input = blob(ciphertext)?;
+                let entropy = blob(ENTROPY)?;
+                let mut output = CRYPT_INTEGER_BLOB::default();
+                CryptUnprotectData(
+                    &input,
+                    None,
+                    Some(&entropy as *const _),
+                    None,
+                    None,
+                    CRYPTPROTECT_UI_FORBIDDEN,
+                    &mut output,
+                )
+                .map_err(|_| SealError::CryptoFailure)?;
+                let bytes = copy_and_free(output)?;
+                let text = String::from_utf8(bytes).map_err(|_| SealError::InvalidInput)?;
+                Ok(Zeroizing::new(text))
+            }
+        }
+    }
+
+    unsafe fn blob(bytes: &[u8]) -> Result<CRYPT_INTEGER_BLOB, SealError> {
+        let cb_data = u32::try_from(bytes.len()).map_err(|_| SealError::InvalidInput)?;
+        Ok(CRYPT_INTEGER_BLOB {
+            cbData: cb_data,
+            pbData: bytes.as_ptr() as *mut u8,
+        })
+    }
+
+    unsafe fn copy_and_free(blob: CRYPT_INTEGER_BLOB) -> Result<Vec<u8>, SealError> {
+        if blob.pbData.is_null() {
+            return Err(SealError::CryptoFailure);
+        }
+        let copied = std::slice::from_raw_parts(blob.pbData, blob.cbData as usize).to_vec();
+        let _ = LocalFree(Some(HLOCAL(blob.pbData.cast())));
+        if copied.is_empty() {
+            Err(SealError::CryptoFailure)
+        } else {
             Ok(copied)
         }
     }
-
-    fn unseal(&self, blob: &[u8]) -> Result<Zeroizing<String>, SealError> {
-        use windows::core::PCWSTR;
-        use windows::Win32::Foundation::{LocalFree, HLOCAL};
-        use windows::Win32::Security::Cryptography::{
-            CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
-        };
-
-        const ENTROPY: &[u8] = b"devbox.api-playground.secrets.v1";
-
-        unsafe {
-            let input = blob_ref(blob)?;
-            let entropy = blob(ENTROPY)?;
-            let mut output = CRYPT_INTEGER_BLOB::default();
-            CryptUnprotectData(
-                &input,
-                None,
-                Some(&entropy as *const _),
-                None,
-                None,
-                CRYPTPROTECT_UI_FORBIDDEN,
-                &mut output,
-            )
-            .map_err(|_| SealError::CryptoFailure)?;
-            if output.pbData.is_null() {
-                return Err(SealError::CryptoFailure);
-            }
-            let copied = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
-            let _ = LocalFree(Some(HLOCAL(output.pbData.cast())));
-            let text = String::from_utf8(copied).map_err(|_| SealError::InvalidInput)?;
-            Ok(Zeroizing::new(text))
-        }
-    }
 }
 
 #[cfg(target_os = "windows")]
-fn blob(bytes: &[u8]) -> Result<CRYPT_INTEGER_BLOB, SealError> {
-    use windows::Win32::Security::Cryptography::CRYPT_INTEGER_BLOB;
-    let cb_data = u32::try_from(bytes.len()).map_err(|_| SealError::InvalidInput)?;
-    Ok(CRYPT_INTEGER_BLOB {
-        cbData: cb_data,
-        pbData: bytes.as_ptr() as *mut u8,
-    })
-}
-
-#[cfg(target_os = "windows")]
-fn blob_ref(bytes: &[u8]) -> Result<CRYPT_INTEGER_BLOB, SealError> {
-    blob(bytes)
-}
+pub use windows_impl::DpapiSealer;
 
 struct UnsupportedSealer;
 
