@@ -4,6 +4,7 @@
 
 pub mod asset;
 pub mod catalog;
+pub mod download;
 pub mod manifest;
 pub mod url_policy;
 pub mod version;

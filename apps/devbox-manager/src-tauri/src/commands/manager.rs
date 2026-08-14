@@ -1,9 +1,13 @@
 use crate::core::asset::select_asset;
 use crate::core::catalog::CatalogApp;
+use crate::core::download::{is_over_limit, partial_path, validate_digest, validate_size};
 use crate::core::manifest::{parse_manifest, ReleaseManifest};
 use crate::core::url_policy::is_allowed;
+use futures_util::StreamExt;
 use reqwest::header::USER_AGENT;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::io::Write;
 use std::path::PathBuf;
 use tauri::Manager;
 
@@ -45,7 +49,44 @@ fn read_registry(app: &tauri::AppHandle) -> Vec<InstalledApp> {
 fn write_registry(app: &tauri::AppHandle, reg: &[InstalledApp]) -> Result<(), String> {
     let path = registry_path(app)?;
     let json = serde_json::to_string_pretty(reg).map_err(|e| e.to_string())?;
-    std::fs::write(path, json).map_err(|e| e.to_string())
+    // 임시 파일 + rename으로 원자 기록 (중간에 깨진 registry 방지)
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+/// 앱 시작 시 남아 있는 중단된 `.partial` 파일을 정리한다.
+pub fn cleanup_partials(app: &tauri::AppHandle) {
+    let Ok(base) = data_dir(app) else { return };
+    let apps_root = base.join("apps");
+    let Ok(entries) = std::fs::read_dir(&apps_root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let app_dir = entry.path();
+        if !app_dir.is_dir() {
+            continue;
+        }
+        walk_remove_partials(&app_dir);
+    }
+}
+
+fn walk_remove_partials(dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            walk_remove_partials(&path);
+        } else if path
+            .file_name()
+            .map(|n| n.to_string_lossy().ends_with(".partial"))
+            .unwrap_or(false)
+        {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }
 
 /// 번들에 포함된 카탈로그를 반환한다.
@@ -130,8 +171,8 @@ pub async fn install(
         let setup_dir = base.join("installers");
         std::fs::create_dir_all(&setup_dir).map_err(|e| e.to_string())?;
         let dest = setup_dir.join(&asset.name);
-        download(&client, &url, &dest).await?;
-        // 설치 마법사 실행 (사용자가 진행)
+        // 검증이 끝난 뒤에만 installer를 실행한다.
+        download(&client, &url, &dest, asset.size, &asset.sha256).await?;
         std::process::Command::new(&dest)
             .spawn()
             .map_err(|e| e.to_string())?;
@@ -143,7 +184,7 @@ pub async fn install(
     let app_dir = base.join("apps").join(&app_id).join(&version);
     std::fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
     let exe = app_dir.join(format!("{app_id}.exe"));
-    download(&client, &url, &exe).await?;
+    download(&client, &url, &exe, asset.size, &asset.sha256).await?;
     let exe_path = exe.to_string_lossy().into_owned();
     upsert_registry(&app, app_id, version, "portable", exe_path)?;
     Ok("휴대용 앱을 설치했습니다.".into())
@@ -190,7 +231,13 @@ async fn download(
     client: &reqwest::Client,
     url: &str,
     dest: &std::path::Path,
+    expected_size: i64,
+    expected_sha: &str,
 ) -> Result<(), String> {
+    // 1. 요청 전 URL 검증
+    if !is_allowed(url) {
+        return Err("허용되지 않은 다운로드 URL".into());
+    }
     let resp = client
         .get(url)
         .header(USER_AGENT, "devbox-manager")
@@ -200,7 +247,53 @@ async fn download(
     if !resp.status().is_success() {
         return Err(format!("다운로드 응답 오류: {}", resp.status()));
     }
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    std::fs::write(dest, bytes).map_err(|e| e.to_string())?;
+    // 2. redirect 후 최종 URL을 다시 검증한다 (중간 hop이 아니라 최종 응답의 URL)
+    if !is_allowed(resp.url().as_str()) {
+        return Err("redirect 후 URL이 허용 범위를 벗어났다".into());
+    }
+    // 3. Content-Length가 manifest size와 다르면 즉시 중단
+    if let Some(cl) = resp.content_length() {
+        if cl != expected_size as u64 {
+            return Err(format!(
+                "Content-Length 불일치: 기대 {expected_size}바이트, 서버 {cl}바이트"
+            ));
+        }
+    }
+
+    // 4. .partial로 streaming 기록. 청크마다 SHA-256 갱신, 누적 크기 상한 검사
+    let partial = partial_path(dest);
+    let mut file = std::fs::File::create(&partial).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new();
+    let mut total: u64 = 0;
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("스트림 오류: {e}"))?;
+        total += chunk.len() as u64;
+        if is_over_limit(total as i64, expected_size) {
+            drop(file);
+            let _ = std::fs::remove_file(&partial);
+            return Err(format!(
+                "크기 초과: 기대 {expected_size}바이트를 넘었다 ({total}바이트)"
+            ));
+        }
+        hasher.update(&chunk);
+        file.write_all(&chunk).map_err(|e| e.to_string())?;
+    }
+    file.flush().map_err(|e| e.to_string())?;
+    drop(file);
+
+    // 5. 완료 후 총 바이트와 digest를 manifest와 대조
+    if let Err(e) = validate_size(expected_size, total as i64) {
+        let _ = std::fs::remove_file(&partial);
+        return Err(e);
+    }
+    let digest = format!("{:x}", hasher.finalize());
+    if let Err(e) = validate_digest(expected_sha, &digest) {
+        let _ = std::fs::remove_file(&partial);
+        return Err(e);
+    }
+
+    // 6. 일치하면 최종 경로로 rename
+    std::fs::rename(&partial, dest).map_err(|e| e.to_string())?;
     Ok(())
 }
