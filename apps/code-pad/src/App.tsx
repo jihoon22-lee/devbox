@@ -17,6 +17,7 @@ import {
 } from "./api";
 import DocHost from "./components/DocHost";
 import PreviewPane from "./components/PreviewPane";
+import ProblemsPanel from "./components/ProblemsPanel";
 import QuickOpen from "./components/QuickOpen";
 import RecoveryDialog from "./components/RecoveryDialog";
 import StatusBar from "./components/StatusBar";
@@ -131,6 +132,7 @@ export default function App() {
     encoding: Encoding;
   } | null>(null);
   const [lspPanelOpen, setLspPanelOpen] = useState(false);
+  const [problemsOpen, setProblemsOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryChecked, setRecoveryChecked] = useState(false);
   const [lspSync] = useState(() => new LspDocumentSync());  const [lspSyncState, setLspSyncState] = useState(lspSync.getState());
@@ -496,8 +498,22 @@ export default function App() {
     });
   };
 
-  const handleLspNavigation = (kind: "definition" | "references") => {
-    if (!activeDoc) return;
+  const handleProblemsNavigate = async (docId: string, offset: number) => {
+    const doc = stateRef.current.docs.find((d) => d.id === docId);
+    if (!doc) return;
+    await openPath(doc.path);
+    dispatchAction({ type: "setCursor", docId, cursor: offset });
+  };
+
+  const problemsServerStatus = lspSyncState.lastError
+    ? `degraded — ${lspSyncState.lastError}`
+    : lspSyncState.configuredLanguages.length === 0
+      ? "언어 서버 미구성"
+      : lspSyncState.runningLanguages.length === 0
+        ? "서버 없음"
+        : `${lspSyncState.runningLanguages.join(", ")} 실행 중`;
+
+  const handleLspNavigation = (kind: "definition" | "references") => {    if (!activeDoc) return;
     const requestId = ++lspFeatureRequestRef.current;
     void runLspOperation(async () => {
       const response = kind === "definition"
@@ -1111,6 +1127,14 @@ export default function App() {
         >
           언어 서버
         </button>
+        <button
+          type="button"
+          className={`toolbar-button ${problemsOpen ? "selected" : ""}`}
+          onClick={() => setProblemsOpen((prev) => !prev)}
+          disabled={!hydrated}
+        >
+          Problems
+        </button>
         <button type="button" className="toolbar-button" onClick={() => handleLspNavigation("definition")} disabled={!hydrated || !lspCapability("definition") || lspBusy}>
           정의
         </button>
@@ -1204,6 +1228,15 @@ export default function App() {
         onEncodingConvert={handleEncodingConversion}
         onLineEndingChange={handleLineEndingChange}
       />
+      {problemsOpen && (
+        <ProblemsPanel
+          docs={state.docs.map((doc) => ({ id: doc.id, path: doc.path }))}
+          diagnosticsFor={(docId) => lspDiagnostics[docId] ?? []}
+          serverStatus={problemsServerStatus}
+          onNavigate={(docId, offset) => void handleProblemsNavigate(docId, offset)}
+          onClose={() => setProblemsOpen(false)}
+        />
+      )}
       {lspNavigation && (
         <LspNavigationPanel
           kind={lspNavigation.kind}
