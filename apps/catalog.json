@@ -121,6 +121,17 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false
+    },
+    {
+      "id": "webhook-lab",
+      "displayName": "Webhook Lab",
+      "productName": "WebhookLab",
+      "identifier": "com.devbox.webhooklab",
+      "cargoPackage": "webhook-lab",
+      "appDir": "apps/webhook-lab",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false
     }
   ]
 }
