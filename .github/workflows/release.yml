@@ -6,9 +6,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag (e.g. v0.1.0). Use a new tag each run."
+        description: "Release tag (e.g. v0.4.0). Use a new tag each run."
         required: true
-        default: "v0.1.0"
 
 concurrency:
   group: release
@@ -37,30 +36,45 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
-      - name: Build all apps (NSIS installers)
-        shell: pwsh
+      - id: apps
+        name: Resolve build targets from catalog
+        shell: bash
         run: |
-          $apps = @(
-            "port-manager","developer-toolbox","api-playground",
-            "everything-plus","knowledge-base","life-log",
-            "wsl-desktop","devbox-manager","code-pad","run-manager"
-          )
+          list=$(python3 -c "import json;print(' '.join(a['id'] for a in json.load(open('apps/catalog.json'))['apps'] if a['release']))")
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          echo "빌드 대상: $list"
+
+      - name: Build all apps (NSIS installers) with per-app staging
+        shell: pwsh
+        env:
+          APPS: ${{ steps.apps.outputs.list }}
+        run: |
+          $apps = @($env:APPS -split ' ')
+          $catalog = Get-Content 'apps/catalog.json' -Raw | ConvertFrom-Json
           foreach ($a in $apps) {
             Write-Host "===== Building $a =====" -ForegroundColor Cyan
             Push-Location "apps/$a"
             pnpm tauri build --bundles nsis
             if ($LASTEXITCODE -ne 0) { throw "build failed: $a" }
             Pop-Location
+
+            # Cargo workspace라 산출물이 루트 target/에 모인다. 빌드 직후 그 앱의
+            # 산출물만 staging으로 옮겨 이전 빌드 산출물이 섞이는 것을 막는다.
+            $conf = Get-Content "apps/$a/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+            $portable  = "target/release/$($conf.productName).exe"
+            $installer = "target/release/bundle/nsis/$($conf.productName)_$($conf.version)_x64-setup.exe"
+
+            New-Item -ItemType Directory -Force -Path "staging/$a/portable"   | Out-Null
+            New-Item -ItemType Directory -Force -Path "staging/$a/installer"  | Out-Null
+            Move-Item -Force $portable  "staging/$a/portable/$a.exe"
+            Move-Item -Force $installer "staging/$a/installer/$(Split-Path $installer -Leaf)"
           }
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
           name: windows-installers
-          # devbox는 Cargo workspace라 산출물이 워크스페이스 루트 target/에 생긴다
-          path: |
-            target/release/*.exe
-            target/release/bundle/nsis/*.exe
+          path: staging/**
           if-no-files-found: error
 
   publish:
@@ -75,7 +89,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: windows-installers
-          path: installers
+          path: artifacts
 
       - name: Determine tag
         id: tag
@@ -85,6 +99,15 @@ jobs:
             echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
           else
             echo "tag=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fail if tag already exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists"; exit 1
           fi
 
       - name: Extract changelog section
@@ -109,6 +132,6 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: devbox ${{ steps.tag.outputs.tag }}
           body_path: ${{ steps.notes.outputs.path }}
-          files: installers/**/*.exe
+          files: artifacts/staging/**/*.exe
           draft: false
           make_latest: true
