@@ -123,6 +123,35 @@ pub fn parse_git_status(path: &str, input: &str) -> GitStatus {
     }
 }
 
+/// wsl.exe 출력 디코딩.
+///
+/// 파이프로 실행된 `wsl.exe -l -v`는 UTF-16LE(BOM 또는 다량의 NUL)로 출력한다.
+/// 이 경우 UTF-16LE로, 그 외에는 UTF-8로 해석한다. (distro 이름에 NUL이 남아
+/// 다음 명령의 인자가 되면 "null byte found in provided data" 오류가 발생한다)
+///
+/// 병합 참고: wsl-dashboard와 wsl-desktop에 동일한 구현이 두 벌 있었다. 두 구현을
+/// diff로 대조한 결과 로직이 완전히 같아(IDENTICAL) wsl-desktop의 한 벌만 남겼다.
+pub fn decode_output(bytes: &[u8]) -> String {
+    let bom = bytes.starts_with(&[0xFF, 0xFE]);
+    let null_ratio = if bytes.is_empty() {
+        0
+    } else {
+        bytes.iter().filter(|b| **b == 0).count() * 4 / bytes.len()
+    };
+    if bom || (bytes.len() >= 2 && null_ratio >= 1) {
+        let start = if bom { 2 } else { 0 };
+        let units: Vec<u16> = bytes[start..]
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16_lossy(&units)
+            .trim_end_matches('\0')
+            .to_string()
+    } else {
+        String::from_utf8_lossy(bytes).into_owned()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,5 +200,36 @@ mod tests {
         assert_eq!(s.branch, "dev");
         assert_eq!(s.changes, 2);
         assert!(!s.clean);
+    }
+
+    #[test]
+    fn decodes_plain_utf8() {
+        assert_eq!(decode_output(b"Ubuntu\n"), "Ubuntu\n");
+    }
+
+    #[test]
+    fn decodes_utf16le_with_bom() {
+        let mut bytes = vec![0xFF, 0xFE];
+        for ch in "Ubuntu".encode_utf16() {
+            bytes.extend_from_slice(&ch.to_le_bytes());
+        }
+        let s = decode_output(&bytes);
+        assert_eq!(s, "Ubuntu");
+    }
+
+    #[test]
+    fn decodes_utf16le_without_bom() {
+        let mut bytes = Vec::new();
+        for ch in "docker-desktop".encode_utf16() {
+            bytes.extend_from_slice(&ch.to_le_bytes());
+        }
+        let s = decode_output(&bytes);
+        assert_eq!(s, "docker-desktop");
+    }
+
+    #[test]
+    fn keeps_utf8_with_non_ascii() {
+        let s = decode_output("프로토콜".as_bytes());
+        assert!(s.contains("프로토콜"));
     }
 }

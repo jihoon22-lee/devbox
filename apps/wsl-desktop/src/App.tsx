@@ -1,17 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { closeSession, listDistros, onTerminalClosed, onTerminalOutput, startSession } from "./api";
+import {
+  closeSession,
+  dockerAction,
+  dockerPs,
+  gitStatus,
+  listDistros,
+  onTerminalClosed,
+  onTerminalOutput,
+  startSession,
+} from "./api";
+import DistroPanel from "./components/DistroPanel";
 import PaneCanvas from "./components/PaneCanvas";
+import ProjectPanel from "./components/ProjectPanel";
 import TabBar from "./components/TabBar";
 import { makeId } from "./lib/id";
+import { addPath as addSavedPath, loadSavedPaths, removePath as removeSavedPath, savePaths } from "./lib/projectPaths";
 import { matchShortcut, type ShortcutAction } from "./lib/shortcuts";
 import { loadPinned, loadPinnedCwd, loadRecentPaths, pushRecentPath, savePinned, savePinnedCwd } from "./lib/storage";
 import { nextTabTitle } from "./lib/tabTitle";
-import type { Layout, Pane, Tab } from "./types";
+import type { ContainerInfo, DistroInfo, GitStatus, Layout, Pane, Tab } from "./types";
 import "./App.css";
 
 export default function App() {
-  const [distros, setDistros] = useState<string[]>([]);
+  const [distros, setDistros] = useState<DistroInfo[]>([]);
   const [selected, setSelected] = useState("");
+  const [containers, setContainers] = useState<ContainerInfo[]>([]);
+  const [projects, setProjects] = useState<GitStatus[]>([]);
+  const [newPath, setNewPath] = useState("");
+  const [dockerMissing, setDockerMissing] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(true);
   const [pinned, setPinned] = useState<boolean>(loadPinned);
   const [cwd, setCwd] = useState<string>(() => (loadPinned() ? loadPinnedCwd() : ""));
   const [recentPaths, setRecentPaths] = useState<string[]>(loadRecentPaths);
@@ -39,9 +57,63 @@ export default function App() {
   useEffect(() => {
     void listDistros().then((ds) => {
       setDistros(ds);
-      setSelected((prev) => prev || ds[0] || "Ubuntu");
+      setSelected((prev) => prev || ds.find((d) => d.default)?.name || ds[0]?.name || "Ubuntu");
     });
   }, []);
+
+  const refreshDashboard = useCallback(async () => {
+    const ds = await listDistros();
+    setDistros(ds);
+    const distro = ds.find((d) => d.default)?.name ?? ds[0]?.name ?? "Ubuntu";
+    setSelected((prev) => prev || distro);
+    try {
+      setContainers(await dockerPs(distro));
+      setDockerMissing(false);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/command not found|docker/i.test(msg)) {
+        setContainers([]);
+        setDockerMissing(true);
+      } else {
+        setError(msg);
+      }
+    }
+    setProjects(await gitStatus(loadSavedPaths()));
+  }, []);
+
+  useEffect(() => {
+    void refreshDashboard().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const addPath = () => {
+    if (!newPath.trim()) return;
+    savePaths(addSavedPath(loadSavedPaths(), newPath));
+    setNewPath("");
+    void refreshDashboard();
+  };
+
+  const removePath = (p: string) => {
+    savePaths(removeSavedPath(loadSavedPaths(), p));
+    void refreshDashboard();
+  };
+
+  const onDockerAction = async (id: string, action: "start" | "stop" | "restart") => {
+    setBusy(`${id}:${action}`);
+    try {
+      await dockerAction(selected, id, action);
+      setContainers(await dockerPs(selected));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openDistroTerminal = (name: string) => {
+    setSelected(name);
+    void startInTab(null, name);
+  };
 
   // 팬 하나(세션)를 상태에서 제거한다. 마지막 팬이면 소속 탭도 함께 닫는다.
   // stateRef를 통해서만 tabs/activeTabId/activePaneId를 읽는다 — 위 주석 참고.
@@ -254,10 +326,17 @@ export default function App() {
     <div className="app">
       <header className="toolbar">
         <h1 className="title">WSL Desktop</h1>
+        <button
+          className={`btn panel-toggle ${panelOpen ? "active" : ""}`}
+          title="사이드 패널 토글 (distro/Docker/프로젝트)"
+          onClick={() => setPanelOpen((prev) => !prev)}
+        >
+          ☰
+        </button>
         <select value={selected} onChange={(e) => setSelected(e.currentTarget.value)}>
           {distros.map((d) => (
-            <option key={d} value={d}>
-              {d}
+            <option key={d.name} value={d.name}>
+              {d.name} {d.default ? "(default)" : ""}
             </option>
           ))}
         </select>
@@ -296,34 +375,61 @@ export default function App() {
         ))}
       </header>
 
-      <TabBar
-        tabs={tabs}
-        activeTabId={activeTabId}
-        onActivate={activateTab}
-        onClose={closeTab}
-        onReorder={reorderTabs}
-        onDropPane={movePaneToTab}
-        onNewTab={() => void openNewTab()}
-      />
+      <div className="main">
+        {panelOpen && (
+          <aside className="side-panel">
+            <DistroPanel
+              distros={distros}
+              selectedDistro={selected}
+              onSelectDistro={setSelected}
+              onOpenTerminal={openDistroTerminal}
+              containers={containers}
+              dockerMissing={dockerMissing}
+              busy={busy}
+              onAction={onDockerAction}
+              onRefresh={() => void refreshDashboard().catch(() => undefined)}
+            />
+            <ProjectPanel
+              projects={projects}
+              newPath={newPath}
+              onNewPathChange={setNewPath}
+              onAddPath={addPath}
+              onRemovePath={removePath}
+            />
+          </aside>
+        )}
 
-      {error && <div className="error">{error}</div>}
+        <div className="terminal-area">
+          {error && <div className="error">{error}</div>}
 
-      <PaneCanvas
-        tabs={tabs}
-        panes={panes}
-        activeTabId={activeTabId}
-        activePaneId={activePaneId}
-        broadcastOn={broadcastOn}
-        registerWrite={registerWrite}
-        unregisterWrite={unregisterWrite}
-        onClosePane={closePane}
-        onFocusPane={(id) => {
-          setActivePaneId(id);
-          const owner = tabs.find((t) => t.paneIds.includes(id));
-          if (owner) setActiveTabId(owner.id);
-        }}
-        onShortcut={handleShortcut}
-      />
+          <TabBar
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onActivate={activateTab}
+            onClose={closeTab}
+            onReorder={reorderTabs}
+            onDropPane={movePaneToTab}
+            onNewTab={() => void openNewTab()}
+          />
+
+          <PaneCanvas
+            tabs={tabs}
+            panes={panes}
+            activeTabId={activeTabId}
+            activePaneId={activePaneId}
+            broadcastOn={broadcastOn}
+            registerWrite={registerWrite}
+            unregisterWrite={unregisterWrite}
+            onClosePane={closePane}
+            onFocusPane={(id) => {
+              setActivePaneId(id);
+              const owner = tabs.find((t) => t.paneIds.includes(id));
+              if (owner) setActiveTabId(owner.id);
+            }}
+            onShortcut={handleShortcut}
+          />
+        </div>
+      </div>
     </div>
   );
 }

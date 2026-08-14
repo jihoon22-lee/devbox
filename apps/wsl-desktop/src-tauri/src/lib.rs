@@ -1,4 +1,5 @@
 mod commands;
+mod core;
 
 use commands::terminal::SessionState;
 use std::collections::HashMap;
@@ -33,7 +34,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            commands::terminal::list_distros,
+            commands::dashboard::list_distros,
+            commands::dashboard::run_wsl_command,
+            commands::dashboard::docker_ps,
+            commands::dashboard::docker_action,
+            commands::dashboard::git_status,
             commands::terminal::start_session,
             commands::terminal::write_session,
             commands::terminal::broadcast,
