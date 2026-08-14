@@ -181,13 +181,110 @@ pub async fn install(
     }
 
     // portable
-    let app_dir = base.join("apps").join(&app_id).join(&version);
-    std::fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
-    let exe = app_dir.join(format!("{app_id}.exe"));
+    let version_root = crate::core::layout::version_dir(&base, &app_id, &version);
+    std::fs::create_dir_all(&version_root).map_err(|e| e.to_string())?;
+    let exe = crate::core::layout::version_exe(&base, &app_id, &version);
     download(&client, &url, &exe, asset.size, &asset.sha256).await?;
-    let exe_path = exe.to_string_lossy().into_owned();
-    upsert_registry(&app, app_id, version, "portable", exe_path)?;
+
+    // current.json 갱신 (직전 정상 버전을 previous로 보존)
+    let prev = read_current(&base, &app_id);
+    let current = crate::core::layout::Current {
+        version: version.clone(),
+        exe_path: exe.to_string_lossy().into_owned(),
+        installed_at: now_ms(),
+        previous_version: prev.map(|p| p.version),
+    };
+    write_current(&base, &app_id, &current)?;
+    // 이전 버전 디렉터리는 삭제하지 않는다 (rollback 보존)
+
+    upsert_registry(&app, app_id, version, "portable", current.exe_path.clone())?;
     Ok("휴대용 앱을 설치했습니다.".into())
+}
+
+/// 설치된 휴대용 앱의 current.json을 반환한다 (없으면 None).
+#[tauri::command]
+pub fn current(app: tauri::AppHandle, app_id: String) -> Option<crate::core::layout::Current> {
+    let base = data_dir(&app).ok()?;
+    read_current(&base, &app_id)
+}
+
+/// 직전 정상 버전으로 되돌린다 (portable만).
+#[tauri::command]
+pub fn rollback(app: tauri::AppHandle, app_id: String) -> Result<String, String> {
+    let base = data_dir(&app)?;
+    let current = read_current(&base, &app_id)
+        .ok_or_else(|| "current.json이 없다 (portable 설치 필요)".to_string())?;
+    let installed = installed_versions_with_exe(&base, &app_id);
+    let target = crate::core::layout::pick_rollback_target(&current, &installed)
+        .ok_or_else(|| "되돌릴 이전 버전이 없다".to_string())?;
+    let target_exe = crate::core::layout::version_exe(&base, &app_id, &target);
+
+    let next = crate::core::layout::Current {
+        version: target.clone(),
+        exe_path: target_exe.to_string_lossy().into_owned(),
+        installed_at: now_ms(),
+        previous_version: Some(current.version.clone()),
+    };
+    write_current(&base, &app_id, &next)?;
+
+    // registry의 exe_path 갱신
+    if let Some(inst) = read_registry(&app).into_iter().find(|a| a.app == app_id) {
+        let mut reg = read_registry(&app);
+        reg.retain(|a| a.app != app_id);
+        reg.push(InstalledApp {
+            app: inst.app,
+            version: target,
+            mode: "portable".into(),
+            exe_path: next.exe_path,
+        });
+        write_registry(&app, &reg)?;
+    }
+    Ok(format!(
+        "{app_id}를 버전 {}으로 되돌렸습니다.",
+        next.version
+    ))
+}
+
+/// versions/ 아래에서 실행 파일이 실제 존재하는 버전 목록.
+fn installed_versions_with_exe(base: &std::path::Path, app_id: &str) -> Vec<String> {
+    let mut versions: Vec<String> =
+        std::fs::read_dir(crate::core::layout::versions_root(base, app_id))
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter(|e| e.path().is_dir())
+                    .filter_map(|e| e.file_name().into_string().ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+    versions.sort();
+    versions.retain(|v| crate::core::layout::version_exe(base, app_id, v).exists());
+    versions
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn read_current(base: &std::path::Path, app_id: &str) -> Option<crate::core::layout::Current> {
+    let path = crate::core::layout::current_json(base, app_id);
+    let text = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+fn write_current(
+    base: &std::path::Path,
+    app_id: &str,
+    current: &crate::core::layout::Current,
+) -> Result<(), String> {
+    let path = crate::core::layout::current_json(base, app_id);
+    let json = serde_json::to_string_pretty(current).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
 /// 설치된 앱 실행 (휴대용만).

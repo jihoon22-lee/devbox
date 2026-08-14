@@ -44,6 +44,8 @@ pub fn run() {
             commands::manager::installed,
             commands::manager::install,
             commands::manager::launch,
+            commands::manager::current,
+            commands::manager::rollback,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

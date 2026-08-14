@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { available, catalog, installApp, installed, launchApp } from "./api";
-import type { CatalogApp, InstalledApp, ReleaseManifest } from "./types";
+import { available, catalog, current, installApp, installed, launchApp, rollback } from "./api";
+import type { CatalogApp, Current, InstalledApp, ReleaseManifest } from "./types";
 import "./App.css";
 
 export default function App() {
   const [apps, setApps] = useState<CatalogApp[]>([]);
   const [manifest, setManifest] = useState<ReleaseManifest | null>(null);
   const [installedList, setInstalledList] = useState<InstalledApp[]>([]);
+  const [currentMap, setCurrentMap] = useState<Record<string, Current | null>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -18,6 +19,14 @@ export default function App() {
       setApps(cat.filter((a) => a.managerVisible));
       setManifest(av);
       setInstalledList(inst);
+      // portable로 설치된 앱의 current.json 정보
+      const curMap: Record<string, Current | null> = {};
+      for (const i of inst) {
+        if (i.mode === "portable") {
+          curMap[i.app] = await current(i.app);
+        }
+      }
+      setCurrentMap(curMap);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -62,6 +71,21 @@ export default function App() {
     }
   };
 
+  const onRollback = async (appId: string) => {
+    setBusy(appId);
+    setError(null);
+    setNotice(null);
+    try {
+      const msg = await rollback(appId);
+      setNotice(msg);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className="app">
       <header className="toolbar">
@@ -91,15 +115,33 @@ export default function App() {
               const inst = installedOf(a.id);
               const app = manifestOf(a.id);
               const upToDate = isUpToDate(a.id);
+              const cur = currentMap[a.id];
+              const canRollback = inst?.mode === "portable" && cur?.previousVersion != null;
               return (
                 <tr key={a.id}>
                   <td className="app-name">{a.displayName}</td>
-                  <td>{inst ? `${inst.version} (${inst.mode})` : <span className="dim">-</span>}</td>
+                  <td>
+                    {inst ? (
+                      <span>
+                        {inst.version} ({inst.mode})
+                        {canRollback && (
+                          <span className="dim"> ← prev {cur?.previousVersion}</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="dim">-</span>
+                    )}
+                  </td>
                   <td>{app ? app.version : "-"}</td>
                   <td className="actions">
                     {inst && (
                       <button className="btn" disabled={busy === a.id} onClick={() => void onLaunch(a.id)}>
                         Launch
+                      </button>
+                    )}
+                    {canRollback && (
+                      <button className="btn" disabled={busy === a.id} onClick={() => void onRollback(a.id)}>
+                        {busy === a.id ? "..." : "Rollback"}
                       </button>
                     )}
                     {!upToDate && app && (

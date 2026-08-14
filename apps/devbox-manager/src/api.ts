@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./lib/isTauri";
-import type { CatalogApp, InstalledApp, ReleaseManifest } from "./types";
+import type { CatalogApp, Current, InstalledApp, ReleaseManifest } from "./types";
 
 const MOCK_CATALOG: CatalogApp[] = [
   { id: "port-manager", displayName: "Port Manager", productName: "PortManager", identifier: "com.devbox.portmanager", cargoPackage: "port-manager", appDir: "apps/port-manager", release: true, managerVisible: true, selfManaged: false },
@@ -51,6 +51,20 @@ export async function installed(): Promise<InstalledApp[]> {
 export async function installApp(appId: string, mode: "portable" | "installer"): Promise<string> {
   if (!isTauri()) return `installed (${mode})`;
   return invoke<string>("install", { appId, mode });
+}
+
+export async function current(appId: string): Promise<Current | null> {
+  if (!isTauri()) {
+    return appId === "port-manager"
+      ? { version: "0.2.0", exePath: "", installedAt: 0, previousVersion: "0.1.0" }
+      : null;
+  }
+  return invoke<Current | null>("current", { appId });
+}
+
+export async function rollback(appId: string): Promise<string> {
+  if (!isTauri()) return `rolled back (${appId})`;
+  return invoke<string>("rollback", { appId });
 }
 
 export async function launchApp(name: string): Promise<void> {
