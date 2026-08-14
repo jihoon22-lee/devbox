@@ -93,6 +93,7 @@ mod windows_impl {
     }
 }
 
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 struct UnsupportedSealer;
 
 impl devbox_secrets::Sealer for UnsupportedSealer {
