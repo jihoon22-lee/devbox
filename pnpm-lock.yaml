@@ -23,6 +23,9 @@ importers:
 
   apps/api-playground:
     dependencies:
+      '@devbox/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -179,6 +182,9 @@ importers:
 
   apps/developer-toolbox:
     dependencies:
+      '@devbox/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -213,6 +219,9 @@ importers:
 
   apps/everything-plus:
     dependencies:
+      '@devbox/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -321,6 +330,9 @@ importers:
 
   apps/port-manager:
     dependencies:
+      '@devbox/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
