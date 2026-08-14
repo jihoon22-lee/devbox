@@ -1,0 +1,9 @@
+[package]
+name = "search"
+version = "0.1.0"
+description = "FTS5 query building primitives"
+edition = "2021"
+
+[lib]
+name = "search"
+path = "src/lib.rs"

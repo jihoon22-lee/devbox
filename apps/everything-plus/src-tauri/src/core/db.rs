@@ -234,7 +234,7 @@ pub fn total_files(conn: &Connection) -> rusqlite::Result<i64> {
 
 /// FTS5 파일명 검색. 쿼리는 토큰 단위 prefix 매치로 안전하게 이스케이프한다.
 pub fn search(conn: &Connection, query: &str, limit: i64) -> rusqlite::Result<Vec<FileEntry>> {
-    let q = build_fts_query(query);
+    let q = search::build_fts_query(query);
     let mut stmt = conn.prepare(
         "SELECT f.id, f.path, f.name, f.ext, f.size, f.modified_ts
          FROM files_fts JOIN files f ON f.id = files_fts.rowid
@@ -261,7 +261,7 @@ pub fn search_content(
     query: &str,
     limit: i64,
 ) -> rusqlite::Result<Vec<ContentResult>> {
-    let q = build_fts_query(query);
+    let q = search::build_fts_query(query);
     let mut stmt = conn.prepare(
         "SELECT f.path, f.name, snippet(file_content_fts, 0, '[', ']', '…', 20) AS snip
          FROM file_content_fts
@@ -279,18 +279,6 @@ pub fn search_content(
         })
     })?;
     rows.collect()
-}
-
-/// 사용자 입력 → FTS5 MATCH 쿼리. 각 토큰을 `"토큰"*` (prefix) 형태로 만든다.
-fn build_fts_query(query: &str) -> String {
-    query
-        .split_whitespace()
-        .map(|tok| {
-            let escaped = tok.replace('"', "\"\"");
-            format!("\"{escaped}\"*")
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 #[cfg(test)]
@@ -350,11 +338,6 @@ mod tests {
         let by_new = search(&conn, "plan", 10).unwrap();
         assert_eq!(by_old.len(), by_new.len());
         assert_eq!(by_new[0].size, 30);
-    }
-
-    #[test]
-    fn build_fts_query_escapes_quotes() {
-        assert_eq!(build_fts_query("my \"file\""), "\"my\"* \"\"\"file\"\"\"*");
     }
 
     #[test]

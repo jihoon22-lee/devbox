@@ -25,4 +25,5 @@ serde_json = "1"
 notify = "8.2.0"
 rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite"] }
 filesystem = { path = "../../../crates/filesystem" }
+search = { path = "../../../crates/search" }
 
