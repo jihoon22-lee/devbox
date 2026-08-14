@@ -150,3 +150,20 @@ export async function setAutostart(enabled: boolean): Promise<AutostartStatus> {
   if (!isTauri()) return { supported: true, enabled, command: null };
   return invoke<AutostartStatus>("set_autostart", { enabled });
 }
+
+export interface SourceStatus {
+  producer: string;
+  available: boolean;
+  schemaVersion: number | null;
+  producerVersion: string | null;
+  generatedAt: string | null;
+  freshnessMs: number | null;
+  error: string | null;
+}
+
+export async function integrationSources(): Promise<SourceStatus[]> {
+  if (!isTauri()) {
+    return [{ producer: "run-manager", available: true, schemaVersion: 1, producerVersion: "0.3.0", generatedAt: new Date().toISOString(), freshnessMs: 30000, error: null }];
+  }
+  return invoke<SourceStatus[]>("integration_sources");
+}

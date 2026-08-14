@@ -8,6 +8,7 @@ import {
   getProjects,
   getRange,
   getTimeline,
+  integrationSources,
   isTracking,
   redactExisting,
   setAutostart,
@@ -18,6 +19,7 @@ import {
   stopTracking,
   type AutostartStatus,
   type PrivacyRules,
+  type SourceStatus,
 } from "./api";
 import type { AppTotal, DaySummary, RangeSummary, Session } from "./types";
 import "./App.css";
@@ -78,6 +80,7 @@ export default function App() {
   const [idleThreshold, setIdleThresholdState] = useState(300000);
   const [privacy, setPrivacy] = useState<PrivacyRules>({ excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false });
   const [autoStart, setAutoStart] = useState<AutostartStatus | null>(null);
+  const [sources, setSources] = useState<SourceStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -85,11 +88,18 @@ export default function App() {
 
   const loadSettings = useCallback(async () => {
     try {
-      const [pr, idle, privacyRules, ast] = await Promise.all([getProjects(), getIdleThreshold(), getPrivacyRules(), autostartStatus()]);
+      const [pr, idle, privacyRules, ast, src] = await Promise.all([
+        getProjects(),
+        getIdleThreshold(),
+        getPrivacyRules(),
+        autostartStatus(),
+        integrationSources(),
+      ]);
       setProjectsState(pr);
       setIdleThresholdState(idle);
       setPrivacy(privacyRules);
       setAutoStart(ast);
+      setSources(src);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -215,6 +225,25 @@ export default function App() {
 
       {view === "settings" ? (
         <div className="settings">
+          <section className="panel">
+            <h2>Data sources</h2>
+            {sources.length === 0 && <div className="dim">등록된 source가 없습니다.</div>}
+            {sources.map((s) => (
+              <div key={s.producer} className="git-row">
+                <span className="mono">{s.producer}</span>
+                {s.available ? (
+                  <span className="dim">
+                    v{s.schemaVersion} · {s.producerVersion}
+                    {s.freshnessMs != null && ` · ${fmtDuration(s.freshnessMs)} 전 갱신`}
+                  </span>
+                ) : (
+                  <span className="tag-dirty">{s.error ?? "사용할 수 없음"}</span>
+                )}
+              </div>
+            ))}
+            <div className="dim">source는 devbox 공용 루트의 read-only snapshot을 통해 읽습니다 (다른 앱의 DB를 직접 읽지 않음).</div>
+          </section>
+
           <section className="panel">
             <h2>Git project paths</h2>
             {projects.map((p) => (
