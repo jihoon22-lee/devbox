@@ -6,6 +6,7 @@ import {
   canonicalizeWorkspace,
   listWorkspaceFiles,
   loadSession,
+  loadRecovery,
   openFile,
   renderPreview,
   saveFile,
@@ -17,6 +18,7 @@ import {
 import DocHost from "./components/DocHost";
 import PreviewPane from "./components/PreviewPane";
 import QuickOpen from "./components/QuickOpen";
+import RecoveryDialog from "./components/RecoveryDialog";
 import StatusBar from "./components/StatusBar";
 import ViewPane from "./components/ViewPane";
 import LspControlPanel from "./components/LspControlPanel";
@@ -129,8 +131,9 @@ export default function App() {
     encoding: Encoding;
   } | null>(null);
   const [lspPanelOpen, setLspPanelOpen] = useState(false);
-  const [lspSync] = useState(() => new LspDocumentSync());
-  const [lspSyncState, setLspSyncState] = useState(lspSync.getState());
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryChecked, setRecoveryChecked] = useState(false);
+  const [lspSync] = useState(() => new LspDocumentSync());  const [lspSyncState, setLspSyncState] = useState(lspSync.getState());
   const [lspDiagnostics, setLspDiagnostics] = useState<Record<DocId, import("@codemirror/lint").Diagnostic[]>>({});
   const [lspNavigation, setLspNavigation] = useState<{
     kind: "definition" | "references";
@@ -178,6 +181,21 @@ export default function App() {
     }));
   }), [lspSync]);
 
+  // 비정상 종료 후 미저장 버퍼 복구 확인 (§12.1)
+  useEffect(() => {
+    let active = true;
+    void loadRecovery().then((entries) => {
+      if (!active) return;
+      setRecoveryChecked(true);
+      if (entries.length > 0) {
+        setRecoveryOpen(true);
+      }
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
   useEffect(() => {
     let disposed = false;
     let stopDiagnostics: (() => void) | undefined;
@@ -195,8 +213,7 @@ export default function App() {
       }
     }).catch(() => undefined);
     return () => {
-      disposed = true;
-      stopDiagnostics?.();
+      disposed = true;      stopDiagnostics?.();
       stopStatus?.();
     };
   }, [lspSync]);
@@ -984,6 +1001,13 @@ export default function App() {
 
   return (
     <main className="app-shell">
+      {recoveryOpen && recoveryChecked && (
+        <RecoveryDialog
+          onDone={() => {
+            setRecoveryOpen(false);
+          }}
+        />
+      )}
       <header className="app-header">
         <div className="app-heading">
           <p className="eyebrow">WORKBENCH</p>

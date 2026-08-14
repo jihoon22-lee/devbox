@@ -108,6 +108,7 @@ vi.mock("./api", () => ({
   watchFile: vi.fn().mockResolvedValue(undefined),
   unwatchFile: vi.fn().mockResolvedValue(undefined),
   saveSession: vi.fn().mockResolvedValue(undefined),
+  loadRecovery: vi.fn().mockResolvedValue([]),
   canonicalizeWorkspace: vi.fn(),
   listWorkspaceFiles: vi.fn(),
   renderPreview: vi.fn(),
