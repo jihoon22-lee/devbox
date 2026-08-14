@@ -35,6 +35,11 @@ while IFS= read -r path; do
     Cargo.toml|Cargo.lock|rust-toolchain*|.cargo/*|crates/*)
       rust_all=true
       ;;
+    apps/catalog.json)
+      # 카탈로그는 release matrix와 Manager가 모두 소비하므로 양쪽 게이트를 켠다.
+      frontend_all=true
+      rust_all=true
+      ;;
     apps/*)
       app=${path#apps/}
       app=${app%%/*}

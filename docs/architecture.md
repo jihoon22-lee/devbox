@@ -80,6 +80,12 @@ devbox-manager:   React → commands → catalog/manifest → GitHub release ass
 단일 원본. 앱 ID·productName·bundle identifier·Cargo package·앱 디렉터리를 소유한다.
 버전은 카탈로그가 소유하지 않는다(세 파일 `Cargo.toml`/`tauri.conf.json`/`package.json`이 원본).
 
+카탈로그는 두 가지 소비자를 갖는다:
+- **release workflow** — 빌드 대상 앱 목록을 카탈로그에서 읽는다 (하드코딩 배열 금지)
+- **Devbox Manager** — 설치·업데이트 대상과 앱 표시 여부를 카탈로그에서 읽는다
+
+`apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
+
 ## 통합 앱 (Workbench)
 
 기존 앱을 어느 정도 완성한 뒤 `apps/workbench`를 추가한다. 기존 `crates/`·`packages/`를
