@@ -2,10 +2,17 @@
 
 export const ENVIRONMENT_LS_KEY = "apip-environments";
 
+export interface EnvVariable {
+  key: string;
+  /** secret이면 봉인된 base64 blob을 저장한다 (평문 미보관). */
+  value: string;
+  secret: boolean;
+}
+
 export interface Environment {
   id: string;
   name: string;
-  variables: Array<{ key: string; value: string }>;
+  variables: EnvVariable[];
 }
 
 export interface EnvironmentStore {
@@ -53,6 +60,7 @@ export function setVariable(
   envId: string,
   key: string,
   value: string,
+  secret = false,
 ): EnvironmentStore {
   return {
     ...store,
@@ -62,8 +70,8 @@ export function setVariable(
       return {
         ...env,
         variables: exists
-          ? env.variables.map((v) => (v.key === key ? { ...v, value } : v))
-          : [...env.variables, { key, value }],
+          ? env.variables.map((v) => (v.key === key ? { ...v, value, secret } : v))
+          : [...env.variables, { key, value, secret }],
       };
     }),
   };

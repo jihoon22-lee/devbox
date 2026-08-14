@@ -57,10 +57,10 @@ describe("environment store", () => {
     store = addEnvironment(store, "dev", () => "e-1");
     store = setVariable(store, "e-1", "base", "https://dev");
     store = setVariable(store, "e-1", "base", "https://dev2");
-    store = setVariable(store, "e-1", "token", "t");
+    store = setVariable(store, "e-1", "token", "t", true);
     expect(store.environments[0].variables).toEqual([
-      { key: "base", value: "https://dev2" },
-      { key: "token", value: "t" },
+      { key: "base", value: "https://dev2", secret: false },
+      { key: "token", value: "t", secret: true },
     ]);
     store = removeEnvironment(store, "e-1");
     expect(store.environments).toEqual([]);

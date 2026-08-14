@@ -8,6 +8,21 @@ export async function sendRequest(req: ApiRequest): Promise<ApiResponse> {
   return invoke<ApiResponse>("send_request", { req });
 }
 
+/** 값을 봉인해 base64 blob을 반환한다. */
+export async function sealSecret(value: string): Promise<string> {
+  if (!isTauri()) return btoa(`plain:${value}`);
+  return invoke<string>("seal_secret", { value });
+}
+
+/** base64 봉인 blob을 해제한다. */
+export async function unsealSecret(blobB64: string): Promise<string> {
+  if (!isTauri()) {
+    const raw = atob(blobB64);
+    return raw.startsWith("plain:") ? raw.slice(6) : blobB64;
+  }
+  return invoke<string>("unseal_secret", { blobB64 });
+}
+
 async function browserFetch(req: ApiRequest): Promise<ApiResponse> {
   const start = performance.now();
   const headers: Record<string, string> = {};

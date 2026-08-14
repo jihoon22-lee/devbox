@@ -479,3 +479,11 @@ body {
 .env-add-var {
   margin-top: 2px;
 }
+
+.env-var-secret {
+  flex: 1;
+  color: var(--db-color-text-muted, #8b93a1);
+  font-family: var(--db-font-mono, monospace);
+  font-size: 12px;
+  letter-spacing: 2px;
+}
