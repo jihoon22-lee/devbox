@@ -10,6 +10,7 @@ import {
   getTimeline,
   integrationSources,
   isTracking,
+  projectAttribution,
   redactExisting,
   setAutostart,
   setIdleThreshold,
@@ -17,6 +18,7 @@ import {
   setProjects,
   startTracking,
   stopTracking,
+  type AttributionResult,
   type AutostartStatus,
   type PrivacyRules,
   type SourceStatus,
@@ -71,6 +73,7 @@ export default function App() {
   const [view, setView] = useState<ViewTab>("day");
   const [day, setDay] = useState<DaySummary | null>(null);
   const [range, setRange] = useState<RangeSummary | null>(null);
+  const [attribution, setAttribution] = useState<AttributionResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [stats, setStats] = useState<AppTotal[]>([]);
@@ -112,6 +115,7 @@ export default function App() {
       if (view === "day") {
         const start = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
         setDay(await getDay(dateStr, start, start + DAY_MS));
+        setAttribution(await projectAttribution(start, start + DAY_MS));
       } else if (view === "week") {
         const { start, end } = weekRange(date);
         setRange(await getRange(`${fmtDay(start)} ~ ${fmtDay(end - DAY_MS)}`, start, end));
@@ -450,6 +454,25 @@ export default function App() {
                       <span className="stat-dur">{fmtDuration(a.duration_ms)}</span>
                     </div>
                   ))}
+                </section>
+              )}
+
+              {attribution && attribution.profileCount > 0 && (
+                <section className="panel">
+                  <h2>Project attribution</h2>
+                  {attribution.attributed.map((a) => (
+                    <div key={a.projectId} className="git-row">
+                      <span className="mono dim">{a.projectId}</span>
+                      <span className="git-count">{a.sessions} sessions · {fmtDuration(a.durationMs)}</span>
+                    </div>
+                  ))}
+                  {attribution.unattributed.sessions > 0 && (
+                    <div className="git-row">
+                      <span className="dim">미귀속</span>
+                      <span className="git-count">{attribution.unattributed.sessions} sessions · {fmtDuration(attribution.unattributed.durationMs)}</span>
+                    </div>
+                  )}
+                  <div className="dim">귀속은 창 제목의 프로젝트 이름 매치 기준입니다 (가장 긴 이름 우선, 중복 집계 없음).</div>
                 </section>
               )}
 

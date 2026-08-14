@@ -1,5 +1,6 @@
 use crate::commands::tracking::AppState;
 use crate::core::aggregate::collect_git;
+use crate::core::attribution::{attribute_sessions, Attribution, ProjectMatch};
 use crate::core::db;
 use crate::core::models::{DayPoint, DaySummary, RangeSummary};
 use serde::Serialize;
@@ -17,6 +18,61 @@ pub struct SourceStatus {
     /// 마지막 갱신 이후 경과 (ms). snapshot이 없으면 None.
     pub freshness_ms: Option<i64>,
     pub error: Option<String>,
+}
+
+/// 기간 내 활동을 프로젝트로 귀속한다. 미귀속은 별도로 표시한다.
+///
+/// 프로젝트 identity는 설정된 git 프로젝트 경로의 basename을 쓴다. Workbench의
+/// ProjectProfile(§10.2)이 생기면 canonical key로 대체한다.
+#[tauri::command]
+pub fn project_attribution(
+    state: tauri::State<'_, Arc<AppState>>,
+    day_start: i64,
+    day_end: i64,
+) -> Result<AttributionResult, String> {
+    let conn = state.db.lock().unwrap();
+    let sessions = db::get_timeline(&conn, day_start, day_end).map_err(|e| e.to_string())?;
+    let projects = db::get_setting(&conn, "projects", "")
+        .lines()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>();
+    drop(conn);
+
+    let profiles: Vec<ProjectMatch> = projects
+        .iter()
+        .filter_map(|p| {
+            let basename = p
+                .trim_end_matches(['/', '\\'])
+                .rsplit(['/', '\\'])
+                .next()
+                .filter(|b| !b.is_empty())?;
+            Some(ProjectMatch {
+                project_id: p.clone(),
+                basenames: vec![basename.to_string()],
+            })
+        })
+        .collect();
+
+    let rows: Vec<(String, String, i64)> = sessions
+        .into_iter()
+        .map(|s| (s.app, s.title, s.duration_ms))
+        .collect();
+    let (attributed, unattributed) = attribute_sessions(&rows, &profiles);
+
+    Ok(AttributionResult {
+        attributed,
+        unattributed,
+        profile_count: profiles.len(),
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttributionResult {
+    pub attributed: Vec<Attribution>,
+    pub unattributed: Attribution,
+    pub profile_count: usize,
 }
 
 /// 등록된 integration source의 상태를 반환한다.

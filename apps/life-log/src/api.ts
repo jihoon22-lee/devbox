@@ -167,3 +167,26 @@ export async function integrationSources(): Promise<SourceStatus[]> {
   }
   return invoke<SourceStatus[]>("integration_sources");
 }
+
+export interface Attribution {
+  projectId: string;
+  sessions: number;
+  durationMs: number;
+}
+
+export interface AttributionResult {
+  attributed: Attribution[];
+  unattributed: Attribution;
+  profileCount: number;
+}
+
+export async function projectAttribution(dayStart: number, dayEnd: number): Promise<AttributionResult> {
+  if (!isTauri()) {
+    return {
+      attributed: [{ projectId: "C:\\projects\\devbox", sessions: 5, durationMs: 4 * 3600000 }],
+      unattributed: { projectId: "unattributed", sessions: 2, durationMs: 3600000 },
+      profileCount: 1,
+    };
+  }
+  return invoke<AttributionResult>("project_attribution", { dayStart, dayEnd });
+}
