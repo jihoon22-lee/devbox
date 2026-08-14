@@ -1,0 +1,179 @@
+:root {
+  --bg: #111418;
+  --panel: #171b21;
+  --border: #262c36;
+  --text: #e6e9ef;
+  --dim: #8b93a1;
+  --accent: #4f8cff;
+  --danger: #f85149;
+  --ok: #3fb950;
+  --warn: #d29922;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.title {
+  font-size: 15px;
+  margin: 0;
+}
+
+.root-input {
+  flex: 1;
+  max-width: 400px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.btn {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mini {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--dim);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
+.mini:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.error {
+  background: rgba(248, 81, 73, 0.12);
+  border-bottom: 1px solid var(--danger);
+  color: var(--danger);
+  padding: 8px 14px;
+}
+
+.repos {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.repo-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.repo-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repo-path {
+  font-weight: 600;
+  flex: 1;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+.branch {
+  color: var(--ok);
+}
+
+.branch.dirty {
+  color: var(--warn);
+}
+
+.worktrees {
+  margin-top: 8px;
+  padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mono {
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.wt-create {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.wt-create input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  flex: 1;
+}
+
+.note {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.dim {
+  color: var(--dim);
+}
