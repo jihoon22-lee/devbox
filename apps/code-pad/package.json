@@ -34,7 +34,8 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "@devbox/tokens": "workspace:*",
-    "@devbox/editor": "workspace:*"
+    "@devbox/editor": "workspace:*",
+    "@devbox/diff-view": "workspace:*"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
