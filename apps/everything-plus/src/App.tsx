@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addRoot, indexNow, indexStatus, listRoots, removeRoot, searchContent, searchFiles, watcherStatuses } from "./api";
+import { addRoot, copyPath, indexNow, indexStatus, listRoots, openFile, removeRoot, revealFile, searchContent, searchFiles, watcherStatuses } from "./api";
 import type { ContentResult, FileEntry, IndexStatus, RootInfo, RootStatus } from "./types";
 import "./App.css";
 
@@ -22,6 +22,7 @@ export default function App() {
   const [newRootContent, setNewRootContent] = useState(false);
   const [regexError, setRegexError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeIdx, setActiveIdx] = useState(-1);
   const seq = useRef(0);
 
   const loadMeta = useCallback(async () => {
@@ -49,6 +50,7 @@ export default function App() {
   useEffect(() => {
     const current = ++seq.current;
     const q = query.trim();
+    setActiveIdx(-1);
     if (!q) {
       setResults([]);
       setContentResults([]);
@@ -108,6 +110,55 @@ export default function App() {
   };
 
   const pct = status.total_files > 0 ? Math.round((status.indexed_files / status.total_files) * 100) : 0;
+
+  const activeList = mode === "content" ? contentResults : results;
+  const activePath = (i: number) => (mode === "content" ? contentResults[i]?.path : results[i]?.path) ?? null;
+
+  const moveActive = (dir: 1 | -1) => {
+    if (activeList.length === 0) return;
+    setActiveIdx((prev) => {
+      const base = prev === -1 ? (dir === 1 ? -1 : 0) : prev;
+      return Math.min(activeList.length - 1, Math.max(0, base + dir));
+    });
+  };
+
+  const onOpenActive = async () => {
+    const path = activeIdx >= 0 ? activePath(activeIdx) : null;
+    if (!path) return;
+    setError(null);
+    try {
+      await openFile(path);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      moveActive(1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      moveActive(-1);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      void onOpenActive();
+    } else if (e.key === "Escape") {
+      setQuery("");
+      setActiveIdx(-1);
+    }
+  };
+
+  const onRowAction = async (path: string, action: "open" | "folder" | "copy") => {
+    setError(null);
+    try {
+      if (action === "open") await openFile(path);
+      else if (action === "folder") await revealFile(path);
+      else await copyPath(path);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   return (
     <div className="app">
@@ -191,7 +242,7 @@ export default function App() {
         </button>
       </div>
 
-      <div className="table-wrap">
+      <div className="table-wrap" onKeyDown={onKeyDown}>
         {mode === "content" ? (
           <table>
             <thead>
@@ -199,28 +250,39 @@ export default function App() {
                 <th>NAME</th>
                 <th>SNIPPET</th>
                 <th>PATH</th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {contentResults.map((f, i) => (
-                <tr key={`${f.path}-${i}`}>
+                <tr
+                  key={`${f.path}-${i}`}
+                  className={i === activeIdx ? "active-row" : ""}
+                  onMouseEnter={() => setActiveIdx(i)}
+                  onClick={() => void onOpenActive()}
+                >
                   <td>
                     <span className="name">{f.name}</span>
                   </td>
                   <td className="snippet">{f.snippet}</td>
                   <td className="mono dim">{f.path}</td>
+                  <td className="row-actions">
+                    <button className="mini" title="Open" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "open"); }}>Open</button>
+                    <button className="mini" title="Show in folder" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "folder"); }}>Folder</button>
+                    <button className="mini" title="Copy path" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "copy"); }}>Copy</button>
+                  </td>
                 </tr>
               ))}
               {query.trim() && contentResults.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="empty">
+                  <td colSpan={4} className="empty">
                     No content matches for "{query}"
                   </td>
                 </tr>
               )}
               {!query.trim() && (
                 <tr>
-                  <td colSpan={3} className="empty">
+                  <td colSpan={4} className="empty">
                     Type to search file contents
                   </td>
                 </tr>
@@ -234,28 +296,39 @@ export default function App() {
                 <th>NAME</th>
                 <th>PATH</th>
                 <th>SIZE</th>
+                <th />
               </tr>
             </thead>
             <tbody>
-              {results.map((f) => (
-                <tr key={f.id}>
+              {results.map((f, i) => (
+                <tr
+                  key={f.id}
+                  className={i === activeIdx ? "active-row" : ""}
+                  onMouseEnter={() => setActiveIdx(i)}
+                  onClick={() => void onOpenActive()}
+                >
                   <td>
                     <span className="name">{f.name}</span>
                   </td>
                   <td className="mono dim">{f.path}</td>
                   <td className="mono">{fmtSize(f.size)}</td>
+                  <td className="row-actions">
+                    <button className="mini" title="Open" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "open"); }}>Open</button>
+                    <button className="mini" title="Show in folder" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "folder"); }}>Folder</button>
+                    <button className="mini" title="Copy path" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "copy"); }}>Copy</button>
+                  </td>
                 </tr>
               ))}
               {query.trim() && results.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="empty">
+                  <td colSpan={4} className="empty">
                     No results for "{query}"
                   </td>
                 </tr>
               )}
               {!query.trim() && (
                 <tr>
-                  <td colSpan={3} className="empty">
+                  <td colSpan={4} className="empty">
                     Type to search
                   </td>
                 </tr>

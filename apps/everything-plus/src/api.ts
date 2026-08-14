@@ -59,3 +59,20 @@ export async function watcherStatuses(): Promise<RootStatus[]> {
   }
   return invoke<RootStatus[]>("watcher_statuses");
 }
+
+export async function openFile(path: string): Promise<void> {
+  if (!isTauri()) {
+    window.open("about:blank", "_blank");
+    return;
+  }
+  await invoke("open_file", { path });
+}
+
+export async function revealFile(path: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("reveal_file", { path });
+}
+
+export async function copyPath(path: string): Promise<void> {
+  await navigator.clipboard.writeText(path);
+}
