@@ -5,9 +5,7 @@ resolver = "2"
 members = [
     "apps/port-manager/src-tauri",
     "apps/developer-toolbox/src-tauri",
-    "apps/wsl-dashboard/src-tauri",
     "apps/api-playground/src-tauri",
-    "apps/activity-timeline/src-tauri",
     "apps/everything-plus/src-tauri",
     "apps/knowledge-base/src-tauri",
     "apps/life-log/src-tauri",

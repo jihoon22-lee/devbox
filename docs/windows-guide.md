@@ -1,12 +1,12 @@
 # Windows 11에서 devbox 앱 사용 가이드
 
-이 가이드는 **Windows 11 PC(예: 회사 PC)에서 12개 앱을 직접 빌드하고 실행**하는 방법을 설명한다.
+이 가이드는 **Windows 11 PC(예: 회사 PC)에서 10개 앱을 직접 빌드하고 실행**하는 방법을 설명한다.
 개발은 WSL에서 했지만, 앱 자체는 Windows 데스크톱 앱(Tauri)이므로 Windows PC에서 `.exe`로 빌드하면 그대로 쓸 수 있다.
 
 > 저장소: `https://github.com/jihoon22-lee/devbox` (공개 저장소)
-> 앱별 산출물: `PortManager.exe` `DevToolbox.exe` `WSLDashboard.exe` `ApiPlayground.exe`
-> `ActivityTimeline.exe` `EverythingPlus.exe` `Knowledge.exe` `LifeLog.exe`
-> `WSLDesktop.exe` `DevboxManager.exe` `CodePad.exe` `RunManager.exe`
+> 앱별 산출물: `PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`
+> `EverythingPlus.exe` `Knowledge.exe` `LifeLog.exe`
+> `DevboxManager.exe` `CodePad.exe` `RunManager.exe`
 
 ---
 
@@ -178,7 +178,7 @@ pnpm tauri build
 
 ```powershell
 cd C:\devbox
-$apps = "port-manager","developer-toolbox","wsl-dashboard","api-playground","activity-timeline","everything-plus","knowledge-base","life-log","wsl-desktop","devbox-manager","code-pad","run-manager"
+$apps = "port-manager","developer-toolbox","api-playground","everything-plus","knowledge-base","life-log","wsl-desktop","devbox-manager","code-pad","run-manager"
 foreach ($a in $apps) {
   Write-Host "===== BUILDING $a =====" -ForegroundColor Cyan
   Push-Location "apps\$a"
@@ -201,9 +201,7 @@ ProductName 매핑:
 |---|---|
 | port-manager | PortManager |
 | developer-toolbox | DevToolbox |
-| wsl-dashboard | WSLDashboard |
 | api-playground | ApiPlayground |
-| activity-timeline | ActivityTimeline |
 | everything-plus | EverythingPlus |
 | knowledge-base | Knowledge |
 | life-log | LifeLog |
@@ -231,13 +229,11 @@ SmartScreen 경고("인식할 수 없는 앱")가 뜨면:
 |---|---|
 | **PortManager** | 포트/Kill/열기. 시스템 프로세스 Kill이 실패하면 **관리자 권한으로 실행**. |
 | **DevToolbox** | 좌측 메뉴에서 도구 선택. Hash/UUID/Regex/Diff는 Rust 연동. |
-| **WSLDashboard** | WSL2 필요: `wsl --install` 후 재부팅. Docker 컨테이너 관리엔 Docker Desktop 필요. |
 | **ApiPlayground** | URL 입력 → Send. Rust가 직접 요청하므로 CORS 없음. History는 자동 저장. |
-| **ActivityTimeline** | 실행하면 추적 시작. 창을 닫아도 **트레이 아이콘**으로 계속 기록. 종료는 트레이 → Quit. |
 | **EverythingPlus** | 첫 실행 시 `+`로 검색 루트 추가(예: `C:\`, `D:\`) → 자동 인덱싱. |
 | **Knowledge** | 기본 저장 위치: `Documents\Knowledge`. 우측에서 작성, Ctrl+S 저장. Daily note 버튼으로 오늘 메모. |
-| **LifeLog** | 설정 탭에서 **활동 데이터 소스**(activity-timeline의 data.db)와 **git 프로젝트 경로**를 등록해야 값이 채워짐. |
-| **WSLDesktop** | 임베디드 WSL 터미널. WSL2 필요: `wsl --install` 후 재부팅. |
+| **LifeLog** | 설정 탭에서 **git 프로젝트 경로**를 등록해야 값이 채워짐 (활동 추적은 앱에 통합됨). |
+| **WSLDesktop** | 임베디드 WSL 터미널 + distro/Docker/프로젝트 상태 패널. WSL2 필요: `wsl --install` 후 재부팅. Docker 컨테이너 관리엔 Docker Desktop 필요. |
 | **DevboxManager** | devbox 앱 설치·업데이트·실행을 한 곳에서 관리. |
 | **CodePad** | CodeMirror 6 기반 코드 에디터. `언어 서버` 패널에서 LSP 서버 설치·활성화 후 진단·이름 변경·포맷 사용. |
 | **RunManager** | 작업(cron)·서비스 정의, 실행 이력·로그 tail. 서비스는 시작/정지/재시작과 헬스체크·재시작 정책 지원. |

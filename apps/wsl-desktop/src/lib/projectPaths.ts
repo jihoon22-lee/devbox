@@ -1,5 +1,5 @@
-// App.tsx에 인라인돼 있던 저장된 프로젝트 경로 목록 로직을 테스트를 위해 순수 함수로 추출했다.
-// wsl-desktop/src/lib/storage.ts의 최근 경로 저장 선례를 따른다. 동작은 바꾸지 않았다.
+// TODO(workbench): 프로젝트 목록과 git 상태는 Workbench의 ProjectProfile로 이관한다.
+// (docs/product-opportunities.md §3.1, §15.2). Workbench 출시 전까지 여기서 유지한다.
 const LS_KEY = "wsld-projects";
 
 export function loadSavedPaths(): string[] {
