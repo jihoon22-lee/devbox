@@ -229,6 +229,13 @@ export interface ServiceObservability {
   nextRetryAt: number | null;
 }
 
+export interface DefinitionExport {
+  schemaVersion: number;
+  exportedAt: string;
+  jobs: Job[];
+  services: Job[];
+}
+
 export function getServiceObservability(id: string): Promise<ServiceObservability | null> {
   if (!isTauri()) {
     const inst = mockServiceInstance(id);
@@ -258,6 +265,13 @@ export function getServiceObservability(id: string): Promise<ServiceObservabilit
     });
   }
   return invoke<ServiceObservability | null>("service_observability", { id });
+}
+
+export function exportDefinitions(): Promise<DefinitionExport | null> {
+  if (!isTauri()) {
+    return Promise.resolve(null);
+  }
+  return invoke<DefinitionExport | null>("export_definitions");
 }
 
 export function startService(id: string): Promise<ServiceInstance> {

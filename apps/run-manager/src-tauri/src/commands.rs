@@ -260,6 +260,31 @@ pub fn delete_service(id: String, state: State<'_, Arc<DatabaseState>>) -> Resul
     state.delete_service(&id).map_err(storage_command_error)
 }
 
+/// 정의 export 문서 (schema version 포함). secret 값은 절대 포함하지 않는다 —
+/// Job의 `envConfigured`(존재 여부)만 나간다 (ciphertext는 read DTO에 원천 차단).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefinitionExport {
+    pub schema_version: u32,
+    pub exported_at: String,
+    pub jobs: Vec<Job>,
+    pub services: Vec<Job>,
+}
+
+#[tauri::command]
+pub fn export_definitions(
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<DefinitionExport, String> {
+    let jobs = state.list_jobs().map_err(|e| e.to_string())?;
+    let services = state.list_services().map_err(|e| e.to_string())?;
+    Ok(DefinitionExport {
+        schema_version: 1,
+        exported_at: current_epoch_millis().to_string(),
+        jobs,
+        services,
+    })
+}
+
 #[tauri::command]
 pub fn get_service_instance(
     id: String,
