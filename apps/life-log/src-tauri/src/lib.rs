@@ -51,6 +51,7 @@ pub fn run() {
             commands::autostart::autostart_status,
             commands::autostart::set_autostart,
             commands::life::integration_sources,
+            commands::life::project_attribution,
             commands::queries::timeline,
             commands::queries::app_stats,
         ])
