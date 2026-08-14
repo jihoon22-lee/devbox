@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { sendRequest } from "./api";
 import { addEntry, foldersOf, loadStore, removeEntry, saveStore } from "./lib/collections";
+import {
+  addEnvironment,
+  applyToRequest,
+  loadStore as loadEnvStore,
+  removeEnvironment,
+  saveStore as saveEnvStore,
+  setVariable,
+} from "./lib/environments";
 import type { ApiRequest, ApiResponse, HistoryItem, KeyValue } from "./types";
 import "./App.css";
 
@@ -80,6 +88,23 @@ export default function App() {
   const [collFolder, setCollFolder] = useState("");
   const [collFilter, setCollFilter] = useState("");
   const [collSaving, setCollSaving] = useState(false);
+  const [envStore, setEnvStore] = useState(loadEnvStore);
+  const [currentEnvId, setCurrentEnvId] = useState("");
+  const [envName, setEnvName] = useState("");
+
+  const currentEnv = envStore.environments.find((e) => e.id === currentEnvId) ?? null;
+
+  const persistEnvs = (store: ReturnType<typeof loadEnvStore>) => {
+    setEnvStore(store);
+    saveEnvStore(store);
+  };
+
+  const onCreateEnv = () => {
+    const next = addEnvironment(envStore, envName, () => `e-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
+    persistEnvs(next);
+    setCurrentEnvId(next.environments[0].id);
+    setEnvName("");
+  };
 
   const persistCollections = (store: ReturnType<typeof loadStore>) => {
     setCollections(store);
@@ -117,9 +142,11 @@ export default function App() {
     setSending(true);
     setError(null);
     try {
-      const result = await sendRequest(req);
+      // 환경 변수를 원본 template(불변)에 적용한 사본을 보낸다
+      const effectiveReq = currentEnv ? applyToRequest(req, new Map(currentEnv.variables.map((v) => [v.key, v.value]))) : req;
+      const result = await sendRequest(effectiveReq);
       setResp(result);
-      const item: HistoryItem = { id: String(Date.now()), saved_at: Date.now(), request: req, status: result.status };
+      const item: HistoryItem = { id: String(Date.now()), saved_at: Date.now(), request: effectiveReq, status: result.status };
       const next = [item, ...history].slice(0, 50);
       setHistory(next);
       localStorage.setItem("apip-history", JSON.stringify(next));
@@ -222,6 +249,55 @@ export default function App() {
             </div>
           ))}
         {collections.collections.length === 0 && <div className="dim">저장된 collection 없음</div>}
+
+        <div className="group-name">Environments</div>
+        <div className="coll-save-row">
+          <input
+            className="coll-input"
+            placeholder="환경 이름 (예: dev)"
+            value={envName}
+            onChange={(e) => setEnvName(e.currentTarget.value)}
+          />
+          <button className="btn" onClick={onCreateEnv}>
+            추가
+          </button>
+        </div>
+        {envStore.environments.map((env) => (
+          <div key={env.id} className={`env-item ${env.id === currentEnvId ? "active" : ""}`}>
+            <button className="env-name" onClick={() => setCurrentEnvId(env.id)}>
+              {env.name}
+            </button>
+            <button className="coll-del" onClick={() => persistEnvs(removeEnvironment(envStore, env.id))}>
+              ✕
+            </button>
+          </div>
+        ))}
+        {currentEnv && (
+          <div className="env-vars">
+            {currentEnv.variables.map((v) => (
+              <div key={v.key} className="env-var-row">
+                <span className="env-var-key">{v.key}</span>
+                <input
+                  className="coll-input"
+                  value={v.value}
+                  onChange={(e) => persistEnvs(setVariable(envStore, currentEnv.id, v.key, e.currentTarget.value))}
+                />
+              </div>
+            ))}
+            {currentEnv.variables.length === 0 && <div className="dim">변수 없음 — {"{{var}}"}를 요청에 쓰세요.</div>}
+            <div className="env-add-var">
+              <button
+                className="btn"
+                onClick={() => {
+                  const name = `var${currentEnv.variables.length + 1}`;
+                  persistEnvs(setVariable(envStore, currentEnv.id, name, ""));
+                }}
+              >
+                + 변수
+              </button>
+            </div>
+          </div>
+        )}
       </aside>
 
       <main className="content">
