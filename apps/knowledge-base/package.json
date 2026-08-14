@@ -15,7 +15,8 @@
     "@tauri-apps/plugin-opener": "^2",
     "mermaid": "^11.16.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "@devbox/tokens": "workspace:*"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

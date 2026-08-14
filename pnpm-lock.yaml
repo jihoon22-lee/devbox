@@ -108,6 +108,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.36.5
         version: 6.43.8
+      '@devbox/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -148,6 +151,9 @@ importers:
 
   apps/devbox-manager:
     dependencies:
+      '@devbox/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -256,6 +262,9 @@ importers:
 
   apps/knowledge-base:
     dependencies:
+      '@devbox/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -401,6 +410,9 @@ importers:
 
   apps/wsl-desktop:
     dependencies:
+      '@devbox/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
