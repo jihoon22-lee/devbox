@@ -108,6 +108,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.36.5
         version: 6.43.8
+      '@devbox/editor':
+        specifier: workspace:*
+        version: link:../../packages/editor
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
@@ -280,6 +283,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.0.0
         version: 6.43.8
+      '@devbox/editor':
+        specifier: workspace:*
+        version: link:../../packages/editor
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
@@ -468,6 +474,48 @@ importers:
       vite:
         specifier: ^7.0.4
         version: 7.3.6
+
+  packages/editor:
+    dependencies:
+      '@codemirror/commands':
+        specifier: ^6.0.0
+        version: 6.10.4
+      '@codemirror/lang-css':
+        specifier: ^6.0.0
+        version: 6.3.1
+      '@codemirror/lang-html':
+        specifier: ^6.0.0
+        version: 6.4.12
+      '@codemirror/lang-javascript':
+        specifier: ^6.0.0
+        version: 6.2.5
+      '@codemirror/lang-json':
+        specifier: ^6.0.0
+        version: 6.0.2
+      '@codemirror/lang-markdown':
+        specifier: ^6.0.0
+        version: 6.5.2
+      '@codemirror/lang-python':
+        specifier: ^6.0.0
+        version: 6.2.1
+      '@codemirror/lang-rust':
+        specifier: ^6.0.0
+        version: 6.0.2
+      '@codemirror/lang-sql':
+        specifier: ^6.0.0
+        version: 6.10.0
+      '@codemirror/language':
+        specifier: ^6.0.0
+        version: 6.12.4
+      '@codemirror/search':
+        specifier: ^6.0.0
+        version: 6.7.1
+      '@codemirror/state':
+        specifier: ^6.0.0
+        version: 6.7.1
+      '@codemirror/view':
+        specifier: ^6.0.0
+        version: 6.43.8
 
   packages/tokens: {}
 

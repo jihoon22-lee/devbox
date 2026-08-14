@@ -1,37 +1,33 @@
 import { autocompletion, type CompletionContext, type CompletionSource } from "@codemirror/autocomplete";
-import { defaultKeymap, indentWithTab } from "@codemirror/commands";
-import { css } from "@codemirror/lang-css";
-import { html } from "@codemirror/lang-html";
-import { javascript } from "@codemirror/lang-javascript";
-import { json } from "@codemirror/lang-json";
-import { markdown } from "@codemirror/lang-markdown";
-import { rust } from "@codemirror/lang-rust";
-import { sql } from "@codemirror/lang-sql";
-import { python } from "@codemirror/lang-python";
-import { defaultHighlightStyle, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting } from "@codemirror/language";
+import { indentWithTab } from "@codemirror/commands";
+import { foldGutter, foldKeymap, indentOnInput } from "@codemirror/language";
 import {
   crosshairCursor,
   drawSelection,
   dropCursor,
   EditorView,
-  highlightActiveLine,
   highlightSpecialChars,
   keymap,
-  lineNumbers,
   rectangularSelection,
   type KeyBinding,
 } from "@codemirror/view";
-import { Annotation, Compartment, EditorState, type Extension } from "@codemirror/state";
+import { Annotation, Compartment, type Extension } from "@codemirror/state";
 import { lintGutter } from "@codemirror/lint";
 import { hoverTooltip } from "@codemirror/view";
-import { history, historyKeymap } from "@codemirror/commands";
 import {
   openSearchPanel,
-  search,
-  searchKeymap,
   selectNextOccurrence,
   selectSelectionMatches,
 } from "@codemirror/search";
+import {
+  baseEditorExtensions,
+  languageExtensionFor,
+  languageForPath,
+  languageLabel,
+  readOnlyExtension,
+  syntaxHighlightingExtension,
+  type SupportedLanguage,
+} from "@devbox/editor";
 import type { EncodingKind } from "../types";
 import {
   bookmarkExtension,
@@ -41,93 +37,16 @@ import {
   toggleBookmark,
 } from "./bookmarks";
 
-export type SupportedLanguage =
-  | "css"
-  | "html"
-  | "javascript"
-  | "json"
-  | "markdown"
-  | "python"
-  | "rust"
-  | "sql"
-  | "text";
+export type { SupportedLanguage };
+export { languageForPath, languageLabel, languageExtensionFor, syntaxHighlightingExtension, readOnlyExtension };
 
-const EXTENSION_LANGUAGE: Record<string, SupportedLanguage> = {
-  css: "css",
-  scss: "css",
-  less: "css",
-  html: "html",
-  htm: "html",
-  js: "javascript",
-  jsx: "javascript",
-  mjs: "javascript",
-  cjs: "javascript",
-  ts: "javascript",
-  tsx: "javascript",
-  json: "json",
-  jsonc: "json",
-  md: "markdown",
-  markdown: "markdown",
-  mmd: "markdown",
-  py: "python",
-  pyi: "python",
-  rs: "rust",
-  sql: "sql",
-};
+/** Marks a transaction as a parent-to-editor value synchronization. */
+export const externalValueSync = Annotation.define<boolean>();
 
-export function languageForPath(path: string): SupportedLanguage {
-  const fileName = path.split("\\").join("/").split("/").pop() ?? "";
-  const extension = fileName.includes(".") ? fileName.split(".").pop()?.toLowerCase() : undefined;
-  return extension ? EXTENSION_LANGUAGE[extension] ?? "text" : "text";
-}
-
-export function languageLabel(language: SupportedLanguage): string {
-  switch (language) {
-    case "javascript":
-      return "JavaScript/TypeScript";
-    case "markdown":
-      return "Markdown";
-    case "text":
-      return "일반 텍스트";
-    default:
-      return language.toUpperCase();
-  }
-}
-
-function languageExtension(language: SupportedLanguage): Extension | null {
-  switch (language) {
-    case "css":
-      return css();
-    case "html":
-      return html();
-    case "javascript":
-      return javascript({ jsx: true, typescript: true });
-    case "json":
-      return json();
-    case "markdown":
-      return markdown();
-    case "python":
-      return python();
-    case "rust":
-      return rust();
-    case "sql":
-      return sql();
-    case "text":
-      return null;
-  }
-}
-
-export function languageExtensionFor(language: SupportedLanguage): Extension {
-  return languageExtension(language) ?? [];
-}
-
-export function syntaxHighlightingExtension(enabled: boolean): Extension {
-  return enabled ? syntaxHighlighting(defaultHighlightStyle, { fallback: true }) : [];
-}
-
-export function readOnlyExtension(readOnly: boolean): Extension {
-  return [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)];
-}
+/** Ctrl/Cmd+H opens CodeMirror's built-in find/replace panel. */
+export const replaceKeymap: KeyBinding[] = [
+  { key: "Mod-h", run: openSearchPanel, scope: "editor search-panel", preventDefault: true },
+];
 
 /**
  * Word completion intentionally reads only the current CodeMirror document.
@@ -164,14 +83,6 @@ export interface EditorCompartments {
   syntax: Compartment;
 }
 
-/** Marks a transaction as a parent-to-editor value synchronization. */
-export const externalValueSync = Annotation.define<boolean>();
-
-/** Ctrl/Cmd+H opens CodeMirror's built-in find/replace panel. */
-export const replaceKeymap: KeyBinding[] = [
-  { key: "Mod-h", run: openSearchPanel, scope: "editor search-panel", preventDefault: true },
-];
-
 export function editorExtensions({
   language,
   syntaxHighlightingEnabled,
@@ -188,26 +99,18 @@ export function editorExtensions({
   const syntaxMode = syntaxHighlightingExtension(syntaxHighlightingEnabled);
   const readOnlyMode = readOnlyExtension(readOnly);
   return [
-    lineNumbers(),
-    // CM6 rejects additional ranges unless this facet is explicitly enabled.
-    // The default keymap plus search keymap then provide the expected
-    // Mod-Alt-Arrow and Mod-D multicursor actions.
-    EditorState.allowMultipleSelections.of(true),
+    // 공용 기반(lineNumbers·히스토리·활성 라인·기본 keymap·검색)은 @devbox/editor에서.
+    ...baseEditorExtensions(),
     rectangularSelection(),
     crosshairCursor(),
     bookmarkExtension(bookmarks),
     highlightSpecialChars(),
-    history(),
     foldGutter(),
     drawSelection(),
     dropCursor(),
     indentOnInput(),
-    highlightActiveLine(),
     keymap.of([
-      ...defaultKeymap,
-      ...historyKeymap,
       ...foldKeymap,
-      ...searchKeymap,
       ...replaceKeymap,
       indentWithTab,
       { key: "F2", run: nextBookmark },
@@ -216,7 +119,6 @@ export function editorExtensions({
       { key: "Mod-d", run: selectNextOccurrence, preventDefault: true },
       { key: "Mod-Shift-l", run: selectSelectionMatches, preventDefault: true },
     ]),
-    search({ top: true }),
     lintGutter(),
     autocompletion({ override: [completionSource ?? currentDocumentWordCompletion] }),
     ...(hoverSource ? [hoverTooltip(hoverSource)] : []),
