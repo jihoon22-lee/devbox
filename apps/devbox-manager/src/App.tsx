@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { available, catalog, current, installApp, installed, launchApp, rollback } from "./api";
+import { available, catalog, current, installApp, installed, launchApp, rollback, runDiagnosis, type DiagnosisItem } from "./api";
 import type { CatalogApp, Current, InstalledApp, ReleaseManifest } from "./types";
 import "./App.css";
 
@@ -11,6 +11,17 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [tab, setTab] = useState<"apps" | "doctor">("apps");
+  const [diagnosis, setDiagnosis] = useState<DiagnosisItem[]>([]);
+
+  const onDiagnose = useCallback(async () => {
+    setError(null);
+    try {
+      setDiagnosis(await runDiagnosis());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -90,6 +101,12 @@ export default function App() {
     <div className="app">
       <header className="toolbar">
         <h1 className="title">Devbox Manager</h1>
+        <button className={`btn ${tab === "apps" ? "active" : ""}`} onClick={() => setTab("apps")}>
+          앱
+        </button>
+        <button className={`btn ${tab === "doctor" ? "active" : ""}`} onClick={() => { setTab("doctor"); void onDiagnose(); }}>
+          환경 진단
+        </button>
         <span className="latest">Latest: {manifest ? manifest.releaseTag : "..."}</span>
         <span className="spacer" />
         <button className="btn refresh" onClick={() => void refresh()}>
@@ -100,6 +117,22 @@ export default function App() {
       {error && <div className="error">{error}</div>}
       {notice && <div className="notice">{notice}</div>}
 
+      {tab === "doctor" ? (
+        <div className="doctor">
+          <div className="doctor-head">
+            <span className="dim">read-only 진단 · 자동 설치·수정 없음</span>
+            <button className="btn" onClick={() => void onDiagnose()}>다시 진단</button>
+          </div>
+          {diagnosis.map((d) => (
+            <div key={d.name} className={`doctor-row ${d.ok ? "ok" : "bad"}`}>
+              <span className="doctor-name">{d.name}</span>
+              <span className="doctor-detail">{d.detail}</span>
+            </div>
+          ))}
+          {diagnosis.length === 0 && <div className="dim">진단을 실행해 주세요.</div>}
+          <div className="dim doctor-note">지원 번들·path·환경변수는 redaction되어야 합니다 (§15.4 경계).</div>
+        </div>
+      ) : (
       <div className="table-wrap">
         <table>
           <thead>
@@ -162,6 +195,7 @@ export default function App() {
           </tbody>
         </table>
       </div>
+      )}
 
       <footer className="foot">
         <div className="dim">휴대용(portable): exe를 자체 폴더에 받아 관리. 설치 마법사(setup): 공식 설치 프로그램 실행.</div>

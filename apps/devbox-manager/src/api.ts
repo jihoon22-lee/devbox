@@ -67,6 +67,28 @@ export async function rollback(appId: string): Promise<string> {
   return invoke<string>("rollback", { appId });
 }
 
+export interface DiagnosisItem {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+
+export async function runDiagnosis(): Promise<DiagnosisItem[]> {
+  if (!isTauri()) {
+    return [
+      { name: "wsl", ok: true, detail: "WSL version 2.4.4" },
+      { name: "git", ok: true, detail: "git version 2.45.0" },
+      { name: "node", ok: true, detail: "v22.22.1" },
+      { name: "pnpm", ok: true, detail: "9.0.0" },
+      { name: "rustc", ok: true, detail: "rustc 1.97.1" },
+      { name: "cargo", ok: true, detail: "cargo 1.97.1" },
+      { name: "devbox-data", ok: true, detail: "카탈로그 12개 · 데이터 디렉터리 존재 10개" },
+      { name: "catalog-ids", ok: true, detail: "모든 identifier가 com.devbox.*" },
+    ];
+  }
+  return invoke<DiagnosisItem[]>("run_diagnosis");
+}
+
 export async function launchApp(name: string): Promise<void> {
   if (!isTauri()) return;
   await invoke("launch", { name });
