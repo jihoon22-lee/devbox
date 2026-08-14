@@ -3,6 +3,7 @@ pub mod folder;
 pub mod installer;
 pub mod lsp;
 pub mod preview;
+pub mod recovery;
 pub mod session;
 pub mod watch {
     use crate::watcher::WatcherManager;

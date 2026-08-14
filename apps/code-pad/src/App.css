@@ -866,3 +866,118 @@ h1 {
     grid-column: auto;
   }
 }
+
+/* ── recovery (§12.1) ─────────────────────────────────────────── */
+
+.recovery-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(11, 15, 22, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.recovery-dialog > h2 {
+  margin: 0 0 8px;
+}
+
+.recovery-note {
+  color: var(--dim, #8b93a1);
+  margin: 0 0 12px;
+}
+
+.recovery-message {
+  color: var(--dim, #8b93a1);
+}
+
+.changeset {
+  width: min(760px, 90vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: #0f1319;
+  border: 1px solid var(--border, #262c36);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.changeset-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, #262c36);
+}
+
+.changeset-title {
+  font-weight: 600;
+}
+
+.changeset-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.changeset-item {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, #262c36);
+}
+
+.changeset-item.selected {
+  background: rgba(79, 140, 255, 0.06);
+}
+
+.changeset-check {
+  padding-top: 4px;
+}
+
+.changeset-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.changeset-path {
+  font-family: var(--font-mono, "Cascadia Code", Consolas, monospace);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.changeset-diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.changeset-diff pre {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.changeset-before {
+  background: rgba(248, 81, 73, 0.08);
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+.changeset-after {
+  background: rgba(63, 185, 80, 0.08);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
+.changeset-actions {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border, #262c36);
+}

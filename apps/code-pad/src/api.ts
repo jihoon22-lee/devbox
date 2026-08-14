@@ -266,3 +266,28 @@ export function requestLspReferences(
     includeDeclaration,
   });
 }
+
+// ── recovery (§12.1) ──────────────────────────────────────────────
+
+export interface RecoveryEntry {
+  path: string;
+  content: string;
+  baseHash: string | null;
+  snapshotAtMs: number;
+}
+
+export function saveRecovery(entries: RecoveryEntry[]): Promise<void> {
+  return invoke<void>("save_recovery", { entries });
+}
+
+export function loadRecovery(): Promise<RecoveryEntry[]> {
+  return invoke<RecoveryEntry[]>("load_recovery");
+}
+
+export function discardRecovery(path: string | null): Promise<void> {
+  return invoke<void>("discard_recovery", { path });
+}
+
+export function applyRecovery(path: string, content: string): Promise<void> {
+  return invoke<void>("apply_recovery", { path, content });
+}
