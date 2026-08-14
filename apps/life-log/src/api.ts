@@ -102,3 +102,13 @@ export async function setProjects(paths: string[]): Promise<void> {
   if (!isTauri()) return;
   await invoke("set_projects", { paths });
 }
+
+export async function getIdleThreshold(): Promise<number> {
+  if (!isTauri()) return 300000;
+  return invoke<number>("get_idle_threshold");
+}
+
+export async function setIdleThreshold(thresholdMs: number): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("set_idle_threshold", { thresholdMs });
+}

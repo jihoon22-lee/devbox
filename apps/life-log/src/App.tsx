@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getAppStats,
   getDay,
+  getIdleThreshold,
   getProjects,
   getRange,
   getTimeline,
   isTracking,
+  setIdleThreshold,
   setProjects,
   startTracking,
   stopTracking,
@@ -66,14 +68,16 @@ export default function App() {
   const [tracking, setTracking] = useState(false);
   const [projects, setProjectsState] = useState<string[]>([]);
   const [projectInput, setProjectInput] = useState("");
+  const [idleThreshold, setIdleThresholdState] = useState(300000);
   const [error, setError] = useState<string | null>(null);
 
   const dateStr = useMemo(() => toDateStr(date), [date]);
 
   const loadSettings = useCallback(async () => {
     try {
-      const pr = await getProjects();
+      const [pr, idle] = await Promise.all([getProjects(), getIdleThreshold()]);
       setProjectsState(pr);
+      setIdleThresholdState(idle);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -215,6 +219,26 @@ export default function App() {
               </button>
             </div>
             <div className="dim">활동 추적은 Life Log에 통합되어 있으며, 세션은 자동으로 기록됩니다.</div>
+          </section>
+
+          <section className="panel">
+            <h2>Idle detection</h2>
+            <div className="row">
+              <span className="dim">자리를 비운 지 (분):</span>
+              <input
+                type="number"
+                min={1}
+                value={Math.round(idleThreshold / 60000)}
+                onChange={(e) => {
+                  const minutes = Number(e.currentTarget.value);
+                  if (Number.isFinite(minutes) && minutes >= 1) {
+                    setIdleThresholdState(minutes * 60000);
+                    void setIdleThreshold(minutes * 60000);
+                  }
+                }}
+              />
+            </div>
+            <div className="dim">이 시간 이상 입력이 없으면 해당 구간을 사용 시간에서 제외합니다.</div>
           </section>
         </div>
       ) : view === "timeline" ? (

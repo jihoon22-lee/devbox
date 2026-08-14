@@ -43,6 +43,8 @@ pub fn run() {
             commands::tracking::start_tracking,
             commands::tracking::stop_tracking,
             commands::tracking::is_tracking,
+            commands::tracking::set_idle_threshold,
+            commands::tracking::get_idle_threshold,
             commands::queries::timeline,
             commands::queries::app_stats,
         ])
