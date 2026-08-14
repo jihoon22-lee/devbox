@@ -13,7 +13,10 @@ pub async fn list_distros() -> Result<Vec<DistroInfo>, String> {
 /// 임의의 WSL 명령을 지정한 배포판에서 실행하고 출력을 반환한다.
 #[tauri::command]
 pub async fn run_wsl_command(distro: String, command: String) -> Result<String, String> {
-    let output = run_wsl(&["-d", &distro, "--", &command], None).await?;
+    let argv =
+        devbox_wsl::argv::build_exec_argv(&distro, None, &command).map_err(|e| e.to_string())?;
+    let refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+    let output = run_wsl(&refs, None).await?;
     Ok(output)
 }
 

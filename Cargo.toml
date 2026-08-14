@@ -16,7 +16,7 @@ members = [
     "crates/filesystem",
     "crates/markdown",
     "crates/process",
-    # "crates/wsl",
+    "crates/wsl",
     # "crates/database",
 ]
 

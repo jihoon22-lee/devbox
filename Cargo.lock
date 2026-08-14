@@ -3836,6 +3836,7 @@ dependencies = [
  "tokio",
  "uuid",
  "windows 0.61.3",
+ "wsl",
  "zeroize",
 ]
 
@@ -6415,6 +6416,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wsl"
+version = "0.1.0"
+
+[[package]]
 name = "wsl-desktop"
 version = "0.2.2"
 dependencies = [
@@ -6425,6 +6430,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tokio",
+ "wsl",
 ]
 
 [[package]]

@@ -1,0 +1,9 @@
+[package]
+name = "wsl"
+version = "0.1.0"
+description = "WSL argv composition and path normalization"
+edition = "2021"
+
+[lib]
+name = "wsl"
+path = "src/lib.rs"

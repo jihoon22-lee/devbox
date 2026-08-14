@@ -67,6 +67,15 @@ impl fmt::Display for ShellError {
 
 impl std::error::Error for ShellError {}
 
+impl From<devbox_wsl::WslError> for ShellError {
+    fn from(err: devbox_wsl::WslError) -> Self {
+        match err {
+            devbox_wsl::WslError::InvalidDistro(_) => ShellError::InvalidDistro,
+            devbox_wsl::WslError::InvalidPath(_) => ShellError::EmptyField("WSL path"),
+        }
+    }
+}
+
 fn validate_nul_free(field: &'static str, value: &str) -> Result<(), ShellError> {
     if value.contains('\0') {
         Err(ShellError::NulByte(field))
@@ -272,7 +281,6 @@ pub fn build_wsl_command(
     environment: &BTreeMap<String, String>,
     existing_wslenv: Option<&str>,
 ) -> Result<WslCommandSpec, ShellError> {
-    validate_distro(distro)?;
     if let Some(cwd) = cwd {
         validate_nonempty("WSL cwd", cwd)?;
     }
@@ -280,13 +288,11 @@ pub fn build_wsl_command(
     let wrapper = build_wsl_wrapper(run_id, command)?;
     let child_environment = prepare_wsl_environment(environment, existing_wslenv, run_id)?;
 
-    let mut argv = vec!["wsl.exe".to_owned(), "-d".to_owned(), distro.to_owned()];
-    if let Some(cwd) = cwd {
-        argv.push("--cd".to_owned());
-        argv.push(cwd.to_owned());
-    }
+    // 순수 argv 조립(wsl.exe -d <distro> [--cd <cwd>] --)은 devbox-wsl 프리미티브를 쓴다.
+    // 빈 command 베이스에 실행 정책(setsid·bash 플래그·wrapper)을 덧붙인다.
+    let mut argv = devbox_wsl::argv::build_exec_argv(distro, cwd, "")
+        .map_err(|_| ShellError::InvalidDistro)?;
     argv.extend([
-        "--".to_owned(),
         "setsid".to_owned(),
         "bash".to_owned(),
         "--noprofile".to_owned(),
@@ -302,30 +308,6 @@ pub fn build_wsl_command(
         environment: child_environment,
         wrapper,
     })
-}
-
-pub fn validate_distro(distro: &str) -> Result<(), ShellError> {
-    validate_nonempty("WSL distro", distro).map_err(|_| ShellError::InvalidDistro)
-}
-
-/// Build the argv used to convert a Windows path before it is used as WSL's
-/// `--cd` value.  The path stays one argv element; it is never shell-quoted.
-pub fn build_wslpath_conversion_argv(
-    distro: &str,
-    windows_path: &str,
-) -> Result<Vec<String>, ShellError> {
-    validate_distro(distro)?;
-    validate_nonempty("Windows path", windows_path)?;
-    Ok(vec![
-        "wsl.exe".to_owned(),
-        "-d".to_owned(),
-        distro.to_owned(),
-        "--".to_owned(),
-        "wslpath".to_owned(),
-        "-u".to_owned(),
-        "--".to_owned(),
-        windows_path.to_owned(),
-    ])
 }
 
 /// Merge WSLENV without allowing a caller to retain a conflicting direction
@@ -563,7 +545,7 @@ pub fn build_wsl_group_signal_argv(
     signal: WslSignal,
     pgid: u32,
 ) -> Result<Vec<String>, ShellError> {
-    validate_distro(distro)?;
+    devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
     if pgid == 0 {
         return Err(ShellError::InvalidNumericField("PGID"));
     }
@@ -580,7 +562,7 @@ pub fn build_wsl_group_signal_argv(
 }
 
 pub fn build_wsl_group_probe_argv(distro: &str, pgid: u32) -> Result<Vec<String>, ShellError> {
-    validate_distro(distro)?;
+    devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
     if pgid == 0 {
         return Err(ShellError::InvalidNumericField("PGID"));
     }
@@ -600,7 +582,7 @@ pub fn build_wsl_group_probe_argv(distro: &str, pgid: u32) -> Result<Vec<String>
 /// and process-group identity check.  It is returned as argv rather than a
 /// shell fragment so a PID can never become command syntax.
 pub fn build_wsl_proc_environ_argv(distro: &str, pid: u32) -> Result<Vec<String>, ShellError> {
-    validate_distro(distro)?;
+    devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
     if pid == 0 {
         return Err(ShellError::InvalidNumericField("PID"));
     }
@@ -616,7 +598,7 @@ pub fn build_wsl_proc_environ_argv(distro: &str, pid: u32) -> Result<Vec<String>
 }
 
 pub fn build_wsl_proc_stat_argv(distro: &str, pid: u32) -> Result<Vec<String>, ShellError> {
-    validate_distro(distro)?;
+    devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
     if pid == 0 {
         return Err(ShellError::InvalidNumericField("PID"));
     }
@@ -632,7 +614,7 @@ pub fn build_wsl_proc_stat_argv(distro: &str, pid: u32) -> Result<Vec<String>, S
 }
 
 pub fn build_wsl_proc_dir_probe_argv(distro: &str, pid: u32) -> Result<Vec<String>, ShellError> {
-    validate_distro(distro)?;
+    devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
     if pid == 0 {
         return Err(ShellError::InvalidNumericField("PID"));
     }
@@ -694,7 +676,7 @@ pub fn build_wsl_termination_plan(
     distro: &str,
     identity: &WslProcessIdentity,
 ) -> Result<WslTerminationPlan, ShellError> {
-    validate_distro(distro)?;
+    devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
     identity.validate()?;
     Ok(WslTerminationPlan {
         term: build_wsl_group_signal_argv(distro, WslSignal::Term, identity.pgid)?,

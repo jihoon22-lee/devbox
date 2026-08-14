@@ -16,9 +16,9 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::core::shell::{
     build_wsl_command, build_wsl_proc_dir_probe_argv, build_wsl_proc_environ_argv,
-    build_wsl_proc_stat_argv, build_wsl_termination_plan, build_wslpath_conversion_argv,
-    parse_proc_stat_identity, parse_wsl_handshake, validate_wsl_handshake_identity,
-    validate_wsl_identity, ShellError, WslCommandSpec, WslProcessIdentity, WslTerminationPlan,
+    build_wsl_proc_stat_argv, build_wsl_termination_plan, parse_proc_stat_identity,
+    parse_wsl_handshake, validate_wsl_handshake_identity, validate_wsl_identity, ShellError,
+    WslCommandSpec, WslProcessIdentity, WslTerminationPlan,
 };
 
 const HANDSHAKE_BUFFER_LIMIT: usize = 64 * 1024;
@@ -341,7 +341,8 @@ pub async fn convert_windows_path(
     distro: &str,
     windows_path: &str,
 ) -> Result<String, WslExecutionError> {
-    let argv = build_wslpath_conversion_argv(distro, windows_path)?;
+    let argv = devbox_wsl::argv::build_wslpath_argv(distro, windows_path)
+        .map_err(|e| WslExecutionError::Shell(e.into()))?;
     let output = run_helper_output(&argv).await?;
     if !output.status.success() {
         return Err(WslExecutionError::CommandFailed {
