@@ -43,6 +43,8 @@ pub fn run() {
             commands::search::search_files,
             commands::search::search_content,
             commands::watcher::watcher_statuses,
+            commands::actions::open_file,
+            commands::actions::reveal_file,
         ])
         .setup(|app| {
             if let Err(error) = migrate_local_data(app.handle(), LEGACY_IDENTIFIER) {
