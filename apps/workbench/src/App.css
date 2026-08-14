@@ -1,0 +1,234 @@
+:root {
+  --bg: #111418;
+  --panel: #171b21;
+  --border: #262c36;
+  --text: #e6e9ef;
+  --dim: #8b93a1;
+  --accent: #4f8cff;
+  --danger: #f85149;
+  --ok: #3fb950;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.title {
+  font-size: 15px;
+  margin: 0;
+}
+
+.btn {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn.refresh {
+  margin-left: auto;
+}
+
+.mini {
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.mini:hover {
+  color: var(--text);
+}
+
+.error {
+  background: rgba(248, 81, 73, 0.12);
+  border-bottom: 1px solid var(--danger);
+  color: var(--danger);
+  padding: 8px 14px;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 260px;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.group-title {
+  font-size: 12px;
+  color: var(--dim);
+  margin: 0 0 8px;
+}
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.profile-row.active {
+  background: rgba(79, 140, 255, 0.1);
+}
+
+.profile-name {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  max-width: 720px;
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.field span {
+  display: block;
+  color: var(--dim);
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.field input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  outline: none;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.subtitle {
+  font-size: 13px;
+  margin: 14px 0 8px;
+}
+
+.health-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.health-name {
+  min-width: 90px;
+  font-weight: 600;
+}
+
+.health-row.ok .health-name {
+  color: var(--ok);
+}
+
+.health-row.bad .health-name {
+  color: var(--danger);
+}
+
+.health-detail {
+  color: var(--dim);
+}
+
+.dim {
+  color: var(--dim);
+}
+
+.empty {
+  color: var(--dim);
+  padding: 40px;
+  text-align: center;
+}

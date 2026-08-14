@@ -13,6 +13,7 @@ members = [
     "apps/devbox-manager/src-tauri",
     "apps/code-pad/src-tauri",
     "apps/run-manager/src-tauri",
+    "apps/workbench/src-tauri",
     "crates/filesystem",
     "crates/markdown",
     "crates/process",

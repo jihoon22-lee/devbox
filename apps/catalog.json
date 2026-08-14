@@ -110,6 +110,17 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false
+    },
+    {
+      "id": "workbench",
+      "displayName": "Workbench",
+      "productName": "Workbench",
+      "identifier": "com.devbox.workbench",
+      "cargoPackage": "workbench",
+      "appDir": "apps/workbench",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false
     }
   ]
 }
