@@ -1,4 +1,5 @@
 mod commands;
+mod platform;
 
 use tauri::Manager;
 
@@ -35,7 +36,11 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::request::send_request])
+        .invoke_handler(tauri::generate_handler![
+            commands::request::send_request,
+            commands::secrets::seal_secret,
+            commands::secrets::unseal_secret,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

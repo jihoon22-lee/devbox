@@ -9,6 +9,7 @@ import {
   saveStore as saveEnvStore,
   setVariable,
 } from "./lib/environments";
+import { unsealSecret, sealSecret } from "./api";
 import type { ApiRequest, ApiResponse, HistoryItem, KeyValue } from "./types";
 import "./App.css";
 
@@ -142,8 +143,16 @@ export default function App() {
     setSending(true);
     setError(null);
     try {
-      // 환경 변수를 원본 template(불변)에 적용한 사본을 보낸다
-      const effectiveReq = currentEnv ? applyToRequest(req, new Map(currentEnv.variables.map((v) => [v.key, v.value]))) : req;
+      // 환경 변수를 원본 template(불변)에 적용한 사본을 보낸다. secret은 해제한다.
+      let effectiveReq = req;
+      if (currentEnv) {
+        const vars = new Map<string, string>();
+        for (const v of currentEnv.variables) {
+          const plain = v.secret ? await unsealSecret(v.value).catch(() => v.value) : v.value;
+          vars.set(v.key, plain);
+        }
+        effectiveReq = applyToRequest(req, vars);
+      }
       const result = await sendRequest(effectiveReq);
       setResp(result);
       const item: HistoryItem = { id: String(Date.now()), saved_at: Date.now(), request: effectiveReq, status: result.status };
@@ -277,11 +286,39 @@ export default function App() {
             {currentEnv.variables.map((v) => (
               <div key={v.key} className="env-var-row">
                 <span className="env-var-key">{v.key}</span>
-                <input
-                  className="coll-input"
-                  value={v.value}
-                  onChange={(e) => persistEnvs(setVariable(envStore, currentEnv.id, v.key, e.currentTarget.value))}
-                />
+                {v.secret ? (
+                  <>
+                    <span className="env-var-secret" title="봉인됨 — 평문 미보관">
+                      ••••••••
+                    </span>
+                    <button className="btn mini" onClick={() => {
+                      const plain = window.prompt(`${v.key} 새 값 입력`);
+                      if (plain != null) {
+                        void sealSecret(plain).then((blob) => persistEnvs(setVariable(envStore, currentEnv.id, v.key, blob, true)));
+                      }
+                    }}>
+                      변경
+                    </button>
+                    <button className="btn mini" title="secret 해제 (저장 값 삭제)" onClick={() => persistEnvs(setVariable(envStore, currentEnv.id, v.key, "", false))}>
+                      해제
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      className="coll-input"
+                      value={v.value}
+                      onChange={(e) => persistEnvs(setVariable(envStore, currentEnv.id, v.key, e.currentTarget.value, false))}
+                    />
+                    <button className="btn mini" title="이 변수를 봉인해 secret으로 저장" onClick={() => {
+                      if (v.value) {
+                        void sealSecret(v.value).then((blob) => persistEnvs(setVariable(envStore, currentEnv.id, v.key, blob, true)));
+                      }
+                    }}>
+                      🔒
+                    </button>
+                  </>
+                )}
               </div>
             ))}
             {currentEnv.variables.length === 0 && <div className="dim">변수 없음 — {"{{var}}"}를 요청에 쓰세요.</div>}
@@ -290,7 +327,7 @@ export default function App() {
                 className="btn"
                 onClick={() => {
                   const name = `var${currentEnv.variables.length + 1}`;
-                  persistEnvs(setVariable(envStore, currentEnv.id, name, ""));
+                  persistEnvs(setVariable(envStore, currentEnv.id, name, "", false));
                 }}
               >
                 + 변수

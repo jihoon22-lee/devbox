@@ -169,6 +169,23 @@ mod windows_impl {
 
     pub(super) struct DpapiProtector;
 
+    impl devbox_secrets::Sealer for DpapiProtector {
+        fn seal(&self, plaintext: &str) -> Result<Vec<u8>, devbox_secrets::SealError> {
+            protect_blob(plaintext.as_bytes()).map_err(|_| devbox_secrets::SealError::CryptoFailure)
+        }
+
+        fn unseal(
+            &self,
+            blob: &[u8],
+        ) -> Result<zeroize::Zeroizing<String>, devbox_secrets::SealError> {
+            let bytes =
+                unprotect_blob(blob).map_err(|_| devbox_secrets::SealError::CryptoFailure)?;
+            let text = String::from_utf8(bytes.to_vec())
+                .map_err(|_| devbox_secrets::SealError::InvalidInput)?;
+            Ok(zeroize::Zeroizing::new(text))
+        }
+    }
+
     impl EnvironmentProtector for DpapiProtector {
         fn encrypt(
             &self,
@@ -180,7 +197,10 @@ mod windows_impl {
                 serde_json::to_vec(environment)
                     .map_err(|_| EnvironmentProtectionError::CryptoFailure)?,
             );
-            protect_blob(&serialized)
+            let plaintext = String::from_utf8(serialized.to_vec())
+                .map_err(|_| EnvironmentProtectionError::CryptoFailure)?;
+            devbox_secrets::seal_v1(self, &plaintext)
+                .map_err(|_| EnvironmentProtectionError::CryptoFailure)
         }
 
         fn decrypt(
@@ -190,8 +210,13 @@ mod windows_impl {
             if ciphertext.is_empty() {
                 return Err(EnvironmentProtectionError::InvalidCiphertext);
             }
-            let serialized = unprotect_blob(ciphertext)?;
-            let environment = serde_json::from_slice(&serialized)
+            // v1 envelope 시도 → 실패 시 legacy(버전 byte 없음) raw blob fallback
+            let plaintext = match devbox_secrets::unseal_v1(self, ciphertext) {
+                Ok(text) => Zeroizing::new(text.as_bytes().to_vec()),
+                Err(_) => unprotect_blob(ciphertext)
+                    .map_err(|_| EnvironmentProtectionError::InvalidCiphertext)?,
+            };
+            let environment = serde_json::from_slice(&plaintext)
                 .map_err(|_| EnvironmentProtectionError::InvalidCiphertext)?;
             if crate::core::shell::validate_environment(&environment).is_err() {
                 drop(SecretEnvironment::new(environment));
