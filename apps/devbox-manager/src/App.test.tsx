@@ -35,4 +35,11 @@ describe("App", () => {
     // code-pad는 미설치 → Install 버튼이 보인다
     expect(screen.getAllByText("Install (portable)").length).toBeGreaterThan(0);
   });
+
+  it("이전 버전이 있는 portable 앱에 rollback 버튼이 보인다", async () => {
+    await screen.findByText("Port Manager");
+    // port-manager: portable + previousVersion 0.1.0 → rollback 표시
+    expect(screen.getAllByText("Rollback").length).toBe(1);
+    expect(screen.getByText(/prev 0\.1\.0/)).toBeTruthy();
+  });
 });
