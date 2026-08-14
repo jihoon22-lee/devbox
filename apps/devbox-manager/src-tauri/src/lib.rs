@@ -34,6 +34,8 @@ pub fn run() {
             if let Err(error) = migrate_local_data(app.handle(), LEGACY_IDENTIFIER) {
                 eprintln!("devbox: local data migration will retry next launch: {error}");
             }
+            // 중단된 다운로드의 .partial 정리 (재시도/안전 정리)
+            commands::manager::cleanup_partials(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
