@@ -56,12 +56,13 @@ pub fn start_session(
     cmd.args(["-d".to_string(), distro.clone()]);
     if let Some(dir) = cwd.filter(|c| !c.is_empty()) {
         // 지정 경로로 바로 열기: wsl -d <distro> -- bash -lc "cd <dir> && exec bash"
-        cmd.args([
-            "--".to_string(),
-            "bash".to_string(),
-            "-lc".to_string(),
-            format!("cd '{dir}' && exec bash"),
-        ]);
+        let argv = devbox_wsl::argv::build_exec_argv(
+            &distro,
+            None,
+            &format!("bash -lc \"cd '{dir}' && exec bash\""),
+        )
+        .map_err(|e| e.to_string())?;
+        cmd.args(argv[3..].iter()); // "-d <distro>" 다음부터
     }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
