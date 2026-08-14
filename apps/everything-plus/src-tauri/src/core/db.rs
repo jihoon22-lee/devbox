@@ -228,6 +228,46 @@ pub fn upsert_content(conn: &Connection, file_id: i64, content: &str) -> rusqlit
     Ok(())
 }
 
+/// 파일과 그 내용 인덱스를 삭제한다. 삭제된 행이 있었으면 true.
+pub fn delete_file(conn: &Connection, path: &str) -> rusqlite::Result<bool> {
+    let path = normalize_path(path);
+    let deleted = conn.execute(
+        "DELETE FROM file_content WHERE file_id IN (SELECT id FROM files WHERE path = ?1)",
+        params![path],
+    )?;
+    let removed = conn.execute("DELETE FROM files WHERE path = ?1", params![path])?;
+    Ok(deleted > 0 || removed > 0)
+}
+
+/// 경로를 포함하는 루트를 찾는다 (가장 긴 prefix 우선).
+pub fn find_root_for(conn: &Connection, path: &str) -> rusqlite::Result<Option<RootInfo>> {
+    let path = normalize_path(path);
+    let roots = list_roots(conn)?;
+    let mut best: Option<(usize, RootInfo)> = None;
+    for root in roots {
+        if crate::core::watcher::is_within_root(&root.path, &path) {
+            let matched = root.path.len();
+            if best.as_ref().map(|(len, _)| matched > *len).unwrap_or(true) {
+                best = Some((matched, root));
+            }
+        }
+    }
+    Ok(best.map(|(_, r)| r))
+}
+
+/// 경로를 포함하는 루트의 (id, content)를 찾는다.
+pub fn root_row_for(conn: &Connection, path: &str) -> rusqlite::Result<Option<(i64, bool)>> {
+    let Some(root) = find_root_for(conn, path)? else {
+        return Ok(None);
+    };
+    let id: i64 = conn.query_row(
+        "SELECT id FROM roots WHERE path = ?1",
+        params![root.path],
+        |r| r.get(0),
+    )?;
+    Ok(Some((id, root.content)))
+}
+
 pub fn total_files(conn: &Connection) -> rusqlite::Result<i64> {
     conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
 }
@@ -493,5 +533,38 @@ mod tests {
         assert!(search(&conn, "readme", 10).unwrap().is_empty());
         assert!(search(&conn, "bar", 10).unwrap().is_empty());
         assert_eq!(total_files(&conn).unwrap(), 0);
+    }
+
+    #[test]
+    fn delete_file_removes_file_and_content() {
+        let conn = mem();
+        let id = upsert_file(&conn, "C:/notes/todo.md", 10, 0, 1).unwrap();
+        upsert_content(&conn, id, "buy milk").unwrap();
+        assert!(delete_file(&conn, "C:\\notes\\todo.md").unwrap());
+        assert!(search(&conn, "todo", 10).unwrap().is_empty());
+        assert!(search_content(&conn, "milk", 10).unwrap().is_empty());
+        // 두 번째 삭제는 idempotent
+        assert!(!delete_file(&conn, "C:/notes/todo.md").unwrap());
+    }
+
+    #[test]
+    fn root_row_for_finds_deepest_root() {
+        let conn = mem();
+        add_root(&conn, "C:/proj", false).unwrap();
+        let (root_id, content) = root_row_for(&conn, "C:/proj/sub/a.rs").unwrap().unwrap();
+        assert_eq!(root_id, 1);
+        assert!(!content);
+        // 루트 밖 경로는 None
+        assert!(root_row_for(&conn, "C:/other/x.rs").unwrap().is_none());
+    }
+
+    #[test]
+    fn find_root_for_prefers_longest_prefix() {
+        let conn = mem();
+        add_root(&conn, "C:/a", false).unwrap();
+        add_root(&conn, "C:/a/b", true).unwrap();
+        let root = find_root_for(&conn, "C:/a/b/c.rs").unwrap().unwrap();
+        assert_eq!(root.path, "C:/a/b");
+        assert!(root.content);
     }
 }

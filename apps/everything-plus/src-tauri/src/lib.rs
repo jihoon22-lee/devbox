@@ -2,6 +2,7 @@ mod commands;
 mod core;
 
 use commands::indexing::AppState;
+use commands::watcher::WatcherManager;
 use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -41,6 +42,7 @@ pub fn run() {
             commands::indexing::index_status,
             commands::search::search_files,
             commands::search::search_content,
+            commands::watcher::watcher_statuses,
         ])
         .setup(|app| {
             if let Err(error) = migrate_local_data(app.handle(), LEGACY_IDENTIFIER) {
@@ -54,6 +56,8 @@ pub fn run() {
                 indexing: AtomicBool::new(false),
                 indexed: AtomicI64::new(0),
             });
+            // watcher는 DB 초기화 뒤, 상태 관리 전에 생성한다 (restore_all이 db를 읽는다)
+            let watcher = WatcherManager::new(app.handle().clone(), state.clone());
             // 스키마 버전이 올라가 migrate()가 인덱스를 비웠다면, 등록된
             // 루트가 있는 한 사용자가 빈 검색 결과만 보지 않도록 전체
             // 재인덱싱을 자동으로 걸어준다.
@@ -64,6 +68,9 @@ pub fn run() {
                 }
             }
             app.manage(state);
+            app.manage(watcher.clone());
+            // 앱 재시작 시 등록된 루트의 watcher를 복원한다
+            watcher.restore_all();
             Ok(())
         })
         .run(tauri::generate_context!())
