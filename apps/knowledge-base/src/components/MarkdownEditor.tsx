@@ -1,12 +1,10 @@
 import { useEffect, useRef } from "react";
-import { history, historyKeymap, defaultKeymap } from "@codemirror/commands";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { search, searchKeymap } from "@codemirror/search";
+import { baseEditorExtensions, markdownEditorExtensions } from "@devbox/editor";
+import { defaultKeymap } from "@codemirror/commands";
 import { EditorState } from "@codemirror/state";
-import { EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 
-// PR 24에서 packages/editor로 추출할 공용 CodeMirror 설정. 여기서는 복사해 쓴다.
+// 공용 CodeMirror 설정은 packages/editor(@devbox/editor)에서 가져온다 (PR 24).
 // LSP는 넣지 않는다 (knowledge-base는 노트 앱이다).
 interface Props {
   value: string;
@@ -28,18 +26,12 @@ export default function MarkdownEditor({ value, onChange, onSave }: Props) {
       state: EditorState.create({
         doc: value,
         extensions: [
-          lineNumbers(),
-          highlightActiveLine(),
-          history(),
-          markdown({ base: markdownLanguage }),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          baseEditorExtensions(),
+          markdownEditorExtensions(),
           keymap.of([
             ...defaultKeymap,
-            ...historyKeymap,
-            ...searchKeymap,
             { key: "Mod-s", run: () => { onSaveRef.current(); return true; }, preventDefault: true },
           ]),
-          search({ top: true }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) onChangeRef.current(update.state.doc.toString());
           }),
