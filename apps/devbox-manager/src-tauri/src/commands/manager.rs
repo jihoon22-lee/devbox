@@ -1,22 +1,18 @@
+use crate::core::asset::select_asset;
+use crate::core::catalog::CatalogApp;
+use crate::core::manifest::{parse_manifest, ReleaseManifest};
+use crate::core::url_policy::is_allowed;
 use reqwest::header::USER_AGENT;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::Manager;
 
 const REPO: &str = "https://api.github.com/repos/jihoon22-lee/devbox";
+const DOWNLOAD_ROOT: &str = "https://github.com/jihoon22-lee/devbox/releases/download";
 
-#[derive(Debug, Clone, Serialize)]
-pub struct Asset {
-    pub name: String,
-    pub url: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct LatestRelease {
-    pub tag: String,
-    pub published_at: String,
-    pub assets: Vec<Asset>,
-}
+/// 빌드 시 임베드된 카탈로그. Manager 자신의 버전이 아는 앱 목록이 명확해지고
+/// 오프라인에서도 목록이 보인다. 새 앱은 Manager 업데이트로 반영된다.
+const CATALOG_JSON: &str = include_str!("../../../../catalog.json");
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct InstalledApp {
@@ -52,9 +48,17 @@ fn write_registry(app: &tauri::AppHandle, reg: &[InstalledApp]) -> Result<(), St
     std::fs::write(path, json).map_err(|e| e.to_string())
 }
 
-/// 최신 릴리스 정보 (태그 + 에셋 목록) 조회.
+/// 번들에 포함된 카탈로그를 반환한다.
 #[tauri::command]
-pub async fn latest() -> Result<LatestRelease, String> {
+pub fn catalog() -> Result<Vec<CatalogApp>, String> {
+    let catalog = crate::core::catalog::parse_catalog(CATALOG_JSON)?;
+    Ok(catalog.apps)
+}
+
+/// 최신 릴리스의 `release-manifest.json`을 받아 파싱한다.
+/// Manager는 GitHub asset 이름을 추측하지 않고 이 manifest만 신뢰한다.
+#[tauri::command]
+pub async fn available() -> Result<ReleaseManifest, String> {
     let client = reqwest::Client::new();
     let resp = client
         .get(format!("{REPO}/releases/latest"))
@@ -66,24 +70,29 @@ pub async fn latest() -> Result<LatestRelease, String> {
         return Err(format!("GitHub 응답 오류: {}", resp.status()));
     }
     let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let tag = json["tag_name"].as_str().unwrap_or("").to_string();
-    let published_at = json["published_at"].as_str().unwrap_or("").to_string();
-    let assets = json["assets"]
+    let manifest_url = json["assets"]
         .as_array()
-        .map(|arr| {
+        .and_then(|arr| {
             arr.iter()
-                .map(|a| Asset {
-                    name: a["name"].as_str().unwrap_or("").to_string(),
-                    url: a["browser_download_url"].as_str().unwrap_or("").to_string(),
-                })
-                .collect()
+                .find(|a| a["name"].as_str() == Some("release-manifest.json"))
         })
-        .unwrap_or_default();
-    Ok(LatestRelease {
-        tag,
-        published_at,
-        assets,
-    })
+        .and_then(|a| a["browser_download_url"].as_str().map(|s| s.to_string()))
+        .ok_or("release-manifest.json asset이 없다 (PR 9 이후의 릴리스가 필요하다)")?;
+
+    if !is_allowed(&manifest_url) {
+        return Err("허용되지 않은 manifest URL".into());
+    }
+    let mresp = client
+        .get(&manifest_url)
+        .header(USER_AGENT, "devbox-manager")
+        .send()
+        .await
+        .map_err(|e| format!("manifest 다운로드 실패: {e}"))?;
+    if !mresp.status().is_success() {
+        return Err(format!("manifest 응답 오류: {}", mresp.status()));
+    }
+    let text = mresp.text().await.map_err(|e| e.to_string())?;
+    parse_manifest(&text)
 }
 
 /// 설치된 앱 목록 (registry.json).
@@ -92,45 +101,51 @@ pub fn installed(app: tauri::AppHandle) -> Vec<InstalledApp> {
     read_registry(&app)
 }
 
-/// 앱 설치/업데이트.
+/// 앱 설치/업데이트. Rust가 이미 검증한 manifest에서 대상 asset을 선택한다.
 /// - mode=portable: 휴대용 exe를 다운로드해 자체 폴더에 보관
 /// - mode=installer: NSIS 설치 패키지를 내려받아 실행 (설치 마법사)
 #[tauri::command]
 pub async fn install(
     app: tauri::AppHandle,
-    name: String,
-    version: String,
-    url: String,
+    app_id: String,
     mode: String,
 ) -> Result<String, String> {
+    let manifest = available().await?;
+    let app_manifest = manifest
+        .apps
+        .iter()
+        .find(|a| a.id == app_id)
+        .ok_or_else(|| format!("manifest에 앱이 없다: {app_id}"))?;
+    let asset = select_asset(&manifest, &app_id, &mode)?;
+    let version = app_manifest.version.clone();
+    let url = format!("{DOWNLOAD_ROOT}/{}/{}", manifest.release_tag, asset.name);
+    if !is_allowed(&url) {
+        return Err("허용되지 않은 다운로드 URL".into());
+    }
+
     let base = data_dir(&app)?;
     let client = reqwest::Client::new();
 
     if mode == "installer" {
         let setup_dir = base.join("installers");
         std::fs::create_dir_all(&setup_dir).map_err(|e| e.to_string())?;
-        let file_name = url
-            .rsplit('/')
-            .next()
-            .filter(|s| !s.is_empty())
-            .unwrap_or("setup.exe");
-        let dest = setup_dir.join(file_name);
+        let dest = setup_dir.join(&asset.name);
         download(&client, &url, &dest).await?;
         // 설치 마법사 실행 (사용자가 진행)
         std::process::Command::new(&dest)
             .spawn()
             .map_err(|e| e.to_string())?;
-        upsert_registry(&app, name, version, "installer", String::new())?;
+        upsert_registry(&app, app_id, version, "installer", String::new())?;
         return Ok("설치 프로그램을 실행했습니다. 화면 안내에 따라 설치하세요.".into());
     }
 
     // portable
-    let app_dir = base.join("apps").join(&name).join(&version);
+    let app_dir = base.join("apps").join(&app_id).join(&version);
     std::fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
-    let exe = app_dir.join(format!("{name}.exe"));
+    let exe = app_dir.join(format!("{app_id}.exe"));
     download(&client, &url, &exe).await?;
     let exe_path = exe.to_string_lossy().into_owned();
-    upsert_registry(&app, name, version, "portable", exe_path)?;
+    upsert_registry(&app, app_id, version, "portable", exe_path)?;
     Ok("휴대용 앱을 설치했습니다.".into())
 }
 
