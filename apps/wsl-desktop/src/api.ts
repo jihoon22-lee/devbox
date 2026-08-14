@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauri } from "./lib/isTauri";
-import type { ContainerInfo, DistroInfo, GitStatus } from "./types";
+import type { ContainerInfo, DistroInfo } from "./types";
 
 export interface SessionInfo {
   id: string;
@@ -24,11 +24,6 @@ const MOCK_CONTAINERS: ContainerInfo[] = [
   { id: "ghi789", name: "nginx", image: "nginx:1.25", status: "Exited (0) 3 days ago", ports: "80/tcp" },
 ];
 
-const MOCK_PROJECTS: GitStatus[] = [
-  { path: "C:\\projects\\devbox", branch: "main", changes: 0, clean: true },
-  { path: "C:\\projects\\FamilyCard", branch: "dev", changes: 3, clean: false },
-];
-
 export async function listDistros(): Promise<DistroInfo[]> {
   if (!isTauri()) return MOCK_DISTROS;
   return invoke<DistroInfo[]>("list_distros");
@@ -42,11 +37,6 @@ export async function dockerPs(distro: string): Promise<ContainerInfo[]> {
 export async function dockerAction(distro: string, containerId: string, action: string): Promise<void> {
   if (!isTauri()) return;
   await invoke("docker_action", { distro, containerId, action });
-}
-
-export async function gitStatus(projects: string[]): Promise<GitStatus[]> {
-  if (!isTauri()) return MOCK_PROJECTS;
-  return invoke<GitStatus[]>("git_status", { projects });
 }
 
 export async function startSession(distro: string, cwd?: string): Promise<string> {

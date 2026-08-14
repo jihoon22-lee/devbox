@@ -28,10 +28,3 @@ export interface ContainerInfo {
   status: string;
   ports: string;
 }
-
-export interface GitStatus {
-  path: string;
-  branch: string;
-  changes: number;
-  clean: boolean;
-}
