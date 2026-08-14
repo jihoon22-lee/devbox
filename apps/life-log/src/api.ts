@@ -134,3 +134,19 @@ export async function redactExisting(): Promise<number> {
   if (!isTauri()) return 0;
   return invoke<number>("redact_existing");
 }
+
+export interface AutostartStatus {
+  supported: boolean;
+  enabled: boolean;
+  command: string | null;
+}
+
+export async function autostartStatus(): Promise<AutostartStatus> {
+  if (!isTauri()) return { supported: true, enabled: false, command: null };
+  return invoke<AutostartStatus>("autostart_status");
+}
+
+export async function setAutostart(enabled: boolean): Promise<AutostartStatus> {
+  if (!isTauri()) return { supported: true, enabled, command: null };
+  return invoke<AutostartStatus>("set_autostart", { enabled });
+}
