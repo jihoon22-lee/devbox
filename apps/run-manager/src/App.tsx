@@ -25,6 +25,7 @@ import {
   updateJob,
 } from "./api";
 import JobEditor from "./components/JobEditor";
+import ImportDialog from "./components/ImportDialog";
 import RunHistory from "./components/RunHistory";
 import ServiceEditor from "./components/ServiceEditor";
 import type {
@@ -74,6 +75,7 @@ export default function App() {
   const [serviceInstances, setServiceInstances] = useState<Record<string, ServiceInstance>>({});
   const [obsMap, setObsMap] = useState<Record<string, ServiceObservability | null>>({});
   const [obsOpen, setObsOpen] = useState<Record<string, boolean>>({});
+  const [importOpen, setImportOpen] = useState(false);
   const [activeRuns, setActiveRuns] = useState<Record<string, Run | null>>({});
   const [screen, setScreen] = useState<Screen>("jobs");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
@@ -485,6 +487,7 @@ export default function App() {
               </div>
               <button type="button" className="button-primary" onClick={openServiceCreate}>+ 새 서비스</button>
               <button type="button" className="button-secondary" onClick={() => void onExportDefs()}>정의 내보내기</button>
+              <button type="button" className="button-secondary" onClick={() => setImportOpen(true)}>정의 가져오기</button>
             </div>
             {loading ? <div className="empty-card compact"><div className="pulse" /><p>서비스를 불러오는 중…</p></div> : null}
             {!loading && services.length === 0 ? (
@@ -638,6 +641,16 @@ export default function App() {
           </section>
         )}
       </section>
+      {importOpen && (
+        <ImportDialog
+          onDone={(_created) => {
+            setImportOpen(false);
+            void refreshServices();
+            void refreshJobs();
+          }}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
     </main>
   );
 }

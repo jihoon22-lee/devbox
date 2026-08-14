@@ -228,6 +228,166 @@ pub fn service_observability(
     }))
 }
 
+/// import 항목 하나.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportItem {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    /// "new" | "conflict"
+    pub status: String,
+    pub detail: String,
+}
+
+/// import 계획 — 실제로 생성하지 않고 충돌 여부만 판단한다.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPlan {
+    pub schema_version: u32,
+    pub items: Vec<ImportItem>,
+}
+
+/// 정의 export JSON을 파싱하고, 기존 정의와 충돌하는지 계획을 만든다.
+#[tauri::command]
+pub fn import_definitions(
+    json: String,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<ImportPlan, String> {
+    let doc: DefinitionExport =
+        serde_json::from_str(&json).map_err(|e| format!("정의 JSON을 읽을 수 없습니다: {e}"))?;
+    if doc.schema_version != 1 {
+        return Err(format!(
+            "지원하지 않는 정의 스키마 버전: {}",
+            doc.schema_version
+        ));
+    }
+    let existing_jobs = state.list_jobs().map_err(|e| e.to_string())?;
+    let existing_services = state.list_services().map_err(|e| e.to_string())?;
+    let job_ids: std::collections::HashSet<String> =
+        existing_jobs.iter().map(|j| j.id.clone()).collect();
+    let service_ids: std::collections::HashSet<String> =
+        existing_services.iter().map(|s| s.id.clone()).collect();
+
+    let mut items = Vec::new();
+    for job in &doc.jobs {
+        items.push(ImportItem {
+            id: job.id.clone(),
+            name: job.name.clone(),
+            kind: "job".into(),
+            status: if job_ids.contains(&job.id) {
+                "conflict"
+            } else {
+                "new"
+            }
+            .into(),
+            detail: job_enabled_draft(job),
+        });
+    }
+    for service in &doc.services {
+        items.push(ImportItem {
+            id: service.id.clone(),
+            name: service.name.clone(),
+            kind: "service".into(),
+            status: if service_ids.contains(&service.id) {
+                "conflict"
+            } else {
+                "new"
+            }
+            .into(),
+            detail: job_enabled_draft(service),
+        });
+    }
+    Ok(ImportPlan {
+        schema_version: doc.schema_version,
+        items,
+    })
+}
+
+/// WSL distro·cwd가 현재 PC에 없을 수 있으므로 draft(disabled)로 들여오는
+/// 안내를 위한 상세 문자열. 실제 적용 시 enabled는 보존하되, 요구 사항이
+/// 없으면 사용자가 직접 활성화한다 — [설계] "disabled draft로 들어옴".
+fn job_enabled_draft(job: &Job) -> String {
+    if job.enabled {
+        "활성(사용자 확인 필요)".into()
+    } else {
+        "비활성 draft".into()
+    }
+}
+
+/// 선택한 항목을 실제로 생성한다. 충돌 항목·미선택 항목은 건너뛴다.
+#[tauri::command]
+pub fn apply_import(
+    json: String,
+    selected: Vec<String>,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<usize, String> {
+    let doc: DefinitionExport =
+        serde_json::from_str(&json).map_err(|e| format!("정의 JSON을 읽을 수 없습니다: {e}"))?;
+    let selected_set: std::collections::HashSet<String> = selected.into_iter().collect();
+    let mut created = 0usize;
+    let now = current_epoch_millis();
+
+    for job in &doc.jobs {
+        if !selected_set.contains(&job.id) {
+            continue;
+        }
+        // 충돌은 건너뛴다 (apply 전 계획에서 확인됨)
+        if state.get_job(&job.id).map_err(|e| e.to_string())?.is_some() {
+            continue;
+        }
+        let input = JobInput {
+            name: job.name.clone(),
+            command: job.command.clone(),
+            cwd: job.cwd.clone(),
+            target_kind: job.target_kind,
+            target_distro: job.target_distro.clone(),
+            environment: crate::core::models::EnvironmentUpdate::Clear,
+            cron_expr: job.cron_expr.clone().unwrap_or_default(),
+            enabled: job.enabled,
+            overlap_policy: job.overlap_policy,
+            catch_up: job.catch_up,
+        };
+        state
+            .create_job_with_ciphertext_at(input, None, now)
+            .map_err(|e| e.to_string())?;
+        created += 1;
+    }
+    for service in &doc.services {
+        if !selected_set.contains(&service.id) {
+            continue;
+        }
+        if state
+            .get_service(&service.id)
+            .map_err(|e| e.to_string())?
+            .is_some()
+        {
+            continue;
+        }
+        let input = crate::core::models::ServiceInput {
+            name: service.name.clone(),
+            command: service.command.clone(),
+            cwd: service.cwd.clone(),
+            target_kind: service.target_kind,
+            target_distro: service.target_distro.clone(),
+            environment: crate::core::models::EnvironmentUpdate::Clear,
+            restart_policy: service.restart_policy.unwrap_or_default(),
+            auto_start: service.auto_start.unwrap_or(false),
+            health_tcp_address: service.health_tcp_address.clone(),
+            health_tcp_port: service.health_tcp_port,
+        };
+        state
+            .create_service_with_ciphertext_at(
+                input,
+                crate::core::models::EnvironmentCiphertextUpdate::Clear,
+                now,
+            )
+            .map_err(|e| e.to_string())?;
+        created += 1;
+    }
+    Ok(created)
+}
+
 #[tauri::command]
 pub fn create_service(
     input: ServiceInput,
@@ -262,7 +422,7 @@ pub fn delete_service(id: String, state: State<'_, Arc<DatabaseState>>) -> Resul
 
 /// 정의 export 문서 (schema version 포함). secret 값은 절대 포함하지 않는다 —
 /// Job의 `envConfigured`(존재 여부)만 나간다 (ciphertext는 read DTO에 원천 차단).
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DefinitionExport {
     pub schema_version: u32,

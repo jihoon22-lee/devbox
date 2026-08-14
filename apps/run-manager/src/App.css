@@ -984,3 +984,35 @@ dd {
   color: var(--dim, #8b93a1);
   font-size: 11px;
 }
+
+.import-dialog {
+  width: min(760px, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg, #0b0f16);
+  border: 1px solid var(--border, #262c36);
+  border-radius: 8px;
+  padding: 16px;
+  overflow: auto;
+}
+
+.import-textarea {
+  min-height: 220px;
+  width: 100%;
+  background: #0b0f16;
+  color: var(--text, #e8eef8);
+  border: 1px solid var(--border, #262c36);
+  border-radius: 6px;
+  padding: 8px;
+  font-family: var(--font-mono, "Cascadia Code", Consolas, monospace);
+  font-size: 12px;
+  resize: vertical;
+}
+
+.import-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  justify-content: flex-end;
+}

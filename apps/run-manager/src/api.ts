@@ -274,6 +274,31 @@ export function exportDefinitions(): Promise<DefinitionExport | null> {
   return invoke<DefinitionExport | null>("export_definitions");
 }
 
+export interface ImportItem {
+  id: string;
+  name: string;
+  kind: "job" | "service";
+  status: "new" | "conflict";
+  detail: string;
+}
+
+export interface ImportPlan {
+  schemaVersion: number;
+  items: ImportItem[];
+}
+
+export function importDefinitions(json: string): Promise<ImportPlan> {
+  if (!isTauri()) {
+    return Promise.resolve({ schemaVersion: 1, items: [] });
+  }
+  return invoke<ImportPlan>("import_definitions", { json });
+}
+
+export function applyImport(json: string, selected: string[]): Promise<number> {
+  if (!isTauri()) return Promise.resolve(0);
+  return invoke<number>("apply_import", { json, selected });
+}
+
 export function startService(id: string): Promise<ServiceInstance> {
   if (!isTauri()) {
     mockServiceState.set(id, "running");

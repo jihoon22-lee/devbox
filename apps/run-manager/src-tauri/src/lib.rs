@@ -84,6 +84,8 @@ pub fn run() {
             commands::get_service,
             commands::service_observability,
             commands::export_definitions,
+            commands::import_definitions,
+            commands::apply_import,
             commands::create_service,
             commands::update_service,
             commands::delete_service,
