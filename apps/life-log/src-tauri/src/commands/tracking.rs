@@ -135,7 +135,7 @@ fn last_input_ms() -> Option<i64> {
             cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
             dwTime: 0,
         };
-        if GetLastInputInfo(&mut info).is_ok() {
+        if GetLastInputInfo(&mut info).as_bool() {
             let last = u64::from(info.dwTime);
             let now_tick = GetTickCount64();
             Some((now_tick.saturating_sub(last)) as i64)
