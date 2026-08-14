@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "apps": [
+    {
+      "id": "port-manager",
+      "displayName": "Port Manager",
+      "productName": "PortManager",
+      "identifier": "com.devbox.portmanager",
+      "cargoPackage": "port-manager",
+      "appDir": "apps/port-manager",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false
+    },
+    {
+      "id": "developer-toolbox",
+      "displayName": "Developer Toolbox",
+      "productName": "DevToolbox",
+      "identifier": "com.devbox.developertoolbox",
+      "cargoPackage": "developer-toolbox",
+      "appDir": "apps/developer-toolbox",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false
+    },
+    {
+      "id": "wsl-desktop",
+      "displayName": "WSL Desktop",
+      "productName": "WSLDesktop",
+      "identifier": "com.devbox.wsldesktop",
+      "cargoPackage": "wsl-desktop",
+      "appDir": "apps/wsl-desktop",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false
+    },
+    {
+      "id": "api-playground",
+      "displayName": "API Playground",
+      "productName": "ApiPlayground",
+      "identifier": "com.devbox.apiplayground",
+      "cargoPackage": "api-playground",
+      "appDir": "apps/api-playground",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false
+    },
+    {
+      "id": "everything-plus",
+      "displayName": "Everything+",
+      "productName": "EverythingPlus",
+      "identifier": "com.devbox.everythingplus",
+      "cargoPackage": "everything-plus",
+      "appDir": "apps/everything-plus",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false
+    },
+    {
+      "id": "knowledge-base",
+      "displayName": "Knowledge",
+      "productName": "Knowledge",
+      "identifier": "com.devbox.knowledgebase",
+      "cargoPackage": "knowledge-base",
+      "appDir": "apps/knowledge-base",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false
+    },
+    {
+      "id": "life-log",
+      "displayName": "Life Log",
+      "productName": "LifeLog",
+      "identifier": "com.devbox.lifelog",
+      "cargoPackage": "life-log",
+      "appDir": "apps/life-log",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false
+    },
+    {
+      "id": "devbox-manager",
+      "displayName": "Devbox Manager",
+      "productName": "DevboxManager",
+      "identifier": "com.devbox.devboxmanager",
+      "cargoPackage": "devbox-manager",
+      "appDir": "apps/devbox-manager",
+      "release": true,
+      "managerVisible": false,
+      "selfManaged": true
+    },
+    {
+      "id": "code-pad",
+      "displayName": "Code Pad",
+      "productName": "Code Pad",
+      "identifier": "com.devbox.codepad",
+      "cargoPackage": "code-pad",
+      "appDir": "apps/code-pad",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false
+    },
+    {
+      "id": "run-manager",
+      "displayName": "Run Manager",
+      "productName": "Run Manager",
+      "identifier": "com.devbox.runmanager",
+      "cargoPackage": "run-manager",
+      "appDir": "apps/run-manager",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false
+    }
+  ]
+}
