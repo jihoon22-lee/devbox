@@ -77,6 +77,22 @@ jobs:
           path: staging/**
           if-no-files-found: error
 
+      - name: Generate release manifest
+        id: manifest
+        shell: bash
+        env:
+          TAG: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.version }}
+        run: |
+          python3 .github/scripts/build-manifest.py staging "$TAG" apps/catalog.json staging/release-manifest.json
+          echo "path=staging/release-manifest.json" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: staging/release-manifest.json
+          if-no-files-found: error
+
   publish:
     name: Publish release
     needs: build-windows
@@ -90,6 +106,11 @@ jobs:
         with:
           name: windows-installers
           path: artifacts
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: artifacts/staging
 
       - name: Determine tag
         id: tag
@@ -132,6 +153,30 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: devbox ${{ steps.tag.outputs.tag }}
           body_path: ${{ steps.notes.outputs.path }}
-          files: artifacts/staging/**/*.exe
+          files: |
+            artifacts/staging/**/*.exe
+            artifacts/staging/release-manifest.json
           draft: false
           make_latest: true
+
+  verify:
+    name: Verify release assets against manifest
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: manifest
+
+      - name: Verify assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.version }}
+        run: |
+          python3 .github/scripts/verify-release.py "jihoon22-lee/devbox" "$TAG" manifest/release-manifest.json "$GH_TOKEN"
