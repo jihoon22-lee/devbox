@@ -26,3 +26,4 @@ rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite"] }
 dirs = "6.0.0"
 base64 = "0.22"
 markdown = { path = "../../../crates/markdown" }
+search = { path = "../../../crates/search" }

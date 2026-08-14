@@ -85,7 +85,7 @@ pub fn search(
     query: &str,
     limit: i64,
 ) -> rusqlite::Result<Vec<(String, String)>> {
-    let q = build_fts_query(query);
+    let q = search::build_fts_query(query);
     let mut stmt = conn.prepare(
         "SELECT d.path, d.title
          FROM docs_fts JOIN docs d ON d.id = docs_fts.rowid
@@ -117,17 +117,6 @@ pub fn default_title(path: &str) -> String {
         .unwrap_or(path)
         .trim_end_matches(".md")
         .to_string()
-}
-
-fn build_fts_query(query: &str) -> String {
-    query
-        .split_whitespace()
-        .map(|tok| {
-            let escaped = tok.replace('"', "\"\"");
-            format!("\"{escaped}\"*")
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 trait OptionalRow {
