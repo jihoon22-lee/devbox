@@ -1,3 +1,5 @@
+@import "@devbox/tokens/tokens.css";
+
 :root {
   color: #e8eef8;
   background: #0b0f16;
@@ -338,7 +340,7 @@ h2 {
   color: #94a3b8;
   background: #101827;
   cursor: pointer;
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--db-font-mono);
   font-size: 11px;
 }
 
@@ -351,11 +353,11 @@ h2 {
 .run-error {
   margin-top: 14px;
   border: 1px solid #6e2934;
-  border-radius: 8px;
+  border-radius: var(--db-radius-lg);
   padding: 9px 11px;
   color: #fecaca;
   background: #251219;
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--db-font-mono);
   font-size: 11px;
 }
 
@@ -382,7 +384,7 @@ h2 {
   overflow: auto;
   padding: 13px;
   color: #cbd5e1;
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--db-font-mono);
   font-size: 11px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -500,7 +502,7 @@ h2 {
   margin-top: 12px;
   overflow: hidden;
   color: #bfdbfe;
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--db-font-mono);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -622,7 +624,7 @@ h2 {
 .environment-row select {
   width: 100%;
   border: 1px solid #334155;
-  border-radius: 8px;
+  border-radius: var(--db-radius-lg);
   padding: 10px 11px;
   color: #e2e8f0;
   background: #0c1420;
@@ -727,7 +729,7 @@ h2 {
 .adapter-warning {
   margin-top: 14px;
   border: 1px solid #5c4a24;
-  border-radius: 8px;
+  border-radius: var(--db-radius-lg);
   padding: 9px 11px;
   color: #fcd34d;
   background: #251d0e;
@@ -846,7 +848,7 @@ h2 {
 
 .preview-list li span {
   color: #718096;
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--db-font-mono);
   font-size: 10px;
 }
 

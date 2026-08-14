@@ -1,0 +1,48 @@
+/*
+ * @devbox/tokens — 공용 디자인 토큰 (CSS 커스텀 프로퍼티).
+ *
+ * 값은 10개 앱의 기존 App.css에서 실제 사용 빈도가 높은 것을 수집했다
+ * (새 팔레트를 발명하지 않는다). 현재 10개 앱이 모두 다크 기조이므로 다크가
+ * 기본이다. 추후 라이트 테마는 `[data-theme]` 선택자로 덮어쓸 수 있게 이름만 준비한다.
+ *
+ * 사용: 각 앱 App.css 최상단에서
+ *   @import "@devbox/tokens/tokens.css";
+ *
+ * 주의: 이 파일은 토큰(변수)만 정의한다. React 컴포넌트·레이아웃은 만들지 않는다.
+ */
+
+:root {
+  /* color */
+  --db-color-bg: #111418;
+  --db-color-surface: #171b21;
+  --db-color-border: #262c36;
+  --db-color-text: #e6e9ef;
+  --db-color-text-muted: #8b93a1;
+  --db-color-accent: #4f8cff;
+  --db-color-danger: #f85149;
+  --db-color-warn: #d29922;
+  --db-color-ok: #3fb950;
+
+  /* spacing */
+  --db-space-1: 4px;
+  --db-space-2: 8px;
+  --db-space-3: 12px;
+  --db-space-4: 16px;
+  --db-space-5: 20px;
+  --db-space-6: 24px;
+
+  /* radius */
+  --db-radius-sm: 4px;
+  --db-radius-md: 6px;
+  --db-radius-lg: 8px;
+
+  /* typography */
+  --db-font-sans: "Segoe UI", system-ui, sans-serif;
+  --db-font-mono: "Cascadia Code", Consolas, monospace;
+  --db-text-sm: 11px;
+  --db-text-base: 13px;
+  --db-text-lg: 15px;
+
+  /* focus */
+  --db-focus-ring: 0 0 0 2px rgba(79, 140, 255, 0.45);
+}
