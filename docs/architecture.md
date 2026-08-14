@@ -74,6 +74,24 @@ devbox-manager:   React → commands → catalog/manifest → GitHub release ass
 앱들이 임의 로컬 파일(code-pad, knowledge-base, everything-plus)과 임의 원격 응답
 (api-playground)을 다루므로 명시적 CSP 정책을 둔다. (상세: `docs/product-opportunities.md` §7.5)
 
+### CSP 기준선
+
+10개 앱 전부 다음 최소 기준선을 쓴다 (PR 17).
+
+```
+default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline';
+font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost
+```
+
+- `connect-src ipc: http://ipc.localhost` — Tauri v2 IPC 채널
+- `style-src 'unsafe-inline'` — React 인라인 스타일과 mermaid가 삽입하는 SVG 스타일
+- `img-src data:`·`font-src data:` — data URI 아이콘/폰트
+- 앱별 예외가 필요해지면 그룹 단위로 최소한만 추가한다:
+  - A(외부 콘텐츠 렌더): code-pad, knowledge-base — mermaid SVG
+  - B(외부 응답 취급): api-playground, devbox-manager — 응답 텍스트/릴리스 메타데이터
+  - C(로컬 데이터만): 그 외 6개 — 기준선 그대로
+- dev 모드 HMR(WebSocket)이 기준선과 충돌하면 dev/prod CSP를 분리하거나 `connect-src`에 dev 오리진을 추가한다
+
 ## 앱 카탈로그
 
 `apps/catalog.json`이 앱 식별자의 단일 원본이다 — 배포 대상 목록이자 런타임 discovery의
