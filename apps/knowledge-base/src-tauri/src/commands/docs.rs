@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
+use tauri::Manager;
 
 /// 앱 전역 상태
 pub struct AppState {
@@ -44,10 +45,18 @@ pub fn get_root(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String
 }
 
 #[tauri::command]
-pub fn set_root(state: tauri::State<'_, Arc<AppState>>, path: String) -> Result<(), String> {
+pub fn set_root(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<AppState>>,
+    path: String,
+) -> Result<(), String> {
     let conn = state.db.lock().unwrap();
     store::ensure_layout(Path::new(&path))?;
-    db::set_setting(&conn, "root", &path).map_err(|e| e.to_string())
+    db::set_setting(&conn, "root", &path).map_err(|e| e.to_string())?;
+    drop(conn);
+    // watcher를 새 루트로 재시작
+    let watcher = app.state::<Arc<crate::commands::watcher::KnowledgeWatcher>>();
+    watcher.set_root(Path::new(&path))
 }
 
 #[tauri::command]

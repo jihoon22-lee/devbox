@@ -2496,6 +2496,7 @@ dependencies = [
  "base64 0.22.1",
  "dirs",
  "markdown",
+ "notify",
  "rusqlite",
  "search",
  "serde",

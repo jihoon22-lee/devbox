@@ -2,6 +2,7 @@ mod commands;
 mod core;
 
 use commands::docs::AppState;
+use commands::watcher::KnowledgeWatcher;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -58,7 +59,13 @@ pub fn run() {
                 db: Mutex::new(conn),
                 image_cache: Mutex::new(HashMap::new()),
             });
+            // watcher 생성 후 루트에 연결 (앱 재시작 시 외부 편집 계속 반영)
+            let watcher = KnowledgeWatcher::new(app.handle().clone(), state.clone());
+            if let Ok(root) = commands::docs::resolve_root(&state.db.lock().unwrap()) {
+                let _ = watcher.set_root(&root);
+            }
             app.manage(state);
+            app.manage(watcher);
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -17,8 +17,19 @@ export async function getRoot(): Promise<string> {
 }
 
 export async function listTree(): Promise<TreeEntry[]> {
-  if (!isTauri()) return MOCK_TREE;
+  if (!isTauri()) {
+    return [
+      { path: "Notes/2026-08-14.md", is_dir: false },
+      { path: "Projects/devbox.md", is_dir: false },
+    ];
+  }
   return invoke<TreeEntry[]>("list_tree");
+}
+
+export async function onDocsChanged(cb: () => void): Promise<() => void> {
+  if (!isTauri()) return () => undefined;
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen("docs-changed", () => cb());
 }
 
 export async function readFile(rel: string): Promise<string> {
