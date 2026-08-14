@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { sendRequest } from "./api";
+import { addEntry, foldersOf, loadStore, removeEntry, saveStore } from "./lib/collections";
 import type { ApiRequest, ApiResponse, HistoryItem, KeyValue } from "./types";
 import "./App.css";
 
@@ -74,6 +75,33 @@ export default function App() {
   const [showHeaders, setShowHeaders] = useState(false);
   const [pretty, setPretty] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [collections, setCollections] = useState(loadStore);
+  const [collName, setCollName] = useState("");
+  const [collFolder, setCollFolder] = useState("");
+  const [collFilter, setCollFilter] = useState("");
+  const [collSaving, setCollSaving] = useState(false);
+
+  const persistCollections = (store: ReturnType<typeof loadStore>) => {
+    setCollections(store);
+    saveStore(store);
+  };
+
+  const onSaveCollection = () => {
+    setCollSaving(true);
+    try {
+      const next = addEntry(
+        collections,
+        { name: collName, folder: collFolder, request: req },
+        Date.now(),
+        () => `c-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+      );
+      persistCollections(next);
+      setCollName("");
+      setCollFolder("");
+    } finally {
+      setCollSaving(false);
+    }
+  };
 
   const loadHistory = useCallback(() => {
     try {
@@ -141,6 +169,59 @@ export default function App() {
           </button>
         ))}
         {history.length === 0 && <div className="dim">No requests yet</div>}
+
+        <div className="group-name">Collections</div>
+        <div className="coll-save-row">
+          <input
+            className="coll-input"
+            placeholder="저장 이름"
+            value={collName}
+            onChange={(e) => setCollName(e.currentTarget.value)}
+          />
+          <input
+            className="coll-input"
+            placeholder="폴더 (선택)"
+            value={collFolder}
+            onChange={(e) => setCollFolder(e.currentTarget.value)}
+          />
+          <button className="btn" disabled={collSaving || !req.url.trim()} onClick={onSaveCollection}>
+            Save
+          </button>
+        </div>
+        {foldersOf(collections).length > 0 && (
+          <select
+            className="coll-filter"
+            value={collFilter}
+            onChange={(e) => setCollFilter(e.currentTarget.value)}
+          >
+            <option value="">모든 폴더</option>
+            {foldersOf(collections).map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        )}
+        {collections.collections
+          .filter((c) => !collFilter || c.folder === collFilter)
+          .map((c) => (
+            <div key={c.id} className="history-item coll-item" title={`${c.folder ? `[${c.folder}] ` : ""}${c.name}`}>
+              <button
+                className="coll-open"
+                onClick={() => {
+                  setReq(c.request);
+                  setResp(null);
+                }}
+              >
+                <span className={`method ${c.request.method.toLowerCase()}`}>{c.request.method}</span>
+                <span className="history-url">{c.folder ? `[${c.folder}] ` : ""}{c.name}</span>
+              </button>
+              <button className="coll-del" onClick={() => persistCollections(removeEntry(collections, c.id))}>
+                ✕
+              </button>
+            </div>
+          ))}
+        {collections.collections.length === 0 && <div className="dim">저장된 collection 없음</div>}
       </aside>
 
       <main className="content">
