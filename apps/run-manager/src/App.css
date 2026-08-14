@@ -941,3 +941,46 @@ dd {
     grid-template-columns: 1fr;
   }
 }
+
+.obs-panel {
+  border-top: 1px solid var(--border, #262c36);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.obs-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.obs-label {
+  color: var(--dim, #8b93a1);
+  min-width: 110px;
+}
+
+.obs-recent {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.obs-run {
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  color: var(--ok, #3fb950);
+}
+
+.obs-run.obs-fail {
+  color: var(--danger, #f85149);
+}
+
+.obs-note {
+  color: var(--dim, #8b93a1);
+  font-size: 11px;
+}
