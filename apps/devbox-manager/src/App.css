@@ -149,3 +149,45 @@ td {
   border-top: 1px solid var(--border);
   font-size: 11px;
 }
+
+.doctor {
+  padding: 16px;
+  max-width: 720px;
+}
+
+.doctor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.doctor-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--db-color-border, #262c36);
+}
+
+.doctor-name {
+  min-width: 140px;
+  font-weight: 600;
+}
+
+.doctor-row.ok .doctor-name {
+  color: var(--db-color-ok, #3fb950);
+}
+
+.doctor-row.bad .doctor-name {
+  color: var(--db-color-danger, #f85149);
+}
+
+.doctor-detail {
+  color: var(--db-color-text-muted, #8b93a1);
+}
+
+.doctor-note {
+  margin-top: 14px;
+  font-size: 11px;
+}
