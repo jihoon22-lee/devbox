@@ -69,7 +69,9 @@ jobs:
             New-Item -ItemType Directory -Force -Path "staging/$a/portable"   | Out-Null
             New-Item -ItemType Directory -Force -Path "staging/$a/installer"  | Out-Null
             Move-Item -Force $portable  "staging/$a/portable/$a.exe"
-            Move-Item -Force $installer "staging/$a/installer/$(Split-Path $installer -Leaf)"
+            # productName에 공백이 있으면 GitHub가 asset명 공백을 '.'으로 치환한다.
+            # URL 안전하고 검증 가능한 이름(<app-id>_<version>_x64-setup.exe)으로 rename한다.
+            Move-Item -Force $installer "staging/$a/installer/$($a)_$($conf.version)_x64-setup.exe"
           }
 
       - name: Upload installers
