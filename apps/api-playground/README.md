@@ -22,4 +22,3 @@ Postman을 축소 재현한 로컬 REST API 테스트 앱. Rust가 HTTP 클라�
 - 순수 로직: `src-tauri/src/core/` → `cargo test`
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
 
-상세 계획: [PLAN.md](./PLAN.md)

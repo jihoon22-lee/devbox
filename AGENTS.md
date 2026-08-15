@@ -1,6 +1,6 @@
 # AGENTS.md
 
-devbox — Tauri 13개 데스크톱 앱 모노레포. 모든 규약의 기준은 루트 `CONVENTIONS.md` (반드시 먼저 읽을 것). 앱별 상세는 `apps/<app>/PLAN.md` 또는 `docs/superpowers/specs/` 설계 문서.
+devbox — Tauri 13개 데스크톱 앱 모노레포. 모든 규약의 기준은 루트 `CONVENTIONS.md` (반드시 먼저 읽을 것). 앱별 상세는 각 `apps/<app>/README.md` 또는 `docs/superpowers/specs/` 설계 문서.
 
 ## 저장소 사실
 - 원격: `https://github.com/jihoon22-lee/devbox` (로컬 디렉터리명 `devbox`와 동일)

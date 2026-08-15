@@ -1,6 +1,6 @@
 # Projects
 
-13개 앱의 요약. 상세 계획은 각 `apps/<AppName>/PLAN.md` 또는 설계 문서(`docs/superpowers/specs/`)를 참조한다.
+13개 앱의 요약. 상세 소개는 각 `apps/<AppName>/README.md`, 설계는 `docs/superpowers/specs/`를 참조한다.
 
 | # | 앱 | 디렉터리 | 핵심 목적 | Phase | 연계 |
 |---|---|---|---|---|---|

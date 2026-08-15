@@ -26,4 +26,3 @@
 - 순수 로직: `src-tauri/src/core/` → `cargo test`
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
 
-상세 계획: [PLAN.md](./PLAN.md)

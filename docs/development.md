@@ -52,5 +52,5 @@ WSL에서는 `cargo test`(core 로직) / `pnpm build`(프론트 검증)로 개�
 - [docs/roadmap.md](./roadmap.md) — 로드맵 / 진행 상황
 - [docs/projects.md](./projects.md) — 앱별 요약
 - [docs/windows-guide.md](./windows-guide.md) — Windows 사용/빌드 가이드
-- `docs/superpowers/specs/` — 신규 앱 설계 문서 (workbench·webhook-lab·repo-manager 등)
-- 각 `apps/<앱>/PLAN.md` — 앱별 상세 계획
+- `docs/superpowers/specs/` — 앱/기능 설계 문서 (workbench·webhook-lab·repo-manager 등)
+- 각 `apps/<앱>/README.md` — 앱별 상세 소개

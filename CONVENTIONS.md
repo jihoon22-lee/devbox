@@ -220,7 +220,7 @@ Stage5:  webhook-lab, repo-manager             # 로컬 웹훅 서버, git workt
 ```
 - 13개 앱 모두 구현 완료. 진행 상황은 [docs/roadmap.md](./docs/roadmap.md) 참조
 - 공통 코드 발견 시점에 `crates/process`, `crates/wsl`, `packages/tokens` 등을 하나씩 추출
-- 각 프로젝트 상세는 `apps/<AppName>/PLAN.md` 또는 설계 문서(`docs/superpowers/specs/`) 참조
+- 각 프로젝트 상세는 `apps/<AppName>/README.md` 또는 설계 문서(`docs/superpowers/specs/`) 참조
 
 ## 8. Git 규약 (모노레포: `devbox/` 루트 1개 저장소)
 

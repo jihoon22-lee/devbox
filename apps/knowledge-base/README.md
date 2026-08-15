@@ -27,4 +27,3 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 - 순수 로직: `src-tauri/src/core/` → `cargo test`
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
 
-상세 계획: [PLAN.md](./PLAN.md)
