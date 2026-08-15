@@ -60,8 +60,10 @@ jobs:
 
             # Cargo workspace라 산출물이 루트 target/에 모인다. 빌드 직후 그 앱의
             # 산출물만 staging으로 옮겨 이전 빌드 산출물이 섞이는 것을 막는다.
+            $entry = $catalog.apps | Where-Object { $_.id -eq $a }
             $conf = Get-Content "apps/$a/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
-            $portable  = "target/release/$($conf.productName).exe"
+            # 휴대용 exe는 productName이 아니라 crate 패키지명(<package>.exe)으로 생성된다.
+            $portable  = "target/release/$($entry.cargoPackage).exe"
             $installer = "target/release/bundle/nsis/$($conf.productName)_$($conf.version)_x64-setup.exe"
 
             New-Item -ItemType Directory -Force -Path "staging/$a/portable"   | Out-Null
