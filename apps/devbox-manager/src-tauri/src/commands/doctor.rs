@@ -27,7 +27,8 @@ fn version_of(cmd: &str, args: &[&str]) -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    let text = String::from_utf8_lossy(&out.stdout);
+    // `wsl.exe --version`/`-l -v`는 UTF-16LE로 출력된다 (공용 crates/wsl 디코더).
+    let text = devbox_wsl::output::decode_output(&out.stdout);
     Some(text.lines().next().unwrap_or("").trim().to_string())
 }
 
