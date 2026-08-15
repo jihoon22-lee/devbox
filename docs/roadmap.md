@@ -35,11 +35,18 @@
 - [x] **repo-manager** — Git repository 탐색·브랜치/worktree/상태 목록, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기
   (파괴적 기본 동작 없음, remove 전 uncommitted/untracked 검사)
 
-## 다음 작업
+## 다음 단계 후보 (backlog)
 
-`docs/product-opportunities.md` §17의 실행 계획(PR 1~39 + Stage 4·5)은 **전부 완료**.
-남은 작업은 [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176)와
-릴리스 배포(v0.4.0) 검증이다.
+`docs/product-opportunities.md` §17(PR 1~39 + Stage 4/5)은 **전부 완료**됐다. 이후 작업은
+[UX 개선 설계](./superpowers/specs/2026-08-15-ux-improvements-design.md)를 따른다. 우선순위 요약:
+
+1. **앱별 우클릭 컨텍스트 메뉴** — 공용 `packages/context-menu` + 13개 앱 특화 동작
+2. **wsl-desktop 복사/붙여넣기** — `Ctrl+Shift+C/V`, 우클릭 붙여넣기, 복사 시 선택
+3. **developer-toolbox 도구 확장** — JSON↔YAML, 진법 변환, JSON→TS 타입 등
+4. **api-playground** — 응답 헤더/쿠키 뷰어, 파일 업로드
+5. **knowledge-base 백링크** / **everything-plus→Code Pad 열기**
+
+상세 항목·난이도·안전 경계는 위 설계 문서 참조.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅
@@ -51,9 +58,11 @@ Stage 2    앱 간 연동 (PR 26~30) — integration snapshot, ProjectProfile �
 Stage 3    기존 앱 깊이 (PR 31~39) — Run Manager 관찰성, Code Pad 복구 ✅
 Stage 4    Workbench — ProjectProfile 기반 orchestration 앱          ✅
 Stage 5    Webhook Lab, Dev Environment Doctor, Repo Manager          ✅
+다음       UX 개선 (컨텍스트 메뉴·클립보드·toolbox 도구·앱별 추천)     ◻
 ```
 
 ## 현재 상태
 - 13개 앱 모두 WSL에서 구현 완료 (Rust 유닛 테스트 + clippy + 프론트 빌드 통과)
 - 각 앱은 기능 단위 PR로 main에 머지됨
 - Windows 실제 실행/배포는 Releases(v0.4.0)로 제공 중
+- 남은 검증: [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176) + 릴리스 배포 확인
