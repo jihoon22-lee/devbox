@@ -1035,6 +1035,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "wsl",
 ]
 
 [[package]]

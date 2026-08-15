@@ -8,6 +8,7 @@
 
 pub mod argv;
 pub mod distro;
+pub mod output;
 pub mod path;
 
 use std::fmt;
