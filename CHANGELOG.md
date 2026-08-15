@@ -3,6 +3,38 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [v0.4.0] - 2026-08-15
+
+기능 추가 릴리스. 신규 앱 3종(Workbench, Webhook Lab, Repo Manager)과 devbox-manager 환경 진단이 추가되어
+총 13개 앱이 되었다. 배포 워크플로가 카탈로그 기반으로 정비되고, 신규 앱에도 CSP 기준선이 적용되었다.
+
+### Added
+
+- **workbench (신규)** — 프로젝트 기반 orchestration 셸. ProjectProfile CRUD(기존 wsl-desktop·life-log 저장소 흡수),
+  Git/WSL/포트/서비스 사전 점검, Run Manager 서비스·WSL Desktop layout·Code Pad workspace 시작,
+  idempotent 실행 기록과 `Stop What I Started`(Workbench가 시작한 자원만 정리).
+- **webhook-lab (신규)** — 로컬 웹훅/콜백 서버(inbound HTTP). method/path별 request history, 응답 rule·지연·오류 재현,
+  JSON fixture 저장, 수신 요청의 API Playground request 변환, `Authorization`·`Cookie`·API key 헤더 masking,
+  기본 bind 127.0.0.1 + LAN 공개는 명시적 설정.
+- **repo-manager (신규)** — Git repository 탐색·브랜치/dirty/ahead-behind/worktree 상태 목록, worktree 생성,
+  Code Pad·WSL Desktop·Workbench로 열기. force delete·reset·clean 기본 동작 없음, worktree remove 전
+  uncommitted/untracked 검사.
+- **devbox-manager** — 환경 진단(dev environment doctor) 탭: WSL/git/node/pnpm/rustc/cargo/devbox-data/catalog-ids 점검.
+- **crates** — `crates/wsl`, `crates/search`, `crates/integration`, `crates/secrets`가 공용 크레이트로 추출되었다.
+- **packages** — `packages/tokens`, `packages/editor`, `packages/diff-view`가 공용 React 패키지로 추출되었다.
+- **배포 정비** — 릴리스 워크플로가 `apps/catalog.json`에서 빌드 대상을 읽고, portable·installer를 staging해
+  `release-manifest.json`(asset 명칭·SHA-256)과 함께 게시하며 verify 단계가 asset을 대조한다.
+- **CSP 기준선** — 신규 앱 3종에도 `default-src 'self'; ...; connect-src 'self' ipc: http://ipc.localhost` 기준선 적용.
+
+### Changed
+
+- 앱 카탈로그가 13개로 확장 (`apps/catalog.json`).
+- GitHub Releases 산출물 명칭 통일: 휴대용 `<app-id>.exe`, 설치 `<app-id>_<version>_x64-setup.exe`.
+
+### Fixed
+
+- (v0.2.x에서 수정된 항목 유지)
+
 ## [v0.3.0] - 2026-08-13
 
 기능 추가 릴리스. 신규 앱 2종(Code Pad, Run Manager)이 추가되어 총 12개 앱이 되었다.
