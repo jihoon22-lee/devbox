@@ -28,8 +28,8 @@ const MOCK_MANIFEST: ReleaseManifest = {
     { id: "knowledge-base", version: "0.2.0", portable: { name: "knowledge-base.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "Knowledge_0.2.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
     { id: "life-log", version: "0.2.2", portable: { name: "life-log.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "LifeLog_0.2.2_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
     { id: "devbox-manager", version: "0.2.0", portable: { name: "devbox-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "DevboxManager_0.2.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "code-pad", version: "0.3.0", portable: { name: "code-pad.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "Code Pad_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "run-manager", version: "0.3.0", portable: { name: "run-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "Run Manager_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "code-pad", version: "0.3.0", portable: { name: "code-pad.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "code-pad_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "run-manager", version: "0.3.0", portable: { name: "run-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "run-manager_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
   ],
 };
 
