@@ -1,12 +1,13 @@
 # Windows 11에서 devbox 앱 사용 가이드
 
-이 가이드는 **Windows 11 PC(예: 회사 PC)에서 10개 앱을 직접 빌드하고 실행**하는 방법을 설명한다.
+이 가이드는 **Windows 11 PC(예: 회사 PC)에서 13개 앱을 직접 빌드하고 실행**하는 방법을 설명한다.
 개발은 WSL에서 했지만, 앱 자체는 Windows 데스크톱 앱(Tauri)이므로 Windows PC에서 `.exe`로 빌드하면 그대로 쓸 수 있다.
 
 > 저장소: `https://github.com/jihoon22-lee/devbox` (공개 저장소)
 > 앱별 산출물: `PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`
 > `EverythingPlus.exe` `Knowledge.exe` `LifeLog.exe`
 > `DevboxManager.exe` `CodePad.exe` `RunManager.exe`
+> `Workbench.exe` `WebhookLab.exe` `RepoManager.exe`
 
 ---
 
@@ -24,7 +25,7 @@
 > 1. 루트 `CHANGELOG.md`에 새 버전 섹션(`## [vX.Y.Z] - 날짜`)으로 변경점 기록
 > 2. **방법 1 (태그로 배포, 권장)**: WSL/로컬에서 `git tag v0.1.1 && git push origin v0.1.1`
 >    - **방법 2 (수동)**: GitHub → Actions 탭 → **Release** → **Run workflow** → 버전 입력(예: `v0.1.1`)
-> 3. 그러면 Windows CI가 12개 앱을 빌드해 **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 새 릴리스를 만든다.
+> 3. 그러면 Windows CI가 13개 앱을 빌드해 **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 새 릴리스를 만든다.
 >    버전(tag)은 **매번 새로** 써야 한다(기존 tag 재사용 불가).
 
 > 참고: 개인 빌드라 코드 서명이 없어 SmartScreen 경고가 뜨면 `추가 정보 → 실행`을 누르면 된다.
@@ -158,7 +159,7 @@ cd devbox
 pnpm install
 ```
 
-- `pnpm install`은 12개 앱의 의존성을 한 번에 설치한다 (몇 분).
+- `pnpm install`은 13개 앱의 의존성을 한 번에 설치한다 (몇 분).
 - `node_modules`는 워크스페이스 루트에 통합 관리된다.
 
 ---
@@ -178,7 +179,7 @@ pnpm tauri build
 
 ```powershell
 cd C:\devbox
-$apps = "port-manager","developer-toolbox","api-playground","everything-plus","knowledge-base","life-log","wsl-desktop","devbox-manager","code-pad","run-manager"
+$apps = "port-manager","developer-toolbox","api-playground","everything-plus","knowledge-base","life-log","wsl-desktop","devbox-manager","code-pad","run-manager","workbench","webhook-lab","repo-manager"
 foreach ($a in $apps) {
   Write-Host "===== BUILDING $a =====" -ForegroundColor Cyan
   Push-Location "apps\$a"
@@ -191,9 +192,13 @@ foreach ($a in $apps) {
 
 devbox는 **Cargo workspace**이므로, 어떤 앱에서 빌드하든 산출물이 **저장소 루트의 `target\`** 아래에 모인다:
 ```
-C:\devbox\target\release\<ProductName>.exe                                        ← 실행 파일 (단일)
-C:\devbox\target\release\bundle\nsis\<ProductName>_0.3.0_x64-setup.exe             ← 설치 패키지
+C:\devbox\target\release\<package>.exe                                          ← 실행 파일 (단일)
+C:\devbox\target\release\bundle\nsis\<ProductName>_<version>_x64-setup.exe      ← 설치 패키지
 ```
+
+- 실행 파일 이름은 productName이 아니라 **Cargo 패키지명**(앱 디렉터리명, 예: `port-manager.exe`)이다.
+- 설치 패키지 이름은 **productName**(예: `PortManager_0.2.0_x64-setup.exe`)이다.
+- 단, GitHub Releases 산출물은 휴대용 `<app-id>.exe` / 설치 `<app-id>_<version>_x64-setup.exe` 형태로 게시된다.
 
 ProductName 매핑:
 
@@ -207,8 +212,11 @@ ProductName 매핑:
 | life-log | LifeLog |
 | wsl-desktop | WSLDesktop |
 | devbox-manager | DevboxManager |
-| code-pad | CodePad |
-| run-manager | RunManager |
+| code-pad | Code Pad |
+| run-manager | Run Manager |
+| workbench | Workbench |
+| webhook-lab | WebhookLab |
+| repo-manager | RepoManager |
 
 ---
 
@@ -237,6 +245,9 @@ SmartScreen 경고("인식할 수 없는 앱")가 뜨면:
 | **DevboxManager** | devbox 앱 설치·업데이트·실행을 한 곳에서 관리. |
 | **CodePad** | CodeMirror 6 기반 코드 에디터. `언어 서버` 패널에서 LSP 서버 설치·활성화 후 진단·이름 변경·포맷 사용. |
 | **RunManager** | 작업(cron)·서비스 정의, 실행 이력·로그 tail. 서비스는 시작/정지/재시작과 헬스체크·재시작 정책 지원. |
+| **Workbench** | 프로젝트 등록 후 `Start Workspace`로 사전 점검(Git/WSL/포트/서비스)과 Run Manager·WSL Desktop·Code Pad 시작을 한 번에. `Stop What I Started`는 Workbench가 시작한 자원만 정리. |
+| **WebhookLab** | 포트 선택 후 서버 시작 → 외부 서비스의 웹훅/콜백을 로컬에서 수신해 검사. 응답 rule·지연·오류 재현, 수신 요청을 API Playground 요청으로 변환. |
+| **RepoManager** | 검색 root를 등록하면 그 아래 Git 저장소를 목록화. 브랜치/dirty/ahead-behind/worktree 상태 확인, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기. |
 
 ---
 
@@ -248,6 +259,8 @@ Tauri의 `app_local_data_dir()`은 번들 identifier 기준 폴더를 사용한�
 %LOCALAPPDATA%\com.devbox.lifelog\data.db              ← 활동 세션 + life-log 설정
 %LOCALAPPDATA%\com.devbox.everythingplus\data.db       ← 파일 인덱스
 %LOCALAPPDATA%\com.devbox.knowledgebase\data.db        ← 문서 인덱스
+%LOCALAPPDATA%\com.devbox.workbench\project-profiles.json  ← Workbench 프로젝트 프로필
+%LOCALAPPDATA%\com.devbox.webhooklab\...               ← 웹훅 fixture·기록 (웹훅 Lab)
 ```
 
 - **집 ↔ 회사 데이터 공유**: 위 폴더를 통째로 복사하면 기록/인덱스가 이전된다.
@@ -303,5 +316,5 @@ cd apps\port-manager
 pnpm tauri build
 
 # 4. 실행
-.\target\release\bundle\nsis\PortManager_0.3.0_x64-setup.exe
+.\target\release\bundle\nsis\PortManager_0.2.0_x64-setup.exe
 ```

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-devbox — Tauri 12개 데스크톱 앱 모노레포. 모든 규약의 기준은 루트 `CONVENTIONS.md` (반드시 먼저 읽을 것). 앱별 상세는 `apps/<app>/PLAN.md` (wsl-desktop·devbox-manager·code-pad·run-manager는 `README.md` 또는 설계 문서).
+devbox — Tauri 13개 데스크톱 앱 모노레포. 모든 규약의 기준은 루트 `CONVENTIONS.md` (반드시 먼저 읽을 것). 앱별 상세는 `apps/<app>/PLAN.md` 또는 `docs/superpowers/specs/` 설계 문서.
 
 ## 저장소 사실
 - 원격: `https://github.com/jihoon22-lee/devbox` (로컬 디렉터리명 `devbox`와 동일)
@@ -9,7 +9,10 @@ devbox — Tauri 12개 데스크톱 앱 모노레포. 모든 규약의 기준은
 - git identity: `jihoon22.lee <zkemzld1004@gmail.com>` (전역·로컬 설정됨)
 
 ## 현재 상태
-- 12개 앱 모두 구현 완료 (v0.3.0 릴리스). `crates/filesystem`·`crates/markdown`·`crates/process` 추출 완료, `packages/`는 비어 있음
+- 13개 앱 모두 구현 완료 (v0.4.0 릴리스 진행 중): port-manager, developer-toolbox, wsl-desktop, api-playground,
+  everything-plus, knowledge-base, life-log, devbox-manager, code-pad, run-manager, workbench, webhook-lab, repo-manager
+- 공용 크레이트: `crates/wsl`·`search`·`integration`·`secrets`·`filesystem`·`markdown`·`process`
+- 공용 패키지: `packages/tokens`·`editor`·`diff-view`
 - 루트 `Cargo.toml`의 `[workspace] members`에 앱/크레이트가 생길 때마다 추가해야 함
 - 프론트 워크스페이스는 `pnpm-workspace.yaml` + 루트 `package.json` (packageManager: pnpm@9)
 

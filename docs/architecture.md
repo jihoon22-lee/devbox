@@ -15,12 +15,12 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 
 ```
 ┌──────────────────────────────┐
-│ apps/*   독립 Tauri 앱 (.exe) │  10개 (병합 후)
+│ apps/*   독립 Tauri 앱 (.exe) │  13개
 ├──────────────────────────────┤
-│ packages/*  React 공용       │  tokens, editor (추출 예정)
+│ packages/*  React 공용       │  tokens, editor, diff-view
 ├──────────────────────────────┤
-│ crates/*    Rust 공용        │  filesystem, markdown, process (추출 완료)
-│                              │  wsl, search (추출 예정)
+│ crates/*    Rust 공용        │  filesystem, markdown, process, wsl,
+│                              │  search, integration, secrets
 ├──────────────────────────────┤
 │ 공통 인프라: Cargo workspace, │
 │ pnpm workspace, git 모노레포,  │
@@ -28,14 +28,16 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 └──────────────────────────────┘
 ```
 
-## 크레이트 의존 관계 (추출 완료/예정)
+## 크레이트 의존 관계
 
 ```
   crates/filesystem ◄── everything-plus, code-pad
   crates/markdown   ◄── knowledge-base, code-pad
   crates/process    ◄── port-manager, run-manager
-           wsl      ◄── wsl-desktop, run-manager (추출 예정 — PR 14)
-        search      ◄── everything-plus, knowledge-base (추출 예정 — PR 15)
+  crates/wsl        ◄── wsl-desktop, run-manager, workbench, repo-manager
+  crates/search     ◄── everything-plus, knowledge-base
+  crates/integration◄── run-manager, workbench, knowledge-base 등 snapshot 계약
+  crates/secrets    ◄── api-playground, run-manager (DPAPI)
 ```
 
 ## 앱별 데이터 흐름
@@ -52,6 +54,9 @@ api-playground:   React → commands → reqwest → HTTP
 code-pad:         React(CodeMirror) → commands → LSP stdio 서버, filesystem/markdown crate → React
 run-manager:      React → commands → scheduler → platform 실행 어댑터(Windows Job Object/WSL) → SQLite
 devbox-manager:   React → commands → catalog/manifest → GitHub release asset
+workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument)
+webhook-lab:      inbound HTTP → core/server → history·rule·fixture → React
+repo-manager:     React → commands → git crate(wsl) → repository/worktree 탐색·생성
 ```
 
 ## 앱 간 데이터 교환
@@ -76,7 +81,7 @@ devbox-manager:   React → commands → catalog/manifest → GitHub release ass
 
 ### CSP 기준선
 
-10개 앱 전부 다음 최소 기준선을 쓴다 (PR 17).
+13개 앱 전부 다음 최소 기준선을 쓴다 (PR 17 + 신규 앱 반영).
 
 ```
 default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline';
@@ -89,7 +94,7 @@ font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost
 - 앱별 예외가 필요해지면 그룹 단위로 최소한만 추가한다:
   - A(외부 콘텐츠 렌더): code-pad, knowledge-base — mermaid SVG
   - B(외부 응답 취급): api-playground, devbox-manager — 응답 텍스트/릴리스 메타데이터
-  - C(로컬 데이터만): 그 외 6개 — 기준선 그대로
+  - C(로컬 데이터만): 그 외 — 기준선 그대로
 - dev 모드 HMR(WebSocket)이 기준선과 충돌하면 dev/prod CSP를 분리하거나 `connect-src`에 dev 오리진을 추가한다
 
 ## 앱 카탈로그
@@ -106,8 +111,15 @@ font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost
 
 ## 통합 앱 (Workbench)
 
-기존 앱을 어느 정도 완성한 뒤 `apps/workbench`를 추가한다. 기존 `crates/`·`packages/`를
-재사용하며, 결과물은 **독립 앱 10개 + orchestration 앱 1개** 구조다.
-상세: `docs/product-opportunities.md` §15.2
+`apps/workbench`는 기존 앱의 UI를 복제하는 통합 앱이 아니라, 프로젝트를 기준으로
+여러 앱·서비스를 조정하고 상태를 요약하는 **orchestration 셸**이다. 기존 `crates/`·
+`packages/`를 재사용하며, 결과물은 **독립 앱 13개**(workbench 포함) 구조다.
+상세: `docs/product-opportunities.md` §15.2, `docs/superpowers/specs/2026-08-14-workbench-design.md`
+
+## 신규 앱 설계 문서
+
+- `docs/superpowers/specs/2026-08-14-workbench-design.md` — Workbench (orchestration 셸)
+- `docs/superpowers/specs/2026-08-14-webhook-lab-design.md` — Webhook Lab (로컬 웹훅 서버)
+- `docs/superpowers/specs/2026-08-14-repo-manager-design.md` — Repo Manager (git worktree)
 
 상세 규약: [CONVENTIONS.md](../CONVENTIONS.md)

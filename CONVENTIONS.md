@@ -1,6 +1,7 @@
-# devbox — Tauri 10개 데스크톱 앱 모노레포 공통 규약
+# devbox — Tauri 13개 데스크톱 앱 모노레포 공통 규약
 
-10개 앱(port-manager, developer-toolbox, wsl-desktop, api-playground, everything-plus, knowledge-base, life-log, devbox-manager, code-pad, run-manager)을 하나의 저장소에서 관리하되,
+13개 앱(port-manager, developer-toolbox, wsl-desktop, api-playground, everything-plus, knowledge-base,
+life-log, devbox-manager, code-pad, run-manager, workbench, webhook-lab, repo-manager)을 하나의 저장소에서 관리하되,
 각각은 **독립적으로 실행되고 독립적으로 .exe가 만들어지는 Tauri 앱**이다. 소스 저장소와 공통 코드만 공유한다.
 
 ```
@@ -48,22 +49,27 @@ devbox/
 │  ├─ everything-plus/     # 로컬 파일 검색
 │  ├─ knowledge-base/      # 마크다운 지식 저장소
 │  ├─ life-log/            # 자동 일일 로그 (집계 허브, activity-timeline 흡수)
-│  ├─ devbox-manager/      # devbox 앱 설치·업데이트·실행
+│  ├─ devbox-manager/      # devbox 앱 설치·업데이트·실행 (+ 환경 진단)
 │  ├─ code-pad/            # CodeMirror 6 경량 코드 에디터 (LSP)
-│  └─ run-manager/         # 예약 실행·서비스 관리
+│  ├─ run-manager/         # 예약 실행·서비스 관리
+│  ├─ workbench/           # 프로젝트 기반 orchestration 셸
+│  ├─ webhook-lab/         # 로컬 웹훅/콜백 서버
+│  └─ repo-manager/        # git 저장소·worktree 관리
 │
-├─ packages/               # React 공용 (필요 시)
-│  ├─ tokens/              # 공용 CSS 커스텀 프로퍼티 (추출 예정 — PR 16)
-│  ├─ editor/              # CodeMirror 공용 설정 (추출 예정 — PR 24)
+├─ packages/               # React 공용
+│  ├─ tokens/              # 공용 CSS 커스텀 프로퍼티  (기존 앱 10곳 사용)
+│  ├─ editor/              # CodeMirror 공용 설정      (knowledge-base, code-pad)
+│  ├─ diff-view/           # diff 렌더 공용            (code-pad, run-manager)
 │  └─ ...
 │
-├─ crates/                 # Rust 공용 (추출 완료/필요 시)
+├─ crates/                 # Rust 공용
 │  ├─ filesystem/          # 파일 walk/검색 순회  (everything-plus, code-pad)
 │  ├─ markdown/            # 마크다운 렌더          (knowledge-base, code-pad)
 │  ├─ process/             # 프로세스/포트 조회·kill  (port-manager, run-manager)
-│  ├─ wsl/                 # WSL argv·경로 정규화    (wsl-desktop, run-manager) [추출 예정 — PR 14]
-│  ├─ search/              # FTS5 쿼리 빌더          (everything-plus, knowledge-base) [추출 예정 — PR 15]
-│  └─ database/            # SQLite 마이그레이션 헬퍼 (후보 — 소비자 확정 시) [필요 시]
+│  ├─ wsl/                 # WSL argv·경로 정규화    (wsl-desktop, run-manager, workbench, repo-manager)
+│  ├─ search/              # FTS5 쿼리 빌더          (everything-plus, knowledge-base)
+│  ├─ integration/         # 앱 간 snapshot 계약      (run-manager, workbench, knowledge-base)
+│  └─ secrets/             # DPAPI 비밀 보호          (api-playground, run-manager)
 │
 ├─ docs/
 │  ├─ architecture.md
@@ -202,17 +208,19 @@ pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnp
 3. 두 번째 앱에서 중복 코드 발생 시 → `crates/`·`packages/`로 추출
 4. 최종: Windows에서 `pnpm tauri dev/build`
 
-## 7. 개발 순서 (10개 전체)
+## 7. 개발 순서 (13개 전체)
 ```
 Phase 1: port-manager → developer-toolbox     # Tauri 기본기 (IPC, Rust 기초, 설정)
 Phase 2: api-playground → everything-plus      # 자식 프로세스, async, HTTP, 상태관리
 Phase 3: knowledge-base → life-log             # 개인 데이터 플랫폼 통합
 추가:    wsl-desktop, devbox-manager           # PTY 터미널, 앱 설치·업데이트
 추가:    code-pad, run-manager                 # 경량 코드 에디터(LSP), 예약 실행·서비스
+Stage4:  workbench                             # 프로젝트 기반 orchestration 셸
+Stage5:  webhook-lab, repo-manager             # 로컬 웹훅 서버, git worktree 관리
 ```
-- 10개 앱 모두 구현 완료. 진행 상황은 [docs/roadmap.md](./docs/roadmap.md) 참조
+- 13개 앱 모두 구현 완료. 진행 상황은 [docs/roadmap.md](./docs/roadmap.md) 참조
 - 공통 코드 발견 시점에 `crates/process`, `crates/wsl`, `packages/tokens` 등을 하나씩 추출
-- 각 프로젝트 상세는 `apps/<AppName>/PLAN.md` 참조 (wsl-desktop·devbox-manager·code-pad·run-manager는 `README.md` 또는 설계 문서)
+- 각 프로젝트 상세는 `apps/<AppName>/PLAN.md` 또는 설계 문서(`docs/superpowers/specs/`) 참조
 
 ## 8. Git 규약 (모노레포: `devbox/` 루트 1개 저장소)
 
@@ -258,7 +266,7 @@ docs/<scope>           문서 작업   예: docs/roadmap
 > 계약, 타임아웃, 종료 보장을 갖춘다.
 
 ## 10. 통합 전략 (Workbench)
-- 기존 앱을 어느 정도 완성한 뒤, `apps/workbench`를 추가해 프로젝트 기반 orchestration 셸로 묶는다
+- `apps/workbench`를 프로젝트 기반 orchestration 셸로 구현했다 (구현 완료)
 - workbench는 기존 `crates/`·`packages/`를 그대로 재사용 → 공통화가 통합을 쉽게 만든다
-- 결과적으로 "독립 앱 10개 + orchestration 앱 1개" 구조
-- 상세: `docs/product-opportunities.md` §15.2
+- 결과적으로 "독립 앱 13개" 구조 (workbench 포함, 독립 .exe)
+- 상세: `docs/product-opportunities.md` §15.2, `docs/superpowers/specs/2026-08-14-workbench-design.md`
