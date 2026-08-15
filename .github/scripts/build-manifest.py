@@ -28,7 +28,7 @@ def cargo_version(app_dir: str) -> str:
     text = open(f"{app_dir}/src-tauri/Cargo.toml").read()
     m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
     if not m:
-        raise SystemExit(f"version을 읽을 수 없다: {app_dir}")
+        raise SystemExit(f"cannot read version from: {app_dir}")
     return m.group(1)
 
 
@@ -54,9 +54,9 @@ def main() -> None:
         ) if os.path.isdir(installer_dir) else []
 
         if len(portable_files) != 1:
-            raise SystemExit(f"{app_id}: portable이 정확히 1개여야 한다 (found {portable_files})")
+            raise SystemExit(f"{app_id}: expected exactly 1 portable (found {portable_files})")
         if len(installer_files) != 1:
-            raise SystemExit(f"{app_id}: installer가 정확히 1개여야 한다 (found {installer_files})")
+            raise SystemExit(f"{app_id}: expected exactly 1 installer (found {installer_files})")
 
         def asset(name: str, dirpath: str) -> dict:
             path = f"{dirpath}/{name}"
@@ -83,7 +83,7 @@ def main() -> None:
     with open(output, "w") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
         f.write("\n")
-    print(f"manifest 작성 완료: {output} ({len(manifest_apps)} apps)")
+    print(f"manifest written: {output} ({len(manifest_apps)} apps)")
 
 
 if __name__ == "__main__":
