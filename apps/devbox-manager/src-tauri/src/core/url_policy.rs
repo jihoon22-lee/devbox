@@ -3,8 +3,13 @@
 /// GitHub release asset의 최초 URL과 redirect 대상 호스트만 허용한다.
 /// redirect 대상이 바뀔 수 있으므로 상수로 두고 근거를 남긴다.
 /// - github.com: `https://github.com/jihoon22-lee/devbox/...` (2026-08 확인)
-/// - objects.githubusercontent.com: release asset redirect 대상 (2026-08 확인)
-pub const ALLOWED_HOSTS: &[&str] = &["github.com", "objects.githubusercontent.com"];
+/// - objects.githubusercontent.com: 예전 release asset redirect 대상 (2026-08 확인)
+/// - release-assets.githubusercontent.com: 현재 release asset redirect 대상 (2026-08 확인)
+pub const ALLOWED_HOSTS: &[&str] = &[
+    "github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+];
 
 /// 허용 저장소 경로 (github.com에만 적용).
 pub const REPO_PATH: &str = "jihoon22-lee/devbox";
@@ -43,6 +48,13 @@ mod tests {
     fn allows_redirect_host() {
         assert!(is_allowed(
             "https://objects.githubusercontent.com/github-production-release-asset-2e65be/12345/life-log.exe"
+        ));
+    }
+
+    #[test]
+    fn allows_release_assets_redirect_host() {
+        assert!(is_allowed(
+            "https://release-assets.githubusercontent.com/github-production-release-asset/1330301814/d9a60c20/life-log.exe"
         ));
     }
 
