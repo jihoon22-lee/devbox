@@ -30,10 +30,24 @@
 
 - 앱 카탈로그가 13개로 확장 (`apps/catalog.json`).
 - GitHub Releases 산출물 명칭 통일: 휴대용 `<app-id>.exe`, 설치 `<app-id>_<version>_x64-setup.exe`.
+- 앱 버전을 기능 추가·수정에 맞게 개별 갱신 (버전은 각 앱이 독립적으로 가져간다):
+  - 0.2.0 → **0.3.0**: api-playground(컬렉션·환경·시크릿), everything-plus(watcher·결과 액션),
+    knowledge-base(CodeMirror·watcher·snapshot), devbox-manager(카탈로그·manifest·원자 설치·환경 진단)
+  - 0.2.2 → **0.3.0**: life-log(활동 추적 흡수·idle·privacy·자동 시작·프로젝트 귀속), wsl-desktop(wsl-dashboard 흡수·탭)
+  - 0.3.0 → **0.3.1**: code-pad(복구·problems·탐색 이력), run-manager(관찰성·export/import)
+  - 0.2.0 → **0.2.1**: port-manager, developer-toolbox (identifier 이관 등 내부 정비)
+  - 0.1.0 → **0.1.1**: repo-manager (git·앱 실행 안정화)
 
 ### Fixed
 
-- (v0.2.x에서 수정된 항목 유지)
+- **repo-manager·workbench·life-log** — Windows에서 `git` 하위 프로세스가 실패해 브랜치 `?`/`n/a`,
+  커밋 수 0으로 표시되던 문제 수정 (`crates/git`).
+- **repo-manager·workbench** — 설치된 앱 실행(`open_in`·Start Workspace)이 잘못된 exe명으로 실패하던 문제 수정 (`crates/launch`).
+- **devbox-manager** — GitHub release asset redirect 대상 변경(`release-assets.githubusercontent.com`) 미반영 수정.
+- **devbox-manager** — 환경 진단 WSL 버전 UTF-16LE 깨짐 수정.
+- **life-log** — 실행 파일 중복 실행 방지(단일 인스턴스 + 기존 트레이 포커스).
+- **wsl-desktop** — grid 행 높이 불균형·팬 간 이동 불가 수정 (Alt+Arrow).
+- **code-pad** — 창 축소 시 하단 잘림 수정 (`.content-area` 높이 제약).
 
 ## [v0.3.0] - 2026-08-13
 

@@ -73,7 +73,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "api-playground"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "reqwest",
@@ -618,7 +618,7 @@ dependencies = [
 
 [[package]]
 name = "code-pad"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "base64 0.22.1",
  "chardetng",
@@ -1025,7 +1025,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-manager"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "futures-util",
  "reqwest",
@@ -1040,7 +1040,7 @@ dependencies = [
 
 [[package]]
 name = "developer-toolbox"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "md-5",
  "regex",
@@ -1319,7 +1319,7 @@ dependencies = [
 
 [[package]]
 name = "everything-plus"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "filesystem",
  "notify",
@@ -2526,7 +2526,7 @@ dependencies = [
 
 [[package]]
 name = "knowledge-base"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "dirs",
@@ -2646,7 +2646,7 @@ dependencies = [
 
 [[package]]
 name = "life-log"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "git",
  "regex",
@@ -3427,7 +3427,7 @@ dependencies = [
 
 [[package]]
 name = "port-manager"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "process",
  "serde",
@@ -3813,7 +3813,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "repo-manager"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "git",
  "launch",
@@ -3884,7 +3884,7 @@ dependencies = [
 
 [[package]]
 name = "run-manager"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -6617,7 +6617,7 @@ version = "0.1.0"
 
 [[package]]
 name = "wsl-desktop"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "portable-pty",
  "serde",
