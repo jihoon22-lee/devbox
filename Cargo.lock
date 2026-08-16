@@ -1759,6 +1759,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "git"
+version = "0.1.0"
+
+[[package]]
 name = "glib"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2644,6 +2648,7 @@ dependencies = [
 name = "life-log"
 version = "0.2.2"
 dependencies = [
+ "git",
  "regex",
  "rusqlite",
  "serde",
@@ -3810,13 +3815,13 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 name = "repo-manager"
 version = "0.1.0"
 dependencies = [
+ "git",
  "launch",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
- "tokio",
  "wsl",
 ]
 
@@ -6542,6 +6547,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 name = "workbench"
 version = "0.1.0"
 dependencies = [
+ "git",
  "integration",
  "launch",
  "rusqlite",

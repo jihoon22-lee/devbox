@@ -1,0 +1,11 @@
+[package]
+name = "git"
+version = "0.1.0"
+description = "Stable git subprocess execution for Windows (absolute path resolution + std process)"
+edition = "2021"
+
+[lib]
+name = "git"
+path = "src/lib.rs"
+
+[dependencies]
