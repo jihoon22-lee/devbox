@@ -51,20 +51,26 @@ fn current_exe(app_dir: &Path) -> Option<PathBuf> {
 
 fn latest_version_exe(app_dir: &Path, app_id: &str) -> Option<PathBuf> {
     let versions = app_dir.join("versions");
-    let mut best: Option<PathBuf> = None;
+    let mut best: Option<(Vec<u32>, PathBuf)> = None;
     for entry in std::fs::read_dir(versions).ok()?.flatten() {
         let exe = entry.path().join(format!("{app_id}.exe"));
         if !exe.exists() {
             continue;
         }
-        let better = best
-            .as_ref()
-            .is_none_or(|b| exe.to_string_lossy() > b.to_string_lossy());
+        let key = version_sort_key(&entry.file_name().to_string_lossy());
+        let better = best.as_ref().is_none_or(|(best_key, _)| key > *best_key);
         if better {
-            best = Some(exe);
+            best = Some((key, exe));
         }
     }
-    best
+    best.map(|(_, exe)| exe)
+}
+
+/// 버전 디렉터리 이름("0.9.0", "0.10.0")을 숫자 세그먼트로 분해한다. 이전 구현은 exe
+/// 경로 문자열을 그대로 비교해 "0.10.0" < "0.9.0"으로 잘못 판정했다 (사전순으로는 '1' <
+/// '9'). 파싱 실패한 세그먼트는 0으로 취급해 이름이 예상과 다르더라도 패닉하지 않는다.
+fn version_sort_key(name: &str) -> Vec<u32> {
+    name.split('.').map(|s| s.parse().unwrap_or(0)).collect()
 }
 
 /// 설치된 앱을 실행하고 자식 pid를 반환한다.
@@ -97,6 +103,40 @@ mod tests {
         assert!(got.to_string_lossy().contains("0.3.0"));
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// 회귀 테스트: 경로 문자열을 그대로 비교하면 "0.10.0" < "0.9.0"으로 잘못 판정된다
+    /// (사전순 비교에서 '1' < '9'). semver 세그먼트 비교로 고쳐야 한다.
+    #[test]
+    fn latest_version_exe_compares_numerically_not_lexically() {
+        let tmp = std::env::temp_dir().join(format!("launch-test-numeric-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("versions/0.9.0")).unwrap();
+        std::fs::create_dir_all(tmp.join("versions/0.10.0")).unwrap();
+        std::fs::write(tmp.join("versions/0.9.0/test-app.exe"), b"").unwrap();
+        std::fs::write(tmp.join("versions/0.10.0/test-app.exe"), b"").unwrap();
+
+        let got = latest_version_exe(&tmp, "test-app").unwrap();
+        assert!(
+            got.to_string_lossy().contains("0.10.0"),
+            "0.10.0이 0.9.0보다 최신이어야 하는데 {got:?}가 선택됨"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn version_sort_key_orders_numerically() {
+        assert!(version_sort_key("0.10.0") > version_sort_key("0.9.0"));
+        assert!(version_sort_key("1.0.0") > version_sort_key("0.99.99"));
+        assert_eq!(version_sort_key("0.3.1"), vec![0, 3, 1]);
+    }
+
+    #[test]
+    fn version_sort_key_does_not_panic_on_malformed_input() {
+        assert_eq!(version_sort_key("not-a-version"), vec![0]);
+        assert_eq!(version_sort_key(""), vec![0]);
+        assert_eq!(version_sort_key("1.x.0"), vec![1, 0, 0]);
     }
 
     #[test]
