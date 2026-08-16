@@ -2559,6 +2559,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "launch"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3803,6 +3810,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 name = "repo-manager"
 version = "0.1.0"
 dependencies = [
+ "launch",
  "serde",
  "serde_json",
  "tauri",
@@ -6535,6 +6543,7 @@ name = "workbench"
 version = "0.1.0"
 dependencies = [
  "integration",
+ "launch",
  "rusqlite",
  "serde",
  "serde_json",

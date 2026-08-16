@@ -1,0 +1,12 @@
+[package]
+name = "launch"
+version = "0.1.0"
+description = "Installed devbox app exe resolution and launch (pure path/process logic)"
+edition = "2021"
+
+[lib]
+name = "launch"
+path = "src/lib.rs"
+
+[dependencies]
+serde_json = "1"

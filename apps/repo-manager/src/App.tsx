@@ -95,8 +95,8 @@ export default function App() {
                   {s?.branch.behind ? ` ↓${s.branch.behind}` : ""}
                   {s?.changes ? ` +${s.changes}` : ""}
                 </span>
-                <button className="mini" onClick={() => void openIn("codepad", r.path)}>CodePad</button>
-                <button className="mini" onClick={() => void openIn("wsldesktop", r.path)}>WSLDesktop</button>
+                <button className="mini" onClick={() => void openIn("code-pad", r.path)}>CodePad</button>
+                <button className="mini" onClick={() => void openIn("wsl-desktop", r.path)}>WSLDesktop</button>
                 <button className="mini" onClick={() => void openIn("workbench", r.path)}>Workbench</button>
               </div>
               {wt[r.path] && wt[r.path].length > 1 && (

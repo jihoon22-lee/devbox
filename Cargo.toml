@@ -23,6 +23,7 @@ members = [
     "crates/search",
     "crates/integration",
     "crates/secrets",
+    "crates/launch",
     # "crates/database",
 ]
 

@@ -23,5 +23,6 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
+devbox-launch = { package = "launch", path = "../../../crates/launch" }
 tokio = { version = "1.53.1", features = ["process"] }
 
