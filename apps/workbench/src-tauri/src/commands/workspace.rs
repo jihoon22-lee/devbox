@@ -361,7 +361,10 @@ pub async fn start_workspace(
     }
     match devbox_launch::launch(
         "code-pad",
-        &["--workspace", &profile.windows_path.clone().unwrap_or_default()],
+        &[
+            "--workspace",
+            &profile.windows_path.clone().unwrap_or_default(),
+        ],
     ) {
         Ok(pid) => started_pids.push(pid),
         Err(e) => steps.push(RunStep {
