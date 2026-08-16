@@ -212,6 +212,49 @@ h1 {
   flex-wrap: wrap;
 }
 
+.content-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.content-area.with-preview {
+  flex-direction: row;
+}
+
+.preview-pane {
+  display: flex;
+  min-width: 0;
+  width: 42%;
+  flex-direction: column;
+  border-left: 1px solid #293442;
+  background: #171e29;
+  overflow: hidden;
+}
+
+.preview-pane-header {
+  display: flex;
+  height: 25px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  border-bottom: 1px solid #26303d;
+  color: #91a1b8;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
 .editor-area {
   display: grid;
   min-height: 0;
