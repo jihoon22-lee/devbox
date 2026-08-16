@@ -129,6 +129,26 @@ type MenuItem =
 | run-manager | 로그 뷰어 검색/필터 | 회전 로그 tail에 검색 부재 시 장기 로그 사용 불가 |
 | devbox-manager | 설치 폴더 열기·제거 | Manager 관리 완결성 (§1.2와 연계) |
 
+### 4.3 실사용 피드백 (v0.4.0-rc1)
+
+Windows 실기 검증에서 수집한 UX 개선 항목. 기능 버그가 아니라 편의·가독성 항목이다.
+
+| 앱 | 항목 | 설명 |
+|---|---|---|
+| devbox-manager | 일괄 설치/업데이트 + 다중 선택 | 여러 앱을 체크박스로 선택해 한 번에 설치/업데이트 |
+| devbox-manager | 설치 위치 표시 + 지정 | 현재 설치 경로를 표시하고, 사용자가 변경 가능하게 |
+| wsl-desktop | Docker 패널 컴팩트 포맷 | 좌우 잘림을 줄이도록 트리/축약 포맷 도입 |
+| code-pad | 언어 서버 패널 높이 확보 | 언어 서버 목록 패널이 좁아 가독성이 떨어짐 |
+| code-pad | 빠른 열기 → 트리 + 탭/패널 | 평면 리스트 + 잘림을 탐색기형 트리로 개선 |
+| code-pad | 상태 표시줄 하단 고정 | 파일 길이에 따라 움직이지 않고 항상 최하단 고정 |
+| code-pad | 프리뷰/편집 영역 구분 강화 | 프리뷰 영역이 편집 영역과 시각적으로 구분되게 |
+| workbench | ports/services 입력 UX + 자동 반영 | 입력 방법을 명확히 하고, WSL Desktop의 Docker/포트를 자동 반영 |
+| webhook-lab | rule 필드 라벨/설명 | 각 rule 필드가 무엇인지 옆에 설명 표시 |
+| webhook-lab | 규칙 저장 후 예시 curl 표시 | 규칙 설정 직후 테스트용 curl 예시 자동 생성 |
+
+> 참고: v0.4.0-rc1에서 발견된 **기능 버그**(git 집계 실패, open_in 실행 실패, 중복 실행,
+> 그리드/스크롤 레이아웃 깨짐)는 이 문서가 아니라 별도 버그 수정으로 처리한다.
+
 ## 5. 제외 확정 (다시 검토하지 않음)
 
 이전 검토에서 비추천·부적합으로 제외한 항목. 근거를 남겨 재논의를 막는다.
@@ -162,5 +182,7 @@ type MenuItem =
 3. developer-toolbox: JSON↔YAML + 진법 변환 + JSON→TS 타입 (§3 저비용 3종)
 4. api-playground: 응답 헤더/쿠키 뷰어 + 파일 업로드 (§4.1 저난이도)
 5. knowledge-base 백링크 / everything-plus→Code Pad 열기 (§4.1·4.2 중난이도)
+6. 실사용 피드백 항목 (§4.3) — devbox-manager 다중 선택·설치 위치, code-pad 레이아웃,
+   webhook-lab 라벨·curl 예시, wsl-desktop Docker 포맷, workbench 포트/서비스
 
 각 항목은 기능 단위 1 PR로 진행한다.
