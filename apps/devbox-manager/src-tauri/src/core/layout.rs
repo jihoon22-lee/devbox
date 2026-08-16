@@ -4,9 +4,9 @@
 //! apps/<app-id>/
 //! ├─ versions/
 //! │  ├─ 0.2.0/<app-id>.exe
+//! │  ├─ 0.2.0/<app-id>.exe.partial   (다운로드 중, core::download::partial_path)
 //! │  └─ 0.3.0/<app-id>.exe
-//! ├─ current.json
-//! └─ download/<version>.partial
+//! └─ current.json
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -47,13 +47,6 @@ pub fn current_json(base: &std::path::Path, app_id: &str) -> std::path::PathBuf 
     apps_root(base, app_id).join("current.json")
 }
 
-/// `base/apps/<app-id>/download/<version>.partial`
-pub fn partial_file(base: &std::path::Path, app_id: &str, version: &str) -> std::path::PathBuf {
-    apps_root(base, app_id)
-        .join("download")
-        .join(format!("{version}.partial"))
-}
-
 /// rollback 대상 선택. 직전 정상 버전이 아직 설치되어 있으면 그것을 반환한다.
 pub fn pick_rollback_target(current: &Current, installed_versions: &[String]) -> Option<String> {
     let previous = current.previous_version.as_ref()?;
@@ -85,10 +78,6 @@ mod tests {
         assert_eq!(
             current_json(&base(), "life-log"),
             std::path::Path::new("/data/apps/life-log/current.json")
-        );
-        assert_eq!(
-            partial_file(&base(), "life-log", "0.2.2"),
-            std::path::Path::new("/data/apps/life-log/download/0.2.2.partial")
         );
     }
 
