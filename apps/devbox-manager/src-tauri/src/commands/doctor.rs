@@ -18,7 +18,7 @@ pub struct DiagnosisItem {
     pub detail: String,
 }
 
-fn version_of(cmd: &str, args: &[&str]) -> Option<String> {
+fn version_of(cmd: impl AsRef<std::ffi::OsStr>, args: &[&str]) -> Option<String> {
     let mut c = Command::new(cmd);
     c.args(args);
     #[cfg(target_os = "windows")]
@@ -53,8 +53,9 @@ pub fn run_diagnosis() -> Vec<DiagnosisItem> {
         }),
     }
 
-    // Git
-    match version_of("git", &["--version"]) {
+    // Git — GUI 앱이 물려받은 PATH에 git이 없어도 Git for Windows 기본 설치
+    // 경로를 우선 시도한다 (crates/git와 동일 근거, PATH만 보면 오탐할 수 있다).
+    match version_of(devbox_git::resolve_git(), &["--version"]) {
         Some(v) => items.push(DiagnosisItem {
             name: "git".into(),
             ok: true,

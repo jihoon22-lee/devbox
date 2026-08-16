@@ -26,4 +26,5 @@ reqwest = { version = "0.13.4", features = ["json", "stream"] }
 sha2 = "0.10"
 futures-util = "0.3"
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
+devbox-git = { package = "git", path = "../../../crates/git" }
 
