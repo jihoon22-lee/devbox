@@ -351,40 +351,24 @@ pub async fn start_workspace(
 
     // 앱 열기 (best-effort). Workbench가 시작한 것만 기록한다.
     let mut started_pids = Vec::new();
-    for (app_name, args) in [(
-        "WSLDesktop",
-        vec!["--profile".to_string(), profile.id.clone()],
-    )] {
-        match std::process::Command::new(format!("{app_name}.exe"))
-            .args(&args)
-            .spawn()
-        {
-            Ok(child) => started_pids.push(child.id()),
-            Err(_) => steps.push(RunStep {
-                name: "open".into(),
-                ok: false,
-                detail: format!("{app_name} 시작 실패 (설치 확인)"),
-            }),
-        }
+    match devbox_launch::launch("wsl-desktop", &["--profile", &profile.id]) {
+        Ok(pid) => started_pids.push(pid),
+        Err(e) => steps.push(RunStep {
+            name: "open".into(),
+            ok: false,
+            detail: format!("wsl-desktop 시작 실패: {e}"),
+        }),
     }
-    for (app_name, args) in [(
-        "CodePad",
-        vec![
-            "--workspace".to_string(),
-            profile.windows_path.clone().unwrap_or_default(),
-        ],
-    )] {
-        match std::process::Command::new(format!("{app_name}.exe"))
-            .args(&args)
-            .spawn()
-        {
-            Ok(child) => started_pids.push(child.id()),
-            Err(_) => steps.push(RunStep {
-                name: "open".into(),
-                ok: false,
-                detail: format!("{app_name} 시작 실패 (설치 확인)"),
-            }),
-        }
+    match devbox_launch::launch(
+        "code-pad",
+        &["--workspace", &profile.windows_path.clone().unwrap_or_default()],
+    ) {
+        Ok(pid) => started_pids.push(pid),
+        Err(e) => steps.push(RunStep {
+            name: "open".into(),
+            ok: false,
+            detail: format!("code-pad 시작 실패: {e}"),
+        }),
     }
 
     let run = WorkspaceRun {

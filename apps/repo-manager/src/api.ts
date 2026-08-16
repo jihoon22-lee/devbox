@@ -52,7 +52,7 @@ export function worktreeClean(path: string): Promise<boolean> {
   return invoke<boolean>("worktree_clean", { path });
 }
 
-export function openIn(appName: string, path: string): Promise<void> {
+export function openIn(appId: string, path: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("open_in", { appName, path });
+  return invoke<void>("open_in", { appId, path });
 }

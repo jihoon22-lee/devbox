@@ -102,18 +102,13 @@ pub async fn worktree_clean(path: String) -> Result<bool, String> {
 }
 
 /// Code Pad / WSL Desktop / Workbench로 연다 (best-effort).
+/// app_id는 카탈로그 id(code-pad·wsl-desktop·workbench). 설치된 exe 경로는
+/// 공용 `crates/launch`가 Manager 설치 layout에서 해석한다.
 #[tauri::command]
-pub fn open_in(app_name: String, path: String) -> Result<(), String> {
-    let app_name = app_name.to_lowercase();
-    let exe = match app_name.as_str() {
-        "codepad" => "CodePad.exe",
-        "wsldesktop" => "WSLDesktop.exe",
-        "workbench" => "Workbench.exe",
-        _ => return Err("알 수 없는 앱".into()),
-    };
-    std::process::Command::new(exe)
-        .arg(path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("{exe} 시작 실패 (설치 확인): {e}"))
+pub fn open_in(app_id: String, path: String) -> Result<(), String> {
+    let app_id = app_id.to_lowercase();
+    if !matches!(app_id.as_str(), "code-pad" | "wsl-desktop" | "workbench") {
+        return Err("알 수 없는 앱".into());
+    }
+    devbox_launch::launch(&app_id, &[&path]).map(|_| ())
 }
