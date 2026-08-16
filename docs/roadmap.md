@@ -64,5 +64,7 @@ Stage 5    Webhook Lab, Dev Environment Doctor, Repo Manager          ✅
 ## 현재 상태
 - 13개 앱 모두 WSL에서 구현 완료 (Rust 유닛 테스트 + clippy + 프론트 빌드 통과)
 - 각 앱은 기능 단위 PR로 main에 머지됨
-- Windows 실제 실행/배포는 Releases(v0.4.0)로 제공 중
-- 남은 검증: [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176) + 릴리스 배포 확인
+- v0.4.0은 아직 정식 배포 전. `v0.4.0-rc*` 태그로 배포 워크플로·설치 dry-run을 검증 중이며,
+  최신 정식 릴리스는 여전히 v0.3.0이다
+- 남은 검증: [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176)
+  (rc 빌드 기준 실기 검증 진행 중) → 통과 후 v0.4.0 정식 배포

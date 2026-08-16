@@ -3,10 +3,19 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
-## [v0.4.0] - 2026-08-15
+## [v0.4.0] - 2026-08-17
 
 기능 추가 릴리스. 신규 앱 3종(Workbench, Webhook Lab, Repo Manager)과 devbox-manager 환경 진단이 추가되어
 총 13개 앱이 되었다. 배포 워크플로가 카탈로그 기반으로 정비되고, 신규 앱에도 CSP 기준선이 적용되었다.
+
+### 업그레이드 참고 (v0.3.0 이하 사용자)
+
+PR #180에서 릴리스 asset 명명이 `<ProductName>_<태그버전>_x64-setup.exe`에서
+`<app-id>_<앱버전>_x64-setup.exe`로 바뀌었고, portable 설치 layout도
+`apps/<id>/<tag>/<id>.exe`에서 `apps/<id>/versions/<version>/<id>.exe`로 바뀌었다.
+**v0.3.0 이하 Devbox Manager는 이 새 이름·layout을 인식하지 못해 "Install (setup)"
+버튼이 동작하지 않는다** (휴대용 재설치는 계속 동작한다). Releases 페이지에서 새
+Devbox Manager를 직접 내려받아 먼저 설치한 뒤, 나머지 앱을 새 Manager로 설치하세요.
 
 ### Added
 
