@@ -3,7 +3,6 @@
 use crate::core::git::{parse_status, parse_worktrees, RepoSnapshot};
 use serde::Serialize;
 use std::path::Path;
-use tokio::process::Command;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,27 +52,19 @@ fn walk(dir: &Path, out: &mut Vec<RepoEntry>) {
     }
 }
 
-async fn git(args: &[&str], cwd: &str) -> Result<String, String> {
-    let mut cmd = Command::new("git");
-    cmd.args(["-C", cwd]).args(args);
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(0x0800_0000);
-    let out = cmd.output().await.map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+fn git(args: &[&str], cwd: &str) -> Result<String, String> {
+    devbox_git::run(args, cwd)
 }
 
 #[tauri::command]
 pub async fn repo_status(path: String) -> Result<RepoSnapshot, String> {
-    let status = git(&["status", "--porcelain", "--branch"], &path).await?;
+    let status = git(&["status", "--porcelain", "--branch"], &path)?;
     Ok(parse_status(&path, &status))
 }
 
 #[tauri::command]
 pub async fn worktrees(path: String) -> Result<Vec<String>, String> {
-    let out = git(&["worktree", "list", "--porcelain"], &path).await?;
+    let out = git(&["worktree", "list", "--porcelain"], &path)?;
     Ok(parse_worktrees(&out))
 }
 
@@ -89,15 +80,14 @@ pub async fn create_worktree(
     branch: String,
     target_dir: String,
 ) -> Result<WorktreeCreate, String> {
-    let out = git(&["worktree", "add", "-b", &branch, &target_dir], &repo_path).await?;
-    let _ = out;
+    git(&["worktree", "add", "-b", &branch, &target_dir], &repo_path)?;
     Ok(WorktreeCreate { path: target_dir })
 }
 
 /// remove 전 uncommitted/untracked 검사. 없으면 true.
 #[tauri::command]
 pub async fn worktree_clean(path: String) -> Result<bool, String> {
-    let status = git(&["status", "--porcelain"], &path).await?;
+    let status = git(&["status", "--porcelain"], &path)?;
     Ok(status.trim().is_empty())
 }
 

@@ -26,6 +26,7 @@ rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite"] }
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
 devbox-launch = { package = "launch", path = "../../../crates/launch" }
+devbox-git = { package = "git", path = "../../../crates/git" }
 tokio = { version = "1.53.1", features = ["process", "time"] }
 uuid = { version = "1", features = ["v4"] }
 

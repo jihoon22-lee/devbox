@@ -75,16 +75,9 @@ pub async fn git_status(
 ) -> Result<Vec<crate::core::health::GitStatus>, String> {
     let mut out = Vec::new();
     for path in projects {
-        let mut cmd = Command::new("git");
-        cmd.args(["-C", &path, "status", "--porcelain", "--branch"]);
-        #[cfg(target_os = "windows")]
-        cmd.creation_flags(0x0800_0000);
-        match cmd.output().await {
-            Ok(o) if o.status.success() => {
-                let text = String::from_utf8_lossy(&o.stdout).into_owned();
-                out.push(parse_git_status(&path, &text));
-            }
-            _ => out.push(crate::core::health::GitStatus {
+        match devbox_git::run(&["status", "--porcelain", "--branch"], &path) {
+            Ok(text) => out.push(parse_git_status(&path, &text)),
+            Err(_) => out.push(crate::core::health::GitStatus {
                 path,
                 branch: "n/a".into(),
                 changes: 0,
