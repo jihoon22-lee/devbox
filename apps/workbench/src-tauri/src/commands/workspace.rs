@@ -114,7 +114,8 @@ async fn wsl_list_output() -> Option<String> {
     if !output.status.success() {
         return None;
     }
-    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+    // `wsl.exe -l -v`는 UTF-16LE로 출력된다 (공용 crates/wsl 디코더, PR #183과 동일 근거).
+    Some(devbox_wsl::output::decode_output(&output.stdout))
 }
 
 fn port_open(port: u16) -> bool {
