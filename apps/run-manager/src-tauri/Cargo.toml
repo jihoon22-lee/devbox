@@ -1,6 +1,6 @@
 [package]
 name = "run-manager"
-version = "0.3.0"
+version = "0.3.1"
 description = "Scheduled job and service manager"
 authors = ["jihoon22.lee"]
 edition = "2021"

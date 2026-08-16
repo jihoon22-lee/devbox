@@ -1,6 +1,6 @@
 [package]
 name = "developer-toolbox"
-version = "0.2.0"
+version = "0.2.1"
 description = "Developer Toolbox"
 authors = ["jihoon22.lee"]
 edition = "2021"
