@@ -59,7 +59,7 @@ fn latest_version_exe(app_dir: &Path, app_id: &str) -> Option<PathBuf> {
         }
         let better = best
             .as_ref()
-            .map_or(true, |b| exe.to_string_lossy() > b.to_string_lossy());
+            .is_none_or(|b| exe.to_string_lossy() > b.to_string_lossy());
         if better {
             best = Some(exe);
         }
