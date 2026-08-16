@@ -34,6 +34,11 @@ fn migrate_local_data(app: &tauri::AppHandle, legacy_id: &str) -> std::io::Resul
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // single-instance는 반드시 첫 플러그인이어야 한다: 이후 플러그인·setup이
+        // 두 번째 프로세스에서 중복 초기화되기 전에 중복 실행을 종료한다.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            focus_main_window(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::life::set_projects,
@@ -90,6 +95,14 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+fn focus_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
 fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
@@ -107,13 +120,7 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            "show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
-                }
-            }
+            "show" => focus_main_window(app),
             "quit" => app.exit(0),
             _ => {}
         })
