@@ -7,6 +7,12 @@ export interface RepoEntry {
   hasWorktrees: boolean;
 }
 
+export interface ScanResult {
+  repos: RepoEntry[];
+  /** 탐색 깊이·방문 상한에 걸려 일부 디렉터리를 건너뛰었으면 true. */
+  truncated: boolean;
+}
+
 export interface BranchState {
   current: string;
   ahead: number;
@@ -21,13 +27,14 @@ export interface RepoSnapshot {
   changes: number;
 }
 
-const MOCK_REPOS: RepoEntry[] = [
-  { path: "C:\\projects\\devbox", canonicalKey: "win:c:/projects/devbox", hasWorktrees: true },
-];
+const MOCK_RESULT: ScanResult = {
+  repos: [{ path: "C:\\projects\\devbox", canonicalKey: "win:c:/projects/devbox", hasWorktrees: true }],
+  truncated: false,
+};
 
-export function scanRoot(root: string): Promise<RepoEntry[]> {
-  if (!isTauri()) return Promise.resolve(MOCK_REPOS);
-  return invoke<RepoEntry[]>("scan_root", { root });
+export function scanRoot(root: string): Promise<ScanResult> {
+  if (!isTauri()) return Promise.resolve(MOCK_RESULT);
+  return invoke<ScanResult>("scan_root", { root });
 }
 
 export function repoStatus(path: string): Promise<RepoSnapshot> {

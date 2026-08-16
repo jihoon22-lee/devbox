@@ -14,6 +14,7 @@ import "./App.css";
 export default function App() {
   const [root, setRoot] = useState("C:\\projects");
   const [repos, setRepos] = useState<RepoEntry[]>([]);
+  const [truncated, setTruncated] = useState(false);
   const [status, setStatus] = useState<Record<string, RepoSnapshot>>({});
   const [wt, setWt] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
@@ -24,8 +25,9 @@ export default function App() {
   const scan = useCallback(async () => {
     setError(null);
     try {
-      const list = await scanRoot(root);
+      const { repos: list, truncated: wasTruncated } = await scanRoot(root);
       setRepos(list);
+      setTruncated(wasTruncated);
       const st: Record<string, RepoSnapshot> = {};
       const ws: Record<string, string[]> = {};
       for (const r of list) {
@@ -81,6 +83,11 @@ export default function App() {
         <button className="btn primary" onClick={() => void scan()}>탐색</button>
       </header>
       {error && <div className="error">{error}</div>}
+      {truncated && (
+        <div className="note dim">
+          탐색 범위가 커서 일부 디렉터리를 건너뛰었습니다 (깊이·개수 상한). root를 더 좁혀서 다시 탐색하세요.
+        </div>
+      )}
 
       <div className="repos">
         {repos.map((r) => {
