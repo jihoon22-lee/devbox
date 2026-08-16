@@ -107,11 +107,11 @@ mod tests {
         let exe = tmp.join("versions/0.2.0/test-app.exe");
         std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
         std::fs::write(&exe, b"").unwrap();
-        std::fs::write(
-            tmp.join("current.json"),
-            format!(r#"{{"exePath": "{}", "version": "0.2.0"}}"#, exe.display()),
-        )
-        .unwrap();
+        let json = serde_json::json!({
+            "exePath": exe.to_string_lossy(),
+            "version": "0.2.0",
+        });
+        std::fs::write(tmp.join("current.json"), json.to_string()).unwrap();
 
         assert_eq!(current_exe(&tmp).unwrap(), exe);
 
