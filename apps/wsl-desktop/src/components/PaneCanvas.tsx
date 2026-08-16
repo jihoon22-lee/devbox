@@ -47,13 +47,17 @@ export default function PaneCanvas({
   const activePaneIds = activeTab?.paneIds ?? [];
 
   const gridCols = activePaneIds.length === 0 ? 1 : Math.ceil(Math.sqrt(activePaneIds.length));
+  const gridRows = Math.ceil(activePaneIds.length / gridCols);
   const layout = activeTab?.layout ?? "grid";
   const gridStyle: CSSProperties =
     layout === "cols"
       ? { gridTemplateColumns: `repeat(${Math.max(1, activePaneIds.length)}, 1fr)` }
       : layout === "rows"
         ? { gridTemplateRows: `repeat(${Math.max(1, activePaneIds.length)}, 1fr)` }
-        : { gridTemplateColumns: `repeat(${gridCols}, 1fr)` };
+        : {
+            gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
+            gridTemplateRows: `repeat(${gridRows}, 1fr)`,
+          };
 
   return (
     <div className="panes" style={gridStyle}>

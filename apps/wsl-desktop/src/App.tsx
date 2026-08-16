@@ -259,6 +259,15 @@ export default function App() {
     setTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, layout } : t)));
   };
 
+  const focusPane = (dir: 1 | -1) => {
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (!tab || tab.paneIds.length === 0) return;
+    const idx = tab.paneIds.indexOf(activePaneId ?? "");
+    const base = idx === -1 ? (dir === 1 ? -1 : 0) : idx;
+    const next = (base + dir + tab.paneIds.length) % tab.paneIds.length;
+    setActivePaneId(tab.paneIds[next]);
+  };
+
   const handleShortcut = (action: ShortcutAction) => {
     switch (action.type) {
       case "new-tab":
@@ -278,6 +287,9 @@ export default function App() {
         break;
       case "goto-tab":
         gotoTab(action.index);
+        break;
+      case "focus-pane":
+        focusPane(action.dir);
         break;
     }
   };

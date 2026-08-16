@@ -53,6 +53,18 @@ describe("matchShortcut", () => {
     expect(matchShortcut(key("10", { ctrlKey: true, altKey: true }))).toBeNull();
   });
 
+  it("Alt+Arrow는 focus-pane (Right/Down=next, Left/Up=prev)", () => {
+    expect(matchShortcut(key("ArrowRight", { altKey: true }))).toEqual({ type: "focus-pane", dir: 1 });
+    expect(matchShortcut(key("ArrowDown", { altKey: true }))).toEqual({ type: "focus-pane", dir: 1 });
+    expect(matchShortcut(key("ArrowLeft", { altKey: true }))).toEqual({ type: "focus-pane", dir: -1 });
+    expect(matchShortcut(key("ArrowUp", { altKey: true }))).toEqual({ type: "focus-pane", dir: -1 });
+  });
+
+  it("Alt+Arrow에 Ctrl/Shift가 섞이면 매치하지 않는다", () => {
+    expect(matchShortcut(key("ArrowRight", { altKey: true, ctrlKey: true }))).toBeNull();
+    expect(matchShortcut(key("ArrowRight", { altKey: true, shiftKey: true }))).toBeNull();
+  });
+
   it("Ctrl+Alt+문자(숫자가 아님)는 매치하지 않는다", () => {
     expect(matchShortcut(key("a", { ctrlKey: true, altKey: true }))).toBeNull();
   });

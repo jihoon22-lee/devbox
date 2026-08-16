@@ -151,6 +151,14 @@ export default function TermPane({
     return () => cancelAnimationFrame(raf);
   }, [active]);
 
+  // 활성 팬이 바뀌면(클릭 또는 Alt+Arrow 이동) xterm에 키보드 포커스를 준다.
+  // 포커스 이동 없이 activePaneId만 바뀌면 입력이 이전 팬에 남는다.
+  useEffect(() => {
+    if (active && isFocusedPane) {
+      termRef.current?.focus();
+    }
+  }, [active, isFocusedPane]);
+
   return (
     <div className={`pane ${isFocusedPane ? "pane-focused" : ""}`} style={style} onMouseDownCapture={onFocusPane}>
       <div

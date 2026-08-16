@@ -12,9 +12,15 @@ export type ShortcutAction =
   | { type: "close-pane" }
   | { type: "next-tab" }
   | { type: "prev-tab" }
-  | { type: "goto-tab"; index: number };
+  | { type: "goto-tab"; index: number }
+  | { type: "focus-pane"; dir: 1 | -1 };
 
 export function matchShortcut(e: KeyboardEvent): ShortcutAction | null {
+  // 팬 간 포커스 이동: Alt+Arrow (Windows Terminal 기본). Ctrl 조합보다 먼저 검사한다.
+  if (e.altKey && !e.ctrlKey && !e.shiftKey) {
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") return { type: "focus-pane", dir: 1 };
+    if (e.key === "ArrowLeft" || e.key === "ArrowUp") return { type: "focus-pane", dir: -1 };
+  }
   if (!e.ctrlKey) return null;
 
   if (e.shiftKey && !e.altKey) {
