@@ -198,6 +198,8 @@ select {
   gap: 1px;
   background: var(--border);
   overflow: hidden;
+  grid-auto-rows: 1fr;
+  grid-auto-columns: 1fr;
 }
 
 .pane {
