@@ -59,4 +59,70 @@ mod tests {
         let p = resolve_git();
         assert!(!p.as_os_str().is_empty());
     }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn resolve_git_falls_back_to_path_on_non_windows() {
+        // KNOWN_GIT_PATHS 탐색은 Windows 전용이다. 다른 플랫폼은 항상 PATH의 git을 쓴다.
+        assert_eq!(resolve_git(), PathBuf::from("git"));
+    }
+
+    fn init_repo(dir: &std::path::Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        assert!(std::process::Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(dir)
+            .status()
+            .unwrap()
+            .success());
+        // author 미설정 환경(CI)에서도 커밋 가능하도록 로컬 config로 고정.
+        for (key, value) in [("user.email", "test@example.com"), ("user.name", "test")] {
+            assert!(std::process::Command::new("git")
+                .args(["config", key, value])
+                .current_dir(dir)
+                .status()
+                .unwrap()
+                .success());
+        }
+    }
+
+    #[test]
+    fn run_returns_stdout_on_success() {
+        let tmp = std::env::temp_dir().join(format!("devbox-git-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        init_repo(&tmp);
+
+        let out = run(
+            &["status", "--porcelain", "--branch"],
+            &tmp.to_string_lossy(),
+        )
+        .unwrap();
+        assert!(
+            out.starts_with("## "),
+            "branch 헤더로 시작해야 한다: {out:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn run_returns_stderr_as_error_on_failure() {
+        let tmp =
+            std::env::temp_dir().join(format!("devbox-git-test-notrepo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // .git이 없는 디렉터리에서 status를 실행하면 실패해야 하고, 그 에러가
+        // git이 낸 stderr 문구를 담고 있어야 한다 (빈 문자열로 삼켜지면 안 된다).
+        let err = run(&["status"], &tmp.to_string_lossy()).unwrap_err();
+        assert!(!err.is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn run_errors_on_nonexistent_cwd() {
+        let err = run(&["status"], "/no/such/directory/devbox-git-test").unwrap_err();
+        assert!(!err.is_empty());
+    }
 }
