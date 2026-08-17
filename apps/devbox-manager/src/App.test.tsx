@@ -11,11 +11,11 @@ describe("App", () => {
     render(<App />);
   });
 
-  it("managerVisible 앱 9개만 표시한다 (devbox-manager 제외)", async () => {
+  it("managerVisible 앱 12개만 표시한다 (devbox-manager 제외)", async () => {
     await screen.findByText("Code Pad"); // 데이터 로드 대기
     const rows = screen.getAllByRole("row");
-    // header + 9 rows
-    expect(rows.length).toBe(10);
+    // header + 12 rows
+    expect(rows.length).toBe(13);
     // "Devbox Manager"는 헤더 타이틀 1건뿐 (목록 row에는 없음)
     expect(screen.getAllByText("Devbox Manager").length).toBe(1);
     expect(screen.getByText("Port Manager")).toBeTruthy();
@@ -23,14 +23,15 @@ describe("App", () => {
 
   it("앱별 서로 다른 최신 버전을 표시한다", async () => {
     await screen.findByText("Port Manager");
-    // LATEST 컬럼: code-pad 0.3.0, port-manager 0.2.0
-    expect(screen.getAllByText("0.3.0").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("0.2.0").length).toBeGreaterThan(0);
+    // LATEST 컬럼: code-pad 0.3.1, port-manager 0.2.1, repo-manager 0.1.1
+    expect(screen.getAllByText("0.3.1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("0.2.1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("0.1.1").length).toBeGreaterThan(0);
   });
 
   it("업데이트 판정이 앱별로 독립적이다", async () => {
     await screen.findByText("Port Manager");
-    // port-manager는 0.2.0 설치 + 최신 0.2.0 → up to date
+    // port-manager는 0.2.1 설치 + 최신 0.2.1 → up to date
     expect(screen.getAllByText("up to date").length).toBe(1);
     // code-pad는 미설치 → Install 버튼이 보인다
     expect(screen.getAllByText("Install (portable)").length).toBeGreaterThan(0);
@@ -38,8 +39,8 @@ describe("App", () => {
 
   it("이전 버전이 있는 portable 앱에 rollback 버튼이 보인다", async () => {
     await screen.findByText("Port Manager");
-    // port-manager: portable + previousVersion 0.1.0 → rollback 표시
+    // port-manager: portable + previousVersion 0.2.0 → rollback 표시
     expect(screen.getAllByText("Rollback").length).toBe(1);
-    expect(screen.getByText(/prev 0\.1\.0/)).toBeTruthy();
+    expect(screen.getByText(/prev 0\.2\.0/)).toBeTruthy();
   });
 });

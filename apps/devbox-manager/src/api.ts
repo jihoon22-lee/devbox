@@ -13,23 +13,29 @@ const MOCK_CATALOG: CatalogApp[] = [
   { id: "devbox-manager", displayName: "Devbox Manager", productName: "DevboxManager", identifier: "com.devbox.devboxmanager", cargoPackage: "devbox-manager", appDir: "apps/devbox-manager", release: true, managerVisible: false, selfManaged: true },
   { id: "code-pad", displayName: "Code Pad", productName: "Code Pad", identifier: "com.devbox.codepad", cargoPackage: "code-pad", appDir: "apps/code-pad", release: true, managerVisible: true, selfManaged: false },
   { id: "run-manager", displayName: "Run Manager", productName: "Run Manager", identifier: "com.devbox.runmanager", cargoPackage: "run-manager", appDir: "apps/run-manager", release: true, managerVisible: true, selfManaged: false },
+  { id: "workbench", displayName: "Workbench", productName: "Workbench", identifier: "com.devbox.workbench", cargoPackage: "workbench", appDir: "apps/workbench", release: true, managerVisible: true, selfManaged: false },
+  { id: "webhook-lab", displayName: "Webhook Lab", productName: "WebhookLab", identifier: "com.devbox.webhooklab", cargoPackage: "webhook-lab", appDir: "apps/webhook-lab", release: true, managerVisible: true, selfManaged: false },
+  { id: "repo-manager", displayName: "Repo Manager", productName: "RepoManager", identifier: "com.devbox.repomanager", cargoPackage: "repo-manager", appDir: "apps/repo-manager", release: true, managerVisible: true, selfManaged: false },
 ];
 
 const MOCK_MANIFEST: ReleaseManifest = {
   schemaVersion: 1,
-  releaseTag: "v0.4.0",
-  generatedAt: "2026-08-14T12:00:00Z",
+  releaseTag: "v0.4.0-rc3",
+  generatedAt: "2026-08-17T03:00:00Z",
   apps: [
-    { id: "port-manager", version: "0.2.0", portable: { name: "port-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "PortManager_0.2.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "developer-toolbox", version: "0.2.0", portable: { name: "developer-toolbox.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "DevToolbox_0.2.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "wsl-desktop", version: "0.2.2", portable: { name: "wsl-desktop.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "WSLDesktop_0.2.2_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "api-playground", version: "0.2.0", portable: { name: "api-playground.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "ApiPlayground_0.2.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "everything-plus", version: "0.2.0", portable: { name: "everything-plus.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "EverythingPlus_0.2.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "knowledge-base", version: "0.2.0", portable: { name: "knowledge-base.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "Knowledge_0.2.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "life-log", version: "0.2.2", portable: { name: "life-log.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "LifeLog_0.2.2_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "devbox-manager", version: "0.2.0", portable: { name: "devbox-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "DevboxManager_0.2.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "code-pad", version: "0.3.0", portable: { name: "code-pad.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "code-pad_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "run-manager", version: "0.3.0", portable: { name: "run-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "run-manager_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "port-manager", version: "0.2.1", portable: { name: "port-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "port-manager_0.2.1_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "developer-toolbox", version: "0.2.1", portable: { name: "developer-toolbox.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "developer-toolbox_0.2.1_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "wsl-desktop", version: "0.3.0", portable: { name: "wsl-desktop.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "wsl-desktop_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "api-playground", version: "0.3.0", portable: { name: "api-playground.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "api-playground_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "everything-plus", version: "0.3.0", portable: { name: "everything-plus.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "everything-plus_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "knowledge-base", version: "0.3.0", portable: { name: "knowledge-base.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "knowledge-base_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "life-log", version: "0.3.0", portable: { name: "life-log.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "life-log_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "devbox-manager", version: "0.3.0", portable: { name: "devbox-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "devbox-manager_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "code-pad", version: "0.3.1", portable: { name: "code-pad.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "code-pad_0.3.1_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "run-manager", version: "0.3.1", portable: { name: "run-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "run-manager_0.3.1_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "workbench", version: "0.1.0", portable: { name: "workbench.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "workbench_0.1.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "webhook-lab", version: "0.1.0", portable: { name: "webhook-lab.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "webhook-lab_0.1.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "repo-manager", version: "0.1.1", portable: { name: "repo-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "repo-manager_0.1.1_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
   ],
 };
 
@@ -44,7 +50,7 @@ export async function available(): Promise<ReleaseManifest> {
 }
 
 export async function installed(): Promise<InstalledApp[]> {
-  if (!isTauri()) return [{ app: "port-manager", version: "0.2.0", mode: "portable", exe_path: "" }];
+  if (!isTauri()) return [{ app: "port-manager", version: "0.2.1", mode: "portable", exe_path: "" }];
   return invoke<InstalledApp[]>("installed");
 }
 
@@ -56,7 +62,7 @@ export async function installApp(appId: string, mode: "portable" | "installer"):
 export async function current(appId: string): Promise<Current | null> {
   if (!isTauri()) {
     return appId === "port-manager"
-      ? { version: "0.2.0", exePath: "", installedAt: 0, previousVersion: "0.1.0" }
+      ? { version: "0.2.1", exePath: "", installedAt: 0, previousVersion: "0.2.0" }
       : null;
   }
   return invoke<Current | null>("current", { appId });
