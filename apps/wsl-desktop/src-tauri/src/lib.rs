@@ -39,6 +39,7 @@ pub fn run() {
             commands::dashboard::docker_ps,
             commands::dashboard::docker_action,
             commands::terminal::start_session,
+            commands::terminal::attach_session,
             commands::terminal::write_session,
             commands::terminal::broadcast,
             commands::terminal::resize_session,

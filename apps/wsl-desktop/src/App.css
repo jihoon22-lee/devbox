@@ -42,6 +42,9 @@ body {
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   flex-wrap: wrap;
+  /* flex-wrap과 짝을 이루지 않으면, 창을 좁혀 툴바가 2~3줄로 줄바꿈될 때 window
+   * resize 이벤트 없이 .main의 높이를 훔쳐 팬 붕괴(§2.3)의 시작점이 된다. */
+  flex-shrink: 0;
 }
 
 .title {
@@ -120,6 +123,7 @@ select {
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
+  flex-shrink: 0;
 }
 
 .tab-pill {
@@ -190,6 +194,7 @@ select {
   border-bottom: 1px solid var(--red);
   color: var(--red);
   padding: 8px 12px;
+  flex-shrink: 0;
 }
 
 .panes {
@@ -200,6 +205,11 @@ select {
   overflow: hidden;
   grid-auto-rows: 1fr;
   grid-auto-columns: 1fr;
+  /* TermPane.tsx의 MIN_ROWS(4)/MIN_COLS(20)에 대략 맞춘 바닥값. 이 아래로는 축소를
+   * 흡수하지 않고 대신 .terminal-area가 스크롤/클리핑되게 해, 셸이 그 크기의
+   * SIGWINCH를 받아 화면을 파괴하는 경로(§2.3) 자체를 CSS 단에서 막는다. */
+  min-height: 140px;
+  min-width: 220px;
 }
 
 .pane {
@@ -293,6 +303,10 @@ select {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* flex item의 기본 min-height는 auto(= 콘텐츠 높이)라 .panes의 min-height 바닥값이
+   * 밖으로 새어 나가 .main 전체를 밀어낼 수 있다. 0으로 낮춰 .terminal-area 스스로는
+   * 축소를 허용하고, 바닥값은 .panes 안에서만 유효하게 한다. */
+  min-height: 0;
 }
 
 .panel-toggle {

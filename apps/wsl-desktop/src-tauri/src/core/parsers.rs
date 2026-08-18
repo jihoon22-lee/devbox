@@ -19,7 +19,7 @@ pub fn parse_wsl_list(input: &str) -> Vec<DistroInfo> {
         let cleaned = line.trim_start_matches('*').trim();
         let mut parts = cleaned.split_whitespace();
         let name = parts.next().unwrap_or("").to_string();
-        let _state = parts.next();
+        let state = parts.next().unwrap_or("").to_string();
         let version = parts
             .next()
             .and_then(|v| v.parse::<u32>().ok())
@@ -31,6 +31,7 @@ pub fn parse_wsl_list(input: &str) -> Vec<DistroInfo> {
             name,
             version,
             default,
+            state,
         });
     }
     out
@@ -107,13 +108,15 @@ mod tests {
 
     #[test]
     fn parses_wsl_list() {
-        let input = "  NAME      STATE           VERSION\n* Ubuntu    Running         2\n  docker-desktop Running         2\n";
+        let input = "  NAME      STATE           VERSION\n* Ubuntu    Running         2\n  docker-desktop Stopped         2\n";
         let distros = parse_wsl_list(input);
         assert_eq!(distros.len(), 2);
         assert_eq!(distros[0].name, "Ubuntu");
         assert!(distros[0].default);
         assert_eq!(distros[0].version, 2);
+        assert_eq!(distros[0].state, "Running");
         assert!(!distros[1].default);
+        assert_eq!(distros[1].state, "Stopped");
     }
 
     #[test]
@@ -122,6 +125,15 @@ mod tests {
         let distros = parse_wsl_list(input);
         assert_eq!(distros.len(), 1);
         assert!(!distros[0].default);
+        assert_eq!(distros[0].state, "Running");
+    }
+
+    #[test]
+    fn parses_wsl_list_stopped_distro_state() {
+        let input = "  NAME      STATE           VERSION\n  Ubuntu    Stopped         2\n";
+        let distros = parse_wsl_list(input);
+        assert_eq!(distros.len(), 1);
+        assert_eq!(distros[0].state, "Stopped");
     }
 
     #[test]
