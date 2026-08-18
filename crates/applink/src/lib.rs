@@ -298,8 +298,7 @@ mod tests {
 
     #[test]
     fn non_numeric_column_is_err() {
-        let err =
-            parse_argv(&argv(&["exe", "--path", "/tmp/x", "--column", "abc"])).unwrap_err();
+        let err = parse_argv(&argv(&["exe", "--path", "/tmp/x", "--column", "abc"])).unwrap_err();
         assert!(err.0.contains("--column"), "{err}");
     }
 
@@ -308,12 +307,7 @@ mod tests {
         let req = parse_argv(&argv(&["exe", "--profile", "prof-1"]))
             .unwrap()
             .unwrap();
-        assert_eq!(
-            req.target,
-            OpenTarget::Profile {
-                id: s("prof-1")
-            }
-        );
+        assert_eq!(req.target, OpenTarget::Profile { id: s("prof-1") });
     }
 
     #[test]
@@ -346,9 +340,15 @@ mod tests {
 
     #[test]
     fn from_captured_with_path() {
-        let req = parse_argv(&argv(&["exe", "--path", "/tmp/x", "--from", "repo-manager"]))
-            .unwrap()
-            .unwrap();
+        let req = parse_argv(&argv(&[
+            "exe",
+            "--path",
+            "/tmp/x",
+            "--from",
+            "repo-manager",
+        ]))
+        .unwrap()
+        .unwrap();
         assert_eq!(req.from, Some(s("repo-manager")));
     }
 
@@ -362,15 +362,9 @@ mod tests {
 
     #[test]
     fn from_captured_with_workspace() {
-        let req = parse_argv(&argv(&[
-            "exe",
-            "--workspace",
-            "/ws",
-            "--from",
-            "workbench",
-        ]))
-        .unwrap()
-        .unwrap();
+        let req = parse_argv(&argv(&["exe", "--workspace", "/ws", "--from", "workbench"]))
+            .unwrap()
+            .unwrap();
         assert_eq!(req.from, Some(s("workbench")));
     }
 
@@ -404,7 +398,10 @@ mod tests {
     /// 새 플래그를 보내도 앱이 평소대로(빈 상태로) 뜨는 것이 §1.3의 핵심 보장이다.
     #[test]
     fn unknown_flags_are_ignored_not_errors() {
-        assert_eq!(parse_argv(&argv(&["exe", "--totally-unknown"])).unwrap(), None);
+        assert_eq!(
+            parse_argv(&argv(&["exe", "--totally-unknown"])).unwrap(),
+            None
+        );
         // "somevalue"는 맨 앞 위치 인자가 아니다(앞에 이미 모르는 플래그가 있었다) —
         // Path로 잘못 해석되면 안 되고, 알려진 타깃도 없으므로 Ok(None)이어야 한다.
         assert_eq!(
@@ -428,11 +425,9 @@ mod tests {
 
     #[test]
     fn unknown_flags_interleaved_with_known_flag() {
-        let req = parse_argv(&argv(&[
-            "exe", "--foo", "--path", "/tmp/x", "--bar",
-        ]))
-        .unwrap()
-        .unwrap();
+        let req = parse_argv(&argv(&["exe", "--foo", "--path", "/tmp/x", "--bar"]))
+            .unwrap()
+            .unwrap();
         assert_eq!(
             req.target,
             OpenTarget::Path {
@@ -465,7 +460,10 @@ mod tests {
 
     #[test]
     fn no_known_target_flag_is_ok_none() {
-        assert_eq!(parse_argv(&argv(&["exe", "--from", "repo-manager"])).unwrap(), None);
+        assert_eq!(
+            parse_argv(&argv(&["exe", "--from", "repo-manager"])).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -661,9 +659,7 @@ mod tests {
     #[test]
     fn json_uses_camel_case_kind_tag() {
         let req = OpenRequest {
-            target: OpenTarget::Workspace {
-                path: s("/ws"),
-            },
+            target: OpenTarget::Workspace { path: s("/ws") },
             from: None,
         };
         let json = serde_json::to_value(&req).unwrap();
