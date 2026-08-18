@@ -13,7 +13,7 @@
 
 ## 기술
 
-- 공용 크레이트 `crates/process`·`crates/wsl`·`crates/secrets`·`crates/integration`
+- 공용 크레이트 `crates/wsl`·`crates/secrets`·`crates/integration`, 프로세스/서비스 실행은 자체 구현(`src-tauri/src/platform/`)
 - 트레이 상주 + 백그라운드 tokio 루프 + SQLite
 - `packages/diff-view`
 

@@ -24,7 +24,7 @@ apps/        독립 Tauri 앱 (각각 독립 .exe)
   webhook-lab         로컬 웹훅/콜백 서버
   repo-manager        Git worktree/저장소 관리
 packages/    공용 React 패키지 (tokens·editor·diff-view)
-crates/      공용 Rust 크레이트 (filesystem·integration·markdown·process·search·secrets·wsl)
+crates/      공용 Rust 크레이트 (filesystem·git·integration·launch·markdown·process·search·secrets·wsl)
 docs/        architecture / roadmap / projects
 ```
 

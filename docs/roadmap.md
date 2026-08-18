@@ -6,7 +6,7 @@
 
 ## Phase 1 — Tauri 기본기 ✅
 - [x] **port-manager** — IPC, Rust 기초, netstat 파싱, 포트/프로세스 관리
-- [x] **developer-toolbox** — 사이드바 UI, 소형 도구 14종 (hash/uuid/regex/diff는 Rust)
+- [x] **developer-toolbox** — 사이드바 UI, 소형 도구 13종 (hash/uuid/regex/diff는 Rust)
 
 ## Phase 2 — 시스템/네트워크 ✅
 - [x] **api-playground** — HTTP(reqwest), 요청 빌더, 응답 뷰어, history
@@ -29,8 +29,8 @@
   Run Manager·WSL Desktop·Code Pad 시작, idempotent 실행 기록, `Stop What I Started`
 
 ## Stage 5 — 신규 앱 ✅
-- [x] **webhook-lab** — 로컬 웹훅/콜백 서버 (inbound HTTP). request history, 응답 rule·delay·오류 재현, JSON fixture,
-  API Playground request 변환, 민감 헤더 masking, LAN 공개 기본 차단
+- [x] **webhook-lab** — 로컬 웹훅/콜백 서버 (inbound HTTP). request history, 응답 rule·delay·오류 재현,
+  민감 헤더 masking, LAN 공개 기본 차단 (JSON fixture·API Playground 변환은 설계 문서의 향후 항목)
 - [x] **dev environment doctor** — devbox-manager의 환경 진단 탭 (WSL/git/node/pnpm/rustc/cargo/devbox-data/catalog-ids)
 - [x] **repo-manager** — Git repository 탐색·브랜치/worktree/상태 목록, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기
   (파괴적 기본 동작 없음, remove 전 uncommitted/untracked 검사)
@@ -38,15 +38,33 @@
 ## 다음 단계 후보 (backlog)
 
 `docs/product-opportunities.md` §17(PR 1~39 + Stage 4/5)은 **전부 완료**됐다. 이후 작업은
-[UX 개선 설계](./superpowers/specs/2026-08-15-ux-improvements-design.md)를 따른다. 우선순위 요약:
+설계 문서 3종을 따른다.
 
-1. **앱별 우클릭 컨텍스트 메뉴** — 공용 `packages/context-menu` + 13개 앱 특화 동작
-2. **wsl-desktop 복사/붙여넣기** — `Ctrl+Shift+C/V`, 우클릭 붙여넣기, 복사 시 선택
-3. **developer-toolbox 도구 확장** — JSON↔YAML, 진법 변환, JSON→TS 타입 등
-4. **api-playground** — 응답 헤더/쿠키 뷰어, 파일 업로드
-5. **knowledge-base 백링크** / **everything-plus→Code Pad 열기**
+| 문서 | 범위 |
+|---|---|
+| [wsl-desktop 터미널 설계](./superpowers/specs/2026-08-17-wsl-desktop-terminal-design.md) | PTY 전송 결함, 클립보드·단축키, 레이아웃 복원, 멀티플렉서 opt-in |
+| [앱 간 연동 설계](./superpowers/specs/2026-08-17-app-interop-design.md) | argv 계약, 카탈로그 capability, 스냅샷 버스 정리 |
+| [UX 개선 설계](./superpowers/specs/2026-08-15-ux-improvements-design.md) | 컨텍스트 메뉴 13개 앱, toolbox 도구, 앱별 항목, 실사용 피드백 |
 
-상세 항목·난이도·안전 경계는 위 설계 문서 참조.
+### v0.4.1 — 핫픽스 (결함만, 기능 추가 없음)
+
+1. **wsl-desktop 터미널 출력 손상** — `terminal.rs`가 PTY 읽기마다 `String::from_utf8_lossy`를
+   호출해 읽기 경계에 걸린 한글·박스드로잉이 U+FFFD로 치환된다. "화면이 깨진다"의 직접 원인.
+   `windowsPty` 미설정, 팬 1×2 붕괴, 영구 resize desync가 함께 걸려 있다
+2. **작동하지 않는 앱 간 링크** — repo-manager와 workbench가 다른 앱에 인자를 넘기지만
+   **argv를 읽는 앱이 하나도 없어** 빈 앱이 열린다. `crates/applink` + 3개 앱 수신으로 복구
+
+### v0.5.0
+
+1. 실사용 피드백 저비용분 (code-pad 프리뷰 구분, webhook-lab 라벨·curl, 설치 경로 표시)
+2. **카탈로그 capability + 런타임 배포** — "다른 앱으로 열기"를 선언에서 생성
+3. **컨텍스트 메뉴 13개 앱** — 공용 `packages/context-menu`(껍데기) + 앱별 항목(각 앱 소유)
+4. 터미널 클립보드·사용성·세션 유지
+5. developer-toolbox 도구 확장 / api-playground 헤더·업로드
+6. 스냅샷 버스 정리 + 자동 발견
+7. 실사용 피드백 잔여분 / knowledge-base 백링크
+
+상세 항목·난이도·안전 경계·테스트 계획은 위 설계 문서 참조.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅
@@ -58,13 +76,12 @@ Stage 2    앱 간 연동 (PR 26~30) — integration snapshot, ProjectProfile �
 Stage 3    기존 앱 깊이 (PR 31~39) — Run Manager 관찰성, Code Pad 복구 ✅
 Stage 4    Workbench — ProjectProfile 기반 orchestration 앱          ✅
 Stage 5    Webhook Lab, Dev Environment Doctor, Repo Manager          ✅
-다음       UX 개선 (컨텍스트 메뉴·클립보드·toolbox 도구·앱별 추천)     ◻
+v0.4.1     핫픽스 — 터미널 PTY 전송 결함, 끊긴 앱 간 링크             ◻
+v0.5.0     유기성(argv 계약·카탈로그) + 컨텍스트 메뉴 + 터미널 사용성  ◻
 ```
 
 ## 현재 상태
 - 13개 앱 모두 WSL에서 구현 완료 (Rust 유닛 테스트 + clippy + 프론트 빌드 통과)
 - 각 앱은 기능 단위 PR로 main에 머지됨
-- v0.4.0은 아직 정식 배포 전. `v0.4.0-rc*` 태그로 배포 워크플로·설치 dry-run을 검증 중이며,
-  최신 정식 릴리스는 여전히 v0.3.0이다
-- 남은 검증: [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176)
-  (rc 빌드 기준 실기 검증 진행 중) → 통과 후 v0.4.0 정식 배포
+- v0.4.0 정식 배포 완료 (13개 앱)
+- [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176) — v0.4.0 기준 검증 완료

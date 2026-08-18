@@ -8,12 +8,12 @@
 - **일일 요약** — PC 사용시간, 앱별 사용, git 커밋 수, 생성 파일 수, 노트 수
 - **캘린더 뷰** — 날짜 선택·이동, 일별 활동 타임라인
 - **기간 통계** — 주/월 사용량 차트, 앱 순위, 커밋 트렌드
-- **git 프로젝트 연동** — git 경로 등록으로 커밋 집계 (프로젝트 설정은 Workbench로 이관)
+- **git 프로젝트 연동** — git 경로 등록으로 커밋 집계 (Workbench가 이 등록을 읽어가는 one-way 흡수이며, life-log 자체 등록 UI·기능은 그대로 유지)
 
 ## 기술
 
 - 백그라운드 폴러·세션 추적 → SQLite → React
-- integration snapshot 계약(`crates/integration`) — 외부 DB 직접 조회 없음
+- 다른 앱의 snapshot을 소비하며, 리더는 자체 구현(`core/readers.rs`) — 외부 DB 직접 조회 없음
 
 ## 데이터
 

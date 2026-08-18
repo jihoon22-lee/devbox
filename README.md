@@ -7,7 +7,7 @@ Tauri 13개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소
 | 앱 | 설명 |
 |---|---|
 | 🔥 **Port Manager** | 포트·프로세스 조회/검색/필터, 프로세스 종료, localhost 열기 |
-| 🧰 **Developer Toolbox** | 개발용 소형 도구 14종 — JSON/Base64/URL/타임스탬프/Case, Hash/UUID/Regex/Diff( Rust), JWT 디코더 |
+| 🧰 **Developer Toolbox** | 개발용 소형 도구 13종 — JSON/Base64/URL/타임스탬프/Case, Hash/UUID/Regex/Diff( Rust), JWT 디코더 |
 | 🐧 **WSL Desktop** | 앱 안의 임베디드 WSL 터미널 — 경로 지정 실행, 분할 레이아웃, 동시 명령, distro·Docker·git 상태 패널 |
 | 🧪 **API Playground** | REST 요청 빌더. CORS 제약 없음, 응답 확인, 요청 history, curl 생성 |
 | 🔍 **Everything+** | 파일명/내용 초고속 검색(FTS5), 정규식 모드, re-index 진행률 |
@@ -17,7 +17,7 @@ Tauri 13개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소
 | ✍️ **Code Pad** | CodeMirror 6 경량 코드 에디터 — 문법 하이라이팅, 탭·분할 2뷰, LSP(진단·자동완성·hover·정의·참조·이름 변경·포맷), 프리뷰 |
 | ⏱ **Run Manager** | 예약 실행(크론 잡)과 상시 실행(서비스) 관리 — 실행 이력, 회전 로그 tail, 서비스 재시작·헬스체크 |
 | 🛠 **Workbench** | 프로젝트 기반 orchestration 셸 — Git/WSL/포트/서비스 사전 점검, Run Manager·WSL Desktop·Code Pad 시작, Stop What I Started |
-| 🔁 **Webhook Lab** | 로컬 웹훅/콜백 서버 — 수신 요청 history, 응답 rule·delay·오류 재현, JSON fixture, API Playground로 변환 |
+| 🔁 **Webhook Lab** | 로컬 웹훅/콜백 서버 — 수신 요청 history, 응답 rule·delay·오류 재현, 민감 헤더 masking |
 | 🗂 **Repo Manager** | Git repository 탐색·브랜치/worktree/상태 목록, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기 |
 
 ## 다운로드 / 설치

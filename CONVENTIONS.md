@@ -64,6 +64,8 @@ devbox/
 │
 ├─ crates/                 # Rust 공용
 │  ├─ filesystem/          # 파일 walk/검색 순회  (everything-plus, code-pad)
+│  ├─ git/                 # Windows 안정 git subprocess 실행  (devbox-manager, life-log, repo-manager, workbench)
+│  ├─ launch/              # 설치된 앱 exe 해석·실행           (repo-manager, workbench)
 │  ├─ markdown/            # 마크다운 렌더          (knowledge-base, code-pad)
 │  ├─ process/             # 프로세스/포트 조회·kill  (port-manager, run-manager)
 │  ├─ wsl/                 # WSL argv·경로 정규화    (wsl-desktop, run-manager, workbench, repo-manager)
@@ -104,7 +106,7 @@ devbox/
 ### 프론트엔드 (React, apps/<app>/src/)
 - Vite + **React 19 + TypeScript(엄격 모드)**
 - 스타일: **순수 CSS (앱별 `App.css`)**. 공용 토큰은 `packages/tokens` (`@devbox/tokens`)
-- 편집기: `@codemirror/*` 직접 사용 (code-pad). 공용 설정은 `packages/editor` (추출 예정 — PR 24)
+- 편집기: `@codemirror/*` 직접 사용 (code-pad). 공용 설정은 `packages/editor` (추출 완료, knowledge-base·code-pad 사용)
 - 다이어그램: `mermaid` (code-pad, knowledge-base만)
 - Tauri API: `@tauri-apps/api`
 - **선언했으나 실제 사용이 없는 라이브러리**(`lucide-react`, `zustand`, `@tanstack/react-table`,

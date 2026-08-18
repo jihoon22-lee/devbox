@@ -4,7 +4,8 @@
 개발은 WSL에서 했지만, 앱 자체는 Windows 데스크톱 앱(Tauri)이므로 Windows PC에서 `.exe`로 빌드하면 그대로 쓸 수 있다.
 
 > 저장소: `https://github.com/jihoon22-lee/devbox` (공개 저장소)
-> 앱별 산출물: `PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`
+> 앱별 산출물(제품명/설치 패키지 기준 표기 — 실제 빌드 실행 파일명은 `<package>.exe`, 7.3 참고):
+> `PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`
 > `EverythingPlus.exe` `Knowledge.exe` `LifeLog.exe`
 > `DevboxManager.exe` `CodePad.exe` `RunManager.exe`
 > `Workbench.exe` `WebhookLab.exe` `RepoManager.exe`
@@ -223,7 +224,7 @@ ProductName 매핑:
 ## 8. 실행
 
 - **방법 A (권장)**: `bundle\nsis`의 `*-setup.exe`로 설치 → 시작 메뉴에서 실행
-- **방법 B**: `target\release\<ProductName>.exe`를 바로 더블클릭 (설치 없이 실행)
+- **방법 B**: `target\release\<package>.exe`(예: `port-manager.exe`)를 바로 더블클릭 (설치 없이 실행)
 
 SmartScreen 경고("인식할 수 없는 앱")가 뜨면:
 1. `추가 정보` 클릭 → `실행` 클릭
