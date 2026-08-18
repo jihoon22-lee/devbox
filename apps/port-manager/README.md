@@ -9,7 +9,7 @@
 - **검색·필터** — 포트 번호·프로세스명 부분 일치, TCP/UDP·state 필터
 - **프로세스 종료(Kill)** — PID 종료, 권한 부족 시 안내 메시지
 - **Open in browser** — `http://localhost:<port>` 열기, 정보 복사
-- **새로고침** — 수동 + 단축키 (F5, Ctrl+R)
+- **새로고침** — 수동
 
 ## 기술
 
@@ -19,6 +19,6 @@
 
 ## 개발
 
-- 순수 로직: `src-tauri/src/core/` → `cargo test`
+- 로직: `src-tauri/src/commands/` (아직 `#[test]` 없음)
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
 

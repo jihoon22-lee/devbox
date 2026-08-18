@@ -6,7 +6,7 @@
 
 ## Phase 1 — Tauri 기본기 ✅
 - [x] **port-manager** — IPC, Rust 기초, netstat 파싱, 포트/프로세스 관리
-- [x] **developer-toolbox** — 사이드바 UI, 소형 도구 14종 (hash/uuid/regex/diff는 Rust)
+- [x] **developer-toolbox** — 사이드바 UI, 소형 도구 13종 (hash/uuid/regex/diff는 Rust)
 
 ## Phase 2 — 시스템/네트워크 ✅
 - [x] **api-playground** — HTTP(reqwest), 요청 빌더, 응답 뷰어, history
@@ -29,8 +29,8 @@
   Run Manager·WSL Desktop·Code Pad 시작, idempotent 실행 기록, `Stop What I Started`
 
 ## Stage 5 — 신규 앱 ✅
-- [x] **webhook-lab** — 로컬 웹훅/콜백 서버 (inbound HTTP). request history, 응답 rule·delay·오류 재현, JSON fixture,
-  API Playground request 변환, 민감 헤더 masking, LAN 공개 기본 차단
+- [x] **webhook-lab** — 로컬 웹훅/콜백 서버 (inbound HTTP). request history, 응답 rule·delay·오류 재현,
+  민감 헤더 masking, LAN 공개 기본 차단 (JSON fixture·API Playground 변환은 설계 문서의 향후 항목)
 - [x] **dev environment doctor** — devbox-manager의 환경 진단 탭 (WSL/git/node/pnpm/rustc/cargo/devbox-data/catalog-ids)
 - [x] **repo-manager** — Git repository 탐색·브랜치/worktree/상태 목록, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기
   (파괴적 기본 동작 없음, remove 전 uncommitted/untracked 검사)
@@ -83,7 +83,5 @@ v0.5.0     유기성(argv 계약·카탈로그) + 컨텍스트 메뉴 + 터미�
 ## 현재 상태
 - 13개 앱 모두 WSL에서 구현 완료 (Rust 유닛 테스트 + clippy + 프론트 빌드 통과)
 - 각 앱은 기능 단위 PR로 main에 머지됨
-- v0.4.0은 아직 정식 배포 전. `v0.4.0-rc*` 태그로 배포 워크플로·설치 dry-run을 검증 중이며,
-  최신 정식 릴리스는 여전히 v0.3.0이다
-- 남은 검증: [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176)
-  (rc 빌드 기준 실기 검증 진행 중) → 통과 후 v0.4.0 정식 배포
+- v0.4.0 정식 배포 완료 (13개 앱)
+- [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176) — v0.4.0 기준 검증 완료

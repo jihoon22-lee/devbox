@@ -3,7 +3,7 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
-## [v0.4.0] - 2026-08-17
+## [v0.4.0] - 2026-08-18
 
 기능 추가 릴리스. 신규 앱 3종(Workbench, Webhook Lab, Repo Manager)과 devbox-manager 환경 진단이 추가되어
 총 13개 앱이 되었다. 배포 워크플로가 카탈로그 기반으로 정비되고, 신규 앱에도 CSP 기준선이 적용되었다.
@@ -23,7 +23,7 @@ Devbox Manager를 직접 내려받아 먼저 설치한 뒤, 나머지 앱을 새
   Git/WSL/포트/서비스 사전 점검, Run Manager 서비스·WSL Desktop layout·Code Pad workspace 시작,
   idempotent 실행 기록과 `Stop What I Started`(Workbench가 시작한 자원만 정리).
 - **webhook-lab (신규)** — 로컬 웹훅/콜백 서버(inbound HTTP). method/path별 request history, 응답 rule·지연·오류 재현,
-  JSON fixture 저장, 수신 요청의 API Playground request 변환, `Authorization`·`Cookie`·API key 헤더 masking,
+  `Authorization`·`Cookie`·API key 헤더 masking, body/history 상한,
   기본 bind 127.0.0.1 + LAN 공개는 명시적 설정.
 - **repo-manager (신규)** — Git repository 탐색·브랜치/dirty/ahead-behind/worktree 상태 목록, worktree 생성,
   Code Pad·WSL Desktop·Workbench로 열기. force delete·reset·clean 기본 동작 없음, worktree remove 전
@@ -57,6 +57,23 @@ Devbox Manager를 직접 내려받아 먼저 설치한 뒤, 나머지 앱을 새
 - **life-log** — 실행 파일 중복 실행 방지(단일 인스턴스 + 기존 트레이 포커스).
 - **wsl-desktop** — grid 행 높이 불균형·팬 간 이동 불가 수정 (Alt+Arrow).
 - **code-pad** — 창 축소 시 하단 잘림 수정 (`.content-area` 높이 제약).
+- **workbench** — Windows에서 `wsl.exe -l -v` 출력을 UTF-16LE로 디코딩하지 않아 프로젝트 사전 점검(project health)의
+  WSL 배포판 확인이 항상 "distro 없음"으로 표시되던 문제 수정. devbox-manager(#183)와 같은 원인으로, 공용
+  `crates/wsl` 디코더를 재사용했다 (#192).
+- **repo-manager** — `scan_root`가 탐색 깊이 제한·제외 규칙 없이 전체 파일시스템을 재귀 탐색해 `node_modules`·
+  `target`·`AppData` 등까지 들어가고 Windows junction 순환에 취약하던 문제 수정. 비-repo 디렉터리 가지치기와
+  탐색 깊이·방문 디렉터리 상한을 추가했다. 상한에 걸리면 `scan_root`가 `truncated` 플래그를 반환하고 화면에
+  배너로 알린다 (#193).
+
+### 알려진 문제
+
+- **wsl-desktop 터미널 출력 손상.** PTY 읽기 경계에 걸친 멀티바이트 문자(한글·박스드로잉)가 손상돼 화면이
+  간헐적으로 깨지고, `htop`/`vim`/`lazygit` 같은 TUI의 프레임이 어긋난다. 긴 줄이 있는 상태에서 창 크기를
+  바꾸면 기존 출력이 망가지는 문제도 함께 있다.
+  설계·수정 계획: [`docs/superpowers/specs/2026-08-17-wsl-desktop-terminal-design.md`](docs/superpowers/specs/2026-08-17-wsl-desktop-terminal-design.md) §2
+- **앱 간 "다른 앱으로 열기"가 경로를 전달하지 못한다.** repo-manager의 Code Pad/WSL Desktop/Workbench 열기와
+  workbench의 Start Workspace는 대상 앱을 실행하지만, 대상 앱이 명령줄 인자를 읽지 않아 빈 상태로 열린다.
+  설계·수정 계획: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](docs/superpowers/specs/2026-08-17-app-interop-design.md) §5.1
 
 ## [v0.3.0] - 2026-08-13
 

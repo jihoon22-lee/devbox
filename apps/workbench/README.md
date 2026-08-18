@@ -7,12 +7,12 @@
 
 - **ProjectProfile CRUD** — wsl-desktop·life-log의 기존 프로젝트 저장소 흡수 (canonical identity 단일 규칙)
 - **사전 점검(read-only health)** — Git/WSL distro/예상 포트/Run Manager 서비스 상태
-- **Start Workspace** — 사전 점검 → Run Manager 서비스 시작 → 예상 포트 확인 → WSL Desktop layout·Code Pad workspace 열기 (단계별 idempotency·실패·rollback 표시)
+- **Start Workspace** — 사전 점검 → Run Manager 서비스 시작 → 예상 포트 확인 → WSL Desktop layout·Code Pad workspace 열기 (단계별 idempotency·실패·rollback 표시; 현재는 대상 앱만 실행되고 경로 전달은 v0.4.1에서 동작 — 설계: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](../../docs/superpowers/specs/2026-08-17-app-interop-design.md))
 - **Stop What I Started** — Workbench가 시작한 자원만 정리 (기존 실행 자원은 건드리지 않음)
 
 ## 기술
 
-- 공용 크레이트 `crates/wsl`·`crates/integration`
+- 공용 크레이트 `crates/wsl`·`crates/integration`·`crates/launch`(Start Workspace)·`crates/git`(git_status, workspace.rs)
 - 실행 context는 CLI argument로 전달 (custom URL scheme 아님)
 - 다른 앱의 DB를 직접 수정하지 않음, 앱 없으면 Devbox Manager 설치 화면으로 안내
 

@@ -15,7 +15,7 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 
 - 파일을 원본(source of truth)으로 두고 SQLite는 검색용 보조 인덱스
 - `crates/markdown` `sanitize()`로 HTML 살균, mermaid `securityLevel: "strict"`
-- `crates/filesystem` safe_join으로 루트 밖 경로 차단
+- `core/store.rs`의 자체 `safe_join`으로 루트 밖 경로 차단
 
 ## 데이터
 

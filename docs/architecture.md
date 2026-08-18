@@ -20,7 +20,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 │ packages/*  React 공용       │  tokens, editor, diff-view
 ├──────────────────────────────┤
 │ crates/*    Rust 공용        │  filesystem, markdown, process, wsl,
-│                              │  search, integration, secrets
+│                              │  search, integration, secrets, git, launch
 ├──────────────────────────────┤
 │ 공통 인프라: Cargo workspace, │
 │ pnpm workspace, git 모노레포,  │
@@ -38,6 +38,8 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   crates/search     ◄── everything-plus, knowledge-base
   crates/integration◄── run-manager, workbench, knowledge-base 등 snapshot 계약
   crates/secrets    ◄── api-playground, run-manager (DPAPI)
+  crates/git        ◄── devbox-manager, life-log, repo-manager, workbench
+  crates/launch     ◄── repo-manager, workbench
 ```
 
 ## 앱별 데이터 흐름
@@ -45,7 +47,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 ```
 port-manager:    React → invoke → commands → process crate → OS netstat
 wsl-desktop:     React → invoke → commands → wsl crate → wsl.exe (wsl-dashboard 흡수)
-                   └ distro·docker 패널 + gitStatus(Workbench 이관 예정)
+                   └ distro·docker 패널 (gitStatus는 Workbench로 이관 완료)
 life-log:        tray/poller(상시) → sessionizer → SQLite → commands → React
                    (activity-timeline 흡수. 외부 DB 직접 조회 없음 → integration snapshot 계약)
 everything-plus:  indexer/watcher → filesystem crate → search crate(FTS5) → React
@@ -54,7 +56,8 @@ api-playground:   React → commands → reqwest → HTTP
 code-pad:         React(CodeMirror) → commands → LSP stdio 서버, filesystem/markdown crate → React
 run-manager:      React → commands → scheduler → platform 실행 어댑터(Windows Job Object/WSL) → SQLite
 devbox-manager:   React → commands → catalog/manifest → GitHub release asset
-workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument)
+workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument,
+                   단 argv 수신 앱이 없어 현재는 미동작 — v0.4.1에서 구현 예정. ./superpowers/specs/2026-08-17-app-interop-design.md)
 webhook-lab:      inbound HTTP → core/server → history·rule·fixture → React
 repo-manager:     React → commands → git crate(wsl) → repository/worktree 탐색·생성
 ```
@@ -64,6 +67,10 @@ repo-manager:     React → commands → git crate(wsl) → repository/worktree 
 상대 앱의 `app_local_data_dir`을 직접 읽지 않는다. producer가
 `%LOCALAPPDATA%\devbox\integration\<app-id>\v<n>\`에 privacy-safe snapshot을 원자적으로
 기록하고 consumer는 읽기만 한다. (상세: `docs/product-opportunities.md` §10.1)
+
+> **예외 (알려진 위반)**: workbench의 `absorb_life_log_projects`(`commands/workspace.rs`)가
+> life-log의 `data.db`를 직접 SQLite로 읽는다 — 현재 이 정책의 유일한 예외다.
+> life-log를 producer로 만들어 해소할 예정: `./superpowers/specs/2026-08-17-app-interop-design.md` §4.1
 
 ## 보안 경계
 
