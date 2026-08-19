@@ -24,10 +24,21 @@ import type {
   LspFilteredLocations,
   ManagedInstallStatus,
   ManagedServerManifest,
+  OpenRequest,
 } from "./types";
 
 export function openFile(path: string, encoding: Encoding | null = null): Promise<OpenedFile> {
   return invoke<OpenedFile>("open_file", { request: { path, encoding } });
+}
+
+/**
+ * Takes (and clears) the inbound open request left by a cold-start argv parse
+ * or a single-instance relaunch, if any. `null` when nothing is pending.
+ * Clearing on take means a page reload does not re-trigger the same open
+ * (`docs/superpowers/specs/2026-08-17-app-interop-design.md` §3).
+ */
+export function takePendingOpen(): Promise<OpenRequest | null> {
+  return invoke<OpenRequest | null>("take_pending_open");
 }
 
 export function saveFile(

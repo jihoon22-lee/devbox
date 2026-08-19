@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauri } from "./lib/isTauri";
-import type { ContainerInfo, DistroInfo } from "./types";
+import type { ContainerInfo, DistroInfo, OpenRequest } from "./types";
 
 export interface SessionInfo {
   id: string;
@@ -86,4 +86,21 @@ export async function onTerminalOutput(cb: (payload: TerminalOutput) => void): P
 export async function onTerminalClosed(cb: (payload: TerminalOutput) => void): Promise<UnlistenFn> {
   if (!isTauri()) return () => undefined;
   return listen<TerminalOutput>("terminal-closed", (e) => cb(e.payload));
+}
+
+/**
+ * Takes (and clears) the inbound open request left by a cold-start argv parse
+ * or a single-instance relaunch, if any. `null` when nothing is pending.
+ * Clearing on take means a page reload does not re-trigger the same open
+ * (`docs/superpowers/specs/2026-08-17-app-interop-design.md` §3).
+ */
+export async function takePendingOpen(): Promise<OpenRequest | null> {
+  if (!isTauri()) return null;
+  return invoke<OpenRequest | null>("take_pending_open");
+}
+
+/** Fired when an already-running instance is relaunched with argv (§3). */
+export async function onOpenRequest(cb: (payload: OpenRequest) => void): Promise<UnlistenFn> {
+  if (!isTauri()) return () => undefined;
+  return listen<OpenRequest>("devbox://open", (e) => cb(e.payload));
 }

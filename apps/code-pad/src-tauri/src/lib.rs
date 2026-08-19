@@ -1,3 +1,4 @@
+pub mod applink;
 pub mod commands;
 pub mod core;
 pub mod lsp;
@@ -36,10 +37,33 @@ pub fn run() {
     let shutdown_started_for_run = std::sync::Arc::clone(&shutdown_started);
     let exit_authorized_for_run = std::sync::Arc::clone(&exit_authorized);
     let app = tauri::Builder::default()
+        // single-instance는 반드시 첫 플러그인이어야 한다: 이후 플러그인·setup이
+        // 두 번째 프로세스에서 중복 초기화되기 전에 중복 실행을 종료한다.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            match devbox_applink::parse_argv(&args) {
+                Ok(Some(req)) => {
+                    app.state::<applink::PendingOpen>().set(req.clone());
+                    let _ = app.emit("devbox://open", req);
+                }
+                Ok(None) => {}
+                Err(e) => eprintln!("applink: {e}"),
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             if let Err(error) = migrate_local_data(app.handle(), LEGACY_IDENTIFIER) {
                 eprintln!("devbox: local data migration will retry next launch: {error}");
+            }
+            app.manage(applink::PendingOpen::new());
+            match devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>()) {
+                Ok(Some(req)) => app.state::<applink::PendingOpen>().set(req),
+                Ok(None) => {}
+                Err(e) => eprintln!("applink: {e}"),
             }
             app.manage(watcher::WatcherManager::new(app.handle().clone()));
             let app_local_data_dir = app.path().app_local_data_dir()?;
@@ -73,6 +97,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            applink::take_pending_open,
             commands::file::open_file,
             commands::file::save_file,
             commands::file::validate_encoding,

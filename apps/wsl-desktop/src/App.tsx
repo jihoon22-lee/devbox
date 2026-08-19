@@ -4,18 +4,21 @@ import {
   dockerAction,
   dockerPs,
   listDistros,
+  onOpenRequest,
   onTerminalClosed,
   onTerminalOutput,
   startSession,
+  takePendingOpen,
 } from "./api";
 import DistroPanel from "./components/DistroPanel";
 import PaneCanvas from "./components/PaneCanvas";
 import TabBar from "./components/TabBar";
+import { routeOpenRequest } from "./lib/applink";
 import { makeId } from "./lib/id";
 import { matchShortcut, type ShortcutAction } from "./lib/shortcuts";
 import { loadPinned, loadPinnedCwd, loadRecentPaths, pushRecentPath, savePinned, savePinnedCwd } from "./lib/storage";
 import { nextTabTitle } from "./lib/tabTitle";
-import type { ContainerInfo, DistroInfo, Layout, Pane, Tab } from "./types";
+import type { ContainerInfo, DistroInfo, Layout, OpenRequest, Pane, Tab } from "./types";
 import "./App.css";
 
 export default function App() {
@@ -34,6 +37,10 @@ export default function App() {
   const [activePaneId, setActivePaneId] = useState<string | null>(null);
   const [broadcastOn, setBroadcastOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Flips true once the first listDistros() resolves. Gates applink handling
+  // (below) so a `path` target has a real default distro to open into,
+  // rather than racing the empty initial `selected` state.
+  const [distrosLoaded, setDistrosLoaded] = useState(false);
   const writes = useRef(new Map<string, (data: string) => void>());
 
   // onTerminalClosed 구독은 마운트 시 한 번만 걸린다(아래 effect, deps []). 그 콜백이
@@ -53,6 +60,7 @@ export default function App() {
     void listDistros().then((ds) => {
       setDistros(ds);
       setSelected((prev) => prev || ds.find((d) => d.default)?.name || ds[0]?.name || "Ubuntu");
+      setDistrosLoaded(true);
     });
   }, []);
 
@@ -139,6 +147,56 @@ export default function App() {
     return () => unsubs.forEach((u) => u());
   }, [dropPane]);
 
+  // Inbound cross-app open requests (§3). Redefined every render so it always
+  // closes over the latest tabs/activeTabId/selected/startInTab — the
+  // devbox://open listener below is set up once and lives for the app's
+  // lifetime, so without this a relaunch long after mount would act on
+  // stale state (same hazard the stateRef comment above documents for
+  // onTerminalClosed).
+  const handleOpenRequest = (request: OpenRequest) => {
+    const action = routeOpenRequest(request);
+    switch (action.kind) {
+      case "openTerminal":
+        // repo-manager는 저장소의 Windows 경로를 보내는데(연동 설계 §0.1) 이
+        // 터미널은 WSL이다. 변환은 백엔드가 한다 — start_session의
+        // normalize_cwd가 드라이브 문자 경로를 /mnt/... 로 바꾸므로 여기서는
+        // 받은 경로를 그대로 넘긴다. (같은 정규화가 툴바 cwd 입력칸에도 걸린다.)
+        void startInTab(tabs.length === 0 ? null : activeTabId, selected, action.path);
+        break;
+      case "noop":
+        console.info(`applink: ${action.reason}`);
+        break;
+    }
+  };
+  const handleOpenRequestRef = useRef(handleOpenRequest);
+  handleOpenRequestRef.current = handleOpenRequest;
+
+  // Cold start pulls take_pending_open once; a relaunch of this same running
+  // instance arrives as the devbox://open event. Both converge on
+  // handleOpenRequest so the two paths behave identically. Gated on
+  // distrosLoaded so `selected` already has a real default distro.
+  useEffect(() => {
+    if (!distrosLoaded) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void takePendingOpen()
+      .then((request) => {
+        if (!disposed && request) handleOpenRequestRef.current(request);
+      })
+      .catch(() => undefined);
+
+    void onOpenRequest((request) => handleOpenRequestRef.current(request)).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [distrosLoaded]);
+
   // 핀이 켜져 있는 동안은 cwd가 바뀔 때마다 localStorage에 저장한다 (핀을 막 켠
   // 순간도 pinned가 deps에 있어 여기서 함께 처리된다).
   useEffect(() => {
@@ -154,10 +212,13 @@ export default function App() {
   };
 
   /** tabId가 null이면 새 탭을, 아니면 그 탭에 분할 팬을 추가한다. 세션 시작이
-   * 성공해야만 탭/팬을 만든다 — "탭은 항상 팬을 최소 1개 갖는다" 불변식의 근거. */
-  const startInTab = async (tabId: string | null, distro: string) => {
+   * 성공해야만 탭/팬을 만든다 — "탭은 항상 팬을 최소 1개 갖는다" 불변식의 근거.
+   *
+   * cwdOverride가 있으면 cwd 입력칸 대신 그 경로를 연다 — applink `path` 타깃(§1.4)이
+   * 쓴다. 입력칸에 사용자가 입력 중이던 값은 건드리지 않는다(끝의 조건부 setCwd 참고). */
+  const startInTab = async (tabId: string | null, distro: string, cwdOverride?: string) => {
     setError(null);
-    const usedCwd = cwd.trim() || undefined;
+    const usedCwd = (cwdOverride ?? cwd).trim() || undefined;
     try {
       const id = await startSession(distro, usedCwd);
       const key = makeId("p");
@@ -174,7 +235,7 @@ export default function App() {
       setActivePaneId(id);
 
       if (usedCwd) setRecentPaths(pushRecentPath(usedCwd));
-      if (!pinned) setCwd("");
+      if (cwdOverride === undefined && !pinned) setCwd("");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

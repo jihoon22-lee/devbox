@@ -38,3 +38,20 @@ export interface ContainerInfo {
   status: string;
   ports: string;
 }
+
+/**
+ * Inbound cross-app open request (`crates/applink::OpenTarget`/`OpenRequest`).
+ * `Option` fields serialize as `null`, never omitted, so every optional field
+ * here is typed `| null` rather than `?:`
+ * (`docs/superpowers/specs/2026-08-17-app-interop-design.md` §1.2).
+ */
+export type OpenTarget =
+  | { kind: "path"; path: string; line: number | null; column: number | null }
+  | { kind: "profile"; id: string }
+  | { kind: "workspace"; path: string }
+  | { kind: "query"; text: string };
+
+export interface OpenRequest {
+  target: OpenTarget;
+  from: string | null;
+}
