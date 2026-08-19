@@ -1,6 +1,6 @@
 # wsl-desktop 터미널 — 정확성·세션·사용성 설계
 
-- 상태: 제안(Proposal)
+- 상태: v0.4.1 범위(§2) 구현 반영 (Windows 실기 검증 대기); v0.5.0 범위(§3·§4) 제안·보류
 - 작성일: 2026-08-17
 - 범위: `apps/wsl-desktop` 단일 앱 + `crates/wsl`
 - 관련: [UX 개선 설계](./2026-08-15-ux-improvements-design.md) §2 를 이 문서가 대체한다

@@ -7,8 +7,12 @@
 
 - **ProjectProfile CRUD** — wsl-desktop·life-log의 기존 프로젝트 저장소 흡수 (canonical identity 단일 규칙)
 - **사전 점검(read-only health)** — Git/WSL distro/예상 포트/Run Manager 서비스 상태
-- **Start Workspace** — 사전 점검 → Run Manager 서비스 시작 → 예상 포트 확인 → WSL Desktop layout·Code Pad workspace 열기 (단계별 idempotency·실패·rollback 표시; 현재는 대상 앱만 실행되고 경로 전달은 v0.4.1에서 동작 — 설계: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](../../docs/superpowers/specs/2026-08-17-app-interop-design.md))
+- **Start Workspace** — 사전 점검 → Run Manager 서비스 시작 → 예상 포트 확인 → WSL Desktop에 구체적인 경로 전달·Code Pad workspace 열기 (단계별 idempotency·실패·rollback 표시; 저장된 WSL Desktop layout을 보내는 기능은 아님 — 설계: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](../../docs/superpowers/specs/2026-08-17-app-interop-design.md))
 - **Stop What I Started** — Workbench가 시작한 자원만 정리 (기존 실행 자원은 건드리지 않음)
+
+v0.4.1의 `Path`에는 distro나 profile 정보가 없다. 따라서 Start Workspace가 WSL Desktop으로
+보내는 것은 프로필의 구체적인 경로이며, WSL Desktop은 앱에서 선택된 distro를 사용하고 선택값이
+없으면 기본 distro를 사용한다. 프로필의 distro와 저장된 터미널 layout 복원은 v0.5.0으로 미룬다.
 
 ## 기술
 

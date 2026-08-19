@@ -46,7 +46,7 @@
 | [앱 간 연동 설계](./superpowers/specs/2026-08-17-app-interop-design.md) | argv 계약, 카탈로그 capability, 스냅샷 버스 정리 |
 | [UX 개선 설계](./superpowers/specs/2026-08-15-ux-improvements-design.md) | 컨텍스트 메뉴 13개 앱, toolbox 도구, 앱별 항목, 실사용 피드백 |
 
-### v0.4.1 — 핫픽스 (결함만, 기능 추가 없음; 코드 구현 완료; Windows 수동 검증은 별도 체크리스트)
+### v0.4.1 — 핫픽스 (결함만, 기능 추가 없음; RC2 코드·자동화 게이트 준비; 선택된 Windows acceptance 대기)
 
 1. **wsl-desktop 터미널 출력·세션 실행 결함** — v0.4.0에서 `terminal.rs`가 PTY 읽기마다
    `String::from_utf8_lossy`를 호출해 읽기 경계의 한글·박스드로잉을 U+FFFD로 치환했고,
@@ -57,7 +57,8 @@
    **argv를 읽는 앱이 없어** 빈 앱이 열렸다. v0.4.1에서 `crates/applink`와 Code Pad/WSL Desktop/
    Workbench의 수신 및 대상 매핑을 구현해 복구했다.
 
-코드 구현과 WSL 검증은 완료됐고, Windows 실기 검증 매트릭스는 별도 수동 체크리스트로 관리한다.
+RC2의 코드와 자동화 게이트는 준비됐지만, 선택된 Windows acceptance(패키지·프로토콜·실제 경로·시각)
+검증은 아직 대기 중이다. 따라서 안정판 v0.4.1은 완료로 표시하지 않는다.
 
 ### v0.5.0
 

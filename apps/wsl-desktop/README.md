@@ -14,8 +14,12 @@
 ## 기술
 
 - `portable-pty` 기반 ConPTY (PTY resize, 탭 모델, 드래그 2종, 단축키 5종)
-- 공용 크레이트 `crates/wsl` 사용 (argv·경로 정규화)
-- WSL2 필요: `wsl --install` 후 재부팅 (Docker 컨테이너 관리엔 Docker Desktop 필요)
+- 공용 크레이트 `crates/wsl` — 프로세스를 실행하지 않는 WSL 공용 프리미티브로, `wsl.exe` 실행
+  argv(`--cd` 포함)·`wslpath` argv 조립, distro 이름 검증, WSL 출력 디코딩, Windows↔WSL 경로와
+  canonical project key 정규화를 제공한다.
+- WSL 기준선은 `wsl.exe --cd <cwd>`를 지원하는 최신 Microsoft Store WSL이다. 구형 inbox WSL은
+  `wsl --update`로 먼저 업데이트하는 것을 권장한다. WSL2는 필요하면 `wsl --install` 후 재부팅하며,
+  Docker 컨테이너 관리에는 Docker Desktop이 필요하다.
 
 ## 데이터
 
@@ -25,4 +29,4 @@
 
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
 
-설계 문서: `docs/superpowers/specs/2026-08-12-wsl-desktop-tabs-design.md`
+설계 문서: [`docs/superpowers/specs/2026-08-17-wsl-desktop-terminal-design.md`](../../docs/superpowers/specs/2026-08-17-wsl-desktop-terminal-design.md)

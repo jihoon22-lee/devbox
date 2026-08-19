@@ -3,6 +3,28 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [v0.4.1-rc2] - 2026-08-20
+
+v0.4.1-rc2는 코드 변경과 자동화 게이트를 반영한 Windows acceptance 후보 빌드다. 이 후보는
+Windows 실기 실행이 완료됐다는 뜻이 아니며, 선택된 Windows acceptance 검증을 남겨 둔다.
+
+### Fixed
+
+- **wsl-desktop 0.3.2** — Windows cwd를 변환하거나 셸 문자열로 조립하지 않고 `wsl.exe --cd`의
+  별도 argv 값으로 그대로 전달해 공백이 있는 경로도 경계를 보존한다.
+- **wsl-desktop** — 자연 종료된 터미널 세션의 리소스 정리를 추가하고, 오래된 reader가 교체된
+  세션을 지우지 않도록 teardown 및 cleanup 경합을 안전하게 처리했다.
+
+### Tests
+
+- resize 거부 후 재시도와 활성화 시 대기 중 resize 취소 회귀 테스트를 추가했다.
+- 동시 세션 생성에서 ID가 충돌하지 않는지 검증하는 회귀 테스트를 추가했다.
+
+### Release gate
+
+- 릴리스 노트 섹션이 없거나 비어 있으면 실패하도록 추출 게이트를 fatal로 변경했다.
+- RC2는 Windows acceptance 후보이며, 안정판 v0.4.1 배포를 위한 Windows runtime 완료를 주장하지 않는다.
+
 ## [v0.4.1-rc1] - 2026-08-19
 
 v0.4.1 핫픽스의 릴리스 후보(v0.4.1-rc1)다. 터미널 PTY 전송과 앱 간 링크의 결함을 수정했으며,
