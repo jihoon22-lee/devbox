@@ -30,6 +30,8 @@ devbox — Tauri 13개 데스크톱 앱 모노레포. 모든 규약의 기준은
 - **모든 PR은 GitHub Actions CI(`.github/workflows/ci.yml`) 통과 후에만 main으로 머지**
 - 커밋: Conventional Commits, 영어, 현재형 — `feat(port-manager): add netstat parser`
 - 코드 산출물의 완료 정의: `cargo test` + `cargo check` + `pnpm build` 통과
+- PR 머지 또는 작업 종료 시 같은 작업 안에서 전용 worktree가 clean이고 머지된 상태인지 확인한 뒤, 전용 worktree 제거 및 `git worktree prune`, 로컬 작업 브랜치 삭제, 원격 작업 브랜치 삭제를 순서대로 수행한다. 활성·잠김·미머지·dirty worktree는 삭제하지 말고 사용자에게 즉시 보고한다. 자동 생성 worktree나 호스트가 소유한 worktree는 무단으로 삭제하지 않는다.
+- `완료`를 보고하기 전에 `git worktree list`와 로컬·원격 브랜치 목록을 다시 확인해 작업 잔존 여부를 검증한다.
 
 ## 함정 / 주의
 - `/mnt/e`(9p 마운트)에서 cargo 컴파일은 느림 → `target-dir`을 Linux 네이티브 경로로 (`.cargo/config.toml`, `~/.cache/targets/...`)
