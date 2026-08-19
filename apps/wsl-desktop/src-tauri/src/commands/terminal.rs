@@ -610,10 +610,13 @@ mod tests {
     fn session_ids_are_unique_across_concurrent_calls() {
         const THREADS: usize = 16;
         const IDS_PER_THREAD: usize = 64;
+        let start = Arc::new(std::sync::Barrier::new(THREADS + 1));
 
         let workers = (0..THREADS)
             .map(|_| {
-                std::thread::spawn(|| {
+                let start = Arc::clone(&start);
+                std::thread::spawn(move || {
+                    start.wait();
                     (0..IDS_PER_THREAD)
                         .map(|_| next_session_id())
                         .collect::<Vec<_>>()
@@ -621,6 +624,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
+        start.wait();
         let mut ids = std::collections::HashSet::with_capacity(THREADS * IDS_PER_THREAD);
         for worker in workers {
             for id in worker.join().expect("session ID worker panicked") {
