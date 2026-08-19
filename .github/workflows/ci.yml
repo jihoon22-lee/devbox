@@ -121,6 +121,11 @@ jobs:
         if: ${{ needs.scope.outputs.rust_scope != 'none' }}
         timeout-minutes: 15
         run: |
+          if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+            # Rewrite the source directly because apt's mirror+file transport ignores mirror-list contents here.
+            sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|https://archive.ubuntu.com/ubuntu/|g' \
+              /etc/apt/sources.list.d/ubuntu.sources
+          fi
           sudo env DEBIAN_FRONTEND=noninteractive apt-get \
             -o Acquire::Retries=3 \
             -o Acquire::http::Timeout=30 \
