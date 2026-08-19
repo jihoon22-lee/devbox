@@ -387,6 +387,10 @@ select {
   color: #3fb950;
 }
 
+.status-off {
+  color: var(--dim);
+}
+
 .side-panel .btn {
   padding: 5px 10px;
 }
@@ -438,6 +442,7 @@ select {
 }
 
 .side-panel .empty {
+  display: table-cell;
   text-align: center;
   color: var(--dim);
   padding: 16px;

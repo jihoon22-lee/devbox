@@ -14,8 +14,8 @@ export interface TerminalOutput {
 }
 
 const MOCK_DISTROS: DistroInfo[] = [
-  { name: "Ubuntu", version: 2, default: true },
-  { name: "docker-desktop", version: 2, default: false },
+  { name: "Ubuntu", version: 2, default: true, state: "Running" },
+  { name: "docker-desktop", version: 2, default: false, state: "Stopped" },
 ];
 
 const MOCK_CONTAINERS: ContainerInfo[] = [
@@ -27,6 +27,11 @@ const MOCK_CONTAINERS: ContainerInfo[] = [
 export async function listDistros(): Promise<DistroInfo[]> {
   if (!isTauri()) return MOCK_DISTROS;
   return invoke<DistroInfo[]>("list_distros");
+}
+
+export async function getWindowsBuildNumber(): Promise<number | null> {
+  if (!isTauri()) return null;
+  return invoke<number | null>("windows_build_number");
 }
 
 export async function dockerPs(distro: string): Promise<ContainerInfo[]> {

@@ -32,10 +32,23 @@ pub fn parse_git_status(path: &str, input: &str) -> GitStatus {
 pub fn has_distro(distro: &str, wsl_list_output: &str) -> bool {
     wsl_list_output
         .lines()
-        .map(|l| l.trim().trim_start_matches('*').trim())
-        .filter(|l| !l.is_empty() && !l.starts_with("NAME") && !l.starts_with("Windows"))
-        .filter_map(|l| l.split_whitespace().next())
+        .filter_map(distro_name_from_row)
         .any(|name| name.eq_ignore_ascii_case(distro))
+}
+
+/// Parse one `wsl.exe -l -v` row. STATE and VERSION are the two rightmost
+/// columns, so the NAME column may contain spaces.
+fn distro_name_from_row(line: &str) -> Option<String> {
+    let row = line.trim().trim_start_matches('*').trim();
+    if row.is_empty() || row.starts_with("NAME") || row.starts_with("Windows") {
+        return None;
+    }
+
+    let mut fields = row.split_whitespace();
+    fields.next_back()?; // VERSION
+    fields.next_back()?; // STATE
+    let name = fields.collect::<Vec<_>>().join(" ");
+    (!name.is_empty()).then_some(name)
 }
 
 #[cfg(test)]
@@ -58,6 +71,14 @@ mod tests {
         assert!(has_distro("ubuntu", out));
         assert!(has_distro("docker-desktop", out));
         assert!(!has_distro("Debian", out));
+    }
+
+    #[test]
+    fn distro_presence_matches_spaced_names_exactly() {
+        let out =
+            "  NAME             STATE           VERSION\n* Ubuntu 24.04     Running         2\n";
+        assert!(has_distro("Ubuntu 24.04", out));
+        assert!(!has_distro("Ubuntu 24", out));
     }
 
     /// `wsl.exe -l -v`는 실제로 UTF-16LE(BOM 있음)로 출력한다. 호출부가 이를

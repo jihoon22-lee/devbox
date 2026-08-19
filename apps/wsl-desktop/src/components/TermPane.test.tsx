@@ -11,13 +11,16 @@ import TermPane from "./TermPane";
  * TermPane을 렌더링한다.
  */
 const { createdTerminals, FakeTerminal, FakeFitAddon, FakeUnicode11Addon } = vi.hoisted(() => {
-  const createdTerminals: { rows: number; cols: number }[] = [];
+  type TerminalOptions = {
+    windowsPty?: { backend: string; buildNumber?: number };
+  };
+  const createdTerminals: { rows: number; cols: number; options: TerminalOptions }[] = [];
 
   class FakeTerminal {
     rows = 2;
     cols = 5;
     unicode = { activeVersion: "" };
-    constructor() {
+    constructor(public options: TerminalOptions) {
       createdTerminals.push(this);
     }
     loadAddon() {}
@@ -68,6 +71,7 @@ function baseProps(overrides: Partial<ComponentProps<typeof TermPane>> = {}): Co
     onClose: vi.fn(),
     onFocusPane: vi.fn(),
     onShortcut: vi.fn(),
+    windowsBuildNumber: null,
     ...overrides,
   };
 }
@@ -102,6 +106,13 @@ afterEach(() => {
 });
 
 describe("TermPane — resize 바닥값 (§2.3)", () => {
+  it("passes the Windows build number to xterm ConPTY options", () => {
+    const props = { ...baseProps(), windowsBuildNumber: 22631 } as ComponentProps<typeof TermPane>;
+    render(<TermPane {...props} />);
+
+    expect(createdTerminals[0].options.windowsPty).toEqual({ backend: "conpty", buildNumber: 22631 });
+  });
+
   it("바닥값(4행 20열) 미만이면 마운트 시 resizeSession을 호출하지 않는다", () => {
     // FakeTerminal 기본값은 2행 5열 — 둘 다 바닥값 미만이다.
     render(<TermPane {...baseProps()} />);

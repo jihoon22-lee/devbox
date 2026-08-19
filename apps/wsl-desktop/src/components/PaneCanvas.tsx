@@ -14,6 +14,7 @@ interface PaneCanvasProps {
   onClosePane: (id: string) => void;
   onFocusPane: (id: string) => void;
   onShortcut: (action: ShortcutAction) => void;
+  windowsBuildNumber: number | null;
 }
 
 /**
@@ -42,6 +43,7 @@ export default function PaneCanvas({
   onClosePane,
   onFocusPane,
   onShortcut,
+  windowsBuildNumber,
 }: PaneCanvasProps) {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activePaneIds = activeTab?.paneIds ?? [];
@@ -87,6 +89,7 @@ export default function PaneCanvas({
             onClose={() => onClosePane(sessionId)}
             onFocusPane={() => onFocusPane(sessionId)}
             onShortcut={onShortcut}
+            windowsBuildNumber={windowsBuildNumber}
             style={active ? { order } : { display: "none" }}
           />
         );

@@ -29,6 +29,7 @@ export interface DistroInfo {
   name: string;
   version: number;
   default: boolean;
+  state: string;
 }
 
 export interface ContainerInfo {

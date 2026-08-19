@@ -3,6 +3,7 @@ import {
   closeSession,
   dockerAction,
   dockerPs,
+  getWindowsBuildNumber,
   listDistros,
   onOpenRequest,
   onTerminalClosed,
@@ -37,6 +38,9 @@ export default function App() {
   const [activePaneId, setActivePaneId] = useState<string | null>(null);
   const [broadcastOn, setBroadcastOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // TermPane must not create xterm until this one-time lookup resolves, so
+  // every terminal receives its final ConPTY build-number option.
+  const [windowsBuildNumber, setWindowsBuildNumber] = useState<number | null | undefined>(undefined);
   // Flips true once the first listDistros() resolves. Gates applink handling
   // (below) so a `path` target has a real default distro to open into,
   // rather than racing the empty initial `selected` state.
@@ -62,6 +66,12 @@ export default function App() {
       setSelected((prev) => prev || ds.find((d) => d.default)?.name || ds[0]?.name || "Ubuntu");
       setDistrosLoaded(true);
     });
+  }, []);
+
+  useEffect(() => {
+    void getWindowsBuildNumber()
+      .then(setWindowsBuildNumber)
+      .catch(() => setWindowsBuildNumber(null));
   }, []);
 
   const refreshDashboard = useCallback(async () => {
@@ -180,16 +190,31 @@ export default function App() {
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
-    void takePendingOpen()
-      .then((request) => {
-        if (!disposed && request) handleOpenRequestRef.current(request);
-      })
-      .catch(() => undefined);
+    const consumePendingOpen = () => {
+      void takePendingOpen()
+        .then((request) => {
+          if (!disposed && request) handleOpenRequestRef.current(request);
+        })
+        .catch(() => undefined);
+    };
+    let coldStartConsumed = false;
+    const consumeColdStart = () => {
+      if (disposed || coldStartConsumed) return;
+      coldStartConsumed = true;
+      consumePendingOpen();
+    };
 
-    void onOpenRequest((request) => handleOpenRequestRef.current(request)).then((stop) => {
-      if (disposed) stop();
-      else unlisten = stop;
-    });
+    void onOpenRequest(() => consumePendingOpen())
+      .then((stop) => {
+        if (disposed) stop();
+        else {
+          unlisten = stop;
+          consumeColdStart();
+        }
+      })
+      .catch(() => {
+        consumeColdStart();
+      });
 
     return () => {
       disposed = true;
@@ -461,22 +486,25 @@ export default function App() {
             onNewTab={() => void openNewTab()}
           />
 
-          <PaneCanvas
-            tabs={tabs}
-            panes={panes}
-            activeTabId={activeTabId}
-            activePaneId={activePaneId}
-            broadcastOn={broadcastOn}
-            registerWrite={registerWrite}
-            unregisterWrite={unregisterWrite}
-            onClosePane={closePane}
-            onFocusPane={(id) => {
-              setActivePaneId(id);
-              const owner = tabs.find((t) => t.paneIds.includes(id));
-              if (owner) setActiveTabId(owner.id);
-            }}
-            onShortcut={handleShortcut}
-          />
+          {windowsBuildNumber !== undefined && (
+            <PaneCanvas
+              tabs={tabs}
+              panes={panes}
+              activeTabId={activeTabId}
+              activePaneId={activePaneId}
+              broadcastOn={broadcastOn}
+              registerWrite={registerWrite}
+              unregisterWrite={unregisterWrite}
+              onClosePane={closePane}
+              onFocusPane={(id) => {
+                setActivePaneId(id);
+                const owner = tabs.find((t) => t.paneIds.includes(id));
+                if (owner) setActiveTabId(owner.id);
+              }}
+              onShortcut={handleShortcut}
+              windowsBuildNumber={windowsBuildNumber}
+            />
+          )}
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 [package]
 name = "wsl-desktop"
-version = "0.3.0"
+version = "0.3.1"
 description = "WSL Desktop"
 authors = ["jihoon22.lee"]
 edition = "2021"
@@ -28,3 +28,5 @@ tokio = { version = "1.53.1", features = ["process"] }
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 
+[target.'cfg(windows)'.dependencies]
+windows-version = "0.1.7"
