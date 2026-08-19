@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauri } from "./lib/isTauri";
 
 export interface ProjectProfile {
@@ -84,4 +85,38 @@ export function startWorkspace(profileId: string): Promise<WorkspaceRun> {
 export function stopWorkspace(runId: string): Promise<number> {
   if (!isTauri()) return Promise.resolve(0);
   return invoke<number>("stop_workspace", { runId });
+}
+
+// ── applink — inbound cross-app open requests ───────────────────────
+// docs/superpowers/specs/2026-08-17-app-interop-design.md §1.2/§3
+
+/**
+ * `Option` fields serialize as `null`, never omitted, so every optional field
+ * here is typed `| null` rather than `?:` (matches `crates/applink::OpenTarget`).
+ */
+export type OpenTarget =
+  | { kind: "path"; path: string; line: number | null; column: number | null }
+  | { kind: "profile"; id: string }
+  | { kind: "workspace"; path: string }
+  | { kind: "query"; text: string };
+
+export interface OpenRequest {
+  target: OpenTarget;
+  from: string | null;
+}
+
+/**
+ * Takes (and clears) the inbound open request left by a cold-start argv parse
+ * or a single-instance relaunch, if any. `null` when nothing is pending.
+ * Clearing on take means a page reload does not re-trigger the same open (§3).
+ */
+export async function takePendingOpen(): Promise<OpenRequest | null> {
+  if (!isTauri()) return null;
+  return invoke<OpenRequest | null>("take_pending_open");
+}
+
+/** Fired when an already-running instance is relaunched with argv (§3). */
+export async function onOpenRequest(cb: (payload: OpenRequest) => void): Promise<UnlistenFn> {
+  if (!isTauri()) return () => undefined;
+  return listen<OpenRequest>("devbox://open", (e) => cb(e.payload));
 }

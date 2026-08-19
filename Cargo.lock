@@ -628,6 +628,7 @@ dependencies = [
 name = "code-pad"
 version = "0.3.1"
 dependencies = [
+ "applink",
  "base64 0.22.1",
  "chardetng",
  "encoding_rs",
@@ -645,6 +646,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
  "tempfile",
  "tokio",
  "url",
@@ -2575,6 +2577,7 @@ dependencies = [
 name = "launch"
 version = "0.1.0"
 dependencies = [
+ "applink",
  "serde_json",
 ]
 
@@ -3824,6 +3827,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 name = "repo-manager"
 version = "0.1.1"
 dependencies = [
+ "applink",
  "filesystem",
  "git",
  "launch",
@@ -6558,6 +6562,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 name = "workbench"
 version = "0.1.0"
 dependencies = [
+ "applink",
  "git",
  "integration",
  "launch",
@@ -6567,6 +6572,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
  "tokio",
  "uuid",
  "wsl",
@@ -6630,12 +6636,14 @@ version = "0.1.0"
 name = "wsl-desktop"
 version = "0.3.0"
 dependencies = [
+ "applink",
  "portable-pty",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
  "tokio",
  "wsl",
 ]

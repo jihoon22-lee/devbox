@@ -345,7 +345,13 @@ pub async fn start_workspace(
 
     // 앱 열기 (best-effort). Workbench가 시작한 것만 기록한다.
     let mut started_pids = Vec::new();
-    match devbox_launch::launch("wsl-desktop", &["--profile", &profile.id]) {
+    let wsl_desktop_req = devbox_applink::OpenRequest {
+        target: devbox_applink::OpenTarget::Profile {
+            id: profile.id.clone(),
+        },
+        from: Some("workbench".to_string()),
+    };
+    match devbox_launch::launch_open("wsl-desktop", &wsl_desktop_req) {
         Ok(pid) => started_pids.push(pid),
         Err(e) => steps.push(RunStep {
             name: "open".into(),
@@ -353,13 +359,13 @@ pub async fn start_workspace(
             detail: format!("wsl-desktop 시작 실패: {e}"),
         }),
     }
-    match devbox_launch::launch(
-        "code-pad",
-        &[
-            "--workspace",
-            &profile.windows_path.clone().unwrap_or_default(),
-        ],
-    ) {
+    let code_pad_req = devbox_applink::OpenRequest {
+        target: devbox_applink::OpenTarget::Workspace {
+            path: profile.windows_path.clone().unwrap_or_default(),
+        },
+        from: Some("workbench".to_string()),
+    };
+    match devbox_launch::launch_open("code-pad", &code_pad_req) {
         Ok(pid) => started_pids.push(pid),
         Err(e) => steps.push(RunStep {
             name: "open".into(),

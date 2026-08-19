@@ -11,6 +11,7 @@ import {
   renderPreview,
   saveFile,
   saveSession,
+  takePendingOpen,
   validateEncoding,
   unwatchFile,
   watchFile,
@@ -25,6 +26,7 @@ import ViewPane from "./components/ViewPane";
 import LspControlPanel from "./components/LspControlPanel";
 import LspNavigationPanel from "./components/LspNavigationPanel";
 import { currentDocumentWordCompletion } from "./editor/extensions";
+import { APPLINK_OPEN_EVENT, routeOpenRequest } from "./lib/applink";
 import { completionOptions, diagnosticsForCodeMirror, hoverText, offsetForPosition, pathFromFileUri } from "./lspFeatures";
 import type { BookmarkCommands } from "./editor/bookmarks";
 import { normalizeBookmarkLines } from "./editor/bookmarks";
@@ -51,6 +53,7 @@ import type {
   EditedLspDocument,
   LspDiagnosticsEvent,
   LspStatusEvent,
+  OpenRequest,
 } from "./types";
 
 function docFromOpenedFile(file: OpenedFile, metadata?: SessionState["docs"][number]): Doc {
@@ -770,6 +773,18 @@ export default function App() {
     }
   };
 
+  // Shared by the toolbar "작업 폴더" button and applink `workspace` targets
+  // (§1.4) — both open a folder as the workspace through the same path.
+  const setWorkspaceRoot = async (path: string) => {
+    const root = await canonicalizeWorkspace(path);
+    const listing = await listWorkspaceFiles(root);
+    dispatchAction({ type: "setWorkspace", workspaceFolder: root });
+    void lspSync.setWorkspace(root);
+    setWorkspaceFiles(listing.files);
+    setWorkspaceTruncated(listing.truncated);
+    setWorkspaceListingRoot(root);
+  };
+
   const handleSetWorkspace = () => {
     if (!hydrated) return;
     const path = pathInput.trim();
@@ -778,15 +793,25 @@ export default function App() {
       return;
     }
     void runFileOperation(async () => {
-      const root = await canonicalizeWorkspace(path);
-      const listing = await listWorkspaceFiles(root);
-      dispatchAction({ type: "setWorkspace", workspaceFolder: root });
-      void lspSync.setWorkspace(root);
-      setWorkspaceFiles(listing.files);
-      setWorkspaceTruncated(listing.truncated);
-      setWorkspaceListingRoot(root);
+      await setWorkspaceRoot(path);
       setPathInput("");
     });
+  };
+
+  // applink `path` target (§1.4): reuses openPath, then moves the cursor if a
+  // line was given. line/column follow 1-based editor convention (not
+  // specified by the applink contract itself); column defaults to the start
+  // of the line when omitted.
+  const openApplinkPath = async (path: string, line: number | null, column: number | null) => {
+    const doc = await openPath(path);
+    if (line === null) return;
+    const position = {
+      line: Math.max(0, line - 1),
+      character: column !== null ? Math.max(0, column - 1) : 0,
+    };
+    const status = lspSync.statusForDocument(doc.id);
+    const cursor = offsetForPosition(doc.text, position, status?.capabilities.positionEncoding ?? "utf-16");
+    dispatchAction({ type: "setCursor", docId: doc.id, cursor });
   };
 
   const handleQuickOpen = () => {
@@ -949,6 +974,56 @@ export default function App() {
       disposed = true;
       unlisten?.();
     };
+  }, [hydrated]);
+
+  // Inbound cross-app open requests (§3): a cold-start argv parse is pulled
+  // once via take_pending_open, and a relaunch of this same running instance
+  // arrives as the devbox://open event. Both converge on handleOpenRequest so
+  // the two paths behave identically. Gated on hydrated — restoreSession
+  // replaces the whole docs array, so acting earlier risks the applink open
+  // being clobbered by session restore landing after it.
+  useEffect(() => {
+    if (!hydrated) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    const handleOpenRequest = (request: OpenRequest) => {
+      const action = routeOpenRequest(request);
+      switch (action.kind) {
+        case "openFile":
+          void runFileOperation(() => openApplinkPath(action.path, action.line, action.column));
+          break;
+        case "openWorkspace":
+          void runFileOperation(() => setWorkspaceRoot(action.path));
+          break;
+        case "noop":
+          console.info(`applink: ${action.reason}`);
+          break;
+      }
+    };
+
+    void takePendingOpen()
+      .then((request) => {
+        if (!disposed && request) handleOpenRequest(request);
+      })
+      .catch(() => undefined);
+
+    // In browser/Vitest the Tauri bridge is absent; treat that as no relaunch
+    // forwarding rather than an unhandled rejection during mount (same
+    // pattern as the file-changed listener above).
+    void Promise.resolve()
+      .then(() => listen<OpenRequest>(APPLINK_OPEN_EVENT, (event) => handleOpenRequest(event.payload)))
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated]);
 
   // Preview requests are tied to the document revision and discarded if a

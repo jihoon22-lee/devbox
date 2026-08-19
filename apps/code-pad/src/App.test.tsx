@@ -140,6 +140,7 @@ vi.mock("./api", () => ({
   requestLspReferences: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false }),
   requestLspRename: vi.fn().mockResolvedValue({ documents: [] }),
   restartLanguageServer: vi.fn().mockResolvedValue(undefined),
+  takePendingOpen: vi.fn().mockResolvedValue(null),
 }));
 
 const openFileMock = vi.mocked(openFile);

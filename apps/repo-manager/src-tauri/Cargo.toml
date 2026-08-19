@@ -26,6 +26,7 @@ devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 devbox-launch = { package = "launch", path = "../../../crates/launch" }
 devbox-git = { package = "git", path = "../../../crates/git" }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+devbox-applink = { package = "applink", path = "../../../crates/applink" }
 
 [dev-dependencies]
 tempfile = "3"
