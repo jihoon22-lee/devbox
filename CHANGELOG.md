@@ -10,9 +10,11 @@ v0.4.1-rc3는 RC2 Windows acceptance 중 발견된 Run Manager 시작 결함을 
 
 ### Fixed
 
-- **run-manager 0.3.2** — RC2 Windows acceptance에서 Tauri `setup` 경계의 scheduler와 maintenance
-  task가 현재 Tokio runtime 없이 시작되며 panic하던 회귀를 확인했다. 두 lifecycle task를 Tauri가
-  구성한 async runtime에서 시작하도록 변경했다.
+- **run-manager 0.3.2** — RC2 Windows acceptance에서
+  `apps/run-manager/src-tauri/src/lifecycle.rs:144`의 scheduler `tokio::spawn`이 Tauri `setup`
+  경계에서 현재 Tokio runtime 없이 실행되어 panic하고 프로세스가 즉시 종료되는 현상을 직접
+  관찰했다. 후속 코드 검토와 회귀 테스트에서 maintenance task에도 같은 setup-runtime 결함이
+  있음을 확인했으며, 두 lifecycle task를 Tauri가 구성한 async runtime에서 시작하도록 변경했다.
 
 ### Tests
 
