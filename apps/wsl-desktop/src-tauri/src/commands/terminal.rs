@@ -118,27 +118,14 @@ fn decode_chunk(carry: &mut Vec<u8>, chunk: &[u8]) -> String {
     out
 }
 
-/// 작업 디렉터리를 WSL이 이해하는 형태로 정규화한다.
-///
-/// `wsl.exe --cd`는 Windows 경로를 받아주지 않으므로 `E:\projects\devbox`를 그대로
-/// 넘기면 세션이 그 경로로 열리지 않는다. 이 경로는 두 곳에서 들어온다 —
-/// 툴바 cwd 입력칸에 Windows 경로를 붙여넣는 경우, 그리고 repo-manager가
-/// applink `--path`로 저장소의 Windows 경로를 보내는 경우다.
-///
-/// 드라이브 문자 경로가 아니면(이미 WSL 경로, 상대 경로, UNC) 변환하지 않고 그대로 둔다.
-fn normalize_cwd(dir: &str) -> String {
-    devbox_wsl::path::windows_to_wsl(dir).unwrap_or_else(|_| dir.to_owned())
-}
-
 /// Builds the exact argv used for a terminal session.
 ///
 /// Always delegates distro validation and argument construction to the shared
 /// WSL builder, including when no cwd is supplied. Keeping this boundary as
 /// argv also prevents a path from becoming shell syntax (`bash -lc ...`).
 fn build_session_command(distro: &str, cwd: Option<&str>) -> Result<CommandBuilder, String> {
-    let normalized_cwd = cwd.filter(|dir| !dir.trim().is_empty()).map(normalize_cwd);
-    let argv = devbox_wsl::argv::build_exec_argv(distro, normalized_cwd.as_deref(), "")
-        .map_err(|e| e.to_string())?;
+    let cwd = cwd.filter(|dir| !dir.trim().is_empty());
+    let argv = devbox_wsl::argv::build_exec_argv(distro, cwd, "").map_err(|e| e.to_string())?;
     let mut command = CommandBuilder::new(&argv[0]);
     command.args(&argv[1..]);
     Ok(command)
@@ -383,26 +370,6 @@ pub fn list_sessions(state: tauri::State<'_, Arc<SessionState>>) -> Vec<SessionI
 mod tests {
     use super::*;
 
-    #[test]
-    fn normalize_cwd_converts_windows_drive_paths() {
-        // repo-manager가 applink --path로 보내는 형태
-        assert_eq!(
-            normalize_cwd("E:\\projects\\devbox"),
-            "/mnt/e/projects/devbox"
-        );
-        assert_eq!(normalize_cwd("C:/Users/me"), "/mnt/c/Users/me");
-        assert_eq!(normalize_cwd("E:\\"), "/mnt/e");
-    }
-
-    #[test]
-    fn normalize_cwd_leaves_non_windows_paths_untouched() {
-        // 이미 WSL 경로거나 상대 경로면 건드리지 않는다
-        assert_eq!(normalize_cwd("/mnt/e/projects"), "/mnt/e/projects");
-        assert_eq!(normalize_cwd("/home/me/src"), "/home/me/src");
-        assert_eq!(normalize_cwd("relative/dir"), "relative/dir");
-        assert_eq!(normalize_cwd("~/src"), "~/src");
-    }
-
     fn command_args(command: &CommandBuilder) -> Vec<String> {
         command
             .get_argv()
@@ -428,6 +395,23 @@ mod tests {
         );
         assert!(args.iter().all(|arg| arg != "bash" && arg != "-lc"));
         assert!(args.iter().all(|arg| !arg.contains("bash -lc")));
+    }
+
+    #[test]
+    fn session_command_preserves_windows_cwd_as_a_separate_argument() {
+        let command =
+            build_session_command("Ubuntu", Some(r"E:\projects\path with space")).unwrap();
+        assert_eq!(
+            command_args(&command),
+            vec![
+                "wsl.exe",
+                "-d",
+                "Ubuntu",
+                "--cd",
+                r"E:\projects\path with space",
+                "--",
+            ]
+        );
     }
 
     #[test]
