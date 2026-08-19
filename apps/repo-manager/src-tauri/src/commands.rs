@@ -144,6 +144,18 @@ pub async fn worktree_clean(path: String) -> Result<bool, String> {
 /// 공용 `crates/launch`가 Manager 설치 layout에서 해석하고, argv는
 /// `crates/applink::build_argv`로 만들어 수신측(`parse_argv`)과 포맷이 어긋나지
 /// 않게 한다.
+fn open_target(app_id: &str, path: String) -> devbox_applink::OpenTarget {
+    if app_id == "code-pad" {
+        devbox_applink::OpenTarget::Workspace { path }
+    } else {
+        devbox_applink::OpenTarget::Path {
+            path,
+            line: None,
+            column: None,
+        }
+    }
+}
+
 #[tauri::command]
 pub fn open_in(app_id: String, path: String) -> Result<(), String> {
     let app_id = app_id.to_lowercase();
@@ -151,11 +163,7 @@ pub fn open_in(app_id: String, path: String) -> Result<(), String> {
         return Err("알 수 없는 앱".into());
     }
     let req = devbox_applink::OpenRequest {
-        target: devbox_applink::OpenTarget::Path {
-            path,
-            line: None,
-            column: None,
-        },
+        target: open_target(&app_id, path),
         from: Some("repo-manager".to_string()),
     };
     devbox_launch::launch_open(&app_id, &req).map(|_| ())
@@ -165,6 +173,26 @@ pub fn open_in(app_id: String, path: String) -> Result<(), String> {
 mod scan_tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn open_target_uses_workspace_for_code_pad_and_path_for_other_apps() {
+        let path = "E:\\projects\\devbox".to_string();
+
+        assert_eq!(
+            open_target("code-pad", path.clone()),
+            devbox_applink::OpenTarget::Workspace { path: path.clone() }
+        );
+        for app_id in ["wsl-desktop", "workbench"] {
+            assert_eq!(
+                open_target(app_id, path.clone()),
+                devbox_applink::OpenTarget::Path {
+                    path: path.clone(),
+                    line: None,
+                    column: None,
+                }
+            );
+        }
+    }
 
     fn init_git_dir(dir: &Path) {
         fs::create_dir_all(dir.join(".git")).unwrap();
