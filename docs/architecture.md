@@ -20,7 +20,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 │ packages/*  React 공용       │  tokens, editor, diff-view
 ├──────────────────────────────┤
 │ crates/*    Rust 공용        │  filesystem, markdown, process, wsl,
-│                              │  search, integration, secrets, git, launch
+│                              │  search, integration, secrets, git, launch, applink
 ├──────────────────────────────┤
 │ 공통 인프라: Cargo workspace, │
 │ pnpm workspace, git 모노레포,  │
