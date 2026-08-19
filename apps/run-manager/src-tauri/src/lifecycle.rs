@@ -372,6 +372,7 @@ mod tests {
     fn maintenance_starts_from_setup_without_a_current_tokio_runtime() {
         let database =
             std::sync::Arc::new(crate::storage::DatabaseState::open_in_memory().unwrap());
+        let app_data_dir = tempfile::tempdir().expect("temporary app data directory");
         let coordinator = SchedulerCoordinator::new(
             Arc::clone(&database),
             std::sync::Arc::new(crate::scheduler::UnavailableExecutionAdapter),
@@ -387,7 +388,7 @@ mod tests {
         spawn_maintenance_with_notifier(
             Arc::clone(&state),
             database,
-            PathBuf::from("data"),
+            app_data_dir.path().to_path_buf(),
             |_| {},
         );
         state.request_shutdown();
