@@ -31,7 +31,10 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 ## 크레이트 의존 관계
 
 ```
-  crates/filesystem ◄── everything-plus, code-pad
+  crates/filesystem ◄── api-playground, code-pad, developer-toolbox, devbox-manager,
+                       everything-plus, knowledge-base, life-log, port-manager,
+                       repo-manager, run-manager, wsl-desktop
+  crates/applink    ◄── code-pad, repo-manager, wsl-desktop, workbench
   crates/markdown   ◄── knowledge-base, code-pad
   crates/process    ◄── port-manager, run-manager
   crates/wsl        ◄── wsl-desktop, run-manager, workbench, repo-manager
