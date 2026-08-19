@@ -1,6 +1,6 @@
 # 앱 간 연동 — 인바운드 계약과 생태계 확장 설계
 
-- 상태: 제안(Proposal)
+- 상태: v0.4.1 범위(§1의 Path/Workspace 라우팅·§3·§5.1) 구현 반영 (Windows 실기 검증 대기); v0.5.0 범위(§1의 Profile/Query 라우팅·§2·§4·§5.2) 제안·보류
 - 작성일: 2026-08-17
 - 범위: 저장소 전체 — 신규 `crates/applink`, `crates/launch`, `crates/integration`, `apps/catalog.json`, 13개 앱
 - 관련: [UX 개선 설계](./2026-08-15-ux-improvements-design.md) §4.2, [wsl-desktop 터미널 설계](./2026-08-17-wsl-desktop-terminal-design.md) §4.4
@@ -29,11 +29,14 @@ v0.4.1의 `Path` 타깃에는 distro 정보가 없으므로 WSL Desktop은 앱�
 run-manager의 `--background` 하나뿐이다(`apps/run-manager/src-tauri/src/lib.rs:108`).
 code-pad·wsl-desktop·workbench의 `main.rs`/`lib.rs`에는 인자 처리가 **전혀 없다.**
 
-> 지금 repo-manager에서 "CodePad" 버튼을 누르면 **빈 Code Pad가 열린다.**
-> Workbench의 "Start Workspace"는 wsl-desktop과 code-pad를 띄우지만
-> **둘 다 아무 프로젝트도 모르는 상태로** 뜬다.
+> v0.4.0 당시 repo-manager에서 "CodePad" 버튼을 누르면 **빈 Code Pad가 열렸다.**
+> Workbench의 "Start Workspace"는 wsl-desktop과 code-pad를 띄웠지만
+> **둘 다 아무 프로젝트도 모르는 상태로** 떴다.
 
-### 0.1 v0.4.0 기준 현재 연동 실태
+### 0.1 v0.4.0 기준 현재 연동 실태 (역사적 기준선)
+
+다음 표와 설명은 v0.4.1 수정 전의 v0.4.0 상태를 기록한 역사적 관찰이며, 현재 구현 상태를
+뜻하지 않는다. 현재 릴리스 범위는 §5.1, 이후 기능은 §5.2의 v0.5.0 범위를 따른다.
 
 ```
 repo-manager   ──launch(path)─────────► code-pad       ✗ 인자 무시

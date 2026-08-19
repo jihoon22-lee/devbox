@@ -186,9 +186,10 @@ mod tests {
         );
     }
 
-    /// workbench → wsl-desktop → `OpenTarget::Profile`.
+    /// Generic/deferred `OpenTarget::Profile` argv contract (v0.5.0), not a current
+    /// Workbench → WSL Desktop mapping.
     #[test]
-    fn open_argv_workbench_wsl_desktop_profile_request() {
+    fn open_argv_generic_deferred_profile_contract() {
         let req = devbox_applink::OpenRequest {
             target: devbox_applink::OpenTarget::Profile {
                 id: "prof-1".to_string(),
