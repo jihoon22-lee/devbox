@@ -73,9 +73,11 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "api-playground"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "base64 0.22.1",
+ "dirs",
+ "filesystem",
  "reqwest",
  "secrets",
  "serde",
@@ -626,11 +628,12 @@ dependencies = [
 
 [[package]]
 name = "code-pad"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "applink",
  "base64 0.22.1",
  "chardetng",
+ "dirs",
  "encoding_rs",
  "filesystem",
  "flate2",
@@ -1035,8 +1038,10 @@ dependencies = [
 
 [[package]]
 name = "devbox-manager"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
+ "dirs",
+ "filesystem",
  "futures-util",
  "git",
  "reqwest",
@@ -1051,8 +1056,10 @@ dependencies = [
 
 [[package]]
 name = "developer-toolbox"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
+ "dirs",
+ "filesystem",
  "md-5",
  "regex",
  "serde",
@@ -1330,8 +1337,9 @@ dependencies = [
 
 [[package]]
 name = "everything-plus"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
+ "dirs",
  "filesystem",
  "notify",
  "rusqlite",
@@ -2537,10 +2545,11 @@ dependencies = [
 
 [[package]]
 name = "knowledge-base"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "base64 0.22.1",
  "dirs",
+ "filesystem",
  "integration",
  "markdown",
  "notify",
@@ -2658,8 +2667,10 @@ dependencies = [
 
 [[package]]
 name = "life-log"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
+ "dirs",
+ "filesystem",
  "git",
  "regex",
  "rusqlite",
@@ -3439,8 +3450,10 @@ dependencies = [
 
 [[package]]
 name = "port-manager"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
+ "dirs",
+ "filesystem",
  "process",
  "serde",
  "serde_json",
@@ -3899,11 +3912,13 @@ dependencies = [
 
 [[package]]
 name = "run-manager"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "chrono",
  "chrono-tz",
  "croner",
+ "dirs",
+ "filesystem",
  "integration",
  "rusqlite",
  "secrets",
@@ -6634,9 +6649,11 @@ version = "0.1.0"
 
 [[package]]
 name = "wsl-desktop"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "applink",
+ "dirs",
+ "filesystem",
  "portable-pty",
  "serde",
  "serde_json",

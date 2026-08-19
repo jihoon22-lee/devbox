@@ -1,6 +1,6 @@
 [package]
 name = "knowledge-base"
-version = "0.3.0"
+version = "0.3.1"
 description = "Knowledge Base"
 authors = ["jihoon22.lee"]
 edition = "2021"
@@ -29,3 +29,4 @@ markdown = { path = "../../../crates/markdown" }
 search = { path = "../../../crates/search" }
 notify = "8.2.0"
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
+devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }

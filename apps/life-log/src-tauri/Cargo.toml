@@ -1,6 +1,6 @@
 [package]
 name = "life-log"
-version = "0.3.0"
+version = "0.3.1"
 description = "Auto Life Log"
 authors = ["jihoon22.lee"]
 edition = "2021"
@@ -26,6 +26,8 @@ serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite"] }
 tokio = { version = "1.53.1", features = ["process", "time"] }
 devbox-git = { package = "git", path = "../../../crates/git" }
+dirs = "6.0.0"
+devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
 sysinfo = "0.39.6"
 regex = "1"
 
@@ -39,4 +41,3 @@ windows = { version = "0.58", features = [
     "Win32_System_Threading",
     "Win32_System_ProcessStatus",
 ] }
-
