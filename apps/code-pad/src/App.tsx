@@ -1002,22 +1002,35 @@ export default function App() {
       }
     };
 
-    void takePendingOpen()
-      .then((request) => {
-        if (!disposed && request) handleOpenRequest(request);
-      })
-      .catch(() => undefined);
+    const consumePendingOpen = () => {
+      void takePendingOpen()
+        .then((request) => {
+          if (!disposed && request) handleOpenRequest(request);
+        })
+        .catch(() => undefined);
+    };
+    let coldStartConsumed = false;
+    const consumeColdStart = () => {
+      if (disposed || coldStartConsumed) return;
+      coldStartConsumed = true;
+      consumePendingOpen();
+    };
 
     // In browser/Vitest the Tauri bridge is absent; treat that as no relaunch
     // forwarding rather than an unhandled rejection during mount (same
     // pattern as the file-changed listener above).
     void Promise.resolve()
-      .then(() => listen<OpenRequest>(APPLINK_OPEN_EVENT, (event) => handleOpenRequest(event.payload)))
+      .then(() => listen<OpenRequest>(APPLINK_OPEN_EVENT, () => consumePendingOpen()))
       .then((stop) => {
         if (disposed) stop();
-        else unlisten = stop;
+        else {
+          unlisten = stop;
+          consumeColdStart();
+        }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        consumeColdStart();
+      });
 
     return () => {
       disposed = true;

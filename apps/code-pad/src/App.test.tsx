@@ -20,6 +20,7 @@ import {
   saveLspDocument,
   startLanguageServer,
   stopLanguageServer,
+  takePendingOpen,
   unwatchFile,
   validateEncoding,
   watchFile,
@@ -35,16 +36,27 @@ const lspDiagnosticsHandlerRef: {
 const lspStatusHandlerRef: {
   current: ((event: { payload: LspStatusEvent }) => void) | null;
 } = { current: null };
+const appLinkHandlerRef: {
+  current: ((event: { payload: { target: { kind: string; [key: string]: unknown }; from: string | null } }) => void) | null;
+} = { current: null };
+const appLinkOrder: string[] = [];
+const rejectAppLinkListenRef = { current: false };
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (event: string, handler: unknown) => {
     if (event === "file-changed") fileChangedHandlerRef.current = handler as typeof fileChangedHandlerRef.current;
     if (event === "lsp/diagnostics") lspDiagnosticsHandlerRef.current = handler as typeof lspDiagnosticsHandlerRef.current;
     if (event === "lsp/status") lspStatusHandlerRef.current = handler as typeof lspStatusHandlerRef.current;
+    if (event === "devbox://open") {
+      if (rejectAppLinkListenRef.current) throw new Error("listener unavailable");
+      appLinkOrder.push("listen");
+      appLinkHandlerRef.current = handler as typeof appLinkHandlerRef.current;
+    }
     return () => {
       if (event === "file-changed" && fileChangedHandlerRef.current === handler) fileChangedHandlerRef.current = null;
       if (event === "lsp/diagnostics" && lspDiagnosticsHandlerRef.current === handler) lspDiagnosticsHandlerRef.current = null;
       if (event === "lsp/status" && lspStatusHandlerRef.current === handler) lspStatusHandlerRef.current = null;
+      if (event === "devbox://open" && appLinkHandlerRef.current === handler) appLinkHandlerRef.current = null;
     };
   }),
 }));
@@ -163,6 +175,7 @@ const requestLspDefinitionMock = vi.mocked(requestLspDefinition);
 const requestLspFormattingMock = vi.mocked(requestLspFormatting);
 const requestLspReferencesMock = vi.mocked(requestLspReferences);
 const requestLspRenameMock = vi.mocked(requestLspRename);
+const takePendingOpenMock = vi.mocked(takePendingOpen);
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -324,9 +337,16 @@ beforeEach(() => {
   requestLspFormattingMock.mockReset().mockResolvedValue({ documents: [] });
   requestLspReferencesMock.mockReset().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false });
   requestLspRenameMock.mockReset().mockResolvedValue({ documents: [] });
+  takePendingOpenMock.mockReset().mockImplementation(async () => {
+    appLinkOrder.push("take");
+    return null;
+  });
   fileChangedHandlerRef.current = null;
   lspDiagnosticsHandlerRef.current = null;
   lspStatusHandlerRef.current = null;
+  appLinkHandlerRef.current = null;
+  appLinkOrder.length = 0;
+  rejectAppLinkListenRef.current = false;
 });
 
 afterEach(() => cleanup());
@@ -343,6 +363,40 @@ async function openOne() {
 }
 
 describe("App editor shell operations", () => {
+  it("registers the app-link listener before consuming and takes again on relaunch", async () => {
+    openFileMock.mockResolvedValue(openedFile());
+    render(<App />);
+
+    await waitFor(() => expect(appLinkHandlerRef.current).not.toBeNull());
+    await waitFor(() => expect(takePendingOpenMock).toHaveBeenCalledTimes(1));
+    expect(appLinkOrder.slice(0, 2)).toEqual(["listen", "take"]);
+
+    takePendingOpenMock.mockResolvedValueOnce({
+      target: { kind: "path", path: "/tmp/one.ts", line: null, column: null },
+      from: "repo-manager",
+    });
+    appLinkHandlerRef.current?.({
+      payload: { target: { kind: "query", text: "stale-event-payload" }, from: "test" },
+    });
+
+    await waitFor(() => expect(takePendingOpenMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(openFileMock).toHaveBeenCalledWith("/tmp/one.ts", null));
+  });
+
+  it("consumes a cold-start request when app-link listener registration fails", async () => {
+    rejectAppLinkListenRef.current = true;
+    openFileMock.mockResolvedValue(openedFile());
+    takePendingOpenMock.mockResolvedValueOnce({
+      target: { kind: "path", path: "/tmp/listener-fallback.ts", line: null, column: null },
+      from: "repo-manager",
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(takePendingOpenMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(openFileMock).toHaveBeenCalledWith("/tmp/listener-fallback.ts", null));
+  });
+
   it("locks duplicate open requests before React can rerender", async () => {
     const request = deferred<ReturnType<typeof openedFile>>();
     openFileMock.mockReturnValue(request.promise);
