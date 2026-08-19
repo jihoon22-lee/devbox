@@ -168,6 +168,19 @@ pub fn spawn_maintenance(
     app: AppHandle,
     data_dir: PathBuf,
 ) {
+    spawn_maintenance_with_notifier(state, database, data_dir, move |database| {
+        let _ = crate::notifications::drain_pending(&app, database);
+    });
+}
+
+fn spawn_maintenance_with_notifier<F>(
+    state: Arc<RuntimeState>,
+    database: Arc<crate::storage::DatabaseState>,
+    data_dir: PathBuf,
+    notify: F,
+) where
+    F: Fn(&crate::storage::DatabaseState) + Send + 'static,
+{
     let task_state = Arc::clone(&state);
     let task = spawn_runtime_task(async move {
         let cleaner = crate::cleanup::RetentionCleaner::new(&data_dir);
@@ -184,7 +197,7 @@ pub fn spawn_maintenance(
             }
             let now = crate::storage::current_epoch_millis();
             let _ = cleaner.run(&database, now);
-            let _ = crate::notifications::drain_pending(&app, &database);
+            notify(&database);
         }
         task_state
             .maintenance_stopped
@@ -353,5 +366,36 @@ mod tests {
         let result = tauri::async_runtime::block_on(task).expect("scheduler task should join");
         assert!(result.is_ok());
         assert!(state.scheduler_stopped.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn maintenance_starts_from_setup_without_a_current_tokio_runtime() {
+        let database =
+            std::sync::Arc::new(crate::storage::DatabaseState::open_in_memory().unwrap());
+        let coordinator = SchedulerCoordinator::new(
+            Arc::clone(&database),
+            std::sync::Arc::new(crate::scheduler::UnavailableExecutionAdapter),
+        );
+        let state = std::sync::Arc::new(RuntimeState::new(
+            PathBuf::from("data.db"),
+            false,
+            coordinator,
+        ));
+
+        // The real AppHandle notification sink is intentionally replaced with
+        // a no-op so this covers the synchronous setup boundary without a UI.
+        spawn_maintenance_with_notifier(
+            Arc::clone(&state),
+            database,
+            PathBuf::from("data"),
+            |_| {},
+        );
+        state.request_shutdown();
+
+        let task = state
+            .take_maintenance_task()
+            .expect("maintenance task should be installed");
+        tauri::async_runtime::block_on(task).expect("maintenance task should join");
+        assert!(state.maintenance_stopped.load(Ordering::Acquire));
     }
 }
