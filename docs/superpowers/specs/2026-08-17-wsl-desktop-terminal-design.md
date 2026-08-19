@@ -24,6 +24,9 @@ wsl-desktop은 13개 앱 중 사용 빈도가 가장 높지만, 실사용에서 
 
 ## 1. 실측 — 이 명세를 결정한 사실들
 
+이 절의 표와 분석은 v0.4.1 수정 전 v0.4.0/pre-fix 구현을 기록한 역사적 기준선이다. 현재
+v0.4.1 동작은 §2에서, Windows acceptance로 남은 확인은 §5에서 구분한다.
+
 코드를 직접 읽어 확인했다. **여기서 나온 사실들이 아래 설계를 결정한다.**
 
 | # | 확인한 것 | 위치 |
@@ -209,7 +212,7 @@ resizeSession(sessionId, rows, cols)
   });
 ```
 
-기존 코드는 `lastSizeRef`를 IPC **전에** 낙관적으로 기록하고 `.catch`도 재시도도 없다.
+v0.4.0/pre-fix 코드는 `lastSizeRef`를 IPC **전에** 낙관적으로 기록하고 `.catch`도 재시도도 없었다.
 resize 한 번이 유실·재정렬되면 이후 모든 `fitAndSendResize`가 `:95`의 조기 반환에 걸려
 **xterm과 PTY가 영원히 다른 크기로 남는다.** 사용자가 창을 물리적으로 다른 크기로 바꿔야만
 풀린다.
@@ -256,7 +259,7 @@ type Pane = {
 
 | 위치 | 수정 |
 |---|---|
-| `terminal.rs:116` | `Interrupted`/`WouldBlock`은 계속 진행. 현재는 일시 오류에 팬이 사라지고 `wsl.exe`가 고아로 남는다 |
+| `terminal.rs:116` | **v0.4.0/pre-fix 기준:** `Interrupted`/`WouldBlock`을 EOF처럼 처리해 일시 오류에 팬이 사라지고 `wsl.exe`가 고아로 남을 수 있었다. **v0.4.1 구현:** 두 일시 오류는 계속 읽고, 루프가 끝나면 현재 핸들과 일치하는 세션만 한 번 정리해 stale reader가 교체 세션을 지우지 못하게 한다 |
 | `terminal.rs:57-66` | 문자열 조립 제거 → `build_exec_argv(&distro, Some(dir), "")`의 `--cd` 사용. 경로에 작은따옴표가 있으면 깨지고, `'; cmd; '` 주입 표면이 열려 있다. §4.2 워크스페이스 정의(파일에서 읽는 cwd)가 들어오면 신뢰 경계가 달라지므로 먼저 닫는다 |
 | `PaneCanvas.tsx:50` | `Math.max(1, …)` — `repeat(0, 1fr)`은 무효 CSS라 이전 렌더의 `gridTemplateRows`가 남는다. #189이 `cols`/`rows` 분기에 있던 가드를 `grid` 분기에서 누락하며 도입 |
 | `App.css:261-268` | `.empty`의 `display: flex`가 `<td>`(`DistroPanel.tsx:120-126`)에 적용돼 `colSpan={5}`가 무효화된다. `.side-panel .empty`에 `display: table-cell` |
@@ -441,7 +444,7 @@ pub trait Multiplexer {
 | 대상 | 방법 |
 |---|---|
 | `decode_chunk` | **골든 테스트.** 한글·박스드로잉·이모지를 1~3바이트 경계 **모든 위치**에서 분할해, 재조립 결과가 원본과 바이트 동일한지. 진짜 불량 바이트는 U+FFFD가 정확히 하나만 나오는지. carry가 3바이트를 넘지 않는지 |
-| resize 커밋 | `resizeSession`을 mock해 reject시키고, 다음 `fitAndSendResize`가 **재전송하는지** 단언 (회귀 방지: 현재는 재시도하지 않는다) |
+| resize 커밋 | **v0.4.0/pre-fix 기준:** `resizeSession` reject 뒤에 낙관적으로 기록한 크기가 남아 재시도되지 않았다. **v0.4.1 구현:** ack가 올 때만 `lastSizeRef`를 커밋하고, reject 시에는 커밋하지 않아 다음 `fitAndSendResize`가 같은 크기를 재전송하는지 단언 |
 | resize 경합 | 디바운스 타이머가 걸린 상태에서 탭 전환 → `clearTimeout`이 호출되는지 |
 | 바닥값 | 바닥값 미만 크기에서 `resizeSession`이 호출되지 않고 `lastSizeRef`도 갱신되지 않는지 |
 | 세션 id | 동시 `start_session` N회 → id 중복 0 |
@@ -456,7 +459,7 @@ Windows 전용 경로다).** `CONVENTIONS.md §1`의 "편집은 WSL, 빌드·실
 
 - `find / 2>/dev/null | head -100000` 대량 출력 후 `�` **0개**
 - `htop`·`lazygit`·`vim`을 띄운 채 창 크기 반복 변경 → 프레임 어긋남 없음
-- 창을 최소 폭까지 줄였다 되돌리기 → **셸 화면 보존** (현재는 파괴된다)
+- 창을 최소 폭까지 줄였다 되돌리기 → **v0.4.0/pre-fix 기준:** 1행×2열에 가까운 resize가 셸 화면을 파괴할 수 있었다. **v0.4.1 구현:** 바닥값(4행×20열) 미만은 resize를 전송·커밋하지 않고, 활성화 시 pending ResizeObserver 디바운스를 취소한 뒤 rAF로 다시 맞춘다. Windows 화면 보존 여부는 acceptance에서 확인한다.
 - 긴 줄(200자+) 출력 후 resize → 줄바꿈 보존 (`windowsPty` 검증)
 - 팬 4개 빠른 연속 생성 → 세션 id 충돌 없음, 출력 섞임 없음
 - 한글 프롬프트·이모지 powerline 테마에서 커서 위치 정확 (Unicode11 검증)
