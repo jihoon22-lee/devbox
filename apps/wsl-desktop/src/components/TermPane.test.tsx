@@ -10,11 +10,14 @@ import TermPane from "./TermPane";
  * Unicode11Addon)을 rows/cols를 직접 조작할 수 있는 최소 스텁으로 대체하고 실제
  * TermPane을 렌더링한다.
  */
-const { createdTerminals, FakeTerminal, FakeFitAddon, FakeUnicode11Addon } = vi.hoisted(() => {
+const { createdTerminals, fitSizes, observerState, FakeTerminal, FakeFitAddon, FakeUnicode11Addon } = vi.hoisted(() => {
   type TerminalOptions = {
     windowsPty?: { backend: string; buildNumber?: number };
   };
+  type TerminalSize = { rows: number; cols: number };
   const createdTerminals: { rows: number; cols: number; options: TerminalOptions }[] = [];
+  const fitSizes: TerminalSize[] = [];
+  const observerState: { callback?: () => void } = {};
 
   class FakeTerminal {
     rows = 2;
@@ -35,12 +38,18 @@ const { createdTerminals, FakeTerminal, FakeFitAddon, FakeUnicode11Addon } = vi.
   }
 
   class FakeFitAddon {
-    fit() {}
+    fit() {
+      const nextSize = fitSizes.shift();
+      if (!nextSize) return;
+      const term = createdTerminals[createdTerminals.length - 1];
+      term.rows = nextSize.rows;
+      term.cols = nextSize.cols;
+    }
   }
 
   class FakeUnicode11Addon {}
 
-  return { createdTerminals, FakeTerminal, FakeFitAddon, FakeUnicode11Addon };
+  return { createdTerminals, fitSizes, observerState, FakeTerminal, FakeFitAddon, FakeUnicode11Addon };
 });
 
 vi.mock("@xterm/xterm", () => ({ Terminal: FakeTerminal }));
@@ -78,6 +87,8 @@ function baseProps(overrides: Partial<ComponentProps<typeof TermPane>> = {}): Co
 
 beforeEach(() => {
   createdTerminals.length = 0;
+  fitSizes.length = 0;
+  observerState.callback = undefined;
   mockResizeSession.mockClear();
   // TermPane 마운트는 항상 `new ResizeObserver(...)`를 호출한다. jsdom은 이를 구현하지
   // 않으므로(ReferenceError) 최소 스텁으로 대체한다. 이 스위트는 ResizeObserver의
@@ -86,6 +97,10 @@ beforeEach(() => {
   vi.stubGlobal(
     "ResizeObserver",
     class {
+      constructor(callback: () => void) {
+        observerState.callback = callback;
+      }
+
       observe() {}
       unobserve() {}
       disconnect() {}
@@ -102,6 +117,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -156,5 +173,62 @@ describe("TermPane — resize 바닥값 (§2.3)", () => {
     term.cols = 80;
     rerender(<TermPane {...props(true)} />);
     expect(mockResizeSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries the same dimensions when resizeSession rejects", async () => {
+    vi.useFakeTimers();
+    const registerWrite = vi.fn();
+    const unregisterWrite = vi.fn();
+    render(<TermPane {...baseProps({ active: false, registerWrite, unregisterWrite })} />);
+    const term = createdTerminals[0];
+    term.rows = 24;
+    term.cols = 80;
+    mockResizeSession.mockRejectedValueOnce(new Error("resize rejected"));
+
+    expect(observerState.callback).toBeDefined();
+    observerState.callback!();
+    vi.advanceTimersByTime(100);
+    expect(mockResizeSession).toHaveBeenCalledTimes(1);
+    expect(mockResizeSession).toHaveBeenNthCalledWith(1, "s1", 24, 80);
+
+    // Let the rejection handler run without committing the rejected size.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    observerState.callback!();
+    vi.advanceTimersByTime(100);
+    expect(mockResizeSession).toHaveBeenCalledTimes(2);
+    expect(mockResizeSession).toHaveBeenNthCalledWith(2, "s1", 24, 80);
+  });
+
+  it("cancels a pending ResizeObserver resize before the activation resize", async () => {
+    vi.useFakeTimers();
+    const registerWrite = vi.fn();
+    const unregisterWrite = vi.fn();
+    // Mount fit, activation fit, and a stale timer fit respectively. The third size
+    // must never reach resizeSession when activation cancels the pending timer.
+    fitSizes.push({ rows: 2, cols: 5 }, { rows: 24, cols: 80 }, { rows: 40, cols: 120 });
+    const { rerender } = render(<TermPane {...baseProps({ active: false, registerWrite, unregisterWrite })} />);
+
+    expect(observerState.callback).toBeDefined();
+    observerState.callback!();
+    const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
+    const clearCallsBeforeActivation = clearTimeoutSpy.mock.invocationCallOrder.length;
+
+    rerender(<TermPane {...baseProps({ active: true, registerWrite, unregisterWrite })} />);
+    vi.runOnlyPendingTimers();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockResizeSession).toHaveBeenCalledTimes(1);
+    expect(mockResizeSession).toHaveBeenNthCalledWith(1, "s1", 24, 80);
+    const activationClearOrders = clearTimeoutSpy.mock.invocationCallOrder.slice(clearCallsBeforeActivation);
+    expect(activationClearOrders).not.toHaveLength(0);
+    expect(activationClearOrders[0]).toBeLessThan(mockResizeSession.mock.invocationCallOrder[0]);
+
+    vi.advanceTimersByTime(100);
+    await Promise.resolve();
+    expect(mockResizeSession).toHaveBeenCalledTimes(1);
+    clearTimeoutSpy.mockRestore();
   });
 });

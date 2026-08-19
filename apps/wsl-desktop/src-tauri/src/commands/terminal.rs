@@ -607,14 +607,27 @@ mod tests {
     }
 
     #[test]
-    fn session_ids_are_unique_across_many_sequential_calls() {
-        let mut ids = std::collections::HashSet::new();
-        for _ in 0..1000 {
-            assert!(
-                ids.insert(next_session_id()),
-                "duplicate session id generated"
-            );
+    fn session_ids_are_unique_across_concurrent_calls() {
+        const THREADS: usize = 16;
+        const IDS_PER_THREAD: usize = 64;
+
+        let workers = (0..THREADS)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    (0..IDS_PER_THREAD)
+                        .map(|_| next_session_id())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let mut ids = std::collections::HashSet::with_capacity(THREADS * IDS_PER_THREAD);
+        for worker in workers {
+            for id in worker.join().expect("session ID worker panicked") {
+                assert!(ids.insert(id), "duplicate session id generated");
+            }
         }
+        assert_eq!(ids.len(), THREADS * IDS_PER_THREAD);
     }
 
     fn test_session_handle() -> Arc<Mutex<SessionHandle>> {
