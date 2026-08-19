@@ -101,7 +101,7 @@ export default function App() {
   // stateRef를 통해서만 tabs/activeTabId/activePaneId를 읽는다 — 위 주석 참고.
   const dropPane = useCallback((paneId: string) => {
     const { tabs: curTabs, activeTabId: curActiveTabId, activePaneId: curActivePaneId } = stateRef.current;
-    setPanes((prev) => prev.filter((p) => p.id !== paneId));
+    setPanes((prev) => prev.filter((p) => p.sessionId !== paneId));
 
     const ownerIdx = curTabs.findIndex((t) => t.paneIds.includes(paneId));
     if (ownerIdx === -1) {
@@ -160,7 +160,8 @@ export default function App() {
     const usedCwd = cwd.trim() || undefined;
     try {
       const id = await startSession(distro, usedCwd);
-      setPanes((prev) => [...prev, { id, distro }]);
+      const key = makeId("p");
+      setPanes((prev) => [...prev, { key, sessionId: id, distro, cwd: usedCwd }]);
 
       if (tabId === null) {
         const title = nextTabTitle(tabs.map((t) => t.title), distro);
@@ -194,7 +195,7 @@ export default function App() {
     if (idx === -1) return;
     const tab = tabs[idx];
     tab.paneIds.forEach((id) => void closeSession(id));
-    setPanes((prev) => prev.filter((p) => !tab.paneIds.includes(p.id)));
+    setPanes((prev) => prev.filter((p) => p.sessionId === null || !tab.paneIds.includes(p.sessionId)));
     const nextTabs = tabs.filter((t) => t.id !== tabId);
     setTabs(nextTabs);
     if (activeTabId === tabId) {

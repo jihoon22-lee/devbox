@@ -49,6 +49,14 @@ export async function writeSession(sessionId: string, data: string): Promise<voi
   await invoke("write_session", { sessionId, data });
 }
 
+/** PTY 리더 스레드를 spawn한다. start_session이 아니라 이 호출이 방출을 시작시키므로,
+ * TermPane이 registerWrite 직후 정확히 한 번 호출해야 마운트 사이의 출력이 유실되지
+ * 않는다. */
+export async function attachSession(sessionId: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("attach_session", { sessionId });
+}
+
 /** 활성 탭의 세션 id만 넘겨야 한다 — 등록된 모든 세션이 아니라 대상만 받는다. */
 export async function broadcast(sessionIds: string[], data: string): Promise<void> {
   if (!isTauri()) return;

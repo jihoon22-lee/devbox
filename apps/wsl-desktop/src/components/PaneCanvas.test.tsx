@@ -35,8 +35,11 @@ vi.mock("./TermPane", () => ({
   },
 }));
 
+// key와 sessionId를 같은 값으로 둔다 — 이 테스트 스위트는 세션 재부착이 아니라
+// panes 배열 순서/재마운트 방지 불변식을 검증하는 것이 목적이라 둘을 구분할
+// 필요가 없다. 기존 테스트의 "p1"/"p2" 참조는 그대로 sessionId로도 동작한다.
 function pane(id: string, distro = "Ubuntu"): Pane {
-  return { id, distro };
+  return { key: id, sessionId: id, distro };
 }
 
 function tab(id: string, paneIds: string[]): Tab {
@@ -146,5 +149,20 @@ describe("PaneCanvas — 탭 전환 시 팬 재마운트 방지", () => {
     expect(getByTestId("pane-p1").style.display).toBe("none");
     expect(getByTestId("pane-p2").getAttribute("data-active")).toBe("true");
     expect(getByTestId("pane-p2").style.display).not.toBe("none");
+  });
+});
+
+describe("PaneCanvas — grid 레이아웃 가드 (#189 회귀)", () => {
+  it("활성 탭에 팬이 없어도 gridTemplateRows/Columns가 repeat(0, …)이 아니다", () => {
+    // grid 분기의 gridRows/gridCols는 activePaneIds.length에서 나온다. 0개면
+    // `repeat(0, 1fr)`이 나올 수 있는데, 이는 무효 CSS라 이전 렌더의 값이 그대로
+    // 남는다. cols/rows 분기엔 있던 Math.max(1, …) 가드가 grid 분기에 누락됐던
+    // 버그(#189)의 회귀를 막는다.
+    const tabs = [tab("t1", [])];
+    const { container } = render(<PaneCanvas {...baseProps({ tabs, panes: [], activeTabId: "t1" })} />);
+
+    const panesEl = container.querySelector(".panes") as HTMLElement;
+    expect(panesEl.style.gridTemplateRows).not.toContain("repeat(0");
+    expect(panesEl.style.gridTemplateColumns).not.toContain("repeat(0");
   });
 });

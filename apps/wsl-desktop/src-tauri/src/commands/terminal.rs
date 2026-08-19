@@ -1,7 +1,8 @@
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 
@@ -16,10 +17,30 @@ pub struct SessionHandle {
     pub writer: Box<dyn Write + Send>,
     pub child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     /// ConPTY(HPCON)를 보관하는 master. drop 되면 ConPTY가 닫히므로
-    /// 세션 수명 동안 유지해야 한다 (일찍 닫으면 자식이 0xc0000142로 실패).
+    /// 세션 수명 동안 유지해야 한다 (일찍 닫으면 자식이 0xc0000142로 실패한다).
     /// v0.2.2에서는 보관 용도로만 썼지만, 이제 `resize_session`이
     /// `MasterPty::resize()`를 호출하는 데도 쓰인다.
     pub master: Option<Box<dyn portable_pty::MasterPty>>,
+    /// `attach_session`이 리더 스레드를 시작할 때 꺼내 쓰는 PTY 리더.
+    /// `start_session`이 세션을 만들 때 채우고, attach 후에는 스레드 클로저로
+    /// 이동하므로 `None`으로 남는다.
+    pub reader: Option<Box<dyn Read + Send>>,
+    /// 리더 스레드가 이미 spawn 됐는지. `attach_session`을 두 번 호출해도
+    /// 스레드가 두 번 spawn 되지 않도록 막는 가드.
+    pub attached: bool,
+}
+
+impl SessionHandle {
+    /// 첫 attach 요청에서만 `true`를 반환하고 내부 플래그를 세운다.
+    /// 이후 재호출은 `false` — 리더 스레드 중복 spawn을 막는다.
+    fn mark_attached(&mut self) -> bool {
+        if self.attached {
+            false
+        } else {
+            self.attached = true;
+            true
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -34,10 +55,63 @@ pub struct TerminalOutput {
     pub data: String,
 }
 
+/// 프로세스 전역 카운터. 밀리초 타임스탬프는 같은 밀리초에 두 세션이 생기면
+/// 충돌한다 — HashMap 삽입이 먼저 생긴 `SessionHandle`을 덮어써 그 ConPTY가
+/// 닫히고, 두 리더 스레드가 같은 id로 방출해 두 스트림이 한 xterm에 섞인다.
+static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
+
+/// 다음 세션 id를 발급한다. 프론트의 `lib/id.ts`의 `makeId`와 같은 패턴
+/// (단조 증가 카운터)을 백엔드 쪽에서 쓴다.
+fn next_session_id() -> String {
+    let n = NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed);
+    format!("s{n}")
+}
+
+/// PTY 바이트를 UTF-8로 디코드한다. 읽기 경계에 걸린 불완전한 멀티바이트 시퀀스는
+/// carry 에 남겨 다음 청크 앞에 이어 붙인다. 진짜 잘못된 바이트만 U+FFFD 로 치환한다.
+///
+/// 불완전 시퀀스는 최대 3바이트(UTF-8 최대 4바이트 - 1)이므로 carry 는 자연히 유계다.
+fn decode_chunk(carry: &mut Vec<u8>, chunk: &[u8]) -> String {
+    carry.extend_from_slice(chunk);
+    let mut out = String::with_capacity(carry.len());
+    let mut start = 0usize;
+    loop {
+        match std::str::from_utf8(&carry[start..]) {
+            Ok(s) => {
+                out.push_str(s);
+                start = carry.len();
+                break;
+            }
+            Err(e) => {
+                let valid = e.valid_up_to();
+                out.push_str(std::str::from_utf8(&carry[start..start + valid]).unwrap());
+                match e.error_len() {
+                    // 진짜 불량 바이트 — U+FFFD 로 치환하고 건너뛴다
+                    Some(n) => {
+                        out.push('\u{FFFD}');
+                        start += valid + n;
+                    }
+                    // 끝이 잘린 시퀀스 — 다음 청크로 넘긴다
+                    None => {
+                        start += valid;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    carry.drain(..start);
+    out
+}
+
 /// 새 WSL 터미널 세션을 시작한다. `cwd`가 있으면 해당 경로로 열린다.
+///
+/// PTY 리더 스레드는 여기서 spawn하지 않는다 — `attach_session`이 한다.
+/// (프론트가 출력 핸들러를 등록하기 전에 방출을 시작하면, 등록 전 데이터는
+/// `App.tsx`의 옵셔널 체이닝으로 조용히 버려지고 이스케이프 시퀀스 중간에서
+/// 잘린 첫 청크가 리터럴 쓰레기로 렌더된다.)
 #[tauri::command]
 pub fn start_session(
-    app: tauri::AppHandle,
     state: tauri::State<'_, Arc<SessionState>>,
     distro: String,
     cwd: Option<String>,
@@ -55,20 +129,23 @@ pub fn start_session(
     let mut cmd = CommandBuilder::new("wsl.exe");
     cmd.args(["-d".to_string(), distro.clone()]);
     if let Some(dir) = cwd.filter(|c| !c.is_empty()) {
-        // 지정 경로로 바로 열기: wsl -d <distro> -- bash -lc "cd <dir> && exec bash"
-        let argv = devbox_wsl::argv::build_exec_argv(
-            &distro,
-            None,
-            &format!("bash -lc \"cd '{dir}' && exec bash\""),
-        )
-        .map_err(|e| e.to_string())?;
-        cmd.args(argv[3..].iter()); // "-d <distro>" 다음부터
+        // 지정 경로로 바로 열기: wsl.exe -d <distro> --cd <dir> --
+        // (이전에는 `bash -lc "cd '{dir}' && exec bash"`를 문자열로 조립했다 —
+        // 경로에 작은따옴표가 있으면 깨지고 셸 주입 표면이 열려 있었다. `--cd`는
+        // wsl.exe가 셸 없이 직접 처리하므로 인용이 필요 없다.)
+        let argv = devbox_wsl::argv::build_exec_argv(&distro, Some(dir.as_str()), "")
+            .map_err(|e| e.to_string())?;
+        // argv = ["wsl.exe", "-d", <distro>, "--cd", <dir>, "--"].
+        // 앞 3개(wsl.exe/-d/<distro>)는 위에서 이미 cmd.args로 추가했으므로 3부터
+        // 슬라이스한다. 이 오프셋은 --cd 유무와 무관하게 항상 옳다 —
+        // build_exec_argv가 그 3개를 고정 순서로 반환하기 때문이다.
+        cmd.args(argv[3..].iter());
     }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
-    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     // Windows에서만 ConPTY DSR 응답을 쓰므로 그 외 OS에서는 mut 불필요
     #[allow(unused_mut)]
     let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
@@ -86,36 +163,69 @@ pub fn start_session(
         let _ = writer.flush();
     }
 
-    let session_id = format!(
-        "s{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    );
+    let session_id = next_session_id();
 
     let handle = Arc::new(Mutex::new(SessionHandle {
         distro: distro.clone(),
         writer,
         child: Some(child),
         master: Some(master),
+        reader: Some(reader),
+        attached: false,
     }));
     state
         .sessions
         .lock()
         .unwrap()
-        .insert(session_id.clone(), handle.clone());
+        .insert(session_id.clone(), handle);
 
-    // PTY 출력 → 프론트 이벤트
+    Ok(session_id)
+}
+
+/// PTY 리더 스레드를 시작한다. 프론트가 출력 핸들러를 등록한 직후 호출해야
+/// `start_session`과 `attach_session` 사이의 출력이 유실되지 않는다 — 그 사이의
+/// 출력은 ConPTY 내부 버퍼가 보관한다.
+///
+/// 세션이 이미 attach 됐거나(`SessionHandle::mark_attached`가 막는다) 이미
+/// 닫혔으면(맵에 없음) 조용히 무시한다 — `write_session` 등 다른 커맨드와 같은
+/// 관례다. attach가 오지 않아도 `close_session`은 세션을 정리할 수 있다
+/// (reader/writer/master/child가 전부 `SessionHandle`에 있으므로 drop만으로 정리된다).
+#[tauri::command]
+pub fn attach_session(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<SessionState>>,
+    session_id: String,
+) -> Result<(), String> {
+    let handle = {
+        let sessions = state.sessions.lock().unwrap();
+        match sessions.get(&session_id) {
+            Some(h) => h.clone(),
+            None => return Ok(()),
+        }
+    };
+
+    let reader = {
+        let mut h = handle.lock().unwrap();
+        if !h.mark_attached() {
+            return Ok(());
+        }
+        h.reader.take()
+    };
+    let Some(mut reader) = reader else {
+        // attached 와 reader 상태가 어긋난 경우 방어적으로 종료한다 (일어나면 안 됨).
+        return Ok(());
+    };
+
     let app_out = app.clone();
     let sid = session_id.clone();
     std::thread::spawn(move || {
+        let mut carry: Vec<u8> = Vec::new();
         let mut buf = [0u8; 4096];
         loop {
             match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
+                Ok(0) => break,
                 Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).into_owned();
+                    let data = decode_chunk(&mut carry, &buf[..n]);
                     let _ = app_out.emit(
                         "terminal-output",
                         TerminalOutput {
@@ -124,6 +234,13 @@ pub fn start_session(
                         },
                     );
                 }
+                // 일시 오류 — EOF가 아니다. 계속 읽는다.
+                Err(e)
+                    if e.kind() == ErrorKind::Interrupted || e.kind() == ErrorKind::WouldBlock =>
+                {
+                    continue;
+                }
+                Err(_) => break,
             }
         }
         let _ = app_out.emit(
@@ -135,7 +252,7 @@ pub fn start_session(
         );
     });
 
-    Ok(session_id)
+    Ok(())
 }
 
 /// 세션에 키 입력을 전달한다.
@@ -231,4 +348,133 @@ pub fn list_sessions(state: tauri::State<'_, Arc<SessionState>>) -> Vec<SessionI
             distro: h.lock().unwrap().distro.clone(),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 문자열을 모든 바이트 경계에서 2조각으로 나눠 각각 별도 청크로 넘기고,
+    /// 재조립 결과가 원본과 바이트 동일한지 모든 분할 위치에서 확인한다.
+    fn assert_roundtrip_all_splits(s: &str) {
+        let bytes = s.as_bytes();
+        for i in 1..bytes.len() {
+            let mut carry = Vec::new();
+            let mut out = String::new();
+            out.push_str(&decode_chunk(&mut carry, &bytes[..i]));
+            out.push_str(&decode_chunk(&mut carry, &bytes[i..]));
+            assert_eq!(out, s, "split at byte {i} failed for {s:?}");
+            assert!(
+                carry.is_empty(),
+                "carry not drained after full input, split at {i}"
+            );
+        }
+    }
+
+    #[test]
+    fn korean_survives_every_split_point() {
+        assert_roundtrip_all_splits("한글 테스트");
+    }
+
+    #[test]
+    fn box_drawing_survives_every_split_point() {
+        assert_roundtrip_all_splits("┌─┬─┐│└┘");
+    }
+
+    #[test]
+    fn emoji_survives_every_split_point() {
+        // 4바이트 이모지
+        assert_roundtrip_all_splits("😀😃😄🎉");
+    }
+
+    #[test]
+    fn three_chunk_splits_reassemble_exactly() {
+        let s = "한글 테스트 ┌─┬─┐ 😀😃";
+        let bytes = s.as_bytes();
+        let len = bytes.len();
+        for a in 1..len {
+            for b in (a + 1)..len {
+                let mut carry = Vec::new();
+                let mut out = String::new();
+                out.push_str(&decode_chunk(&mut carry, &bytes[..a]));
+                out.push_str(&decode_chunk(&mut carry, &bytes[a..b]));
+                out.push_str(&decode_chunk(&mut carry, &bytes[b..]));
+                assert_eq!(out, s, "3-way split at {a},{b} failed");
+                assert!(carry.is_empty(), "carry not drained, split at {a},{b}");
+            }
+        }
+    }
+
+    #[test]
+    fn lone_invalid_byte_produces_one_replacement_char_and_resumes() {
+        let mut carry = Vec::new();
+        // 0xFF는 UTF-8에서 유효한 시작 바이트가 될 수 없다.
+        let out = decode_chunk(&mut carry, &[b'a', 0xFF, b'b']);
+        assert_eq!(out, "a\u{FFFD}b");
+        assert!(carry.is_empty());
+    }
+
+    #[test]
+    fn lone_continuation_byte_produces_one_replacement_char() {
+        let mut carry = Vec::new();
+        // 0x9C는 계속 바이트(continuation byte)만 가능 — 단독으로는 시작 바이트가 될 수 없다.
+        let out = decode_chunk(&mut carry, &[b'x', 0x9C, b'y']);
+        assert_eq!(out, "x\u{FFFD}y");
+        assert!(carry.is_empty());
+    }
+
+    #[test]
+    fn decoding_resumes_correctly_after_invalid_byte_across_chunks() {
+        let mut carry = Vec::new();
+        let mut out = String::new();
+        out.push_str(&decode_chunk(&mut carry, &[0xFF]));
+        out.push_str(&decode_chunk(&mut carry, "한글".as_bytes()));
+        assert_eq!(out, "\u{FFFD}한글");
+        assert!(carry.is_empty());
+    }
+
+    #[test]
+    fn carry_never_exceeds_three_bytes() {
+        let s = "한글 테스트 ┌─┬─┐ 😀😃 mixed ascii";
+        let bytes = s.as_bytes();
+        let mut carry = Vec::new();
+        for chunk in bytes.chunks(1) {
+            let _ = decode_chunk(&mut carry, chunk);
+            assert!(carry.len() <= 3, "carry grew to {} bytes", carry.len());
+        }
+    }
+
+    #[test]
+    fn chunk_ending_on_char_boundary_leaves_carry_empty() {
+        let mut carry = Vec::new();
+        let out = decode_chunk(&mut carry, "한글".as_bytes());
+        assert_eq!(out, "한글");
+        assert!(carry.is_empty());
+    }
+
+    #[test]
+    fn session_ids_are_unique_across_many_sequential_calls() {
+        let mut ids = std::collections::HashSet::new();
+        for _ in 0..1000 {
+            assert!(
+                ids.insert(next_session_id()),
+                "duplicate session id generated"
+            );
+        }
+    }
+
+    #[test]
+    fn attach_marks_session_attached_only_once() {
+        let mut handle = SessionHandle {
+            distro: "Ubuntu".to_string(),
+            writer: Box::new(Vec::new()),
+            child: None,
+            master: None,
+            reader: None,
+            attached: false,
+        };
+        assert!(handle.mark_attached(), "first attach should succeed");
+        assert!(!handle.mark_attached(), "second attach must be a no-op");
+        assert!(!handle.mark_attached(), "third attach must also be a no-op");
+    }
 }

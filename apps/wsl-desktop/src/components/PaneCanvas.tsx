@@ -55,28 +55,37 @@ export default function PaneCanvas({
       : layout === "rows"
         ? { gridTemplateRows: `repeat(${Math.max(1, activePaneIds.length)}, 1fr)` }
         : {
-            gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
-            gridTemplateRows: `repeat(${gridRows}, 1fr)`,
+            // activePaneIds.length === 0일 때 gridRows도 0이 되어 `repeat(0, 1fr)`은 무효
+            // CSS라 이전 렌더의 gridTemplateRows가 그대로 남는다. cols/rows 분기엔 있던
+            // Math.max(1, …) 가드가 #189에서 이 grid 분기에만 누락됐었다.
+            gridTemplateColumns: `repeat(${Math.max(1, gridCols)}, 1fr)`,
+            gridTemplateRows: `repeat(${Math.max(1, gridRows)}, 1fr)`,
           };
 
   return (
     <div className="panes" style={gridStyle}>
       {panes.map((pane) => {
-        const order = activePaneIds.indexOf(pane.id);
+        // 세션이 아직 붙지 않은 팬(sessionId === null)은 TermPane을 마운트할 것이 없다
+        // — 지금 이 릴리스에서는 startSession 성공 후에만 팬이 생기므로 실질적으로는
+        // 항상 non-null이지만, 타입이 허용하는 미래(레이아웃 복원)를 위해 가드해 둔다.
+        // panes 배열 자체는 건드리지 않으므로(그냥 렌더를 건너뜀) 순서 불변식은 유지된다.
+        if (pane.sessionId === null) return null;
+        const sessionId = pane.sessionId;
+        const order = activePaneIds.indexOf(sessionId);
         const active = order !== -1;
         return (
           <TermPane
-            key={pane.id}
-            sessionId={pane.id}
+            key={pane.key}
+            sessionId={sessionId}
             title={pane.distro}
             active={active}
-            isFocusedPane={pane.id === activePaneId}
+            isFocusedPane={sessionId === activePaneId}
             broadcastOn={broadcastOn}
             broadcastTargetIds={activePaneIds}
             registerWrite={registerWrite}
             unregisterWrite={unregisterWrite}
-            onClose={() => onClosePane(pane.id)}
-            onFocusPane={() => onFocusPane(pane.id)}
+            onClose={() => onClosePane(sessionId)}
+            onFocusPane={() => onFocusPane(sessionId)}
             onShortcut={onShortcut}
             style={active ? { order } : { display: "none" }}
           />
