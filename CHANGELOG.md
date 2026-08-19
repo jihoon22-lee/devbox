@@ -3,6 +3,29 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [v0.4.1-rc3] - 2026-08-20
+
+v0.4.1-rc3는 RC2 Windows acceptance 중 발견된 Run Manager 시작 결함을 수정한 추가 acceptance
+후보 빌드다. 이 후보는 안정판 v0.4.1의 Windows acceptance가 완료됐다는 뜻이 아니다.
+
+### Fixed
+
+- **run-manager 0.3.2** — RC2 Windows acceptance에서
+  `apps/run-manager/src-tauri/src/lifecycle.rs:144`의 scheduler `tokio::spawn`이 Tauri `setup`
+  경계에서 현재 Tokio runtime 없이 실행되어 panic하고 프로세스가 즉시 종료되는 현상을 직접
+  관찰했다. 후속 코드 검토와 회귀 테스트에서 maintenance task에도 같은 setup-runtime 결함이
+  있음을 확인했으며, 두 lifecycle task를 Tauri가 구성한 async runtime에서 시작하도록 변경했다.
+
+### Tests
+
+- 동기 `setup` 경계에서 scheduler와 maintenance task가 panic 없이 시작·종료되는 회귀 테스트를
+  추가했다.
+
+### Release status
+
+- RC3는 수정 사항을 확인하기 위한 Windows acceptance 후보이며, 선택된 실기 검증이 끝날 때까지
+  안정판 v0.4.1로 간주하지 않는다.
+
 ## [v0.4.1-rc2] - 2026-08-20
 
 v0.4.1-rc2는 코드 변경과 자동화 게이트를 반영한 Windows acceptance 후보 빌드다. 이 후보는

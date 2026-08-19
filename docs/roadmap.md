@@ -46,7 +46,7 @@
 | [앱 간 연동 설계](./superpowers/specs/2026-08-17-app-interop-design.md) | argv 계약, 카탈로그 capability, 스냅샷 버스 정리 |
 | [UX 개선 설계](./superpowers/specs/2026-08-15-ux-improvements-design.md) | 컨텍스트 메뉴 13개 앱, toolbox 도구, 앱별 항목, 실사용 피드백 |
 
-### v0.4.1 — 핫픽스 (결함만, 기능 추가 없음; RC2 코드·자동화 게이트 준비; 선택된 Windows acceptance 대기)
+### v0.4.1 — 핫픽스 (결함만, 기능 추가 없음; RC3 코드·자동화 게이트 준비; 선택된 Windows acceptance 대기)
 
 1. **wsl-desktop 터미널 출력·세션 실행 결함** — v0.4.0에서 `terminal.rs`가 PTY 읽기마다
    `String::from_utf8_lossy`를 호출해 읽기 경계의 한글·박스드로잉을 U+FFFD로 치환했고,
@@ -57,7 +57,14 @@
    **argv를 읽는 앱이 없어** 빈 앱이 열렸다. v0.4.1에서 `crates/applink`와 Code Pad/WSL Desktop/
    Workbench의 수신 및 대상 매핑을 구현해 복구했다.
 
-RC2의 코드와 자동화 게이트는 준비됐지만, 선택된 Windows acceptance(패키지·프로토콜·실제 경로·시각)
+3. **run-manager 시작 시 panic** — RC2 Windows acceptance에서
+   `apps/run-manager/src-tauri/src/lifecycle.rs:144`의 scheduler `tokio::spawn` 호출이 Tauri
+   `setup` 경계의 runtime 부재로 panic하고 프로세스가 즉시 종료되는 현상을 직접 관찰했다. 후속
+   코드 검토와 회귀 테스트에서 maintenance task에도 같은 setup-runtime 결함이 있음을 확인했다.
+   v0.4.1-rc3에서 두 lifecycle task를 Tauri가 구성한 async runtime에서 시작하도록 수정하고,
+   동기 `setup` 경계의 시작·종료 회귀 테스트를 추가했다.
+
+RC3의 코드와 자동화 게이트는 준비됐지만, 선택된 Windows acceptance(패키지·프로토콜·실제 경로·시각)
 검증은 아직 대기 중이다. 따라서 안정판 v0.4.1은 완료로 표시하지 않는다.
 
 ### v0.5.0
@@ -82,7 +89,7 @@ Stage 2    앱 간 연동 (PR 26~30) — integration snapshot, ProjectProfile �
 Stage 3    기존 앱 깊이 (PR 31~39) — Run Manager 관찰성, Code Pad 복구 ✅
 Stage 4    Workbench — ProjectProfile 기반 orchestration 앱          ✅
 Stage 5    Webhook Lab, Dev Environment Doctor, Repo Manager          ✅
-v0.4.1     핫픽스 — 터미널 PTY 전송 결함, 끊긴 앱 간 링크             ◐ (Windows 수동 검증 별도)
+v0.4.1     핫픽스 — 터미널 PTY·끊긴 앱 간 링크·Run Manager 시작 panic 수정  ◐ (Windows 수동 검증 별도)
 v0.5.0     유기성(argv 계약·카탈로그) + 컨텍스트 메뉴 + 터미널 사용성  ◻
 ```
 
