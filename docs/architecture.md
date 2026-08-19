@@ -57,7 +57,9 @@ code-pad:         React(CodeMirror) → commands → LSP stdio 서버, filesyste
 run-manager:      React → commands → scheduler → platform 실행 어댑터(Windows Job Object/WSL) → SQLite
 devbox-manager:   React → commands → catalog/manifest → GitHub release asset
 workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument,
-                   단 argv 수신 앱이 없어 현재는 미동작 — v0.4.1에서 구현 예정. ./superpowers/specs/2026-08-17-app-interop-design.md)
+                   v0.4.0에서는 argv 수신 부재로 미동작했으나, v0.4.1에서 crates/applink와
+                   single-instance pending-open 수신을 Code Pad/WSL Desktop/Workbench에 구현.
+                   Windows 실사용 검증은 v0.4.1-rc1에서 진행 예정. ./superpowers/specs/2026-08-17-app-interop-design.md)
 webhook-lab:      inbound HTTP → core/server → history·rule·fixture → React
 repo-manager:     React → commands → git crate(wsl) → repository/worktree 탐색·생성
 ```

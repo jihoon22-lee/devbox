@@ -119,11 +119,24 @@ jobs:
       - name: Determine tag
         id: tag
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_TAG: ${{ github.ref_name }}
+          DISPATCH_TAG: ${{ github.event.inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "push" ]; then
+            tag="$PUSH_TAG"
           else
-            echo "tag=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+            tag="$DISPATCH_TAG"
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ "$tag" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Fail if tag already exists
@@ -161,7 +174,8 @@ jobs:
             artifacts/staging/**/*.exe
             artifacts/staging/release-manifest.json
           draft: false
-          make_latest: true
+          prerelease: ${{ steps.tag.outputs.prerelease }}
+          make_latest: ${{ steps.tag.outputs.make_latest }}
 
   verify:
     name: Verify release assets against manifest

@@ -4,7 +4,8 @@
 - 작성일: 2026-08-17
 - 범위: `apps/wsl-desktop` 단일 앱 + `crates/wsl`
 - 관련: [UX 개선 설계](./2026-08-15-ux-improvements-design.md) §2 를 이 문서가 대체한다
-- 선행: [앱 간 연동 설계](./2026-08-17-app-interop-design.md) §3 (`--profile` 수신)
+- 선행: [앱 간 연동 설계](./2026-08-17-app-interop-design.md) §1.2 (`Path` 수신은 v0.4.1,
+  `Profile` 수신과 레이아웃 선택은 v0.5.0 §4.4)
 
 ## 0. 배경
 

@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "code-pad"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "applink",
  "base64 0.22.1",
@@ -3825,7 +3825,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "repo-manager"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "applink",
  "filesystem",
@@ -6560,7 +6560,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "workbench"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "applink",
  "git",
