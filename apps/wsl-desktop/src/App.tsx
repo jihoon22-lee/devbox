@@ -168,9 +168,8 @@ export default function App() {
     switch (action.kind) {
       case "openTerminal":
         // repo-manager는 저장소의 Windows 경로를 보내는데(연동 설계 §0.1) 이
-        // 터미널은 WSL이다. 변환은 백엔드가 한다 — start_session의
-        // normalize_cwd가 드라이브 문자 경로를 /mnt/... 로 바꾸므로 여기서는
-        // 받은 경로를 그대로 넘긴다. (같은 정규화가 툴바 cwd 입력칸에도 걸린다.)
+        // 터미널은 WSL이다. 경로는 `--cd`의 별도 argv 값으로 그대로 전달되므로
+        // 입력 경로를 프론트에서 변환하지 않는다.
         void startInTab(tabs.length === 0 ? null : activeTabId, selected, action.path);
         break;
       case "noop":
