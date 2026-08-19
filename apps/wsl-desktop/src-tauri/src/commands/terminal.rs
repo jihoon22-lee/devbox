@@ -41,6 +41,84 @@ impl SessionHandle {
             true
         }
     }
+
+    fn take_resources(&mut self) -> SessionResources {
+        SessionResources {
+            writer: std::mem::replace(&mut self.writer, Box::new(std::io::sink())),
+            child: self.child.take(),
+            master: self.master.take(),
+            reader: self.reader.take(),
+        }
+    }
+}
+
+struct SessionResources {
+    writer: Box<dyn Write + Send>,
+    child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
+    master: Option<Box<dyn portable_pty::MasterPty>>,
+    reader: Option<Box<dyn Read + Send>>,
+}
+
+impl SessionResources {
+    fn teardown(mut self, kill_child: bool) {
+        if kill_child {
+            if let Some(child) = self.child.as_mut() {
+                let _ = child.kill();
+            }
+        }
+        drop(self.reader.take());
+        drop(self.master.take());
+        drop(self.writer);
+        drop(self.child.take());
+    }
+}
+
+fn take_session(state: &SessionState, session_id: &str) -> Option<Arc<Mutex<SessionHandle>>> {
+    state.sessions.lock().unwrap().remove(session_id)
+}
+
+fn teardown_session(handle: Arc<Mutex<SessionHandle>>, kill_child: bool) {
+    let resources = {
+        let mut handle = handle.lock().unwrap();
+        handle.take_resources()
+    };
+    resources.teardown(kill_child);
+}
+
+fn emit_terminal_closed_if_cleanup_won<F>(cleanup_won: bool, emit: F)
+where
+    F: FnOnce(),
+{
+    if cleanup_won {
+        emit();
+    }
+}
+
+/// Removes a session only when the reader still owns the handle currently
+/// registered for its id. A stale reader must not remove a replacement handle
+/// that happens to use the same id.
+fn remove_session_if_handle(
+    state: &SessionState,
+    session_id: &str,
+    expected_handle: &Arc<Mutex<SessionHandle>>,
+) -> bool {
+    let removed = {
+        let mut sessions = state.sessions.lock().unwrap();
+        let matches_current = matches!(
+            sessions.get(session_id),
+            Some(current) if Arc::ptr_eq(current, expected_handle)
+        );
+        if matches_current {
+            sessions.remove(session_id)
+        } else {
+            None
+        }
+    };
+    let Some(handle) = removed else {
+        return false;
+    };
+    teardown_session(handle, false);
+    true
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -234,6 +312,7 @@ pub fn attach_session(
 
     let app_out = app.clone();
     let sid = session_id.clone();
+    let state_for_reader = Arc::clone(state.inner());
     std::thread::spawn(move || {
         let mut carry: Vec<u8> = Vec::new();
         let mut buf = [0u8; 4096];
@@ -259,13 +338,18 @@ pub fn attach_session(
                 Err(_) => break,
             }
         }
-        let _ = app_out.emit(
-            "terminal-closed",
-            TerminalOutput {
-                session_id: sid.clone(),
-                data: String::new(),
-            },
-        );
+        drop(reader);
+        let cleanup_won = remove_session_if_handle(&state_for_reader, &sid, &handle);
+        drop(handle);
+        emit_terminal_closed_if_cleanup_won(cleanup_won, || {
+            let _ = app_out.emit(
+                "terminal-closed",
+                TerminalOutput {
+                    session_id: sid.clone(),
+                    data: String::new(),
+                },
+            );
+        });
     });
 
     Ok(())
@@ -342,12 +426,8 @@ pub fn close_session(
     state: tauri::State<'_, Arc<SessionState>>,
     session_id: String,
 ) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().unwrap();
-    if let Some(h) = sessions.remove(&session_id) {
-        let mut h = h.lock().unwrap();
-        if let Some(mut child) = h.child.take() {
-            let _ = child.kill();
-        }
+    if let Some(h) = take_session(state.inner().as_ref(), &session_id) {
+        teardown_session(h, true);
     }
     Ok(())
 }
@@ -535,6 +615,133 @@ mod tests {
                 "duplicate session id generated"
             );
         }
+    }
+
+    fn test_session_handle() -> Arc<Mutex<SessionHandle>> {
+        Arc::new(Mutex::new(SessionHandle {
+            distro: "Ubuntu".to_string(),
+            writer: Box::new(Vec::new()),
+            child: None,
+            master: None,
+            reader: None,
+            attached: false,
+        }))
+    }
+
+    struct DropProbe(Arc<std::sync::atomic::AtomicUsize>);
+
+    impl Write for DropProbe {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Drop for DropProbe {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn matching_reader_cleanup_drops_resources_with_an_extra_handle_reference() {
+        let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handle = Arc::new(Mutex::new(SessionHandle {
+            distro: "Ubuntu".to_string(),
+            writer: Box::new(DropProbe(drops.clone())),
+            child: None,
+            master: None,
+            reader: None,
+            attached: true,
+        }));
+        let retained_handle = handle.clone();
+        let state = SessionState {
+            sessions: Mutex::new(HashMap::from([(String::from("s1"), handle.clone())])),
+        };
+
+        assert!(remove_session_if_handle(&state, "s1", &handle));
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+        drop(retained_handle);
+    }
+
+    #[test]
+    fn mismatched_reader_cleanup_returns_false_without_emitting_closed_event() {
+        let current_handle = test_session_handle();
+        let stale_handle = test_session_handle();
+        let state = SessionState {
+            sessions: Mutex::new(HashMap::from([(String::from("s1"), current_handle)])),
+        };
+        let emitted = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let emitted_for_event = emitted.clone();
+
+        let cleanup_won = remove_session_if_handle(&state, "s1", &stale_handle);
+        emit_terminal_closed_if_cleanup_won(cleanup_won, || {
+            emitted_for_event.store(true, Ordering::SeqCst);
+        });
+
+        assert!(!cleanup_won);
+        assert!(!emitted.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn already_removed_reader_cleanup_returns_false_without_emitting_closed_event() {
+        let handle = test_session_handle();
+        let state = SessionState {
+            sessions: Mutex::new(HashMap::from([(String::from("s1"), handle.clone())])),
+        };
+        let emitted = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let emitted_for_event = emitted.clone();
+
+        assert!(remove_session_if_handle(&state, "s1", &handle));
+        let cleanup_won = remove_session_if_handle(&state, "s1", &handle);
+        emit_terminal_closed_if_cleanup_won(cleanup_won, || {
+            emitted_for_event.store(true, Ordering::SeqCst);
+        });
+
+        assert!(!cleanup_won);
+        assert!(!emitted.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn reader_cleanup_removes_matching_session_once() {
+        let handle = test_session_handle();
+        let state = SessionState {
+            sessions: Mutex::new(HashMap::from([(String::from("s1"), handle.clone())])),
+        };
+
+        assert!(remove_session_if_handle(&state, "s1", &handle));
+        assert!(!remove_session_if_handle(&state, "s1", &handle));
+        assert!(state.sessions.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn reader_cleanup_preserves_replacement_with_a_mismatched_handle() {
+        let current_handle = test_session_handle();
+        let stale_handle = test_session_handle();
+        let state = SessionState {
+            sessions: Mutex::new(HashMap::from([(
+                String::from("s1"),
+                current_handle.clone(),
+            )])),
+        };
+
+        assert!(!remove_session_if_handle(&state, "s1", &stale_handle));
+        let stored_handle = state.sessions.lock().unwrap().get("s1").cloned();
+        assert!(stored_handle.is_some_and(|stored| Arc::ptr_eq(&stored, &current_handle)));
+    }
+
+    #[test]
+    fn explicit_close_removal_is_idempotent() {
+        let handle = test_session_handle();
+        let state = SessionState {
+            sessions: Mutex::new(HashMap::from([(String::from("s1"), handle)])),
+        };
+
+        assert!(take_session(&state, "s1").is_some());
+        assert!(take_session(&state, "s1").is_none());
     }
 
     #[test]
