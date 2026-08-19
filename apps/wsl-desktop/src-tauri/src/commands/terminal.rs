@@ -60,6 +60,20 @@ pub struct TerminalOutput {
 /// 닫히고, 두 리더 스레드가 같은 id로 방출해 두 스트림이 한 xterm에 섞인다.
 static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
+/// Returns the Windows build number used by xterm's ConPTY heuristics.
+/// Linux/WSL development builds intentionally return `None`.
+#[tauri::command]
+pub fn windows_build_number() -> Option<u32> {
+    #[cfg(target_os = "windows")]
+    {
+        Some(windows_version::OsVersion::current().build)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
+
 /// 다음 세션 id를 발급한다. 프론트의 `lib/id.ts`의 `makeId`와 같은 패턴
 /// (단조 증가 카운터)을 백엔드 쪽에서 쓴다.
 fn next_session_id() -> String {
@@ -116,6 +130,20 @@ fn normalize_cwd(dir: &str) -> String {
     devbox_wsl::path::windows_to_wsl(dir).unwrap_or_else(|_| dir.to_owned())
 }
 
+/// Builds the exact argv used for a terminal session.
+///
+/// Always delegates distro validation and argument construction to the shared
+/// WSL builder, including when no cwd is supplied. Keeping this boundary as
+/// argv also prevents a path from becoming shell syntax (`bash -lc ...`).
+fn build_session_command(distro: &str, cwd: Option<&str>) -> Result<CommandBuilder, String> {
+    let normalized_cwd = cwd.filter(|dir| !dir.trim().is_empty()).map(normalize_cwd);
+    let argv = devbox_wsl::argv::build_exec_argv(distro, normalized_cwd.as_deref(), "")
+        .map_err(|e| e.to_string())?;
+    let mut command = CommandBuilder::new(&argv[0]);
+    command.args(&argv[1..]);
+    Ok(command)
+}
+
 /// 새 WSL 터미널 세션을 시작한다. `cwd`가 있으면 해당 경로로 열린다.
 ///
 /// PTY 리더 스레드는 여기서 spawn하지 않는다 — `attach_session`이 한다.
@@ -128,6 +156,7 @@ pub fn start_session(
     distro: String,
     cwd: Option<String>,
 ) -> Result<String, String> {
+    let cmd = build_session_command(&distro, cwd.as_deref())?;
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -138,23 +167,10 @@ pub fn start_session(
         })
         .map_err(|e| e.to_string())?;
 
-    let mut cmd = CommandBuilder::new("wsl.exe");
-    cmd.args(["-d".to_string(), distro.clone()]);
-    if let Some(dir) = cwd.filter(|c| !c.is_empty()) {
-        let dir = normalize_cwd(&dir);
-        // 지정 경로로 바로 열기: wsl.exe -d <distro> --cd <dir> --
-        // (이전에는 `bash -lc "cd '{dir}' && exec bash"`를 문자열로 조립했다 —
-        // 경로에 작은따옴표가 있으면 깨지고 셸 주입 표면이 열려 있었다. `--cd`는
-        // wsl.exe가 셸 없이 직접 처리하므로 인용이 필요 없다.)
-        let argv = devbox_wsl::argv::build_exec_argv(&distro, Some(dir.as_str()), "")
-            .map_err(|e| e.to_string())?;
-        // argv = ["wsl.exe", "-d", <distro>, "--cd", <dir>, "--"].
-        // 앞 3개(wsl.exe/-d/<distro>)는 위에서 이미 cmd.args로 추가했으므로 3부터
-        // 슬라이스한다. 이 오프셋은 --cd 유무와 무관하게 항상 옳다 —
-        // build_exec_argv가 그 3개를 고정 순서로 반환하기 때문이다.
-        cmd.args(argv[3..].iter());
-    }
-
+    // 지정 경로로 바로 열기: wsl.exe -d <distro> [--cd <dir>] --
+    // (이전에는 `bash -lc "cd '{dir}' && exec bash"`를 문자열로 조립했다 —
+    // 경로에 작은따옴표가 있으면 깨지고 셸 주입 표면이 열려 있었다. `--cd`는
+    // wsl.exe가 셸 없이 직접 처리하므로 인용이 필요 없다.)
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
@@ -385,6 +401,47 @@ mod tests {
         assert_eq!(normalize_cwd("/home/me/src"), "/home/me/src");
         assert_eq!(normalize_cwd("relative/dir"), "relative/dir");
         assert_eq!(normalize_cwd("~/src"), "~/src");
+    }
+
+    fn command_args(command: &CommandBuilder) -> Vec<String> {
+        command
+            .get_argv()
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn session_command_keeps_cwd_as_a_separate_argument() {
+        let command = build_session_command("Ubuntu", Some("/mnt/e/path with 'quote'")).unwrap();
+        let args = command_args(&command);
+        assert_eq!(
+            args,
+            vec![
+                "wsl.exe",
+                "-d",
+                "Ubuntu",
+                "--cd",
+                "/mnt/e/path with 'quote'",
+                "--",
+            ]
+        );
+        assert!(args.iter().all(|arg| arg != "bash" && arg != "-lc"));
+        assert!(args.iter().all(|arg| !arg.contains("bash -lc")));
+    }
+
+    #[test]
+    fn session_command_rejects_invalid_distro_without_cwd() {
+        assert!(build_session_command("a;b", None).is_err());
+    }
+
+    #[test]
+    fn session_command_omits_whitespace_only_cwd() {
+        let command = build_session_command("Ubuntu", Some("  \t ")).unwrap();
+        assert_eq!(
+            command_args(&command),
+            vec!["wsl.exe", "-d", "Ubuntu", "--"]
+        );
     }
 
     /// 문자열을 모든 바이트 경계에서 2조각으로 나눠 각각 별도 청크로 넘기고,

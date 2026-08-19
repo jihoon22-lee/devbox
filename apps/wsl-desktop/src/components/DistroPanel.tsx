@@ -59,7 +59,9 @@ export default function DistroPanel({
             </div>
             <div className="card-row">
               <span>Status</span>
-              <span className="status-on">● Running</span>
+              <span className={d.state.toLowerCase() === "running" ? "status-on" : "status-off"}>
+                ● {d.state}
+              </span>
             </div>
             <button className="btn" onClick={() => onOpenTerminal(d.name)}>
               Open Terminal

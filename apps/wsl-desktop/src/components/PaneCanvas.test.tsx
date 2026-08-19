@@ -58,6 +58,7 @@ function baseProps(overrides: Partial<Parameters<typeof PaneCanvas>[0]> = {}) {
     onClosePane: vi.fn(),
     onFocusPane: vi.fn(),
     onShortcut: vi.fn(),
+    windowsBuildNumber: null,
     ...overrides,
   };
 }

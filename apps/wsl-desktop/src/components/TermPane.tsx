@@ -21,6 +21,8 @@ interface TermPaneProps {
   onClose: () => void;
   onFocusPane: () => void;
   onShortcut: (action: ShortcutAction) => void;
+  /** Windows build number for xterm's ConPTY soft-wrap heuristics, or null off Windows. */
+  windowsBuildNumber: number | null;
   /** PaneCanvas가 display:none(비활성) 또는 order(활성 탭 안에서의 시각적 순서)를 준다. */
   style?: CSSProperties;
 }
@@ -53,6 +55,7 @@ export default function TermPane({
   onClose,
   onFocusPane,
   onShortcut,
+  windowsBuildNumber,
   style,
 }: TermPaneProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -86,9 +89,12 @@ export default function TermPane({
       allowProposedApi: true, // Unicode11Addon 전제
       // ConPTY는 오른쪽 여백에서 하드 랩할 때 랩 플래그를 주지 않는다. 이 옵션 없이는
       // 긴 줄이 전부 독립적인 하드 줄로 저장되고, cols가 바뀔 때마다 기존 출력이
-      // 리플로우되지 않아 망가진다. buildNumber는 Rust 조회가 필요해 이번 범위에서는
-      // 생략한다 — backend만으로도 소프트랩 휴리스틱은 켜진다.
-      windowsPty: { backend: "conpty" },
+      // 리플로우되지 않아 망가진다. Windows 빌드 번호는 소프트랩 휴리스틱에 필요하며,
+      // 비-Windows에서는 null이라 backend만 지정한다.
+      windowsPty: {
+        backend: "conpty",
+        ...(windowsBuildNumber === null ? {} : { buildNumber: windowsBuildNumber }),
+      },
     });
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = "11";

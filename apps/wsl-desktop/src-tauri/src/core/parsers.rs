@@ -18,12 +18,14 @@ pub fn parse_wsl_list(input: &str) -> Vec<DistroInfo> {
         let default = line.starts_with('*');
         let cleaned = line.trim_start_matches('*').trim();
         let mut parts = cleaned.split_whitespace();
-        let name = parts.next().unwrap_or("").to_string();
-        let state = parts.next().unwrap_or("").to_string();
+        // NAME can contain spaces. STATE and VERSION are the two rightmost
+        // columns, so consume those from the end and join the remainder.
         let version = parts
-            .next()
+            .next_back()
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(0);
+        let state = parts.next_back().unwrap_or("").to_string();
+        let name = parts.collect::<Vec<_>>().join(" ");
         if name.is_empty() {
             continue;
         }
@@ -134,6 +136,17 @@ mod tests {
         let distros = parse_wsl_list(input);
         assert_eq!(distros.len(), 1);
         assert_eq!(distros[0].state, "Stopped");
+    }
+
+    #[test]
+    fn parses_wsl_list_with_spaces_in_distro_name() {
+        let input =
+            "  NAME             STATE           VERSION\n  Ubuntu 24.04     Running         2\n";
+        let distros = parse_wsl_list(input);
+        assert_eq!(distros.len(), 1);
+        assert_eq!(distros[0].name, "Ubuntu 24.04");
+        assert_eq!(distros[0].state, "Running");
+        assert_eq!(distros[0].version, 2);
     }
 
     #[test]

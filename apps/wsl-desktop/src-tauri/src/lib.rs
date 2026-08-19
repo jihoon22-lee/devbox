@@ -59,6 +59,7 @@ pub fn run() {
             commands::dashboard::docker_action,
             commands::terminal::start_session,
             commands::terminal::attach_session,
+            commands::terminal::windows_build_number,
             commands::terminal::write_session,
             commands::terminal::broadcast,
             commands::terminal::resize_session,
