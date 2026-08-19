@@ -46,7 +46,7 @@
 | [앱 간 연동 설계](./superpowers/specs/2026-08-17-app-interop-design.md) | argv 계약, 카탈로그 capability, 스냅샷 버스 정리 |
 | [UX 개선 설계](./superpowers/specs/2026-08-15-ux-improvements-design.md) | 컨텍스트 메뉴 13개 앱, toolbox 도구, 앱별 항목, 실사용 피드백 |
 
-### v0.4.1 — 핫픽스 (결함만, 기능 추가 없음; RC3 코드·자동화 게이트 준비; 선택된 Windows acceptance 대기)
+### v0.4.1 — 핫픽스 (결함만, 기능 추가 없음; RC4 코드·자동화 게이트 후보; 선택된 Windows acceptance 대기)
 
 1. **wsl-desktop 터미널 출력·세션 실행 결함** — v0.4.0에서 `terminal.rs`가 PTY 읽기마다
    `String::from_utf8_lossy`를 호출해 읽기 경계의 한글·박스드로잉을 U+FFFD로 치환했고,
@@ -64,7 +64,13 @@
    v0.4.1-rc3에서 두 lifecycle task를 Tauri가 구성한 async runtime에서 시작하도록 수정하고,
    동기 `setup` 경계의 시작·종료 회귀 테스트를 추가했다.
 
-RC3의 코드와 자동화 게이트는 준비됐지만, 선택된 Windows acceptance(패키지·프로토콜·실제 경로·시각)
+4. **identifier 변경 뒤 앱 로컬 데이터 이관** — RC3 packaged Developer Toolbox에서 WebView/Tauri가
+   setup 전에 `com.devbox.developertoolbox/EBWebView`를 만들어 setup 시점 destination-exists
+   guard가 구 데이터 이관을 건너뛰는 결함을 직접 관찰했다. RC4 후보에서는 공용 whole-directory
+   rename을 `tauri::Builder::default()` 전에 수행하고, 현재 디렉터리가 있으면 덮어쓰지 않으며,
+   실패는 로그를 남기고 다음 실행에서 재시도한다.
+
+RC4의 코드와 자동화 게이트는 후보 상태지만, 선택된 Windows acceptance(패키지·프로토콜·실제 경로·시각)
 검증은 아직 대기 중이다. 따라서 안정판 v0.4.1은 완료로 표시하지 않는다.
 
 ### v0.5.0
@@ -89,7 +95,7 @@ Stage 2    앱 간 연동 (PR 26~30) — integration snapshot, ProjectProfile �
 Stage 3    기존 앱 깊이 (PR 31~39) — Run Manager 관찰성, Code Pad 복구 ✅
 Stage 4    Workbench — ProjectProfile 기반 orchestration 앱          ✅
 Stage 5    Webhook Lab, Dev Environment Doctor, Repo Manager          ✅
-v0.4.1     핫픽스 — 터미널 PTY·끊긴 앱 간 링크·Run Manager 시작 panic 수정  ◐ (Windows 수동 검증 별도)
+v0.4.1     핫픽스 — 터미널 PTY·끊긴 앱 간 링크·Run Manager 시작 panic·identifier 이관 수정  ◐ (RC4 Windows 수동 검증 별도)
 v0.5.0     유기성(argv 계약·카탈로그) + 컨텍스트 메뉴 + 터미널 사용성  ◻
 ```
 

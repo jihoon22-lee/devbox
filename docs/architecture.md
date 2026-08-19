@@ -20,7 +20,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 │ packages/*  React 공용       │  tokens, editor, diff-view
 ├──────────────────────────────┤
 │ crates/*    Rust 공용        │  filesystem, markdown, process, wsl,
-│                              │  search, integration, secrets, git, launch
+│                              │  search, integration, secrets, git, launch, applink
 ├──────────────────────────────┤
 │ 공통 인프라: Cargo workspace, │
 │ pnpm workspace, git 모노레포,  │
@@ -31,7 +31,10 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 ## 크레이트 의존 관계
 
 ```
-  crates/filesystem ◄── everything-plus, code-pad
+  crates/filesystem ◄── api-playground, code-pad, developer-toolbox, devbox-manager,
+                       everything-plus, knowledge-base, life-log, port-manager,
+                       repo-manager, run-manager, wsl-desktop
+  crates/applink    ◄── code-pad, repo-manager, wsl-desktop, workbench
   crates/markdown   ◄── knowledge-base, code-pad
   crates/process    ◄── port-manager, run-manager
   crates/wsl        ◄── wsl-desktop, run-manager, workbench, repo-manager
@@ -59,7 +62,8 @@ devbox-manager:   React → commands → catalog/manifest → GitHub release ass
 workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument,
                    v0.4.0에서는 argv 수신 부재로 미동작했으나, v0.4.1에서 crates/applink와
                    single-instance pending-open 수신을 Code Pad/WSL Desktop/Workbench에 구현.
-                   Windows 실사용 검증은 안정판 배포 전 선택된 v0.4.1 acceptance 후보에서 진행한다.
+                   현재 v0.4.1-rc4는 코드·자동화 게이트 후보이며, 선택된 Windows 실사용 acceptance는
+                   안정판 배포 전 진행한다.
                    ./superpowers/specs/2026-08-17-app-interop-design.md)
 webhook-lab:      inbound HTTP → core/server → history·rule·fixture → React
 repo-manager:     React → commands → git crate(wsl) → repository/worktree 탐색·생성
