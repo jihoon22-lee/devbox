@@ -46,13 +46,18 @@
 | [앱 간 연동 설계](./superpowers/specs/2026-08-17-app-interop-design.md) | argv 계약, 카탈로그 capability, 스냅샷 버스 정리 |
 | [UX 개선 설계](./superpowers/specs/2026-08-15-ux-improvements-design.md) | 컨텍스트 메뉴 13개 앱, toolbox 도구, 앱별 항목, 실사용 피드백 |
 
-### v0.4.1 — 핫픽스 (결함만, 기능 추가 없음)
+### v0.4.1 — 핫픽스 (결함만, 기능 추가 없음; 코드 구현 완료; Windows 수동 검증은 별도 체크리스트)
 
-1. **wsl-desktop 터미널 출력 손상** — `terminal.rs`가 PTY 읽기마다 `String::from_utf8_lossy`를
-   호출해 읽기 경계에 걸린 한글·박스드로잉이 U+FFFD로 치환된다. "화면이 깨진다"의 직접 원인.
-   `windowsPty` 미설정, 팬 1×2 붕괴, 영구 resize desync가 함께 걸려 있다
-2. **작동하지 않는 앱 간 링크** — repo-manager와 workbench가 다른 앱에 인자를 넘기지만
-   **argv를 읽는 앱이 하나도 없어** 빈 앱이 열린다. `crates/applink` + 3개 앱 수신으로 복구
+1. **wsl-desktop 터미널 출력·세션 실행 결함** — v0.4.0에서 `terminal.rs`가 PTY 읽기마다
+   `String::from_utf8_lossy`를 호출해 읽기 경계의 한글·박스드로잉을 U+FFFD로 치환했고,
+   `windowsPty` 미설정·팬 1×2 붕괴·영구 resize desync와 사용자 제보의 `bash -lc "cd ... && exec bash"`
+   단일 argv 문제가 관찰됐다. v0.4.1에서 UTF-8 carry, `windowsPty`/resize, `wsl.exe ... --cd <cwd> --`
+   분리 argv를 적용해 해결했다.
+2. **작동하지 않는 앱 간 링크** — v0.4.0에서는 repo-manager와 workbench가 다른 앱에 인자를 넘겨도
+   **argv를 읽는 앱이 없어** 빈 앱이 열렸다. v0.4.1에서 `crates/applink`와 Code Pad/WSL Desktop/
+   Workbench의 수신 및 대상 매핑을 구현해 복구했다.
+
+코드 구현과 WSL 검증은 완료됐고, Windows 실기 검증 매트릭스는 별도 수동 체크리스트로 관리한다.
 
 ### v0.5.0
 
@@ -76,7 +81,7 @@ Stage 2    앱 간 연동 (PR 26~30) — integration snapshot, ProjectProfile �
 Stage 3    기존 앱 깊이 (PR 31~39) — Run Manager 관찰성, Code Pad 복구 ✅
 Stage 4    Workbench — ProjectProfile 기반 orchestration 앱          ✅
 Stage 5    Webhook Lab, Dev Environment Doctor, Repo Manager          ✅
-v0.4.1     핫픽스 — 터미널 PTY 전송 결함, 끊긴 앱 간 링크             ◻
+v0.4.1     핫픽스 — 터미널 PTY 전송 결함, 끊긴 앱 간 링크             ◐ (Windows 수동 검증 별도)
 v0.5.0     유기성(argv 계약·카탈로그) + 컨텍스트 메뉴 + 터미널 사용성  ◻
 ```
 
@@ -84,4 +89,5 @@ v0.5.0     유기성(argv 계약·카탈로그) + 컨텍스트 메뉴 + 터미�
 - 13개 앱 모두 WSL에서 구현 완료 (Rust 유닛 테스트 + clippy + 프론트 빌드 통과)
 - 각 앱은 기능 단위 PR로 main에 머지됨
 - v0.4.0 정식 배포 완료 (13개 앱)
-- [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176) — v0.4.0 기준 검증 완료
+- [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176) — Windows 실기·패키지·프로토콜·경로·시각
+  검증은 별도 수동 체크리스트로 관리한다.

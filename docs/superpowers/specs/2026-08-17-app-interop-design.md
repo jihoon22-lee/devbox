@@ -10,16 +10,22 @@
 
 repo-manager와 workbench는 다른 앱을 실행하며 인자를 넘긴다.
 
-```rust
-// apps/repo-manager/src-tauri/src/commands.rs:151
-devbox_launch::launch(&app_id, &[&path])                          // 저장소 경로
+```text
+// v0.4.1 release-gate target mapping
+repo-manager -> code-pad:    OpenTarget::Workspace { path }
+repo-manager -> wsl-desktop: OpenTarget::Path { path }
+repo-manager -> workbench:   OpenTarget::Path { path }
 
-// apps/workbench/src-tauri/src/commands/workspace.rs:348, 356
-devbox_launch::launch("wsl-desktop", &["--profile", &profile.id])
-devbox_launch::launch("code-pad",    &["--workspace", &path])
+workbench -> wsl-desktop:    OpenTarget::Path { path } // concrete WSL path, then Windows path
+workbench -> code-pad:       OpenTarget::Workspace { path } // Windows workspace path
 ```
 
-**그런데 argv를 읽는 앱이 하나도 없다.** 저장소 전체에서 `std::env::args` 소비처는
+`OpenTarget::Profile`과 그에 따른 터미널 레이아웃 선택은 v0.5.0 범위다(§4.4). v0.4.1은
+프로필 id를 wsl-desktop에 보내지 않고, 실제로 열 수 있는 구체적인 `Path`만 보낸다.
+v0.4.1의 `Path` 타깃에는 distro 정보가 없으므로 WSL Desktop은 앱에서 선택된 distro를 사용하고,
+선택값이 없으면 기본 distro를 사용한다. 특정 프로필의 distro와 레이아웃을 복원하는 동작은 v0.5.0으로 미룬다.
+
+위 매핑 이전의 v0.4.0 구현에는 다음 문제가 있었다. **argv를 읽는 앱이 하나도 없었다.** 저장소 전체에서 `std::env::args` 소비처는
 run-manager의 `--background` 하나뿐이다(`apps/run-manager/src-tauri/src/lib.rs:108`).
 code-pad·wsl-desktop·workbench의 `main.rs`/`lib.rs`에는 인자 처리가 **전혀 없다.**
 
@@ -27,7 +33,7 @@ code-pad·wsl-desktop·workbench의 `main.rs`/`lib.rs`에는 인자 처리가 **
 > Workbench의 "Start Workspace"는 wsl-desktop과 code-pad를 띄우지만
 > **둘 다 아무 프로젝트도 모르는 상태로** 뜬다.
 
-### 0.1 현재 연동 실태
+### 0.1 v0.4.0 기준 현재 연동 실태
 
 ```
 repo-manager   ──launch(path)─────────► code-pad       ✗ 인자 무시
@@ -143,8 +149,8 @@ degrade한다.** 크래시하거나 오류 대화상자를 띄우지 않는다. 
 
 | 앱 | 받는 타깃 | 동작 |
 |---|---|---|
-| code-pad | `Path`(+line/column), `Workspace` | 파일 열기 / 워크스페이스 열기 |
-| wsl-desktop | `Path`, `Profile` | 그 경로에서 터미널 / 프로필 레이아웃 (터미널 설계 §4.4) |
+| code-pad | `Path`(+line/column), `Workspace` (v0.4.1) | 파일 열기 / 워크스페이스 열기 |
+| wsl-desktop | `Path` (v0.4.1), `Profile` (v0.5.0) | 그 경로에서 터미널 / 프로필 레이아웃 (터미널 설계 §4.4) |
 | workbench | `Path` | 해당 프로필 선택, 없으면 생성 초안 |
 | knowledge-base | `Path`, `Query` | 노트 열기 / 검색 |
 | everything-plus | `Query` | 검색어로 시작 |
@@ -329,15 +335,25 @@ error)는 그대로 쓰고, 목록만 발견 결과로 채운다.
 - 그 3개 앱에 `tauri-plugin-single-instance` + `PendingOpen` (§3)
 - `crates/launch`가 `build_argv`를 쓰도록 변경
 
+v0.4.1 발신 타깃은 다음과 같이 고정한다.
+
+- repo-manager → Code Pad: `OpenTarget::Workspace { path }`
+- repo-manager → WSL Desktop/Workbench: `OpenTarget::Path { path }`
+- Workbench → WSL Desktop: `OpenTarget::Path { path }` (구체적인 WSL 경로 우선, Windows 경로 폴백)
+- Workbench → Code Pad: `OpenTarget::Workspace { path }` (비어 있지 않은 Windows 경로만)
+
 제외:
 - 카탈로그 capability 스키마 (§2)
 - 런타임 카탈로그 배포 (§2.3)
 - 스냅샷 정리·자동 발견 (§4)
 - 나머지 10개 앱의 수신
 
-**컷 라인 근거**: `--path`·`--profile`·`--workspace`는 **오늘 이미 발신되고 있다.**
-수신을 붙이는 것은 새 기능이 아니라 **출시된 기능의 완성**이다. 반면 카탈로그 capability와
+**컷 라인 근거**: `--path`·`--workspace`는 v0.4.1에서 실제로 보낼 수 있는 타깃이다.
+Workbench → WSL Desktop은 프로필 id가 아니라 구체적인 `Path`를 보낸다. 수신을 붙이는 것은 새 기능이 아니라
+**출시된 기능의 완성**이다. 반면 카탈로그 capability와
 스냅샷 정리는 새 표면이므로 핫픽스에 넣지 않는다.
+
+`--profile`을 통한 프로필 선택과 터미널 레이아웃 동작은 v0.5.0 §4.4로 명시적으로 미룬다.
 
 repo-manager의 하드코딩 allowlist(`commands.rs:148`)는 §2의 카탈로그로 대체되므로
 핫픽스에서는 손대지 않는다.
@@ -346,6 +362,13 @@ repo-manager의 하드코딩 allowlist(`commands.rs:148`)는 §2의 카탈로그
 
 §2 전체 → §4 전체 → 나머지 앱 수신. 순서 근거: 카탈로그가 있어야 컨텍스트 메뉴의
 "다른 앱으로 열기"가 생성되고(UX 개선 설계 §1), 그것이 나머지 앱 수신의 소비처다.
+
+다음 수동 검증은 v0.5.0 범위이며 v0.4.1 릴리스 게이트가 아니다.
+
+- 카탈로그에 가짜 14번째 앱 항목을 추가했을 때 다른 앱의 "열기" 메뉴에 자동 등장하고,
+  설치돼 있지 않으면 보이지 않는지 확인한다.
+- workbench가 life-log의 SQLite를 직접 열지 않고 스냅샷 계약을 사용하는지 확인한다
+  (`grep -rn "lifelog" apps/workbench`).
 
 ---
 
@@ -363,11 +386,8 @@ repo-manager의 하드코딩 allowlist(`commands.rs:148`)는 §2의 카탈로그
 **실기 검증** (Windows):
 - repo-manager에서 "CodePad" → Code Pad가 **그 저장소를 열고** 뜬다
 - Code Pad를 띄워둔 상태에서 다시 "CodePad" → 새 인스턴스가 아니라 **기존 창이 포커스되며
-  파일이 열린다**
-- Workbench "Start Workspace" → wsl-desktop이 프로필 경로에서 뜬다
-- 카탈로그에 가짜 14번째 앱 항목 추가 → 다른 앱의 "열기" 메뉴에 자동 등장하고,
-  설치돼 있지 않으면 보이지 않는다
-- workbench가 life-log의 SQLite를 더 이상 열지 않는다 (`grep -rn "lifelog" apps/workbench`)
+  같은 workspace/저장소가 열린다**
+- Workbench "Start Workspace" → wsl-desktop이 프로필의 **구체적인 경로**에서 뜬다
 
 ---
 

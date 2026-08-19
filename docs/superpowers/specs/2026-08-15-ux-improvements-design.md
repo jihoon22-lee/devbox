@@ -233,12 +233,12 @@ type MenuItem =
 | run-manager | 로그 뷰어 검색/필터 | 회전 로그 tail에 검색 부재 시 장기 로그 사용 불가 |
 | devbox-manager | 설치 폴더 열기·제거 | Manager 관리 완결성 (§1.2와 연계) |
 
-> **전제 조건 (초판 누락).** "다른 앱으로 열기"는 작은 항목이 아니라 **저장소 차원의
-> 프리미티브에 막혀 있었다.** repo-manager와 workbench가 이미 다른 앱에 인자를 넘기고
-> 있으나(`repo-manager/src-tauri/src/commands.rs:151`,
-> `workbench/src-tauri/src/commands/workspace.rs:348,356`) **argv를 읽는 앱이 하나도 없어**
-> 지금은 빈 앱이 열린다. [앱 간 연동 설계](./2026-08-17-app-interop-design.md)의
-> `crates/applink`가 완료된 뒤에 이 항목이 가능하다.
+> **전제 조건 (v0.4.0 → v0.4.1 갱신).** "다른 앱으로 열기"는 작은 항목이 아니라
+> **저장소 차원의 프리미티브에 막혀 있었다.** v0.4.0에서는 repo-manager와 workbench가
+> 다른 앱에 인자를 넘겨도 **argv를 읽는 앱이 없어** 빈 앱이 열렸다. v0.4.1에서
+> [앱 간 연동 설계](./2026-08-17-app-interop-design.md)의 `crates/applink`와
+> Code Pad/WSL Desktop/Workbench의 single-instance pending-open 수신 및 대상 매핑 복구를
+> 완료했으므로, 이제 후속 v0.5.0 링크 항목을 구현할 기반이 준비됐다.
 >
 > 반대로 그 프리미티브 하나가 8개 링크를 동시에 연다 — repo-manager→3개(이미 작성됨),
 > workbench→2개(이미 작성됨), everything-plus→code-pad, knowledge-base→code-pad,

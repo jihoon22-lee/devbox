@@ -3,6 +3,26 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [v0.4.1-rc1] - 2026-08-19
+
+v0.4.1 핫픽스의 릴리스 후보(v0.4.1-rc1)다. 터미널 PTY 전송과 앱 간 링크의 결함을 수정했으며,
+Windows 수동 검증 매트릭스를 위한 후보 빌드다.
+
+### Fixed
+
+- **wsl-desktop** — PTY 읽기 경계에서 잘리던 UTF-8을 carry 버퍼로 재조립하고, ConPTY 빌드 정보·Unicode11·
+  스크롤백·리사이즈 하드닝을 적용해 한글·박스 드로잉과 창 크기 변경 시 터미널 화면 손상을 줄였다. v0.3.0에서
+  `bash -lc "cd ..."`가 파일명으로 처리되던 Open Terminal 실패도 `wsl.exe -d <distro> --cd <cwd> --` 형태의
+  정확한 분리 argv로 수정했다.
+- **앱 간 링크** — `devbox://open` 수신과 single-instance pending-open 전달을 보강해 콜드/웜 시작 모두 대상 경로를
+  소비하도록 했다. repo-manager는 Code Pad에 `Workspace`, WSL Desktop·Workbench에 구체적인 `Path`를 보내며,
+  Workbench도 WSL Desktop에 프로필 id 대신 실제 프로젝트 경로를 전달한다.
+
+### Release status
+
+- 이 RC의 검증 범위는 Windows 실기·패키지·프로토콜·경로·시각 수동 검증이며, 결과는 안정판 배포 판단의 근거로
+  사용한다.
+
 ## [v0.4.0] - 2026-08-18
 
 기능 추가 릴리스. 신규 앱 3종(Workbench, Webhook Lab, Repo Manager)과 devbox-manager 환경 진단이 추가되어
