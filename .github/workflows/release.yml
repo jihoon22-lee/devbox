@@ -154,14 +154,7 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          awk -v h="## [$TAG]" '
-            index($0, h) == 1 { flag = 1; next }
-            flag && index($0, "## [") == 1 { exit }
-            flag { print }
-          ' CHANGELOG.md > /tmp/release-notes.md
-          if [ ! -s /tmp/release-notes.md ]; then
-            echo "CHANGELOG.md에 [$TAG] 섹션이 없습니다. 버전에 맞는 변경점을 기록해주세요." > /tmp/release-notes.md
-          fi
+          python3 .github/scripts/extract-release-notes.py CHANGELOG.md "$TAG" > /tmp/release-notes.md
           echo "path=/tmp/release-notes.md" >> "$GITHUB_OUTPUT"
 
       - name: Create release
