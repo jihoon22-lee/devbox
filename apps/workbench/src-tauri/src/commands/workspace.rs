@@ -298,6 +298,48 @@ pub struct RunRegistry {
     pub runs: Mutex<HashMap<String, WorkspaceRun>>,
 }
 
+fn open_request(target: devbox_applink::OpenTarget) -> devbox_applink::OpenRequest {
+    devbox_applink::OpenRequest {
+        target,
+        from: Some("workbench".to_string()),
+    }
+}
+
+fn wsl_desktop_open_request(
+    profile: &ProjectProfile,
+) -> Result<devbox_applink::OpenRequest, String> {
+    let path = profile
+        .wsl
+        .as_ref()
+        .map(|wsl| wsl.path.as_str())
+        .filter(|path| !path.trim().is_empty())
+        .or_else(|| {
+            profile
+                .windows_path
+                .as_deref()
+                .filter(|path| !path.trim().is_empty())
+        })
+        .ok_or_else(|| "WSL Desktop에서 열 프로젝트 경로가 없습니다".to_string())?;
+
+    Ok(open_request(devbox_applink::OpenTarget::Path {
+        path: path.to_string(),
+        line: None,
+        column: None,
+    }))
+}
+
+fn code_pad_open_request(profile: &ProjectProfile) -> Result<devbox_applink::OpenRequest, String> {
+    let path = profile
+        .windows_path
+        .as_deref()
+        .filter(|path| !path.trim().is_empty())
+        .ok_or_else(|| "Code Pad에서 열 Windows 프로젝트 경로가 없습니다".to_string())?;
+
+    Ok(open_request(devbox_applink::OpenTarget::Workspace {
+        path: path.to_string(),
+    }))
+}
+
 #[tauri::command]
 pub async fn start_workspace(
     app: AppHandle,
@@ -345,32 +387,34 @@ pub async fn start_workspace(
 
     // 앱 열기 (best-effort). Workbench가 시작한 것만 기록한다.
     let mut started_pids = Vec::new();
-    let wsl_desktop_req = devbox_applink::OpenRequest {
-        target: devbox_applink::OpenTarget::Profile {
-            id: profile.id.clone(),
+    match wsl_desktop_open_request(&profile) {
+        Ok(request) => match devbox_launch::launch_open("wsl-desktop", &request) {
+            Ok(pid) => started_pids.push(pid),
+            Err(e) => steps.push(RunStep {
+                name: "open".into(),
+                ok: false,
+                detail: format!("wsl-desktop 시작 실패: {e}"),
+            }),
         },
-        from: Some("workbench".to_string()),
-    };
-    match devbox_launch::launch_open("wsl-desktop", &wsl_desktop_req) {
-        Ok(pid) => started_pids.push(pid),
         Err(e) => steps.push(RunStep {
             name: "open".into(),
             ok: false,
-            detail: format!("wsl-desktop 시작 실패: {e}"),
+            detail: e,
         }),
     }
-    let code_pad_req = devbox_applink::OpenRequest {
-        target: devbox_applink::OpenTarget::Workspace {
-            path: profile.windows_path.clone().unwrap_or_default(),
+    match code_pad_open_request(&profile) {
+        Ok(request) => match devbox_launch::launch_open("code-pad", &request) {
+            Ok(pid) => started_pids.push(pid),
+            Err(e) => steps.push(RunStep {
+                name: "open".into(),
+                ok: false,
+                detail: format!("code-pad 시작 실패: {e}"),
+            }),
         },
-        from: Some("workbench".to_string()),
-    };
-    match devbox_launch::launch_open("code-pad", &code_pad_req) {
-        Ok(pid) => started_pids.push(pid),
         Err(e) => steps.push(RunStep {
             name: "open".into(),
             ok: false,
-            detail: format!("code-pad 시작 실패: {e}"),
+            detail: e,
         }),
     }
 
@@ -460,4 +504,68 @@ pub fn absorb_life_log_projects(store: &mut ProfileStore) -> Result<usize, Strin
         }
     }
     Ok(absorbed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::profile::WslProfile;
+
+    fn profile(windows_path: Option<&str>, wsl_path: Option<&str>) -> ProjectProfile {
+        let mut profile = ProjectProfile::new("devbox");
+        profile.windows_path = windows_path.map(str::to_string);
+        profile.wsl = wsl_path.map(|path| WslProfile {
+            distro: "Ubuntu".into(),
+            path: path.into(),
+        });
+        profile
+    }
+
+    #[test]
+    fn launch_request_prefers_wsl_path_for_wsl_desktop() {
+        let request = wsl_desktop_open_request(&profile(
+            Some("E:\\projects\\devbox"),
+            Some("/mnt/e/projects/devbox"),
+        ))
+        .unwrap();
+        assert_eq!(
+            request.target,
+            devbox_applink::OpenTarget::Path {
+                path: "/mnt/e/projects/devbox".into(),
+                line: None,
+                column: None,
+            }
+        );
+    }
+
+    #[test]
+    fn launch_request_falls_back_to_windows_path_for_wsl_desktop() {
+        let request =
+            wsl_desktop_open_request(&profile(Some("E:\\projects\\devbox"), None)).unwrap();
+        assert_eq!(
+            request.target,
+            devbox_applink::OpenTarget::Path {
+                path: "E:\\projects\\devbox".into(),
+                line: None,
+                column: None,
+            }
+        );
+    }
+
+    #[test]
+    fn launch_request_rejects_missing_or_empty_code_pad_workspace() {
+        assert!(code_pad_open_request(&profile(None, Some("/home/me/project"))).is_err());
+        assert!(code_pad_open_request(&profile(Some("   "), None)).is_err());
+    }
+
+    #[test]
+    fn launch_request_uses_non_empty_windows_path_for_code_pad() {
+        let request = code_pad_open_request(&profile(Some("E:\\projects\\devbox"), None)).unwrap();
+        assert_eq!(
+            request.target,
+            devbox_applink::OpenTarget::Workspace {
+                path: "E:\\projects\\devbox".into(),
+            }
+        );
+    }
 }

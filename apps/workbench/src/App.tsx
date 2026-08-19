@@ -96,16 +96,31 @@ export default function App() {
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
-    void takePendingOpen()
-      .then((request) => {
-        if (!disposed && request) handleOpenRequestRef.current(request);
-      })
-      .catch(() => undefined);
+    const consumePendingOpen = () => {
+      void takePendingOpen()
+        .then((request) => {
+          if (!disposed && request) handleOpenRequestRef.current(request);
+        })
+        .catch(() => undefined);
+    };
+    let coldStartConsumed = false;
+    const consumeColdStart = () => {
+      if (disposed || coldStartConsumed) return;
+      coldStartConsumed = true;
+      consumePendingOpen();
+    };
 
-    void onOpenRequest((request) => handleOpenRequestRef.current(request)).then((stop) => {
-      if (disposed) stop();
-      else unlisten = stop;
-    });
+    void onOpenRequest(() => consumePendingOpen())
+      .then((stop) => {
+        if (disposed) stop();
+        else {
+          unlisten = stop;
+          consumeColdStart();
+        }
+      })
+      .catch(() => {
+        consumeColdStart();
+      });
 
     return () => {
       disposed = true;
