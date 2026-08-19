@@ -141,14 +141,24 @@ pub async fn worktree_clean(path: String) -> Result<bool, String> {
 
 /// Code Pad / WSL Desktop / Workbench로 연다 (best-effort).
 /// app_id는 카탈로그 id(code-pad·wsl-desktop·workbench). 설치된 exe 경로는
-/// 공용 `crates/launch`가 Manager 설치 layout에서 해석한다.
+/// 공용 `crates/launch`가 Manager 설치 layout에서 해석하고, argv는
+/// `crates/applink::build_argv`로 만들어 수신측(`parse_argv`)과 포맷이 어긋나지
+/// 않게 한다.
 #[tauri::command]
 pub fn open_in(app_id: String, path: String) -> Result<(), String> {
     let app_id = app_id.to_lowercase();
     if !matches!(app_id.as_str(), "code-pad" | "wsl-desktop" | "workbench") {
         return Err("알 수 없는 앱".into());
     }
-    devbox_launch::launch(&app_id, &[&path]).map(|_| ())
+    let req = devbox_applink::OpenRequest {
+        target: devbox_applink::OpenTarget::Path {
+            path,
+            line: None,
+            column: None,
+        },
+        from: Some("repo-manager".to_string()),
+    };
+    devbox_launch::launch_open(&app_id, &req).map(|_| ())
 }
 
 #[cfg(test)]

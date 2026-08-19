@@ -15,6 +15,13 @@
 //!
 //! 제약: 순수 경로/프로세스 로직만 담는다. Manager의 install/update/rollback 정책은
 //! Manager 앱이 소유한다.
+//!
+//! `crates/applink`에 의존한다 — 발신 앱이 argv를 문자열 리터럴로 손수 조립하면
+//! 수신측(`crates/applink::parse_argv`)과 포맷이 조용히 어긋날 수 있으므로,
+//! [`launch_open`]이 `devbox_applink::build_argv`를 거쳐 그 어긋남을 구조적으로
+//! 막는다. 수신 앱 13개는 이 크레이트에 의존하지 않는다 — 계약만 필요하지 설치
+//! 경로 해석은 필요 없기 때문이다
+//! (`docs/superpowers/specs/2026-08-17-app-interop-design.md` §1.1, §7 #3).
 
 use std::path::{Path, PathBuf};
 
@@ -84,6 +91,27 @@ pub fn launch(app_id: &str, args: &[&str]) -> Result<u32, String> {
         .map_err(|e| format!("{} 실행 실패: {e}", exe.display()))
 }
 
+/// `OpenRequest`를 `devbox_applink::build_argv`로 argv에 인코딩한 뒤 실행한다.
+///
+/// 발신 앱(repo-manager·workbench 등)이 argv를 직접 문자열 리터럴로 조립하던 것을
+/// 대체한다 — 계약(`crates/applink`)과 실행(`crates/launch`)이 갈라져 있으면
+/// 발신측과 수신측 argv 포맷이 조용히 어긋날 수 있으므로, 한쪽 진실 원본에서 뽑아
+/// 쓰도록 강제한다
+/// (`docs/superpowers/specs/2026-08-17-app-interop-design.md` §7 #3).
+///
+/// argv 없이 실행하고 싶은 호출자(요청이 없는 경우)는 그대로 [`launch`]를 쓴다.
+pub fn launch_open(app_id: &str, req: &devbox_applink::OpenRequest) -> Result<u32, String> {
+    let argv = open_argv(req);
+    let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+    launch(app_id, &args)
+}
+
+/// [`launch_open`]에서 프로세스 spawn 없이 argv 구성만 떼어낸 부분. 테스트가 실제
+/// 프로세스를 띄우지 않고도 각 호출부가 만드는 argv를 단언할 수 있도록 공개한다.
+pub fn open_argv(req: &devbox_applink::OpenRequest) -> Vec<String> {
+    devbox_applink::build_argv(req)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,6 +165,55 @@ mod tests {
         assert_eq!(version_sort_key("not-a-version"), vec![0]);
         assert_eq!(version_sort_key(""), vec![0]);
         assert_eq!(version_sort_key("1.x.0"), vec![1, 0, 0]);
+    }
+
+    // ---- open_argv: 세 호출부의 요청 모양이 만드는 argv (실제 spawn 없이 검증) ----
+
+    /// repo-manager `open_in` → `OpenTarget::Path`.
+    #[test]
+    fn open_argv_repo_manager_path_request() {
+        let req = devbox_applink::OpenRequest {
+            target: devbox_applink::OpenTarget::Path {
+                path: "/repos/foo".to_string(),
+                line: None,
+                column: None,
+            },
+            from: Some("repo-manager".to_string()),
+        };
+        assert_eq!(
+            open_argv(&req),
+            vec!["--path", "/repos/foo", "--from", "repo-manager"]
+        );
+    }
+
+    /// workbench → wsl-desktop → `OpenTarget::Profile`.
+    #[test]
+    fn open_argv_workbench_wsl_desktop_profile_request() {
+        let req = devbox_applink::OpenRequest {
+            target: devbox_applink::OpenTarget::Profile {
+                id: "prof-1".to_string(),
+            },
+            from: Some("workbench".to_string()),
+        };
+        assert_eq!(
+            open_argv(&req),
+            vec!["--profile", "prof-1", "--from", "workbench"]
+        );
+    }
+
+    /// workbench → code-pad → `OpenTarget::Workspace`.
+    #[test]
+    fn open_argv_workbench_code_pad_workspace_request() {
+        let req = devbox_applink::OpenRequest {
+            target: devbox_applink::OpenTarget::Workspace {
+                path: "C:\\ws\\proj".to_string(),
+            },
+            from: Some("workbench".to_string()),
+        };
+        assert_eq!(
+            open_argv(&req),
+            vec!["--workspace", "C:\\ws\\proj", "--from", "workbench"]
+        );
     }
 
     #[test]
