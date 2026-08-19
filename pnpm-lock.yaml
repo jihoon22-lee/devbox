@@ -640,6 +640,10 @@ importers:
       '@codemirror/view':
         specifier: ^6.0.0
         version: 6.43.8
+    devDependencies:
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
 
   packages/tokens: {}
 
