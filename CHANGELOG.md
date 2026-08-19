@@ -3,6 +3,55 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [v0.4.1-rc4] - 2026-08-20
+
+v0.4.1-rc4는 identifier 변경 뒤 앱 로컬 데이터를 안전하게 이관하는 코드를 확인하기 위한
+Windows acceptance 후보 빌드다. 선택된 Windows acceptance가 끝났다는 뜻이 아니며, 안정판
+v0.4.1 완료를 의미하지 않는다.
+
+### Fixed
+
+- **Developer Toolbox 0.2.2 — RC3에서 직접 관찰한 packaged build 결함** — Windows 패키지에서
+  WebView/Tauri가 setup보다 먼저 현재 경로인
+  `com.devbox.developertoolbox/EBWebView`를 만들었다. 기존 setup 시점 migration은 현재
+  디렉터리(`com.devbox.developertoolbox`)가 이미 존재하는지 검사하는 guard였으므로
+  destination-exists로 판단해 migration을 건너뛰었고, 기존
+  `com.workbench.developertoolbox` 데이터가 이관되지 않았다.
+- **10개 identifier 이관 앱** — 공용
+  `crates/filesystem::migrate_legacy_identifier_dir`를 `tauri::Builder::default()`보다 먼저
+  실행해 구 identifier 디렉터리 전체를 현재 identifier로 rename한다. 현재 디렉터리가 이미
+  있으면 merge하거나 덮어쓰지 않고 그대로 건너뛰며, rename 또는 로컬 데이터 경로 확인에
+  실패해도 앱을 중단하지 않고 재실행 때 다시 시도하도록 로그를 남긴다.
+
+### Affected packaged versions
+
+| 앱 | 버전 |
+|---|---:|
+| api-playground | 0.3.1 |
+| code-pad | 0.3.3 |
+| devbox-manager | 0.3.1 |
+| developer-toolbox | 0.2.2 |
+| everything-plus | 0.3.1 |
+| knowledge-base | 0.3.1 |
+| life-log | 0.3.1 |
+| port-manager | 0.2.2 |
+| run-manager | 0.3.3 |
+| wsl-desktop | 0.3.3 |
+
+### Data safety and recovery guidance
+
+> **중요:** v0.4.0 또는 그 이전 RC를 실행한 뒤에는 같은 앱에
+> `com.devbox.*`와 `com.workbench.*` 디렉터리가 모두 남아 있을 수 있다. RC4는 이 경우
+> 더 최신일 수 있는 현재 상태를 덮어쓰지 않기 위해 자동 migration을 의도적으로 건너뛴다.
+> 두 디렉터리 모두 보존되며 자동 merge나 자동 recovery는 하지 않는다. RC4를 실행하기 전에
+> 두 디렉터리를 모두 백업하고, 어느 상태를 사용할지 확인한 뒤에만 필요한 데이터를 수동으로
+> 복구하거나 이동하라.
+
+### Release status
+
+- RC4는 코드와 자동화 게이트를 확인하기 위한 Windows acceptance 후보이며, 선택된 Windows
+  실기 검증이 끝날 때까지 안정판 v0.4.1로 간주하지 않는다.
+
 ## [v0.4.1-rc3] - 2026-08-20
 
 v0.4.1-rc3는 RC2 Windows acceptance 중 발견된 Run Manager 시작 결함을 수정한 추가 acceptance

@@ -59,7 +59,8 @@ devbox-manager:   React → commands → catalog/manifest → GitHub release ass
 workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument,
                    v0.4.0에서는 argv 수신 부재로 미동작했으나, v0.4.1에서 crates/applink와
                    single-instance pending-open 수신을 Code Pad/WSL Desktop/Workbench에 구현.
-                   Windows 실사용 검증은 안정판 배포 전 선택된 v0.4.1 acceptance 후보에서 진행한다.
+                   현재 v0.4.1-rc4는 코드·자동화 게이트 후보이며, 선택된 Windows 실사용 acceptance는
+                   안정판 배포 전 진행한다.
                    ./superpowers/specs/2026-08-17-app-interop-design.md)
 webhook-lab:      inbound HTTP → core/server → history·rule·fixture → React
 repo-manager:     React → commands → git crate(wsl) → repository/worktree 탐색·생성
