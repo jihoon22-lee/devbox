@@ -150,7 +150,8 @@ export default function App() {
       writes.current.get(session_id)?.(data);
     }).then((u) => unsubs.push(u));
     void onTerminalClosed(({ session_id }) => {
-      // 세션이 (셸 종료 등으로) 스스로 끝났을 때. close_session 호출은 필요 없다.
+      // 백엔드가 세션 리소스를 정리한 뒤 보내는 이벤트다. 여기서는 UI 상태만
+      // 제거하고 close_session은 호출하지 않는다.
       dropPane(session_id);
       writes.current.delete(session_id);
     }).then((u) => unsubs.push(u));
