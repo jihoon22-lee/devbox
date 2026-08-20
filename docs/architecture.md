@@ -62,9 +62,9 @@ devbox-manager:   React → commands → catalog/manifest → GitHub release ass
 workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument,
                    v0.4.0에서는 argv 수신 부재로 미동작했으나, v0.4.1에서 crates/applink와
                    single-instance pending-open 수신을 Code Pad/WSL Desktop/Workbench에 구현.
-                   v0.4.1은 이 핫픽스를 포함한 안정판으로 배포됐다. Windows C1/C2 수동 acceptance는
-                   legacy path가 제거되어 재현하지 못했으며, packaged-runtime 검증과 구분해
-                   issue #176에서 post-release로 계속 관리한다.
+                   v0.4.1은 이 핫픽스를 포함한 안정판으로 배포됐다. 남은 Windows packaged-runtime
+                   acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서
+                   post-release로 계속 관리한다.
                    ./superpowers/specs/2026-08-17-app-interop-design.md)
 webhook-lab:      inbound HTTP → core/server → history·rule·fixture → React
 repo-manager:     React → commands → git crate(wsl) → repository/worktree 탐색·생성

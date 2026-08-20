@@ -1,6 +1,6 @@
 # 앱 간 연동 — 인바운드 계약과 생태계 확장 설계
 
-- 상태: v0.4.1 범위(§1의 Path/Workspace 라우팅·§3·§5.1) 구현 및 안정판 배포 완료; Windows C1/C2 acceptance는 legacy path 제거로 재현하지 못해 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서 post-release로 관리. v0.5.0 범위(§1의 Profile/Query 라우팅·§2·§4·§5.2) 제안·보류
+- 상태: v0.4.1 범위(§1의 Path/Workspace 라우팅·§3·§5.1) 구현 및 안정판 배포 완료; 남은 Windows packaged-runtime acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서 post-release로 계속 관리. v0.5.0 범위(§1의 Profile/Query 라우팅·§2·§4·§5.2) 제안·보류
 - 작성일: 2026-08-17
 - 범위: 저장소 전체 — 신규 `crates/applink`, `crates/launch`, `crates/integration`, `apps/catalog.json`, 13개 앱
 - 관련: [UX 개선 설계](./2026-08-15-ux-improvements-design.md) §4.2, [wsl-desktop 터미널 설계](./2026-08-17-wsl-desktop-terminal-design.md) §4.4
