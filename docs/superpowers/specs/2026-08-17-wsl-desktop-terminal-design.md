@@ -1,6 +1,6 @@
 # wsl-desktop 터미널 — 정확성·세션·사용성 설계
 
-- 상태: v0.4.1 범위(§2) 구현 반영 (Windows 실기 검증 대기); v0.5.0 범위(§3·§4) 제안·보류
+- 상태: v0.4.1 범위(§2) 구현 및 안정판 배포 완료; Windows C1/C2 acceptance는 legacy path 제거로 재현하지 못해 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서 post-release로 관리. v0.5.0 범위(§3·§4) 제안·보류
 - 작성일: 2026-08-17
 - 범위: `apps/wsl-desktop` 단일 앱 + `crates/wsl`
 - 관련: [UX 개선 설계](./2026-08-15-ux-improvements-design.md) §2 를 이 문서가 대체한다

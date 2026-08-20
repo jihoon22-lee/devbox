@@ -3,6 +3,40 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [v0.4.1] - 2026-08-20
+
+v0.4.1은 v0.4.0 이후 발견된 터미널·앱 간 열기·Run Manager lifecycle·identifier 이관
+결함을 누적해 수정한 안정판 핫픽스다.
+
+### Fixed
+
+- **wsl-desktop 터미널** — PTY 읽기 경계에서 잘린 UTF-8을 carry 버퍼로 재조립하고,
+  ConPTY·Unicode11·scrollback·resize 하드닝과 세션 정리를 적용했다. Open Terminal은 셸
+  문자열 조립 대신 `wsl.exe -d <distro> --cd <cwd> --`의 분리 argv로 경로 경계를 보존한다.
+- **앱 간 열기** — `crates/applink`, `devbox://open`, single-instance pending-open 수신을
+  Code Pad·WSL Desktop·Workbench에 적용했다. Repo Manager는 Code Pad에 `Workspace`, WSL
+  Desktop·Workbench에 `Path`를 전달하고, Workbench도 WSL Desktop에 실제 프로젝트 경로를 전달한다.
+- **Run Manager lifecycle** — Tauri `setup` 경계에서 runtime 없이 실행되던 scheduler와
+  maintenance task를 Tauri async runtime에서 시작하도록 바꿔 시작 시 panic을 방지했다.
+- **identifier 이관** — 10개 앱에서
+  `crates/filesystem::migrate_legacy_identifier_dir`를 `tauri::Builder::default()`보다 먼저
+  실행한다. 현재 identifier 디렉터리가 있으면 merge하거나 덮어쓰지 않고 건너뛰며, 실패는
+  로그를 남기고 다음 실행에서 재시도한다.
+
+### Data safety and recovery guidance
+
+> **중요:** v0.4.0 또는 그 이전 RC를 실행한 뒤에는 같은 앱에 `com.devbox.*`와
+> `com.workbench.*` 디렉터리가 모두 남아 있을 수 있다. v0.4.1은 더 최신일 수 있는 현재
+> 상태를 덮어쓰지 않기 위해 이 경우 자동 migration을 의도적으로 건너뛴다. 두 디렉터리를
+> 모두 백업하고, 어느 상태를 사용할지 확인한 뒤에만 필요한 데이터를 수동으로 복구하거나
+> 이동하라. 자동 merge나 자동 recovery는 하지 않는다.
+
+### Verification boundary
+
+- 자동화된 migration 사례와 10개 앱의 `tauri::Builder::default()` 이전 호출 위치는 검증했다.
+- Windows C1/C2는 사용 가능한 Windows 장비에서 legacy path가 이미 제거되어 안전하게 재현할 수
+  없었다. 이는 packaged-runtime 검증이 아니며, 남은 수동 acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서 계속 관리한다.
+
 ## [v0.4.1-rc4] - 2026-08-20
 
 v0.4.1-rc4는 identifier 변경 뒤 앱 로컬 데이터를 안전하게 이관하는 코드를 확인하기 위한

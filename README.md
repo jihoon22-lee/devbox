@@ -8,7 +8,7 @@ Tauri 13개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소
 |---|---|
 | 🔥 **Port Manager** | 포트·프로세스 조회/검색/필터, 프로세스 종료, localhost 열기 |
 | 🧰 **Developer Toolbox** | 개발용 소형 도구 13종 — JSON/Base64/URL/타임스탬프/Case, Hash/UUID/Regex/Diff( Rust), JWT 디코더 |
-| 🐧 **WSL Desktop** | 앱 안의 임베디드 WSL 터미널 — 경로 지정 실행, 분할 레이아웃, 동시 명령, distro·Docker·git 상태 패널 |
+| 🐧 **WSL Desktop** | 앱 안의 임베디드 WSL 터미널 — 경로 지정 실행, 분할 레이아웃, 동시 명령, distro·Docker 상태 패널 |
 | 🧪 **API Playground** | REST 요청 빌더. CORS 제약 없음, 응답 확인, 요청 history, curl 생성 |
 | 🔍 **Everything+** | 파일명/내용 초고속 검색(FTS5), 정규식 모드, re-index 진행률 |
 | 🗂 **Knowledge** | 마크다운 기반 지식 저장소 — 태그, 본문 검색, 데일리 노트 |
