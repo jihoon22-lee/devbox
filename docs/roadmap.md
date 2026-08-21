@@ -35,13 +35,14 @@
 - [x] **repo-manager** — Git repository 탐색·브랜치/worktree/상태 목록, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기
   (파괴적 기본 동작 없음, remove 전 uncommitted/untracked 검사)
 
-## 다음 단계 후보 (backlog)
+## 다음 단계 — v0.5.0 확정 계획
 
 `docs/product-opportunities.md` §17(PR 1~39 + Stage 4/5)은 **전부 완료**됐다. 이후 작업은
-설계 문서 3종을 따른다.
+2026-08-22에 확정한 네이티브 우선 계획과 하위 설계 문서를 따른다.
 
 | 문서 | 범위 |
 |---|---|
+| [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3 전체 범위, 외부 도구 원칙, 신규 앱, PR·테스트·릴리스 gate의 단일 기준 |
 | [wsl-desktop 터미널 설계](./superpowers/specs/2026-08-17-wsl-desktop-terminal-design.md) | PTY 전송 결함, 클립보드·단축키, 레이아웃 복원, 멀티플렉서 opt-in |
 | [앱 간 연동 설계](./superpowers/specs/2026-08-17-app-interop-design.md) | argv 계약, 카탈로그 capability, 스냅샷 버스 정리 |
 | [UX 개선 설계](./superpowers/specs/2026-08-15-ux-improvements-design.md) | 컨텍스트 메뉴 13개 앱, toolbox 도구, 앱별 항목, 실사용 피드백 |
@@ -77,15 +78,56 @@ Windows acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues
 
 ### v0.5.0
 
-1. 실사용 피드백 저비용분 (code-pad 프리뷰 구분, webhook-lab 라벨·curl, 설치 경로 표시)
-2. **카탈로그 capability + 런타임 배포** — "다른 앱으로 열기"를 선언에서 생성
-3. **컨텍스트 메뉴 13개 앱** — 공용 `packages/context-menu`(껍데기) + 앱별 항목(각 앱 소유)
-4. 터미널 클립보드·사용성·세션 유지
-5. developer-toolbox 도구 확장 / api-playground 헤더·업로드
-6. 스냅샷 버스 정리 + 자동 발견
-7. 실사용 피드백 잔여분 / knowledge-base 백링크
+v0.5.0은 외부 도구 설치 허브가 아니라 **오프라인 native 기능과 앱 간 직접 전달**을 강화하는
+release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 추가해 목표 15개 앱으로
+확장한다. 아래 P3도 검토 후 선택된 release 범위이며 임의로 탈락시키지 않는다.
 
-상세 항목·난이도·안전 경계·테스트 계획은 위 설계 문서 참조.
+#### P1 — 선행 필수
+
+1. 네이티브 우선·외부 도구 보완 원칙과 bundled dependency/license 지침.
+2. API Playground의 resolved secret History 저장 결함 수정과 구버전 History 안전 migration.
+3. catalog schema v2, runtime catalog, installed target discovery, 하드코딩 allowlist 제거.
+4. Knowledge·Everything+·Repo Manager inbound/single-instance 수신 확대.
+5. Life Log/Knowledge/WSL snapshot producer·consumer 정리와 자동 발견, direct DB read 제거.
+6. `packages/context-menu`와 기존 13개 앱의 도메인별 메뉴.
+7. WSL Desktop clipboard·shortcut·title/cwd/link/search/font·resize 안전성.
+8. WSL native workspace/profile/layout와 action palette, optional tmux/zellij adapter.
+9. Toolbox JSON↔YAML/Base64 계열/JSON→TypeScript, API header/cookie/multipart, Knowledge
+   wikilink/backlink/rename preview, Manager batch, Code Pad Quick Open/LSP UX, Workbench
+   services/ports·WSL 제안, Webhook label/example curl. 기존 실사용 backlog의 WSL Docker compact,
+   Code Pad preview·LSP panel·Quick Open tree, Manager install path 표시, API response header/cookie도 포함.
+
+#### P2 — 순서가 유동적인 필수 후속
+
+1. `OpenTarget::Handoff` protocol v2와 one-time handoff: Webhook/Toolbox→API,
+   Life Log→Knowledge, Run/WSL→Log Lens.
+2. Port Manager command line·WSL identity-safe kill.
+3. Toolbox UUID v7/ULID/HTML/URL/HMAC/JWT verify/Lorem/Markdown table/내장 QR.
+4. API Playground OpenAPI 3.x import, GraphQL, SSE, WebSocket.
+5. Everything+ text/code/Markdown 및 PDF/DOCX/XLS(X)/ODS content index.
+6. Knowledge global quick capture·image asset, Life Log Markdown/JSON/CSV export·규칙 기반 요약.
+7. Manager custom install root·데이터 보존형 안전 제거.
+8. Code Pad LSP cache/local archive, Run Manager log search, Workbench project environment,
+   Webhook fixture/API handoff, Repo Manager history/diff/stage/commit/fetch/FF-only pull/push.
+
+#### P3 — 선택 확정
+
+1. 신규 **Devbox Launcher 0.1.0** — devbox 앱·profile·repo·job·saved query 전용 launcher와
+   current clipboard 일회성 routing.
+2. 신규 **Log Lens 0.1.0** — local/Run/WSL/container log tail·merge·filter·export.
+3. 전 앱 monitor/DPI-safe window state.
+4. Port auto-refresh/diff/favorite/source provenance, Toolbox detection/pipeline/recent/favorite,
+   WSL resource/broadcast 안전, API collection import/export/history/binary, Everything filter/saved
+   query, Knowledge template, Life Log source explanation/Knowledge draft 상태.
+5. Manager read-only Data Inspector·redacted support bundle, Code Pad multi-file rename,
+   Run history filter/task import, Workbench template/dependency health/retry, Webhook replay/sequence,
+   Repo merged/stale cleanup.
+6. Manager의 제한된 Related Tools 감지·사용자 확인 설치·실행. 외부 도구는 모든 native
+   action의 secondary 보완재로만 제공한다.
+
+지원 형식, buffer·파일·시간 상한, secret/privacy, destructive safety, public schema,
+앱별 목표 버전, PR 지도와 acceptance는 [상세 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을
+축약 없이 기준으로 삼는다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅
@@ -98,7 +140,7 @@ Stage 3    기존 앱 깊이 (PR 31~39) — Run Manager 관찰성, Code Pad 복�
 Stage 4    Workbench — ProjectProfile 기반 orchestration 앱          ✅
 Stage 5    Webhook Lab, Dev Environment Doctor, Repo Manager          ✅
 v0.4.1     핫픽스 — 터미널 PTY·끊긴 앱 간 링크·Run Manager 시작 panic·identifier 이관 수정  ✅ (C1/C2 Windows 수동 acceptance는 issue #176에서 post-release 관리)
-v0.5.0     유기성(argv 계약·카탈로그) + 컨텍스트 메뉴 + 터미널 사용성  ◻
+v0.5.0     네이티브 기능 강화 + handoff + Devbox Launcher·Log Lens (목표 15개 앱)  ◻
 ```
 
 ## 현재 상태

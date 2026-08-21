@@ -1,10 +1,19 @@
 # 앱 간 연동 — 인바운드 계약과 생태계 확장 설계
 
-- 상태: v0.4.1 범위(§1의 Path/Workspace 라우팅·§3·§5.1) 구현 및 안정판 배포 완료; 남은 Windows packaged-runtime acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서 post-release로 계속 관리. v0.5.0 범위(§1의 Profile/Query 라우팅·§2·§4·§5.2) 제안·보류
+- 상태: v0.4.1 범위(§1의 Path/Workspace 라우팅·§3·§5.1) 구현 및 안정판 배포 완료;
+  v0.5.0 catalog·Profile/Query·snapshot 정리와 protocol v2 handoff **범위 확정, 구현 전**
 - 작성일: 2026-08-17
-- 범위: 저장소 전체 — 신규 `crates/applink`, `crates/launch`, `crates/integration`, `apps/catalog.json`, 13개 앱
+- 범위: 저장소 전체 — `crates/applink`, `crates/launch`, `crates/integration`, 신규
+  `crates/catalog`, `apps/catalog.json`, 기존 13개 앱 + 계획된 Devbox Launcher·Log Lens
 - 관련: [UX 개선 설계](./2026-08-15-ux-improvements-design.md) §4.2, [wsl-desktop 터미널 설계](./2026-08-17-wsl-desktop-terminal-design.md) §4.4
 - 근거: `docs/product-opportunities.md` §10.1(versioned read-only snapshot), §12.4(앱 간 연결)
+
+> **2026-08-22 확장.** 이 문서의 v0.5.0 제안 범위는
+> [v0.5.0 네이티브 우선 계획](./2026-08-22-v0.5.0-native-first-plan.md)에서 확정됐다.
+> `Path`·`Profile`·`Workspace`·`Query`처럼 작은 argv만으로 표현할 수 없는 API request,
+> Knowledge draft, log source 전달을 위해 protocol v2의 one-time `Handoff`를 추가한다.
+> devbox가 양쪽 앱을 제어할 때 사용자가 파일·클립보드로 데이터를 운반하지 않게 하는 것이
+> 목적이다.
 
 ## 0. 배경 — 링크가 작성돼 있으나 작동하지 않는다
 
@@ -155,11 +164,51 @@ degrade한다.** 크래시하거나 오류 대화상자를 띄우지 않는다. 
 | code-pad | `Path`(+line/column), `Workspace` (v0.4.1) | 파일 열기 / 워크스페이스 열기 |
 | wsl-desktop | `Path` (v0.4.1), `Profile` (v0.5.0) | 그 경로에서 터미널 / 프로필 레이아웃 (터미널 설계 §4.4) |
 | workbench | `Path` | 해당 프로필 선택, 없으면 생성 초안 |
-| knowledge-base | `Path`, `Query` | 노트 열기 / 검색 |
+| knowledge-base | `Path`, `Query`, `Handoff(knowledge-draft/v1)` | 노트 열기 / 검색 / 저장 전 draft preview |
 | everything-plus | `Query` | 검색어로 시작 |
 | repo-manager | `Path` | 해당 저장소 선택 |
+| api-playground | `Handoff(api-request/v1)` | 전달된 templated request를 저장 전 preview |
+| developer-toolbox | `Handoff(toolbox-text/v1)` | text와 추천 transformer를 입력 초안으로 적용 |
+| webhook-lab | `Handoff(webhook-fixture/v1)` | response fixture 초안 preview |
+| log-lens | `Handoff(log-source/v1)` | local/Run/WSL log source 연결 |
 
 이 표는 §2의 `accepts` 선언과 1:1 대응한다.
+
+### 1.5 v0.5.0 protocol v2 — one-time handoff
+
+argv에 JSON body나 장문 text를 직접 넣지 않는다. command line 노출, 길이 상한, quoting,
+secret persistence 문제를 피하기 위해 `OpenTarget`에는 opaque id만 전달한다.
+
+```rust
+pub const PROTOCOL_VERSION: u32 = 2;
+
+pub enum OpenTarget {
+    // v1 variants 유지
+    Path { path: String, line: Option<u32>, column: Option<u32> },
+    Profile { id: String },
+    Workspace { path: String },
+    Query { text: String },
+    Handoff { kind: String, id: String },
+}
+```
+
+handoff envelope:
+
+```text
+protocolVersion, id, kind, sourceApp, targetApp?, createdAt, expiresAt, payload
+```
+
+- 128-bit random id, 기본 TTL 10분, serialized payload 10MiB 상한.
+- create-new + atomic rename으로 완성되지 않은 payload를 노출하지 않는다.
+- `targetApp`이 있으면 그 앱만 consume할 수 있다.
+- kind/schema/source/target/expiry/size를 검증한 뒤 읽고 성공하면 한 번만 소비해 삭제한다.
+- 처리 실패는 TTL까지 재시도할 수 있게 남기되 손상·만료 payload는 정리한다.
+- 큰 binary는 payload에 복제하지 않고 canonical path, size, digest만 전달한다.
+- secret 원문은 금지한다. `api-request/v1`에는 `${SECRET_NAME}` 참조만 허용한다.
+
+표준 kind는 `api-request/v1`, `webhook-fixture/v1`, `knowledge-draft/v1`, `log-source/v1`,
+`toolbox-text/v1`이다. 새 kind는 source/target/payload schema와 redaction 규칙을 설계 문서에
+먼저 추가한다.
 
 ---
 
@@ -177,12 +226,12 @@ if !matches!(app_id.as_str(), "code-pad" | "wsl-desktop" | "workbench") {
 ```
 
 그리고 UI의 버튼 세 개도 하드코딩이다(`apps/repo-manager/src/App.tsx:105-107`).
-14번째 앱이 "경로를 받을 수 있다"고 해도, repo-manager를 고치지 않으면 나타나지 않는다.
+14번째 이후 앱이 "경로를 받을 수 있다"고 해도, repo-manager를 고치지 않으면 나타나지 않는다.
 같은 문제가 "다른 앱으로 열기"를 넣고 싶은 모든 앱에서 반복된다.
 
 ### 2.2 선언
 
-`apps/catalog.json`의 각 항목에 추가한다:
+`apps/catalog.json`의 `schemaVersion`을 2로 올리고 각 항목에 추가한다:
 
 ```json
 {
@@ -191,7 +240,7 @@ if !matches!(app_id.as_str(), "code-pad" | "wsl-desktop" | "workbench") {
   "identifier": "com.devbox.codepad",
   ...
   "accepts": ["path", "workspace"],
-  "produces": ["code-pad/v1"]
+  "produces": ["snapshot:code-pad/workspace/v1"]
 }
 ```
 
@@ -201,7 +250,10 @@ if !matches!(app_id.as_str(), "code-pad" | "wsl-desktop" | "workbench") {
 - **"다른 앱으로 열기" 메뉴가 카탈로그에서 생성된다.** 어떤 앱이든 "나는 경로를 가지고
   있다"만 선언하면, `accepts`에 `path`가 있고 **실제로 설치된** 앱들이 메뉴에 자동으로
   나타난다
-- **14번째 앱은 `catalog.json` 항목 하나로 12개 앱의 메뉴에 등장한다**
+- **새 앱은 `catalog.json` 항목 하나로 capability가 맞는 기존 앱 메뉴에 등장한다**
+- 구조화 payload는 `handoff:<kind>/v<n>`, snapshot은
+  `snapshot:<producer>/<kind>/v<n>` 형식으로 선언한다
+- schema v1 또는 capability가 없는 항목은 빈 배열로 읽어 하위 호환한다
 
 ### 2.3 런타임 카탈로그 배포
 
@@ -214,17 +266,18 @@ if !matches!(app_id.as_str(), "code-pad" | "wsl-desktop" | "workbench") {
 1. devbox-manager가 설치/업데이트마다 `<common_root>/catalog.json`
    (`%LOCALAPPDATA%\devbox\catalog.json`)에 **런타임 사본을 원자적으로 쓴다.**
    `crates/integration::write_atomic`의 tmp+rename 패턴을 재사용한다
-2. `crates/applink`가 조회 API를 제공한다:
+2. 새 순수 `crates/catalog`가 schema v1/v2 type, runtime/build-time 사본 읽기,
+   capability filter를 제공한다:
    ```rust
    pub struct AppRef { pub id: String, pub display_name: String, pub accepts: Vec<String> }
-
-   /// 이 타깃 종류를 받고, 실제로 설치돼 있는 앱들
-   pub fn installed_targets(kind: &str) -> Vec<AppRef>;
+   pub fn capable_targets(kind: &str) -> Vec<AppRef>;
    ```
-   런타임 카탈로그를 읽고 `crates/launch::resolve_installed`로 실제 설치된 것만 남긴다
-3. **폴백**: 런타임 사본이 없으면(단독 설치, Manager 미실행) 각 앱이 빌드 타임
+3. `crates/launch::installed_targets(kind)`가 capable target에
+   `resolve_installed`를 적용해 실제 설치된 것만 남긴다. `crates/applink`는 argv 계약만
+   담당한다. `launch`가 이미 `applink`에 의존하므로 이 분리가 순환 의존을 막는다
+4. **폴백**: 런타임 사본이 없으면(단독 설치, Manager 미실행) 각 앱이 빌드 타임
    `include_str!` 사본을 바닥값으로 쓴다. 런타임 사본이 있으면 그쪽이 이긴다
-4. `api.ts:6-18`의 손수 중복은 제거하고 카탈로그에서 파생시킨다
+5. `api.ts:6-18`의 손수 중복은 제거하고 카탈로그에서 파생시킨다
 
 폴백이 있어야 하는 이유: 앱은 devbox-manager 없이 단독 설치될 수 있다. 그 경우 자기 자신은
 알지만 다른 앱의 설치 여부는 모른다 — `resolve_installed`가 `None`을 반환하므로 메뉴가
@@ -363,12 +416,13 @@ repo-manager의 하드코딩 allowlist(`commands.rs:148`)는 §2의 카탈로그
 
 ### 5.2 v0.5.0
 
-§2 전체 → §4 전체 → 나머지 앱 수신. 순서 근거: 카탈로그가 있어야 컨텍스트 메뉴의
-"다른 앱으로 열기"가 생성되고(UX 개선 설계 §1), 그것이 나머지 앱 수신의 소비처다.
+`crates/catalog` + §2 전체 → §4 전체 → 나머지 앱 수신 → §1.5 handoff core → handoff별
+producer/consumer 순서다. 카탈로그가 있어야 컨텍스트 메뉴의 "다른 앱으로 열기"가
+생성되고, handoff kind를 수신할 설치 앱도 안전하게 찾을 수 있다.
 
 다음 수동 검증은 v0.5.0 범위이며 v0.4.1 릴리스 게이트가 아니다.
 
-- 카탈로그에 가짜 14번째 앱 항목을 추가했을 때 다른 앱의 "열기" 메뉴에 자동 등장하고,
+- 카탈로그에 가짜 16번째 앱 항목을 추가했을 때 다른 앱의 "열기" 메뉴에 자동 등장하고,
   설치돼 있지 않으면 보이지 않는지 확인한다.
 - workbench가 life-log의 SQLite를 직접 열지 않고 스냅샷 계약을 사용하는지 확인한다
   (`grep -rn "lifelog" apps/workbench`).
@@ -385,6 +439,8 @@ repo-manager의 하드코딩 allowlist(`commands.rs:148`)는 §2의 카탈로그
 | `installed_targets` | 설치되지 않은 앱은 제외되는지. 런타임 사본 우선, 없으면 빌드타임 폴백 |
 | `discover()` | 스냅샷 0개/1개/N개. 손상된 JSON은 건너뛰고 나머지를 반환하는지 |
 | single-instance | 콜드 스타트와 두 번째 인스턴스가 **같은 `PendingOpen` 경로**를 쓰는지 |
+| handoff | create/consume, 10분 expiry, wrong target, 10MiB 상한, 손상 JSON, 중복 consume |
+| secret 경계 | handoff/snapshot에 secret 원문이 없고 API payload에는 이름 참조만 있는지 |
 
 **실기 검증** (Windows):
 - repo-manager에서 "CodePad" → Code Pad가 **그 저장소를 열고** 뜬다
@@ -401,13 +457,18 @@ repo-manager의 하드코딩 allowlist(`commands.rs:148`)는 §2의 카탈로그
 | 1 | `crates/applink` 타입 + `parse_argv`/`build_argv` + 테스트 | v0.4.1 |
 | 2 | code-pad·wsl-desktop·workbench 수신 + single-instance | v0.4.1 |
 | 3 | `crates/launch`가 `build_argv` 사용 | v0.4.1 |
-| 4 | `catalog.json` `accepts`/`produces` + 파서 | v0.5.0 |
-| 5 | 런타임 카탈로그 배포 + `installed_targets` + `api.ts` 중복 제거 | v0.5.0 |
+| 4 | `crates/catalog` + catalog v2 `accepts`/`produces` + v1 fallback | v0.5.0 |
+| 5 | 런타임 카탈로그 배포 + `crates/launch::installed_targets` + `api.ts` 중복 제거 | v0.5.0 |
 | 6 | repo-manager allowlist 제거 → 카탈로그 기반 | v0.5.0 |
 | 7 | life-log `projects` producer → workbench 직접 DB 읽기 삭제 | v0.5.0 |
 | 8 | life-log가 knowledge-base consumer + `core/readers.rs` 삭제 | v0.5.0 |
 | 9 | wsl-desktop producer (Docker/터미널) + 포트 구조화 | v0.5.0 |
 | 10 | `discover()` + life-log Data sources 패널 | v0.5.0 |
 | 11 | 나머지 앱 수신 라우팅 (§1.4) | v0.5.0 |
+| 12 | protocol v2 `Handoff` + one-time store + 계약 테스트 | v0.5.0 |
+| 13 | Webhook Lab → API Playground `api-request/v1` | v0.5.0 |
+| 14 | Toolbox → API, Life Log → Knowledge handoff | v0.5.0 |
+| 15 | Run Manager·WSL Desktop → Log Lens `log-source/v1` | v0.5.0 |
+| 16 | Devbox Launcher가 catalog/snapshot action을 applink로 실행 | v0.5.0 |
 
 1과 2는 한 PR로 묶는다 — 계약과 첫 소비자를 분리하면 검증이 안 된다.

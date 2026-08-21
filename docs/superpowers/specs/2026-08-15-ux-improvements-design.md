@@ -1,7 +1,7 @@
 # UX 개선 설계 — 컨텍스트 메뉴·도구 확장·앱별 항목
 
-- 상태: 제안(Proposal) — v0.5.0
-- 작성일: 2026-08-15 (개정: 2026-08-17)
+- 상태: v0.5.0 P1·P2 범위 확정, 구현 전
+- 작성일: 2026-08-15 (개정: 2026-08-17, 2026-08-22)
 - 근거: `docs/product-opportunities.md` §11.1~11.3(기능 순서), §12·§13·§14(기존 앱 확장)
 - 선행: PR 1~39 + Stage 4/5 (모두 완료), 13개 앱 + 공용 crates/packages
 
@@ -14,6 +14,12 @@
 > - [앱 간 연동 설계](./2026-08-17-app-interop-design.md) — 초판 §4.2의 전제
 >
 > 초판의 사실 오류 두 건도 정정했다 (§4.1 wikilink, §5 WebSocket). 아래 각 항목에 표시.
+
+> **2026-08-22 범위 개정.** 외부 도구에 유사 기능이 있거나 새 dependency가 필요하다는
+> 사실만으로 native 기능을 제외하지 않는다. P1·P2 core는 오프라인 제공, 대형 전문 도구는
+> 선택적 보완재로 두는 정책으로 바뀌었다. §5의 “제외 확정”을 재검토 표로 교체했으며,
+> 우선순위·구현 상한·신규 Devbox Launcher/Log Lens 범위는
+> [v0.5.0 네이티브 우선 계획](./2026-08-22-v0.5.0-native-first-plan.md)을 따른다.
 
 ## 0. 배경
 
@@ -171,26 +177,30 @@ type MenuItem =
 | 도구 | 그룹 | 구현 | 가치 |
 |---|---|---|---|
 | JSON ↔ YAML 변환 | JSON | TS(`js-yaml`) | 높음 — 설정 파일 작업 |
-| 진법 변환 (Hex/Dec/Bin/Oct) | Encoding | TS | 높음 — 디버깅 기본기 |
+| Base64/Base64URL/Hex + 진법 변환 | Encoding | TS | 높음 — 디버깅 기본기 |
 | JSON → TypeScript 타입 생성 | JSON | TS | 높음 — API 응답 → 인터페이스 |
-| UUID 다량 생성 + ULID | Security | Rust(기존 `uuid` 확장) | 중간 |
+| UUID v4/v7 다량 생성 + ULID | Security | Rust(기존 `uuid` 확장) | 중간 |
 | HTML Entity Encode/Decode | Encoding | TS | 중간 |
+| URL Component Encode/Decode | Encoding | TS | 중간 |
 | HMAC / JWT 서명 검증(HS256) | Auth | Rust(`hmac`) | 중간 — 기존 JWT 확장 |
 | Lorem Ipsum/placeholder 생성 | Text | TS | 중간 |
 | Markdown 테이블 생성기 | Text | TS | 중간 |
+| QR 생성 | Encoding | Rust(`qrcode`) | 중간 — URL/Wi-Fi/text를 오프라인 export |
 
 추가 도구는 기존 `ToolDef[]` 레지스트리에 한 줄 추가만 하면 좌측 메뉴에 자동 등록되는
 구조를 그대로 이용한다 (`apps/developer-toolbox/src/tools/index.tsx`).
 
 **범위 제한 (초판 누락):**
-- **JSON → TS 타입 생성**은 "TS" 한 단어로 저비용처럼 적혀 §7의 저비용 3종에 들어 있었으나,
-  union·optional·중첩 배열·키 정규화가 전부 따라온다. **범위를 명시한다: 단일 샘플 기준,
-  optional 추론 없음, 배열은 첫 원소 기준.** 그 이상은 별도 항목.
+- **JSON → TS 타입 생성**은 단일 sample을 기준으로 object/array/null과 동일 object 배열의
+  optional field를 추론한다. 서로 다른 scalar type의 복잡한 union, schema merge, codegen
+  plugin은 제외한다. root type 이름과 identifier 정규화 규칙은 deterministic해야 한다.
 - **`js-yaml` 의존 추가**는 §5에서 QR 생성을 "의존 추가 대비 가치 낮음"으로 제외한 것과
   형평이 맞아야 한다. 근거: YAML은 이 저장소의 설정 파일 작업에서 고빈도이고,
   `js-yaml`은 브라우저 번들 친화적이며 추가 런타임 의존이 없다.
 - **HMAC를 Rust로 두는 것은 일관성이 있다** — `hash`/`generateUuid`가 이미 Rust 커맨드다
   (`tools/security.tsx:2`, `src-tauri/src/commands/tools.rs`).
+- **QR은 제외에서 복원한다.** permissive pure-Rust `qrcode`를 설치물에 정적으로 포함할 수
+  있고, 별도 웹 서비스·실행 파일·network 없이 SVG/PNG를 만들 수 있어 devbox 목적과 맞는다.
 
 ### 3.1 완료 조건
 
@@ -270,29 +280,35 @@ Windows 실기 검증에서 수집한 UX 개선 항목. 기능 버그가 아니�
 
 ---
 
-## 5. 제외 확정 (다시 검토하지 않음)
+## 5. 이전 제외 항목 재검토
 
-이전 검토에서 비추천·부적합으로 제외한 항목. 근거를 남겨 재논의를 막는다.
+“다시 검토하지 않음”이라는 초판 표현을 폐기한다. 외부 도구의 존재는 제외 근거가 아니며,
+오프라인 제공 가치, 앱 책임, 안전, 설치 크기, 유지비를 함께 본다.
 
-| 앱 | 제외 항목 | 근거 |
-|---|---|---|
-| knowledge-base | Git 커밋/로그 UI | Repo Manager가 git 담당, 책임 중복 |
-| developer-toolbox | Cron 표현 설명 | Run Manager cron 빌더·미리보기와 중복 |
-| developer-toolbox | QR 생성 | 의존 추가 대비 가치 낮음 |
-| developer-toolbox | 도구별 설정 저장 | 도구 대부분 stateless |
-| port-manager | WSL 포트 연동 | wsl-dashboard 시대 구식 계획, WSL2 NAT로 의미 애매 |
-| port-manager | 점유 앱 아이콘 표시 | 아이콘 추출 비용 대비 가치 낮음 (명령줄은 §4.1 추천) |
-| api-playground | GraphQL | 기존 JSON body 에디터로 충분 |
-| api-playground | SSE | 우선순위 최하위 |
-| everything-plus | PDF/DOCX/XLSX 내용 추출 | 파서 의존 무거움, 오프라인 경량 앱 부적합 |
-| everything-plus | 시맨틱 검색 | 로컬 임베딩+벡터 DB 필요, 부적합 |
-| api-playground | WebSocket | **우선순위·유지비** (아래 정정) |
-| life-log | 자동 일기(LLM) | 개인 활동 데이터 외부 전송 → privacy 경계 위배 |
+| 앱/영역 | 이전 항목 | v0.5.0 결정 | 경계 |
+|---|---|---|---|
+| developer-toolbox | QR 생성 | **P2 포함** | text/URL/Wi-Fi 생성과 SVG/PNG export. camera/dynamic service 제외 |
+| api-playground | GraphQL | **P2 포함** | HTTP query/variables/operationName. introspection/codegen 제외 |
+| api-playground | SSE | **P2 포함** | bounded stream parser와 stop/pause/reconnect opt-in |
+| api-playground | WebSocket | **P2 포함** | ws/wss text/binary/ping/pong. Socket.IO/STOMP 제외 |
+| everything-plus | PDF/DOCX/XLSX 내용 | **P2 포함** | text extraction만. OCR/암호/legacy Office/서식 제외 |
+| port-manager | WSL 포트 | **P2/P3 포함** | distro·PID·start identity와 source provenance 필수 |
+| life-log | 자동 일기 | 규칙 기반 local digest 포함 | cloud/local LLM 호출과 외부 전송 제외 |
+| 범용 command palette | 신규 앱 제외 | **Devbox Launcher로 포함** | devbox action/context만. OS 범용 검색 제외 |
+| log viewer | 조건부 후보 | **Log Lens 신규 앱 포함** | local/Run/WSL/container source. network ingest 제외 |
+| data inspector | 독립 앱 후보 | Manager 내부 P3 포함 | devbox DB read-only. 임의 DB/write 제외 |
+| knowledge-base | Git UI | 제외 유지 | Repo Manager 책임 |
+| developer-toolbox | Cron 설명 | 제외 유지 | Run Manager 책임 |
+| developer-toolbox | 도구별 설정 | 개별 설정은 제외 유지 | recent/favorite/pipeline만 제공 |
+| port-manager | 점유 앱 icon | 제외 유지 | 작업 효율 대비 추출·cache 비용이 큼 |
+| everything-plus | semantic search | 제외 유지 | embedding model/vector DB가 설치 규모 경계 초과 |
+| clipboard | 범용 history | 제외 유지 | 호출 시 current clipboard만 일회성 routing |
+| system | hosts/system env editor | 제외 유지 | Workbench project environment만 제공 |
+| terminal | 범용 terminal | 제외 유지 | WSL Desktop의 WSL workflow는 native 강화 |
+| container | Docker Desktop 복제 | 제외 유지 | state/log/port adapter만 제공 |
 
-> **정정 (초판 사실 오류).** 초판은 WebSocket 제외 근거를 "reqwest 미지원, 스택 교체
-> 필요"라고 적었다. 부정확하다 — `tokio-tungstenite`를 추가하면 되고 reqwest를 교체할
-> 필요가 없다. **제외 결론은 유지하되 근거를 "우선순위·유지비"로 바꾼다.** 틀린 근거를
-> 남겨두면 나중에 뒤집혔을 때 제외 목록 전체의 신뢰를 깎는다.
+포함으로 바뀐 항목의 정확한 parser, buffer, file/time 상한과 secret 정책은 v0.5.0 네이티브
+우선 계획 §4를 기준으로 한다. 제외 유지 항목도 근거가 바뀌면 이후 release에서 다시 검토한다.
 
 ---
 
@@ -310,31 +326,30 @@ Windows 실기 검증에서 수집한 UX 개선 항목. 기능 버그가 아니�
 
 ## 7. 권장 구현 순서
 
+전체 저장소 순서는 v0.5.0 네이티브 우선 계획 §7이 단일 기준이다. 이 문서가 소유한 UX
+작업은 다음 의존 순서로 들어간다.
+
 ```
 v0.4.1 (핫픽스 — 결함만, 기능 추가 없음)
   터미널 결함 7종        → 터미널 설계 §2
   argv 계약 + 3개 앱 수신 → 연동 설계 §5.1
 
 v0.5.0
-  1. 실사용 피드백 저비용분 (§4.3)        ← code-pad 프리뷰 구분, webhook-lab 라벨·curl,
-                                            devbox-manager 설치 경로 "표시"
-  2. 카탈로그 capability + 런타임 배포     → 연동 설계 §2
-  3. packages/context-menu + 13개 앱 (§1)  ← 2가 있어야 "다른 앱으로 열기"가 생성된다
-  4. 터미널 클립보드·사용성·세션           → 터미널 설계 §3~§4
-  5. developer-toolbox 저비용 3종 (§3)
-  6. api-playground 헤더/쿠키 + 파일 업로드 (§4.1)
-  7. 스냅샷 버스 정리 + 자동 발견          → 연동 설계 §4
-  8. 실사용 피드백 잔여분 (§4.3)           ← devbox-manager 일괄 설치, code-pad 빠른 열기 트리,
-                                            workbench ports/services
-  9. knowledge-base 백링크 (§4.1, 난이도 상 — 파서부터)
+  P1-선행  catalog capability + 런타임 배포
+  P1-UX    packages/context-menu + 기존 13개 앱
+  P1-WSL   clipboard·terminal 기본기·native workspace/profile
+  P1-앱    Toolbox JSON/YAML·encoding·JSON→TS, API header/cookie/multipart,
+           Knowledge wikilink/backlink/rename, Manager batch, Code Pad Quick Open/LSP,
+           Workbench ports/services, Webhook label/curl
+  P2       Toolbox QR·security/text 도구, Knowledge capture/image,
+           API OpenAPI/GraphQL/SSE/WebSocket, Everything document content
+  P3       detection/pipeline/templates/filter/replay/window state + 신규 Launcher/Log Lens
 ```
 
-**초판 대비 변경**: 초판 §7은 실사용 피드백(§4.3)을 6번째, 즉 맨 끝에 두고 추측 기반
-항목(13개 앱 메뉴)을 1번에 두었다. **뒤집힌 우선순위였다.** 실기 검증에서 실제로 겪은
-불편이 먼저다. 다만 §4.3 안에서도 저비용/고비용을 갈라 저비용분을 앞으로 뺐다.
-
-컨텍스트 메뉴(3번)가 카탈로그(2번) 뒤로 간 이유: "다른 앱으로 열기"를 카탈로그에서
+컨텍스트 메뉴가 카탈로그 뒤로 간 이유: "다른 앱으로 열기"를 카탈로그에서
 생성하지 않으면 13개 앱에 하드코딩이 들어가고, 나중에 걷어내는 비용이 13배가 된다.
+복원된 QR·stream protocol·document extractor는 새 dependency와 입력 안전 경계가 있어
+작은 UX 수정과 한 PR에 섞지 않는다.
 
 각 항목은 기능 단위 1 PR로 진행한다.
 
@@ -351,9 +366,9 @@ v0.5.0
 | 메뉴 항목 생성 | 앱별 `buildMenu(target, state) -> MenuItem[]`을 순수 함수로. 비활성 조건(선택 없음 → 복사 disabled 등) 단언 |
 | 키보드 이동 | ↑↓ 순환, separator 건너뛰기, disabled 건너뛰기, Esc 닫기 |
 | 카탈로그 기반 "열기" | 설치되지 않은 앱 제외, `accepts` 불일치 앱 제외 |
-| developer-toolbox 변환기 | 왕복 테스트 (`transformers.test.ts` 확장). 잘못된 입력에 예외 대신 오류 메시지 |
+| developer-toolbox 변환기 | 왕복 테스트 (`transformers.test.ts` 확장). 잘못된 입력에 예외 대신 오류 메시지. QR SVG/PNG golden·size 상한 |
 | webhook-lab curl | 규칙 → curl 문자열 골든 테스트. 인용이 필요한 body |
-| devbox-manager 일괄 설치 | 부분 실패 시 성공분이 유지되고 실패분만 보고되는지. `App.test.tsx`의 `rows.length === 13` 단언이 컬럼 추가로 깨지므로 함께 갱신 |
+| devbox-manager 일괄 설치 | 부분 실패 시 성공분이 유지되고 실패분만 보고되는지. 신규 앱 등록 뒤 `App.test.tsx`의 catalog 개수도 15개로 갱신 |
 
 **실기 검증(Windows)** — 컨텍스트 메뉴는 WebView2 기본 메뉴 억제와 IME가 얽히므로 실기
 확인이 필요하다:
@@ -376,5 +391,7 @@ v0.5.0
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | 복사 / 붙여넣기 | wsl-desktop |
 | `Ctrl+Shift+F` | 스크롤백 검색 | wsl-desktop |
 | `Ctrl+Shift+T/D/W`, `Ctrl+Tab`, `Alt+Arrow` | 탭·팬 조작 | wsl-desktop (기존) |
+| `Ctrl+Alt+K` | global quick capture | knowledge-base, 충돌 시 설정 변경 |
+| `Ctrl+Alt+Space` | devbox action launcher 열기 | devbox-launcher, 충돌 시 설정 변경 |
 
 새 단축키를 추가하는 PR은 이 표를 함께 갱신한다.

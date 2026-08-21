@@ -38,9 +38,10 @@ https://github.com/jihoon22-lee/devbox/releases
 | [사용 가이드](./docs/windows-guide.md) | Windows 11에서 설치·사용·빌드·문제 해결 |
 | [개발자 가이드](./docs/development.md) | 구조, 시작하기, 개발 워크플로 |
 | [아키텍처](./docs/architecture.md) | 모노레포 구조, 레이어, 데이터 흐름 |
-| [로드맵](./docs/roadmap.md) | 진행 상황 / 다음 단계 backlog |
+| [로드맵](./docs/roadmap.md) | 진행 상황 / v0.5.0 확정 범위 |
+| [v0.5.0 네이티브 우선 계획](./docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3, 신규 앱, 앱 간 handoff, 테스트·릴리스 gate |
 | [프로젝트 요약](./docs/projects.md) | 앱별 상세 요약 |
-| [UX 개선 설계](./docs/superpowers/specs/2026-08-15-ux-improvements-design.md) | 다음 단계: 컨텍스트 메뉴·클립보드·도구 확장 |
+| [UX 개선 설계](./docs/superpowers/specs/2026-08-15-ux-improvements-design.md) | v0.5.0 컨텍스트 메뉴·클립보드·도구 확장 |
 | [제품 기회 및 실행 계획 (완료·보존)](./docs/product-opportunities.md) | v0.1~v0.4 결정 근거 + 실행 계획 |
 | [공통 규약](./CONVENTIONS.md) | 스택, 개발 워크플로, git 규칙 |
 | [변경 이력](./CHANGELOG.md) | 버전별 변경점 |
