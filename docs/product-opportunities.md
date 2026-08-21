@@ -2,10 +2,19 @@
 
 > - 상태: **완료(Completed)** — §17 실행 계획(PR 1~39 + Stage 4/5)은 v0.4.0에서 전부 실행됨.
 > - 이 문서는 이제 **결정·분석 근거의 보존용**이다. 신규 작업은
->   `docs/roadmap.md`(백로그)와 `docs/superpowers/specs/`(기능 설계)를 따른다.
-> - 최초 검토일: 2026-08-13 · 개정일: 2026-08-14 · 실행 완료: 2026-08-15
+>   `docs/roadmap.md`와
+>   [`2026-08-22-v0.5.0-native-first-plan.md`](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)를
+>   따른다.
+> - 최초 검토일: 2026-08-13 · 실행 완료: 2026-08-15 · v0.5.0 방향 개정: 2026-08-22
 > - 검토 기준: `main` (`43f941b`), 12개 앱 코드 직접 대조
 > - 범위: 앱 통폐합, 기술 스택 정책, 배포 기반, 공용 프리미티브, 앱 간 통합, 신규 앱 후보, PR 단위 실행 계획
+
+> **2026-08-22 정정.** 이 문서의 최초 분석은 외부 도구와 영역이 겹친다는 사실을 기능 제외
+> 근거로 지나치게 강하게 사용했다. devbox의 목적은 개발자가 자주 쓰는 작업을 여러 도구에
+> 나누어 수행하고 파일·클립보드로 옮기는 비용을 줄이는 것이다. 외부 도구의 존재만으로
+> 기능을 제외하지 않으며, P1·P2 core는 오프라인 native 제공, 대형 전문 도구는 선택적
+> 보완재로 두는 정책으로 변경했다. §15·§16은 이 결정에 맞춰 개정했고, 상세 범위와 상한은
+> 위 v0.5.0 계획이 우선한다.
 
 ## 1. 문서 목적
 
@@ -1238,16 +1247,20 @@ JWT decode와 signature verify는 별도 기능으로 구분한다. decode 성�
 
 | 후보 | 사용자 영향 | 차별성 | 기존 코드 재사용 | MVP 경계 | 위험 | 권장 |
 |---|---:|---:|---:|---:|---:|---|
-| workbench | 5 | 5 | 5 | 3 | 4 | 최우선 신규 앱 |
-| webhook-lab | 4 | 4 | 5 | 5 | 3 | 두 번째 |
-| dev-env-doctor | 4 | 4 | 4 | 5 | 2 | 조건부 |
-| log-lens | 4 | 3 | 4 | 4 | 3 | 조건부 |
-| repo-manager | 3 | 4 | 4 | 4 | 3 | 조건부 |
-| data-inspector | 3 | 3 | 4 | 4 | 4 | 독립 앱보다 내부 진단 우선 |
+| workbench | 5 | 5 | 5 | 3 | 4 | 구현 완료 |
+| webhook-lab | 4 | 4 | 5 | 5 | 3 | 구현 완료 |
+| dev-env-doctor | 4 | 4 | 4 | 5 | 2 | Manager 내부 구현 완료 |
+| log-lens | 4 | 4 | 4 | 4 | 3 | **v0.5.0 신규 앱 선택** |
+| repo-manager | 3 | 4 | 4 | 4 | 3 | 구현 완료, v0.5.0 강화 |
+| data-inspector | 3 | 3 | 4 | 4 | 4 | v0.5.0 Manager 내부 기능 |
+| devbox-launcher | 5 | 5 | 5 | 4 | 3 | **v0.5.0 신규 앱 선택** |
 
-**신규 앱 후보를 추가로 제안하지 않는다.** 10개 앱을 대조하며 발굴한 결핍 — 버전 원본 3벌,
-WSL 로직 중복, FTS 쿼리 빌더 2벌, 프로젝트 목록 2벌, CSS 10벌, CSP 10벌 — 은 하나도 "앱이
-부족해서" 생기지 않았다. 전부 **앱 간 계약이 없어서** 생겼다.
+최초본의 “신규 앱 후보를 추가로 제안하지 않는다”는 결론은 **기반이 갖춰지기 전의 조건부
+판단**으로 정정한다. v0.4.0~v0.4.1에서 catalog, `crates/applink`, `crates/integration`,
+ProjectProfile과 공용 primitive가 실제로 생겼다. 이제 앱 간 계약 부재를 먼저 해결한다는
+원칙은 유지하면서, 책임과 수명주기가 독립적인 Log Lens와 devbox 생태계 전용 Launcher를
+추가하는 것이 타당하다. 두 앱은 기존 UI를 복제하지 않고 handoff·snapshot의 실사용
+소비자가 된다.
 
 ### 15.2 Workbench — Project Workspace Orchestrator
 
@@ -1350,12 +1363,14 @@ MVP는 read-only다. 자동 설치·registry 수정·WSL reset을 하지 않는�
 
 ### 15.5 Log Lens — Unified Local Log Viewer
 
-**MVP**: local file tail, Run Manager job/service stdout·stderr, WSL file/command source,
-timestamp/level/source 정규화, plain text·regex·JSON field filter, pause·follow·wrap·export,
-saved view.
+**v0.5.0 선택 확정.** local file tail, Run Manager job/service stdout·stderr handoff, WSL
+file/journal, 설치된 container engine source, timestamp/level/source 정규화, plain text·regex·
+JSONL/logfmt field filter, pause·follow·wrap·bookmark·export, saved view를 제공한다.
 
-무한 buffer 대신 ring buffer와 backpressure를 사용한다. Docker 전용 dashboard는 만들지 않고,
-Docker source가 필요하면 adapter 하나로 추가한다.
+100,000행 또는 64MiB ring buffer와 backpressure를 사용한다. Docker 전용 dashboard는 만들지
+않고 engine이 설치됐을 때 log adapter 하나로 연결한다. network ingest, arbitrary command,
+ELK·distributed tracing 대체는 하지 않는다. 세부 source identity, rotation, merge 규칙은
+v0.5.0 네이티브 우선 계획 §5 P3-02를 따른다.
 
 ### 15.6 Repo Manager — Git Worktree Manager
 
@@ -1368,33 +1383,58 @@ repository를 중복 등록하지 않도록 canonical identity를 정의한다 (
 
 ### 15.7 Data Inspector — 내부 기능부터 검증
 
-일반 SQLite GUI로 시작하지 않는다. Dev Environment Doctor 또는 Life Log source 설정에서
+일반 SQLite GUI로 시작하지 않는다. v0.5.0에는 Devbox Manager의 환경 진단 옆 내부 기능으로
 다음 read-only 기능을 먼저 제공한다: devbox DB 자동 발견, schema version·table/view·row
-count, integrity check, 제한된 read-only query, JSON/CSV export, backup.
+count, integrity check, 2초·1,000행 제한 read-only query, JSON/CSV export, backup. SQLite
+read-only open, `PRAGMA query_only=ON`, authorizer write 차단을 함께 적용하고 임의 DB path는
+받지 않는다.
 
 실제 독립 사용성이 확인될 때만 새 앱으로 승격한다.
 
-## 16. 우선 피할 신규 앱
+### 15.8 Devbox Launcher — Devbox Action Entrypoint
 
-**범용 command palette** — PowerToys가 이미 앱·파일·명령·웹·시스템 기능 실행과 확장 모델을
-제공한다. Workbench는 프로젝트 준비 상태와 devbox 앱 orchestration에만 집중한다.
+**v0.5.0 선택 확정.** PowerToys와 경쟁하는 범용 OS launcher가 아니다. catalog capability와
+snapshot에서 devbox 앱, Workbench profile, repository/worktree, Run task/service, Everything+
+saved query, WSL profile, Knowledge capture, Toolbox transformer를 발견하고 versioned applink와
+handoff로 실행하는 devbox 전용 진입점이다.
 
-**범용 clipboard manager 또는 converter 모음** — Windows clipboard history, PowerToys
-Advanced Paste, DevToys와 직접 경쟁하지 않는다. Developer Toolbox는 pipeline과 devbox 앱 간
-입력 전달을 차별점으로 삼는다.
+기본 단축키는 `Ctrl+Alt+Space`이며 current clipboard/selected text는 실행 전 preview하고
+저장하지 않는다. 범용 파일·웹·Windows 설정 검색, arbitrary shell command, clipboard history,
+외부 plugin host는 범위에서 제외한다.
 
-**hosts·시스템 환경변수 편집기** — PowerToys에 해당 도구가 있다. devbox는 project-scoped
-environment, Run Manager secret 주입, API Playground environment의 연결에 집중한다.
+## 16. 책임 경계상 피할 범용 앱
 
-**범용 terminal** — Windows Terminal은 탭·분할·프로필·layout 복원이 강하다. WSL Desktop은
-ProjectProfile과 multi-pane broadcast에 집중한다.
+외부 도구가 존재한다는 이유만으로 기능을 제외하지 않는다. 다음 항목은 외부 경쟁 회피가
+아니라 devbox 앱의 책임과 설치 규모를 지키기 위해 범용 구현을 피하는 것이다. 필요한
+devbox-scoped 하위 기능은 각 문단처럼 native로 제공한다.
 
-**Docker Desktop 복제** — images, volumes, builds, Kubernetes, Docker 전체 로그 관리를
-복제하지 않는다. WSL Desktop은 Git·WSL·포트·Run Manager를 프로젝트 기준으로 연결한다.
+**범용 command palette** — 앱·파일·웹·시스템 전체 launcher는 만들지 않는다. 대신 §15.8의
+Devbox Launcher가 devbox app/action/context를 오프라인으로 검색하고 직접 handoff한다.
+
+**범용 clipboard manager** — clipboard history와 OS 전역 감시는 만들지 않는다. Developer
+Toolbox와 Launcher는 사용자가 호출한 순간의 current clipboard만 preview하고 pipeline·devbox
+앱 간 입력 전달을 native로 제공한다.
+
+**hosts·시스템 환경변수 편집기** — registry/hosts 전체 편집은 프로젝트 orchestration 책임을
+벗어난다. Workbench project-scoped environment, Run Manager secret 주입, API Playground
+environment 연결은 native로 강화한다.
+
+**범용 terminal** — 모든 shell·platform을 포괄하지 않는다. WSL Desktop의 clipboard,
+profile, native pane layout, action palette, ProjectProfile, multi-pane broadcast는 외부 terminal
+없이 동작하도록 강화한다.
+
+**Docker Desktop 복제** — image build, volume, registry, Kubernetes 전체 UI는 만들지 않는다.
+WSL Desktop·Port Manager·Log Lens는 프로젝트 상태, port, container start/stop/log adapter를
+engine-neutral 방식으로 native 제공한다.
 
 ---
 
 # 17. 실행 계획
+
+> **역사적 실행 계획.** 이 절의 PR 1~39와 Stage 4/5는 v0.4.0에서 완료됐다. v0.5.0의
+> 현재 실행 순서와 PR 지도는
+> [`2026-08-22-v0.5.0-native-first-plan.md` §7](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을
+> 따른다. 아래 내용은 기존 결정과 구현 근거를 보존하기 위해 유지한다.
 
 ## 17.0 이 계획을 읽는 법
 
@@ -3660,7 +3700,9 @@ PR 2(identifier), PR 4(DB 흡수)는 사용자 데이터를 옮긴다. 다음을
 
 ## 19. 외부 도구와의 비교 근거
 
-중복 영역 판단에는 다음 공식 자료를 사용한다.
+다음 공식 자료는 기능 범위·전문 도구 handoff·설치 크기 판단을 위한 비교 근거다. 목록에
+도구가 있다는 사실 자체는 devbox 기능의 제외 근거가 아니며, native-first 정책과 반복 작업
+감축 효과를 먼저 평가한다.
 
 - [PowerToys Command Palette](https://learn.microsoft.com/windows/powertoys/command-palette/overview)
 - [PowerToys Run](https://learn.microsoft.com/windows/powertoys/run)
@@ -3707,3 +3749,24 @@ PR 2(identifier), PR 4(DB 흡수)는 사용자 데이터를 옮긴다. 다음을
 
 이 기반이 갖춰지면 Workbench는 기능을 복제하는 11번째 앱이 아니라 기존 앱의 가치를 묶어
 증폭하는 제품이 될 수 있다.
+
+### 20.1 2026-08-22 현재 결론
+
+위 전제는 v0.4.0~v0.4.1에서 충족됐다. 현재 저장소에는 13개 앱, release catalog/manifest,
+`crates/wsl`·`search`·`integration`·`applink`·`launch`, ProjectProfile과 실제 inbound 계약이
+있다. 다음 단계는 다시 기반만 만드는 것이 아니라 그 기반으로 사용자의 앱 전환과 수동
+데이터 운반을 실제로 줄이는 것이다.
+
+```text
+native-first 지침 + API secret 안전성
+  → catalog capability + snapshot 정리 + one-time handoff
+  → 전 앱 context menu + WSL native workspace
+  → 기존 13개 앱의 P1/P2 기능 강화
+  → Devbox Launcher + Log Lens
+  → 선택 P3 보강 + 제한된 Related Tools
+  → offline Windows RC + v0.5.0
+```
+
+전체 기능·제외·상한·버전·검증 조건은
+[`2026-08-22-v0.5.0-native-first-plan.md`](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)가
+단일 원본이다.

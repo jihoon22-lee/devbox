@@ -24,9 +24,22 @@ apps/        독립 Tauri 앱 (각각 독립 .exe)
   webhook-lab         로컬 웹훅/콜백 서버
   repo-manager        Git worktree/저장소 관리
 packages/    공용 React 패키지 (tokens·editor·diff-view)
-crates/      공용 Rust 크레이트 (filesystem·git·integration·launch·markdown·process·search·secrets·wsl)
+crates/      공용 Rust 크레이트 (applink·filesystem·git·integration·launch·markdown·process·search·secrets·wsl)
 docs/        architecture / roadmap / projects
 ```
+
+## 기능·의존성 판단
+
+- 외부 도구에 같은 기능이 있다는 이유만으로 개발 대상에서 제외하지 않는다.
+- 반복적인 P1·P2 흐름은 대상 자체가 WSL/Git/remote API인 경우를 제외하면 network와 별도
+  runtime 설치 없이 완료되어야 한다.
+- permissive library는 출처·version·license·크기·보안·오프라인 동작을 검토해 설치물에
+  포함할 수 있다.
+- 대형 전문 도구 설치·실행은 native 기능을 대체하지 않는 optional integration으로만 둔다.
+- devbox 앱 간 전달은 clipboard/file export보다 versioned applink·handoff·snapshot을 우선한다.
+
+상세 정책은 `CONVENTIONS.md` §9, 확정된 v0.5.0 기능·신규 앱·제외 범위는
+[v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을 따른다.
 
 ## 시작하기
 
@@ -50,6 +63,7 @@ WSL에서는 `cargo test`(core 로직) / `pnpm build`(프론트 검증)로 개�
 - [CONVENTIONS.md](../CONVENTIONS.md) — 공통 규약 (스택, 개발 워크플로, git 규칙)
 - [docs/architecture.md](./architecture.md) — 아키텍처
 - [docs/roadmap.md](./roadmap.md) — 로드맵 / 진행 상황
+- [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) — P1·P2·선택 P3 상세 계획
 - [docs/projects.md](./projects.md) — 앱별 요약
 - [docs/windows-guide.md](./windows-guide.md) — Windows 사용/빌드 가이드
 - `docs/superpowers/specs/` — 앱/기능 설계 문서 (workbench·webhook-lab·repo-manager 등)

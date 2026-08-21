@@ -28,6 +28,17 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 └──────────────────────────────┘
 ```
 
+위 그림은 v0.4.1의 현재 구조다. v0.5.0에서는 기존 동작을 유지하면서 다음 계획 요소를
+추가한다. 구현 전에는 현재 앱/크레이트 수에 포함하지 않는다.
+
+- 신규 독립 앱 `devbox-launcher`, `log-lens` — 목표 15개 앱
+- 신규 순수 `crates/catalog` — catalog v1/v2 type·runtime/build-time load·capability filter
+- 신규 `crates/logs` — Log Lens가 두 번째 소비자가 되는 시점의 순수 log parsing
+- 신규 `crates/window-state`와 `packages/context-menu`
+- `crates/applink` protocol v2 one-time handoff
+
+상세: [`v0.5.0 네이티브 우선 계획`](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)
+
 ## 크레이트 의존 관계
 
 ```
@@ -76,6 +87,11 @@ repo-manager:     React → commands → git crate(wsl) → repository/worktree 
 `%LOCALAPPDATA%\devbox\integration\<app-id>\v<n>\`에 privacy-safe snapshot을 원자적으로
 기록하고 consumer는 읽기만 한다. (상세: `docs/product-opportunities.md` §10.1)
 
+v0.5.0에서는 지속 상태는 snapshot, 일회성 작업 전달은 applink protocol v2 handoff로
+구분한다. API request, Knowledge draft, log source처럼 argv에 안전하게 넣을 수 없는 payload는
+128-bit opaque id만 argv에 전달하고 공용 root의 TTL·크기 제한 payload를 한 번 소비한다.
+devbox가 양쪽 앱을 제어하면 clipboard·임시 export 파일 전달은 명시적 fallback으로만 둔다.
+
 > **예외 (알려진 위반)**: workbench의 `absorb_life_log_projects`(`commands/workspace.rs`)가
 > life-log의 `data.db`를 직접 SQLite로 읽는다 — 현재 이 정책의 유일한 예외다.
 > life-log를 producer로 만들어 해소할 예정: `./superpowers/specs/2026-08-17-app-interop-design.md` §4.1
@@ -122,6 +138,10 @@ font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost
 - **release workflow** — 빌드 대상 앱 목록을 카탈로그에서 읽는다 (하드코딩 배열 금지)
 - **Devbox Manager** — 설치·업데이트 대상과 앱 표시 여부를 카탈로그에서 읽는다
 
+v0.5.0에서는 schema v2 `accepts`/`produces`를 추가한다. `crates/catalog`가 schema와 runtime
+사본을 읽고, `crates/launch`가 실제 설치 여부를 판정한다. `crates/applink`는 argv 계약만
+담당해 `launch`와의 순환 의존을 피한다.
+
 `apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
 
 ## 통합 앱 (Workbench)
@@ -136,5 +156,7 @@ font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost
 - `docs/superpowers/specs/2026-08-14-workbench-design.md` — Workbench (orchestration 셸)
 - `docs/superpowers/specs/2026-08-14-webhook-lab-design.md` — Webhook Lab (로컬 웹훅 서버)
 - `docs/superpowers/specs/2026-08-14-repo-manager-design.md` — Repo Manager (git worktree)
+- `docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md` — v0.5.0 Devbox Launcher·Log Lens,
+  기존 13개 앱 강화, handoff와 native-first 범위
 
 상세 규약: [CONVENTIONS.md](../CONVENTIONS.md)

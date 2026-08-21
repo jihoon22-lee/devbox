@@ -1,11 +1,17 @@
 # wsl-desktop 터미널 — 정확성·세션·사용성 설계
 
-- 상태: v0.4.1 범위(§2) 구현 및 안정판 배포 완료; 남은 Windows packaged-runtime acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서 post-release로 계속 관리. v0.5.0 범위(§3·§4) 제안·보류
-- 작성일: 2026-08-17
+- 상태: v0.4.1 범위(§2) 구현 및 안정판 배포 완료; v0.5.0 §3·§4 **P1 범위 확정, 구현 전**
+- 작성일: 2026-08-17 (범위 개정: 2026-08-22)
 - 범위: `apps/wsl-desktop` 단일 앱 + `crates/wsl`
 - 관련: [UX 개선 설계](./2026-08-15-ux-improvements-design.md) §2 를 이 문서가 대체한다
 - 선행: [앱 간 연동 설계](./2026-08-17-app-interop-design.md) §1.2 (`Path` 수신은 v0.4.1,
   `Profile` 수신과 레이아웃 선택은 v0.5.0 §4.4)
+
+> **2026-08-22 native-first 확인.** 탭·팬·profile·layout·action palette는 WSL Desktop이
+> 자체 제공하며 tmux/zellij 설치를 전제로 하지 않는다. 멀티플렉서는 앱 종료 뒤 process
+> 생존이 필요한 사용자를 위해 이미 설치된 session에 attach하는 optional adapter다. 앱이
+> 자동 설치하거나 없을 때 core terminal 기능을 비활성화하지 않는다. 전체 우선순위와
+> offline 계약은 [v0.5.0 계획](./2026-08-22-v0.5.0-native-first-plan.md)을 따른다.
 
 ## 0. 배경
 
@@ -362,10 +368,11 @@ type PersistedLayout = {
 
 앱을 닫아도 빌드·dev server·ssh가 살아 있게 하려면 멀티플렉서가 필요하다. `wsl.exe`가
 종료되면 셸에 SIGHUP이 가므로 **자체 데몬을 만들지 않는 한 다른 방법이 없다.**
-opt-in으로 둔다.
+opt-in으로 둔다. 레이아웃 복원과 workspace 정의는 §4.1·§4.4의 native 기능이므로
+멀티플렉서가 없어도 완전하게 동작하고, process 생존만 제공되지 않는다.
 
-백엔드 트레이트 — `idk`의 `src/idk/ws/backends/zellij.py`가 정의한 경계를 옮긴다.
-그 파일이 tmux 백엔드를 만들지 않으면서도 시그니처를 백엔드 경계로 남긴 것과 같은 의도다.
+백엔드 트레이트는 WSL Desktop에 필요한 detect/list/attach/kill 동작을 기준으로 독립
+설계한다. 외부 프로젝트의 구현·parser·정규식을 복사하지 않는다.
 
 ```rust
 pub struct MuxSession { pub name: String, pub state: MuxState }  // Running | Exited
@@ -380,17 +387,15 @@ pub trait Multiplexer {
 
 - **세션 이름**: `wsld-<distro>-<paneKey>`. `paneKey`가 영속(§2.5)이므로 재시작을 넘어
   안정적이다
-- **zellij UI 숨김**: `tab-bar`/`status-bar` plugin pane이 **없는** 레이아웃 KDL로 생성한다.
-  `idk`의 `ws/layout.py`는 `_render_tab(ui=True)` 분기에서 그 plugin들을 의도적으로 넣는데
-  (CLI에서는 하단 키힌트가 필요하므로), **우리는 그 분기를 쓰지 않는다.** `pane_frames false`도
-  함께 설정한다. 결과적으로 zellij는 화면에 보이지 않고, 탭·분할·단축키는 wsl-desktop이
-  계속 소유한다
+- **zellij UI 숨김**: 공식 zellij KDL 설정을 사용해 `tab-bar`/`status-bar` plugin pane을
+  만들지 않고 `pane_frames false`를 적용한다. 결과적으로 zellij는 화면에 보이지 않고,
+  탭·분할·단축키는 WSL Desktop이 계속 소유한다
 - **tmux**: 같은 트레이트 뒤에 `new-session -A -s <name> -c <cwd>` + `set -g status off`
 - **감지/폴백**: 멀티플렉서가 없으면 토글을 비활성화하고 사이드 패널에 사유를 표시한다.
   기존 동작(비지속 세션)으로 조용히 내려간다
-- `idk`의 `list-sessions --no-formatting` 파싱 정규식과 EXITED 판정(`SESSION_RE`, 그리고
-  "이름만 보면 EXITED 잔재를 새로 만든 것으로 오판한다"는 주석)은 실측으로 얻은 것이므로
-  그대로 이식한다
+- list parser는 공식 CLI의 machine-readable 또는 stable 출력만 대상으로 fixture를 직접
+  작성한다. 단순 session 이름뿐 아니라 running/exited 상태를 함께 검사해 잔재를 새 session으로
+  오판하지 않는다
 
 **정직한 트레이드오프 — 이것 때문에 opt-in이다:**
 
@@ -415,17 +420,17 @@ pub trait Multiplexer {
 
 [앱 간 연동 설계](./2026-08-17-app-interop-design.md)의 `wsl-desktop --profile <id>`가 의미를
 가지려면 **"이 프로젝트의 터미널 레이아웃"** 개념이 필요하다 — 탭 2개, 팬 3개, 각각의 cwd와
-시작 명령. `idk`의 `workspaces.toml`이 하는 일과 같다.
+시작 명령. 이 정의는 WSL Desktop 소유 JSON schema로 만들고 외부 workspace 파일에 의존하지 않는다.
 
 **터미널 사용성 강화와 앱 간 유기성이 같은 부품을 요구하는 지점이다.**
 
 - 워크스페이스 정의(탭/팬/cwd/시작 명령)를 `app_local_data_dir`의 JSON에 저장한다.
   레이아웃(§4.1)이 "마지막 상태 자동 저장"이라면, 워크스페이스는 "이름 붙여 저장한 정의"다
-- 세션 목록 패널: `idk ws ls`의 3상태 — `defined`(정의만) / `running` / `exited`(부활 가능).
+- 세션 목록 패널: `defined`(정의만) / `running` / `exited`(부활 가능)의 3상태.
   정의에 없는 살아있는 세션도 보여준다(손으로 만든 것을 놓치지 않기 위해)
-- **명령 팔레트**: `idk run`의 스니펫 모델. `{{param}}` 치환 시 **기본적으로 인용하고**,
-  값 자체가 셸 조각이어야 하는 경우만 `raw = true`로 명시적 opt-in 한다
-  (`idk/docs/spec-ws-run.md §7.1`). 최종 명령을 실행 전에 보여준다
+- **명령 팔레트**: WSL Desktop 소유 snippet model. `{{param}}` 치환 시 **기본적으로
+  인용하고**, 값 자체가 shell fragment여야 하는 경우만 `raw = true`로 명시적 opt-in 한다.
+  최종 command를 실행 전에 보여준다
 
 **책임 경계 — 문서에 못박는다** (UX 개선 설계 §0의 "각 앱의 책임을 다른 앱에서 복제하지
 않는다"):

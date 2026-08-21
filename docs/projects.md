@@ -40,3 +40,14 @@
 `PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`
 `EverythingPlus.exe` `Knowledge.exe` `LifeLog.exe` `DevboxManager.exe` `CodePad.exe` `RunManager.exe`
 `Workbench.exe` `WebhookLab.exe` `RepoManager.exe`
+
+## v0.5.0 계획 앱 (아직 미구현)
+
+| 목표 # | 앱 | 예정 디렉터리 | 독립 책임 | 주요 연계 |
+|---|---|---|---|---|
+| 14 | devbox-launcher | `apps/devbox-launcher` | devbox app/action/context 전용 launcher | catalog, applink, integration snapshot |
+| 15 | log-lens | `apps/log-lens` | local/Run/WSL/container log tail·merge·filter | logs crate, `log-source/v1` handoff |
+
+두 앱은 v0.5.0에 선택 확정됐지만 현재 저장소의 13개 구현 앱에는 아직 포함하지 않는다.
+기존 앱의 P1·P2·선택 P3 강화, 앱별 목표 version, 신규 앱의 안전 경계와 acceptance는
+[v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을 따른다.
