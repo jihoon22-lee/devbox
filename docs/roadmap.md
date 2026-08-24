@@ -76,6 +76,16 @@ v0.4.1은 안정판 핫픽스로 배포됐다. 자동화된 migration 사례와 
 이미 제거되어 Windows C1/C2를 안전하게 재현하지 못했다. 이는 packaged-runtime 검증이 아니며, 남은
 Windows acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서 post-release로 계속 관리한다.
 
+### v0.4.2 — API Playground 보안 핫픽스 (RC1·H1 진행 중)
+
+v0.4.1에도 존재하는 resolved secret persistence 결함을 v0.5.0까지 미루지 않고 P1-02 전체
+범위로 선행 수정했다. API Playground 0.3.2는 secret을 Rust 전송 경계에서만 해석하고,
+History·Collection v2 fail-closed migration, masked cURL, 응답·오류·redirect redaction과
+cross-origin credential·body stripping 및 민감한 redirect destination 연결 전 차단을 적용한다.
+코드와 Linux/Windows CI는 main에 반영됐으며,
+`v0.4.2-rc1` 공식 Windows package의 H1 acceptance가 통과한 뒤에만 안정판 v0.4.2를 게시한다.
+이 선행 완료는 v0.5.0 범위를 삭제하거나 축소하지 않고 같은 P1-02 회귀 기준으로 이어진다.
+
 ### v0.5.0
 
 v0.5.0은 외부 도구 설치 허브가 아니라 **오프라인 native 기능과 앱 간 직접 전달**을 강화하는

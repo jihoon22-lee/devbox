@@ -3,6 +3,50 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [v0.4.2-rc1] - 2026-08-24
+
+v0.4.2-rc1은 API Playground 0.3.2의 secret persistence 보안 핫픽스를 실제 Windows
+패키지에서 검증하기 위한 prerelease다. 안정판은 계속 v0.4.1이며, 아래 H1 packaged
+acceptance가 통과하기 전에는 v0.4.2로 승격하지 않는다.
+
+### Security
+
+- **backend-only secret resolve** — `{{NAME}}`와 `${NAME}` environment reference를 URL,
+  query, header key/value, body 및 auth field에서 Rust가 전송 직전에만 해석한다. 해석된
+  요청은 frontend state나 응답 wire 형식에 포함하지 않으며 unseal 실패는 ciphertext
+  fallback 없이 안전하게 종료한다.
+- **History·Collection v2** — 평문 포함 여부를 증명할 수 없는 `apip-history` v1은 UI에서
+  즉시 격리하고, 빈 v2 write/read-back과 raw key delete/read-back이 성공한 뒤에만 migration
+  marker를 기록한다. Collection v1의 직접 입력 credential은 reference 또는 `[REDACTED]`와
+  `requiresSecretReview`로 변환하며 raw backup·quarantine을 만들지 않는다.
+- **cURL·응답·오류 redaction** — 기본 cURL은 Authorization, Cookie, API key와 auth 값을
+  마스킹한다. 원문 cURL은 명시적 확인 뒤 일회성 clipboard 복사에만 사용한다. 응답 header/body,
+  URL userinfo/query, redirect location/final URL, 알려진 token 패턴과 network error에도 같은
+  redaction 경계를 적용한다.
+- **redirect credential stripping** — redirect를 최대 10회까지 직접 처리하고 cross-origin
+  hop에는 Authorization, Cookie, API key 계열 header, 알려진 secret이 든 일반 header,
+  auth, body 및 stale body metadata를 전달하지 않는다. 307/308도 같은 경계를 적용하며,
+  목적지 URL 자체에 민감정보가 있으면 다른 origin에 연결하기 전에 차단한다.
+- **browser fallback 제거** — WebView가 아닌 browser preview에서는 secret seal/send/reveal을
+  거부하며 기존 `plain:` base64 pseudo-sealing 경로를 제거했다.
+
+### Changed
+
+- API Playground의 frontend·Rust·Tauri package version을 0.3.2로 올렸다.
+- Rust 1.98의 신규 clippy lint에 맞춰 WSL·Code Pad의 고정 2바이트 청크 처리를
+  `as_chunks`로 바꾸되 기존 UTF-16·SHA 파싱 동작을 회귀 테스트로 보존했다.
+
+### Verification status
+
+- API Playground frontend 55개 및 Rust 14개 보안 회귀 테스트, 전체 Cargo
+  test/check, 13개 앱 순차 frontend build와 GitHub Actions Linux/Windows job이 통과했다.
+- v0.4.1 W0에서 API Playground를 포함한 격리 가능한 portable 10개 앱의 cold start가
+  통과했다.
+- RC1에서는 API Playground 0.3.2 packaged 실행의 DPAPI ciphertext, logical localStorage
+  raw History 삭제·Collection 변환, cURL/응답/오류 redaction과 cross-origin credential
+  stripping, 307/308 body 억제와 민감한 redirect destination 연결 전 차단을 H1으로 직접
+  확인한다.
+
 ## [v0.4.1] - 2026-08-20
 
 v0.4.1은 v0.4.0 이후 발견된 터미널·앱 간 열기·Run Manager lifecycle·identifier 이관
