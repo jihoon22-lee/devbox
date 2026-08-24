@@ -200,6 +200,8 @@ fn deliver_ready(state: &Arc<AppState>, app: &AppHandle, debouncer: &mut Debounc
     }
     drop(conn);
     if changed {
+        // 외부 editor에서 생긴 변경도 앱 내부 저장과 같은 activity 계약으로 발행한다.
+        let _ = crate::integration::write_snapshot(&state.db.lock().unwrap());
         let _ = app.emit("docs-changed", ());
     }
 }
