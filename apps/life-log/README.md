@@ -13,7 +13,7 @@
 ## 기술
 
 - 백그라운드 폴러·세션 추적 → SQLite → React
-- 다른 앱의 snapshot을 소비하며, 리더는 자체 구현(`core/readers.rs`) — 외부 DB 직접 조회 없음
+- `crates/integration`의 자동 발견·검증 API로 모든 snapshot producer를 Data Sources에 표시 — 외부 DB 직접 조회 없음
 
 ## 데이터
 
@@ -23,4 +23,3 @@
 
 - 순수 로직: `src-tauri/src/core/` → `cargo test`
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
-

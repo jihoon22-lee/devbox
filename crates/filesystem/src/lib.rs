@@ -107,20 +107,42 @@ fn replace_file(temporary: &Path, target: &Path) -> io::Result<()> {
 fn replace_file(temporary: &Path, target: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{
+        ERROR_ACCESS_DENIED, ERROR_LOCK_VIOLATION, ERROR_SHARING_VIOLATION, WIN32_ERROR,
+    };
     use windows::Win32::Storage::FileSystem::{
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
     };
 
     let temporary: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
     let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
-    unsafe {
-        MoveFileExW(
-            PCWSTR(temporary.as_ptr()),
-            PCWSTR(target.as_ptr()),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
+    const MAX_REPLACE_ATTEMPTS: usize = 16;
+    for attempt in 0..MAX_REPLACE_ATTEMPTS {
+        let result = unsafe {
+            MoveFileExW(
+                PCWSTR(temporary.as_ptr()),
+                PCWSTR(target.as_ptr()),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        match result {
+            Ok(()) => return Ok(()),
+            Err(error)
+                if attempt + 1 < MAX_REPLACE_ATTEMPTS
+                    && WIN32_ERROR::from_error(&error).is_some_and(|code| {
+                        matches!(
+                            code,
+                            ERROR_ACCESS_DENIED | ERROR_LOCK_VIOLATION | ERROR_SHARING_VIOLATION
+                        )
+                    }) =>
+            {
+                let delay_ms = 1_u64 << attempt.min(4);
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            }
+            Err(error) => return Err(io::Error::other(error)),
+        }
     }
-    .map_err(io::Error::other)
+    unreachable!("the final replace attempt always returns")
 }
 
 #[cfg(unix)]

@@ -2691,6 +2691,7 @@ dependencies = [
  "dirs",
  "filesystem",
  "git",
+ "integration",
  "regex",
  "rusqlite",
  "serde",

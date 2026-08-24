@@ -75,57 +75,53 @@ pub struct AttributionResult {
     pub profile_count: usize,
 }
 
-/// 등록된 integration source의 상태를 반환한다.
+/// 공용 integration root에서 자동 발견한 모든 source 상태를 반환한다.
 #[tauri::command]
 pub fn integration_sources() -> Vec<SourceStatus> {
-    vec![run_manager_source_status()]
+    source_statuses(devbox_integration::discover_report())
 }
 
-fn run_manager_source_status() -> SourceStatus {
-    match crate::core::readers::read_snapshot(crate::core::readers::PRODUCER_RUN_MANAGER, 1) {
-        Ok(Some(envelope)) => {
-            let path =
-                crate::core::readers::snapshot_path(crate::core::readers::PRODUCER_RUN_MANAGER, 1);
-            let freshness_ms = std::fs::metadata(&path)
-                .ok()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|n| n.as_millis() as i64)
-                        .unwrap_or(0);
-                    (now - d.as_millis() as i64).max(0)
-                });
-            SourceStatus {
-                producer: envelope.producer.clone(),
-                available: true,
-                schema_version: Some(envelope.schema_version),
-                producer_version: Some(envelope.producer_version),
-                generated_at: Some(envelope.generated_at),
-                freshness_ms,
-                error: None,
-            }
-        }
-        Ok(None) => SourceStatus {
-            producer: crate::core::readers::PRODUCER_RUN_MANAGER.into(),
-            available: false,
-            schema_version: None,
-            producer_version: None,
-            generated_at: None,
-            freshness_ms: None,
-            error: Some("snapshot이 없다 (run-manager를 실행하면 생성된다)".into()),
-        },
-        Err(error) => SourceStatus {
-            producer: crate::core::readers::PRODUCER_RUN_MANAGER.into(),
+fn source_statuses(report: devbox_integration::DiscoveryReport) -> Vec<SourceStatus> {
+    let mut statuses = Vec::with_capacity(
+        report.snapshots.len() + report.issues.len() + usize::from(report.root_error.is_some()),
+    );
+    statuses.extend(report.snapshots.into_iter().map(|snapshot| SourceStatus {
+        producer: snapshot.producer,
+        available: true,
+        schema_version: Some(snapshot.version),
+        producer_version: Some(snapshot.producer_version),
+        generated_at: Some(snapshot.generated_at),
+        freshness_ms: Some(snapshot.freshness_ms.min(i64::MAX as u64) as i64),
+        error: None,
+    }));
+    statuses.extend(report.issues.into_iter().map(|issue| SourceStatus {
+        producer: issue.producer,
+        available: false,
+        schema_version: issue.version,
+        producer_version: None,
+        generated_at: None,
+        freshness_ms: None,
+        error: Some(issue.error),
+    }));
+    if let Some(error) = report.root_error {
+        statuses.push(SourceStatus {
+            producer: "integration-root".into(),
             available: false,
             schema_version: None,
             producer_version: None,
             generated_at: None,
             freshness_ms: None,
             error: Some(error),
-        },
+        });
     }
+    statuses.sort_by(|a, b| {
+        (&a.producer, a.schema_version, !a.available).cmp(&(
+            &b.producer,
+            b.schema_version,
+            !b.available,
+        ))
+    });
+    statuses
 }
 
 /// 프로젝트 경로 목록 설정 (줄바꿈 구분).
@@ -212,4 +208,56 @@ pub async fn get_range(
         git,
         daily,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_statuses_preserve_valid_and_isolated_error_rows() {
+        let report = devbox_integration::DiscoveryReport {
+            snapshots: vec![devbox_integration::SnapshotRef {
+                producer: "knowledge-base".into(),
+                version: 1,
+                producer_version: "0.5.0".into(),
+                generated_at: "2026-08-25T12:00:00Z".into(),
+                path: std::path::PathBuf::from("unused-by-ui.json"),
+                freshness_ms: 1_234,
+                views: vec![],
+            }],
+            issues: vec![devbox_integration::SnapshotIssue {
+                producer: "run-manager".into(),
+                version: Some(2),
+                error: "snapshot JSON 형식이 올바르지 않습니다".into(),
+            }],
+            root_error: None,
+        };
+
+        let statuses = source_statuses(report);
+        assert_eq!(statuses.len(), 2);
+        assert_eq!(statuses[0].producer, "knowledge-base");
+        assert!(statuses[0].available);
+        assert_eq!(statuses[0].freshness_ms, Some(1_234));
+        assert_eq!(statuses[1].producer, "run-manager");
+        assert!(!statuses[1].available);
+        assert_eq!(statuses[1].schema_version, Some(2));
+    }
+
+    #[test]
+    fn source_statuses_show_root_failure_without_inventing_a_producer() {
+        let statuses = source_statuses(devbox_integration::DiscoveryReport {
+            root_error: Some("integration root를 읽을 수 없습니다".into()),
+            ..Default::default()
+        });
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].producer, "integration-root");
+        assert!(!statuses[0].available);
+        assert_eq!(statuses[0].schema_version, None);
+    }
+
+    #[test]
+    fn source_statuses_are_empty_when_nothing_has_been_published() {
+        assert!(source_statuses(Default::default()).is_empty());
+    }
 }
