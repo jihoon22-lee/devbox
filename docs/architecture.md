@@ -175,6 +175,11 @@ bounded Markdown 파일로 해석·읽기까지 backend에서 수행하고, Quer
 FTS 검색 상태로 연결한다. 잘못된 요청은 창을 유지한 채 raw 입력 없는 복구 가능한 오류로
 표시한다.
 
+Everything+는 catalog revision 3부터 `query`를 수신한다. Knowledge와 같은 listener-first
+`PendingOpen` 경로로 cold/hot request를 한 번만 적용하고, 유효한 bounded Query는 name 모드와
+non-regex 상태의 기존 검색 pipeline에 연결한다. invalid/unsupported request는 raw query를
+반향하지 않는 오류로 표시하며 index, root, saved-query 상태는 변경하지 않는다.
+
 `apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
 
 ## 통합 앱 (Workbench)

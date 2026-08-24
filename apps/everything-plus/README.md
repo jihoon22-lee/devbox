@@ -10,11 +10,13 @@
 - **정규식 모드** — regex 검색
 - **인덱스 관리** — 검색 루트(드라이브/폴더) 추가·제외 규칙, re-index 진행률 표시, 파일 감시로 최신성 유지
 - **결과** — 경로·확장자·크기·수정시각, 더블클릭으로 탐색기 열기
+- **앱 간 검색** — catalog `Query`를 cold start와 실행 중 재호출에서 수신해 name/non-regex 검색으로 즉시 연결
 
 ## 기술
 
 - 공용 크레이트 `crates/filesystem`(제한 순회)·`crates/search`(FTS5) 사용
 - 백그라운드 watcher + 주기 재스캔
+- inbound Query는 1~512자로 제한하며 원문을 로그·오류·지속 저장소에 남기지 않는다
 
 ## 데이터
 
@@ -24,4 +26,3 @@
 
 - 순수 로직: `src-tauri/src/core/` → `cargo test`
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
-

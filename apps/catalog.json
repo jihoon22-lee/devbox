@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 2,
+  "catalogRevision": 3,
   "apps": [
     {
       "id": "port-manager",
@@ -68,7 +68,7 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": [],
+      "accepts": ["query"],
       "produces": [],
       "actions": []
     },
