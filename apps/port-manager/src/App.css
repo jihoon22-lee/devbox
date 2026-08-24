@@ -181,6 +181,19 @@ tr:hover td {
   background: rgba(255, 255, 255, 0.02);
 }
 
+tbody tr:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+tbody tr.selected td {
+  background: rgba(79, 140, 255, 0.1);
+}
+
+tbody tr.selected:hover td {
+  background: rgba(79, 140, 255, 0.14);
+}
+
 .mono {
   font-family: "Cascadia Code", Consolas, monospace;
 }

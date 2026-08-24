@@ -105,6 +105,23 @@ pub fn get_process_info(pid: u32) -> Result<ProcessInfo, String> {
     })
 }
 
+/// PID를 실행 시점에 다시 조회하고 해당 실행 파일만 탐색기에 표시한다.
+/// 프론트엔드가 임의의 파일 경로를 opener에 전달하지 못하게 PID만 입력으로 받는다.
+#[tauri::command]
+pub async fn reveal_process(app: tauri::AppHandle, pid: u32) -> Result<(), String> {
+    let system = System::new_all();
+    let process = system
+        .process(Pid::from_u32(pid))
+        .ok_or_else(|| format!("PID {pid} 프로세스를 찾을 수 없습니다."))?;
+    let executable = process
+        .exe()
+        .ok_or_else(|| format!("PID {pid} 프로세스의 실행 파일 경로를 확인할 수 없습니다."))?;
+
+    app.opener()
+        .reveal_item_in_dir(executable)
+        .map_err(|e| format!("실행 파일을 탐색기에서 열지 못했습니다: {e}"))
+}
+
 /// 기본 브라우저로 URL을 연다.
 #[tauri::command]
 pub async fn open_browser(app: tauri::AppHandle, url: String) -> Result<(), String> {
