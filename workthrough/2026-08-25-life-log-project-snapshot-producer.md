@@ -68,12 +68,14 @@ producer write는 별도 mutex로 직렬화해 오래된 동시 writer가 새 �
 Files:
 
 - `apps/catalog.json`
+- `apps/devbox-manager/src-tauri/src/core/catalog.rs`
 - `crates/catalog/tests/catalog.rs`
 
 Life Log의 정적 producer capability에 `snapshot:life-log/projects/v1`을 추가하고 monotonic
 `catalogRevision`을 4에서 5로 올렸다. repository catalog test는 revision과 실제 producer
 filter 결과가 Life Log 하나인지 고정한다. Workbench의 consumer 선언은 handoff가 아닌
-read-only snapshot discovery이므로 catalog `accepts`에 추가하지 않는다.
+read-only snapshot discovery이므로 catalog `accepts`에 추가하지 않는다. Devbox Manager의
+build-time catalog adapter fixture도 revision 5와 Life Log producer capability를 확인한다.
 
 ### 4. 현재 동작 문서
 
@@ -144,6 +146,10 @@ Finished `dev` profile
 $ CARGO_BUILD_JOBS=1 cargo test -p catalog -j1
 running 11 tests
 test result: ok. 11 passed; 0 failed
+
+$ CARGO_BUILD_JOBS=1 cargo test -p devbox-manager -j1
+running 37 tests
+test result: ok. 37 passed; 0 failed
 
 $ bash .github/scripts/check-catalog.sh
 exit 0
