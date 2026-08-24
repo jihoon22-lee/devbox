@@ -7,5 +7,13 @@ export interface PortRow {
   process_name: string | null;
 }
 
+export interface ProcessInfo {
+  pid: number;
+  name: string;
+  exe: string | null;
+  start_time: number;
+  memory_bytes: number;
+}
+
 export type ProtoFilter = "all" | "tcp" | "udp";
 export type StateFilter = "all" | "listening" | "established";

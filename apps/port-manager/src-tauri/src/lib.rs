@@ -29,6 +29,7 @@ pub fn run() {
             commands::ports::list_ports,
             commands::ports::kill_process,
             commands::ports::get_process_info,
+            commands::ports::reveal_process,
             commands::ports::open_browser,
         ])
         .run(tauri::generate_context!())
