@@ -34,6 +34,17 @@ export interface RepoOpenTarget {
   payloadKind: "path" | "workspace";
 }
 
+export type OpenTarget =
+  | { kind: "path"; path: string; line: number | null; column: number | null }
+  | { kind: "profile"; id: string }
+  | { kind: "workspace"; path: string }
+  | { kind: "query"; text: string };
+
+export interface OpenRequest {
+  target: OpenTarget;
+  from: string | null;
+}
+
 const MOCK_RESULT: ScanResult = {
   repos: [{ path: "C:\\projects\\devbox", canonicalKey: "win:c:/projects/devbox", hasWorktrees: true }],
   truncated: false,
@@ -56,6 +67,31 @@ const MOCK_OPEN_TARGETS: RepoOpenTarget[] = MOCK_CATALOG_APPS
 export function scanRoot(root: string): Promise<ScanResult> {
   if (!isTauri()) return Promise.resolve(MOCK_RESULT);
   return invoke<ScanResult>("scan_root", { root });
+}
+
+export function prepareInboundRepository(path: string): Promise<RepoEntry> {
+  if (!isTauri()) {
+    const normalized = path.replace(/\\/g, "/").replace(/\/+$/u, "");
+    return Promise.resolve({
+      path,
+      canonicalKey: /^[a-zA-Z]:\//u.test(normalized)
+        ? `win:${normalized.toLowerCase()}`
+        : normalized,
+      hasWorktrees: false,
+    });
+  }
+  return invoke<RepoEntry>("prepare_inbound_repository", { path });
+}
+
+export async function takePendingOpen(): Promise<OpenRequest | null> {
+  if (!isTauri()) return null;
+  return invoke<OpenRequest | null>("take_pending_open");
+}
+
+export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise<() => void> {
+  if (!isTauri()) return () => undefined;
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<OpenRequest>("devbox://open", (event) => cb(event.payload));
 }
 
 export function repoStatus(path: string): Promise<RepoSnapshot> {

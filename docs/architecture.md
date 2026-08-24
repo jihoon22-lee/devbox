@@ -180,6 +180,12 @@ Everything+는 catalog revision 3부터 `query`를 수신한다. Knowledge와 �
 non-regex 상태의 기존 검색 pipeline에 연결한다. invalid/unsupported request는 raw query를
 반향하지 않는 오류로 표시하며 index, root, saved-query 상태는 변경하지 않는다.
 
+Repo Manager는 catalog revision 4부터 `path`를 수신한다. cold/hot request를 listener-first
+`PendingOpen` 경로로 한 번만 소비하고 기존 scan 결과와 canonical identity가 같은 repository를
+선택·focus한다. 목록에 없는 유효한 Git repository는 자동 등록하거나 Git 명령을 실행하지 않고
+비지속 등록 초안으로 표시하며, 사용자가 명시적으로 선택할 때만 기존 read-only scan을 수행한다.
+상대·traversal·누락·비-repository 경로는 raw path를 반향하지 않는 복구 가능한 오류가 된다.
+
 `apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
 
 ## 통합 앱 (Workbench)
