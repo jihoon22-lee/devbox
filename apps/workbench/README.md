@@ -5,7 +5,7 @@
 
 ## 주요 기능
 
-- **ProjectProfile CRUD** — wsl-desktop·life-log의 기존 프로젝트 저장소 흡수 (canonical identity 단일 규칙)
+- **ProjectProfile CRUD** — wsl-desktop 프로젝트와 Life Log `projects/v1` snapshot을 흡수 (canonical identity 단일 규칙)
 - **사전 점검(read-only health)** — Git/WSL distro/예상 포트/Run Manager 서비스 상태
 - **Start Workspace** — 사전 점검 → Run Manager 서비스 시작 → 예상 포트 확인 → WSL Desktop에 구체적인 경로 전달·Code Pad workspace 열기 (단계별 idempotency·실패·rollback 표시; 저장된 WSL Desktop layout을 보내는 기능은 아님 — 설계: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](../../docs/superpowers/specs/2026-08-17-app-interop-design.md))
 - **Stop What I Started** — Workbench가 시작한 자원만 정리 (기존 실행 자원은 건드리지 않음)
@@ -16,13 +16,16 @@ v0.4.1의 `Path`에는 distro나 profile 정보가 없다. 따라서 Start Works
 
 ## 기술
 
-- 공용 크레이트 `crates/wsl`·`crates/integration`·`crates/launch`(Start Workspace)·`crates/git`(git_status, workspace.rs)
+- 공용 크레이트 `crates/wsl`·`crates/integration`·`crates/filesystem`(snapshot 경로 안전 규칙)·`crates/launch`(Start Workspace)·`crates/git`(git_status, workspace.rs)
 - 실행 context는 CLI argument로 전달 (custom URL scheme 아님)
-- 다른 앱의 DB를 직접 수정하지 않음, 앱 없으면 Devbox Manager 설치 화면으로 안내
+- 다른 앱의 DB를 직접 읽거나 수정하지 않음, 앱 없으면 Devbox Manager 설치 화면으로 안내
 
 ## 데이터
 
 - `%LOCALAPPDATA%\com.devbox.workbench\project-profiles.json` (원자 교체)
+- Life Log 입력: `%LOCALAPPDATA%\devbox\integration\life-log\v1\summary.json`의
+  `projects/v1` read-only view. 누락은 no-op이고 손상·schema mismatch·unsafe path는 기존
+  프로필을 유지한다. producer가 꺼져 있어도 마지막 정상 snapshot은 freshness와 함께 읽는다.
 
 ## 개발
 

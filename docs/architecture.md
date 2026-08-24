@@ -103,9 +103,10 @@ v0.5.0에서는 지속 상태는 snapshot, 일회성 작업 전달은 applink pr
 128-bit opaque id만 argv에 전달하고 공용 root의 TTL·크기 제한 payload를 한 번 소비한다.
 devbox가 양쪽 앱을 제어하면 clipboard·임시 export 파일 전달은 명시적 fallback으로만 둔다.
 
-> **예외 (알려진 위반)**: workbench의 `absorb_life_log_projects`(`commands/workspace.rs`)가
-> life-log의 `data.db`를 직접 SQLite로 읽는다 — 현재 이 정책의 유일한 예외다.
-> life-log를 producer로 만들어 해소할 예정: `./superpowers/specs/2026-08-17-app-interop-design.md` §4.1
+Workbench는 Life Log의 app-local DB와 settings schema를 알지 않는다. 시작 시
+`life-log/projects/v1`을 producer/schema/freshness 기준으로 검증하고 안전한 절대 경로만
+ProjectProfile로 흡수한다. 파일 없음은 no-op이며 손상·schema mismatch·unsafe entry는 기존
+프로필을 바꾸지 않는 fail-closed fallback이다.
 
 ## 보안 경계
 
@@ -198,6 +199,10 @@ Life Log는 catalog revision 5부터 `snapshot:life-log/projects/v1`을 생산�
 절대 프로젝트 경로와 최근 7일의 마지막 활동 시각·세션 수·활동 시간만 `projects` view로
 발행하고, 창 제목·앱명·원문 세션은 귀속 과정 밖으로 내보내지 않는다. 앱 시작, 프로젝트
 설정 변경, 60초 주기 갱신은 같은 `life-log/v1/summary.json` 전체를 원자 교체한다.
+Workbench는 이 view를 읽는 첫 consumer다. producer가 꺼진 동안에도 마지막 정상 snapshot은
+사용하되 계산된 freshness를 유지하고, 전체 entry 검증을 마친 뒤에만 Workbench가 단독 소유한
+`project-profiles.json`을 원자 교체한다. distro 정보가 없는 `/mnt` 밖 POSIX 경로에는 임의
+distro를 붙이지 않는다.
 
 `apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
 
