@@ -1,3 +1,11 @@
+export interface CatalogAction {
+  actionId: string;
+  actionVersion: number;
+  label: string;
+  target: string;
+  payloadKind: string;
+}
+
 export interface CatalogApp {
   id: string;
   displayName: string;
@@ -8,6 +16,9 @@ export interface CatalogApp {
   release: boolean;
   managerVisible: boolean;
   selfManaged: boolean;
+  accepts: string[];
+  produces: string[];
+  actions: CatalogAction[];
 }
 
 export interface AssetRef {

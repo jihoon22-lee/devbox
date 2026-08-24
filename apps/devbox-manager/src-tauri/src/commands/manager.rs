@@ -16,7 +16,7 @@ const DOWNLOAD_ROOT: &str = "https://github.com/jihoon22-lee/devbox/releases/dow
 
 /// 빌드 시 임베드된 카탈로그. Manager 자신의 버전이 아는 앱 목록이 명확해지고
 /// 오프라인에서도 목록이 보인다. 새 앱은 Manager 업데이트로 반영된다.
-const CATALOG_JSON: &str = include_str!("../../../../catalog.json");
+pub(crate) const CATALOG_JSON: &str = include_str!("../../../../catalog.json");
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct InstalledApp {
@@ -27,7 +27,7 @@ pub struct InstalledApp {
     pub exe_path: String,
 }
 
-fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
@@ -49,10 +49,27 @@ fn read_registry(app: &tauri::AppHandle) -> Vec<InstalledApp> {
 fn write_registry(app: &tauri::AppHandle, reg: &[InstalledApp]) -> Result<(), String> {
     let path = registry_path(app)?;
     let json = serde_json::to_string_pretty(reg).map_err(|e| e.to_string())?;
-    // 임시 파일 + rename으로 원자 기록 (중간에 깨진 registry 방지)
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+    devbox_filesystem::atomic_write(path, json.as_bytes()).map_err(|e| e.to_string())
+}
+
+/// Publish the embedded catalog and the default Manager install-root locator.
+/// Errors are deliberately safe and contain no raw filesystem path.
+pub(crate) fn sync_runtime_metadata(app: &tauri::AppHandle) -> Result<(), String> {
+    let manager_root =
+        data_dir(app).map_err(|_| "runtime metadata root is unavailable".to_string())?;
+    let catalog_path = devbox_launch::runtime_catalog_path()
+        .ok_or_else(|| "runtime metadata root is unavailable".to_string())?;
+    let common_root = catalog_path
+        .parent()
+        .ok_or_else(|| "runtime metadata root is unavailable".to_string())?;
+    crate::core::runtime_metadata::sync_runtime_metadata(
+        &manager_root,
+        common_root,
+        CATALOG_JSON,
+        now_ms().max(1) as u64,
+    )
+    .map(|_| ())
+    .map_err(|error| error.to_string())
 }
 
 /// 앱 시작 시 남아 있는 중단된 `.partial` 파일을 정리한다.
@@ -92,8 +109,11 @@ fn walk_remove_partials(dir: &std::path::Path) {
 /// 번들에 포함된 카탈로그를 반환한다.
 #[tauri::command]
 pub fn catalog() -> Result<Vec<CatalogApp>, String> {
-    let catalog = crate::core::catalog::parse_catalog(CATALOG_JSON)?;
-    Ok(catalog.apps)
+    let runtime =
+        devbox_launch::runtime_catalog_path().and_then(|path| std::fs::read_to_string(path).ok());
+    let selected = devbox_catalog::select_catalog(CATALOG_JSON, runtime.as_deref())
+        .map_err(|error| error.to_string())?;
+    Ok(selected.catalog.apps)
 }
 
 /// 최신 릴리스의 `release-manifest.json`을 받아 파싱한다.
@@ -282,9 +302,7 @@ fn write_current(
 ) -> Result<(), String> {
     let path = crate::core::layout::current_json(base, app_id);
     let json = serde_json::to_string_pretty(current).map_err(|e| e.to_string())?;
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+    devbox_filesystem::atomic_write(path, json.as_bytes()).map_err(|e| e.to_string())
 }
 
 /// 설치된 앱 실행 (휴대용만).
@@ -321,7 +339,11 @@ fn upsert_registry(
         mode: mode.to_string(),
         exe_path,
     });
-    write_registry(app, &reg)
+    write_registry(app, &reg)?;
+    if let Err(error) = sync_runtime_metadata(app) {
+        eprintln!("devbox: runtime metadata sync will retry next launch: {error}");
+    }
+    Ok(())
 }
 
 async fn download(

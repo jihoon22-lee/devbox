@@ -59,17 +59,13 @@ pub fn snapshot_path(producer_id: &str, version: u32) -> std::path::PathBuf {
     snapshot_dir(producer_id, version).join("summary.json")
 }
 
-/// 원자 기록: 임시 파일 + rename. 실패 시 .tmp가 남지 않도록 정리한다.
+/// 원자 기록: 고유한 임시 파일을 sync한 뒤 overwrite-capable rename으로
+/// commit한다. 실패 시 해당 호출의 임시 파일만 정리한다.
 pub fn write_atomic(envelope: &Envelope, dir: &std::path::Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let json = serde_json::to_string_pretty(envelope).map_err(|e| e.to_string())?;
     let target = dir.join("summary.json");
-    let tmp = dir.join("summary.json.tmp");
-    if let Err(error) = std::fs::write(&tmp, json).and_then(|()| std::fs::rename(&tmp, &target)) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(error.to_string());
-    }
-    Ok(())
+    devbox_filesystem::atomic_write(target, json.as_bytes()).map_err(|error| error.to_string())
 }
 
 /// snapshot 읽기. 파일이 없으면 Ok(None). producer·schema version이 다르면 명확한 오류.

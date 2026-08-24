@@ -29,6 +29,9 @@ pub fn run() {
         .setup(|app| {
             // 중단된 다운로드의 .partial 정리 (재시도/안전 정리)
             commands::manager::cleanup_partials(app.handle());
+            if let Err(error) = commands::manager::sync_runtime_metadata(app.handle()) {
+                eprintln!("devbox: runtime metadata sync will retry next launch: {error}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

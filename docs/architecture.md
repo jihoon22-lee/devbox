@@ -143,9 +143,25 @@ font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost
 
 현재 schema v2는 단조 증가하는 `catalogRevision`과 `accepts`/`produces`/`actions`를
 소유한다. `crates/catalog`가 v1 하위 호환, v2 검증, build/runtime revision freshness
-선택과 순수 capability filter를 담당한다. runtime 사본의 원자적 기록은 후속 Manager
-기능, 실제 설치 여부는 `crates/launch`가 담당한다. `crates/applink`는 argv 계약만
-담당해 `launch`와의 순환 의존을 피한다.
+선택과 순수 capability filter를 담당한다. Devbox Manager는 시작과 설치 registry 변경 때
+`%LOCALAPPDATA%\devbox\catalog.json` 및 versioned install-root locator를 원자적으로
+동기화하고, 현재보다 낮은 revision으로 덮어쓰지 않는다. `crates/launch`는 locator가
+가리키는 Manager 소유 manifest에서 canonical executable을 확인한 뒤 실제 설치된
+capability target만 반환한다. locator가 없거나 손상된 v0.4.x 환경에 한해서만 기존 고정
+Manager root를 read-only fallback으로 읽으며, 유효한 locator 뒤의 manifest/path 오류는
+fail-closed 처리한다. `crates/applink`는 argv 계약만 담당해 `launch`와의 순환 의존을
+피한다.
+
+고정된 공용 metadata 경계는 다음과 같다.
+
+| 파일 | 소유자 | 소비자 | freshness/안전 조건 |
+|---|---|---|---|
+| `%LOCALAPPDATA%\devbox\catalog.json` | Devbox Manager | `crates/catalog`, Manager, 메뉴 소비 앱 | 유효한 v2이며 build-time `catalogRevision` 이상일 때만 runtime 우선 |
+| `%LOCALAPPDATA%\devbox\install-roots\v1\registry.json` | Devbox Manager | `crates/launch` | 양수 `registryRevision`, catalog provenance, canonical root/manifest |
+| `<manager-root>\registry.json` | Devbox Manager | Manager, `crates/launch` | app/version/mode와 exact portable executable layout 일치 |
+
+실제 custom root 이동·제거 UI는 이 locator 계약의 후속 기능이며, locator에는 root 자체나
+설치 목록을 복제하지 않고 app-owned manifest 위치만 둔다.
 
 `apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
 

@@ -31,3 +31,4 @@ devbox-git = { package = "git", path = "../../../crates/git" }
 dirs = "6.0.0"
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
 devbox-catalog = { package = "catalog", path = "../../../crates/catalog" }
+devbox-launch = { package = "launch", path = "../../../crates/launch" }
