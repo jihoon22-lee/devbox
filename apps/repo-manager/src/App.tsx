@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import {
   createWorktree,
   openIn,
+  openTargets,
   repoStatus,
   scanRoot,
   worktreeClean,
   worktrees,
   type RepoEntry,
+  type RepoOpenTarget,
   type RepoSnapshot,
 } from "./api";
 import "./App.css";
@@ -21,6 +23,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [newBranch, setNewBranch] = useState("");
   const [newDir, setNewDir] = useState("");
+  const [targets, setTargets] = useState<RepoOpenTarget[] | null>(null);
 
   const scan = useCallback(async () => {
     setError(null);
@@ -44,6 +47,24 @@ export default function App() {
   useEffect(() => {
     void scan();
   }, [scan]);
+
+  useEffect(() => {
+    void openTargets()
+      .then(setTargets)
+      .catch((e: unknown) => {
+        setTargets([]);
+        setError(e instanceof Error ? e.message : String(e));
+      });
+  }, []);
+
+  const onOpen = async (target: RepoOpenTarget, path: string) => {
+    setError(null);
+    try {
+      await openIn(target.id, path);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const onCreate = async (repo: string) => {
     if (!newBranch.trim() || !newDir.trim()) return;
@@ -102,9 +123,20 @@ export default function App() {
                   {s?.branch.behind ? ` ↓${s.branch.behind}` : ""}
                   {s?.changes ? ` +${s.changes}` : ""}
                 </span>
-                <button className="mini" onClick={() => void openIn("code-pad", r.path)}>CodePad</button>
-                <button className="mini" onClick={() => void openIn("wsl-desktop", r.path)}>WSLDesktop</button>
-                <button className="mini" onClick={() => void openIn("workbench", r.path)}>Workbench</button>
+                <div className="open-targets" aria-label="다른 앱으로 열기">
+                  {targets?.map((target) => (
+                    <button
+                      key={target.id}
+                      className="mini"
+                      title={`${target.displayName}에서 ${target.payloadKind === "workspace" ? "workspace" : "path"}로 열기`}
+                      onClick={() => void onOpen(target, r.path)}
+                    >
+                      {target.displayName}
+                    </button>
+                  ))}
+                  {targets === null && <span className="open-targets-empty">대상 확인 중…</span>}
+                  {targets?.length === 0 && <span className="open-targets-empty">설치된 대상 앱 없음</span>}
+                </div>
               </div>
               {wt[r.path] && wt[r.path].length > 1 && (
                 <div className="worktrees">

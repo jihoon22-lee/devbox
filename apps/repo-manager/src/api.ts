@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import catalogJson from "../../catalog.json";
 import { isTauri } from "./lib/isTauri";
 
 export interface RepoEntry {
@@ -27,10 +28,30 @@ export interface RepoSnapshot {
   changes: number;
 }
 
+export interface RepoOpenTarget {
+  id: string;
+  displayName: string;
+  payloadKind: "path" | "workspace";
+}
+
 const MOCK_RESULT: ScanResult = {
   repos: [{ path: "C:\\projects\\devbox", canonicalKey: "win:c:/projects/devbox", hasWorktrees: true }],
   truncated: false,
 };
+
+const MOCK_CATALOG_APPS = catalogJson.apps as Array<{
+  id: string;
+  displayName: string;
+  accepts: string[];
+}>;
+
+const MOCK_OPEN_TARGETS: RepoOpenTarget[] = MOCK_CATALOG_APPS
+  .filter((app) => app.id !== "repo-manager" && app.accepts.includes("path"))
+  .map((app) => ({
+    id: app.id,
+    displayName: app.displayName,
+    payloadKind: app.accepts.includes("workspace") ? "workspace" : "path",
+  }));
 
 export function scanRoot(root: string): Promise<ScanResult> {
   if (!isTauri()) return Promise.resolve(MOCK_RESULT);
@@ -57,6 +78,11 @@ export function createWorktree(repoPath: string, branch: string, targetDir: stri
 export function worktreeClean(path: string): Promise<boolean> {
   if (!isTauri()) return Promise.resolve(true);
   return invoke<boolean>("worktree_clean", { path });
+}
+
+export function openTargets(): Promise<RepoOpenTarget[]> {
+  if (!isTauri()) return Promise.resolve(MOCK_OPEN_TARGETS);
+  return invoke<RepoOpenTarget[]>("open_targets");
 }
 
 export function openIn(appId: string, path: string): Promise<void> {
