@@ -311,6 +311,9 @@ fn valid_absolute_literal(value: &str) -> bool {
         && !value.contains(['%', '$', '\0'])
         && !value.starts_with('~')
         && Path::new(value).is_absolute()
+        && !value
+            .split(['/', '\\'])
+            .any(|segment| matches!(segment, "." | ".."))
         && !Path::new(value).components().any(|component| {
             matches!(
                 component,

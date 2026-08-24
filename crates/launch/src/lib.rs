@@ -305,7 +305,10 @@ mod tests {
         });
         std::fs::write(tmp.join("current.json"), json.to_string()).unwrap();
 
-        assert_eq!(current_exe(&tmp, "test-app").unwrap(), exe);
+        assert_eq!(
+            current_exe(&tmp, "test-app").unwrap(),
+            exe.canonicalize().unwrap()
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

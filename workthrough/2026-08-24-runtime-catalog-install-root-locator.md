@@ -171,6 +171,7 @@ frontend/Linux Rust/Windows Rust 검증은 PR의 GitHub Actions matrix가 수행
 - `cargo test -p devbox-manager --lib -j 1` — 37 passed
 - `cargo check -p devbox-manager -j 1`
 - `cargo check -p filesystem --target x86_64-pc-windows-gnu -j 1`
+- `cargo check -p launch --target x86_64-pc-windows-gnu -j 1`
 - `cargo fmt --all`
 - `CARGO_BUILD_JOBS=1 cargo clippy -p filesystem -p integration -p launch -p devbox-manager --all-targets -- -D warnings`
 - `python3 .github/scripts/check-dependencies.py check`
