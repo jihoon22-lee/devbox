@@ -10,6 +10,7 @@
 #   5. 카탈로그 appDir이 존재하고 package.json을 가진다
 #   6. 모든 identifier가 com.devbox. 로 시작한다
 #   7. release 앱은 third-party notices를 installer resource로 포함한다
+#   8. catalog v2 revision/capability/action 계약이 유효하다
 #
 # 의존: bash + python3 (러너에 이미 존재). jq 사용 금지.
 
@@ -36,12 +37,38 @@ if not os.path.exists(catalog_path):
     sys.exit(1)
 
 cat = json.load(open(catalog_path))
-if cat.get("schemaVersion") != 1:
-    report(f"schemaVersion != 1: {cat.get('schemaVersion')}")
+if set(cat) != {"schemaVersion", "catalogRevision", "apps"}:
+    report("catalog top-level field 집합이 schema v2와 맞지 않는다")
+if cat.get("schemaVersion") != 2:
+    report(f"schemaVersion != 2: {cat.get('schemaVersion')}")
+revision = cat.get("catalogRevision")
+if not isinstance(revision, int) or isinstance(revision, bool) or revision <= 0:
+    report(f"catalogRevision이 양의 정수가 아니다: {revision!r}")
 
 apps = cat["apps"]
 ids = {a["id"] for a in apps}
 dirs = {d for d in os.listdir("apps") if os.path.isdir(f"apps/{d}")}
+if len(ids) != len(apps):
+    report("catalog app id가 중복된다")
+
+def valid_slug(value):
+    return isinstance(value, str) and bool(re.fullmatch(r"[a-z0-9](?:[a-z0-9+_.-]*[a-z0-9])?", value))
+
+def valid_version(value):
+    return bool(re.fullmatch(r"v[1-9][0-9]*", value))
+
+def capability_shape(value):
+    if value in {"path", "workspace", "query", "profile"}:
+        return "basic"
+    if isinstance(value, str) and value.startswith("handoff:"):
+        parts = value.removeprefix("handoff:").split("/")
+        if len(parts) == 2 and valid_slug(parts[0]) and valid_version(parts[1]):
+            return "handoff"
+    if isinstance(value, str) and value.startswith("snapshot:"):
+        parts = value.removeprefix("snapshot:").split("/")
+        if len(parts) == 3 and valid_slug(parts[0]) and valid_slug(parts[1]) and valid_version(parts[2]):
+            return "snapshot"
+    return None
 
 # 1. id 집합 == 디렉터리 집합
 if ids != dirs:
@@ -68,9 +95,25 @@ missing = {a["cargoPackage"] for a in apps} - member_packages
 if missing:
     report(f"cargoPackage가 workspace members에 없음: {sorted(missing)}")
 
+identifiers = set()
+cargo_packages = set()
+app_dirs = set()
+expected_app_fields = {
+    "id", "displayName", "productName", "identifier", "cargoPackage", "appDir",
+    "release", "managerVisible", "selfManaged", "accepts", "produces", "actions",
+}
+expected_action_fields = {"actionId", "actionVersion", "label", "target", "payloadKind"}
+
 for a in apps:
     app_dir = a["appDir"]
     app_id = a["id"]
+    if set(a) != expected_app_fields:
+        report(f"{app_id}: app field 집합이 schema v2와 맞지 않는다")
+    for field, seen in (("identifier", identifiers), ("cargoPackage", cargo_packages), ("appDir", app_dirs)):
+        value = a.get(field)
+        if value in seen:
+            report(f"{app_id}: {field}가 중복된다")
+        seen.add(value)
     cargo_path = f"{app_dir}/src-tauri/Cargo.toml"
     tauri_path = f"{app_dir}/src-tauri/tauri.conf.json"
     pkg_path = f"{app_dir}/package.json"
@@ -103,13 +146,49 @@ for a in apps:
         report(f"{app_id}: productName 불일치 catalog={a['productName']} tauri={tauri.get('productName')}")
 
     # 6. identifier가 com.devbox. 로 시작
-    if not a["identifier"].startswith("com.devbox."):
+    if not re.fullmatch(r"com\.devbox\.[a-z0-9]+(?:\.[a-z0-9]+)*", a["identifier"]):
         report(f"{app_id}: identifier가 com.devbox. 로 시작하지 않는다: {a['identifier']}")
 
     # 7. release package는 lockfile 기반 notices를 반드시 포함
     resources = tauri.get("bundle", {}).get("resources", [])
     if a.get("release") and "../../../THIRD_PARTY_NOTICES.md" not in resources:
         report(f"{app_id}: bundle.resources에 THIRD_PARTY_NOTICES.md가 없다")
+
+    # 8. v2 capability/action은 정적이고 versioned인 선언만 허용
+    accepts = a.get("accepts")
+    produces = a.get("produces")
+    actions = a.get("actions")
+    if not isinstance(accepts, list) or not isinstance(produces, list) or not isinstance(actions, list):
+        report(f"{app_id}: accepts/produces/actions가 배열이 아니다")
+        continue
+    if any(not isinstance(item, str) for item in accepts) or len(accepts) != len(set(accepts)) or any(capability_shape(item) not in {"basic", "handoff"} for item in accepts):
+        report(f"{app_id}: accepts capability가 중복되거나 유효하지 않다")
+    if any(not isinstance(item, str) for item in produces) or len(produces) != len(set(produces)) or any(capability_shape(item) not in {"handoff", "snapshot"} for item in produces):
+        report(f"{app_id}: produces capability가 중복되거나 유효하지 않다")
+    if any(capability_shape(item) == "snapshot" and not item.startswith(f"snapshot:{app_id}/") for item in produces):
+        report(f"{app_id}: snapshot producer가 app id와 맞지 않는다")
+    action_ids = set()
+    for action in actions:
+        if not isinstance(action, dict):
+            report(f"{app_id}: action이 object가 아니다")
+            continue
+        if set(action) != expected_action_fields:
+            report(f"{app_id}: action field 집합이 schema v2와 맞지 않는다")
+        action_id = action.get("actionId")
+        if not valid_slug(action_id) or action_id in action_ids:
+            report(f"{app_id}: actionId가 유효하지 않거나 중복된다")
+        action_ids.add(action_id)
+        if not isinstance(action.get("actionVersion"), int) or isinstance(action.get("actionVersion"), bool) or action["actionVersion"] <= 0:
+            report(f"{app_id}: actionVersion이 양의 정수가 아니다")
+        if not isinstance(action.get("label"), str) or not action["label"].strip():
+            report(f"{app_id}: action label이 비어 있다")
+        payload = action.get("payloadKind")
+        target = action.get("target")
+        if capability_shape(payload) != "handoff":
+            report(f"{app_id}: action payloadKind가 versioned handoff가 아니다")
+        target_app = next((candidate for candidate in apps if candidate["id"] == target), None)
+        if target_app is None or payload not in target_app.get("accepts", []):
+            report(f"{app_id}: action target이 payloadKind를 받지 않는다")
 
 sys.exit(1 if failures else 0)
 PY

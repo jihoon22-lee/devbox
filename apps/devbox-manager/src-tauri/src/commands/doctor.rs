@@ -138,6 +138,7 @@ pub fn run_diagnosis() -> Vec<DiagnosisItem> {
     let catalog = crate::core::catalog::parse_catalog(CATALOG_JSON).unwrap_or_else(|_| {
         crate::core::catalog::Catalog {
             schema_version: 0,
+            catalog_revision: None,
             apps: vec![],
         }
     });
