@@ -5,13 +5,15 @@
 
 use crate::core::attribution::{attribute_title, ProjectMatch};
 use crate::core::db;
+use devbox_filesystem::parse_safe_project_path;
+#[cfg(test)]
+use devbox_filesystem::MAX_PROJECT_PATH_BYTES;
 use rusqlite::Connection;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
 pub const RECENT_ACTIVITY_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
 const MAX_PROJECTS: usize = 512;
-const MAX_PROJECT_PATH_BYTES: usize = 4_096;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,12 +23,6 @@ pub struct ProjectSnapshotEntry {
     pub last_activity_at_ms: Option<i64>,
     pub recent_session_count: u64,
     pub recent_duration_ms: i64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PathKind {
-    Posix,
-    Windows,
 }
 
 #[derive(Debug)]
@@ -142,103 +138,12 @@ fn safe_projects(raw: &str) -> Vec<SafeProject> {
 }
 
 fn safe_project(raw: &str) -> Option<SafeProject> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty()
-        || trimmed.len() > MAX_PROJECT_PATH_BYTES
-        || trimmed.chars().any(char::is_control)
-    {
-        return None;
-    }
-
-    if is_windows_device_path(trimmed) {
-        return None;
-    }
-    let (kind, without_root, required_components) =
-        if let Some(rest) = windows_drive_suffix(trimmed) {
-            (PathKind::Windows, rest, 1)
-        } else if let Some(rest) = unc_suffix(trimmed) {
-            (PathKind::Windows, rest, 3)
-        } else {
-            let rest = trimmed.strip_prefix('/')?;
-            (PathKind::Posix, rest, 1)
-        };
-
-    let components = match kind {
-        PathKind::Posix => without_root.split('/').collect::<Vec<_>>(),
-        PathKind::Windows => without_root.split(['/', '\\']).collect::<Vec<_>>(),
-    }
-    .into_iter()
-    .filter(|component| !component.is_empty())
-    .collect::<Vec<_>>();
-    if components.len() < required_components
-        || components.iter().any(|component| {
-            matches!(*component, "." | "..")
-                || (kind == PathKind::Windows && !windows_component_is_safe(component))
-        })
-    {
-        return None;
-    }
-
-    let path = match kind {
-        PathKind::Posix => trimmed.trim_end_matches('/'),
-        PathKind::Windows => trimmed.trim_end_matches(['/', '\\']),
-    }
-    .to_string();
-    let name = components.last()?.to_string();
-    let identity = match kind {
-        PathKind::Posix => path.clone(),
-        PathKind::Windows => path.replace('/', "\\").to_ascii_lowercase(),
-    };
+    let path = parse_safe_project_path(raw)?;
     Some(SafeProject {
-        path,
-        name,
-        identity,
+        path: path.as_str().to_string(),
+        name: path.name().to_string(),
+        identity: path.identity().to_string(),
     })
-}
-
-fn windows_drive_suffix(path: &str) -> Option<&str> {
-    let bytes = path.as_bytes();
-    (bytes.len() >= 4
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && matches!(bytes[2], b'/' | b'\\'))
-    .then(|| &path[3..])
-}
-
-fn unc_suffix(path: &str) -> Option<&str> {
-    path.strip_prefix("\\\\")
-        .or_else(|| path.strip_prefix("//"))
-}
-
-fn is_windows_device_path(path: &str) -> bool {
-    path.starts_with("\\\\?\\")
-        || path.starts_with("\\\\.\\")
-        || path.starts_with("//?/")
-        || path.starts_with("//./")
-}
-
-fn windows_component_is_safe(component: &str) -> bool {
-    if component.ends_with(' ')
-        || component.ends_with('.')
-        || component
-            .chars()
-            .any(|character| matches!(character, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
-    {
-        return false;
-    }
-    let stem = component.split('.').next().unwrap_or_default();
-    let upper = stem.to_ascii_uppercase();
-    !matches!(
-        upper.as_str(),
-        "CON" | "PRN" | "AUX" | "NUL" | "CLOCK$" | "CONIN$" | "CONOUT$"
-    ) && !is_numbered_windows_device(&upper, "COM")
-        && !is_numbered_windows_device(&upper, "LPT")
-}
-
-fn is_numbered_windows_device(value: &str, prefix: &str) -> bool {
-    value
-        .strip_prefix(prefix)
-        .is_some_and(|suffix| matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"))
 }
 
 /// 같은 basename이 여러 경로에 있으면 창 제목만으로 구분할 수 없으므로 모두 미귀속한다.

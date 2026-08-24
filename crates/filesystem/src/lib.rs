@@ -5,6 +5,8 @@
 //!   파일 목록 수집
 //! - [`collect_limited`] / [`WalkResult`]: 같은 순회를 상한과 `truncated` 상태와
 //!   함께 수행하는 빠른 열기용 API
+//! - [`parse_safe_project_path`] / [`SafeProjectPath`]: snapshot producer·consumer가
+//!   공유하는 안전한 절대 프로젝트 경로 규칙
 //! - [`migrate_legacy_identifier_dir`]: 새 identifier 디렉터리가 아직 없을 때
 //!   구 identifier 디렉터리를 통째로 옮기는 rename-only migration
 //!
@@ -19,9 +21,13 @@
 //!   구현한다.
 
 pub mod ignore;
+pub mod project_path;
 pub mod walk;
 
 pub use ignore::is_ignored_dir;
+pub use project_path::{
+    parse_safe_project_path, ProjectPathKind, SafeProjectPath, MAX_PROJECT_PATH_BYTES,
+};
 pub use walk::{collect, collect_limited, IndexedFile, WalkResult};
 
 #[cfg(unix)]

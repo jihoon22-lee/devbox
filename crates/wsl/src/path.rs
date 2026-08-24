@@ -61,6 +61,8 @@ pub fn wsl_to_windows(distro: &str, path: &str) -> Result<String, WslError> {
 /// 규칙:
 /// - Windows 경로: 드라이브 문자를 소문자로, 구분자를 `/`로, 후행 `/` 제거한
 ///   `win:<drive>:/...` 형태로 정규화한다.
+/// - 일반 UNC 경로는 case/slash를 접은 `unc:<server>/<share>/...` 키를 쓴다.
+///   `\\wsl$`·`\\wsl.localhost` 경로는 WSL identity로 접어 WSL profile과 중복되지 않는다.
 /// - WSL 경로가 `/mnt/<드라이브>/...`면 같은 `win:` 키로 변환한다
 ///   (Windows/WSL 어느 쪽에서 등록해도 하나로 식별된다 — §10.2 ProjectProfile).
 /// - `/mnt/` 밖의 WSL 경로는 distro를 포함한 `wsl:<distro>:...` 키를 쓴다.
@@ -69,7 +71,7 @@ pub fn canonical_project_key(
     wsl: Option<(&str, &str)>,
 ) -> Result<String, WslError> {
     if let Some(w) = windows {
-        return Ok(format!("win:{}", normalize_windows_drive(w)?));
+        return normalize_windows_project_key(w);
     }
     if let Some((distro, p)) = wsl {
         if let Some(rest) = p.trim().strip_prefix("/mnt/") {
@@ -83,11 +85,52 @@ pub fn canonical_project_key(
             }
         }
         let normalized = p.trim().trim_matches('/').to_owned();
-        return Ok(format!("wsl:{distro}:{normalized}"));
+        return Ok(format!("wsl:{}:{normalized}", distro.trim()));
     }
     Err(WslError::InvalidPath(
         "Windows 경로 또는 WSL 경로가 필요하다".into(),
     ))
+}
+
+fn normalize_windows_project_key(path: &str) -> Result<String, WslError> {
+    let trimmed = path.trim();
+    if trimmed.starts_with("\\\\?\\")
+        || trimmed.starts_with("\\\\.\\")
+        || trimmed.starts_with("//?/")
+        || trimmed.starts_with("//./")
+    {
+        return Err(WslError::InvalidPath(
+            "Windows device 경로는 프로젝트 identity로 사용할 수 없다".into(),
+        ));
+    }
+    if trimmed.starts_with("\\\\") || trimmed.starts_with("//") {
+        return normalize_unc_project_key(trimmed);
+    }
+    Ok(format!("win:{}", normalize_windows_drive(trimmed)?))
+}
+
+fn normalize_unc_project_key(path: &str) -> Result<String, WslError> {
+    let normalized = path.replace('\\', "/");
+    let parts = normalized
+        .strip_prefix("//")
+        .unwrap_or_default()
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if parts.len() < 2 || parts.iter().any(|part| matches!(*part, "." | "..")) {
+        return Err(WslError::InvalidPath(
+            "UNC 경로에는 server와 share가 필요하다".into(),
+        ));
+    }
+
+    let server = parts[0];
+    if server.eq_ignore_ascii_case("wsl$") || server.eq_ignore_ascii_case("wsl.localhost") {
+        let distro = parts[1];
+        let tail = parts[2..].join("/");
+        return Ok(format!("wsl:{distro}:{tail}"));
+    }
+
+    Ok(format!("unc:{}", parts.join("/").to_ascii_lowercase()))
 }
 
 /// `win:` 키에 쓰는 드라이브 경로 정규화: 소문자 드라이브, `/` 구분, 후행 제거.
@@ -161,6 +204,36 @@ mod tests {
             canonical_project_key(Some("e:/projects/devbox"), None).unwrap(),
             "win:e:/projects/devbox"
         );
+    }
+
+    #[test]
+    fn canonical_key_unc_normalizes_case_and_slashes() {
+        assert_eq!(
+            canonical_project_key(Some("\\\\Server\\Share\\Projects\\Devbox\\"), None).unwrap(),
+            "unc:server/share/projects/devbox"
+        );
+        assert_eq!(
+            canonical_project_key(Some("//server/share/projects/devbox"), None).unwrap(),
+            "unc:server/share/projects/devbox"
+        );
+    }
+
+    #[test]
+    fn canonical_key_wsl_unc_matches_wsl_profile() {
+        let unc = canonical_project_key(
+            Some("\\\\wsl.localhost\\Ubuntu\\home\\jihoon\\Devbox"),
+            None,
+        )
+        .unwrap();
+        let profile = canonical_project_key(None, Some(("Ubuntu", "/home/jihoon/Devbox"))).unwrap();
+        assert_eq!(unc, profile);
+    }
+
+    #[test]
+    fn canonical_key_rejects_unc_root_traversal_and_device_paths() {
+        assert!(canonical_project_key(Some("\\\\server"), None).is_err());
+        assert!(canonical_project_key(Some("\\\\server\\share\\..\\escape"), None).is_err());
+        assert!(canonical_project_key(Some("\\\\?\\C:\\project"), None).is_err());
     }
 
     #[test]

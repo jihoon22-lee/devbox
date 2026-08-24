@@ -6599,10 +6599,10 @@ name = "workbench"
 version = "0.1.1"
 dependencies = [
  "applink",
+ "filesystem",
  "git",
  "integration",
  "launch",
- "rusqlite",
  "serde",
  "serde_json",
  "tauri",

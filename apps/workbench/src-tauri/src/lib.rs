@@ -35,7 +35,7 @@ pub fn run() {
                 Err(e) => eprintln!("applink: {e}"),
             }
             app.manage(run_registry());
-            // life-log의 프로젝트 경로를 흡수 (read-only, §10.2)
+            // Life Log projects/v1 snapshot의 프로젝트 경로를 흡수 (read-only, §10.2)
             let mut store = crate::core::profile::ProfileStore::load(
                 &app.handle()
                     .path()
@@ -44,15 +44,21 @@ pub fn run() {
                     .and_then(|d| std::fs::read_to_string(d.join("project-profiles.json")).ok())
                     .unwrap_or_default(),
             );
-            if let Ok(n) = commands::workspace::absorb_life_log_projects(&mut store) {
-                if n > 0 {
-                    if let Ok(dir) = app.handle().path().app_local_data_dir() {
-                        let path = dir.join("project-profiles.json");
-                        if let Ok(json) = store.to_json() {
-                            let _ = std::fs::write(&path, json);
+            match commands::workspace::absorb_life_log_projects(&mut store) {
+                Ok(report) => {
+                    if report.unsupported_paths > 0 {
+                        eprintln!(
+                            "life-log snapshot: distro 정보가 없는 POSIX 프로젝트 {}개를 건너뛰었습니다",
+                            report.unsupported_paths
+                        );
+                    }
+                    if report.added > 0 {
+                        if let Err(error) = commands::workspace::save_store(app.handle(), &store) {
+                            eprintln!("life-log snapshot: {error}");
                         }
                     }
                 }
+                Err(error) => eprintln!("life-log snapshot: {error}"),
             }
             Ok(())
         })
