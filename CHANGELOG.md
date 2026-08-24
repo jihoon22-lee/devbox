@@ -7,11 +7,9 @@
 
 v0.4.2는 API Playground 0.3.2의 secret persistence 보안 핫픽스다. backend-only
 secret resolve, History·Collection v2 fail-closed migration, cURL·응답·오류·redirect
-redaction과 cross-origin credential·body stripping을 포함한다. 아래 stable section은
-RC2 packaged H1과 cleanup을 통과한 뒤 작성한 **stable preparation 문서**이며, 안정판
-tag/release가 아직 게시됐다는 뜻은 아니다. docs-only PR의 required CI가 통과해 merge된
-commit에서 RC2를 조상으로 하는 annotated `v0.4.2` tag를 만든 뒤에야 안정판이 게시된다.
-그 전까지 최신 안정판은 `v0.4.1`이다.
+redaction과 cross-origin credential·body stripping을 포함한다. 아래 section은 RC2 packaged
+H1과 cleanup, docs-only stable preparation, exact stable asset 재검증까지의 경계를 기록한다.
+RC2를 조상으로 하는 annotated `v0.4.2` tag에서 공식 stable release를 게시했다.
 
 ### Fixed
 
@@ -53,11 +51,21 @@ commit에서 RC2를 조상으로 하는 annotated `v0.4.2` tag를 만든 뒤에�
 ### Release status
 
 `v0.4.2-rc1`은 immutable failed-H1 historical candidate로 보존하고, RC2는 H1을 통과한
-stable basis로 보존한다. v0.4.2 stable은 아직 publish되지 않았다. docs-only PR의 CI와
-merge, 그 merge commit에서의 annotated `v0.4.2` tag, 이후 release workflow와 독립적인
-27-asset verification이 남아 있다. H1 이후 product code를 바꾸면 새 RC부터 다시
-검증한다. GitHub Actions의 Node 20 action-runtime deprecation annotation은 향후 유지보수
-항목이며 이번 stable gate의 blocker가 아니다.
+stable basis로 보존한다. stable preparation PR
+[#233](https://github.com/jihoon22-lee/devbox/pull/233)은 required CI 뒤 commit
+`c9a320ef52ac2d6abe30d9f6e5364a09780b54c4`에 병합됐고, 같은 commit의 annotated
+`v0.4.2` tag에서 [workflow 32708402180](https://github.com/jihoon22-lee/devbox/actions/runs/32708402180)의
+Build, Publish, Verify 세 job이 성공했다. [stable release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.4.2)는
+`draft=false`, `prerelease=false`, GitHub Latest이며 정확한 27 assets를 가진다. 별도 download의
+26 binaries와 manifest는 모든 size·SHA-256, missing 0, undeclared 0을 통과했다.
+
+Stable API Playground portable SHA-256은
+`c7927b833633d5abf038eca6adda726d9d5ea2a5929b4b1649e777de207d6a10`이다. RC2와 stable
+binary digest가 달라 byte reproducibility를 가정하지 않고 exact stable portable에서 H1-A~D를
+다시 통과했다. cleanup 뒤 API process 0, app-data 부재, backup residue 0을 독립 확인했으며
+상세 결과는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176#issuecomment-5393695037)에
+기록했다. H1 이후 product code를 바꾸면 새 RC부터 다시 검증한다. GitHub Actions의 Node 20
+action-runtime deprecation annotation은 향후 유지보수 항목이며 v0.4.2 blocker가 아니다.
 
 ## [v0.4.2-rc2] - 2026-08-24
 

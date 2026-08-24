@@ -76,7 +76,7 @@ v0.4.1은 안정판 핫픽스로 배포됐다. 자동화된 migration 사례와 
 이미 제거되어 Windows C1/C2를 안전하게 재현하지 못했다. 이는 packaged-runtime 검증이 아니며, 남은
 Windows acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서 post-release로 계속 관리한다.
 
-### v0.4.2 — API Playground 보안 핫픽스 (RC2 H1 통과·stable 준비)
+### v0.4.2 — API Playground 보안 핫픽스 (안정판 배포 완료)
 
 v0.4.1에도 존재하는 resolved secret persistence 결함을 v0.5.0까지 미루지 않고 P1-02 전체
 범위로 선행 수정했다. API Playground 0.3.2는 secret을 Rust 전송 경계에서만 해석하고,
@@ -134,13 +134,22 @@ RC1은 수정·삭제하지 않는 immutable failed-H1 historical candidate로 �
   [issue #176 PASS evidence](https://github.com/jihoon22-lee/devbox/issues/176#issuecomment-5392680030)에
   기록했다.
 
-현재 단계는 RC2 제품 코드에 문서만 더하는 stable preparation이다. 별도 docs PR의 required
-CI가 통과해 merge된 뒤 그 exact merge commit에 annotated `v0.4.2` tag를 만들고, stable
-workflow 성공·`draft=false`·`prerelease=false`·GitHub Latest와 독립 27-asset 검증까지
-확인해야 배포 완료다. 그 전 Latest stable은 v0.4.1이며, H1 뒤 제품 코드가 바뀌면 새 RC부터
-다시 검증한다. 상세 상태는 [release plan](./superpowers/plans/2026-08-24-v0.4.2-release.md)에
-기록한다. v0.4.2 선행 완료는 v0.5.0 P1-02의 회귀 기준으로 유지하며 P1·P2·선택 P3,
-Devbox Launcher·Log Lens 범위를 삭제하거나 축소하지 않는다.
+stable preparation PR [#233](https://github.com/jihoon22-lee/devbox/pull/233)은 required CI 뒤
+commit `c9a320ef52ac2d6abe30d9f6e5364a09780b54c4`에 병합됐다. 같은 commit의 annotated
+`v0.4.2` tag에서 [stable workflow 32708402180](https://github.com/jihoon22-lee/devbox/actions/runs/32708402180)의
+Build, Publish, Verify 세 job이 성공했고, [stable release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.4.2)는
+`draft=false`, `prerelease=false`, GitHub Latest다. 13 portable + 13 NSIS installer + manifest의
+정확한 27 assets/26 binaries는 별도 download에서 모든 size·SHA-256, missing 0, undeclared 0을
+다시 통과했다.
+
+Stable API Playground portable SHA-256은
+`c7927b833633d5abf038eca6adda726d9d5ea2a5929b4b1649e777de207d6a10`이다. stable binary가
+RC2와 byte-identical하다고 가정하지 않고 exact stable asset에서 accepted H1-A~D를 다시 수행해
+logical localStorage plaintext 0과 cleanup(API process 0, app-data absent, backup residue 0)을
+확인했다. 상세 evidence는 [issue #176 stable PASS comment](https://github.com/jihoon22-lee/devbox/issues/176#issuecomment-5393695037)와
+[release plan](./superpowers/plans/2026-08-24-v0.4.2-release.md)에 기록한다. v0.4.2 선행 완료는
+v0.5.0 P1-02의 회귀 기준으로 유지하며 P1·P2·선택 P3, Devbox Launcher·Log Lens 범위를
+삭제하거나 축소하지 않는다.
 
 ### v0.5.0
 
@@ -208,6 +217,7 @@ Stage 3    기존 앱 깊이 (PR 31~39) — Run Manager 관찰성, Code Pad 복�
 Stage 4    Workbench — ProjectProfile 기반 orchestration 앱          ✅
 Stage 5    Webhook Lab, Dev Environment Doctor, Repo Manager          ✅
 v0.4.1     핫픽스 — 터미널 PTY·끊긴 앱 간 링크·Run Manager 시작 panic·identifier 이관 수정  ✅ (C1/C2 Windows 수동 acceptance는 issue #176에서 post-release 관리)
+v0.4.2     API Playground secret persistence 보안 핫픽스 — stable 27 assets·packaged H1  ✅
 v0.5.0     네이티브 기능 강화 + handoff + Devbox Launcher·Log Lens (목표 15개 앱)  ◻
 ```
 
@@ -217,5 +227,7 @@ v0.5.0     네이티브 기능 강화 + handoff + Devbox Launcher·Log Lens (목
 - v0.4.0 정식 배포 완료 (13개 앱)
 - v0.4.1 안정판 핫픽스 배포 완료; C1/C2는 legacy path 제거로 재현하지 못했으므로 Windows packaged-runtime
   검증과 구분한다.
+- v0.4.2 안정판 보안 핫픽스 배포 완료; exact stable asset의 manifest·size·SHA-256과 packaged
+  H1-A~D·cleanup을 통과했다.
 - [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176) — 남은 Windows 실기·패키지·프로토콜·경로·시각
   acceptance를 post-release 수동 체크리스트로 관리한다.
