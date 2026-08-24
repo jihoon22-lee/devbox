@@ -23,7 +23,8 @@
 - **Collection migration** — v1 `apip-collections`는 민감한 auth/header literal을 환경 변수
   reference 또는 `[REDACTED]`로 안전 변환해 v2에 보존한다. 변환된 항목에는
   `requiresSecretReview`를 표시하며, 변환 실패 시 v1 원문은 UI에 노출하지 않고 다음 실행에서
-  다시 시도한다. raw 원문 backup은 만들지 않는다.
+  다시 시도한다. 이 boolean 스키마 메타데이터는 backend sanitizer를 통과해 boolean 타입을
+  보존하며, 같은 이름의 비boolean 값은 민감값으로 마스킹한다. raw 원문 backup은 만들지 않는다.
 - **요청·응답 redaction** — response headers/body, final URL, redirect 위치와 오류는 secret,
   Authorization, Cookie 및 민감한 token 패턴을 redaction한다. 모든 cross-origin redirect에서는
   Authorization/Cookie/API-key 헤더와 auth를 다음 요청에 전달하지 않고 요청 body도 억제한다.
