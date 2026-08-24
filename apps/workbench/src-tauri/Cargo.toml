@@ -1,6 +1,7 @@
 [package]
 name = "workbench"
 version = "0.1.1"
+publish = false
 description = "Project Workspace Orchestrator"
 authors = ["jihoon22.lee"]
 edition = "2021"
@@ -31,4 +32,3 @@ devbox-git = { package = "git", path = "../../../crates/git" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 tokio = { version = "1.53.1", features = ["process", "time"] }
 uuid = { version = "1", features = ["v4"] }
-

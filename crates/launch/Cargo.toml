@@ -1,6 +1,7 @@
 [package]
 name = "launch"
 version = "0.1.0"
+publish = false
 description = "Installed devbox app exe resolution and launch (pure path/process logic)"
 edition = "2021"
 

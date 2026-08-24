@@ -9,6 +9,7 @@
 #   4. 카탈로그 identifier · productName == 해당 앱 tauri.conf.json 값
 #   5. 카탈로그 appDir이 존재하고 package.json을 가진다
 #   6. 모든 identifier가 com.devbox. 로 시작한다
+#   7. release 앱은 third-party notices를 installer resource로 포함한다
 #
 # 의존: bash + python3 (러너에 이미 존재). jq 사용 금지.
 
@@ -104,6 +105,11 @@ for a in apps:
     # 6. identifier가 com.devbox. 로 시작
     if not a["identifier"].startswith("com.devbox."):
         report(f"{app_id}: identifier가 com.devbox. 로 시작하지 않는다: {a['identifier']}")
+
+    # 7. release package는 lockfile 기반 notices를 반드시 포함
+    resources = tauri.get("bundle", {}).get("resources", [])
+    if a.get("release") and "../../../THIRD_PARTY_NOTICES.md" not in resources:
+        report(f"{app_id}: bundle.resources에 THIRD_PARTY_NOTICES.md가 없다")
 
 sys.exit(1 if failures else 0)
 PY

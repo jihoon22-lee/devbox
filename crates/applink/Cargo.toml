@@ -1,6 +1,7 @@
 [package]
 name = "applink"
 version = "0.1.0"
+publish = false
 description = "devbox 앱 간 인바운드 실행 계약 — argv ↔ OpenRequest 파싱/빌드 (전방 호환)"
 edition = "2021"
 

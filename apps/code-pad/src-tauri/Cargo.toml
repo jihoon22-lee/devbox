@@ -1,6 +1,7 @@
 [package]
 name = "code-pad"
 version = "0.3.3"
+publish = false
 description = "Code Pad"
 authors = ["jihoon22.lee"]
 edition = "2021"
