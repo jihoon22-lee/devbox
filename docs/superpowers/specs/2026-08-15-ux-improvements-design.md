@@ -1,6 +1,6 @@
 # UX 개선 설계 — 컨텍스트 메뉴·도구 확장·앱별 항목
 
-- 상태: v0.5.0 P1·P2 범위 확정, 구현 전
+- 상태: v0.5.0 P1·P2 범위 확정, 개발 착수
 - 작성일: 2026-08-15 (개정: 2026-08-17, 2026-08-22)
 - 근거: `docs/product-opportunities.md` §11.1~11.3(기능 순서), §12·§13·§14(기존 앱 확장)
 - 선행: PR 1~39 + Stage 4/5 (모두 완료), 13개 앱 + 공용 crates/packages
@@ -45,7 +45,7 @@
 |---|---|
 | `packages/context-menu` | 렌더링, 뷰포트 경계 포지셔닝, 바깥 클릭/Esc/스크롤 닫기, 키보드 이동, `role="menu"` 접근성, `danger` 스타일. **항목을 하나도 정의하지 않는다** |
 | 각 앱 | `MenuItem[]`을 만들어 넘긴다. 대상 종류(포트 행 / 파일 노드 / 에디터 탭 / 캘린더 날짜)마다 다른 목록 |
-| 카탈로그 (`crates/applink`) | "다른 앱으로 열기" 섹션 **하나만** 공통 생성 |
+| 카탈로그·실행 (`crates/catalog` + `crates/launch`)과 `crates/applink` | capability·설치 상태로 "다른 앱으로 열기" 섹션 **하나만** 만들고 versioned argv로 라우팅 |
 
 즉 공용 컴포넌트의 API는 `<ContextMenu items={...} />` 하나이고, `items`는 각 앱이 자기
 도메인 지식으로 채운다. §1.2의 표가 그 목록의 명세다.
@@ -134,7 +134,7 @@ type MenuItem =
 >   §1(우클릭 메뉴)의 충돌이 표면화되지 않았다. **결정: 우클릭 = 메뉴, 가운데 클릭 =
 >   붙여넣기.** 상세는 [터미널 설계](./2026-08-17-wsl-desktop-terminal-design.md) §3.3.
 > - **"다른 앱으로 열기 ▸"는 각 앱이 하드코딩하지 않는다.** `apps/catalog.json`의
->   `accepts` 선언에서 생성되므로, 14번째 앱을 추가하면 기존 앱을 고치지 않아도 메뉴에
+>   `accepts` 선언에서 생성되므로, 새 앱을 추가하면 기존 앱을 고치지 않아도 메뉴에
 >   나타난다. [앱 간 연동 설계](./2026-08-17-app-interop-design.md) §2.
 
 ### 1.3 완료 조건
@@ -342,8 +342,10 @@ v0.5.0
            Knowledge wikilink/backlink/rename, Manager batch, Code Pad Quick Open/LSP,
            Workbench ports/services, Webhook label/curl
   P2       Toolbox QR·security/text 도구, Knowledge capture/image,
-           API OpenAPI/GraphQL/SSE/WebSocket, Everything document content
-  P3       detection/pipeline/templates/filter/replay/window state + 신규 Launcher/Log Lens
+           API OpenAPI/GraphQL/SSE/WebSocket, Everything document content,
+           handoff core + Webhook/API·Life Log/Knowledge integration
+  P3       detection/pipeline/templates/filter/replay/window state + 신규 Launcher/Log Lens,
+           Toolbox/API와 Run/WSL·Log Lens integration
 ```
 
 컨텍스트 메뉴가 카탈로그 뒤로 간 이유: "다른 앱으로 열기"를 카탈로그에서
