@@ -534,6 +534,16 @@ fn sanitize_persisted_json_with_sealer(
 }
 
 fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zeroizing<String>]) {
+    // `requiresSecretReview` is persistence schema metadata, not a credential.
+    // Preserve only its exact boolean wire shape; redact every other value under
+    // the same name immediately so schema parsing fails closed without leakage.
+    if key == "requiresSecretReview" {
+        if value.is_boolean() {
+            return;
+        }
+        *value = serde_json::Value::String(REDACTED.to_string());
+        return;
+    }
     if is_sensitive_name(key) {
         if value.as_str().is_some_and(contains_reference) {
             return;
@@ -946,6 +956,81 @@ mod tests {
     }
 
     #[test]
+    fn persisted_json_preserves_only_boolean_secret_review_metadata() {
+        let input = r#"{
+            "requiresSecretReview": true,
+            "request": {"requiresSecretReview": false},
+            "invalidString": {"requiresSecretReview": "direct-secret"},
+            "invalidReference": {"requiresSecretReview": "{{SECRET_REVIEW}}"},
+            "invalidNumber": {"requiresSecretReview": 7},
+            "secret": true
+        }"#;
+        let output = sanitize_persisted_json_with_sealer(input, &[], &MockSealer).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        assert_eq!(json["requiresSecretReview"], true);
+        assert_eq!(json["request"]["requiresSecretReview"], false);
+        assert_eq!(json["invalidString"]["requiresSecretReview"], REDACTED);
+        assert_eq!(json["invalidReference"]["requiresSecretReview"], REDACTED);
+        assert_eq!(json["invalidNumber"]["requiresSecretReview"], REDACTED);
+        assert_eq!(json["secret"], REDACTED);
+        assert!(!output.contains("direct-secret"));
+    }
+
+    #[test]
+    fn persisted_collection_wire_shape_survives_backend_sanitization() {
+        let input = r#"{
+            "version": 2,
+            "collections": [{
+                "id": "collection-1",
+                "name": "protected request",
+                "folder": "security",
+                "saved_at": 1,
+                "requiresSecretReview": true,
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.test/path",
+                    "headers": [{"key": "Authorization", "value": "[REDACTED]"}],
+                    "params": [],
+                    "body_kind": "json",
+                    "body": "{\"password\":\"top-secret\",\"safe\":\"ok\"}",
+                    "auth": {
+                        "kind": "bearer",
+                        "username": "",
+                        "password": "",
+                        "token": "direct-token",
+                        "api_key": "",
+                        "api_value": ""
+                    },
+                    "timeout_ms": 30000,
+                    "requiresSecretReview": true
+                }
+            }]
+        }"#;
+        let output = sanitize_persisted_json_with_sealer(
+            input,
+            &[sealed_variable("TOKEN", "top-secret")],
+            &MockSealer,
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let entry = &json["collections"][0];
+
+        assert_eq!(json["version"], 2);
+        assert_eq!(entry["requiresSecretReview"], true);
+        assert!(entry["requiresSecretReview"].is_boolean());
+        assert_eq!(entry["request"]["requiresSecretReview"], true);
+        assert!(entry["request"]["requiresSecretReview"].is_boolean());
+        assert_eq!(entry["request"]["headers"][0]["value"], REDACTED);
+        assert_eq!(
+            entry["request"]["body"],
+            r#"{"password":"[REDACTED]","safe":"ok"}"#
+        );
+        assert!(!output.contains("direct-token"));
+        assert!(!output.contains("top-secret"));
+    }
+
+    #[test]
     fn cross_origin_redirect_strips_sensitive_headers() {
         let same = reqwest::Url::parse("https://a.test/next").unwrap();
         let other = reqwest::Url::parse("https://b.test/next").unwrap();
@@ -990,14 +1075,29 @@ mod tests {
     }
 
     #[test]
-    fn persisted_history_wire_shape_is_distinct() {
+    fn persisted_history_wire_shape_survives_backend_sanitization() {
         let persisted = PersistedHistoryRequest {
             template: template(),
             requires_secret_review: true,
         };
-        let json = serde_json::to_value(persisted).unwrap();
-        assert_eq!(json["requiresSecretReview"], true);
-        assert!(json.get("url").is_some());
+        let serialized = serde_json::json!({
+            "version": 2,
+            "history": [{
+                "id": "history-1",
+                "saved_at": 1,
+                "request": persisted,
+                "status": 200
+            }]
+        })
+        .to_string();
+        let output = sanitize_persisted_json_with_sealer(&serialized, &[], &MockSealer).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let request = &json["history"][0]["request"];
+
+        assert_eq!(json["version"], 2);
+        assert_eq!(request["requiresSecretReview"], true);
+        assert!(request["requiresSecretReview"].is_boolean());
+        assert!(request.get("url").is_some());
     }
 
     #[test]
