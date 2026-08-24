@@ -44,6 +44,8 @@ def main() -> None:
     for a in manifest["apps"]:
         for kind in ("portable", "installer"):
             expected[a["id"] + "/" + kind] = a[kind]
+    if manifest.get("notices"):
+        expected["notices"] = manifest["notices"]
 
     # release asset 목록 조회
     release = gh_get(f"{API}/repos/{repo}/releases/tags/{tag}", token)

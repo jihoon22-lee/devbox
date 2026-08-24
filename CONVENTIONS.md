@@ -296,6 +296,10 @@ docs/<scope>           문서 작업   예: docs/roadmap
 - 새 의존성 PR은 목적, 대안, 공식 출처, 고정 버전, 라이선스, 설치 크기, security advisory,
   오프라인 동작, 업데이트 담당을 기록한다. GPL·AGPL·SSPL·독점 runtime의 기본 번들은
   별도 승인 없이는 허용하지 않는다.
+- Cargo와 pnpm 의존성은 `deny.toml`·`.github/dependency-policy.json`의 allowlist와 만료되는
+  예외를 통과해야 한다. `THIRD_PARTY_NOTICES.md`는 lockfile에서 생성하며 모든 Tauri 앱의
+  `bundle.resources`에 포함한다. 앱을 추가할 때 이 resource와 release notice asset 검증을
+  함께 추가하고, notices를 수동 편집하지 않는다.
 
 기능별 판단과 v0.5.0 적용 범위는
 [`docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md`](./docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)를

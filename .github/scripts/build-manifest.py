@@ -73,11 +73,20 @@ def main() -> None:
             "installer": asset(installer_files[0], installer_dir),
         })
 
+    notices_path = f"{staging}/THIRD_PARTY_NOTICES.md"
+    if not os.path.isfile(notices_path):
+        raise SystemExit("THIRD_PARTY_NOTICES.md is missing from staging")
+
     manifest = {
         "schemaVersion": 1,
         "releaseTag": release_tag,
         "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "apps": manifest_apps,
+        "notices": {
+            "name": "THIRD_PARTY_NOTICES.md",
+            "sha256": sha256_of(notices_path),
+            "size": os.path.getsize(notices_path),
+        },
     }
 
     with open(output, "w") as f:

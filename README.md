@@ -46,6 +46,7 @@ https://github.com/jihoon22-lee/devbox/releases
 | [아키텍처](./docs/architecture.md) | 모노레포 구조, 레이어, 데이터 흐름 |
 | [로드맵](./docs/roadmap.md) | 진행 상황 / v0.5.0 확정 범위 |
 | [v0.5.0 네이티브 우선 계획](./docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3, 신규 앱, 앱 간 handoff, 테스트·릴리스 gate |
+| [의존성·제3자 고지 정책](./docs/dependency-policy.md) | Cargo·pnpm allowlist, advisory 예외 만료, notices 생성·배포 규칙 |
 | [프로젝트 요약](./docs/projects.md) | 앱별 상세 요약 |
 | [UX 개선 설계](./docs/superpowers/specs/2026-08-15-ux-improvements-design.md) | v0.5.0 컨텍스트 메뉴·클립보드·도구 확장 |
 | [제품 기회 및 실행 계획 (완료·보존)](./docs/product-opportunities.md) | v0.1~v0.4 결정 근거 + 실행 계획 |

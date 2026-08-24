@@ -74,6 +74,10 @@ jobs:
             Move-Item -Force $installer "staging/$a/installer/$($a)_$($conf.version)_x64-setup.exe"
           }
 
+      - name: Stage third-party notices
+        shell: pwsh
+        run: Copy-Item -Force THIRD_PARTY_NOTICES.md staging/THIRD_PARTY_NOTICES.md
+
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
@@ -165,6 +169,7 @@ jobs:
           body_path: ${{ steps.notes.outputs.path }}
           files: |
             artifacts/staging/**/*.exe
+            artifacts/staging/THIRD_PARTY_NOTICES.md
             artifacts/staging/release-manifest.json
           draft: false
           prerelease: ${{ steps.tag.outputs.prerelease }}

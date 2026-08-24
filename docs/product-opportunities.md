@@ -523,11 +523,18 @@ release tag와 앱 버전을 분리한다. release build가 다음 manifest를 �
       "portable": { "name": "life-log.exe", "sha256": "...", "size": 123456 },
       "installer": { "name": "LifeLog_0.2.2_x64-setup.exe", "sha256": "...", "size": 234567 }
     }
-  ]
+  ],
+  "notices": {
+    "name": "THIRD_PARTY_NOTICES.md",
+    "sha256": "...",
+    "size": 345678
+  }
 }
 ```
 
-Manager는 GitHub asset 이름을 추측하지 않고 이 manifest만 신뢰한다.
+`notices`는 schemaVersion 1의 backward-compatible 추가 필드다. 기존 Manager는 앱 asset을
+그대로 읽고, release verifier는 notices까지 선언된 asset으로 검증한다. Manager는 GitHub
+asset 이름을 추측하지 않고 이 manifest만 신뢰한다.
 
 ### 5.5 release workflow 개선
 
@@ -2413,8 +2420,9 @@ manifest와 일치하는지 릴리스 후 검증한다.
    - `portable` / `installer`의 `name`·`size`·`sha256`: staging의 **실제 파일**에서 계산
    - `releaseTag`: workflow 입력 또는 `github.ref_name`
    - `generatedAt`: UTC ISO-8601
+   - `notices`: lockfile에서 생성한 `THIRD_PARTY_NOTICES.md`의 `name`·`size`·`sha256`
    - 앱 하나라도 portable 또는 installer가 없으면 **실패**한다 (조용한 누락 금지)
-2. `publish` job의 `files:`에 `release-manifest.json`을 포함한다.
+2. `publish` job의 `files:`에 `THIRD_PARTY_NOTICES.md`와 `release-manifest.json`을 포함한다.
 3. `verify-release.py`와 이를 실행하는 `verify` job을 추가한다. `needs: publish`.
    - GitHub API로 release asset 목록을 가져온다
    - manifest에 있는 모든 asset이 존재하는지 확인
@@ -2431,6 +2439,7 @@ manifest와 일치하는지 릴리스 후 검증한다.
 - [ ] manifest에 10개 앱이 전부 있다
 - [ ] 각 앱의 `version`이 release tag가 아니라 앱 실제 버전이다
 - [ ] portable/installer 각각 name·size·sha256이 있다
+- [ ] notices asset의 name·size·sha256이 있고 installer resource에도 같은 파일이 포함된다
 - [ ] sha256이 64자 hex다
 - [ ] `release-manifest.json`이 release asset으로 올라간다
 - [ ] verify job이 실제로 다운로드해 digest를 재계산한다
@@ -2451,6 +2460,9 @@ for a in m["apps"]:
         assert set(a[kind]) >= {"name", "sha256", "size"}, a["id"]
         assert len(a[kind]["sha256"]) == 64, a["id"]
         assert a[kind]["size"] > 0, a["id"]
+assert m["notices"]["name"] == "THIRD_PARTY_NOTICES.md"
+assert len(m["notices"]["sha256"]) == 64
+assert m["notices"]["size"] > 0
 print("manifest OK:", len(m["apps"]), "apps")
 PY
 ```

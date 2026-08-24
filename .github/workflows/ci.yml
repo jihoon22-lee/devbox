@@ -14,6 +14,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  dependencies:
+    name: Dependency policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit frontend dependencies
+        run: pnpm audit --audit-level moderate
+
+      - name: Check pnpm policy and notices
+        run: |
+          python3 .github/scripts/check-dependencies.py check
+          python3 .github/scripts/test-check-dependencies.py
+          python3 .github/scripts/test-build-manifest.py
+
+      - name: Check Cargo licenses, advisories, bans, and sources
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2, cargo-deny 0.20.2
+        with:
+          rust-version: "1.98.0"
+          arguments: --locked
+          command: check
+
   catalog:
     name: Catalog consistency
     runs-on: ubuntu-latest

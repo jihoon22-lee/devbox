@@ -1,6 +1,7 @@
 [package]
 name = "search"
 version = "0.1.0"
+publish = false
 description = "FTS5 query building primitives"
 edition = "2021"
 
