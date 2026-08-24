@@ -233,7 +233,7 @@ export default function App() {
             <h2>Data sources</h2>
             {sources.length === 0 && <div className="dim">등록된 source가 없습니다.</div>}
             {sources.map((s) => (
-              <div key={s.producer} className="git-row">
+              <div key={`${s.producer}:v${s.schemaVersion ?? "unknown"}:${s.available ? "ok" : "error"}`} className="git-row">
                 <span className="mono">{s.producer}</span>
                 {s.available ? (
                   <span className="dim">

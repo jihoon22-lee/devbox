@@ -52,7 +52,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   crates/process    ◄── port-manager, run-manager
   crates/wsl        ◄── wsl-desktop, run-manager, workbench, repo-manager
   crates/search     ◄── everything-plus, knowledge-base
-  crates/integration◄── run-manager, workbench, knowledge-base 등 snapshot 계약
+  crates/integration◄── run-manager, workbench, knowledge-base, life-log 등 snapshot 계약·자동 발견
   crates/secrets    ◄── api-playground, run-manager (DPAPI)
   crates/git        ◄── devbox-manager, life-log, repo-manager, workbench
   crates/launch     ◄── repo-manager, workbench
@@ -66,7 +66,8 @@ port-manager:    React → invoke → commands → process crate → OS netstat
 wsl-desktop:     React → invoke → commands → wsl crate → wsl.exe (wsl-dashboard 흡수)
                    └ distro·docker 패널 (gitStatus는 Workbench로 이관 완료)
 life-log:        tray/poller(상시) → sessionizer → SQLite → commands → React
-                   (activity-timeline 흡수. 외부 DB 직접 조회 없음 → integration snapshot 계약)
+                   (activity-timeline 흡수. crates/integration으로 snapshot을 자동 발견하며
+                   외부 DB 직접 조회 없음)
 everything-plus:  indexer/watcher → filesystem crate → search crate(FTS5) → React
 knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror)
 api-playground:   React → commands → reqwest → HTTP
@@ -89,6 +90,13 @@ repo-manager:     React → commands → git crate(wsl) → repository/worktree 
 상대 앱의 `app_local_data_dir`을 직접 읽지 않는다. producer가
 `%LOCALAPPDATA%\devbox\integration\<app-id>\v<n>\`에 privacy-safe snapshot을 원자적으로
 기록하고 consumer는 읽기만 한다. (상세: `docs/product-opportunities.md` §10.1)
+
+`crates/integration::discover()`는 각 version의 `summary.json`을 자동 발견한다. 한 producer의
+손상·과대·unsafe-link snapshot은 다른 producer를 막지 않으며, Life Log의 Data Sources는
+발견 결과와 격리된 안전한 오류를 동적으로 표시한다. 여러 kind는 `data.views`에 모아 파일
+전체를 한 번만 교체하고 각 view가 `schemaVersion`, `freshnessMs`, `entries`를 소유한다.
+공용 경계는 10MiB 상한과 producer/version/path/timestamp 검증을 적용하고
+Authorization·Cookie·credential·raw environment 계열 필드를 거부한다.
 
 v0.5.0에서는 지속 상태는 snapshot, 일회성 작업 전달은 applink protocol v2 handoff로
 구분한다. API request, Knowledge draft, log source처럼 argv에 안전하게 넣을 수 없는 payload는
