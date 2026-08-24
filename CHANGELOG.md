@@ -3,6 +3,65 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [v0.4.2-rc2] - 2026-08-24
+
+v0.4.2-rc2는 API Playground 0.3.2의 secret persistence 보안 핫픽스를 새 immutable
+release candidate에서 다시 검증하기 위한 prerelease다. `v0.4.2-rc1`의 Windows
+패키지·asset 검증은 통과했지만, packaged H1에서 Collection v1→v2 변환의
+`requiresSecretReview` boolean metadata가 backend sanitizer에 의해 문자열
+`[REDACTED]`로 바뀌어 parse에 실패하는 결함을 발견했다. 따라서 RC1은 안정판으로
+승격하지 않았고, RC2의 새 package와 전체 H1 재검증이 끝나기 전에는 v0.4.2 안정판을
+게시하지 않는다.
+
+### Fixed
+
+- **Collection·History persistence schema metadata** — `requiresSecretReview`가 정확히
+  boolean인 경우에만 보존하고, 해당 필드의 non-boolean 값은 즉시 redaction한다. 실제
+  secret field의 redaction 경계를 완화하지 않으면서 persisted History·Collection wire
+  shape가 frontend schema parser를 통과하도록 수정했다.
+- **Regression coverage** — persisted History·Collection wire shape와 실제 sensitive field를
+  함께 검증하는 Rust 회귀 테스트를 추가했다. API Playground Rust 테스트는 14개에서
+  16개로 늘었고, 전체 CI가 통과했다.
+
+### Security
+
+- **backend-only secret resolve** — `{{NAME}}`와 `${NAME}` environment reference를 URL,
+  query, header key/value, body 및 auth field에서 Rust가 전송 직전에만 해석한다. 해석된
+  요청은 frontend state나 응답 wire 형식에 포함하지 않으며 unseal 실패는 ciphertext
+  fallback 없이 안전하게 종료한다.
+- **History·Collection v2** — 평문 포함 여부를 증명할 수 없는 `apip-history` v1은 UI에서
+  즉시 격리하고, 빈 v2 write/read-back과 raw key delete/read-back이 성공한 뒤에만
+  migration marker를 기록한다. Collection v1의 직접 입력 credential은 reference 또는
+  `[REDACTED]`와 `requiresSecretReview`로 변환하며 raw backup·quarantine을 만들지 않는다.
+- **cURL·응답·오류 redaction** — 기본 cURL은 Authorization, Cookie, API key와 auth 값을
+  마스킹한다. 원문 cURL은 명시적 확인 뒤 일회성 clipboard 복사에만 사용한다. 응답 header/body,
+  URL userinfo/query, redirect location/final URL, 알려진 token 패턴과 network error에도 같은
+  redaction 경계를 적용한다.
+- **redirect credential stripping** — redirect를 최대 10회까지 직접 처리하고 cross-origin
+  hop에는 Authorization, Cookie, API key 계열 header, 알려진 secret이 든 일반 header,
+  auth, body 및 stale body metadata를 전달하지 않는다. 307/308도 같은 경계를 적용하며,
+  목적지 URL 자체에 민감정보가 있으면 다른 origin에 연결하기 전에 차단한다.
+- **browser fallback 제거** — WebView가 아닌 browser preview에서는 secret seal/send/reveal을
+  거부하며 기존 `plain:` base64 pseudo-sealing 경로를 제거했다.
+
+### RC1 and RC2 verification boundary
+
+- `v0.4.2-rc1` annotated tag `371c404`의 공식 Windows release는 workflow
+  [32693958102](https://github.com/jihoon22-lee/devbox/actions/runs/32693958102)에서
+  Build, Publish, Verify 세 job이 통과했고, 13개 portable·13개 NSIS installer·manifest를
+  포함한 정확한 27 assets와 26 binaries를 별도 다운로드로 독립 검증했다. API Playground
+  portable asset도 size·SHA-256 대조를 통과했다.
+- RC1 packaged H1에서는 DPAPI sealing, backend-only resolve, History v1 fail-closed 삭제,
+  cURL·응답·오류 redaction, cross-origin redirect credential/body 차단 및 민감한 목적지
+  연결 전 차단을 확인했다. Collection v1→v2 변환은 위 schema sanitizer 결함으로 실패했고,
+  raw v1이 logical storage에 남아 stable gate를 차단했다. 이 결과와 cleanup evidence는
+  [issue #176 comment](https://github.com/jihoon22-lee/devbox/issues/176#issuecomment-5391635404)에
+  기록했다.
+- PR [#231](https://github.com/jihoon22-lee/devbox/pull/231)이 `be2c64e`로 main에
+  병합되어 위 결함과 wire-shape 회귀를 수정했다. RC2는 새 immutable annotated tag로
+  빌드하고 정확한 27 assets/26 binaries를 다시 검증한 뒤, H1-A~D 전체를 재수행해야 한다.
+  H1 재검증과 cleanup이 모두 통과하기 전에는 v0.4.2 안정판으로 간주하지 않는다.
+
 ## [v0.4.2-rc1] - 2026-08-24
 
 v0.4.2-rc1은 API Playground 0.3.2의 secret persistence 보안 핫픽스를 실제 Windows

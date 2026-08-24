@@ -76,15 +76,51 @@ v0.4.1은 안정판 핫픽스로 배포됐다. 자동화된 migration 사례와 
 이미 제거되어 Windows C1/C2를 안전하게 재현하지 못했다. 이는 packaged-runtime 검증이 아니며, 남은
 Windows acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서 post-release로 계속 관리한다.
 
-### v0.4.2 — API Playground 보안 핫픽스 (RC1·H1 진행 중)
+### v0.4.2 — API Playground 보안 핫픽스 (RC2 준비·H1 전체 재검증 대기)
 
 v0.4.1에도 존재하는 resolved secret persistence 결함을 v0.5.0까지 미루지 않고 P1-02 전체
 범위로 선행 수정했다. API Playground 0.3.2는 secret을 Rust 전송 경계에서만 해석하고,
 History·Collection v2 fail-closed migration, masked cURL, 응답·오류·redirect redaction과
 cross-origin credential·body stripping 및 민감한 redirect destination 연결 전 차단을 적용한다.
-코드와 Linux/Windows CI는 main에 반영됐으며,
-`v0.4.2-rc1` 공식 Windows package의 H1 acceptance가 통과한 뒤에만 안정판 v0.4.2를 게시한다.
-이 선행 완료는 v0.5.0 범위를 삭제하거나 축소하지 않고 같은 P1-02 회귀 기준으로 이어진다.
+코드와 Linux/Windows CI는 main에 반영됐으며, 이 선행 완료는 v0.5.0 범위를 삭제하거나
+축소하지 않고 같은 P1-02 회귀 기준으로 이어진다.
+
+v0.4.2-rc1은 다음 단계까지 완료했다.
+
+- `v0.4.2-rc1` annotated tag는 commit `371c404`에 고정됐다.
+- 공식 Windows release workflow
+  [32693958102](https://github.com/jihoon22-lee/devbox/actions/runs/32693958102)의
+  Build Windows installers, Publish release, Verify release assets 세 job이 모두 성공했다.
+- 13개 portable + 13개 NSIS installer + `release-manifest.json`으로 구성된 정확한 27 assets,
+  26 binaries를 별도 다운로드·size·SHA-256 대조로 독립 검증했다. API Playground portable
+  asset도 검증을 통과했다.
+- Windows packaged H1에서 DPAPI sealing, backend-only resolve, History v1 fail-closed 삭제,
+  cURL·응답·오류 redaction, cross-origin redirect credential/body 차단 및 민감한 redirect
+  destination 연결 전 차단을 확인했다.
+
+그러나 RC1 H1의 Collection v1→v2 변환에서 `requiresSecretReview` boolean metadata가
+backend sanitizer에 의해 문자열 `[REDACTED]`로 바뀌어 schema parse가 실패했고, raw v1이
+logical storage에 남았다. 이 실패와 cleanup 결과는 [issue #176 comment](https://github.com/jihoon22-lee/devbox/issues/176#issuecomment-5391635404)에
+기록했으며, stable gate는 의도적으로 차단된 상태다. 이 결함을 수정한 PR
+[#231](https://github.com/jihoon22-lee/devbox/pull/231)은 commit `be2c64e`로 main에
+병합됐고, 정확한 boolean metadata 보존·non-boolean 즉시 redaction, History/Collection wire
+shape와 실제 sensitive field 회귀 테스트를 포함한다. API Rust 테스트는 16개로 늘었고
+전체 CI도 통과했다.
+
+현재 release gate는 다음 순서로 진행한다.
+
+1. RC1을 수정·삭제하지 않고 보존한다.
+2. PR #231이 반영된 `origin/main`에서 새 immutable annotated `v0.4.2-rc2` tag를 만든다.
+3. RC2 Windows package를 빌드·게시하고 정확한 27 assets/26 binaries 및 manifest를 독립
+   검증한다.
+4. RC2 package에서 H1-A~D 전체를 처음부터 재수행한다. Collection write/read-back, raw v1
+   삭제, marker 기록, logical localStorage 전체 scan과 cleanup을 포함한다.
+5. H1 재검증과 기존 사용자 data/process/clipboard 보호 및 test residue 제거가 모두 통과해
+   issue #176에 evidence로 남기기 전에는 v0.4.2 stable tag/release를 만들지 않는다.
+
+RC2 준비와 H1 재검증은 [상세 release plan](./superpowers/plans/2026-08-24-v0.4.2-release.md)에서
+Task 2a·Task 2b 및 후속 Task 3~7의 체크리스트로 추적한다. RC1 H1 실패로 인해 v0.5.0
+P1·P2·선택 P3나 Devbox Launcher·Log Lens 범위를 삭제·축소하지 않는다.
 
 ### v0.5.0
 
