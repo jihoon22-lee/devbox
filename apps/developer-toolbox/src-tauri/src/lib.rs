@@ -24,6 +24,7 @@ fn migrate_local_data() {
 pub fn run() {
     migrate_local_data();
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::tools::hash,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { diff } from "../api";
 import type { DiffHunk } from "../types";
+import { ToolOutput, ToolTextArea } from "./common";
 
 const KIND_CLASS = ["diff-eq", "diff-add", "diff-del"];
 
@@ -68,16 +69,46 @@ export function DiffTool() {
       <div className="io-grid">
         <div className="io-col">
           <div className="io-label">Old</div>
-          <textarea className="io-input" rows={10} value={a} onChange={(e) => setA(e.currentTarget.value)} spellCheck={false} />
+          <ToolTextArea
+            aria-label="Old input"
+            className="io-input"
+            rows={10}
+            value={a}
+            onValueChange={setA}
+            spellCheck={false}
+          />
         </div>
         <div className="io-col">
           <div className="io-label">New</div>
-          <textarea className="io-input" rows={10} value={b} onChange={(e) => setB(e.currentTarget.value)} spellCheck={false} />
+          <ToolTextArea
+            aria-label="New input"
+            className="io-input"
+            rows={10}
+            value={b}
+            onValueChange={setB}
+            spellCheck={false}
+          />
         </div>
       </div>
       <div className="io-grid diff-view">
-        <div className="io-col">{renderColumn(aLines, "old")}</div>
-        <div className="io-col">{renderColumn(bLines, "new")}</div>
+        <ToolOutput
+          asDiv
+          className="io-col"
+          value={a}
+          ariaLabel="Old diff output"
+          downloadName="dev-toolbox-diff-old.txt"
+        >
+          {renderColumn(aLines, "old")}
+        </ToolOutput>
+        <ToolOutput
+          asDiv
+          className="io-col"
+          value={b}
+          ariaLabel="New diff output"
+          downloadName="dev-toolbox-diff-new.txt"
+        >
+          {renderColumn(bLines, "new")}
+        </ToolOutput>
       </div>
     </div>
   );

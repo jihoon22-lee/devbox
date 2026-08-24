@@ -20,9 +20,10 @@
 - 오프라인 즉시 사용 (외부 서비스 없음)
 - 좌측 사이드바에서 도구 선택
 - JS로 충분한 것과 Rust가 필요한 것의 경계 분리 — 계산·검증은 Rust 연동
+- 입력 우클릭 메뉴에서 명시적 Paste·전체 선택·비우기, 출력 메뉴에서 복사·전체 선택·텍스트
+  파일 저장 지원. Clipboard read는 Paste를 누른 순간에만 수행하며 저장·로그하지 않음
 
 ## 개발
 
 - 순수 로직: `src-tauri/src/commands/tools.rs` → `cargo test`
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
-

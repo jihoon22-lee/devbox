@@ -137,6 +137,22 @@ body {
   border-color: var(--accent);
 }
 
+.io-output:focus,
+.uuid-list:focus,
+.regex-view:focus,
+.diff-view .io-col:focus {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.context-action-error {
+  color: var(--red);
+  font-size: 11px;
+  margin-top: 5px;
+  white-space: normal;
+}
+
 .row-input {
   display: block;
   margin-bottom: 8px;
