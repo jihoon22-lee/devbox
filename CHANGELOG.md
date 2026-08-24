@@ -3,6 +3,62 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [v0.4.2] - 2026-08-24
+
+v0.4.2는 API Playground 0.3.2의 secret persistence 보안 핫픽스다. backend-only
+secret resolve, History·Collection v2 fail-closed migration, cURL·응답·오류·redirect
+redaction과 cross-origin credential·body stripping을 포함한다. 아래 stable section은
+RC2 packaged H1과 cleanup을 통과한 뒤 작성한 **stable preparation 문서**이며, 안정판
+tag/release가 아직 게시됐다는 뜻은 아니다. docs-only PR의 required CI가 통과해 merge된
+commit에서 RC2를 조상으로 하는 annotated `v0.4.2` tag를 만든 뒤에야 안정판이 게시된다.
+그 전까지 최신 안정판은 `v0.4.1`이다.
+
+### Fixed
+
+- **backend-only secret resolve** — 환경 변수 reference를 Rust 전송 경계에서만 해석하고,
+  frontend state·저장 wire 형식·응답에 해석된 secret을 포함하지 않는다. browser fallback의
+  `plain:` pseudo-sealing 경로는 제거했다.
+- **History·Collection persistence** — 평문 포함 여부를 증명할 수 없는 v1 History는
+  fail-closed로 격리·삭제하고 v2 write/read-back과 marker 순서를 보장한다. Collection v1의
+  direct credential은 redaction하며 `requiresSecretReview` boolean metadata를 보존한다.
+- **cURL·response·error·redirect redaction** — 민감 header/body/query/auth와 redirect
+  destination을 마스킹하고, cross-origin hop에 credential·body를 전달하지 않는다.
+
+### Verification
+
+- immutable `v0.4.2-rc2` tag의 source commit은
+  `8bcde4271778f83c23b7b1049634a65656662e89`다. [RC2 release workflow
+  32700441413](https://github.com/jihoon22-lee/devbox/actions/runs/32700441413)이
+  성공했고, [공개 prerelease](https://github.com/jihoon22-lee/devbox/releases/tag/v0.4.2-rc2)는
+  13개 앱의 portable 13개와 NSIS installer 13개, `release-manifest.json` 1개인 정확한
+  27 assets(26 binaries/1 manifest)를 가진다. missing 0, undeclared 0이며 독립적인
+  size·SHA-256 대조도 통과했다. API Playground portable SHA-256은
+  `bfec1475c87173515c6c6a21fb6f10a145090c070ed51d40d03e9167d874c053`다.
+- API Playground의 frontend package, Rust Cargo package, Tauri package version은 모두
+  `0.3.2`다.
+- [H1 PASS evidence](https://github.com/jihoon22-lee/devbox/issues/176#issuecomment-5392680030)는
+  Windows `10.0.26200`, PowerShell `5.1.26100.9168`, WebView2 `151.0.4129.101`,
+  Node `24.18.1`에서 H1-A~D 전체 통과를 기록한다. logical localStorage 전체 scan에서
+  plaintext가 없었고 cleanup 뒤 API Playground process 0, app-data 부재, backup residue
+  0을 확인했다.
+- host firewall이 unbound IPv4/IPv6 loopback을 timeout으로 매핑하므로 직접적인
+  `ConnectionRefused`라고 부를 수 없었다. H1-D의 generic non-timeout transport failure는
+  accept-and-reset server로, timeout은 1초 제한보다 늦게 응답하는 loopback server로 각각 확인했다.
+  정확한 multi-format clipboard 보존을 보장할 수 없어 clipboard는 건드리지 않았다.
+- H1 harness SHA-256은
+  `a5c628c91967375fa4508ea65048fb3dfa06bd7b17a722e60dc379c1f2d44794`, redacted result
+  SHA-256은 `d3beac59f928f8f1b8b97614245cdecb88a912468de3721c12379e617a111080`이며,
+  evidence에 secret 원문이나 sealed blob은 없다.
+
+### Release status
+
+`v0.4.2-rc1`은 immutable failed-H1 historical candidate로 보존하고, RC2는 H1을 통과한
+stable basis로 보존한다. v0.4.2 stable은 아직 publish되지 않았다. docs-only PR의 CI와
+merge, 그 merge commit에서의 annotated `v0.4.2` tag, 이후 release workflow와 독립적인
+27-asset verification이 남아 있다. H1 이후 product code를 바꾸면 새 RC부터 다시
+검증한다. GitHub Actions의 Node 20 action-runtime deprecation annotation은 향후 유지보수
+항목이며 이번 stable gate의 blocker가 아니다.
+
 ## [v0.4.2-rc2] - 2026-08-24
 
 v0.4.2-rc2는 API Playground 0.3.2의 secret persistence 보안 핫픽스를 새 immutable
