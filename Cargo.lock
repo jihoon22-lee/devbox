@@ -2559,6 +2559,7 @@ dependencies = [
 name = "knowledge-base"
 version = "0.3.1"
 dependencies = [
+ "applink",
  "base64 0.22.1",
  "dirs",
  "filesystem",
@@ -2572,6 +2573,8 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
+ "tempfile",
 ]
 
 [[package]]

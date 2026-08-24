@@ -21,8 +21,14 @@ mod tests {
     fn parses_the_repository_v2_catalog_through_the_shared_contract() {
         let catalog = parse_catalog(BUILD_CATALOG).unwrap();
         assert_eq!(catalog.schema_version, 2);
-        assert_eq!(catalog.catalog_revision, Some(1));
+        assert_eq!(catalog.catalog_revision, Some(2));
         assert_eq!(catalog.apps.len(), 13);
+        let knowledge = catalog
+            .apps
+            .iter()
+            .find(|app| app.id == "knowledge-base")
+            .expect("Knowledge must remain in the repository catalog");
+        assert_eq!(knowledge.accepts, vec!["path", "query"]);
     }
 
     #[test]
