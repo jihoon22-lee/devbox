@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { isTauri } from "./lib/isTauri";
 import type { DiffHunk, RegexMatch } from "./types";
 
@@ -24,6 +25,16 @@ export async function regexTest(pattern: string, text: string): Promise<RegexMat
 export async function diff(a: string, b: string): Promise<DiffHunk[]> {
   if (!isTauri()) return browserDiff(a, b);
   return invoke<DiffHunk[]>("diff", { a, b });
+}
+
+/**
+ * Paste처럼 사용자가 명시적으로 요청한 순간에만 plain text clipboard를 읽는다.
+ * Browser preview에서는 표준 Clipboard API를 사용하고 Tauri에서는 명시적으로 허용한
+ * read-text command만 호출한다.
+ */
+export async function readClipboardText(): Promise<string> {
+  if (!isTauri()) return navigator.clipboard.readText();
+  return readText();
 }
 
 async function browserHash(data: string, algorithm: string): Promise<string> {

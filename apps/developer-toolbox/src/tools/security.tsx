@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { generateUuid, hash } from "../api";
-import { CopyBtn } from "./common";
+import { CopyBtn, ToolOutput, ToolTextArea } from "./common";
 
 const ALGORITHMS = ["md5", "sha256", "sha512"];
 
@@ -41,11 +41,12 @@ export function HashTool() {
       <div className="io-grid">
         <div className="io-col">
           <div className="io-label">Input</div>
-          <textarea
+          <ToolTextArea
+            aria-label="Hash input"
             className="io-input"
             rows={5}
             value={input}
-            onChange={(e) => setInput(e.currentTarget.value)}
+            onValueChange={setInput}
             spellCheck={false}
           />
         </div>
@@ -53,7 +54,11 @@ export function HashTool() {
           <div className="io-label">
             Output {output && <CopyBtn value={output} />}
           </div>
-          <pre className={`io-output ${error ? "io-error" : ""}`}>{error || output || " "}</pre>
+          <ToolOutput
+            className={`io-output ${error ? "io-error" : ""}`}
+            value={error || output}
+            downloadName="dev-toolbox-hash-result.txt"
+          />
         </div>
       </div>
     </div>
@@ -87,9 +92,12 @@ export function UuidTool() {
           Generate
         </button>
       </div>
-      <pre className="uuid-list">
-        {list.join("\n") || " "}
-      </pre>
+      <ToolOutput
+        className="uuid-list"
+        value={list.join("\n")}
+        ariaLabel="UUID output"
+        downloadName="dev-toolbox-uuid-result.txt"
+      />
       {list.length > 0 && <CopyBtn value={list.join("\n")} />}
     </div>
   );

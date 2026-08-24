@@ -128,10 +128,16 @@ fallback으로만 허용하며, 손상된 Knowledge snapshot은 다른 producer 
 | `ammonia` HTML 살균 | `crates/markdown` `sanitize()` | 마크다운 HTML의 `<script>` 제거, `javascript:` URI 차단 |
 | mermaid `securityLevel: "strict"` | code-pad `PreviewPane`, knowledge-base `MarkdownPreview` | 다이어그램 HTML의 XSS |
 | CSP (`csp` 정책) | 각 앱 `tauri.conf.json` | DOM injection 시에도 임의 `invoke`/네트워크 접근 차단 |
+| Clipboard 최소 권한 | Developer Toolbox `clipboard-manager:allow-read-text` | 명시적 Paste 이외의 image/write/clear IPC와 background clipboard 수집 차단 |
 
 `csp: null` + `core:default` 조합은 DOM injection이 성립하면 곧바로 `invoke`에 닿게 만든다.
 앱들이 임의 로컬 파일(code-pad, knowledge-base, everything-plus)과 임의 원격 응답
 (api-playground)을 다루므로 명시적 CSP 정책을 둔다. (상세: `docs/product-opportunities.md` §7.5)
+
+Developer Toolbox는 입력 context menu에서 사용자가 Paste를 선택한 순간에만 system clipboard의
+plain text를 읽는다. 읽은 값은 현재 controlled input selection에만 삽입하며 log, snapshot,
+settings에 기록하지 않는다. 출력 Copy는 기존 WebView clipboard write 경로를 쓰고, 결과 파일
+저장은 사용자가 누른 항목에서 생성한 local text download로만 수행한다.
 
 ### CSP 기준선
 

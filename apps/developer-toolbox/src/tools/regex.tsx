@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { regexTest } from "../api";
 import type { RegexMatch } from "../types";
+import { ToolOutput, ToolTextArea, ToolTextField } from "./common";
 
 /** 정규식 매치를 하이라이트로 표시하는 도구 */
 export function RegexTool() {
@@ -43,23 +44,30 @@ export function RegexTool() {
 
   return (
     <div className="tool">
-      <input
+      <ToolTextField
+        aria-label="Regular expression pattern"
         className="io-input row-input"
         placeholder="Regular expression pattern..."
         value={pattern}
-        onChange={(e) => setPattern(e.currentTarget.value)}
+        onValueChange={setPattern}
         spellCheck={false}
       />
-      <textarea
+      <ToolTextArea
+        aria-label="Regex test input"
         className="io-input"
         rows={6}
         placeholder="Test text..."
         value={text}
-        onChange={(e) => setText(e.currentTarget.value)}
+        onValueChange={setText}
         spellCheck={false}
       />
       <div className="io-label">{matches.length} match(es)</div>
-      <pre className="regex-view">
+      <ToolOutput
+        className="regex-view"
+        value={text}
+        ariaLabel="Regex output"
+        downloadName="dev-toolbox-regex-result.txt"
+      >
         {segments.length === 0
           ? " "
           : segments.map((s, i) => (
@@ -67,7 +75,7 @@ export function RegexTool() {
                 {s.text}
               </span>
             ))}
-      </pre>
+      </ToolOutput>
       {error && <div className="error-inline">{error}</div>}
     </div>
   );

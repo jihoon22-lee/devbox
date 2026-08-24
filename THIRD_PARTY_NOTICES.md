@@ -4,8 +4,8 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `496eeea777c481d5906de191645f51da7ca9035981de94a89bcf9829ab8282fd`
-- pnpm-lock.yaml SHA-256: `18e3d109399f5954550a98e5d46eaba9e3ae13ab94333a342ff4374665d25a1b`
+- Cargo.lock SHA-256: `638bd58203fd5ccfcc5436a8c7d45e009a054fb03d5a6679372f7f55b5a9353c`
+- pnpm-lock.yaml SHA-256: `3e265c4ef5402fa0043867d39e49526dc13b7ccfd55d160a5da20c60a9d33e12`
 
 ## Rust dependencies
 
@@ -19,6 +19,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | ammonia | 4.1.4 | MIT OR Apache-2.0 | https://github.com/rust-ammonia/ammonia | `sha256:dc6d763210e2eb7670d1a5183a08bebefa3f97db2a738a684f2ce00bd49f681d` |
 | android_system_properties | 0.1.6 | MIT OR Apache-2.0 | https://github.com/nical/android_system_properties | `sha256:ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc` |
 | anyhow | 1.0.104 | MIT OR Apache-2.0 | https://github.com/dtolnay/anyhow | `sha256:330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470` |
+| arboard | 3.6.1 | MIT OR Apache-2.0 | https://github.com/1Password/arboard | `sha256:0348a1c054491f4bfe6ab86a7b6ab1e44e45d899005de92f58b3df180b36ddaf` |
 | ascii | 1.1.0 | Apache-2.0 OR MIT | https://github.com/tomprogrammer/rust-ascii | `sha256:d92bec98840b8f03a5ff5413de5293bfcd8bf96467cf5452609f939ec6f5de16` |
 | async-broadcast | 0.7.2 | MIT OR Apache-2.0 | https://github.com/smol-rs/async-broadcast | `sha256:435a87a52755b8f27fcf321ac4f04b2802e337c8c4872923137471ec39c37532` |
 | async-channel | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/async-channel | `sha256:924ed96dd52d1b75e9c1a3e6275715fd320f5f9439fb5a4a11fa51f4221158d2` |
@@ -53,6 +54,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | bumpalo | 3.20.3 | MIT OR Apache-2.0 | https://github.com/fitzgen/bumpalo | `sha256:72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649` |
 | bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT | https://github.com/Lokathor/bytemuck | `sha256:95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797` |
 | byteorder | 1.5.0 | Unlicense OR MIT | https://github.com/BurntSushi/byteorder | `sha256:1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b` |
+| byteorder-lite | 0.1.0 | Unlicense OR MIT | https://github.com/image-rs/byteorder-lite | `sha256:8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495` |
 | bytes | 1.12.1 | MIT | https://github.com/tokio-rs/bytes | `sha256:fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04` |
 | cairo-rs | 0.18.5 | MIT | https://github.com/gtk-rs/gtk-rs-core | `sha256:8ca26ef0159422fb77631dc9d17b102f253b876fe1586b03b803e63a309b4ee2` |
 | cairo-sys-rs | 0.18.2 | MIT | https://github.com/gtk-rs/gtk-rs-core | `sha256:685c9fa8e590b8b3d678873528d83411db17242a73fccaed827770ea0fedda51` |
@@ -72,6 +74,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | chrono | 0.4.45 | MIT OR Apache-2.0 | https://github.com/chronotope/chrono | `sha256:1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327` |
 | chrono-tz | 0.10.4 | MIT OR Apache-2.0 | https://github.com/chronotope/chrono-tz | `sha256:a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3` |
 | chunked_transfer | 1.5.0 | MIT OR Apache-2.0 | https://github.com/frewsxcv/rust-chunked-transfer | `sha256:6e4de3bc4ea267985becf712dc6d9eed8b04c953b3fcfb339ebc87acd9804901` |
+| clipboard-win | 5.4.1 | BSL-1.0 | https://github.com/DoumanAsh/clipboard-win | `sha256:bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4` |
 | cmake | 0.1.58 | MIT OR Apache-2.0 | https://github.com/rust-lang/cmake-rs | `sha256:c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678` |
 | combine | 4.6.7 | MIT | https://github.com/Marwes/combine | `sha256:ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd` |
 | concurrent-queue | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/concurrent-queue | `sha256:4ca0197aee26d1ae37445ee532fefce43251d24cc7c166799f4d46817f1d3973` |
@@ -88,6 +91,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | croner | 3.0.1 | MIT | https://github.com/hexagon/croner-rust | `sha256:4aa42bcd3d846ebf66e15bd528d1087f75d1c6c1c66ebff626178a106353c576` |
 | crossbeam-channel | 0.5.16 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam | `sha256:d85363c37faeca707aef026efa9f3b34d077bce547e48f770770625c6013679e` |
 | crossbeam-utils | 0.8.22 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam | `sha256:61803da095bee82a81bb1a452ecc25d3b2f1416d1897eb86430c6159ef717c17` |
+| crunchy | 0.2.4 | MIT | https://github.com/eira-fransham/crunchy | `sha256:460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5` |
 | crypto-common | 0.1.7 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits | `sha256:78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a` |
 | crypto-common | 0.2.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits | `sha256:ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453` |
 | cssparser | 0.36.0 | MPL-2.0 | https://github.com/servo/rust-cssparser | `sha256:dae61cf9c0abb83bd659dab65b7e4e38d8236824c85f0f804f173567bda257d2` |
@@ -137,19 +141,23 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | equivalent | 1.0.2 | Apache-2.0 OR MIT | https://github.com/indexmap-rs/equivalent | `sha256:877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f` |
 | erased-serde | 0.4.10 | MIT OR Apache-2.0 | https://github.com/dtolnay/erased-serde | `sha256:d2add8a07dd6a8d93ff627029c51de145e12686fbc36ecb298ac22e74cf02dec` |
 | errno | 0.3.14 | MIT OR Apache-2.0 | https://github.com/lambda-fairy/rust-errno | `sha256:39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb` |
+| error-code | 3.4.0 | BSL-1.0 | https://github.com/DoumanAsh/error-code | `sha256:0b5343afd4a8365a643ac588dab4cf234a190c7f6c88c9f6dd6ffe00837661b7` |
 | event-listener | 5.4.2 | Apache-2.0 OR MIT | https://github.com/smol-rs/event-listener | `sha256:5a23add41df1562121a9393cb065eab5146a1242410f23a644851e90cfd669d2` |
 | event-listener-strategy | 0.5.4 | Apache-2.0 OR MIT | https://github.com/smol-rs/event-listener-strategy | `sha256:8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93` |
 | fallible-iterator | 0.3.0 | MIT/Apache-2.0 | https://github.com/sfackler/rust-fallible-iterator | `sha256:2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649` |
 | fallible-streaming-iterator | 0.1.9 | MIT/Apache-2.0 | https://github.com/sfackler/fallible-streaming-iterator | `sha256:7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a` |
 | fastrand | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/fastrand | `sha256:da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223` |
+| fax | 0.2.7 | MIT | https://github.com/pdf-rs/fax | `sha256:caf1079563223d5d59d83c85886a56e586cfd5c1a26292e971a0fa266531ac5a` |
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 | https://github.com/image-rs/fdeflate | `sha256:1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c` |
 | field-offset | 0.3.6 | MIT OR Apache-2.0 | https://github.com/Diggsey/rust-field-offset | `sha256:38e2275cc4e4fc009b0669731a1e5ab7ebf11f469eaede2bab9309a5b4d6057f` |
 | filedescriptor | 0.8.3 | MIT | https://github.com/wezterm/wezterm | `sha256:e40758ed24c9b2eeb76c35fb0aebc66c626084edd827e07e1552279814c6682d` |
 | filetime | 0.2.29 | MIT/Apache-2.0 | https://github.com/alexcrichton/filetime | `sha256:5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759` |
 | find-msvc-tools | 0.1.10 | MIT OR Apache-2.0 | https://github.com/rust-lang/cc-rs | `sha256:26b73573e6edcd2af0cdf47bd6cb58f0b3839491263c314eaad1ccf24430e1de` |
+| fixedbitset | 0.5.7 | MIT OR Apache-2.0 | https://github.com/petgraph/fixedbitset | `sha256:1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99` |
 | flate2 | 1.1.9 | MIT OR Apache-2.0 | https://github.com/rust-lang/flate2-rs | `sha256:843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c` |
 | fluent-uri | 0.1.4 | MIT | https://github.com/yescallop/fluent-uri-rs | `sha256:17c704e9dbe1ddd863da1e6ff3567795087b1eb201ce80d8fa81162e1516500d` |
 | fnv | 1.0.7 | Apache-2.0 / MIT | https://github.com/servo/rust-fnv | `sha256:3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1` |
+| foldhash | 0.1.5 | Zlib | https://github.com/orlp/foldhash | `sha256:d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2` |
 | foldhash | 0.2.0 | Zlib | https://github.com/orlp/foldhash | `sha256:77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb` |
 | foreign-types | 0.5.0 | MIT/Apache-2.0 | https://github.com/sfackler/foreign-types | `sha256:d737d9aa519fb7b749cbc3b962edcf310a8dd1f4b67c91c4f83975dbdd17d965` |
 | foreign-types-macros | 0.2.4 | MIT/Apache-2.0 | https://github.com/sfackler/foreign-types | `sha256:ea5190182e6915eb873ddbc16e23b711b6eb1f9c00a0d0a3a91b5f6228475225` |
@@ -174,6 +182,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | gdkx11 | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs | `sha256:3caa00e14351bebbc8183b3c36690327eb77c49abc2268dd4bd36b856db3fbfe` |
 | gdkx11-sys | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs | `sha256:6e2e7445fe01ac26f11601db260dd8608fe172514eb63b3b5e261ea6b0f4428d` |
 | generic-array | 0.14.7 | MIT | https://github.com/fizyk20/generic-array.git | `sha256:85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a` |
+| gethostname | 1.1.0 | Apache-2.0 | https://codeberg.org/swsnr/gethostname.rs.git | `sha256:1bd49230192a3797a9a4d6abe9b3eed6f7fa4c8a8a4947977c6f80025f92cbd8` |
 | getopts | 0.2.24 | MIT OR Apache-2.0 | https://github.com/rust-lang/getopts | `sha256:cfe4fbac503b8d1f88e6676011885f34b7174f46e59956bba534ba83abded4df` |
 | getrandom | 0.2.17 | MIT OR Apache-2.0 | https://github.com/rust-random/getrandom | `sha256:ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0` |
 | getrandom | 0.3.4 | MIT OR Apache-2.0 | https://github.com/rust-random/getrandom | `sha256:899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd` |
@@ -189,8 +198,10 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | gtk-sys | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs | `sha256:8f29a1c21c59553eb7dd40e918be54dccd60c52b049b75119d5d96ce6b624414` |
 | gtk3-macros | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs | `sha256:52ff3c5b21f14f0736fed6dcfc0bfb4225ebf5725f3c0209edeec181e4d73e9d` |
 | h2 | 0.4.16 | MIT | https://github.com/hyperium/h2 | `sha256:a9f37a958b41b3b19ee2707c06439c0e9e547e847223eb791ecb0cb821c65e27` |
+| half | 2.7.1 | MIT OR Apache-2.0 | https://github.com/VoidStarKat/half-rs | `sha256:6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b` |
 | hashbrown | 0.12.3 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | `sha256:8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888` |
 | hashbrown | 0.14.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | `sha256:e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1` |
+| hashbrown | 0.15.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | `sha256:9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1` |
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | `sha256:ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a` |
 | hashlink | 0.9.1 | MIT OR Apache-2.0 | https://github.com/kyren/hashlink | `sha256:6ba4ff7128dee98c7dc9794b6a411377e1404dba1c97deb8d1a55297bd25d8af` |
 | heck | 0.4.1 | MIT OR Apache-2.0 | https://github.com/withoutboats/heck | `sha256:95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8` |
@@ -221,6 +232,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | ident_case | 1.0.1 | MIT/Apache-2.0 | https://github.com/TedDriggs/ident_case | `sha256:b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39` |
 | idna | 1.1.0 | MIT OR Apache-2.0 | https://github.com/servo/rust-url/ | `sha256:3b0875f23caa03898994f6ddc501886a45c7d3d62d04d2d90788d47be1b1e4de` |
 | idna_adapter | 1.2.2 | Apache-2.0 OR MIT | https://github.com/hsivonen/idna_adapter | `sha256:cb68373c0d6620ef8105e855e7745e18b0d00d3bdb07fb532e434244cdb9a714` |
+| image | 0.25.10 | MIT OR Apache-2.0 | https://github.com/image-rs/image | `sha256:85ab80394333c02fe689eaf900ab500fbd0c2213da414687ebf995a65d5a6104` |
 | indexmap | 1.9.3 | Apache-2.0 OR MIT | https://github.com/bluss/indexmap | `sha256:bd070e393353796e801d209ad339e89596eb4c8d430d18ede6a1cced8fafbd99` |
 | indexmap | 2.14.0 | Apache-2.0 OR MIT | https://github.com/indexmap-rs/indexmap | `sha256:d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9` |
 | infer | 0.19.0 | MIT | https://github.com/bojand/infer | `sha256:a588916bfdfd92e71cacef98a63d9b1f0d74d6599980d11894290e7ddefffcf7` |
@@ -274,11 +286,13 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | mime | 0.3.17 | MIT OR Apache-2.0 | https://github.com/hyperium/mime | `sha256:6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a` |
 | miniz_oxide | 0.8.9 | MIT OR Zlib OR Apache-2.0 | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide | `sha256:1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316` |
 | mio | 1.2.2 | MIT | https://github.com/tokio-rs/mio | `sha256:30d65c71f1ce40ab09135ce117d742b9f8a19ff91a41a8b57ed50bc2de59c427` |
+| moxcms | 0.8.1 | BSD-3-Clause OR Apache-2.0 | https://github.com/awxkee/moxcms.git | `sha256:bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b` |
 | muda | 0.19.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/muda | `sha256:1dd04e60bc0b07438a6771710ee1698f98f6ebbc7f89b61264af1563b8aeb878` |
 | ndk | 0.9.0 | MIT OR Apache-2.0 | https://github.com/rust-mobile/ndk | `sha256:c3f42e7bbe13d351b6bead8286a43aac9534b82bd3cc43e47037f012ebfd62d4` |
 | ndk-sys | 0.6.0+11769913 | MIT OR Apache-2.0 | https://github.com/rust-mobile/ndk | `sha256:ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873` |
 | new_debug_unreachable | 1.0.6 | MIT | https://github.com/mbrubeck/rust-debug-unreachable | `sha256:650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086` |
 | nix | 0.28.0 | MIT | https://github.com/nix-rust/nix | `sha256:ab2156c4fce2f8df6c499cc1c763e4394b7482525bf2a9701c9d79d215f519e4` |
+| nom | 8.0.0 | MIT | https://github.com/rust-bakery/nom | `sha256:df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405` |
 | notify | 8.2.0 | CC0-1.0 | https://github.com/notify-rs/notify.git | `sha256:4d3d07927151ff8575b7087f245456e549fea62edf0ec4e565a5ee50c8402bc3` |
 | notify-rust | 4.18.0 | MIT OR Apache-2.0 | https://github.com/hoodie/notify-rust | `sha256:c5b4c1b4f2aa9f25f63a7a49d3dd0ed567b3670da15330a66b29434be899b891` |
 | notify-types | 2.1.0 | MIT OR Apache-2.0 | https://github.com/notify-rs/notify.git | `sha256:42b8cfee0e339a0337359f3c88165702ac6e600dc01c0cc9579a92d62b08477a` |
@@ -311,12 +325,14 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | openssl-probe | 0.2.1 | MIT OR Apache-2.0 | https://github.com/rustls/openssl-probe | `sha256:7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe` |
 | option-ext | 0.2.0 | MPL-2.0 | https://github.com/soc/option-ext.git | `sha256:04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d` |
 | ordered-stream | 0.2.0 | MIT OR Apache-2.0 | https://github.com/danieldg/ordered-stream | `sha256:9aa2b01e1d916879f73a53d01d1d6cee68adbb31d6d9177a8cfce093cced1d50` |
+| os_pipe | 1.2.3 | MIT | https://github.com/oconnor663/os_pipe.rs | `sha256:7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967` |
 | pango | 0.18.3 | MIT | https://github.com/gtk-rs/gtk-rs-core | `sha256:7ca27ec1eb0457ab26f3036ea52229edbdb74dee1edd29063f5b9b010e7ebee4` |
 | pango-sys | 0.18.0 | MIT | https://github.com/gtk-rs/gtk-rs-core | `sha256:436737e391a843e5933d6d9aa102cb126d501e815b83601365a948a518555dc5` |
 | parking | 2.2.1 | Apache-2.0 OR MIT | https://github.com/smol-rs/parking | `sha256:f38d5652c16fde515bb1ecef450ab0f6a219d619a7274976324d5e377f7dceba` |
 | parking_lot | 0.12.5 | MIT OR Apache-2.0 | https://github.com/Amanieu/parking_lot | `sha256:93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a` |
 | parking_lot_core | 0.9.12 | MIT OR Apache-2.0 | https://github.com/Amanieu/parking_lot | `sha256:2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1` |
 | percent-encoding | 2.3.2 | MIT OR Apache-2.0 | https://github.com/servo/rust-url/ | `sha256:9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220` |
+| petgraph | 0.8.3 | MIT OR Apache-2.0 | https://github.com/petgraph/petgraph | `sha256:8701b58ea97060d5e5b155d383a69952a60943f0e6dfe30b04c287beb0b27455` |
 | phf | 0.12.1 | MIT | https://github.com/rust-phf/rust-phf | `sha256:913273894cec178f401a31ec4b656318d95473527be05c0752cc41cdc32be8b7` |
 | phf | 0.13.1 | MIT | https://github.com/rust-phf/rust-phf | `sha256:c1562dc717473dbaa4c1f85a36410e03c047b2e7df7f45ee938fbef64ae7fadf` |
 | phf_codegen | 0.13.1 | MIT | https://github.com/rust-phf/rust-phf | `sha256:49aa7f9d80421bca176ca8dbfebe668cc7a2684708594ec9f3c0db0805d5d6e1` |
@@ -346,6 +362,8 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | proc-macro2 | 1.0.107 | MIT OR Apache-2.0 | https://github.com/dtolnay/proc-macro2 | `sha256:985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9` |
 | pulldown-cmark | 0.13.4 | MIT | https://github.com/raphlinus/pulldown-cmark | `sha256:e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e` |
 | pulldown-cmark-escape | 0.11.0 | MIT | https://github.com/raphlinus/pulldown-cmark | `sha256:007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae` |
+| pxfm | 0.1.30 | BSD-3-Clause OR Apache-2.0 | https://github.com/awxkee/pxfm | `sha256:d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea` |
+| quick-error | 2.0.1 | MIT/Apache-2.0 | http://github.com/tailhook/quick-error | `sha256:a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3` |
 | quick-xml | 0.41.0 | MIT | https://github.com/tafia/quick-xml | `sha256:e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1` |
 | quinn | 0.11.11 | MIT OR Apache-2.0 | https://github.com/quinn-rs/quinn | `sha256:0c1a41e437b6bbd489372cd4971de128e85c855f56c57f283d20ff016cf7c0a8` |
 | quinn-proto | 0.11.16 | MIT OR Apache-2.0 | https://github.com/quinn-rs/quinn | `sha256:2f4bfc015262b9df63c8845072ce59068853ff5872180c2ce2f13038b970e560` |
@@ -449,6 +467,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | tauri-codegen | 2.6.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri | `sha256:08279169ff42f8fc45a1dbc9dcae888893ba95288142e5880c59b93a26d2cfc5` |
 | tauri-macros | 2.6.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri | `sha256:e8b394794f399a421811d06966343e7933fcae92d59f5180b9388d1174497a45` |
 | tauri-plugin | 2.6.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri | `sha256:74be5dd4bed9afbd145e5716b5fa2ec28cbc29c34ffa61c258c9273d896c8020` |
+| tauri-plugin-clipboard-manager | 2.3.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:206dc20af4ed210748ba945c2774e60fd0acd52b9a73a028402caf809e9b6ecf` |
 | tauri-plugin-notification | 2.3.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:01fc2c5ff41105bd1f7242d8201fdf3efd70749b82fa013a17f2126357d194cc` |
 | tauri-plugin-opener | 2.5.4 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:17e1bea14edce6b793a04e2417e3fd924b9bc4faae83cdee7d714156cceeed29` |
 | tauri-plugin-single-instance | 2.4.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:b3214becf9ef5783c0ae99a3bb25adf5353a7a16ebf53e74b909e29205735c6c` |
@@ -463,6 +482,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | thiserror | 2.0.20 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | `sha256:ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f` |
 | thiserror-impl | 1.0.69 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | `sha256:4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1` |
 | thiserror-impl | 2.0.20 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | `sha256:bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af` |
+| tiff | 0.11.3 | MIT | https://github.com/image-rs/image-tiff | `sha256:b63feaf3343d35b6ca4d50483f94843803b0f51634937cc2ec519fc32232bc52` |
 | time | 0.3.55 | MIT OR Apache-2.0 | https://github.com/time-rs/time | `sha256:cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134` |
 | time-core | 0.1.9 | MIT OR Apache-2.0 | https://github.com/time-rs/time | `sha256:9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109` |
 | time-macros | 0.2.32 | MIT OR Apache-2.0 | https://github.com/time-rs/time | `sha256:7e689342a48d2ea927c87ea50cabf8594854bf940e9310208848d680d668ed85` |
@@ -493,6 +513,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | tracing-attributes | 0.1.31 | MIT | https://github.com/tokio-rs/tracing | `sha256:7490cfa5ec963746568740651ac6781f701c9c5ea257c58e057f3ba8cf69e8da` |
 | tracing-core | 0.1.36 | MIT | https://github.com/tokio-rs/tracing | `sha256:db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a` |
 | tray-icon | 0.24.2 | MIT OR Apache-2.0 | https://github.com/tauri-apps/tray-icon | `sha256:045979e3f037cd18ad1cb2a419dfda133c5c29c9f3453370079f2255d46c257e` |
+| tree_magic_mini | 3.2.2 | MIT | https://github.com/mbrubeck/tree_magic/ | `sha256:b8765b90061cba6c22b5831f675da109ae5561588290f9fa2317adab2714d5a6` |
 | try-lock | 0.2.5 | MIT | https://github.com/seanmonstar/try-lock | `sha256:e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b` |
 | typed-path | 0.12.3 | MIT OR Apache-2.0 | https://github.com/chipsenkbeil/typed-path | `sha256:8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e` |
 | typeid | 1.0.3 | MIT OR Apache-2.0 | https://github.com/dtolnay/typeid | `sha256:bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c` |
@@ -527,6 +548,12 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | wasm-bindgen-macro-support | 0.2.127 | MIT OR Apache-2.0 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro-support | `sha256:e11d33f857dc2fb11b8bc75aee111aa9cbeb12cd9f25efd3d4c2a3dd4e235284` |
 | wasm-bindgen-shared | 0.2.127 | MIT OR Apache-2.0 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared | `sha256:7ef64dbcc55df09c7e5a46182d181c2cfa3e925f3da937ea764728b4bbb9dcbf` |
 | wasm-streams | 0.5.0 | MIT OR Apache-2.0 | https://github.com/MattiasBuelens/wasm-streams/ | `sha256:9d1ec4f6517c9e11ae630e200b2b65d193279042e28edd4a2cda233e46670bbb` |
+| wayland-backend | 0.3.17 | MIT | https://github.com/smithay/wayland-rs | `sha256:38a91b4eaddff87b1cd1074985e3713da4af2c49742d1b356b2c01670a67a078` |
+| wayland-client | 0.31.15 | MIT | https://github.com/smithay/wayland-rs | `sha256:e3c36a0f861ad76d0901f2800b46321410d9f73f2ea88aac0650d86c32688073` |
+| wayland-protocols | 0.32.13 | MIT | https://github.com/smithay/wayland-rs | `sha256:23d0c813de3daa2ed6520af85a3bd49b0e722a3078506899aa9686fea58dc4b6` |
+| wayland-protocols-wlr | 0.3.12 | MIT | https://github.com/smithay/wayland-rs | `sha256:eb04e52f7836d7c7976c78ca0250d61e33873c34156a2a1fc9474828ec268234` |
+| wayland-scanner | 0.31.11 | MIT | https://github.com/smithay/wayland-rs | `sha256:338e30461b3a2b67d70eb30a6d89f8e0c93a833e07d2ae89085cd070c4a00ac0` |
+| wayland-sys | 0.31.11 | MIT | https://github.com/smithay/wayland-rs | `sha256:d8eab23fefc9e41f8e841df4a9c707e8a8c4ed26e944ef69297184de2785e3be` |
 | web-sys | 0.3.104 | MIT OR Apache-2.0 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys | `sha256:c435338968042f4f59a557f690a253676d47ce13ceb55d70100e7facf6620a30` |
 | web-time | 1.1.0 | MIT OR Apache-2.0 | https://github.com/daxpedda/web-time | `sha256:5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb` |
 | web_atoms | 0.2.6 | MIT OR Apache-2.0 | https://github.com/servo/html5ever | `sha256:ba8b815c1b593dc0baf78dd0f4fc8fdb2de53198fb1163738093e9a311c33fb3` |
@@ -536,6 +563,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | webview2-com | 0.38.2 | MIT | https://github.com/wravery/webview2-rs | `sha256:7130243a7a5b33c54a444e54842e6a9e133de08b5ad7b5861cd8ed9a6a5bc96a` |
 | webview2-com-macros | 0.8.1 | MIT | https://github.com/wravery/webview2-rs | `sha256:67a921c1b6914c367b2b823cd4cde6f96beec77d30a939c8199bb377cf9b9b54` |
 | webview2-com-sys | 0.38.2 | MIT | https://github.com/wravery/webview2-rs | `sha256:381336cfffd772377d291702245447a5251a2ffa5bad679c99e61bc48bacbf9c` |
+| weezl | 0.1.12 | MIT OR Apache-2.0 | https://github.com/image-rs/weezl | `sha256:a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88` |
 | winapi | 0.3.9 | MIT/Apache-2.0 | https://github.com/retep998/winapi-rs | `sha256:5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419` |
 | winapi-i686-pc-windows-gnu | 0.4.0 | MIT/Apache-2.0 | https://github.com/retep998/winapi-rs | `sha256:ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6` |
 | winapi-util | 0.1.11 | Unlicense OR MIT | https://github.com/BurntSushi/winapi-util | `sha256:c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22` |
@@ -616,10 +644,13 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | winreg | 0.52.0 | MIT | https://github.com/gentoo90/winreg-rs | `sha256:a277a57398d4bfa075df44f501a17cfdf8542d224f0d36095a2adc7aee4ef0a5` |
 | winreg | 0.55.0 | MIT | https://github.com/gentoo90/winreg-rs | `sha256:cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97` |
 | wit-bindgen | 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/wit-bindgen | `sha256:1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e` |
+| wl-clipboard-rs | 0.9.3 | MIT/Apache-2.0 | https://github.com/YaLTeR/wl-clipboard-rs | `sha256:e9651471a32e87d96ef3a127715382b2d11cc7c8bb9822ded8a7cc94072eb0a3` |
 | writeable | 0.6.3 | Unicode-3.0 | https://github.com/unicode-org/icu4x | `sha256:1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4` |
 | wry | 0.55.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/wry | `sha256:186f9871daa55fd9c016578b810d149de58367113db7fb72b462d2323ce19514` |
 | x11 | 2.21.0 | MIT | https://github.com/AltF02/x11-rs.git | `sha256:502da5464ccd04011667b11c435cb992822c2c0dbde1770c988480d312a0db2e` |
 | x11-dl | 2.21.0 | MIT | https://github.com/AltF02/x11-rs.git | `sha256:38735924fedd5314a6e548792904ed8c6de6636285cb9fec04d5b1db85c1516f` |
+| x11rb | 0.13.2 | MIT OR Apache-2.0 | https://github.com/psychon/x11rb | `sha256:9993aa5be5a26815fe2c3eacfc1fde061fc1a1f094bf1ad2a18bf9c495dd7414` |
+| x11rb-protocol | 0.13.2 | MIT OR Apache-2.0 | https://github.com/psychon/x11rb | `sha256:ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd` |
 | yoke | 0.8.3 | Unicode-3.0 | https://github.com/unicode-org/icu4x | `sha256:709fe23a0424b6a435d82152b1bd3fdfb0833487d5fa90d05d42762a9891fef5` |
 | yoke-derive | 0.8.2 | Unicode-3.0 | https://github.com/unicode-org/icu4x | `sha256:de844c262c8848816172cef550288e7dc6c7b7814b4ee56b3e1553f275f1858e` |
 | zbus | 5.19.0 | MIT | https://github.com/z-galaxy/zbus/ | `sha256:5db4be7c075cb421e4b7ee645541604239bd243ba7c357511f4ff3a74b555907` |
@@ -637,6 +668,8 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | zerovec-derive | 0.11.3 | Unicode-3.0 | https://github.com/unicode-org/icu4x | `sha256:625dc425cab0dca6dc3c3319506e6593dcb08a9f387ea3b284dbd52a92c40555` |
 | zip | 8.6.0 | MIT | https://github.com/zip-rs/zip2 | `sha256:2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b` |
 | zmij | 1.0.23 | MIT | https://github.com/dtolnay/zmij | `sha256:29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b` |
+| zune-core | 0.5.3 | MIT OR Apache-2.0 OR Zlib | https://github.com/etemesi254/zune-image | `sha256:d56377fd46368984a170bc5aac5567e52ca5da874caa60bea39fcbca78fb658b` |
+| zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib | https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg | `sha256:27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296` |
 | zvariant | 5.14.0 | MIT | https://github.com/z-galaxy/zbus/ | `sha256:b5e28c25bd8bb8da5a1f3e7065d0c156b9ee9a7973adf78b0e35eaefdf3b1b5c` |
 | zvariant_derive | 5.14.0 | MIT | https://github.com/z-galaxy/zbus/ | `sha256:d496a145685283b67e232bd9e47377f6b60ad9d51e3601b23867f77c42477f96` |
 | zvariant_utils | 4.0.0 | MIT | https://github.com/z-galaxy/zbus/ | `sha256:629d80ece222cad20fe0e8741be493c4ab166acf3b85341bdc2cdbcfd8f3c2d6` |
@@ -683,6 +716,7 @@ to the CI license gate but are not shipped in the compiled frontend bundle.
 | @marijn/find-cluster-break | 1.0.3 | MIT | https://code.haverbeke.berlin/marijn/find-cluster-break | `sha512-FY+MKLBoTsLNJF/eLWaOsXGdz6uh3Iu1axjPf6TUq92IYumcTcXWHoS747JARLkcdlJ/Waiaxc5wQfFO8jC6NA==` |
 | @mermaid-js/parser | 1.2.0 | MIT | https://github.com/mermaid-js/mermaid/tree/develop/packages/mermaid/parser/#readme | `sha512-oYPyv8A4As1yH5Bx+04iQEQxXuIQDe0GKCNSRgao6z8AM9jixXIfP0vsppRLvGf+nKIOb9/LdpWA4YuJiVvESA==` |
 | @tauri-apps/api | 2.11.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri#readme | `sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==` |
+| @tauri-apps/plugin-clipboard-manager | 2.3.2 | MIT OR Apache-2.0 | https://github.com/tauri-apps/plugins-workspace#readme | `sha512-CUlb5Hqi2oZbcZf4VUyUH53XWPPdtpw43EUpCza5HWZJwxEoDowFzNUDt1tRUXA8Uq+XPn17Ysfptip33sG4eQ==` |
 | @tauri-apps/plugin-opener | 2.5.4 | MIT OR Apache-2.0 | https://github.com/tauri-apps/plugins-workspace#readme | `sha512-1HnPkb+AmgO29HBazm4uPLKB+r7zzcTBW1d0fyYp1uP+jwtpoiNDGKMMzz58SFp49nOIrxdE3aUJtT57lfO9CQ==` |
 | @types/d3 | 7.4.3 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3 | `sha512-lZXZ9ckh5R8uiFVt8ogUNf+pIrK4EsWrx2Np75WvF/eTpJ0FMHNhjXk8CKEx/+gpHbNQyJWehbFaTvqmHWB3ww==` |
 | @types/d3-array | 3.2.2 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-array | `sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw==` |
