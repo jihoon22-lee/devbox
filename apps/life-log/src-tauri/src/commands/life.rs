@@ -131,6 +131,7 @@ pub fn set_projects(
     paths: Vec<String>,
 ) -> Result<(), String> {
     db::set_setting(&state.db.lock().unwrap(), "projects", &paths.join("\n"));
+    crate::integration::request_snapshot_write(state.inner().clone());
     Ok(())
 }
 

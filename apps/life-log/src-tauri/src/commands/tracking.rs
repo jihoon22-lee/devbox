@@ -13,6 +13,7 @@ pub struct AppState {
     pub db: Mutex<Connection>,
     pub sessionizer: Mutex<Sessionizer>,
     pub tracking: AtomicBool,
+    pub snapshot_writer: Mutex<()>,
 }
 
 pub fn now_ms() -> i64 {

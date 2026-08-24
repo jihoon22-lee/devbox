@@ -1,5 +1,6 @@
 mod commands;
 mod core;
+mod integration;
 
 use commands::tracking::{spawn_poller, AppState};
 use core::db::init;
@@ -73,8 +74,10 @@ pub fn run() {
                 db: Mutex::new(conn),
                 sessionizer: Mutex::new(Sessionizer::new()),
                 tracking: AtomicBool::new(true),
+                snapshot_writer: Mutex::new(()),
             });
-            app.manage(state);
+            app.manage(state.clone());
+            integration::spawn_snapshot_writer(state);
             spawn_poller(app.handle());
             setup_tray(app)?;
             Ok(())

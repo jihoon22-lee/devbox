@@ -194,6 +194,11 @@ Repo Manager는 catalog revision 4부터 `path`를 수신한다. cold/hot reques
 비지속 등록 초안으로 표시하며, 사용자가 명시적으로 선택할 때만 기존 read-only scan을 수행한다.
 상대·traversal·누락·비-repository 경로는 raw path를 반향하지 않는 복구 가능한 오류가 된다.
 
+Life Log는 catalog revision 5부터 `snapshot:life-log/projects/v1`을 생산한다. 등록된 안전한
+절대 프로젝트 경로와 최근 7일의 마지막 활동 시각·세션 수·활동 시간만 `projects` view로
+발행하고, 창 제목·앱명·원문 세션은 귀속 과정 밖으로 내보내지 않는다. 앱 시작, 프로젝트
+설정 변경, 60초 주기 갱신은 같은 `life-log/v1/summary.json` 전체를 원자 교체한다.
+
 `apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
 
 ## 통합 앱 (Workbench)

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 4,
+  "catalogRevision": 5,
   "apps": [
     {
       "id": "port-manager",
@@ -97,7 +97,7 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": [],
-      "produces": [],
+      "produces": ["snapshot:life-log/projects/v1"],
       "actions": []
     },
     {

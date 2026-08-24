@@ -4,5 +4,6 @@ pub mod db;
 pub mod idle;
 pub mod models;
 pub mod privacy;
+pub mod project_snapshot;
 pub mod sessionizer;
 pub mod window;
