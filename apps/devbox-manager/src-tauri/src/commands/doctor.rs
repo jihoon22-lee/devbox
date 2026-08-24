@@ -34,7 +34,7 @@ fn version_of(cmd: impl AsRef<std::ffi::OsStr>, args: &[&str]) -> Option<String>
 
 /// 전체 진단 실행 (read-only).
 #[tauri::command]
-pub fn run_diagnosis() -> Vec<DiagnosisItem> {
+pub fn run_diagnosis(app: tauri::AppHandle) -> Vec<DiagnosisItem> {
     let mut items = Vec::new();
 
     // WSL
@@ -175,6 +175,29 @@ pub fn run_diagnosis() -> Vec<DiagnosisItem> {
             "모든 identifier가 com.devbox.*".into()
         } else {
             format!("비정상: {bad_ids:?}")
+        },
+    });
+
+    let metadata_ok = crate::commands::manager::data_dir(&app)
+        .ok()
+        .zip(devbox_launch::runtime_catalog_path())
+        .and_then(|(manager_root, catalog_path)| {
+            catalog_path.parent().map(|common_root| {
+                crate::core::runtime_metadata::runtime_metadata_consistent(
+                    &manager_root,
+                    common_root,
+                    CATALOG_JSON,
+                )
+            })
+        })
+        .unwrap_or(false);
+    items.push(DiagnosisItem {
+        name: "runtime-metadata".into(),
+        ok: metadata_ok,
+        detail: if metadata_ok {
+            "runtime catalog와 install-root locator 정합".into()
+        } else {
+            "runtime metadata를 다음 실행에 재동기화해야 함".into()
         },
     });
 

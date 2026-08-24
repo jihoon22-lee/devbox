@@ -1,22 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import catalogJson from "../../catalog.json";
 import { isTauri } from "./lib/isTauri";
 import type { CatalogApp, Current, InstalledApp, ReleaseManifest } from "./types";
 
-const MOCK_CATALOG: CatalogApp[] = [
-  { id: "port-manager", displayName: "Port Manager", productName: "PortManager", identifier: "com.devbox.portmanager", cargoPackage: "port-manager", appDir: "apps/port-manager", release: true, managerVisible: true, selfManaged: false },
-  { id: "developer-toolbox", displayName: "Developer Toolbox", productName: "DevToolbox", identifier: "com.devbox.developertoolbox", cargoPackage: "developer-toolbox", appDir: "apps/developer-toolbox", release: true, managerVisible: true, selfManaged: false },
-  { id: "wsl-desktop", displayName: "WSL Desktop", productName: "WSLDesktop", identifier: "com.devbox.wsldesktop", cargoPackage: "wsl-desktop", appDir: "apps/wsl-desktop", release: true, managerVisible: true, selfManaged: false },
-  { id: "api-playground", displayName: "API Playground", productName: "ApiPlayground", identifier: "com.devbox.apiplayground", cargoPackage: "api-playground", appDir: "apps/api-playground", release: true, managerVisible: true, selfManaged: false },
-  { id: "everything-plus", displayName: "Everything+", productName: "EverythingPlus", identifier: "com.devbox.everythingplus", cargoPackage: "everything-plus", appDir: "apps/everything-plus", release: true, managerVisible: true, selfManaged: false },
-  { id: "knowledge-base", displayName: "Knowledge", productName: "Knowledge", identifier: "com.devbox.knowledgebase", cargoPackage: "knowledge-base", appDir: "apps/knowledge-base", release: true, managerVisible: true, selfManaged: false },
-  { id: "life-log", displayName: "Life Log", productName: "LifeLog", identifier: "com.devbox.lifelog", cargoPackage: "life-log", appDir: "apps/life-log", release: true, managerVisible: true, selfManaged: false },
-  { id: "devbox-manager", displayName: "Devbox Manager", productName: "DevboxManager", identifier: "com.devbox.devboxmanager", cargoPackage: "devbox-manager", appDir: "apps/devbox-manager", release: true, managerVisible: false, selfManaged: true },
-  { id: "code-pad", displayName: "Code Pad", productName: "Code Pad", identifier: "com.devbox.codepad", cargoPackage: "code-pad", appDir: "apps/code-pad", release: true, managerVisible: true, selfManaged: false },
-  { id: "run-manager", displayName: "Run Manager", productName: "Run Manager", identifier: "com.devbox.runmanager", cargoPackage: "run-manager", appDir: "apps/run-manager", release: true, managerVisible: true, selfManaged: false },
-  { id: "workbench", displayName: "Workbench", productName: "Workbench", identifier: "com.devbox.workbench", cargoPackage: "workbench", appDir: "apps/workbench", release: true, managerVisible: true, selfManaged: false },
-  { id: "webhook-lab", displayName: "Webhook Lab", productName: "WebhookLab", identifier: "com.devbox.webhooklab", cargoPackage: "webhook-lab", appDir: "apps/webhook-lab", release: true, managerVisible: true, selfManaged: false },
-  { id: "repo-manager", displayName: "Repo Manager", productName: "RepoManager", identifier: "com.devbox.repomanager", cargoPackage: "repo-manager", appDir: "apps/repo-manager", release: true, managerVisible: true, selfManaged: false },
-];
+const MOCK_CATALOG: CatalogApp[] = catalogJson.apps;
 
 const MOCK_MANIFEST: ReleaseManifest = {
   schemaVersion: 1,
@@ -88,8 +75,9 @@ export async function runDiagnosis(): Promise<DiagnosisItem[]> {
       { name: "pnpm", ok: true, detail: "9.0.0" },
       { name: "rustc", ok: true, detail: "rustc 1.97.1" },
       { name: "cargo", ok: true, detail: "cargo 1.97.1" },
-      { name: "devbox-data", ok: true, detail: "카탈로그 12개 · 데이터 디렉터리 존재 10개" },
+      { name: "devbox-data", ok: true, detail: "카탈로그 13개 · 데이터 디렉터리 존재 10개" },
       { name: "catalog-ids", ok: true, detail: "모든 identifier가 com.devbox.*" },
+      { name: "runtime-metadata", ok: true, detail: "runtime catalog와 install-root locator 정합" },
     ];
   }
   return invoke<DiagnosisItem[]>("run_diagnosis");
