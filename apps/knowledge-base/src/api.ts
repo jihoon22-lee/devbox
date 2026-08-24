@@ -2,6 +2,22 @@ import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./lib/isTauri";
 import type { RenderedDoc, SearchResult, TreeEntry } from "./types";
 
+export type OpenTarget =
+  | { kind: "path"; path: string; line: number | null; column: number | null }
+  | { kind: "profile"; id: string }
+  | { kind: "workspace"; path: string }
+  | { kind: "query"; text: string };
+
+export interface OpenRequest {
+  target: OpenTarget;
+  from: string | null;
+}
+
+export interface InboundNote {
+  path: string;
+  content: string;
+}
+
 const MOCK_TREE: TreeEntry[] = [
   { path: "Projects", is_dir: true },
   { path: "Projects/FamilyCard.md", is_dir: false },
@@ -37,6 +53,27 @@ export async function readFile(rel: string): Promise<string> {
     return rel.endsWith(".md") ? "# Mock note\n\nEdit me." : "";
   }
   return invoke<string>("read_file", { rel });
+}
+
+export async function openInboundNote(path: string): Promise<InboundNote> {
+  if (!isTauri()) {
+    const normalized = path.replace(/\\/g, "/");
+    return { path: normalized.split("/Knowledge/").pop() ?? normalized, content: "# Mock note\n" };
+  }
+  return invoke<InboundNote>("open_inbound_note", { path });
+}
+
+/** Cold start 또는 같은 실행 중 instance가 남긴 요청을 한 번 가져온다. */
+export async function takePendingOpen(): Promise<OpenRequest | null> {
+  if (!isTauri()) return null;
+  return invoke<OpenRequest | null>("take_pending_open");
+}
+
+/** Hot-instance relaunch 알림. payload 대신 pending pull을 authoritative하게 사용한다. */
+export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise<() => void> {
+  if (!isTauri()) return () => undefined;
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<OpenRequest>("devbox://open", (event) => cb(event.payload));
 }
 
 export async function writeFile(rel: string, content: string): Promise<void> {

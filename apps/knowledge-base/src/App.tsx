@@ -6,15 +6,20 @@ import {
   listTags,
   listTree,
   onDocsChanged,
+  onOpenRequest,
+  openInboundNote,
   readFile,
   renameFile,
   renderMarkdown,
   searchDocs,
+  takePendingOpen,
   writeFile,
+  type OpenRequest,
 } from "./api";
 import MarkdownEditor from "./components/MarkdownEditor";
 import MarkdownPreview from "./components/MarkdownPreview";
 import type { RenderedDoc, SearchResult, TreeEntry } from "./types";
+import { routeOpenRequest } from "./lib/applink";
 import "./App.css";
 
 type ViewMode = "edit" | "split" | "preview";
@@ -123,18 +128,84 @@ export default function App() {
     }
   };
 
-  const runSearch = async () => {
-    if (!query.trim()) {
+  const runSearch = async (requestedQuery = query) => {
+    const normalized = requestedQuery.trim();
+    if (!normalized) {
       setResults([]);
       return;
     }
     setError(null);
     try {
-      setResults(await searchDocs(query.trim()));
+      setResults(await searchDocs(normalized));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+
+  const handleOpenRequest = async (request: OpenRequest) => {
+    const action = routeOpenRequest(request);
+    switch (action.kind) {
+      case "openNote":
+        if (dirty && !confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?")) return;
+        setError(null);
+        try {
+          const note = await openInboundNote(action.path);
+          setSelected(note.path);
+          setContent(note.content);
+          setDirty(false);
+        } catch {
+          setError("요청한 노트를 열 수 없습니다");
+        }
+        break;
+      case "search":
+        setQuery(action.query);
+        await runSearch(action.query);
+        break;
+      case "error":
+        setError(action.message);
+        break;
+    }
+  };
+  const handleOpenRequestRef = useRef(handleOpenRequest);
+  handleOpenRequestRef.current = handleOpenRequest;
+
+  // listener를 먼저 등록한 뒤 cold-start pending slot을 pull한다. Hot relaunch
+  // event도 payload를 직접 적용하지 않고 같은 slot을 take해 중복 처리를 막는다.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    const consumePendingOpen = () => {
+      void takePendingOpen()
+        .then((request) => {
+          if (!disposed && request) void handleOpenRequestRef.current(request);
+        })
+        .catch(() => {
+          if (!disposed) setError("열기 요청을 처리하지 못했습니다");
+        });
+    };
+    let coldStartConsumed = false;
+    const consumeColdStart = () => {
+      if (disposed || coldStartConsumed) return;
+      coldStartConsumed = true;
+      consumePendingOpen();
+    };
+
+    void onOpenRequest(() => consumePendingOpen())
+      .then((stop) => {
+        if (disposed) stop();
+        else {
+          unlisten = stop;
+          consumeColdStart();
+        }
+      })
+      .catch(() => consumeColdStart());
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   const openDaily = async () => {
     setError(null);

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 1,
+  "catalogRevision": 2,
   "apps": [
     {
       "id": "port-manager",
@@ -82,7 +82,7 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": [],
+      "accepts": ["path", "query"],
       "produces": ["snapshot:knowledge-base/activity/v1"],
       "actions": []
     },

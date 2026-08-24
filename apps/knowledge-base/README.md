@@ -10,12 +10,14 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 - **검색** — 제목+본문 FTS5 (`crates/search`)
 - **태그** — YAML frontmatter(`tags:`) 파싱, 태그 목록·필터
 - **데일리 노트** — 날짜별 생성·연결
+- **앱 간 열기** — catalog의 `Path`로 Knowledge root 안의 Markdown 노트를 열고, `Query`로 즉시 검색. cold start와 실행 중 재호출 모두 같은 pending-open 경로를 사용
 
 ## 기술
 
 - 파일을 원본(source of truth)으로 두고 SQLite는 검색용 보조 인덱스
 - `crates/markdown` `sanitize()`로 HTML 살균, mermaid `securityLevel: "strict"`
 - `core/store.rs`의 자체 `safe_join`으로 루트 밖 경로 차단
+- inbound Path는 canonical Knowledge root 내부의 실제 `.md` 파일만 허용하고 10 MiB로 제한한다. 실패 시 raw path·OS 오류를 UI에 반향하지 않는다
 
 ## 데이터
 
@@ -26,4 +28,3 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 
 - 순수 로직: `src-tauri/src/core/` → `cargo test`
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
-

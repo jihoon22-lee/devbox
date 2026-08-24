@@ -168,6 +168,13 @@ Repo Manager의 "다른 앱으로 열기"는 이 계약의 첫 동적 UI 소비�
 repository에 더 구체적인 Workspace payload를 우선한다. 대상 앱 ID나 executable 경로를
 프론트에 하드코딩하지 않으며, source app 자신은 메뉴에서 제외한다.
 
+Knowledge Base는 catalog revision 2부터 `path`와 `query`를 수신한다. cold argv와 hot
+single-instance relaunch를 모두 one-shot `PendingOpen`으로 모으고, frontend listener는 event
+payload를 직접 적용하지 않고 pending slot을 pull한다. Path는 canonical Knowledge root 내부의
+bounded Markdown 파일로 해석·읽기까지 backend에서 수행하고, Query는 bounded trim 뒤 기존
+FTS 검색 상태로 연결한다. 잘못된 요청은 창을 유지한 채 raw 입력 없는 복구 가능한 오류로
+표시한다.
+
 `apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
 
 ## 통합 앱 (Workbench)

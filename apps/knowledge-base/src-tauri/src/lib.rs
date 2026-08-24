@@ -1,3 +1,4 @@
+mod applink;
 mod commands;
 mod core;
 mod integration;
@@ -6,7 +7,7 @@ use commands::docs::AppState;
 use commands::watcher::KnowledgeWatcher;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 // TODO(0.5.0): v0.4.x 이전 사용자를 위한 1회성 마이그레이션. 두 릴리스 뒤 제거한다.
 const LEGACY_IDENTIFIER: &str = "com.workbench.knowledgebase";
@@ -32,12 +33,31 @@ fn migrate_local_data() {
 pub fn run() {
     migrate_local_data();
     tauri::Builder::default()
+        // single-instance는 opener와 setup보다 먼저 등록해 두 번째 프로세스가
+        // 중복 초기화되기 전에 argv를 기존 instance로 전달한다.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            match devbox_applink::parse_argv(&args) {
+                Ok(Some(request)) => {
+                    app.state::<applink::PendingOpen>().set(request.clone());
+                    let _ = app.emit("devbox://open", request);
+                }
+                Ok(None) => {}
+                Err(_) => eprintln!("applink: invalid request"),
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            applink::take_pending_open,
             commands::docs::get_root,
             commands::docs::set_root,
             commands::docs::list_tree,
             commands::docs::read_file,
+            commands::docs::open_inbound_note,
             commands::docs::write_file,
             commands::docs::create_file,
             commands::docs::rename_file,
@@ -48,6 +68,12 @@ pub fn run() {
             commands::markdown::render_markdown,
         ])
         .setup(|app| {
+            app.manage(applink::PendingOpen::new());
+            match devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>()) {
+                Ok(Some(request)) => app.state::<applink::PendingOpen>().set(request),
+                Ok(None) => {}
+                Err(_) => eprintln!("applink: invalid request"),
+            }
             let dir = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let conn = core::db::init(&dir.join("data.db"))?;

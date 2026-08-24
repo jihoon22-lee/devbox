@@ -60,11 +60,11 @@ fn v2_parses_revision_capabilities_actions_and_fake_sixteenth_app() {
 }
 
 #[test]
-fn repository_catalog_is_valid_v2_without_advertising_future_features() {
+fn repository_catalog_tracks_current_shipped_capabilities() {
     let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
-    assert_eq!(catalog.catalog_revision, Some(1));
+    assert_eq!(catalog.catalog_revision, Some(2));
     assert_eq!(catalog.apps.len(), 13);
     assert!(catalog.apps.iter().all(|app| app.actions.is_empty()));
     assert_eq!(
@@ -72,7 +72,14 @@ fn repository_catalog_is_valid_v2_without_advertising_future_features() {
             .into_iter()
             .map(|app| app.id)
             .collect::<Vec<_>>(),
-        vec!["wsl-desktop", "code-pad", "workbench"]
+        vec!["wsl-desktop", "knowledge-base", "code-pad", "workbench"]
+    );
+    assert_eq!(
+        capable_targets(&catalog, "query")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["knowledge-base"]
     );
 }
 

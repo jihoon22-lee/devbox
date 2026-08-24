@@ -22,6 +22,13 @@ pub struct TreeEntry {
     pub is_dir: bool,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InboundNote {
+    pub path: String,
+    pub content: String,
+}
+
 /// KnowledgeRoot 경로를 반환한다. 미설정이면 Documents/Knowledge로 초기화.
 ///
 /// `commands::markdown`도 이미지·링크 해석을 위해 루트 경로가 필요해 `pub(crate)`로
@@ -76,6 +83,22 @@ pub fn read_file(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Result<
     let root = resolve_root(&conn)?;
     let path = store::safe_join(&root, &rel)?;
     store::read_file(&path)
+}
+
+/// Untrusted applink `Path`를 현재 Knowledge root 안의 실제 Markdown note로
+/// 해석하고 같은 canonical target에서 bounded read까지 수행한다. 실패 메시지는
+/// 요청 경로나 OS 오류를 반향하지 않는다.
+#[tauri::command]
+pub fn open_inbound_note(
+    state: tauri::State<'_, Arc<AppState>>,
+    path: String,
+) -> Result<InboundNote, String> {
+    let root = {
+        let conn = state.db.lock().unwrap();
+        resolve_root(&conn).map_err(|_| "요청한 노트를 열 수 없습니다".to_string())?
+    };
+    let (path, content) = crate::core::inbound::read_note(&root, &path).map_err(str::to_string)?;
+    Ok(InboundNote { path, content })
 }
 
 #[tauri::command]
