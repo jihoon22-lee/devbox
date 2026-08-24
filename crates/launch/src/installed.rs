@@ -614,12 +614,11 @@ mod tests {
     fn executable_dot_segments_are_rejected_even_when_they_canonicalize_inside_root() {
         let layout = TestLayout::new();
         let executable = layout.install("code-pad", "0.5.0");
-        let dotted = executable
-            .parent()
-            .unwrap()
-            .join("ignored")
-            .join("..")
-            .join("code-pad.exe");
+        let separator = std::path::MAIN_SEPARATOR;
+        let dotted = format!(
+            "{}{separator}ignored{separator}..{separator}code-pad.exe",
+            executable.parent().unwrap().display()
+        );
         fs::create_dir_all(executable.parent().unwrap().join("ignored")).unwrap();
         layout.write_manifest(json!([
             {"app":"code-pad","version":"0.5.0","mode":"portable","exe_path":dotted}
