@@ -63,6 +63,7 @@ devbox/
 │  └─ ...
 │
 ├─ crates/                 # Rust 공용
+│  ├─ applink/             # 앱 간 argv·single-instance 수신 계약 (v0.4.1)
 │  ├─ filesystem/          # 파일 walk/검색 순회  (everything-plus, code-pad)
 │  ├─ git/                 # Windows 안정 git subprocess 실행  (devbox-manager, life-log, repo-manager, workbench)
 │  ├─ launch/              # 설치된 앱 exe 해석·실행           (repo-manager, workbench)
@@ -87,7 +88,7 @@ devbox/
 
 - 앱 이름은 **kebab-case** (`port-manager`) — 디렉터리·git 브랜치·crate 의존에 사용
 - 앱별 Rust 크레이트 이름은 `_` → `-` 변환 후 사용: `port-manager` → `port_manager`
-- 각 앱의 산출물: `PortManager.exe`, `DevToolbox.exe`, `WSLDesktop.exe`, `ApiPlayground.exe`, `EverythingPlus.exe`, `Knowledge.exe`, `LifeLog.exe`, `DevboxManager.exe`, `CodePad.exe`, `RunManager.exe`
+- 각 앱의 산출물: `PortManager.exe`, `DevToolbox.exe`, `WSLDesktop.exe`, `ApiPlayground.exe`, `EverythingPlus.exe`, `Knowledge.exe`, `LifeLog.exe`, `DevboxManager.exe`, `CodePad.exe`, `RunManager.exe`, `Workbench.exe`, `WebhookLab.exe`, `RepoManager.exe`
 
 ## 3. 공통 기술 스택
 

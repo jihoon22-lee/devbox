@@ -1,7 +1,7 @@
 # 앱 간 연동 — 인바운드 계약과 생태계 확장 설계
 
 - 상태: v0.4.1 범위(§1의 Path/Workspace 라우팅·§3·§5.1) 구현 및 안정판 배포 완료;
-  v0.5.0 catalog·Profile/Query·snapshot 정리와 protocol v2 handoff **범위 확정, 구현 전**
+  v0.5.0 catalog·Profile/Query·snapshot 정리와 protocol v2 handoff **범위 확정, 개발 착수**
 - 작성일: 2026-08-17
 - 범위: 저장소 전체 — `crates/applink`, `crates/launch`, `crates/integration`, 신규
   `crates/catalog`, `apps/catalog.json`, 기존 13개 앱 + 계획된 Devbox Launcher·Log Lens
@@ -80,7 +80,8 @@ knowledge-base ──write snapshot v1────► (소비자 없음)   ⚠ �
 
 ### 0.3 설계 기준 — 생태계 확장
 
-**14번째 앱을 추가할 때 기존 13개 앱을 한 줄도 고치지 않아도 연결되어야 한다.**
+**v0.5.0의 14·15번째 예정 앱과 그 이후 새 앱을 추가할 때 기존 13개 앱을 한 줄도 고치지
+않아도 연결되어야 한다.**
 
 이 기준이 아래 세 결정을 낳는다:
 
@@ -201,10 +202,27 @@ protocolVersion, id, kind, sourceApp, targetApp?, createdAt, expiresAt, payload
 - 128-bit random id, 기본 TTL 10분, serialized payload 10MiB 상한.
 - create-new + atomic rename으로 완성되지 않은 payload를 노출하지 않는다.
 - `targetApp`이 있으면 그 앱만 consume할 수 있다.
-- kind/schema/source/target/expiry/size를 검증한 뒤 읽고 성공하면 한 번만 소비해 삭제한다.
-- 처리 실패는 TTL까지 재시도할 수 있게 남기되 손상·만료 payload는 정리한다.
+- kind/schema/source/target/expiry/size를 검증한 뒤 claim하고 성공하면 한 번만 ack해 삭제한다.
+- 처리 실패는 claim을 restore해 TTL까지 재시도할 수 있게 남기되 손상·만료 payload는 정리한다.
 - 큰 binary는 payload에 복제하지 않고 canonical path, size, digest만 전달한다.
 - secret 원문은 금지한다. `api-request/v1`에는 `${SECRET_NAME}` 참조만 허용한다.
+
+read-then-delete로는 동시 consumer가 같은 payload를 처리할 수 있으므로 상태를 고정한다.
+
+```text
+pending --atomic claim(consumer+lease)--> claimed --ack--> consumed/deleted
+   ^                                      |
+   └----------- restore/nack --------------┘
+```
+
+- producer는 pending payload를 create-new + atomic rename으로 발행한다. claim은 exclusive
+  rename/claim record와 consumer token/lease를 사용해 한 consumer만 소유하게 한다.
+- 처리 성공 뒤에만 token을 확인한 `ack`가 삭제하고, validation/import 실패는 `restore`가
+  pending으로 되돌린다. consumer crash는 lease expiry 후 재시도한다.
+- claim/ack/restore는 id, target, kind, schema와 token을 재검증하며 concurrent claim,
+  duplicate ack, wrong target, crash recovery를 계약 테스트한다.
+- 기본 lease는 60초이며 payload `expiresAt`을 넘지 않는다. 같은 token의 상한 내 lease 갱신만
+  허용하고 만료 token의 ack/restore는 거부한다.
 
 표준 kind는 `api-request/v1`, `webhook-fixture/v1`, `knowledge-draft/v1`, `log-source/v1`,
 `toolbox-text/v1`이다. 새 kind는 source/target/payload schema와 redaction 규칙을 설계 문서에
@@ -226,21 +244,28 @@ if !matches!(app_id.as_str(), "code-pad" | "wsl-desktop" | "workbench") {
 ```
 
 그리고 UI의 버튼 세 개도 하드코딩이다(`apps/repo-manager/src/App.tsx:105-107`).
-14번째 이후 앱이 "경로를 받을 수 있다"고 해도, repo-manager를 고치지 않으면 나타나지 않는다.
+14·15번째 예정 앱과 그 이후 앱이 "경로를 받을 수 있다"고 해도, repo-manager를 고치지
+않으면 나타나지 않는다.
 같은 문제가 "다른 앱으로 열기"를 넣고 싶은 모든 앱에서 반복된다.
 
 ### 2.2 선언
 
-`apps/catalog.json`의 `schemaVersion`을 2로 올리고 각 항목에 추가한다:
+`apps/catalog.json`의 `schemaVersion`을 2로 올리고 단조 증가하는 `catalogRevision`과 각
+항목의 capability를 추가한다:
 
 ```json
 {
-  "id": "code-pad",
-  "productName": "Code Pad",
-  "identifier": "com.devbox.codepad",
-  ...
-  "accepts": ["path", "workspace"],
-  "produces": ["snapshot:code-pad/workspace/v1"]
+  "schemaVersion": 2,
+  "catalogRevision": 1,
+  "apps": [
+    {
+      "id": "code-pad",
+      "productName": "Code Pad",
+      "identifier": "com.devbox.codepad",
+      "accepts": ["path", "workspace"],
+      "produces": ["snapshot:code-pad/workspace/v1"]
+    }
+  ]
 }
 ```
 
@@ -253,6 +278,9 @@ if !matches!(app_id.as_str(), "code-pad" | "wsl-desktop" | "workbench") {
 - **새 앱은 `catalog.json` 항목 하나로 capability가 맞는 기존 앱 메뉴에 등장한다**
 - 구조화 payload는 `handoff:<kind>/v<n>`, snapshot은
   `snapshot:<producer>/<kind>/v<n>` 형식으로 선언한다
+- 정적 launcher action은 항목의 `actions`에 `actionId`, `actionVersion`, label, target과
+  versioned payload kind만 선언한다. profile/job/query의 동적 상태와 secret은 catalog에
+  저장하지 않고 snapshot에서 발행한다.
 - schema v1 또는 capability가 없는 항목은 빈 배열로 읽어 하위 호환한다
 
 ### 2.3 런타임 카탈로그 배포
@@ -266,18 +294,27 @@ if !matches!(app_id.as_str(), "code-pad" | "wsl-desktop" | "workbench") {
 1. devbox-manager가 설치/업데이트마다 `<common_root>/catalog.json`
    (`%LOCALAPPDATA%\devbox\catalog.json`)에 **런타임 사본을 원자적으로 쓴다.**
    `crates/integration::write_atomic`의 tmp+rename 패턴을 재사용한다
-2. 새 순수 `crates/catalog`가 schema v1/v2 type, runtime/build-time 사본 읽기,
-   capability filter를 제공한다:
+2. 새 순수 `crates/catalog`가 schema v1/v2 type, `catalogRevision`, runtime/build-time
+   freshness 선택, capability filter를 제공한다:
    ```rust
    pub struct AppRef { pub id: String, pub display_name: String, pub accepts: Vec<String> }
    pub fn capable_targets(kind: &str) -> Vec<AppRef>;
    ```
+   유효한 runtime 사본의 revision이 build-time 이상이면 runtime을 사용하고, 더 오래됐거나
+   손상된 사본은 build-time으로 폴백한다. Manager는 현재 revision보다 낮은 사본을 쓰지 않는다.
 3. `crates/launch::installed_targets(kind)`가 capable target에
    `resolve_installed`를 적용해 실제 설치된 것만 남긴다. `crates/applink`는 argv 계약만
    담당한다. `launch`가 이미 `applink`에 의존하므로 이 분리가 순환 의존을 막는다
-4. **폴백**: 런타임 사본이 없으면(단독 설치, Manager 미실행) 각 앱이 빌드 타임
-   `include_str!` 사본을 바닥값으로 쓴다. 런타임 사본이 있으면 그쪽이 이긴다
-5. `api.ts:6-18`의 손수 중복은 제거하고 카탈로그에서 파생시킨다
+4. catalog와 custom root의 선행 계약으로
+   `%LOCALAPPDATA%\devbox\install-roots\v1\registry.json` versioned locator를 둔다.
+   `schemaVersion`, 단조 증가하는 `registryRevision`, 기록 당시 `catalogRevision`, `rootId`,
+   canonical root path와 app-owned manifest 경로를 기록하고 tmp+rename으로 갱신한다. catalog
+   revision 변경만으로 root를 무효화하지 않는다. `crates/launch`가 이를 해석하며 v0.4.x 고정 위치는 migration
+   기간에만 read-only fallback으로 사용한다. custom root UI는 이 locator를 소비한 뒤 붙인다.
+5. **폴백**: 런타임 사본이 없으면(단독 설치, Manager 미실행) 각 앱이 빌드 타임
+   `include_str!` 사본을 바닥값으로 쓴다. `catalogRevision`이 freshness 조건을 통과한 runtime
+   사본만 build-time보다 우선한다
+6. `api.ts:6-18`의 손수 중복은 제거하고 카탈로그에서 파생시킨다
 
 폴백이 있어야 하는 이유: 앱은 devbox-manager 없이 단독 설치될 수 있다. 그 경우 자기 자신은
 알지만 다른 앱의 설치 여부는 모른다 — `resolve_installed`가 `None`을 반환하므로 메뉴가
@@ -376,6 +413,29 @@ life-log의 "Data sources" 패널(`apps/life-log/src/App.tsx:233-235`)이 하드
 기존 `SourceStatus`(available / schemaVersion / producerVersion / generatedAt / freshnessMs /
 error)는 그대로 쓰고, 목록만 발견 결과로 채운다.
 
+Devbox Launcher가 소비하는 동적 source는 다음 versioned snapshot을 producer가 발행한다.
+
+| snapshot | producer | 내용 |
+|---|---|---|
+| `workbench/profiles/v1` | Workbench | recent profile/workspace id와 표시 metadata |
+| `repo-manager/repositories/v1` | Repo Manager | repository/worktree id와 path label |
+| `run-manager/jobs-services/v1` | Run Manager | job/service id, 상태와 실행 action metadata |
+| `everything-plus/saved-queries/v1` | Everything+ | query/filter만, 결과 목록은 제외 |
+| `wsl-desktop/profiles/v1` | WSL Desktop | profile/layout/distro/cwd metadata |
+
+각 envelope은 `schemaVersion`, `producer`, `producerVersion`, `generatedAt`과 `data.views`를
+포함하고 `%LOCALAPPDATA%\devbox\integration\<app-id>\v1\summary.json`에 atomic replace로
+쓴다. 각 view는 자체 `schemaVersion`, `freshnessMs`, `entries`를 가지며 entry에는 versioned
+action payload와 안정적인 id만 둔다. secret, environment value, raw log, full query result는
+금지한다. stale·손상 source 하나가 다른 source 검색을 막지 않는다. Developer Toolbox
+transformer와 Knowledge capture는 동적 snapshot이 아니라 catalog의 static action entry로
+선언한다.
+
+기존 snapshot path에는 producer/version별 파일이 하나뿐이다. 여러 kind를 발행하는 WSL
+Desktop과 Run Manager는 `data.views` 아래 `runtime`/`profiles`, `status`/`jobs-services` view를
+한 envelope에 모아 한 번만 atomic replace한다. kind별 writer가 같은 `summary.json`을 서로
+덮어쓰지 않으며 catalog capability가 지원 view와 version을 선택한다.
+
 `read_snapshot`은 이미 파일 없음을 `Ok(None)`으로, producer/schema 불일치를 `Err`로
 처리한다(`crates/integration/src/lib.rs:76-97`). 발견 기반으로 바뀌어도 이 계약은 그대로다.
 
@@ -416,9 +476,12 @@ repo-manager의 하드코딩 allowlist(`commands.rs:148`)는 §2의 카탈로그
 
 ### 5.2 v0.5.0
 
-`crates/catalog` + §2 전체 → §4 전체 → 나머지 앱 수신 → §1.5 handoff core → handoff별
-producer/consumer 순서다. 카탈로그가 있어야 컨텍스트 메뉴의 "다른 앱으로 열기"가
-생성되고, handoff kind를 수신할 설치 앱도 안전하게 찾을 수 있다.
+`crates/catalog` + `catalogRevision`/versioned install-root locator → §4 snapshot producer와
+자동 발견 → 나머지 앱 수신 → §1.5 handoff core(claim/ack/restore) → P2 Webhook Lab → API
+Playground → P2 Life Log → Knowledge → P3 Devbox Launcher/Log Lens bootstrap → P3 Toolbox
+→ API → P3 Run/WSL → Log Lens producer 순서다. 카탈로그와 locator가 있어야 컨텍스트
+메뉴의 "다른 앱으로 열기"와 custom-root executable discovery가 생성되고, handoff kind를
+수신할 설치 앱도 안전하게 찾을 수 있다.
 
 다음 수동 검증은 v0.5.0 범위이며 v0.4.1 릴리스 게이트가 아니다.
 
@@ -436,10 +499,10 @@ producer/consumer 순서다. 카탈로그가 있어야 컨텍스트 메뉴의 "�
 | `parse_argv` | 알려진 플래그 전부. **모르는 플래그 무시**(전방 호환 회귀 방지 — 명시적으로 단언). 타깃 없음 → `Ok(None)`. 값 누락 → `Err`. 맨 앞 위치 인자 → `Path` |
 | `build_argv` ↔ `parse_argv` | 왕복 테스트. 모든 `OpenTarget` 변형 |
 | 카탈로그 파싱 | `accepts`가 없는 구버전 항목 → 빈 목록으로 폴백(에러 아님) |
-| `installed_targets` | 설치되지 않은 앱은 제외되는지. 런타임 사본 우선, 없으면 빌드타임 폴백 |
+| `installed_targets` | 설치되지 않은 앱은 제외되는지. `catalogRevision` freshness를 통과한 runtime만 우선하고, 없거나 stale/corrupt면 build-time 폴백. versioned install-root locator와 custom root manifest 경계 |
 | `discover()` | 스냅샷 0개/1개/N개. 손상된 JSON은 건너뛰고 나머지를 반환하는지 |
 | single-instance | 콜드 스타트와 두 번째 인스턴스가 **같은 `PendingOpen` 경로**를 쓰는지 |
-| handoff | create/consume, 10분 expiry, wrong target, 10MiB 상한, 손상 JSON, 중복 consume |
+| handoff | create/claim/ack/restore, 10분 expiry, wrong target, 10MiB 상한, 손상 JSON, 중복·동시 consume, consumer crash lease recovery |
 | secret 경계 | handoff/snapshot에 secret 원문이 없고 API payload에는 이름 참조만 있는지 |
 
 **실기 검증** (Windows):
@@ -457,18 +520,20 @@ producer/consumer 순서다. 카탈로그가 있어야 컨텍스트 메뉴의 "�
 | 1 | `crates/applink` 타입 + `parse_argv`/`build_argv` + 테스트 | v0.4.1 |
 | 2 | code-pad·wsl-desktop·workbench 수신 + single-instance | v0.4.1 |
 | 3 | `crates/launch`가 `build_argv` 사용 | v0.4.1 |
-| 4 | `crates/catalog` + catalog v2 `accepts`/`produces` + v1 fallback | v0.5.0 |
-| 5 | 런타임 카탈로그 배포 + `crates/launch::installed_targets` + `api.ts` 중복 제거 | v0.5.0 |
+| 4 | `crates/catalog` + catalog v2 `accepts`/`produces`/`actions` + `catalogRevision` + v1 fallback | v0.5.0 |
+| 5 | 런타임 카탈로그 freshness 배포 + versioned install-root locator(`registryRevision` 별도) + `crates/launch::installed_targets` + `api.ts` 중복 제거 | v0.5.0 |
 | 6 | repo-manager allowlist 제거 → 카탈로그 기반 | v0.5.0 |
 | 7 | life-log `projects` producer → workbench 직접 DB 읽기 삭제 | v0.5.0 |
 | 8 | life-log가 knowledge-base consumer + `core/readers.rs` 삭제 | v0.5.0 |
 | 9 | wsl-desktop producer (Docker/터미널) + 포트 구조화 | v0.5.0 |
 | 10 | `discover()` + life-log Data sources 패널 | v0.5.0 |
 | 11 | 나머지 앱 수신 라우팅 (§1.4) | v0.5.0 |
-| 12 | protocol v2 `Handoff` + one-time store + 계약 테스트 | v0.5.0 |
+| 12 | protocol v2 `Handoff` + atomic claim/ack/restore store + 계약 테스트 | v0.5.0 |
 | 13 | Webhook Lab → API Playground `api-request/v1` | v0.5.0 |
-| 14 | Toolbox → API, Life Log → Knowledge handoff | v0.5.0 |
-| 15 | Run Manager·WSL Desktop → Log Lens `log-source/v1` | v0.5.0 |
-| 16 | Devbox Launcher가 catalog/snapshot action을 applink로 실행 | v0.5.0 |
+| 14 | Life Log → Knowledge `knowledge-draft/v1` | v0.5.0 |
+| 15 | Devbox Launcher catalog/snapshot action consumer bootstrap | v0.5.0 |
+| 16 | Log Lens `log-source/v1` receiver bootstrap | v0.5.0 |
+| 17 | Developer Toolbox → API Playground `api-request/v1` (P3 integration) | v0.5.0 |
+| 18 | Run Manager·WSL Desktop → Log Lens `log-source/v1` (P3 integration) | v0.5.0 |
 
 1과 2는 한 PR로 묶는다 — 계약과 첫 소비자를 분리하면 검증이 안 된다.

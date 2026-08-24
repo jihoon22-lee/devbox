@@ -85,7 +85,8 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 #### P1 — 선행 필수
 
 1. 네이티브 우선·외부 도구 보완 원칙과 bundled dependency/license 지침.
-2. API Playground의 resolved secret History 저장 결함 수정과 구버전 History 안전 migration.
+2. API Playground의 resolved secret History·Collection·cURL·응답/오류 경계 수정(v0.4.2
+   선행 hotfix), backend-only resolve와 localStorage 기반 구버전 History fail-closed migration.
 3. catalog schema v2, runtime catalog, installed target discovery, 하드코딩 allowlist 제거.
 4. Knowledge·Everything+·Repo Manager inbound/single-instance 수신 확대.
 5. Life Log/Knowledge/WSL snapshot producer·consumer 정리와 자동 발견, direct DB read 제거.
@@ -99,8 +100,9 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 
 #### P2 — 순서가 유동적인 필수 후속
 
-1. `OpenTarget::Handoff` protocol v2와 one-time handoff: Webhook/Toolbox→API,
-   Life Log→Knowledge, Run/WSL→Log Lens.
+1. `OpenTarget::Handoff` protocol v2와 atomic one-time handoff: P2 Webhook→API,
+   Life Log→Knowledge. P3 Launcher/Log Lens bootstrap 이후 Toolbox→API와 Run/WSL→Log Lens를
+   연결한다.
 2. Port Manager command line·WSL identity-safe kill.
 3. Toolbox UUID v7/ULID/HTML/URL/HMAC/JWT verify/Lorem/Markdown table/내장 QR.
 4. API Playground OpenAPI 3.x import, GraphQL, SSE, WebSocket.
