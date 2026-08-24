@@ -468,6 +468,7 @@ describe("LspControlPanel", () => {
     ).toBe(false));
     fireEvent.change(rendered.getByLabelText("서버 종류"), { target: { value: "managed" } });
     fireEvent.click(rendered.getByRole("button", { name: "이 언어 설정 적용" }));
+    await waitFor(() => expect(rendered.getByText("managed")).toBeTruthy());
     fireEvent.click(rendered.getByRole("button", { name: "설정 저장" }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledWith(
       expect.objectContaining({
