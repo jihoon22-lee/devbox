@@ -25,8 +25,10 @@
   `requiresSecretReview`를 표시하며, 변환 실패 시 v1 원문은 UI에 노출하지 않고 다음 실행에서
   다시 시도한다. raw 원문 backup은 만들지 않는다.
 - **요청·응답 redaction** — response headers/body, final URL, redirect 위치와 오류는 secret,
-  Authorization, Cookie 및 민감한 token 패턴을 redaction한다. cross-origin redirect에서는
-  Authorization/Cookie 등 민감한 인증 헤더를 다음 요청에 전달하지 않는다.
+  Authorization, Cookie 및 민감한 token 패턴을 redaction한다. 모든 cross-origin redirect에서는
+  Authorization/Cookie/API-key 헤더와 auth를 다음 요청에 전달하지 않고 요청 body도 억제한다.
+  메서드를 보존하는 307/308 redirect에도 동일하게 적용하고, 목적지 URL 자체에 민감정보가
+  포함된 cross-origin redirect는 follow 전에 차단해 fail-closed로 처리한다.
 - **cURL** — 화면과 기본 복사는 masking된 결과만 사용한다. 확인 대화상자 뒤의 원문 복사는
   데스크톱 backend가 일회성으로 생성하며 저장하지 않는다.
 - **브라우저 preview** — Tauri 밖에서는 `fetch` 미리보기만 제공하므로 CORS 제한이 있다.

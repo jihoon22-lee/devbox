@@ -148,7 +148,11 @@ async fn execute_request(req: ResolvedRequest, redactor: &Redactor) -> Result<Ap
     for redirect_count in 0..=MAX_REDIRECTS {
         let mut builder = client.request(method.clone(), current_url.clone());
         for header in &req.headers {
-            if header.key.is_empty() || !should_send_header(&header.key, allow_sensitive) {
+            if header.key.is_empty()
+                || !should_send_header(&header.key, allow_sensitive)
+                || !include_body && is_body_header(&header.key)
+                || !allow_sensitive && redactor.redact_text(&header.value) != header.value
+            {
                 continue;
             }
             if let (Ok(name), Ok(value)) = (
@@ -189,12 +193,18 @@ async fn execute_request(req: ResolvedRequest, redactor: &Redactor) -> Result<Ap
                 let next_url = current_url
                     .join(location)
                     .map_err(|_| "리다이렉트 위치가 올바르지 않습니다".to_string())?;
+                let redacted_location = redactor.redact_url(next_url.as_str());
+                let cross_origin = is_cross_origin(&current_url, &next_url);
+                if cross_origin && redacted_location != next_url.as_str() {
+                    return Err(safe_cross_origin_redirect_error());
+                }
                 redirects.push(RedirectHop {
                     status: status.as_u16(),
-                    location: redactor.redact_url(next_url.as_str()),
+                    location: redacted_location,
                 });
-                if is_cross_origin(&current_url, &next_url) {
+                if cross_origin {
                     allow_sensitive = false;
+                    include_body = false;
                 }
                 if redirect_switches_to_get(status.as_u16(), &method) {
                     method = reqwest::Method::GET;
@@ -696,6 +706,15 @@ fn should_send_header(name: &str, allow_sensitive: bool) -> bool {
     allow_sensitive || !is_sensitive_name(name)
 }
 
+fn is_body_header(name: &str) -> bool {
+    let normalized = name.to_ascii_lowercase().replace('_', "-");
+    normalized.starts_with("content-")
+        || matches!(
+            normalized.as_str(),
+            "transfer-encoding" | "trailer" | "expect" | "digest" | "repr-digest"
+        )
+}
+
 fn is_cross_origin(from: &reqwest::Url, to: &reqwest::Url) -> bool {
     from.scheme() != to.scheme()
         || from.host_str() != to.host_str()
@@ -709,6 +728,10 @@ fn redirect_switches_to_get(status: u16, method: &reqwest::Method) -> bool {
 
 fn safe_secret_error() -> String {
     "요청에 필요한 secret을 안전하게 해제할 수 없습니다".to_string()
+}
+
+fn safe_cross_origin_redirect_error() -> String {
+    "교차 출처 리다이렉트에 민감정보가 포함되어 요청을 차단했습니다".to_string()
 }
 
 fn safe_request_error(error: reqwest::Error) -> String {
@@ -936,6 +959,16 @@ mod tests {
     }
 
     #[test]
+    fn body_headers_are_identified_for_body_suppression() {
+        assert!(is_body_header("Content-Length"));
+        assert!(is_body_header("content_type"));
+        assert!(is_body_header("Transfer-Encoding"));
+        assert!(is_body_header("Expect"));
+        assert!(!is_body_header("Accept"));
+        assert!(!is_body_header("X-Request-Id"));
+    }
+
+    #[test]
     fn redirect_method_rules_preserve_307_and_switch_post_302() {
         assert!(redirect_switches_to_get(302, &reqwest::Method::POST));
         assert!(redirect_switches_to_get(303, &reqwest::Method::PUT));
@@ -995,7 +1028,7 @@ mod tests {
 
         let destination = std::thread::spawn(move || {
             let (mut stream, _) = destination_server.accept().unwrap();
-            let request = read_http_head(&mut stream);
+            let request = read_http_request(&mut stream);
             observed_tx
                 .send(request.to_ascii_lowercase().contains("\r\nauthorization:"))
                 .unwrap();
@@ -1011,10 +1044,10 @@ mod tests {
 
         let redirect = std::thread::spawn(move || {
             let (mut stream, _) = redirect_server.accept().unwrap();
-            let _ = read_http_head(&mut stream);
+            let _ = read_http_request(&mut stream);
             write!(
                 stream,
-                "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{destination_port}/finish?token=cross-origin-secret\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{destination_port}/finish?request_id=redirect-ok\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
             )
             .unwrap();
         });
@@ -1053,6 +1086,124 @@ mod tests {
     }
 
     #[test]
+    fn live_cross_origin_307_and_308_suppress_body_and_derived_secret_headers() {
+        for status in [307, 308] {
+            let redirect_server = TcpListener::bind("127.0.0.1:0").unwrap();
+            let destination_server = TcpListener::bind("127.0.0.1:0").unwrap();
+            let redirect_port = redirect_server.local_addr().unwrap().port();
+            let destination_port = destination_server.local_addr().unwrap().port();
+
+            let destination = std::thread::spawn(move || {
+                let (mut stream, _) = destination_server.accept().unwrap();
+                let request = read_http_request(&mut stream);
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
+                )
+                .unwrap();
+                request
+            });
+
+            let redirect = std::thread::spawn(move || {
+                let (mut stream, _) = redirect_server.accept().unwrap();
+                let _ = read_http_request(&mut stream);
+                write!(
+                    stream,
+                    "HTTP/1.1 {status} Redirect\r\nLocation: http://127.0.0.1:{destination_port}/finish\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                .unwrap();
+            });
+
+            let body = "payload=cross-origin-secret";
+            let mut request = template();
+            request.url = format!("http://127.0.0.1:{redirect_port}/start");
+            request.body_kind = "raw".into();
+            request.body = body.into();
+            request.headers = vec![
+                KeyValue {
+                    key: "Cookie".into(),
+                    value: "sid=cross-origin-secret".into(),
+                },
+                KeyValue {
+                    key: "X-Api-Key".into(),
+                    value: "cross-origin-secret".into(),
+                },
+                KeyValue {
+                    key: "X-Debug".into(),
+                    value: "cross-origin-secret".into(),
+                },
+                KeyValue {
+                    key: "Content-Type".into(),
+                    value: "text/plain".into(),
+                },
+                KeyValue {
+                    key: "Content-Encoding".into(),
+                    value: "identity".into(),
+                },
+            ];
+            request.auth = Some(AuthConfig {
+                kind: "bearer".into(),
+                token: "cross-origin-secret".into(),
+                ..Default::default()
+            });
+
+            let response = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap();
+            assert_eq!(response.status, 200);
+            let observed = destination.join().unwrap();
+            let observed_lower = observed.to_ascii_lowercase();
+            assert!(observed.starts_with("POST /finish HTTP/1.1"));
+            assert!(!observed.contains("cross-origin-secret"));
+            assert!(!observed_lower.contains("\r\nauthorization:"));
+            assert!(!observed_lower.contains("\r\ncookie:"));
+            assert!(!observed_lower.contains("\r\nx-api-key:"));
+            assert!(!observed_lower.contains("\r\nx-debug:"));
+            assert!(!observed_lower.contains("\r\ncontent-type:"));
+            assert!(!observed_lower.contains("\r\ncontent-encoding:"));
+            redirect.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn live_cross_origin_redirect_with_sensitive_destination_is_blocked() {
+        let redirect_server = TcpListener::bind("127.0.0.1:0").unwrap();
+        let destination_server = TcpListener::bind("127.0.0.1:0").unwrap();
+        let redirect_port = redirect_server.local_addr().unwrap().port();
+        let destination_port = destination_server.local_addr().unwrap().port();
+
+        let redirect = std::thread::spawn(move || {
+            let (mut stream, _) = redirect_server.accept().unwrap();
+            let _ = read_http_request(&mut stream);
+            write!(
+                stream,
+                "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{destination_port}/finish?token=cross-origin-secret\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            .unwrap();
+        });
+
+        let mut request = template();
+        request.method = "GET".into();
+        request.url = format!("http://127.0.0.1:{redirect_port}/start");
+        request.headers.clear();
+        request.body_kind = "none".into();
+        request.body.clear();
+        request.auth = Some(AuthConfig {
+            kind: "bearer".into(),
+            token: "cross-origin-secret".into(),
+            ..Default::default()
+        });
+
+        let error = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap_err();
+        assert_eq!(error, safe_cross_origin_redirect_error());
+        assert!(!error.contains("cross-origin-secret"));
+        assert!(!error.contains(&destination_port.to_string()));
+        redirect.join().unwrap();
+
+        destination_server.set_nonblocking(true).unwrap();
+        let accept_error = destination_server.accept().unwrap_err();
+        assert_eq!(accept_error.kind(), std::io::ErrorKind::WouldBlock);
+    }
+
+    #[test]
     fn live_network_error_is_generic_and_contains_no_request_secret() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -1066,10 +1217,35 @@ mod tests {
         assert!(!error.contains(&port.to_string()));
     }
 
-    fn read_http_head(stream: &mut std::net::TcpStream) -> String {
+    fn read_http_request(stream: &mut std::net::TcpStream) -> String {
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
         let mut bytes = Vec::new();
         let mut buffer = [0_u8; 512];
         while !bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+            let read = stream.read(&mut buffer).unwrap();
+            if read == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&buffer[..read]);
+        }
+        let header_end = bytes
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .map(|index| index + 4)
+            .unwrap_or(bytes.len());
+        let head = String::from_utf8_lossy(&bytes[..header_end]);
+        let content_length = head
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse::<usize>().ok())
+                    .flatten()
+            })
+            .unwrap_or(0);
+        while bytes.len() < header_end + content_length {
             let read = stream.read(&mut buffer).unwrap();
             if read == 0 {
                 break;
