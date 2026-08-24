@@ -12,7 +12,7 @@ devbox — Tauri 13개 데스크톱 앱 모노레포. v0.4.1 안정판을 기준
 - 13개 앱 모두 구현 완료 (v0.4.1 안정판 배포 완료, v0.5.0 개발 착수): port-manager, developer-toolbox, wsl-desktop, api-playground,
   everything-plus, knowledge-base, life-log, devbox-manager, code-pad, run-manager, workbench, webhook-lab, repo-manager
 - 공용 크레이트: `crates/wsl`·`search`·`integration`·`secrets`·`filesystem`·`markdown`·`process`·`git`·`launch`·`applink`·`catalog`
-- 공용 패키지: `packages/tokens`·`editor`·`diff-view`
+- 공용 패키지: `packages/tokens`·`editor`·`diff-view`·`context-menu`
 - 루트 `Cargo.toml`의 `[workspace] members`에 앱/크레이트가 생길 때마다 추가해야 함
 - 프론트 워크스페이스는 `pnpm-workspace.yaml` + 루트 `package.json` (packageManager: pnpm@9)
 

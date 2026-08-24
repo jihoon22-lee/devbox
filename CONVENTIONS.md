@@ -108,6 +108,7 @@ devbox/
 - Vite + **React 19 + TypeScript(엄격 모드)**
 - 스타일: **순수 CSS (앱별 `App.css`)**. 공용 토큰은 `packages/tokens` (`@devbox/tokens`)
 - 편집기: `@codemirror/*` 직접 사용 (code-pad). 공용 설정은 `packages/editor` (추출 완료, knowledge-base·code-pad 사용)
+- 컨텍스트 메뉴: 위치·keyboard·focus·submenu·상태 표현은 `packages/context-menu`; 항목·action·파괴적 확인은 각 앱이 소유
 - 다이어그램: `mermaid` (code-pad, knowledge-base만)
 - Tauri API: `@tauri-apps/api`
 - **선언했으나 실제 사용이 없는 라이브러리**(`lucide-react`, `zustand`, `@tanstack/react-table`,

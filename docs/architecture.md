@@ -17,7 +17,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 ┌──────────────────────────────┐
 │ apps/*   독립 Tauri 앱 (.exe) │  13개
 ├──────────────────────────────┤
-│ packages/*  React 공용       │  tokens, editor, diff-view
+│ packages/*  React 공용       │  tokens, editor, diff-view, context-menu
 ├──────────────────────────────┤
 │ crates/*    Rust 공용        │  filesystem, markdown, process, wsl,
 │                              │  search, integration, secrets, git, launch,
@@ -36,7 +36,9 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 - 구현된 순수 `crates/catalog` — catalog v1/v2 type·revision freshness·runtime/build-time
   fallback·capability filter. runtime file I/O는 후속 Manager 기능이 담당한다.
 - 신규 `crates/logs` — Log Lens가 두 번째 소비자가 되는 시점의 순수 log parsing
-- 신규 `crates/window-state`와 `packages/context-menu`
+- 구현된 `packages/context-menu` — 위치·keyboard navigation·focus restore·submenu·separator·
+  disabled/danger 표현만 소유하며, 기존 13개 앱 적용은 기능 단위 후속 PR이 담당한다.
+- 신규 `crates/window-state`
 - `crates/applink` protocol v2 one-time handoff
 
 상세: [`v0.5.0 네이티브 우선 계획`](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)
