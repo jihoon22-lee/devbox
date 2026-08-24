@@ -28,12 +28,11 @@ Windows 11에서 실행 파일만 받아 바로 쓰려면 **Releases** 페이지
 https://github.com/jihoon22-lee/devbox/releases
 ```
 
-- **현재 최신 안정판:** `v0.4.1`
-- **v0.4.2 상태:** `v0.4.2-rc2`의 Windows packaged H1-A~D와 cleanup은 통과했지만,
-  stable docs-only PR의 required CI·merge, annotated `v0.4.2` tag, stable release
-  workflow와 독립 asset 검증이 아직 남아 있다. 따라서 v0.4.2 stable은 아직 게시되지
-  않았다. [상세 release plan](./docs/superpowers/plans/2026-08-24-v0.4.2-release.md)
-  에서 RC1 historical failure와 RC2 증거, stable gate를 함께 확인할 수 있다.
+- **현재 최신 안정판:** [`v0.4.2`](https://github.com/jihoon22-lee/devbox/releases/tag/v0.4.2)
+- **v0.4.2 검증:** 공식 Windows build/publish/manifest workflow, 13개 앱의 27 release
+  assets 독립 size·SHA-256 대조와 exact stable API Playground portable의 packaged
+  H1-A~D·cleanup을 통과했다. [상세 release plan](./docs/superpowers/plans/2026-08-24-v0.4.2-release.md)에서
+  RC1 historical failure, RC2 수정 검증과 stable evidence를 함께 확인할 수 있다.
 
 - 각 앱의 `*-setup.exe`를 내려받아 설치하면 됩니다. WebView2 런타임(Windows 11 기본 포함)만 있으면 별도 도구 설치가 필요 없습니다.
 - 자세한 사용/설치/트러블슈팅: [docs/windows-guide.md](./docs/windows-guide.md)
