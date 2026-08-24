@@ -28,8 +28,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::request::send_request,
+            commands::request::build_revealed_curl,
+            commands::request::sanitize_persisted_json,
             commands::secrets::seal_secret,
-            commands::secrets::unseal_secret,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

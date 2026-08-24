@@ -1,23 +1,30 @@
 import { useCallback, useEffect, useState } from "react";
-import { sendRequest } from "./api";
-import { addEntry, foldersOf, loadStore, removeEntry, saveStore } from "./lib/collections";
+import { buildRevealedCurl, sanitizePersistedJson, sealSecret, sendRequest } from "./api";
+import { addEntry, emptyStore as emptyCollectionStore, foldersOf, migrateCollections, removeEntry, saveStore } from "./lib/collections";
 import {
   addEnvironment,
-  applyToRequest,
   loadStore as loadEnvStore,
   removeEnvironment,
   saveStore as saveEnvStore,
   setVariable,
 } from "./lib/environments";
-import { unsealSecret, sealSecret } from "./api";
-import type { ApiRequest, ApiResponse, HistoryItem, KeyValue } from "./types";
+import {
+  containsReference,
+  emptyHistoryStore,
+  migrateHistoryStorage,
+  sanitizeRequestForPersistence,
+  saveHistoryStore,
+  toRequestTemplate,
+  type HistoryStore,
+} from "./lib/persistence";
+import type { ApiResponse, HistoryItem, KeyValue, RequestTemplate } from "./types";
 import "./App.css";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const BODY_KINDS = ["none", "json", "form", "raw"];
 const AUTH_KINDS = ["none", "basic", "bearer", "apikey"];
 
-const emptyReq = (): ApiRequest => ({
+const emptyReq = (): RequestTemplate => ({
   method: "GET",
   url: "",
   headers: [],
@@ -75,7 +82,7 @@ export function statusClass(status: number) {
 }
 
 export default function App() {
-  const [req, setReq] = useState<ApiRequest>(emptyReq);
+  const [req, setReq] = useState<RequestTemplate>(emptyReq);
   const [resp, setResp] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -84,7 +91,7 @@ export default function App() {
   const [showHeaders, setShowHeaders] = useState(false);
   const [pretty, setPretty] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [collections, setCollections] = useState(loadStore);
+  const [collections, setCollections] = useState(emptyCollectionStore);
   const [collName, setCollName] = useState("");
   const [collFolder, setCollFolder] = useState("");
   const [collFilter, setCollFilter] = useState("");
@@ -92,6 +99,9 @@ export default function App() {
   const [envStore, setEnvStore] = useState(loadEnvStore);
   const [currentEnvId, setCurrentEnvId] = useState("");
   const [envName, setEnvName] = useState("");
+  const [migrationNotice, setMigrationNotice] = useState<string | null>(null);
+  const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null);
+  const [persistenceReady, setPersistenceReady] = useState(false);
 
   const currentEnv = envStore.environments.find((e) => e.id === currentEnvId) ?? null;
 
@@ -107,13 +117,19 @@ export default function App() {
     setEnvName("");
   };
 
-  const persistCollections = (store: ReturnType<typeof loadStore>) => {
-    setCollections(store);
-    saveStore(store);
+  const environmentVariables = envStore.environments.flatMap((environment) => environment.variables);
+  const sanitizeForPersistence = (serialized: string) =>
+    sanitizePersistedJson(serialized, environmentVariables);
+
+  const persistCollections = async (store: ReturnType<typeof emptyCollectionStore>) => {
+    const safe = await saveStore(store, sanitizeForPersistence);
+    setCollections(safe);
+    return safe;
   };
 
-  const onSaveCollection = () => {
+  const onSaveCollection = async () => {
     setCollSaving(true);
+    setPersistenceWarning(null);
     try {
       const next = addEntry(
         collections,
@@ -121,53 +137,95 @@ export default function App() {
         Date.now(),
         () => `c-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
       );
-      persistCollections(next);
+      await persistCollections(next);
       setCollName("");
       setCollFolder("");
+    } catch {
+      setPersistenceWarning("민감정보 안전 검증에 실패해 Collection을 저장하지 않았습니다.");
     } finally {
       setCollSaving(false);
     }
   };
 
-  const loadHistory = useCallback(() => {
-    try {
-      setHistory(JSON.parse(localStorage.getItem("apip-history") ?? "[]"));
-    } catch {
-      setHistory([]);
+  useEffect(() => {
+    const historyMigration = migrateHistoryStorage();
+    const initialVariables = envStore.environments.flatMap((environment) => environment.variables);
+    let historyTask: Promise<void>;
+    if (historyMigration.failed) {
+      setPersistenceWarning("이전 History 삭제를 완료하지 못했습니다. 원본은 격리되며 다음 실행에서 재시도합니다.");
+      historyTask = Promise.resolve();
+    } else {
+      historyTask = saveHistoryStore(
+        historyMigration.store,
+        (serialized) => sanitizePersistedJson(serialized, initialVariables),
+      ).then((safe) => {
+        setHistory(safe.history);
+        if (historyMigration.migrated) {
+          setMigrationNotice(`안전을 확인할 수 없는 이전 History ${historyMigration.removedLegacyEntries}건을 제거했습니다.`);
+        }
+      }).catch(() => {
+        setHistory([]);
+        setPersistenceWarning("History v2 안전 검증을 완료하지 못해 내용을 격리했습니다. 다음 실행에서 재시도합니다.");
+      });
     }
+
+    const collectionTask = migrateCollections((serialized) => sanitizePersistedJson(serialized, initialVariables)).then((migration) => {
+      setCollections(migration.store);
+      if (migration.failed) {
+        setPersistenceWarning("이전 Collection 안전 변환을 완료하지 못했습니다. 원본은 격리되며 다음 실행에서 재시도합니다.");
+      } else if (migration.migrated) {
+        setMigrationNotice((current) =>
+          [current, `이전 Collection을 v2로 안전 변환했습니다(검토 필요 ${migration.removedLegacyEntries}건).`]
+            .filter(Boolean)
+            .join(" "),
+        );
+      }
+    });
+    void Promise.allSettled([historyTask, collectionTask]).then(() => setPersistenceReady(true));
+    // 최초 실행 migration은 시작 시점의 봉인 환경 snapshot으로 한 번만 검증한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(loadHistory, [loadHistory]);
+  const persistHistoryRequest = useCallback(async (status?: number) => {
+    const item: HistoryItem = {
+      id: String(Date.now()),
+      saved_at: Date.now(),
+      request: sanitizeRequestForPersistence(req),
+      status,
+    };
+    const candidate: HistoryStore = {
+      ...emptyHistoryStore(),
+      history: [item, ...history].slice(0, 50),
+    };
+    const safe = await saveHistoryStore(candidate, sanitizeForPersistence);
+    setHistory(safe.history);
+  }, [history, req, environmentVariables]);
 
   const onSend = async () => {
     setSending(true);
     setError(null);
     try {
-      // 환경 변수를 원본 template(불변)에 적용한 사본을 보낸다. secret은 해제한다.
-      let effectiveReq = req;
-      if (currentEnv) {
-        const vars = new Map<string, string>();
-        for (const v of currentEnv.variables) {
-          const plain = v.secret ? await unsealSecret(v.value).catch(() => v.value) : v.value;
-          vars.set(v.key, plain);
-        }
-        effectiveReq = applyToRequest(req, vars);
-      }
-      const result = await sendRequest(effectiveReq);
+      const result = await sendRequest(req, currentEnv?.variables ?? []);
       setResp(result);
-      const item: HistoryItem = { id: String(Date.now()), saved_at: Date.now(), request: effectiveReq, status: result.status };
-      const next = [item, ...history].slice(0, 50);
-      setHistory(next);
-      localStorage.setItem("apip-history", JSON.stringify(next));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      try {
+        await persistHistoryRequest(result.status);
+      } catch {
+        setPersistenceWarning("요청은 완료됐지만 민감정보 안전 검증에 실패해 History를 저장하지 않았습니다.");
+      }
+    } catch {
+      setError("요청에 실패했습니다. URL, 연결 상태와 secret 설정을 확인하세요.");
       setResp(null);
+      try {
+        await persistHistoryRequest();
+      } catch {
+        setPersistenceWarning("실패한 요청은 민감정보 안전 검증을 통과하지 못해 History에 저장하지 않았습니다.");
+      }
     } finally {
       setSending(false);
     }
   };
 
-  const setAuth = (patch: Partial<NonNullable<ApiRequest["auth"]>>) =>
+  const setAuth = (patch: Partial<NonNullable<RequestTemplate["auth"]>>) =>
     setReq({
       ...req,
       auth: {
@@ -194,7 +252,10 @@ export default function App() {
             key={h.id}
             className="history-item"
             onClick={() => {
-              setReq(h.request);
+              setReq(toRequestTemplate(h.request));
+              if (h.request.requiresSecretReview) {
+                setPersistenceWarning("마스킹된 History입니다. 민감한 값을 환경 변수 참조로 다시 설정하세요.");
+              }
               setResp(null);
             }}
           >
@@ -220,7 +281,7 @@ export default function App() {
             value={collFolder}
             onChange={(e) => setCollFolder(e.currentTarget.value)}
           />
-          <button className="btn" disabled={collSaving || !req.url.trim()} onClick={onSaveCollection}>
+          <button className="btn" disabled={!persistenceReady || collSaving || !req.url.trim()} onClick={() => void onSaveCollection()}>
             Save
           </button>
         </div>
@@ -245,14 +306,21 @@ export default function App() {
               <button
                 className="coll-open"
                 onClick={() => {
-                  setReq(c.request);
+                  setReq(toRequestTemplate(c.request));
+                  if (c.requiresSecretReview) {
+                    setPersistenceWarning("안전 변환된 Collection입니다. 마스킹된 값을 환경 변수 참조로 다시 설정하세요.");
+                  }
                   setResp(null);
                 }}
               >
                 <span className={`method ${c.request.method.toLowerCase()}`}>{c.request.method}</span>
                 <span className="history-url">{c.folder ? `[${c.folder}] ` : ""}{c.name}</span>
               </button>
-              <button className="coll-del" onClick={() => persistCollections(removeEntry(collections, c.id))}>
+              <button className="coll-del" onClick={() => {
+                void persistCollections(removeEntry(collections, c.id)).catch(() =>
+                  setPersistenceWarning("Collection 삭제 상태를 안전하게 저장하지 못했습니다."),
+                );
+              }}>
                 ✕
               </button>
             </div>
@@ -294,7 +362,9 @@ export default function App() {
                     <button className="btn mini" onClick={() => {
                       const plain = window.prompt(`${v.key} 새 값 입력`);
                       if (plain != null) {
-                        void sealSecret(plain).then((blob) => persistEnvs(setVariable(envStore, currentEnv.id, v.key, blob, true)));
+                        void sealSecret(plain)
+                          .then((blob) => persistEnvs(setVariable(envStore, currentEnv.id, v.key, blob, true)))
+                          .catch(() => setError("secret 봉인에 실패했습니다. 데스크톱 앱에서 다시 시도하세요."));
                       }
                     }}>
                       변경
@@ -312,7 +382,9 @@ export default function App() {
                     />
                     <button className="btn mini" title="이 변수를 봉인해 secret으로 저장" onClick={() => {
                       if (v.value) {
-                        void sealSecret(v.value).then((blob) => persistEnvs(setVariable(envStore, currentEnv.id, v.key, blob, true)));
+                        void sealSecret(v.value)
+                          .then((blob) => persistEnvs(setVariable(envStore, currentEnv.id, v.key, blob, true)))
+                          .catch(() => setError("secret 봉인에 실패했습니다. 데스크톱 앱에서 다시 시도하세요."));
                       }
                     }}>
                       🔒
@@ -338,6 +410,8 @@ export default function App() {
       </aside>
 
       <main className="content">
+        {migrationNotice && <div className="migration-notice">{migrationNotice}</div>}
+        {persistenceWarning && <div className="persistence-warning">{persistenceWarning}</div>}
         <div className="request-bar">
           <select className="method-select" value={req.method} onChange={(e) => setReq({ ...req, method: e.currentTarget.value })}>
             {METHODS.map((m) => (
@@ -353,8 +427,8 @@ export default function App() {
             onChange={(e) => setReq({ ...req, url: e.currentTarget.value })}
             spellCheck={false}
           />
-          <button className="btn send" onClick={() => void onSend()} disabled={sending || !req.url}>
-            {sending ? "Sending..." : "Send"}
+          <button className="btn send" onClick={() => void onSend()} disabled={!persistenceReady || sending || !req.url}>
+            {!persistenceReady ? "Checking..." : sending ? "Sending..." : "Send"}
           </button>
           <button className={`btn ${showCurl ? "active" : ""}`} onClick={() => setShowCurl((v) => !v)} disabled={!req.url}>
             cURL
@@ -366,7 +440,10 @@ export default function App() {
             <div className="io-label">
               cURL
               <button className="copy-btn" onClick={() => void navigator.clipboard.writeText(buildCurl(req))}>
-                Copy
+                마스킹 복사
+              </button>
+              <button className="copy-btn" onClick={() => void copyRevealedCurl(req, currentEnv?.variables ?? [], setError)}>
+                원문 1회 복사
               </button>
             </div>
             <pre className="curl-text">{buildCurl(req) || " "}</pre>
@@ -488,9 +565,10 @@ export function tryPretty(json: string): string {
   }
 }
 
-/** 요청 구성을 curl 명령 문자열로 만든다 (타인에게 전달·디버깅용). */
-export function buildCurl(req: ApiRequest): string {
-  if (!req.url) return "";
+/** 요청 구성을 기본 마스킹된 curl 명령으로 만든다. */
+export function buildCurl(template: RequestTemplate): string {
+  if (!template.url) return "";
+  const req = sanitizeRequestForPersistence(template);
 
   const params = new URLSearchParams();
   for (const p of req.params) if (p.key) params.append(p.key, p.value);
@@ -502,11 +580,11 @@ export function buildCurl(req: ApiRequest): string {
   const headers: [string, string][] = [];
   for (const h of req.headers) if (h.key) headers.push([h.key, h.value]);
   if (req.auth?.kind === "basic" && req.auth.username) {
-    headers.push(["Authorization", `Basic ${btoa(`${req.auth.username}:${req.auth.password}`)}`]);
+    headers.push(["Authorization", "Basic [REDACTED]"]);
   } else if (req.auth?.kind === "bearer" && req.auth.token) {
-    headers.push(["Authorization", `Bearer ${req.auth.token}`]);
+    headers.push(["Authorization", `Bearer ${containsReference(req.auth.token) ? req.auth.token : "[REDACTED]"}`]);
   } else if (req.auth?.kind === "apikey" && req.auth.api_key) {
-    headers.push([req.auth.api_key, req.auth.api_value]);
+    headers.push([req.auth.api_key, containsReference(req.auth.api_value) ? req.auth.api_value : "[REDACTED]"]);
   }
   for (const [k, v] of headers) {
     lines.push(`  --header ${shellQuote(`${k}: ${v}`)}`);
@@ -521,4 +599,21 @@ export function buildCurl(req: ApiRequest): string {
 
 export function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+async function copyRevealedCurl(
+  req: RequestTemplate,
+  environment: Parameters<typeof buildRevealedCurl>[1],
+  setError: (message: string | null) => void,
+): Promise<void> {
+  const confirmed = window.confirm(
+    "원문 cURL에는 Authorization, Cookie, API key와 secret 값이 포함될 수 있습니다. 클립보드에 한 번 복사할까요?",
+  );
+  if (!confirmed) return;
+  try {
+    const revealed = await buildRevealedCurl(req, environment);
+    await navigator.clipboard.writeText(revealed);
+  } catch {
+    setError("원문 cURL을 안전하게 만들거나 복사하지 못했습니다.");
+  }
 }

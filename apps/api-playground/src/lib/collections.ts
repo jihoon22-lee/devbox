@@ -1,70 +1,204 @@
-// collection 저장·조회 순수 로직.
-//
-// [설계] 수명 정책 분리:
-// - history: 자동·단기·상한(50) — 이 파일과 무관 (App.tsx가 localStorage "apip-history" 처리)
-// - collection: 사용자가 명시적으로 저장한 재사용 자산 — "apip-collections"에 영구 보관
-// 두 저장소를 완전히 분리한다.
+// Collection v2 저장·조회 및 v1 fail-closed 안전 변환.
 
-import type { ApiRequest } from "../types";
+import type { PersistedHistoryRequest, RequestTemplate } from "../types";
+import {
+  type PersistenceSanitizer,
+  type StorageMigration,
+  sanitizeRequestForPersistence,
+} from "./persistence";
 
-export const COLLECTION_LS_KEY = "apip-collections";
+export const COLLECTION_V1_LS_KEY = "apip-collections";
+export const COLLECTION_V2_LS_KEY = "apip-collections-v2";
+export const COLLECTION_V1_MARKER_KEY = "apip-collections-v1-migrated";
+export const COLLECTION_VERSION = 2;
 
 export interface CollectionEntry {
   id: string;
   name: string;
   folder: string;
   saved_at: number;
-  request: ApiRequest;
+  request: PersistedHistoryRequest;
+  requiresSecretReview: boolean;
 }
 
 export interface CollectionStore {
-  version: number;
+  version: 2;
   collections: CollectionEntry[];
 }
 
-export const COLLECTION_VERSION = 1;
+interface LegacyCollectionEntry {
+  id?: unknown;
+  name?: unknown;
+  folder?: unknown;
+  saved_at?: unknown;
+  request?: unknown;
+}
 
 export function emptyStore(): CollectionStore {
   return { version: COLLECTION_VERSION, collections: [] };
 }
 
-export function loadStore(): CollectionStore {
+/** v2는 backend 검증 전까지 반환하지 않으며, v1 raw는 어떤 경우에도 UI에 노출하지 않는다. */
+export async function migrateCollections(
+  sanitize: PersistenceSanitizer,
+  storage: Storage = localStorage,
+): Promise<StorageMigration<CollectionStore>> {
+  const rawV1 = storage.getItem(COLLECTION_V1_LS_KEY);
   try {
-    const parsed = JSON.parse(localStorage.getItem(COLLECTION_LS_KEY) ?? "null") as CollectionStore | null;
-    if (parsed && parsed.version === COLLECTION_VERSION && Array.isArray(parsed.collections)) {
-      return parsed;
+    const current = parseStore(storage.getItem(COLLECTION_V2_LS_KEY));
+    const legacy = current ? null : parseLegacyStore(rawV1);
+    const candidate = current ?? legacy?.store ?? emptyStore();
+    const safe = await sanitizeStore(candidate, sanitize);
+
+    storage.setItem(COLLECTION_V2_LS_KEY, JSON.stringify(safe));
+    const readBack = parseStore(storage.getItem(COLLECTION_V2_LS_KEY));
+    if (!readBack) throw new Error("collection v2 read-back failed");
+
+    if (rawV1 !== null) {
+      storage.removeItem(COLLECTION_V1_LS_KEY);
+      if (storage.getItem(COLLECTION_V1_LS_KEY) !== null) {
+        throw new Error("legacy collection deletion failed");
+      }
     }
+    storage.setItem(COLLECTION_V1_MARKER_KEY, "2");
+    if (storage.getItem(COLLECTION_V1_MARKER_KEY) !== "2") {
+      throw new Error("collection marker write failed");
+    }
+    return {
+      store: readBack,
+      migrated: rawV1 !== null,
+      failed: false,
+      removedLegacyEntries: legacy?.removedUnsafeValues ?? 0,
+    };
   } catch {
-    // 손상된 저장소는 빈 스토어로 시작
+    return { store: emptyStore(), migrated: false, failed: true, removedLegacyEntries: 0 };
   }
-  return emptyStore();
 }
 
-export function saveStore(store: CollectionStore): void {
-  localStorage.setItem(COLLECTION_LS_KEY, JSON.stringify(store));
+export async function saveStore(
+  store: CollectionStore,
+  sanitize: PersistenceSanitizer,
+  storage: Storage = localStorage,
+): Promise<CollectionStore> {
+  const safe = await sanitizeStore(store, sanitize);
+  storage.setItem(COLLECTION_V2_LS_KEY, JSON.stringify(safe));
+  const readBack = parseStore(storage.getItem(COLLECTION_V2_LS_KEY));
+  if (!readBack) throw new Error("Collection 안전 저장을 확인할 수 없습니다");
+  return readBack;
 }
 
 export function addEntry(
   store: CollectionStore,
-  input: { name: string; folder: string; request: ApiRequest },
+  input: { name: string; folder: string; request: RequestTemplate },
   now: number,
   makeId: () => string,
 ): CollectionStore {
+  const request = sanitizeRequestForPersistence(input.request);
   const entry: CollectionEntry = {
     id: makeId(),
     name: input.name.trim() || input.request.url || "untitled",
     folder: input.folder.trim(),
     saved_at: now,
-    request: input.request,
+    request,
+    requiresSecretReview: request.requiresSecretReview,
   };
   return { ...store, collections: [entry, ...store.collections] };
 }
 
 export function removeEntry(store: CollectionStore, id: string): CollectionStore {
-  return { ...store, collections: store.collections.filter((c) => c.id !== id) };
+  return { ...store, collections: store.collections.filter((entry) => entry.id !== id) };
 }
 
 export function foldersOf(store: CollectionStore): string[] {
-  const folders = new Set(store.collections.map((c) => c.folder).filter(Boolean));
+  const folders = new Set(store.collections.map((entry) => entry.folder).filter(Boolean));
   return [...folders].sort();
+}
+
+export function parseStore(raw: string | null): CollectionStore | null {
+  try {
+    const parsed = JSON.parse(raw ?? "null") as Partial<CollectionStore> | null;
+    if (parsed?.version !== COLLECTION_VERSION || !Array.isArray(parsed.collections)) return null;
+    if (!parsed.collections.every(isCollectionEntry)) return null;
+    return { version: COLLECTION_VERSION, collections: parsed.collections };
+  } catch {
+    return null;
+  }
+}
+
+async function sanitizeStore(
+  store: CollectionStore,
+  sanitize: PersistenceSanitizer,
+): Promise<CollectionStore> {
+  const original = JSON.stringify(store);
+  const serialized = await sanitize(original);
+  const parsed = parseStore(serialized);
+  if (!parsed) throw new Error("안전한 Collection 형식이 아닙니다");
+  if (serialized === original) return parsed;
+  return {
+    ...parsed,
+    collections: parsed.collections.map((entry) => ({
+      ...entry,
+      requiresSecretReview: true,
+      request: { ...entry.request, requiresSecretReview: true },
+    })),
+  };
+}
+
+function parseLegacyStore(raw: string | null): { store: CollectionStore; removedUnsafeValues: number } | null {
+  if (raw === null) return null;
+  try {
+    const parsed = JSON.parse(raw) as { version?: unknown; collections?: unknown };
+    if (parsed?.version !== 1 || !Array.isArray(parsed.collections)) return { store: emptyStore(), removedUnsafeValues: 1 };
+    let removedUnsafeValues = 0;
+    const collections = parsed.collections.flatMap((candidate: LegacyCollectionEntry, index) => {
+      if (!isRequestTemplate(candidate?.request)) {
+        removedUnsafeValues += 1;
+        return [];
+      }
+      const request = sanitizeRequestForPersistence(candidate.request);
+      if (request.requiresSecretReview) removedUnsafeValues += 1;
+      return [{
+        id: typeof candidate.id === "string" ? candidate.id : `migrated-${index}`,
+        name: typeof candidate.name === "string" ? candidate.name : candidate.request.url || "untitled",
+        folder: typeof candidate.folder === "string" ? candidate.folder : "",
+        saved_at: typeof candidate.saved_at === "number" ? candidate.saved_at : 0,
+        request,
+        requiresSecretReview: request.requiresSecretReview,
+      }];
+    });
+    return { store: { version: COLLECTION_VERSION, collections }, removedUnsafeValues };
+  } catch {
+    return { store: emptyStore(), removedUnsafeValues: 1 };
+  }
+}
+
+function isCollectionEntry(value: unknown): value is CollectionEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Partial<CollectionEntry>;
+  return (
+    typeof entry.id === "string" &&
+    typeof entry.name === "string" &&
+    typeof entry.folder === "string" &&
+    typeof entry.saved_at === "number" &&
+    typeof entry.requiresSecretReview === "boolean" &&
+    isPersistedRequest(entry.request)
+  );
+}
+
+function isRequestTemplate(value: unknown): value is RequestTemplate {
+  if (!value || typeof value !== "object") return false;
+  const request = value as Partial<RequestTemplate>;
+  return (
+    typeof request.method === "string" &&
+    typeof request.url === "string" &&
+    Array.isArray(request.headers) &&
+    Array.isArray(request.params) &&
+    typeof request.body_kind === "string" &&
+    typeof request.body === "string" &&
+    typeof request.timeout_ms === "number"
+  );
+}
+
+function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
+  return isRequestTemplate(value) && typeof (value as Partial<PersistedHistoryRequest>).requiresSecretReview === "boolean";
 }

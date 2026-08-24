@@ -12,7 +12,8 @@ export interface AuthConfig {
   api_value: string;
 }
 
-export interface ApiRequest {
+/** 사용자가 편집하고 저장하는 요청 원본. 환경 변수 참조는 해석하지 않은 채 유지한다. */
+export interface RequestTemplate {
   method: string;
   url: string;
   headers: KeyValue[];
@@ -23,6 +24,14 @@ export interface ApiRequest {
   timeout_ms: number;
 }
 
+/**
+ * 저장 직전에 민감한 직접 입력값을 제거한 요청.
+ * 실제 전송에 쓰이는 ResolvedRequest는 Rust 내부에만 존재한다.
+ */
+export interface PersistedHistoryRequest extends RequestTemplate {
+  requiresSecretReview: boolean;
+}
+
 export interface ApiResponse {
   status: number;
   status_text: string;
@@ -31,11 +40,18 @@ export interface ApiResponse {
   size_bytes: number;
   body: string;
   is_json: boolean;
+  final_url: string;
+  redirects: RedirectHop[];
+}
+
+export interface RedirectHop {
+  status: number;
+  location: string;
 }
 
 export interface HistoryItem {
   id: string;
   saved_at: number;
-  request: ApiRequest;
+  request: PersistedHistoryRequest;
   status?: number;
 }
