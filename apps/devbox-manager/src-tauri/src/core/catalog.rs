@@ -1,90 +1,34 @@
-use serde::{Deserialize, Serialize};
+//! Devbox Manager's build-time catalog adapter.
+//!
+//! Runtime-copy persistence and install-root resolution are intentionally
+//! wired by the follow-up Manager feature. Parsing and validation already use
+//! the shared crate so moving the repository catalog to schema v2 cannot leave
+//! Manager on a divergent private schema.
 
-/// §5.3 앱 카탈로그 스키마의 앱 항목.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct CatalogApp {
-    pub id: String,
-    pub display_name: String,
-    pub product_name: String,
-    pub identifier: String,
-    pub cargo_package: String,
-    pub app_dir: String,
-    pub release: bool,
-    pub manager_visible: bool,
-    pub self_managed: bool,
-}
-
-/// §5.3 앱 카탈로그. 버전은 카탈로그가 소유하지 않는다.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Catalog {
-    pub schema_version: u32,
-    pub apps: Vec<CatalogApp>,
-}
+pub use devbox_catalog::{Catalog, CatalogApp};
 
 pub fn parse_catalog(input: &str) -> Result<Catalog, String> {
-    let catalog: Catalog =
-        serde_json::from_str(input).map_err(|e| format!("카탈로그 파싱 실패: {e}"))?;
-    if catalog.schema_version != 1 {
-        return Err(format!(
-            "지원하지 않는 카탈로그 schemaVersion: {}",
-            catalog.schema_version
-        ));
-    }
-    Ok(catalog)
+    devbox_catalog::parse_catalog(input).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const SAMPLE: &str = r#"{
-        "schemaVersion": 1,
-        "apps": [
-            {
-                "id": "code-pad",
-                "displayName": "Code Pad",
-                "productName": "Code Pad",
-                "identifier": "com.devbox.codepad",
-                "cargoPackage": "code-pad",
-                "appDir": "apps/code-pad",
-                "release": true,
-                "managerVisible": true,
-                "selfManaged": false
-            }
-        ]
-    }"#;
+    const BUILD_CATALOG: &str = include_str!("../../../../catalog.json");
 
     #[test]
-    fn parses_valid_catalog() {
-        let cat = parse_catalog(SAMPLE).unwrap();
-        assert_eq!(cat.schema_version, 1);
-        assert_eq!(cat.apps.len(), 1);
-        assert_eq!(cat.apps[0].id, "code-pad");
-        assert_eq!(cat.apps[0].identifier, "com.devbox.codepad");
-        assert!(cat.apps[0].release);
-        assert!(!cat.apps[0].self_managed);
+    fn parses_the_repository_v2_catalog_through_the_shared_contract() {
+        let catalog = parse_catalog(BUILD_CATALOG).unwrap();
+        assert_eq!(catalog.schema_version, 2);
+        assert_eq!(catalog.catalog_revision, Some(1));
+        assert_eq!(catalog.apps.len(), 13);
     }
 
     #[test]
-    fn rejects_unknown_schema_version() {
-        let bad = SAMPLE.replace("\"schemaVersion\": 1", "\"schemaVersion\": 2");
-        let err = parse_catalog(&bad).unwrap_err();
-        assert!(err.contains("schemaVersion"), "{err}");
-    }
-
-    #[test]
-    fn rejects_missing_field() {
-        let bad = SAMPLE.replace(
-            "\"managerVisible\": true,\n                \"selfManaged\": false",
-            "\"managerVisible\": true",
-        );
-        assert!(parse_catalog(&bad).is_err());
-    }
-
-    #[test]
-    fn rejects_invalid_json() {
-        assert!(parse_catalog("{ not json").is_err());
+    fn adapter_error_does_not_echo_untrusted_catalog_values() {
+        let secret = "TOP_SECRET_CATALOG_VALUE";
+        let error = parse_catalog(&format!("{{not-json:{secret}}}")).unwrap_err();
+        assert!(!error.contains(secret));
     }
 }

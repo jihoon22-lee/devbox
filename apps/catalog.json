@@ -1,5 +1,6 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "catalogRevision": 1,
   "apps": [
     {
       "id": "port-manager",
@@ -10,7 +11,10 @@
       "appDir": "apps/port-manager",
       "release": true,
       "managerVisible": true,
-      "selfManaged": false
+      "selfManaged": false,
+      "accepts": [],
+      "produces": [],
+      "actions": []
     },
     {
       "id": "developer-toolbox",
@@ -21,7 +25,10 @@
       "appDir": "apps/developer-toolbox",
       "release": true,
       "managerVisible": true,
-      "selfManaged": false
+      "selfManaged": false,
+      "accepts": [],
+      "produces": [],
+      "actions": []
     },
     {
       "id": "wsl-desktop",
@@ -32,7 +39,10 @@
       "appDir": "apps/wsl-desktop",
       "release": true,
       "managerVisible": true,
-      "selfManaged": false
+      "selfManaged": false,
+      "accepts": ["path"],
+      "produces": [],
+      "actions": []
     },
     {
       "id": "api-playground",
@@ -43,7 +53,10 @@
       "appDir": "apps/api-playground",
       "release": true,
       "managerVisible": true,
-      "selfManaged": false
+      "selfManaged": false,
+      "accepts": [],
+      "produces": [],
+      "actions": []
     },
     {
       "id": "everything-plus",
@@ -54,7 +67,10 @@
       "appDir": "apps/everything-plus",
       "release": true,
       "managerVisible": true,
-      "selfManaged": false
+      "selfManaged": false,
+      "accepts": [],
+      "produces": [],
+      "actions": []
     },
     {
       "id": "knowledge-base",
@@ -65,7 +81,10 @@
       "appDir": "apps/knowledge-base",
       "release": true,
       "managerVisible": true,
-      "selfManaged": false
+      "selfManaged": false,
+      "accepts": [],
+      "produces": ["snapshot:knowledge-base/activity/v1"],
+      "actions": []
     },
     {
       "id": "life-log",
@@ -76,7 +95,10 @@
       "appDir": "apps/life-log",
       "release": true,
       "managerVisible": true,
-      "selfManaged": false
+      "selfManaged": false,
+      "accepts": [],
+      "produces": [],
+      "actions": []
     },
     {
       "id": "devbox-manager",
@@ -87,7 +109,10 @@
       "appDir": "apps/devbox-manager",
       "release": true,
       "managerVisible": false,
-      "selfManaged": true
+      "selfManaged": true,
+      "accepts": [],
+      "produces": [],
+      "actions": []
     },
     {
       "id": "code-pad",
@@ -98,7 +123,10 @@
       "appDir": "apps/code-pad",
       "release": true,
       "managerVisible": true,
-      "selfManaged": false
+      "selfManaged": false,
+      "accepts": ["path", "workspace"],
+      "produces": [],
+      "actions": []
     },
     {
       "id": "run-manager",
@@ -109,7 +137,10 @@
       "appDir": "apps/run-manager",
       "release": true,
       "managerVisible": true,
-      "selfManaged": false
+      "selfManaged": false,
+      "accepts": [],
+      "produces": ["snapshot:run-manager/status/v1"],
+      "actions": []
     },
     {
       "id": "workbench",
@@ -120,7 +151,10 @@
       "appDir": "apps/workbench",
       "release": true,
       "managerVisible": true,
-      "selfManaged": false
+      "selfManaged": false,
+      "accepts": ["path"],
+      "produces": [],
+      "actions": []
     },
     {
       "id": "webhook-lab",
@@ -131,7 +165,10 @@
       "appDir": "apps/webhook-lab",
       "release": true,
       "managerVisible": true,
-      "selfManaged": false
+      "selfManaged": false,
+      "accepts": [],
+      "produces": [],
+      "actions": []
     },
     {
       "id": "repo-manager",
@@ -142,7 +179,10 @@
       "appDir": "apps/repo-manager",
       "release": true,
       "managerVisible": true,
-      "selfManaged": false
+      "selfManaged": false,
+      "accepts": [],
+      "produces": [],
+      "actions": []
     }
   ]
 }

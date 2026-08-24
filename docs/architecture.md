@@ -20,7 +20,8 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 │ packages/*  React 공용       │  tokens, editor, diff-view
 ├──────────────────────────────┤
 │ crates/*    Rust 공용        │  filesystem, markdown, process, wsl,
-│                              │  search, integration, secrets, git, launch, applink
+│                              │  search, integration, secrets, git, launch,
+│                              │  applink, catalog
 ├──────────────────────────────┤
 │ 공통 인프라: Cargo workspace, │
 │ pnpm workspace, git 모노레포,  │
@@ -28,11 +29,12 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 └──────────────────────────────┘
 ```
 
-위 그림은 v0.4.1의 현재 구조다. v0.5.0에서는 기존 동작을 유지하면서 다음 계획 요소를
-추가한다. 구현 전에는 현재 앱/크레이트 수에 포함하지 않는다.
+위 그림은 v0.5.0 개발 중인 현재 구조다. 기존 동작을 유지하면서 다음 계획 요소를
+순차적으로 추가한다. 구현 전인 항목은 현재 앱/크레이트 수에 포함하지 않는다.
 
 - 신규 독립 앱 `devbox-launcher`, `log-lens` — 목표 15개 앱
-- 신규 순수 `crates/catalog` — catalog v1/v2 type·runtime/build-time load·capability filter
+- 구현된 순수 `crates/catalog` — catalog v1/v2 type·revision freshness·runtime/build-time
+  fallback·capability filter. runtime file I/O는 후속 Manager 기능이 담당한다.
 - 신규 `crates/logs` — Log Lens가 두 번째 소비자가 되는 시점의 순수 log parsing
 - 신규 `crates/window-state`와 `packages/context-menu`
 - `crates/applink` protocol v2 one-time handoff
@@ -54,6 +56,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   crates/secrets    ◄── api-playground, run-manager (DPAPI)
   crates/git        ◄── devbox-manager, life-log, repo-manager, workbench
   crates/launch     ◄── repo-manager, workbench
+  crates/catalog    ◄── devbox-manager (후속에서 launch·capability 메뉴 소비자 확대)
 ```
 
 ## 앱별 데이터 흐름
@@ -138,8 +141,10 @@ font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost
 - **release workflow** — 빌드 대상 앱 목록을 카탈로그에서 읽는다 (하드코딩 배열 금지)
 - **Devbox Manager** — 설치·업데이트 대상과 앱 표시 여부를 카탈로그에서 읽는다
 
-v0.5.0에서는 schema v2 `accepts`/`produces`를 추가한다. `crates/catalog`가 schema와 runtime
-사본을 읽고, `crates/launch`가 실제 설치 여부를 판정한다. `crates/applink`는 argv 계약만
+현재 schema v2는 단조 증가하는 `catalogRevision`과 `accepts`/`produces`/`actions`를
+소유한다. `crates/catalog`가 v1 하위 호환, v2 검증, build/runtime revision freshness
+선택과 순수 capability filter를 담당한다. runtime 사본의 원자적 기록은 후속 Manager
+기능, 실제 설치 여부는 `crates/launch`가 담당한다. `crates/applink`는 argv 계약만
 담당해 `launch`와의 순환 의존을 피한다.
 
 `apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
