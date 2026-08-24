@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { monthRange, toDateStr, weekRange } from "./App";
+import { cleanup, render, screen } from "@testing-library/react";
+import { createElement } from "react";
+import { afterEach, describe, expect, it } from "vitest";
+import { DataSourceRow, monthRange, toDateStr, weekRange } from "./App";
+import type { SourceStatus } from "./api";
+
+afterEach(cleanup);
 
 // 참고: 2024-01-01은 실제로 월요일이다(고정된 역사적 사실이므로 타임존과 무관하게 검증 가능).
 
@@ -87,5 +92,53 @@ describe("toDateStr", () => {
 
   it("12월 31일처럼 패딩이 필요 없는 경우도 올바르다", () => {
     expect(toDateStr(new Date(2024, 11, 31))).toBe("2024-12-31");
+  });
+});
+
+describe("DataSourceRow", () => {
+  it("Knowledge activity 수와 최근 수정 및 freshness를 함께 표시한다", () => {
+    const source: SourceStatus = {
+      producer: "knowledge-base",
+      available: true,
+      schemaVersion: 1,
+      producerVersion: "0.5.0",
+      generatedAt: "2026-08-25T12:00:00Z",
+      freshnessMs: 125_000,
+      error: null,
+      knowledgeActivity: {
+        notesModifiedToday: 3,
+        lastModifiedAtMs: 1_800_000_000_000,
+        identifiedNotes: 3,
+        identifiersComplete: true,
+        legacySnapshot: false,
+      },
+    };
+
+    render(createElement(DataSourceRow, { source }));
+
+    expect(screen.getByText("knowledge-base")).toBeTruthy();
+    expect(screen.getByText(/v1 · 0.5.0 · 2m 전 갱신/)).toBeTruthy();
+    expect(screen.getByText(/오늘 작성·수정 3개/)).toBeTruthy();
+    expect(screen.getByText(/마지막 수정/)).toBeTruthy();
+  });
+
+  it("잘못된 activity source에서도 version, freshness와 안전한 오류를 유지한다", () => {
+    const source: SourceStatus = {
+      producer: "knowledge-base",
+      available: false,
+      schemaVersion: 1,
+      producerVersion: "0.5.0",
+      generatedAt: "2026-08-25T12:00:00Z",
+      freshnessMs: 61_000,
+      error: "Knowledge activity view schema를 지원하지 않습니다",
+      knowledgeActivity: null,
+    };
+
+    render(createElement(DataSourceRow, { source }));
+
+    expect(screen.getByText(/v1 · 0.5.0 · 1m 전 갱신/)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Knowledge activity view schema를 지원하지 않습니다",
+    );
   });
 });

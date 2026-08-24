@@ -223,6 +223,26 @@ body {
   border-bottom: none;
 }
 
+.source-row {
+  align-items: flex-start;
+}
+
+.source-details {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  text-align: right;
+}
+
+.source-activity {
+  color: var(--text);
+}
+
+.source-error {
+  color: var(--red);
+}
+
 .git-count {
   color: var(--accent);
   font-weight: 600;

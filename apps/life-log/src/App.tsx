@@ -68,6 +68,37 @@ export function monthRange(date: Date): { start: number; end: number } {
   return { start, end };
 }
 
+export function DataSourceRow({ source }: { source: SourceStatus }) {
+  const diagnostics = [
+    source.schemaVersion != null ? `v${source.schemaVersion}` : null,
+    source.producerVersion,
+    source.freshnessMs != null ? `${fmtDuration(source.freshnessMs)} 전 갱신` : null,
+  ].filter((value): value is string => value != null);
+  const activity = source.knowledgeActivity;
+
+  return (
+    <div className="git-row source-row">
+      <span className="mono">{source.producer}</span>
+      <div className="source-details">
+        {diagnostics.length > 0 && <span className="dim">{diagnostics.join(" · ")}</span>}
+        {source.available && activity && (
+          <span className="source-activity">
+            오늘 작성·수정 {activity.notesModifiedToday}개
+            {activity.lastModifiedAtMs != null && ` · 마지막 수정 ${new Date(activity.lastModifiedAtMs).toLocaleString()}`}
+            {activity.legacySnapshot && " · 구버전 snapshot"}
+            {!activity.identifiersComplete && !activity.legacySnapshot && ` · 식별자 ${activity.identifiedNotes}개만 포함`}
+          </span>
+        )}
+        {!source.available && (
+          <span role="alert" className="source-error">
+            {source.error ?? "사용할 수 없음"}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [date, setDate] = useState(new Date());
   const [view, setView] = useState<ViewTab>("day");
@@ -233,17 +264,10 @@ export default function App() {
             <h2>Data sources</h2>
             {sources.length === 0 && <div className="dim">등록된 source가 없습니다.</div>}
             {sources.map((s) => (
-              <div key={`${s.producer}:v${s.schemaVersion ?? "unknown"}:${s.available ? "ok" : "error"}`} className="git-row">
-                <span className="mono">{s.producer}</span>
-                {s.available ? (
-                  <span className="dim">
-                    v{s.schemaVersion} · {s.producerVersion}
-                    {s.freshnessMs != null && ` · ${fmtDuration(s.freshnessMs)} 전 갱신`}
-                  </span>
-                ) : (
-                  <span className="tag-dirty">{s.error ?? "사용할 수 없음"}</span>
-                )}
-              </div>
+              <DataSourceRow
+                key={`${s.producer}:v${s.schemaVersion ?? "unknown"}:${s.available ? "ok" : "error"}`}
+                source={s}
+              />
             ))}
             <div className="dim">source는 devbox 공용 루트의 read-only snapshot을 통해 읽습니다 (다른 앱의 DB를 직접 읽지 않음).</div>
           </section>

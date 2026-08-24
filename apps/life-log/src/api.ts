@@ -159,11 +159,47 @@ export interface SourceStatus {
   generatedAt: string | null;
   freshnessMs: number | null;
   error: string | null;
+  knowledgeActivity: KnowledgeActivity | null;
+}
+
+export interface KnowledgeActivity {
+  notesModifiedToday: number;
+  lastModifiedAtMs: number | null;
+  identifiedNotes: number;
+  identifiersComplete: boolean;
+  legacySnapshot: boolean;
 }
 
 export async function integrationSources(): Promise<SourceStatus[]> {
   if (!isTauri()) {
-    return [{ producer: "run-manager", available: true, schemaVersion: 1, producerVersion: "0.3.0", generatedAt: new Date().toISOString(), freshnessMs: 30000, error: null }];
+    return [
+      {
+        producer: "knowledge-base",
+        available: true,
+        schemaVersion: 1,
+        producerVersion: "0.5.0",
+        generatedAt: new Date().toISOString(),
+        freshnessMs: 30_000,
+        error: null,
+        knowledgeActivity: {
+          notesModifiedToday: 4,
+          lastModifiedAtMs: Date.now() - 90_000,
+          identifiedNotes: 4,
+          identifiersComplete: true,
+          legacySnapshot: false,
+        },
+      },
+      {
+        producer: "run-manager",
+        available: true,
+        schemaVersion: 1,
+        producerVersion: "0.3.0",
+        generatedAt: new Date().toISOString(),
+        freshnessMs: 30_000,
+        error: null,
+        knowledgeActivity: null,
+      },
+    ];
   }
   return invoke<SourceStatus[]>("integration_sources");
 }

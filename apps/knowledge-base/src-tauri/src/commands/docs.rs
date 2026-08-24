@@ -156,6 +156,8 @@ pub fn rename_file(
     if let Ok(content) = store::read_file(&dst) {
         let _ = db::index_doc(&conn, &to, &content);
     }
+    drop(conn);
+    let _ = crate::integration::write_snapshot(&state.db.lock().unwrap());
     Ok(())
 }
 
@@ -165,7 +167,10 @@ pub fn delete_file(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Resul
     let root = resolve_root(&conn)?;
     let path = store::safe_join(&root, &rel)?;
     store::delete_file(&path)?;
-    db::remove_doc(&conn, &rel).map_err(|e| e.to_string())
+    db::remove_doc(&conn, &rel).map_err(|e| e.to_string())?;
+    drop(conn);
+    let _ = crate::integration::write_snapshot(&state.db.lock().unwrap());
+    Ok(())
 }
 
 #[tauri::command]
@@ -198,6 +203,8 @@ pub fn daily_note(state: tauri::State<'_, Arc<AppState>>) -> Result<(String, Str
         let content = format!("---\ntags: [daily]\n---\n\n# {}\n\n", today_str());
         store::write_file(&path, &content)?;
         db::index_doc(&conn, &rel, &content).map_err(|e| e.to_string())?;
+        drop(conn);
+        let _ = crate::integration::write_snapshot(&state.db.lock().unwrap());
         return Ok((rel, content));
     }
     let content = store::read_file(&path)?;

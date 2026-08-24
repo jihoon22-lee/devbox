@@ -67,9 +67,10 @@ wsl-desktop:     React → invoke → commands → wsl crate → wsl.exe (wsl-da
                    └ distro·docker 패널 (gitStatus는 Workbench로 이관 완료)
 life-log:        tray/poller(상시) → sessionizer → SQLite → commands → React
                    (activity-timeline 흡수. crates/integration으로 snapshot을 자동 발견하며
-                   외부 DB 직접 조회 없음)
+                   Knowledge activity/v1을 검증·집계하고 외부 DB 직접 조회 없음)
 everything-plus:  indexer/watcher → filesystem crate → search crate(FTS5) → React
 knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror)
+                   └ path/body-free activity/v1 snapshot → Life Log Data Sources
 api-playground:   React → commands → reqwest → HTTP
 code-pad:         React(CodeMirror) → commands → LSP stdio 서버, filesystem/markdown crate → React
 run-manager:      React → commands → scheduler → platform 실행 어댑터(Windows Job Object/WSL) → SQLite
@@ -107,6 +108,14 @@ Workbench는 Life Log의 app-local DB와 settings schema를 알지 않는다. �
 `life-log/projects/v1`을 producer/schema/freshness 기준으로 검증하고 안전한 절대 경로만
 ProjectProfile로 흡수한다. 파일 없음은 no-op이며 손상·schema mismatch·unsafe entry는 기존
 프로필을 바꾸지 않는 fail-closed fallback이다.
+
+Knowledge Base는 `knowledge-base/activity/v1` view에 UTC 기준 오늘 작성·수정된 노트 수,
+전체 최근 수정 시각, 최대 512개의 `note-<DB row id>` 불투명 식별자와 truncation 여부만
+발행한다. 경로·제목·본문·tag는 생산 경계를 넘지 않는다. 앱 내부 CRUD뿐 아니라 watcher가
+반영한 외부 편집도 원자 snapshot을 갱신하므로 Life Log는 Knowledge DB나 노트 파일을 직접
+읽지 않는다. Life Log는 producer/envelope/view schema와 단일 entry, 식별자 형식·유일성·
+개수 관계를 검증하고 UI에는 수와 시각만 전달한다. 구버전 flat v1은 롤링 업그레이드
+fallback으로만 허용하며, 손상된 Knowledge snapshot은 다른 producer 발견과 집계를 막지 않는다.
 
 ## 보안 경계
 
@@ -203,6 +212,11 @@ Workbench는 이 view를 읽는 첫 consumer다. producer가 꺼진 동안에도
 사용하되 계산된 freshness를 유지하고, 전체 entry 검증을 마친 뒤에만 Workbench가 단독 소유한
 `project-profiles.json`을 원자 교체한다. distro 정보가 없는 `/mnt` 밖 POSIX 경로에는 임의
 distro를 붙이지 않는다.
+
+Knowledge Base가 catalog에 선언한 `snapshot:knowledge-base/activity/v1`은 Life Log가 읽는
+첫 consumer 계약이다. producer가 종료돼도 마지막 정상 snapshot과 계산된 view freshness를
+사용한다. schema·payload 오류가 있으면 version/freshness 진단과 고정된 안전 오류를 Data
+Sources에 표시하되, 불투명 note ID와 원문 입력은 frontend로 전달하지 않는다.
 
 `apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
 
