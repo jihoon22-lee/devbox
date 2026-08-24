@@ -64,7 +64,7 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
-    assert_eq!(catalog.catalog_revision, Some(4));
+    assert_eq!(catalog.catalog_revision, Some(5));
     assert_eq!(catalog.apps.len(), 13);
     assert!(catalog.apps.iter().all(|app| app.actions.is_empty()));
     assert_eq!(
@@ -86,6 +86,13 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
             .map(|app| app.id)
             .collect::<Vec<_>>(),
         vec!["everything-plus", "knowledge-base"]
+    );
+    assert_eq!(
+        capable_producers(&catalog, "snapshot:life-log/projects/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["life-log"]
     );
 }
 
