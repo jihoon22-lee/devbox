@@ -1,16 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createWorktree,
+  onOpenRequest,
   openIn,
   openTargets,
+  prepareInboundRepository,
   repoStatus,
   scanRoot,
+  takePendingOpen,
   worktreeClean,
   worktrees,
+  type OpenRequest,
   type RepoEntry,
   type RepoOpenTarget,
   type RepoSnapshot,
 } from "./api";
+import { routeOpenRequest, sameRepositoryKey } from "./lib/applink";
 import "./App.css";
 
 export default function App() {
@@ -24,13 +29,46 @@ export default function App() {
   const [newBranch, setNewBranch] = useState("");
   const [newDir, setNewDir] = useState("");
   const [targets, setTargets] = useState<RepoOpenTarget[] | null>(null);
+  const [reposLoaded, setReposLoaded] = useState(false);
+  const [selectedRepoKey, setSelectedRepoKey] = useState<string | null>(null);
+  const [registrationDraft, setRegistrationDraft] = useState<RepoEntry | null>(null);
+  const reposRef = useRef<RepoEntry[]>(repos);
+  const pendingSelectionKeyRef = useRef<string | null>(null);
+  const selectedCardRef = useRef<HTMLDivElement | null>(null);
+  const openSequenceRef = useRef(0);
+  reposRef.current = repos;
 
   const scan = useCallback(async () => {
     setError(null);
     try {
       const { repos: list, truncated: wasTruncated } = await scanRoot(root);
+      reposRef.current = list;
       setRepos(list);
       setTruncated(wasTruncated);
+      const pendingKey = pendingSelectionKeyRef.current;
+      if (pendingKey) {
+        const match = list.find((repo) => sameRepositoryKey(repo.canonicalKey, pendingKey));
+        if (match) {
+          setSelectedRepoKey(match.canonicalKey);
+          setRegistrationDraft(null);
+        }
+        pendingSelectionKeyRef.current = null;
+      } else {
+        setSelectedRepoKey((current) =>
+          current && list.some((repo) => sameRepositoryKey(repo.canonicalKey, current))
+            ? current
+            : null,
+        );
+      }
+      setRegistrationDraft((current) =>
+        current && list.some((repo) => sameRepositoryKey(repo.canonicalKey, current.canonicalKey))
+          ? null
+          : current,
+      );
+      // 목록이 확보되면 inbound listener/선택을 먼저 활성화한다. 각 repository의
+      // Git status와 worktree 조회는 그 뒤에 이어져도 card 선택을 막지 않는다.
+      setReposLoaded(true);
+
       const st: Record<string, RepoSnapshot> = {};
       const ws: Record<string, string[]> = {};
       for (const r of list) {
@@ -40,7 +78,10 @@ export default function App() {
       setStatus(st);
       setWt(ws);
     } catch (e) {
+      pendingSelectionKeyRef.current = null;
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReposLoaded(true);
     }
   }, [root]);
 
@@ -56,6 +97,91 @@ export default function App() {
         setError(e instanceof Error ? e.message : String(e));
       });
   }, []);
+
+  const handleOpenRequest = async (request: OpenRequest) => {
+    const sequence = ++openSequenceRef.current;
+    pendingSelectionKeyRef.current = null;
+    const action = routeOpenRequest(request);
+    if (action.kind === "error") {
+      setError(action.message);
+      return;
+    }
+
+    try {
+      const inbound = await prepareInboundRepository(action.path);
+      if (sequence !== openSequenceRef.current) return;
+      const match = reposRef.current.find((repo) =>
+        sameRepositoryKey(repo.canonicalKey, inbound.canonicalKey),
+      );
+      setError(null);
+      if (match) {
+        setRegistrationDraft(null);
+        setSelectedRepoKey(match.canonicalKey);
+      } else {
+        setSelectedRepoKey(null);
+        setRegistrationDraft(inbound);
+      }
+    } catch {
+      if (sequence === openSequenceRef.current) {
+        setError("repository 경로를 확인할 수 없습니다");
+      }
+    }
+  };
+  const handleOpenRequestRef = useRef(handleOpenRequest);
+  handleOpenRequestRef.current = handleOpenRequest;
+
+  // 초기 목록을 준비한 뒤 listener를 먼저 등록하고 cold request를 pull한다.
+  // Hot event payload는 trigger로만 쓰고 authoritative request는 pending slot에서 take한다.
+  useEffect(() => {
+    if (!reposLoaded) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    const consumePendingOpen = () => {
+      void takePendingOpen()
+        .then((request) => {
+          if (!disposed && request) void handleOpenRequestRef.current(request);
+        })
+        .catch(() => {
+          if (!disposed) setError("repository 열기 요청을 처리하지 못했습니다");
+        });
+    };
+    let coldStartConsumed = false;
+    const consumeColdStart = () => {
+      if (disposed || coldStartConsumed) return;
+      coldStartConsumed = true;
+      consumePendingOpen();
+    };
+
+    void onOpenRequest(() => consumePendingOpen())
+      .then((stop) => {
+        if (disposed) stop();
+        else {
+          unlisten = stop;
+          consumeColdStart();
+        }
+      })
+      .catch(() => consumeColdStart());
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [reposLoaded]);
+
+  useEffect(() => {
+    if (!selectedRepoKey) return;
+    selectedCardRef.current?.focus();
+    selectedCardRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [selectedRepoKey]);
+
+  const exploreDraft = () => {
+    if (!registrationDraft) return;
+    pendingSelectionKeyRef.current = registrationDraft.canonicalKey;
+    if (registrationDraft.path === root) void scan();
+    else setRoot(registrationDraft.path);
+    setRegistrationDraft(null);
+  };
 
   const onOpen = async (target: RepoOpenTarget, path: string) => {
     setError(null);
@@ -110,11 +236,28 @@ export default function App() {
         </div>
       )}
 
+      {registrationDraft && (
+        <section className="registration-draft" aria-label="Repository 등록 초안">
+          <div>
+            <strong>Repository 등록 초안</strong>
+            <span className="draft-path">{registrationDraft.path}</span>
+          </div>
+          <span className="draft-help">현재 목록에는 없습니다. 아직 저장하거나 Git 명령을 실행하지 않았습니다.</span>
+          <button className="btn primary" onClick={exploreDraft}>이 경로 탐색</button>
+          <button className="btn" onClick={() => setRegistrationDraft(null)}>취소</button>
+        </section>
+      )}
+
       <div className="repos">
         {repos.map((r) => {
           const s = status[r.path];
           return (
-            <div key={r.path} className="repo-card">
+            <div
+              key={r.path}
+              ref={sameRepositoryKey(r.canonicalKey, selectedRepoKey ?? "") ? selectedCardRef : undefined}
+              className={`repo-card ${sameRepositoryKey(r.canonicalKey, selectedRepoKey ?? "") ? "selected" : ""}`}
+              tabIndex={-1}
+            >
               <div className="repo-head">
                 <span className="repo-path">{r.path}</span>
                 <span className={`branch ${s?.branch.dirty ? "dirty" : ""}`}>

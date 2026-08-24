@@ -5,7 +5,7 @@ use crate::core::open_targets::{select_repo_open_targets, RepoOpenTarget};
 use serde::Serialize;
 use std::path::Path;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoEntry {
     pub path: String,
@@ -69,15 +69,9 @@ fn walk(
     *visited += 1;
 
     if dir.join(".git").exists() {
-        let canonical_key =
-            devbox_wsl::path::canonical_project_key(Some(&dir.to_string_lossy()), None)
-                .unwrap_or_else(|_| dir.to_string_lossy().into_owned());
-        let worktrees = dir.join(".git").join("worktrees").is_dir();
-        out.push(RepoEntry {
-            path: dir.to_string_lossy().into_owned(),
-            canonical_key,
-            has_worktrees: worktrees,
-        });
+        if let Ok(entry) = repository_entry(dir) {
+            out.push(entry);
+        }
         return; // 중첩 repo는 건너뛴다
     }
     if depth >= MAX_SCAN_DEPTH {
@@ -155,7 +149,25 @@ pub fn open_targets() -> Vec<RepoOpenTarget> {
     available_open_targets()
 }
 
-fn validated_repository_path(path: &str) -> Result<String, &'static str> {
+fn repository_entry(path: &Path) -> Result<RepoEntry, &'static str> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| "repository를 찾을 수 없습니다")?;
+    if !canonical.is_dir() || !canonical.join(".git").exists() {
+        return Err("repository를 찾을 수 없습니다");
+    }
+
+    let display_path = path.to_string_lossy().into_owned();
+    let canonical_key = devbox_wsl::path::canonical_project_key(Some(&display_path), None)
+        .unwrap_or_else(|_| canonical.to_string_lossy().into_owned());
+    Ok(RepoEntry {
+        path: display_path,
+        canonical_key,
+        has_worktrees: canonical.join(".git").join("worktrees").is_dir(),
+    })
+}
+
+fn validated_repository(path: &str) -> Result<RepoEntry, &'static str> {
     let raw = Path::new(path);
     if path.is_empty()
         || !raw.is_absolute()
@@ -165,13 +177,14 @@ fn validated_repository_path(path: &str) -> Result<String, &'static str> {
     {
         return Err("repository 경로가 올바르지 않습니다");
     }
-    let canonical = raw
-        .canonicalize()
-        .map_err(|_| "repository를 찾을 수 없습니다")?;
-    if !canonical.is_dir() || !canonical.join(".git").exists() {
-        return Err("repository를 찾을 수 없습니다");
-    }
-    Ok(path.to_string())
+    repository_entry(raw)
+}
+
+/// Inbound Path를 임의 등록하거나 Git 명령을 실행하지 않고, 기존 목록 선택 또는
+/// frontend 등록 초안에 쓸 검증된 metadata로만 변환한다.
+#[tauri::command]
+pub fn prepare_inbound_repository(path: String) -> Result<RepoEntry, String> {
+    validated_repository(&path).map_err(str::to_string)
 }
 
 #[tauri::command]
@@ -181,7 +194,7 @@ pub fn open_in(app_id: String, path: String) -> Result<(), String> {
         .into_iter()
         .find(|target| target.id == app_id)
         .ok_or_else(|| "사용 가능한 대상 앱이 아닙니다".to_string())?;
-    let path = validated_repository_path(&path).map_err(str::to_string)?;
+    let path = validated_repository(&path).map_err(str::to_string)?.path;
     let req = target.request(path);
     devbox_launch::launch_open(&target.id, &req).map(|_| ())
 }
@@ -192,29 +205,31 @@ mod scan_tests {
     use std::fs;
 
     #[test]
-    fn validated_repository_path_accepts_only_existing_absolute_git_directories() {
+    fn validated_repository_accepts_only_existing_absolute_git_directories() {
         let tmp = tempfile::tempdir().unwrap();
         init_git_dir(tmp.path());
         let path = tmp.path().to_string_lossy().into_owned();
 
-        assert_eq!(validated_repository_path(&path), Ok(path.clone()));
+        let entry = validated_repository(&path).unwrap();
+        assert_eq!(entry.path, path);
+        assert!(!entry.canonical_key.is_empty());
         assert_eq!(
-            validated_repository_path("relative/repository"),
+            validated_repository("relative/repository"),
             Err("repository 경로가 올바르지 않습니다")
         );
         assert_eq!(
-            validated_repository_path(&format!("{path}/child/../repository")),
+            validated_repository(&format!("{path}/child/../repository")),
             Err("repository 경로가 올바르지 않습니다")
         );
 
         let non_repo = tempfile::tempdir().unwrap();
         assert_eq!(
-            validated_repository_path(&non_repo.path().to_string_lossy()),
+            validated_repository(&non_repo.path().to_string_lossy()),
             Err("repository를 찾을 수 없습니다")
         );
 
         let secret = "repo-path-secret-must-not-appear";
-        let error = validated_repository_path(&format!("{path}/{secret}"))
+        let error = validated_repository(&format!("{path}/{secret}"))
             .unwrap_err()
             .to_string();
         assert_eq!(error, "repository를 찾을 수 없습니다");
@@ -232,6 +247,18 @@ mod scan_tests {
         let result = scan_root(tmp.path().to_string_lossy().into_owned()).unwrap();
         assert_eq!(result.repos.len(), 1);
         assert!(!result.truncated);
+    }
+
+    #[test]
+    fn inbound_repository_metadata_matches_scan_identity_without_mutation() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_git_dir(tmp.path());
+        let path = tmp.path().to_string_lossy().into_owned();
+
+        let inbound = prepare_inbound_repository(path.clone()).unwrap();
+        let scanned = scan_root(path).unwrap();
+
+        assert_eq!(scanned.repos, vec![inbound]);
     }
 
     #[test]

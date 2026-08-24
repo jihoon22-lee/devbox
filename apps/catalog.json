@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 3,
+  "catalogRevision": 4,
   "apps": [
     {
       "id": "port-manager",
@@ -180,7 +180,7 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": [],
+      "accepts": ["path"],
       "produces": [],
       "actions": []
     }

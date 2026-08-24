@@ -64,7 +64,7 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
-    assert_eq!(catalog.catalog_revision, Some(3));
+    assert_eq!(catalog.catalog_revision, Some(4));
     assert_eq!(catalog.apps.len(), 13);
     assert!(catalog.apps.iter().all(|app| app.actions.is_empty()));
     assert_eq!(
@@ -72,7 +72,13 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
             .into_iter()
             .map(|app| app.id)
             .collect::<Vec<_>>(),
-        vec!["wsl-desktop", "knowledge-base", "code-pad", "workbench"]
+        vec![
+            "wsl-desktop",
+            "knowledge-base",
+            "code-pad",
+            "workbench",
+            "repo-manager"
+        ]
     );
     assert_eq!(
         capable_targets(&catalog, "query")

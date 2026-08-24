@@ -125,6 +125,44 @@ body {
   padding: 10px 12px;
 }
 
+.repo-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+  outline: none;
+}
+
+.registration-draft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+}
+
+.registration-draft > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.draft-path {
+  max-width: 420px;
+  overflow: hidden;
+  color: var(--text);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-help {
+  flex: 1;
+  color: var(--dim);
+  font-size: 11px;
+}
+
 .repo-head {
   display: flex;
   align-items: center;
