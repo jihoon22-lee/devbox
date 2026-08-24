@@ -76,7 +76,7 @@ v0.4.1은 안정판 핫픽스로 배포됐다. 자동화된 migration 사례와 
 이미 제거되어 Windows C1/C2를 안전하게 재현하지 못했다. 이는 packaged-runtime 검증이 아니며, 남은
 Windows acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서 post-release로 계속 관리한다.
 
-### v0.4.2 — API Playground 보안 핫픽스 (RC2 준비·H1 전체 재검증 대기)
+### v0.4.2 — API Playground 보안 핫픽스 (RC2 H1 통과·stable 준비)
 
 v0.4.1에도 존재하는 resolved secret persistence 결함을 v0.5.0까지 미루지 않고 P1-02 전체
 범위로 선행 수정했다. API Playground 0.3.2는 secret을 Rust 전송 경계에서만 해석하고,
@@ -107,20 +107,40 @@ logical storage에 남았다. 이 실패와 cleanup 결과는 [issue #176 commen
 shape와 실제 sensitive field 회귀 테스트를 포함한다. API Rust 테스트는 16개로 늘었고
 전체 CI도 통과했다.
 
-현재 release gate는 다음 순서로 진행한다.
+RC1은 수정·삭제하지 않는 immutable failed-H1 historical candidate로 보존한다. schema fix가
+반영된 RC2는 다음 gate를 모두 통과했다.
 
-1. RC1을 수정·삭제하지 않고 보존한다.
-2. PR #231이 반영된 `origin/main`에서 새 immutable annotated `v0.4.2-rc2` tag를 만든다.
-3. RC2 Windows package를 빌드·게시하고 정확한 27 assets/26 binaries 및 manifest를 독립
-   검증한다.
-4. RC2 package에서 H1-A~D 전체를 처음부터 재수행한다. Collection write/read-back, raw v1
-   삭제, marker 기록, logical localStorage 전체 scan과 cleanup을 포함한다.
-5. H1 재검증과 기존 사용자 data/process/clipboard 보호 및 test residue 제거가 모두 통과해
-   issue #176에 evidence로 남기기 전에는 v0.4.2 stable tag/release를 만들지 않는다.
+- annotated `v0.4.2-rc2`는 source commit
+  `8bcde4271778f83c23b7b1049634a65656662e89`에 고정됐다. 공식
+  [release workflow 32700441413](https://github.com/jihoon22-lee/devbox/actions/runs/32700441413)의
+  Build, Publish, Verify 세 job이 성공했고, [공개 prerelease](https://github.com/jihoon22-lee/devbox/releases/tag/v0.4.2-rc2)는
+  정확한 27 assets(13 portable + 13 NSIS installer + manifest), 26 binaries를 가진다.
+- 별도 download에서 모든 size·SHA-256, missing 0, undeclared 0을 독립 검증했다. API Playground
+  portable SHA-256은 `bfec1475c87173515c6c6a21fb6f10a145090c070ed51d40d03e9167d874c053`이고
+  package/Cargo/Tauri version은 모두 0.3.2다.
+- Windows `10.0.26200`, PowerShell `5.1.26100.9168`, WebView2 `151.0.4129.101`에서
+  accepted packaged H1-A~D를 수행했다. UI secret sealing과 backend-only resolve,
+  History v1 fail-closed removal, Collection v2 conversion과 boolean review metadata,
+  reference 보존, cURL·response·error redaction, 307/308 body·entity-header 억제, 민감한
+  redirect destination 연결 전 차단, generic transport-failure/timeout 메시지와 logical
+  localStorage 평문 부재가 모두 통과했다.
+- 이 host firewall은 unbound IPv4/IPv6 loopback을 `ConnectionRefused` 대신 timeout으로
+  처리했다. non-timeout generic transport-failure branch는 accept-and-reset server로,
+  timeout branch는 지연 loopback server로 분리해 검증했으며 두 오류 모두 URL·port·token·
+  내부 오류를 노출하지 않았다. exact multi-format 복구를 보장할 수 없어 clipboard는
+  건드리지 않았다.
+- cleanup 뒤 API Playground process 0, 격리 app-data 부재, backup residue 0과 test server·
+  새 WebView2 descendant 종료를 독립 재확인했다. secret 원문·sealed blob 없는 상세 결과는
+  [issue #176 PASS evidence](https://github.com/jihoon22-lee/devbox/issues/176#issuecomment-5392680030)에
+  기록했다.
 
-RC2 준비와 H1 재검증은 [상세 release plan](./superpowers/plans/2026-08-24-v0.4.2-release.md)에서
-Task 2a·Task 2b 및 후속 Task 3~7의 체크리스트로 추적한다. RC1 H1 실패로 인해 v0.5.0
-P1·P2·선택 P3나 Devbox Launcher·Log Lens 범위를 삭제·축소하지 않는다.
+현재 단계는 RC2 제품 코드에 문서만 더하는 stable preparation이다. 별도 docs PR의 required
+CI가 통과해 merge된 뒤 그 exact merge commit에 annotated `v0.4.2` tag를 만들고, stable
+workflow 성공·`draft=false`·`prerelease=false`·GitHub Latest와 독립 27-asset 검증까지
+확인해야 배포 완료다. 그 전 Latest stable은 v0.4.1이며, H1 뒤 제품 코드가 바뀌면 새 RC부터
+다시 검증한다. 상세 상태는 [release plan](./superpowers/plans/2026-08-24-v0.4.2-release.md)에
+기록한다. v0.4.2 선행 완료는 v0.5.0 P1-02의 회귀 기준으로 유지하며 P1·P2·선택 P3,
+Devbox Launcher·Log Lens 범위를 삭제하거나 축소하지 않는다.
 
 ### v0.5.0
 
