@@ -19,8 +19,10 @@ pub fn decode_output(bytes: &[u8]) -> String {
     if bom || (bytes.len() >= 2 && null_ratio >= 1) {
         let start = if bom { 2 } else { 0 };
         let units: Vec<u16> = bytes[start..]
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|chunk| u16::from_le_bytes(*chunk))
             .collect();
         String::from_utf16_lossy(&units)
             .trim_end_matches('\0')
@@ -58,6 +60,12 @@ mod tests {
         // BOM은 없지만 NUL 비율이 높아 UTF-16LE로 판별돼야 한다.
         let s = decode_output(&bytes);
         assert_eq!(s, "Ubuntu");
+    }
+
+    #[test]
+    fn ignores_incomplete_utf16le_trailing_byte() {
+        let bytes = [0xFF, 0xFE, b'A', 0x00, 0xFF];
+        assert_eq!(decode_output(&bytes), "A");
     }
 
     #[test]
