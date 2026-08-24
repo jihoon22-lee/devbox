@@ -1401,6 +1401,7 @@ dependencies = [
  "applink",
  "dirs",
  "filesystem",
+ "launch",
  "notify",
  "rusqlite",
  "search",

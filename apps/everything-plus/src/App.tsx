@@ -1,5 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { addRoot, copyPath, indexNow, indexStatus, listRoots, onOpenRequest, openFile, removeRoot, revealFile, searchContent, searchFiles, takePendingOpen, watcherStatuses, type OpenRequest } from "./api";
+import {
+  ContextMenu,
+  useContextMenu,
+  type ContextMenuEntry,
+} from "@devbox/context-menu";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  addRoot,
+  copyPath,
+  indexNow,
+  indexStatus,
+  listRoots,
+  onOpenRequest,
+  openFile,
+  openIn,
+  openTargets,
+  removeRoot,
+  revealFile,
+  searchContent,
+  searchFiles,
+  takePendingOpen,
+  watcherStatuses,
+  type EverythingOpenTarget,
+  type OpenRequest,
+} from "./api";
 import type { ContentResult, FileEntry, IndexStatus, RootInfo, RootStatus } from "./types";
 import { routeOpenRequest } from "./lib/applink";
 import "./App.css";
@@ -8,6 +31,11 @@ function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+interface ResultContext {
+  path: string;
+  name: string;
 }
 
 export default function App() {
@@ -24,6 +52,8 @@ export default function App() {
   const [regexError, setRegexError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeIdx, setActiveIdx] = useState(-1);
+  const [contextResult, setContextResult] = useState<ResultContext | null>(null);
+  const [availableTargets, setAvailableTargets] = useState<EverythingOpenTarget[] | null>(null);
   const seq = useRef(0);
 
   const loadMeta = useCallback(async () => {
@@ -47,6 +77,23 @@ export default function App() {
   useEffect(() => {
     void loadMeta();
   }, [loadMeta]);
+
+  useEffect(() => {
+    let disposed = false;
+    void openTargets()
+      .then((targets) => {
+        if (!disposed) setAvailableTargets(targets);
+      })
+      .catch(() => {
+        if (!disposed) {
+          setAvailableTargets([]);
+          setError("다른 앱으로 열기 대상을 확인하지 못했습니다");
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   const handleOpenRequest = (request: OpenRequest) => {
     const action = routeOpenRequest(request);
@@ -171,6 +218,25 @@ export default function App() {
   const activeList = mode === "content" ? contentResults : results;
   const activePath = (i: number) => (mode === "content" ? contentResults[i]?.path : results[i]?.path) ?? null;
 
+  const prepareContextResult = useCallback((target: HTMLElement) => {
+    const indexText = target.dataset.resultIndex;
+    if (indexText === undefined) return;
+    const index = Number.parseInt(indexText, 10);
+    const result = activeList[index];
+    if (!Number.isInteger(index) || !result) return;
+    setActiveIdx(index);
+    setContextResult({ path: result.path, name: result.name });
+  }, [activeList]);
+
+  const contextMenu = useContextMenu({
+    onBeforeOpen: (_reason, target) => prepareContextResult(target),
+  });
+
+  useEffect(() => {
+    contextMenu.close();
+    setContextResult(null);
+  }, [activeList, contextMenu.close]);
+
   const moveActive = (dir: 1 | -1) => {
     if (activeList.length === 0) return;
     setActiveIdx((prev) => {
@@ -215,6 +281,59 @@ export default function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+  };
+
+  const contextMenuItems = useMemo<readonly ContextMenuEntry[]>(() => {
+    if (!contextResult) return [];
+    const targetItems: ContextMenuEntry[] = (availableTargets ?? []).map((target) => ({
+      type: "item",
+      id: `open-in:${target.id}`,
+      label: target.displayName,
+    }));
+    return [
+      { type: "item", id: "open", label: "Open" },
+      { type: "item", id: "reveal", label: "Show in folder" },
+      { type: "separator", id: "copy-separator" },
+      { type: "item", id: "copy-path", label: "Copy path" },
+      { type: "item", id: "copy-name", label: "Copy file name" },
+      { type: "separator", id: "open-in-separator" },
+      {
+        type: "submenu",
+        id: "open-in",
+        label: "Open in another app",
+        disabled: availableTargets === null || targetItems.length === 0,
+        items: targetItems,
+      },
+    ];
+  }, [availableTargets, contextResult]);
+
+  const onContextMenuSelect = (id: string) => {
+    const result = contextResult;
+    if (!result) return;
+    if (id === "open") {
+      void onRowAction(result.path, "open");
+      return;
+    }
+    if (id === "reveal") {
+      void onRowAction(result.path, "folder");
+      return;
+    }
+    if (id === "copy-path") {
+      void onRowAction(result.path, "copy");
+      return;
+    }
+    if (id === "copy-name") {
+      void navigator.clipboard.writeText(result.name).catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      });
+      return;
+    }
+    const target = availableTargets?.find((candidate) => `open-in:${candidate.id}` === id);
+    if (!target) return;
+    setError(null);
+    void openIn(target.id, result.path).catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    });
   };
 
   return (
@@ -315,8 +434,15 @@ export default function App() {
                 <tr
                   key={`${f.path}-${i}`}
                   className={i === activeIdx ? "active-row" : ""}
+                  data-result-index={i}
+                  tabIndex={0}
+                  aria-selected={i === activeIdx}
                   onMouseEnter={() => setActiveIdx(i)}
-                  onClick={() => void onOpenActive()}
+                  onClick={() => {
+                    setActiveIdx(i);
+                    void onRowAction(f.path, "open");
+                  }}
+                  {...contextMenu.triggerProps}
                 >
                   <td>
                     <span className="name">{f.name}</span>
@@ -361,8 +487,15 @@ export default function App() {
                 <tr
                   key={f.id}
                   className={i === activeIdx ? "active-row" : ""}
+                  data-result-index={i}
+                  tabIndex={0}
+                  aria-selected={i === activeIdx}
                   onMouseEnter={() => setActiveIdx(i)}
-                  onClick={() => void onOpenActive()}
+                  onClick={() => {
+                    setActiveIdx(i);
+                    void onRowAction(f.path, "open");
+                  }}
+                  {...contextMenu.triggerProps}
                 >
                   <td>
                     <span className="name">{f.name}</span>
@@ -394,6 +527,15 @@ export default function App() {
           </table>
         )}
       </div>
+      <ContextMenu
+        open={contextMenu.open}
+        anchor={contextMenu.anchor}
+        restoreFocusTo={contextMenu.restoreFocusTo}
+        items={contextMenuItems}
+        onSelect={onContextMenuSelect}
+        onClose={contextMenu.close}
+        ariaLabel="Search result actions"
+      />
     </div>
   );
 }

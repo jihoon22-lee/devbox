@@ -1,7 +1,18 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { onOpenRequest, searchFiles, takePendingOpen, type OpenRequest } from "./api";
+import {
+  copyPath,
+  onOpenRequest,
+  openFile,
+  openIn,
+  openTargets,
+  revealFile,
+  searchContent,
+  searchFiles,
+  takePendingOpen,
+  type OpenRequest,
+} from "./api";
 
 const mocks = vi.hoisted(() => ({
   openHandler: null as ((request: OpenRequest) => void) | null,
@@ -20,6 +31,11 @@ vi.mock("./api", () => ({
   openFile: vi.fn(async () => undefined),
   revealFile: vi.fn(async () => undefined),
   copyPath: vi.fn(async () => undefined),
+  openTargets: vi.fn(async () => [
+    { id: "code-pad", displayName: "Code Pad" },
+    { id: "workbench", displayName: "Workbench" },
+  ]),
+  openIn: vi.fn(async () => undefined),
   takePendingOpen: vi.fn().mockImplementation(async () => {
     mocks.order.push("take");
     return null;
@@ -34,6 +50,13 @@ vi.mock("./api", () => ({
 const takePendingOpenMock = vi.mocked(takePendingOpen);
 const onOpenRequestMock = vi.mocked(onOpenRequest);
 const searchFilesMock = vi.mocked(searchFiles);
+const searchContentMock = vi.mocked(searchContent);
+const openFileMock = vi.mocked(openFile);
+const revealFileMock = vi.mocked(revealFile);
+const copyPathMock = vi.mocked(copyPath);
+const openTargetsMock = vi.mocked(openTargets);
+const openInMock = vi.mocked(openIn);
+const writeTextMock = vi.fn<(text: string) => Promise<void>>();
 
 beforeEach(() => {
   mocks.openHandler = null;
@@ -47,7 +70,23 @@ beforeEach(() => {
     mocks.openHandler = handler;
     return () => undefined;
   });
-  searchFilesMock.mockClear();
+  searchFilesMock.mockReset().mockImplementation(async (query: string) => [
+    { id: 1, path: `C:\\files\\${query}`, name: query, ext: "", size: 1, modified_ts: 0 },
+  ]);
+  searchContentMock.mockReset().mockResolvedValue([]);
+  openFileMock.mockReset().mockResolvedValue(undefined);
+  revealFileMock.mockReset().mockResolvedValue(undefined);
+  copyPathMock.mockReset().mockResolvedValue(undefined);
+  openTargetsMock.mockReset().mockResolvedValue([
+    { id: "code-pad", displayName: "Code Pad" },
+    { id: "workbench", displayName: "Workbench" },
+  ]);
+  openInMock.mockReset().mockResolvedValue(undefined);
+  writeTextMock.mockReset().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: writeTextMock },
+  });
 });
 
 afterEach(() => cleanup());
@@ -127,5 +166,131 @@ describe("Everything+ Query app-link delivery", () => {
     expect(await screen.findByText("요청한 검색어를 사용할 수 없습니다")).toBeTruthy();
     expect(screen.getByText("Everything+")).toBeTruthy();
     expect(searchFilesMock).not.toHaveBeenCalled();
+  });
+});
+
+async function renderNamedResults() {
+  searchFilesMock.mockResolvedValueOnce([
+    { id: 1, path: "C:\\files\\alpha.txt", name: "alpha.txt", ext: "txt", size: 10, modified_ts: 0 },
+    { id: 2, path: "C:\\files\\beta.md", name: "beta.md", ext: "md", size: 20, modified_ts: 0 },
+  ]);
+  render(<App />);
+  fireEvent.change(screen.getByPlaceholderText("Search file names..."), {
+    target: { value: "fixture" },
+  });
+  await screen.findByText("beta.md");
+}
+
+function resultRow(name: string): HTMLTableRowElement {
+  const element = screen.getByText(name).closest("tr");
+  if (!(element instanceof HTMLTableRowElement)) throw new Error("result row was not rendered");
+  return element;
+}
+
+describe("Everything+ result context menu", () => {
+  it("selects the right-clicked row and exposes every app-owned action", async () => {
+    await renderNamedResults();
+    const beta = resultRow("beta.md");
+
+    fireEvent.contextMenu(beta, { clientX: 20, clientY: 30 });
+
+    expect(beta.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("menu", { name: "Search result actions" })).toBeTruthy();
+    for (const label of [
+      "Open",
+      "Show in folder",
+      "Copy path",
+      "Copy file name",
+      "Open in another app",
+    ]) {
+      expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
+    }
+    await waitFor(() => expect(
+      screen.getByRole("menuitem", { name: "Open in another app" }).getAttribute("aria-disabled"),
+    ).toBeNull());
+  });
+
+  it("runs row actions with the exact selected path and file name", async () => {
+    await renderNamedResults();
+    const beta = resultRow("beta.md");
+
+    fireEvent.contextMenu(beta);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open" }));
+    await waitFor(() => expect(openFileMock).toHaveBeenCalledWith("C:\\files\\beta.md"));
+
+    fireEvent.contextMenu(beta);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Show in folder" }));
+    await waitFor(() => expect(revealFileMock).toHaveBeenCalledWith("C:\\files\\beta.md"));
+
+    fireEvent.contextMenu(beta);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }));
+    await waitFor(() => expect(copyPathMock).toHaveBeenCalledWith("C:\\files\\beta.md"));
+
+    fireEvent.contextMenu(beta);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy file name" }));
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("beta.md"));
+  });
+
+  it("opens only a catalog-derived submenu target", async () => {
+    await renderNamedResults();
+    const beta = resultRow("beta.md");
+    fireEvent.contextMenu(beta);
+    const submenu = screen.getByRole("menuitem", { name: "Open in another app" });
+    await waitFor(() => expect(submenu.getAttribute("aria-disabled")).toBeNull());
+    fireEvent.mouseEnter(submenu);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Code Pad" }));
+
+    await waitFor(() => expect(openInMock).toHaveBeenCalledWith(
+      "code-pad",
+      "C:\\files\\beta.md",
+    ));
+  });
+
+  it("opens with Shift+F10 and restores focus after selection", async () => {
+    await renderNamedResults();
+    const alpha = resultRow("alpha.txt");
+    alpha.focus();
+
+    fireEvent.keyDown(alpha, { key: "F10", code: "F10", shiftKey: true });
+    const copyName = screen.getByRole("menuitem", { name: "Copy file name" });
+    fireEvent.click(copyName);
+
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("alpha.txt"));
+    await waitFor(() => expect(document.activeElement).toBe(alpha));
+  });
+
+  it("keeps the catalog submenu disabled when no installed target exists", async () => {
+    openTargetsMock.mockResolvedValueOnce([]);
+    await renderNamedResults();
+    const beta = resultRow("beta.md");
+    fireEvent.contextMenu(beta);
+
+    const submenu = screen.getByRole("menuitem", { name: "Open in another app" });
+    await waitFor(() => expect(submenu.getAttribute("aria-disabled")).toBe("true"));
+    fireEvent.click(submenu);
+    expect(screen.queryByRole("menuitem", { name: "Code Pad" })).toBeNull();
+    expect(openInMock).not.toHaveBeenCalled();
+  });
+
+  it("uses the same menu for content results and reports launch failure", async () => {
+    searchContentMock.mockResolvedValueOnce([
+      { path: "C:\\notes\\meeting.md", name: "meeting.md", snippet: "fixture text" },
+    ]);
+    openInMock.mockRejectedValueOnce(new Error("대상 앱을 실행하지 못했습니다"));
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Content" }));
+    fireEvent.change(screen.getByPlaceholderText("Search file contents..."), {
+      target: { value: "fixture" },
+    });
+    const contentRow = (await screen.findByText("meeting.md")).closest("tr");
+    if (!(contentRow instanceof HTMLTableRowElement)) throw new Error("content row was not rendered");
+
+    fireEvent.contextMenu(contentRow);
+    const submenu = screen.getByRole("menuitem", { name: "Open in another app" });
+    await waitFor(() => expect(submenu.getAttribute("aria-disabled")).toBeNull());
+    fireEvent.mouseEnter(submenu);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Workbench" }));
+
+    expect(await screen.findByText("대상 앱을 실행하지 못했습니다")).toBeTruthy();
   });
 });
