@@ -12,6 +12,7 @@ pub fn run() {
             commands::worktrees,
             commands::create_worktree,
             commands::worktree_clean,
+            commands::open_targets,
             commands::open_in,
         ])
         .run(tauri::generate_context!())

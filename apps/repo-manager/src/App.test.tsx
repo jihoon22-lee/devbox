@@ -27,6 +27,13 @@ describe("App", () => {
     expect(screen.queryByText(/일부 디렉터리를 건너뛰었습니다/)).toBeNull();
   });
 
+  it("catalog capability에서 다른 앱으로 열기 대상을 생성한다", async () => {
+    await screen.findByRole("button", { name: "Code Pad" });
+    expect(screen.getByRole("button", { name: "WSL Desktop" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Workbench" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Repo Manager" })).toBeNull();
+  });
+
   it("worktree remove는 clean 여부만 알려주고 실제 삭제는 하지 않는다", async () => {
     await screen.findByText("C:\\projects\\devbox-wt");
     screen.getAllByText("remove 확인")[0].click();

@@ -88,6 +88,20 @@ body {
   border-color: var(--accent);
 }
 
+.open-targets {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 48%;
+}
+
+.open-targets-empty {
+  color: var(--dim);
+  font-size: 11px;
+}
+
 .error {
   background: rgba(248, 81, 73, 0.12);
   border-bottom: 1px solid var(--danger);

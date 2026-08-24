@@ -8,7 +8,7 @@
 - **저장소 탐색** — root 아래 Git repository 중복 없이 나열 (canonical identity)
 - **상태 목록** — branch·dirty·ahead/behind·worktree
 - **worktree 생성** — 새 작업 트리 생성
-- **열기** — Code Pad에는 `Workspace`, WSL Desktop·Workbench에는 `Path`를 전달해 연다 (설계: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](../../docs/superpowers/specs/2026-08-17-app-interop-design.md))
+- **열기** — catalog에서 `path` capability와 실제 설치 executable이 모두 확인된 앱만 자동 노출하고, `workspace`도 받는 앱에는 더 구체적인 `Workspace` payload를 전달한다 (설계: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](../../docs/superpowers/specs/2026-08-17-app-interop-design.md))
 - **정리 후보** — merged/stale branch 후보, remove 전 uncommitted/untracked 검사
 
 ## 안전 경계
@@ -19,7 +19,7 @@
 
 ## 기술
 
-- 공용 크레이트 `crates/wsl`·`crates/launch`(`open_in`)·`crates/filesystem`(`is_ignored_dir`, scan_root)
+- 공용 크레이트 `crates/wsl`·`crates/launch`(`installed_targets`, `launch_open`)·`crates/filesystem`(`is_ignored_dir`, scan_root)
 - git 출력 파싱·탐색은 순수 `core/` 로직
 
 ## 개발

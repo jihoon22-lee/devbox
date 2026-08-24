@@ -1,6 +1,7 @@
 //! Repo Manager command — 저장소 탐색·상태·worktree.
 
 use crate::core::git::{parse_status, parse_worktrees, RepoSnapshot};
+use crate::core::open_targets::{select_repo_open_targets, RepoOpenTarget};
 use serde::Serialize;
 use std::path::Path;
 
@@ -139,34 +140,50 @@ pub async fn worktree_clean(path: String) -> Result<bool, String> {
     Ok(status.trim().is_empty())
 }
 
-/// Code Pad / WSL Desktop / Workbench로 연다 (best-effort).
-/// app_id는 카탈로그 id(code-pad·wsl-desktop·workbench). 설치된 exe 경로는
-/// 공용 `crates/launch`가 Manager 설치 layout에서 해석하고, argv는
-/// `crates/applink::build_argv`로 만들어 수신측(`parse_argv`)과 포맷이 어긋나지
-/// 않게 한다.
-fn open_target(app_id: &str, path: String) -> devbox_applink::OpenTarget {
-    if app_id == "code-pad" {
-        devbox_applink::OpenTarget::Workspace { path }
-    } else {
-        devbox_applink::OpenTarget::Path {
-            path,
-            line: None,
-            column: None,
-        }
+fn available_open_targets() -> Vec<RepoOpenTarget> {
+    select_repo_open_targets(
+        "repo-manager",
+        devbox_launch::installed_targets("path"),
+        devbox_launch::installed_targets("workspace"),
+    )
+}
+
+/// Catalog capability와 실제 설치 executable의 교집합만 반환한다. executable
+/// 경로는 frontend에 노출하지 않는다.
+#[tauri::command]
+pub fn open_targets() -> Vec<RepoOpenTarget> {
+    available_open_targets()
+}
+
+fn validated_repository_path(path: &str) -> Result<String, &'static str> {
+    let raw = Path::new(path);
+    if path.is_empty()
+        || !raw.is_absolute()
+        || path
+            .split(['/', '\\'])
+            .any(|segment| matches!(segment, "." | ".."))
+    {
+        return Err("repository 경로가 올바르지 않습니다");
     }
+    let canonical = raw
+        .canonicalize()
+        .map_err(|_| "repository를 찾을 수 없습니다")?;
+    if !canonical.is_dir() || !canonical.join(".git").exists() {
+        return Err("repository를 찾을 수 없습니다");
+    }
+    Ok(path.to_string())
 }
 
 #[tauri::command]
 pub fn open_in(app_id: String, path: String) -> Result<(), String> {
     let app_id = app_id.to_lowercase();
-    if !matches!(app_id.as_str(), "code-pad" | "wsl-desktop" | "workbench") {
-        return Err("알 수 없는 앱".into());
-    }
-    let req = devbox_applink::OpenRequest {
-        target: open_target(&app_id, path),
-        from: Some("repo-manager".to_string()),
-    };
-    devbox_launch::launch_open(&app_id, &req).map(|_| ())
+    let target = available_open_targets()
+        .into_iter()
+        .find(|target| target.id == app_id)
+        .ok_or_else(|| "사용 가능한 대상 앱이 아닙니다".to_string())?;
+    let path = validated_repository_path(&path).map_err(str::to_string)?;
+    let req = target.request(path);
+    devbox_launch::launch_open(&target.id, &req).map(|_| ())
 }
 
 #[cfg(test)]
@@ -175,23 +192,33 @@ mod scan_tests {
     use std::fs;
 
     #[test]
-    fn open_target_uses_workspace_for_code_pad_and_path_for_other_apps() {
-        let path = "E:\\projects\\devbox".to_string();
+    fn validated_repository_path_accepts_only_existing_absolute_git_directories() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_git_dir(tmp.path());
+        let path = tmp.path().to_string_lossy().into_owned();
 
+        assert_eq!(validated_repository_path(&path), Ok(path.clone()));
         assert_eq!(
-            open_target("code-pad", path.clone()),
-            devbox_applink::OpenTarget::Workspace { path: path.clone() }
+            validated_repository_path("relative/repository"),
+            Err("repository 경로가 올바르지 않습니다")
         );
-        for app_id in ["wsl-desktop", "workbench"] {
-            assert_eq!(
-                open_target(app_id, path.clone()),
-                devbox_applink::OpenTarget::Path {
-                    path: path.clone(),
-                    line: None,
-                    column: None,
-                }
-            );
-        }
+        assert_eq!(
+            validated_repository_path(&format!("{path}/child/../repository")),
+            Err("repository 경로가 올바르지 않습니다")
+        );
+
+        let non_repo = tempfile::tempdir().unwrap();
+        assert_eq!(
+            validated_repository_path(&non_repo.path().to_string_lossy()),
+            Err("repository를 찾을 수 없습니다")
+        );
+
+        let secret = "repo-path-secret-must-not-appear";
+        let error = validated_repository_path(&format!("{path}/{secret}"))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(error, "repository를 찾을 수 없습니다");
+        assert!(!error.contains(secret));
     }
 
     fn init_git_dir(dir: &Path) {

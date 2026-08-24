@@ -163,6 +163,11 @@ fail-closed 처리한다. `crates/applink`는 argv 계약만 담당해 `launch`�
 실제 custom root 이동·제거 UI는 이 locator 계약의 후속 기능이며, locator에는 root 자체나
 설치 목록을 복제하지 않고 app-owned manifest 위치만 둔다.
 
+Repo Manager의 "다른 앱으로 열기"는 이 계약의 첫 동적 UI 소비자다. `path` capability와
+실제 설치 executable이 모두 확인된 앱만 표시하고, 같은 앱이 `workspace`도 선언하면
+repository에 더 구체적인 Workspace payload를 우선한다. 대상 앱 ID나 executable 경로를
+프론트에 하드코딩하지 않으며, source app 자신은 메뉴에서 제외한다.
+
 `apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
 
 ## 통합 앱 (Workbench)
