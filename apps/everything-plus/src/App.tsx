@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addRoot, copyPath, indexNow, indexStatus, listRoots, openFile, removeRoot, revealFile, searchContent, searchFiles, watcherStatuses } from "./api";
+import { addRoot, copyPath, indexNow, indexStatus, listRoots, onOpenRequest, openFile, removeRoot, revealFile, searchContent, searchFiles, takePendingOpen, watcherStatuses, type OpenRequest } from "./api";
 import type { ContentResult, FileEntry, IndexStatus, RootInfo, RootStatus } from "./types";
+import { routeOpenRequest } from "./lib/applink";
 import "./App.css";
 
 function fmtSize(bytes: number): string {
@@ -47,6 +48,60 @@ export default function App() {
     void loadMeta();
   }, [loadMeta]);
 
+  const handleOpenRequest = (request: OpenRequest) => {
+    const action = routeOpenRequest(request);
+    if (action.kind === "error") {
+      setError(action.message);
+      return;
+    }
+
+    setError(null);
+    setRegexError(null);
+    setMode("name");
+    setRegexMode(false);
+    setQuery(action.query);
+  };
+  const handleOpenRequestRef = useRef(handleOpenRequest);
+  handleOpenRequestRef.current = handleOpenRequest;
+
+  // Event listener를 먼저 준비한 다음 cold request를 pull한다. Hot event도
+  // payload를 직접 적용하지 않고 같은 one-shot pending slot을 소비한다.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    const consumePendingOpen = () => {
+      void takePendingOpen()
+        .then((request) => {
+          if (!disposed && request) handleOpenRequestRef.current(request);
+        })
+        .catch(() => {
+          if (!disposed) setError("검색 요청을 처리하지 못했습니다");
+        });
+    };
+    let coldStartConsumed = false;
+    const consumeColdStart = () => {
+      if (disposed || coldStartConsumed) return;
+      coldStartConsumed = true;
+      consumePendingOpen();
+    };
+
+    void onOpenRequest(() => consumePendingOpen())
+      .then((stop) => {
+        if (disposed) stop();
+        else {
+          unlisten = stop;
+          consumeColdStart();
+        }
+      })
+      .catch(() => consumeColdStart());
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
   useEffect(() => {
     const current = ++seq.current;
     const q = query.trim();
@@ -61,7 +116,8 @@ export default function App() {
     const t = setTimeout(async () => {
       try {
         if (mode === "content") {
-          setContentResults(await searchContent(q));
+          const next = await searchContent(q);
+          if (!cancelled && seq.current === current) setContentResults(next);
         } else if (regexMode) {
           let re: RegExp;
           try {
@@ -75,7 +131,8 @@ export default function App() {
           if (!cancelled && seq.current === current) setResults(all.filter((f) => re.test(f.name)));
         } else {
           setRegexError(null);
-          setResults(await searchFiles(q));
+          const next = await searchFiles(q);
+          if (!cancelled && seq.current === current) setResults(next);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));

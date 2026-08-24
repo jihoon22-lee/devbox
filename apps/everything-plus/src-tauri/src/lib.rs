@@ -1,3 +1,4 @@
+mod applink;
 mod commands;
 mod core;
 
@@ -5,7 +6,7 @@ use commands::indexing::AppState;
 use commands::watcher::WatcherManager;
 use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 // TODO(0.5.0): v0.4.x 이전 사용자를 위한 1회성 마이그레이션. 두 릴리스 뒤 제거한다.
 const LEGACY_IDENTIFIER: &str = "com.workbench.everythingplus";
@@ -29,8 +30,26 @@ fn migrate_local_data() {
 pub fn run() {
     migrate_local_data();
     tauri::Builder::default()
+        // 두 번째 process가 index DB와 watcher를 다시 초기화하기 전에 기존
+        // instance로 argv를 전달하도록 첫 plugin으로 등록한다.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            match devbox_applink::parse_argv(&args) {
+                Ok(Some(request)) => {
+                    app.state::<applink::PendingOpen>().set(request.clone());
+                    let _ = app.emit("devbox://open", request);
+                }
+                Ok(None) => {}
+                Err(_) => eprintln!("applink: invalid request"),
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            applink::take_pending_open,
             commands::indexing::add_root,
             commands::indexing::remove_root,
             commands::indexing::list_roots,
@@ -43,6 +62,12 @@ pub fn run() {
             commands::actions::reveal_file,
         ])
         .setup(|app| {
+            app.manage(applink::PendingOpen::new());
+            match devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>()) {
+                Ok(Some(request)) => app.state::<applink::PendingOpen>().set(request),
+                Ok(None) => {}
+                Err(_) => eprintln!("applink: invalid request"),
+            }
             let dir = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let (conn, index_cleared) = core::db::init(&dir.join("data.db"))?;

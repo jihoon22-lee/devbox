@@ -2,6 +2,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./lib/isTauri";
 import type { ContentResult, FileEntry, IndexStatus, RootInfo, RootStatus } from "./types";
 
+export type OpenTarget =
+  | { kind: "path"; path: string; line: number | null; column: number | null }
+  | { kind: "profile"; id: string }
+  | { kind: "workspace"; path: string }
+  | { kind: "query"; text: string };
+
+export interface OpenRequest {
+  target: OpenTarget;
+  from: string | null;
+}
+
 const MOCK_FILES: FileEntry[] = [
   { id: 1, path: "C:\\projects\\devbox\\PLAN.md", name: "PLAN.md", ext: "md", size: 3555, modified_ts: 0 },
   { id: 2, path: "C:\\projects\\devbox\\apps\\port-manager\\src\\App.tsx", name: "App.tsx", ext: "tsx", size: 5120, modified_ts: 0 },
@@ -13,6 +24,17 @@ const MOCK_CONTENT: ContentResult[] = [
 ];
 
 const MOCK_STATUS: IndexStatus = { indexing: false, total_files: 42317, indexed_files: 42317, roots: 2, last_indexed_at: null };
+
+export async function takePendingOpen(): Promise<OpenRequest | null> {
+  if (!isTauri()) return null;
+  return invoke<OpenRequest | null>("take_pending_open");
+}
+
+export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise<() => void> {
+  if (!isTauri()) return () => undefined;
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<OpenRequest>("devbox://open", (event) => cb(event.payload));
+}
 
 export async function searchFiles(query: string, limit?: number): Promise<FileEntry[]> {
   if (!isTauri()) {
