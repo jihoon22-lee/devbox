@@ -107,6 +107,23 @@ body {
   overflow: hidden;
 }
 
+.migration-notice,
+.persistence-warning {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.migration-notice {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 8%, transparent);
+}
+
+.persistence-warning {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+}
+
 .request-bar {
   display: flex;
   gap: 8px;

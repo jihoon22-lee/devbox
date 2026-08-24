@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCurl, shellQuote, statusClass, tryPretty } from "./App";
-import type { ApiRequest } from "./types";
+import type { RequestTemplate } from "./types";
 
 describe("statusClass", () => {
   it("2xx는 status-2xx", () => {
@@ -49,7 +49,7 @@ describe("shellQuote", () => {
   });
 });
 
-function baseReq(overrides: Partial<ApiRequest> = {}): ApiRequest {
+function baseReq(overrides: Partial<RequestTemplate> = {}): RequestTemplate {
   return {
     method: "GET",
     url: "",
@@ -93,34 +93,58 @@ describe("buildCurl", () => {
     expect(curl).not.toContain("ignored");
   });
 
-  it("basic auth는 Authorization: Basic 헤더를 base64로 추가한다", () => {
+  it("basic auth는 기본 cURL에서 평문 대신 [REDACTED]를 사용한다", () => {
     const curl = buildCurl(
       baseReq({
         url: "https://api.example.com",
         auth: { kind: "basic", username: "user", password: "pass", token: "", api_key: "", api_value: "" },
       }),
     );
-    expect(curl).toContain(`Authorization: Basic ${btoa("user:pass")}`);
+    expect(curl).toContain("Authorization: Basic [REDACTED]");
+    expect(curl).not.toContain("user");
+    expect(curl).not.toContain("pass");
   });
 
-  it("bearer auth는 Authorization: Bearer 헤더를 추가한다", () => {
+  it("bearer auth는 기본 cURL에서 token 평문을 남기지 않는다", () => {
     const curl = buildCurl(
       baseReq({
         url: "https://api.example.com",
         auth: { kind: "bearer", username: "", password: "", token: "tok123", api_key: "", api_value: "" },
       }),
     );
-    expect(curl).toContain("Authorization: Bearer tok123");
+    expect(curl).toContain("Authorization: Bearer [REDACTED]");
+    expect(curl).not.toContain("tok123");
   });
 
-  it("apikey auth는 지정한 헤더 이름으로 추가한다", () => {
+  it("bearer auth의 environment reference는 기본 cURL에 보존한다", () => {
+    const curl = buildCurl(
+      baseReq({
+        url: "https://api.example.com",
+        auth: { kind: "bearer", username: "", password: "", token: "${ACCESS_TOKEN}", api_key: "", api_value: "" },
+      }),
+    );
+    expect(curl).toContain("Authorization: Bearer ${ACCESS_TOKEN}");
+  });
+
+  it("apikey auth는 헤더 이름을 보존하고 value 평문을 마스킹한다", () => {
     const curl = buildCurl(
       baseReq({
         url: "https://api.example.com",
         auth: { kind: "apikey", username: "", password: "", token: "", api_key: "X-API-Key", api_value: "secret" },
       }),
     );
-    expect(curl).toContain("X-API-Key: secret");
+    expect(curl).toContain("X-API-Key: [REDACTED]");
+    expect(curl).not.toContain("secret");
+  });
+
+  it("apikey auth의 environment reference는 기본 cURL에 보존한다", () => {
+    const curl = buildCurl(
+      baseReq({
+        url: "https://api.example.com",
+        auth: { kind: "apikey", username: "", password: "", token: "", api_key: "X-API-Key", api_value: "${API_KEY}" },
+      }),
+    );
+    expect(curl).toContain("X-API-Key: ${API_KEY}");
   });
 
   it("username이 없는 basic auth는 헤더를 추가하지 않는다", () => {
@@ -136,6 +160,44 @@ describe("buildCurl", () => {
   it("body_kind가 none이 아니고 body가 있으면 --data를 추가한다", () => {
     const curl = buildCurl(baseReq({ url: "https://api.example.com", body_kind: "json", body: '{"a":1}' }));
     expect(curl).toContain("--data '{\"a\":1}'");
+  });
+
+  it("JSON body의 민감한 field는 기본 cURL에 평문으로 포함하지 않는다", () => {
+    const secret = "body-password-123";
+    const curl = buildCurl(
+      baseReq({
+        url: "https://api.example.com",
+        body_kind: "json",
+        body: JSON.stringify({ username: "alice", password: secret, token: "${BODY_TOKEN}" }),
+      }),
+    );
+    expect(curl).not.toContain(secret);
+    expect(curl).toContain('"password":"[REDACTED]"');
+    expect(curl).toContain('"token":"${BODY_TOKEN}"');
+  });
+
+  it("Authorization/Cookie와 알려진 token pattern header는 기본 cURL에서 마스킹한다", () => {
+    const authorization = "Bearer direct-header-secret";
+    const cookie = "session=direct-cookie-secret";
+    const token = "ghp_1234567890abcdef";
+    const curl = buildCurl(
+      baseReq({
+        url: "https://api.example.com",
+        headers: [
+          { key: "Authorization", value: authorization },
+          { key: "Cookie", value: cookie },
+          { key: "X-Debug-Token", value: token },
+          { key: "X-Request-Id", value: "request-123" },
+        ],
+      }),
+    );
+    expect(curl).not.toContain(authorization);
+    expect(curl).not.toContain(cookie);
+    expect(curl).not.toContain(token);
+    expect(curl).toContain("Authorization: [REDACTED]");
+    expect(curl).toContain("Cookie: [REDACTED]");
+    expect(curl).toContain("X-Debug-Token: [REDACTED]");
+    expect(curl).toContain("X-Request-Id: request-123");
   });
 
   it("body_kind가 none이면 body가 있어도 --data를 추가하지 않는다", () => {

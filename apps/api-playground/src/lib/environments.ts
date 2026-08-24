@@ -77,9 +77,10 @@ export function setVariable(
   };
 }
 
-/// 문자열의 `{{name}}`을 치환한다. 알 수 없는 변수는 그대로 둔다.
+/// 문자열의 `{{name}}` 또는 `${name}`을 치환한다. 알 수 없는 변수는 그대로 둔다.
 export function applyVariables(template: string, variables: Map<string, string>): string {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (match, name: string) => {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}|\$\{\s*([a-zA-Z0-9_.-]+)\s*\}/g, (match, moustache: string, dollar: string) => {
+    const name = moustache ?? dollar;
     return variables.get(name) ?? match;
   });
 }
@@ -100,6 +101,15 @@ export function applyToRequest<T>(request: T, variables: Map<string, string>): T
       key: p.key,
       value: applyVariables(p.value, variables),
     }));
+  }
+  if (out.auth && typeof out.auth === "object") {
+    const auth = out.auth as Record<string, unknown>;
+    out.auth = Object.fromEntries(
+      Object.entries(auth).map(([key, value]) => [
+        key,
+        typeof value === "string" ? applyVariables(value, variables) : value,
+      ]),
+    );
   }
   return out as T;
 }

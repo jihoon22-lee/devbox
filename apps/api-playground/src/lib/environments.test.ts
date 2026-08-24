@@ -8,6 +8,7 @@ import {
   setVariable,
   emptyStore,
 } from "./environments";
+import type { RequestTemplate } from "../types";
 
 beforeEach(() => {
   localStorage.clear();
@@ -17,6 +18,17 @@ describe("variable substitution", () => {
   it("기본 치환", () => {
     const vars = new Map([["base", "https://api.example.com"], ["token", "abc"]]);
     expect(applyVariables("{{base}}/v1?token={{token}}", vars)).toBe("https://api.example.com/v1?token=abc");
+  });
+
+  it("${NAME} reference와 기존 {{NAME}} reference를 함께 치환한다", () => {
+    const vars = new Map([
+      ["BASE_URL", "https://api.example.com"],
+      ["VERSION", "v2"],
+      ["TOKEN", "abc"],
+    ]);
+    expect(applyVariables("${BASE_URL}/${VERSION}?token={{TOKEN}}", vars)).toBe(
+      "https://api.example.com/v2?token=abc",
+    );
   });
 
   it("알 수 없는 변수는 그대로", () => {
@@ -39,6 +51,57 @@ describe("variable substitution", () => {
     // 원본 template은 바뀌지 않는다
     expect(req.url).toBe("{{base}}/x");
     expect(req.body).toBe("hello {{name}}");
+  });
+
+  it("URL·params·headers·body와 모든 auth field를 치환하고 원본 auth를 보존한다", () => {
+    const req: RequestTemplate = {
+      method: "POST",
+      url: "${BASE_URL}/${VERSION}",
+      headers: [{ key: "Authorization", value: "Bearer ${TOKEN}" }],
+      params: [{ key: "tenant", value: "${TENANT}" }],
+      body_kind: "json",
+      body: '{"token":"${TOKEN}"}',
+      auth: {
+        kind: "basic",
+        username: "${USERNAME}",
+        password: "${PASSWORD}",
+        token: "${TOKEN}",
+        api_key: "${API_HEADER}",
+        api_value: "${API_VALUE}",
+      },
+      timeout_ms: 10000,
+    };
+    const variables = new Map([
+      ["BASE_URL", "https://api.example.com"],
+      ["VERSION", "v2"],
+      ["TOKEN", "token-value"],
+      ["TENANT", "tenant-value"],
+      ["USERNAME", "user-value"],
+      ["PASSWORD", "password-value"],
+      ["API_HEADER", "X-API-Key"],
+      ["API_VALUE", "api-value"],
+    ]);
+
+    const out = applyToRequest(req, variables);
+
+    expect(out.url).toBe("https://api.example.com/v2");
+    expect(out.headers[0].value).toBe("Bearer token-value");
+    expect(out.params[0].value).toBe("tenant-value");
+    expect(out.body).toBe('{"token":"token-value"}');
+    expect(out.auth).toEqual({
+      kind: "basic",
+      username: "user-value",
+      password: "password-value",
+      token: "token-value",
+      api_key: "X-API-Key",
+      api_value: "api-value",
+    });
+    expect(req.url).toBe("${BASE_URL}/${VERSION}");
+    expect(req.auth?.password).toBe("${PASSWORD}");
+  });
+
+  it("알 수 없는 ${NAME} reference는 그대로 보존한다", () => {
+    expect(applyVariables("${KNOWN}/${MISSING}", new Map([["KNOWN", "ok"]]))).toBe("ok/${MISSING}");
   });
 });
 
