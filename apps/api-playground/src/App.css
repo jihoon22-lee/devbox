@@ -81,6 +81,11 @@ body {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.history-item.selected {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
 .method {
   font-weight: 700;
   font-size: 11px;

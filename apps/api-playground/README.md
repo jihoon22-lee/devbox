@@ -8,7 +8,8 @@
 - **요청 작성** — Method, URL, Params/Headers/Body(JSON·form·raw)
 - **응답 보기** — 상태코드·시간·크기, JSON Pretty/폴드, Raw
 - **Auth 프리셋** — Basic / Bearer / API Key
-- **History / Collection** — 최근 요청과 저장 요청을 v2 형식으로 보존·재호출
+- **History / Collection** — 최근 요청과 저장 요청을 v2 형식으로 보존·재호출. 항목 우클릭 또는
+  `Shift+F10`/Menu 키로 복제·이름 변경·확인 후 삭제·마스킹 cURL 복사를 실행한다.
 - **cURL 변환** — 기본 masking cURL 복사, 확인 후 원문 cURL 1회 복사
 - **환경(environment)·비밀(secret)** — URL·params·headers·body·auth에서 `${NAME}`과
   `{{NAME}}` 참조를 지원하고, DPAPI로 보호된 secret은 backend가 요청 직전에 메모리에서만
@@ -32,6 +33,9 @@
   포함된 cross-origin redirect는 follow 전에 차단해 fail-closed로 처리한다.
 - **cURL** — 화면과 기본 복사는 masking된 결과만 사용한다. 확인 대화상자 뒤의 원문 복사는
   데스크톱 backend가 일회성으로 생성하며 저장하지 않는다.
+- **항목 메뉴** — History·Collection 메뉴는 v2에 저장된 마스킹 request만 사용한다. 복제와
+  이름 변경도 backend sanitizer 및 read-back 검증을 다시 통과하며, 삭제는 확인 전 저장소를
+  변경하지 않는다. History의 선택적 표시 이름은 기존 v2 항목과 하위 호환된다.
 - **브라우저 preview** — Tauri 밖에서는 `fetch` 미리보기만 제공하므로 CORS 제한이 있다.
   DPAPI secret이 포함된 요청과 secret 해제·원문 cURL은 차단하며, 응답·URL도 미리보기 경계에서
   redaction한다.
@@ -39,7 +43,7 @@
 ## 기술
 
 - Rust(`reqwest`)가 직접 요청 → 브라우저 CORS 없음
-- 공용 패키지 `packages/tokens` 사용
+- 공용 패키지 `packages/tokens`, `packages/context-menu` 사용
 
 ## 개발
 

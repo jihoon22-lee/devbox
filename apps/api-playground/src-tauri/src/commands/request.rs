@@ -978,6 +978,41 @@ mod tests {
     }
 
     #[test]
+    fn persisted_history_display_name_survives_and_redacts_environment_secret() {
+        let input = r#"{
+            "version": 2,
+            "history": [{
+                "id": "history-1",
+                "name": "deploy top-secret request",
+                "saved_at": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.test/path",
+                    "headers": [],
+                    "params": [],
+                    "body_kind": "none",
+                    "body": "",
+                    "auth": null,
+                    "timeout_ms": 30000,
+                    "requiresSecretReview": true
+                }
+            }]
+        }"#;
+        let output = sanitize_persisted_json_with_sealer(
+            input,
+            &[sealed_variable("TOKEN", "top-secret")],
+            &MockSealer,
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let entry = &json["history"][0];
+
+        assert_eq!(entry["name"], format!("deploy {REDACTED} request"));
+        assert_eq!(entry["request"]["requiresSecretReview"], true);
+        assert!(!output.contains("top-secret"));
+    }
+
+    #[test]
     fn persisted_collection_wire_shape_survives_backend_sanitization() {
         let input = r#"{
             "version": 2,

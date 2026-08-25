@@ -51,6 +51,8 @@ export interface RedirectHop {
 
 export interface HistoryItem {
   id: string;
+  /** 사용자가 지정한 표시 이름. 기존 v2 항목은 URL을 fallback으로 사용한다. */
+  name?: string;
   saved_at: number;
   request: PersistedHistoryRequest;
   status?: number;

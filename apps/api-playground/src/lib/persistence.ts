@@ -274,7 +274,12 @@ function looksLikeSecret(value: string): boolean {
 function isHistoryItem(value: unknown): value is HistoryItem {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<HistoryItem>;
-  return typeof item.id === "string" && typeof item.saved_at === "number" && isPersistedRequest(item.request);
+  return (
+    typeof item.id === "string" &&
+    (item.name === undefined || typeof item.name === "string") &&
+    typeof item.saved_at === "number" &&
+    isPersistedRequest(item.request)
+  );
 }
 
 function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
