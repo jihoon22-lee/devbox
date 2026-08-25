@@ -7,6 +7,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use tauri::Manager;
+use tauri_plugin_opener::OpenerExt;
+
+use crate::core::entry_actions::{
+    canonical_existing_entry, prepare_open_request, select_open_targets, validated_new_entry,
+    KnowledgeOpenTarget,
+};
 
 /// 앱 전역 상태
 pub struct AppState {
@@ -126,7 +132,7 @@ pub fn create_file(
 ) -> Result<(), String> {
     let conn = state.db.lock().unwrap();
     let root = resolve_root(&conn)?;
-    let path = store::safe_join(&root, &rel)?;
+    let path = validated_new_entry(&root, &rel).map_err(str::to_string)?;
     if path.exists() {
         return Err("파일이 이미 존재합니다".into());
     }
@@ -139,38 +145,153 @@ pub fn create_file(
 }
 
 #[tauri::command]
+pub fn create_directory(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Result<(), String> {
+    let conn = state.db.lock().unwrap();
+    let root = resolve_root(&conn)?;
+    let path = validated_new_entry(&root, &rel).map_err(str::to_string)?;
+    if path.exists() {
+        return Err("폴더가 이미 존재합니다".into());
+    }
+    std::fs::create_dir_all(path).map_err(|_| "폴더를 만들 수 없습니다".to_string())
+}
+
+#[tauri::command]
 pub fn rename_file(
     state: tauri::State<'_, Arc<AppState>>,
     from: String,
     to: String,
 ) -> Result<(), String> {
-    let conn = state.db.lock().unwrap();
+    let mut conn = state.db.lock().unwrap();
     let root = resolve_root(&conn)?;
-    let src = store::safe_join(&root, &from)?;
-    let dst = store::safe_join(&root, &to)?;
-    if let Some(parent) = dst.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let src = canonical_existing_entry(&root, &from).map_err(str::to_string)?;
+    let dst = validated_new_entry(&root, &to).map_err(str::to_string)?;
+    if dst.exists() {
+        return Err("같은 이름의 항목이 이미 존재합니다".into());
     }
-    std::fs::rename(&src, &dst).map_err(|e| e.to_string())?;
-    db::remove_doc(&conn, &from).map_err(|e| e.to_string())?;
-    if let Ok(content) = store::read_file(&dst) {
-        let _ = db::index_doc(&conn, &to, &content);
+    if let Some(parent) = dst.parent() {
+        std::fs::create_dir_all(parent).map_err(|_| "항목 이름을 바꿀 수 없습니다".to_string())?;
+    }
+    std::fs::rename(&src, &dst).map_err(|_| "항목 이름을 바꿀 수 없습니다".to_string())?;
+    if replace_indexed_path(&mut conn, &root, &from, &to).is_err() {
+        // 파일이 source of truth다. DB transaction이 실패하면 가능한 경우 filesystem
+        // rename도 되돌려 호출자가 성공으로 오인하지 않게 한다.
+        let _ = std::fs::rename(&dst, &src);
+        return Err("검색 인덱스를 갱신할 수 없습니다".to_string());
     }
     drop(conn);
     let _ = crate::integration::write_snapshot(&state.db.lock().unwrap());
     Ok(())
 }
 
+fn replace_indexed_path(
+    conn: &mut Connection,
+    root: &Path,
+    from: &str,
+    to: &str,
+) -> Result<(), String> {
+    let transaction = conn
+        .transaction()
+        .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
+    db::remove_docs_under(&transaction, from)
+        .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
+    let renamed = canonical_existing_entry(root, to).map_err(str::to_string)?;
+    if renamed.is_dir() {
+        let entries =
+            store::tree(&renamed).map_err(|_| "검색할 폴더 내용을 읽을 수 없습니다".to_string())?;
+        for (child, is_dir) in entries {
+            if is_dir {
+                continue;
+            }
+            let child_rel = format!("{}/{}", to.trim_end_matches('/'), child);
+            let Ok(child_path) = canonical_existing_entry(root, &child_rel) else {
+                continue;
+            };
+            let Ok(content) = store::read_file(&child_path) else {
+                continue;
+            };
+            db::index_doc(&transaction, &child_rel, &content)
+                .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
+        }
+    } else if let Ok(content) = store::read_file(&renamed) {
+        db::index_doc(&transaction, to, &content)
+            .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
+    }
+    transaction
+        .commit()
+        .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())
+}
+
 #[tauri::command]
 pub fn delete_file(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Result<(), String> {
-    let conn = state.db.lock().unwrap();
+    let mut conn = state.db.lock().unwrap();
     let root = resolve_root(&conn)?;
-    let path = store::safe_join(&root, &rel)?;
-    store::delete_file(&path)?;
-    db::remove_doc(&conn, &rel).map_err(|e| e.to_string())?;
+    let path = canonical_existing_entry(&root, &rel).map_err(str::to_string)?;
+    let transaction = conn
+        .transaction()
+        .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
+    db::remove_docs_under(&transaction, &rel)
+        .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
+    store::delete_file(&path).map_err(|_| "항목을 삭제할 수 없습니다".to_string())?;
+    transaction
+        .commit()
+        .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
     drop(conn);
     let _ = crate::integration::write_snapshot(&state.db.lock().unwrap());
     Ok(())
+}
+
+fn available_open_targets() -> Vec<KnowledgeOpenTarget> {
+    select_open_targets("knowledge-base", devbox_launch::installed_targets("path"))
+}
+
+fn resolve_entry_for_action(
+    state: &tauri::State<'_, Arc<AppState>>,
+    rel: &str,
+) -> Result<PathBuf, String> {
+    let conn = state.db.lock().unwrap();
+    let root = resolve_root(&conn).map_err(|_| "Knowledge 루트를 열 수 없습니다".to_string())?;
+    canonical_existing_entry(&root, rel).map_err(str::to_string)
+}
+
+/// 사용자가 명시적으로 Copy path를 선택했을 때만 absolute path를 frontend에 반환한다.
+#[tauri::command]
+pub fn entry_path(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Result<String, String> {
+    let path = resolve_entry_for_action(&state, &rel)?;
+    path.to_str()
+        .map(str::to_string)
+        .ok_or_else(|| "Knowledge 항목 경로가 올바르지 않습니다".to_string())
+}
+
+#[tauri::command]
+pub fn reveal_entry(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<AppState>>,
+    rel: String,
+) -> Result<(), String> {
+    let path = resolve_entry_for_action(&state, &rel)?;
+    app.opener()
+        .reveal_item_in_dir(path)
+        .map_err(|_| "탐색기에서 항목을 표시할 수 없습니다".to_string())
+}
+
+/// Catalog capability와 실제 설치 executable의 교집합만 공개한다. executable
+/// 경로는 frontend에 보내지 않는다.
+#[tauri::command]
+pub fn open_targets() -> Vec<KnowledgeOpenTarget> {
+    available_open_targets()
+}
+
+#[tauri::command]
+pub fn open_in(
+    state: tauri::State<'_, Arc<AppState>>,
+    app_id: String,
+    rel: String,
+) -> Result<(), String> {
+    let entry = resolve_entry_for_action(&state, &rel)?;
+    let targets = available_open_targets();
+    let (target_id, request) =
+        prepare_open_request(&targets, &app_id, &entry).map_err(str::to_string)?;
+    devbox_launch::launch_open(&target_id, &request).map(|_| ())
 }
 
 #[tauri::command]
@@ -250,5 +371,29 @@ mod tests {
         // 2026-08-11 = epoch days
         let days = 20_676;
         assert_eq!(civil_from_days(days), (2026, 8, 11));
+    }
+
+    #[test]
+    fn folder_rename_reindexes_descendants_and_delete_removes_them() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("Old/nested")).unwrap();
+        std::fs::write(root.path().join("Old/a.md"), "alpha unique").unwrap();
+        std::fs::write(root.path().join("Old/nested/b.md"), "beta unique").unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
+        db::migrate(&conn).unwrap();
+        db::index_doc(&conn, "Old/a.md", "alpha unique").unwrap();
+        db::index_doc(&conn, "Old/nested/b.md", "beta unique").unwrap();
+
+        std::fs::rename(root.path().join("Old"), root.path().join("New")).unwrap();
+        replace_indexed_path(&mut conn, root.path(), "Old", "New").unwrap();
+
+        assert_eq!(db::search(&conn, "alpha", 10).unwrap()[0].0, "New/a.md");
+        assert_eq!(
+            db::search(&conn, "beta", 10).unwrap()[0].0,
+            "New/nested/b.md"
+        );
+        store::delete_file(&root.path().join("New")).unwrap();
+        db::remove_docs_under(&conn, "New").unwrap();
+        assert!(db::search(&conn, "unique", 10).unwrap().is_empty());
     }
 }

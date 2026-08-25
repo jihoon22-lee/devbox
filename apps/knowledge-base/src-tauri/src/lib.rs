@@ -50,6 +50,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             applink::take_pending_open,
@@ -60,8 +61,13 @@ pub fn run() {
             commands::docs::open_inbound_note,
             commands::docs::write_file,
             commands::docs::create_file,
+            commands::docs::create_directory,
             commands::docs::rename_file,
             commands::docs::delete_file,
+            commands::docs::entry_path,
+            commands::docs::reveal_entry,
+            commands::docs::open_targets,
+            commands::docs::open_in,
             commands::docs::search_docs,
             commands::docs::list_tags,
             commands::docs::daily_note,

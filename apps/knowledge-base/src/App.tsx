@@ -1,20 +1,31 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ContextMenu,
+  useContextMenu,
+  type ContextMenuEntry,
+} from "@devbox/context-menu";
 import {
   createFile,
+  createDirectory,
   dailyNote,
   deleteFile,
+  entryPath,
   listTags,
   listTree,
   onDocsChanged,
   onOpenRequest,
   openInboundNote,
+  openIn,
+  openTargets,
   readFile,
+  revealEntry,
   renameFile,
   renderMarkdown,
   searchDocs,
   takePendingOpen,
   writeFile,
   type OpenRequest,
+  type KnowledgeOpenTarget,
 } from "./api";
 import MarkdownEditor from "./components/MarkdownEditor";
 import MarkdownPreview from "./components/MarkdownPreview";
@@ -23,6 +34,7 @@ import { routeOpenRequest } from "./lib/applink";
 import "./App.css";
 
 type ViewMode = "edit" | "split" | "preview";
+type TreeContextTarget = { path: string; isDir: boolean };
 
 const RENDER_DEBOUNCE_MS = 300;
 
@@ -34,10 +46,34 @@ function isMarkdown(path: string | null): boolean {
   return !!path && path.endsWith(".md");
 }
 
+function normalizeRelativePath(path: string): string {
+  return path.trim().replace(/\\/g, "/").replace(/\/+/g, "/");
+}
+
+function parentPath(path: string): string {
+  const separator = path.lastIndexOf("/");
+  return separator < 0 ? "" : path.slice(0, separator);
+}
+
+function childPath(parent: string, name: string): string {
+  return parent ? `${parent}/${name}` : name;
+}
+
+function isSameOrChild(path: string | null, parent: string): boolean {
+  return path === parent || path?.startsWith(`${parent}/`) === true;
+}
+
+function remapPath(path: string | null, from: string, to: string): string | null {
+  if (path === from) return to;
+  if (path?.startsWith(`${from}/`)) return `${to}${path.slice(from.length)}`;
+  return path;
+}
+
 export default function App() {
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [dirty, setDirty] = useState(false);
   const [query, setQuery] = useState("");
@@ -45,6 +81,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<ViewMode>("edit");
   const [rendered, setRendered] = useState<RenderedDoc | null>(null);
+  const [contextTarget, setContextTarget] = useState<TreeContextTarget | null>(null);
+  const [availableTargets, setAvailableTargets] = useState<KnowledgeOpenTarget[] | null>(null);
 
   // 인플라이트 렌더 응답이 도착했을 때 "그사이 다른 문서로 전환했는지"를 판단하기 위해
   // 최신 선택값을 ref로도 들고 있는다(설계 결정 3 — 응답 시점에 최신값과 비교).
@@ -94,6 +132,23 @@ export default function App() {
     void loadMeta();
   }, [loadMeta]);
 
+  useEffect(() => {
+    let disposed = false;
+    void openTargets()
+      .then((targets) => {
+        if (!disposed) setAvailableTargets(targets);
+      })
+      .catch((cause: unknown) => {
+        if (!disposed) {
+          setAvailableTargets([]);
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
   // 외부 편집 watcher가 docs-changed를 보내면 트리·태그를 새로고침한다
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -109,6 +164,7 @@ export default function App() {
     try {
       const text = await readFile(path);
       setSelected(path);
+      setSelectedTreePath(path);
       setContent(text);
       setDirty(false);
     } catch (e) {
@@ -151,6 +207,7 @@ export default function App() {
         try {
           const note = await openInboundNote(action.path);
           setSelected(note.path);
+          setSelectedTreePath(note.path);
           setContent(note.content);
           setDirty(false);
         } catch {
@@ -212,6 +269,7 @@ export default function App() {
     try {
       const [rel, text] = await dailyNote();
       setSelected(rel);
+      setSelectedTreePath(rel);
       setContent(text);
       setDirty(false);
       await loadMeta();
@@ -222,10 +280,11 @@ export default function App() {
 
   const newFile = async () => {
     const name = prompt("새 파일 이름 (예: Notes/idea.md)");
-    if (!name) return;
+    const normalized = name ? normalizeRelativePath(name) : "";
+    if (!normalized) return;
     setError(null);
     try {
-      await createFile(name, "---\ntitle: \n---\n\n");
+      await createFile(normalized, "---\ntitle: \n---\n\n");
       await loadMeta();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -234,29 +293,124 @@ export default function App() {
 
   const rename = async (path: string) => {
     const name = prompt("새 이름", path);
-    if (!name || name === path) return;
+    const normalized = name ? normalizeRelativePath(name) : "";
+    if (!normalized || normalized === path) return;
     setError(null);
     try {
-      await renameFile(path, name);
-      if (selected === path) setSelected(name);
+      await renameFile(path, normalized);
+      setSelected((current) => remapPath(current, path, normalized));
+      setSelectedTreePath((current) => remapPath(current, path, normalized));
       await loadMeta();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
 
-  const remove = async (path: string) => {
-    if (!confirm(`'${path}' 삭제?`)) return;
+  const remove = async (path: string, isDir = false) => {
+    const kind = isDir ? "폴더와 그 안의 모든 항목" : "파일";
+    if (!confirm(`'${path}' ${kind}을(를) 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
     setError(null);
     try {
       await deleteFile(path);
-      if (selected === path) {
+      if (isSameOrChild(selected, path)) {
         setSelected(null);
         setContent("");
+        setDirty(false);
       }
+      setSelectedTreePath((current) => (isSameOrChild(current, path) ? null : current));
       await loadMeta();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const prepareTreeContext = useCallback((_reason: "pointer" | "keyboard", target: HTMLElement) => {
+    const path = target.dataset.treePath;
+    if (!path) return;
+    const next = { path, isDir: target.dataset.treeDir === "true" };
+    setSelectedTreePath(path);
+    setContextTarget(next);
+  }, []);
+
+  const treeContextMenu = useContextMenu({ onBeforeOpen: prepareTreeContext });
+
+  useEffect(() => {
+    if (contextTarget && !tree.some((entry) => entry.path === contextTarget.path)) {
+      treeContextMenu.close();
+      setContextTarget(null);
+    }
+  }, [contextTarget, tree, treeContextMenu.close]);
+
+  const treeContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
+    if (!contextTarget) return [];
+    const targetItems: ContextMenuEntry[] = (availableTargets ?? []).map((target) => ({
+      type: "item",
+      id: `open-in:${target.id}`,
+      label: target.displayName,
+    }));
+    return [
+      { type: "item", id: "new-file", label: "새 파일" },
+      { type: "item", id: "new-folder", label: "새 폴더" },
+      { type: "separator", id: "mutate-separator" },
+      { type: "item", id: "rename", label: "이름 변경" },
+      { type: "item", id: "delete", label: "삭제", danger: true },
+      { type: "separator", id: "path-separator" },
+      { type: "item", id: "copy-path", label: "경로 복사" },
+      { type: "item", id: "reveal", label: "탐색기에서 열기" },
+      {
+        type: "submenu",
+        id: "open-in",
+        label: "다른 앱으로 열기",
+        disabled: availableTargets === null || targetItems.length === 0,
+        items: targetItems,
+      },
+    ];
+  }, [availableTargets, contextTarget]);
+
+  const createFromContext = async (kind: "file" | "folder", target: TreeContextTarget) => {
+    const parent = target.isDir ? target.path : parentPath(target.path);
+    const suggestion = childPath(parent, kind === "file" ? "새 노트.md" : "새 폴더");
+    const requested = prompt(kind === "file" ? "새 파일 이름" : "새 폴더 이름", suggestion);
+    const rel = requested ? normalizeRelativePath(requested) : "";
+    if (!rel) return;
+    setError(null);
+    try {
+      if (kind === "file") await createFile(rel, "---\ntitle: \n---\n\n");
+      else await createDirectory(rel);
+      setSelectedTreePath(rel);
+      await loadMeta();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const runTreeContextAction = async (id: string) => {
+    const target = contextTarget;
+    if (!target) return;
+    if (id === "new-file" || id === "new-folder") {
+      await createFromContext(id === "new-file" ? "file" : "folder", target);
+      return;
+    }
+    if (id === "rename") {
+      await rename(target.path);
+      return;
+    }
+    if (id === "delete") {
+      await remove(target.path, target.isDir);
+      return;
+    }
+    setError(null);
+    try {
+      if (id === "copy-path") {
+        await navigator.clipboard.writeText(await entryPath(target.path));
+      } else if (id === "reveal") {
+        await revealEntry(target.path);
+      } else {
+        const destination = availableTargets?.find((candidate) => `open-in:${candidate.id}` === id);
+        if (destination) await openIn(destination.id, target.path);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
 
@@ -293,9 +447,16 @@ export default function App() {
             : tree.map((t) => (
                 <div key={t.path} className="tree-node-wrap">
                   <button
-                    className={`tree-node ${selected === t.path ? "active" : ""}`}
+                    className={`tree-node ${selectedTreePath === t.path ? "active" : ""}`}
                     style={{ paddingLeft: `${8 + indent(t.path) * 14}px` }}
-                    onClick={() => (t.is_dir ? undefined : void openFile(t.path))}
+                    data-tree-path={t.path}
+                    data-tree-dir={String(t.is_dir)}
+                    aria-selected={selectedTreePath === t.path}
+                    onClick={() => {
+                      setSelectedTreePath(t.path);
+                      if (!t.is_dir) void openFile(t.path);
+                    }}
+                    {...treeContextMenu.triggerProps}
                   >
                     <span className={t.is_dir ? "dir" : "file"}>
                       {t.is_dir ? "▾ " : ""}
@@ -315,6 +476,15 @@ export default function App() {
                 </div>
               ))}
         </div>
+        <ContextMenu
+          open={treeContextMenu.open}
+          anchor={treeContextMenu.anchor}
+          items={treeContextItems}
+          onSelect={(id) => void runTreeContextAction(id)}
+          onClose={treeContextMenu.close}
+          restoreFocusTo={treeContextMenu.restoreFocusTo}
+          ariaLabel="Knowledge 트리 작업"
+        />
         <div className="tags">
           <div className="dim">Tags</div>
           {tags.map((t) => (
@@ -369,6 +539,7 @@ export default function App() {
                     setDirty(true);
                   }}
                   onSave={() => void save()}
+                  onError={setError}
                 />
               )}
               {mode !== "edit" && (

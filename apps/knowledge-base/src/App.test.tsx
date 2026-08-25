@@ -1,10 +1,24 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import {
+  createDirectory,
+  createFile,
+  deleteFile,
+  entryPath,
+  openIn,
+  openTargets,
+  renameFile,
+  revealEntry,
+} from "./api";
 
-/** listTree가 .md 파일과 .png 파일을 하나씩 반환하도록 ./api를 모킹한다. */
+const writeTextMock = vi.fn<(text: string) => Promise<void>>();
+
+/** 폴더, .md 파일, .png 파일을 포함한 tree fixture. */
 vi.mock("./api", () => {
   const TREE = [
+    { path: "Notes", is_dir: true },
+    { path: "Notes/nested.md", is_dir: false },
     { path: "note.md", is_dir: false },
     { path: "image.png", is_dir: false },
   ];
@@ -17,8 +31,16 @@ vi.mock("./api", () => {
     onOpenRequest: vi.fn(async () => () => undefined),
     writeFile: vi.fn(async () => undefined),
     createFile: vi.fn(async () => undefined),
+    createDirectory: vi.fn(async () => undefined),
     renameFile: vi.fn(async () => undefined),
     deleteFile: vi.fn(async () => undefined),
+    entryPath: vi.fn(async (rel: string) => `C:\\Knowledge\\${rel.replace(/\//g, "\\")}`),
+    revealEntry: vi.fn(async () => undefined),
+    openTargets: vi.fn(async () => [
+      { id: "code-pad", displayName: "Code Pad" },
+      { id: "workbench", displayName: "Workbench" },
+    ]),
+    openIn: vi.fn(async () => undefined),
     searchDocs: vi.fn(async () => []),
     dailyNote: vi.fn(async () => ["daily.md", "# Today"] as [string, string]),
     renderMarkdown: vi.fn(async () => ({ title: null, tags: [], html: "<p>rendered</p>", mermaid: [] })),
@@ -26,7 +48,27 @@ vi.mock("./api", () => {
   };
 });
 
-afterEach(() => cleanup());
+const createFileMock = vi.mocked(createFile);
+const createDirectoryMock = vi.mocked(createDirectory);
+const renameFileMock = vi.mocked(renameFile);
+const deleteFileMock = vi.mocked(deleteFile);
+const entryPathMock = vi.mocked(entryPath);
+const revealEntryMock = vi.mocked(revealEntry);
+const openTargetsMock = vi.mocked(openTargets);
+const openInMock = vi.mocked(openIn);
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  createFileMock.mockClear();
+  createDirectoryMock.mockClear();
+  renameFileMock.mockClear();
+  deleteFileMock.mockClear();
+  entryPathMock.mockClear();
+  revealEntryMock.mockClear();
+  openTargetsMock.mockClear();
+  openInMock.mockClear();
+});
 
 describe("knowledge-base App — 모드 토글 & 프리뷰 비활성화", () => {
   it(".md 파일을 열면 분할/프리뷰 버튼이 활성화된다", async () => {
@@ -82,5 +124,137 @@ describe("knowledge-base App — 모드 토글 & 프리뷰 비활성화", () => 
 
     fireEvent.click(await screen.findByText("image.png"));
     await waitFor(() => expect(body()?.className).toContain("mode-edit"));
+  });
+});
+
+function treeButton(nameOrNode: string | HTMLElement): HTMLButtonElement {
+  const button = typeof nameOrNode === "string"
+    ? Array.from(document.querySelectorAll<HTMLButtonElement>("button[data-tree-path]"))
+        .find((candidate) => candidate.dataset.treePath === nameOrNode) ?? null
+    : nameOrNode.closest("button");
+  if (!(button instanceof HTMLButtonElement)) throw new Error("tree button was not rendered");
+  return button;
+}
+
+describe("knowledge-base App — tree context menu", () => {
+  it("우클릭한 폴더를 먼저 선택하고 정확한 앱 소유 메뉴를 표시한다", async () => {
+    render(<App />);
+    await screen.findByText("nested.md");
+    const notes = treeButton("Notes");
+
+    fireEvent.contextMenu(notes, { clientX: 20, clientY: 30 });
+
+    expect(notes).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("menu", { name: "Knowledge 트리 작업" })).toBeInTheDocument();
+    for (const label of [
+      "새 파일",
+      "새 폴더",
+      "이름 변경",
+      "삭제",
+      "경로 복사",
+      "탐색기에서 열기",
+      "다른 앱으로 열기",
+    ]) {
+      expect(screen.getByRole("menuitem", { name: label })).toBeInTheDocument();
+    }
+    expect(screen.getByRole("menuitem", { name: "삭제" })).toHaveClass("danger");
+    await waitFor(() => expect(
+      screen.getByRole("menuitem", { name: "다른 앱으로 열기" }),
+    ).not.toHaveAttribute("aria-disabled"));
+  });
+
+  it("대상 폴더를 기준으로 새 파일과 새 폴더를 만든다", async () => {
+    const promptMock = vi.spyOn(window, "prompt");
+    render(<App />);
+    await screen.findByText("nested.md");
+    const notes = treeButton("Notes");
+
+    promptMock.mockReturnValueOnce("Notes/idea.md");
+    fireEvent.contextMenu(notes);
+    fireEvent.click(screen.getByRole("menuitem", { name: "새 파일" }));
+    await waitFor(() => expect(createFileMock).toHaveBeenCalledWith(
+      "Notes/idea.md",
+      "---\ntitle: \n---\n\n",
+    ));
+
+    promptMock.mockReturnValueOnce("Notes/Archive");
+    fireEvent.contextMenu(notes);
+    fireEvent.click(screen.getByRole("menuitem", { name: "새 폴더" }));
+    await waitFor(() => expect(createDirectoryMock).toHaveBeenCalledWith("Notes/Archive"));
+  });
+
+  it("이름변경과 danger 삭제를 확인 뒤 정확한 항목에 적용한다", async () => {
+    vi.spyOn(window, "prompt").mockReturnValueOnce("Notes/renamed.md");
+    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+    const nested = treeButton(await screen.findByText("nested.md"));
+
+    fireEvent.contextMenu(nested);
+    fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
+    await waitFor(() => expect(renameFileMock).toHaveBeenCalledWith(
+      "Notes/nested.md",
+      "Notes/renamed.md",
+    ));
+
+    fireEvent.contextMenu(nested);
+    fireEvent.click(screen.getByRole("menuitem", { name: "삭제" }));
+    await waitFor(() => expect(deleteFileMock).toHaveBeenCalledWith("Notes/nested.md"));
+    expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining("되돌릴 수 없습니다"));
+  });
+
+  it("검증된 absolute path 복사·탐색기 표시·catalog 대상 열기를 실행한다", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: writeTextMock },
+    });
+    writeTextMock.mockResolvedValue(undefined);
+    render(<App />);
+    const nested = treeButton(await screen.findByText("nested.md"));
+
+    fireEvent.contextMenu(nested);
+    fireEvent.click(screen.getByRole("menuitem", { name: "경로 복사" }));
+    await waitFor(() => expect(entryPathMock).toHaveBeenCalledWith("Notes/nested.md"));
+    expect(writeTextMock).toHaveBeenCalledWith("C:\\Knowledge\\Notes\\nested.md");
+
+    fireEvent.contextMenu(nested);
+    fireEvent.click(screen.getByRole("menuitem", { name: "탐색기에서 열기" }));
+    await waitFor(() => expect(revealEntryMock).toHaveBeenCalledWith("Notes/nested.md"));
+
+    fireEvent.contextMenu(nested);
+    const submenu = screen.getByRole("menuitem", { name: "다른 앱으로 열기" });
+    fireEvent.mouseEnter(submenu);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Code Pad" }));
+    await waitFor(() => expect(openInMock).toHaveBeenCalledWith("code-pad", "Notes/nested.md"));
+  });
+
+  it("Shift+F10/Menu key를 지원하고 닫힌 뒤 원래 tree row로 focus를 복구한다", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: writeTextMock },
+    });
+    writeTextMock.mockResolvedValue(undefined);
+    render(<App />);
+    const nested = treeButton(await screen.findByText("nested.md"));
+    nested.focus();
+
+    fireEvent.keyDown(nested, { key: "F10", code: "F10", shiftKey: true });
+    fireEvent.click(screen.getByRole("menuitem", { name: "경로 복사" }));
+
+    await waitFor(() => expect(document.activeElement).toBe(nested));
+  });
+
+  it("설치 대상이 없으면 submenu를 비활성화하고 action 실패를 복구 가능한 오류로 표시한다", async () => {
+    openTargetsMock.mockResolvedValueOnce([]);
+    revealEntryMock.mockRejectedValueOnce(new Error("표시 실패"));
+    render(<App />);
+    const nested = treeButton(await screen.findByText("nested.md"));
+
+    fireEvent.contextMenu(nested);
+    expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "탐색기에서 열기" }));
+    expect(await screen.findByText("표시 실패")).toBeInTheDocument();
   });
 });

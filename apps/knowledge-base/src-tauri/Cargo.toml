@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+tauri-plugin-clipboard-manager = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
@@ -33,6 +34,7 @@ notify = "8.2.0"
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
+devbox-launch = { package = "launch", path = "../../../crates/launch" }
 
 [dev-dependencies]
 tempfile = "3"

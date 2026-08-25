@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { isTauri } from "./lib/isTauri";
 import type { RenderedDoc, SearchResult, TreeEntry } from "./types";
 
@@ -17,6 +18,16 @@ export interface InboundNote {
   path: string;
   content: string;
 }
+
+export interface KnowledgeOpenTarget {
+  id: string;
+  displayName: string;
+}
+
+const MOCK_OPEN_TARGETS: KnowledgeOpenTarget[] = [
+  { id: "code-pad", displayName: "Code Pad" },
+  { id: "workbench", displayName: "Workbench" },
+];
 
 const MOCK_TREE: TreeEntry[] = [
   { path: "Projects", is_dir: true },
@@ -86,6 +97,11 @@ export async function createFile(rel: string, content?: string): Promise<void> {
   await invoke("create_file", { rel, content });
 }
 
+export async function createDirectory(rel: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("create_directory", { rel });
+}
+
 export async function renameFile(from: string, to: string): Promise<void> {
   if (!isTauri()) return;
   await invoke("rename_file", { from, to });
@@ -94,6 +110,32 @@ export async function renameFile(from: string, to: string): Promise<void> {
 export async function deleteFile(rel: string): Promise<void> {
   if (!isTauri()) return;
   await invoke("delete_file", { rel });
+}
+
+export async function entryPath(rel: string): Promise<string> {
+  if (!isTauri()) return rel;
+  return invoke<string>("entry_path", { rel });
+}
+
+export async function revealEntry(rel: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("reveal_entry", { rel });
+}
+
+export async function openTargets(): Promise<KnowledgeOpenTarget[]> {
+  if (!isTauri()) return MOCK_OPEN_TARGETS;
+  return invoke<KnowledgeOpenTarget[]>("open_targets");
+}
+
+export async function openIn(appId: string, rel: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("open_in", { appId, rel });
+}
+
+/** 편집기 메뉴에서 사용자가 Paste를 선택한 순간에만 plain text를 읽는다. */
+export async function readClipboardText(): Promise<string> {
+  if (!isTauri()) return navigator.clipboard.readText();
+  return readText();
 }
 
 export async function searchDocs(query: string): Promise<SearchResult[]> {
