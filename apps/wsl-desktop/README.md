@@ -21,18 +21,32 @@
 - **글꼴·스크롤백·resize** — 글꼴 크기 `Ctrl++/-/0`과 툴바 조절값을 저장하며 xterm을
   재마운트하지 않는다. 10,000줄 scrollback, ConPTY wrap 보정, resize ack 후 commit·실패
   재시도, hidden pane/최소 크기 보호를 적용한다.
-- **동시 명령(broadcast)** — 여러 터미널에 같은 명령 전송
+- **워크스페이스·프로필** — stable pane key로 마지막 탭/팬/distro/cwd/layout/시작 명령을
+  복원하고, 현재 구성을 이름 있는 터미널 프로필로 저장한다. `OpenTarget::Profile` cold/hot
+  요청은 같은 전환 경로를 사용한다. 시작 명령은 실행 전에 최종 문자열을 확인하고 새 세션에
+  한 번만 보낸다.
+- **명령 팔레트** — `Ctrl+Shift+P`에서 활성 팬 분할·닫기·출력 검색·cwd 복사와 프로필
+  전환을 키보드로 실행한다.
+- **동시 입력(broadcast)** — 기본 OFF. 활성 탭의 팬을 2개 이상 직접 선택하고 대상 수를
+  확인해야 켤 수 있다. 여러 줄 붙여넣기와 위험 명령 Enter는 대상 수와 실행 위험을 다시
+  확인하며 취소한 위험 명령은 다음 Enter에서도 재확인한다.
+- **선택적 프로세스 유지** — native workspace는 외부 도구 없이 완전하게 동작한다. 이미
+  설치된 tmux/zellij만 감지해 stable `wsld-*` 세션에 opt-in attach하며, 설치·download하지
+  않고 부재/감지 실패 시 native로 폴백한다.
 - **상태 패널** — WSL 배포판 / Docker
 - **open path 핀·최근 경로** — 자주 쓰는 작업 경로 저장
 
 ## 기술
 
-- `portable-pty` 기반 ConPTY (PTY resize, 탭 모델, 드래그 2종, 단축키 5종)
+- `portable-pty` 기반 ConPTY (PTY resize, 탭 모델, 드래그와 앱/터미널 단축키)
 - 공용 `packages/context-menu` — viewport 배치·keyboard navigation·focus 복원·submenu를
   공유하고, WSL 전용 항목·exact pane/tab 대상·danger 확인은 앱이 소유한다.
 - 공식 xterm MIT addon(`addon-search`, `addon-web-links`)과 Tauri clipboard plugin을 앱에
   포함하므로 설치 뒤 검색·링크 감지·붙여넣기는 network나 별도 외부 도구 없이 동작한다.
   clipboard capability는 읽기 텍스트 하나만 허용한다.
+- tmux/zellij 어댑터는 shell 문자열 조립 없이 exact argv만 사용한다. tmux UI option은 해당
+  session에만 적용하고 zellij는 내장 `disable-status` layout과 frame/mouse off option을
+  사용해 앱의 탭·팬 UI와 xterm selection을 유지한다.
 - 공용 크레이트 `crates/wsl` — 프로세스를 실행하지 않는 WSL 공용 프리미티브로, `wsl.exe` 실행
   argv(`--cd` 포함)·`wslpath` argv 조립, distro 이름 검증, WSL 출력 디코딩, Windows↔WSL 경로와
   canonical project key 정규화를 제공한다.
@@ -43,8 +57,11 @@
 ## 데이터
 
 - 프로젝트·git 상태는 Workbench로 이관됨 (`com.devbox.workbench\project-profiles.json`)
-- `localStorage`: cwd 핀·최근 경로 5개, selection 자동 복사 여부, 터미널 글꼴 크기. 터미널
-  출력·selection·clipboard 내용은 저장하지 않는다.
+- `localStorage`: cwd 핀·최근 경로 5개, selection 자동 복사 여부, 터미널 글꼴 크기, version 1
+  마지막 레이아웃. 터미널 출력·selection·clipboard 내용과 runtime session id는 저장하지 않는다.
+- `app_local_data_dir/terminal-profiles.json`: version 1 이름 있는 터미널 프로필. atomic replace,
+  탭 16개·팬 32개·한 줄 시작 명령 4,096자 제한, 참조 무결성·안전한 절대 cwd·명백한 평문
+  credential 검증을 적용한다.
 
 ## 개발
 

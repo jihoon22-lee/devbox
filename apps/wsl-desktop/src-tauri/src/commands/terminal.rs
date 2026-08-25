@@ -1,10 +1,13 @@
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{ErrorKind, Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
+
+use crate::core::multiplexer::build_session_argv;
+use crate::core::workspace::MultiplexerKind;
 
 /// 실행 중인 터미널 세션 저장소
 pub struct SessionState {
@@ -128,6 +131,14 @@ pub struct SessionInfo {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartedSession {
+    pub session_id: String,
+    pub resumed: bool,
+    pub multiplexer: MultiplexerKind,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct TerminalOutput {
     pub session_id: String,
     pub data: String,
@@ -201,9 +212,18 @@ fn decode_chunk(carry: &mut Vec<u8>, chunk: &[u8]) -> String {
 /// Always delegates distro validation and argument construction to the shared
 /// WSL builder, including when no cwd is supplied. Keeping this boundary as
 /// argv also prevents a path from becoming shell syntax (`bash -lc ...`).
+#[cfg(test)]
 fn build_session_command(distro: &str, cwd: Option<&str>) -> Result<CommandBuilder, String> {
-    let cwd = cwd.filter(|dir| !dir.trim().is_empty());
-    let argv = devbox_wsl::argv::build_exec_argv(distro, cwd, "").map_err(|e| e.to_string())?;
+    build_workspace_session_command(distro, cwd, "ephemeral", MultiplexerKind::Native)
+}
+
+fn build_workspace_session_command(
+    distro: &str,
+    cwd: Option<&str>,
+    pane_key: &str,
+    multiplexer: MultiplexerKind,
+) -> Result<CommandBuilder, String> {
+    let argv = build_session_argv(distro, cwd, pane_key, multiplexer)?;
     let mut command = CommandBuilder::new(&argv[0]);
     command.args(&argv[1..]);
     Ok(command)
@@ -216,12 +236,24 @@ fn build_session_command(distro: &str, cwd: Option<&str>) -> Result<CommandBuild
 /// `App.tsx`의 옵셔널 체이닝으로 조용히 버려지고 이스케이프 시퀀스 중간에서
 /// 잘린 첫 청크가 리터럴 쓰레기로 렌더된다.)
 #[tauri::command]
-pub fn start_session(
+pub async fn start_session(
     state: tauri::State<'_, Arc<SessionState>>,
     distro: String,
     cwd: Option<String>,
-) -> Result<String, String> {
-    let cmd = build_session_command(&distro, cwd.as_deref())?;
+    pane_key: String,
+    multiplexer: MultiplexerKind,
+) -> Result<StartedSession, String> {
+    let actual_multiplexer =
+        if crate::commands::multiplexer::kind_is_available(&distro, multiplexer).await {
+            multiplexer
+        } else {
+            MultiplexerKind::Native
+        };
+    let resumed = actual_multiplexer != MultiplexerKind::Native
+        && crate::commands::multiplexer::session_is_running(&distro, &pane_key, actual_multiplexer)
+            .await;
+    let cmd =
+        build_workspace_session_command(&distro, cwd.as_deref(), &pane_key, actual_multiplexer)?;
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -273,7 +305,11 @@ pub fn start_session(
         .unwrap()
         .insert(session_id.clone(), handle);
 
-    Ok(session_id)
+    Ok(StartedSession {
+        session_id,
+        resumed,
+        multiplexer: actual_multiplexer,
+    })
 }
 
 /// PTY 리더 스레드를 시작한다. 프론트가 출력 핸들러를 등록한 직후 호출해야
@@ -377,19 +413,37 @@ pub fn write_session(
 /// 탭 도입 전에는 등록된 모든 세션을 대상으로 했지만, 탭이 생기면서
 /// 다른 탭의 세션에도 입력이 새는 문제가 됐다. 프론트는 활성 탭의
 /// 세션 id만 넘긴다.
+fn validate_broadcast_request(session_ids: &[String], data: &str) -> Result<(), String> {
+    if session_ids.len() < 2 || session_ids.len() > 32 || data.len() > 1_000_000 {
+        return Err("broadcast 입력 범위가 올바르지 않습니다".into());
+    }
+    if session_ids.iter().collect::<HashSet<_>>().len() != session_ids.len() {
+        return Err("broadcast 대상이 중복되었습니다".into());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn broadcast(
     state: tauri::State<'_, Arc<SessionState>>,
     session_ids: Vec<String>,
     data: String,
 ) -> Result<(), String> {
+    validate_broadcast_request(&session_ids, &data)?;
     let sessions = state.sessions.lock().unwrap();
+    if session_ids.iter().any(|id| !sessions.contains_key(id)) {
+        return Err("broadcast 대상 세션을 찾을 수 없습니다".into());
+    }
     for id in &session_ids {
-        if let Some(h) = sessions.get(id) {
-            let mut h = h.lock().unwrap();
-            let _ = h.writer.write_all(data.as_bytes());
-            let _ = h.writer.flush();
-        }
+        let mut handle = sessions[id].lock().unwrap();
+        handle
+            .writer
+            .write_all(data.as_bytes())
+            .map_err(|_| "broadcast 입력을 일부 세션에 전달하지 못했습니다".to_string())?;
+        handle
+            .writer
+            .flush()
+            .map_err(|_| "broadcast 입력을 일부 세션에 전달하지 못했습니다".to_string())?;
     }
     Ok(())
 }
@@ -505,6 +559,17 @@ mod tests {
         assert_eq!(
             command_args(&command),
             vec!["wsl.exe", "-d", "Ubuntu", "--"]
+        );
+    }
+
+    #[test]
+    fn broadcast_requires_bounded_unique_explicit_targets() {
+        assert!(validate_broadcast_request(&["one".into()], "echo ok").is_err());
+        assert!(validate_broadcast_request(&["one".into(), "one".into()], "echo ok").is_err());
+        assert!(validate_broadcast_request(&["one".into(), "two".into()], "echo ok").is_ok());
+        assert!(
+            validate_broadcast_request(&["one".into(), "two".into()], &"x".repeat(1_000_001),)
+                .is_err()
         );
     }
 

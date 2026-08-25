@@ -51,6 +51,7 @@ const {
     selection = "";
     keyHandler?: (event: KeyboardEvent) => boolean;
     selectionHandler?: () => void;
+    dataHandler?: (data: string) => void;
     titleHandler?: (title: string) => void;
     osc7Handler?: (payload: string) => boolean;
     parser = {
@@ -69,7 +70,8 @@ const {
     attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
       this.keyHandler = handler;
     }
-    onData() {
+    onData(handler: (data: string) => void) {
+      this.dataHandler = handler;
       return { dispose: () => undefined };
     }
     onSelectionChange(handler: () => void) {
@@ -152,18 +154,20 @@ vi.mock("@xterm/addon-search", () => ({ SearchAddon: FakeSearchAddon }));
 vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: FakeUnicode11Addon }));
 vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: FakeWebLinksAddon }));
 
-const { mockResizeSession, mockReadClipboardText, mockOpenTerminalLink } = vi.hoisted(() => ({
+const { mockResizeSession, mockReadClipboardText, mockOpenTerminalLink, mockBroadcast, mockWriteSession } = vi.hoisted(() => ({
   mockResizeSession: vi.fn().mockResolvedValue(undefined),
   mockReadClipboardText: vi.fn().mockResolvedValue(""),
   mockOpenTerminalLink: vi.fn().mockResolvedValue(undefined),
+  mockBroadcast: vi.fn().mockResolvedValue(undefined),
+  mockWriteSession: vi.fn().mockResolvedValue(undefined),
 }));
 const stableRegisterFocus = vi.fn<(id: string, focus: () => void) => void>();
 const stableUnregisterFocus = vi.fn<(id: string) => void>();
 
 vi.mock("../api", () => ({
   attachSession: vi.fn().mockResolvedValue(undefined),
-  broadcast: vi.fn().mockResolvedValue(undefined),
-  writeSession: vi.fn().mockResolvedValue(undefined),
+  broadcast: mockBroadcast,
+  writeSession: mockWriteSession,
   resizeSession: mockResizeSession,
   readClipboardText: mockReadClipboardText,
   openTerminalLink: mockOpenTerminalLink,
@@ -209,6 +213,8 @@ beforeEach(() => {
   mockResizeSession.mockClear();
   mockReadClipboardText.mockReset().mockResolvedValue("");
   mockOpenTerminalLink.mockReset().mockResolvedValue(undefined);
+  mockBroadcast.mockReset().mockResolvedValue(undefined);
+  mockWriteSession.mockReset().mockResolvedValue(undefined);
   stableRegisterFocus.mockClear();
   stableUnregisterFocus.mockClear();
   Object.defineProperty(navigator, "clipboard", {
@@ -554,5 +560,54 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
     rerender(<TermPane {...props(16)} />);
     expect(createdTerminals).toHaveLength(1);
     expect(term.options.fontSize).toBe(16);
+  });
+});
+
+describe("TermPane — profile command와 safe broadcast (#263)", () => {
+  it("새 세션의 시작 명령은 한 번만 보내고 rerender에서 재실행하지 않는다", async () => {
+    const registerWrite = vi.fn();
+    const unregisterWrite = vi.fn();
+    const props = baseProps({ initialCommand: "pnpm dev", registerWrite, unregisterWrite });
+    const { rerender } = render(<TermPane {...props} />);
+    await waitFor(() => expect(mockWriteSession).toHaveBeenCalledWith("s1", "pnpm dev\r"));
+
+    rerender(<TermPane {...props} fontSize={14} />);
+    expect(mockWriteSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("명시적으로 선택한 대상에만 broadcast하고 위험 Enter 취소 시 실행을 막는다", async () => {
+    const confirm = vi.mocked(window.confirm);
+    confirm.mockReturnValue(false);
+    render(<TermPane {...baseProps({ broadcastOn: true, broadcastTargetIds: ["s1", "s3"] })} />);
+    const term = createdTerminals[0];
+
+    act(() => term.dataHandler?.("sudo rm -rf ./cache"));
+    expect(mockBroadcast).toHaveBeenCalledWith(["s1", "s3"], "sudo rm -rf ./cache");
+    act(() => term.dataHandler?.("\r"));
+    expect(confirm).toHaveBeenCalledWith("2개 터미널에 위험할 수 있는 명령을 동시에 보낼까요?");
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+    act(() => term.dataHandler?.("\r"));
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+  });
+
+  it("multiline broadcast는 대상 수 확인 뒤 취소하고 raw command를 확인문에 넣지 않는다", () => {
+    const confirm = vi.mocked(window.confirm);
+    confirm.mockReturnValue(false);
+    render(<TermPane {...baseProps({ broadcastOn: true, broadcastTargetIds: ["s1", "s2", "s4"] })} />);
+    const term = createdTerminals[0];
+
+    act(() => term.dataHandler?.("echo raw-one\necho raw-two\n"));
+    expect(mockBroadcast).not.toHaveBeenCalled();
+    const message = String(confirm.mock.calls[0]?.[0]);
+    expect(message).toContain("3개");
+    expect(message).not.toContain("raw-one");
+  });
+
+  it("대상 2개 미만이면 broadcast mode가 켜져 있어도 현재 팬에만 입력한다", () => {
+    render(<TermPane {...baseProps({ broadcastOn: true, broadcastTargetIds: ["s1"] })} />);
+    act(() => createdTerminals[0].dataHandler?.("echo local"));
+    expect(mockBroadcast).not.toHaveBeenCalled();
+    expect(mockWriteSession).toHaveBeenCalledWith("s1", "echo local");
   });
 });

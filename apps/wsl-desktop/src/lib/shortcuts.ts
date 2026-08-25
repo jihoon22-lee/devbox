@@ -9,6 +9,7 @@
 export type ShortcutAction =
   | { type: "new-tab" }
   | { type: "new-pane" }
+  | { type: "command-palette" }
   | { type: "close-pane" }
   | { type: "next-tab" }
   | { type: "prev-tab" }
@@ -27,6 +28,7 @@ export function matchShortcut(e: KeyboardEvent): ShortcutAction | null {
     const key = e.key.toLowerCase();
     if (key === "t") return { type: "new-tab" };
     if (key === "d") return { type: "new-pane" };
+    if (key === "p") return { type: "command-palette" };
     if (key === "w") return { type: "close-pane" };
     if (e.key === "Tab") return { type: "prev-tab" };
     return null;

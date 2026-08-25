@@ -29,6 +29,10 @@ describe("matchShortcut", () => {
     expect(matchShortcut(key("d", { ctrlKey: true, shiftKey: true }))).toEqual({ type: "new-pane" });
   });
 
+  it("Ctrl+Shift+P는 command-palette", () => {
+    expect(matchShortcut(key("p", { ctrlKey: true, shiftKey: true }))).toEqual({ type: "command-palette" });
+  });
+
   it("Ctrl+Shift+W는 close-pane", () => {
     expect(matchShortcut(key("w", { ctrlKey: true, shiftKey: true }))).toEqual({ type: "close-pane" });
   });

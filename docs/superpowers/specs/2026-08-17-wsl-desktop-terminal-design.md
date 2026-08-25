@@ -458,6 +458,22 @@ pub trait Multiplexer {
 | workbench | *프로젝트* 프로필 (경로·포트·서비스) |
 | wsl-desktop 워크스페이스 | *터미널 레이아웃*. cwd 기본값은 `crates/integration` 스냅샷으로 workbench에서 읽는다 |
 
+> **2026-08-26 #263 구현 상태.** runtime `sessionId`와 stable `paneKey`를 분리한 상태에서
+> 탭·팬·distro·안전한 절대 cwd·layout·한 줄 시작 명령을 마지막 레이아웃(localStorage)과
+> 이름 있는 profile(`app_local_data_dir/terminal-profiles.json`)로 각각 저장·복원한다. profile
+> store는 version 1 전체 참조를 검증하고 손상·중복·orphan·unsafe path·명백한 raw credential을
+> fail-closed 처리하며 atomic replace만 사용한다. cold/hot `OpenTarget::Profile`은 같은 실행
+> 경로로 수렴하고, 시작 명령은 최종 문자열을 보여 준 뒤 새 세션에 한 번만 전달한다.
+>
+> native layout과 action palette(split/close/search/profile switch/cwd copy)는 외부 도구 없이
+> 완전하게 동작한다. tmux/zellij는 설치 여부를 exact argv로 읽기 전용 감지한 뒤 stable
+> `wsld-*` 세션에 opt-in attach/create할 뿐 설치·download하지 않으며, 없거나 감지가 실패하면
+> backend에서도 native로 내린다. tmux option은 해당 session에만 적용하고 zellij는 공식
+> `disable-status` layout과 frame/mouse off option을 사용한다. broadcast는 기본 off, 활성 탭의
+> 팬을 사용자가 2개 이상 직접 선택해야 활성화되며 대상 수를 계속 표시한다. multiline paste와
+> 위험 명령 Enter는 raw command를 오류/확인문에 반향하지 않고 대상 수와 실행 위험을 다시
+> 확인한다. W1 packaged build 실기 checkpoint는 남아 있다.
+
 ---
 
 ## 5. 테스트 계획

@@ -6,20 +6,26 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   closeSession,
+  deleteWorkspaceProfile,
+  detectMultiplexers,
   dockerAction,
   dockerPs,
   getWindowsBuildNumber,
   listDistros,
+  listWorkspaceProfiles,
   onOpenRequest,
   onTerminalClosed,
   onTerminalOutput,
   startSession,
+  saveWorkspaceProfile,
   takePendingOpen,
 } from "./api";
 import DistroPanel from "./components/DistroPanel";
+import ActionPalette, { type PaletteAction } from "./components/ActionPalette";
 import PaneCanvas from "./components/PaneCanvas";
 import type { TerminalPaneCapabilities, TerminalPaneHandle } from "./components/TermPane";
 import TabBar from "./components/TabBar";
+import WorkspacePanel from "./components/WorkspacePanel";
 import { routeOpenRequest } from "./lib/applink";
 import { makeId } from "./lib/id";
 import { buildPaneContextMenu, buildTabContextMenu, normalizeTabName } from "./lib/contextMenu";
@@ -38,10 +44,29 @@ import {
 } from "./lib/storage";
 import { nextTabTitle } from "./lib/tabTitle";
 import {
+  isSafeWorkspacePath,
+  loadLastWorkspace,
+  normalizeProfile,
+  saveLastWorkspace,
+  startCommandError,
+  workspaceFromRuntime,
+} from "./lib/workspace";
+import {
   DEFAULT_TERMINAL_FONT_SIZE,
   clampTerminalFontSize,
 } from "./lib/terminalUx";
-import type { ContainerInfo, DistroInfo, Layout, OpenRequest, Pane, Tab } from "./types";
+import type {
+  ContainerInfo,
+  DistroInfo,
+  Layout,
+  MultiplexerAvailability,
+  MultiplexerKind,
+  OpenRequest,
+  Pane,
+  Tab,
+  WorkspaceDefinition,
+  WorkspaceProfile,
+} from "./types";
 import "./App.css";
 
 export default function App() {
@@ -59,6 +84,20 @@ export default function App() {
   const [activeTabId, setActiveTabId] = useState<string>("");
   const [activePaneId, setActivePaneId] = useState<string | null>(null);
   const [broadcastOn, setBroadcastOn] = useState(false);
+  const [broadcastTargetIds, setBroadcastTargetIds] = useState<Set<string>>(() => new Set());
+  const [broadcastPickerOpen, setBroadcastPickerOpen] = useState(false);
+  const [startCommand, setStartCommand] = useState("");
+  const [multiplexer, setMultiplexer] = useState<MultiplexerKind>("native");
+  const [muxAvailability, setMuxAvailability] = useState<MultiplexerAvailability[]>([
+    { kind: "native", available: true, version: null },
+    { kind: "tmux", available: false, version: null },
+    { kind: "zellij", available: false, version: null },
+  ]);
+  const [profiles, setProfiles] = useState<WorkspaceProfile[]>([]);
+  const [profilesLoaded, setProfilesLoaded] = useState(false);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [copyOnSelect, setCopyOnSelect] = useState(loadCopyOnSelect);
   const [terminalFontSize, setTerminalFontSize] = useState(loadTerminalFontSize);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +118,9 @@ export default function App() {
   const writes = useRef(new Map<string, (data: string) => void>());
   const paneFocus = useRef(new Map<string, () => void>());
   const terminalHandles = useRef(new Map<string, TerminalPaneHandle>());
+  const restoreStarted = useRef(false);
+  const workspaceLoadingRef = useRef(false);
+  const layoutSaveTimer = useRef<number | undefined>(undefined);
 
   // onTerminalClosed 구독은 마운트 시 한 번만 걸린다(아래 effect, deps []). 그 콜백이
   // dropPane을 부를 때 tabs/activeTabId/activePaneId를 직접 클로저로 참조하면 마운트
@@ -150,6 +192,50 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let disposed = false;
+    void listWorkspaceProfiles()
+      .then((items) => {
+        if (disposed) return;
+        setProfiles(items.map(normalizeProfile).filter((item): item is WorkspaceProfile => item !== null));
+      })
+      .catch(() => {
+        if (!disposed) setError("터미널 프로필 목록을 읽지 못했습니다.");
+      })
+      .finally(() => {
+        if (!disposed) setProfilesLoaded(true);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selected) return;
+    let disposed = false;
+    void detectMultiplexers(selected)
+      .then((availability) => {
+        if (disposed) return;
+        setMuxAvailability(availability);
+        setMultiplexer((current) =>
+          availability.some((item) => item.kind === current && item.available) ? current : "native"
+        );
+      })
+      .catch(() => {
+        if (!disposed) {
+          setMuxAvailability([
+            { kind: "native", available: true, version: null },
+            { kind: "tmux", available: false, version: null },
+            { kind: "zellij", available: false, version: null },
+          ]);
+          setMultiplexer("native");
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [selected]);
+
+  useEffect(() => {
     void getWindowsBuildNumber()
       .then(setWindowsBuildNumber)
       .catch(() => setWindowsBuildNumber(null));
@@ -192,6 +278,7 @@ export default function App() {
   };
 
   const openDistroTerminal = (name: string) => {
+    if (!workspaceReady || workspaceLoading) return;
     setSelected(name);
     void startInTab(null, name);
   };
@@ -254,6 +341,9 @@ export default function App() {
         // 입력 경로를 프론트에서 변환하지 않는다.
         void startInTab(tabs.length === 0 ? null : activeTabId, selected, action.path);
         break;
+      case "openProfile":
+        void openProfileById(action.id);
+        break;
       case "noop":
         console.info(`applink: ${action.reason}`);
         break;
@@ -265,9 +355,9 @@ export default function App() {
   // Cold start pulls take_pending_open once; a relaunch of this same running
   // instance arrives as the devbox://open event. Both converge on
   // handleOpenRequest so the two paths behave identically. Gated on
-  // distrosLoaded so `selected` already has a real default distro.
+  // distro/profile/layout hydration이 끝나야 cold/hot profile 요청도 같은 상태를 본다.
   useEffect(() => {
-    if (!distrosLoaded) return;
+    if (!distrosLoaded || !profilesLoaded || !workspaceReady) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
@@ -301,7 +391,7 @@ export default function App() {
       disposed = true;
       unlisten?.();
     };
-  }, [distrosLoaded]);
+  }, [distrosLoaded, profilesLoaded, workspaceReady]);
 
   // 핀이 켜져 있는 동안은 cwd가 바뀔 때마다 localStorage에 저장한다 (핀을 막 켠
   // 순간도 pinned가 deps에 있어 여기서 함께 처리된다).
@@ -327,13 +417,40 @@ export default function App() {
     distro: string,
     cwdOverride?: string,
     safeFailureMessage?: string,
+    options?: {
+      paneKey?: string;
+      startCommand?: string | null;
+      multiplexer?: MultiplexerKind;
+    },
   ): Promise<boolean> => {
+    if (workspaceLoadingRef.current) return false;
     setError(null);
     const usedCwd = (cwdOverride ?? cwd).trim() || undefined;
+    const usedStartCommand = (options?.startCommand === undefined ? startCommand : options.startCommand)?.trim() || undefined;
+    if (usedStartCommand) {
+      const commandError = startCommandError(usedStartCommand);
+      if (commandError) {
+        setError(commandError);
+        return false;
+      }
+      if (!window.confirm(`다음 시작 명령을 '${distro}' 터미널에서 실행할까요?\n\n${usedStartCommand}`)) {
+        return false;
+      }
+    }
+    const key = options?.paneKey ?? makeId("p");
+    const requestedMultiplexer = options?.multiplexer ?? multiplexer;
     try {
-      const id = await startSession(distro, usedCwd);
-      const key = makeId("p");
-      setPanes((prev) => [...prev, { key, sessionId: id, distro, cwd: usedCwd }]);
+      const started = await startSession(distro, usedCwd, key, requestedMultiplexer);
+      const id = started.sessionId;
+      setPanes((prev) => [...prev, {
+        key,
+        sessionId: id,
+        distro,
+        cwd: usedCwd,
+        startCommand: usedStartCommand,
+        initialCommand: started.resumed ? undefined : usedStartCommand,
+        multiplexer: started.multiplexer,
+      }]);
 
       if (tabId === null) {
         const title = nextTabTitle(tabs.map((t) => t.title), distro);
@@ -353,6 +470,209 @@ export default function App() {
       return false;
     }
   };
+
+  const launchWorkspace = async (
+    workspace: WorkspaceDefinition,
+    options: { replaceExisting: boolean; label: string },
+  ): Promise<boolean> => {
+    if (workspaceLoadingRef.current) return false;
+    const oldSessionIds = panes.flatMap((pane) => pane.sessionId ? [pane.sessionId] : []);
+    if (
+      options.replaceExisting
+      && oldSessionIds.length > 0
+      && !window.confirm(`'${options.label}' 프로필로 전환할까요? 현재 터미널 ${oldSessionIds.length}개가 닫힙니다.`)
+    ) return false;
+
+    const commands = workspace.panes.flatMap((pane) => pane.startCommand
+      ? [`[${pane.distro} · ${pane.key}] ${pane.startCommand}`]
+      : []);
+    const runStartCommands = commands.length === 0 || window.confirm(
+      `다음 시작 명령 ${commands.length}개를 실행할까요?\n취소하면 레이아웃만 엽니다.\n\n${commands.join("\n")}`,
+    );
+
+    workspaceLoadingRef.current = true;
+    setWorkspaceLoading(true);
+    setError(null);
+    const sessionByPaneKey = new Map<string, string>();
+    const nextPanes: Pane[] = [];
+    let failed = 0;
+    try {
+      // 프로필 하나가 과도한 동시 WSL 시작을 만들지 않도록 의도적으로 순차 실행한다.
+      for (const definition of workspace.panes) {
+        try {
+          const started = await startSession(
+            definition.distro,
+            definition.cwd ?? undefined,
+            definition.key,
+            definition.multiplexer,
+          );
+          sessionByPaneKey.set(definition.key, started.sessionId);
+          const command = runStartCommands ? (definition.startCommand ?? undefined) : undefined;
+          nextPanes.push({
+            key: definition.key,
+            sessionId: started.sessionId,
+            distro: definition.distro,
+            cwd: definition.cwd ?? undefined,
+            startCommand: definition.startCommand ?? undefined,
+            initialCommand: started.resumed ? undefined : command,
+            multiplexer: started.multiplexer,
+          });
+        } catch {
+          failed += 1;
+        }
+      }
+
+      const nextTabs: Tab[] = workspace.tabs.flatMap((definition) => {
+        const paneIds = definition.paneKeys
+          .map((key) => sessionByPaneKey.get(key))
+          .filter((id): id is string => Boolean(id));
+        return paneIds.length === 0 ? [] : [{
+          id: definition.id,
+          title: definition.title,
+          customTitle: definition.customTitle,
+          layout: definition.layout,
+          paneIds,
+        }];
+      });
+      if (nextTabs.length === 0) {
+        await Promise.allSettled(nextPanes.flatMap((pane) => pane.sessionId ? [closeSession(pane.sessionId)] : []));
+        setError("프로필의 터미널을 하나도 시작하지 못했습니다.");
+        return false;
+      }
+
+      const nextActiveTab = nextTabs.find((tab) => tab.id === workspace.activeTabId) ?? nextTabs[0];
+      const requestedActiveSession = workspace.activePaneKey
+        ? sessionByPaneKey.get(workspace.activePaneKey)
+        : undefined;
+      const nextActivePane = requestedActiveSession && nextActiveTab.paneIds.includes(requestedActiveSession)
+        ? requestedActiveSession
+        : nextActiveTab.paneIds[nextActiveTab.paneIds.length - 1] ?? null;
+
+      // terminal-closed 이벤트가 늦게 와도 새 workspace를 오래된 tab 상태로 제거하지 않게
+      // ref를 React commit보다 먼저 새 identity로 전환한다.
+      stateRef.current = {
+        tabs: nextTabs,
+        activeTabId: nextActiveTab.id,
+        activePaneId: nextActivePane,
+      };
+      setPanes(nextPanes);
+      setTabs(nextTabs);
+      setActiveTabId(nextActiveTab.id);
+      setActivePaneId(nextActivePane);
+      setBroadcastOn(false);
+      setBroadcastTargetIds(new Set());
+      setBroadcastPickerOpen(false);
+      const activeDefinition = nextActivePane
+        ? workspace.panes.find((pane) => sessionByPaneKey.get(pane.key) === nextActivePane)
+        : undefined;
+      if (activeDefinition) setSelected(activeDefinition.distro);
+
+      const closeResults = await Promise.allSettled(oldSessionIds.map((id) => closeSession(id)));
+      const closeFailed = closeResults.filter((result) => result.status === "rejected").length;
+      if (failed > 0 || closeFailed > 0) {
+        const details = [
+          failed > 0 ? `시작 실패 ${failed}개` : "",
+          closeFailed > 0 ? `이전 세션 닫기 실패 ${closeFailed}개` : "",
+        ].filter(Boolean).join(" · ");
+        setError(`프로필을 부분적으로 열었습니다. ${details}`);
+      }
+      return true;
+    } finally {
+      workspaceLoadingRef.current = false;
+      setWorkspaceLoading(false);
+    }
+  };
+
+  const launchWorkspaceRef = useRef(launchWorkspace);
+  launchWorkspaceRef.current = launchWorkspace;
+
+  const openProfile = async (profile: WorkspaceProfile): Promise<boolean> =>
+    launchWorkspace(profile, { replaceExisting: true, label: profile.name });
+
+  const openProfileById = async (id: string): Promise<boolean> => {
+    const profile = profiles.find((item) => item.id === id);
+    if (!profile) {
+      setError("요청한 터미널 프로필을 찾을 수 없습니다.");
+      return false;
+    }
+    return openProfile(profile);
+  };
+
+  const saveCurrentProfile = async (): Promise<void> => {
+    if (workspaceLoadingRef.current) return;
+    if (panes.some((pane) => pane.cwd && !isSafeWorkspacePath(pane.cwd))) {
+      setError("안전한 절대 경로가 아닌 cwd가 있어 프로필을 저장할 수 없습니다.");
+      return;
+    }
+    const workspace = workspaceFromRuntime(tabs, panes, activeTabId, activePaneId);
+    if (!workspace) {
+      setError("저장할 터미널 레이아웃이 없습니다.");
+      return;
+    }
+    const input = window.prompt("현재 터미널 레이아웃의 프로필 이름", "새 터미널 프로필");
+    if (input === null) return;
+    const name = input.trim();
+    if (!name) {
+      setError("프로필 이름은 비워둘 수 없습니다.");
+      return;
+    }
+    workspaceLoadingRef.current = true;
+    setWorkspaceLoading(true);
+    setError(null);
+    try {
+      const saved = await saveWorkspaceProfile({ id: "", name, ...workspace });
+      const normalized = normalizeProfile(saved);
+      if (!normalized) throw new Error("invalid profile response");
+      setProfiles((previous) => [...previous.filter((profile) => profile.id !== normalized.id), normalized]);
+    } catch {
+      setError("터미널 프로필을 저장하지 못했습니다.");
+    } finally {
+      workspaceLoadingRef.current = false;
+      setWorkspaceLoading(false);
+    }
+  };
+
+  const requestDeleteProfile = async (profile: WorkspaceProfile): Promise<void> => {
+    if (workspaceLoadingRef.current) return;
+    if (!window.confirm(`'${profile.name}' 터미널 프로필을 삭제할까요? 실행 중인 터미널은 닫히지 않습니다.`)) return;
+    workspaceLoadingRef.current = true;
+    setWorkspaceLoading(true);
+    setError(null);
+    try {
+      await deleteWorkspaceProfile(profile.id);
+      setProfiles((previous) => previous.filter((item) => item.id !== profile.id));
+    } catch {
+      setError("터미널 프로필을 삭제하지 못했습니다.");
+    } finally {
+      workspaceLoadingRef.current = false;
+      setWorkspaceLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!distrosLoaded || restoreStarted.current) return;
+    restoreStarted.current = true;
+    const saved = loadLastWorkspace();
+    if (!saved) {
+      setWorkspaceReady(true);
+      return;
+    }
+    void launchWorkspaceRef.current(saved, { replaceExisting: false, label: "마지막 터미널 레이아웃" })
+      .finally(() => setWorkspaceReady(true));
+  }, [distrosLoaded]);
+
+  useEffect(() => {
+    if (!workspaceReady || workspaceLoading) return;
+    window.clearTimeout(layoutSaveTimer.current);
+    layoutSaveTimer.current = window.setTimeout(() => {
+      saveLastWorkspace(workspaceFromRuntime(tabs, panes, activeTabId, activePaneId));
+    }, 150);
+    return () => window.clearTimeout(layoutSaveTimer.current);
+  }, [activePaneId, activeTabId, panes, tabs, workspaceLoading, workspaceReady]);
+
+  useEffect(() => {
+    if (workspaceLoading) setPaletteOpen(false);
+  }, [workspaceLoading]);
 
   const openNewTab = () => startInTab(null, selected);
   // 툴바 "+ Terminal"과 Ctrl+Shift+D는 같은 동작이다: 활성 탭이 있으면 분할 추가,
@@ -517,12 +837,16 @@ export default function App() {
   };
 
   const handleShortcut = (action: ShortcutAction) => {
+    if ((!workspaceReady || workspaceLoadingRef.current) && action.type !== "command-palette") return;
     switch (action.type) {
       case "new-tab":
         void openNewTab();
         break;
       case "new-pane":
         void addPane();
+        break;
+      case "command-palette":
+        setPaletteOpen(true);
         break;
       case "close-pane":
         if (activePaneId && !contextActionBusy) requestClosePane(activePaneId);
@@ -596,17 +920,18 @@ export default function App() {
     }
   }, [contextTab?.id, tabContextMenu.close, tabs]);
 
+  const domainActionsBusy = contextActionBusy || workspaceLoading;
   const paneContextItems = useMemo<readonly ContextMenuEntry[]>(
     () => buildPaneContextMenu({
-      busy: contextActionBusy,
+      busy: domainActionsBusy,
       hasSelection: contextPaneCapabilities.hasSelection,
       hasCwd: contextPaneCapabilities.hasCwd,
     }),
-    [contextActionBusy, contextPaneCapabilities.hasCwd, contextPaneCapabilities.hasSelection],
+    [domainActionsBusy, contextPaneCapabilities.hasCwd, contextPaneCapabilities.hasSelection],
   );
   const tabContextItems = useMemo<readonly ContextMenuEntry[]>(
-    () => buildTabContextMenu(contextActionBusy, tabs.length > 1),
-    [contextActionBusy, tabs.length],
+    () => buildTabContextMenu(domainActionsBusy, tabs.length > 1),
+    [domainActionsBusy, tabs.length],
   );
 
   const splitContextPane = (layout: "cols" | "rows") => {
@@ -621,6 +946,7 @@ export default function App() {
       pane.distro,
       pane.cwd,
       "터미널 팬을 안전하게 분할하지 못했습니다.",
+      { startCommand: null, multiplexer: pane.multiplexer },
     ).then((started) => {
       if (started) setTabLayout(owner.id, layout);
     }).finally(() => setContextActionBusy(false));
@@ -640,6 +966,7 @@ export default function App() {
   };
 
   const onPaneContextSelect = (id: string) => {
+    if (workspaceLoadingRef.current) return;
     const pane = contextPane;
     if (!pane || pane.sessionId === null) return;
     const handle = terminalHandles.current.get(pane.sessionId);
@@ -653,6 +980,7 @@ export default function App() {
   };
 
   const onTabContextSelect = (id: string) => {
+    if (workspaceLoadingRef.current) return;
     const tab = contextTab;
     if (!tab) return;
     if (id === "close") requestCloseTab(tab.id);
@@ -692,6 +1020,85 @@ export default function App() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activeLayout = activeTab?.layout ?? "grid";
+  const activePaneIds = activeTab?.paneIds ?? [];
+  const selectedBroadcastIds = activePaneIds.filter((id) => broadcastTargetIds.has(id));
+
+  useEffect(() => {
+    const allowed = new Set(activePaneIds);
+    const next = new Set([...broadcastTargetIds].filter((id) => allowed.has(id)));
+    setBroadcastTargetIds(next);
+    if (next.size < 2) setBroadcastOn(false);
+    // 대상 변경은 active tab/pane identity 변화에만 반응한다. Set 자체는 deps에 넣으면
+    // 이 effect가 만든 새 Set 때문에 다시 실행된다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId, activePaneIds.join("|")]);
+
+  const toggleBroadcastTarget = (id: string, checked: boolean) => {
+    const next = new Set(broadcastTargetIds);
+    if (checked) next.add(id);
+    else next.delete(id);
+    setBroadcastTargetIds(next);
+    if (next.size < 2) setBroadcastOn(false);
+  };
+
+  const splitActivePane = (layout: "cols" | "rows") => {
+    const pane = panes.find((item) => item.sessionId === activePaneId);
+    if (!pane || !activeTab) return;
+    setContextActionBusy(true);
+    void startInTab(
+      activeTab.id,
+      pane.distro,
+      pane.cwd,
+      "터미널 팬을 안전하게 분할하지 못했습니다.",
+      { startCommand: null, multiplexer: pane.multiplexer },
+    ).then((started) => {
+      if (started) setTabLayout(activeTab.id, layout);
+    }).finally(() => setContextActionBusy(false));
+  };
+
+  const paletteActions: PaletteAction[] = [
+    {
+      id: "split-vertical",
+      label: "팬: 세로 분할",
+      description: "활성 팬과 같은 distro/cwd로 오른쪽에 추가",
+      run: () => splitActivePane("cols"),
+    },
+    {
+      id: "split-horizontal",
+      label: "팬: 가로 분할",
+      description: "활성 팬과 같은 distro/cwd로 아래에 추가",
+      run: () => splitActivePane("rows"),
+    },
+    {
+      id: "search",
+      label: "팬: 출력 검색",
+      description: "활성 팬의 스크롤백 검색",
+      run: () => activePaneId && terminalHandles.current.get(activePaneId)?.openSearch(),
+    },
+    {
+      id: "copy-cwd",
+      label: "팬: cwd 복사",
+      description: "활성 팬이 보고한 현재 경로 복사",
+      run: () => {
+        if (activePaneId) void terminalHandles.current.get(activePaneId)?.copyCwd();
+      },
+    },
+    {
+      id: "close-pane",
+      label: "팬: 닫기",
+      description: "실행 중인 작업이 종료될 수 있음",
+      danger: true,
+      run: () => {
+        if (activePaneId) requestClosePane(activePaneId);
+      },
+    },
+    ...profiles.map((profile): PaletteAction => ({
+      id: `profile-${profile.id}`,
+      label: `프로필 전환: ${profile.name}`,
+      description: `${profile.tabs.length}개 탭 · ${profile.panes.length}개 팬`,
+      run: () => void openProfile(profile),
+    })),
+  ];
 
   return (
     <div className="app">
@@ -711,6 +1118,18 @@ export default function App() {
             </option>
           ))}
         </select>
+        <select
+          aria-label="세션 유지 방식"
+          value={multiplexer}
+          onChange={(event) => setMultiplexer(event.currentTarget.value as MultiplexerKind)}
+          title="native는 외부 도구 없이 동작합니다. tmux/zellij는 설치된 경우에만 선택할 수 있습니다."
+        >
+          {muxAvailability.map((item) => (
+            <option key={item.kind} value={item.kind} disabled={!item.available}>
+              {item.kind}{item.kind === "native" ? " (기본)" : item.available ? " (설치됨)" : " (없음)"}
+            </option>
+          ))}
+        </select>
         <input
           className="cwd"
           list="cwd-recent"
@@ -718,6 +1137,14 @@ export default function App() {
           value={cwd}
           onChange={(e) => setCwd(e.currentTarget.value)}
           onKeyDown={(e) => e.key === "Enter" && void addPane()}
+        />
+        <input
+          className="start-command"
+          placeholder="시작 명령 (선택, 프로필에 저장)"
+          value={startCommand}
+          maxLength={4096}
+          onChange={(event) => setStartCommand(event.currentTarget.value)}
+          onKeyDown={(event) => event.key === "Enter" && void addPane()}
         />
         <datalist id="cwd-recent">
           {recentPaths.map((p) => (
@@ -731,14 +1158,28 @@ export default function App() {
         >
           📌
         </button>
-        <button className="btn" disabled={contextActionBusy} onClick={() => void addPane()}>
+        <button className="btn" disabled={contextActionBusy || workspaceLoading || !workspaceReady} onClick={() => void addPane()}>
           + Terminal
+        </button>
+        <button className="btn" title="명령 팔레트 (Ctrl+Shift+P)" onClick={() => setPaletteOpen(true)}>
+          명령…
         </button>
         <span className="spacer" />
         <label className="toggle">
-          <input type="checkbox" checked={broadcastOn} onChange={(e) => setBroadcastOn(e.currentTarget.checked)} />
-          broadcast
+          <input
+            type="checkbox"
+            checked={broadcastOn}
+            disabled={selectedBroadcastIds.length < 2}
+            onChange={(event) => setBroadcastOn(event.currentTarget.checked)}
+          />
+          동시 입력 {broadcastOn ? "ON" : "OFF"}
         </label>
+        <button
+          type="button"
+          className={`btn compact ${broadcastPickerOpen ? "active" : ""}`}
+          aria-expanded={broadcastPickerOpen}
+          onClick={() => setBroadcastPickerOpen((open) => !open)}
+        >대상 {selectedBroadcastIds.length}/{activePaneIds.length}</button>
         <label className="toggle" title="선택한 터미널 텍스트를 자동으로 복사합니다">
           <input
             type="checkbox"
@@ -772,11 +1213,32 @@ export default function App() {
           >A+</button>
         </div>
         {(["grid", "cols", "rows"] as const).map((l) => (
-          <button key={l} className={`btn ${activeLayout === l ? "active" : ""}`} disabled={contextActionBusy} onClick={() => setActiveTabLayout(l)}>
+          <button key={l} className={`btn ${activeLayout === l ? "active" : ""}`} disabled={domainActionsBusy} onClick={() => setActiveTabLayout(l)}>
             {l}
           </button>
         ))}
       </header>
+
+      {broadcastPickerOpen && (
+        <div className="broadcast-picker" role="group" aria-label="동시 입력 대상 팬 선택">
+          <strong>동시 입력 대상</strong>
+          <span className="dim">기본 OFF · 최소 2개를 직접 선택해야 켤 수 있습니다.</span>
+          {activePaneIds.map((id, index) => {
+            const pane = panes.find((item) => item.sessionId === id);
+            return (
+              <label key={id}>
+                <input
+                  type="checkbox"
+                  checked={broadcastTargetIds.has(id)}
+                  onChange={(event) => toggleBroadcastTarget(id, event.currentTarget.checked)}
+                />
+                {index + 1}. {pane?.title?.trim() || pane?.distro || "터미널"}
+              </label>
+            );
+          })}
+          {activePaneIds.length === 0 && <span className="dim">활성 탭에 팬이 없습니다.</span>}
+        </div>
+      )}
 
       <div className="main">
         {panelOpen && (
@@ -791,6 +1253,14 @@ export default function App() {
               busy={busy}
               onAction={onDockerAction}
               onRefresh={() => void refreshDashboard().catch(() => undefined)}
+            />
+            <WorkspacePanel
+              profiles={profiles}
+              muxAvailability={muxAvailability}
+              busy={workspaceLoading || contextActionBusy}
+              onSaveCurrent={() => void saveCurrentProfile()}
+              onOpen={(profile) => void openProfile(profile)}
+              onDelete={(profile) => void requestDeleteProfile(profile)}
             />
           </aside>
         )}
@@ -807,7 +1277,7 @@ export default function App() {
             onDropPane={movePaneToTab}
             onNewTab={() => void openNewTab()}
             contextMenuTriggerProps={tabContextMenu.triggerProps}
-            actionsDisabled={contextActionBusy}
+            actionsDisabled={contextActionBusy || workspaceLoading}
           />
 
           {windowsBuildNumber !== undefined && (
@@ -817,6 +1287,7 @@ export default function App() {
               activeTabId={activeTabId}
               activePaneId={activePaneId}
               broadcastOn={broadcastOn}
+              broadcastTargetIds={selectedBroadcastIds}
               copyOnSelect={copyOnSelect}
               fontSize={terminalFontSize}
               registerWrite={registerWrite}
@@ -837,7 +1308,7 @@ export default function App() {
               onTerminalError={setError}
               windowsBuildNumber={windowsBuildNumber}
               contextMenuTriggerProps={paneContextMenu.triggerProps}
-              actionsDisabled={contextActionBusy}
+              actionsDisabled={contextActionBusy || workspaceLoading}
             />
           )}
         </div>
@@ -860,6 +1331,7 @@ export default function App() {
         onClose={tabContextMenu.close}
         ariaLabel="터미널 탭 메뉴"
       />
+      <ActionPalette open={paletteOpen} actions={paletteActions} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }
