@@ -1,8 +1,68 @@
+import {
+  ContextMenu,
+  useContextMenu,
+  type ContextMenuEntry,
+} from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listActiveRuns, listRuns, runJobNow, stopActiveRun, tailLog } from "../api";
 import type { Job, LogStream, Run, RunStatus } from "../types";
 
 const DISPLAY_BYTE_LIMIT = 1024 * 1024;
+const LOG_EXPORT_CHUNK_BYTES = 256 * 1024;
+const LOG_EXPORT_BYTE_LIMIT = 50 * 1024 * 1024;
+
+export interface CollectedRunLog {
+  bytes: Uint8Array;
+  truncated: boolean;
+}
+
+export async function collectRunLog(
+  runId: string,
+  stream: LogStream,
+  reader: typeof tailLog = tailLog,
+): Promise<CollectedRunLog> {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let cursor: string | null = null;
+  let truncated = false;
+
+  while (total < LOG_EXPORT_BYTE_LIMIT) {
+    const remaining = LOG_EXPORT_BYTE_LIMIT - total;
+    const response = await reader(
+      runId,
+      stream,
+      cursor,
+      Math.min(LOG_EXPORT_CHUNK_BYTES, remaining),
+    );
+    truncated ||= response.truncated;
+    const incoming = Uint8Array.from(response.data);
+    if (incoming.length === 0) break;
+    truncated ||= incoming.length > remaining;
+    const accepted = incoming.slice(0, remaining);
+    chunks.push(accepted);
+    total += accepted.length;
+
+    const previousCursor: string | null = cursor;
+    cursor = response.nextCursor;
+    if (cursor === previousCursor) {
+      truncated = true;
+      break;
+    }
+    if (total === LOG_EXPORT_BYTE_LIMIT) {
+      const probe = await reader(runId, stream, cursor, 1);
+      truncated ||= probe.data.length > 0;
+      break;
+    }
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return { bytes, truncated };
+}
 
 const STATUS_LABEL: Record<RunStatus, string> = {
   queued: "대기",
@@ -17,6 +77,7 @@ const STATUS_LABEL: Record<RunStatus, string> = {
 
 interface RunHistoryProps {
   jobs: Job[];
+  requestedJobId?: string | null;
 }
 
 function dateBoundary(value: string, end: boolean): number | null {
@@ -37,8 +98,11 @@ function duration(run: Run): string {
   return `${(elapsed / 1_000).toFixed(elapsed < 10_000 ? 1 : 0)}초`;
 }
 
-export default function RunHistory({ jobs }: RunHistoryProps) {
-  const [jobId, setJobId] = useState(jobs[0]?.id ?? "");
+export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryProps) {
+  const initialJobId = requestedJobId && jobs.some((job) => job.id === requestedJobId)
+    ? requestedJobId
+    : jobs[0]?.id ?? "";
+  const [jobId, setJobId] = useState(initialJobId);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [runs, setRuns] = useState<Run[]>([]);
@@ -54,6 +118,7 @@ export default function RunHistory({ jobs }: RunHistoryProps) {
   const [logError, setLogError] = useState<string | null>(null);
   const [activeSnapshotError, setActiveSnapshotError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [contextRun, setContextRun] = useState<Run | null>(null);
   const viewGeneration = useRef(0);
   const refreshInFlight = useRef<Promise<void> | null>(null);
   const refreshPending = useRef(false);
@@ -62,9 +127,31 @@ export default function RunHistory({ jobs }: RunHistoryProps) {
   const queryRef = useRef({ jobId, startDate, endDate });
   queryRef.current = { jobId, startDate, endDate };
 
+  const prepareRunContext = useCallback((target: HTMLElement) => {
+    const id = target.dataset.runId;
+    const run = runs.find((candidate) => candidate.id === id);
+    if (!run) return;
+    setSelectedRunId(run.id);
+    setContextRun(run);
+  }, [runs]);
+  const runContextMenu = useContextMenu({
+    onBeforeOpen: (_reason, target) => prepareRunContext(target),
+  });
+
   useEffect(() => {
     if (!jobs.some((job) => job.id === jobId)) setJobId(jobs[0]?.id ?? "");
   }, [jobId, jobs]);
+
+  useEffect(() => {
+    const id = contextRun?.id;
+    if (!id) return;
+    const current = runs.find((run) => run.id === id) ?? null;
+    if (current) setContextRun(current);
+    else {
+      runContextMenu.close();
+      setContextRun(null);
+    }
+  }, [contextRun?.id, runContextMenu.close, runs]);
 
   const refresh = useCallback(async () => {
     const existing = refreshInFlight.current;
@@ -164,6 +251,8 @@ export default function RunHistory({ jobs }: RunHistoryProps) {
 
   const handleStop = async () => {
     if (!jobId) return;
+    const name = jobs.find((job) => job.id === jobId)?.name ?? "선택한 작업";
+    if (!window.confirm(`'${name}' 작업의 활성 실행을 중지할까요?`)) return;
     setActionBusy(true);
     try {
       await stopActiveRun(jobId);
@@ -180,6 +269,73 @@ export default function RunHistory({ jobs }: RunHistoryProps) {
     () => runs.find((run) => run.id === selectedRunId) ?? null,
     [runs, selectedRunId],
   );
+
+  const handleRerun = async (run: Run) => {
+    setActionBusy(true);
+    try {
+      await runJobNow(run.jobId);
+      await refresh();
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleSaveLog = async (run: Run) => {
+    setActionBusy(true);
+    try {
+      const collected = await collectRunLog(run.id, stream);
+      const blob = new Blob([collected.bytes], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      try {
+        const anchor = document.createElement("a");
+        const safeId = run.id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64) || "run";
+        anchor.href = url;
+        anchor.download = `run-${safeId}-${stream}.log`;
+        anchor.click();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+      setError(
+        collected.truncated
+          ? "로그 보존 범위가 바뀌었거나 저장 상한을 넘어 현재 확인 가능한 부분만 저장했습니다."
+          : null,
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const runContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
+    if (!contextRun) return [];
+    return [
+      {
+        type: "item",
+        id: "view-log",
+        label: "로그 보기",
+        disabled: !contextRun.logsAvailable,
+      },
+      { type: "item", id: "rerun", label: "재실행", disabled: actionBusy },
+      {
+        type: "item",
+        id: "save-log",
+        label: "로그 저장",
+        disabled: actionBusy || !contextRun.logsAvailable,
+      },
+    ];
+  }, [actionBusy, contextRun]);
+
+  const onRunContextSelect = (id: string) => {
+    const run = contextRun;
+    if (!run) return;
+    if (id === "view-log") setSelectedRunId(run.id);
+    else if (id === "rerun") void handleRerun(run);
+    else if (id === "save-log") void handleSaveLog(run);
+  };
 
   useEffect(() => {
     setLogBytes(new Uint8Array());
@@ -278,7 +434,9 @@ export default function RunHistory({ jobs }: RunHistoryProps) {
                   className={`run-row ${selectedRunId === run.id ? "selected" : ""}`}
                   aria-current={selectedRunId === run.id ? "true" : undefined}
                   aria-pressed={selectedRunId === run.id}
+                  data-run-id={run.id}
                   onClick={() => setSelectedRunId(run.id)}
+                  {...runContextMenu.triggerProps}
                 >
                   <span className={`run-status ${run.status}`}>{STATUS_LABEL[run.status]}</span>
                   <span><strong>{formatTime(run.startedAt ?? run.createdAt)}</strong><small>{duration(run)}</small></span>
@@ -316,6 +474,15 @@ export default function RunHistory({ jobs }: RunHistoryProps) {
           </section>
         </div>
       ) : null}
+      <ContextMenu
+        open={runContextMenu.open}
+        anchor={runContextMenu.anchor}
+        restoreFocusTo={runContextMenu.restoreFocusTo}
+        items={runContextItems}
+        onSelect={onRunContextSelect}
+        onClose={runContextMenu.close}
+        ariaLabel="실행 이력 메뉴"
+      />
     </section>
   );
 }

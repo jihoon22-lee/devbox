@@ -552,7 +552,9 @@ impl DatabaseState {
     }
 
     /// Transition a running/starting service into `stopping` before the
-    /// termination boundary. Returns the instance when the service was active.
+    /// termination boundary. A retry-waiting service has no live process, but
+    /// uses the same transition so an explicit stop can cancel its pending
+    /// automatic restart under the per-service scheduler lock.
     pub fn begin_service_stop(
         &self,
         service_id: &str,
@@ -562,7 +564,7 @@ impl DatabaseState {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = transaction.execute(
             "UPDATE service_instances SET state = 'stopping', updated_at = ?
-             WHERE job_id = ? AND state IN ('running', 'starting')",
+             WHERE job_id = ? AND state IN ('running', 'starting', 'retry_waiting')",
             params![now, service_id],
         )?;
         let instance = if changed == 1 {
@@ -587,7 +589,8 @@ impl DatabaseState {
         let changed = connection.execute(
             "UPDATE service_instances
              SET state = 'stopped', active_run_id = NULL,
-                 owner_instance_id = NULL, attempt_token = NULL, updated_at = ?
+                 owner_instance_id = NULL, attempt_token = NULL,
+                 next_retry_at = NULL, updated_at = ?
              WHERE job_id = ? AND generation = ?",
             params![now, service_id, generation],
         )?;

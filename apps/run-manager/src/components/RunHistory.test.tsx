@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listActiveRuns, listRuns, runJobNow, stopActiveRun, tailLog } from "../api";
 import type { Job, Run } from "../types";
-import RunHistory from "./RunHistory";
+import RunHistory, { collectRunLog } from "./RunHistory";
 
 vi.mock("../api", () => ({
   listRuns: vi.fn(),
@@ -17,6 +17,7 @@ const listActiveRunsMock = vi.mocked(listActiveRuns);
 const runJobNowMock = vi.mocked(runJobNow);
 const stopActiveRunMock = vi.mocked(stopActiveRun);
 const tailLogMock = vi.mocked(tailLog);
+const confirmMock = vi.fn<(message?: string) => boolean>();
 
 const job: Job = {
   id: "job-1",
@@ -68,9 +69,17 @@ beforeEach(() => {
     nextCursor: "9",
     truncated: false,
   });
+  confirmMock.mockReset().mockReturnValue(false);
+  Object.defineProperty(window, "confirm", {
+    configurable: true,
+    value: confirmMock,
+  });
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("RunHistory", () => {
   it("loads bounded history and tails stdout with a decimal cursor", async () => {
@@ -113,6 +122,139 @@ describe("RunHistory", () => {
     fireEvent.click(view.getByRole("button", { name: "지금 실행" }));
     await waitFor(() => expect(runJobNowMock).toHaveBeenCalledWith(job.id));
     fireEvent.click(view.getByRole("button", { name: "활성 실행 중지" }));
+    expect(confirmMock).toHaveBeenCalledWith("'백업' 작업의 활성 실행을 중지할까요?");
+    expect(stopActiveRunMock).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(view.getByRole("button", { name: "활성 실행 중지" }));
     await waitFor(() => expect(stopActiveRunMock).toHaveBeenCalledWith(job.id));
+  });
+
+  it("selects the right-clicked history row and exposes every history action", async () => {
+    const second = { ...run, id: "run-2", status: "failed" as const, exitCode: 1 };
+    listRunsMock.mockResolvedValue([run, second]);
+    const view = render(<RunHistory jobs={[job]} />);
+    const row = await waitFor(() => {
+      const element = document.querySelector<HTMLButtonElement>('[data-run-id="run-2"]');
+      if (!element) throw new Error("history row was not rendered");
+      return element;
+    });
+
+    fireEvent.contextMenu(row, { clientX: 20, clientY: 30 });
+
+    expect(row.getAttribute("aria-pressed")).toBe("true");
+    expect(view.getByRole("menu", { name: "실행 이력 메뉴" })).toBeTruthy();
+    for (const label of ["로그 보기", "재실행", "로그 저장"]) {
+      expect(view.getByRole("menuitem", { name: label })).toBeTruthy();
+    }
+  });
+
+  it("opens the history menu from Shift+F10, reruns the exact row, and restores focus", async () => {
+    const view = render(<RunHistory jobs={[job]} />);
+    const row = await waitFor(() => {
+      const element = document.querySelector<HTMLButtonElement>('[data-run-id="run-1"]');
+      if (!element) throw new Error("history row was not rendered");
+      return element;
+    });
+    row.focus();
+
+    fireEvent.keyDown(row, { key: "F10", code: "F10", shiftKey: true });
+    fireEvent.click(view.getByRole("menuitem", { name: "재실행" }));
+
+    await waitFor(() => expect(runJobNowMock).toHaveBeenCalledWith(job.id));
+    await waitFor(() => expect(document.activeElement).toBe(row));
+  });
+
+  it("saves the selected stream with an opaque bounded filename", async () => {
+    const createObjectUrl = vi.fn(() => "blob:run-log");
+    const revokeObjectUrl = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectUrl });
+    const downloads: string[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloads.push(this.download);
+    });
+    const view = render(<RunHistory jobs={[job]} />);
+    await view.findByLabelText("stdout 로그");
+    tailLogMock.mockReset()
+      .mockResolvedValueOnce({
+        data: Array.from(new TextEncoder().encode("saved\n")),
+        retainedStartOffset: "0",
+        nextCursor: "6",
+        truncated: false,
+      })
+      .mockResolvedValueOnce({
+        data: [],
+        retainedStartOffset: "0",
+        nextCursor: "6",
+        truncated: false,
+      });
+    const row = document.querySelector<HTMLButtonElement>('[data-run-id="run-1"]');
+    if (!row) throw new Error("history row was not rendered");
+
+    fireEvent.contextMenu(row);
+    fireEvent.click(view.getByRole("menuitem", { name: "로그 저장" }));
+
+    await waitFor(() => expect(createObjectUrl).toHaveBeenCalledTimes(1));
+    expect(downloads).toEqual(["run-run-1-stdout.log"]);
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:run-log");
+    expect(tailLogMock).toHaveBeenCalledWith(run.id, "stdout", null, 256 * 1024);
+    click.mockRestore();
+  });
+
+  it("collects multiple decimal-cursor chunks without converting offsets to numbers", async () => {
+    tailLogMock.mockReset()
+      .mockResolvedValueOnce({
+        data: [97, 98],
+        retainedStartOffset: "90071992547409930",
+        nextCursor: "90071992547409932",
+        truncated: false,
+      })
+      .mockResolvedValueOnce({
+        data: [99, 100],
+        retainedStartOffset: "90071992547409930",
+        nextCursor: "90071992547409934",
+        truncated: false,
+      })
+      .mockResolvedValueOnce({
+        data: [],
+        retainedStartOffset: "90071992547409930",
+        nextCursor: "90071992547409934",
+        truncated: false,
+      });
+
+    const collected = await collectRunLog(run.id, "stdout", tailLogMock);
+
+    expect(new TextDecoder().decode(collected.bytes)).toBe("abcd");
+    expect(collected.truncated).toBe(false);
+    expect(tailLogMock.mock.calls.map((call) => call[2])).toEqual([
+      null,
+      "90071992547409932",
+      "90071992547409934",
+    ]);
+  });
+
+  it("stops a malformed non-advancing cursor instead of looping", async () => {
+    tailLogMock.mockReset()
+      .mockResolvedValueOnce({
+        data: [97],
+        retainedStartOffset: "0",
+        nextCursor: "1",
+        truncated: false,
+      })
+      .mockResolvedValue({
+        data: [98],
+        retainedStartOffset: "0",
+        nextCursor: "1",
+        truncated: false,
+      });
+
+    const collected = await collectRunLog(run.id, "stdout", tailLogMock);
+
+    expect(new TextDecoder().decode(collected.bytes)).toBe("ab");
+    expect(collected.truncated).toBe(true);
+    expect(tailLogMock).toHaveBeenCalledTimes(2);
   });
 });

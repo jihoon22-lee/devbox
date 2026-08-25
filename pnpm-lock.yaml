@@ -461,6 +461,9 @@ importers:
 
   apps/run-manager:
     dependencies:
+      '@devbox/context-menu':
+        specifier: workspace:*
+        version: link:../../packages/context-menu
       '@devbox/diff-view':
         specifier: workspace:*
         version: link:../../packages/diff-view

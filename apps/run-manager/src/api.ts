@@ -127,6 +127,23 @@ export function updateJob(id: string, input: JobInput): Promise<Job> {
   return invoke<Job>("update_job", { id, input });
 }
 
+export function setJobEnabled(id: string, enabled: boolean): Promise<Job> {
+  if (!isTauri()) {
+    const current = mockJobs.find((job) => job.id === id);
+    if (!current) return Promise.reject(new Error("작업을 찾을 수 없습니다."));
+    const now = Date.now();
+    const updated = {
+      ...current,
+      enabled,
+      lastEvaluatedAt: current.enabled === enabled ? current.lastEvaluatedAt : now,
+      updatedAt: now,
+    };
+    mockJobs = mockJobs.map((job) => (job.id === id ? updated : job));
+    return Promise.resolve(updated);
+  }
+  return invoke<Job>("set_job_enabled", { id, enabled });
+}
+
 export function deleteJob(id: string): Promise<boolean> {
   if (!isTauri()) {
     const before = mockJobs.length;
