@@ -108,6 +108,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.36.5
         version: 6.43.8
+      '@devbox/context-menu':
+        specifier: workspace:*
+        version: link:../../packages/context-menu
       '@devbox/diff-view':
         specifier: workspace:*
         version: link:../../packages/diff-view
@@ -120,6 +123,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
+      '@tauri-apps/plugin-clipboard-manager':
+        specifier: ^2
+        version: 2.3.2
       '@tauri-apps/plugin-opener':
         specifier: ^2
         version: 2.5.4

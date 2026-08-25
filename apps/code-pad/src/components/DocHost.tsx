@@ -21,6 +21,10 @@ interface DocHostProps {
   diagnostics?: (docId: string) => Diagnostic[];
   completionSource?: (docId: string) => CompletionSource | undefined;
   hoverSource?: (docId: string) => HoverTooltipSource | undefined;
+  canNavigate?: (docId: DocId, kind: "definition" | "references") => boolean;
+  navigationBusy?: boolean;
+  onNavigate?: (docId: DocId, kind: "definition" | "references", cursor: number) => void;
+  onError?: (message: string | null) => void;
 }
 
 function placementForDoc(
@@ -68,6 +72,10 @@ export default function DocHost({
   diagnostics,
   completionSource,
   hoverSource,
+  canNavigate,
+  navigationBusy,
+  onNavigate,
+  onError,
 }: DocHostProps) {
   return (
     <div
@@ -101,6 +109,11 @@ export default function DocHost({
             diagnostics={diagnostics?.(doc.id)}
             completionSource={completionSource?.(doc.id)}
             hoverSource={hoverSource?.(doc.id)}
+            canGoToDefinition={canNavigate?.(doc.id, "definition")}
+            canFindReferences={canNavigate?.(doc.id, "references")}
+            navigationBusy={navigationBusy}
+            onNavigate={onNavigate}
+            onError={onError}
           />
         );
       })}

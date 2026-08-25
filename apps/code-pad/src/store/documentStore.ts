@@ -11,6 +11,14 @@ export type EditorAction =
   | { type: "moveDoc"; docId: DocId; toView: ViewId }
   | { type: "setDocText"; docId: DocId; text: string }
   | { type: "replaceDoc"; doc: Doc }
+  | {
+      type: "renameDoc";
+      docId: DocId;
+      path: string;
+      mtimeNanos: string;
+      size: number;
+      contentHash: string;
+    }
   | { type: "setCursor"; docId: DocId; cursor: number }
   | { type: "setBookmarks"; docId: DocId; bookmarks: number[] }
   | { type: "setEncoding"; docId: DocId; encoding: Encoding }
@@ -363,6 +371,27 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
             ),
           }
         : state;
+
+    case "renameDoc": {
+      const previous = state.docs.find((doc) => doc.id === action.docId);
+      if (!previous) return state;
+      return {
+        ...state,
+        docs: state.docs.map((doc) => doc.id === action.docId
+          ? {
+              ...doc,
+              path: action.path,
+              mtimeNanos: action.mtimeNanos,
+              size: action.size,
+              contentHash: action.contentHash,
+            }
+          : doc),
+        recentFiles: [
+          action.path,
+          ...state.recentFiles.filter((path) => path !== previous.path && path !== action.path),
+        ].slice(0, 20),
+      };
+    }
 
     case "setCursor":
       return state.docs.some((doc) => doc.id === action.docId)

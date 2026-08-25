@@ -37,7 +37,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   fallback·capability filter. runtime file I/O는 후속 Manager 기능이 담당한다.
 - 신규 `crates/logs` — Log Lens가 두 번째 소비자가 되는 시점의 순수 log parsing
 - 구현된 `packages/context-menu` — 위치·keyboard navigation·focus restore·submenu·separator·
-  disabled/danger 표현만 소유한다. Port Manager, Developer Toolbox, Everything+, Knowledge에
+  disabled/danger 표현만 소유한다. Port Manager, Developer Toolbox, Everything+, Knowledge, Code Pad에
   기능 단위로 적용됐고 나머지 기존 앱은 후속 PR이 담당한다.
 - 신규 `crates/window-state`
 - `crates/applink` protocol v2 one-time handoff
@@ -76,7 +76,8 @@ knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror + co
                    ├ canonical tree entry → opener 또는 catalog/launch crate → 설치된 대상 앱
                    └ path/body-free activity/v1 snapshot → Life Log Data Sources
 api-playground:   React → commands → reqwest → HTTP
-code-pad:         React(CodeMirror) → commands → LSP stdio 서버, filesystem/markdown crate → React
+code-pad:         React(CodeMirror + tab/editor context-menu) → commands → LSP stdio 서버,
+                   snapshot-checked sibling rename/delete, filesystem/markdown crate → React
 run-manager:      React → commands → scheduler → platform 실행 어댑터(Windows Job Object/WSL) → SQLite
 devbox-manager:   React → commands → catalog/manifest → GitHub release asset
 workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument,
@@ -130,13 +131,13 @@ fallback으로만 허용하며, 손상된 Knowledge snapshot은 다른 producer 
 | `ammonia` HTML 살균 | `crates/markdown` `sanitize()` | 마크다운 HTML의 `<script>` 제거, `javascript:` URI 차단 |
 | mermaid `securityLevel: "strict"` | code-pad `PreviewPane`, knowledge-base `MarkdownPreview` | 다이어그램 HTML의 XSS |
 | CSP (`csp` 정책) | 각 앱 `tauri.conf.json` | DOM injection 시에도 임의 `invoke`/네트워크 접근 차단 |
-| Clipboard 최소 권한 | Developer Toolbox·Knowledge `clipboard-manager:allow-read-text` | 명시적 Paste 이외의 image/write/clear IPC와 background clipboard 수집 차단 |
+| Clipboard 최소 권한 | Developer Toolbox·Knowledge·Code Pad `clipboard-manager:allow-read-text` | 명시적 Paste 이외의 image/write/clear IPC와 background clipboard 수집 차단 |
 
 `csp: null` + `core:default` 조합은 DOM injection이 성립하면 곧바로 `invoke`에 닿게 만든다.
 앱들이 임의 로컬 파일(code-pad, knowledge-base, everything-plus)과 임의 원격 응답
 (api-playground)을 다루므로 명시적 CSP 정책을 둔다. (상세: `docs/product-opportunities.md` §7.5)
 
-Developer Toolbox와 Knowledge는 input/editor context menu에서 사용자가 붙여넣기를 선택한 순간에만
+Developer Toolbox, Knowledge, Code Pad는 input/editor context menu에서 사용자가 붙여넣기를 선택한 순간에만
 system clipboard의 plain text를 읽는다. 읽은 값은 현재 controlled input 또는 CodeMirror
 selection에만 삽입하며 log, snapshot, settings에 기록하지 않는다. Copy는 기존 WebView clipboard
 write 경로를 쓰고, Toolbox 결과 파일 저장은 사용자가 누른 항목에서 생성한 local text

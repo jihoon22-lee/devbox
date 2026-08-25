@@ -1,5 +1,6 @@
 import type { Doc, DocId, ViewId } from "../types";
 import TabBar from "./TabBar";
+import type { TabContextAction } from "./TabBar";
 
 interface ViewPaneProps {
   view: ViewId;
@@ -9,6 +10,7 @@ interface ViewPaneProps {
   onActivateDoc: (view: ViewId, docId: DocId) => void;
   onCloseDoc: (docId: DocId) => void;
   onMoveDoc: (docId: DocId, toView: ViewId) => void;
+  onTabContextAction: (view: ViewId, docId: DocId, action: TabContextAction) => void;
   hidden?: boolean;
 }
 
@@ -20,6 +22,7 @@ export default function ViewPane({
   onActivateDoc,
   onCloseDoc,
   onMoveDoc,
+  onTabContextAction,
   hidden = false,
 }: ViewPaneProps) {
   return (
@@ -41,6 +44,8 @@ export default function ViewPane({
         onActivate={(docId) => onActivateDoc(view, docId)}
         onClose={onCloseDoc}
         onMove={(docId) => onMoveDoc(docId, view === 0 ? 1 : 0)}
+        onContextAction={onTabContextAction}
+        disabled={hidden}
       />
     </section>
   );

@@ -15,6 +15,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri_plugin_opener::OpenerExt;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct OpenedFile {
@@ -116,6 +117,32 @@ pub struct SaveFileRequest {
     pub source_lossy: bool,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileActionRequest {
+    pub path: String,
+    pub expected_mtime_nanos: String,
+    pub expected_size: u64,
+    pub expected_content_hash: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameFileRequest {
+    #[serde(flatten)]
+    pub file: FileActionRequest,
+    pub new_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RenamedFileWire {
+    pub path: String,
+    pub mtime_nanos: String,
+    pub size: u64,
+    pub content_hash: String,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ExpectedFileSnapshot<'a> {
     pub mtime: i64,
@@ -149,6 +176,8 @@ pub enum FileError {
     },
     InvalidPath(String),
     InvalidMtime(String),
+    InvalidFileName,
+    DestinationExists,
     Conflict {
         expected_mtime: i64,
         actual_mtime: i64,
@@ -173,6 +202,8 @@ impl fmt::Display for FileError {
             Self::InvalidMtime(value) => {
                 write!(f, "invalid epoch nanoseconds decimal string: {value:?}")
             }
+            Self::InvalidFileName => f.write_str("invalid sibling file name"),
+            Self::DestinationExists => f.write_str("destination already exists"),
             Self::Conflict {
                 expected_mtime,
                 actual_mtime,
@@ -354,6 +385,131 @@ pub fn parse_epoch_nanos(value: &str) -> Result<i64, FileError> {
     i64::try_from(parsed).map_err(|_| FileError::InvalidMtime(value.to_string()))
 }
 
+fn expected_snapshot(request: &FileActionRequest) -> Result<ExpectedFileSnapshot<'_>, FileError> {
+    Ok(ExpectedFileSnapshot {
+        mtime: parse_epoch_nanos(&request.expected_mtime_nanos)?,
+        size: request.expected_size,
+        content_hash: &request.expected_content_hash,
+    })
+}
+
+fn validate_file_snapshot(
+    path: &Path,
+    expected: ExpectedFileSnapshot<'_>,
+) -> Result<PathBuf, FileError> {
+    let canonical = canonical_file(path)?;
+    let (current, bytes) = read_stable(&canonical)?;
+    let actual_mtime = modified_epoch_nanos(&current)?;
+    let actual_size = current.len();
+    if actual_mtime != expected.mtime
+        || actual_size != expected.size
+        || content_hash(&bytes) != expected.content_hash
+    {
+        return Err(FileError::Conflict {
+            expected_mtime: expected.mtime,
+            actual_mtime,
+            expected_size: expected.size,
+            actual_size,
+        });
+    }
+    Ok(canonical)
+}
+
+fn sibling_destination(source: &Path, new_name: &str) -> Result<PathBuf, FileError> {
+    if new_name.is_empty()
+        || new_name.trim() != new_name
+        || new_name.contains('/')
+        || new_name.contains('\\')
+    {
+        return Err(FileError::InvalidFileName);
+    }
+    let mut components = Path::new(new_name).components();
+    let Some(std::path::Component::Normal(component)) = components.next() else {
+        return Err(FileError::InvalidFileName);
+    };
+    if components.next().is_some() {
+        return Err(FileError::InvalidFileName);
+    }
+    let parent = source.parent().ok_or(FileError::InvalidFileName)?;
+    Ok(parent.join(component))
+}
+
+#[cfg(windows)]
+fn rename_without_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::MoveFileW;
+
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    unsafe { MoveFileW(PCWSTR(source.as_ptr()), PCWSTR(destination.as_ptr())) }
+        .map_err(io::Error::other)
+}
+
+#[cfg(not(windows))]
+fn rename_without_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    // `std::fs::rename` may replace a concurrently-created destination on Unix.
+    // A sibling hard link is create-new, so the move can never clobber data.
+    fs::hard_link(source, destination)?;
+    if let Err(error) = fs::remove_file(source) {
+        let _ = fs::remove_file(destination);
+        return Err(error);
+    }
+    Ok(())
+}
+
+pub fn rename_path(
+    path: &Path,
+    new_name: &str,
+    expected: ExpectedFileSnapshot<'_>,
+) -> Result<RenamedFileWire, FileError> {
+    let canonical = canonical_file(path)?;
+    let destination = sibling_destination(&canonical, new_name)?;
+    match fs::symlink_metadata(&destination) {
+        Ok(_) => return Err(FileError::DestinationExists),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(FileError::Io {
+                operation: "inspect rename destination",
+                source,
+            })
+        }
+    }
+
+    // Re-read immediately before the mutation, including a content digest, so
+    // a stale tab can never rename a replaced file merely because metadata is equal.
+    let canonical = validate_file_snapshot(&canonical, expected)?;
+    rename_without_replace(&canonical, &destination).map_err(|source| FileError::Io {
+        operation: "rename file without replacement",
+        source,
+    })?;
+    // The namespace mutation already committed. A directory sync failure must
+    // not make the frontend keep referring to the old path.
+    let _ = sync_parent(&destination);
+    Ok(RenamedFileWire {
+        path: path_string(&destination)?,
+        mtime_nanos: expected.mtime.to_string(),
+        size: expected.size,
+        content_hash: expected.content_hash.to_owned(),
+    })
+}
+
+pub fn delete_path(path: &Path, expected: ExpectedFileSnapshot<'_>) -> Result<(), FileError> {
+    let canonical = validate_file_snapshot(path, expected)?;
+    fs::remove_file(&canonical).map_err(|source| FileError::Io {
+        operation: "delete file",
+        source,
+    })?;
+    // As with rename, deletion success is authoritative even when a best-effort
+    // directory durability refresh is unavailable.
+    let _ = sync_parent(&canonical);
+    Ok(())
+}
+
 /// Tauri command for opening one file.
 #[tauri::command]
 pub async fn open_file(request: OpenFileRequest) -> Result<OpenedFileWire, String> {
@@ -390,6 +546,45 @@ pub async fn save_file(request: SaveFileRequest) -> Result<SavedFileWire, String
     })
     .await
     .map_err(|error| format!("save file worker failed: {error}"))?
+}
+
+/// Rename only the currently-open file, after an exact disk snapshot check.
+/// Error strings are deliberately generic so arbitrary paths and OS details do
+/// not cross the command boundary.
+#[tauri::command]
+pub async fn rename_file_action(request: RenameFileRequest) -> Result<RenamedFileWire, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let expected = expected_snapshot(&request.file)
+            .map_err(|_| "파일 이름을 변경할 수 없습니다.".to_string())?;
+        rename_path(Path::new(&request.file.path), &request.new_name, expected)
+            .map_err(|_| "파일 이름을 변경할 수 없습니다.".to_string())
+    })
+    .await
+    .map_err(|_| "파일 이름 변경 작업이 중단되었습니다.".to_string())?
+}
+
+/// Delete only the currently-open regular file after an exact snapshot check.
+#[tauri::command]
+pub async fn delete_file_action(request: FileActionRequest) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let expected =
+            expected_snapshot(&request).map_err(|_| "파일을 삭제할 수 없습니다.".to_string())?;
+        delete_path(Path::new(&request.path), expected)
+            .map_err(|_| "파일을 삭제할 수 없습니다.".to_string())
+    })
+    .await
+    .map_err(|_| "파일 삭제 작업이 중단되었습니다.".to_string())?
+}
+
+/// Reveal a canonical existing regular file without returning its path or the
+/// platform opener's detailed error to the frontend.
+#[tauri::command]
+pub async fn reveal_file_action(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let canonical =
+        canonical_file(Path::new(&path)).map_err(|_| "파일 위치를 열 수 없습니다.".to_string())?;
+    app.opener()
+        .reveal_item_in_dir(canonical)
+        .map_err(|_| "파일 위치를 열 수 없습니다.".to_string())
 }
 
 /// Validates a prospective save encoding without touching the target file.
@@ -797,5 +992,88 @@ mod tests {
         .unwrap_err();
         assert!(matches!(error, FileError::Conflict { .. }));
         assert_eq!(fs::read(&path).unwrap(), b"one");
+    }
+
+    #[test]
+    fn rename_moves_only_to_a_new_sibling_and_preserves_the_snapshot() {
+        let (_directory, path) = temp_file("before.txt", b"one");
+        let opened = open_path(&path).unwrap();
+        let renamed = rename_path(&path, "after.txt", snapshot(&opened)).unwrap();
+        let destination = path.with_file_name("after.txt");
+
+        assert!(!path.exists());
+        assert_eq!(fs::read(&destination).unwrap(), b"one");
+        assert_eq!(renamed.path, destination.to_string_lossy());
+        assert_eq!(renamed.mtime_nanos, opened.mtime.to_string());
+        assert_eq!(renamed.size, opened.size);
+        assert_eq!(renamed.content_hash, opened.content_hash);
+    }
+
+    #[test]
+    fn rename_rejects_traversal_and_existing_destinations_without_touching_files() {
+        let (_directory, path) = temp_file("before.txt", b"source");
+        let destination = path.with_file_name("after.txt");
+        fs::write(&destination, b"destination").unwrap();
+        let opened = open_path(&path).unwrap();
+
+        for invalid in [
+            "",
+            ".",
+            "..",
+            "../escape.txt",
+            "sub/file.txt",
+            "sub\\file.txt",
+            " padded.txt",
+        ] {
+            assert!(matches!(
+                rename_path(&path, invalid, snapshot(&opened)),
+                Err(FileError::InvalidFileName)
+            ));
+        }
+        assert!(matches!(
+            rename_path(&path, "after.txt", snapshot(&opened)),
+            Err(FileError::DestinationExists)
+        ));
+        assert_eq!(fs::read(&path).unwrap(), b"source");
+        assert_eq!(fs::read(&destination).unwrap(), b"destination");
+    }
+
+    #[test]
+    fn rename_and_delete_reject_stale_content_snapshots() {
+        let (_directory, path) = temp_file("before.txt", b"one");
+        let opened = open_path(&path).unwrap();
+        fs::write(&path, b"changed").unwrap();
+
+        assert!(matches!(
+            rename_path(&path, "after.txt", snapshot(&opened)),
+            Err(FileError::Conflict { .. })
+        ));
+        assert!(matches!(
+            delete_path(&path, snapshot(&opened)),
+            Err(FileError::Conflict { .. })
+        ));
+        assert_eq!(fs::read(&path).unwrap(), b"changed");
+    }
+
+    #[test]
+    fn delete_removes_only_the_snapshot_matched_regular_file() {
+        let (_directory, path) = temp_file("delete.txt", b"one");
+        let opened = open_path(&path).unwrap();
+        delete_path(&path, snapshot(&opened)).unwrap();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn mutation_commands_do_not_echo_untrusted_paths_in_errors() {
+        let untrusted = "/secret/example.txt";
+        let request = FileActionRequest {
+            path: untrusted.into(),
+            expected_mtime_nanos: "1".into(),
+            expected_size: 1,
+            expected_content_hash: "hash".into(),
+        };
+        let error = tauri::async_runtime::block_on(delete_file_action(request)).unwrap_err();
+        assert_eq!(error, "파일을 삭제할 수 없습니다.");
+        assert!(!error.contains(untrusted));
     }
 }

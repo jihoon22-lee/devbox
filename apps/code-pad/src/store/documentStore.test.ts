@@ -160,6 +160,33 @@ describe("document registry transitions", () => {
     });
   });
 
+  it("renames a document without replacing its live editor buffer and refreshes recent paths", () => {
+    let state = withDocs(doc("one"));
+    state = editorReducer(state, { type: "setDocText", docId: "one", text: "unsaved\n" });
+    const revision = state.docs[0].revision;
+    state = editorReducer(state, {
+      type: "renameDoc",
+      docId: "one",
+      path: "/workspace/renamed.ts",
+      mtimeNanos: "200",
+      size: 12,
+      contentHash: "hash-200",
+    });
+
+    expect(state.docs[0]).toMatchObject({
+      id: "one",
+      path: "/workspace/renamed.ts",
+      text: "unsaved\n",
+      dirty: true,
+      revision,
+      mtimeNanos: "200",
+      size: 12,
+      contentHash: "hash-200",
+    });
+    expect(state.recentFiles).toEqual(["/workspace/renamed.ts"]);
+    expect(state.views).toEqual([["one"], []]);
+  });
+
   it("applies a multi-document LSP edit atomically and rejects unknown targets", () => {
     const state = withDocs(doc("one"), doc("two"));
     const edited = editorReducer(state, {

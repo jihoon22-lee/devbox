@@ -692,6 +692,7 @@ dependencies = [
  "tar",
  "tauri",
  "tauri-build",
+ "tauri-plugin-clipboard-manager",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tempfile",
