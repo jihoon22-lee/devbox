@@ -13,7 +13,7 @@ describe("WSL Desktop context menu contracts", () => {
   });
 
   it("pane 메뉴의 정확한 항목과 #262 비범위를 유지한다", () => {
-    const items = buildPaneContextMenu(false);
+    const items = buildPaneContextMenu({ busy: false, hasSelection: true, hasCwd: true });
     expect(labels(items)).toEqual([
       "복사",
       "붙여넣기",
@@ -25,18 +25,30 @@ describe("WSL Desktop context menu contracts", () => {
     ]);
     for (const id of ["copy", "paste", "search", "copy-cwd"]) {
       const item = items.find((candidate) => candidate.type === "item" && candidate.id === id);
-      expect(item?.type === "item" && item.disabled).toBe(true);
+      expect(item?.type === "item" && item.disabled).toBe(false);
     }
     const close = items.find((item) => item.type === "item" && item.id === "close");
     expect(close?.type === "item" && close.danger).toBe(true);
   });
 
-  it("pane mutation은 busy 동안 비활성화된다", () => {
-    const items = buildPaneContextMenu(true);
-    for (const id of ["split-vertical", "split-horizontal", "close"]) {
+  it("pane action은 busy 동안 모두 비활성화된다", () => {
+    const items = buildPaneContextMenu({ busy: true, hasSelection: true, hasCwd: true });
+    for (const id of ["copy", "paste", "search", "split-vertical", "split-horizontal", "copy-cwd", "close"]) {
       const item = items.find((candidate) => candidate.type === "item" && candidate.id === id);
       expect(item?.type === "item" && item.disabled).toBe(true);
     }
+  });
+
+  it("selection과 OSC 7 cwd가 없는 exact pane의 해당 action만 비활성화한다", () => {
+    const items = buildPaneContextMenu({ busy: false, hasSelection: false, hasCwd: false });
+    const disabled = (id: string) => {
+      const item = items.find((candidate) => candidate.type === "item" && candidate.id === id);
+      return item?.type === "item" && item.disabled;
+    };
+    expect(disabled("copy")).toBe(true);
+    expect(disabled("copy-cwd")).toBe(true);
+    expect(disabled("paste")).toBe(false);
+    expect(disabled("search")).toBe(false);
   });
 
   it("tab 메뉴와 layout submenu의 정확한 topology를 유지한다", () => {

@@ -18,13 +18,29 @@ import {
 } from "./api";
 import DistroPanel from "./components/DistroPanel";
 import PaneCanvas from "./components/PaneCanvas";
+import type { TerminalPaneCapabilities, TerminalPaneHandle } from "./components/TermPane";
 import TabBar from "./components/TabBar";
 import { routeOpenRequest } from "./lib/applink";
 import { makeId } from "./lib/id";
 import { buildPaneContextMenu, buildTabContextMenu, normalizeTabName } from "./lib/contextMenu";
 import { matchShortcut, type ShortcutAction } from "./lib/shortcuts";
-import { loadPinned, loadPinnedCwd, loadRecentPaths, pushRecentPath, savePinned, savePinnedCwd } from "./lib/storage";
+import {
+  loadCopyOnSelect,
+  loadPinned,
+  loadPinnedCwd,
+  loadRecentPaths,
+  loadTerminalFontSize,
+  pushRecentPath,
+  saveCopyOnSelect,
+  savePinned,
+  savePinnedCwd,
+  saveTerminalFontSize,
+} from "./lib/storage";
 import { nextTabTitle } from "./lib/tabTitle";
+import {
+  DEFAULT_TERMINAL_FONT_SIZE,
+  clampTerminalFontSize,
+} from "./lib/terminalUx";
 import type { ContainerInfo, DistroInfo, Layout, OpenRequest, Pane, Tab } from "./types";
 import "./App.css";
 
@@ -43,9 +59,15 @@ export default function App() {
   const [activeTabId, setActiveTabId] = useState<string>("");
   const [activePaneId, setActivePaneId] = useState<string | null>(null);
   const [broadcastOn, setBroadcastOn] = useState(false);
+  const [copyOnSelect, setCopyOnSelect] = useState(loadCopyOnSelect);
+  const [terminalFontSize, setTerminalFontSize] = useState(loadTerminalFontSize);
   const [error, setError] = useState<string | null>(null);
   const [contextActionBusy, setContextActionBusy] = useState(false);
   const [contextPane, setContextPane] = useState<Pane | null>(null);
+  const [contextPaneCapabilities, setContextPaneCapabilities] = useState<TerminalPaneCapabilities>({
+    hasSelection: false,
+    hasCwd: false,
+  });
   const [contextTab, setContextTab] = useState<Tab | null>(null);
   // TermPane must not create xterm until this one-time lookup resolves, so
   // every terminal receives its final ConPTY build-number option.
@@ -56,6 +78,7 @@ export default function App() {
   const [distrosLoaded, setDistrosLoaded] = useState(false);
   const writes = useRef(new Map<string, (data: string) => void>());
   const paneFocus = useRef(new Map<string, () => void>());
+  const terminalHandles = useRef(new Map<string, TerminalPaneHandle>());
 
   // onTerminalClosed 구독은 마운트 시 한 번만 걸린다(아래 effect, deps []). 그 콜백이
   // dropPane을 부를 때 tabs/activeTabId/activePaneId를 직접 클로저로 참조하면 마운트
@@ -75,6 +98,48 @@ export default function App() {
   const unregisterFocus = useCallback((id: string) => {
     paneFocus.current.delete(id);
   }, []);
+  const registerTerminalHandle = useCallback((id: string, handle: TerminalPaneHandle) => {
+    terminalHandles.current.set(id, handle);
+  }, []);
+  const unregisterTerminalHandle = useCallback((id: string) => {
+    terminalHandles.current.delete(id);
+  }, []);
+  const updateTerminalFontSize = useCallback((value: number) => {
+    const next = clampTerminalFontSize(value);
+    setTerminalFontSize(next);
+    saveTerminalFontSize(next);
+  }, []);
+  const updatePaneMetadata = useCallback((id: string, metadata: { title?: string; cwd?: string }) => {
+    setPanes((previous) => {
+      let changed = false;
+      const next = previous.map((pane) => {
+        if (pane.sessionId !== id) return pane;
+        const titleChanged = metadata.title !== undefined && metadata.title !== pane.title;
+        const cwdChanged = metadata.cwd !== undefined && metadata.cwd !== pane.cwd;
+        if (!titleChanged && !cwdChanged) return pane;
+        changed = true;
+        return { ...pane, ...metadata };
+      });
+      return changed ? next : previous;
+    });
+  }, []);
+
+  // 사용자가 이름을 붙이지 않은 탭은 현재 활성 팬의 OSC 0/2 제목을 따른다. 수동 rename은
+  // customTitle로 고정해 이후 shell title sequence가 사용자 이름을 덮어쓰지 못하게 한다.
+  useEffect(() => {
+    if (!activePaneId) return;
+    const paneTitle = panes.find((pane) => pane.sessionId === activePaneId)?.title;
+    if (!paneTitle) return;
+    setTabs((previous) => {
+      let changed = false;
+      const next = previous.map((tab) => {
+        if (tab.customTitle || !tab.paneIds.includes(activePaneId) || tab.title === paneTitle) return tab;
+        changed = true;
+        return { ...tab, title: paneTitle };
+      });
+      return changed ? next : previous;
+    });
+  }, [activePaneId, panes]);
 
   useEffect(() => {
     void listDistros().then((ds) => {
@@ -273,7 +338,7 @@ export default function App() {
       if (tabId === null) {
         const title = nextTabTitle(tabs.map((t) => t.title), distro);
         const newTabId = makeId("t");
-        setTabs((prev) => [...prev, { id: newTabId, title, layout: "grid", paneIds: [id] }]);
+        setTabs((prev) => [...prev, { id: newTabId, title, customTitle: false, layout: "grid", paneIds: [id] }]);
         setActiveTabId(newTabId);
       } else {
         setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, paneIds: [...t.paneIds, id] } : t)));
@@ -483,6 +548,9 @@ export default function App() {
     const owner = tabs.find((tab) => id !== undefined && tab.paneIds.includes(id));
     if (!pane || !owner || !id) return;
     setContextPane(pane);
+    setContextPaneCapabilities(
+      terminalHandles.current.get(id)?.getCapabilities() ?? { hasSelection: false, hasCwd: false },
+    );
     setActiveTabId(owner.id);
     setActivePaneId(id);
   }, [panes, tabs]);
@@ -529,8 +597,12 @@ export default function App() {
   }, [contextTab?.id, tabContextMenu.close, tabs]);
 
   const paneContextItems = useMemo<readonly ContextMenuEntry[]>(
-    () => buildPaneContextMenu(contextActionBusy),
-    [contextActionBusy],
+    () => buildPaneContextMenu({
+      busy: contextActionBusy,
+      hasSelection: contextPaneCapabilities.hasSelection,
+      hasCwd: contextPaneCapabilities.hasCwd,
+    }),
+    [contextActionBusy, contextPaneCapabilities.hasCwd, contextPaneCapabilities.hasSelection],
   );
   const tabContextItems = useMemo<readonly ContextMenuEntry[]>(
     () => buildTabContextMenu(contextActionBusy, tabs.length > 1),
@@ -563,14 +635,19 @@ export default function App() {
       return;
     }
     setTabs((previous) => previous.map((candidate) =>
-      candidate.id === tab.id ? { ...candidate, title: name } : candidate
+      candidate.id === tab.id ? { ...candidate, title: name, customTitle: true } : candidate
     ));
   };
 
   const onPaneContextSelect = (id: string) => {
     const pane = contextPane;
     if (!pane || pane.sessionId === null) return;
-    if (id === "split-vertical") splitContextPane("cols");
+    const handle = terminalHandles.current.get(pane.sessionId);
+    if (id === "copy") void handle?.copySelection();
+    else if (id === "paste") void handle?.pasteClipboard();
+    else if (id === "search") handle?.openSearch();
+    else if (id === "copy-cwd") void handle?.copyCwd();
+    else if (id === "split-vertical") splitContextPane("cols");
     else if (id === "split-horizontal") splitContextPane("rows");
     else if (id === "close") requestClosePane(pane.sessionId);
   };
@@ -662,6 +739,38 @@ export default function App() {
           <input type="checkbox" checked={broadcastOn} onChange={(e) => setBroadcastOn(e.currentTarget.checked)} />
           broadcast
         </label>
+        <label className="toggle" title="선택한 터미널 텍스트를 자동으로 복사합니다">
+          <input
+            type="checkbox"
+            checked={copyOnSelect}
+            onChange={(event) => {
+              const enabled = event.currentTarget.checked;
+              setCopyOnSelect(enabled);
+              saveCopyOnSelect(enabled);
+            }}
+          />
+          선택 시 복사
+        </label>
+        <div className="font-controls" aria-label="터미널 글꼴 크기">
+          <button
+            type="button"
+            className="btn compact"
+            title="글꼴 축소 (Ctrl+-)"
+            onClick={() => updateTerminalFontSize(terminalFontSize - 1)}
+          >A−</button>
+          <button
+            type="button"
+            className="btn font-size"
+            title="기본 글꼴 크기로 복원 (Ctrl+0)"
+            onClick={() => updateTerminalFontSize(DEFAULT_TERMINAL_FONT_SIZE)}
+          >{terminalFontSize}px</button>
+          <button
+            type="button"
+            className="btn compact"
+            title="글꼴 확대 (Ctrl++)"
+            onClick={() => updateTerminalFontSize(terminalFontSize + 1)}
+          >A+</button>
+        </div>
         {(["grid", "cols", "rows"] as const).map((l) => (
           <button key={l} className={`btn ${activeLayout === l ? "active" : ""}`} disabled={contextActionBusy} onClick={() => setActiveTabLayout(l)}>
             {l}
@@ -708,10 +817,14 @@ export default function App() {
               activeTabId={activeTabId}
               activePaneId={activePaneId}
               broadcastOn={broadcastOn}
+              copyOnSelect={copyOnSelect}
+              fontSize={terminalFontSize}
               registerWrite={registerWrite}
               unregisterWrite={unregisterWrite}
               registerFocus={registerFocus}
               unregisterFocus={unregisterFocus}
+              registerTerminalHandle={registerTerminalHandle}
+              unregisterTerminalHandle={unregisterTerminalHandle}
               onClosePane={requestClosePane}
               onFocusPane={(id) => {
                 setActivePaneId(id);
@@ -719,6 +832,9 @@ export default function App() {
                 if (owner) setActiveTabId(owner.id);
               }}
               onShortcut={handleShortcut}
+              onFontSizeChange={updateTerminalFontSize}
+              onMetadataChange={updatePaneMetadata}
+              onTerminalError={setError}
               windowsBuildNumber={windowsBuildNumber}
               contextMenuTriggerProps={paneContextMenu.triggerProps}
               actionsDisabled={contextActionBusy}

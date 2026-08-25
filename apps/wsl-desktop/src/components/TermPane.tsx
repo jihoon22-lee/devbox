@@ -1,11 +1,46 @@
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ContextMenuTriggerProps } from "@devbox/context-menu";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon, type ISearchResultChangeEvent } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { attachSession, broadcast, resizeSession, writeSession } from "../api";
+import {
+  attachSession,
+  broadcast,
+  openTerminalLink,
+  readClipboardText,
+  resizeSession,
+  writeSession,
+} from "../api";
 import { matchShortcut, type ShortcutAction } from "../lib/shortcuts";
+import {
+  DEFAULT_TERMINAL_FONT_SIZE,
+  MAX_TERMINAL_PASTE_CHARACTERS,
+  MAX_TERMINAL_SEARCH_CHARACTERS,
+  clampTerminalFontSize,
+  hasMultilinePaste,
+  matchTerminalKey,
+  normalizeTerminalLink,
+  normalizeTerminalTitle,
+  parseOsc7Cwd,
+  pasteLineCount,
+  type TerminalKeyAction,
+} from "../lib/terminalUx";
+
+export interface TerminalPaneCapabilities {
+  hasSelection: boolean;
+  hasCwd: boolean;
+}
+
+export interface TerminalPaneHandle {
+  getCapabilities: () => TerminalPaneCapabilities;
+  copySelection: () => Promise<void>;
+  pasteClipboard: () => Promise<void>;
+  openSearch: () => void;
+  copyCwd: () => Promise<void>;
+}
 
 interface TermPaneProps {
   sessionId: string;
@@ -17,13 +52,20 @@ interface TermPaneProps {
   broadcastOn: boolean;
   /** broadcast 대상 세션 id 목록 (활성 탭의 paneIds). */
   broadcastTargetIds: string[];
+  copyOnSelect: boolean;
+  fontSize: number;
   registerWrite: (id: string, fn: (data: string) => void) => void;
   unregisterWrite: (id: string) => void;
   registerFocus: (id: string, fn: () => void) => void;
   unregisterFocus: (id: string) => void;
+  registerTerminalHandle: (id: string, handle: TerminalPaneHandle) => void;
+  unregisterTerminalHandle: (id: string) => void;
   onClose: () => void;
   onFocusPane: () => void;
   onShortcut: (action: ShortcutAction) => void;
+  onFontSizeChange: (fontSize: number) => void;
+  onMetadataChange: (id: string, metadata: { title?: string; cwd?: string }) => void;
+  onTerminalError: (message: string) => void;
   /** Windows build number for xterm's ConPTY soft-wrap heuristics, or null off Windows. */
   windowsBuildNumber: number | null;
   contextMenuTriggerProps: ContextMenuTriggerProps;
@@ -39,7 +81,17 @@ const THEME = {
   selectionBackground: "#264f78",
 };
 
+const SEARCH_DECORATIONS = {
+  matchBackground: "#5c4b16",
+  matchBorder: "#d29922",
+  matchOverviewRuler: "#d29922",
+  activeMatchBackground: "#264f78",
+  activeMatchBorder: "#4f8cff",
+  activeMatchColorOverviewRuler: "#4f8cff",
+};
+
 const RESIZE_DEBOUNCE_MS = 100;
+const SELECTION_COPY_DEBOUNCE_MS = 120;
 
 // FitAddon.proposeDimensions() clamps to a minimum of 1 row / 2 cols — it never
 // produces 0, so a `rows <= 0 || cols <= 0` guard can never fire. These are the
@@ -55,20 +107,34 @@ export default function TermPane({
   isFocusedPane,
   broadcastOn,
   broadcastTargetIds,
+  copyOnSelect,
+  fontSize,
   registerWrite,
   unregisterWrite,
   registerFocus,
   unregisterFocus,
+  registerTerminalHandle,
+  unregisterTerminalHandle,
   onClose,
   onFocusPane,
   onShortcut,
+  onFontSizeChange,
+  onMetadataChange,
+  onTerminalError,
   windowsBuildNumber,
   contextMenuTriggerProps,
   actionsDisabled,
   style,
 }: TermPaneProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const { onContextMenu, ...menuTriggerProps } = contextMenuTriggerProps;
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResult, setSearchResult] = useState<ISearchResultChangeEvent>({
+    resultIndex: -1,
+    resultCount: 0,
+  });
 
   // 매 렌더마다 최신 값을 반영하는 ref들 — mount effect(아래)의 의존성 배열에는 넣지
   // 않는다. 넣으면 이 prop들이 바뀔 때마다 xterm이 재생성되어 스크롤백을 잃는다.
@@ -76,27 +142,163 @@ export default function TermPane({
   broadcastRef.current = broadcastOn;
   const broadcastTargetsRef = useRef(broadcastTargetIds);
   broadcastTargetsRef.current = broadcastTargetIds;
+  const copyOnSelectRef = useRef(copyOnSelect);
+  copyOnSelectRef.current = copyOnSelect;
+  const fontSizeRef = useRef(fontSize);
+  fontSizeRef.current = fontSize;
   const onShortcutRef = useRef(onShortcut);
   onShortcutRef.current = onShortcut;
+  const onFontSizeChangeRef = useRef(onFontSizeChange);
+  onFontSizeChangeRef.current = onFontSizeChange;
+  const onMetadataChangeRef = useRef(onMetadataChange);
+  onMetadataChangeRef.current = onMetadataChange;
+  const onTerminalErrorRef = useRef(onTerminalError);
+  onTerminalErrorRef.current = onTerminalError;
 
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
+  const cwdRef = useRef<string | null>(null);
+  const lastAutoCopiedRef = useRef<string | null>(null);
+  const selectionCopyTimerRef = useRef<number | undefined>(undefined);
   const lastSizeRef = useRef<{ rows: number; cols: number } | null>(null);
   const resizeTimerRef = useRef<number | undefined>(undefined);
   const fitAndSendResizeRef = useRef<() => void>(() => undefined);
   const seqRef = useRef(0);
+  const appliedFontSizeRef = useRef(clampTerminalFontSize(fontSize));
+
+  const copyText = useCallback(async (text: string, failureMessage: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      onTerminalErrorRef.current(failureMessage);
+    }
+  }, []);
+
+  const copySelection = useCallback(async () => {
+    const selection = termRef.current?.getSelection() ?? "";
+    if (!selection) return;
+    await copyText(selection, "선택한 텍스트를 클립보드에 복사하지 못했습니다.");
+  }, [copyText]);
+
+  const pasteClipboard = useCallback(async () => {
+    try {
+      const text = await readClipboardText();
+      if (!text) return;
+      if (text.length > MAX_TERMINAL_PASTE_CHARACTERS) {
+        onTerminalErrorRef.current("붙여넣을 내용이 1,000,000자를 초과합니다.");
+        return;
+      }
+      if (
+        hasMultilinePaste(text)
+        && !window.confirm(`${pasteLineCount(text)}줄을 터미널에 붙여넣을까요? 명령이 실행될 수 있습니다.`)
+      ) {
+        termRef.current?.focus();
+        return;
+      }
+      termRef.current?.paste(text);
+      termRef.current?.focus();
+    } catch {
+      onTerminalErrorRef.current("클립보드 내용을 터미널에 붙여넣지 못했습니다.");
+    }
+  }, []);
+
+  const openSearch = useCallback(() => {
+    setSearchOpen(true);
+    window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    });
+  }, []);
+
+  const closeSearch = useCallback(() => {
+    searchAddonRef.current?.clearDecorations();
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchResult({ resultIndex: -1, resultCount: 0 });
+    window.requestAnimationFrame(() => termRef.current?.focus());
+  }, []);
+
+  const copyCwd = useCallback(async () => {
+    if (!cwdRef.current) return;
+    await copyText(cwdRef.current, "현재 경로를 클립보드에 복사하지 못했습니다.");
+  }, [copyText]);
+
+  const getCapabilities = useCallback<TerminalPaneHandle["getCapabilities"]>(() => ({
+    hasSelection: Boolean(termRef.current?.hasSelection()),
+    hasCwd: cwdRef.current !== null,
+  }), []);
+
+  const openLinkRef = useRef<(input: string) => Promise<void>>(async () => undefined);
+  openLinkRef.current = async (input: string) => {
+    const url = normalizeTerminalLink(input);
+    if (!url) {
+      onTerminalErrorRef.current("지원하지 않는 링크 형식입니다.");
+      return;
+    }
+    const host = new URL(url).hostname;
+    if (!window.confirm(`'${host}' 링크를 기본 브라우저에서 열까요?`)) return;
+    try {
+      await openTerminalLink(url);
+    } catch {
+      onTerminalErrorRef.current("터미널 링크를 기본 브라우저에서 열지 못했습니다.");
+    }
+  };
+
+  const terminalKeyActionRef = useRef<(action: TerminalKeyAction) => void>(() => undefined);
+  terminalKeyActionRef.current = (action) => {
+    switch (action) {
+      case "copy":
+        void copySelection();
+        break;
+      case "paste":
+        void pasteClipboard();
+        break;
+      case "search":
+        openSearch();
+        break;
+      case "font-increase":
+        onFontSizeChangeRef.current(clampTerminalFontSize(fontSizeRef.current + 1));
+        break;
+      case "font-decrease":
+        onFontSizeChangeRef.current(clampTerminalFontSize(fontSizeRef.current - 1));
+        break;
+      case "font-reset":
+        onFontSizeChangeRef.current(DEFAULT_TERMINAL_FONT_SIZE);
+        break;
+    }
+  };
+
+  useEffect(() => {
+    registerTerminalHandle(sessionId, {
+      getCapabilities,
+      copySelection,
+      pasteClipboard,
+      openSearch,
+      copyCwd,
+    });
+    return () => unregisterTerminalHandle(sessionId);
+  }, [copyCwd, copySelection, getCapabilities, openSearch, pasteClipboard, registerTerminalHandle, sessionId, unregisterTerminalHandle]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
+    const initialFontSize = clampTerminalFontSize(fontSizeRef.current);
+    appliedFontSizeRef.current = initialFontSize;
     const term = new Terminal({
-      fontSize: 13,
+      fontSize: initialFontSize,
       fontFamily: '"Cascadia Code", Consolas, monospace',
       theme: THEME,
       cursorBlink: true,
       scrollback: 10000, // xterm 기본값(1000)보다 크게
       allowProposedApi: true, // Unicode11Addon 전제
+      linkHandler: {
+        activate: (event, text) => {
+          event.preventDefault();
+          void openLinkRef.current(text);
+        },
+      },
       // ConPTY는 오른쪽 여백에서 하드 랩할 때 랩 플래그를 주지 않는다. 이 옵션 없이는
       // 긴 줄이 전부 독립적인 하드 줄로 저장되고, cols가 바뀔 때마다 기존 출력이
       // 리플로우되지 않아 망가진다. Windows 빌드 번호는 소프트랩 휴리스틱에 필요하며,
@@ -110,9 +312,16 @@ export default function TermPane({
     term.unicode.activeVersion = "11";
     const fit = new FitAddon();
     term.loadAddon(fit);
+    const search = new SearchAddon();
+    term.loadAddon(search);
+    term.loadAddon(new WebLinksAddon((event, uri) => {
+      event.preventDefault();
+      void openLinkRef.current(uri);
+    }));
     term.open(el);
     termRef.current = term;
     fitRef.current = fit;
+    searchAddonRef.current = search;
 
     // fit() 후 실제 rows/cols를 PTY에 전달한다. display:none인 동안(비활성 탭)에는
     // fit()이 0 크기를 계산하므로 건너뛴다 — 그 상태에서도 lastSizeRef는 마지막 실측
@@ -147,11 +356,17 @@ export default function TermPane({
     fitAndSendResizeRef.current = fitAndSendResize;
     fitAndSendResize();
 
-    // Windows Terminal 호환 단축키를 셸로 보내기 전에 가로챈다. keydown/keyup 모두
-    // 불리므로 keydown만 처리한다. 매칭되면 stopPropagation으로 window 레벨
-    // keydown 리스너(App.tsx)까지 버블링되지 않게 막아 중복 실행을 막는다.
+    // 터미널 로컬 UX 단축키를 먼저 처리한 뒤 앱 단축키를 처리한다. 매칭되면
+    // window 레벨 리스너까지 버블링되지 않게 막아 중복 실행을 방지한다.
     term.attachCustomKeyEventHandler((event) => {
       if (event.type !== "keydown") return true;
+      const terminalAction = matchTerminalKey(event);
+      if (terminalAction) {
+        event.preventDefault();
+        event.stopPropagation();
+        terminalKeyActionRef.current(terminalAction);
+        return false;
+      }
       const action = matchShortcut(event);
       if (!action) return true;
       event.preventDefault();
@@ -167,6 +382,34 @@ export default function TermPane({
         void writeSession(sessionId, data);
       }
     });
+    const selectionDisposable = term.onSelectionChange(() => {
+      window.clearTimeout(selectionCopyTimerRef.current);
+      const selection = term.getSelection();
+      if (!selection) {
+        lastAutoCopiedRef.current = null;
+        return;
+      }
+      if (!copyOnSelectRef.current || selection === lastAutoCopiedRef.current) return;
+      selectionCopyTimerRef.current = window.setTimeout(() => {
+        const settledSelection = term.getSelection();
+        if (!copyOnSelectRef.current || !settledSelection || settledSelection !== selection) return;
+        lastAutoCopiedRef.current = settledSelection;
+        void copyText(settledSelection, "선택한 텍스트를 클립보드에 복사하지 못했습니다.");
+      }, SELECTION_COPY_DEBOUNCE_MS);
+    });
+    const titleDisposable = term.onTitleChange((nextTitle) => {
+      const normalized = normalizeTerminalTitle(nextTitle);
+      if (normalized) onMetadataChangeRef.current(sessionId, { title: normalized });
+    });
+    const osc7Disposable = term.parser.registerOscHandler(7, (payload) => {
+      const nextCwd = parseOsc7Cwd(payload);
+      if (nextCwd) {
+        cwdRef.current = nextCwd;
+        onMetadataChangeRef.current(sessionId, { cwd: nextCwd });
+      }
+      return true;
+    });
+    const searchResultDisposable = search.onDidChangeResults((result) => setSearchResult(result));
 
     registerWrite(sessionId, (data: string) => term.write(data));
     // registerWrite 직후, 마운트당 정확히 한 번. 리더 스레드는 start_session이 아니라
@@ -184,12 +427,19 @@ export default function TermPane({
     term.write("\x1b[2J\x1b[H");
 
     return () => {
+      window.clearTimeout(selectionCopyTimerRef.current);
       window.clearTimeout(resizeTimerRef.current);
       ro.disconnect();
       dataDisposable.dispose();
+      selectionDisposable.dispose();
+      titleDisposable.dispose();
+      osc7Disposable.dispose();
+      searchResultDisposable.dispose();
       unregisterWrite(sessionId);
+      cwdRef.current = null;
       termRef.current = null;
       fitRef.current = null;
+      searchAddonRef.current = null;
       term.dispose();
     };
   }, [sessionId, registerWrite, unregisterWrite]);
@@ -213,13 +463,40 @@ export default function TermPane({
     return () => cancelAnimationFrame(raf);
   }, [active]);
 
+  // 옵션만 갱신해 스크롤백과 PTY 연결을 유지한다. 글꼴 변화 뒤의 새 rows/cols는 기존
+  // ack-after-commit resize 경로로만 전달한다.
+  useEffect(() => {
+    const next = clampTerminalFontSize(fontSize);
+    const term = termRef.current;
+    if (!term || next === appliedFontSizeRef.current) return;
+    appliedFontSizeRef.current = next;
+    term.options.fontSize = next;
+    window.clearTimeout(resizeTimerRef.current);
+    const raf = requestAnimationFrame(() => fitAndSendResizeRef.current());
+    return () => cancelAnimationFrame(raf);
+  }, [fontSize]);
+
   // 활성 팬이 바뀌면(클릭 또는 Alt+Arrow 이동) xterm에 키보드 포커스를 준다.
   // 포커스 이동 없이 activePaneId만 바뀌면 입력이 이전 팬에 남는다.
   useEffect(() => {
-    if (active && isFocusedPane) {
+    if (active && isFocusedPane && !searchOpen) {
       termRef.current?.focus();
     }
-  }, [active, isFocusedPane]);
+  }, [active, isFocusedPane, searchOpen]);
+
+  const runSearch = (direction: "next" | "previous", query = searchQuery) => {
+    const addon = searchAddonRef.current;
+    if (!addon) return;
+    const boundedQuery = query.slice(0, MAX_TERMINAL_SEARCH_CHARACTERS);
+    if (!boundedQuery) {
+      addon.clearDecorations();
+      setSearchResult({ resultIndex: -1, resultCount: 0 });
+      return;
+    }
+    const options = { decorations: SEARCH_DECORATIONS, incremental: direction === "next" };
+    if (direction === "next") addon.findNext(boundedQuery, options);
+    else addon.findPrevious(boundedQuery, options);
+  };
 
   return (
     <div
@@ -236,17 +513,59 @@ export default function TermPane({
       <div
         className="pane-head"
         draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData("application/x-wsld-pane", sessionId);
-          e.dataTransfer.effectAllowed = "move";
+        onDragStart={(event) => {
+          event.dataTransfer.setData("application/x-wsld-pane", sessionId);
+          event.dataTransfer.effectAllowed = "move";
         }}
       >
-        <span className="pane-title">{title}</span>
-        <button className="pane-close" title="Close terminal" disabled={actionsDisabled} onClick={onClose}>
+        <span className="pane-title" title={title}>{title}</span>
+        <button className="pane-close" title="터미널 닫기" disabled={actionsDisabled} onClick={onClose}>
           ✕
         </button>
       </div>
-      <div className="term-wrap" ref={ref} />
+      {searchOpen && (
+        <div className="pane-search" role="search" aria-label="터미널 출력 검색">
+          <input
+            ref={searchInputRef}
+            aria-label="검색어"
+            maxLength={MAX_TERMINAL_SEARCH_CHARACTERS}
+            value={searchQuery}
+            onChange={(event) => {
+              const query = event.currentTarget.value.slice(0, MAX_TERMINAL_SEARCH_CHARACTERS);
+              setSearchQuery(query);
+              runSearch("next", query);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeSearch();
+              } else if (event.key === "Enter") {
+                event.preventDefault();
+                runSearch(event.shiftKey ? "previous" : "next");
+              }
+            }}
+            placeholder="터미널 출력 검색"
+          />
+          <span className="search-count" aria-live="polite">
+            {searchResult.resultCount > 0 ? `${searchResult.resultIndex + 1}/${searchResult.resultCount}` : "0/0"}
+          </span>
+          <button type="button" title="이전 결과 (Shift+Enter)" onClick={() => runSearch("previous")}>↑</button>
+          <button type="button" title="다음 결과 (Enter)" onClick={() => runSearch("next")}>↓</button>
+          <button type="button" title="검색 닫기 (Esc)" onClick={closeSearch}>✕</button>
+        </div>
+      )}
+      <div
+        className="term-wrap"
+        ref={ref}
+        onMouseDown={(event) => {
+          if (event.button === 1) event.preventDefault();
+        }}
+        onAuxClick={(event) => {
+          if (event.button !== 1) return;
+          event.preventDefault();
+          void pasteClipboard();
+        }}
+      />
     </div>
   );
 }

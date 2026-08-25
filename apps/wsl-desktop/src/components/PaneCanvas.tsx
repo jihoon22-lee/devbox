@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import type { ContextMenuTriggerProps } from "@devbox/context-menu";
-import TermPane from "./TermPane";
+import TermPane, { type TerminalPaneHandle } from "./TermPane";
 import type { Pane, Tab } from "../types";
 import type { ShortcutAction } from "../lib/shortcuts";
 
@@ -10,13 +10,20 @@ interface PaneCanvasProps {
   activeTabId: string;
   activePaneId: string | null;
   broadcastOn: boolean;
+  copyOnSelect: boolean;
+  fontSize: number;
   registerWrite: (id: string, fn: (data: string) => void) => void;
   unregisterWrite: (id: string) => void;
   registerFocus: (id: string, fn: () => void) => void;
   unregisterFocus: (id: string) => void;
+  registerTerminalHandle: (id: string, handle: TerminalPaneHandle) => void;
+  unregisterTerminalHandle: (id: string) => void;
   onClosePane: (id: string) => void;
   onFocusPane: (id: string) => void;
   onShortcut: (action: ShortcutAction) => void;
+  onFontSizeChange: (fontSize: number) => void;
+  onMetadataChange: (id: string, metadata: { title?: string; cwd?: string }) => void;
+  onTerminalError: (message: string) => void;
   windowsBuildNumber: number | null;
   contextMenuTriggerProps: ContextMenuTriggerProps;
   actionsDisabled: boolean;
@@ -43,13 +50,20 @@ export default function PaneCanvas({
   activeTabId,
   activePaneId,
   broadcastOn,
+  copyOnSelect,
+  fontSize,
   registerWrite,
   unregisterWrite,
   registerFocus,
   unregisterFocus,
+  registerTerminalHandle,
+  unregisterTerminalHandle,
   onClosePane,
   onFocusPane,
   onShortcut,
+  onFontSizeChange,
+  onMetadataChange,
+  onTerminalError,
   windowsBuildNumber,
   contextMenuTriggerProps,
   actionsDisabled,
@@ -88,18 +102,25 @@ export default function PaneCanvas({
           <TermPane
             key={pane.key}
             sessionId={sessionId}
-            title={pane.distro}
+            title={pane.title?.trim() || pane.distro}
             active={active}
             isFocusedPane={sessionId === activePaneId}
             broadcastOn={broadcastOn}
             broadcastTargetIds={activePaneIds}
+            copyOnSelect={copyOnSelect}
+            fontSize={fontSize}
             registerWrite={registerWrite}
             unregisterWrite={unregisterWrite}
             registerFocus={registerFocus}
             unregisterFocus={unregisterFocus}
+            registerTerminalHandle={registerTerminalHandle}
+            unregisterTerminalHandle={unregisterTerminalHandle}
             onClose={() => onClosePane(sessionId)}
             onFocusPane={() => onFocusPane(sessionId)}
             onShortcut={onShortcut}
+            onFontSizeChange={onFontSizeChange}
+            onMetadataChange={onMetadataChange}
+            onTerminalError={onTerminalError}
             windowsBuildNumber={windowsBuildNumber}
             contextMenuTriggerProps={contextMenuTriggerProps}
             actionsDisabled={actionsDisabled}

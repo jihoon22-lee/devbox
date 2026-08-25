@@ -4,8 +4,8 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `94ddc4959ef62afb685bdd09b8931e06dd85ed00cc696f03455d4abda12f33d7`
-- pnpm-lock.yaml SHA-256: `746460104c1d7cf8777c54876a36c9872ead5fe45224ce0a706d181b98e6a15e`
+- Cargo.lock SHA-256: `2295d09173758c7633418d4d84279c5bc574cc116a12c71b0e33e81751fff341`
+- pnpm-lock.yaml SHA-256: `b7013251b18e9e418d0f835d23dd5dcac6d728febcb6d56b1c56dd95f7d61636`
 
 ## Rust dependencies
 
@@ -753,7 +753,9 @@ to the CI license gate but are not shipped in the compiled frontend bundle.
 | @types/trusted-types | 2.0.7 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/trusted-types | `sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==` |
 | @upsetjs/venn.js | 2.0.0 | MIT | https://github.com/upsetjs/venn.js | `sha512-WbBhLrooyePuQ1VZxrJjtLvTc4NVfpOyKx0sKqioq9bX1C1m7Jgykkn8gLrtwumBioXIqam8DLxp88Adbue6Hw==` |
 | @xterm/addon-fit | 0.11.0 | MIT | https://github.com/xtermjs/xterm.js/tree/master#readme | `sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==` |
+| @xterm/addon-search | 0.16.0 | MIT | https://github.com/xtermjs/xterm.js/tree/master#readme | `sha512-9OeuBFu0/uZJPu+9AHKY6g/w0Czyb/Ut0A5t79I4ULoU4IfU5BEpPFVGQxP4zTTMdfZEYkVIRYbHBX1xWwjeSA==` |
 | @xterm/addon-unicode11 | 0.9.0 | MIT | https://github.com/xtermjs/xterm.js/tree/master#readme | `sha512-FxDnYcyuXhNl+XSqGZL/t0U9eiNb/q3EWT5rYkQT/zuig8Gz/VagnQANKHdDWFM2lTMk9ly0EFQxxxtZUoRetw==` |
+| @xterm/addon-web-links | 0.12.0 | MIT | https://github.com/xtermjs/xterm.js/tree/master#readme | `sha512-4Smom3RPyVp7ZMYOYDoC/9eGJJJqYhnPLGGqJ6wOBfB8VxPViJNSKdgRYb8NpaM6YSelEKbA2SStD7lGyqaobw==` |
 | @xterm/xterm | 6.0.0 | MIT | https://github.com/xtermjs/xterm.js#readme | `sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==` |
 | codemirror | 6.0.2 | MIT | https://github.com/codemirror/basic-setup#readme | `sha512-VhydHotNW5w1UGK0Qj96BwSk/Zqbp9WbnyK2W/eVMv4QyF41INRGpjUhFJY7/uDNuudSc33a/PKr4iDqRduvHw==` |
 | commander | 7.2.0 | MIT | https://github.com/tj/commander.js#readme | `sha512-QrWXB+ZQSVPmIWIhtEO9H+gwHaMGYiF5ChvoJ+K9ZGHG/sVsa6yiesAD1GC/x46sET00Xlwo1u49RVVVzvcSkw==` |

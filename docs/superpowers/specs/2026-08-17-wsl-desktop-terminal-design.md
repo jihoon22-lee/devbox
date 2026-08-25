@@ -337,12 +337,14 @@ type Pane = {
 | cwd 복사 | OSC 7 로 cwd 를 알 수 있을 때 |
 | 팬 닫기 (danger) | — |
 
-> **2026-08-26 구현 상태 (#260).** 공용 `@devbox/context-menu`에 팬·탭 trigger를 연결하고
+> **2026-08-26 구현 상태 (#260, #262).** 공용 `@devbox/context-menu`에 팬·탭 trigger를 연결하고
 > 팬의 세로/가로 분할·확인 후 닫기와 탭의 닫기·다른 탭 닫기·이름 변경·레이아웃
 > 전환을 구현했다. 기존 팬/탭 close button과 `Ctrl+Shift+W`도 같은 danger confirmation
 > 경로를 쓴다. 팬 메뉴가 닫히면 DOM root에서 멈추지 않고 registry의 xterm `focus()`를
-> 호출한다. 복사·붙여넣기·검색·cwd 복사는 이 절의 selection/clipboard/OSC 7 계약을
-> 반쪽만 구현하지 않도록 #262(P1-07) 전까지 exact menu에서 비활성화한다.
+> 호출한다. #262는 팬 handle registry에서 우클릭한 exact 팬의 selection과 유효한 OSC 7
+> cwd를 snapshot해 복사/cwd 복사 활성 조건을 정하고, 붙여넣기·검색까지 같은 exact 팬에
+> 전달한다. 읽기 권한 또는 clipboard 호출이 실패해도 PTY input/세션은 유지하며 raw 오류를
+> 화면에 반향하지 않는다.
 
 ---
 
@@ -422,6 +424,13 @@ pub trait Multiplexer {
 | 렌더러 | `@xterm/addon-webgl` (실패 시 canvas → DOM 폴백) |
 | 폰트 크기 | `Ctrl` `+`/`-`/`0`, 영속화. 현재 `THEME`·`fontSize` 하드코딩 |
 | 팬 크기 조절 | grid/cols/rows 프리셋에 더해 드래그 리사이즈 |
+
+> **2026-08-26 #262 구현 상태.** OSC 0/2 팬 제목과 활성 팬 기반 자동 탭 제목(수동 이름
+> 우선), OSC 7 cwd, addon-search, OSC 8 core link handler와 addon-web-links, 영속 글꼴
+> 크기를 구현했다. 링크는 HTTP(S)만 허용하고 embedded credential을 거부하며 host 확인 뒤
+> 연다. 기존 ConPTY wrap·10,000줄 scrollback·resize retry/hidden-pane 바닥값 회귀 테스트를
+> 함께 유지한다. WebGL renderer와 드래그 팬 크기 조절은 P1-07 issue의 acceptance에 포함하지
+> 않으며 native workspace/profile·multiplexer와 함께 이 PR로 끌어오지 않는다.
 
 ### 4.4 워크스페이스 정의와 명령 팔레트
 
