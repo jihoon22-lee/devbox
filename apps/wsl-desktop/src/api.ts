@@ -3,7 +3,14 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { isTauri } from "./lib/isTauri";
-import type { ContainerInfo, DistroInfo, OpenRequest } from "./types";
+import type {
+  ContainerInfo,
+  DistroInfo,
+  MultiplexerAvailability,
+  MultiplexerKind,
+  OpenRequest,
+  WorkspaceProfile,
+} from "./types";
 
 export interface SessionInfo {
   id: string;
@@ -25,6 +32,7 @@ const MOCK_CONTAINERS: ContainerInfo[] = [
   { id: "def456", name: "redis", image: "redis:7", status: "Up 2 hours", ports: "0.0.0.0:6379->6379/tcp" },
   { id: "ghi789", name: "nginx", image: "nginx:1.25", status: "Exited (0) 3 days ago", ports: "80/tcp" },
 ];
+let nextMockSession = 0;
 
 export async function listDistros(): Promise<DistroInfo[]> {
   if (!isTauri()) return MOCK_DISTROS;
@@ -46,9 +54,61 @@ export async function dockerAction(distro: string, containerId: string, action: 
   await invoke("docker_action", { distro, containerId, action });
 }
 
-export async function startSession(distro: string, cwd?: string): Promise<string> {
-  if (!isTauri()) return "mock-" + Date.now();
-  return invoke<string>("start_session", { distro, cwd: cwd ?? null });
+export interface StartedSession {
+  sessionId: string;
+  resumed: boolean;
+  multiplexer: MultiplexerKind;
+}
+
+export async function startSession(
+  distro: string,
+  cwd: string | undefined,
+  paneKey: string,
+  multiplexer: MultiplexerKind,
+): Promise<StartedSession> {
+  if (!isTauri()) {
+    nextMockSession += 1;
+    return { sessionId: `mock-${Date.now()}-${nextMockSession}`, resumed: false, multiplexer: "native" };
+  }
+  return invoke<StartedSession>("start_session", {
+    distro,
+    cwd: cwd ?? null,
+    paneKey,
+    multiplexer,
+  });
+}
+
+export async function detectMultiplexers(distro: string): Promise<MultiplexerAvailability[]> {
+  if (!isTauri()) return [
+    { kind: "native", available: true, version: null },
+    { kind: "tmux", available: false, version: null },
+    { kind: "zellij", available: false, version: null },
+  ];
+  return invoke<MultiplexerAvailability[]>("detect_multiplexers", { distro });
+}
+
+let mockProfiles: WorkspaceProfile[] = [];
+
+export async function listWorkspaceProfiles(): Promise<WorkspaceProfile[]> {
+  if (!isTauri()) return mockProfiles;
+  return invoke<WorkspaceProfile[]>("list_workspace_profiles");
+}
+
+export async function saveWorkspaceProfile(profile: WorkspaceProfile): Promise<WorkspaceProfile> {
+  if (!isTauri()) {
+    const saved = { ...profile, id: profile.id || `profile-${Date.now()}` };
+    mockProfiles = [...mockProfiles.filter((item) => item.id !== saved.id), saved];
+    return saved;
+  }
+  return invoke<WorkspaceProfile>("save_workspace_profile", { profile });
+}
+
+export async function deleteWorkspaceProfile(id: string): Promise<void> {
+  if (!isTauri()) {
+    mockProfiles = mockProfiles.filter((profile) => profile.id !== id);
+    return;
+  }
+  await invoke("delete_workspace_profile", { id });
 }
 
 export async function writeSession(sessionId: string, data: string): Promise<void> {

@@ -10,6 +10,7 @@ interface PaneCanvasProps {
   activeTabId: string;
   activePaneId: string | null;
   broadcastOn: boolean;
+  broadcastTargetIds: string[];
   copyOnSelect: boolean;
   fontSize: number;
   registerWrite: (id: string, fn: (data: string) => void) => void;
@@ -50,6 +51,7 @@ export default function PaneCanvas({
   activeTabId,
   activePaneId,
   broadcastOn,
+  broadcastTargetIds,
   copyOnSelect,
   fontSize,
   registerWrite,
@@ -106,7 +108,8 @@ export default function PaneCanvas({
             active={active}
             isFocusedPane={sessionId === activePaneId}
             broadcastOn={broadcastOn}
-            broadcastTargetIds={activePaneIds}
+            broadcastTargetIds={broadcastTargetIds}
+            initialCommand={pane.initialCommand}
             copyOnSelect={copyOnSelect}
             fontSize={fontSize}
             registerWrite={registerWrite}

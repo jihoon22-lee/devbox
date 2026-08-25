@@ -82,7 +82,19 @@ vi.mock("./api", () => ({
   ]),
   dockerPs: vi.fn().mockResolvedValue([]),
   dockerAction: vi.fn().mockResolvedValue(undefined),
-  startSession: vi.fn().mockImplementation(async () => `session-${++mocks.nextSession}`),
+  startSession: vi.fn().mockImplementation(async () => ({
+    sessionId: `session-${++mocks.nextSession}`,
+    resumed: false,
+    multiplexer: "native",
+  })),
+  detectMultiplexers: vi.fn().mockResolvedValue([
+    { kind: "native", available: true, version: null },
+    { kind: "tmux", available: false, version: null },
+    { kind: "zellij", available: false, version: null },
+  ]),
+  listWorkspaceProfiles: vi.fn().mockResolvedValue([]),
+  saveWorkspaceProfile: vi.fn(),
+  deleteWorkspaceProfile: vi.fn(),
   closeSession: vi.fn().mockResolvedValue(undefined),
   onTerminalClosed: vi.fn().mockResolvedValue(() => undefined),
   onTerminalOutput: vi.fn().mockResolvedValue(() => undefined),
@@ -100,20 +112,27 @@ async function renderWithPane(cwd = "") {
   render(<App />);
   await screen.findAllByRole("option", { name: /Ubuntu/u });
   if (cwd) fireEvent.change(screen.getByPlaceholderText(/Open path/u), { target: { value: cwd } });
-  fireEvent.click(screen.getByRole("button", { name: "+ Terminal" }));
+  const addButton = screen.getByRole("button", { name: "+ Terminal" });
+  await waitFor(() => expect(addButton).toBeEnabled());
+  fireEvent.click(addButton);
   const pane = await screen.findByLabelText("Ubuntu 터미널 팬") as HTMLDivElement;
   const tab = await screen.findByLabelText("Ubuntu 터미널 탭") as HTMLDivElement;
   return { pane, tab };
 }
 
 beforeEach(() => {
+  localStorage.clear();
   mocks.nextSession = 0;
   mocks.terminalFocus.mockReset();
   mocks.copySelection.mockReset();
   mocks.pasteClipboard.mockReset();
   mocks.openSearch.mockReset();
   mocks.copyCwd.mockReset();
-  startSessionMock.mockReset().mockImplementation(async () => `session-${++mocks.nextSession}`);
+  startSessionMock.mockReset().mockImplementation(async () => ({
+    sessionId: `session-${++mocks.nextSession}`,
+    resumed: false,
+    multiplexer: "native",
+  }));
   closeSessionMock.mockReset().mockResolvedValue(undefined);
   confirmMock.mockReset().mockReturnValue(false);
   promptMock.mockReset().mockReturnValue(null);
@@ -153,7 +172,13 @@ describe("WSL Desktop pane and tab context menus", () => {
     fireEvent.contextMenu(pane);
     fireEvent.click(screen.getByRole("menuitem", { name: "세로 분할" }));
 
-    await waitFor(() => expect(startSessionMock).toHaveBeenNthCalledWith(3, "Ubuntu", firstCwd));
+    await waitFor(() => expect(startSessionMock).toHaveBeenNthCalledWith(
+      3,
+      "Ubuntu",
+      firstCwd,
+      expect.any(String),
+      "native",
+    ));
     await waitFor(() => expect(screen.getAllByLabelText("Ubuntu 터미널 팬")).toHaveLength(3));
     const canvas = document.querySelector(".panes") as HTMLElement;
     expect(canvas.style.gridTemplateColumns).toContain("repeat(3");

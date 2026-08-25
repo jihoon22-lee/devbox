@@ -10,13 +10,15 @@ import type { Pane, Tab } from "../types";
  * 이러면 실제 TermPane 모듈(과 그 안의 @xterm/xterm, ../api import)이 아예 평가되지
  * 않으므로 별도로 mocking할 필요가 없다.
  */
-const { mountSpy, unmountSpy } = vi.hoisted(() => ({
+const { mountSpy, unmountSpy, termPropsSpy } = vi.hoisted(() => ({
   mountSpy: vi.fn<(sessionId: string) => void>(),
   unmountSpy: vi.fn<(sessionId: string) => void>(),
+  termPropsSpy: vi.fn<(sessionId: string, initialCommand: string | undefined) => void>(),
 }));
 
 vi.mock("./TermPane", () => ({
-  default: (props: { sessionId: string; active: boolean; style?: CSSProperties }) => {
+  default: (props: { sessionId: string; active: boolean; initialCommand?: string; style?: CSSProperties }) => {
+    termPropsSpy(props.sessionId, props.initialCommand);
     useEffect(() => {
       mountSpy(props.sessionId);
       return () => unmountSpy(props.sessionId);
@@ -39,7 +41,7 @@ vi.mock("./TermPane", () => ({
 // panes 배열 순서/재마운트 방지 불변식을 검증하는 것이 목적이라 둘을 구분할
 // 필요가 없다. 기존 테스트의 "p1"/"p2" 참조는 그대로 sessionId로도 동작한다.
 function pane(id: string, distro = "Ubuntu"): Pane {
-  return { key: id, sessionId: id, distro };
+  return { key: id, sessionId: id, distro, multiplexer: "native" };
 }
 
 function tab(id: string, paneIds: string[]): Tab {
@@ -53,6 +55,7 @@ function baseProps(overrides: Partial<Parameters<typeof PaneCanvas>[0]> = {}) {
     activeTabId: "",
     activePaneId: null as string | null,
     broadcastOn: false,
+    broadcastTargetIds: [] as string[],
     copyOnSelect: true,
     fontSize: 13,
     registerWrite: vi.fn(),
@@ -77,6 +80,7 @@ function baseProps(overrides: Partial<Parameters<typeof PaneCanvas>[0]> = {}) {
 beforeEach(() => {
   mountSpy.mockClear();
   unmountSpy.mockClear();
+  termPropsSpy.mockClear();
 });
 
 afterEach(() => {
@@ -84,6 +88,17 @@ afterEach(() => {
 });
 
 describe("PaneCanvas — 탭 전환 시 팬 재마운트 방지", () => {
+  it("새 세션용 initialCommand만 전달하고 저장된 명령은 재연결 때 다시 실행하지 않는다", () => {
+    const fresh = { ...pane("fresh"), startCommand: "pnpm dev", initialCommand: "pnpm dev" };
+    const resumed = { ...pane("resumed"), startCommand: "pnpm dev", initialCommand: undefined };
+    const tabs = [tab("t1", ["fresh", "resumed"])];
+
+    render(<PaneCanvas {...baseProps({ tabs, panes: [fresh, resumed], activeTabId: "t1" })} />);
+
+    expect(termPropsSpy).toHaveBeenCalledWith("fresh", "pnpm dev");
+    expect(termPropsSpy).toHaveBeenCalledWith("resumed", undefined);
+  });
+
   it("모든 팬을 panes 배열 순서대로, 활성 탭 여부와 무관하게 항상 마운트한다", () => {
     const panes = [pane("p1"), pane("p2")];
     const tabs = [tab("t1", ["p1"]), tab("t2", ["p2"])];

@@ -28,6 +28,7 @@ import {
   pasteLineCount,
   type TerminalKeyAction,
 } from "../lib/terminalUx";
+import { assessBroadcastInput } from "../lib/broadcastSafety";
 
 export interface TerminalPaneCapabilities {
   hasSelection: boolean;
@@ -52,6 +53,8 @@ interface TermPaneProps {
   broadcastOn: boolean;
   /** broadcast 대상 세션 id 목록 (활성 탭의 paneIds). */
   broadcastTargetIds: string[];
+  /** 새 native/mux 세션에만 한 번 보내며, 기존 mux 재연결에는 전달하지 않는다. */
+  initialCommand?: string;
   copyOnSelect: boolean;
   fontSize: number;
   registerWrite: (id: string, fn: (data: string) => void) => void;
@@ -107,6 +110,7 @@ export default function TermPane({
   isFocusedPane,
   broadcastOn,
   broadcastTargetIds,
+  initialCommand,
   copyOnSelect,
   fontSize,
   registerWrite,
@@ -165,7 +169,12 @@ export default function TermPane({
   const resizeTimerRef = useRef<number | undefined>(undefined);
   const fitAndSendResizeRef = useRef<() => void>(() => undefined);
   const seqRef = useRef(0);
+  const broadcastPendingCommandRef = useRef("");
   const appliedFontSizeRef = useRef(clampTerminalFontSize(fontSize));
+
+  useEffect(() => {
+    broadcastPendingCommandRef.current = "";
+  }, [broadcastOn, broadcastTargetIds.join("|")]);
 
   const copyText = useCallback(async (text: string, failureMessage: string) => {
     try {
@@ -376,10 +385,19 @@ export default function TermPane({
     });
 
     const dataDisposable = term.onData((data) => {
-      if (broadcastRef.current) {
-        void broadcast(broadcastTargetsRef.current, data);
+      const targets = broadcastTargetsRef.current;
+      if (broadcastRef.current && targets.length >= 2) {
+        const assessment = assessBroadcastInput(data, broadcastPendingCommandRef.current, targets.length);
+        if (assessment.confirmation && !window.confirm(assessment.confirmation)) return;
+        broadcastPendingCommandRef.current = assessment.nextPendingCommand;
+        void broadcast(targets, data).catch(() => {
+          onTerminalErrorRef.current("broadcast 입력을 모든 대상 터미널에 전달하지 못했습니다.");
+        });
       } else {
-        void writeSession(sessionId, data);
+        broadcastPendingCommandRef.current = "";
+        void writeSession(sessionId, data).catch(() => {
+          onTerminalErrorRef.current("터미널 입력을 전달하지 못했습니다.");
+        });
       }
     });
     const selectionDisposable = term.onSelectionChange(() => {
@@ -416,6 +434,11 @@ export default function TermPane({
     // 이 호출로 spawn된다 — 그 사이 출력은 ConPTY 내부 버퍼가 보관하므로 프론트
     // 핸들러가 등록되기 전에 나온 바이트가 유실되지 않는다.
     void attachSession(sessionId);
+    if (initialCommand) {
+      void writeSession(sessionId, `${initialCommand}\r`).catch(() => {
+        onTerminalErrorRef.current("프로필 시작 명령을 터미널에 전달하지 못했습니다.");
+      });
+    }
 
     const ro = new ResizeObserver(() => {
       window.clearTimeout(resizeTimerRef.current);
@@ -442,7 +465,7 @@ export default function TermPane({
       searchAddonRef.current = null;
       term.dispose();
     };
-  }, [sessionId, registerWrite, unregisterWrite]);
+  }, [initialCommand, sessionId, registerWrite, unregisterWrite]);
 
   // focus registry callback identity가 바뀌어도 xterm 자체를 재생성하지 않는다. terminal
   // 인스턴스는 mount effect가 소유하고 이 effect는 최신 registry에 focus handle만 연결한다.

@@ -1,4 +1,5 @@
 export type Layout = "grid" | "cols" | "rows";
+export type MultiplexerKind = "native" | "tmux" | "zellij";
 
 /** 세션 하나. 소속 탭 정보는 갖지 않는다 — Tab.paneIds가 소속의 단일 진실 소스다.
  *
@@ -17,6 +18,12 @@ export interface Pane {
   title?: string;
   /** 시작 경로로 초기화되고 이후 유효한 OSC 7을 받을 때 현재 경로로 갱신된다. */
   cwd?: string;
+  /** 프로필/마지막 레이아웃에서 새 세션에 한 번 전달할 명령. 재연결 시 재실행하지 않는다. */
+  startCommand?: string;
+  /** 이 런타임 세션이 처음 마운트될 때만 전달할 명령. 영속 정의에는 저장하지 않는다. */
+  initialCommand?: string;
+  /** 실제로 시작된 모드. 요청한 외부 도구가 없으면 backend가 native로 낮춘다. */
+  multiplexer: MultiplexerKind;
 }
 
 /** 탭 하나. 항상 팬을 최소 1개 갖는다 (탭 생성은 첫 세션 시작 성공과 함께 일어나고,
@@ -60,4 +67,38 @@ export type OpenTarget =
 export interface OpenRequest {
   target: OpenTarget;
   from: string | null;
+}
+
+export interface WorkspacePaneDefinition {
+  key: string;
+  distro: string;
+  cwd: string | null;
+  startCommand: string | null;
+  multiplexer: MultiplexerKind;
+}
+
+export interface WorkspaceTabDefinition {
+  id: string;
+  title: string;
+  customTitle: boolean;
+  layout: Layout;
+  paneKeys: string[];
+}
+
+export interface WorkspaceDefinition {
+  tabs: WorkspaceTabDefinition[];
+  panes: WorkspacePaneDefinition[];
+  activeTabId: string;
+  activePaneKey: string | null;
+}
+
+export interface WorkspaceProfile extends WorkspaceDefinition {
+  id: string;
+  name: string;
+}
+
+export interface MultiplexerAvailability {
+  kind: MultiplexerKind;
+  available: boolean;
+  version: string | null;
 }

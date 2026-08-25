@@ -6986,6 +6986,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tokio",
+ "uuid",
  "windows-version",
  "wsl",
 ]

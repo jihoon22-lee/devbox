@@ -19,11 +19,9 @@ describe("wsl-desktop applink routing", () => {
     expect(routeOpenRequest(request)).toEqual({ kind: "openTerminal", path: "/tmp/x" });
   });
 
-  it("no-ops profile with a reason pointing at the not-yet-built workspace/layout feature", () => {
+  it("routes profile to the named terminal workspace", () => {
     const request: OpenRequest = { target: { kind: "profile", id: "p-1" }, from: "workbench" };
-    const action = routeOpenRequest(request);
-    expect(action.kind).toBe("noop");
-    expect(action.kind === "noop" && action.reason).toMatch(/v0\.5\.0/);
+    expect(routeOpenRequest(request)).toEqual({ kind: "openProfile", id: "p-1" });
   });
 
   it("no-ops workspace and query targets with a reason instead of failing silently", () => {
