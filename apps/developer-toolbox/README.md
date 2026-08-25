@@ -8,7 +8,7 @@
 | 그룹 | 도구 | 구현 |
 |---|---|---|
 | JSON | Formatter / Minifier / Validator, JSON ↔ YAML 1.2 | TS (`jsonc-parser`·`yaml`) |
-| Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, URL Encode·Decode | TS |
+| Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, 진법 변환, URL Encode·Decode | TS |
 | Time | Unix Timestamp ↔ Date | TS |
 | Text | Case Converter, Diff | Diff는 Rust(`similar`) |
 | Security | Hash(MD5/SHA-256/SHA-512), UUID v4 | Rust(`md-5`·`sha2`·`uuid`) |
@@ -35,6 +35,12 @@
   Base64URL은 RFC 4648의 `-`/`_` alphabet으로 구분해 padding 없이 출력한다.
 - Base64는 암호화나 secret 보호 수단이 아니다. codec 입력·결과는 자동 저장·전송하지 않고,
   사용자가 명시적으로 누른 복사·text 파일 저장 action만 수행한다.
+- 진법 변환은 2·8·10·16진수를 동시에 보여 준다. 자동 입력은 부호 뒤의 `0b`·`0o`·`0x`를
+  감지하고 prefix가 없으면 10진수로 읽으며, 명시적 입력 진법에서는 prefix 일치 여부를
+  검증한다. invalid digit·prefix와 256bit 범위 초과가 시작되는 원문 문자 위치를 표시한다.
+- 진법 결과는 sign-before-prefix signed magnitude이고 two's complement 해석이나 digit
+  separator는 지원하지 않는다. 입력 표현은 512자, 절댓값은 최대 256bit로 제한하며 `BigInt`는
+  이 범위 안의 정확한 계산에만 사용한다.
 - 입력 우클릭 메뉴에서 명시적 Paste·전체 선택·비우기, 출력 메뉴에서 복사·전체 선택·텍스트
   파일 저장 지원. Clipboard read는 Paste를 누른 순간에만 수행하며 저장·로그하지 않음
 
