@@ -38,7 +38,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 - 신규 `crates/logs` — Log Lens가 두 번째 소비자가 되는 시점의 순수 log parsing
 - 구현된 `packages/context-menu` — 위치·keyboard navigation·focus restore·submenu·separator·
   disabled/danger 표현만 소유한다. Port Manager, Developer Toolbox, Everything+, Knowledge, Code Pad에
-  기능 단위로 적용됐고 나머지 기존 앱은 후속 PR이 담당한다.
+  이어 Run Manager의 job/service/history 행에도 기능 단위로 적용됐고 나머지 기존 앱은 후속 PR이 담당한다.
 - 신규 `crates/window-state`
 - `crates/applink` protocol v2 one-time handoff
 
@@ -78,7 +78,8 @@ knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror + co
 api-playground:   React → commands → reqwest → HTTP
 code-pad:         React(CodeMirror + tab/editor context-menu) → commands → LSP stdio 서버,
                    snapshot-checked sibling rename/delete, filesystem/markdown crate → React
-run-manager:      React → commands → scheduler → platform 실행 어댑터(Windows Job Object/WSL) → SQLite
+run-manager:      React(context-menu + bounded log export) → commands → scheduler
+                   → platform 실행 어댑터(Windows Job Object/WSL) → SQLite + app-owned 회전 로그
 devbox-manager:   React → commands → catalog/manifest → GitHub release asset
 workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument,
                    v0.4.0에서는 argv 수신 부재로 미동작했으나, v0.4.1에서 crates/applink와
@@ -142,6 +143,22 @@ system clipboard의 plain text를 읽는다. 읽은 값은 현재 controlled inp
 selection에만 삽입하며 log, snapshot, settings에 기록하지 않는다. Copy는 기존 WebView clipboard
 write 경로를 쓰고, Toolbox 결과 파일 저장은 사용자가 누른 항목에서 생성한 local text
 download로만 수행한다.
+
+Run Manager의 job/service/history context menu는 열기 전에 대상 행을 선택하고, 메뉴 action은
+그 snapshot의 불투명 ID만 backend에 전달한다. 활성 실행 stop과 service stop, job/service delete는
+메뉴와 기존 버튼 어느 쪽에서 실행해도 명시적 확인을 요구한다. 작업 active-run snapshot이 아직
+정상 확인되지 않았거나 service가 `stopping`이면 파괴적·lifecycle 항목을 fail-closed로 비활성화한다.
+service instance snapshot 자체가 없을 때도 stopped로 추정하지 않고 모든 lifecycle·delete 항목을
+비활성화한다. `retry_waiting` 서비스의 stop은 같은 service lock 아래 예약된 backoff를 취소하고,
+restart는 stopped 전이를 거쳐 새 generation을 claim한다.
+
+실행 이력의 로그 저장은 사용자가 선택한 stdout 또는 stderr 한 스트림만 `tail_log`로 읽는다.
+backend는 run ID에서 app-local `logs/runs` 경로를 다시 만들고 stored relative directory와 canonical
+경계를 검증하므로 frontend는 filesystem path를 받거나 선택하지 않는다. cursor는 lossless decimal
+string으로 유지하고 응답은 256KiB, 한 번의 저장은 현재 per-stream 보존 상한과 같은 50MiB로 제한한다.
+cursor가 전진하지 않거나 보존 범위가 이동하거나 상한 뒤 데이터가 남으면 부분 저장임을 알린다.
+download 파일명은 64자 이하의 sanitized opaque run ID와 stream만 포함해 command, cwd, 환경변수,
+원래 log path가 이름이나 오류에 노출되지 않는다.
 
 ### CSP 기준선
 

@@ -1,3 +1,8 @@
+import {
+  ContextMenu,
+  useContextMenu,
+  type ContextMenuEntry,
+} from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createService,
@@ -17,6 +22,7 @@ import {
   quitApp,
   restartService,
   runJobNow,
+  setJobEnabled,
   setStartupShortcutEnabled,
   startService,
   stopActiveRun,
@@ -67,6 +73,27 @@ function serviceStateLabel(state: ServiceInstance["state"]): string {
   }
 }
 
+interface ServiceSnapshot {
+  services: Job[];
+  instances: Record<string, ServiceInstance>;
+}
+
+async function loadServiceSnapshot(): Promise<ServiceSnapshot> {
+  const services = await listServices();
+  const entries = await Promise.all(
+    services.map(async (service): Promise<[string, ServiceInstance] | null> => {
+      const instance = await getServiceInstance(service.id);
+      return instance ? [service.id, instance] : null;
+    }),
+  );
+  return {
+    services,
+    instances: Object.fromEntries(
+      entries.filter((entry): entry is [string, ServiceInstance] => entry !== null),
+    ),
+  };
+}
+
 export default function App() {
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
   const [startupStatus, setStartupStatus] = useState<StartupShortcutStatus | null>(null);
@@ -80,6 +107,11 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("jobs");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [historyJobId, setHistoryJobId] = useState<string | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
+  const [contextJob, setContextJob] = useState<Job | null>(null);
+  const [contextService, setContextService] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +122,28 @@ export default function App() {
     promise: null,
     pending: false,
     generation: 0,
+  });
+
+  const prepareJobContext = useCallback((target: HTMLElement) => {
+    const id = target.dataset.jobId;
+    const job = jobs.find((candidate) => candidate.id === id);
+    if (!job) return;
+    setSelectedJobId(job.id);
+    setContextJob(job);
+  }, [jobs]);
+  const jobContextMenu = useContextMenu({
+    onBeforeOpen: (_reason, target) => prepareJobContext(target),
+  });
+
+  const prepareServiceContext = useCallback((target: HTMLElement) => {
+    const id = target.dataset.serviceId;
+    const service = services.find((candidate) => candidate.id === id);
+    if (!service) return;
+    setSelectedServiceId(service.id);
+    setContextService(service);
+  }, [services]);
+  const serviceContextMenu = useContextMenu({
+    onBeforeOpen: (_reason, target) => prepareServiceContext(target),
   });
 
   const refreshActiveRuns = useCallback(async () => {
@@ -139,15 +193,9 @@ export default function App() {
   }, [refreshActiveRuns]);
 
   const refreshServices = useCallback(async () => {
-    const nextServices = await listServices();
-    setServices(nextServices);
-    const entries = await Promise.all(
-      nextServices.map(async (service): Promise<[string, ServiceInstance] | null> => {
-        const instance = await getServiceInstance(service.id);
-        return instance ? [service.id, instance] : null;
-      }),
-    );
-    setServiceInstances(Object.fromEntries(entries.filter((entry): entry is [string, ServiceInstance] => entry !== null)));
+    const snapshot = await loadServiceSnapshot();
+    setServices(snapshot.services);
+    setServiceInstances(snapshot.instances);
   }, []);
 
   const onToggleObs = async (id: string) => {
@@ -197,12 +245,13 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([loadRuntimeStatus(), listJobs(), listServices(), loadStartupShortcutStatus()])
-      .then(([nextStatus, nextJobs, nextServices, nextStartupStatus]) => {
+    void Promise.all([loadRuntimeStatus(), listJobs(), loadServiceSnapshot(), loadStartupShortcutStatus()])
+      .then(([nextStatus, nextJobs, serviceSnapshot, nextStartupStatus]) => {
         if (!active) return;
         setStatus(nextStatus);
         setJobs(nextJobs);
-        setServices(nextServices);
+        setServices(serviceSnapshot.services);
+        setServiceInstances(serviceSnapshot.instances);
         setStartupStatus(nextStartupStatus);
         void refreshActiveRuns();
         setStatusError(null);
@@ -217,6 +266,41 @@ export default function App() {
       active = false;
     };
   }, [refreshActiveRuns]);
+
+  useEffect(() => {
+    if (screen !== "jobs") {
+      jobContextMenu.close();
+      setContextJob(null);
+    }
+    if (screen !== "services") {
+      serviceContextMenu.close();
+      setContextService(null);
+    }
+  }, [jobContextMenu.close, screen, serviceContextMenu.close]);
+
+  useEffect(() => {
+    const id = contextJob?.id;
+    if (!id) return;
+    const current = jobs.find((job) => job.id === id) ?? null;
+    if (current) setContextJob(current);
+    else {
+      jobContextMenu.close();
+      setContextJob(null);
+      setSelectedJobId((selected) => (selected === id ? null : selected));
+    }
+  }, [contextJob?.id, jobContextMenu.close, jobs]);
+
+  useEffect(() => {
+    const id = contextService?.id;
+    if (!id) return;
+    const current = services.find((service) => service.id === id) ?? null;
+    if (current) setContextService(current);
+    else {
+      serviceContextMenu.close();
+      setContextService(null);
+      setSelectedServiceId((selected) => (selected === id ? null : selected));
+    }
+  }, [contextService?.id, serviceContextMenu.close, services]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -242,6 +326,7 @@ export default function App() {
   };
 
   const handleStopRun = async (job: Job) => {
+    if (!window.confirm(`'${job.name}' 작업의 활성 실행을 중지할까요?`)) return;
     setBusy(true);
     try {
       await stopActiveRun(job.id);
@@ -268,6 +353,7 @@ export default function App() {
   };
 
   const handleServiceStop = async (service: Job) => {
+    if (!window.confirm(`'${service.name}' 서비스를 정지할까요?`)) return;
     setBusy(true);
     try {
       await stopService(service.id);
@@ -313,6 +399,12 @@ export default function App() {
     setEditingJobId(job.id);
     setError(null);
     setScreen("editor");
+  };
+
+  const openHistory = (job: Job) => {
+    setHistoryJobId(job.id);
+    setError(null);
+    setScreen("history");
   };
 
   const openServiceCreate = () => {
@@ -368,6 +460,19 @@ export default function App() {
     }
   };
 
+  const handleToggleJob = async (job: Job) => {
+    setBusy(true);
+    try {
+      await setJobEnabled(job.id, !job.enabled);
+      await refreshJobs();
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const toggleStartup = async () => {
     if (!startupStatus?.supported) return;
     setBusy(true);
@@ -408,6 +513,86 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const jobContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
+    if (!contextJob) return [];
+    return [
+      { type: "item", id: "run-now", label: "지금 실행", disabled: busy },
+      {
+        type: "item",
+        id: "toggle-enabled",
+        label: contextJob.enabled ? "비활성화" : "활성화",
+        disabled: busy,
+      },
+      { type: "item", id: "edit", label: "편집", disabled: busy },
+      { type: "item", id: "open-logs", label: "로그 열기" },
+      { type: "separator", id: "job-danger-separator" },
+      {
+        type: "item",
+        id: "delete",
+        label: "삭제",
+        disabled: busy || !activeSnapshotFresh || Boolean(activeRuns[contextJob.id]),
+        danger: true,
+      },
+    ];
+  }, [activeRuns, activeSnapshotFresh, busy, contextJob]);
+
+  const onJobContextSelect = (id: string) => {
+    const job = contextJob;
+    if (!job) return;
+    if (id === "run-now") void handleRunNow(job);
+    else if (id === "toggle-enabled") void handleToggleJob(job);
+    else if (id === "edit") openEdit(job);
+    else if (id === "open-logs") openHistory(job);
+    else if (id === "delete") void handleDelete(job);
+  };
+
+  const contextServiceState = contextService
+    ? serviceInstances[contextService.id]?.state ?? null
+    : null;
+  const serviceCanStart = contextServiceState === "stopped";
+  const serviceCanStop = contextServiceState !== null
+    && ["starting", "running", "retry_waiting"].includes(contextServiceState);
+  const serviceCanRestart = contextServiceState !== null
+    && ["starting", "running", "retry_waiting"].includes(contextServiceState);
+  const serviceContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
+    if (!contextService) return [];
+    return [
+      { type: "item", id: "start", label: "시작", disabled: busy || !serviceCanStart },
+      {
+        type: "item",
+        id: "stop",
+        label: "정지",
+        disabled: busy || !serviceCanStop,
+        danger: true,
+      },
+      {
+        type: "item",
+        id: "restart",
+        label: "재시작",
+        disabled: busy || !serviceCanRestart,
+      },
+      { type: "separator", id: "service-edit-separator" },
+      { type: "item", id: "edit", label: "편집", disabled: busy },
+      {
+        type: "item",
+        id: "delete",
+        label: "삭제",
+        disabled: busy || contextServiceState !== "stopped",
+        danger: true,
+      },
+    ];
+  }, [busy, contextService, contextServiceState, serviceCanRestart, serviceCanStart, serviceCanStop]);
+
+  const onServiceContextSelect = (id: string) => {
+    const service = contextService;
+    if (!service) return;
+    if (id === "start") void handleServiceStart(service);
+    else if (id === "stop") void handleServiceStop(service);
+    else if (id === "restart") void handleServiceRestart(service);
+    else if (id === "edit") openServiceEdit(service);
+    else if (id === "delete") void handleServiceDelete(service);
   };
 
   return (
@@ -477,7 +662,7 @@ export default function App() {
         ) : screen === "service-editor" ? (
           <ServiceEditor service={editingService} onSave={handleServiceSave} onCancel={closeServiceEditor} />
         ) : screen === "history" ? (
-          <RunHistory jobs={jobs.filter((job) => job.kind === "job")} />
+          <RunHistory jobs={jobs.filter((job) => job.kind === "job")} requestedJobId={historyJobId} />
         ) : screen === "services" ? (
           <section className="jobs-section" aria-labelledby="services-title">
             <div className="section-toolbar">
@@ -499,18 +684,32 @@ export default function App() {
               </section>
             ) : null}
             {!loading && services.length > 0 ? (
-              <div className="job-list service-list">
+              <div className="job-list service-list" role="list" aria-label="서비스 목록">
                 {services.map((service) => {
                   const instance = serviceInstances[service.id];
-                  const state = instance?.state ?? "stopped";
-                  const running = state === "running" || state === "starting";
+                  const state = instance?.state ?? null;
+                  const canStart = state === "stopped";
+                  const canControl = state !== null
+                    && ["starting", "running", "retry_waiting"].includes(state);
+                  const ready = state === "running" || state === "starting";
                   const obs = obsMap[service.id];
                   return (
-                  <article className="job-card service-card" key={service.id}>
+                  <article
+                    className={`job-card service-card ${selectedServiceId === service.id ? "selected" : ""}`}
+                    key={service.id}
+                    role="listitem"
+                    tabIndex={0}
+                    aria-current={selectedServiceId === service.id ? "true" : undefined}
+                    data-service-id={service.id}
+                    onClick={() => setSelectedServiceId(service.id)}
+                    {...serviceContextMenu.triggerProps}
+                  >
                     <div className="job-card-main">
                       <div className="job-title-row">
                         <h3>{service.name}</h3>
-                        <span className={`job-state ${running ? "ready" : "disabled"}`}>{serviceStateLabel(state)}</span>
+                        <span className={`job-state ${ready ? "ready" : "disabled"}`}>
+                          {state ? serviceStateLabel(state) : "상태 확인 불가"}
+                        </span>
                       </div>
                       <code title={service.command}>{service.command}</code>
                       <div className="job-meta">
@@ -527,19 +726,19 @@ export default function App() {
                       </div>
                     </div>
                     <div className="job-actions">
-                      {running ? (
+                      {canControl ? (
                         <>
                           <button type="button" className="button-secondary" disabled={busy} onClick={() => void handleServiceRestart(service)}>재시작</button>
                           <button type="button" className="button-danger" disabled={busy} onClick={() => void handleServiceStop(service)}>정지</button>
                         </>
                       ) : (
-                        <button type="button" className="button-secondary" disabled={busy} onClick={() => void handleServiceStart(service)}>시작</button>
+                        <button type="button" className="button-secondary" disabled={busy || !canStart} onClick={() => void handleServiceStart(service)}>시작</button>
                       )}
                       <button type="button" className="button-secondary" onClick={() => void onToggleObs(service.id)}>
                         {obsOpen[service.id] ? "상세 닫기" : "상세"}
                       </button>
                       <button type="button" className="button-secondary" onClick={() => openServiceEdit(service)}>편집</button>
-                      <button type="button" className="button-danger" disabled={busy || running} onClick={() => void handleServiceDelete(service)}>삭제</button>
+                      <button type="button" className="button-danger" disabled={busy || state !== "stopped"} onClick={() => void handleServiceDelete(service)}>삭제</button>
                     </div>
                     {obsOpen[service.id] && obs && (
                       <div className="obs-panel">
@@ -610,9 +809,18 @@ export default function App() {
               </section>
             ) : null}
             {!loading && jobs.length > 0 ? (
-              <div className="job-list">
+              <div className="job-list" role="list" aria-label="작업 목록">
                 {jobs.map((job) => (
-                  <article className="job-card" key={job.id}>
+                  <article
+                    className={`job-card ${selectedJobId === job.id ? "selected" : ""}`}
+                    key={job.id}
+                    role="listitem"
+                    tabIndex={0}
+                    aria-current={selectedJobId === job.id ? "true" : undefined}
+                    data-job-id={job.id}
+                    onClick={() => setSelectedJobId(job.id)}
+                    {...jobContextMenu.triggerProps}
+                  >
                     <div className="job-card-main">
                       <div className="job-title-row">
                         <h3>{job.name}</h3>
@@ -630,9 +838,9 @@ export default function App() {
                     </div>
                     <div className="job-actions">
                       <button type="button" className="button-primary" disabled={busy} onClick={() => void handleRunNow(job)}>지금 실행</button>
-      <button type="button" className="button-secondary" disabled={busy || !activeSnapshotFresh || !activeRuns[job.id]} onClick={() => void handleStopRun(job)}>중지</button>
+                      <button type="button" className="button-danger" disabled={busy || !activeSnapshotFresh || !activeRuns[job.id]} onClick={() => void handleStopRun(job)}>중지</button>
                       <button type="button" className="button-secondary" onClick={() => openEdit(job)}>편집</button>
-                      <button type="button" className="button-danger" disabled={busy} onClick={() => void handleDelete(job)}>삭제</button>
+                      <button type="button" className="button-danger" disabled={busy || !activeSnapshotFresh || Boolean(activeRuns[job.id])} onClick={() => void handleDelete(job)}>삭제</button>
                     </div>
                   </article>
                 ))}
@@ -651,6 +859,24 @@ export default function App() {
           onClose={() => setImportOpen(false)}
         />
       )}
+      <ContextMenu
+        open={jobContextMenu.open}
+        anchor={jobContextMenu.anchor}
+        restoreFocusTo={jobContextMenu.restoreFocusTo}
+        items={jobContextItems}
+        onSelect={onJobContextSelect}
+        onClose={jobContextMenu.close}
+        ariaLabel="작업 메뉴"
+      />
+      <ContextMenu
+        open={serviceContextMenu.open}
+        anchor={serviceContextMenu.anchor}
+        restoreFocusTo={serviceContextMenu.restoreFocusTo}
+        items={serviceContextItems}
+        onSelect={onServiceContextSelect}
+        onClose={serviceContextMenu.close}
+        ariaLabel="서비스 메뉴"
+      />
     </main>
   );
 }

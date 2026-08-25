@@ -3737,6 +3737,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn service_stop_cancels_retry_waiting_backoff() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_with_policy("web", RestartPolicy::OnFailure), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        adapter.finish_next(1).await;
+        await_service_state(&database, &service.id, ServiceInstanceState::RetryWaiting).await;
+
+        let stopped = scheduler
+            .stop_service_at(&service.id, current_epoch_millis())
+            .await
+            .unwrap()
+            .expect("retry-waiting service should accept an explicit stop");
+        assert_eq!(stopped.state, ServiceInstanceState::Stopped);
+        assert_eq!(stopped.next_retry_at, None);
+
+        scheduler
+            .supervise_services(current_epoch_millis().saturating_add(60_000))
+            .await;
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 1);
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn service_restart_bypasses_retry_waiting_backoff() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_with_policy("web", RestartPolicy::OnFailure), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        let first = scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        adapter.finish_next(1).await;
+        await_service_state(&database, &service.id, ServiceInstanceState::RetryWaiting).await;
+
+        let restarted = scheduler
+            .restart_service_at(&service.id, current_epoch_millis())
+            .await
+            .unwrap();
+        assert_eq!(restarted.state, ServiceInstanceState::Running);
+        assert!(restarted.generation > first.generation);
+        assert_eq!(restarted.next_retry_at, None);
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 2);
+
+        adapter.finish_next(0).await;
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn clean_service_exit_stops_without_retry_for_on_failure_policy() {
         let database = Arc::new(DatabaseState::open_in_memory().unwrap());
         let service = database

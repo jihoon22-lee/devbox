@@ -15,7 +15,8 @@
     "react-dom": "^19.1.0",
     "@tauri-apps/api": "^2",
     "@devbox/tokens": "workspace:*",
-    "@devbox/diff-view": "workspace:*"
+    "@devbox/diff-view": "workspace:*",
+    "@devbox/context-menu": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
