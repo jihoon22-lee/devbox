@@ -8,6 +8,10 @@ import type { OpenRequest } from "./types";
 const mocks = vi.hoisted(() => ({
   nextSession: 0,
   terminalFocus: vi.fn<(id: string) => void>(),
+  copySelection: vi.fn<(id: string) => void>(),
+  pasteClipboard: vi.fn<(id: string) => void>(),
+  openSearch: vi.fn<(id: string) => void>(),
+  copyCwd: vi.fn<(id: string) => void>(),
 }));
 
 vi.mock("./components/TermPane", () => ({
@@ -19,6 +23,15 @@ vi.mock("./components/TermPane", () => ({
     style?: CSSProperties;
     registerFocus: (id: string, focus: () => void) => void;
     unregisterFocus: (id: string) => void;
+    registerTerminalHandle: (id: string, handle: {
+      getCapabilities: () => { hasSelection: boolean; hasCwd: boolean };
+      copySelection: () => Promise<void>;
+      pasteClipboard: () => Promise<void>;
+      openSearch: () => void;
+      copyCwd: () => Promise<void>;
+    }) => void;
+    unregisterTerminalHandle: (id: string) => void;
+    onMetadataChange: (id: string, metadata: { title?: string; cwd?: string }) => void;
     onClose: () => void;
     contextMenuTriggerProps: HTMLAttributes<HTMLElement>;
     actionsDisabled: boolean;
@@ -29,8 +42,18 @@ vi.mock("./components/TermPane", () => ({
         mocks.terminalFocus(props.sessionId);
         ref.current?.focus();
       });
-      return () => props.unregisterFocus(props.sessionId);
-    }, [props.registerFocus, props.sessionId, props.unregisterFocus]);
+      props.registerTerminalHandle(props.sessionId, {
+        getCapabilities: () => ({ hasSelection: true, hasCwd: true }),
+        copySelection: async () => mocks.copySelection(props.sessionId),
+        pasteClipboard: async () => mocks.pasteClipboard(props.sessionId),
+        openSearch: () => mocks.openSearch(props.sessionId),
+        copyCwd: async () => mocks.copyCwd(props.sessionId),
+      });
+      return () => {
+        props.unregisterFocus(props.sessionId);
+        props.unregisterTerminalHandle(props.sessionId);
+      };
+    }, [props.registerFocus, props.registerTerminalHandle, props.sessionId, props.unregisterFocus, props.unregisterTerminalHandle]);
     return (
       <div
         ref={ref}
@@ -44,6 +67,10 @@ vi.mock("./components/TermPane", () => ({
         <button title={`Close terminal ${props.sessionId}`} disabled={props.actionsDisabled} onClick={props.onClose}>
           close
         </button>
+        <button
+          title={`Emit title ${props.sessionId}`}
+          onClick={() => props.onMetadataChange(props.sessionId, { title: "npm test" })}
+        >title</button>
       </div>
     );
   },
@@ -82,6 +109,10 @@ async function renderWithPane(cwd = "") {
 beforeEach(() => {
   mocks.nextSession = 0;
   mocks.terminalFocus.mockReset();
+  mocks.copySelection.mockReset();
+  mocks.pasteClipboard.mockReset();
+  mocks.openSearch.mockReset();
+  mocks.copyCwd.mockReset();
   startSessionMock.mockReset().mockImplementation(async () => `session-${++mocks.nextSession}`);
   closeSessionMock.mockReset().mockResolvedValue(undefined);
   confirmMock.mockReset().mockReturnValue(false);
@@ -93,7 +124,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("WSL Desktop pane and tab context menus", () => {
-  it("우클릭한 exact pane을 선택하고 #262 경계를 포함한 정확한 메뉴를 표시한다", async () => {
+  it("우클릭한 exact pane의 현재 capability로 정확한 메뉴를 표시하고 action을 전달한다", async () => {
     const { pane } = await renderWithPane();
 
     fireEvent.contextMenu(pane, { clientX: 20, clientY: 24 });
@@ -103,9 +134,11 @@ describe("WSL Desktop pane and tab context menus", () => {
       expect(screen.getByRole("menuitem", { name: label })).toBeInTheDocument();
     }
     for (const label of ["복사", "붙여넣기", "검색", "cwd 복사"]) {
-      expect(screen.getByRole("menuitem", { name: label })).toHaveAttribute("aria-disabled", "true");
+      expect(screen.getByRole("menuitem", { name: label })).not.toHaveAttribute("aria-disabled", "true");
     }
     expect(screen.getByRole("menuitem", { name: "팬 닫기" })).toHaveClass("danger");
+    fireEvent.click(screen.getByRole("menuitem", { name: "복사" }));
+    expect(mocks.copySelection).toHaveBeenCalledWith("session-1");
   });
 
   it("활성 pane과 다른 exact pane의 distro·cwd로 세로 분할하고 layout을 전환한다", async () => {
@@ -166,6 +199,24 @@ describe("WSL Desktop pane and tab context menus", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "레이아웃 전환" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "가로 분할" }));
     expect(screen.getByRole("button", { name: "rows" })).toHaveClass("active");
+  });
+
+  it("자동 탭 제목은 활성 pane OSC 제목을 따르고 수동 rename 뒤에는 덮어쓰지 않는다", async () => {
+    const { pane, tab } = await renderWithPane();
+
+    fireEvent.click(screen.getByTitle("Emit title session-1"));
+    const autoTitle = await screen.findByLabelText("npm test 터미널 탭");
+    expect(pane).toHaveAttribute("aria-label", "npm test 터미널 팬");
+
+    promptMock.mockReturnValueOnce("내 작업");
+    fireEvent.contextMenu(autoTitle);
+    fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
+    const customTitle = await screen.findByLabelText("내 작업 터미널 탭");
+
+    fireEvent.click(screen.getByTitle("Emit title session-1"));
+    expect(customTitle).toBeInTheDocument();
+    expect(screen.queryByLabelText("npm test 터미널 탭")).not.toBeInTheDocument();
+    expect(tab).toHaveAttribute("aria-label", "내 작업 터미널 탭");
   });
 
   it("다른 탭 닫기는 target tab을 먼저 활성화하고 승인된 다른 session만 닫는다", async () => {

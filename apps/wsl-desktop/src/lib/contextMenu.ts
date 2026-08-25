@@ -10,28 +10,31 @@ export function normalizeTabName(input: string): string | null {
   return name || null;
 }
 
-export function buildPaneContextMenu(busy: boolean): readonly ContextMenuEntry[] {
+export interface PaneContextCapabilities {
+  busy: boolean;
+  hasSelection: boolean;
+  hasCwd: boolean;
+}
+
+export function buildPaneContextMenu({ busy, hasSelection, hasCwd }: PaneContextCapabilities): readonly ContextMenuEntry[] {
   return [
     {
       type: "item",
       id: "copy",
       label: "복사",
-      // #262가 xterm selection snapshot과 clipboard write를 소유한다.
-      disabled: true,
+      disabled: busy || !hasSelection,
     },
     {
       type: "item",
       id: "paste",
       label: "붙여넣기",
-      // #262가 clipboard permission, multiline confirm과 term.paste()를 소유한다.
-      disabled: true,
+      disabled: busy,
     },
     {
       type: "item",
       id: "search",
       label: "검색",
-      // #262가 xterm search addon과 query lifecycle을 소유한다.
-      disabled: true,
+      disabled: busy,
     },
     { type: "item", id: "split-vertical", label: "세로 분할", disabled: busy },
     { type: "item", id: "split-horizontal", label: "가로 분할", disabled: busy },
@@ -39,8 +42,7 @@ export function buildPaneContextMenu(busy: boolean): readonly ContextMenuEntry[]
       type: "item",
       id: "copy-cwd",
       label: "cwd 복사",
-      // Pane.cwd는 시작 경로일 뿐 현재 cwd가 아니다. #262의 OSC 7 값만 복사한다.
-      disabled: true,
+      disabled: busy || !hasCwd,
     },
     { type: "item", id: "close", label: "팬 닫기", disabled: busy, danger: true },
   ];

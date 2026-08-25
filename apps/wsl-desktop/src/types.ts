@@ -13,6 +13,9 @@ export interface Pane {
   key: string;
   sessionId: string | null;
   distro: string;
+  /** OSC 0/2가 보고한 현재 터미널 제목. distro는 값이 없을 때의 fallback이다. */
+  title?: string;
+  /** 시작 경로로 초기화되고 이후 유효한 OSC 7을 받을 때 현재 경로로 갱신된다. */
   cwd?: string;
 }
 
@@ -21,6 +24,8 @@ export interface Pane {
 export interface Tab {
   id: string;
   title: string;
+  /** OSC 제목을 따라가는 기본 탭(false/undefined)인지 사용자가 직접 이름을 붙였는지. */
+  customTitle?: boolean;
   layout: Layout;
   paneIds: string[];
 }

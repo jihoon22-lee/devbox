@@ -206,6 +206,11 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 앱별 목표 버전, PR 지도와 acceptance는 [상세 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을
 축약 없이 기준으로 삼는다.
 
+2026-08-26 현재 7번은 #262에서 구현·검증 중이다. selection 자동 복사/명시적 복사,
+권한 실패가 PTY로 번지지 않는 bracketed paste, exact-pane 메뉴, OSC 0/2·7·8, 검색과
+영속 글꼴 크기를 추가하고 기존 wrap/scrollback/resize 안전 경계를 유지한다. P1-08의
+workspace/profile/multiplexer는 이 기능 PR에 섞지 않는다.
+
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅
 Stage 0a   통폐합·네이밍 (PR 2~4) — identifier com.devbox.*          ✅

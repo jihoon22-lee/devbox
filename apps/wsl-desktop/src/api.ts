@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { isTauri } from "./lib/isTauri";
 import type { ContainerInfo, DistroInfo, OpenRequest } from "./types";
 
@@ -108,4 +110,18 @@ export async function takePendingOpen(): Promise<OpenRequest | null> {
 export async function onOpenRequest(cb: (payload: OpenRequest) => void): Promise<UnlistenFn> {
   if (!isTauri()) return () => undefined;
   return listen<OpenRequest>("devbox://open", (e) => cb(e.payload));
+}
+
+export async function readClipboardText(): Promise<string> {
+  if (!isTauri()) return navigator.clipboard.readText();
+  return readText();
+}
+
+/** URL 검증은 호출자가 먼저 수행한다. 이 경계는 운영체제 기본 브라우저 실행만 소유한다. */
+export async function openTerminalLink(url: string): Promise<void> {
+  if (!isTauri()) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  await openUrl(url);
 }

@@ -1,7 +1,11 @@
 import type { ComponentProps } from "react";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import TermPane from "./TermPane";
+import {
+  MAX_TERMINAL_PASTE_CHARACTERS,
+  MAX_TERMINAL_SEARCH_CHARACTERS,
+} from "../lib/terminalUx";
 
 /**
  * jsdom에는 캔버스 텍스트 측정이 없어 실제 xterm을 그릴 수 없다(PaneCanvas.test.tsx의
@@ -10,28 +14,80 @@ import TermPane from "./TermPane";
  * Unicode11Addon)을 rows/cols를 직접 조작할 수 있는 최소 스텁으로 대체하고 실제
  * TermPane을 렌더링한다.
  */
-const { createdTerminals, fitSizes, observerState, focusSpy, FakeTerminal, FakeFitAddon, FakeUnicode11Addon } = vi.hoisted(() => {
+const {
+  createdTerminals,
+  createdSearchAddons,
+  createdWebLinksAddons,
+  fitSizes,
+  observerState,
+  focusSpy,
+  pasteSpy,
+  FakeTerminal,
+  FakeFitAddon,
+  FakeSearchAddon,
+  FakeUnicode11Addon,
+  FakeWebLinksAddon,
+} = vi.hoisted(() => {
   type TerminalOptions = {
+    fontSize?: number;
     windowsPty?: { backend: string; buildNumber?: number };
+    linkHandler?: { activate: (event: MouseEvent, text: string) => void };
   };
   type TerminalSize = { rows: number; cols: number };
-  const createdTerminals: { rows: number; cols: number; options: TerminalOptions }[] = [];
+  type Disposable = { dispose: () => void };
+  type SearchResult = { resultIndex: number; resultCount: number };
+  const createdTerminals: FakeTerminal[] = [];
+  const createdSearchAddons: FakeSearchAddon[] = [];
+  const createdWebLinksAddons: FakeWebLinksAddon[] = [];
   const fitSizes: TerminalSize[] = [];
   const observerState: { callback?: () => void } = {};
   const focusSpy = vi.fn();
+  const pasteSpy = vi.fn<(text: string) => void>();
 
   class FakeTerminal {
     rows = 2;
     cols = 5;
     unicode = { activeVersion: "" };
+    selection = "";
+    keyHandler?: (event: KeyboardEvent) => boolean;
+    selectionHandler?: () => void;
+    titleHandler?: (title: string) => void;
+    osc7Handler?: (payload: string) => boolean;
+    parser = {
+      registerOscHandler: (identifier: number, handler: (payload: string) => boolean): Disposable => {
+        if (identifier === 7) this.osc7Handler = handler;
+        return { dispose: () => undefined };
+      },
+    };
     constructor(public options: TerminalOptions) {
       createdTerminals.push(this);
     }
-    loadAddon() {}
+    loadAddon(addon: { activate?: (terminal: FakeTerminal) => void }) {
+      addon.activate?.(this);
+    }
     open() {}
-    attachCustomKeyEventHandler() {}
+    attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
+      this.keyHandler = handler;
+    }
     onData() {
       return { dispose: () => undefined };
+    }
+    onSelectionChange(handler: () => void) {
+      this.selectionHandler = handler;
+      return { dispose: () => undefined };
+    }
+    onTitleChange(handler: (title: string) => void) {
+      this.titleHandler = handler;
+      return { dispose: () => undefined };
+    }
+    getSelection() {
+      return this.selection;
+    }
+    hasSelection() {
+      return this.selection.length > 0;
+    }
+    paste(text: string) {
+      pasteSpy(text);
     }
     write() {}
     focus() {
@@ -52,15 +108,54 @@ const { createdTerminals, fitSizes, observerState, focusSpy, FakeTerminal, FakeF
 
   class FakeUnicode11Addon {}
 
-  return { createdTerminals, fitSizes, observerState, focusSpy, FakeTerminal, FakeFitAddon, FakeUnicode11Addon };
+  class FakeSearchAddon {
+    resultHandler?: (result: SearchResult) => void;
+    findNext = vi.fn<(term: string) => boolean>().mockReturnValue(true);
+    findPrevious = vi.fn<(term: string) => boolean>().mockReturnValue(true);
+    clearDecorations = vi.fn();
+    constructor() {
+      createdSearchAddons.push(this);
+    }
+    activate() {}
+    onDidChangeResults(handler: (result: SearchResult) => void) {
+      this.resultHandler = handler;
+      return { dispose: () => undefined };
+    }
+  }
+
+  class FakeWebLinksAddon {
+    constructor(public handler?: (event: MouseEvent, uri: string) => void) {
+      createdWebLinksAddons.push(this);
+    }
+    activate() {}
+  }
+
+  return {
+    createdTerminals,
+    createdSearchAddons,
+    createdWebLinksAddons,
+    fitSizes,
+    observerState,
+    focusSpy,
+    pasteSpy,
+    FakeTerminal,
+    FakeFitAddon,
+    FakeSearchAddon,
+    FakeUnicode11Addon,
+    FakeWebLinksAddon,
+  };
 });
 
 vi.mock("@xterm/xterm", () => ({ Terminal: FakeTerminal }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: FakeFitAddon }));
+vi.mock("@xterm/addon-search", () => ({ SearchAddon: FakeSearchAddon }));
 vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: FakeUnicode11Addon }));
+vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: FakeWebLinksAddon }));
 
-const { mockResizeSession } = vi.hoisted(() => ({
+const { mockResizeSession, mockReadClipboardText, mockOpenTerminalLink } = vi.hoisted(() => ({
   mockResizeSession: vi.fn().mockResolvedValue(undefined),
+  mockReadClipboardText: vi.fn().mockResolvedValue(""),
+  mockOpenTerminalLink: vi.fn().mockResolvedValue(undefined),
 }));
 const stableRegisterFocus = vi.fn<(id: string, focus: () => void) => void>();
 const stableUnregisterFocus = vi.fn<(id: string) => void>();
@@ -70,6 +165,8 @@ vi.mock("../api", () => ({
   broadcast: vi.fn().mockResolvedValue(undefined),
   writeSession: vi.fn().mockResolvedValue(undefined),
   resizeSession: mockResizeSession,
+  readClipboardText: mockReadClipboardText,
+  openTerminalLink: mockOpenTerminalLink,
 }));
 
 function baseProps(overrides: Partial<ComponentProps<typeof TermPane>> = {}): ComponentProps<typeof TermPane> {
@@ -80,13 +177,20 @@ function baseProps(overrides: Partial<ComponentProps<typeof TermPane>> = {}): Co
     isFocusedPane: false,
     broadcastOn: false,
     broadcastTargetIds: [],
+    copyOnSelect: true,
+    fontSize: 13,
     registerWrite: vi.fn(),
     unregisterWrite: vi.fn(),
     registerFocus: stableRegisterFocus,
     unregisterFocus: stableUnregisterFocus,
+    registerTerminalHandle: vi.fn(),
+    unregisterTerminalHandle: vi.fn(),
     onClose: vi.fn(),
     onFocusPane: vi.fn(),
     onShortcut: vi.fn(),
+    onFontSizeChange: vi.fn(),
+    onMetadataChange: vi.fn(),
+    onTerminalError: vi.fn(),
     windowsBuildNumber: null,
     contextMenuTriggerProps: {},
     actionsDisabled: false,
@@ -96,12 +200,25 @@ function baseProps(overrides: Partial<ComponentProps<typeof TermPane>> = {}): Co
 
 beforeEach(() => {
   createdTerminals.length = 0;
+  createdSearchAddons.length = 0;
+  createdWebLinksAddons.length = 0;
   fitSizes.length = 0;
   observerState.callback = undefined;
   focusSpy.mockClear();
+  pasteSpy.mockClear();
   mockResizeSession.mockClear();
+  mockReadClipboardText.mockReset().mockResolvedValue("");
+  mockOpenTerminalLink.mockReset().mockResolvedValue(undefined);
   stableRegisterFocus.mockClear();
   stableUnregisterFocus.mockClear();
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+  });
+  Object.defineProperty(window, "confirm", {
+    configurable: true,
+    value: vi.fn().mockReturnValue(false),
+  });
   // TermPane 마운트는 항상 `new ResizeObserver(...)`를 호출한다. jsdom은 이를 구현하지
   // 않으므로(ReferenceError) 최소 스텁으로 대체한다. 이 스위트는 ResizeObserver의
   // 디바운스 경로가 아니라 mount 직접 호출 + active(rAF) 경로만으로 fitAndSendResize를
@@ -263,5 +380,179 @@ describe("TermPane — resize 바닥값 (§2.3)", () => {
     await Promise.resolve();
     expect(mockResizeSession).toHaveBeenCalledTimes(1);
     clearTimeoutSpy.mockRestore();
+  });
+});
+
+describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
+  it("selection이 120ms 유지될 때만 자동 복사하고 clipboard 실패를 고정 메시지로 격리한다", async () => {
+    vi.useFakeTimers();
+    const onTerminalError = vi.fn();
+    const raw = "C:\\secret\\clipboard credential-raw";
+    const writeText = vi.mocked(navigator.clipboard.writeText);
+    writeText.mockRejectedValueOnce(new Error(raw));
+    render(<TermPane {...baseProps({ onTerminalError })} />);
+    const term = createdTerminals[0];
+
+    term.selection = "first";
+    term.selectionHandler?.();
+    term.selection = "settled";
+    term.selectionHandler?.();
+    await act(async () => {
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith("settled");
+    expect(onTerminalError).toHaveBeenCalledWith(
+      "선택한 텍스트를 클립보드에 복사하지 못했습니다.",
+    );
+    expect(onTerminalError).not.toHaveBeenCalledWith(expect.stringContaining(raw));
+  });
+
+  it("exact pane handle이 복사·다중행 확인 붙여넣기·OSC cwd 복사·검색을 제공한다", async () => {
+    const registerTerminalHandle = vi.fn();
+    const onTerminalError = vi.fn();
+    const confirm = vi.mocked(window.confirm);
+    confirm.mockReturnValue(true);
+    mockReadClipboardText.mockResolvedValue("echo one\r\necho two");
+    const { container } = render(<TermPane {...baseProps({ registerTerminalHandle, onTerminalError })} />);
+    const term = createdTerminals[0];
+    const handle = registerTerminalHandle.mock.calls[0][1];
+
+    term.selection = "selected output";
+    expect(handle.getCapabilities()).toEqual({ hasSelection: true, hasCwd: false });
+    await handle.copySelection();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("selected output");
+
+    await handle.pasteClipboard();
+    expect(confirm).toHaveBeenCalledWith("2줄을 터미널에 붙여넣을까요? 명령이 실행될 수 있습니다.");
+    expect(pasteSpy).toHaveBeenCalledWith("echo one\r\necho two");
+
+    const raw = "C:\\secret\\clipboard-read credential-raw";
+    mockReadClipboardText.mockRejectedValue(new Error(raw));
+    await handle.pasteClipboard();
+    expect(onTerminalError).toHaveBeenCalledWith("클립보드 내용을 터미널에 붙여넣지 못했습니다.");
+    expect(onTerminalError).not.toHaveBeenCalledWith(expect.stringContaining(raw));
+
+    mockReadClipboardText.mockResolvedValue("x".repeat(MAX_TERMINAL_PASTE_CHARACTERS + 1));
+    await handle.pasteClipboard();
+    expect(pasteSpy).toHaveBeenCalledTimes(1);
+    expect(onTerminalError).toHaveBeenCalledWith("붙여넣을 내용이 1,000,000자를 초과합니다.");
+
+    mockReadClipboardText.mockResolvedValue("middle paste");
+    fireEvent(
+      container.querySelector(".term-wrap") as HTMLDivElement,
+      new MouseEvent("auxclick", { bubbles: true, button: 1 }),
+    );
+    await waitFor(() => expect(pasteSpy).toHaveBeenLastCalledWith("middle paste"));
+
+    act(() => {
+      term.osc7Handler?.("file://wsl-host/mnt/c/My%20Repo");
+      handle.openSearch();
+    });
+    expect(handle.getCapabilities()).toEqual({ hasSelection: true, hasCwd: true });
+    await handle.copyCwd();
+    expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith("/mnt/c/My Repo");
+    expect(await screen.findByRole("search", { name: "터미널 출력 검색" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "검색어" }), { target: { value: "error" } });
+    expect(createdSearchAddons[0].findNext).toHaveBeenCalledWith("error", expect.any(Object));
+    fireEvent.change(screen.getByRole("textbox", { name: "검색어" }), {
+      target: { value: "q".repeat(MAX_TERMINAL_SEARCH_CHARACTERS + 1) },
+    });
+    expect(createdSearchAddons[0].findNext).toHaveBeenLastCalledWith(
+      "q".repeat(MAX_TERMINAL_SEARCH_CHARACTERS),
+      expect.any(Object),
+    );
+    fireEvent.click(screen.getByTitle("이전 결과 (Shift+Enter)"));
+    expect(createdSearchAddons[0].findPrevious).toHaveBeenCalledWith(
+      "q".repeat(MAX_TERMINAL_SEARCH_CHARACTERS),
+      expect.any(Object),
+    );
+    act(() => createdSearchAddons[0].resultHandler?.({ resultIndex: 1, resultCount: 3 }));
+    expect(screen.getByText("2/3")).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "검색어" }), { key: "Escape" });
+    expect(screen.queryByRole("search", { name: "터미널 출력 검색" })).not.toBeInTheDocument();
+  });
+
+  it("Ctrl+Shift+C/V/F는 로컬 처리하지만 bare Ctrl+C는 PTY 입력 경로에 남긴다", async () => {
+    const registerTerminalHandle = vi.fn();
+    render(<TermPane {...baseProps({ registerTerminalHandle })} />);
+    const term = createdTerminals[0];
+    term.selection = "copy me";
+    const event = (key: string, code: string, shiftKey: boolean) => ({
+      type: "keydown",
+      ctrlKey: true,
+      shiftKey,
+      altKey: false,
+      metaKey: false,
+      key,
+      code,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    }) as unknown as KeyboardEvent;
+
+    expect(term.keyHandler?.(event("c", "KeyC", false))).toBe(true);
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+    expect(term.keyHandler?.(event("c", "KeyC", true))).toBe(false);
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith("copy me"));
+
+    mockReadClipboardText.mockResolvedValue("keyboard paste");
+    expect(term.keyHandler?.(event("v", "KeyV", true))).toBe(false);
+    await waitFor(() => expect(pasteSpy).toHaveBeenCalledWith("keyboard paste"));
+
+    const searchEvent = event("f", "KeyF", true);
+    act(() => { term.keyHandler?.(searchEvent); });
+    expect(await screen.findByRole("search", { name: "터미널 출력 검색" })).toBeInTheDocument();
+  });
+
+  it("OSC 0/2 제목과 유효한 OSC 7만 metadata에 반영한다", () => {
+    const onMetadataChange = vi.fn();
+    render(<TermPane {...baseProps({ onMetadataChange })} />);
+    const term = createdTerminals[0];
+
+    act(() => {
+      term.titleHandler?.(" build\u0000\r\nlogs ");
+      term.osc7Handler?.("https://example.com/secret");
+      term.osc7Handler?.("file://wsl-host/home/me/project");
+    });
+
+    expect(onMetadataChange).toHaveBeenCalledWith("s1", { title: "build logs" });
+    expect(onMetadataChange).toHaveBeenCalledWith("s1", { cwd: "/home/me/project" });
+    expect(onMetadataChange).toHaveBeenCalledTimes(2);
+  });
+
+  it("HTTP(S) 링크만 host 확인 뒤 열고 font 변경은 terminal을 재마운트하지 않는다", async () => {
+    const onTerminalError = vi.fn();
+    const registerWrite = vi.fn();
+    const unregisterWrite = vi.fn();
+    const confirm = vi.mocked(window.confirm);
+    confirm.mockReturnValue(true);
+    const props = (nextFontSize: number) => baseProps({
+      fontSize: nextFontSize,
+      onTerminalError,
+      registerWrite,
+      unregisterWrite,
+    });
+    const { rerender } = render(<TermPane {...props(13)} />);
+    const term = createdTerminals[0];
+
+    const preventDefault = vi.fn();
+    term.options.linkHandler?.activate({ preventDefault } as unknown as MouseEvent, "javascript:alert(1)");
+    expect(onTerminalError).toHaveBeenCalledWith("지원하지 않는 링크 형식입니다.");
+    expect(mockOpenTerminalLink).not.toHaveBeenCalled();
+
+    createdWebLinksAddons[0].handler?.(
+      { preventDefault } as unknown as MouseEvent,
+      "https://example.com/docs",
+    );
+    await waitFor(() => expect(mockOpenTerminalLink).toHaveBeenCalledWith("https://example.com/docs"));
+    expect(confirm).toHaveBeenCalledWith("'example.com' 링크를 기본 브라우저에서 열까요?");
+
+    rerender(<TermPane {...props(16)} />);
+    expect(createdTerminals).toHaveLength(1);
+    expect(term.options.fontSize).toBe(16);
   });
 });

@@ -1,5 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { loadPinned, loadPinnedCwd, loadRecentPaths, pushRecentPath, savePinned, savePinnedCwd } from "./storage";
+import {
+  loadCopyOnSelect,
+  loadPinned,
+  loadPinnedCwd,
+  loadRecentPaths,
+  loadTerminalFontSize,
+  pushRecentPath,
+  saveCopyOnSelect,
+  savePinned,
+  savePinnedCwd,
+  saveTerminalFontSize,
+} from "./storage";
 
 beforeEach(() => {
   localStorage.clear();
@@ -75,5 +86,25 @@ describe("pushRecentPath", () => {
   it("앞뒤 공백은 trim된 상태로 저장된다", () => {
     pushRecentPath("  /trimmed  ");
     expect(loadRecentPaths()).toEqual(["/trimmed"]);
+  });
+});
+
+describe("터미널 UX 설정 왕복", () => {
+  it("selection 자동 복사는 기본 on이고 명시적으로 끌 수 있다", () => {
+    expect(loadCopyOnSelect()).toBe(true);
+    saveCopyOnSelect(false);
+    expect(loadCopyOnSelect()).toBe(false);
+    saveCopyOnSelect(true);
+    expect(loadCopyOnSelect()).toBe(true);
+  });
+
+  it("글꼴 크기는 기본값과 안전 범위로 정규화해 저장한다", () => {
+    expect(loadTerminalFontSize()).toBe(13);
+    saveTerminalFontSize(18);
+    expect(loadTerminalFontSize()).toBe(18);
+    localStorage.setItem("wsl-desktop:font-size", "999");
+    expect(loadTerminalFontSize()).toBe(24);
+    localStorage.setItem("wsl-desktop:font-size", "invalid");
+    expect(loadTerminalFontSize()).toBe(13);
   });
 });
