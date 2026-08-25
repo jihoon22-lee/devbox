@@ -125,3 +125,13 @@ export function openIn(appId: string, path: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   return invoke<void>("open_in", { appId, path });
 }
+
+export function repositoryCopyPath(path: string): Promise<string> {
+  if (!isTauri()) return Promise.resolve(path);
+  return invoke<string>("repository_copy_path", { path });
+}
+
+export function openRepositoryFolder(path: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("open_repository_folder", { path });
+}

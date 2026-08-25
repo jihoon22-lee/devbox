@@ -4,6 +4,7 @@ use crate::core::git::{parse_status, parse_worktrees, RepoSnapshot};
 use crate::core::open_targets::{select_repo_open_targets, RepoOpenTarget};
 use serde::Serialize;
 use std::path::Path;
+use tauri_plugin_opener::OpenerExt;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -199,6 +200,24 @@ pub fn open_in(app_id: String, path: String) -> Result<(), String> {
     devbox_launch::launch_open(&target.id, &req).map(|_| ())
 }
 
+/// 사용자가 명시적으로 복사를 선택한 순간에만 현재 Git repository 경로를 반환한다.
+#[tauri::command]
+pub fn repository_copy_path(path: String) -> Result<String, String> {
+    validated_repository(&path)
+        .map(|entry| entry.path)
+        .map_err(str::to_string)
+}
+
+/// 현재도 유효한 Git repository만 OS file manager로 연다. opener 상세 오류와 raw path는
+/// frontend error에 반향하지 않는다.
+#[tauri::command]
+pub fn open_repository_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let repository = validated_repository(&path).map_err(str::to_string)?;
+    app.opener()
+        .open_path(repository.path, None::<&str>)
+        .map_err(|_| "repository 폴더를 열 수 없습니다".to_string())
+}
+
 #[cfg(test)]
 mod scan_tests {
     use super::*;
@@ -259,6 +278,21 @@ mod scan_tests {
         let scanned = scan_root(path).unwrap();
 
         assert_eq!(scanned.repos, vec![inbound]);
+    }
+
+    #[test]
+    fn explicit_copy_revalidates_repository_and_hides_rejected_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_git_dir(tmp.path());
+        let path = tmp.path().to_string_lossy().into_owned();
+        assert_eq!(repository_copy_path(path.clone()).unwrap(), path);
+
+        let secret = "copy-path-secret-must-not-appear";
+        let error = repository_copy_path(format!("relative/{secret}"))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(error, "repository 경로가 올바르지 않습니다");
+        assert!(!error.contains(secret));
     }
 
     #[test]

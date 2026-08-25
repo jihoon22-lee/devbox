@@ -10,6 +10,9 @@
 - **상태 목록** — branch·dirty·ahead/behind·worktree
 - **worktree 생성** — 새 작업 트리 생성
 - **열기** — catalog에서 `path` capability와 실제 설치 executable이 모두 확인된 앱만 자동 노출하고, `workspace`도 받는 앱에는 더 구체적인 `Workspace` payload를 전달한다 (설계: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](../../docs/superpowers/specs/2026-08-17-app-interop-design.md))
+- **repository 컨텍스트 메뉴** — 다른 앱으로 열기, worktree 생성 입력으로 이동, backend에서
+  재검증한 경로 복사, 탐색기에서 열기. 우클릭과 `Shift+F10`/Menu 키를 지원하고 닫은 뒤 원래
+  repository 카드로 포커스를 돌려보낸다. 카드 안의 텍스트 입력은 기본 우클릭·IME 동작을 유지한다.
 - **정리 후보** — merged/stale branch 후보, remove 전 uncommitted/untracked 검사
 
 ## 안전 경계
@@ -19,6 +22,10 @@
 - Windows/WSL path가 같은 저장소를 중복 등록하지 않음 (`crates/wsl` canonical_project_key)
 - inbound Path는 절대 경로·traversal·존재·Git repository 여부를 backend에서 검증하며, 실패 오류와 로그에 원문을 반향하지 않음
 - 등록 초안은 자동 저장·Git 명령·임의 경로 쓰기를 수행하지 않고 사용자의 명시적 탐색 전까지 UI state로만 유지
+- 경로 복사와 탐색기 열기는 action 시점에 존재하는 절대 Git repository인지 backend에서 다시
+  확인한다. copy 외에는 새 path DTO를 만들지 않으며 opener 상세 오류나 거부된 raw path를 반향하지 않는다.
+- 실제 worktree/branch 제거는 이 메뉴 PR에 포함하지 않는다. 현재는 read-only clean 검사만 유지하고,
+  dirty/untracked/locked/main 차단과 preview를 갖춘 safe cleanup(#364)에서만 파괴 action을 추가한다.
 
 ## 기술
 

@@ -36,6 +36,8 @@ pub fn run() {
             commands::worktree_clean,
             commands::open_targets,
             commands::open_in,
+            commands::repository_copy_path,
+            commands::open_repository_folder,
         ])
         .setup(|app| {
             app.manage(applink::PendingOpen::new());

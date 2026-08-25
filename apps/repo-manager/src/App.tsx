@@ -1,10 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ContextMenu,
+  useContextMenu,
+  type ContextMenuEntry,
+} from "@devbox/context-menu";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createWorktree,
   onOpenRequest,
   openIn,
+  openRepositoryFolder,
   openTargets,
   prepareInboundRepository,
+  repositoryCopyPath,
   repoStatus,
   scanRoot,
   takePendingOpen,
@@ -16,7 +23,13 @@ import {
   type RepoSnapshot,
 } from "./api";
 import { routeOpenRequest, sameRepositoryKey } from "./lib/applink";
+import { buildRepositoryContextMenu } from "./lib/contextMenu";
 import "./App.css";
+
+function usesNativeTextContext(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement
+    && target.closest("input, textarea, [contenteditable='true']") !== null;
+}
 
 export default function App() {
   const [root, setRoot] = useState("C:\\projects");
@@ -32,11 +45,25 @@ export default function App() {
   const [reposLoaded, setReposLoaded] = useState(false);
   const [selectedRepoKey, setSelectedRepoKey] = useState<string | null>(null);
   const [registrationDraft, setRegistrationDraft] = useState<RepoEntry | null>(null);
+  const [contextRepo, setContextRepo] = useState<RepoEntry | null>(null);
   const reposRef = useRef<RepoEntry[]>(repos);
   const pendingSelectionKeyRef = useRef<string | null>(null);
   const selectedCardRef = useRef<HTMLDivElement | null>(null);
   const openSequenceRef = useRef(0);
+  const branchInputRefs = useRef(new Map<string, HTMLInputElement>());
   reposRef.current = repos;
+
+  const prepareRepositoryContext = useCallback((target: HTMLElement) => {
+    const key = target.dataset.repoKey;
+    const repo = repos.find((candidate) => sameRepositoryKey(candidate.canonicalKey, key ?? ""));
+    if (!repo) return;
+    setSelectedRepoKey(repo.canonicalKey);
+    setRegistrationDraft(null);
+    setContextRepo(repo);
+  }, [repos]);
+  const repositoryContextMenu = useContextMenu({
+    onBeforeOpen: (_reason, target) => prepareRepositoryContext(target),
+  });
 
   const scan = useCallback(async () => {
     setError(null);
@@ -92,9 +119,9 @@ export default function App() {
   useEffect(() => {
     void openTargets()
       .then(setTargets)
-      .catch((e: unknown) => {
+      .catch(() => {
         setTargets([]);
-        setError(e instanceof Error ? e.message : String(e));
+        setError("다른 앱으로 열기 대상을 확인하지 못했습니다");
       });
   }, []);
 
@@ -170,10 +197,22 @@ export default function App() {
   }, [reposLoaded]);
 
   useEffect(() => {
-    if (!selectedRepoKey) return;
+    if (!selectedRepoKey || repositoryContextMenu.open) return;
     selectedCardRef.current?.focus();
     selectedCardRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [selectedRepoKey]);
+  }, [repositoryContextMenu.open, selectedRepoKey]);
+
+  useEffect(() => {
+    const key = contextRepo?.canonicalKey;
+    if (!key) return;
+    const current = repos.find((repo) => sameRepositoryKey(repo.canonicalKey, key)) ?? null;
+    if (current) setContextRepo(current);
+    else {
+      repositoryContextMenu.close();
+      setContextRepo(null);
+      setSelectedRepoKey((selected) => selected && sameRepositoryKey(selected, key) ? null : selected);
+    }
+  }, [contextRepo?.canonicalKey, repos, repositoryContextMenu.close]);
 
   const exploreDraft = () => {
     if (!registrationDraft) return;
@@ -190,6 +229,32 @@ export default function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+  };
+
+  const onCopyRepositoryPath = async (repo: RepoEntry) => {
+    setError(null);
+    try {
+      const path = await repositoryCopyPath(repo.path);
+      await navigator.clipboard.writeText(path);
+    } catch {
+      setError("repository 경로를 확인하거나 복사하지 못했습니다");
+    }
+  };
+
+  const onOpenRepositoryFolder = async (repo: RepoEntry) => {
+    setError(null);
+    try {
+      await openRepositoryFolder(repo.path);
+    } catch {
+      setError("repository 폴더를 열 수 없습니다");
+    }
+  };
+
+  const focusWorktreeCreate = (repo: RepoEntry) => {
+    setSelectedRepoKey(repo.canonicalKey);
+    window.requestAnimationFrame(() => {
+      branchInputRefs.current.get(repo.canonicalKey)?.focus({ preventScroll: true });
+    });
   };
 
   const onCreate = async (repo: string) => {
@@ -219,6 +284,23 @@ export default function App() {
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const repositoryContextItems = useMemo<readonly ContextMenuEntry[]>(
+    () => buildRepositoryContextMenu(targets, busy),
+    [busy, targets],
+  );
+
+  const onRepositoryContextSelect = (id: string) => {
+    const repo = contextRepo;
+    if (!repo) return;
+    if (id === "create-worktree") focusWorktreeCreate(repo);
+    else if (id === "copy-path") void onCopyRepositoryPath(repo);
+    else if (id === "open-folder") void onOpenRepositoryFolder(repo);
+    else {
+      const target = targets?.find((candidate) => `open-in:${candidate.id}` === id);
+      if (target) void onOpen(target, repo.path);
     }
   };
 
@@ -256,7 +338,27 @@ export default function App() {
               key={r.path}
               ref={sameRepositoryKey(r.canonicalKey, selectedRepoKey ?? "") ? selectedCardRef : undefined}
               className={`repo-card ${sameRepositoryKey(r.canonicalKey, selectedRepoKey ?? "") ? "selected" : ""}`}
-              tabIndex={-1}
+              tabIndex={0}
+              aria-current={sameRepositoryKey(r.canonicalKey, selectedRepoKey ?? "") ? "true" : undefined}
+              aria-label={`${r.path} repository`}
+              data-repo-key={r.canonicalKey}
+              onClick={(event) => {
+                if (!usesNativeTextContext(event.target)) {
+                  setSelectedRepoKey(r.canonicalKey);
+                  setRegistrationDraft(null);
+                }
+              }}
+              {...repositoryContextMenu.triggerProps}
+              onContextMenu={(event) => {
+                if (!usesNativeTextContext(event.target)) {
+                  repositoryContextMenu.triggerProps.onContextMenu?.(event);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (!usesNativeTextContext(event.target)) {
+                  repositoryContextMenu.triggerProps.onKeyDown?.(event);
+                }
+              }}
             >
               <div className="repo-head">
                 <span className="repo-path">{r.path}</span>
@@ -292,7 +394,15 @@ export default function App() {
                 </div>
               )}
               <div className="wt-create">
-                <input placeholder="새 브랜치" value={newBranch} onChange={(e) => setNewBranch(e.currentTarget.value)} />
+                <input
+                  ref={(node) => {
+                    if (node) branchInputRefs.current.set(r.canonicalKey, node);
+                    else branchInputRefs.current.delete(r.canonicalKey);
+                  }}
+                  placeholder="새 브랜치"
+                  value={newBranch}
+                  onChange={(e) => setNewBranch(e.currentTarget.value)}
+                />
                 <input placeholder="대상 디렉터리" value={newDir} onChange={(e) => setNewDir(e.currentTarget.value)} />
                 <button className="btn" disabled={busy} onClick={() => void onCreate(r.path)}>worktree 생성</button>
               </div>
@@ -302,6 +412,15 @@ export default function App() {
         {repos.length === 0 && <div className="dim">repository가 없습니다.</div>}
       </div>
       <div className="note dim">force delete·reset·clean은 기본 동작으로 제공하지 않습니다. remove 전 검사만 지원합니다.</div>
+      <ContextMenu
+        open={repositoryContextMenu.open}
+        anchor={repositoryContextMenu.anchor}
+        restoreFocusTo={repositoryContextMenu.restoreFocusTo}
+        items={repositoryContextItems}
+        onSelect={onRepositoryContextSelect}
+        onClose={repositoryContextMenu.close}
+        ariaLabel="Repository 메뉴"
+      />
     </div>
   );
 }
