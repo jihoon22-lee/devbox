@@ -1,42 +1,216 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import {
+  createWorktree,
+  onOpenRequest,
+  openIn,
+  openRepositoryFolder,
+  openTargets,
+  prepareInboundRepository,
+  repoStatus,
+  repositoryCopyPath,
+  scanRoot,
+  takePendingOpen,
+  worktreeClean,
+  worktrees,
+  type RepoEntry,
+  type RepoOpenTarget,
+} from "./api";
 
-// isTauri()가 false인 환경(MOCK, api.ts의 MOCK_RESULT)에서 렌더링해 검증한다.
+vi.mock("./api", () => ({
+  createWorktree: vi.fn(),
+  onOpenRequest: vi.fn(),
+  openIn: vi.fn(),
+  openRepositoryFolder: vi.fn(),
+  openTargets: vi.fn(),
+  prepareInboundRepository: vi.fn(),
+  repoStatus: vi.fn(),
+  repositoryCopyPath: vi.fn(),
+  scanRoot: vi.fn(),
+  takePendingOpen: vi.fn(),
+  worktreeClean: vi.fn(),
+  worktrees: vi.fn(),
+}));
+
+const repositories: RepoEntry[] = [
+  {
+    path: "C:\\projects\\devbox",
+    canonicalKey: "win:c:/projects/devbox",
+    hasWorktrees: true,
+  },
+  {
+    path: "E:\\projects\\sample",
+    canonicalKey: "win:e:/projects/sample",
+    hasWorktrees: false,
+  },
+];
+
+const targets: RepoOpenTarget[] = [
+  { id: "code-pad", displayName: "Code Pad", payloadKind: "workspace" },
+  { id: "wsl-desktop", displayName: "WSL Desktop", payloadKind: "path" },
+];
+
+const scanRootMock = vi.mocked(scanRoot);
+const repoStatusMock = vi.mocked(repoStatus);
+const worktreesMock = vi.mocked(worktrees);
+const createWorktreeMock = vi.mocked(createWorktree);
+const worktreeCleanMock = vi.mocked(worktreeClean);
+const openTargetsMock = vi.mocked(openTargets);
+const openInMock = vi.mocked(openIn);
+const repositoryCopyPathMock = vi.mocked(repositoryCopyPath);
+const openRepositoryFolderMock = vi.mocked(openRepositoryFolder);
+const prepareInboundRepositoryMock = vi.mocked(prepareInboundRepository);
+const takePendingOpenMock = vi.mocked(takePendingOpen);
+const onOpenRequestMock = vi.mocked(onOpenRequest);
+const writeTextMock = vi.fn<(value: string) => Promise<void>>();
+
+beforeEach(() => {
+  scanRootMock.mockReset().mockResolvedValue({ repos: repositories, truncated: false });
+  repoStatusMock.mockReset().mockImplementation(async (path) => ({
+    path,
+    branch: { current: "main", ahead: 0, behind: 0, dirty: false, detached: false },
+    changes: 0,
+  }));
+  worktreesMock.mockReset().mockImplementation(async (path) => path === repositories[0].path
+    ? [repositories[0].path, "C:\\projects\\devbox-wt"]
+    : [path]);
+  createWorktreeMock.mockReset().mockImplementation(async (_repoPath, _branch, targetDir) => ({ path: targetDir }));
+  worktreeCleanMock.mockReset().mockResolvedValue(true);
+  openTargetsMock.mockReset().mockResolvedValue(targets);
+  openInMock.mockReset().mockResolvedValue(undefined);
+  repositoryCopyPathMock.mockReset().mockImplementation(async (path) => path);
+  openRepositoryFolderMock.mockReset().mockResolvedValue(undefined);
+  prepareInboundRepositoryMock.mockReset().mockImplementation(async (path) => ({
+    path,
+    canonicalKey: path.toLowerCase(),
+    hasWorktrees: false,
+  }));
+  takePendingOpenMock.mockReset().mockResolvedValue(null);
+  onOpenRequestMock.mockReset().mockResolvedValue(() => undefined);
+  writeTextMock.mockReset().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: writeTextMock },
+  });
+  Object.defineProperty(window, "requestAnimationFrame", {
+    configurable: true,
+    value: (callback: FrameRequestCallback) => window.setTimeout(() => callback(performance.now()), 0),
+  });
+});
 
 afterEach(() => cleanup());
 
-describe("App", () => {
-  beforeEach(() => {
+describe("Repo Manager repository context menu", () => {
+  it("repository와 기존 worktree 안전 검사 UI를 유지한다", async () => {
     render(<App />);
-  });
 
-  it("mock 탐색 결과의 repository를 표시한다", async () => {
-    // repo-path span에서만 찾는다: 같은 경로가 자기 자신의 worktree 목록에도
-    // "mono" span으로 다시 나타나 텍스트가 중복된다.
     await screen.findByText("C:\\projects\\devbox", { selector: ".repo-path" });
+    expect(screen.getByText("C:\\projects\\devbox-wt")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "remove 확인" })[0]);
+    expect(await screen.findByText(/제거 가능 \(동작 미구현: remove는 신중히\)/)).toBeTruthy();
   });
 
-  it("worktree가 2개 이상이면 worktree 목록을 보여준다", async () => {
-    await screen.findByText("C:\\projects\\devbox-wt");
-    expect(screen.getAllByText("remove 확인").length).toBeGreaterThan(0);
+  it("우클릭한 exact repository를 선택하고 설계의 네 항목만 표시한다", async () => {
+    render(<App />);
+    const target = await screen.findByLabelText("E:\\projects\\sample repository") as HTMLDivElement;
+
+    fireEvent.contextMenu(target, { clientX: 16, clientY: 24 });
+
+    expect(target.getAttribute("aria-current")).toBe("true");
+    for (const label of ["다른 앱으로 열기", "worktree 생성", "경로 복사", "탐색기에서 열기"]) {
+      expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
+    }
+    expect(screen.queryByRole("menuitem", { name: /remove|제거/u })).toBeNull();
   });
 
-  it("탐색이 잘리지 않았으면 truncated 배너를 보이지 않는다", async () => {
-    await screen.findByText("C:\\projects\\devbox", { selector: ".repo-path" });
-    expect(screen.queryByText(/일부 디렉터리를 건너뛰었습니다/)).toBeNull();
+  it("catalog submenu action은 exact repository와 target ID를 backend에 전달한다", async () => {
+    render(<App />);
+    const target = await screen.findByLabelText("E:\\projects\\sample repository") as HTMLDivElement;
+    await screen.findAllByRole("button", { name: "Code Pad" });
+
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem", { name: "다른 앱으로 열기" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Code Pad" }));
+
+    await waitFor(() => expect(openInMock).toHaveBeenCalledWith("code-pad", repositories[1].path));
+    await waitFor(() => expect(document.activeElement).toBe(target));
   });
 
-  it("catalog capability에서 다른 앱으로 열기 대상을 생성한다", async () => {
-    await screen.findByRole("button", { name: "Code Pad" });
-    expect(screen.getByRole("button", { name: "WSL Desktop" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Workbench" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Repo Manager" })).toBeNull();
+  it("Shift+F10 경로 복사는 backend 재검증 결과만 쓰고 focus를 복원한다", async () => {
+    render(<App />);
+    const target = await screen.findByLabelText("E:\\projects\\sample repository") as HTMLDivElement;
+    target.focus();
+
+    fireEvent.keyDown(target, { key: "F10", code: "F10", shiftKey: true });
+    fireEvent.click(screen.getByRole("menuitem", { name: "경로 복사" }));
+
+    await waitFor(() => expect(repositoryCopyPathMock).toHaveBeenCalledWith(repositories[1].path));
+    expect(writeTextMock).toHaveBeenCalledWith(repositories[1].path);
+    await waitFor(() => expect(document.activeElement).toBe(target));
   });
 
-  it("worktree remove는 clean 여부만 알려주고 실제 삭제는 하지 않는다", async () => {
-    await screen.findByText("C:\\projects\\devbox-wt");
-    screen.getAllByText("remove 확인")[0].click();
-    await screen.findByText(/제거 가능 \(동작 미구현: remove는 신중히\)/);
+  it("Menu key로 exact repository 폴더를 연다", async () => {
+    render(<App />);
+    const target = await screen.findByLabelText("C:\\projects\\devbox repository") as HTMLDivElement;
+    target.focus();
+
+    fireEvent.keyDown(target, { key: "ContextMenu", code: "ContextMenu" });
+    fireEvent.click(screen.getByRole("menuitem", { name: "탐색기에서 열기" }));
+
+    await waitFor(() => expect(openRepositoryFolderMock).toHaveBeenCalledWith(repositories[0].path));
+    await waitFor(() => expect(document.activeElement).toBe(target));
+  });
+
+  it("worktree 생성 action은 exact repository의 기존 입력으로 이동하고 자동 생성하지 않는다", async () => {
+    render(<App />);
+    const target = await screen.findByLabelText("E:\\projects\\sample repository") as HTMLDivElement;
+    const branchInput = within(target).getByPlaceholderText("새 브랜치");
+
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem", { name: "worktree 생성" }));
+
+    await waitFor(() => expect(document.activeElement).toBe(branchInput));
+    expect(createWorktreeMock).not.toHaveBeenCalled();
+  });
+
+  it("worktree 텍스트 입력의 기본 context menu와 Shift+F10을 가로채지 않는다", async () => {
+    render(<App />);
+    const target = await screen.findByLabelText("E:\\projects\\sample repository") as HTMLDivElement;
+    const branchInput = within(target).getByPlaceholderText("새 브랜치");
+
+    branchInput.focus();
+    fireEvent.click(branchInput);
+    fireEvent.contextMenu(branchInput);
+    fireEvent.keyDown(branchInput, { key: "F10", code: "F10", shiftKey: true });
+
+    expect(screen.queryByRole("menu", { name: "Repository 메뉴" })).toBeNull();
+    expect(document.activeElement).toBe(branchInput);
+  });
+
+  it("target discovery 실패는 raw 오류를 숨기고 submenu를 fail-closed로 둔다", async () => {
+    openTargetsMock.mockRejectedValueOnce(new Error("credential-raw-error"));
+    render(<App />);
+    const target = await screen.findByLabelText("C:\\projects\\devbox repository") as HTMLDivElement;
+    await screen.findByText("다른 앱으로 열기 대상을 확인하지 못했습니다");
+
+    fireEvent.contextMenu(target);
+
+    expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" }).getAttribute("aria-disabled"))
+      .toBe("true");
+    expect(document.body.textContent?.includes("credential-raw-error")).toBe(false);
+  });
+
+  it("copy 실패는 backend 경로나 상세 오류를 화면에 반향하지 않는다", async () => {
+    repositoryCopyPathMock.mockRejectedValueOnce(new Error("C:\\secret\\repo"));
+    render(<App />);
+    const target = await screen.findByLabelText("C:\\projects\\devbox repository") as HTMLDivElement;
+
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem", { name: "경로 복사" }));
+
+    expect(await screen.findByText("repository 경로를 확인하거나 복사하지 못했습니다")).toBeTruthy();
+    expect(document.body.textContent?.includes("C:\\secret\\repo")).toBe(false);
+    expect(writeTextMock).not.toHaveBeenCalled();
   });
 });

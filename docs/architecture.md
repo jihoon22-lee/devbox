@@ -254,6 +254,15 @@ Repo Manager의 "다른 앱으로 열기"는 이 계약의 첫 동적 UI 소비�
 repository에 더 구체적인 Workspace payload를 우선한다. 대상 앱 ID나 executable 경로를
 프론트에 하드코딩하지 않으며, source app 자신은 메뉴에서 제외한다.
 
+Repo Manager의 repository context menu는 열기 전에 canonical repository key로 정확한 카드를
+선택한다. “다른 앱으로 열기” submenu만 위 catalog/installed capability 결과로 만들고 action 때
+target ID와 현재 card path를 backend가 다시 검증한다. 경로 복사와 OS file manager 열기도 같은
+absolute/traversal/existing `.git` 검증을 다시 거친다. raw path는 명시적 copy 결과에서만 새로
+반환하고, opener/검증 상세 오류에는 거부된 path를 포함하지 않는다. worktree 생성 항목은 자동 Git
+명령을 실행하지 않고 선택한 카드의 기존 입력으로 focus만 이동한다. 카드 내부 text input의 기본
+context menu·IME는 가로채지 않는다. 실제 worktree/branch remove는 dirty/untracked/locked/main
+차단과 preview를 소유한 #364 safe cleanup 전까지 메뉴에 넣지 않는다.
+
 Everything+의 검색 결과 context menu도 같은 설치 경계를 사용한다. 앱 고유의 열기·Explorer
 reveal·경로/파일명 복사와 달리 "다른 앱으로 열기" submenu만 `path` capability와 설치
 manifest의 교집합에서 생성한다. frontend에는 app id와 표시 이름만 전달하고 executable은
