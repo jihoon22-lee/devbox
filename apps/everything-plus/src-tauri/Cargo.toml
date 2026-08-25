@@ -30,3 +30,4 @@ rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite"] }
 filesystem = { path = "../../../crates/filesystem" }
 search = { path = "../../../crates/search" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
+devbox-launch = { package = "launch", path = "../../../crates/launch" }

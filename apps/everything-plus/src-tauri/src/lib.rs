@@ -60,6 +60,8 @@ pub fn run() {
             commands::watcher::watcher_statuses,
             commands::actions::open_file,
             commands::actions::reveal_file,
+            commands::actions::open_targets,
+            commands::actions::open_in,
         ])
         .setup(|app| {
             app.manage(applink::PendingOpen::new());

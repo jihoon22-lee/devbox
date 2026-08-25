@@ -194,6 +194,14 @@ Repo Manager의 "다른 앱으로 열기"는 이 계약의 첫 동적 UI 소비�
 repository에 더 구체적인 Workspace payload를 우선한다. 대상 앱 ID나 executable 경로를
 프론트에 하드코딩하지 않으며, source app 자신은 메뉴에서 제외한다.
 
+Everything+의 검색 결과 context menu도 같은 설치 경계를 사용한다. 앱 고유의 열기·Explorer
+reveal·경로/파일명 복사와 달리 "다른 앱으로 열기" submenu만 `path` capability와 설치
+manifest의 교집합에서 생성한다. frontend에는 app id와 표시 이름만 전달하고 executable은
+노출하지 않는다. 실행 command는 전달받은 id가 현재 교집합에 남아 있는지 확인하고, 결과가
+traversal 없는 기존 절대 파일인지 재검증한 뒤 `from=everything-plus`인 versioned Path
+app-link를 만든다. locator/manifest가 없거나 대상이 제거되면 submenu는 비활성화되며 임의
+fallback executable을 실행하지 않는다.
+
 Knowledge Base는 catalog revision 2부터 `path`와 `query`를 수신한다. cold argv와 hot
 single-instance relaunch를 모두 one-shot `PendingOpen`으로 모으고, frontend listener는 event
 payload를 직접 적용하지 않고 pending slot을 pull한다. Path는 canonical Knowledge root 내부의

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import catalogJson from "../../catalog.json";
 import { isTauri } from "./lib/isTauri";
 import type { ContentResult, FileEntry, IndexStatus, RootInfo, RootStatus } from "./types";
 
@@ -12,6 +13,21 @@ export interface OpenRequest {
   target: OpenTarget;
   from: string | null;
 }
+
+export interface EverythingOpenTarget {
+  id: string;
+  displayName: string;
+}
+
+const MOCK_CATALOG_APPS = catalogJson.apps as Array<{
+  id: string;
+  displayName: string;
+  accepts: string[];
+}>;
+
+const MOCK_OPEN_TARGETS: EverythingOpenTarget[] = MOCK_CATALOG_APPS
+  .filter((app) => app.id !== "everything-plus" && app.accepts.includes("path"))
+  .map(({ id, displayName }) => ({ id, displayName }));
 
 const MOCK_FILES: FileEntry[] = [
   { id: 1, path: "C:\\projects\\devbox\\PLAN.md", name: "PLAN.md", ext: "md", size: 3555, modified_ts: 0 },
@@ -97,4 +113,14 @@ export async function revealFile(path: string): Promise<void> {
 
 export async function copyPath(path: string): Promise<void> {
   await navigator.clipboard.writeText(path);
+}
+
+export async function openTargets(): Promise<EverythingOpenTarget[]> {
+  if (!isTauri()) return MOCK_OPEN_TARGETS;
+  return invoke<EverythingOpenTarget[]>("open_targets");
+}
+
+export async function openIn(appId: string, path: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("open_in", { appId, path });
 }
