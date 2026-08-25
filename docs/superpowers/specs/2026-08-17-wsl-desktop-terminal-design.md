@@ -337,6 +337,13 @@ type Pane = {
 | cwd 복사 | OSC 7 로 cwd 를 알 수 있을 때 |
 | 팬 닫기 (danger) | — |
 
+> **2026-08-26 구현 상태 (#260).** 공용 `@devbox/context-menu`에 팬·탭 trigger를 연결하고
+> 팬의 세로/가로 분할·확인 후 닫기와 탭의 닫기·다른 탭 닫기·이름 변경·레이아웃
+> 전환을 구현했다. 기존 팬/탭 close button과 `Ctrl+Shift+W`도 같은 danger confirmation
+> 경로를 쓴다. 팬 메뉴가 닫히면 DOM root에서 멈추지 않고 registry의 xterm `focus()`를
+> 호출한다. 복사·붙여넣기·검색·cwd 복사는 이 절의 selection/clipboard/OSC 7 계약을
+> 반쪽만 구현하지 않도록 #262(P1-07) 전까지 exact menu에서 비활성화한다.
+
 ---
 
 ## 4. v0.5.0 — 세션과 사용성

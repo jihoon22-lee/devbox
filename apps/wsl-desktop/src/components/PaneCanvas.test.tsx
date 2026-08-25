@@ -55,10 +55,14 @@ function baseProps(overrides: Partial<Parameters<typeof PaneCanvas>[0]> = {}) {
     broadcastOn: false,
     registerWrite: vi.fn(),
     unregisterWrite: vi.fn(),
+    registerFocus: vi.fn(),
+    unregisterFocus: vi.fn(),
     onClosePane: vi.fn(),
     onFocusPane: vi.fn(),
     onShortcut: vi.fn(),
     windowsBuildNumber: null,
+    contextMenuTriggerProps: {},
+    actionsDisabled: false,
     ...overrides,
   };
 }

@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ContextMenu,
+  useContextMenu,
+  type ContextMenuEntry,
+} from "@devbox/context-menu";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   closeSession,
   dockerAction,
@@ -16,6 +21,7 @@ import PaneCanvas from "./components/PaneCanvas";
 import TabBar from "./components/TabBar";
 import { routeOpenRequest } from "./lib/applink";
 import { makeId } from "./lib/id";
+import { buildPaneContextMenu, buildTabContextMenu, normalizeTabName } from "./lib/contextMenu";
 import { matchShortcut, type ShortcutAction } from "./lib/shortcuts";
 import { loadPinned, loadPinnedCwd, loadRecentPaths, pushRecentPath, savePinned, savePinnedCwd } from "./lib/storage";
 import { nextTabTitle } from "./lib/tabTitle";
@@ -38,6 +44,9 @@ export default function App() {
   const [activePaneId, setActivePaneId] = useState<string | null>(null);
   const [broadcastOn, setBroadcastOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [contextActionBusy, setContextActionBusy] = useState(false);
+  const [contextPane, setContextPane] = useState<Pane | null>(null);
+  const [contextTab, setContextTab] = useState<Tab | null>(null);
   // TermPane must not create xterm until this one-time lookup resolves, so
   // every terminal receives its final ConPTY build-number option.
   const [windowsBuildNumber, setWindowsBuildNumber] = useState<number | null | undefined>(undefined);
@@ -46,6 +55,7 @@ export default function App() {
   // rather than racing the empty initial `selected` state.
   const [distrosLoaded, setDistrosLoaded] = useState(false);
   const writes = useRef(new Map<string, (data: string) => void>());
+  const paneFocus = useRef(new Map<string, () => void>());
 
   // onTerminalClosed 구독은 마운트 시 한 번만 걸린다(아래 effect, deps []). 그 콜백이
   // dropPane을 부를 때 tabs/activeTabId/activePaneId를 직접 클로저로 참조하면 마운트
@@ -58,6 +68,12 @@ export default function App() {
   }, []);
   const unregisterWrite = useCallback((id: string) => {
     writes.current.delete(id);
+  }, []);
+  const registerFocus = useCallback((id: string, focus: () => void) => {
+    paneFocus.current.set(id, focus);
+  }, []);
+  const unregisterFocus = useCallback((id: string) => {
+    paneFocus.current.delete(id);
   }, []);
 
   useEffect(() => {
@@ -241,7 +257,12 @@ export default function App() {
    *
    * cwdOverride가 있으면 cwd 입력칸 대신 그 경로를 연다 — applink `path` 타깃(§1.4)이
    * 쓴다. 입력칸에 사용자가 입력 중이던 값은 건드리지 않는다(끝의 조건부 setCwd 참고). */
-  const startInTab = async (tabId: string | null, distro: string, cwdOverride?: string) => {
+  const startInTab = async (
+    tabId: string | null,
+    distro: string,
+    cwdOverride?: string,
+    safeFailureMessage?: string,
+  ): Promise<boolean> => {
     setError(null);
     const usedCwd = (cwdOverride ?? cwd).trim() || undefined;
     try {
@@ -261,8 +282,10 @@ export default function App() {
 
       if (usedCwd) setRecentPaths(pushRecentPath(usedCwd));
       if (cwdOverride === undefined && !pinned) setCwd("");
+      return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(safeFailureMessage ?? (e instanceof Error ? e.message : String(e)));
+      return false;
     }
   };
 
@@ -271,24 +294,95 @@ export default function App() {
   // 없으면(앱을 막 띄운 직후) 새 탭을 만든다.
   const addPane = () => startInTab(tabs.length === 0 ? null : activeTabId, selected);
 
-  const closePane = (paneId: string) => {
-    void closeSession(paneId);
-    dropPane(paneId);
+  const closePane = async (paneId: string): Promise<void> => {
+    setError(null);
+    setContextActionBusy(true);
+    try {
+      await closeSession(paneId);
+      dropPane(paneId);
+    } catch {
+      setError("터미널 팬을 닫지 못했습니다.");
+    } finally {
+      setContextActionBusy(false);
+    }
   };
 
-  const closeTab = (tabId: string) => {
-    const idx = tabs.findIndex((t) => t.id === tabId);
-    if (idx === -1) return;
-    const tab = tabs[idx];
-    tab.paneIds.forEach((id) => void closeSession(id));
-    setPanes((prev) => prev.filter((p) => p.sessionId === null || !tab.paneIds.includes(p.sessionId)));
-    const nextTabs = tabs.filter((t) => t.id !== tabId);
-    setTabs(nextTabs);
-    if (activeTabId === tabId) {
-      const fallback = nextTabs[Math.min(idx, nextTabs.length - 1)] ?? null;
-      setActiveTabId(fallback ? fallback.id : "");
-      setActivePaneId(fallback ? (fallback.paneIds[fallback.paneIds.length - 1] ?? null) : null);
+  const closeTabs = async (tabIds: readonly string[]): Promise<void> => {
+    const ids = new Set(tabIds);
+    const currentTabs = stateRef.current.tabs;
+    const targets = currentTabs.filter((tab) => ids.has(tab.id));
+    if (targets.length === 0) return;
+    const sessionIds = targets.flatMap((tab) => tab.paneIds);
+    setError(null);
+    setContextActionBusy(true);
+    try {
+      const results = await Promise.allSettled(sessionIds.map((id) => closeSession(id)));
+      const closedSessionIds = new Set(
+        sessionIds.filter((_id, index) => results[index]?.status === "fulfilled"),
+      );
+      const latestTabs = stateRef.current.tabs;
+      const latestActiveTabId = stateRef.current.activeTabId;
+      const latestActivePaneId = stateRef.current.activePaneId;
+      const activeIndex = latestTabs.findIndex((tab) => tab.id === latestActiveTabId);
+      const nextTabs = closedSessionIds.size === 0
+        ? latestTabs
+        : latestTabs
+            .map((tab) => ({
+              ...tab,
+              paneIds: tab.paneIds.filter((id) => !closedSessionIds.has(id)),
+            }))
+            .filter((tab) => tab.paneIds.length > 0);
+
+      if (closedSessionIds.size > 0) {
+        // close_session 완료 이벤트가 먼저 도착했어도 멱등적이다. 닫기 중 팬이
+        // 다른 탭으로 이동했거나 새 팬이 추가된 경우에도 성공한 session ID만 제거해
+        // 최신 탭/팬 소유권을 보존한다.
+        setPanes((previous) => previous.filter(
+          (pane) => pane.sessionId === null || !closedSessionIds.has(pane.sessionId),
+        ));
+        setTabs(nextTabs);
+      }
+
+      const activeTab = nextTabs.find((tab) => tab.id === latestActiveTabId);
+      if (activeTab) {
+        setActivePaneId(
+          latestActivePaneId && activeTab.paneIds.includes(latestActivePaneId)
+            ? latestActivePaneId
+            : (activeTab.paneIds[activeTab.paneIds.length - 1] ?? null),
+        );
+      } else if (latestActiveTabId) {
+        const fallback = nextTabs[Math.min(Math.max(activeIndex, 0), nextTabs.length - 1)] ?? null;
+        setActiveTabId(fallback?.id ?? "");
+        setActivePaneId(fallback?.paneIds[fallback.paneIds.length - 1] ?? null);
+      }
+
+      if (results.some((result) => result.status === "rejected")) {
+        setError("터미널 탭을 모두 닫지 못했습니다.");
+      }
+    } finally {
+      setContextActionBusy(false);
     }
+  };
+
+  const requestClosePane = (paneId: string) => {
+    const pane = panes.find((candidate) => candidate.sessionId === paneId);
+    if (!pane || !window.confirm(`'${pane.distro}' 터미널 팬을 닫을까요? 실행 중인 작업이 종료될 수 있습니다.`)) return;
+    void closePane(paneId);
+  };
+
+  const requestCloseTab = (tabId: string) => {
+    const tab = tabs.find((candidate) => candidate.id === tabId);
+    if (!tab || !window.confirm(`'${tab.title}' 탭과 터미널 ${tab.paneIds.length}개를 닫을까요? 실행 중인 작업이 종료될 수 있습니다.`)) return;
+    void closeTabs([tab.id]);
+  };
+
+  const requestCloseOtherTabs = (tabId: string) => {
+    const tab = tabs.find((candidate) => candidate.id === tabId);
+    const otherTabs = tabs.filter((candidate) => candidate.id !== tabId);
+    if (!tab || otherTabs.length === 0) return;
+    const paneCount = otherTabs.reduce((total, candidate) => total + candidate.paneIds.length, 0);
+    if (!window.confirm(`'${tab.title}' 외 탭 ${otherTabs.length}개와 터미널 ${paneCount}개를 닫을까요?`)) return;
+    void closeTabs(otherTabs.map((candidate) => candidate.id));
   };
 
   const activateTab = (tabId: string) => {
@@ -342,9 +436,11 @@ export default function App() {
     setActivePaneId(paneId);
   };
 
-  const setActiveTabLayout = (layout: Layout) => {
-    setTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, layout } : t)));
+  const setTabLayout = (tabId: string, layout: Layout) => {
+    setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, layout } : t)));
   };
+
+  const setActiveTabLayout = (layout: Layout) => setTabLayout(activeTabId, layout);
 
   const focusPane = (dir: 1 | -1) => {
     const tab = tabs.find((t) => t.id === activeTabId);
@@ -364,7 +460,7 @@ export default function App() {
         void addPane();
         break;
       case "close-pane":
-        if (activePaneId) closePane(activePaneId);
+        if (activePaneId && !contextActionBusy) requestClosePane(activePaneId);
         break;
       case "next-tab":
         stepTab(1);
@@ -380,6 +476,123 @@ export default function App() {
         break;
     }
   };
+
+  const preparePaneContext = useCallback((target: HTMLElement) => {
+    const id = target.dataset.paneId;
+    const pane = panes.find((candidate) => candidate.sessionId === id);
+    const owner = tabs.find((tab) => id !== undefined && tab.paneIds.includes(id));
+    if (!pane || !owner || !id) return;
+    setContextPane(pane);
+    setActiveTabId(owner.id);
+    setActivePaneId(id);
+  }, [panes, tabs]);
+  const paneContextMenu = useContextMenu({
+    onBeforeOpen: (_reason, target) => preparePaneContext(target),
+  });
+
+  const prepareTabContext = useCallback((target: HTMLElement) => {
+    const id = target.dataset.tabId;
+    const tab = tabs.find((candidate) => candidate.id === id);
+    if (!tab) return;
+    setContextTab(tab);
+    setActiveTabId(tab.id);
+    setActivePaneId((current) =>
+      current && tab.paneIds.includes(current)
+        ? current
+        : (tab.paneIds[tab.paneIds.length - 1] ?? null),
+    );
+  }, [tabs]);
+  const tabContextMenu = useContextMenu({
+    onBeforeOpen: (_reason, target) => prepareTabContext(target),
+  });
+
+  useEffect(() => {
+    const id = contextPane?.sessionId;
+    if (!id) return;
+    const current = panes.find((pane) => pane.sessionId === id) ?? null;
+    if (current) setContextPane(current);
+    else {
+      paneContextMenu.close();
+      setContextPane(null);
+    }
+  }, [contextPane?.sessionId, paneContextMenu.close, panes]);
+
+  useEffect(() => {
+    const id = contextTab?.id;
+    if (!id) return;
+    const current = tabs.find((tab) => tab.id === id) ?? null;
+    if (current) setContextTab(current);
+    else {
+      tabContextMenu.close();
+      setContextTab(null);
+    }
+  }, [contextTab?.id, tabContextMenu.close, tabs]);
+
+  const paneContextItems = useMemo<readonly ContextMenuEntry[]>(
+    () => buildPaneContextMenu(contextActionBusy),
+    [contextActionBusy],
+  );
+  const tabContextItems = useMemo<readonly ContextMenuEntry[]>(
+    () => buildTabContextMenu(contextActionBusy, tabs.length > 1),
+    [contextActionBusy, tabs.length],
+  );
+
+  const splitContextPane = (layout: "cols" | "rows") => {
+    const pane = contextPane;
+    const owner = tabs.find((tab) =>
+      pane?.sessionId !== null && pane?.sessionId !== undefined && tab.paneIds.includes(pane.sessionId),
+    );
+    if (!pane || !owner || pane.sessionId === null) return;
+    setContextActionBusy(true);
+    void startInTab(
+      owner.id,
+      pane.distro,
+      pane.cwd,
+      "터미널 팬을 안전하게 분할하지 못했습니다.",
+    ).then((started) => {
+      if (started) setTabLayout(owner.id, layout);
+    }).finally(() => setContextActionBusy(false));
+  };
+
+  const renameContextTab = (tab: Tab) => {
+    const input = window.prompt("탭 이름 변경", tab.title);
+    if (input === null) return;
+    const name = normalizeTabName(input);
+    if (!name) {
+      setError("탭 이름은 비워둘 수 없습니다.");
+      return;
+    }
+    setTabs((previous) => previous.map((candidate) =>
+      candidate.id === tab.id ? { ...candidate, title: name } : candidate
+    ));
+  };
+
+  const onPaneContextSelect = (id: string) => {
+    const pane = contextPane;
+    if (!pane || pane.sessionId === null) return;
+    if (id === "split-vertical") splitContextPane("cols");
+    else if (id === "split-horizontal") splitContextPane("rows");
+    else if (id === "close") requestClosePane(pane.sessionId);
+  };
+
+  const onTabContextSelect = (id: string) => {
+    const tab = contextTab;
+    if (!tab) return;
+    if (id === "close") requestCloseTab(tab.id);
+    else if (id === "close-others") requestCloseOtherTabs(tab.id);
+    else if (id === "rename") renameContextTab(tab);
+    else if (id === "layout-grid") setTabLayout(tab.id, "grid");
+    else if (id === "layout-cols") setTabLayout(tab.id, "cols");
+    else if (id === "layout-rows") setTabLayout(tab.id, "rows");
+  };
+
+  const closePaneContextMenu = useCallback(() => {
+    const paneId = contextPane?.sessionId;
+    paneContextMenu.close();
+    if (paneId) {
+      window.setTimeout(() => paneFocus.current.get(paneId)?.(), 0);
+    }
+  }, [contextPane?.sessionId, paneContextMenu.close]);
 
   // 터미널 밖(탭 바, cwd 입력칸 등)에 포커스가 있을 때를 위한 전역 리스너.
   // handleShortcut이 tabs/activeTabId/cwd/selected/pinned 등 여러 상태를 참조하므로
@@ -441,7 +654,7 @@ export default function App() {
         >
           📌
         </button>
-        <button className="btn" onClick={() => void addPane()}>
+        <button className="btn" disabled={contextActionBusy} onClick={() => void addPane()}>
           + Terminal
         </button>
         <span className="spacer" />
@@ -450,7 +663,7 @@ export default function App() {
           broadcast
         </label>
         {(["grid", "cols", "rows"] as const).map((l) => (
-          <button key={l} className={`btn ${activeLayout === l ? "active" : ""}`} onClick={() => setActiveTabLayout(l)}>
+          <button key={l} className={`btn ${activeLayout === l ? "active" : ""}`} disabled={contextActionBusy} onClick={() => setActiveTabLayout(l)}>
             {l}
           </button>
         ))}
@@ -480,10 +693,12 @@ export default function App() {
             tabs={tabs}
             activeTabId={activeTabId}
             onActivate={activateTab}
-            onClose={closeTab}
+            onClose={requestCloseTab}
             onReorder={reorderTabs}
             onDropPane={movePaneToTab}
             onNewTab={() => void openNewTab()}
+            contextMenuTriggerProps={tabContextMenu.triggerProps}
+            actionsDisabled={contextActionBusy}
           />
 
           {windowsBuildNumber !== undefined && (
@@ -495,7 +710,9 @@ export default function App() {
               broadcastOn={broadcastOn}
               registerWrite={registerWrite}
               unregisterWrite={unregisterWrite}
-              onClosePane={closePane}
+              registerFocus={registerFocus}
+              unregisterFocus={unregisterFocus}
+              onClosePane={requestClosePane}
               onFocusPane={(id) => {
                 setActivePaneId(id);
                 const owner = tabs.find((t) => t.paneIds.includes(id));
@@ -503,10 +720,30 @@ export default function App() {
               }}
               onShortcut={handleShortcut}
               windowsBuildNumber={windowsBuildNumber}
+              contextMenuTriggerProps={paneContextMenu.triggerProps}
+              actionsDisabled={contextActionBusy}
             />
           )}
         </div>
       </div>
+      <ContextMenu
+        open={paneContextMenu.open}
+        anchor={paneContextMenu.anchor}
+        restoreFocusTo={paneContextMenu.restoreFocusTo}
+        items={paneContextItems}
+        onSelect={onPaneContextSelect}
+        onClose={closePaneContextMenu}
+        ariaLabel="터미널 팬 메뉴"
+      />
+      <ContextMenu
+        open={tabContextMenu.open}
+        anchor={tabContextMenu.anchor}
+        restoreFocusTo={tabContextMenu.restoreFocusTo}
+        items={tabContextItems}
+        onSelect={onTabContextSelect}
+        onClose={tabContextMenu.close}
+        ariaLabel="터미널 탭 메뉴"
+      />
     </div>
   );
 }

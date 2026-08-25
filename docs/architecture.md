@@ -38,8 +38,8 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 - 신규 `crates/logs` — Log Lens가 두 번째 소비자가 되는 시점의 순수 log parsing
 - 구현된 `packages/context-menu` — 위치·keyboard navigation·focus restore·submenu·separator·
   disabled/danger 표현만 소유한다. Port Manager, Developer Toolbox, Everything+, Knowledge, Code Pad,
-  Run Manager, Devbox Manager, Workbench, Webhook Lab, Repo Manager, API Playground에 기능 단위로
-  적용됐고 WSL Desktop과 Life Log는 후속 PR이 담당한다.
+  Run Manager, Devbox Manager, Workbench, Webhook Lab, Repo Manager, API Playground, WSL Desktop에 기능
+  단위로 적용됐고 Life Log는 후속 PR이 담당한다.
 - 신규 `crates/window-state`
 - `crates/applink` protocol v2 one-time handoff
 
@@ -67,7 +67,8 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 
 ```
 port-manager:    React → invoke → commands → process crate → OS netstat
-wsl-desktop:     React → invoke → commands → wsl crate → wsl.exe (wsl-dashboard 흡수)
+wsl-desktop:     React(xterm + pane/tab context-menu) → invoke → commands → wsl crate → wsl.exe
+                   (wsl-dashboard 흡수; split/close/tab action은 exact ID와 확인 경계 사용)
                    └ distro·docker 패널 (gitStatus는 Workbench로 이관 완료)
 life-log:        tray/poller(상시) → sessionizer → SQLite → commands → React
                    (activity-timeline 흡수. crates/integration으로 snapshot을 자동 발견하며

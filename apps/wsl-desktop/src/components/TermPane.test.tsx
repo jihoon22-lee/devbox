@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import TermPane from "./TermPane";
 
@@ -10,7 +10,7 @@ import TermPane from "./TermPane";
  * Unicode11Addon)을 rows/cols를 직접 조작할 수 있는 최소 스텁으로 대체하고 실제
  * TermPane을 렌더링한다.
  */
-const { createdTerminals, fitSizes, observerState, FakeTerminal, FakeFitAddon, FakeUnicode11Addon } = vi.hoisted(() => {
+const { createdTerminals, fitSizes, observerState, focusSpy, FakeTerminal, FakeFitAddon, FakeUnicode11Addon } = vi.hoisted(() => {
   type TerminalOptions = {
     windowsPty?: { backend: string; buildNumber?: number };
   };
@@ -18,6 +18,7 @@ const { createdTerminals, fitSizes, observerState, FakeTerminal, FakeFitAddon, F
   const createdTerminals: { rows: number; cols: number; options: TerminalOptions }[] = [];
   const fitSizes: TerminalSize[] = [];
   const observerState: { callback?: () => void } = {};
+  const focusSpy = vi.fn();
 
   class FakeTerminal {
     rows = 2;
@@ -33,7 +34,9 @@ const { createdTerminals, fitSizes, observerState, FakeTerminal, FakeFitAddon, F
       return { dispose: () => undefined };
     }
     write() {}
-    focus() {}
+    focus() {
+      focusSpy();
+    }
     dispose() {}
   }
 
@@ -49,7 +52,7 @@ const { createdTerminals, fitSizes, observerState, FakeTerminal, FakeFitAddon, F
 
   class FakeUnicode11Addon {}
 
-  return { createdTerminals, fitSizes, observerState, FakeTerminal, FakeFitAddon, FakeUnicode11Addon };
+  return { createdTerminals, fitSizes, observerState, focusSpy, FakeTerminal, FakeFitAddon, FakeUnicode11Addon };
 });
 
 vi.mock("@xterm/xterm", () => ({ Terminal: FakeTerminal }));
@@ -59,6 +62,8 @@ vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: FakeUnicode11Addon })
 const { mockResizeSession } = vi.hoisted(() => ({
   mockResizeSession: vi.fn().mockResolvedValue(undefined),
 }));
+const stableRegisterFocus = vi.fn<(id: string, focus: () => void) => void>();
+const stableUnregisterFocus = vi.fn<(id: string) => void>();
 
 vi.mock("../api", () => ({
   attachSession: vi.fn().mockResolvedValue(undefined),
@@ -77,10 +82,14 @@ function baseProps(overrides: Partial<ComponentProps<typeof TermPane>> = {}): Co
     broadcastTargetIds: [],
     registerWrite: vi.fn(),
     unregisterWrite: vi.fn(),
+    registerFocus: stableRegisterFocus,
+    unregisterFocus: stableUnregisterFocus,
     onClose: vi.fn(),
     onFocusPane: vi.fn(),
     onShortcut: vi.fn(),
     windowsBuildNumber: null,
+    contextMenuTriggerProps: {},
+    actionsDisabled: false,
     ...overrides,
   };
 }
@@ -89,7 +98,10 @@ beforeEach(() => {
   createdTerminals.length = 0;
   fitSizes.length = 0;
   observerState.callback = undefined;
+  focusSpy.mockClear();
   mockResizeSession.mockClear();
+  stableRegisterFocus.mockClear();
+  stableUnregisterFocus.mockClear();
   // TermPane 마운트는 항상 `new ResizeObserver(...)`를 호출한다. jsdom은 이를 구현하지
   // 않으므로(ReferenceError) 최소 스텁으로 대체한다. 이 스위트는 ResizeObserver의
   // 디바운스 경로가 아니라 mount 직접 호출 + active(rAF) 경로만으로 fitAndSendResize를
@@ -123,6 +135,27 @@ afterEach(() => {
 });
 
 describe("TermPane — resize 바닥값 (§2.3)", () => {
+  it("context menu trigger와 terminal focus 복구 함수를 pane root에 연결한다", () => {
+    const onContextMenu = vi.fn();
+    const onKeyDown = vi.fn();
+    const registerFocus = vi.fn();
+    const { container } = render(<TermPane {...baseProps({
+      registerFocus,
+      contextMenuTriggerProps: { onContextMenu, onKeyDown },
+    })} />);
+    const pane = container.querySelector(".pane") as HTMLDivElement;
+
+    fireEvent.contextMenu(pane);
+    fireEvent.keyDown(pane, { key: "F10", shiftKey: true });
+    expect(onContextMenu).toHaveBeenCalledTimes(1);
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
+    expect(registerFocus).toHaveBeenCalledWith("s1", expect.any(Function));
+
+    const focus = registerFocus.mock.calls[0][1] as () => void;
+    focus();
+    expect(focusSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("passes the Windows build number to xterm ConPTY options", () => {
     const props = { ...baseProps(), windowsBuildNumber: 22631 } as ComponentProps<typeof TermPane>;
     render(<TermPane {...props} />);
