@@ -42,6 +42,8 @@ pub fn run() {
             commands::manager::launch,
             commands::manager::current,
             commands::manager::rollback,
+            commands::manager::open_install_folder,
+            commands::manager::remove_portable_app,
             commands::doctor::run_diagnosis,
         ])
         .run(tauri::generate_context!())

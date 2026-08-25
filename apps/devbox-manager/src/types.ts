@@ -45,12 +45,10 @@ export interface InstalledApp {
   app: string;
   version: string;
   mode: "portable" | "installer";
-  exe_path: string;
 }
 
 export interface Current {
   version: string;
-  exePath: string;
   installedAt: number;
   previousVersion: string | null;
 }

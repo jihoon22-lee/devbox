@@ -1,6 +1,12 @@
-use crate::core::asset::select_asset;
+use crate::core::asset::{
+    select_asset, validate_artifact_coordinates, validate_manifest_artifacts,
+    validate_version_component,
+};
 use crate::core::catalog::CatalogApp;
 use crate::core::download::{is_over_limit, partial_path, validate_digest, validate_size};
+use crate::core::managed_install::{
+    remove_portable_install, resolve_portable_install, ManagedPortableInstall,
+};
 use crate::core::manifest::{parse_manifest, ReleaseManifest};
 use crate::core::url_policy::is_allowed;
 use futures_util::StreamExt;
@@ -10,6 +16,7 @@ use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::PathBuf;
 use tauri::Manager;
+use tauri_plugin_opener::OpenerExt;
 
 const REPO: &str = "https://api.github.com/repos/jihoon22-lee/devbox";
 const DOWNLOAD_ROOT: &str = "https://github.com/jihoon22-lee/devbox/releases/download";
@@ -25,6 +32,42 @@ pub struct InstalledApp {
     /// "portable" | "installer"
     pub mode: String,
     pub exe_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledAppView {
+    pub app: String,
+    pub version: String,
+    pub mode: String,
+}
+
+impl From<&InstalledApp> for InstalledAppView {
+    fn from(value: &InstalledApp) -> Self {
+        Self {
+            app: value.app.clone(),
+            version: value.version.clone(),
+            mode: value.mode.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentView {
+    pub version: String,
+    pub installed_at: i64,
+    pub previous_version: Option<String>,
+}
+
+impl From<&crate::core::layout::Current> for CurrentView {
+    fn from(value: &crate::core::layout::Current) -> Self {
+        Self {
+            version: value.version.clone(),
+            installed_at: value.installed_at,
+            previous_version: value.previous_version.clone(),
+        }
+    }
 }
 
 pub(crate) fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -116,6 +159,40 @@ pub fn catalog() -> Result<Vec<CatalogApp>, String> {
     Ok(selected.catalog.apps)
 }
 
+fn ensure_catalog_target(app_id: &str) -> Result<CatalogApp, String> {
+    catalog()
+        .map_err(|_| "앱 카탈로그를 확인할 수 없습니다.".to_string())?
+        .into_iter()
+        .find(|entry| entry.id == app_id && entry.manager_visible && !entry.self_managed)
+        .ok_or_else(|| "관리 가능한 카탈로그 앱이 아닙니다.".to_string())
+}
+
+fn portable_registry_entry(app: &tauri::AppHandle, app_id: &str) -> Result<InstalledApp, String> {
+    ensure_catalog_target(app_id)?;
+    let installed = read_registry(app)
+        .into_iter()
+        .find(|entry| entry.app == app_id)
+        .ok_or_else(|| "설치된 앱이 없습니다. 먼저 설치하세요.".to_string())?;
+    if installed.mode != "portable" {
+        return Err("설치 패키지 방식 앱은 이 작업을 지원하지 않습니다.".to_string());
+    }
+    validate_version_component(&installed.version)
+        .map_err(|_| "설치된 앱의 버전 정보가 올바르지 않습니다.".to_string())?;
+    Ok(installed)
+}
+
+fn managed_portable(
+    app: &tauri::AppHandle,
+    app_id: &str,
+) -> Result<ManagedPortableInstall, String> {
+    let installed = portable_registry_entry(app, app_id)?;
+    let root =
+        data_dir(app).map_err(|_| "Manager 데이터 위치를 확인할 수 없습니다.".to_string())?;
+    let resolved = resolve_portable_install(&root, app_id, &installed.version, &installed.exe_path)
+        .map_err(|_| "검증된 휴대용 앱 경로를 확인할 수 없습니다.".to_string())?;
+    Ok(resolved)
+}
+
 /// 최신 릴리스의 `release-manifest.json`을 받아 파싱한다.
 /// Manager는 GitHub asset 이름을 추측하지 않고 이 manifest만 신뢰한다.
 #[tauri::command]
@@ -153,13 +230,34 @@ pub async fn available() -> Result<ReleaseManifest, String> {
         return Err(format!("manifest 응답 오류: {}", mresp.status()));
     }
     let text = mresp.text().await.map_err(|e| e.to_string())?;
-    parse_manifest(&text)
+    let manifest = parse_manifest(&text)?;
+    validate_manifest_artifacts(&manifest)
+        .map_err(|_| "release manifest의 앱 정보가 올바르지 않습니다.".to_string())?;
+    let known = catalog().map_err(|_| "앱 카탈로그를 확인할 수 없습니다.".to_string())?;
+    if manifest
+        .apps
+        .iter()
+        .any(|entry| !known.iter().any(|target| target.id == entry.id))
+    {
+        return Err("release manifest에 알 수 없는 앱이 포함되어 있습니다.".to_string());
+    }
+    Ok(manifest)
 }
 
 /// 설치된 앱 목록 (registry.json).
 #[tauri::command]
-pub fn installed(app: tauri::AppHandle) -> Vec<InstalledApp> {
-    read_registry(&app)
+pub fn installed(app: tauri::AppHandle) -> Result<Vec<InstalledAppView>, String> {
+    let targets = catalog().map_err(|_| "앱 카탈로그를 확인할 수 없습니다.".to_string())?;
+    Ok(read_registry(&app)
+        .iter()
+        .filter(|installed| {
+            targets.iter().any(|target| {
+                target.id == installed.app && target.manager_visible && !target.self_managed
+            }) && matches!(installed.mode.as_str(), "portable" | "installer")
+                && validate_version_component(&installed.version).is_ok()
+        })
+        .map(InstalledAppView::from)
+        .collect())
 }
 
 /// 앱 설치/업데이트. Rust가 이미 검증한 manifest에서 대상 asset을 선택한다.
@@ -171,6 +269,10 @@ pub async fn install(
     app_id: String,
     mode: String,
 ) -> Result<String, String> {
+    ensure_catalog_target(&app_id)?;
+    if mode != "portable" && mode != "installer" {
+        return Err("지원하지 않는 설치 방식입니다.".to_string());
+    }
     let manifest = available().await?;
     let app_manifest = manifest
         .apps
@@ -179,6 +281,8 @@ pub async fn install(
         .ok_or_else(|| format!("manifest에 앱이 없다: {app_id}"))?;
     let asset = select_asset(&manifest, &app_id, &mode)?;
     let version = app_manifest.version.clone();
+    validate_artifact_coordinates(&manifest.release_tag, &version, &asset.name)
+        .map_err(|_| "manifest의 다운로드 경로 정보가 올바르지 않습니다.".to_string())?;
     let url = format!("{DOWNLOAD_ROOT}/{}/{}", manifest.release_tag, asset.name);
     if !is_allowed(&url) {
         return Err("허용되지 않은 다운로드 URL".into());
@@ -223,25 +327,52 @@ pub async fn install(
 
 /// 설치된 휴대용 앱의 current.json을 반환한다 (없으면 None).
 #[tauri::command]
-pub fn current(app: tauri::AppHandle, app_id: String) -> Option<crate::core::layout::Current> {
-    let base = data_dir(&app).ok()?;
-    read_current(&base, &app_id)
+pub fn current(app: tauri::AppHandle, app_id: String) -> Result<Option<CurrentView>, String> {
+    let installed = portable_registry_entry(&app, &app_id)?;
+    let base =
+        data_dir(&app).map_err(|_| "Manager 데이터 위치를 확인할 수 없습니다.".to_string())?;
+    let current = read_current(&base, &app_id)
+        .filter(|value| {
+            value.version == installed.version
+                && validate_version_component(&value.version).is_ok()
+                && value
+                    .previous_version
+                    .as_deref()
+                    .is_none_or(|version| validate_version_component(version).is_ok())
+        })
+        .as_ref()
+        .map(CurrentView::from);
+    Ok(current)
 }
 
 /// 직전 정상 버전으로 되돌린다 (portable만).
 #[tauri::command]
 pub fn rollback(app: tauri::AppHandle, app_id: String) -> Result<String, String> {
-    let base = data_dir(&app)?;
+    let installed_record = portable_registry_entry(&app, &app_id)?;
+    let base =
+        data_dir(&app).map_err(|_| "Manager 데이터 위치를 확인할 수 없습니다.".to_string())?;
     let current = read_current(&base, &app_id)
         .ok_or_else(|| "current.json이 없다 (portable 설치 필요)".to_string())?;
+    if current.version != installed_record.version {
+        return Err("설치 상태와 현재 버전 정보가 일치하지 않습니다.".to_string());
+    }
     let installed = installed_versions_with_exe(&base, &app_id);
     let target = crate::core::layout::pick_rollback_target(&current, &installed)
         .ok_or_else(|| "되돌릴 이전 버전이 없다".to_string())?;
     let target_exe = crate::core::layout::version_exe(&base, &app_id, &target);
+    let target_exe_text = target_exe
+        .to_str()
+        .ok_or_else(|| "이전 버전 경로를 안전하게 표현할 수 없습니다.".to_string())?;
+    let target_install = resolve_portable_install(&base, &app_id, &target, target_exe_text)
+        .map_err(|_| "검증된 이전 버전 경로를 확인할 수 없습니다.".to_string())?;
+    let target_exe_text = target_install
+        .executable
+        .to_str()
+        .ok_or_else(|| "이전 버전 경로를 안전하게 표현할 수 없습니다.".to_string())?;
 
     let next = crate::core::layout::Current {
         version: target.clone(),
-        exe_path: target_exe.to_string_lossy().into_owned(),
+        exe_path: target_exe_text.to_string(),
         installed_at: now_ms(),
         previous_version: Some(current.version.clone()),
     };
@@ -307,21 +438,55 @@ fn write_current(
 
 /// 설치된 앱 실행 (휴대용만).
 #[tauri::command]
-pub fn launch(app: tauri::AppHandle, name: String) -> Result<(), String> {
-    let reg = read_registry(&app);
-    let Some(found) = reg.iter().find(|a| a.app == name) else {
-        return Err("설치된 앱이 없습니다. 먼저 설치하세요.".into());
-    };
-    if found.mode != "portable" {
-        return Err("설치 패키지 방식으로 설치된 앱은 시작 메뉴에서 실행하세요.".into());
-    }
-    if found.exe_path.is_empty() || !std::path::Path::new(&found.exe_path).exists() {
-        return Err(format!("실행 파일을 찾을 수 없습니다: {}", found.exe_path));
-    }
-    std::process::Command::new(&found.exe_path)
+pub fn launch(app: tauri::AppHandle, app_id: String) -> Result<(), String> {
+    let install = managed_portable(&app, &app_id)?;
+    std::process::Command::new(&install.executable)
         .spawn()
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| "휴대용 앱을 실행할 수 없습니다.".to_string())?;
     Ok(())
+}
+
+/// Manager가 검증한 현재 portable version directory만 연다. registry의 raw
+/// path는 frontend로 반환하지 않으며 catalog/layout/canonical identity를 모두
+/// 다시 확인한다.
+#[tauri::command]
+pub fn open_install_folder(app: tauri::AppHandle, app_id: String) -> Result<(), String> {
+    let install = managed_portable(&app, &app_id)?;
+    let directory = install
+        .install_dir()
+        .map_err(|_| "검증된 설치 폴더를 확인할 수 없습니다.".to_string())?;
+    let directory = directory
+        .to_str()
+        .ok_or_else(|| "설치 폴더 경로를 안전하게 표현할 수 없습니다.".to_string())?;
+    app.opener()
+        .open_path(directory, None::<&str>)
+        .map_err(|_| "설치 폴더를 열 수 없습니다.".to_string())
+}
+
+/// 기본 Manager root 안의 portable app tree만 제거한다. 대상 앱의 별도
+/// app-local user data는 이 tree 밖에 있으므로 보존된다. Installer uninstall과
+/// custom root removal은 별도 기능이 소유한다.
+#[tauri::command]
+pub fn remove_portable_app(app: tauri::AppHandle, app_id: String) -> Result<String, String> {
+    let install = managed_portable(&app, &app_id)?;
+    let original_registry = read_registry(&app);
+    let mut next_registry = original_registry.clone();
+    next_registry.retain(|entry| entry.app != app_id);
+    if next_registry.len() == original_registry.len() {
+        return Err("설치 상태에서 제거할 앱을 찾을 수 없습니다.".to_string());
+    }
+
+    write_registry(&app, &next_registry)
+        .map_err(|_| "제거 전 설치 상태를 갱신할 수 없습니다.".to_string())?;
+    if let Err(_error) = remove_portable_install(&install) {
+        let _ = write_registry(&app, &original_registry);
+        let _ = sync_runtime_metadata(&app);
+        return Err("휴대용 앱 파일을 안전하게 제거할 수 없습니다.".to_string());
+    }
+    if let Err(error) = sync_runtime_metadata(&app) {
+        eprintln!("devbox: runtime metadata sync will retry next launch: {error}");
+    }
+    Ok("휴대용 앱을 제거했습니다. 앱 사용자 데이터는 유지됩니다.".to_string())
 }
 
 fn upsert_registry(
@@ -415,4 +580,43 @@ async fn download(
     // 6. 일치하면 최종 경로로 rename
     std::fs::rename(&partial, dest).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installed_view_never_serializes_registry_executable_path() {
+        let secret_path = r"C:\secret\portable\app.exe";
+        let installed = InstalledApp {
+            app: "port-manager".to_string(),
+            version: "0.4.0".to_string(),
+            mode: "portable".to_string(),
+            exe_path: secret_path.to_string(),
+        };
+
+        let json = serde_json::to_string(&InstalledAppView::from(&installed)).unwrap();
+
+        assert!(!json.contains("secret"));
+        assert!(!json.contains("exePath"));
+        assert!(!json.contains("exe_path"));
+    }
+
+    #[test]
+    fn current_view_never_serializes_current_json_executable_path() {
+        let secret_path = r"C:\secret\versions\0.4.0\app.exe";
+        let current = crate::core::layout::Current {
+            version: "0.4.0".to_string(),
+            exe_path: secret_path.to_string(),
+            installed_at: 1_000,
+            previous_version: Some("0.3.0".to_string()),
+        };
+
+        let json = serde_json::to_string(&CurrentView::from(&current)).unwrap();
+
+        assert!(!json.contains("secret"));
+        assert!(!json.contains("exePath"));
+        assert!(json.contains("previousVersion"));
+    }
 }

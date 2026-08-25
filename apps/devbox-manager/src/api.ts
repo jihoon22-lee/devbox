@@ -37,7 +37,7 @@ export async function available(): Promise<ReleaseManifest> {
 }
 
 export async function installed(): Promise<InstalledApp[]> {
-  if (!isTauri()) return [{ app: "port-manager", version: "0.2.1", mode: "portable", exe_path: "" }];
+  if (!isTauri()) return [{ app: "port-manager", version: "0.2.1", mode: "portable" }];
   return invoke<InstalledApp[]>("installed");
 }
 
@@ -49,7 +49,7 @@ export async function installApp(appId: string, mode: "portable" | "installer"):
 export async function current(appId: string): Promise<Current | null> {
   if (!isTauri()) {
     return appId === "port-manager"
-      ? { version: "0.2.1", exePath: "", installedAt: 0, previousVersion: "0.2.0" }
+      ? { version: "0.2.1", installedAt: 0, previousVersion: "0.2.0" }
       : null;
   }
   return invoke<Current | null>("current", { appId });
@@ -85,5 +85,15 @@ export async function runDiagnosis(): Promise<DiagnosisItem[]> {
 
 export async function launchApp(name: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("launch", { name });
+  await invoke("launch", { appId: name });
+}
+
+export async function openInstallFolder(appId: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("open_install_folder", { appId });
+}
+
+export async function removeApp(appId: string): Promise<string> {
+  if (!isTauri()) return `removed (${appId})`;
+  return invoke<string>("remove_portable_app", { appId });
 }

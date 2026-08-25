@@ -7,7 +7,9 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
 
 - **카탈로그 조회** — 설치 가능한 devbox 앱 목록 (휴대용/설치 패키지)
 - **설치·업데이트·실행** — 휴대용 exe 또는 설치 패키지 선택, 버전별 관리·롤백
+- **앱 행 컨텍스트 메뉴** — 우클릭/Shift+F10/Menu key로 설치·업데이트, 실행, 이전 버전 롤백, 설치 폴더 열기, 확인 후 제거. 메뉴를 연 행을 먼저 선택하고 닫히면 해당 행으로 focus 복구
 - **안전 다운로드** — 허용 호스트 정책, SHA-256·크기 검증, `.partial` 스트리밍
+- **Manager 소유 portable 경계** — catalog 대상·검증된 버전·기본 설치 layout·canonical registry executable이 모두 일치할 때만 실행/폴더 열기/제거. 제거 전 symlink·Windows reparse point와 bounded tree를 검사하며 별도 앱 사용자 데이터는 기본 보존
 - **런타임 discovery 발행** — revision 기반 runtime catalog와 versioned install-root locator를 원자 갱신
 - **환경 진단(dev environment doctor)** — WSL/git/node/pnpm/rustc/cargo/devbox-data/catalog-ids/runtime-metadata 점검
 - **실행** — 설치된 앱 실행
@@ -18,8 +20,11 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
 - 공용 catalog: `%LOCALAPPDATA%\devbox\catalog.json`
 - install-root locator: `%LOCALAPPDATA%\devbox\install-roots\v1\registry.json`
 - 설치 manifest는 Manager 데이터 root의 `registry.json`이 소유하며, locator에는 canonical root와 manifest 경로만 기록
+- frontend의 설치·현재 버전 DTO에는 executable path를 포함하지 않는다. lifecycle command는 catalog app ID만 받고 backend에서 현재 registry와 고정 layout을 다시 검증한다.
 - runtime catalog는 build-time revision보다 낮으면 교체하고, 더 최신이면 보존한다. locator가 유효한 뒤의 manifest/path 오류는 legacy root로 우회하지 않는다.
 - `reqwest` + redirect 호스트 정책 (`crates/...` 아니고 앱 내 `core/url_policy`)
+
+현재 컨텍스트 메뉴의 실행·폴더 열기·제거는 Manager 기본 root의 휴대용 설치에만 제공한다. 설치 패키지의 실제 설치 위치·uninstaller를 추측하지 않으며, custom root와 app binary/user data를 분리한 확장 제거는 v0.5.0 P2의 별도 기능이다. batch, install path 표시, Related Tools도 각 계획 항목에서 독립적으로 구현한다.
 
 ## 개발
 
