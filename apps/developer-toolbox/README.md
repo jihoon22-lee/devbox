@@ -7,7 +7,7 @@
 
 | 그룹 | 도구 | 구현 |
 |---|---|---|
-| JSON | Formatter / Minifier / Validator | TS |
+| JSON | Formatter / Minifier / Validator, JSON ↔ YAML 1.2 | TS (`jsonc-parser`·`yaml`) |
 | Encoding | Base64 / URL Encode·Decode | TS |
 | Time | Unix Timestamp ↔ Date | TS |
 | Text | Case Converter, Diff | Diff는 Rust(`similar`) |
@@ -20,8 +20,19 @@
 - 오프라인 즉시 사용 (외부 서비스 없음)
 - 좌측 사이드바에서 도구 선택
 - JS로 충분한 것과 Rust가 필요한 것의 경계 분리 — 계산·검증은 Rust 연동
+- JSON ↔ YAML은 strict JSON과 YAML 1.2 문서 하나를 양방향 변환하고, 구문 오류의 1-based
+  행·열과 안전한 오류 code를 표시한다. 입력은 1,000,000바이트, 출력은 4,000,000바이트,
+  YAML alias 확장은 50개로 제한하며 merge key는 자동 확장하지 않는다. JSON에서 안전하게
+  표현할 수 없는 정수·비유한 숫자와 의미가 손실되는 YAML custom tag도 명시적으로 거부한다.
+- YAML → JSON은 주석을 제거하고 anchor/alias를 값으로 확장한다. 변환 화면에 이 손실과
+  anchor 이름·공유 관계가 보존되지 않는다는 안내를 항상 표시하며, 결과를 복사하거나
+  `.json`/`.yaml` 파일로 저장할 수 있다.
 - 입력 우클릭 메뉴에서 명시적 Paste·전체 선택·비우기, 출력 메뉴에서 복사·전체 선택·텍스트
   파일 저장 지원. Clipboard read는 Paste를 누른 순간에만 수행하며 저장·로그하지 않음
+
+JSON ↔ YAML의 `jsonc-parser` 3.3.1(MIT)과 `yaml` 2.9.0(ISC)은 앱에 함께 번들된다. 실행 중
+다운로드나 network 요청은 없으며 버전·무결성·라이선스는 `pnpm-lock.yaml`, dependency policy,
+`THIRD_PARTY_NOTICES.md`로 검증한다.
 
 ## 개발
 

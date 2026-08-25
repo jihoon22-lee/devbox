@@ -1241,7 +1241,8 @@ Windows Terminal과 범용 탭·테마·프로필 경쟁을 하기보다 프로�
 - 단계별 preview와 실패 위치
 - 즐겨찾기·최근 사용·도구별 설정
 - API Playground response를 formatter/JWT 도구로 보내기
-- 수요가 확인되면 JSON↔YAML, CSV↔JSON, URL parser 추가
+- JSON↔YAML은 v0.5.0 P1-09 #264에서 오프라인 native 기능으로 구현
+- CSV↔JSON과 URL parser는 수요·형식 경계가 확정되면 후속 추가
 
 JWT decode와 signature verify는 별도 기능으로 구분한다. decode 성공을 신뢰 가능한 token으로
 보이게 하지 않는다.

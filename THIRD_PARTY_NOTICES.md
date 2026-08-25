@@ -5,7 +5,7 @@ license for devbox itself; workspace packages are private and excluded from this
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
 - Cargo.lock SHA-256: `d2092e8d6d1b607833050ef6fc95cf528f8d570bed566c3ba727edafbee7e026`
-- pnpm-lock.yaml SHA-256: `b7013251b18e9e418d0f835d23dd5dcac6d728febcb6d56b1c56dd95f7d61636`
+- pnpm-lock.yaml SHA-256: `761506d610babd9c28b77c8115b73d4556cbfa7af5b0d267fe3e36115f21b6dc`
 
 ## Rust dependencies
 
@@ -811,6 +811,7 @@ to the CI license gate but are not shipped in the compiled frontend bundle.
 | import-meta-resolve | 4.2.0 | MIT | https://github.com/wooorm/import-meta-resolve#readme | `sha512-Iqv2fzaTQN28s/FwZAoFq0ZSs/7hMAHJVX+w8PZl3cY19Pxk6jFFalxQoIfW2826i/fDLXv8IiEZRIT0lDuWcg==` |
 | internmap | 1.0.1 | ISC | https://github.com/mbostock/internmap/ | `sha512-lDB5YccMydFBtasVtxnZ3MRBHuaoE8GKsppq+EchKL2U4nK/DmEpPHNH8MZe5HkMtpSiTSOZwfN0tzYjO/lJEw==` |
 | internmap | 2.0.3 | ISC | https://github.com/mbostock/internmap/ | `sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==` |
+| jsonc-parser | 3.3.1 | MIT | https://github.com/microsoft/node-jsonc-parser#readme | `sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ==` |
 | katex | 0.16.47 | MIT | https://katex.org | `sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg==` |
 | khroma | 2.1.0 | MIT | https://github.com/fabiospampinato/khroma/blob/v2.1.0/license | `sha512-Ls993zuzfayK269Svk9hzpeGUKob/sIgZzyHYdjQoAdQetRKpOLj+k/QQQ/6Qi0Yz65mlROrfd+Ev+1+7dz9Kw==` |
 | layout-base | 1.0.2 | MIT | https://github.com/iVis-at-Bilkent/layout-base#readme | `sha512-8h2oVEZNktL4BH2JCOI90iD1yXwL6iNW7KcCKT2QZgQJR2vbqDsldCTPRU9NifTCqHZci57XvQQ15YTu+sTYPg==` |
@@ -835,3 +836,4 @@ to the CI license gate but are not shipped in the compiled frontend bundle.
 | ts-dedent | 2.3.0 | MIT | https://github.com/tamino-martinius/node-ts-dedent#readme | `sha512-JfJeIHke7y2egdGGgRAvpCwYFUsHlM2gPcrVOxFkznt/4uzQ7HFmvE63iFHVLBJNDuyDOQgijDK/tXH/f6Msjg==` |
 | uuid | 14.0.1 | MIT | https://github.com/uuidjs/uuid#readme | `sha512-6ZxzVpzDXDa3bJWaHilVayA+BH/1zmxCJoVgvmqJnid/gPoKHxUrS/aC/T6LGQtNHT+XHG9fXPJB4d+IrU30Ew==` |
 | w3c-keyname | 2.2.8 | MIT | https://github.com/marijnh/w3c-keyname#readme | `sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ==` |
+| yaml | 2.9.0 | ISC | https://eemeli.org/yaml/ | `sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==` |

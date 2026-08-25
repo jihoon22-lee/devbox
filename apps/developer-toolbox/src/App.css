@@ -247,6 +247,78 @@ select {
   cursor: default;
 }
 
+.btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.14);
+}
+
+.conversion-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.conversion-notice {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(210, 153, 34, 0.5);
+  border-radius: 6px;
+  background: rgba(210, 153, 34, 0.09);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.conversion-notice strong {
+  color: var(--amber);
+  margin-right: 8px;
+}
+
+.json-yaml-input,
+.json-yaml-output {
+  min-height: 360px;
+  max-height: calc(100vh - 210px);
+  overflow: auto;
+}
+
+.conversion-output-label {
+  min-height: 29px;
+}
+
+.conversion-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.conversion-actions .copy-btn {
+  margin-left: 0;
+}
+
+.copy-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.conversion-error {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(248, 81, 73, 0.5);
+  border-radius: 6px;
+  color: var(--red);
+  background: rgba(248, 81, 73, 0.08);
+}
+
+.conversion-error span {
+  color: var(--dim);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+}
+
 .uuid-list {
   background: var(--bg);
   border: 1px solid var(--border);
