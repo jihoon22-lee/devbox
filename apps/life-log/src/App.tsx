@@ -1,3 +1,8 @@
+import {
+  ContextMenu,
+  useContextMenu,
+  type ContextMenuEntry,
+} from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   autostartStatus,
@@ -23,6 +28,7 @@ import {
   type PrivacyRules,
   type SourceStatus,
 } from "./api";
+import { buildDateContextMenu, parseDateKey } from "./lib/contextMenu";
 import type { AppTotal, DaySummary, RangeSummary, Session } from "./types";
 import "./App.css";
 
@@ -117,8 +123,49 @@ export default function App() {
   const [sources, setSources] = useState<SourceStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [contextDate, setContextDate] = useState<string | null>(null);
+  const [contextActionBusy, setContextActionBusy] = useState(false);
 
   const dateStr = useMemo(() => toDateStr(date), [date]);
+
+  const prepareDateContext = useCallback((target: HTMLElement) => {
+    const value = target.dataset.date;
+    const parsed = value ? parseDateKey(value) : null;
+    if (!value || !parsed) {
+      setContextDate(null);
+      return;
+    }
+    setContextDate(value);
+    setDate(parsed);
+  }, []);
+  const dateContextMenu = useContextMenu({
+    onBeforeOpen: (_reason, target) => prepareDateContext(target),
+  });
+  const dateContextItems = useMemo<readonly ContextMenuEntry[]>(
+    () => buildDateContextMenu(contextActionBusy || contextDate === null),
+    [contextActionBusy, contextDate],
+  );
+
+  const copyContextDate = async () => {
+    const value = contextDate;
+    if (!value || !parseDateKey(value)) return;
+    setContextActionBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(value);
+      setNotice(`${value} 날짜를 복사했습니다.`);
+    } catch {
+      setError("날짜를 클립보드에 복사하지 못했습니다.");
+    } finally {
+      setContextActionBusy(false);
+    }
+  };
+
+  const onDateContextSelect = (id: string) => {
+    if (id === "copy-date") void copyContextDate();
+  };
 
   const loadSettings = useCallback(async () => {
     try {
@@ -235,7 +282,13 @@ export default function App() {
           type="date"
           className="date-input"
           value={dateStr}
-          onChange={(e) => e.currentTarget.value && setDate(new Date(e.currentTarget.value + "T00:00:00"))}
+          data-date={dateStr}
+          aria-label={`${dateStr} 선택된 날짜`}
+          onChange={(e) => {
+            const parsed = parseDateKey(e.currentTarget.value);
+            if (parsed) setDate(parsed);
+          }}
+          {...dateContextMenu.triggerProps}
         />
         <button className="btn" onClick={() => shift(1)}>
           ▶
@@ -455,12 +508,26 @@ export default function App() {
                 <section className="panel">
                   <h2>{range.label} — daily usage</h2>
                   <div className="daily-chart">
-                    {range.daily.map((p) => (
-                      <div key={p.day_ms} className="daily-col" title={`${fmtDay(p.day_ms)}: ${fmtDuration(p.pc_usage_ms)}`}>
-                        <div className="daily-bar" style={{ height: `${Math.max(2, (p.pc_usage_ms / maxDaily) * 100)}%` }} />
-                        <div className="daily-label">{fmtDay(p.day_ms)}</div>
-                      </div>
-                    ))}
+                    {range.daily.map((p) => {
+                      const pointDate = new Date(p.day_ms);
+                      const pointDateStr = toDateStr(pointDate);
+                      return (
+                        <button
+                          key={p.day_ms}
+                          type="button"
+                          className="daily-col"
+                          title={`${fmtDay(p.day_ms)}: ${fmtDuration(p.pc_usage_ms)}`}
+                          data-date={pointDateStr}
+                          aria-label={`${pointDateStr} 날짜`}
+                          aria-current={pointDateStr === dateStr ? "date" : undefined}
+                          onClick={() => setDate(pointDate)}
+                          {...dateContextMenu.triggerProps}
+                        >
+                          <div className="daily-bar" style={{ height: `${Math.max(2, (p.pc_usage_ms / maxDaily) * 100)}%` }} />
+                          <div className="daily-label">{fmtDay(p.day_ms)}</div>
+                        </button>
+                      );
+                    })}
                     {range.daily.length === 0 && <div className="empty">No activity in this period</div>}
                   </div>
                 </section>
@@ -515,6 +582,15 @@ export default function App() {
           )}
         </div>
       )}
+      <ContextMenu
+        open={dateContextMenu.open}
+        anchor={dateContextMenu.anchor}
+        restoreFocusTo={dateContextMenu.restoreFocusTo}
+        items={dateContextItems}
+        onSelect={onDateContextSelect}
+        onClose={dateContextMenu.close}
+        ariaLabel="Life Log 날짜 메뉴"
+      />
     </div>
   );
 }

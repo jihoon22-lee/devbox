@@ -137,6 +137,12 @@ type MenuItem =
 >   `accepts` 선언에서 생성되므로, 새 앱을 추가하면 기존 앱을 고치지 않아도 메뉴에
 >   나타난다. [앱 간 연동 설계](./2026-08-17-app-interop-design.md) §2.
 
+> **2026-08-26 구현 상태 (#261).** Life Log의 toolbar 선택 날짜와 주·월 daily chart
+> 날짜에 메뉴를 연결했다. exact chart date를 먼저 선택한 뒤 `YYYY-MM-DD`를
+> 복사하며 pointer/keyboard close 후 focus를 복원한다. Markdown/JSON export는 #305의
+> date-range/source metadata/privacy/native save 경계를 반쪽만 구현하지 않도록 그 전까지
+> disabled다. 이로써 기존 13개 앱의 P1-06 앱별 적용이 완료됐다.
+
 ### 1.3 완료 조건
 
 - 13개 앱 전부에서 우클릭이 앱 고유 메뉴를 연다. 같은 앱의 서로 다른 대상은 서로 다른

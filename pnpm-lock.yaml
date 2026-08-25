@@ -356,6 +356,9 @@ importers:
 
   apps/life-log:
     dependencies:
+      '@devbox/context-menu':
+        specifier: workspace:*
+        version: link:../../packages/context-menu
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
