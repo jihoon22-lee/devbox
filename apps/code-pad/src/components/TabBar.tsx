@@ -1,5 +1,15 @@
+import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { displayNameForPath, panelIdForDoc, tabIdForDoc, type Doc, type DocId, type ViewId } from "../types";
-import type { KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+
+export type TabContextAction =
+  | "close"
+  | "close-others"
+  | "close-right"
+  | "copy-path"
+  | "reveal"
+  | "rename"
+  | "delete";
 
 interface TabBarProps {
   view: ViewId;
@@ -9,6 +19,8 @@ interface TabBarProps {
   onActivate: (docId: DocId) => void;
   onClose: (docId: DocId) => void;
   onMove: (docId: DocId) => void;
+  onContextAction: (view: ViewId, docId: DocId, action: TabContextAction) => void;
+  disabled?: boolean;
 }
 
 export default function TabBar({
@@ -19,16 +31,50 @@ export default function TabBar({
   onActivate,
   onClose,
   onMove,
+  onContextAction,
+  disabled = false,
 }: TabBarProps) {
   const docsById = new Map(docs.map((doc) => [doc.id, doc]));
   const visibleDocIds = docIds.filter((docId) => docsById.has(docId));
   const rovingDocId = visibleDocIds.includes(activeDocId ?? "") ? activeDocId : visibleDocIds[0] ?? null;
+  const [contextDocId, setContextDocId] = useState<DocId | null>(null);
+  const prepareContext = useCallback((_reason: "pointer" | "keyboard", target: HTMLElement) => {
+    const docId = target.dataset.docId;
+    if (!docId || !visibleDocIds.includes(docId)) return;
+    setContextDocId(docId);
+    onActivate(docId);
+  }, [onActivate, visibleDocIds]);
+  const contextMenu = useContextMenu({ disabled, onBeforeOpen: prepareContext });
+
+  useEffect(() => {
+    if (disabled || (contextDocId && !visibleDocIds.includes(contextDocId))) {
+      contextMenu.close();
+      setContextDocId(null);
+    }
+  }, [contextDocId, contextMenu.close, disabled, visibleDocIds]);
+
+  const contextItems = useMemo<readonly ContextMenuEntry[]>(() => {
+    const index = contextDocId ? visibleDocIds.indexOf(contextDocId) : -1;
+    return [
+      { type: "item", id: "close", label: "닫기" },
+      { type: "item", id: "close-others", label: "다른 탭 닫기", disabled: visibleDocIds.length <= 1 },
+      { type: "item", id: "close-right", label: "오른쪽 탭 모두 닫기", disabled: index < 0 || index === visibleDocIds.length - 1 },
+      { type: "separator", id: "path-separator" },
+      { type: "item", id: "copy-path", label: "경로 복사" },
+      { type: "item", id: "reveal", label: "탐색기에서 열기" },
+      { type: "separator", id: "mutation-separator" },
+      { type: "item", id: "rename", label: "이름 변경" },
+      { type: "item", id: "delete", label: "삭제", danger: true },
+    ];
+  }, [contextDocId, visibleDocIds]);
 
   const focusTab = (docId: DocId) => {
     document.getElementById(tabIdForDoc(docId))?.focus();
   };
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, docId: DocId) => {
+    contextMenu.triggerProps.onKeyDown?.(event);
+    if (event.defaultPrevented) return;
     const index = visibleDocIds.indexOf(docId);
     if (index < 0) return;
     let nextIndex: number | null = null;
@@ -53,13 +99,14 @@ export default function TabBar({
   };
 
   return (
-    <div
-      className="tab-bar"
-      role="tablist"
-      aria-label={`${view + 1}번 뷰 문서 탭`}
-      aria-orientation="horizontal"
-    >
-      {visibleDocIds.map((docId, index) => {
+    <>
+      <div
+        className="tab-bar"
+        role="tablist"
+        aria-label={`${view + 1}번 뷰 문서 탭`}
+        aria-orientation="horizontal"
+      >
+        {visibleDocIds.map((docId, index) => {
         const doc = docsById.get(docId);
         if (!doc) return null;
         const active = doc.id === activeDocId;
@@ -75,8 +122,12 @@ export default function TabBar({
               aria-setsize={visibleDocIds.length}
               tabIndex={doc.id === rovingDocId ? 0 : -1}
               className="document-tab-select"
+              data-doc-id={doc.id}
               onClick={() => onActivate(doc.id)}
               onKeyDown={(event) => handleTabKeyDown(event, doc.id)}
+              onContextMenu={contextMenu.triggerProps.onContextMenu}
+              aria-haspopup="menu"
+              aria-expanded={contextMenu.open && contextDocId === doc.id}
               title={doc.path}
             >
               <span className="document-tab-name">
@@ -104,8 +155,20 @@ export default function TabBar({
             </button>
           </div>
         );
-      })}
-      {visibleDocIds.length === 0 && <span className="tab-empty">열린 파일 없음</span>}
-    </div>
+        })}
+        {visibleDocIds.length === 0 && <span className="tab-empty">열린 파일 없음</span>}
+      </div>
+      <ContextMenu
+        open={contextMenu.open}
+        anchor={contextMenu.anchor}
+        items={contextItems}
+        onSelect={(id) => {
+          if (contextDocId) onContextAction(view, contextDocId, id as TabContextAction);
+        }}
+        onClose={contextMenu.close}
+        restoreFocusTo={contextMenu.restoreFocusTo}
+        ariaLabel="문서 탭 작업"
+      />
+    </>
   );
 }

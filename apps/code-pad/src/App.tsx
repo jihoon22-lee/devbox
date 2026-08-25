@@ -4,10 +4,13 @@ import type { CompletionSource } from "@codemirror/autocomplete";
 import type { HoverTooltipSource } from "@codemirror/view";
 import {
   canonicalizeWorkspace,
+  deleteFileAction,
   listWorkspaceFiles,
   loadSession,
   loadRecovery,
   openFile,
+  renameFileAction,
+  revealFileAction,
   renderPreview,
   saveFile,
   saveSession,
@@ -25,6 +28,7 @@ import StatusBar from "./components/StatusBar";
 import ViewPane from "./components/ViewPane";
 import LspControlPanel from "./components/LspControlPanel";
 import LspNavigationPanel from "./components/LspNavigationPanel";
+import type { TabContextAction } from "./components/TabBar";
 import { currentDocumentWordCompletion } from "./editor/extensions";
 import { APPLINK_OPEN_EVENT, routeOpenRequest } from "./lib/applink";
 import { completionOptions, diagnosticsForCodeMirror, hoverText, offsetForPosition, pathFromFileUri } from "./lspFeatures";
@@ -86,6 +90,11 @@ function isPreviewable(path: string): boolean {
   return normalized.endsWith(".md") || normalized.endsWith(".markdown") || normalized.endsWith(".mmd");
 }
 
+function fileNameForPath(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
 function snapshotMatches(
   doc: Doc | undefined,
   snapshot: Pick<
@@ -135,7 +144,7 @@ export default function App() {
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [externalChanges, setExternalChanges] = useState<string[]>([]);
-  const [pendingCloseDocId, setPendingCloseDocId] = useState<DocId | null>(null);
+  const [pendingCloseDocIds, setPendingCloseDocIds] = useState<DocId[]>([]);
   const [pendingEncodingReopen, setPendingEncodingReopen] = useState<{
     docId: DocId;
     encoding: Encoding;
@@ -251,6 +260,7 @@ export default function App() {
   };
 
   const activeDoc = useMemo(() => activeDocForState(state), [state]);
+  const pendingCloseDocId = pendingCloseDocIds[0] ?? null;
   const pendingCloseDoc = pendingCloseDocId
     ? state.docs.find((doc) => doc.id === pendingCloseDocId) ?? null
     : null;
@@ -318,8 +328,8 @@ export default function App() {
     });
   };
 
-  const unregisterWatch = (path: string) => {
-    void enqueueWatchOperation(path, async () => {
+  const unregisterWatch = (path: string) =>
+    enqueueWatchOperation(path, async () => {
       try {
         await unwatchFile(path);
       } catch {
@@ -327,7 +337,6 @@ export default function App() {
         // already unavailable; no native resources are held by the UI.
       }
     });
-  };
 
   const openPath = async (path: string, metadata?: SessionState["docs"][number]) => {
     const opened = await openFile(path, null);
@@ -420,26 +429,35 @@ export default function App() {
     const doc = stateRef.current.docs.find((item) => item.id === docId);
     void lspSync.close(docId);
     dispatchAction({ type: "removeDoc", docId });
-    if (doc) unregisterWatch(doc.path);
+    if (doc) void unregisterWatch(doc.path);
     if (doc) removeExternalChange(doc.path);
     if (activeDoc?.id === docId) setPreview(null);
   };
 
-  const handleCloseRequest = (docId: DocId) => {
+  const requestCloseDocuments = (docIds: readonly DocId[]) => {
     if (!hydrated) return;
-    const doc = stateRef.current.docs.find((item) => item.id === docId);
-    if (!doc) return;
-    if (doc.dirty) {
-      setPendingCloseDocId(docId);
-      return;
+    const requested = [...new Set(docIds)]
+      .map((docId) => stateRef.current.docs.find((doc) => doc.id === docId))
+      .filter((doc): doc is Doc => doc !== undefined);
+    for (const doc of requested) {
+      if (!doc.dirty) removeDocument(doc.id);
     }
-    removeDocument(docId);
+    const dirtyIds = requested.filter((doc) => doc.dirty).map((doc) => doc.id);
+    if (dirtyIds.length > 0) {
+      setPendingCloseDocIds((current) => [...current, ...dirtyIds.filter((id) => !current.includes(id))]);
+    }
+  };
+
+  const handleCloseRequest = (docId: DocId) => requestCloseDocuments([docId]);
+
+  const advanceCloseQueue = (docId: DocId) => {
+    setPendingCloseDocIds((current) => current.filter((id) => id !== docId));
   };
 
   const handleDiscardClose = () => {
     if (!pendingCloseDocId) return;
     removeDocument(pendingCloseDocId);
-    setPendingCloseDocId(null);
+    advanceCloseQueue(pendingCloseDocId);
   };
 
   const handleSaveAndClose = () => {
@@ -450,7 +468,7 @@ export default function App() {
       if (!outcome) return;
       if (outcome.matchedSnapshot) {
         removeDocument(docId);
-        setPendingCloseDocId(null);
+        advanceCloseQueue(docId);
       } else {
         setError("저장 중 새 편집이 발생해 탭을 닫지 않았습니다.");
       }
@@ -472,10 +490,16 @@ export default function App() {
     bookmarkCommandsRef.current.get(activeDoc.id)?.[kind]();
   };
 
-  const lspCapability = (capability: keyof NonNullable<ReturnType<LspDocumentSync["statusForDocument"]>>["capabilities"]) => {
-    if (!activeDoc) return false;
-    return Boolean(lspSync.statusForDocument(activeDoc.id)?.capabilities[capability]);
+  const lspCapabilityFor = (
+    docId: DocId | null | undefined,
+    capability: keyof NonNullable<ReturnType<LspDocumentSync["statusForDocument"]>>["capabilities"],
+  ) => {
+    if (!docId) return false;
+    return Boolean(lspSync.statusForDocument(docId)?.capabilities[capability]);
   };
+
+  const lspCapability = (capability: keyof NonNullable<ReturnType<LspDocumentSync["statusForDocument"]>>["capabilities"]) =>
+    lspCapabilityFor(activeDoc?.id, capability);
 
   const runLspOperation = async <T,>(operation: () => Promise<T>): Promise<T | undefined> => {
     if (lspBusyRef.current) return undefined;
@@ -558,12 +582,18 @@ export default function App() {
         ? "서버 없음"
         : `${lspSyncState.runningLanguages.join(", ")} 실행 중`;
 
-  const handleLspNavigation = (kind: "definition" | "references") => {    if (!activeDoc) return;
+  const handleLspNavigation = (
+    kind: "definition" | "references",
+    docId: DocId | null = activeDoc?.id ?? null,
+    cursor?: number,
+  ) => {
+    const sourceDoc = stateRef.current.docs.find((doc) => doc.id === docId);
+    if (!sourceDoc || !lspCapabilityFor(sourceDoc.id, kind)) return;
     const requestId = ++lspFeatureRequestRef.current;
     void runLspOperation(async () => {
       const response = kind === "definition"
-        ? await lspSync.requestDefinition(activeDoc.id, activeDoc.cursor)
-        : await lspSync.requestReferences(activeDoc.id, activeDoc.cursor);
+        ? await lspSync.requestDefinition(sourceDoc.id, cursor ?? sourceDoc.cursor)
+        : await lspSync.requestReferences(sourceDoc.id, cursor ?? sourceDoc.cursor);
       if (requestId !== lspFeatureRequestRef.current || !response || response.stale) return;
       setLspNavigation({ kind, locations: response.value.locations, rejected: response.value.rejected });
     });
@@ -770,6 +800,103 @@ export default function App() {
       setWorkspaceListingRoot(root);
     } finally {
       setWorkspaceLoading(false);
+    }
+  };
+
+  const refreshCurrentWorkspace = async () => {
+    const root = stateRef.current.workspaceFolder;
+    if (root) await loadWorkspaceSnapshot(root);
+  };
+
+  const renameDocumentFile = (doc: Doc) => {
+    const requested = window.prompt("새 파일 이름", fileNameForPath(doc.path));
+    const newName = requested?.trim();
+    if (!newName || newName === fileNameForPath(doc.path)) return;
+    void runFileOperation(async () => {
+      const renamed = await renameFileAction({
+        path: doc.path,
+        mtimeNanos: doc.mtimeNanos,
+        size: doc.size,
+        contentHash: doc.contentHash,
+      }, newName);
+      const closeOldLsp = lspSync.close(doc.id);
+      const stopOldWatch = unregisterWatch(doc.path);
+      removeExternalChange(doc.path);
+      lspFeatureRequestRef.current += 1;
+      setLspNavigation(null);
+      setLspDiagnostics((current) => {
+        const next = { ...current };
+        delete next[doc.id];
+        return next;
+      });
+      setNavBack((current) => current.map((entry) => entry.docId === doc.id
+        ? { ...entry, path: renamed.path }
+        : entry));
+      setNavForward((current) => current.map((entry) => entry.docId === doc.id
+        ? { ...entry, path: renamed.path }
+        : entry));
+      if (!stateRef.current.docs.some((candidate) => candidate.id === doc.id)) {
+        await Promise.all([closeOldLsp, stopOldWatch]);
+        await refreshCurrentWorkspace();
+        return;
+      }
+      dispatchAction({
+        type: "renameDoc",
+        docId: doc.id,
+        path: renamed.path,
+        mtimeNanos: renamed.mtimeNanos,
+        size: renamed.size,
+        contentHash: renamed.contentHash,
+      });
+      await registerWatch(renamed.path);
+      await Promise.all([closeOldLsp, stopOldWatch]);
+      const latest = stateRef.current.docs.find((candidate) => candidate.id === doc.id);
+      if (latest) await lspSync.open(latest);
+      await refreshCurrentWorkspace();
+    });
+  };
+
+  const deleteDocumentFile = (doc: Doc) => {
+    const confirmed = window.confirm(
+      `${doc.path}\n\n파일을 영구 삭제합니다. 미저장 변경 사항도 복구할 수 없습니다. 계속할까요?`,
+    );
+    if (!confirmed) return;
+    void runFileOperation(async () => {
+      await deleteFileAction({
+        path: doc.path,
+        mtimeNanos: doc.mtimeNanos,
+        size: doc.size,
+        contentHash: doc.contentHash,
+      });
+      removeDocument(doc.id);
+      await refreshCurrentWorkspace();
+    });
+  };
+
+  const handleTabContextAction = (
+    view: import("./types").ViewId,
+    docId: DocId,
+    action: TabContextAction,
+  ) => {
+    const current = stateRef.current;
+    const doc = current.docs.find((candidate) => candidate.id === docId);
+    if (!doc) return;
+    const viewDocIds = current.views[view];
+    const index = viewDocIds.indexOf(docId);
+    if (action === "close") {
+      requestCloseDocuments([docId]);
+    } else if (action === "close-others") {
+      requestCloseDocuments(viewDocIds.filter((candidate) => candidate !== docId));
+    } else if (action === "close-right") {
+      requestCloseDocuments(index < 0 ? [] : viewDocIds.slice(index + 1));
+    } else if (action === "copy-path") {
+      void runFileOperation(() => navigator.clipboard.writeText(doc.path));
+    } else if (action === "reveal") {
+      void runFileOperation(() => revealFileAction(doc.path));
+    } else if (action === "rename") {
+      renameDocumentFile(doc);
+    } else if (action === "delete") {
+      deleteDocumentFile(doc);
     }
   };
 
@@ -1140,10 +1267,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (pendingCloseDocId && !state.docs.some((doc) => doc.id === pendingCloseDocId)) {
-      setPendingCloseDocId(null);
-    }
-  }, [pendingCloseDocId, state.docs]);
+    setPendingCloseDocIds((current) => {
+      const next = current.filter((docId) => state.docs.some((doc) => doc.id === docId));
+      return next.length === current.length ? current : next;
+    });
+  }, [state.docs]);
 
   return (
     <main className="app-shell">
@@ -1319,6 +1447,7 @@ export default function App() {
             onActivateDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
             onCloseDoc={handleCloseRequest}
             onMoveDoc={(docId, toView) => dispatchAction({ type: "moveDoc", docId, toView })}
+            onTabContextAction={handleTabContextAction}
           />
           <ViewPane
             view={1}
@@ -1329,6 +1458,7 @@ export default function App() {
             onActivateDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
             onCloseDoc={handleCloseRequest}
             onMoveDoc={(docId, toView) => dispatchAction({ type: "moveDoc", docId, toView })}
+            onTabContextAction={handleTabContextAction}
           />
           <DocHost
             docs={state.docs}
@@ -1350,6 +1480,10 @@ export default function App() {
             diagnostics={(docId) => lspDiagnostics[docId] ?? []}
             completionSource={completionSourceFor}
             hoverSource={hoverSourceFor}
+            canNavigate={(docId, kind) => hydrated && lspCapabilityFor(docId, kind)}
+            navigationBusy={lspBusy}
+            onNavigate={(docId, kind, cursor) => handleLspNavigation(kind, docId, cursor)}
+            onError={setError}
           />
         </section>
         {previewOpen && activeDoc && (
@@ -1400,14 +1534,17 @@ export default function App() {
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
-                setPendingCloseDocId(null);
+                setPendingCloseDocIds([]);
               }
             }}
           >
             <h2>저장되지 않은 변경 사항</h2>
-            <p>{pendingCloseDoc.path}에 저장되지 않은 변경 사항이 있습니다. 어떻게 하시겠습니까?</p>
+            <p>
+              {pendingCloseDoc.path}에 저장되지 않은 변경 사항이 있습니다. 어떻게 하시겠습니까?
+              {pendingCloseDocIds.length > 1 && ` (이후 ${pendingCloseDocIds.length - 1}개 대기)`}
+            </p>
             <div className="confirm-dialog-actions">
-              <button type="button" className="toolbar-button" autoFocus onClick={() => setPendingCloseDocId(null)}>취소</button>
+              <button type="button" className="toolbar-button" autoFocus onClick={() => setPendingCloseDocIds([])}>취소</button>
               <button type="button" className="toolbar-button" onClick={handleDiscardClose}>변경 내용 버리고 닫기</button>
               <button type="button" className="toolbar-button selected" onClick={handleSaveAndClose} disabled={busy}>저장 후 닫기</button>
             </div>

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import type {
   Encoding,
   LineEnding,
@@ -26,6 +27,20 @@ import type {
   ManagedServerManifest,
   OpenRequest,
 } from "./types";
+
+export interface FileActionSnapshot {
+  path: string;
+  mtimeNanos: string;
+  size: number;
+  contentHash: string;
+}
+
+export interface RenamedFile {
+  path: string;
+  mtimeNanos: string;
+  size: number;
+  contentHash: string;
+}
 
 export function openFile(path: string, encoding: Encoding | null = null): Promise<OpenedFile> {
   return invoke<OpenedFile>("open_file", { request: { path, encoding } });
@@ -67,6 +82,27 @@ export function saveFile(
 
 export function validateEncoding(text: string, encoding: Encoding): Promise<void> {
   return invoke<void>("validate_encoding", { request: { text, encoding } });
+}
+
+export function renameFileAction(
+  file: FileActionSnapshot,
+  newName: string,
+): Promise<RenamedFile> {
+  return invoke<RenamedFile>("rename_file_action", {
+    request: { ...file, newName },
+  });
+}
+
+export function deleteFileAction(file: FileActionSnapshot): Promise<void> {
+  return invoke<void>("delete_file_action", { request: file });
+}
+
+export function revealFileAction(path: string): Promise<void> {
+  return invoke<void>("reveal_file_action", { path });
+}
+
+export function readClipboardText(): Promise<string> {
+  return readText();
 }
 
 export function listWorkspaceFiles(path: string): Promise<WorkspaceFiles> {

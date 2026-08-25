@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import TabBar from "./TabBar";
 import type { Doc } from "../types";
@@ -37,6 +37,7 @@ describe("document tab semantics", () => {
         onActivate={onActivate}
         onClose={vi.fn()}
         onMove={vi.fn()}
+        onContextAction={vi.fn()}
       />,
     );
 
@@ -65,9 +66,87 @@ describe("document tab semantics", () => {
         onActivate={vi.fn()}
         onClose={onClose}
         onMove={vi.fn()}
+        onContextAction={vi.fn()}
       />,
     );
     fireEvent.keyDown(getByRole("tab"), { key: "Delete" });
     expect(onClose).toHaveBeenCalledWith("one");
+  });
+
+  it("opens the exact target-aware menu and marks delete as dangerous", () => {
+    const onActivate = vi.fn();
+    const onContextAction = vi.fn();
+    const rendered = render(
+      <TabBar
+        view={0}
+        docs={[doc("one"), doc("two"), doc("three")]}
+        docIds={["one", "two", "three"]}
+        activeDocId="one"
+        onActivate={onActivate}
+        onClose={vi.fn()}
+        onMove={vi.fn()}
+        onContextAction={onContextAction}
+      />,
+    );
+
+    fireEvent.contextMenu(rendered.getByRole("tab", { name: "two.ts" }), { clientX: 40, clientY: 60 });
+    expect(onActivate).toHaveBeenLastCalledWith("two");
+    const menu = rendered.getByRole("menu", { name: "문서 탭 작업" });
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "닫기",
+      "다른 탭 닫기",
+      "오른쪽 탭 모두 닫기",
+      "경로 복사",
+      "탐색기에서 열기",
+      "이름 변경",
+      "삭제",
+    ]);
+    expect(within(menu).getByRole("menuitem", { name: "삭제" }).classList.contains("danger")).toBe(true);
+
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "오른쪽 탭 모두 닫기" }));
+    expect(onContextAction).toHaveBeenCalledWith(0, "two", "close-right");
+  });
+
+  it("supports keyboard opening, restores tab focus, and ignores IME key events", async () => {
+    const rendered = render(
+      <TabBar
+        view={0}
+        docs={[doc("one")]}
+        docIds={["one"]}
+        activeDocId="one"
+        onActivate={vi.fn()}
+        onClose={vi.fn()}
+        onMove={vi.fn()}
+        onContextAction={vi.fn()}
+      />,
+    );
+    const tab = rendered.getByRole("tab", { name: "one.ts" });
+    tab.focus();
+
+    fireEvent.keyDown(tab, { key: "F10", shiftKey: true, isComposing: true });
+    expect(rendered.queryByRole("menu")).toBeNull();
+
+    fireEvent.keyDown(tab, { key: "F10", shiftKey: true });
+    const menu = rendered.getByRole("menu", { name: "문서 탭 작업" });
+    expect(within(menu).getByRole("menuitem", { name: "다른 탭 닫기" }).getAttribute("aria-disabled")).toBe("true");
+    expect(within(menu).getByRole("menuitem", { name: "오른쪽 탭 모두 닫기" }).getAttribute("aria-disabled")).toBe("true");
+    fireEvent.keyDown(menu, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(tab));
+
+    fireEvent.contextMenu(tab, { clientX: 10, clientY: 10 });
+    rendered.rerender(
+      <TabBar
+        view={0}
+        docs={[doc("one")]}
+        docIds={["one"]}
+        activeDocId="one"
+        onActivate={vi.fn()}
+        onClose={vi.fn()}
+        onMove={vi.fn()}
+        onContextAction={vi.fn()}
+        disabled
+      />,
+    );
+    await waitFor(() => expect(rendered.queryByRole("menu")).toBeNull());
   });
 });

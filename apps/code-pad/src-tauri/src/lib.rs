@@ -52,6 +52,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             app.manage(applink::PendingOpen::new());
@@ -95,6 +96,9 @@ pub fn run() {
             applink::take_pending_open,
             commands::file::open_file,
             commands::file::save_file,
+            commands::file::rename_file_action,
+            commands::file::delete_file_action,
+            commands::file::reveal_file_action,
             commands::file::validate_encoding,
             commands::folder::list_workspace_files,
             commands::folder::canonicalize_workspace,

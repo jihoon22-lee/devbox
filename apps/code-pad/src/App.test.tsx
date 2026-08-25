@@ -5,6 +5,7 @@ import App from "./App";
 import {
   changeLspDocument,
   closeLspDocument,
+  deleteFileAction,
   languageServerStatuses,
   loadLspConfig,
   loadSession,
@@ -16,6 +17,8 @@ import {
   requestLspFormatting,
   requestLspReferences,
   requestLspRename,
+  renameFileAction,
+  revealFileAction,
   saveFile,
   saveLspDocument,
   startLanguageServer,
@@ -144,6 +147,7 @@ vi.mock("./api", () => ({
   changeLspDocument: vi.fn(),
   saveLspDocument: vi.fn(),
   closeLspDocument: vi.fn(),
+  deleteFileAction: vi.fn(),
   pullLspDiagnostics: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { uri: "", version: 1, diagnostics: [], origin: "pull" }, stale: false }),
   requestLspCompletion: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { isIncomplete: false, items: [] }, stale: false }),
   requestLspDefinition: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false }),
@@ -151,6 +155,8 @@ vi.mock("./api", () => ({
   requestLspHover: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: null, stale: false }),
   requestLspReferences: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false }),
   requestLspRename: vi.fn().mockResolvedValue({ documents: [] }),
+  renameFileAction: vi.fn(),
+  revealFileAction: vi.fn().mockResolvedValue(undefined),
   restartLanguageServer: vi.fn().mockResolvedValue(undefined),
   takePendingOpen: vi.fn().mockResolvedValue(null),
 }));
@@ -170,11 +176,14 @@ const reloadLspDocumentMock = vi.mocked(reloadLspDocument);
 const changeLspDocumentMock = vi.mocked(changeLspDocument);
 const saveLspDocumentMock = vi.mocked(saveLspDocument);
 const closeLspDocumentMock = vi.mocked(closeLspDocument);
+const deleteFileActionMock = vi.mocked(deleteFileAction);
 const pullLspDiagnosticsMock = vi.mocked(pullLspDiagnostics);
 const requestLspDefinitionMock = vi.mocked(requestLspDefinition);
 const requestLspFormattingMock = vi.mocked(requestLspFormatting);
 const requestLspReferencesMock = vi.mocked(requestLspReferences);
 const requestLspRenameMock = vi.mocked(requestLspRename);
+const renameFileActionMock = vi.mocked(renameFileAction);
+const revealFileActionMock = vi.mocked(revealFileAction);
 const takePendingOpenMock = vi.mocked(takePendingOpen);
 
 function deferred<T>() {
@@ -187,9 +196,9 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function openedFile(text = "before") {
+function openedFile(text = "before", path = "/tmp/one.ts") {
   return {
-    path: "/tmp/one.ts",
+    path,
     text,
     encoding: { encodingKind: "utf8" as const, bom: false },
     lineEnding: "lf" as const,
@@ -333,10 +342,13 @@ beforeEach(() => {
   changeLspDocumentMock.mockReset();
   saveLspDocumentMock.mockReset();
   closeLspDocumentMock.mockReset();
+  deleteFileActionMock.mockReset().mockResolvedValue(undefined);
   requestLspDefinitionMock.mockReset().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false });
   requestLspFormattingMock.mockReset().mockResolvedValue({ documents: [] });
   requestLspReferencesMock.mockReset().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false });
   requestLspRenameMock.mockReset().mockResolvedValue({ documents: [] });
+  renameFileActionMock.mockReset();
+  revealFileActionMock.mockReset().mockResolvedValue(undefined);
   takePendingOpenMock.mockReset().mockImplementation(async () => {
     appLinkOrder.push("take");
     return null;
@@ -360,6 +372,22 @@ async function openOne() {
   fireEvent.click(rendered.getByRole("button", { name: "파일 열기" }));
   await waitFor(() => expect(rendered.getByRole("tab", { name: /one\.ts/ })).toBeTruthy());
   return rendered;
+}
+
+async function openAdditional(
+  rendered: Awaited<ReturnType<typeof openOne>>,
+  path: string,
+  text = "before",
+) {
+  openFileMock.mockResolvedValueOnce(openedFile(text, path));
+  const input = rendered.getByRole("textbox", { name: "열 파일 경로" });
+  fireEvent.change(input, { target: { value: path } });
+  fireEvent.click(rendered.getByRole("button", { name: "파일 열기" }));
+  await waitFor(() => expect(rendered.getByRole("tab", { name: new RegExp(fileName(path)) })).toBeTruthy());
+}
+
+function fileName(path: string): string {
+  return path.split("/").pop() ?? path;
 }
 
 describe("App editor shell operations", () => {
@@ -629,6 +657,104 @@ describe("App editor shell operations", () => {
     fireEvent.click(rendered.getByRole("button", { name: "/tmp/one.ts 닫기" }));
     fireEvent.click(rendered.getByRole("button", { name: "변경 내용 버리고 닫기" }));
     await waitFor(() => expect(rendered.queryByRole("tab", { name: /one\.ts/ })).toBeNull());
+  });
+
+  it("closes clean right-hand tabs immediately and queues dirty confirmations in tab order", async () => {
+    const rendered = await openOne();
+    await openAdditional(rendered, "/tmp/two.ts");
+    await openAdditional(rendered, "/tmp/three.ts");
+    await openAdditional(rendered, "/tmp/four.ts");
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/two.ts" }));
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/four.ts" }));
+
+    fireEvent.contextMenu(rendered.getByRole("tab", { name: "one.ts" }), { clientX: 10, clientY: 10 });
+    fireEvent.click(rendered.getByRole("menuitem", { name: "오른쪽 탭 모두 닫기" }));
+
+    const firstDialog = rendered.getByRole("dialog", { name: "저장되지 않은 변경 사항" });
+    expect(firstDialog.textContent).toContain("/tmp/two.ts");
+    expect(firstDialog.textContent).toContain("이후 1개 대기");
+    expect(rendered.queryByRole("tab", { name: "three.ts" })).toBeNull();
+    fireEvent.click(rendered.getByRole("button", { name: "변경 내용 버리고 닫기" }));
+    await waitFor(() => expect(rendered.getByRole("dialog").textContent).toContain("/tmp/four.ts"));
+    fireEvent.click(rendered.getByRole("button", { name: "취소" }));
+
+    expect(rendered.queryByRole("tab", { name: "two.ts" })).toBeNull();
+    expect(rendered.getByRole("tab", { name: /four\.ts/ })).toBeTruthy();
+  });
+
+  it("renames a tab without losing its dirty buffer and migrates the native watch", async () => {
+    const rendered = await openOne();
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+    renameFileActionMock.mockResolvedValue({
+      path: "/tmp/renamed.ts",
+      mtimeNanos: "1",
+      size: 6,
+      contentHash: "hash-1",
+    });
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("renamed.ts");
+
+    fireEvent.contextMenu(rendered.getByRole("tab", { name: /one\.ts/ }), { clientX: 10, clientY: 10 });
+    fireEvent.click(rendered.getByRole("menuitem", { name: "이름 변경" }));
+
+    await waitFor(() => expect(renameFileActionMock).toHaveBeenCalledWith({
+      path: "/tmp/one.ts",
+      mtimeNanos: "1",
+      size: 6,
+      contentHash: "hash-1",
+    }, "renamed.ts"));
+    await waitFor(() => expect(rendered.getByRole("tab", { name: /renamed\.ts/ })).toBeTruthy());
+    expect(rendered.getByTestId("doc-text-/tmp/renamed.ts").textContent).toBe("before!");
+    expect(unwatchFileMock).toHaveBeenCalledWith("/tmp/one.ts");
+    expect(watchFileMock).toHaveBeenCalledWith("/tmp/renamed.ts");
+    prompt.mockRestore();
+  });
+
+  it("requires explicit deletion confirmation and keeps the tab when the snapshot is stale", async () => {
+    const rendered = await openOne();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+
+    fireEvent.contextMenu(rendered.getByRole("tab", { name: /one\.ts/ }), { clientX: 10, clientY: 10 });
+    fireEvent.click(rendered.getByRole("menuitem", { name: "삭제" }));
+    expect(deleteFileActionMock).not.toHaveBeenCalled();
+
+    deleteFileActionMock.mockRejectedValueOnce(new Error("파일을 삭제할 수 없습니다."));
+    fireEvent.contextMenu(rendered.getByRole("tab", { name: /one\.ts/ }), { clientX: 10, clientY: 10 });
+    fireEvent.click(rendered.getByRole("menuitem", { name: "삭제" }));
+    await waitFor(() => expect(rendered.getByRole("alert").textContent).toContain("파일을 삭제할 수 없습니다."));
+    expect(rendered.getByRole("tab", { name: /one\.ts/ })).toBeTruthy();
+    expect(confirm.mock.calls[1][0]).toContain("미저장 변경 사항도 복구할 수 없습니다");
+    confirm.mockRestore();
+  });
+
+  it("closes and unwatches a tab only after the validated delete succeeds", async () => {
+    const rendered = await openOne();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.contextMenu(rendered.getByRole("tab", { name: /one\.ts/ }), { clientX: 10, clientY: 10 });
+    fireEvent.click(rendered.getByRole("menuitem", { name: "삭제" }));
+
+    await waitFor(() => expect(deleteFileActionMock).toHaveBeenCalledWith({
+      path: "/tmp/one.ts",
+      mtimeNanos: "1",
+      size: 6,
+      contentHash: "hash-1",
+    }));
+    await waitFor(() => expect(rendered.queryByRole("tab", { name: /one\.ts/ })).toBeNull());
+    expect(unwatchFileMock).toHaveBeenCalledWith("/tmp/one.ts");
+    confirm.mockRestore();
+  });
+
+  it("copies the canonical tab path and delegates reveal to the validated backend action", async () => {
+    const rendered = await openOne();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+
+    fireEvent.contextMenu(rendered.getByRole("tab", { name: /one\.ts/ }), { clientX: 10, clientY: 10 });
+    fireEvent.click(rendered.getByRole("menuitem", { name: "경로 복사" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("/tmp/one.ts"));
+
+    fireEvent.contextMenu(rendered.getByRole("tab", { name: /one\.ts/ }), { clientX: 10, clientY: 10 });
+    fireEvent.click(rendered.getByRole("menuitem", { name: "탐색기에서 열기" }));
+    await waitFor(() => expect(revealFileActionMock).toHaveBeenCalledWith("/tmp/one.ts"));
   });
 
   it("guards explicit encoding reopen behind the dirty-choice dialog", async () => {
