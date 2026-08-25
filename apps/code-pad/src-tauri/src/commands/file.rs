@@ -1003,7 +1003,10 @@ mod tests {
 
         assert!(!path.exists());
         assert_eq!(fs::read(&destination).unwrap(), b"one");
-        assert_eq!(renamed.path, destination.to_string_lossy());
+        assert_eq!(
+            Path::new(&renamed.path),
+            fs::canonicalize(&destination).unwrap()
+        );
         assert_eq!(renamed.mtime_nanos, opened.mtime.to_string());
         assert_eq!(renamed.size, opened.size);
         assert_eq!(renamed.content_hash, opened.content_hash);

@@ -301,6 +301,12 @@ PR 직전 집중 검토에서 native rename 성공 뒤 old LSP close가 느리�
 변경된 App·TabBar·CodeEditor 3개 파일의 36개 test를 다시 실행해 모두 통과했고 production build도
 다시 생성했다.
 
+첫 PR CI의 Linux Rust, frontend, dependency, catalog gate는 통과했지만 Windows Rust test에서
+rename 결과의 canonical long path(`\\?\C:\\...`)를 `tempfile`이 돌려준 8.3 short path와 문자열로
+직접 비교한 test assertion 하나가 실패했다. 구현은 열린 문서와 watcher가 사용하는 canonical path를
+정상적으로 반환하고 있었으므로, assertion을 rename 뒤 destination의 canonical path와 비교하도록
+고쳤다. 같은 단일 test를 Linux에서 다시 실행해 통과했으며 Windows CI를 재실행한다.
+
 ## Security and Failure Boundaries
 
 - rename/delete는 frontend path가 아니라 실행 직전 canonical regular file과 exact disk snapshot을
