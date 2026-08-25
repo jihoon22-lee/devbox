@@ -42,7 +42,7 @@ fn profile_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join(PROFILE_FILE))
 }
 
-fn load_store(app: &AppHandle) -> ProfileStore {
+pub(crate) fn load_store(app: &AppHandle) -> ProfileStore {
     profile_path(app)
         .ok()
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -85,9 +85,26 @@ pub fn update_profile(app: AppHandle, profile: ProjectProfile) -> Result<(), Str
 }
 
 #[tauri::command]
-pub fn delete_profile(app: AppHandle, id: String) -> Result<(), String> {
+pub fn delete_profile(
+    app: AppHandle,
+    registry: tauri::State<'_, Arc<RunRegistry>>,
+    id: String,
+) -> Result<(), String> {
+    let _transition_claim =
+        claim_workspace_transition(&registry.starting_profile, &id).map_err(str::to_string)?;
+    let runs = registry
+        .runs
+        .lock()
+        .map_err(|_| "실행 상태를 확인할 수 없습니다".to_string())?;
+    let has_active_run = has_active_profile_run(&runs, &id);
+    drop(runs);
+    if has_active_run {
+        return Err("실행 중인 프로필은 먼저 Workbench가 시작한 리소스를 중지하세요".to_string());
+    }
     let mut store = load_store(&app);
-    store.remove(&id);
+    if !store.remove(&id) {
+        return Err("프로필을 찾을 수 없습니다".to_string());
+    }
     save_store(&app, &store)
 }
 
@@ -316,9 +333,80 @@ pub struct WorkspaceRun {
     pub started_pids: Vec<u32>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceRunOwnership {
+    pub run_id: String,
+    pub profile_id: String,
+}
+
+impl From<&WorkspaceRun> for WorkspaceRunOwnership {
+    fn from(run: &WorkspaceRun) -> Self {
+        Self {
+            run_id: run.run_id.clone(),
+            profile_id: run.profile_id.clone(),
+        }
+    }
+}
+
 /// 실행 기록 (인메모리). 앱 수명 동안 유지한다.
 pub struct RunRegistry {
     pub runs: Mutex<HashMap<String, WorkspaceRun>>,
+    starting_profile: Mutex<Option<String>>,
+}
+
+struct WorkspaceTransitionClaim<'a> {
+    slot: &'a Mutex<Option<String>>,
+}
+
+impl Drop for WorkspaceTransitionClaim<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut slot) = self.slot.lock() {
+            *slot = None;
+        }
+    }
+}
+
+fn claim_workspace_transition<'a>(
+    slot: &'a Mutex<Option<String>>,
+    profile_id: &str,
+) -> Result<WorkspaceTransitionClaim<'a>, &'static str> {
+    let mut current = slot
+        .lock()
+        .map_err(|_| "Workspace 작업 상태를 확인할 수 없습니다")?;
+    if current.is_some() {
+        return Err("다른 Workspace 작업이 이미 진행 중입니다");
+    }
+    *current = Some(profile_id.to_string());
+    drop(current);
+    Ok(WorkspaceTransitionClaim { slot })
+}
+
+fn has_active_profile_run(runs: &HashMap<String, WorkspaceRun>, profile_id: &str) -> bool {
+    runs.values().any(|run| run.profile_id == profile_id)
+}
+
+fn take_profile_run(
+    runs: &mut HashMap<String, WorkspaceRun>,
+    run_id: &str,
+    profile_id: &str,
+) -> Result<Option<WorkspaceRun>, &'static str> {
+    if runs
+        .get(run_id)
+        .is_some_and(|run| run.profile_id != profile_id)
+    {
+        return Err("선택한 프로필의 실행 기록이 아닙니다");
+    }
+    Ok(runs.remove(run_id))
+}
+
+fn single_workspace_run(
+    runs: &HashMap<String, WorkspaceRun>,
+) -> Result<Option<WorkspaceRunOwnership>, &'static str> {
+    if runs.len() > 1 {
+        return Err("여러 Workspace 실행 상태를 안전하게 복원할 수 없습니다");
+    }
+    Ok(runs.values().next().map(WorkspaceRunOwnership::from))
 }
 
 fn open_request(target: devbox_applink::OpenTarget) -> devbox_applink::OpenRequest {
@@ -369,6 +457,16 @@ pub async fn start_workspace(
     registry: tauri::State<'_, Arc<RunRegistry>>,
     profile_id: String,
 ) -> Result<WorkspaceRun, String> {
+    let _start_claim = claim_workspace_transition(&registry.starting_profile, &profile_id)
+        .map_err(str::to_string)?;
+    if !registry
+        .runs
+        .lock()
+        .map_err(|_| "실행 상태를 확인할 수 없습니다".to_string())?
+        .is_empty()
+    {
+        return Err("현재 Workspace 실행을 먼저 중지하세요".to_string());
+    }
     let store = load_store(&app);
     let profile = store
         .profiles
@@ -447,11 +545,14 @@ pub async fn start_workspace(
         steps,
         started_pids,
     };
-    registry
+    let mut runs = registry
         .runs
         .lock()
-        .unwrap()
-        .insert(run.run_id.clone(), run.clone());
+        .map_err(|_| "실행 상태를 저장할 수 없습니다".to_string())?;
+    if !runs.is_empty() {
+        return Err("Workspace 실행 상태가 변경되어 결과를 저장할 수 없습니다".to_string());
+    }
+    runs.insert(run.run_id.clone(), run.clone());
     Ok(run)
 }
 
@@ -460,9 +561,14 @@ pub async fn start_workspace(
 pub fn stop_workspace(
     registry: tauri::State<'_, Arc<RunRegistry>>,
     run_id: String,
+    profile_id: String,
 ) -> Result<usize, String> {
-    let mut runs = registry.runs.lock().unwrap();
-    let Some(run) = runs.remove(&run_id) else {
+    let mut runs = registry
+        .runs
+        .lock()
+        .map_err(|_| "실행 상태를 확인할 수 없습니다".to_string())?;
+    let Some(run) = take_profile_run(&mut runs, &run_id, &profile_id).map_err(str::to_string)?
+    else {
         return Ok(0);
     };
     let stopped: usize = run
@@ -487,9 +593,23 @@ pub fn stop_workspace(
     Ok(stopped)
 }
 
+/// frontend reload 뒤에도 backend가 추적 중인 단일 run ownership을 복원한다.
+/// start claim이 추가 run을 막으므로 둘 이상이면 손상 상태로 보고 fail-closed한다.
+#[tauri::command]
+pub fn current_workspace_run(
+    registry: tauri::State<'_, Arc<RunRegistry>>,
+) -> Result<Option<WorkspaceRunOwnership>, String> {
+    let runs = registry
+        .runs
+        .lock()
+        .map_err(|_| "실행 상태를 확인할 수 없습니다".to_string())?;
+    single_workspace_run(&runs).map_err(str::to_string)
+}
+
 pub fn run_registry() -> Arc<RunRegistry> {
     Arc::new(RunRegistry {
         runs: Mutex::new(HashMap::new()),
+        starting_profile: Mutex::new(None),
     })
 }
 
@@ -702,6 +822,73 @@ mod tests {
             path: path.into(),
         });
         profile
+    }
+
+    fn workspace_run(run_id: &str, profile_id: &str) -> WorkspaceRun {
+        WorkspaceRun {
+            run_id: run_id.to_string(),
+            profile_id: profile_id.to_string(),
+            steps: Vec::new(),
+            started_pids: vec![101],
+        }
+    }
+
+    #[test]
+    fn run_ownership_gate_preserves_mismatched_runs_and_tracks_active_profile() {
+        let mut runs = HashMap::from([("run-1".to_string(), workspace_run("run-1", "profile-1"))]);
+
+        assert!(has_active_profile_run(&runs, "profile-1"));
+        assert!(!has_active_profile_run(&runs, "profile-2"));
+        assert!(matches!(
+            take_profile_run(&mut runs, "run-1", "profile-2"),
+            Err("선택한 프로필의 실행 기록이 아닙니다")
+        ));
+        assert!(runs.contains_key("run-1"));
+
+        let taken = take_profile_run(&mut runs, "run-1", "profile-1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(taken.profile_id, "profile-1");
+        assert!(runs.is_empty());
+        assert!(take_profile_run(&mut runs, "missing", "profile-1")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn transition_claim_and_current_run_restore_are_fail_closed() {
+        let slot = Mutex::new(None);
+        let claim = claim_workspace_transition(&slot, "profile-1").unwrap();
+        assert!(matches!(
+            claim_workspace_transition(&slot, "profile-2"),
+            Err("다른 Workspace 작업이 이미 진행 중입니다")
+        ));
+        assert_eq!(slot.lock().unwrap().as_deref(), Some("profile-1"));
+        drop(claim);
+        assert!(slot.lock().unwrap().is_none());
+
+        let mut sensitive_run = workspace_run("run-1", "profile-1");
+        sensitive_run.steps.push(RunStep {
+            name: "health".to_string(),
+            ok: false,
+            detail: r"C:\TOP_SECRET\project".to_string(),
+        });
+        let one = HashMap::from([("run-1".to_string(), sensitive_run)]);
+        let ownership = single_workspace_run(&one).unwrap().unwrap();
+        assert_eq!(ownership.run_id, "run-1");
+        let json = serde_json::to_string(&ownership).unwrap();
+        assert!(!json.contains("TOP_SECRET"));
+        assert!(!json.contains("startedPids"));
+        assert!(!json.contains("steps"));
+
+        let multiple = HashMap::from([
+            ("run-1".to_string(), workspace_run("run-1", "profile-1")),
+            ("run-2".to_string(), workspace_run("run-2", "profile-2")),
+        ]);
+        assert!(matches!(
+            single_workspace_run(&multiple),
+            Err("여러 Workspace 실행 상태를 안전하게 복원할 수 없습니다")
+        ));
     }
 
     #[test]

@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ContextMenu,
+  useContextMenu,
+  type ContextMenuEntry,
+} from "@devbox/context-menu";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createProfile,
+  currentWorkspaceRun,
   deleteProfile,
   listProfiles,
   onOpenRequest,
+  openProfileIn,
+  profileCopyPath,
   projectHealth,
+  profileOpenTargets,
   startWorkspace,
   stopWorkspace,
   takePendingOpen,
@@ -13,6 +22,7 @@ import {
   type ProjectHealth,
   type ProjectProfile,
   type WorkspaceRun,
+  type WorkbenchOpenTarget,
 } from "./api";
 import { routeOpenRequest } from "./lib/applink";
 import "./App.css";
@@ -37,15 +47,47 @@ export default function App() {
   const [run, setRun] = useState<WorkspaceRun | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [contextProfile, setContextProfile] = useState<ProjectProfile | null>(null);
+  const [contextTargets, setContextTargets] = useState<{
+    profileId: string;
+    targets: WorkbenchOpenTarget[];
+  } | null>(null);
+  const contextTargetRequest = useRef(0);
   // Flips true once the first listProfiles() resolves (success or failure).
   // Gates applink handling (below) so a `path` target is matched against the
   // real profile list instead of racing the empty initial state.
   const [profilesLoaded, setProfilesLoaded] = useState(false);
 
+  const prepareProfileContext = useCallback((target: HTMLElement) => {
+    const id = target.dataset.profileId;
+    const profile = profiles.find((candidate) => candidate.id === id);
+    if (!profile) return;
+    setSelectedId(profile.id);
+    setContextProfile(profile);
+    setContextTargets(null);
+    const request = ++contextTargetRequest.current;
+    void profileOpenTargets(profile.id)
+      .then((targets) => {
+        if (request === contextTargetRequest.current) {
+          setContextTargets({ profileId: profile.id, targets });
+        }
+      })
+      .catch(() => {
+        if (request === contextTargetRequest.current) {
+          setContextTargets({ profileId: profile.id, targets: [] });
+          setError("다른 앱으로 열기 대상을 확인하지 못했습니다");
+        }
+      });
+  }, [profiles]);
+  const profileContextMenu = useContextMenu({
+    onBeforeOpen: (_reason, target) => prepareProfileContext(target),
+  });
+
   const refresh = useCallback(async () => {
     try {
-      const list = await listProfiles();
+      const [list, activeRun] = await Promise.all([listProfiles(), currentWorkspaceRun()]);
       setProfiles(list);
+      setRun(activeRun ? { ...activeRun, steps: [], startedPids: [] } : null);
       setSelectedId((prev) => (prev && list.some((p) => p.id === prev) ? prev : list[0]?.id ?? ""));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -57,6 +99,19 @@ export default function App() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const id = contextProfile?.id;
+    if (!id) return;
+    const current = profiles.find((profile) => profile.id === id) ?? null;
+    if (current) setContextProfile(current);
+    else {
+      contextTargetRequest.current += 1;
+      profileContextMenu.close();
+      setContextProfile(null);
+      setContextTargets(null);
+    }
+  }, [contextProfile?.id, profileContextMenu.close, profiles]);
 
   // Inbound cross-app open requests (§1.4, §3). Redefined every render so it
   // always closes over the latest `profiles` — the devbox://open listener
@@ -152,11 +207,18 @@ export default function App() {
     }
   };
 
-  const onDelete = async (id: string) => {
+  const onDelete = async (profile: ProjectProfile) => {
+    if (run?.profileId === profile.id) {
+      setError("실행 중인 프로필은 먼저 Workbench가 시작한 리소스를 중지하세요.");
+      return;
+    }
+    if (!window.confirm(
+      `'${profile.name}' 프로필을 삭제할까요? 저장된 프로필 정의만 삭제하며 프로젝트 파일과 이미 실행 중이던 외부 리소스는 변경하지 않습니다.`,
+    )) return;
     setBusy(true);
     setError(null);
     try {
-      await deleteProfile(id);
+      await deleteProfile(profile.id);
       setSelectedId("");
       setHealth(null);
       await refresh();
@@ -167,12 +229,16 @@ export default function App() {
     }
   };
 
-  const onStart = async () => {
-    if (!selectedId) return;
+  const onStart = async (profileId: string) => {
+    if (!profileId) return;
+    if (run) {
+      setError("현재 Workspace 실행을 먼저 중지하세요.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      setRun(await startWorkspace(selectedId));
+      setRun(await startWorkspace(profileId));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -180,12 +246,18 @@ export default function App() {
     }
   };
 
-  const onStop = async () => {
-    if (!run) return;
+  const onStop = async (profile: ProjectProfile) => {
+    if (!run || run.profileId !== profile.id) {
+      setError("선택한 프로필에서 Workbench가 시작한 실행을 찾을 수 없습니다.");
+      return;
+    }
+    if (!window.confirm(
+      `'${profile.name}'에서 Workbench가 시작한 리소스만 중지할까요? 시작 전부터 실행 중이던 리소스는 유지됩니다.`,
+    )) return;
     setBusy(true);
     setError(null);
     try {
-      const n = await stopWorkspace(run.runId);
+      const n = await stopWorkspace(run.runId, profile.id);
       setRun(null);
       if (n > 0) setError(`Workbench가 시작한 프로세스 ${n}개를 종료했습니다.`);
     } catch (e) {
@@ -195,7 +267,99 @@ export default function App() {
     }
   };
 
+  const onCopyProfilePath = async (profileId: string) => {
+    setError(null);
+    try {
+      const path = await profileCopyPath(profileId);
+      await navigator.clipboard.writeText(path);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const onOpenProfileIn = async (profileId: string, appId: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await openProfileIn(profileId, appId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resolvedContextTargets = contextProfile && contextTargets?.profileId === contextProfile.id
+    ? contextTargets.targets
+    : null;
+  const contextRun = contextProfile && run?.profileId === contextProfile.id ? run : null;
+  const contextHasPath = Boolean(
+    contextProfile?.windowsPath?.trim() || contextProfile?.wsl?.path.trim(),
+  );
+  const profileContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
+    if (!contextProfile) return [];
+    const openTargetItems: ContextMenuEntry[] = (resolvedContextTargets ?? []).map((target) => ({
+      type: "item",
+      id: `open-in:${target.id}`,
+      label: target.displayName,
+    }));
+    return [
+      {
+        type: "item",
+        id: "start",
+        label: "Start Workspace",
+        disabled: busy || run !== null,
+      },
+      {
+        type: "item",
+        id: "stop",
+        label: "Stop What I Started",
+        disabled: busy || contextRun === null,
+        danger: true,
+      },
+      { type: "separator", id: "lifecycle-separator" },
+      { type: "item", id: "edit", label: "프로필 편집", disabled: busy },
+      {
+        type: "item",
+        id: "delete",
+        label: "삭제",
+        disabled: busy || contextRun !== null,
+        danger: true,
+      },
+      { type: "separator", id: "path-separator" },
+      {
+        type: "item",
+        id: "copy-path",
+        label: "경로 복사",
+        disabled: busy || !contextHasPath,
+      },
+      {
+        type: "submenu",
+        id: "open-in",
+        label: "다른 앱으로 열기",
+        disabled: busy || resolvedContextTargets === null || openTargetItems.length === 0,
+        items: openTargetItems,
+      },
+    ];
+  }, [busy, contextHasPath, contextProfile, contextRun, resolvedContextTargets, run]);
+
+  const onProfileContextSelect = (id: string) => {
+    const profile = contextProfile;
+    if (!profile) return;
+    if (id === "start") void onStart(profile.id);
+    else if (id === "stop") void onStop(profile);
+    else if (id === "edit") setEditing(profile);
+    else if (id === "delete") void onDelete(profile);
+    else if (id === "copy-path") void onCopyProfilePath(profile.id);
+    else {
+      const target = resolvedContextTargets?.find((candidate) => `open-in:${candidate.id}` === id);
+      if (target) void onOpenProfileIn(profile.id, target.id);
+    }
+  };
+
   const patch = (p: Partial<ProjectProfile>) => setEditing((prev) => (prev ? { ...prev, ...p } : prev));
+
+  const selectedProfile = profiles.find((profile) => profile.id === selectedId) ?? null;
 
   return (
     <div className="app">
@@ -211,12 +375,27 @@ export default function App() {
         <aside className="sidebar">
           <h2 className="group-title">프로젝트</h2>
           {profiles.map((p) => (
-            <div key={p.id} className={`profile-row ${p.id === selectedId ? "active" : ""}`}>
+            <div
+              key={p.id}
+              className={`profile-row ${p.id === selectedId ? "active" : ""}`}
+              tabIndex={0}
+              aria-current={p.id === selectedId ? "true" : undefined}
+              data-profile-id={p.id}
+              onClick={() => setSelectedId(p.id)}
+              {...profileContextMenu.triggerProps}
+            >
               <button className="profile-name" onClick={() => setSelectedId(p.id)}>
                 {p.name}
               </button>
-              <button className="mini" onClick={() => setEditing(p)} title="편집">✏️</button>
-              <button className="mini" onClick={() => void onDelete(p.id)} title="삭제">✕</button>
+              <button className="mini" disabled={busy} onClick={() => setEditing(p)} title="편집">✏️</button>
+              <button
+                className="mini"
+                disabled={busy || run?.profileId === p.id}
+                onClick={() => void onDelete(p)}
+                title="삭제"
+              >
+                ✕
+              </button>
             </div>
           ))}
           {profiles.length === 0 && <div className="dim">프로필이 없습니다.</div>}
@@ -262,13 +441,21 @@ export default function App() {
                 <button className="btn" onClick={() => setEditing(null)}>취소</button>
               </div>
             </section>
-          ) : selectedId ? (
+          ) : selectedProfile ? (
             <section className="panel">
-              <h2>{profiles.find((p) => p.id === selectedId)?.name ?? selectedId}</h2>
+              <h2>{selectedProfile.name}</h2>
               <div className="row-actions">
-                <button className="btn primary" disabled={busy} onClick={() => void onStart()}>Start Workspace</button>
-                {run && (
-                  <button className="btn danger" disabled={busy} onClick={() => void onStop()}>Stop What I Started</button>
+                <button
+                  className="btn primary"
+                  disabled={busy || run !== null}
+                  onClick={() => void onStart(selectedProfile.id)}
+                >
+                  Start Workspace
+                </button>
+                {run?.profileId === selectedProfile.id && (
+                  <button className="btn danger" disabled={busy} onClick={() => void onStop(selectedProfile)}>
+                    Stop What I Started
+                  </button>
                 )}
               </div>
 
@@ -280,7 +467,7 @@ export default function App() {
                 </div>
               ))}
 
-              {run && (
+              {run?.profileId === selectedProfile.id && (
                 <>
                   <h3 className="subtitle">Start Workspace 결과</h3>
                   {run.steps.map((step, i) => (
@@ -297,6 +484,15 @@ export default function App() {
           )}
         </main>
       </div>
+      <ContextMenu
+        open={profileContextMenu.open}
+        anchor={profileContextMenu.anchor}
+        restoreFocusTo={profileContextMenu.restoreFocusTo}
+        items={profileContextItems}
+        onSelect={onProfileContextSelect}
+        onClose={profileContextMenu.close}
+        ariaLabel="프로필 메뉴"
+      />
     </div>
   );
 }

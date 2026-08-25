@@ -36,6 +36,17 @@ export interface WorkspaceRun {
   startedPids: number[];
 }
 
+export interface WorkspaceRunOwnership {
+  runId: string;
+  profileId: string;
+}
+
+export interface WorkbenchOpenTarget {
+  id: string;
+  displayName: string;
+  payloadKind: "path" | "workspace";
+}
+
 const MOCK_PROFILES: ProjectProfile[] = [
   { id: "p-1", name: "devbox", windowsPath: "C:\\projects\\devbox", wsl: { distro: "Ubuntu", path: "/mnt/e/projects/devbox" }, gitRoot: "C:\\projects\\devbox", expectedPorts: [1420], runManagerServiceIds: ["devbox-dev"] },
 ];
@@ -82,9 +93,38 @@ export function startWorkspace(profileId: string): Promise<WorkspaceRun> {
   return invoke<WorkspaceRun>("start_workspace", { profileId });
 }
 
-export function stopWorkspace(runId: string): Promise<number> {
+export function stopWorkspace(runId: string, profileId: string): Promise<number> {
   if (!isTauri()) return Promise.resolve(0);
-  return invoke<number>("stop_workspace", { runId });
+  return invoke<number>("stop_workspace", { runId, profileId });
+}
+
+export function currentWorkspaceRun(): Promise<WorkspaceRunOwnership | null> {
+  if (!isTauri()) return Promise.resolve(null);
+  return invoke<WorkspaceRunOwnership | null>("current_workspace_run");
+}
+
+export function profileOpenTargets(profileId: string): Promise<WorkbenchOpenTarget[]> {
+  if (!isTauri()) {
+    return Promise.resolve([
+      { id: "code-pad", displayName: "Code Pad", payloadKind: "workspace" },
+      { id: "wsl-desktop", displayName: "WSL Desktop", payloadKind: "path" },
+    ]);
+  }
+  return invoke<WorkbenchOpenTarget[]>("profile_open_targets", { profileId });
+}
+
+export function profileCopyPath(profileId: string): Promise<string> {
+  if (!isTauri()) {
+    const profile = MOCK_PROFILES.find((candidate) => candidate.id === profileId);
+    const path = profile?.windowsPath ?? profile?.wsl?.path;
+    return path ? Promise.resolve(path) : Promise.reject(new Error("프로필 경로가 없습니다"));
+  }
+  return invoke<string>("profile_copy_path", { profileId });
+}
+
+export function openProfileIn(profileId: string, appId: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("open_profile_in", { profileId, appId });
 }
 
 // ── applink — inbound cross-app open requests ───────────────────────

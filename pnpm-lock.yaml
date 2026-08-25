@@ -538,6 +538,9 @@ importers:
 
   apps/workbench:
     dependencies:
+      '@devbox/context-menu':
+        specifier: workspace:*
+        version: link:../../packages/context-menu
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1

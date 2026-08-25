@@ -21,11 +21,15 @@ vi.mock("./api", () => ({
     },
   ]),
   createProfile: vi.fn(),
+  currentWorkspaceRun: vi.fn().mockResolvedValue(null),
   deleteProfile: vi.fn(),
   updateProfile: vi.fn(),
   projectHealth: vi.fn().mockResolvedValue({ profileId: "p-1", items: [] }),
   startWorkspace: vi.fn(),
   stopWorkspace: vi.fn(),
+  profileOpenTargets: vi.fn().mockResolvedValue([]),
+  profileCopyPath: vi.fn(),
+  openProfileIn: vi.fn(),
   takePendingOpen: vi.fn().mockImplementation(async () => {
     mocks.order.push("take");
     return null;

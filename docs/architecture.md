@@ -174,6 +174,22 @@ data는 이 경계 밖에 있어 보존된다. registry를 먼저 원자 갱신�
 복원한다. installer lifecycle과 custom install root 이동·제거는 실제 소유 manifest가 추가되는 P2
 기능 전까지 경로를 추측하지 않는다.
 
+Workbench의 profile-row context menu는 열기 전에 opaque profile ID로 대상 행을 선택한다. 현재 UI가
+추적 중인 workspace run은 profile ID와 함께 유지하고 frontend reload 때 run/profile ID ownership만
+복원한다. 기존 step detail, PID, 경로는 restore DTO에 포함하지 않는다. 다른
+profile의 start와 active/starting profile 삭제를 fail-closed로 막는다. 단일 transition claim은
+concurrent start와 start/delete race를 차단한다. Stop What I Started는 run ID와 profile ID를 함께 backend에 보내고 저장된 run
+소유권이 일치할 때만 Workbench가 기록한 PID를 정리한다. stop과 profile delete는 메뉴와 기존 inline
+button 양쪽에서 같은 명시적 확인을 거친다. profile delete는 저장 정의만 지우고 프로젝트 파일이나
+기존 외부 resource를 삭제하지 않는다.
+
+Workbench의 “다른 앱으로 열기” submenu는 `crates/launch::installed_targets`의 `path`/`workspace`
+capability 교집합에서 생성하며 executable과 profile path를 frontend에 보내지 않는다. 사용자가 target을
+선택하면 backend가 현재 `project-profiles.json`을 다시 읽고 bounded absolute Windows/UNC/POSIX 경로를
+검증한다. workspace payload는 Windows project path가 있을 때만 노출하고, 동일 target이 path와
+workspace를 모두 받으면 workspace를 우선한다. 경로 복사는 사용자가 항목을 누른 순간에만 같은 검증을
+통과한 현재 path를 frontend로 반환해 system clipboard에 기록한다.
+
 ### CSP 기준선
 
 13개 앱 전부 다음 최소 기준선을 쓴다 (PR 17 + 신규 앱 반영).

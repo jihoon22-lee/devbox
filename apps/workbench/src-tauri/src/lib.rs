@@ -72,6 +72,10 @@ pub fn run() {
             commands::workspace::project_health,
             commands::workspace::start_workspace,
             commands::workspace::stop_workspace,
+            commands::workspace::current_workspace_run,
+            commands::profile_actions::profile_open_targets,
+            commands::profile_actions::profile_copy_path,
+            commands::profile_actions::open_profile_in,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
