@@ -208,9 +208,10 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 
 2026-08-26 현재 7번은 #262, 8번은 #263으로 CI 통과·머지됐다. stable pane key 기반 last
 layout/app-local profile, cold/hot profile open, native action palette와 명시적 target broadcast
-safety가 들어갔고 tmux/zellij 부재 시에도 native workspace가 완전하게 동작한다. 9번은 첫
-독립 기능 #264 Developer Toolbox JSON↔YAML을 구현·검증 중이다. 외부 converter 없이 strict
-JSON/YAML 1.2 parse 위치, comment/anchor 손실 고지, alias/byte 안전 상한, copy/save를 제공한다.
+safety가 들어갔고 tmux/zellij 부재 시에도 native workspace가 완전하게 동작한다. 9번의 첫
+독립 기능 #264 Developer Toolbox JSON↔YAML도 PR #396으로 CI 통과·머지됐다. 다음 #265는
+UTF-8 text와 Hex/Base64/Base64URL raw byte 표현을 명확히 나누고 invalid 문자·byte 위치,
+canonical padding, byte 상한, copy/save를 구현·검증 중이다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

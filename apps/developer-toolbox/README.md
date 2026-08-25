@@ -8,7 +8,7 @@
 | 그룹 | 도구 | 구현 |
 |---|---|---|
 | JSON | Formatter / Minifier / Validator, JSON ↔ YAML 1.2 | TS (`jsonc-parser`·`yaml`) |
-| Encoding | Base64 / URL Encode·Decode | TS |
+| Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, URL Encode·Decode | TS |
 | Time | Unix Timestamp ↔ Date | TS |
 | Text | Case Converter, Diff | Diff는 Rust(`similar`) |
 | Security | Hash(MD5/SHA-256/SHA-512), UUID v4 | Rust(`md-5`·`sha2`·`uuid`) |
@@ -27,6 +27,14 @@
 - YAML → JSON은 주석을 제거하고 anchor/alias를 값으로 확장한다. 변환 화면에 이 손실과
   anchor 이름·공유 관계가 보존되지 않는다는 안내를 항상 표시하며, 결과를 복사하거나
   `.json`/`.yaml` 파일로 저장할 수 있다.
+- byte codec은 입력·출력 표현을 UTF-8 text, Hex raw bytes, Base64, unpadded Base64URL에서
+  각각 선택한다. 내부에서는 최대 1,000,000 raw byte를 `Uint8Array`로 보존하고 입력 표현은
+  최대 2,100,000자로 제한한다. Hex와 Base64 계열의 ASCII 공백은 paste 편의를 위해 무시한다.
+- invalid Hex/Base64 character·padding·pad bit는 원문 문자 위치를, overlong·truncated·surrogate·
+  범위 초과 UTF-8은 raw byte 위치를 표시한다. 잘못된 UTF-8을 대체 문자로 바꾸지 않으며
+  Base64URL은 RFC 4648의 `-`/`_` alphabet으로 구분해 padding 없이 출력한다.
+- Base64는 암호화나 secret 보호 수단이 아니다. codec 입력·결과는 자동 저장·전송하지 않고,
+  사용자가 명시적으로 누른 복사·text 파일 저장 action만 수행한다.
 - 입력 우클릭 메뉴에서 명시적 Paste·전체 선택·비우기, 출력 메뉴에서 복사·전체 선택·텍스트
   파일 저장 지원. Clipboard read는 Paste를 누른 순간에만 수행하며 저장·로그하지 않음
 

@@ -1,12 +1,11 @@
 import type { ComponentType } from "react";
+import { ByteCodecTool } from "./ByteCodecTool";
 import { TransformerTool } from "./common";
 import { DiffTool } from "./diff";
 import { RegexTool } from "./regex";
 import { HashTool, UuidTool } from "./security";
 import { JsonYamlTool } from "./JsonYamlTool";
 import {
-  base64Decode,
-  base64Encode,
   CaseConverter,
   jsonFormatter,
   jsonMinifier,
@@ -30,8 +29,7 @@ const jsonTools: ToolDef[] = [
 ];
 
 const encodingTools: ToolDef[] = [
-  { id: "b64-encode", group: "Encoding", name: "Base64 Encode", component: () => <TransformerTool placeholder="Text to encode..." run={base64Encode()} /> },
-  { id: "b64-decode", group: "Encoding", name: "Base64 Decode", component: () => <TransformerTool placeholder="Base64 to decode..." run={base64Decode()} /> },
+  { id: "byte-codec", group: "Encoding", name: "UTF-8 / Base64 / Hex", component: ByteCodecTool },
   { id: "url-encode", group: "Encoding", name: "URL Encode", component: UrlEncoder },
   { id: "url-decode", group: "Encoding", name: "URL Decode", component: UrlDecoder },
 ];

@@ -1,4 +1,5 @@
 import { TransformerTool } from "./common";
+import { convertByteEncoding } from "./byteCodec";
 
 // 반환 타입을 명시해 ok/fail 두 분기가 항상 같은 모양({ output, error? })을 갖게 한다.
 // (동작 변화 없음 — ok()가 error를 안 채우는 건 원래와 동일하고, 타입에서만 optional로 통일한다.)
@@ -24,19 +25,13 @@ export function formatJson(input: string, mode: "format" | "minify") {
 }
 
 export function toBase64(input: string) {
-  try {
-    return ok(btoa(unescape(encodeURIComponent(input))));
-  } catch (e) {
-    return fail(e);
-  }
+  const result = convertByteEncoding(input, "utf8", "base64");
+  return result.error ? fail(new Error(result.error.message)) : ok(result.output);
 }
 
 export function fromBase64(input: string) {
-  try {
-    return ok(decodeURIComponent(escape(atob(input.trim()))));
-  } catch (e) {
-    return fail(e);
-  }
+  const result = convertByteEncoding(input, "base64", "utf8");
+  return result.error ? fail(new Error(result.error.message)) : ok(result.output);
 }
 
 export function decodeJwt(input: string) {
