@@ -55,14 +55,43 @@ export function clearHistory(): Promise<void> {
   return invoke<void>("clear_history");
 }
 
+function mockHistoryRecord(id: number): RequestRecord {
+  const record = MOCK_HISTORY.find((candidate) => candidate.id === id);
+  if (!record) throw new Error("요청 기록을 찾을 수 없습니다");
+  return record;
+}
+
+export function copyMaskedHistory(id: number): Promise<string> {
+  if (!isTauri()) return Promise.resolve(JSON.stringify(mockHistoryRecord(id), null, 2));
+  return invoke<string>("copy_masked_history", { id });
+}
+
+export function copyRawHistory(id: number): Promise<string> {
+  if (!isTauri()) return Promise.reject(new Error("원본 요청 복사는 데스크톱 앱에서만 사용할 수 있습니다"));
+  return invoke<string>("copy_raw_history", { id });
+}
+
+export function copyHistoryHeaders(id: number): Promise<string> {
+  if (!isTauri()) {
+    const headers = mockHistoryRecord(id).headers;
+    return Promise.resolve(headers.map(([name, value]) => `${name}: ${value}`).join("\n"));
+  }
+  return invoke<string>("copy_history_headers", { id });
+}
+
+export function deleteHistory(id: number): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("delete_history", { id });
+}
+
 export function listRules(): Promise<ResponseRule[]> {
   if (!isTauri()) return Promise.resolve([]);
   return invoke<ResponseRule[]>("list_rules");
 }
 
-export function setRule(rule: ResponseRule): Promise<void> {
-  if (!isTauri()) return Promise.resolve();
-  return invoke<void>("set_rule", { rule });
+export function setRule(rule: ResponseRule): Promise<string> {
+  if (!isTauri()) return Promise.resolve(rule.id || "mock-rule");
+  return invoke<string>("set_rule", { rule });
 }
 
 export function deleteRule(id: string): Promise<void> {

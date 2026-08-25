@@ -170,6 +170,19 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.rule-row.selected,
+.request-row.selected {
+  background: rgba(79, 140, 255, 0.1);
+  outline: 1px solid rgba(79, 140, 255, 0.45);
+  outline-offset: -1px;
+}
+
+.rule-row:focus-visible,
+.request-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .mono {
   font-family: "Cascadia Code", Consolas, monospace;
 }

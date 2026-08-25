@@ -1,7 +1,7 @@
 //! Webhook Lab command — 서버 시작/중지, history, rule 관리.
 
 use crate::core::history::History;
-use crate::core::rules::{matches, ResponseRule};
+use crate::core::rules::{matches, upsert, ResponseRule};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -139,13 +139,62 @@ pub fn list_history(
     state: tauri::State<'_, Arc<ServerState>>,
 ) -> Vec<crate::core::history::RequestRecord> {
     let h = state.history.lock().unwrap();
-    h.records.iter().rev().cloned().collect()
+    h.list_masked()
 }
 
 #[tauri::command]
 pub fn clear_history(state: tauri::State<'_, Arc<ServerState>>) -> Result<(), String> {
-    *state.history.lock().unwrap() = History::default();
+    state.history.lock().unwrap().clear();
     Ok(())
+}
+
+#[tauri::command]
+pub fn copy_masked_history(
+    state: tauri::State<'_, Arc<ServerState>>,
+    id: u64,
+) -> Result<String, String> {
+    state
+        .history
+        .lock()
+        .unwrap()
+        .masked_copy(id)
+        .ok_or_else(history_not_found)
+}
+
+/// 사용자가 확인한 일회성 원본 복사에서만 호출한다. 반환값을 저장하거나 로그에 남기지 않는다.
+#[tauri::command]
+pub fn copy_raw_history(
+    state: tauri::State<'_, Arc<ServerState>>,
+    id: u64,
+) -> Result<String, String> {
+    state
+        .history
+        .lock()
+        .unwrap()
+        .raw_copy(id)
+        .ok_or_else(history_not_found)
+}
+
+#[tauri::command]
+pub fn copy_history_headers(
+    state: tauri::State<'_, Arc<ServerState>>,
+    id: u64,
+) -> Result<String, String> {
+    state
+        .history
+        .lock()
+        .unwrap()
+        .masked_headers_copy(id)
+        .ok_or_else(history_not_found)
+}
+
+#[tauri::command]
+pub fn delete_history(state: tauri::State<'_, Arc<ServerState>>, id: u64) -> Result<(), String> {
+    if state.history.lock().unwrap().remove(id) {
+        Ok(())
+    } else {
+        Err(history_not_found())
+    }
 }
 
 #[tauri::command]
@@ -159,20 +208,21 @@ pub fn list_rules(state: tauri::State<'_, Arc<ServerState>>) -> Vec<ResponseRule
 pub fn set_rule(
     state: tauri::State<'_, Arc<ServerState>>,
     rule: ResponseRule,
-) -> Result<(), String> {
-    let id = if rule.id.is_empty() {
-        uuid::Uuid::new_v4().to_string()
-    } else {
-        rule.id.clone()
-    };
-    state.rules.lock().unwrap().insert(id, rule);
-    Ok(())
+) -> Result<String, String> {
+    Ok(upsert(&mut state.rules.lock().unwrap(), rule))
 }
 
 #[tauri::command]
 pub fn delete_rule(state: tauri::State<'_, Arc<ServerState>>, id: String) -> Result<(), String> {
-    state.rules.lock().unwrap().remove(&id);
-    Ok(())
+    if state.rules.lock().unwrap().remove(&id).is_some() {
+        Ok(())
+    } else {
+        Err("규칙을 찾을 수 없습니다".to_string())
+    }
+}
+
+fn history_not_found() -> String {
+    "요청 기록을 찾을 수 없습니다".to_string()
 }
 
 fn now_ms() -> i64 {
