@@ -160,6 +160,20 @@ cursor가 전진하지 않거나 보존 범위가 이동하거나 상한 뒤 데
 download 파일명은 64자 이하의 sanitized opaque run ID와 stream만 포함해 command, cwd, 환경변수,
 원래 log path가 이름이나 오류에 노출되지 않는다.
 
+Devbox Manager의 app-row context menu도 메뉴를 열기 전에 catalog app ID로 대상 행을 선택하고,
+설치/업데이트의 portable·setup 선택을 submenu로 보존한다. 실행·rollback·설치 폴더 열기·제거는
+portable registry snapshot에서만 활성화하며 installer 상태나 확인되지 않은 상태에서는 fail-closed다.
+제거는 danger 표시와 명시적 확인을 거친다. frontend의 installed/current DTO에는 registry의
+`exe_path`를 포함하지 않고 action은 app ID만 backend에 전달한다.
+
+Manager backend는 action마다 manager-visible/non-self-managed catalog target, bounded version component,
+`<manager-root>/apps/<app-id>/versions/<version>/<app-id>.exe` 고정 layout과 registry executable의 canonical
+identity를 다시 확인한다. portable 제거 전에는 app-owned tree 전체를 제한된 깊이·항목 수로 순회해
+symlink, Windows reparse point, 특수 파일을 거부한 뒤 해당 app tree만 삭제한다. 별도 app-local user
+data는 이 경계 밖에 있어 보존된다. registry를 먼저 원자 갱신하고 제거가 실패하면 원래 registry를
+복원한다. installer lifecycle과 custom install root 이동·제거는 실제 소유 manifest가 추가되는 P2
+기능 전까지 경로를 추측하지 않는다.
+
 ### CSP 기준선
 
 13개 앱 전부 다음 최소 기준선을 쓴다 (PR 17 + 신규 앱 반영).
