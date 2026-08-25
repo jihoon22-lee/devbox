@@ -5,11 +5,13 @@ import {
   COLLECTION_V1_LS_KEY,
   COLLECTION_V1_MARKER_KEY,
   COLLECTION_V2_LS_KEY,
+  duplicateEntry,
   emptyStore,
   foldersOf,
   migrateCollections,
   parseStore,
   removeEntry,
+  renameEntry,
   saveStore,
 } from "./collections";
 import { REDACTED, type PersistenceSanitizer } from "./persistence";
@@ -151,6 +153,30 @@ describe("collections v2 store", () => {
 
     expect(foldersOf(store)).toEqual(["dev", "prod"]);
     expect(removeEntry(store, "c-1").collections.map((entry) => entry.id)).toEqual(["c-3", "c-2"]);
+  });
+
+  it("복제와 이름 변경은 exact entry의 마스킹 request만 사용한다", () => {
+    const secret = "direct-collection-secret";
+    const source = addEntry(
+      emptyStore(),
+      {
+        name: "원본",
+        folder: "dev",
+        request: request({ headers: [{ key: "Authorization", value: secret }] }),
+      },
+      1,
+      () => "c-1",
+    );
+
+    const duplicated = duplicateEntry(source, "c-1", 2, () => "c-copy");
+    expect(duplicated.collections[0]).toMatchObject({ id: "c-copy", name: "원본 복사본", saved_at: 2 });
+    expect(duplicated.collections[0].request).not.toBe(source.collections[0].request);
+    expect(JSON.stringify(duplicated)).not.toContain(secret);
+    expect(duplicated.collections[0].request.headers[0].value).toBe(REDACTED);
+
+    const renamed = renameEntry(duplicated, "c-copy", "  새\n이름  ");
+    expect(renamed.collections[0].name).toBe("새 이름");
+    expect(renamed.collections[1].name).toBe("원본");
   });
 });
 

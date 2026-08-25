@@ -1,6 +1,27 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  ContextMenu,
+  useContextMenu,
+  type ContextMenuEntry,
+} from "@devbox/context-menu";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildRevealedCurl, sanitizePersistedJson, sealSecret, sendRequest } from "./api";
-import { addEntry, emptyStore as emptyCollectionStore, foldersOf, migrateCollections, removeEntry, saveStore } from "./lib/collections";
+import {
+  addEntry,
+  duplicateEntry,
+  emptyStore as emptyCollectionStore,
+  foldersOf,
+  migrateCollections,
+  removeEntry,
+  renameEntry,
+  saveStore,
+  type CollectionEntry,
+} from "./lib/collections";
+import {
+  buildRequestItemContextMenu,
+  duplicateHistoryItem,
+  removeHistoryItem,
+  renameHistoryItem,
+} from "./lib/contextMenu";
 import {
   addEnvironment,
   loadStore as loadEnvStore,
@@ -102,6 +123,33 @@ export default function App() {
   const [migrationNotice, setMigrationNotice] = useState<string | null>(null);
   const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null);
   const [persistenceReady, setPersistenceReady] = useState(false);
+  const [contextActionBusy, setContextActionBusy] = useState(false);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [contextHistory, setContextHistory] = useState<HistoryItem | null>(null);
+  const [contextCollection, setContextCollection] = useState<CollectionEntry | null>(null);
+
+  const prepareHistoryContext = useCallback((target: HTMLElement) => {
+    const id = target.dataset.historyId;
+    const item = history.find((candidate) => candidate.id === id);
+    if (!item) return;
+    setSelectedHistoryId(item.id);
+    setContextHistory(item);
+  }, [history]);
+  const historyContextMenu = useContextMenu({
+    onBeforeOpen: (_reason, target) => prepareHistoryContext(target),
+  });
+
+  const prepareCollectionContext = useCallback((target: HTMLElement) => {
+    const id = target.dataset.collectionId;
+    const item = collections.collections.find((candidate) => candidate.id === id);
+    if (!item) return;
+    setSelectedCollectionId(item.id);
+    setContextCollection(item);
+  }, [collections.collections]);
+  const collectionContextMenu = useContextMenu({
+    onBeforeOpen: (_reason, target) => prepareCollectionContext(target),
+  });
 
   const currentEnv = envStore.environments.find((e) => e.id === currentEnvId) ?? null;
 
@@ -124,6 +172,12 @@ export default function App() {
   const persistCollections = async (store: ReturnType<typeof emptyCollectionStore>) => {
     const safe = await saveStore(store, sanitizeForPersistence);
     setCollections(safe);
+    return safe;
+  };
+
+  const persistHistory = async (store: HistoryStore) => {
+    const safe = await saveHistoryStore(store, sanitizeForPersistence);
+    setHistory(safe.history);
     return safe;
   };
 
@@ -186,6 +240,30 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const id = contextHistory?.id;
+    if (!id) return;
+    const current = history.find((item) => item.id === id) ?? null;
+    if (current) setContextHistory(current);
+    else {
+      historyContextMenu.close();
+      setContextHistory(null);
+      setSelectedHistoryId((selected) => selected === id ? null : selected);
+    }
+  }, [contextHistory?.id, history, historyContextMenu.close]);
+
+  useEffect(() => {
+    const id = contextCollection?.id;
+    if (!id) return;
+    const current = collections.collections.find((item) => item.id === id) ?? null;
+    if (current) setContextCollection(current);
+    else {
+      collectionContextMenu.close();
+      setContextCollection(null);
+      setSelectedCollectionId((selected) => selected === id ? null : selected);
+    }
+  }, [collectionContextMenu.close, collections.collections, contextCollection?.id]);
+
   const persistHistoryRequest = useCallback(async (status?: number) => {
     const item: HistoryItem = {
       id: String(Date.now()),
@@ -241,6 +319,116 @@ export default function App() {
     });
 
   const responseText = resp?.is_json && pretty ? tryPretty(resp.body) : resp?.body ?? "";
+  const contextItems = useMemo<readonly ContextMenuEntry[]>(
+    () => buildRequestItemContextMenu(
+      contextActionBusy || collSaving || sending || !persistenceReady,
+    ),
+    [collSaving, contextActionBusy, persistenceReady, sending],
+  );
+
+  const runContextAction = async (action: () => Promise<void>, failureMessage: string) => {
+    setContextActionBusy(true);
+    setPersistenceWarning(null);
+    try {
+      await action();
+    } catch {
+      setPersistenceWarning(failureMessage);
+    } finally {
+      setContextActionBusy(false);
+    }
+  };
+
+  const copyMaskedCurl = (request: HistoryItem["request"]) => {
+    void runContextAction(async () => {
+      await navigator.clipboard.writeText(buildCurl(toRequestTemplate(request)));
+    }, "마스킹된 cURL을 복사하지 못했습니다.");
+  };
+
+  const duplicateHistory = (item: HistoryItem) => {
+    void runContextAction(async () => {
+      const next = duplicateHistoryItem(
+        { ...emptyHistoryStore(), history },
+        item.id,
+        Date.now(),
+        () => `h-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+      );
+      const safe = await persistHistory(next);
+      setSelectedHistoryId(safe.history[0]?.id ?? null);
+    }, "History 복제 상태를 안전하게 저장하지 못했습니다.");
+  };
+
+  const renameHistory = (item: HistoryItem) => {
+    const name = window.prompt("History 이름 변경", item.name ?? item.request.url);
+    if (name === null) return;
+    if (!name.trim()) {
+      setPersistenceWarning("History 이름은 비워둘 수 없습니다.");
+      return;
+    }
+    void runContextAction(async () => {
+      await persistHistory(renameHistoryItem(
+        { ...emptyHistoryStore(), history },
+        item.id,
+        name,
+      ));
+    }, "History 이름을 안전하게 저장하지 못했습니다.");
+  };
+
+  const deleteHistory = (item: HistoryItem) => {
+    const label = (item.name ?? item.request.url) || "(no url)";
+    if (!window.confirm(`'${label}' History를 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+    void runContextAction(async () => {
+      await persistHistory(removeHistoryItem({ ...emptyHistoryStore(), history }, item.id));
+    }, "History 삭제 상태를 안전하게 저장하지 못했습니다.");
+  };
+
+  const duplicateCollection = (item: CollectionEntry) => {
+    void runContextAction(async () => {
+      const safe = await persistCollections(duplicateEntry(
+        collections,
+        item.id,
+        Date.now(),
+        () => `c-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+      ));
+      setSelectedCollectionId(safe.collections[0]?.id ?? null);
+    }, "Collection 복제 상태를 안전하게 저장하지 못했습니다.");
+  };
+
+  const renameCollection = (item: CollectionEntry) => {
+    const name = window.prompt("Collection 이름 변경", item.name);
+    if (name === null) return;
+    if (!name.trim()) {
+      setPersistenceWarning("Collection 이름은 비워둘 수 없습니다.");
+      return;
+    }
+    void runContextAction(async () => {
+      await persistCollections(renameEntry(collections, item.id, name));
+    }, "Collection 이름을 안전하게 저장하지 못했습니다.");
+  };
+
+  const deleteCollection = (item: CollectionEntry) => {
+    if (!window.confirm(`'${item.name}' Collection을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+    void runContextAction(async () => {
+      await persistCollections(removeEntry(collections, item.id));
+    }, "Collection 삭제 상태를 안전하게 저장하지 못했습니다.");
+  };
+
+  const onHistoryContextSelect = (id: string) => {
+    const item = contextHistory;
+    if (!item) return;
+    if (id === "duplicate") duplicateHistory(item);
+    else if (id === "rename") renameHistory(item);
+    else if (id === "delete") deleteHistory(item);
+    else if (id === "copy-curl") copyMaskedCurl(item.request);
+  };
+
+  const onCollectionContextSelect = (id: string) => {
+    const item = contextCollection;
+    if (!item) return;
+    if (id === "duplicate") duplicateCollection(item);
+    else if (id === "rename") renameCollection(item);
+    else if (id === "delete") deleteCollection(item);
+    else if (id === "copy-curl") copyMaskedCurl(item.request);
+  };
 
   return (
     <div className="app">
@@ -250,18 +438,23 @@ export default function App() {
         {history.map((h) => (
           <button
             key={h.id}
-            className="history-item"
+            className={`history-item ${selectedHistoryId === h.id ? "selected" : ""}`}
+            aria-current={selectedHistoryId === h.id ? "true" : undefined}
+            aria-label={`History 항목: ${(h.name ?? h.request.url) || "(no url)"}`}
+            data-history-id={h.id}
             onClick={() => {
+              setSelectedHistoryId(h.id);
               setReq(toRequestTemplate(h.request));
               if (h.request.requiresSecretReview) {
                 setPersistenceWarning("마스킹된 History입니다. 민감한 값을 환경 변수 참조로 다시 설정하세요.");
               }
               setResp(null);
             }}
+            {...historyContextMenu.triggerProps}
           >
             <span className={`method ${h.request.method.toLowerCase()}`}>{h.request.method}</span>
-            <span className="history-url" title={h.request.url}>
-              {h.request.url || "(no url)"}
+            <span className="history-url" title={h.name ?? h.request.url}>
+              {(h.name ?? h.request.url) || "(no url)"}
             </span>
           </button>
         ))}
@@ -281,7 +474,7 @@ export default function App() {
             value={collFolder}
             onChange={(e) => setCollFolder(e.currentTarget.value)}
           />
-          <button className="btn" disabled={!persistenceReady || collSaving || !req.url.trim()} onClick={() => void onSaveCollection()}>
+          <button className="btn" disabled={!persistenceReady || collSaving || contextActionBusy || !req.url.trim()} onClick={() => void onSaveCollection()}>
             Save
           </button>
         </div>
@@ -302,10 +495,21 @@ export default function App() {
         {collections.collections
           .filter((c) => !collFilter || c.folder === collFilter)
           .map((c) => (
-            <div key={c.id} className="history-item coll-item" title={`${c.folder ? `[${c.folder}] ` : ""}${c.name}`}>
+            <div
+              key={c.id}
+              className={`history-item coll-item ${selectedCollectionId === c.id ? "selected" : ""}`}
+              title={`${c.folder ? `[${c.folder}] ` : ""}${c.name}`}
+              tabIndex={0}
+              aria-current={selectedCollectionId === c.id ? "true" : undefined}
+              aria-label={`Collection 항목: ${c.name}`}
+              data-collection-id={c.id}
+              onClick={() => setSelectedCollectionId(c.id)}
+              {...collectionContextMenu.triggerProps}
+            >
               <button
                 className="coll-open"
                 onClick={() => {
+                  setSelectedCollectionId(c.id);
                   setReq(toRequestTemplate(c.request));
                   if (c.requiresSecretReview) {
                     setPersistenceWarning("안전 변환된 Collection입니다. 마스킹된 값을 환경 변수 참조로 다시 설정하세요.");
@@ -316,11 +520,12 @@ export default function App() {
                 <span className={`method ${c.request.method.toLowerCase()}`}>{c.request.method}</span>
                 <span className="history-url">{c.folder ? `[${c.folder}] ` : ""}{c.name}</span>
               </button>
-              <button className="coll-del" onClick={() => {
-                void persistCollections(removeEntry(collections, c.id)).catch(() =>
-                  setPersistenceWarning("Collection 삭제 상태를 안전하게 저장하지 못했습니다."),
-                );
-              }}>
+              <button
+                className="coll-del"
+                aria-label={`${c.name} Collection 삭제`}
+                disabled={contextActionBusy || collSaving || sending || !persistenceReady}
+                onClick={() => deleteCollection(c)}
+              >
                 ✕
               </button>
             </div>
@@ -427,7 +632,7 @@ export default function App() {
             onChange={(e) => setReq({ ...req, url: e.currentTarget.value })}
             spellCheck={false}
           />
-          <button className="btn send" onClick={() => void onSend()} disabled={!persistenceReady || sending || !req.url}>
+          <button className="btn send" onClick={() => void onSend()} disabled={!persistenceReady || sending || contextActionBusy || !req.url}>
             {!persistenceReady ? "Checking..." : sending ? "Sending..." : "Send"}
           </button>
           <button className={`btn ${showCurl ? "active" : ""}`} onClick={() => setShowCurl((v) => !v)} disabled={!req.url}>
@@ -553,6 +758,24 @@ export default function App() {
           <pre className="resp-body">{responseText || " "}</pre>
         </div>
       </main>
+      <ContextMenu
+        open={historyContextMenu.open}
+        anchor={historyContextMenu.anchor}
+        restoreFocusTo={historyContextMenu.restoreFocusTo}
+        items={contextItems}
+        onSelect={onHistoryContextSelect}
+        onClose={historyContextMenu.close}
+        ariaLabel="History 메뉴"
+      />
+      <ContextMenu
+        open={collectionContextMenu.open}
+        anchor={collectionContextMenu.anchor}
+        restoreFocusTo={collectionContextMenu.restoreFocusTo}
+        items={contextItems}
+        onSelect={onCollectionContextSelect}
+        onClose={collectionContextMenu.close}
+        ariaLabel="Collection 메뉴"
+      />
     </div>
   );
 }

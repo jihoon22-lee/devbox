@@ -10,6 +10,7 @@ import {
   REDACTED,
   sanitizeRequestForPersistence,
   saveHistoryStore,
+  type HistoryStore,
 } from "./persistence";
 
 class RecordingStorage implements Storage {
@@ -78,7 +79,7 @@ function legacyHistory(rawRequest: RequestTemplate): string {
   ]);
 }
 
-function validHistoryStore() {
+function validHistoryStore(): HistoryStore {
   return {
     ...emptyHistoryStore(),
     history: [
@@ -97,6 +98,19 @@ beforeEach(() => {
 });
 
 describe("History v1 fail-closed migration", () => {
+  it("선택적 표시 이름이 있는 v2와 기존 이름 없는 v2를 모두 읽는다", () => {
+    const named = validHistoryStore();
+    named.history[0].name = "내 요청";
+    const legacyV2 = validHistoryStore();
+
+    expect(parseHistoryStore(JSON.stringify(named))?.history[0].name).toBe("내 요청");
+    expect(parseHistoryStore(JSON.stringify(legacyV2))?.history[0].name).toBeUndefined();
+    expect(parseHistoryStore(JSON.stringify({
+      ...named,
+      history: [{ ...named.history[0], name: 123 }],
+    }))).toEqual({ version: 2, history: [] });
+  });
+
   it("v2를 선기록한 뒤 v1을 삭제하고 marker를 기록하며 raw backup을 만들지 않는다", () => {
     const storage = new RecordingStorage();
     storage.setItem(HISTORY_V1_LS_KEY, legacyHistory(request()));

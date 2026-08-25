@@ -37,8 +37,9 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   fallback·capability filter. runtime file I/O는 후속 Manager 기능이 담당한다.
 - 신규 `crates/logs` — Log Lens가 두 번째 소비자가 되는 시점의 순수 log parsing
 - 구현된 `packages/context-menu` — 위치·keyboard navigation·focus restore·submenu·separator·
-  disabled/danger 표현만 소유한다. Port Manager, Developer Toolbox, Everything+, Knowledge, Code Pad에
-  이어 Run Manager의 job/service/history 행에도 기능 단위로 적용됐고 나머지 기존 앱은 후속 PR이 담당한다.
+  disabled/danger 표현만 소유한다. Port Manager, Developer Toolbox, Everything+, Knowledge, Code Pad,
+  Run Manager, Devbox Manager, Workbench, Webhook Lab, Repo Manager, API Playground에 기능 단위로
+  적용됐고 WSL Desktop과 Life Log는 후속 PR이 담당한다.
 - 신규 `crates/window-state`
 - `crates/applink` protocol v2 one-time handoff
 
@@ -75,7 +76,8 @@ everything-plus:  indexer/watcher → filesystem crate → search crate(FTS5) �
 knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror + context-menu)
                    ├ canonical tree entry → opener 또는 catalog/launch crate → 설치된 대상 앱
                    └ path/body-free activity/v1 snapshot → Life Log Data Sources
-api-playground:   React → commands → reqwest → HTTP
+api-playground:   React(context-menu + History/Collection v2) → commands(secrets sanitizer)
+                   → reqwest → HTTP
 code-pad:         React(CodeMirror + tab/editor context-menu) → commands → LSP stdio 서버,
                    snapshot-checked sibling rename/delete, filesystem/markdown crate → React
 run-manager:      React(context-menu + bounded log export) → commands → scheduler
@@ -91,6 +93,13 @@ workbench:        React → commands → ProjectProfile/read-only health + 다�
 webhook-lab:      inbound HTTP → core/server → history·rule·fixture → React
 repo-manager:     React → commands → git crate(wsl) → repository/worktree 탐색·생성
 ```
+
+API Playground의 History·Collection context menu는 v2에 저장되고 backend sanitizer read-back을
+통과한 `PersistedHistoryRequest`만 복제·이름 변경·삭제·마스킹 cURL 복사의 입력으로 사용한다.
+History의 선택적 표시 이름은 기존 v2 wire shape에 하위 호환되며 이름까지 sanitizer가 검사한다.
+context action은 현재 editor의 raw request나 unsealed environment secret을 읽지 않는다. 삭제는
+확인 전 storage를 변경하지 않고, 복제는 마스킹 request를 깊은 복사한 뒤 전체 store를 다시
+sanitize/read-back 한다. Collection import/export와 앱 간 protocol은 각 후속 기능 경계에 남긴다.
 
 ## 앱 간 데이터 교환
 

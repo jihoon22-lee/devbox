@@ -109,6 +109,36 @@ export function removeEntry(store: CollectionStore, id: string): CollectionStore
   return { ...store, collections: store.collections.filter((entry) => entry.id !== id) };
 }
 
+/** 저장된 마스킹 request를 다시 원본 template로 만들지 않고 그대로 복제한다. */
+export function duplicateEntry(
+  store: CollectionStore,
+  id: string,
+  now: number,
+  makeId: () => string,
+): CollectionStore {
+  const source = store.collections.find((entry) => entry.id === id);
+  if (!source) return store;
+  const duplicate: CollectionEntry = {
+    ...source,
+    id: makeId(),
+    name: copyName(source.name),
+    saved_at: now,
+    request: clonePersistedRequest(source.request),
+  };
+  return { ...store, collections: [duplicate, ...store.collections] };
+}
+
+export function renameEntry(store: CollectionStore, id: string, name: string): CollectionStore {
+  const normalized = normalizeName(name);
+  if (!normalized) return store;
+  return {
+    ...store,
+    collections: store.collections.map((entry) =>
+      entry.id === id ? { ...entry, name: normalized } : entry
+    ),
+  };
+}
+
 export function foldersOf(store: CollectionStore): string[] {
   const folders = new Set(store.collections.map((entry) => entry.folder).filter(Boolean));
   return [...folders].sort();
@@ -201,4 +231,22 @@ function isRequestTemplate(value: unknown): value is RequestTemplate {
 
 function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
   return isRequestTemplate(value) && typeof (value as Partial<PersistedHistoryRequest>).requiresSecretReview === "boolean";
+}
+
+function copyName(name: string): string {
+  const suffix = " 복사본";
+  return `${name.slice(0, 120 - suffix.length)}${suffix}`;
+}
+
+function normalizeName(name: string): string {
+  return name.replace(/[\r\n]+/g, " ").trim().slice(0, 120);
+}
+
+function clonePersistedRequest(request: PersistedHistoryRequest): PersistedHistoryRequest {
+  return {
+    ...request,
+    headers: request.headers.map((header) => ({ ...header })),
+    params: request.params.map((param) => ({ ...param })),
+    auth: request.auth ? { ...request.auth } : null,
+  };
 }
