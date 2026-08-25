@@ -160,6 +160,15 @@ cursor가 전진하지 않거나 보존 범위가 이동하거나 상한 뒤 데
 download 파일명은 64자 이하의 sanitized opaque run ID와 stream만 포함해 command, cwd, 환경변수,
 원래 log path가 이름이나 오류에 노출되지 않는다.
 
+Webhook Lab의 history/rule context menu도 열기 전에 대상의 opaque ID를 선택한다. 일반 history
+DTO, 마스킹 복사, 헤더 복사는 Authorization·Cookie·API key 값을 마스킹하며, 원본 헤더를 가진
+내부 entry는 Serialize/Debug를 구현하지 않고 process memory에만 최대 200건 유지한다. 요청별
+보관 헤더는 100개·총 64K자, body는 256K자로 제한한다. raw copy command는 사용자가 별도 경고를
+확인한 뒤에만 호출하고 반환값은 일회성 clipboard write 이외에는 저장·기록하지 않는다. 개별
+history/rule 삭제와 전체 history 비우기는 기존 버튼을 포함해 확인을 요구하며, clear 뒤에도
+프로세스 안의 history ID를 재사용하지 않는다. 별도 issue인 example curl과 `api-request/v1`
+handoff가 준비되기 전에는 해당 메뉴 항목을 fail-closed로 비활성화한다.
+
 Devbox Manager의 app-row context menu도 메뉴를 열기 전에 catalog app ID로 대상 행을 선택하고,
 설치/업데이트의 portable·setup 선택을 submenu로 보존한다. 실행·rollback·설치 폴더 열기·제거는
 portable registry snapshot에서만 활성화하며 installer 상태나 확인되지 않은 상태에서는 fail-closed다.

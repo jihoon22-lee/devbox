@@ -1,6 +1,7 @@
 //! response rule (순수). method+path 매치 → 고정 status/header/body 응답.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -25,6 +26,17 @@ pub fn matches(rule: &ResponseRule, method: &str, path: &str) -> bool {
     }
     rule.path == path
         || (rule.path.ends_with('*') && path.starts_with(&rule.path[..rule.path.len() - 1]))
+}
+
+/// 새 규칙에는 실제 ID를 부여하고 기존 규칙은 같은 ID로 교체한다.
+/// 반환한 ID와 저장된 rule.id가 항상 같아야 context-menu 대상이 안정적이다.
+pub fn upsert(rules: &mut HashMap<String, ResponseRule>, mut rule: ResponseRule) -> String {
+    if rule.id.is_empty() {
+        rule.id = uuid::Uuid::new_v4().to_string();
+    }
+    let id = rule.id.clone();
+    rules.insert(id.clone(), rule);
+    id
 }
 
 #[cfg(test)]
@@ -54,5 +66,18 @@ mod tests {
             "/events/123"
         ));
         assert!(!matches(&rule("r3", None, "/events/*"), "POST", "/other"));
+    }
+
+    #[test]
+    fn upsert_assigns_and_preserves_rule_identity() {
+        let mut rules = HashMap::new();
+        let generated = upsert(&mut rules, rule("", Some("POST"), "/hook"));
+        assert!(!generated.is_empty());
+        assert_eq!(rules[&generated].id, generated);
+
+        let same = upsert(&mut rules, rule(&generated, Some("GET"), "/updated"));
+        assert_eq!(same, generated);
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[&generated].path, "/updated");
     }
 }
