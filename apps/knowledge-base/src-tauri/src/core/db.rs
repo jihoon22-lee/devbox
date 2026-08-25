@@ -79,6 +79,17 @@ pub fn remove_doc(conn: &Connection, path: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// 파일 하나 또는 폴더 아래의 모든 문서를 검색 인덱스에서 제거한다.
+/// `LIKE`를 쓰지 않아 `%`와 `_`가 들어간 실제 폴더명도 wildcard로 해석되지 않는다.
+pub fn remove_docs_under(conn: &Connection, path: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM docs
+         WHERE path = ?1 OR substr(path, 1, length(?1) + 1) = ?1 || '/'",
+        params![path],
+    )?;
+    Ok(())
+}
+
 /// FTS5 검색. title+body 대상, prefix 매치.
 pub fn search(
     conn: &Connection,
@@ -182,6 +193,20 @@ mod tests {
         assert_eq!(search(&conn, "unique", 10).unwrap().len(), 1);
         remove_doc(&conn, "Notes/a.md").unwrap();
         assert_eq!(search(&conn, "unique", 10).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn removes_folder_docs_without_treating_names_as_wildcards() {
+        let conn = mem();
+        index_doc(&conn, "Notes_100/a.md", "first unique").unwrap();
+        index_doc(&conn, "Notes_100/nested/b.md", "second unique").unwrap();
+        index_doc(&conn, "NotesX100/keep.md", "keep unique").unwrap();
+
+        remove_docs_under(&conn, "Notes_100").unwrap();
+
+        assert!(search(&conn, "first", 10).unwrap().is_empty());
+        assert!(search(&conn, "second", 10).unwrap().is_empty());
+        assert_eq!(search(&conn, "keep", 10).unwrap().len(), 1);
     }
 
     #[test]
