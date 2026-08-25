@@ -3,6 +3,7 @@ import { TransformerTool } from "./common";
 import { DiffTool } from "./diff";
 import { RegexTool } from "./regex";
 import { HashTool, UuidTool } from "./security";
+import { JsonYamlTool } from "./JsonYamlTool";
 import {
   base64Decode,
   base64Encode,
@@ -25,6 +26,7 @@ export interface ToolDef {
 const jsonTools: ToolDef[] = [
   { id: "json-format", group: "JSON", name: "Formatter", component: () => <TransformerTool placeholder="Paste JSON..." run={jsonFormatter()} /> },
   { id: "json-minify", group: "JSON", name: "Minifier", component: () => <TransformerTool placeholder="Paste JSON..." run={jsonMinifier()} /> },
+  { id: "json-yaml", group: "JSON", name: "JSON ↔ YAML", component: JsonYamlTool },
 ];
 
 const encodingTools: ToolDef[] = [
