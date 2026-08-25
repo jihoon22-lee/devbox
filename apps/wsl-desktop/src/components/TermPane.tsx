@@ -1,4 +1,5 @@
 import { useEffect, useRef, type CSSProperties } from "react";
+import type { ContextMenuTriggerProps } from "@devbox/context-menu";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -18,11 +19,15 @@ interface TermPaneProps {
   broadcastTargetIds: string[];
   registerWrite: (id: string, fn: (data: string) => void) => void;
   unregisterWrite: (id: string) => void;
+  registerFocus: (id: string, fn: () => void) => void;
+  unregisterFocus: (id: string) => void;
   onClose: () => void;
   onFocusPane: () => void;
   onShortcut: (action: ShortcutAction) => void;
   /** Windows build number for xterm's ConPTY soft-wrap heuristics, or null off Windows. */
   windowsBuildNumber: number | null;
+  contextMenuTriggerProps: ContextMenuTriggerProps;
+  actionsDisabled: boolean;
   /** PaneCanvas가 display:none(비활성) 또는 order(활성 탭 안에서의 시각적 순서)를 준다. */
   style?: CSSProperties;
 }
@@ -52,13 +57,18 @@ export default function TermPane({
   broadcastTargetIds,
   registerWrite,
   unregisterWrite,
+  registerFocus,
+  unregisterFocus,
   onClose,
   onFocusPane,
   onShortcut,
   windowsBuildNumber,
+  contextMenuTriggerProps,
+  actionsDisabled,
   style,
 }: TermPaneProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const { onContextMenu, ...menuTriggerProps } = contextMenuTriggerProps;
 
   // 매 렌더마다 최신 값을 반영하는 ref들 — mount effect(아래)의 의존성 배열에는 넣지
   // 않는다. 넣으면 이 prop들이 바뀔 때마다 xterm이 재생성되어 스크롤백을 잃는다.
@@ -184,6 +194,13 @@ export default function TermPane({
     };
   }, [sessionId, registerWrite, unregisterWrite]);
 
+  // focus registry callback identity가 바뀌어도 xterm 자체를 재생성하지 않는다. terminal
+  // 인스턴스는 mount effect가 소유하고 이 effect는 최신 registry에 focus handle만 연결한다.
+  useEffect(() => {
+    registerFocus(sessionId, () => termRef.current?.focus());
+    return () => unregisterFocus(sessionId);
+  }, [registerFocus, sessionId, unregisterFocus]);
+
   // 탭이 다시 보일 때(active: false → true) 실제 크기로 다시 맞춘다. ResizeObserver가
   // display:none → 보임 전환에서 항상 안정적으로 발화한다고 보장할 수 없으므로,
   // 여기서 명시적으로 한 번 더 호출한다.
@@ -205,7 +222,17 @@ export default function TermPane({
   }, [active, isFocusedPane]);
 
   return (
-    <div className={`pane ${isFocusedPane ? "pane-focused" : ""}`} style={style} onMouseDownCapture={onFocusPane}>
+    <div
+      className={`pane ${isFocusedPane ? "pane-focused" : ""}`}
+      style={style}
+      tabIndex={-1}
+      data-pane-id={sessionId}
+      aria-label={`${title} 터미널 팬`}
+      onMouseDownCapture={onFocusPane}
+      // xterm 내부 handler가 bubble을 중단해도 pane menu가 먼저 열리도록 capture에서 받는다.
+      onContextMenuCapture={onContextMenu}
+      {...menuTriggerProps}
+    >
       <div
         className="pane-head"
         draggable
@@ -215,7 +242,7 @@ export default function TermPane({
         }}
       >
         <span className="pane-title">{title}</span>
-        <button className="pane-close" title="Close terminal" onClick={onClose}>
+        <button className="pane-close" title="Close terminal" disabled={actionsDisabled} onClick={onClose}>
           ✕
         </button>
       </div>

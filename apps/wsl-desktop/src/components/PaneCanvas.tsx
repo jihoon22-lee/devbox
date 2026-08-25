@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import type { ContextMenuTriggerProps } from "@devbox/context-menu";
 import TermPane from "./TermPane";
 import type { Pane, Tab } from "../types";
 import type { ShortcutAction } from "../lib/shortcuts";
@@ -11,10 +12,14 @@ interface PaneCanvasProps {
   broadcastOn: boolean;
   registerWrite: (id: string, fn: (data: string) => void) => void;
   unregisterWrite: (id: string) => void;
+  registerFocus: (id: string, fn: () => void) => void;
+  unregisterFocus: (id: string) => void;
   onClosePane: (id: string) => void;
   onFocusPane: (id: string) => void;
   onShortcut: (action: ShortcutAction) => void;
   windowsBuildNumber: number | null;
+  contextMenuTriggerProps: ContextMenuTriggerProps;
+  actionsDisabled: boolean;
 }
 
 /**
@@ -40,10 +45,14 @@ export default function PaneCanvas({
   broadcastOn,
   registerWrite,
   unregisterWrite,
+  registerFocus,
+  unregisterFocus,
   onClosePane,
   onFocusPane,
   onShortcut,
   windowsBuildNumber,
+  contextMenuTriggerProps,
+  actionsDisabled,
 }: PaneCanvasProps) {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activePaneIds = activeTab?.paneIds ?? [];
@@ -86,10 +95,14 @@ export default function PaneCanvas({
             broadcastTargetIds={activePaneIds}
             registerWrite={registerWrite}
             unregisterWrite={unregisterWrite}
+            registerFocus={registerFocus}
+            unregisterFocus={unregisterFocus}
             onClose={() => onClosePane(sessionId)}
             onFocusPane={() => onFocusPane(sessionId)}
             onShortcut={onShortcut}
             windowsBuildNumber={windowsBuildNumber}
+            contextMenuTriggerProps={contextMenuTriggerProps}
+            actionsDisabled={actionsDisabled}
             style={active ? { order } : { display: "none" }}
           />
         );
