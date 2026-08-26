@@ -59,9 +59,38 @@ pub fn get_timeline(
         "SELECT id, app, title, start_ts, end_ts, duration_ms
          FROM sessions
          WHERE start_ts >= ?1 AND start_ts < ?2
-         ORDER BY start_ts",
+         ORDER BY start_ts, end_ts, app, title, id",
     )?;
     let rows = stmt.query_map(rusqlite::params![day_start, day_end], |r| {
+        Ok(Session {
+            id: r.get(0)?,
+            app: r.get(1)?,
+            title: r.get(2)?,
+            start_ts: r.get(3)?,
+            end_ts: r.get(4)?,
+            duration_ms: r.get(5)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Bounded timeline query used by export and other memory-sensitive readers.
+/// The caller may request one extra row to distinguish an exact limit from a
+/// truncated result without loading an unbounded activity table.
+pub fn get_timeline_limited(
+    conn: &Connection,
+    day_start: i64,
+    day_end: i64,
+    limit: usize,
+) -> rusqlite::Result<Vec<Session>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, app, title, start_ts, end_ts, duration_ms
+         FROM sessions
+         WHERE start_ts >= ?1 AND start_ts < ?2
+         ORDER BY start_ts, end_ts, app, title, id
+         LIMIT ?3",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![day_start, day_end, limit as i64], |r| {
         Ok(Session {
             id: r.get(0)?,
             app: r.get(1)?,

@@ -3,9 +3,10 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   autostartStatus,
+  exportLifeLog,
   getAppStats,
   getDay,
   getIdleThreshold,
@@ -21,14 +22,19 @@ import {
   setIdleThreshold,
   setPrivacyRules,
   setProjects,
+  saveLifeLog,
   startTracking,
   stopTracking,
+  type ExportDayBoundary,
+  type ExportInput,
+  type ExportFormat,
   type AttributionResult,
   type AutostartStatus,
   type PrivacyRules,
   type SourceStatus,
 } from "./api";
 import { buildDateContextMenu, parseDateKey } from "./lib/contextMenu";
+import { isTauri } from "./lib/isTauri";
 import type { AppTotal, DaySummary, RangeSummary, Session } from "./types";
 import "./App.css";
 
@@ -46,7 +52,7 @@ function shortApp(app: string): string {
 }
 
 export function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${String(d.getFullYear()).padStart(4, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function fmtDay(dayMs: number): string {
@@ -72,6 +78,44 @@ export function monthRange(date: Date): { start: number; end: number } {
   const start = new Date(date.getFullYear(), date.getMonth(), 1).getTime();
   const end = new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime();
   return { start, end };
+}
+
+export function buildExportInput(
+  startDate: string,
+  endDate: string,
+  format: ExportFormat,
+): ExportInput | null {
+  const start = parseDateKey(startDate);
+  const end = parseDateKey(endDate);
+  if (!start || !end) return null;
+  if (end.getTime() < start.getTime()) return null;
+
+  // Keep each civil-day boundary instead of deriving later days by adding a
+  // fixed 24 hours. This preserves local calendar semantics across DST.
+  const dayBoundaries: ExportDayBoundary[] = [];
+  let cursor = new Date(start.getTime());
+  while (cursor.getTime() <= end.getTime()) {
+    if (dayBoundaries.length >= 366) return null;
+    const date = toDateStr(cursor);
+    const dayStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()).getTime();
+    const next = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+    const dayEnd = next.getTime();
+    if (dayEnd <= dayStart) return null;
+    dayBoundaries.push({ date, startMs: dayStart, endMs: dayEnd });
+    cursor = next;
+  }
+  const first = dayBoundaries[0];
+  const last = dayBoundaries[dayBoundaries.length - 1];
+  if (!first || !last || last.date !== endDate) return null;
+  return {
+    startDate,
+    endDate,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "local",
+    dayStart: first.startMs,
+    dayEnd: last.endMs,
+    dayBoundaries,
+    format,
+  };
 }
 
 export function DataSourceRow({ source }: { source: SourceStatus }) {
@@ -107,6 +151,7 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
 
 export default function App() {
   const [date, setDate] = useState(new Date());
+  const dateStr = useMemo(() => toDateStr(date), [date]);
   const [view, setView] = useState<ViewTab>("day");
   const [day, setDay] = useState<DaySummary | null>(null);
   const [range, setRange] = useState<RangeSummary | null>(null);
@@ -125,8 +170,24 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [contextDate, setContextDate] = useState<string | null>(null);
   const [contextActionBusy, setContextActionBusy] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState(dateStr);
+  const [exportEndDate, setExportEndDate] = useState(dateStr);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("markdown");
+  const exportBusyRef = useRef(false);
+  const exportRequestRef = useRef(0);
+  const exportDialogRef = useRef<HTMLElement>(null);
+  const exportFirstFieldRef = useRef<HTMLInputElement>(null);
+  const exportRestoreFocusRef = useRef<HTMLElement | null>(null);
 
-  const dateStr = useMemo(() => toDateStr(date), [date]);
+  // An export can outlive the component (for example when the window closes
+  // while the native command is still preparing Git data). Invalidate the
+  // request token and busy ref during unmount so its completion cannot update
+  // detached UI or make a later mount inherit a stale lock.
+  useEffect(() => () => {
+    exportRequestRef.current += 1;
+    exportBusyRef.current = false;
+  }, []);
 
   const prepareDateContext = useCallback((target: HTMLElement) => {
     const value = target.dataset.date;
@@ -148,7 +209,7 @@ export default function App() {
 
   const copyContextDate = async () => {
     const value = contextDate;
-    if (!value || !parseDateKey(value)) return;
+    if (!value || !parseDateKey(value) || contextActionBusy || exportBusyRef.current) return;
     setContextActionBusy(true);
     setError(null);
     setNotice(null);
@@ -163,8 +224,170 @@ export default function App() {
     }
   };
 
+  const saveOrDownloadExport = async (
+    input: ExportInput,
+  ): Promise<{ saved: boolean; preview: boolean }> => {
+    if (isTauri()) {
+      return { saved: (await saveLifeLog(input)).saved, preview: false };
+    }
+    const result = await exportLifeLog(input);
+    const expectedExtension = input.format === "markdown" ? "md" : input.format;
+    const expectedMime = input.format === "markdown"
+      ? "text/markdown;charset=utf-8"
+      : `${input.format === "json" ? "application/json" : "text/csv"};charset=utf-8`;
+    const byteLength = new TextEncoder().encode(result.content).byteLength;
+    if (result.origin !== "browser-preview"
+        || result.format !== input.format
+        || result.extension !== expectedExtension
+        || result.mimeType !== expectedMime
+        || result.byteLength !== byteLength
+        || result.byteLength > 4 * 1024 * 1024) {
+      throw new Error("export 미리보기 결과가 올바르지 않습니다");
+    }
+    if (typeof URL.createObjectURL !== "function") throw new Error("export 다운로드를 사용할 수 없습니다");
+    const blob = new Blob([result.content], { type: result.mimeType });
+    const anchor = document.createElement("a");
+    let objectUrl: string | null = null;
+    try {
+      objectUrl = URL.createObjectURL(blob);
+      anchor.href = objectUrl;
+      anchor.download = `life-log-${input.startDate}-${input.endDate}.${expectedExtension}`;
+      anchor.click();
+    } catch {
+      throw new Error("export 다운로드를 사용할 수 없습니다");
+    } finally {
+      if (objectUrl && typeof URL.revokeObjectURL === "function") {
+        // Let the browser start the download before releasing the object URL.
+        setTimeout(() => URL.revokeObjectURL(objectUrl!), 0);
+      }
+    }
+    return { saved: true, preview: true };
+  };
+
+  const beginExport = (): number | null => {
+    if (contextActionBusy || exportBusyRef.current) return null;
+    exportBusyRef.current = true;
+    const request = exportRequestRef.current + 1;
+    exportRequestRef.current = request;
+    setContextActionBusy(true);
+    setError(null);
+    setNotice(null);
+    return request;
+  };
+
+  const isCurrentExport = (request: number): boolean => exportRequestRef.current === request;
+
+  const finishExport = (request: number) => {
+    if (!isCurrentExport(request)) return;
+    exportBusyRef.current = false;
+    setContextActionBusy(false);
+  };
+
+  const exportNotice = (format: ExportFormat, preview: boolean): string =>
+    `${format.toUpperCase()} export를 ${preview ? "브라우저 미리보기로 다운로드" : isTauri() ? "저장" : "다운로드"}했습니다.`;
+
+  const exportFailure = (format: ExportFormat): string =>
+    isTauri()
+      ? `${format.toUpperCase()} export를 저장하지 못했습니다.`
+      : `${format.toUpperCase()} export 미리보기를 다운로드하지 못했습니다.`;
+
+  const exportDate = async (format: ExportFormat) => {
+    const value = contextDate;
+    const input = value ? buildExportInput(value, value, format) : null;
+    if (!input) return;
+    const request = beginExport();
+    if (request === null) return;
+    try {
+      const outcome = await saveOrDownloadExport(input);
+      if (isCurrentExport(request) && outcome.saved) setNotice(exportNotice(format, outcome.preview));
+    } catch {
+      // Native path/OS 오류와 parser/DB 내부 오류를 UI에 반향하지 않는다.
+      if (isCurrentExport(request)) setError(exportFailure(format));
+    } finally {
+      finishExport(request);
+    }
+  };
+
+  const openExportDialog = () => {
+    if (contextActionBusy || exportBusyRef.current) return;
+    setExportStartDate(contextDate ?? dateStr);
+    setExportEndDate(contextDate ?? dateStr);
+    setExportFormat("markdown");
+    setExportDialogOpen(true);
+  };
+
+  const submitRangeExport = async () => {
+    const input = buildExportInput(exportStartDate, exportEndDate, exportFormat);
+    if (!input) {
+      setError("export 날짜 범위가 올바르지 않습니다. 최대 366일까지 선택할 수 있습니다.");
+      return;
+    }
+    const request = beginExport();
+    if (request === null) return;
+    try {
+      const outcome = await saveOrDownloadExport(input);
+      if (isCurrentExport(request) && outcome.saved) {
+        setNotice(exportNotice(input.format, outcome.preview));
+        setExportDialogOpen(false);
+      }
+    } catch {
+      if (isCurrentExport(request)) setError(exportFailure(exportFormat));
+    } finally {
+      finishExport(request);
+    }
+  };
+
+  // Keep keyboard focus inside the modal and return it to the control that
+  // opened the dialog. The busy ref is used instead of a state dependency so
+  // a progress update cannot tear down and recreate the focus trap.
+  useEffect(() => {
+    if (!exportDialogOpen) return;
+    exportRestoreFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const dialog = exportDialogRef.current;
+    const focusTask = window.setTimeout(() => exportFirstFieldRef.current?.focus(), 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (!exportBusyRef.current) setExportDialogOpen(false);
+        event.preventDefault();
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        ),
+      ).filter((element) => !element.hasAttribute("aria-hidden"));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(focusTask);
+      document.removeEventListener("keydown", onKeyDown);
+      if (exportRestoreFocusRef.current?.isConnected) exportRestoreFocusRef.current.focus();
+      exportRestoreFocusRef.current = null;
+    };
+  }, [exportDialogOpen]);
+
   const onDateContextSelect = (id: string) => {
     if (id === "copy-date") void copyContextDate();
+    if (id === "export-markdown") void exportDate("markdown");
+    if (id === "export-json") void exportDate("json");
+    if (id === "export-csv") void exportDate("csv");
   };
 
   const loadSettings = useCallback(async () => {
@@ -306,10 +529,13 @@ export default function App() {
         <button className="btn refresh" onClick={() => void load()}>
           Refresh
         </button>
+        <button className="btn" onClick={openExportDialog} disabled={contextActionBusy}>
+          {isTauri() ? "Export range" : "Export preview"}
+        </button>
       </header>
 
-      {error && <div className="error">{error}</div>}
-      {notice && <div className="notice">{notice}</div>}
+      {error && <div className="error" role="alert">{error}</div>}
+      {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
 
       {view === "settings" ? (
         <div className="settings">
@@ -580,6 +806,51 @@ export default function App() {
               )}
             </>
           )}
+        </div>
+      )}
+      {exportDialogOpen && (
+        <div className="export-backdrop" role="presentation">
+          <section
+            className="export-dialog"
+            ref={exportDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="life-log-export-title"
+            aria-describedby="life-log-export-description"
+            aria-busy={contextActionBusy}
+            tabIndex={-1}
+          >
+            <h2 id="life-log-export-title">Life Log export</h2>
+            <p id="life-log-export-description" className="dim">
+              {isTauri()
+                ? "선택한 기간의 활동·Git·검증된 local source 요약을 파일로 저장합니다."
+                : "브라우저 미리보기는 로컬 DB·Git·snapshot을 포함하지 않습니다."}
+            </p>
+            <div className="export-fields">
+              <label htmlFor="life-log-export-start">
+                시작 날짜
+                <input id="life-log-export-start" ref={exportFirstFieldRef} type="date" value={exportStartDate} onChange={(event) => setExportStartDate(event.currentTarget.value)} disabled={contextActionBusy} />
+              </label>
+              <label htmlFor="life-log-export-end">
+                종료 날짜
+                <input id="life-log-export-end" type="date" value={exportEndDate} onChange={(event) => setExportEndDate(event.currentTarget.value)} disabled={contextActionBusy} />
+              </label>
+              <label htmlFor="life-log-export-format">
+                형식
+                <select id="life-log-export-format" value={exportFormat} onChange={(event) => setExportFormat(event.currentTarget.value as ExportFormat)} disabled={contextActionBusy}>
+                  <option value="markdown">Markdown</option>
+                  <option value="json">JSON</option>
+                  <option value="csv">CSV</option>
+                </select>
+              </label>
+            </div>
+            <div className="export-actions">
+              <button type="button" className="btn" onClick={() => setExportDialogOpen(false)} disabled={contextActionBusy}>취소</button>
+              <button type="button" className="btn active" onClick={() => void submitRangeExport()} disabled={contextActionBusy}>
+                {contextActionBusy ? "Exporting..." : isTauri() ? "저장" : "미리보기 다운로드"}
+              </button>
+            </div>
+          </section>
         </div>
       )}
       <ContextMenu

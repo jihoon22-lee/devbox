@@ -194,6 +194,9 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 4. API Playground OpenAPI 3.x import, GraphQL, SSE, WebSocket.
 5. Everything+ text/code/Markdown 및 PDF/DOCX/XLS(X)/ODS content index.
 6. Knowledge global quick capture·image asset, Life Log Markdown/JSON/CSV export·규칙 기반 요약.
+   Life Log export는 #305 범위의 native-first date-range artifact와 browser-preview 경계를
+   포함하며, exact `[start,end)`/DST boundaries·bounded Git·snapshot provenance·privacy/
+   deterministic rendering을 선행 계약으로 삼는다.
 7. Manager custom install root·데이터 보존형 안전 제거.
 8. Code Pad LSP cache/local archive, Run Manager log search, Workbench project environment,
    Webhook fixture/API handoff, Repo Manager history/diff/stage/commit/fetch/FF-only pull/push.
@@ -332,6 +335,25 @@ stale 응답을 버린다. raw backend/path/credential/subprocess 오류는 UI�
 project environment preflight, template wizard와 runtime 자동 반영은 포함하지 않는다. 다음 dependency
 chain은 #410 WSL Desktop runtime snapshot producer 후 #281 Workbench WSL runtime 제안이며, 독립적인
 #282 Webhook Lab rule 설명과 #283 example curl은 병렬로 진행한다.
+
+**2026-08-26 #305 구현 상태.** Life Log export는 요청 날짜를 inclusive로, `endMs`를
+exclusive로 해석하고 frontend가 계산한 local civil-day `dayBoundaries`를 그대로 보존한다.
+날짜 수는 366일, session은 bounded SQL 50,000건, 결과는 4MiB로 제한하며 app/title/privacy와
+obvious credential marker를 export 직전에 다시 적용한다. Git은 safe absolute project path만
+identity 기준으로 최대 64개 unique 처리하고, `crates/git` bounded runner의 fixed argv·null
+stdin·2초 timeout·256KiB stdout·폐기 stderr 및 stable error code를 사용한다. Windows native
+save는 사용자가 확정한 matching extension의 absolute path에서만 artifact를 재검증하고
+atomic write하며, 취소·잘못된 경로·손상된 output은 대상 파일을 만들지 않는다.
+
+Markdown/JSON/CSV는 같은 source 순서와 deterministic 정렬을 공유하고, Markdown table cell은
+pipe·역슬래시·backtick·개행을 escape하며 CSV는 24열 RFC 4180/CRLF를 사용한다. Run Manager의
+duplicate service ID와 Knowledge activity identifier·view·freshness·최신 snapshot identity를
+검증하고, 요청 범위 밖 snapshot 수치는 summary에 섞지 않는다. 브라우저 preview는 native
+DB/Git/snapshot을 읽지 않고 네 source를 `browser_preview_only`로 표시한 bounded range artifact만
+다운로드한다. UI는 context menu와 range modal에 하나의 busy guard/request token을 공유하며,
+stale·unmount·double-submit을 버리고 initial focus·Escape·Tab trap·focus restore와 고정 오류
+안내를 제공한다. Rust export 17개와 Life Log frontend 31개 fixture, app build/clippy/fmt를
+focused gate로 확인했으며 Windows packaged W2와 전체 workspace gate는 PR 직전에 수행한다.
 
 **2026-08-26 #410 구현 상태.** WSL Desktop이 Workbench #281과 Life Log가 읽을 수 있는
 `wsl-desktop/runtime/v1` snapshot producer를 맡도록 연결했다. 기존

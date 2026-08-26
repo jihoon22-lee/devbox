@@ -1,6 +1,7 @@
 pub mod aggregate;
 pub mod attribution;
 pub mod db;
+pub mod export;
 pub mod idle;
 pub mod models;
 pub mod privacy;

@@ -8,10 +8,12 @@ describe("Life Log date context menu contract", () => {
       "날짜 복사",
       "Markdown 내보내기",
       "JSON 내보내기",
+      "CSV 내보내기",
     ]);
     expect(items[0]).toMatchObject({ id: "copy-date", disabled: false });
-    expect(items[1]).toMatchObject({ id: "export-markdown", disabled: true });
-    expect(items[2]).toMatchObject({ id: "export-json", disabled: true });
+    expect(items[1]).toMatchObject({ id: "export-markdown", disabled: false });
+    expect(items[2]).toMatchObject({ id: "export-json", disabled: false });
+    expect(items[3]).toMatchObject({ id: "export-csv", disabled: false });
   });
 
   it("복사 action은 busy 동안만 비활성화한다", () => {

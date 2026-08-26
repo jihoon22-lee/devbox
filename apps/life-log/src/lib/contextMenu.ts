@@ -29,15 +29,19 @@ export function buildDateContextMenu(busy: boolean): readonly ContextMenuEntry[]
       type: "item",
       id: "export-markdown",
       label: "Markdown 내보내기",
-      // #305가 date-range schema, source metadata, native save boundary를 함께 소유한다.
-      disabled: true,
+      disabled: busy,
     },
     {
       type: "item",
       id: "export-json",
       label: "JSON 내보내기",
-      // 현재 집계 상태를 임시 JSON으로 직렬화해 #305의 privacy 계약을 우회하지 않는다.
-      disabled: true,
+      disabled: busy,
+    },
+    {
+      type: "item",
+      id: "export-csv",
+      label: "CSV 내보내기",
+      disabled: busy,
     },
   ];
 }

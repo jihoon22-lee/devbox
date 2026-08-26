@@ -250,6 +250,86 @@ body {
   color: var(--text);
 }
 
+.export-backdrop {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(2 6 23 / 55%);
+}
+
+.export-dialog {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--border, #334155);
+  border-radius: 12px;
+  background: var(--panel, #111827);
+  box-shadow: 0 18px 60px rgb(0 0 0 / 35%);
+}
+
+.export-dialog:focus {
+  outline: none;
+}
+
+.export-dialog button:focus-visible,
+.export-dialog input:focus-visible,
+.export-dialog select:focus-visible {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 2px;
+}
+
+.export-dialog button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.export-dialog h2 {
+  margin: 0 0 8px;
+}
+
+.export-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.export-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+}
+
+.export-fields input,
+.export-fields select {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border, #334155);
+  border-radius: 6px;
+  color: inherit;
+  background: var(--surface, #0f172a);
+}
+
+.export-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 620px) {
+  .export-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 .source-error {
   color: var(--red);
 }
