@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { analyzeWikilinks, backlinks, openInboundNote } from "./api";
 
@@ -53,6 +53,27 @@ vi.mock("./api", () => ({
 const analyzeMock = vi.mocked(analyzeWikilinks);
 const backlinksMock = vi.mocked(backlinks);
 const openInboundNoteMock = vi.mocked(openInboundNote);
+const originalRangeClientRects = Object.getOwnPropertyDescriptor(
+  Range.prototype,
+  "getClientRects",
+);
+
+beforeAll(() => {
+  // CodeMirror measures a requested scroll position on the next animation frame.
+  // jsdom has no Range geometry API, so give that test-only measurement an empty result.
+  Object.defineProperty(Range.prototype, "getClientRects", {
+    configurable: true,
+    value: () => [],
+  });
+});
+
+afterAll(() => {
+  if (originalRangeClientRects) {
+    Object.defineProperty(Range.prototype, "getClientRects", originalRangeClientRects);
+  } else {
+    Reflect.deleteProperty(Range.prototype, "getClientRects");
+  }
+});
 
 afterEach(() => {
   cleanup();
