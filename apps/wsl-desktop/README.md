@@ -33,7 +33,10 @@
 - **선택적 프로세스 유지** — native workspace는 외부 도구 없이 완전하게 동작한다. 이미
   설치된 tmux/zellij만 감지해 stable `wsld-*` 세션에 opt-in attach하며, 설치·download하지
   않고 부재/감지 실패 시 native로 폴백한다.
-- **상태 패널** — WSL 배포판 / Docker
+- **상태 패널** — WSL 배포판과 선택 distro의 Docker 컨테이너를 표시한다. 260px의 좁은
+  패널에서도 이름·정규화 상태·축약 port mapping을 먼저 보여 주고, 컨테이너를 펼치면 Docker가
+  반환한 ID·image·status·ports 원문을 확인하고 start/stop/restart할 수 있다. Docker가 없으면
+  설치 안내만 표시하며 engine 설치·설정·리소스 관리는 수행하지 않는다.
 - **open path 핀·최근 경로** — 자주 쓰는 작업 경로 저장
 
 ## 기술
@@ -50,15 +53,22 @@
 - 공용 크레이트 `crates/wsl` — 프로세스를 실행하지 않는 WSL 공용 프리미티브로, `wsl.exe` 실행
   argv(`--cd` 포함)·`wslpath` argv 조립, distro 이름 검증, WSL 출력 디코딩, Windows↔WSL 경로와
   canonical project key 정규화를 제공한다.
+- Docker 목록은 기본 공백 table을 추측해 파싱하지 않고 `docker ps -a --no-trunc --format`으로
+  ID/name/image/status/ports 다섯 필드만 요청한다. 요약용 상태·port만 frontend에서 파생하며 원문
+  필드는 변경하거나 저장하지 않는다. COMMAND, 환경 변수, credential과 resource summary는
+  조회하지 않는다.
 - WSL 기준선은 `wsl.exe --cd <cwd>`를 지원하는 최신 Microsoft Store WSL이다. 구형 inbox WSL은
   `wsl --update`로 먼저 업데이트하는 것을 권장한다. WSL2는 필요하면 `wsl --install` 후 재부팅하며,
-  Docker 컨테이너 관리에는 Docker Desktop이 필요하다.
+  컨테이너 패널에는 선택 distro에서 실행 가능한 Docker CLI와 engine이 필요하다. devbox가 이를
+  자동 download하거나 설치하지 않는다.
 
 ## 데이터
 
 - 프로젝트·git 상태는 Workbench로 이관됨 (`com.devbox.workbench\project-profiles.json`)
 - `localStorage`: cwd 핀·최근 경로 5개, selection 자동 복사 여부, 터미널 글꼴 크기, version 1
   마지막 레이아웃. 터미널 출력·selection·clipboard 내용과 runtime session id는 저장하지 않는다.
+- Docker 컨테이너 목록과 detail 원문은 runtime memory에만 두며 localStorage나 profile에 저장하지
+  않는다.
 - `app_local_data_dir/terminal-profiles.json`: version 1 이름 있는 터미널 프로필. atomic replace,
   탭 16개·팬 32개·한 줄 시작 명령 4,096자 제한, 참조 무결성·안전한 절대 cwd·명백한 평문
   credential 검증을 적용한다.

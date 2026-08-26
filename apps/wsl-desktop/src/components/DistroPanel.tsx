@@ -1,4 +1,5 @@
 import type { ContainerInfo, DistroInfo } from "../types";
+import { compactDockerPorts, dockerDisplayState } from "../lib/dockerDisplay";
 
 interface Props {
   distros: DistroInfo[];
@@ -23,7 +24,7 @@ export default function DistroPanel({
   onAction,
   onRefresh,
 }: Props) {
-  const running = containers.filter((c) => c.status.startsWith("Up")).length;
+  const running = containers.filter((c) => dockerDisplayState(c.status).running).length;
 
   return (
     <div className="dash-section">
@@ -72,62 +73,79 @@ export default function DistroPanel({
 
       <h3 className="dash-subtitle">Docker ({running}/{containers.length} running)</h3>
       {!dockerMissing && (
-        <table>
-          <thead>
-            <tr>
-              <th>NAME</th>
-              <th>IMAGE</th>
-              <th>STATUS</th>
-              <th>PORTS</th>
-              <th>ACTION</th>
-            </tr>
-          </thead>
-          <tbody>
-            {containers.map((c) => (
-              <tr key={c.id}>
-                <td>{c.name}</td>
-                <td className="dim">{c.image}</td>
-                <td>{c.status}</td>
-                <td className="mono dim">{c.ports || "-"}</td>
-                <td className="actions">
-                  {c.status.startsWith("Exited") ? (
-                    <button
-                      className="btn"
-                      disabled={busy === `${c.id}:start`}
-                      onClick={() => onAction(c.id, "start")}
-                    >
-                      Start
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        className="btn danger"
-                        disabled={busy === `${c.id}:stop`}
-                        onClick={() => onAction(c.id, "stop")}
-                      >
-                        Stop
-                      </button>
+        <div className="docker-list" aria-label="Docker containers">
+          {containers.map((c) => {
+            const state = dockerDisplayState(c.status);
+            const canStart = state.key === "exited" || state.key === "created";
+            return (
+              <details key={c.id} className="docker-container">
+                <summary className="docker-container-summary">
+                  <span className="docker-container-name" title={c.name}>
+                    {c.name}
+                  </span>
+                  <span className={`docker-state docker-state-${state.key}`}>{state.label}</span>
+                  <span className="docker-port-summary mono" title={c.ports || "No ports"}>
+                    {compactDockerPorts(c.ports)}
+                  </span>
+                  <span className="docker-detail-chevron" aria-hidden="true">
+                    ▸
+                  </span>
+                </summary>
+
+                <div className="docker-container-detail">
+                  <dl>
+                    <div>
+                      <dt>Container ID</dt>
+                      <dd className="mono">{c.id}</dd>
+                    </div>
+                    <div>
+                      <dt>Image</dt>
+                      <dd className="mono">{c.image || "(empty)"}</dd>
+                    </div>
+                    <div>
+                      <dt>Original status</dt>
+                      <dd>{c.status || "(empty)"}</dd>
+                    </div>
+                    <div>
+                      <dt>Original ports</dt>
+                      <dd className="mono">{c.ports || "(empty)"}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="docker-actions">
+                    {canStart ? (
                       <button
                         className="btn"
-                        disabled={busy === `${c.id}:restart`}
-                        onClick={() => onAction(c.id, "restart")}
+                        disabled={busy === `${c.id}:start`}
+                        onClick={() => onAction(c.id, "start")}
                       >
-                        Restart
+                        Start
                       </button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {containers.length === 0 && (
-              <tr>
-                <td colSpan={5} className="empty">
-                  No containers
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                    ) : (
+                      <>
+                        <button
+                          className="btn danger"
+                          disabled={busy === `${c.id}:stop`}
+                          onClick={() => onAction(c.id, "stop")}
+                        >
+                          Stop
+                        </button>
+                        <button
+                          className="btn"
+                          disabled={busy === `${c.id}:restart`}
+                          onClick={() => onAction(c.id, "restart")}
+                        >
+                          Restart
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </details>
+            );
+          })}
+          {containers.length === 0 && <div className="docker-empty">No containers</div>}
+        </div>
       )}
     </div>
   );

@@ -236,7 +236,11 @@ portable registry commit 실패는 기존 current를 복구하고 setup batch는
 만들어 batch downgrade를 막아 PR #406으로 CI 통과·머지됐다. #275는 versioned locator와 selected
 catalog revision, canonical source manifest와 portable exact executable을 검증해 app별 executable/root/
 source manifest를 읽기 전용 패널에 표시한다. installer는 실제 wizard 완료 위치를 추측하지 않고
-source manifest provenance만 표시한다. 다음 P1-09 작업은 #276 WSL Desktop Docker compact 표시다.
+source manifest provenance만 표시한다. #276은 WSL Desktop의 Docker table을 260px 대응 disclosure
+list로 바꾸고 name/state/축약 port를 우선하며, 펼친 detail에 Docker의 ID/image/status/ports 원문을
+표시한다. backend는 COMMAND를 포함한 기본 table을 추측하지 않고 `--format`으로 다섯 필드만
+조회하고, summary 파생값은 원문이나 storage를 변경하지 않는다. Docker engine 관리·resource
+summary는 제외했다. 다음 P1-09 작업은 #277 Code Pad Quick Open이다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

@@ -69,7 +69,8 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 port-manager:    React → invoke → commands → process crate → OS netstat
 wsl-desktop:     React(xterm + pane/tab context-menu) → invoke → commands → wsl crate → wsl.exe
                    (wsl-dashboard 흡수; split/close/tab action은 exact ID와 확인 경계 사용)
-                   └ distro·docker 패널 (gitStatus는 Workbench로 이관 완료)
+                   └ distro·docker 패널 (`docker ps --format` 5필드 원문 → compact summary/detail,
+                      gitStatus는 Workbench로 이관 완료)
 life-log:        tray/poller(상시) → sessionizer → SQLite → commands → React(date context-menu)
                    (activity-timeline 흡수. crates/integration으로 snapshot을 자동 발견하며
                    Knowledge activity/v1을 검증·집계하고 외부 DB 직접 조회 없음)
