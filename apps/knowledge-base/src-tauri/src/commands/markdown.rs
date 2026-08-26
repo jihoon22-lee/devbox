@@ -1,4 +1,5 @@
 use crate::commands::docs::{resolve_root, AppState};
+use crate::core::db::{self, AnalyzedWikilink, LinkResolution};
 use crate::core::{frontmatter, store};
 use ::markdown::{self, ImageResult};
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -35,12 +36,16 @@ pub fn render_markdown(
     rel: String,
     content: String,
 ) -> Result<RenderedDoc, String> {
-    let root = {
+    let (root, wikilinks) = {
         let conn = state.db.lock().unwrap();
-        resolve_root(&conn)?
+        let root = resolve_root(&conn)?;
+        let wikilinks = db::analyze_wikilinks(&conn, &content)
+            .map_err(|_| "위키링크를 렌더링할 수 없습니다".to_string())?;
+        (root, wikilinks)
     };
 
-    let (meta, body) = frontmatter::parse(&content);
+    let rewritten = rewrite_wikilinks_for_preview(&content, &wikilinks);
+    let (meta, body) = frontmatter::parse(&rewritten);
     // 이미지·상대 링크는 문서가 위치한 디렉터리를 기준으로 해석한다.
     let doc_dir = Path::new(&rel).parent().unwrap_or_else(|| Path::new(""));
     let app_state: &AppState = state.inner().as_ref();
@@ -54,6 +59,51 @@ pub fn render_markdown(
         html,
         mermaid,
     })
+}
+
+fn rewrite_wikilinks_for_preview(content: &str, links: &[AnalyzedWikilink]) -> String {
+    let mut rewritten = content.to_string();
+    for link in links.iter().rev() {
+        let display = if link.occurrence.label.is_empty() {
+            "(invalid wikilink)"
+        } else {
+            &link.occurrence.label
+        };
+        let display = html_escape(display);
+        let replacement = match &link.resolution {
+            LinkResolution::Resolved(path) => format!(
+                r#"<a class="wikilink resolved" href="/{}">{display}</a>"#,
+                html_escape(path)
+            ),
+            LinkResolution::Missing => format!(
+                r#"<span class="wikilink unresolved" title="대상 노트 없음">{display}</span>"#
+            ),
+            LinkResolution::Ambiguous => format!(
+                r#"<span class="wikilink unresolved" title="같은 이름의 노트가 여러 개임">{display}</span>"#
+            ),
+            LinkResolution::Invalid => format!(
+                r#"<span class="wikilink unresolved" title="올바르지 않은 위키링크 대상">{display}</span>"#
+            ),
+        };
+        if link.occurrence.to_byte <= rewritten.len()
+            && rewritten.is_char_boundary(link.occurrence.from_byte)
+            && rewritten.is_char_boundary(link.occurrence.to_byte)
+        {
+            rewritten.replace_range(
+                link.occurrence.from_byte..link.occurrence.to_byte,
+                &replacement,
+            );
+        }
+    }
+    rewritten
+}
+
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// 실제 이미지 로더: `safe_join` 기반 경로 검증 → 크기 검사 → `fs::read` →
@@ -132,5 +182,32 @@ mod tests {
         assert!(!html.contains("title: Hello"));
         assert!(!html.contains("tags:"));
         assert!(html.contains("<h1>Body</h1>"));
+    }
+
+    #[test]
+    fn preview_rewrite_uses_only_resolved_index_paths_and_escapes_labels() {
+        let content = "[[Notes/Rust|Rust <safe>]] [[Missing]]";
+        let parsed = crate::core::wikilink::parse_wikilinks(content);
+        let links = vec![
+            AnalyzedWikilink {
+                occurrence: parsed[0].clone(),
+                resolution: LinkResolution::Resolved("Notes/Rust.md".into()),
+            },
+            AnalyzedWikilink {
+                occurrence: parsed[1].clone(),
+                resolution: LinkResolution::Missing,
+            },
+        ];
+
+        let rewritten = rewrite_wikilinks_for_preview(content, &links);
+        assert!(rewritten.contains(r#"href="/Notes/Rust.md">Rust &lt;safe&gt;</a>"#));
+        assert!(rewritten.contains("class=\"wikilink unresolved\""));
+        assert!(!rewritten.contains("[[Missing]]"));
+
+        let (html, _) = markdown::render(&rewritten, &|_| ImageResult::NotFound);
+        assert!(html.contains(r#"class="wikilink resolved" href="/Notes/Rust.md""#));
+        assert!(html.contains(r#"class="wikilink unresolved""#));
+        assert!(html.contains("Rust &lt;safe&gt;"));
+        assert!(!html.contains("<safe>"));
     }
 }

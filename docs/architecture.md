@@ -75,6 +75,8 @@ life-log:        tray/poller(상시) → sessionizer → SQLite → commands →
                    Knowledge activity/v1을 검증·집계하고 외부 DB 직접 조회 없음)
 everything-plus:  indexer/watcher → filesystem crate → search crate(FTS5) → React
 knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror + context-menu)
+                   ├ Markdown 원문 → wikilink parser → SQLite 재생성 가능 key/link index
+                   │  → autocomplete·unresolved decoration·backlink source position
                    ├ canonical tree entry → opener 또는 catalog/launch crate → 설치된 대상 앱
                    └ path/body-free activity/v1 snapshot → Life Log Data Sources
 api-playground:   React(context-menu + History/Collection v2) → commands(secrets sanitizer)
@@ -110,6 +112,16 @@ ID를 발급하며, 늦게 끝난 과거 요청은 current ID와
 일치하지 않아 raw entry를 저장하지 못한다. 상한 초과·비텍스트 header는 masked DTO에 안전한
 표시만 남기고 raw copy 전체를 fail-closed한다. 확인된 Headers/Set-Cookie copy command만 ID로
 원문을 조회하며 반환 문자열은 clipboard write 외 storage·history·log에 전달하지 않는다.
+
+Knowledge Base의 `doc_link_keys`와 `wikilinks`는 Markdown 파일이 원본인 재생성 가능 SQLite 보조
+인덱스다. 하나의 Rust parser가 앱 저장·watcher·편집 중 분석·preview를 함께 담당하며 frontmatter,
+fenced/inline code와 escape된 opener를 제외한다. path stem·filename·frontmatter title key가 정확히
+한 문서에만 대응할 때만 resolved다. 중복 key는 ambiguous, 부재 key는 missing으로 남고 새 문서가
+인덱스되면 source 재작성 없이 현재 key 집합으로 다시 해석된다. schema v1 최초 실행은 root 내부의
+canonical `.md` 원문만 최대 10 MiB로 읽어 정확한 line/UTF-16 column을 복구한 뒤 marker를 기록한다.
+UI가 raw `[[target]]`을 경로로 열지 않으며 editor/preview/backlink가 받은 indexed 상대 경로도 실제
+열기 직전에 canonical root·확장자·크기 검증을 다시 통과한다. link-aware rename transaction은 다음
+독립 기능 경계다.
 
 ## 앱 간 데이터 교환
 

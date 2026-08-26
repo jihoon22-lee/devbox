@@ -5,12 +5,18 @@ import { defaultKeymap } from "@codemirror/commands";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { readClipboardText } from "../api";
+import type {
+  EditorCursorRequest,
+  WikilinkCandidate,
+  WikilinkOccurrence,
+} from "../types";
 import {
   hasSelectedText,
   insertMarkdownLink,
   removeSelectedText,
   selectedText,
 } from "./editorActions";
+import { setWikilinkOccurrences, wikilinkEditorExtensions } from "./wikilinkEditor";
 
 // 공용 CodeMirror 설정은 packages/editor(@devbox/editor)에서 가져온다 (PR 24).
 // LSP는 넣지 않는다 (knowledge-base는 노트 앱이다).
@@ -19,11 +25,25 @@ interface Props {
   onChange: (text: string) => void;
   onSave: () => void;
   onError: (message: string | null) => void;
+  wikilinks?: readonly WikilinkOccurrence[];
+  loadWikilinkCandidates?: (query: string) => Promise<WikilinkCandidate[]>;
+  onNavigateWikilink?: (path: string) => void;
+  cursorRequest?: EditorCursorRequest | null;
 }
 
-export default function MarkdownEditor({ value, onChange, onSave, onError }: Props) {
+export default function MarkdownEditor({
+  value,
+  onChange,
+  onSave,
+  onError,
+  wikilinks = [],
+  loadWikilinkCandidates,
+  onNavigateWikilink,
+  cursorRequest = null,
+}: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const syncingValueRef = useRef(false);
   const [hasSelection, setHasSelection] = useState(false);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -31,6 +51,10 @@ export default function MarkdownEditor({ value, onChange, onSave, onError }: Pro
   onSaveRef.current = onSave;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const loadCandidatesRef = useRef(loadWikilinkCandidates);
+  loadCandidatesRef.current = loadWikilinkCandidates;
+  const navigateWikilinkRef = useRef(onNavigateWikilink);
+  navigateWikilinkRef.current = onNavigateWikilink;
   const editorMenu = useContextMenu();
   const openMenuRef = useRef(editorMenu.openAt);
   openMenuRef.current = editorMenu.openAt;
@@ -54,6 +78,10 @@ export default function MarkdownEditor({ value, onChange, onSave, onError }: Pro
         extensions: [
           baseEditorExtensions(),
           markdownEditorExtensions(),
+          wikilinkEditorExtensions(
+            (query) => loadCandidatesRef.current?.(query) ?? Promise.resolve([]),
+            (path) => navigateWikilinkRef.current?.(path),
+          ),
           keymap.of([
             ...defaultKeymap,
             { key: "Mod-s", run: () => { onSaveRef.current(); return true; }, preventDefault: true },
@@ -104,7 +132,9 @@ export default function MarkdownEditor({ value, onChange, onSave, onError }: Pro
             },
           }),
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) onChangeRef.current(update.state.doc.toString());
+            if (update.docChanged && !syncingValueRef.current) {
+              onChangeRef.current(update.state.doc.toString());
+            }
           }),
         ],
       }),
@@ -123,8 +153,33 @@ export default function MarkdownEditor({ value, onChange, onSave, onError }: Pro
   useEffect(() => {
     const view = viewRef.current;
     if (!view || view.state.doc.toString() === value) return;
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+    syncingValueRef.current = true;
+    try {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+    } finally {
+      syncingValueRef.current = false;
+    }
   }, [value]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: setWikilinkOccurrences.of(wikilinks) });
+  }, [wikilinks]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !cursorRequest) return;
+    const lineNumber = Math.min(Math.max(cursorRequest.line, 1), view.state.doc.lines);
+    const line = view.state.doc.line(lineNumber);
+    const columnOffset = Math.min(Math.max(cursorRequest.column - 1, 0), line.length);
+    const position = line.from + columnOffset;
+    view.dispatch({
+      selection: EditorSelection.cursor(position),
+      effects: EditorView.scrollIntoView(position, { y: "center" }),
+    });
+    view.focus();
+  }, [cursorRequest]);
 
   const runAction = async (id: string) => {
     const view = viewRef.current;

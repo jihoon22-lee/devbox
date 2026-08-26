@@ -28,9 +28,16 @@ interface MarkdownPreviewProps {
   baseRel: string;
   /** 상대 링크 클릭 시 호출된다 (기존 openFile 재사용) */
   onNavigate: (rel: string) => void;
+  /** backend가 유일하게 resolve한 root-relative wikilink 전용 안전 열기 경로. */
+  onNavigateWikilink?: (rel: string) => void;
 }
 
-export default function MarkdownPreview({ doc, baseRel, onNavigate }: MarkdownPreviewProps) {
+export default function MarkdownPreview({
+  doc,
+  baseRel,
+  onNavigate,
+  onNavigateWikilink,
+}: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 인덱스별 마지막 성공 SVG. mermaid 문법 오류가 나도 지우지 않고 유지한다(설계 결정 6).
   const lastGoodSvg = useRef<Map<number, string>>(new Map());
@@ -73,7 +80,11 @@ export default function MarkdownPreview({ doc, baseRel, onNavigate }: MarkdownPr
       void openExternal(href);
       return;
     }
-    onNavigate(resolveRelativePath(baseRel, href));
+    if (href.startsWith("/") && anchor.classList.contains("wikilink")) {
+      (onNavigateWikilink ?? onNavigate)(href.slice(1));
+    } else {
+      onNavigate(resolveRelativePath(baseRel, href));
+    }
   };
 
   if (!doc) {

@@ -72,6 +72,9 @@ pub fn run() {
             commands::docs::list_tags,
             commands::docs::daily_note,
             commands::markdown::render_markdown,
+            commands::wikilinks::analyze_wikilinks,
+            commands::wikilinks::wikilink_candidates,
+            commands::wikilinks::backlinks,
         ])
         .setup(|app| {
             app.manage(applink::PendingOpen::new());
@@ -83,6 +86,11 @@ pub fn run() {
             let dir = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let conn = core::db::init(&dir.join("data.db"))?;
+            if let Ok(root) = commands::docs::resolve_root(&conn) {
+                if commands::docs::rebuild_wikilink_index_if_needed(&conn, &root).is_err() {
+                    eprintln!("wikilink index rebuild will retry next launch");
+                }
+            }
             let state = Arc::new(AppState {
                 db: Mutex::new(conn),
                 image_cache: Mutex::new(HashMap::new()),

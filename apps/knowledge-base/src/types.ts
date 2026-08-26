@@ -17,3 +17,39 @@ export interface RenderedDoc {
   /** placeholder `data-idx` 순서의 mermaid 원문. */
   mermaid: string[];
 }
+
+export type WikilinkStatus = "resolved" | "missing" | "ambiguous" | "invalid";
+
+export interface WikilinkOccurrence {
+  target: string;
+  label: string;
+  line: number;
+  column: number;
+  /** CodeMirror-compatible UTF-16 offsets. */
+  from: number;
+  to: number;
+  status: WikilinkStatus;
+  /** Backend index가 유일하게 해석한 root-relative note path만 들어간다. */
+  resolved_path: string | null;
+}
+
+export interface WikilinkCandidate {
+  path: string;
+  title: string;
+  /** 자동완성 시 삽입할 root-relative path without `.md`. */
+  link_target: string;
+}
+
+export interface Backlink {
+  source_path: string;
+  target: string;
+  /** 1-based source position; column uses UTF-16 code units. */
+  line: number;
+  column: number;
+}
+
+export interface EditorCursorRequest {
+  line: number;
+  column: number;
+  token: number;
+}

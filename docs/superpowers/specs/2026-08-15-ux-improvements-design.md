@@ -222,7 +222,7 @@ type MenuItem =
 
 | 앱 | 항목 | 범위 | 난이도 |
 |---|---|---|---|
-| knowledge-base | 백링크 + 역링크 패널 | **파서부터 새로 만든다** (아래 정정) | **상** |
+| knowledge-base | 백링크 + 역링크 패널 | #272에서 parser·dynamic key index·autocomplete·unresolved·source 위치 이동 구현, rename transaction은 분리 | **상** |
 | knowledge-base | 퀵캡처(전역 단축키)+Inbox | global shortcut → Inbox note | 중 |
 | knowledge-base | 첨부파일(이미지) 관리 | root 내 attachment 폴더, 이미지 드롭·삽입·프리뷰 | 중 |
 | api-playground | 파일 업로드 | `multipart/form-data`, `reqwest::multipart`; #270에서 runtime-only picker 경로·bounded stream·safe history로 구현 | 저 |
