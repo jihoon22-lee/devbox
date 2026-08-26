@@ -8,6 +8,8 @@ import type {
   Current,
   InstalledApp,
   InstallPathInfo,
+  InstallRootApplyResult,
+  InstallRootPreview,
   InstallMode,
   ReleaseManifest,
 } from "./types";
@@ -62,6 +64,44 @@ export async function installPath(appId: string): Promise<InstallPathInfo> {
     };
   }
   return invoke<InstallPathInfo>("install_path", { appId });
+}
+
+export async function previewInstallRoot(path: string): Promise<InstallRootPreview> {
+  if (!isTauri()) {
+    const candidatePath = path.trim();
+    if (!candidatePath) throw new Error("install root input is invalid");
+    return {
+      status: "ready",
+      canApply: true,
+      registryRevision: 1,
+      catalogRevision: Number(catalogJson.catalogRevision ?? 1),
+      candidatePath,
+      rootId: "custom-browser-preview",
+      freeSpaceBytes: 512 * 1024 * 1024,
+      requiredFreeSpaceBytes: 128 * 1024 * 1024,
+      activeInstallCount: 0,
+      candidateEntryCount: 0,
+      migration: "no-automatic-migration",
+    };
+  }
+  return invoke<InstallRootPreview>("preview_install_root", { request: { path } });
+}
+
+export async function applyInstallRoot(
+  path: string,
+  expectedRegistryRevision: number,
+): Promise<InstallRootApplyResult> {
+  if (!isTauri()) {
+    return {
+      status: "applied",
+      registryRevision: expectedRegistryRevision + 1,
+      rootId: "custom-browser-preview",
+      candidatePath: path.trim(),
+    };
+  }
+  return invoke<InstallRootApplyResult>("apply_install_root", {
+    request: { path, expectedRegistryRevision },
+  });
 }
 
 export async function installApp(appId: string, mode: InstallMode): Promise<string> {

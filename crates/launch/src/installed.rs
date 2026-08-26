@@ -1,10 +1,17 @@
+use crate::canonicalize_path;
 use devbox_catalog::{capable_targets, select_catalog, Catalog, CatalogError};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub const INSTALL_ROOT_SCHEMA_VERSION: u32 = 1;
+pub const MAX_INSTALL_ROOT_PATH_BYTES: usize = 4_096;
+pub const MAX_INSTALL_ROOT_LOCATOR_BYTES: u64 = 16 * 1024;
+pub const MAX_INSTALL_MANIFEST_BYTES: u64 = 1_048_576;
+pub const MAX_INSTALL_MANIFEST_ENTRIES: usize = 256;
 const BUILD_CATALOG: &str = include_str!("../../../apps/catalog.json");
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -83,7 +90,8 @@ struct InstalledManifest {
 }
 
 enum LocatorState {
-    MissingOrInvalid,
+    Missing,
+    Invalid,
     Valid(InstallRootLocator),
 }
 
@@ -101,6 +109,9 @@ fn common_root() -> Option<PathBuf> {
 }
 
 pub fn parse_install_root_locator(input: &str) -> Result<InstallRootLocator, InstallLookupError> {
+    if input.len() > MAX_INSTALL_ROOT_LOCATOR_BYTES as usize {
+        return Err(InstallLookupError::InvalidLocator);
+    }
     let locator: InstallRootLocator =
         serde_json::from_str(input).map_err(|_| InstallLookupError::InvalidLocator)?;
     if locator.schema_version != INSTALL_ROOT_SCHEMA_VERSION
@@ -108,6 +119,8 @@ pub fn parse_install_root_locator(input: &str) -> Result<InstallRootLocator, Ins
         || locator.catalog_revision == 0
         || !valid_root_id(&locator.root_id)
         || locator.updated_at_ms == 0
+        || locator.path.len() > MAX_INSTALL_ROOT_PATH_BYTES
+        || locator.manifest_path.len() > MAX_INSTALL_ROOT_PATH_BYTES
         || !valid_absolute_literal(&locator.path)
         || !valid_absolute_literal(&locator.manifest_path)
     {
@@ -116,10 +129,10 @@ pub fn parse_install_root_locator(input: &str) -> Result<InstallRootLocator, Ins
     Ok(locator)
 }
 
-/// Resolve through a valid versioned locator. A missing or malformed locator
-/// uses the v0.4.x Manager location as a read-only migration fallback. Once a
-/// valid locator exists, an invalid manifest or executable fails closed and
-/// never falls back around that registry boundary.
+/// Resolve through a valid versioned locator. Only an absent locator uses the
+/// v0.4.x Manager location as a read-only migration fallback. A present but
+/// malformed locator, or an invalid manifest/executable behind a valid one,
+/// fails closed and never falls back around that registry boundary.
 pub fn resolve_installed_from_paths(
     locator_path: Option<&Path>,
     legacy_base: Option<&Path>,
@@ -129,9 +142,10 @@ pub fn resolve_installed_from_paths(
         return None;
     }
     match read_locator_state(locator_path) {
-        LocatorState::MissingOrInvalid => {
+        LocatorState::Missing => {
             legacy_base.and_then(|base| crate::resolve_legacy_from_base(base, app_id))
         }
+        LocatorState::Invalid => None,
         LocatorState::Valid(locator) => load_manifest(&locator)
             .ok()
             .and_then(|manifest| manifest.executables.get(app_id).cloned()),
@@ -165,7 +179,8 @@ pub fn installed_targets_from_paths(
     let locator = read_locator_state(locator_path);
     let manifest = match &locator {
         LocatorState::Valid(locator) => Some(load_manifest(locator)?),
-        LocatorState::MissingOrInvalid => None,
+        LocatorState::Missing => None,
+        LocatorState::Invalid => return Err(InstallLookupError::InvalidLocator),
     };
 
     Ok(targets
@@ -283,14 +298,33 @@ fn map_catalog_error(_error: CatalogError) -> InstallLookupError {
 
 fn read_locator_state(path: Option<&Path>) -> LocatorState {
     let Some(path) = path else {
-        return LocatorState::MissingOrInvalid;
+        return LocatorState::Missing;
     };
-    let Ok(input) = std::fs::read_to_string(path) else {
-        return LocatorState::MissingOrInvalid;
-    };
-    match parse_install_root_locator(&input) {
-        Ok(locator) => LocatorState::Valid(locator),
-        Err(_) => LocatorState::MissingOrInvalid,
+    if let Some(parent) = path.parent() {
+        // Keep the v0.4.x missing-locator fallback, but never treat a
+        // locator hidden behind an existing symlink/reparse parent as absent.
+        if ensure_plain_existing_components(parent).is_err() {
+            return LocatorState::Invalid;
+        }
+    }
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => LocatorState::Missing,
+        Err(_) => LocatorState::Invalid,
+        Ok(metadata) if path_is_link_or_reparse(&metadata) || !metadata.is_file() => {
+            LocatorState::Invalid
+        }
+        Ok(_) => {
+            if ensure_plain_components(path).is_err() {
+                return LocatorState::Invalid;
+            }
+            let Ok(input) = read_bounded_text(path, MAX_INSTALL_ROOT_LOCATOR_BYTES) else {
+                return LocatorState::Invalid;
+            };
+            match parse_install_root_locator(&input) {
+                Ok(locator) => LocatorState::Valid(locator),
+                Err(_) => LocatorState::Invalid,
+            }
+        }
     }
 }
 
@@ -298,19 +332,25 @@ fn load_manifest(locator: &InstallRootLocator) -> Result<InstalledManifest, Inst
     let raw_root = PathBuf::from(&locator.path);
     let raw_manifest = PathBuf::from(&locator.manifest_path);
     let root = canonical_non_symlink(&raw_root).map_err(|_| InstallLookupError::UnsafeRoot)?;
-    if root != raw_root || dangerous_canonical_root(&root) {
+    if !same_path_identity(&root, &raw_root) || dangerous_canonical_root(&root) {
         return Err(InstallLookupError::UnsafeRoot);
     }
     let manifest =
         canonical_non_symlink(&raw_manifest).map_err(|_| InstallLookupError::UnsafeManifest)?;
-    if manifest != raw_manifest || !manifest.starts_with(&root) || !manifest.is_file() {
+    if !same_path_identity(&manifest, &raw_manifest)
+        || !path_within(&root, &manifest)
+        || !manifest.is_file()
+    {
         return Err(InstallLookupError::UnsafeManifest);
     }
 
-    let input =
-        std::fs::read_to_string(&manifest).map_err(|_| InstallLookupError::InvalidManifest)?;
+    let input = read_bounded_text(&manifest, MAX_INSTALL_MANIFEST_BYTES)
+        .map_err(|_| InstallLookupError::InvalidManifest)?;
     let rows: Vec<InstalledManifestEntry> =
         serde_json::from_str(&input).map_err(|_| InstallLookupError::InvalidManifest)?;
+    if rows.len() > MAX_INSTALL_MANIFEST_ENTRIES {
+        return Err(InstallLookupError::InvalidManifest);
+    }
     let mut app_ids = HashSet::new();
     let mut installed = HashMap::new();
     let mut modes = HashMap::new();
@@ -333,6 +373,8 @@ fn load_manifest(locator: &InstallRootLocator) -> Result<InstalledManifest, Inst
         if !valid_absolute_literal(&row.exe_path) {
             return Err(InstallLookupError::UnsafeExecutable);
         }
+        ensure_plain_components(&raw_executable)
+            .map_err(|_| InstallLookupError::UnsafeExecutable)?;
         let executable = canonical_non_symlink(&raw_executable)
             .map_err(|_| InstallLookupError::UnsafeExecutable)?;
         let expected = root
@@ -341,10 +383,12 @@ fn load_manifest(locator: &InstallRootLocator) -> Result<InstalledManifest, Inst
             .join("versions")
             .join(&row.version)
             .join(format!("{}.exe", row.app));
-        let expected = expected
-            .canonicalize()
-            .map_err(|_| InstallLookupError::UnsafeExecutable)?;
-        if executable != expected || !executable.starts_with(&root) || !executable.is_file() {
+        let expected =
+            canonicalize_path(&expected).map_err(|_| InstallLookupError::UnsafeExecutable)?;
+        if !same_path_identity(&executable, &expected)
+            || !path_within(&root, &executable)
+            || !executable.is_file()
+        {
             return Err(InstallLookupError::UnsafeExecutable);
         }
         modes.insert(row.app.clone(), row.mode);
@@ -377,34 +421,161 @@ fn canonical_non_symlink(path: &Path) -> Result<PathBuf, ()> {
     if path_is_link_or_reparse(&metadata) {
         return Err(());
     }
-    path.canonicalize().map_err(|_| ())
+    canonicalize_path(path).map_err(|_| ())
+}
+
+/// Reject a symlink/reparse point in every component, not only the final
+/// executable entry. A link that resolves to another directory inside the
+/// managed root must not be accepted as an alternate install layout.
+fn ensure_plain_components(path: &Path) -> Result<(), ()> {
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Prefix(prefix) => current.push(prefix.as_os_str()),
+            std::path::Component::RootDir => current.push(Path::new(std::path::MAIN_SEPARATOR_STR)),
+            std::path::Component::Normal(value) => current.push(value),
+            std::path::Component::CurDir | std::path::Component::ParentDir => return Err(()),
+        }
+        // On Windows a disk prefix (`C:`) is not an absolute path until the
+        // following root component has been appended. Do not probe the
+        // drive-relative spelling; start metadata checks at the absolute root.
+        if !current.is_absolute() {
+            continue;
+        }
+        let metadata = std::fs::symlink_metadata(&current).map_err(|_| ())?;
+        if path_is_link_or_reparse(&metadata) {
+            return Err(());
+        }
+    }
+    Ok(())
+}
+
+/// Check existing components up to (but not including) a potentially missing
+/// locator. A legacy installation may not have created `install-roots/v1`;
+/// missing components therefore stop the check, while an existing link or
+/// reparse point is invalid even when the final locator is absent.
+fn ensure_plain_existing_components(path: &Path) -> Result<(), ()> {
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Prefix(prefix) => current.push(prefix.as_os_str()),
+            std::path::Component::RootDir => current.push(Path::new(std::path::MAIN_SEPARATOR_STR)),
+            std::path::Component::Normal(value) => current.push(value),
+            std::path::Component::CurDir | std::path::Component::ParentDir => return Err(()),
+        }
+        if !current.is_absolute() {
+            continue;
+        }
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if path_is_link_or_reparse(&metadata) => return Err(()),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(_) => return Err(()),
+        }
+    }
+    Ok(())
+}
+
+fn same_path_identity(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        normalize_windows_identity(left) == normalize_windows_identity(right)
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+#[cfg(windows)]
+fn normalize_windows_identity(path: &Path) -> String {
+    let mut value = path.to_string_lossy().replace('/', "\\");
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+        value = format!(r"\\{rest}");
+    } else if let Some(rest) = value.strip_prefix(r"\\?\") {
+        value = rest.to_string();
+    }
+    while value.len() > 3 && value.ends_with('\\') {
+        value.pop();
+    }
+    value.to_ascii_lowercase()
+}
+
+fn path_within(root: &Path, candidate: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let root = normalize_windows_identity(root);
+        let candidate = normalize_windows_identity(candidate);
+        candidate == root
+            || candidate
+                .strip_prefix(&root)
+                .is_some_and(|suffix| suffix.starts_with('\\'))
+    }
+    #[cfg(not(windows))]
+    {
+        candidate.starts_with(root)
+    }
+}
+
+fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String, ()> {
+    let metadata = std::fs::symlink_metadata(path).map_err(|_| ())?;
+    if path_is_link_or_reparse(&metadata) || !metadata.is_file() || metadata.len() > max_bytes {
+        return Err(());
+    }
+    let file = File::open(path).map_err(|_| ())?;
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| ())?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(());
+    }
+    String::from_utf8(bytes).map_err(|_| ())
 }
 
 fn dangerous_canonical_root(root: &Path) -> bool {
-    if root.parent().is_none() {
+    if is_filesystem_root(root) {
         return true;
     }
     if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
-        if Path::new(&home)
-            .canonicalize()
-            .is_ok_and(|canonical_home| root == canonical_home)
+        if canonicalize_path(Path::new(&home))
+            .is_ok_and(|canonical_home| same_path_identity(root, &canonical_home))
         {
             return true;
         }
     }
     if std::env::current_dir()
-        .and_then(|cwd| cwd.canonicalize())
-        .is_ok_and(|cwd| root == cwd)
+        .and_then(|cwd| canonicalize_path(&cwd))
+        .is_ok_and(|cwd| same_path_identity(root, &cwd))
     {
         return true;
     }
     false
 }
 
+fn is_filesystem_root(path: &Path) -> bool {
+    let mut saw_root = false;
+    for component in path.components() {
+        match component {
+            std::path::Component::Prefix(_) => {}
+            std::path::Component::RootDir => saw_root = true,
+            std::path::Component::CurDir
+            | std::path::Component::ParentDir
+            | std::path::Component::Normal(_) => return false,
+        }
+    }
+    saw_root
+}
+
 fn valid_absolute_literal(value: &str) -> bool {
     !value.is_empty()
+        && value.len() <= MAX_INSTALL_ROOT_PATH_BYTES
         && !value.contains(['%', '$', '\0'])
         && !value.starts_with('~')
+        && !value.starts_with(r"\\?\")
+        && !value.starts_with(r"\\.\")
+        && !value.starts_with("//?/")
+        && !value.starts_with("//./")
         && Path::new(value).is_absolute()
         && !value
             .split(['/', '\\'])
@@ -480,7 +651,7 @@ mod tests {
             fs::create_dir_all(&root).unwrap();
             Self {
                 outer,
-                root: root.canonicalize().unwrap(),
+                root: canonicalize_path(&root).unwrap(),
                 manifest,
                 locator,
             }
@@ -496,7 +667,7 @@ mod tests {
                 .join(format!("{app_id}.exe"));
             fs::create_dir_all(executable.parent().unwrap()).unwrap();
             fs::write(&executable, b"fixture executable").unwrap();
-            executable.canonicalize().unwrap()
+            canonicalize_path(&executable).unwrap()
         }
 
         fn write_manifest(&self, rows: serde_json::Value) {
@@ -510,9 +681,7 @@ mod tests {
                 catalog_revision,
                 root_id: "devbox-manager-default".into(),
                 path: self.root.to_string_lossy().into_owned(),
-                manifest_path: self
-                    .manifest
-                    .canonicalize()
+                manifest_path: canonicalize_path(&self.manifest)
                     .unwrap()
                     .to_string_lossy()
                     .into_owned(),
@@ -627,7 +796,7 @@ mod tests {
         assert_eq!(portable.install_root, Some(layout.root.clone()));
         assert_eq!(
             portable.source_manifest,
-            layout.manifest.canonicalize().unwrap()
+            canonicalize_path(&layout.manifest).unwrap()
         );
 
         let installer = installed_path_details_from_paths(
@@ -644,7 +813,7 @@ mod tests {
         assert_eq!(installer.install_root, None);
         assert_eq!(
             installer.source_manifest,
-            layout.manifest.canonicalize().unwrap()
+            canonicalize_path(&layout.manifest).unwrap()
         );
 
         assert_eq!(fs::read(&layout.manifest).unwrap(), manifest_before);
@@ -731,7 +900,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_or_corrupt_locator_uses_read_only_legacy_fallback() {
+    fn missing_locator_uses_read_only_legacy_fallback_but_corrupt_does_not() {
         let layout = TestLayout::new();
         let executable = layout.install("code-pad", "0.5.0");
         fs::write(
@@ -747,7 +916,34 @@ mod tests {
         fs::write(&layout.locator, b"{broken").unwrap();
         assert_eq!(
             resolve_installed_from_paths(Some(&layout.locator), Some(&layout.root), "code-pad"),
-            Some(executable)
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_locator_under_symlinked_parent_does_not_use_legacy_fallback() {
+        use std::os::unix::fs::symlink;
+
+        let layout = TestLayout::new();
+        let linked_common = layout.outer.join("linked-common");
+        symlink(
+            layout
+                .locator
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap(),
+            &linked_common,
+        )
+        .unwrap();
+        let locator = linked_common.join("install-roots/v1/registry.json");
+
+        assert_eq!(
+            resolve_installed_from_paths(Some(&locator), Some(&layout.root), "code-pad"),
+            None
         );
     }
 
@@ -905,6 +1101,12 @@ mod tests {
 
         assert_eq!(error, "install-root locator is invalid");
         assert!(!error.contains(secret));
+
+        let oversized = "x".repeat(MAX_INSTALL_ROOT_LOCATOR_BYTES as usize + 1);
+        assert_eq!(
+            parse_install_root_locator(&oversized),
+            Err(InstallLookupError::InvalidLocator)
+        );
     }
 
     #[cfg(unix)]
@@ -923,6 +1125,34 @@ mod tests {
         layout.write_manifest(json!([
             {"app":"code-pad","version":"0.5.0","mode":"portable","exe_path":executable}
         ]));
+        layout.write_locator(1, 1);
+
+        assert_eq!(
+            resolve_installed_from_paths(Some(&layout.locator), None, "code-pad"),
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_layout_component_is_rejected_even_when_it_resolves_inside_root() {
+        use std::os::unix::fs::symlink;
+
+        let layout = TestLayout::new();
+        let real_app_root = layout.root.join("apps/real-code-pad");
+        let executable = real_app_root
+            .join("versions/0.5.0/code-pad.exe")
+            .canonicalize()
+            .unwrap_or_else(|_| real_app_root.join("versions/0.5.0/code-pad.exe"));
+        fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        fs::write(&executable, b"inside root").unwrap();
+        symlink(&real_app_root, layout.root.join("apps/code-pad")).unwrap();
+        layout.write_manifest(json!([{
+            "app": "code-pad",
+            "version": "0.5.0",
+            "mode": "portable",
+            "exe_path": layout.root.join("apps/code-pad/versions/0.5.0/code-pad.exe")
+        }]));
         layout.write_locator(1, 1);
 
         assert_eq!(

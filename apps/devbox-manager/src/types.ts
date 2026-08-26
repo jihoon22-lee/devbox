@@ -55,6 +55,36 @@ export interface InstallPathInfo {
   sourceManifest: string;
 }
 
+export type InstallRootPreviewStatus =
+  | "ready"
+  | "already-active"
+  | "existing-install"
+  | "candidate-conflict"
+  | "permission-denied"
+  | "insufficient-free-space"
+  | "free-space-unavailable";
+
+export interface InstallRootPreview {
+  status: InstallRootPreviewStatus;
+  canApply: boolean;
+  registryRevision: number;
+  catalogRevision: number;
+  candidatePath: string;
+  rootId: string;
+  freeSpaceBytes: number | null;
+  requiredFreeSpaceBytes: number;
+  activeInstallCount: number;
+  candidateEntryCount: number;
+  migration: "blocked-existing-install" | "no-automatic-migration";
+}
+
+export interface InstallRootApplyResult {
+  status: "applied" | "already-active";
+  registryRevision: number;
+  rootId: string;
+  candidatePath: string;
+}
+
 export type InstallMode = "portable" | "installer";
 
 export interface BatchInstallRequest {

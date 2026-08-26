@@ -30,6 +30,7 @@ pub use installed::{
     installed_targets_from_paths, parse_install_root_locator, resolve_installed_from_paths,
     runtime_catalog_path, validate_installation_metadata_from_paths, InstallLookupError,
     InstallRootLocator, InstalledPathDetails, InstalledTarget, INSTALL_ROOT_SCHEMA_VERSION,
+    MAX_INSTALL_ROOT_LOCATOR_BYTES,
 };
 
 use serde::Deserialize;
@@ -57,7 +58,7 @@ pub(crate) fn resolve_legacy_from_base(base: &Path, app_id: &str) -> Option<Path
     if !valid_app_id(app_id) {
         return None;
     }
-    let base = base.canonicalize().ok()?;
+    let base = canonicalize_path(base).ok()?;
     let app_dir = base.join("apps").join(app_id);
 
     if let Some(exe) = current_exe(&app_dir, app_id) {
@@ -91,18 +92,38 @@ fn current_exe(app_dir: &Path, app_id: &str) -> Option<PathBuf> {
     if !valid_version_dir(&current.version) {
         return None;
     }
-    let executable = PathBuf::from(current.exe_path).canonicalize().ok()?;
-    let expected = app_dir
+    let executable = canonicalize_path(&PathBuf::from(current.exe_path)).ok()?;
+    let expected_path = app_dir
         .join("versions")
         .join(current.version)
-        .join(format!("{app_id}.exe"))
-        .canonicalize()
-        .ok()?;
+        .join(format!("{app_id}.exe"));
+    let expected = canonicalize_path(&expected_path).ok()?;
     (executable == expected && executable.is_file()).then_some(executable)
 }
 
+pub(crate) fn canonicalize_path(path: &Path) -> Result<PathBuf, std::io::Error> {
+    path.canonicalize().map(normalize_canonical_path)
+}
+
+#[cfg(windows)]
+fn normalize_canonical_path(path: PathBuf) -> PathBuf {
+    let value = path.to_string_lossy();
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{rest}"))
+    } else if let Some(rest) = value.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        path
+    }
+}
+
+#[cfg(not(windows))]
+fn normalize_canonical_path(path: PathBuf) -> PathBuf {
+    path
+}
+
 fn latest_version_exe(app_dir: &Path, app_id: &str) -> Option<PathBuf> {
-    let app_dir = app_dir.canonicalize().ok()?;
+    let app_dir = canonicalize_path(app_dir).ok()?;
     let versions = app_dir.join("versions");
     let mut best: Option<(Vec<u32>, PathBuf)> = None;
     for entry in std::fs::read_dir(versions).ok()?.flatten() {
@@ -117,7 +138,7 @@ fn latest_version_exe(app_dir: &Path, app_id: &str) -> Option<PathBuf> {
         {
             continue;
         }
-        let Ok(executable) = raw_executable.canonicalize() else {
+        let Ok(executable) = canonicalize_path(&raw_executable) else {
             continue;
         };
         if !executable.starts_with(&app_dir) || !executable.is_file() {
@@ -307,7 +328,7 @@ mod tests {
 
         assert_eq!(
             current_exe(&tmp, "test-app").unwrap(),
-            exe.canonicalize().unwrap()
+            canonicalize_path(&exe).unwrap()
         );
 
         let _ = std::fs::remove_dir_all(&tmp);

@@ -19,6 +19,7 @@ pub fn validate_size(expected: i64, actual: i64) -> Result<(), String> {
 }
 
 /// 누적 바이트가 manifest size를 초과하면 즉시 중단해야 한다.
+#[cfg(test)]
 pub fn is_over_limit(received: i64, expected: i64) -> bool {
     expected >= 0 && received > expected
 }

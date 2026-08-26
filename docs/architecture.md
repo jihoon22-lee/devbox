@@ -90,7 +90,8 @@ code-pad:         React(CodeMirror + tab/editor context-menu, bounded workspace 
                    filesystem/markdown crate → React
 run-manager:      React(context-menu + bounded log export/search) → commands → scheduler
                    → platform 실행 어댑터(Windows Job Object/WSL) → SQLite + app-owned 회전 로그
-devbox-manager:   React → commands → catalog/manifest → GitHub release asset
+devbox-manager:   React → commands → catalog/manifest/install-root preview → GitHub release asset
+                   └ custom root apply: canonical empty directory → app-owned registry → versioned locator
 workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument,
                    v0.4.0에서는 argv 수신 부재로 미동작했으나, v0.4.1에서 crates/applink와
                    single-instance pending-open 수신을 Code Pad/WSL Desktop/Workbench에 구현.
@@ -280,8 +281,41 @@ Manager backend는 action마다 manager-visible/non-self-managed catalog target,
 identity를 다시 확인한다. portable 제거 전에는 app-owned tree 전체를 제한된 깊이·항목 수로 순회해
 symlink, Windows reparse point, 특수 파일을 거부한 뒤 해당 app tree만 삭제한다. 별도 app-local user
 data는 이 경계 밖에 있어 보존된다. registry를 먼저 원자 갱신하고 제거가 실패하면 원래 registry를
-복원한다. installer lifecycle과 custom install root 이동·제거는 실제 소유 manifest가 추가되는 P2
-기능 전까지 경로를 추측하지 않는다.
+복원한다. installer lifecycle은 wizard 실행 사실만 기록하고 실제 설치 위치를 추측하지 않는다.
+
+Devbox Manager의 custom install root는 `preview_install_root`와 `apply_install_root` 두 단계로
+분리된다. preview는 사용자 문자열을 native에서 trim/bounds/canonicalize하고, 기존 root·home·workspace·
+환경변수 표기·symlink/reparse·비디렉터리·기존 항목·쓰기 권한·최소 128 MiB free-space를 검사하지만 파일을
+생성·이동·삭제하지 않는다. active manifest가 비어 있지 않거나 `apps/`, partial, 기타 root artifact가
+남아 있으면 `existing-install`로 종료한다. 후보는 이미 존재하는 canonical 빈 디렉터리여야 하므로
+부모를 임의로 만들거나 사용자의 파일을 덮어쓰지 않는다.
+
+적용은 preview의 양의 `registryRevision`을 CAS token으로 받아 경로·active manifest·artifact·free-space를
+즉시 재검사한다. 성공할 때만 후보 안에 `apps/`와 빈 `registry.json`을 component별로 안전하게 만들고,
+manifest는 기존 경로를 대체하지 않는 exclusive create+sync로 준비한다. locator publish 직전에는
+candidate direct entries, empty apps와 exact manifest bytes를 다시 확인하고,
+`%LOCALAPPDATA%\devbox\install-roots\v1\registry.json`을 새 canonical root/manifest와
+`catalogRevision` provenance로 atomic replace한다. locator write가 실패하면 이번 호출이 만든 빈
+manifest/apps만 rollback하고 기존 root·설치 파일·사용자 data는 절대 이동하거나 삭제하지 않는다.
+rollback 시 manifest는 여전히 exact regular `[]`일 때만 제거한다. 다른 writer가 내용을 바꿨으면
+외부 변경을 보존하고 rollback 실패를 반환한다. root preflight/apply 중 frontend는 refresh,
+doctor, app lifecycle과 batch selection/action을 같은 single-flight operation으로 잠근다.
+metadata refresh/doctor도 read single-flight를 소유해 진행 중에는 root·app mutation을 막고,
+mutation 소유자가 수행하는 후속 refresh만 명시적 internal 경로로 허용한다.
+locator가 없을 때만 v0.4.x default root를 read-only fallback으로 보고, 손상된 locator나 valid locator
+뒤의 manifest/path 오류는 fail-closed한다. 적용 후 Manager의 install/current/rollback/launch/path 조회는
+locator의 active root를 사용하고 custom root의 removal은 #309가 소유한다.
+non-legacy Manager lifecycle은 locator catalog provenance가 선택 catalog revision과 같고 source
+manifest의 모든 app ID가 현재 manager-visible/non-self-managed 대상일 때만 동작한다. startup
+metadata sync가 실패한 stale custom locator/manifest를 command가 우회해 계속 사용하지 않는다.
+
+startup partial cleanup은 active root 전체에서 이름이 `.partial`인 파일을 재귀 삭제하지 않는다.
+catalog-visible Manager app과 strict version에서 계산한 exact portable download slot만 bounded scan으로
+먼저 모두 수집하고, scan 전체가 안전할 때만 삭제한다. 따라서 사용자 sibling/nested partial은
+보존되고 link/reparse·특수 파일·읽기 실패·과대 tree는 cleanup 전체를 fail-closed한다. startup
+metadata sync는 custom locator의 active root/manifest도 mutation 전에 재검증한다. valid custom root는
+선택 catalog revision으로 provenance와 registry revision만 전진시키며 path identity는 유지하고,
+locator가 선택 revision보다 앞서거나 unsafe하면 downgrade·재작성하지 않는다.
 
 Workbench의 profile-row context menu는 열기 전에 opaque profile ID로 대상 행을 선택한다. 현재 UI가
 추적 중인 workspace run은 profile ID와 함께 유지하고 frontend reload 때 run/profile ID ownership만
@@ -333,10 +367,15 @@ font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost
 `%LOCALAPPDATA%\devbox\catalog.json` 및 versioned install-root locator를 원자적으로
 동기화하고, 현재보다 낮은 revision으로 덮어쓰지 않는다. `crates/launch`는 locator가
 가리키는 Manager 소유 manifest에서 canonical executable을 확인한 뒤 실제 설치된
-capability target만 반환한다. locator가 없거나 손상된 v0.4.x 환경에 한해서만 기존 고정
-Manager root를 read-only fallback으로 읽으며, 유효한 locator 뒤의 manifest/path 오류는
+capability target만 반환한다. locator가 없는 v0.4.x 환경에 한해서만 기존 고정
+Manager root를 read-only fallback으로 읽으며, 손상된 locator 또는 유효한 locator 뒤의 manifest/path 오류는
 fail-closed 처리한다. `crates/applink`는 argv 계약만 담당해 `launch`와의 순환 의존을
 피한다.
+
+legacy fallback은 locator 파일이 없는 경우에만 허용한다. locator 경로의 이미 존재하는
+parent component가 symlink/reparse이거나 active portable record가 exact layout 밖을
+가리키면 Manager와 launch consumer 모두 fail-closed하며, startup sync도 present corrupt
+locator를 default metadata로 덮어쓰지 않는다.
 
 고정된 공용 metadata 경계는 다음과 같다.
 
@@ -344,10 +383,13 @@ fail-closed 처리한다. `crates/applink`는 argv 계약만 담당해 `launch`�
 |---|---|---|---|
 | `%LOCALAPPDATA%\devbox\catalog.json` | Devbox Manager | `crates/catalog`, Manager, 메뉴 소비 앱 | 유효한 v2이며 build-time `catalogRevision` 이상일 때만 runtime 우선 |
 | `%LOCALAPPDATA%\devbox\install-roots\v1\registry.json` | Devbox Manager | `crates/launch` | 양수 `registryRevision`, catalog provenance, canonical root/manifest |
-| `<manager-root>\registry.json` | Devbox Manager | Manager, `crates/launch` | app/version/mode와 exact portable executable layout 일치 |
+| `<active-install-root>\registry.json` | Devbox Manager | Manager, `crates/launch` | app/version/mode와 exact portable executable layout 일치 |
 
-실제 custom root 이동·제거 UI는 이 locator 계약의 후속 기능이며, locator에는 root 자체나
-설치 목록을 복제하지 않고 app-owned manifest 위치만 둔다.
+custom root selector는 위 locator 계약을 소비하는 #308 범위에 포함되지만 “이동”은 빈 후보에
+대한 pointer 전환만 뜻한다. 기존 설치가 있는 상태에서의 migration, binary removal, user-data 삭제,
+root reset은 수행하지 않는다. locator에는 설치 목록을 복제하지 않고 app-owned manifest 위치만 둔다.
+`registryRevision`·catalog provenance·path/manifest bounds와 canonical/symlink/reparse 검증 실패는
+공용 consumer와 Manager 모두 동일하게 fail-closed해야 하며 raw path·OS error는 public DTO에 내보내지 않는다.
 
 Repo Manager의 "다른 앱으로 열기"는 이 계약의 첫 동적 UI 소비자다. `path` capability와
 실제 설치 executable이 모두 확인된 앱만 표시하고, 같은 앱이 `workspace`도 선언하면

@@ -197,7 +197,7 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
    Life Log export는 #305 범위의 native-first date-range artifact와 browser-preview 경계를
    포함하며, exact `[start,end)`/DST boundaries·bounded Git·snapshot provenance·privacy/
    deterministic rendering을 선행 계약으로 삼는다.
-7. Manager custom install root·데이터 보존형 안전 제거.
+7. Manager custom install root (#308)·데이터 보존형 안전 제거 (#309).
 8. Code Pad LSP cache/local archive, Run Manager log search, Workbench project environment,
    Webhook fixture/API handoff, Repo Manager history/diff/stage/commit/fetch/FF-only pull/push.
 
@@ -390,6 +390,29 @@ stale 반영은 확인하고 expired·missing·corrupt는 차단한다. 반영 �
 preview/accept는 profile store 저장, WSL/Docker command, resource start, producer write를 수행하지
 않으며 snapshot 절대 경로·container ID·raw Docker detail은 frontend로 전달하지 않는다. W1에서는
 packaged fresh/stale/expired 전환, producer missing/corrupt, accept 후 Save 전 저장소 불변을 확인한다.
+
+**2026-08-27 #308 구현·감사 완료 (PR 전).** Devbox Manager의 custom install root는 기존 설치를
+이동하는 마법사가 아니라, 사용자가 선택한 이미 존재하는 canonical 빈 디렉터리를 다음 portable
+설치에 연결하는 native preview/confirm 흐름이다. `preview_install_root`는 4,096-byte 경로,
+root/home/workspace·환경변수·symlink/reparse·canonical alias·기존 항목·쓰기 권한·최소 128 MiB
+free-space를 검사하고 파일을 변경하지 않는다. active manifest 또는 root artifact가 있으면
+`existing-install`로 fail-closed한다.
+
+`apply_install_root`는 preview의 `registryRevision`을 CAS로 재검사한 뒤 후보에 `apps/`와 빈
+`registry.json`만 만들고 versioned locator를 atomic replace한다. locator/manifest의 strict schema와
+16 KiB/1 MiB·256 row bounds, catalog provenance, stale/overflow, rollback residue를 Rust fixture로
+검증하며, 기존 root·binary·partial·user data는 이동·삭제하지 않는다. 적용 후 Manager의 install,
+launch, rollback, install path 조회는 locator가 지정한 active root를 사용하고, 설치 directory와
+download target도 각 component 및 `.partial` sibling의 symlink/reparse를 다시 검사한다.
+
+locator가 없는 v0.4.x 상태만 legacy fallback으로 사용하며, corrupt/oversized locator 또는
+symlink/reparse parent는 default root로 복구하지 않는다. active portable record는 exact layout와
+intermediate component identity를 다시 확인하고, 기존 `.partial`은 `create_new`로 덮어쓰지 않는다.
+WSL focused Rust 75/23 tests, manager/launch check·clippy·fmt, frontend 19 tests와 build를 통과했다.
+PR 전 전체 Rust workspace test·check·clippy(`-D warnings`)·fmt과 17개 frontend workspace build도
+통과했다. Windows packaged acceptance는 CI와 W2에서 검증한다.
+custom root removal, 기존 설치 migration/병합, root reset과 user-data 삭제는 후속 `#309` 범위로
+남기며 #308에서 자동 이동·삭제로 우회하지 않는다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

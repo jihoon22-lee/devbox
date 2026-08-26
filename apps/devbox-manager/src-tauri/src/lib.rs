@@ -39,6 +39,8 @@ pub fn run() {
             commands::manager::available,
             commands::manager::installed,
             commands::manager::install_path,
+            commands::manager::preview_install_root,
+            commands::manager::apply_install_root,
             commands::manager::install,
             commands::manager::install_many,
             commands::manager::launch,
