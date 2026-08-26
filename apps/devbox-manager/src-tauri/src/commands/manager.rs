@@ -6,9 +6,13 @@ use crate::core::batch::{
     is_install_or_upgrade, validate_batch_requests, BatchInstallRequest, BatchInstallResult,
 };
 use crate::core::catalog::CatalogApp;
-use crate::core::download::{is_over_limit, partial_path, validate_digest, validate_size};
+use crate::core::custom_root::{
+    self, ActiveInstallLocation, CustomRootError, InstallRootPreviewStatus,
+};
+use crate::core::download::{partial_path, validate_digest, validate_size};
 use crate::core::managed_install::{
-    remove_portable_install, resolve_portable_install, ManagedPortableInstall,
+    prepare_installer_destination, prepare_portable_destination, remove_portable_install,
+    resolve_portable_install, validate_download_target, ManagedPortableInstall,
 };
 use crate::core::manifest::{parse_manifest, ReleaseManifest};
 use crate::core::url_policy::is_allowed;
@@ -16,6 +20,8 @@ use futures_util::StreamExt;
 use reqwest::header::USER_AGENT;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use tauri::Manager;
@@ -23,6 +29,8 @@ use tauri_plugin_opener::OpenerExt;
 
 const REPO: &str = "https://api.github.com/repos/jihoon22-lee/devbox";
 const DOWNLOAD_ROOT: &str = "https://github.com/jihoon22-lee/devbox/releases/download";
+const MAX_PARTIAL_CLEANUP_APPS: usize = 256;
+const MAX_PARTIAL_CLEANUP_VERSIONS: usize = 256;
 
 /// 빌드 시 임베드된 카탈로그. Manager 자신의 버전이 아는 앱 목록이 명확해지고
 /// 오프라인에서도 목록이 보인다. 새 앱은 Manager 업데이트로 반영된다.
@@ -83,29 +91,291 @@ pub struct InstallPathView {
     pub source_manifest: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InstallRootRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InstallRootApplyRequest {
+    pub path: String,
+    pub expected_registry_revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallRootPreviewView {
+    pub status: String,
+    pub can_apply: bool,
+    pub registry_revision: u64,
+    pub catalog_revision: u64,
+    pub candidate_path: String,
+    pub root_id: String,
+    pub free_space_bytes: Option<u64>,
+    pub required_free_space_bytes: u64,
+    pub active_install_count: usize,
+    pub candidate_entry_count: usize,
+    pub migration: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallRootApplyView {
+    pub status: String,
+    pub registry_revision: u64,
+    pub root_id: String,
+    pub candidate_path: String,
+}
+
 pub(crate) fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let dir = data_dir_path(app)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
 
-fn registry_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    Ok(data_dir(app)?.join("registry.json"))
+fn data_dir_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path().app_local_data_dir().map_err(|e| e.to_string())
 }
 
-fn read_registry(app: &tauri::AppHandle) -> Vec<InstalledApp> {
-    let path = registry_path(app).ok();
-    let Some(path) = path else { return Vec::new() };
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<Vec<InstalledApp>>(&s).ok())
-        .unwrap_or_default()
+fn registry_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(active_install_location(app)?.manifest)
+}
+
+fn active_install_location(app: &tauri::AppHandle) -> Result<ActiveInstallLocation, String> {
+    // Resolving the active root is read-only. In particular, preview must not
+    // create the legacy root as a side effect of asking where it is.
+    let default_root = data_dir_path(app)?;
+    let locator_path = devbox_launch::install_root_registry_path()
+        .ok_or_else(|| "설치 root 출처를 확인할 수 없습니다.".to_string())?;
+    let location = custom_root::resolve_active_location(&locator_path, &default_root)
+        .map_err(|_| "설치 root 상태를 안전하게 확인할 수 없습니다.".to_string())?;
+    if !location.from_legacy_fallback && location.catalog_revision != selected_catalog_revision()? {
+        return Err("설치 root 상태를 안전하게 확인할 수 없습니다.".to_string());
+    }
+    Ok(location)
+}
+
+fn install_root_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(active_install_location(app)?.root)
+}
+
+fn read_registry(app: &tauri::AppHandle) -> Result<Vec<InstalledApp>, String> {
+    let location = active_install_location(app)?;
+    let path = location.manifest;
+    if location.from_legacy_fallback {
+        match std::fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(_) => return Err("설치 상태를 안전하게 읽을 수 없습니다.".to_string()),
+            Ok(_) => {}
+        }
+    }
+    let records = custom_root::read_install_manifest(&path)
+        .map_err(|_| "설치 상태를 안전하게 읽을 수 없습니다.".to_string())?;
+    let known_apps = catalog()?
+        .into_iter()
+        .filter(|entry| entry.manager_visible && !entry.self_managed)
+        .map(|entry| entry.id)
+        .collect::<HashSet<_>>();
+    if !registry_apps_are_known(&records, &known_apps) {
+        return Err("설치 상태를 안전하게 읽을 수 없습니다.".to_string());
+    }
+    Ok(records
+        .into_iter()
+        .map(|record| InstalledApp {
+            app: record.app,
+            version: record.version,
+            mode: record.mode,
+            exe_path: record.exe_path,
+        })
+        .collect())
+}
+
+fn registry_apps_are_known(
+    records: &[custom_root::InstallRecord],
+    known_apps: &HashSet<String>,
+) -> bool {
+    records
+        .iter()
+        .all(|record| known_apps.contains(&record.app))
 }
 
 fn write_registry(app: &tauri::AppHandle, reg: &[InstalledApp]) -> Result<(), String> {
     let path = registry_path(app)?;
-    let json = serde_json::to_string_pretty(reg).map_err(|e| e.to_string())?;
-    devbox_filesystem::atomic_write(path, json.as_bytes()).map_err(|e| e.to_string())
+    let json = serde_json::to_string_pretty(reg)
+        .map_err(|_| "설치 상태를 직렬화할 수 없습니다.".to_string())?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "설치 상태를 안전하게 기록할 수 없습니다.".to_string())?;
+    let records = custom_root::parse_install_manifest(json.as_bytes())
+        .map_err(|_| "설치 상태를 안전하게 기록할 수 없습니다.".to_string())?;
+    custom_root::validate_install_manifest_at_root(parent, &records)
+        .map_err(|_| "설치 상태를 안전하게 기록할 수 없습니다.".to_string())?;
+    let metadata = std::fs::symlink_metadata(parent)
+        .map_err(|_| "설치 상태를 안전하게 기록할 수 없습니다.".to_string())?;
+    if metadata_is_link_or_reparse(&metadata) || !metadata.is_dir() {
+        return Err("설치 상태를 안전하게 기록할 수 없습니다.".to_string());
+    }
+    devbox_filesystem::atomic_write(path, json.as_bytes())
+        .map_err(|_| "설치 상태를 안전하게 기록할 수 없습니다.".to_string())
+}
+
+fn metadata_common_root() -> Result<PathBuf, String> {
+    devbox_launch::runtime_catalog_path()
+        .and_then(|path| path.parent().map(PathBuf::from))
+        .ok_or_else(|| "runtime metadata root is unavailable".to_string())
+}
+
+fn metadata_locator_path() -> Result<PathBuf, String> {
+    devbox_launch::install_root_registry_path()
+        .ok_or_else(|| "install-root locator is unavailable".to_string())
+}
+
+fn selected_catalog_revision() -> Result<u64, String> {
+    let runtime =
+        devbox_launch::runtime_catalog_path().and_then(|path| std::fs::read_to_string(path).ok());
+    devbox_catalog::select_catalog(CATALOG_JSON, runtime.as_deref())
+        .map_err(|_| "앱 카탈로그를 확인할 수 없습니다.".to_string())?
+        .catalog
+        .catalog_revision
+        .filter(|revision| *revision > 0)
+        .ok_or_else(|| "앱 카탈로그 revision을 확인할 수 없습니다.".to_string())
+}
+
+fn custom_root_error(error: CustomRootError) -> String {
+    match error {
+        CustomRootError::InvalidPath | CustomRootError::PathTooLong => {
+            "설치 root 경로가 올바르지 않습니다.".to_string()
+        }
+        CustomRootError::MissingDirectory => {
+            "선택한 설치 root 디렉터리를 찾을 수 없습니다.".to_string()
+        }
+        CustomRootError::UnsafePath | CustomRootError::ProtectedPath => {
+            "안전하지 않은 설치 root는 사용할 수 없습니다.".to_string()
+        }
+        CustomRootError::LocatorInvalid => "현재 설치 root 상태를 확인할 수 없습니다.".to_string(),
+        CustomRootError::ActiveStateInvalid
+        | CustomRootError::ManifestTooLarge
+        | CustomRootError::ManifestInvalid
+        | CustomRootError::ManifestTooManyEntries => {
+            "현재 설치 상태가 올바르지 않아 변경할 수 없습니다.".to_string()
+        }
+        CustomRootError::CandidateConflict => "선택한 설치 root가 비어 있지 않습니다.".to_string(),
+        CustomRootError::PermissionDenied => "선택한 설치 root에 쓸 권한이 없습니다.".to_string(),
+        CustomRootError::ExistingInstall => {
+            "기존 설치가 있어 자동 이동하지 않습니다. 별도 migration을 먼저 진행하세요.".to_string()
+        }
+        CustomRootError::FreeSpaceUnavailable => {
+            "설치 root의 여유 공간을 확인할 수 없습니다.".to_string()
+        }
+        CustomRootError::InsufficientFreeSpace => "설치 root의 여유 공간이 부족합니다.".to_string(),
+        CustomRootError::RevisionMismatch => {
+            "설치 root 상태가 바뀌었습니다. 최신 preview를 다시 확인하세요.".to_string()
+        }
+        CustomRootError::RevisionOverflow => "설치 root revision을 증가할 수 없습니다.".to_string(),
+        CustomRootError::InvalidCatalogRevision => {
+            "앱 카탈로그 revision을 확인할 수 없습니다.".to_string()
+        }
+        CustomRootError::Storage | CustomRootError::Serialization => {
+            "설치 root 상태를 안전하게 저장할 수 없습니다.".to_string()
+        }
+        CustomRootError::RollbackFailed => {
+            "설치 root 변경 실패 후 안전하게 복구하지 못했습니다.".to_string()
+        }
+        CustomRootError::NonUtf8Path => "설치 root 경로를 안전하게 표시할 수 없습니다.".to_string(),
+    }
+}
+
+fn install_root_preview_view(
+    preview: custom_root::InstallRootPreview,
+) -> Result<InstallRootPreviewView, String> {
+    let candidate_path = preview
+        .candidate_root
+        .to_str()
+        .ok_or_else(|| custom_root_error(CustomRootError::NonUtf8Path))?
+        .to_string();
+    Ok(InstallRootPreviewView {
+        status: preview.status.as_code().to_string(),
+        can_apply: preview.status.can_apply(),
+        registry_revision: preview.registry_revision,
+        catalog_revision: preview.catalog_revision,
+        candidate_path,
+        root_id: preview.candidate_root_id,
+        free_space_bytes: preview.free_space_bytes,
+        required_free_space_bytes: preview.required_free_space_bytes,
+        active_install_count: preview.active_install_count,
+        candidate_entry_count: preview.candidate_entry_count,
+        migration: if preview.status == InstallRootPreviewStatus::ExistingInstall {
+            "blocked-existing-install".to_string()
+        } else {
+            "no-automatic-migration".to_string()
+        },
+    })
+}
+
+/// Read-only custom install-root preflight. The selected directory is
+/// canonicalized and checked again by `apply_install_root`; this command does
+/// not create, move, delete, or rewrite any file.
+#[tauri::command]
+pub fn preview_install_root(
+    app: tauri::AppHandle,
+    request: InstallRootRequest,
+) -> Result<InstallRootPreviewView, String> {
+    let default_root =
+        data_dir_path(&app).map_err(|_| "현재 설치 root를 확인할 수 없습니다.".to_string())?;
+    let locator_path = metadata_locator_path()?;
+    let common_root = metadata_common_root()?;
+    let catalog_revision = selected_catalog_revision()?;
+    let preview = custom_root::preview_custom_root(
+        &locator_path,
+        &default_root,
+        Some(&common_root),
+        &request.path,
+        catalog_revision,
+        None,
+    )
+    .map_err(custom_root_error)?;
+    install_root_preview_view(preview)
+}
+
+/// Apply a confirmed custom install root. Only an empty candidate is allowed;
+/// existing installations are never moved or deleted in this issue.
+#[tauri::command]
+pub fn apply_install_root(
+    app: tauri::AppHandle,
+    request: InstallRootApplyRequest,
+) -> Result<InstallRootApplyView, String> {
+    let default_root =
+        data_dir_path(&app).map_err(|_| "현재 설치 root를 확인할 수 없습니다.".to_string())?;
+    let locator_path = metadata_locator_path()?;
+    let common_root = metadata_common_root()?;
+    let catalog_revision = selected_catalog_revision()?;
+    let applied = custom_root::apply_custom_root(
+        &locator_path,
+        &default_root,
+        Some(&common_root),
+        &request.path,
+        request.expected_registry_revision,
+        catalog_revision,
+        now_ms().max(1) as u64,
+    )
+    .map_err(custom_root_error)?;
+    let candidate_path = applied
+        .root
+        .to_str()
+        .ok_or_else(|| custom_root_error(CustomRootError::NonUtf8Path))?
+        .to_string();
+    Ok(InstallRootApplyView {
+        status: if applied.status == InstallRootPreviewStatus::AlreadyActive {
+            "already-active".to_string()
+        } else {
+            "applied".to_string()
+        },
+        registry_revision: applied.registry_revision,
+        root_id: applied.root_id,
+        candidate_path,
+    })
 }
 
 /// Publish the embedded catalog and the default Manager install-root locator.
@@ -130,36 +400,123 @@ pub(crate) fn sync_runtime_metadata(app: &tauri::AppHandle) -> Result<(), String
 
 /// 앱 시작 시 남아 있는 중단된 `.partial` 파일을 정리한다.
 pub fn cleanup_partials(app: &tauri::AppHandle) {
-    let Ok(base) = data_dir(app) else { return };
-    let apps_root = base.join("apps");
-    let Ok(entries) = std::fs::read_dir(&apps_root) else {
+    let Ok(base) = install_root_dir(app) else {
         return;
     };
-    for entry in entries.flatten() {
-        let app_dir = entry.path();
-        if !app_dir.is_dir() {
-            continue;
-        }
-        walk_remove_partials(&app_dir);
+    let Ok(known_apps) = catalog().map(|entries| {
+        entries
+            .into_iter()
+            .filter(|entry| entry.manager_visible && !entry.self_managed)
+            .map(|entry| entry.id)
+            .collect::<HashSet<_>>()
+    }) else {
+        return;
+    };
+    cleanup_managed_partials(&base, &known_apps);
+}
+
+fn cleanup_managed_partials(base: &std::path::Path, known_apps: &HashSet<String>) {
+    let Some(targets) = managed_partial_targets(base, known_apps) else {
+        return;
+    };
+    for target in targets {
+        let _ = std::fs::remove_file(target);
     }
 }
 
-fn walk_remove_partials(dir: &std::path::Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
+/// Return only the exact partial slots that Manager derives for a known app
+/// and strict version. The complete scan finishes before deletion so an
+/// unsafe link, malformed component, or oversized tree leaves every file
+/// untouched instead of partially cleaning an untrusted custom root.
+fn managed_partial_targets(
+    base: &std::path::Path,
+    known_apps: &HashSet<String>,
+) -> Option<Vec<PathBuf>> {
+    let apps_root = base.join("apps");
+    let Ok(metadata) = std::fs::symlink_metadata(&apps_root) else {
+        return Some(Vec::new());
     };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            walk_remove_partials(&path);
-        } else if path
-            .file_name()
-            .map(|n| n.to_string_lossy().ends_with(".partial"))
-            .unwrap_or(false)
-        {
-            let _ = std::fs::remove_file(&path);
+    if metadata_is_link_or_reparse(&metadata) || !metadata.is_dir() {
+        return None;
+    }
+    let Ok(entries) = std::fs::read_dir(&apps_root) else {
+        return None;
+    };
+    let mut app_count = 0_usize;
+    let mut targets = Vec::new();
+    for entry in entries {
+        let entry = entry.ok()?;
+        app_count = app_count.checked_add(1)?;
+        if app_count > MAX_PARTIAL_CLEANUP_APPS {
+            return None;
+        }
+        let app_id = entry.file_name().into_string().ok()?;
+        if !known_apps.contains(&app_id) {
+            continue;
+        }
+        let app_dir = entry.path();
+        let Ok(metadata) = std::fs::symlink_metadata(&app_dir) else {
+            return None;
+        };
+        if metadata_is_link_or_reparse(&metadata) || !metadata.is_dir() {
+            return None;
+        }
+        let versions_dir = app_dir.join("versions");
+        let metadata = match std::fs::symlink_metadata(&versions_dir) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return None,
+        };
+        if metadata_is_link_or_reparse(&metadata) || !metadata.is_dir() {
+            return None;
+        }
+        let Ok(versions) = std::fs::read_dir(&versions_dir) else {
+            return None;
+        };
+        let mut version_count = 0_usize;
+        for version in versions {
+            let version = version.ok()?;
+            version_count = version_count.checked_add(1)?;
+            if version_count > MAX_PARTIAL_CLEANUP_VERSIONS {
+                return None;
+            }
+            let version_name = version.file_name().into_string().ok()?;
+            if validate_version_component(&version_name).is_err() {
+                continue;
+            }
+            let version_dir = version.path();
+            let Ok(metadata) = std::fs::symlink_metadata(&version_dir) else {
+                return None;
+            };
+            if metadata_is_link_or_reparse(&metadata) || !metadata.is_dir() {
+                return None;
+            }
+            let partial = version_dir.join(format!("{app_id}.exe.partial"));
+            let metadata = match std::fs::symlink_metadata(&partial) {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(_) => return None,
+            };
+            if metadata_is_link_or_reparse(&metadata) || !metadata.is_file() {
+                return None;
+            }
+            targets.push(partial);
         }
     }
+    Some(targets)
+}
+
+#[cfg(windows)]
+fn metadata_is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+    metadata.file_type().is_symlink()
+        || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn metadata_is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
+    metadata.file_type().is_symlink()
 }
 
 /// 번들에 포함된 카탈로그를 반환한다.
@@ -168,7 +525,7 @@ pub fn catalog() -> Result<Vec<CatalogApp>, String> {
     let runtime =
         devbox_launch::runtime_catalog_path().and_then(|path| std::fs::read_to_string(path).ok());
     let selected = devbox_catalog::select_catalog(CATALOG_JSON, runtime.as_deref())
-        .map_err(|error| error.to_string())?;
+        .map_err(|_| "앱 카탈로그를 확인할 수 없습니다.".to_string())?;
     Ok(selected.catalog.apps)
 }
 
@@ -182,7 +539,7 @@ fn ensure_catalog_target(app_id: &str) -> Result<CatalogApp, String> {
 
 fn portable_registry_entry(app: &tauri::AppHandle, app_id: &str) -> Result<InstalledApp, String> {
     ensure_catalog_target(app_id)?;
-    let installed = read_registry(app)
+    let installed = read_registry(app)?
         .into_iter()
         .find(|entry| entry.app == app_id)
         .ok_or_else(|| "설치된 앱이 없습니다. 먼저 설치하세요.".to_string())?;
@@ -200,7 +557,7 @@ fn managed_portable(
 ) -> Result<ManagedPortableInstall, String> {
     let installed = portable_registry_entry(app, app_id)?;
     let root =
-        data_dir(app).map_err(|_| "Manager 데이터 위치를 확인할 수 없습니다.".to_string())?;
+        install_root_dir(app).map_err(|_| "Manager 설치 root를 확인할 수 없습니다.".to_string())?;
     let resolved = resolve_portable_install(&root, app_id, &installed.version, &installed.exe_path)
         .map_err(|_| "검증된 휴대용 앱 경로를 확인할 수 없습니다.".to_string())?;
     Ok(resolved)
@@ -216,11 +573,14 @@ pub async fn available() -> Result<ReleaseManifest, String> {
         .header(USER_AGENT, "devbox-manager")
         .send()
         .await
-        .map_err(|e| format!("릴리스 조회 실패: {e}"))?;
+        .map_err(|_| "릴리스 정보를 조회할 수 없습니다.".to_string())?;
     if !resp.status().is_success() {
-        return Err(format!("GitHub 응답 오류: {}", resp.status()));
+        return Err("릴리스 정보를 제공받지 못했습니다.".to_string());
     }
-    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|_| "릴리스 응답을 읽을 수 없습니다.".to_string())?;
     let manifest_url = json["assets"]
         .as_array()
         .and_then(|arr| {
@@ -238,12 +598,16 @@ pub async fn available() -> Result<ReleaseManifest, String> {
         .header(USER_AGENT, "devbox-manager")
         .send()
         .await
-        .map_err(|e| format!("manifest 다운로드 실패: {e}"))?;
+        .map_err(|_| "release manifest를 다운로드할 수 없습니다.".to_string())?;
     if !mresp.status().is_success() {
-        return Err(format!("manifest 응답 오류: {}", mresp.status()));
+        return Err("release manifest를 제공받지 못했습니다.".to_string());
     }
-    let text = mresp.text().await.map_err(|e| e.to_string())?;
-    let manifest = parse_manifest(&text)?;
+    let text = mresp
+        .text()
+        .await
+        .map_err(|_| "release manifest 응답을 읽을 수 없습니다.".to_string())?;
+    let manifest = parse_manifest(&text)
+        .map_err(|_| "release manifest 형식이 올바르지 않습니다.".to_string())?;
     validate_manifest_artifacts(&manifest)
         .map_err(|_| "release manifest의 앱 정보가 올바르지 않습니다.".to_string())?;
     let known = catalog().map_err(|_| "앱 카탈로그를 확인할 수 없습니다.".to_string())?;
@@ -261,7 +625,7 @@ pub async fn available() -> Result<ReleaseManifest, String> {
 #[tauri::command]
 pub fn installed(app: tauri::AppHandle) -> Result<Vec<InstalledAppView>, String> {
     let targets = catalog().map_err(|_| "앱 카탈로그를 확인할 수 없습니다.".to_string())?;
-    Ok(read_registry(&app)
+    Ok(read_registry(&app)?
         .iter()
         .filter(|installed| {
             targets.iter().any(|target| {
@@ -282,11 +646,9 @@ pub fn install_path(app: tauri::AppHandle, app_id: String) -> Result<InstallPath
     let locator_path = devbox_launch::install_root_registry_path()
         .ok_or_else(|| "설치 경로 출처를 확인할 수 없습니다.".to_string())?;
     let runtime_catalog = devbox_launch::runtime_catalog_path();
-    let active_manifest = app
-        .path()
-        .app_local_data_dir()
+    let active_manifest = active_install_location(&app)
         .map_err(|_| "현재 설치 상태의 출처를 확인할 수 없습니다.".to_string())?
-        .join("registry.json");
+        .manifest;
     let details = devbox_launch::installed_path_details_from_paths(
         CATALOG_JSON,
         runtime_catalog.as_deref(),
@@ -325,7 +687,7 @@ pub async fn install(
         return Err("지원하지 않는 설치 방식입니다.".to_string());
     }
     let manifest = available().await?;
-    let base = data_dir(&app)?;
+    let base = install_root_dir(&app)?;
     let client = reqwest::Client::new();
     install_with_manifest(&app, &base, &client, &manifest, app_id, mode).await
 }
@@ -357,7 +719,7 @@ pub async fn install_many(
                 .collect());
         }
     };
-    let base = match data_dir(&app) {
+    let base = match install_root_dir(&app) {
         Ok(base) => base,
         Err(_) => {
             return Ok(requests
@@ -367,7 +729,7 @@ pub async fn install_many(
         }
     };
     let client = reqwest::Client::new();
-    let initial_registry = read_registry(&app);
+    let initial_registry = read_registry(&app)?;
     let mut results = Vec::with_capacity(requests.len());
     for request in &requests {
         let available_version = manifest
@@ -439,12 +801,11 @@ async fn install_with_manifest(
     }
 
     if mode == "installer" {
-        let setup_dir = base.join("installers");
-        std::fs::create_dir_all(&setup_dir).map_err(|e| e.to_string())?;
-        let dest = setup_dir.join(&asset.name);
+        let dest = prepare_installer_destination(base, &asset.name)
+            .map_err(|_| "설치 프로그램 경로를 안전하게 준비할 수 없습니다.".to_string())?;
         // 검증이 끝난 뒤에만 installer를 실행한다.
         download(client, &url, &dest, asset.size, &asset.sha256).await?;
-        let original_registry = read_registry(app);
+        let original_registry = read_registry(app)?;
         let next_registry = registry_with_entry(
             &original_registry,
             app_id,
@@ -470,9 +831,8 @@ async fn install_with_manifest(
     }
 
     // portable
-    let version_root = crate::core::layout::version_dir(base, &app_id, &version);
-    std::fs::create_dir_all(&version_root).map_err(|e| e.to_string())?;
-    let exe = crate::core::layout::version_exe(base, &app_id, &version);
+    let exe = prepare_portable_destination(base, &app_id, &version)
+        .map_err(|_| "휴대용 앱 설치 폴더를 안전하게 준비할 수 없습니다.".to_string())?;
     download(client, &url, &exe, asset.size, &asset.sha256).await?;
 
     // current.json 갱신 (직전 정상 버전을 previous로 보존)
@@ -483,7 +843,7 @@ async fn install_with_manifest(
         installed_at: now_ms(),
         previous_version: prev.as_ref().map(|value| value.version.clone()),
     };
-    let original_registry = read_registry(app);
+    let original_registry = read_registry(app)?;
     let next_registry = registry_with_entry(
         &original_registry,
         app_id.clone(),
@@ -509,8 +869,8 @@ async fn install_with_manifest(
 #[tauri::command]
 pub fn current(app: tauri::AppHandle, app_id: String) -> Result<Option<CurrentView>, String> {
     let installed = portable_registry_entry(&app, &app_id)?;
-    let base =
-        data_dir(&app).map_err(|_| "Manager 데이터 위치를 확인할 수 없습니다.".to_string())?;
+    let base = install_root_dir(&app)
+        .map_err(|_| "Manager 설치 root를 확인할 수 없습니다.".to_string())?;
     let current = read_current(&base, &app_id)
         .filter(|value| {
             value.version == installed.version
@@ -529,8 +889,8 @@ pub fn current(app: tauri::AppHandle, app_id: String) -> Result<Option<CurrentVi
 #[tauri::command]
 pub fn rollback(app: tauri::AppHandle, app_id: String) -> Result<String, String> {
     let installed_record = portable_registry_entry(&app, &app_id)?;
-    let base =
-        data_dir(&app).map_err(|_| "Manager 데이터 위치를 확인할 수 없습니다.".to_string())?;
+    let base = install_root_dir(&app)
+        .map_err(|_| "Manager 설치 root를 확인할 수 없습니다.".to_string())?;
     let current = read_current(&base, &app_id)
         .ok_or_else(|| "current.json이 없다 (portable 설치 필요)".to_string())?;
     if current.version != installed_record.version {
@@ -559,8 +919,8 @@ pub fn rollback(app: tauri::AppHandle, app_id: String) -> Result<String, String>
     write_current(&base, &app_id, &next)?;
 
     // registry의 exe_path 갱신
-    if let Some(inst) = read_registry(&app).into_iter().find(|a| a.app == app_id) {
-        let mut reg = read_registry(&app);
+    if let Some(inst) = read_registry(&app)?.into_iter().find(|a| a.app == app_id) {
+        let mut reg = read_registry(&app)?;
         reg.retain(|a| a.app != app_id);
         reg.push(InstalledApp {
             app: inst.app,
@@ -612,8 +972,10 @@ fn write_current(
     current: &crate::core::layout::Current,
 ) -> Result<(), String> {
     let path = crate::core::layout::current_json(base, app_id);
-    let json = serde_json::to_string_pretty(current).map_err(|e| e.to_string())?;
-    devbox_filesystem::atomic_write(path, json.as_bytes()).map_err(|e| e.to_string())
+    let json = serde_json::to_string_pretty(current)
+        .map_err(|_| "현재 버전 상태를 직렬화할 수 없습니다.".to_string())?;
+    devbox_filesystem::atomic_write(path, json.as_bytes())
+        .map_err(|_| "현재 버전 상태를 안전하게 기록할 수 없습니다.".to_string())
 }
 
 /// 설치된 앱 실행 (휴대용만).
@@ -648,8 +1010,15 @@ pub fn open_install_folder(app: tauri::AppHandle, app_id: String) -> Result<(), 
 /// custom root removal은 별도 기능이 소유한다.
 #[tauri::command]
 pub fn remove_portable_app(app: tauri::AppHandle, app_id: String) -> Result<String, String> {
+    if active_install_location(&app)
+        .map_err(|_| "설치 root 상태를 안전하게 확인할 수 없습니다.".to_string())?
+        .root_id
+        != custom_root::DEFAULT_ROOT_ID
+    {
+        return Err("custom root의 제거는 별도 기능에서 지원합니다.".to_string());
+    }
     let install = managed_portable(&app, &app_id)?;
-    let original_registry = read_registry(&app);
+    let original_registry = read_registry(&app)?;
     let mut next_registry = original_registry.clone();
     next_registry.retain(|entry| entry.app != app_id);
     if next_registry.len() == original_registry.len() {
@@ -716,6 +1085,11 @@ async fn download(
     expected_size: i64,
     expected_sha: &str,
 ) -> Result<(), String> {
+    validate_download_target(dest)
+        .map_err(|_| "다운로드 파일 경로를 안전하게 준비할 수 없습니다.".to_string())?;
+    if expected_size < 0 {
+        return Err("다운로드 크기 정보가 올바르지 않습니다.".to_string());
+    }
     // 1. 요청 전 URL 검증
     if !is_allowed(url) {
         return Err("허용되지 않은 다운로드 URL".into());
@@ -725,9 +1099,9 @@ async fn download(
         .header(USER_AGENT, "devbox-manager")
         .send()
         .await
-        .map_err(|e| format!("다운로드 실패: {e}"))?;
+        .map_err(|_| "다운로드 요청을 완료할 수 없습니다.".to_string())?;
     if !resp.status().is_success() {
-        return Err(format!("다운로드 응답 오류: {}", resp.status()));
+        return Err("다운로드 서버가 파일을 제공하지 않았습니다.".to_string());
     }
     // 2. redirect 후 최종 URL을 다시 검증한다 (중간 hop이 아니라 최종 응답의 URL)
     if !is_allowed(resp.url().as_str()) {
@@ -736,47 +1110,72 @@ async fn download(
     // 3. Content-Length가 manifest size와 다르면 즉시 중단
     if let Some(cl) = resp.content_length() {
         if cl != expected_size as u64 {
-            return Err(format!(
-                "Content-Length 불일치: 기대 {expected_size}바이트, 서버 {cl}바이트"
-            ));
+            return Err("다운로드 크기 정보가 manifest와 일치하지 않습니다.".to_string());
         }
     }
 
     // 4. .partial로 streaming 기록. 청크마다 SHA-256 갱신, 누적 크기 상한 검사
     let partial = partial_path(dest);
-    let mut file = std::fs::File::create(&partial).map_err(|e| e.to_string())?;
+    // `create_new` refuses an existing regular partial as well as a link and
+    // never follows a symlink between validation and open. Interrupted
+    // partials are removed at startup; a retry in the same process is kept
+    // fail-closed rather than truncating an attacker-controlled path.
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&partial)
+        .map_err(|_| "다운로드 임시 파일을 안전하게 준비할 수 없습니다.".to_string())?;
     let mut hasher = Sha256::new();
     let mut total: u64 = 0;
     let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("스트림 오류: {e}"))?;
-        total += chunk.len() as u64;
-        if is_over_limit(total as i64, expected_size) {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(_) => {
+                drop(file);
+                let _ = std::fs::remove_file(&partial);
+                return Err("다운로드 스트림을 읽을 수 없습니다.".to_string());
+            }
+        };
+        let Some(next_total) = total.checked_add(chunk.len() as u64) else {
             drop(file);
             let _ = std::fs::remove_file(&partial);
-            return Err(format!(
-                "크기 초과: 기대 {expected_size}바이트를 넘었다 ({total}바이트)"
-            ));
+            return Err("다운로드 크기를 확인할 수 없습니다.".to_string());
+        };
+        total = next_total;
+        if total > expected_size as u64 {
+            drop(file);
+            let _ = std::fs::remove_file(&partial);
+            return Err("다운로드 크기가 manifest 상한을 초과했습니다.".to_string());
         }
         hasher.update(&chunk);
-        file.write_all(&chunk).map_err(|e| e.to_string())?;
+        if file.write_all(&chunk).is_err() {
+            drop(file);
+            let _ = std::fs::remove_file(&partial);
+            return Err("다운로드 파일을 기록할 수 없습니다.".to_string());
+        }
     }
-    file.flush().map_err(|e| e.to_string())?;
+    if file.flush().is_err() {
+        drop(file);
+        let _ = std::fs::remove_file(&partial);
+        return Err("다운로드 파일을 완료할 수 없습니다.".to_string());
+    }
     drop(file);
 
     // 5. 완료 후 총 바이트와 digest를 manifest와 대조
-    if let Err(e) = validate_size(expected_size, total as i64) {
+    if validate_size(expected_size, total as i64).is_err() {
         let _ = std::fs::remove_file(&partial);
-        return Err(e);
+        return Err("다운로드 크기가 manifest와 일치하지 않습니다.".to_string());
     }
     let digest = format!("{:x}", hasher.finalize());
-    if let Err(e) = validate_digest(expected_sha, &digest) {
+    if validate_digest(expected_sha, &digest).is_err() {
         let _ = std::fs::remove_file(&partial);
-        return Err(e);
+        return Err("다운로드 무결성 검증에 실패했습니다.".to_string());
     }
 
     // 6. 일치하면 최종 경로로 rename
-    std::fs::rename(&partial, dest).map_err(|e| e.to_string())?;
+    std::fs::rename(&partial, dest)
+        .map_err(|_| "검증된 다운로드 파일을 설치 위치로 옮길 수 없습니다.".to_string())?;
     Ok(())
 }
 
@@ -901,5 +1300,62 @@ mod tests {
 
         restore_current(&root.0, "port-manager", None).unwrap();
         assert!(read_current(&root.0, "port-manager").is_none());
+    }
+
+    #[test]
+    fn partial_cleanup_removes_only_exact_managed_download_slots() {
+        let root = TestRoot::new();
+        let version = root.0.join("apps/port-manager/versions/0.4.0");
+        std::fs::create_dir_all(version.join("nested")).unwrap();
+        let managed = version.join("port-manager.exe.partial");
+        let sibling = version.join("user.partial");
+        let nested = version.join("nested/user.partial");
+        std::fs::write(&managed, b"managed").unwrap();
+        std::fs::write(&sibling, b"user").unwrap();
+        std::fs::write(&nested, b"user").unwrap();
+        let known = HashSet::from(["port-manager".to_string()]);
+
+        cleanup_managed_partials(&root.0, &known);
+
+        assert!(!managed.exists());
+        assert_eq!(std::fs::read(sibling).unwrap(), b"user");
+        assert_eq!(std::fs::read(nested).unwrap(), b"user");
+    }
+
+    #[test]
+    fn registry_records_must_belong_to_the_selected_manager_catalog() {
+        let records = vec![custom_root::InstallRecord {
+            app: "port-manager".to_string(),
+            version: "0.4.0".to_string(),
+            mode: "installer".to_string(),
+            exe_path: String::new(),
+        }];
+        assert!(registry_apps_are_known(
+            &records,
+            &HashSet::from(["port-manager".to_string()])
+        ));
+        assert!(!registry_apps_are_known(
+            &records,
+            &HashSet::from(["code-pad".to_string()])
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unsafe_exact_partial_aborts_cleanup_without_following_or_deleting_it() {
+        use std::os::unix::fs::symlink;
+
+        let root = TestRoot::new();
+        let version = root.0.join("apps/port-manager/versions/0.4.0");
+        std::fs::create_dir_all(&version).unwrap();
+        let outside = root.0.join("outside.partial");
+        std::fs::write(&outside, b"outside").unwrap();
+        symlink(&outside, version.join("port-manager.exe.partial")).unwrap();
+        let known = HashSet::from(["port-manager".to_string()]);
+
+        cleanup_managed_partials(&root.0, &known);
+
+        assert_eq!(std::fs::read(outside).unwrap(), b"outside");
+        assert!(version.join("port-manager.exe.partial").exists());
     }
 }

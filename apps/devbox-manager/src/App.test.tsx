@@ -4,6 +4,7 @@ import catalogJson from "../../catalog.json";
 import App from "./App";
 import {
   available,
+  applyInstallRoot,
   catalog,
   current,
   installApp,
@@ -12,6 +13,7 @@ import {
   installed,
   launchApp,
   openInstallFolder,
+  previewInstallRoot,
   removeApp,
   rollback,
   runDiagnosis,
@@ -21,11 +23,13 @@ import type {
   Current,
   InstalledApp,
   InstallPathInfo,
+  InstallRootPreview,
   ReleaseManifest,
 } from "./types";
 
 vi.mock("./api", () => ({
   available: vi.fn(),
+  applyInstallRoot: vi.fn(),
   catalog: vi.fn(),
   current: vi.fn(),
   installApp: vi.fn(),
@@ -34,6 +38,7 @@ vi.mock("./api", () => ({
   installed: vi.fn(),
   launchApp: vi.fn(),
   openInstallFolder: vi.fn(),
+  previewInstallRoot: vi.fn(),
   removeApp: vi.fn(),
   rollback: vi.fn(),
   runDiagnosis: vi.fn(),
@@ -72,6 +77,7 @@ const portableCurrent: Current = {
 
 const catalogMock = vi.mocked(catalog);
 const availableMock = vi.mocked(available);
+const applyInstallRootMock = vi.mocked(applyInstallRoot);
 const installedMock = vi.mocked(installed);
 const currentMock = vi.mocked(current);
 const installAppMock = vi.mocked(installApp);
@@ -82,6 +88,7 @@ const rollbackMock = vi.mocked(rollback);
 const openInstallFolderMock = vi.mocked(openInstallFolder);
 const removeAppMock = vi.mocked(removeApp);
 const runDiagnosisMock = vi.mocked(runDiagnosis);
+const previewInstallRootMock = vi.mocked(previewInstallRoot);
 const confirmMock = vi.fn<(message?: string) => boolean>();
 const portablePath: InstallPathInfo = {
   appId: "port-manager",
@@ -116,6 +123,25 @@ beforeEach(() => {
   openInstallFolderMock.mockReset().mockResolvedValue(undefined);
   removeAppMock.mockReset().mockResolvedValue("removed");
   runDiagnosisMock.mockReset().mockResolvedValue([]);
+  previewInstallRootMock.mockReset().mockResolvedValue({
+    status: "ready",
+    canApply: true,
+    registryRevision: 1,
+    catalogRevision: 5,
+    candidatePath: "C:\\Devbox-custom",
+    rootId: "custom-test-root",
+    freeSpaceBytes: 512 * 1024 * 1024,
+    requiredFreeSpaceBytes: 128 * 1024 * 1024,
+    activeInstallCount: 0,
+    candidateEntryCount: 0,
+    migration: "no-automatic-migration",
+  });
+  applyInstallRootMock.mockReset().mockResolvedValue({
+    status: "applied",
+    registryRevision: 2,
+    rootId: "custom-test-root",
+    candidatePath: "C:\\Devbox-custom",
+  });
   confirmMock.mockReset().mockReturnValue(false);
   Object.defineProperty(window, "confirm", {
     configurable: true,
@@ -304,6 +330,166 @@ describe("Devbox Manager install path details", () => {
     await waitFor(() => expect(installPathMock).toHaveBeenCalledWith("port-manager"));
     expect(screen.getAllByText("Manager가 실제 설치 위치를 추적하지 않습니다.")).toHaveLength(2);
     expect(screen.getByText(/설치 패키지는 마법사 실행 뒤의 실제 위치/)).toBeTruthy();
+  });
+});
+
+describe("Devbox Manager custom install root", () => {
+  it("requires an explicit preview and confirmation before applying a root", async () => {
+    render(<App />);
+    await screen.findByText("Port Manager");
+
+    const input = screen.getByLabelText("설치 root 경로");
+    fireEvent.change(input, { target: { value: "C:\\Devbox-custom" } });
+    fireEvent.click(screen.getByRole("button", { name: "미리 확인" }));
+
+    await waitFor(() => expect(previewInstallRootMock).toHaveBeenCalledWith("C:\\Devbox-custom"));
+    expect(screen.getByRole("status")).toBeTruthy();
+    expect(applyInstallRootMock).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 이 root 적용" }));
+    await waitFor(() => expect(applyInstallRootMock).toHaveBeenCalledWith("C:\\Devbox-custom", 1));
+    expect(confirmMock).toHaveBeenCalledWith(
+      "검증된 빈 디렉터리를 새 설치 root로 적용할까요? 기존 설치는 자동으로 이동하거나 삭제하지 않습니다.",
+    );
+  });
+
+  it("invalidates a preview when the IME-safe input changes and blocks duplicate preview calls", async () => {
+    render(<App />);
+    await screen.findByText("Port Manager");
+
+    const input = screen.getByLabelText("설치 root 경로");
+    fireEvent.change(input, { target: { value: "C:\\Devbox-custom" } });
+    fireEvent.click(screen.getByRole("button", { name: "미리 확인" }));
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+
+    fireEvent.change(input, { target: { value: "C:\\Devbox-other" } });
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("button", { name: "확인 후 이 root 적용" })).toBeNull();
+  });
+
+  it("disables other Manager operations while a root preflight is pending", async () => {
+    previewInstallRootMock.mockImplementationOnce(() => new Promise(() => {}));
+    render(<App />);
+    await screen.findByText("Port Manager");
+
+    fireEvent.change(screen.getByLabelText("설치 root 경로"), {
+      target: { value: "C:\\Devbox-pending" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "미리 확인" }));
+
+    await waitFor(() => expect(previewInstallRootMock).toHaveBeenCalledTimes(1));
+    expect((screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    expect((screen.getByRole("button", { name: "환경 진단" }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    expect((screen.getByRole("checkbox", {
+      name: "설치 및 업데이트 가능한 앱 전체 선택",
+    }) as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("blocks root and app mutations while a metadata refresh is pending", async () => {
+    render(<App />);
+    await screen.findByText("Port Manager");
+    availableMock.mockImplementationOnce(() => new Promise(() => {}));
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(availableMock).toHaveBeenCalledTimes(2));
+    expect((screen.getByLabelText("설치 root 경로") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "미리 확인" }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    expect((screen.getByRole("button", { name: "환경 진단" }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    expect((screen.getByRole("button", { name: "Launch" }) as HTMLButtonElement).disabled)
+      .toBe(true);
+  });
+
+  it("does not resurrect a stale preview after an in-flight input change", async () => {
+    let resolvePreview!: (preview: InstallRootPreview) => void;
+    previewInstallRootMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolvePreview = resolve;
+    }));
+    render(<App />);
+    await screen.findByText("Port Manager");
+
+    const input = screen.getByLabelText("설치 root 경로");
+    fireEvent.change(input, { target: { value: "C:\\Devbox-old" } });
+    fireEvent.click(screen.getByRole("button", { name: "미리 확인" }));
+    fireEvent.change(input, { target: { value: "C:\\Devbox-new" } });
+    resolvePreview({
+      status: "ready",
+      canApply: true,
+      registryRevision: 1,
+      catalogRevision: 5,
+      candidatePath: "C:\\Devbox-old",
+      rootId: "stale-root",
+      freeSpaceBytes: 512 * 1024 * 1024,
+      requiredFreeSpaceBytes: 128 * 1024 * 1024,
+      activeInstallCount: 0,
+      candidateEntryCount: 0,
+      migration: "no-automatic-migration",
+    });
+
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    expect(screen.getByDisplayValue("C:\\Devbox-new")).toBeTruthy();
+  });
+
+  it("ignores a preview response that arrives after the component unmounts", async () => {
+    let resolvePreview!: (preview: InstallRootPreview) => void;
+    previewInstallRootMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolvePreview = resolve;
+    }));
+    const view = render(<App />);
+    await screen.findByText("Port Manager");
+
+    const input = screen.getByLabelText("설치 root 경로");
+    fireEvent.change(input, { target: { value: "C:\\Devbox-unmounted" } });
+    fireEvent.click(screen.getByRole("button", { name: "미리 확인" }));
+    view.unmount();
+    resolvePreview({
+      status: "ready",
+      canApply: true,
+      registryRevision: 1,
+      catalogRevision: 5,
+      candidatePath: "C:\\Devbox-unmounted",
+      rootId: "unmounted-root",
+      freeSpaceBytes: 512 * 1024 * 1024,
+      requiredFreeSpaceBytes: 128 * 1024 * 1024,
+      activeInstallCount: 0,
+      candidateEntryCount: 0,
+      migration: "no-automatic-migration",
+    });
+    await Promise.resolve();
+
+    expect(document.querySelector(".install-root-preview")).toBeNull();
+  });
+
+  it("reports an existing-install boundary without offering migration or removal", async () => {
+    previewInstallRootMock.mockResolvedValueOnce({
+      status: "existing-install",
+      canApply: false,
+      registryRevision: 3,
+      catalogRevision: 5,
+      candidatePath: "C:\\Devbox-custom",
+      rootId: "custom-test-root",
+      freeSpaceBytes: 512 * 1024 * 1024,
+      requiredFreeSpaceBytes: 128 * 1024 * 1024,
+      activeInstallCount: 1,
+      candidateEntryCount: 0,
+      migration: "blocked-existing-install",
+    });
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.change(screen.getByLabelText("설치 root 경로"), {
+      target: { value: "C:\\Devbox-custom" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "미리 확인" }));
+
+    expect(await screen.findByText("기존 설치로 이동 차단")).toBeTruthy();
+    expect(screen.getByText(/자동 이동하지 않습니다/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "확인 후 이 root 적용" })).toBeNull();
+    expect(applyInstallRootMock).not.toHaveBeenCalled();
   });
 });
 

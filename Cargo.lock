@@ -1113,6 +1113,7 @@ dependencies = [
  "futures-util",
  "git",
  "launch",
+ "libc",
  "reqwest",
  "semver",
  "serde",
@@ -1121,6 +1122,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "windows 0.61.3",
  "wsl",
 ]
 

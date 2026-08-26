@@ -687,6 +687,65 @@ registry write가 없다. 일반 installed/current DTO도 path-free를 유지한
 manifest, executable byte가 같음을 확인하고, revision mismatch·unsafe path는 원문 경로 없는 고정 오류로
 fail-closed 처리한다.
 
+### 6.10 v0.5.0 custom install root 경계 (#308, #309 분리)
+
+`#308`은 Devbox Manager가 인터넷이나 별도 설치 프로그램에 의존하지 않고, 개발자가 선택한
+로컬 디렉터리를 다음 portable 설치의 root로 안전하게 사용할 수 있게 하는 기능이다. 큰 외부
+도구를 다운로드해 대체하는 기능이 아니며, Manager가 이미 소유한 catalog·release manifest·portable
+layout·runtime locator를 한 화면에서 연결하는 native 기능이다.
+
+#### #308에서 제공하는 흐름
+
+1. 사용자가 절대 경로를 입력한다. frontend는 4,096 bytes 상한, IME 조합 중 Enter 차단,
+   입력 변경 시 이전 preview 폐기, 중복 preview/apply 차단과 접근 가능한 label/status/error를
+   제공한다.
+2. `preview_install_root`가 입력을 trim하고 native에서 다시 검사한다. unresolved environment
+   variable, `~`, `.`/`..`, root/home/workspace/current working directory, 비정규 canonical alias,
+   symlink/reparse component, 일반 파일과 누락 디렉터리를 거부한다. 후보는 이미 존재하는 빈
+   canonical directory여야 하며 direct entry를 최대 4,096개까지 bounded scan하고 write permission과 OS
+   free space 최소 128 MiB를 확인한다.
+3. 현재 versioned locator가 없을 때만 v0.4.x default root를 read-only fallback으로 사용한다.
+   locator가 존재하면 16 KiB 이하 strict schema만 읽고, active manifest는 1 MiB/256 rows 이내로
+   파싱한다. active manifest record 또는 `apps`/partial/기타 artifact가 남아 있으면
+   `existing-install`로 보고 자동 migration을 제공하지 않는다. locator 자체가 없더라도 이미
+   존재하는 locator parent component가 symlink/reparse이면 legacy fallback을 사용하지 않으며,
+   portable record는 canonical exact layout 밖의 executable을 trusted state로 취급하지 않는다.
+4. 사용자의 별도 확인 뒤 `apply_install_root`가 preview의 `registryRevision`을 CAS token으로
+   검증하고 active root·manifest·candidate·free-space를 즉시 재검사한다. 성공 시 후보에
+   `apps/`와 빈 `registry.json`만 안전한 component 단위로 만들고, locator를
+   `%LOCALAPPDATA%\devbox\install-roots\v1\registry.json`에 tmp+rename한다. revision은
+   overflow 없이 증가하고 catalog revision provenance를 기록한다.
+5. locator commit 실패·경합·stale preview는 성공으로 숨기지 않는다. 이번 호출이 만든 빈
+   manifest/apps만 rollback하며 기존 root의 registry, binary, partial, user data는 이동·삭제·
+   덮어쓰지 않는다. 이후 install/current/rollback/launch/path 조회는 active locator root를
+   사용한다. `.partial`은 regular `create_new` slot으로만 만들어 기존 중단 파일을 덮어쓰지 않고,
+   present corrupt locator는 startup sync가 default metadata로 바꾸지 않는다.
+
+#### 명시적 비범위와 후속 순서
+
+- `#308`에는 기존 설치를 새 root로 이동하는 migration wizard, 기존 설치 병합, root reset,
+  binary removal, user-data 삭제, catalog 수정, installer wizard의 실제 설치 위치 추적이 없다.
+- 기본 root의 기존 portable 제거는 기존 검증 경계를 유지한다. custom root 제거와 데이터 보존
+  정책을 별도 UI로 제공하는 `#309`가 이를 소유하며, #308 PR에서 우회하거나 선행 구현하지 않는다.
+- `crates/launch` consumer가 읽는 locator/manifest도 같은 path·schema·bytes/rows bound와
+  canonical/symlink/reparse fail-closed 규칙을 적용한다. public DTO·UI 오류에는 입력 path,
+  locator/manifest 원문, OS 오류, credential을 반사하지 않는다.
+
+#### PR·검증 경계
+
+기능 단위 PR은 (1) locator/path core 및 bounded parser, (2) Manager command와 active-root
+lifecycle, (3) frontend preview/confirm/a11y, (4) 문서·fixture 보강으로 나누어 검토할 수
+있지만 merge 단위는 #308 하나로 유지한다. Rust fixture는 missing-vs-corrupt locator,
+canonical/protected/symlink/reparse path, active artifact/manifest conflict, candidate conflict,
+permission/free-space status, revision CAS/overflow, atomic publish와 rollback residue를 확인한다. frontend
+fixture는 preview 전에는 apply가 없고, input/IME 변경이 stale preview를 폐기하며, confirm 거부,
+existing-install status와 unmount 중 늦은 응답이 mutation을 만들지 않음을 확인한다. WSL에서는
+focused `cargo test -p devbox-manager --lib`, `cargo check -p devbox-manager --lib`, frontend
+unit/typecheck를 수행하고, 실제 Tauri 실행·Windows junction/reparse·free-space API와 packaged
+installer acceptance는 Windows W2에서 별도로 수행한다. 현재 전용 worktree에서는 manager
+67개/launch 23개 focused test, 양쪽 check·clippy·fmt, frontend 17개 test와 build를 통과했고,
+full workspace gate와 Windows packaged 검증은 PR/CI/W2로 남겼다.
+
 ## 7. P0.5 — 공용 프리미티브
 
 기능 추가가 아니다. 저장소가 이미 선언한 추출 규칙을 집행하고, 문서와 코드의 불일치를

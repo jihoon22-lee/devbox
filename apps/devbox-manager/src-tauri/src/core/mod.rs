@@ -1,6 +1,7 @@
 pub mod asset;
 pub mod batch;
 pub mod catalog;
+pub mod custom_root;
 pub mod download;
 pub mod layout;
 pub mod managed_install;
