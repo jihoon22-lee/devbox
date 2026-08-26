@@ -222,7 +222,9 @@ describe("Webhook Lab history and rule context menus", () => {
 
     fireEvent.contextMenu(target);
     expect(target.getAttribute("aria-current")).toBe("true");
-    expect(screen.getByRole("menuitem", { name: "예시 curl 복사" }).getAttribute("aria-disabled"))
+    expect(screen.getByRole("menuitem", { name: "PowerShell curl.exe 복사" }).getAttribute("aria-disabled"))
+      .toBe("true");
+    expect(screen.getByRole("menuitem", { name: "POSIX sh curl 복사" }).getAttribute("aria-disabled"))
       .toBe("true");
     fireEvent.click(screen.getByRole("menuitem", { name: "편집" }));
     expect((screen.getByPlaceholderText("method (없으면 전체)") as HTMLInputElement).value).toBe("GET");
@@ -231,6 +233,130 @@ describe("Webhook Lab history and rule context menus", () => {
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "복제" }));
     await waitFor(() => expect(setRuleMock).toHaveBeenCalledWith(expect.objectContaining({ id: "", path: "/health" })));
+  });
+
+  it("실행 중인 rule의 example curl을 마스킹해 복사한다", async () => {
+    serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
+    rules = [{
+      ...initialRule,
+      headers: [
+        ["Authorization", "Bearer rule-secret"],
+        ["Content-Type", "application/json"],
+      ] as [string, string][],
+      body: JSON.stringify({ token: "body-secret", ok: true }),
+    }];
+    render(<App />);
+    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+
+    fireEvent.contextMenu(target);
+    const copy = screen.getByRole("menuitem", { name: "POSIX sh curl 복사" });
+    expect(copy.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(copy);
+
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining(
+      "curl --globoff --path-as-is --include --request GET 'http://127.0.0.1:9000/health'",
+    )));
+    const copied = writeTextMock.mock.calls[writeTextMock.mock.calls.length - 1]?.[0] ?? "";
+    expect(copied).toContain("Authorization: [REDACTED]");
+    expect(copied).not.toContain("rule-secret");
+    expect(copied).not.toContain("body-secret");
+  });
+
+  it("PowerShell action copies curl.exe and revalidates the running address", async () => {
+    serverStatusMock
+      .mockResolvedValueOnce({ running: true, address: "0.0.0.0:9000" })
+      .mockResolvedValueOnce({ running: true, address: "0.0.0.0:9000" });
+    rules = [{ ...initialRule, path: "/events/*", method: "post" }];
+    render(<App />);
+    const target = await screen.findByLabelText("post /events/* 규칙") as HTMLDivElement;
+
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem", { name: "PowerShell curl.exe 복사" }));
+
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining(
+      "curl.exe --globoff --path-as-is --include --request POST 'http://127.0.0.1:9000/events/example'",
+    )));
+    expect(serverStatusMock).toHaveBeenCalledTimes(2);
+    expect(writeTextMock.mock.calls[writeTextMock.mock.calls.length - 1]?.[0]).toContain("Concrete trailing-* sample path: /events/example");
+  });
+
+  it("stale rule selection fails closed without copying", async () => {
+    serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
+    render(<App />);
+    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+
+    fireEvent.contextMenu(target);
+    rules = [];
+    fireEvent.click(screen.getByRole("menuitem", { name: "POSIX sh curl 복사" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("선택한 규칙이 더 이상 존재하지 않습니다.");
+    expect(writeTextMock).not.toHaveBeenCalled();
+  });
+
+  it("rechecks running state before copying when the server stopped after menu open", async () => {
+    serverStatusMock
+      .mockResolvedValueOnce({ running: true, address: "127.0.0.1:9000" })
+      .mockResolvedValueOnce({ running: false, address: null });
+    render(<App />);
+    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem", { name: "POSIX sh curl 복사" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("현재 서버가 실행 중이 아니거나 주소가 유효하지 않아 예시 curl을 만들지 못했습니다.");
+    expect(writeTextMock).not.toHaveBeenCalled();
+  });
+
+  it("keyboard menu restores rule focus after Escape", async () => {
+    serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
+    render(<App />);
+    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    target.focus();
+    fireEvent.keyDown(target, { key: "F10", shiftKey: true });
+
+    expect(screen.getByRole("menuitem", { name: "PowerShell curl.exe 복사" }).getAttribute("aria-disabled")).toBeNull();
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: "편집" }), { key: "Escape" });
+    expect(document.activeElement).toBe(target);
+  });
+
+  it("does not start a second clipboard action while the first is busy", async () => {
+    serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
+    let resolveWrite: (() => void) | undefined;
+    writeTextMock.mockImplementation(() => new Promise<void>((resolve) => {
+      resolveWrite = resolve;
+    }));
+    render(<App />);
+    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem", { name: "POSIX sh curl 복사" }));
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.contextMenu(target);
+    const disabledCopy = screen.getByRole("menuitem", { name: "POSIX sh curl 복사" });
+    expect(disabledCopy.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(disabledCopy);
+    expect(writeTextMock).toHaveBeenCalledTimes(1);
+    resolveWrite?.();
+  });
+
+  it("example curl clipboard 실패는 고정 메시지만 표시한다", async () => {
+    serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
+    rules = [{
+      ...initialRule,
+      headers: [["Authorization", "Bearer rule-secret"]] as [string, string][],
+    }];
+    writeTextMock.mockRejectedValueOnce(new Error("Bearer backend-secret"));
+    render(<App />);
+    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem", { name: "POSIX sh curl 복사" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("예시 curl을 복사하지 못했습니다.");
+    expect(document.body.textContent?.includes("backend-secret")).toBe(false);
+    expect(document.body.textContent?.includes("rule-secret")).toBe(false);
   });
 
   it("rule 삭제는 danger 확인을 거치며 취소하면 상태를 유지한다", async () => {

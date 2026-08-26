@@ -122,7 +122,7 @@ type MenuItem =
 | devbox-manager | 앱 목록 행 | 설치/업데이트 · 실행 · 이전 버전 롤백 · 설치 폴더 열기 · 제거(danger) |
 | workbench | 프로젝트 프로필 | Start Workspace · Stop What I Started · 프로필 편집 · 삭제(danger) · 경로 복사 · **다른 앱으로 열기 ▸** |
 | webhook-lab | 수신 요청 history | **마스킹 복사**(기본) · **원본 복사**(확인 후) · 헤더 복사 · API Playground로 변환 · 삭제(danger) |
-| webhook-lab | 규칙 행 | 편집 · 복제 · 예시 curl 복사 · 삭제(danger) |
+| webhook-lab | 규칙 행 | 편집 · 복제 · PowerShell curl.exe 복사 · POSIX sh curl 복사 · 삭제(danger) |
 | repo-manager | 저장소 행 | **다른 앱으로 열기 ▸** · worktree 생성 · 경로 복사 · 탐색기에서 열기 |
 | api-playground | History/Collection 항목 | 복제 · 이름 변경 · 삭제(danger) · curl 복사 |
 | **wsl-desktop** | **터미널 팬** | **복사(선택 시만 활성) · 붙여넣기 · 검색 · 세로 분할 · 가로 분할 · cwd 복사 · 팬 닫기(danger)** |
@@ -276,7 +276,45 @@ Windows 실기 검증에서 수집한 UX 개선 항목. 기능 버그가 아니�
 | code-pad | 프리뷰/편집 영역 구분 강화 | 프리뷰 영역이 편집 영역과 시각적으로 구분되게 | **저비용.** `.preview-pane`(`App.css:227-235`)과 `.view-pane`(`:270-274`)이 같은 배경색(`#171e29`)에 1px 선 하나로만 나뉜다. CSS만 수정 |
 | workbench | ports/services 입력 UX + 자동 반영 | 입력 방법을 명확히 하고, WSL Desktop의 Docker/포트를 자동 반영 | **services는 입력 UI가 아예 없다** (`App.tsx:146-184`에 필드 없음, 항상 `[]`). ports는 매 키 입력마다 `join(", ")`으로 재포맷돼 입력이 튄다. **Docker 자동 반영은 wsl-desktop이 producer가 되어야 가능** → 연동 설계 §4.1 |
 | webhook-lab | rule 필드 라벨/설명 | 각 rule 필드가 무엇인지 옆에 설명 표시 | **저비용.** `App.tsx:105-112`에 `<label>`이 하나도 없고 placeholder만 있는데, status/delayMs는 항상 값이 있어 placeholder가 영영 안 보인다. 매칭 규칙(method는 대소문자 무시, path는 정확 일치 또는 후행 `*` 접두 일치 — `core/rules.rs:20-28`)을 설명에 넣는다 |
-| webhook-lab | 규칙 저장 후 예시 curl 표시 | 규칙 설정 직후 테스트용 curl 예시 자동 생성 | **저비용.** `ServerStatus.address`가 이미 컴포넌트 상태에 있다. api-playground의 `buildCurl`은 `ApiRequest` 타입에 묶여 있어 그대로 못 쓴다 — webhook용 15줄을 새로 쓰는 편이 낫고, `shellQuote`(3줄)만 재사용 |
+| webhook-lab | 규칙 저장 후 예시 curl 표시 | 규칙 설정 직후 테스트용 curl 예시 자동 생성 | **#283 구현 계약.** PowerShell `curl.exe`와 POSIX `sh curl`을 별도 context-menu 항목으로 제공하고 shell별 quoting을 독립 구현한다. fresh running address와 현재 rule을 재검증한 뒤에만 복사하며, trailing `*`는 backend prefix matcher와 같은 concrete sample로 바꾼다. response status/headers/body/delay는 request arguments가 아닌 주석 metadata로 표시한다. |
+
+#### #283 Webhook Lab example curl 구현 세부
+
+example curl은 설치·network·replay를 추가하지 않는 순수 formatter + clipboard action이다.
+Windows desktop의 PowerShell 사용성과 WSL/POSIX 사용성을 함께 지원하되 `cmd.exe` 형식은
+이번 항목에 포함하지 않는다.
+
+- context menu는 `PowerShell curl.exe 복사`와 `POSIX sh curl 복사`를 각각 독립 action으로
+  만든다. PowerShell single quote는 `'`를 `''`로, POSIX single quote는 close/escape/reopen
+  방식으로 처리한다. 문자열에는 command substitution, variable expansion, URL glob이
+  일어나지 않도록 하고 command에는 `--globoff`와 `--path-as-is`를 포함해 curl의
+  dot-segment path 정규화도 차단한다.
+- 복사 직전에 `serverStatus`와 `listRules`를 다시 조회한다. stopped/주소 없음이면 복사하지
+  않고, 메뉴를 연 뒤 바뀐 bind address는 fresh 값을 다시 검증해 사용한다. 삭제된 rule은
+  복사하지 않고 고정 alert를 표시한다. 허용 destination은 loopback IPv4/IPv6뿐이며
+  `0.0.0.0`·`[::]` wildcard bind는 각각 `127.0.0.1`·`[::1]`로 바꾼다. 외부 주소와
+  bracket 없는 IPv6는 거부한다.
+- backend matcher가 rule path 전체의 마지막 문자 `*`만 wildcard로 취급하므로, `/events/*`
+  는 `/events/example` 요청으로 구체화한다. 중간 `*`는 literal이며 exact path/query를
+  trim·decode·re-encode해 matcher 결과를 바꾸지 않는다. absolute URL, host escape,
+  fragment, raw/decoded whitespace/control, malformed percent escape, path token/placeholder를
+  fail-closed한다. 민감 query를 `[REDACTED]`로 바꾸면 exact route가 변하므로 query 전체를
+  거부한다.
+- response rule의 status·headers·body·delay는 request method/path 조건이 아니라 서버가
+  반환할 response metadata다. `--include`로 실제 response headers/body를 출력하고,
+  response fields를 `--header`/`--data` request argument로 복사하지 않는다. raw secret
+  reveal과 request replay는 비범위다.
+- header/body의 placeholder는 값 전체가 `${NAME}` 또는 `{{NAME}}`일 때만 보존한다.
+  `Bearer ${TOKEN}`·`prefix ${TOKEN}` 같은 mixed raw+placeholder는 전체 redact하고,
+  JSON object key와 path placeholder는 거부한다. path 4,096자, header 100개·name 256자·value 16,384자·
+  합계 64,000자, body 256,000자, JSON depth 32·node 10,000개·string 64,000자, 최종
+  출력 512,000자, status 100~599, delay 0~60,000ms bounds를 적용한다. builder와 clipboard
+  예외는 원문을 DOM에 반향하지 않는 고정 alert로 처리한다.
+- `exampleCurl.test.ts`는 두 shell golden, quote metacharacter, concrete wildcard,
+  placeholder/masking, sensitive query fail-closed, URI/address policy, 각 bounds를
+  고정한다. `App.test.tsx`와 `contextMenus.test.ts`는 두 menu action, running/fresh
+  address, stale selection, busy/double action, raw error alert, `Shift+F10`/Escape focus
+  복원을 고정한다.
 
 > 참고: v0.4.0-rc1에서 발견된 **기능 버그**는 별도 PR로 전부 수정 완료됨 —
 > git 집계(#188), open_in/앱 실행(#186), 중복 실행(#187), grid/스크롤 레이아웃(#189·#190).
