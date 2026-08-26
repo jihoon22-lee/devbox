@@ -13,6 +13,7 @@ function request(): RequestTemplate {
     method: "POST",
     url: "https://api.example.com/items?token=direct-url-secret",
     headers: [{ key: "Authorization", value: "Bearer direct-header-secret" }],
+    cookies: [{ name: "session", value: "direct-cookie-secret" }],
     params: [],
     body_kind: "json",
     body: JSON.stringify({ password: "direct-body-secret" }),
@@ -59,8 +60,10 @@ describe("API Playground request item context menu", () => {
     expect(next.history[0]).toMatchObject({ id: "h-copy", saved_at: 2_000, name: expect.stringContaining("복사본") });
     expect(next.history[0].request).not.toBe(source.request);
     expect(next.history[0].request.headers).not.toBe(source.request.headers);
+    expect(next.history[0].request.cookies).not.toBe(source.request.cookies);
     expect(JSON.stringify(next)).not.toContain("direct-header-secret");
     expect(next.history[0].request.headers[0].value).toBe(REDACTED);
+    expect(next.history[0].request.cookies[0].value).toBe(REDACTED);
   });
 
   it("History 이름은 한 줄·120자로 제한하고 exact ID만 삭제한다", () => {

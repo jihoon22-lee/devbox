@@ -62,6 +62,7 @@ function request(overrides: Partial<RequestTemplate> = {}): RequestTemplate {
     method: "GET",
     url: "https://api.example.com/x",
     headers: [],
+    cookies: [],
     params: [],
     body_kind: "none",
     body: "",
@@ -149,6 +150,36 @@ describe("collections v2 store", () => {
     ]);
   });
 
+  it("cookie 직접 값은 마스킹하고 reference·순서·enabled는 Collection에 보존한다", async () => {
+    const storage = new RecordingStorage();
+    const store = addEntry(
+      emptyStore(),
+      {
+        name: "cookies",
+        folder: "api",
+        request: request({
+          cookies: [
+            { name: "session", value: "direct-cookie", enabled: true },
+            { name: "token", value: "${COOKIE_TOKEN}", enabled: true },
+            { name: "disabled", value: "disabled-secret", enabled: false },
+          ],
+        }),
+      },
+      1000,
+      () => "c-cookies",
+    );
+
+    const saved = await saveStore(store, identitySanitizer, storage);
+
+    expect(saved.collections[0].request.cookies).toEqual([
+      { name: "session", value: REDACTED, enabled: true },
+      { name: "token", value: "${COOKIE_TOKEN}", enabled: true },
+      { name: "disabled", value: REDACTED, enabled: false },
+    ]);
+    expect(storage.getItem(COLLECTION_V2_LS_KEY)).not.toContain("direct-cookie");
+    expect(storage.getItem(COLLECTION_V2_LS_KEY)).not.toContain("disabled-secret");
+  });
+
   it("saveStore sanitizer 실패 시 기존 v2를 보존하고 raw backup을 만들지 않는다", async () => {
     const storage = new RecordingStorage();
     const existing = JSON.stringify(emptyStore());
@@ -188,7 +219,10 @@ describe("collections v2 store", () => {
       {
         name: "원본",
         folder: "dev",
-        request: request({ headers: [{ key: "Authorization", value: secret }] }),
+        request: request({
+          headers: [{ key: "Authorization", value: secret }],
+          cookies: [{ name: "session", value: secret }],
+        }),
       },
       1,
       () => "c-1",
@@ -197,8 +231,10 @@ describe("collections v2 store", () => {
     const duplicated = duplicateEntry(source, "c-1", 2, () => "c-copy");
     expect(duplicated.collections[0]).toMatchObject({ id: "c-copy", name: "원본 복사본", saved_at: 2 });
     expect(duplicated.collections[0].request).not.toBe(source.collections[0].request);
+    expect(duplicated.collections[0].request.cookies).not.toBe(source.collections[0].request.cookies);
     expect(JSON.stringify(duplicated)).not.toContain(secret);
     expect(duplicated.collections[0].request.headers[0].value).toBe(REDACTED);
+    expect(duplicated.collections[0].request.cookies[0].value).toBe(REDACTED);
 
     const renamed = renameEntry(duplicated, "c-copy", "  새\n이름  ");
     expect(renamed.collections[0].name).toBe("새 이름");

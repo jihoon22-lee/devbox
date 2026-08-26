@@ -1070,8 +1070,12 @@ LLM 일기 생성은 source 정확성과 privacy 설정 이후의 opt-in 기능�
 10. Webhook Lab에서 포착한 요청 가져오기
 
 v0.5.0 P1-09 #268에서 duplicate 순서, enabled persistence와 backend-only secret reference를
-지원하는 request header table을 오프라인 native 기능으로 구현했다. Cookie editor, multipart와
-response header/cookie viewer는 각각 분리된 후속 issue로 유지한다.
+지원하는 request header table을 오프라인 native 기능으로 구현했다. 이어 #269에서 domain cookie
+jar가 아닌 request `Cookie` header 전용 editor를 추가했다. 구조화 name/value 행은 순서와 enabled를
+보존하고, 직접 값은 History·Collection·기본 cURL에서 마스킹하며 전체 값이 단일 environment
+reference일 때만 참조를 유지한다. raw `Cookie` header와의 동시 사용, 잘못된 문자와 100행 초과는
+native 전송 전 fail-closed한다. multipart와 response header/cookie viewer는 각각 분리된 후속
+issue로 유지한다.
 
 history는 자동·단기·secret 제거를 기본으로 한다. collection은 사용자가 명시적으로 저장한
 재사용 자산으로 취급한다. Authorization과 Cookie를 history에 평문으로 남기지 않는다.

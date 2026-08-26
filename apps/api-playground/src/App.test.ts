@@ -54,6 +54,7 @@ function baseReq(overrides: Partial<RequestTemplate> = {}): RequestTemplate {
     method: "GET",
     url: "",
     headers: [],
+    cookies: [],
     params: [],
     body_kind: "none",
     body: "",
@@ -214,6 +215,35 @@ describe("buildCurl", () => {
     expect(curl).toContain("Cookie: [REDACTED]");
     expect(curl).toContain("X-Debug-Token: [REDACTED]");
     expect(curl).toContain("X-Request-Id: request-123");
+  });
+
+  it("구조화 Cookie는 순서대로 한 header로 만들고 직접 값만 마스킹한다", () => {
+    const curl = buildCurl(baseReq({
+      url: "https://api.example.com",
+      cookies: [
+        { name: "session", value: "direct-cookie", enabled: true },
+        { name: "token", value: "${COOKIE_TOKEN}", enabled: true },
+        { name: "empty", value: "", enabled: true },
+        { name: "skip", value: "disabled-secret", enabled: false },
+      ],
+    }));
+
+    expect(curl).toContain("Cookie: session=[REDACTED]; token=${COOKIE_TOKEN}; empty=");
+    expect(curl).not.toContain("direct-cookie");
+    expect(curl).not.toContain("disabled-secret");
+    expect(curl.match(/Cookie:/g)).toHaveLength(1);
+  });
+
+  it("raw Cookie header 충돌 또는 잘못된 구조화 Cookie는 cURL도 fail-closed한다", () => {
+    expect(buildCurl(baseReq({
+      url: "https://api.example.com",
+      headers: [{ key: "Cookie", value: "legacy=one" }],
+      cookies: [{ name: "session", value: "two" }],
+    }))).toBe("");
+    expect(buildCurl(baseReq({
+      url: "https://api.example.com",
+      cookies: [{ name: "bad name", value: "two" }],
+    }))).toBe("");
   });
 
   it("body_kind가 none이면 body가 있어도 --data를 추가하지 않는다", () => {

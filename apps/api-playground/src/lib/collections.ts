@@ -1,6 +1,7 @@
 // Collection v2 저장·조회 및 v1 fail-closed 안전 변환.
 
 import type { PersistedHistoryRequest, RequestTemplate } from "../types";
+import { isRequestCookie, normalizeCookies } from "./cookies";
 import { isRequestHeader, normalizeHeaders } from "./headers";
 import {
   type PersistenceSanitizer,
@@ -231,6 +232,8 @@ function isRequestTemplate(value: unknown): value is RequestTemplate {
     typeof request.url === "string" &&
     Array.isArray(request.headers) &&
     request.headers.every(isRequestHeader) &&
+    (request.cookies === undefined ||
+      (Array.isArray(request.cookies) && request.cookies.every(isRequestCookie))) &&
     Array.isArray(request.params) &&
     request.params.every(isKeyValue) &&
     typeof request.body_kind === "string" &&
@@ -262,6 +265,7 @@ function clonePersistedRequest(request: PersistedHistoryRequest): PersistedHisto
   return {
     ...request,
     headers: normalizeHeaders(request.headers),
+    cookies: normalizeCookies(request.cookies),
     params: request.params.map((param) => ({ ...param })),
     auth: request.auth ? { ...request.auth } : null,
   };

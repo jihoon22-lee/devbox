@@ -34,6 +34,7 @@ function rawRequest(): RequestTemplate {
       { key: "Authorization", value: `Bearer ${RAW_SECRET}` },
       { key: "X-Request-Id", value: "request-123" },
     ],
+    cookies: [],
     params: [],
     body_kind: "json",
     body: JSON.stringify({ password: "body-secret", safe: "value" }),

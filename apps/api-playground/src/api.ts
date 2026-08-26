@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./lib/isTauri";
 import { applyToRequest, type EnvVariable } from "./lib/environments";
+import {
+  buildCookieHeader,
+  hasCookieSourceConflict,
+  isCookieEnabled,
+  validateCookies,
+} from "./lib/cookies";
 import { isHeaderEnabled } from "./lib/headers";
 import type { ApiResponse, RequestTemplate } from "./types";
 
@@ -48,11 +54,19 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): P
   }
   const variables = new Map(environment.map((variable) => [variable.key, variable.value]));
   const resolved = applyToRequest(req, variables);
+  if (validateCookies(resolved.cookies).length > 0) {
+    throw new Error("Cookie 이름 또는 값이 올바르지 않습니다");
+  }
+  if (hasCookieSourceConflict(resolved.cookies, resolved.headers)) {
+    throw new Error("Cookie header와 구조화 Cookie를 동시에 전송할 수 없습니다");
+  }
   const start = performance.now();
   const headers = new Headers();
   for (const header of resolved.headers) {
     if (isHeaderEnabled(header) && header.key) headers.append(header.key, header.value);
   }
+  const cookieHeader = buildCookieHeader(resolved.cookies);
+  if (cookieHeader) headers.append("Cookie", cookieHeader);
   if (resolved.auth?.kind === "basic") {
     headers.append("Authorization", "Basic " + btoa(`${resolved.auth.username}:${resolved.auth.password}`));
   } else if (resolved.auth?.kind === "bearer") {
@@ -121,6 +135,9 @@ function redactBrowserText(text: string, req: RequestTemplate): string {
     ...req.headers
       .filter((header) => isHeaderEnabled(header) && isSensitiveName(header.key))
       .map((header) => header.value),
+    ...req.cookies
+      .filter((cookie) => isCookieEnabled(cookie))
+      .map((cookie) => cookie.value),
     ...req.params.filter((param) => isSensitiveName(param.key)).map((param) => param.value),
   ].filter((value): value is string => Boolean(value));
   const exactRedacted = directSecrets.sort((a, b) => b.length - a.length).reduce(

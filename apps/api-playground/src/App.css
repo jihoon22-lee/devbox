@@ -325,6 +325,69 @@ body {
   line-height: 1.5;
 }
 
+.cookie-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.cookie-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.cookie-row {
+  display: grid;
+  grid-template-columns: 66px minmax(140px, 0.7fr) minmax(210px, 1.2fr) auto 130px auto 28px;
+  align-items: center;
+  gap: 6px;
+  min-width: 850px;
+}
+
+.cookie-row.disabled > :not(.header-enabled),
+.cookie-row.invalid.disabled > :not(.header-enabled) {
+  opacity: 0.55;
+}
+
+.cookie-row > input,
+.cookie-row > select {
+  min-width: 0;
+  height: 30px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+.cookie-row > input:focus,
+.cookie-row > select:focus {
+  border-color: var(--accent);
+}
+
+.cookie-row.invalid > input {
+  border-color: var(--red);
+}
+
+.cookie-row-error {
+  grid-column: 2 / -1;
+  color: var(--red);
+  font-size: 11px;
+}
+
+.cookie-conflict {
+  padding: 8px 10px;
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  color: var(--red);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .select-sm {
   background: var(--bg);
   color: var(--text);

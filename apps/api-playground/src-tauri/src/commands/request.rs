@@ -8,6 +8,7 @@ use zeroize::Zeroizing;
 const REDACTED: &str = "[REDACTED]";
 const MAX_REDIRECTS: usize = 10;
 const MAX_REQUEST_HEADERS: usize = 100;
+const MAX_REQUEST_COOKIES: usize = 100;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KeyValue {
@@ -37,6 +38,24 @@ impl Default for RequestHeader {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestCookie {
+    pub name: String,
+    pub value: String,
+    #[serde(default = "default_header_enabled")]
+    pub enabled: bool,
+}
+
+impl Default for RequestCookie {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            value: String::new(),
+            enabled: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthConfig {
     pub kind: String,
@@ -53,6 +72,8 @@ pub struct RequestTemplate {
     pub method: String,
     pub url: String,
     pub headers: Vec<RequestHeader>,
+    #[serde(default)]
+    pub cookies: Vec<RequestCookie>,
     pub params: Vec<KeyValue>,
     /// none | json | form | raw
     pub body_kind: String,
@@ -67,6 +88,7 @@ struct ResolvedRequest {
     method: String,
     url: String,
     headers: Vec<RequestHeader>,
+    cookies: Vec<RequestCookie>,
     params: Vec<KeyValue>,
     body_kind: String,
     body: String,
@@ -117,9 +139,11 @@ pub async fn send_request(
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
 ) -> Result<ApiResponse, String> {
+    validate_cookie_rows(&req.headers, &req.cookies)?;
     let sealer = platform_sealer();
     let (resolved, environment_secrets) =
         resolve_template(&req, &environment, sealer.as_ref()).map_err(|_| safe_secret_error())?;
+    validate_cookie_configuration(&resolved)?;
     let redactor = Redactor::for_request(&resolved, environment_secrets);
     execute_request(resolved, &redactor).await
 }
@@ -130,9 +154,11 @@ pub fn build_revealed_curl(
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
 ) -> Result<String, String> {
+    validate_cookie_rows(&req.headers, &req.cookies)?;
     let sealer = platform_sealer();
     let (resolved, _environment_secrets) =
         resolve_template(&req, &environment, sealer.as_ref()).map_err(|_| safe_secret_error())?;
+    validate_cookie_configuration(&resolved)?;
     Ok(build_curl(&resolved))
 }
 
@@ -148,6 +174,7 @@ pub fn sanitize_persisted_json(
 }
 
 async fn execute_request(req: ResolvedRequest, redactor: &Redactor) -> Result<ApiResponse, String> {
+    validate_cookie_configuration(&req)?;
     if req.body_kind == "json" && !req.body.trim().is_empty() {
         serde_json::from_str::<serde_json::Value>(&req.body)
             .map_err(|_| "JSON 본문 형식이 올바르지 않습니다".to_string())?;
@@ -167,6 +194,7 @@ async fn execute_request(req: ResolvedRequest, redactor: &Redactor) -> Result<Ap
     let mut include_body = true;
     let mut redirects = Vec::new();
     let started = Instant::now();
+    let cookie_header = build_cookie_header(&req.cookies);
 
     for redirect_count in 0..=MAX_REDIRECTS {
         let mut builder = client.request(method.clone(), current_url.clone());
@@ -184,6 +212,11 @@ async fn execute_request(req: ResolvedRequest, redactor: &Redactor) -> Result<Ap
                 reqwest::header::HeaderValue::from_str(&header.value),
             ) {
                 builder = builder.header(name, value);
+            }
+        }
+        if allow_sensitive {
+            if let Some(value) = &cookie_header {
+                builder = builder.header(reqwest::header::COOKIE, value.as_str());
             }
         }
         if allow_sensitive {
@@ -321,6 +354,16 @@ fn resolve_template(
                     enabled: item.enabled,
                 })
                 .collect(),
+            cookies: req
+                .cookies
+                .iter()
+                .take(MAX_REQUEST_COOKIES)
+                .map(|cookie| RequestCookie {
+                    name: cookie.name.clone(),
+                    value: replace(&cookie.value),
+                    enabled: cookie.enabled,
+                })
+                .collect(),
             params: req
                 .params
                 .iter()
@@ -370,6 +413,14 @@ fn referenced_variable_names(req: &RequestTemplate) -> BTreeSet<String> {
     {
         collect(&header.key);
         collect(&header.value);
+    }
+    for cookie in req
+        .cookies
+        .iter()
+        .take(MAX_REQUEST_COOKIES)
+        .filter(|cookie| cookie.enabled)
+    {
+        collect(&cookie.value);
     }
     for param in &req.params {
         collect(&param.key);
@@ -499,6 +550,9 @@ fn collect_request_secrets(req: &ResolvedRequest, secrets: &mut Vec<Zeroizing<St
             push(&header.value);
         }
     }
+    for cookie in req.cookies.iter().filter(|cookie| cookie.enabled) {
+        push(&cookie.value);
+    }
     for param in &req.params {
         if is_sensitive_name(&param.key) {
             push(&param.value);
@@ -579,6 +633,31 @@ fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zero
         *value = serde_json::Value::String(REDACTED.to_string());
         return;
     }
+    if key == "cookies" {
+        let serde_json::Value::Array(cookies) = value else {
+            *value = serde_json::Value::String(REDACTED.to_string());
+            return;
+        };
+        for cookie in cookies {
+            let serde_json::Value::Object(object) = cookie else {
+                *cookie = serde_json::Value::String(REDACTED.to_string());
+                continue;
+            };
+            for (child_key, child) in object {
+                if child_key == "value" {
+                    match child.as_str() {
+                        Some("") => {}
+                        Some(text) if is_exact_reference(text) => {}
+                        Some(_) => *child = serde_json::Value::String(REDACTED.to_string()),
+                        None => *child = serde_json::Value::String(REDACTED.to_string()),
+                    }
+                } else {
+                    sanitize_json_value(child, child_key, secrets);
+                }
+            }
+        }
+        return;
+    }
     if is_sensitive_name(key) {
         if value.as_str().is_some_and(contains_reference) {
             return;
@@ -615,6 +694,18 @@ fn contains_reference(value: &str) -> bool {
     let mut found = false;
     visit_references(value, |_| found = true);
     found
+}
+
+fn is_exact_reference(value: &str) -> bool {
+    let candidate = if value.starts_with("{{") && value.ends_with("}}") {
+        &value[2..value.len().saturating_sub(2)]
+    } else if value.starts_with("${") && value.ends_with('}') {
+        &value[2..value.len().saturating_sub(1)]
+    } else {
+        return false;
+    };
+    let name = candidate.trim();
+    !name.is_empty() && name.chars().all(is_reference_char)
 }
 
 fn redact_text(value: &str, secrets: &[Zeroizing<String>]) -> String {
@@ -760,6 +851,84 @@ fn is_body_header(name: &str) -> bool {
         )
 }
 
+fn validate_cookie_configuration(req: &ResolvedRequest) -> Result<(), String> {
+    validate_cookie_rows(&req.headers, &req.cookies)
+}
+
+fn validate_cookie_rows(
+    headers: &[RequestHeader],
+    cookies: &[RequestCookie],
+) -> Result<(), String> {
+    if cookies.len() > MAX_REQUEST_COOKIES {
+        return Err("Cookie는 최대 100행까지 사용할 수 있습니다".to_string());
+    }
+    let active = cookies
+        .iter()
+        .filter(|cookie| cookie.enabled && (!cookie.name.is_empty() || !cookie.value.is_empty()))
+        .collect::<Vec<_>>();
+    if !active.is_empty()
+        && headers
+            .iter()
+            .any(|header| header.enabled && header.key.trim().eq_ignore_ascii_case("cookie"))
+    {
+        return Err("Cookie header와 구조화 Cookie를 동시에 전송할 수 없습니다".to_string());
+    }
+    for cookie in active {
+        if !is_valid_cookie_name(&cookie.name) {
+            return Err("Cookie 이름이 올바르지 않습니다".to_string());
+        }
+        if !is_valid_cookie_value(&cookie.value) {
+            return Err("Cookie 값에 허용되지 않는 문자가 있습니다".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn is_valid_cookie_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
+                )
+        })
+}
+
+fn is_valid_cookie_value(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| matches!(byte, 0x21 | 0x23..=0x2b | 0x2d..=0x3a | 0x3c..=0x5b | 0x5d..=0x7e))
+}
+
+fn build_cookie_header(cookies: &[RequestCookie]) -> Option<String> {
+    let value = cookies
+        .iter()
+        .filter(|cookie| {
+            cookie.enabled
+                && (!cookie.name.is_empty() || !cookie.value.is_empty())
+                && is_valid_cookie_name(&cookie.name)
+                && is_valid_cookie_value(&cookie.value)
+        })
+        .map(|cookie| format!("{}={}", cookie.name, cookie.value))
+        .collect::<Vec<_>>()
+        .join("; ");
+    (!value.is_empty()).then_some(value)
+}
+
 fn is_cross_origin(from: &reqwest::Url, to: &reqwest::Url) -> bool {
     from.scheme() != to.scheme()
         || from.host_str() != to.host_str()
@@ -840,6 +1009,12 @@ fn build_curl(req: &ResolvedRequest) -> String {
             shell_quote(&format!("{}: {}", header.key, header.value))
         ));
     }
+    if let Some(cookie_header) = build_cookie_header(&req.cookies) {
+        lines.push(format!(
+            "  --header {}",
+            shell_quote(&format!("Cookie: {cookie_header}"))
+        ));
+    }
     if let Some(auth) = &req.auth {
         match auth.kind.as_str() {
             "basic" if !auth.username.is_empty() => lines.push(format!(
@@ -904,6 +1079,7 @@ mod tests {
                 value: "Bearer ${TOKEN}".into(),
                 enabled: true,
             }],
+            cookies: vec![],
             params: vec![],
             body_kind: "json".into(),
             body: r#"{"password":"${TOKEN}"}"#.into(),
@@ -993,6 +1169,124 @@ mod tests {
         assert_eq!(curl.matches("X-Trace:").count(), 2);
         assert!(!curl.contains("X-Skip"));
         assert!(!curl.contains("BROKEN"));
+    }
+
+    #[test]
+    fn cookie_defaults_and_backend_only_secret_resolution_are_safe() {
+        let legacy_cookie: RequestCookie =
+            serde_json::from_str(r#"{"name":"session","value":"one"}"#).unwrap();
+        assert!(legacy_cookie.enabled);
+
+        let legacy_template = serde_json::json!({
+            "method": "GET",
+            "url": "https://example.test",
+            "headers": [],
+            "params": [],
+            "body_kind": "none",
+            "body": "",
+            "auth": null,
+            "timeout_ms": 1000
+        });
+        let parsed: RequestTemplate = serde_json::from_value(legacy_template).unwrap();
+        assert!(parsed.cookies.is_empty());
+
+        let mut request = template();
+        request.url = "https://example.test".into();
+        request.headers.clear();
+        request.body_kind = "none".into();
+        request.body.clear();
+        request.auth = None;
+        request.cookies = vec![
+            RequestCookie {
+                name: "session".into(),
+                value: "${COOKIE_TOKEN}".into(),
+                enabled: true,
+            },
+            RequestCookie {
+                name: "disabled".into(),
+                value: "${BROKEN}".into(),
+                enabled: false,
+            },
+        ];
+
+        let (resolved, secrets) = resolve_template(
+            &request,
+            &[
+                sealed_variable("COOKIE_TOKEN", "cookie-secret"),
+                EnvironmentVariable {
+                    key: "BROKEN".into(),
+                    value: "not-base64".into(),
+                    secret: true,
+                },
+            ],
+            &MockSealer,
+        )
+        .unwrap();
+
+        assert_eq!(resolved.cookies[0].value, "cookie-secret");
+        assert_eq!(resolved.cookies[1].value, "${BROKEN}");
+        assert_eq!(secrets.len(), 1);
+        assert_eq!(secrets[0].as_str(), "cookie-secret");
+        assert_eq!(
+            build_cookie_header(&resolved.cookies).as_deref(),
+            Some("session=cookie-secret")
+        );
+        let curl = build_curl(&resolved);
+        assert!(curl.contains("Cookie: session=cookie-secret"));
+        assert!(!curl.contains("BROKEN"));
+
+        let mut direct = resolved.clone();
+        direct.cookies = vec![RequestCookie {
+            name: "sid".into(),
+            value: "cookie-only-secret".into(),
+            enabled: true,
+        }];
+        let redactor = Redactor::for_request(&direct, vec![]);
+        assert_eq!(
+            redactor.redact_body(r#"{"echo":"cookie-only-secret"}"#),
+            r#"{"echo":"[REDACTED]"}"#
+        );
+    }
+
+    #[test]
+    fn invalid_or_ambiguous_cookie_configuration_fails_closed() {
+        let mut resolved = resolve_template(&template(), &[], &MockSealer).unwrap().0;
+        resolved.headers.clear();
+        resolved.cookies = vec![RequestCookie {
+            name: "bad name".into(),
+            value: "one".into(),
+            enabled: true,
+        }];
+        assert_eq!(
+            validate_cookie_configuration(&resolved).unwrap_err(),
+            "Cookie 이름이 올바르지 않습니다"
+        );
+
+        resolved.cookies[0].name = "session".into();
+        resolved.cookies[0].value = "bad;value".into();
+        assert_eq!(
+            validate_cookie_configuration(&resolved).unwrap_err(),
+            "Cookie 값에 허용되지 않는 문자가 있습니다"
+        );
+
+        resolved.cookies[0].value = "one".into();
+        resolved.headers.push(RequestHeader {
+            key: "Cookie".into(),
+            value: "legacy=two".into(),
+            enabled: true,
+        });
+        assert_eq!(
+            validate_cookie_configuration(&resolved).unwrap_err(),
+            "Cookie header와 구조화 Cookie를 동시에 전송할 수 없습니다"
+        );
+
+        resolved.headers[0].enabled = false;
+        assert!(validate_cookie_configuration(&resolved).is_ok());
+        resolved.cookies = vec![RequestCookie::default(); MAX_REQUEST_COOKIES + 1];
+        assert_eq!(
+            validate_cookie_configuration(&resolved).unwrap_err(),
+            "Cookie는 최대 100행까지 사용할 수 있습니다"
+        );
     }
 
     #[test]
@@ -1123,6 +1417,11 @@ mod tests {
                     "method": "POST",
                     "url": "https://example.test/path",
                     "headers": [{"key": "Authorization", "value": "[REDACTED]"}],
+                    "cookies": [
+                        {"name": "session", "value": "direct-cookie", "enabled": true},
+                        {"name": "token", "value": "${COOKIE_TOKEN}", "enabled": true},
+                        {"name": "mixed", "value": "prefix-${COOKIE_TOKEN}", "enabled": true}
+                    ],
                     "params": [],
                     "body_kind": "json",
                     "body": "{\"password\":\"top-secret\",\"safe\":\"ok\"}",
@@ -1154,11 +1453,15 @@ mod tests {
         assert_eq!(entry["request"]["requiresSecretReview"], true);
         assert!(entry["request"]["requiresSecretReview"].is_boolean());
         assert_eq!(entry["request"]["headers"][0]["value"], REDACTED);
+        assert_eq!(entry["request"]["cookies"][0]["value"], REDACTED);
+        assert_eq!(entry["request"]["cookies"][1]["value"], "${COOKIE_TOKEN}");
+        assert_eq!(entry["request"]["cookies"][2]["value"], REDACTED);
         assert_eq!(
             entry["request"]["body"],
             r#"{"password":"[REDACTED]","safe":"ok"}"#
         );
         assert!(!output.contains("direct-token"));
+        assert!(!output.contains("direct-cookie"));
         assert!(!output.contains("top-secret"));
     }
 
@@ -1302,6 +1605,57 @@ mod tests {
     }
 
     #[test]
+    fn live_request_builds_one_ordered_cookie_header_and_skips_disabled_rows() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut stream);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
+            )
+            .unwrap();
+            request
+        });
+
+        let mut request = template();
+        request.method = "GET".into();
+        request.url = format!("http://127.0.0.1:{port}/cookies");
+        request.headers.clear();
+        request.body_kind = "none".into();
+        request.body.clear();
+        request.auth = None;
+        request.cookies = vec![
+            RequestCookie {
+                name: "session".into(),
+                value: "one".into(),
+                enabled: true,
+            },
+            RequestCookie {
+                name: "token".into(),
+                value: "two".into(),
+                enabled: true,
+            },
+            RequestCookie {
+                name: "skip".into(),
+                value: "not-sent".into(),
+                enabled: false,
+            },
+        ];
+
+        let response = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap();
+        assert_eq!(response.status, 200);
+        let observed = server.join().unwrap();
+        let cookie_lines = observed
+            .lines()
+            .filter(|line| line.to_ascii_lowercase().starts_with("cookie:"))
+            .collect::<Vec<_>>();
+        assert_eq!(cookie_lines, vec!["cookie: session=one; token=two"]);
+        assert!(!observed.contains("not-sent"));
+    }
+
+    #[test]
     fn live_cross_origin_redirect_strips_auth_and_redacts_every_return_path() {
         let redirect_server = TcpListener::bind("127.0.0.1:0").unwrap();
         let destination_server = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1312,8 +1666,12 @@ mod tests {
         let destination = std::thread::spawn(move || {
             let (mut stream, _) = destination_server.accept().unwrap();
             let request = read_http_request(&mut stream);
+            let lowered = request.to_ascii_lowercase();
             observed_tx
-                .send(request.to_ascii_lowercase().contains("\r\nauthorization:"))
+                .send((
+                    lowered.contains("\r\nauthorization:"),
+                    lowered.contains("\r\ncookie:"),
+                ))
                 .unwrap();
             let body = r#"{"echo":"cross-origin-secret","access_token":"server-token"}"#;
             write!(
@@ -1346,9 +1704,16 @@ mod tests {
             token: "cross-origin-secret".into(),
             ..Default::default()
         });
+        request.cookies = vec![RequestCookie {
+            name: "session".into(),
+            value: "cross-origin-secret".into(),
+            enabled: true,
+        }];
 
         let response = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap();
-        assert!(!observed_rx.recv().unwrap());
+        let (has_auth, has_cookie) = observed_rx.recv().unwrap();
+        assert!(!has_auth);
+        assert!(!has_cookie);
         assert!(!response.body.contains("cross-origin-secret"));
         assert!(!response.body.contains("server-token"));
         assert_eq!(

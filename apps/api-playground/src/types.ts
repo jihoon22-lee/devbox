@@ -8,6 +8,14 @@ export interface RequestHeader extends KeyValue {
   enabled?: boolean;
 }
 
+/** request Cookie header로 조립되는 단일 name/value 행. domain cookie jar가 아니다. */
+export interface RequestCookie {
+  name: string;
+  value: string;
+  /** 이전 저장본과의 일관성을 위해 누락 시 활성으로 해석한다. */
+  enabled?: boolean;
+}
+
 export interface AuthConfig {
   kind: string;
   username: string;
@@ -22,6 +30,7 @@ export interface RequestTemplate {
   method: string;
   url: string;
   headers: RequestHeader[];
+  cookies: RequestCookie[];
   params: KeyValue[];
   body_kind: string;
   body: string;
