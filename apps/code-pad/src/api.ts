@@ -25,6 +25,7 @@ import type {
   LspFilteredLocations,
   ManagedInstallStatus,
   ManagedServerManifest,
+  LanguageServerLog,
   OpenRequest,
 } from "./types";
 
@@ -163,6 +164,10 @@ export function restartLanguageServer(languageId: string): Promise<void> {
 
 export function languageServerStatuses(): Promise<LanguageServerStatus[]> {
   return invoke<LanguageServerStatus[]>("language_server_statuses");
+}
+
+export function languageServerLogs(): Promise<LanguageServerLog[]> {
+  return invoke<LanguageServerLog[]>("language_server_logs");
 }
 
 export function openLspDocument(

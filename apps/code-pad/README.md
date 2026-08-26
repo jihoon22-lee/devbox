@@ -12,13 +12,19 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
 - **빠른 열기** — 작업 폴더를 한 번만 제한 색인한 뒤 파일명·상대 경로를 fuzzy 검색하고, 디렉터리 트리로 묶어 긴 경로도 이름과 부모 경로로 나누어 표시. 마우스 없이 `Ctrl/⌘+P` → 입력 → `↑/↓`·`Home/End` → `Enter`로 파일을 연다
 - **프리뷰** — `.md`/`.mmd`(mermaid) 프리뷰 패널
 - **LSP** — Windows 로컬 stdio 서버 관리(진단·자동완성·hover·정의·참조·이름 변경·포맷, 재시작 백오프).
-  rust-analyzer·typescript-language-server·basedpyright·vscode-langservers-extracted를 고정 버전으로 설치
+  상태와 retry/circuit, 검증된 관리형 runtime cache를 한 화면에서 확인하고 `다시 시도`로 명시적 복구한다.
+  최근 로그는 앱 실행 중 memory에 최대 64개 언어·언어별 200개만 보존하며, 제3자 서버 stderr는 native 경계에서
+  절대 경로·URL·credential 패턴을 제거하고 길이를 제한한 뒤 표시한다. raw stderr·설정 오류는 IPC로
+  전달하지 않는다. rust-analyzer·typescript-language-server·basedpyright·vscode-langservers-extracted를
+  검토된 고정 버전으로 명시적으로 설치할 수 있다
 
 ## 기술
 
 - CodeMirror 6 (공용 `packages/editor`), `packages/diff-view`
 - 공용 크레이트 `crates/filesystem`·`crates/markdown`
 - mermaid `securityLevel: "strict"`
+- LSP 관리 dialog는 header/footer를 고정하고 본문 하나만 scroll한다. 상태와 설치 목록에 별도 nested
+  scroll을 만들지 않으며 viewport 안에서 최대 900px 높이를 사용한다
 - 파일 이름 변경은 같은 폴더의 단일 이름만 허용하고 기존 대상을 덮어쓰지 않는다. 삭제는 복구 불가·미저장 버퍼 손실을 명시적으로 확인하며, 두 작업 모두 mtime·크기·SHA-256이 열린 탭의 스냅샷과 일치할 때만 실행한다
 - clipboard IPC는 `allow-read-text`만 허용한다. 사용자가 편집기 메뉴의 붙여넣기를 고른 순간에만 plain text를 읽어 현재 CodeMirror selection에 삽입하며 history·background 수집은 하지 않는다
 

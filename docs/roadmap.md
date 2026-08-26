@@ -248,7 +248,16 @@ summary는 제외했다.
 선택 순서를 일치시켰다. `Ctrl/⌘+P`는 복원된 workspace도 최신 handler로 읽으며 modal input에
 focus를 고정하고 닫힐 때 이전 focus를 복원한다. 파일 열기는 backend가 이미 제한·canonicalize한
 absolute path를 그대로 사용하고 새 filesystem walk, storage, network, process 변경은 추가하지
-않는다. 다음 P1-09 작업은 #278 Code Pad LSP 관리 UX다.
+않는다.
+
+#278은 기존 언어 서버 status에 retry 실패 횟수·남은 backoff·열린 circuit을 표시하고, 같은 카드에서
+수동 `다시 시도`를 실행하도록 확장한다. 관리형 server ref는 설치 index 검증 결과와 결합해 cache
+사용 가능/재설치 필요/미설치 상태만 보여 주며 설치 경로는 frontend DTO에 추가하지 않는다. lifecycle
+event와 stderr는 앱 실행 중 memory의 언어별 200-entry ring에만 두고, stderr chunk를 native에서 line으로
+조립한 뒤 절대 경로·URL·credential 패턴과 oversized line을 제거한다. raw protocol/config/install 오류도
+관리 UI에 반향하지 않는다. status/log polling은 generation으로 stale 응답을 버리고, 900px 이내 panel의
+본문 하나만 scroll하도록 status/installer nested scroll을 제거한다. LSP server 기능과 managed runtime
+설치 계약 자체는 변경하지 않는다. 다음 P1-09 작업은 #279 Code Pad editor·preview 구분이다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

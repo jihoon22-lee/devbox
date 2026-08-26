@@ -123,6 +123,7 @@ pub fn run() {
             commands::lsp::restart_language_server,
             commands::lsp::stop_all_language_servers,
             commands::lsp::language_server_statuses,
+            commands::lsp::language_server_logs,
             commands::lsp::open_lsp_document,
             commands::lsp::change_lsp_document,
             commands::lsp::reload_lsp_document,

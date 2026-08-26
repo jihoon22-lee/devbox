@@ -140,6 +140,7 @@ vi.mock("./api", () => ({
     persist_allowed: true,
     error: null,
   }),
+  languageServerLogs: vi.fn().mockResolvedValue([]),
   languageServerStatuses: vi.fn().mockResolvedValue([]),
   startLanguageServer: vi.fn().mockResolvedValue(undefined),
   stopLanguageServer: vi.fn().mockResolvedValue(undefined),

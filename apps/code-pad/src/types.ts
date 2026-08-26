@@ -198,6 +198,23 @@ export interface LanguageServerStatus {
   autoRestartDisabled?: boolean;
 }
 
+export type LspLogLevel = "info" | "warning" | "error";
+
+export interface LspLogEntry {
+  sequence: string;
+  level: LspLogLevel;
+  code: string;
+  message: string;
+}
+
+export interface LanguageServerLog {
+  languageId: string;
+  entries: LspLogEntry[];
+  droppedEntries: number;
+  droppedStderrBytes: number;
+  stderrTruncated: boolean;
+}
+
 export interface LspRequestMetadata {
   uri: string;
   version: number;

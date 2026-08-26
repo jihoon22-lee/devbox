@@ -2,8 +2,8 @@
 
 use crate::lsp::{
     AppliedDocumentEdits, CompletionResult, DiagnosticResult, DidChange, DidClose, DidOpen,
-    DidSave, FeatureResponse, FilteredLocations, LanguageServerStatus, LoadedLspConfig, LspConfig,
-    LspManager, LspPosition, SanitizedHover,
+    DidSave, FeatureResponse, FilteredLocations, LanguageServerLog, LanguageServerStatus,
+    LoadedLspConfig, LspConfig, LspManager, LspManagerError, LspPosition, SanitizedHover,
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -13,7 +13,10 @@ use tauri::State;
 pub async fn load_lsp_config(
     manager: State<'_, Arc<LspManager>>,
 ) -> Result<LoadedLspConfig, String> {
-    manager.load_config().map_err(|error| error.to_string())
+    let loaded = manager
+        .load_config()
+        .map_err(|_| "LSP 설정을 불러오지 못했습니다".to_owned())?;
+    Ok(public_loaded_config(loaded))
 }
 
 #[tauri::command]
@@ -24,8 +27,8 @@ pub async fn save_lsp_config(
 ) -> Result<(), String> {
     manager
         .save_config(&config, recover_invalid)
-        .map_err(|error| error.to_string())?;
-    manager.stop_all().await.map_err(|error| error.to_string())
+        .map_err(|_| "LSP 설정을 저장하지 못했습니다".to_owned())?;
+    manager.stop_all().await.map_err(public_control_error)
 }
 
 #[tauri::command]
@@ -36,7 +39,7 @@ pub async fn start_language_server(
     manager
         .start(&language_id)
         .await
-        .map_err(|error| error.to_string())
+        .map_err(public_control_error)
 }
 
 #[tauri::command]
@@ -47,7 +50,7 @@ pub async fn stop_language_server(
     manager
         .stop(&language_id)
         .await
-        .map_err(|error| error.to_string())
+        .map_err(public_control_error)
 }
 
 #[tauri::command]
@@ -58,12 +61,12 @@ pub async fn restart_language_server(
     manager
         .restart(&language_id)
         .await
-        .map_err(|error| error.to_string())
+        .map_err(public_control_error)
 }
 
 #[tauri::command]
 pub async fn stop_all_language_servers(manager: State<'_, Arc<LspManager>>) -> Result<(), String> {
-    manager.stop_all().await.map_err(|error| error.to_string())
+    manager.stop_all().await.map_err(public_control_error)
 }
 
 #[tauri::command]
@@ -71,6 +74,62 @@ pub async fn language_server_statuses(
     manager: State<'_, Arc<LspManager>>,
 ) -> Result<Vec<LanguageServerStatus>, String> {
     Ok(manager.statuses().await)
+}
+
+#[tauri::command]
+pub async fn language_server_logs(
+    manager: State<'_, Arc<LspManager>>,
+) -> Result<Vec<LanguageServerLog>, String> {
+    Ok(manager.logs().await)
+}
+
+fn public_control_error(error: LspManagerError) -> String {
+    match error {
+        LspManagerError::Config(_) | LspManagerError::Protocol(_) => {
+            "언어 서버 작업을 완료하지 못했습니다".into()
+        }
+        safe => safe.to_string(),
+    }
+}
+
+fn public_loaded_config(mut loaded: LoadedLspConfig) -> LoadedLspConfig {
+    if loaded.error.is_some() {
+        loaded.error = Some("저장된 LSP 설정이 손상되었습니다".into());
+    }
+    loaded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{public_control_error, public_loaded_config};
+    use crate::lsp::{LoadedLspConfig, LspConfig, LspManagerError};
+
+    #[test]
+    fn management_errors_do_not_echo_protocol_paths_or_credentials() {
+        let secret = r#"C:\Users\dev\private token=raw-secret"#;
+        for error in [
+            LspManagerError::Config(secret.into()),
+            LspManagerError::Protocol(secret.into()),
+        ] {
+            let public = public_control_error(error);
+            assert_eq!(public, "언어 서버 작업을 완료하지 못했습니다");
+            assert!(!public.contains("Users"));
+            assert!(!public.contains("raw-secret"));
+        }
+    }
+
+    #[test]
+    fn corrupt_config_detail_is_replaced_before_ipc() {
+        let loaded = public_loaded_config(LoadedLspConfig {
+            config: LspConfig::empty(),
+            persist_allowed: false,
+            error: Some(r#"invalid file at C:\Users\dev\lsp.json token=secret"#.into()),
+        });
+        assert_eq!(
+            loaded.error.as_deref(),
+            Some("저장된 LSP 설정이 손상되었습니다")
+        );
+    }
 }
 
 #[tauri::command]

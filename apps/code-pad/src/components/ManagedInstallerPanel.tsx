@@ -146,7 +146,9 @@ function ManagedInstallCard({
       {!knownManifest && (
         <p className="lsp-warning">이 버전은 현재 검토된 catalog에 없습니다. 설치는 할 수 없고, indexed key를 확인한 뒤 제거만 할 수 있습니다.</p>
       )}
-      {status.reason && <p className="lsp-warning">{status.reason}</p>}
+      {status.state === "needs_reinstall" && (
+        <p className="lsp-warning">설치된 파일 또는 metadata 검증에 실패했습니다. 제거한 뒤 다시 설치하세요.</p>
+      )}
       <div className="lsp-installer-actions">
         <button
           type="button"
@@ -172,19 +174,19 @@ function ManagedInstallCard({
 }
 
 interface Props {
-  onError?: (message: string) => void;
   onChanged?: (
     catalog: ManagedServerManifest[],
     statuses: ManagedInstallStatus[],
   ) => void;
 }
 
-export default function ManagedInstallerPanel({ onError, onChanged }: Props) {
+export default function ManagedInstallerPanel({ onChanged }: Props) {
   const [catalog, setCatalog] = useState<ManagedServerManifest[]>([]);
   const [statuses, setStatuses] = useState<ManagedInstallStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryAvailable, setRecoveryAvailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
 
@@ -202,11 +204,10 @@ export default function ManagedInstallerPanel({ onError, onChanged }: Props) {
     ])),
     [catalog],
   );
-  const canRecover = error?.includes("installed server index is corrupt") ?? false;
-
   const refresh = async () => {
     setLoading(true);
     setError(null);
+    setRecoveryAvailable(false);
     try {
       const nextCatalog = await lspCatalog();
       setCatalog(nextCatalog);
@@ -214,9 +215,10 @@ export default function ManagedInstallerPanel({ onError, onChanged }: Props) {
       setStatuses(nextStatuses);
       onChanged?.(nextCatalog, nextStatuses);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      const message = "관리형 서버 상태를 확인하지 못했습니다.";
+      setRecoveryAvailable(detail === "관리형 서버 설치 목록 복구가 필요합니다");
       setError(message);
-      onError?.(message);
     } finally {
       setLoading(false);
     }
@@ -235,10 +237,9 @@ export default function ManagedInstallerPanel({ onError, onChanged }: Props) {
     try {
       await recoverInstalledLsp();
       await refresh();
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+    } catch {
+      const message = "설치 목록을 복구하지 못했습니다.";
       setError(message);
-      onError?.(message);
     } finally {
       setRecoveryBusy(false);
     }
@@ -262,10 +263,11 @@ export default function ManagedInstallerPanel({ onError, onChanged }: Props) {
       }
       setPending(null);
       await refresh();
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+    } catch {
+      const message = kind === "install"
+        ? "관리형 서버를 설치하지 못했습니다."
+        : "관리형 서버를 제거하지 못했습니다.";
       setError(message);
-      onError?.(message);
     } finally {
       setBusyKey(null);
     }
@@ -285,8 +287,8 @@ export default function ManagedInstallerPanel({ onError, onChanged }: Props) {
 
       {error && (
         <div className="lsp-installer-error" role="alert">
-          <span>설치 목록을 읽지 못했습니다: {error}</span>
-          {canRecover && (
+          <span>{error}</span>
+          {recoveryAvailable && (
             <button
               type="button"
               className="toolbar-button"

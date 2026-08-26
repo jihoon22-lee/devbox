@@ -23,6 +23,7 @@ use super::features::{
     SanitizedHover, WorkspaceEditPlan,
 };
 use super::installer::ManagedInstaller;
+use super::logs::{LanguageServerLog, LspLogLevel, LspLogStore, StderrLineSanitizer};
 use super::positions::{position_to_offset, LspPosition, PositionEncoding};
 use super::process::{IncomingMessage, LspProcess, ProcessState};
 use super::runtime::RuntimeResolver;
@@ -288,6 +289,7 @@ pub struct LspManager {
     resolver: RuntimeResolver,
     installer: Arc<ManagedInstaller>,
     state: Arc<Mutex<ManagerState>>,
+    logs: Arc<Mutex<LspLogStore>>,
     events: broadcast::Sender<LspEvent>,
     active_starts: Arc<std::sync::atomic::AtomicUsize>,
     start_finished: Arc<tokio::sync::Notify>,
@@ -316,6 +318,7 @@ impl LspManager {
             resolver: RuntimeResolver::new(),
             installer,
             state: Arc::new(Mutex::new(ManagerState::default())),
+            logs: Arc::new(Mutex::new(LspLogStore::default())),
             events,
             active_starts: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             start_finished: Arc::new(tokio::sync::Notify::new()),
@@ -347,10 +350,42 @@ impl LspManager {
 
     pub async fn start(&self, language_id: &str) -> Result<(), LspManagerError> {
         let language_id = normalized_language_id(language_id)?;
-        let reservation = self.reserve_start(&language_id).await?;
-        let start_token = reservation.token();
-        let result = self.start_reserved(&language_id, start_token).await;
-        reservation.complete();
+        self.append_log(
+            &language_id,
+            LspLogLevel::Info,
+            "start-requested",
+            "언어 서버 시작을 요청했습니다",
+        )
+        .await;
+        let result = match self.reserve_start(&language_id).await {
+            Ok(reservation) => {
+                let start_token = reservation.token();
+                let result = self.start_reserved(&language_id, start_token).await;
+                reservation.complete();
+                result
+            }
+            Err(error) => Err(error),
+        };
+        match &result {
+            Ok(()) => {
+                self.append_log(
+                    &language_id,
+                    LspLogLevel::Info,
+                    "server-ready",
+                    "언어 서버가 준비되었습니다",
+                )
+                .await;
+            }
+            Err(_) => {
+                self.append_log(
+                    &language_id,
+                    LspLogLevel::Error,
+                    "start-failed",
+                    "언어 서버를 시작하지 못했습니다",
+                )
+                .await;
+            }
+        }
         result
     }
 
@@ -504,6 +539,7 @@ impl LspManager {
         let process = LspProcess::spawn(resolved.process_spec())
             .await
             .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        self.spawn_stderr_monitor(language_id.to_owned(), process.subscribe_stderr());
         let client = LspClient::new(process.clone());
         let capabilities = match client
             .initialize(&workspace, InitializeConfig::new(&self.app_version))
@@ -533,7 +569,14 @@ impl LspManager {
 
     pub async fn stop(&self, language_id: &str) -> Result<(), LspManagerError> {
         let language_id = normalized_language_id(language_id)?;
-        let session = {
+        self.append_log(
+            &language_id,
+            LspLogLevel::Info,
+            "stop-requested",
+            "언어 서버 중지를 요청했습니다",
+        )
+        .await;
+        let selection = {
             let mut state = self.state.lock().await;
             state.restart.remove(&language_id);
             if let Some(session) = state.sessions.get(&language_id).cloned() {
@@ -542,20 +585,51 @@ impl LspManager {
                 // observe this flag before it can create a replacement.
                 session.stopping.store(true, Ordering::Release);
                 state.starting.remove(&language_id);
-                session
+                Ok(Some(session))
             } else if state.starting.remove(&language_id).is_some() {
-                return Ok(());
+                Ok(None)
             } else {
-                return Err(LspManagerError::NotRunning(language_id));
+                Err(LspManagerError::NotRunning(language_id.clone()))
             }
         };
-        self.terminate_session(&language_id, &session).await
+        let result = match selection {
+            Ok(Some(session)) => self.terminate_session(&language_id, &session).await,
+            Ok(None) => Ok(()),
+            Err(error) => Err(error),
+        };
+        self.append_log(
+            &language_id,
+            if result.is_ok() {
+                LspLogLevel::Info
+            } else {
+                LspLogLevel::Error
+            },
+            if result.is_ok() {
+                "server-stopped"
+            } else {
+                "stop-failed"
+            },
+            if result.is_ok() {
+                "언어 서버를 중지했습니다"
+            } else {
+                "언어 서버를 중지하지 못했습니다"
+            },
+        )
+        .await;
+        result
     }
 
     /// Explicit restart clears the automatic backoff circuit and starts a
     /// fresh session. The frontend's buffers remain untouched.
     pub async fn restart(&self, language_id: &str) -> Result<(), LspManagerError> {
         let language_id = normalized_language_id(language_id)?;
+        self.append_log(
+            &language_id,
+            LspLogLevel::Warning,
+            "manual-retry",
+            "사용자가 언어 서버 다시 시도를 요청했습니다",
+        )
+        .await;
         let session = {
             let mut state = self.state.lock().await;
             state.restart.remove(&language_id);
@@ -567,7 +641,16 @@ impl LspManager {
             session
         };
         if let Some(session) = session {
-            self.terminate_session(&language_id, &session).await?;
+            if let Err(error) = self.terminate_session(&language_id, &session).await {
+                self.append_log(
+                    &language_id,
+                    LspLogLevel::Error,
+                    "manual-retry-failed",
+                    "언어 서버 다시 시도를 시작하지 못했습니다",
+                )
+                .await;
+                return Err(error);
+            }
         }
         self.start(&language_id).await
     }
@@ -588,7 +671,27 @@ impl LspManager {
         };
         let mut first_error = None;
         for (language_id, session) in sessions {
-            if let Err(error) = self.terminate_session(&language_id, &session).await {
+            let result = self.terminate_session(&language_id, &session).await;
+            self.append_log(
+                &language_id,
+                if result.is_ok() {
+                    LspLogLevel::Info
+                } else {
+                    LspLogLevel::Error
+                },
+                if result.is_ok() {
+                    "server-stopped"
+                } else {
+                    "stop-failed"
+                },
+                if result.is_ok() {
+                    "언어 서버를 중지했습니다"
+                } else {
+                    "언어 서버를 중지하지 못했습니다"
+                },
+            )
+            .await;
+            if let Err(error) = result {
                 first_error.get_or_insert_with(|| LspManagerError::Protocol(error.to_string()));
             }
         }
@@ -673,7 +776,11 @@ impl LspManager {
                 // exit notification and publish Ready for a crashed child.
                 status: effective_client_status(session.client.status(), &process),
                 process_state,
-                server_info: session.client.server_info().await,
+                // The initialize response is controlled by the third-party
+                // server and can put arbitrary path or credential text in
+                // serverInfo. Runtime identity is derived from reviewed config
+                // metadata in the UI, so do not forward this untrusted label.
+                server_info: None,
                 capabilities: session.client.capabilities().await,
                 document_count,
                 restart_attempt: restart_state
@@ -692,6 +799,64 @@ impl LspManager {
             });
         }
         statuses
+    }
+
+    pub async fn logs(&self) -> Vec<LanguageServerLog> {
+        self.logs.lock().await.snapshots()
+    }
+
+    async fn append_log(
+        &self,
+        language_id: &str,
+        level: LspLogLevel,
+        code: &'static str,
+        message: &'static str,
+    ) {
+        self.logs
+            .lock()
+            .await
+            .append(language_id, level, code, message);
+    }
+
+    fn spawn_stderr_monitor(
+        &self,
+        language_id: String,
+        mut receiver: broadcast::Receiver<super::process::StderrEvent>,
+    ) {
+        let logs = Arc::clone(&self.logs);
+        tokio::spawn(async move {
+            let mut sanitizer = StderrLineSanitizer::default();
+            loop {
+                match receiver.recv().await {
+                    Ok(event) => {
+                        let lines = sanitizer.push(&event.bytes);
+                        let mut store = logs.lock().await;
+                        store.record_stderr_state(
+                            &language_id,
+                            event.dropped_bytes,
+                            event.truncated,
+                        );
+                        for line in lines {
+                            store.append(&language_id, LspLogLevel::Warning, "server-stderr", line);
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                        logs.lock().await.append(
+                            &language_id,
+                            LspLogLevel::Warning,
+                            "stderr-events-dropped",
+                            "서버 진단 출력 일부를 처리하지 못했습니다",
+                        );
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            if let Some(line) = sanitizer.finish() {
+                logs.lock()
+                    .await
+                    .append(&language_id, LspLogLevel::Warning, "server-stderr", line);
+            }
+        });
     }
 
     pub async fn open_document(
@@ -1420,36 +1585,9 @@ impl LspManager {
         if session.stopping.load(Ordering::Acquire) {
             return;
         }
-        let (delay, disabled) = {
-            let mut state = self.state.lock().await;
-            let tracker = state.restart.entry(language_id.to_owned()).or_default();
-            let now = Instant::now();
-            while tracker
-                .failures
-                .front()
-                .is_some_and(|failure| now.duration_since(*failure) > RESTART_WINDOW)
-            {
-                tracker.failures.pop_front();
-            }
-            if tracker.failures.is_empty() {
-                tracker.attempt = 0;
-                tracker.disabled = false;
-                tracker.reason = None;
-            }
-            tracker.failures.push_back(now);
-            tracker.reason = Some(reason.clone());
-            if tracker.failures.len() >= 3 {
-                tracker.disabled = true;
-                tracker.next_restart_at = None;
-                (None, true)
-            } else {
-                let index = tracker.attempt.min((RESTART_DELAYS.len() - 1) as u32) as usize;
-                let delay = RESTART_DELAYS[index];
-                tracker.attempt = tracker.attempt.saturating_add(1);
-                tracker.next_restart_at = Some(now + delay);
-                (Some(delay), false)
-            }
-        };
+        let (delay, disabled) = self
+            .record_restart_failure(language_id, reason.clone())
+            .await;
         self.emit_status_override(
             language_id,
             Some(reason.clone()),
@@ -1586,6 +1724,13 @@ impl LspManager {
                     }
                     self.spawn_session_monitor(language_id, Arc::clone(&session));
                     self.emit_status(language_id, None, false).await;
+                    self.append_log(
+                        language_id,
+                        LspLogLevel::Info,
+                        "auto-restart-ready",
+                        "언어 서버 자동 재시작이 완료되었습니다",
+                    )
+                    .await;
                     return;
                 }
                 Err(error) => {
@@ -1610,34 +1755,56 @@ impl LspManager {
         language_id: &str,
         reason: String,
     ) -> (Option<Duration>, bool) {
-        let mut state = self.state.lock().await;
-        let tracker = state.restart.entry(language_id.to_owned()).or_default();
-        let now = Instant::now();
-        while tracker
-            .failures
-            .front()
-            .is_some_and(|failure| now.duration_since(*failure) > RESTART_WINDOW)
-        {
-            tracker.failures.pop_front();
-        }
-        if tracker.failures.is_empty() {
-            tracker.attempt = 0;
-            tracker.disabled = false;
-            tracker.reason = None;
-        }
-        tracker.failures.push_back(now);
-        tracker.reason = Some(reason);
-        if tracker.failures.len() >= 3 {
-            tracker.disabled = true;
-            tracker.next_restart_at = None;
-            (None, true)
-        } else {
-            let index = tracker.attempt.min((RESTART_DELAYS.len() - 1) as u32) as usize;
-            let delay = RESTART_DELAYS[index];
-            tracker.attempt = tracker.attempt.saturating_add(1);
-            tracker.next_restart_at = Some(now + delay);
-            (Some(delay), false)
-        }
+        let outcome = {
+            let mut state = self.state.lock().await;
+            let tracker = state.restart.entry(language_id.to_owned()).or_default();
+            let now = Instant::now();
+            while tracker
+                .failures
+                .front()
+                .is_some_and(|failure| now.duration_since(*failure) > RESTART_WINDOW)
+            {
+                tracker.failures.pop_front();
+            }
+            if tracker.failures.is_empty() {
+                tracker.attempt = 0;
+                tracker.disabled = false;
+                tracker.reason = None;
+            }
+            tracker.failures.push_back(now);
+            tracker.reason = Some(reason);
+            if tracker.failures.len() >= 3 {
+                tracker.disabled = true;
+                tracker.next_restart_at = None;
+                (None, true)
+            } else {
+                let index = tracker.attempt.min((RESTART_DELAYS.len() - 1) as u32) as usize;
+                let delay = RESTART_DELAYS[index];
+                tracker.attempt = tracker.attempt.saturating_add(1);
+                tracker.next_restart_at = Some(now + delay);
+                (Some(delay), false)
+            }
+        };
+        self.append_log(
+            language_id,
+            if outcome.1 {
+                LspLogLevel::Error
+            } else {
+                LspLogLevel::Warning
+            },
+            if outcome.1 {
+                "auto-restart-disabled"
+            } else {
+                "auto-restart-scheduled"
+            },
+            if outcome.1 {
+                "반복 실패로 자동 재시작을 중지했습니다"
+            } else {
+                "언어 서버 실패 후 자동 재시작을 예약했습니다"
+            },
+        )
+        .await;
+        outcome
     }
 
     async fn clear_start_reservation(&self, language_id: &str, token: u64) {
@@ -1861,9 +2028,14 @@ fn validate_rename_name(new_name: &str) -> Result<(), LspManagerError> {
 
 fn normalized_language_id(language_id: &str) -> Result<String, LspManagerError> {
     let language_id = language_id.trim();
-    if language_id.is_empty() || language_id.chars().any(char::is_whitespace) {
+    if language_id.is_empty()
+        || language_id.len() > 64
+        || !language_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'+'))
+    {
         return Err(LspManagerError::Protocol(
-            "language id는 공백 없는 값이어야 합니다".into(),
+            "language id 형식이 올바르지 않습니다".into(),
         ));
     }
     Ok(language_id.to_owned())
@@ -1924,6 +2096,16 @@ mod status_tests {
 mod tests {
     use super::*;
 
+    #[test]
+    fn runtime_language_id_uses_the_same_safe_identifier_boundary_as_config() {
+        assert_eq!(normalized_language_id("rust").unwrap(), "rust");
+        assert_eq!(normalized_language_id(" c-sharp ").unwrap(), "c-sharp");
+        for invalid in ["C:\\private", "../../secret", "token value", "한글"] {
+            assert!(normalized_language_id(invalid).is_err());
+        }
+        assert!(normalized_language_id(&"a".repeat(65)).is_err());
+    }
+
     #[tokio::test]
     async fn restart_backoff_resets_after_the_failure_window() {
         let manager = LspManager::new("/tmp/code-pad-lsp-test", "test");
@@ -1957,5 +2139,10 @@ mod tests {
         let (delay, disabled) = manager.record_restart_failure("rust", "three".into()).await;
         assert!(delay.is_none());
         assert!(disabled);
+        let logs = manager.logs().await;
+        let entries = &logs[0].entries;
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[2].code, "auto-restart-disabled");
+        assert!(!entries.iter().any(|entry| entry.message.contains("three")));
     }
 }
