@@ -1,4 +1,5 @@
 pub mod asset;
+pub mod batch;
 pub mod catalog;
 pub mod download;
 pub mod layout;

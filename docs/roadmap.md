@@ -229,7 +229,11 @@ boundary에서 다시 검증한다. #273은 파일·폴더 이름 변경 전에 
 전체 승인 UI로 표시하고, opaque one-shot plan과 SHA-256 스냅샷 재검증을 거쳐 파일별 atomic
 rewrite·filesystem rename·SQLite FTS/link transaction을 적용한다. 기존 key로 계속 유일하게
 resolve되는 링크는 쓰지 않고 alias는 보존하며, 충돌·stale snapshot·부분 실패는 전체 중단 또는
-rollback한다. 다음 P1-09 작업은 Devbox Manager batch다.
+rollback하도록 구현해 PR #405로 CI 통과·머지됐다. #274는 Devbox Manager의 catalog 기반 다중 선택,
+단일 manifest 조회·순차 실행, 앱별 성공/실패 결과와 실패 항목 exact-mode 재시도를 구현한다.
+portable registry commit 실패는 기존 current를 복구하고 setup batch는 여러 installer 마법사 실행을
+명시적으로 확인한다. backend SemVer gate는 동일·더 최신 installed version의 stale selection을 no-op로
+만들어 batch downgrade를 막는다. 다음 P1-09 작업은 #275 Devbox Manager install path read-only 표시다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

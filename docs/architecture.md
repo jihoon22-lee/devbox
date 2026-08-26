@@ -218,6 +218,22 @@ portable registry snapshot에서만 활성화하며 installer 상태나 확인�
 제거는 danger 표시와 명시적 확인을 거친다. frontend의 installed/current DTO에는 registry의
 `exe_path`를 포함하지 않고 action은 app ID만 backend에 전달한다.
 
+일괄 설치/업데이트는 frontend의 catalog-derived checkbox selection을 `appId`와
+`portable|installer` mode 목록으로만 전달한다. backend는 빈 목록, 32개 초과, 중복·잘못된 ID/mode와
+manager-visible/non-self-managed가 아닌 target을 mutation 전에 거부한다. 유효한 batch는 release
+manifest와 HTTP client를 한 번만 준비하고 입력 순서대로 한 앱씩 처리한다. 한 항목이 실패해도 다음
+항목을 계속하며 public 결과는 app ID, mode, 성공 여부와 고정된 안전 메시지만 포함한다. 성공 결과는
+유지하고 UI는 실패 결과만 선택한 채 exact mode로 다시 호출한다. batch 전체를 하나의 rollback
+단위로 만들지 않는다. backend가 installed/available version을 strict SemVer로 다시 비교해 available이
+더 큰 경우에만 변경하며, 같거나 더 최신 버전이 설치된 stale selection은 download 없는 성공 no-op다.
+
+portable 항목은 검증된 version artifact를 준비한 뒤 current와 registry를 갱신한다. registry commit이
+실패하면 이전 `current.json`을 복구하거나 최초 설치였다면 새 current를 제거하고 해당 항목만 실패로
+표시한다. setup 항목은 durable registry 준비 뒤 검증된 installer를 spawn하고, spawn 실패 시 registry를
+복구한다. setup 성공은 설치 완료가 아니라 마법사 실행 성공이므로 여러 항목 실행 전 UI 확인과
+결과 설명을 제공한다. batch 도중 URL, digest, process와 filesystem의 원문 오류는 frontend DTO로
+반사하지 않는다.
+
 Manager backend는 action마다 manager-visible/non-self-managed catalog target, bounded version component,
 `<manager-root>/apps/<app-id>/versions/<version>/<app-id>.exe` 고정 layout과 registry executable의 canonical
 identity를 다시 확인한다. portable 제거 전에는 app-owned tree 전체를 제한된 깊이·항목 수로 순회해

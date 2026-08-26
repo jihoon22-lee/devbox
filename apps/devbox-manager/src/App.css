@@ -102,6 +102,75 @@ body {
   overflow: auto;
 }
 
+.batch-panel {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 96%, var(--accent) 4%);
+}
+
+.batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.batch-actions .retry {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.batch-note {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.batch-results {
+  display: grid;
+  gap: 4px;
+  max-height: 150px;
+  margin-top: 8px;
+  overflow: auto;
+}
+
+.batch-result {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 80px 44px minmax(240px, 2fr);
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  font-size: 11px;
+}
+
+.batch-result.ok {
+  border-left: 3px solid var(--green);
+}
+
+.batch-result.bad {
+  border-left: 3px solid var(--red);
+}
+
+.batch-result-name {
+  font-weight: 600;
+}
+
+.batch-result-message {
+  color: var(--dim);
+}
+
+.batch-select-cell {
+  width: 42px;
+  padding-right: 4px;
+  text-align: center;
+}
+
+.batch-select-cell input {
+  accent-color: var(--accent);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -199,4 +268,14 @@ td {
 .doctor-note {
   margin-top: 14px;
   font-size: 11px;
+}
+
+@media (max-width: 820px) {
+  .batch-result {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .batch-result-message {
+    grid-column: 1 / -1;
+  }
 }

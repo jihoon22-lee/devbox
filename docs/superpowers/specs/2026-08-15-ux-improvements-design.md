@@ -267,7 +267,7 @@ Windows 실기 검증에서 수집한 UX 개선 항목. 기능 버그가 아니�
 
 | 앱 | 항목 | 설명 | 비고 |
 |---|---|---|---|
-| devbox-manager | 일괄 설치/업데이트 + 다중 선택 | 여러 앱을 체크박스로 선택해 한 번에 설치/업데이트 | **부분 실패·롤백 규칙 필요.** `manager.rs:154`가 install마다 GitHub manifest를 재조회하므로 12개 배치 = 24회 왕복 → `install_many` 또는 manifest 호이스팅. 기존 원자 다운로드·롤백 계층(`core/layout.rs`, `manager.rs:327-396`)은 그대로 재사용 |
+| devbox-manager | 일괄 설치/업데이트 + 다중 선택 | #274에서 catalog checkbox, manifest 1회 조회, 순차 실행, 앱별 결과와 실패 exact-mode retry 구현 | 성공 앱 유지·실패 앱만 재시도. portable current/registry rollback, setup 다중 마법사 확인 |
 | devbox-manager | 설치 위치 표시 + 지정 | 현재 설치 경로를 표시하고, 사용자가 변경 가능하게 | **표시는 저비용, 변경은 고비용.** 설치 루트는 `manager.rs:30-34`와 `crates/launch/src/lib.rs:21-27` 두 곳에 독립적으로 하드코딩돼 있고 후자를 repo-manager·workbench가 쓴다. **표시를 먼저 내고 변경은 분리한다** |
 | wsl-desktop | Docker 패널 컴팩트 포맷 | 좌우 잘림을 줄이도록 트리/축약 포맷 도입 | |
 | code-pad | 언어 서버 패널 높이 확보 | 언어 서버 목록 패널이 좁아 가독성이 떨어짐 | `App.css:622-627`의 `min-height:120px`. **같은 모달 안에 스크롤 영역이 둘**(`:685-690` installer)이라 그 충돌을 먼저 해소해야 한다 |
@@ -376,7 +376,7 @@ v0.5.0
 | 카탈로그 기반 "열기" | 설치되지 않은 앱 제외, `accepts` 불일치 앱 제외 |
 | developer-toolbox 변환기 | 왕복 테스트 (`transformers.test.ts` 확장). 잘못된 입력에 예외 대신 오류 메시지. QR SVG/PNG golden·size 상한 |
 | webhook-lab curl | 규칙 → curl 문자열 골든 테스트. 인용이 필요한 body |
-| devbox-manager 일괄 설치 | 부분 실패 시 성공분이 유지되고 실패분만 보고되는지. 신규 앱 등록 뒤 `App.test.tsx`의 catalog 개수도 15개로 갱신 |
+| devbox-manager 일괄 설치 | #274 fixture가 부분 실패 뒤 성공분 유지·실패분 선택·exact-mode retry, setup 확인을 검증. 신규 앱 등록 뒤 `App.test.tsx`의 catalog 개수도 15개로 갱신 |
 
 **실기 검증(Windows)** — 컨텍스트 메뉴는 WebView2 기본 메뉴 억제와 IME가 얽히므로 실기
 확인이 필요하다:

@@ -3,12 +3,13 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   available,
   catalog,
   current,
   installApp,
+  installMany,
   installed,
   launchApp,
   openInstallFolder,
@@ -17,7 +18,15 @@ import {
   runDiagnosis,
   type DiagnosisItem,
 } from "./api";
-import type { CatalogApp, Current, InstalledApp, ReleaseManifest } from "./types";
+import type {
+  BatchInstallRequest,
+  BatchInstallResult,
+  CatalogApp,
+  Current,
+  InstalledApp,
+  InstallMode,
+  ReleaseManifest,
+} from "./types";
 import "./App.css";
 
 export default function App() {
@@ -32,6 +41,11 @@ export default function App() {
   const [diagnosis, setDiagnosis] = useState<DiagnosisItem[]>([]);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [contextApp, setContextApp] = useState<CatalogApp | null>(null);
+  const [batchSelection, setBatchSelection] = useState<Set<string>>(() => new Set());
+  const [batchResults, setBatchResults] = useState<BatchInstallResult[]>([]);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const batchBusyRef = useRef(false);
+  const operationBusyRef = useRef(false);
 
   const prepareAppContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.appId;
@@ -101,7 +115,7 @@ export default function App() {
   const manifestOf = (appId: string) => manifest?.apps.find((a) => a.id === appId);
   const installedOf = (appId: string) => installedList.find((i) => i.app === appId);
 
-  const isAppBusy = (appId: string) => busy?.startsWith(`${appId}:`) ?? false;
+  const isAppBusy = (_appId: string) => batchBusy || busy !== null;
 
   const isUpToDate = (appId: string) => {
     const inst = installedOf(appId);
@@ -110,7 +124,77 @@ export default function App() {
     return inst.version === app.version;
   };
 
-  const onInstall = async (appId: string, mode: "portable" | "installer") => {
+  const batchCandidateIds = useMemo(() => new Set(
+    apps
+      .filter((candidate) => {
+        const installedApp = installedList.find((item) => item.app === candidate.id);
+        const availableApp = manifest?.apps.find((item) => item.id === candidate.id);
+        return Boolean(availableApp && installedApp?.version !== availableApp.version);
+      })
+      .map((candidate) => candidate.id),
+  ), [apps, installedList, manifest]);
+  const selectedBatchIds = [...batchSelection].filter((id) => batchCandidateIds.has(id));
+  const allBatchCandidatesSelected = batchCandidateIds.size > 0
+    && selectedBatchIds.length === batchCandidateIds.size;
+
+  const toggleBatchApp = (appId: string) => {
+    if (batchBusyRef.current || !batchCandidateIds.has(appId)) return;
+    setBatchSelection((currentSelection) => {
+      const next = new Set(currentSelection);
+      if (next.has(appId)) next.delete(appId);
+      else next.add(appId);
+      return next;
+    });
+  };
+
+  const toggleAllBatchApps = () => {
+    if (batchBusyRef.current) return;
+    setBatchSelection(allBatchCandidatesSelected ? new Set() : new Set(batchCandidateIds));
+  };
+
+  const runBatch = async (requests: BatchInstallRequest[]) => {
+    if (operationBusyRef.current || requests.length === 0) return;
+    const installerCount = requests.filter((request) => request.mode === "installer").length;
+    if (installerCount > 0 && !window.confirm(
+      `${installerCount}개 앱의 설치 마법사를 각각 실행할까요? 각 창에서 설치를 완료해야 합니다.`,
+    )) return;
+
+    batchBusyRef.current = true;
+    operationBusyRef.current = true;
+    setBatchBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const results = await installMany(requests);
+      setBatchResults(results);
+      const failed = results.filter((result) => !result.ok);
+      setBatchSelection(new Set(failed.map((result) => result.appId)));
+      const succeededCount = results.length - failed.length;
+      setNotice(`일괄 작업 완료: 성공 ${succeededCount}개, 실패 ${failed.length}개`);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      batchBusyRef.current = false;
+      operationBusyRef.current = false;
+      setBatchBusy(false);
+    }
+  };
+
+  const onBatchInstall = (mode: InstallMode) => {
+    const requests = selectedBatchIds.map((appId) => ({ appId, mode }));
+    void runBatch(requests);
+  };
+
+  const onRetryFailed = () => {
+    void runBatch(batchResults
+      .filter((result) => !result.ok)
+      .map(({ appId, mode }) => ({ appId, mode })));
+  };
+
+  const onInstall = async (appId: string, mode: InstallMode) => {
+    if (operationBusyRef.current) return;
+    operationBusyRef.current = true;
     setBusy(`${appId}:${mode}`);
     setError(null);
     setNotice(null);
@@ -121,11 +205,14 @@ export default function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      operationBusyRef.current = false;
       setBusy(null);
     }
   };
 
   const onLaunch = async (appId: string) => {
+    if (operationBusyRef.current) return;
+    operationBusyRef.current = true;
     setBusy(`${appId}:launch`);
     setError(null);
     setNotice(null);
@@ -134,11 +221,14 @@ export default function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      operationBusyRef.current = false;
       setBusy(null);
     }
   };
 
   const onRollback = async (appId: string) => {
+    if (operationBusyRef.current) return;
+    operationBusyRef.current = true;
     setBusy(`${appId}:rollback`);
     setError(null);
     setNotice(null);
@@ -149,11 +239,14 @@ export default function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      operationBusyRef.current = false;
       setBusy(null);
     }
   };
 
   const onOpenInstallFolder = async (appId: string) => {
+    if (operationBusyRef.current) return;
+    operationBusyRef.current = true;
     setBusy(`${appId}:folder`);
     setError(null);
     setNotice(null);
@@ -162,14 +255,17 @@ export default function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      operationBusyRef.current = false;
       setBusy(null);
     }
   };
 
   const onRemove = async (app: CatalogApp) => {
+    if (operationBusyRef.current) return;
     if (!window.confirm(
       `'${app.displayName}' 휴대용 앱을 제거할까요? Manager가 관리하는 실행 파일과 보존 버전만 삭제하며 앱 사용자 데이터는 유지됩니다.`,
     )) return;
+    operationBusyRef.current = true;
     setBusy(`${app.id}:remove`);
     setError(null);
     setNotice(null);
@@ -179,6 +275,7 @@ export default function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      operationBusyRef.current = false;
       setBusy(null);
     }
   };
@@ -243,15 +340,23 @@ export default function App() {
     <div className="app">
       <header className="toolbar">
         <h1 className="title">Devbox Manager</h1>
-        <button className={`btn ${tab === "apps" ? "active" : ""}`} onClick={() => setTab("apps")}>
+        <button
+          className={`btn ${tab === "apps" ? "active" : ""}`}
+          disabled={batchBusy}
+          onClick={() => setTab("apps")}
+        >
           앱
         </button>
-        <button className={`btn ${tab === "doctor" ? "active" : ""}`} onClick={() => { setTab("doctor"); void onDiagnose(); }}>
+        <button
+          className={`btn ${tab === "doctor" ? "active" : ""}`}
+          disabled={batchBusy}
+          onClick={() => { setTab("doctor"); void onDiagnose(); }}
+        >
           환경 진단
         </button>
         <span className="latest">Latest: {manifest ? manifest.releaseTag : "..."}</span>
         <span className="spacer" />
-        <button className="btn refresh" onClick={() => void refresh()}>
+        <button className="btn refresh" disabled={batchBusy} onClick={() => void refresh()}>
           Refresh
         </button>
       </header>
@@ -276,9 +381,69 @@ export default function App() {
         </div>
       ) : (
       <div className="table-wrap">
+        <section className="batch-panel" aria-label="일괄 설치 및 업데이트">
+          <div className="batch-actions">
+            <strong>일괄 작업</strong>
+            <span className="dim">설치/업데이트 가능한 앱 {selectedBatchIds.length}개 선택</span>
+            <button
+              className="btn"
+              disabled={batchBusy || busy !== null || selectedBatchIds.length === 0}
+              onClick={() => onBatchInstall("portable")}
+            >
+              {batchBusy ? "처리 중..." : "휴대용 일괄 실행"}
+            </button>
+            <button
+              className="btn"
+              disabled={batchBusy || busy !== null || selectedBatchIds.length === 0}
+              onClick={() => onBatchInstall("installer")}
+            >
+              설치 패키지 일괄 실행
+            </button>
+            {batchResults.some((result) => !result.ok) && (
+              <button
+                className="btn retry"
+                disabled={batchBusy || busy !== null}
+                onClick={onRetryFailed}
+              >
+                실패 항목만 재시도 ({batchResults.filter((result) => !result.ok).length})
+              </button>
+            )}
+          </div>
+          <div className="dim batch-note">
+            성공한 앱은 유지하고 실패한 앱만 선택 상태로 남깁니다. 설치 패키지는 앱마다 별도 마법사를 실행합니다.
+          </div>
+          {batchResults.length > 0 && (
+            <div className="batch-results" aria-label="일괄 작업 결과" aria-live="polite">
+              {batchResults.map((result) => {
+                const displayName = apps.find((candidate) => candidate.id === result.appId)?.displayName
+                  ?? result.appId;
+                return (
+                  <div
+                    key={`${result.appId}:${result.mode}`}
+                    className={`batch-result ${result.ok ? "ok" : "bad"}`}
+                  >
+                    <span className="batch-result-name">{displayName}</span>
+                    <span>{result.mode === "portable" ? "휴대용" : "설치 패키지"}</span>
+                    <span>{result.ok ? "성공" : "실패"}</span>
+                    <span className="batch-result-message">{result.message}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
         <table>
           <thead>
             <tr>
+              <th className="batch-select-cell">
+                <input
+                  type="checkbox"
+                  aria-label="설치 및 업데이트 가능한 앱 전체 선택"
+                  checked={allBatchCandidatesSelected}
+                  disabled={batchBusy || batchCandidateIds.size === 0}
+                  onChange={toggleAllBatchApps}
+                />
+              </th>
               <th>APP</th>
               <th>INSTALLED</th>
               <th>LATEST</th>
@@ -302,6 +467,16 @@ export default function App() {
                   onClick={() => setSelectedAppId(a.id)}
                   {...appContextMenu.triggerProps}
                 >
+                  <td className="batch-select-cell">
+                    <input
+                      type="checkbox"
+                      aria-label={`${a.displayName} 일괄 선택`}
+                      checked={batchSelection.has(a.id) && batchCandidateIds.has(a.id)}
+                      disabled={batchBusy || !batchCandidateIds.has(a.id)}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={() => toggleBatchApp(a.id)}
+                    />
+                  </td>
                   <td className="app-name">{a.displayName}</td>
                   <td>
                     {inst ? (

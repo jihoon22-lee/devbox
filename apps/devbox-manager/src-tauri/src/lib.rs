@@ -39,6 +39,7 @@ pub fn run() {
             commands::manager::available,
             commands::manager::installed,
             commands::manager::install,
+            commands::manager::install_many,
             commands::manager::launch,
             commands::manager::current,
             commands::manager::rollback,
