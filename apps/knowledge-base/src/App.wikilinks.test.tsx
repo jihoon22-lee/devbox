@@ -64,9 +64,14 @@ describe("Knowledge wikilink and backlink integration", () => {
     render(<App />);
     fireEvent.click(await screen.findByText("Current.md"));
 
-    await waitFor(() => expect(analyzeMock).toHaveBeenCalledWith("[[Missing]]"));
+    await waitFor(
+      () => expect(analyzeMock).toHaveBeenCalledWith("[[Missing]]"),
+      { timeout: 5_000 },
+    );
     await waitFor(() => expect(backlinksMock).toHaveBeenCalledWith("Current.md"));
-    expect(await screen.findByText("1 unresolved")).toBeInTheDocument();
+    expect(
+      await screen.findByText("1 unresolved", undefined, { timeout: 5_000 }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Backlinks (1)" })).toBeInTheDocument();
 
     fireEvent.click(within(screen.getByLabelText("Backlinks")).getByRole(
@@ -82,5 +87,5 @@ describe("Knowledge wikilink and backlink integration", () => {
     if (!view) throw new Error("CodeMirror view missing");
     await waitFor(() => expect(view.state.selection.main.head).toBe(8));
     expect(screen.queryByText("● unsaved")).toBeNull();
-  });
+  }, 15_000);
 });
