@@ -1,6 +1,6 @@
 # Webhook Lab 설계 — Local Mock/Webhook Server
 
-- 상태: 제안(Proposal) — Stage 5
+- 상태: MVP 구현 중 — #314 captured fixture 저장 완료; #315 handoff·#362 replay 후속
 - 작성일: 2026-08-14
 - 근거: `docs/product-opportunities.md` §15.3, §17.9
 
@@ -80,6 +80,22 @@ count, byte는 UTF-8 byte count이며 JS `Array.from`/`TextEncoder`와 Rust 구�
 응답하고 map을 변경하지 않는다. editor는 같은 validator로 add/edit/duplicate를 검사하며
 invalid raw draft를 유지하고 stale id, double action, 접근성 오류를 처리한다. 이 PR은 기존
 HashMap 저장/순회·id·순서·matcher semantics를 변경하지 않고 priority를 만들지 않는다.
-fixture 저장, captured request replay/sequence, API Playground handoff와 예시 curl은 각각
-후속 이슈 범위다. 따라서 위 MVP 목록에 적힌 fixture/handoff는 제품 설계의 전체 목표이고,
-#282 완료 상태는 rule 설명·검증까지로 기록한다.
+예시 curl은 별도 완료 범위이고, captured fixture 저장은 아래 #314 계약으로 구현했다. captured
+request replay/sequence와 API Playground handoff는 각각 #362·#315 후속 이슈 범위다.
+따라서 위 MVP 목록에 적힌 handoff는 제품 설계의 전체 목표이며, #282 완료 상태는 rule
+설명·검증까지로 기록한다.
+
+## 8. #314 captured fixture 저장 계약 (2026-08-27)
+
+history의 opaque ID로 backend가 읽은 masked snapshot만 앱 전용
+`app_local_data_dir()/fixtures.json`에 저장한다. fixture ID는 `fixture-<number>`로 발급하고
+schema v1, 최대 200개·8 MiB 파일, method/target/header/body/timestamp의 bounded validator를
+적용한다. Authorization·Cookie·token·secret·password·auth 계열 값과 known credential marker는
+`[REDACTED]`, 절대/unsafe path는 `/[REDACTED_PATH]`로 바꾼다. frontend는 path·body를 저장
+명령에 전달하지 않는다.
+
+corrupt·oversized·symlink/non-file 저장소는 고정 오류로 fail-closed하며 기존 bytes를 자동
+복구하지 않는다. app-owned path 검사, atomic replace, raw-byte CAS와 process-local writer lock을
+통해 partial write와 concurrent overwrite를 막고, 목록은 timestamp 내림차순·ID tie-break로
+결정한다. fixture에서 response-rule 초안을 만들 때는 method/path만 local editor에 채우며
+response metadata는 빈 값으로 둔다. API handoff와 replay/sequence는 이 계약에 포함하지 않는다.

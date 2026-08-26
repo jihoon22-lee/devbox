@@ -5,6 +5,7 @@ export function buildHistoryContextMenu(busy: boolean): readonly ContextMenuEntr
     { type: "item", id: "copy-masked", label: "마스킹 복사", disabled: busy },
     { type: "item", id: "copy-raw", label: "원본 복사", disabled: busy },
     { type: "item", id: "copy-headers", label: "헤더 복사", disabled: busy },
+    { type: "item", id: "save-fixture", label: "masked fixture 저장", disabled: busy },
     {
       type: "item",
       id: "convert-api-playground",

@@ -77,8 +77,30 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
 검사한다. 이 PR은 기존 rule id·저장 순서·HashMap 순회와 trailing-star matcher를 바꾸거나
 priority를 도입하지 않는다.
 
-JSON fixture 관리·API Playground 변환은 미구현이며, 설계 문서(`docs/superpowers/specs/2026-08-14-webhook-lab-design.md`)의 향후 항목이다.
-API Playground 변환은 `api-request/v1` handoff(#315)가 준비될 때까지 비활성화한다.
+### Captured fixture 저장 계약 (#314)
+
+history에서 **masked fixture 저장**을 선택하면 backend가 opaque history ID로 현재
+마스킹된 snapshot을 읽어 앱 전용 JSON 파일에 저장한다. 사용자가 경로나 body를 IPC로
+제공할 수 없고, 원본 header vault는 fixture 입력에 도달하지 않는다.
+
+- 저장 위치는 Tauri `app_local_data_dir()/fixtures.json` 하나다
+  (`%LOCALAPPDATA%\com.devbox.webhooklab\fixtures.json`). 파일명과 부모 디렉터리는
+  앱이 소유하며 fixture가 임의 경로를 읽거나 쓰지 않는다.
+- schema v1의 fixture ID는 `fixture-<number>`로만 발급되고, 최대 200개·파일 8 MiB,
+  method 16자, origin-form target 4,096자/16 KiB, header 100개·이름 256자·값
+  16,384자·총 64,000자/256 KiB, body 256,000자/1 MiB 경계를 적용한다.
+- `Authorization`·`Cookie`·token/secret/password/auth 계열 header와 JSON/text의 같은
+  credential 표시는 `[REDACTED]`가 된다. 절대 URL·`..`/`.`·역슬래시·잘못된 percent
+  encoding·token-shaped path는 고정 `/[REDACTED_PATH]`로 바꾸고, 안전한 query만
+  보존한다. 입력을 넘으면 부분 fixture를 만들지 않는다.
+- 파일은 atomic replace와 raw-byte compare-and-swap으로 저장한다. corrupt·oversized·
+  symlink/non-file store는 고정 오류로 fail-closed하고 원본 파일을 자동 복구·덮어쓰지
+  않는다. 목록은 capture timestamp 내림차순, 동일 timestamp에서는 ID 순으로 정렬한다.
+- fixture의 `응답 rule 초안`은 method/path만 편집기에 채우며 status 200·빈 response
+  headers/body·delay 0으로 시작한다. rule 저장은 별도 사용자 동작이고, API Playground
+  `api-request/v1` handoff(#315)나 request replay/sequence(#362)는 이 범위에 없다.
+
+API Playground 변환 메뉴는 `api-request/v1` handoff(#315)가 준비될 때까지 계속 비활성화한다.
 
 ### Example curl 계약
 

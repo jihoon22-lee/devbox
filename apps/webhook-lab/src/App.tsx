@@ -5,14 +5,19 @@ import {
 } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  clearFixtures,
   clearHistory,
+  deleteFixture,
   copyHistoryHeaders,
   copyMaskedHistory,
   copyRawHistory,
   deleteHistory,
   deleteRule,
+  fixtureToRule,
+  listFixtures,
   listHistory,
   listRules,
+  saveFixture,
   serverStatus,
   setRule,
   startServer,
@@ -20,6 +25,7 @@ import {
   type RequestRecord,
   type ResponseRule,
   type ServerStatus,
+  type CapturedFixture,
 } from "./api";
 import { buildHistoryContextMenu, buildRuleContextMenu } from "./lib/contextMenus";
 import { buildExampleCurl, type CurlShell } from "./lib/exampleCurl";
@@ -42,6 +48,16 @@ const SAFE_ERROR_MESSAGES = new Set([
   "규칙을 찾을 수 없습니다",
   "규칙 입력이 유효하지 않습니다",
   "원본 요청 복사는 데스크톱 앱에서만 사용할 수 있습니다",
+  "fixture 저장소를 읽을 수 없습니다",
+  "fixture 저장소를 저장할 수 없습니다",
+  "fixture 저장소 크기 제한을 초과했습니다",
+  "fixture 저장소가 다른 작업으로 변경되었습니다. 다시 시도하세요",
+  "fixture를 찾을 수 없습니다",
+  "fixture 입력이 유효하지 않습니다",
+  "LAN 공개를 시작하려면 명시적인 확인이 필요합니다",
+  "허용되지 않은 bind 주소입니다",
+  "포트는 1~65535 범위여야 합니다",
+  "서버 bind에 실패했습니다",
 ]);
 
 function emptyRule(): ResponseRule {
@@ -63,11 +79,17 @@ function safeMessage(error: unknown): string {
   return SAFE_ERROR_MESSAGES.has(message) ? message : GENERIC_ERROR_MESSAGE;
 }
 
+function formatFixtureTime(receivedAtMs: number): string {
+  const date = new Date(receivedAtMs);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : "시간 미상";
+}
+
 export default function App() {
   const [status, setStatus] = useState<ServerStatus>({ running: false, address: null });
   const [port, setPort] = useState(DEFAULT_PORT);
   const [lanBind, setLanBind] = useState(false);
   const [history, setHistory] = useState<RequestRecord[]>([]);
+  const [fixtures, setFixtures] = useState<CapturedFixture[]>([]);
   const [rules, setRules] = useState<ResponseRule[]>([]);
   const [rule, setRuleDraft] = useState<ResponseRule>(emptyRule);
   const [error, setError] = useState<string | null>(null);
@@ -123,16 +145,21 @@ export default function App() {
   const refresh = useCallback(async () => {
     const request = refreshRequest.current + 1;
     refreshRequest.current = request;
-    try {
-      const [st, h, r] = await Promise.all([serverStatus(), listHistory(), listRules()]);
-      if (refreshRequest.current !== request) return;
-      setStatus(st);
-      setHistory(h);
-      setRules(r);
-    } catch (e) {
-      if (refreshRequest.current !== request) return;
-      setError(safeMessage(e));
-    }
+    const [statusResult, historyResult, rulesResult, fixtureResult] = await Promise.allSettled([
+      serverStatus(),
+      listHistory(),
+      listRules(),
+      listFixtures(),
+    ]);
+    if (refreshRequest.current !== request) return;
+    if (statusResult.status === "fulfilled") setStatus(statusResult.value);
+    if (historyResult.status === "fulfilled") setHistory(historyResult.value);
+    if (rulesResult.status === "fulfilled") setRules(rulesResult.value);
+    if (fixtureResult.status === "fulfilled") setFixtures(fixtureResult.value);
+    else setFixtures([]);
+    const failure = [statusResult, historyResult, rulesResult, fixtureResult]
+      .find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failure) setError(safeMessage(failure.reason));
   }, []);
 
   useEffect(() => {
@@ -170,11 +197,12 @@ export default function App() {
   }, [contextRule?.id, ruleContextMenu.close, rules]);
 
   const onStart = async () => {
+    if (lanBind && !window.confirm("LAN 공개는 외부 접근을 허용합니다. 이 컴퓨터의 다른 장치에서 요청을 받을까요?")) return;
     if (!beginBusy()) return;
     setError(null);
     try {
       const bind = lanBind ? "0.0.0.0" : "127.0.0.1";
-      setStatus(await startServer(bind, port));
+      setStatus(await startServer(bind, port, lanBind));
       await refresh();
     } catch (e) {
       setError(safeMessage(e));
@@ -321,6 +349,59 @@ export default function App() {
     }
   };
 
+  const onSaveFixture = async (request: RequestRecord) => {
+    if (!beginBusy()) return;
+    setError(null);
+    try {
+      await saveFixture(request.id);
+      await refresh();
+    } catch (e) {
+      setError(safeMessage(e));
+    } finally {
+      endBusy();
+    }
+  };
+
+  const onDraftFixture = async (fixture: CapturedFixture) => {
+    if (!beginBusy()) return;
+    setError(null);
+    try {
+      setRuleDraft(await fixtureToRule(fixture.id));
+    } catch (e) {
+      setError(safeMessage(e));
+    } finally {
+      endBusy();
+    }
+  };
+
+  const onDeleteFixture = async (fixture: CapturedFixture) => {
+    if (!window.confirm("선택한 masked fixture를 삭제할까요?")) return;
+    if (!beginBusy()) return;
+    setError(null);
+    try {
+      await deleteFixture(fixture.id);
+      await refresh();
+    } catch (e) {
+      setError(safeMessage(e));
+    } finally {
+      endBusy();
+    }
+  };
+
+  const onClearFixtures = async () => {
+    if (!window.confirm("저장된 masked fixture를 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
+    if (!beginBusy()) return;
+    setError(null);
+    try {
+      await clearFixtures();
+      await refresh();
+    } catch (e) {
+      setError(safeMessage(e));
+    } finally {
+      endBusy();
+    }
+  };
+
   const onDeleteRule = async (targetRule: ResponseRule) => {
     const currentRule = rules.find((candidate) => candidate.id === targetRule.id);
     if (!currentRule) {
@@ -416,6 +497,8 @@ export default function App() {
         () => copyHistoryHeaders(request.id),
         "마스킹된 헤더를 복사하지 못했습니다.",
       );
+    } else if (id === "save-fixture") {
+      void onSaveFixture(request);
     } else if (id === "delete") {
       void onDeleteHistory(request);
     }
@@ -616,9 +699,73 @@ export default function App() {
               {request.headers.some(([, value]) => value === "•••••") && (
                 <span className="masked">민감 헤더 마스킹됨</span>
               )}
+              <button
+                type="button"
+                className="mini fixture-save"
+                aria-label={`${request.method} ${request.url} masked fixture 저장`}
+                disabled={busy}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void onSaveFixture(request);
+                }}
+              >
+                fixture 저장
+              </button>
             </div>
           ))}
           {history.length === 0 && <div className="dim">수신 요청이 없습니다.</div>}
+          <div className="fixture-section" aria-labelledby="fixtures-heading">
+            <div className="fixture-heading">
+              <h3 id="fixtures-heading">Fixtures ({fixtures.length})</h3>
+              <button
+                type="button"
+                className="mini"
+                aria-label="저장된 fixture 모두 삭제"
+                disabled={busy || fixtures.length === 0}
+                onClick={() => void onClearFixtures()}
+              >
+                전체 삭제
+              </button>
+            </div>
+            <p className="field-help fixture-help">
+              저장된 요청은 앱 전용 파일에 masked 상태로만 보관합니다. 원본 header·credential·안전하지 않은 path는 저장하지 않습니다.
+            </p>
+            {fixtures.map((fixture) => (
+              <div
+                key={fixture.id}
+                className="fixture-row"
+                aria-label={`${fixture.method} ${fixture.url} fixture`}
+              >
+                <div className="fixture-summary">
+                  <span className="mono">{fixture.method} {fixture.url}</span>
+                  <span className="dim">{formatFixtureTime(fixture.receivedAtMs)}</span>
+                  <span className="masked">masked</span>
+                </div>
+                {fixture.body && <pre className="body">{fixture.body.slice(0, 200)}</pre>}
+                <div className="fixture-actions">
+                  <button
+                    type="button"
+                    className="mini"
+                    disabled={busy}
+                    aria-label={`${fixture.method} ${fixture.url} 응답 rule 초안`}
+                    onClick={() => void onDraftFixture(fixture)}
+                  >
+                    응답 rule 초안
+                  </button>
+                  <button
+                    type="button"
+                    className="mini danger-text"
+                    disabled={busy}
+                    aria-label={`${fixture.method} ${fixture.url} fixture 삭제`}
+                    onClick={() => void onDeleteFixture(fixture)}
+                  >
+                    삭제
+                  </button>
+                </div>
+              </div>
+            ))}
+            {fixtures.length === 0 && <div className="dim">저장된 fixture가 없습니다.</div>}
+          </div>
         </section>
       </div>
 

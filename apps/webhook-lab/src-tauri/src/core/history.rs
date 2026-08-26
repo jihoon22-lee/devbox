@@ -4,11 +4,18 @@
 //! 원본 헤더는 bounded in-memory entry에만 남기고 명시적인 일회성 복사에서만 사용한다.
 
 use serde::Serialize;
+use std::collections::VecDeque;
 
 pub const MAX_HISTORY: usize = 200;
 pub const MAX_BODY_CHARS: usize = 256_000;
+pub const MAX_BODY_BYTES: usize = 1_024_000;
 pub const MAX_HEADERS: usize = 100;
 pub const MAX_HEADER_CHARS: usize = 64_000;
+/// A busy local endpoint must not let an unbounded stream of requests keep
+/// allocating history entries. This is deliberately a small, fixed window;
+/// it is a server admission limit, not a persistence policy.
+pub const MAX_REQUESTS_PER_WINDOW: usize = 120;
+pub const RATE_WINDOW_MS: i64 = 1_000;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +49,7 @@ pub fn mask_header(name: &str, value: &str) -> String {
 pub struct History {
     entries: Vec<HistoryEntry>,
     next_id: u64,
+    rate_events: VecDeque<i64>,
 }
 
 impl Default for History {
@@ -49,6 +57,7 @@ impl Default for History {
         Self {
             entries: Vec::new(),
             next_id: 1,
+            rate_events: VecDeque::new(),
         }
     }
 }
@@ -99,6 +108,41 @@ impl History {
             .rev()
             .map(|entry| entry.masked.clone())
             .collect()
+    }
+
+    /// Return one masked request for an explicit opaque history ID. The raw
+    /// header vault is intentionally not reachable through this accessor.
+    pub fn masked_record(&self, id: u64) -> Option<RequestRecord> {
+        self.entry(id).map(|entry| entry.masked.clone())
+    }
+
+    /// Admit a request before reading its body. This keeps the tiny HTTP
+    /// server bounded even when a client sends a burst of large requests.
+    pub fn allow_request(&mut self, received_at_ms: i64) -> bool {
+        // `received_at_ms` comes from the wall clock. If that clock moves
+        // backwards, retaining future-dated events would keep the listener
+        // rate-limited until wall time catches up. Start a fresh bounded
+        // window instead; this neither admits an unbounded burst nor leaves
+        // the local server wedged after a clock correction.
+        if self
+            .rate_events
+            .back()
+            .is_some_and(|latest| received_at_ms < *latest)
+        {
+            self.rate_events.clear();
+        }
+        while self
+            .rate_events
+            .front()
+            .is_some_and(|oldest| received_at_ms.saturating_sub(*oldest) >= RATE_WINDOW_MS)
+        {
+            self.rate_events.pop_front();
+        }
+        if self.rate_events.len() >= MAX_REQUESTS_PER_WINDOW {
+            return false;
+        }
+        self.rate_events.push_back(received_at_ms);
+        true
     }
 
     /// 마스킹된 전체 요청을 JSON으로 만든다.
@@ -291,5 +335,31 @@ mod tests {
         h.push("GET".into(), "/third".into(), vec![], "".into(), 3);
         assert_eq!(h.list_masked()[0].id, 3);
         assert!(h.raw_copy(2).is_none());
+    }
+
+    #[test]
+    fn request_rate_is_bounded_per_fixed_window() {
+        let mut h = History::default();
+        for _ in 0..MAX_REQUESTS_PER_WINDOW {
+            assert!(h.allow_request(10));
+        }
+        assert!(!h.allow_request(10));
+        assert!(!h.allow_request(RATE_WINDOW_MS - 1));
+        assert!(h.allow_request(RATE_WINDOW_MS + 10));
+    }
+
+    #[test]
+    fn request_rate_recovers_when_the_wall_clock_moves_backwards() {
+        let mut h = History::default();
+        for _ in 0..MAX_REQUESTS_PER_WINDOW {
+            assert!(h.allow_request(10_000));
+        }
+        assert!(!h.allow_request(10_000));
+
+        assert!(h.allow_request(10));
+        for _ in 1..MAX_REQUESTS_PER_WINDOW {
+            assert!(h.allow_request(10));
+        }
+        assert!(!h.allow_request(10));
     }
 }

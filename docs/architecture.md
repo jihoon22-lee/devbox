@@ -241,8 +241,19 @@ DTO, 마스킹 복사, 헤더 복사는 Authorization·Cookie·API key 값을 �
 보관 헤더는 100개·총 64K자, body는 256K자로 제한한다. raw copy command는 사용자가 별도 경고를
 확인한 뒤에만 호출하고 반환값은 일회성 clipboard write 이외에는 저장·기록하지 않는다. 개별
 history/rule 삭제와 전체 history 비우기는 기존 버튼을 포함해 확인을 요구하며, clear 뒤에도
-프로세스 안의 history ID를 재사용하지 않는다. 별도 issue인 example curl과 `api-request/v1`
-handoff가 준비되기 전에는 해당 메뉴 항목을 fail-closed로 비활성화한다.
+프로세스 안의 history ID를 재사용하지 않는다.
+
+Captured fixture는 history의 masked snapshot만 opaque ID로 읽어
+`app_local_data_dir()/fixtures.json`에 저장한다. fixture 자체도 method·origin-form target·header·
+body·timestamp를 다시 검증하며, Authorization/Cookie/token/secret/password/auth 계열 값과
+known credential marker를 `[REDACTED]`로 바꾸고 절대/unsafe path는 고정 marker로 대체한다.
+schema v1은 fixture 200개·파일 8 MiB·bounded field limits를 적용하고, corrupt·oversized·link-backed
+파일은 원본을 자동 복구하지 않고 fixed error로 중단한다. app-owned parent/file 검사,
+raw-byte CAS, process-local write lock, atomic replace로 concurrent update와 partial write를
+방지하며 timestamp 내림차순+ID tie-break로 목록을 결정적으로 만든다. fixture의 response-rule
+초안은 로컬 editor draft일 뿐이고 API Playground handoff(#315)·replay/sequence(#362)는 별도 범위다.
+example curl은 기존 bounded redaction contract를 따르고, API Playground `api-request/v1`
+handoff 메뉴는 #315가 준비되기 전까지 fail-closed로 비활성화한다.
 
 Devbox Manager의 app-row context menu도 메뉴를 열기 전에 catalog app ID로 대상 행을 선택하고,
 설치/업데이트의 portable·setup 선택을 submenu로 보존한다. 실행·rollback·설치 폴더 열기·제거는

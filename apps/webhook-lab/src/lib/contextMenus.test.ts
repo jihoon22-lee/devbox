@@ -12,6 +12,7 @@ describe("Webhook Lab context menu contracts", () => {
       "마스킹 복사",
       "원본 복사",
       "헤더 복사",
+      "masked fixture 저장",
       "API Playground로 변환",
       "삭제",
     ]);

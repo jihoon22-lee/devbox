@@ -25,19 +25,39 @@ export interface ResponseRule {
   delayMs: number;
 }
 
+export interface CapturedFixture {
+  id: string;
+  method: string;
+  url: string;
+  headers: Array<[string, string]>;
+  body: string;
+  receivedAtMs: number;
+}
+
 const MOCK_HISTORY: RequestRecord[] = [
   { id: 1, method: "POST", url: "/hook", headers: [["content-type", "application/json"]], body: '{"event":"push"}', receivedAtMs: Date.now() - 30000 },
   { id: 2, method: "GET", url: "/health", headers: [], body: "", receivedAtMs: Date.now() - 10000 },
 ];
+
+const MOCK_FIXTURES: CapturedFixture[] = [];
+let nextMockFixtureId = 1;
+
+function fixtureOrder(left: CapturedFixture, right: CapturedFixture): number {
+  if (left.receivedAtMs < right.receivedAtMs) return 1;
+  if (left.receivedAtMs > right.receivedAtMs) return -1;
+  if (left.id < right.id) return -1;
+  if (left.id > right.id) return 1;
+  return 0;
+}
 
 export function serverStatus(): Promise<ServerStatus> {
   if (!isTauri()) return Promise.resolve({ running: false, address: null });
   return invoke<ServerStatus>("server_status");
 }
 
-export function startServer(bind: string | null, port: number): Promise<ServerStatus> {
+export function startServer(bind: string | null, port: number, allowLan = false): Promise<ServerStatus> {
   if (!isTauri()) return Promise.resolve({ running: true, address: `${bind ?? "127.0.0.1"}:${port}` });
-  return invoke<ServerStatus>("start_server", { bind, port });
+  return invoke<ServerStatus>("start_server", { bind, port, allowLan });
 }
 
 export function stopServer(): Promise<ServerStatus> {
@@ -82,6 +102,65 @@ export function copyHistoryHeaders(id: number): Promise<string> {
 export function deleteHistory(id: number): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   return invoke<void>("delete_history", { id });
+}
+
+export function listFixtures(): Promise<CapturedFixture[]> {
+  if (!isTauri()) {
+    return Promise.resolve(MOCK_FIXTURES.map((fixture) => ({ ...fixture })).sort(fixtureOrder));
+  }
+  return invoke<CapturedFixture[]>("list_fixtures");
+}
+
+export function saveFixture(historyId: number): Promise<CapturedFixture> {
+  if (!isTauri()) {
+    const request = MOCK_HISTORY.find((candidate) => candidate.id === historyId);
+    if (!request) return Promise.reject(new Error("fixture를 찾을 수 없습니다"));
+    const fixture: CapturedFixture = {
+      id: `fixture-${nextMockFixtureId++}`,
+      method: request.method,
+      url: request.url,
+      headers: request.headers.map((header) => [...header] as [string, string]),
+      body: request.body,
+      receivedAtMs: request.receivedAtMs,
+    };
+    MOCK_FIXTURES.push(fixture);
+    return Promise.resolve(fixture);
+  }
+  return invoke<CapturedFixture>("save_fixture", { historyId });
+}
+
+export function deleteFixture(id: string): Promise<void> {
+  if (!isTauri()) {
+    const index = MOCK_FIXTURES.findIndex((fixture) => fixture.id === id);
+    if (index >= 0) MOCK_FIXTURES.splice(index, 1);
+    return Promise.resolve();
+  }
+  return invoke<void>("delete_fixture", { id });
+}
+
+export function clearFixtures(): Promise<void> {
+  if (!isTauri()) {
+    MOCK_FIXTURES.splice(0, MOCK_FIXTURES.length);
+    return Promise.resolve();
+  }
+  return invoke<void>("clear_fixtures");
+}
+
+export function fixtureToRule(id: string): Promise<ResponseRule> {
+  if (!isTauri()) {
+    const fixture = MOCK_FIXTURES.find((candidate) => candidate.id === id);
+    if (!fixture) return Promise.reject(new Error("fixture를 찾을 수 없습니다"));
+    return Promise.resolve({
+      id: "",
+      method: fixture.method,
+      path: fixture.url,
+      status: 200,
+      headers: [],
+      body: "",
+      delayMs: 0,
+    });
+  }
+  return invoke<ResponseRule>("fixture_to_rule", { id });
 }
 
 export function listRules(): Promise<ResponseRule[]> {

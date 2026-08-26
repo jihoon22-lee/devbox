@@ -261,7 +261,7 @@ Tauri의 `app_local_data_dir()`은 번들 identifier 기준 폴더를 사용한�
 %LOCALAPPDATA%\com.devbox.everythingplus\data.db       ← 파일 인덱스
 %LOCALAPPDATA%\com.devbox.knowledgebase\data.db        ← 문서 인덱스
 %LOCALAPPDATA%\com.devbox.workbench\project-profiles.json  ← Workbench 프로젝트 프로필
-%LOCALAPPDATA%\com.devbox.webhooklab\...               ← 웹훅 fixture·기록 (웹훅 Lab)
+%LOCALAPPDATA%\com.devbox.webhooklab\fixtures.json     ← 웹훅 masked fixture (웹훅 Lab)
 ```
 
 - **집 ↔ 회사 데이터 공유**: 위 폴더를 통째로 복사하면 기록/인덱스가 이전된다.

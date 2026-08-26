@@ -230,6 +230,61 @@ body {
   margin-bottom: 6px;
 }
 
+.fixture-section {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.fixture-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fixture-heading h3 {
+  font-size: 12px;
+  margin: 0;
+}
+
+.fixture-help {
+  margin: 6px 0 8px;
+}
+
+.fixture-row {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fixture-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fixture-summary .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fixture-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.fixture-save {
+  float: right;
+  margin-left: 8px;
+}
+
+.danger-text {
+  color: var(--danger);
+}
+
 .request-row {
   padding: 6px 0;
   border-bottom: 1px solid var(--border);

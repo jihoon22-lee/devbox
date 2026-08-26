@@ -6205,11 +6205,13 @@ dependencies = [
 name = "webhook-lab"
 version = "0.1.0"
 dependencies = [
+ "filesystem",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tempfile",
  "tiny_http",
  "uuid",
 ]
