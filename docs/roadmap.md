@@ -259,6 +259,15 @@ event와 stderr는 앱 실행 중 memory의 언어별 200-entry ring에만 두�
 본문 하나만 scroll하도록 status/installer nested scroll을 제거한다. LSP server 기능과 managed runtime
 설치 계약 자체는 변경하지 않는다. 다음 P1-09 작업은 #279 Code Pad editor·preview 구분이다.
 
+#279는 기존 `previewOpen` state와 `PreviewPane` renderer를 그대로 두고, 프리뷰가 열린 경우에만
+editor와 preview surface의 배경·2px 경계·header tone을 분리한다. 활성 editor는
+`focus-within` 경계로, 선택된 문서 tab은 기존 selected state와 새 `focus-visible` ring으로
+키보드 위치를 드러낸다. preview body 하나만 세로 scroll을 소유하고 일반 본문·긴 inline
+code/path는 줄바꿈하되 `pre` code block은 panel 내부 가로 scroll을 사용한다. image·SVG·video·
+canvas는 panel width를 넘지 않는다. renderer, Mermaid security mode, state, IPC, storage,
+원문/path 전달과 외부 상태는 변경하지 않는다. 다음 P1-09 작업은 #280 Workbench services·ports
+입력이다.
+
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅
 Stage 0a   통폐합·네이밍 (PR 2~4) — identifier com.devbox.*          ✅
