@@ -19,6 +19,7 @@ import {
   requestLspReferences,
   requestLspRename,
   renameFileAction,
+  renderPreview,
   revealFileAction,
   saveFile,
   saveLspDocument,
@@ -186,6 +187,7 @@ const requestLspFormattingMock = vi.mocked(requestLspFormatting);
 const requestLspReferencesMock = vi.mocked(requestLspReferences);
 const requestLspRenameMock = vi.mocked(requestLspRename);
 const renameFileActionMock = vi.mocked(renameFileAction);
+const renderPreviewMock = vi.mocked(renderPreview);
 const revealFileActionMock = vi.mocked(revealFileAction);
 const takePendingOpenMock = vi.mocked(takePendingOpen);
 
@@ -352,6 +354,12 @@ beforeEach(() => {
   requestLspReferencesMock.mockReset().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false });
   requestLspRenameMock.mockReset().mockResolvedValue({ documents: [] });
   renameFileActionMock.mockReset();
+  renderPreviewMock.mockReset().mockResolvedValue({
+    kind: "markdown",
+    html: "<p>preview</p>",
+    mermaid: [],
+    source: null,
+  });
   revealFileActionMock.mockReset().mockResolvedValue(undefined);
   takePendingOpenMock.mockReset().mockImplementation(async () => {
     appLinkOrder.push("take");
@@ -395,6 +403,51 @@ function fileName(path: string): string {
 }
 
 describe("App editor shell operations", () => {
+  it("exposes separate editor and preview regions while keeping preview state explicit", async () => {
+    loadSessionMock.mockResolvedValue({
+      session: {
+        version: 1,
+        workspace_folder: "/tmp",
+        docs: [],
+        views: [[], []],
+        active_view: 0,
+        active_doc_by_view: [null, null],
+        recent_files: [],
+      },
+      persistAllowed: true,
+    });
+    openFileMock.mockResolvedValue(openedFile("# Title", "/tmp/readme.md"));
+
+    const rendered = render(<App />);
+    const input = rendered.getByRole("textbox", { name: "열 파일 경로" });
+    await waitFor(() => expect((input as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(input, { target: { value: "/tmp/readme.md" } });
+    fireEvent.click(rendered.getByRole("button", { name: "파일 열기" }));
+    await waitFor(() => expect(rendered.getByRole("tab", { name: /readme\.md/ })).toBeTruthy());
+
+    const previewToggle = rendered.getByRole("button", { name: "프리뷰" });
+    expect(previewToggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(previewToggle);
+
+    const previewRegion = await rendered.findByRole("complementary", { name: "프리뷰" });
+    const contentArea = previewRegion.parentElement;
+    expect(contentArea?.classList.contains("with-preview")).toBe(true);
+    expect(contentArea?.querySelector(".editor-area")).not.toBeNull();
+    expect(previewRegion.querySelector(".preview-pane-path")?.textContent).toBe("/tmp/readme.md");
+    expect(rendered.getByRole("tab", { name: /readme\.md/ }).getAttribute("aria-selected")).toBe("true");
+    expect(previewToggle.getAttribute("aria-pressed")).toBe("true");
+    await waitFor(() => expect(renderPreviewMock).toHaveBeenCalledWith(
+      "/tmp/readme.md",
+      "# Title",
+      "/tmp",
+    ));
+
+    fireEvent.click(previewToggle);
+    expect(rendered.queryByRole("complementary", { name: "프리뷰" })).toBeNull();
+    expect(contentArea?.classList.contains("with-preview")).toBe(false);
+    expect(rendered.getByRole("tab", { name: /readme\.md/ })).toBeTruthy();
+  });
+
   it("loads the restored workspace when Quick Open is opened with Ctrl+P", async () => {
     loadSessionMock.mockResolvedValue({
       session: {
