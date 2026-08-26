@@ -254,6 +254,77 @@ body {
   align-self: flex-start;
 }
 
+.header-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.header-summary {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.header-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.header-row {
+  display: grid;
+  grid-template-columns: 66px minmax(150px, 0.8fr) minmax(220px, 1.4fr) 130px auto 28px;
+  align-items: center;
+  gap: 6px;
+  min-width: 790px;
+}
+
+.header-row.disabled > :not(.header-enabled) {
+  opacity: 0.55;
+}
+
+.header-enabled {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.header-row > input,
+.header-row > select {
+  min-width: 0;
+  height: 30px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+.header-row > input:focus,
+.header-row > select:focus {
+  border-color: var(--accent);
+}
+
+.header-row-action {
+  height: 30px;
+  padding: 5px 9px;
+}
+
+.header-notice {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .select-sm {
   background: var(--bg);
   color: var(--text);

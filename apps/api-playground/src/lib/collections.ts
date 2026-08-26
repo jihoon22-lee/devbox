@@ -1,9 +1,11 @@
 // Collection v2 저장·조회 및 v1 fail-closed 안전 변환.
 
 import type { PersistedHistoryRequest, RequestTemplate } from "../types";
+import { isRequestHeader, normalizeHeaders } from "./headers";
 import {
   type PersistenceSanitizer,
   type StorageMigration,
+  normalizePersistedRequest,
   sanitizeRequestForPersistence,
 } from "./persistence";
 
@@ -149,7 +151,13 @@ export function parseStore(raw: string | null): CollectionStore | null {
     const parsed = JSON.parse(raw ?? "null") as Partial<CollectionStore> | null;
     if (parsed?.version !== COLLECTION_VERSION || !Array.isArray(parsed.collections)) return null;
     if (!parsed.collections.every(isCollectionEntry)) return null;
-    return { version: COLLECTION_VERSION, collections: parsed.collections };
+    return {
+      version: COLLECTION_VERSION,
+      collections: parsed.collections.map((entry) => ({
+        ...entry,
+        request: normalizePersistedRequest(entry.request),
+      })),
+    };
   } catch {
     return null;
   }
@@ -222,11 +230,19 @@ function isRequestTemplate(value: unknown): value is RequestTemplate {
     typeof request.method === "string" &&
     typeof request.url === "string" &&
     Array.isArray(request.headers) &&
+    request.headers.every(isRequestHeader) &&
     Array.isArray(request.params) &&
+    request.params.every(isKeyValue) &&
     typeof request.body_kind === "string" &&
     typeof request.body === "string" &&
     typeof request.timeout_ms === "number"
   );
+}
+
+function isKeyValue(value: unknown): value is { key: string; value: string } {
+  if (!value || typeof value !== "object") return false;
+  const pair = value as { key?: unknown; value?: unknown };
+  return typeof pair.key === "string" && typeof pair.value === "string";
 }
 
 function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
@@ -245,7 +261,7 @@ function normalizeName(name: string): string {
 function clonePersistedRequest(request: PersistedHistoryRequest): PersistedHistoryRequest {
   return {
     ...request,
-    headers: request.headers.map((header) => ({ ...header })),
+    headers: normalizeHeaders(request.headers),
     params: request.params.map((param) => ({ ...param })),
     auth: request.auth ? { ...request.auth } : null,
   };

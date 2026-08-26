@@ -1069,6 +1069,10 @@ LLM 일기 생성은 source 정확성과 privacy 설정 이후의 opt-in 기능�
 9. SSE와 WebSocket은 각각 별도 PR
 10. Webhook Lab에서 포착한 요청 가져오기
 
+v0.5.0 P1-09 #268에서 duplicate 순서, enabled persistence와 backend-only secret reference를
+지원하는 request header table을 오프라인 native 기능으로 구현했다. Cookie editor, multipart와
+response header/cookie viewer는 각각 분리된 후속 issue로 유지한다.
+
 history는 자동·단기·secret 제거를 기본으로 한다. collection은 사용자가 명시적으로 저장한
 재사용 자산으로 취급한다. Authorization과 Cookie를 history에 평문으로 남기지 않는다.
 

@@ -3,6 +3,11 @@ export interface KeyValue {
   value: string;
 }
 
+/** 이전 v2 저장본에는 enabled가 없으며 이 경우 활성 상태로 해석한다. */
+export interface RequestHeader extends KeyValue {
+  enabled?: boolean;
+}
+
 export interface AuthConfig {
   kind: string;
   username: string;
@@ -16,7 +21,7 @@ export interface AuthConfig {
 export interface RequestTemplate {
   method: string;
   url: string;
-  headers: KeyValue[];
+  headers: RequestHeader[];
   params: KeyValue[];
   body_kind: string;
   body: string;

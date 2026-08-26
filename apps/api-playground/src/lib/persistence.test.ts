@@ -111,6 +111,21 @@ describe("History v1 fail-closed migration", () => {
     }))).toEqual({ version: 2, history: [] });
   });
 
+  it("기존 v2 header는 enabled true로 올리고 duplicate/disabled/reference를 순서대로 보존한다", () => {
+    const store = validHistoryStore();
+    store.history[0].request.headers = [
+      { key: "X-Trace", value: "one" },
+      { key: "x-trace", value: "${TRACE_SECRET}", enabled: false },
+    ];
+
+    const parsed = parseHistoryStore(JSON.stringify(store));
+
+    expect(parsed?.history[0].request.headers).toEqual([
+      { key: "X-Trace", value: "one", enabled: true },
+      { key: "x-trace", value: "${TRACE_SECRET}", enabled: false },
+    ]);
+  });
+
   it("v2를 선기록한 뒤 v1을 삭제하고 marker를 기록하며 raw backup을 만들지 않는다", () => {
     const storage = new RecordingStorage();
     storage.setItem(HISTORY_V1_LS_KEY, legacyHistory(request()));
@@ -284,9 +299,9 @@ describe("request persistence sanitizer", () => {
     expect(safe.url).not.toContain("url-token");
     expect(decodeURIComponent(safe.url)).toContain("token=[REDACTED]");
     expect(safe.headers).toEqual([
-      { key: "Authorization", value: REDACTED },
-      { key: "Cookie", value: REDACTED },
-      { key: "X-Trace", value: "${TRACE_ID}" },
+      { key: "Authorization", value: REDACTED, enabled: true },
+      { key: "Cookie", value: REDACTED, enabled: true },
+      { key: "X-Trace", value: "${TRACE_ID}", enabled: true },
     ]);
     expect(safe.params).toEqual([
       { key: "access_token", value: REDACTED },

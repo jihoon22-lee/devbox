@@ -93,6 +93,22 @@ describe("buildCurl", () => {
     expect(curl).not.toContain("ignored");
   });
 
+  it("중복 header 순서를 유지하고 disabled header는 기본 cURL에서 제외한다", () => {
+    const curl = buildCurl(baseReq({
+      url: "https://api.example.com",
+      headers: [
+        { key: "X-Trace", value: "one", enabled: true },
+        { key: "X-Trace", value: "two", enabled: true },
+        { key: "X-Skip", value: "not-sent", enabled: false },
+      ],
+    }));
+
+    expect(curl.match(/X-Trace:/g)).toHaveLength(2);
+    expect(curl.indexOf("X-Trace: one")).toBeLessThan(curl.indexOf("X-Trace: two"));
+    expect(curl).not.toContain("X-Skip");
+    expect(curl).not.toContain("not-sent");
+  });
+
   it("basic auth는 기본 cURL에서 평문 대신 [REDACTED]를 사용한다", () => {
     const curl = buildCurl(
       baseReq({

@@ -123,6 +123,32 @@ describe("collections v2 store", () => {
     expect(storage.getItem(COLLECTION_V2_LS_KEY)).not.toContain("direct-secret");
   });
 
+  it("duplicate header의 순서, enabled와 secret reference를 Collection round-trip에서 보존한다", async () => {
+    const storage = new RecordingStorage();
+    const store = addEntry(
+      emptyStore(),
+      {
+        name: "duplicate headers",
+        folder: "api",
+        request: request({
+          headers: [
+            { key: "X-Trace", value: "one", enabled: true },
+            { key: "x-trace", value: "${TRACE_SECRET}", enabled: false },
+          ],
+        }),
+      },
+      1000,
+      () => "c-headers",
+    );
+
+    const saved = await saveStore(store, identitySanitizer, storage);
+
+    expect(saved.collections[0].request.headers).toEqual([
+      { key: "X-Trace", value: "one", enabled: true },
+      { key: "x-trace", value: "${TRACE_SECRET}", enabled: false },
+    ]);
+  });
+
   it("saveStore sanitizer 실패 시 기존 v2를 보존하고 raw backup을 만들지 않는다", async () => {
     const storage = new RecordingStorage();
     const existing = JSON.stringify(emptyStore());
@@ -230,9 +256,9 @@ describe("v1 collection fail-closed migration", () => {
     expect(saved).not.toBeNull();
     expect(saved?.collections[0].requiresSecretReview).toBe(true);
     expect(saved?.collections[0].request.headers).toEqual([
-      { key: "Authorization", value: REDACTED },
-      { key: "Cookie", value: REDACTED },
-      { key: "X-Request-Id", value: "request-123" },
+      { key: "Authorization", value: REDACTED, enabled: true },
+      { key: "Cookie", value: REDACTED, enabled: true },
+      { key: "X-Request-Id", value: "request-123", enabled: true },
     ]);
     expect(JSON.stringify(saved)).not.toContain("header-secret");
     expect(JSON.stringify(saved)).not.toContain("cookie-secret");
