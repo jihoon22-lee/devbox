@@ -51,6 +51,34 @@ pub(crate) fn resolve_root(conn: &Connection) -> Result<PathBuf, String> {
     Ok(default)
 }
 
+/// schema v1 최초 실행에만 원문 Markdown에서 정확한 source line을 재구축한다.
+/// 읽을 수 없거나 root 밖으로 canonicalize되는 항목은 index 대상에서 제외한다.
+pub(crate) fn rebuild_wikilink_index_if_needed(
+    conn: &Connection,
+    root: &Path,
+) -> Result<(), String> {
+    if !db::wikilink_index_needs_rebuild(conn)
+        .map_err(|_| "위키링크 인덱스를 준비할 수 없습니다".to_string())?
+    {
+        return Ok(());
+    }
+    let entries =
+        store::tree(root).map_err(|_| "위키링크 인덱스를 준비할 수 없습니다".to_string())?;
+    let docs = entries
+        .into_iter()
+        .filter(|(path, is_dir)| {
+            !*is_dir
+                && Path::new(path)
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+        })
+        .filter_map(|(path, _)| crate::core::inbound::read_note(root, &path).ok())
+        .collect::<Vec<_>>();
+    db::rebuild_wikilink_index(conn, &docs)
+        .map_err(|_| "위키링크 인덱스를 준비할 수 없습니다".to_string())
+}
+
 #[tauri::command]
 pub fn get_root(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String> {
     let conn = state.db.lock().unwrap();
@@ -209,11 +237,11 @@ fn replace_indexed_path(
             let Ok(content) = store::read_file(&child_path) else {
                 continue;
             };
-            db::index_doc(&transaction, &child_rel, &content)
+            db::index_doc_in_transaction(&transaction, &child_rel, &content)
                 .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
         }
     } else if let Ok(content) = store::read_file(&renamed) {
-        db::index_doc(&transaction, to, &content)
+        db::index_doc_in_transaction(&transaction, to, &content)
             .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
     }
     transaction

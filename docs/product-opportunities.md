@@ -1047,6 +1047,14 @@ LLM 일기 생성은 source 정확성과 privacy 설정 이후의 opt-in 기능�
 `packages/editor`는 테마나 전체 state를 공용화하지 않는다. CodeMirror extension setup,
 언어 감지, 공통 keymap처럼 **두 앱에서 동일한 부분만** 옮긴다.
 
+#272에서 4~5번을 하나의 parser/index 계약으로 구현했다. `[[target]]`·`[[target|alias]]`
+자동완성은 root-relative path without `.md`를 삽입하며, 편집기와 preview가 missing/ambiguous/invalid
+상태를 구분한다. backlink는 source path와 1-based line·UTF-16 column만 반환하고 클릭 시 해당
+CodeMirror 위치로 이동한다. raw target은 파일 경로가 아니며 유일하게 resolve된 DB 상대 경로도
+canonical root 내부 `.md`·10 MiB 경계에서 다시 검증한다. 외부 watcher와 앱 저장은 같은 link
+metadata 갱신 함수를 사용하고 새 target은 source 재작성 없이 resolution/backlink에 반영된다.
+rename 전 영향 preview와 link rewrite transaction은 6번의 별도 issue로 유지한다.
+
 #### 완료 조건
 
 - 마크다운 편집에 문법 하이라이팅과 기본 keymap이 동작한다.

@@ -1,9 +1,11 @@
 import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { acceptCompletion, selectedCompletion, startCompletion } from "@codemirror/autocomplete";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readClipboardText } from "../api";
 import MarkdownEditor from "./MarkdownEditor";
+import type { WikilinkCandidate, WikilinkOccurrence } from "../types";
 
 vi.mock("../api", () => ({
   readClipboardText: vi.fn(async () => "pasted"),
@@ -23,15 +25,23 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-function setup() {
+function setup(options: {
+  value?: string;
+  wikilinks?: WikilinkOccurrence[];
+  loadWikilinkCandidates?: (query: string) => Promise<WikilinkCandidate[]>;
+  onNavigateWikilink?: (path: string) => void;
+} = {}) {
   const onChange = vi.fn();
   const onError = vi.fn();
   render(
     <MarkdownEditor
-      value="alpha beta"
+      value={options.value ?? "alpha beta"}
       onChange={onChange}
       onSave={() => undefined}
       onError={onError}
+      wikilinks={options.wikilinks}
+      loadWikilinkCandidates={options.loadWikilinkCandidates}
+      onNavigateWikilink={options.onNavigateWikilink}
     />,
   );
   const content = document.querySelector(".cm-content");
@@ -113,5 +123,65 @@ describe("MarkdownEditor context menu", () => {
     openByKeyboard(content);
     fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
     await waitFor(() => expect(onError).toHaveBeenLastCalledWith("clipboard unavailable"));
+  });
+});
+
+describe("MarkdownEditor wikilinks", () => {
+  it("completes after [[ with the canonical indexed path and closing brackets", async () => {
+    const loadCandidates = vi.fn(async () => [{
+      path: "Notes/Rust.md",
+      title: "Rust Study",
+      link_target: "Notes/Rust",
+    }]);
+    const { view } = setup({ value: "[[Ru", loadWikilinkCandidates: loadCandidates });
+    view.dispatch({ selection: EditorSelection.cursor(view.state.doc.length) });
+    view.focus();
+
+    expect(startCompletion(view)).toBe(true);
+    await waitFor(() => expect(loadCandidates).toHaveBeenCalledWith("Ru"));
+    await waitFor(() => expect(selectedCompletion(view.state)?.label).toBe("Rust Study"));
+    // CodeMirror prevents the same keystroke that opened the menu from accepting it.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(acceptCompletion(view)).toBe(true);
+    expect(view.state.doc.toString()).toBe("[[Notes/Rust]]");
+  });
+
+  it("decorates unresolved links and only navigates a resolved indexed path on Ctrl+click", async () => {
+    const onNavigate = vi.fn();
+    setup({
+      value: "[[Rust]] [[Missing]]",
+      wikilinks: [
+        {
+          target: "Rust",
+          label: "Rust",
+          line: 1,
+          column: 1,
+          from: 0,
+          to: 8,
+          status: "resolved",
+          resolved_path: "Notes/Rust.md",
+        },
+        {
+          target: "Missing",
+          label: "Missing",
+          line: 1,
+          column: 10,
+          from: 9,
+          to: 20,
+          status: "missing",
+          resolved_path: null,
+        },
+      ],
+      onNavigateWikilink: onNavigate,
+    });
+
+    const resolved = await waitFor(() => {
+      const element = document.querySelector<HTMLElement>(".cm-wikilink-resolved");
+      expect(element).toBeTruthy();
+      return element as HTMLElement;
+    });
+    expect(document.querySelector(".cm-wikilink-missing")).toBeTruthy();
+    fireEvent.mouseDown(resolved, { ctrlKey: true });
+    expect(onNavigate).toHaveBeenCalledWith("Notes/Rust.md");
   });
 });

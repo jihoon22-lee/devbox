@@ -5,6 +5,8 @@ import {
   type ContextMenuEntry,
 } from "@devbox/context-menu";
 import {
+  analyzeWikilinks,
+  backlinks as listBacklinks,
   createFile,
   createDirectory,
   dailyNote,
@@ -24,12 +26,20 @@ import {
   searchDocs,
   takePendingOpen,
   writeFile,
+  wikilinkCandidates,
   type OpenRequest,
   type KnowledgeOpenTarget,
 } from "./api";
 import MarkdownEditor from "./components/MarkdownEditor";
 import MarkdownPreview from "./components/MarkdownPreview";
-import type { RenderedDoc, SearchResult, TreeEntry } from "./types";
+import type {
+  Backlink,
+  EditorCursorRequest,
+  RenderedDoc,
+  SearchResult,
+  TreeEntry,
+  WikilinkOccurrence,
+} from "./types";
 import { routeOpenRequest } from "./lib/applink";
 import "./App.css";
 
@@ -37,6 +47,7 @@ type ViewMode = "edit" | "split" | "preview";
 type TreeContextTarget = { path: string; isDir: boolean };
 
 const RENDER_DEBOUNCE_MS = 300;
+const WIKILINK_DEBOUNCE_MS = 220;
 
 function indent(path: string): number {
   return path.split("/").length - 1;
@@ -83,6 +94,12 @@ export default function App() {
   const [rendered, setRendered] = useState<RenderedDoc | null>(null);
   const [contextTarget, setContextTarget] = useState<TreeContextTarget | null>(null);
   const [availableTargets, setAvailableTargets] = useState<KnowledgeOpenTarget[] | null>(null);
+  const [wikilinks, setWikilinks] = useState<WikilinkOccurrence[]>([]);
+  const [backlinks, setBacklinks] = useState<Backlink[]>([]);
+  const [showBacklinks, setShowBacklinks] = useState(true);
+  const [metadataRevision, setMetadataRevision] = useState(0);
+  const [cursorRequest, setCursorRequest] = useState<EditorCursorRequest | null>(null);
+  const cursorTokenRef = useRef(0);
 
   // 인플라이트 렌더 응답이 도착했을 때 "그사이 다른 문서로 전환했는지"를 판단하기 위해
   // 최신 선택값을 ref로도 들고 있는다(설계 결정 3 — 응답 시점에 최신값과 비교).
@@ -123,6 +140,7 @@ export default function App() {
       const [t, ts] = await Promise.all([listTree(), listTags()]);
       setTree(t);
       setTags(ts);
+      setMetadataRevision((revision) => revision + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -131,6 +149,53 @@ export default function App() {
   useEffect(() => {
     void loadMeta();
   }, [loadMeta]);
+
+  useEffect(() => {
+    let disposed = false;
+    if (!isMarkdown(selected)) {
+      setWikilinks([]);
+      return;
+    }
+    const rel = selected as string;
+    const timer = setTimeout(() => {
+      void analyzeWikilinks(content)
+        .then((links) => {
+          if (!disposed && selectedRef.current === rel) setWikilinks(links);
+        })
+        .catch(() => {
+          if (!disposed && selectedRef.current === rel) {
+            setWikilinks([]);
+            setError("위키링크를 분석하지 못했습니다");
+          }
+        });
+    }, WIKILINK_DEBOUNCE_MS);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [content, metadataRevision, selected]);
+
+  useEffect(() => {
+    let disposed = false;
+    if (!isMarkdown(selected)) {
+      setBacklinks([]);
+      return;
+    }
+    const rel = selected as string;
+    void listBacklinks(rel)
+      .then((links) => {
+        if (!disposed && selectedRef.current === rel) setBacklinks(links);
+      })
+      .catch(() => {
+        if (!disposed && selectedRef.current === rel) {
+          setBacklinks([]);
+          setError("백링크를 불러오지 못했습니다");
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [metadataRevision, selected]);
 
   useEffect(() => {
     let disposed = false;
@@ -167,8 +232,28 @@ export default function App() {
       setSelectedTreePath(path);
       setContent(text);
       setDirty(false);
+      setCursorRequest(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const openIndexedNoteAt = async (path: string, line = 1, column = 1) => {
+    if (dirty && !confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?")) return;
+    setError(null);
+    try {
+      // Link/backlink path는 raw target이 아니라 backend index가 유일하게 해석한
+      // 상대 경로다. 실제 열기 직전에도 canonical root/.md/size 경계를 다시 검증한다.
+      const note = await openInboundNote(path);
+      setSelected(note.path);
+      setSelectedTreePath(note.path);
+      setContent(note.content);
+      setDirty(false);
+      setMode("edit");
+      cursorTokenRef.current += 1;
+      setCursorRequest({ line, column, token: cursorTokenRef.current });
+    } catch {
+      setError("연결된 노트를 열 수 없습니다");
     }
   };
 
@@ -210,6 +295,7 @@ export default function App() {
           setSelectedTreePath(note.path);
           setContent(note.content);
           setDirty(false);
+          setCursorRequest(null);
         } catch {
           setError("요청한 노트를 열 수 없습니다");
         }
@@ -272,6 +358,7 @@ export default function App() {
       setSelectedTreePath(rel);
       setContent(text);
       setDirty(false);
+      setCursorRequest(null);
       await loadMeta();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -316,6 +403,7 @@ export default function App() {
         setSelected(null);
         setContent("");
         setDirty(false);
+        setCursorRequest(null);
       }
       setSelectedTreePath((current) => (isSameOrChild(current, path) ? null : current));
       await loadMeta();
@@ -525,25 +613,71 @@ export default function App() {
                 </button>
               </div>
               <span className="spacer" />
+              {isMarkdown(selected) && (
+                <>
+                  <span className={`link-health ${wikilinks.some((link) => link.status !== "resolved") ? "has-unresolved" : ""}`}>
+                    {wikilinks.filter((link) => link.status !== "resolved").length} unresolved
+                  </span>
+                  <button
+                    className={`btn small ${showBacklinks ? "active" : ""}`}
+                    aria-pressed={showBacklinks}
+                    onClick={() => setShowBacklinks((visible) => !visible)}
+                  >
+                    Backlinks ({backlinks.length})
+                  </button>
+                </>
+              )}
               {dirty && <span className="dirty">● unsaved</span>}
               <button className="btn" onClick={() => void save()}>
                 Save
               </button>
             </div>
-            <div className={`editor-body mode-${mode}`}>
-              {mode !== "preview" && (
-                <MarkdownEditor
-                  value={content}
-                  onChange={(text) => {
-                    setContent(text);
-                    setDirty(true);
-                  }}
-                  onSave={() => void save()}
-                  onError={setError}
-                />
-              )}
-              {mode !== "edit" && (
-                <MarkdownPreview doc={rendered} baseRel={selected} onNavigate={(rel) => void openFile(rel)} />
+            <div className="note-workspace">
+              <div className={`editor-body mode-${mode}`}>
+                {mode !== "preview" && (
+                  <MarkdownEditor
+                    value={content}
+                    onChange={(text) => {
+                      setContent(text);
+                      setDirty(true);
+                    }}
+                    onSave={() => void save()}
+                    onError={setError}
+                    wikilinks={wikilinks}
+                    loadWikilinkCandidates={wikilinkCandidates}
+                    onNavigateWikilink={(path) => void openIndexedNoteAt(path)}
+                    cursorRequest={cursorRequest}
+                  />
+                )}
+                {mode !== "edit" && (
+                  <MarkdownPreview
+                    doc={rendered}
+                    baseRel={selected}
+                    onNavigate={(rel) => void openFile(rel)}
+                    onNavigateWikilink={(rel) => void openIndexedNoteAt(rel)}
+                  />
+                )}
+              </div>
+              {showBacklinks && isMarkdown(selected) && (
+                <aside className="backlink-panel" aria-label="Backlinks">
+                  <div className="backlink-head">Backlinks</div>
+                  {backlinks.length > 0 ? backlinks.map((link, index) => (
+                    <button
+                      key={`${link.source_path}-${link.line}-${link.column}-${index}`}
+                      className="backlink-item"
+                      onClick={() => void openIndexedNoteAt(
+                        link.source_path,
+                        link.line,
+                        link.column,
+                      )}
+                    >
+                      <span>{link.source_path}</span>
+                      <span className="dim">line {link.line}:{link.column}</span>
+                    </button>
+                  )) : (
+                    <div className="backlink-empty">No backlinks.</div>
+                  )}
+                </aside>
               )}
             </div>
           </>

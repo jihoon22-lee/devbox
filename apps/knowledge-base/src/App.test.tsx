@@ -44,6 +44,9 @@ vi.mock("./api", () => {
     searchDocs: vi.fn(async () => []),
     dailyNote: vi.fn(async () => ["daily.md", "# Today"] as [string, string]),
     renderMarkdown: vi.fn(async () => ({ title: null, tags: [], html: "<p>rendered</p>", mermaid: [] })),
+    analyzeWikilinks: vi.fn(async () => []),
+    wikilinkCandidates: vi.fn(async () => []),
+    backlinks: vi.fn(async () => []),
     onDocsChanged: vi.fn(async () => () => undefined),
   };
 });

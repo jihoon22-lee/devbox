@@ -218,10 +218,14 @@ request `Cookie` header editor, 기본 비공개 값 입력, 단일 secret refer
 masking, raw Cookie header 충돌과 문법 오류의 fail-closed native 전송 경계를 구현해 PR #401로
 CI 통과·머지됐다. #270은 text/file multipart part, part별 Content-Type, runtime-only file
 picker 경로, 파일당 25 MiB·전체 50 MiB 제한, missing-file 안전 오류와 History·Collection 경로
-제거를 구현해 PR #402로 CI 통과·머지됐다. 이어 #271은 Body/Headers/Cookies 응답 탭, 기본
+제거를 구현해 PR #402로 CI 통과·머지됐다. #271은 Body/Headers/Cookies 응답 탭, 기본
 Set-Cookie masking, current-response-only bounded backend raw vault와 확인 후 원문 Headers/Cookies
-복사를 구현한다. raw response header는 frontend state·History·Collection·로그에 저장하지 않고,
-stale ID·100행/64 KiB 초과·비텍스트 값은 fail-closed한다.
+복사를 구현해 PR #403으로 CI 통과·머지됐다. raw response header는 frontend state·History·
+Collection·로그에 저장하지 않고 stale ID·100행/64 KiB 초과·비텍스트 값은 fail-closed한다.
+이어 #272는 Knowledge `[[target]]`/alias parser, indexed-note 자동완성, missing/ambiguous/invalid
+표시와 backlink source line·column 이동을 구현한다. link target은 raw path로 열지 않고 backend가
+유일하게 resolve한 root-relative `.md` path를 canonical open boundary에서 다시 검증하며,
+link-aware rename preview/transaction은 다음 독립 기능으로 유지한다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

@@ -1,7 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { isTauri } from "./lib/isTauri";
-import type { RenderedDoc, SearchResult, TreeEntry } from "./types";
+import type {
+  Backlink,
+  RenderedDoc,
+  SearchResult,
+  TreeEntry,
+  WikilinkCandidate,
+  WikilinkOccurrence,
+} from "./types";
 
 export type OpenTarget =
   | { kind: "path"; path: string; line: number | null; column: number | null }
@@ -148,6 +155,32 @@ export async function searchDocs(query: string): Promise<SearchResult[]> {
 export async function listTags(): Promise<string[]> {
   if (!isTauri()) return ["rust", "tauri", "daily"];
   return invoke<string[]>("list_tags");
+}
+
+export async function analyzeWikilinks(content: string): Promise<WikilinkOccurrence[]> {
+  if (!isTauri()) return [];
+  return invoke<WikilinkOccurrence[]>("analyze_wikilinks", { content });
+}
+
+export async function wikilinkCandidates(query: string): Promise<WikilinkCandidate[]> {
+  if (!isTauri()) {
+    const normalized = query.trim().toLowerCase();
+    return MOCK_TREE
+      .filter((entry) => !entry.is_dir && entry.path.toLowerCase().endsWith(".md"))
+      .filter((entry) => entry.path.toLowerCase().includes(normalized))
+      .slice(0, 100)
+      .map((entry) => ({
+        path: entry.path,
+        title: entry.path.split("/").pop()?.replace(/\.md$/iu, "") ?? entry.path,
+        link_target: entry.path.replace(/\.md$/iu, ""),
+      }));
+  }
+  return invoke<WikilinkCandidate[]>("wikilink_candidates", { query });
+}
+
+export async function backlinks(rel: string): Promise<Backlink[]> {
+  if (!isTauri()) return [];
+  return invoke<Backlink[]>("backlinks", { rel });
 }
 
 export async function dailyNote(): Promise<[string, string]> {

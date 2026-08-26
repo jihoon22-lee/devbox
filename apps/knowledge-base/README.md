@@ -7,6 +7,9 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 
 - **폴더/파일 탐색** — 왼쪽 트리, 생성/이름변경/이동/삭제. 우클릭·Shift+F10·Menu 키 메뉴에서 경로 복사, 탐색기 표시, 설치된 catalog 대상 앱으로 열기를 지원
 - **Markdown 편집** — CodeMirror(공용 `packages/editor`) + 프리뷰 토글, Ctrl+S 저장, mermaid 다이어그램 렌더. CM6 DOM event 경유 메뉴에서 잘라내기·복사·명시적 붙여넣기·Markdown 링크 삽입을 지원
+- **Wikilink / backlink** — `[[target]]`·`[[target|alias]]` 자동완성, resolved/unresolved 표시,
+  Ctrl/Cmd+클릭 노트 이동과 backlink source line·column 이동. fenced/inline code와 escape된 문법은
+  링크로 인덱스하지 않는다
 - **검색** — 제목+본문 FTS5 (`crates/search`)
 - **태그** — YAML frontmatter(`tags:`) 파싱, 태그 목록·필터
 - **데일리 노트** — 날짜별 생성·연결
@@ -16,10 +19,20 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 ## 기술
 
 - 파일을 원본(source of truth)으로 두고 SQLite는 검색용 보조 인덱스
+- SQLite의 `doc_link_keys`·`wikilinks`도 재생성 가능한 보조 인덱스다. path stem·filename·title이
+  정확히 한 노트에만 대응할 때 resolved로 판정하며 중복 title/filename은 ambiguous unresolved로
+  처리한다. 새 노트가 생기거나 watcher가 외부 편집을 반영하면 source를 다시 쓰지 않아도 현재
+  key 집합 기준으로 resolution과 backlink가 갱신된다
+- wikilink schema 최초 실행에는 root의 안전한 Markdown 원문을 한 번 읽어 source position을
+  복구한다. root 밖 symlink·비 Markdown·10 MiB 초과·읽기 실패 항목은 인덱스에 넣지 않고,
+  일반 링크 DTO에는 절대 경로와 본문을 포함하지 않는다
 - `crates/markdown` `sanitize()`로 HTML 살균, mermaid `securityLevel: "strict"`
 - `core/store.rs`의 자체 `safe_join`으로 루트 밖 경로 차단
 - 트리 메뉴의 filesystem·launch 명령은 실행 직전에 항목과 기존 조상을 canonicalize하고 symlink 경유 루트 탈출을 거부한다. absolute path는 사용자가 경로 복사를 선택한 경우에만 frontend에 반환하며, 다른 앱으로 열기는 catalog capability와 실제 설치 상태를 다시 검증한다
 - 폴더 이름변경·삭제 시 하위 문서의 FTS 행을 함께 제거하고, 이름변경된 폴더의 읽을 수 있는 파일만 새 상대 경로로 재색인한다. wikilink 참조 갱신과 link-aware rename transaction은 별도 P1-09 기능이다
+- 자동완성은 root-relative path에서 `.md`를 뺀 canonical target을 삽입한다. raw target을 파일
+  경로로 직접 열지 않으며, editor/preview/backlink 이동은 backend가 유일하게 resolve한 상대
+  경로를 기존 canonical root·`.md`·10 MiB 검증 경계에서 다시 연다
 - inbound Path는 canonical Knowledge root 내부의 실제 `.md` 파일만 허용하고 10 MiB로 제한한다. 실패 시 raw path·OS 오류를 UI에 반향하지 않는다
 - `crates/integration`의 multi-view envelope을 사용해 `%LOCALAPPDATA%\devbox\integration\knowledge-base\v1\summary.json`을 원자 교체한다
 - `activity/v1` entry는 `notesModifiedToday`, `lastModifiedAtMs`, `noteIds`, `identifiersTruncated`만 포함한다. `noteIds`는 DB row에서 만든 `note-<양의 정수>` 형식이며 최대 512개다
