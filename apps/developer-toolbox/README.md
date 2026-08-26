@@ -13,7 +13,7 @@
 | Text | Case Converter, Lorem Generator, Markdown Table Formatter, Diff | Lorem/table은 deterministic TS, Diff는 Rust(`similar`) |
 | Security | Hash(MD5/SHA-256/SHA-512), HMAC-SHA-256/384/512 생성·검증, UUID v4/v7, ULID | Rust(`md-5`·`hmac`·`sha2`·`base64`·`uuid`·`getrandom`) |
 | Regex | Regex Tester (매치 하이라이트) | Rust(`regex`) |
-| Auth | JWT Decoder (헤더/페이로드) | TS(base64url) |
+| Auth | JWT Decoder / Verify (HS256/HS384/HS512) | TS bounded decoder + RustCrypto HMAC/Web Crypto |
 
 ## 주요 특징
 
@@ -115,10 +115,34 @@
 - 입력 우클릭 메뉴에서 명시적 Paste·전체 선택·비우기, 출력 메뉴에서 복사·전체 선택·텍스트
   파일 저장 지원. Clipboard read는 Paste를 누른 순간에만 수행하며 저장·로그하지 않음
 
+- JWT는 compact `header.payload.signature`를 strict Base64URL·UTF-8·JSON으로 해석해 헤더와
+  페이로드를 **검증되지 않음** 상태로 표시한다. `alg=none`, 대소문자 변형, RSA/EC 알고리즘,
+  non-canonical padding, 중복 JSON key, 알 수 없는 `crit` header와 잘못된 signature 길이는
+  고정 오류로 거부한다. JSON은 64KiB, 32단계, 10,000개 값, 문자열 16KiB, 전체 token
+  256KiB의 bounded parser를 사용하며 원문 token·signature를 오류나 로그에 반향하지 않는다.
+- Verify는 사용자가 명시적으로 누른 경우에만 실행하고 HS256·HS384·HS512만 허용한다. key는
+  raw UTF-8, hex, padded Base64, unpadded Base64URL 중 하나로 명시하며 각각의 decoded key는
+  알고리즘 digest 길이 이상(32/48/64바이트)이어야 한다. PEM/JWK/RSA/EC key parsing은 이
+  기능의 범위가 아니며 HMAC secret은 UI memory에서만 사용한다. Native는 RustCrypto의
+  constant-time `verify_slice`를, browser preview는 Web Crypto HMAC `verify`를 사용하고
+  둘 다 key/signature/tag를 반환하지 않는다. Native command도 header/payload JSON bounds,
+  duplicate key, critical header, canonical segment를 다시 확인해 direct IPC 호출이 browser
+  검사를 우회하지 못하게 한다.
+- `exp`·`nbf`·`iat`는 raw NumericDate와 UTC ISO-8601을 함께 표시한다. 검증 시각은 요청
+  시작 시 한 번 캡처한 현재 UTC epoch seconds이고 고정 clock skew는 ±60초다. 시간 claim이
+  malformed이거나 범위를 벗어나면 signature primitive를 호출하지 않고 invalid 상태로
+  표시한다. 유효한 signature와 시간 claim을 모두 통과해야만 `verified`가 된다.
+- JWT 입력과 key는 localStorage/history/telemetry/network/자동 clipboard에 절대 기록하지
+  않는다. 결과 JSON의 copy/save와 input context-menu Paste는 사용자가 명시적으로 선택한
+  경우에만 동작하며, 실행 중 중복 action·IME 입력·늦은 async/native 결과·unmount state
+  반영을 막고 accessible label/status/alert를 제공한다.
+
 JSON ↔ YAML의 `jsonc-parser` 3.3.1(MIT)·`yaml` 2.9.0(ISC)과 HTML entity의
-`entities` 8.0.0(BSD-2-Clause)은 앱에 함께 번들된다. 실행 중
-다운로드나 network 요청은 없으며 버전·무결성·라이선스는 `pnpm-lock.yaml`, dependency policy,
-`THIRD_PARTY_NOTICES.md`로 검증한다.
+`entities` 8.0.0(BSD-2-Clause), JWT verify의 RustCrypto `hmac` 0.13.0(MIT OR
+Apache-2.0)·`base64` 0.22.1(MIT OR Apache-2.0)은 앱에 함께 번들된다. 실행 중 다운로드나
+network 요청은 없으며 버전·무결성·라이선스는 `Cargo.lock`, `pnpm-lock.yaml`, dependency
+policy, `THIRD_PARTY_NOTICES.md`로 검증한다. `cmov`·`ctutils` 등 RustCrypto 전이 의존성도
+동일한 lock/notices/dependency gate를 통과해야 한다.
 
 Rust의 HMAC 순수 로직은 `src-tauri/src/core/hmac.rs`, Tauri 경계는
 `src-tauri/src/commands/tools.rs`의 `hmac_generate`·`hmac_verify` 명령에 있다. 요청 wire

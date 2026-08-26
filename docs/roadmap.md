@@ -385,7 +385,11 @@ cut/copy/paste·IME·keyboard 동작을 유지한다. HTML parser, 외부 conver
 digest를 dependency gate로 검증한다. Windows W2 packaged smoke evidence는 P2 checkpoint에서
 수행한다.
 
-**2026-08-27 #290/#291 구현 상태.** Developer Toolbox Text 그룹에 Lorem Generator와 Markdown
+**2026-08-27 #289–#292 통합 구현 상태.** 네 기능은 Developer Toolbox 0.3.0의 같은 offline
+도구 surface와 입력/output·clipboard·접근성·배포 경계를 공유하므로 하나의 cohesive PR에서
+각 acceptance와 fixture를 독립 추적한다.
+
+**#290/#291.** Developer Toolbox Text 그룹에 Lorem Generator와 Markdown
 Table Formatter를 하나의 cohesive text-transform 사용자 경계로 추가했다. 두 기능 모두 외부
 generator/formatter·network·filesystem read·random source 없이 앱에 번들된 deterministic
 TypeScript 경로를 사용한다. Lorem은 고정 5문장 corpus에서 문단·문장·단어를 생성하고 수량
@@ -404,6 +408,33 @@ status, fixed `role=alert`를 제공하고 native cut/copy/paste·IME keyboard�
 사용자가 명시적으로 요청한 경우에만 수행한다. 순수·통합 fixture와 README, v0.5.0 계획,
 workthrough를 갱신했으며 신규 의존성·IPC·Rust command는 없다. 필수 cargo/frontend 전체 gate와
 Windows W2 packaged offline smoke는 root release checkpoint에서 수행한다.
+
+**#289.** Developer Toolbox Auth group의 JWT compact decode·verify를 완성한다. decoder는 token을
+256KiB, header/payload segment를 96KiB, JSON을 64KiB·depth 32·10,000개 값/key node·문자열
+16KiB·formatted output 256KiB로 제한하고, unpadded canonical Base64URL·fatal UTF-8·strict
+JSON을 사용한다. duplicate JSON key, non-zero pad bit/`=`, malformed `crit`·unknown critical
+header, `alg=none`, casing 변형, 잘못된 signature 길이와 비대칭 algorithm은 부분 결과 없이
+고정 오류로 거부한다. Header/payload를 보여 주는 decode 결과는 항상 `unverified`로 표시하며
+signature를 확인한 것처럼 표현하지 않는다.
+
+Verify는 사용자가 명시적으로 실행한 경우에만 HS256·HS384·HS512를 RustCrypto `hmac 0.13.0`의
+  constant-time `verify_slice`(packaged native) 또는 Web Crypto HMAC `verify`(browser preview)로
+  확인한다. key encoding은 raw UTF-8·hex·padded Base64·unpadded Base64URL로 고정하고 decoded
+  key 1,000,000바이트/encoded 2,100,000바이트 및 알고리즘별 최소 32/48/64바이트를 적용한다.
+  PEM/JWK/RSA/EC parser와 token storage는 이 PR의 비범위이며, strict camelCase native DTO는
+  `{algorithm, signingInput, signature, key, keyEncoding}`만 받고 boolean 또는 fixed error만
+  반환한다. Base64URL signing input·signature와 key를 native에서도 재검증해 browser/native
+  key·error parity를 보장하고 raw secret/signature/calculated tag를 되돌리지 않는다.
+
+`exp`·`nbf`·`iat`는 raw NumericDate와 UTC ISO-8601을 표시한다. Verify 시작 시 캡처한 현재 UTC
+epoch seconds와 고정 ±60초 skew를 사용하고, malformed/future/expired time claim은 crypto
+호출 전에 `invalid_claims`로 분리한다. signature와 time claim이 모두 통과한 경우만 `verified`,
+길이·형식이 맞고 tag가 다른 경우는 `invalid_signature`로 표시한다. token/key는 localStorage,
+history, telemetry, network, automatic clipboard에 기록하지 않으며 결과 copy/save·input Paste는
+explicit action으로만 제공한다. UI는 password key, accessible labels/ARIA live status/fixed alert,
+IME·double-action·stale/unmount guard를 포함한다. RFC/negative vector, bounds, duplicate/critical,
+encoding/key length, temporal skew, browser/native parity와 Windows W2 packaged/offline smoke를
+이 기능의 완료 증거로 남긴다.
 
 #278은 기존 언어 서버 status에 retry 실패 횟수·남은 backoff·열린 circuit을 표시하고, 같은 카드에서
 수동 `다시 시도`를 실행하도록 확장한다. 관리형 server ref는 설치 index 검증 결과와 결합해 cache

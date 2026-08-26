@@ -8,6 +8,7 @@ import {
   type HmacRequest,
   type HmacVerifyRequest,
 } from "./tools/hmac";
+import { browserVerifyJwt, type JwtVerifyRequest } from "./tools/jwt";
 import type { DiffHunk, RegexMatch } from "./types";
 
 /** 데이터를 해시한다. browser 미리보기에서는 Web Crypto(SHA)만 지원. */
@@ -26,6 +27,12 @@ export async function hmacGenerate(request: HmacRequest): Promise<string> {
 export async function hmacVerify(request: HmacVerifyRequest): Promise<boolean> {
   if (!isTauri()) return browserHmacVerify(request);
   return invoke<boolean>("hmac_verify", { request });
+}
+
+/** Verify a parsed JWT without returning its key, signature, or calculated tag. */
+export async function verifyJwt(request: JwtVerifyRequest): Promise<boolean> {
+  if (!isTauri()) return browserVerifyJwt(request);
+  return invoke<boolean>("jwt_verify", { request });
 }
 
 /** UUID v4/v7 또는 ULID를 제한된 수량으로 생성한다. */

@@ -313,6 +313,7 @@ interface ToolTextFieldProps
   actionErrorMessage?: string;
   /** Maximum resulting UTF-8 bytes after the explicit Paste action. */
   maxPasteBytes?: number;
+  inputType?: "text" | "password";
 }
 
 /** Controlled single-line text field with the same app-owned input menu. */
@@ -323,6 +324,7 @@ export function ToolTextField({
   clipboardErrorMessage,
   actionErrorMessage,
   maxPasteBytes,
+  inputType = "text",
   ...props
 }: ToolTextFieldProps) {
   const context = useEditableTextContextMenu(value, onValueChange, {
@@ -335,7 +337,7 @@ export function ToolTextField({
         {...props}
         {...context.menu.triggerProps}
         ref={context.controlRef as RefObject<HTMLInputElement | null>}
-        type="text"
+        type={inputType}
         value={value}
         onChange={(event) => onValueChange(event.currentTarget.value)}
       />

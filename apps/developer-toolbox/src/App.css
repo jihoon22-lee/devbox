@@ -667,8 +667,22 @@ select {
   max-width: 1100px;
 }
 
+.jwt-tool {
+  max-width: 1180px;
+}
+
+.jwt-help {
+  max-width: 980px;
+  margin: 0 0 12px;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .hmac-toolbar,
-.hmac-input-grid {
+.hmac-input-grid,
+.jwt-toolbar,
+.jwt-key-row {
   display: flex;
   align-items: end;
   gap: 10px;
@@ -678,6 +692,20 @@ select {
 .hmac-input-grid {
   align-items: stretch;
   margin-top: 14px;
+}
+
+.jwt-key-row {
+  margin-top: 12px;
+}
+
+.jwt-field {
+  display: flex;
+  min-width: 220px;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--dim);
+  font-size: 11px;
 }
 
 .hmac-field,
@@ -691,8 +719,10 @@ select {
 
 .hmac-field select,
 .hmac-input-field select,
-.hmac-input-field input {
+.jwt-field input,
+.jwt-field select {
   min-height: 30px;
+  width: 100%;
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
@@ -711,6 +741,19 @@ select {
 
 .hmac-message-field textarea {
   min-height: 120px;
+}
+
+.jwt-field input:focus,
+.jwt-field select:focus {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.jwt-field input:disabled,
+.jwt-field select:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .hmac-field select:disabled,
@@ -735,6 +778,19 @@ select {
   font-size: 11px;
 }
 
+.jwt-status {
+  min-height: 18px;
+  margin: 10px 0 4px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.jwt-error {
+  margin: 6px 0;
+  color: var(--red);
+  font-size: 11px;
+}
+
 .hmac-status {
   min-height: 18px;
   margin: 4px 0;
@@ -744,6 +800,20 @@ select {
 
 .hmac-output-col {
   margin-top: 6px;
+}
+
+.jwt-grid {
+  margin-top: 8px;
+}
+
+.jwt-input {
+  min-height: 170px;
+}
+
+.jwt-output {
+  min-height: 170px;
+  max-height: 560px;
+  overflow: auto;
 }
 
 .regex-view {
@@ -803,4 +873,10 @@ select {
 
 .dim {
   color: var(--dim);
+}
+
+@media (max-width: 800px) {
+  .io-grid.jwt-grid {
+    grid-template-columns: 1fr;
+  }
 }

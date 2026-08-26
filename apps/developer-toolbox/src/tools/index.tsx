@@ -16,11 +16,11 @@ import {
   HtmlEntityEncoder,
   jsonFormatter,
   jsonMinifier,
-  JwtDecoder,
   TimestampConverter,
   UrlDecoder,
   UrlEncoder,
 } from "./transformers";
+import { JwtDecoder } from "./JwtTool";
 
 export interface ToolDef {
   id: string;

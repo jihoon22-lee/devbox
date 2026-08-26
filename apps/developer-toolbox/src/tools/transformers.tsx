@@ -14,6 +14,7 @@ export {
   urlComponentDecode,
   urlComponentEncode,
 } from "./textEncoding";
+export { decodeJwt } from "./jwt";
 
 // 반환 타입을 명시해 ok/fail 두 분기가 항상 같은 모양({ output, error? })을 갖게 한다.
 // (동작 변화 없음 — ok()가 error를 안 채우는 건 원래와 동일하고, 타입에서만 optional로 통일한다.)
@@ -46,17 +47,6 @@ export function toBase64(input: string) {
 export function fromBase64(input: string) {
   const result = convertByteEncoding(input, "base64", "utf8");
   return result.error ? fail(new Error(result.error.message)) : ok(result.output);
-}
-
-export function decodeJwt(input: string) {
-  try {
-    const [, payloadB64] = input.trim().split(".");
-    if (!payloadB64) throw new Error("JWT 페이로드가 없습니다 (header.payload.signature 형식)");
-    const json = decodeURIComponent(escape(atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/"))));
-    return ok(JSON.stringify(JSON.parse(json), null, 2));
-  } catch (e) {
-    return fail(e);
-  }
 }
 
 export const jsonFormatter = () => (input: string) => formatJson(input, "format");
@@ -158,14 +148,4 @@ export function convertCase(input: string): string {
 
 export function CaseConverter() {
   return <TransformerTool placeholder="Text to convert..." run={(i) => ok(convertCase(i))} />;
-}
-
-export function JwtDecoder() {
-  return (
-    <TransformerTool
-      placeholder="Paste JWT token (header.payload.signature)..."
-      run={decodeJwt}
-      rows={4}
-    />
-  );
 }
