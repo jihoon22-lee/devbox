@@ -18,6 +18,9 @@ import {
 } from "./lib/multipart";
 import type { ApiResponse, RequestTemplate } from "./types";
 
+const MAX_RESPONSE_HEADERS = 100;
+const MAX_RESPONSE_HEADER_BYTES = 64 * 1024;
+
 /** HTTP 요청 전송. 브라우저 미리보기에서는 fetch(CORS 제약 존재)로 대체한다. */
 export async function sendRequest(
   req: RequestTemplate,
@@ -54,6 +57,18 @@ export async function buildRevealedCurl(
 ): Promise<string> {
   if (!isTauri()) throw new Error("원문 cURL 복사는 데스크톱 앱에서만 사용할 수 있습니다");
   return invoke<string>("build_revealed_curl", { req, environment });
+}
+
+/** 확인된 현재 응답의 원문 header를 backend 메모리에서 한 번만 가져온다. */
+export async function copyRawResponseHeaders(responseId: string): Promise<string> {
+  if (!isTauri()) throw new Error("원문 응답 header 복사는 데스크톱 앱에서만 사용할 수 있습니다");
+  return invoke<string>("copy_raw_response_headers", { responseId });
+}
+
+/** 확인된 현재 응답의 원문 Set-Cookie만 backend 메모리에서 한 번 가져온다. */
+export async function copyRawResponseCookies(responseId: string): Promise<string> {
+  if (!isTauri()) throw new Error("원문 응답 Cookie 복사는 데스크톱 앱에서만 사용할 수 있습니다");
+  return invoke<string>("copy_raw_response_cookies", { responseId });
 }
 
 /** 데스크톱 file picker의 사용자 선택 결과만 runtime multipart 경로로 반환한다. */
@@ -139,9 +154,20 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): P
   const duration_ms = Math.round(performance.now() - start);
   const text = await resp.text();
   const respHeaders: { key: string; value: string }[] = [];
-  resp.headers.forEach((v, k) =>
-    respHeaders.push({ key: k, value: isSensitiveName(k) ? "[REDACTED]" : v }),
-  );
+  let responseHeaderBytes = 0;
+  let headersTruncated = false;
+  const encoder = new TextEncoder();
+  resp.headers.forEach((v, k) => {
+    if (headersTruncated) return;
+    const lineBytes = encoder.encode(k).byteLength + encoder.encode(v).byteLength + 2;
+    if (respHeaders.length >= MAX_RESPONSE_HEADERS
+      || responseHeaderBytes + lineBytes > MAX_RESPONSE_HEADER_BYTES) {
+      headersTruncated = true;
+      return;
+    }
+    responseHeaderBytes += lineBytes;
+    respHeaders.push({ key: k, value: isSensitiveName(k) ? "[REDACTED]" : v });
+  });
 
   return {
     status: resp.status,
@@ -153,6 +179,10 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): P
     is_json: (resp.headers.get("content-type") ?? "").includes("json"),
     final_url: redactUrl(resp.url),
     redirects: [],
+    cookies: [],
+    response_id: null,
+    raw_headers_available: false,
+    headers_truncated: headersTruncated,
   };
 }
 

@@ -15,6 +15,8 @@ import type { RequestTemplate } from "./types";
 
 vi.mock("./api", () => ({
   buildRevealedCurl: vi.fn(),
+  copyRawResponseCookies: vi.fn(),
+  copyRawResponseHeaders: vi.fn(),
   sanitizePersistedJson: vi.fn(),
   sealSecret: vi.fn(),
   sendRequest: vi.fn(),

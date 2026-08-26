@@ -25,11 +25,14 @@ fn migrate_local_data() {
 pub fn run() {
     migrate_local_data();
     tauri::Builder::default()
+        .manage(commands::request::ResponseHeaderVault::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::request::send_request,
             commands::request::build_revealed_curl,
+            commands::request::copy_raw_response_headers,
+            commands::request::copy_raw_response_cookies,
             commands::request::sanitize_persisted_json,
             commands::secrets::seal_secret,
         ])

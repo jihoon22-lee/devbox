@@ -6,6 +6,8 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   buildRevealedCurl,
+  copyRawResponseCookies,
+  copyRawResponseHeaders,
   pickMultipartFile,
   sanitizePersistedJson,
   sealSecret,
@@ -14,6 +16,7 @@ import {
 import { CookieEditor } from "./CookieEditor";
 import { HeaderTable } from "./HeaderTable";
 import { MultipartEditor } from "./MultipartEditor";
+import { ResponseViewer, type RawResponseCopyKind } from "./ResponseViewer";
 import {
   addEntry,
   duplicateEntry,
@@ -61,6 +64,8 @@ import {
 } from "./lib/multipart";
 import type { ApiResponse, HistoryItem, KeyValue, RequestTemplate } from "./types";
 import "./App.css";
+
+export { statusClass } from "./ResponseViewer";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const BODY_KINDS = ["none", "json", "form", "multipart", "raw"];
@@ -119,12 +124,6 @@ function KeyValueEditor({
   );
 }
 
-export function statusClass(status: number) {
-  if (status >= 200 && status < 300) return "status-2xx";
-  if (status >= 400) return "status-4xx";
-  return "status-other";
-}
-
 export default function App() {
   const [req, setReq] = useState<RequestTemplate>(emptyReq);
   const [resp, setResp] = useState<ApiResponse | null>(null);
@@ -132,7 +131,6 @@ export default function App() {
   const [sending, setSending] = useState(false);
   const [showCurl, setShowCurl] = useState(false);
   const [tab, setTab] = useState<"params" | "headers" | "cookies" | "body" | "auth">("params");
-  const [showHeaders, setShowHeaders] = useState(false);
   const [pretty, setPretty] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [collections, setCollections] = useState(emptyCollectionStore);
@@ -363,6 +361,11 @@ export default function App() {
     });
 
   const responseText = resp?.is_json && pretty ? tryPretty(resp.body) : resp?.body ?? "";
+  const copyRawResponse = (kind: RawResponseCopyKind, responseId: string) => (
+    kind === "headers"
+      ? copyRawResponseHeaders(responseId)
+      : copyRawResponseCookies(responseId)
+  );
   const contextItems = useMemo<readonly ContextMenuEntry[]>(
     () => buildRequestItemContextMenu(
       contextActionBusy || collSaving || sending || !persistenceReady,
@@ -807,40 +810,14 @@ export default function App() {
 
         {error && <div className="error">{error}</div>}
 
-        <div className="response">
-          <div className="response-head">
-            {resp ? (
-              <>
-                <span className={`status-badge ${statusClass(resp.status)}`}>
-                  {resp.status} {resp.status_text}
-                </span>
-                <span className="dim">{resp.duration_ms}ms</span>
-                <span className="dim">{(resp.size_bytes / 1024).toFixed(2)} KB</span>
-                <span className="spacer" />
-                {resp.is_json && (
-                  <label className="toggle">
-                    <input type="checkbox" checked={pretty} onChange={(e) => setPretty(e.currentTarget.checked)} />
-                    pretty
-                  </label>
-                )}
-                <button className="btn" onClick={() => void navigator.clipboard.writeText(responseText)}>
-                  Copy
-                </button>
-                <button className="btn" onClick={() => setShowHeaders((v) => !v)}>
-                  {showHeaders ? "Hide" : "Show"} headers
-                </button>
-              </>
-            ) : (
-              <span className="dim">Send a request to see the response</span>
-            )}
-          </div>
-          {showHeaders && resp && (
-            <pre className="resp-headers">
-              {resp.headers.map((h) => `${h.key}: ${h.value}`).join("\n")}
-            </pre>
-          )}
-          <pre className="resp-body">{responseText || " "}</pre>
-        </div>
+        <ResponseViewer
+          response={resp}
+          responseText={responseText}
+          pretty={pretty}
+          onPrettyChange={setPretty}
+          onRawCopy={copyRawResponse}
+          onError={setError}
+        />
       </main>
       <ContextMenu
         open={historyContextMenu.open}

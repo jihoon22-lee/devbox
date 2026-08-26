@@ -102,6 +102,15 @@ context action은 현재 editor의 raw request나 unsealed environment secret을
 확인 전 storage를 변경하지 않고, 복제는 마스킹 request를 깊은 복사한 뒤 전체 store를 다시
 sanitize/read-back 한다. Collection import/export와 앱 간 protocol은 각 후속 기능 경계에 남긴다.
 
+API Playground response viewer의 일반 DTO는 마스킹된 headers와 값이 제거된 Cookie projection만
+포함한다. 원문 response headers는 `Serialize`/`Debug`를 구현하지 않은 app-managed vault가 현재
+요청 1건에 대해서만 최대 100개·64 KiB로 보관한다. 새 요청을 시작하면 이전 entry를 즉시
+폐기하며 raw name/value 버퍼는 drop 때 zeroize한다. 이후 monotonically 증가하는 opaque string
+ID를 발급하며, 늦게 끝난 과거 요청은 current ID와
+일치하지 않아 raw entry를 저장하지 못한다. 상한 초과·비텍스트 header는 masked DTO에 안전한
+표시만 남기고 raw copy 전체를 fail-closed한다. 확인된 Headers/Set-Cookie copy command만 ID로
+원문을 조회하며 반환 문자열은 clipboard write 외 storage·history·log에 전달하지 않는다.
+
 ## 앱 간 데이터 교환
 
 상대 앱의 `app_local_data_dir`을 직접 읽지 않는다. producer가
