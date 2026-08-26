@@ -223,9 +223,13 @@ Set-Cookie masking, current-response-only bounded backend raw vault와 확인 �
 복사를 구현해 PR #403으로 CI 통과·머지됐다. raw response header는 frontend state·History·
 Collection·로그에 저장하지 않고 stale ID·100행/64 KiB 초과·비텍스트 값은 fail-closed한다.
 이어 #272는 Knowledge `[[target]]`/alias parser, indexed-note 자동완성, missing/ambiguous/invalid
-표시와 backlink source line·column 이동을 구현한다. link target은 raw path로 열지 않고 backend가
-유일하게 resolve한 root-relative `.md` path를 canonical open boundary에서 다시 검증하며,
-link-aware rename preview/transaction은 다음 독립 기능으로 유지한다.
+표시와 backlink source line·column 이동을 구현해 PR #404로 CI 통과·머지됐다. link target은 raw
+path로 열지 않고 backend가 유일하게 resolve한 root-relative `.md` path를 canonical open
+boundary에서 다시 검증한다. #273은 파일·폴더 이름 변경 전에 이동 경로와 깨질 위키링크 diff를
+전체 승인 UI로 표시하고, opaque one-shot plan과 SHA-256 스냅샷 재검증을 거쳐 파일별 atomic
+rewrite·filesystem rename·SQLite FTS/link transaction을 적용한다. 기존 key로 계속 유일하게
+resolve되는 링크는 쓰지 않고 alias는 보존하며, 충돌·stale snapshot·부분 실패는 전체 중단 또는
+rollback한다. 다음 P1-09 작업은 Devbox Manager batch다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

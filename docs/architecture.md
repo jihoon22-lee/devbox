@@ -120,8 +120,20 @@ fenced/inline code와 escape된 opener를 제외한다. path stem·filename·fro
 인덱스되면 source 재작성 없이 현재 key 집합으로 다시 해석된다. schema v1 최초 실행은 root 내부의
 canonical `.md` 원문만 최대 10 MiB로 읽어 정확한 line/UTF-16 column을 복구한 뒤 marker를 기록한다.
 UI가 raw `[[target]]`을 경로로 열지 않으며 editor/preview/backlink가 받은 indexed 상대 경로도 실제
-열기 직전에 canonical root·확장자·크기 검증을 다시 통과한다. link-aware rename transaction은 다음
-독립 기능 경계다.
+열기 직전에 canonical root·확장자·크기 검증을 다시 통과한다.
+
+Knowledge의 이름 변경은 기존 즉시 `rename_file` IPC를 노출하지 않는다. preview command가 root
+경로 목록, 모든 Markdown, 이동 subtree 내용을 10,000항목·64 MiB 경계 안에서 SHA-256으로 묶고,
+깨질 때만 canonical 새 target으로 바꾼 link diff와 opaque one-shot plan ID를 반환한다. 제목 등
+기존 key가 이동 뒤에도 유일하면 source를 쓰지 않고 `[[target|alias]]`의 alias는 그대로 보존한다.
+frontend에는 root-relative path와 최대 1,024바이트의 영향 link syntax만 보내며 전체 원문·절대
+경로는 plan vault 밖으로 내보내지 않는다. 적용 command는 현재 root와 destination을 canonical
+검증하고 동일 스냅샷을 재계산한 뒤에만 파일별 atomic replace → filesystem rename → SQLite
+FTS/link transaction을 실행한다. 실패 시 역순 rollback과 생성한 빈 parent 정리를 시도하며 rollback
+자체 실패는 성공으로 숨기지 않고 수동 확인 오류로 올린다. 따라서 계약은 OS 전역 다중 파일
+원자성이 아니라 실행 중 오류에 대한 conflict-checked all-or-rollback이다. apply 도중 process/OS
+강제 종료를 복구할 persistent journal은 이 기능 범위가 아니다. watcher는 같은 DB mutex 뒤에서 후속
+event를 처리하므로 command transaction과 인덱스를 동시에 수정하지 않는다.
 
 ## 앱 간 데이터 교환
 

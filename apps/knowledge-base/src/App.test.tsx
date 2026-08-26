@@ -1,14 +1,17 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
+  applyRename,
   createDirectory,
   createFile,
   deleteFile,
+  discardRenamePreview,
   entryPath,
   openIn,
   openTargets,
-  renameFile,
+  previewRename,
+  readFile,
   revealEntry,
 } from "./api";
 
@@ -32,7 +35,26 @@ vi.mock("./api", () => {
     writeFile: vi.fn(async () => undefined),
     createFile: vi.fn(async () => undefined),
     createDirectory: vi.fn(async () => undefined),
-    renameFile: vi.fn(async () => undefined),
+    previewRename: vi.fn(async (from: string, to: string) => ({
+      planId: "rename-plan-1",
+      from,
+      to,
+      isDir: false,
+      items: [
+        { path: `이름 변경 · ${from}`, before: from, after: to, meta: "파일 이동" },
+        {
+          path: "Projects/source.md",
+          before: "L2: [[Notes/nested|별칭]]",
+          after: "L2: [[Notes/renamed|별칭]]",
+          meta: "위키링크 1개 갱신",
+        },
+      ],
+    })),
+    applyRename: vi.fn(async () => ({
+      from: "Notes/nested.md",
+      to: "Notes/renamed.md",
+    })),
+    discardRenamePreview: vi.fn(async () => undefined),
     deleteFile: vi.fn(async () => undefined),
     entryPath: vi.fn(async (rel: string) => `C:\\Knowledge\\${rel.replace(/\//g, "\\")}`),
     revealEntry: vi.fn(async () => undefined),
@@ -53,24 +75,30 @@ vi.mock("./api", () => {
 
 const createFileMock = vi.mocked(createFile);
 const createDirectoryMock = vi.mocked(createDirectory);
-const renameFileMock = vi.mocked(renameFile);
+const previewRenameMock = vi.mocked(previewRename);
+const applyRenameMock = vi.mocked(applyRename);
+const discardRenamePreviewMock = vi.mocked(discardRenamePreview);
 const deleteFileMock = vi.mocked(deleteFile);
 const entryPathMock = vi.mocked(entryPath);
 const revealEntryMock = vi.mocked(revealEntry);
 const openTargetsMock = vi.mocked(openTargets);
 const openInMock = vi.mocked(openIn);
+const readFileMock = vi.mocked(readFile);
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   createFileMock.mockClear();
   createDirectoryMock.mockClear();
-  renameFileMock.mockClear();
+  previewRenameMock.mockClear();
+  applyRenameMock.mockClear();
+  discardRenamePreviewMock.mockClear();
   deleteFileMock.mockClear();
   entryPathMock.mockClear();
   revealEntryMock.mockClear();
   openTargetsMock.mockClear();
   openInMock.mockClear();
+  readFileMock.mockClear();
 });
 
 describe("knowledge-base App — 모드 토글 & 프리뷰 비활성화", () => {
@@ -186,7 +214,7 @@ describe("knowledge-base App — tree context menu", () => {
     await waitFor(() => expect(createDirectoryMock).toHaveBeenCalledWith("Notes/Archive"));
   });
 
-  it("이름변경과 danger 삭제를 확인 뒤 정확한 항목에 적용한다", async () => {
+  it("이름변경 diff를 먼저 표시하고 전체 승인 뒤에만 transaction을 적용한다", async () => {
     vi.spyOn(window, "prompt").mockReturnValueOnce("Notes/renamed.md");
     const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<App />);
@@ -194,15 +222,60 @@ describe("knowledge-base App — tree context menu", () => {
 
     fireEvent.contextMenu(nested);
     fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
-    await waitFor(() => expect(renameFileMock).toHaveBeenCalledWith(
+    await waitFor(() => expect(previewRenameMock).toHaveBeenCalledWith(
       "Notes/nested.md",
       "Notes/renamed.md",
     ));
+    expect(applyRenameMock).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "이름 변경 미리보기" });
+    expect(dialog).toHaveTextContent("Projects/source.md");
+    expect(dialog).toHaveTextContent("[[Notes/nested|별칭]]");
+    expect(dialog).toHaveTextContent("[[Notes/renamed|별칭]]");
+    expect(within(dialog).queryByRole("checkbox")).toBeNull();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "전체 적용 (2)" }));
+    await waitFor(() => expect(applyRenameMock).toHaveBeenCalledWith("rename-plan-1"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     fireEvent.contextMenu(nested);
     fireEvent.click(screen.getByRole("menuitem", { name: "삭제" }));
     await waitFor(() => expect(deleteFileMock).toHaveBeenCalledWith("Notes/nested.md"));
     expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining("되돌릴 수 없습니다"));
+  });
+
+  it("이름변경 미리보기를 취소하면 backend의 보관 plan도 폐기한다", async () => {
+    vi.spyOn(window, "prompt").mockReturnValueOnce("Notes/renamed.md");
+    render(<App />);
+    const nested = treeButton(await screen.findByText("nested.md"));
+
+    fireEvent.contextMenu(nested);
+    fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
+    const dialog = await screen.findByRole("dialog", { name: "이름 변경 미리보기" });
+    expect(within(dialog).getByRole("button", { name: "취소" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => expect(discardRenamePreviewMock).toHaveBeenCalledWith("rename-plan-1"));
+    expect(applyRenameMock).not.toHaveBeenCalled();
+  });
+
+  it("transaction 성공 뒤 재읽기만 실패하면 stale 본문을 지우고 metadata 갱신을 유지한다", async () => {
+    vi.spyOn(window, "prompt").mockReturnValueOnce("Notes/renamed.md");
+    render(<App />);
+    const nested = treeButton(await screen.findByText("nested.md"));
+    fireEvent.click(nested);
+    await waitFor(() => expect(document.querySelector(".path")?.textContent).toBe("Notes/nested.md"));
+    readFileMock.mockRejectedValueOnce(new Error("raw filesystem error"));
+
+    fireEvent.contextMenu(nested);
+    fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
+    const dialog = await screen.findByRole("dialog", { name: "이름 변경 미리보기" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "전체 적용 (2)" }));
+
+    expect(await screen.findByText("이름은 변경했지만 현재 노트를 다시 읽지 못했습니다"))
+      .toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("raw filesystem error");
+    expect(document.querySelector(".path")?.textContent).toBe("Notes/renamed.md");
+    expect(document.querySelector(".cm-content")?.textContent).toBe("");
   });
 
   it("검증된 absolute path 복사·탐색기 표시·catalog 대상 열기를 실행한다", async () => {

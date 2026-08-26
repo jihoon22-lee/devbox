@@ -62,7 +62,9 @@ pub fn run() {
             commands::docs::write_file,
             commands::docs::create_file,
             commands::docs::create_directory,
-            commands::docs::rename_file,
+            commands::rename::preview_rename,
+            commands::rename::apply_rename,
+            commands::rename::discard_rename_preview,
             commands::docs::delete_file,
             commands::docs::entry_path,
             commands::docs::reveal_entry,
@@ -93,6 +95,7 @@ pub fn run() {
             }
             let state = Arc::new(AppState {
                 db: Mutex::new(conn),
+                rename_plans: Mutex::new(core::rename::RenamePlanStore::default()),
                 image_cache: Mutex::new(HashMap::new()),
             });
             // watcher 생성 후 루트에 연결 (앱 재시작 시 외부 편집 계속 반영)
