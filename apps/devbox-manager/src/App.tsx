@@ -15,6 +15,7 @@ import {
   installed,
   launchApp,
   openInstallFolder,
+  previewRemoveApp,
   previewInstallRoot,
   removeApp,
   rollback,
@@ -30,6 +31,9 @@ import type {
   InstallPathInfo,
   InstallRootPreview,
   InstallMode,
+  RemoveAppRequest,
+  RemovePreview,
+  RemoveResult,
   ReleaseManifest,
 } from "./types";
 import "./App.css";
@@ -63,6 +67,30 @@ function rootStatusDescription(preview: InstallRootPreview): string {
   }
 }
 
+const REMOVE_PREVIEW_ERROR = "제거 대상을 확인할 수 없습니다. 설치 상태를 확인한 뒤 다시 시도하세요.";
+const REMOVE_STALE_ERROR = "설치 상태가 바뀌었습니다. 최신 제거 미리 보기를 다시 확인하세요.";
+
+function removalStateDescription(preview: RemovePreview): string {
+  if (preview.mode === "installer") {
+    return "설치 패키지는 마법사가 관리하는 실제 설치 위치와 제거 프로그램을 Manager가 소유하지 않습니다.";
+  }
+  switch (preview.state) {
+    case "ready":
+      return "Manager가 소유한 portable 실행 파일과 보존 버전만 제거합니다.";
+    case "partial":
+      return "이전 제거가 중단된 상태입니다. 남아 있는 Manager 소유 파일만 다시 정리합니다.";
+    case "missing":
+      return "실행 파일은 이미 없고 설치 기록만 남아 있습니다. 기록을 정리할 수 있습니다.";
+  }
+  return "Manager가 소유한 portable 파일만 제거합니다.";
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.floor(bytes / 1024)} KiB`;
+  return `${Math.floor(bytes / 1024 / 1024)} MiB`;
+}
+
 export default function App() {
   const [apps, setApps] = useState<CatalogApp[]>([]);
   const [manifest, setManifest] = useState<ReleaseManifest | null>(null);
@@ -83,6 +111,9 @@ export default function App() {
   const [installRootBusy, setInstallRootBusy] = useState(false);
   const [installRootError, setInstallRootError] = useState<string | null>(null);
   const [installRootComposing, setInstallRootComposing] = useState(false);
+  const [removePreview, setRemovePreview] = useState<RemovePreview | null>(null);
+  const [removePreviewError, setRemovePreviewError] = useState<string | null>(null);
+  const [removeResult, setRemoveResult] = useState<RemoveResult | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
   const [readBusy, setReadBusy] = useState(false);
   const batchBusyRef = useRef(false);
@@ -92,6 +123,7 @@ export default function App() {
   const rootRequestIdRef = useRef(0);
   const mountedRef = useRef(true);
   const refreshRequestIdRef = useRef(0);
+  const removeRequestIdRef = useRef(0);
 
   const prepareAppContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.appId;
@@ -171,6 +203,7 @@ export default function App() {
       mountedRef.current = false;
       refreshRequestIdRef.current += 1;
       rootRequestIdRef.current += 1;
+      removeRequestIdRef.current += 1;
     };
   }, [refresh]);
 
@@ -443,23 +476,74 @@ export default function App() {
     }
   };
 
-  const onRemove = async (app: CatalogApp) => {
+  const onPreviewRemove = async (app: CatalogApp) => {
     if (operationBusyRef.current || readBusyRef.current) return;
-    if (!window.confirm(
-      `'${app.displayName}' 휴대용 앱을 제거할까요? Manager가 관리하는 실행 파일과 보존 버전만 삭제하며 앱 사용자 데이터는 유지됩니다.`,
-    )) return;
+    const requestId = ++removeRequestIdRef.current;
     operationBusyRef.current = true;
-    setBusy(`${app.id}:remove`);
+    setBusy(`${app.id}:remove-preview`);
+    setRemovePreview(null);
+    setRemoveResult(null);
+    setRemovePreviewError(null);
     setError(null);
     setNotice(null);
     try {
-      setNotice(await removeApp(app.id));
-      await refresh(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const preview = await previewRemoveApp(app.id);
+      if (mountedRef.current && requestId === removeRequestIdRef.current) {
+        setRemovePreview(preview);
+        setSelectedAppId(app.id);
+      }
+    } catch {
+      if (mountedRef.current && requestId === removeRequestIdRef.current) {
+        setRemovePreviewError(REMOVE_PREVIEW_ERROR);
+      }
     } finally {
-      operationBusyRef.current = false;
-      setBusy(null);
+      if (requestId === removeRequestIdRef.current) {
+        operationBusyRef.current = false;
+        if (mountedRef.current) setBusy(null);
+      }
+    }
+  };
+
+  const onRemove = async (app: CatalogApp) => {
+    const preview = removePreview;
+    if (!preview || preview.appId !== app.id || !preview.canRemove) return;
+    if (operationBusyRef.current || readBusyRef.current) return;
+    if (!window.confirm(
+      `'${app.displayName}'의 Manager 소유 portable 파일을 제거할까요? 앱 사용자 데이터는 유지됩니다.`,
+    )) return;
+    const requestId = ++removeRequestIdRef.current;
+    operationBusyRef.current = true;
+    setBusy(`${app.id}:remove`);
+    setRemovePreviewError(null);
+    setError(null);
+    setNotice(null);
+    try {
+      const request: RemoveAppRequest = {
+        appId: preview.appId,
+        expectedRegistryRevision: preview.registryRevision,
+        expectedCatalogRevision: preview.catalogRevision,
+        expectedRootId: preview.rootId,
+        expectedManifestDigest: preview.manifestDigest,
+      };
+      const result = await removeApp(request);
+      if (mountedRef.current && requestId === removeRequestIdRef.current) {
+        setRemovePreview(null);
+        setRemoveResult(result);
+        if (result.status === "partial") setRemovePreviewError(result.message);
+        else setNotice(result.message);
+      }
+      await refresh(true);
+    } catch {
+      if (mountedRef.current && requestId === removeRequestIdRef.current) {
+        setRemovePreview(null);
+        setRemoveResult(null);
+        setRemovePreviewError(REMOVE_STALE_ERROR);
+      }
+    } finally {
+      if (requestId === removeRequestIdRef.current) {
+        operationBusyRef.current = false;
+        if (mountedRef.current) setBusy(null);
+      }
     }
   };
 
@@ -531,7 +615,7 @@ export default function App() {
     else if (id === "rollback") void onRollback(app.id);
     else if (id === "open-folder") void onOpenInstallFolder(app.id);
     else if (id === "install-path") void onShowInstallPath(app.id);
-    else if (id === "remove") void onRemove(app);
+    else if (id === "remove") void onPreviewRemove(app);
   };
 
   return (
@@ -540,14 +624,14 @@ export default function App() {
         <h1 className="title">Devbox Manager</h1>
         <button
           className={`btn ${tab === "apps" ? "active" : ""}`}
-          disabled={batchBusy || installRootBusy || readBusy}
+          disabled={batchBusy || busy !== null || installRootBusy || readBusy}
           onClick={() => setTab("apps")}
         >
           앱
         </button>
         <button
           className={`btn ${tab === "doctor" ? "active" : ""}`}
-          disabled={batchBusy || installRootBusy || readBusy}
+          disabled={batchBusy || busy !== null || installRootBusy || readBusy}
           onClick={() => { setTab("doctor"); void onDiagnose(); }}
         >
           환경 진단
@@ -556,7 +640,7 @@ export default function App() {
         <span className="spacer" />
         <button
           className="btn refresh"
-          disabled={batchBusy || installRootBusy || readBusy}
+          disabled={batchBusy || busy !== null || installRootBusy || readBusy}
           onClick={() => void refresh()}
         >
           Refresh
@@ -707,6 +791,73 @@ export default function App() {
                 <> 설치 패키지는 마법사 실행 뒤의 실제 위치를 Manager가 소유하지 않아 추측하지 않습니다.</>
               )}
             </div>
+          </section>
+        )}
+        {(removePreview || removePreviewError || removeResult) && (
+          <section
+            className="remove-preview-panel"
+            aria-label="제거 대상 미리 보기"
+            aria-busy={busy?.endsWith(":remove-preview") || busy?.endsWith(":remove") || undefined}
+          >
+            <div className="remove-preview-head">
+              <div>
+                <h2>제거 대상 미리 보기</h2>
+                {removePreview && (
+                  <strong>
+                    {apps.find((candidate) => candidate.id === removePreview.appId)?.displayName
+                      ?? removePreview.appId}
+                  </strong>
+                )}
+              </div>
+              {removePreview && <span className="read-only-tag">검증 후 확인</span>}
+            </div>
+            {removePreview && (
+              <>
+                <p className="dim">{removalStateDescription(removePreview)}</p>
+                {removePreview.targetPath && (
+                  <code className="remove-preview-target">{removePreview.targetPath}</code>
+                )}
+                <dl className="remove-preview-facts">
+                  <div><dt>방식</dt><dd>{removePreview.mode === "portable" ? "휴대용" : "설치 패키지"}</dd></div>
+                  <div><dt>버전</dt><dd>{removePreview.version}</dd></div>
+                  <div><dt>Manager 소유 항목</dt><dd>{removePreview.ownedEntryCount}개 · {formatBytes(removePreview.ownedBytes)}</dd></div>
+                  <div><dt>앱 사용자 데이터</dt><dd>{removePreview.preservesUserData ? "보존" : "삭제"}</dd></div>
+                </dl>
+                {removePreview.canRemove && (
+                  <div className="remove-preview-actions">
+                    <button
+                      className="btn danger"
+                      type="button"
+                      disabled={batchBusy || busy !== null || installRootBusy || readBusy}
+                      onClick={() => {
+                        const target = apps.find((candidate) => candidate.id === removePreview.appId);
+                        if (target) void onRemove(target);
+                      }}
+                    >
+                      {busy?.endsWith(":remove") ? "제거 중..." : "확인 후 제거"}
+                    </button>
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => setRemovePreview(null)}
+                    >
+                      취소
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+            {removePreviewError && (
+              <div className="error remove-preview-error" role="alert">{removePreviewError}</div>
+            )}
+            {removeResult && (
+              <div className={`remove-result ${removeResult.status === "partial" ? "bad" : "ok"}`} role="status" aria-live="polite">
+                <strong>{removeResult.status === "partial" ? "부분 제거" : "제거 완료"}</strong>
+                <span>{removeResult.message}</span>
+                <span>제거 {removeResult.removedEntryCount}개 · 남음 {removeResult.remainingEntryCount}개 · 사용자 데이터 보존</span>
+              </div>
+            )}
           </section>
         )}
         <section className="batch-panel" aria-label="일괄 설치 및 업데이트">

@@ -85,6 +85,40 @@ export interface InstallRootApplyResult {
   candidatePath: string;
 }
 
+export type RemovePreviewState = "ready" | "partial" | "missing" | "unsupported-installer";
+
+export interface RemovePreview {
+  appId: string;
+  mode: InstallMode;
+  version: string;
+  state: RemovePreviewState;
+  canRemove: boolean;
+  registryRevision: number;
+  catalogRevision: number;
+  rootId: string;
+  manifestDigest: string;
+  targetPath: string | null;
+  ownedEntryCount: number;
+  ownedBytes: number;
+  preservesUserData: boolean;
+}
+
+export interface RemoveAppRequest {
+  appId: string;
+  expectedRegistryRevision: number;
+  expectedCatalogRevision: number;
+  expectedRootId: string;
+  expectedManifestDigest: string;
+}
+
+export interface RemoveResult {
+  status: "removed" | "partial";
+  message: string;
+  removedEntryCount: number;
+  remainingEntryCount: number;
+  preservesUserData: boolean;
+}
+
 export type InstallMode = "portable" | "installer";
 
 export interface BatchInstallRequest {

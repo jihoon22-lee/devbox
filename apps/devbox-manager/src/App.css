@@ -263,6 +263,89 @@ body {
   font-size: 11px;
 }
 
+.remove-preview-panel {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 93%, var(--red) 7%);
+}
+
+.remove-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.remove-preview-head h2 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.remove-preview-panel p {
+  margin: 0;
+  font-size: 11px;
+}
+
+.remove-preview-target {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.remove-preview-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 11px;
+}
+
+.remove-preview-facts div {
+  min-width: 0;
+}
+
+.remove-preview-facts dt {
+  color: var(--dim);
+}
+
+.remove-preview-facts dd {
+  margin: 2px 0 0;
+}
+
+.remove-preview-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn.danger {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.remove-preview-error {
+  border: 1px solid var(--red);
+  padding: 6px 8px;
+}
+
+.remove-result {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--green);
+  border-radius: 5px;
+  padding: 7px 9px;
+  font-size: 11px;
+}
+
+.remove-result.bad {
+  border-left-color: var(--red);
+}
+
+.remove-result span {
+  color: var(--dim);
+}
+
 .batch-panel {
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
@@ -442,6 +525,10 @@ td {
   }
 
   .install-root-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .remove-preview-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

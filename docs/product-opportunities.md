@@ -664,8 +664,8 @@ SemVer로 비교한다. available이 더 큰 경우만 실제 설치하고 동�
 
 frontend 결과는 catalog app ID, mode, 성공 여부와 고정 메시지만 보관한다. lower-level reqwest,
 process와 filesystem 오류의 URL·absolute path를 반사하지 않는다. 성공 항목은 선택에서 제거하고 실패
-항목만 원래 mode로 재시도한다. install path 표시, custom root, 제거와 Data Inspector는 각각 #275,
-P2/P3 범위로 유지한다.
+항목만 원래 mode로 재시도한다. install path 표시(#275), custom root(#308), 안전한 제거(#309)와
+Data Inspector는 각 기능 경계에서 유지한다.
 
 ### 6.9 v0.5.0 install path 표시 경계 (#275)
 
@@ -725,11 +725,31 @@ layout·runtime locator를 한 화면에서 연결하는 native 기능이다.
 
 - `#308`에는 기존 설치를 새 root로 이동하는 migration wizard, 기존 설치 병합, root reset,
   binary removal, user-data 삭제, catalog 수정, installer wizard의 실제 설치 위치 추적이 없다.
-- 기본 root의 기존 portable 제거는 기존 검증 경계를 유지한다. custom root 제거와 데이터 보존
-  정책을 별도 UI로 제공하는 `#309`가 이를 소유하며, #308 PR에서 우회하거나 선행 구현하지 않는다.
+- 기본/custom root의 portable 제거와 데이터 보존 정책은 별도 `#309`가 소유하며, #308의
+  empty-root pointer 전환과 섞지 않는다.
 - `crates/launch` consumer가 읽는 locator/manifest도 같은 path·schema·bytes/rows bound와
   canonical/symlink/reparse fail-closed 규칙을 적용한다. public DTO·UI 오류에는 입력 path,
   locator/manifest 원문, OS 오류, credential을 반사하지 않는다.
+
+#### #309 safe removal 구현
+
+`#309`는 위 #308의 active locator를 소비하는 Manager-owned portable binary 제거 기능이다.
+`preview_remove_app({ appId })`가 현재 catalog-visible/non-self-managed 대상, locator provenance,
+active manifest digest와 exact `<root>/apps/<app>/versions/<version>/<app>.exe` layout을
+read-only로 검증하고, app-owned `current.json`·versions tree의 bounded count/size를 표시한다.
+사용자 data는 preview와 결과에 항상 보존으로 표시된다.
+
+별도 확인 뒤 `remove_portable_app`은 preview token의 registry/catalog revision, root ID와
+manifest digest를 CAS로 재검증한다. manifest에서 record를 먼저 atomic claim하고, link/reparse,
+special/foreign entry, traversal 또는 arbitrary path가 없는 exact regular file/directory 목록만
+깊은 순서로 제거한다. `remove_dir_all`과 강제 삭제는 사용하지 않는다. Installer record는
+wizard의 실제 위치·uninstaller를 Manager가 소유하지 않으므로 제거하지 않는다.
+
+삭제 중 권한·잠금·I/O 문제가 생기면 남은 항목 수와 `partial` 결과를 반환하고, 이번 호출의
+manifest digest가 그대로일 때만 원래 bytes를 복원한다. 이미 삭제된 exact final executable은
+복구 parser에서만 missing으로 허용해 interrupted removal을 다시 preview할 수 있으며, 경쟁
+writer의 manifest는 덮어쓰지 않는다. frontend는 stale preview를 폐기하고 최신 preview 재확인을
+요구하며, 앱 사용자 data 삭제·임의 경로 선택·root migration/reset은 계속 비범위다.
 
 #### PR·검증 경계
 

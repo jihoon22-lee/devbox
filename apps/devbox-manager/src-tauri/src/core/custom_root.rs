@@ -141,13 +141,25 @@ impl fmt::Display for CustomRootError {
 
 impl std::error::Error for CustomRootError {}
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct InstallRecord {
     pub app: String,
     pub version: String,
     pub mode: String,
     pub exe_path: String,
+}
+
+/// A validated app-owned manifest together with the exact bytes that were
+/// observed.  The digest is an opaque compare-and-swap token for lifecycle
+/// commands; the bytes stay inside the native layer so a failed destructive
+/// operation can restore the user's original manifest without reserializing
+/// or reflecting any path in an error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallManifestSnapshot {
+    pub records: Vec<InstallRecord>,
+    pub bytes: Vec<u8>,
+    pub digest: String,
 }
 
 /// Read a Manager-owned manifest with bounded bytes/rows and no path/error
@@ -184,6 +196,38 @@ pub fn parse_install_manifest(input: &[u8]) -> Result<Vec<InstallRecord>, Custom
 }
 
 pub fn read_install_manifest(path: &Path) -> Result<Vec<InstallRecord>, CustomRootError> {
+    Ok(read_install_manifest_snapshot(path)?.records)
+}
+
+/// Read and validate the exact app-owned manifest path while retaining its
+/// bytes for a compare-and-swap or conservative recovery.  The manifest is
+/// always `<root>/registry.json`; a valid JSON file at another sibling path is
+/// not trusted as Manager state.
+pub fn read_install_manifest_snapshot(
+    path: &Path,
+) -> Result<InstallManifestSnapshot, CustomRootError> {
+    read_install_manifest_snapshot_with_missing_executable(path, false)
+}
+
+/// Read the same app-owned manifest contract for a removal recovery attempt.
+///
+/// Normal lifecycle reads require every portable executable to exist.  A
+/// removal can be interrupted after deleting the executable but before the
+/// manifest is restored, so recovery must still be able to prove ownership of
+/// the exact derived path and remove only the stale record.  This variant
+/// allows a *missing final executable only*; it keeps strict schema, catalog
+/// membership (at the command layer), absolute exact-layout identity, and all
+/// existing-component link/reparse checks unchanged.
+pub fn read_install_manifest_snapshot_for_removal(
+    path: &Path,
+) -> Result<InstallManifestSnapshot, CustomRootError> {
+    read_install_manifest_snapshot_with_missing_executable(path, true)
+}
+
+fn read_install_manifest_snapshot_with_missing_executable(
+    path: &Path,
+    allow_missing_executable: bool,
+) -> Result<InstallManifestSnapshot, CustomRootError> {
     let metadata = fs::symlink_metadata(path).map_err(|_| CustomRootError::ActiveStateInvalid)?;
     if path_is_link_or_reparse(&metadata) || !metadata.is_file() {
         return Err(CustomRootError::ActiveStateInvalid);
@@ -198,8 +242,27 @@ pub fn read_install_manifest(path: &Path) -> Result<Vec<InstallRecord>, CustomRo
         .map_err(|_| CustomRootError::ActiveStateInvalid)?;
     let records = parse_install_manifest(&bytes)?;
     let root = path.parent().ok_or(CustomRootError::ActiveStateInvalid)?;
-    validate_install_manifest_at_root(root, &records)?;
-    Ok(records)
+    let expected = root.join("registry.json");
+    let canonical_path =
+        canonicalize_path(path).map_err(|_| CustomRootError::ActiveStateInvalid)?;
+    let canonical_expected =
+        canonicalize_path(&expected).map_err(|_| CustomRootError::ActiveStateInvalid)?;
+    if !same_path_identity(path, &expected)
+        || !same_path_identity(&canonical_path, &canonical_expected)
+    {
+        return Err(CustomRootError::ActiveStateInvalid);
+    }
+    validate_install_manifest_at_root_with_missing_executable(
+        root,
+        &records,
+        allow_missing_executable,
+    )?;
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    Ok(InstallManifestSnapshot {
+        records,
+        bytes,
+        digest,
+    })
 }
 
 /// Validate that portable records point at the exact Manager-owned layout for
@@ -209,6 +272,25 @@ pub fn read_install_manifest(path: &Path) -> Result<Vec<InstallRecord>, CustomRo
 pub fn validate_install_manifest_at_root(
     root: &Path,
     records: &[InstallRecord],
+) -> Result<(), CustomRootError> {
+    validate_install_manifest_at_root_with_missing_executable(root, records, false)
+}
+
+/// Validate a manifest being restored after an interrupted removal.  The
+/// normal writer requires every portable executable to exist; recovery may
+/// have already removed that exact final executable, so this variant permits
+/// only a missing exact layout slot while retaining all path/link checks.
+pub fn validate_install_manifest_at_root_for_removal(
+    root: &Path,
+    records: &[InstallRecord],
+) -> Result<(), CustomRootError> {
+    validate_install_manifest_at_root_with_missing_executable(root, records, true)
+}
+
+fn validate_install_manifest_at_root_with_missing_executable(
+    root: &Path,
+    records: &[InstallRecord],
+    allow_missing_executable: bool,
 ) -> Result<(), CustomRootError> {
     if root
         .to_str()
@@ -229,15 +311,43 @@ pub fn validate_install_manifest_at_root(
             continue;
         }
         let raw_executable = Path::new(&record.exe_path);
-        ensure_plain_components(raw_executable).map_err(|_| CustomRootError::ManifestInvalid)?;
-        let executable =
-            canonicalize_path(raw_executable).map_err(|_| CustomRootError::ManifestInvalid)?;
-        let expected = canonical_root
-            .join("apps")
-            .join(&record.app)
-            .join("versions")
-            .join(&record.version)
-            .join(format!("{}.exe", record.app));
+        if !valid_absolute_literal(&record.exe_path) {
+            return Err(CustomRootError::ManifestInvalid);
+        }
+        if allow_missing_executable {
+            ensure_plain_components_allow_missing_final(raw_executable)
+                .map_err(|_| CustomRootError::ManifestInvalid)?;
+        } else {
+            ensure_plain_components(raw_executable)
+                .map_err(|_| CustomRootError::ManifestInvalid)?;
+        }
+        let expected = expected_path(root, record);
+        let executable = match canonicalize_path(raw_executable) {
+            Ok(executable) => executable,
+            Err(error)
+                if allow_missing_executable && error.kind() == std::io::ErrorKind::NotFound =>
+            {
+                match fs::symlink_metadata(raw_executable) {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        let executable = canonicalize_allow_missing(raw_executable)
+                            .map_err(|_| CustomRootError::ManifestInvalid)?;
+                        let expected = canonicalize_allow_missing(&expected)
+                            .map_err(|_| CustomRootError::ManifestInvalid)?;
+                        if !same_path_identity(&executable, &expected)
+                            || !path_within(&canonical_root, &executable)
+                        {
+                            return Err(CustomRootError::ManifestInvalid);
+                        }
+                        continue;
+                    }
+                    Ok(metadata) if path_is_link_or_reparse(&metadata) || metadata.is_file() => {
+                        return Err(CustomRootError::ManifestInvalid)
+                    }
+                    _ => return Err(CustomRootError::ManifestInvalid),
+                }
+            }
+            Err(_) => return Err(CustomRootError::ManifestInvalid),
+        };
         let expected =
             canonicalize_path(&expected).map_err(|_| CustomRootError::ManifestInvalid)?;
         if !same_path_identity(&executable, &expected)
@@ -248,6 +358,37 @@ pub fn validate_install_manifest_at_root(
         }
     }
     Ok(())
+}
+
+fn expected_path(root: &Path, record: &InstallRecord) -> PathBuf {
+    root.join("apps")
+        .join(&record.app)
+        .join("versions")
+        .join(&record.version)
+        .join(format!("{}.exe", record.app))
+}
+
+fn canonicalize_allow_missing(path: &Path) -> Result<PathBuf, CustomRootError> {
+    let mut ancestor = path;
+    loop {
+        match fs::symlink_metadata(ancestor) {
+            Ok(metadata) => {
+                if path_is_link_or_reparse(&metadata) {
+                    return Err(CustomRootError::UnsafePath);
+                }
+                let suffix = path
+                    .strip_prefix(ancestor)
+                    .map_err(|_| CustomRootError::InvalidPath)?;
+                let canonical =
+                    canonicalize_path(ancestor).map_err(|_| CustomRootError::InvalidPath)?;
+                return Ok(canonical.join(suffix));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                ancestor = ancestor.parent().ok_or(CustomRootError::InvalidPath)?;
+            }
+            Err(_) => return Err(CustomRootError::UnsafePath),
+        }
+    }
 }
 
 /// Resolve the current root. A missing locator is the only legacy fallback;
@@ -974,6 +1115,35 @@ fn ensure_plain_components(path: &Path) -> Result<(), CustomRootError> {
     Ok(())
 }
 
+/// Validate every component that exists in a path while allowing the final
+/// executable (and any still-missing tail after an interrupted removal) to be
+/// absent. The caller must separately compare the lexical path with the
+/// exact derived layout, so this helper never grants arbitrary path access.
+fn ensure_plain_components_allow_missing_final(path: &Path) -> Result<(), CustomRootError> {
+    let mut current = PathBuf::new();
+    let mut missing = false;
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => current.push(prefix.as_os_str()),
+            Component::RootDir => current.push(Path::new(std::path::MAIN_SEPARATOR_STR)),
+            Component::Normal(value) => current.push(value),
+            Component::CurDir | Component::ParentDir => return Err(CustomRootError::InvalidPath),
+        }
+        if !current.is_absolute() || missing {
+            continue;
+        }
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if path_is_link_or_reparse(&metadata) => {
+                return Err(CustomRootError::UnsafePath)
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => missing = true,
+            Err(_) => return Err(CustomRootError::UnsafePath),
+        }
+    }
+    Ok(())
+}
+
 /// Check only components that already exist. This is used for optional
 /// versioned metadata paths where the final locator may be absent on a legacy
 /// installation; a present link/reparse component must never be followed.
@@ -1515,6 +1685,44 @@ mod tests {
         );
         assert_eq!(
             parse_install_manifest(br#"[{"app":"code-pad","version":"0.3.2","mode":"portable","exe_path":"relative.exe"}]"#),
+            Err(CustomRootError::ManifestInvalid)
+        );
+    }
+
+    #[test]
+    fn removal_snapshot_accepts_only_a_missing_exact_executable() {
+        let fixture = Fixture::new();
+        let root = canonicalize_path(&fixture.default_root).unwrap();
+        let executable = root.join("apps/code-pad/versions/0.3.2/code-pad.exe");
+        let manifest = serde_json::to_vec(&json!([{
+            "app": "code-pad",
+            "version": "0.3.2",
+            "mode": "portable",
+            "exe_path": executable,
+        }]))
+        .unwrap();
+        let manifest_path = root.join("registry.json");
+        fs::write(&manifest_path, &manifest).unwrap();
+
+        assert_eq!(
+            read_install_manifest_snapshot(&manifest_path),
+            Err(CustomRootError::ManifestInvalid)
+        );
+        let snapshot = read_install_manifest_snapshot_for_removal(&manifest_path).unwrap();
+        assert_eq!(snapshot.records.len(), 1);
+        assert_eq!(snapshot.bytes, manifest);
+
+        let wrong = root.join("apps/code-pad/versions/0.3.2/other.exe");
+        let wrong_manifest = serde_json::to_vec(&json!([{
+            "app": "code-pad",
+            "version": "0.3.2",
+            "mode": "portable",
+            "exe_path": wrong,
+        }]))
+        .unwrap();
+        fs::write(&manifest_path, wrong_manifest).unwrap();
+        assert_eq!(
+            read_install_manifest_snapshot_for_removal(&manifest_path),
             Err(CustomRootError::ManifestInvalid)
         );
     }
