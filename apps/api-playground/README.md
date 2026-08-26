@@ -10,7 +10,9 @@
   Cookies tab은 domain/path/만료일을 관리하는 cookie jar가 아니라 현재 요청의 `Cookie` header를
   name/value 행으로 편집한다. Multipart body는 text/file part, part별 Content-Type, enabled,
   복제·삭제와 데스크톱 file picker를 지원한다.
-- **응답 보기** — 상태코드·시간·크기, JSON Pretty/폴드, Raw
+- **응답 보기** — 상태코드·시간·크기와 Body/Headers/Cookies 전용 탭. JSON pretty와 본문 복사,
+  표 형태의 마스킹 header, 값이 가려진 `Set-Cookie` 이름·안전 attribute를 제공한다. 데스크톱에서는
+  별도 경고 확인 뒤 현재 응답의 원문 headers 또는 `Set-Cookie`만 일회성으로 복사할 수 있다.
 - **Auth 프리셋** — Basic / Bearer / API Key
 - **History / Collection** — 최근 요청과 저장 요청을 v2 형식으로 보존·재호출. 항목 우클릭 또는
   `Shift+F10`/Menu 키로 복제·이름 변경·확인 후 삭제·마스킹 cURL 복사를 실행한다.
@@ -58,6 +60,12 @@
   Authorization/Cookie/API-key 헤더와 auth를 다음 요청에 전달하지 않고 요청 body도 억제한다.
   메서드를 보존하는 307/308 redirect에도 동일하게 적용하고, 목적지 URL 자체에 민감정보가
   포함된 cross-origin redirect는 follow 전에 차단해 fail-closed로 처리한다.
+- **Response header/Cookie boundary** — 일반 응답 DTO에는 마스킹된 header와 Cookie 이름,
+  `[REDACTED]` 값, 제한된 안전 attribute만 포함한다. 원문 header는 Serialize/Debug를 구현하지 않은
+  backend 보관소에 가장 최근 요청 1건만 두며 새 요청 시작 즉시 이전 값을 폐기한다. 동시 요청의
+  오래된 opaque response ID는 원문을 되살릴 수 없다. header는 최대 100개·원문 합계 64 KiB로
+  제한하며 상한 초과나 비텍스트 값이 있으면 원문 전체 복사를 비활성화한다. 원문은 확인 뒤
+  clipboard write에만 사용하고 localStorage, History, Collection, 로그에 기록하지 않는다.
 - **cURL** — 화면과 기본 복사는 masking된 결과만 사용한다. 확인 대화상자 뒤의 원문 복사는
   데스크톱 backend가 일회성으로 생성하며 저장하지 않는다. Multipart 기본 cURL은 파일 경로 대신
   basename 기반 재선택 placeholder를 사용하고, 확인한 원문 cURL만 현재 runtime 경로를 포함한다.
@@ -69,6 +77,8 @@
   redaction한다. 브라우저가 `Cookie`를 forbidden request header로 제한할 수 있으므로 Cookie의
   실제 wire 동작과 cross-origin 제거 계약은 packaged native 경로를 기준으로 한다. text-only
   multipart는 `FormData`로 미리 볼 수 있지만 file part와 part별 Content-Type은 데스크톱 전용이다.
+  Fetch는 `Set-Cookie` response header를 노출하지 않으므로 browser preview의 Cookies tab과 원문
+  복사는 사용할 수 없고, 이 기능의 acceptance는 packaged native 경로를 기준으로 한다.
 
 ## 기술
 

@@ -2,6 +2,7 @@ use crate::platform::platform_sealer;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
+use std::sync::Mutex;
 use std::time::Instant;
 use zeroize::Zeroizing;
 
@@ -13,6 +14,8 @@ const MAX_MULTIPART_PARTS: usize = 50;
 const MAX_MULTIPART_TEXT_BYTES: usize = 1_000_000;
 const MAX_MULTIPART_FILE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_MULTIPART_TOTAL_FILE_BYTES: u64 = 50 * 1024 * 1024;
+const MAX_RESPONSE_HEADERS: usize = 100;
+const MAX_RESPONSE_HEADER_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KeyValue {
@@ -154,6 +157,13 @@ pub struct RedirectHop {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ResponseCookie {
+    pub name: String,
+    pub value: String,
+    pub attributes: Vec<KeyValue>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ApiResponse {
     pub status: u16,
     pub status_text: String,
@@ -164,6 +174,97 @@ pub struct ApiResponse {
     pub is_json: bool,
     pub final_url: String,
     pub redirects: Vec<RedirectHop>,
+    pub cookies: Vec<ResponseCookie>,
+    pub response_id: Option<String>,
+    pub raw_headers_available: bool,
+    pub headers_truncated: bool,
+}
+
+type RawResponseHeader = (Zeroizing<String>, Zeroizing<String>);
+
+struct ResponseHeaderEntry {
+    id: String,
+    // Serialize/Debug를 구현하지 않는다. 명시적인 일회성 복사 외 경계로 내보내지 않는다.
+    raw_headers: Vec<RawResponseHeader>,
+}
+
+struct ResponseHeaderVaultInner {
+    next_id: u64,
+    current_request_id: Option<String>,
+    entry: Option<ResponseHeaderEntry>,
+}
+
+/// 가장 최근 요청 1건의 bounded raw response headers만 process memory에 보관한다.
+pub struct ResponseHeaderVault {
+    inner: Mutex<ResponseHeaderVaultInner>,
+}
+
+impl Default for ResponseHeaderVault {
+    fn default() -> Self {
+        Self {
+            inner: Mutex::new(ResponseHeaderVaultInner {
+                next_id: 1,
+                current_request_id: None,
+                entry: None,
+            }),
+        }
+    }
+}
+
+impl ResponseHeaderVault {
+    fn begin_request(&self) -> Result<String, String> {
+        let mut inner = self.inner.lock().map_err(|_| response_copy_error())?;
+        // 새 요청이 시작된 시점부터 이전 응답 원문은 어떤 오류 경로에서도 다시 읽히지 않는다.
+        inner.current_request_id = None;
+        inner.entry = None;
+        let id = format!("response-{}", inner.next_id);
+        inner.next_id = inner
+            .next_id
+            .checked_add(1)
+            .ok_or_else(response_copy_error)?;
+        inner.current_request_id = Some(id.clone());
+        Ok(id)
+    }
+
+    fn store_if_current(
+        &self,
+        id: &str,
+        raw_headers: Vec<RawResponseHeader>,
+    ) -> Result<bool, String> {
+        let mut inner = self.inner.lock().map_err(|_| response_copy_error())?;
+        if inner.current_request_id.as_deref() != Some(id) {
+            return Ok(false);
+        }
+        inner.entry = Some(ResponseHeaderEntry {
+            id: id.to_string(),
+            raw_headers,
+        });
+        Ok(true)
+    }
+
+    fn copy(&self, id: &str, cookies_only: bool) -> Result<String, String> {
+        let inner = self.inner.lock().map_err(|_| response_copy_error())?;
+        let entry = inner
+            .entry
+            .as_ref()
+            .filter(|entry| entry.id == id)
+            .ok_or_else(response_copy_error)?;
+        let lines = entry
+            .raw_headers
+            .iter()
+            .filter(|(name, _)| !cookies_only || name.as_str().eq_ignore_ascii_case("set-cookie"))
+            .map(|(name, value)| format!("{}: {}", name.as_str(), value.as_str()))
+            .collect::<Vec<_>>();
+        if cookies_only && lines.is_empty() {
+            return Err(response_copy_error());
+        }
+        Ok(lines.join("\n"))
+    }
+}
+
+struct ExecutedResponse {
+    response: ApiResponse,
+    raw_headers: Vec<RawResponseHeader>,
 }
 
 /// HTTP 요청을 backend-only resolve 뒤 수행한다. resolved 값은 응답에 포함하지 않는다.
@@ -171,7 +272,17 @@ pub struct ApiResponse {
 pub async fn send_request(
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
+    response_headers: tauri::State<'_, ResponseHeaderVault>,
 ) -> Result<ApiResponse, String> {
+    send_request_with_vault(req, environment, response_headers.inner()).await
+}
+
+async fn send_request_with_vault(
+    req: RequestTemplate,
+    environment: Vec<EnvironmentVariable>,
+    response_headers: &ResponseHeaderVault,
+) -> Result<ApiResponse, String> {
+    let response_id = response_headers.begin_request()?;
     validate_cookie_rows(&req.headers, &req.cookies)?;
     validate_multipart_rows(&req)?;
     let sealer = platform_sealer();
@@ -181,7 +292,32 @@ pub async fn send_request(
     validate_multipart_configuration(&resolved)?;
     prepare_multipart_files(&mut resolved)?;
     let redactor = Redactor::for_request(&resolved, environment_secrets);
-    execute_request(resolved, &redactor).await
+    let mut executed = execute_request(resolved, &redactor).await?;
+    if !executed.response.headers_truncated
+        && response_headers.store_if_current(&response_id, executed.raw_headers)?
+    {
+        executed.response.response_id = Some(response_id);
+        executed.response.raw_headers_available = true;
+    }
+    Ok(executed.response)
+}
+
+/// 확인된 현재 응답의 모든 원문 header를 한 번 복사할 때만 호출한다.
+#[tauri::command]
+pub fn copy_raw_response_headers(
+    response_headers: tauri::State<'_, ResponseHeaderVault>,
+    response_id: String,
+) -> Result<String, String> {
+    response_headers.copy(&response_id, false)
+}
+
+/// 확인된 현재 응답의 Set-Cookie 원문만 한 번 복사할 때 호출한다.
+#[tauri::command]
+pub fn copy_raw_response_cookies(
+    response_headers: tauri::State<'_, ResponseHeaderVault>,
+    response_id: String,
+) -> Result<String, String> {
+    response_headers.copy(&response_id, true)
 }
 
 /// 사용자가 확인한 일회성 원문 복사에만 사용한다. 호출자는 결과를 저장해서는 안 된다.
@@ -212,7 +348,10 @@ pub fn sanitize_persisted_json(
         .map_err(|_| "민감정보 안전 저장 검증에 실패했습니다".to_string())
 }
 
-async fn execute_request(req: ResolvedRequest, redactor: &Redactor) -> Result<ApiResponse, String> {
+async fn execute_request(
+    req: ResolvedRequest,
+    redactor: &Redactor,
+) -> Result<ExecutedResponse, String> {
     validate_cookie_configuration(&req)?;
     validate_multipart_configuration(&req)?;
     if req.body_kind == "json" && !req.body.trim().is_empty() {
@@ -313,32 +452,32 @@ async fn execute_request(req: ResolvedRequest, redactor: &Redactor) -> Result<Ap
             }
         }
 
-        let headers = response
-            .headers()
-            .iter()
-            .map(|(name, value)| KeyValue {
-                key: name.to_string(),
-                value: redact_header_value(name.as_str(), value.to_str().unwrap_or(""), redactor),
-            })
-            .collect::<Vec<_>>();
+        let captured_headers = capture_response_headers(response.headers(), redactor);
         let body = response
             .text()
             .await
             .map_err(|_| "응답 본문을 안전하게 읽지 못했습니다".to_string())?;
         let body = redactor.redact_body(&body);
-        let is_json = headers.iter().any(|header| {
+        let is_json = captured_headers.masked.iter().any(|header| {
             header.key.eq_ignore_ascii_case("content-type") && header.value.contains("json")
         });
-        return Ok(ApiResponse {
-            status: status.as_u16(),
-            status_text: status.canonical_reason().unwrap_or("").to_string(),
-            headers,
-            duration_ms: started.elapsed().as_millis() as u64,
-            size_bytes: body.len(),
-            body,
-            is_json,
-            final_url: redactor.redact_url(current_url.as_str()),
-            redirects,
+        return Ok(ExecutedResponse {
+            response: ApiResponse {
+                status: status.as_u16(),
+                status_text: status.canonical_reason().unwrap_or("").to_string(),
+                headers: captured_headers.masked,
+                duration_ms: started.elapsed().as_millis() as u64,
+                size_bytes: body.len(),
+                body,
+                is_json,
+                final_url: redactor.redact_url(current_url.as_str()),
+                redirects,
+                cookies: captured_headers.cookies,
+                response_id: None,
+                raw_headers_available: false,
+                headers_truncated: captured_headers.truncated,
+            },
+            raw_headers: captured_headers.raw,
         });
     }
 
@@ -1003,6 +1142,142 @@ fn redact_header_value(name: &str, value: &str, redactor: &Redactor) -> String {
     }
 }
 
+struct CapturedResponseHeaders {
+    masked: Vec<KeyValue>,
+    raw: Vec<RawResponseHeader>,
+    cookies: Vec<ResponseCookie>,
+    truncated: bool,
+}
+
+fn capture_response_headers(
+    headers: &reqwest::header::HeaderMap,
+    redactor: &Redactor,
+) -> CapturedResponseHeaders {
+    let mut captured = CapturedResponseHeaders {
+        masked: Vec::new(),
+        raw: Vec::new(),
+        cookies: Vec::new(),
+        truncated: false,
+    };
+    let mut remaining = MAX_RESPONSE_HEADER_BYTES;
+
+    for (index, (name, value)) in headers.iter().enumerate() {
+        if index >= MAX_RESPONSE_HEADERS {
+            captured.truncated = true;
+            break;
+        }
+        let raw_name = name.as_str();
+        let display_name = redactor.redact_text(raw_name);
+        let Ok(value) = value.to_str() else {
+            captured.truncated = true;
+            let unavailable = if is_sensitive_name(raw_name) {
+                REDACTED
+            } else {
+                "[NON-TEXT HEADER]"
+            };
+            if raw_name.len() + unavailable.len() + 2 <= remaining {
+                remaining -= raw_name.len() + unavailable.len() + 2;
+                captured.masked.push(KeyValue {
+                    key: display_name,
+                    value: unavailable.to_string(),
+                });
+            }
+            continue;
+        };
+
+        if raw_name.eq_ignore_ascii_case("set-cookie") {
+            captured.cookies.push(response_cookie(value, redactor));
+        }
+
+        let line_bytes = raw_name.len() + value.len() + 2;
+        if line_bytes > remaining {
+            captured.truncated = true;
+            let unavailable = if is_sensitive_name(raw_name) {
+                REDACTED
+            } else {
+                "[TRUNCATED]"
+            };
+            if raw_name.len() + unavailable.len() + 2 <= remaining {
+                captured.masked.push(KeyValue {
+                    key: display_name,
+                    value: unavailable.to_string(),
+                });
+            }
+            break;
+        }
+
+        remaining -= line_bytes;
+        captured.masked.push(KeyValue {
+            key: display_name,
+            value: redact_header_value(raw_name, value, redactor),
+        });
+        captured.raw.push((
+            Zeroizing::new(raw_name.to_string()),
+            Zeroizing::new(value.to_string()),
+        ));
+    }
+    captured
+}
+
+fn response_cookie(value: &str, redactor: &Redactor) -> ResponseCookie {
+    let mut segments = value.split(';');
+    let name = segments
+        .next()
+        .and_then(|pair| pair.split_once('='))
+        .map(|(name, _)| name.trim())
+        .unwrap_or("");
+    let name = if is_http_token(name) && name.len() <= 120 {
+        redactor.redact_text(name)
+    } else {
+        "(unparsed)".to_string()
+    };
+    let attributes = segments
+        .take(20)
+        .filter_map(|segment| {
+            let segment = segment.trim();
+            if segment.is_empty() {
+                return None;
+            }
+            let (attribute, value) = segment
+                .split_once('=')
+                .map(|(attribute, value)| (attribute.trim(), Some(value.trim())))
+                .unwrap_or((segment, None));
+            if !is_http_token(attribute) || attribute.len() > 64 {
+                return None;
+            }
+            let value = value.map_or_else(String::new, |value| {
+                if matches!(
+                    attribute.to_ascii_lowercase().as_str(),
+                    "domain" | "path" | "expires" | "max-age" | "samesite" | "priority"
+                ) {
+                    bounded_cookie_attribute(&redactor.redact_text(value))
+                } else {
+                    REDACTED.to_string()
+                }
+            });
+            Some(KeyValue {
+                key: redactor.redact_text(attribute),
+                value,
+            })
+        })
+        .collect();
+    ResponseCookie {
+        name,
+        value: REDACTED.to_string(),
+        attributes,
+    }
+}
+
+fn bounded_cookie_attribute(value: &str) -> String {
+    let mut chars = value.chars();
+    let bounded = chars.by_ref().take(256).collect::<String>();
+    if chars.next().is_some() {
+        format!("{bounded}…")
+    } else {
+        bounded
+    }
+}
+
 fn is_sensitive_name(name: &str) -> bool {
     let normalized = name.to_ascii_lowercase().replace('_', "-");
     let compact = normalized.replace('-', "");
@@ -1280,6 +1555,10 @@ fn safe_request_error(error: reqwest::Error) -> String {
     }
 }
 
+fn response_copy_error() -> String {
+    "현재 응답의 원문 header를 안전하게 복사할 수 없습니다".to_string()
+}
+
 fn append_query(url: &str, params: &[KeyValue]) -> String {
     let pairs = params
         .iter()
@@ -1445,6 +1724,11 @@ mod tests {
             value: B64.encode(blob),
             secret: true,
         }
+    }
+
+    fn send_test(request: RequestTemplate) -> Result<ApiResponse, String> {
+        let response_headers = ResponseHeaderVault::default();
+        tauri::async_runtime::block_on(send_request_with_vault(request, vec![], &response_headers))
     }
 
     #[test]
@@ -1677,6 +1961,118 @@ mod tests {
             redactor.redact_body(r#"{"apiKey":"server-issued"}"#),
             r#"{"apiKey":"[REDACTED]"}"#
         );
+    }
+
+    #[test]
+    fn response_headers_and_cookie_rows_are_masked_while_raw_values_stay_in_vault() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.append(
+            reqwest::header::SET_COOKIE,
+            reqwest::header::HeaderValue::from_static("session=server-secret; HttpOnly"),
+        );
+        headers.append(
+            reqwest::header::SET_COOKIE,
+            reqwest::header::HeaderValue::from_static("theme=dark; Path=/; Custom=hidden"),
+        );
+        headers.insert(
+            "x-trace",
+            reqwest::header::HeaderValue::from_static("trace-ok"),
+        );
+        let captured = capture_response_headers(
+            &headers,
+            &Redactor {
+                secrets: vec![Zeroizing::new("server-secret".to_string())],
+            },
+        );
+
+        assert!(!captured.truncated);
+        assert_eq!(
+            captured
+                .masked
+                .iter()
+                .filter(|header| header.key.eq_ignore_ascii_case("set-cookie"))
+                .map(|header| header.value.as_str())
+                .collect::<Vec<_>>(),
+            vec![REDACTED, REDACTED]
+        );
+        assert_eq!(
+            captured
+                .cookies
+                .iter()
+                .map(|cookie| (cookie.name.as_str(), cookie.value.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("session", REDACTED), ("theme", REDACTED)]
+        );
+        assert_eq!(captured.cookies[0].attributes[0].key, "HttpOnly");
+        assert!(captured.cookies[0].attributes[0].value.is_empty());
+        assert_eq!(captured.cookies[1].attributes[0].key, "Path");
+        assert_eq!(captured.cookies[1].attributes[0].value, "/");
+        assert_eq!(captured.cookies[1].attributes[1].key, "Custom");
+        assert_eq!(captured.cookies[1].attributes[1].value, REDACTED);
+
+        let vault = ResponseHeaderVault::default();
+        let response_id = vault.begin_request().unwrap();
+        assert!(vault.store_if_current(&response_id, captured.raw).unwrap());
+        let raw_headers = vault.copy(&response_id, false).unwrap();
+        let raw_cookies = vault.copy(&response_id, true).unwrap();
+        assert!(raw_headers.contains("x-trace: trace-ok"));
+        assert!(raw_cookies.contains("set-cookie: session=server-secret; HttpOnly"));
+        assert!(raw_cookies.contains("set-cookie: theme=dark; Path=/; Custom=hidden"));
+    }
+
+    #[test]
+    fn response_header_vault_rejects_stale_ids_and_capture_disables_raw_on_overflow() {
+        let vault = ResponseHeaderVault::default();
+        let stale = vault.begin_request().unwrap();
+        let current = vault.begin_request().unwrap();
+        assert!(!vault
+            .store_if_current(
+                &stale,
+                vec![(
+                    Zeroizing::new("x-old".into()),
+                    Zeroizing::new("secret".into()),
+                )],
+            )
+            .unwrap());
+        assert!(vault.copy(&stale, false).is_err());
+        assert!(vault
+            .store_if_current(
+                &current,
+                vec![(
+                    Zeroizing::new("x-new".into()),
+                    Zeroizing::new("safe".into()),
+                )],
+            )
+            .unwrap());
+        assert_eq!(vault.copy(&current, false).unwrap(), "x-new: safe");
+
+        let mut oversized = reqwest::header::HeaderMap::new();
+        oversized.insert(
+            "x-large",
+            reqwest::header::HeaderValue::from_str(&"a".repeat(MAX_RESPONSE_HEADER_BYTES)).unwrap(),
+        );
+        let captured = capture_response_headers(
+            &oversized,
+            &Redactor {
+                secrets: Vec::new(),
+            },
+        );
+        assert!(captured.truncated);
+        assert_eq!(captured.masked[0].value, "[TRUNCATED]");
+
+        let retained = vault.begin_request().unwrap();
+        assert!(vault
+            .store_if_current(
+                &retained,
+                vec![(
+                    Zeroizing::new("x-retained".into()),
+                    Zeroizing::new("secret".into()),
+                )],
+            )
+            .unwrap());
+        vault.inner.lock().unwrap().next_id = u64::MAX;
+        assert!(vault.begin_request().is_err());
+        assert!(vault.copy(&retained, false).is_err());
     }
 
     #[test]
@@ -1969,7 +2365,7 @@ mod tests {
             ..Default::default()
         }];
 
-        let error = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap_err();
+        let error = send_test(request).unwrap_err();
         assert_eq!(error, "선택한 multipart 파일을 찾을 수 없습니다");
         assert!(!error.contains(&missing));
         assert!(!error.contains("devbox-missing"));
@@ -2069,7 +2465,7 @@ mod tests {
             },
         ];
 
-        let result = tauri::async_runtime::block_on(send_request(request, vec![]));
+        let result = send_test(request);
         let _ = std::fs::remove_file(&file_path);
         assert_eq!(result.unwrap().status, 200);
         let observed = server.join().unwrap();
@@ -2123,7 +2519,7 @@ mod tests {
             },
         ];
 
-        let response = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap();
+        let response = send_test(request).unwrap();
         assert_eq!(response.status, 200);
         let observed = server.join().unwrap();
         let trace_lines = observed
@@ -2175,7 +2571,7 @@ mod tests {
             },
         ];
 
-        let response = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap();
+        let response = send_test(request).unwrap();
         assert_eq!(response.status, 200);
         let observed = server.join().unwrap();
         let cookie_lines = observed
@@ -2241,7 +2637,13 @@ mod tests {
             enabled: true,
         }];
 
-        let response = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap();
+        let response_headers = ResponseHeaderVault::default();
+        let response = tauri::async_runtime::block_on(send_request_with_vault(
+            request,
+            vec![],
+            &response_headers,
+        ))
+        .unwrap();
         let (has_auth, has_cookie) = observed_rx.recv().unwrap();
         assert!(!has_auth);
         assert!(!has_cookie);
@@ -2256,6 +2658,13 @@ mod tests {
                 .value,
             REDACTED
         );
+        assert_eq!(response.cookies.len(), 1);
+        assert_eq!(response.cookies[0].name, "sid");
+        assert_eq!(response.cookies[0].value, REDACTED);
+        assert!(response.raw_headers_available);
+        let response_id = response.response_id.as_deref().unwrap();
+        let raw_cookies = response_headers.copy(response_id, true).unwrap();
+        assert!(raw_cookies.contains("sid=cross-origin-secret"));
         assert!(!response.final_url.contains("cross-origin-secret"));
         assert!(!response.redirects[0]
             .location
@@ -2331,7 +2740,7 @@ mod tests {
                 ..Default::default()
             });
 
-            let response = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap();
+            let response = send_test(request).unwrap();
             assert_eq!(response.status, 200);
             let observed = destination.join().unwrap();
             let observed_lower = observed.to_ascii_lowercase();
@@ -2376,7 +2785,7 @@ mod tests {
             ..Default::default()
         });
 
-        let error = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap_err();
+        let error = send_test(request).unwrap_err();
         assert_eq!(error, safe_cross_origin_redirect_error());
         assert!(!error.contains("cross-origin-secret"));
         assert!(!error.contains(&destination_port.to_string()));
@@ -2395,7 +2804,7 @@ mod tests {
         let mut request = template();
         request.url = format!("http://127.0.0.1:{port}/?token=network-secret");
         request.auth = None;
-        let error = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap_err();
+        let error = send_test(request).unwrap_err();
         assert_eq!(error, "요청 전송에 실패했습니다");
         assert!(!error.contains("network-secret"));
         assert!(!error.contains(&port.to_string()));

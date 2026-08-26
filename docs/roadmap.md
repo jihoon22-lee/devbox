@@ -216,9 +216,12 @@ CI 통과·머지됐다. #268은 API Playground request header table에서 dupli
 삽입·해제하는 경계를 구현해 PR #400으로 CI 통과·머지됐다. #269는 domain cookie jar가 아닌
 request `Cookie` header editor, 기본 비공개 값 입력, 단일 secret reference만 보존하는 persistence
 masking, raw Cookie header 충돌과 문법 오류의 fail-closed native 전송 경계를 구현해 PR #401로
-CI 통과·머지됐다. 이어 #270은 text/file multipart part, part별 Content-Type, runtime-only file
+CI 통과·머지됐다. #270은 text/file multipart part, part별 Content-Type, runtime-only file
 picker 경로, 파일당 25 MiB·전체 50 MiB 제한, missing-file 안전 오류와 History·Collection 경로
-제거를 구현한다. response header/cookie는 다음 독립 기능으로 유지한다.
+제거를 구현해 PR #402로 CI 통과·머지됐다. 이어 #271은 Body/Headers/Cookies 응답 탭, 기본
+Set-Cookie masking, current-response-only bounded backend raw vault와 확인 후 원문 Headers/Cookies
+복사를 구현한다. raw response header는 frontend state·History·Collection·로그에 저장하지 않고,
+stale ID·100행/64 KiB 초과·비텍스트 값은 fail-closed한다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

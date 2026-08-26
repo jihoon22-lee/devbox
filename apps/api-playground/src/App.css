@@ -508,18 +508,103 @@ body {
 .status-4xx { color: var(--red); }
 .status-other { color: var(--amber); }
 
-.resp-headers {
-  background: var(--panel);
+.response-tabs {
+  display: flex;
   border-bottom: 1px solid var(--border);
-  margin: 0;
-  padding: 8px 14px;
-  font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 12px;
+  padding: 0 14px;
+}
+
+.response-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
   color: var(--dim);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.response-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.response-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.response-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.response-warning {
+  padding: 7px 14px;
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.response-table-wrap {
+  flex: 1;
+  overflow: auto;
+}
+
+.response-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.response-table th,
+.response-table td {
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.response-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.response-table td:first-child {
+  width: 28%;
+  color: var(--dim);
+  word-break: break-word;
+}
+
+.response-table .mono {
+  font-family: "Cascadia Code", Consolas, monospace;
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 200px;
-  overflow: auto;
+}
+
+.response-empty {
+  padding: 20px 14px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.btn.danger-outline {
+  border-color: color-mix(in srgb, var(--red) 65%, var(--border));
+  color: var(--red);
 }
 
 .resp-body {

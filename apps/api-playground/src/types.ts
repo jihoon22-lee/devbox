@@ -71,6 +71,18 @@ export interface ApiResponse {
   is_json: boolean;
   final_url: string;
   redirects: RedirectHop[];
+  cookies: ResponseCookie[];
+  response_id: string | null;
+  raw_headers_available: boolean;
+  headers_truncated: boolean;
+}
+
+export interface ResponseCookie {
+  name: string;
+  /** 응답 DTO에서는 항상 마스킹된 값이다. */
+  value: string;
+  /** 알려진 안전 attribute만 제한적으로 표시하며, 미지 값은 마스킹한다. */
+  attributes: KeyValue[];
 }
 
 export interface RedirectHop {

@@ -1078,7 +1078,14 @@ native 전송 전 fail-closed한다. #270에서는 multipart body에 ordered tex
 part별 Content-Type과 native file picker를 추가했다. 파일 경로·byte backup은 저장하지 않고
 basename만 남겨 History·Collection 재호출 때 재선택하게 한다. Rust가 파일당 25 MiB·전체 50 MiB와
 regular file을 검증한 뒤 stream하며 text part의 secret reference도 backend에서만 해제한다.
-response header/cookie viewer는 다음 분리 issue로 유지한다.
+#270은 PR #402로 CI 통과·머지됐다. #271에서는 응답을 Body/Headers/Cookies 전용 탭으로 나누고,
+Headers는 ordered table, Cookies는 `Set-Cookie` name과 `[REDACTED]` value 및 bounded safe
+attribute로 표시한다. 일반 DTO와 기본 복사는 항상 마스킹하고, raw headers는 현재 native 응답
+1건에 한해 backend memory에 100개·64 KiB로 보관한다. 새 요청은 이전 raw entry를 폐기하며
+stale response ID, 상한 초과, 비텍스트 header는 원문 복사를 fail-closed한다. 사용자가 별도 경고를
+확인한 경우에만 전체 headers 또는 Set-Cookie 원문을 clipboard에 한 번 전달하며 저장·History·
+Collection·로그에는 남기지 않는다. browser preview는 Fetch가 Set-Cookie를 노출하지 않는 한계를
+명시하고 raw copy를 비활성화한다.
 
 history는 자동·단기·secret 제거를 기본으로 한다. collection은 사용자가 명시적으로 저장한
 재사용 자산으로 취급한다. Authorization, Cookie, 민감 multipart text와 file path를 history에
