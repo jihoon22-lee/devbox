@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `a5988f2a53b32c7c8437965754218c0cfc3d2c6989e307ba9ee507b1a31ef590`
+- Cargo.lock SHA-256: `a6d0fdc9d08b78627d36a6e15df3ed240172bc020e32c7145ebf560f3b46c299`
 - pnpm-lock.yaml SHA-256: `a03d40c154292ecedf255641fe890212fde58c160d71f876f017552bcd34b0ac`
 
 ## Rust dependencies

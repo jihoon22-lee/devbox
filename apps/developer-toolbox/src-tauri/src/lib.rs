@@ -29,6 +29,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::tools::hash,
             commands::tools::generate_uuid,
+            commands::tools::generate_ids,
             commands::tools::regex_test,
             commands::tools::diff,
         ])
