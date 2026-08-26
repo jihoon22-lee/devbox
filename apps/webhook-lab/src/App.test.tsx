@@ -129,6 +129,155 @@ describe("Webhook Lab history and rule context menus", () => {
     expect(screen.getByText(/GET \/health → 204/)).toBeTruthy();
   });
 
+  it("rule 매칭 필드의 의미를 값이 채워져도 항상 표시한다", async () => {
+    render(<App />);
+
+    await screen.findByText("History (2)");
+
+    expect(screen.getByLabelText("method").getAttribute("aria-describedby")).toBe("rule-method-help");
+    expect(screen.getByLabelText("path").getAttribute("aria-describedby")).toBe("rule-path-help");
+    expect(screen.getByLabelText("status").getAttribute("aria-describedby")).toBe("rule-status-help");
+    expect(screen.getByLabelText("delay (ms)").getAttribute("aria-describedby")).toBe("rule-delay-help");
+    expect(screen.getByLabelText("응답 body").getAttribute("aria-describedby")).toBe("rule-body-help rule-headers-help");
+    expect(screen.getByText("대소문자를 구분하지 않고 요청 method와 일치합니다. 비워두면 모든 method(*)에 적용됩니다. ASCII HTTP token, 최대 16자/16바이트입니다.")).toBeTruthy();
+    expect(screen.getByText("경로 전체가 정확히 일치합니다. 마지막 문자가 *일 때만 그 앞부분으로 시작하는 경로와 일치합니다 (예: /events/* → /events/123). /로 시작하고 최대 4,096자/16,384바이트입니다.")).toBeTruthy();
+    expect(screen.getByText("매칭된 요청에 돌려줄 HTTP 응답 status 코드입니다 (허용 범위: 100~599, 예: 200, 404, 500).")).toBeTruthy();
+    expect(screen.getByText("응답 전에 기다릴 시간(밀리초)입니다. 0이면 지연 없이 바로 응답합니다 (허용 범위: 0~60000ms).")).toBeTruthy();
+    expect(screen.getByText("매칭된 요청에 돌려줄 response body입니다. 저장된 headers와 함께 응답 규칙의 출력으로 사용됩니다. body는 최대 256,000자/1,024,000바이트입니다.")).toBeTruthy();
+    expect(screen.getByText("response headers는 최대 100개이며 이름 256자/256바이트, 값 16,384자/65,536바이트, 전체 64,000자/256,000바이트입니다.")).toBeTruthy();
+  });
+
+  it("응답 status 범위를 벗어난 rule은 저장하지 않고 입력 오류를 연결한다", async () => {
+    render(<App />);
+    await screen.findByText("History (2)");
+
+    const status = screen.getByLabelText("status");
+    fireEvent.change(status, { target: { value: "99" } });
+
+    expect(status.getAttribute("aria-invalid")).toBe("true");
+    expect(status.getAttribute("min")).toBe("100");
+    expect(status.getAttribute("max")).toBe("599");
+    fireEvent.click(screen.getByRole("button", { name: "규칙 추가" }));
+
+    expect(setRuleMock).not.toHaveBeenCalled();
+    expect((await screen.findByRole("alert")).textContent).toContain("status는 100~599 범위의 정수여야 합니다.");
+  });
+
+  it("method/path/body의 잘못된 raw draft를 보존하고 저장을 차단한다", async () => {
+    render(<App />);
+    await screen.findByText("History (2)");
+
+    const method = screen.getByLabelText("method") as HTMLInputElement;
+    fireEvent.change(method, { target: { value: "POST JSON" } });
+    expect(method.value).toBe("POST JSON");
+    expect(method.getAttribute("aria-invalid")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "규칙 추가" }));
+    expect(setRuleMock).not.toHaveBeenCalled();
+    expect((await screen.findByRole("alert")).textContent).toContain("method는 ASCII HTTP token이어야 합니다");
+
+    const path = screen.getByLabelText("path") as HTMLInputElement;
+    fireEvent.change(path, { target: { value: "/bad\u0001path" } });
+    expect(path.value).toBe("/bad\u0001path");
+    expect(path.getAttribute("aria-invalid")).toBe("true");
+
+    const body = screen.getByLabelText("응답 body") as HTMLTextAreaElement;
+    fireEvent.change(body, { target: { value: "draft body" } });
+    expect(body.value).toBe("draft body");
+    expect(body.getAttribute("aria-describedby")).toContain("rule-body-help");
+    expect(body.getAttribute("aria-describedby")).toContain("rule-headers-help");
+  });
+
+  it("편집 중인 rule이 refresh에서 사라지면 stale 저장을 차단하고 draft를 유지한다", async () => {
+    render(<App />);
+    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem", { name: "편집" }));
+
+    const path = screen.getByLabelText("path") as HTMLInputElement;
+    fireEvent.change(path, { target: { value: "/stale-draft" } });
+    listRulesMock.mockResolvedValueOnce([]);
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+    await waitFor(() => expect(screen.getByText("규칙 없음 — 매치 없으면 404.")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "규칙 저장" }));
+    expect(setRuleMock).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("path") as HTMLInputElement).value).toBe("/stale-draft");
+    expect((await screen.findByRole("alert")).textContent).toContain("선택한 규칙이 더 이상 존재하지 않습니다");
+  });
+
+  it("동일한 busy 작업의 double action을 한 번만 실행하고 aria-busy를 표시한다", async () => {
+    let release!: (id: string) => void;
+    const pending = new Promise<string>((resolve) => { release = resolve; });
+    setRuleMock.mockReturnValueOnce(pending);
+    render(<App />);
+    await screen.findByText("History (2)");
+
+    const save = screen.getByRole("button", { name: "규칙 추가" });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    await waitFor(() => expect(setRuleMock).toHaveBeenCalledTimes(1));
+    expect(save.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "규칙 추가" }).closest(".app")?.getAttribute("aria-busy")).toBe("true");
+
+    release("rule-2");
+    await waitFor(() => expect(save.hasAttribute("disabled")).toBe(false));
+    expect(screen.getByRole("button", { name: "규칙 추가" }).closest(".app")?.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("늦게 끝난 mount refresh가 더 최신 action refresh를 덮어쓰지 않는다", async () => {
+    let releaseStatus!: (value: { running: boolean; address: string | null }) => void;
+    let releaseHistory!: (value: RequestRecord[]) => void;
+    let releaseRules!: (value: ResponseRule[]) => void;
+    serverStatusMock
+      .mockReset()
+      .mockReturnValueOnce(new Promise((resolve) => { releaseStatus = resolve; }))
+      .mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
+    listHistoryMock
+      .mockReset()
+      .mockReturnValueOnce(new Promise((resolve) => { releaseHistory = resolve; }))
+      .mockImplementation(async () => history.map((request) => ({ ...request })));
+    listRulesMock
+      .mockReset()
+      .mockReturnValueOnce(new Promise((resolve) => { releaseRules = resolve; }))
+      .mockImplementation(async () => rules.map((candidate) => ({ ...candidate })));
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+    await screen.findByText("History (2)");
+    expect(screen.getByText(/듣는 중 127\.0\.0\.1:9000/u)).toBeTruthy();
+
+    releaseStatus({ running: false, address: null });
+    releaseHistory([]);
+    releaseRules([]);
+    await waitFor(() => {
+      expect(screen.getByText("History (2)")).toBeTruthy();
+      expect(screen.getByText(/GET \/health → 204/u)).toBeTruthy();
+      expect(screen.getByText(/듣는 중 127\.0\.0\.1:9000/u)).toBeTruthy();
+    });
+  });
+
+  it("빈 method를 모든 method를 뜻하는 null로 저장한다", async () => {
+    render(<App />);
+    await screen.findByText("History (2)");
+
+    fireEvent.change(screen.getByLabelText("method"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "규칙 추가" }));
+
+    await waitFor(() => expect(setRuleMock).toHaveBeenCalledWith(expect.objectContaining({ method: null })));
+  });
+
+  it("backend 원문 오류를 고정된 안전 메시지로 대체한다", async () => {
+    setRuleMock.mockRejectedValueOnce(new Error("secret/path=/tmp/private-token"));
+    render(<App />);
+    await screen.findByText("History (2)");
+
+    fireEvent.click(screen.getByRole("button", { name: "규칙 추가" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("요청을 처리하지 못했습니다. 입력과 서버 상태를 확인하세요.");
+    expect(document.body.textContent).not.toContain("private-token");
+  });
+
   it("우클릭한 요청을 먼저 선택하고 정확한 메뉴와 후속 기능 경계를 표시한다", async () => {
     render(<App />);
     const target = await screen.findByLabelText("GET /health 요청") as HTMLDivElement;
@@ -334,9 +483,7 @@ describe("Webhook Lab history and rule context menus", () => {
     await waitFor(() => expect(writeTextMock).toHaveBeenCalledTimes(1));
 
     fireEvent.contextMenu(target);
-    const disabledCopy = screen.getByRole("menuitem", { name: "POSIX sh curl 복사" });
-    expect(disabledCopy.getAttribute("aria-disabled")).toBe("true");
-    fireEvent.click(disabledCopy);
+    expect(screen.queryByRole("menuitem", { name: "POSIX sh curl 복사" })).toBeNull();
     expect(writeTextMock).toHaveBeenCalledTimes(1);
     resolveWrite?.();
   });

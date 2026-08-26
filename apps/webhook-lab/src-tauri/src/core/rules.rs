@@ -3,6 +3,62 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Rule validation is deliberately stricter than the serde wire types. These
+/// values are also mirrored by the editor's TypeScript validator.
+pub const MAX_RULES: usize = 200;
+pub const MAX_RULE_ID_CHARS: usize = 128;
+pub const MAX_RULE_ID_BYTES: usize = 128;
+pub const MAX_METHOD_CHARS: usize = 16;
+pub const MAX_METHOD_BYTES: usize = 16;
+pub const MAX_PATH_CHARS: usize = 4_096;
+pub const MAX_PATH_BYTES: usize = 16_384;
+pub const MAX_RULE_HEADERS: usize = 100;
+pub const MAX_HEADER_NAME_CHARS: usize = 256;
+pub const MAX_HEADER_NAME_BYTES: usize = 256;
+pub const MAX_HEADER_VALUE_CHARS: usize = 16_384;
+pub const MAX_HEADER_VALUE_BYTES: usize = 65_536;
+pub const MAX_HEADER_TOTAL_CHARS: usize = 64_000;
+pub const MAX_HEADER_TOTAL_BYTES: usize = 256_000;
+pub const MAX_BODY_CHARS: usize = 256_000;
+pub const MAX_BODY_BYTES: usize = 1_024_000;
+pub const MAX_RULE_COLLECTION_CHARS: usize = 2_000_000;
+pub const MAX_RULE_COLLECTION_BYTES: usize = 8_000_000;
+pub const MIN_RESPONSE_STATUS: u16 = 100;
+pub const MAX_RESPONSE_STATUS: u16 = 599;
+pub const MAX_RESPONSE_DELAY_MS: u64 = 60_000;
+pub const INVALID_RULE_ERROR: &str = "규칙 입력이 유효하지 않습니다";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuleValidationError;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct StringMetrics {
+    chars: usize,
+    bytes: usize,
+}
+
+impl StringMetrics {
+    fn add_str(&mut self, value: &str) -> Option<()> {
+        self.chars = self.chars.checked_add(value.chars().count())?;
+        self.bytes = self.bytes.checked_add(value.len())?;
+        Some(())
+    }
+
+    fn checked_add(self, other: Self) -> Option<Self> {
+        Some(Self {
+            chars: self.chars.checked_add(other.chars)?,
+            bytes: self.bytes.checked_add(other.bytes)?,
+        })
+    }
+
+    fn checked_sub(self, other: Self) -> Option<Self> {
+        Some(Self {
+            chars: self.chars.checked_sub(other.chars)?,
+            bytes: self.bytes.checked_sub(other.bytes)?,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ResponseRule {
@@ -10,14 +66,169 @@ pub struct ResponseRule {
     /// None이면 모든 method
     pub method: Option<String>,
     pub path: String,
+    /// 매치된 요청에 반환할 HTTP response status
     pub status: u16,
+    /// 매치된 요청에 반환할 HTTP response headers
     pub headers: Vec<(String, String)>,
+    /// 매치된 요청에 반환할 HTTP response body
     pub body: String,
-    /// 응답 지연 (ms)
+    /// HTTP response를 보내기 전 대기 시간 (ms)
     pub delay_ms: u64,
 }
 
-/// rule이 요청과 매치하는지. method는 대소문자 무시.
+fn within(value: &str, max_chars: usize, max_bytes: usize) -> bool {
+    value.chars().count() <= max_chars && value.len() <= max_bytes
+}
+
+fn has_control(value: &str) -> bool {
+    value.chars().any(char::is_control)
+}
+
+fn is_method(value: &str) -> bool {
+    is_token(value)
+}
+
+fn is_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
+                )
+        })
+}
+
+fn is_header_name(value: &str) -> bool {
+    is_token(value)
+}
+
+fn validate_headers(headers: &[(String, String)]) -> Result<(), RuleValidationError> {
+    if headers.len() > MAX_RULE_HEADERS {
+        return Err(RuleValidationError);
+    }
+
+    let mut total = StringMetrics::default();
+    for (name, value) in headers {
+        if !within(name, MAX_HEADER_NAME_CHARS, MAX_HEADER_NAME_BYTES)
+            || !is_header_name(name)
+            || !within(value, MAX_HEADER_VALUE_CHARS, MAX_HEADER_VALUE_BYTES)
+            || has_control(value)
+        {
+            return Err(RuleValidationError);
+        }
+        total.add_str(name).ok_or(RuleValidationError)?;
+        total.add_str(value).ok_or(RuleValidationError)?;
+    }
+
+    if total.chars > MAX_HEADER_TOTAL_CHARS || total.bytes > MAX_HEADER_TOTAL_BYTES {
+        return Err(RuleValidationError);
+    }
+    Ok(())
+}
+
+fn rule_metrics(rule: &ResponseRule) -> Option<StringMetrics> {
+    let mut metrics = StringMetrics::default();
+    // A new rule receives a UUID before it reaches storage. Reserve the UUID
+    // footprint here too so frontend and backend collection checks agree.
+    metrics.add_str(if rule.id.is_empty() {
+        "00000000-0000-0000-0000-000000000000"
+    } else {
+        &rule.id
+    })?;
+    if let Some(method) = &rule.method {
+        metrics.add_str(method)?;
+    }
+    metrics.add_str(&rule.path)?;
+    for (name, value) in &rule.headers {
+        metrics.add_str(name)?;
+        metrics.add_str(value)?;
+    }
+    metrics.add_str(&rule.body)?;
+    Some(metrics)
+}
+
+/// Validate one response rule at the storage boundary.
+pub fn validate_rule(rule: &ResponseRule) -> Result<(), RuleValidationError> {
+    if (!rule.id.is_empty()
+        && (!within(&rule.id, MAX_RULE_ID_CHARS, MAX_RULE_ID_BYTES) || has_control(&rule.id)))
+        || !within(&rule.path, MAX_PATH_CHARS, MAX_PATH_BYTES)
+        || !rule.path.starts_with('/')
+        || has_control(&rule.path)
+        || !within(&rule.body, MAX_BODY_CHARS, MAX_BODY_BYTES)
+    {
+        return Err(RuleValidationError);
+    }
+
+    if let Some(method) = &rule.method {
+        if !within(method, MAX_METHOD_CHARS, MAX_METHOD_BYTES) || !is_method(method) {
+            return Err(RuleValidationError);
+        }
+    }
+    if rule.status < MIN_RESPONSE_STATUS || rule.status > MAX_RESPONSE_STATUS {
+        return Err(RuleValidationError);
+    }
+    if rule.delay_ms > MAX_RESPONSE_DELAY_MS {
+        return Err(RuleValidationError);
+    }
+    validate_headers(&rule.headers)?;
+
+    let metrics = rule_metrics(rule).ok_or(RuleValidationError)?;
+    if metrics.chars > MAX_RULE_COLLECTION_CHARS || metrics.bytes > MAX_RULE_COLLECTION_BYTES {
+        return Err(RuleValidationError);
+    }
+    Ok(())
+}
+
+fn collection_metrics<'a, I>(rules: I) -> Result<StringMetrics, RuleValidationError>
+where
+    I: IntoIterator<Item = &'a ResponseRule>,
+{
+    let mut count: usize = 0;
+    let mut metrics = StringMetrics::default();
+    for rule in rules {
+        count = count.checked_add(1).ok_or(RuleValidationError)?;
+        if count > MAX_RULES {
+            return Err(RuleValidationError);
+        }
+        validate_rule(rule)?;
+        metrics = metrics
+            .checked_add(rule_metrics(rule).ok_or(RuleValidationError)?)
+            .ok_or(RuleValidationError)?;
+        if metrics.chars > MAX_RULE_COLLECTION_CHARS || metrics.bytes > MAX_RULE_COLLECTION_BYTES {
+            return Err(RuleValidationError);
+        }
+    }
+    Ok(metrics)
+}
+
+/// Validate the complete in-memory rule collection without exposing input in
+/// the error type.
+#[cfg(test)]
+pub fn validate_rule_collection<'a, I>(rules: I) -> Result<(), RuleValidationError>
+where
+    I: IntoIterator<Item = &'a ResponseRule>,
+{
+    collection_metrics(rules).map(|_| ())
+}
+
+/// rule이 요청과 매치하는지. method는 대소문자 무시하고, None은 모든 method다.
+/// path는 전체 문자열이 같거나, rule path의 마지막 문자가 `*`일 때 그 앞부분으로
+/// 시작해야 한다. `HashMap`에서 여러 rule이 매치되는 경우의 우선순위는 이 함수의
+/// 계약이 아니다.
 pub fn matches(rule: &ResponseRule, method: &str, path: &str) -> bool {
     if let Some(m) = &rule.method {
         if !m.eq_ignore_ascii_case(method) {
@@ -30,13 +241,34 @@ pub fn matches(rule: &ResponseRule, method: &str, path: &str) -> bool {
 
 /// 새 규칙에는 실제 ID를 부여하고 기존 규칙은 같은 ID로 교체한다.
 /// 반환한 ID와 저장된 rule.id가 항상 같아야 context-menu 대상이 안정적이다.
-pub fn upsert(rules: &mut HashMap<String, ResponseRule>, mut rule: ResponseRule) -> String {
+/// 검증에 실패하면 map을 전혀 변경하지 않는다.
+pub fn upsert(
+    rules: &mut HashMap<String, ResponseRule>,
+    mut rule: ResponseRule,
+) -> Result<String, RuleValidationError> {
     if rule.id.is_empty() {
         rule.id = uuid::Uuid::new_v4().to_string();
     }
     let id = rule.id.clone();
+    validate_rule(&rule)?;
+
+    let mut collection = collection_metrics(rules.values())?;
+    if let Some(existing) = rules.get(&id) {
+        collection = collection
+            .checked_sub(rule_metrics(existing).ok_or(RuleValidationError)?)
+            .ok_or(RuleValidationError)?;
+    } else if rules.len() >= MAX_RULES {
+        return Err(RuleValidationError);
+    }
+    collection = collection
+        .checked_add(rule_metrics(&rule).ok_or(RuleValidationError)?)
+        .ok_or(RuleValidationError)?;
+    if collection.chars > MAX_RULE_COLLECTION_CHARS || collection.bytes > MAX_RULE_COLLECTION_BYTES
+    {
+        return Err(RuleValidationError);
+    }
     rules.insert(id.clone(), rule);
-    id
+    Ok(id)
 }
 
 #[cfg(test)]
@@ -69,15 +301,185 @@ mod tests {
     }
 
     #[test]
+    fn method_matching_is_case_insensitive_and_none_matches_all_methods() {
+        assert!(matches(&rule("all", None, "/hook"), "PATCH", "/hook"));
+        assert!(matches(
+            &rule("post", Some("post"), "/hook"),
+            "PoSt",
+            "/hook"
+        ));
+        assert!(!matches(
+            &rule("post", Some("post"), "/hook"),
+            "PUT",
+            "/hook"
+        ));
+    }
+
+    #[test]
+    fn path_matching_is_exact_or_prefix_only_for_a_trailing_star() {
+        let exact = rule("exact", None, "/events/123");
+        assert!(matches(&exact, "GET", "/events/123"));
+        assert!(!matches(&exact, "GET", "/events/123/extra"));
+        assert!(!matches(&exact, "GET", "/events/123?source=test"));
+
+        let prefix = rule("prefix", None, "/events/*");
+        assert!(matches(&prefix, "GET", "/events/"));
+        assert!(matches(&prefix, "GET", "/events/123/extra"));
+        assert!(!matches(&prefix, "GET", "/eventslater"));
+
+        // An asterisk anywhere other than the final character is literal.
+        let interior_star = rule("interior", None, "/events/*/tail");
+        assert!(matches(&interior_star, "GET", "/events/*/tail"));
+        assert!(!matches(&interior_star, "GET", "/events/123/tail"));
+    }
+
+    #[test]
     fn upsert_assigns_and_preserves_rule_identity() {
         let mut rules = HashMap::new();
-        let generated = upsert(&mut rules, rule("", Some("POST"), "/hook"));
+        let generated = upsert(&mut rules, rule("", Some("POST"), "/hook")).unwrap();
         assert!(!generated.is_empty());
         assert_eq!(rules[&generated].id, generated);
 
-        let same = upsert(&mut rules, rule(&generated, Some("GET"), "/updated"));
+        let same = upsert(&mut rules, rule(&generated, Some("GET"), "/updated")).unwrap();
         assert_eq!(same, generated);
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[&generated].path, "/updated");
+    }
+
+    #[test]
+    fn validates_status_and_delay_bounds() {
+        assert!(validate_rule(&rule("r", None, "/hook")).is_ok());
+
+        let mut invalid = rule("r", None, "/hook");
+        invalid.status = MIN_RESPONSE_STATUS - 1;
+        assert!(validate_rule(&invalid).is_err());
+        invalid.status = MAX_RESPONSE_STATUS + 1;
+        assert!(validate_rule(&invalid).is_err());
+        invalid.status = MIN_RESPONSE_STATUS;
+        invalid.delay_ms = MAX_RESPONSE_DELAY_MS + 1;
+        assert!(validate_rule(&invalid).is_err());
+
+        invalid.status = MAX_RESPONSE_STATUS;
+        invalid.delay_ms = MAX_RESPONSE_DELAY_MS;
+        assert!(validate_rule(&invalid).is_ok());
+    }
+
+    #[test]
+    fn validates_method_path_and_body_shape_and_size() {
+        let mut invalid = rule("r", Some("POST"), "/hook");
+        invalid.method = Some("post-json".into());
+        assert!(validate_rule(&invalid).is_ok());
+        // Custom HTTP methods use the RFC token grammar; matching remains
+        // case-insensitive and does not invent a first-letter restriction.
+        invalid.method = Some("!custom".into());
+        assert!(validate_rule(&invalid).is_ok());
+        invalid.method = Some(String::new());
+        assert!(validate_rule(&invalid).is_err());
+        invalid.method = Some("POST JSON".into());
+        assert!(validate_rule(&invalid).is_err());
+        invalid.method = Some("P".repeat(MAX_METHOD_CHARS + 1));
+        assert!(validate_rule(&invalid).is_err());
+
+        invalid = rule("r", None, "hook");
+        assert!(validate_rule(&invalid).is_err());
+        invalid.path = format!("/{}", "p".repeat(MAX_PATH_CHARS));
+        assert!(validate_rule(&invalid).is_err());
+        invalid.path = "/hook\u{0085}".into();
+        assert!(validate_rule(&invalid).is_err());
+
+        invalid = rule("r", None, "/hook");
+        invalid.body = "b".repeat(MAX_BODY_CHARS + 1);
+        assert!(validate_rule(&invalid).is_err());
+        invalid.body = "🙂".repeat(MAX_BODY_BYTES / 4 + 1);
+        assert!(validate_rule(&invalid).is_err());
+    }
+
+    #[test]
+    fn validates_rule_id_character_and_string_bounds() {
+        let mut invalid = rule("r", None, "/hook");
+        invalid.id = "i".repeat(MAX_RULE_ID_CHARS);
+        assert!(validate_rule(&invalid).is_ok());
+        invalid.id = "i".repeat(MAX_RULE_ID_CHARS + 1);
+        assert!(validate_rule(&invalid).is_err());
+        invalid.id = "stable\u{0000}".into();
+        assert!(validate_rule(&invalid).is_err());
+
+        invalid.id.clear();
+        assert!(validate_rule(&invalid).is_ok());
+    }
+
+    #[test]
+    fn validates_header_count_shape_and_aggregate_limits() {
+        let mut invalid = rule("r", None, "/hook");
+        invalid.headers = (0..=MAX_RULE_HEADERS)
+            .map(|index| (format!("X-Test-{index}"), "ok".into()))
+            .collect();
+        assert!(validate_rule(&invalid).is_err());
+
+        invalid.headers = vec![("not a header".into(), "ok".into())];
+        assert!(validate_rule(&invalid).is_err());
+        invalid.headers = vec![("X-Test".into(), "bad\nvalue".into())];
+        assert!(validate_rule(&invalid).is_err());
+
+        invalid.headers = vec![("X-Test".into(), "v".repeat(MAX_HEADER_VALUE_CHARS + 1))];
+        assert!(validate_rule(&invalid).is_err());
+
+        invalid.headers = vec![("N".repeat(MAX_HEADER_NAME_CHARS), "ok".into())];
+        assert!(validate_rule(&invalid).is_ok());
+        invalid.headers = vec![("N".repeat(MAX_HEADER_NAME_CHARS + 1), "ok".into())];
+        assert!(validate_rule(&invalid).is_err());
+
+        invalid.headers = (0..5)
+            .map(|index| (format!("X-{index}"), "v".repeat(MAX_HEADER_TOTAL_CHARS / 4)))
+            .collect();
+        assert!(validate_rule(&invalid).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_upsert_without_mutating_storage() {
+        let mut rules = HashMap::new();
+        let id = upsert(&mut rules, rule("stable", Some("GET"), "/old")).unwrap();
+        let before = rules.clone();
+
+        let mut invalid = rule(&id, Some("GET"), "/new");
+        invalid.status = 600;
+        assert!(upsert(&mut rules, invalid).is_err());
+        assert_eq!(rules, before);
+    }
+
+    #[test]
+    fn enforces_rule_count_and_collection_string_limits() {
+        let mut rules = HashMap::new();
+        for index in 0..MAX_RULES {
+            assert!(upsert(&mut rules, rule(&format!("r-{index}"), None, "/hook")).is_ok());
+        }
+        let before = rules.clone();
+        assert!(upsert(&mut rules, rule("new", None, "/hook")).is_err());
+        assert_eq!(rules, before);
+
+        let mut large_rules = HashMap::new();
+        for index in 0..(MAX_RULE_COLLECTION_CHARS / MAX_BODY_CHARS + 1) {
+            let mut candidate = rule(&format!("large-{index}"), None, "/hook");
+            candidate.body = "x".repeat(MAX_BODY_CHARS);
+            if index == MAX_RULE_COLLECTION_CHARS / MAX_BODY_CHARS {
+                assert!(upsert(&mut large_rules, candidate).is_err());
+            } else {
+                assert!(upsert(&mut large_rules, candidate).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn validates_complete_rule_collection() {
+        let valid = rule("r", None, "/hook");
+        assert!(validate_rule_collection([&valid]).is_ok());
+
+        let invalid = rule("bad", None, "hook");
+        assert!(validate_rule_collection([&valid, &invalid]).is_err());
+
+        let too_many: Vec<ResponseRule> = (0..=MAX_RULES)
+            .map(|index| rule(&format!("r-{index}"), None, "/hook"))
+            .collect();
+        assert!(validate_rule_collection(too_many.iter()).is_err());
     }
 }

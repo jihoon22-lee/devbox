@@ -8,6 +8,8 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
 - **서버 시작/정지** — localhost bind 주소·포트 선택 (기본 `127.0.0.1`)
 - **request history** — method/path별 headers/query/body/timestamp 기록
 - **응답 rule** — 고정 status/header/body, delay와 대표 오류 응답(500/404 등)
+- **rule 설명** — method 대소문자 무시·빈 값 전체 적용, path 정확 일치·후행 `*` wildcard,
+  status 응답 코드, delay 밀리초 의미를 편집 중 항상 표시
 - **대상별 컨텍스트 메뉴** — history의 마스킹 복사·확인 후 원본 복사·마스킹 헤더
   복사·개별 삭제, rule의 편집·복제·PowerShell/POSIX curl 복사·삭제. 우클릭과 `Shift+F10`/Menu 키를 지원하고 닫은 뒤
   원래 행으로 포커스를 돌려보낸다.
@@ -18,6 +20,62 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
   `[REDACTED]`로 마스킹한다. wildcard path는 backend trailing-`*` matcher와 일치하는
   concrete sample로 바꾸고, shell별 독립 quoting과 `--globoff`·`--path-as-is`로 command/URL
   확장과 curl의 path dot-segment 정규화를 막는다.
+
+### Rule 매칭·응답 의미
+
+- `method`는 대소문자를 구분하지 않는다. 편집기의 method를 비워 저장하면 backend DTO의
+  `None`으로 전달되어 모든 method에 매치된다.
+- `path`는 요청 URL 문자열 전체가 같은 경우에만 기본적으로 매치된다. rule path의 **마지막
+  문자**가 `*`일 때만 `*` 앞부분을 접두사로 사용한다. 따라서 `/events/*`는 `/events/`와
+  `/events/123`에 매치하지만 `/eventslater`에는 매치하지 않고, `/events/*/tail`의 중간 `*`는
+  wildcard가 아니라 literal 문자다.
+- `status`, `headers`, `body`는 요청 조건이 아니라 매치된 요청에 돌려줄 HTTP **응답**이다.
+  `delay`는 그 응답을 보내기 전에 기다리는 밀리초이며, 매치가 없으면 `404 Not Found`를
+  지연 없이 반환한다.
+- 여러 rule이 동시에 매치되는 경우 `HashMap` 순회 순서는 우선순위나 결정성 계약이 아니다.
+  겹치는 rule 중 어느 것이 선택되는지에 의존하지 말고, method/path 조합이 겹치지 않게
+  작성한다.
+- 편집기는 status를 `100~599` 정수, delay를 `0~60000ms` 정수로 제한한다. Rust wire type의
+  표현 범위보다 좁은 UI 경계로 실수로 비정상 status를 보내거나 서버를 장시간 sleep시키는
+  것을 막는다.
+- 필드 설명은 값이 채워져 있어도 항상 보이고, label/help/error가 각 입력에 연결된다.
+  저장·서버 오류는 backend 원문(로컬 경로·토큰 등)을 화면에 그대로 표시하지 않고 고정된
+  안전 메시지로 표시한다.
+
+### Rule 저장 경계와 크기 계약
+
+`set_rule` IPC와 Rust `core/rules.rs::upsert`가 최종 권위다. 프론트 검증을 우회한 호출도
+아래 경계를 통과해야 하며, 실패한 add/edit는 map을 변경하지 않는다. 검증 오류는 입력값,
+경로, header 값, secret, parser/OS 오류를 포함하지 않는 고정 메시지
+`규칙 입력이 유효하지 않습니다`만 반환한다.
+
+- rule은 최대 `200`개다. 기존 `id`는 최대 128자/128 UTF-8 바이트이며 제어 문자를 허용하지
+  않는다. 새 rule의 빈 id는 저장 직전에 UUID를 받으며 collection 크기 계산에도 UUID의
+  36자/36바이트 footprint를 예약한다.
+- method는 `null`(전체 method) 또는 ASCII HTTP token이며 최대 16자/16바이트다. 편집기의
+  빈 값은 `null`로 변환하고, `Some("")`이나 공백/제어 문자는 저장하지 않는다.
+- path는 최대 4,096자/16,384 UTF-8 바이트이며 `/`로 시작하고 모든 Unicode control 문자를
+  포함할 수 없다. 문자열을 decode, normalize, query 제거하지 않는다. 매칭은 저장된 path와
+  요청 URL의 전체 문자열 exact 비교이거나 **마지막** `*` 하나에 대한 prefix 비교이며,
+  중간 `*`는 literal로 남는다.
+- response headers는 최대 100개다. 각 이름은 HTTP token, 최대 256자/256바이트, 각 값은
+  최대 16,384자/65,536바이트이고 control 문자를 허용하지 않는다. 이름과 값을 합한 rule별
+  전체는 64,000자/256,000바이트 이하여야 한다.
+- response body는 최대 256,000자/1,024,000 UTF-8 바이트다. body는 매칭 조건이 아니라
+  반환 payload이므로 별도 텍스트 변환 없이 저장한다. status는 100~599 정수, delay는
+  0~60,000ms 정수다.
+- collection의 모든 rule에 포함된 id/method/path/header 이름·값/body 문자열의 합은
+  최대 2,000,000자/8,000,000바이트다. 프론트는 `Array.from(value).length`와 UTF-8
+  `TextEncoder`로, Rust는 Unicode scalar count와 `str::len()`으로 같은 char/byte 단위를
+  검사하며, Rust UTF-8로 표현할 수 없는 unpaired JavaScript surrogate도 프론트에서 거부한다.
+
+편집기와 복제 동작은 동일한 validator와 collection projection을 사용한다. invalid raw draft는
+입력창에 그대로 남고 IPC를 호출하지 않으며, 편집 중 대상 id가 refresh에서 사라진 stale rule도
+고정 메시지로 저장을 중단한다. 작업 중에는 `aria-busy`와 disabled 상태로 double action을 막고,
+각 method/path/status/delay/body 설명·오류는 `aria-describedby`/`aria-invalid`로 연결한다.
+현재 headers 편집 UI는 별도 기능이지만, 로드·복제된 response headers도 같은 프론트 경계를
+검사한다. 이 PR은 기존 rule id·저장 순서·HashMap 순회와 trailing-star matcher를 바꾸거나
+priority를 도입하지 않는다.
 
 JSON fixture 관리·API Playground 변환은 미구현이며, 설계 문서(`docs/superpowers/specs/2026-08-14-webhook-lab-design.md`)의 향후 항목이다.
 API Playground 변환은 `api-request/v1` handoff(#315)가 준비될 때까지 비활성화한다.

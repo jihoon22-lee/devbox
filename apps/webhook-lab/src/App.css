@@ -143,8 +143,20 @@ body {
 .rule-editor {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   margin-bottom: 10px;
+}
+
+.rule-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rule-field label {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .rule-editor input,
@@ -160,6 +172,25 @@ body {
 .rule-editor textarea {
   min-height: 60px;
   font-family: monospace;
+}
+
+.rule-editor input[aria-invalid="true"],
+.rule-editor textarea[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.field-help {
+  margin: 0;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.field-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .rule-row {

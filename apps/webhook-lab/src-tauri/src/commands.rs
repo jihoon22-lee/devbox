@@ -1,7 +1,7 @@
 //! Webhook Lab command — 서버 시작/중지, history, rule 관리.
 
 use crate::core::history::History;
-use crate::core::rules::{matches, upsert, ResponseRule};
+use crate::core::rules::{matches, upsert, ResponseRule, INVALID_RULE_ERROR};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -109,6 +109,8 @@ fn handle_request(state: &Arc<ServerState>, mut request: Request) {
     );
 
     // rule 매치 → 응답
+    // HashMap iteration order is unspecified. Matching order is not a
+    // priority or determinism contract for response rules.
     let rule = state
         .rules
         .lock()
@@ -209,7 +211,7 @@ pub fn set_rule(
     state: tauri::State<'_, Arc<ServerState>>,
     rule: ResponseRule,
 ) -> Result<String, String> {
-    Ok(upsert(&mut state.rules.lock().unwrap(), rule))
+    upsert(&mut state.rules.lock().unwrap(), rule).map_err(|_| INVALID_RULE_ERROR.to_string())
 }
 
 #[tauri::command]
