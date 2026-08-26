@@ -1,7 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import catalogJson from "../../catalog.json";
 import { isTauri } from "./lib/isTauri";
-import type { CatalogApp, Current, InstalledApp, ReleaseManifest } from "./types";
+import type {
+  BatchInstallRequest,
+  BatchInstallResult,
+  CatalogApp,
+  Current,
+  InstalledApp,
+  InstallMode,
+  ReleaseManifest,
+} from "./types";
 
 const MOCK_CATALOG: CatalogApp[] = catalogJson.apps;
 
@@ -41,9 +49,24 @@ export async function installed(): Promise<InstalledApp[]> {
   return invoke<InstalledApp[]>("installed");
 }
 
-export async function installApp(appId: string, mode: "portable" | "installer"): Promise<string> {
+export async function installApp(appId: string, mode: InstallMode): Promise<string> {
   if (!isTauri()) return `installed (${mode})`;
   return invoke<string>("install", { appId, mode });
+}
+
+export async function installMany(
+  requests: BatchInstallRequest[],
+): Promise<BatchInstallResult[]> {
+  if (!isTauri()) {
+    return requests.map((request) => ({
+      ...request,
+      ok: true,
+      message: request.mode === "portable"
+        ? "휴대용 앱을 설치했습니다."
+        : "설치 프로그램을 실행했습니다. 화면 안내에 따라 설치하세요.",
+    }));
+  }
+  return invoke<BatchInstallResult[]>("install_many", { requests });
 }
 
 export async function current(appId: string): Promise<Current | null> {

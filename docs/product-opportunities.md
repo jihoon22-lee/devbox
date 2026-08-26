@@ -643,6 +643,30 @@ registry migration / interrupted download recovery / rollback target 선택
 - catalog 대상 앱이 자동으로 나타난다.
 - 앱별 서로 다른 최신 버전을 정확히 표시한다.
 
+### 6.8 v0.5.0 batch 구현 경계 (#274)
+
+다중 선택은 catalog에서 Manager가 관리할 수 있고 manifest에 현재보다 새 버전이 있는 앱만
+활성화한다. public IPC는 최대 32개의 `{appId, mode}`만 받고 빈 목록, duplicate, unsafe/unknown ID와
+unknown mode를 다운로드 전에 거부한다. release manifest와 HTTP client는 batch당 한 번만 만들며
+다운로드와 registry 변경은 입력 순서대로 실행해 네트워크·disk 부하와 registry 경합을 제한한다.
+
+batch의 transaction 단위는 전체 목록이 아니라 앱 하나다. 한 앱의 다운로드·검증·상태 반영이
+실패해도 다음 앱을 계속하고 이미 성공한 앱을 되돌리지 않는다. portable은 새 version artifact와
+current를 준비한 뒤 registry 기록이 실패하면 이전 current를 원자 복구하며, 최초 설치였다면 생성한
+current를 제거한다. setup은 registry를 먼저 durable하게 준비한 뒤 검증된 installer를 실행하고 spawn
+실패 시 원래 registry를 복구한다. setup 성공은 installer process 시작이지 설치 완료 증명이 아니므로
+UI는 선택 수만큼 마법사가 열린다는 확인을 받고 결과에도 이 의미를 표시한다.
+
+stale frontend state가 batch downgrade를 만들지 않도록 backend가 installed와 available을 strict
+SemVer로 비교한다. available이 더 큰 경우만 실제 설치하고 동일·더 최신 installed version은 download
+없는 성공 no-op로 반환한다. 파싱할 수 없는 version은 임의 문자열 순서로 비교하지 않고 해당 앱을
+안전하게 실패시킨다.
+
+frontend 결과는 catalog app ID, mode, 성공 여부와 고정 메시지만 보관한다. lower-level reqwest,
+process와 filesystem 오류의 URL·absolute path를 반사하지 않는다. 성공 항목은 선택에서 제거하고 실패
+항목만 원래 mode로 재시도한다. install path 표시, custom root, 제거와 Data Inspector는 각각 #275,
+P2/P3 범위로 유지한다.
+
 ## 7. P0.5 — 공용 프리미티브
 
 기능 추가가 아니다. 저장소가 이미 선언한 추출 규칙을 집행하고, 문서와 코드의 불일치를

@@ -2,6 +2,9 @@ use crate::core::asset::{
     select_asset, validate_artifact_coordinates, validate_manifest_artifacts,
     validate_version_component,
 };
+use crate::core::batch::{
+    is_install_or_upgrade, validate_batch_requests, BatchInstallRequest, BatchInstallResult,
+};
 use crate::core::catalog::CatalogApp;
 use crate::core::download::{is_over_limit, partial_path, validate_digest, validate_size};
 use crate::core::managed_install::{
@@ -274,12 +277,111 @@ pub async fn install(
         return Err("지원하지 않는 설치 방식입니다.".to_string());
     }
     let manifest = available().await?;
+    let base = data_dir(&app)?;
+    let client = reqwest::Client::new();
+    install_with_manifest(&app, &base, &client, &manifest, app_id, mode).await
+}
+
+/// 여러 앱을 순서대로 설치/업데이트한다. Release manifest와 HTTP client는
+/// batch 전체에서 한 번만 준비하고 한 항목의 실패는 다음 항목을 막지 않는다.
+/// 결과 오류는 app ID와 고정 메시지만 포함하며 lower-level URL/path를 노출하지 않는다.
+#[tauri::command]
+pub async fn install_many(
+    app: tauri::AppHandle,
+    requests: Vec<BatchInstallRequest>,
+) -> Result<Vec<BatchInstallResult>, String> {
+    validate_batch_requests(&requests)?;
+    let targets = catalog().map_err(|_| "앱 카탈로그를 확인할 수 없습니다.".to_string())?;
+    if requests.iter().any(|request| {
+        !targets.iter().any(|target| {
+            target.id == request.app_id && target.manager_visible && !target.self_managed
+        })
+    }) {
+        return Err("일괄 작업에 관리할 수 없는 앱이 포함되어 있습니다.".to_string());
+    }
+
+    let manifest = match available().await {
+        Ok(manifest) => manifest,
+        Err(_) => {
+            return Ok(requests
+                .iter()
+                .map(BatchInstallResult::shared_failure)
+                .collect());
+        }
+    };
+    let base = match data_dir(&app) {
+        Ok(base) => base,
+        Err(_) => {
+            return Ok(requests
+                .iter()
+                .map(BatchInstallResult::shared_failure)
+                .collect());
+        }
+    };
+    let client = reqwest::Client::new();
+    let initial_registry = read_registry(&app);
+    let mut results = Vec::with_capacity(requests.len());
+    for request in &requests {
+        let available_version = manifest
+            .apps
+            .iter()
+            .find(|entry| entry.id == request.app_id)
+            .map(|entry| entry.version.as_str());
+        let installed_version = initial_registry
+            .iter()
+            .find(|entry| entry.app == request.app_id)
+            .map(|entry| entry.version.as_str());
+        match available_version.ok_or(()).and_then(|available| {
+            is_install_or_upgrade(installed_version, available).map_err(|_| ())
+        }) {
+            Ok(false) => {
+                results.push(BatchInstallResult::success(
+                    request,
+                    "이미 같거나 더 최신 버전이 설치되어 있어 변경하지 않았습니다.".to_string(),
+                ));
+                continue;
+            }
+            Err(()) => {
+                results.push(BatchInstallResult::retryable_failure(request));
+                continue;
+            }
+            Ok(true) => {}
+        }
+        let result = install_with_manifest(
+            &app,
+            &base,
+            &client,
+            &manifest,
+            request.app_id.clone(),
+            request.mode.clone(),
+        )
+        .await;
+        results.push(match result {
+            Ok(message) => BatchInstallResult::success(request, message),
+            Err(_) => BatchInstallResult::retryable_failure(request),
+        });
+    }
+    Ok(results)
+}
+
+async fn install_with_manifest(
+    app: &tauri::AppHandle,
+    base: &std::path::Path,
+    client: &reqwest::Client,
+    manifest: &ReleaseManifest,
+    app_id: String,
+    mode: String,
+) -> Result<String, String> {
+    ensure_catalog_target(&app_id)?;
+    if mode != "portable" && mode != "installer" {
+        return Err("지원하지 않는 설치 방식입니다.".to_string());
+    }
     let app_manifest = manifest
         .apps
         .iter()
         .find(|a| a.id == app_id)
         .ok_or_else(|| format!("manifest에 앱이 없다: {app_id}"))?;
-    let asset = select_asset(&manifest, &app_id, &mode)?;
+    let asset = select_asset(manifest, &app_id, &mode)?;
     let version = app_manifest.version.clone();
     validate_artifact_coordinates(&manifest.release_tag, &version, &asset.name)
         .map_err(|_| "manifest의 다운로드 경로 정보가 올바르지 않습니다.".to_string())?;
@@ -288,40 +390,70 @@ pub async fn install(
         return Err("허용되지 않은 다운로드 URL".into());
     }
 
-    let base = data_dir(&app)?;
-    let client = reqwest::Client::new();
-
     if mode == "installer" {
         let setup_dir = base.join("installers");
         std::fs::create_dir_all(&setup_dir).map_err(|e| e.to_string())?;
         let dest = setup_dir.join(&asset.name);
         // 검증이 끝난 뒤에만 installer를 실행한다.
-        download(&client, &url, &dest, asset.size, &asset.sha256).await?;
-        std::process::Command::new(&dest)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        upsert_registry(&app, app_id, version, "installer", String::new())?;
+        download(client, &url, &dest, asset.size, &asset.sha256).await?;
+        let original_registry = read_registry(app);
+        let next_registry = registry_with_entry(
+            &original_registry,
+            app_id,
+            version,
+            "installer",
+            String::new(),
+        );
+        // 실행 전에 durable registry 기록을 준비한다. 실행 실패 시 원래 registry를 복구한다.
+        write_registry(app, &next_registry)
+            .map_err(|_| "설치 상태를 기록할 수 없습니다.".to_string())?;
+        if std::process::Command::new(&dest).spawn().is_err() {
+            if write_registry(app, &original_registry).is_err() {
+                return Err(
+                    "설치 프로그램 실행과 상태 복구에 실패했습니다. 앱 상태를 확인하세요."
+                        .to_string(),
+                );
+            }
+            sync_runtime_metadata_best_effort(app);
+            return Err("설치 프로그램을 실행할 수 없습니다.".to_string());
+        }
+        sync_runtime_metadata_best_effort(app);
         return Ok("설치 프로그램을 실행했습니다. 화면 안내에 따라 설치하세요.".into());
     }
 
     // portable
-    let version_root = crate::core::layout::version_dir(&base, &app_id, &version);
+    let version_root = crate::core::layout::version_dir(base, &app_id, &version);
     std::fs::create_dir_all(&version_root).map_err(|e| e.to_string())?;
-    let exe = crate::core::layout::version_exe(&base, &app_id, &version);
-    download(&client, &url, &exe, asset.size, &asset.sha256).await?;
+    let exe = crate::core::layout::version_exe(base, &app_id, &version);
+    download(client, &url, &exe, asset.size, &asset.sha256).await?;
 
     // current.json 갱신 (직전 정상 버전을 previous로 보존)
-    let prev = read_current(&base, &app_id);
+    let prev = read_current(base, &app_id);
     let current = crate::core::layout::Current {
         version: version.clone(),
         exe_path: exe.to_string_lossy().into_owned(),
         installed_at: now_ms(),
-        previous_version: prev.map(|p| p.version),
+        previous_version: prev.as_ref().map(|value| value.version.clone()),
     };
-    write_current(&base, &app_id, &current)?;
+    let original_registry = read_registry(app);
+    let next_registry = registry_with_entry(
+        &original_registry,
+        app_id.clone(),
+        version,
+        "portable",
+        current.exe_path.clone(),
+    );
+    write_current(base, &app_id, &current)?;
+    if write_registry(app, &next_registry).is_err() {
+        if restore_current(base, &app_id, prev.as_ref()).is_err() {
+            return Err(
+                "설치 상태 기록과 current 복구에 실패했습니다. 앱 상태를 확인하세요.".to_string(),
+            );
+        }
+        return Err("설치 상태를 기록할 수 없습니다.".to_string());
+    }
     // 이전 버전 디렉터리는 삭제하지 않는다 (rollback 보존)
-
-    upsert_registry(&app, app_id, version, "portable", current.exe_path.clone())?;
+    sync_runtime_metadata_best_effort(app);
     Ok("휴대용 앱을 설치했습니다.".into())
 }
 
@@ -489,14 +621,14 @@ pub fn remove_portable_app(app: tauri::AppHandle, app_id: String) -> Result<Stri
     Ok("휴대용 앱을 제거했습니다. 앱 사용자 데이터는 유지됩니다.".to_string())
 }
 
-fn upsert_registry(
-    app: &tauri::AppHandle,
+fn registry_with_entry(
+    original: &[InstalledApp],
     name: String,
     version: String,
     mode: &str,
     exe_path: String,
-) -> Result<(), String> {
-    let mut reg = read_registry(app);
+) -> Vec<InstalledApp> {
+    let mut reg = original.to_vec();
     reg.retain(|a| a.app != name);
     reg.push(InstalledApp {
         app: name,
@@ -504,11 +636,29 @@ fn upsert_registry(
         mode: mode.to_string(),
         exe_path,
     });
-    write_registry(app, &reg)?;
+    reg
+}
+
+fn restore_current(
+    base: &std::path::Path,
+    app_id: &str,
+    previous: Option<&crate::core::layout::Current>,
+) -> Result<(), String> {
+    if let Some(previous) = previous {
+        return write_current(base, app_id, previous);
+    }
+    let path = crate::core::layout::current_json(base, app_id);
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("current 상태를 복구할 수 없습니다.".to_string()),
+    }
+}
+
+fn sync_runtime_metadata_best_effort(app: &tauri::AppHandle) {
     if let Err(error) = sync_runtime_metadata(app) {
         eprintln!("devbox: runtime metadata sync will retry next launch: {error}");
     }
-    Ok(())
 }
 
 async fn download(
@@ -585,6 +735,29 @@ async fn download(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(0);
+
+    struct TestRoot(PathBuf);
+
+    impl TestRoot {
+        fn new() -> Self {
+            let nonce = NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "devbox-manager-batch-{}-{nonce}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     fn installed_view_never_serializes_registry_executable_path() {
@@ -618,5 +791,67 @@ mod tests {
         assert!(!json.contains("secret"));
         assert!(!json.contains("exePath"));
         assert!(json.contains("previousVersion"));
+    }
+
+    #[test]
+    fn registry_batch_update_replaces_only_the_target_app() {
+        let original = vec![
+            InstalledApp {
+                app: "port-manager".to_string(),
+                version: "0.2.1".to_string(),
+                mode: "portable".to_string(),
+                exe_path: "port-old.exe".to_string(),
+            },
+            InstalledApp {
+                app: "code-pad".to_string(),
+                version: "0.3.1".to_string(),
+                mode: "portable".to_string(),
+                exe_path: "code.exe".to_string(),
+            },
+        ];
+
+        let updated = registry_with_entry(
+            &original,
+            "port-manager".to_string(),
+            "0.2.2".to_string(),
+            "portable",
+            "port-new.exe".to_string(),
+        );
+
+        assert_eq!(updated.len(), 2);
+        assert!(updated.iter().any(|entry| {
+            entry.app == "port-manager"
+                && entry.version == "0.2.2"
+                && entry.exe_path == "port-new.exe"
+        }));
+        assert_eq!(
+            updated.iter().find(|entry| entry.app == "code-pad"),
+            original.iter().find(|entry| entry.app == "code-pad")
+        );
+    }
+
+    #[test]
+    fn failed_portable_commit_can_restore_or_remove_current_state() {
+        let root = TestRoot::new();
+        std::fs::create_dir_all(crate::core::layout::apps_root(&root.0, "port-manager")).unwrap();
+        let previous = crate::core::layout::Current {
+            version: "0.2.1".to_string(),
+            exe_path: "old.exe".to_string(),
+            installed_at: 1,
+            previous_version: Some("0.2.0".to_string()),
+        };
+        let attempted = crate::core::layout::Current {
+            version: "0.2.2".to_string(),
+            exe_path: "new.exe".to_string(),
+            installed_at: 2,
+            previous_version: Some("0.2.1".to_string()),
+        };
+        write_current(&root.0, "port-manager", &attempted).unwrap();
+
+        restore_current(&root.0, "port-manager", Some(&previous)).unwrap();
+        assert_eq!(read_current(&root.0, "port-manager"), Some(previous));
+
+        restore_current(&root.0, "port-manager", None).unwrap();
+        assert!(read_current(&root.0, "port-manager").is_none());
     }
 }

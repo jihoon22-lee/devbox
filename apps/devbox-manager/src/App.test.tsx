@@ -7,6 +7,7 @@ import {
   catalog,
   current,
   installApp,
+  installMany,
   installed,
   launchApp,
   openInstallFolder,
@@ -21,6 +22,7 @@ vi.mock("./api", () => ({
   catalog: vi.fn(),
   current: vi.fn(),
   installApp: vi.fn(),
+  installMany: vi.fn(),
   installed: vi.fn(),
   launchApp: vi.fn(),
   openInstallFolder: vi.fn(),
@@ -65,6 +67,7 @@ const availableMock = vi.mocked(available);
 const installedMock = vi.mocked(installed);
 const currentMock = vi.mocked(current);
 const installAppMock = vi.mocked(installApp);
+const installManyMock = vi.mocked(installMany);
 const launchAppMock = vi.mocked(launchApp);
 const rollbackMock = vi.mocked(rollback);
 const openInstallFolderMock = vi.mocked(openInstallFolder);
@@ -86,6 +89,11 @@ beforeEach(() => {
     appId === portable.app ? portableCurrent : null
   ));
   installAppMock.mockReset().mockResolvedValue("installed");
+  installManyMock.mockReset().mockImplementation(async (requests) => requests.map((request) => ({
+    ...request,
+    ok: true,
+    message: "installed",
+  })));
   launchAppMock.mockReset().mockResolvedValue(undefined);
   rollbackMock.mockReset().mockResolvedValue("rolled back");
   openInstallFolderMock.mockReset().mockResolvedValue(undefined);
@@ -229,5 +237,76 @@ describe("Devbox Manager app row context menu", () => {
 
     expect(screen.getByRole("menuitem", { name: "설치/업데이트" }).getAttribute("aria-disabled"))
       .toBe("true");
+  });
+});
+
+describe("Devbox Manager batch install", () => {
+  it("continues after a partial failure and retries only the failed app", async () => {
+    installManyMock.mockResolvedValueOnce([
+      {
+        appId: "port-manager",
+        mode: "portable",
+        ok: false,
+        message: "설치/업데이트에 실패했습니다. 앱 상태를 확인한 뒤 이 항목만 다시 시도하세요.",
+      },
+      {
+        appId: "code-pad",
+        mode: "portable",
+        ok: true,
+        message: "휴대용 앱을 설치했습니다.",
+      },
+    ]);
+    render(<App />);
+    await screen.findByText("Code Pad");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Port Manager 일괄 선택" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Code Pad 일괄 선택" }));
+    fireEvent.click(screen.getByRole("button", { name: "휴대용 일괄 실행" }));
+
+    await waitFor(() => expect(installManyMock).toHaveBeenCalledWith([
+      { appId: "port-manager", mode: "portable" },
+      { appId: "code-pad", mode: "portable" },
+    ]));
+    expect(await screen.findByText("일괄 작업 완료: 성공 1개, 실패 1개")).toBeTruthy();
+    expect((screen.getByRole("checkbox", {
+      name: "Port Manager 일괄 선택",
+    }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("checkbox", {
+      name: "Code Pad 일괄 선택",
+    }) as HTMLInputElement).checked).toBe(false);
+    expect(installAppMock).not.toHaveBeenCalled();
+
+    installManyMock.mockResolvedValueOnce([{
+      appId: "port-manager",
+      mode: "portable",
+      ok: true,
+      message: "휴대용 앱을 설치했습니다.",
+    }]);
+    const retry = screen.getByRole("button", { name: "실패 항목만 재시도 (1)" });
+    await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(installManyMock).toHaveBeenNthCalledWith(2, [
+      { appId: "port-manager", mode: "portable" },
+    ]));
+    expect(await screen.findByText("일괄 작업 완료: 성공 1개, 실패 0개")).toBeTruthy();
+  });
+
+  it("confirms a setup batch before launching one installer per app", async () => {
+    render(<App />);
+    await screen.findByText("Code Pad");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Code Pad 일괄 선택" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "설치 패키지 일괄 실행" }));
+    expect(confirmMock).toHaveBeenCalledWith(
+      "1개 앱의 설치 마법사를 각각 실행할까요? 각 창에서 설치를 완료해야 합니다.",
+    );
+    expect(installManyMock).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(screen.getByRole("button", { name: "설치 패키지 일괄 실행" }));
+    await waitFor(() => expect(installManyMock).toHaveBeenCalledWith([
+      { appId: "code-pad", mode: "installer" },
+    ]));
   });
 });

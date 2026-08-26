@@ -44,7 +44,19 @@ export interface ReleaseManifest {
 export interface InstalledApp {
   app: string;
   version: string;
-  mode: "portable" | "installer";
+  mode: InstallMode;
+}
+
+export type InstallMode = "portable" | "installer";
+
+export interface BatchInstallRequest {
+  appId: string;
+  mode: InstallMode;
+}
+
+export interface BatchInstallResult extends BatchInstallRequest {
+  ok: boolean;
+  message: string;
 }
 
 export interface Current {
