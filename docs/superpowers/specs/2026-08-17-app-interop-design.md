@@ -387,9 +387,24 @@ run-manager(`lib.rs:52-63`)와 life-log(`lib.rs:39-41`)가 `tauri-plugin-single-
 | life-log의 중복 구현 삭제 | `apps/life-log/src-tauri/src/core/readers.rs` 제거 → `crates/integration` 사용 | 계약 단일화 |
 | wsl-desktop을 producer로 | Docker 컨테이너 + 열린 터미널 발행 | **UX 개선 설계 §4.3의 "workbench가 WSL Desktop의 Docker/포트를 자동 반영"은 이것 없이는 구현 불가.** wsl-desktop은 현재 `write_snapshot`을 전혀 호출하지 않는다 |
 
-wsl-desktop producer 구현 시 `core/parsers.rs`의 Docker 포트 파싱이 구조화된 호스트 포트를
-내도록 함께 수정한다 — 현재 `ContainerInfo.ports`는 파싱되지 않은 원시 문자열이다
-(`core/models.rs:18`).
+wsl-desktop producer 구현 시 `core/parsers.rs`의 interactive Docker detail parser와 snapshot
+parser를 섞지 않는다. 기존 `ContainerInfo.ports`는 #276 detail UI가 보여 줄 원시 문자열이고,
+`runtime/v1` producer는 별도의 fixed four-field query(`ID`, `Names`, `State`, `Ports`)와
+`core::runtime_snapshot` parser로 validated `portMappings`만 발행한다. 이 분리는 원문 detail을
+runtime snapshot에 실수로 저장하지 않게 하며, Workbench consumer가 주소가 다른 IPv4/IPv6
+binding을 deterministic tuple로 dedupe할 수 있게 한다.
+
+**2026-08-26 #410 구현 상태.** WSL Desktop은 `wsl.exe --list --running --quiet`로 이미
+실행 중인 distro만 순차 열거하고, 각 distro에서 `wsl.exe -d <validated-distro> -- docker ps
+-a --no-trunc --format {{.ID}}\\t{{.Names}}\\t{{.State}}\\t{{.Ports}}`를 고정 실행한다.
+stopped distro는 시작하지 않으며 shell/user command/mutation은 없다. bounded parser는 distro
+64개·container 256개/distro·512개 전체·terminal 256개/distro·mapping 32개/container·
+1,024개 전체·stdout 4MiB·line 16KiB·5초 timeout을 적용하고, malformed/partial/timeout은
+빈 snapshot으로 덮어쓰지 않고 last-good을 보존한다. `dockerAvailability`는 성공/빈 출력,
+exit 127, 기타 non-zero를 각각 `available`/`missing`/`error`로 구분한다. envelope은
+`Envelope::with_views` + `write_atomic`으로 producer당 한 파일만 교체하며 catalog capability는
+`snapshot:wsl-desktop/runtime/v1`로 선언한다. Workbench #281 consumer와 Docker/WSL action은
+이 producer 구현에 포함되지 않는다.
 
 ### 4.2 자동 발견
 

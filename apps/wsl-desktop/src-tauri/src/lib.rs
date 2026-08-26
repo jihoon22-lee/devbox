@@ -1,10 +1,10 @@
 mod applink;
 mod commands;
 mod core;
+mod runtime_snapshot;
 
 use commands::terminal::SessionState;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
 // TODO(0.5.0): v0.4.x 이전 사용자를 위한 1회성 마이그레이션. 두 릴리스 뒤 제거한다.
@@ -76,10 +76,9 @@ pub fn run() {
                 Ok(None) => {}
                 Err(e) => eprintln!("applink: {e}"),
             }
-            let state = Arc::new(SessionState {
-                sessions: Mutex::new(HashMap::new()),
-            });
-            app.manage(state);
+            let state = Arc::new(SessionState::new());
+            app.manage(Arc::clone(&state));
+            runtime_snapshot::spawn_snapshot_writer(state);
             Ok(())
         })
         .run(tauri::generate_context!())

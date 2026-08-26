@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 5,
+  "catalogRevision": 6,
   "apps": [
     {
       "id": "port-manager",
@@ -41,7 +41,7 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["path"],
-      "produces": [],
+      "produces": ["snapshot:wsl-desktop/runtime/v1"],
       "actions": []
     },
     {

@@ -283,6 +283,32 @@ project environment preflight, template wizard와 runtime 자동 반영은 포�
 chain은 #410 WSL Desktop runtime snapshot producer 후 #281 Workbench WSL runtime 제안이며, 독립적인
 #282 Webhook Lab rule 설명과 #283 example curl은 병렬로 진행한다.
 
+**2026-08-26 #410 구현 상태.** WSL Desktop이 Workbench #281과 Life Log가 읽을 수 있는
+`wsl-desktop/runtime/v1` snapshot producer를 맡도록 연결했다. 기존
+`crates/integration::Envelope::with_views`와 `write_atomic`을 사용해
+`%LOCALAPPDATA%\\devbox\\integration\\wsl-desktop\\v1\\summary.json` 하나를 atomic replace하며,
+`apps/catalog.json` revision 6에 `snapshot:wsl-desktop/runtime/v1` capability를 선언했다.
+
+producer는 `wsl.exe --list --running --quiet`의 이미 실행 중인 distro만 대상으로 하고, 각
+distro에 `wsl.exe -d <validated-distro> -- docker ps -a --no-trunc --format
+{{.ID}}\\t{{.Names}}\\t{{.State}}\\t{{.Ports}}` 고정 argv를 순차 실행한다. stopped distro를
+조회 때문에 시작하지 않으며 shell/사용자 command/환경 확장을 사용하지 않는다. Docker raw
+image/status/ports/COMMAND/labels/env, terminal session id·pane key·cwd·title·profile command는
+공개 경계에서 제외한다. container는 bounded hex ID/name과 정규화 state만, port는 검증된
+`published`, `target`, `protocol` tuple만 내보내고 IPv4/IPv6 binding을 deterministic dedupe한다.
+
+상한은 distro 64개·이름 128 bytes, container 256개/distro·512개 전체, ID 64 bytes·name 256
+bytes, mapping 32개/container·1,024개 전체, terminal 256개/distro, stdout 4MiB·stderr 64KiB·
+line 16KiB·child timeout 5초다. 성공한 빈 Docker 목록은 `available`, exit 127은 `missing`,
+기타 non-zero는 `error`로 구분한다. malformed row, duplicate/unsafe identity, timeout, I/O 또는
+overflow는 빈 결과로 덮어쓰지 않고 기존 last-good snapshot을 보존한다. 앱 setup의 60초 주기와
+dashboard 성공 refresh/terminal start·close·cleanup의 250ms debounce는 producer당 단일
+coordinator worker로 합친다. 관련 순수 fixture는 parser, exact argv, state/port normalization,
+bounds/privacy, atomic replacement, last-good 보존과 temp residue를 검증한다. Workbench 파일,
+자동 Docker/WSL mutation, resource summary, Run Manager 추론과 Log Lens는 이 PR에 포함하지 않는다.
+상세 wire contract와 W1 packaged 검증 항목은 [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)의
+P1-05 `#410` 절을 따른다.
+
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅
 Stage 0a   통폐합·네이밍 (PR 2~4) — identifier com.devbox.*          ✅

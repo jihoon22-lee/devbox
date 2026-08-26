@@ -1,6 +1,6 @@
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{ErrorKind, Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -8,10 +8,48 @@ use tauri::Emitter;
 
 use crate::core::multiplexer::build_session_argv;
 use crate::core::workspace::MultiplexerKind;
+use crate::runtime_snapshot::{request_snapshot_write, SnapshotCoordinator};
 
 /// 실행 중인 터미널 세션 저장소
 pub struct SessionState {
     pub sessions: Mutex<HashMap<String, Arc<Mutex<SessionHandle>>>>,
+    pub snapshot_coordinator: Arc<SnapshotCoordinator>,
+}
+
+impl SessionState {
+    pub fn new() -> Self {
+        Self {
+            sessions: Mutex::new(HashMap::new()),
+            snapshot_coordinator: Arc::new(SnapshotCoordinator::new()),
+        }
+    }
+
+    /// Take a bounded distro-only count snapshot without exposing session ids, pane keys,
+    /// cwd, title or command metadata to the integration producer.
+    pub(crate) fn terminal_counts_by_distro(&self) -> Result<BTreeMap<String, usize>, String> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| "터미널 상태를 읽을 수 없습니다".to_owned())?;
+        let mut counts = BTreeMap::new();
+        for handle in sessions.values() {
+            let distro = handle
+                .lock()
+                .map_err(|_| "터미널 상태를 읽을 수 없습니다".to_owned())?
+                .distro
+                .trim()
+                .to_owned();
+            if !crate::core::runtime_snapshot::is_safe_distro_name(&distro) {
+                return Err("터미널 상태를 읽을 수 없습니다".into());
+            }
+            let count = counts.entry(distro).or_insert(0usize);
+            *count = count.saturating_add(1);
+            if *count > crate::core::runtime_snapshot::MAX_TERMINALS_PER_DISTRO {
+                return Err("터미널 수 제한을 초과했습니다".into());
+            }
+        }
+        Ok(counts)
+    }
 }
 
 /// PTY 세션 하나
@@ -304,6 +342,7 @@ pub async fn start_session(
         .lock()
         .unwrap()
         .insert(session_id.clone(), handle);
+    request_snapshot_write(Arc::clone(state.inner()));
 
     Ok(StartedSession {
         session_id,
@@ -376,6 +415,9 @@ pub fn attach_session(
         }
         drop(reader);
         let cleanup_won = remove_session_if_handle(&state_for_reader, &sid, &handle);
+        if cleanup_won {
+            request_snapshot_write(Arc::clone(&state_for_reader));
+        }
         drop(handle);
         emit_terminal_closed_if_cleanup_won(cleanup_won, || {
             let _ = app_out.emit(
@@ -482,6 +524,7 @@ pub fn close_session(
 ) -> Result<(), String> {
     if let Some(h) = take_session(state.inner().as_ref(), &session_id) {
         teardown_session(h, true);
+        request_snapshot_write(Arc::clone(state.inner()));
     }
     Ok(())
 }
@@ -710,6 +753,40 @@ mod tests {
         }))
     }
 
+    #[test]
+    fn terminal_count_view_groups_only_safe_distro_names() {
+        let ubuntu_a = test_session_handle();
+        let ubuntu_b = test_session_handle();
+        let debian = test_session_handle();
+        debian.lock().unwrap().distro = " Debian ".into();
+        let state = SessionState {
+            sessions: Mutex::new(HashMap::from([
+                ("s1".into(), ubuntu_a),
+                ("s2".into(), ubuntu_b),
+                ("s3".into(), debian),
+            ])),
+            ..SessionState::new()
+        };
+
+        assert_eq!(
+            state.terminal_counts_by_distro().unwrap(),
+            BTreeMap::from([("Debian".into(), 1), ("Ubuntu".into(), 2)])
+        );
+    }
+
+    #[test]
+    fn terminal_count_view_fails_closed_at_the_per_distro_bound() {
+        let sessions = (0..=crate::core::runtime_snapshot::MAX_TERMINALS_PER_DISTRO)
+            .map(|index| (format!("s{index}"), test_session_handle()))
+            .collect();
+        let state = SessionState {
+            sessions: Mutex::new(sessions),
+            ..SessionState::new()
+        };
+
+        assert!(state.terminal_counts_by_distro().is_err());
+    }
+
     struct DropProbe(Arc<std::sync::atomic::AtomicUsize>);
 
     impl Write for DropProbe {
@@ -742,6 +819,7 @@ mod tests {
         let retained_handle = handle.clone();
         let state = SessionState {
             sessions: Mutex::new(HashMap::from([(String::from("s1"), handle.clone())])),
+            ..SessionState::new()
         };
 
         assert!(remove_session_if_handle(&state, "s1", &handle));
@@ -755,6 +833,7 @@ mod tests {
         let stale_handle = test_session_handle();
         let state = SessionState {
             sessions: Mutex::new(HashMap::from([(String::from("s1"), current_handle)])),
+            ..SessionState::new()
         };
         let emitted = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let emitted_for_event = emitted.clone();
@@ -773,6 +852,7 @@ mod tests {
         let handle = test_session_handle();
         let state = SessionState {
             sessions: Mutex::new(HashMap::from([(String::from("s1"), handle.clone())])),
+            ..SessionState::new()
         };
         let emitted = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let emitted_for_event = emitted.clone();
@@ -792,6 +872,7 @@ mod tests {
         let handle = test_session_handle();
         let state = SessionState {
             sessions: Mutex::new(HashMap::from([(String::from("s1"), handle.clone())])),
+            ..SessionState::new()
         };
 
         assert!(remove_session_if_handle(&state, "s1", &handle));
@@ -808,6 +889,7 @@ mod tests {
                 String::from("s1"),
                 current_handle.clone(),
             )])),
+            ..SessionState::new()
         };
 
         assert!(!remove_session_if_handle(&state, "s1", &stale_handle));
@@ -820,6 +902,7 @@ mod tests {
         let handle = test_session_handle();
         let state = SessionState {
             sessions: Mutex::new(HashMap::from([(String::from("s1"), handle)])),
+            ..SessionState::new()
         };
 
         assert!(take_session(&state, "s1").is_some());
