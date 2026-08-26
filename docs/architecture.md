@@ -83,8 +83,11 @@ knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror + co
                    │  → autocomplete·unresolved decoration·backlink source position
                    ├ canonical tree entry → opener 또는 catalog/launch crate → 설치된 대상 앱
                    └ path/body-free activity/v1 snapshot → Life Log Data Sources
-api-playground:   React(context-menu + History/Collection v2) → commands(secrets sanitizer)
+api-playground:   React(context-menu + History/Collection v2 + GraphQL editor/response projection)
+                   → commands(secrets sanitizer + bounded cancellation)
                    → reqwest → HTTP
+                   └ GraphQL GET/POST query·variables·operationName은 기존 native HTTP 경계를
+                      재사용하며 persisted query/introspection/subscription은 별도 제공하지 않음
 code-pad:         React(CodeMirror + tab/editor context-menu, bounded workspace Quick Open tree)
                    → commands → LSP stdio 서버, snapshot-checked sibling rename/delete,
                    filesystem/markdown crate → React

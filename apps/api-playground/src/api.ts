@@ -10,6 +10,17 @@ import {
 } from "./lib/cookies";
 import { isHeaderEnabled } from "./lib/headers";
 import {
+  buildGraphqlBody,
+  buildGraphqlGetUrl,
+  extractGraphqlCredentialLiterals,
+  isGraphqlDerivedHeader,
+  projectGraphqlResponse,
+  parseGraphqlVariables,
+  resolveGraphqlRequest,
+  validateGraphqlEndpoint,
+  validateGraphqlHeaders,
+} from "./lib/graphql";
+import {
   isMultipartPartEnabled,
   isMultipartDerivedHeader,
   safeMultipartFileName,
@@ -20,14 +31,37 @@ import type { ApiResponse, RequestTemplate } from "./types";
 
 const MAX_RESPONSE_HEADERS = 100;
 const MAX_RESPONSE_HEADER_BYTES = 64 * 1024;
+let nativeRequestSequence = 0;
+
+function nextNativeRequestId(): string {
+  nativeRequestSequence = (nativeRequestSequence + 1) % Number.MAX_SAFE_INTEGER;
+  const randomId = globalThis.crypto?.randomUUID?.().replace(/-/g, "");
+  return randomId
+    ? `request-${randomId}`
+    : `request-${Date.now().toString(36)}-${nativeRequestSequence.toString(36)}`;
+}
 
 /** HTTP 요청 전송. 브라우저 미리보기에서는 fetch(CORS 제약 존재)로 대체한다. */
 export async function sendRequest(
   req: RequestTemplate,
   environment: EnvVariable[],
+  signal?: AbortSignal,
 ): Promise<ApiResponse> {
-  if (!isTauri()) return browserFetch(req, environment);
-  return invoke<ApiResponse>("send_request", { req, environment });
+  if (!isTauri()) return browserFetch(req, environment, signal);
+  if (signal?.aborted) throw new Error("요청이 취소되었습니다");
+  const requestId = nextNativeRequestId();
+  const onAbort = () => { void cancelRequest(requestId); };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    return await invoke<ApiResponse>("send_request", { req, environment, requestId });
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+async function cancelRequest(requestId: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("cancel_request", { requestId });
 }
 
 /** 값을 봉인해 base64 blob을 반환한다. */
@@ -83,12 +117,26 @@ export async function pickMultipartFile(): Promise<PickedMultipartFile | null> {
   return { path: selected, name: safeMultipartFileName(selected) };
 }
 
-async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): Promise<ApiResponse> {
+async function browserFetch(req: RequestTemplate, environment: EnvVariable[], signal?: AbortSignal): Promise<ApiResponse> {
   if (environment.some((variable) => variable.secret)) {
     throw new Error("secret 포함 요청은 데스크톱 앱에서만 전송할 수 있습니다");
   }
   const variables = new Map(environment.map((variable) => [variable.key, variable.value]));
-  const resolved = applyToRequest(req, variables);
+  let resolved = applyToRequest(req, variables);
+  const graphql = resolved.body_kind === "graphql" && resolved.graphql
+    ? resolveGraphqlRequest(resolved.graphql, variables)
+    : null;
+  if (resolved.body_kind === "graphql") {
+    if (!graphql) throw new Error("GraphQL 요청 구성이 올바르지 않습니다");
+    validateGraphqlEndpoint(resolved.url);
+    validateGraphqlHeaders(resolved.headers);
+    if (resolved.method !== "GET" && resolved.method !== "POST") {
+      throw new Error("GraphQL 요청 구성이 올바르지 않습니다");
+    }
+    // Keep the resolved document only in this in-flight call; it is not persisted.
+    resolved = { ...resolved, graphql, body: "" };
+    buildGraphqlBody(graphql);
+  }
   if (validateCookies(resolved.cookies).length > 0) {
     throw new Error("Cookie 이름 또는 값이 올바르지 않습니다");
   }
@@ -115,7 +163,8 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): P
     if (
       isHeaderEnabled(header) &&
       header.key &&
-      !(resolved.body_kind === "multipart" && isMultipartDerivedHeader(header.key))
+      !(resolved.body_kind === "multipart" && isMultipartDerivedHeader(header.key)) &&
+      !(resolved.body_kind === "graphql" && isGraphqlDerivedHeader(header.key))
     ) {
       headers.append(header.key, header.value);
     }
@@ -131,11 +180,19 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): P
   }
   const params = new URLSearchParams();
   for (const p of resolved.params) if (p.key) params.append(p.key, p.value);
-  const sep = resolved.url.includes("?") ? "&" : "?";
-  const url = params.size ? resolved.url + sep + params.toString() : resolved.url;
+  const url = resolved.body_kind === "graphql" && graphql && resolved.method === "GET"
+    ? buildGraphqlGetUrl(resolved.url, resolved.params, graphql)
+    : (() => {
+      const sep = resolved.url.includes("?") ? "&" : "?";
+      return params.size ? resolved.url + sep + params.toString() : resolved.url;
+    })();
+  if (resolved.body_kind === "graphql") validateGraphqlEndpoint(url);
 
   let body: BodyInit | undefined;
-  if (resolved.body_kind === "json" && resolved.body.trim()) {
+  if (resolved.body_kind === "graphql" && graphql && resolved.method === "POST") {
+    headers.set("Content-Type", "application/json");
+    body = buildGraphqlBody(graphql);
+  } else if (resolved.body_kind === "json" && resolved.body.trim()) {
     headers.set("Content-Type", "application/json");
     body = resolved.body;
   } else if (resolved.body_kind === "raw" && resolved.body) {
@@ -150,9 +207,24 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): P
     body = form;
   }
 
-  const resp = await fetch(url, { method: req.method, headers, body });
+  const resp = await fetch(url, {
+    method: resolved.method,
+    headers,
+    body,
+    signal,
+    // Browser preview cannot inspect and re-apply native redirect policy safely.
+    // Keep GraphQL redirects at the browser boundary instead of forwarding auth.
+    redirect: resolved.body_kind === "graphql" ? "manual" : "follow",
+  });
+  if (resolved.body_kind === "graphql" && resp.type === "opaqueredirect") {
+    throw new Error("GraphQL 리다이렉트를 브라우저 미리보기에서 처리할 수 없습니다");
+  }
   const duration_ms = Math.round(performance.now() - start);
-  const text = await resp.text();
+  const text = await readResponseText(
+    resp,
+    resolved.body_kind === "graphql" ? 4 * 1024 * 1024 : Number.MAX_SAFE_INTEGER,
+  );
+  const maskedBody = redactBrowserText(text, resolved);
   const respHeaders: { key: string; value: string }[] = [];
   let responseHeaderBytes = 0;
   let headersTruncated = false;
@@ -174,27 +246,61 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): P
     status_text: resp.statusText,
     headers: respHeaders,
     duration_ms,
-    size_bytes: text.length,
-    body: redactBrowserText(text, resolved),
+    size_bytes: new TextEncoder().encode(text).byteLength,
+    body: maskedBody,
     is_json: (resp.headers.get("content-type") ?? "").includes("json"),
-    final_url: redactUrl(resp.url),
+    final_url: redactUrl(resp.url, resolved.body_kind === "graphql"),
     redirects: [],
     cookies: [],
     response_id: null,
     raw_headers_available: false,
     headers_truncated: headersTruncated,
+    ...(resolved.body_kind === "graphql" ? { graphql: projectGraphqlResponse(maskedBody) } : {}),
   };
 }
 
-function isSensitiveName(name: string): boolean {
-  return /(authorization|cookie|api[-_]?key|token|secret|password)/i.test(name);
+async function readResponseText(response: Response, maxBytes: number): Promise<string> {
+  if (!response.body) {
+    const output = await response.text();
+    if (new TextEncoder().encode(output).byteLength > maxBytes) {
+      throw new Error("응답 본문이 허용된 크기를 초과했습니다");
+    }
+    return output;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let output = "";
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) {
+        output += decoder.decode();
+        return output;
+      }
+      total += next.value.byteLength;
+      if (total > maxBytes) throw new Error("응답 본문이 허용된 크기를 초과했습니다");
+      output += decoder.decode(next.value, { stream: true });
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
 }
 
-function redactUrl(value: string): string {
+function isSensitiveName(name: string): boolean {
+  return /(authorization|cookie|set[-_]?cookie|api[-_]?key|api[-_]?value|token|secret|password|passwd|private[-_]?key|username)/i.test(name);
+}
+
+function redactUrl(value: string, maskGraphql = false): string {
   try {
     const url = new URL(value);
     for (const key of [...url.searchParams.keys()]) {
-      if (isSensitiveName(key)) url.searchParams.set(key, "[REDACTED]");
+      if (isSensitiveName(key) || (maskGraphql && ["query", "variables", "operationName"].includes(key))) {
+        url.searchParams.set(key, "[REDACTED]");
+      }
     }
     if (url.username) url.username = "REDACTED";
     if (url.password) url.password = "REDACTED";
@@ -222,6 +328,7 @@ function redactBrowserText(text: string, req: RequestTemplate): string {
         isMultipartPartEnabled(part) && part.kind === "text" && isSensitiveName(part.name),
       )
       .map((part) => part.value),
+    ...(req.body_kind === "graphql" && req.graphql ? graphqlSecrets(req.graphql) : []),
   ].filter((value): value is string => Boolean(value));
   const exactRedacted = directSecrets.sort((a, b) => b.length - a.length).reduce(
     (result, secret) => result.split(secret).join("[REDACTED]"),
@@ -231,10 +338,32 @@ function redactBrowserText(text: string, req: RequestTemplate): string {
     return JSON.stringify(redactBrowserJson(JSON.parse(exactRedacted) as unknown));
   } catch {
     return exactRedacted.replace(
-      /((?:authorization|cookie|api[-_]?key|token|secret|password)\s*[=:]\s*)([^\s,;&]+)/gi,
+      /((?:authorization|cookie|set[-_]?cookie|api[-_]?key|api[-_]?value|token|secret|password|passwd|private[-_]?key|username)\s*[=:]\s*)([^\s,;&]+)/gi,
       "$1[REDACTED]",
     );
   }
+}
+
+function graphqlSecrets(request: NonNullable<RequestTemplate["graphql"]>): string[] {
+  const values = extractGraphqlCredentialLiterals(request.query);
+  try {
+    const variables = parseGraphqlVariables(request.variables);
+    const visit = (value: unknown, key = "") => {
+      // Match the native redactor: variable values are secrets when their
+      // variable name is credential-shaped, while ordinary values (for
+      // example an echoed id) remain useful in a response preview.
+      if (typeof value === "string" && value && isSensitiveName(key)) values.push(value);
+      else if (Array.isArray(value)) value.forEach((item) => visit(item, key));
+      else if (value && typeof value === "object") {
+        Object.entries(value).forEach(([childKey, child]) => visit(child, childKey));
+      }
+    };
+    visit(variables);
+  } catch {
+    // The request builder reports malformed variables before fetch. Do not echo them
+    // from a later browser error path.
+  }
+  return values;
 }
 
 function redactBrowserJson(value: unknown, key = ""): unknown {

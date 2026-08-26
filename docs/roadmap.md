@@ -192,6 +192,14 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
      arbitrary PID kill remain outside this issue.
 3. Toolbox UUID v7/ULID/HTML/URL/HMAC/JWT verify/Lorem/Markdown table/내장 QR.
 4. API Playground OpenAPI 3.x import, GraphQL, SSE, WebSocket.
+   - GraphQL #294 draft: 기존 native HTTP/auth/environment/history 경계 위에 bounded GET/POST
+     query·variables·operationName, canonical GraphQL JSON body, HTTP-vs-GraphQL response
+     projection, cancellation과 browser parity를 구현했다. URL/userinfo/credential query,
+     document/variables/header/body/response bounds 및 fixed error/redaction을 native와
+     frontend에서 mirror한다. multi-operation `operationName` 선택과 request-ID-routed
+     in-flight connect/body cancellation까지 루트 review fixture로 고정했고 frontend 전체
+     test/build를 통과했다. persisted query/introspection/schema cache/subscription/codegen/replay는
+     제외하며 Windows W2는 PR gate에서 확인한다.
 5. Everything+ text/code/Markdown 및 PDF/DOCX/XLS(X)/ODS content index.
 6. Knowledge global quick capture·image asset, Life Log Markdown/JSON/CSV export·규칙 기반 요약.
    Life Log export는 #305 범위의 native-first date-range artifact와 browser-preview 경계를

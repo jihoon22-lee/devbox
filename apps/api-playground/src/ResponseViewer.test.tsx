@@ -132,4 +132,22 @@ describe("ResponseViewer", () => {
     ));
     expect(document.body.textContent).not.toContain("backend-secret");
   });
+
+  it("keeps HTTP status errors distinct from projected GraphQL data and errors", () => {
+    renderViewer(response({
+      status: 400,
+      status_text: "Bad Request",
+      body: '{"data":{"viewer":null},"errors":[{"message":"field failed","path":["viewer"]}]}',
+      graphql: {
+        envelope: "valid",
+        data: { viewer: null },
+        errors: [{ message: "field failed", locations: [], path: ["viewer"] }],
+        errors_truncated: false,
+      },
+    }));
+    expect(screen.getByText("HTTP error (400)")).toBeTruthy();
+    expect(screen.getByText("GraphQL envelope: valid")).toBeTruthy();
+    expect(screen.getByRole("alert", { name: "GraphQL errors" }).textContent).toContain("field failed");
+    expect(screen.getByText("GraphQL data")).toBeTruthy();
+  });
 });

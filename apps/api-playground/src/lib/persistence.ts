@@ -1,5 +1,6 @@
 import type {
   AuthConfig,
+  GraphqlRequest,
   HistoryItem,
   KeyValue,
   MultipartPart,
@@ -13,6 +14,7 @@ import {
 } from "./headers";
 import { isRequestCookie, normalizeCookies } from "./cookies";
 import { isExactVariableReference } from "./references";
+import { maskGraphqlQueryLiterals } from "./graphql";
 import {
   isMultipartPart,
   MAX_MULTIPART_PARTS,
@@ -145,7 +147,9 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
   const url = mark(request.url, sanitizeUrl(request.url));
   const body = mark(
     request.body,
-    request.body_kind === "multipart" ? "" : sanitizeBody(request.body, request.body_kind),
+    ["multipart", "graphql"].includes(request.body_kind)
+      ? ""
+      : sanitizeBody(request.body, request.body_kind),
   );
   const sourceMultipart = request.multipart ?? [];
   if (sourceMultipart.length > MAX_MULTIPART_PARTS) requiresSecretReview = true;
@@ -153,6 +157,9 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
     sanitizeMultipartPart(part, sourceMultipart[index] ?? part, mark),
   );
   const auth = request.auth ? sanitizeAuth(request.auth, mark) : null;
+  const graphql = request.body_kind === "graphql" && request.graphql
+    ? sanitizeGraphqlRequest(request.graphql, mark)
+    : undefined;
 
   return {
     method: request.method,
@@ -165,6 +172,7 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
     body,
     auth,
     timeout_ms: request.timeout_ms,
+    ...(graphql ? { graphql } : {}),
     requiresSecretReview,
   };
 }
@@ -176,6 +184,9 @@ export function toRequestTemplate(request: PersistedHistoryRequest): RequestTemp
     headers: normalizeHeaders(template.headers),
     cookies: normalizeCookies(template.cookies),
     multipart: normalizeMultipartParts(template.multipart),
+    ...(template.body_kind === "graphql" && template.graphql
+      ? { graphql: normalizeGraphqlRequest(template.graphql) }
+      : {}),
   };
 }
 
@@ -187,6 +198,19 @@ export function normalizePersistedRequest(
     headers: normalizeHeaders(request.headers),
     cookies: normalizeCookies(request.cookies),
     multipart: normalizeMultipartParts(request.multipart),
+    ...(request.body_kind === "graphql" && request.graphql
+      ? { graphql: normalizeGraphqlRequest(request.graphql) }
+      : {}),
+  };
+}
+
+function normalizeGraphqlRequest(request: GraphqlRequest): GraphqlRequest {
+  // Keep the persisted wire shape allowlisted even when an older or manually
+  // edited store contains unknown GraphQL fields.
+  return {
+    query: request.query,
+    variables: request.variables,
+    operation_name: request.operation_name,
   };
 }
 
@@ -306,6 +330,42 @@ function sanitizeBody(body: string, kind: string): string {
   return redactKnownTokenPatterns(body);
 }
 
+function sanitizeGraphqlRequest(
+  request: GraphqlRequest,
+  mark: (original: string, sanitized: string) => string,
+): GraphqlRequest {
+  const query = maskGraphqlQueryLiterals(request.query);
+  let variables = request.variables;
+  if (variables.trim()) {
+    try {
+      variables = JSON.stringify(sanitizeGraphqlVariables(JSON.parse(variables) as unknown));
+    } catch {
+      variables = REDACTED;
+    }
+  }
+  return {
+    query: mark(request.query, redactKnownTokenPatterns(query)),
+    variables: mark(request.variables, redactKnownTokenPatterns(variables)),
+    operation_name: mark(request.operation_name, redactKnownTokenPatterns(request.operation_name)),
+  };
+}
+
+function sanitizeGraphqlVariables(value: unknown, key = ""): unknown {
+  if (isSensitiveName(key)) {
+    return typeof value === "string" && isExactVariableReference(value) ? value : REDACTED;
+  }
+  if (Array.isArray(value)) return value.map((item) => sanitizeGraphqlVariables(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([childKey, child]) => [
+        childKey,
+        sanitizeGraphqlVariables(child, childKey),
+      ]),
+    );
+  }
+  return typeof value === "string" ? redactKnownTokenPatterns(value) : value;
+}
+
 function sanitizeJsonValue(value: unknown, key = ""): unknown {
   if (isSensitiveName(key)) {
     return typeof value === "string" && containsReference(value) ? value : REDACTED;
@@ -383,9 +443,18 @@ function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
     request.params.every(isKeyValue) &&
     typeof request.body_kind === "string" &&
     typeof request.body === "string" &&
+    (request.graphql === undefined || request.graphql === null || isGraphqlRequest(request.graphql)) &&
     typeof request.timeout_ms === "number" &&
     typeof request.requiresSecretReview === "boolean"
   );
+}
+
+function isGraphqlRequest(value: unknown): value is GraphqlRequest {
+  if (!value || typeof value !== "object") return false;
+  const request = value as Partial<GraphqlRequest>;
+  return typeof request.query === "string"
+    && typeof request.variables === "string"
+    && typeof request.operation_name === "string";
 }
 
 function isKeyValue(value: unknown): value is KeyValue {

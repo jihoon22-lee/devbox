@@ -30,6 +30,7 @@ base64 = "0.22"
 zeroize = "1"
 dirs = "6.0.0"
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+tokio = { version = "1", features = ["macros", "time"] }
 
 
 [target.'cfg(windows)'.dependencies]

@@ -451,4 +451,42 @@ describe("request persistence sanitizer", () => {
     expect(safe.body).not.toContain("broken-secret");
     expect(safe.requiresSecretReview).toBe(true);
   });
+
+  it("GraphQL generated body를 저장하지 않고 query literal·variables secret을 정화한다", () => {
+    const safe = sanitizeRequestForPersistence(request({
+      body_kind: "graphql",
+      body: '{"query":"generated body must not persist"}',
+      graphql: {
+        query: 'query Viewer { viewer(token: "query-secret", id: "42", ref: "{{ID}}") { id } }',
+        variables: '{"token":"variable-secret","mixed_token":"prefix-${TOKEN}","reference_token":"${TOKEN}","id":"42"}',
+        operation_name: "Viewer",
+      },
+    }));
+
+    expect(safe.body).toBe("");
+    expect(safe.graphql).toEqual({
+      query: 'query Viewer { viewer(token: "[REDACTED]", id: "[REDACTED]", ref: "{{ID}}") { id } }',
+      variables: '{"token":"[REDACTED]","mixed_token":"[REDACTED]","reference_token":"${TOKEN}","id":"42"}',
+      operation_name: "Viewer",
+    });
+    expect(JSON.stringify(safe)).not.toContain("query-secret");
+    expect(JSON.stringify(safe)).not.toContain("variable-secret");
+    expect(JSON.stringify(safe)).not.toContain("generated body must not persist");
+    expect(safe.requiresSecretReview).toBe(true);
+  });
+
+  it("비-GraphQL 요청에서는 stale GraphQL 편집 상태를 저장하지 않는다", () => {
+    const safe = sanitizeRequestForPersistence(request({
+      body_kind: "json",
+      body: '{"safe":true}',
+      graphql: {
+        query: 'query Viewer { viewer(token: "stale-secret") { id } }',
+        variables: '{"token":"stale-secret"}',
+        operation_name: "Viewer",
+      },
+    }));
+
+    expect(safe.graphql).toBeUndefined();
+    expect(JSON.stringify(safe)).not.toContain("stale-secret");
+  });
 });

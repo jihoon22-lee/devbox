@@ -22,6 +22,63 @@
   해제한다 (`crates/secrets`). Header table의 picker에는 현재 환경의 봉인된 secret 이름만
   표시하고 `${NAME}`을 삽입하며 frontend로 DPAPI secret을 unseal하지 않는다.
 
+## GraphQL 요청 (P2-05, #294)
+
+Body 종류에서 GraphQL을 선택하면 REST 본문과 분리된 `query`, `variables` JSON object,
+`operationName` 편집기가 표시된다. 기존 URL params·headers·auth·environment를 그대로
+재사용하며, 전송할 때만 environment reference를 해석한다. method는 GraphQL-over-HTTP의
+GET/POST만 허용한다.
+
+### Wire contract
+
+- POST는 `Content-Type: application/json`과 함께 다음 canonical JSON object를 전송한다.
+  `operationName`(입력 시), `query`, `variables` 순서와 nested object key를 deterministic하게
+  직렬화한다. 사용자가 입력한 `Content-Type`, `Content-Length`, transfer 관련 파생 header는
+  무시하고 transport가 결정한다. 그 밖의 enabled header와 auth는 기존 request 경계를
+  따른다.
+- GET은 endpoint query와 params를 URL encoder로 보존한 뒤 `query`, compact JSON
+  `variables`, 입력된 `operationName`을 query parameter로 추가한다. URL은 8 KiB를 넘을 수
+  없고 credential-shaped query key(`token`, `authorization`, `cookie`, `api-key`, `password`,
+  `private-key`, `username` 등)는 값이 비어 있어도 fail-closed로 거부한다. endpoint는
+  `http`/`https`와 host를 요구하며 userinfo, fragment, control 문자를 허용하지 않는다.
+- 여러 operation은 명시적인 operationName이 필요하고, 이름은 GraphQL name 문법과 128
+  UTF-8 bytes를 따른다. query는 최대 512 KiB·100,000 token·100 operations, variables는
+  최대 512 KiB의 JSON object·depth 32·10,000 nodes·key/value string 64 KiB다. 생성된
+  POST body는 2 MiB, request header는 100행·합계 128 KiB를 넘을 수 없다.
+- response body는 native에서 최대 4 MiB까지 bounded stream으로 읽는다. `data`는 depth 64,
+  10,000 nodes, key/value string 64 KiB, `errors`는 100개·message 4 KiB·path 20개와 path
+  item 128 bytes로 제한한다. 상한을 넘거나 JSON envelope가 손상되면 raw parser/OS 오류
+  대신 고정 상태(`not_json`, `invalid`, `oversized`)만 반환한다.
+
+### Response, persistence, and cancellation
+
+- Body tab의 GraphQL summary는 HTTP status(예: HTTP 400)와 GraphQL envelope error(예:
+  HTTP 200 + `errors`)를 별도로 보여 주며, bounded `data`와 `errors[].message/path/location`을
+  함께 표시한다. `extensions`와 알 수 없는 error field는 projection에서 버린다. 원문
+  response body는 기존 masked Body tab에도 남긴다.
+- History/Collection에는 GraphQL fields만 저장하고 생성된 POST body나 GET URL을 저장하지
+  않는다. query string literal은 기본적으로 `[REDACTED]` 처리하며 exact whole-value
+  `${NAME}`/`{{NAME}}` reference만 다시 해석할 수 있도록 보존한다. variables는 JSON
+  형태를 유지하되 credential-shaped key/value와 알려진 token을 masking하고, credential
+  key에서는 exact whole-value `${NAME}`/`{{NAME}}` reference만 보존한다. 알 수 없는
+  GraphQL field는 제거한다. backend sanitizer가 저장 직전에 같은 shape와 redaction을
+  재검증하며 request editor 자체는 사용자가 저장/전송하기 전까지 memory-only다.
+- response data/error/body/final URL/redirect metadata에는 request auth, cookie, sensitive
+  header/variable 및 credential-shaped GraphQL argument가 반향되지 않는다. raw header와
+  원문 cURL은 기존처럼 별도 확인 뒤 일회성으로만 제공되며 GraphQL 기본 cURL은 masked
+  fields를 사용한다. GraphQL subscription, persisted query, introspection/schema explorer,
+  code generation은 이 기능에 포함하지 않는다.
+- Send 중에는 버튼이 Cancel로 바뀐다. native cancellation은 bounded caller request ID와
+  process-local monotonic token을 함께 사용해 늦은 이전 Cancel IPC를 정확한 요청에만
+  적용하고, 새 요청으로 이전 요청을 supersede한다. HTTP connect/header 대기와 bounded
+  response body read도 즉시 취소한다. browser preview는 AbortController를 사용한다.
+  sequence/mounted guard가 stale response와 unmount 후 state 변경을 버리며, 별도
+  sidecar/외부 process는 만들지 않는다. timeout 범위는 100 ms~120 s로 고정한다.
+- Tauri 밖 browser preview도 같은 query/variables/body/response projection과 request bounds를
+  사용하지만 CORS와 브라우저 header 제약을 받는다. DPAPI secret 요청은 전송하지 않으며,
+  browser GraphQL redirect는 auth 재전달을 막기 위해 manual mode로 멈춘다. packaged native
+  loopback test가 실제 HTTP acceptance의 기준이다.
+
 ## 보안·저장 경계
 
 - **History migration** — v1 `apip-history`는 평문 포함 여부를 증명할 수 없어 UI·검색·재전송에서
@@ -87,5 +144,5 @@
 
 ## 개발
 
-- 순수 로직: `src-tauri/src/commands/request.rs` → `cargo test`
+- 순수 로직: `src-tauri/src/core/graphql.rs`·`src-tauri/src/commands/request.rs` → `cargo test`
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
