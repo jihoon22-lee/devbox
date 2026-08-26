@@ -5,6 +5,7 @@ import { DiffTool } from "./diff";
 import { RegexTool } from "./regex";
 import { HashTool, UuidTool } from "./security";
 import { JsonYamlTool } from "./JsonYamlTool";
+import { JsonTypescriptTool } from "./JsonTypescriptTool";
 import { RadixTool } from "./RadixTool";
 import {
   CaseConverter,
@@ -27,6 +28,7 @@ const jsonTools: ToolDef[] = [
   { id: "json-format", group: "JSON", name: "Formatter", component: () => <TransformerTool placeholder="Paste JSON..." run={jsonFormatter()} /> },
   { id: "json-minify", group: "JSON", name: "Minifier", component: () => <TransformerTool placeholder="Paste JSON..." run={jsonMinifier()} /> },
   { id: "json-yaml", group: "JSON", name: "JSON ↔ YAML", component: JsonYamlTool },
+  { id: "json-typescript", group: "JSON", name: "JSON → TypeScript", component: JsonTypescriptTool },
 ];
 
 const encodingTools: ToolDef[] = [

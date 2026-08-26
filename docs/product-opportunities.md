@@ -1244,6 +1244,7 @@ Windows Terminal과 범용 탭·테마·프로필 경쟁을 하기보다 프로�
 - JSON↔YAML은 v0.5.0 P1-09 #264에서 오프라인 native 기능으로 구현
 - UTF-8/Hex/Base64/Base64URL byte codec은 v0.5.0 P1-09 #265에서 오프라인 native 기능으로 구현
 - 2·8·10·16진수 bounded radix converter는 v0.5.0 P1-09 #266에서 오프라인 native 기능으로 구현
+- deterministic JSON→TypeScript type generator는 v0.5.0 P1-09 #267에서 오프라인 native 기능으로 구현
 - CSV↔JSON과 URL parser는 수요·형식 경계가 확정되면 후속 추가
 
 JWT decode와 signature verify는 별도 기능으로 구분한다. decode 성공을 신뢰 가능한 token으로
