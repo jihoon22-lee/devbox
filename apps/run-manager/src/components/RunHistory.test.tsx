@@ -1,13 +1,14 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listActiveRuns, listRuns, runJobNow, stopActiveRun, tailLog } from "../api";
-import type { Job, Run } from "../types";
+import { listActiveRuns, listRuns, runJobNow, searchRunLogs, stopActiveRun, tailLog } from "../api";
+import type { Job, LogSearchResponse, Run } from "../types";
 import RunHistory, { collectRunLog } from "./RunHistory";
 
 vi.mock("../api", () => ({
   listRuns: vi.fn(),
   listActiveRuns: vi.fn(),
   runJobNow: vi.fn(),
+  searchRunLogs: vi.fn(),
   stopActiveRun: vi.fn(),
   tailLog: vi.fn(),
 }));
@@ -15,6 +16,7 @@ vi.mock("../api", () => ({
 const listRunsMock = vi.mocked(listRuns);
 const listActiveRunsMock = vi.mocked(listActiveRuns);
 const runJobNowMock = vi.mocked(runJobNow);
+const searchRunLogsMock = vi.mocked(searchRunLogs);
 const stopActiveRunMock = vi.mocked(stopActiveRun);
 const tailLogMock = vi.mocked(tailLog);
 const confirmMock = vi.fn<(message?: string) => boolean>();
@@ -62,6 +64,13 @@ beforeEach(() => {
   listRunsMock.mockReset().mockResolvedValue([run]);
   listActiveRunsMock.mockReset().mockResolvedValue([]);
   runJobNowMock.mockReset().mockResolvedValue({ ...run, id: "run-now", status: "running", endedAt: null, exitCode: null });
+  searchRunLogsMock.mockReset().mockResolvedValue({
+    matches: [],
+    scannedLines: 1,
+    scannedBytes: 9,
+    truncated: false,
+    sources: [],
+  });
   stopActiveRunMock.mockReset().mockResolvedValue({ ...run, status: "cancelled" });
   tailLogMock.mockReset().mockResolvedValue({
     data: Array.from(new TextEncoder().encode("finished\n")),
@@ -256,5 +265,101 @@ describe("RunHistory", () => {
     expect(new TextDecoder().decode(collected.bytes)).toBe("ab");
     expect(collected.truncated).toBe(true);
     expect(tailLogMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("searches literal logs with source/level filters and navigates by stream and line", async () => {
+    const response: LogSearchResponse = {
+      matches: [
+        {
+          sourceId: "run-manager:run-1:stderr",
+          stream: "stderr",
+          lineNumber: 1,
+          level: "error",
+          timestampMillis: null,
+        },
+      ],
+      scannedLines: 2,
+      scannedBytes: 24,
+      truncated: false,
+      sources: [{ kind: "log-source/v1", sourceId: "run-manager:run-1:stderr", runId: "run-1", stream: "stderr" }],
+    };
+    searchRunLogsMock.mockResolvedValueOnce(response);
+    const view = render(<RunHistory jobs={[job]} />);
+    const query = await view.findByRole("searchbox", { name: "로그 검색어" });
+    fireEvent.change(query, { target: { value: "failure" } });
+    fireEvent.change(view.getByRole("combobox", { name: "로그 검색 소스" }), { target: { value: "stderr" } });
+    fireEvent.change(view.getByRole("combobox", { name: "로그 검색 레벨" }), { target: { value: "error" } });
+    fireEvent.submit(view.getByRole("form", { name: "로그 검색" }));
+
+    await waitFor(() => expect(searchRunLogsMock).toHaveBeenCalledWith("run-1", {
+      query: "failure",
+      mode: "literal",
+      source: "stderr",
+      level: "error",
+      startAt: null,
+      endAt: null,
+    }));
+    expect(await view.findByText(/1 \/ 1개 결과/)).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "다음 검색 결과" }));
+    expect(view.getByRole("button", { name: "stderr" }).className).toContain("active");
+  });
+
+  it("does not submit a composing Enter and suppresses raw regex errors", async () => {
+    searchRunLogsMock.mockRejectedValueOnce(new Error("secret /path/raw"));
+    const view = render(<RunHistory jobs={[job]} />);
+    const query = await view.findByRole("searchbox", { name: "로그 검색어" });
+    fireEvent.change(query, { target: { value: "[" } });
+    fireEvent.change(view.getByRole("combobox", { name: "로그 검색 방식" }), { target: { value: "regex" } });
+    fireEvent.keyDown(query, { key: "Enter", keyCode: 229 });
+    expect(searchRunLogsMock).not.toHaveBeenCalled();
+    fireEvent.submit(view.getByRole("form", { name: "로그 검색" }));
+
+    const alert = await view.findByRole("alert");
+    expect(alert.textContent).toContain("로그 검색을 완료하지 못했습니다.");
+    expect(alert.textContent).not.toContain("secret");
+    expect(alert.textContent).not.toContain("/path/raw");
+  });
+
+  it("submits from keyboard and clears metadata without retaining a log copy", async () => {
+    searchRunLogsMock.mockResolvedValueOnce({
+      matches: [{
+        sourceId: "run-manager:run-1:stdout",
+        stream: "stdout",
+        lineNumber: 1,
+        level: null,
+        timestampMillis: null,
+      }],
+      scannedLines: 1,
+      scannedBytes: 4,
+      truncated: false,
+      sources: [{ kind: "log-source/v1", sourceId: "run-manager:run-1:stdout", runId: "run-1", stream: "stdout" }],
+    });
+    const view = render(<RunHistory jobs={[job]} />);
+    const query = await view.findByRole("searchbox", { name: "로그 검색어" });
+    fireEvent.change(query, { target: { value: "hit" } });
+    fireEvent.keyDown(query, { key: "Enter", code: "Enter", keyCode: 13 });
+    await waitFor(() => expect(searchRunLogsMock).toHaveBeenCalledTimes(1));
+    expect(await view.findByText(/1 \/ 1개 결과/)).toBeTruthy();
+
+    fireEvent.click(view.getByRole("button", { name: "지우기" }));
+    expect((query as HTMLInputElement).value).toBe("");
+    expect(view.queryByText("1 / 1개 결과")).toBeNull();
+  });
+
+  it("guards duplicate searches while busy and ignores a stale result after unmount", async () => {
+    let resolve: (value: LogSearchResponse) => void = () => undefined;
+    searchRunLogsMock.mockReturnValueOnce(new Promise<LogSearchResponse>((done) => {
+      resolve = (value) => done(value);
+    }));
+    const view = render(<RunHistory jobs={[job]} />);
+    const query = await view.findByRole("searchbox", { name: "로그 검색어" });
+    fireEvent.change(query, { target: { value: "hit" } });
+    const form = view.getByRole("form", { name: "로그 검색" });
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(searchRunLogsMock).toHaveBeenCalledTimes(1);
+    view.unmount();
+    resolve({ matches: [], scannedLines: 1, scannedBytes: 3, truncated: false, sources: [] });
+    await Promise.resolve();
   });
 });

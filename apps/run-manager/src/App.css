@@ -377,6 +377,79 @@ h2 {
   font-size: 11px;
 }
 
+.log-search {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 120px 120px 120px auto auto;
+  align-items: end;
+  gap: 8px;
+  border-bottom: 1px solid #263349;
+  padding: 10px;
+  background: #0d1420;
+}
+
+.log-search .field {
+  gap: 4px;
+}
+
+.log-search-query {
+  min-width: 0;
+}
+
+.log-search-results {
+  border-bottom: 1px solid #263349;
+  padding: 9px 10px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.log-search-summary {
+  min-height: 18px;
+}
+
+.log-search-navigation {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+}
+
+.log-search-match-list {
+  display: flex;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  list-style: none;
+}
+
+.log-search-match-list button {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 7px;
+  color: #94a3b8;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--db-font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.log-search-match-list button:hover,
+.log-search-match-list button.active {
+  border-color: #31548a;
+  color: #dbeafe;
+  background: #12213a;
+}
+
+.log-line {
+  display: block;
+}
+
+.log-line.match-active {
+  outline: 1px solid #5b8fd9;
+  background: #182d4b;
+}
+
 .log-panel pre {
   min-height: 300px;
   max-height: 540px;
@@ -949,6 +1022,14 @@ dd {
 
   .history-layout {
     grid-template-columns: 1fr;
+  }
+
+  .log-search {
+    grid-template-columns: minmax(160px, 1fr) repeat(3, minmax(110px, 0.7fr));
+  }
+
+  .log-search > button {
+    min-width: 84px;
   }
 }
 

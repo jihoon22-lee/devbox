@@ -49,6 +49,7 @@ vi.mock("./api", () => ({
   quitApp: vi.fn(async () => undefined),
   restartService: vi.fn(),
   runJobNow: vi.fn(),
+  searchRunLogs: vi.fn(),
   setJobEnabled: vi.fn(),
   setStartupShortcutEnabled: vi.fn(),
   startService: vi.fn(),

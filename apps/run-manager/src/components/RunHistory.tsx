@@ -4,12 +4,28 @@ import {
   type ContextMenuEntry,
 } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listActiveRuns, listRuns, runJobNow, stopActiveRun, tailLog } from "../api";
-import type { Job, LogStream, Run, RunStatus } from "../types";
+import { listActiveRuns, listRuns, runJobNow, searchRunLogs, stopActiveRun, tailLog } from "../api";
+import type {
+  Job,
+  LogLevel,
+  LogSearchMatch,
+  LogSearchMode,
+  LogSearchResponse,
+  LogStream,
+  Run,
+  RunStatus,
+} from "../types";
 
 const DISPLAY_BYTE_LIMIT = 1024 * 1024;
 const LOG_EXPORT_CHUNK_BYTES = 256 * 1024;
 const LOG_EXPORT_BYTE_LIMIT = 50 * 1024 * 1024;
+export const LOG_SEARCH_QUERY_BYTE_LIMIT = 512;
+export const LOG_SEARCH_MAX_RESULT_LINES = 500;
+const MAX_WRAPPED_LOG_LINES = 20_000;
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
 
 export interface CollectedRunLog {
   bytes: Uint8Array;
@@ -98,6 +114,51 @@ function duration(run: Run): string {
   return `${(elapsed / 1_000).toFixed(elapsed < 10_000 ? 1 : 0)}초`;
 }
 
+function searchErrorMessage(cause: unknown): string {
+  return String(cause) === "log-search-invalid-pattern"
+    ? "정규식 패턴이 올바르지 않습니다."
+    : "로그 검색을 완료하지 못했습니다.";
+}
+
+function levelLabel(level: LogLevel | null): string {
+  return level === null ? "레벨 없음" : level;
+}
+
+function isSafeSearchResponse(response: LogSearchResponse, runId: string): boolean {
+  if (
+    !response ||
+    !Array.isArray(response.matches) ||
+    !Array.isArray(response.sources) ||
+    !Number.isSafeInteger(response.scannedLines) ||
+    response.scannedLines < 0 ||
+    response.scannedLines > 50_000 ||
+    !Number.isSafeInteger(response.scannedBytes) ||
+    response.scannedBytes < 0 ||
+    response.scannedBytes > 8 * 1024 * 1024 ||
+    typeof response.truncated !== "boolean" ||
+    response.matches.length > LOG_SEARCH_MAX_RESULT_LINES ||
+    response.sources.length > 2
+  ) return false;
+  const sourceIds = new Set<string>();
+  const sourceStreams = new Set<LogStream>();
+  for (const source of response.sources) {
+    if (source.kind !== "log-source/v1" || source.runId !== runId || !["stdout", "stderr"].includes(source.stream) || sourceStreams.has(source.stream)) {
+      return false;
+    }
+    const expected = `run-manager:${runId}:${source.stream}`;
+    if (source.sourceId !== expected || source.sourceId.length > 192) return false;
+    sourceIds.add(source.sourceId);
+    sourceStreams.add(source.stream);
+  }
+  return response.matches.every((match) => {
+    if (!sourceIds.has(match.sourceId) || !["stdout", "stderr"].includes(match.stream)) return false;
+    if (match.sourceId !== `run-manager:${runId}:${match.stream}`) return false;
+    if (!Number.isSafeInteger(match.lineNumber) || match.lineNumber < 1 || match.lineNumber > 50_000) return false;
+    if (match.level !== null && !["trace", "debug", "info", "warn", "error"].includes(match.level)) return false;
+    return match.timestampMillis === null || Number.isSafeInteger(match.timestampMillis);
+  });
+}
+
 export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryProps) {
   const initialJobId = requestedJobId && jobs.some((job) => job.id === requestedJobId)
     ? requestedJobId
@@ -118,14 +179,34 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   const [logError, setLogError] = useState<string | null>(null);
   const [activeSnapshotError, setActiveSnapshotError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<LogSearchMode>("literal");
+  const [searchSource, setSearchSource] = useState<LogStream | "">("");
+  const [searchLevel, setSearchLevel] = useState<LogLevel | "">("");
+  const [searchResponse, setSearchResponse] = useState<LogSearchResponse | null>(null);
+  const [searchIndex, setSearchIndex] = useState(-1);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [contextRun, setContextRun] = useState<Run | null>(null);
   const viewGeneration = useRef(0);
   const refreshInFlight = useRef<Promise<void> | null>(null);
   const refreshPending = useRef(false);
   const refreshRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const selectedStatusRef = useRef<RunStatus | null>(null);
+  const searchGeneration = useRef(0);
+  const searchBusyRef = useRef(false);
+  const mountedRef = useRef(true);
+  const logLineRefs = useRef(new Map<number, HTMLSpanElement>());
   const queryRef = useRef({ jobId, startDate, endDate });
   queryRef.current = { jobId, startDate, endDate };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      searchGeneration.current += 1;
+    };
+  }, []);
 
   const prepareRunContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.runId;
@@ -310,6 +391,59 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     }
   };
 
+  const handleSearch = async () => {
+    const run = selectedRun;
+    if (!run?.logsAvailable || !searchQuery || searchBusyRef.current) return;
+    if (utf8ByteLength(searchQuery) > LOG_SEARCH_QUERY_BYTE_LIMIT) {
+      setSearchError("검색어가 허용된 크기를 초과했습니다.");
+      return;
+    }
+    const generation = ++searchGeneration.current;
+    searchBusyRef.current = true;
+    setSearchBusy(true);
+    setSearchError(null);
+    setSearchResponse(null);
+    setSearchIndex(-1);
+    try {
+      const response = await searchRunLogs(run.id, {
+        query: searchQuery,
+        mode: searchMode,
+        source: searchSource || null,
+        level: searchLevel || null,
+        startAt: dateBoundary(startDate, false),
+        endAt: dateBoundary(endDate, true),
+      });
+      if (!isSafeSearchResponse(response, run.id)) throw new Error("log-search-invalid-source");
+      if (!mountedRef.current || generation !== searchGeneration.current) return;
+      setSearchResponse(response);
+      setSearchIndex(response.matches.length > 0 ? 0 : -1);
+    } catch (cause) {
+      if (mountedRef.current && generation === searchGeneration.current) {
+        setSearchError(searchErrorMessage(cause));
+      }
+    } finally {
+      searchBusyRef.current = false;
+      if (mountedRef.current) setSearchBusy(false);
+    }
+  };
+
+  const clearSearch = () => {
+    searchGeneration.current += 1;
+    setSearchQuery("");
+    setSearchResponse(null);
+    setSearchIndex(-1);
+    setSearchError(null);
+  };
+
+  const moveToSearchMatch = (index: number) => {
+    const matches = searchResponse?.matches ?? [];
+    if (matches.length === 0) return;
+    const next = (index + matches.length) % matches.length;
+    const match = matches[next];
+    setSearchIndex(next);
+    if (match.stream !== stream) setStream(match.stream);
+  };
+
   const runContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
     if (!contextRun) return [];
     return [
@@ -342,6 +476,16 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     setLogTrimmed(false);
     setLogError(null);
   }, [selectedRunId, stream]);
+
+  // A result is tied to the selected run and exact search controls. Clear it
+  // as soon as any of those controls changes so an old async response cannot
+  // be mistaken for the new query.
+  useEffect(() => {
+    searchGeneration.current += 1;
+    setSearchResponse(null);
+    setSearchIndex(-1);
+    setSearchError(null);
+  }, [endDate, searchLevel, searchMode, searchQuery, searchSource, selectedRunId, startDate]);
 
   useEffect(() => {
     selectedStatusRef.current = selectedRun?.status ?? null;
@@ -388,6 +532,43 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   }, [selectedRun?.id, selectedRun?.logsAvailable, stream]);
 
   const logText = useMemo(() => new TextDecoder().decode(logBytes), [logBytes]);
+  const logLines = useMemo(() => logText.split("\n"), [logText]);
+  const activeSearchMatch: LogSearchMatch | null =
+    searchResponse && searchIndex >= 0 ? searchResponse.matches[searchIndex] ?? null : null;
+  const activeSearchLineUnavailable = Boolean(
+    activeSearchMatch &&
+    (activeSearchMatch.stream !== stream ||
+      logTrimmed ||
+      !logText ||
+      logLines.length > MAX_WRAPPED_LOG_LINES ||
+      activeSearchMatch.lineNumber > logLines.length),
+  );
+
+  useEffect(() => {
+    if (!activeSearchMatch || activeSearchMatch.stream !== stream) return;
+    const line = logLineRefs.current.get(activeSearchMatch.lineNumber);
+    if (line && typeof line.scrollIntoView === "function") {
+      line.scrollIntoView({ block: "center" });
+    }
+  }, [activeSearchMatch, logLines, stream]);
+
+  const renderLogText = () => {
+    if (!logText) return "로그를 기다리는 중…";
+    if (logLines.length > MAX_WRAPPED_LOG_LINES) return logText;
+    return logLines.map((line, index) => (
+      <span
+        key={index}
+        ref={(element) => {
+          if (element) logLineRefs.current.set(index + 1, element);
+          else logLineRefs.current.delete(index + 1);
+        }}
+        className={activeSearchMatch?.stream === stream && !logTrimmed && activeSearchMatch.lineNumber === index + 1 ? "log-line match-active" : "log-line"}
+        data-line-number={index + 1}
+      >
+        {line}{index < logLines.length - 1 ? "\n" : null}
+      </span>
+    ));
+  };
 
   return (
     <section className="history-section" aria-labelledby="history-title">
@@ -420,7 +601,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
         </label>
       </div>
 
-      {(error ?? historyError ?? activeSnapshotError ?? logError) ? <div className="error-banner" role="alert">오류: {error ?? historyError ?? activeSnapshotError ?? logError}</div> : null}
+      {(error ?? historyError ?? activeSnapshotError ?? logError ?? searchError) ? <div className="error-banner" role="alert">오류: {error ?? historyError ?? activeSnapshotError ?? logError ?? searchError}</div> : null}
       {!jobId ? <div className="empty-card compact"><p>먼저 작업을 만들어 주세요.</p></div> : null}
       {jobId && !loading && runs.length === 0 ? <div className="empty-card compact"><p>조건에 맞는 실행 기록이 없습니다.</p></div> : null}
 
@@ -466,7 +647,101 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
                 {selectedRun.logsAvailable ? (
                   <div className="log-panel">
                     {logTrimmed ? <div className="log-notice">보존 범위 또는 화면 한도를 벗어난 이전 로그는 생략했습니다.</div> : null}
-                    <pre aria-label={`${stream} 로그`}>{logText || "로그를 기다리는 중…"}</pre>
+                    <form
+                      className="log-search"
+                      aria-label="로그 검색"
+                      aria-busy={searchBusy}
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if ((event.nativeEvent as SubmitEvent & { isComposing?: boolean }).isComposing) return;
+                        void handleSearch();
+                      }}
+                    >
+                      <label className="field log-search-query">
+                        <span>검색어</span>
+                        <input
+                          aria-label="로그 검색어"
+                          type="search"
+                          value={searchQuery}
+                          maxLength={LOG_SEARCH_QUERY_BYTE_LIMIT}
+                          onChange={(event) => {
+                            if (utf8ByteLength(event.target.value) <= LOG_SEARCH_QUERY_BYTE_LIMIT) {
+                              setSearchQuery(event.target.value);
+                            }
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter") return;
+                            if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                              event.preventDefault();
+                              return;
+                            }
+                            event.preventDefault();
+                            void handleSearch();
+                          }}
+                          placeholder="로그에서 찾기"
+                        />
+                      </label>
+                      <label className="field">
+                        <span>방식</span>
+                        <select aria-label="로그 검색 방식" value={searchMode} onChange={(event) => setSearchMode(event.target.value as LogSearchMode)}>
+                          <option value="literal">일반 텍스트</option>
+                          <option value="regex">정규식(명시적)</option>
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>소스</span>
+                        <select aria-label="로그 검색 소스" value={searchSource} onChange={(event) => setSearchSource(event.target.value as LogStream | "")}>
+                          <option value="">모든 스트림</option>
+                          <option value="stdout">stdout</option>
+                          <option value="stderr">stderr</option>
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>레벨</span>
+                        <select aria-label="로그 검색 레벨" value={searchLevel} onChange={(event) => setSearchLevel(event.target.value as LogLevel | "")}>
+                          <option value="">모든 레벨</option>
+                          <option value="trace">trace</option>
+                          <option value="debug">debug</option>
+                          <option value="info">info</option>
+                          <option value="warn">warn</option>
+                          <option value="error">error</option>
+                        </select>
+                      </label>
+                      <button type="submit" className="button-secondary" disabled={searchBusy || !searchQuery}>검색</button>
+                      <button type="button" className="button-secondary" disabled={searchBusy && !searchResponse} onClick={clearSearch}>지우기</button>
+                    </form>
+                    {searchResponse ? (
+                      <div className="log-search-results" aria-label="로그 검색 결과">
+                        <div className="log-search-summary" role="status" aria-live="polite">
+                          {searchResponse.matches.length === 0
+                            ? "검색 결과가 없습니다."
+                            : `${searchIndex + 1} / ${searchResponse.matches.length}개 결과`}
+                          {activeSearchLineUnavailable ? " (현재 화면 범위 밖)" : ""}
+                          {searchResponse.truncated ? " (검색 범위가 상한으로 제한됨)" : ""}
+                        </div>
+                        {searchResponse.matches.length > 0 ? (
+                          <div className="log-search-navigation">
+                            <button type="button" className="button-secondary" aria-label="이전 검색 결과" onClick={() => moveToSearchMatch(searchIndex - 1)}>이전</button>
+                            <button type="button" className="button-secondary" aria-label="다음 검색 결과" onClick={() => moveToSearchMatch(searchIndex + 1)}>다음</button>
+                            <ol className="log-search-match-list">
+                              {searchResponse.matches.slice(0, LOG_SEARCH_MAX_RESULT_LINES).map((match, index) => (
+                                <li key={`${match.sourceId}:${match.lineNumber}:${index}`}>
+                                  <button
+                                    type="button"
+                                    className={index === searchIndex ? "active" : ""}
+                                    aria-current={index === searchIndex ? "true" : undefined}
+                                    onClick={() => moveToSearchMatch(index)}
+                                  >
+                                    {match.stream} · {match.lineNumber}번째 줄 · {levelLabel(match.level)}
+                                  </button>
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <pre aria-label={`${stream} 로그`}>{renderLogText()}</pre>
                   </div>
                 ) : <p className="muted run-no-log">보존된 로그가 없습니다.</p>}
               </>

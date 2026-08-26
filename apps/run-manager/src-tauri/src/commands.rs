@@ -1,16 +1,20 @@
+use crate::core::log_search::{
+    search_streams, validate_request, LogSearchError, LogSearchRequest, LogSearchResponse,
+    MAX_SCAN_BYTES_PER_STREAM,
+};
 use crate::core::models::{
     EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, RunView, ServiceInput,
     ServiceInstanceView,
 };
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
-use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse};
+use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse, MAX_TAIL_BYTES};
 use crate::platform::environment::{EnvironmentProtectorState, SecretEnvironment};
 use crate::platform::{StartupShortcut, StartupShortcutStatus};
 use crate::scheduler::SchedulerError;
 use crate::storage::{current_epoch_millis, DatabaseState, StorageError};
 use chrono::Local;
 use serde::Deserialize;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use tauri::{AppHandle, Manager, State};
 
 #[derive(Debug, Deserialize)]
@@ -20,6 +24,92 @@ pub struct TailLogInput {
     pub stream: LogStream,
     pub cursor: Option<String>,
     pub max_bytes: usize,
+}
+
+fn log_search_command_error(error: LogSearchError) -> String {
+    match error {
+        LogSearchError::InvalidRequest => "log-search-invalid-request".to_string(),
+        LogSearchError::InvalidPattern => "log-search-invalid-pattern".to_string(),
+        LogSearchError::InvalidSource => "log-search-invalid-source".to_string(),
+        LogSearchError::InvalidTimeRange => "log-search-invalid-time-range".to_string(),
+    }
+}
+
+/// Read one bounded source through the existing decimal-cursor tail API.
+/// Each chunk releases the stream lock before yielding to the scheduler, so a
+/// running writer is never held behind the complete search scan. A rotation
+/// observed between chunks causes one safe restart from the current retained
+/// boundary rather than returning duplicate or path-derived data.
+async fn read_search_snapshot(
+    streams: &LogStreams,
+    stream: LogStream,
+) -> Result<(Vec<u8>, bool), String> {
+    let mut bytes = Vec::with_capacity(MAX_SCAN_BYTES_PER_STREAM);
+    let mut cursor: Option<String> = None;
+    let mut restarted = false;
+    let mut truncated = false;
+
+    loop {
+        let request_cursor = cursor.clone();
+        let response = streams
+            .tail_log(stream, request_cursor.as_deref(), MAX_TAIL_BYTES)
+            .await
+            .map_err(|_| "log-search-read-failed".to_string())?;
+
+        if response.truncated && request_cursor.is_some() {
+            if !restarted {
+                restarted = true;
+                bytes.clear();
+                cursor = None;
+                tokio::task::yield_now().await;
+                continue;
+            }
+            return Err("log-search-read-failed".to_string());
+        }
+
+        let remaining = MAX_SCAN_BYTES_PER_STREAM.saturating_sub(bytes.len());
+        if response.data.len() > remaining {
+            bytes.extend_from_slice(&response.data[..remaining]);
+            truncated = true;
+            break;
+        }
+        bytes.extend_from_slice(&response.data);
+        if response.data.is_empty() {
+            break;
+        }
+
+        let next_cursor = response.next_cursor;
+        if request_cursor.as_deref() == Some(next_cursor.as_str()) {
+            truncated = true;
+            break;
+        }
+        cursor = Some(next_cursor);
+        if bytes.len() >= MAX_SCAN_BYTES_PER_STREAM {
+            // The exact end may be equal to the cap, so conservatively mark
+            // the result as bounded rather than probing with an extra read.
+            truncated = true;
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    Ok((bytes, truncated))
+}
+
+/// Resolve and reconstruct retained segment metadata away from Tauri's async
+/// command executor. Both operations perform bounded synchronous filesystem
+/// work and keep returning fixed, path-independent failures.
+async fn open_search_streams(
+    data_root: PathBuf,
+    log_dir: String,
+    run_id: String,
+) -> Result<LogStreams, String> {
+    tokio::task::spawn_blocking(move || {
+        crate::logs::resolve_run_directory(&data_root, &log_dir, &run_id)
+            .map_err(|_| "logs-unavailable".to_string())?;
+        LogStreams::open_default(&data_root, run_id).map_err(|_| "logs-unavailable".to_string())
+    })
+    .await
+    .map_err(|_| "logs-unavailable".to_string())?
 }
 
 #[tauri::command]
@@ -658,4 +748,97 @@ pub async fn tail_log(
         })
         .await
         .map_err(|_| "logs-read-failed".to_string())
+}
+
+/// Search the currently retained app-owned stdout/stderr snapshots for one
+/// run. The command returns only bounded line metadata; it never stores,
+/// forwards, or re-emits matching log text.
+#[tauri::command]
+pub async fn search_run_logs(
+    app: AppHandle,
+    input: LogSearchRequest,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<LogSearchResponse, String> {
+    validate_request(&input).map_err(log_search_command_error)?;
+    let run = state
+        .get_run(&input.run_id)
+        .map_err(|_| "run-storage-failed".to_string())?
+        .ok_or_else(|| "run-not-found".to_string())?;
+    let log_dir = run.log_dir.ok_or_else(|| "logs-unavailable".to_string())?;
+    let data_root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "logs-unavailable".to_string())?;
+    let streams =
+        open_search_streams(data_root.clone(), log_dir.clone(), input.run_id.clone()).await?;
+
+    let selected = input.source.map_or_else(
+        || vec![LogStream::Stdout, LogStream::Stderr],
+        |stream| vec![stream],
+    );
+    let mut snapshots = Vec::with_capacity(selected.len());
+    let mut read_truncated = false;
+    for stream in selected {
+        let (bytes, truncated) = match read_search_snapshot(&streams, stream).await {
+            Ok(snapshot) => snapshot,
+            Err(_) => {
+                // A writer may rotate a segment between two cursor reads. A
+                // fresh metadata snapshot is safe to retry once; repeated
+                // failure remains the same fixed read error.
+                let fresh =
+                    open_search_streams(data_root.clone(), log_dir.clone(), input.run_id.clone())
+                        .await
+                        .map_err(|_| "log-search-read-failed".to_string())?;
+                read_search_snapshot(&fresh, stream).await?
+            }
+        };
+        snapshots.push((stream, bytes));
+        read_truncated |= truncated;
+    }
+    let fallback_timestamp = run.started_at.or(Some(run.created_at));
+    let mut response =
+        tokio::task::spawn_blocking(move || search_streams(&input, &snapshots, fallback_timestamp))
+            .await
+            .map_err(|_| "log-search-failed".to_string())?
+            .map_err(log_search_command_error)?;
+    response.truncated |= read_truncated;
+    Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn bounded_search_reads_yield_to_a_running_writer() {
+        let root = tempfile::tempdir().expect("temporary log root");
+        let streams = LogStreams::open(
+            root.path(),
+            "run-1",
+            crate::logs::LogLimits {
+                segment_bytes: MAX_TAIL_BYTES as u64,
+                max_segments: 8,
+            },
+        )
+        .expect("log streams");
+        streams
+            .append(LogStream::Stdout, &vec![b'a'; MAX_TAIL_BYTES * 2])
+            .await
+            .expect("seed log");
+
+        let reader = streams.clone();
+        let writer = streams.clone();
+        let search =
+            tokio::spawn(async move { read_search_snapshot(&reader, LogStream::Stdout).await });
+        tokio::task::yield_now().await;
+        let append = tokio::time::timeout(
+            Duration::from_secs(2),
+            writer.append(LogStream::Stdout, b"writer\n"),
+        )
+        .await;
+        assert!(append.is_ok(), "writer should not wait for the full search");
+        let snapshot = search.await.expect("search task").expect("search snapshot");
+        assert!(!snapshot.0.is_empty());
+    }
 }

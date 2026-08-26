@@ -4,6 +4,8 @@ import type {
   CronPreviewItem,
   Job,
   JobInput,
+  LogSearchOptions,
+  LogSearchResponse,
   LogStream,
   ServiceInput,
   ServiceInstance,
@@ -446,6 +448,30 @@ export function tailLog(
   return invoke<TailResponse>("tail_log", {
     input: { runId, stream, cursor, maxBytes },
   });
+}
+
+export function searchRunLogs(runId: string, options: LogSearchOptions): Promise<LogSearchResponse> {
+  const input = {
+    runId,
+    query: options.query,
+    mode: options.mode,
+    source: options.source,
+    level: options.level,
+    startAt: options.startAt,
+    endAt: options.endAt,
+  };
+  if (!isTauri()) {
+    return Promise.resolve({
+      matches: [],
+      scannedLines: 0,
+      scannedBytes: 0,
+      truncated: false,
+      sources: options.source
+        ? [{ kind: "log-source/v1" as const, sourceId: `run-manager:${runId}:${options.source}`, runId, stream: options.source }]
+        : [],
+    });
+  }
+  return invoke<LogSearchResponse>("search_run_logs", { input });
 }
 
 /**

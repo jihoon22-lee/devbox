@@ -874,6 +874,40 @@ code-pad와 달리 JSON 단일 파일을 쓰지 않는 이유는 run-manager 데
   `logs_deleted_at`을 채우고, 파일만 남은 경우 app-generated run ID와 DB를 대조해
   orphan을 회수한다.
 
+### 로그 검색 (#311, v0.5.0 P2-13 구현 계약)
+
+검색은 선택한 하나의 run에 대해 기존 `tail_log`의 app-owned 회전 파일을 bounded
+snapshot으로 읽은 뒤, 파일·DB·process writer와 분리된 순수 core에서 판정한다. 한 번에
+전체 파일을 열어 writer를 오래 기다리지 않고 256 KiB cursor chunk마다 async yield한다.
+rotation으로 cursor가 stale해진 경우 현재 retained boundary에서 최대 한 번 재시작하며,
+그 이후의 결과는 `truncated`로 표시한다. 로그 본문은 SQLite·snapshot·telemetry·remote
+archive로 복제하지 않는다.
+
+요청 DTO는 `runId`, `query`, `mode`, optional `source`, `level`, `startAt`, `endAt`이다.
+`mode=literal`이 기본 UI 선택이며 query를 정규식으로 해석하지 않는다. `mode=regex`를
+명시한 경우에만 Rust `regex` 엔진을 사용하고 compile/automata budget을 적용한다. source는
+임의 path나 remote source가 아니라 이 run의 `stdout`/`stderr` stream adapter이며, level은
+줄 시작의 trace/debug/info/warn/error 토큰을 best-effort로 판정한다. RFC3339 timestamp가
+줄 앞에 있으면 이를 사용하고 없으면 run 시작 시각을 사용한다. 시간 필터는 epoch
+milliseconds 반열린 구간 `[startAt, endAt)`이며 JSON/WebView 왕복에서 정밀도를 잃지 않는
+JavaScript safe integer 범위만 허용한다. request DTO는 unknown field를 거부한다.
+
+응답은 검색 원문을 포함하지 않고 `sourceId`, `stream`, 보존 snapshot 기준 1-based
+`lineNumber`, 판정된 `level`/`timestampMillis`와 `scannedLines`, `scannedBytes`,
+`truncated`, `sources`만 반환한다. 따라서 frontend는 현재 log viewer의 줄을 stream·line
+기준으로 선택하고 이전/다음 결과로 이동한다. 보존 rotation 또는 화면 1 MiB cap 때문에
+해당 줄이 현재 DOM에 없으면 메타데이터만 유지하고 안전한 안내를 표시한다.
+
+검증 상한은 query/regex UTF-8 512 bytes, source당 scan 4 MiB, 전체 scan 8 MiB, record
+16 KiB, 전체 50,000 records, 결과 500개이다. invalid query/time/source와 regex compile
+실패는 raw query, line, path, credential을 반향하지 않는 고정 command 오류 코드로
+변환한다. `log-source/v1` reference는 `run-manager:<opaque-run-id>:<stream>` identity와
+kind를 local boundary에서 exact 검증하며 absolute path·command·environment·secret은
+payload에 없고 unknown field도 거부한다. retained segment metadata 복원과 bounded core
+scan은 blocking worker로 옮겨 async command executor를 점유하지 않는다. Log Lens
+receiver/producer handoff와 remote/permanent log archive는 이 PR에 포함하지 않고 Log Lens
+bootstrap 뒤 별도 integration PR로 남긴다.
+
 ### 스키마 버전
 
 초기 migration에서 `meta(schema_version)`를 생성한다. everything-plus의
@@ -903,6 +937,7 @@ job 정의와 실행 이력은 파생 인덱스인지 여부가 다르므로 실
 | 데몬 종료·Tauri ExitRequested·Windows logoff/shutdown | scheduler와 pending retry를 먼저 멈추고 queue는 보존한다. active handle을 orderly terminate, 제한 시간 후 강제 escalation, wait, 로그 flush, terminal CAS 순으로 처리한 뒤에만 exit를 허용한다 |
 | stale `starting`/`stopping`/`running` run | startup에서 절대 respawn하지 않는다. Windows Job cleanup 또는 WSL marker/group cleanup과 실제 종료를 확인한 뒤 ambiguous run을 `failed`로 terminal 처리한다. 오직 `queued`만 durable resume한다 |
 | 환경변수 DPAPI 오류 | 평문 fallback 없이 `failed` run을 기록하고 해당 process를 시작하지 않는다 |
+| 로그 검색 query/source/time/regex 오류 | 고정 `log-search-*` 오류 코드만 반환하고 query·line·경로·credential을 반향하지 않는다. scan은 source/전체 byte·record·result 상한 안에서만 수행하며, stale cursor와 상한 도달은 `truncated` 결과로 표시한다 |
 
 `CREATE_NO_WINDOW`는 오류를 숨기는 수단이 아니라 콘솔 창 생성을 막는 실행 옵션이다.
 life-log가 Windows 조건부로만 이 플래그를 호출한다(`apps/life-log/src-tauri/src/core/aggregate.rs:37-39`)는
@@ -955,6 +990,11 @@ life-log가 Windows 조건부로만 이 플래그를 호출한다(`apps/life-log
   Linux fake protector test로 Keep/Set/Clear, plaintext fallback 없음, old-secret
   per-run snapshot, empty/overlap/chunk-boundary secret redaction과 zeroize
   best-effort를 검증하고, error/toast/commandline에 plaintext가 없음을 확인한다.
+- 로그 검색은 literal 우선과 명시적 regex mode, invalid pattern 고정 오류, level/source/time
+  filter, stream·보존 line navigation metadata, malformed/oversized record, scan/result
+  cap, deterministic source order, nested-quantifier regex, stale cursor와 running-writer
+  chunk fixture를 검증한다. frontend는 Enter/IME composition, busy 중복 제출, stale
+  async response, unmount, clear, keyboard/a11y navigation을 검증한다.
 - `service_instances` generation/state claim, process liveness AND optional TCP
   semantics, immediate exit, 10s/3s/3 failures, fixed backoff, stale health/retry
   cancellation을 테스트한다.

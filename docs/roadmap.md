@@ -187,6 +187,11 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 8. Code Pad LSP cache/local archive, Run Manager log search, Workbench project environment,
    Webhook fixture/API handoff, Repo Manager history/diff/stage/commit/fetch/FF-only pull/push.
 
+   - Run Manager log search draft (#311): 기존 retained stdout/stderr만 대상으로 literal
+     우선·명시적 regex·level/source/time filter, bounded non-blocking scan, line/stream
+     navigation과 `log-source/v1` opaque source validation을 구현 중이다. Log Lens 연결,
+     원격 로그와 permanent archive는 이 작업에서 제외하고 별도 P3 integration으로 남긴다.
+
 #### P3 — 선택 확정
 
 1. 신규 **Devbox Launcher 0.1.0** — devbox 앱·profile·repo·job·saved query 전용 launcher와
