@@ -37,6 +37,33 @@ import {
   validateMultipartParts,
   type PickedMultipartFile,
 } from "./lib/multipart";
+import {
+  buildWebSocketUrl,
+  encodeBase64,
+  hexToBytes,
+  makeBinaryMessage,
+  makeTextMessage,
+  MAX_BINARY_PREVIEW_BYTES,
+  MAX_CLOSE_REASON_BYTES,
+  MAX_CONTROL_PAYLOAD_BYTES,
+  MAX_MESSAGE_BYTES,
+  MAX_TEXT_PREVIEW_BYTES,
+  MESSAGE_TOO_LARGE,
+  WebSocketMessageBuffer,
+  toNativeMessageInput,
+  textToBytes,
+  utf8Bytes,
+  utf8Truncate,
+  validateCloseCode,
+  validateCloseReason,
+  validateWebSocketRequest,
+} from "./lib/websocket";
+import type {
+  WebSocketConnectionState,
+  WebSocketMessage,
+  WebSocketMessageInput,
+  WebSocketUpdate,
+} from "./types";
 import type { ApiResponse, RequestTemplate, SseOptions, SseUpdate } from "./types";
 
 const SSE_EVENT = "api-playground/sse";
@@ -976,4 +1003,405 @@ function safeSseStartError(cause: unknown): string {
   ];
   const normalized = raw.replace(/^Error:\s*/u, "").replace(/\.$/u, "");
   return allowed.includes(normalized) || allowed.includes(raw) ? raw : "SSE stream을 시작하지 못했습니다.";
+}
+
+const WEBSOCKET_EVENT = "api-playground/websocket";
+const SAFE_WEBSOCKET_MESSAGES = new Set([
+  "WebSocket endpoint URL이 올바르지 않습니다",
+  "WebSocket endpoint query에 credential을 넣을 수 없습니다",
+  "WebSocket 요청 URL이 너무 깁니다",
+  "WebSocket 요청 header가 올바르지 않습니다",
+  "WebSocket 요청 header가 너무 깁니다",
+  "WebSocket 요청 parameter가 올바르지 않습니다",
+  "WebSocket 요청 항목 수가 제한을 초과했습니다",
+  "WebSocket 연결 timeout 범위가 올바르지 않습니다",
+  "WebSocket 인증 설정이 올바르지 않습니다",
+  "WebSocket 연결을 시작할 수 없습니다",
+  "이미 실행 중인 WebSocket 연결이 있습니다",
+  "WebSocket 연결이 열려 있지 않습니다",
+  "WebSocket message를 보낼 수 없습니다",
+  "WebSocket ping을 보낼 수 없습니다",
+  "WebSocket 연결을 닫을 수 없습니다",
+  "WebSocket binary payload가 올바르지 않습니다",
+  "WebSocket binary를 안전하게 저장할 수 없습니다",
+  "WebSocket message가 허용된 크기를 초과했습니다",
+  "WebSocket close code가 올바르지 않습니다",
+  "WebSocket close reason이 올바르지 않습니다",
+  "WebSocket 연결 시간이 초과되었습니다",
+  "WebSocket 연결에 실패했습니다",
+  "WebSocket 연결이 끊어졌습니다",
+]);
+
+function safeWebSocketError(cause: unknown): Error {
+  const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
+  const message = raw.replace(/^Error:\s*/u, "");
+  return new Error(SAFE_WEBSOCKET_MESSAGES.has(message) ? message : "WebSocket 요청에 실패했습니다.");
+}
+
+function isWebSocketSessionId(value: unknown): value is string {
+  return typeof value === "string" && /^ws-\d{1,26}$/u.test(value);
+}
+
+function isConnectionState(value: unknown): value is WebSocketConnectionState {
+  return value === "idle" || value === "connecting" || value === "open"
+    || value === "closing" || value === "closed" || value === "error";
+}
+
+function isMessageKind(value: unknown): value is WebSocketMessage["kind"] {
+  return value === "text" || value === "binary" || value === "ping" || value === "pong" || value === "close";
+}
+
+function isMessageDirection(value: unknown): value is WebSocketMessage["direction"] {
+  return value === "sent" || value === "received";
+}
+
+function isBoundedString(value: unknown, maxBytes: number): value is string {
+  return typeof value === "string" && utf8Bytes(value) <= maxBytes;
+}
+
+function isBinaryPreview(value: unknown): value is string {
+  if (value === "[REDACTED]") return true;
+  if (typeof value !== "string") return false;
+  const normalized = value.endsWith("…") ? value.slice(0, -1) : value;
+  return normalized.length <= MAX_BINARY_PREVIEW_BYTES * 2
+    && normalized.length % 2 === 0
+    && /^[0-9a-f]*$/u.test(normalized);
+}
+
+function parseWebSocketUpdate(payload: unknown): WebSocketUpdate | null {
+  if (!payload || typeof payload !== "object") return null;
+  const candidate = payload as Record<string, unknown>;
+  if (!isWebSocketSessionId(candidate.sessionId)
+    || (candidate.kind !== "state" && candidate.kind !== "message")
+    || !Number.isSafeInteger(candidate.sequence) || Number(candidate.sequence) < 0
+    || !Number.isSafeInteger(candidate.dropped) || Number(candidate.dropped) < 0) {
+    return null;
+  }
+  if (candidate.kind === "state") {
+    return isConnectionState(candidate.state)
+      ? {
+        sessionId: candidate.sessionId,
+        kind: "state",
+        state: candidate.state,
+        sequence: Number(candidate.sequence),
+        dropped: Number(candidate.dropped),
+        ...(typeof candidate.message === "string" && SAFE_WEBSOCKET_MESSAGES.has(candidate.message)
+          ? { message: candidate.message } : {}),
+      }
+      : null;
+  }
+  if (!isMessageKind(candidate.messageType)
+    || !isMessageDirection(candidate.direction)
+    || !Number.isSafeInteger(candidate.messageId) || Number(candidate.messageId) < 1) {
+    return null;
+  }
+  if ((candidate.text !== undefined && !isBoundedString(candidate.text, MAX_TEXT_PREVIEW_BYTES))
+    || (candidate.binaryHex !== undefined && !isBinaryPreview(candidate.binaryHex))
+    || (candidate.binaryText !== undefined && !isBoundedString(candidate.binaryText, MAX_TEXT_PREVIEW_BYTES))
+    || (candidate.binarySize !== undefined
+      && (!Number.isSafeInteger(candidate.binarySize)
+        || Number(candidate.binarySize) < 0
+        || Number(candidate.binarySize) > MAX_MESSAGE_BYTES))
+    || (candidate.closeCode !== undefined
+      && (!Number.isInteger(candidate.closeCode)
+        || Number(candidate.closeCode) < 0
+        || Number(candidate.closeCode) > 65_535))
+    || (candidate.closeReason !== undefined
+      && !isBoundedString(candidate.closeReason, MAX_CLOSE_REASON_BYTES))) {
+    return null;
+  }
+  const update: WebSocketUpdate = {
+    sessionId: candidate.sessionId,
+    kind: "message",
+    direction: candidate.direction,
+    messageType: candidate.messageType,
+    messageId: Number(candidate.messageId),
+    sequence: Number(candidate.sequence),
+    dropped: Number(candidate.dropped),
+  };
+  if (typeof candidate.text === "string") update.text = candidate.text;
+  if (typeof candidate.textTruncated === "boolean") update.textTruncated = candidate.textTruncated;
+  if (typeof candidate.binaryHex === "string") update.binaryHex = candidate.binaryHex;
+  if (typeof candidate.binaryText === "string") update.binaryText = candidate.binaryText;
+  if (Number.isSafeInteger(candidate.binarySize) && Number(candidate.binarySize) >= 0) {
+    update.binarySize = Number(candidate.binarySize);
+  }
+  if (typeof candidate.binaryTruncated === "boolean") update.binaryTruncated = candidate.binaryTruncated;
+  if (Number.isInteger(candidate.closeCode) && Number(candidate.closeCode) >= 0) update.closeCode = Number(candidate.closeCode);
+  if (typeof candidate.closeReason === "string") update.closeReason = candidate.closeReason;
+  return update;
+}
+
+export interface WebSocketHandle {
+  sessionId: string;
+  send: (kind: "text" | "binary", value: string, encoding?: "text" | "hex") => Promise<void>;
+  ping: (value: string, encoding?: "text" | "hex") => Promise<void>;
+  close: (code?: number, reason?: string) => Promise<void>;
+  saveBinary: (messageId: number) => Promise<boolean>;
+  stop: () => Promise<void>;
+}
+
+export async function startWebSocket(
+  req: RequestTemplate,
+  environment: Parameters<typeof sendRequest>[1],
+  onUpdate: (update: WebSocketUpdate) => void,
+): Promise<WebSocketHandle> {
+  if (isTauri()) return startNativeWebSocket(req, environment, onUpdate);
+  return startBrowserWebSocket(req, environment, onUpdate);
+}
+
+async function startNativeWebSocket(
+  req: RequestTemplate,
+  environment: Parameters<typeof sendRequest>[1],
+  onUpdate: (update: WebSocketUpdate) => void,
+): Promise<WebSocketHandle> {
+  const { listen } = await import("@tauri-apps/api/event");
+  let sessionId: string | null = null;
+  const pending: WebSocketUpdate[] = [];
+  const unlisten = await listen<unknown>(WEBSOCKET_EVENT, (event) => {
+    const update = parseWebSocketUpdate(event.payload);
+    if (!update) return;
+    if (!sessionId) {
+      if (pending.length < 64) pending.push(update);
+      return;
+    }
+    if (update.sessionId === sessionId) onUpdate(update);
+  });
+  let started: string;
+  try {
+    started = await invoke<string>("start_websocket", { req, environment });
+    if (!isWebSocketSessionId(started)) throw new Error("invalid session");
+    sessionId = started;
+    for (const update of pending.splice(0)) {
+      if (update.sessionId === started) onUpdate(update);
+    }
+  } catch (cause) {
+    await unlisten();
+    throw safeWebSocketError(cause);
+  }
+
+  const activeSessionId = started;
+  let stopped = false;
+  const invokeMessage = async (message: WebSocketMessageInput): Promise<void> => {
+    if (stopped) throw new Error("WebSocket 연결이 열려 있지 않습니다");
+    try {
+      await invoke("send_websocket_message", { sessionId: activeSessionId, message });
+    } catch (cause) {
+      throw safeWebSocketError(cause);
+    }
+  };
+  const close = async (code?: number, reason = "") => {
+    validateCloseCode(code);
+    validateCloseReason(reason);
+    if (stopped) return;
+    try {
+      await invoke("close_websocket", { sessionId: activeSessionId, close: { code, reason } });
+    } catch (cause) {
+      throw safeWebSocketError(cause);
+    }
+  };
+  return {
+    sessionId: activeSessionId,
+    send: async (kind, value, encoding = "text") => {
+      await invokeMessage(toNativeMessageInput(kind, value, encoding));
+    },
+    ping: async (value, encoding = "text") => {
+      const payload = encoding === "hex" ? hexToBytes(value) : textToBytes(value);
+      if (payload.byteLength > MAX_CONTROL_PAYLOAD_BYTES) throw new Error(MESSAGE_TOO_LARGE);
+      try {
+        await invoke("ping_websocket", { sessionId: activeSessionId, data: encodeBase64(payload) });
+      } catch (cause) {
+        throw safeWebSocketError(cause);
+      }
+    },
+    close,
+    saveBinary: async (messageId) => {
+      if (!Number.isSafeInteger(messageId) || messageId < 1) throw new Error("WebSocket binary payload가 올바르지 않습니다");
+      try {
+        return await invoke<boolean>("save_websocket_binary", { sessionId: activeSessionId, messageId });
+      } catch (cause) {
+        throw safeWebSocketError(cause);
+      }
+    },
+    stop: async () => {
+      if (stopped) return;
+      stopped = true;
+      try {
+        await invoke("disconnect_websocket", { sessionId: activeSessionId });
+      } catch (cause) {
+        throw safeWebSocketError(cause);
+      } finally {
+        await unlisten();
+      }
+    },
+  };
+}
+
+let browserWebSocketSequence = 0;
+
+async function startBrowserWebSocket(
+  request: RequestTemplate,
+  environment: Parameters<typeof sendRequest>[1],
+  onUpdate: (update: WebSocketUpdate) => void,
+): Promise<WebSocketHandle> {
+  if (environment.some((variable) => variable.secret)) {
+    throw new Error("secret 포함 WebSocket은 데스크톱 앱에서만 전송할 수 있습니다");
+  }
+  const variables = new Map(environment.map((variable) => [variable.key, variable.value]));
+  const resolved = {
+    ...applyToRequest(request, variables),
+    method: request.method.trim().toUpperCase(),
+  };
+  validateWebSocketRequest(resolved);
+  const activeHeaders = resolved.headers.filter((header) => header.enabled !== false && header.key.trim());
+  const activeCookies = resolved.cookies.filter((cookie) => cookie.enabled !== false && (cookie.name || cookie.value));
+  if (activeHeaders.length > 0 || activeCookies.length > 0 || (resolved.auth && resolved.auth.kind !== "none")) {
+    throw new Error("브라우저 미리보기에서는 WebSocket custom header/auth를 사용할 수 없습니다");
+  }
+  const url = buildWebSocketUrl(resolved.url, resolved.params);
+  const socket = new WebSocket(url);
+  socket.binaryType = "arraybuffer";
+  const sessionId = `browser-ws-${++browserWebSocketSequence}`;
+  let nextMessageId = 1;
+  let sequence = 0;
+  let stopped = false;
+  let socketClosed = false;
+  let connectTimer: ReturnType<typeof setTimeout> | null = null;
+  const retained = new WebSocketMessageBuffer();
+  const rawBinary = new Map<number, Uint8Array>();
+  const clearConnectTimer = () => {
+    if (connectTimer !== null) {
+      clearTimeout(connectTimer);
+      connectTimer = null;
+    }
+  };
+  const emitState = (state: WebSocketConnectionState, message?: string) => {
+    onUpdate({ sessionId, kind: "state", state, sequence, dropped: retained.evicted, ...(message ? { message } : {}) });
+  };
+  const emitMessage = (message: WebSocketMessage) => {
+    retained.push(message);
+    for (const id of retained.takeEvictedIds()) rawBinary.delete(id);
+    sequence += 1;
+    onUpdate({
+      sessionId,
+      kind: "message",
+      direction: message.direction,
+      messageId: message.id,
+      messageType: message.kind,
+      text: message.text,
+      textTruncated: message.textTruncated,
+      binaryHex: message.binaryHex,
+      binaryText: message.binaryText,
+      binarySize: message.binarySize,
+      binaryTruncated: message.binaryTruncated,
+      closeCode: message.closeCode,
+      closeReason: message.closeReason,
+      sequence,
+      dropped: retained.evicted,
+    });
+  };
+  const nextId = () => {
+    const id = nextMessageId;
+    nextMessageId += 1;
+    return id;
+  };
+  socket.onopen = () => {
+    clearConnectTimer();
+    if (!stopped) emitState("open");
+  };
+  socket.onmessage = (event) => {
+    if (stopped) return;
+    if (typeof event.data === "string") {
+      try { emitMessage(makeTextMessage(nextId(), "received", event.data, resolved)); } catch { emitState("error", "WebSocket message가 허용된 크기를 초과했습니다"); }
+      return;
+    }
+    const readBinary = async () => {
+      try {
+        const bytes = event.data instanceof ArrayBuffer
+          ? new Uint8Array(event.data)
+          : event.data instanceof Blob
+            ? new Uint8Array(await event.data.arrayBuffer())
+            : null;
+        if (!bytes) throw new Error("binary");
+        if (stopped || socketClosed) return;
+        const id = nextId();
+        const message = makeBinaryMessage(id, "received", bytes, resolved);
+        rawBinary.set(id, bytes);
+        emitMessage(message);
+      } catch {
+        emitState("error", "WebSocket binary payload가 올바르지 않습니다");
+      }
+    };
+    void readBinary();
+  };
+  socket.onerror = () => {
+    clearConnectTimer();
+    if (!stopped) emitState("error", "WebSocket 연결에 실패했습니다");
+  };
+  socket.onclose = (event) => {
+    clearConnectTimer();
+    socketClosed = true;
+    if (!stopped) {
+      const reason = maskWebSocketCloseReason(event.reason, resolved);
+      const id = nextId();
+      emitMessage({ id, direction: "received", kind: "close", closeCode: event.code, closeReason: reason });
+      emitState("closed");
+    }
+  };
+  emitState("connecting");
+  connectTimer = setTimeout(() => {
+    if (stopped || socketClosed || socket.readyState !== WebSocket.CONNECTING) return;
+    stopped = true;
+    emitState("error", "WebSocket 연결 시간이 초과되었습니다");
+    try { socket.close(); } catch { /* The browser owns CONNECTING socket teardown. */ }
+  }, resolved.timeout_ms);
+  return {
+    sessionId,
+    send: async (kind, value, encoding = "text") => {
+      if (stopped || socket.readyState !== WebSocket.OPEN) throw new Error("WebSocket 연결이 열려 있지 않습니다");
+      if (kind === "text") {
+        const message = makeTextMessage(nextId(), "sent", value, resolved);
+        socket.send(value);
+        emitMessage(message);
+      } else {
+        const bytes = encoding === "hex" ? hexToBytes(value) : textToBytes(value, MAX_MESSAGE_BYTES);
+        if (bytes.byteLength > MAX_MESSAGE_BYTES) throw new Error(MESSAGE_TOO_LARGE);
+        const message = makeBinaryMessage(nextId(), "sent", bytes, resolved);
+        socket.send(bytes);
+        rawBinary.set(message.id, bytes);
+        emitMessage(message);
+      }
+    },
+    ping: async () => {
+      throw new Error("브라우저 미리보기에서는 ping/pong을 직접 보낼 수 없습니다");
+    },
+    close: async (code, reason = "") => {
+      if (stopped || socketClosed) return;
+      validateCloseCode(code);
+      validateCloseReason(reason);
+      emitState("closing");
+      socket.close(code ?? 1000, reason);
+    },
+    saveBinary: async (messageId) => {
+      const bytes = rawBinary.get(messageId);
+      if (!bytes) throw new Error("WebSocket binary payload가 올바르지 않습니다");
+      const blob = new Blob([bytes], { type: "application/octet-stream" });
+      const anchor = document.createElement("a");
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = `websocket-message-${messageId}.bin`;
+      anchor.click();
+      URL.revokeObjectURL(anchor.href);
+      return true;
+    },
+    stop: async () => {
+      if (stopped) return;
+      stopped = true;
+      clearConnectTimer();
+      if (!socketClosed && socket.readyState < WebSocket.CLOSING) socket.close(1000, "client disconnect");
+    },
+  };
+}
+
+function maskWebSocketCloseReason(value: string, request: RequestTemplate): string {
+  return value ? utf8Truncate(redactBrowserText(value, request), MAX_CLOSE_REASON_BYTES).value : "";
 }

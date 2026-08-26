@@ -210,6 +210,17 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
    수행한다. Swagger UI bundle·자동 전송·secret 주입은 제외한다. `$ref`·unsupported auth/method·unsafe graph는
    operation 단위로 격리하며, 기존 Collection overwrite 없이 현재 draft 또는 새 항목으로만
    명시적으로 적용한다.
+   - WebSocket #296 implementation: native `tokio-tungstenite` ws/wss transport와 existing
+     header/cookie/auth/environment/redaction 경계를 재사용해 explicit Connect/Send/Ping/Close/
+     Disconnect, text/binary preview/save, close state와 bounded 10,000-message/20 MiB retention을
+     구현했다. TLS certificate verification을 유지하고 transport 파생 header·credential query·
+     unsafe path/raw error를 차단하며 opaque session event만 webview에 보낸다. Browser preview는
+     standard WebSocket 제한(custom header/auth/cookie/direct ping)을 표시하고 request timeout도
+     적용한다. terminal listener/network cleanup 뒤에도 bounded binary save handle은 다음 연결까지
+     유지하며, native DTO preview bounds와 atomic file save를 fail-closed로 고정했다. Native loopback/
+     masking/eviction/accessibility/lifecycle fixtures와 app-only test/build/typecheck를 포함한다.
+     이미 구현된 SSE #295와 OpenAPI #293의 동작은 변경하지 않고 함께 동작하도록 통합했으며,
+     GraphQL subscription은 제외한다. Windows W2 packaged smoke는 release gate에서 확인한다.
 5. Everything+ text/code/Markdown 및 PDF/DOCX/XLS(X)/ODS content index.
 6. Knowledge global quick capture·image asset, Life Log Markdown/JSON/CSV export·규칙 기반 요약.
    Life Log export는 #305 범위의 native-first date-range artifact와 browser-preview 경계를

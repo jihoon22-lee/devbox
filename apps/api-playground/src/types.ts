@@ -148,3 +148,50 @@ export interface SseUpdate {
   message?: string;
   attempt?: number;
 }
+
+export type WebSocketConnectionState = "idle" | "connecting" | "open" | "closing" | "closed" | "error";
+export type WebSocketMessageKind = "text" | "binary" | "ping" | "pong" | "close";
+export type WebSocketMessageDirection = "sent" | "received";
+
+/** Masked message projection used by both native events and browser preview. */
+export interface WebSocketMessage {
+  id: number;
+  direction: WebSocketMessageDirection;
+  kind: WebSocketMessageKind;
+  text?: string;
+  textTruncated?: boolean;
+  binaryHex?: string;
+  binaryText?: string;
+  binarySize?: number;
+  binaryTruncated?: boolean;
+  closeCode?: number;
+  closeReason?: string;
+}
+
+export interface WebSocketMessageInput {
+  kind: "text" | "binary" | "ping" | "pong";
+  text: string;
+  /** Base64 payload for binary/control messages. */
+  data: string;
+}
+
+/** Fixed event envelope. It intentionally contains no URL, headers, raw error, or path. */
+export interface WebSocketUpdate {
+  sessionId: string;
+  kind: "state" | "message";
+  state?: WebSocketConnectionState;
+  direction?: WebSocketMessageDirection;
+  messageId?: number;
+  messageType?: WebSocketMessageKind;
+  text?: string;
+  textTruncated?: boolean;
+  binaryHex?: string;
+  binaryText?: string;
+  binarySize?: number;
+  binaryTruncated?: boolean;
+  closeCode?: number;
+  closeReason?: string;
+  sequence: number;
+  dropped: number;
+  message?: string;
+}

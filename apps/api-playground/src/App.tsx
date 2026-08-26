@@ -14,6 +14,8 @@ import {
   sendRequest,
   startSseStream,
   type SseStreamHandle,
+  startWebSocket,
+  type WebSocketHandle,
 } from "./api";
 import { CookieEditor } from "./CookieEditor";
 import { GraphqlEditor } from "./GraphqlEditor";
@@ -22,6 +24,7 @@ import { MultipartEditor } from "./MultipartEditor";
 import { OpenApiImport } from "./OpenApiImport";
 import { ResponseViewer, type RawResponseCopyKind } from "./ResponseViewer";
 import { SseEventViewer } from "./SseEventViewer";
+import { WebSocketPanel } from "./WebSocketPanel";
 import {
   addEntry,
   duplicateEntry,
@@ -86,10 +89,22 @@ import {
   isMultipartDerivedHeader,
   validateMultipartParts,
 } from "./lib/multipart";
-import type { ApiResponse, GraphqlRequest, HistoryItem, KeyValue, RequestTemplate } from "./types";
 import { OPENAPI_LIMITS, type OpenApiOperationPreview } from "./lib/openapi";
-import type { SseOptions, SseUpdate } from "./types";
 import { eventSize, MAX_DECODED_BYTES, MAX_RETAINED_EVENTS, type SseEvent } from "./lib/sse";
+import { isTauri } from "./lib/isTauri";
+import { WebSocketMessageBuffer } from "./lib/websocket";
+import type {
+  ApiResponse,
+  GraphqlRequest,
+  HistoryItem,
+  KeyValue,
+  RequestTemplate,
+  SseOptions,
+  SseUpdate,
+  WebSocketConnectionState,
+  WebSocketMessage,
+  WebSocketUpdate,
+} from "./types";
 import "./App.css";
 
 export { statusClass } from "./ResponseViewer";
@@ -246,9 +261,18 @@ export default function App() {
   const openApiCollectionSavingRef = useRef(false);
   const [contextHistory, setContextHistory] = useState<HistoryItem | null>(null);
   const [contextCollection, setContextCollection] = useState<CollectionEntry | null>(null);
+  const [webSocketState, setWebSocketState] = useState<WebSocketConnectionState>("idle");
+  const [webSocketMessages, setWebSocketMessages] = useState<WebSocketMessage[]>([]);
+  const [webSocketDropped, setWebSocketDropped] = useState(0);
+  const [webSocketBusy, setWebSocketBusy] = useState(false);
   const mountedRef = useRef(true);
   const requestSequenceRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const webSocketHandleRef = useRef<WebSocketHandle | null>(null);
+  const webSocketGenerationRef = useRef(0);
+  const webSocketTerminalGenerationRef = useRef<number | null>(null);
+  const webSocketSequenceRef = useRef(0);
+  const webSocketBufferRef = useRef(new WebSocketMessageBuffer());
 
   useEffect(() => {
     mountedRef.current = true;
@@ -256,6 +280,10 @@ export default function App() {
       mountedRef.current = false;
       requestSequenceRef.current += 1;
       abortControllerRef.current?.abort();
+      webSocketGenerationRef.current += 1;
+      const handle = webSocketHandleRef.current;
+      webSocketHandleRef.current = null;
+      if (handle) void handle.stop().catch(() => undefined);
     };
   }, []);
 
@@ -666,6 +694,160 @@ export default function App() {
     sseHandleRef.current = null;
     if (handle) void handle.stop().catch(() => undefined);
   }, []);
+
+  const applyWebSocketUpdate = (generation: number, update: WebSocketUpdate) => {
+    if (!mountedRef.current || webSocketGenerationRef.current !== generation) return;
+    if (update.kind === "state") {
+      webSocketSequenceRef.current = Math.max(webSocketSequenceRef.current, update.sequence);
+      if (update.state) setWebSocketState(update.state);
+      setWebSocketDropped((current) => Math.max(current, update.dropped, webSocketBufferRef.current.evicted));
+      if (update.message) setError(update.message);
+      if (update.state === "closed" || update.state === "error") {
+        webSocketTerminalGenerationRef.current = generation;
+        const handle = webSocketHandleRef.current;
+        if (handle) void handle.stop().catch(() => undefined);
+      }
+      return;
+    }
+    if (update.sequence <= webSocketSequenceRef.current) return;
+    if (!update.messageId || !update.messageType || !update.direction) return;
+    webSocketSequenceRef.current = update.sequence;
+    const message: WebSocketMessage = {
+      id: update.messageId,
+      direction: update.direction,
+      kind: update.messageType,
+      text: update.text,
+      textTruncated: update.textTruncated,
+      binaryHex: update.binaryHex,
+      binaryText: update.binaryText,
+      binarySize: update.binarySize,
+      binaryTruncated: update.binaryTruncated,
+      closeCode: update.closeCode,
+      closeReason: update.closeReason,
+    };
+    const retained = webSocketBufferRef.current;
+    retained.push(message);
+    setWebSocketMessages([...retained.messages]);
+    setWebSocketDropped(Math.max(update.dropped, retained.evicted));
+  };
+
+  const onWebSocketConnect = async () => {
+    if (webSocketBusy || webSocketState === "open" || webSocketState === "connecting" || webSocketState === "closing") return;
+    const generation = webSocketGenerationRef.current + 1;
+    webSocketGenerationRef.current = generation;
+    webSocketTerminalGenerationRef.current = null;
+    webSocketSequenceRef.current = 0;
+    webSocketBufferRef.current = new WebSocketMessageBuffer();
+    const previous = webSocketHandleRef.current;
+    webSocketHandleRef.current = null;
+    setWebSocketMessages([]);
+    setWebSocketDropped(0);
+    setWebSocketState("connecting");
+    setWebSocketBusy(true);
+    setError(null);
+    if (previous) await previous.stop().catch(() => undefined);
+    try {
+      const handle = await startWebSocket(
+        req,
+        currentEnv?.variables ?? [],
+        (update) => applyWebSocketUpdate(generation, update),
+      );
+      if (!mountedRef.current || webSocketGenerationRef.current !== generation) {
+        await handle.stop().catch(() => undefined);
+        return;
+      }
+      if (webSocketTerminalGenerationRef.current === generation) {
+        await handle.stop().catch(() => undefined);
+        if (mountedRef.current && webSocketGenerationRef.current === generation) {
+          webSocketHandleRef.current = handle;
+        }
+        return;
+      }
+      webSocketHandleRef.current = handle;
+    } catch (cause) {
+      if (mountedRef.current && webSocketGenerationRef.current === generation) {
+        setWebSocketState("error");
+        setError(safeWebSocketUiError(cause));
+      }
+    } finally {
+      if (mountedRef.current && webSocketGenerationRef.current === generation) setWebSocketBusy(false);
+    }
+  };
+
+  const onWebSocketDisconnect = async () => {
+    if (webSocketBusy) return;
+    const handle = webSocketHandleRef.current;
+    if (!handle) {
+      setWebSocketState("idle");
+      return;
+    }
+    setWebSocketBusy(true);
+    try {
+      await handle.close(1000, "client disconnect");
+    } catch (cause) {
+      setWebSocketState("error");
+      setError(safeWebSocketUiError(cause));
+    } finally {
+      if (mountedRef.current) setWebSocketBusy(false);
+    }
+  };
+
+  const onWebSocketSend = async (kind: "text" | "binary", value: string, encoding: "text" | "hex") => {
+    const handle = webSocketHandleRef.current;
+    if (!handle || webSocketBusy) return;
+    setWebSocketBusy(true);
+    setError(null);
+    try {
+      await handle.send(kind, value, encoding);
+    } catch (cause) {
+      setError(safeWebSocketUiError(cause));
+    } finally {
+      if (mountedRef.current) setWebSocketBusy(false);
+    }
+  };
+
+  const onWebSocketPing = async (value: string, encoding: "text" | "hex") => {
+    const handle = webSocketHandleRef.current;
+    if (!handle || webSocketBusy) return;
+    setWebSocketBusy(true);
+    setError(null);
+    try {
+      await handle.ping(value, encoding);
+    } catch (cause) {
+      setError(safeWebSocketUiError(cause));
+    } finally {
+      if (mountedRef.current) setWebSocketBusy(false);
+    }
+  };
+
+  const onWebSocketClose = async (code: number | undefined, reason: string) => {
+    const handle = webSocketHandleRef.current;
+    if (!handle || webSocketBusy) return;
+    setWebSocketBusy(true);
+    setError(null);
+    try {
+      await handle.close(code, reason);
+    } catch (cause) {
+      setError(safeWebSocketUiError(cause));
+    } finally {
+      if (mountedRef.current) setWebSocketBusy(false);
+    }
+  };
+
+  const onWebSocketSaveBinary = async (messageId: number) => {
+    const handle = webSocketHandleRef.current;
+    if (!handle || webSocketBusy) return;
+    setWebSocketBusy(true);
+    setError(null);
+    try {
+      await handle.saveBinary(messageId);
+    } catch (cause) {
+      setError(safeWebSocketUiError(cause));
+    } finally {
+      if (mountedRef.current) setWebSocketBusy(false);
+    }
+  };
+
   const setAuth = (patch: Partial<NonNullable<RequestTemplate["auth"]>>) =>
     setReq({
       ...req,
@@ -1230,6 +1412,21 @@ export default function App() {
           )}
         </div>
 
+        <WebSocketPanel
+          state={webSocketState}
+          messages={webSocketMessages}
+          dropped={webSocketDropped}
+          native={isTauri()}
+          canConnect={persistenceReady && Boolean(req.url.trim()) && !contextActionBusy}
+          busy={webSocketBusy || sending || contextActionBusy}
+          onConnect={() => void onWebSocketConnect()}
+          onDisconnect={() => void onWebSocketDisconnect()}
+          onSend={(kind, value, encoding) => void onWebSocketSend(kind, value, encoding)}
+          onPing={(value, encoding) => void onWebSocketPing(value, encoding)}
+          onClose={(code, reason) => void onWebSocketClose(code, reason)}
+          onSaveBinary={(messageId) => void onWebSocketSaveBinary(messageId)}
+        />
+
         {graphqlIssue && <div className="error" role="alert">{graphqlIssue}</div>}
         {error && <div className="error" role="alert">{error}</div>}
 
@@ -1469,6 +1666,43 @@ function safeRequestError(cause: unknown): string {
     return message;
   }
   return "요청에 실패했습니다. URL, 연결 상태와 secret 설정을 확인하세요.";
+}
+
+const SAFE_WEBSOCKET_UI_MESSAGES = new Set([
+  "WebSocket endpoint URL이 올바르지 않습니다",
+  "WebSocket endpoint query에 credential을 넣을 수 없습니다",
+  "WebSocket 요청 URL이 너무 깁니다",
+  "WebSocket 요청 header가 올바르지 않습니다",
+  "WebSocket 요청 header가 너무 깁니다",
+  "WebSocket 요청 parameter가 올바르지 않습니다",
+  "WebSocket 요청 항목 수가 제한을 초과했습니다",
+  "WebSocket 연결 timeout 범위가 올바르지 않습니다",
+  "WebSocket 인증 설정이 올바르지 않습니다",
+  "secret 포함 WebSocket은 데스크톱 앱에서만 전송할 수 있습니다",
+  "브라우저 미리보기에서는 WebSocket custom header/auth를 사용할 수 없습니다",
+  "브라우저 미리보기에서는 ping/pong을 직접 보낼 수 없습니다",
+  "WebSocket 연결을 시작할 수 없습니다",
+  "이미 실행 중인 WebSocket 연결이 있습니다",
+  "WebSocket 연결이 열려 있지 않습니다",
+  "WebSocket message를 보낼 수 없습니다",
+  "WebSocket ping을 보낼 수 없습니다",
+  "WebSocket 연결을 닫을 수 없습니다",
+  "WebSocket binary payload가 올바르지 않습니다",
+  "WebSocket binary를 안전하게 저장할 수 없습니다",
+  "WebSocket binary hex가 올바르지 않습니다",
+  "WebSocket message가 허용된 크기를 초과했습니다",
+  "WebSocket close code가 올바르지 않습니다",
+  "WebSocket close reason이 올바르지 않습니다",
+  "WebSocket 연결 시간이 초과되었습니다",
+  "WebSocket 연결에 실패했습니다",
+  "WebSocket 연결이 끊어졌습니다",
+  "WebSocket 요청에 실패했습니다.",
+]);
+
+function safeWebSocketUiError(cause: unknown): string {
+  const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
+  const message = raw.replace(/^Error:\s*/u, "");
+  return SAFE_WEBSOCKET_UI_MESSAGES.has(message) ? message : "WebSocket 요청에 실패했습니다.";
 }
 
 export function shellQuote(s: string): string {

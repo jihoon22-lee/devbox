@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `ced4ed69928bcfb3ffa1be829e8bdb5f5eb60f268525f2f40e9b3df4f5816943`
+- Cargo.lock SHA-256: `ebc86703dd38410574e589c06d7b4e4d12a41aa783e7114cf9678fc69a366be5`
 - pnpm-lock.yaml SHA-256: `c49f2e10098da67eaf9af9bf737d06f517fc6efda1883d2bc810d8068027f440`
 
 ## Rust dependencies
@@ -110,6 +110,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | darling_core | 0.23.0 | MIT | https://github.com/TedDriggs/darling | `sha256:9865a50f7c335f53564bb694ef660825eb8610e0a53d3e11bf1b0d3df31e03b0` |
 | darling_macro | 0.20.11 | MIT | https://github.com/TedDriggs/darling | `sha256:fc34b93ccb385b40dc71c6fceac4b2ad23662c7eeb248cf10d529b7e055b6ead` |
 | darling_macro | 0.23.0 | MIT | https://github.com/TedDriggs/darling | `sha256:ac3984ec7bd6cfa798e62b4a642426a5be0e68f9401cfc2a01e3fa9ea2fcdb8d` |
+| data-encoding | 2.11.1 | MIT | https://github.com/ia0/data-encoding | `sha256:4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06` |
 | dbus | 0.9.12 | Apache-2.0/MIT | https://github.com/diwic/dbus-rs | `sha256:3ab69f03cc8c4340c9c8e315114e1658e6775a9b16a04357973aa21cec22b32e` |
 | defmt | 1.1.1 | MIT OR Apache-2.0 | https://github.com/knurling-rs/defmt | `sha256:e2953bfe4f93bbd20cc71198842756f77d161884c99ebbabc41d80231ded88d1` |
 | defmt-macros | 1.1.1 | MIT OR Apache-2.0 | https://github.com/knurling-rs/defmt | `sha256:bad9c72e7ca2137e0dc3813245a0d282fd6daad32fd800af018306a9169b5fe8` |
@@ -432,6 +433,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | serialize-to-javascript | 0.1.2 | MIT OR Apache-2.0 | https://github.com/chippers/serialize-to-javascript | `sha256:04f3666a07a197cdb77cdf306c32be9b7f598d7060d50cfd4d5aa04bfd92f6c5` |
 | serialize-to-javascript-impl | 0.1.2 | MIT OR Apache-2.0 | https://github.com/chippers/serialize-to-javascript | `sha256:772ee033c0916d670af7860b6e1ef7d658a4629a6d0b4c8c3e67f09b3765b75d` |
 | servo_arc | 0.4.3 | MIT OR Apache-2.0 | https://github.com/servo/stylo | `sha256:170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930` |
+| sha1 | 0.11.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | `sha256:aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214` |
 | sha2 | 0.10.9 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | `sha256:a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283` |
 | sha2 | 0.11.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | `sha256:446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4` |
 | shared_library | 0.1.9 | Apache-2.0/MIT | https://github.com/tomaka/shared_library/ | `sha256:5a9e7e0f2bfae24d8a5b5a66c5b257a83c7412304311512a0c054cd5e619da11` |
@@ -503,6 +505,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | tokio | 1.53.1 | MIT | https://github.com/tokio-rs/tokio | `sha256:202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed` |
 | tokio-macros | 2.7.2 | MIT | https://github.com/tokio-rs/tokio | `sha256:78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e` |
 | tokio-rustls | 0.26.4 | MIT OR Apache-2.0 | https://github.com/rustls/tokio-rustls | `sha256:1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61` |
+| tokio-tungstenite | 0.30.0 | MIT | https://github.com/snapview/tokio-tungstenite | `sha256:17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71` |
 | tokio-util | 0.7.19 | MIT | https://github.com/tokio-rs/tokio | `sha256:494815d09bf52b5548659851081238f0ca39ff638363907596da739561c62c52` |
 | toml | 0.8.2 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml | `sha256:185d8ab0dfbb35cf1399a6344d8484209c088f75f8f68230da55d48d95d43e3d` |
 | toml | 0.9.12+spec-1.1.0 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml | `sha256:cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863` |
@@ -525,6 +528,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | tray-icon | 0.24.2 | MIT OR Apache-2.0 | https://github.com/tauri-apps/tray-icon | `sha256:045979e3f037cd18ad1cb2a419dfda133c5c29c9f3453370079f2255d46c257e` |
 | tree_magic_mini | 3.2.2 | MIT | https://github.com/mbrubeck/tree_magic/ | `sha256:b8765b90061cba6c22b5831f675da109ae5561588290f9fa2317adab2714d5a6` |
 | try-lock | 0.2.5 | MIT | https://github.com/seanmonstar/try-lock | `sha256:e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b` |
+| tungstenite | 0.30.0 | MIT OR Apache-2.0 | https://github.com/snapview/tungstenite-rs | `sha256:e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22` |
 | typed-path | 0.12.3 | MIT OR Apache-2.0 | https://github.com/chipsenkbeil/typed-path | `sha256:8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e` |
 | typeid | 1.0.3 | MIT OR Apache-2.0 | https://github.com/dtolnay/typeid | `sha256:bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c` |
 | typenum | 1.20.1 | MIT OR Apache-2.0 | https://github.com/paholg/typenum | `sha256:b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20` |

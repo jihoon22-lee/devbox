@@ -29,6 +29,9 @@ pub fn run() {
         .manage(commands::request::ResponseHeaderVault::default())
         .manage(commands::request::RequestCancellation::default())
         .manage(std::sync::Arc::new(commands::sse::SseState::default()))
+        .manage(std::sync::Arc::new(
+            commands::websocket::WebSocketState::default(),
+        ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -42,6 +45,12 @@ pub fn run() {
             commands::secrets::seal_secret,
             commands::sse::start_sse_stream,
             commands::sse::stop_sse_stream,
+            commands::websocket::start_websocket,
+            commands::websocket::send_websocket_message,
+            commands::websocket::ping_websocket,
+            commands::websocket::close_websocket,
+            commands::websocket::disconnect_websocket,
+            commands::websocket::save_websocket_binary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
