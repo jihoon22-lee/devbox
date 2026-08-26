@@ -29,6 +29,14 @@ vi.mock("./api", () => ({
   onDocsChanged: vi.fn(async () => () => undefined),
   takePendingOpen: vi.fn(async () => null),
   onOpenRequest: vi.fn(async () => () => undefined),
+  onQuickCaptureRequested: vi.fn(async () => () => undefined),
+  onQuickCaptureShortcutStatusChanged: vi.fn(async () => () => undefined),
+  quickCaptureShortcutStatus: vi.fn(async () => ({ shortcut: "Ctrl+Alt+K", state: "registered" })),
+  previewQuickCapture: vi.fn(async (input: { title: string; body: string; tags: string[] }) => ({
+    target: "Inbox",
+    ...input,
+  })),
+  saveQuickCapture: vi.fn(async () => ({ path: "Inbox/quick-capture-test.md" })),
   analyzeWikilinks: vi.fn(async () => [{
     target: "Missing",
     label: "Missing",

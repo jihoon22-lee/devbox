@@ -51,8 +51,19 @@ body {
 
 .sidebar-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 0 14px 8px;
+}
+
+.quick-capture-trigger {
+  width: 100%;
+  text-align: left;
+}
+
+.quick-capture-trigger .dim {
+  float: right;
+  font-family: "Cascadia Code", Consolas, monospace;
 }
 
 .btn {
@@ -565,6 +576,28 @@ body {
   padding: 8px 14px;
 }
 
+.quick-capture-notice,
+.quick-capture-shortcut-warning {
+  position: fixed;
+  top: 10px;
+  right: 14px;
+  z-index: 90;
+  max-width: min(560px, calc(100vw - 28px));
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24);
+  line-height: 1.4;
+}
+
+.quick-capture-shortcut-warning {
+  top: 48px;
+  color: var(--red);
+  border-color: var(--red);
+  background: rgba(248, 81, 73, 0.1);
+}
+
 /* ── rename preview transaction ──────────────────────────────── */
 
 .modal-backdrop {
@@ -575,6 +608,157 @@ body {
   place-items: center;
   padding: 24px;
   background: rgba(3, 7, 12, 0.72);
+}
+
+.quick-capture-dialog {
+  width: min(680px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.quick-capture-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.quick-capture-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.quick-capture-head p {
+  margin: 6px 0 0;
+  color: var(--dim);
+  line-height: 1.45;
+}
+
+.quick-capture-form,
+.quick-capture-preview {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.quick-capture-target {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--dim);
+}
+
+.quick-capture-target strong {
+  margin-left: 4px;
+  color: var(--accent);
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.quick-capture-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.quick-capture-field input,
+.quick-capture-field textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  font-weight: 400;
+  outline: none;
+}
+
+.quick-capture-field input:focus,
+.quick-capture-field textarea:focus {
+  border-color: var(--accent);
+}
+
+.quick-capture-field textarea {
+  min-height: 160px;
+  resize: vertical;
+  font-family: "Cascadia Code", Consolas, monospace;
+  line-height: 1.5;
+}
+
+.quick-capture-privacy {
+  margin: 0;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.quick-capture-error {
+  padding: 8px 10px;
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  background: rgba(248, 81, 73, 0.1);
+  color: var(--red);
+  line-height: 1.45;
+}
+
+.quick-capture-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.btn.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.quick-capture-preview-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 14px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.quick-capture-preview-meta span {
+  color: var(--dim);
+}
+
+.quick-capture-preview-meta strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.quick-capture-preview-body {
+  min-height: 0;
+}
+
+.quick-capture-preview-body pre {
+  max-height: 42vh;
+  margin: 6px 0 0;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "Cascadia Code", Consolas, monospace;
+  line-height: 1.5;
 }
 
 .rename-dialog {

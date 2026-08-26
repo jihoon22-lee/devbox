@@ -16,6 +16,9 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 - **검색** — 제목+본문 FTS5 (`crates/search`)
 - **태그** — YAML frontmatter(`tags:`) 파싱, 태그 목록·필터
 - **데일리 노트** — 날짜별 생성·연결
+- **빠른 캡처** — `Ctrl+Alt+K`(Windows 전역 단축키) 또는 앱 내 버튼으로 제목·본문·태그를
+  먼저 미리 본 뒤 오프라인 `Inbox/`에 새 Markdown 노트를 저장. 단축키 충돌이어도 앱 내
+  동작은 유지하며, 클립보드는 사용자가 선택한 순간에만 한 번 읽는다
 - **앱 간 열기** — catalog의 `Path`로 Knowledge root 안의 Markdown 노트를 열고, `Query`로 즉시 검색. cold start와 실행 중 재호출 모두 같은 pending-open 경로를 사용
 - **활동 snapshot** — 오늘 작성·수정된 노트 수와 경로 없는 불투명 식별자를 Life Log용 `activity/v1` view로 발행
 
@@ -54,6 +57,19 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 - `activity/v1` entry는 `notesModifiedToday`, `lastModifiedAtMs`, `noteIds`, `identifiersTruncated`만 포함한다. `noteIds`는 DB row에서 만든 `note-<양의 정수>` 형식이며 최대 512개다
 - 노트 경로·제목·본문·tag·credential은 snapshot에 포함하지 않는다. 앱 저장·생성·이름변경·삭제·데일리 노트 생성과 watcher가 감지한 외부 편집 뒤에 같은 snapshot을 best-effort로 갱신한다
 - clipboard IPC는 `allow-read-text`만 허용하며 편집기에서 사용자가 붙여넣기를 고른 순간의 plain text만 읽는다. clipboard history나 background 수집은 하지 않는다
+- quick capture도 같은 clipboard read 권한을 사용하지만, 별도의 history·자동 수집은 하지 않는다.
+  미리보기와 저장 모두 Rust가 최종 입력·태그·본문 상한, 제어문자, credential-like 패턴과
+  고정 `Inbox` 경계를 다시 검사한다. 민감한 입력이나 native 저장 실패는 고정된 안전 메시지만
+  반환하며 입력·절대 경로·OS 오류를 UI/로그에 반향하지 않는다
+- quick capture native 저장은 `Inbox/quick-capture-YYYY-MM-DD-HH-mm-ss[-N].md` 형식의
+  UTC 파일명을 사용하고, 기존 파일은 `create_new`로 절대 덮어쓰지 않는다. 파일 flush/sync,
+  SQLite FTS/link index transaction이 실패하면 새 파일을 정리해 반쪽 노트를 남기지 않는다.
+  본문 line ending은 LF로 정규화하고 동일 입력의 Markdown은 결정론적으로 생성한다
+- `Ctrl+Alt+K` 등록은 Windows `RegisterHotKey` 메시지 루프가 담당한다. 다른 앱이 이미
+  사용 중이거나 플랫폼이 지원되지 않으면 상태를 `conflict`/`unsupported`로만 표시하고,
+  앱 내부 빠른 캡처 버튼은 계속 사용할 수 있다. 단축키 event에는 문서 내용·경로가 없다
+- #303 범위는 quick capture와 Inbox note뿐이다. image asset, template, cloud sync, clipboard
+  history 및 다른 앱으로의 handoff는 이 기능에서 구현하지 않는다
 - 이름 변경은 외부 binary, network, runtime download 없이 동작한다. 직접 추가한 `sha2 0.11`은
   기존 workspace lock과 고지에 있던 MIT/Apache-2.0 dependency이며, preview UI는 기존
   `@devbox/diff-view`를 세 번째 소비자로 재사용한다

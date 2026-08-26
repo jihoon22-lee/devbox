@@ -704,6 +704,19 @@ all-target check/Clippy/fmt, frontend 20 files/160 tests와 production build, de
 catalog gate를 통과했다. Windows W2에서는 loopback GET/POST stream, native/browser parity,
 cancel/reconnect, CORS/redirect, redaction, no-persistence, bounded failure와 keyboard/IME/focus를
 packaged smoke로 확인한다.
+#303 구현 초안은 Knowledge에 고정 `Inbox` target의 offline quick capture를 추가한다. Windows
+`Ctrl+Alt+K`는 native `RegisterHotKey`로 등록하고 충돌·미지원 상태를 안전한 상태 DTO로 안내하며,
+앱 내부 버튼은 항상 유지한다. modal은 title/body/tags 입력 뒤 preview를 먼저 보여 주고, 명시적
+save에서만 새 Markdown과 검색 인덱스를 만든다. Rust/TypeScript 양쪽에서 본문·태그·제어문자·
+credential-like 입력과 root boundary를 재검증하고, UTC bounded filename collision·create_new·
+flush/sync·SQLite transaction 실패 시 반쪽 파일을 남기지 않는다. clipboard는 버튼을 누른 순간
+한 번만 읽으며 history·cloud·image/template/handoff는 포함하지 않는다. preview/save/clipboard의
+stale 응답과 중복 실행은 generation/busy guard로 버리고 modal은 ARIA·focus trap·Escape·Ctrl+Enter와
+닫힌 뒤 trigger focus 복원을 제공한다. `Inbox`가 없을 때는 preview에서 만들지 않고 save 시 검증 후
+지연 생성한다. 최신 `origin/main`에 rebase한 전용 worktree의 local checkpoint draft는 현재 clean이며,
+merge 전 Windows W2에서 shortcut conflict/focus, preview-before-save, clipboard one-shot,
+collision/failure evidence를 남긴다. WSL 집중 검증은 Rust 62개, Knowledge frontend 42개, TypeScript와
+Vite production build를 통과했다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

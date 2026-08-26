@@ -4,11 +4,19 @@ import { isTauri } from "./lib/isTauri";
 import type {
   Backlink,
   RenderedDoc,
+  QuickCaptureInput,
+  QuickCapturePreview,
+  QuickCaptureSaved,
+  QuickCaptureShortcutStatus,
   SearchResult,
   TreeEntry,
   WikilinkCandidate,
   WikilinkOccurrence,
 } from "./types";
+import {
+  normalizeQuickCapture,
+  QUICK_CAPTURE_TARGET,
+} from "./lib/quickCapture";
 
 export type OpenTarget =
   | { kind: "path"; path: string; line: number | null; column: number | null }
@@ -226,6 +234,112 @@ export async function backlinks(rel: string): Promise<Backlink[]> {
 export async function dailyNote(): Promise<[string, string]> {
   if (!isTauri()) return ["Journal/2026-08-11.md", "# Today\n"];
   return invoke<[string, string]>("daily_note");
+}
+
+const QUICK_CAPTURE_UNAVAILABLE = "빠른 캡처 저장은 Knowledge 앱에서만 사용할 수 있습니다";
+const QUICK_CAPTURE_PREVIEW_FAILED = "빠른 캡처 미리보기를 만들 수 없습니다";
+const QUICK_CAPTURE_SAVE_FAILED = "빠른 캡처를 저장하지 못했습니다";
+const QUICK_CAPTURE_SHORTCUT = "Ctrl+Alt+K";
+const QUICK_CAPTURE_SHORTCUT_STATES: QuickCaptureShortcutStatus["state"][] = [
+  "registering",
+  "registered",
+  "conflict",
+  "unsupported",
+  "unavailable",
+];
+
+function safeQuickCaptureShortcutStatus(value: unknown): QuickCaptureShortcutStatus {
+  if (typeof value === "object" && value !== null) {
+    const candidate = value as { shortcut?: unknown; state?: unknown };
+    if (
+      candidate.shortcut === QUICK_CAPTURE_SHORTCUT
+      && typeof candidate.state === "string"
+      && QUICK_CAPTURE_SHORTCUT_STATES.includes(candidate.state as QuickCaptureShortcutStatus["state"])
+    ) {
+      return {
+        shortcut: QUICK_CAPTURE_SHORTCUT,
+        state: candidate.state as QuickCaptureShortcutStatus["state"],
+      };
+    }
+  }
+  return { shortcut: QUICK_CAPTURE_SHORTCUT, state: "unavailable" };
+}
+
+function safeQuickCaptureError(error: unknown, fallback: string): Error {
+  const message = error instanceof Error ? error.message : "";
+  // Native commands only expose these stable validation/storage messages.  A
+  // defensive allowlist keeps an unexpected OS/IPC string out of the UI.
+  if (
+    message === "빠른 캡처 본문을 입력하세요"
+    || message === "민감한 정보가 포함되어 있어 저장하지 않았습니다"
+    || message === "빠른 캡처 입력이 올바르지 않습니다"
+  ) {
+    return new Error(message);
+  }
+  return new Error(fallback);
+}
+
+export async function previewQuickCapture(input: QuickCaptureInput): Promise<QuickCapturePreview> {
+  const normalized = normalizeQuickCapture(input);
+  if (!isTauri()) {
+    return { target: QUICK_CAPTURE_TARGET, ...normalized };
+  }
+  try {
+    const preview = await invoke<QuickCapturePreview>("preview_quick_capture", { input: normalized });
+    if (preview.target !== QUICK_CAPTURE_TARGET) throw new Error("unexpected target");
+    const checked = normalizeQuickCapture({ title: preview.title, body: preview.body, tags: preview.tags });
+    return { target: QUICK_CAPTURE_TARGET, ...checked };
+  } catch (error) {
+    throw safeQuickCaptureError(error, QUICK_CAPTURE_PREVIEW_FAILED);
+  }
+}
+
+export async function saveQuickCapture(input: QuickCaptureInput): Promise<QuickCaptureSaved> {
+  const normalized = normalizeQuickCapture(input);
+  if (!isTauri()) throw new Error(QUICK_CAPTURE_UNAVAILABLE);
+  try {
+    const saved = await invoke<QuickCaptureSaved>("save_quick_capture", { input: normalized });
+    if (
+      !saved
+      || typeof saved.path !== "string"
+      || !saved.path.startsWith(`${QUICK_CAPTURE_TARGET}/`)
+      || saved.path.indexOf("/") !== QUICK_CAPTURE_TARGET.length
+      || saved.path.includes("..")
+      || saved.path.includes("\\")
+    ) {
+      throw new Error("unexpected save path");
+    }
+    return { path: saved.path };
+  } catch (error) {
+    throw safeQuickCaptureError(error, QUICK_CAPTURE_SAVE_FAILED);
+  }
+}
+
+export async function quickCaptureShortcutStatus(): Promise<QuickCaptureShortcutStatus> {
+  if (!isTauri()) {
+    return { shortcut: QUICK_CAPTURE_SHORTCUT, state: "unsupported" };
+  }
+  try {
+    return safeQuickCaptureShortcutStatus(await invoke<QuickCaptureShortcutStatus>("shortcut_status"));
+  } catch {
+    return { shortcut: QUICK_CAPTURE_SHORTCUT, state: "unavailable" };
+  }
+}
+
+export async function onQuickCaptureRequested(cb: () => void): Promise<() => void> {
+  if (!isTauri()) return () => undefined;
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen("knowledge://quick-capture", () => cb());
+}
+
+export async function onQuickCaptureShortcutStatusChanged(
+  cb: (status: QuickCaptureShortcutStatus) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => undefined;
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<QuickCaptureShortcutStatus>("knowledge://quick-capture-shortcut-status", (event) => {
+    cb(safeQuickCaptureShortcutStatus(event.payload));
+  });
 }
 
 function escapeHtml(s: string): string {

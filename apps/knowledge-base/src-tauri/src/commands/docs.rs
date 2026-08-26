@@ -1,8 +1,11 @@
+use crate::core::capture::{self, QuickCaptureInput};
 use crate::core::db;
 use crate::core::store;
 use rusqlite::Connection;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -34,6 +37,22 @@ pub struct TreeEntry {
 pub struct InboundNote {
     pub path: String,
     pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickCapturePreview {
+    pub target: String,
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickCaptureSaved {
+    /// Root-relative only.  The absolute Knowledge path never crosses IPC.
+    pub path: String,
 }
 
 /// KnowledgeRoot 경로를 반환한다. 미설정이면 Documents/Knowledge로 초기화.
@@ -258,6 +277,141 @@ pub fn open_in(
     devbox_launch::launch_open(&target_id, &request).map(|_| ())
 }
 
+fn validate_capture_inbox(root: &Path) -> Result<(), String> {
+    // Validate the fixed destination even during preview.  This means a
+    // misconfigured root or a symlinked Inbox cannot appear selectable in UI.
+    let inbox = validated_new_entry(root, capture::INBOX_DIR).map_err(str::to_string)?;
+    match std::fs::symlink_metadata(&inbox) {
+        Ok(metadata) if metadata.is_dir() => Ok(()),
+        Ok(_) => Err("빠른 캡처 저장 위치를 사용할 수 없습니다".to_string()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("빠른 캡처 저장 위치를 사용할 수 없습니다".to_string()),
+    }
+}
+
+fn capture_preview(root: &Path, input: QuickCaptureInput) -> Result<QuickCapturePreview, String> {
+    validate_capture_inbox(root)?;
+    let normalized = capture::normalize(input).map_err(|error| error.to_string())?;
+    Ok(QuickCapturePreview {
+        target: capture::INBOX_DIR.to_string(),
+        title: normalized.title,
+        body: normalized.body,
+        tags: normalized.tags,
+    })
+}
+
+#[tauri::command]
+pub fn preview_quick_capture(
+    state: tauri::State<'_, Arc<AppState>>,
+    input: QuickCaptureInput,
+) -> Result<QuickCapturePreview, String> {
+    let conn = state.db.lock().unwrap();
+    let root =
+        resolve_root(&conn).map_err(|_| "빠른 캡처 미리보기를 만들 수 없습니다".to_string())?;
+    capture_preview(&root, input)
+}
+
+fn create_new_capture_file(path: &Path, content: &[u8]) -> Result<(), std::io::Error> {
+    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    let result = (|| {
+        file.write_all(content)?;
+        file.flush()?;
+        file.sync_all()
+    })();
+    if result.is_err() {
+        // The file is ours because create_new succeeded.  Do not leave a
+        // partial note behind when disk/full/permission errors occur.
+        drop(file);
+        let _ = std::fs::remove_file(path);
+    }
+    result
+}
+
+fn save_capture_in_root(
+    conn: &Connection,
+    root: &Path,
+    input: QuickCaptureInput,
+) -> Result<QuickCaptureSaved, String> {
+    let now_seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs().min(i64::MAX as u64) as i64)
+        .unwrap_or(0);
+    save_capture_at(conn, root, input, now_seconds)
+}
+
+fn save_capture_at(
+    conn: &Connection,
+    root: &Path,
+    input: QuickCaptureInput,
+    now_seconds: i64,
+) -> Result<QuickCaptureSaved, String> {
+    let normalized = capture::normalize(input).map_err(|error| error.to_string())?;
+    validate_capture_inbox(root)?;
+    let document = capture::render_markdown(&normalized).map_err(|error| error.to_string())?;
+
+    let mut selected: Option<(String, PathBuf)> = None;
+    for ordinal in 1..=capture::MAX_COLLISION_ATTEMPTS {
+        let rel = format!(
+            "{}/{}",
+            capture::INBOX_DIR,
+            capture::filename_for_timestamp(now_seconds, ordinal)
+        );
+        let path = validated_new_entry(root, &rel).map_err(str::to_string)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|_| "빠른 캡처를 저장하지 못했습니다".to_string())?;
+        }
+        match create_new_capture_file(&path, document.as_bytes()) {
+            Ok(()) => {
+                selected = Some((rel, path));
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return Err("빠른 캡처를 저장하지 못했습니다".to_string()),
+        }
+    }
+    let Some((rel, path)) = selected else {
+        return Err("빠른 캡처를 저장하지 못했습니다".to_string());
+    };
+
+    // Keep the file and SQLite index in one bounded operation.  Any index
+    // failure removes only the newly-created file and rolls the transaction
+    // back, so a failed capture does not leave a half-visible note.
+    let transaction = match conn.unchecked_transaction() {
+        Ok(transaction) => transaction,
+        Err(_) => {
+            let _ = std::fs::remove_file(&path);
+            return Err("빠른 캡처를 저장하지 못했습니다".to_string());
+        }
+    };
+    if let Err(error) = db::index_doc_in_transaction(&transaction, &rel, &document)
+        .map_err(|_| "빠른 캡처를 저장하지 못했습니다".to_string())
+    {
+        let _ = transaction.rollback();
+        let _ = std::fs::remove_file(&path);
+        return Err(error);
+    }
+    if transaction.commit().is_err() {
+        let _ = std::fs::remove_file(&path);
+        return Err("빠른 캡처를 저장하지 못했습니다".to_string());
+    }
+    Ok(QuickCaptureSaved { path: rel })
+}
+
+#[tauri::command]
+pub fn save_quick_capture(
+    state: tauri::State<'_, Arc<AppState>>,
+    input: QuickCaptureInput,
+) -> Result<QuickCaptureSaved, String> {
+    let conn = state.db.lock().unwrap();
+    let root = resolve_root(&conn).map_err(|_| "빠른 캡처를 저장하지 못했습니다".to_string())?;
+    let result = save_capture_in_root(&conn, &root, input)?;
+    drop(conn);
+    // The snapshot contains counts and opaque IDs only; never capture content.
+    let _ = crate::integration::write_snapshot(&state.db.lock().unwrap());
+    Ok(result)
+}
+
 #[tauri::command]
 pub fn search_docs(
     state: tauri::State<'_, Arc<AppState>>,
@@ -324,6 +478,14 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
 mod tests {
     use super::*;
 
+    fn capture_input(body: &str) -> QuickCaptureInput {
+        QuickCaptureInput {
+            title: "Captured idea".to_string(),
+            body: body.to_string(),
+            tags: vec!["rust".to_string(), "offline".to_string()],
+        }
+    }
+
     #[test]
     fn civil_date_for_epoch() {
         // 1970-01-01
@@ -335,5 +497,112 @@ mod tests {
         // 2026-08-11 = epoch days
         let days = 20_676;
         assert_eq!(civil_from_days(days), (2026, 8, 11));
+    }
+
+    #[test]
+    fn quick_capture_preview_has_fixed_inbox_target_and_normalized_values() {
+        let root = tempfile::tempdir().unwrap();
+        crate::core::store::ensure_layout(root.path()).unwrap();
+        let preview = capture_preview(
+            root.path(),
+            QuickCaptureInput {
+                title: "  Captured idea  ".into(),
+                body: "first\r\nsecond".into(),
+                tags: vec!["rust".into(), "rust".into()],
+            },
+        )
+        .unwrap();
+        assert_eq!(preview.target, "Inbox");
+        assert_eq!(preview.title, "Captured idea");
+        assert_eq!(preview.body, "first\nsecond");
+        assert_eq!(preview.tags, ["rust"]);
+    }
+
+    #[test]
+    fn quick_capture_saves_portable_markdown_and_indexes_it() {
+        let root = tempfile::tempdir().unwrap();
+        crate::core::store::ensure_layout(root.path()).unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        db::migrate(&conn).unwrap();
+
+        let saved =
+            save_capture_in_root(&conn, root.path(), capture_input("hello\nworld")).unwrap();
+        assert!(saved.path.starts_with("Inbox/"));
+        assert!(saved.path.ends_with(".md"));
+        let content = std::fs::read_to_string(root.path().join(&saved.path)).unwrap();
+        assert_eq!(
+            content,
+            "---\ntitle: \"Captured idea\"\ntags: [\"rust\", \"offline\"]\n---\n\nhello\nworld\n"
+        );
+        assert_eq!(db::search(&conn, "world", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn quick_capture_collision_never_overwrites_existing_note() {
+        let root = tempfile::tempdir().unwrap();
+        crate::core::store::ensure_layout(root.path()).unwrap();
+        std::fs::create_dir(root.path().join(capture::INBOX_DIR)).unwrap();
+        let now = 1_754_923_200;
+        let first = root
+            .path()
+            .join("Inbox")
+            .join(capture::filename_for_timestamp(now, 1));
+        std::fs::write(&first, "keep me").unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        db::migrate(&conn).unwrap();
+
+        let saved = save_capture_at(&conn, root.path(), capture_input("new note"), now).unwrap();
+        assert_eq!(
+            saved.path,
+            format!("Inbox/{}", capture::filename_for_timestamp(now, 2))
+        );
+        assert_eq!(std::fs::read_to_string(first).unwrap(), "keep me");
+    }
+
+    #[test]
+    fn quick_capture_secret_is_rejected_before_any_file_is_created() {
+        let root = tempfile::tempdir().unwrap();
+        crate::core::store::ensure_layout(root.path()).unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        db::migrate(&conn).unwrap();
+        let error = save_capture_in_root(&conn, root.path(), capture_input("token=secret-value"))
+            .unwrap_err();
+        assert_eq!(error, "민감한 정보가 포함되어 있어 저장하지 않았습니다");
+        assert!(!root.path().join(capture::INBOX_DIR).exists());
+    }
+
+    #[test]
+    fn quick_capture_index_failure_removes_the_new_file() {
+        let root = tempfile::tempdir().unwrap();
+        crate::core::store::ensure_layout(root.path()).unwrap();
+        // Without the schema, indexing fails after the file has been created.
+        let conn = Connection::open_in_memory().unwrap();
+        let error = save_capture_at(
+            &conn,
+            root.path(),
+            capture_input("index failure"),
+            1_754_923_200,
+        )
+        .unwrap_err();
+        assert_eq!(error, "빠른 캡처를 저장하지 못했습니다");
+        assert_eq!(
+            std::fs::read_dir(root.path().join("Inbox"))
+                .unwrap()
+                .count(),
+            0
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn quick_capture_rejects_an_inbox_symlink_before_writing() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        symlink(outside.path(), root.path().join("Inbox")).unwrap();
+        let error = capture_preview(root.path(), capture_input("would escape")).unwrap_err();
+        assert_eq!(error, "Knowledge 항목 경로가 올바르지 않습니다");
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
     }
 }

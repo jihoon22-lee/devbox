@@ -1,3 +1,4 @@
+pub mod capture;
 pub mod db;
 pub mod entry_actions;
 pub mod frontmatter;

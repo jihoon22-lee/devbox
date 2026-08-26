@@ -53,3 +53,33 @@ export interface EditorCursorRequest {
   column: number;
   token: number;
 }
+
+export interface QuickCaptureInput {
+  title: string;
+  body: string;
+  tags: string[];
+}
+
+export interface QuickCapturePreview {
+  target: string;
+  title: string;
+  body: string;
+  tags: string[];
+}
+
+export interface QuickCaptureSaved {
+  /** Knowledge-root relative path; an absolute path never crosses IPC. */
+  path: string;
+}
+
+export type QuickCaptureShortcutState =
+  | "registering"
+  | "registered"
+  | "conflict"
+  | "unsupported"
+  | "unavailable";
+
+export interface QuickCaptureShortcutStatus {
+  shortcut: string;
+  state: QuickCaptureShortcutState;
+}

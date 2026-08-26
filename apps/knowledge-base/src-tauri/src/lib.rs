@@ -2,6 +2,7 @@ mod applink;
 mod commands;
 mod core;
 mod integration;
+mod platform;
 
 use commands::docs::AppState;
 use commands::watcher::KnowledgeWatcher;
@@ -70,9 +71,12 @@ pub fn run() {
             commands::docs::reveal_entry,
             commands::docs::open_targets,
             commands::docs::open_in,
+            commands::docs::preview_quick_capture,
+            commands::docs::save_quick_capture,
             commands::docs::search_docs,
             commands::docs::list_tags,
             commands::docs::daily_note,
+            platform::shortcut_status,
             commands::markdown::render_markdown,
             commands::wikilinks::analyze_wikilinks,
             commands::wikilinks::wikilink_candidates,
@@ -105,6 +109,9 @@ pub fn run() {
             }
             // integration snapshot producer (두 번째, §10.1)
             let _ = integration::write_snapshot(&state.db.lock().unwrap());
+            let shortcut_state = Arc::new(platform::QuickCaptureShortcutState::default());
+            app.manage(shortcut_state.clone());
+            platform::install(app.handle().clone(), shortcut_state);
             app.manage(state);
             app.manage(watcher);
             Ok(())
