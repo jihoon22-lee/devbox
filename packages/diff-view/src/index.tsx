@@ -20,10 +20,13 @@ interface Props {
   items: ChangeSetItem[];
   title?: string;
   approveLabel?: string;
+  /** false면 전체 변경을 하나의 transaction처럼 승인하는 고정 목록으로 표시한다. */
+  selectable?: boolean;
+  disabled?: boolean;
   /** 승인할 항목의 path 목록을 넘긴다. */
   onApprove: (paths: string[]) => void;
   /** 거부할 항목의 path 목록을 넘긴다. */
-  onReject: (paths: string[]) => void;
+  onReject?: (paths: string[]) => void;
   onCancel?: () => void;
 }
 
@@ -31,6 +34,8 @@ export default function ChangeSetPreview({
   items,
   title = "변경 사항",
   approveLabel = "적용",
+  selectable = true,
+  disabled = false,
   onApprove,
   onReject,
   onCancel,
@@ -66,17 +71,26 @@ export default function ChangeSetPreview({
     <div className="changeset">
       <div className="changeset-head">
         <span className="changeset-title">{title} ({items.length})</span>
-        <button className="btn mini" onClick={toggleAll}>
-          {allSelected ? "전체 해제" : "전체 선택"}
-        </button>
+        {selectable && (
+          <button className="btn mini" disabled={disabled} onClick={toggleAll}>
+            {allSelected ? "전체 해제" : "전체 선택"}
+          </button>
+        )}
       </div>
 
       <div className="changeset-list">
         {items.map((item) => (
           <div key={item.path} className={`changeset-item ${selected.has(item.path) ? "selected" : ""}`}>
-            <label className="changeset-check">
-              <input type="checkbox" checked={selected.has(item.path)} onChange={() => toggle(item.path)} />
-            </label>
+            {selectable && (
+              <label className="changeset-check">
+                <input
+                  type="checkbox"
+                  checked={selected.has(item.path)}
+                  disabled={disabled}
+                  onChange={() => toggle(item.path)}
+                />
+              </label>
+            )}
             <div className="changeset-body">
               <div className="changeset-path">
                 {item.path}
@@ -93,14 +107,20 @@ export default function ChangeSetPreview({
       </div>
 
       <div className="changeset-actions">
-        <button className="btn" disabled={selectedItems.length === 0} onClick={() => onApprove(selectedItems.map((i) => i.path))}>
-          {approveLabel} ({selectedItems.length})
+        <button
+          className="btn"
+          disabled={disabled || (selectable ? selectedItems.length === 0 : items.length === 0)}
+          onClick={() => onApprove((selectable ? selectedItems : items).map((i) => i.path))}
+        >
+          {approveLabel} ({selectable ? selectedItems.length : items.length})
         </button>
-        <button className="btn" disabled={selectedItems.length === 0} onClick={() => onReject(selectedItems.map((i) => i.path))}>
-          폐기 ({selectedItems.length})
-        </button>
+        {onReject && (
+          <button className="btn" disabled={disabled || selectedItems.length === 0} onClick={() => onReject(selectedItems.map((i) => i.path))}>
+            폐기 ({selectedItems.length})
+          </button>
+        )}
         {onCancel && (
-          <button className="btn" onClick={onCancel}>
+          <button className="btn" disabled={disabled} onClick={onCancel}>
             취소
           </button>
         )}

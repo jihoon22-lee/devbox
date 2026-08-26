@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@devbox/context-menu": "workspace:*",
+    "@devbox/diff-view": "workspace:*",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2",
     "@tauri-apps/plugin-opener": "^2",

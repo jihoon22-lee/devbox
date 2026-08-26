@@ -31,6 +31,26 @@ export interface KnowledgeOpenTarget {
   displayName: string;
 }
 
+export interface RenameDiffItem {
+  path: string;
+  before: string;
+  after: string;
+  meta: string;
+}
+
+export interface RenamePreview {
+  planId: string;
+  from: string;
+  to: string;
+  isDir: boolean;
+  items: RenameDiffItem[];
+}
+
+export interface RenameApplied {
+  from: string;
+  to: string;
+}
+
 const MOCK_OPEN_TARGETS: KnowledgeOpenTarget[] = [
   { id: "code-pad", displayName: "Code Pad" },
   { id: "workbench", displayName: "Workbench" },
@@ -109,9 +129,29 @@ export async function createDirectory(rel: string): Promise<void> {
   await invoke("create_directory", { rel });
 }
 
-export async function renameFile(from: string, to: string): Promise<void> {
+export async function previewRename(from: string, to: string): Promise<RenamePreview> {
+  if (!isTauri()) {
+    return {
+      planId: "mock-rename",
+      from,
+      to,
+      isDir: false,
+      items: [{ path: `이름 변경 · ${from}`, before: from, after: to, meta: "파일 이동" }],
+    };
+  }
+  return invoke<RenamePreview>("preview_rename", { from, to });
+}
+
+export async function applyRename(planId: string): Promise<RenameApplied> {
+  if (!isTauri()) {
+    return { from: "", to: "" };
+  }
+  return invoke<RenameApplied>("apply_rename", { planId });
+}
+
+export async function discardRenamePreview(planId: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("rename_file", { from, to });
+  await invoke("discard_rename_preview", { planId });
 }
 
 export async function deleteFile(rel: string): Promise<void> {

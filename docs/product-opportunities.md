@@ -1053,7 +1053,28 @@ LLM 일기 생성은 source 정확성과 privacy 설정 이후의 opt-in 기능�
 CodeMirror 위치로 이동한다. raw target은 파일 경로가 아니며 유일하게 resolve된 DB 상대 경로도
 canonical root 내부 `.md`·10 MiB 경계에서 다시 검증한다. 외부 watcher와 앱 저장은 같은 link
 metadata 갱신 함수를 사용하고 새 target은 source 재작성 없이 resolution/backlink에 반영된다.
-rename 전 영향 preview와 link rewrite transaction은 6번의 별도 issue로 유지한다.
+#273에서 6번을 구현했다. 파일·폴더 rename을 즉시 실행하던 command 대신 다음 경계를 사용한다.
+
+1. canonical root 내부 source와 덮어쓰지 않는 destination을 검증한다. 폴더를 자기 하위로 옮기거나
+   symlink를 경유하는 경로, 동일 destination은 변경 전에 거부한다. 파일은 미래 key simulation과
+   실제 link index의 종류를 일치시키기 위해 Markdown 여부(`.md`/비 Markdown)를 바꾸지 않는다.
+2. root의 경로 inventory, 모든 Markdown, 이동 subtree 파일을 SHA-256 snapshot으로 묶는다.
+   root 10,000항목, 읽은 내용 합계 64 MiB, rewrite 200파일·5,000링크를 상한으로 둔다.
+3. 현재 유일하게 이동 note를 가리키는 link만 분석한다. 이동 후에도 동일 key가 유일하면 그대로
+   두고, 깨지는 link만 새 root-relative path without `.md`로 바꾼다. 새 canonical key가 다른 title,
+   filename 또는 path key와 충돌하면 preview 자체를 만들지 않는다. explicit alias와 target 주위
+   whitespace는 보존한다.
+4. UI에는 이동 경로와 영향받는 `[[...]]` syntax만 before/after로 보내고 전체 note body나 절대
+   경로를 반환하지 않는다. `@devbox/diff-view`를 고정 목록 모드로 사용해 일부 link만 선택하는
+   비원자 적용은 허용하지 않는다.
+5. 원문 전체 plan은 `Serialize`/`Debug` 없는 app-managed slot 하나에만 보관한다. opaque ID는
+   승인 한 번 또는 취소에 소비되며 새 preview가 이전 plan을 폐기한다.
+6. apply 직전에 snapshot과 root/source/destination을 재검증한다. 통과한 경우 파일별 atomic
+   rewrite, source rename, SQLite FTS/link transaction 순서로 수행하고 실패 시 이미 바뀐 파일,
+   rename, 새 parent directory를 역순 복구한다. 이는 다중 파일 OS-global atomicity가 아니라
+   bounded preflight + per-file atomic replace + rollback 기반 all-or-rollback이다.
+7. dirty editor가 있는 동안 preview를 시작하지 않으며 성공 후 선택 note를 authoritative disk
+   내용으로 다시 읽는다. watcher는 DB mutex가 풀린 뒤 event를 수렴시킨다.
 
 #### 완료 조건
 

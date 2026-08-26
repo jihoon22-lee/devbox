@@ -17,6 +17,7 @@ use crate::core::entry_actions::{
 /// 앱 전역 상태
 pub struct AppState {
     pub db: Mutex<Connection>,
+    pub rename_plans: Mutex<crate::core::rename::RenamePlanStore>,
     /// 렌더 프리뷰용 이미지 인라인 캐시: (경로, mtime)이 같으면 base64 재인코딩을
     /// 건너뛴다. 항목 32개를 넘기면 통째로 비운다(LRU까지 갈 필요 없음).
     pub image_cache: Mutex<HashMap<PathBuf, (SystemTime, String)>>,
@@ -95,6 +96,7 @@ pub fn set_root(
     store::ensure_layout(Path::new(&path))?;
     db::set_setting(&conn, "root", &path).map_err(|e| e.to_string())?;
     drop(conn);
+    state.rename_plans.lock().unwrap().clear();
     // watcher를 새 루트로 재시작
     let watcher = app.state::<Arc<crate::commands::watcher::KnowledgeWatcher>>();
     watcher.set_root(Path::new(&path))
@@ -181,72 +183,6 @@ pub fn create_directory(state: tauri::State<'_, Arc<AppState>>, rel: String) -> 
         return Err("폴더가 이미 존재합니다".into());
     }
     std::fs::create_dir_all(path).map_err(|_| "폴더를 만들 수 없습니다".to_string())
-}
-
-#[tauri::command]
-pub fn rename_file(
-    state: tauri::State<'_, Arc<AppState>>,
-    from: String,
-    to: String,
-) -> Result<(), String> {
-    let mut conn = state.db.lock().unwrap();
-    let root = resolve_root(&conn)?;
-    let src = canonical_existing_entry(&root, &from).map_err(str::to_string)?;
-    let dst = validated_new_entry(&root, &to).map_err(str::to_string)?;
-    if dst.exists() {
-        return Err("같은 이름의 항목이 이미 존재합니다".into());
-    }
-    if let Some(parent) = dst.parent() {
-        std::fs::create_dir_all(parent).map_err(|_| "항목 이름을 바꿀 수 없습니다".to_string())?;
-    }
-    std::fs::rename(&src, &dst).map_err(|_| "항목 이름을 바꿀 수 없습니다".to_string())?;
-    if replace_indexed_path(&mut conn, &root, &from, &to).is_err() {
-        // 파일이 source of truth다. DB transaction이 실패하면 가능한 경우 filesystem
-        // rename도 되돌려 호출자가 성공으로 오인하지 않게 한다.
-        let _ = std::fs::rename(&dst, &src);
-        return Err("검색 인덱스를 갱신할 수 없습니다".to_string());
-    }
-    drop(conn);
-    let _ = crate::integration::write_snapshot(&state.db.lock().unwrap());
-    Ok(())
-}
-
-fn replace_indexed_path(
-    conn: &mut Connection,
-    root: &Path,
-    from: &str,
-    to: &str,
-) -> Result<(), String> {
-    let transaction = conn
-        .transaction()
-        .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
-    db::remove_docs_under(&transaction, from)
-        .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
-    let renamed = canonical_existing_entry(root, to).map_err(str::to_string)?;
-    if renamed.is_dir() {
-        let entries =
-            store::tree(&renamed).map_err(|_| "검색할 폴더 내용을 읽을 수 없습니다".to_string())?;
-        for (child, is_dir) in entries {
-            if is_dir {
-                continue;
-            }
-            let child_rel = format!("{}/{}", to.trim_end_matches('/'), child);
-            let Ok(child_path) = canonical_existing_entry(root, &child_rel) else {
-                continue;
-            };
-            let Ok(content) = store::read_file(&child_path) else {
-                continue;
-            };
-            db::index_doc_in_transaction(&transaction, &child_rel, &content)
-                .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
-        }
-    } else if let Ok(content) = store::read_file(&renamed) {
-        db::index_doc_in_transaction(&transaction, to, &content)
-            .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
-    }
-    transaction
-        .commit()
-        .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())
 }
 
 #[tauri::command]
@@ -399,29 +335,5 @@ mod tests {
         // 2026-08-11 = epoch days
         let days = 20_676;
         assert_eq!(civil_from_days(days), (2026, 8, 11));
-    }
-
-    #[test]
-    fn folder_rename_reindexes_descendants_and_delete_removes_them() {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(root.path().join("Old/nested")).unwrap();
-        std::fs::write(root.path().join("Old/a.md"), "alpha unique").unwrap();
-        std::fs::write(root.path().join("Old/nested/b.md"), "beta unique").unwrap();
-        let mut conn = Connection::open_in_memory().unwrap();
-        db::migrate(&conn).unwrap();
-        db::index_doc(&conn, "Old/a.md", "alpha unique").unwrap();
-        db::index_doc(&conn, "Old/nested/b.md", "beta unique").unwrap();
-
-        std::fs::rename(root.path().join("Old"), root.path().join("New")).unwrap();
-        replace_indexed_path(&mut conn, root.path(), "Old", "New").unwrap();
-
-        assert_eq!(db::search(&conn, "alpha", 10).unwrap()[0].0, "New/a.md");
-        assert_eq!(
-            db::search(&conn, "beta", 10).unwrap()[0].0,
-            "New/nested/b.md"
-        );
-        store::delete_file(&root.path().join("New")).unwrap();
-        db::remove_docs_under(&conn, "New").unwrap();
-        assert!(db::search(&conn, "unique", 10).unwrap().is_empty());
     }
 }

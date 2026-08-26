@@ -69,6 +69,11 @@ body {
   border-color: var(--accent);
 }
 
+.btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .btn.small {
   padding: 4px 10px;
   font-size: 11px;
@@ -558,4 +563,142 @@ body {
   border-bottom: 1px solid var(--red);
   color: var(--red);
   padding: 8px 14px;
+}
+
+/* ── rename preview transaction ──────────────────────────────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 7, 12, 0.72);
+}
+
+.rename-dialog {
+  width: min(820px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.rename-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.rename-note {
+  margin: 8px 0 14px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+.rename-dialog .changeset {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.changeset-head,
+.changeset-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.changeset-head {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+
+.changeset-title {
+  font-weight: 600;
+}
+
+.changeset-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.changeset-item {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.changeset-item:last-child {
+  border-bottom: 0;
+}
+
+.changeset-item.selected {
+  background: rgba(79, 140, 255, 0.05);
+}
+
+.changeset-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.changeset-path {
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+.changeset-meta {
+  color: var(--dim);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.changeset-diff {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.changeset-diff pre {
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 5px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.changeset-before {
+  border: 1px solid rgba(248, 81, 73, 0.3);
+  background: rgba(248, 81, 73, 0.08);
+}
+
+.changeset-after {
+  border: 1px solid rgba(63, 185, 80, 0.3);
+  background: rgba(63, 185, 80, 0.08);
+}
+
+.changeset-actions {
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .changeset-diff {
+    grid-template-columns: 1fr;
+  }
 }

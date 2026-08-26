@@ -4,13 +4,16 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
+import ChangeSetPreview from "@devbox/diff-view";
 import {
+  applyRename,
   analyzeWikilinks,
   backlinks as listBacklinks,
   createFile,
   createDirectory,
   dailyNote,
   deleteFile,
+  discardRenamePreview,
   entryPath,
   listTags,
   listTree,
@@ -21,7 +24,7 @@ import {
   openTargets,
   readFile,
   revealEntry,
-  renameFile,
+  previewRename,
   renderMarkdown,
   searchDocs,
   takePendingOpen,
@@ -29,6 +32,7 @@ import {
   wikilinkCandidates,
   type OpenRequest,
   type KnowledgeOpenTarget,
+  type RenamePreview,
 } from "./api";
 import MarkdownEditor from "./components/MarkdownEditor";
 import MarkdownPreview from "./components/MarkdownPreview";
@@ -99,6 +103,9 @@ export default function App() {
   const [showBacklinks, setShowBacklinks] = useState(true);
   const [metadataRevision, setMetadataRevision] = useState(0);
   const [cursorRequest, setCursorRequest] = useState<EditorCursorRequest | null>(null);
+  const [renamePreview, setRenamePreview] = useState<RenamePreview | null>(null);
+  const [renameBusy, setRenameBusy] = useState(false);
+  const renameBusyRef = useRef(false);
   const cursorTokenRef = useRef(0);
 
   // 인플라이트 렌더 응답이 도착했을 때 "그사이 다른 문서로 전환했는지"를 판단하기 위해
@@ -379,17 +386,78 @@ export default function App() {
   };
 
   const rename = async (path: string) => {
+    if (renameBusyRef.current) return;
+    if (dirty) {
+      setError("이름을 변경하기 전에 편집 중인 노트를 저장하세요");
+      return;
+    }
     const name = prompt("새 이름", path);
     const normalized = name ? normalizeRelativePath(name) : "";
     if (!normalized || normalized === path) return;
     setError(null);
+    renameBusyRef.current = true;
+    setRenameBusy(true);
     try {
-      await renameFile(path, normalized);
-      setSelected((current) => remapPath(current, path, normalized));
-      setSelectedTreePath((current) => remapPath(current, path, normalized));
-      await loadMeta();
+      setRenamePreview(await previewRename(path, normalized));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      renameBusyRef.current = false;
+      setRenameBusy(false);
+    }
+  };
+
+  const cancelRename = useCallback(() => {
+    const planId = renamePreview?.planId;
+    setRenamePreview(null);
+    if (planId) void discardRenamePreview(planId);
+  }, [renamePreview]);
+
+  useEffect(() => {
+    if (!renamePreview) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || renameBusyRef.current) return;
+      event.preventDefault();
+      cancelRename();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [cancelRename, renamePreview]);
+
+  const commitRename = async () => {
+    if (!renamePreview || renameBusyRef.current) return;
+    const planId = renamePreview.planId;
+    renameBusyRef.current = true;
+    setRenameBusy(true);
+    setError(null);
+    try {
+      const applied = await applyRename(planId);
+      const current = selectedRef.current;
+      const mapped = remapPath(current, applied.from, applied.to);
+      setSelected(mapped);
+      setSelectedTreePath((path) => remapPath(path, applied.from, applied.to));
+      if (mapped) {
+        try {
+          setContent(await readFile(mapped));
+        } catch {
+          // Native transaction은 이미 성공했다. 이전 경로의 stale editor 내용을 새
+          // 경로 아래에 표시하거나 저장하지 않고 metadata refresh는 계속한다.
+          setContent("");
+          setError("이름은 변경했지만 현재 노트를 다시 읽지 못했습니다");
+        }
+        setDirty(false);
+        setCursorRequest(null);
+      }
+      setRenamePreview(null);
+      await loadMeta();
+    } catch (cause) {
+      // apply plan은 성공 여부와 무관하게 one-shot이다. 실패한 미리보기를 다시
+      // 승인하지 않고 새 스냅샷부터 만들게 한다.
+      setRenamePreview(null);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      renameBusyRef.current = false;
+      setRenameBusy(false);
     }
   };
 
@@ -504,6 +572,32 @@ export default function App() {
 
   return (
     <div className="app">
+      {renamePreview && (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="rename-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-busy={renameBusy}
+            aria-labelledby="rename-dialog-title"
+          >
+            <h2 id="rename-dialog-title">이름 변경 미리보기</h2>
+            <p className="rename-note">
+              경로 이동과 연결된 위키링크 변경을 한 번에 적용합니다. 적용 직전에
+              파일이 달라졌거나 충돌이 생기면 전체 작업을 중단합니다.
+            </p>
+            <ChangeSetPreview
+              items={renamePreview.items}
+              title="변경 파일·링크"
+              approveLabel="전체 적용"
+              selectable={false}
+              disabled={renameBusy}
+              onApprove={() => void commitRename()}
+              onCancel={cancelRename}
+            />
+          </section>
+        </div>
+      )}
       {error && <div className="error">{error}</div>}
       <aside className="sidebar">
         <h1 className="app-title">Knowledge</h1>
