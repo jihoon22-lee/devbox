@@ -40,6 +40,8 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            commands::export::export_life_log,
+            commands::export::save_life_log,
             commands::life::set_projects,
             commands::life::get_projects,
             commands::life::get_day,

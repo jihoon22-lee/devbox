@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { DataSourceRow, monthRange, toDateStr, weekRange } from "./App";
+import { buildExportInput, DataSourceRow, monthRange, toDateStr, weekRange } from "./App";
 import type { SourceStatus } from "./api";
 
 afterEach(cleanup);
@@ -92,6 +92,32 @@ describe("toDateStr", () => {
 
   it("12월 31일처럼 패딩이 필요 없는 경우도 올바르다", () => {
     expect(toDateStr(new Date(2024, 11, 31))).toBe("2024-12-31");
+  });
+});
+
+describe("buildExportInput", () => {
+  it("날짜 범위를 local day boundary로 만들고 exclusive end를 사용한다", () => {
+    const input = buildExportInput("2024-01-01", "2024-01-02", "json");
+    expect(input).toMatchObject({
+      startDate: "2024-01-01",
+      endDate: "2024-01-02",
+      format: "json",
+    });
+    expect(input?.timezone).toBeTruthy();
+    const firstDayStart = new Date(2024, 0, 1).getTime();
+    const secondDayStart = new Date(2024, 0, 2).getTime();
+    const thirdDayStart = new Date(2024, 0, 3).getTime();
+    expect(input?.dayBoundaries).toEqual([
+      { date: "2024-01-01", startMs: firstDayStart, endMs: secondDayStart },
+      { date: "2024-01-02", startMs: secondDayStart, endMs: thirdDayStart },
+    ]);
+    expect(input?.dayStart).toBe(firstDayStart);
+    expect(input?.dayEnd).toBe(thirdDayStart);
+  });
+
+  it("잘못된 날짜와 366일 초과 범위를 거부한다", () => {
+    expect(buildExportInput("2024-02-30", "2024-02-30", "csv")).toBeNull();
+    expect(buildExportInput("2024-01-01", "2025-01-02", "markdown")).toBeNull();
   });
 });
 
