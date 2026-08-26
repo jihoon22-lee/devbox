@@ -58,6 +58,7 @@ describe("variable substitution", () => {
       method: "POST",
       url: "${BASE_URL}/${VERSION}",
       headers: [{ key: "Authorization", value: "Bearer ${TOKEN}", enabled: false }],
+      cookies: [{ name: "session", value: "${TOKEN}", enabled: true }],
       params: [{ key: "tenant", value: "${TENANT}" }],
       body_kind: "json",
       body: '{"token":"${TOKEN}"}',
@@ -87,6 +88,9 @@ describe("variable substitution", () => {
     expect(out.url).toBe("https://api.example.com/v2");
     expect(out.headers[0].value).toBe("Bearer token-value");
     expect(out.headers[0].enabled).toBe(false);
+    expect(out.cookies).toEqual([
+      { name: "session", value: "token-value", enabled: true },
+    ]);
     expect(out.params[0].value).toBe("tenant-value");
     expect(out.body).toBe('{"token":"token-value"}');
     expect(out.auth).toEqual({
@@ -99,6 +103,7 @@ describe("variable substitution", () => {
     });
     expect(req.url).toBe("${BASE_URL}/${VERSION}");
     expect(req.auth?.password).toBe("${PASSWORD}");
+    expect(req.cookies[0].value).toBe("${TOKEN}");
   });
 
   it("알 수 없는 ${NAME} reference는 그대로 보존한다", () => {

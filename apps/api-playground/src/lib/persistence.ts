@@ -10,6 +10,7 @@ import {
   isRequestHeader,
   normalizeHeaders,
 } from "./headers";
+import { isCookieReference, isRequestCookie, normalizeCookies } from "./cookies";
 
 export const REDACTED = "[REDACTED]";
 export const HISTORY_V1_LS_KEY = "apip-history";
@@ -123,6 +124,15 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
     ...sanitizePair(header, mark),
     enabled: isHeaderEnabled(header),
   }));
+  const cookies = normalizeCookies(request.cookies).map((cookie) => ({
+    ...cookie,
+    value: mark(
+      cookie.value,
+      cookie.value && !isCookieReference(cookie.value)
+        ? REDACTED
+        : redactKnownTokenPatterns(cookie.value),
+    ),
+  }));
   const params = request.params.map((param) => sanitizePair(param, mark));
   const url = mark(request.url, sanitizeUrl(request.url));
   const body = mark(request.body, sanitizeBody(request.body, request.body_kind));
@@ -132,6 +142,7 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
     method: request.method,
     url,
     headers,
+    cookies,
     params,
     body_kind: request.body_kind,
     body,
@@ -143,13 +154,21 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
 
 export function toRequestTemplate(request: PersistedHistoryRequest): RequestTemplate {
   const { requiresSecretReview: _, ...template } = request;
-  return { ...template, headers: normalizeHeaders(template.headers) };
+  return {
+    ...template,
+    headers: normalizeHeaders(template.headers),
+    cookies: normalizeCookies(template.cookies),
+  };
 }
 
 export function normalizePersistedRequest(
   request: PersistedHistoryRequest,
 ): PersistedHistoryRequest {
-  return { ...request, headers: normalizeHeaders(request.headers) };
+  return {
+    ...request,
+    headers: normalizeHeaders(request.headers),
+    cookies: normalizeCookies(request.cookies),
+  };
 }
 
 export function isSensitiveName(name: string): boolean {
@@ -310,6 +329,8 @@ function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
     typeof request.url === "string" &&
     Array.isArray(request.headers) &&
     request.headers.every(isRequestHeader) &&
+    (request.cookies === undefined ||
+      (Array.isArray(request.cookies) && request.cookies.every(isRequestCookie))) &&
     Array.isArray(request.params) &&
     request.params.every(isKeyValue) &&
     typeof request.body_kind === "string" &&

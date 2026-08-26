@@ -1,5 +1,6 @@
 import type { ContextMenuEntry } from "@devbox/context-menu";
 import type { HistoryItem, PersistedHistoryRequest } from "../types";
+import { normalizeCookies } from "./cookies";
 import type { HistoryStore } from "./persistence";
 
 export function buildRequestItemContextMenu(disabled: boolean): readonly ContextMenuEntry[] {
@@ -55,6 +56,7 @@ function clonePersistedRequest(request: PersistedHistoryRequest): PersistedHisto
   return {
     ...request,
     headers: request.headers.map((header) => ({ ...header })),
+    cookies: normalizeCookies(request.cookies),
     params: request.params.map((param) => ({ ...param })),
     auth: request.auth ? { ...request.auth } : null,
   };

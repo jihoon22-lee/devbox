@@ -5,6 +5,7 @@ import {
 } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildRevealedCurl, sanitizePersistedJson, sealSecret, sendRequest } from "./api";
+import { CookieEditor } from "./CookieEditor";
 import { HeaderTable } from "./HeaderTable";
 import {
   addEntry,
@@ -39,6 +40,12 @@ import {
   toRequestTemplate,
   type HistoryStore,
 } from "./lib/persistence";
+import {
+  buildCookieHeader,
+  hasActiveCookieHeader,
+  hasCookieSourceConflict,
+  validateCookies,
+} from "./lib/cookies";
 import { isHeaderEnabled } from "./lib/headers";
 import type { ApiResponse, HistoryItem, KeyValue, RequestTemplate } from "./types";
 import "./App.css";
@@ -51,6 +58,7 @@ const emptyReq = (): RequestTemplate => ({
   method: "GET",
   url: "",
   headers: [],
+  cookies: [],
   params: [],
   body_kind: "none",
   body: "",
@@ -110,7 +118,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [showCurl, setShowCurl] = useState(false);
-  const [tab, setTab] = useState<"params" | "headers" | "body" | "auth">("params");
+  const [tab, setTab] = useState<"params" | "headers" | "cookies" | "body" | "auth">("params");
   const [showHeaders, setShowHeaders] = useState(false);
   const [pretty, setPretty] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -128,6 +136,7 @@ export default function App() {
   const [contextActionBusy, setContextActionBusy] = useState(false);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [requestEditorRevision, setRequestEditorRevision] = useState(0);
   const [contextHistory, setContextHistory] = useState<HistoryItem | null>(null);
   const [contextCollection, setContextCollection] = useState<CollectionEntry | null>(null);
 
@@ -154,6 +163,13 @@ export default function App() {
   });
 
   const currentEnv = envStore.environments.find((e) => e.id === currentEnvId) ?? null;
+  const cookieIssues = validateCookies(req.cookies);
+  const cookieConflict = hasCookieSourceConflict(req.cookies, req.headers);
+  const cookieConfigurationError = cookieConflict
+    ? "활성 Cookie header와 구조화 Cookie 중 하나만 사용하세요."
+    : cookieIssues[0]
+      ? `${cookieIssues[0].index + 1}번 Cookie: ${cookieIssues[0].message}`
+      : null;
 
   const persistEnvs = (store: ReturnType<typeof loadEnvStore>) => {
     setEnvStore(store);
@@ -282,6 +298,11 @@ export default function App() {
   }, [history, req, environmentVariables]);
 
   const onSend = async () => {
+    if (cookieConfigurationError) {
+      setError(cookieConfigurationError);
+      setTab("cookies");
+      return;
+    }
     setSending(true);
     setError(null);
     try {
@@ -342,7 +363,9 @@ export default function App() {
 
   const copyMaskedCurl = (request: HistoryItem["request"]) => {
     void runContextAction(async () => {
-      await navigator.clipboard.writeText(buildCurl(toRequestTemplate(request)));
+      const curl = buildCurl(toRequestTemplate(request));
+      if (!curl) throw new Error("invalid request");
+      await navigator.clipboard.writeText(curl);
     }, "마스킹된 cURL을 복사하지 못했습니다.");
   };
 
@@ -447,6 +470,7 @@ export default function App() {
             onClick={() => {
               setSelectedHistoryId(h.id);
               setReq(toRequestTemplate(h.request));
+              setRequestEditorRevision((revision) => revision + 1);
               if (h.request.requiresSecretReview) {
                 setPersistenceWarning("마스킹된 History입니다. 민감한 값을 환경 변수 참조로 다시 설정하세요.");
               }
@@ -513,6 +537,7 @@ export default function App() {
                 onClick={() => {
                   setSelectedCollectionId(c.id);
                   setReq(toRequestTemplate(c.request));
+                  setRequestEditorRevision((revision) => revision + 1);
                   if (c.requiresSecretReview) {
                     setPersistenceWarning("안전 변환된 Collection입니다. 마스킹된 값을 환경 변수 참조로 다시 설정하세요.");
                   }
@@ -634,15 +659,15 @@ export default function App() {
             onChange={(e) => setReq({ ...req, url: e.currentTarget.value })}
             spellCheck={false}
           />
-          <button className="btn send" onClick={() => void onSend()} disabled={!persistenceReady || sending || contextActionBusy || !req.url}>
+          <button className="btn send" onClick={() => void onSend()} disabled={!persistenceReady || sending || contextActionBusy || !req.url || Boolean(cookieConfigurationError)}>
             {!persistenceReady ? "Checking..." : sending ? "Sending..." : "Send"}
           </button>
-          <button className={`btn ${showCurl ? "active" : ""}`} onClick={() => setShowCurl((v) => !v)} disabled={!req.url}>
+          <button className={`btn ${showCurl ? "active" : ""}`} onClick={() => setShowCurl((v) => !v)} disabled={!req.url || Boolean(cookieConfigurationError)}>
             cURL
           </button>
         </div>
 
-        {showCurl && (
+        {showCurl && !cookieConfigurationError && (
           <div className="curl-panel">
             <div className="io-label">
               cURL
@@ -658,12 +683,16 @@ export default function App() {
         )}
 
         <div className="tabs">
-          {(["params", "headers", "body", "auth"] as const).map((t) => (
+          {(["params", "headers", "cookies", "body", "auth"] as const).map((t) => (
             <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
               {t.toUpperCase()}
             </button>
           ))}
         </div>
+
+        {cookieConfigurationError && (
+          <div className="error" role="alert">{cookieConfigurationError}</div>
+        )}
 
         <div className="tab-body">
           {tab === "params" && (
@@ -676,6 +705,17 @@ export default function App() {
                 .filter((variable) => variable.secret)
                 .map((variable) => variable.key)}
               onChange={(headers) => setReq({ ...req, headers })}
+            />
+          )}
+          {tab === "cookies" && (
+            <CookieEditor
+              key={requestEditorRevision}
+              rows={req.cookies}
+              secretNames={(currentEnv?.variables ?? [])
+                .filter((variable) => variable.secret)
+                .map((variable) => variable.key)}
+              hasRawCookieHeader={hasActiveCookieHeader(req.headers)}
+              onChange={(cookies) => setReq({ ...req, cookies })}
             />
           )}
           {tab === "body" && (
@@ -799,6 +839,9 @@ export function tryPretty(json: string): string {
 /** 요청 구성을 기본 마스킹된 curl 명령으로 만든다. */
 export function buildCurl(template: RequestTemplate): string {
   if (!template.url) return "";
+  if (validateCookies(template.cookies).length > 0 || hasCookieSourceConflict(template.cookies, template.headers)) {
+    return "";
+  }
   const req = sanitizeRequestForPersistence(template);
 
   const params = new URLSearchParams();
@@ -812,6 +855,8 @@ export function buildCurl(template: RequestTemplate): string {
   for (const h of req.headers) {
     if (isHeaderEnabled(h) && h.key) headers.push([h.key, h.value]);
   }
+  const cookieHeader = buildCookieHeader(req.cookies);
+  if (cookieHeader) headers.push(["Cookie", cookieHeader]);
   if (req.auth?.kind === "basic" && req.auth.username) {
     headers.push(["Authorization", "Basic [REDACTED]"]);
   } else if (req.auth?.kind === "bearer" && req.auth.token) {

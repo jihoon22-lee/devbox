@@ -211,9 +211,11 @@ layout/app-local profile, cold/hot profile open, native action palette와 명시
 safety가 들어갔고 tmux/zellij 부재 시에도 native workspace가 완전하게 동작한다. 9번의 첫
 독립 기능 #264 Developer Toolbox JSON↔YAML은 PR #396, #265 UTF-8/Hex/Base64/Base64URL byte
 codec은 PR #397, #266 bounded radix converter는 PR #398, #267 JSON→TypeScript는 PR #399로
-CI 통과·머지됐다. 이번 #268은 API Playground request header table에서 duplicate 순서와 enabled
+CI 통과·머지됐다. #268은 API Playground request header table에서 duplicate 순서와 enabled
 상태를 History/Collection까지 보존하고, 현재 환경의 봉인된 secret 이름을 backend-only reference로
-삽입·해제하는 경계를 구현한다.
+삽입·해제하는 경계를 구현해 PR #400으로 CI 통과·머지됐다. 이어 #269는 domain cookie jar가 아닌
+request `Cookie` header editor, 기본 비공개 값 입력, 단일 secret reference만 보존하는 persistence
+masking, raw Cookie header 충돌과 문법 오류의 fail-closed native 전송 경계를 구현한다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

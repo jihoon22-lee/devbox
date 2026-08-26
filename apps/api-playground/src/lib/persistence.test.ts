@@ -59,6 +59,7 @@ function request(overrides: Partial<RequestTemplate> = {}): RequestTemplate {
     method: "POST",
     url: "https://api.example.com/x",
     headers: [],
+    cookies: [],
     params: [],
     body_kind: "none",
     body: "",
@@ -123,6 +124,22 @@ describe("History v1 fail-closed migration", () => {
     expect(parsed?.history[0].request.headers).toEqual([
       { key: "X-Trace", value: "one", enabled: true },
       { key: "x-trace", value: "${TRACE_SECRET}", enabled: false },
+    ]);
+  });
+
+  it("기존 v2의 cookies 누락은 빈 배열로 올리고 cookie 순서·enabled를 보존한다", () => {
+    const legacy = validHistoryStore();
+    delete (legacy.history[0].request as Partial<RequestTemplate>).cookies;
+    expect(parseHistoryStore(JSON.stringify(legacy))?.history[0].request.cookies).toEqual([]);
+
+    const current = validHistoryStore();
+    current.history[0].request.cookies = [
+      { name: "session", value: "${SESSION}", enabled: true },
+      { name: "disabled", value: REDACTED, enabled: false },
+    ];
+    expect(parseHistoryStore(JSON.stringify(current))?.history[0].request.cookies).toEqual([
+      { name: "session", value: "${SESSION}", enabled: true },
+      { name: "disabled", value: REDACTED, enabled: false },
     ]);
   });
 
@@ -270,6 +287,12 @@ describe("request persistence sanitizer", () => {
         { key: "Cookie", value: "session=cookie-secret" },
         { key: "X-Trace", value: "${TRACE_ID}" },
       ],
+      cookies: [
+        { name: "session", value: "direct-cookie" },
+        { name: "token", value: "${COOKIE_TOKEN}" },
+        { name: "mixed", value: "prefix-${COOKIE_TOKEN}" },
+        { name: "disabled", value: "disabled-secret", enabled: false },
+      ],
       params: [
         { key: "access_token", value: "param-token" },
         { key: "q", value: "safe-query" },
@@ -303,6 +326,14 @@ describe("request persistence sanitizer", () => {
       { key: "Cookie", value: REDACTED, enabled: true },
       { key: "X-Trace", value: "${TRACE_ID}", enabled: true },
     ]);
+    expect(safe.cookies).toEqual([
+      { name: "session", value: REDACTED, enabled: true },
+      { name: "token", value: "${COOKIE_TOKEN}", enabled: true },
+      { name: "mixed", value: REDACTED, enabled: true },
+      { name: "disabled", value: REDACTED, enabled: false },
+    ]);
+    expect(JSON.stringify(safe)).not.toContain("direct-cookie");
+    expect(JSON.stringify(safe)).not.toContain("disabled-secret");
     expect(safe.params).toEqual([
       { key: "access_token", value: REDACTED },
       { key: "q", value: "safe-query" },

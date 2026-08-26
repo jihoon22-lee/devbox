@@ -97,6 +97,13 @@ export function applyToRequest<T>(request: T, variables: Map<string, string>): T
       value: applyVariables(h.value, variables),
     }));
   }
+  if (Array.isArray(out.cookies)) {
+    out.cookies = (out.cookies as Array<{ name: string; value: string; enabled?: boolean }>).map((cookie) => ({
+      ...cookie,
+      name: cookie.name,
+      value: applyVariables(cookie.value, variables),
+    }));
+  }
   if (Array.isArray(out.params)) {
     out.params = (out.params as Array<{ key: string; value: string }>).map((p) => ({
       key: p.key,
