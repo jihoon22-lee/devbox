@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { isTauri } from "./lib/isTauri";
+import { generateIdentifiers, type IdentifierOptions } from "./tools/ids";
 import type { DiffHunk, RegexMatch } from "./types";
 
 /** 데이터를 해시한다. browser 미리보기에서는 Web Crypto(SHA)만 지원. */
@@ -9,9 +10,22 @@ export async function hash(data: string, algorithm: string): Promise<string> {
   return invoke<string>("hash", { data, algorithm });
 }
 
-/** UUID v4를 생성한다. */
+/** UUID v4/v7 또는 ULID를 제한된 수량으로 생성한다. */
+export async function generateIds(options: IdentifierOptions): Promise<string[]> {
+  if (!isTauri()) return generateIdentifiers(options);
+  return invoke<string[]>("generate_ids", { request: options });
+}
+
+/** 기존 UUID v4 호출과의 호환을 유지한다. */
 export async function generateUuid(): Promise<string> {
-  if (!isTauri()) return crypto.randomUUID();
+  if (!isTauri()) {
+    return generateIdentifiers({
+      kind: "uuid-v4",
+      count: 1,
+      uppercase: false,
+      hyphens: true,
+    })[0];
+  }
   return invoke<string>("generate_uuid");
 }
 

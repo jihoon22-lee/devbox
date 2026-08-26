@@ -11,7 +11,7 @@
 | Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, 진법 변환, URL Encode·Decode | TS |
 | Time | Unix Timestamp ↔ Date | TS |
 | Text | Case Converter, Diff | Diff는 Rust(`similar`) |
-| Security | Hash(MD5/SHA-256/SHA-512), UUID v4 | Rust(`md-5`·`sha2`·`uuid`) |
+| Security | Hash(MD5/SHA-256/SHA-512), UUID v4/v7, ULID | Rust(`md-5`·`sha2`·`uuid`·`getrandom`) |
 | Regex | Regex Tester (매치 하이라이트) | Rust(`regex`) |
 | Auth | JWT Decoder (헤더/페이로드) | TS(base64url) |
 
@@ -20,6 +20,14 @@
 - 오프라인 즉시 사용 (외부 서비스 없음)
 - 좌측 사이드바에서 도구 선택
 - JS로 충분한 것과 Rust가 필요한 것의 경계 분리 — 계산·검증은 Rust 연동
+- UUID / ULID 생성기는 UUID v4·v7과 canonical Crockford Base32 ULID를 한 번의 batch
+  요청으로 최대 100개까지 생성한다. UUID는 표준 hyphen/compact와 대·소문자를 선택할 수
+  있고, ULID는 canonical 대문자·hyphenless 형식을 기본으로 하며 표시용 그룹 hyphen도
+  지원한다. UUID v7과 ULID는 시계가 같은 밀리초에 머물거나 뒤로 이동해도 단일 batch
+  내부에서 생성 순서대로 엄격히 증가한다. UUID v4는 순서를 보장하지 않으며, 별도 호출·
+  프로세스·컴퓨터 사이의 전역 순서도 보장하지 않는다. 플랫폼의 보안 난수를 사용할 수
+  없을 때는 고정된 오류로 중단하고 취약한 난수로 대체하지 않는다. 생성 값은 자동 저장·
+  전송하지 않는다.
 - JSON ↔ YAML은 strict JSON과 YAML 1.2 문서 하나를 양방향 변환하고, 구문 오류의 1-based
   행·열과 안전한 오류 code를 표시한다. 입력은 1,000,000바이트, 출력은 4,000,000바이트,
   YAML alias 확장은 50개로 제한하며 merge key는 자동 확장하지 않는다. JSON에서 안전하게

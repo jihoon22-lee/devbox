@@ -1115,6 +1115,7 @@ version = "0.2.2"
 dependencies = [
  "dirs",
  "filesystem",
+ "getrandom 0.4.3",
  "md-5",
  "regex",
  "serde",

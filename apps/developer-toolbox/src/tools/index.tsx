@@ -48,7 +48,7 @@ const textTools: ToolDef[] = [
 
 const securityTools: ToolDef[] = [
   { id: "hash", group: "Security", name: "Hash (MD5/SHA)", component: HashTool },
-  { id: "uuid", group: "Security", name: "UUID Generator", component: UuidTool },
+  { id: "uuid", group: "Security", name: "UUID / ULID Generator", component: UuidTool },
 ];
 
 const regexTools: ToolDef[] = [{ id: "regex", group: "Regex", name: "Regex Tester", component: RegexTool }];
