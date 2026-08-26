@@ -73,6 +73,16 @@ impl From<&crate::core::layout::Current> for CurrentView {
     }
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallPathView {
+    pub app_id: String,
+    pub mode: String,
+    pub executable: Option<String>,
+    pub install_root: Option<String>,
+    pub source_manifest: String,
+}
+
 pub(crate) fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -261,6 +271,44 @@ pub fn installed(app: tauri::AppHandle) -> Result<Vec<InstalledAppView>, String>
         })
         .map(InstalledAppView::from)
         .collect())
+}
+
+/// Versioned locator와 source manifest가 증명한 설치 경로를 표시용으로만 반환한다.
+/// installer는 실제 설치 완료/위치를 Manager가 소유하지 않으므로 executable/root를
+/// 추측하지 않는다. 이 command는 파일·registry·프로세스를 변경하지 않는다.
+#[tauri::command]
+pub fn install_path(app: tauri::AppHandle, app_id: String) -> Result<InstallPathView, String> {
+    ensure_catalog_target(&app_id)?;
+    let locator_path = devbox_launch::install_root_registry_path()
+        .ok_or_else(|| "설치 경로 출처를 확인할 수 없습니다.".to_string())?;
+    let runtime_catalog = devbox_launch::runtime_catalog_path();
+    let active_manifest = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "현재 설치 상태의 출처를 확인할 수 없습니다.".to_string())?
+        .join("registry.json");
+    let details = devbox_launch::installed_path_details_from_paths(
+        CATALOG_JSON,
+        runtime_catalog.as_deref(),
+        &locator_path,
+        &active_manifest,
+        &app_id,
+    )
+    .map_err(|_| "검증된 설치 경로 정보를 확인할 수 없습니다.".to_string())?
+    .ok_or_else(|| "설치된 앱의 경로 기록이 없습니다.".to_string())?;
+
+    let path_text = |path: std::path::PathBuf| {
+        path.into_os_string()
+            .into_string()
+            .map_err(|_| "설치 경로를 안전하게 표시할 수 없습니다.".to_string())
+    };
+    Ok(InstallPathView {
+        app_id: details.app_id,
+        mode: details.mode,
+        executable: details.executable.map(&path_text).transpose()?,
+        install_root: details.install_root.map(&path_text).transpose()?,
+        source_manifest: path_text(details.source_manifest)?,
+    })
 }
 
 /// 앱 설치/업데이트. Rust가 이미 검증한 manifest에서 대상 asset을 선택한다.

@@ -7,6 +7,7 @@ import type {
   CatalogApp,
   Current,
   InstalledApp,
+  InstallPathInfo,
   InstallMode,
   ReleaseManifest,
 } from "./types";
@@ -47,6 +48,20 @@ export async function available(): Promise<ReleaseManifest> {
 export async function installed(): Promise<InstalledApp[]> {
   if (!isTauri()) return [{ app: "port-manager", version: "0.2.1", mode: "portable" }];
   return invoke<InstalledApp[]>("installed");
+}
+
+export async function installPath(appId: string): Promise<InstallPathInfo> {
+  if (!isTauri()) {
+    const root = "C:\\Users\\developer\\AppData\\Local\\com.devbox.devboxmanager";
+    return {
+      appId,
+      mode: "portable",
+      executable: `${root}\\apps\\${appId}\\versions\\0.2.1\\${appId}.exe`,
+      installRoot: root,
+      sourceManifest: `${root}\\registry.json`,
+    };
+  }
+  return invoke<InstallPathInfo>("install_path", { appId });
 }
 
 export async function installApp(appId: string, mode: InstallMode): Promise<string> {

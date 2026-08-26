@@ -26,10 +26,10 @@
 mod installed;
 
 pub use installed::{
-    install_root_registry_path, installed_targets, installed_targets_from_paths,
-    parse_install_root_locator, resolve_installed_from_paths, runtime_catalog_path,
-    validate_installation_metadata_from_paths, InstallLookupError, InstallRootLocator,
-    InstalledTarget, INSTALL_ROOT_SCHEMA_VERSION,
+    install_root_registry_path, installed_path_details_from_paths, installed_targets,
+    installed_targets_from_paths, parse_install_root_locator, resolve_installed_from_paths,
+    runtime_catalog_path, validate_installation_metadata_from_paths, InstallLookupError,
+    InstallRootLocator, InstalledPathDetails, InstalledTarget, INSTALL_ROOT_SCHEMA_VERSION,
 };
 
 use serde::Deserialize;

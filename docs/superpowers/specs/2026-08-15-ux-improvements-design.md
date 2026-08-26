@@ -268,7 +268,7 @@ Windows 실기 검증에서 수집한 UX 개선 항목. 기능 버그가 아니�
 | 앱 | 항목 | 설명 | 비고 |
 |---|---|---|---|
 | devbox-manager | 일괄 설치/업데이트 + 다중 선택 | #274에서 catalog checkbox, manifest 1회 조회, 순차 실행, 앱별 결과와 실패 exact-mode retry 구현 | 성공 앱 유지·실패 앱만 재시도. portable current/registry rollback, setup 다중 마법사 확인 |
-| devbox-manager | 설치 위치 표시 + 지정 | 현재 설치 경로를 표시하고, 사용자가 변경 가능하게 | **표시는 저비용, 변경은 고비용.** 설치 루트는 `manager.rs:30-34`와 `crates/launch/src/lib.rs:21-27` 두 곳에 독립적으로 하드코딩돼 있고 후자를 repo-manager·workbench가 쓴다. **표시를 먼저 내고 변경은 분리한다** |
+| devbox-manager | 설치 위치 표시 + 지정 | #275에서 locator/manifest가 검증한 executable/root/source manifest 읽기 전용 표시 구현. 경로 지정은 후속 | portable actual path만 표시하고 installer 위치는 미추정. lifecycle DTO는 path-free, 변경은 별도 P2 |
 | wsl-desktop | Docker 패널 컴팩트 포맷 | 좌우 잘림을 줄이도록 트리/축약 포맷 도입 | |
 | code-pad | 언어 서버 패널 높이 확보 | 언어 서버 목록 패널이 좁아 가독성이 떨어짐 | `App.css:622-627`의 `min-height:120px`. **같은 모달 안에 스크롤 영역이 둘**(`:685-690` installer)이라 그 충돌을 먼저 해소해야 한다 |
 | code-pad | 빠른 열기 → 트리 + 탭/패널 | 평면 리스트 + 잘림을 탐색기형 트리로 개선 | **`quick-open-*` 클래스에 CSS가 0줄**이다(저장소 전체 grep). 재사용할 트리 컴포넌트도 없다 — knowledge-base의 `.tree`도 `paddingLeft`로 깊이를 흉내내는 평면 리스트다. 난이도 **상** |
