@@ -780,6 +780,246 @@ body {
   margin-top: 2px;
 }
 
+.openapi-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.openapi-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(860px, 100%);
+  max-height: min(760px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.4);
+}
+
+.openapi-dialog-head,
+.openapi-dialog-actions,
+.openapi-source-row,
+.openapi-server-row,
+.openapi-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.openapi-dialog-head {
+  justify-content: space-between;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.openapi-dialog-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.openapi-dialog-head p {
+  margin: 5px 0 0;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.openapi-source-row {
+  padding: 12px 18px 8px;
+}
+
+.openapi-url-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px 8px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.openapi-url-row input {
+  min-width: 0;
+}
+
+.openapi-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.openapi-file-input:focus-visible + .openapi-file-label,
+.openapi-file-label:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.openapi-offline-note {
+  margin: 0 18px 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 6px;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.openapi-status,
+.openapi-document-warnings {
+  margin: 0 18px 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.openapi-summary {
+  flex-wrap: wrap;
+  padding: 8px 18px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.openapi-summary span:first-child {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.openapi-server-row {
+  padding: 10px 18px;
+  font-size: 11px;
+}
+
+.openapi-server-row span {
+  flex: 0 0 52px;
+  color: var(--dim);
+}
+
+.openapi-server-row select {
+  min-width: 0;
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.openapi-operations {
+  min-height: 100px;
+  overflow: auto;
+  padding: 0 18px 12px;
+}
+
+.openapi-operation {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  cursor: pointer;
+}
+
+.openapi-operation:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.openapi-operation.is-invalid {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.openapi-operation > input {
+  margin-top: 3px;
+}
+
+.openapi-operation > .method {
+  flex: 0 0 46px;
+  margin-top: 2px;
+}
+
+.openapi-operation-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.openapi-operation-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+.openapi-operation-meta,
+.openapi-operation-detail,
+.openapi-operation-issue {
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.openapi-operation-detail {
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.openapi-operation-issue {
+  color: var(--amber);
+}
+
+.openapi-dialog-actions {
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+}
+
+.openapi-action-buttons {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+@media (max-width: 680px) {
+  .openapi-overlay {
+    padding: 10px;
+  }
+
+  .openapi-dialog-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .openapi-action-buttons {
+    justify-content: flex-end;
+  }
+
+  .openapi-url-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .openapi-url-row label {
+    grid-column: 1 / -1;
+  }
+}
+
 .env-var-secret {
   flex: 1;
   color: var(--db-color-text-muted, #8b93a1);

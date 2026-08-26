@@ -41,6 +41,17 @@ function nextNativeRequestId(): string {
     : `request-${Date.now().toString(36)}-${nativeRequestSequence.toString(36)}`;
 }
 
+export interface RemoteOpenApiSource {
+  text: string;
+  format: "json" | "yaml";
+}
+
+/** URL 문서를 native bounded fetch 경계에서 읽는다. URL 원문은 결과나 오류에 포함하지 않는다. */
+export async function fetchOpenApiSource(url: string): Promise<RemoteOpenApiSource> {
+  if (!isTauri()) throw new Error("URL 가져오기는 데스크톱 앱에서만 사용할 수 있습니다");
+  return invoke<RemoteOpenApiSource>("fetch_openapi_source", { url });
+}
+
 /** HTTP 요청 전송. 브라우저 미리보기에서는 fetch(CORS 제약 존재)로 대체한다. */
 export async function sendRequest(
   req: RequestTemplate,

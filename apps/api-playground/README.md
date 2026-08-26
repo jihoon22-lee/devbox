@@ -10,6 +10,13 @@
   Cookies tab은 domain/path/만료일을 관리하는 cookie jar가 아니라 현재 요청의 `Cookie` header를
   name/value 행으로 편집한다. Multipart body는 text/file part, part별 Content-Type, enabled,
   복제·삭제와 데스크톱 file picker를 지원한다.
+- **OpenAPI 3.x 가져오기** — 로컬 `.json`/`.yaml`/`.yml` 파일 또는 HTTP(S) URL을 bounded parse한 뒤
+  server, path/method, path/query/header/cookie parameter, request body example과 지원되는
+  basic/bearer/api-key 인증의 **빈 draft metadata**를 operation별로 미리 본다. 체크한 한 operation만
+  현재 draft에 명시적으로 적용하거나, 여러 operation을 기존 항목을 덮어쓰지 않는 새 `OpenAPI`
+  Collection 항목으로 추가할 수 있다. 로컬 파일 선택·parse는 완전 오프라인이며 URL 입력을 선택한
+  경우에만 native fetch를 수행한다. Swagger UI bundle, code generation, 자동 request 전송과 secret
+  값 주입은 제공하지 않는다.
 - **응답 보기** — 상태코드·시간·크기와 Body/Headers/Cookies 전용 탭. JSON pretty와 본문 복사,
   표 형태의 마스킹 header, 값이 가려진 `Set-Cookie` 이름·안전 attribute를 제공한다. 데스크톱에서는
   별도 경고 확인 뒤 현재 응답의 원문 headers 또는 `Set-Cookie`만 일회성으로 복사할 수 있다.
@@ -137,12 +144,50 @@ GET/POST만 허용한다.
   Fetch는 `Set-Cookie` response header를 노출하지 않으므로 browser preview의 Cookies tab과 원문
   복사는 사용할 수 없고, 이 기능의 acceptance는 packaged native 경로를 기준으로 한다.
 
+### OpenAPI import 안전 경계
+
+- 입력은 UTF-8 기준 4 MiB, 구조 깊이 40, 노드 50,000, 문자열 16,384자, path 250개,
+  operation 1,000개, server 20개, parameter 선언 2,000개, security scheme 100개, operation별
+  media type 50개로 제한한다. 생성되는 request parameter/header/cookie 행은 각각 100개,
+  JSON body와 multipart/form 데이터는 UTF-8 512 KiB로 제한하며 Collection 표시 이름은 120자로 자른다. JSON은
+  comments/trailing comma/unsafe number/duplicate key를
+  허용하지 않고, YAML은 YAML 1.2 core·unique key·merge 비활성·alias 50개 상한으로 읽는다.
+- parser 오류·순환 alias·`__proto__`/`prototype`/`constructor` key·제어문자·비 HTTP(S) server와
+  userinfo·민감 query를 고정 메시지로 fail-closed한다. 로컬 파일 이름은 basename만 120자까지
+  표시하고 parser 오류나 URL 원문을 화면·로그·preview에 반향하지 않는다.
+- URL import는 native `reqwest` 경계에서 URL 2,048자, connect 5초/전체 15초, redirect 3회,
+  decoded response 4 MiB를 강제한다. userinfo/credential-shaped query/fragment와 HTTP(S) 외 scheme을 거부하고,
+  redirect는 같은 host의 동일 scheme 또는 HTTP→HTTPS 승격만 허용한다. status/network/UTF-8 오류는
+  원문 URL이 없는 고정 메시지로 반환한다. URL import가 실패해도 로컬 import에는 네트워크 의존성이 없다.
+- `$ref`는 자동 fetch/해석하지 않는다. operation·path item·parameter·request body·security
+  scheme에 `$ref`가 있으면 해당 operation만 적용 불가로 표시하고 나머지 operation preview는
+  계속한다. 지원하지 않는 method/auth도 같은 operation 단위 오류 경계를 사용한다.
+- 기존 request template에는 문서 전체 server 선택 슬롯만 있으므로 path item/operation-level
+  `servers` override는 우선순위를 추측하지 않고 해당 operation을 적용 불가로 표시한다.
+- 예제는 deterministic 우선순위(example → named examples 정렬 → schema example/default/enum)로
+  선택한다. `authorization`, `cookie`, `token`, `secret`, `password`, `credential` 등 민감한
+  이름의 값과 `${ENV}`/`{{ENV}}` 형태의 environment reference·Bearer/Basic literal은 항상 빈 문자열로 만들고,
+  basic/bearer/api-key에도 값은 절대 주입하지 않는다.
+  비민감 path example만 URI component로 URL placeholder에 넣고, secret path는 placeholder를
+  유지한다.
+  구조화 JSON body의 민감 property는 빈 값으로 redaction하고, opaque raw body example은
+  안전상 생략한다. body는 UTF-8 512 KiB 이내만 draft에 넣는다.
+- server를 선택해도 import는 URL을 조립할 뿐 요청하지 않는다. 유효한 HTTP(S) server가 없으면
+  preview는 보여 주되 apply를 막고, server 선택 변경은 기존 operation 순서·선택 상태를
+  보존한다. 현재 draft 적용은 한 항목, Collection 추가는 명시적으로 체크한 항목만 수행하며
+  기존 Collection을 overwrite하지 않는다.
+
 ## 기술
 
 - Rust(`reqwest` multipart stream)와 Tauri dialog plugin이 직접 요청·파일 선택 → 브라우저 CORS 없음
+- OpenAPI parser는 `yaml@2.9.0` 및 `jsonc-parser@3.3.1`을 사용하며 앱 내부 순수 변환 계층에
+  격리한다. URL source만 기존 native `reqwest`로 bounded fetch하며, gzip/deflate/brotli/zstd 응답도
+  해제 후 4 MiB에서 자른다. 공용 integration/applink 변경은 없다.
 - 공용 패키지 `packages/tokens`, `packages/context-menu` 사용
 
 ## 개발
 
 - 순수 로직: `src-tauri/src/core/graphql.rs`·`src-tauri/src/commands/request.rs` → `cargo test`
+- OpenAPI URL 경계: `src-tauri/src/commands/openapi.rs` → `cargo test -p api-playground`
+- OpenAPI 순수 로직: `src/lib/openapi.test.ts` → `pnpm --filter api-playground test`
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
