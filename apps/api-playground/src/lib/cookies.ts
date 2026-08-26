@@ -1,11 +1,11 @@
 import type { RequestCookie, RequestHeader } from "../types";
 import { isHeaderEnabled } from "./headers";
+import { isExactVariableReference } from "./references";
 
 export const MAX_REQUEST_COOKIE_ROWS = 100;
 
 const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const COOKIE_VALUE = /^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*$/;
-const VARIABLE_REFERENCE = /^(?:\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}|\$\{\s*[a-zA-Z0-9_.-]+\s*\})$/;
 
 export interface CookieValidationIssue {
   index: number;
@@ -121,12 +121,8 @@ export function buildCookieHeader(
 }
 
 export function maskCookieValue(value: string): string {
-  if (!value || isCookieReference(value)) return value;
+  if (!value || isExactVariableReference(value)) return value;
   return "[REDACTED]";
-}
-
-export function isCookieReference(value: string): boolean {
-  return VARIABLE_REFERENCE.test(value);
 }
 
 export function cookieSecretReference(name: string): string {

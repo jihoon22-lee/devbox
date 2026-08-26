@@ -12,10 +12,10 @@ devbox의 P1·P2 native 기능은 설치 뒤 오프라인에서 동작해야 한
 | Cargo graph | `Cargo.lock`, `deny.toml` | Windows/Linux target의 license, advisory, duplicate ban, registry/git source를 `--locked`로 검사 |
 | pnpm graph | `pnpm-lock.yaml`, `.github/dependency-policy.json` | frozen install 뒤 full transitive license와 audit를 검사; 미허용 표현·integrity 부재·미등록 `Unknown`을 거부 |
 | Exceptions | `.github/dependency-policy.json` | ID, package, exact locked version, detector, scope, reason, ISO date expiry를 모두 요구; 만료 당일부터 merge 불가 |
-| Notices | 두 lockfile + package metadata | 662 Rust package와 154 frontend runtime package의 version/license/source/digest를 결정적으로 재생성해 checked-in 파일과 byte 비교 |
+| Notices | 두 lockfile + package metadata | 666 Rust package와 157 frontend runtime package의 version/license/source/digest를 결정적으로 재생성해 checked-in 파일과 byte 비교 |
 | Distribution | `tauri.conf.json`, release manifest | 모든 release 앱 installer에 notices resource를 넣고, release에는 notices와 그 size/SHA-256을 manifest-declared asset으로 게시 |
 
-현재 `THIRD_PARTY_NOTICES.md`는 133,921 bytes다. installer에서는 동일 파일을 압축 resource로
+현재 `THIRD_PARTY_NOTICES.md`는 135,107 bytes다. installer에서는 동일 파일을 압축 resource로
 포함하므로 새 executable runtime이나 network dependency를 추가하지 않는다. portable 사용자는
 release의 독립 notice asset을 받을 수 있다. release manifest는 schemaVersion 1을 유지하고
 optional `notices` 필드를 추가하므로 기존 Devbox Manager parser와 호환된다. v0.5.0 release의
@@ -36,6 +36,7 @@ optional `notices` 필드를 추가하므로 기존 Devbox Manager parser와 호
 | `caniuse-lite` CC-BY-4.0 | browser support data attribution 조건으로 허용 | notices attribution과 source 유지 |
 | `khroma 2.1.0` | package metadata의 `Unknown`을 exact upstream tag의 MIT 파일과 lock integrity로만 명확화 | version 또는 integrity가 바뀌면 clarification이 자동 실패하고 재검토 필요 |
 | `tauri-plugin-clipboard-manager 2.3.2` | 공식 Tauri plugin의 MIT/Apache-2.0 선택지를 허용. Developer Toolbox 입력과 Knowledge·Code Pad CodeMirror 메뉴의 명시적 Paste에 사용하고 이후 WSL clipboard에 재사용 | app capability는 `allow-read-text`만 부여하고 image/write/clear command는 허용하지 않음. 앱은 설치 뒤 network·sidecar 없이 OS clipboard를 in-process로 사용 |
+| `@tauri-apps/plugin-dialog`·`tauri-plugin-dialog 2.7.2` | 공식 Tauri plugin의 MIT/Apache-2.0 선택지를 허용. API Playground multipart file part의 명시적 단일 파일 선택에 사용한다. 전이 `tauri-plugin-fs 2.5.1`은 MIT/Apache-2.0, `rfd 0.16.0`·`mime_guess 2.0.5`는 MIT다. 수제 platform picker와 외부 도구 연결은 Windows/Linux 권한·취소·경로 전달 회귀 위험이 더 크다. | API Playground main window에 `dialog:allow-open`만 부여하고 save/directory/multiple 권한을 쓰지 않는다. 경로는 runtime request state에만 두며 Rust가 regular file·25 MiB/전체 50 MiB를 재검증해 stream한다. 설치 뒤 network·sidecar가 없고 notices는 1,186 bytes 증가했다. 기능 전체 frontend bundle은 JS +9,996 bytes(gzip +2,535), CSS +811 bytes(gzip +95)이며 packaged native 증분은 W1 checkpoint에서 기록한다. |
 | `@xterm/addon-search 0.16.0`, `@xterm/addon-web-links 0.12.0` | xterm 공식 monorepo의 MIT addon. WSL scrollback search와 일반 URL link provider를 직접 구현할 때의 buffer/Unicode/link-range 회귀 위험보다 작아 허용 | unpacked package 838,673 bytes/45,573 bytes. 같은 toolchain production build에서 WSL JS는 580.64→623.61 kB(+42.97 kB), gzip 164.78→177.98 kB(+13.20 kB)다. 설치 뒤 network·sidecar 없이 동작하며 URL 실행은 별도 HTTP(S) allowlist·credential 거부·사용자 확인 경계를 거침. xterm major 갱신 때 호환 version과 bundle delta를 재검토 |
 | `clipboard-win 5.4.1`, `error-code 3.4.0` BSL-1.0 | clipboard plugin의 Windows 전이 경로. [Boost 공식 license](https://www.boost.org/LICENSE_1_0.txt) 조건상 상업 사용·수정·배포가 가능한 permissive license이고 machine-executable object code 배포에는 source notice 재현을 요구하지 않으므로 허용 | source 또는 수정 source를 별도 배포할 때 copyright와 BSL-1.0 전문을 유지. binary installer에도 exact package/license/source/digest를 notices로 추가 고지 |
 

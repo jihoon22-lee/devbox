@@ -225,7 +225,7 @@ type MenuItem =
 | knowledge-base | 백링크 + 역링크 패널 | **파서부터 새로 만든다** (아래 정정) | **상** |
 | knowledge-base | 퀵캡처(전역 단축키)+Inbox | global shortcut → Inbox note | 중 |
 | knowledge-base | 첨부파일(이미지) 관리 | root 내 attachment 폴더, 이미지 드롭·삽입·프리뷰 | 중 |
-| api-playground | 파일 업로드 | `multipart/form-data`, `reqwest::multipart` | 저 |
+| api-playground | 파일 업로드 | `multipart/form-data`, `reqwest::multipart`; #270에서 runtime-only picker 경로·bounded stream·safe history로 구현 | 저 |
 | api-playground | 응답 헤더/쿠키 뷰어 | 응답 headers 존재 → 전용 탭 추가 | 저 |
 | api-playground | OpenAPI 3 import | 스펙 파싱 → endpoint 요청 초안. **기존 collection 덮어쓰기 방지를 위해 적용 전 preview 필요** — `packages/diff-view`가 이미 있으므로 소비자로 연결 | 중 |
 | life-log | Markdown/JSON export | 집계 결과 직렬화 | 저 |

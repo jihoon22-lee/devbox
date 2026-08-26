@@ -63,6 +63,7 @@ function request(overrides: Partial<RequestTemplate> = {}): RequestTemplate {
     url: "https://api.example.com/x",
     headers: [],
     cookies: [],
+    multipart: [],
     params: [],
     body_kind: "none",
     body: "",
@@ -178,6 +179,56 @@ describe("collections v2 store", () => {
     ]);
     expect(storage.getItem(COLLECTION_V2_LS_KEY)).not.toContain("direct-cookie");
     expect(storage.getItem(COLLECTION_V2_LS_KEY)).not.toContain("disabled-secret");
+  });
+
+  it("multipart file path를 제거하고 복제에서도 safe metadata만 보존한다", async () => {
+    const storage = new RecordingStorage();
+    const store = addEntry(
+      emptyStore(),
+      {
+        name: "multipart",
+        folder: "api",
+        request: request({
+          body_kind: "multipart",
+          multipart: [{
+            kind: "file",
+            name: "upload",
+            value: "raw-bytes",
+            file_path: "C:\\private\\artifact.zip",
+            file_name: "artifact.zip",
+            content_type: "application/zip",
+            enabled: true,
+          }],
+        }),
+      },
+      1000,
+      () => "c-multipart",
+    );
+    const saved = await saveStore(store, identitySanitizer, storage);
+    const duplicate = duplicateEntry(saved, "c-multipart", 2000, () => "c-copy");
+
+    expect(saved.collections[0].request.multipart[0]).toMatchObject({
+      file_path: "",
+      file_name: "artifact.zip",
+      value: "",
+    });
+    expect(duplicate.collections[0].request.multipart[0]).toEqual(
+      saved.collections[0].request.multipart[0],
+    );
+    expect(JSON.stringify(duplicate)).not.toContain("C:\\private");
+    expect(JSON.stringify(duplicate)).not.toContain("raw-bytes");
+  });
+
+  it("multipart가 없는 legacy collection을 빈 배열로 올린다", async () => {
+    const storage = new RecordingStorage();
+    const legacyRequest = request();
+    delete (legacyRequest as Partial<RequestTemplate>).multipart;
+    storage.setItem(COLLECTION_V1_LS_KEY, legacyStore(legacyRequest));
+
+    const migration = await migrateCollections(identitySanitizer, storage);
+
+    expect(migration.failed).toBe(false);
+    expect(migration.store.collections[0].request.multipart).toEqual([]);
   });
 
   it("saveStore sanitizer 실패 시 기존 v2를 보존하고 raw backup을 만들지 않는다", async () => {

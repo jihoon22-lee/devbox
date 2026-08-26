@@ -59,6 +59,23 @@ describe("variable substitution", () => {
       url: "${BASE_URL}/${VERSION}",
       headers: [{ key: "Authorization", value: "Bearer ${TOKEN}", enabled: false }],
       cookies: [{ name: "session", value: "${TOKEN}", enabled: true }],
+      multipart: [{
+        kind: "text",
+        name: "token",
+        value: "${TOKEN}",
+        file_path: "",
+        file_name: "",
+        content_type: "text/plain",
+        enabled: true,
+      }, {
+        kind: "file",
+        name: "upload",
+        value: "",
+        file_path: "C:\\${TOKEN}\\artifact.zip",
+        file_name: "artifact.zip",
+        content_type: "application/zip",
+        enabled: true,
+      }],
       params: [{ key: "tenant", value: "${TENANT}" }],
       body_kind: "json",
       body: '{"token":"${TOKEN}"}',
@@ -88,6 +105,8 @@ describe("variable substitution", () => {
     expect(out.url).toBe("https://api.example.com/v2");
     expect(out.headers[0].value).toBe("Bearer token-value");
     expect(out.headers[0].enabled).toBe(false);
+    expect(out.multipart[0].value).toBe("token-value");
+    expect(out.multipart[1].file_path).toBe("C:\\${TOKEN}\\artifact.zip");
     expect(out.cookies).toEqual([
       { name: "session", value: "token-value", enabled: true },
     ]);
@@ -104,6 +123,25 @@ describe("variable substitution", () => {
     expect(req.url).toBe("${BASE_URL}/${VERSION}");
     expect(req.auth?.password).toBe("${PASSWORD}");
     expect(req.cookies[0].value).toBe("${TOKEN}");
+  });
+
+  it("multipart에서는 stale body를 해석하지 않고 비운다", () => {
+    const req: RequestTemplate = {
+      method: "POST",
+      url: "https://example.test/upload",
+      headers: [],
+      cookies: [],
+      multipart: [],
+      params: [],
+      body_kind: "multipart",
+      body: "${BROKEN}",
+      auth: null,
+      timeout_ms: 10_000,
+    };
+
+    const out = applyToRequest(req, new Map([["BROKEN", "must-not-be-used"]]));
+    expect(out.body).toBe("");
+    expect(req.body).toBe("${BROKEN}");
   });
 
   it("알 수 없는 ${NAME} reference는 그대로 보존한다", () => {

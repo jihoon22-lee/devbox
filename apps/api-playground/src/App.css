@@ -388,6 +388,65 @@ body {
   line-height: 1.5;
 }
 
+.multipart-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.multipart-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.multipart-row {
+  display: grid;
+  grid-template-columns: 66px 74px minmax(130px, 0.65fr) minmax(180px, 1fr) minmax(150px, 0.7fr) 126px auto 28px;
+  align-items: center;
+  gap: 6px;
+  min-width: 1020px;
+}
+
+.multipart-row.disabled > :not(.header-enabled) {
+  opacity: 0.55;
+}
+
+.multipart-row > input,
+.multipart-row > select {
+  min-width: 0;
+  height: 30px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+.multipart-row.invalid > input {
+  border-color: var(--red);
+}
+
+.multipart-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multipart-row-error {
+  grid-column: 2 / -1;
+  color: var(--red);
+  font-size: 11px;
+}
+
+.multipart-add-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .select-sm {
   background: var(--bg);
   color: var(--text);

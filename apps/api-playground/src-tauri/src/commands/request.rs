@@ -9,6 +9,10 @@ const REDACTED: &str = "[REDACTED]";
 const MAX_REDIRECTS: usize = 10;
 const MAX_REQUEST_HEADERS: usize = 100;
 const MAX_REQUEST_COOKIES: usize = 100;
+const MAX_MULTIPART_PARTS: usize = 50;
+const MAX_MULTIPART_TEXT_BYTES: usize = 1_000_000;
+const MAX_MULTIPART_FILE_BYTES: u64 = 25 * 1024 * 1024;
+const MAX_MULTIPART_TOTAL_FILE_BYTES: u64 = 50 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KeyValue {
@@ -56,6 +60,32 @@ impl Default for RequestCookie {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultipartPart {
+    pub kind: String,
+    pub name: String,
+    pub value: String,
+    pub file_path: String,
+    pub file_name: String,
+    pub content_type: String,
+    #[serde(default = "default_header_enabled")]
+    pub enabled: bool,
+}
+
+impl Default for MultipartPart {
+    fn default() -> Self {
+        Self {
+            kind: "text".to_string(),
+            name: String::new(),
+            value: String::new(),
+            file_path: String::new(),
+            file_name: String::new(),
+            content_type: String::new(),
+            enabled: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthConfig {
     pub kind: String,
@@ -74,8 +104,10 @@ pub struct RequestTemplate {
     pub headers: Vec<RequestHeader>,
     #[serde(default)]
     pub cookies: Vec<RequestCookie>,
+    #[serde(default)]
+    pub multipart: Vec<MultipartPart>,
     pub params: Vec<KeyValue>,
-    /// none | json | form | raw
+    /// none | json | form | multipart | raw
     pub body_kind: String,
     pub body: String,
     pub auth: Option<AuthConfig>,
@@ -89,6 +121,7 @@ struct ResolvedRequest {
     url: String,
     headers: Vec<RequestHeader>,
     cookies: Vec<RequestCookie>,
+    multipart: Vec<MultipartPart>,
     params: Vec<KeyValue>,
     body_kind: String,
     body: String,
@@ -140,10 +173,13 @@ pub async fn send_request(
     environment: Vec<EnvironmentVariable>,
 ) -> Result<ApiResponse, String> {
     validate_cookie_rows(&req.headers, &req.cookies)?;
+    validate_multipart_rows(&req)?;
     let sealer = platform_sealer();
-    let (resolved, environment_secrets) =
+    let (mut resolved, environment_secrets) =
         resolve_template(&req, &environment, sealer.as_ref()).map_err(|_| safe_secret_error())?;
     validate_cookie_configuration(&resolved)?;
+    validate_multipart_configuration(&resolved)?;
+    prepare_multipart_files(&mut resolved)?;
     let redactor = Redactor::for_request(&resolved, environment_secrets);
     execute_request(resolved, &redactor).await
 }
@@ -155,10 +191,13 @@ pub fn build_revealed_curl(
     environment: Vec<EnvironmentVariable>,
 ) -> Result<String, String> {
     validate_cookie_rows(&req.headers, &req.cookies)?;
+    validate_multipart_rows(&req)?;
     let sealer = platform_sealer();
-    let (resolved, _environment_secrets) =
+    let (mut resolved, _environment_secrets) =
         resolve_template(&req, &environment, sealer.as_ref()).map_err(|_| safe_secret_error())?;
     validate_cookie_configuration(&resolved)?;
+    validate_multipart_configuration(&resolved)?;
+    prepare_multipart_files(&mut resolved)?;
     Ok(build_curl(&resolved))
 }
 
@@ -175,6 +214,7 @@ pub fn sanitize_persisted_json(
 
 async fn execute_request(req: ResolvedRequest, redactor: &Redactor) -> Result<ApiResponse, String> {
     validate_cookie_configuration(&req)?;
+    validate_multipart_configuration(&req)?;
     if req.body_kind == "json" && !req.body.trim().is_empty() {
         serde_json::from_str::<serde_json::Value>(&req.body)
             .map_err(|_| "JSON 본문 형식이 올바르지 않습니다".to_string())?;
@@ -204,6 +244,7 @@ async fn execute_request(req: ResolvedRequest, redactor: &Redactor) -> Result<Ap
                 || !should_send_header(&header.key, allow_sensitive)
                 || !include_body && is_body_header(&header.key)
                 || !allow_sensitive && redactor.redact_text(&header.value) != header.value
+                || req.body_kind == "multipart" && is_multipart_derived_header(&header.key)
             {
                 continue;
             }
@@ -234,7 +275,7 @@ async fn execute_request(req: ResolvedRequest, redactor: &Redactor) -> Result<Ap
             }
         }
         if include_body {
-            builder = apply_body(builder, &req);
+            builder = apply_body(builder, &req).await?;
         }
 
         let response = builder.send().await.map_err(safe_request_error)?;
@@ -304,17 +345,41 @@ async fn execute_request(req: ResolvedRequest, redactor: &Redactor) -> Result<Ap
     Err("리다이렉트 처리에 실패했습니다".to_string())
 }
 
-fn apply_body(builder: reqwest::RequestBuilder, req: &ResolvedRequest) -> reqwest::RequestBuilder {
-    match req.body_kind.as_str() {
+async fn apply_body(
+    builder: reqwest::RequestBuilder,
+    req: &ResolvedRequest,
+) -> Result<reqwest::RequestBuilder, String> {
+    Ok(match req.body_kind.as_str() {
         "json" => builder
             .header("Content-Type", "application/json")
             .body(req.body.clone()),
         "form" => builder
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(encode_form(&req.body)),
+        "multipart" => builder.multipart(build_multipart_form(req).await?),
         _ if !req.body.is_empty() => builder.body(req.body.clone()),
         _ => builder,
+    })
+}
+
+async fn build_multipart_form(req: &ResolvedRequest) -> Result<reqwest::multipart::Form, String> {
+    let mut form = reqwest::multipart::Form::new();
+    for item in active_multipart_parts(&req.multipart) {
+        let mut part = if item.kind == "file" {
+            reqwest::multipart::Part::file(&item.file_path)
+                .await
+                .map_err(|_| "선택한 multipart 파일을 읽을 수 없습니다".to_string())?
+        } else {
+            reqwest::multipart::Part::text(item.value.clone())
+        };
+        if !item.content_type.is_empty() {
+            part = part
+                .mime_str(&item.content_type)
+                .map_err(|_| "Content-Type은 type/subtype 형식이어야 합니다.".to_string())?;
+        }
+        form = form.part(item.name.clone(), part);
     }
+    Ok(form)
 }
 
 fn resolve_template(
@@ -364,6 +429,28 @@ fn resolve_template(
                     enabled: cookie.enabled,
                 })
                 .collect(),
+            multipart: req
+                .multipart
+                .iter()
+                .take(MAX_MULTIPART_PARTS)
+                .map(|part| MultipartPart {
+                    kind: part.kind.clone(),
+                    name: part.name.clone(),
+                    value: if part.kind == "text" {
+                        replace(&part.value)
+                    } else {
+                        String::new()
+                    },
+                    file_path: if part.kind == "file" {
+                        part.file_path.clone()
+                    } else {
+                        String::new()
+                    },
+                    file_name: part.file_name.clone(),
+                    content_type: part.content_type.clone(),
+                    enabled: part.enabled,
+                })
+                .collect(),
             params: req
                 .params
                 .iter()
@@ -373,7 +460,11 @@ fn resolve_template(
                 })
                 .collect(),
             body_kind: req.body_kind.clone(),
-            body: replace(&req.body),
+            body: if req.body_kind == "multipart" {
+                String::new()
+            } else {
+                replace(&req.body)
+            },
             auth: req.auth.as_ref().map(|auth| AuthConfig {
                 kind: auth.kind.clone(),
                 username: replace(&auth.username),
@@ -404,7 +495,9 @@ fn referenced_variable_names(req: &RequestTemplate) -> BTreeSet<String> {
         })
     };
     collect(&req.url);
-    collect(&req.body);
+    if req.body_kind != "multipart" {
+        collect(&req.body);
+    }
     for header in req
         .headers
         .iter()
@@ -421,6 +514,11 @@ fn referenced_variable_names(req: &RequestTemplate) -> BTreeSet<String> {
         .filter(|cookie| cookie.enabled)
     {
         collect(&cookie.value);
+    }
+    if req.body_kind == "multipart" {
+        for part in active_multipart_parts(&req.multipart).filter(|part| part.kind == "text") {
+            collect(&part.value);
+        }
     }
     for param in &req.params {
         collect(&param.key);
@@ -553,6 +651,13 @@ fn collect_request_secrets(req: &ResolvedRequest, secrets: &mut Vec<Zeroizing<St
     for cookie in req.cookies.iter().filter(|cookie| cookie.enabled) {
         push(&cookie.value);
     }
+    if req.body_kind == "multipart" {
+        for part in active_multipart_parts(&req.multipart) {
+            if part.kind == "text" && is_sensitive_name(&part.name) {
+                push(&part.value);
+            }
+        }
+    }
     for param in &req.params {
         if is_sensitive_name(&param.key) {
             push(&param.value);
@@ -633,6 +738,19 @@ fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zero
         *value = serde_json::Value::String(REDACTED.to_string());
         return;
     }
+    if let serde_json::Value::Object(object) = value {
+        let is_multipart_request =
+            object.get("body_kind").and_then(serde_json::Value::as_str) == Some("multipart");
+        if is_multipart_request {
+            if let Some(body) = object.get_mut("body") {
+                *body = serde_json::Value::String(String::new());
+            }
+        }
+    }
+    if key == "multipart" {
+        sanitize_persisted_multipart(value, secrets);
+        return;
+    }
     if key == "cookies" {
         let serde_json::Value::Array(cookies) = value else {
             *value = serde_json::Value::String(REDACTED.to_string());
@@ -687,6 +805,68 @@ fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zero
             *text = redact_text(text, secrets);
         }
         _ => {}
+    }
+}
+
+fn sanitize_persisted_multipart(value: &mut serde_json::Value, secrets: &[Zeroizing<String>]) {
+    let serde_json::Value::Array(parts) = value else {
+        *value = serde_json::Value::String(REDACTED.to_string());
+        return;
+    };
+    for part in parts {
+        let serde_json::Value::Object(object) = part else {
+            *part = serde_json::Value::String(REDACTED.to_string());
+            continue;
+        };
+        let kind = object
+            .get("kind")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let name = object
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let mut safe = serde_json::Map::new();
+        for field in [
+            "kind",
+            "name",
+            "value",
+            "file_name",
+            "content_type",
+            "enabled",
+        ] {
+            let Some(mut child) = object.get(field).cloned() else {
+                continue;
+            };
+            match field {
+                "value" if kind == "file" => {
+                    child = serde_json::Value::String(String::new());
+                }
+                "value" if is_sensitive_name(&name) => match child.as_str() {
+                    Some("") => {}
+                    Some(text) if is_exact_reference(text) => {}
+                    _ => child = serde_json::Value::String(REDACTED.to_string()),
+                },
+                "file_name" => {
+                    child = serde_json::Value::String(
+                        child
+                            .as_str()
+                            .map(safe_file_name)
+                            .map(|name| redact_text(&name, secrets))
+                            .unwrap_or_else(|| REDACTED.to_string()),
+                    );
+                }
+                _ => sanitize_json_value(&mut child, field, secrets),
+            }
+            safe.insert(field.to_string(), child);
+        }
+        safe.insert(
+            "file_path".to_string(),
+            serde_json::Value::String(String::new()),
+        );
+        *part = serde_json::Value::Object(safe);
     }
 }
 
@@ -851,6 +1031,170 @@ fn is_body_header(name: &str) -> bool {
         )
 }
 
+fn is_multipart_derived_header(name: &str) -> bool {
+    matches!(
+        name.trim().to_ascii_lowercase().replace('_', "-").as_str(),
+        "content-type" | "content-length" | "transfer-encoding"
+    )
+}
+
+fn active_multipart_parts(parts: &[MultipartPart]) -> impl Iterator<Item = &MultipartPart> {
+    parts
+        .iter()
+        .filter(|part| part.enabled && multipart_part_has_content(part))
+}
+
+fn multipart_part_has_content(part: &MultipartPart) -> bool {
+    !part.name.is_empty()
+        || !part.value.is_empty()
+        || !part.file_path.is_empty()
+        || !part.file_name.is_empty()
+        || !part.content_type.is_empty()
+}
+
+fn validate_multipart_rows(req: &RequestTemplate) -> Result<(), String> {
+    validate_multipart_parts(&req.body_kind, &req.multipart)
+}
+
+fn validate_multipart_configuration(req: &ResolvedRequest) -> Result<(), String> {
+    validate_multipart_parts(&req.body_kind, &req.multipart)
+}
+
+fn validate_multipart_parts(body_kind: &str, parts: &[MultipartPart]) -> Result<(), String> {
+    if body_kind != "multipart" {
+        return Ok(());
+    }
+    if parts.len() > MAX_MULTIPART_PARTS {
+        return Err("multipart는 최대 50개 part까지 사용할 수 있습니다.".to_string());
+    }
+    let mut text_bytes = 0usize;
+    for part in active_multipart_parts(parts) {
+        if !matches!(part.kind.as_str(), "text" | "file") {
+            return Err("multipart part 종류가 올바르지 않습니다".to_string());
+        }
+        if part.name.is_empty() {
+            return Err("part 이름이 필요합니다.".to_string());
+        }
+        if part.name.len() > 120 || !is_http_token(&part.name) {
+            return Err("part 이름은 120자 이하의 HTTP token이어야 합니다.".to_string());
+        }
+        if !part.content_type.is_empty() && !is_valid_content_type(&part.content_type) {
+            return Err("Content-Type은 type/subtype 형식이어야 합니다.".to_string());
+        }
+        if part.kind == "file" {
+            if part.file_path.is_empty() {
+                return Err("전송할 파일을 선택하세요.".to_string());
+            }
+        } else {
+            text_bytes = text_bytes.saturating_add(part.value.len());
+        }
+    }
+    if text_bytes > MAX_MULTIPART_TEXT_BYTES {
+        return Err(
+            "활성 text part 전체는 UTF-8 기준 1,000,000바이트 이하여야 합니다.".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn is_http_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
+                )
+        })
+}
+
+fn is_valid_content_type(value: &str) -> bool {
+    if value.len() > 127 || value.bytes().any(|byte| byte.is_ascii_control()) {
+        return false;
+    }
+    let Some((kind, subtype)) = value.split_once('/') else {
+        return false;
+    };
+    !kind.is_empty()
+        && !subtype.is_empty()
+        && !subtype.contains('/')
+        && kind.bytes().all(is_content_type_char)
+        && subtype.bytes().all(is_content_type_char)
+}
+
+fn is_content_type_char(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || matches!(
+            byte,
+            b'!' | b'#' | b'$' | b'&' | b'^' | b'_' | b'.' | b'+' | b'-'
+        )
+}
+
+fn prepare_multipart_files(req: &mut ResolvedRequest) -> Result<(), String> {
+    if req.body_kind != "multipart" {
+        return Ok(());
+    }
+    let mut total = 0u64;
+    for part in req
+        .multipart
+        .iter_mut()
+        .filter(|part| part.enabled && part.kind == "file" && multipart_part_has_content(part))
+    {
+        let canonical = std::fs::canonicalize(&part.file_path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                "선택한 multipart 파일을 찾을 수 없습니다".to_string()
+            } else {
+                "선택한 multipart 파일을 읽을 수 없습니다".to_string()
+            }
+        })?;
+        let metadata = std::fs::metadata(&canonical)
+            .map_err(|_| "선택한 multipart 파일을 읽을 수 없습니다".to_string())?;
+        if !metadata.is_file() {
+            return Err("선택한 multipart 파일을 읽을 수 없습니다".to_string());
+        }
+        if metadata.len() > MAX_MULTIPART_FILE_BYTES {
+            return Err("multipart 파일은 각각 25 MiB 이하여야 합니다".to_string());
+        }
+        total = total
+            .checked_add(metadata.len())
+            .ok_or_else(|| "multipart 파일 전체는 50 MiB 이하여야 합니다".to_string())?;
+        if total > MAX_MULTIPART_TOTAL_FILE_BYTES {
+            return Err("multipart 파일 전체는 50 MiB 이하여야 합니다".to_string());
+        }
+        part.file_path = canonical.to_string_lossy().into_owned();
+        part.file_name = canonical
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(safe_file_name)
+            .unwrap_or_else(|| "file".to_string());
+    }
+    Ok(())
+}
+
+fn safe_file_name(value: &str) -> String {
+    value
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("")
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(255)
+        .collect()
+}
+
 fn validate_cookie_configuration(req: &ResolvedRequest) -> Result<(), String> {
     validate_cookie_rows(&req.headers, &req.cookies)
 }
@@ -885,27 +1229,7 @@ fn validate_cookie_rows(
 }
 
 fn is_valid_cookie_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric()
-                || matches!(
-                    byte,
-                    b'!' | b'#'
-                        | b'$'
-                        | b'%'
-                        | b'&'
-                        | b'\''
-                        | b'*'
-                        | b'+'
-                        | b'-'
-                        | b'.'
-                        | b'^'
-                        | b'_'
-                        | b'`'
-                        | b'|'
-                        | b'~'
-                )
-        })
+    is_http_token(name)
 }
 
 fn is_valid_cookie_value(value: &str) -> bool {
@@ -999,11 +1323,11 @@ fn build_curl(req: &ResolvedRequest) -> String {
         req.method,
         shell_quote(&url)
     )];
-    for header in req
-        .headers
-        .iter()
-        .filter(|header| header.enabled && !header.key.is_empty())
-    {
+    for header in req.headers.iter().filter(|header| {
+        header.enabled
+            && !header.key.is_empty()
+            && !(req.body_kind == "multipart" && is_multipart_derived_header(&header.key))
+    }) {
         lines.push(format!(
             "  --header {}",
             shell_quote(&format!("{}: {}", header.key, header.value))
@@ -1035,7 +1359,24 @@ fn build_curl(req: &ResolvedRequest) -> String {
             _ => {}
         }
     }
-    if req.body_kind != "none" && !req.body.is_empty() {
+    if req.body_kind == "multipart" {
+        for part in active_multipart_parts(&req.multipart) {
+            let suffix = if part.content_type.is_empty() {
+                String::new()
+            } else {
+                format!(";type={}", part.content_type)
+            };
+            let value = if part.kind == "file" {
+                format!("@{}", curl_form_quote(&part.file_path))
+            } else {
+                curl_form_quote(&part.value)
+            };
+            lines.push(format!(
+                "  --form {}",
+                shell_quote(&format!("{}={value}{suffix}", part.name))
+            ));
+        }
+    } else if req.body_kind != "none" && !req.body.is_empty() {
         lines.push(format!("  --data {}", shell_quote(&req.body)));
     }
     lines.join(" \\\n")
@@ -1043,6 +1384,10 @@ fn build_curl(req: &ResolvedRequest) -> String {
 
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn curl_form_quote(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 #[cfg(test)]
@@ -1080,6 +1425,7 @@ mod tests {
                 enabled: true,
             }],
             cookies: vec![],
+            multipart: vec![],
             params: vec![],
             body_kind: "json".into(),
             body: r#"{"password":"${TOKEN}"}"#.into(),
@@ -1189,6 +1535,7 @@ mod tests {
         });
         let parsed: RequestTemplate = serde_json::from_value(legacy_template).unwrap();
         assert!(parsed.cookies.is_empty());
+        assert!(parsed.multipart.is_empty());
 
         let mut request = template();
         request.url = "https://example.test".into();
@@ -1507,6 +1854,10 @@ mod tests {
         let curl = build_curl(&resolved);
         assert!(curl.contains("top-secret"));
         assert!(curl.contains("Authorization: Bearer"));
+        assert_eq!(
+            curl_form_quote("C:\\tmp\\a;\"b\".txt"),
+            "\"C:\\\\tmp\\\\a;\\\"b\\\".txt\""
+        );
     }
 
     #[test]
@@ -1551,6 +1902,186 @@ mod tests {
             encode_form("# comment\nname=John Doe\nage=30\n"),
             "name=John Doe&age=30"
         );
+    }
+
+    #[test]
+    fn multipart_persistence_removes_paths_backup_body_and_sensitive_text() {
+        let input = r#"{
+            "version": 2,
+            "history": [{
+                "id": "history-1",
+                "saved_at": 1,
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.test/upload",
+                    "headers": [],
+                    "cookies": [],
+                    "multipart": [
+                        {"kind":"file","name":"upload","value":"raw-bytes","file_path":"C:\\\\Users\\\\private\\\\report.txt","file_name":"C:\\\\Users\\\\private\\\\report.txt","content_type":"text/plain","enabled":true,"raw_backup":"raw-bytes"},
+                        {"kind":"text","name":"token","value":"direct-secret","file_path":"","file_name":"","content_type":"","enabled":true},
+                        {"kind":"text","name":"token","value":"${TOKEN}","file_path":"","file_name":"","content_type":"","enabled":true}
+                    ],
+                    "params": [],
+                    "body_kind": "multipart",
+                    "body": "raw-file-backup",
+                    "auth": null,
+                    "timeout_ms": 30000,
+                    "requiresSecretReview": true
+                }
+            }]
+        }"#;
+        let output = sanitize_persisted_json_with_sealer(input, &[], &MockSealer).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let request = &json["history"][0]["request"];
+
+        assert_eq!(request["body"], "");
+        assert_eq!(request["multipart"][0]["file_path"], "");
+        assert_eq!(request["multipart"][0]["file_name"], "report.txt");
+        assert!(request["multipart"][0].get("raw_backup").is_none());
+        assert_eq!(request["multipart"][0]["value"], "");
+        assert_eq!(request["multipart"][1]["value"], REDACTED);
+        assert_eq!(request["multipart"][2]["value"], "${TOKEN}");
+        assert!(!output.contains("Users"));
+        assert!(!output.contains("raw-file-backup"));
+        assert!(!output.contains("raw-bytes"));
+        assert!(!output.contains("direct-secret"));
+    }
+
+    #[test]
+    fn missing_multipart_file_error_never_contains_path() {
+        let missing = format!(
+            "{}/devbox-missing-multipart-{}",
+            std::env::temp_dir().display(),
+            std::process::id()
+        );
+        let mut request = template();
+        request.url = "https://example.test/upload".into();
+        request.headers.clear();
+        request.cookies.clear();
+        request.auth = None;
+        request.body_kind = "multipart".into();
+        request.body = "${BROKEN}".into();
+        request.multipart = vec![MultipartPart {
+            kind: "file".into(),
+            name: "upload".into(),
+            file_path: missing.clone(),
+            file_name: "missing.bin".into(),
+            ..Default::default()
+        }];
+
+        let error = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap_err();
+        assert_eq!(error, "선택한 multipart 파일을 찾을 수 없습니다");
+        assert!(!error.contains(&missing));
+        assert!(!error.contains("devbox-missing"));
+    }
+
+    #[test]
+    fn multipart_secret_resolution_ignores_disabled_parts() {
+        let mut request = template();
+        request.url = "https://example.test/upload".into();
+        request.headers.clear();
+        request.cookies.clear();
+        request.auth = None;
+        request.body_kind = "multipart".into();
+        request.body.clear();
+        request.multipart = vec![
+            MultipartPart {
+                name: "token".into(),
+                value: "${TOKEN}".into(),
+                ..Default::default()
+            },
+            MultipartPart {
+                name: "skip".into(),
+                value: "${BROKEN}".into(),
+                enabled: false,
+                ..Default::default()
+            },
+        ];
+        let (resolved, secrets) = resolve_template(
+            &request,
+            &[
+                sealed_variable("TOKEN", "multipart-secret"),
+                EnvironmentVariable {
+                    key: "BROKEN".into(),
+                    value: "not-base64".into(),
+                    secret: true,
+                },
+            ],
+            &MockSealer,
+        )
+        .unwrap();
+
+        assert_eq!(resolved.multipart[0].value, "multipart-secret");
+        assert_eq!(resolved.multipart[1].value, "${BROKEN}");
+        assert!(resolved.body.is_empty());
+        assert_eq!(secrets.len(), 1);
+    }
+
+    #[test]
+    fn live_request_streams_text_and_file_multipart_with_derived_boundary() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let file_path = std::env::temp_dir().join(format!(
+            "devbox-multipart-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&file_path, b"file-content-unique").unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut stream);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
+            )
+            .unwrap();
+            request
+        });
+
+        let mut request = template();
+        request.url = format!("http://127.0.0.1:{port}/multipart");
+        request.headers = vec![RequestHeader {
+            key: "Content-Type".into(),
+            value: "text/plain".into(),
+            enabled: true,
+        }];
+        request.cookies.clear();
+        request.auth = None;
+        request.body_kind = "multipart".into();
+        request.body.clear();
+        request.multipart = vec![
+            MultipartPart {
+                name: "note".into(),
+                value: "hello-multipart".into(),
+                content_type: "text/plain".into(),
+                ..Default::default()
+            },
+            MultipartPart {
+                kind: "file".into(),
+                name: "upload".into(),
+                file_path: file_path.to_string_lossy().into_owned(),
+                file_name: "ignored-name.bin".into(),
+                content_type: "text/plain".into(),
+                ..Default::default()
+            },
+        ];
+
+        let result = tauri::async_runtime::block_on(send_request(request, vec![]));
+        let _ = std::fs::remove_file(&file_path);
+        assert_eq!(result.unwrap().status, 200);
+        let observed = server.join().unwrap();
+        let lowered = observed.to_ascii_lowercase();
+        assert!(lowered.contains("content-type: multipart/form-data; boundary="));
+        assert!(!lowered.contains("content-type: text/plain\r\ncontent-length"));
+        assert!(observed.contains("name=\"note\""));
+        assert!(observed.contains("hello-multipart"));
+        assert!(observed.contains("name=\"upload\""));
+        assert!(observed.contains("file-content-unique"));
+        assert!(observed.contains("Content-Type: text/plain"));
+        assert!(!observed.contains("ignored-name.bin"));
     }
 
     #[test]

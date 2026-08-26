@@ -1074,11 +1074,15 @@ v0.5.0 P1-09 #268에서 duplicate 순서, enabled persistence와 backend-only se
 jar가 아닌 request `Cookie` header 전용 editor를 추가했다. 구조화 name/value 행은 순서와 enabled를
 보존하고, 직접 값은 History·Collection·기본 cURL에서 마스킹하며 전체 값이 단일 environment
 reference일 때만 참조를 유지한다. raw `Cookie` header와의 동시 사용, 잘못된 문자와 100행 초과는
-native 전송 전 fail-closed한다. multipart와 response header/cookie viewer는 각각 분리된 후속
-issue로 유지한다.
+native 전송 전 fail-closed한다. #270에서는 multipart body에 ordered text/file part, enabled,
+part별 Content-Type과 native file picker를 추가했다. 파일 경로·byte backup은 저장하지 않고
+basename만 남겨 History·Collection 재호출 때 재선택하게 한다. Rust가 파일당 25 MiB·전체 50 MiB와
+regular file을 검증한 뒤 stream하며 text part의 secret reference도 backend에서만 해제한다.
+response header/cookie viewer는 다음 분리 issue로 유지한다.
 
 history는 자동·단기·secret 제거를 기본으로 한다. collection은 사용자가 명시적으로 저장한
-재사용 자산으로 취급한다. Authorization과 Cookie를 history에 평문으로 남기지 않는다.
+재사용 자산으로 취급한다. Authorization, Cookie, 민감 multipart text와 file path를 history에
+평문으로 남기지 않는다.
 
 **`crates/secrets` 추출 지점.** run-manager가 DPAPI 환경변수 보호를 이미 구현했다
 (`apps/run-manager/src-tauri/src/platform/environment.rs`). 위 3번이 두 번째 실소비자가
