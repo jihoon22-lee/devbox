@@ -2,7 +2,8 @@ mod applink;
 mod commands;
 mod core;
 
-use commands::workspace::run_registry;
+use commands::workspace::{profile_store_state, run_registry, ProfileStoreState};
+use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
 // TODO(0.5.0): 신규 앱 — identifier 변경 이전 데이터가 없어 마이그레이션 없음.
@@ -18,7 +19,7 @@ pub fn run() {
                     let _ = app.emit("devbox://open", req);
                 }
                 Ok(None) => {}
-                Err(e) => eprintln!("applink: {e}"),
+                Err(_) => eprintln!("applink: 요청을 해석할 수 없습니다"),
             }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -32,33 +33,42 @@ pub fn run() {
             match devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>()) {
                 Ok(Some(req)) => app.state::<applink::PendingOpen>().set(req),
                 Ok(None) => {}
-                Err(e) => eprintln!("applink: {e}"),
+                Err(_) => eprintln!("applink: 요청을 해석할 수 없습니다"),
             }
             app.manage(run_registry());
+            app.manage(profile_store_state());
             // Life Log projects/v1 snapshot의 프로젝트 경로를 흡수 (read-only, §10.2)
-            let mut store = crate::core::profile::ProfileStore::load(
-                &app.handle()
-                    .path()
-                    .app_local_data_dir()
-                    .ok()
-                    .and_then(|d| std::fs::read_to_string(d.join("project-profiles.json")).ok())
-                    .unwrap_or_default(),
-            );
-            match commands::workspace::absorb_life_log_projects(&mut store) {
-                Ok(report) => {
-                    if report.unsupported_paths > 0 {
-                        eprintln!(
-                            "life-log snapshot: distro 정보가 없는 POSIX 프로젝트 {}개를 건너뛰었습니다",
-                            report.unsupported_paths
-                        );
-                    }
-                    if report.added > 0 {
-                        if let Err(error) = commands::workspace::save_store(app.handle(), &store) {
-                            eprintln!("life-log snapshot: {error}");
-                        }
+            let store_state = app.state::<Arc<ProfileStoreState>>();
+            match store_state.lock.lock() {
+                Ok(_store_lock) => {
+                    match commands::workspace::load_store_document(app.handle()) {
+                        Ok(mut document) => match commands::workspace::absorb_life_log_projects(&mut document.store) {
+                            Ok(report) => {
+                                if report.unsupported_paths > 0 {
+                                    eprintln!(
+                                        "life-log snapshot: distro 정보가 없는 POSIX 프로젝트 {}개를 건너뛰었습니다",
+                                        report.unsupported_paths
+                                    );
+                                }
+                                if report.added > 0
+                                    && commands::workspace::save_store_document(
+                                        app.handle(),
+                                        &document,
+                                        &document.store,
+                                    )
+                                    .is_err()
+                                {
+                                    eprintln!("life-log snapshot: 프로필 저장소를 저장할 수 없습니다");
+                                }
+                            }
+                            Err(_) => eprintln!("life-log snapshot: snapshot을 안전하게 읽을 수 없습니다"),
+                        },
+                        Err(_) => eprintln!("life-log snapshot: 프로필 저장소를 읽을 수 없습니다"),
                     }
                 }
-                Err(error) => eprintln!("life-log snapshot: {error}"),
+                Err(_) => {
+                    eprintln!("life-log snapshot: 프로필 저장소를 사용할 수 없습니다");
+                }
             }
             Ok(())
         })

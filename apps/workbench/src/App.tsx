@@ -25,23 +25,24 @@ import {
   type WorkbenchOpenTarget,
 } from "./api";
 import { routeOpenRequest } from "./lib/applink";
+import {
+  draftFromProfile,
+  emptyProfileDraft,
+  MAX_EXPECTED_PORTS_INPUT_CHARS,
+  MAX_PROFILE_NAME_CHARS,
+  MAX_PROFILE_PATH_BYTES,
+  MAX_SERVICE_ID_CHARS,
+  MAX_SERVICES,
+  MAX_WSL_DISTRO_CHARS,
+  newServiceDraftRow,
+  validateProfileDraft,
+  type ProfileDraft,
+} from "./lib/profileEditor";
 import "./App.css";
-
-function emptyProfile(): ProjectProfile {
-  return {
-    id: "",
-    name: "",
-    windowsPath: null,
-    wsl: null,
-    gitRoot: null,
-    expectedPorts: [],
-    runManagerServiceIds: [],
-  };
-}
 
 export default function App() {
   const [profiles, setProfiles] = useState<ProjectProfile[]>([]);
-  const [editing, setEditing] = useState<ProjectProfile | null>(null);
+  const [editing, setEditing] = useState<ProfileDraft | null>(null);
   const [selectedId, setSelectedId] = useState<string>("");
   const [health, setHealth] = useState<ProjectHealth | null>(null);
   const [run, setRun] = useState<WorkspaceRun | null>(null);
@@ -53,6 +54,10 @@ export default function App() {
     targets: WorkbenchOpenTarget[];
   } | null>(null);
   const contextTargetRequest = useRef(0);
+  const refreshRequest = useRef(0);
+  const healthRequest = useRef(0);
+  const saveInFlight = useRef(false);
+  const [profilesRevision, setProfilesRevision] = useState(0);
   // Flips true once the first listProfiles() resolves (success or failure).
   // Gates applink handling (below) so a `path` target is matched against the
   // real profile list instead of racing the empty initial state.
@@ -84,15 +89,26 @@ export default function App() {
   });
 
   const refresh = useCallback(async () => {
+    const request = ++refreshRequest.current;
     try {
       const [list, activeRun] = await Promise.all([listProfiles(), currentWorkspaceRun()]);
+      if (request !== refreshRequest.current) return;
       setProfiles(list);
       setRun(activeRun ? { ...activeRun, steps: [], startedPids: [] } : null);
       setSelectedId((prev) => (prev && list.some((p) => p.id === prev) ? prev : list[0]?.id ?? ""));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setProfilesRevision((revision) => revision + 1);
+    } catch {
+      if (request === refreshRequest.current) {
+        // A failed read must not leave actionable stale profiles on screen.
+        healthRequest.current += 1;
+        setProfiles([]);
+        setSelectedId("");
+        setHealth(null);
+        setRun(null);
+        setError("프로필 목록을 불러올 수 없습니다.");
+      }
     } finally {
-      setProfilesLoaded(true);
+      if (request === refreshRequest.current) setProfilesLoaded(true);
     }
   }, []);
 
@@ -127,15 +143,14 @@ export default function App() {
       case "draftProfile": {
         // No matching profile — surface it via the create-profile draft form
         // (this app's existing affordance) instead of silently doing nothing.
-        const draft = emptyProfile();
+        const draft = emptyProfileDraft();
         if (action.looksWindows) draft.windowsPath = action.path;
-        else draft.wsl = { distro: "", path: action.path };
+        else draft.wslPath = action.path;
         setEditing(draft);
-        setError(`연결된 프로필을 찾지 못해 새 프로필 초안을 열었습니다: ${action.path}`);
+        setError("연결된 프로필을 찾지 못해 새 프로필 초안을 열었습니다.");
         break;
       }
       case "noop":
-        console.info(`applink: ${action.reason}`);
         break;
     }
   };
@@ -184,25 +199,45 @@ export default function App() {
   }, [profilesLoaded]);
 
   useEffect(() => {
-    if (!selectedId) return;
-    void projectHealth(selectedId).then(setHealth).catch(() => undefined);
-  }, [selectedId]);
+    const request = ++healthRequest.current;
+    if (!selectedId) {
+      setHealth(null);
+      return;
+    }
+    setHealth(null);
+    void projectHealth(selectedId)
+      .then((result) => {
+        if (request === healthRequest.current && result.profileId === selectedId) setHealth(result);
+      })
+      .catch(() => {
+        if (request === healthRequest.current) setError("프로젝트 상태를 확인할 수 없습니다.");
+      });
+  }, [profilesRevision, selectedId]);
 
   const onSave = async () => {
-    if (!editing) return;
+    if (!editing || saveInFlight.current) return;
+    const validation = validateProfileDraft(editing);
+    if (!validation.profile) {
+      setError("프로필 입력값을 확인한 뒤 저장하세요.");
+      return;
+    }
+    saveInFlight.current = true;
     setBusy(true);
     setError(null);
     try {
-      if (editing.id) {
-        await updateProfile(editing);
+      if (validation.profile.id) {
+        await updateProfile(validation.profile);
       } else {
-        await createProfile(editing);
+        await createProfile(validation.profile);
       }
       setEditing(null);
       await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch {
+      // Backend errors are deliberately not echoed: path strings and future
+      // service metadata must not become UI/telemetry output by accident.
+      setError("프로필을 저장할 수 없습니다. 입력과 경로를 확인하세요.");
     } finally {
+      saveInFlight.current = false;
       setBusy(false);
     }
   };
@@ -222,8 +257,8 @@ export default function App() {
       setSelectedId("");
       setHealth(null);
       await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch {
+      setError("프로필을 삭제할 수 없습니다.");
     } finally {
       setBusy(false);
     }
@@ -239,8 +274,8 @@ export default function App() {
     setError(null);
     try {
       setRun(await startWorkspace(profileId));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch {
+      setError("Workspace를 시작할 수 없습니다.");
     } finally {
       setBusy(false);
     }
@@ -260,8 +295,8 @@ export default function App() {
       const n = await stopWorkspace(run.runId, profile.id);
       setRun(null);
       if (n > 0) setError(`Workbench가 시작한 프로세스 ${n}개를 종료했습니다.`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch {
+      setError("Workspace 실행을 중지할 수 없습니다.");
     } finally {
       setBusy(false);
     }
@@ -272,8 +307,8 @@ export default function App() {
     try {
       const path = await profileCopyPath(profileId);
       await navigator.clipboard.writeText(path);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch {
+      setError("프로필 경로를 클립보드에 복사할 수 없습니다.");
     }
   };
 
@@ -282,8 +317,8 @@ export default function App() {
     setError(null);
     try {
       await openProfileIn(profileId, appId);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch {
+      setError("선택한 앱으로 프로필을 열 수 없습니다.");
     } finally {
       setBusy(false);
     }
@@ -348,7 +383,7 @@ export default function App() {
     if (!profile) return;
     if (id === "start") void onStart(profile.id);
     else if (id === "stop") void onStop(profile);
-    else if (id === "edit") setEditing(profile);
+    else if (id === "edit") setEditing(draftFromProfile(profile));
     else if (id === "delete") void onDelete(profile);
     else if (id === "copy-path") void onCopyProfilePath(profile.id);
     else {
@@ -357,7 +392,8 @@ export default function App() {
     }
   };
 
-  const patch = (p: Partial<ProjectProfile>) => setEditing((prev) => (prev ? { ...prev, ...p } : prev));
+  const patch = (p: Partial<ProfileDraft>) => setEditing((prev) => (prev ? { ...prev, ...p } : prev));
+  const draftValidation = editing ? validateProfileDraft(editing) : null;
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedId) ?? null;
 
@@ -365,11 +401,11 @@ export default function App() {
     <div className="app">
       <header className="toolbar">
         <h1 className="title">Workbench</h1>
-        <button className="btn" onClick={() => { setEditing(emptyProfile()); }}>+ 프로필</button>
-        <button className="btn refresh" onClick={() => void refresh()}>새로고침</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => { setEditing(emptyProfileDraft()); }}>+ 프로필</button>
+        <button type="button" className="btn refresh" disabled={busy} onClick={() => void refresh()}>새로고침</button>
       </header>
 
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
 
       <div className="main">
         <aside className="sidebar">
@@ -384,15 +420,24 @@ export default function App() {
               onClick={() => setSelectedId(p.id)}
               {...profileContextMenu.triggerProps}
             >
-              <button className="profile-name" onClick={() => setSelectedId(p.id)}>
+              <button type="button" className="profile-name" disabled={busy} onClick={() => setSelectedId(p.id)}>
                 {p.name}
               </button>
-              <button className="mini" disabled={busy} onClick={() => setEditing(p)} title="편집">✏️</button>
               <button
+                type="button"
+                className="mini"
+                disabled={busy}
+                onClick={() => setEditing(draftFromProfile(p))}
+                title="편집"
+                aria-label={`${p.name} 프로필 편집`}
+              >✏️</button>
+              <button
+                type="button"
                 className="mini"
                 disabled={busy || run?.profileId === p.id}
                 onClick={() => void onDelete(p)}
                 title="삭제"
+                aria-label={`${p.name} 프로필 삭제`}
               >
                 ✕
               </button>
@@ -403,43 +448,157 @@ export default function App() {
 
         <main className="content">
           {editing ? (
-            <section className="panel">
-              <h2>{editing.id ? "프로필 편집" : "새 프로필"}</h2>
-              <label className="field">
-                <span>이름</span>
-                <input value={editing.name} onChange={(e) => patch({ name: e.currentTarget.value })} />
-              </label>
-              <label className="field">
-                <span>Windows 경로</span>
-                <input value={editing.windowsPath ?? ""} onChange={(e) => patch({ windowsPath: e.currentTarget.value || null })} />
-              </label>
-              <label className="field">
-                <span>WSL distro</span>
-                <input value={editing.wsl?.distro ?? ""} onChange={(e) => patch({ wsl: { distro: e.currentTarget.value, path: editing.wsl?.path ?? "" } })} />
-              </label>
-              <label className="field">
-                <span>WSL 경로</span>
-                <input value={editing.wsl?.path ?? ""} onChange={(e) => patch({ wsl: { distro: editing.wsl?.distro ?? "", path: e.currentTarget.value } })} />
-              </label>
-              <label className="field">
-                <span>Git root</span>
-                <input value={editing.gitRoot ?? ""} onChange={(e) => patch({ gitRoot: e.currentTarget.value || null })} />
-              </label>
-              <label className="field">
-                <span>예상 포트 (쉼표)</span>
-                <input
-                  value={editing.expectedPorts.join(", ")}
-                  onChange={(e) =>
-                    patch({
-                      expectedPorts: e.currentTarget.value.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0),
-                    })
-                  }
-                />
-              </label>
-              <div className="actions">
-                <button className="btn primary" disabled={busy || !editing.name.trim()} onClick={() => void onSave()}>저장</button>
-                <button className="btn" onClick={() => setEditing(null)}>취소</button>
-              </div>
+            <section
+              className="panel editor-panel"
+              aria-labelledby="profile-editor-title"
+              aria-busy={busy}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && !event.nativeEvent.isComposing && !busy) {
+                  event.preventDefault();
+                  setEditing(null);
+                }
+              }}
+            >
+              <h2 id="profile-editor-title">{editing.id ? "프로필 편집" : "새 프로필"}</h2>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void onSave();
+                }}
+              >
+                <label className="field" htmlFor="profile-name">
+                  <span>이름</span>
+                  <input
+                    id="profile-name"
+                    value={editing.name}
+                    maxLength={MAX_PROFILE_NAME_CHARS}
+                    autoFocus
+                    disabled={busy}
+                    aria-invalid={Boolean(draftValidation?.errors.name)}
+                    aria-describedby={draftValidation?.errors.name ? "profile-name-error" : undefined}
+                    onChange={(e) => patch({ name: e.currentTarget.value })}
+                  />
+                  {draftValidation?.errors.name && <span id="profile-name-error" className="field-error" role="alert">{draftValidation.errors.name}</span>}
+                </label>
+                <label className="field" htmlFor="profile-windows-path">
+                  <span>Windows 경로</span>
+                  <input
+                    id="profile-windows-path"
+                    value={editing.windowsPath}
+                    maxLength={MAX_PROFILE_PATH_BYTES}
+                    disabled={busy}
+                    aria-invalid={Boolean(draftValidation?.errors.projectPath)}
+                    aria-describedby={draftValidation?.errors.projectPath ? "profile-project-path-error" : undefined}
+                    onChange={(e) => patch({ windowsPath: e.currentTarget.value })}
+                  />
+                </label>
+                <label className="field" htmlFor="profile-wsl-distro">
+                  <span>WSL distro</span>
+                  <input
+                    id="profile-wsl-distro"
+                    value={editing.wslDistro}
+                    maxLength={MAX_WSL_DISTRO_CHARS}
+                    disabled={busy}
+                    aria-invalid={Boolean(draftValidation?.errors.wsl)}
+                    aria-describedby={draftValidation?.errors.wsl ? "profile-wsl-error" : undefined}
+                    onChange={(e) => patch({ wslDistro: e.currentTarget.value })}
+                  />
+                </label>
+                <label className="field" htmlFor="profile-wsl-path">
+                  <span>WSL 경로</span>
+                  <input
+                    id="profile-wsl-path"
+                    value={editing.wslPath}
+                    maxLength={MAX_PROFILE_PATH_BYTES}
+                    disabled={busy}
+                    aria-invalid={Boolean(draftValidation?.errors.projectPath || draftValidation?.errors.wsl)}
+                    aria-describedby={draftValidation?.errors.projectPath ? "profile-project-path-error" : draftValidation?.errors.wsl ? "profile-wsl-error" : undefined}
+                    onChange={(e) => patch({ wslPath: e.currentTarget.value })}
+                  />
+                  {draftValidation?.errors.wsl && <span id="profile-wsl-error" className="field-error" role="alert">{draftValidation.errors.wsl}</span>}
+                </label>
+                <label className="field" htmlFor="profile-git-root">
+                  <span>Git root</span>
+                  <input
+                    id="profile-git-root"
+                    value={editing.gitRoot}
+                    maxLength={MAX_PROFILE_PATH_BYTES}
+                    disabled={busy}
+                    aria-invalid={Boolean(draftValidation?.errors.gitRoot)}
+                    aria-describedby={draftValidation?.errors.gitRoot ? "profile-git-root-error" : undefined}
+                    onChange={(e) => patch({ gitRoot: e.currentTarget.value })}
+                  />
+                  {draftValidation?.errors.gitRoot && <span id="profile-git-root-error" className="field-error" role="alert">{draftValidation.errors.gitRoot}</span>}
+                </label>
+                <label className="field" htmlFor="profile-expected-ports">
+                  <span>예상 포트 (쉼표)</span>
+                  <input
+                    id="profile-expected-ports"
+                    value={editing.expectedPortsText}
+                    maxLength={MAX_EXPECTED_PORTS_INPUT_CHARS}
+                    inputMode="numeric"
+                    placeholder="예: 3000, 5173"
+                    disabled={busy}
+                    aria-invalid={Boolean(draftValidation?.errors.expectedPorts)}
+                    aria-describedby={draftValidation?.errors.expectedPorts ? "profile-ports-error" : "profile-ports-help"}
+                    onChange={(e) => patch({ expectedPortsText: e.currentTarget.value })}
+                  />
+                  <span id="profile-ports-help" className="field-help">프로필 health 점검과 Start Workspace에서 확인할 로컬 TCP 포트입니다.</span>
+                  {draftValidation?.errors.expectedPorts && <span id="profile-ports-error" className="field-error" role="alert">{draftValidation.errors.expectedPorts}</span>}
+                </label>
+                <fieldset
+                  className="editor-section"
+                  disabled={busy}
+                  aria-describedby={draftValidation?.errors.services ? "profile-services-error" : undefined}
+                >
+                  <legend>Run Manager 서비스</legend>
+                  <p className="field-help">연결할 서비스 ID를 등록합니다. 이 화면은 서비스 자체를 시작·수정하지 않습니다.</p>
+                  {editing.serviceRows.map((row, index) => (
+                    <div className="editable-list-row" key={row.key}>
+                      <label className="sr-only" htmlFor={`service-${row.key}`}>서비스 {index + 1}</label>
+                      <input
+                        id={`service-${row.key}`}
+                        value={row.value}
+                        maxLength={MAX_SERVICE_ID_CHARS}
+                        placeholder="예: devbox-dev"
+                        aria-invalid={Boolean(draftValidation?.errors.serviceRows[row.key])}
+                        aria-describedby={draftValidation?.errors.serviceRows[row.key] ? `service-error-${row.key}` : undefined}
+                        onChange={(e) => patch({
+                          serviceRows: editing.serviceRows.map((candidate) => (
+                            candidate.key === row.key ? { ...candidate, value: e.currentTarget.value } : candidate
+                          )),
+                        })}
+                      />
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => patch({ serviceRows: editing.serviceRows.filter((candidate) => candidate.key !== row.key) })}
+                        aria-label={`서비스 ${index + 1} 삭제`}
+                      >
+                        삭제
+                      </button>
+                      {draftValidation?.errors.serviceRows[row.key] && (
+                        <span id={`service-error-${row.key}`} className="field-error" role="alert">{draftValidation.errors.serviceRows[row.key]}</span>
+                      )}
+                    </div>
+                  ))}
+                  {draftValidation?.errors.services && <span id="profile-services-error" className="field-error" role="alert">{draftValidation.errors.services}</span>}
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={editing.serviceRows.length >= MAX_SERVICES}
+                    onClick={() => patch({ serviceRows: [...editing.serviceRows, newServiceDraftRow()] })}
+                  >
+                    + 서비스 추가
+                  </button>
+                </fieldset>
+                {draftValidation?.errors.projectPath && <div id="profile-project-path-error" className="field-error form-error" role="alert">{draftValidation.errors.projectPath}</div>}
+                {draftValidation?.errors.id && <div className="field-error form-error" role="alert">{draftValidation.errors.id}</div>}
+                <div className="actions">
+                  <button type="submit" className="btn primary" disabled={busy || !draftValidation?.profile}>저장</button>
+                  <button type="button" className="btn" disabled={busy} onClick={() => setEditing(null)}>취소</button>
+                </div>
+              </form>
             </section>
           ) : selectedProfile ? (
             <section className="panel">
