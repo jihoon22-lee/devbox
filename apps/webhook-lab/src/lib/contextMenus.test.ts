@@ -24,15 +24,24 @@ describe("Webhook Lab context menu contracts", () => {
     expect(items.map((item) => item.label)).toEqual([
       "편집",
       "복제",
-      "예시 curl 복사",
+      "PowerShell curl.exe 복사",
+      "POSIX sh curl 복사",
       "삭제",
     ]);
     expect(items.find((item) => item.id === "delete")?.danger).toBe(true);
-    expect(items.find((item) => item.id === "copy-example-curl")?.disabled).toBe(true);
+    expect(items.find((item) => item.id === "copy-example-curl-powershell")?.disabled).toBe(true);
+    expect(items.find((item) => item.id === "copy-example-curl-posix")?.disabled).toBe(true);
+  });
+
+  it("실행 중인 서버 주소가 있을 때만 두 shell 형식의 example curl 복사를 활성화한다", () => {
+    const items = actions(buildRuleContextMenu(false, true));
+    expect(items.find((item) => item.id === "copy-example-curl-powershell")?.disabled).toBe(false);
+    expect(items.find((item) => item.id === "copy-example-curl-posix")?.disabled).toBe(false);
   });
 
   it("진행 중에는 이미 구현된 변경 action만 비활성화한다", () => {
     expect(actions(buildHistoryContextMenu(true)).every((item) => item.disabled)).toBe(true);
     expect(actions(buildRuleContextMenu(true)).every((item) => item.disabled)).toBe(true);
+    expect(actions(buildRuleContextMenu(true, true)).every((item) => item.disabled)).toBe(true);
   });
 });

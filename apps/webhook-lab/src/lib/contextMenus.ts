@@ -17,16 +17,24 @@ export function buildHistoryContextMenu(busy: boolean): readonly ContextMenuEntr
   ];
 }
 
-export function buildRuleContextMenu(busy: boolean): readonly ContextMenuEntry[] {
+export function buildRuleContextMenu(
+  busy: boolean,
+  canCopyExampleCurl = false,
+): readonly ContextMenuEntry[] {
   return [
     { type: "item", id: "edit", label: "편집", disabled: busy },
     { type: "item", id: "duplicate", label: "복제", disabled: busy },
     {
       type: "item",
-      id: "copy-example-curl",
-      label: "예시 curl 복사",
-      // P1 #283이 current bind와 안전한 quoting 계약을 구현한 뒤 활성화한다.
-      disabled: true,
+      id: "copy-example-curl-powershell",
+      label: "PowerShell curl.exe 복사",
+      disabled: busy || !canCopyExampleCurl,
+    },
+    {
+      type: "item",
+      id: "copy-example-curl-posix",
+      label: "POSIX sh curl 복사",
+      disabled: busy || !canCopyExampleCurl,
     },
     { type: "separator", id: "rule-danger-separator" },
     { type: "item", id: "delete", label: "삭제", disabled: busy, danger: true },

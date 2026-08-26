@@ -3,7 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   clearHistory,
   copyHistoryHeaders,
@@ -22,9 +22,16 @@ import {
   type ServerStatus,
 } from "./api";
 import { buildHistoryContextMenu, buildRuleContextMenu } from "./lib/contextMenus";
+import { buildExampleCurl, type CurlShell } from "./lib/exampleCurl";
 import "./App.css";
 
 const DEFAULT_PORT = 9000;
+const GENERIC_ERROR_MESSAGE = "요청을 처리하지 못했습니다. 입력과 서버 상태를 확인하세요.";
+const SAFE_ERROR_MESSAGES = new Set([
+  "요청 기록을 찾을 수 없습니다",
+  "규칙을 찾을 수 없습니다",
+  "원본 요청 복사는 데스크톱 앱에서만 사용할 수 있습니다",
+]);
 
 function emptyRule(): ResponseRule {
   return {
@@ -39,7 +46,10 @@ function emptyRule(): ResponseRule {
 }
 
 function safeMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === "string" ? error : "";
+  return SAFE_ERROR_MESSAGES.has(message) ? message : GENERIC_ERROR_MESSAGE;
 }
 
 export default function App() {
@@ -55,6 +65,19 @@ export default function App() {
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
   const [contextHistory, setContextHistory] = useState<RequestRecord | null>(null);
   const [contextRule, setContextRule] = useState<ResponseRule | null>(null);
+  const operationInFlight = useRef(false);
+
+  const beginBusy = () => {
+    if (operationInFlight.current) return false;
+    operationInFlight.current = true;
+    setBusy(true);
+    return true;
+  };
+
+  const endBusy = () => {
+    operationInFlight.current = false;
+    setBusy(false);
+  };
 
   const prepareHistoryContext = useCallback((target: HTMLElement) => {
     const id = Number(target.dataset.historyId);
@@ -118,7 +141,7 @@ export default function App() {
   }, [contextRule?.id, ruleContextMenu.close, rules]);
 
   const onStart = async () => {
-    setBusy(true);
+    if (!beginBusy()) return;
     setError(null);
     try {
       const bind = lanBind ? "0.0.0.0" : "127.0.0.1";
@@ -127,24 +150,24 @@ export default function App() {
     } catch (e) {
       setError(safeMessage(e));
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const onStop = async () => {
-    setBusy(true);
+    if (!beginBusy()) return;
     setError(null);
     try {
       setStatus(await stopServer());
     } catch (e) {
       setError(safeMessage(e));
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const onSaveRule = async () => {
-    setBusy(true);
+    if (!beginBusy()) return;
     setError(null);
     try {
       await setRule(rule);
@@ -153,7 +176,7 @@ export default function App() {
     } catch (e) {
       setError(safeMessage(e));
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
@@ -161,18 +184,61 @@ export default function App() {
     load: () => Promise<string>,
     failureMessage: string,
   ) => {
+    if (!beginBusy()) return;
     setError(null);
     try {
       const text = await load();
       await navigator.clipboard.writeText(text);
     } catch {
       setError(failureMessage);
+    } finally {
+      endBusy();
+    }
+  };
+
+  const copyExampleCurl = async (ruleId: string, shell: CurlShell) => {
+    if (!beginBusy()) return;
+    setError(null);
+    try {
+      // A menu can remain open while another actor stops the server or removes the
+      // rule. Re-read both sources before generating or copying anything.
+      const [freshStatus, freshRules] = await Promise.all([serverStatus(), listRules()]);
+      setStatus(freshStatus);
+      setRules(freshRules);
+
+      if (!freshStatus.running || !freshStatus.address) {
+        setError("현재 서버가 실행 중이 아니거나 주소가 유효하지 않아 예시 curl을 만들지 못했습니다.");
+        return;
+      }
+
+      const freshRule = freshRules.find((candidate) => candidate.id === ruleId);
+      if (!freshRule) {
+        setContextRule(null);
+        setSelectedRuleId((selected) => selected === ruleId ? null : selected);
+        setError("선택한 규칙이 더 이상 존재하지 않습니다.");
+        return;
+      }
+
+      const curl = buildExampleCurl(freshRule, freshStatus.address, shell);
+      if (!curl) {
+        setError("현재 서버 주소 또는 규칙 입력을 확인할 수 없어 예시 curl을 만들지 못했습니다.");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(curl);
+      } catch {
+        setError("예시 curl을 복사하지 못했습니다.");
+      }
+    } catch (e) {
+      setError(safeMessage(e));
+    } finally {
+      endBusy();
     }
   };
 
   const onDeleteHistory = async (request: RequestRecord) => {
     if (!window.confirm(`'${request.method} ${request.url}' 요청 기록을 삭제할까요?`)) return;
-    setBusy(true);
+    if (!beginBusy()) return;
     setError(null);
     try {
       await deleteHistory(request.id);
@@ -181,13 +247,13 @@ export default function App() {
     } catch (e) {
       setError(safeMessage(e));
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const onClearHistory = async () => {
     if (!window.confirm("수신 요청 기록을 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
-    setBusy(true);
+    if (!beginBusy()) return;
     setError(null);
     try {
       await clearHistory();
@@ -196,13 +262,13 @@ export default function App() {
     } catch (e) {
       setError(safeMessage(e));
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const onDeleteRule = async (targetRule: ResponseRule) => {
     if (!window.confirm(`'${targetRule.method ?? "*"} ${targetRule.path}' 규칙을 삭제할까요?`)) return;
-    setBusy(true);
+    if (!beginBusy()) return;
     setError(null);
     try {
       await deleteRule(targetRule.id);
@@ -212,12 +278,12 @@ export default function App() {
     } catch (e) {
       setError(safeMessage(e));
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const onDuplicateRule = async (targetRule: ResponseRule) => {
-    setBusy(true);
+    if (!beginBusy()) return;
     setError(null);
     try {
       await setRule({ ...targetRule, id: "" });
@@ -225,7 +291,7 @@ export default function App() {
     } catch (e) {
       setError(safeMessage(e));
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
@@ -234,8 +300,8 @@ export default function App() {
     [busy],
   );
   const ruleContextItems = useMemo<readonly ContextMenuEntry[]>(
-    () => buildRuleContextMenu(busy),
-    [busy],
+    () => buildRuleContextMenu(busy, status.running && Boolean(status.address)),
+    [busy, status.address, status.running],
   );
 
   const onHistoryContextSelect = (id: string) => {
@@ -269,9 +335,25 @@ export default function App() {
   const onRuleContextSelect = (id: string) => {
     const targetRule = contextRule;
     if (!targetRule) return;
-    if (id === "edit") setRuleDraft({ ...targetRule, headers: [...targetRule.headers] });
-    else if (id === "duplicate") void onDuplicateRule(targetRule);
-    else if (id === "delete") void onDeleteRule(targetRule);
+    if (id === "copy-example-curl-powershell") {
+      void copyExampleCurl(targetRule.id, "powershell");
+      return;
+    }
+    if (id === "copy-example-curl-posix") {
+      void copyExampleCurl(targetRule.id, "posix");
+      return;
+    }
+
+    const currentRule = rules.find((candidate) => candidate.id === targetRule.id);
+    if (!currentRule) {
+      setContextRule(null);
+      setSelectedRuleId((selected) => selected === targetRule.id ? null : selected);
+      setError("선택한 규칙이 더 이상 존재하지 않습니다.");
+      return;
+    }
+    if (id === "edit") setRuleDraft({ ...currentRule, headers: [...currentRule.headers] });
+    else if (id === "duplicate") void onDuplicateRule(currentRule);
+    else if (id === "delete") void onDeleteRule(currentRule);
   };
 
   return (
@@ -300,7 +382,7 @@ export default function App() {
       </header>
 
       {lanBind && <div className="warn">LAN 공개는 명시적 설정입니다. 외부에서 접근 가능합니다.</div>}
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
 
       <div className="main">
         <section className="panel">
