@@ -11,7 +11,7 @@
 | Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, 진법 변환, HTML Entity Encode·Decode, URL Component Encode·Decode | TS |
 | Time | Unix Timestamp ↔ Date | TS |
 | Text | Case Converter, Diff | Diff는 Rust(`similar`) |
-| Security | Hash(MD5/SHA-256/SHA-512), UUID v4/v7, ULID | Rust(`md-5`·`sha2`·`uuid`·`getrandom`) |
+| Security | Hash(MD5/SHA-256/SHA-512), HMAC-SHA-256/384/512 생성·검증, UUID v4/v7, ULID | Rust(`md-5`·`hmac`·`sha2`·`base64`·`uuid`·`getrandom`) |
 | Regex | Regex Tester (매치 하이라이트) | Rust(`regex`) |
 | Auth | JWT Decoder (헤더/페이로드) | TS(base64url) |
 
@@ -42,6 +42,21 @@
 - JSON → TypeScript 입력은 strict JSON 1,000,000바이트, 중첩 64단계, 값 100,000개, 출력
   4,000,000바이트로 제한한다. 원본 값은 생성 코드나 오류에 포함하지 않고 자동 저장·전송하지
   않으며 사용자가 명시적으로 복사하거나 `.ts` 파일로 저장할 때만 외부 action을 수행한다.
+- HMAC는 정확히 `sha256`·`sha384`·`sha512` 알고리즘을 지원한다. key와 message는 각각
+  `utf8`, `hex`, 표준 padded `base64`, unpadded RFC 4648 `base64url` 중 하나로 해석하고,
+  결과는 lowercase `hex`, padded `base64`, unpadded `base64url` 중 하나로 인코딩한다.
+  Hex 입력은 대·소문자를 허용하지만 Base64 계열은 alphabet·padding·pad bit까지 canonical
+  표현만 허용한다. 빈 message는 허용하고 key는 비어 있지 않아야 한다.
+- HMAC key/message의 decoded 크기는 각각 최대 1,000,000바이트, encoded field는 최대
+  2,100,000바이트다. SHA-512 결과를 포함한 tag 출력은 최대 128자이며 초과·잘못된
+  algorithm/encoding·malformed input은 원문과 플랫폼 세부사항을 포함하지 않는 하나의 고정
+  오류로 거부한다. 검증은 RustCrypto `verify_slice` 또는 Web Crypto `verify`를 사용해
+  constant-time primitive 경계를 유지하고, 성공 여부만 반환한다.
+- HMAC는 브라우저 미리보기와 Tauri native 경로 모두 외부 network 없이 실행한다. key·message와
+  작업 결과는 화면과 한 번의 메모리 작업에만 존재하며 history/localStorage/로그로 저장하거나
+  전송하지 않는다. 생성 tag의 복사·결과 파일 저장은 사용자가 출력 메뉴에서 명시적으로
+  요청한 경우에만 수행한다. JWT signature verify, secret persistence, pipeline/handoff는
+  이 도구의 범위가 아니다.
 - byte codec은 입력·출력 표현을 UTF-8 text, Hex raw bytes, Base64, unpadded Base64URL에서
   각각 선택한다. 내부에서는 최대 1,000,000 raw byte를 `Uint8Array`로 보존하고 입력 표현은
   최대 2,100,000자로 제한한다. Hex와 Base64 계열의 ASCII 공백은 paste 편의를 위해 무시한다.
@@ -87,7 +102,19 @@ JSON ↔ YAML의 `jsonc-parser` 3.3.1(MIT)·`yaml` 2.9.0(ISC)과 HTML entity의
 다운로드나 network 요청은 없으며 버전·무결성·라이선스는 `pnpm-lock.yaml`, dependency policy,
 `THIRD_PARTY_NOTICES.md`로 검증한다.
 
+Rust의 HMAC 순수 로직은 `src-tauri/src/core/hmac.rs`, Tauri 경계는
+`src-tauri/src/commands/tools.rs`의 `hmac_generate`·`hmac_verify` 명령에 있다. 요청 wire
+필드는 `algorithm`, `key`, `keyEncoding`, `message`, `messageEncoding`, `outputEncoding`이며,
+검증 요청은 여기에 `expectedTag`를 더한다. Frontend와 native가 같은 strict codec/상한을
+공유하고, verify 명령은 `boolean` 외의 tag를 반환하지 않는다.
+
+HMAC가 사용하는 `hmac 0.13.0`은 RustCrypto의 검증된 표준 HMAC primitive(MIT OR
+Apache-2.0)이며, `sha2 0.11.0`과 기존에 잠겨 있던 `base64 0.22.1`을 사용한다. 버전·전이
+`cmov`/`ctutils`·checksum·license는 루트 `Cargo.lock`과 생성된
+`THIRD_PARTY_NOTICES.md`에서 검증한다. 자체 암호 구현, 외부 generator, runtime download는
+추가하지 않는다.
+
 ## 개발
 
-- 순수 로직: `src-tauri/src/commands/tools.rs` → `cargo test`
+- 순수 로직: `src-tauri/src/core/hmac.rs` 및 `src-tauri/src/commands/tools.rs` → `cargo test`
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`

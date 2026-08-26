@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `93f37afd7fb4f00b60c8899736aefb60f14469a6f15807c94b8a6ae18cb4be3e`
+- Cargo.lock SHA-256: `89321b0ad40cc3c23b80d5833ee9dd23865f6529b2d35e8beb9b1fde4c9c9586`
 - pnpm-lock.yaml SHA-256: `539339e2e29fdde9ae5fa8adc45d9cca7ab683456405e37f50ed87b21ca47c8d`
 
 ## Rust dependencies
@@ -76,6 +76,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | chunked_transfer | 1.5.0 | MIT OR Apache-2.0 | https://github.com/frewsxcv/rust-chunked-transfer | `sha256:6e4de3bc4ea267985becf712dc6d9eed8b04c953b3fcfb339ebc87acd9804901` |
 | clipboard-win | 5.4.1 | BSL-1.0 | https://github.com/DoumanAsh/clipboard-win | `sha256:bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4` |
 | cmake | 0.1.58 | MIT OR Apache-2.0 | https://github.com/rust-lang/cmake-rs | `sha256:c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678` |
+| cmov | 0.5.4 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils | `sha256:0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a` |
 | combine | 4.6.7 | MIT | https://github.com/Marwes/combine | `sha256:ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd` |
 | concurrent-queue | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/concurrent-queue | `sha256:4ca0197aee26d1ae37445ee532fefce43251d24cc7c166799f4d46817f1d3973` |
 | const-oid | 0.10.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats | `sha256:a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c` |
@@ -99,6 +100,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | cssparser-macros | 0.6.1 | MPL-2.0 | https://github.com/servo/rust-cssparser | `sha256:13b588ba4ac1a99f7f2964d24b3d896ddc6bf847ee3855dbd4366f058cfcd331` |
 | ctor | 0.8.0 | Apache-2.0 OR MIT | https://github.com/mmastrac/rust-ctor | `sha256:352d39c2f7bef1d6ad73db6f5160efcaed66d94ef8c6c573a8410c00bf909a98` |
 | ctor-proc-macro | 0.0.7 | Apache-2.0 OR MIT | https://github.com/mmastrac/rust-ctor | `sha256:52560adf09603e58c9a7ee1fe1dcb95a16927b17c127f0ac02d6e768a0e25bc1` |
+| ctutils | 0.4.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils | `sha256:7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e` |
 | darling | 0.20.11 | MIT | https://github.com/TedDriggs/darling | `sha256:fc7f46116c46ff9ab3eb1597a45688b6715c6e628b5c133e288e709a29bcb4ee` |
 | darling | 0.23.0 | MIT | https://github.com/TedDriggs/darling | `sha256:25ae13da2f202d56bd7f91c25fba009e7717a1e4a1cc98a76d844b65ae912e9d` |
 | darling_core | 0.20.11 | MIT | https://github.com/TedDriggs/darling | `sha256:0d00b9596d185e565c2207a0b01f8bd1a135483d02d9b7b0a54b11da8d53412e` |
@@ -208,6 +210,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | heck | 0.5.0 | MIT OR Apache-2.0 | https://github.com/withoutboats/heck | `sha256:2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea` |
 | hermit-abi | 0.5.2 | MIT OR Apache-2.0 | https://github.com/hermit-os/hermit-rs | `sha256:fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c` |
 | hex | 0.4.3 | MIT OR Apache-2.0 | https://github.com/KokaKiwi/rust-hex | `sha256:7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70` |
+| hmac | 0.13.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/MACs | `sha256:6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f` |
 | html5ever | 0.38.0 | MIT OR Apache-2.0 | https://github.com/servo/html5ever | `sha256:1054432bae2f14e0061e33d23402fbaa67a921d319d56adc6bcf887ddad1cbc2` |
 | html5ever | 0.39.0 | MIT OR Apache-2.0 | https://github.com/servo/html5ever | `sha256:46a1761807faccc9a19e86944bbf40610014066306f96edcdedc2fb714bcb7b8` |
 | http | 1.5.0 | MIT OR Apache-2.0 | https://github.com/hyperium/http | `sha256:918d3568bebf352712bc2ef3d46a8bcf1a75b373be6539de198e9105cbbf9ce0` |

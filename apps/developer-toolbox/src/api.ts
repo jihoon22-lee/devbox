@@ -2,12 +2,30 @@ import { invoke } from "@tauri-apps/api/core";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { isTauri } from "./lib/isTauri";
 import { generateIdentifiers, type IdentifierOptions } from "./tools/ids";
+import {
+  browserHmacGenerate,
+  browserHmacVerify,
+  type HmacRequest,
+  type HmacVerifyRequest,
+} from "./tools/hmac";
 import type { DiffHunk, RegexMatch } from "./types";
 
 /** 데이터를 해시한다. browser 미리보기에서는 Web Crypto(SHA)만 지원. */
 export async function hash(data: string, algorithm: string): Promise<string> {
   if (!isTauri()) return browserHash(data, algorithm);
   return invoke<string>("hash", { data, algorithm });
+}
+
+/** Generates an HMAC without network, persistence, or secret-bearing logs. */
+export async function hmacGenerate(request: HmacRequest): Promise<string> {
+  if (!isTauri()) return browserHmacGenerate(request);
+  return invoke<string>("hmac_generate", { request });
+}
+
+/** Verifies an HMAC and returns only the boolean result. */
+export async function hmacVerify(request: HmacVerifyRequest): Promise<boolean> {
+  if (!isTauri()) return browserHmacVerify(request);
+  return invoke<boolean>("hmac_verify", { request });
 }
 
 /** UUID v4/v7 또는 ULID를 제한된 수량으로 생성한다. */

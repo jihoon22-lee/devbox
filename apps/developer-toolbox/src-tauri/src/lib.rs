@@ -1,4 +1,5 @@
 mod commands;
+mod core;
 
 // TODO(0.5.0): v0.4.x 이전 사용자를 위한 1회성 마이그레이션. 두 릴리스 뒤 제거한다.
 const LEGACY_IDENTIFIER: &str = "com.workbench.developertoolbox";
@@ -28,6 +29,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::tools::hash,
+            commands::tools::hmac_generate,
+            commands::tools::hmac_verify,
             commands::tools::generate_uuid,
             commands::tools::generate_ids,
             commands::tools::regex_test,

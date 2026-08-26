@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
+use crate::core::hmac as hmac_core;
+pub use crate::core::hmac::{HmacRequest, HmacVerifyRequest};
+
 const MAX_IDENTIFIER_BATCH: usize = 100;
 const MAX_IDENTIFIER_TIMESTAMP: u64 = (1u64 << 48) - 1;
 const CROCKFORD_ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -62,6 +65,21 @@ pub fn hash(data: String, algorithm: String) -> Result<String, String> {
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Generates an HMAC entirely in memory using the standard RustCrypto
+/// primitive selected by the request. The core returns only a fixed safe error
+/// and never receives a logging sink or persistence handle.
+#[tauri::command]
+pub fn hmac_generate(request: HmacRequest) -> Result<String, String> {
+    hmac_core::generate(&request)
+}
+
+/// Verifies an HMAC with the primitive's constant-time verification method.
+/// Only the boolean result crosses the command boundary.
+#[tauri::command]
+pub fn hmac_verify(request: HmacVerifyRequest) -> Result<bool, String> {
+    hmac_core::verify(&request)
 }
 
 /// 기존 UUID v4 호출과의 호환을 유지하면서 bounded generator와 같은 오류 경계를 사용한다.
