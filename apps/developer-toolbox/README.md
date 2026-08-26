@@ -8,7 +8,7 @@
 | 그룹 | 도구 | 구현 |
 |---|---|---|
 | JSON | Formatter / Minifier / Validator, JSON ↔ YAML 1.2, JSON → TypeScript | TS (`jsonc-parser`·`yaml`) |
-| Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, 진법 변환, URL Encode·Decode | TS |
+| Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, 진법 변환, HTML Entity Encode·Decode, URL Component Encode·Decode | TS |
 | Time | Unix Timestamp ↔ Date | TS |
 | Text | Case Converter, Diff | Diff는 Rust(`similar`) |
 | Security | Hash(MD5/SHA-256/SHA-512), UUID v4/v7, ULID | Rust(`md-5`·`sha2`·`uuid`·`getrandom`) |
@@ -56,10 +56,34 @@
 - 진법 결과는 sign-before-prefix signed magnitude이고 two's complement 해석이나 digit
   separator는 지원하지 않는다. 입력 표현은 512자, 절댓값은 최대 256bit로 제한하며 `BigInt`는
   이 범위 안의 정확한 계산에만 사용한다.
+- HTML entity와 URL component 도구는 브라우저 parser·외부 converter·network 없이 현재 WebView의
+  순수 text pipeline에서 즉시 실행한다. HTML encode는 `&`, `<`, `>`, `"`, `'`만 각각
+  `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&#39;`로 canonical하게 바꾸며 다른 Unicode 문자는 보존한다.
+  decode는 BSD-2-Clause `entities@8.0.0` codec의 전체 표준 HTML named entity와 직접 검증한
+  decimal/hex numeric entity를 semicolon이 있는 strict mode로만 해석한다. `&`가
+  entity처럼 시작하지만 unknown·unterminated·invalid code point·surrogate이면 조용히 복구하지
+  않고 고정 오류로 중단하며, entity를 시작할 수 없는 일반 literal `&`만 보존한다. HTML parser나
+  sanitizer가 아니므로 tag/attribute 해석, entity 없는 HTML 문서 정규화는 제공하지 않는다.
+- URL component encode/decode는 `encodeURIComponent`/`decodeURIComponent`의 component semantics를
+  사용해 query/path 전체 URL을 조립하지 않는다. `%` escape는 정확히 두 hexadecimal digit이어야
+  하고 percent-decoded bytes도 유효한 UTF-8이어야 한다. malformed escape, invalid UTF-8, lone
+  JS surrogate는 고정 오류로 거부해 replacement character나 부분 결과를 만들지 않는다.
+- 두 codec 모두 UTF-8 input 1,000,000바이트, output 4,000,000바이트, 최대 expansion ratio 16을
+  적용하고, HTML decode는 entity token 32자·numeric digit 7자·entity 100,000개를 넘으면
+  fail-closed한다. encode는 output을 만들기 전 예상 크기를 계산해 oversized expansion을
+  차단하고, decode는 output을 누적할 때도 같은 상한을 재확인한다. 문자열 원문·secret·credential·
+  path와 플랫폼/URI parser 오류는 오류 메시지·로그에 반향하지 않으며 오류 시 output은 빈 값이다.
+- 입력 변경 중 이전 output을 지우고 현재 변환만 표시한다. sequence guard가 늦게 끝난 async
+  결과를 버리고 `aria-busy`/live running status로 상태를 알린다. 기존 공용 input context menu의
+  명시적 Paste·전체 선택·비우기, native cut/copy/paste와 IME keyboard 동작, output의 명시적
+  copy/select/save 및 접근 가능한 Input/Output label을 그대로 사용한다. 자동 저장·history·
+  clipboard read/network 요청은 없고 clipboard와 파일 저장은 사용자가 누른 action에서만 수행한다.
+  effect cleanup은 unmount 뒤 늦게 도착한 transform 결과의 state 반영도 차단한다.
 - 입력 우클릭 메뉴에서 명시적 Paste·전체 선택·비우기, 출력 메뉴에서 복사·전체 선택·텍스트
   파일 저장 지원. Clipboard read는 Paste를 누른 순간에만 수행하며 저장·로그하지 않음
 
-JSON ↔ YAML의 `jsonc-parser` 3.3.1(MIT)과 `yaml` 2.9.0(ISC)은 앱에 함께 번들된다. 실행 중
+JSON ↔ YAML의 `jsonc-parser` 3.3.1(MIT)·`yaml` 2.9.0(ISC)과 HTML entity의
+`entities` 8.0.0(BSD-2-Clause)은 앱에 함께 번들된다. 실행 중
 다운로드나 network 요청은 없으며 버전·무결성·라이선스는 `pnpm-lock.yaml`, dependency policy,
 `THIRD_PARTY_NOTICES.md`로 검증한다.
 

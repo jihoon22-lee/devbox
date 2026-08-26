@@ -9,6 +9,8 @@ import { JsonTypescriptTool } from "./JsonTypescriptTool";
 import { RadixTool } from "./RadixTool";
 import {
   CaseConverter,
+  HtmlEntityDecoder,
+  HtmlEntityEncoder,
   jsonFormatter,
   jsonMinifier,
   JwtDecoder,
@@ -34,8 +36,10 @@ const jsonTools: ToolDef[] = [
 const encodingTools: ToolDef[] = [
   { id: "byte-codec", group: "Encoding", name: "UTF-8 / Base64 / Hex", component: ByteCodecTool },
   { id: "radix", group: "Encoding", name: "Radix Converter", component: RadixTool },
-  { id: "url-encode", group: "Encoding", name: "URL Encode", component: UrlEncoder },
-  { id: "url-decode", group: "Encoding", name: "URL Decode", component: UrlDecoder },
+  { id: "html-entity-encode", group: "Encoding", name: "HTML Entity Encode", component: HtmlEntityEncoder },
+  { id: "html-entity-decode", group: "Encoding", name: "HTML Entity Decode", component: HtmlEntityDecoder },
+  { id: "url-encode", group: "Encoding", name: "URL Component Encode", component: UrlEncoder },
+  { id: "url-decode", group: "Encoding", name: "URL Component Decode", component: UrlDecoder },
 ];
 
 const timeTools: ToolDef[] = [

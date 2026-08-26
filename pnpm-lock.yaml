@@ -224,6 +224,9 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2
         version: 2.5.4
+      entities:
+        specifier: 8.0.0
+        version: 8.0.0
       jsonc-parser:
         specifier: 3.3.1
         version: 3.3.1

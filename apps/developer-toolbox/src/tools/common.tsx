@@ -20,14 +20,20 @@ import { readClipboardText } from "../api";
 export function useAsyncTransform(
   input: string,
   run: (input: string) => Promise<{ output: string; error?: string }>,
+  options: { clearOutputOnStart?: boolean } = {},
 ) {
   const [output, setOutput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const seq = useRef(0);
+  const clearOutputOnStart = options.clearOutputOnStart ?? false;
 
   useEffect(() => {
     const current = ++seq.current;
+    if (clearOutputOnStart) {
+      setOutput("");
+      setError(null);
+    }
     setRunning(true);
     run(input)
       .then((res) => {
@@ -42,7 +48,10 @@ export function useAsyncTransform(
       .finally(() => {
         if (seq.current === current) setRunning(false);
       });
-  }, [input, run]);
+    return () => {
+      if (seq.current === current) seq.current += 1;
+    };
+  }, [clearOutputOnStart, input, run]);
 
   return { output, error, running };
 }
@@ -335,14 +344,19 @@ export function TransformerTool({
   run,
   extra,
   rows = 8,
+  clearOutputOnInput = false,
 }: {
   placeholder: string;
   run: (input: string) => Promise<{ output: string; error?: string }>;
   extra?: React.ReactNode;
   rows?: number;
+  /** Clear the previous result while a new bounded transform is running. */
+  clearOutputOnInput?: boolean;
 }) {
   const [input, setInput] = useState("");
-  const { output, error, running } = useAsyncTransform(input, run);
+  const { output, error, running } = useAsyncTransform(input, run, {
+    clearOutputOnStart: clearOutputOnInput,
+  });
   const displayedOutput = error || output;
 
   return (
@@ -353,6 +367,7 @@ export function TransformerTool({
           <div className="io-label">Input</div>
           <ToolTextArea
             aria-label="Input"
+            aria-busy={running}
             className="io-input"
             placeholder={placeholder}
             rows={rows}
@@ -363,7 +378,7 @@ export function TransformerTool({
         </div>
         <div className="io-col">
           <div className="io-label">
-            Output {running && <span className="dim">(running...)</span>}
+            Output {running && <span className="dim" role="status" aria-live="polite">(running...)</span>}
             {output && !error && (
               <button
                 className="copy-btn"

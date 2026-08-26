@@ -123,7 +123,7 @@ describe("urlEncode / urlDecode", () => {
     expect(urlDecode(urlEncode(original))).toBe(original);
   });
 
-  it("잘못된 %-시퀀스는 예외를 던진다 (원래 컴포넌트 코드에 try/catch가 없던 동작 그대로)", () => {
+  it("잘못된 %-시퀀스는 고정 오류를 던져 원문을 반향하지 않는다", () => {
     expect(() => urlDecode("%")).toThrow();
     expect(() => urlDecode("%zz")).toThrow();
   });

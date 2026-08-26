@@ -5,7 +5,7 @@ license for devbox itself; workspace packages are private and excluded from this
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
 - Cargo.lock SHA-256: `93f37afd7fb4f00b60c8899736aefb60f14469a6f15807c94b8a6ae18cb4be3e`
-- pnpm-lock.yaml SHA-256: `a03d40c154292ecedf255641fe890212fde58c160d71f876f017552bcd34b0ac`
+- pnpm-lock.yaml SHA-256: `539339e2e29fdde9ae5fa8adc45d9cca7ab683456405e37f50ed87b21ca47c8d`
 
 ## Rust dependencies
 
@@ -810,6 +810,7 @@ to the CI license gate but are not shipped in the compiled frontend bundle.
 | dayjs | 1.11.21 | MIT | https://day.js.org | `sha512-98IT+HOahAisibz/yjKbzuOBwYcjJ7BCLPzARyHiyEBmRz4fatF+KPJszEHXsGYjUG234aH/cOjW1wwTbKUZlA==` |
 | delaunator | 5.1.0 | ISC | https://github.com/mapbox/delaunator#readme | `sha512-AGrQ4QSgssa1NGmWmLPqN5NY2KajF5MqxetNEO+o0n3ZwZZeTmt7bBnvzHWrmkZFxGgr4HdyFgelzgi06otLuQ==` |
 | dompurify | 3.4.13 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify | `sha512-2vmYIoqjze2d+kakP8S/nS5shfsl587kzwEjcGlTdiksUVgFHnFCsLYDVj/JNqJVOQZGSYBTmuycv0PodwmnMQ==` |
+| entities | 8.0.0 | BSD-2-Clause | https://github.com/fb55/entities#readme | `sha512-zwfzJecQ/Uej6tusMqwAqU/6KL2XaB2VZ2Jg54Je6ahNBGNH6Ek6g3jjNCF0fG9EWQKGZNddNjU5F1ZQn/sBnA==` |
 | es-toolkit | 1.50.0 | MIT | https://es-toolkit.dev | `sha512-OyZKhUVvEep9ITEiwHn8GKnMRQIVqoSIX7WnRbkWgJkllCujilqP2rD0u979tkl8wqyc8ICwlc1UBVv/Sl1G6w==` |
 | hachure-fill | 0.5.2 | MIT | https://github.com/pshihn/hachure-fill#readme | `sha512-3GKBOn+m2LX9iq+JC1064cSFprJY4jL1jCXTcpnfER5HYE2l/4EfWSGzkPa/ZDBmYI0ZOEj5VHV/eKnPGkHuOg==` |
 | iconv-lite | 0.6.3 | MIT | https://github.com/ashtuchkin/iconv-lite | `sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==` |
