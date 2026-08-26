@@ -13,6 +13,7 @@ import {
   startWorkspace,
   stopWorkspace,
   updateProfile,
+  type ProjectHealth,
   type ProjectProfile,
 } from "./api";
 
@@ -72,12 +73,22 @@ function profileRow(name: string): HTMLDivElement {
   return row;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   profiles = [{ ...firstProfile }, { ...secondProfile }];
   listProfilesMock.mockReset().mockImplementation(async () => profiles.map((profile) => ({ ...profile })));
   createProfileMock.mockReset().mockResolvedValue(firstProfile);
   currentWorkspaceRunMock.mockReset().mockResolvedValue(null);
-  updateProfileMock.mockReset().mockResolvedValue(undefined);
+  updateProfileMock.mockReset().mockImplementation(async (profile) => {
+    profiles = profiles.map((candidate) => (candidate.id === profile.id ? { ...profile } : candidate));
+  });
   deleteProfileMock.mockReset().mockImplementation(async (id) => {
     profiles = profiles.filter((profile) => profile.id !== id);
   });
@@ -231,6 +242,46 @@ describe("Workbench profile context menu", () => {
     expect(screen.getByDisplayValue("toolbox")).toBeTruthy();
   });
 
+  it("keeps invalid port text in the editing buffer and blocks save", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+
+    fireEvent.contextMenu(profileRow("devbox"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "프로필 편집" }));
+
+    const ports = screen.getByDisplayValue("1420");
+    fireEvent.change(ports, { target: { value: "1420, nope" } });
+    expect(screen.getByDisplayValue("1420, nope")).toBeTruthy();
+    expect(screen.getByText("포트는 쉼표로 구분한 1~65535 사이의 숫자여야 합니다.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+    expect(updateProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("supports adding, editing, removing, and saving service ID rows", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+
+    fireEvent.contextMenu(profileRow("devbox"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "프로필 편집" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ 서비스 추가" }));
+
+    const secondService = screen.getByLabelText("서비스 2");
+    fireEvent.change(secondService, { target: { value: "worker" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "저장" })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(updateProfileMock).toHaveBeenCalledWith({
+      ...firstProfile,
+      runManagerServiceIds: ["devbox-dev", "worker"],
+    }));
+
+    fireEvent.contextMenu(profileRow("devbox"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "프로필 편집" }));
+    expect(screen.getByLabelText("서비스 2")).toHaveValue("worker");
+    fireEvent.click(screen.getByRole("button", { name: "서비스 2 삭제" }));
+    expect(screen.queryByLabelText("서비스 2")).toBeNull();
+  });
+
   it("requires explicit confirmation before deleting only the context profile", async () => {
     render(<App />);
     await screen.findByRole("button", { name: "toolbox" });
@@ -292,5 +343,114 @@ describe("Workbench profile context menu", () => {
 
     expect(await screen.findByRole("heading", { name: "새 프로필" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+  });
+
+  it("submits the form with Enter and closes the editor with Escape", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+    const name = screen.getByRole("textbox", { name: "이름" });
+    expect(name).toHaveFocus();
+    fireEvent.change(name, { target: { value: "devbox-renamed" } });
+    fireEvent.submit(name.closest("form")!);
+
+    await waitFor(() => expect(updateProfileMock).toHaveBeenCalledWith({
+      ...firstProfile,
+      name: "devbox-renamed",
+    }));
+    expect(screen.queryByRole("heading", { name: "프로필 편집" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "devbox-renamed 프로필 편집" }));
+    const renamed = screen.getByRole("textbox", { name: "이름" });
+    fireEvent.keyDown(renamed, { key: "Escape", isComposing: true });
+    expect(screen.getByRole("heading", { name: "프로필 편집" })).toBeTruthy();
+    fireEvent.keyDown(renamed, { key: "Escape" });
+    expect(screen.queryByRole("heading", { name: "프로필 편집" })).toBeNull();
+  });
+
+  it("does not expose raw backend errors in the editor", async () => {
+    updateProfileMock.mockRejectedValueOnce(new Error("TOP_SECRET C:\\private\\project"));
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "이름" }), { target: { value: "safe-name" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("프로필을 저장할 수 없습니다"));
+    expect(screen.queryByText(/TOP_SECRET|private/)).toBeNull();
+  });
+
+  it("blocks a second editor action while a save is pending", async () => {
+    const pendingSave = deferred<void>();
+    updateProfileMock.mockReturnValueOnce(pendingSave.promise);
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "이름" }), { target: { value: "safe-name" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(updateProfileMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "취소" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "+ 프로필" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "새로고침" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "이름" })).toBeDisabled();
+    pendingSave.resolve();
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "프로필 편집" })).toBeNull());
+  });
+
+  it("ignores stale health responses after the selected profile changes", async () => {
+    const firstHealth = deferred<ProjectHealth>();
+    const secondHealth = deferred<ProjectHealth>();
+    projectHealthMock.mockImplementation((profileId) => (
+      profileId === firstProfile.id ? firstHealth.promise : secondHealth.promise
+    ));
+    render(<App />);
+    await screen.findByRole("button", { name: "toolbox" });
+    fireEvent.click(screen.getByRole("button", { name: "toolbox" }));
+    await waitFor(() => expect(projectHealthMock).toHaveBeenCalledWith(secondProfile.id));
+
+    secondHealth.resolve({ profileId: secondProfile.id, items: [{ name: "health", ok: true, detail: "new result" }] });
+    expect(await screen.findByText("new result")).toBeTruthy();
+    firstHealth.resolve({ profileId: firstProfile.id, items: [{ name: "health", ok: true, detail: "stale result" }] });
+    await waitFor(() => expect(screen.queryByText("stale result")).toBeNull());
+  });
+
+  it("keeps the newest refresh result when an older request resolves later", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "toolbox" });
+    const older = deferred<ProjectProfile[]>();
+    const newer = deferred<ProjectProfile[]>();
+    listProfilesMock.mockImplementationOnce(() => older.promise).mockImplementationOnce(() => newer.promise);
+
+    fireEvent.click(screen.getByRole("button", { name: "새로고침" }));
+    fireEvent.click(screen.getByRole("button", { name: "새로고침" }));
+    const latestProfile: ProjectProfile = {
+      ...secondProfile,
+      id: "p-latest",
+      name: "latest",
+      windowsPath: "E:\\projects\\latest",
+      gitRoot: "E:\\projects\\latest",
+    };
+    newer.resolve([latestProfile]);
+    await screen.findByRole("button", { name: "latest" });
+    older.resolve([{ ...firstProfile, name: "stale" }]);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "stale" })).toBeNull());
+    expect(screen.getByRole("button", { name: "latest" })).toBeTruthy();
+  });
+
+  it("clears stale actionable profiles when a refresh fails without echoing the cause", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    listProfilesMock.mockRejectedValueOnce(new Error("TOP_SECRET C:\\private\\profile-store"));
+
+    fireEvent.click(screen.getByRole("button", { name: "새로고침" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("프로필 목록을 불러올 수 없습니다.");
+    });
+    expect(screen.queryByRole("button", { name: "devbox" })).toBeNull();
+    expect(screen.queryByText(/TOP_SECRET|private|profile-store/)).toBeNull();
   });
 });

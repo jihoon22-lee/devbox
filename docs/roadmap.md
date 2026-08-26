@@ -268,6 +268,21 @@ canvas는 panel width를 넘지 않는다. renderer, Mermaid security mode, stat
 원문/path 전달과 외부 상태는 변경하지 않는다. 다음 P1-09 작업은 #280 Workbench services·ports
 입력이다.
 
+#280은 `ProjectProfile`을 직접 편집하던 화면을 원문 포트 문자열과 stable-key 서비스 행을 소유하는
+`ProfileDraft`로 분리한다. 포트는 쉼표 입력을 저장 직전까지 보존하면서 1~65535, 중복·빈 토큰,
+8KiB/128개 상한을 검증하고, Run Manager 서비스 ID는 128자/128개 상한 안에서 행 단위 추가·수정·
+삭제와 순서를 보존한다. 이름·profile/service ID·Windows/WSL/Git 경로·WSL distro·포트는 frontend와
+Rust IPC/storage 경계에서 다시 검증하고 DTO만 저장한다. 저장소는 missing만 empty로 처리하며 corrupt,
+지원하지 않는 version, unknown field, unsafe link/path, 중복 ID/identity와 4MiB 초과를 fail-closed한다.
+CRUD는 process-local writer lock 안에서 load/전체 validate/candidate replace/raw-byte CAS/atomic write를
+수행해 collision·동시 수정 실패가 기존 파일을 지우지 않게 한다. Run Manager snapshot은 누락과 손상을
+구분하고 `activeServices` 전체를 bounded schema로 확인한 뒤에만 health에 사용한다. 편집기는 Enter submit,
+IME-safe Escape, autofocus, label/fieldset/aria error, save 중 중복 동작 차단을 제공하며 list/health sequence가
+stale 응답을 버린다. raw backend/path/credential/subprocess 오류는 UI에 반향하지 않는다. 서비스 lifecycle,
+project environment preflight, template wizard와 runtime 자동 반영은 포함하지 않는다. 다음 dependency
+chain은 #410 WSL Desktop runtime snapshot producer 후 #281 Workbench WSL runtime 제안이며, 독립적인
+#282 Webhook Lab rule 설명과 #283 example curl은 병렬로 진행한다.
+
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅
 Stage 0a   통폐합·네이밍 (PR 2~4) — identifier com.devbox.*          ✅

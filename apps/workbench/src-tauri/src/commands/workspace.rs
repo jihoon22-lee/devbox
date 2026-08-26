@@ -1,10 +1,13 @@
 //! Workbench command — 프로필 CRUD, health, Start/Stop Workspace.
 
 use crate::core::health::{has_distro, parse_git_status};
-use crate::core::profile::{ProfileStore, ProjectProfile};
+use crate::core::profile::{
+    validate_profile_id, validate_service_id, ProfileStore, ProjectProfile, MAX_SERVICES,
+};
 use devbox_filesystem::{parse_safe_project_path, ProjectPathKind};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::fs::Metadata;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
@@ -16,6 +19,11 @@ const LIFE_LOG_SNAPSHOT_VERSION: u32 = 1;
 const LIFE_LOG_PROJECTS_VIEW: &str = "projects";
 const LIFE_LOG_PROJECTS_VIEW_VERSION: u32 = 1;
 const MAX_LIFE_LOG_PROJECTS: usize = 512;
+const PROFILE_READ_ERROR: &str = "프로필 저장소를 읽을 수 없습니다";
+const PROFILE_WRITE_ERROR: &str = "프로필 저장소를 저장할 수 없습니다";
+const PROFILE_CONFLICT_ERROR: &str =
+    "프로필 저장소가 다른 작업으로 변경되었습니다. 다시 시도하세요";
+const PROFILE_PATH_ERROR: &str = "프로필 저장소 경로를 확인할 수 없습니다";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LifeLogAbsorbReport {
@@ -37,59 +45,195 @@ struct LifeLogProjectEntry {
 }
 
 fn profile_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| PROFILE_PATH_ERROR.to_string())?;
     Ok(dir.join(PROFILE_FILE))
 }
 
-pub(crate) fn load_store(app: &AppHandle) -> ProfileStore {
-    profile_path(app)
-        .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .map(|t| ProfileStore::load(&t))
-        .unwrap_or_default()
+fn is_link_metadata(metadata: &Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    false
 }
 
-pub(crate) fn save_store(app: &AppHandle, store: &ProfileStore) -> Result<(), String> {
+fn read_profile_file(path: &std::path::Path) -> Result<Option<Vec<u8>>, String> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(PROFILE_READ_ERROR.into()),
+    };
+    if is_link_metadata(&metadata) || !metadata.file_type().is_file() {
+        return Err(PROFILE_READ_ERROR.into());
+    }
+    if metadata.len() > crate::core::profile::MAX_PROFILE_FILE_BYTES as u64 {
+        return Err("프로필 저장소 크기 제한을 초과했습니다".into());
+    }
+    let bytes = std::fs::read(path).map_err(|_| PROFILE_READ_ERROR.to_string())?;
+    if bytes.len() > crate::core::profile::MAX_PROFILE_FILE_BYTES {
+        return Err("프로필 저장소 크기 제한을 초과했습니다".into());
+    }
+    Ok(Some(bytes))
+}
+
+fn ensure_profile_directory(path: &std::path::Path) -> Result<(), String> {
+    let directory = path
+        .parent()
+        .ok_or_else(|| PROFILE_PATH_ERROR.to_string())?;
+    match std::fs::symlink_metadata(directory) {
+        Ok(metadata) if is_link_metadata(&metadata) || !metadata.file_type().is_dir() => {
+            Err(PROFILE_PATH_ERROR.into())
+        }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir_all(directory).map_err(|_| PROFILE_WRITE_ERROR.to_string())?;
+            match std::fs::symlink_metadata(directory) {
+                Ok(metadata) if !is_link_metadata(&metadata) && metadata.file_type().is_dir() => {
+                    Ok(())
+                }
+                _ => Err(PROFILE_PATH_ERROR.into()),
+            }
+        }
+        Err(_) => Err(PROFILE_PATH_ERROR.into()),
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ProfileStoreDocument {
+    pub(crate) store: ProfileStore,
+    raw: Option<Vec<u8>>,
+}
+
+pub(crate) fn load_store_document(app: &AppHandle) -> Result<ProfileStoreDocument, String> {
     let path = profile_path(app)?;
-    let json = store.to_json().map_err(|e| e.to_string())?;
+    let Some(bytes) = read_profile_file(&path)? else {
+        return Ok(ProfileStoreDocument {
+            store: ProfileStore::empty(),
+            raw: None,
+        });
+    };
+    let text = std::str::from_utf8(&bytes).map_err(|_| PROFILE_READ_ERROR.to_string())?;
+    let store = ProfileStore::load(text).map_err(|_| PROFILE_READ_ERROR.to_string())?;
+    Ok(ProfileStoreDocument {
+        store,
+        raw: Some(bytes),
+    })
+}
+
+pub(crate) fn load_store(app: &AppHandle) -> Result<ProfileStore, String> {
+    load_store_document(app).map(|document| document.store)
+}
+
+/// Write a validated next store only if the bytes observed before editing are
+/// still present. The process-local mutex in CRUD commands serializes app
+/// writers; this byte comparison also rejects ordinary concurrent external
+/// edits instead of silently losing them.
+pub(crate) fn save_store_document(
+    app: &AppHandle,
+    expected: &ProfileStoreDocument,
+    store: &ProfileStore,
+) -> Result<(), String> {
+    let json = store.to_json_checked()?;
+    let path = profile_path(app)?;
+    let current = read_profile_file(&path)?;
+    if !document_is_current(expected, current.as_deref()) {
+        return Err(PROFILE_CONFLICT_ERROR.into());
+    }
+    ensure_profile_directory(&path)?;
+    match std::fs::symlink_metadata(&path) {
+        Ok(metadata) if is_link_metadata(&metadata) => return Err(PROFILE_PATH_ERROR.into()),
+        Ok(metadata) if !metadata.file_type().is_file() => return Err(PROFILE_PATH_ERROR.into()),
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err(PROFILE_PATH_ERROR.into()),
+    }
     devbox_filesystem::atomic_write(path, json.as_bytes())
-        .map_err(|_| "프로필을 원자적으로 저장할 수 없습니다".to_string())
+        .map_err(|_| PROFILE_WRITE_ERROR.to_string())
+}
+
+fn document_is_current(expected: &ProfileStoreDocument, current: Option<&[u8]>) -> bool {
+    expected.raw.as_deref() == current
+}
+
+/// Process-local writer gate. Reads remain lock-free because writes replace a
+/// complete file atomically, while every mutation holds this gate through its
+/// load/validate/CAS/write sequence.
+pub struct ProfileStoreState {
+    pub(crate) lock: Mutex<()>,
+}
+
+pub fn profile_store_state() -> Arc<ProfileStoreState> {
+    Arc::new(ProfileStoreState {
+        lock: Mutex::new(()),
+    })
 }
 
 #[tauri::command]
-pub fn list_profiles(app: AppHandle) -> Vec<ProjectProfile> {
-    load_store(&app).profiles
+pub fn list_profiles(app: AppHandle) -> Result<Vec<ProjectProfile>, String> {
+    Ok(load_store(&app)?.profiles)
 }
 
 #[tauri::command]
 pub fn create_profile(
     app: AppHandle,
+    store_state: tauri::State<'_, Arc<ProfileStoreState>>,
     mut profile: ProjectProfile,
 ) -> Result<ProjectProfile, String> {
-    let mut store = load_store(&app);
+    let _store_lock = store_state
+        .lock
+        .lock()
+        .map_err(|_| PROFILE_WRITE_ERROR.to_string())?;
+    let document = load_store_document(&app)?;
+    let mut store = document.store.clone();
     if profile.id.is_empty() {
         profile.id = uuid::Uuid::new_v4().to_string();
     }
     let dup = store.upsert(profile)?;
-    save_store(&app, &store)?;
-    Ok(dup.unwrap_or_else(|| store.profiles.last().cloned().expect("just pushed")))
+    if let Some(existing) = dup {
+        return Ok(existing);
+    }
+    let created = store
+        .profiles
+        .last()
+        .cloned()
+        .ok_or_else(|| PROFILE_WRITE_ERROR.to_string())?;
+    save_store_document(&app, &document, &store)?;
+    Ok(created)
 }
 
 #[tauri::command]
-pub fn update_profile(app: AppHandle, profile: ProjectProfile) -> Result<(), String> {
-    let mut store = load_store(&app);
-    store.profiles.retain(|p| p.id != profile.id);
-    store.upsert(profile)?;
-    save_store(&app, &store)
+pub fn update_profile(
+    app: AppHandle,
+    store_state: tauri::State<'_, Arc<ProfileStoreState>>,
+    profile: ProjectProfile,
+) -> Result<(), String> {
+    let _store_lock = store_state
+        .lock
+        .lock()
+        .map_err(|_| PROFILE_WRITE_ERROR.to_string())?;
+    let document = load_store_document(&app)?;
+    let mut store = document.store.clone();
+    store.replace(profile)?;
+    save_store_document(&app, &document, &store)
 }
 
 #[tauri::command]
 pub fn delete_profile(
     app: AppHandle,
     registry: tauri::State<'_, Arc<RunRegistry>>,
+    store_state: tauri::State<'_, Arc<ProfileStoreState>>,
     id: String,
 ) -> Result<(), String> {
+    validate_profile_id(&id)?;
     let _transition_claim =
         claim_workspace_transition(&registry.starting_profile, &id).map_err(str::to_string)?;
     let runs = registry
@@ -101,11 +245,16 @@ pub fn delete_profile(
     if has_active_run {
         return Err("실행 중인 프로필은 먼저 Workbench가 시작한 리소스를 중지하세요".to_string());
     }
-    let mut store = load_store(&app);
+    let _store_lock = store_state
+        .lock
+        .lock()
+        .map_err(|_| PROFILE_WRITE_ERROR.to_string())?;
+    let document = load_store_document(&app)?;
+    let mut store = document.store.clone();
     if !store.remove(&id) {
         return Err("프로필을 찾을 수 없습니다".to_string());
     }
-    save_store(&app, &store)
+    save_store_document(&app, &document, &store)
 }
 
 /// wsl-desktop의 gitStatus 이관 (§3.1, §15.2). 프로젝트 경로들의 git 상태.
@@ -145,6 +294,62 @@ pub struct ProjectHealth {
     pub items: Vec<HealthItem>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunManagerSnapshotData {
+    active_services: Vec<RunManagerActiveService>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunManagerActiveService {
+    id: String,
+    uptime_ms: i64,
+}
+
+/// Decode the v1 producer payload as one bounded unit. A malformed entry must
+/// not turn the entire producer state into the misleading "nothing running"
+/// result; callers surface it as unavailable instead.
+fn active_service_ids(data: &serde_json::Value) -> Result<HashSet<String>, ()> {
+    let snapshot: RunManagerSnapshotData = serde_json::from_value(data.clone()).map_err(|_| ())?;
+    if snapshot.active_services.len() > MAX_SERVICES {
+        return Err(());
+    }
+
+    let mut ids = HashSet::with_capacity(snapshot.active_services.len());
+    for service in snapshot.active_services {
+        validate_service_id(&service.id).map_err(|_| ())?;
+        if service.uptime_ms < 0 || !ids.insert(service.id) {
+            return Err(());
+        }
+    }
+    Ok(ids)
+}
+
+fn service_health_item(configured: &[String], running: Result<HashSet<String>, ()>) -> HealthItem {
+    let Ok(running) = running else {
+        return HealthItem {
+            name: "services".into(),
+            ok: false,
+            detail: "서비스 상태를 확인할 수 없습니다".into(),
+        };
+    };
+    let missing: Vec<&str> = configured
+        .iter()
+        .filter(|id| !running.contains(*id))
+        .map(String::as_str)
+        .collect();
+    HealthItem {
+        name: "services".into(),
+        ok: missing.is_empty(),
+        detail: if missing.is_empty() {
+            "서비스 전부 실행 중".into()
+        } else {
+            format!("미실행: {}", missing.join(", "))
+        },
+    }
+}
+
 async fn wsl_list_output() -> Option<String> {
     let mut cmd = Command::new("wsl.exe");
     cmd.args(["-l", "-v"]);
@@ -170,7 +375,7 @@ fn port_open(port: u16) -> bool {
 /// read-only project health. run-manager 서비스는 integration snapshot(§10.1)으로 읽는다.
 #[tauri::command]
 pub async fn project_health(app: AppHandle, profile_id: String) -> Result<ProjectHealth, String> {
-    let store = load_store(&app);
+    let store = load_store(&app)?;
     let profile = store
         .profiles
         .iter()
@@ -273,41 +478,18 @@ pub async fn project_health(app: AppHandle, profile_id: String) -> Result<Projec
             detail: "서비스 미지정".into(),
         });
     } else {
-        let snapshot = devbox_integration::read_snapshot("run-manager", 1).unwrap_or(None);
-        let running: Vec<String> = snapshot
-            .as_ref()
-            .and_then(|e| e.data.get("activeServices").and_then(|v| v.as_array()))
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|s| {
-                        s.get("id")
-                            .and_then(|id| id.as_str())
-                            .map(|s| s.to_string())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let missing: Vec<&String> = profile
-            .run_manager_service_ids
-            .iter()
-            .filter(|id| !running.iter().any(|r| r == *id))
-            .collect();
-        items.push(HealthItem {
-            name: "services".into(),
-            ok: missing.is_empty(),
-            detail: if missing.is_empty() {
-                "서비스 전부 실행 중".into()
-            } else {
-                format!(
-                    "미실행: {}",
-                    missing
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            },
-        });
+        let running = match devbox_integration::read_snapshot("run-manager", 1) {
+            Err(_) => Err(()),
+            // A genuinely missing snapshot means no service is known to be
+            // running. Corrupt producer data remains a distinct unavailable
+            // state, per the v1 consumer contract.
+            Ok(None) => Ok(HashSet::new()),
+            Ok(Some(snapshot)) => active_service_ids(&snapshot.data),
+        };
+        items.push(service_health_item(
+            &profile.run_manager_service_ids,
+            running,
+        ));
     }
 
     Ok(ProjectHealth { profile_id, items })
@@ -467,7 +649,7 @@ pub async fn start_workspace(
     {
         return Err("현재 Workspace 실행을 먼저 중지하세요".to_string());
     }
-    let store = load_store(&app);
+    let store = load_store(&app)?;
     let profile = store
         .profiles
         .iter()
@@ -511,10 +693,10 @@ pub async fn start_workspace(
     match wsl_desktop_open_request(&profile) {
         Ok(request) => match devbox_launch::launch_open("wsl-desktop", &request) {
             Ok(pid) => started_pids.push(pid),
-            Err(e) => steps.push(RunStep {
+            Err(_) => steps.push(RunStep {
                 name: "open".into(),
                 ok: false,
-                detail: format!("wsl-desktop 시작 실패: {e}"),
+                detail: "wsl-desktop을 시작할 수 없습니다".into(),
             }),
         },
         Err(e) => steps.push(RunStep {
@@ -526,10 +708,10 @@ pub async fn start_workspace(
     match code_pad_open_request(&profile) {
         Ok(request) => match devbox_launch::launch_open("code-pad", &request) {
             Ok(pid) => started_pids.push(pid),
-            Err(e) => steps.push(RunStep {
+            Err(_) => steps.push(RunStep {
                 name: "open".into(),
                 ok: false,
-                detail: format!("code-pad 시작 실패: {e}"),
+                detail: "code-pad를 시작할 수 없습니다".into(),
             }),
         },
         Err(e) => steps.push(RunStep {
@@ -822,6 +1004,75 @@ mod tests {
             path: path.into(),
         });
         profile
+    }
+
+    #[test]
+    fn store_document_rejects_stale_or_missing_bytes() {
+        let document = ProfileStoreDocument {
+            store: ProfileStore::empty(),
+            raw: Some(b"old".to_vec()),
+        };
+        assert!(document_is_current(&document, Some(b"old")));
+        assert!(!document_is_current(&document, Some(b"new")));
+        assert!(!document_is_current(&document, None));
+
+        let missing = ProfileStoreDocument {
+            store: ProfileStore::empty(),
+            raw: None,
+        };
+        assert!(document_is_current(&missing, None));
+        assert!(!document_is_current(&missing, Some(b"new")));
+    }
+
+    #[test]
+    fn run_manager_snapshot_data_is_complete_bounded_and_safe() {
+        let valid = serde_json::json!({
+            "activeServices": [
+                { "id": "api", "uptimeMs": 1200 },
+                { "id": "worker", "uptimeMs": 0 }
+            ],
+            "runs": { "success": 2, "failed": 0 },
+            "lastRunAtMs": null
+        });
+        assert_eq!(
+            active_service_ids(&valid).unwrap(),
+            HashSet::from(["api".to_string(), "worker".to_string()])
+        );
+
+        for malformed in [
+            serde_json::json!({}),
+            serde_json::json!({ "activeServices": "TOP_SECRET" }),
+            serde_json::json!({ "activeServices": [{ "id": "api" }] }),
+            serde_json::json!({ "activeServices": [{ "id": " api", "uptimeMs": 0 }] }),
+            serde_json::json!({ "activeServices": [{ "id": "api", "uptimeMs": -1 }] }),
+            serde_json::json!({
+                "activeServices": [
+                    { "id": "api", "uptimeMs": 0 },
+                    { "id": "api", "uptimeMs": 1 }
+                ]
+            }),
+        ] {
+            assert!(active_service_ids(&malformed).is_err());
+        }
+
+        let oversized = serde_json::json!({
+            "activeServices": (0..=MAX_SERVICES)
+                .map(|index| serde_json::json!({ "id": format!("service-{index}"), "uptimeMs": 0 }))
+                .collect::<Vec<_>>()
+        });
+        assert!(active_service_ids(&oversized).is_err());
+    }
+
+    #[test]
+    fn missing_and_corrupt_service_snapshots_have_distinct_health_states() {
+        let configured = vec!["api".to_string()];
+        let missing = service_health_item(&configured, Ok(HashSet::new()));
+        assert!(!missing.ok);
+        assert_eq!(missing.detail, "미실행: api");
+
+        let unavailable = service_health_item(&configured, Err(()));
+        assert!(!unavailable.ok);
+        assert_eq!(unavailable.detail, "서비스 상태를 확인할 수 없습니다");
     }
 
     fn workspace_run(run_id: &str, profile_id: &str) -> WorkspaceRun {

@@ -69,7 +69,7 @@ describe("App app-link delivery", () => {
     });
 
     await waitFor(() => expect(takePendingOpenMock).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText(/\/fresh\/project/)).toBeTruthy();
+    expect(await screen.findByDisplayValue("/fresh/project")).toBeTruthy();
   });
 
   it("consumes a cold-start request when app-link listener registration fails", async () => {
@@ -82,6 +82,6 @@ describe("App app-link delivery", () => {
     render(<App />);
 
     await waitFor(() => expect(takePendingOpenMock).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText(/\/fresh\/project/)).toBeTruthy();
+    expect(await screen.findByDisplayValue("/fresh/project")).toBeTruthy();
   });
 });
