@@ -14,7 +14,7 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
 - **설치 root preview·적용** — 사용자가 고른 기존 디렉터리를 native backend가 canonical path,
   symlink/reparse point, 보호 경로, 비어 있음, 여유 공간과 현재 설치 상태까지 읽기 전용으로
   확인한 뒤, 별도 확인을 거쳐 다음 설치 root로 적용한다. 기존 설치를 자동 이동하거나 삭제하지
-  않으며 custom root의 제거는 #309 후속 범위다.
+  않으며 기존 설치와 사용자 data는 건드리지 않는다.
 - **앱 행 컨텍스트 메뉴** — 우클릭/Shift+F10/Menu key로 설치·업데이트, 실행, 이전 버전 롤백, 설치 폴더 열기, 설치 경로 정보, 확인 후 제거. 메뉴를 연 행을 먼저 선택하고 닫히면 해당 행으로 focus 복구
 - **안전 다운로드** — 허용 호스트 정책, SHA-256·크기 검증, `.partial` 스트리밍
 - **중단 다운로드 보호** — target과 `.partial` sibling을 regular-file slot으로 확인하고
@@ -22,6 +22,11 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
   active root 아래 catalog-derived exact download slot에서만 bounded preflight 후 정리한다.
   다른 이름·위치의 사용자 `.partial`은 보존하며, 같은 실행 중 재시도는 fail-closed한다.
 - **Manager 소유 portable 경계** — catalog 대상·검증된 버전·active 설치 layout·canonical registry executable이 모두 일치할 때만 실행/폴더 열기/제거. 제거 전 symlink·Windows reparse point와 bounded tree를 검사하며 별도 앱 사용자 데이터는 기본 보존
+- **안전한 앱 제거 (#309)** — 제거 전 exact app-owned tree와 manifest revision/digest를
+  preview하고 별도 확인을 받는다. portable의 `current.json`, 보존 version과 정확한
+  executable만 non-recursive로 제거하며, custom root에서도 같은 경계를 적용한다. 권한·잠금
+  실패는 partial 상태와 재시도 안내를 남기고 앱 사용자 data는 항상 보존한다. installer의
+  실제 위치·uninstaller, arbitrary path와 강제 삭제는 지원하지 않는다.
 - **런타임 discovery 발행** — revision 기반 runtime catalog와 versioned install-root locator를 원자 갱신
 - **환경 진단(dev environment doctor)** — WSL/git/node/pnpm/rustc/cargo/devbox-data/catalog-ids/runtime-metadata 점검
 - **실행** — 설치된 앱 실행
@@ -49,8 +54,8 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
   catalog revision, root ID가 바뀌면 적용하지 않는다.
 - 적용 이후 설치·실행·rollback·경로 조회는 locator가 가리키는 active root를 사용한다. 설치 디렉터리는
   `create_dir_all`로 symlink/reparse를 따라가지 않고 각 component를 생성·확인하며, 다운로드 target과
-  `.partial` sibling도 regular-file slot인지 확인한다. custom root에서는 기존 binary removal을
-  제공하지 않고 #309의 별도 안전 제거 PR을 기다린다.
+  `.partial` sibling도 regular-file slot인지 확인한다. 제거도 locator가 가리키는 active root에서
+  catalog와 manifest가 증명한 app-owned tree만 대상으로 하며, 기존 user data를 삭제하지 않는다.
 - non-legacy lifecycle은 locator의 catalog provenance가 현재 선택 revision과 같고 registry의 모든
   app ID가 현재 Manager 대상일 때만 동작한다. startup sync 실패 뒤 stale custom state나 제거된
   catalog app을 그대로 사용하지 않는다.
@@ -84,8 +89,9 @@ fallback). 브라우저 개발 모드의 API mock은 화면 흐름을 위한 모
 
 현재 컨텍스트 메뉴의 실행·폴더 열기·제거는 검증된 휴대용 설치에만 제공한다. 설치 패키지의
 source manifest 기록은 표시하지만 실제 설치 위치·uninstaller는 추측하지 않는다. custom root는
-명시적 preview/확인 뒤 빈 root에만 적용하고, app binary/user data를 분리한 제거·root migration,
-Related Tools는 각각 별도 계획 항목이다.
+명시적 preview/확인 뒤 빈 root에만 적용하고, 앱 제거는 별도 preview/확인 및 manifest CAS를
+통과한 Manager-owned binary tree에 한정한다. root migration/reset, user-data 삭제와 Related
+Tools는 각각 별도 계획 항목이다.
 
 ## 개발
 

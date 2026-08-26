@@ -283,10 +283,14 @@ executable과 install root를 `null`로 반환하고 source manifest만 표시�
 
 Manager backend는 action마다 manager-visible/non-self-managed catalog target, bounded version component,
 `<manager-root>/apps/<app-id>/versions/<version>/<app-id>.exe` 고정 layout과 registry executable의 canonical
-identity를 다시 확인한다. portable 제거 전에는 app-owned tree 전체를 제한된 깊이·항목 수로 순회해
-symlink, Windows reparse point, 특수 파일을 거부한 뒤 해당 app tree만 삭제한다. 별도 app-local user
-data는 이 경계 밖에 있어 보존된다. registry를 먼저 원자 갱신하고 제거가 실패하면 원래 registry를
-복원한다. installer lifecycle은 wizard 실행 사실만 기록하고 실제 설치 위치를 추측하지 않는다.
+identity를 다시 확인한다. `preview_remove_app`은 이 검증 결과와 bounded app-owned tree를
+read-only로 반환하고, `remove_portable_app`은 preview의 root/catalog revision 및 manifest digest를
+CAS로 다시 확인한 뒤 정확히 수집된 파일·디렉터리만 깊은 순서로 non-recursive 삭제한다. portable 제거
+전에는 symlink, Windows reparse point, 특수 파일과 foreign entry를 거부하며, user data는 이 경계
+밖에 있어 보존된다. registry를 먼저 atomic claim하고 실패·부분 제거 때 동일 digest일 경우에만 원래
+manifest bytes를 복원한다. 이미 삭제된 exact final executable은 recovery parser에서만 missing으로
+허용한다. installer lifecycle은 wizard 실행 사실만 기록하고 실제 설치 위치나 uninstaller를 추측하지
+않으므로 제거를 지원하지 않는다.
 
 Devbox Manager의 custom install root는 `preview_install_root`와 `apply_install_root` 두 단계로
 분리된다. preview는 사용자 문자열을 native에서 trim/bounds/canonicalize하고, 기존 root·home·workspace·
@@ -309,7 +313,7 @@ metadata refresh/doctor도 read single-flight를 소유해 진행 중에는 root
 mutation 소유자가 수행하는 후속 refresh만 명시적 internal 경로로 허용한다.
 locator가 없을 때만 v0.4.x default root를 read-only fallback으로 보고, 손상된 locator나 valid locator
 뒤의 manifest/path 오류는 fail-closed한다. 적용 후 Manager의 install/current/rollback/launch/path 조회는
-locator의 active root를 사용하고 custom root의 removal은 #309가 소유한다.
+locator의 active root를 사용하며, #309의 safe removal도 default/custom root에 동일하게 적용한다.
 non-legacy Manager lifecycle은 locator catalog provenance가 선택 catalog revision과 같고 source
 manifest의 모든 app ID가 현재 manager-visible/non-self-managed 대상일 때만 동작한다. startup
 metadata sync가 실패한 stale custom locator/manifest를 command가 우회해 계속 사용하지 않는다.
@@ -391,8 +395,9 @@ locator를 default metadata로 덮어쓰지 않는다.
 | `<active-install-root>\registry.json` | Devbox Manager | Manager, `crates/launch` | app/version/mode와 exact portable executable layout 일치 |
 
 custom root selector는 위 locator 계약을 소비하는 #308 범위에 포함되지만 “이동”은 빈 후보에
-대한 pointer 전환만 뜻한다. 기존 설치가 있는 상태에서의 migration, binary removal, user-data 삭제,
-root reset은 수행하지 않는다. locator에는 설치 목록을 복제하지 않고 app-owned manifest 위치만 둔다.
+대한 pointer 전환만 뜻한다. 기존 설치가 있는 상태에서의 migration과 root reset은 수행하지 않으며,
+binary removal은 #309의 manifest-CAS/exact-tree 경계를 통해서만 수행한다. user-data 삭제는 하지
+않는다. locator에는 설치 목록을 복제하지 않고 app-owned manifest 위치만 둔다.
 `registryRevision`·catalog provenance·path/manifest bounds와 canonical/symlink/reparse 검증 실패는
 공용 consumer와 Manager 모두 동일하게 fail-closed해야 하며 raw path·OS error는 public DTO에 내보내지 않는다.
 

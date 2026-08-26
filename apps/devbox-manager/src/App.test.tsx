@@ -13,6 +13,7 @@ import {
   installed,
   launchApp,
   openInstallFolder,
+  previewRemoveApp,
   previewInstallRoot,
   removeApp,
   rollback,
@@ -24,6 +25,8 @@ import type {
   InstalledApp,
   InstallPathInfo,
   InstallRootPreview,
+  RemovePreview,
+  RemoveResult,
   ReleaseManifest,
 } from "./types";
 
@@ -38,6 +41,7 @@ vi.mock("./api", () => ({
   installed: vi.fn(),
   launchApp: vi.fn(),
   openInstallFolder: vi.fn(),
+  previewRemoveApp: vi.fn(),
   previewInstallRoot: vi.fn(),
   removeApp: vi.fn(),
   rollback: vi.fn(),
@@ -86,6 +90,7 @@ const installManyMock = vi.mocked(installMany);
 const launchAppMock = vi.mocked(launchApp);
 const rollbackMock = vi.mocked(rollback);
 const openInstallFolderMock = vi.mocked(openInstallFolder);
+const previewRemoveAppMock = vi.mocked(previewRemoveApp);
 const removeAppMock = vi.mocked(removeApp);
 const runDiagnosisMock = vi.mocked(runDiagnosis);
 const previewInstallRootMock = vi.mocked(previewInstallRoot);
@@ -121,7 +126,28 @@ beforeEach(() => {
   launchAppMock.mockReset().mockResolvedValue(undefined);
   rollbackMock.mockReset().mockResolvedValue("rolled back");
   openInstallFolderMock.mockReset().mockResolvedValue(undefined);
-  removeAppMock.mockReset().mockResolvedValue("removed");
+  previewRemoveAppMock.mockReset().mockResolvedValue({
+    appId: "port-manager",
+    mode: "portable",
+    version: "0.2.1",
+    state: "ready",
+    canRemove: true,
+    registryRevision: 7,
+    catalogRevision: 5,
+    rootId: "default-root",
+    manifestDigest: "a".repeat(64),
+    targetPath: "C:\\Devbox\\apps\\port-manager",
+    ownedEntryCount: 3,
+    ownedBytes: 1,
+    preservesUserData: true,
+  } satisfies RemovePreview);
+  removeAppMock.mockReset().mockResolvedValue({
+    status: "removed",
+    message: "휴대용 앱의 Manager 소유 파일을 제거했습니다. 앱 사용자 데이터는 유지됩니다.",
+    removedEntryCount: 3,
+    remainingEntryCount: 0,
+    preservesUserData: true,
+  } satisfies RemoveResult);
   runDiagnosisMock.mockReset().mockResolvedValue([]);
   previewInstallRootMock.mockReset().mockResolvedValue({
     status: "ready",
@@ -234,28 +260,78 @@ describe("Devbox Manager app row context menu", () => {
     await waitFor(() => expect(openInstallFolderMock).toHaveBeenCalledWith("port-manager"));
   });
 
-  it("requires explicit confirmation before removing only the selected portable app", async () => {
+  it("previews the exact portable target before a separate confirmation", async () => {
     render(<App />);
     await screen.findByText("Port Manager");
     const target = appRow("Port Manager");
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "제거" }));
-    expect(confirmMock).toHaveBeenCalledWith(
-      "'Port Manager' 휴대용 앱을 제거할까요? Manager가 관리하는 실행 파일과 보존 버전만 삭제하며 앱 사용자 데이터는 유지됩니다.",
-    );
+    await waitFor(() => expect(previewRemoveAppMock).toHaveBeenCalledWith("port-manager"));
+    expect(screen.getByRole("region", { name: "제거 대상 미리 보기" })).toBeTruthy();
+    expect(screen.getByText("C:\\Devbox\\apps\\port-manager")).toBeTruthy();
+    expect(screen.getByText(/앱 사용자 데이터/)).toBeTruthy();
+    expect(confirmMock).not.toHaveBeenCalled();
     expect(removeAppMock).not.toHaveBeenCalled();
 
     removeAppMock.mockImplementationOnce(async () => {
       installedMock.mockResolvedValue([]);
-      return "휴대용 앱을 제거했습니다. 앱 사용자 데이터는 유지됩니다.";
+      return {
+        status: "removed",
+        message: "휴대용 앱의 Manager 소유 파일을 제거했습니다. 앱 사용자 데이터는 유지됩니다.",
+        removedEntryCount: 3,
+        remainingEntryCount: 0,
+        preservesUserData: true,
+      };
     });
     confirmMock.mockReturnValueOnce(true);
-    fireEvent.contextMenu(target);
-    fireEvent.click(screen.getByRole("menuitem", { name: "제거" }));
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 제거" }));
 
-    await waitFor(() => expect(removeAppMock).toHaveBeenCalledWith("port-manager"));
-    await waitFor(() => expect(screen.getByText(/앱 사용자 데이터는 유지됩니다/)).toBeTruthy());
+    await waitFor(() => expect(removeAppMock).toHaveBeenCalledWith({
+      appId: "port-manager",
+      expectedRegistryRevision: 7,
+      expectedCatalogRevision: 5,
+      expectedRootId: "default-root",
+      expectedManifestDigest: "a".repeat(64),
+    }));
+    expect(confirmMock).toHaveBeenCalledWith(
+      "'Port Manager'의 Manager 소유 portable 파일을 제거할까요? 앱 사용자 데이터는 유지됩니다.",
+    );
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain(
+      "앱 사용자 데이터는 유지됩니다",
+    ));
+  });
+
+  it("does not mutate while the removal preview is pending", async () => {
+    previewRemoveAppMock.mockImplementationOnce(() => new Promise(() => {}));
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.contextMenu(appRow("Port Manager"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "제거" }));
+    await waitFor(() => expect(previewRemoveAppMock).toHaveBeenCalledTimes(1));
+    expect((screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    expect(removeAppMock).not.toHaveBeenCalled();
+    fireEvent.contextMenu(appRow("Port Manager"));
+    expect(previewRemoveAppMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears a stale preview after the confirmed removal is rejected", async () => {
+    removeAppMock.mockRejectedValueOnce(new Error("stale manifest"));
+    confirmMock.mockReturnValueOnce(true);
+    render(<App />);
+    await screen.findByText("Port Manager");
+
+    fireEvent.contextMenu(appRow("Port Manager"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "제거" }));
+    await screen.findByText("C:\\Devbox\\apps\\port-manager");
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 제거" }));
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(
+      "설치 상태가 바뀌었습니다. 최신 제거 미리 보기를 다시 확인하세요.",
+    ));
+    expect(screen.queryByText("C:\\Devbox\\apps\\port-manager")).toBeNull();
+    expect(screen.queryByRole("button", { name: "확인 후 제거" })).toBeNull();
   });
 
   it("keeps installer lifecycle, folder, and removal actions fail-closed", async () => {

@@ -11,6 +11,9 @@ import type {
   InstallRootApplyResult,
   InstallRootPreview,
   InstallMode,
+  RemoveAppRequest,
+  RemovePreview,
+  RemoveResult,
   ReleaseManifest,
 } from "./types";
 
@@ -171,7 +174,37 @@ export async function openInstallFolder(appId: string): Promise<void> {
   await invoke("open_install_folder", { appId });
 }
 
-export async function removeApp(appId: string): Promise<string> {
-  if (!isTauri()) return `removed (${appId})`;
-  return invoke<string>("remove_portable_app", { appId });
+export async function previewRemoveApp(appId: string): Promise<RemovePreview> {
+  if (!isTauri()) {
+    const root = "C:\\Users\\developer\\AppData\\Local\\com.devbox.devboxmanager";
+    return {
+      appId,
+      mode: "portable",
+      version: "0.2.1",
+      state: "ready",
+      canRemove: true,
+      registryRevision: 1,
+      catalogRevision: Number(catalogJson.catalogRevision ?? 1),
+      rootId: "custom-browser-root",
+      manifestDigest: "0".repeat(64),
+      targetPath: `${root}\\apps\\${appId}`,
+      ownedEntryCount: 3,
+      ownedBytes: 1,
+      preservesUserData: true,
+    };
+  }
+  return invoke<RemovePreview>("preview_remove_app", { appId });
+}
+
+export async function removeApp(request: RemoveAppRequest): Promise<RemoveResult> {
+  if (!isTauri()) {
+    return {
+      status: "removed",
+      message: "휴대용 앱의 Manager 소유 파일을 제거했습니다. 앱 사용자 데이터는 유지됩니다.",
+      removedEntryCount: 3,
+      remainingEntryCount: 0,
+      preservesUserData: true,
+    };
+  }
+  return invoke<RemoveResult>("remove_portable_app", { request });
 }

@@ -424,8 +424,24 @@ intermediate component identity를 다시 확인하고, 기존 `.partial`은 `cr
 WSL focused Rust 75/23 tests, manager/launch check·clippy·fmt, frontend 19 tests와 build를 통과했다.
 PR 전 전체 Rust workspace test·check·clippy(`-D warnings`)·fmt과 17개 frontend workspace build도
 통과했다. Windows packaged acceptance는 CI와 W2에서 검증한다.
-custom root removal, 기존 설치 migration/병합, root reset과 user-data 삭제는 후속 `#309` 범위로
-남기며 #308에서 자동 이동·삭제로 우회하지 않는다.
+custom root removal, 기존 설치 migration/병합, root reset과 user-data 삭제는 #308에서 자동
+이동·삭제로 우회하지 않고 #309의 별도 안전 경계로 분리했다.
+
+**2026-08-27 #309 구현 상태 (PR 전).** Devbox Manager의 portable 제거를
+`preview_remove_app` → 별도 확인 → `remove_portable_app`의 두 단계로 연결했다. preview와
+remove 모두 현재 catalog-visible app, active locator provenance, manifest digest와 canonical
+`apps/<app>/versions/<version>/<app>.exe` layout을 native에서 재검증한다. 삭제는 app-owned
+`current.json`·versions tree를 bounded preflight한 뒤 exact regular file/directory 목록만 깊은
+순서로 처리하고 symlink/reparse, special, foreign entry, traversal과 arbitrary path를 거부한다.
+기본 root와 custom root를 구분하지 않으며, installer의 wizard 위치·uninstaller와 앱 사용자
+data는 제거 대상에서 제외한다.
+
+manifest를 먼저 CAS claim하고 실패·부분 제거 시 동일 digest일 때 원래 bytes를 복원한다. 이미
+삭제된 exact final executable은 recovery에서만 허용해 interrupted removal을 `partial`/`missing`
+상태로 재시도할 수 있고, 경쟁 writer가 있으면 덮어쓰지 않는다. frontend는 target/count/size와
+user-data 보존을 preview panel에 표시하며 stale preview, pending duplicate action, unmount 뒤
+늦은 응답을 폐기한다. Manager 81개 focused Rust test와 21개 frontend test를 통과시키고,
+Windows junction/ACL/packaged W2 및 전체 workspace gate는 CI/W2에서 확인한다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

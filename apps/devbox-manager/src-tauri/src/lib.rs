@@ -47,6 +47,7 @@ pub fn run() {
             commands::manager::current,
             commands::manager::rollback,
             commands::manager::open_install_folder,
+            commands::manager::preview_remove_app,
             commands::manager::remove_portable_app,
             commands::doctor::run_diagnosis,
         ])

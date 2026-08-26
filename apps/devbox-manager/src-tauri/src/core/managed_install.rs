@@ -8,9 +8,6 @@ use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-const MAX_TREE_DEPTH: usize = 16;
-const MAX_TREE_ENTRIES: usize = 10_000;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManagedInstallError {
     InvalidIdentity,
@@ -349,42 +346,71 @@ pub fn resolve_portable_install(
     })
 }
 
-fn validate_tree(
-    path: &Path,
-    depth: usize,
-    entries: &mut usize,
-) -> Result<(), ManagedInstallError> {
-    if depth > MAX_TREE_DEPTH || *entries >= MAX_TREE_ENTRIES {
-        return Err(ManagedInstallError::UnsupportedEntry);
-    }
-    *entries += 1;
-    let metadata = fs::symlink_metadata(path).map_err(|_| ManagedInstallError::Missing)?;
-    if is_link_or_reparse(&metadata) {
-        return Err(ManagedInstallError::UnsafePath);
-    }
-    if metadata.is_file() {
-        return Ok(());
-    }
-    if !metadata.is_dir() {
-        return Err(ManagedInstallError::UnsupportedEntry);
-    }
-    let children = fs::read_dir(path).map_err(|_| ManagedInstallError::Io)?;
-    for entry in children {
-        let entry = entry.map_err(|_| ManagedInstallError::Io)?;
-        validate_tree(&entry.path(), depth + 1, entries)?;
-    }
-    Ok(())
-}
-
+/// Compatibility wrapper for callers that still hold a resolved install.
+/// New Manager removal uses the manifest-CAS command boundary directly.
+#[allow(dead_code)]
 pub fn remove_portable_install(
     install: &ManagedPortableInstall,
 ) -> Result<(), ManagedInstallError> {
-    let mut entries = 0;
-    validate_tree(&install.app_root, 0, &mut entries)?;
-    if !install.executable.is_file() || !install.executable.starts_with(&install.app_root) {
-        return Err(ManagedInstallError::UnsafePath);
-    }
-    fs::remove_dir_all(&install.app_root).map_err(|_| ManagedInstallError::Io)
+    let app_id = install
+        .executable
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or(ManagedInstallError::InvalidIdentity)?;
+    let version = install
+        .executable
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|value| value.to_str())
+        .ok_or(ManagedInstallError::InvalidIdentity)?;
+    let manager_root = install
+        .app_root
+        .parent()
+        .and_then(Path::parent)
+        .ok_or(ManagedInstallError::UnsafePath)?;
+    let registry_executable = install
+        .executable
+        .to_str()
+        .ok_or(ManagedInstallError::UnsafePath)?;
+    let plan = crate::core::removal::inspect_portable_removal(
+        manager_root,
+        app_id,
+        version,
+        registry_executable,
+    )
+    .map_err(|error| match error {
+        crate::core::removal::RemovalError::InvalidIdentity => ManagedInstallError::InvalidIdentity,
+        crate::core::removal::RemovalError::Missing => ManagedInstallError::Missing,
+        crate::core::removal::RemovalError::UnsafePath => ManagedInstallError::UnsafePath,
+        crate::core::removal::RemovalError::RegistryMismatch => {
+            ManagedInstallError::RegistryMismatch
+        }
+        crate::core::removal::RemovalError::ForeignEntry
+        | crate::core::removal::RemovalError::UnsupportedEntry => {
+            ManagedInstallError::UnsupportedEntry
+        }
+        crate::core::removal::RemovalError::Io => ManagedInstallError::Io,
+    })?;
+    let outcome =
+        crate::core::removal::remove_portable_tree(&plan).map_err(|error| match error {
+            crate::core::removal::RemovalError::InvalidIdentity => {
+                ManagedInstallError::InvalidIdentity
+            }
+            crate::core::removal::RemovalError::Missing => ManagedInstallError::Missing,
+            crate::core::removal::RemovalError::UnsafePath => ManagedInstallError::UnsafePath,
+            crate::core::removal::RemovalError::RegistryMismatch => {
+                ManagedInstallError::RegistryMismatch
+            }
+            crate::core::removal::RemovalError::ForeignEntry
+            | crate::core::removal::RemovalError::UnsupportedEntry => {
+                ManagedInstallError::UnsupportedEntry
+            }
+            crate::core::removal::RemovalError::Io => ManagedInstallError::Io,
+        })?;
+    outcome
+        .complete
+        .then_some(())
+        .ok_or(ManagedInstallError::Io)
 }
 
 #[cfg(test)]

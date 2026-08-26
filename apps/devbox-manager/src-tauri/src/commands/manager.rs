@@ -11,10 +11,13 @@ use crate::core::custom_root::{
 };
 use crate::core::download::{partial_path, validate_digest, validate_size};
 use crate::core::managed_install::{
-    prepare_installer_destination, prepare_portable_destination, remove_portable_install,
-    resolve_portable_install, validate_download_target, ManagedPortableInstall,
+    prepare_installer_destination, prepare_portable_destination, resolve_portable_install,
+    validate_download_target, ManagedPortableInstall,
 };
 use crate::core::manifest::{parse_manifest, ReleaseManifest};
+use crate::core::removal::{
+    inspect_portable_removal, remove_portable_tree, RemovalError, RemovalPlan,
+};
 use crate::core::url_policy::is_allowed;
 use futures_util::StreamExt;
 use reqwest::header::USER_AGENT;
@@ -24,6 +27,7 @@ use std::collections::HashSet;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
@@ -31,6 +35,8 @@ const REPO: &str = "https://api.github.com/repos/jihoon22-lee/devbox";
 const DOWNLOAD_ROOT: &str = "https://github.com/jihoon22-lee/devbox/releases/download";
 const MAX_PARTIAL_CLEANUP_APPS: usize = 256;
 const MAX_PARTIAL_CLEANUP_VERSIONS: usize = 256;
+
+static REMOVAL_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// 빌드 시 임베드된 카탈로그. Manager 자신의 버전이 아는 앱 목록이 명확해지고
 /// 오프라인에서도 목록이 보인다. 새 앱은 Manager 업데이트로 반영된다.
@@ -129,6 +135,52 @@ pub struct InstallRootApplyView {
     pub candidate_path: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RemoveAppRequest {
+    pub app_id: String,
+    pub expected_registry_revision: u64,
+    pub expected_catalog_revision: u64,
+    pub expected_root_id: String,
+    pub expected_manifest_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemovePreviewView {
+    pub app_id: String,
+    pub mode: String,
+    pub version: String,
+    pub state: String,
+    pub can_remove: bool,
+    pub registry_revision: u64,
+    pub catalog_revision: u64,
+    pub root_id: String,
+    pub manifest_digest: String,
+    pub target_path: Option<String>,
+    pub owned_entry_count: usize,
+    pub owned_bytes: u64,
+    pub preserves_user_data: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoveResultView {
+    pub status: String,
+    pub message: String,
+    pub removed_entry_count: usize,
+    pub remaining_entry_count: usize,
+    pub preserves_user_data: bool,
+}
+
+#[derive(Debug, Clone)]
+struct RegistrySnapshot {
+    location: ActiveInstallLocation,
+    records: Vec<custom_root::InstallRecord>,
+    bytes: Vec<u8>,
+    digest: String,
+}
+
 pub(crate) fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = data_dir_path(app)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -162,26 +214,8 @@ fn install_root_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 }
 
 fn read_registry(app: &tauri::AppHandle) -> Result<Vec<InstalledApp>, String> {
-    let location = active_install_location(app)?;
-    let path = location.manifest;
-    if location.from_legacy_fallback {
-        match std::fs::symlink_metadata(&path) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(_) => return Err("설치 상태를 안전하게 읽을 수 없습니다.".to_string()),
-            Ok(_) => {}
-        }
-    }
-    let records = custom_root::read_install_manifest(&path)
-        .map_err(|_| "설치 상태를 안전하게 읽을 수 없습니다.".to_string())?;
-    let known_apps = catalog()?
-        .into_iter()
-        .filter(|entry| entry.manager_visible && !entry.self_managed)
-        .map(|entry| entry.id)
-        .collect::<HashSet<_>>();
-    if !registry_apps_are_known(&records, &known_apps) {
-        return Err("설치 상태를 안전하게 읽을 수 없습니다.".to_string());
-    }
-    Ok(records
+    Ok(read_registry_snapshot(app)?
+        .records
         .into_iter()
         .map(|record| InstalledApp {
             app: record.app,
@@ -190,6 +224,79 @@ fn read_registry(app: &tauri::AppHandle) -> Result<Vec<InstalledApp>, String> {
             exe_path: record.exe_path,
         })
         .collect())
+}
+
+fn read_registry_snapshot(app: &tauri::AppHandle) -> Result<RegistrySnapshot, String> {
+    let location = active_install_location(app)?;
+    if location.from_legacy_fallback {
+        match std::fs::symlink_metadata(&location.manifest) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(RegistrySnapshot {
+                    location,
+                    records: Vec::new(),
+                    bytes: b"[]".to_vec(),
+                    digest: manifest_digest(b"[]"),
+                })
+            }
+            Err(_) => return Err("설치 상태를 안전하게 읽을 수 없습니다.".to_string()),
+            Ok(_) => {}
+        }
+    }
+    let snapshot = custom_root::read_install_manifest_snapshot(&location.manifest)
+        .map_err(|_| "설치 상태를 안전하게 읽을 수 없습니다.".to_string())?;
+    let known_apps = catalog()?
+        .into_iter()
+        .filter(|entry| entry.manager_visible && !entry.self_managed)
+        .map(|entry| entry.id)
+        .collect::<HashSet<_>>();
+    if !registry_apps_are_known(&snapshot.records, &known_apps) {
+        return Err("설치 상태를 안전하게 읽을 수 없습니다.".to_string());
+    }
+    Ok(RegistrySnapshot {
+        location,
+        records: snapshot.records,
+        bytes: snapshot.bytes,
+        digest: snapshot.digest,
+    })
+}
+
+/// Read a registry for the removal recovery path. Normal lifecycle reads
+/// require every portable executable to still exist; a removal may have
+/// already deleted that exact executable before the process was interrupted.
+/// The core recovery parser permits only that missing final layout slot and
+/// keeps every schema/path/link check intact.
+fn read_registry_snapshot_for_removal(app: &tauri::AppHandle) -> Result<RegistrySnapshot, String> {
+    let location = active_install_location(app)?;
+    if location.from_legacy_fallback {
+        match std::fs::symlink_metadata(&location.manifest) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(RegistrySnapshot {
+                    location,
+                    records: Vec::new(),
+                    bytes: b"[]".to_vec(),
+                    digest: manifest_digest(b"[]"),
+                })
+            }
+            Err(_) => return Err("설치 상태를 안전하게 읽을 수 없습니다.".to_string()),
+            Ok(_) => {}
+        }
+    }
+    let snapshot = custom_root::read_install_manifest_snapshot_for_removal(&location.manifest)
+        .map_err(|_| "설치 상태를 안전하게 읽을 수 없습니다.".to_string())?;
+    let known_apps = catalog()?
+        .into_iter()
+        .filter(|entry| entry.manager_visible && !entry.self_managed)
+        .map(|entry| entry.id)
+        .collect::<HashSet<_>>();
+    if !registry_apps_are_known(&snapshot.records, &known_apps) {
+        return Err("설치 상태를 안전하게 읽을 수 없습니다.".to_string());
+    }
+    Ok(RegistrySnapshot {
+        location,
+        records: snapshot.records,
+        bytes: snapshot.bytes,
+        digest: snapshot.digest,
+    })
 }
 
 fn registry_apps_are_known(
@@ -201,24 +308,133 @@ fn registry_apps_are_known(
         .all(|record| known_apps.contains(&record.app))
 }
 
-fn write_registry(app: &tauri::AppHandle, reg: &[InstalledApp]) -> Result<(), String> {
-    let path = registry_path(app)?;
-    let json = serde_json::to_string_pretty(reg)
+fn manifest_digest(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn encode_registry(reg: &[InstalledApp]) -> Result<Vec<u8>, String> {
+    let json = serde_json::to_vec_pretty(reg)
         .map_err(|_| "설치 상태를 직렬화할 수 없습니다.".to_string())?;
+    custom_root::parse_install_manifest(&json)
+        .map_err(|_| "설치 상태를 안전하게 기록할 수 없습니다.".to_string())?;
+    Ok(json)
+}
+
+fn write_manifest_bytes(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    write_manifest_bytes_with_validation(path, bytes, false)
+}
+
+fn write_manifest_bytes_for_removal(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    write_manifest_bytes_with_validation(path, bytes, true)
+}
+
+fn write_manifest_bytes_with_validation(
+    path: &std::path::Path,
+    bytes: &[u8],
+    allow_missing_executable: bool,
+) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "설치 상태를 안전하게 기록할 수 없습니다.".to_string())?;
-    let records = custom_root::parse_install_manifest(json.as_bytes())
+    let records = custom_root::parse_install_manifest(bytes)
         .map_err(|_| "설치 상태를 안전하게 기록할 수 없습니다.".to_string())?;
-    custom_root::validate_install_manifest_at_root(parent, &records)
-        .map_err(|_| "설치 상태를 안전하게 기록할 수 없습니다.".to_string())?;
+    if allow_missing_executable {
+        custom_root::validate_install_manifest_at_root_for_removal(parent, &records)
+    } else {
+        custom_root::validate_install_manifest_at_root(parent, &records)
+    }
+    .map_err(|_| "설치 상태를 안전하게 기록할 수 없습니다.".to_string())?;
     let metadata = std::fs::symlink_metadata(parent)
         .map_err(|_| "설치 상태를 안전하게 기록할 수 없습니다.".to_string())?;
     if metadata_is_link_or_reparse(&metadata) || !metadata.is_dir() {
         return Err("설치 상태를 안전하게 기록할 수 없습니다.".to_string());
     }
-    devbox_filesystem::atomic_write(path, json.as_bytes())
+    devbox_filesystem::atomic_write(path, bytes)
         .map_err(|_| "설치 상태를 안전하게 기록할 수 없습니다.".to_string())
+}
+
+fn write_registry(app: &tauri::AppHandle, reg: &[InstalledApp]) -> Result<(), String> {
+    let path = registry_path(app)?;
+    let json = encode_registry(reg)?;
+    write_manifest_bytes(&path, &json)
+}
+
+fn same_location(left: &ActiveInstallLocation, right: &ActiveInstallLocation) -> bool {
+    left.root_id == right.root_id
+        && left.registry_revision == right.registry_revision
+        && left.catalog_revision == right.catalog_revision
+        && same_path_identity(&left.root, &right.root)
+        && same_path_identity(&left.manifest, &right.manifest)
+}
+
+fn same_path_identity(left: &std::path::Path, right: &std::path::Path) -> bool {
+    #[cfg(windows)]
+    {
+        normalize_windows_identity(left) == normalize_windows_identity(right)
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+#[cfg(windows)]
+fn normalize_windows_identity(path: &std::path::Path) -> String {
+    let mut value = path.to_string_lossy().replace('/', "\\");
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+        value = format!(r"\\{rest}");
+    } else if let Some(rest) = value.strip_prefix(r"\\?\") {
+        value = rest.to_string();
+    }
+    while value.len() > 3 && value.ends_with('\\') {
+        value.pop();
+    }
+    value.to_ascii_lowercase()
+}
+
+fn write_registry_if_current(
+    app: &tauri::AppHandle,
+    expected: &RegistrySnapshot,
+    next: &[InstalledApp],
+) -> Result<String, String> {
+    let current_location = active_install_location(app)?;
+    if !same_location(&current_location, &expected.location) {
+        return Err("설치 상태가 바뀌었습니다. 최신 제거 미리 보기를 다시 확인하세요.".to_string());
+    }
+    let current =
+        read_registry_snapshot(app).or_else(|_| read_registry_snapshot_for_removal(app))?;
+    if current.digest != expected.digest {
+        return Err("설치 상태가 바뀌었습니다. 최신 제거 미리 보기를 다시 확인하세요.".to_string());
+    }
+    let json = encode_registry(next)?;
+    write_manifest_bytes(&current.location.manifest, &json)?;
+    Ok(manifest_digest(&json))
+}
+
+/// Restore only when the manifest still contains the exact bytes written by
+/// this removal attempt.  A competing writer is preserved and reported as a
+/// recovery failure rather than being overwritten.
+fn restore_manifest_if_current(
+    app: &tauri::AppHandle,
+    expected_location: &ActiveInstallLocation,
+    expected_digest: &str,
+    original_bytes: &[u8],
+) -> bool {
+    let Ok(location) = active_install_location(app) else {
+        return false;
+    };
+    if !same_location(&location, expected_location) {
+        return false;
+    }
+    let Ok(current) =
+        read_registry_snapshot(app).or_else(|_| read_registry_snapshot_for_removal(app))
+    else {
+        return false;
+    };
+    if current.digest != expected_digest {
+        return false;
+    }
+    write_manifest_bytes_for_removal(&location.manifest, original_bytes).is_ok()
 }
 
 fn metadata_common_root() -> Result<PathBuf, String> {
@@ -1005,37 +1221,235 @@ pub fn open_install_folder(app: tauri::AppHandle, app_id: String) -> Result<(), 
         .map_err(|_| "설치 폴더를 열 수 없습니다.".to_string())
 }
 
-/// 기본 Manager root 안의 portable app tree만 제거한다. 대상 앱의 별도
-/// app-local user data는 이 tree 밖에 있으므로 보존된다. Installer uninstall과
-/// custom root removal은 별도 기능이 소유한다.
-#[tauri::command]
-pub fn remove_portable_app(app: tauri::AppHandle, app_id: String) -> Result<String, String> {
-    if active_install_location(&app)
-        .map_err(|_| "설치 root 상태를 안전하게 확인할 수 없습니다.".to_string())?
-        .root_id
-        != custom_root::DEFAULT_ROOT_ID
-    {
-        return Err("custom root의 제거는 별도 기능에서 지원합니다.".to_string());
+struct RemovalContext {
+    snapshot: RegistrySnapshot,
+    record: custom_root::InstallRecord,
+    plan: Option<RemovalPlan>,
+}
+
+fn removal_error(_error: RemovalError) -> String {
+    "제거 대상을 안전하게 확인할 수 없습니다. 설치 상태를 확인한 뒤 다시 시도하세요.".to_string()
+}
+
+fn installer_removal_error() -> String {
+    "설치 패키지 앱은 Manager가 실제 설치 위치나 제거 프로그램을 소유하지 않아 제거할 수 없습니다."
+        .to_string()
+}
+
+fn removal_context(app: &tauri::AppHandle, app_id: &str) -> Result<RemovalContext, String> {
+    ensure_catalog_target(app_id)?;
+    // Prefer the ordinary lifecycle parser. If it rejects only because a
+    // portable executable is already gone, the bounded removal parser can
+    // still prove the exact app-owned layout and clean the stale record.
+    let snapshot =
+        read_registry_snapshot(app).or_else(|_| read_registry_snapshot_for_removal(app))?;
+    let record = snapshot
+        .records
+        .iter()
+        .find(|record| record.app == app_id)
+        .cloned()
+        .ok_or_else(|| "설치된 앱의 제거 상태를 찾을 수 없습니다.".to_string())?;
+    let plan = if record.mode == "portable" {
+        Some(
+            inspect_portable_removal(
+                &snapshot.location.root,
+                &record.app,
+                &record.version,
+                &record.exe_path,
+            )
+            .map_err(removal_error)?,
+        )
+    } else {
+        None
+    };
+    Ok(RemovalContext {
+        snapshot,
+        record,
+        plan,
+    })
+}
+
+fn removal_preview_view(context: &RemovalContext) -> Result<RemovePreviewView, String> {
+    if context.record.mode == "installer" {
+        return Ok(RemovePreviewView {
+            app_id: context.record.app.clone(),
+            mode: context.record.mode.clone(),
+            version: context.record.version.clone(),
+            state: "unsupported-installer".to_string(),
+            can_remove: false,
+            registry_revision: context.snapshot.location.registry_revision,
+            catalog_revision: context.snapshot.location.catalog_revision,
+            root_id: context.snapshot.location.root_id.clone(),
+            manifest_digest: context.snapshot.digest.clone(),
+            target_path: None,
+            owned_entry_count: 0,
+            owned_bytes: 0,
+            preserves_user_data: true,
+        });
     }
-    let install = managed_portable(&app, &app_id)?;
-    let original_registry = read_registry(&app)?;
-    let mut next_registry = original_registry.clone();
-    next_registry.retain(|entry| entry.app != app_id);
-    if next_registry.len() == original_registry.len() {
-        return Err("설치 상태에서 제거할 앱을 찾을 수 없습니다.".to_string());
+    let plan = context
+        .plan
+        .as_ref()
+        .ok_or_else(|| "제거 대상을 안전하게 확인할 수 없습니다.".to_string())?;
+    let target_path = plan
+        .app_root
+        .to_str()
+        .ok_or_else(|| "제거 대상을 안전하게 표시할 수 없습니다.".to_string())?
+        .to_string();
+    Ok(RemovePreviewView {
+        app_id: context.record.app.clone(),
+        mode: context.record.mode.clone(),
+        version: context.record.version.clone(),
+        state: plan.state.as_code().to_string(),
+        can_remove: true,
+        registry_revision: context.snapshot.location.registry_revision,
+        catalog_revision: context.snapshot.location.catalog_revision,
+        root_id: context.snapshot.location.root_id.clone(),
+        manifest_digest: context.snapshot.digest.clone(),
+        target_path: Some(target_path),
+        owned_entry_count: plan.owned_entry_count,
+        owned_bytes: plan.owned_bytes,
+        preserves_user_data: true,
+    })
+}
+
+/// Read-only removal preflight.  It validates the selected app's catalog,
+/// locator provenance, app-owned manifest, exact portable path, and bounded
+/// tree before the UI offers a separate confirmation action.
+#[tauri::command]
+pub fn preview_remove_app(
+    app: tauri::AppHandle,
+    app_id: String,
+) -> Result<RemovePreviewView, String> {
+    removal_preview_view(&removal_context(&app, &app_id)?)
+}
+
+fn removal_request_matches(request: &RemoveAppRequest, context: &RemovalContext) -> bool {
+    request.app_id == context.record.app
+        && request.expected_registry_revision == context.snapshot.location.registry_revision
+        && request.expected_catalog_revision == context.snapshot.location.catalog_revision
+        && request.expected_root_id == context.snapshot.location.root_id
+        && request.expected_manifest_digest == context.snapshot.digest
+        && request.expected_manifest_digest.len() == 64
+        && request
+            .expected_manifest_digest
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn records_to_installed(records: &[custom_root::InstallRecord]) -> Vec<InstalledApp> {
+    records
+        .iter()
+        .map(|record| InstalledApp {
+            app: record.app.clone(),
+            version: record.version.clone(),
+            mode: record.mode.clone(),
+            exe_path: record.exe_path.clone(),
+        })
+        .collect()
+}
+
+/// Remove only the app-owned portable tree after a preview token and manifest
+/// CAS check.  Installer records deliberately fail closed because Manager
+/// owns the installer process invocation, not the installer's final location
+/// or uninstaller.  User data is never a target of this command.
+#[tauri::command]
+pub fn remove_portable_app(
+    app: tauri::AppHandle,
+    request: RemoveAppRequest,
+) -> Result<RemoveResultView, String> {
+    let lock = REMOVAL_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock
+        .lock()
+        .map_err(|_| "제거 작업을 시작할 수 없습니다. 잠시 후 다시 시도하세요.".to_string())?;
+    let context = removal_context(&app, &request.app_id)?;
+    if context.record.mode == "installer" {
+        return Err(installer_removal_error());
+    }
+    if !removal_request_matches(&request, &context) {
+        return Err("설치 상태가 바뀌었습니다. 최신 제거 미리 보기를 다시 확인하세요.".to_string());
+    }
+    let plan = context
+        .plan
+        .as_ref()
+        .ok_or_else(|| "제거 대상을 안전하게 확인할 수 없습니다.".to_string())?;
+    let original_records = records_to_installed(&context.snapshot.records);
+    let next_records = original_records
+        .iter()
+        .filter(|record| record.app != request.app_id)
+        .cloned()
+        .collect::<Vec<_>>();
+    if next_records.len() == original_records.len() {
+        return Err("설치된 앱의 제거 상태를 찾을 수 없습니다.".to_string());
     }
 
-    write_registry(&app, &next_registry)
-        .map_err(|_| "제거 전 설치 상태를 갱신할 수 없습니다.".to_string())?;
-    if let Err(_error) = remove_portable_install(&install) {
-        let _ = write_registry(&app, &original_registry);
-        let _ = sync_runtime_metadata(&app);
-        return Err("휴대용 앱 파일을 안전하게 제거할 수 없습니다.".to_string());
+    // Claim the manifest before filesystem mutation.  If deletion is
+    // interrupted, the original bytes can be restored and the same app can
+    // be previewed/retried without losing ownership evidence.
+    let next_digest = write_registry_if_current(&app, &context.snapshot, &next_records)?;
+    let post_write = read_registry_snapshot(&app)?;
+    if !same_location(&post_write.location, &context.snapshot.location)
+        || post_write.digest != next_digest
+    {
+        let _ = restore_manifest_if_current(
+            &app,
+            &context.snapshot.location,
+            &next_digest,
+            &context.snapshot.bytes,
+        );
+        return Err("설치 상태가 바뀌었습니다. 최신 제거 미리 보기를 다시 확인하세요.".to_string());
     }
+
+    let outcome = match remove_portable_tree(plan) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            let restored = restore_manifest_if_current(
+                &app,
+                &context.snapshot.location,
+                &next_digest,
+                &context.snapshot.bytes,
+            );
+            if !restored {
+                return Err(
+                    "제거 중 안전 검증에 실패했습니다. 남은 파일과 설치 상태를 확인한 뒤 복구하세요."
+                        .to_string(),
+                );
+            }
+            return Err(removal_error(error));
+        }
+    };
+
+    if !outcome.complete {
+        let restored = restore_manifest_if_current(
+            &app,
+            &context.snapshot.location,
+            &next_digest,
+            &context.snapshot.bytes,
+        );
+        return Ok(RemoveResultView {
+            status: "partial".to_string(),
+            message: if restored {
+                "앱 파일을 모두 제거하지 못했습니다. 설치 기록은 보존했습니다. 잠금·권한 문제를 해결한 뒤 최신 제거 미리 보기에서 다시 시도하세요.".to_string()
+            } else {
+                "앱 파일 일부만 제거했고 설치 상태를 안전하게 복구하지 못했습니다. 남은 파일과 설치 상태를 확인한 뒤 Manager를 다시 시작하세요.".to_string()
+            },
+            removed_entry_count: outcome.removed_entry_count,
+            remaining_entry_count: outcome.remaining_entry_count,
+            preserves_user_data: true,
+        });
+    }
+
     if let Err(error) = sync_runtime_metadata(&app) {
         eprintln!("devbox: runtime metadata sync will retry next launch: {error}");
     }
-    Ok("휴대용 앱을 제거했습니다. 앱 사용자 데이터는 유지됩니다.".to_string())
+    Ok(RemoveResultView {
+        status: "removed".to_string(),
+        message: "휴대용 앱의 Manager 소유 파일을 제거했습니다. 앱 사용자 데이터는 유지됩니다."
+            .to_string(),
+        removed_entry_count: outcome.removed_entry_count,
+        remaining_entry_count: 0,
+        preserves_user_data: true,
+    })
 }
 
 fn registry_with_entry(
