@@ -178,6 +178,11 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 1. `OpenTarget::Handoff` protocol v2와 atomic one-time handoff: P2 Webhook→API,
    Life Log→Knowledge. P3 Launcher/Log Lens bootstrap 이후 Toolbox→API와 Run/WSL→Log Lens를
    연결한다.
+   - 2026-08-27 core implementation: 기존 v1 argv/path 호환성을 유지하면서 opaque
+     `kind`/128-bit `id`만 argv로 전달하고, 10분 TTL·10MiB 상한·target/kind/schema 검증,
+     create-new publication, token 기반 claim/ack/restore, 60초 bounded lease와 crash recovery를
+     공용 `crates/applink`에 구현했다. raw credential과 상대/symlink payload path는 publication과
+     claim 양쪽에서 거부한다. producer/consumer 화면과 clipboard fallback은 후속 issue 범위다.
 2. Port Manager command line·WSL identity-safe kill.
    - 2026-08-26 draft: native/WSL/container listener rows, bounded full command/path,
      Windows creation FILETIME (decimal-string wire value) and WSL proc start tick identity,

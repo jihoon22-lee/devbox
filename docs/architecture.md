@@ -41,14 +41,16 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   Run Manager, Devbox Manager, Workbench, Webhook Lab, Repo Manager, API Playground, WSL Desktop, Life Log의
   기존 13개 앱에 기능 단위로 적용됐다. 신규 앱은 처음부터 적용한다.
 - 신규 `crates/window-state`
-- `crates/applink` protocol v2 one-time handoff
+- 구현된 `crates/applink` protocol v2 one-time handoff — argv에는 kind와 opaque 128-bit id만
+  전달하고, bounded payload는 공용 data root 아래에서 atomic claim/ack/restore와 60초 lease로
+  한 번만 소비한다. producer/consumer UI는 각 integration PR이 소유한다.
 
 상세: [`v0.5.0 네이티브 우선 계획`](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)
 
 ## 크레이트 의존 관계
 
 ```
-  crates/filesystem ◄── api-playground, code-pad, developer-toolbox, devbox-manager,
+  crates/filesystem ◄── applink, api-playground, code-pad, developer-toolbox, devbox-manager,
                        everything-plus, knowledge-base, life-log, port-manager,
                        repo-manager, run-manager, wsl-desktop
   crates/applink    ◄── code-pad, repo-manager, wsl-desktop, workbench

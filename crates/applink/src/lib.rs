@@ -37,10 +37,17 @@
 //! - 맨 앞 위치 인자(플래그 아님)는 `Path`로 해석한다 — 이미 배포된 repo-manager가
 //!   그 형태로 보낸다.
 
+mod handoff;
+
+pub use handoff::{
+    handoff_root_in, CreateHandoff, HandoffClaim, HandoffDescriptor, HandoffEnvelope, HandoffError,
+    HandoffStore, DEFAULT_CLAIM_LEASE_MS, DEFAULT_HANDOFF_TTL_MS, MAX_HANDOFF_BYTES,
+};
+
 use serde::{Deserialize, Serialize};
 
 /// 이 계약의 프로토콜 버전. `OpenRequest`/`OpenTarget`의 필드 모양이 바뀌면 올린다.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// "어디를 열지"를 나타내는 타깃.
 ///
@@ -64,6 +71,20 @@ pub enum OpenTarget {
     Query {
         text: String,
     },
+    Handoff {
+        #[serde(rename = "handoffKind")]
+        kind: String,
+        id: String,
+    },
+}
+
+impl From<HandoffDescriptor> for OpenTarget {
+    fn from(descriptor: HandoffDescriptor) -> Self {
+        Self::Handoff {
+            kind: descriptor.kind,
+            id: descriptor.id,
+        }
+    }
 }
 
 /// 파싱된 인바운드 요청. Tauri 이벤트(`devbox://open`) payload로 그대로 직렬화된다.
@@ -110,6 +131,8 @@ fn parse_rest(rest: &[String]) -> Result<Option<OpenRequest>, ParseError> {
     let mut profile: Option<String> = None;
     let mut workspace: Option<String> = None;
     let mut query: Option<String> = None;
+    let mut handoff_kind: Option<String> = None;
+    let mut handoff_id: Option<String> = None;
     let mut from: Option<String> = None;
 
     let mut i = 0;
@@ -131,6 +154,8 @@ fn parse_rest(rest: &[String]) -> Result<Option<OpenRequest>, ParseError> {
             "--profile" => profile = Some(take_value(rest, &mut i, flag)?),
             "--workspace" => workspace = Some(take_value(rest, &mut i, flag)?),
             "--query" => query = Some(take_value(rest, &mut i, flag)?),
+            "--handoff-kind" => handoff_kind = Some(take_value(rest, &mut i, flag)?),
+            "--handoff-id" => handoff_id = Some(take_value(rest, &mut i, flag)?),
             "--from" => from = Some(take_value(rest, &mut i, flag)?),
             _ => {
                 // 모르는 플래그: 토큰 자체만 건너뛴다. 값의 arity를 모르므로 다음
@@ -140,11 +165,20 @@ fn parse_rest(rest: &[String]) -> Result<Option<OpenRequest>, ParseError> {
         }
     }
 
+    let handoff = match (handoff_kind, handoff_id) {
+        (Some(kind), Some(id)) if !kind.is_empty() && !id.is_empty() => {
+            Some(OpenTarget::Handoff { kind, id })
+        }
+        (None, None) => None,
+        _ => return Err(ParseError("handoff kind/id가 모두 필요함".into())),
+    };
+
     let target = path
         .map(|path| OpenTarget::Path { path, line, column })
         .or_else(|| profile.map(|id| OpenTarget::Profile { id }))
         .or_else(|| workspace.map(|path| OpenTarget::Workspace { path }))
-        .or_else(|| query.map(|text| OpenTarget::Query { text }));
+        .or_else(|| query.map(|text| OpenTarget::Query { text }))
+        .or(handoff);
 
     Ok(target.map(|target| OpenRequest { target, from }))
 }
@@ -200,6 +234,12 @@ pub fn build_argv(req: &OpenRequest) -> Vec<String> {
         OpenTarget::Query { text } => {
             out.push("--query".to_string());
             out.push(text.clone());
+        }
+        OpenTarget::Handoff { kind, id } => {
+            out.push("--handoff-kind".to_string());
+            out.push(kind.clone());
+            out.push("--handoff-id".to_string());
+            out.push(id.clone());
         }
     }
 
@@ -639,6 +679,43 @@ mod tests {
         });
     }
 
+    #[test]
+    fn parses_and_round_trips_handoff_descriptor_without_payload() {
+        let request = parse_argv(&argv(&[
+            "exe",
+            "--handoff-kind",
+            "api-request/v1",
+            "--handoff-id",
+            "0123456789abcdef0123456789abcdef",
+            "--from",
+            "webhook-lab",
+        ]))
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            request,
+            OpenRequest {
+                target: OpenTarget::Handoff {
+                    kind: s("api-request/v1"),
+                    id: s("0123456789abcdef0123456789abcdef"),
+                },
+                from: Some(s("webhook-lab")),
+            }
+        );
+        round_trip(request);
+    }
+
+    #[test]
+    fn handoff_kind_and_id_are_an_atomic_argv_pair() {
+        assert!(parse_argv(&argv(&["exe", "--handoff-kind", "api-request/v1"])).is_err());
+        assert!(parse_argv(&argv(&[
+            "exe",
+            "--handoff-id",
+            "0123456789abcdef0123456789abcdef"
+        ]))
+        .is_err());
+    }
+
     // ---- serde JSON 왕복: Tauri 이벤트 payload로 쓰이므로 별도 확인 ----
 
     #[test]
@@ -691,11 +768,33 @@ mod tests {
                 target: OpenTarget::Query { text: s("t") },
                 from: None,
             },
+            OpenRequest {
+                target: OpenTarget::Handoff {
+                    kind: s("knowledge-draft/v1"),
+                    id: s("0123456789abcdef0123456789abcdef"),
+                },
+                from: Some(s("life-log")),
+            },
         ];
         for req in reqs {
             let json = serde_json::to_string(&req).unwrap();
             let back: OpenRequest = serde_json::from_str(&json).unwrap();
             assert_eq!(back, req);
         }
+    }
+
+    #[test]
+    fn handoff_json_keeps_variant_tag_and_payload_kind_distinct() {
+        let request = OpenRequest {
+            target: OpenTarget::Handoff {
+                kind: s("knowledge-draft/v1"),
+                id: s("0123456789abcdef0123456789abcdef"),
+            },
+            from: Some(s("life-log")),
+        };
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["target"]["kind"], "handoff");
+        assert_eq!(json["target"]["handoffKind"], "knowledge-draft/v1");
+        assert_eq!(json["target"]["id"], "0123456789abcdef0123456789abcdef");
     }
 }
