@@ -7,6 +7,7 @@ import {
   closeLspDocument,
   deleteFileAction,
   languageServerStatuses,
+  listWorkspaceFiles,
   loadLspConfig,
   loadSession,
   openFile,
@@ -169,6 +170,7 @@ const watchFileMock = vi.mocked(watchFile);
 const unwatchFileMock = vi.mocked(unwatchFile);
 const loadLspConfigMock = vi.mocked(loadLspConfig);
 const languageServerStatusesMock = vi.mocked(languageServerStatuses);
+const listWorkspaceFilesMock = vi.mocked(listWorkspaceFiles);
 const startLanguageServerMock = vi.mocked(startLanguageServer);
 const stopLanguageServerMock = vi.mocked(stopLanguageServer);
 const openLspDocumentMock = vi.mocked(openLspDocument);
@@ -335,6 +337,7 @@ beforeEach(() => {
     error: null,
   });
   languageServerStatusesMock.mockReset().mockResolvedValue([]);
+  listWorkspaceFilesMock.mockReset().mockResolvedValue({ files: [], truncated: false });
   startLanguageServerMock.mockReset().mockResolvedValue(undefined);
   stopLanguageServerMock.mockReset().mockResolvedValue(undefined);
   openLspDocumentMock.mockReset();
@@ -391,6 +394,32 @@ function fileName(path: string): string {
 }
 
 describe("App editor shell operations", () => {
+  it("loads the restored workspace when Quick Open is opened with Ctrl+P", async () => {
+    loadSessionMock.mockResolvedValue({
+      session: {
+        version: 1,
+        workspace_folder: "/tmp/workspace",
+        docs: [],
+        views: [[], []],
+        active_view: 0,
+        active_doc_by_view: [null, null],
+        recent_files: [],
+      },
+      persistAllowed: true,
+    });
+    listWorkspaceFilesMock.mockResolvedValue({
+      files: [{ path: "/tmp/workspace/src/main.ts", relativePath: "src/main.ts", size: 12 }],
+      truncated: false,
+    });
+
+    const rendered = render(<App />);
+    await waitFor(() => expect((rendered.getByRole("textbox", { name: "열 파일 경로" }) as HTMLInputElement).disabled).toBe(false));
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+    await waitFor(() => expect(listWorkspaceFilesMock).toHaveBeenCalledWith("/tmp/workspace"));
+    expect(await rendered.findByRole("dialog", { name: "빠른 파일 열기" })).toBeTruthy();
+    expect(rendered.getByRole("option", { name: "src/main.ts" })).toBeTruthy();
+  });
+
   it("registers the app-link listener before consuming and takes again on relaunch", async () => {
     openFileMock.mockResolvedValue(openedFile());
     render(<App />);

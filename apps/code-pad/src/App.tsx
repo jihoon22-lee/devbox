@@ -181,6 +181,7 @@ export default function App() {
   const externalChangeVersionRef = useRef(new Map<string, number>());
   const lspFeatureRequestRef = useRef(0);
   const lspBusyRef = useRef(false);
+  const quickOpenRef = useRef<() => void>(() => undefined);
 
   useEffect(() => lspSync.subscribe(setLspSyncState), [lspSync]);
 
@@ -950,6 +951,10 @@ export default function App() {
       });
     }
   };
+  // The global Ctrl/⌘+P listener is intentionally installed once. Keep the
+  // latest workspace-aware handler available so keyboard opening also refreshes
+  // a restored workspace snapshot instead of capturing the initial null root.
+  quickOpenRef.current = handleQuickOpen;
 
   const reloadExternallyChanged = (path: string) => {
     const before = stateRef.current.docs.find((doc) => doc.path === path);
@@ -1251,7 +1256,7 @@ export default function App() {
       } else if (key === "p") {
         if (hydratedRef.current) {
           event.preventDefault();
-          setQuickOpen(true);
+          quickOpenRef.current();
         }
       } else if (key === "h") {
         const current = activeDocForState(stateRef.current);
