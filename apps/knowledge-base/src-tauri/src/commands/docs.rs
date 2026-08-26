@@ -71,6 +71,16 @@ pub(crate) fn resolve_root(conn: &Connection) -> Result<PathBuf, String> {
     Ok(default)
 }
 
+/// Read the already-selected root without initializing the default layout.
+/// Quick-capture preview is metadata-only, so it must not turn a read request
+/// into a first-run filesystem/database mutation.
+fn resolve_configured_root(conn: &Connection) -> Result<PathBuf, String> {
+    db::get_setting(conn, "root")
+        .map_err(|_| "빠른 캡처 미리보기를 만들 수 없습니다".to_string())?
+        .map(PathBuf::from)
+        .ok_or_else(|| "빠른 캡처 미리보기를 만들 수 없습니다".to_string())
+}
+
 /// schema v1 최초 실행에만 원문 Markdown에서 정확한 source line을 재구축한다.
 /// 읽을 수 없거나 root 밖으로 canonicalize되는 항목은 index 대상에서 제외한다.
 pub(crate) fn rebuild_wikilink_index_if_needed(
@@ -277,21 +287,40 @@ pub fn open_in(
     devbox_launch::launch_open(&target_id, &request).map(|_| ())
 }
 
-fn validate_capture_inbox(root: &Path) -> Result<(), String> {
+fn validate_capture_inbox(root: &Path) -> Result<PathBuf, String> {
     // Validate the fixed destination even during preview.  This means a
     // misconfigured root or a symlinked Inbox cannot appear selectable in UI.
     let inbox = validated_new_entry(root, capture::INBOX_DIR).map_err(str::to_string)?;
     match std::fs::symlink_metadata(&inbox) {
-        Ok(metadata) if metadata.is_dir() => Ok(()),
+        Ok(metadata) if metadata.is_dir() => Ok(inbox),
         Ok(_) => Err("빠른 캡처 저장 위치를 사용할 수 없습니다".to_string()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(inbox),
         Err(_) => Err("빠른 캡처 저장 위치를 사용할 수 없습니다".to_string()),
     }
 }
 
+/// Create only the fixed one-level capture directory after the same canonical
+/// root/ancestor checks used by preview.  A recursive create here would make a
+/// future path change accidentally become a generic writer and would also
+/// widen the symlink race window.
+fn ensure_capture_inbox(root: &Path) -> Result<PathBuf, String> {
+    let inbox = validate_capture_inbox(root)?;
+    if matches!(
+        std::fs::symlink_metadata(&inbox),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound
+    ) {
+        match std::fs::create_dir(&inbox) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(_) => return Err("빠른 캡처를 저장하지 못했습니다".to_string()),
+        }
+    }
+    validate_capture_inbox(root)
+}
+
 fn capture_preview(root: &Path, input: QuickCaptureInput) -> Result<QuickCapturePreview, String> {
-    validate_capture_inbox(root)?;
     let normalized = capture::normalize(input).map_err(|error| error.to_string())?;
+    validate_capture_inbox(root)?;
     Ok(QuickCapturePreview {
         target: capture::INBOX_DIR.to_string(),
         title: normalized.title,
@@ -306,8 +335,7 @@ pub fn preview_quick_capture(
     input: QuickCaptureInput,
 ) -> Result<QuickCapturePreview, String> {
     let conn = state.db.lock().unwrap();
-    let root =
-        resolve_root(&conn).map_err(|_| "빠른 캡처 미리보기를 만들 수 없습니다".to_string())?;
+    let root = resolve_configured_root(&conn)?;
     capture_preview(&root, input)
 }
 
@@ -346,8 +374,8 @@ fn save_capture_at(
     now_seconds: i64,
 ) -> Result<QuickCaptureSaved, String> {
     let normalized = capture::normalize(input).map_err(|error| error.to_string())?;
-    validate_capture_inbox(root)?;
     let document = capture::render_markdown(&normalized).map_err(|error| error.to_string())?;
+    let inbox = ensure_capture_inbox(root)?;
 
     let mut selected: Option<(String, PathBuf)> = None;
     for ordinal in 1..=capture::MAX_COLLISION_ATTEMPTS {
@@ -357,10 +385,7 @@ fn save_capture_at(
             capture::filename_for_timestamp(now_seconds, ordinal)
         );
         let path = validated_new_entry(root, &rel).map_err(str::to_string)?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|_| "빠른 캡처를 저장하지 못했습니다".to_string())?;
-        }
+        debug_assert_eq!(path.parent(), Some(inbox.as_path()));
         match create_new_capture_file(&path, document.as_bytes()) {
             Ok(()) => {
                 selected = Some((rel, path));
@@ -500,6 +525,18 @@ mod tests {
     }
 
     #[test]
+    fn quick_capture_preview_root_lookup_is_read_only_when_unconfigured() {
+        let conn = Connection::open_in_memory().unwrap();
+        db::migrate(&conn).unwrap();
+
+        assert_eq!(
+            resolve_configured_root(&conn).unwrap_err(),
+            "빠른 캡처 미리보기를 만들 수 없습니다"
+        );
+        assert!(db::get_setting(&conn, "root").unwrap().is_none());
+    }
+
+    #[test]
     fn quick_capture_preview_has_fixed_inbox_target_and_normalized_values() {
         let root = tempfile::tempdir().unwrap();
         crate::core::store::ensure_layout(root.path()).unwrap();
@@ -516,6 +553,7 @@ mod tests {
         assert_eq!(preview.title, "Captured idea");
         assert_eq!(preview.body, "first\nsecond");
         assert_eq!(preview.tags, ["rust"]);
+        assert!(!root.path().join(capture::INBOX_DIR).exists());
     }
 
     #[test]
@@ -527,6 +565,7 @@ mod tests {
 
         let saved =
             save_capture_in_root(&conn, root.path(), capture_input("hello\nworld")).unwrap();
+        assert!(root.path().join(capture::INBOX_DIR).is_dir());
         assert!(saved.path.starts_with("Inbox/"));
         assert!(saved.path.ends_with(".md"));
         let content = std::fs::read_to_string(root.path().join(&saved.path)).unwrap();

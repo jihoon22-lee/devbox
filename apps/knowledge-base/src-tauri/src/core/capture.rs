@@ -12,9 +12,17 @@ use std::fmt;
 pub const INBOX_DIR: &str = "Inbox";
 pub const DEFAULT_TITLE: &str = "빠른 캡처";
 pub const MAX_TITLE_CHARS: usize = 200;
+/// A UTF-8 scalar can occupy at most four bytes.  This is a cheap pre-check
+/// before the normalized title is copied into a second allocation.
+pub const MAX_TITLE_BYTES: usize = MAX_TITLE_CHARS * 4;
 pub const MAX_BODY_BYTES: usize = 64 * 1024;
+/// CRLF normalization can reduce the input by at most one byte per pair.  The
+/// raw bound keeps an untrusted command payload from being needlessly copied
+/// at an unbounded size while still allowing a normalized 64 KiB body.
+pub const MAX_RAW_BODY_BYTES: usize = MAX_BODY_BYTES * 2;
 pub const MAX_TAGS: usize = 20;
 pub const MAX_TAG_CHARS: usize = 48;
+pub const MAX_TAG_ITEM_BYTES: usize = MAX_TAG_CHARS * 4;
 pub const MAX_TAG_BYTES: usize = 1_024;
 pub const MAX_COLLISION_ATTEMPTS: u32 = 100;
 
@@ -81,7 +89,14 @@ impl std::error::Error for CaptureError {}
 
 /// Validate and normalize a draft without touching the filesystem.
 pub fn normalize(input: QuickCaptureInput) -> Result<NormalizedCapture, CaptureError> {
-    let title = input.title.trim().to_string();
+    if input.title.len() > MAX_TITLE_BYTES {
+        return Err(CaptureError::TitleTooLong);
+    }
+    let title_value = input.title.trim();
+    if title_value.len() > MAX_TITLE_BYTES {
+        return Err(CaptureError::TitleTooLong);
+    }
+    let title = title_value.to_string();
     if contains_single_line_forbidden(&title) {
         return Err(CaptureError::InvalidText);
     }
@@ -89,6 +104,9 @@ pub fn normalize(input: QuickCaptureInput) -> Result<NormalizedCapture, CaptureE
         return Err(CaptureError::TitleTooLong);
     }
 
+    if input.body.len() > MAX_RAW_BODY_BYTES {
+        return Err(CaptureError::BodyTooLarge);
+    }
     let body = normalize_line_endings(&input.body);
     if body.trim().is_empty() {
         return Err(CaptureError::EmptyBody);
@@ -107,13 +125,17 @@ pub fn normalize(input: QuickCaptureInput) -> Result<NormalizedCapture, CaptureE
     let mut seen = BTreeSet::new();
     let mut tag_bytes = 0_usize;
     for raw in input.tags {
-        let tag = raw.trim().to_string();
-        if tag.is_empty() {
-            continue;
-        }
-        if tag.chars().count() > MAX_TAG_CHARS {
+        if raw.len() > MAX_TAG_ITEM_BYTES {
             return Err(CaptureError::TagTooLong);
         }
+        let tag_value = raw.trim();
+        if tag_value.is_empty() {
+            continue;
+        }
+        if tag_value.len() > MAX_TAG_ITEM_BYTES || tag_value.chars().count() > MAX_TAG_CHARS {
+            return Err(CaptureError::TagTooLong);
+        }
+        let tag = tag_value.to_string();
         if contains_single_line_forbidden(&tag)
             || tag
                 .chars()
@@ -149,6 +171,7 @@ pub fn normalize(input: QuickCaptureInput) -> Result<NormalizedCapture, CaptureE
 /// normalized input; timestamp and collision suffixes are intentionally kept
 /// in the filename rather than in the note body.
 pub fn render_markdown(capture: &NormalizedCapture) -> Result<String, CaptureError> {
+    validate_normalized(capture)?;
     let mut document = String::with_capacity(capture.body.len() + 128);
     document.push_str("---\n");
     document.push_str("title: ");
@@ -195,14 +218,80 @@ fn normalize_line_endings(value: &str) -> String {
     value.replace("\r\n", "\n").replace('\r', "\n")
 }
 
+/// Keep the renderer safe even if a future caller constructs a
+/// `NormalizedCapture` without first going through `normalize`.
+fn validate_normalized(capture: &NormalizedCapture) -> Result<(), CaptureError> {
+    if capture.title.is_empty() {
+        return Err(CaptureError::InvalidText);
+    }
+    if capture.title.len() > MAX_TITLE_BYTES || capture.title.chars().count() > MAX_TITLE_CHARS {
+        return Err(CaptureError::TitleTooLong);
+    }
+    if contains_single_line_forbidden(&capture.title) {
+        return Err(CaptureError::InvalidText);
+    }
+    if capture.body.trim().is_empty() {
+        return Err(CaptureError::EmptyBody);
+    }
+    if capture.body.len() > MAX_BODY_BYTES {
+        return Err(CaptureError::BodyTooLarge);
+    }
+    if contains_forbidden_text(&capture.body) {
+        return Err(CaptureError::InvalidText);
+    }
+    if capture.tags.len() > MAX_TAGS {
+        return Err(CaptureError::TooManyTags);
+    }
+    let mut total_bytes = 0_usize;
+    let mut seen = BTreeSet::new();
+    for tag in &capture.tags {
+        if tag.is_empty() {
+            return Err(CaptureError::InvalidTag);
+        }
+        if tag.len() > MAX_TAG_ITEM_BYTES || tag.chars().count() > MAX_TAG_CHARS {
+            return Err(CaptureError::TagTooLong);
+        }
+        if contains_single_line_forbidden(tag)
+            || tag
+                .chars()
+                .any(|character| matches!(character, ',' | '[' | ']' | '"'))
+        {
+            return Err(CaptureError::InvalidTag);
+        }
+        total_bytes = total_bytes.saturating_add(tag.len());
+        if total_bytes > MAX_TAG_BYTES || !seen.insert(tag) {
+            return Err(if total_bytes > MAX_TAG_BYTES {
+                CaptureError::TagsTooLarge
+            } else {
+                CaptureError::InvalidTag
+            });
+        }
+    }
+    if looks_sensitive(&capture.title)
+        || looks_sensitive(&capture.body)
+        || capture.tags.iter().any(|tag| looks_sensitive(tag))
+    {
+        return Err(CaptureError::SensitiveContent);
+    }
+    Ok(())
+}
+
 fn contains_forbidden_text(value: &str) -> bool {
     value.chars().any(|character| {
-        character == '\0' || (character.is_control() && character != '\n' && character != '\t')
+        character == '\0'
+            || is_line_separator(character)
+            || (character.is_control() && character != '\n' && character != '\t')
     })
 }
 
 fn contains_single_line_forbidden(value: &str) -> bool {
-    value.chars().any(|character| character.is_control())
+    value
+        .chars()
+        .any(|character| character.is_control() || is_line_separator(character))
+}
+
+fn is_line_separator(character: char) -> bool {
+    matches!(character, '\u{2028}' | '\u{2029}')
 }
 
 fn is_boundary(value: &[u8], index: usize, length: usize) -> bool {
@@ -254,8 +343,12 @@ fn looks_sensitive(value: &str) -> bool {
         "client_secret",
         "client-secret",
         "authorization",
+        "x-api-key",
+        "x_api_key",
         "password",
         "passwd",
+        "private-key",
+        "private_key",
         "secret",
         "token",
     ] {
@@ -263,20 +356,54 @@ fn looks_sensitive(value: &str) -> bool {
             return true;
         }
     }
-    for prefix in ["ghp_", "github_pat_", "xoxb-", "xoxp-", "akia"] {
-        if lower.contains(prefix)
-            && lower
-                .split(prefix)
-                .nth(1)
-                .is_some_and(|tail| tail.chars().take_while(|c| !c.is_whitespace()).count() >= 12)
-        {
+    for prefix in [
+        "ghp_",
+        "github_pat_",
+        "gho_",
+        "ghu_",
+        "ghs_",
+        "ghr_",
+        "xoxb-",
+        "xoxp-",
+        "akia",
+        "sk-",
+        "glpat-",
+        "npm_",
+        "pypi-",
+    ] {
+        if contains_credential_prefix(&lower, prefix) {
             return true;
         }
     }
-    let words = lower.split_whitespace().collect::<Vec<_>>();
-    words
-        .windows(2)
-        .any(|pair| pair[0] == "bearer" && pair[1].len() >= 12)
+    let mut saw_bearer = false;
+    for word in lower.split_whitespace() {
+        if saw_bearer && word.len() >= 12 {
+            return true;
+        }
+        saw_bearer = word == "bearer";
+    }
+    false
+}
+
+fn contains_credential_prefix(value: &str, prefix: &str) -> bool {
+    let mut offset = 0_usize;
+    while let Some(relative) = value[offset..].find(prefix) {
+        let index = offset + relative;
+        let tail = &value[index + prefix.len()..];
+        if tail
+            .chars()
+            .take_while(|character| !character.is_whitespace())
+            .count()
+            >= 12
+        {
+            return true;
+        }
+        offset = index.saturating_add(prefix.len());
+        if offset >= value.len() {
+            break;
+        }
+    }
+    false
 }
 
 /// Howard Hinnant's civil_from_days algorithm (epoch 1970-01-01).
@@ -390,12 +517,38 @@ body
             normalize(input("title", "body", &[&"x".repeat(MAX_TAG_CHARS + 1)])),
             Err(CaptureError::TagTooLong)
         );
+        assert!(normalize(input("😀".repeat(MAX_TITLE_CHARS).as_str(), "body", &[])).is_ok());
+        assert_eq!(
+            normalize(input(&"😀".repeat(MAX_TITLE_CHARS + 1), "body", &[],)),
+            Err(CaptureError::TitleTooLong)
+        );
+        assert!(normalize(input("title", &"😀".repeat(MAX_BODY_BYTES / 4), &[])).is_ok());
+        assert_eq!(
+            normalize(input("title", &"😀".repeat(MAX_BODY_BYTES / 4 + 1), &[])),
+            Err(CaptureError::BodyTooLarge)
+        );
+        let raw_at_limit = format!("{}x", "\r\n".repeat(MAX_BODY_BYTES - 1));
+        assert!(normalize(input("title", &raw_at_limit, &[])).is_ok());
+        let raw_over_limit = format!("{}x", "\r\n".repeat(MAX_BODY_BYTES));
+        assert_eq!(
+            normalize(input("title", &raw_over_limit, &[])),
+            Err(CaptureError::BodyTooLarge)
+        );
+        assert!(normalize(input("title", "body", &[&"😀".repeat(MAX_TAG_CHARS)])).is_ok());
     }
 
     #[test]
     fn rejects_control_injection_and_unsafe_tags() {
         assert_eq!(
             normalize(input("bad\nname", "body", &[])),
+            Err(CaptureError::InvalidText)
+        );
+        assert_eq!(
+            normalize(input("title\u{2028}name", "body", &[])),
+            Err(CaptureError::InvalidText)
+        );
+        assert_eq!(
+            normalize(input("title", "body\u{2029}text", &[])),
             Err(CaptureError::InvalidText)
         );
         assert_eq!(
@@ -412,14 +565,37 @@ body
     fn rejects_credential_like_values_without_echoing_them() {
         for body in [
             "api_key=super-secret-value",
+            "X-API-Key: super-secret-value",
             "Authorization: Bearer abcdefghijklmnop",
             "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----",
             "ghp_abcdefghijklmnop",
+            "ghp_short ghp_abcdefghijklmnop",
+            "sk-abcdefghijklmnop",
         ] {
             let error = normalize(input("title", body, &[])).unwrap_err();
             assert_eq!(error, CaptureError::SensitiveContent);
             assert!(!error.to_string().contains(body));
         }
+    }
+
+    #[test]
+    fn renderer_rechecks_the_normalized_boundary() {
+        let oversized = NormalizedCapture {
+            title: "title".to_string(),
+            body: "x".repeat(MAX_BODY_BYTES + 1),
+            tags: Vec::new(),
+        };
+        assert_eq!(render_markdown(&oversized), Err(CaptureError::BodyTooLarge));
+
+        let sensitive = NormalizedCapture {
+            title: "title".to_string(),
+            body: "X-API-Key: hidden-value".to_string(),
+            tags: Vec::new(),
+        };
+        assert_eq!(
+            render_markdown(&sensitive),
+            Err(CaptureError::SensitiveContent)
+        );
     }
 
     #[test]

@@ -6,7 +6,8 @@ import {
 } from "../api";
 import type { QuickCaptureInput, QuickCapturePreview, QuickCaptureSaved } from "../types";
 import {
-  MAX_QUICK_CAPTURE_BODY_BYTES,
+  MAX_QUICK_CAPTURE_TITLE_CHARS,
+  normalizeQuickCapture,
   parseQuickCaptureTags,
 } from "../lib/quickCapture";
 
@@ -152,13 +153,16 @@ export default function QuickCaptureDialog({
       const text = await readClipboardText();
       if (token !== generationRef.current) return;
       const normalizedText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-      if (new TextEncoder().encode(normalizedText).byteLength > MAX_QUICK_CAPTURE_BODY_BYTES) {
-        setError("빠른 캡처 입력이 올바르지 않습니다");
-        return;
+      // Apply the same policy before placing clipboard text in the controlled
+      // draft.  A credential-like or malformed clipboard value is therefore
+      // never retained by this dialog, even temporarily as a body draft.
+      const checked = normalizeQuickCapture({ title: "", body: normalizedText, tags: [] });
+      if (token !== generationRef.current) return;
+      setBody(checked.body);
+    } catch (cause) {
+      if (token === generationRef.current) {
+        setError(errorMessage(cause, "클립보드 내용을 읽을 수 없습니다"));
       }
-      setBody(normalizedText);
-    } catch {
-      if (token === generationRef.current) setError("클립보드 내용을 읽을 수 없습니다");
     } finally {
       if (token === generationRef.current) setBusyState(false);
     }
@@ -224,41 +228,56 @@ export default function QuickCaptureDialog({
             <div className="quick-capture-target" aria-label="저장 위치">
               저장 위치 <strong>Inbox</strong>
             </div>
-            <label className="quick-capture-field">
+            <label className="quick-capture-field" htmlFor="quick-capture-title-input">
               제목 <span className="dim">(선택, 비워 두면 기본 제목)</span>
               <input
+                id="quick-capture-title-input"
                 ref={titleRef}
                 value={title}
-                maxLength={200}
+                // HTML maxlength counts UTF-16 code units.  Two units per
+                // non-BMP scalar keeps the UI from rejecting a valid 200
+                // scalar title before the shared byte/scalar validator runs.
+                maxLength={MAX_QUICK_CAPTURE_TITLE_CHARS * 2}
+                aria-describedby="quick-capture-title-hint"
                 onChange={(event) => setTitle(event.currentTarget.value)}
                 disabled={busy}
                 autoComplete="off"
               />
+              <span id="quick-capture-title-hint" className="sr-only">최대 200자</span>
             </label>
-            <label className="quick-capture-field">
+            <label className="quick-capture-field" htmlFor="quick-capture-body-input">
               본문 <span className="dim">(필수)</span>
               <textarea
+                id="quick-capture-body-input"
                 value={body}
                 maxLength={64 * 1024}
+                aria-describedby="quick-capture-body-hint"
                 onChange={(event) => setBody(event.currentTarget.value)}
                 disabled={busy}
                 rows={10}
               />
+              <span id="quick-capture-body-hint" className="sr-only">LF 기준 UTF-8 최대 64 KiB</span>
             </label>
-            <label className="quick-capture-field">
+            <label className="quick-capture-field" htmlFor="quick-capture-tags-input">
               태그 <span className="dim">(쉼표로 구분, 선택)</span>
               <input
+                id="quick-capture-tags-input"
                 value={tagsText}
                 maxLength={1_024}
+                aria-describedby="quick-capture-tags-hint"
                 onChange={(event) => setTagsText(event.currentTarget.value)}
                 disabled={busy}
                 autoComplete="off"
               />
+              <span id="quick-capture-tags-hint" className="sr-only">최대 20개, 태그 하나당 48자</span>
             </label>
             <p className="quick-capture-privacy">
               민감한 정보처럼 보이는 credential은 저장하지 않습니다. 클립보드는 이 버튼을 누른 순간에만 한 번 읽습니다.
             </p>
-            {error && <div className="quick-capture-error" role="alert" aria-live="assertive">{error}</div>}
+            {error && <div id="quick-capture-error" className="quick-capture-error" role="alert" aria-live="assertive">{error}</div>}
+            <div className="quick-capture-progress" role="status" aria-live="polite" aria-atomic="true">
+              {busy ? "미리보기를 확인하는 중…" : ""}
+            </div>
             <div className="quick-capture-actions">
               <button className="btn" type="button" onClick={() => void pasteClipboard()} disabled={busy}>
                 클립보드에서 본문 가져오기
@@ -278,10 +297,13 @@ export default function QuickCaptureDialog({
               <span>태그</span><strong>{preview?.tags.length ? preview.tags.join(", ") : "없음"}</strong>
             </div>
             <div className="quick-capture-preview-body">
-              <div className="dim">본문 미리보기</div>
-              <pre>{preview?.body}</pre>
+              <div className="dim" id="quick-capture-preview-label">본문 미리보기</div>
+              <pre aria-labelledby="quick-capture-preview-label">{preview?.body}</pre>
             </div>
-            {error && <div className="quick-capture-error" role="alert" aria-live="assertive">{error}</div>}
+            {error && <div id="quick-capture-error" className="quick-capture-error" role="alert" aria-live="assertive">{error}</div>}
+            <div className="quick-capture-progress" role="status" aria-live="polite" aria-atomic="true">
+              {busy ? "저장하는 중…" : "미리보기를 확인했습니다. 저장을 누르면 새 노트가 생성됩니다."}
+            </div>
             <div className="quick-capture-actions">
               <button
                 className="btn"

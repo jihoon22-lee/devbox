@@ -707,16 +707,19 @@ packaged smoke로 확인한다.
 #303 구현 초안은 Knowledge에 고정 `Inbox` target의 offline quick capture를 추가한다. Windows
 `Ctrl+Alt+K`는 native `RegisterHotKey`로 등록하고 충돌·미지원 상태를 안전한 상태 DTO로 안내하며,
 앱 내부 버튼은 항상 유지한다. modal은 title/body/tags 입력 뒤 preview를 먼저 보여 주고, 명시적
-save에서만 새 Markdown과 검색 인덱스를 만든다. Rust/TypeScript 양쪽에서 본문·태그·제어문자·
-credential-like 입력과 root boundary를 재검증하고, UTC bounded filename collision·create_new·
-flush/sync·SQLite transaction 실패 시 반쪽 파일을 남기지 않는다. clipboard는 버튼을 누른 순간
-한 번만 읽으며 history·cloud·image/template/handoff는 포함하지 않는다. preview/save/clipboard의
-stale 응답과 중복 실행은 generation/busy guard로 버리고 modal은 ARIA·focus trap·Escape·Ctrl+Enter와
-닫힌 뒤 trigger focus 복원을 제공한다. `Inbox`가 없을 때는 preview에서 만들지 않고 save 시 검증 후
-지연 생성한다. 최신 `origin/main`에 rebase한 전용 worktree의 local checkpoint draft는 현재 clean이며,
-merge 전 Windows W2에서 shortcut conflict/focus, preview-before-save, clipboard one-shot,
-collision/failure evidence를 남긴다. WSL 집중 검증은 Rust 62개, Knowledge frontend 42개, TypeScript와
-Vite production build를 통과했다.
+save에서만 새 Markdown과 검색 인덱스를 만든다. Rust/TypeScript 양쪽에서 제목 200 scalar/800
+bytes, LF body 64 KiB(raw 128 KiB), 태그 20개·항목 48 scalar/192 bytes·총 1 KiB, C0/C1 및
+Unicode line separator, frontmatter injection과 credential-like 입력을 재검증한다. UTC bounded
+filename collision·create_new·flush/sync·SQLite transaction 실패 시 반쪽 파일을 남기지 않으며,
+renderer와 반환 path grammar도 native 경계에서 재확인한다. `Inbox`는 preview에서 생성하지 않고
+save에서 canonical root와 symlink를 재검증한 뒤 한 단계만 지연 생성한다. clipboard는 버튼을
+누른 순간 한 번만 읽고 입력 정책을 통과한 값만 draft에 넣으며 history·cloud·image/template/
+handoff는 포함하지 않는다. preview/save/clipboard의 stale 응답과 중복 실행은 generation/busy
+guard로 버리고 modal은 ARIA·focus trap·Escape·Ctrl+Enter와 닫힌 뒤 trigger focus 복원을 제공한다.
+최신 `origin/main`(`2c20eb5`, #424)에 rebase한 전용 worktree의 local checkpoint draft는 현재
+clean이며, merge 전 Windows W2에서 shortcut conflict/focus, preview-before-save, clipboard
+one-shot, collision/failure evidence를 남긴다. WSL 집중 검증은 Rust 67개, quick-capture focused
+Vitest 16개, TypeScript, Knowledge Vite production build를 통과했다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

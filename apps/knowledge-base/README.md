@@ -60,11 +60,20 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 - quick capture도 같은 clipboard read 권한을 사용하지만, 별도의 history·자동 수집은 하지 않는다.
   미리보기와 저장 모두 Rust가 최종 입력·태그·본문 상한, 제어문자, credential-like 패턴과
   고정 `Inbox` 경계를 다시 검사한다. 민감한 입력이나 native 저장 실패는 고정된 안전 메시지만
-  반환하며 입력·절대 경로·OS 오류를 UI/로그에 반향하지 않는다
+  반환하며 입력·절대 경로·OS 오류를 UI/로그에 반향하지 않는다. 브라우저 미리보기도 같은
+  Unicode scalar/UTF-8 byte·line separator·credential policy를 먼저 적용하며, clipboard 값은
+  이 검사를 통과한 경우에만 controlled draft에 넣는다
 - quick capture native 저장은 `Inbox/quick-capture-YYYY-MM-DD-HH-mm-ss[-N].md` 형식의
   UTC 파일명을 사용하고, 기존 파일은 `create_new`로 절대 덮어쓰지 않는다. 파일 flush/sync,
   SQLite FTS/link index transaction이 실패하면 새 파일을 정리해 반쪽 노트를 남기지 않는다.
-  본문 line ending은 LF로 정규화하고 동일 입력의 Markdown은 결정론적으로 생성한다
+  본문 line ending은 LF로 정규화하고 동일 입력의 Markdown은 결정론적으로 생성한다. 정규화된
+  본문은 64 KiB, raw CRLF 입력은 128 KiB, 제목은 200 scalar/800 byte, 태그는 20개·항목
+  48 scalar/192 byte·총 1 KiB로 제한하며 renderer도 같은 경계를 다시 확인한다
+- preview는 이미 설정된 root를 읽어 고정 `Inbox`를 metadata로만 확인하고 폴더나 기본 root를
+  초기화하지 않는다. save만 canonical root의 기존 조상을 재검사한 뒤 `Inbox` 한 단계
+  디렉터리를 지연 생성하고, `Inbox`가 파일·symlink로
+  바뀌었거나 root 밖으로 해석되면 쓰기를 중단한다. 반환되는 저장 path도 고정된 timestamp
+  filename grammar만 허용하며 임의의 상대·절대 path를 UI 계약으로 받아들이지 않는다
 - `Ctrl+Alt+K` 등록은 Windows `RegisterHotKey` 메시지 루프가 담당한다. 다른 앱이 이미
   사용 중이거나 플랫폼이 지원되지 않으면 상태를 `conflict`/`unsupported`로만 표시하고,
   앱 내부 빠른 캡처 버튼은 계속 사용할 수 있다. 단축키 event에는 문서 내용·경로가 없다

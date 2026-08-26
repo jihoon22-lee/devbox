@@ -6,6 +6,7 @@ import {
   readClipboardText,
   saveQuickCapture,
 } from "../api";
+import type { QuickCapturePreview } from "../types";
 
 vi.mock("../api", () => ({
   previewQuickCapture: vi.fn(async (input: { title: string; body: string; tags: string[] }) => ({
@@ -55,6 +56,17 @@ describe("Knowledge quick capture dialog", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "클립보드에서 본문 가져오기" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("빠른 캡처 입력이 올바르지 않습니다");
     expect(within(dialog).getByLabelText(/본문/u)).toHaveValue("");
+  });
+
+  it("rejects credential-like clipboard text before retaining it in the draft", async () => {
+    clipboardMock.mockResolvedValueOnce("X-API-Key: super-secret-value");
+    renderDialog();
+    const dialog = screen.getByRole("dialog", { name: "빠른 캡처" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "클립보드에서 본문 가져오기" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("민감한 정보가 포함되어 있어 저장하지 않았습니다");
+    expect(within(dialog).getByLabelText(/본문/u)).toHaveValue("");
+    expect(alert).not.toHaveTextContent("super-secret-value");
   });
 
   it("previews the fixed Inbox target before saving and forwards normalized fields", async () => {
@@ -116,6 +128,18 @@ describe("Knowledge quick capture dialog", () => {
 
     resolveSave?.({ path: "Inbox/quick-capture-test.md" });
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it("discards a late preview completion after unmount", async () => {
+    let resolvePreview: ((value: QuickCapturePreview) => void) | undefined;
+    previewMock.mockImplementationOnce(() => new Promise((resolve) => { resolvePreview = resolve; }));
+    renderDialog();
+    const dialog = screen.getByRole("dialog", { name: "빠른 캡처" });
+    fireEvent.change(within(dialog).getByLabelText(/본문/u), { target: { value: "body" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "미리보기" }));
+    cleanup();
+    resolvePreview?.({ target: "Inbox", title: "late", body: "late", tags: [] });
+    await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(1));
   });
 
   it("shows a safe validation message without echoing rejected input", async () => {

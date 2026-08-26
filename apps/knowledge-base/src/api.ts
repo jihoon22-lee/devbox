@@ -14,6 +14,7 @@ import type {
   WikilinkOccurrence,
 } from "./types";
 import {
+  isSafeQuickCapturePath,
   normalizeQuickCapture,
   QUICK_CAPTURE_TARGET,
 } from "./lib/quickCapture";
@@ -299,14 +300,7 @@ export async function saveQuickCapture(input: QuickCaptureInput): Promise<QuickC
   if (!isTauri()) throw new Error(QUICK_CAPTURE_UNAVAILABLE);
   try {
     const saved = await invoke<QuickCaptureSaved>("save_quick_capture", { input: normalized });
-    if (
-      !saved
-      || typeof saved.path !== "string"
-      || !saved.path.startsWith(`${QUICK_CAPTURE_TARGET}/`)
-      || saved.path.indexOf("/") !== QUICK_CAPTURE_TARGET.length
-      || saved.path.includes("..")
-      || saved.path.includes("\\")
-    ) {
+    if (!saved || !isSafeQuickCapturePath(saved.path)) {
       throw new Error("unexpected save path");
     }
     return { path: saved.path };

@@ -13,19 +13,21 @@ never claims that a note was saved.
 The work is intentionally limited to issue #303. Image assets, templates,
 clipboard history, cloud sync, and cross-app handoff remain follow-up work.
 The existing draft was checkpointed and rebased onto the latest `origin/main`
-(`847e28f`, after #420) in the dedicated worktree
+(`2c20eb5`, after #424) in the dedicated worktree
 `/mnt/e/projects/devbox-worktrees/knowledge-base-quick-capture` on
-`feat/knowledge-base/quick-capture`. No push, merge, or PR was made before the
-parent review.
+`feat/knowledge-base/quick-capture`. The post-rebase audit kept the feature
+isolated to #303; no push, merge, or PR is part of this checkpoint.
 
 ## Context and decisions
 
 - The capture destination is not accepted from the request. It is always the
   root-relative `Inbox` directory, which prevents the modal from becoming a
   generic file writer.
-- Preview has no filesystem or database side effect. Save creates a new file
-  with a bounded UTC timestamp name and then indexes that exact Markdown in a
-  SQLite transaction.
+- Preview has no capture filesystem/database side effect: it reads the already
+  configured root, normalizes the input, and metadata-checks the fixed `Inbox`
+  target without creating it or initializing the default layout. Save
+  creates only that one fixed directory after a fresh root/ancestor/symlink
+  check, then indexes the exact Markdown in a SQLite transaction.
 - `create_new`, `flush`, and `sync_all` prevent overwrite and reduce the
   chance of a silently incomplete note. If writing or indexing fails, the new
   file is removed on the failure path.
@@ -35,6 +37,10 @@ parent review.
 - Credential-like assignment markers, token prefixes, bearer values, and
   private-key markers fail closed. Errors are fixed safe messages and do not
   echo input, absolute paths, or OS details.
+- Rust and TypeScript now agree on Unicode scalar and UTF-8 byte bounds,
+  C0/C1 plus Unicode line-separator rejection, `X-API-Key`/private-key
+  assignments, and all-occurrence common token-prefix scanning. The renderer
+  rechecks a manually constructed normalized DTO before serializing it.
 - Clipboard text is read only after the explicit clipboard button action. No
   history, background polling, localStorage entry, or integration snapshot
   contains the clipboard payload.
@@ -50,12 +56,16 @@ parent review.
 - `apps/knowledge-base/src-tauri/src/core/capture.rs`
   - Added `QuickCaptureInput`, normalized DTOs, fixed error messages, LF
     normalization, and deterministic Markdown rendering.
-  - Enforced title 200 Unicode scalars, body 64 KiB UTF-8, at most 20 tags,
-    48 scalars per tag, and 1 KiB total tag bytes.
-  - Rejected control/newline injection, unsafe tag punctuation, blank body,
-    and conservative credential-like content.
+  - Enforced title 200 Unicode scalars/800 bytes, LF-normalized body 64 KiB
+    with a 128 KiB raw-input bound, at most 20 tags, 48 scalars/192 bytes per
+    tag, and 1 KiB total tag bytes.
+  - Rejected C0/C1 and Unicode line-separator injection, unsafe tag
+    punctuation, blank body, and conservative credential-like content.
   - Rejected unknown IPC fields, kept bearer-token scanning linear, and JSON-quoted
     title/tag frontmatter so punctuation cannot corrupt or reinterpret metadata.
+  - Scans all common token-prefix occurrences (including header-shaped
+    `X-API-Key`) and rechecks the complete normalized DTO in the renderer so a
+    future caller cannot bypass the native policy.
   - Added UTC filename generation with a bounded collision ordinal.
 - `apps/knowledge-base/src-tauri/src/core/frontmatter.rs`
   - Decodes the JSON-compatible quoted scalars emitted by quick capture while
@@ -69,6 +79,9 @@ parent review.
 - `apps/knowledge-base/src-tauri/src/commands/docs.rs`
   - Added preview/save DTOs and Tauri commands.
   - Reused canonical root and existing-ancestor/symlink validation.
+  - Preview validates the fixed target without creating it. Save creates only
+    the one-level `Inbox` directory with `create_dir`, revalidates it, and no
+    longer uses recursive `create_dir_all` before the new-file operation.
   - Added deterministic test injection for the timestamp, `create_new` file
     creation, cleanup on the database failure path, and root-relative result
   paths only. The write/commit cleanup branches remain explicit in the
@@ -94,8 +107,11 @@ parent review.
 
 - `apps/knowledge-base/src/lib/quickCapture.ts` and
   `apps/knowledge-base/src/types.ts`
-  - Added the browser/native input mirror, tag parsing, bounded validation
-    errors, preview/saved DTOs, and shortcut status types.
+  - Added the browser/native input mirror, matching scalar/byte/raw-body and
+    line-separator validation, tag parsing, bounded validation errors,
+    preview/saved DTOs, and shortcut status types.
+  - Added an exact root-relative timestamp filename predicate for the native
+    save response and all-occurrence credential-prefix checks.
 - `apps/knowledge-base/src/api.ts`
   - Added preview/save/status/event wrappers.
   - Performs local validation, validates the returned `Inbox/` path, and
@@ -105,10 +121,13 @@ parent review.
     error instead of reporting success.
 - `apps/knowledge-base/src/components/QuickCaptureDialog.tsx`
   - Added edit → preview → save modal stages with fixed target display,
-    explicit clipboard action, bounded clipboard retention, and safe errors.
+    explicit clipboard action, policy-gated clipboard retention, and safe
+    errors.
   - Added generation tokens, busy guards, duplicate-save protection, Escape,
     Tab focus trap, Ctrl/Cmd+Enter, ARIA dialog state, live errors, and focus
     restoration to the trigger.
+  - Added explicit field descriptions and live progress status for screen
+    readers; IME-composed actions remain ignored.
   - Saves the exact normalized preview payload the user approved and ignores
     Enter/Escape shortcuts during IME composition.
 - `apps/knowledge-base/src/App.tsx` and `apps/knowledge-base/src/App.css`
@@ -119,19 +138,23 @@ parent review.
 ### Tests and regression mocks
 
 - `apps/knowledge-base/src-tauri/src/core/capture.rs` tests cover
-  normalization, deterministic rendering, title/body/tag bounds, injection,
-  credential rejection, and filenames.
+  normalization, deterministic rendering, title/body/tag scalar/byte bounds,
+  line-separator injection, renderer revalidation, credential rejection, and
+  filenames.
 - `apps/knowledge-base/src-tauri/src/commands/docs.rs` tests cover fixed
   `Inbox` preview, Markdown/index persistence, same-second collision
-  suffixing, rejection before file creation, and an Inbox symlink escape.
+  suffixing, lazy directory creation, rejection before file creation, and an
+  Inbox symlink escape.
 - `apps/knowledge-base/src-tauri/src/platform/mod.rs` tests cover bounded
   shortcut status values.
 - `apps/knowledge-base/src/lib/quickCapture.test.ts` covers the frontend
-  mirror policy and tag parser.
+  mirror scalar/byte policy, Unicode line separators, all-occurrence
+  credential checks, fixed save-path validation, and tag parsing.
 - `apps/knowledge-base/src/components/QuickCaptureDialog.test.tsx` covers
   explicit one-shot clipboard use, oversized clipboard rejection, preview
   before save, exact approved-payload persistence, IME composition,
-  duplicate/busy behavior, and non-echoing safe errors.
+  credential clipboard rejection without draft retention, duplicate/busy
+  behavior, unmount stale completion, and non-echoing safe errors.
 - `apps/knowledge-base/src/App.applink.test.tsx`, `App.test.tsx`, and
   `App.wikilinks.test.tsx` include the new API mocks and verify event/button
   parity and shortcut conflict fallback without changing existing app-link,
@@ -141,14 +164,15 @@ parent review.
 
 - Re-read the native command boundary, capture policy, shortcut platform
   boundary, frontend API, dialog, capability, README, roadmap, and detailed
-  plan after rebasing onto `origin/main`.
+  plan after rebasing onto `origin/main` at `2c20eb5`.
 - Confirmed that preview has no filesystem/SQLite mutation, save has a fixed
   root-relative target and bounded collision loop, and clipboard access occurs
   only from the explicit button handler. Native and frontend error adapters
   continue to keep raw paths, credentials, and OS/IPC detail out of the UI.
 - Confirmed that the existing generation/busy guards cover preview, save, and
   clipboard completion after close/unmount, while disabled controls prevent
-  duplicate mutation and the dialog retains keyboard focus handling.
+  duplicate mutation and the dialog retains keyboard focus handling. The
+  clipboard path now runs the same validator before placing a value in state.
 - The parent review additionally fixed frontmatter punctuation loss, a
   credential-scan worst case, unknown IPC fields, preview/save parity, and IME
   shortcut handling without broadening product scope.
@@ -208,29 +232,29 @@ the React listener only opens the same modal as the visible button.
 ## Verification results
 
 The following focused checks were run without installing dependencies or
-running a full workspace build:
+running a full workspace gate:
 
 ```text
 cargo fmt --all -- --check
 exit 0
 
-cargo metadata --locked --offline --no-deps --format-version 1
+cargo test --manifest-path apps/knowledge-base/src-tauri/Cargo.toml --lib -j2
+test result: ok. 67 passed; 0 failed
+
+cargo check --manifest-path apps/knowledge-base/src-tauri/Cargo.toml --lib -j2
 exit 0
 
-cargo test --manifest-path apps/knowledge-base/src-tauri/Cargo.toml --lib
-test result: ok. 65 passed; 0 failed
-
-cargo clippy --manifest-path apps/knowledge-base/src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo clippy --manifest-path apps/knowledge-base/src-tauri/Cargo.toml --all-targets -j2 -- -D warnings
 exit 0
 
-tsc -p apps/knowledge-base/tsconfig.json --noEmit
+tsc -p apps/knowledge-base/tsconfig.json --noEmit (Linux-native dependency mirror)
 exit 0
 
-vitest run (Knowledge Base, all 9 test files)
-Test Files  9 passed (9)
-Tests       43 passed (43)
+vitest run --config vite.config.ts src/lib/quickCapture.test.ts src/components/QuickCaptureDialog.test.tsx --pool=forks --maxWorkers=1 --no-file-parallelism --reporter=dot
+Test Files  2 passed (2)
+Tests       16 passed (16)
 
-pnpm --filter knowledge-base build
+vite build (Knowledge Base, Linux-native dependency mirror)
 exit 0
 
 git diff --check
@@ -239,10 +263,11 @@ exit 0
 
 The TypeScript, Vitest, and Vite checks used the repository's existing local
 dependency snapshot through a Linux-native mirror; the feature worktree has no
-`node_modules` directory. The normal filtered pnpm build completed successfully.
-The focused Windows MSVC target check reached the Windows dependency graph but
-could not finish because the WSL host has no `lib.exe` for the bundled SQLite
-build. The Windows packaged W2 manual check was not run in WSL.
+`node_modules` directory. The focused Rust commands were limited to the
+Knowledge Base crate and used two cargo jobs. The Windows MSVC target check was
+not repeated in this audit; the earlier attempt reached the Windows dependency
+graph but could not finish because the WSL host has no `lib.exe` for the bundled
+SQLite build. The Windows packaged W2 manual check was not run in WSL.
 
 ## Remaining risks and next steps
 
@@ -255,7 +280,11 @@ build. The Windows packaged W2 manual check was not run in WSL.
    WSL cannot execute it.
 3. Keep image assets, templates, clipboard history, cloud sync, and handoff in
    separate issues/PRs as documented; they are not hidden in this draft.
-4. Treat filesystem cleanup as bounded execution rollback only: an abrupt
+4. The save path uses bounded canonical-root/ancestor revalidation followed by
+   `create_new`; this narrows filesystem TOCTOU exposure but is not an
+   OS-level openat-style transaction against a concurrent attacker. Keep the
+   fixed target and revalidation contract in place if persistence is refactored.
+5. Treat filesystem cleanup as bounded execution rollback only: an abrupt
    process/OS termination during the file/index sequence is not covered by a
    persistent journal. The credential gate is deliberately conservative
    pattern detection, so it should not be described as a complete secret
