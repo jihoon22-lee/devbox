@@ -47,6 +47,14 @@ export interface InstalledApp {
   mode: InstallMode;
 }
 
+export interface InstallPathInfo {
+  appId: string;
+  mode: InstallMode;
+  executable: string | null;
+  installRoot: string | null;
+  sourceManifest: string;
+}
+
 export type InstallMode = "portable" | "installer";
 
 export interface BatchInstallRequest {

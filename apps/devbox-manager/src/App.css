@@ -102,6 +102,53 @@ body {
   overflow: auto;
 }
 
+.install-path-panel {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 94%, var(--accent) 6%);
+}
+
+.install-path-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.read-only-tag {
+  margin-left: 8px;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.install-path-grid {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 10px 0 0;
+}
+
+.install-path-grid dt {
+  color: var(--dim);
+}
+
+.install-path-grid dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.install-path-grid code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  user-select: text;
+}
+
+.install-path-note {
+  margin-top: 9px;
+  font-size: 11px;
+}
+
 .batch-panel {
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);

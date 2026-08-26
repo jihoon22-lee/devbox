@@ -667,6 +667,26 @@ process와 filesystem 오류의 URL·absolute path를 반사하지 않는다. �
 항목만 원래 mode로 재시도한다. install path 표시, custom root, 제거와 Data Inspector는 각각 #275,
 P2/P3 범위로 유지한다.
 
+### 6.9 v0.5.0 install path 표시 경계 (#275)
+
+경로 표시는 설치·실행·제거 command의 응답을 확장하지 않고 별도 read-only IPC로 제공한다. frontend는
+catalog app ID 하나만 보내며 locator path, manifest path나 executable 후보를 입력하지 않는다.
+backend는 build/runtime catalog 선택과 locator `catalogRevision`이 일치해야 진행하고, canonical root,
+그 root 내부의 canonical source manifest, manifest 전체 app/version/mode/중복 계약과 portable exact
+layout을 모두 재검증한다. source manifest는 현재 Manager 목록의 canonical manifest와도 같아야 하며,
+유효한 locator 뒤의 손상·다른 root manifest/path는 legacy fallback으로 우회하지 않는다.
+
+portable은 실제 canonical executable, 이를 소유한 install root와 source manifest를 표시한다. installer는
+Manager가 검증된 설치 프로그램을 실행했다는 manifest record만 소유할 뿐 wizard의 완료·최종 위치를
+증명하지 못한다. 따라서 installer의 executable/root는 `null`이며 UI는 추측 대신 “Manager가 실제 설치
+위치를 추적하지 않습니다”라고 표시한다. source manifest는 상태의 provenance로 계속 표시한다.
+
+표시 패널은 명시적인 `읽기 전용` 배지와 executable/root/source manifest label을 갖고 긴 경로를 panel
+내에서 wrap한다. 이 PR에는 copy, Explorer open, path 선택·변경, custom root migration, install/remove,
+registry write가 없다. 일반 installed/current DTO도 path-free를 유지한다. fixture는 조회 전후 locator,
+manifest, executable byte가 같음을 확인하고, revision mismatch·unsafe path는 원문 경로 없는 고정 오류로
+fail-closed 처리한다.
+
 ## 7. P0.5 — 공용 프리미티브
 
 기능 추가가 아니다. 저장소가 이미 선언한 추출 규칙을 집행하고, 문서와 코드의 불일치를

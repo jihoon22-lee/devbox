@@ -233,7 +233,10 @@ rollback하도록 구현해 PR #405로 CI 통과·머지됐다. #274는 Devbox M
 단일 manifest 조회·순차 실행, 앱별 성공/실패 결과와 실패 항목 exact-mode 재시도를 구현한다.
 portable registry commit 실패는 기존 current를 복구하고 setup batch는 여러 installer 마법사 실행을
 명시적으로 확인한다. backend SemVer gate는 동일·더 최신 installed version의 stale selection을 no-op로
-만들어 batch downgrade를 막는다. 다음 P1-09 작업은 #275 Devbox Manager install path read-only 표시다.
+만들어 batch downgrade를 막아 PR #406으로 CI 통과·머지됐다. #275는 versioned locator와 selected
+catalog revision, canonical source manifest와 portable exact executable을 검증해 app별 executable/root/
+source manifest를 읽기 전용 패널에 표시한다. installer는 실제 wizard 완료 위치를 추측하지 않고
+source manifest provenance만 표시한다. 다음 P1-09 작업은 #276 WSL Desktop Docker compact 표시다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

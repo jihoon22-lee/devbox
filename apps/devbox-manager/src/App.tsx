@@ -9,6 +9,7 @@ import {
   catalog,
   current,
   installApp,
+  installPath,
   installMany,
   installed,
   launchApp,
@@ -24,6 +25,7 @@ import type {
   CatalogApp,
   Current,
   InstalledApp,
+  InstallPathInfo,
   InstallMode,
   ReleaseManifest,
 } from "./types";
@@ -43,6 +45,7 @@ export default function App() {
   const [contextApp, setContextApp] = useState<CatalogApp | null>(null);
   const [batchSelection, setBatchSelection] = useState<Set<string>>(() => new Set());
   const [batchResults, setBatchResults] = useState<BatchInstallResult[]>([]);
+  const [installPathDetails, setInstallPathDetails] = useState<InstallPathInfo | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
   const batchBusyRef = useRef(false);
   const operationBusyRef = useRef(false);
@@ -69,6 +72,7 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     setError(null);
+    setInstallPathDetails(null);
     try {
       const [cat, av, inst] = await Promise.all([catalog(), available(), installed()]);
       const visibleApps = cat.filter((a) => a.managerVisible && !a.selfManaged);
@@ -260,6 +264,24 @@ export default function App() {
     }
   };
 
+  const onShowInstallPath = async (appId: string) => {
+    if (operationBusyRef.current) return;
+    operationBusyRef.current = true;
+    setBusy(`${appId}:path`);
+    setError(null);
+    setNotice(null);
+    try {
+      setInstallPathDetails(await installPath(appId));
+      setSelectedAppId(appId);
+    } catch (e) {
+      setInstallPathDetails(null);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      operationBusyRef.current = false;
+      setBusy(null);
+    }
+  };
+
   const onRemove = async (app: CatalogApp) => {
     if (operationBusyRef.current) return;
     if (!window.confirm(
@@ -314,6 +336,12 @@ export default function App() {
         label: "설치 폴더 열기",
         disabled: contextBusy || !contextPortable,
       },
+      {
+        type: "item",
+        id: "install-path",
+        label: "설치 경로 정보",
+        disabled: contextBusy || !contextInstalled,
+      },
       { type: "separator", id: "remove-separator" },
       {
         type: "item",
@@ -323,7 +351,15 @@ export default function App() {
         danger: true,
       },
     ];
-  }, [contextApp, contextBusy, contextCanRollback, contextManifest, contextPortable, contextUpToDate]);
+  }, [
+    contextApp,
+    contextBusy,
+    contextCanRollback,
+    contextInstalled,
+    contextManifest,
+    contextPortable,
+    contextUpToDate,
+  ]);
 
   const onAppContextSelect = (id: string) => {
     const app = contextApp;
@@ -333,6 +369,7 @@ export default function App() {
     else if (id === "launch") void onLaunch(app.id);
     else if (id === "rollback") void onRollback(app.id);
     else if (id === "open-folder") void onOpenInstallFolder(app.id);
+    else if (id === "install-path") void onShowInstallPath(app.id);
     else if (id === "remove") void onRemove(app);
   };
 
@@ -381,6 +418,40 @@ export default function App() {
         </div>
       ) : (
       <div className="table-wrap">
+        {installPathDetails && (
+          <section className="install-path-panel" aria-label="검증된 설치 경로 정보">
+            <div className="install-path-head">
+              <div>
+                <strong>
+                  {apps.find((candidate) => candidate.id === installPathDetails.appId)?.displayName
+                    ?? installPathDetails.appId}
+                </strong>
+                <span className="read-only-tag">읽기 전용</span>
+              </div>
+              <button
+                className="btn"
+                aria-label="설치 경로 정보 닫기"
+                onClick={() => setInstallPathDetails(null)}
+              >
+                닫기
+              </button>
+            </div>
+            <dl className="install-path-grid">
+              <dt>Executable</dt>
+              <dd><code>{installPathDetails.executable ?? "Manager가 실제 설치 위치를 추적하지 않습니다."}</code></dd>
+              <dt>Install root</dt>
+              <dd><code>{installPathDetails.installRoot ?? "Manager가 실제 설치 위치를 추적하지 않습니다."}</code></dd>
+              <dt>Source manifest</dt>
+              <dd><code>{installPathDetails.sourceManifest}</code></dd>
+            </dl>
+            <div className="dim install-path-note">
+              locator·catalog revision·manifest·canonical executable을 검증한 결과만 표시하며 파일을 열거나 변경하지 않습니다.
+              {installPathDetails.mode === "installer" && (
+                <> 설치 패키지는 마법사 실행 뒤의 실제 위치를 Manager가 소유하지 않아 추측하지 않습니다.</>
+              )}
+            </div>
+          </section>
+        )}
         <section className="batch-panel" aria-label="일괄 설치 및 업데이트">
           <div className="batch-actions">
             <strong>일괄 작업</strong>
@@ -492,6 +563,16 @@ export default function App() {
                   </td>
                   <td>{app ? app.version : "-"}</td>
                   <td className="actions">
+                    {inst && (
+                      <button
+                        className="btn"
+                        aria-label={`${a.displayName} 설치 경로 정보`}
+                        disabled={isAppBusy(a.id)}
+                        onClick={() => void onShowInstallPath(a.id)}
+                      >
+                        {busy === `${a.id}:path` ? "..." : "Paths"}
+                      </button>
+                    )}
                     {inst?.mode === "portable" && (
                       <button className="btn" disabled={isAppBusy(a.id)} onClick={() => void onLaunch(a.id)}>
                         Launch

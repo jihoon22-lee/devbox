@@ -234,6 +234,21 @@ portable 항목은 검증된 version artifact를 준비한 뒤 current와 regist
 결과 설명을 제공한다. batch 도중 URL, digest, process와 filesystem의 원문 오류는 frontend DTO로
 반사하지 않는다.
 
+설치 경로 표시는 lifecycle DTO와 분리된 명시적 read-only `install_path(appId)` IPC만 사용한다.
+backend는 selected runtime/build catalog revision과 install-root locator의 catalog provenance가
+일치하는지 확인하고, locator가 가리키는 canonical root와 그 내부의 canonical source manifest를
+검증한다. manifest 전체가 알려진 catalog app만 포함하고 중복·잘못된 version/mode가 없으며 모든
+portable executable이 `<root>/apps/<app-id>/versions/<version>/<app-id>.exe`와 정확히 같을 때만
+표시 DTO를 만든다. 또한 locator의 source manifest가 현재 Manager 설치 목록이 읽는 canonical manifest와
+같아야 한다. 미래 custom-root locator와 아직 default-root인 Manager 상태가 섞인 과도기에는 다른 root의
+같은 app ID를 표시하지 않고 실패한다. 원시 locator/manifest 값이나 검증 오류는 frontend에 반사하지 않는다.
+
+portable DTO는 app ID, mode, canonical executable, canonical install root, canonical source manifest를
+포함한다. installer manifest는 installer 실행 사실만 소유하고 마법사 완료 위치는 소유하지 않으므로
+executable과 install root를 `null`로 반환하고 source manifest만 표시한다. UI는 이를 `읽기 전용`으로
+표시하며 copy/open/edit action을 제공하지 않는다. command는 filesystem, registry, process를 변경하지
+않고, 기존 installed/current 및 launch/remove DTO는 계속 path-free 상태를 유지한다.
+
 Manager backend는 action마다 manager-visible/non-self-managed catalog target, bounded version component,
 `<manager-root>/apps/<app-id>/versions/<version>/<app-id>.exe` 고정 layout과 registry executable의 canonical
 identity를 다시 확인한다. portable 제거 전에는 app-owned tree 전체를 제한된 깊이·항목 수로 순회해

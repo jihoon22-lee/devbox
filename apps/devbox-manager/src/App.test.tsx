@@ -7,6 +7,7 @@ import {
   catalog,
   current,
   installApp,
+  installPath,
   installMany,
   installed,
   launchApp,
@@ -15,13 +16,20 @@ import {
   rollback,
   runDiagnosis,
 } from "./api";
-import type { CatalogApp, Current, InstalledApp, ReleaseManifest } from "./types";
+import type {
+  CatalogApp,
+  Current,
+  InstalledApp,
+  InstallPathInfo,
+  ReleaseManifest,
+} from "./types";
 
 vi.mock("./api", () => ({
   available: vi.fn(),
   catalog: vi.fn(),
   current: vi.fn(),
   installApp: vi.fn(),
+  installPath: vi.fn(),
   installMany: vi.fn(),
   installed: vi.fn(),
   launchApp: vi.fn(),
@@ -67,6 +75,7 @@ const availableMock = vi.mocked(available);
 const installedMock = vi.mocked(installed);
 const currentMock = vi.mocked(current);
 const installAppMock = vi.mocked(installApp);
+const installPathMock = vi.mocked(installPath);
 const installManyMock = vi.mocked(installMany);
 const launchAppMock = vi.mocked(launchApp);
 const rollbackMock = vi.mocked(rollback);
@@ -74,6 +83,13 @@ const openInstallFolderMock = vi.mocked(openInstallFolder);
 const removeAppMock = vi.mocked(removeApp);
 const runDiagnosisMock = vi.mocked(runDiagnosis);
 const confirmMock = vi.fn<(message?: string) => boolean>();
+const portablePath: InstallPathInfo = {
+  appId: "port-manager",
+  mode: "portable",
+  executable: "C:\\Devbox\\apps\\port-manager\\versions\\0.2.1\\port-manager.exe",
+  installRoot: "C:\\Devbox",
+  sourceManifest: "C:\\Devbox\\registry.json",
+};
 
 function appRow(name: string): HTMLTableRowElement {
   const row = screen.getByText(name).closest("tr");
@@ -89,6 +105,7 @@ beforeEach(() => {
     appId === portable.app ? portableCurrent : null
   ));
   installAppMock.mockReset().mockResolvedValue("installed");
+  installPathMock.mockReset().mockResolvedValue(portablePath);
   installManyMock.mockReset().mockImplementation(async (requests) => requests.map((request) => ({
     ...request,
     ok: true,
@@ -128,7 +145,14 @@ describe("Devbox Manager app row context menu", () => {
 
     fireEvent.contextMenu(appRow("Port Manager"));
 
-    for (const label of ["설치/업데이트", "실행", "이전 버전 롤백", "설치 폴더 열기", "제거"]) {
+    for (const label of [
+      "설치/업데이트",
+      "실행",
+      "이전 버전 롤백",
+      "설치 폴더 열기",
+      "설치 경로 정보",
+      "제거",
+    ]) {
       expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
     }
     expect(screen.getByRole("menuitem", { name: "실행" }).getAttribute("aria-disabled")).toBeNull();
@@ -221,6 +245,8 @@ describe("Devbox Manager app row context menu", () => {
     for (const label of ["실행", "이전 버전 롤백", "설치 폴더 열기", "제거"]) {
       expect(screen.getByRole("menuitem", { name: label }).getAttribute("aria-disabled")).toBe("true");
     }
+    expect(screen.getByRole("menuitem", { name: "설치 경로 정보" }).getAttribute("aria-disabled"))
+      .toBeNull();
   });
 
   it("disables install/update when the catalog target is already current", async () => {
@@ -237,6 +263,47 @@ describe("Devbox Manager app row context menu", () => {
 
     expect(screen.getByRole("menuitem", { name: "설치/업데이트" }).getAttribute("aria-disabled"))
       .toBe("true");
+  });
+});
+
+describe("Devbox Manager install path details", () => {
+  it("shows only backend-verified portable executable, root, and source manifest", async () => {
+    render(<App />);
+    await screen.findByText("Port Manager");
+
+    fireEvent.click(screen.getByRole("button", { name: "Port Manager 설치 경로 정보" }));
+
+    await waitFor(() => expect(installPathMock).toHaveBeenCalledWith("port-manager"));
+    expect(screen.getByRole("region", { name: "검증된 설치 경로 정보" })).toBeTruthy();
+    expect(screen.getByText(portablePath.executable!)).toBeTruthy();
+    expect(screen.getByText(portablePath.installRoot!)).toBeTruthy();
+    expect(screen.getByText(portablePath.sourceManifest)).toBeTruthy();
+    expect(screen.getByText("읽기 전용")).toBeTruthy();
+    expect(installAppMock).not.toHaveBeenCalled();
+    expect(openInstallFolderMock).not.toHaveBeenCalled();
+    expect(removeAppMock).not.toHaveBeenCalled();
+  });
+
+  it("does not guess executable or root for installer records", async () => {
+    installedMock.mockResolvedValue([
+      { app: "port-manager", version: "0.2.1", mode: "installer" },
+    ]);
+    currentMock.mockResolvedValue(null);
+    installPathMock.mockResolvedValue({
+      appId: "port-manager",
+      mode: "installer",
+      executable: null,
+      installRoot: null,
+      sourceManifest: "C:\\Devbox\\registry.json",
+    });
+    render(<App />);
+    await screen.findByText("Port Manager");
+
+    fireEvent.click(screen.getByRole("button", { name: "Port Manager 설치 경로 정보" }));
+
+    await waitFor(() => expect(installPathMock).toHaveBeenCalledWith("port-manager"));
+    expect(screen.getAllByText("Manager가 실제 설치 위치를 추적하지 않습니다.")).toHaveLength(2);
+    expect(screen.getByText(/설치 패키지는 마법사 실행 뒤의 실제 위치/)).toBeTruthy();
   });
 });
 

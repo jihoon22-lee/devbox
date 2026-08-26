@@ -27,6 +27,19 @@ pub struct InstalledTarget {
     pub executable: PathBuf,
 }
 
+/// Canonical, read-only evidence for an installed app. Portable entries have
+/// an executable and an install root because the Manager manifest owns both.
+/// Installer entries deliberately leave both paths absent: spawning an
+/// installer does not prove where its wizard ultimately placed the app.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstalledPathDetails {
+    pub app_id: String,
+    pub mode: String,
+    pub executable: Option<PathBuf>,
+    pub install_root: Option<PathBuf>,
+    pub source_manifest: PathBuf,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallLookupError {
     InvalidLocator,
@@ -64,6 +77,9 @@ struct InstalledManifestEntry {
 struct InstalledManifest {
     app_ids: HashSet<String>,
     executables: HashMap<String, PathBuf>,
+    modes: HashMap<String, String>,
+    root: PathBuf,
+    source_manifest: PathBuf,
 }
 
 enum LocatorState {
@@ -184,6 +200,66 @@ pub fn validate_installation_metadata_from_paths(
     validate_manifest_apps(&manifest, &selected.catalog)
 }
 
+/// Return display-only installation evidence after validating the selected
+/// catalog, versioned locator, source manifest, and every portable executable
+/// in that manifest. The function reads filesystem state only.
+pub fn installed_path_details_from_paths(
+    build_catalog: &str,
+    runtime_catalog_path: Option<&Path>,
+    locator_path: &Path,
+    expected_source_manifest: &Path,
+    app_id: &str,
+) -> Result<Option<InstalledPathDetails>, InstallLookupError> {
+    if !valid_app_id(app_id) {
+        return Err(InstallLookupError::InvalidManifest);
+    }
+    let locator_metadata =
+        std::fs::symlink_metadata(locator_path).map_err(|_| InstallLookupError::InvalidLocator)?;
+    if path_is_link_or_reparse(&locator_metadata) || !locator_metadata.is_file() {
+        return Err(InstallLookupError::InvalidLocator);
+    }
+    let runtime = runtime_catalog_path.and_then(|path| std::fs::read_to_string(path).ok());
+    let selected = select_catalog(build_catalog, runtime.as_deref()).map_err(map_catalog_error)?;
+    if !selected
+        .catalog
+        .apps
+        .iter()
+        .any(|app| app.id == app_id && app.manager_visible && !app.self_managed)
+    {
+        return Ok(None);
+    }
+    let LocatorState::Valid(locator) = read_locator_state(Some(locator_path)) else {
+        return Err(InstallLookupError::InvalidLocator);
+    };
+    if selected.catalog.catalog_revision != Some(locator.catalog_revision) {
+        return Err(InstallLookupError::InvalidLocator);
+    }
+    let manifest = load_manifest(&locator)?;
+    let expected_source_manifest = canonical_non_symlink(expected_source_manifest)
+        .map_err(|_| InstallLookupError::UnsafeManifest)?;
+    if manifest.source_manifest != expected_source_manifest {
+        return Err(InstallLookupError::UnsafeManifest);
+    }
+    validate_manifest_apps(&manifest, &selected.catalog)?;
+    let Some(mode) = manifest.modes.get(app_id) else {
+        return Ok(None);
+    };
+    let portable = mode == "portable";
+    let executable = portable
+        .then(|| manifest.executables.get(app_id).cloned())
+        .flatten();
+    if portable && executable.is_none() {
+        return Err(InstallLookupError::UnsafeExecutable);
+    }
+    Ok(Some(InstalledPathDetails {
+        app_id: app_id.to_string(),
+        mode: mode.clone(),
+        executable,
+        install_root: portable.then(|| manifest.root.clone()),
+        source_manifest: manifest.source_manifest.clone(),
+    }))
+}
+
 fn validate_manifest_apps(
     manifest: &InstalledManifest,
     catalog: &Catalog,
@@ -237,6 +313,7 @@ fn load_manifest(locator: &InstallRootLocator) -> Result<InstalledManifest, Inst
         serde_json::from_str(&input).map_err(|_| InstallLookupError::InvalidManifest)?;
     let mut app_ids = HashSet::new();
     let mut installed = HashMap::new();
+    let mut modes = HashMap::new();
     for row in rows {
         if !valid_app_id(&row.app)
             || !valid_version(&row.version)
@@ -249,6 +326,7 @@ fn load_manifest(locator: &InstallRootLocator) -> Result<InstalledManifest, Inst
             if !row.exe_path.is_empty() {
                 return Err(InstallLookupError::InvalidManifest);
             }
+            modes.insert(row.app, row.mode);
             continue;
         }
         let raw_executable = PathBuf::from(&row.exe_path);
@@ -269,17 +347,34 @@ fn load_manifest(locator: &InstallRootLocator) -> Result<InstalledManifest, Inst
         if executable != expected || !executable.starts_with(&root) || !executable.is_file() {
             return Err(InstallLookupError::UnsafeExecutable);
         }
+        modes.insert(row.app.clone(), row.mode);
         installed.insert(row.app, executable);
     }
     Ok(InstalledManifest {
         app_ids,
         executables: installed,
+        modes,
+        root,
+        source_manifest: manifest,
     })
+}
+
+#[cfg(windows)]
+fn path_is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+    metadata.file_type().is_symlink()
+        || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn path_is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
+    metadata.file_type().is_symlink()
 }
 
 fn canonical_non_symlink(path: &Path) -> Result<PathBuf, ()> {
     let metadata = std::fs::symlink_metadata(path).map_err(|_| ())?;
-    if metadata.file_type().is_symlink() {
+    if path_is_link_or_reparse(&metadata) {
         return Err(());
     }
     path.canonicalize().map_err(|_| ())
@@ -495,6 +590,144 @@ mod tests {
         )
         .unwrap()
         .is_empty());
+    }
+
+    #[test]
+    fn install_path_details_are_canonical_and_read_only() {
+        let layout = TestLayout::new();
+        let executable = layout.install("code-pad", "0.5.0");
+        layout.write_manifest(json!([
+            {"app":"code-pad","version":"0.5.0","mode":"portable","exe_path":executable},
+            {"app":"wsl-desktop","version":"0.5.0","mode":"installer","exe_path":""}
+        ]));
+        layout.write_locator(3, 5);
+        let build = catalog(
+            5,
+            vec![
+                app("code-pad", json!(["path"])),
+                app("wsl-desktop", json!(["path"])),
+            ],
+        );
+        let manifest_before = fs::read(&layout.manifest).unwrap();
+        let locator_before = fs::read(&layout.locator).unwrap();
+        let executable_before = fs::read(&executable).unwrap();
+
+        let portable = installed_path_details_from_paths(
+            &build,
+            None,
+            &layout.locator,
+            &layout.manifest,
+            "code-pad",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(portable.app_id, "code-pad");
+        assert_eq!(portable.mode, "portable");
+        assert_eq!(portable.executable, Some(executable.clone()));
+        assert_eq!(portable.install_root, Some(layout.root.clone()));
+        assert_eq!(
+            portable.source_manifest,
+            layout.manifest.canonicalize().unwrap()
+        );
+
+        let installer = installed_path_details_from_paths(
+            &build,
+            None,
+            &layout.locator,
+            &layout.manifest,
+            "wsl-desktop",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(installer.mode, "installer");
+        assert_eq!(installer.executable, None);
+        assert_eq!(installer.install_root, None);
+        assert_eq!(
+            installer.source_manifest,
+            layout.manifest.canonicalize().unwrap()
+        );
+
+        assert_eq!(fs::read(&layout.manifest).unwrap(), manifest_before);
+        assert_eq!(fs::read(&layout.locator).unwrap(), locator_before);
+        assert_eq!(fs::read(&executable).unwrap(), executable_before);
+    }
+
+    #[test]
+    fn install_path_details_fail_closed_on_catalog_revision_mismatch() {
+        let layout = TestLayout::new();
+        let executable = layout.install("code-pad", "0.5.0");
+        layout.write_manifest(json!([
+            {"app":"code-pad","version":"0.5.0","mode":"portable","exe_path":executable}
+        ]));
+        layout.write_locator(1, 4);
+        let build = catalog(5, vec![app("code-pad", json!(["path"]))]);
+
+        assert_eq!(
+            installed_path_details_from_paths(
+                &build,
+                None,
+                &layout.locator,
+                &layout.manifest,
+                "code-pad"
+            ),
+            Err(InstallLookupError::InvalidLocator)
+        );
+    }
+
+    #[test]
+    fn install_path_details_reject_a_different_active_manifest() {
+        let layout = TestLayout::new();
+        let executable = layout.install("code-pad", "0.5.0");
+        layout.write_manifest(json!([
+            {"app":"code-pad","version":"0.5.0","mode":"portable","exe_path":executable}
+        ]));
+        layout.write_locator(1, 5);
+        let other_manifest = layout.outer.join("other-registry.json");
+        fs::write(&other_manifest, b"[]").unwrap();
+        let build = catalog(5, vec![app("code-pad", json!(["path"]))]);
+
+        let error = installed_path_details_from_paths(
+            &build,
+            None,
+            &layout.locator,
+            &other_manifest,
+            "code-pad",
+        )
+        .unwrap_err();
+        assert_eq!(error, InstallLookupError::UnsafeManifest);
+        assert!(!error
+            .to_string()
+            .contains(&other_manifest.to_string_lossy()[..]));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_path_details_reject_a_symlinked_locator_without_path_reflection() {
+        use std::os::unix::fs::symlink;
+
+        let layout = TestLayout::new();
+        let executable = layout.install("code-pad", "0.5.0");
+        layout.write_manifest(json!([
+            {"app":"code-pad","version":"0.5.0","mode":"portable","exe_path":executable}
+        ]));
+        layout.write_locator(1, 5);
+        let actual_locator = layout.locator.with_file_name("actual-locator.json");
+        fs::rename(&layout.locator, &actual_locator).unwrap();
+        symlink(&actual_locator, &layout.locator).unwrap();
+        let build = catalog(5, vec![app("code-pad", json!(["path"]))]);
+
+        let error = installed_path_details_from_paths(
+            &build,
+            None,
+            &layout.locator,
+            &layout.manifest,
+            "code-pad",
+        )
+        .unwrap_err();
+        assert_eq!(error, InstallLookupError::InvalidLocator);
+        assert!(!error
+            .to_string()
+            .contains(&layout.outer.to_string_lossy()[..]));
     }
 
     #[test]
