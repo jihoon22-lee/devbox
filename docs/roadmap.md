@@ -436,6 +436,21 @@ IME·double-action·stale/unmount guard를 포함한다. RFC/negative vector, bo
 encoding/key length, temporal skew, browser/native parity와 Windows W2 packaged/offline smoke를
 이 기능의 완료 증거로 남긴다.
 
+**#292.** Developer Toolbox Encoding group에 오프라인 QR Generator를 추가한다. text·HTTP(S)
+URL·Wi-Fi preset, QR version auto/1–40, 오류 보정 L/M/Q/H, 64–2,048px 출력과 quiet zone
+4–16 modules를 bounded request로 검증한다. payload는 UTF-8 4,096바이트까지이며 Wi-Fi
+SSID/password는 32/63바이트와 WPA/WEP/nopass 규칙을 적용하고 예약 문자를 표준 WIFI payload로
+escape한다. URL은 문자열 형식만 검사하고 fetch·network·dynamic service를 실행하지 않는다.
+명시 version capacity, SVG 4MiB, PNG raw/base64 각 4MiB 상한은 부분 결과 없이 고정 오류로
+중단한다.
+
+Tauri는 `qrcode 0.14.1` pure-Rust byte mode와 `png 0.18.1` grayscale encoder를 사용하고,
+browser fallback은 bundled `qrcode-generator 2.0.4`로 같은 bounded contract를 적용한다. SVG는
+payload를 XML에 포함하지 않는 deterministic matrix renderer이며 결과 DTO에는 payload·path·
+credential이 없다. 생성 중 input/options를 잠그고 sequence·mounted guard로 stale 결과/action을
+폐기하며, SVG/PNG preview와 명시적 copy/save만 제공한다. dependency source/license/integrity와
+notice digest를 함께 검증하고 camera scan·decode·remote generator는 포함하지 않는다.
+
 #278은 기존 언어 서버 status에 retry 실패 횟수·남은 backoff·열린 circuit을 표시하고, 같은 카드에서
 수동 `다시 시도`를 실행하도록 확장한다. 관리형 server ref는 설치 index 검증 결과와 결합해 cache
 사용 가능/재설치 필요/미설치 상태만 보여 주며 설치 경로는 frontend DTO에 추가하지 않는다. lifecycle

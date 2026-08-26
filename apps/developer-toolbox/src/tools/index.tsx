@@ -10,6 +10,7 @@ import { JsonTypescriptTool } from "./JsonTypescriptTool";
 import { LoremTool } from "./LoremTool";
 import { MarkdownTableTool } from "./MarkdownTableTool";
 import { RadixTool } from "./RadixTool";
+import { QrTool } from "./QrTool";
 import {
   CaseConverter,
   HtmlEntityDecoder,
@@ -43,6 +44,7 @@ const encodingTools: ToolDef[] = [
   { id: "html-entity-decode", group: "Encoding", name: "HTML Entity Decode", component: HtmlEntityDecoder },
   { id: "url-encode", group: "Encoding", name: "URL Component Encode", component: UrlEncoder },
   { id: "url-decode", group: "Encoding", name: "URL Component Decode", component: UrlDecoder },
+  { id: "qr", group: "Encoding", name: "QR Generator", component: QrTool },
 ];
 
 const timeTools: ToolDef[] = [

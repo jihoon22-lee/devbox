@@ -257,6 +257,8 @@ interface ToolTextAreaProps
   clipboardErrorMessage?: string;
   /** Backward-compatible alias used by earlier text-tool implementations. */
   actionErrorMessage?: string;
+  /** Backward-compatible fixed-error alias used by the QR surface. */
+  fixedActionError?: string;
   /** Maximum resulting UTF-8 bytes after the explicit Paste action. */
   maxPasteBytes?: number;
 }
@@ -268,11 +270,12 @@ export function ToolTextArea({
   menuLabel = "Input actions",
   clipboardErrorMessage,
   actionErrorMessage,
+  fixedActionError,
   maxPasteBytes,
   ...props
 }: ToolTextAreaProps) {
   const context = useEditableTextContextMenu(value, onValueChange, {
-    clipboardErrorMessage: clipboardErrorMessage ?? actionErrorMessage,
+    clipboardErrorMessage: clipboardErrorMessage ?? actionErrorMessage ?? fixedActionError,
     maxPasteBytes,
   });
   return (
@@ -303,7 +306,7 @@ export function ToolTextArea({
 }
 
 interface ToolTextFieldProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "onChange"> {
+  extends Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> {
   value: string;
   onValueChange: (value: string) => void;
   menuLabel?: string;
@@ -311,6 +314,8 @@ interface ToolTextFieldProps
   clipboardErrorMessage?: string;
   /** Backward-compatible alias used by earlier text-tool implementations. */
   actionErrorMessage?: string;
+  /** Backward-compatible fixed-error alias used by the QR surface. */
+  fixedActionError?: string;
   /** Maximum resulting UTF-8 bytes after the explicit Paste action. */
   maxPasteBytes?: number;
   inputType?: "text" | "password";
@@ -323,12 +328,14 @@ export function ToolTextField({
   menuLabel = "Input actions",
   clipboardErrorMessage,
   actionErrorMessage,
+  fixedActionError,
   maxPasteBytes,
-  inputType = "text",
+  inputType,
+  type,
   ...props
 }: ToolTextFieldProps) {
   const context = useEditableTextContextMenu(value, onValueChange, {
-    clipboardErrorMessage: clipboardErrorMessage ?? actionErrorMessage,
+    clipboardErrorMessage: clipboardErrorMessage ?? actionErrorMessage ?? fixedActionError,
     maxPasteBytes,
   });
   return (
@@ -337,7 +344,7 @@ export function ToolTextField({
         {...props}
         {...context.menu.triggerProps}
         ref={context.controlRef as RefObject<HTMLInputElement | null>}
-        type={inputType}
+        type={type ?? inputType ?? "text"}
         value={value}
         onChange={(event) => onValueChange(event.currentTarget.value)}
       />
@@ -371,6 +378,21 @@ export function downloadTextResult(value: string, filename: string): void {
   }
 }
 
+export function downloadBinaryResult(value: string, filename: string, mimeType: string): void {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 interface ToolOutputProps {
   value: string;
   children?: ReactNode;
@@ -380,6 +402,8 @@ interface ToolOutputProps {
   downloadName?: string;
   /** Fixed error text for features whose output action must not reflect platform details. */
   actionErrorMessage?: string;
+  /** Backward-compatible fixed-error alias used by the QR surface. */
+  fixedActionError?: string;
   /** Optional parent busy state used to share one copy/save flight across controls. */
   busy?: boolean;
   /** Called when a context-menu output action starts or settles. */
@@ -396,6 +420,7 @@ export function ToolOutput({
   menuLabel = "Output actions",
   downloadName = "dev-toolbox-result.txt",
   actionErrorMessage,
+  fixedActionError,
   busy = false,
   onBusyChange,
   asDiv = false,
@@ -423,7 +448,7 @@ export function ToolOutput({
     setActionBusy(false);
     onBusyChange?.(false);
     setActionError(null);
-  }, [actionErrorMessage, downloadName, onBusyChange, value]);
+  }, [actionErrorMessage, downloadName, fixedActionError, onBusyChange, value]);
 
   const menu = useContextMenu({ onBeforeOpen: () => setActionError(null) });
   const items = useMemo<readonly ContextMenuEntry[]>(
@@ -472,7 +497,7 @@ export function ToolOutput({
           || actionRevision.current !== revision
           || valueRef.current !== snapshot
         ) return;
-        setActionError(actionErrorMessage ?? `Output action failed: ${message(error)}`);
+        setActionError(actionErrorMessage ?? fixedActionError ?? `Output action failed: ${message(error)}`);
       })
       .finally(() => {
         if (mounted.current && actionRevision.current === revision) {

@@ -8,7 +8,7 @@
 | 그룹 | 도구 | 구현 |
 |---|---|---|
 | JSON | Formatter / Minifier / Validator, JSON ↔ YAML 1.2, JSON → TypeScript | TS (`jsonc-parser`·`yaml`) |
-| Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, 진법 변환, HTML Entity Encode·Decode, URL Component Encode·Decode | TS |
+| Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, 진법 변환, HTML Entity Encode·Decode, URL Component Encode·Decode, QR Generator | TS + Rust |
 | Time | Unix Timestamp ↔ Date | TS |
 | Text | Case Converter, Lorem Generator, Markdown Table Formatter, Diff | Lorem/table은 deterministic TS, Diff는 Rust(`similar`) |
 | Security | Hash(MD5/SHA-256/SHA-512), HMAC-SHA-256/384/512 생성·검증, UUID v4/v7, ULID | Rust(`md-5`·`hmac`·`sha2`·`base64`·`uuid`·`getrandom`) |
@@ -155,6 +155,39 @@ Apache-2.0)이며, `sha2 0.11.0`과 기존에 잠겨 있던 `base64 0.22.1`을 �
 `cmov`/`ctutils`·checksum·license는 루트 `Cargo.lock`과 생성된
 `THIRD_PARTY_NOTICES.md`에서 검증한다. 자체 암호 구현, 외부 generator, runtime download는
 추가하지 않는다.
+
+- QR Generator는 text, HTTP(S) URL, Wi-Fi preset을 지원한다. URL은 가져오거나 열지 않고
+  입력 문자열만 payload로 사용하며, Wi-Fi는 WPA/WEP/nopass·SSID·비밀번호·hidden 필드를
+  표준 WIFI 형식으로 escape한다. 텍스트와 URL payload는 UTF-8 4,096바이트, SSID는
+  32바이트, 비밀번호는 63바이트까지이며 빈 값·lone surrogate·지원하지 않는 URL/보안
+  설정은 고정된 오류로 거부한다.
+- QR 버전은 자동(맞는 가장 작은 normal version) 또는 1–40을 선택하고 오류 보정은
+  L/M/Q/H를 선택한다. 출력 크기는 64–2,048px, quiet zone은 4–16 modules로 제한하며
+  실제 이미지는 module 경계에 맞춰 요청한 최대 크기 이하로 생성된다. 선택한 버전에
+  payload가 들어가지 않으면 일부 결과를 만들지 않고 capacity 오류로 중단한다.
+- Tauri에서는 feature-gated pure-Rust qrcode 0.14.1을 byte mode로 사용하고 작은
+  grayscale PNG encoder(png 0.18.1)와 deterministic SVG renderer로 결과를 만든다.
+  browser preview/fallback은 고정 버전 qrcode-generator 2.0.4를 사용하되 동일한
+  payload·option bounds, UTF-8 byte semantics, module-aligned dimension 계약을 적용한다.
+  두 경로 모두 runtime download, network request, dynamic QR service와 camera scan을
+  사용하지 않는다.
+- 미리보기와 SVG/PNG 결과는 메모리에만 두며 자동 저장·history·telemetry·clipboard
+  write는 없다. 사용자가 명시적으로 SVG/PNG 복사 또는 저장을 눌렀을 때만 action이
+  실행되고, SVG/PNG는 고정 파일명으로 저장된다. PNG image clipboard를 지원하지 않는
+  WebView/Windows 환경에서는 원문이나 경로를 노출하지 않는 고정 안내와 PNG 파일 저장
+  fallback을 제공한다. 생성 오류·clipboard 오류·canvas/encoder 오류도 raw payload,
+  credential, path 또는 플랫폼 오류를 반향하지 않는다.
+- 생성 요청 중에는 입력과 option을 잠그고 중복 action을 무시한다. 입력 변경·preset 변경과
+  unmount는 request sequence를 무효화해 늦은 결과가 화면을 덮어쓰지 않게 하며,
+  composition/IME 중에는 생성하지 않는다. preset/option label, live status, alert,
+  preview alt text, keyboard/native context menu를 제공해 접근 가능한 explicit workflow를
+  유지한다.
+
+QR 기능의 native matrix encoder(qrcode 0.14.1, MIT OR Apache-2.0)와 grayscale PNG
+encoder(png 0.18.1, MIT OR Apache-2.0), browser fallback(qrcode-generator 2.0.4, MIT)은
+버전과 integrity를 lockfile에 고정한다. qrcode의 optional image/svg/pic feature는 사용하지
+않고, 새 license·source·advisory·bundle 크기는 dependency policy와 notice generator의
+검사 대상이다.
 
 ## 개발
 
