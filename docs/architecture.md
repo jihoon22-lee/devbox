@@ -54,7 +54,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   crates/applink    ◄── code-pad, repo-manager, wsl-desktop, workbench
   crates/markdown   ◄── knowledge-base, code-pad
   crates/process    ◄── port-manager, run-manager
-  crates/wsl        ◄── wsl-desktop, run-manager, workbench, repo-manager
+  crates/wsl        ◄── port-manager, wsl-desktop, run-manager, workbench, repo-manager
   crates/search     ◄── everything-plus, knowledge-base
   crates/integration◄── run-manager, workbench, knowledge-base, life-log 등 snapshot 계약·자동 발견
   crates/secrets    ◄── api-playground, run-manager (DPAPI)
@@ -66,7 +66,10 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 ## 앱별 데이터 흐름
 
 ```
-port-manager:    React → invoke → commands → process crate → OS netstat
+port-manager:    React → invoke → bounded commands → native netstat / wsl.exe
+                   ├ Windows process handle (PID + creation FILETIME) → identity re-check → terminate
+                   ├ WSL ss + /proc stat/cmdline (distro + PID + start tick) → identity re-check → SIGTERM
+                   └ Docker published port → validated WSL Desktop stop handoff (never process kill)
 wsl-desktop:     React(xterm + pane/tab context-menu) → invoke → commands → wsl crate → wsl.exe
                    (wsl-dashboard 흡수; split/close/tab action은 exact ID와 확인 경계 사용)
                    └ distro·docker 패널 (`docker ps --format` 5필드 원문 → compact summary/detail,
@@ -98,6 +101,17 @@ workbench:        React → commands → ProjectProfile/read-only health + 다�
 webhook-lab:      inbound HTTP → core/server → history·rule·fixture → React
 repo-manager:     React → commands → git crate(wsl) → repository/worktree 탐색·생성
 ```
+
+Port Manager의 listener row는 source별 display metadata와 kill precondition을 분리한다. Windows
+row의 command line/path는 읽기 전용·bounded·credential-redacted projection이며, Windows creation
+FILETIME identity는 JavaScript 정밀도 손실을 막기 위해 decimal string으로 wire한다. process control
+command는 이를 받지 않고 endpoint와 creation FILETIME만 받는다. WSL row는 distro를 argv로
+검증하고 ss 결과와 proc start tick을 함께 보존한다. kill command는 새 snapshot에서 endpoint와
+identity가 모두 일치할 때만 고정된 Windows handle 또는 wsl.exe kill argv를 사용한다. Docker
+published port는 container identity를 별도로 표시하고 process kill 대신 WSL Desktop stop
+handoff descriptor를 반환한다. WSL detail은 distro/PID별 bounded cache로 재사용하며 snapshot의
+모든 child 명령은 하나의 15초 deadline과 2 MiB stdout 상한을 공유한다. auto-refresh, diff,
+favorite와 arbitrary PID kill은 이 흐름에 포함하지 않는다.
 
 API Playground의 History·Collection context menu는 v2에 저장되고 backend sanitizer read-back을
 통과한 `PersistedHistoryRequest`만 복제·이름 변경·삭제·마스킹 cURL 복사의 입력으로 사용한다.
