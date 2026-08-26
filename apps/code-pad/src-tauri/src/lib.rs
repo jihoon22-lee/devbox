@@ -53,6 +53,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             app.manage(applink::PendingOpen::new());
@@ -106,6 +107,7 @@ pub fn run() {
             commands::installer::lsp_installed,
             commands::installer::lsp_recover_installed,
             commands::installer::lsp_install,
+            commands::installer::lsp_import_archive,
             commands::installer::lsp_uninstall,
             commands::preview::render_preview,
             commands::session::load_session,

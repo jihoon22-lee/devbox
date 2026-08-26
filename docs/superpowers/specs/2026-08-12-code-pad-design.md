@@ -1069,7 +1069,12 @@ ServerRef { kind, manifest_id?, version?, installed_path?, executable?, args? }
 
 `lsp/installed.json`의 각 entry는 `manifest_id`, exact `version`, `platform`,
 `sha256`, `source_url`, `license`, `artifact_url`, `installed_path`, `entrypoint`,
-`runtime`, `installed_at`, `package_lock_sha256`를 저장한다. 경로는 app data 아래
+`runtime`, `installed_at`, `package_lock_sha256`, `install_source`,
+`last_verified_at`를 저장한다. `install_source`는 `network`, `archive_cache`,
+`local_archive`, `unknown` 중 하나이며 선택한 local archive의 원본 경로는 저장하지 않는다.
+검증된 compressed artifact는 `lsp/downloads/cache/<sha256>.<ext>`에만 보관하고
+Node local import는 reviewed dependency closure의 `.tgz` 경로 목록을 native lock에 매칭해
+missing/duplicate/extra archive를 거부한다. 설치 경로는 app data 아래
 versioned directory로 canonicalize할 수 있어야 하며, index metadata와 실제 파일이
 불일치하면 installed가 아닌 `needs reinstall`로 표시한다. session 손상과 동일하게
 schema version이 맞지 않거나 JSON이 깨지면 empty LSP config로 시작하되, 파일을

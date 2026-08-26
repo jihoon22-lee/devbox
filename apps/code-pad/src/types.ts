@@ -377,6 +377,8 @@ export interface LoadedLspConfig {
 
 export type ManagedInstallState = "not_installed" | "installed" | "needs_reinstall";
 
+export type ManagedInstallSource = "network" | "archive_cache" | "local_archive" | "unknown";
+
 export interface ManagedArtifact {
   kind: "zip" | "npm_tarball";
   url: string;
@@ -419,6 +421,8 @@ export interface InstalledServerMetadata {
   runtime: { kind: "native" | "node"; executable: string; min_version: string | null };
   installed_at: string;
   package_lock_sha256: string | null;
+  install_source: ManagedInstallSource;
+  last_verified_at: string | null;
 }
 
 export interface ManagedInstallStatus {
@@ -428,6 +432,7 @@ export interface ManagedInstallStatus {
   state: ManagedInstallState;
   reason: string | null;
   installed: InstalledServerMetadata | null;
+  archive_cached: boolean;
 }
 
 export function displayNameForPath(path: string): string {

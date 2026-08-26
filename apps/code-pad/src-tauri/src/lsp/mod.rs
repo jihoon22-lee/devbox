@@ -20,9 +20,9 @@ pub mod transport;
 
 pub use catalog::{
     initial_catalog, Artifact, ArtifactKind, CapabilitiesHint, Catalog, CommandSpec, CustomServer,
-    InstalledServer, InstalledServerIndex, LanguageSupport, LspConfig, ManifestFiles, RuntimeKind,
-    RuntimeSpec, SchemaError, ServerCatalog, ServerManifest, ServerRef, UpdatePolicy,
-    ValidationError, LSP_CONFIG_SCHEMA_VERSION, LSP_INSTALLED_SCHEMA_VERSION,
+    InstallSource, InstalledServer, InstalledServerIndex, LanguageSupport, LspConfig,
+    ManifestFiles, RuntimeKind, RuntimeSpec, SchemaError, ServerCatalog, ServerManifest, ServerRef,
+    UpdatePolicy, ValidationError, LSP_CONFIG_SCHEMA_VERSION, LSP_INSTALLED_SCHEMA_VERSION,
     WINDOWS_X86_64_PLATFORM,
 };
 pub use client::{
@@ -56,7 +56,7 @@ pub use features::{
 pub use installer::{
     InstallError, InstallLimits, InstallResult, InstalledServerMetadata, ManagedInstallResolution,
     ManagedInstallState, ManagedInstallStatus, ManagedInstaller, NodePackageArchive,
-    DEFAULT_MAX_ARCHIVE_ENTRIES, DEFAULT_MAX_INSTALL_BYTES,
+    DEFAULT_MAX_ARCHIVE_DEPTH, DEFAULT_MAX_ARCHIVE_ENTRIES, DEFAULT_MAX_INSTALL_BYTES,
 };
 pub use logs::{LanguageServerLog, LspLogEntry, LspLogLevel};
 pub use manager::{

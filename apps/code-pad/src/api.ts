@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
+import { open } from "@tauri-apps/plugin-dialog";
 import type {
   Encoding,
   LineEnding,
@@ -217,6 +218,31 @@ export function installLsp(
   platform: string,
 ): Promise<void> {
   return invoke<void>("lsp_install", { manifestId, version, platform });
+}
+
+export async function pickLspArchives(): Promise<string[]> {
+  const selected = await open({
+    directory: false,
+    multiple: true,
+    title: "관리형 LSP archive 선택",
+    filters: [{ name: "LSP archive", extensions: ["zip", "tgz", "tar.gz"] }],
+  });
+  if (Array.isArray(selected)) return selected;
+  return typeof selected === "string" ? [selected] : [];
+}
+
+export function importLspArchives(
+  manifestId: string,
+  version: string,
+  platform: string,
+  archivePaths: string[],
+): Promise<void> {
+  return invoke<void>("lsp_import_archive", {
+    manifestId,
+    version,
+    platform,
+    archivePaths,
+  });
 }
 
 export function uninstallLsp(

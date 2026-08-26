@@ -1,12 +1,14 @@
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  importLspArchives,
   languageServerLogs,
   languageServerStatuses,
   installLsp,
   lspCatalog,
   lspInstalled,
   loadLspConfig,
+  pickLspArchives,
   recoverInstalledLsp,
   restartLanguageServer,
   saveLspConfig,
@@ -21,14 +23,17 @@ import type {
   ManagedServerManifest,
 } from "../types";
 import LspControlPanel from "./LspControlPanel";
+import ManagedInstallerPanel from "./ManagedInstallerPanel";
 
 vi.mock("../api", () => ({
+  importLspArchives: vi.fn(),
   languageServerLogs: vi.fn(),
   languageServerStatuses: vi.fn(),
   installLsp: vi.fn(),
   lspCatalog: vi.fn(),
   lspInstalled: vi.fn(),
   loadLspConfig: vi.fn(),
+  pickLspArchives: vi.fn(),
   recoverInstalledLsp: vi.fn(),
   saveLspConfig: vi.fn(),
   startLanguageServer: vi.fn(),
@@ -43,6 +48,8 @@ const statusesMock = vi.mocked(languageServerStatuses);
 const catalogMock = vi.mocked(lspCatalog);
 const installedMock = vi.mocked(lspInstalled);
 const installMock = vi.mocked(installLsp);
+const importMock = vi.mocked(importLspArchives);
+const pickArchiveMock = vi.mocked(pickLspArchives);
 const uninstallMock = vi.mocked(uninstallLsp);
 const recoverMock = vi.mocked(recoverInstalledLsp);
 const saveMock = vi.mocked(saveLspConfig);
@@ -112,7 +119,10 @@ function fixtureInstallStatus(
       runtime: manifest.runtime,
       installed_at: "2026-08-13T00:00:00Z",
       package_lock_sha256: null,
+      install_source: "local_archive",
+      last_verified_at: "2026-08-13T00:00:00Z",
     } : null,
+    archive_cached: false,
   };
 }
 
@@ -158,6 +168,8 @@ beforeEach(() => {
   catalogMock.mockReset().mockResolvedValue([]);
   installedMock.mockReset().mockResolvedValue([]);
   installMock.mockReset().mockResolvedValue(undefined);
+  importMock.mockReset().mockResolvedValue(undefined);
+  pickArchiveMock.mockReset().mockResolvedValue([]);
   uninstallMock.mockReset().mockResolvedValue(undefined);
   recoverMock.mockReset().mockResolvedValue(undefined);
   saveMock.mockReset().mockResolvedValue(undefined);
@@ -335,6 +347,7 @@ describe("LspControlPanel", () => {
       state: "not_installed",
       reason: null,
       installed: null,
+      archive_cached: false,
     };
     catalogMock.mockResolvedValue([manifest]);
     installedMock.mockResolvedValue([notInstalled]);
@@ -353,6 +366,112 @@ describe("LspControlPanel", () => {
       manifest.version,
       manifest.platform,
     ));
+  });
+
+  it("keeps the selected local archive private and imports it only after confirmation", async () => {
+    const manifest = fixtureManifest();
+    const notInstalled = fixtureInstallStatus(manifest, "not_installed");
+    catalogMock.mockResolvedValue([manifest]);
+    installedMock.mockResolvedValue([notInstalled]);
+    pickArchiveMock.mockResolvedValue(["C:\\Users\\alice\\private-server.zip"]);
+
+    const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
+    fireEvent.click(await rendered.findByRole("button", { name: "local archive 가져오기" }));
+    expect(await rendered.findByRole("dialog", { name: "관리형 서버 작업 확인" })).toBeTruthy();
+    expect(rendered.queryByText("C:\\Users\\alice\\private-server.zip")).toBeNull();
+    expect(importMock).not.toHaveBeenCalled();
+
+    fireEvent.click(rendered.getByRole("button", { name: "가져오기 확인" }));
+    await waitFor(() => expect(importMock).toHaveBeenCalledWith(
+      manifest.id,
+      manifest.version,
+      manifest.platform,
+      ["C:\\Users\\alice\\private-server.zip"],
+    ));
+  });
+
+  it("passes a Node archive set without exposing the selected paths", async () => {
+    const manifest = fixtureManifest();
+    manifest.runtime = { kind: "node", executable: "node", min_version: ">=22" };
+    const notInstalled = fixtureInstallStatus(manifest, "not_installed");
+    catalogMock.mockResolvedValue([manifest]);
+    installedMock.mockResolvedValue([notInstalled]);
+    pickArchiveMock.mockResolvedValue([
+      "C:\\Users\\alice\\private-server.tgz",
+      "C:\\Users\\alice\\private-dependency.tgz",
+    ]);
+
+    const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
+    fireEvent.click(await rendered.findByRole("button", { name: "local archive 가져오기" }));
+    expect(await rendered.findByRole("dialog", { name: "관리형 서버 작업 확인" })).toBeTruthy();
+    expect(rendered.queryByText("C:\\Users\\alice\\private-server.tgz")).toBeNull();
+    expect(rendered.queryByText("C:\\Users\\alice\\private-dependency.tgz")).toBeNull();
+
+    fireEvent.click(rendered.getByRole("button", { name: "가져오기 확인" }));
+    await waitFor(() => expect(importMock).toHaveBeenCalledWith(
+      manifest.id,
+      manifest.version,
+      manifest.platform,
+      [
+        "C:\\Users\\alice\\private-server.tgz",
+        "C:\\Users\\alice\\private-dependency.tgz",
+      ],
+    ));
+  });
+
+  it("serializes archive picking and the confirmed import mutation", async () => {
+    const manifest = fixtureManifest();
+    catalogMock.mockResolvedValue([manifest]);
+    installedMock.mockResolvedValue([fixtureInstallStatus(manifest, "not_installed")]);
+    const pendingPick = deferred<string[]>();
+    const pendingImport = deferred<void>();
+    pickArchiveMock.mockImplementation(() => pendingPick.promise);
+    importMock.mockImplementation(() => pendingImport.promise);
+
+    const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
+    const choose = await rendered.findByRole("button", { name: "local archive 가져오기" });
+    fireEvent.click(choose);
+    fireEvent.click(choose);
+    expect(pickArchiveMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      pendingPick.resolve(["C:\\Users\\alice\\private-server.zip"]);
+      await pendingPick.promise;
+    });
+    const confirm = await rendered.findByRole("button", { name: "가져오기 확인" });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(importMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      pendingImport.resolve();
+      await pendingImport.promise;
+    });
+  });
+
+  it("drops a managed installer refresh that completes after unmount", async () => {
+    const pendingCatalog = deferred<ManagedServerManifest[]>();
+    catalogMock.mockImplementation(() => pendingCatalog.promise);
+    const rendered = render(<ManagedInstallerPanel />);
+    await waitFor(() => expect(catalogMock).toHaveBeenCalledTimes(1));
+    rendered.unmount();
+
+    await act(async () => {
+      pendingCatalog.resolve([fixtureManifest()]);
+      await pendingCatalog.promise;
+    });
+    expect(installedMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a verified archive cache as an offline install option", async () => {
+    const manifest = fixtureManifest();
+    const cached = fixtureInstallStatus(manifest, "not_installed");
+    cached.archive_cached = true;
+    catalogMock.mockResolvedValue([manifest]);
+    installedMock.mockResolvedValue([cached]);
+
+    const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
+    expect(await rendered.findByText("검증된 archive cache를 오프라인에서 사용할 수 있습니다.")).toBeTruthy();
   });
 
   it("disables mutation controls for installed entries and exposes reinstall state", async () => {
@@ -385,6 +504,7 @@ describe("LspControlPanel", () => {
       state: "installed",
       reason: null,
       installed: null,
+      archive_cached: false,
     }]);
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
     await rendered.findByText("설치됨");
@@ -436,7 +556,10 @@ describe("LspControlPanel", () => {
         runtime: manifest.runtime,
         installed_at: "2026-08-13T00:00:00Z",
         package_lock_sha256: null,
+        install_source: "network",
+        last_verified_at: "2026-08-13T00:00:00Z",
       },
+      archive_cached: false,
     }]);
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
     await rendered.findByText("재설치 필요");
@@ -481,7 +604,10 @@ describe("LspControlPanel", () => {
         runtime: { kind: "native", executable: "old-server.exe", min_version: null },
         installed_at: "2026-08-13T00:00:00Z",
         package_lock_sha256: null,
+        install_source: "network",
+        last_verified_at: "2026-08-13T00:00:00Z",
       },
+      archive_cached: false,
     }]);
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
     expect(await rendered.findByText("0.9.0 · windows-x86_64")).toBeTruthy();

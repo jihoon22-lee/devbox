@@ -20,7 +20,12 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
   최근 로그는 앱 실행 중 memory에 최대 64개 언어·언어별 200개만 보존하며, 제3자 서버 stderr는 native 경계에서
   절대 경로·URL·credential 패턴을 제거하고 길이를 제한한 뒤 표시한다. raw stderr·설정 오류는 IPC로
   전달하지 않는다. rust-analyzer·typescript-language-server·basedpyright·vscode-langservers-extracted를
-  검토된 고정 버전으로 명시적으로 설치할 수 있다
+  검토된 고정 버전으로 명시적으로 설치할 수 있다. 설치가 성공하면 archive는 app-owned
+  `lsp/downloads/cache/<sha256>.<ext>`에 크기·SHA-256 검증 후 보관하고, 다음 설치에서 network 없이
+  재사용한다. native 서버는 같은 검증을 통과한 local archive를 가져올 수 있고, Node 서버는 native
+  multi-file picker로 reviewed dependency closure의 `.tgz`들을 선택해 exact size·SHA-256·lock
+  integrity를 확인한다. 선택 set은 이미 검증된 cache와 결합해 설치할 수 있으며, 선택한 원본 경로는
+  index·status·로그에 저장하거나 반환하지 않는다.
 
 ## 기술
 
