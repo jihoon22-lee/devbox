@@ -359,6 +359,10 @@ select {
     grid-template-columns: 1fr;
     align-items: stretch;
   }
+
+  .json-typescript-tool .io-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .conversion-notice {
@@ -377,10 +381,49 @@ select {
 }
 
 .json-yaml-input,
-.json-yaml-output {
+.json-yaml-output,
+.json-typescript-input,
+.json-typescript-output {
   min-height: 360px;
   max-height: calc(100vh - 210px);
   overflow: auto;
+}
+
+.json-typescript-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.json-typescript-toolbar label {
+  display: flex;
+  flex: 1 1 260px;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.json-typescript-name {
+  width: 100%;
+  height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.json-typescript-name:focus {
+  border-color: var(--accent);
+}
+
+.json-typescript-output {
+  white-space: pre;
+  word-break: normal;
 }
 
 .conversion-output-label {

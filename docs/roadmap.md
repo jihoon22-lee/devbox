@@ -210,8 +210,9 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 layout/app-local profile, cold/hot profile open, native action palette와 명시적 target broadcast
 safety가 들어갔고 tmux/zellij 부재 시에도 native workspace가 완전하게 동작한다. 9번의 첫
 독립 기능 #264 Developer Toolbox JSON↔YAML은 PR #396, #265 UTF-8/Hex/Base64/Base64URL byte
-codec은 PR #397로 CI 통과·머지됐다. 다음 #266은 2·8·10·16진수, sign-before-prefix,
-invalid digit 원문 위치와 bounded 256bit signed-magnitude 변환을 구현·검증 중이다.
+codec은 PR #397, #266 bounded radix converter는 PR #398로 CI 통과·머지됐다. 이번 #267은
+root type 이름, object-array optional 병합, null/primitive/array/object 추론과 입력 순서에 독립적인
+TypeScript 출력을 구현한다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

@@ -7,7 +7,7 @@
 
 | 그룹 | 도구 | 구현 |
 |---|---|---|
-| JSON | Formatter / Minifier / Validator, JSON ↔ YAML 1.2 | TS (`jsonc-parser`·`yaml`) |
+| JSON | Formatter / Minifier / Validator, JSON ↔ YAML 1.2, JSON → TypeScript | TS (`jsonc-parser`·`yaml`) |
 | Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, 진법 변환, URL Encode·Decode | TS |
 | Time | Unix Timestamp ↔ Date | TS |
 | Text | Case Converter, Diff | Diff는 Rust(`similar`) |
@@ -27,6 +27,13 @@
 - YAML → JSON은 주석을 제거하고 anchor/alias를 값으로 확장한다. 변환 화면에 이 손실과
   anchor 이름·공유 관계가 보존되지 않는다는 안내를 항상 표시하며, 결과를 복사하거나
   `.json`/`.yaml` 파일로 저장할 수 있다.
+- JSON → TypeScript는 사용자가 지정한 ASCII TypeScript root identifier로 `export interface`
+  또는 `export type`을 만든다. object key는 code-point 순서로 정렬하고 배열 속 object 표본은
+  한 번에 구조 병합해 누락 속성을 optional로 추론한다. primitive·null union과 중첩 object·
+  array를 보존하며, 빈 배열은 `Array<unknown>`, 빈 object는 `Record<string, never>`로 명시한다.
+- JSON → TypeScript 입력은 strict JSON 1,000,000바이트, 중첩 64단계, 값 100,000개, 출력
+  4,000,000바이트로 제한한다. 원본 값은 생성 코드나 오류에 포함하지 않고 자동 저장·전송하지
+  않으며 사용자가 명시적으로 복사하거나 `.ts` 파일로 저장할 때만 외부 action을 수행한다.
 - byte codec은 입력·출력 표현을 UTF-8 text, Hex raw bytes, Base64, unpadded Base64URL에서
   각각 선택한다. 내부에서는 최대 1,000,000 raw byte를 `Uint8Array`로 보존하고 입력 표현은
   최대 2,100,000자로 제한한다. Hex와 Base64 계열의 ASCII 공백은 paste 편의를 위해 무시한다.
