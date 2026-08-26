@@ -271,7 +271,7 @@ Windows 실기 검증에서 수집한 UX 개선 항목. 기능 버그가 아니�
 | devbox-manager | 설치 위치 표시 + 지정 | #275에서 locator/manifest가 검증한 executable/root/source manifest 읽기 전용 표시 구현. 경로 지정은 후속 | portable actual path만 표시하고 installer 위치는 미추정. lifecycle DTO는 path-free, 변경은 별도 P2 |
 | wsl-desktop | Docker 패널 컴팩트 포맷 | #276에서 name/state/port 우선 disclosure list 구현. 펼치면 ID/image/status/ports 원문과 기존 action 표시 | 260px fixture, 긴 이름 ellipsis·port 2개+나머지 수 축약. 기본 table 추측 대신 Docker format 5필드 사용 |
 | code-pad | 언어 서버 패널 높이 확보 | 언어 서버 목록 패널이 좁아 가독성이 떨어짐 | `App.css:622-627`의 `min-height:120px`. **같은 모달 안에 스크롤 영역이 둘**(`:685-690` installer)이라 그 충돌을 먼저 해소해야 한다 |
-| code-pad | 빠른 열기 → 트리 + 탭/패널 | 평면 리스트 + 잘림을 탐색기형 트리로 개선 | **`quick-open-*` 클래스에 CSS가 0줄**이다(저장소 전체 grep). 재사용할 트리 컴포넌트도 없다 — knowledge-base의 `.tree`도 `paddingLeft`로 깊이를 흉내내는 평면 리스트다. 난이도 **상** |
+| code-pad | 빠른 열기 → 트리 + 탭/패널 | #277에서 기존 bounded workspace snapshot의 fuzzy 결과를 재귀 directory group으로 표시하고 긴 파일명·부모 경로를 줄바꿈 가능하게 분리 | 표시 tree 순서와 keyboard selection을 일치시키고 `Ctrl/⌘+P`, `↑/↓`, `Home/End`, `Enter`, `Esc`, modal focus 복원을 fixture로 고정. 별도 filesystem walk·Git grep·LSP 없음 |
 | ~~code-pad~~ | ~~상태 표시줄 하단 고정~~ | ~~파일 길이에 따라 움직이지 않고 항상 최하단 고정~~ | #190에서 해결됨 (`.content-area` 높이 제약) |
 | code-pad | 프리뷰/편집 영역 구분 강화 | 프리뷰 영역이 편집 영역과 시각적으로 구분되게 | **저비용.** `.preview-pane`(`App.css:227-235`)과 `.view-pane`(`:270-274`)이 같은 배경색(`#171e29`)에 1px 선 하나로만 나뉜다. CSS만 수정 |
 | workbench | ports/services 입력 UX + 자동 반영 | 입력 방법을 명확히 하고, WSL Desktop의 Docker/포트를 자동 반영 | **services는 입력 UI가 아예 없다** (`App.tsx:146-184`에 필드 없음, 항상 `[]`). ports는 매 키 입력마다 `join(", ")`으로 재포맷돼 입력이 튄다. **Docker 자동 반영은 wsl-desktop이 producer가 되어야 가능** → 연동 설계 §4.1 |

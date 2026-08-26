@@ -9,6 +9,7 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
 - **탭 파일 작업** — 닫기·다른/오른쪽 탭 닫기, canonical 경로 복사·탐색기 표시, 파일 이름 변경·삭제. 여러 dirty 탭은 순차 확인하고 이름 변경·삭제는 디스크 스냅샷을 다시 검증
 - **인코딩/줄바꿈** — 인코딩 감지·변환, CRLF/LF 감지·변환, 큰 파일 가드
 - **찾기/바꾸기** — 단일 파일 내 정규식 지원
+- **빠른 열기** — 작업 폴더를 한 번만 제한 색인한 뒤 파일명·상대 경로를 fuzzy 검색하고, 디렉터리 트리로 묶어 긴 경로도 이름과 부모 경로로 나누어 표시. 마우스 없이 `Ctrl/⌘+P` → 입력 → `↑/↓`·`Home/End` → `Enter`로 파일을 연다
 - **프리뷰** — `.md`/`.mmd`(mermaid) 프리뷰 패널
 - **LSP** — Windows 로컬 stdio 서버 관리(진단·자동완성·hover·정의·참조·이름 변경·포맷, 재시작 백오프).
   rust-analyzer·typescript-language-server·basedpyright·vscode-langservers-extracted를 고정 버전으로 설치

@@ -240,7 +240,15 @@ source manifest provenance만 표시한다. #276은 WSL Desktop의 Docker table�
 list로 바꾸고 name/state/축약 port를 우선하며, 펼친 detail에 Docker의 ID/image/status/ports 원문을
 표시한다. backend는 COMMAND를 포함한 기본 table을 추측하지 않고 `--format`으로 다섯 필드만
 조회하고, summary 파생값은 원문이나 storage를 변경하지 않는다. Docker engine 관리·resource
-summary는 제외했다. 다음 P1-09 작업은 #277 Code Pad Quick Open이다.
+summary는 제외했다.
+
+#277은 기존 workspace snapshot을 다시 걷거나 Git grep/LSP에 의존하지 않고 최대 200개 결과를
+파일명·상대 경로 fuzzy score로 정렬한 뒤 디렉터리 tree로 묶는다. 긴 결과는 파일명과 전체 부모
+경로를 줄바꿈 가능한 별도 영역에 표시하고, tree의 실제 표시 순서와 `↑/↓`·`Home/End`·`Enter`
+선택 순서를 일치시켰다. `Ctrl/⌘+P`는 복원된 workspace도 최신 handler로 읽으며 modal input에
+focus를 고정하고 닫힐 때 이전 focus를 복원한다. 파일 열기는 backend가 이미 제한·canonicalize한
+absolute path를 그대로 사용하고 새 filesystem walk, storage, network, process 변경은 추가하지
+않는다. 다음 P1-09 작업은 #278 Code Pad LSP 관리 UX다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅
