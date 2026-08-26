@@ -85,7 +85,7 @@ api-playground:   React(context-menu + History/Collection v2) → commands(secre
 code-pad:         React(CodeMirror + tab/editor context-menu, bounded workspace Quick Open tree)
                    → commands → LSP stdio 서버, snapshot-checked sibling rename/delete,
                    filesystem/markdown crate → React
-run-manager:      React(context-menu + bounded log export) → commands → scheduler
+run-manager:      React(context-menu + bounded log export/search) → commands → scheduler
                    → platform 실행 어댑터(Windows Job Object/WSL) → SQLite + app-owned 회전 로그
 devbox-manager:   React → commands → catalog/manifest → GitHub release asset
 workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument,
@@ -204,6 +204,16 @@ string으로 유지하고 응답은 256KiB, 한 번의 저장은 현재 per-stre
 cursor가 전진하지 않거나 보존 범위가 이동하거나 상한 뒤 데이터가 남으면 부분 저장임을 알린다.
 download 파일명은 64자 이하의 sanitized opaque run ID와 stream만 포함해 command, cwd, 환경변수,
 원래 log path가 이름이나 오류에 노출되지 않는다.
+
+Run Manager의 #311 검색도 이 경계를 확장하지 않는다. `search_run_logs`는 기존 tail의
+256KiB cursor chunk를 source당 4MiB·전체 8MiB까지만 읽고, chunk 사이에 scheduler에
+양보한다. 결과는 literal 우선/명시적 linear-time regex, level·source·time 필터와
+보존 snapshot의 stream·line metadata만 반환하며 log 원문·path·credential을 별도 payload로
+복제하지 않는다. `log-source/v1`는 `run-manager:<opaque-run-id>:<stream>` identity를
+검증하는 local contract로만 존재한다. request/source는 unknown field를 거부하고 timestamp는
+JavaScript safe integer로 제한하며, 동기 filesystem metadata 복원과 bounded scan은 async
+command executor 밖의 blocking worker에서 수행한다. Log Lens handoff/remote ingest/permanent
+archive는 Log Lens bootstrap 뒤 별도 integration 범위다.
 
 Webhook Lab의 history/rule context menu도 열기 전에 대상의 opaque ID를 선택한다. 일반 history
 DTO, 마스킹 복사, 헤더 복사는 Authorization·Cookie·API key 값을 마스킹하며, 원본 헤더를 가진

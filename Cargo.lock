@@ -4148,6 +4148,7 @@ dependencies = [
  "dirs",
  "filesystem",
  "integration",
+ "regex",
  "rusqlite",
  "secrets",
  "serde",

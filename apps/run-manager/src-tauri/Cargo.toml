@@ -29,6 +29,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["clock"] }
 croner = "3.0.1"
+regex = "1.13.1"
 zeroize = "1"
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }

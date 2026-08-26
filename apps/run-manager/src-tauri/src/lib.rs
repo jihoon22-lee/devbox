@@ -95,6 +95,7 @@ pub fn run() {
             commands::list_runs,
             commands::preview_cron,
             commands::tail_log,
+            commands::search_run_logs,
         ])
         .setup(|app| {
             let data_dir = app.path().app_local_data_dir()?;

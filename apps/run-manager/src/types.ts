@@ -24,6 +24,8 @@ export type RunStatus =
   | "cancelled"
   | "skipped";
 export type LogStream = "stdout" | "stderr";
+export type LogSearchMode = "literal" | "regex";
+export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 export type EnvironmentAction = "keep" | "replace" | "clear";
 
 export type EnvironmentUpdate =
@@ -101,6 +103,38 @@ export interface TailResponse {
   retainedStartOffset: string;
   nextCursor: string;
   truncated: boolean;
+}
+
+export interface LogSearchOptions {
+  query: string;
+  mode: LogSearchMode;
+  source: LogStream | null;
+  level: LogLevel | null;
+  startAt: number | null;
+  endAt: number | null;
+}
+
+export interface LogSourceRef {
+  kind: "log-source/v1";
+  sourceId: string;
+  runId: string;
+  stream: LogStream;
+}
+
+export interface LogSearchMatch {
+  sourceId: string;
+  stream: LogStream;
+  lineNumber: number;
+  level: LogLevel | null;
+  timestampMillis: number | null;
+}
+
+export interface LogSearchResponse {
+  matches: LogSearchMatch[];
+  scannedLines: number;
+  scannedBytes: number;
+  truncated: boolean;
+  sources: LogSourceRef[];
 }
 
 export interface EnvironmentDraft {

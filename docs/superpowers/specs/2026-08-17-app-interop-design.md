@@ -228,6 +228,14 @@ pending --atomic claim(consumer+lease)--> claimed --ack--> consumed/deleted
 `toolbox-text/v1`이다. 새 kind는 source/target/payload schema와 redaction 규칙을 설계 문서에
 먼저 추가한다.
 
+Run Manager의 #311 local validation은 `log-source/v1` reference를
+`{ kind, sourceId, runId, stream }`으로 한정한다. `sourceId`는
+`run-manager:<opaque-run-id>:<stdout|stderr>`와 exact 일치해야 하며 absolute path,
+command, environment, credential, remote address를 payload에 넣지 않는다. 이 reference는
+unknown field도 거부하므로 추가 path field를 숨길 수 없다. 현재 검색 결과의 source
+identity를 검증하기 위한 것으로, Log Lens producer/consumer handoff는 Log Lens bootstrap
+이후 별도 integration PR에서 claim/ack 경계와 함께 구현한다.
+
 ---
 
 ## 2. 카탈로그 capability — 메뉴를 선언에서 생성한다
