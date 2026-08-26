@@ -309,6 +309,16 @@ bounds/privacy, atomic replacement, last-good 보존과 temp residue를 검증�
 상세 wire contract와 W1 packaged 검증 항목은 [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)의
 P1-05 `#410` 절을 따른다.
 
+**2026-08-26 #281 구현 상태.** Workbench가 `wsl-desktop/runtime/v1`을 read-only로 소비해
+published TCP host port를 편집 중인 profile draft에 제안한다. consumer는 envelope/view와 distro,
+container, mapping 전체 bounds/identity를 검증하고 port 숫자순·source provenance순으로 dedupe한다.
+producer의 60초 주기에 맞춰 2분 이하는 fresh, 15분 이하는 stale, 그 이후는 expired로 분류하며
+stale 반영은 확인하고 expired·missing·corrupt는 차단한다. 반영 직전에 snapshot을 다시 읽어 후보
+소실과 freshness 변경을 검사하고, 기존 expectedPorts 순서를 보존한 채 선택된 새 port만 append한다.
+preview/accept는 profile store 저장, WSL/Docker command, resource start, producer write를 수행하지
+않으며 snapshot 절대 경로·container ID·raw Docker detail은 frontend로 전달하지 않는다. W1에서는
+packaged fresh/stale/expired 전환, producer missing/corrupt, accept 후 Save 전 저장소 불변을 확인한다.
+
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅
 Stage 0a   통폐합·네이밍 (PR 2~4) — identifier com.devbox.*          ✅

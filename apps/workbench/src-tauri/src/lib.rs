@@ -83,6 +83,7 @@ pub fn run() {
             commands::workspace::start_workspace,
             commands::workspace::stop_workspace,
             commands::workspace::current_workspace_run,
+            core::runtime_suggestions::wsl_runtime_suggestions,
             commands::profile_actions::profile_open_targets,
             commands::profile_actions::profile_copy_path,
             commands::profile_actions::open_profile_in,

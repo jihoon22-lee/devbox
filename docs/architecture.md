@@ -390,6 +390,15 @@ credential·image·raw status/ports·terminal session identity는 snapshot과 �
 consumer이며 WSL Desktop producer PR에서는 Workbench 파일이나 Docker resource mutation을
 수정하지 않는다.
 
+Workbench는 이 runtime view의 첫 consumer다. 공용 discovery/read 경계 뒤에서 v1 payload 전체를
+엄격하게 재검증하고 published TCP host port만 숫자순으로 묶으며, 같은 port의 distro/container/
+target source는 안정적으로 정렬·중복 제거한다. 60초 producer cadence를 기준으로 2분 이하는 fresh,
+2분 초과 15분 이하는 stale, 그 이후는 expired다. stale accept는 사용자 확인이 필요하고 expired,
+missing, corrupt는 차단한다. accept 직전 snapshot을 다시 읽으며 결과는 현재 `ProfileDraft`에만
+합쳐져 기존 port 순서를 보존한다. 이 경계는 profile store, WSL/Docker process, container와 Run
+Manager service를 변경하지 않고 snapshot path·raw Docker detail·container ID를 frontend로 보내지
+않는다.
+
 `apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
 
 ## 통합 앱 (Workbench)

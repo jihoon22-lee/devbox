@@ -11,7 +11,8 @@
 - **Stop What I Started** — Workbench가 시작한 자원만 정리 (기존 실행 자원은 건드리지 않음)
 - **프로필 컨텍스트 메뉴** — 우클릭/Shift+F10/Menu key로 Start Workspace, Stop What I Started, 프로필 편집, 확인 후 삭제, 검증된 경로 복사, catalog 기반 다른 앱으로 열기. 메뉴를 연 행을 먼저 선택하고 닫히면 focus 복구
 - **실행 소유권 gate** — backend run을 reload 뒤 복원하고, 추적 중인 run 또는 start transition이 있으면 다른 profile start를 막는다. stop은 run/profile ID가 일치할 때만 수행하며 active profile은 stop 전까지 삭제할 수 없다.
-- **서비스·포트 프로필 입력** — 편집 화면은 저장 DTO와 분리된 안정적인 draft buffer를 사용한다. 예상 포트는 원문 입력을 유지한 채 1~65535·중복·빈 토큰을 검증하고, Run Manager 서비스 ID는 행 단위로 추가·수정·삭제한다. 유효성 검사를 통과한 경우에만 저장하며, 백엔드 IPC 경계에서도 이름·경로·포트·서비스 ID를 다시 검증한다. 이 화면은 Run Manager 서비스를 생성·수정·시작하지 않으며 WSL runtime 자동 제안은 후속 기능이다.
+- **서비스·포트 프로필 입력** — 편집 화면은 저장 DTO와 분리된 안정적인 draft buffer를 사용한다. 예상 포트는 원문 입력을 유지한 채 1~65535·중복·빈 토큰을 검증하고, Run Manager 서비스 ID는 행 단위로 추가·수정·삭제한다. 유효성 검사를 통과한 경우에만 저장하며, 백엔드 IPC 경계에서도 이름·경로·포트·서비스 ID를 다시 검증한다. 이 화면은 Run Manager 서비스를 생성·수정·시작하지 않는다.
+- **WSL runtime 포트 제안** — `wsl-desktop/runtime/v1` read-only snapshot의 published TCP host port를 distro/container/target provenance와 함께 표시한다. 기존 예상 포트를 보존하면서 사용자가 고른 항목만 편집 draft에 추가하고, 저장 버튼 전에는 profile store를 변경하지 않는다. 2분 이하는 fresh, 2분 초과 15분 이하는 stale로 구분해 stale 반영을 다시 확인하고, 15분 초과 expired·missing·corrupt source는 반영하지 않는다. 반영 직전에 snapshot을 다시 읽어 사라진 후보와 만료 전환도 차단한다.
 
 v0.4.1의 `Path`에는 distro나 profile 정보가 없다. 따라서 Start Workspace가 WSL Desktop으로
 보내는 것은 프로필의 구체적인 경로이며, WSL Desktop은 앱에서 선택된 distro를 사용하고 선택값이
@@ -37,6 +38,12 @@ v0.4.1의 `Path`에는 distro나 profile 정보가 없다. 따라서 Start Works
   flat `activeServices`를 read-only로 읽는다. snapshot 자체가 없으면 지정 서비스는 미실행으로
   보이지만, 손상·잘못된 schema·음수 uptime·중복/잘못된 ID·128개 초과는 빈 정상 상태로 축소하지
   않고 “서비스 상태를 확인할 수 없습니다”로 표시한다.
+- WSL Desktop 입력: `%LOCALAPPDATA%\devbox\integration\wsl-desktop\v1\summary.json`의
+  `runtime/v1` view. 공용 integration reader로 envelope·link·size·freshness를 확인한 뒤 distro
+  64개, container 512개, mapping 1,024개와 문자열/identity를 다시 검증한다. host port별 source를
+  정렬·중복 제거하고 `ProjectProfile.expectedPorts`가 표현할 수 없는 UDP/SCTP mapping은 제안에서
+  제외한다. snapshot 절대 경로, container ID, raw Docker output/image/command/environment는
+  frontend DTO에 포함하지 않는다.
 
 ## 개발
 
@@ -62,5 +69,14 @@ aria 오류 상태를 제공한다. backend 오류는 경로·credential·subpro
 - 제외: Run Manager 서비스 자체의 생성·수정·시작, project environment preflight, template
   wizard, 다른 앱 DB 직접 수정. 서비스 상태는 기존 integration snapshot을 읽기만 하며,
   snapshot 손상은 “상태를 확인할 수 없음”으로 fail-closed 처리한다.
+
+### #281 범위와 실패 계약
+
+- 포함: versioned WSL runtime snapshot read/validation, fresh·stale·expired·missing·corrupt 구분,
+  published TCP port의 deterministic source aggregation, 명시적 선택과 accept 직전 재검증,
+  기존 expectedPorts를 보존하는 draft-only merge.
+- 제외: WSL/Docker command 실행, container/resource 시작·변경, producer 쓰기, Run Manager service
+  ID 추론, accept 시 profile 자동 저장. raw snapshot 오류·절대 경로·Docker detail은 UI에 반향하지
+  않고 source/version/freshness와 검증된 distro/container/port provenance만 표시한다.
 
 설계 문서: `docs/superpowers/specs/2026-08-14-workbench-design.md`

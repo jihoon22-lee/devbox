@@ -239,6 +239,87 @@ body {
   padding: 0 4px;
 }
 
+.runtime-suggestions > .btn {
+  margin-top: 8px;
+}
+
+.runtime-suggestion-result {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.runtime-suggestion-status {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.runtime-suggestion-status strong {
+  font-size: 12px;
+}
+
+.runtime-suggestion-status span {
+  color: var(--dim);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.runtime-suggestion-status.status-stale,
+.runtime-suggestion-status.status-expired {
+  border-color: #9e6a03;
+}
+
+.runtime-suggestion-status.status-corrupt {
+  border-color: var(--danger);
+}
+
+.runtime-port-list {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.runtime-port-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: start;
+  gap: 6px 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.runtime-port-row input {
+  margin-top: 2px;
+}
+
+.runtime-port-number {
+  font-weight: 600;
+}
+
+.runtime-port-existing {
+  justify-self: end;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.runtime-port-row ul {
+  grid-column: 2 / -1;
+  margin: 0;
+  padding-left: 16px;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .editable-list-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
