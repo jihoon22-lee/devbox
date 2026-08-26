@@ -473,6 +473,41 @@ bounded source/parser 경계와 operation preview를 고정한다. 로컬 file r
 격리로 처리한다. 생성 request의 parameter/header/cookie row는 각각 100개, 구조화 body는 512 KiB로 제한하며
 environment reference도 secret처럼 비워 둔다. Swagger UI bundle, code generation, secret 주입은 범위에서 제외한다.
 
+**2026-08-27 #295 구현 상태.** API Playground에 REST request draft를 그대로 사용하는
+native-first SSE streaming을 추가했다. GET/POST, 기존 auth/environment/header/Cookie/params와
+JSON/form/raw/multipart text body를 지원하고, native는 Rust request resolver에서 secret을
+전송 직전에만 해제한다. browser preview는 secret environment와 file multipart를 차단하고
+CORS/forbidden Cookie header·redirect 차이를 표시한다.
+
+native/browser parser는 UTF-8 incremental chunk, 최초 BOM, CR/LF/CRLF, comment, `event`, multiline
+`data`, `id`, empty id, decimal `retry`와 EOF flush를 동일하게 처리한다. malformed UTF-8/NUL,
+malformed retry와 line/field/data/name/id overflow는 raw source나 runtime 오류를 노출하지 않는
+fixed error로 실패한다. decoded/retained stream은 각각 20 MiB, 10,000 event 또는 20 MiB,
+line/field 64 KiB, name/id 256 bytes, data 1 MiB, retry 0–60 s로 제한하고, UI는 최근 1,000개와
+oldest-first eviction 수만 표시한다. pause는 render만 멈추며 bounded history는 계속 유지한다.
+environment는 최대 100개, key 128 bytes, value 64 KiB로 먼저 검증해 browser/native 입력
+경계를 일치시킨다.
+
+transport는 opaque session 하나와 abortable task를 사용하며 connect/idle/total timeout을
+100–30,000 ms/100–300,000 ms/1–3,600 s로 제한한다. native redirect는 최대 10회, browser
+redirect는 차단한다. cross-origin redirect에는 sensitive header/auth/body를 보내지 않고
+credential-bearing destination은 차단하며 Accept는 `text/event-stream`, user `Last-Event-ID`는
+무시한다. reconnect는 기본 off, opt-in 때만 server retry를 250 ms–60 s로 clamp해 최대 5회로
+제한한다. raw URL/path/chunk/credential/network/parser stderr는 DTO·DOM·log·history·telemetry에
+반향하지 않으며 event는 자동 저장하지 않는다. 사용자가 누른 `Copy masked events`만 현재
+메모리 표시 범위를 clipboard로 보낸다.
+
+Rust/TypeScript pure fixture는 chunk split/BOM/newline/multiline/empty id/retry, invalid UTF-8·NUL,
+bounds·eviction과 safe DTO/session filtering을 고정한다. PR 직전 검토에서 lone CR의 이중 line
+종료, terminal update 뒤 listener 미해제, browser multipart file/part Content-Type의 늦거나
+silent 처리, GET multipart body 누락을 수정하고 Rust/TypeScript/App 회귀 fixture를 추가했다.
+`tokio`는 이미 lock/direct dependency에 있는 runtime의 `time` 기능만 사용하고 새
+parser/transport library나 lockfile 변경은 추가하지 않았다. 최종 Linux 검증은 Rust 69 test,
+all-target check/Clippy/fmt, frontend 20 files/160 tests와 production build, dependency/notices와
+catalog gate를 통과했다. Windows W2에서는 loopback GET/POST stream, native/browser parity,
+cancel/reconnect, CORS/redirect, redaction, no-persistence, bounded failure와 keyboard/IME/focus를
+packaged smoke로 확인한다.
+
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅
 Stage 0a   통폐합·네이밍 (PR 2~4) — identifier com.devbox.*          ✅

@@ -21,13 +21,39 @@ import {
   validateGraphqlHeaders,
 } from "./lib/graphql";
 import {
+  SseEventBuffer,
+  SseParseError,
+  SseParser,
+  MAX_DECODED_BYTES,
+  MAX_EVENT_DATA_BYTES,
+  MAX_EVENT_ID_BYTES,
+  MAX_EVENT_NAME_BYTES,
+  MAX_RETRY_MS,
+} from "./lib/sse";
+import {
   isMultipartPartEnabled,
   isMultipartDerivedHeader,
   safeMultipartFileName,
   validateMultipartParts,
   type PickedMultipartFile,
 } from "./lib/multipart";
-import type { ApiResponse, RequestTemplate } from "./types";
+import type { ApiResponse, RequestTemplate, SseOptions, SseUpdate } from "./types";
+
+const SSE_EVENT = "api-playground/sse";
+const MAX_SSE_URL_BYTES = 8 * 1024;
+const MAX_SSE_HEADERS = 100;
+const MAX_SSE_PARAMS = 100;
+const MAX_SSE_ENVIRONMENT_VARIABLES = 100;
+const MAX_SSE_BODY_BYTES = 4 * 1024 * 1024;
+const MAX_SSE_RECONNECT_ATTEMPTS = 5;
+const MIN_SSE_RETRY_MS = 250;
+const DEFAULT_SSE_RETRY_MS = 1_000;
+const MIN_SSE_CONNECT_TIMEOUT_MS = 100;
+const MAX_SSE_CONNECT_TIMEOUT_MS = 30_000;
+const MIN_SSE_IDLE_TIMEOUT_MS = 100;
+const MAX_SSE_IDLE_TIMEOUT_MS = 300_000;
+const MIN_SSE_TOTAL_TIMEOUT_MS = 1_000;
+const MAX_SSE_TOTAL_TIMEOUT_MS = 3_600_000;
 
 const MAX_RESPONSE_HEADERS = 100;
 const MAX_RESPONSE_HEADER_BYTES = 64 * 1024;
@@ -50,6 +76,19 @@ export interface RemoteOpenApiSource {
 export async function fetchOpenApiSource(url: string): Promise<RemoteOpenApiSource> {
   if (!isTauri()) throw new Error("URL 가져오기는 데스크톱 앱에서만 사용할 수 있습니다");
   return invoke<RemoteOpenApiSource>("fetch_openapi_source", { url });
+}
+
+const SAFE_SSE_UPDATE_MESSAGES = new Set([
+  "SSE 요청을 보낼 수 없습니다",
+  "SSE stream 시간이 초과되었습니다",
+  "SSE stream 연결에 실패했습니다",
+  "SSE 응답 형식이 아닙니다",
+  "SSE 리다이렉트 정책으로 요청을 차단했습니다",
+  "SSE stream 데이터가 올바르지 않습니다",
+]);
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
 }
 
 /** HTTP 요청 전송. 브라우저 미리보기에서는 fetch(CORS 제약 존재)로 대체한다. */
@@ -133,7 +172,7 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[], si
     throw new Error("secret 포함 요청은 데스크톱 앱에서만 전송할 수 있습니다");
   }
   const variables = new Map(environment.map((variable) => [variable.key, variable.value]));
-  let resolved = applyToRequest(req, variables);
+  let resolved = { ...applyToRequest(req, variables), method: req.method.trim().toUpperCase() };
   const graphql = resolved.body_kind === "graphql" && resolved.graphql
     ? resolveGraphqlRequest(resolved.graphql, variables)
     : null;
@@ -341,17 +380,25 @@ function redactBrowserText(text: string, req: RequestTemplate): string {
       .map((part) => part.value),
     ...(req.body_kind === "graphql" && req.graphql ? graphqlSecrets(req.graphql) : []),
   ].filter((value): value is string => Boolean(value));
+  try {
+    const url = new URL(req.url);
+    for (const [key, value] of url.searchParams) {
+      if (isSensitiveName(key) && value) directSecrets.push(value);
+    }
+  } catch {
+    // The request boundary reports a fixed URL error; redaction itself never reflects it.
+  }
   const exactRedacted = directSecrets.sort((a, b) => b.length - a.length).reduce(
     (result, secret) => result.split(secret).join("[REDACTED]"),
     text,
   );
   try {
-    return JSON.stringify(redactBrowserJson(JSON.parse(exactRedacted) as unknown));
+    return redactBrowserTokens(JSON.stringify(redactBrowserJson(JSON.parse(exactRedacted) as unknown)));
   } catch {
-    return exactRedacted.replace(
+    return redactBrowserTokens(exactRedacted.replace(
       /((?:authorization|cookie|set[-_]?cookie|api[-_]?key|api[-_]?value|token|secret|password|passwd|private[-_]?key|username)\s*[=:]\s*)([^\s,;&]+)/gi,
       "$1[REDACTED]",
-    );
+    ));
   }
 }
 
@@ -377,6 +424,13 @@ function graphqlSecrets(request: NonNullable<RequestTemplate["graphql"]>): strin
   return values;
 }
 
+function redactBrowserTokens(value: string): string {
+  return value.replace(
+    /(?:sk-|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_\-]{12,}/g,
+    "[REDACTED]",
+  );
+}
+
 function redactBrowserJson(value: unknown, key = ""): unknown {
   if (isSensitiveName(key)) return "[REDACTED]";
   if (Array.isArray(value)) return value.map((item) => redactBrowserJson(item));
@@ -389,4 +443,537 @@ function redactBrowserJson(value: unknown, key = ""): unknown {
     );
   }
   return value;
+}
+
+export interface SseStreamHandle {
+  sessionId: string;
+  stop: () => Promise<void>;
+}
+
+/**
+ * Start one bounded SSE stream.  The callback receives only a validated, masked event envelope;
+ * callers must not persist it automatically.  Desktop uses the native task/event bridge and the
+ * browser preview uses the same parser with Fetch/CORS limitations.
+ */
+export async function startSseStream(
+  req: RequestTemplate,
+  environment: EnvVariable[],
+  options: SseOptions,
+  onUpdate: (update: SseUpdate) => void,
+): Promise<SseStreamHandle> {
+  validateSseOptions(options);
+  validateSseEnvironment(environment);
+  if (isTauri()) return startNativeSseStream(req, environment, options, onUpdate);
+  return startBrowserSseStream(req, environment, options, onUpdate);
+}
+
+async function startNativeSseStream(
+  req: RequestTemplate,
+  environment: EnvVariable[],
+  options: SseOptions,
+  onUpdate: (update: SseUpdate) => void,
+): Promise<SseStreamHandle> {
+  const { listen } = await import("@tauri-apps/api/event");
+  let sessionId: string | null = null;
+  const pending: SseUpdate[] = [];
+  const unlisten = await listen<unknown>(SSE_EVENT, (event) => {
+    const update = parseSseUpdate(event.payload);
+    if (!update) return;
+    if (!sessionId) {
+      if (pending.length < 64) pending.push(update);
+      return;
+    }
+    if (update.sessionId === sessionId) onUpdate(update);
+  });
+  let started: string;
+  try {
+    started = await invoke<string>("start_sse_stream", { req, environment, options });
+    if (!isSseSessionId(started)) throw new Error("invalid session");
+    sessionId = started;
+    for (const update of pending.splice(0)) {
+      if (update.sessionId === started) onUpdate(update);
+    }
+  } catch (cause) {
+    await unlisten();
+    throw new Error(safeSseStartError(cause));
+  }
+
+  const activeSessionId = started;
+  let stopped = false;
+  return {
+    sessionId: activeSessionId,
+    stop: async () => {
+      if (stopped) return;
+      stopped = true;
+      try {
+        await invoke("stop_sse_stream", { sessionId: activeSessionId });
+      } catch {
+        throw new Error("SSE stream을 중지하지 못했습니다.");
+      } finally {
+        await unlisten();
+      }
+    },
+  };
+}
+
+async function startBrowserSseStream(
+  req: RequestTemplate,
+  environment: EnvVariable[],
+  options: SseOptions,
+  onUpdate: (update: SseUpdate) => void,
+): Promise<SseStreamHandle> {
+  if (environment.some((variable) => variable.secret)) {
+    throw new Error("secret 포함 SSE stream은 데스크톱 앱에서만 사용할 수 있습니다.");
+  }
+  const variables = new Map(environment.map((variable) => [variable.key, variable.value]));
+  const resolved = {
+    ...applyToRequest(req, variables),
+    method: req.method.trim().toUpperCase(),
+  };
+  validateBrowserSseRequest(resolved);
+  const controller = new AbortController();
+  const sessionId = `browser-sse-${++browserSseSequence}`;
+  void runBrowserSse(resolved, options, sessionId, controller.signal, onUpdate);
+  return {
+    sessionId,
+    stop: async () => {
+      controller.abort();
+    },
+  };
+}
+
+let browserSseSequence = 0;
+
+async function runBrowserSse(
+  req: RequestTemplate,
+  options: SseOptions,
+  sessionId: string,
+  signal: AbortSignal,
+  onUpdate: (update: SseUpdate) => void,
+): Promise<void> {
+  const startedAt = performance.now();
+  const deadline = startedAt + options.totalTimeoutMs;
+  let attempts = 0;
+  let retryMs = DEFAULT_SSE_RETRY_MS;
+  let sequence = 0;
+  let decodedBytes = 0;
+  const history = new SseEventBuffer();
+
+  while (!signal.aborted && performance.now() < deadline) {
+    try {
+      const response = await browserSseFetch(req, options, signal, deadline);
+      onUpdate({ sessionId, kind: "connected", sequence, dropped: history.evicted, attempt: attempts });
+      const parser = new SseParser();
+      const reader = response.body?.getReader();
+      if (!reader) throw new BrowserSseFailure("SSE 응답 형식이 아닙니다", false);
+      let streamEnded = false;
+      try {
+        while (!signal.aborted) {
+          const remaining = Math.max(1, deadline - performance.now());
+          const result = await readWithTimeout(reader, Math.min(options.idleTimeoutMs, remaining));
+          if (result.done) {
+            streamEnded = true;
+            break;
+          }
+          const chunk = result.value;
+          decodedBytes += chunk.byteLength;
+          if (decodedBytes > MAX_DECODED_BYTES) throw new BrowserSseFailure("SSE stream 데이터가 올바르지 않습니다", false);
+          for (const event of parser.feed(chunk)) {
+            sequence = emitBrowserEvent(event, req, sessionId, onUpdate, sequence, history);
+            if (event.retryMs !== undefined) retryMs = event.retryMs;
+          }
+          if (parser.retryMs !== undefined) retryMs = parser.retryMs;
+        }
+        for (const event of parser.finish()) {
+          sequence = emitBrowserEvent(event, req, sessionId, onUpdate, sequence, history);
+          if (event.retryMs !== undefined) retryMs = event.retryMs;
+        }
+        if (parser.retryMs !== undefined) retryMs = parser.retryMs;
+      } finally {
+        if (!streamEnded) await reader.cancel().catch(() => undefined);
+        reader.releaseLock();
+      }
+
+      if (!options.reconnect || attempts >= MAX_SSE_RECONNECT_ATTEMPTS || signal.aborted) {
+        if (!signal.aborted) onUpdate({ sessionId, kind: "closed", sequence, dropped: history.evicted });
+        return;
+      }
+    } catch (cause) {
+      if (signal.aborted) return;
+      const failure = cause instanceof BrowserSseFailure
+        ? cause
+        : cause instanceof SseParseError
+          ? new BrowserSseFailure("SSE stream 데이터가 올바르지 않습니다", false)
+          : new BrowserSseFailure("SSE stream 연결에 실패했습니다", true);
+      if (!options.reconnect || !failure.retryable || attempts >= MAX_SSE_RECONNECT_ATTEMPTS) {
+        onUpdate({ sessionId, kind: "error", sequence, dropped: history.evicted, message: failure.message });
+        return;
+      }
+    }
+
+    attempts += 1;
+    const remaining = Math.max(0, deadline - performance.now());
+    if (!remaining) break;
+    await sleepWithAbort(Math.min(Math.max(retryMs, MIN_SSE_RETRY_MS), MAX_RETRY_MS, remaining), signal);
+  }
+  if (!signal.aborted) {
+    onUpdate({
+      sessionId,
+      kind: "error",
+      sequence,
+      dropped: history.evicted,
+      message: "SSE stream 시간이 초과되었습니다",
+    });
+  }
+}
+
+class BrowserSseFailure extends Error {
+  constructor(readonly message: string, readonly retryable: boolean) {
+    super(message);
+    this.name = "BrowserSseFailure";
+  }
+}
+
+async function browserSseFetch(
+  req: RequestTemplate,
+  _options: SseOptions,
+  signal: AbortSignal,
+  deadline: number,
+): Promise<Response> {
+  const url = new URL(req.url);
+  const params = new URLSearchParams(url.search);
+  for (const parameter of req.params.slice(0, MAX_SSE_PARAMS)) {
+    if (parameter.key) params.append(parameter.key, parameter.value);
+  }
+  url.search = params.toString();
+  if (utf8ByteLength(url.toString()) > MAX_SSE_URL_BYTES) {
+    throw new BrowserSseFailure("SSE 요청 URL이 너무 깁니다", false);
+  }
+  const headers = new Headers();
+  for (const header of req.headers.slice(0, MAX_SSE_HEADERS)) {
+    const headerName = header.key.trim().toLowerCase();
+    if (
+      isHeaderEnabled(header)
+      && header.key
+      && headerName !== "last-event-id"
+      && headerName !== "accept"
+      && !(req.body_kind === "multipart" && isMultipartDerivedHeader(header.key))
+    ) {
+      try {
+        headers.append(header.key, header.value);
+      } catch {
+        throw new BrowserSseFailure("SSE 요청을 보낼 수 없습니다", false);
+      }
+    }
+  }
+  headers.set("Accept", "text/event-stream");
+  if (req.auth?.kind === "basic") {
+    try {
+      headers.set("Authorization", "Basic " + btoa(`${req.auth.username}:${req.auth.password}`));
+    } catch {
+      throw new BrowserSseFailure("SSE 요청을 보낼 수 없습니다", false);
+    }
+  } else if (req.auth?.kind === "bearer") {
+    try {
+      headers.set("Authorization", "Bearer " + req.auth.token);
+    } catch {
+      throw new BrowserSseFailure("SSE 요청을 보낼 수 없습니다", false);
+    }
+  } else if (req.auth?.kind === "apikey" && req.auth.api_key) {
+    try {
+      headers.set(req.auth.api_key, req.auth.api_value);
+    } catch {
+      throw new BrowserSseFailure("SSE 요청을 보낼 수 없습니다", false);
+    }
+  }
+  const cookieHeader = buildCookieHeader(req.cookies);
+  if (cookieHeader) {
+    try {
+      headers.set("Cookie", cookieHeader);
+    } catch {
+      throw new BrowserSseFailure("SSE 요청을 보낼 수 없습니다", false);
+    }
+  }
+  let body: BodyInit | undefined;
+  if (req.method === "POST" && req.body_kind === "json" && req.body.trim()) {
+    headers.set("Content-Type", "application/json");
+    body = req.body;
+  } else if (req.method === "POST" && req.body_kind === "raw" && req.body) {
+    body = req.body;
+  } else if (req.method === "POST" && req.body_kind === "form" && req.body.trim()) {
+    const form = new URLSearchParams();
+    for (const line of req.body.split(/\r?\n/u)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const [key, ...rest] = trimmed.split("=");
+      form.append(key?.trim() ?? "", rest.join("=").trim());
+    }
+    headers.set("Content-Type", "application/x-www-form-urlencoded");
+    body = form;
+  } else if (req.method === "POST" && req.body_kind === "multipart") {
+    const form = new FormData();
+    for (const part of req.multipart) {
+      if (isMultipartPartEnabled(part) && part.kind === "text" && part.name) form.append(part.name, part.value);
+      if (isMultipartPartEnabled(part) && part.kind === "file") {
+        throw new BrowserSseFailure("SSE multipart 파일 전송은 데스크톱 앱에서만 사용할 수 있습니다.", false);
+      }
+    }
+    body = form;
+  } else if (req.method === "GET" && req.body.trim()) {
+    throw new BrowserSseFailure("GET SSE 요청에는 본문을 사용할 수 없습니다", false);
+  }
+  const remaining = Math.max(1, deadline - performance.now());
+  const connectTimeout = Math.min(_options.connectTimeoutMs, remaining);
+  const requestController = new AbortController();
+  let timedOut = false;
+  const relayAbort = () => requestController.abort();
+  signal.addEventListener("abort", relayAbort, { once: true });
+  const connectTimer = setTimeout(() => {
+    timedOut = true;
+    requestController.abort();
+  }, connectTimeout);
+  let response: Response;
+  try {
+    response = await fetch(url, { method: req.method, headers, body, redirect: "error", signal: requestController.signal });
+  } catch {
+    if (signal.aborted) throw new BrowserSseFailure("SSE stream이 중지되었습니다", false);
+    if (timedOut || remaining <= 1) throw new BrowserSseFailure("SSE stream 시간이 초과되었습니다", true);
+    throw new BrowserSseFailure("SSE stream 연결에 실패했습니다", true);
+  } finally {
+    clearTimeout(connectTimer);
+    signal.removeEventListener("abort", relayAbort);
+  }
+  if (!response.ok || (response.headers.get("content-type") ?? "").split(";", 1)[0].trim().toLowerCase() !== "text/event-stream") {
+    throw new BrowserSseFailure("SSE 응답 형식이 아닙니다", false);
+  }
+  return response;
+}
+
+async function readWithTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs: number,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
+        timer = setTimeout(() => {
+          void reader.cancel().catch(() => undefined);
+          reject(new BrowserSseFailure("SSE stream 시간이 초과되었습니다", true));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+function sleepWithAbort(delayMs: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(resolve, delayMs);
+    signal.addEventListener("abort", () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
+}
+
+function emitBrowserEvent(
+  event: import("./lib/sse").SseEvent,
+  req: RequestTemplate,
+  sessionId: string,
+  onUpdate: (update: SseUpdate) => void,
+  sequence: number,
+  history: SseEventBuffer,
+): number {
+  const safe: import("./lib/sse").SseEvent = {
+    event: redactBrowserText(event.event, req),
+    data: redactBrowserText(event.data, req),
+    ...(event.id ? { id: redactBrowserText(event.id, req) } : {}),
+    ...(event.retryMs === undefined ? {} : { retryMs: event.retryMs }),
+  };
+  if (
+    utf8ByteLength(safe.event) > MAX_EVENT_NAME_BYTES
+    || utf8ByteLength(safe.data) > MAX_EVENT_DATA_BYTES
+    || (safe.id !== undefined && utf8ByteLength(safe.id) > MAX_EVENT_ID_BYTES)
+  ) throw new BrowserSseFailure("SSE stream 데이터가 올바르지 않습니다", false);
+  history.push(safe);
+  const nextSequence = sequence + 1;
+  if (!Number.isSafeInteger(nextSequence)) throw new BrowserSseFailure("SSE stream 데이터가 올바르지 않습니다", false);
+  onUpdate({
+    sessionId,
+    kind: "event",
+    event: safe.event,
+    data: safe.data,
+    ...(safe.id ? { id: safe.id } : {}),
+    ...(safe.retryMs === undefined ? {} : { retryMs: safe.retryMs }),
+    sequence: nextSequence,
+    dropped: history.evicted,
+  });
+  return nextSequence;
+}
+
+function validateSseOptions(options: SseOptions): void {
+  if (!Number.isInteger(options.connectTimeoutMs) || options.connectTimeoutMs < MIN_SSE_CONNECT_TIMEOUT_MS || options.connectTimeoutMs > MAX_SSE_CONNECT_TIMEOUT_MS) {
+    throw new Error("SSE 연결 timeout 범위가 올바르지 않습니다.");
+  }
+  if (!Number.isInteger(options.idleTimeoutMs) || options.idleTimeoutMs < MIN_SSE_IDLE_TIMEOUT_MS || options.idleTimeoutMs > MAX_SSE_IDLE_TIMEOUT_MS) {
+    throw new Error("SSE idle timeout 범위가 올바르지 않습니다.");
+  }
+  if (!Number.isInteger(options.totalTimeoutMs) || options.totalTimeoutMs < MIN_SSE_TOTAL_TIMEOUT_MS || options.totalTimeoutMs > MAX_SSE_TOTAL_TIMEOUT_MS) {
+    throw new Error("SSE 전체 timeout 범위가 올바르지 않습니다.");
+  }
+}
+
+function validateSseEnvironment(environment: EnvVariable[]): void {
+  if (environment.length > MAX_SSE_ENVIRONMENT_VARIABLES) {
+    throw new Error("SSE 환경 변수는 최대 100개까지 사용할 수 있습니다.");
+  }
+  if (environment.some((variable) =>
+    !variable.key
+    || utf8ByteLength(variable.key) > 128
+    || utf8ByteLength(variable.value) > 64 * 1024
+  )) {
+    throw new Error("SSE 환경 변수 형식이 올바르지 않습니다.");
+  }
+}
+
+function validateBrowserSseRequest(req: RequestTemplate): void {
+  const method = req.method.trim().toUpperCase();
+  if (method !== "GET" && method !== "POST") throw new Error("SSE stream은 GET 또는 POST만 지원합니다.");
+  if (
+    utf8ByteLength(req.url) > MAX_SSE_URL_BYTES
+    || req.headers.length > MAX_SSE_HEADERS
+    || req.cookies.length > 100
+    || req.params.length > MAX_SSE_PARAMS
+  ) {
+    throw new Error("SSE 요청 항목 수 또는 URL이 제한을 초과했습니다.");
+  }
+  if (utf8ByteLength(req.body) > MAX_SSE_BODY_BYTES) throw new Error("SSE 요청 본문이 너무 큽니다.");
+  const hasMultipartContent = req.body_kind === "multipart" && req.multipart.some((part) =>
+    isMultipartPartEnabled(part)
+    && Boolean(part.name || part.value || part.file_path || part.file_name || part.content_type)
+  );
+  if (method === "GET" && (req.body.trim() || hasMultipartContent)) {
+    throw new Error("GET SSE 요청에는 본문을 사용할 수 없습니다.");
+  }
+  const cookieIssue = validateCookies(req.cookies)[0];
+  if (cookieIssue) throw new Error(cookieIssue.message);
+  if (hasCookieSourceConflict(req.cookies, req.headers)) {
+    throw new Error("Cookie header와 구조화 Cookie를 동시에 전송할 수 없습니다.");
+  }
+  if (!["none", "json", "form", "multipart", "raw"].includes(req.body_kind)) {
+    throw new Error("SSE 요청 본문 형식이 올바르지 않습니다.");
+  }
+  let url: URL;
+  try {
+    url = new URL(req.url);
+  } catch {
+    throw new Error("SSE 요청 URL이 올바르지 않습니다.");
+  }
+  if (!/^https?:$/u.test(url.protocol) || url.username || url.password || url.hash) {
+    throw new Error("SSE 요청 URL이 올바르지 않습니다.");
+  }
+  if (req.auth && !["none", "basic", "bearer", "apikey"].includes(req.auth.kind)) {
+    throw new Error("SSE 인증 설정이 올바르지 않습니다.");
+  }
+  for (const header of req.headers) {
+    if (utf8ByteLength(header.key) > 256 || utf8ByteLength(header.value) > 64 * 1024) throw new Error("SSE 요청 header가 너무 깁니다.");
+  }
+  for (const cookie of req.cookies) {
+    if (utf8ByteLength(cookie.name) > 256 || utf8ByteLength(cookie.value) > 64 * 1024) throw new Error("SSE 요청 Cookie가 너무 깁니다.");
+  }
+  for (const parameter of req.params) {
+    if (utf8ByteLength(parameter.key) > 64 * 1024 || utf8ByteLength(parameter.value) > 64 * 1024) throw new Error("SSE 요청 parameter가 너무 깁니다.");
+  }
+  if (req.body_kind === "multipart") {
+    const multipartIssue = validateMultipartParts(req.multipart)[0];
+    if (multipartIssue) throw new Error(multipartIssue.message);
+    if (req.multipart.some((part) => utf8ByteLength(part.file_path) > MAX_SSE_URL_BYTES)) {
+      throw new Error("SSE multipart 파일 경로가 너무 깁니다.");
+    }
+    if (req.multipart.some((part) => isMultipartPartEnabled(part) && part.kind === "file")) {
+      throw new Error("SSE multipart 파일 전송은 데스크톱 앱에서만 사용할 수 있습니다.");
+    }
+    if (req.multipart.some((part) =>
+      isMultipartPartEnabled(part) && part.kind === "text" && Boolean(part.content_type)
+    )) {
+      throw new Error("SSE multipart part별 Content-Type은 데스크톱 앱에서만 사용할 수 있습니다.");
+    }
+  }
+  if (req.body_kind === "none" && req.body.trim()) {
+    throw new Error("SSE 요청 본문 형식이 올바르지 않습니다.");
+  }
+  if (req.auth && [
+    req.auth.kind,
+    req.auth.username,
+    req.auth.password,
+    req.auth.token,
+    req.auth.api_key,
+    req.auth.api_value,
+  ].some((value) => utf8ByteLength(value) > 64 * 1024)) {
+    throw new Error("SSE 인증 설정이 너무 깁니다.");
+  }
+}
+
+function parseSseUpdate(value: unknown): SseUpdate | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<SseUpdate>;
+  if (!isSseSessionId(candidate.sessionId) || !["connected", "event", "closed", "error"].includes(candidate.kind ?? "")) return null;
+  if (!Number.isSafeInteger(candidate.sequence) || !Number.isSafeInteger(candidate.dropped) || (candidate.sequence ?? 0) < 0 || (candidate.dropped ?? 0) < 0 || (candidate.dropped ?? 0) > MAX_DECODED_BYTES) return null;
+  if (candidate.event !== undefined && (typeof candidate.event !== "string" || utf8ByteLength(candidate.event) > MAX_EVENT_NAME_BYTES)) return null;
+  if (candidate.data !== undefined && (typeof candidate.data !== "string" || utf8ByteLength(candidate.data) > MAX_EVENT_DATA_BYTES)) return null;
+  if (candidate.id !== undefined && (typeof candidate.id !== "string" || utf8ByteLength(candidate.id) > MAX_EVENT_ID_BYTES)) return null;
+  if (candidate.message !== undefined && (typeof candidate.message !== "string" || !SAFE_SSE_UPDATE_MESSAGES.has(candidate.message))) return null;
+  if (candidate.retryMs !== undefined && (!Number.isSafeInteger(candidate.retryMs) || candidate.retryMs < 0 || candidate.retryMs > MAX_RETRY_MS)) return null;
+  if (candidate.attempt !== undefined && (!Number.isSafeInteger(candidate.attempt) || candidate.attempt < 0 || candidate.attempt > MAX_SSE_RECONNECT_ATTEMPTS)) return null;
+  return candidate as SseUpdate;
+}
+
+function isSseSessionId(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 40 && /^(?:sse|browser-sse)-[0-9]+$/u.test(value);
+}
+
+function safeSseStartError(cause: unknown): string {
+  const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
+  const allowed = [
+    "SSE 연결 timeout 범위가 올바르지 않습니다",
+    "SSE idle timeout 범위가 올바르지 않습니다",
+    "SSE 전체 timeout 범위가 올바르지 않습니다",
+    "SSE 환경 변수는 최대 100개까지 사용할 수 있습니다",
+    "SSE 환경 변수 형식이 올바르지 않습니다",
+    "SSE stream은 GET 또는 POST만 지원합니다",
+    "SSE 요청 URL이 너무 깁니다",
+    "SSE 요청 URL이 올바르지 않습니다",
+    "SSE 요청 항목 수가 제한을 초과했습니다",
+    "SSE 요청 항목 수 또는 URL이 제한을 초과했습니다",
+    "SSE 요청 본문이 너무 큽니다",
+    "SSE 요청 header가 너무 깁니다",
+    "SSE 요청 Cookie가 너무 깁니다",
+    "SSE 요청 parameter가 너무 깁니다",
+    "SSE 인증 설정이 너무 깁니다",
+    "SSE 인증 설정이 올바르지 않습니다",
+    "SSE 요청 header가 올바르지 않습니다",
+    "SSE multipart 파일 경로가 너무 깁니다",
+    "SSE 요청 본문 형식이 올바르지 않습니다",
+    "SSE 요청을 보낼 수 없습니다",
+    "SSE 리다이렉트 정책으로 요청을 차단했습니다",
+    "Cookie header와 구조화 Cookie를 동시에 전송할 수 없습니다.",
+    "Cookie는 최대 100행까지 사용할 수 있습니다.",
+    "이름이 필요합니다.",
+    "이름에 Cookie token으로 쓸 수 없는 문자가 있습니다.",
+    "값에 공백, 세미콜론, 따옴표 또는 제어 문자를 사용할 수 없습니다.",
+    "SSE 응답 형식이 아닙니다",
+    "SSE multipart 파일 전송은 데스크톱 앱에서만 사용할 수 있습니다.",
+    "SSE multipart part별 Content-Type은 데스크톱 앱에서만 사용할 수 있습니다.",
+    "GET SSE 요청에는 본문을 사용할 수 없습니다",
+    "secret 포함 SSE stream은 데스크톱 앱에서만 사용할 수 있습니다.",
+  ];
+  const normalized = raw.replace(/^Error:\s*/u, "").replace(/\.$/u, "");
+  return allowed.includes(normalized) || allowed.includes(raw) ? raw : "SSE stream을 시작하지 못했습니다.";
 }

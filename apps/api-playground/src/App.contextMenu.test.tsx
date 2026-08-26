@@ -20,6 +20,7 @@ vi.mock("./api", () => ({
   sanitizePersistedJson: vi.fn(),
   sealSecret: vi.fn(),
   sendRequest: vi.fn(),
+  startSseStream: vi.fn(),
 }));
 
 const RAW_SECRET = "direct-context-secret";

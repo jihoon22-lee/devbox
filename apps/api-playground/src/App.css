@@ -1110,3 +1110,110 @@ body {
   max-height: 240px;
   overflow: auto;
 }
+
+.sse-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.sse-control-actions,
+.sse-control-options {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sse-status {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sse-status-connected { color: var(--green); }
+.sse-status-connecting { color: var(--amber); }
+.sse-status-error { color: var(--red); }
+
+.sse-number-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.sse-number-field input {
+  width: 86px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 5px;
+  font-size: 11px;
+}
+
+.sse-policy-note {
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.sse-viewer {
+  min-height: 120px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sse-viewer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sse-event-list {
+  max-height: 42vh;
+  overflow: auto;
+  padding: 8px 14px;
+}
+
+.sse-event-row {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 7px;
+  overflow: hidden;
+}
+
+.sse-event-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 5px 8px;
+  background: color-mix(in srgb, var(--panel) 80%, var(--accent));
+  font-size: 11px;
+}
+
+.sse-event-name {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.sse-event-data {
+  margin: 0;
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}

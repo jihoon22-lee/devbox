@@ -12,6 +12,8 @@ import {
   sanitizePersistedJson,
   sealSecret,
   sendRequest,
+  startSseStream,
+  type SseStreamHandle,
 } from "./api";
 import { CookieEditor } from "./CookieEditor";
 import { GraphqlEditor } from "./GraphqlEditor";
@@ -19,6 +21,7 @@ import { HeaderTable } from "./HeaderTable";
 import { MultipartEditor } from "./MultipartEditor";
 import { OpenApiImport } from "./OpenApiImport";
 import { ResponseViewer, type RawResponseCopyKind } from "./ResponseViewer";
+import { SseEventViewer } from "./SseEventViewer";
 import {
   addEntry,
   duplicateEntry,
@@ -85,6 +88,8 @@ import {
 } from "./lib/multipart";
 import type { ApiResponse, GraphqlRequest, HistoryItem, KeyValue, RequestTemplate } from "./types";
 import { OPENAPI_LIMITS, type OpenApiOperationPreview } from "./lib/openapi";
+import type { SseOptions, SseUpdate } from "./types";
+import { eventSize, MAX_DECODED_BYTES, MAX_RETAINED_EVENTS, type SseEvent } from "./lib/sse";
 import "./App.css";
 
 export { statusClass } from "./ResponseViewer";
@@ -92,6 +97,14 @@ export { statusClass } from "./ResponseViewer";
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const BODY_KINDS = ["none", "json", "form", "multipart", "raw", "graphql"];
 const AUTH_KINDS = ["none", "basic", "bearer", "apikey"];
+const MAX_SSE_UI_ROWS = 1_000;
+
+const defaultSseOptions = (): SseOptions => ({
+  connectTimeoutMs: 10_000,
+  idleTimeoutMs: 30_000,
+  totalTimeoutMs: 300_000,
+  reconnect: false,
+});
 
 const emptyReq = (): RequestTemplate => ({
   method: "GET",
@@ -198,6 +211,18 @@ export default function App() {
   const [resp, setResp] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [sseOptions, setSseOptions] = useState<SseOptions>(defaultSseOptions);
+  const [sseState, setSseState] = useState<"idle" | "connecting" | "connected" | "stopped" | "closed" | "error">("idle");
+  const [sseEvents, setSseEvents] = useState<SseEvent[]>([]);
+  const [sseDropped, setSseDropped] = useState(0);
+  const [ssePaused, setSsePausedState] = useState(false);
+  const sseHandleRef = useRef<SseStreamHandle | null>(null);
+  const sseGenerationRef = useRef(0);
+  const sseStopRequestedRef = useRef(false);
+  const sseTerminalGenerationRef = useRef<number | null>(null);
+  const ssePausedRef = useRef(false);
+  const sseHistoryRef = useRef<SseEvent[]>([]);
+  const sseHistoryBytesRef = useRef(0);
   const [showCurl, setShowCurl] = useState(false);
   const [showOpenApiImport, setShowOpenApiImport] = useState(false);
   const [tab, setTab] = useState<"params" | "headers" | "cookies" | "body" | "auth">("params");
@@ -521,6 +546,126 @@ export default function App() {
     setError("요청이 취소되었습니다");
   };
 
+  const sseActive = sseState === "connecting" || sseState === "connected";
+
+  const updateSseHistory = useCallback((event: SseEvent) => {
+    const history = sseHistoryRef.current;
+    history.push(event);
+    sseHistoryBytesRef.current += eventSize(event);
+    while (
+      history.length > MAX_RETAINED_EVENTS
+      || sseHistoryBytesRef.current > MAX_DECODED_BYTES
+    ) {
+      const oldest = history.shift();
+      if (!oldest) {
+        sseHistoryBytesRef.current = 0;
+        break;
+      }
+      sseHistoryBytesRef.current = Math.max(0, sseHistoryBytesRef.current - eventSize(oldest));
+      setSseDropped((count) => count + 1);
+    }
+    if (!ssePausedRef.current) {
+      setSseEvents(history.slice(-MAX_SSE_UI_ROWS));
+    }
+  }, []);
+
+  const handleSseUpdate = useCallback((generation: number, update: SseUpdate) => {
+    if (generation !== sseGenerationRef.current) return;
+    if (update.kind === "event" && typeof update.event === "string" && typeof update.data === "string") {
+      updateSseHistory({
+        event: update.event,
+        data: update.data,
+        ...(update.id ? { id: update.id } : {}),
+        ...(update.retryMs === undefined ? {} : { retryMs: update.retryMs }),
+      });
+      return;
+    }
+    if (update.kind === "connected") {
+      setSseState("connected");
+    } else if (update.kind === "closed") {
+      setSseState("closed");
+      sseTerminalGenerationRef.current = generation;
+      const handle = sseHandleRef.current;
+      sseHandleRef.current = null;
+      if (handle) void handle.stop().catch(() => undefined);
+    } else if (update.kind === "error") {
+      setSseState("error");
+      setError(update.message ?? "SSE stream에 실패했습니다.");
+      sseTerminalGenerationRef.current = generation;
+      const handle = sseHandleRef.current;
+      sseHandleRef.current = null;
+      if (handle) void handle.stop().catch(() => undefined);
+    }
+  }, [updateSseHistory]);
+
+  const clearSseHistory = () => {
+    sseHistoryRef.current = [];
+    sseHistoryBytesRef.current = 0;
+    setSseEvents([]);
+    setSseDropped(0);
+  };
+
+  const setSsePaused = (paused: boolean) => {
+    ssePausedRef.current = paused;
+    setSsePausedState(paused);
+    if (!paused) setSseEvents(sseHistoryRef.current.slice(-MAX_SSE_UI_ROWS));
+  };
+
+  const onStartSse = async () => {
+    if (sseActive || sending || contextActionBusy || requestConfigurationError || !req.url) return;
+    if (req.method !== "GET" && req.method !== "POST") {
+      setError("SSE stream은 GET 또는 POST만 지원합니다.");
+      return;
+    }
+    const generation = sseGenerationRef.current + 1;
+    sseGenerationRef.current = generation;
+    sseStopRequestedRef.current = false;
+    sseTerminalGenerationRef.current = null;
+    clearSseHistory();
+    setSseState("connecting");
+    setError(null);
+    try {
+      const handle = await startSseStream(
+        req,
+        currentEnv?.variables ?? [],
+        sseOptions,
+        (update) => handleSseUpdate(generation, update),
+      );
+      if (generation !== sseGenerationRef.current || sseStopRequestedRef.current || sseTerminalGenerationRef.current === generation) {
+        await handle.stop().catch(() => undefined);
+        return;
+      }
+      sseHandleRef.current = handle;
+    } catch (cause) {
+      if (generation !== sseGenerationRef.current || sseStopRequestedRef.current) return;
+      setSseState("error");
+      setError(safeRequestError(cause));
+    }
+  };
+
+  const onStopSse = async () => {
+    if (!sseActive && !sseHandleRef.current) return;
+    sseStopRequestedRef.current = true;
+    sseGenerationRef.current += 1;
+    const handle = sseHandleRef.current;
+    sseHandleRef.current = null;
+    setSseState("stopped");
+    if (handle) {
+      try {
+        await handle.stop();
+      } catch {
+        setError("SSE stream을 중지하지 못했습니다.");
+      }
+    }
+  };
+
+  useEffect(() => () => {
+    sseStopRequestedRef.current = true;
+    sseGenerationRef.current += 1;
+    const handle = sseHandleRef.current;
+    sseHandleRef.current = null;
+    if (handle) void handle.stop().catch(() => undefined);
+  }, []);
   const setAuth = (patch: Partial<NonNullable<RequestTemplate["auth"]>>) =>
     setReq({
       ...req,
@@ -859,15 +1004,93 @@ export default function App() {
             onChange={(e) => setReq({ ...req, url: e.currentTarget.value })}
             spellCheck={false}
           />
-          <button className="btn send" onClick={() => sending ? onCancel() : void onSend()} disabled={!persistenceReady || contextActionBusy || (!sending && (!req.url || Boolean(requestConfigurationError)))}>
+          <button className="btn send" onClick={() => sending ? onCancel() : void onSend()} disabled={!persistenceReady || contextActionBusy || (!sending && (sseActive || !req.url || Boolean(requestConfigurationError)))}>
             {!persistenceReady ? "Checking..." : sending ? "Cancel" : "Send"}
           </button>
           <button className={`btn ${showCurl ? "active" : ""}`} onClick={() => setShowCurl((v) => !v)} disabled={!req.url || Boolean(requestConfigurationError)}>
             cURL
           </button>
-          <button className="btn" type="button" onClick={() => setShowOpenApiImport(true)} disabled={!persistenceReady || sending || contextActionBusy || collSaving}>
+          <button className="btn" type="button" onClick={() => setShowOpenApiImport(true)} disabled={!persistenceReady || sending || sseActive || contextActionBusy || collSaving}>
             OpenAPI
           </button>
+        </div>
+
+        <div className="sse-controls" aria-label="SSE stream controls">
+          <div className="sse-control-actions">
+            <button
+              type="button"
+              className="btn send"
+              onClick={() => void onStartSse()}
+              disabled={!persistenceReady || sending || sseActive || contextActionBusy || !req.url || Boolean(requestConfigurationError) || (req.method !== "GET" && req.method !== "POST")}
+            >
+              {sseState === "connecting" ? "Connecting SSE..." : "Start SSE"}
+            </button>
+            <button
+              type="button"
+              className="btn danger-outline"
+              onClick={() => void onStopSse()}
+              disabled={!sseActive && !sseHandleRef.current}
+            >
+              Stop SSE
+            </button>
+            <span className={`sse-status sse-status-${sseState}`} role="status" aria-live="polite">
+              {sseState === "idle" ? "SSE idle" : `SSE ${sseState}`}
+            </span>
+          </div>
+          <div className="sse-control-options">
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={sseOptions.reconnect}
+                disabled={sseActive}
+                onChange={(event) => setSseOptions({ ...sseOptions, reconnect: event.currentTarget.checked })}
+              />
+              reconnect (max 5, off by default)
+            </label>
+            <label className="sse-number-field">
+              connect ms
+              <input
+                type="number"
+                min={100}
+                max={30_000}
+                step={100}
+                value={sseOptions.connectTimeoutMs}
+                disabled={sseActive}
+                onChange={(event) => setSseOptions({ ...sseOptions, connectTimeoutMs: Number(event.currentTarget.value) })}
+                aria-label="SSE connect timeout in milliseconds"
+              />
+            </label>
+            <label className="sse-number-field">
+              idle ms
+              <input
+                type="number"
+                min={100}
+                max={300_000}
+                step={100}
+                value={sseOptions.idleTimeoutMs}
+                disabled={sseActive}
+                onChange={(event) => setSseOptions({ ...sseOptions, idleTimeoutMs: Number(event.currentTarget.value) })}
+                aria-label="SSE idle timeout in milliseconds"
+              />
+            </label>
+            <label className="sse-number-field">
+              total ms
+              <input
+                type="number"
+                min={1_000}
+                max={3_600_000}
+                step={1_000}
+                value={sseOptions.totalTimeoutMs}
+                disabled={sseActive}
+                onChange={(event) => setSseOptions({ ...sseOptions, totalTimeoutMs: Number(event.currentTarget.value) })}
+                aria-label="SSE total timeout in milliseconds"
+              />
+            </label>
+          </div>
+          <div className="sse-policy-note">
+            Native SSE does not forward Last-Event-ID during reconnect. Events stay in bounded memory only;
+            browser preview follows CORS and uses redirect blocking.
+          </div>
         </div>
 
         {showCurl && !requestConfigurationError && (
@@ -1016,6 +1239,13 @@ export default function App() {
           pretty={pretty}
           onPrettyChange={setPretty}
           onRawCopy={copyRawResponse}
+          onError={setError}
+        />
+        <SseEventViewer
+          events={sseEvents}
+          dropped={sseDropped}
+          paused={ssePaused}
+          onPauseChange={setSsePaused}
           onError={setError}
         />
       </main>
@@ -1204,6 +1434,36 @@ function safeRequestError(cause: unknown): string {
     GRAPHQL_URL_TOO_LARGE,
     "GraphQL 리다이렉트를 브라우저 미리보기에서 처리할 수 없습니다",
     "응답 본문이 허용된 크기를 초과했습니다",
+    "SSE 연결 timeout 범위가 올바르지 않습니다.",
+    "SSE idle timeout 범위가 올바르지 않습니다.",
+    "SSE 전체 timeout 범위가 올바르지 않습니다.",
+    "SSE 환경 변수는 최대 100개까지 사용할 수 있습니다.",
+    "SSE 환경 변수 형식이 올바르지 않습니다.",
+    "SSE stream은 GET 또는 POST만 지원합니다.",
+    "SSE 요청 URL이 너무 깁니다",
+    "SSE 요청 URL이 올바르지 않습니다",
+    "SSE 요청 항목 수가 제한을 초과했습니다",
+    "SSE 요청 항목 수 또는 URL이 제한을 초과했습니다.",
+    "SSE 요청 본문이 너무 큽니다",
+    "SSE 요청 header가 너무 깁니다",
+    "SSE 요청 Cookie가 너무 깁니다",
+    "SSE 요청 parameter가 너무 깁니다",
+    "SSE 인증 설정이 너무 깁니다",
+    "SSE 인증 설정이 올바르지 않습니다",
+    "SSE 요청 header가 올바르지 않습니다",
+    "SSE multipart 파일 경로가 너무 깁니다",
+    "SSE 요청 본문 형식이 올바르지 않습니다",
+    "SSE 응답 형식이 아닙니다",
+    "SSE 요청을 보낼 수 없습니다",
+    "SSE 리다이렉트 정책으로 요청을 차단했습니다",
+    "SSE multipart 파일 전송은 데스크톱 앱에서만 사용할 수 있습니다.",
+    "SSE multipart part별 Content-Type은 데스크톱 앱에서만 사용할 수 있습니다.",
+    "GET SSE 요청에는 본문을 사용할 수 없습니다",
+    "secret 포함 SSE stream은 데스크톱 앱에서만 사용할 수 있습니다.",
+    "SSE stream 시간이 초과되었습니다",
+    "SSE stream 연결에 실패했습니다",
+    "SSE stream 데이터가 올바르지 않습니다",
+    "SSE stream을 시작하지 못했습니다.",
   ];
   if (safeMessages.includes(message) || /^'.+' 파일을 다시 선택하세요\.$/.test(message)) {
     return message;
