@@ -5,8 +5,11 @@
 //! (full re-index가 루트를 통째로 다시 쓰므로 generation 대신 `indexing` 플래그로
 //! 배타 제어한다 — §8.3).
 
-use crate::commands::indexing::{spawn_index, AppState};
-use crate::core::db::{delete_file, find_root_for, root_row_for, upsert_content, upsert_file};
+use crate::commands::indexing::{spawn_index, validate_root, AppState};
+use crate::core::content::{extract_file, is_content_candidate};
+use crate::core::db::{
+    delete_content, delete_file, find_root_for, root_row_for, upsert_content_record, upsert_file,
+};
 use crate::core::models::RootStatus;
 use crate::core::watcher::{classify_event, is_within_root, Debouncer, DEBOUNCE_WINDOW};
 use notify::{RecursiveMode, Watcher};
@@ -75,7 +78,9 @@ impl WatcherManager {
             crate::core::db::list_roots(&conn).unwrap_or_default()
         };
         for root in roots {
-            let _ = self.add(&root.path);
+            if let Ok(validated) = validate_root(&root.path) {
+                let _ = self.add(&validated);
+            }
         }
     }
 
@@ -100,16 +105,17 @@ impl WatcherManager {
             }
             Err(error) => {
                 // overflow 등 — 해당 루트 reconciliation scan으로 수렴한다
-                eprintln!("everything-plus watcher error for {root_for_cb}: {error}");
+                let _ = error;
+                eprintln!("everything-plus: watcher requested reconciliation");
                 let _ = sender.send(WatcherMessage::Rescan {
                     root: root_for_cb.clone(),
                 });
             }
         })
-        .map_err(|e| format!("watcher 생성 실패: {e}"))?;
+        .map_err(|_| "검색 감시를 시작할 수 없습니다.".to_string())?;
         watcher
             .watch(std::path::Path::new(&normalized), RecursiveMode::Recursive)
-            .map_err(|e| format!("watcher 등록 실패: {e}"))?;
+            .map_err(|_| "검색 감시를 등록할 수 없습니다.".to_string())?;
 
         self.roots
             .lock()
@@ -212,21 +218,28 @@ fn deliver_ready(state: &Arc<AppState>, status: &SharedStatus, debouncer: &mut D
     }
     // full re-index가 도는 동안에는 증분 반영을 건너뛴다 (배타 제어)
     if state.indexing.load(Ordering::SeqCst) {
+        // Do not drop events that arrived while the full scan owned the index.
+        // Re-arm the quiet window so the next worker observes the final file
+        // state after the full scan has finished.
+        let now = Instant::now();
+        for path in ready {
+            debouncer.record(&path, now);
+        }
         return;
     }
-    let conn = state.db.lock().unwrap();
     for path in &ready {
         let path_str = path.to_string_lossy().into_owned();
-        if let Err(error) = apply_incremental(&conn, &path_str) {
-            eprintln!("everything-plus incremental error for {path_str}: {error}");
-            if let Ok(Some(root)) = find_root_for(&conn, &path_str) {
-                if let Some(entry) = status.lock().unwrap().get_mut(&root.path) {
-                    entry.error = Some(error.to_string());
+        if apply_incremental(state, &path_str).is_err() {
+            eprintln!("everything-plus: incremental index failed");
+            if let Ok(conn) = state.db.lock() {
+                if let Ok(Some(root)) = find_root_for(&conn, &path_str) {
+                    if let Some(entry) = status.lock().unwrap().get_mut(&root.path) {
+                        entry.error = Some("incremental_index_failed".to_string());
+                    }
                 }
             }
         }
     }
-    drop(conn);
 
     let now = now_ms();
     for entry in status.lock().unwrap().values_mut() {
@@ -238,32 +251,63 @@ fn deliver_ready(state: &Arc<AppState>, status: &SharedStatus, debouncer: &mut D
 /// 경로 하나를 DB에 증분 반영한다.
 /// - 일반 파일이면 upsert(크기·mtime) + 내용(설정·확장자·크기 조건부)
 /// - 아니면(삭제·디렉터리·심링크) 이전 인덱스 정리
-fn apply_incremental(conn: &rusqlite::Connection, path: &str) -> rusqlite::Result<()> {
+pub(crate) fn apply_incremental(state: &Arc<AppState>, path: &str) -> rusqlite::Result<()> {
     let meta = std::fs::symlink_metadata(path);
     match meta {
         Ok(m) if m.file_type().is_file() => {
-            let size = m.len() as i64;
+            let size = i64::try_from(m.len()).unwrap_or(i64::MAX);
             let modified_ts = m
                 .modified()
                 .ok()
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_millis() as i64)
                 .unwrap_or(0);
-            let Some((root_id, content)) = root_row_for(conn, path)? else {
+            let Some((root_id, content)) = ({
+                let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
+                root_row_for(&conn, path)?
+            }) else {
                 return Ok(());
             };
-            let file_id = upsert_file(conn, path, size, modified_ts, root_id)?;
-            if crate::core::watcher::should_index_content(content, path, size as u64) {
-                if let Ok(text) = std::fs::read_to_string(path) {
-                    upsert_content(conn, file_id, &text)?;
-                }
+            if size == i64::MAX {
+                return Ok(());
+            }
+            let content_record = if content && is_content_candidate(std::path::Path::new(path)) {
+                Some(extract_file(
+                    std::path::Path::new(path),
+                    size as u64,
+                    Instant::now(),
+                ))
+            } else {
+                None
+            };
+            let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
+            let Some((current_root_id, current_content)) = root_row_for(&conn, path)? else {
+                // The root may have been removed while the bounded read was in
+                // progress. Do not resurrect a file row after that deletion.
+                return Ok(());
+            };
+            if current_root_id != root_id || current_content != content {
+                // A root setting change owns a partial/full re-index. Let that
+                // worker establish the new content policy instead of applying
+                // a stale read under the old one.
+                return Ok(());
+            }
+            let file_id = upsert_file(&conn, path, size, modified_ts, root_id)?;
+            if let Some(record) = content_record {
+                upsert_content_record(&conn, file_id, &record, now_ms())?;
+            } else {
+                delete_content(&conn, file_id)?;
             }
         }
         _ => {
             // 삭제·디렉터리·심링크 → 이전 인덱스 정리 (idempotent)
-            let _ = delete_file(conn, path)?;
+            let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
+            let _ = delete_file(&conn, path)?;
         }
     }
+    state
+        .last_indexed_at
+        .store(now_ms().max(1), Ordering::SeqCst);
     Ok(())
 }
 

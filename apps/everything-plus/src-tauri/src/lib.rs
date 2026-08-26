@@ -54,6 +54,7 @@ pub fn run() {
             commands::indexing::remove_root,
             commands::indexing::list_roots,
             commands::indexing::index_now,
+            commands::indexing::cancel_index,
             commands::indexing::index_status,
             commands::search::search_files,
             commands::search::search_content,
@@ -75,8 +76,17 @@ pub fn run() {
             let (conn, index_cleared) = core::db::init(&dir.join("data.db"))?;
             let state = Arc::new(AppState {
                 db: Mutex::new(conn),
+                lifecycle: Mutex::new(()),
                 indexing: AtomicBool::new(false),
+                cancel_requested: AtomicBool::new(false),
+                restart_requested: AtomicBool::new(false),
                 indexed: AtomicI64::new(0),
+                total: AtomicI64::new(0),
+                content_indexed: AtomicI64::new(0),
+                content_truncated: AtomicI64::new(0),
+                content_failed: AtomicI64::new(0),
+                last_indexed_at: AtomicI64::new(0),
+                last_error: Mutex::new(None),
             });
             // watcher는 DB 초기화 뒤, 상태 관리 전에 생성한다 (restore_all이 db를 읽는다)
             let watcher = WatcherManager::new(app.handle().clone(), state.clone());

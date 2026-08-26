@@ -79,7 +79,8 @@ wsl-desktop:     React(xterm + pane/tab context-menu) → invoke → commands �
 life-log:        tray/poller(상시) → sessionizer → SQLite → commands → React(date context-menu)
                    (activity-timeline 흡수. crates/integration으로 snapshot을 자동 발견하며
                    Knowledge activity/v1을 검증·집계하고 외부 DB 직접 조회 없음)
-everything-plus:  indexer/watcher → filesystem crate → search crate(FTS5) → React
+everything-plus:  validated roots → filesystem crate → bounded text extractor →
+                   search crate(FTS5 + content metadata) → React
 knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror + context-menu)
                    ├ Markdown 원문 → wikilink parser → SQLite 재생성 가능 key/link index
                    │  → autocomplete·unresolved decoration·backlink source position
@@ -445,6 +446,18 @@ Everything+는 catalog revision 3부터 `query`를 수신한다. Knowledge와 �
 `PendingOpen` 경로로 cold/hot request를 한 번만 적용하고, 유효한 bounded Query는 name 모드와
 non-regex 상태의 기존 검색 pipeline에 연결한다. invalid/unsupported request는 raw query를
 반향하지 않는 오류로 표시하며 index, root, saved-query 상태는 변경하지 않는다.
+
+Everything+의 content-enabled root는 explicit source/Markdown/plain-text allowlist를 거친
+파일만 bounded extractor로 보낸다. extractor는 UTF-8과 UTF-16 LE/BE를 strict decode하고
+파일 20 MiB·text 2,000,000 Unicode scalar characters·candidate 10초 processing budget을
+공통 적용한다. `file_content`는 `content_status`, `extractor_version`, `truncated`,
+`indexed_at`, `error_code`, `encoding`, `text_chars`를 소유하며, 실패 상태의 body는 빈
+FTS row라 filename search를 가리지 않는다. sensitive filename은 읽기 전에 skip하고,
+검색 snippet도 common credential/private-key와 provider token·AWS access key·JWT pattern을
+redaction한 뒤 4,096자 cap을 통과해야 UI로 나간다. 파일명 검색은 regex prefilter의 기존
+2,000개 상한을 보존하고 content 결과만 200개로 제한한다. full scan과 watcher incremental
+path가 크기·mtime을 읽기 전후에 다시 확인하는 같은 extractor를 공유하며,
+network/external tool/OCR/Office/PDF/semantic processing은 이 BASE 경계에 없다.
 
 Repo Manager는 catalog revision 4부터 `path`를 수신한다. cold/hot request를 listener-first
 `PendingOpen` 경로로 한 번만 소비하고 기존 scan 결과와 canonical identity가 같은 repository를

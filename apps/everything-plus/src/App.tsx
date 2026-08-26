@@ -6,6 +6,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   addRoot,
+  cancelIndex,
   copyPath,
   indexNow,
   indexStatus,
@@ -27,6 +28,26 @@ import type { ContentResult, FileEntry, IndexStatus, RootInfo, RootStatus } from
 import { routeOpenRequest } from "./lib/applink";
 import "./App.css";
 
+const MAX_SEARCH_QUERY_BYTES = 4 * 1024;
+const MAX_ROOT_BYTES = 4 * 1024;
+const SEARCH_INPUT_ERROR = "검색어가 너무 길거나 사용할 수 없는 문자를 포함합니다.";
+const SEARCH_ERROR = "검색을 처리하지 못했습니다.";
+const INDEX_ERROR = "인덱싱 작업을 처리하지 못했습니다.";
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function isSearchQueryAllowed(value: string): boolean {
+  return (
+    utf8ByteLength(value) <= MAX_SEARCH_QUERY_BYTES &&
+    !Array.from(value).some((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code < 0x20 || code === 0x7f;
+    })
+  );
+}
+
 function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -44,7 +65,18 @@ export default function App() {
   const [regexMode, setRegexMode] = useState(false);
   const [results, setResults] = useState<FileEntry[]>([]);
   const [contentResults, setContentResults] = useState<ContentResult[]>([]);
-  const [status, setStatus] = useState<IndexStatus>({ indexing: false, total_files: 0, indexed_files: 0, roots: 0, last_indexed_at: null });
+  const [status, setStatus] = useState<IndexStatus>({
+    indexing: false,
+    cancel_requested: false,
+    total_files: 0,
+    indexed_files: 0,
+    content_indexed_files: 0,
+    content_truncated_files: 0,
+    content_failed_files: 0,
+    roots: 0,
+    last_indexed_at: null,
+    last_error: null,
+  });
   const [roots, setRoots] = useState<RootInfo[]>([]);
   const [watchStatus, setWatchStatus] = useState<RootStatus[]>([]);
   const [newRoot, setNewRoot] = useState("");
@@ -54,16 +86,27 @@ export default function App() {
   const [activeIdx, setActiveIdx] = useState(-1);
   const [contextResult, setContextResult] = useState<ResultContext | null>(null);
   const [availableTargets, setAvailableTargets] = useState<EverythingOpenTarget[] | null>(null);
+  const [indexActionBusy, setIndexActionBusy] = useState(false);
+  const mounted = useRef(true);
   const seq = useRef(0);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const loadMeta = useCallback(async () => {
     try {
       const [st, rs, ws] = await Promise.all([indexStatus(), listRoots(), watcherStatuses()]);
+      if (!mounted.current) return;
       setStatus(st);
       setRoots(rs);
       setWatchStatus(ws);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch {
+      if (!mounted.current) return;
+      setError(INDEX_ERROR);
     }
   }, []);
 
@@ -153,6 +196,13 @@ export default function App() {
     const current = ++seq.current;
     const q = query.trim();
     setActiveIdx(-1);
+    if (!isSearchQueryAllowed(query)) {
+      setResults([]);
+      setContentResults([]);
+      setRegexError(null);
+      setError(SEARCH_INPUT_ERROR);
+      return;
+    }
     if (!q) {
       setResults([]);
       setContentResults([]);
@@ -169,8 +219,8 @@ export default function App() {
           let re: RegExp;
           try {
             re = new RegExp(q, "i");
-          } catch (e) {
-            setRegexError(e instanceof Error ? e.message : String(e));
+          } catch {
+            setRegexError("정규식을 해석할 수 없습니다.");
             return;
           }
           setRegexError(null);
@@ -181,8 +231,10 @@ export default function App() {
           const next = await searchFiles(q);
           if (!cancelled && seq.current === current) setResults(next);
         }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      } catch {
+        if (!cancelled && seq.current === current) {
+          setError(SEARCH_ERROR);
+        }
       }
     }, 150);
     return () => {
@@ -190,6 +242,12 @@ export default function App() {
       clearTimeout(t);
     };
   }, [query, mode, regexMode]);
+
+  useEffect(() => {
+    if (status.last_error === "indexing_failed") {
+      setError("인덱싱을 완료하지 못했습니다. 다시 시도해 주세요.");
+    }
+  }, [status.last_error]);
 
   const onAddRoot = async () => {
     if (!newRoot.trim()) return;
@@ -199,17 +257,23 @@ export default function App() {
       setNewRoot("");
       setNewRootContent(false);
       await loadMeta();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch {
+      setError(INDEX_ERROR);
     }
   };
 
   const onReindex = async () => {
+    if (indexActionBusy) return;
+    setIndexActionBusy(true);
     setError(null);
     try {
-      await indexNow();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (status.indexing) await cancelIndex();
+      else await indexNow();
+      await loadMeta();
+    } catch {
+      if (mounted.current) setError(INDEX_ERROR);
+    } finally {
+      if (mounted.current) setIndexActionBusy(false);
     }
   };
 
@@ -344,18 +408,36 @@ export default function App() {
       <header className="toolbar">
         <h1 className="title">Everything+</h1>
         <div className="mode-tabs">
-          <button className={`mode-tab ${mode === "name" ? "active" : ""}`} onClick={() => setMode("name")}>
+          <button
+            className={`mode-tab ${mode === "name" ? "active" : ""}`}
+            aria-pressed={mode === "name"}
+            onClick={() => setMode("name")}
+          >
             Name
           </button>
-          <button className={`mode-tab ${mode === "content" ? "active" : ""}`} onClick={() => setMode("content")}>
+          <button
+            className={`mode-tab ${mode === "content" ? "active" : ""}`}
+            aria-pressed={mode === "content"}
+            onClick={() => setMode("content")}
+          >
             Content
           </button>
         </div>
         <input
           className="search"
+          aria-label={mode === "content" ? "Search file contents" : "Search file names"}
           placeholder={mode === "content" ? "Search file contents..." : "Search file names..."}
           value={query}
-          onChange={(e) => setQuery(e.currentTarget.value)}
+          maxLength={MAX_SEARCH_QUERY_BYTES}
+          onChange={(e) => {
+            const value = e.currentTarget.value;
+            if (isSearchQueryAllowed(value)) {
+              setError(null);
+              setQuery(value);
+            } else {
+              setError(SEARCH_INPUT_ERROR);
+            }
+          }}
           autoFocus
         />
         {mode === "name" && (
@@ -364,13 +446,22 @@ export default function App() {
             regex
           </label>
         )}
-        <span className="status">
+        <span className="status" aria-live="polite">
           {status.indexing
-            ? `Indexing... ${status.indexed_files.toLocaleString()} files`
+            ? `${status.cancel_requested ? "Cancelling..." : "Indexing..."} ${status.indexed_files.toLocaleString()} files`
             : `${status.total_files.toLocaleString()} files`}
         </span>
-        <button className="btn" onClick={() => void onReindex()}>
-          Re-index
+        <span className="content-status" aria-live="polite">
+          Content {status.content_indexed_files.toLocaleString()} indexed · {status.content_failed_files.toLocaleString()} skipped
+          {status.content_truncated_files > 0 && ` · ${status.content_truncated_files.toLocaleString()} truncated`}
+        </span>
+        <button
+          className="btn"
+          onClick={() => void onReindex()}
+          disabled={status.cancel_requested || indexActionBusy}
+          aria-busy={indexActionBusy}
+        >
+          {status.indexing ? "Cancel" : "Re-index"}
         </button>
       </header>
 
@@ -407,6 +498,7 @@ export default function App() {
           className="root-input"
           placeholder="Add root path (e.g. C:\projects)"
           value={newRoot}
+          maxLength={MAX_ROOT_BYTES}
           onChange={(e) => setNewRoot(e.currentTarget.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") void onAddRoot();
@@ -462,7 +554,7 @@ export default function App() {
               {query.trim() && contentResults.length === 0 && (
                 <tr>
                   <td colSpan={4} className="empty">
-                    No content matches for "{query}"
+                    No content matches
                   </td>
                 </tr>
               )}
@@ -515,7 +607,7 @@ export default function App() {
               {query.trim() && results.length === 0 && (
                 <tr>
                   <td colSpan={4} className="empty">
-                    No results for "{query}"
+                    No results
                   </td>
                 </tr>
               )}

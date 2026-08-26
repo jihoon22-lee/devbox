@@ -30,10 +30,15 @@ pub struct RootInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct IndexStatus {
     pub indexing: bool,
+    pub cancel_requested: bool,
     pub total_files: i64,
     pub indexed_files: i64,
+    pub content_indexed_files: i64,
+    pub content_truncated_files: i64,
+    pub content_failed_files: i64,
     pub roots: usize,
     pub last_indexed_at: Option<i64>,
+    pub last_error: Option<String>,
 }
 
 /// watcher 루트별 상태

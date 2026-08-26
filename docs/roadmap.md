@@ -239,6 +239,25 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
      navigation과 `log-source/v1` opaque source validation을 구현 중이다. Log Lens 연결,
      원격 로그와 permanent archive는 이 작업에서 제외하고 별도 P3 integration으로 남긴다.
 
+   - 2026-08-27 `#297` BASE 구현: Everything+의 내용 검색은 content-enabled root에서
+     명시적 source/Markdown/plain-text 후보만 선택해 UTF-8 및 UTF-16 LE/BE를 strict
+     decode하고, 파일 20 MiB·보관 text 2,000,000 Unicode scalar characters·후보 처리
+     10초 상한을 적용한다. UTF-8 BOM, UTF-16 BOM, empty/Korean/English fixture와
+     unsupported binary/encoding, oversized file, file-change race를 모두 deterministic
+     상태로 기록하며, PDF/Office/OCR/semantic search는 다음 별도 feature로 남긴다.
+   - 각 `file_content` row는 `content_status`, `extractor_version=text-v1`, `truncated`,
+     `indexed_at`, `error_code`, `encoding`, `text_chars`를 보유한다. 실패 row의 FTS body는
+     비워 filename search를 계속 제공하고, sensitive filename은 읽기 전에
+     `skipped_sensitive`로 격리하며 content snippet은 common credential/private-key와
+     provider token·AWS access key·JWT pattern redaction, 4,096자 output cap 뒤에만 UI로
+     전달한다. full/incremental index는 250-file batch와 cooperative cancel을 사용하고
+     watcher도 같은 extractor와 크기·mtime race check를 재사용한다. 기존 regex 파일명
+     prefilter는 최대 2,000개를 유지하고 content result만 최대 200개로 제한한다.
+   - schema v2 migration은 roots를 보존하고 files/content 파생 index만 재생성한다. `Cancel`
+     중 이미 커밋된 부분 결과는 안전한 상태로 남고 `Re-index`로 수렴한다. Rust unit/
+     integration fixture와 frontend stale-search·input bound·cancel/a11y fixture를
+     focused gate로 검증했으며, packaged Windows W2와 전체 release gate는 아직 남아 있다.
+
 #### P3 — 선택 확정
 
 1. 신규 **Devbox Launcher 0.1.0** — devbox 앱·profile·repo·job·saved query 전용 launcher와

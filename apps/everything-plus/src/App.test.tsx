@@ -2,7 +2,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
+  cancelIndex,
   copyPath,
+  indexStatus,
   onOpenRequest,
   openFile,
   openIn,
@@ -20,7 +22,18 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./api", () => ({
-  indexStatus: vi.fn(async () => ({ indexing: false, total_files: 1, indexed_files: 1, roots: 1, last_indexed_at: null })),
+  indexStatus: vi.fn(async () => ({
+    indexing: false,
+    cancel_requested: false,
+    total_files: 1,
+    indexed_files: 1,
+    content_indexed_files: 1,
+    content_truncated_files: 0,
+    content_failed_files: 0,
+    roots: 1,
+    last_indexed_at: null,
+    last_error: null,
+  })),
   listRoots: vi.fn(async () => []),
   watcherStatuses: vi.fn(async () => []),
   searchFiles: vi.fn(async (query: string) => [{ id: 1, path: `C:\\files\\${query}`, name: query, ext: "", size: 1, modified_ts: 0 }]),
@@ -28,6 +41,7 @@ vi.mock("./api", () => ({
   addRoot: vi.fn(async () => undefined),
   removeRoot: vi.fn(async () => undefined),
   indexNow: vi.fn(async () => undefined),
+  cancelIndex: vi.fn(async () => undefined),
   openFile: vi.fn(async () => undefined),
   revealFile: vi.fn(async () => undefined),
   copyPath: vi.fn(async () => undefined),
@@ -51,6 +65,8 @@ const takePendingOpenMock = vi.mocked(takePendingOpen);
 const onOpenRequestMock = vi.mocked(onOpenRequest);
 const searchFilesMock = vi.mocked(searchFiles);
 const searchContentMock = vi.mocked(searchContent);
+const indexStatusMock = vi.mocked(indexStatus);
+const cancelIndexMock = vi.mocked(cancelIndex);
 const openFileMock = vi.mocked(openFile);
 const revealFileMock = vi.mocked(revealFile);
 const copyPathMock = vi.mocked(copyPath);
@@ -74,6 +90,19 @@ beforeEach(() => {
     { id: 1, path: `C:\\files\\${query}`, name: query, ext: "", size: 1, modified_ts: 0 },
   ]);
   searchContentMock.mockReset().mockResolvedValue([]);
+  indexStatusMock.mockReset().mockResolvedValue({
+    indexing: false,
+    cancel_requested: false,
+    total_files: 1,
+    indexed_files: 1,
+    content_indexed_files: 1,
+    content_truncated_files: 0,
+    content_failed_files: 0,
+    roots: 1,
+    last_indexed_at: null,
+    last_error: null,
+  });
+  cancelIndexMock.mockReset().mockResolvedValue(undefined);
   openFileMock.mockReset().mockResolvedValue(undefined);
   revealFileMock.mockReset().mockResolvedValue(undefined);
   copyPathMock.mockReset().mockResolvedValue(undefined);
@@ -166,6 +195,43 @@ describe("Everything+ Query app-link delivery", () => {
     expect(await screen.findByText("요청한 검색어를 사용할 수 없습니다")).toBeTruthy();
     expect(screen.getByText("Everything+")).toBeTruthy();
     expect(searchFilesMock).not.toHaveBeenCalled();
+  });
+
+  it("enforces the UTF-8 search bound before invoking the backend", async () => {
+    render(<App />);
+    const input = screen.getByPlaceholderText("Search file names...");
+    fireEvent.change(input, {
+      target: { value: "가".repeat(2_000) },
+    });
+
+    expect(await screen.findByText("검색어가 너무 길거나 사용할 수 없는 문자를 포함합니다.")).toBeTruthy();
+    expect(searchFilesMock).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: "recovered" } });
+    await waitFor(() => expect(searchFilesMock).toHaveBeenCalledWith("recovered"));
+    expect(screen.queryByText("검색어가 너무 길거나 사용할 수 없는 문자를 포함합니다.")).toBeNull();
+  });
+
+  it("offers cancellation while indexing with an accessible busy action", async () => {
+    indexStatusMock.mockResolvedValue({
+      indexing: true,
+      cancel_requested: false,
+      total_files: 20,
+      indexed_files: 4,
+      content_indexed_files: 2,
+      content_truncated_files: 1,
+      content_failed_files: 0,
+      roots: 1,
+      last_indexed_at: null,
+      last_error: null,
+    });
+
+    render(<App />);
+
+    const cancel = await screen.findByRole("button", { name: "Cancel" });
+    fireEvent.click(cancel);
+    await waitFor(() => expect(cancelIndexMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("Indexing... 4 files")).toBeTruthy();
   });
 });
 

@@ -39,7 +39,18 @@ const MOCK_CONTENT: ContentResult[] = [
   { path: "C:\\notes\\meeting.md", name: "meeting.md", snippet: "quarterly [review] with the team" },
 ];
 
-const MOCK_STATUS: IndexStatus = { indexing: false, total_files: 42317, indexed_files: 42317, roots: 2, last_indexed_at: null };
+const MOCK_STATUS: IndexStatus = {
+  indexing: false,
+  cancel_requested: false,
+  total_files: 42317,
+  indexed_files: 42317,
+  content_indexed_files: 11840,
+  content_truncated_files: 2,
+  content_failed_files: 6,
+  roots: 2,
+  last_indexed_at: null,
+  last_error: null,
+};
 
 export async function takePendingOpen(): Promise<OpenRequest | null> {
   if (!isTauri()) return null;
@@ -89,6 +100,11 @@ export async function indexStatus(): Promise<IndexStatus> {
 export async function indexNow(): Promise<void> {
   if (!isTauri()) return;
   await invoke("index_now");
+}
+
+export async function cancelIndex(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("cancel_index");
 }
 
 export async function watcherStatuses(): Promise<RootStatus[]> {

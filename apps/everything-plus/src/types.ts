@@ -20,10 +20,15 @@ export interface RootInfo {
 
 export interface IndexStatus {
   indexing: boolean;
+  cancel_requested: boolean;
   total_files: number;
   indexed_files: number;
+  content_indexed_files: number;
+  content_truncated_files: number;
+  content_failed_files: number;
   roots: number;
   last_indexed_at: number | null;
+  last_error: string | null;
 }
 
 export interface RootStatus {

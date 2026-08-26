@@ -51,12 +51,15 @@ pub fn is_within_root(root: &str, path: &str) -> bool {
 }
 
 /// 내용 인덱싱 대상 판정 (루트 설정·확장자·크기).
+#[allow(dead_code)]
 pub fn should_index_content(root_content: bool, path: &str, size: u64) -> bool {
     root_content
-        && size <= crate::core::indexer::MAX_CONTENT_BYTES
+        && size <= crate::core::content::MAX_FILE_BYTES
+        && !crate::core::content::is_sensitive_filename(std::path::Path::new(path))
         && crate::core::indexer::is_text_ext(ext_of(path))
 }
 
+#[allow(dead_code)]
 fn ext_of(path: &str) -> &str {
     path.rsplit('.')
         .next()
@@ -149,7 +152,11 @@ mod tests {
         assert!(should_index_content(true, "C:/a.md", 10));
         assert!(!should_index_content(false, "C:/a.md", 10));
         assert!(!should_index_content(true, "C:/a.png", 10));
-        assert!(!should_index_content(true, "C:/a.md", 1_000_001));
+        assert!(!should_index_content(
+            true,
+            "C:/a.md",
+            crate::core::content::MAX_FILE_BYTES + 1
+        ));
     }
 
     #[test]
