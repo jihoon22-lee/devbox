@@ -7,11 +7,34 @@ use zeroize::Zeroizing;
 
 const REDACTED: &str = "[REDACTED]";
 const MAX_REDIRECTS: usize = 10;
+const MAX_REQUEST_HEADERS: usize = 100;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KeyValue {
     pub key: String,
     pub value: String,
+}
+
+fn default_header_enabled() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestHeader {
+    pub key: String,
+    pub value: String,
+    #[serde(default = "default_header_enabled")]
+    pub enabled: bool,
+}
+
+impl Default for RequestHeader {
+    fn default() -> Self {
+        Self {
+            key: String::new(),
+            value: String::new(),
+            enabled: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -29,7 +52,7 @@ pub struct AuthConfig {
 pub struct RequestTemplate {
     pub method: String,
     pub url: String,
-    pub headers: Vec<KeyValue>,
+    pub headers: Vec<RequestHeader>,
     pub params: Vec<KeyValue>,
     /// none | json | form | raw
     pub body_kind: String,
@@ -43,7 +66,7 @@ pub struct RequestTemplate {
 struct ResolvedRequest {
     method: String,
     url: String,
-    headers: Vec<KeyValue>,
+    headers: Vec<RequestHeader>,
     params: Vec<KeyValue>,
     body_kind: String,
     body: String,
@@ -148,7 +171,8 @@ async fn execute_request(req: ResolvedRequest, redactor: &Redactor) -> Result<Ap
     for redirect_count in 0..=MAX_REDIRECTS {
         let mut builder = client.request(method.clone(), current_url.clone());
         for header in &req.headers {
-            if header.key.is_empty()
+            if !header.enabled
+                || header.key.is_empty()
                 || !should_send_header(&header.key, allow_sensitive)
                 || !include_body && is_body_header(&header.key)
                 || !allow_sensitive && redactor.redact_text(&header.value) != header.value
@@ -290,9 +314,11 @@ fn resolve_template(
             headers: req
                 .headers
                 .iter()
-                .map(|item| KeyValue {
+                .take(MAX_REQUEST_HEADERS)
+                .map(|item| RequestHeader {
                     key: replace(&item.key),
                     value: replace(&item.value),
+                    enabled: item.enabled,
                 })
                 .collect(),
             params: req
@@ -336,9 +362,18 @@ fn referenced_variable_names(req: &RequestTemplate) -> BTreeSet<String> {
     };
     collect(&req.url);
     collect(&req.body);
-    for pair in req.headers.iter().chain(req.params.iter()) {
-        collect(&pair.key);
-        collect(&pair.value);
+    for header in req
+        .headers
+        .iter()
+        .take(MAX_REQUEST_HEADERS)
+        .filter(|header| header.enabled)
+    {
+        collect(&header.key);
+        collect(&header.value);
+    }
+    for param in &req.params {
+        collect(&param.key);
+        collect(&param.value);
     }
     if let Some(auth) = &req.auth {
         collect(&auth.username);
@@ -459,7 +494,7 @@ fn collect_request_secrets(req: &ResolvedRequest, secrets: &mut Vec<Zeroizing<St
         push(&auth.token);
         push(&auth.api_value);
     }
-    for header in &req.headers {
+    for header in req.headers.iter().filter(|header| header.enabled) {
         if is_sensitive_name(&header.key) {
             push(&header.value);
         }
@@ -795,7 +830,11 @@ fn build_curl(req: &ResolvedRequest) -> String {
         req.method,
         shell_quote(&url)
     )];
-    for header in req.headers.iter().filter(|header| !header.key.is_empty()) {
+    for header in req
+        .headers
+        .iter()
+        .filter(|header| header.enabled && !header.key.is_empty())
+    {
         lines.push(format!(
             "  --header {}",
             shell_quote(&format!("{}: {}", header.key, header.value))
@@ -860,9 +899,10 @@ mod tests {
         RequestTemplate {
             method: "POST".into(),
             url: "https://example.com/api?token={{ TOKEN }}".into(),
-            headers: vec![KeyValue {
+            headers: vec![RequestHeader {
                 key: "Authorization".into(),
                 value: "Bearer ${TOKEN}".into(),
+                enabled: true,
             }],
             params: vec![],
             body_kind: "json".into(),
@@ -896,6 +936,63 @@ mod tests {
         assert!(resolved.url.contains("top-secret"));
         assert_eq!(resolved.auth.unwrap().token, "top-secret");
         assert_eq!(secrets[0].as_str(), "top-secret");
+    }
+
+    #[test]
+    fn legacy_header_defaults_enabled_and_disabled_reference_is_not_unsealed() {
+        let legacy: RequestHeader =
+            serde_json::from_str(r#"{"key":"X-Legacy","value":"one"}"#).unwrap();
+        assert!(legacy.enabled);
+
+        let mut request = template();
+        request.url = "https://example.com/api".into();
+        request.body_kind = "none".into();
+        request.body.clear();
+        request.auth = None;
+        request.headers = vec![
+            RequestHeader {
+                key: "X-Trace".into(),
+                value: "one".into(),
+                enabled: true,
+            },
+            RequestHeader {
+                key: "X-Trace".into(),
+                value: "${TOKEN}".into(),
+                enabled: true,
+            },
+            RequestHeader {
+                key: "X-Skip".into(),
+                value: "${BROKEN}".into(),
+                enabled: false,
+            },
+        ];
+
+        let (resolved, secrets) = resolve_template(
+            &request,
+            &[
+                sealed_variable("TOKEN", "top-secret"),
+                EnvironmentVariable {
+                    key: "BROKEN".into(),
+                    value: "not-base64".into(),
+                    secret: true,
+                },
+            ],
+            &MockSealer,
+        )
+        .unwrap();
+
+        assert_eq!(resolved.headers.len(), 3);
+        assert_eq!(resolved.headers[0].value, "one");
+        assert_eq!(resolved.headers[1].value, "top-secret");
+        assert_eq!(resolved.headers[2].value, "${BROKEN}");
+        assert!(!resolved.headers[2].enabled);
+        assert_eq!(secrets.len(), 1);
+        assert_eq!(secrets[0].as_str(), "top-secret");
+
+        let curl = build_curl(&resolved);
+        assert_eq!(curl.matches("X-Trace:").count(), 2);
+        assert!(!curl.contains("X-Skip"));
+        assert!(!curl.contains("BROKEN"));
     }
 
     #[test]
@@ -1154,6 +1251,57 @@ mod tests {
     }
 
     #[test]
+    fn live_request_sends_enabled_duplicate_headers_in_order_and_skips_disabled() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut stream);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
+            )
+            .unwrap();
+            request
+        });
+
+        let mut request = template();
+        request.method = "GET".into();
+        request.url = format!("http://127.0.0.1:{port}/headers");
+        request.body_kind = "none".into();
+        request.body.clear();
+        request.auth = None;
+        request.headers = vec![
+            RequestHeader {
+                key: "X-Trace".into(),
+                value: "one".into(),
+                enabled: true,
+            },
+            RequestHeader {
+                key: "X-Trace".into(),
+                value: "two".into(),
+                enabled: true,
+            },
+            RequestHeader {
+                key: "X-Skip".into(),
+                value: "not-sent".into(),
+                enabled: false,
+            },
+        ];
+
+        let response = tauri::async_runtime::block_on(send_request(request, vec![])).unwrap();
+        assert_eq!(response.status, 200);
+        let observed = server.join().unwrap();
+        let trace_lines = observed
+            .lines()
+            .filter(|line| line.to_ascii_lowercase().starts_with("x-trace:"))
+            .collect::<Vec<_>>();
+        assert_eq!(trace_lines, vec!["x-trace: one", "x-trace: two"]);
+        assert!(!observed.to_ascii_lowercase().contains("x-skip:"));
+        assert!(!observed.contains("not-sent"));
+    }
+
+    #[test]
     fn live_cross_origin_redirect_strips_auth_and_redacts_every_return_path() {
         let redirect_server = TcpListener::bind("127.0.0.1:0").unwrap();
         let destination_server = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1255,25 +1403,30 @@ mod tests {
             request.body_kind = "raw".into();
             request.body = body.into();
             request.headers = vec![
-                KeyValue {
+                RequestHeader {
                     key: "Cookie".into(),
                     value: "sid=cross-origin-secret".into(),
+                    enabled: true,
                 },
-                KeyValue {
+                RequestHeader {
                     key: "X-Api-Key".into(),
                     value: "cross-origin-secret".into(),
+                    enabled: true,
                 },
-                KeyValue {
+                RequestHeader {
                     key: "X-Debug".into(),
                     value: "cross-origin-secret".into(),
+                    enabled: true,
                 },
-                KeyValue {
+                RequestHeader {
                     key: "Content-Type".into(),
                     value: "text/plain".into(),
+                    enabled: true,
                 },
-                KeyValue {
+                RequestHeader {
                     key: "Content-Encoding".into(),
                     value: "identity".into(),
+                    enabled: true,
                 },
             ];
             request.auth = Some(AuthConfig {

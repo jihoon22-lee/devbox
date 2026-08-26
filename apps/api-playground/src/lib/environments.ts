@@ -91,7 +91,8 @@ export function applyToRequest<T>(request: T, variables: Map<string, string>): T
   if (typeof out.url === "string") out.url = applyVariables(out.url, variables);
   if (typeof out.body === "string") out.body = applyVariables(out.body, variables);
   if (Array.isArray(out.headers)) {
-    out.headers = (out.headers as Array<{ key: string; value: string }>).map((h) => ({
+    out.headers = (out.headers as Array<{ key: string; value: string; enabled?: boolean }>).map((h) => ({
+      ...h,
       key: h.key,
       value: applyVariables(h.value, variables),
     }));

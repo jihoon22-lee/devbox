@@ -5,6 +5,11 @@ import type {
   PersistedHistoryRequest,
   RequestTemplate,
 } from "../types";
+import {
+  isHeaderEnabled,
+  isRequestHeader,
+  normalizeHeaders,
+} from "./headers";
 
 export const REDACTED = "[REDACTED]";
 export const HISTORY_V1_LS_KEY = "apip-history";
@@ -94,7 +99,13 @@ export function parseHistoryStore(raw: string | null): HistoryStore | null {
   try {
     const parsed = JSON.parse(raw ?? "null") as Partial<HistoryStore> | null;
     if (parsed?.version !== HISTORY_VERSION || !Array.isArray(parsed.history)) return null;
-    const history = parsed.history.filter(isHistoryItem).slice(0, 50);
+    const history = parsed.history
+      .filter(isHistoryItem)
+      .slice(0, 50)
+      .map((item) => ({
+        ...item,
+        request: normalizePersistedRequest(item.request),
+      }));
     return { version: HISTORY_VERSION, history };
   } catch {
     return null;
@@ -108,7 +119,10 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
     return sanitized;
   };
 
-  const headers = request.headers.map((header) => sanitizePair(header, mark));
+  const headers = normalizeHeaders(request.headers).map((header) => ({
+    ...sanitizePair(header, mark),
+    enabled: isHeaderEnabled(header),
+  }));
   const params = request.params.map((param) => sanitizePair(param, mark));
   const url = mark(request.url, sanitizeUrl(request.url));
   const body = mark(request.body, sanitizeBody(request.body, request.body_kind));
@@ -129,7 +143,13 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
 
 export function toRequestTemplate(request: PersistedHistoryRequest): RequestTemplate {
   const { requiresSecretReview: _, ...template } = request;
-  return template;
+  return { ...template, headers: normalizeHeaders(template.headers) };
+}
+
+export function normalizePersistedRequest(
+  request: PersistedHistoryRequest,
+): PersistedHistoryRequest {
+  return { ...request, headers: normalizeHeaders(request.headers) };
 }
 
 export function isSensitiveName(name: string): boolean {
@@ -289,12 +309,20 @@ function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
     typeof request.method === "string" &&
     typeof request.url === "string" &&
     Array.isArray(request.headers) &&
+    request.headers.every(isRequestHeader) &&
     Array.isArray(request.params) &&
+    request.params.every(isKeyValue) &&
     typeof request.body_kind === "string" &&
     typeof request.body === "string" &&
     typeof request.timeout_ms === "number" &&
     typeof request.requiresSecretReview === "boolean"
   );
+}
+
+function isKeyValue(value: unknown): value is KeyValue {
+  if (!value || typeof value !== "object") return false;
+  const pair = value as Partial<KeyValue>;
+  return typeof pair.key === "string" && typeof pair.value === "string";
 }
 
 function countLegacyHistoryEntries(raw: string | null): number {

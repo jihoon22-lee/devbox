@@ -5,6 +5,7 @@ import {
 } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildRevealedCurl, sanitizePersistedJson, sealSecret, sendRequest } from "./api";
+import { HeaderTable } from "./HeaderTable";
 import {
   addEntry,
   duplicateEntry,
@@ -38,6 +39,7 @@ import {
   toRequestTemplate,
   type HistoryStore,
 } from "./lib/persistence";
+import { isHeaderEnabled } from "./lib/headers";
 import type { ApiResponse, HistoryItem, KeyValue, RequestTemplate } from "./types";
 import "./App.css";
 
@@ -668,7 +670,13 @@ export default function App() {
             <KeyValueEditor rows={req.params} onChange={(params) => setReq({ ...req, params })} namePlaceholder="Key" />
           )}
           {tab === "headers" && (
-            <KeyValueEditor rows={req.headers} onChange={(headers) => setReq({ ...req, headers })} namePlaceholder="Header" />
+            <HeaderTable
+              rows={req.headers}
+              secretNames={(currentEnv?.variables ?? [])
+                .filter((variable) => variable.secret)
+                .map((variable) => variable.key)}
+              onChange={(headers) => setReq({ ...req, headers })}
+            />
           )}
           {tab === "body" && (
             <div>
@@ -801,7 +809,9 @@ export function buildCurl(template: RequestTemplate): string {
   const lines = [`curl --request ${req.method} ${shellQuote(url)}`];
 
   const headers: [string, string][] = [];
-  for (const h of req.headers) if (h.key) headers.push([h.key, h.value]);
+  for (const h of req.headers) {
+    if (isHeaderEnabled(h) && h.key) headers.push([h.key, h.value]);
+  }
   if (req.auth?.kind === "basic" && req.auth.username) {
     headers.push(["Authorization", "Basic [REDACTED]"]);
   } else if (req.auth?.kind === "bearer" && req.auth.token) {

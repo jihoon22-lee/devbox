@@ -57,7 +57,7 @@ describe("variable substitution", () => {
     const req: RequestTemplate = {
       method: "POST",
       url: "${BASE_URL}/${VERSION}",
-      headers: [{ key: "Authorization", value: "Bearer ${TOKEN}" }],
+      headers: [{ key: "Authorization", value: "Bearer ${TOKEN}", enabled: false }],
       params: [{ key: "tenant", value: "${TENANT}" }],
       body_kind: "json",
       body: '{"token":"${TOKEN}"}',
@@ -86,6 +86,7 @@ describe("variable substitution", () => {
 
     expect(out.url).toBe("https://api.example.com/v2");
     expect(out.headers[0].value).toBe("Bearer token-value");
+    expect(out.headers[0].enabled).toBe(false);
     expect(out.params[0].value).toBe("tenant-value");
     expect(out.body).toBe('{"token":"token-value"}');
     expect(out.auth).toEqual({

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./lib/isTauri";
 import { applyToRequest, type EnvVariable } from "./lib/environments";
+import { isHeaderEnabled } from "./lib/headers";
 import type { ApiResponse, RequestTemplate } from "./types";
 
 /** HTTP 요청 전송. 브라우저 미리보기에서는 fetch(CORS 제약 존재)로 대체한다. */
@@ -48,14 +49,16 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): P
   const variables = new Map(environment.map((variable) => [variable.key, variable.value]));
   const resolved = applyToRequest(req, variables);
   const start = performance.now();
-  const headers: Record<string, string> = {};
-  for (const h of resolved.headers) if (h.key) headers[h.key] = h.value;
+  const headers = new Headers();
+  for (const header of resolved.headers) {
+    if (isHeaderEnabled(header) && header.key) headers.append(header.key, header.value);
+  }
   if (resolved.auth?.kind === "basic") {
-    headers["Authorization"] = "Basic " + btoa(`${resolved.auth.username}:${resolved.auth.password}`);
+    headers.append("Authorization", "Basic " + btoa(`${resolved.auth.username}:${resolved.auth.password}`));
   } else if (resolved.auth?.kind === "bearer") {
-    headers["Authorization"] = "Bearer " + resolved.auth.token;
-  } else if (resolved.auth?.kind === "apikey") {
-    headers[resolved.auth.api_key] = resolved.auth.api_value;
+    headers.append("Authorization", "Bearer " + resolved.auth.token);
+  } else if (resolved.auth?.kind === "apikey" && resolved.auth.api_key) {
+    headers.append(resolved.auth.api_key, resolved.auth.api_value);
   }
   const params = new URLSearchParams();
   for (const p of resolved.params) if (p.key) params.append(p.key, p.value);
@@ -64,7 +67,7 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): P
 
   let body: string | undefined;
   if (resolved.body_kind === "json" && resolved.body.trim()) {
-    headers["Content-Type"] = "application/json";
+    headers.set("Content-Type", "application/json");
     body = resolved.body;
   } else if (resolved.body_kind === "raw" && resolved.body) {
     body = resolved.body;
@@ -115,7 +118,9 @@ function redactBrowserText(text: string, req: RequestTemplate): string {
     req.auth?.password,
     req.auth?.token,
     req.auth?.api_value,
-    ...req.headers.filter((header) => isSensitiveName(header.key)).map((header) => header.value),
+    ...req.headers
+      .filter((header) => isHeaderEnabled(header) && isSensitiveName(header.key))
+      .map((header) => header.value),
     ...req.params.filter((param) => isSensitiveName(param.key)).map((param) => param.value),
   ].filter((value): value is string => Boolean(value));
   const exactRedacted = directSecrets.sort((a, b) => b.length - a.length).reduce(
