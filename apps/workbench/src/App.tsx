@@ -18,11 +18,13 @@ import {
   stopWorkspace,
   takePendingOpen,
   updateProfile,
+  wslRuntimeSuggestions,
   type OpenRequest,
   type ProjectHealth,
   type ProjectProfile,
   type WorkspaceRun,
   type WorkbenchOpenTarget,
+  type RuntimeSuggestions,
 } from "./api";
 import { routeOpenRequest } from "./lib/applink";
 import {
@@ -35,10 +37,20 @@ import {
   MAX_SERVICES,
   MAX_WSL_DISTRO_CHARS,
   newServiceDraftRow,
+  parseExpectedPorts,
   validateProfileDraft,
   type ProfileDraft,
 } from "./lib/profileEditor";
+import { formatRuntimeFreshness, mergeSuggestedPorts } from "./lib/runtimeSuggestions";
 import "./App.css";
+
+const RUNTIME_STATUS_LABEL: Record<RuntimeSuggestions["status"], string> = {
+  fresh: "최신 snapshot",
+  stale: "오래된 snapshot — 반영 시 추가 확인 필요",
+  expired: "만료된 snapshot — 반영 불가",
+  missing: "WSL Desktop snapshot 없음",
+  corrupt: "WSL Desktop snapshot을 안전하게 읽을 수 없음",
+};
 
 export default function App() {
   const [profiles, setProfiles] = useState<ProjectProfile[]>([]);
@@ -48,6 +60,10 @@ export default function App() {
   const [run, setRun] = useState<WorkspaceRun | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [runtimeSuggestions, setRuntimeSuggestions] = useState<RuntimeSuggestions | null>(null);
+  const [selectedRuntimePorts, setSelectedRuntimePorts] = useState<Set<number>>(new Set());
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const [runtimeAccepting, setRuntimeAccepting] = useState(false);
   const [contextProfile, setContextProfile] = useState<ProjectProfile | null>(null);
   const [contextTargets, setContextTargets] = useState<{
     profileId: string;
@@ -57,6 +73,9 @@ export default function App() {
   const refreshRequest = useRef(0);
   const healthRequest = useRef(0);
   const saveInFlight = useRef(false);
+  const runtimeRequest = useRef(0);
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   const [profilesRevision, setProfilesRevision] = useState(0);
   // Flips true once the first listProfiles() resolves (success or failure).
   // Gates applink handling (below) so a `path` target is matched against the
@@ -115,6 +134,17 @@ export default function App() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    runtimeRequest.current += 1;
+    setRuntimeSuggestions(null);
+    setSelectedRuntimePorts(new Set());
+    setRuntimeLoading(false);
+    setRuntimeAccepting(false);
+    return () => {
+      runtimeRequest.current += 1;
+    };
+  }, [editing?.id]);
 
   useEffect(() => {
     const id = contextProfile?.id;
@@ -213,6 +243,80 @@ export default function App() {
         if (request === healthRequest.current) setError("프로젝트 상태를 확인할 수 없습니다.");
       });
   }, [profilesRevision, selectedId]);
+
+  const loadRuntimeSuggestions = async () => {
+    if (!editing || runtimeLoading || runtimeAccepting) return;
+    const request = ++runtimeRequest.current;
+    setRuntimeLoading(true);
+    setError(null);
+    try {
+      const result = await wslRuntimeSuggestions();
+      if (request !== runtimeRequest.current || !editingRef.current) return;
+      setRuntimeSuggestions(result);
+      setSelectedRuntimePorts(new Set());
+    } catch {
+      if (request === runtimeRequest.current) {
+        setRuntimeSuggestions(null);
+        setSelectedRuntimePorts(new Set());
+        setError("WSL runtime 제안을 읽을 수 없습니다.");
+      }
+    } finally {
+      if (request === runtimeRequest.current) setRuntimeLoading(false);
+    }
+  };
+
+  const acceptRuntimePorts = async () => {
+    if (!editing || runtimeLoading || runtimeAccepting || selectedRuntimePorts.size === 0) return;
+    const selected = Array.from(selectedRuntimePorts).sort((left, right) => left - right);
+    const request = ++runtimeRequest.current;
+    setRuntimeAccepting(true);
+    setError(null);
+    try {
+      // Re-read immediately before acceptance. Preview never grants authority
+      // to a snapshot that has since expired or changed.
+      const latest = await wslRuntimeSuggestions();
+      if (request !== runtimeRequest.current) return;
+      setRuntimeSuggestions(latest);
+      const available = new Set(latest.ports.map((port) => port.published));
+      if (latest.status === "expired") {
+        setError("WSL runtime 제안이 만료되었습니다. WSL Desktop에서 상태를 갱신하세요.");
+        return;
+      }
+      if (latest.status === "missing" || latest.status === "corrupt") {
+        setSelectedRuntimePorts(new Set());
+        setError("현재 반영할 수 있는 WSL runtime 제안이 없습니다.");
+        return;
+      }
+      if (selected.some((port) => !available.has(port))) {
+        setSelectedRuntimePorts(new Set(selected.filter((port) => available.has(port))));
+        setError("WSL runtime 상태가 변경되었습니다. 제안을 다시 확인하세요.");
+        return;
+      }
+      if (latest.status === "stale" && !window.confirm(
+        `WSL runtime snapshot이 오래되었습니다. 선택한 포트 ${selected.length}개를 편집 초안에만 반영할까요? 프로필은 저장 버튼을 누르기 전까지 변경되지 않습니다.`,
+      )) {
+        return;
+      }
+
+      const currentDraft = editingRef.current;
+      if (!currentDraft) return;
+      const merged = mergeSuggestedPorts(currentDraft.expectedPortsText, selected);
+      if (merged.nextText === null) {
+        setError(merged.error ?? "WSL runtime 포트를 편집 초안에 반영하지 못했습니다.");
+        return;
+      }
+      setEditing((previous) => (
+        previous === currentDraft ? { ...previous, expectedPortsText: merged.nextText! } : previous
+      ));
+      setSelectedRuntimePorts(new Set());
+    } catch {
+      if (request === runtimeRequest.current) {
+        setError("WSL runtime 상태를 다시 확인하지 못해 반영을 중단했습니다.");
+      }
+    } finally {
+      if (request === runtimeRequest.current) setRuntimeAccepting(false);
+    }
+  };
 
   const onSave = async () => {
     if (!editing || saveInFlight.current) return;
@@ -394,6 +498,11 @@ export default function App() {
 
   const patch = (p: Partial<ProfileDraft>) => setEditing((prev) => (prev ? { ...prev, ...p } : prev));
   const draftValidation = editing ? validateProfileDraft(editing) : null;
+  const existingRuntimePorts = new Set(
+    editing ? parseExpectedPorts(editing.expectedPortsText).ports : [],
+  );
+  const runtimeActionable = runtimeSuggestions?.status === "fresh"
+    || runtimeSuggestions?.status === "stale";
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedId) ?? null;
 
@@ -451,7 +560,7 @@ export default function App() {
             <section
               className="panel editor-panel"
               aria-labelledby="profile-editor-title"
-              aria-busy={busy}
+              aria-busy={busy || runtimeLoading || runtimeAccepting}
               onKeyDown={(event) => {
                 if (event.key === "Escape" && !event.nativeEvent.isComposing && !busy) {
                   event.preventDefault();
@@ -546,6 +655,81 @@ export default function App() {
                   <span id="profile-ports-help" className="field-help">프로필 health 점검과 Start Workspace에서 확인할 로컬 TCP 포트입니다.</span>
                   {draftValidation?.errors.expectedPorts && <span id="profile-ports-error" className="field-error" role="alert">{draftValidation.errors.expectedPorts}</span>}
                 </label>
+                <fieldset className="editor-section runtime-suggestions" disabled={busy}>
+                  <legend>WSL runtime 포트 제안</legend>
+                  <p className="field-help">
+                    WSL Desktop이 마지막으로 발행한 read-only snapshot만 읽습니다. WSL·Docker를
+                    실행하거나 컨테이너를 변경하지 않으며, 반영한 포트도 저장 전 편집 초안에만 남습니다.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={runtimeLoading || runtimeAccepting}
+                    onClick={() => void loadRuntimeSuggestions()}
+                  >
+                    {runtimeLoading ? "제안 읽는 중..." : runtimeSuggestions ? "제안 새로고침" : "제안 불러오기"}
+                  </button>
+                  {runtimeSuggestions ? (
+                    <div className="runtime-suggestion-result">
+                      <div className={`runtime-suggestion-status status-${runtimeSuggestions.status}`} role="status" aria-live="polite">
+                        <strong>{RUNTIME_STATUS_LABEL[runtimeSuggestions.status]}</strong>
+                        {runtimeSuggestions.producerVersion && runtimeSuggestions.freshnessMs !== null ? (
+                          <span>
+                            {runtimeSuggestions.source} · producer {runtimeSuggestions.producerVersion} · {formatRuntimeFreshness(runtimeSuggestions.freshnessMs)}
+                          </span>
+                        ) : (
+                          <span>{runtimeSuggestions.source}</span>
+                        )}
+                      </div>
+                      {runtimeSuggestions.ports.length > 0 ? (
+                        <div className="runtime-port-list" aria-label="WSL runtime 포트 후보">
+                          {runtimeSuggestions.ports.map((port) => {
+                            const alreadyRegistered = existingRuntimePorts.has(port.published);
+                            const selected = selectedRuntimePorts.has(port.published);
+                            return (
+                              <label className="runtime-port-row" key={port.published}>
+                                <input
+                                  type="checkbox"
+                                  checked={alreadyRegistered || selected}
+                                  disabled={alreadyRegistered || !runtimeActionable || runtimeLoading || runtimeAccepting}
+                                  onChange={(event) => {
+                                    const checked = event.currentTarget.checked;
+                                    setSelectedRuntimePorts((previous) => {
+                                      const next = new Set(previous);
+                                      if (checked) next.add(port.published);
+                                      else next.delete(port.published);
+                                      return next;
+                                    });
+                                  }}
+                                  aria-label={`published port ${port.published} 선택`}
+                                />
+                                <span className="runtime-port-number">host {port.published}</span>
+                                {alreadyRegistered ? <span className="runtime-port-existing">이미 등록됨</span> : null}
+                                <ul>
+                                  {port.sources.map((source) => (
+                                    <li key={`${source.distro}\u0000${source.container}\u0000${source.target}\u0000${source.protocol}`}>
+                                      {source.distro} · {source.container} ({source.containerState}) · target {source.target}/{source.protocol}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : runtimeActionable ? (
+                        <p className="field-help">발행된 host 포트 후보가 없습니다.</p>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="btn primary"
+                        disabled={!runtimeActionable || runtimeLoading || runtimeAccepting || selectedRuntimePorts.size === 0}
+                        onClick={() => void acceptRuntimePorts()}
+                      >
+                        {runtimeAccepting ? "상태 재확인 중..." : "선택 포트를 초안에 반영"}
+                      </button>
+                    </div>
+                  ) : null}
+                </fieldset>
                 <fieldset
                   className="editor-section"
                   disabled={busy}

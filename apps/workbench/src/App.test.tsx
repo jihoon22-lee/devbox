@@ -13,8 +13,10 @@ import {
   startWorkspace,
   stopWorkspace,
   updateProfile,
+  wslRuntimeSuggestions,
   type ProjectHealth,
   type ProjectProfile,
+  type RuntimeSuggestions,
 } from "./api";
 
 vi.mock("./api", () => ({
@@ -31,6 +33,7 @@ vi.mock("./api", () => ({
   stopWorkspace: vi.fn(),
   takePendingOpen: vi.fn(async () => null),
   updateProfile: vi.fn(),
+  wslRuntimeSuggestions: vi.fn(),
 }));
 
 const firstProfile: ProjectProfile = {
@@ -63,9 +66,27 @@ const stopWorkspaceMock = vi.mocked(stopWorkspace);
 const profileOpenTargetsMock = vi.mocked(profileOpenTargets);
 const profileCopyPathMock = vi.mocked(profileCopyPath);
 const openProfileInMock = vi.mocked(openProfileIn);
+const wslRuntimeSuggestionsMock = vi.mocked(wslRuntimeSuggestions);
 const confirmMock = vi.fn<(message?: string) => boolean>();
 const writeTextMock = vi.fn<(value: string) => Promise<void>>();
 let profiles: ProjectProfile[];
+
+const freshRuntimeSuggestions: RuntimeSuggestions = {
+  source: "WSL Desktop runtime/v1",
+  status: "fresh",
+  producerVersion: "0.2.1",
+  freshnessMs: 12_000,
+  ports: [{
+    published: 8080,
+    sources: [{
+      distro: "Ubuntu",
+      container: "api",
+      containerState: "running",
+      target: 80,
+      protocol: "tcp",
+    }],
+  }],
+};
 
 function profileRow(name: string): HTMLDivElement {
   const row = screen.getByRole("button", { name }).closest(".profile-row");
@@ -114,6 +135,7 @@ beforeEach(() => {
     profileId === firstProfile.id ? firstProfile.windowsPath! : secondProfile.windowsPath!
   ));
   openProfileInMock.mockReset().mockResolvedValue(undefined);
+  wslRuntimeSuggestionsMock.mockReset().mockResolvedValue(freshRuntimeSuggestions);
   confirmMock.mockReset().mockReturnValue(false);
   writeTextMock.mockReset().mockResolvedValue(undefined);
   Object.defineProperty(window, "confirm", { configurable: true, value: confirmMock });
@@ -398,6 +420,142 @@ describe("Workbench profile context menu", () => {
     expect(screen.getByRole("textbox", { name: "이름" })).toBeDisabled();
     pendingSave.resolve();
     await waitFor(() => expect(screen.queryByRole("heading", { name: "프로필 편집" })).toBeNull());
+  });
+
+  it("revalidates and explicitly adds selected runtime ports only to the draft until Save", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "제안 불러오기" }));
+    const candidate = await screen.findByRole("checkbox", { name: "published port 8080 선택" });
+    expect(screen.getByText(/WSL Desktop runtime\/v1 · producer 0.2.1/)).toBeTruthy();
+    fireEvent.click(candidate);
+    fireEvent.click(screen.getByRole("button", { name: "선택 포트를 초안에 반영" }));
+
+    await waitFor(() => expect(screen.getByDisplayValue("1420, 8080")).toBeTruthy());
+    expect(wslRuntimeSuggestionsMock).toHaveBeenCalledTimes(2);
+    expect(updateProfileMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(updateProfileMock).toHaveBeenCalledWith({
+      ...firstProfile,
+      expectedPorts: [1420, 8080],
+    }));
+  });
+
+  it("requires extra confirmation for stale suggestions and preserves the draft when declined", async () => {
+    wslRuntimeSuggestionsMock.mockResolvedValue({
+      ...freshRuntimeSuggestions,
+      status: "stale",
+      freshnessMs: 180_000,
+    });
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+    fireEvent.click(screen.getByRole("button", { name: "제안 불러오기" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "published port 8080 선택" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 포트를 초안에 반영" }));
+
+    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByDisplayValue("1420")).toBeTruthy();
+    expect(updateProfileMock).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(screen.getByRole("button", { name: "선택 포트를 초안에 반영" }));
+    await waitFor(() => expect(screen.getByDisplayValue("1420, 8080")).toBeTruthy());
+  });
+
+  it("blocks expired suggestions and distinguishes missing from corrupt producers", async () => {
+    wslRuntimeSuggestionsMock.mockResolvedValueOnce({
+      ...freshRuntimeSuggestions,
+      status: "expired",
+      freshnessMs: 901_000,
+    });
+    const rendered = render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+    fireEvent.click(screen.getByRole("button", { name: "제안 불러오기" }));
+    expect(await screen.findByText("만료된 snapshot — 반영 불가")).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "published port 8080 선택" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "선택 포트를 초안에 반영" })).toBeDisabled();
+
+    rendered.unmount();
+    wslRuntimeSuggestionsMock.mockResolvedValueOnce({
+      source: "WSL Desktop runtime/v1",
+      status: "missing",
+      producerVersion: null,
+      freshnessMs: null,
+      ports: [],
+    });
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+    fireEvent.click(screen.getByRole("button", { name: "제안 불러오기" }));
+    expect(await screen.findByText("WSL Desktop snapshot 없음")).toBeTruthy();
+    expect(screen.queryByText("WSL Desktop snapshot을 안전하게 읽을 수 없음")).toBeNull();
+
+    cleanup();
+    wslRuntimeSuggestionsMock.mockResolvedValueOnce({
+      source: "WSL Desktop runtime/v1",
+      status: "corrupt",
+      producerVersion: null,
+      freshnessMs: null,
+      ports: [],
+    });
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+    fireEvent.click(screen.getByRole("button", { name: "제안 불러오기" }));
+    expect(await screen.findByText("WSL Desktop snapshot을 안전하게 읽을 수 없음")).toBeTruthy();
+    expect(screen.queryByText("WSL Desktop snapshot 없음")).toBeNull();
+  });
+
+  it("does not apply a selection that disappeared during acceptance revalidation", async () => {
+    wslRuntimeSuggestionsMock
+      .mockResolvedValueOnce(freshRuntimeSuggestions)
+      .mockResolvedValueOnce({
+        ...freshRuntimeSuggestions,
+        ports: [{
+          published: 9000,
+          sources: freshRuntimeSuggestions.ports[0].sources,
+        }],
+      });
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+    fireEvent.click(screen.getByRole("button", { name: "제안 불러오기" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "published port 8080 선택" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 포트를 초안에 반영" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("runtime 상태가 변경되었습니다");
+    expect(screen.getByDisplayValue("1420")).toBeTruthy();
+    expect(updateProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a late runtime response after the editor closes and never reflects its data", async () => {
+    const pending = deferred<RuntimeSuggestions>();
+    wslRuntimeSuggestionsMock.mockReturnValueOnce(pending.promise);
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+    fireEvent.click(screen.getByRole("button", { name: "제안 불러오기" }));
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    pending.resolve({
+      ...freshRuntimeSuggestions,
+      ports: [{
+        ...freshRuntimeSuggestions.ports[0],
+        sources: [{
+          ...freshRuntimeSuggestions.ports[0].sources[0],
+          container: "DO_NOT_RENDER_LATE_VALUE",
+        }],
+      }],
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(screen.queryByText(/DO_NOT_RENDER_LATE_VALUE/)).toBeNull();
+    expect(screen.queryByRole("heading", { name: "프로필 편집" })).toBeNull();
   });
 
   it("ignores stale health responses after the selected profile changes", async () => {

@@ -47,6 +47,29 @@ export interface WorkbenchOpenTarget {
   payloadKind: "path" | "workspace";
 }
 
+export type RuntimeSuggestionStatus = "fresh" | "stale" | "expired" | "missing" | "corrupt";
+
+export interface RuntimePortSource {
+  distro: string;
+  container: string;
+  containerState: string;
+  target: number;
+  protocol: "tcp";
+}
+
+export interface RuntimePortSuggestion {
+  published: number;
+  sources: RuntimePortSource[];
+}
+
+export interface RuntimeSuggestions {
+  source: string;
+  status: RuntimeSuggestionStatus;
+  producerVersion: string | null;
+  freshnessMs: number | null;
+  ports: RuntimePortSuggestion[];
+}
+
 const MOCK_PROFILES: ProjectProfile[] = [
   { id: "p-1", name: "devbox", windowsPath: "C:\\projects\\devbox", wsl: { distro: "Ubuntu", path: "/mnt/e/projects/devbox" }, gitRoot: "C:\\projects\\devbox", expectedPorts: [1420], runManagerServiceIds: ["devbox-dev"] },
 ];
@@ -101,6 +124,31 @@ export function stopWorkspace(runId: string, profileId: string): Promise<number>
 export function currentWorkspaceRun(): Promise<WorkspaceRunOwnership | null> {
   if (!isTauri()) return Promise.resolve(null);
   return invoke<WorkspaceRunOwnership | null>("current_workspace_run");
+}
+
+/** Reads WSL Desktop's versioned snapshot. It never invokes WSL or Docker. */
+export function wslRuntimeSuggestions(): Promise<RuntimeSuggestions> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      source: "WSL Desktop runtime/v1",
+      status: "fresh",
+      producerVersion: "preview",
+      freshnessMs: 0,
+      ports: [
+        {
+          published: 3000,
+          sources: [{
+            distro: "Ubuntu",
+            container: "web",
+            containerState: "running",
+            target: 3000,
+            protocol: "tcp",
+          }],
+        },
+      ],
+    });
+  }
+  return invoke<RuntimeSuggestions>("wsl_runtime_suggestions");
 }
 
 export function profileOpenTargets(profileId: string): Promise<WorkbenchOpenTarget[]> {
