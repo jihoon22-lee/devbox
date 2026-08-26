@@ -6,12 +6,19 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getProcessInfo,
-  killProcess,
+  handoffContainerStop,
+  killListener,
   listPorts,
   openBrowser,
   revealProcess,
 } from "./api";
-import type { PortRow, ProtoFilter, StateFilter } from "./types";
+import type {
+  ListenerActionResult,
+  ListenerKillRequest,
+  PortRow,
+  ProtoFilter,
+  StateFilter,
+} from "./types";
 import "./App.css";
 
 const PROTO_FILTERS: { value: ProtoFilter; label: string }[] = [
@@ -35,20 +42,112 @@ export function matches(row: PortRow, query: string): boolean {
     String(row.port).includes(q) ||
     (row.pid != null && String(row.pid).includes(q)) ||
     row.local_addr.toLowerCase().includes(q) ||
-    (row.process_name?.toLowerCase().includes(q) ?? false)
+    (row.process_name?.toLowerCase().includes(q) ?? false) ||
+    (row.command_line?.toLowerCase().includes(q) ?? false) ||
+    (row.executable_path?.toLowerCase().includes(q) ?? false) ||
+    (row.wsl_distro?.toLowerCase().includes(q) ?? false) ||
+    (row.container_id?.toLowerCase().includes(q) ?? false) ||
+    (row.container_name?.toLowerCase().includes(q) ?? false)
   );
 }
 
 export function portRowKey(row: PortRow): string {
-  return `${row.proto}:${row.local_addr}:${row.pid ?? 0}`;
+  const identity = row.identity;
+  if (identity?.kind === "windows") {
+    return (
+      row.proto +
+      ":" +
+      row.local_addr +
+      ":" +
+      identity.pid +
+      ":" +
+      identity.start_time
+    );
+  }
+  if (identity?.kind === "wsl") {
+    return (
+      row.proto +
+      ":" +
+      row.local_addr +
+      ":" +
+      identity.distro +
+      ":" +
+      identity.pid +
+      ":" +
+      identity.start_tick
+    );
+  }
+  if (identity?.kind === "container") {
+    return (
+      row.proto +
+      ":" +
+      row.local_addr +
+      ":" +
+      identity.distro +
+      ":" +
+      identity.container_id
+    );
+  }
+  return row.proto + ":" + row.local_addr + ":" + (row.pid ?? 0);
 }
 
 export function localhostUrl(row: PortRow): string | null {
-  return row.port > 0 ? `http://localhost:${row.port}` : null;
+  return row.port > 0 ? "http://localhost:" + row.port : null;
+}
+
+export function listenerKillRequest(row: PortRow): ListenerKillRequest | null {
+  if (!row.identity) return null;
+  return {
+    endpoint: {
+      proto: row.proto,
+      local_addr: row.local_addr,
+      port: row.port,
+      state: row.state,
+    },
+    identity: row.identity,
+  };
+}
+
+export function sourceLabel(row: PortRow): string {
+  switch (row.source ?? "windows") {
+    case "wsl":
+      return "WSL";
+    case "container":
+      return "Container";
+    default:
+      return "Windows";
+  }
+}
+
+export function safeActionError(_error: unknown): string {
+  return "Action failed. Refresh the list and try again.";
+}
+
+export function shouldIgnoreComposingShortcut(isComposing: boolean, key: string): boolean {
+  return isComposing && (key === "Enter" || key === " " || key === "F10");
+}
+
+export function isCurrentRequest(request: number, current: number): boolean {
+  return request === current;
 }
 
 function isListening(row: PortRow): boolean {
   return row.state.toLowerCase() === "listening";
+}
+
+function isListener(row: PortRow): boolean {
+  const state = row.state.toLowerCase();
+  return state === "" || state === "listening" || state === "unconn" || state === "bound";
+}
+
+function matchesStateFilter(row: PortRow, filter: StateFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "listening") return isListener(row);
+  return row.state.toLowerCase() === filter;
+}
+
+function displayValue(value: string | number | null | undefined): string {
+  return value === null || value === undefined || value === "" ? "-" : String(value);
 }
 
 type ProcessPathState = {
@@ -63,26 +162,47 @@ export default function App() {
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busyPid, setBusyPid] = useState<number | null>(null);
+  const [busyRowKey, setBusyRowKey] = useState<string | null>(null);
   const [selectedRowKey, setSelectedRowKey] = useState<string | null>(null);
   const [contextRow, setContextRow] = useState<PortRow | null>(null);
   const [processPath, setProcessPath] = useState<ProcessPathState | null>(null);
+  const [handoff, setHandoff] = useState<string | null>(null);
+  const [isComposing, setIsComposing] = useState(false);
   const processPathRequest = useRef(0);
+  const refreshRequest = useRef(0);
+  const busyActionRef = useRef<string | null>(null);
+  const mounted = useRef(false);
 
   const refresh = useCallback(async () => {
+    if (!mounted.current) return;
+    const request = ++refreshRequest.current;
     setLoading(true);
     setError(null);
     try {
-      setPorts(await listPorts());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const next = await listPorts();
+      if (mounted.current && refreshRequest.current === request) {
+        setPorts(next);
+      }
+    } catch (caught) {
+      if (mounted.current && refreshRequest.current === request) {
+        setError(safeActionError(caught));
+      }
     } finally {
-      setLoading(false);
+      if (mounted.current && refreshRequest.current === request) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    refresh();
+    mounted.current = true;
+    void refresh();
+    return () => {
+      mounted.current = false;
+      refreshRequest.current += 1;
+      processPathRequest.current += 1;
+      busyActionRef.current = null;
+    };
   }, [refresh]);
 
   const visible = useMemo(() => {
@@ -90,37 +210,60 @@ export default function App() {
       (row) =>
         matches(row, query) &&
         (protoFilter === "all" || row.proto.toLowerCase().startsWith(protoFilter)) &&
-        (stateFilter === "all" || row.state.toLowerCase() === stateFilter),
+        matchesStateFilter(row, stateFilter),
     );
   }, [ports, query, protoFilter, stateFilter]);
 
   const counts = useMemo(() => {
-    const listening = ports.filter((p) => p.state.toLowerCase() === "listening").length;
+    const listening = ports.filter((p) => isListener(p)).length;
     return { total: ports.length, listening };
   }, [ports]);
 
   const runAction = useCallback(async (action: () => Promise<void>) => {
+    if (!mounted.current) return;
     setError(null);
     try {
       await action();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch (caught) {
+      if (mounted.current) setError(safeActionError(caught));
     }
   }, []);
 
   const onKill = async (row: PortRow) => {
-    if (row.pid == null) return;
-    const processLabel = row.process_name ? ` (${row.process_name})` : "";
-    if (!window.confirm(`PID ${row.pid}${processLabel} 프로세스를 종료할까요?`)) return;
-    setBusyPid(row.pid);
+    if (!mounted.current || busyActionRef.current !== null) return;
+    const request = listenerKillRequest(row);
+    if (!request || !isListener(row)) {
+      setError("Identity unavailable. Refresh the list before trying again.");
+      return;
+    }
+    const processLabel = row.process_name ? " (" + row.process_name + ")" : "";
+    const actionLabel = row.source === "container" ? "WSL Desktop에서 중지" : "listener 종료";
+    if (!window.confirm(row.local_addr + processLabel + " " + actionLabel + "할까요?")) return;
+
+    const rowKey = portRowKey(row);
+    busyActionRef.current = rowKey;
+    setBusyRowKey(rowKey);
     setError(null);
+    setHandoff(null);
     try {
-      await killProcess(row.pid);
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const result: ListenerActionResult =
+        row.source === "container"
+          ? { kind: "handoff", handoff: await handoffContainerStop(request) }
+          : await killListener(request);
+      if (result.kind === "handoff" && mounted.current) {
+        setHandoff(
+          "WSL Desktop에서 " + result.handoff.container_id + " 컨테이너를 중지하세요.",
+        );
+      } else {
+        await refresh();
+      }
+    } catch (caught) {
+      if (mounted.current) setError(safeActionError(caught));
     } finally {
-      setBusyPid(null);
+      if (busyActionRef.current === rowKey) {
+        busyActionRef.current = null;
+        if (mounted.current) setBusyRowKey(null);
+      }
     }
   };
 
@@ -141,15 +284,15 @@ export default function App() {
       setProcessPath(null);
 
       const request = ++processPathRequest.current;
-      if (row.pid == null) return;
+      if (row.pid == null || row.source === "wsl" || row.source === "container") return;
       void getProcessInfo(row.pid)
         .then((info) => {
-          if (processPathRequest.current === request) {
-            setProcessPath({ rowKey, path: info.exe });
+          if (mounted.current && processPathRequest.current === request) {
+            setProcessPath({ rowKey, path: info.executable_path ?? info.exe });
           }
         })
         .catch(() => {
-          if (processPathRequest.current === request) {
+          if (mounted.current && processPathRequest.current === request) {
             setProcessPath({ rowKey, path: null });
           }
         });
@@ -167,6 +310,9 @@ export default function App() {
     if (!contextRow) return [];
     const url = localhostUrl(contextRow);
     const hasPid = contextRow.pid != null;
+    const request = listenerKillRequest(contextRow);
+    const isContainer = contextRow.source === "container";
+    const isBusy = busyRowKey === portRowKey(contextRow);
     return [
       { type: "item", id: "copy-port", label: "Copy port", disabled: contextRow.port <= 0 },
       { type: "item", id: "copy-pid", label: "Copy PID", disabled: !hasPid },
@@ -188,18 +334,24 @@ export default function App() {
         type: "item",
         id: "reveal-process",
         label: "Show in Explorer",
-        disabled: !hasPid || !contextPath,
+        disabled: !hasPid || !contextPath || contextRow.source !== "windows",
       },
       { type: "separator", id: "danger-separator" },
       {
         type: "item",
-        id: "kill-process",
-        label: busyPid === contextRow.pid ? "Killing…" : "Kill process",
-        disabled: !hasPid || busyPid === contextRow.pid,
+        id: isContainer ? "handoff-container-stop" : "kill-listener",
+        label: isContainer
+          ? isBusy
+            ? "Preparing handoff…"
+            : "Stop in WSL Desktop"
+          : isBusy
+            ? "Killing…"
+            : "Kill listener",
+        disabled: !request || !isListener(contextRow) || isBusy,
         danger: true,
       },
     ];
-  }, [busyPid, contextPath, contextRow]);
+  }, [busyRowKey, contextPath, contextRow]);
 
   const onContextMenuSelect = (id: string) => {
     const row = contextRow;
@@ -228,13 +380,16 @@ export default function App() {
           void runAction(() => revealProcess(pid));
         }
         break;
-      case "kill-process":
+      case "kill-listener":
+      case "handoff-container-stop":
         void onKill(row);
         break;
     }
   };
 
-  const stateLabel = (row: PortRow) => row.state || "-";
+  const selectedRow = selectedRowKey
+    ? ports.find((row) => portRowKey(row) === selectedRowKey) ?? null
+    : null;
 
   return (
     <div className="app">
@@ -242,49 +397,76 @@ export default function App() {
         <h1 className="title">Port Manager</h1>
         <input
           className="search"
+          aria-label="Search listeners"
           placeholder="Search (port / proto / pid / process)..."
           value={query}
-          onChange={(e) => setQuery(e.currentTarget.value)}
+          onChange={(event) => setQuery(event.currentTarget.value)}
+          onCompositionStart={() => setIsComposing(true)}
+          onCompositionEnd={() => setIsComposing(false)}
+          onKeyDown={(event) => {
+            if (shouldIgnoreComposingShortcut(isComposing, event.key)) {
+              event.stopPropagation();
+            }
+          }}
         />
-        <div className="filters">
-          {PROTO_FILTERS.map((f) => (
+        <div className="filters" aria-label="Listener filters">
+          {PROTO_FILTERS.map((filter) => (
             <button
-              key={f.value}
-              className={`chip ${protoFilter === f.value ? "active" : ""}`}
-              onClick={() => setProtoFilter(f.value)}
+              key={filter.value}
+              type="button"
+              className={"chip " + (protoFilter === filter.value ? "active" : "")}
+              aria-pressed={protoFilter === filter.value}
+              onClick={() => setProtoFilter(filter.value)}
             >
-              {f.label}
+              {filter.label}
             </button>
           ))}
           <span className="divider" />
-          {STATE_FILTERS.map((f) => (
+          {STATE_FILTERS.map((filter) => (
             <button
-              key={f.value}
-              className={`chip ${stateFilter === f.value ? "active" : ""}`}
-              onClick={() => setStateFilter(f.value)}
+              key={filter.value}
+              type="button"
+              className={"chip " + (stateFilter === filter.value ? "active" : "")}
+              aria-pressed={stateFilter === filter.value}
+              onClick={() => setStateFilter(filter.value)}
             >
-              {f.label}
+              {filter.label}
             </button>
           ))}
         </div>
-        <button className="btn refresh" onClick={() => void refresh()} disabled={loading}>
+        <button
+          type="button"
+          className="btn refresh"
+          onClick={() => void refresh()}
+          disabled={loading}
+        >
           {loading ? "Refreshing..." : "Refresh"}
         </button>
       </header>
 
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="error" role="alert" aria-live="assertive">
+          {error}
+        </div>
+      )}
+      {handoff && (
+        <div className="handoff" role="status" aria-live="polite">
+          {handoff}
+        </div>
+      )}
 
-      <div className="statusbar">
+      <div className="statusbar" aria-live="polite">
         <span>
           {visible.length} / {counts.total} rows
         </span>
-        <span className="dot-green" /> {counts.listening} listening
+        <span className="dot-green" /> {counts.listening} listeners
       </div>
 
       <div className="table-wrap">
-        <table>
+        <table aria-label="Listener list">
           <thead>
             <tr>
+              <th>SOURCE</th>
               <th>PROTO</th>
               <th>PORT</th>
               <th>LOCAL ADDRESS</th>
@@ -298,34 +480,56 @@ export default function App() {
             {visible.map((row) => {
               const rowKey = portRowKey(row);
               const selected = selectedRowKey === rowKey;
+              const busy = busyRowKey === rowKey;
               return (
                 <tr
                   key={rowKey}
                   data-port-row-key={rowKey}
                   tabIndex={0}
                   aria-selected={selected}
+                  aria-label={sourceLabel(row) + " " + row.local_addr}
                   className={selected ? "selected" : undefined}
-                  onClick={() => setSelectedRowKey(rowKey)}
                   {...contextMenu.triggerProps}
+                  onClick={() => setSelectedRowKey(rowKey)}
+                  onKeyDown={(event) => {
+                    contextMenu.triggerProps.onKeyDown?.(event);
+                    if (event.defaultPrevented) return;
+                    if (shouldIgnoreComposingShortcut(isComposing, event.key)) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedRowKey(rowKey);
+                    }
+                  }}
                 >
+                  <td>{sourceLabel(row)}</td>
                   <td>{row.proto}</td>
                   <td className="mono">{row.port || "-"}</td>
                   <td className="mono dim">{row.local_addr}</td>
-                  <td>{stateLabel(row)}</td>
+                  <td>{row.state || "-"}</td>
                   <td className="mono">{row.pid ?? "-"}</td>
                   <td>{row.process_name ?? "-"}</td>
                   <td className="actions">
-                    {row.pid != null && (
+                    {row.identity && isListener(row) && (
                       <button
+                        type="button"
                         className="btn danger"
-                        disabled={busyPid === row.pid}
+                        aria-label={
+                          row.source === "container" ? "Stop in WSL Desktop" : "Kill listener"
+                        }
+                        disabled={busy}
                         onClick={() => void onKill(row)}
                       >
-                        {busyPid === row.pid ? "Killing..." : "Kill"}
+                        {busy
+                          ? row.source === "container"
+                            ? "Preparing..."
+                            : "Killing..."
+                          : row.source === "container"
+                            ? "Stop"
+                            : "Kill"}
                       </button>
                     )}
-                    {row.port > 0 && row.state.toLowerCase() === "listening" && (
-                      <button className="btn" onClick={() => void onOpen(row)}>
+                    {row.port > 0 && isListening(row) && (
+                      <button type="button" className="btn" onClick={() => void onOpen(row)}>
                         Open
                       </button>
                     )}
@@ -335,7 +539,7 @@ export default function App() {
             })}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={7} className="empty">
+                <td colSpan={8} className="empty">
                   No results
                 </td>
               </tr>
@@ -343,6 +547,80 @@ export default function App() {
           </tbody>
         </table>
       </div>
+
+      {selectedRow && (
+        <aside className="details" aria-label="Listener details">
+          <div className="details-heading">
+            <h2>Listener details</h2>
+            <span>{sourceLabel(selectedRow)}</span>
+          </div>
+          <dl>
+            <div>
+              <dt>Endpoint</dt>
+              <dd className="mono">
+                {selectedRow.proto} {selectedRow.local_addr}
+              </dd>
+            </div>
+            <div>
+              <dt>PID</dt>
+              <dd className="mono">{displayValue(selectedRow.pid)}</dd>
+            </div>
+            <div>
+              <dt>Process</dt>
+              <dd>{displayValue(selectedRow.process_name)}</dd>
+            </div>
+            <div>
+              <dt>Command line</dt>
+              <dd className="mono details-value">
+                {displayValue(selectedRow.command_line)}
+              </dd>
+            </div>
+            <div>
+              <dt>Executable path</dt>
+              <dd className="mono details-value">
+                {displayValue(selectedRow.executable_path)}
+              </dd>
+            </div>
+            <div>
+              <dt>Process start time</dt>
+              <dd className="mono">
+                {displayValue(selectedRow.process_start_time)}
+              </dd>
+            </div>
+            {selectedRow.wsl_distro && (
+              <div>
+                <dt>WSL distro</dt>
+                <dd>{selectedRow.wsl_distro}</dd>
+              </div>
+            )}
+            {selectedRow.wsl_start_tick != null && (
+              <div>
+                <dt>WSL start tick</dt>
+                <dd className="mono">{selectedRow.wsl_start_tick}</dd>
+              </div>
+            )}
+            {selectedRow.container_id && (
+              <div>
+                <dt>Container</dt>
+                <dd className="mono">
+                  {displayValue(selectedRow.container_engine)} / {selectedRow.container_id}
+                </dd>
+              </div>
+            )}
+          </dl>
+          {selectedRow.source === "container" && listenerKillRequest(selectedRow) && (
+            <button
+              type="button"
+              className="btn danger"
+              disabled={busyRowKey === portRowKey(selectedRow)}
+              onClick={() => void onKill(selectedRow)}
+            >
+              Stop in WSL Desktop
+            </button>
+          )}
+        </aside>
+      )}
+
       <ContextMenu
         open={contextMenu.open}
         anchor={contextMenu.anchor}

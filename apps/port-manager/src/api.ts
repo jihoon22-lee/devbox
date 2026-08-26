@@ -1,15 +1,85 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./lib/isTauri";
-import type { PortRow, ProcessInfo } from "./types";
+import type {
+  ContainerStopHandoff,
+  ListenerActionResult,
+  ListenerKillRequest,
+  PortRow,
+  ProcessInfo,
+} from "./types";
 
 /** Tauri 없이 브라우저에서 UI를 미리 볼 수 있게 하는 샘플 데이터 */
 const MOCK_PORTS: PortRow[] = [
-  { proto: "TCP", local_addr: "0.0.0.0:3000", port: 3000, state: "LISTENING", pid: 18231, process_name: "node.exe" },
-  { proto: "TCP", local_addr: "127.0.0.1:5173", port: 5173, state: "LISTENING", pid: 21324, process_name: "node.exe" },
-  { proto: "TCP", local_addr: "0.0.0.0:5432", port: 5432, state: "LISTENING", pid: 9812, process_name: "postgres.exe" },
-  { proto: "TCP", local_addr: "0.0.0.0:8080", port: 8080, state: "LISTENING", pid: 12415, process_name: "java.exe" },
-  { proto: "TCP", local_addr: "10.0.0.5:50261", port: 50261, state: "ESTABLISHED", pid: 1044, process_name: "chrome.exe" },
-  { proto: "UDP", local_addr: "0.0.0.0:5353", port: 5353, state: "", pid: 1829, process_name: "svchost.exe" },
+  {
+    proto: "TCP",
+    local_addr: "0.0.0.0:3000",
+    port: 3000,
+    state: "LISTENING",
+    pid: 18231,
+    process_name: "node.exe",
+    source: "windows",
+    process_start_time: "638000000000000000",
+    executable_path: "C:\\Program Files\\nodejs\\node.exe",
+    command_line: "node server.js --port 3000",
+    identity: { kind: "windows", pid: 18231, start_time: "638000000000000000" },
+  },
+  {
+    proto: "TCP",
+    local_addr: "127.0.0.1:5173",
+    port: 5173,
+    state: "LISTENING",
+    pid: 21324,
+    process_name: "node.exe",
+    source: "windows",
+    process_start_time: "638000000100000000",
+    executable_path: "C:\\Program Files\\nodejs\\node.exe",
+    command_line: "node dev-server.js --port 5173",
+    identity: { kind: "windows", pid: 21324, start_time: "638000000100000000" },
+  },
+  {
+    proto: "TCP",
+    local_addr: "0.0.0.0:5432",
+    port: 5432,
+    state: "LISTENING",
+    pid: 9812,
+    process_name: "postgres.exe",
+    source: "windows",
+    process_start_time: "638000000200000000",
+    identity: { kind: "windows", pid: 9812, start_time: "638000000200000000" },
+  },
+  {
+    proto: "TCP",
+    local_addr: "0.0.0.0:8080",
+    port: 8080,
+    state: "LISTENING",
+    pid: 12415,
+    process_name: "java.exe",
+    source: "windows",
+    process_start_time: "638000000300000000",
+    identity: { kind: "windows", pid: 12415, start_time: "638000000300000000" },
+  },
+  {
+    proto: "TCP",
+    local_addr: "10.0.0.5:50261",
+    port: 50261,
+    state: "ESTABLISHED",
+    pid: 1044,
+    process_name: "chrome.exe",
+    source: "windows",
+    process_start_time: "638000000400000000",
+    identity: { kind: "windows", pid: 1044, start_time: "638000000400000000" },
+  },
+  {
+    proto: "UDP",
+    local_addr: "0.0.0.0:5353",
+    port: 5353,
+    state: "",
+    pid: 1829,
+    process_name: "svchost.exe",
+    source: "windows",
+    process_start_time: "638000000500000000",
+    identity: { kind: "windows", pid: 1829, start_time: "638000000500000000" },
+  },
 ];
 
 export async function listPorts(): Promise<PortRow[]> {
@@ -19,11 +89,31 @@ export async function listPorts(): Promise<PortRow[]> {
   return invoke<PortRow[]>("list_ports");
 }
 
-export async function killProcess(pid: number): Promise<void> {
+export async function killListener(
+  request: ListenerKillRequest,
+): Promise<ListenerActionResult> {
   if (!isTauri()) {
-    return;
+    return { kind: "terminated" };
   }
-  await invoke("kill_process", { pid });
+  return invoke<ListenerActionResult>("kill_listener", { request });
+}
+
+export async function handoffContainerStop(
+  request: ListenerKillRequest,
+): Promise<ContainerStopHandoff> {
+  if (!isTauri()) {
+    if (request.identity.kind !== "container") {
+      throw new Error("container handoff is unavailable");
+    }
+    return {
+      target_app: "wsl-desktop",
+      action: "stop-container",
+      engine: request.identity.engine,
+      container_id: request.identity.container_id,
+      distro: request.identity.distro,
+    };
+  }
+  return invoke<ContainerStopHandoff>("handoff_container_stop", { request });
 }
 
 export async function openBrowser(url: string): Promise<void> {
@@ -37,13 +127,16 @@ export async function openBrowser(url: string): Promise<void> {
 export async function getProcessInfo(pid: number): Promise<ProcessInfo> {
   if (!isTauri()) {
     const row = MOCK_PORTS.find((candidate) => candidate.pid === pid);
-    if (!row) throw new Error(`PID ${pid} process was not found.`);
+    if (!row) throw new Error("process information unavailable");
     return {
       pid,
       name: row.process_name ?? "",
       exe: `C:\\Program Files\\${row.process_name ?? "process.exe"}`,
       start_time: 0,
       memory_bytes: 0,
+      command_line: row.command_line ?? null,
+      executable_path: row.executable_path ?? null,
+      process_start_time: row.process_start_time ?? null,
     };
   }
   return invoke<ProcessInfo>("get_process_info", { pid });

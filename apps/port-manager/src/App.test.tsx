@@ -1,9 +1,17 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App, { localhostUrl, matches, portRowKey } from "./App";
+import App, {
+  listenerKillRequest,
+  isCurrentRequest,
+  localhostUrl,
+  matches,
+  portRowKey,
+  shouldIgnoreComposingShortcut,
+} from "./App";
 import {
   getProcessInfo,
-  killProcess,
+  handoffContainerStop,
+  killListener,
   listPorts,
   openBrowser,
   revealProcess,
@@ -12,7 +20,8 @@ import type { PortRow } from "./types";
 
 vi.mock("./api", () => ({
   listPorts: vi.fn(),
-  killProcess: vi.fn(),
+  killListener: vi.fn(),
+  handoffContainerStop: vi.fn(),
   openBrowser: vi.fn(),
   getProcessInfo: vi.fn(),
   revealProcess: vi.fn(),
@@ -25,6 +34,11 @@ const LISTENING_ROW: PortRow = {
   state: "LISTENING",
   pid: 1234,
   process_name: "node.exe",
+  source: "windows",
+  process_start_time: "100",
+  command_line: "node server.js --port 3000",
+  executable_path: "C:\\Program Files\\nodejs\\node.exe",
+  identity: { kind: "windows", pid: 1234, start_time: "100" },
 };
 
 const ESTABLISHED_ROW: PortRow = {
@@ -34,10 +48,14 @@ const ESTABLISHED_ROW: PortRow = {
   state: "ESTABLISHED",
   pid: 4321,
   process_name: "browser.exe",
+  source: "windows",
+  process_start_time: "200",
+  identity: { kind: "windows", pid: 4321, start_time: "200" },
 };
 
 const listPortsMock = vi.mocked(listPorts);
-const killProcessMock = vi.mocked(killProcess);
+const killListenerMock = vi.mocked(killListener);
+const handoffContainerStopMock = vi.mocked(handoffContainerStop);
 const openBrowserMock = vi.mocked(openBrowser);
 const getProcessInfoMock = vi.mocked(getProcessInfo);
 const revealProcessMock = vi.mocked(revealProcess);
@@ -52,12 +70,18 @@ function row(overrides: Partial<PortRow> = {}): PortRow {
     state: "LISTENING",
     pid: 1234,
     process_name: "node.exe",
+    source: "windows",
+    process_start_time: "100",
+    identity: { kind: "windows", pid: 1234, start_time: "100" },
     ...overrides,
   };
 }
 
 function renderedRow(processName: string): HTMLTableRowElement {
-  const element = screen.getByText(processName).closest("tr");
+  const element = screen
+    .getAllByText(processName)
+    .map((candidate) => candidate.closest("tr"))
+    .find((candidate): candidate is HTMLTableRowElement => candidate instanceof HTMLTableRowElement);
   if (!(element instanceof HTMLTableRowElement)) throw new Error("port row was not rendered");
   return element;
 }
@@ -70,7 +94,14 @@ function openRowMenu(processName: string): HTMLTableRowElement {
 
 beforeEach(() => {
   listPortsMock.mockReset().mockResolvedValue([LISTENING_ROW, ESTABLISHED_ROW]);
-  killProcessMock.mockReset().mockResolvedValue(undefined);
+  killListenerMock.mockReset().mockResolvedValue({ kind: "terminated" });
+  handoffContainerStopMock.mockReset().mockResolvedValue({
+    target_app: "wsl-desktop",
+    action: "stop-container",
+    engine: "docker",
+    container_id: "aabbccdd",
+    distro: "docker-desktop",
+  });
   openBrowserMock.mockReset().mockResolvedValue(undefined);
   getProcessInfoMock.mockReset().mockImplementation(async (pid) => ({
     pid,
@@ -122,6 +153,13 @@ describe("matches", () => {
     expect(matches(row({ process_name: null }), "tcp")).toBe(true);
   });
 
+  it("searches bounded command, executable, distro, and container metadata", () => {
+    expect(matches(row({ command_line: "node server.js" }), "server.js")).toBe(true);
+    expect(matches(row({ executable_path: "C:\\Tools\\node.exe" }), "tools")).toBe(true);
+    expect(matches(row({ wsl_distro: "Ubuntu" }), "ubuntu")).toBe(true);
+    expect(matches(row({ container_name: "api" }), "api")).toBe(true);
+  });
+
   it("어느 필드에도 없는 문자열은 false", () => {
     expect(matches(row(), "no-such-thing")).toBe(false);
   });
@@ -129,7 +167,7 @@ describe("matches", () => {
 
 describe("port row helpers", () => {
   it("creates a stable row key and localhost URL without exposing another address", () => {
-    expect(portRowKey(LISTENING_ROW)).toBe("TCP:127.0.0.1:3000:1234");
+    expect(portRowKey(LISTENING_ROW)).toBe("TCP:127.0.0.1:3000:1234:100");
     expect(localhostUrl(LISTENING_ROW)).toBe("http://localhost:3000");
     expect(localhostUrl(row({ port: 0 }))).toBeNull();
   });
@@ -151,7 +189,7 @@ describe("port context menu", () => {
       "Open localhost",
       "Copy process path",
       "Show in Explorer",
-      "Kill process",
+      "Kill listener",
     ]) {
       expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
     }
@@ -214,16 +252,18 @@ describe("port context menu", () => {
     render(<App />);
     await screen.findByText("node.exe");
     openRowMenu("node.exe");
-    fireEvent.click(screen.getByRole("menuitem", { name: "Kill process" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Kill listener" }));
 
-    expect(confirmMock).toHaveBeenCalledWith("PID 1234 (node.exe) 프로세스를 종료할까요?");
-    expect(killProcessMock).not.toHaveBeenCalled();
+    expect(confirmMock).toHaveBeenCalledWith("127.0.0.1:3000 (node.exe) listener 종료할까요?");
+    expect(killListenerMock).not.toHaveBeenCalled();
 
     confirmMock.mockReturnValueOnce(true);
     openRowMenu("node.exe");
-    fireEvent.click(screen.getByRole("menuitem", { name: "Kill process" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Kill listener" }));
 
-    await waitFor(() => expect(killProcessMock).toHaveBeenCalledWith(1234));
+    await waitFor(() =>
+      expect(killListenerMock).toHaveBeenCalledWith(listenerKillRequest(LISTENING_ROW)),
+    );
     await waitFor(() => expect(listPortsMock).toHaveBeenCalledTimes(2));
   });
 
@@ -237,6 +277,98 @@ describe("port context menu", () => {
     expect(openBrowserMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
-    expect(await screen.findByText("browser unavailable")).toBeTruthy();
+    expect(await screen.findByText("Action failed. Refresh the list and try again.")).toBeTruthy();
+  });
+});
+
+describe("identity-safe listener UI boundaries", () => {
+  it("does not create a kill request for a row without an identity", () => {
+    expect(listenerKillRequest(row({ identity: null }))).toBeNull();
+  });
+
+  it("ignores shortcut handling while an IME composition is active", () => {
+    expect(shouldIgnoreComposingShortcut(true, "Enter")).toBe(true);
+    expect(shouldIgnoreComposingShortcut(true, "F10")).toBe(true);
+    expect(shouldIgnoreComposingShortcut(false, "Enter")).toBe(false);
+  });
+
+  it("ignores an older refresh result after a newer request wins", () => {
+    expect(isCurrentRequest(1, 2)).toBe(false);
+    expect(isCurrentRequest(2, 2)).toBe(true);
+  });
+
+  it("does not update state when an in-flight refresh resolves after unmount", async () => {
+    let resolveRefresh: ((rows: PortRow[]) => void) | undefined;
+    listPortsMock.mockReset().mockImplementation(
+      () =>
+        new Promise<PortRow[]>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    const { unmount } = render(<App />);
+    unmount();
+    resolveRefresh?.([LISTENING_ROW]);
+    await Promise.resolve();
+  });
+
+  it("exposes details and alert semantics for keyboard users", async () => {
+    listPortsMock.mockResolvedValueOnce([LISTENING_ROW]);
+    render(<App />);
+    const target = await screen.findByText("node.exe");
+    fireEvent.click(target.closest("tr") as HTMLTableRowElement);
+    expect(screen.getByRole("complementary", { name: "Listener details" })).toBeTruthy();
+    expect(screen.getByText("node server.js --port 3000")).toBeTruthy();
+    expect(screen.getByRole("table", { name: "Listener list" })).toBeTruthy();
+  });
+
+  it("uses the WSL Desktop handoff for container rows and never calls listener kill", async () => {
+    const container: PortRow = {
+      ...row(),
+      local_addr: "127.0.0.1:8080",
+      port: 8080,
+      pid: null,
+      process_name: "api",
+      source: "container",
+      container_engine: "docker",
+      container_id: "aabbccdd",
+      container_name: "api",
+      wsl_distro: "docker-desktop",
+      identity: {
+        kind: "container",
+        engine: "docker",
+        container_id: "aabbccdd",
+        distro: "docker-desktop",
+      },
+    };
+    listPortsMock.mockReset().mockResolvedValue([container]);
+    confirmMock.mockReturnValue(true);
+    render(<App />);
+    await screen.findByText("api");
+    fireEvent.click(screen.getByRole("button", { name: "Stop in WSL Desktop" }));
+    await waitFor(() => expect(handoffContainerStopMock).toHaveBeenCalled());
+    expect(killListenerMock).not.toHaveBeenCalled();
+    expect((await screen.findByRole("status")).textContent).toContain("aabbccdd");
+  });
+
+  it("suppresses duplicate listener actions before React commits busy state", async () => {
+    let resolveKill: (() => void) | undefined;
+    killListenerMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveKill = () => resolve({ kind: "terminated" });
+        }),
+    );
+    confirmMock.mockReturnValue(true);
+    render(<App />);
+    await screen.findByText("node.exe");
+
+    const button = screen.getByRole("button", { name: "Kill listener" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    expect(killListenerMock).toHaveBeenCalledTimes(1);
+    resolveKill?.();
+    await waitFor(() => expect(listPortsMock).toHaveBeenCalledTimes(2));
   });
 });

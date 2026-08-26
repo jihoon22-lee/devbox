@@ -179,6 +179,17 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
    Life Log→Knowledge. P3 Launcher/Log Lens bootstrap 이후 Toolbox→API와 Run/WSL→Log Lens를
    연결한다.
 2. Port Manager command line·WSL identity-safe kill.
+   - 2026-08-26 draft: native/WSL/container listener rows, bounded full command/path,
+     Windows creation FILETIME (decimal-string wire value) and WSL proc start tick identity,
+     endpoint+identity
+     revalidation, fixed-argv signal/terminate boundary, and WSL Desktop container
+     stop handoff descriptor are implemented in the dedicated feature worktree.
+   - The handoff descriptor is deliberately the seam to applink protocol v2; Port
+     Manager does not duplicate the one-time store or call the container engine's
+     process API. Windows W2 packaged smoke and cross-app consumer verification remain
+     release-gate work after the P2-01 contract lands.
+   - auto-refresh, diff, favorite/provenance, established-connection termination, and
+     arbitrary PID kill remain outside this issue.
 3. Toolbox UUID v7/ULID/HTML/URL/HMAC/JWT verify/Lorem/Markdown table/내장 QR.
 4. API Playground OpenAPI 3.x import, GraphQL, SSE, WebSocket.
 5. Everything+ text/code/Markdown 및 PDF/DOCX/XLS(X)/ODS content index.
