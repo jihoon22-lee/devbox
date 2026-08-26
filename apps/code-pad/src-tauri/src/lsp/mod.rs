@@ -10,6 +10,7 @@ pub mod config;
 pub mod documents;
 pub mod features;
 pub mod installer;
+pub mod logs;
 pub mod manager;
 pub mod node_lock;
 pub mod positions;
@@ -57,6 +58,7 @@ pub use installer::{
     ManagedInstallState, ManagedInstallStatus, ManagedInstaller, NodePackageArchive,
     DEFAULT_MAX_ARCHIVE_ENTRIES, DEFAULT_MAX_INSTALL_BYTES,
 };
+pub use logs::{LanguageServerLog, LspLogEntry, LspLogLevel};
 pub use manager::{
     AppliedDocumentEdits, EditedDocument, LanguageServerStatus, LspDiagnosticsEvent, LspEvent,
     LspManager, LspManagerError, LspStatusEvent,

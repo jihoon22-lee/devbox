@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  languageServerLogs,
   languageServerStatuses,
   installLsp,
   lspCatalog,
@@ -22,6 +23,7 @@ import type {
 import LspControlPanel from "./LspControlPanel";
 
 vi.mock("../api", () => ({
+  languageServerLogs: vi.fn(),
   languageServerStatuses: vi.fn(),
   installLsp: vi.fn(),
   lspCatalog: vi.fn(),
@@ -36,6 +38,7 @@ vi.mock("../api", () => ({
 }));
 
 const loadMock = vi.mocked(loadLspConfig);
+const logsMock = vi.mocked(languageServerLogs);
 const statusesMock = vi.mocked(languageServerStatuses);
 const catalogMock = vi.mocked(lspCatalog);
 const installedMock = vi.mocked(lspInstalled);
@@ -140,8 +143,17 @@ function fixtureServerStatus(
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   loadMock.mockReset().mockResolvedValue(loadedConfig());
+  logsMock.mockReset().mockResolvedValue([]);
   statusesMock.mockReset().mockResolvedValue([]);
   catalogMock.mockReset().mockResolvedValue([]);
   installedMock.mockReset().mockResolvedValue([]);
@@ -154,7 +166,10 @@ beforeEach(() => {
   restartMock.mockReset().mockResolvedValue(undefined);
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  vi.useRealTimers();
+  cleanup();
+});
 
 describe("LspControlPanel", () => {
   it("keeps one close action in the footer instead of a duplicate header button", async () => {
@@ -171,6 +186,7 @@ describe("LspControlPanel", () => {
     loadMock.mockResolvedValue(loadedConfig({ persist_allowed: false, error: "invalid JSON" }));
     const rendered = render(<LspControlPanel workspaceRoot={"/work/project"} onClose={() => undefined} />);
     expect(await rendered.findByText(/저장된 설정이 손상되었습니다/)).toBeTruthy();
+    expect(rendered.queryByText("invalid JSON")).toBeNull();
     fireEvent.click(rendered.getByRole("button", { name: "설정 저장" }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledWith(
       expect.objectContaining({ workspace_root: "/work/project" }),
@@ -240,17 +256,54 @@ describe("LspControlPanel", () => {
         server_by_language: {
           rust: { kind: "local", installed_path: "C:\\rust.exe", args: [] },
           typescript: { kind: "local", installed_path: "C:\\typescript.exe", args: [] },
+          python: { kind: "local", installed_path: "C:\\python.exe", args: [] },
         },
       },
     }));
     statusesMock.mockResolvedValue([
       fixtureServerStatus("rust", "crashed"),
       fixtureServerStatus("typescript", "ready"),
+      fixtureServerStatus("python", "starting"),
     ]);
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
-    expect(await rendered.findByRole("button", { name: "재시작" })).toBeTruthy();
-    expect(rendered.getAllByRole("button", { name: "중지" })).toHaveLength(2);
+    expect(await rendered.findByRole("button", { name: "다시 시도" })).toBeTruthy();
+    expect(rendered.getByRole("button", { name: "시작 중…" })).toBeTruthy();
+    expect(rendered.getAllByRole("button", { name: "중지" })).toHaveLength(3);
     expect(rendered.queryByRole("button", { name: "시작" })).toBeNull();
+  });
+
+  it("allows an in-progress manual start to be cancelled without waiting for start to finish", async () => {
+    const pendingStart = deferred<void>();
+    loadMock.mockResolvedValue(loadedConfig({
+      config: {
+        ...loadedConfig().config,
+        enabled: true,
+        workspace_root: "C:\\work",
+        server_by_language: {
+          rust: { kind: "local", installed_path: "C:\\rust.exe", args: [] },
+        },
+      },
+    }));
+    statusesMock.mockResolvedValueOnce([]);
+    startMock.mockImplementation(() => pendingStart.promise);
+    const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
+    const start = await rendered.findByRole("button", { name: "시작" });
+    fireEvent.click(start);
+    await waitFor(() => expect(startMock).toHaveBeenCalledWith("rust"));
+
+    statusesMock.mockResolvedValue([fixtureServerStatus("rust", "starting")]);
+    const stop = await rendered.findByRole("button", { name: "중지" }, { timeout: 3_000 });
+    expect((stop as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(stop);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(stopMock).toHaveBeenCalledWith("rust");
+
+    await act(async () => {
+      pendingStart.resolve();
+      await pendingStart.promise;
+    });
   });
 
   it("shows reviewed metadata and requires an explicit install confirmation", async () => {
@@ -387,6 +440,8 @@ describe("LspControlPanel", () => {
     }]);
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
     await rendered.findByText("재설치 필요");
+    expect(rendered.queryByText("managed metadata differs")).toBeNull();
+    expect(rendered.getByText(/metadata 검증에 실패했습니다/)).toBeTruthy();
     expect((rendered.getByRole("button", { name: "먼저 제거" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(rendered.getByRole("button", { name: "제거" }));
     fireEvent.click(await rendered.findByRole("button", { name: "제거 확인" }));
@@ -395,6 +450,15 @@ describe("LspControlPanel", () => {
       manifest.version,
       manifest.platform,
     ));
+  });
+
+  it("offers explicit index recovery from only the safe native signal", async () => {
+    installedMock.mockRejectedValue(new Error("관리형 서버 설치 목록 복구가 필요합니다"));
+    const rendered = render(<LspControlPanel workspaceRoot="/work" onClose={() => undefined} />);
+    const recover = await rendered.findByRole("button", { name: "설치 목록 명시적 복구" });
+    expect(rendered.queryByText(/installed server index is corrupt/i)).toBeNull();
+    fireEvent.click(recover);
+    await waitFor(() => expect(recoverMock).toHaveBeenCalledTimes(1));
   });
 
   it("renders catalog-orphaned indexed versions with explicit removal", async () => {
@@ -572,8 +636,98 @@ describe("LspControlPanel", () => {
       autoRestartDisabled: true,
     }]);
     const rendered = render(<LspControlPanel workspaceRoot="/work" onClose={() => undefined} />);
-    const restart = await rendered.findByRole("button", { name: "재시작" });
+    const restart = await rendered.findByRole("button", { name: "다시 시도" });
     fireEvent.click(restart);
     await waitFor(() => expect(restartMock).toHaveBeenCalledWith("rust"));
+  });
+
+  it("shows bounded runtime logs, retry timing, and verified managed cache state", async () => {
+    const manifest = fixtureManifest();
+    loadMock.mockResolvedValue(loadedConfig({
+      config: {
+        ...loadedConfig().config,
+        enabled: true,
+        workspace_root: "/work",
+        server_by_language: {
+          rust: { kind: "managed", manifest_id: manifest.id, version: manifest.version },
+        },
+      },
+    }));
+    catalogMock.mockResolvedValue([manifest]);
+    installedMock.mockResolvedValue([fixtureInstallStatus(manifest, "installed")]);
+    statusesMock.mockResolvedValue([{
+      ...fixtureServerStatus("rust", "degraded"),
+      restartFailures: 2,
+      restartDelayMs: 2_400,
+      autoRestartDisabled: false,
+    }]);
+    logsMock.mockResolvedValue([{
+      languageId: "rust",
+      entries: [{
+        sequence: "7",
+        level: "warning",
+        code: "server-stderr",
+        message: "진단 출력은 native 경계에서 정리되었습니다",
+      }],
+      droppedEntries: 3,
+      droppedStderrBytes: 128,
+      stderrTruncated: true,
+    }]);
+
+    const rendered = render(<LspControlPanel workspaceRoot="/work" onClose={() => undefined} />);
+    expect(await rendered.findByText("검증된 캐시 사용 가능 · native · rust-analyzer.exe")).toBeTruthy();
+    expect(rendered.getByText("최근 실패 2회 · 자동 재시도까지 약 3초")).toBeTruthy();
+    expect(rendered.getByText("최근 로그 1개")).toBeTruthy();
+    expect(rendered.getByText("진단 출력은 native 경계에서 정리되었습니다")).toBeTruthy();
+    expect(rendered.getByText("보존 상한으로 정제 로그 3개가 교체되었습니다.")).toBeTruthy();
+    expect(rendered.getByText(/native 진단 원본 순환 buffer에서 오래된 128 bytes가 교체/)).toBeTruthy();
+    fireEvent.click(rendered.getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(restartMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("ignores an older status and log refresh after a newer request completes", async () => {
+    const oldStatuses = deferred<LanguageServerStatus[]>();
+    const oldLogs = deferred<Awaited<ReturnType<typeof languageServerLogs>>>();
+    loadMock.mockResolvedValue(loadedConfig({
+      config: {
+        ...loadedConfig().config,
+        enabled: true,
+        workspace_root: "/work",
+        server_by_language: {
+          rust: { kind: "local", installed_path: "/server", args: [] },
+        },
+      },
+    }));
+    statusesMock
+      .mockImplementationOnce(() => oldStatuses.promise)
+      .mockResolvedValue([fixtureServerStatus("rust", "ready")]);
+    logsMock
+      .mockImplementationOnce(() => oldLogs.promise)
+      .mockResolvedValue([{
+        languageId: "rust",
+        entries: [{ sequence: "2", level: "info", code: "server-ready", message: "new-log" }],
+        droppedEntries: 0,
+        droppedStderrBytes: 0,
+        stderrTruncated: false,
+      }]);
+
+    const rendered = render(<LspControlPanel workspaceRoot="/work" onClose={() => undefined} />);
+    fireEvent.click(await rendered.findByRole("button", { name: "시작" }));
+    expect(await rendered.findByText("준비됨")).toBeTruthy();
+    expect(rendered.getByText("new-log")).toBeTruthy();
+
+    await act(async () => {
+      oldStatuses.resolve([fixtureServerStatus("rust", "crashed")]);
+      oldLogs.resolve([{
+        languageId: "rust",
+        entries: [{ sequence: "1", level: "error", code: "start-failed", message: "old-log" }],
+        droppedEntries: 0,
+        droppedStderrBytes: 0,
+        stderrTruncated: false,
+      }]);
+      await Promise.all([oldStatuses.promise, oldLogs.promise]);
+    });
+    expect(rendered.getByText("준비됨")).toBeTruthy();
+    expect(rendered.queryByText("old-log")).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  languageServerLogs,
   languageServerStatuses,
   lspCatalog,
   lspInstalled,
@@ -10,6 +11,7 @@ import {
   stopLanguageServer,
 } from "../api";
 import type {
+  LanguageServerLog,
   LanguageServerStatus,
   LoadedLspConfig,
   LspConfig,
@@ -88,6 +90,30 @@ function statusLabel(status: LanguageServerStatus["status"]): string {
   }
 }
 
+function managedCacheLabel(
+  server: LspServerRef | undefined,
+  statuses: ManagedInstallStatus[],
+  catalog: ManagedServerManifest[],
+): string | null {
+  if (server?.kind !== "managed") return null;
+  const manifest = catalog.find((item) => (
+    item.id === server.manifest_id && item.version === server.version
+  ));
+  if (!manifest) return "검토된 catalog에 없음";
+  const status = statuses.find((item) => (
+    item.manifest_id === manifest.id
+    && item.version === manifest.version
+    && item.platform === manifest.platform
+  ));
+  if (!status) return "캐시 없음 · 설치 필요";
+  if (status.state === "installed" && status.installed) {
+    const minimum = manifest.runtime.min_version ? ` ${manifest.runtime.min_version}` : "";
+    return `검증된 캐시 사용 가능 · ${manifest.runtime.kind} · ${manifest.runtime.executable}${minimum}`;
+  }
+  if (status.state === "needs_reinstall") return "캐시 검증 실패 · 재설치 필요";
+  return "캐시 없음 · 설치 필요";
+}
+
 interface Props {
   workspaceRoot: string | null;
   onClose: () => void;
@@ -98,6 +124,7 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
   const [loaded, setLoaded] = useState<LoadedLspConfig | null>(null);
   const [config, setConfig] = useState<LspConfig>(() => emptyConfig(workspaceRoot));
   const [statuses, setStatuses] = useState<LanguageServerStatus[]>([]);
+  const [logs, setLogs] = useState<LanguageServerLog[]>([]);
   const [managedCatalog, setManagedCatalog] = useState<ManagedServerManifest[]>([]);
   const [managedStatuses, setManagedStatuses] = useState<ManagedInstallStatus[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState("rust");
@@ -110,7 +137,11 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
   const [error, setError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [formDirty, setFormDirty] = useState(false);
+  const [cancellingStart, setCancellingStart] = useState<string | null>(null);
   const busyRef = useRef(false);
+  const cancelledStartsRef = useRef(new Set<string>());
+  const runtimeRefreshGenerationRef = useRef(0);
+  const runtimeRefreshActiveRef = useRef(false);
 
   const configuredLanguageIds = [...new Set([
     ...Object.keys(config.server_by_language),
@@ -134,18 +165,30 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
     (manifest) => managedSelectionKey(manifest) === managedSelection,
   );
 
-  const refreshStatuses = async () => {
+  const refreshRuntime = async () => {
+    const generation = ++runtimeRefreshGenerationRef.current;
     try {
-      setStatuses(await languageServerStatuses());
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      const [nextStatuses, nextLogs] = await Promise.all([
+        languageServerStatuses(),
+        languageServerLogs(),
+      ]);
+      if (!runtimeRefreshActiveRef.current || generation !== runtimeRefreshGenerationRef.current) {
+        return;
+      }
+      setStatuses(nextStatuses);
+      setLogs(nextLogs);
+    } catch {
+      if (runtimeRefreshActiveRef.current && generation === runtimeRefreshGenerationRef.current) {
+        setError("언어 서버 상태와 로그를 새로 고치지 못했습니다.");
+      }
     }
   };
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([loadLspConfig(), languageServerStatuses()])
-      .then(([nextLoaded, nextStatuses]) => {
+    runtimeRefreshActiveRef.current = true;
+    void loadLspConfig()
+      .then((nextLoaded) => {
         if (cancelled) return;
         const nextConfig = { ...nextLoaded.config };
         if (workspaceRoot && nextConfig.workspace_root !== workspaceRoot) {
@@ -154,11 +197,11 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
         }
         setLoaded(nextLoaded);
         setConfig(nextConfig);
-        setStatuses(nextStatuses);
       })
-      .catch((cause) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      .catch(() => {
+        if (!cancelled) setError("LSP 설정을 불러오지 못했습니다.");
       });
+    void refreshRuntime();
     void Promise.all([lspCatalog(), lspInstalled()])
       .then(([catalog, installed]) => {
         if (cancelled) return;
@@ -169,9 +212,11 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
         // Managed catalog availability must not prevent local/custom server
         // configuration from remaining usable.
       });
-    const timer = window.setInterval(() => void refreshStatuses(), 2_000);
+    const timer = window.setInterval(() => void refreshRuntime(), 2_000);
     return () => {
       cancelled = true;
+      runtimeRefreshActiveRef.current = false;
+      runtimeRefreshGenerationRef.current += 1;
       window.clearInterval(timer);
     };
     // The dialog loads one persisted snapshot when opened.
@@ -205,8 +250,8 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
     setError(null);
     try {
       await operation();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+    } catch {
+      setError("언어 서버 작업을 완료하지 못했습니다.");
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -279,18 +324,35 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
   });
 
   const handleStart = (languageId: string) => void run(async () => {
-    await startLanguageServer(languageId);
-    await refreshStatuses();
+    try {
+      await startLanguageServer(languageId);
+    } catch (cause) {
+      if (cancelledStartsRef.current.delete(languageId)) return;
+      throw cause;
+    }
+    cancelledStartsRef.current.delete(languageId);
+    await refreshRuntime();
   });
+
+  const handleCancelStart = (languageId: string) => {
+    if (cancellingStart === languageId) return;
+    cancelledStartsRef.current.add(languageId);
+    setCancellingStart(languageId);
+    setError(null);
+    void stopLanguageServer(languageId)
+      .then(refreshRuntime)
+      .catch(() => setError("언어 서버 시작을 취소하지 못했습니다."))
+      .finally(() => setCancellingStart(null));
+  };
 
   const handleStop = (languageId: string) => void run(async () => {
     await stopLanguageServer(languageId);
-    await refreshStatuses();
+    await refreshRuntime();
   });
 
   const handleRestart = (languageId: string) => void run(async () => {
     await restartLanguageServer(languageId);
-    await refreshStatuses();
+    await refreshRuntime();
   });
 
   return (
@@ -303,12 +365,13 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
           </div>
         </header>
 
-        {error && <p className="lsp-error" role="alert">{error}</p>}
-        {loaded?.error && (
-          <p className="lsp-warning" role="alert">
-            저장된 설정이 손상되었습니다: {loaded.error} 저장하면 기존 파일을 명시적으로 복구합니다.
-          </p>
-        )}
+        <div className="lsp-panel-body">
+          {error && <p className="lsp-error" role="alert">{error}</p>}
+          {loaded?.error && (
+            <p className="lsp-warning" role="alert">
+              저장된 설정이 손상되었습니다. 저장하면 기존 파일을 명시적으로 복구합니다.
+            </p>
+          )}
         {!workspaceRoot && (
           <p className="lsp-warning">먼저 작업 폴더를 지정해야 LSP를 활성화할 수 있습니다.</p>
         )}
@@ -421,6 +484,8 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
             const status = statuses.find((item) => item.languageId === languageId);
             const server = config.server_by_language[languageId]
               ?? config.custom_servers.find((item) => item.language_ids.includes(languageId));
+            const cacheLabel = managedCacheLabel(server, managedStatuses, managedCatalog);
+            const languageLog = logs.find((item) => item.languageId === languageId);
             return (
               <article className="lsp-status-card" key={languageId}>
                 <div className="lsp-status-main">
@@ -431,6 +496,16 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
                   <span>{status?.serverInfo?.name ?? server?.kind ?? "custom"}</span>
                   <span>문서 {status?.documentCount ?? 0}</span>
                 </div>
+                {cacheLabel && <p className="lsp-cache-state">{cacheLabel}</p>}
+                {status && (status.restartFailures || status.restartDelayMs || status.autoRestartDisabled) && (
+                  <p className="lsp-retry-state" aria-live="polite">
+                    {status.autoRestartDisabled
+                      ? `최근 실패 ${status.restartFailures ?? 0}회 · 자동 재시작 중지 · 수동 다시 시도 필요`
+                      : `최근 실패 ${status.restartFailures ?? 0}회${status.restartDelayMs
+                        ? ` · 자동 재시도까지 약 ${Math.max(1, Math.ceil(status.restartDelayMs / 1_000))}초`
+                        : ""}`}
+                  </p>
+                )}
                 {status && (
                   <div className="lsp-capabilities" aria-label={`${languageId} 기능`}>
                     {CAPABILITY_LABELS.filter(([key]) => Boolean(status.capabilities[key])).map(([, label]) => (
@@ -441,27 +516,63 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
                   </div>
                 )}
                 <div className="lsp-status-actions">
-                  {!status || status.status === "stopped"
+                  {status?.status === "starting"
+                    ? <>
+                        <button type="button" className="toolbar-button" disabled>시작 중…</button>
+                        <button
+                          type="button"
+                          className="toolbar-button"
+                          disabled={cancellingStart === languageId}
+                          onClick={() => handleCancelStart(languageId)}
+                        >
+                          {cancellingStart === languageId ? "중지 중…" : "중지"}
+                        </button>
+                      </>
+                    : !status || status.status === "stopped"
                     ? <button type="button" className="toolbar-button" disabled={busy || !config.enabled || hasUnsavedChanges} onClick={() => handleStart(languageId)}>시작</button>
                     : status.status === "crashed" || status.status === "degraded" || status.autoRestartDisabled
                       ? <>
-                          <button type="button" className="toolbar-button" disabled={busy || !config.enabled || hasUnsavedChanges} onClick={() => handleRestart(languageId)}>재시작</button>
+                          <button type="button" className="toolbar-button" disabled={busy || !config.enabled || hasUnsavedChanges} onClick={() => handleRestart(languageId)}>다시 시도</button>
                           <button type="button" className="toolbar-button" disabled={busy} onClick={() => handleStop(languageId)}>중지</button>
                         </>
                       : <button type="button" className="toolbar-button" disabled={busy} onClick={() => handleStop(languageId)}>중지</button>}
                 </div>
+                <details className="lsp-log-disclosure">
+                  <summary>최근 로그 {languageLog?.entries.length ?? 0}개</summary>
+                  {languageLog && languageLog.droppedEntries > 0 && (
+                    <p className="lsp-log-warning">
+                      보존 상한으로 정제 로그 {languageLog.droppedEntries.toLocaleString()}개가 교체되었습니다.
+                    </p>
+                  )}
+                  {languageLog?.stderrTruncated && (
+                    <p className="lsp-log-warning">
+                      native 진단 원본 순환 buffer에서 오래된 {languageLog.droppedStderrBytes.toLocaleString()} bytes가 교체되었습니다.
+                      정제 로그는 위 목록에 별도로 보존됩니다.
+                    </p>
+                  )}
+                  {!languageLog || languageLog.entries.length === 0
+                    ? <p className="lsp-empty">아직 기록된 로그가 없습니다.</p>
+                    : <ol className="lsp-log-list">
+                        {languageLog.entries.map((entry) => (
+                          <li key={entry.sequence} className={`lsp-log-entry ${entry.level}`}>
+                            <span>{entry.code}</span>
+                            <p>{entry.message}</p>
+                          </li>
+                        ))}
+                      </ol>}
+                </details>
               </article>
             );
           })}
         </section>
 
-        <ManagedInstallerPanel
-          onError={setError}
-          onChanged={(nextCatalog, nextStatuses) => {
-            setManagedCatalog(nextCatalog);
-            setManagedStatuses(nextStatuses);
-          }}
-        />
+          <ManagedInstallerPanel
+            onChanged={(nextCatalog, nextStatuses) => {
+              setManagedCatalog(nextCatalog);
+              setManagedStatuses(nextStatuses);
+            }}
+          />
+        </div>
 
         <footer className="lsp-panel-footer">
           <span>{formDirty ? "먼저 이 언어 설정을 적용하세요." : hasUnsavedChanges ? "변경 사항을 저장해야 서버를 시작할 수 있습니다." : "설정을 저장하면 실행 중인 서버는 안전하게 종료됩니다."}</span>
