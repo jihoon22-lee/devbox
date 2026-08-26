@@ -530,6 +530,35 @@ stale·unmount·double-submit을 버리고 initial focus·Escape·Tab trap·focu
 안내를 제공한다. Rust export 17개와 Life Log frontend 31개 fixture, app build/clippy/fmt를
 focused gate로 확인했으며 Windows packaged W2와 전체 workspace gate는 PR 직전에 수행한다.
 
+**#306 구현 상태.** #305의 `ExportDocument` producer를 재사용해 `life-log/digest/v1`를
+추가했다. `DigestInput`은 일간(정확히 한 local civil day), 주간(월요일 시작 정확히 7 local
+civil days), 또는 기존 월간(해당 월 28~31 days)의 period와 export와 동일한
+`dayBoundaries`/exclusive `endMs`를 요구하며, native가 경계를 24시간 덧셈으로 재생성하지 않는다.
+DB bounded query·privacy boundary·safe Git collector는
+한 번만 준비하고, 앱 exact filter를 sanitized session에 적용한다. 필터는 null 또는 256-byte
+이하의 non-control/non-credential app name만 허용하고, 2,048 unique app·366 daily row·4MiB
+document/Markdown 상한을 초과하면 고정 오류로 fail-closed한다.
+
+digest summary는 filtered PC usage/session count/active day/average daily usage/top app과
+Git total을 제공하고, 날짜별로 boundary/date/usage/session/Git/top app/empty 상태를 제공한다.
+app 정렬은 duration 내림차순 후 UTF-8 byte 순이며, Git은 app filter와 독립적으로 기존
+project/error row를 유지한다. Run Manager·Knowledge의 latest snapshot은 range history가
+아니므로 수치에 혼합하지 않고 producer/schema/snapshot version, generatedAt, freshness, named
+view, `latest-snapshot-out-of-range` scope를 source metadata에만 보존한다. source 순서·오류
+코드는 #305와 동일하고 snapshot 원문·raw path/credential/stderr를 노출하지 않는다.
+
+native command `get_digest`는 document와 deterministic Markdown을 반환하고 `save_digest`는
+사용자 확인 뒤 Markdown만 Windows atomic save한다. `Copy digest`/browser Download는 명시적
+action일 때만 현재 Markdown을 사용하며 persistence/history/network/LLM은 없다. browser는
+`origin: browser-preview`, 4개 source `browser_preview_only`, 0-valued empty rows로 native
+성공을 가장하지 않는다. frontend는 daily/weekly (+ existing monthly)의 DST-safe input builder, app filter,
+explicit copy/save/download, stale/unmount/duplicate guard, keyboard/IME/a11y 상태와 source/rule
+explanation을 포함한다. 순수 fixture는 period/boundary/filter bounds, deterministic app/day
+aggregation, empty result, Markdown escaping, source ordering, fixed errors를 고정하고
+frontend fixture는 browser/native origin, no-network, stale response, busy/double action,
+clipboard failure와 empty state를 검증한다. #306은 #307 handoff/Knowledge 저장, 자동 AI
+요약, cloud export를 구현하지 않는다.
+
 **2026-08-26 #410 구현 상태.** WSL Desktop이 Workbench #281과 Life Log가 읽을 수 있는
 `wsl-desktop/runtime/v1` snapshot producer를 맡도록 연결했다. 기존
 `crates/integration::Envelope::with_views`와 `write_atomic`을 사용해

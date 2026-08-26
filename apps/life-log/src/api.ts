@@ -36,6 +36,111 @@ export interface SaveExportResult {
   byteLength: number;
 }
 
+export type DigestPeriod = "day" | "week" | "month";
+
+export interface DigestFilter {
+  app: string | null;
+}
+
+export interface DigestInput {
+  startDate: string;
+  endDate: string;
+  timezone: string;
+  dayStart: number;
+  dayEnd: number;
+  dayBoundaries: ExportDayBoundary[];
+  period: DigestPeriod;
+  filter: DigestFilter;
+}
+
+export interface DigestRules {
+  sessionWindow: string;
+  sessionDuration: string;
+  dailyBuckets: string;
+  appFilter: string;
+  appTotals: string;
+  gitCommits: string;
+  snapshotScope: string;
+  privacy: string;
+  externalProcessing: string;
+}
+
+export interface DigestDay {
+  date: string;
+  startMs: number;
+  endMs: number;
+  pcUsageMs: number;
+  sessionCount: number;
+  gitCommits: number;
+  topApp: string | null;
+  hasActivity: boolean;
+}
+
+export interface DigestSummary {
+  pcUsageMs: number;
+  sessionCount: number;
+  activeDays: number;
+  totalDays: number;
+  averageDailyUsageMs: number;
+  topApp: string | null;
+  gitCommits: number;
+}
+
+export interface DigestDocument {
+  schemaVersion: number;
+  period: DigestPeriod;
+  range: {
+    startDate: string;
+    endDate: string;
+    timezone: string;
+    startMs: number;
+    endMs: number;
+    dayBoundaries: ExportDayBoundary[];
+  };
+  filter: DigestFilter;
+  rules: DigestRules;
+  headline: string;
+  summary: DigestSummary;
+  daily: DigestDay[];
+  appTotals: Array<{
+    app: string;
+    durationMs: number;
+    sessions: number;
+  }>;
+  git: {
+    projects: Array<{
+      path: string;
+      commits: number;
+      errorCode: string | null;
+    }>;
+    totalCommits: number;
+    errorCodes: string[];
+  };
+  sources: Array<{
+    id: string;
+    available: boolean;
+    schemaVersion: number | null;
+    snapshotVersion: number | null;
+    producerVersion: string | null;
+    generatedAt: string | null;
+    freshnessMs: number | null;
+    view: string | null;
+    scope: string;
+    errorCode: string | null;
+  }>;
+}
+
+export interface DigestResponse {
+  origin: ExportOrigin;
+  document: DigestDocument;
+  markdown: string;
+}
+
+export interface SaveDigestResult {
+  saved: boolean;
+  byteLength: number;
+}
+
 const DAY_MS = 86_400_000;
 const MAX_EXPORT_DAYS = 366;
 const MAX_EXPORT_BYTES = 4 * 1024 * 1024;
@@ -50,6 +155,17 @@ const EXPORT_INPUT_KEYS = [
   "timezone",
 ] as const;
 const DAY_BOUNDARY_KEYS = ["date", "endMs", "startMs"] as const;
+const DIGEST_INPUT_KEYS = [
+  "dayBoundaries",
+  "dayEnd",
+  "dayStart",
+  "endDate",
+  "filter",
+  "period",
+  "startDate",
+  "timezone",
+] as const;
+const DIGEST_FILTER_KEYS = ["app"] as const;
 
 function hasExactKeys(value: object, expected: readonly string[]): boolean {
   const actual = Object.keys(value).sort();
@@ -79,6 +195,10 @@ function nextLocalDateKey(value: string): string {
   const date = parseLocalDateKey(value)!;
   date.setDate(date.getDate() + 1);
   return `${String(date.getFullYear()).padStart(4, "0")}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function isMondayDateKey(value: string): boolean {
+  return parseLocalDateKey(value)?.getDay() === 1;
 }
 
 function isControlCharacter(character: string): boolean {
@@ -326,6 +446,7 @@ function validateBrowserExportInput(input: ExportInput): void {
       || !Number.isSafeInteger(input.dayStart)
       || !Number.isSafeInteger(input.dayEnd)
       || input.dayEnd <= input.dayStart
+      || input.timezone.length > 128
       || new TextEncoder().encode(input.timezone).byteLength > 128
       || input.timezone.trim() !== input.timezone
       || [...input.timezone].some(isControlCharacter)
@@ -493,4 +614,211 @@ export async function exportLifeLog(input: ExportInput): Promise<RenderedExport>
 export async function saveLifeLog(input: ExportInput): Promise<SaveExportResult> {
   if (!isTauri()) throw new Error("native export 저장은 데스크톱 앱에서 사용할 수 없습니다");
   return invoke<SaveExportResult>("save_life_log", { input });
+}
+
+function digestError(): Error {
+  return new Error("digest 입력이 올바르지 않습니다");
+}
+
+function hasSecretMarker(value: string): boolean {
+  const lower = value.toLowerCase();
+  return [
+    "password", "passwd", "secret", "token", "access_token", "refresh_token",
+    "api_key", "apikey", "client_secret", "credential", "authorization",
+    "bearer ", "basic ", "sk-", "ghp_", "gho_", "ghs_", "ghu_",
+    "github_pat_", "xoxb-", "xoxp-", "npm_", "pypi-", "akia", "ya29.",
+    "-----begin ",
+  ].some((marker) => lower.includes(marker));
+}
+
+/** Shared frontend boundary for native and browser digest requests. */
+export function validateDigestInput(input: DigestInput): void {
+  if (!input || typeof input !== "object" || !hasExactKeys(input, DIGEST_INPUT_KEYS)
+      || !input.filter || typeof input.filter !== "object"
+      || !hasExactKeys(input.filter, DIGEST_FILTER_KEYS)
+      || !["day", "week", "month"].includes(input.period)
+      || (input.filter.app !== null && typeof input.filter.app !== "string")) {
+    throw digestError();
+  }
+  const exportInput: ExportInput = {
+    startDate: input.startDate,
+    endDate: input.endDate,
+    timezone: input.timezone,
+    dayStart: input.dayStart,
+    dayEnd: input.dayEnd,
+    dayBoundaries: input.dayBoundaries,
+    format: "json",
+  };
+  try {
+    validateBrowserExportInput(exportInput);
+  } catch {
+    throw digestError();
+  }
+  if (input.filter.app !== null && input.filter.app !== undefined
+      && (input.filter.app.length === 0 || input.filter.app.length > 256
+        || new TextEncoder().encode(input.filter.app).byteLength > 256
+        || [...input.filter.app].some(isControlCharacter) || hasSecretMarker(input.filter.app))) {
+    throw digestError();
+  }
+  const days = input.dayBoundaries.length;
+  if ((input.period === "day" && (days !== 1 || input.startDate !== input.endDate))
+      || (input.period === "week" && (days !== 7 || !isMondayDateKey(input.startDate)))
+      || (input.period === "month" && (days < 28 || days > 31
+        || !input.startDate.endsWith("-01")
+        || input.startDate.slice(0, 7) !== input.endDate.slice(0, 7)))) {
+    throw digestError();
+  }
+}
+
+function browserDigestRules(appFilter: string | null): DigestRules {
+  return {
+    sessionWindow: "start_ts_ms >= range.startMs && start_ts_ms < range.endMs",
+    sessionDuration: "stored durationMs is retained; sessions are assigned by start timestamp and are not clipped",
+    dailyBuckets: "the supplied local civil-day boundaries are authoritative; no fixed 24-hour arithmetic is used",
+    appFilter: appFilter ? `exact sanitized app \`${appFilter}\` only` : "all sanitized applications",
+    appTotals: "sanitized sessions are grouped by app; duration descending then app byte order",
+    gitCommits: "native-only read-only bounded Git counts; unavailable in browser preview",
+    snapshotScope: "Run Manager and Knowledge latest snapshots are provenance only and unavailable in browser preview",
+    privacy: "Life Log privacy rules and obvious credential markers are reapplied before aggregation",
+    externalProcessing: "rule-based local aggregation only; no cloud/local LLM, network, telemetry, or external activity transfer",
+  };
+}
+
+function markdownPreview(value: string): string {
+  return value.replace(/[|\\]/g, "\\$&").replace(/`/g, "\\`").replace(/[\r\n]/g, " ");
+}
+
+function browserDigestMarkdown(input: DigestInput, document: DigestDocument): string {
+  const filter = input.filter.app ?? "all apps";
+  const daily = document.daily.map((day) =>
+    `| ${day.date} | 0 | 0 | 0 | - |`,
+  ).join("\n");
+  const sources = document.sources.map((source) =>
+    `| ${source.id} | false | ${source.scope} | ${source.errorCode ?? "-"} |`,
+  ).join("\n");
+  const rules = Object.entries(document.rules).map(([name, value]) =>
+    `| ${name} | ${markdownPreview(value)} |`,
+  ).join("\n");
+  return [
+    "# Life Log local digest",
+    "",
+    `- Period: \`${input.period}\``,
+    `- Range: \`${input.startDate}\` to \`${input.endDate}\` (exclusive end)`,
+    `- Timezone: \`${markdownPreview(input.timezone)}\``,
+    `- Filter: ${markdownPreview(filter)}`,
+    "- Browser preview only: native DB, Git, and local snapshots are not included.",
+    "",
+    "## Summary",
+    "",
+    "| Metric | Value |",
+    "| --- | ---: |",
+    "| PC usage (ms) | 0 |",
+    "| Sessions | 0 |",
+    `| Active days | 0 / ${document.daily.length} |`,
+    "| Average daily usage (ms) | 0 |",
+    "| Git commits | 0 |",
+    "| Top app | - |",
+    "",
+    "No activity was recorded in the browser preview.",
+    "",
+    "## Daily digest",
+    "",
+    "| Date | PC usage (ms) | Sessions | Git commits | Top app |",
+    "| --- | ---: | ---: | ---: | --- |",
+    daily,
+    "",
+    "## Applications",
+    "",
+    "| App | Duration (ms) | Sessions |",
+    "| --- | ---: | ---: |",
+    "| - | 0 | 0 |",
+    "",
+    "## Git projects",
+    "",
+    "| Project | Commits | Error code |",
+    "| --- | ---: | --- |",
+    "| - | 0 | browser_preview_only |",
+    "",
+    "## Sources",
+    "",
+    "| Source | Available | Scope | Error code |",
+    "| --- | --- | --- | --- |",
+    sources,
+    "",
+    "## Rules",
+    "",
+    "| Rule | Definition |",
+    "| --- | --- |",
+    rules,
+    "",
+  ].join("\n");
+}
+
+function browserDigest(input: DigestInput): DigestResponse {
+  validateDigestInput(input);
+  const sources = ["life-log", "git", "run-manager", "knowledge-base"].map((id) => ({
+    id,
+    available: false,
+    schemaVersion: null,
+    snapshotVersion: null,
+    producerVersion: null,
+    generatedAt: null,
+    freshnessMs: null,
+    view: null,
+    scope: "browser-preview-only",
+    errorCode: "browser_preview_only",
+  }));
+  const document: DigestDocument = {
+    schemaVersion: 1,
+    period: input.period,
+    range: {
+      startDate: input.startDate,
+      endDate: input.endDate,
+      timezone: input.timezone,
+      startMs: input.dayStart,
+      endMs: input.dayEnd,
+      dayBoundaries: input.dayBoundaries,
+    },
+    filter: input.filter,
+    rules: browserDigestRules(input.filter.app),
+    headline: `${input.period} local digest preview: native local data is unavailable`,
+    summary: {
+      pcUsageMs: 0,
+      sessionCount: 0,
+      activeDays: 0,
+      totalDays: input.dayBoundaries.length,
+      averageDailyUsageMs: 0,
+      topApp: null,
+      gitCommits: 0,
+    },
+    daily: input.dayBoundaries.map((boundary) => ({
+      date: boundary.date,
+      startMs: boundary.startMs,
+      endMs: boundary.endMs,
+      pcUsageMs: 0,
+      sessionCount: 0,
+      gitCommits: 0,
+      topApp: null,
+      hasActivity: false,
+    })),
+    appTotals: [],
+    git: { projects: [], totalCommits: 0, errorCodes: ["browser_preview_only"] },
+    sources,
+  };
+  const markdown = browserDigestMarkdown(input, document);
+  const byteLength = new TextEncoder().encode(markdown).byteLength;
+  if (byteLength > MAX_EXPORT_BYTES) throw new Error("digest 미리보기 결과가 너무 큽니다");
+  return { origin: "browser-preview", document, markdown };
+}
+
+export async function getDigest(input: DigestInput): Promise<DigestResponse> {
+  if (!isTauri()) return browserDigest(input);
+  validateDigestInput(input);
+  return invoke<DigestResponse>("get_digest", { input });
+}
+
+export async function saveDigest(input: DigestInput): Promise<SaveDigestResult> {
+  if (!isTauri()) throw new Error("native digest 저장은 데스크톱 앱에서 사용할 수 없습니다");
+  validateDigestInput(input);
+  return invoke<SaveDigestResult>("save_digest", { input });
 }

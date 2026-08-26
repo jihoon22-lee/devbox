@@ -406,6 +406,15 @@ fn validate_range(input: &ExportInput) -> Result<ValidatedRange, String> {
     })
 }
 
+/// Validate an export-compatible range without exposing the internal parsed
+/// representation. Other local producers (for example the daily/weekly
+/// digest, which retains existing monthly support) use this at their own save
+/// boundary so date, timezone, DST, and contiguous-boundary rules cannot drift
+/// between artifacts.
+pub fn validate_range_input(input: &ExportInput) -> Result<(), String> {
+    validate_range(input).map(|_| ())
+}
+
 /// DB와 snapshot에서 await 이전에 수집할 데이터를 준비한다. Tauri command는
 /// `PreparedExport`를 만든 뒤 DB mutex를 풀고 비동기 git 집계를 수행해야 한다.
 pub fn prepare_document(

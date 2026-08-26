@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildExportInput, DataSourceRow, monthRange, toDateStr, weekRange } from "./App";
+import { buildDigestInput, buildExportInput, DataSourceRow, monthRange, toDateStr, weekRange } from "./App";
 import type { SourceStatus } from "./api";
 
 afterEach(cleanup);
@@ -50,9 +50,11 @@ describe("weekRange", () => {
     expect([endDate.getFullYear(), endDate.getMonth(), endDate.getDate()]).toEqual([2024, 1, 5]); // Mon Feb 5
   });
 
-  it("항상 정확히 7일 구간이다", () => {
+  it("DST에서도 달력 기준으로 정확히 7일 구간이다", () => {
     const { start, end } = weekRange(new Date(2024, 5, 15));
-    expect(end - start).toBe(7 * 86_400_000);
+    const expectedEnd = new Date(start);
+    expectedEnd.setDate(expectedEnd.getDate() + 7);
+    expect(end).toBe(expectedEnd.getTime());
   });
 });
 
@@ -118,6 +120,40 @@ describe("buildExportInput", () => {
   it("잘못된 날짜와 366일 초과 범위를 거부한다", () => {
     expect(buildExportInput("2024-02-30", "2024-02-30", "csv")).toBeNull();
     expect(buildExportInput("2024-01-01", "2025-01-02", "markdown")).toBeNull();
+  });
+});
+
+describe("buildDigestInput", () => {
+  it("uses exactly one supplied local civil-day boundary for a day", () => {
+    const input = buildDigestInput(new Date(2024, 0, 3), "day");
+    expect(input?.period).toBe("day");
+    expect(input?.startDate).toBe("2024-01-03");
+    expect(input?.endDate).toBe("2024-01-03");
+    expect(input?.dayBoundaries).toHaveLength(1);
+    expect(input?.dayStart).toBe(input?.dayBoundaries[0]?.startMs);
+    expect(input?.dayEnd).toBe(input?.dayBoundaries[0]?.endMs);
+    expect(Object.keys(input ?? {}).sort()).toEqual([
+      "dayBoundaries", "dayEnd", "dayStart", "endDate", "filter", "period", "startDate", "timezone",
+    ]);
+  });
+
+  it("uses seven local civil-day boundaries for a week", () => {
+    const input = buildDigestInput(new Date(2024, 0, 3), "week");
+    expect(input?.period).toBe("week");
+    expect(input?.filter).toEqual({ app: null });
+    expect(input?.startDate).toBe("2024-01-01");
+    expect(input?.endDate).toBe("2024-01-07");
+    expect(input?.dayBoundaries).toHaveLength(7);
+    expect(input?.dayEnd).toBe(input?.dayBoundaries[input.dayBoundaries.length - 1]?.endMs);
+  });
+
+  it("uses the calendar month end instead of fixed 24-hour arithmetic", () => {
+    const input = buildDigestInput(new Date(2024, 1, 10), "month", "Code.exe");
+    expect(input?.period).toBe("month");
+    expect(input?.startDate).toBe("2024-02-01");
+    expect(input?.endDate).toBe("2024-02-29");
+    expect(input?.dayBoundaries).toHaveLength(29);
+    expect(input?.filter).toEqual({ app: "Code.exe" });
   });
 });
 

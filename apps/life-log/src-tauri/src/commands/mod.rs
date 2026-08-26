@@ -1,4 +1,5 @@
 pub mod autostart;
+pub mod digest;
 pub mod export;
 pub mod life;
 pub mod privacy;

@@ -190,6 +190,132 @@ body {
   margin-bottom: 10px;
 }
 
+.digest-panel {
+  padding-bottom: 14px;
+}
+
+.digest-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.digest-heading h2 {
+  border-bottom: 0;
+  margin-bottom: 2px;
+  padding-bottom: 0;
+}
+
+.digest-heading p {
+  margin: 0;
+}
+
+.digest-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.digest-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.digest-toolbar label {
+  display: grid;
+  gap: 5px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.digest-toolbar select {
+  min-width: 180px;
+  padding: 6px 8px;
+  color: inherit;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.digest-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.digest-cards .card {
+  padding: 10px;
+}
+
+.digest-cards .card-value {
+  font-size: 16px;
+}
+
+.digest-headline {
+  margin: 12px 0;
+  color: var(--accent);
+}
+
+.digest-days {
+  display: grid;
+  gap: 4px;
+}
+
+.digest-day {
+  display: grid;
+  grid-template-columns: 100px minmax(80px, 1fr) minmax(170px, 1.5fr) minmax(120px, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.digest-day.empty-day {
+  color: var(--dim);
+}
+
+.digest-details {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.digest-details summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.digest-source-list {
+  margin-top: 8px;
+}
+
+.digest-rules {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.digest-rule {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.source-ok {
+  color: var(--green, #3fb950);
+}
+
 .stat-row {
   display: flex;
   align-items: center;
@@ -327,6 +453,26 @@ body {
 @media (max-width: 620px) {
   .export-fields {
     grid-template-columns: 1fr;
+  }
+
+  .digest-heading,
+  .digest-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .digest-actions {
+    justify-content: flex-start;
+  }
+
+  .digest-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .digest-day,
+  .digest-rule {
+    grid-template-columns: 1fr;
+    gap: 3px;
   }
 }
 
