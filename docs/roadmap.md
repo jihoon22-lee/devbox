@@ -266,6 +266,20 @@ focus를 고정하고 닫힐 때 이전 focus를 복원한다. 파일 열기는 
 absolute path를 그대로 사용하고 새 filesystem walk, storage, network, process 변경은 추가하지
 않는다.
 
+#287은 Developer Toolbox Encoding group에 HTML Entity Encode/Decode와 URL Component Encode/Decode를
+추가한다. 기존 URL 변환을 `encodeURIComponent`/`decodeURIComponent` 기반의 bounded component
+codec으로 교체하고, HTML parser를 내재하지 않는 pinned `entities@8.0.0` 표준 named-entity codec과
+직접 검증한 decimal/hex numeric decoder를 추가한다. 두 codec은 UTF-8 input 1,000,000바이트·output 4,000,000바이트·16배
+expansion 상한을 공유하고, HTML entity는 token 32자·numeric digit 7자·100,000개 상한을,
+URL은 malformed percent와 invalid UTF-8/lone surrogate 검사를 적용한다. output 사전 예상,
+entity 누적 상한, fixed error/empty output, raw credential·path·parser 오류 비반향을 순수 fixture로
+고정했다. UI는 기존 offline input/output surface를 재사용하되 input 변경 시 이전 output을 비우고
+stale sequence 결과를 폐기하며 `aria-busy`/live status, 명시적 clipboard/save action, native
+cut/copy/paste·IME·keyboard 동작을 유지한다. HTML parser, 외부 converter, fetch,
+자동 저장/전송은 포함하지 않는다. 이미 lock에 있던 BSD-2-Clause codec의 direct edge와 notice
+digest를 dependency gate로 검증한다. Windows W2 packaged smoke evidence는 P2 checkpoint에서
+수행한다.
+
 #278은 기존 언어 서버 status에 retry 실패 횟수·남은 backoff·열린 circuit을 표시하고, 같은 카드에서
 수동 `다시 시도`를 실행하도록 확장한다. 관리형 server ref는 설치 index 검증 결과와 결합해 cache
 사용 가능/재설치 필요/미설치 상태만 보여 주며 설치 경로는 frontend DTO에 추가하지 않는다. lifecycle
