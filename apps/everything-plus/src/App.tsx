@@ -3,7 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   addRoot,
   copyPath,
@@ -232,7 +232,10 @@ export default function App() {
     onBeforeOpen: (_reason, target) => prepareContextResult(target),
   });
 
-  useEffect(() => {
+  // Result replacement invalidates the exact menu target. Run this before
+  // paint: a passive effect could otherwise close a keyboard menu that the
+  // user opened on the freshly rendered row in the same frame.
+  useLayoutEffect(() => {
     contextMenu.close();
     setContextResult(null);
   }, [activeList, contextMenu.close]);
