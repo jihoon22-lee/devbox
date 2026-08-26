@@ -4,8 +4,8 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `d2092e8d6d1b607833050ef6fc95cf528f8d570bed566c3ba727edafbee7e026`
-- pnpm-lock.yaml SHA-256: `761506d610babd9c28b77c8115b73d4556cbfa7af5b0d267fe3e36115f21b6dc`
+- Cargo.lock SHA-256: `0a801f46ba4533b706d94777b66433c7c8b797282c892d0f59cbabf8a08babc3`
+- pnpm-lock.yaml SHA-256: `57cab2c70423653b77b59f95c1a93584a314dfa2e2db76b26996c408729a0333`
 
 ## Rust dependencies
 
@@ -284,6 +284,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | memchr | 2.8.3 | Unlicense OR MIT | https://github.com/BurntSushi/memchr | `sha256:cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98` |
 | memoffset | 0.9.1 | MIT | https://github.com/Gilnaa/memoffset | `sha256:488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a` |
 | mime | 0.3.17 | MIT OR Apache-2.0 | https://github.com/hyperium/mime | `sha256:6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a` |
+| mime_guess | 2.0.5 | MIT | https://github.com/abonander/mime_guess | `sha256:f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e` |
 | miniz_oxide | 0.8.9 | MIT OR Zlib OR Apache-2.0 | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide | `sha256:1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316` |
 | mio | 1.2.2 | MIT | https://github.com/tokio-rs/mio | `sha256:30d65c71f1ce40ab09135ce117d742b9f8a19ff91a41a8b57ed50bc2de59c427` |
 | moxcms | 0.8.1 | BSD-3-Clause OR Apache-2.0 | https://github.com/awxkee/moxcms.git | `sha256:bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b` |
@@ -386,6 +387,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | regex-automata | 0.4.18 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex | `sha256:ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2` |
 | regex-syntax | 0.8.11 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex | `sha256:d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4` |
 | reqwest | 0.13.4 | MIT OR Apache-2.0 | https://github.com/seanmonstar/reqwest | `sha256:219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3` |
+| rfd | 0.16.0 | MIT | https://github.com/PolyMeilex/rfd | `sha256:a15ad77d9e70a92437d8f74c35d99b4e4691128df018833e99f90bcd36152672` |
 | ring | 0.17.14 | Apache-2.0 AND ISC | https://github.com/briansmith/ring | `sha256:a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7` |
 | rusqlite | 0.32.1 | MIT | https://github.com/rusqlite/rusqlite | `sha256:7753b721174eb8ff87a9a0e799e2d7bc3749323e773db92e0984debb00019d6e` |
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT | https://github.com/rust-lang/rustc-hash | `sha256:6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d` |
@@ -468,6 +470,8 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | tauri-macros | 2.6.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri | `sha256:e8b394794f399a421811d06966343e7933fcae92d59f5180b9388d1174497a45` |
 | tauri-plugin | 2.6.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri | `sha256:74be5dd4bed9afbd145e5716b5fa2ec28cbc29c34ffa61c258c9273d896c8020` |
 | tauri-plugin-clipboard-manager | 2.3.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:206dc20af4ed210748ba945c2774e60fd0acd52b9a73a028402caf809e9b6ecf` |
+| tauri-plugin-dialog | 2.7.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:b2d3c1dbe38037e7f590cdf2492594d5ceebe031e7bc7e827509b22a999d2940` |
+| tauri-plugin-fs | 2.5.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:b7ecc274121aca0c036a2b42d1cbe83d368d348f54e0bb8a735c2b1548e8f371` |
 | tauri-plugin-notification | 2.3.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:01fc2c5ff41105bd1f7242d8201fdf3efd70749b82fa013a17f2126357d194cc` |
 | tauri-plugin-opener | 2.5.4 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:17e1bea14edce6b793a04e2417e3fd924b9bc4faae83cdee7d714156cceeed29` |
 | tauri-plugin-single-instance | 2.4.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:b3214becf9ef5783c0ae99a3bb25adf5353a7a16ebf53e74b909e29205735c6c` |
@@ -717,6 +721,7 @@ to the CI license gate but are not shipped in the compiled frontend bundle.
 | @mermaid-js/parser | 1.2.0 | MIT | https://github.com/mermaid-js/mermaid/tree/develop/packages/mermaid/parser/#readme | `sha512-oYPyv8A4As1yH5Bx+04iQEQxXuIQDe0GKCNSRgao6z8AM9jixXIfP0vsppRLvGf+nKIOb9/LdpWA4YuJiVvESA==` |
 | @tauri-apps/api | 2.11.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri#readme | `sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==` |
 | @tauri-apps/plugin-clipboard-manager | 2.3.2 | MIT OR Apache-2.0 | https://github.com/tauri-apps/plugins-workspace#readme | `sha512-CUlb5Hqi2oZbcZf4VUyUH53XWPPdtpw43EUpCza5HWZJwxEoDowFzNUDt1tRUXA8Uq+XPn17Ysfptip33sG4eQ==` |
+| @tauri-apps/plugin-dialog | 2.7.2 | MIT OR Apache-2.0 | https://github.com/tauri-apps/plugins-workspace#readme | `sha512-pX0IGm1I3I6wc+zeKYcq1GSqogK6okCNX5fOdaNU5ab1AjGS6l1E5wFNjEb7meg7ZFSp0JUs+0jQGQNyOvLrsg==` |
 | @tauri-apps/plugin-opener | 2.5.4 | MIT OR Apache-2.0 | https://github.com/tauri-apps/plugins-workspace#readme | `sha512-1HnPkb+AmgO29HBazm4uPLKB+r7zzcTBW1d0fyYp1uP+jwtpoiNDGKMMzz58SFp49nOIrxdE3aUJtT57lfO9CQ==` |
 | @types/d3 | 7.4.3 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3 | `sha512-lZXZ9ckh5R8uiFVt8ogUNf+pIrK4EsWrx2Np75WvF/eTpJ0FMHNhjXk8CKEx/+gpHbNQyJWehbFaTvqmHWB3ww==` |
 | @types/d3-array | 3.2.2 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-array | `sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw==` |

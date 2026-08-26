@@ -14,6 +14,7 @@ function request(): RequestTemplate {
     url: "https://api.example.com/items?token=direct-url-secret",
     headers: [{ key: "Authorization", value: "Bearer direct-header-secret" }],
     cookies: [{ name: "session", value: "direct-cookie-secret" }],
+    multipart: [],
     params: [],
     body_kind: "json",
     body: JSON.stringify({ password: "direct-body-secret" }),

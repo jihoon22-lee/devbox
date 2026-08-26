@@ -3,6 +3,7 @@
 import type { PersistedHistoryRequest, RequestTemplate } from "../types";
 import { isRequestCookie, normalizeCookies } from "./cookies";
 import { isRequestHeader, normalizeHeaders } from "./headers";
+import { isMultipartPart, normalizeMultipartParts } from "./multipart";
 import {
   type PersistenceSanitizer,
   type StorageMigration,
@@ -234,6 +235,8 @@ function isRequestTemplate(value: unknown): value is RequestTemplate {
     request.headers.every(isRequestHeader) &&
     (request.cookies === undefined ||
       (Array.isArray(request.cookies) && request.cookies.every(isRequestCookie))) &&
+    (request.multipart === undefined ||
+      (Array.isArray(request.multipart) && request.multipart.every(isMultipartPart))) &&
     Array.isArray(request.params) &&
     request.params.every(isKeyValue) &&
     typeof request.body_kind === "string" &&
@@ -266,6 +269,7 @@ function clonePersistedRequest(request: PersistedHistoryRequest): PersistedHisto
     ...request,
     headers: normalizeHeaders(request.headers),
     cookies: normalizeCookies(request.cookies),
+    multipart: normalizeMultipartParts(request.multipart),
     params: request.params.map((param) => ({ ...param })),
     auth: request.auth ? { ...request.auth } : null,
   };

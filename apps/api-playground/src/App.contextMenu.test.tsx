@@ -35,6 +35,7 @@ function rawRequest(): RequestTemplate {
       { key: "X-Request-Id", value: "request-123" },
     ],
     cookies: [],
+    multipart: [],
     params: [],
     body_kind: "json",
     body: JSON.stringify({ password: "body-secret", safe: "value" }),

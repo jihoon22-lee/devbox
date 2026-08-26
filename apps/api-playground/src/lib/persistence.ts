@@ -2,6 +2,7 @@ import type {
   AuthConfig,
   HistoryItem,
   KeyValue,
+  MultipartPart,
   PersistedHistoryRequest,
   RequestTemplate,
 } from "../types";
@@ -10,7 +11,14 @@ import {
   isRequestHeader,
   normalizeHeaders,
 } from "./headers";
-import { isCookieReference, isRequestCookie, normalizeCookies } from "./cookies";
+import { isRequestCookie, normalizeCookies } from "./cookies";
+import { isExactVariableReference } from "./references";
+import {
+  isMultipartPart,
+  MAX_MULTIPART_PARTS,
+  normalizeMultipartParts,
+  safeMultipartFileName,
+} from "./multipart";
 
 export const REDACTED = "[REDACTED]";
 export const HISTORY_V1_LS_KEY = "apip-history";
@@ -128,14 +136,22 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
     ...cookie,
     value: mark(
       cookie.value,
-      cookie.value && !isCookieReference(cookie.value)
+      cookie.value && !isExactVariableReference(cookie.value)
         ? REDACTED
         : redactKnownTokenPatterns(cookie.value),
     ),
   }));
   const params = request.params.map((param) => sanitizePair(param, mark));
   const url = mark(request.url, sanitizeUrl(request.url));
-  const body = mark(request.body, sanitizeBody(request.body, request.body_kind));
+  const body = mark(
+    request.body,
+    request.body_kind === "multipart" ? "" : sanitizeBody(request.body, request.body_kind),
+  );
+  const sourceMultipart = request.multipart ?? [];
+  if (sourceMultipart.length > MAX_MULTIPART_PARTS) requiresSecretReview = true;
+  const multipart = normalizeMultipartParts(sourceMultipart).map((part, index) =>
+    sanitizeMultipartPart(part, sourceMultipart[index] ?? part, mark),
+  );
   const auth = request.auth ? sanitizeAuth(request.auth, mark) : null;
 
   return {
@@ -143,6 +159,7 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
     url,
     headers,
     cookies,
+    multipart,
     params,
     body_kind: request.body_kind,
     body,
@@ -158,6 +175,7 @@ export function toRequestTemplate(request: PersistedHistoryRequest): RequestTemp
     ...template,
     headers: normalizeHeaders(template.headers),
     cookies: normalizeCookies(template.cookies),
+    multipart: normalizeMultipartParts(template.multipart),
   };
 }
 
@@ -168,6 +186,7 @@ export function normalizePersistedRequest(
     ...request,
     headers: normalizeHeaders(request.headers),
     cookies: normalizeCookies(request.cookies),
+    multipart: normalizeMultipartParts(request.multipart),
   };
 }
 
@@ -205,6 +224,33 @@ function sanitizeAuth(
     token: secretField(auth.token),
     api_key: mark(auth.api_key, redactKnownTokenPatterns(auth.api_key)),
     api_value: secretField(auth.api_value),
+  };
+}
+
+function sanitizeMultipartPart(
+  part: MultipartPart,
+  original: MultipartPart,
+  mark: (original: string, sanitized: string) => string,
+): MultipartPart {
+  if (part.kind === "file") {
+    const safeName = safeMultipartFileName(original.file_name || original.file_path);
+    return {
+      ...part,
+      value: mark(original.value, ""),
+      file_path: mark(original.file_path, ""),
+      file_name: mark(original.file_name, redactKnownTokenPatterns(safeName)),
+    };
+  }
+  const safeValue = isSensitiveName(part.name) && part.value
+    ? isExactVariableReference(part.value) ? part.value : REDACTED
+    : redactKnownTokenPatterns(part.value);
+  mark(original.file_path, "");
+  mark(original.file_name, "");
+  return {
+    ...part,
+    value: mark(part.value, safeValue),
+    file_path: "",
+    file_name: "",
   };
 }
 
@@ -331,6 +377,8 @@ function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
     request.headers.every(isRequestHeader) &&
     (request.cookies === undefined ||
       (Array.isArray(request.cookies) && request.cookies.every(isRequestCookie))) &&
+    (request.multipart === undefined ||
+      (Array.isArray(request.multipart) && request.multipart.every(isMultipartPart))) &&
     Array.isArray(request.params) &&
     request.params.every(isKeyValue) &&
     typeof request.body_kind === "string" &&

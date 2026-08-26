@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "./lib/isTauri";
 import { applyToRequest, type EnvVariable } from "./lib/environments";
 import {
@@ -8,6 +9,13 @@ import {
   validateCookies,
 } from "./lib/cookies";
 import { isHeaderEnabled } from "./lib/headers";
+import {
+  isMultipartPartEnabled,
+  isMultipartDerivedHeader,
+  safeMultipartFileName,
+  validateMultipartParts,
+  type PickedMultipartFile,
+} from "./lib/multipart";
 import type { ApiResponse, RequestTemplate } from "./types";
 
 /** HTTP 요청 전송. 브라우저 미리보기에서는 fetch(CORS 제약 존재)로 대체한다. */
@@ -48,6 +56,18 @@ export async function buildRevealedCurl(
   return invoke<string>("build_revealed_curl", { req, environment });
 }
 
+/** 데스크톱 file picker의 사용자 선택 결과만 runtime multipart 경로로 반환한다. */
+export async function pickMultipartFile(): Promise<PickedMultipartFile | null> {
+  if (!isTauri()) throw new Error("파일 선택은 데스크톱 앱에서만 사용할 수 있습니다");
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    title: "multipart 파일 선택",
+  });
+  if (typeof selected !== "string") return null;
+  return { path: selected, name: safeMultipartFileName(selected) };
+}
+
 async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): Promise<ApiResponse> {
   if (environment.some((variable) => variable.secret)) {
     throw new Error("secret 포함 요청은 데스크톱 앱에서만 전송할 수 있습니다");
@@ -60,10 +80,30 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): P
   if (hasCookieSourceConflict(resolved.cookies, resolved.headers)) {
     throw new Error("Cookie header와 구조화 Cookie를 동시에 전송할 수 없습니다");
   }
+  if (resolved.body_kind === "multipart") {
+    const issue = validateMultipartParts(resolved.multipart)[0];
+    if (issue) throw new Error(issue.message);
+    if (resolved.multipart.some((part) =>
+      isMultipartPartEnabled(part) && part.kind === "file" && Boolean(part.name || part.file_name),
+    )) {
+      throw new Error("multipart 파일 전송은 데스크톱 앱에서만 사용할 수 있습니다");
+    }
+    if (resolved.multipart.some((part) =>
+      isMultipartPartEnabled(part) && part.kind === "text" && Boolean(part.content_type),
+    )) {
+      throw new Error("part별 Content-Type 전송은 데스크톱 앱에서만 사용할 수 있습니다");
+    }
+  }
   const start = performance.now();
   const headers = new Headers();
   for (const header of resolved.headers) {
-    if (isHeaderEnabled(header) && header.key) headers.append(header.key, header.value);
+    if (
+      isHeaderEnabled(header) &&
+      header.key &&
+      !(resolved.body_kind === "multipart" && isMultipartDerivedHeader(header.key))
+    ) {
+      headers.append(header.key, header.value);
+    }
   }
   const cookieHeader = buildCookieHeader(resolved.cookies);
   if (cookieHeader) headers.append("Cookie", cookieHeader);
@@ -79,12 +119,20 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[]): P
   const sep = resolved.url.includes("?") ? "&" : "?";
   const url = params.size ? resolved.url + sep + params.toString() : resolved.url;
 
-  let body: string | undefined;
+  let body: BodyInit | undefined;
   if (resolved.body_kind === "json" && resolved.body.trim()) {
     headers.set("Content-Type", "application/json");
     body = resolved.body;
   } else if (resolved.body_kind === "raw" && resolved.body) {
     body = resolved.body;
+  } else if (resolved.body_kind === "multipart") {
+    const form = new FormData();
+    for (const part of resolved.multipart) {
+      if (isMultipartPartEnabled(part) && part.kind === "text" && part.name) {
+        form.append(part.name, part.value);
+      }
+    }
+    body = form;
   }
 
   const resp = await fetch(url, { method: req.method, headers, body });
@@ -139,6 +187,11 @@ function redactBrowserText(text: string, req: RequestTemplate): string {
       .filter((cookie) => isCookieEnabled(cookie))
       .map((cookie) => cookie.value),
     ...req.params.filter((param) => isSensitiveName(param.key)).map((param) => param.value),
+    ...req.multipart
+      .filter((part) =>
+        isMultipartPartEnabled(part) && part.kind === "text" && isSensitiveName(part.name),
+      )
+      .map((part) => part.value),
   ].filter((value): value is string => Boolean(value));
   const exactRedacted = directSecrets.sort((a, b) => b.length - a.length).reduce(
     (result, secret) => result.split(secret).join("[REDACTED]"),

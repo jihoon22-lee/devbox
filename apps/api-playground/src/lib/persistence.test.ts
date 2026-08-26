@@ -60,6 +60,7 @@ function request(overrides: Partial<RequestTemplate> = {}): RequestTemplate {
     url: "https://api.example.com/x",
     headers: [],
     cookies: [],
+    multipart: [],
     params: [],
     body_kind: "none",
     body: "",
@@ -141,6 +142,12 @@ describe("History v1 fail-closed migration", () => {
       { name: "session", value: "${SESSION}", enabled: true },
       { name: "disabled", value: REDACTED, enabled: false },
     ]);
+  });
+
+  it("기존 v2의 multipart 누락은 빈 배열로 올린다", () => {
+    const legacy = validHistoryStore();
+    delete (legacy.history[0].request as Partial<RequestTemplate>).multipart;
+    expect(parseHistoryStore(JSON.stringify(legacy))?.history[0].request.multipart).toEqual([]);
   });
 
   it("v2를 선기록한 뒤 v1을 삭제하고 marker를 기록하며 raw backup을 만들지 않는다", () => {
@@ -376,6 +383,56 @@ describe("request persistence sanitizer", () => {
 
     expect(safe.body).toBe("trace=[REDACTED]");
     expect(safe.body).not.toContain(githubToken);
+    expect(safe.requiresSecretReview).toBe(true);
+  });
+
+  it("multipart 파일 경로·stale body를 제거하고 민감 text는 직접값만 마스킹한다", () => {
+    const safe = sanitizeRequestForPersistence(request({
+      body_kind: "multipart",
+      body: "raw-file-backup",
+      multipart: [
+        {
+          kind: "file",
+          name: "upload",
+          value: "raw-file-bytes",
+          file_path: "C:\\private\\artifact.zip",
+          file_name: "C:\\private\\artifact.zip",
+          content_type: "application/zip",
+          enabled: false,
+        },
+        {
+          kind: "text",
+          name: "token",
+          value: "direct-token",
+          file_path: "",
+          file_name: "",
+          content_type: "text/plain",
+          enabled: true,
+        },
+        {
+          kind: "text",
+          name: "token",
+          value: "${UPLOAD_TOKEN}",
+          file_path: "",
+          file_name: "",
+          content_type: "",
+          enabled: true,
+        },
+      ],
+    }));
+
+    expect(safe.body).toBe("");
+    expect(safe.multipart[0]).toMatchObject({
+      file_path: "",
+      file_name: "artifact.zip",
+      enabled: false,
+    });
+    expect(safe.multipart[1].value).toBe(REDACTED);
+    expect(safe.multipart[2].value).toBe("${UPLOAD_TOKEN}");
+    expect(JSON.stringify(safe)).not.toContain("C:\\private");
+    expect(JSON.stringify(safe)).not.toContain("raw-file-backup");
+    expect(JSON.stringify(safe)).not.toContain("direct-token");
+    expect(JSON.stringify(safe)).not.toContain("raw-file-bytes");
     expect(safe.requiresSecretReview).toBe(true);
   });
 

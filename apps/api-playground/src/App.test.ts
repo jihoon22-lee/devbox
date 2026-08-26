@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCurl, shellQuote, statusClass, tryPretty } from "./App";
+import { buildCurl, curlFormQuote, shellQuote, statusClass, tryPretty } from "./App";
 import type { RequestTemplate } from "./types";
 
 describe("statusClass", () => {
@@ -47,6 +47,10 @@ describe("shellQuote", () => {
   it("작은따옴표가 포함된 문자열은 이스케이프한다", () => {
     expect(shellQuote("it's")).toBe(`'it'\\''s'`);
   });
+
+  it("curl form 내부 quote와 backslash를 별도로 이스케이프한다", () => {
+    expect(curlFormQuote('C:\\tmp\\a;"b".txt')).toBe('"C:\\\\tmp\\\\a;\\"b\\".txt"');
+  });
 });
 
 function baseReq(overrides: Partial<RequestTemplate> = {}): RequestTemplate {
@@ -55,6 +59,7 @@ function baseReq(overrides: Partial<RequestTemplate> = {}): RequestTemplate {
     url: "",
     headers: [],
     cookies: [],
+    multipart: [],
     params: [],
     body_kind: "none",
     body: "",
@@ -249,5 +254,46 @@ describe("buildCurl", () => {
   it("body_kind가 none이면 body가 있어도 --data를 추가하지 않는다", () => {
     const curl = buildCurl(baseReq({ url: "https://api.example.com", body_kind: "none", body: "should-be-ignored" }));
     expect(curl).not.toContain("should-be-ignored");
+  });
+
+  it("multipart 기본 cURL은 text를 정화하고 파일 전체 경로 대신 재선택 placeholder를 쓴다", () => {
+    const curl = buildCurl(baseReq({
+      url: "https://api.example.com/upload",
+      body_kind: "multipart",
+      headers: [
+        { key: "Content-Type", value: "text/plain", enabled: true },
+        { key: "Content-Length", value: "1", enabled: true },
+        { key: "Transfer-Encoding", value: "chunked", enabled: true },
+      ],
+      multipart: [
+        {
+          kind: "text",
+          name: "token",
+          value: "direct-multipart-secret",
+          file_path: "",
+          file_name: "",
+          content_type: "text/plain",
+          enabled: true,
+        },
+        {
+          kind: "file",
+          name: "upload",
+          value: "",
+          file_path: "C:\\private\\artifact.zip",
+          file_name: "artifact.zip",
+          content_type: "application/zip",
+          enabled: true,
+        },
+      ],
+    }));
+
+    expect(curl).toContain("--form 'token=\"[REDACTED]\";type=text/plain'");
+    expect(curl).toContain("--form 'upload=@\"[RESELECT_FILE:artifact.zip]\";type=application/zip'");
+    expect(curl).not.toContain("C:\\private");
+    expect(curl).not.toContain("direct-multipart-secret");
+    expect(curl).not.toContain("--header 'Content-Type:");
+    expect(curl).not.toContain("Content-Length");
+    expect(curl).not.toContain("Transfer-Encoding");
+    expect(curl).not.toContain("--data");
   });
 });

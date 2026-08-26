@@ -16,6 +16,20 @@ export interface RequestCookie {
   enabled?: boolean;
 }
 
+export interface MultipartPart {
+  kind: "text" | "file";
+  name: string;
+  /** text part의 값. file part에서는 항상 빈 문자열이다. */
+  value: string;
+  /** file picker가 선택한 현재 실행의 경로. persistence에서는 항상 제거한다. */
+  file_path: string;
+  /** 경로 없이 다시 선택할 파일을 알려 주는 basename 표시 metadata. */
+  file_name: string;
+  /** 비어 있으면 backend가 기본 content type을 사용한다. */
+  content_type: string;
+  enabled?: boolean;
+}
+
 export interface AuthConfig {
   kind: string;
   username: string;
@@ -31,6 +45,7 @@ export interface RequestTemplate {
   url: string;
   headers: RequestHeader[];
   cookies: RequestCookie[];
+  multipart: MultipartPart[];
   params: KeyValue[];
   body_kind: string;
   body: string;

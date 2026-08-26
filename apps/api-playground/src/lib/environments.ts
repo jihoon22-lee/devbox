@@ -85,11 +85,13 @@ export function applyVariables(template: string, variables: Map<string, string>)
   });
 }
 
-/// 요청의 URL·헤더·body·params에 environment를 적용한다 (원본 template 불변).
+/// 요청의 URL·헤더·cookie·text multipart·body·params에 environment를 적용한다 (원본 template 불변).
 export function applyToRequest<T>(request: T, variables: Map<string, string>): T {
   const out = { ...request } as Record<string, unknown>;
   if (typeof out.url === "string") out.url = applyVariables(out.url, variables);
-  if (typeof out.body === "string") out.body = applyVariables(out.body, variables);
+  if (typeof out.body === "string") {
+    out.body = out.body_kind === "multipart" ? "" : applyVariables(out.body, variables);
+  }
   if (Array.isArray(out.headers)) {
     out.headers = (out.headers as Array<{ key: string; value: string; enabled?: boolean }>).map((h) => ({
       ...h,
@@ -102,6 +104,20 @@ export function applyToRequest<T>(request: T, variables: Map<string, string>): T
       ...cookie,
       name: cookie.name,
       value: applyVariables(cookie.value, variables),
+    }));
+  }
+  if (Array.isArray(out.multipart)) {
+    out.multipart = (out.multipart as Array<{
+      kind: "text" | "file";
+      name: string;
+      value: string;
+      file_path: string;
+      file_name: string;
+      content_type: string;
+      enabled?: boolean;
+    }>).map((part) => ({
+      ...part,
+      value: part.kind === "text" ? applyVariables(part.value, variables) : "",
     }));
   }
   if (Array.isArray(out.params)) {

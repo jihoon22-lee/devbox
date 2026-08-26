@@ -5,10 +5,11 @@
 
 ## 주요 기능
 
-- **요청 작성** — Method, URL, Params/Header/Cookies/Body(JSON·form·raw). Header table은 같은 이름의
+- **요청 작성** — Method, URL, Params/Header/Cookies/Body(JSON·form·multipart·raw). Header table은 같은 이름의
   행과 입력 순서를 유지하고 행별 enabled, 복제·삭제, 현재 환경 secret reference 삽입을 지원한다.
   Cookies tab은 domain/path/만료일을 관리하는 cookie jar가 아니라 현재 요청의 `Cookie` header를
-  name/value 행으로 편집한다.
+  name/value 행으로 편집한다. Multipart body는 text/file part, part별 Content-Type, enabled,
+  복제·삭제와 데스크톱 file picker를 지원한다.
 - **응답 보기** — 상태코드·시간·크기, JSON Pretty/폴드, Raw
 - **Auth 프리셋** — Basic / Bearer / API Key
 - **History / Collection** — 최근 요청과 저장 요청을 v2 형식으로 보존·재호출. 항목 우클릭 또는
@@ -44,24 +45,34 @@
   해제한다. 활성 행은 `name=value; name=value` 순서의 `Cookie` header 하나로 전송하며, 활성 raw
   `Cookie` header가 Headers tab에도 있으면 모호한 병합 대신 전송·cURL을 fail-closed로 막는다.
   Cookie name/value 문자와 행 수는 frontend와 backend에서 검증한다.
+- **Multipart boundary** — multipart는 최대 50개 part, 활성 text 전체 UTF-8 1,000,000바이트,
+  파일당 25 MiB와 파일 전체 50 MiB로 제한한다. file picker가 선택한 경로는 현재 실행의
+  frontend→Rust 명령에만 존재하고 History·Collection·기본 cURL에는 저장하거나 표시하지 않는다.
+  저장에는 안전한 basename만 남겨 다음 전송 전에 파일 재선택을 요구한다. Rust backend가 전송
+  직전에 경로를 canonicalize하고 regular file·크기를 검사한 뒤 `reqwest::multipart`로 stream한다.
+  multipart의 Content-Type·boundary·Content-Length는 backend가 만들며 사용자가 입력한 파생
+  header는 무시한다. text part의 environment reference는 활성 행만 backend에서 해제하고 민감한
+  part 이름의 직접값은 저장·기본 cURL에서 마스킹한다.
 - **요청·응답 redaction** — response headers/body, final URL, redirect 위치와 오류는 secret,
   Authorization, Cookie 및 민감한 token 패턴을 redaction한다. 모든 cross-origin redirect에서는
   Authorization/Cookie/API-key 헤더와 auth를 다음 요청에 전달하지 않고 요청 body도 억제한다.
   메서드를 보존하는 307/308 redirect에도 동일하게 적용하고, 목적지 URL 자체에 민감정보가
   포함된 cross-origin redirect는 follow 전에 차단해 fail-closed로 처리한다.
 - **cURL** — 화면과 기본 복사는 masking된 결과만 사용한다. 확인 대화상자 뒤의 원문 복사는
-  데스크톱 backend가 일회성으로 생성하며 저장하지 않는다.
+  데스크톱 backend가 일회성으로 생성하며 저장하지 않는다. Multipart 기본 cURL은 파일 경로 대신
+  basename 기반 재선택 placeholder를 사용하고, 확인한 원문 cURL만 현재 runtime 경로를 포함한다.
 - **항목 메뉴** — History·Collection 메뉴는 v2에 저장된 마스킹 request만 사용한다. 복제와
   이름 변경도 backend sanitizer 및 read-back 검증을 다시 통과하며, 삭제는 확인 전 저장소를
   변경하지 않는다. History의 선택적 표시 이름은 기존 v2 항목과 하위 호환된다.
 - **브라우저 preview** — Tauri 밖에서는 `fetch` 미리보기만 제공하므로 CORS 제한이 있다.
   DPAPI secret이 포함된 요청과 secret 해제·원문 cURL은 차단하며, 응답·URL도 미리보기 경계에서
   redaction한다. 브라우저가 `Cookie`를 forbidden request header로 제한할 수 있으므로 Cookie의
-  실제 wire 동작과 cross-origin 제거 계약은 packaged native 경로를 기준으로 한다.
+  실제 wire 동작과 cross-origin 제거 계약은 packaged native 경로를 기준으로 한다. text-only
+  multipart는 `FormData`로 미리 볼 수 있지만 file part와 part별 Content-Type은 데스크톱 전용이다.
 
 ## 기술
 
-- Rust(`reqwest`)가 직접 요청 → 브라우저 CORS 없음
+- Rust(`reqwest` multipart stream)와 Tauri dialog plugin이 직접 요청·파일 선택 → 브라우저 CORS 없음
 - 공용 패키지 `packages/tokens`, `packages/context-menu` 사용
 
 ## 개발

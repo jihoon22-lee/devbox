@@ -4,9 +4,16 @@ import {
   type ContextMenuEntry,
 } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { buildRevealedCurl, sanitizePersistedJson, sealSecret, sendRequest } from "./api";
+import {
+  buildRevealedCurl,
+  pickMultipartFile,
+  sanitizePersistedJson,
+  sealSecret,
+  sendRequest,
+} from "./api";
 import { CookieEditor } from "./CookieEditor";
 import { HeaderTable } from "./HeaderTable";
+import { MultipartEditor } from "./MultipartEditor";
 import {
   addEntry,
   duplicateEntry,
@@ -47,11 +54,16 @@ import {
   validateCookies,
 } from "./lib/cookies";
 import { isHeaderEnabled } from "./lib/headers";
+import {
+  isMultipartPartEnabled,
+  isMultipartDerivedHeader,
+  validateMultipartParts,
+} from "./lib/multipart";
 import type { ApiResponse, HistoryItem, KeyValue, RequestTemplate } from "./types";
 import "./App.css";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
-const BODY_KINDS = ["none", "json", "form", "raw"];
+const BODY_KINDS = ["none", "json", "form", "multipart", "raw"];
 const AUTH_KINDS = ["none", "basic", "bearer", "apikey"];
 
 const emptyReq = (): RequestTemplate => ({
@@ -59,6 +71,7 @@ const emptyReq = (): RequestTemplate => ({
   url: "",
   headers: [],
   cookies: [],
+  multipart: [],
   params: [],
   body_kind: "none",
   body: "",
@@ -170,6 +183,14 @@ export default function App() {
     : cookieIssues[0]
       ? `${cookieIssues[0].index + 1}번 Cookie: ${cookieIssues[0].message}`
       : null;
+  const multipartIssue = req.body_kind === "multipart"
+    ? validateMultipartParts(req.multipart)[0] ?? null
+    : null;
+  const requestConfigurationError = cookieConfigurationError ?? (
+    multipartIssue
+      ? `${multipartIssue.index + 1}번 multipart part: ${multipartIssue.message}`
+      : null
+  );
 
   const persistEnvs = (store: ReturnType<typeof loadEnvStore>) => {
     setEnvStore(store);
@@ -298,9 +319,9 @@ export default function App() {
   }, [history, req, environmentVariables]);
 
   const onSend = async () => {
-    if (cookieConfigurationError) {
-      setError(cookieConfigurationError);
-      setTab("cookies");
+    if (requestConfigurationError) {
+      setError(requestConfigurationError);
+      setTab(cookieConfigurationError ? "cookies" : "body");
       return;
     }
     setSending(true);
@@ -313,8 +334,8 @@ export default function App() {
       } catch {
         setPersistenceWarning("요청은 완료됐지만 민감정보 안전 검증에 실패해 History를 저장하지 않았습니다.");
       }
-    } catch {
-      setError("요청에 실패했습니다. URL, 연결 상태와 secret 설정을 확인하세요.");
+    } catch (cause) {
+      setError(safeRequestError(cause));
       setResp(null);
       try {
         await persistHistoryRequest();
@@ -659,15 +680,15 @@ export default function App() {
             onChange={(e) => setReq({ ...req, url: e.currentTarget.value })}
             spellCheck={false}
           />
-          <button className="btn send" onClick={() => void onSend()} disabled={!persistenceReady || sending || contextActionBusy || !req.url || Boolean(cookieConfigurationError)}>
+          <button className="btn send" onClick={() => void onSend()} disabled={!persistenceReady || sending || contextActionBusy || !req.url || Boolean(requestConfigurationError)}>
             {!persistenceReady ? "Checking..." : sending ? "Sending..." : "Send"}
           </button>
-          <button className={`btn ${showCurl ? "active" : ""}`} onClick={() => setShowCurl((v) => !v)} disabled={!req.url || Boolean(cookieConfigurationError)}>
+          <button className={`btn ${showCurl ? "active" : ""}`} onClick={() => setShowCurl((v) => !v)} disabled={!req.url || Boolean(requestConfigurationError)}>
             cURL
           </button>
         </div>
 
-        {showCurl && !cookieConfigurationError && (
+        {showCurl && !requestConfigurationError && (
           <div className="curl-panel">
             <div className="io-label">
               cURL
@@ -692,6 +713,11 @@ export default function App() {
 
         {cookieConfigurationError && (
           <div className="error" role="alert">{cookieConfigurationError}</div>
+        )}
+        {!cookieConfigurationError && multipartIssue && (
+          <div className="error" role="alert">
+            {multipartIssue.index + 1}번 multipart part: {multipartIssue.message}
+          </div>
         )}
 
         <div className="tab-body">
@@ -727,7 +753,17 @@ export default function App() {
                   </option>
                 ))}
               </select>
-              {req.body_kind !== "none" && (
+              {req.body_kind === "multipart" ? (
+                <MultipartEditor
+                  key={requestEditorRevision}
+                  rows={req.multipart}
+                  secretNames={(currentEnv?.variables ?? [])
+                    .filter((variable) => variable.secret)
+                    .map((variable) => variable.key)}
+                  onChange={(multipart) => setReq({ ...req, multipart })}
+                  onPickFile={pickMultipartFile}
+                />
+              ) : req.body_kind !== "none" && (
                 <textarea
                   className="body-input"
                   rows={8}
@@ -839,7 +875,12 @@ export function tryPretty(json: string): string {
 /** 요청 구성을 기본 마스킹된 curl 명령으로 만든다. */
 export function buildCurl(template: RequestTemplate): string {
   if (!template.url) return "";
-  if (validateCookies(template.cookies).length > 0 || hasCookieSourceConflict(template.cookies, template.headers)) {
+  if (
+    validateCookies(template.cookies).length > 0 ||
+    hasCookieSourceConflict(template.cookies, template.headers) ||
+    (template.body_kind === "multipart" &&
+      validateMultipartParts(template.multipart).some((issue) => issue.field !== "file"))
+  ) {
     return "";
   }
   const req = sanitizeRequestForPersistence(template);
@@ -853,7 +894,13 @@ export function buildCurl(template: RequestTemplate): string {
 
   const headers: [string, string][] = [];
   for (const h of req.headers) {
-    if (isHeaderEnabled(h) && h.key) headers.push([h.key, h.value]);
+    if (
+      isHeaderEnabled(h) &&
+      h.key &&
+      !(req.body_kind === "multipart" && isMultipartDerivedHeader(h.key))
+    ) {
+      headers.push([h.key, h.value]);
+    }
   }
   const cookieHeader = buildCookieHeader(req.cookies);
   if (cookieHeader) headers.push(["Cookie", cookieHeader]);
@@ -868,15 +915,54 @@ export function buildCurl(template: RequestTemplate): string {
     lines.push(`  --header ${shellQuote(`${k}: ${v}`)}`);
   }
 
-  if (req.body_kind !== "none" && req.body) {
+  if (req.body_kind === "multipart") {
+    for (const part of req.multipart) {
+      if (!isMultipartPartEnabled(part) || !part.name) continue;
+      const suffix = part.content_type ? `;type=${part.content_type}` : "";
+      const value = part.kind === "text"
+        ? curlFormQuote(part.value)
+        : `@${curlFormQuote(`[RESELECT_FILE:${part.file_name || "file"}]`)}`;
+      lines.push(`  --form ${shellQuote(`${part.name}=${value}${suffix}`)}`);
+    }
+  } else if (req.body_kind !== "none" && req.body) {
     lines.push(`  --data ${shellQuote(req.body)}`);
   }
 
   return lines.join(" \\\n");
 }
 
+function safeRequestError(cause: unknown): string {
+  const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
+  const message = raw.replace(/^Error:\s*/, "");
+  const safeMessages = [
+    "multipart는 최대 50개 part까지 사용할 수 있습니다.",
+    "part 이름이 필요합니다.",
+    "part 이름은 120자 이하의 HTTP token이어야 합니다.",
+    "Content-Type은 type/subtype 형식이어야 합니다.",
+    "전송할 파일을 선택하세요.",
+    "선택한 파일 경로가 올바르지 않습니다.",
+    "활성 text part 전체는 UTF-8 기준 1,000,000바이트 이하여야 합니다.",
+    "multipart 파일 전송은 데스크톱 앱에서만 사용할 수 있습니다",
+    "part별 Content-Type 전송은 데스크톱 앱에서만 사용할 수 있습니다",
+    "선택한 multipart 파일을 찾을 수 없습니다",
+    "선택한 multipart 파일을 읽을 수 없습니다",
+    "multipart 파일은 각각 25 MiB 이하여야 합니다",
+    "multipart 파일 전체는 50 MiB 이하여야 합니다",
+    "요청 시간이 초과되었습니다",
+  ];
+  if (safeMessages.includes(message) || /^'.+' 파일을 다시 선택하세요\.$/.test(message)) {
+    return message;
+  }
+  return "요청에 실패했습니다. URL, 연결 상태와 secret 설정을 확인하세요.";
+}
+
 export function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/** curl -F의 쉼표/세미콜론/@ 및 quote parsing과 shell parsing을 분리한다. */
+export function curlFormQuote(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 async function copyRevealedCurl(
