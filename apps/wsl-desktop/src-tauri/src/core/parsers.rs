@@ -39,66 +39,41 @@ pub fn parse_wsl_list(input: &str) -> Vec<DistroInfo> {
     out
 }
 
-/// `docker ps -a` 출력 파싱.
+/// `docker ps -a --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'`
+/// 출력 파싱.
 /// 형식:
 /// ```text
-/// CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS   PORTS   NAMES
-/// abc12345defg   postgres  ...       ...       Up 2h    5432/tcp pg
+/// abc12345defg\tpg\tpostgres:16\tUp 2 hours\t0.0.0.0:5432->5432/tcp
 /// ```
-pub fn parse_docker_ps(input: &str) -> Vec<ContainerInfo> {
-    let mut out = Vec::new();
+pub fn parse_docker_ps(input: &str) -> Result<Vec<ContainerInfo>, &'static str> {
+    let mut containers = Vec::new();
     for line in input.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with("CONTAINER ID") {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.is_empty() {
             continue;
         }
-        let mut parts = line.split_whitespace();
-        let id = parts.next().unwrap_or("").to_string();
-        let image = parts.next().unwrap_or("").to_string();
-        // COMMAND는 공백 포함 가능 → 앞 2칸(id,image) 뒤에서 뒤 4칸(created,status,ports,names) 추출이 어려움.
-        // 안정적으로: 마지막 3개 = status, ports, names? docker는 7개 컬럼이지만 COMMAND가 유동적.
-        // 간단한 접근: 상태/이름만 앞에서부터 건너뛰기로 파싱하는 대신 전체 라인에서 status 패턴 검색.
-        let status = extract_docker_status(line);
-        let name = line.split_whitespace().last().unwrap_or("").to_string();
-        let ports = extract_docker_ports(line);
-        if id.is_empty() {
-            continue;
+
+        let fields = line.split('\t').collect::<Vec<_>>();
+        if fields.len() != 5
+            || fields[0].is_empty()
+            || fields[1].is_empty()
+            || fields[2].is_empty()
+            || fields[3].is_empty()
+        {
+            // frontend의 기존 설치 안내 분류는 실행 파일 이름도 검사한다. 이 고정 오류에는
+            // source field나 실행 파일 이름을 넣지 않아 parser 손상을 부재로 오인하지 않는다.
+            return Err("컨테이너 목록 형식이 올바르지 않습니다.");
         }
-        out.push(ContainerInfo {
-            id,
-            name,
-            image,
-            status,
-            ports,
+
+        containers.push(ContainerInfo {
+            id: fields[0].to_string(),
+            name: fields[1].to_string(),
+            image: fields[2].to_string(),
+            status: fields[3].to_string(),
+            ports: fields[4].to_string(),
         });
     }
-    out
-}
-
-fn extract_docker_status(line: &str) -> String {
-    // STATUS 컬럼은 "Up 2 hours", "Exited (0) 1 minute ago" 등. "Up"/"Exited"/"Created"/"Paused" 로 시작하는 토큰부터 끝까지.
-    let tokens: Vec<&str> = line.split_whitespace().collect();
-    for (i, t) in tokens.iter().enumerate() {
-        if matches!(
-            *t,
-            "Up" | "Exited" | "Created" | "Paused" | "Restarting" | "Dead"
-        ) {
-            // status 뒤에 ports가 올 수도 있으니, name 직전 토큰까지로 제한 (대략 4단어)
-            let end = (i + 5).min(tokens.len().saturating_sub(1));
-            return tokens[i..end].join(" ");
-        }
-    }
-    "Unknown".into()
-}
-
-fn extract_docker_ports(line: &str) -> String {
-    // PORTS 컬럼은 "0.0.0.0:5432->5432/tcp, 0.0.0.0:8080->80/tcp" 형태. "-&gt;" 포함 토큰 수집.
-    line.split_whitespace()
-        .filter(|t| t.contains("->") || t.contains(':'))
-        .filter(|t| !t.starts_with("Up") && !t.starts_with("Exited") && !t.starts_with("Created"))
-        .take(3)
-        .collect::<Vec<_>>()
-        .join(" ")
+    Ok(containers)
 }
 
 /// `wsl.exe` 출력 디코딩 — 공용 `crates/wsl`로 추출됨 (두 번째 소비자: devbox-manager).
@@ -151,12 +126,45 @@ mod tests {
 
     #[test]
     fn parses_docker_ps() {
-        let input = "CONTAINER ID   IMAGE     COMMAND                  CREATED       STATUS        PORTS                    NAMES\nabc123def456   postgres  \"docker-entrypoint.s…\"   2 hours ago   Up 2 hours    0.0.0.0:5432->5432/tcp   pg\nxyz789          redis     \"docker-entrypoint.s…\"   2 hours ago   Exited (0)    6379/tcp                 cache\n";
-        let containers = parse_docker_ps(input);
+        let input = "abc123def456\tpg\tpostgres:16\tUp 2 hours\t0.0.0.0:5432->5432/tcp\nxyz789\tcache\tredis:7\tExited (0) 1 minute ago\t6379/tcp\n";
+        let containers = parse_docker_ps(input).unwrap();
         assert_eq!(containers.len(), 2);
         assert_eq!(containers[0].id, "abc123def456");
         assert_eq!(containers[0].name, "pg");
-        assert!(containers[0].status.contains("Up"));
-        assert!(containers[1].status.contains("Exited"));
+        assert_eq!(containers[0].image, "postgres:16");
+        assert_eq!(containers[0].status, "Up 2 hours");
+        assert_eq!(containers[0].ports, "0.0.0.0:5432->5432/tcp");
+        assert_eq!(containers[1].status, "Exited (0) 1 minute ago");
+        assert_eq!(containers[1].ports, "6379/tcp");
+    }
+
+    #[test]
+    fn preserves_empty_ports_and_crlf() {
+        let containers = parse_docker_ps("abc123\tworker\tjobs:latest\tCreated\t\r\n").unwrap();
+        assert_eq!(containers.len(), 1);
+        assert_eq!(containers[0].status, "Created");
+        assert!(containers[0].ports.is_empty());
+    }
+
+    #[test]
+    fn rejects_malformed_rows_without_reflecting_source_content() {
+        for input in [
+            "not docker output\n",
+            "\tmissing-id\timage\tUp 1 minute\t80/tcp\n",
+            "abc123\tname\t\tUp 1 minute\t80/tcp\n",
+            "abc123\tname\timage\t\t80/tcp\n",
+            "abc123\tname\timage\tDead\t\textra\n",
+        ] {
+            assert_eq!(
+                parse_docker_ps(input).unwrap_err(),
+                "컨테이너 목록 형식이 올바르지 않습니다."
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_an_empty_container_list() {
+        assert!(parse_docker_ps("").unwrap().is_empty());
+        assert!(parse_docker_ps("\r\n").unwrap().is_empty());
     }
 }

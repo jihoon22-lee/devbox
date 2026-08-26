@@ -269,7 +269,7 @@ Windows 실기 검증에서 수집한 UX 개선 항목. 기능 버그가 아니�
 |---|---|---|---|
 | devbox-manager | 일괄 설치/업데이트 + 다중 선택 | #274에서 catalog checkbox, manifest 1회 조회, 순차 실행, 앱별 결과와 실패 exact-mode retry 구현 | 성공 앱 유지·실패 앱만 재시도. portable current/registry rollback, setup 다중 마법사 확인 |
 | devbox-manager | 설치 위치 표시 + 지정 | #275에서 locator/manifest가 검증한 executable/root/source manifest 읽기 전용 표시 구현. 경로 지정은 후속 | portable actual path만 표시하고 installer 위치는 미추정. lifecycle DTO는 path-free, 변경은 별도 P2 |
-| wsl-desktop | Docker 패널 컴팩트 포맷 | 좌우 잘림을 줄이도록 트리/축약 포맷 도입 | |
+| wsl-desktop | Docker 패널 컴팩트 포맷 | #276에서 name/state/port 우선 disclosure list 구현. 펼치면 ID/image/status/ports 원문과 기존 action 표시 | 260px fixture, 긴 이름 ellipsis·port 2개+나머지 수 축약. 기본 table 추측 대신 Docker format 5필드 사용 |
 | code-pad | 언어 서버 패널 높이 확보 | 언어 서버 목록 패널이 좁아 가독성이 떨어짐 | `App.css:622-627`의 `min-height:120px`. **같은 모달 안에 스크롤 영역이 둘**(`:685-690` installer)이라 그 충돌을 먼저 해소해야 한다 |
 | code-pad | 빠른 열기 → 트리 + 탭/패널 | 평면 리스트 + 잘림을 탐색기형 트리로 개선 | **`quick-open-*` 클래스에 CSS가 0줄**이다(저장소 전체 grep). 재사용할 트리 컴포넌트도 없다 — knowledge-base의 `.tree`도 `paddingLeft`로 깊이를 흉내내는 평면 리스트다. 난이도 **상** |
 | ~~code-pad~~ | ~~상태 표시줄 하단 고정~~ | ~~파일 길이에 따라 움직이지 않고 항상 최하단 고정~~ | #190에서 해결됨 (`.content-area` 높이 제약) |
