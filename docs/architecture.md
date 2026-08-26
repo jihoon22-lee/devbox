@@ -82,8 +82,9 @@ knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror + co
                    └ path/body-free activity/v1 snapshot → Life Log Data Sources
 api-playground:   React(context-menu + History/Collection v2) → commands(secrets sanitizer)
                    → reqwest → HTTP
-code-pad:         React(CodeMirror + tab/editor context-menu) → commands → LSP stdio 서버,
-                   snapshot-checked sibling rename/delete, filesystem/markdown crate → React
+code-pad:         React(CodeMirror + tab/editor context-menu, bounded workspace Quick Open tree)
+                   → commands → LSP stdio 서버, snapshot-checked sibling rename/delete,
+                   filesystem/markdown crate → React
 run-manager:      React(context-menu + bounded log export) → commands → scheduler
                    → platform 실행 어댑터(Windows Job Object/WSL) → SQLite + app-owned 회전 로그
 devbox-manager:   React → commands → catalog/manifest → GitHub release asset
