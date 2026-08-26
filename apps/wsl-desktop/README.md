@@ -37,6 +37,10 @@
   패널에서도 이름·정규화 상태·축약 port mapping을 먼저 보여 주고, 컨테이너를 펼치면 Docker가
   반환한 ID·image·status·ports 원문을 확인하고 start/stop/restart할 수 있다. Docker가 없으면
   설치 안내만 표시하며 engine 설치·설정·리소스 관리는 수행하지 않는다.
+- **runtime snapshot producer** — Workbench와 Life Log가 별도 앱 전환 없이 현재 상태를
+  사용할 수 있도록, 이미 실행 중인 distro만 `wsl-desktop/runtime/v1` read-only snapshot으로
+  발행한다. distro별 실행 중 terminal 수와 Docker availability, bounded container 목록,
+  검증된 published port mapping을 제공하며 stopped distro를 조회 때문에 시작하지 않는다.
 - **open path 핀·최근 경로** — 자주 쓰는 작업 경로 저장
 
 ## 기술
@@ -57,6 +61,13 @@
   ID/name/image/status/ports 다섯 필드만 요청한다. 요약용 상태·port만 frontend에서 파생하며 원문
   필드는 변경하거나 저장하지 않는다. COMMAND, 환경 변수, credential과 resource summary는
   조회하지 않는다.
+- runtime producer의 Docker 조회는 별도 고정 argv
+  `wsl.exe -d <validated-distro> -- docker ps -a --no-trunc --format
+  '{{.ID}}\\t{{.Names}}\\t{{.State}}\\t{{.Ports}}'`만 사용한다. WSL distro 목록도
+  `wsl.exe --list --running --quiet`로 고정해 stopped distro의 암묵적 시작을 막는다. 두
+  명령 모두 shell/`bash -lc`/사용자 명령/환경 확장을 사용하지 않으며, child stdin은 닫고
+  stdout·stderr는 bounded reader로 처리한다. stderr는 오류 분류에 반영하지 않고 decode·log·
+  IPC·snapshot에 노출하지 않는다.
 - WSL 기준선은 `wsl.exe --cd <cwd>`를 지원하는 최신 Microsoft Store WSL이다. 구형 inbox WSL은
   `wsl --update`로 먼저 업데이트하는 것을 권장한다. WSL2는 필요하면 `wsl --install` 후 재부팅하며,
   컨테이너 패널에는 선택 distro에서 실행 가능한 Docker CLI와 engine이 필요하다. devbox가 이를
@@ -69,6 +80,57 @@
   마지막 레이아웃. 터미널 출력·selection·clipboard 내용과 runtime session id는 저장하지 않는다.
 - Docker 컨테이너 목록과 detail 원문은 runtime memory에만 두며 localStorage나 profile에 저장하지
   않는다.
+- 공용 integration snapshot은 `%LOCALAPPDATA%\\devbox\\integration\\wsl-desktop\\v1\\summary.json`
+  하나만 소유한다. envelope의 `data.views.runtime`에는 다음처럼 공개에 필요한 최소 필드만
+  들어간다.
+
+  ```json
+  {
+    "schemaVersion": 1,
+    "producer": "wsl-desktop",
+    "producerVersion": "0.3.3",
+    "generatedAt": "2026-08-26T00:00:00Z",
+    "data": {
+      "views": {
+        "runtime": {
+          "schemaVersion": 1,
+          "freshnessMs": 0,
+          "entries": [{
+            "id": "Ubuntu",
+            "name": "Ubuntu",
+            "state": "running",
+            "terminalCount": 1,
+            "dockerAvailability": "available",
+            "containers": [{
+              "id": "0123456789abcdef",
+              "name": "api",
+              "state": "running",
+              "portMappings": [{ "published": 8080, "target": 80, "protocol": "tcp" }]
+            }]
+          }]
+        }
+      }
+    }
+  }
+  ```
+
+  distro `id`는 WSL에 별도 숫자 ID가 없으므로 검증된 등록 이름과 동일한 안정 key다. `state`는
+  현재 producer가 조회한 실행 중 상태이며, container state는 `created`, `dead`, `exited`,
+  `paused`, `removing`, `restarting`, `running`, `unknown` 중 하나다. Docker의 image, raw
+  status/ports, command, labels, mounts, environment, volume/socket/path와 terminal session
+  id, cwd, title, profile command는 snapshot에 들어가지 않는다.
+- producer bounds는 distro 64개·이름 128 bytes, distro당 container 256개·전체 512개,
+  container ID 64 bytes hex·이름 256 bytes, container당 port mapping 32개·전체 1,024개,
+  distro당 terminal 256개, Docker stdout 4MiB·line 16KiB·stderr 64KiB다. 최종 envelope는
+  공용 `crates/integration`의 10MiB 상한도 통과해야 한다.
+- snapshot은 완성된 envelope만 `crates/integration::write_atomic`으로 교체한다. WSL/Docker
+  timeout(5초), child I/O/출력 상한, malformed row/identity/privacy 검증 실패는 빈 결과나
+  부분 결과로 덮어쓰지 않고 직전 last-good 파일을 보존한다. Docker exit 127은 `missing`,
+  기타 non-zero 종료는 `error`, 성공한 빈 출력은 `available` + 빈 목록으로 구분한다.
+- 앱 시작은 60초 주기 writer를 만들고, dashboard의 성공적인 distro 조회와 terminal
+  start/close/reader cleanup은 250ms debounce trigger를 공유한다. producer당 단일 worker가
+  동시 trigger를 합치며, 수집은 distro별 순차 실행으로 고정한다. snapshot 갱신 실패가
+  terminal I/O나 기존 Docker 패널 동작을 막지는 않는다.
 - `app_local_data_dir/terminal-profiles.json`: version 1 이름 있는 터미널 프로필. atomic replace,
   탭 16개·팬 32개·한 줄 시작 명령 4,096자 제한, 참조 무결성·안전한 절대 cwd·명백한 평문
   credential 검증을 적용한다.

@@ -7057,6 +7057,7 @@ dependencies = [
  "applink",
  "dirs",
  "filesystem",
+ "integration",
  "portable-pty",
  "serde",
  "serde_json",

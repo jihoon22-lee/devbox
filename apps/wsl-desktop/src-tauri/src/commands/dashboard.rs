@@ -1,5 +1,9 @@
+use crate::commands::terminal::SessionState;
 use crate::core::models::{ContainerInfo, DistroInfo};
 use crate::core::parsers::{decode_output, parse_docker_ps, parse_wsl_list};
+use crate::runtime_snapshot::request_snapshot_write;
+use std::sync::Arc;
+use tauri::State;
 use tokio::process::Command;
 
 const DOCKER_PS_FORMAT: &str = "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}";
@@ -7,9 +11,11 @@ const DOCKER_PS_FORMAT: &str = "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{
 /// WSL 배포판 목록을 조회한다. distro 모델은 `DistroInfo` 하나로 통일됐다
 /// (wsl-dashboard의 `parse_wsl_list` 채택. 터미널 UI는 `.name`만 쓴다).
 #[tauri::command]
-pub async fn list_distros() -> Result<Vec<DistroInfo>, String> {
+pub async fn list_distros(state: State<'_, Arc<SessionState>>) -> Result<Vec<DistroInfo>, String> {
     let output = run_wsl(&["-l", "-v"], None).await?;
-    Ok(parse_wsl_list(&output))
+    let distros = parse_wsl_list(&output);
+    request_snapshot_write(Arc::clone(state.inner()));
+    Ok(distros)
 }
 
 /// 임의의 WSL 명령을 지정한 배포판에서 실행하고 출력을 반환한다.
@@ -24,7 +30,10 @@ pub async fn run_wsl_command(distro: String, command: String) -> Result<String, 
 
 /// Docker 컨테이너 목록을 조회한다 (기본 distro에서 docker CLI 실행).
 #[tauri::command]
-pub async fn docker_ps(distro: String) -> Result<Vec<ContainerInfo>, String> {
+pub async fn docker_ps(
+    state: State<'_, Arc<SessionState>>,
+    distro: String,
+) -> Result<Vec<ContainerInfo>, String> {
     // Docker가 소유한 필드만 명시적으로 요청한다. 기본 table 출력은 COMMAND/CREATED의
     // 가변 공백 때문에 STATUS와 PORTS의 경계를 정확히 복원할 수 없다. --no-trunc는
     // detail에서 Docker가 반환한 ID/image/status/ports 원문을 그대로 보여 주기 위함이다.
@@ -43,7 +52,9 @@ pub async fn docker_ps(distro: String) -> Result<Vec<ContainerInfo>, String> {
         None,
     )
     .await?;
-    parse_docker_ps(&output).map_err(str::to_string)
+    let containers = parse_docker_ps(&output).map_err(str::to_string)?;
+    request_snapshot_write(Arc::clone(state.inner()));
+    Ok(containers)
 }
 
 /// Docker 컨테이너를 start/stop/restart 한다.
