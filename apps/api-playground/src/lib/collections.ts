@@ -1,6 +1,6 @@
 // Collection v2 저장·조회 및 v1 fail-closed 안전 변환.
 
-import type { PersistedHistoryRequest, RequestTemplate } from "../types";
+import type { GraphqlRequest, PersistedHistoryRequest, RequestTemplate } from "../types";
 import { isRequestCookie, normalizeCookies } from "./cookies";
 import { isRequestHeader, normalizeHeaders } from "./headers";
 import { isMultipartPart, normalizeMultipartParts } from "./multipart";
@@ -241,8 +241,17 @@ function isRequestTemplate(value: unknown): value is RequestTemplate {
     request.params.every(isKeyValue) &&
     typeof request.body_kind === "string" &&
     typeof request.body === "string" &&
+    (request.graphql === undefined || request.graphql === null || isGraphqlRequest(request.graphql)) &&
     typeof request.timeout_ms === "number"
   );
+}
+
+function isGraphqlRequest(value: unknown): value is GraphqlRequest {
+  if (!value || typeof value !== "object") return false;
+  const request = value as Partial<GraphqlRequest>;
+  return typeof request.query === "string"
+    && typeof request.variables === "string"
+    && typeof request.operation_name === "string";
 }
 
 function isKeyValue(value: unknown): value is { key: string; value: string } {
@@ -272,5 +281,14 @@ function clonePersistedRequest(request: PersistedHistoryRequest): PersistedHisto
     multipart: normalizeMultipartParts(request.multipart),
     params: request.params.map((param) => ({ ...param })),
     auth: request.auth ? { ...request.auth } : null,
+    ...(request.body_kind === "graphql" && request.graphql
+      ? {
+          graphql: {
+            query: request.graphql.query,
+            variables: request.graphql.variables,
+            operation_name: request.graphql.operation_name,
+          },
+        }
+      : {}),
   };
 }

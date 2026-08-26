@@ -1,4 +1,5 @@
 mod commands;
+mod core;
 mod platform;
 
 // TODO(0.5.0): v0.4.x 이전 사용자를 위한 1회성 마이그레이션. 두 릴리스 뒤 제거한다.
@@ -26,10 +27,12 @@ pub fn run() {
     migrate_local_data();
     tauri::Builder::default()
         .manage(commands::request::ResponseHeaderVault::default())
+        .manage(commands::request::RequestCancellation::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::request::send_request,
+            commands::request::cancel_request,
             commands::request::build_revealed_curl,
             commands::request::copy_raw_response_headers,
             commands::request::copy_raw_response_cookies,

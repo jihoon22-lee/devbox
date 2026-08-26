@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
-import type { ApiResponse, ResponseCookie } from "./types";
+import type { ApiResponse, GraphqlResponse, ResponseCookie } from "./types";
 
 export type RawResponseCopyKind = "headers" | "cookies";
 type ResponseTab = "body" | "headers" | "cookies";
@@ -26,6 +26,55 @@ export function formatResponseCookies(cookies: readonly ResponseCookie[]): strin
       .join("; ");
     return `${cookie.name}=${cookie.value}${attributes ? `; ${attributes}` : ""}`;
   }).join("\n");
+}
+
+export function formatGraphqlData(data: unknown): string {
+  try {
+    return JSON.stringify(data, null, 2) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function GraphqlResponseSummary({ response, graphql }: { response: ApiResponse; graphql: GraphqlResponse }) {
+  const httpError = response.status >= 400;
+  return (
+    <section className="graphql-response-summary" aria-label="GraphQL response summary">
+      <div className="graphql-response-state">
+        <span className={httpError ? "graphql-http-error" : "graphql-http-ok"}>
+          HTTP {httpError ? "error" : "success"} ({response.status})
+        </span>
+        <span className="dim">GraphQL envelope: {graphql.envelope}</span>
+      </div>
+      {graphql.errors.length > 0 && (
+        <div className="graphql-errors" role="alert" aria-label="GraphQL errors">
+          <div className="graphql-section-label">GraphQL errors ({graphql.errors.length})</div>
+          {graphql.errors.map((error, index) => (
+            <div className="graphql-error-item" key={`${index}-${error.message}`}>
+              <div>{error.message}</div>
+              {(error.path.length > 0 || error.locations.length > 0) && (
+                <div className="dim graphql-error-meta">
+                  {error.path.length > 0 && `path: ${error.path.join(".")}`}
+                  {error.path.length > 0 && error.locations.length > 0 && " · "}
+                  {error.locations.length > 0 && `location: ${error.locations.map((location) => `${location.line}:${location.column}`).join(", ")}`}
+                </div>
+              )}
+            </div>
+          ))}
+          {graphql.errors_truncated && <div className="dim">Additional GraphQL errors were omitted at the display limit.</div>}
+        </div>
+      )}
+      {graphql.data !== null && graphql.data !== undefined && (
+        <div className="graphql-data">
+          <div className="graphql-section-label">GraphQL data</div>
+          <pre className="resp-body graphql-data-body">{formatGraphqlData(graphql.data) || " "}</pre>
+        </div>
+      )}
+      {graphql.envelope !== "valid" && (
+        <div className="dim">The response is retained in the Body tab, but its GraphQL envelope could not be safely projected.</div>
+      )}
+    </section>
+  );
 }
 
 export function ResponseViewer({
@@ -166,6 +215,7 @@ export function ResponseViewer({
               Copy body
             </button>
           </div>
+          {response.graphql && <GraphqlResponseSummary response={response} graphql={response.graphql} />}
           <pre className="resp-body">{responseText || " "}</pre>
         </section>
       )}

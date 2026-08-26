@@ -1,7 +1,13 @@
+use crate::core::graphql::{
+    build_request_body, parse_response as parse_graphql_response, validate_document,
+    GraphqlRequest, GraphqlResponse, GRAPHQL_INVALID_REQUEST, MAX_GRAPHQL_OPERATION_NAME_BYTES,
+    MAX_GRAPHQL_QUERY_BYTES, MAX_GRAPHQL_VARIABLES_BYTES,
+};
 use crate::platform::platform_sealer;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
 use zeroize::Zeroizing;
@@ -16,6 +22,20 @@ const MAX_MULTIPART_FILE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_MULTIPART_TOTAL_FILE_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_RESPONSE_HEADERS: usize = 100;
 const MAX_RESPONSE_HEADER_BYTES: usize = 64 * 1024;
+const MAX_GRAPHQL_URL_BYTES: usize = 8 * 1024;
+const MIN_GRAPHQL_TIMEOUT_MS: u64 = 100;
+const MAX_GRAPHQL_TIMEOUT_MS: u64 = 120_000;
+const MAX_GRAPHQL_REQUEST_HEADER_BYTES: usize = 128 * 1024;
+const MAX_GRAPHQL_RESPONSE_BODY_BYTES: usize = 4 * 1024 * 1024;
+const GRAPHQL_ENDPOINT_ERROR: &str = "GraphQL endpoint URL이 올바르지 않습니다";
+const GRAPHQL_CREDENTIAL_QUERY_ERROR: &str =
+    "GraphQL endpoint query에 credential을 넣을 수 없습니다";
+const GRAPHQL_HEADER_ROWS_ERROR: &str = "GraphQL header 행 수가 허용된 한계를 초과했습니다";
+const GRAPHQL_HEADER_BYTES_ERROR: &str = "GraphQL header 크기가 허용된 한계를 초과했습니다";
+const GRAPHQL_URL_TOO_LARGE: &str = "GraphQL URL이 허용된 크기를 초과했습니다";
+const REQUEST_CANCELLED: &str = "요청이 취소되었습니다";
+const MAX_REQUEST_ID_BYTES: usize = 128;
+const MAX_PENDING_CANCELLATIONS: usize = 32;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KeyValue {
@@ -115,6 +135,8 @@ pub struct RequestTemplate {
     pub body: String,
     pub auth: Option<AuthConfig>,
     pub timeout_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graphql: Option<GraphqlRequest>,
 }
 
 /// 전송 직전 backend 메모리에만 존재하며 직렬화하지 않는다.
@@ -130,6 +152,7 @@ struct ResolvedRequest {
     body: String,
     auth: Option<AuthConfig>,
     timeout_ms: u64,
+    graphql: Option<GraphqlRequest>,
 }
 
 /// History v2의 wire 형식을 Rust 테스트에서도 고정한다.
@@ -178,6 +201,97 @@ pub struct ApiResponse {
     pub response_id: Option<String>,
     pub raw_headers_available: bool,
     pub headers_truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub graphql: Option<GraphqlResponse>,
+}
+
+#[derive(Default)]
+struct CancellationRouting {
+    current: Option<(String, u64)>,
+    pending: VecDeque<String>,
+}
+
+/// The UI allows one explicit in-flight request to be cancelled. Request IDs
+/// route delayed Cancel IPC to the request that emitted it, while monotonic
+/// tokens still make a newer Send supersede an older native task.
+pub struct RequestCancellation {
+    current: AtomicU64,
+    cancelled: AtomicU64,
+    routing: Mutex<CancellationRouting>,
+}
+
+impl Default for RequestCancellation {
+    fn default() -> Self {
+        Self {
+            current: AtomicU64::new(0),
+            cancelled: AtomicU64::new(0),
+            routing: Mutex::new(CancellationRouting::default()),
+        }
+    }
+}
+
+impl RequestCancellation {
+    fn begin(&self, request_id: &str) -> Result<u64, String> {
+        if !valid_request_id(request_id) {
+            return Err("요청 취소 상태를 준비하지 못했습니다".to_string());
+        }
+        let token = self
+            .current
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                current.checked_add(1)
+            })
+            .map(|previous| previous + 1)
+            .map_err(|_| "요청 취소 상태를 준비하지 못했습니다".to_string())?;
+        let mut routing = self
+            .routing
+            .lock()
+            .map_err(|_| "요청 취소 상태를 준비하지 못했습니다".to_string())?;
+        routing.current = Some((request_id.to_string(), token));
+        if let Some(index) = routing
+            .pending
+            .iter()
+            .position(|pending| pending == request_id)
+        {
+            routing.pending.remove(index);
+            self.cancelled.store(token, Ordering::Release);
+        }
+        Ok(token)
+    }
+
+    fn cancel(&self, request_id: &str) {
+        if !valid_request_id(request_id) {
+            return;
+        }
+        let Ok(mut routing) = self.routing.lock() else {
+            return;
+        };
+        if let Some((current_id, token)) = routing.current.as_ref() {
+            if current_id == request_id && self.current.load(Ordering::Acquire) == *token {
+                self.cancelled.store(*token, Ordering::Release);
+                return;
+            }
+        }
+        if routing.pending.iter().any(|pending| pending == request_id) {
+            return;
+        }
+        if routing.pending.len() == MAX_PENDING_CANCELLATIONS {
+            routing.pending.pop_front();
+        }
+        routing.pending.push_back(request_id.to_string());
+    }
+
+    fn is_cancelled(&self, request_token: u64) -> bool {
+        self.current.load(Ordering::Acquire) != request_token
+            || self.cancelled.load(Ordering::Acquire) == request_token
+    }
+}
+
+fn valid_request_id(request_id: &str) -> bool {
+    !request_id.is_empty()
+        && request_id.len() <= MAX_REQUEST_ID_BYTES
+        && request_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 type RawResponseHeader = (Zeroizing<String>, Zeroizing<String>);
@@ -272,27 +386,63 @@ struct ExecutedResponse {
 pub async fn send_request(
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
+    request_id: String,
     response_headers: tauri::State<'_, ResponseHeaderVault>,
+    cancellation: tauri::State<'_, RequestCancellation>,
 ) -> Result<ApiResponse, String> {
-    send_request_with_vault(req, environment, response_headers.inner()).await
+    send_request_with_vault_and_cancellation(
+        req,
+        environment,
+        &request_id,
+        response_headers.inner(),
+        cancellation.inner(),
+    )
+    .await
 }
 
+#[cfg(test)]
 async fn send_request_with_vault(
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
     response_headers: &ResponseHeaderVault,
 ) -> Result<ApiResponse, String> {
+    let cancellation = RequestCancellation::default();
+    send_request_with_vault_and_cancellation(
+        req,
+        environment,
+        "test-request",
+        response_headers,
+        &cancellation,
+    )
+    .await
+}
+
+#[tauri::command]
+pub fn cancel_request(cancellation: tauri::State<'_, RequestCancellation>, request_id: String) {
+    cancellation.cancel(&request_id);
+}
+
+async fn send_request_with_vault_and_cancellation(
+    req: RequestTemplate,
+    environment: Vec<EnvironmentVariable>,
+    request_id: &str,
+    response_headers: &ResponseHeaderVault,
+    cancellation: &RequestCancellation,
+) -> Result<ApiResponse, String> {
+    let request_token = cancellation.begin(request_id)?;
     let response_id = response_headers.begin_request()?;
     validate_cookie_rows(&req.headers, &req.cookies)?;
     validate_multipart_rows(&req)?;
+    validate_graphql_header_rows(&req)?;
     let sealer = platform_sealer();
     let (mut resolved, environment_secrets) =
         resolve_template(&req, &environment, sealer.as_ref()).map_err(|_| safe_secret_error())?;
     validate_cookie_configuration(&resolved)?;
     validate_multipart_configuration(&resolved)?;
     prepare_multipart_files(&mut resolved)?;
+    prepare_graphql_request(&mut resolved)?;
     let redactor = Redactor::for_request(&resolved, environment_secrets);
-    let mut executed = execute_request(resolved, &redactor).await?;
+    let mut executed = execute_request(resolved, &redactor, cancellation, request_token).await?;
     if !executed.response.headers_truncated
         && response_headers.store_if_current(&response_id, executed.raw_headers)?
     {
@@ -328,12 +478,14 @@ pub fn build_revealed_curl(
 ) -> Result<String, String> {
     validate_cookie_rows(&req.headers, &req.cookies)?;
     validate_multipart_rows(&req)?;
+    validate_graphql_header_rows(&req)?;
     let sealer = platform_sealer();
     let (mut resolved, _environment_secrets) =
         resolve_template(&req, &environment, sealer.as_ref()).map_err(|_| safe_secret_error())?;
     validate_cookie_configuration(&resolved)?;
     validate_multipart_configuration(&resolved)?;
     prepare_multipart_files(&mut resolved)?;
+    prepare_graphql_request(&mut resolved)?;
     Ok(build_curl(&resolved))
 }
 
@@ -351,6 +503,8 @@ pub fn sanitize_persisted_json(
 async fn execute_request(
     req: ResolvedRequest,
     redactor: &Redactor,
+    cancellation: &RequestCancellation,
+    request_token: u64,
 ) -> Result<ExecutedResponse, String> {
     validate_cookie_configuration(&req)?;
     validate_multipart_configuration(&req)?;
@@ -359,16 +513,34 @@ async fn execute_request(
             .map_err(|_| "JSON 본문 형식이 올바르지 않습니다".to_string())?;
     }
 
+    let timeout_ms = if req.body_kind == "graphql" {
+        req.timeout_ms
+    } else {
+        req.timeout_ms.max(1000)
+    };
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(req.timeout_ms.max(1000)))
+        .timeout(std::time::Duration::from_millis(timeout_ms))
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| "HTTP 클라이언트를 준비하지 못했습니다".to_string())?;
     let mut method = reqwest::Method::from_bytes(req.method.as_bytes())
         .map_err(|_| "HTTP 메서드가 올바르지 않습니다".to_string())?;
-    let initial_url = append_query(&req.url, &req.params);
+    let initial_url = if req.body_kind == "graphql" && req.method == "GET" {
+        let graphql = req
+            .graphql
+            .as_ref()
+            .ok_or_else(|| GRAPHQL_INVALID_REQUEST.to_string())?;
+        append_graphql_query(&req.url, &req.params, graphql)?
+    } else if req.body_kind == "graphql" {
+        append_graphql_params(&req.url, &req.params)?
+    } else {
+        append_query(&req.url, &req.params)
+    };
     let mut current_url = reqwest::Url::parse(&initial_url)
         .map_err(|_| "요청 URL이 올바르지 않습니다".to_string())?;
+    if req.body_kind == "graphql" {
+        validate_graphql_endpoint_url(current_url.as_str())?;
+    }
     let mut allow_sensitive = true;
     let mut include_body = true;
     let mut redirects = Vec::new();
@@ -376,6 +548,9 @@ async fn execute_request(
     let cookie_header = build_cookie_header(&req.cookies);
 
     for redirect_count in 0..=MAX_REDIRECTS {
+        if cancellation.is_cancelled(request_token) {
+            return Err(REQUEST_CANCELLED.to_string());
+        }
         let mut builder = client.request(method.clone(), current_url.clone());
         for header in &req.headers {
             if !header.enabled
@@ -384,6 +559,7 @@ async fn execute_request(
                 || !include_body && is_body_header(&header.key)
                 || !allow_sensitive && redactor.redact_text(&header.value) != header.value
                 || req.body_kind == "multipart" && is_multipart_derived_header(&header.key)
+                || req.body_kind == "graphql" && is_graphql_derived_header(&header.key)
             {
                 continue;
             }
@@ -417,7 +593,15 @@ async fn execute_request(
             builder = apply_body(builder, &req).await?;
         }
 
-        let response = builder.send().await.map_err(safe_request_error)?;
+        let response = tokio::select! {
+            response = builder.send() => response.map_err(safe_request_error)?,
+            () = wait_for_cancellation(cancellation, request_token) => {
+                return Err(REQUEST_CANCELLED.to_string());
+            }
+        };
+        if cancellation.is_cancelled(request_token) {
+            return Err(REQUEST_CANCELLED.to_string());
+        }
         let status = response.status();
         if status.is_redirection() {
             if let Some(location) = response.headers().get(reqwest::header::LOCATION) {
@@ -430,6 +614,9 @@ async fn execute_request(
                 let next_url = current_url
                     .join(location)
                     .map_err(|_| "리다이렉트 위치가 올바르지 않습니다".to_string())?;
+                if req.body_kind == "graphql" {
+                    validate_graphql_endpoint_url(next_url.as_str())?;
+                }
                 let redacted_location = redactor.redact_url(next_url.as_str());
                 let cross_origin = is_cross_origin(&current_url, &next_url);
                 if cross_origin && redacted_location != next_url.as_str() {
@@ -446,6 +633,17 @@ async fn execute_request(
                 if redirect_switches_to_get(status.as_u16(), &method) {
                     method = reqwest::Method::GET;
                     include_body = false;
+                    if req.body_kind == "graphql" {
+                        if let Some(graphql) = req.graphql.as_ref() {
+                            current_url = reqwest::Url::parse(&append_graphql_query(
+                                next_url.as_str(),
+                                &req.params,
+                                graphql,
+                            )?)
+                            .map_err(|_| GRAPHQL_ENDPOINT_ERROR.to_string())?;
+                            continue;
+                        }
+                    }
                 }
                 current_url = next_url;
                 continue;
@@ -453,11 +651,19 @@ async fn execute_request(
         }
 
         let captured_headers = capture_response_headers(response.headers(), redactor);
-        let body = response
-            .text()
-            .await
-            .map_err(|_| "응답 본문을 안전하게 읽지 못했습니다".to_string())?;
+        let body = read_response_body(
+            response,
+            if req.body_kind == "graphql" {
+                MAX_GRAPHQL_RESPONSE_BODY_BYTES
+            } else {
+                usize::MAX
+            },
+            cancellation,
+            request_token,
+        )
+        .await?;
         let body = redactor.redact_body(&body);
+        let graphql = (req.body_kind == "graphql").then(|| parse_graphql_response(&body));
         let is_json = captured_headers.masked.iter().any(|header| {
             header.key.eq_ignore_ascii_case("content-type") && header.value.contains("json")
         });
@@ -476,6 +682,7 @@ async fn execute_request(
                 response_id: None,
                 raw_headers_available: false,
                 headers_truncated: captured_headers.truncated,
+                graphql,
             },
             raw_headers: captured_headers.raw,
         });
@@ -496,9 +703,43 @@ async fn apply_body(
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(encode_form(&req.body)),
         "multipart" => builder.multipart(build_multipart_form(req).await?),
+        "graphql" if req.method == "POST" => builder
+            .header("Content-Type", "application/json")
+            .body(req.body.clone()),
         _ if !req.body.is_empty() => builder.body(req.body.clone()),
         _ => builder,
     })
+}
+
+async fn read_response_body(
+    mut response: reqwest::Response,
+    max_bytes: usize,
+    cancellation: &RequestCancellation,
+    request_token: u64,
+) -> Result<String, String> {
+    let mut bytes = Vec::new();
+    loop {
+        let chunk = tokio::select! {
+            chunk = response.chunk() => {
+                chunk.map_err(|_| "응답 본문을 안전하게 읽지 못했습니다".to_string())?
+            }
+            () = wait_for_cancellation(cancellation, request_token) => {
+                return Err(REQUEST_CANCELLED.to_string());
+            }
+        };
+        let Some(chunk) = chunk else { break };
+        if bytes.len().saturating_add(chunk.len()) > max_bytes {
+            return Err("응답 본문이 허용된 크기를 초과했습니다".to_string());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    String::from_utf8(bytes).map_err(|_| "응답 본문을 안전하게 읽지 못했습니다".to_string())
+}
+
+async fn wait_for_cancellation(cancellation: &RequestCancellation, request_token: u64) {
+    while !cancellation.is_cancelled(request_token) {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
 }
 
 async fn build_multipart_form(req: &ResolvedRequest) -> Result<reqwest::multipart::Form, String> {
@@ -544,6 +785,14 @@ fn resolve_template(
     }
 
     let replace = |value: &str| replace_references(value, &values);
+    let graphql = (req.body_kind == "graphql")
+        .then_some(req.graphql.as_ref())
+        .flatten()
+        .map(|graphql| GraphqlRequest {
+            query: replace(&graphql.query),
+            variables: replace(&graphql.variables),
+            operation_name: replace(&graphql.operation_name),
+        });
     Ok((
         ResolvedRequest {
             method: req.method.clone(),
@@ -599,7 +848,7 @@ fn resolve_template(
                 })
                 .collect(),
             body_kind: req.body_kind.clone(),
-            body: if req.body_kind == "multipart" {
+            body: if matches!(req.body_kind.as_str(), "multipart" | "graphql") {
                 String::new()
             } else {
                 replace(&req.body)
@@ -613,9 +862,147 @@ fn resolve_template(
                 api_value: replace(&auth.api_value),
             }),
             timeout_ms: req.timeout_ms,
+            graphql,
         },
         environment_secrets,
     ))
+}
+
+fn prepare_graphql_request(req: &mut ResolvedRequest) -> Result<(), String> {
+    if req.body_kind != "graphql" {
+        return Ok(());
+    }
+    if !matches!(req.method.as_str(), "GET" | "POST") {
+        return Err(GRAPHQL_INVALID_REQUEST.to_string());
+    }
+    if req.timeout_ms < MIN_GRAPHQL_TIMEOUT_MS || req.timeout_ms > MAX_GRAPHQL_TIMEOUT_MS {
+        return Err("GraphQL timeout이 허용된 범위를 벗어났습니다".to_string());
+    }
+    let graphql = req
+        .graphql
+        .as_ref()
+        .ok_or_else(|| GRAPHQL_INVALID_REQUEST.to_string())?;
+    if graphql.query.len() > MAX_GRAPHQL_QUERY_BYTES
+        || graphql.variables.len() > MAX_GRAPHQL_VARIABLES_BYTES
+        || graphql.operation_name.len() > MAX_GRAPHQL_OPERATION_NAME_BYTES
+    {
+        return Err(GRAPHQL_INVALID_REQUEST.to_string());
+    }
+    validate_graphql_endpoint_url(&req.url)?;
+    validate_graphql_params(&req.params)?;
+    validate_document(&graphql.query, &graphql.operation_name)?;
+    validate_graphql_headers(&req.headers)?;
+    req.body = build_request_body(graphql)?;
+    if req.method == "GET" {
+        // GET carries the GraphQL document in URL parameters, never in a request body.
+        req.body.clear();
+    }
+    Ok(())
+}
+
+fn validate_graphql_endpoint_url(value: &str) -> Result<(), String> {
+    if value.len() > MAX_GRAPHQL_URL_BYTES || value.bytes().any(|byte| byte.is_ascii_control()) {
+        return Err(GRAPHQL_ENDPOINT_ERROR.to_string());
+    }
+    let url = reqwest::Url::parse(value).map_err(|_| GRAPHQL_ENDPOINT_ERROR.to_string())?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || url.fragment().is_some()
+    {
+        return Err(GRAPHQL_ENDPOINT_ERROR.to_string());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(GRAPHQL_ENDPOINT_ERROR.to_string());
+    }
+    for (key, _value) in url.query_pairs() {
+        if is_sensitive_name(&key) {
+            return Err(GRAPHQL_CREDENTIAL_QUERY_ERROR.to_string());
+        }
+    }
+    Ok(())
+}
+
+fn validate_graphql_header_rows(req: &RequestTemplate) -> Result<(), String> {
+    if req.body_kind == "graphql" {
+        validate_graphql_headers(&req.headers)?;
+    }
+    Ok(())
+}
+
+fn validate_graphql_headers(headers: &[RequestHeader]) -> Result<(), String> {
+    if headers.len() > MAX_REQUEST_HEADERS {
+        return Err(GRAPHQL_HEADER_ROWS_ERROR.to_string());
+    }
+    let header_bytes = headers
+        .iter()
+        .map(|header| {
+            header
+                .key
+                .len()
+                .saturating_add(header.value.len())
+                .saturating_add(4)
+        })
+        .try_fold(0usize, |sum, value| sum.checked_add(value))
+        .ok_or_else(|| GRAPHQL_INVALID_REQUEST.to_string())?;
+    if header_bytes > MAX_GRAPHQL_REQUEST_HEADER_BYTES {
+        return Err(GRAPHQL_HEADER_BYTES_ERROR.to_string());
+    }
+    Ok(())
+}
+
+fn append_graphql_query(
+    base: &str,
+    params: &[KeyValue],
+    graphql: &GraphqlRequest,
+) -> Result<String, String> {
+    let base = append_graphql_params(base, params)?;
+    let mut url = reqwest::Url::parse(&base).map_err(|_| GRAPHQL_ENDPOINT_ERROR.to_string())?;
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("query", graphql.query.trim());
+        let variables = if graphql.variables.trim().is_empty() {
+            "{}".to_string()
+        } else {
+            let variables = crate::core::graphql::parse_variables(&graphql.variables)?;
+            serde_json::to_string(&variables).map_err(|_| GRAPHQL_INVALID_REQUEST.to_string())?
+        };
+        query.append_pair("variables", &variables);
+        if !graphql.operation_name.trim().is_empty() {
+            query.append_pair("operationName", graphql.operation_name.trim());
+        }
+    }
+    let value = url.to_string();
+    if value.len() > MAX_GRAPHQL_URL_BYTES {
+        return Err(GRAPHQL_URL_TOO_LARGE.to_string());
+    }
+    Ok(value)
+}
+
+fn validate_graphql_params(params: &[KeyValue]) -> Result<(), String> {
+    if params
+        .iter()
+        .any(|param| !param.key.is_empty() && is_sensitive_name(&param.key))
+    {
+        return Err(GRAPHQL_CREDENTIAL_QUERY_ERROR.to_string());
+    }
+    Ok(())
+}
+
+fn append_graphql_params(base: &str, params: &[KeyValue]) -> Result<String, String> {
+    validate_graphql_endpoint_url(base)?;
+    validate_graphql_params(params)?;
+    let mut url = reqwest::Url::parse(base).map_err(|_| GRAPHQL_ENDPOINT_ERROR.to_string())?;
+    if params.iter().any(|param| !param.key.is_empty()) {
+        let mut query = url.query_pairs_mut();
+        for param in params.iter().filter(|param| !param.key.is_empty()) {
+            query.append_pair(&param.key, &param.value);
+        }
+    }
+    let value = url.to_string();
+    if value.len() > MAX_GRAPHQL_URL_BYTES {
+        return Err(GRAPHQL_URL_TOO_LARGE.to_string());
+    }
+    Ok(value)
 }
 
 fn unseal_environment_value(
@@ -636,6 +1023,14 @@ fn referenced_variable_names(req: &RequestTemplate) -> BTreeSet<String> {
     collect(&req.url);
     if req.body_kind != "multipart" {
         collect(&req.body);
+    }
+    if req.body_kind == "graphql" {
+        let Some(graphql) = &req.graphql else {
+            return names;
+        };
+        collect(&graphql.query);
+        collect(&graphql.variables);
+        collect(&graphql.operation_name);
     }
     for header in req
         .headers
@@ -740,6 +1135,7 @@ fn is_reference_char(character: char) -> bool {
 
 struct Redactor {
     secrets: Vec<Zeroizing<String>>,
+    mask_graphql_query: bool,
 }
 
 impl Redactor {
@@ -749,6 +1145,7 @@ impl Redactor {
         environment_secrets.dedup_by(|left, right| left.as_str() == right.as_str());
         Self {
             secrets: environment_secrets,
+            mask_graphql_query: req.body_kind == "graphql",
         }
     }
 
@@ -757,7 +1154,7 @@ impl Redactor {
     }
 
     fn redact_url(&self, value: &str) -> String {
-        redact_url(value, &self.secrets)
+        redact_url(value, &self.secrets, self.mask_graphql_query)
     }
 
     fn redact_body(&self, value: &str) -> String {
@@ -813,6 +1210,80 @@ fn collect_request_secrets(req: &ResolvedRequest, secrets: &mut Vec<Zeroizing<St
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&req.body) {
         collect_json_secrets(&json, "", secrets);
     }
+    if let Some(graphql) = &req.graphql {
+        collect_graphql_secrets(graphql, secrets);
+    }
+}
+
+fn collect_graphql_secrets(graphql: &GraphqlRequest, secrets: &mut Vec<Zeroizing<String>>) {
+    // Query argument literals are not part of the generated JSON body. Capture only
+    // literals attached to credential-shaped argument names; ordinary identifiers and
+    // display data should remain useful while known token patterns are still handled by
+    // the general redactor. Variable values are covered by the generated body's
+    // sensitive-key scan below.
+    let bytes = graphql.query.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if !(bytes[index] == b'_' || bytes[index].is_ascii_alphabetic()) {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        index += 1;
+        while index < bytes.len() && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_')
+        {
+            index += 1;
+        }
+        let name = &graphql.query[start..index];
+        if !is_sensitive_name(name) {
+            continue;
+        }
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        if bytes.get(index) != Some(&b':') {
+            continue;
+        }
+        index += 1;
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        if bytes.get(index) != Some(&b'"') {
+            continue;
+        }
+        let literal_start = index;
+        let (next, _block) = match scan_graphql_literal(bytes, index) {
+            Ok(value) => value,
+            Err(_) => break,
+        };
+        let literal = &graphql.query[literal_start..next];
+        let value = serde_json::from_str::<String>(literal)
+            .unwrap_or_else(|_| literal.trim_matches('"').to_string());
+        if !value.is_empty() {
+            secrets.push(Zeroizing::new(value));
+        }
+        index = next;
+    }
+}
+
+fn scan_graphql_literal(bytes: &[u8], start: usize) -> Result<(usize, bool), ()> {
+    let block = bytes.get(start..start + 3) == Some(b"\"\"\"");
+    let closing = if block { b"\"\"\"" as &[u8] } else { b"\"" };
+    let mut index = start + if block { 3 } else { 1 };
+    while index < bytes.len() {
+        if bytes.get(index..index + closing.len()) == Some(closing) {
+            return Ok((index + closing.len(), block));
+        }
+        if !block && bytes[index] == b'\\' {
+            index += 1;
+            if index < bytes.len() {
+                index += 1;
+            }
+        } else {
+            index += 1;
+        }
+    }
+    Err(())
 }
 
 fn collect_json_secrets(
@@ -877,6 +1348,11 @@ fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zero
         *value = serde_json::Value::String(REDACTED.to_string());
         return;
     }
+    let is_graphql_request = value
+        .as_object()
+        .and_then(|object| object.get("body_kind"))
+        .and_then(serde_json::Value::as_str)
+        == Some("graphql");
     if let serde_json::Value::Object(object) = value {
         let is_multipart_request =
             object.get("body_kind").and_then(serde_json::Value::as_str) == Some("multipart");
@@ -884,6 +1360,16 @@ fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zero
             if let Some(body) = object.get_mut("body") {
                 *body = serde_json::Value::String(String::new());
             }
+        }
+        if object.get("body_kind").and_then(serde_json::Value::as_str) == Some("graphql") {
+            if let Some(graphql) = object.get_mut("graphql") {
+                sanitize_persisted_graphql(graphql, secrets);
+            }
+            if let Some(body) = object.get_mut("body") {
+                *body = serde_json::Value::String(String::new());
+            }
+        } else {
+            object.remove("graphql");
         }
     }
     if key == "multipart" {
@@ -925,6 +1411,9 @@ fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zero
     match value {
         serde_json::Value::Object(object) => {
             for (child_key, child) in object {
+                if is_graphql_request && child_key == "graphql" {
+                    continue;
+                }
                 sanitize_json_value(child, child_key, secrets);
             }
         }
@@ -1007,6 +1496,146 @@ fn sanitize_persisted_multipart(value: &mut serde_json::Value, secrets: &[Zeroiz
         );
         *part = serde_json::Value::Object(safe);
     }
+}
+
+fn sanitize_persisted_graphql(value: &mut serde_json::Value, secrets: &[Zeroizing<String>]) {
+    let serde_json::Value::Object(object) = value else {
+        *value = serde_json::Value::String(REDACTED.to_string());
+        return;
+    };
+    let query = object
+        .get("query")
+        .and_then(serde_json::Value::as_str)
+        .map(mask_graphql_query_literals)
+        .map(|query| redact_graphql_query(&query, secrets))
+        .unwrap_or_else(|| REDACTED.to_string());
+    let variables = match object.get("variables").and_then(serde_json::Value::as_str) {
+        Some(variables) if variables.trim().is_empty() => String::new(),
+        Some(variables) => serde_json::from_str::<serde_json::Value>(variables)
+            .map(|mut parsed| {
+                sanitize_graphql_variables(&mut parsed, "", secrets);
+                serde_json::to_string(&parsed).unwrap_or_else(|_| REDACTED.to_string())
+            })
+            .unwrap_or_else(|_| REDACTED.to_string()),
+        None => REDACTED.to_string(),
+    };
+    let operation_name = object
+        .get("operation_name")
+        .and_then(serde_json::Value::as_str)
+        .map(|name| redact_text(name, secrets))
+        .unwrap_or_else(|| REDACTED.to_string());
+    let mut safe = serde_json::Map::new();
+    safe.insert("query".to_string(), serde_json::Value::String(query));
+    safe.insert(
+        "variables".to_string(),
+        serde_json::Value::String(variables),
+    );
+    safe.insert(
+        "operation_name".to_string(),
+        serde_json::Value::String(operation_name),
+    );
+    *value = serde_json::Value::Object(safe);
+}
+
+fn sanitize_graphql_variables(
+    value: &mut serde_json::Value,
+    key: &str,
+    secrets: &[Zeroizing<String>],
+) {
+    if is_sensitive_name(key) {
+        if value.as_str().is_some_and(is_exact_reference) {
+            return;
+        }
+        *value = serde_json::Value::String(REDACTED.to_string());
+        return;
+    }
+    match value {
+        serde_json::Value::Object(object) => {
+            for (child_key, child) in object {
+                sanitize_graphql_variables(child, child_key, secrets);
+            }
+        }
+        serde_json::Value::Array(array) => {
+            for child in array {
+                sanitize_graphql_variables(child, "", secrets);
+            }
+        }
+        serde_json::Value::String(text) => {
+            *text = redact_text(text, secrets);
+        }
+        _ => {}
+    }
+}
+
+fn redact_graphql_query(query: &str, secrets: &[Zeroizing<String>]) -> String {
+    let mut redacted = query.to_string();
+    for secret in secrets.iter().filter(|secret| !secret.is_empty()) {
+        redacted = redacted.replace(secret.as_str(), REDACTED);
+    }
+    redact_known_token_patterns(&redacted)
+}
+
+fn mask_graphql_query_literals(query: &str) -> String {
+    let bytes = query.as_bytes();
+    let mut output = String::with_capacity(query.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'"' {
+            if let Some(character) = query[index..].chars().next() {
+                output.push(character);
+                index += character.len_utf8();
+            } else {
+                break;
+            }
+            continue;
+        }
+        let block = bytes.get(index..index + 3) == Some(b"\"\"\"");
+        let opening = if block { 3 } else { 1 };
+        let closing: &[u8] = if block { b"\"\"\"" } else { b"\"" };
+        let start = index;
+        index += opening;
+        let mut closed = false;
+        while index < bytes.len() {
+            if bytes.get(index..index + closing.len()) == Some(closing) {
+                let inner = &query[start + opening..index];
+                if is_exact_reference(inner) {
+                    output.push_str(&query[start..index + closing.len()]);
+                } else if block {
+                    output.push_str("\"\"\"[REDACTED]\"\"\"");
+                } else {
+                    output.push_str("\"[REDACTED]\"");
+                }
+                index += closing.len();
+                closed = true;
+                break;
+            }
+            if !block && bytes[index] == b'\\' {
+                index += 1;
+                if index < bytes.len() {
+                    index += query[index..]
+                        .chars()
+                        .next()
+                        .map(char::len_utf8)
+                        .unwrap_or(1);
+                }
+            } else {
+                index += query[index..]
+                    .chars()
+                    .next()
+                    .map(char::len_utf8)
+                    .unwrap_or(1);
+            }
+        }
+        if !closed {
+            output.push_str(if block {
+                "\"\"\"[REDACTED]\"\"\""
+            } else {
+                "\"[REDACTED]\""
+            });
+            break;
+        }
+    }
+    output
 }
 
 fn contains_reference(value: &str) -> bool {
@@ -1105,14 +1734,17 @@ fn looks_like_secret(value: &str) -> bool {
     prefixed || aws || jwt
 }
 
-fn redact_url(value: &str, secrets: &[Zeroizing<String>]) -> String {
+fn redact_url(value: &str, secrets: &[Zeroizing<String>], mask_graphql_query: bool) -> String {
     let Ok(mut url) = reqwest::Url::parse(value) else {
         return redact_text(value, secrets);
     };
     let pairs = url
         .query_pairs()
         .map(|(key, value)| {
-            let value = if is_sensitive_name(&key) {
+            let value = if is_sensitive_name(&key)
+                || (mask_graphql_query
+                    && matches!(key.as_ref(), "query" | "variables" | "operationName"))
+            {
                 REDACTED.to_string()
             } else {
                 redact_text(&value, secrets)
@@ -1310,6 +1942,19 @@ fn is_multipart_derived_header(name: &str) -> bool {
     matches!(
         name.trim().to_ascii_lowercase().replace('_', "-").as_str(),
         "content-type" | "content-length" | "transfer-encoding"
+    )
+}
+
+fn is_graphql_derived_header(name: &str) -> bool {
+    matches!(
+        name.trim().to_ascii_lowercase().replace('_', "-").as_str(),
+        "content-type"
+            | "content-length"
+            | "transfer-encoding"
+            | "trailer"
+            | "expect"
+            | "digest"
+            | "repr-digest"
     )
 }
 
@@ -1596,7 +2241,14 @@ fn encode_form(body: &str) -> String {
 }
 
 fn build_curl(req: &ResolvedRequest) -> String {
-    let url = append_query(&req.url, &req.params);
+    let url = if req.body_kind == "graphql" && req.method == "GET" {
+        req.graphql
+            .as_ref()
+            .and_then(|graphql| append_graphql_query(&req.url, &req.params, graphql).ok())
+            .unwrap_or_else(|| append_query(&req.url, &req.params))
+    } else {
+        append_query(&req.url, &req.params)
+    };
     let mut lines = vec![format!(
         "curl --request {} {}",
         req.method,
@@ -1606,6 +2258,7 @@ fn build_curl(req: &ResolvedRequest) -> String {
         header.enabled
             && !header.key.is_empty()
             && !(req.body_kind == "multipart" && is_multipart_derived_header(&header.key))
+            && !(req.body_kind == "graphql" && is_graphql_derived_header(&header.key))
     }) {
         lines.push(format!(
             "  --header {}",
@@ -1655,7 +2308,13 @@ fn build_curl(req: &ResolvedRequest) -> String {
                 shell_quote(&format!("{}={value}{suffix}", part.name))
             ));
         }
-    } else if req.body_kind != "none" && !req.body.is_empty() {
+    } else if req.body_kind != "none" && req.body_kind != "graphql" && !req.body.is_empty() {
+        lines.push(format!("  --data {}", shell_quote(&req.body)));
+    } else if req.body_kind == "graphql" && req.method == "POST" && !req.body.is_empty() {
+        lines.push(format!(
+            "  --header {}",
+            shell_quote("Content-Type: application/json")
+        ));
         lines.push(format!("  --data {}", shell_quote(&req.body)));
     }
     lines.join(" \\\n")
@@ -1714,6 +2373,7 @@ mod tests {
                 ..Default::default()
             }),
             timeout_ms: 5_000,
+            graphql: None,
         }
     }
 
@@ -1742,6 +2402,36 @@ mod tests {
         assert!(resolved.url.contains("top-secret"));
         assert_eq!(resolved.auth.unwrap().token, "top-secret");
         assert_eq!(secrets[0].as_str(), "top-secret");
+    }
+
+    #[test]
+    fn non_graphql_requests_drop_stale_graphql_state_without_unsealing_it() {
+        let mut request = template();
+        request.url = "https://example.com/api".into();
+        request.body_kind = "none".into();
+        request.body.clear();
+        request.auth = None;
+        request.graphql = Some(GraphqlRequest {
+            query: "query Viewer { viewer(token: \"${STALE}\") { id } }".into(),
+            variables: r#"{"token":"${STALE}"}"#.into(),
+            operation_name: String::new(),
+        });
+        let invalid_stale_secret = EnvironmentVariable {
+            key: "STALE".into(),
+            value: "not-base64".into(),
+            secret: true,
+        };
+
+        let (resolved, secrets) =
+            resolve_template(&request, &[invalid_stale_secret], &MockSealer).unwrap();
+        assert!(resolved.graphql.is_none());
+        assert!(secrets.is_empty());
+
+        let serialized = serde_json::to_string(&request).unwrap();
+        let sanitized = sanitize_persisted_json_with_sealer(&serialized, &[], &MockSealer).unwrap();
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&sanitized).unwrap()["graphql"].is_null()
+        );
     }
 
     #[test]
@@ -1982,6 +2672,7 @@ mod tests {
             &headers,
             &Redactor {
                 secrets: vec![Zeroizing::new("server-secret".to_string())],
+                mask_graphql_query: false,
             },
         );
 
@@ -2055,6 +2746,7 @@ mod tests {
             &oversized,
             &Redactor {
                 secrets: Vec::new(),
+                mask_graphql_query: false,
             },
         );
         assert!(captured.truncated);
@@ -2087,6 +2779,44 @@ mod tests {
         assert!(!output.contains("top-secret"));
         assert!(!output.contains("direct"));
         assert!(output.contains(REDACTED));
+    }
+
+    #[test]
+    fn persisted_graphql_keeps_shape_but_masks_query_and_variable_secrets() {
+        let input = r#"{
+            "body_kind":"graphql",
+            "body":"stale generated body",
+            "graphql":{
+                "query":"query Viewer { viewer(token: \"query-secret\") { id } }",
+                "variables":"{\"token\":\"variable-secret\",\"mixed_token\":\"prefix-${TOKEN}\",\"reference_token\":\"${TOKEN}\",\"id\":\"42\"}",
+                "operation_name":"Viewer",
+                "unknown":"drop-me"
+            }
+        }"#;
+        let output = sanitize_persisted_json_with_sealer(input, &[], &MockSealer).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(json["body"], "");
+        assert_eq!(
+            json["graphql"]["query"], "query Viewer { viewer(token: \"[REDACTED]\") { id } }",
+            "sanitized query: {}",
+            json["graphql"]["query"]
+        );
+        assert_eq!(
+            json["graphql"]["variables"],
+            "{\"id\":\"42\",\"mixed_token\":\"[REDACTED]\",\"reference_token\":\"${TOKEN}\",\"token\":\"[REDACTED]\"}"
+        );
+        assert_eq!(json["graphql"]["operation_name"], "Viewer");
+        assert!(json["graphql"].get("unknown").is_none());
+        assert!(!output.contains("query-secret"));
+        assert!(!output.contains("variable-secret"));
+    }
+
+    #[test]
+    fn malformed_graphql_literal_is_masked_without_raw_persistence() {
+        let input = r#"{"body_kind":"graphql","graphql":{"query":"query Viewer { viewer(token: \"unterminated","variables":"","operation_name":""}}"#;
+        let output = sanitize_persisted_json_with_sealer(input, &[], &MockSealer).unwrap();
+        assert!(!output.contains("unterminated"));
+        assert!(output.contains("[REDACTED]"));
     }
 
     #[test]
@@ -2580,6 +3310,276 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(cookie_lines, vec!["cookie: session=one; token=two"]);
         assert!(!observed.contains("not-sent"));
+    }
+
+    #[test]
+    fn graphql_post_sends_standard_body_and_projects_data_and_errors_without_secret_echo() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut stream);
+            let body = r#"{"data":{"viewer":{"id":"42","echo":"query-secret"}},"errors":[{"message":"token leaked","path":["viewer",0],"extensions":{"token":"graphql-secret"}}]}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+            request
+        });
+
+        let mut request = template();
+        request.method = "POST".into();
+        request.url = format!("http://127.0.0.1:{port}/graphql");
+        request.headers = vec![RequestHeader {
+            key: "Authorization".into(),
+            value: "Bearer graphql-secret".into(),
+            enabled: true,
+        }];
+        request.cookies.clear();
+        request.auth = None;
+        request.body_kind = "graphql".into();
+        request.body.clear();
+        request.graphql = Some(GraphqlRequest {
+            query: "query Viewer { viewer(token: \"query-secret\") { id echo } }".into(),
+            variables: r#"{"id":"42"}"#.into(),
+            operation_name: "Viewer".into(),
+        });
+
+        let response = send_test(request).unwrap();
+        assert_eq!(response.status, 200);
+        let graphql = response.graphql.unwrap();
+        assert_eq!(graphql.envelope, "valid");
+        assert_eq!(graphql.data.unwrap()["viewer"]["id"], "42");
+        assert_eq!(graphql.errors[0].path, vec!["viewer", "0"]);
+        assert!(!response.body.contains("graphql-secret"));
+        assert!(!response.body.contains("query-secret"));
+        assert!(response.body.contains("token leaked"));
+        let observed = server.join().unwrap();
+        assert!(
+            observed.starts_with("POST /graphql HTTP/1.1"),
+            "unexpected request: {observed}"
+        );
+        assert!(observed.contains("content-type: application/json"));
+        assert!(observed.contains("\"operationName\":\"Viewer\""));
+        assert!(observed.contains("\"query\":\"query Viewer"));
+    }
+
+    #[test]
+    fn graphql_get_uses_encoded_query_parameters_without_request_body() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut stream);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{{\"data\":{{}}}}"
+            )
+            .unwrap();
+            request
+        });
+
+        let mut request = template();
+        request.method = "GET".into();
+        request.url = format!("http://127.0.0.1:{port}/graphql");
+        request.headers.clear();
+        request.cookies.clear();
+        request.auth = None;
+        request.body_kind = "graphql".into();
+        request.body.clear();
+        request.params = vec![KeyValue {
+            key: "filter".into(),
+            value: "a&b".into(),
+        }];
+        request.graphql = Some(GraphqlRequest {
+            query: "{ viewer { id } }".into(),
+            variables: "".into(),
+            operation_name: "".into(),
+        });
+
+        let response = send_test(request).unwrap();
+        assert_eq!(response.status, 200);
+        let observed = server.join().unwrap();
+        assert!(observed.starts_with("GET /graphql?filter=a%26b&query="));
+        assert!(observed.contains("filter=a%26b"));
+        assert!(observed.contains("&variables=%7B%7D"));
+        assert!(!observed.contains("Content-Length: 0\r\n\r\n{"));
+    }
+
+    #[test]
+    fn graphql_endpoint_rejects_userinfo_fragment_and_credential_query_before_connecting() {
+        let mut request = template();
+        request.method = "POST".into();
+        request.body_kind = "graphql".into();
+        request.body.clear();
+        request.graphql = Some(GraphqlRequest {
+            query: "{ viewer { id } }".into(),
+            variables: "".into(),
+            operation_name: "".into(),
+        });
+        request.url = "https://user:password@example.test/graphql".into();
+        assert_eq!(
+            send_test(request.clone()).unwrap_err(),
+            GRAPHQL_ENDPOINT_ERROR
+        );
+        request.url = "https://example.test/graphql?access_token=literal".into();
+        assert_eq!(
+            send_test(request.clone()).unwrap_err(),
+            GRAPHQL_CREDENTIAL_QUERY_ERROR
+        );
+        request.url = "https://example.test/graphql#fragment".into();
+        assert_eq!(send_test(request).unwrap_err(), GRAPHQL_ENDPOINT_ERROR);
+    }
+
+    #[test]
+    fn graphql_preflight_rejects_header_and_query_bounds_without_network() {
+        let mut request = template();
+        request.url = "https://example.test/graphql".into();
+        request.body_kind = "graphql".into();
+        request.body.clear();
+        request.graphql = Some(GraphqlRequest {
+            query: "{ viewer { id } }".into(),
+            variables: String::new(),
+            operation_name: String::new(),
+        });
+
+        request.headers = (0..=MAX_REQUEST_HEADERS)
+            .map(|index| RequestHeader {
+                key: format!("x-{index}"),
+                value: "ok".into(),
+                enabled: true,
+            })
+            .collect();
+        assert_eq!(
+            send_test(request.clone()).unwrap_err(),
+            GRAPHQL_HEADER_ROWS_ERROR
+        );
+
+        request.headers = vec![RequestHeader {
+            key: "x-large".into(),
+            value: "x".repeat(MAX_GRAPHQL_REQUEST_HEADER_BYTES),
+            enabled: true,
+        }];
+        assert_eq!(
+            send_test(request.clone()).unwrap_err(),
+            GRAPHQL_HEADER_BYTES_ERROR
+        );
+
+        request.headers.clear();
+        request.params = vec![KeyValue {
+            key: "access_token".into(),
+            value: "raw".into(),
+        }];
+        assert_eq!(
+            send_test(request).unwrap_err(),
+            GRAPHQL_CREDENTIAL_QUERY_ERROR
+        );
+    }
+
+    #[test]
+    fn graphql_cancellation_stops_before_network_io() {
+        let mut request = template();
+        request.url = "https://example.test/graphql".into();
+        request.body_kind = "graphql".into();
+        request.body.clear();
+        request.graphql = Some(GraphqlRequest {
+            query: "{ viewer { id } }".into(),
+            variables: String::new(),
+            operation_name: String::new(),
+        });
+        let (mut resolved, secrets) = resolve_template(&request, &[], &MockSealer).unwrap();
+        prepare_graphql_request(&mut resolved).unwrap();
+        let redactor = Redactor::for_request(&resolved, secrets);
+        let cancellation = RequestCancellation::default();
+        let request_token = cancellation.begin("cancel-before-send").unwrap();
+        cancellation.cancel("cancel-before-send");
+        let result = tauri::async_runtime::block_on(execute_request(
+            resolved,
+            &redactor,
+            &cancellation,
+            request_token,
+        ));
+        assert_eq!(result.err().as_deref(), Some(REQUEST_CANCELLED));
+    }
+
+    #[test]
+    fn starting_a_new_request_supersedes_the_previous_cancellation_token() {
+        let cancellation = RequestCancellation::default();
+        let first = cancellation.begin("first-request").unwrap();
+        let second = cancellation.begin("second-request").unwrap();
+        assert!(cancellation.is_cancelled(first));
+        assert!(!cancellation.is_cancelled(second));
+        cancellation.cancel("second-request");
+        assert!(cancellation.is_cancelled(second));
+    }
+
+    #[test]
+    fn delayed_or_early_cancel_is_routed_to_its_exact_request() {
+        let cancellation = RequestCancellation::default();
+        let first = cancellation.begin("first-request").unwrap();
+        let second = cancellation.begin("second-request").unwrap();
+        cancellation.cancel("first-request");
+        assert!(cancellation.is_cancelled(first));
+        assert!(!cancellation.is_cancelled(second));
+
+        cancellation.cancel("third-request");
+        let third = cancellation.begin("third-request").unwrap();
+        assert!(cancellation.is_cancelled(third));
+        assert!(cancellation.begin("").is_err());
+        assert!(cancellation
+            .begin(&"x".repeat(MAX_REQUEST_ID_BYTES + 1))
+            .is_err());
+    }
+
+    #[test]
+    fn graphql_cancellation_interrupts_an_in_flight_request() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (accepted_tx, accepted_rx) = mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _request = read_http_request(&mut stream);
+            accepted_tx.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(800));
+        });
+
+        let mut request = template();
+        request.url = format!("http://127.0.0.1:{port}/graphql");
+        request.body_kind = "graphql".into();
+        request.body.clear();
+        request.graphql = Some(GraphqlRequest {
+            query: "{ viewer { id } }".into(),
+            variables: String::new(),
+            operation_name: String::new(),
+        });
+        let (mut resolved, secrets) = resolve_template(&request, &[], &MockSealer).unwrap();
+        prepare_graphql_request(&mut resolved).unwrap();
+        let redactor = Redactor::for_request(&resolved, secrets);
+        let cancellation = std::sync::Arc::new(RequestCancellation::default());
+        let request_token = cancellation.begin("in-flight-request").unwrap();
+        let task_cancellation = std::sync::Arc::clone(&cancellation);
+        let task = tauri::async_runtime::spawn(async move {
+            execute_request(
+                resolved,
+                &redactor,
+                task_cancellation.as_ref(),
+                request_token,
+            )
+            .await
+        });
+
+        accepted_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        let cancelled_at = Instant::now();
+        cancellation.cancel("in-flight-request");
+        let result = tauri::async_runtime::block_on(task).unwrap();
+        assert_eq!(result.err().as_deref(), Some(REQUEST_CANCELLED));
+        assert!(cancelled_at.elapsed() < std::time::Duration::from_millis(500));
+        server.join().unwrap();
     }
 
     #[test]

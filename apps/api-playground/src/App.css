@@ -787,3 +787,86 @@ body {
   font-size: 12px;
   letter-spacing: 2px;
 }
+
+.graphql-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.graphql-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--db-color-text-muted, #8b93a1);
+  font-size: 12px;
+}
+
+.graphql-query,
+.graphql-variables {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.graphql-operation-name input,
+.graphql-operation-name > input {
+  max-width: 360px;
+}
+
+.graphql-hint {
+  color: var(--db-color-text-muted, #8b93a1);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.graphql-response-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid var(--db-color-border, #262c36);
+  border-radius: 6px;
+}
+
+.graphql-response-state,
+.graphql-error-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.graphql-http-error {
+  color: var(--db-color-danger, #f85149);
+}
+
+.graphql-http-ok {
+  color: var(--db-color-success, #3fb950);
+}
+
+.graphql-section-label {
+  color: var(--db-color-text-muted, #8b93a1);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.graphql-errors {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--db-color-danger, #f85149);
+}
+
+.graphql-error-item {
+  padding: 6px 8px;
+  border-left: 2px solid var(--db-color-danger, #f85149);
+  overflow-wrap: anywhere;
+}
+
+.graphql-data-body {
+  max-height: 240px;
+  overflow: auto;
+}

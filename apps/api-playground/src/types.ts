@@ -39,6 +39,30 @@ export interface AuthConfig {
   api_value: string;
 }
 
+export interface GraphqlRequest {
+  query: string;
+  variables: string;
+  operation_name: string;
+}
+
+export interface GraphqlLocation {
+  line: number;
+  column: number;
+}
+
+export interface GraphqlError {
+  message: string;
+  locations: GraphqlLocation[];
+  path: string[];
+}
+
+export interface GraphqlResponse {
+  envelope: "valid" | "not_json" | "invalid" | "oversized";
+  data: unknown | null;
+  errors: GraphqlError[];
+  errors_truncated: boolean;
+}
+
 /** 사용자가 편집하고 저장하는 요청 원본. 환경 변수 참조는 해석하지 않은 채 유지한다. */
 export interface RequestTemplate {
   method: string;
@@ -51,6 +75,7 @@ export interface RequestTemplate {
   body: string;
   auth: AuthConfig | null;
   timeout_ms: number;
+  graphql?: GraphqlRequest | null;
 }
 
 /**
@@ -75,6 +100,7 @@ export interface ApiResponse {
   response_id: string | null;
   raw_headers_available: boolean;
   headers_truncated: boolean;
+  graphql?: GraphqlResponse | null;
 }
 
 export interface ResponseCookie {

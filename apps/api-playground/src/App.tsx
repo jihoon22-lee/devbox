@@ -3,7 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildRevealedCurl,
   copyRawResponseCookies,
@@ -14,6 +14,7 @@ import {
   sendRequest,
 } from "./api";
 import { CookieEditor } from "./CookieEditor";
+import { GraphqlEditor } from "./GraphqlEditor";
 import { HeaderTable } from "./HeaderTable";
 import { MultipartEditor } from "./MultipartEditor";
 import { ResponseViewer, type RawResponseCopyKind } from "./ResponseViewer";
@@ -58,17 +59,36 @@ import {
 } from "./lib/cookies";
 import { isHeaderEnabled } from "./lib/headers";
 import {
+  buildGraphqlBody,
+  buildGraphqlGetUrl,
+  isGraphqlDerivedHeader,
+  validateGraphqlDocument,
+  validateGraphqlEndpoint,
+  GRAPHQL_OPERATION_INVALID,
+  GRAPHQL_VARIABLES_INVALID,
+  MAX_GRAPHQL_OPERATION_NAME_BYTES,
+  MAX_GRAPHQL_QUERY_BYTES,
+  MAX_GRAPHQL_VARIABLES_BYTES,
+  GRAPHQL_HEADER_BYTES_ERROR,
+  GRAPHQL_HEADER_ROWS_ERROR,
+  GRAPHQL_URL_TOO_LARGE,
+  MIN_GRAPHQL_TIMEOUT_MS,
+  MAX_GRAPHQL_TIMEOUT_MS,
+  validateGraphqlHeaders,
+  validateGraphqlParams,
+} from "./lib/graphql";
+import {
   isMultipartPartEnabled,
   isMultipartDerivedHeader,
   validateMultipartParts,
 } from "./lib/multipart";
-import type { ApiResponse, HistoryItem, KeyValue, RequestTemplate } from "./types";
+import type { ApiResponse, GraphqlRequest, HistoryItem, KeyValue, RequestTemplate } from "./types";
 import "./App.css";
 
 export { statusClass } from "./ResponseViewer";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
-const BODY_KINDS = ["none", "json", "form", "multipart", "raw"];
+const BODY_KINDS = ["none", "json", "form", "multipart", "raw", "graphql"];
 const AUTH_KINDS = ["none", "basic", "bearer", "apikey"];
 
 const emptyReq = (): RequestTemplate => ({
@@ -82,7 +102,54 @@ const emptyReq = (): RequestTemplate => ({
   body: "",
   auth: { kind: "none", username: "", password: "", token: "", api_key: "", api_value: "" },
   timeout_ms: 10000,
+  graphql: null,
 });
+
+const emptyGraphql = (): GraphqlRequest => ({ query: "", variables: "", operation_name: "" });
+
+function graphqlConfigError(request: RequestTemplate): string | null {
+  if (request.body_kind !== "graphql") return null;
+  if (!request.graphql || !["GET", "POST"].includes(request.method)) {
+    return "GraphQL 요청 구성이 올바르지 않습니다";
+  }
+  if (request.timeout_ms < MIN_GRAPHQL_TIMEOUT_MS || request.timeout_ms > MAX_GRAPHQL_TIMEOUT_MS) {
+    return "GraphQL timeout이 허용된 범위를 벗어났습니다";
+  }
+  const encoder = new TextEncoder();
+  if (encoder.encode(request.graphql.query).byteLength > MAX_GRAPHQL_QUERY_BYTES
+    || encoder.encode(request.graphql.variables).byteLength > MAX_GRAPHQL_VARIABLES_BYTES
+    || encoder.encode(request.graphql.operation_name).byteLength > MAX_GRAPHQL_OPERATION_NAME_BYTES) {
+    return "GraphQL 요청 구성이 올바르지 않습니다";
+  }
+  try {
+    validateGraphqlHeaders(request.headers);
+    validateGraphqlParams(request.params);
+    validateGraphqlEndpoint(request.url);
+    validateGraphqlDocument(request.graphql.query, request.graphql.operation_name);
+    buildGraphqlBody(request.graphql);
+    if (request.method === "GET") buildGraphqlGetUrl(request.url, request.params, request.graphql);
+    return null;
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : "";
+    const safe = new Set([
+      "GraphQL endpoint URL이 올바르지 않습니다",
+      "GraphQL endpoint query에 credential을 넣을 수 없습니다",
+      "GraphQL query가 허용된 크기를 초과했습니다",
+      "GraphQL variables가 허용된 크기를 초과했습니다",
+      "GraphQL 문서 형식이 올바르지 않습니다",
+      GRAPHQL_OPERATION_INVALID,
+      GRAPHQL_VARIABLES_INVALID,
+      "GraphQL variables 구조가 허용된 한계를 초과했습니다",
+      "GraphQL 요청 본문이 허용된 크기를 초과했습니다",
+      "GraphQL introspection 요청은 지원하지 않습니다",
+      "GraphQL subscription은 지원하지 않습니다",
+      GRAPHQL_HEADER_ROWS_ERROR,
+      GRAPHQL_HEADER_BYTES_ERROR,
+      GRAPHQL_URL_TOO_LARGE,
+    ]);
+    return safe.has(message) ? message : "GraphQL 요청 구성이 올바르지 않습니다";
+  }
+}
 
 function KeyValueEditor({
   rows,
@@ -150,6 +217,18 @@ export default function App() {
   const [requestEditorRevision, setRequestEditorRevision] = useState(0);
   const [contextHistory, setContextHistory] = useState<HistoryItem | null>(null);
   const [contextCollection, setContextCollection] = useState<CollectionEntry | null>(null);
+  const mountedRef = useRef(true);
+  const requestSequenceRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestSequenceRef.current += 1;
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   const prepareHistoryContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.historyId;
@@ -184,7 +263,8 @@ export default function App() {
   const multipartIssue = req.body_kind === "multipart"
     ? validateMultipartParts(req.multipart)[0] ?? null
     : null;
-  const requestConfigurationError = cookieConfigurationError ?? (
+  const graphqlIssue = graphqlConfigError(req);
+  const requestConfigurationError = graphqlIssue ?? cookieConfigurationError ?? (
     multipartIssue
       ? `${multipartIssue.index + 1}번 multipart part: ${multipartIssue.message}`
       : null
@@ -301,11 +381,15 @@ export default function App() {
     }
   }, [collectionContextMenu.close, collections.collections, contextCollection?.id]);
 
-  const persistHistoryRequest = useCallback(async (status?: number) => {
+  const persistHistoryRequest = useCallback(async (
+    request: RequestTemplate,
+    status: number | undefined,
+    isCurrent: () => boolean,
+  ) => {
     const item: HistoryItem = {
       id: String(Date.now()),
       saved_at: Date.now(),
-      request: sanitizeRequestForPersistence(req),
+      request: sanitizeRequestForPersistence(request),
       status,
     };
     const candidate: HistoryStore = {
@@ -313,36 +397,70 @@ export default function App() {
       history: [item, ...history].slice(0, 50),
     };
     const safe = await saveHistoryStore(candidate, sanitizeForPersistence);
-    setHistory(safe.history);
-  }, [history, req, environmentVariables]);
+    if (isCurrent()) setHistory(safe.history);
+    return safe;
+  }, [history, sanitizeForPersistence]);
 
   const onSend = async () => {
+    if (sending || abortControllerRef.current) return;
     if (requestConfigurationError) {
       setError(requestConfigurationError);
       setTab(cookieConfigurationError ? "cookies" : "body");
       return;
     }
+    const requestSnapshot = req;
+    const environmentSnapshot = currentEnv?.variables ?? [];
+    const controller = new AbortController();
+    const sequence = requestSequenceRef.current + 1;
+    requestSequenceRef.current = sequence;
+    abortControllerRef.current = controller;
     setSending(true);
     setError(null);
     try {
-      const result = await sendRequest(req, currentEnv?.variables ?? []);
+      const result = await sendRequest(requestSnapshot, environmentSnapshot, controller.signal);
+      if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
       setResp(result);
       try {
-        await persistHistoryRequest(result.status);
+        await persistHistoryRequest(
+          requestSnapshot,
+          result.status,
+          () => mountedRef.current && requestSequenceRef.current === sequence,
+        );
       } catch {
-        setPersistenceWarning("요청은 완료됐지만 민감정보 안전 검증에 실패해 History를 저장하지 않았습니다.");
+        if (mountedRef.current && requestSequenceRef.current === sequence) {
+          setPersistenceWarning("요청은 완료됐지만 민감정보 안전 검증에 실패해 History를 저장하지 않았습니다.");
+        }
       }
     } catch (cause) {
+      if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
       setError(safeRequestError(cause));
       setResp(null);
       try {
-        await persistHistoryRequest();
+        await persistHistoryRequest(
+          requestSnapshot,
+          undefined,
+          () => mountedRef.current && requestSequenceRef.current === sequence,
+        );
       } catch {
-        setPersistenceWarning("실패한 요청은 민감정보 안전 검증을 통과하지 못해 History에 저장하지 않았습니다.");
+        if (mountedRef.current && requestSequenceRef.current === sequence) {
+          setPersistenceWarning("실패한 요청은 민감정보 안전 검증을 통과하지 못해 History에 저장하지 않았습니다.");
+        }
       }
     } finally {
-      setSending(false);
+      if (mountedRef.current && requestSequenceRef.current === sequence) {
+        setSending(false);
+        abortControllerRef.current = null;
+      }
     }
+  };
+
+  const onCancel = () => {
+    if (!sending) return;
+    requestSequenceRef.current += 1;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setSending(false);
+    setError("요청이 취소되었습니다");
   };
 
   const setAuth = (patch: Partial<NonNullable<RequestTemplate["auth"]>>) =>
@@ -670,7 +788,7 @@ export default function App() {
         {persistenceWarning && <div className="persistence-warning">{persistenceWarning}</div>}
         <div className="request-bar">
           <select className="method-select" value={req.method} onChange={(e) => setReq({ ...req, method: e.currentTarget.value })}>
-            {METHODS.map((m) => (
+            {(req.body_kind === "graphql" ? ["GET", "POST"] : METHODS).map((m) => (
               <option key={m} value={m}>
                 {m}
               </option>
@@ -683,8 +801,8 @@ export default function App() {
             onChange={(e) => setReq({ ...req, url: e.currentTarget.value })}
             spellCheck={false}
           />
-          <button className="btn send" onClick={() => void onSend()} disabled={!persistenceReady || sending || contextActionBusy || !req.url || Boolean(requestConfigurationError)}>
-            {!persistenceReady ? "Checking..." : sending ? "Sending..." : "Send"}
+          <button className="btn send" onClick={() => sending ? onCancel() : void onSend()} disabled={!persistenceReady || contextActionBusy || (!sending && (!req.url || Boolean(requestConfigurationError)))}>
+            {!persistenceReady ? "Checking..." : sending ? "Cancel" : "Send"}
           </button>
           <button className={`btn ${showCurl ? "active" : ""}`} onClick={() => setShowCurl((v) => !v)} disabled={!req.url || Boolean(requestConfigurationError)}>
             cURL
@@ -749,14 +867,34 @@ export default function App() {
           )}
           {tab === "body" && (
             <div>
-              <select className="select-sm" value={req.body_kind} onChange={(e) => setReq({ ...req, body_kind: e.currentTarget.value })}>
+              <select
+                className="select-sm"
+                value={req.body_kind}
+                onChange={(e) => {
+                  const bodyKind = e.currentTarget.value;
+                  setReq({
+                    ...req,
+                    body_kind: bodyKind,
+                    method: bodyKind === "graphql" && !["GET", "POST"].includes(req.method)
+                      ? "POST"
+                      : req.method,
+                    graphql: bodyKind === "graphql" ? req.graphql ?? emptyGraphql() : null,
+                  });
+                }}
+              >
                 {BODY_KINDS.map((k) => (
                   <option key={k} value={k}>
                     {k}
                   </option>
                 ))}
               </select>
-              {req.body_kind === "multipart" ? (
+              {req.body_kind === "graphql" ? (
+                <GraphqlEditor
+                  key={requestEditorRevision}
+                  value={req.graphql ?? emptyGraphql()}
+                  onChange={(graphql) => setReq({ ...req, graphql, body: "" })}
+                />
+              ) : req.body_kind === "multipart" ? (
                 <MultipartEditor
                   key={requestEditorRevision}
                   rows={req.multipart}
@@ -808,7 +946,8 @@ export default function App() {
           )}
         </div>
 
-        {error && <div className="error">{error}</div>}
+        {graphqlIssue && <div className="error" role="alert">{graphqlIssue}</div>}
+        {error && <div className="error" role="alert">{error}</div>}
 
         <ResponseViewer
           response={resp}
@@ -860,12 +999,54 @@ export function buildCurl(template: RequestTemplate): string {
   ) {
     return "";
   }
+  if (template.body_kind === "graphql") {
+    try {
+      validateGraphqlHeaders(template.headers);
+      validateGraphqlParams(template.params);
+      validateGraphqlEndpoint(template.url);
+    } catch {
+      return "";
+    }
+  }
   const req = sanitizeRequestForPersistence(template);
+  if (req.body_kind === "graphql" && (!req.graphql || !["GET", "POST"].includes(req.method))) return "";
+  const safeGraphql = req.graphql && (() => {
+    try {
+      buildGraphqlBody(req.graphql);
+      return req.graphql;
+    } catch {
+      // A malformed or redacted variables draft remains visible in the editor, but
+      // masked cURL uses an empty variables object instead of leaking raw text.
+      return { ...req.graphql, variables: "{}" };
+    }
+  })();
+  const safeGraphqlBody = req.body_kind === "graphql" && safeGraphql
+    ? (() => {
+      try {
+        return buildGraphqlBody(safeGraphql);
+      } catch {
+        return JSON.stringify({
+          ...(safeGraphql.operation_name ? { operationName: safeGraphql.operation_name } : {}),
+          query: safeGraphql.query,
+          variables: {},
+        });
+      }
+    })()
+    : "";
 
   const params = new URLSearchParams();
   for (const p of req.params) if (p.key) params.append(p.key, p.value);
   const sep = req.url.includes("?") ? "&" : "?";
-  const url = params.size ? req.url + sep + params.toString() : req.url;
+  const url = req.body_kind === "graphql" && safeGraphql && req.method === "GET"
+    ? (() => {
+      try {
+        return buildGraphqlGetUrl(req.url, req.params, safeGraphql);
+      } catch {
+        return "";
+      }
+    })()
+    : params.size ? req.url + sep + params.toString() : req.url;
+  if (!url) return "";
 
   const lines = [`curl --request ${req.method} ${shellQuote(url)}`];
 
@@ -874,7 +1055,8 @@ export function buildCurl(template: RequestTemplate): string {
     if (
       isHeaderEnabled(h) &&
       h.key &&
-      !(req.body_kind === "multipart" && isMultipartDerivedHeader(h.key))
+      !(req.body_kind === "multipart" && isMultipartDerivedHeader(h.key)) &&
+      !(req.body_kind === "graphql" && isGraphqlDerivedHeader(h.key))
     ) {
       headers.push([h.key, h.value]);
     }
@@ -901,7 +1083,10 @@ export function buildCurl(template: RequestTemplate): string {
         : `@${curlFormQuote(`[RESELECT_FILE:${part.file_name || "file"}]`)}`;
       lines.push(`  --form ${shellQuote(`${part.name}=${value}${suffix}`)}`);
     }
-  } else if (req.body_kind !== "none" && req.body) {
+  } else if (req.body_kind === "graphql" && safeGraphql && req.method === "POST") {
+    lines.push(`  --header ${shellQuote("Content-Type: application/json")}`);
+    lines.push(`  --data ${shellQuote(safeGraphqlBody)}`);
+  } else if (req.body_kind !== "none" && req.body_kind !== "graphql" && req.body) {
     lines.push(`  --data ${shellQuote(req.body)}`);
   }
 
@@ -909,6 +1094,10 @@ export function buildCurl(template: RequestTemplate): string {
 }
 
 function safeRequestError(cause: unknown): string {
+  if ((typeof DOMException !== "undefined" && cause instanceof DOMException && cause.name === "AbortError")
+    || (cause instanceof Error && cause.name === "AbortError")) {
+    return "요청이 취소되었습니다";
+  }
   const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
   const message = raw.replace(/^Error:\s*/, "");
   const safeMessages = [
@@ -926,6 +1115,27 @@ function safeRequestError(cause: unknown): string {
     "multipart 파일은 각각 25 MiB 이하여야 합니다",
     "multipart 파일 전체는 50 MiB 이하여야 합니다",
     "요청 시간이 초과되었습니다",
+    "요청이 취소되었습니다",
+    "GraphQL 요청 구성이 올바르지 않습니다",
+    "GraphQL endpoint URL이 올바르지 않습니다",
+    "GraphQL endpoint query에 credential을 넣을 수 없습니다",
+    "GraphQL query가 허용된 크기를 초과했습니다",
+    "GraphQL variables가 허용된 크기를 초과했습니다",
+    "GraphQL 문서 형식이 올바르지 않습니다",
+    "GraphQL operation 선택이 올바르지 않습니다",
+    "GraphQL variables는 유효한 JSON object여야 합니다",
+    "GraphQL variables 구조가 허용된 한계를 초과했습니다",
+    "GraphQL 요청 본문이 허용된 크기를 초과했습니다",
+    "GraphQL introspection 요청은 지원하지 않습니다",
+    "GraphQL subscription은 지원하지 않습니다",
+    "GraphQL timeout이 허용된 범위를 벗어났습니다",
+    "GraphQL header 행 수가 허용된 한계를 초과했습니다",
+    "GraphQL header 크기가 허용된 한계를 초과했습니다",
+    GRAPHQL_HEADER_ROWS_ERROR,
+    GRAPHQL_HEADER_BYTES_ERROR,
+    GRAPHQL_URL_TOO_LARGE,
+    "GraphQL 리다이렉트를 브라우저 미리보기에서 처리할 수 없습니다",
+    "응답 본문이 허용된 크기를 초과했습니다",
   ];
   if (safeMessages.includes(message) || /^'.+' 파일을 다시 선택하세요\.$/.test(message)) {
     return message;
