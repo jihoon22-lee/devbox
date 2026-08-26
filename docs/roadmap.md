@@ -6,7 +6,7 @@
 
 ## Phase 1 — Tauri 기본기 ✅
 - [x] **port-manager** — IPC, Rust 기초, netstat 파싱, 포트/프로세스 관리
-- [x] **developer-toolbox** — 사이드바 UI, 소형 도구 13종 (hash/uuid/regex/diff는 Rust)
+- [x] **developer-toolbox** — 사이드바 UI, 오프라인 소형 개발 도구 모음 (hash/uuid/HMAC/regex/diff는 Rust)
 
 ## Phase 2 — 시스템/네트워크 ✅
 - [x] **api-playground** — HTTP(reqwest), 요청 빌더, 응답 뷰어, history
@@ -297,6 +297,26 @@ code/path는 줄바꿈하되 `pre` code block은 panel 내부 가로 scroll을 �
 canvas는 panel width를 넘지 않는다. renderer, Mermaid security mode, state, IPC, storage,
 원문/path 전달과 외부 상태는 변경하지 않는다. 다음 P1-09 작업은 #280 Workbench services·ports
 입력이다.
+
+**2026-08-27 #288 PR 준비 상태.** Developer Toolbox HMAC는 외부 서비스나 별도 설치 없이
+`hmac 0.13.0`·기존 `sha2 0.11.0`의 표준 RustCrypto primitive와 Web Crypto browser preview를
+사용한다. `sha256`·`sha384`·`sha512`만 허용하고 key/message 입력은 `utf8`, `hex`, padded
+Base64, unpadded Base64URL, 결과는 lowercase hex·padded Base64·unpadded Base64URL로 고정한다.
+각 decoded key/message는 1,000,000바이트, encoded field는 2,100,000바이트, tag는 128자로
+제한하며 key는 비어 있을 수 없다. Base64 alphabet/padding/pad bit의 canonical 여부와 hex
+문자를 native/browser가 동일하게 확인하고, malformed/oversized/unknown 값은 입력·플랫폼
+세부사항 없는 고정 오류로 거부한다. Rust `verify_slice`와 Web Crypto `verify`를 통해
+constant-time 검증을 수행하고 verify 명령은 boolean만 반환한다.
+
+작업은 `hmac_generate`·`hmac_verify` 두 explicit IPC 명령과 순수 `core/hmac.rs` 경계로
+나뉜다. key/message는 history/localStorage/로그/네트워크에 저장하지 않고, 화면 결과의
+copy/save만 사용자 명시 action으로 남긴다. 요청 진행 중 algorithm/encoding/input을 잠그고
+IME 입력·double action·stale response·unmount를 request sequence로 차단하며, 접근 가능한
+label/status/alert를 제공한다. JWT verify, secret persistence, pipeline/handoff, 외부
+generator는 이 PR에 넣지 않는다. 새 dependency의 lockfile·license·checksum·전이
+`cmov`/`ctutils` notices, 전체 Rust/frontend workspace와 dependency/catalog regression gate는
+PR 전 로컬 검증을 통과했다. Windows W2 packaged smoke와 CI dependency audit은 PR/release
+checkpoint에서 이어간다.
 
 #280은 `ProjectProfile`을 직접 편집하던 화면을 원문 포트 문자열과 stable-key 서비스 행을 소유하는
 `ProfileDraft`로 분리한다. 포트는 쉼표 입력을 저장 직전까지 보존하면서 1~65535, 중복·빈 토큰,

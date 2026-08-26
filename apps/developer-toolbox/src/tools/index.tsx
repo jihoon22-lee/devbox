@@ -4,6 +4,7 @@ import { TransformerTool } from "./common";
 import { DiffTool } from "./diff";
 import { RegexTool } from "./regex";
 import { HashTool, UuidTool } from "./security";
+import { HmacTool } from "./HmacTool";
 import { JsonYamlTool } from "./JsonYamlTool";
 import { JsonTypescriptTool } from "./JsonTypescriptTool";
 import { RadixTool } from "./RadixTool";
@@ -52,6 +53,7 @@ const textTools: ToolDef[] = [
 
 const securityTools: ToolDef[] = [
   { id: "hash", group: "Security", name: "Hash (MD5/SHA)", component: HashTool },
+  { id: "hmac", group: "Security", name: "HMAC Generate / Verify", component: HmacTool },
   { id: "uuid", group: "Security", name: "UUID / ULID Generator", component: UuidTool },
 ];
 
