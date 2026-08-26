@@ -275,7 +275,7 @@ Windows 실기 검증에서 수집한 UX 개선 항목. 기능 버그가 아니�
 | ~~code-pad~~ | ~~상태 표시줄 하단 고정~~ | ~~파일 길이에 따라 움직이지 않고 항상 최하단 고정~~ | #190에서 해결됨 (`.content-area` 높이 제약) |
 | code-pad | 프리뷰/편집 영역 구분 강화 | 프리뷰 영역이 편집 영역과 시각적으로 구분되게 | **저비용.** `.preview-pane`(`App.css:227-235`)과 `.view-pane`(`:270-274`)이 같은 배경색(`#171e29`)에 1px 선 하나로만 나뉜다. CSS만 수정 |
 | workbench | ports/services 입력 UX + 자동 반영 | 입력 방법을 명확히 하고, WSL Desktop의 Docker/포트를 자동 반영 | **services는 입력 UI가 아예 없다** (`App.tsx:146-184`에 필드 없음, 항상 `[]`). ports는 매 키 입력마다 `join(", ")`으로 재포맷돼 입력이 튄다. **Docker 자동 반영은 wsl-desktop이 producer가 되어야 가능** → 연동 설계 §4.1 |
-| webhook-lab | rule 필드 라벨/설명 | 각 rule 필드가 무엇인지 옆에 설명 표시 | **저비용.** `App.tsx:105-112`에 `<label>`이 하나도 없고 placeholder만 있는데, status/delayMs는 항상 값이 있어 placeholder가 영영 안 보인다. 매칭 규칙(method는 대소문자 무시, path는 정확 일치 또는 후행 `*` 접두 일치 — `core/rules.rs:20-28`)을 설명에 넣는다 |
+| webhook-lab | rule 필드 라벨/설명 | 각 rule 필드가 무엇인지 옆에 설명 표시 | **#282 구현 계약.** method는 대소문자 무시하고 빈 값(`None`)은 모든 method에 매치한다. path는 전체 문자열 exact match가 기본이며 마지막 문자가 `*`인 경우에만 `*` 앞부분 prefix match를 한다(중간 `*`는 literal). status·headers·body는 매칭 요청에 반환할 response이고 delay는 응답 전 대기 시간이다. status `100~599`, delay `0~60000ms` 정수 bounds와 method/path/header/body/rule-count 및 UTF-8 char/byte bounds를 frontend와 Rust IPC/storage에서 함께 검증한다. backend `upsert`는 실패 시 map을 변경하지 않고 raw input/secret 없는 고정 오류만 반환한다. 겹치는 rule에 대해 `HashMap` 순회 순서의 우선순위·결정성을 약속하지 않으며 id·순서·matcher semantics를 변경하지 않는다. label/help/error를 `aria-describedby`로 입력에 연결하고 invalid draft 보존, stale/busy/double action을 fixture로 고정한다. |
 | webhook-lab | 규칙 저장 후 예시 curl 표시 | 규칙 설정 직후 테스트용 curl 예시 자동 생성 | **#283 구현 계약.** PowerShell `curl.exe`와 POSIX `sh curl`을 별도 context-menu 항목으로 제공하고 shell별 quoting을 독립 구현한다. fresh running address와 현재 rule을 재검증한 뒤에만 복사하며, trailing `*`는 backend prefix matcher와 같은 concrete sample로 바꾼다. response status/headers/body/delay는 request arguments가 아닌 주석 metadata로 표시한다. |
 
 #### #283 Webhook Lab example curl 구현 세부
@@ -315,6 +315,48 @@ Windows desktop의 PowerShell 사용성과 WSL/POSIX 사용성을 함께 지원�
   고정한다. `App.test.tsx`와 `contextMenus.test.ts`는 두 menu action, running/fresh
   address, stale selection, busy/double action, raw error alert, `Shift+F10`/Escape focus
   복원을 고정한다.
+
+#### #282 Webhook Lab rule 설명 구현 세부
+
+`apps/webhook-lab`의 rule editor는 값이 이미 채워져 있어도 method/path/status/delay/body의
+label과 설명을 계속 노출한다. 설명과 backend `core/rules.rs::matches`의 계약은 다음처럼
+일치해야 한다.
+
+- method가 비어 있으면 프론트가 `null`을 보내고, backend의 `None`은 모든 method에 매치한다.
+  값이 있으면 대소문자를 무시한 문자열 비교만 한다.
+- path는 문자열 전체가 같은 exact match이거나, rule path의 마지막 문자가 `*`일 때
+  `*`를 제외한 앞부분으로 시작하는 prefix match다. `/events/*`는 `/events/`·`/events/123`에
+  매치하지만 `/eventslater`에는 매치하지 않으며 `/events/*/tail`의 중간 `*`는 wildcard가
+  아니다. query를 포함한 URL 문자열도 backend가 전달한 문자열 그대로 비교한다.
+- status·headers·body는 요청을 매치시키는 입력이 아니라 반환할 HTTP response의 구성이고,
+  delay는 해당 response 전의 대기 시간이다. 매치 엔진/fixture/replay 동작 자체를 이 UX PR에
+  추가하지 않는다.
+- 현재 저장소는 rule을 `HashMap`에 보관하므로 여러 rule이 겹칠 때 순회 순서가 우선순위나
+  결정성의 공개 계약이 아니다. UI/문서/fixture는 특정 rule이 항상 먼저 선택된다고 암시하지
+  않으며, 겹침을 사용자가 피할 수 있도록 매칭 의미만 설명한다.
+- editor와 Rust `set_rule`/`upsert`는 동일한 storage 경계를 사용한다. rule은 최대 200개,
+  id는 최대 128자/128바이트, method는 `null` 또는 ASCII HTTP token 최대 16자/16바이트,
+  path는 `/` 시작·control 금지·최대 4,096자/16,384바이트, status는 `100~599`, delay는
+  `0~60000ms` 정수다. response headers는 최대 100개이고 이름 256자/256바이트, 값
+  16,384자/65,536바이트, 이름+값 합계 64,000자/256,000바이트다. body는 256,000자/
+  1,024,000바이트다. collection의 id/method/path/header 이름·값/body 문자열 합계는
+  2,000,000자/8,000,000바이트다. char는 JS `Array.from`/Rust Unicode scalar count,
+  byte는 UTF-8 `TextEncoder`/Rust `str::len()`으로 계산하고 새 UUID id의 36자 footprint도
+  예약한다. Rust UTF-8로 표현할 수 없는 unpaired JavaScript surrogate는 frontend에서 먼저
+  거부한다.
+- backend는 frontend-only 방어에 의존하지 않으며 invalid input을 저장하거나 부분 변경하지
+  않는다. IPC 오류는 `규칙 입력이 유효하지 않습니다`처럼 raw input·path·secret이 없는
+  고정 문구다. frontend는 invalid raw draft를 유지하고 save/duplicate IPC를 호출하지 않으며,
+  편집 대상이 refresh에서 사라진 stale id는 저장하지 않는다. `aria-invalid`, linked
+  `aria-describedby`, `aria-busy`, disabled/double-action guard를 포함한다.
+
+검증 fixture는 `src-tauri/src/core/rules.rs`에서 None method·대소문자 무시, exact path,
+trailing-star prefix, 중간-star literal, query 문자열 차이, numeric/string/header/collection
+경계와 invalid upsert의 no-mutation을 고정한다. 프론트 `ruleValidation.test.ts`는 같은
+status/delay/method/path/header/body/count와 char/byte 경계를, `App.test.tsx`는 항상 보이는
+설명/ARIA 연결·범위 초과 저장 차단·raw error 안전 대체·invalid draft 보존·stale save·busy
+double action을 고정한다. 이 항목은 설명/검증 범위만 다루며 예시 curl(#283), fixture/replay
+엔진은 별도 PR로 유지한다.
 
 > 참고: v0.4.0-rc1에서 발견된 **기능 버그**는 별도 PR로 전부 수정 완료됨 —
 > git 집계(#188), open_in/앱 실행(#186), 중복 실행(#187), grid/스크롤 레이아웃(#189·#190).

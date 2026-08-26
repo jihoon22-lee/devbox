@@ -23,13 +23,24 @@ import {
 } from "./api";
 import { buildHistoryContextMenu, buildRuleContextMenu } from "./lib/contextMenus";
 import { buildExampleCurl, type CurlShell } from "./lib/exampleCurl";
+import {
+  MAX_METHOD_CHARS,
+  MAX_RESPONSE_DELAY_MS,
+  MAX_RESPONSE_STATUS,
+  MIN_RESPONSE_STATUS,
+  validateRule,
+  validateRuleCollection,
+  type RuleValidationField,
+} from "./lib/ruleValidation";
 import "./App.css";
 
 const DEFAULT_PORT = 9000;
 const GENERIC_ERROR_MESSAGE = "요청을 처리하지 못했습니다. 입력과 서버 상태를 확인하세요.";
+const STALE_RULE_MESSAGE = "선택한 규칙이 더 이상 존재하지 않습니다. 목록을 새로 고친 뒤 다시 시도하세요.";
 const SAFE_ERROR_MESSAGES = new Set([
   "요청 기록을 찾을 수 없습니다",
   "규칙을 찾을 수 없습니다",
+  "규칙 입력이 유효하지 않습니다",
   "원본 요청 복사는 데스크톱 앱에서만 사용할 수 있습니다",
 ]);
 
@@ -66,18 +77,19 @@ export default function App() {
   const [contextHistory, setContextHistory] = useState<RequestRecord | null>(null);
   const [contextRule, setContextRule] = useState<ResponseRule | null>(null);
   const operationInFlight = useRef(false);
+  const refreshRequest = useRef(0);
 
-  const beginBusy = () => {
+  const beginBusy = useCallback(() => {
     if (operationInFlight.current) return false;
     operationInFlight.current = true;
     setBusy(true);
     return true;
-  };
+  }, []);
 
-  const endBusy = () => {
+  const endBusy = useCallback(() => {
     operationInFlight.current = false;
     setBusy(false);
-  };
+  }, []);
 
   const prepareHistoryContext = useCallback((target: HTMLElement) => {
     const id = Number(target.dataset.historyId);
@@ -87,33 +99,50 @@ export default function App() {
     setContextHistory(request);
   }, [history]);
   const historyContextMenu = useContextMenu({
+    disabled: busy,
     onBeforeOpen: (_reason, target) => prepareHistoryContext(target),
   });
 
   const prepareRuleContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.ruleId;
     const targetRule = rules.find((candidate) => candidate.id === id);
-    if (!targetRule) return;
+    if (!targetRule) {
+      setContextRule(null);
+      setSelectedRuleId(null);
+      setError(STALE_RULE_MESSAGE);
+      return;
+    }
     setSelectedRuleId(targetRule.id);
     setContextRule(targetRule);
   }, [rules]);
   const ruleContextMenu = useContextMenu({
+    disabled: busy,
     onBeforeOpen: (_reason, target) => prepareRuleContext(target),
   });
 
   const refresh = useCallback(async () => {
+    const request = refreshRequest.current + 1;
+    refreshRequest.current = request;
     try {
       const [st, h, r] = await Promise.all([serverStatus(), listHistory(), listRules()]);
+      if (refreshRequest.current !== request) return;
       setStatus(st);
       setHistory(h);
       setRules(r);
     } catch (e) {
+      if (refreshRequest.current !== request) return;
       setError(safeMessage(e));
     }
   }, []);
 
   useEffect(() => {
     void refresh();
+    return () => {
+      // Invalidate the mount refresh and any action-owned refresh before a
+      // late promise can update a newer view or an unmounted app.
+      refreshRequest.current += 1;
+      operationInFlight.current = false;
+    };
   }, [refresh]);
 
   useEffect(() => {
@@ -159,6 +188,9 @@ export default function App() {
     setError(null);
     try {
       setStatus(await stopServer());
+      // Stop changes the source of truth. A refresh that started before the
+      // stop must not restore the old running status or stale rule/history view.
+      await refresh();
     } catch (e) {
       setError(safeMessage(e));
     } finally {
@@ -167,6 +199,26 @@ export default function App() {
   };
 
   const onSaveRule = async () => {
+    const [validationIssue] = validateRule(rule);
+    if (validationIssue) {
+      setError(validationIssue.message);
+      return;
+    }
+
+    if (rule.id && !rules.some((candidate) => candidate.id === rule.id)) {
+      setError(STALE_RULE_MESSAGE);
+      return;
+    }
+
+    const projectedRules = rule.id
+      ? [...rules.filter((candidate) => candidate.id !== rule.id), rule]
+      : [...rules, rule];
+    const [collectionIssue] = validateRuleCollection(projectedRules);
+    if (collectionIssue) {
+      setError(collectionIssue.message);
+      return;
+    }
+
     if (!beginBusy()) return;
     setError(null);
     try {
@@ -199,10 +251,13 @@ export default function App() {
   const copyExampleCurl = async (ruleId: string, shell: CurlShell) => {
     if (!beginBusy()) return;
     setError(null);
+    const request = refreshRequest.current + 1;
+    refreshRequest.current = request;
     try {
       // A menu can remain open while another actor stops the server or removes the
       // rule. Re-read both sources before generating or copying anything.
       const [freshStatus, freshRules] = await Promise.all([serverStatus(), listRules()]);
+      if (refreshRequest.current !== request) return;
       setStatus(freshStatus);
       setRules(freshRules);
 
@@ -215,7 +270,7 @@ export default function App() {
       if (!freshRule) {
         setContextRule(null);
         setSelectedRuleId((selected) => selected === ruleId ? null : selected);
-        setError("선택한 규칙이 더 이상 존재하지 않습니다.");
+        setError(STALE_RULE_MESSAGE);
         return;
       }
 
@@ -267,7 +322,12 @@ export default function App() {
   };
 
   const onDeleteRule = async (targetRule: ResponseRule) => {
-    if (!window.confirm(`'${targetRule.method ?? "*"} ${targetRule.path}' 규칙을 삭제할까요?`)) return;
+    const currentRule = rules.find((candidate) => candidate.id === targetRule.id);
+    if (!currentRule) {
+      setError(STALE_RULE_MESSAGE);
+      return;
+    }
+    if (!window.confirm(`'${currentRule.method ?? "*"} ${currentRule.path}' 규칙을 삭제할까요?`)) return;
     if (!beginBusy()) return;
     setError(null);
     try {
@@ -283,10 +343,29 @@ export default function App() {
   };
 
   const onDuplicateRule = async (targetRule: ResponseRule) => {
+    const currentRule = rules.find((candidate) => candidate.id === targetRule.id);
+    if (!currentRule) {
+      setError(STALE_RULE_MESSAGE);
+      return;
+    }
+
+    const duplicate = { ...currentRule, id: "" };
+    const [validationIssue] = validateRule(duplicate);
+    if (validationIssue) {
+      setError(validationIssue.message);
+      return;
+    }
+
+    const [collectionIssue] = validateRuleCollection([...rules, duplicate]);
+    if (collectionIssue) {
+      setError(collectionIssue.message);
+      return;
+    }
+
     if (!beginBusy()) return;
     setError(null);
     try {
-      await setRule({ ...targetRule, id: "" });
+      await setRule(duplicate);
       await refresh();
     } catch (e) {
       setError(safeMessage(e));
@@ -303,6 +382,16 @@ export default function App() {
     () => buildRuleContextMenu(busy, status.running && Boolean(status.address)),
     [busy, status.address, status.running],
   );
+
+  const ruleIssues = validateRule(rule);
+  const ruleIssueFor = (field: RuleValidationField) =>
+    ruleIssues.find((issue) => issue.field === field);
+  const methodIssue = ruleIssueFor("method");
+  const pathIssue = ruleIssueFor("path");
+  const statusIssue = ruleIssueFor("status");
+  const headersIssue = ruleIssueFor("headers");
+  const bodyIssue = ruleIssueFor("body");
+  const delayIssue = ruleIssueFor("delayMs");
 
   const onHistoryContextSelect = (id: string) => {
     const request = contextHistory;
@@ -348,7 +437,7 @@ export default function App() {
     if (!currentRule) {
       setContextRule(null);
       setSelectedRuleId((selected) => selected === targetRule.id ? null : selected);
-      setError("선택한 규칙이 더 이상 존재하지 않습니다.");
+      setError(STALE_RULE_MESSAGE);
       return;
     }
     if (id === "edit") setRuleDraft({ ...currentRule, headers: [...currentRule.headers] });
@@ -357,7 +446,7 @@ export default function App() {
   };
 
   return (
-    <div className="app">
+    <div className="app" aria-busy={busy}>
       <header className="toolbar">
         <h1 className="title">Webhook Lab</h1>
         <span className={`status ${status.running ? "ok" : "off"}`}>
@@ -388,11 +477,94 @@ export default function App() {
         <section className="panel">
           <h2>Rules</h2>
           <div className="rule-editor">
-            <input placeholder="method (없으면 전체)" value={rule.method ?? ""} onChange={(e) => setRuleDraft({ ...rule, method: e.currentTarget.value || null })} />
-            <input placeholder="path (예: /hook 또는 /events/*)" value={rule.path} onChange={(e) => setRuleDraft({ ...rule, path: e.currentTarget.value })} />
-            <input type="number" placeholder="status" value={rule.status} onChange={(e) => setRuleDraft({ ...rule, status: Number(e.currentTarget.value) })} />
-            <input type="number" placeholder="delay ms" value={rule.delayMs} onChange={(e) => setRuleDraft({ ...rule, delayMs: Number(e.currentTarget.value) })} />
-            <textarea placeholder="응답 body" value={rule.body} onChange={(e) => setRuleDraft({ ...rule, body: e.currentTarget.value })} />
+            <div className="rule-field">
+              <label htmlFor="rule-method">method</label>
+              <input
+                id="rule-method"
+                placeholder="method (없으면 전체)"
+                value={rule.method ?? ""}
+                maxLength={MAX_METHOD_CHARS}
+                aria-describedby={`rule-method-help${methodIssue ? " rule-method-error" : ""}`}
+                aria-invalid={methodIssue ? "true" : undefined}
+                onChange={(e) => setRuleDraft({ ...rule, method: e.currentTarget.value || null })}
+              />
+              <p id="rule-method-help" className="field-help">
+                대소문자를 구분하지 않고 요청 method와 일치합니다. 비워두면 모든 method(*)에 적용됩니다. ASCII HTTP token, 최대 16자/16바이트입니다.
+              </p>
+              {methodIssue && <p id="rule-method-error" className="field-error">{methodIssue.message}</p>}
+            </div>
+            <div className="rule-field">
+              <label htmlFor="rule-path">path</label>
+              <input
+                id="rule-path"
+                placeholder="path (예: /hook 또는 /events/*)"
+                value={rule.path}
+                aria-describedby={`rule-path-help${pathIssue ? " rule-path-error" : ""}`}
+                aria-invalid={pathIssue ? "true" : undefined}
+                onChange={(e) => setRuleDraft({ ...rule, path: e.currentTarget.value })}
+              />
+              <p id="rule-path-help" className="field-help">
+                경로 전체가 정확히 일치합니다. 마지막 문자가 *일 때만 그 앞부분으로 시작하는 경로와 일치합니다 (예: /events/* → /events/123). /로 시작하고 최대 4,096자/16,384바이트입니다.
+              </p>
+              {pathIssue && <p id="rule-path-error" className="field-error">{pathIssue.message}</p>}
+            </div>
+            <div className="rule-field">
+              <label htmlFor="rule-status">status</label>
+              <input
+                id="rule-status"
+                type="number"
+                placeholder="status"
+                value={rule.status}
+                min={MIN_RESPONSE_STATUS}
+                max={MAX_RESPONSE_STATUS}
+                step={1}
+                aria-describedby={`rule-status-help${statusIssue ? " rule-status-error" : ""}`}
+                aria-invalid={statusIssue ? "true" : undefined}
+                onChange={(e) => setRuleDraft({ ...rule, status: Number(e.currentTarget.value) })}
+              />
+              <p id="rule-status-help" className="field-help">
+                매칭된 요청에 돌려줄 HTTP 응답 status 코드입니다 (허용 범위: 100~599, 예: 200, 404, 500).
+              </p>
+              {statusIssue && <p id="rule-status-error" className="field-error">{statusIssue.message}</p>}
+            </div>
+            <div className="rule-field">
+              <label htmlFor="rule-delay">delay (ms)</label>
+              <input
+                id="rule-delay"
+                type="number"
+                placeholder="delay ms"
+                value={rule.delayMs}
+                min={0}
+                max={MAX_RESPONSE_DELAY_MS}
+                step={1}
+                aria-describedby={`rule-delay-help${delayIssue ? " rule-delay-error" : ""}`}
+                aria-invalid={delayIssue ? "true" : undefined}
+                onChange={(e) => setRuleDraft({ ...rule, delayMs: Number(e.currentTarget.value) })}
+              />
+              <p id="rule-delay-help" className="field-help">
+                응답 전에 기다릴 시간(밀리초)입니다. 0이면 지연 없이 바로 응답합니다 (허용 범위: 0~{MAX_RESPONSE_DELAY_MS}ms).
+              </p>
+              {delayIssue && <p id="rule-delay-error" className="field-error">{delayIssue.message}</p>}
+            </div>
+            <div className="rule-field">
+              <label htmlFor="rule-body">응답 body</label>
+              <textarea
+                id="rule-body"
+                placeholder="응답 body"
+                value={rule.body}
+                aria-describedby={`rule-body-help rule-headers-help${bodyIssue ? " rule-body-error" : ""}${headersIssue ? " rule-headers-error" : ""}`}
+                aria-invalid={bodyIssue || headersIssue ? "true" : undefined}
+                onChange={(e) => setRuleDraft({ ...rule, body: e.currentTarget.value })}
+              />
+              <p id="rule-body-help" className="field-help">
+                매칭된 요청에 돌려줄 response body입니다. 저장된 headers와 함께 응답 규칙의 출력으로 사용됩니다. body는 최대 256,000자/1,024,000바이트입니다.
+              </p>
+              <p id="rule-headers-help" className="field-help">
+                response headers는 최대 100개이며 이름 256자/256바이트, 값 16,384자/65,536바이트, 전체 64,000자/256,000바이트입니다.
+              </p>
+              {bodyIssue && <p id="rule-body-error" className="field-error">{bodyIssue.message}</p>}
+              {headersIssue && <p id="rule-headers-error" className="field-error">{headersIssue.message}</p>}
+            </div>
             <button className="btn primary" disabled={busy} onClick={() => void onSaveRule()}>{rule.id ? "규칙 저장" : "규칙 추가"}</button>
           </div>
           {rules.map((targetRule) => (
@@ -407,7 +579,15 @@ export default function App() {
               {...ruleContextMenu.triggerProps}
             >
               <span className="mono">{targetRule.method ?? "*"} {targetRule.path} → {targetRule.status}{targetRule.delayMs ? ` (+${targetRule.delayMs}ms)` : ""}</span>
-              <button className="mini" disabled={busy} onClick={() => void onDeleteRule(targetRule)}>✕</button>
+              <button
+                type="button"
+                className="mini"
+                aria-label={`${targetRule.method ?? "*"} ${targetRule.path} 규칙 삭제`}
+                disabled={busy}
+                onClick={() => void onDeleteRule(targetRule)}
+              >
+                ✕
+              </button>
             </div>
           ))}
           {rules.length === 0 && <div className="dim">규칙 없음 — 매치 없으면 404.</div>}
