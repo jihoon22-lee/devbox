@@ -21,7 +21,9 @@ const HTTP_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const SENSITIVE_NAME = /(authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|access[-_]?token|refresh[-_]?token|token|secret|password|passwd|private[-_]?key)/i;
 const REFERENCE = /\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}|\$\{\s*[a-zA-Z0-9_.-]+\s*\}/;
 const WHOLE_REFERENCE = /^(?:\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}|\$\{\s*[a-zA-Z0-9_.-]+\s*\})$/;
-const KNOWN_TOKEN = /(?:sk-|ghp_|github_pat_|glpat-|xox[baprs]-)[A-Za-z0-9_.-]{12,}|AKIA[A-Z0-9]{16}|(?:[A-Za-z0-9_-]{10,}\.){2}[A-Za-z0-9_-]{10,}/;
+const KNOWN_TOKEN_PREFIXES = ["sk-", "ghp_", "github_pat_", "glpat-", "xoxb-", "xoxa-", "xoxp-", "xoxr-", "xoxs-"] as const;
+const TOKEN_SUFFIX = /^[A-Za-z0-9_.-]+$/;
+const JWT_SEGMENT = /^[A-Za-z0-9_-]+$/;
 const PRIVATE_KEY = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 const URI_SAFE_CHARACTERS = /^[A-Za-z0-9\-._~!$&'()*+,;=:@/?%\[\]*]*$/;
 
@@ -54,12 +56,39 @@ function containsMixedReference(value: string): boolean {
   return containsReference(value) && !isWholeReference(value);
 }
 
+function tokenCandidates(value: string): string[] {
+  return value.split(/[^A-Za-z0-9_.-]+/).filter(Boolean);
+}
+
+/**
+ * Match one already-delimited candidate in linear time. The previous
+ * unanchored JWT regexp retried a greedy `{10,}` branch at every character,
+ * making long ordinary header values quadratic under a loaded CI runner.
+ */
+function isKnownTokenCandidate(candidate: string): boolean {
+  for (const prefix of KNOWN_TOKEN_PREFIXES) {
+    const index = candidate.indexOf(prefix);
+    if (index >= 0) {
+      const suffix = candidate.slice(index + prefix.length);
+      if (suffix.length >= 12 && TOKEN_SUFFIX.test(suffix)) return true;
+    }
+  }
+  const awsIndex = candidate.indexOf("AKIA");
+  if (awsIndex >= 0) {
+    const key = candidate.slice(awsIndex, awsIndex + 20);
+    if (key.length === 20 && /^AKIA[A-Z0-9]{16}$/.test(key)) return true;
+  }
+  const jwt = candidate.split(".");
+  return jwt.length === 3
+    && jwt.every((segment) => segment.length >= 10 && JWT_SEGMENT.test(segment));
+}
+
 function isSensitiveName(name: string): boolean {
   return SENSITIVE_NAME.test(name);
 }
 
 function containsKnownToken(value: string): boolean {
-  return KNOWN_TOKEN.test(value) || PRIVATE_KEY.test(value);
+  return PRIVATE_KEY.test(value) || tokenCandidates(value).some(isKnownTokenCandidate);
 }
 
 function redactKnownTokenPatterns(value: string): string {
@@ -67,9 +96,9 @@ function redactKnownTokenPatterns(value: string): string {
   if (PRIVATE_KEY.test(value)) return REDACTED;
 
   let output = value;
-  const candidates = value.split(/[\s"'=:,&]+/).filter(Boolean);
+  const candidates = tokenCandidates(value);
   for (const candidate of candidates) {
-    if (KNOWN_TOKEN.test(candidate)) output = output.split(candidate).join(REDACTED);
+    if (isKnownTokenCandidate(candidate)) output = output.split(candidate).join(REDACTED);
   }
   return output
     .replace(/\b(Bearer|Basic)\s+([^\s,;]+)/gi, (_match, scheme: string, token: string) =>
