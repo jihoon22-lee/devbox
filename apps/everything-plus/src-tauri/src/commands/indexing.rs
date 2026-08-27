@@ -1,8 +1,8 @@
-use crate::core::content::{extract_file, is_content_candidate};
+use crate::core::content::{extract_file, is_content_candidate, is_pdf_path};
 use crate::core::db::{
-    add_root as db_add_root, clear_all, clear_root, content_status_summary,
-    list_roots as db_list_roots, remove_root as db_remove_root, total_files, upsert_content_record,
-    upsert_file,
+    add_root as db_add_root, clear_all, clear_pdf, clear_root, content_status_summary,
+    list_roots as db_list_roots, record_pdf_extractor_version, remove_root as db_remove_root,
+    total_files, upsert_content_record, upsert_file,
 };
 use crate::core::models::IndexStatus;
 use filesystem::collect;
@@ -37,6 +37,30 @@ pub struct AppState {
     pub content_failed: AtomicI64,
     pub last_indexed_at: AtomicI64,
     pub last_error: Mutex<Option<String>>,
+}
+
+/// Scope used by a re-index worker.  `Pdf` is deliberately narrower than a
+/// root re-index so changing the PDF extractor version cannot discard or
+/// reread text/source/Markdown rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum IndexFilter {
+    All,
+    Pdf,
+}
+
+impl IndexFilter {
+    fn matches(self, path: &Path) -> bool {
+        match self {
+            Self::All => true,
+            Self::Pdf => is_pdf_path(path),
+        }
+    }
+
+    /// A queued request can represent a new root or a user-requested full
+    /// rebuild.  Escalating to `All` is the only safe coalescing rule.
+    fn queued_restart(self) -> Self {
+        Self::All
+    }
 }
 
 /// 인덱스 루트를 추가하고 인덱싱을 시작한다.
@@ -167,6 +191,17 @@ pub fn index_status(state: tauri::State<'_, Arc<AppState>>) -> Result<IndexStatu
 /// `pub(crate)`인 이유: 스키마 버전이 올라가 `migrate()`가 인덱스를 비운 직후
 /// `lib.rs`의 setup에서 전체 재인덱싱을 걸 때도 이 함수를 재사용한다.
 pub(crate) fn spawn_index(state: Arc<AppState>, only_roots: Vec<String>) {
+    spawn_index_with_filter(state, only_roots, IndexFilter::All);
+}
+
+/// Rebuilds only PDF rows for every registered root.  This is used after a
+/// PDF extractor version change and intentionally preserves ordinary content
+/// rows.
+pub(crate) fn spawn_pdf_reindex(state: Arc<AppState>) {
+    spawn_index_with_filter(state, Vec::new(), IndexFilter::Pdf);
+}
+
+fn spawn_index_with_filter(state: Arc<AppState>, only_roots: Vec<String>, filter: IndexFilter) {
     {
         let _lifecycle = state
             .lifecycle
@@ -188,8 +223,9 @@ pub(crate) fn spawn_index(state: Arc<AppState>, only_roots: Vec<String>) {
         .name("everything-plus-indexer".to_string())
         .spawn(move || {
             let mut targets = only_roots;
+            let mut active_filter = filter;
             loop {
-                let result = run_index(&worker_state, &targets);
+                let result = run_index_with_filter(&worker_state, &targets, active_filter);
                 if result.is_err() {
                     if let Ok(mut error) = worker_state.last_error.lock() {
                         *error = Some("indexing_failed".to_string());
@@ -219,6 +255,7 @@ pub(crate) fn spawn_index(state: Arc<AppState>, only_roots: Vec<String>) {
                 // registered root; this also incorporates roots added while
                 // the previous scan was running.
                 targets = Vec::new();
+                active_filter = active_filter.queued_restart();
             }
         });
     if worker.is_err() {
@@ -250,13 +287,24 @@ fn reset_progress(state: &Arc<AppState>) {
 
 /// 실제 인덱싱. 파일 순회는 DB 락 밖에서 수행하고, 쓰기는 작은 트랜잭션으로
 /// 분리해 검색/status command가 장시간 대기하지 않도록 한다.
-fn run_index(state: &Arc<AppState>, only_roots: &[String]) -> rusqlite::Result<()> {
+fn run_index_with_filter(
+    state: &Arc<AppState>,
+    only_roots: &[String],
+    filter: IndexFilter,
+) -> rusqlite::Result<()> {
     let full_reindex = only_roots.is_empty();
     let targets: Vec<_> = {
         let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
         let roots = db_list_roots(&conn)?;
         if full_reindex {
-            clear_all(&conn)?;
+            match filter {
+                IndexFilter::All => clear_all(&conn)?,
+                IndexFilter::Pdf => {
+                    for root in &roots {
+                        clear_pdf(&conn, &root.path)?;
+                    }
+                }
+            }
             roots
         } else {
             let targets: Vec<_> = roots
@@ -264,7 +312,10 @@ fn run_index(state: &Arc<AppState>, only_roots: &[String]) -> rusqlite::Result<(
                 .filter(|root| only_roots.contains(&root.path))
                 .collect();
             for root in &targets {
-                clear_root(&conn, &root.path)?;
+                match filter {
+                    IndexFilter::All => clear_root(&conn, &root.path)?,
+                    IndexFilter::Pdf => clear_pdf(&conn, &root.path)?,
+                }
             }
             targets
         }
@@ -274,7 +325,10 @@ fn run_index(state: &Arc<AppState>, only_roots: &[String]) -> rusqlite::Result<(
         if state.cancel_requested.load(Ordering::SeqCst) {
             return Ok(());
         }
-        let files = collect(Path::new(&root.path));
+        let files: Vec<_> = collect(Path::new(&root.path))
+            .into_iter()
+            .filter(|file| filter.matches(&file.path))
+            .collect();
         state.total.fetch_add(files.len() as i64, Ordering::SeqCst);
         for chunk in files.chunks(BATCH_SIZE) {
             if state.cancel_requested.load(Ordering::SeqCst) {
@@ -349,6 +403,10 @@ fn run_index(state: &Arc<AppState>, only_roots: &[String]) -> rusqlite::Result<(
             }
         }
     }
+    if full_reindex {
+        let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
+        record_pdf_extractor_version(&conn)?;
+    }
     state
         .last_indexed_at
         .store(now_ms().max(1), Ordering::SeqCst);
@@ -417,7 +475,9 @@ fn now_ms() -> i64 {
 mod tests {
     use super::*;
     use crate::core::content::MAX_FILE_BYTES;
-    use crate::core::db::{add_root as db_add_root, search_content};
+    use crate::core::db::{add_root as db_add_root, search, search_content};
+    use lopdf::content::{Content, Operation};
+    use lopdf::{dictionary, Document, Object, Stream};
     use std::fs::{self, File};
     use std::sync::atomic::AtomicUsize;
 
@@ -440,6 +500,56 @@ mod tests {
         })
     }
 
+    fn pdf_fixture(text: &str) -> Vec<u8> {
+        let mut document = Document::with_version("1.5");
+        let pages_id = document.new_object_id();
+        let font_id = document.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type1",
+            "BaseFont" => "Courier",
+        });
+        let resources_id = document.add_object(dictionary! {
+            "Font" => dictionary! { "F1" => font_id },
+        });
+        let content = Content {
+            operations: vec![
+                Operation::new("BT", vec![]),
+                Operation::new("Tf", vec![Object::Name(b"F1".to_vec()), 12.into()]),
+                Operation::new("Td", vec![100.into(), 600.into()]),
+                Operation::new("Tj", vec![Object::string_literal(text)]),
+                Operation::new("ET", vec![]),
+            ],
+        };
+        let content_id = document.add_object(Stream::new(
+            lopdf::Dictionary::new(),
+            content.encode().unwrap(),
+        ));
+        let page_id = document.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "Resources" => resources_id,
+            "Contents" => content_id,
+        });
+        document.objects.insert(
+            pages_id,
+            lopdf::Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![page_id.into()],
+                "Count" => 1,
+                "Resources" => resources_id,
+                "MediaBox" => vec![0.into(), 0.into(), 595.into(), 842.into()],
+            }),
+        );
+        let catalog_id = document.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        document.trailer.set("Root", catalog_id);
+        let mut bytes = Vec::new();
+        document.save_to(&mut bytes).unwrap();
+        bytes
+    }
+
     #[test]
     fn root_validation_rejects_relative_and_traversal_without_echoing_input() {
         for input in [
@@ -453,6 +563,12 @@ mod tests {
             assert_eq!(error, ROOT_ERROR);
             assert!(!error.contains(input));
         }
+    }
+
+    #[test]
+    fn queued_format_reindex_escalates_to_a_full_rebuild() {
+        assert_eq!(IndexFilter::Pdf.queued_restart(), IndexFilter::All);
+        assert_eq!(IndexFilter::All.queued_restart(), IndexFilter::All);
     }
 
     #[test]
@@ -493,7 +609,7 @@ mod tests {
         crate::core::db::migrate(&conn).unwrap();
         let stored_root = db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
         let app_state = state(conn);
-        run_index(&app_state, &[]).unwrap();
+        run_index_with_filter(&app_state, &[], IndexFilter::All).unwrap();
 
         let conn = app_state.db.lock().unwrap();
         assert_eq!(search_content(&conn, "offline", 10).unwrap().len(), 1);
@@ -535,6 +651,53 @@ mod tests {
         drop(conn);
         fs::remove_dir_all(&root).unwrap();
         assert!(!stored_root.is_empty());
+    }
+
+    #[test]
+    fn pdf_reindex_replaces_only_pdf_content_and_preserves_text_content() {
+        let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "everything-plus-pdf-reindex-{id}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let text = root.join("notes.md");
+        let pdf = root.join("report.pdf");
+        let corrupt = root.join("broken.pdf");
+        fs::write(&text, "text content remains").unwrap();
+        fs::write(&pdf, pdf_fixture("old PDF content")).unwrap();
+        fs::write(&corrupt, b"%PDF-1.7\nnot a valid fixture").unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
+        let app_state = state(conn);
+        run_index_with_filter(&app_state, &[], IndexFilter::All).unwrap();
+        {
+            let conn = app_state.db.lock().unwrap();
+            assert_eq!(search_content(&conn, "remains", 10).unwrap().len(), 1);
+            assert_eq!(search_content(&conn, "old PDF", 10).unwrap().len(), 1);
+            assert_eq!(search(&conn, "broken", 10).unwrap().len(), 1);
+            let status: String = conn
+                .query_row(
+                    "SELECT content_status FROM file_content WHERE file_id =
+                        (SELECT id FROM files WHERE path = ?1)",
+                    [crate::core::db::normalize_path(corrupt.to_str().unwrap())],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(status, "extract_error");
+        }
+
+        fs::write(&pdf, pdf_fixture("new PDF content")).unwrap();
+        run_index_with_filter(&app_state, &[], IndexFilter::Pdf).unwrap();
+        let conn = app_state.db.lock().unwrap();
+        assert_eq!(search_content(&conn, "remains", 10).unwrap().len(), 1);
+        assert!(search_content(&conn, "old PDF", 10).unwrap().is_empty());
+        assert_eq!(search_content(&conn, "new PDF", 10).unwrap().len(), 1);
+        drop(conn);
+        fs::remove_dir_all(&root).unwrap();
     }
 
     fn utf16le(value: &str) -> Vec<u8> {

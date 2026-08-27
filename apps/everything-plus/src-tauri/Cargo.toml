@@ -27,6 +27,7 @@ serde_json = "1"
 dirs = "6.0.0"
 notify = "8.2.0"
 rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite"] }
+lopdf = { version = "=0.44.0", default-features = false }
 filesystem = { path = "../../../crates/filesystem" }
 search = { path = "../../../crates/search" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }

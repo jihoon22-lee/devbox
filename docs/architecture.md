@@ -457,7 +457,16 @@ FTS row라 filename search를 가리지 않는다. sensitive filename은 읽기 
 redaction한 뒤 4,096자 cap을 통과해야 UI로 나간다. 파일명 검색은 regex prefilter의 기존
 2,000개 상한을 보존하고 content 결과만 200개로 제한한다. full scan과 watcher incremental
 path가 크기·mtime을 읽기 전후에 다시 확인하는 같은 extractor를 공유하며,
-network/external tool/OCR/Office/PDF/semantic processing은 이 BASE 경계에 없다.
+network/external tool/OCR/Office/semantic processing은 이 BASE 경계에 없다. PDF는
+별도 `pdf-v1` format extractor가 MIT `lopdf`로 text object만 bounded offline 추출하며,
+파일 20 MiB·decompressed page/object stream 16 MiB·parsed object 100,000개·page 10,000개와
+text 2,000,000자·candidate 10초 상한을 적용한다. object/page 구조 상한 초과는
+`content_status=extract_error`, `error_code=resource_limit`으로, image-only scan/encrypted/
+corrupt PDF는 각각 `no_text`/`unsupported_encrypted`/`extract_error` metadata로 격리한다.
+`meta.pdf_extractor_version`이 없거나 현재 `pdf-v1`과 다르면 첫 설치/버전 전환 PDF-only
+reindex를 수행하고, 성공한 full/PDF scan 뒤 marker를 기록한다. PDF-only reindex 중 큐에
+새 root/index 요청이 들어오면 다음 실행을 `All`로 승격해 요청을 놓치지 않는다. OCR·image·
+format extraction은 이 경계에 포함하지 않는다.
 
 Repo Manager는 catalog revision 4부터 `path`를 수신한다. cold/hot request를 listener-first
 `PendingOpen` 경로로 한 번만 소비하고 기존 scan 결과와 canonical identity가 같은 repository를

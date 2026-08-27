@@ -97,7 +97,11 @@ pub fn run() {
                 let roots = core::db::list_roots(&state.db.lock().unwrap()).unwrap_or_default();
                 if !roots.is_empty() {
                     commands::indexing::spawn_index(state.clone(), Vec::new());
+                } else {
+                    core::db::record_pdf_extractor_version(&state.db.lock().unwrap())?;
                 }
+            } else if core::db::pdf_reindex_required(&state.db.lock().unwrap()).unwrap_or(true) {
+                commands::indexing::spawn_pdf_reindex(state.clone());
             }
             app.manage(state);
             app.manage(watcher.clone());

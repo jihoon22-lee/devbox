@@ -1,3 +1,6 @@
+// Kept as a compatibility facade for existing internal references and design
+// documentation. New candidate dispatch belongs to `content`.
+#[allow(unused_imports)]
 pub use super::content::is_text_ext;
 
 #[cfg(test)]

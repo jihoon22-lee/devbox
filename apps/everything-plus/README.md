@@ -6,7 +6,7 @@
 ## 주요 기능
 
 - **파일명 검색** — FTS5 인덱스, 파일명·경로 부분 일치, 밀리초 응답
-- **내용 검색** — 텍스트 파일(TXT/MD/JSON/CSV/소스코드) 내용 FTS5, 스니펫 하이라이트
+- **내용 검색** — 텍스트 파일(TXT/MD/JSON/CSV/소스코드)과 PDF text 내용 FTS5, 스니펫 하이라이트
 - **정규식 모드** — regex 검색
 - **인덱스 관리** — 검색 루트(드라이브/폴더) 추가·제외 규칙, re-index 진행률 표시, 파일 감시로 최신성 유지
 - **결과 작업** — 열기·폴더에서 보기·경로/파일명 복사와 설치된 `path` capability 앱으로 열기 context menu
@@ -16,18 +16,26 @@
 
 `index content`를 켠 검색 루트만 내용 인덱싱 대상이 된다. Everything+는 파일을 전부
 읽지 않고 `src-tauri/src/core/content.rs`의 명시적 source/Markdown/plain-text 확장자와
-`README`, `LICENSE`, `Dockerfile`, `.gitignore` 같은 소수의 이름만 선택한다. 현재 text
-extractor 버전은 `text-v1`이며 PDF/Office 컨테이너, OCR, semantic search는 이 기능에
-포함하지 않는다.
+PDF, `README`, `LICENSE`, `Dockerfile`, `.gitignore` 같은 소수의 이름만 선택한다. plain
+text extractor 버전은 `text-v1`, PDF extractor 버전은 `pdf-v1`이며, `meta`의
+`pdf_extractor_version` marker가 첫 설치와 PDF parser 버전 전환을 감지한다. Office 컨테이너,
+OCR, semantic search는 이 기능에 포함하지 않는다.
 
 - UTF-8(선택적 BOM)과 UTF-16 little/big endian(BOM, 안정적으로 식별 가능한 BOM 없는
   텍스트)을 strict decode한다. invalid UTF-8/UTF-16, binary/NUL 데이터는 검색 hit가 되지
   않는 `unsupported_encoding` 상태로 남는다.
 - 파일 하나는 최대 20 MiB, 보관 text는 최대 2,000,000 Unicode scalar characters,
-  후보 하나의 cooperative processing budget은 10초다. 초과 text는 앞부분만 저장하고
-  `truncated=true`, `error_code=text_limit`을 기록한다. oversized/read/race/timeout/
-  sensitive 파일도 filename index는 유지하면서 고정 `content_status`와 `error_code`만
-  기록한다.
+  후보 하나의 cooperative processing budget은 10초다. PDF는 parser가 inflate하는
+  page/object stream을 16 MiB, parsed indirect object를 100,000개, page를 10,000개로
+  제한한다. object/page 구조 상한을 넘으면 `content_status=extract_error`와 고정
+  `error_code=resource_limit`을 기록하고, 초과 text는 앞부분만 저장해
+  `truncated=true`, `error_code=text_limit`을 기록한다. oversized/read/race/timeout/sensitive
+  파일도 filename index는 유지하면서 고정 `content_status`와 `error_code`만 기록한다.
+- PDF는 MIT `lopdf`로 text object만 오프라인 추출하며 page rendering, OCR, image/format
+  extraction, 외부 resource 접근은 하지 않는다. image-only scanned PDF는 `no_text`,
+  password/encrypted PDF는 `unsupported_encrypted`, corrupt PDF와 parser/decompression
+  실패는 `extract_error`, object/page resource bound 초과는 `extract_error`와
+  `resource_limit`으로 격리한다. 해당 상태에서도 filename search는 계속 제공된다.
 - `.env`, credential/netrc/npmrc/secrets 계열 파일과 private-key 확장자/이름은 읽지 않고
   `skipped_sensitive`로 기록한다. FTS snippet은 Authorization/Bearer/password/token/
   secret/API-key/private-key 형태와 독립적으로 노출된 common provider token·AWS access key·
@@ -44,6 +52,11 @@ extractor 버전은 `text-v1`이며 PDF/Office 컨테이너, OCR, semantic searc
   metadata를 재생성한다. `content_status`, `extractor_version`, `truncated`,
   `indexed_at`, `error_code`, `encoding`, `text_chars`를 함께 저장하므로 검색 결과와
   상태 화면이 단순히 "없음"과 실패를 혼동하지 않는다.
+- text와 PDF extractor 버전은 독립적으로 기록된다. PDF parser 규칙이 바뀌거나
+  `pdf_extractor_version` marker가 없거나 다르면 PDF-only scan을 걸어 PDF row만 지우고 PDF
+  후보만 다시 읽어 text/source/Markdown 인덱스를 보존한다. PDF-only worker 중
+  새 root/index 요청이 큐에 들어오면 다음 실행을 `All`로 승격해 요청을 놓치지 않으며, 성공한
+  full/PDF scan만 현재 `pdf-v1` marker를 기록한다.
 
 ## 기술
 
