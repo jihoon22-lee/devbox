@@ -12,6 +12,7 @@ import {
   copyRawResponseHeaders,
   onOpenRequest,
   pickMultipartFile,
+  renewApiRequest,
   restoreApiRequest,
   sanitizePersistedJson,
   sealSecret,
@@ -385,6 +386,29 @@ export default function App() {
       unlisten?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (!handoffPreview) return undefined;
+    let disposed = false;
+    const handoffId = handoffPreview.handoffId;
+    const interval = window.setInterval(() => {
+      if (handoffBusyRef.current || handoffPreviewRef.current?.handoffId !== handoffId) return;
+      void renewApiRequest(handoffId).catch((cause) => {
+        if (disposed || !mountedRef.current
+          || handoffPreviewRef.current?.handoffId !== handoffId) return;
+        const message = safeHandoffError(cause);
+        if (isTerminalHandoffError(message)) {
+          handoffPreviewRef.current = null;
+          setHandoffPreview(null);
+        }
+        setError(message);
+      });
+    }, 30_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, [handoffPreview]);
 
   const prepareHistoryContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.historyId;
@@ -963,14 +987,16 @@ export default function App() {
       handoffPreviewRef.current = null;
       setHandoffPreview(null);
     } catch (cause) {
-      const message = safeHandoffError(cause);
-      if (message === "handoff 요청을 사용할 수 없습니다"
-        || message === "handoff 요청이 만료되었거나 더 이상 사용할 수 없습니다"
-        || message === "handoff 미리보기가 만료되었습니다. 다시 전달하세요") {
-        handoffPreviewRef.current = null;
-        if (mountedRef.current) setHandoffPreview(null);
+      if (!mountedRef.current) {
+        void restoreApiRequest(preview.handoffId).catch(() => undefined);
+        return;
       }
-      if (mountedRef.current) setError(message);
+      const message = safeHandoffError(cause);
+      if (isTerminalHandoffError(message)) {
+        handoffPreviewRef.current = null;
+        setHandoffPreview(null);
+      }
+      setError(message);
     } finally {
       handoffBusyRef.current = false;
       if (mountedRef.current) setHandoffBusy(false);
@@ -989,14 +1015,16 @@ export default function App() {
       handoffPreviewRef.current = null;
       setHandoffPreview(null);
     } catch (cause) {
-      const message = safeHandoffError(cause);
-      if (message === "handoff 요청을 사용할 수 없습니다"
-        || message === "handoff 요청이 만료되었거나 더 이상 사용할 수 없습니다"
-        || message === "handoff 미리보기가 만료되었습니다. 다시 전달하세요") {
-        handoffPreviewRef.current = null;
-        if (mountedRef.current) setHandoffPreview(null);
+      if (!mountedRef.current) {
+        void restoreApiRequest(preview.handoffId).catch(() => undefined);
+        return;
       }
-      if (mountedRef.current) setError(message);
+      const message = safeHandoffError(cause);
+      if (isTerminalHandoffError(message)) {
+        handoffPreviewRef.current = null;
+        setHandoffPreview(null);
+      }
+      setError(message);
     } finally {
       handoffBusyRef.current = false;
       if (mountedRef.current) setHandoffBusy(false);
@@ -2000,6 +2028,12 @@ function safeHandoffError(cause: unknown): string {
     "API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다",
   ]);
   return safeMessages.has(message) ? message : "handoff 요청을 처리하지 못했습니다";
+}
+
+function isTerminalHandoffError(message: string): boolean {
+  return message === "handoff 요청을 사용할 수 없습니다"
+    || message === "handoff 요청이 만료되었거나 더 이상 사용할 수 없습니다"
+    || message === "handoff 미리보기가 만료되었습니다. 다시 전달하세요";
 }
 
 export function shellQuote(s: string): string {

@@ -244,6 +244,16 @@ marker를 다시 검증한 뒤 process-local claim slot에서 저장 전 preview
 새 digest 재생성으로 회복한다. preview lease는 30초마다 갱신하지만 envelope TTL은 연장하지
 않으며, 어느 앱도 상대 앱의 DB나 원문 노트를 직접 읽지 않는다.
 
+Knowledge handoff의 preview/save는 명시적으로 설정된 vault만 대상으로 하며, default-root
+초기화나 Journal 자동 생성으로 외부 요청을 승격하지 않는다. preview가 보관한 canonical root와
+filesystem object identity를 save·파일 publication 직전에 재검증하고, symlink/reparse ancestor,
+root 교체, Journal 종류 변경은 fixed error와 claim restore로 격리한다. 파일은 완전히 flush한
+temporary sibling을 no-replace primitive로 publish하고, 그 entry identity가 일치할 때만 index
+실패 cleanup을 허용한다. watcher도 같은 vault identity 경계와 regular UTF-8 document/10 MiB 제한을
+사용하며 이벤트당 path 수·길이와 raw event queue·pending path를 각각 bounded하게 유지한다. frontend modal은 title/body
+UTF-8 byte budget과 explicit Save/Cancel, stale/expiry/unmount guard, focus trap/restore를
+제공한다.
+
 Workbench는 Life Log의 app-local DB와 settings schema를 알지 않는다. 시작 시
 `life-log/projects/v1`을 producer/schema/freshness 기준으로 검증하고 안전한 절대 경로만
 ProjectProfile로 흡수한다. 파일 없음은 no-op이며 손상·schema mismatch·unsafe entry는 기존

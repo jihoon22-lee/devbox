@@ -41,6 +41,9 @@ pub fn build_api_request_payload(
     fixture: &CapturedFixture,
 ) -> Result<ApiRequestPayload, &'static str> {
     validate_fixture(fixture).map_err(|_| HANDOFF_INPUT_ERROR)?;
+    if fixture.url == REDACTED_PATH {
+        return Err(HANDOFF_INPUT_ERROR);
+    }
     let payload = ApiRequestPayload {
         method: fixture.method.to_ascii_uppercase(),
         url: rewrite_sensitive_query(&fixture.url),
@@ -238,6 +241,13 @@ mod tests {
     fn invalid_fixture_never_becomes_a_handoff_payload() {
         let mut invalid = fixture();
         invalid.url = "https://example.test/private".into();
+        assert_eq!(
+            build_api_request_payload(&invalid),
+            Err(HANDOFF_INPUT_ERROR)
+        );
+
+        invalid = fixture();
+        invalid.url = REDACTED_PATH.into();
         assert_eq!(
             build_api_request_payload(&invalid),
             Err(HANDOFF_INPUT_ERROR)

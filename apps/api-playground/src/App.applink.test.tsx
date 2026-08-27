@@ -5,6 +5,7 @@ import {
   ackApiRequest,
   claimApiRequest,
   onOpenRequest,
+  renewApiRequest,
   restoreApiRequest,
   takePendingOpen,
 } from "./api";
@@ -27,6 +28,7 @@ vi.mock("./api", () => ({
     return () => undefined;
   }),
   pickMultipartFile: vi.fn(),
+  renewApiRequest: vi.fn(),
   restoreApiRequest: vi.fn(),
   sanitizePersistedJson: vi.fn(async (serialized: string) => serialized),
   sealSecret: vi.fn(),
@@ -40,6 +42,7 @@ vi.mock("./api", () => ({
 const ackApiRequestMock = vi.mocked(ackApiRequest);
 const claimApiRequestMock = vi.mocked(claimApiRequest);
 const onOpenRequestMock = vi.mocked(onOpenRequest);
+const renewApiRequestMock = vi.mocked(renewApiRequest);
 const restoreApiRequestMock = vi.mocked(restoreApiRequest);
 const takePendingOpenMock = vi.mocked(takePendingOpen);
 
@@ -88,6 +91,7 @@ beforeEach(() => {
   });
   claimApiRequestMock.mockReset().mockResolvedValue(preview);
   ackApiRequestMock.mockReset().mockResolvedValue(request);
+  renewApiRequestMock.mockReset().mockResolvedValue({ leaseUntilMs: 1_700_000_120_000 });
   restoreApiRequestMock.mockReset().mockResolvedValue(undefined);
 });
 
@@ -187,6 +191,29 @@ describe("API Playground api-request/v1 receiver", () => {
 
     await waitFor(() => expect(restoreApiRequestMock).toHaveBeenCalledWith(preview.handoffId));
     expect(screen.queryByRole("dialog", { name: "Webhook 요청 미리보기" })).toBeNull();
+  });
+
+  it("renews a visible preview every 30 seconds without extending renderer state", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      takePendingOpenMock.mockImplementationOnce(async () => handoffRequest());
+      render(<App />);
+
+      await screen.findByRole("dialog", { name: "Webhook 요청 미리보기" });
+      await waitFor(() => expect(
+        (screen.getByRole("button", { name: "취소" }) as HTMLButtonElement).disabled,
+      ).toBe(false));
+      await act(async () => {
+        await Promise.resolve();
+        vi.advanceTimersByTime(30_001);
+        await Promise.resolve();
+      });
+
+      expect(renewApiRequestMock).toHaveBeenCalledWith(preview.handoffId);
+      expect(screen.getByRole("dialog", { name: "Webhook 요청 미리보기" })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("surfaces a fixed expiry error without clipboard fallback", async () => {

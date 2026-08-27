@@ -875,6 +875,13 @@ body {
   font: 12px/1.55 "Cascadia Code", Consolas, monospace;
 }
 
+.handoff-size {
+  margin: -4px 0 12px;
+  color: var(--dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .handoff-actions {
   display: flex;
   justify-content: flex-end;

@@ -129,9 +129,9 @@ pub(crate) fn resolve_root(conn: &Connection) -> Result<PathBuf, String> {
 }
 
 /// Read the already-selected root without initializing the default layout.
-/// Quick-capture preview and explicit image writes are metadata-only until
-/// their own fixed destination has been validated, so neither action may turn
-/// a read request into a first-run filesystem/database mutation.
+/// Quick-capture preview, explicit image writes, and external handoff preview
+/// must not initialize `Documents/Knowledge` or mutate settings as a side
+/// effect of a read-only request.
 pub(crate) fn resolve_configured_root(conn: &Connection) -> Result<PathBuf, String> {
     db::get_setting(conn, "root")
         .map_err(|_| "빠른 캡처 미리보기를 만들 수 없습니다".to_string())?
@@ -181,7 +181,12 @@ pub fn set_root(
     path: String,
 ) -> Result<(), String> {
     let conn = state.db.lock().unwrap();
-    store::ensure_layout(Path::new(&path))?;
+    let root = Path::new(&path);
+    crate::core::vault::validate_root_for_creation(root)
+        .map_err(|_| "Knowledge 저장 위치를 확인할 수 없습니다".to_string())?;
+    store::ensure_layout(root)?;
+    VaultIdentity::inspect(root)
+        .map_err(|_| "Knowledge 저장 위치를 확인할 수 없습니다".to_string())?;
     db::set_setting(&conn, "root", &path).map_err(|e| e.to_string())?;
     drop(conn);
     state.rename_plans.lock().unwrap().clear();
@@ -860,6 +865,21 @@ mod tests {
             body: body.to_string(),
             tags: vec!["rust".to_string(), "offline".to_string()],
         }
+    }
+
+    #[test]
+    fn handoff_root_resolution_does_not_create_or_mutate_default_root() {
+        let database = tempfile::tempdir().unwrap();
+        let connection = db::init(&database.path().join("data.db")).unwrap();
+        assert!(resolve_configured_root(&connection).is_err());
+        assert_eq!(db::get_setting(&connection, "root").unwrap(), None);
+
+        let configured = tempfile::tempdir().unwrap();
+        db::set_setting(&connection, "root", &configured.path().to_string_lossy()).unwrap();
+        assert_eq!(
+            resolve_configured_root(&connection).unwrap(),
+            configured.path()
+        );
     }
 
     #[test]

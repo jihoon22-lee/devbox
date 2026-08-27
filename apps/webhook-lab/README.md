@@ -116,6 +116,7 @@ error만 표시하고 clipboard·임시 파일 fallback은 사용하지 않는�
 API Playground는 cold/hot AppLink 모두에서 handoff를 claim한 뒤 적용 전 preview를 표시한다.
 `적용`은 claim을 ack/delete하고 요청 편집기에 반영하며, `취소`는 restore한다. 만료·손상·중복
 claim·lease 오류는 fixed error로 표시하고 자동 재전달이나 clipboard fallback을 하지 않는다.
+preview가 열린 동안 30초마다 claim lease를 갱신하되 원 envelope TTL은 연장하지 않는다.
 credential marker는 `${WEBHOOK_SECRET}` 같은 이름 참조로만 남으며 secret 원문은 handoff에
 포함되지 않는다.
 

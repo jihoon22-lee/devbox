@@ -32,9 +32,9 @@ impl PartialEq for VaultIdentity {
 
 impl Eq for VaultIdentity {}
 
-/// Filesystem identity captured for one regular file.  Rollback callers must
-/// provide this token so a path replaced by another writer is never deleted
-/// merely because it still resolves inside the same vault.
+/// Filesystem identity captured for one regular file or directory. Rollback
+/// and publication callers use it so a path replaced by another writer is
+/// never treated as the object they previously validated.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct EntryIdentity(FileIdentity);
 
@@ -192,8 +192,7 @@ impl VaultIdentity {
         })
     }
 
-    #[cfg(test)]
-    pub fn canonical_path(&self) -> &Path {
+    pub(crate) fn canonical_path(&self) -> &Path {
         &self.canonical_path
     }
 
@@ -317,6 +316,149 @@ impl VaultIdentity {
     }
 }
 
+/// Validate the existing portion of a root before the explicit root-selection
+/// command creates a missing tail. Read-only previews always require
+/// `VaultIdentity::inspect` on an already existing configured root.
+pub(crate) fn validate_root_for_creation(path: &Path) -> Result<(), VaultError> {
+    if path.as_os_str().is_empty() || !path.is_absolute() {
+        return Err(VaultError::InvalidRoot);
+    }
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(VaultError::InvalidRoot);
+    }
+    let mut cursor = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => cursor.push(prefix.as_os_str()),
+            Component::RootDir => cursor.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => return Err(VaultError::InvalidRoot),
+            Component::Normal(segment) => {
+                cursor.push(segment);
+                match std::fs::symlink_metadata(&cursor) {
+                    Ok(metadata) if is_link_or_reparse(&metadata) => {
+                        return Err(VaultError::InvalidRoot)
+                    }
+                    Ok(metadata) if !metadata.is_dir() => return Err(VaultError::InvalidRoot),
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                    Err(_) => return Err(VaultError::InvalidRoot),
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Publish a fully flushed file without replacing an existing target.
+/// The caller owns cleanup of the private temporary sibling on failure.
+pub(crate) fn publish_new_file(temporary: &Path, target: &Path) -> Result<(), std::io::Error> {
+    if temporary.parent() != target.parent() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "publication paths must share a parent",
+        ));
+    }
+
+    #[cfg(windows)]
+    {
+        use ::windows::core::PCWSTR;
+        use ::windows::Win32::Foundation::{
+            ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, ERROR_FILE_EXISTS, WIN32_ERROR,
+        };
+        use ::windows::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_WRITE_THROUGH};
+        use std::os::windows::ffi::OsStrExt;
+
+        let temporary: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
+        let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+        let result = unsafe {
+            MoveFileExW(
+                PCWSTR(temporary.as_ptr()),
+                PCWSTR(target.as_ptr()),
+                MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        return match result {
+            Ok(()) => Ok(()),
+            Err(error)
+                if WIN32_ERROR::from_error(&error).is_some_and(|code| {
+                    code == ERROR_ACCESS_DENIED
+                        || code == ERROR_ALREADY_EXISTS
+                        || code == ERROR_FILE_EXISTS
+                }) =>
+            {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "publication target already exists",
+                ))
+            }
+            Err(error) => Err(std::io::Error::other(error)),
+        };
+    }
+
+    #[cfg(not(windows))]
+    {
+        // A same-directory hard link gives no-replace publication on Unix.
+        // A plain rename could replace a competing target.
+        std::fs::hard_link(temporary, target)?;
+        if sync_parent(target).is_err() {
+            let _ = std::fs::remove_file(target);
+            let _ = std::fs::remove_file(temporary);
+            let _ = sync_parent(target);
+            return Err(std::io::Error::other(
+                "publication directory could not be synced",
+            ));
+        }
+        if std::fs::remove_file(temporary).is_err() {
+            let _ = std::fs::remove_file(target);
+            let _ = sync_parent(target);
+            return Err(std::io::Error::other(
+                "publication temporary file could not be removed",
+            ));
+        }
+        if sync_parent(target).is_err() {
+            let _ = std::fs::remove_file(target);
+            let _ = sync_parent(target);
+            return Err(std::io::Error::other(
+                "publication directory could not be synced",
+            ));
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn cleanup_file(vault: &VaultIdentity, path: &Path, expected: &EntryIdentity) {
+    if vault.revalidate().is_err() {
+        return;
+    }
+    let Ok(current) = vault.existing_file_identity(path) else {
+        return;
+    };
+    if expected.matches(&current) {
+        let _ = std::fs::remove_file(path);
+        let _ = sync_parent(path);
+    }
+}
+
+/// Remove a private temporary file only if it still has the object identity
+/// captured by this process. A changed path is left untouched.
+pub(crate) fn cleanup_file_by_identity(path: &Path, expected: &EntryIdentity) {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return;
+    };
+    if !metadata.is_file() || is_link_or_reparse(&metadata) {
+        return;
+    }
+    let current = EntryIdentity(file_identity(path, &metadata));
+    if expected.matches(&current) {
+        let _ = std::fs::remove_file(path);
+        let _ = sync_parent(path);
+    }
+}
+
 /// Reject links/reparse points in the configured root spelling, not only at
 /// the final directory. `symlink_metadata(path)` follows links in ancestors,
 /// so checking just the final object would accept e.g. `alias/Knowledge`.
@@ -427,6 +569,19 @@ fn file_identity(path: &Path, metadata: &std::fs::Metadata) -> FileIdentity {
     {
         FileIdentity::Path(path.to_path_buf())
     }
+}
+
+#[cfg(unix)]
+fn sync_parent(path: &Path) -> Result<(), std::io::Error> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| std::io::Error::other("publication path has no parent"))?;
+    std::fs::File::open(parent).and_then(|directory| directory.sync_all())
+}
+
+#[cfg(not(unix))]
+fn sync_parent(_path: &Path) -> Result<(), std::io::Error> {
+    Ok(())
 }
 
 #[cfg(unix)]

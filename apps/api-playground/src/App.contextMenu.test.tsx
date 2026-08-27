@@ -20,6 +20,7 @@ vi.mock("./api", () => ({
   copyRawResponseCookies: vi.fn(),
   copyRawResponseHeaders: vi.fn(),
   onOpenRequest: vi.fn(async () => () => undefined),
+  renewApiRequest: vi.fn(),
   restoreApiRequest: vi.fn(),
   sanitizePersistedJson: vi.fn(),
   sealSecret: vi.fn(),

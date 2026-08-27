@@ -2,8 +2,10 @@
 
 ## Overview
 
-Issue #315 adds the first app-to-app one-time handoff on top of the protocol-v2
-`crates/applink` store. Webhook Lab publishes only a backend-owned masked history
+Issue #315 is delivered in the same cohesive app-handoff PR as Life Log →
+Knowledge #307. The two independently versioned flows exercise the same
+protocol-v2 `crates/applink` claim/preview/ack/restore contract without sharing
+business payloads. Webhook Lab publishes only a backend-owned masked history
 or fixture projection; API Playground claims it, shows an explicit preview, and
 applies it only after the user confirms. The implementation is intentionally
 bounded and does not use clipboard or temporary-file fallback.
@@ -43,6 +45,11 @@ consumer crash.
 - Claims into native process memory; the renderer receives a preview without the
   claim token or raw secret. `적용` performs ack/delete and updates the request
   editor; `취소` performs restore.
+- Renews the 60-second preview lease every 30 seconds without extending the
+  10-minute envelope TTL, and restores a late or abandoned native claim when
+  the renderer disappears.
+- Accepts only the exact `webhook-lab` producer → `api-playground` target route;
+  an otherwise valid envelope from another producer is restored and rejected.
 - Maps expiry, wrong target/kind, duplicate claim, lease, storage, and corrupt
   payload failures to fixed messages that do not echo paths or payload content.
 
@@ -52,8 +59,8 @@ consumer crash.
   punctuation (for example `"${WEBHOOK_SECRET}"}`) remains valid while raw
   credential assignments remain rejected.
 - Kept Webhook Lab at `0.1.0`; its `0.2.0` target remains deferred to the last
-  Webhook Lab feature PR or release preparation. API Playground already reached
-  `0.4.0` on main before this integration, and that existing version is preserved.
+  Webhook Lab feature PR or release preparation. API Playground moves from
+  `0.3.2` to its planned `0.4.0` app version in this final scoped API feature.
 - Raised `apps/catalog.json` to revision 7 and declared the API Playground
   receiver and Webhook Lab producer capability.
 
@@ -82,7 +89,9 @@ consumer crash.
   initial cancel-button focus, Escape-to-cancel, Tab trapping, and restoration
   of the previously focused element.
 - Added regression fixtures for bounded IDs, encoded unsafe paths, raw
-  credential forms, late-claim restoration, and modal focus behavior.
+  credential forms, route identity, lease renewal, late-claim restoration, and
+  modal focus behavior. A fixture whose entire request path was redacted is
+  rejected instead of publishing an unusable request.
 
 ## Code Examples
 
@@ -143,16 +152,44 @@ pnpm build (api-playground)                        PASS
 pnpm build (webhook-lab)                           PASS
 ```
 
-### Release-gate notes
+### Grouped PR release-gate notes
 
-- Full workspace `cargo check`/`cargo test`, root `pnpm build`, and formatter/
-  diff checks completed before the single conventional commit.
-- Windows packaged launch and the installed-target cold/hot smoke test remain
-  parent review/release-gate work; this draft does not push, open a PR, merge,
-  or remove the dedicated worktree.
+- Focused `cargo check`/`cargo test`, four-app frontend tests/builds, policy,
+  catalog, formatter, and diff checks are recorded at the grouped PR checkpoint.
+- Windows packaged launch and installed-target cold/hot smoke remain CI/W2
+  evidence. The grouped PR closes #307 and #315 together while retaining
+  separate acceptance coverage for each producer/consumer pair.
+
+### Final grouped #307 + #315 checkpoint
+
+The shared app-handoff PR was revalidated after the final lifecycle, modal,
+and response-to-input fixes. This is the authoritative Linux/WSL checkpoint
+for the grouped change:
+
+```text
+cargo test -j2 -p applink -p api-playground -p webhook-lab \
+  -p life-log -p knowledge-base -p catalog -p devbox-manager
+                                                       PASS (477 tests)
+cargo check --all-targets (same packages)              PASS
+cargo clippy --all-targets -- -D warnings               PASS
+cargo fmt --all -- --check                              PASS
+pnpm test (api-playground, maxWorkers=1)                PASS (183 tests)
+pnpm test (webhook-lab, maxWorkers=2)                   PASS (51 tests)
+pnpm test (life-log, maxWorkers=1)                      PASS (47 tests)
+pnpm test (knowledge-base, maxWorkers=2)                PASS (74 tests)
+pnpm build (four affected apps, workspace concurrency 1) PASS
+bash .github/scripts/check-catalog.sh                   PASS
+python3 .github/scripts/check-dependencies.py check     PASS
+dependency/build-manifest regression scripts           PASS
+git diff --check                                       PASS
+```
+
+The remaining W2 evidence is limited to Windows packaged cold/hot launch,
+receiver focus, and installed-target capability discovery. No browser-preview
+path publishes a handoff or launches another process.
 
 ## Next Steps
 
-- Parent agent performs core review/rebase and Windows packaged W2 verification.
-- Keep Life Log → Knowledge and Webhook replay/sequence (#362) as separate
-  features; do not broaden this handoff PR with those producers/consumers.
+- Keep Webhook replay/sequence (#362) and persistent handoff history/status
+  (#353) as follow-up features; this PR contains only the two user-approved
+  one-time app handoff flows (#307 and #315).

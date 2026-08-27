@@ -75,6 +75,7 @@ pub fn run() {
             commands::request::sanitize_persisted_json,
             commands::secrets::seal_secret,
             commands::handoff::claim_api_request,
+            commands::handoff::renew_api_request,
             commands::handoff::ack_api_request,
             commands::handoff::restore_api_request,
             commands::sse::start_sse_stream,

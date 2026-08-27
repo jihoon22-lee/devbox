@@ -15,11 +15,17 @@ impl PendingOpen {
     }
 
     pub fn set(&self, request: OpenRequest) {
-        *self.0.lock().expect("PendingOpen mutex poisoned") = Some(request);
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(request);
     }
 
     pub fn take(&self) -> Option<OpenRequest> {
-        self.0.lock().expect("PendingOpen mutex poisoned").take()
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 }
 

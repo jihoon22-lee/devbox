@@ -292,7 +292,7 @@ describe("knowledge-base App — tree context menu", () => {
       .toBeInTheDocument();
     expect(document.body.textContent).not.toContain("raw filesystem error");
     expect(document.querySelector(".path")?.textContent).toBe("Notes/renamed.md");
-    expect(document.querySelector(".cm-content")?.textContent).toBe("");
+    await waitFor(() => expect(document.querySelector(".cm-content")?.textContent).toBe(""));
   });
 
   it("검증된 absolute path 복사·탐색기 표시·catalog 대상 열기를 실행한다", async () => {

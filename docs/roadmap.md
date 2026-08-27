@@ -592,6 +592,10 @@ empty result, Markdown escaping, source/freshness ordering, fixed errors와 immu
 clipboard failure와 empty state를 검증한다. #306은 #307 handoff/Knowledge 저장, 자동 AI 요약,
 cloud export를 구현하지 않는다.
 
+**PR grouping.** 사용자 결정에 따라 #307과 #315는 공용 one-time app handoff lifecycle을
+검증하는 하나의 `feat/integration/app-handoffs` PR로 전달한다. 아래 acceptance와 후속 범위는
+producer/consumer 흐름별로 계속 분리해 추적한다.
+
 **2026-08-27 #307 구현 상태.** Life Log native digest의 명시적 `Send to Knowledge`가
 `knowledge-draft/v1` aggregate-only payload를 공용 applink handoff store에 10분 TTL로
 발행하고, `launch_open`에는 kind와 128-bit opaque id만 전달한다. producer/consumer가
@@ -602,8 +606,12 @@ Knowledge cold/hot receiver는 claim token을 process-local preview slot에만 �
 를 exclusive create한 뒤 SQLite index와 applink ack/delete를 수행한다. cancel·검증·파일·index
 실패는 restore하고, 만료/lease expiry는 원 envelope TTL 안에서만 재시도하며 새 digest로
 재생성한다. 고정 오류·fixture lifecycle, frontend preview/save/cancel, catalog capability와
-README/architecture/spec/workthrough를 함께 갱신했다. persistent pending/sent/consumed/
-expired 상태 UI는 P3-10(#353) 후속으로 남긴다.
+README/architecture/spec/workthrough를 함께 갱신했다. 수신 preview/save는 명시적으로 설정된
+vault identity를 캡처·재검증하고 default-root/Journal 자동 생성을 금지한다. Journal 파일은
+완전 flush 후 no-replace로 publish하며 같은 entry identity일 때만 index rollback cleanup을
+허용한다. watcher는 이벤트당 path 수·길이와 bounded queue·4,096 pending path·10 MiB regular UTF-8 document read를 사용하고,
+modal은 UTF-8 byte budget·focus trap·stale/expiry/unmount guard를 제공한다. persistent
+pending/sent/consumed/expired 상태 UI는 P3-10(#353) 후속으로 남긴다.
 
 **2026-08-26 #410 구현 상태.** WSL Desktop이 Workbench #281과 Life Log가 읽을 수 있는
 `wsl-desktop/runtime/v1` snapshot producer를 맡도록 연결했다. 기존
@@ -696,7 +704,8 @@ ID로 backend masked data를 읽고 target capability를 확인한 뒤 공용 ha
 consumer ID, 10분 TTL, bounded payload를 기록한다. receiver는 cold/hot AppLink에서 claim하고
 producer/consumer/handoff ID·expiry·request를 preview한 뒤 사용자 `적용`에서만 ack/delete하며,
 `취소`는 restore한다. URL/header/body bounds와 raw credential rejection, corrupt/expired/duplicate/
-lease/storage fixed errors, no-clipboard fallback, unit/Rust integration/UI fixture tests를
+lease/storage fixed errors, 30초 lease 갱신(10분 TTL 불변), renderer 종료 restore,
+no-clipboard fallback, unit/Rust integration/UI fixture tests를
 포함한다. request replay/sequence(#362)는 구현하지 않는다.
 
 #293 API Playground OpenAPI import는 로컬 파일과 HTTP(S) URL의 JSON/YAML 3.0/3.1 문서를 대상으로

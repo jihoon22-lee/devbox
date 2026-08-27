@@ -9,12 +9,16 @@ vi.mock("./api", () => ({
   copyRawResponseCookies: vi.fn(),
   copyRawResponseHeaders: vi.fn(),
   fetchOpenApiSource: vi.fn(),
+  onOpenRequest: vi.fn(async () => () => undefined),
   pickMultipartFile: vi.fn(),
+  renewApiRequest: vi.fn(),
+  restoreApiRequest: vi.fn(),
   sanitizePersistedJson: vi.fn(),
   sealSecret: vi.fn(),
   sendRequest: vi.fn(),
   startSseStream: vi.fn(),
   startWebSocket: vi.fn(),
+  takePendingOpen: vi.fn(async () => null),
 }));
 
 const sanitizePersistedJsonMock = vi.mocked(sanitizePersistedJson);

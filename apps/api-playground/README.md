@@ -44,6 +44,9 @@ backend claim을 ack/delete한 뒤 요청 editor에 넣고, `취소`는 claim을
 중복 소비·lease/storage 오류는 원문 경로·payload를 반향하지 않는 fixed error로 처리하며
 clipboard·임시 파일로 자동 전환하지 않는다. Webhook credential은 `${WEBHOOK_SECRET}` 같은
 환경 변수 참조만 전달되고 원문 secret은 producer, handoff store, preview DTO에 들어가지 않는다.
+열린 preview는 30초마다 60초 claim lease를 갱신하지만 envelope의 10분 TTL은 늘리지 않는다.
+renderer가 사라지거나 claim 응답이 늦게 도착하면 native restore를 시도하며, 수신자는
+`webhook-lab` producer와 `api-playground` target이 정확히 일치하는 envelope만 허용한다.
 
 ## GraphQL 요청 (P2-05, #294)
 

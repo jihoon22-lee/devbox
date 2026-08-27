@@ -291,7 +291,7 @@ pub fn render_body(summary: &KnowledgeDraftSummary, sources: &[KnowledgeDraftSou
     body.push_str(&summary.start_date);
     body.push_str("` to `");
     body.push_str(&summary.end_date);
-    body.push_str("` (exclusive end)\n- Timezone: `");
+    body.push_str("` (date keys inclusive; end timestamp exclusive)\n- Timezone: `");
     body.push_str(&markdown_cell(&summary.timezone));
     body.push_str("`\n- Filter: ");
     body.push_str(&markdown_cell(
@@ -407,22 +407,39 @@ fn looks_like_path(value: &str) -> bool {
         || value.starts_with('\\')
         || value.contains(":\\")
         || value.contains(":/")
-        || value.split('/').any(|part| part == "..")
+        || value.split(['/', '\\']).any(|part| part == "..")
 }
 
 fn contains_secret_marker(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
-    [
+    if [
         "password",
         "passwd",
         "secret",
+        "secretkey",
         "token",
         "access_token",
         "refresh_token",
         "api_key",
         "apikey",
+        "x-api-key",
+        "x_api_key",
+        "accesskey",
+        "client_secret",
+        "clientsecret",
+        "session_token",
+        "sessiontoken",
+        "id_token",
+        "idtoken",
         "credential",
         "authorization",
+        "cookie",
+        "set-cookie",
+        "private key",
+        "private_key",
+        "ssh_private_key",
+        "signing_key",
+        "oauth",
         "bearer ",
         "basic ",
         "sk-",
@@ -441,6 +458,49 @@ fn contains_secret_marker(value: &str) -> bool {
     ]
     .iter()
     .any(|marker| lower.contains(marker))
+    {
+        return true;
+    }
+    if lower.split_once("://").is_some_and(|(_, rest)| {
+        rest.split(['/', '?', '#'])
+            .next()
+            .is_some_and(|authority| authority.contains('@'))
+    }) {
+        return true;
+    }
+    value
+        .split(|character: char| {
+            character.is_whitespace() || matches!(character, '&' | ',' | ';' | '?')
+        })
+        .filter_map(|segment| segment.split_once('=').or_else(|| segment.split_once(':')))
+        .any(|(key, assigned)| {
+            let key = key
+                .chars()
+                .filter(|character| character.is_ascii_alphanumeric())
+                .flat_map(char::to_lowercase)
+                .collect::<String>();
+            matches!(
+                key.as_str(),
+                "authorization"
+                    | "cookie"
+                    | "password"
+                    | "passwd"
+                    | "secret"
+                    | "secretkey"
+                    | "token"
+                    | "accesstoken"
+                    | "refreshtoken"
+                    | "apikey"
+                    | "xapikey"
+                    | "accesskey"
+                    | "clientsecret"
+                    | "sessiontoken"
+                    | "idtoken"
+                    | "privatekey"
+                    | "signingkey"
+                    | "credential"
+            ) && !assigned.trim().is_empty()
+        })
 }
 
 fn safe_source_error(value: &str) -> bool {
@@ -621,6 +681,26 @@ mod tests {
         assert!(validate_knowledge_draft(&payload).is_err());
         payload.body = render_body(&payload.summary, &payload.sources);
         payload.summary.timezone = "/private/path".into();
+        assert!(validate_knowledge_draft(&payload).is_err());
+    }
+
+    #[test]
+    fn rejects_credential_shaped_metadata_and_windows_traversal() {
+        assert!(contains_secret_marker("client_secret=must-not-cross"));
+        assert!(contains_secret_marker("X_API_KEY=must-not-cross"));
+        assert!(contains_secret_marker("session_token=must-not-cross"));
+        assert!(contains_secret_marker("https://user:password@example.test"));
+        assert!(looks_like_path(r"C:\Users\me\..\secret"));
+
+        let mut payload = KnowledgeDraftPayload {
+            schema_version: 1,
+            title: "Life Log digest · 2026-08-10 ~ 2026-08-16".into(),
+            body: render_body(&summary(), &sources()),
+            tags: vec!["life-log".into(), "digest".into(), "week".into()],
+            summary: summary(),
+            sources: sources(),
+        };
+        payload.summary.top_app = Some("Authorization: Bearer opaque".into());
         assert!(validate_knowledge_draft(&payload).is_err());
     }
 }

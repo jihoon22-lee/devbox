@@ -123,6 +123,20 @@ export function buildDigestInput(
   };
 }
 
+export function digestInputFromResponse(response: DigestResponse): DigestInput {
+  const { document } = response;
+  return {
+    startDate: document.range.startDate,
+    endDate: document.range.endDate,
+    timezone: document.range.timezone,
+    dayStart: document.range.startMs,
+    dayEnd: document.range.endMs,
+    dayBoundaries: document.range.dayBoundaries.map((boundary) => ({ ...boundary })),
+    period: document.period,
+    filter: { ...document.filter },
+  };
+}
+
 function rangeFromDigest(response: DigestResponse, label: string): RangeSummary {
   return {
     label,

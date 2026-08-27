@@ -406,6 +406,12 @@ impl HandoffStore {
         {
             return Err(HandoffError::TokenMismatch);
         }
+        // The claim carries the exact envelope snapshot that the consumer
+        // previewed.  A managed claim file changed in place must not be
+        // acknowledged as if it were the same immutable payload.
+        if record.envelope != claim.envelope {
+            return Err(HandoffError::Corrupt);
+        }
         validate_consumer(
             &record.envelope,
             &claim.envelope.id,
@@ -706,6 +712,9 @@ fn sensitive_field(value: &str) -> bool {
             | "token"
             | "accesstoken"
             | "refreshtoken"
+            | "sessiontoken"
+            | "idtoken"
+            | "jwt"
             | "credential"
             | "credentials"
             | "apikey"
@@ -713,7 +722,9 @@ fn sensitive_field(value: &str) -> bool {
             | "xauth"
             | "accesskey"
             | "clientsecret"
+            | "clientid"
             | "privatekey"
+            | "signingkey"
     ) || [
         "authorization",
         "cookie",
@@ -796,10 +807,10 @@ fn looks_like_raw_credential(value: &str) -> bool {
     let lower = trimmed.to_ascii_lowercase();
     if lower.starts_with("bearer ")
         || lower.starts_with("basic ")
-        || trimmed.starts_with("sk-")
-        || trimmed.contains("-----BEGIN PRIVATE KEY-----")
-        || trimmed.contains("-----BEGIN RSA PRIVATE KEY-----")
-        || trimmed.contains("-----BEGIN OPENSSH PRIVATE KEY-----")
+        || lower.starts_with("sk-")
+        || lower.contains("-----begin private key-----")
+        || lower.contains("-----begin rsa private key-----")
+        || lower.contains("-----begin openssh private key-----")
     {
         return true;
     }
@@ -935,16 +946,37 @@ fn publish_new(path: &Path, contents: &[u8]) -> Result<(), PublishError> {
             return Err(PublishError::Storage);
         }
         let linked = fs::hard_link(&temporary, path);
-        let _ = fs::remove_file(&temporary);
         return match linked {
             Ok(()) => {
-                let _ = sync_parent(path);
+                // A published descriptor is not considered durable until the
+                // containing directory has also been flushed.  Returning
+                // success after a failed directory sync would let a producer
+                // report a handoff that can disappear on crash/restart.
+                let temporary_removed = fs::remove_file(&temporary).is_ok();
+                if !temporary_removed {
+                    let _ = fs::remove_file(path);
+                    let _ = sync_parent(path);
+                    return Err(PublishError::Storage);
+                }
+                if sync_parent(path).is_err() {
+                    // The target was created by this invocation and the
+                    // random managed name cannot alias a pre-existing
+                    // descriptor.  Remove it before reporting failure so a
+                    // retry cannot observe a false-success orphan.
+                    let _ = fs::remove_file(path);
+                    let _ = sync_parent(path);
+                    return Err(PublishError::Storage);
+                }
                 Ok(())
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let _ = fs::remove_file(&temporary);
                 Err(PublishError::Exists)
             }
-            Err(_) => Err(PublishError::Storage),
+            Err(_) => {
+                let _ = fs::remove_file(&temporary);
+                Err(PublishError::Storage)
+            }
         };
     }
     Err(PublishError::Storage)
@@ -1326,6 +1358,29 @@ mod tests {
         assert_eq!(
             store.claim(&descriptor.id, "api-request/v1", "api-playground", 4_000,),
             Err(HandoffError::Missing)
+        );
+    }
+
+    #[test]
+    fn ack_rejects_a_claim_record_with_changed_payload_metadata() {
+        let root = TestRoot::new("immutable");
+        let store = root.store();
+        let descriptor = store.create(request(None), 1_000).unwrap();
+        let claim = store
+            .claim(&descriptor.id, "api-request/v1", "api-playground", 2_000)
+            .unwrap();
+        let mut record: Value =
+            serde_json::from_slice(&fs::read(root.claimed(&descriptor.id)).unwrap()).unwrap();
+        record["envelope"]["payload"]["body"] = json!("changed after preview");
+        fs::write(
+            root.claimed(&descriptor.id),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            store.ack(&claim, "api-playground", 3_000),
+            Err(HandoffError::Corrupt)
         );
     }
 

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "title": "Life Log digest · 2026-08-10 ~ 2026-08-16",
-  "body": "# Life Log local digest\n\n- Period: `week`\n- Range: `2026-08-10` to `2026-08-16` (exclusive end)\n- Timezone: `Asia/Seoul`\n- Filter: all apps\n\n## Summary\n\n| Metric | Value |\n| --- | ---: |\n| PC usage (ms) | 7200000 |\n| Sessions | 4 |\n| Active days | 2 / 7 |\n| Average daily usage (ms) | 1028571 |\n| Git commits | 3 |\n| Top app | Code.exe |\n\n## Sources\n\n| Source | Available | Scope | Error code |\n| --- | --- | --- | --- |\n| life-log | true | requested-range | - |\n| git | true | requested-range | - |\n| run-manager | false | latest-snapshot-out-of-range | snapshot_unavailable |\n| knowledge-base | true | latest-snapshot-out-of-range | - |\n",
+  "body": "# Life Log local digest\n\n- Period: `week`\n- Range: `2026-08-10` to `2026-08-16` (date keys inclusive; end timestamp exclusive)\n- Timezone: `Asia/Seoul`\n- Filter: all apps\n\n## Summary\n\n| Metric | Value |\n| --- | ---: |\n| PC usage (ms) | 7200000 |\n| Sessions | 4 |\n| Active days | 2 / 7 |\n| Average daily usage (ms) | 1028571 |\n| Git commits | 3 |\n| Top app | Code.exe |\n\n## Sources\n\n| Source | Available | Scope | Error code |\n| --- | --- | --- | --- |\n| life-log | true | requested-range | - |\n| git | true | requested-range | - |\n| run-manager | false | latest-snapshot-out-of-range | snapshot_unavailable |\n| knowledge-base | true | latest-snapshot-out-of-range | - |\n",
   "tags": ["life-log", "digest", "week"],
   "summary": {
     "period": "week",

@@ -223,6 +223,12 @@ export async function claimApiRequest(handoffId: string): Promise<ApiRequestHand
   return invoke<ApiRequestHandoffPreview>("claim_api_request", { handoffId });
 }
 
+/** Renew a preview claim without extending the handoff envelope TTL. */
+export async function renewApiRequest(handoffId: string): Promise<{ leaseUntilMs: number }> {
+  if (!isTauri()) throw new Error(HANDOFF_BROWSER_ERROR);
+  return invoke<{ leaseUntilMs: number }>("renew_api_request", { handoffId });
+}
+
 /** Acknowledge an applied preview and return its editable request template. */
 export async function ackApiRequest(handoffId: string): Promise<RequestTemplate> {
   if (!isTauri()) throw new Error(HANDOFF_BROWSER_ERROR);

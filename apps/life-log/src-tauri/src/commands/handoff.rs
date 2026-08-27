@@ -32,7 +32,7 @@ pub async fn send_digest_to_knowledge(
     #[cfg(not(target_os = "windows"))]
     {
         let _ = (state, input);
-        return Err("Knowledge handoff는 Windows 데스크톱에서 사용할 수 없습니다".into());
+        Err("Knowledge handoff는 Windows 데스크톱에서 사용할 수 없습니다".into())
     }
 
     #[cfg(target_os = "windows")]
@@ -40,14 +40,18 @@ pub async fn send_digest_to_knowledge(
         // Resolve first so a missing installation does not leave a pending
         // payload behind.  A launch race can still leave an expiring pending
         // item, which contains only the bounded summary and is retryable.
-        if devbox_launch::resolve_installed("knowledge-base").is_none() {
+        if !devbox_launch::installed_targets("handoff:knowledge-draft/v1")
+            .iter()
+            .any(|target| target.id == "knowledge-base")
+        {
             return Err("Knowledge 앱을 실행할 수 없습니다".into());
         }
         let response = build_for_state(&state, input).await?;
         let payload = handoff::build_knowledge_draft(&response)?;
         let payload = serde_json::to_value(payload)
             .map_err(|_| "Knowledge draft를 준비하지 못했습니다".to_string())?;
-        let now_ms = current_epoch_ms();
+        let now_ms = current_epoch_ms()
+            .ok_or_else(|| "Knowledge draft를 준비하지 못했습니다".to_string())?;
         let store = devbox_applink::HandoffStore::new(devbox_applink::handoff_root_in(
             &devbox_integration::common_root(),
         ));
@@ -78,9 +82,10 @@ pub async fn send_digest_to_knowledge(
 }
 
 #[cfg(target_os = "windows")]
-fn current_epoch_ms() -> u64 {
+fn current_epoch_ms() -> Option<u64> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+        .filter(|now| *now > 0)
 }

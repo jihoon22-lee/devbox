@@ -13,10 +13,11 @@ use devbox_applink::{handoff_root_in, HandoffClaim, HandoffError, HandoffStore};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 pub const API_REQUEST_HANDOFF_KIND: &str = "api-request/v1";
 pub const API_PLAYGROUND_APP_ID: &str = "api-playground";
+pub const WEBHOOK_LAB_APP_ID: &str = "webhook-lab";
 pub const MAX_PENDING_HANDOFFS: usize = 8;
 pub const HANDOFF_INVALID_ERROR: &str = "handoff 요청을 사용할 수 없습니다";
 pub const HANDOFF_EXPIRED_ERROR: &str = "handoff 요청이 만료되었거나 더 이상 사용할 수 없습니다";
@@ -47,6 +48,14 @@ pub struct ApiHandoffState {
     claims: Mutex<HashMap<String, HandoffClaim>>,
 }
 
+impl ApiHandoffState {
+    fn claims(&self) -> MutexGuard<'_, HashMap<String, HandoffClaim>> {
+        self.claims
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ApiRequestHeader {
@@ -74,6 +83,12 @@ pub struct ApiRequestHandoffPreview {
     pub request: RequestTemplate,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenewApiRequestResult {
+    pub lease_until_ms: u64,
+}
+
 /// Claim and validate an opaque handoff ID.  The returned preview contains no
 /// raw credential and no claim token, so the renderer cannot acknowledge a
 /// different request by forging IPC arguments.
@@ -86,28 +101,30 @@ pub fn claim_api_request(
         return Err(HANDOFF_INVALID_ERROR.to_string());
     }
     {
-        let claims = state
-            .claims
-            .lock()
-            .map_err(|_| HANDOFF_STORAGE_ERROR.to_string())?;
+        let claims = state.claims();
         if claims.len() >= MAX_PENDING_HANDOFFS {
             return Err(HANDOFF_BUSY_ERROR.to_string());
         }
     }
 
     let store = handoff_store();
+    let claim_now_ms = now_ms();
     let claim = store
         .claim(
             &handoff_id,
             API_REQUEST_HANDOFF_KIND,
             API_PLAYGROUND_APP_ID,
-            now_ms(),
+            claim_now_ms,
         )
         .map_err(map_handoff_error)?;
+    if !claim_matches_route(&claim) {
+        let _ = store.restore(&claim, API_PLAYGROUND_APP_ID, claim_now_ms);
+        return Err(HANDOFF_INVALID_ERROR.to_string());
+    }
     let request = match request_from_payload(&claim.envelope.payload) {
         Ok(request) => request,
         Err(_) => {
-            let _ = store.restore(&claim, API_PLAYGROUND_APP_ID, now_ms());
+            let _ = store.restore(&claim, API_PLAYGROUND_APP_ID, claim_now_ms);
             return Err(HANDOFF_INVALID_ERROR.to_string());
         }
     };
@@ -120,22 +137,61 @@ pub fn claim_api_request(
         expires_at_ms: claim.envelope.expires_at_ms,
         request,
     };
-    let mut claims = match state.claims.lock() {
-        Ok(claims) => claims,
-        Err(_) => {
-            // Do not strand a successfully claimed envelope merely because
-            // the process-local bookkeeping mutex became unavailable.
-            let _ = store.restore(&claim, API_PLAYGROUND_APP_ID, now_ms());
-            return Err(HANDOFF_STORAGE_ERROR.to_string());
-        }
-    };
+    let mut claims = state.claims();
     if claims.len() >= MAX_PENDING_HANDOFFS {
         drop(claims);
-        let _ = store.restore(&claim, API_PLAYGROUND_APP_ID, now_ms());
+        let _ = store.restore(&claim, API_PLAYGROUND_APP_ID, claim_now_ms);
         return Err(HANDOFF_BUSY_ERROR.to_string());
     }
     claims.insert(claim.envelope.id.clone(), claim);
     Ok(preview)
+}
+
+fn claim_matches_route(claim: &HandoffClaim) -> bool {
+    claim.envelope.source_app == WEBHOOK_LAB_APP_ID
+        && claim.envelope.target_app.as_deref() == Some(API_PLAYGROUND_APP_ID)
+}
+
+/// Renew the short preview lease without extending the envelope TTL.
+#[tauri::command]
+pub fn renew_api_request(
+    state: tauri::State<'_, ApiHandoffState>,
+    handoff_id: String,
+) -> Result<RenewApiRequestResult, String> {
+    let claim = get_claim(&state, &handoff_id)?;
+    match handoff_store().renew(
+        &claim,
+        API_PLAYGROUND_APP_ID,
+        now_ms(),
+        devbox_applink::DEFAULT_CLAIM_LEASE_MS,
+    ) {
+        Ok(renewed) => {
+            let lease_until_ms = renewed.lease_until_ms;
+            let mut claims = state.claims();
+            if claims
+                .get(&handoff_id)
+                .is_some_and(|current| current.claim_token == claim.claim_token)
+            {
+                claims.insert(handoff_id, renewed);
+                Ok(RenewApiRequestResult { lease_until_ms })
+            } else {
+                Err(HANDOFF_INVALID_ERROR.to_string())
+            }
+        }
+        Err(error) => {
+            if matches!(
+                error,
+                HandoffError::Expired
+                    | HandoffError::LeaseExpired
+                    | HandoffError::Missing
+                    | HandoffError::Corrupt
+                    | HandoffError::TokenMismatch
+            ) {
+                remove_claim(&state, &handoff_id, &claim);
+            }
+            Err(map_handoff_error(error))
+        }
+    }
 }
 
 /// Acknowledge a validated preview and return the editable request.  The
@@ -208,22 +264,19 @@ fn get_claim(state: &ApiHandoffState, id: &str) -> Result<HandoffClaim, String> 
         return Err(HANDOFF_INVALID_ERROR.to_string());
     }
     state
-        .claims
-        .lock()
-        .map_err(|_| HANDOFF_STORAGE_ERROR.to_string())?
+        .claims()
         .get(id)
         .cloned()
         .ok_or_else(|| HANDOFF_INVALID_ERROR.to_string())
 }
 
 fn remove_claim(state: &ApiHandoffState, id: &str, claim: &HandoffClaim) {
-    if let Ok(mut claims) = state.claims.lock() {
-        if claims
-            .get(id)
-            .is_some_and(|current| current.claim_token == claim.claim_token)
-        {
-            claims.remove(id);
-        }
+    let mut claims = state.claims();
+    if claims
+        .get(id)
+        .is_some_and(|current| current.claim_token == claim.claim_token)
+    {
+        claims.remove(id);
     }
 }
 
@@ -827,5 +880,72 @@ mod tests {
             Err(HandoffError::Missing)
         );
         const { assert!(DEFAULT_HANDOFF_TTL_MS > 0) };
+    }
+
+    #[test]
+    fn receiver_accepts_only_the_webhook_lab_route() {
+        let directory = tempdir().unwrap();
+        let store = HandoffStore::new(directory.path().join("handoff/v1"));
+        let descriptor = store
+            .create(
+                CreateHandoff {
+                    kind: API_REQUEST_HANDOFF_KIND.into(),
+                    source_app: WEBHOOK_LAB_APP_ID.into(),
+                    target_app: Some(API_PLAYGROUND_APP_ID.into()),
+                    payload: payload(),
+                },
+                1_000,
+            )
+            .unwrap();
+        let mut claim = store
+            .claim(
+                &descriptor.id,
+                API_REQUEST_HANDOFF_KIND,
+                API_PLAYGROUND_APP_ID,
+                1_001,
+            )
+            .unwrap();
+        assert!(claim_matches_route(&claim));
+        claim.envelope.source_app = "developer-toolbox".into();
+        assert!(!claim_matches_route(&claim));
+        claim.envelope.source_app = WEBHOOK_LAB_APP_ID.into();
+        claim.envelope.target_app = Some("knowledge-base".into());
+        assert!(!claim_matches_route(&claim));
+    }
+
+    #[test]
+    fn api_preview_renewal_is_capped_by_the_envelope_ttl() {
+        let directory = tempdir().unwrap();
+        let store = HandoffStore::new(directory.path().join("handoff/v1"));
+        let descriptor = store
+            .create_with_ttl(
+                CreateHandoff {
+                    kind: API_REQUEST_HANDOFF_KIND.into(),
+                    source_app: WEBHOOK_LAB_APP_ID.into(),
+                    target_app: Some(API_PLAYGROUND_APP_ID.into()),
+                    payload: payload(),
+                },
+                1_000,
+                90_000,
+            )
+            .unwrap();
+        let claim = store
+            .claim(
+                &descriptor.id,
+                API_REQUEST_HANDOFF_KIND,
+                API_PLAYGROUND_APP_ID,
+                2_000,
+            )
+            .unwrap();
+        let renewed = store
+            .renew(
+                &claim,
+                API_PLAYGROUND_APP_ID,
+                50_000,
+                devbox_applink::DEFAULT_CLAIM_LEASE_MS,
+            )
+            .unwrap();
+        assert_eq!(renewed.lease_until_ms, 91_000);
+        store.ack(&renewed, API_PLAYGROUND_APP_ID, 90_999).unwrap();
     }
 }

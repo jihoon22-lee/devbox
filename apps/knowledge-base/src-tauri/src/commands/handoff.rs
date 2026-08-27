@@ -5,26 +5,27 @@
 //! it to pending/, while a successful note/index transaction acknowledges and
 //! deletes the claim.
 
-use crate::commands::docs::{resolve_root, AppState};
+use crate::commands::docs::{resolve_configured_root, AppState};
 use crate::core::db;
 use crate::core::handoff::{self, KnowledgeDraftPayload, KnowledgeDraftPreview};
+use crate::core::vault::{self, EntryIdentity, VaultError, VaultIdentity};
 use devbox_applink::{HandoffClaim, HandoffError, HandoffStore};
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 const CONSUMER_APP: &str = "knowledge-base";
 const EXPECTED_KIND: &str = handoff::KNOWLEDGE_DRAFT_KIND;
 const MAX_NOTE_COLLISIONS: usize = 100;
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Debug)]
 struct ClaimedKnowledgeDraft {
     claim: HandoffClaim,
     payload: KnowledgeDraftPayload,
+    vault: VaultIdentity,
 }
 
 /// At most one preview can be active in a Knowledge process. The claim token
@@ -37,13 +38,11 @@ impl PendingKnowledgeDraft {
     }
 
     fn is_open(&self) -> bool {
-        self.0.lock().is_ok_and(|slot| slot.is_some())
+        self.slot().is_some()
     }
 
     fn put_if_empty(&self, draft: ClaimedKnowledgeDraft) -> bool {
-        let Ok(mut slot) = self.0.lock() else {
-            return false;
-        };
+        let mut slot = self.slot();
         if slot.is_some() {
             return false;
         }
@@ -52,10 +51,7 @@ impl PendingKnowledgeDraft {
     }
 
     fn take(&self, id: &str) -> Result<ClaimedKnowledgeDraft, String> {
-        let mut slot = self
-            .0
-            .lock()
-            .map_err(|_| "Knowledge draft 상태를 잠글 수 없습니다".to_string())?;
+        let mut slot = self.slot();
         let Some(current) = slot.as_ref() else {
             return Err("Knowledge draft 미리보기가 없습니다".into());
         };
@@ -64,6 +60,12 @@ impl PendingKnowledgeDraft {
         }
         slot.take()
             .ok_or_else(|| "Knowledge draft 미리보기가 없습니다".to_string())
+    }
+
+    fn slot(&self) -> MutexGuard<'_, Option<ClaimedKnowledgeDraft>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -91,12 +93,10 @@ pub struct RenewKnowledgeDraftResult {
 /// filesystem path, token, or raw activity record.
 #[tauri::command]
 pub fn preview_knowledge_draft(
+    state: tauri::State<'_, Arc<AppState>>,
     pending: tauri::State<'_, PendingKnowledgeDraft>,
     id: String,
 ) -> Result<KnowledgeDraftPreview, String> {
-    if pending.is_open() {
-        return Err("Knowledge draft가 이미 미리보기 중입니다".into());
-    }
     if !valid_handoff_id(&id) {
         return Err("Knowledge draft를 사용할 수 없습니다".into());
     }
@@ -104,6 +104,21 @@ pub fn preview_knowledge_draft(
     if now_ms == 0 {
         return Err("Knowledge draft를 사용할 수 없습니다".into());
     }
+    if pending.is_open() {
+        return Err("Knowledge draft가 이미 미리보기 중입니다".into());
+    }
+    let vault = {
+        let connection = state
+            .db
+            .lock()
+            .map_err(|_| "Knowledge 저장 위치를 확인할 수 없습니다".to_string())?;
+        let root = resolve_configured_root(&connection)
+            .map_err(|_| "Knowledge 저장 위치를 확인할 수 없습니다".to_string())?;
+        let vault = VaultIdentity::inspect(&root)
+            .map_err(|_| "Knowledge 저장 위치를 확인할 수 없습니다".to_string())?;
+        validate_note_parent(&vault)?;
+        vault
+    };
     let store = handoff_store();
     let claim = store
         .claim(&id, EXPECTED_KIND, CONSUMER_APP, now_ms)
@@ -111,21 +126,22 @@ pub fn preview_knowledge_draft(
     let payload = match handoff::parse_claim(&claim) {
         Ok(payload) => payload,
         Err(_) => {
-            let _ = store.restore(&claim, CONSUMER_APP, current_epoch_ms());
+            let _ = store.restore(&claim, CONSUMER_APP, now_ms);
             return Err("Knowledge draft를 처리할 수 없습니다".into());
         }
     };
     let preview = KnowledgeDraftPreview::from_claim(&claim, &payload);
-    let mut slot = pending
-        .0
-        .lock()
-        .map_err(|_| "Knowledge draft 상태를 잠글 수 없습니다".to_string())?;
+    let mut slot = pending.slot();
     if slot.is_some() {
         drop(slot);
-        let _ = store.restore(&claim, CONSUMER_APP, current_epoch_ms());
+        let _ = store.restore(&claim, CONSUMER_APP, now_ms);
         return Err("Knowledge draft가 이미 미리보기 중입니다".into());
     }
-    *slot = Some(ClaimedKnowledgeDraft { claim, payload });
+    *slot = Some(ClaimedKnowledgeDraft {
+        claim,
+        payload,
+        vault,
+    });
     Ok(preview)
 }
 
@@ -156,31 +172,54 @@ pub fn save_knowledge_draft(
         .db
         .lock()
         .map_err(|_| ())
-        .and_then(|connection| resolve_root(&connection).map_err(|_| ()))
+        .and_then(|connection| resolve_configured_root(&connection).map_err(|_| ()))
     {
         Ok(root) => root,
         Err(_) => {
             restore_for_retry(&store, pending.inner(), claimed);
-            return Err("Knowledge 노트 저장 위치를 확인하지 못했습니다".into());
+            return Err(stale_vault_message());
         }
     };
-    let content = note_content(&claimed.payload);
-    let (rel, path) = match write_new_note_with_suffix(&root, &claimed.payload, content.as_bytes())
-    {
-        Ok(result) => result,
+    let current_vault = match VaultIdentity::inspect(&root) {
+        Ok(vault) => vault,
         Err(_) => {
             restore_for_retry(&store, pending.inner(), claimed);
-            return Err("Knowledge draft를 저장하지 못했습니다".into());
+            return Err(stale_vault_message());
         }
     };
-    let indexed = state
-        .db
-        .lock()
-        .ok()
-        .and_then(|connection| db::index_doc(&connection, &rel, &content).ok())
-        .is_some();
+    if current_vault != claimed.vault {
+        restore_for_retry(&store, pending.inner(), claimed);
+        return Err(stale_vault_message());
+    }
+    if validate_note_parent(&current_vault).is_err() {
+        restore_for_retry(&store, pending.inner(), claimed);
+        return Err(stale_vault_message());
+    }
+    let content = note_content(&claimed.payload);
+    let (rel, path, path_identity) =
+        match write_new_note_with_suffix(&current_vault, &claimed.payload, content.as_bytes()) {
+            Ok(result) => result,
+            Err(NewNoteError::Stale) => {
+                restore_for_retry(&store, pending.inner(), claimed);
+                return Err(stale_vault_message());
+            }
+            Err(_) => {
+                restore_for_retry(&store, pending.inner(), claimed);
+                return Err("Knowledge draft를 저장하지 못했습니다".into());
+            }
+        };
+    let indexed = state.db.lock().ok().is_some_and(|connection| {
+        let Ok(transaction) = connection.unchecked_transaction() else {
+            return false;
+        };
+        if db::index_doc_in_transaction(&transaction, &rel, &content).is_err() {
+            let _ = transaction.rollback();
+            return false;
+        }
+        transaction.commit().is_ok()
+    });
     if !indexed {
-        let _ = fs::remove_file(&path);
+        vault::cleanup_file(&current_vault, &path, &path_identity);
         restore_for_retry(&store, pending.inner(), claimed);
         return Err("Knowledge 검색 인덱스를 갱신하지 못했습니다".into());
     }
@@ -227,10 +266,7 @@ pub fn renew_knowledge_draft(
     pending: tauri::State<'_, PendingKnowledgeDraft>,
     id: String,
 ) -> Result<RenewKnowledgeDraftResult, String> {
-    let mut slot = pending
-        .0
-        .lock()
-        .map_err(|_| "Knowledge draft 상태를 잠글 수 없습니다".to_string())?;
+    let mut slot = pending.slot();
     let Some(current) = slot.as_mut() else {
         return Err("Knowledge draft 미리보기가 없습니다".into());
     };
@@ -292,6 +328,23 @@ fn restore_for_retry(
     }
 }
 
+fn validate_note_parent(vault: &VaultIdentity) -> Result<(), String> {
+    let journal = vault
+        .new_entry("Journal")
+        .map_err(|_| "Knowledge draft 저장 위치가 올바르지 않습니다".to_string())?;
+    let journal = vault
+        .existing_path(&journal)
+        .map_err(|_| "Knowledge draft 저장 위치가 올바르지 않습니다".to_string())?;
+    match fs::symlink_metadata(journal) {
+        Ok(metadata) if metadata.is_dir() => Ok(()),
+        _ => Err("Knowledge draft 저장 위치가 올바르지 않습니다".into()),
+    }
+}
+
+fn stale_vault_message() -> String {
+    "Knowledge 저장 위치가 변경되어 다시 확인해야 합니다".to_string()
+}
+
 fn note_content(payload: &KnowledgeDraftPayload) -> String {
     format!(
         "---\ntitle: {}\ntags: [{}]\n---\n\n{}",
@@ -309,10 +362,10 @@ fn draft_note_stem(payload: &KnowledgeDraftPayload) -> String {
 }
 
 fn write_new_note_with_suffix(
-    root: &Path,
+    vault: &VaultIdentity,
     payload: &KnowledgeDraftPayload,
     contents: &[u8],
-) -> Result<(String, PathBuf), ()> {
+) -> Result<(String, PathBuf, EntryIdentity), NewNoteError> {
     for index in 0..=MAX_NOTE_COLLISIONS {
         let stem = draft_note_stem(payload);
         let rel = if index == 0 {
@@ -320,32 +373,50 @@ fn write_new_note_with_suffix(
         } else {
             format!("{stem}-{index}.md")
         };
-        let path = crate::core::entry_actions::validated_new_entry(root, &rel).map_err(|_| ())?;
-        if fs::symlink_metadata(&path).is_ok() {
-            continue;
+        let path = vault.new_entry(&rel).map_err(|error| match error {
+            VaultError::Stale => NewNoteError::Stale,
+            VaultError::InvalidRoot | VaultError::InvalidEntry => NewNoteError::Storage,
+        })?;
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                return Err(NewNoteError::Storage)
+            }
+            Ok(_) => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(NewNoteError::Storage),
         }
-        match write_new_note(&path, contents) {
-            Ok(()) => return Ok((rel, path)),
+        match write_new_note(vault, &path, contents) {
+            Ok(identity) => return Ok((rel, path, identity)),
             Err(NewNoteError::Exists) => continue,
-            Err(NewNoteError::Storage) => return Err(()),
+            Err(error @ (NewNoteError::Storage | NewNoteError::Stale)) => return Err(error),
         }
     }
-    Err(())
+    Err(NewNoteError::Storage)
 }
 
+#[derive(Debug)]
 enum NewNoteError {
     Exists,
     Storage,
+    Stale,
 }
 
 /// Write a complete private file to a unique temporary sibling, then create
 /// the final name with an exclusive hard link. This preserves no-overwrite
 /// semantics even if two handoff saves race for the same date.
-fn write_new_note(path: &Path, contents: &[u8]) -> Result<(), NewNoteError> {
-    let parent = path.parent().ok_or(NewNoteError::Storage)?;
-    if !parent.is_dir() {
+fn write_new_note(
+    vault: &VaultIdentity,
+    path: &Path,
+    contents: &[u8],
+) -> Result<EntryIdentity, NewNoteError> {
+    let parent = vault
+        .existing_path(path.parent().ok_or(NewNoteError::Storage)?)
+        .map_err(|_| NewNoteError::Stale)?;
+    let parent_metadata = fs::symlink_metadata(&parent).map_err(|_| NewNoteError::Storage)?;
+    if !parent_metadata.is_dir() || parent_metadata.file_type().is_symlink() {
         return Err(NewNoteError::Storage);
     }
+    let parent_identity = VaultIdentity::entry_identity_from_metadata(&parent, &parent_metadata);
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -369,6 +440,20 @@ fn write_new_note(path: &Path, contents: &[u8]) -> Result<(), NewNoteError> {
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(_) => return Err(NewNoteError::Storage),
         };
+        let metadata = match file.metadata() {
+            Ok(metadata) => metadata,
+            Err(_) => {
+                drop(file);
+                let _ = fs::remove_file(&temporary);
+                return Err(NewNoteError::Storage);
+            }
+        };
+        let identity = VaultIdentity::entry_identity_from_metadata(&temporary, &metadata);
+        if !entry_identity_matches(vault, &parent, &parent_identity) {
+            drop(file);
+            vault::cleanup_file_by_identity(&temporary, &identity);
+            return Err(NewNoteError::Stale);
+        }
         let written = file
             .write_all(contents)
             .and_then(|()| file.flush())
@@ -378,17 +463,51 @@ fn write_new_note(path: &Path, contents: &[u8]) -> Result<(), NewNoteError> {
             let _ = fs::remove_file(&temporary);
             return Err(NewNoteError::Storage);
         }
-        let linked = fs::hard_link(&temporary, path);
-        let _ = fs::remove_file(&temporary);
-        return match linked {
-            Ok(()) => Ok(()),
+        // The parent was checked before the temporary file was created.  A
+        // final identity check closes the ordinary root-replacement window
+        // before the no-replace publication primitive follows that parent.
+        if !entry_identity_matches(vault, &parent, &parent_identity) {
+            vault::cleanup_file_by_identity(&temporary, &identity);
+            return Err(NewNoteError::Stale);
+        }
+        let published = vault::publish_new_file(&temporary, path);
+        return match published {
+            Ok(()) => {
+                let current = match vault.existing_file_identity(path) {
+                    Ok(current) => current,
+                    Err(_) => {
+                        vault::cleanup_file(vault, path, &identity);
+                        return Err(NewNoteError::Stale);
+                    }
+                };
+                if !identity.matches(&current) {
+                    vault::cleanup_file(vault, path, &identity);
+                    return Err(NewNoteError::Stale);
+                }
+                Ok(current)
+            }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                vault::cleanup_file_by_identity(&temporary, &identity);
                 Err(NewNoteError::Exists)
             }
-            Err(_) => Err(NewNoteError::Storage),
+            Err(_) => {
+                vault::cleanup_file_by_identity(&temporary, &identity);
+                Err(NewNoteError::Storage)
+            }
         };
     }
     Err(NewNoteError::Storage)
+}
+
+fn entry_identity_matches(vault: &VaultIdentity, path: &Path, expected: &EntryIdentity) -> bool {
+    let Ok(path) = vault.existing_path(path) else {
+        return false;
+    };
+    let Ok(metadata) = fs::symlink_metadata(&path) else {
+        return false;
+    };
+    let current = VaultIdentity::entry_identity_from_metadata(&path, &metadata);
+    expected.matches(&current)
 }
 
 fn current_epoch_ms() -> u64 {
@@ -453,13 +572,37 @@ mod tests {
     fn note_save_path_is_bounded_and_non_overwriting() {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir(root.path().join("Journal")).unwrap();
+        let vault = VaultIdentity::inspect(root.path()).unwrap();
         let payload = fixture();
         let content = note_content(&payload);
-        let first = write_new_note_with_suffix(root.path(), &payload, content.as_bytes()).unwrap();
-        let second = write_new_note_with_suffix(root.path(), &payload, content.as_bytes()).unwrap();
+        let first = write_new_note_with_suffix(&vault, &payload, content.as_bytes()).unwrap();
+        let second = write_new_note_with_suffix(&vault, &payload, content.as_bytes()).unwrap();
         assert_eq!(first.0, "Journal/2026-08-27-life-log-day.md");
         assert_eq!(second.0, "Journal/2026-08-27-life-log-day-1.md");
         assert_eq!(fs::read(first.1).unwrap(), fs::read(second.1).unwrap());
+    }
+
+    #[test]
+    fn handoff_parent_validation_never_creates_a_default_journal() {
+        let root = tempfile::tempdir().unwrap();
+        let vault = VaultIdentity::inspect(root.path()).unwrap();
+        assert!(validate_note_parent(&vault).is_err());
+        assert!(!root.path().join("Journal").exists());
+    }
+
+    #[test]
+    fn replaced_journal_identity_is_rejected_before_publication() {
+        let root = tempfile::tempdir().unwrap();
+        let journal = root.path().join("Journal");
+        fs::create_dir(&journal).unwrap();
+        let vault = VaultIdentity::inspect(root.path()).unwrap();
+        let metadata = fs::symlink_metadata(&journal).unwrap();
+        let identity = VaultIdentity::entry_identity_from_metadata(&journal, &metadata);
+
+        fs::remove_dir(&journal).unwrap();
+        fs::create_dir(&journal).unwrap();
+
+        assert!(!entry_identity_matches(&vault, &journal, &identity));
     }
 
     #[test]

@@ -2,7 +2,9 @@
 
 ## Overview
 
-Issue #307의 `knowledge-draft/v1` 네이티브 handoff를 구현했다. Life Log는 검증된
+Issue #307의 `knowledge-draft/v1` 네이티브 handoff를 #315 Webhook Lab → API Playground와
+하나의 cohesive app-handoff PR로 구현했다. 각 payload schema와 acceptance는 분리하되,
+공용 claim/preview/ack/restore·TTL·privacy 경계를 같은 checkpoint에서 검증한다. Life Log는 검증된
 digest를 aggregate-only payload로 축소해 opaque applink descriptor와 함께 Knowledge를
 실행하고, Knowledge는 claim 후 미리보기만 먼저 보여 준다. 사용자가 명시적으로 저장할
 때에만 Journal 파일·검색 인덱스를 만들고 applink를 acknowledge/delete한다.
@@ -55,6 +57,69 @@ digest를 aggregate-only payload로 축소해 opaque applink descriptor와 함�
   `apps/life-log/src/App.contextMenu.test.tsx`에 cold preview/save/cancel과 browser
   disable fixture를 추가했다.
 
+## Follow-up hardening (2026-08-27)
+
+The review pass tightened the boundaries that are easy to miss in a happy-path
+handoff:
+
+- Added `core::vault::VaultIdentity` and identity-bound entry operations. A
+  Knowledge preview captures the configured canonical root and filesystem
+  marker; save revalidates it before resolving `Journal`, before publication,
+  and after publication. Handoff preview/save now read only an explicitly
+  configured existing root, so receiving an applink cannot initialize the
+  default root or create `Journal` as a side effect.
+- Reworked draft note publication to flush a private temporary sibling and
+  use no-replace linking/move semantics. SQLite indexing runs in one explicit
+  transaction before applink acknowledgement. On index failure, cleanup is
+  allowed only when the captured file identity still matches; root replacement
+  and reparse/symlink components fail closed with fixed messages.
+- Made the shared handoff claim immutable from the consumer's point of view:
+  acknowledgement rejects a managed claim record whose envelope metadata or
+  payload differs from the envelope captured at claim time. Directory
+  publication failures are not reported as durable success.
+- Bounded the Knowledge watcher with a 4,096-event sync queue, 128 paths/4 KiB
+  per event, a 4,096 unique path debounce map, identity/path checks, regular
+  UTF-8 document filtering, and a 10 MiB bounded reader. Dropped burst events are retained in a second
+  bounded path set for worker delivery, and watcher root resolution no longer
+  creates a default root.
+- Completed credential/path checks for both producer and receiver metadata,
+  including Windows traversal, URL user-info, assignment-shaped secrets,
+  private-key markers, and common client/session key names.
+- Hardened the draft modal with UTF-8 title/body byte counters, explicit
+  `aria-describedby`, initial focus, Escape cancel, Tab trapping, focus
+  restoration, request tokens, stale/expiry handling, and mounted guards for
+  preview/save/renew/cancel and metadata refresh. Save still sends only the
+  opaque handoff id; the preview bytes are never accepted back from the UI.
+- Restores an active preview during orderly renderer teardown and explicitly
+  restores a claim whose preview IPC response arrives after unmount, rather
+  than waiting for lease recovery. Producer preflight now requires the exact
+  installed `handoff:knowledge-draft/v1` capability, not only an executable.
+
+### Follow-up focused verification
+
+This pass intentionally did not rerun the high-load workspace/build gates while
+the parent agent was running the DOCX final gate. Commands used the dedicated
+Linux-native target cache, `CARGO_INCREMENTAL=0`, and `-j2`:
+
+```text
+    cargo check -p knowledge-base --lib                      passed
+    cargo test -p knowledge-base vault --lib                  6 passed
+    cargo test -p knowledge-base handoff --lib                 9 passed
+    cargo test -p knowledge-base watcher --lib                 5 passed
+cargo test -p knowledge-base debouncer --lib               1 passed
+cargo test -p knowledge-base safe_relative_path_rejects_directories_links_and_outside_paths --lib
+                                                             1 passed
+cargo test -p knowledge-base overflow_path_buffer --lib      1 passed
+cargo test -p knowledge-base bounded_reader --lib            1 passed
+cargo test -p applink handoff --lib                        16 passed
+cargo test -p life-log handoff --lib                        3 passed
+pnpm --filter knowledge-base exec vitest run \
+  src/App.applink.test.tsx --maxWorkers=2                  10 passed
+```
+
+Full workspace checks, Windows W2 packaged launch, and parent-branch rebase
+remain release gates.
+
 ## Code Examples
 
 ### Preview before save
@@ -63,7 +128,9 @@ digest를 aggregate-only payload로 축소해 opaque applink descriptor와 함�
 // apps/knowledge-base/src-tauri/src/commands/handoff.rs
 let claim = store.claim(&id, EXPECTED_KIND, CONSUMER_APP, now_ms)?;
 let payload = handoff::parse_claim(&claim)?;
-pending_slot.put_if_empty(ClaimedKnowledgeDraft { claim, payload });
+let configured_root = resolve_configured_root(&connection)?;
+let vault = VaultIdentity::inspect(&configured_root)?;
+pending_slot.put_if_empty(ClaimedKnowledgeDraft { claim, payload, vault });
 // No file or index mutation occurs until save_knowledge_draft is called.
 ```
 
@@ -107,8 +174,30 @@ An optional Windows GNU target check reached the native dependency build but cou
 because the WSL image has no `x86_64-w64-mingw32-gcc`; this is an environment limitation, not a
 test failure in the Linux workspace.
 
+### Final grouped #307 + #315 checkpoint
+
+The user-approved app-handoff PR groups this Life Log → Knowledge flow with
+Webhook Lab → API Playground because both use the same bounded one-time
+handoff lifecycle. After the final review, the complete affected set passed:
+
+```text
+Rust affected packages                             477 tests passed
+API Playground frontend                            183 tests passed
+Webhook Lab frontend                                51 tests passed
+Life Log frontend                                   47 tests passed
+Knowledge Base frontend                             74 tests passed
+Four affected production builds                    passed
+strict clippy, cargo check, rustfmt                 passed
+catalog, dependency policy/notices, manifest tests passed
+git diff --check                                   passed
+```
+
+The final frontend regression set covers native-only publication, current
+digest reconstruction, duplicate-click single-flight behavior, preview-before-
+save messaging, post-transaction reread failure without stale editor content,
+and modal Escape timing. Windows packaged launch remains W2 evidence.
+
 ## Next Steps
 
-- Parent agent performs core review, rebase, and squash before any PR workflow.
 - Verify Windows W2 cold/hot receiver, packaged launch, expiry/regenerate smoke, and final CI.
 - Implement persistent handoff status and explicit regenerate history only in follow-up #353.

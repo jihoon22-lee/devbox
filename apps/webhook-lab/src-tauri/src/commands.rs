@@ -440,7 +440,7 @@ fn publish_api_handoff(fixture: CapturedFixture) -> Result<ApiHandoffDispatch, S
 
     let payload =
         build_api_request_payload(&fixture).map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
-    let created_at_ms = handoff_now_ms();
+    let created_at_ms = handoff_now_ms().ok_or_else(|| HANDOFF_CREATE_ERROR.to_string())?;
     let expires_at_ms = created_at_ms
         .checked_add(devbox_applink::DEFAULT_HANDOFF_TTL_MS)
         .ok_or_else(|| HANDOFF_CREATE_ERROR.to_string())?;
@@ -529,10 +529,10 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-fn handoff_now_ms() -> u64 {
+fn handoff_now_ms() -> Option<u64> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(1)
-        .max(1)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+        .filter(|now| *now > 0)
 }
