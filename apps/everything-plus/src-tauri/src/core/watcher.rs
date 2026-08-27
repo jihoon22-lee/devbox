@@ -55,16 +55,7 @@ pub fn is_within_root(root: &str, path: &str) -> bool {
 pub fn should_index_content(root_content: bool, path: &str, size: u64) -> bool {
     root_content
         && size <= crate::core::content::MAX_FILE_BYTES
-        && !crate::core::content::is_sensitive_filename(std::path::Path::new(path))
-        && crate::core::indexer::is_text_ext(ext_of(path))
-}
-
-#[allow(dead_code)]
-fn ext_of(path: &str) -> &str {
-    path.rsplit('.')
-        .next()
-        .filter(|e| *e != path && e.len() <= 10)
-        .unwrap_or("")
+        && crate::core::content::is_content_candidate(std::path::Path::new(path))
 }
 
 /// 경로별 quiet-period 디바운스.
@@ -150,6 +141,7 @@ mod tests {
     #[test]
     fn content_target_respects_root_flag_and_size() {
         assert!(should_index_content(true, "C:/a.md", 10));
+        assert!(should_index_content(true, "C:/report.PDF", 10));
         assert!(!should_index_content(false, "C:/a.md", 10));
         assert!(!should_index_content(true, "C:/a.png", 10));
         assert!(!should_index_content(

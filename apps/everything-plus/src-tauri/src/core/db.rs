@@ -1,6 +1,8 @@
-use crate::core::content::{ContentRecord, EXTRACTOR_VERSION};
+use crate::core::content::{ContentRecord, PDF_EXTRACTOR_VERSION};
 use crate::core::models::{ContentResult, FileEntry, RootInfo};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
+
+const PDF_EXTRACTOR_META_KEY: &str = "pdf_extractor_version";
 
 /// 현재 스키마/정규화 규칙의 버전. 값을 올리면 다음 `migrate()` 호출 시
 /// 기존 인덱스(파생 데이터)를 지우고 재인덱싱을 유도한다. 인덱스는 언제든
@@ -312,13 +314,74 @@ pub fn upsert_content_record(
             file_id,
             record.text.as_str(),
             record.status.as_str(),
-            EXTRACTOR_VERSION,
+            record.extractor_version,
             record.truncated,
             indexed_at,
             record.error_code,
             record.encoding,
             record.text_chars as i64,
         ],
+    )?;
+    Ok(())
+}
+
+/// Remove only PDF-derived rows below one root.  Format-specific reindexing
+/// must leave text/source/Markdown rows untouched when the PDF extractor
+/// version changes.
+pub fn clear_pdf(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
+    let normalized = normalize_path(root_path);
+    let prefix = if normalized.ends_with('/') {
+        normalized
+    } else {
+        format!("{normalized}/")
+    };
+    let escaped = prefix.replace('%', "\\%").replace('_', "\\_");
+    let pattern = format!("{escaped}%");
+    conn.execute(
+        "DELETE FROM file_content WHERE file_id IN
+             (SELECT id FROM files WHERE ext = 'pdf' AND path LIKE ?1 ESCAPE '\\')",
+        params![pattern],
+    )?;
+    conn.execute(
+        "DELETE FROM files WHERE ext = 'pdf' AND path LIKE ?1 ESCAPE '\\'",
+        params![pattern],
+    )?;
+    Ok(())
+}
+
+/// Whether PDF rows need a format-specific rebuild.  The metadata key is
+/// required even when no PDF row exists: an upgraded v0.4 database has no PDF
+/// rows at all, which must still trigger the first PDF scan.
+pub fn pdf_reindex_required(conn: &Connection) -> rusqlite::Result<bool> {
+    let recorded: Option<String> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            [PDF_EXTRACTOR_META_KEY],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if recorded.as_deref() != Some(PDF_EXTRACTOR_VERSION) {
+        return Ok(true);
+    }
+    conn.query_row(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM file_content fc
+            JOIN files f ON f.id = fc.file_id
+            WHERE f.ext = 'pdf' AND fc.extractor_version <> ?1
+        )",
+        [PDF_EXTRACTOR_VERSION],
+        |row| row.get(0),
+    )
+}
+
+/// Record a successfully completed full/PDF-only scan.  Callers must not set
+/// this marker after cancellation or a partial-root scan.
+pub fn record_pdf_extractor_version(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![PDF_EXTRACTOR_META_KEY, PDF_EXTRACTOR_VERSION],
     )?;
     Ok(())
 }
@@ -456,7 +519,7 @@ pub fn search_content(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::content::ContentStatus;
+    use crate::core::content::{ContentStatus, EXTRACTOR_VERSION};
 
     fn mem() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -468,7 +531,20 @@ mod tests {
         ContentRecord {
             text: content.to_string(),
             status: ContentStatus::Indexed,
+            extractor_version: EXTRACTOR_VERSION,
             encoding: Some("utf8"),
+            truncated: false,
+            error_code: None,
+            text_chars: content.chars().count(),
+        }
+    }
+
+    fn indexed_pdf_record(content: &str, extractor_version: &'static str) -> ContentRecord {
+        ContentRecord {
+            text: content.to_string(),
+            status: ContentStatus::Indexed,
+            extractor_version,
+            encoding: Some("pdf"),
             truncated: false,
             error_code: None,
             text_chars: content.chars().count(),
@@ -567,6 +643,7 @@ mod tests {
         let failed_record = ContentRecord {
             text: String::new(),
             status: ContentStatus::TooLarge,
+            extractor_version: EXTRACTOR_VERSION,
             encoding: None,
             truncated: false,
             error_code: Some("file_too_large"),
@@ -665,6 +742,57 @@ mod tests {
             1,
             "루트 A의 인덱스가 그대로 남아 있어야 한다"
         );
+    }
+
+    #[test]
+    fn clear_pdf_only_removes_pdf_rows_below_the_requested_root() {
+        let conn = mem();
+        add_root(&conn, "C:/A", true).unwrap();
+        add_root(&conn, "C:/B", true).unwrap();
+        let text_id = upsert_file(&conn, "C:/A/notes.md", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, text_id, &indexed_record("ordinary source"), 1).unwrap();
+        let pdf_a = upsert_file(&conn, "C:/A/report.pdf", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, pdf_a, &indexed_pdf_record("old pdf A", "pdf-old"), 2)
+            .unwrap();
+        let pdf_b = upsert_file(&conn, "C:/B/report.pdf", 1, 0, 2).unwrap();
+        upsert_content_record(
+            &conn,
+            pdf_b,
+            &indexed_pdf_record("old pdf B", PDF_EXTRACTOR_VERSION),
+            3,
+        )
+        .unwrap();
+
+        clear_pdf(&conn, "C:/A").unwrap();
+
+        assert_eq!(search_content(&conn, "ordinary", 10).unwrap().len(), 1);
+        assert!(search_content(&conn, "old pdf A", 10).unwrap().is_empty());
+        assert_eq!(search_content(&conn, "old pdf B", 10).unwrap().len(), 1);
+        record_pdf_extractor_version(&conn).unwrap();
+        assert!(!pdf_reindex_required(&conn).unwrap());
+    }
+
+    #[test]
+    fn pdf_reindex_metadata_detects_first_install_and_stale_rows() {
+        let conn = mem();
+        assert!(pdf_reindex_required(&conn).unwrap());
+        record_pdf_extractor_version(&conn).unwrap();
+        assert!(!pdf_reindex_required(&conn).unwrap());
+
+        let text_id = upsert_file(&conn, "C:/notes/readme.md", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, text_id, &indexed_record("text-v1 row"), 1).unwrap();
+        let pdf_id = upsert_file(&conn, "C:/notes/report.pdf", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, pdf_id, &indexed_pdf_record("old", "pdf-old"), 2).unwrap();
+        assert!(pdf_reindex_required(&conn).unwrap());
+
+        upsert_content_record(
+            &conn,
+            pdf_id,
+            &indexed_pdf_record("current", PDF_EXTRACTOR_VERSION),
+            3,
+        )
+        .unwrap();
+        assert!(!pdf_reindex_required(&conn).unwrap());
     }
 
     #[test]

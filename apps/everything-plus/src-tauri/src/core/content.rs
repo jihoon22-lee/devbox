@@ -1,8 +1,8 @@
 //! Bounded, offline text extraction for the Everything+ content index.
 //!
-//! This module deliberately handles only plain text/source/Markdown.  Archive and
-//! document-container extraction belongs to a later feature and must not be
-//! smuggled into the base content index through a permissive file reader.
+//! Plain text/source/Markdown and PDF are intentionally separate extractor
+//! formats.  The PDF path uses lopdf only for text objects; it never renders
+//! pages, runs OCR, follows external resources, or executes document content.
 
 use std::fs::{self, File};
 use std::io::Read;
@@ -17,6 +17,18 @@ pub const MAX_TEXT_CHARS: usize = 2_000_000;
 pub const PROCESSING_LIMIT: Duration = Duration::from_secs(10);
 /// Bumped only when the plain-text extraction rules change.
 pub const EXTRACTOR_VERSION: &str = "text-v1";
+/// Bumped only when PDF parsing or text normalization rules change.  Keeping
+/// this separate from `EXTRACTOR_VERSION` lets startup reindex only PDFs when
+/// the PDF implementation changes.
+pub const PDF_EXTRACTOR_VERSION: &str = "pdf-v1";
+/// Maximum decompressed bytes allowed for one PDF page/object stream.  A PDF
+/// can be much smaller than its inflated content, so the file-size bound alone
+/// is not sufficient to defend the parser from decompression bombs.
+pub const PDF_MAX_DECOMPRESSED_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum parsed indirect objects retained for one PDF.
+pub const PDF_MAX_OBJECTS: usize = 100_000;
+/// Maximum pages traversed for one PDF.
+pub const PDF_MAX_PAGES: usize = 10_000;
 /// Maximum snippet size returned to the frontend for one result.
 pub const MAX_SNIPPET_CHARS: usize = 4 * 1024;
 
@@ -101,6 +113,9 @@ pub enum ContentStatus {
     Timeout,
     ChangedDuringRead,
     SkippedSensitive,
+    NoText,
+    UnsupportedEncrypted,
+    ExtractError,
 }
 
 impl ContentStatus {
@@ -113,6 +128,9 @@ impl ContentStatus {
             Self::Timeout => "timeout",
             Self::ChangedDuringRead => "changed_during_read",
             Self::SkippedSensitive => "skipped_sensitive",
+            Self::NoText => "no_text",
+            Self::UnsupportedEncrypted => "unsupported_encrypted",
+            Self::ExtractError => "extract_error",
         }
     }
 }
@@ -123,6 +141,7 @@ impl ContentStatus {
 pub struct ContentRecord {
     pub text: String,
     pub status: ContentStatus,
+    pub extractor_version: &'static str,
     pub encoding: Option<&'static str>,
     pub truncated: bool,
     pub error_code: Option<&'static str>,
@@ -150,9 +169,18 @@ impl FileFingerprint {
 
 impl ContentRecord {
     fn failure(status: ContentStatus, error_code: &'static str) -> Self {
+        Self::failure_for(EXTRACTOR_VERSION, status, error_code)
+    }
+
+    fn failure_for(
+        extractor_version: &'static str,
+        status: ContentStatus,
+        error_code: &'static str,
+    ) -> Self {
         Self {
             text: String::new(),
             status,
+            extractor_version,
             encoding: None,
             truncated: false,
             error_code: Some(error_code),
@@ -166,6 +194,19 @@ impl ContentRecord {
 pub fn is_text_ext(ext: &str) -> bool {
     let lower = ext.trim_start_matches('.').to_ascii_lowercase();
     TEXT_EXTENSIONS.iter().any(|candidate| *candidate == lower)
+}
+
+/// Returns true for a PDF extension without inspecting file bytes.  The
+/// explicit extension dispatch ensures a corrupt `.pdf` receives
+/// `extract_error` rather than being treated as an arbitrary binary text file.
+pub fn is_pdf_ext(ext: &str) -> bool {
+    ext.trim_start_matches('.').eq_ignore_ascii_case("pdf")
+}
+
+pub fn is_pdf_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(is_pdf_ext)
 }
 
 /// Returns true for files that commonly contain credentials or private key
@@ -224,65 +265,120 @@ pub fn is_content_candidate(path: &Path) -> bool {
     let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
         return false;
     };
-    is_text_ext(ext)
+    is_text_ext(ext) || is_pdf_ext(ext)
 }
 
 /// Extract one file while enforcing byte, character, encoding, race, and time
 /// bounds.  No error returned by this function contains the source path.
 pub fn extract_file(path: &Path, expected_size: u64, started: Instant) -> ContentRecord {
+    let extractor_version = if is_pdf_path(path) {
+        PDF_EXTRACTOR_VERSION
+    } else {
+        EXTRACTOR_VERSION
+    };
     if is_sensitive_filename(path) {
-        return ContentRecord::failure(ContentStatus::SkippedSensitive, "sensitive_file");
+        return ContentRecord::failure_for(
+            extractor_version,
+            ContentStatus::SkippedSensitive,
+            "sensitive_file",
+        );
     }
     if expected_size > MAX_FILE_BYTES {
-        return ContentRecord::failure(ContentStatus::TooLarge, "file_too_large");
+        return ContentRecord::failure_for(
+            extractor_version,
+            ContentStatus::TooLarge,
+            "file_too_large",
+        );
     }
     if timed_out(started) {
-        return ContentRecord::failure(ContentStatus::Timeout, "processing_timeout");
+        return ContentRecord::failure_for(
+            extractor_version,
+            ContentStatus::Timeout,
+            "processing_timeout",
+        );
     }
 
     let before = match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_file() => metadata,
-        _ => return ContentRecord::failure(ContentStatus::ReadError, "read_error"),
+        _ => {
+            return ContentRecord::failure_for(
+                extractor_version,
+                ContentStatus::ReadError,
+                "read_error",
+            )
+        }
     };
     let before_fingerprint = FileFingerprint::from_metadata(&before);
     if before_fingerprint.len != expected_size {
-        return ContentRecord::failure(ContentStatus::ChangedDuringRead, "changed_during_read");
+        return ContentRecord::failure_for(
+            extractor_version,
+            ContentStatus::ChangedDuringRead,
+            "changed_during_read",
+        );
     }
 
     let mut file = match File::open(path) {
         Ok(file) => file,
-        Err(_) => return ContentRecord::failure(ContentStatus::ReadError, "read_error"),
+        Err(_) => {
+            return ContentRecord::failure_for(
+                extractor_version,
+                ContentStatus::ReadError,
+                "read_error",
+            )
+        }
     };
     let mut bytes = Vec::with_capacity(expected_size.min(MAX_FILE_BYTES) as usize);
     let mut chunk = [0_u8; READ_CHUNK_BYTES];
     loop {
         if timed_out(started) {
-            return ContentRecord::failure(ContentStatus::Timeout, "processing_timeout");
+            return ContentRecord::failure_for(
+                extractor_version,
+                ContentStatus::Timeout,
+                "processing_timeout",
+            );
         }
         let read = match file.read(&mut chunk) {
             Ok(read) => read,
-            Err(_) => return ContentRecord::failure(ContentStatus::ReadError, "read_error"),
+            Err(_) => {
+                return ContentRecord::failure_for(
+                    extractor_version,
+                    ContentStatus::ReadError,
+                    "read_error",
+                )
+            }
         };
         if read == 0 {
             break;
         }
         bytes.extend_from_slice(&chunk[..read]);
         if bytes.len() as u64 > MAX_FILE_BYTES {
-            return ContentRecord::failure(ContentStatus::TooLarge, "file_too_large");
+            return ContentRecord::failure_for(
+                extractor_version,
+                ContentStatus::TooLarge,
+                "file_too_large",
+            );
         }
     }
 
     let opened_after = match file.metadata() {
         Ok(metadata) if metadata.file_type().is_file() => FileFingerprint::from_metadata(&metadata),
         _ => {
-            return ContentRecord::failure(ContentStatus::ChangedDuringRead, "changed_during_read")
+            return ContentRecord::failure_for(
+                extractor_version,
+                ContentStatus::ChangedDuringRead,
+                "changed_during_read",
+            )
         }
     };
 
     let after = match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_file() => metadata,
         _ => {
-            return ContentRecord::failure(ContentStatus::ChangedDuringRead, "changed_during_read")
+            return ContentRecord::failure_for(
+                extractor_version,
+                ContentStatus::ChangedDuringRead,
+                "changed_during_read",
+            )
         }
     };
     let after_fingerprint = FileFingerprint::from_metadata(&after);
@@ -290,10 +386,18 @@ pub fn extract_file(path: &Path, expected_size: u64, started: Instant) -> Conten
         || opened_after.changed_from(before_fingerprint, expected_size)
         || after_fingerprint.changed_from(before_fingerprint, expected_size)
     {
-        return ContentRecord::failure(ContentStatus::ChangedDuringRead, "changed_during_read");
+        return ContentRecord::failure_for(
+            extractor_version,
+            ContentStatus::ChangedDuringRead,
+            "changed_during_read",
+        );
     }
 
-    extract_bytes(&bytes, started)
+    if is_pdf_path(path) {
+        extract_pdf_bytes(&bytes, started)
+    } else {
+        extract_bytes(&bytes, started)
+    }
 }
 
 /// Decode a bounded byte fixture.  Kept public for deterministic unit tests and
@@ -328,11 +432,159 @@ pub fn extract_bytes(bytes: &[u8], started: Instant) -> ContentRecord {
     ContentRecord {
         text,
         status: ContentStatus::Indexed,
+        extractor_version: EXTRACTOR_VERSION,
         encoding: Some(encoding),
         truncated,
         error_code: truncated.then_some("text_limit"),
         text_chars,
     }
+}
+
+/// Extract text-only content from a PDF byte fixture using the MIT-licensed
+/// lopdf parser.  The caller must enforce the path/regular-file race checks;
+/// this function intentionally accepts bytes so it cannot leak a path through
+/// parser diagnostics or logs.
+pub fn extract_pdf_bytes(bytes: &[u8], started: Instant) -> ContentRecord {
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return ContentRecord::failure_for(
+            PDF_EXTRACTOR_VERSION,
+            ContentStatus::TooLarge,
+            "file_too_large",
+        );
+    }
+    if timed_out(started) {
+        return ContentRecord::failure_for(
+            PDF_EXTRACTOR_VERSION,
+            ContentStatus::Timeout,
+            "processing_timeout",
+        );
+    }
+
+    let document = match lopdf::Document::load_mem_with_options(
+        bytes,
+        lopdf::LoadOptions::with_max_decompressed_size(PDF_MAX_DECOMPRESSED_BYTES),
+    ) {
+        Ok(document) => document,
+        Err(_) => {
+            return ContentRecord::failure_for(
+                PDF_EXTRACTOR_VERSION,
+                ContentStatus::ExtractError,
+                "extract_error",
+            )
+        }
+    };
+
+    // lopdf automatically attempts an empty password.  `was_encrypted` is
+    // therefore required in addition to `is_encrypted`: an encrypted PDF with
+    // an empty password must still be isolated instead of silently indexed.
+    if document.is_encrypted() || document.was_encrypted() {
+        return ContentRecord::failure_for(
+            PDF_EXTRACTOR_VERSION,
+            ContentStatus::UnsupportedEncrypted,
+            "unsupported_encrypted",
+        );
+    }
+    // Reject an oversized object graph before walking the page tree.  The
+    // loader's per-stream inflate cap bounds decompression; this separate
+    // count cap bounds later traversal work.
+    if pdf_object_limit_exceeded(document.objects.len()) {
+        return ContentRecord::failure_for(
+            PDF_EXTRACTOR_VERSION,
+            ContentStatus::ExtractError,
+            "resource_limit",
+        );
+    }
+    if timed_out(started) {
+        return ContentRecord::failure_for(
+            PDF_EXTRACTOR_VERSION,
+            ContentStatus::Timeout,
+            "processing_timeout",
+        );
+    }
+
+    // `take(limit + 1)` avoids materializing an unbounded page map merely to
+    // decide whether this document is eligible. lopdf's iterator also bounds
+    // page-tree depth and total visits by the parsed object count.
+    let page_count = document.page_iter().take(PDF_MAX_PAGES + 1).count();
+    if pdf_page_limit_exceeded(page_count) {
+        return ContentRecord::failure_for(
+            PDF_EXTRACTOR_VERSION,
+            ContentStatus::ExtractError,
+            "resource_limit",
+        );
+    }
+    if page_count == 0 {
+        return ContentRecord::failure_for(PDF_EXTRACTOR_VERSION, ContentStatus::NoText, "no_text");
+    }
+
+    let mut text = String::new();
+    let mut text_chars = 0usize;
+    let mut truncated = false;
+    for page_number in 1..=page_count as u32 {
+        if timed_out(started) {
+            return ContentRecord::failure_for(
+                PDF_EXTRACTOR_VERSION,
+                ContentStatus::Timeout,
+                "processing_timeout",
+            );
+        }
+        let chunks =
+            document.extract_text_chunks_with_limit(&[page_number], PDF_MAX_DECOMPRESSED_BYTES);
+        for chunk in chunks {
+            let chunk = match chunk {
+                Ok(chunk) => chunk,
+                Err(_) => {
+                    return ContentRecord::failure_for(
+                        PDF_EXTRACTOR_VERSION,
+                        ContentStatus::ExtractError,
+                        "extract_error",
+                    )
+                }
+            };
+            for character in chunk.chars() {
+                if text_chars == MAX_TEXT_CHARS {
+                    truncated = true;
+                    break;
+                }
+                text.push(character);
+                text_chars += 1;
+            }
+            if truncated {
+                break;
+            }
+        }
+        if truncated {
+            break;
+        }
+    }
+    if timed_out(started) {
+        return ContentRecord::failure_for(
+            PDF_EXTRACTOR_VERSION,
+            ContentStatus::Timeout,
+            "processing_timeout",
+        );
+    }
+    if !text.chars().any(|character| !character.is_whitespace()) {
+        return ContentRecord::failure_for(PDF_EXTRACTOR_VERSION, ContentStatus::NoText, "no_text");
+    }
+
+    ContentRecord {
+        text,
+        status: ContentStatus::Indexed,
+        extractor_version: PDF_EXTRACTOR_VERSION,
+        encoding: Some("pdf"),
+        truncated,
+        error_code: truncated.then_some("text_limit"),
+        text_chars,
+    }
+}
+
+fn pdf_object_limit_exceeded(object_count: usize) -> bool {
+    object_count > PDF_MAX_OBJECTS
+}
+
+fn pdf_page_limit_exceeded(page_count: usize) -> bool {
+    page_count > PDF_MAX_PAGES
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -654,6 +906,10 @@ fn looks_like_known_token(candidate: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lopdf::content::{Content, Operation};
+    use lopdf::{
+        dictionary, Document, EncryptionState, EncryptionVersion, Object, Permissions, Stream,
+    };
 
     fn now() -> Instant {
         Instant::now()
@@ -675,6 +931,95 @@ mod tests {
         bytes
     }
 
+    fn pdf_bytes(text: Option<&str>) -> Vec<u8> {
+        pdf_bytes_with_compression(text, false)
+    }
+
+    fn pdf_bytes_with_compression(text: Option<&str>, compress: bool) -> Vec<u8> {
+        let mut document = Document::with_version("1.5");
+        let pages_id = document.new_object_id();
+        let font_id = document.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type1",
+            "BaseFont" => "Courier",
+        });
+        let resources_id = document.add_object(dictionary! {
+            "Font" => dictionary! { "F1" => font_id },
+        });
+        let page_id = if let Some(text) = text {
+            let content = Content {
+                operations: vec![
+                    Operation::new("BT", vec![]),
+                    Operation::new("Tf", vec![Object::Name(b"F1".to_vec()), 12.into()]),
+                    Operation::new("Td", vec![100.into(), 600.into()]),
+                    Operation::new("Tj", vec![Object::string_literal(text)]),
+                    Operation::new("ET", vec![]),
+                ],
+            };
+            let content_id = document.add_object(Stream::new(
+                lopdf::Dictionary::new(),
+                content.encode().unwrap(),
+            ));
+            document.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages_id,
+                "Resources" => resources_id,
+                "Contents" => content_id,
+            })
+        } else {
+            document.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages_id,
+                "Resources" => resources_id,
+            })
+        };
+        document.objects.insert(
+            pages_id,
+            lopdf::Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![page_id.into()],
+                "Count" => 1,
+                "Resources" => resources_id,
+                "MediaBox" => vec![0.into(), 0.into(), 595.into(), 842.into()],
+            }),
+        );
+        let catalog_id = document.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        document.trailer.set("Root", catalog_id);
+        document.trailer.set(
+            "ID",
+            Object::Array(vec![
+                Object::string_literal(b"fixture-id-a"),
+                Object::string_literal(b"fixture-id-b"),
+            ]),
+        );
+        if compress {
+            document.compress();
+        }
+        let mut bytes = Vec::new();
+        document.save_to(&mut bytes).unwrap();
+        bytes
+    }
+
+    fn encrypted_pdf_bytes(user_password: &str) -> Vec<u8> {
+        let mut document =
+            lopdf::Document::load_mem(&pdf_bytes(Some("protected fixture"))).unwrap();
+        let version = EncryptionVersion::V2 {
+            document: &document,
+            owner_password: "owner",
+            user_password,
+            key_length: 40,
+            permissions: Permissions::all(),
+        };
+        let state = EncryptionState::try_from(version).unwrap();
+        document.encrypt(&state).unwrap();
+        let mut bytes = Vec::new();
+        document.save_to(&mut bytes).unwrap();
+        bytes
+    }
+
     #[test]
     fn recognizes_developer_text_extensions_case_insensitively() {
         assert!(is_text_ext("RS"));
@@ -683,6 +1028,102 @@ mod tests {
         assert!(is_text_ext("tsx"));
         assert!(!is_text_ext("png"));
         assert!(!is_text_ext("exe"));
+    }
+
+    #[test]
+    fn recognizes_pdf_candidates_without_treating_office_formats_as_pdf() {
+        assert!(is_pdf_ext("pdf"));
+        assert!(is_pdf_ext(".PDF"));
+        assert!(is_pdf_path(Path::new("report.PdF")));
+        assert!(is_content_candidate(Path::new("report.pdf")));
+        assert!(!is_pdf_path(Path::new("report.docx")));
+        assert!(!is_content_candidate(Path::new("report.docx")));
+    }
+
+    #[test]
+    fn extracts_pdf_text_and_keeps_pdf_extractor_version_separate() {
+        let record = extract_pdf_bytes(&pdf_bytes(Some("offline PDF fixture")), now());
+        assert_eq!(record.status, ContentStatus::Indexed);
+        assert_eq!(record.extractor_version, PDF_EXTRACTOR_VERSION);
+        assert_eq!(record.encoding, Some("pdf"));
+        assert!(record.text.contains("offline PDF fixture"));
+        assert!(!record.text.contains("/Type"));
+    }
+
+    #[test]
+    fn bounds_pdf_text_and_decompressed_page_content() {
+        let long_text = "x".repeat(MAX_TEXT_CHARS + 1);
+        let bounded = extract_pdf_bytes(&pdf_bytes(Some(&long_text)), now());
+        assert_eq!(bounded.status, ContentStatus::Indexed);
+        assert!(bounded.truncated);
+        assert_eq!(bounded.text_chars, MAX_TEXT_CHARS);
+        assert_eq!(bounded.error_code, Some("text_limit"));
+
+        let decompressed_bomb = "x".repeat(PDF_MAX_DECOMPRESSED_BYTES + 1);
+        let bomb_pdf = pdf_bytes_with_compression(Some(&decompressed_bomb), true);
+        assert!(bomb_pdf.len() < MAX_FILE_BYTES as usize);
+        let bomb = extract_pdf_bytes(&bomb_pdf, now());
+        assert_eq!(bomb.status, ContentStatus::ExtractError);
+        assert_eq!(bomb.error_code, Some("extract_error"));
+        assert!(bomb.text.is_empty());
+    }
+
+    #[test]
+    fn bounds_pdf_object_and_page_structure_at_the_exact_limits() {
+        assert!(!pdf_object_limit_exceeded(PDF_MAX_OBJECTS));
+        assert!(pdf_object_limit_exceeded(PDF_MAX_OBJECTS + 1));
+        assert!(!pdf_page_limit_exceeded(PDF_MAX_PAGES));
+        assert!(pdf_page_limit_exceeded(PDF_MAX_PAGES + 1));
+    }
+
+    #[test]
+    fn isolates_scanned_encrypted_corrupt_oversized_and_timed_out_pdfs() {
+        let scanned = extract_pdf_bytes(&pdf_bytes(None), now());
+        assert_eq!(scanned.status, ContentStatus::NoText);
+        assert_eq!(scanned.error_code, Some("no_text"));
+
+        let encrypted = extract_pdf_bytes(&encrypted_pdf_bytes("user"), now());
+        assert_eq!(encrypted.status, ContentStatus::UnsupportedEncrypted);
+        assert_eq!(encrypted.error_code, Some("unsupported_encrypted"));
+        assert!(encrypted.text.is_empty());
+
+        let empty_password = extract_pdf_bytes(&encrypted_pdf_bytes(""), now());
+        assert_eq!(empty_password.status, ContentStatus::UnsupportedEncrypted);
+        assert_eq!(empty_password.error_code, Some("unsupported_encrypted"));
+        assert!(empty_password.text.is_empty());
+
+        let corrupt = extract_pdf_bytes(b"%PDF-1.7\nnot a valid PDF", now());
+        assert_eq!(corrupt.status, ContentStatus::ExtractError);
+        assert_eq!(corrupt.error_code, Some("extract_error"));
+
+        // A raw marker in malformed bytes is not proof of a valid encryption
+        // dictionary and must not hide the corrupt-input classification.
+        let corrupt_with_marker = extract_pdf_bytes(b"%PDF-1.7\n/Encrypt\nnot a valid PDF", now());
+        assert_eq!(corrupt_with_marker.status, ContentStatus::ExtractError);
+        assert_eq!(corrupt_with_marker.error_code, Some("extract_error"));
+
+        let oversized = extract_pdf_bytes(&vec![b'x'; MAX_FILE_BYTES as usize + 1], now());
+        assert_eq!(oversized.status, ContentStatus::TooLarge);
+        assert_eq!(oversized.error_code, Some("file_too_large"));
+
+        let timeout = extract_pdf_bytes(b"%PDF-1.7", Instant::now() - PROCESSING_LIMIT);
+        assert_eq!(timeout.status, ContentStatus::Timeout);
+        assert_eq!(timeout.error_code, Some("processing_timeout"));
+    }
+
+    #[test]
+    fn pdf_file_boundary_failures_keep_the_pdf_extractor_version() {
+        let oversized = extract_file(Path::new("report.pdf"), MAX_FILE_BYTES + 1, now());
+        assert_eq!(oversized.status, ContentStatus::TooLarge);
+        assert_eq!(oversized.extractor_version, PDF_EXTRACTOR_VERSION);
+
+        let timeout = extract_file(
+            Path::new("report.pdf"),
+            0,
+            Instant::now() - PROCESSING_LIMIT,
+        );
+        assert_eq!(timeout.status, ContentStatus::Timeout);
+        assert_eq!(timeout.extractor_version, PDF_EXTRACTOR_VERSION);
     }
 
     #[test]

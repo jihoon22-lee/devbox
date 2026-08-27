@@ -244,7 +244,7 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
      decode하고, 파일 20 MiB·보관 text 2,000,000 Unicode scalar characters·후보 처리
      10초 상한을 적용한다. UTF-8 BOM, UTF-16 BOM, empty/Korean/English fixture와
      unsupported binary/encoding, oversized file, file-change race를 모두 deterministic
-     상태로 기록하며, PDF/Office/OCR/semantic search는 다음 별도 feature로 남긴다.
+     상태로 기록하며, Office/OCR/semantic search는 다음 별도 feature로 남긴다.
    - 각 `file_content` row는 `content_status`, `extractor_version=text-v1`, `truncated`,
      `indexed_at`, `error_code`, `encoding`, `text_chars`를 보유한다. 실패 row의 FTS body는
      비워 filename search를 계속 제공하고, sensitive filename은 읽기 전에
@@ -257,6 +257,16 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
      중 이미 커밋된 부분 결과는 안전한 상태로 남고 `Re-index`로 수렴한다. Rust unit/
      integration fixture와 frontend stale-search·input bound·cancel/a11y fixture를
      focused gate로 검증했으며, packaged Windows W2와 전체 release gate는 아직 남아 있다.
+   - 2026-08-27 `#298` PDF extractor 구현: MIT `lopdf`로 text object만 bounded offline
+     추출하고 PDF 전용 `pdf-v1` metadata를 기록한다. 20 MiB file/16 MiB decompressed
+     page/object stream/100,000 parsed objects/10,000 pages/2,000,000 character/10초 상한을
+     적용하며, object/page 구조 상한 초과는 `extract_error`와 `resource_limit`으로,
+     image-only scan·encrypted·corrupt 입력은 각각 `no_text`·`unsupported_encrypted`·
+     `extract_error`로 격리한다. `meta.pdf_extractor_version` marker가 첫 설치와 parser
+     version 전환을 보장하고 성공한 full/PDF scan 뒤 갱신된다. PDF extractor version 변경
+     시 PDF row만 format-specific reindex해 text/source/Markdown row를 보존하되, PDF-only
+     reindex 중 큐 요청은 `All`로 승격해 새 root/index 요청을 놓치지 않는다. Office/OCR/
+     image/format extraction은 후속 별도 issue로 남긴다.
 
 #### P3 — 선택 확정
 

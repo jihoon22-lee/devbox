@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `ebc86703dd38410574e589c06d7b4e4d12a41aa783e7114cf9678fc69a366be5`
+- Cargo.lock SHA-256: `60cc14d42cc95ffbcf11183ceb5cb3150c1b13199f20cd021c940e07cfa91038`
 - pnpm-lock.yaml SHA-256: `c49f2e10098da67eaf9af9bf737d06f517fc6efda1883d2bc810d8068027f440`
 
 ## Rust dependencies
@@ -12,6 +12,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | Package | Version | License | Source | Locked digest |
 |---|---:|---|---|---|
 | adler2 | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | https://github.com/oyvindln/adler2 | `sha256:320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa` |
+| aes | 0.9.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/block-ciphers | `sha256:f8eb277bec05f56a0e0591f155a484cbd0f4f07ff2905051a48c72f004f7ed58` |
 | ahash | 0.8.12 | MIT OR Apache-2.0 | https://github.com/tkaitchuck/ahash | `sha256:5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75` |
 | aho-corasick | 1.1.5 | Unlicense OR MIT | https://github.com/BurntSushi/aho-corasick | `sha256:c982642fa9e8606056828ee9a8505737230110bb1099153c79efe865c59d12ba` |
 | alloc-no-stdlib | 2.0.4 | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib | `sha256:cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3` |
@@ -46,6 +47,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | bitflags | 2.13.1 | MIT OR Apache-2.0 | https://github.com/bitflags/bitflags | `sha256:b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da` |
 | block-buffer | 0.10.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | `sha256:3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71` |
 | block-buffer | 0.12.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | `sha256:d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa` |
+| block-padding | 0.4.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | `sha256:710f1dd022ef4e93f8a438b4ba958de7f64308434fa6a87104481645cc30068b` |
 | block2 | 0.6.2 | MIT | https://github.com/madsmtm/objc2 | `sha256:cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5` |
 | blocking | 1.6.2 | Apache-2.0 OR MIT | https://github.com/smol-rs/blocking | `sha256:e83f8d02be6967315521be875afa792a316e28d57b5a2d401897e2a7921b7f21` |
 | brotli | 8.0.4 | BSD-3-Clause AND MIT | https://github.com/dropbox/rust-brotli | `sha256:5cc91aac060a7a1e25823bdccbfb6af1875b88f17c6daac97894eed8207166b3` |
@@ -63,6 +65,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | cargo-platform | 0.1.9 | MIT OR Apache-2.0 | https://github.com/rust-lang/cargo | `sha256:e35af189006b9c0f00a064685c727031e3ed2d8020f7ba284d78cc2671bd36ea` |
 | cargo_metadata | 0.19.2 | MIT | https://github.com/oli-obk/cargo_metadata | `sha256:dd5eb614ed4c27c5d706420e4320fbe3216ab31fa1c33cd8246ac36dae4479ba` |
 | cargo_toml | 0.22.3 | Apache-2.0 OR MIT | https://gitlab.com/lib.rs/cargo_toml | `sha256:374b7c592d9c00c1f4972ea58390ac6b18cbb6ab79011f3bdc90a0b82ca06b77` |
+| cbc | 0.2.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/block-modes | `sha256:ce2dc9ee5f88d11e0beb842c88b33c8a5cf0d1329c4b19494af42b07dbfe8896` |
 | cc | 1.4.2 | MIT OR Apache-2.0 | https://github.com/rust-lang/cc-rs | `sha256:5d262e149917187838d5b42777c8253bcb64500067342904e7d429499a6f277e` |
 | cesu8 | 1.1.0 | Apache-2.0/MIT | https://github.com/emk/cesu8-rs | `sha256:6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c` |
 | cfb | 0.7.3 | MIT | https://github.com/mdsteele/rust-cfb | `sha256:d38f2da7a0a2c4ccf0065be06397cc26a81f4e528be095826eee9d4adbb8c60f` |
@@ -75,6 +78,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | chrono | 0.4.45 | MIT OR Apache-2.0 | https://github.com/chronotope/chrono | `sha256:1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327` |
 | chrono-tz | 0.10.4 | MIT OR Apache-2.0 | https://github.com/chronotope/chrono-tz | `sha256:a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3` |
 | chunked_transfer | 1.5.0 | MIT OR Apache-2.0 | https://github.com/frewsxcv/rust-chunked-transfer | `sha256:6e4de3bc4ea267985becf712dc6d9eed8b04c953b3fcfb339ebc87acd9804901` |
+| cipher | 0.5.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits | `sha256:e8cf2a2c93cd704877c0858356ed03480ff301ee950b43f1cbe4573b088bfa6c` |
 | clipboard-win | 5.4.1 | BSL-1.0 | https://github.com/DoumanAsh/clipboard-win | `sha256:bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4` |
 | cmake | 0.1.58 | MIT OR Apache-2.0 | https://github.com/rust-lang/cmake-rs | `sha256:c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678` |
 | cmov | 0.5.4 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils | `sha256:0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a` |
@@ -89,6 +93,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | core-foundation-sys | 0.8.7 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs | `sha256:773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b` |
 | core-graphics | 0.25.0 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs | `sha256:064badf302c3194842cf2c5d61f56cc88e54a759313879cdf03abdd27d0c3b97` |
 | core-graphics-types | 0.2.0 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs | `sha256:3d44a101f213f6c4cdc1853d4b78aef6db6bdfa3468798cc1d9912f4735013eb` |
+| cpubits | 0.1.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | `sha256:15b85f9c39137c3a891689859392b1bd49812121d0d61c9caf00d46ed5ce06ae` |
 | cpufeatures | 0.2.17 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | `sha256:59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280` |
 | cpufeatures | 0.3.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | `sha256:8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201` |
 | crc32fast | 1.5.0 | MIT OR Apache-2.0 | https://github.com/srijs/rust-crc32fast | `sha256:9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511` |
@@ -138,6 +143,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | dtor-proc-macro | 0.0.6 | Apache-2.0 OR MIT | https://github.com/mmastrac/rust-ctor | `sha256:f678cf4a922c215c63e0de95eb1ff08a958a81d47e485cf9da1e27bf6305cfa5` |
 | dunce | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 | https://gitlab.com/kornelski/dunce | `sha256:92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813` |
 | dyn-clone | 1.0.20 | MIT OR Apache-2.0 | https://github.com/dtolnay/dyn-clone | `sha256:d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555` |
+| ecb | 0.2.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/block-modes | `sha256:26f2a8b3e564eba0877223dc343703ad0385794e882e6d13f3a4dd5c6b1f41ac` |
 | embed-resource | 3.0.11 | MIT | https://github.com/nabijaczleweli/rust-embed-resource | `sha256:fbfdaacccebec3b28e4866b8973543c7647797db5ada1bdab552e48fe665fbbd` |
 | embed_plist | 1.2.2 | MIT OR Apache-2.0 | https://github.com/nvzqz/embed-plist-rs | `sha256:4ef6b89e5b37196644d8796de5268852ff179b44e96276cf4290264843743bb7` |
 | encoding_rs | 0.8.35 | (Apache-2.0 OR MIT) AND BSD-3-Clause | https://github.com/hsivonen/encoding_rs | `sha256:75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3` |
@@ -245,6 +251,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | infer | 0.19.0 | MIT | https://github.com/bojand/infer | `sha256:a588916bfdfd92e71cacef98a63d9b1f0d74d6599980d11894290e7ddefffcf7` |
 | inotify | 0.11.4 | ISC | https://github.com/hannobraun/inotify-rs | `sha256:153be1941a183ec9ccd095ddbe17a8b8d435ef6c76e9e02451b933c3999af2c8` |
 | inotify-sys | 0.1.8 | ISC | https://github.com/hannobraun/inotify-sys | `sha256:c033f80b2c113cdf91ab7a33faa9cbc014726dcad99880c8609af2a370edf37d` |
+| inout | 0.2.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | `sha256:4250ce6452e92010fdf7268ccc5d14faa80bb12fc741938534c58f16804e03c7` |
 | ipnet | 2.12.1 | MIT OR Apache-2.0 | https://github.com/krisprice/ipnet | `sha256:6a756c3fac73139e83f14c2d742155dd2b78d3ee56597b419a0579b7bdd6dd78` |
 | is-docker | 0.2.0 | MIT | https://github.com/TheLarkInn/is-docker | `sha256:928bae27f42bc99b60d9ac7334e3a21d10ad8f1835a4e12ec3ec0464765ed1b3` |
 | is-wsl | 0.4.0 | MIT | https://github.com/TheLarkInn/is-wsl | `sha256:173609498df190136aa7dea1a91db051746d339e18476eed5ca40521f02d7aa5` |
@@ -281,6 +288,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | litemap | 0.8.2 | Unicode-3.0 | https://github.com/unicode-org/icu4x | `sha256:92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0` |
 | lock_api | 0.4.14 | MIT OR Apache-2.0 | https://github.com/Amanieu/parking_lot | `sha256:224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965` |
 | log | 0.4.33 | MIT OR Apache-2.0 | https://github.com/rust-lang/log | `sha256:0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad` |
+| lopdf | 0.44.0 | MIT | https://github.com/J-F-Liu/lopdf.git | `sha256:5e2ec995d822e05cabc3f06d196ee43650af3fe4fe38012cacb35e0c3d113b68` |
 | lru-slab | 0.1.2 | MIT OR Apache-2.0 OR Zlib | https://github.com/Ralith/lru-slab | `sha256:112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154` |
 | lsp-types | 0.97.0 | MIT | https://github.com/gluon-lang/lsp-types | `sha256:53353550a17c04ac46c585feb189c2db82154fc84b79c7a66c96c2c644f66071` |
 | mac-notification-sys | 0.6.15 | MIT/Apache-2.0 | https://github.com/h4llow3En/mac-notification-sys | `sha256:fd604973958ddcc11b561193c0fb96ba146506ef2f231ef2e7c35fd2cbc9beca` |
@@ -385,6 +393,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | rand_core | 0.10.1 | MIT OR Apache-2.0 | https://github.com/rust-random/rand_core | `sha256:63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69` |
 | rand_core | 0.9.5 | MIT OR Apache-2.0 | https://github.com/rust-random/rand | `sha256:76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c` |
 | rand_pcg | 0.10.2 | MIT OR Apache-2.0 | https://github.com/rust-random/rngs | `sha256:caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a` |
+| rangemap | 1.8.0 | MIT/Apache-2.0 | https://github.com/jeffparsons/rangemap | `sha256:a611d15b50743feb4c76b7d03edcb0e64f399c26961e4efe6975bc398be6aa3d` |
 | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib | https://github.com/rust-windowing/raw-window-handle | `sha256:20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539` |
 | redox_syscall | 0.5.18 | MIT | https://gitlab.redox-os.org/redox-os/syscall | `sha256:ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d` |
 | redox_users | 0.5.2 | MIT | https://gitlab.redox-os.org/redox-os/users | `sha256:a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac` |
@@ -454,6 +463,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 | https://github.com/storyyeller/stable_deref_trait | `sha256:6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596` |
 | string_cache | 0.9.0 | MIT OR Apache-2.0 | https://github.com/servo/string-cache | `sha256:a18596f8c785a729f2819c0f6a7eae6ebeebdfffbfe4214ae6b087f690e31901` |
 | string_cache_codegen | 0.6.1 | MIT OR Apache-2.0 | https://github.com/servo/string-cache | `sha256:585635e46db231059f76c5849798146164652513eb9e8ab2685939dd90f29b69` |
+| stringprep | 0.1.5 | MIT/Apache-2.0 | https://github.com/sfackler/rust-stringprep | `sha256:7b4df3d392d81bd458a8a621b8bffbd2302a12ffe288a9d931670948749463b1` |
 | strsim | 0.11.1 | MIT | https://github.com/rapidfuzz/strsim-rs | `sha256:7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f` |
 | strum | 0.27.2 | MIT | https://github.com/Peternator7/strum | `sha256:af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf` |
 | strum_macros | 0.27.2 | MIT | https://github.com/Peternator7/strum | `sha256:7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7` |
@@ -539,7 +549,10 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | unic-ucd-ident | 0.9.0 | MIT/Apache-2.0 | https://github.com/open-i18n/rust-unic/ | `sha256:e230a37c0381caa9219d67cf063aa3a375ffed5bf541a452db16e744bdab6987` |
 | unic-ucd-version | 0.9.0 | MIT/Apache-2.0 | https://github.com/open-i18n/rust-unic/ | `sha256:96bd2f2237fe450fcd0a1d2f5f4e91711124f7857ba2e964247776ebeeb7b0c4` |
 | unicase | 2.9.0 | MIT OR Apache-2.0 | https://github.com/seanmonstar/unicase | `sha256:dbc4bc3a9f746d862c45cb89d705aa10f187bb96c76001afab07a0d35ce60142` |
+| unicode-bidi | 0.3.18 | MIT OR Apache-2.0 | https://github.com/servo/unicode-bidi | `sha256:5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5` |
 | unicode-ident | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/dtolnay/unicode-ident | `sha256:e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75` |
+| unicode-normalization | 0.1.25 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-normalization | `sha256:5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8` |
+| unicode-properties | 0.1.4 | MIT/Apache-2.0 | https://github.com/unicode-rs/unicode-properties | `sha256:7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d` |
 | unicode-segmentation | 1.13.3 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-segmentation | `sha256:c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8` |
 | unicode-width | 0.2.2 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-width | `sha256:b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254` |
 | untrusted | 0.9.0 | ISC | https://github.com/briansmith/untrusted | `sha256:8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1` |
@@ -578,6 +591,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | webview2-com-macros | 0.8.1 | MIT | https://github.com/wravery/webview2-rs | `sha256:67a921c1b6914c367b2b823cd4cde6f96beec77d30a939c8199bb377cf9b9b54` |
 | webview2-com-sys | 0.38.2 | MIT | https://github.com/wravery/webview2-rs | `sha256:381336cfffd772377d291702245447a5251a2ffa5bad679c99e61bc48bacbf9c` |
 | weezl | 0.1.12 | MIT OR Apache-2.0 | https://github.com/image-rs/weezl | `sha256:a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88` |
+| weezl | 0.2.1 | MIT OR Apache-2.0 | https://github.com/image-rs/weezl | `sha256:d4ca08e5ef825b65b056d9efbd95c8750683f0a6d0466d02e96dc2e4e360f3d2` |
 | winapi | 0.3.9 | MIT/Apache-2.0 | https://github.com/retep998/winapi-rs | `sha256:5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419` |
 | winapi-i686-pc-windows-gnu | 0.4.0 | MIT/Apache-2.0 | https://github.com/retep998/winapi-rs | `sha256:ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6` |
 | winapi-util | 0.1.11 | Unlicense OR MIT | https://github.com/BurntSushi/winapi-util | `sha256:c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22` |
