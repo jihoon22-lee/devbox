@@ -539,6 +539,23 @@ project environment preflight, template wizard와 runtime 자동 반영은 포�
 chain은 #410 WSL Desktop runtime snapshot producer 후 #281 Workbench WSL runtime 제안이며, 독립적인
 #282 Webhook Lab rule 설명과 #283 example curl은 병렬로 진행한다.
 
+**2026-08-27 #312+#313 grouped PR preparation.** Workbench의 두 P2-14 slice를 하나의
+`Start Workspace` 사용자 흐름으로 결합할 수 있도록 전용 `feat/workbench/start-workspace`
+worktree에 통합했다. Start는 read-only preflight modal과 명시적 Continue를 거치며, backend는
+Continue 결과를 권한으로 취급하지 않고 child spawn 직전에 preflight/profile/root identity를
+재검증한다. #312 acceptance는 `.env`/`.env.<name>` bounded UTF-8 parser, masked preview,
+metadata-only revision/`secret-ref/v1` profile persistence, per-child ephemeral zeroizing overlay,
+stale/reparse/provider failure와 rollback을 독립적으로 유지한다. #313 acceptance는 required app
+capability, WSL distro 존재·running, Windows/WSL cwd, TCP port, Run Manager snapshot dependency,
+warning/failure/unavailable status와 existing/notRunning/Workbench-started provenance를 독립적으로
+유지한다. service lifecycle·자동 복구·`.env` write/upload·global/cloud store·다른 앱 DB 변경은
+양쪽 모두 범위 밖이다.
+
+Rust core/command fixture, React modal/keyboard/focus/stale/unmount/double-submit fixture와
+grouped workthrough를 함께 추가했으며 Linux focused verification은 worker 1–2와 native target
+dir로 제한한다. packaged Windows W2는 실제 installed capability, stopped distro, junction/reparse,
+port race, changed source, child environment와 StartedPid rollback을 최종 PR 게이트에서 확인한다.
+
 **2026-08-26 #305 구현 상태.** Life Log export는 요청 날짜를 inclusive로, `endMs`를
 exclusive로 해석하고 frontend가 계산한 local civil-day `dayBoundaries`를 그대로 보존한다.
 날짜 수는 366일, session은 bounded SQL 50,000건, 결과는 4MiB로 제한하며 app/title/privacy와

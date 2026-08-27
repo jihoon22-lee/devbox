@@ -1,4 +1,9 @@
-import type { ProjectProfile } from "../api";
+import type {
+  EnvironmentConflict,
+  EnvironmentVariableMetadata,
+  ProjectEnvironmentPreview,
+  ProjectProfile,
+} from "../api";
 
 export interface ServiceDraftRow {
   key: string;
@@ -19,6 +24,12 @@ export interface ProfileDraft {
   gitRoot: string;
   expectedPortsText: string;
   serviceRows: ServiceDraftRow[];
+  environmentEnabled: boolean;
+  environmentSource: string;
+  environmentRevision: string;
+  environmentVariables: EnvironmentVariableMetadata[];
+  /** Native preview is masked metadata only and is never sent in the profile DTO. */
+  environmentPreview: ProjectEnvironmentPreview | null;
 }
 
 export interface ProfileDraftErrors {
@@ -29,6 +40,7 @@ export interface ProfileDraftErrors {
   gitRoot?: string;
   expectedPorts?: string;
   services?: string;
+  environment?: string;
   serviceRows: Record<string, string>;
 }
 
@@ -40,6 +52,10 @@ export const MAX_EXPECTED_PORTS = 128;
 export const MAX_EXPECTED_PORTS_INPUT_CHARS = 8192;
 export const MAX_SERVICE_ID_CHARS = 128;
 export const MAX_SERVICES = 128;
+export const MAX_ENVIRONMENT_SOURCE_BYTES = 256;
+export const MAX_ENVIRONMENT_VARIABLES = 128;
+export const MAX_ENVIRONMENT_NAME_BYTES = 128;
+export const ENVIRONMENT_REVISION_BYTES = 64;
 
 export interface ProfileDraftValidation {
   profile: ProjectProfile | null;
@@ -63,6 +79,11 @@ export function emptyProfileDraft(): ProfileDraft {
     gitRoot: "",
     expectedPortsText: "",
     serviceRows: [],
+    environmentEnabled: false,
+    environmentSource: "",
+    environmentRevision: "",
+    environmentVariables: [],
+    environmentPreview: null,
   };
 }
 
@@ -76,6 +97,11 @@ export function draftFromProfile(profile: ProjectProfile): ProfileDraft {
     gitRoot: profile.gitRoot ?? "",
     expectedPortsText: profile.expectedPorts.join(", "),
     serviceRows: profile.runManagerServiceIds.map((id) => newServiceDraftRow(id)),
+    environmentEnabled: profile.environment?.enabled ?? false,
+    environmentSource: profile.environment?.source ?? "",
+    environmentRevision: profile.environment?.revision ?? "",
+    environmentVariables: profile.environment?.variables.map((variable) => ({ ...variable })) ?? [],
+    environmentPreview: null,
   };
 }
 
@@ -97,6 +123,117 @@ function utf8ByteLength(value: string): number {
     bytes += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
   }
   return bytes;
+}
+
+function isSafeEnvironmentSource(value: string): boolean {
+  if (!value || utf8ByteLength(value) > MAX_ENVIRONMENT_SOURCE_BYTES) return false;
+  if (hasControlCharacter(value) || value.includes("/") || value.includes("\\") || value.includes(":")) {
+    return false;
+  }
+  if (value === ".env") return true;
+  if (!value.startsWith(".env.")) return false;
+  const suffix = value.slice(".env.".length);
+  return Boolean(suffix)
+    && !suffix.startsWith(".")
+    && !suffix.includes("..")
+    && !suffix.endsWith(".")
+    && /^[A-Za-z0-9._-]+$/u.test(suffix);
+}
+
+function isValidEnvironmentName(value: string): boolean {
+  return utf8ByteLength(value) <= MAX_ENVIRONMENT_NAME_BYTES
+    && /^[A-Za-z_][A-Za-z0-9_]*$/u.test(value);
+}
+
+function isEnvironmentConflict(value: string): value is EnvironmentConflict {
+  return value === "none"
+    || value === "duplicate"
+    || value === "reserved"
+    || value === "duplicateAndReserved";
+}
+
+function expectedEnvironmentConflict(name: string, duplicate: boolean): EnvironmentConflict {
+  const reserved = new Set([
+    "PATH",
+    "PATHEXT",
+    "COMSPEC",
+    "SHELL",
+    "WSLENV",
+    "LD_PRELOAD",
+    "DYLD_INSERT_LIBRARIES",
+    "PWD",
+    "OLDPWD",
+    "SHLVL",
+    "HOME",
+    "USER",
+    "USERNAME",
+    "SYSTEMROOT",
+    "WINDIR",
+    "TEMP",
+    "TMP",
+    "LOCALAPPDATA",
+    "APPDATA",
+    "PROGRAMDATA",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "LANG",
+    "TERM",
+  ]).has(name.toUpperCase());
+  if (duplicate && reserved) return "duplicateAndReserved";
+  if (duplicate) return "duplicate";
+  if (reserved) return "reserved";
+  return "none";
+}
+
+function isSecretEnvironmentName(name: string): boolean {
+  const upper = name.toUpperCase();
+  return ["PASSWORD", "PASSWD", "TOKEN", "SECRET", "APIKEY", "API_KEY", "ACCESSKEY", "ACCESS_KEY", "PRIVATEKEY", "PRIVATE_KEY", "CLIENTSECRET", "CLIENT_SECRET", "CREDENTIAL", "AUTH", "BEARER", "COOKIE", "SESSION"]
+    .some((marker) => upper.includes(marker));
+}
+
+function validateEnvironmentMetadata(
+  source: string,
+  variables: EnvironmentVariableMetadata[],
+): string | undefined {
+  if (variables.length > MAX_ENVIRONMENT_VARIABLES) {
+    return "환경 변수는 최대 128개까지 등록할 수 있습니다.";
+  }
+  const occurrences = new Map<string, number>();
+  for (const variable of variables) {
+    if (!isValidEnvironmentName(variable.name)) {
+      return "환경 변수 이름이 올바르지 않습니다.";
+    }
+    if (variable.source !== source || !isEnvironmentConflict(variable.conflict)) {
+      return "환경 변수 메타데이터가 올바르지 않습니다.";
+    }
+    const folded = variable.name.toUpperCase();
+    occurrences.set(folded, (occurrences.get(folded) ?? 0) + 1);
+    const expectedSecret = isSecretEnvironmentName(variable.name);
+    // Tauri always serializes Option as null, but treat an omitted field as
+    // absent too so a malformed IPC payload cannot turn validation into a
+    // TypeError (or accidentally become a save authority).
+    const reference = variable.secretReference;
+    const hasReference = reference !== null && reference !== undefined;
+    if (expectedSecret !== hasReference) {
+      return "환경 secret reference가 올바르지 않습니다.";
+    }
+    if (hasReference
+      && (reference.kind !== "secret-ref/v1" || reference.name !== variable.name)) {
+      return "환경 secret reference가 올바르지 않습니다.";
+    }
+  }
+  // Native parsing marks every occurrence when a later line introduces a
+  // duplicate, including the first entry. Count the complete list before
+  // checking conflicts so parser-produced metadata can be saved faithfully.
+  for (const variable of variables) {
+    const duplicate = (occurrences.get(variable.name.toUpperCase()) ?? 0) > 1;
+    const expected = expectedEnvironmentConflict(variable.name, duplicate);
+    if (variable.conflict !== expected) {
+      return "환경 변수 충돌을 해결한 뒤 저장하세요.";
+    }
+  }
+  return undefined;
 }
 
 export function parseExpectedPorts(input: string): { ports: number[]; error?: string } {
@@ -156,6 +293,7 @@ export function validateProfileDraft(draft: ProfileDraft): ProfileDraftValidatio
   const wslDistro = draft.wslDistro.trim();
   const wslPath = draft.wslPath.trim();
   const gitRoot = draft.gitRoot.trim();
+  const environmentSource = draft.environmentSource.trim();
 
   if (!name) errors.name = "프로필 이름을 입력하세요.";
   else if (Array.from(name).length > MAX_PROFILE_NAME_CHARS) errors.name = "프로필 이름은 120자 이하여야 합니다.";
@@ -224,6 +362,35 @@ export function validateProfileDraft(draft: ProfileDraft): ProfileDraftValidatio
     errors.services = "서비스는 최대 128개까지 등록할 수 있습니다.";
   }
 
+  if (!environmentSource) {
+    if (draft.environmentEnabled || draft.environmentRevision || draft.environmentVariables.length > 0) {
+      errors.environment = "환경 파일을 먼저 확인하거나 선택을 해제하세요.";
+    }
+  } else if (!isSafeEnvironmentSource(environmentSource)) {
+    errors.environment = "환경 파일은 프로젝트 안의 .env 또는 .env.<이름>만 선택할 수 있습니다.";
+  } else if (!/^[0-9a-f]{64}$/u.test(draft.environmentRevision)) {
+    errors.environment = "환경 파일을 확인한 뒤 저장하세요.";
+  } else {
+    const metadataError = validateEnvironmentMetadata(environmentSource, draft.environmentVariables);
+    if (metadataError) errors.environment = metadataError;
+    else if (draft.environmentEnabled && draft.environmentVariables.some((variable) => variable.conflict !== "none")) {
+      errors.environment = "환경 파일의 중복·예약 이름 충돌을 해결한 뒤 저장하세요.";
+    }
+    const previewMetadata = draft.environmentPreview?.variables.map(({
+      name,
+      source,
+      conflict,
+      secretReference,
+    }) => ({ name, source, conflict, secretReference }));
+    if (draft.environmentPreview
+      && (draft.environmentPreview.source !== environmentSource
+        || draft.environmentPreview.revision !== draft.environmentRevision
+        || draft.environmentPreview.hasConflicts !== draft.environmentVariables.some((variable) => variable.conflict !== "none")
+        || JSON.stringify(previewMetadata) !== JSON.stringify(draft.environmentVariables))) {
+      errors.environment = "환경 파일 미리보기가 현재 선택과 일치하지 않습니다. 다시 확인하세요.";
+    }
+  }
+
   if (hasDraftErrors(errors)) return { profile: null, errors };
 
   return {
@@ -236,6 +403,12 @@ export function validateProfileDraft(draft: ProfileDraft): ProfileDraftValidatio
       gitRoot: gitRoot || null,
       expectedPorts: ports.ports,
       runManagerServiceIds: serviceIds,
+      environment: environmentSource ? {
+        enabled: draft.environmentEnabled,
+        source: environmentSource,
+        revision: draft.environmentRevision,
+        variables: draft.environmentVariables.map((variable) => ({ ...variable })),
+      } : null,
     },
   };
 }

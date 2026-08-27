@@ -324,4 +324,20 @@ docs/<scope>           문서 작업   예: docs/roadmap
 - `apps/workbench`를 프로젝트 기반 orchestration 셸로 구현했다 (구현 완료)
 - workbench는 기존 `crates/`·`packages/`를 그대로 재사용 → 공통화가 통합을 쉽게 만든다
 - 결과적으로 "독립 앱 13개" 구조 (workbench 포함, 독립 .exe)
+- Workbench project environment는 native-first/offline 경계를 따른다. 사용자가 고른
+  프로젝트 상대 `.env`/`.env.<name>`만 읽고, profile·IPC·snapshot·로그에는 원문 값을
+  넣지 않는다. 저장되는 것은 source, 변수 이름, 충돌 상태, opaque revision과
+  `crates/secrets`의 secret reference뿐이며, masked preview와 실행 직전 재검증을 거친
+  ephemeral child-process overlay만 허용한다. 파일·변수·이름·값 상한, UTF-8/strict dotenv
+  parser, canonical root·symlink/reparse 거부를 native와 UI 양쪽에서 적용한다.
+- 이 경계는 global/system environment editor, cloud secret store, 다른 앱 DB 직접 수정,
+  자동 `.env` 생성·수정·업로드를 포함하지 않는다. disabled configuration은 실행 시
+  파일을 읽지 않으며, 빈 파일은 성공적인 no-op으로 표현한다. 중복·예약 이름·stale
+  revision·secret backend 불가 상태는 fail-closed한다. project environment의 app/WSL/
+  cwd/port/service preflight는 별도 #313 계약이며 이 규칙에 섞지 않는다.
+- #312와 #313은 사용자에게는 하나의 `Start Workspace` review→continue 흐름으로 보이는
+  grouped PR 후보지만 acceptance/rollback 경계는 독립이다. #313 preflight는 required app,
+  distro/cwd, TCP port와 service snapshot을 read-only로 확인하고, warning/existing와
+  Workbench-started provenance를 구분한다. preflight 실패는 environment read/child spawn을
+  허용하지 않으며, service lifecycle/자동 복구는 여전히 Workbench 범위 밖이다.
 - 상세: `docs/product-opportunities.md` §15.2, `docs/superpowers/specs/2026-08-14-workbench-design.md`

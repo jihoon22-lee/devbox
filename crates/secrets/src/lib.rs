@@ -5,8 +5,49 @@
 //! **순수 부분(trait·마스킹·버전 blob envelope)만 여기에 두고** 실제
 //! CryptProtectData 호출은 각 앱의 platform 레이어가 `Sealer`로 구현한다.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use zeroize::Zeroizing;
+
+/// An opaque, non-secret name used to resolve a value at an execution
+/// boundary.  The reference deliberately carries no plaintext or ciphertext;
+/// owners keep the short-lived sealed value in their platform layer and only
+/// persist this metadata.  This is shared by Workbench project environments
+/// and the existing API/Run Manager integrations.
+pub const SECRET_REFERENCE_VERSION: &str = "secret-ref/v1";
+
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SecretReference {
+    pub kind: String,
+    pub name: String,
+}
+
+impl SecretReference {
+    /// Create a reference for a project environment variable.  `name` is
+    /// validated by the owning parser; this constructor does not copy a
+    /// secret value.
+    pub fn project_environment(name: impl Into<String>) -> Self {
+        Self {
+            kind: SECRET_REFERENCE_VERSION.to_string(),
+            name: name.into(),
+        }
+    }
+
+    pub fn is_project_environment(&self) -> bool {
+        self.kind == SECRET_REFERENCE_VERSION && !self.name.is_empty()
+    }
+}
+
+impl fmt::Debug for SecretReference {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SecretReference")
+            .field("kind", &self.kind)
+            .field("name", &self.name)
+            .finish()
+    }
+}
 
 #[derive(Debug)]
 pub enum SealError {

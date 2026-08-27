@@ -1,6 +1,14 @@
 //! Workbench command — 프로필 CRUD, health, Start/Stop Workspace.
 
+use crate::commands::environment::EnvironmentInjection;
 use crate::core::health::{has_distro, parse_git_status};
+use crate::core::operation::{
+    poll_interval, wait_for_change, OperationBudget, OperationClaim, OperationError,
+    OperationToken, SingleFlight,
+};
+use crate::core::preflight::{
+    PreflightStatus, ResourceProvenance, ResourceState, WorkspacePreflight,
+};
 use crate::core::profile::{
     validate_profile_id, validate_service_id, ProfileStore, ProjectProfile, MAX_SERVICES,
 };
@@ -8,10 +16,14 @@ use devbox_filesystem::{parse_safe_project_path, ProjectPathKind};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::Metadata;
+use std::io::{ErrorKind, Read};
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
-use tokio::process::Command;
+use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::process::{Child, Command};
 
 const PROFILE_FILE: &str = "project-profiles.json";
 const LIFE_LOG_PRODUCER: &str = "life-log";
@@ -24,6 +36,12 @@ const PROFILE_WRITE_ERROR: &str = "프로필 저장소를 저장할 수 없습�
 const PROFILE_CONFLICT_ERROR: &str =
     "프로필 저장소가 다른 작업으로 변경되었습니다. 다시 시도하세요";
 const PROFILE_PATH_ERROR: &str = "프로필 저장소 경로를 확인할 수 없습니다";
+const WORKSPACE_START_TIMEOUT: Duration = Duration::from_secs(30);
+const PROJECT_HEALTH_TIMEOUT: Duration = Duration::from_secs(10);
+const WSL_COMMAND_STDOUT_BYTES: usize = 64 * 1024;
+const WSL_COMMAND_STDERR_BYTES: usize = 64 * 1024;
+const PORT_WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+const PORT_RETRY_INTERVAL: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LifeLogAbsorbReport {
@@ -67,6 +85,18 @@ fn is_link_metadata(metadata: &Metadata) -> bool {
 }
 
 fn read_profile_file(path: &std::path::Path) -> Result<Option<Vec<u8>>, String> {
+    read_profile_file_with_control(path, None, None)
+}
+
+fn read_profile_file_with_control(
+    path: &std::path::Path,
+    token: Option<&OperationToken>,
+    budget: Option<OperationBudget>,
+) -> Result<Option<Vec<u8>>, String> {
+    if let (Some(token), Some(budget)) = (token, budget) {
+        budget.check(token).map_err(OperationError::message)?;
+    }
+    reject_links_in_existing_path(path)?;
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -78,17 +108,83 @@ fn read_profile_file(path: &std::path::Path) -> Result<Option<Vec<u8>>, String> 
     if metadata.len() > crate::core::profile::MAX_PROFILE_FILE_BYTES as u64 {
         return Err("프로필 저장소 크기 제한을 초과했습니다".into());
     }
-    let bytes = std::fs::read(path).map_err(|_| PROFILE_READ_ERROR.to_string())?;
-    if bytes.len() > crate::core::profile::MAX_PROFILE_FILE_BYTES {
-        return Err("프로필 저장소 크기 제한을 초과했습니다".into());
+
+    let source_identity =
+        crate::platform::path_identity(path, false).map_err(|_| PROFILE_PATH_ERROR.to_string())?;
+    let (file, opened_identity) = crate::platform::open_readonly_with_identity(path, false)
+        .map_err(|_| PROFILE_READ_ERROR.to_string())?;
+    let opened_metadata = file
+        .metadata()
+        .map_err(|_| PROFILE_READ_ERROR.to_string())?;
+    if is_link_metadata(&opened_metadata) || source_identity != opened_identity {
+        return Err(PROFILE_PATH_ERROR.into());
+    }
+    let mut reader = file.take((crate::core::profile::MAX_PROFILE_FILE_BYTES + 1) as u64);
+    let mut bytes = Vec::with_capacity(
+        usize::try_from(metadata.len())
+            .unwrap_or(crate::core::profile::MAX_PROFILE_FILE_BYTES)
+            .min(crate::core::profile::MAX_PROFILE_FILE_BYTES)
+            + 1,
+    );
+    let mut chunk = [0_u8; 8 * 1024];
+    loop {
+        if let (Some(token), Some(budget)) = (token, budget) {
+            budget.check(token).map_err(OperationError::message)?;
+        }
+        let count = reader
+            .read(&mut chunk)
+            .map_err(|_| PROFILE_READ_ERROR.to_string())?;
+        if count == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..count]);
+        if bytes.len() > crate::core::profile::MAX_PROFILE_FILE_BYTES {
+            return Err("프로필 저장소 크기 제한을 초과했습니다".into());
+        }
+    }
+
+    if let (Some(token), Some(budget)) = (token, budget) {
+        budget.check(token).map_err(OperationError::message)?;
+    }
+    // Recheck every existing parent after the handle read. A directory
+    // replacement can otherwise make the same textual profile path resolve
+    // through a newly-created junction/symlink while the read is in flight.
+    reject_links_in_existing_path(path)?;
+    let after_metadata =
+        std::fs::symlink_metadata(path).map_err(|_| PROFILE_PATH_ERROR.to_string())?;
+    let after_identity =
+        crate::platform::path_identity(path, false).map_err(|_| PROFILE_PATH_ERROR.to_string())?;
+    if is_link_metadata(&after_metadata) || source_identity != after_identity {
+        return Err(PROFILE_PATH_ERROR.into());
     }
     Ok(Some(bytes))
+}
+
+fn reject_links_in_existing_path(path: &std::path::Path) -> Result<(), String> {
+    // `ancestors()` keeps Windows drive/UNC prefixes intact. Component-wise
+    // PathBuf construction can otherwise turn an absolute `C:\\...` path into
+    // the relative drive path `C:` before the reparse check.
+    for ancestor in path.ancestors() {
+        if ancestor.as_os_str().is_empty() {
+            continue;
+        }
+        let metadata = match std::fs::symlink_metadata(ancestor) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(_) => return Err(PROFILE_PATH_ERROR.into()),
+        };
+        if is_link_metadata(&metadata) {
+            return Err(PROFILE_PATH_ERROR.into());
+        }
+    }
+    Ok(())
 }
 
 fn ensure_profile_directory(path: &std::path::Path) -> Result<(), String> {
     let directory = path
         .parent()
         .ok_or_else(|| PROFILE_PATH_ERROR.to_string())?;
+    reject_links_in_existing_path(directory)?;
     match std::fs::symlink_metadata(directory) {
         Ok(metadata) if is_link_metadata(&metadata) || !metadata.file_type().is_dir() => {
             Err(PROFILE_PATH_ERROR.into())
@@ -96,6 +192,7 @@ fn ensure_profile_directory(path: &std::path::Path) -> Result<(), String> {
         Ok(_) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             std::fs::create_dir_all(directory).map_err(|_| PROFILE_WRITE_ERROR.to_string())?;
+            reject_links_in_existing_path(directory)?;
             match std::fs::symlink_metadata(directory) {
                 Ok(metadata) if !is_link_metadata(&metadata) && metadata.file_type().is_dir() => {
                     Ok(())
@@ -115,7 +212,18 @@ pub(crate) struct ProfileStoreDocument {
 
 pub(crate) fn load_store_document(app: &AppHandle) -> Result<ProfileStoreDocument, String> {
     let path = profile_path(app)?;
-    let Some(bytes) = read_profile_file(&path)? else {
+    load_store_document_at_path(&path, None, None)
+}
+
+fn load_store_document_at_path(
+    path: &std::path::Path,
+    token: Option<&OperationToken>,
+    budget: Option<OperationBudget>,
+) -> Result<ProfileStoreDocument, String> {
+    let Some(bytes) = read_profile_file_with_control(path, token, budget)? else {
+        if let (Some(token), Some(budget)) = (token, budget) {
+            budget.check(token).map_err(OperationError::message)?;
+        }
         return Ok(ProfileStoreDocument {
             store: ProfileStore::empty(),
             raw: None,
@@ -123,10 +231,39 @@ pub(crate) fn load_store_document(app: &AppHandle) -> Result<ProfileStoreDocumen
     };
     let text = std::str::from_utf8(&bytes).map_err(|_| PROFILE_READ_ERROR.to_string())?;
     let store = ProfileStore::load(text).map_err(|_| PROFILE_READ_ERROR.to_string())?;
+    if let (Some(token), Some(budget)) = (token, budget) {
+        budget.check(token).map_err(OperationError::message)?;
+    }
     Ok(ProfileStoreDocument {
         store,
         raw: Some(bytes),
     })
+}
+
+async fn load_store_document_async(
+    app: &AppHandle,
+    token: OperationToken,
+    budget: OperationBudget,
+    claim: &OperationClaim,
+) -> Result<ProfileStoreDocument, String> {
+    let path = profile_path(app)?;
+    let worker_guard = claim.worker_guard().map_err(str::to_string)?;
+    let worker_token = token.clone();
+    let worker = tokio::task::spawn_blocking(move || {
+        let _worker_guard = worker_guard;
+        load_store_document_at_path(&path, Some(&worker_token), Some(budget))
+    });
+    tokio::pin!(worker);
+    let result = tokio::select! {
+        result = &mut worker => result.map_err(|_| "프로필 저장소 작업을 완료하지 못했습니다".to_string())?,
+        control = wait_for_change(token.clone(), budget) => {
+            token.cancel();
+            let _ = worker.await;
+            Err(control.message().to_string())
+        }
+    }?;
+    budget.check(&token).map_err(OperationError::message)?;
+    Ok(result)
 }
 
 pub(crate) fn load_store(app: &AppHandle) -> Result<ProfileStore, String> {
@@ -260,12 +397,63 @@ pub fn delete_profile(
 /// wsl-desktop의 gitStatus 이관 (§3.1, §15.2). 프로젝트 경로들의 git 상태.
 #[tauri::command]
 pub async fn git_status(
+    registry: tauri::State<'_, Arc<RunRegistry>>,
     projects: Vec<String>,
 ) -> Result<Vec<crate::core::health::GitStatus>, String> {
-    let mut out = Vec::new();
+    let operation = &registry.health_operation;
+    let budget = OperationBudget::from_now(PROJECT_HEALTH_TIMEOUT);
+    operation.cancel_active().map_err(str::to_string)?;
+    let pending = operation.prepare("git-status").map_err(str::to_string)?;
+    let token = pending.token();
+    operation.wait_until_idle(token.clone(), budget).await?;
+    budget.check(&token).map_err(OperationError::message)?;
+    let claim = pending.claim().map_err(str::to_string)?;
+    let token = claim.token();
+    git_status_with_control(projects, token, budget, &claim).await
+}
+
+async fn git_status_with_control(
+    projects: Vec<String>,
+    token: OperationToken,
+    budget: OperationBudget,
+    claim: &OperationClaim,
+) -> Result<Vec<crate::core::health::GitStatus>, String> {
+    let mut out = Vec::with_capacity(projects.len());
     for path in projects {
-        match devbox_git::run(&["status", "--porcelain", "--branch"], &path) {
+        budget.check(&token).map_err(OperationError::message)?;
+        let path_for_worker = path.clone();
+        let cancellation = token.cancellation_flag();
+        let worker_cancellation = Arc::clone(&cancellation);
+        let child_timeout = budget.remaining();
+        let worker_guard = claim.worker_guard().map_err(str::to_string)?;
+        let worker = tokio::task::spawn_blocking(move || {
+            let _worker_guard = worker_guard;
+            devbox_git::run_bounded_with_cancel(
+                &["status", "--porcelain", "--branch"],
+                &path_for_worker,
+                child_timeout,
+                64 * 1024,
+                &worker_cancellation,
+            )
+        });
+        tokio::pin!(worker);
+        let result = tokio::select! {
+            output = &mut worker => output.map_err(|_| "git 작업을 완료하지 못했습니다".to_string())?,
+            control = wait_for_change(token.clone(), budget) => {
+                cancellation.store(true, std::sync::atomic::Ordering::Release);
+                let _ = worker.await;
+                return Err(control.message().to_string());
+            }
+        };
+        budget.check(&token).map_err(OperationError::message)?;
+        match result {
             Ok(text) => out.push(parse_git_status(&path, &text)),
+            Err(error) if error == "git_cancelled" => {
+                return Err(OperationError::Cancelled.message().into())
+            }
+            Err(error) if error == "git_timeout" => {
+                return Err(OperationError::TimedOut.message().into())
+            }
             Err(_) => out.push(crate::core::health::GitStatus {
                 path,
                 branch: "n/a".into(),
@@ -310,7 +498,7 @@ struct RunManagerActiveService {
 /// Decode the v1 producer payload as one bounded unit. A malformed entry must
 /// not turn the entire producer state into the misleading "nothing running"
 /// result; callers surface it as unavailable instead.
-fn active_service_ids(data: &serde_json::Value) -> Result<HashSet<String>, ()> {
+pub(crate) fn active_service_ids(data: &serde_json::Value) -> Result<HashSet<String>, ()> {
     let snapshot: RunManagerSnapshotData = serde_json::from_value(data.clone()).map_err(|_| ())?;
     if snapshot.active_services.len() > MAX_SERVICES {
         return Err(());
@@ -345,37 +533,326 @@ fn service_health_item(configured: &[String], running: Result<HashSet<String>, (
         detail: if missing.is_empty() {
             "서비스 전부 실행 중".into()
         } else {
-            format!("미실행: {}", missing.join(", "))
+            format!("미실행 서비스 {}개", missing.len())
         },
     }
 }
 
-async fn wsl_list_output() -> Option<String> {
-    let mut cmd = Command::new("wsl.exe");
-    cmd.args(["-l", "-v"]);
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(0x0800_0000);
-    let output = cmd.output().await.ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    // `wsl.exe -l -v`는 UTF-16LE로 출력된다 (공용 crates/wsl 디코더, PR #183과 동일 근거).
-    Some(devbox_wsl::output::decode_output(&output.stdout))
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeCommandError {
+    Cancelled,
+    TimedOut,
+    Io,
+    OutputTooLarge,
 }
 
-fn port_open(port: u16) -> bool {
+struct NativeCommandOutput {
+    stdout: Vec<u8>,
+    success: bool,
+}
+
+/// Run one fixed native command with bounded output and the caller's
+/// cancellation/deadline. The child is killed and reaped on every error path;
+/// dropping a Tauri invocation therefore cannot strand `wsl.exe`.
+async fn run_fixed_native_command(
+    args: &[&str],
+    token: OperationToken,
+    budget: OperationBudget,
+    claim: &OperationClaim,
+) -> Result<NativeCommandOutput, NativeCommandError> {
+    // Keep the single-flight lease in a detached task as well as in the
+    // command future. If Tauri drops the invocation, `OperationClaim::drop`
+    // cancels this same token; the task then kills/reaps the child before its
+    // lease is released, so a newer health request cannot overlap a still
+    // unwinding `wsl.exe` process.
+    let worker_guard = claim.worker_guard().map_err(|_| NativeCommandError::Io)?;
+    let worker_args: Vec<String> = args.iter().map(|arg| (*arg).to_string()).collect();
+    let worker_token = token.clone();
+    let worker = tokio::spawn(async move {
+        let _worker_guard = worker_guard;
+        run_fixed_native_command_inner(worker_args, worker_token, budget).await
+    });
+    worker.await.map_err(|_| NativeCommandError::Io)?
+}
+
+async fn run_fixed_native_command_inner(
+    args: Vec<String>,
+    token: OperationToken,
+    budget: OperationBudget,
+) -> Result<NativeCommandOutput, NativeCommandError> {
+    budget.check(&token).map_err(|error| match error {
+        OperationError::Cancelled => NativeCommandError::Cancelled,
+        OperationError::TimedOut => NativeCommandError::TimedOut,
+    })?;
+    let mut command = Command::new("wsl.exe");
+    command
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(target_os = "windows")]
+    command.creation_flags(0x0800_0000);
+    let mut child = command.spawn().map_err(|_| NativeCommandError::Io)?;
+    let Some(stdout) = child.stdout.take() else {
+        terminate_native_child(&mut child).await;
+        return Err(NativeCommandError::Io);
+    };
+    let Some(stderr) = child.stderr.take() else {
+        terminate_native_child(&mut child).await;
+        return Err(NativeCommandError::Io);
+    };
+
+    // Keep the stream reader future independent from `child`: this allows
+    // cancellation/timeout to kill and reap the child after the reader is
+    // dropped without holding a second mutable borrow across the await.
+    let read_result = {
+        let readers = async {
+            tokio::try_join!(
+                read_native_bounded(stdout, WSL_COMMAND_STDOUT_BYTES),
+                drain_native_bounded(stderr, WSL_COMMAND_STDERR_BYTES),
+            )
+        };
+        tokio::pin!(readers);
+        tokio::select! {
+            output = &mut readers => output,
+            control = wait_for_change(token.clone(), budget) => Err(match control {
+                OperationError::Cancelled => NativeCommandError::Cancelled,
+                OperationError::TimedOut => NativeCommandError::TimedOut,
+            }),
+        }
+    };
+    let mut result = match read_result {
+        Ok((stdout, _)) => {
+            tokio::select! {
+                status = child.wait() => status
+                    .map(|status| NativeCommandOutput {
+                        stdout,
+                        success: status.success(),
+                    })
+                    .map_err(|_| NativeCommandError::Io),
+                control = wait_for_change(token.clone(), budget) => Err(match control {
+                    OperationError::Cancelled => NativeCommandError::Cancelled,
+                    OperationError::TimedOut => NativeCommandError::TimedOut,
+                }),
+            }
+        }
+        Err(error) => Err(error),
+    };
+    if result.is_ok() {
+        if let Err(control) = budget.check(&token) {
+            result = Err(match control {
+                OperationError::Cancelled => NativeCommandError::Cancelled,
+                OperationError::TimedOut => NativeCommandError::TimedOut,
+            });
+        }
+    }
+    if result.is_err() {
+        terminate_native_child(&mut child).await;
+    }
+    result
+}
+
+async fn terminate_native_child(child: &mut Child) {
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+}
+
+async fn read_native_bounded<R: AsyncRead + Unpin>(
+    mut reader: R,
+    max_bytes: usize,
+) -> Result<Vec<u8>, NativeCommandError> {
+    let mut output = Vec::with_capacity(max_bytes.min(16 * 1024));
+    let mut chunk = [0_u8; 8 * 1024];
+    loop {
+        let count = reader
+            .read(&mut chunk)
+            .await
+            .map_err(|_| NativeCommandError::Io)?;
+        if count == 0 {
+            return Ok(output);
+        }
+        if output.len().saturating_add(count) > max_bytes {
+            return Err(NativeCommandError::OutputTooLarge);
+        }
+        output.extend_from_slice(&chunk[..count]);
+    }
+}
+
+async fn drain_native_bounded<R: AsyncRead + Unpin>(
+    mut reader: R,
+    max_bytes: usize,
+) -> Result<(), NativeCommandError> {
+    let mut total = 0usize;
+    let mut chunk = [0_u8; 8 * 1024];
+    loop {
+        let count = reader
+            .read(&mut chunk)
+            .await
+            .map_err(|_| NativeCommandError::Io)?;
+        if count == 0 {
+            return Ok(());
+        }
+        total = total.saturating_add(count);
+        if total > max_bytes {
+            return Err(NativeCommandError::OutputTooLarge);
+        }
+    }
+}
+
+async fn wsl_list_output(
+    token: OperationToken,
+    budget: OperationBudget,
+    claim: &OperationClaim,
+) -> Result<Option<String>, NativeCommandError> {
+    let output = run_fixed_native_command(&["-l", "-v"], token, budget, claim).await?;
+    if !output.success {
+        return Ok(None);
+    }
+    // `wsl.exe -l -v`는 UTF-16LE로 출력된다 (공용 crates/wsl 디코더, PR #183과 동일 근거).
+    Ok(Some(devbox_wsl::output::decode_output(&output.stdout)))
+}
+
+async fn delay_with_control(
+    delay: Duration,
+    token: OperationToken,
+    budget: OperationBudget,
+) -> Result<(), OperationError> {
+    let end = std::time::Instant::now()
+        .checked_add(delay)
+        .unwrap_or_else(std::time::Instant::now);
+    loop {
+        budget.check(&token)?;
+        let remaining = end.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return Ok(());
+        }
+        tokio::time::sleep(remaining.min(poll_interval())).await;
+    }
+}
+
+async fn read_run_manager_snapshot_with_control(
+    token: OperationToken,
+    budget: OperationBudget,
+    claim: &OperationClaim,
+) -> Result<Option<devbox_integration::Envelope>, String> {
+    budget.check(&token).map_err(OperationError::message)?;
+    let worker_guard = claim.worker_guard().map_err(str::to_string)?;
+    let worker_token = token.clone();
+    let worker = tokio::task::spawn_blocking(move || {
+        let _worker_guard = worker_guard;
+        budget
+            .check(&worker_token)
+            .map_err(OperationError::message)?;
+        devbox_integration::read_snapshot("run-manager", 1)
+            .map_err(|_| "서비스 snapshot을 읽을 수 없습니다".to_string())
+    });
+    tokio::pin!(worker);
+    let result = tokio::select! {
+        result = &mut worker => result.map_err(|_| "서비스 snapshot 작업을 완료하지 못했습니다".to_string())?,
+        control = wait_for_change(token.clone(), budget) => {
+            token.cancel();
+            let _ = worker.await;
+            Err(control.message().to_string())
+        }
+    }?;
+    budget.check(&token).map_err(OperationError::message)?;
+    Ok(result)
+}
+
+fn port_open_with_control(
+    port: u16,
+    token: &OperationToken,
+    budget: OperationBudget,
+) -> Result<bool, OperationError> {
     use std::net::TcpStream;
     use std::time::Duration;
-    if let Ok(addr) = format!("127.0.0.1:{port}").parse() {
-        return TcpStream::connect_timeout(&addr, Duration::from_millis(800)).is_ok();
-    }
-    false
+    budget.check(token)?;
+    let addr = format!("127.0.0.1:{port}")
+        .parse()
+        .map_err(|_| OperationError::TimedOut)?;
+    // A synchronous connect cannot be interrupted in the middle of the OS
+    // call, so cap it by the shared budget. The checks on both sides turn a
+    // cancellation racing with the probe into a deterministic operation
+    // result instead of letting a long expected-port list run unbounded.
+    let timeout = Duration::from_millis(800).min(budget.remaining());
+    let open = TcpStream::connect_timeout(&addr, timeout).is_ok();
+    budget.check(token)?;
+    Ok(open)
 }
 
 /// read-only project health. run-manager 서비스는 integration snapshot(§10.1)으로 읽는다.
 #[tauri::command]
-pub async fn project_health(app: AppHandle, profile_id: String) -> Result<ProjectHealth, String> {
-    let store = load_store(&app)?;
+pub async fn project_health(
+    app: AppHandle,
+    registry: tauri::State<'_, Arc<RunRegistry>>,
+    profile_id: String,
+    request_id: Option<String>,
+) -> Result<ProjectHealth, String> {
+    validate_profile_id(&profile_id)?;
+    validate_operation_request_id(request_id.as_deref())?;
+    let operation_key = health_operation_key(&profile_id, request_id.as_deref());
+    let operation = &registry.health_operation;
+    let budget = OperationBudget::from_now(PROJECT_HEALTH_TIMEOUT);
+    operation.cancel_active().map_err(str::to_string)?;
+    let pending = operation.prepare(operation_key).map_err(str::to_string)?;
+    let token = pending.token();
+    operation.wait_until_idle(token.clone(), budget).await?;
+    budget.check(&token).map_err(OperationError::message)?;
+    let claim = pending.claim().map_err(str::to_string)?;
+    let token = claim.token();
+    project_health_with_control(app, profile_id, token, budget, &claim).await
+}
+
+/// Cancel a health request only when the caller still owns its exact profile
+/// key. This covers selection clearing/window teardown, where no newer health
+/// request would otherwise claim the single-flight slot.
+#[tauri::command]
+pub fn cancel_project_health(
+    registry: tauri::State<'_, Arc<RunRegistry>>,
+    profile_id: String,
+    request_id: String,
+) -> Result<bool, String> {
+    validate_profile_id(&profile_id)?;
+    validate_operation_request_id(Some(&request_id))?;
+    registry
+        .health_operation
+        .cancel(&health_operation_key(&profile_id, Some(&request_id)))
+        .map_err(str::to_string)
+}
+
+fn validate_operation_request_id(request_id: Option<&str>) -> Result<(), String> {
+    if request_id.is_some_and(|value| {
+        value.is_empty() || value.len() > 128 || value.chars().any(char::is_control)
+    }) {
+        return Err("Workspace 작업 ID가 올바르지 않습니다".to_string());
+    }
+    Ok(())
+}
+
+fn health_operation_key(profile_id: &str, request_id: Option<&str>) -> String {
+    match request_id {
+        // Profile IDs and opaque request IDs are independently validated but
+        // may contain a printable separator such as `:`. A NUL separator is
+        // unambiguous because both IPC inputs reject control characters, so
+        // an old request can never cancel a different profile/request pair
+        // through string-key concatenation.
+        Some(request_id) => format!("health\0{profile_id}\0{request_id}"),
+        None => format!("health\0{profile_id}"),
+    }
+}
+
+async fn project_health_with_control(
+    app: AppHandle,
+    profile_id: String,
+    token: OperationToken,
+    budget: OperationBudget,
+    claim: &OperationClaim,
+) -> Result<ProjectHealth, String> {
+    budget.check(&token).map_err(OperationError::message)?;
+    let store = load_store_document_async(&app, token.clone(), budget, claim)
+        .await?
+        .store;
     let profile = store
         .profiles
         .iter()
@@ -391,12 +868,16 @@ pub async fn project_health(app: AppHandle, profile_id: String) -> Result<Projec
         .clone()
         .or_else(|| profile.windows_path.clone())
     {
-        let status = git_status(vec![root]).await?;
+        let status = git_status_with_control(vec![root], token.clone(), budget, claim).await?;
         if let Some(s) = status.first() {
             items.push(HealthItem {
                 name: "git".into(),
                 ok: s.clean,
-                detail: format!("{} · {} · {} changes", s.path, s.branch, s.changes),
+                detail: if s.clean {
+                    "Git 작업 트리가 깨끗합니다".into()
+                } else {
+                    format!("Git 변경 사항 {}개", s.changes)
+                },
             });
         }
     } else {
@@ -409,28 +890,48 @@ pub async fn project_health(app: AppHandle, profile_id: String) -> Result<Projec
 
     // wsl distro
     if let Some(wsl) = profile.wsl.clone() {
-        match wsl_list_output().await {
-            Some(output) => {
+        match wsl_list_output(token.clone(), budget, claim).await {
+            Ok(Some(output)) => {
                 let ok = has_distro(&wsl.distro, &output);
                 items.push(HealthItem {
                     name: "wsl".into(),
                     ok,
                     detail: if ok {
-                        format!("{} · {}", wsl.distro, wsl.path)
+                        "WSL distro와 working directory를 사용할 수 있습니다".into()
                     } else {
-                        format!("distro 없음: {}", wsl.distro)
+                        "설정한 WSL distro를 찾을 수 없습니다".into()
                     },
                 });
             }
-            None => items.push(HealthItem {
+            Ok(None) => items.push(HealthItem {
                 name: "wsl".into(),
                 ok: false,
                 detail: "wsl.exe 조회 불가".into(),
             }),
+            Err(NativeCommandError::Cancelled) => {
+                return Err(OperationError::Cancelled.message().into())
+            }
+            Err(NativeCommandError::TimedOut) => {
+                return Err(OperationError::TimedOut.message().into())
+            }
+            Err(NativeCommandError::Io | NativeCommandError::OutputTooLarge) => {
+                items.push(HealthItem {
+                    name: "wsl".into(),
+                    ok: false,
+                    detail: "wsl.exe 조회 불가".into(),
+                });
+            }
         }
     }
 
     // expected ports
+    let mut closed = Vec::new();
+    for port in &profile.expected_ports {
+        budget.check(&token).map_err(OperationError::message)?;
+        if !port_open_with_control(*port, &token, budget).map_err(OperationError::message)? {
+            closed.push(*port);
+        }
+    }
     if profile.expected_ports.is_empty() {
         items.push(HealthItem {
             name: "ports".into(),
@@ -438,12 +939,6 @@ pub async fn project_health(app: AppHandle, profile_id: String) -> Result<Projec
             detail: "예상 포트 없음".into(),
         });
     } else {
-        let closed: Vec<u16> = profile
-            .expected_ports
-            .iter()
-            .copied()
-            .filter(|p| !port_open(*p))
-            .collect();
         items.push(HealthItem {
             name: "ports".into(),
             ok: closed.is_empty(),
@@ -471,6 +966,7 @@ pub async fn project_health(app: AppHandle, profile_id: String) -> Result<Projec
     }
 
     // run-manager services (integration snapshot)
+    budget.check(&token).map_err(OperationError::message)?;
     if profile.run_manager_service_ids.is_empty() {
         items.push(HealthItem {
             name: "services".into(),
@@ -478,14 +974,17 @@ pub async fn project_health(app: AppHandle, profile_id: String) -> Result<Projec
             detail: "서비스 미지정".into(),
         });
     } else {
-        let running = match devbox_integration::read_snapshot("run-manager", 1) {
-            Err(_) => Err(()),
-            // A genuinely missing snapshot means no service is known to be
-            // running. Corrupt producer data remains a distinct unavailable
-            // state, per the v1 consumer contract.
-            Ok(None) => Ok(HashSet::new()),
-            Ok(Some(snapshot)) => active_service_ids(&snapshot.data),
-        };
+        let running =
+            match read_run_manager_snapshot_with_control(token.clone(), budget, claim).await {
+                Err(error) if error == OperationError::Cancelled.message() => return Err(error),
+                Err(error) if error == OperationError::TimedOut.message() => return Err(error),
+                Err(_) => Err(()),
+                // A genuinely missing snapshot means no service is known to be
+                // running. Corrupt producer data remains a distinct unavailable
+                // state, per the v1 consumer contract.
+                Ok(None) => Ok(HashSet::new()),
+                Ok(Some(snapshot)) => active_service_ids(&snapshot.data),
+            };
         items.push(service_health_item(
             &profile.run_manager_service_ids,
             running,
@@ -503,6 +1002,7 @@ pub struct RunStep {
     pub name: String,
     pub ok: bool,
     pub detail: String,
+    pub status: PreflightStatus,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -512,7 +1012,12 @@ pub struct WorkspaceRun {
     pub profile_id: String,
     pub steps: Vec<RunStep>,
     /// Workbench가 시작한 프로세스 PID (Stop What I Started 대상).
+    /// This remains backend-only ownership state and is never serialized to
+    /// the webview.
+    #[serde(skip_serializing)]
     pub started_pids: Vec<u32>,
+    /// Stable resource ownership observed by the preflight and start steps.
+    pub resource_provenance: Vec<ResourceProvenance>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -520,6 +1025,46 @@ pub struct WorkspaceRun {
 pub struct WorkspaceRunOwnership {
     pub run_id: String,
     pub profile_id: String,
+}
+
+/// Owns children during Start Workspace until the run is committed. Any
+/// early return or dropped Tauri invocation therefore rolls back only the
+/// PIDs this transition recorded; a successful registry insert transfers the
+/// vector to `WorkspaceRun` and disables the guard.
+struct StartedPidGuard {
+    pids: Vec<u32>,
+    committed: bool,
+}
+
+impl StartedPidGuard {
+    fn new() -> Self {
+        Self {
+            pids: Vec::new(),
+            committed: false,
+        }
+    }
+
+    fn push(&mut self, pid: u32) {
+        self.pids.push(pid);
+    }
+
+    fn rollback(&mut self) {
+        terminate_started_pids(&self.pids);
+        self.pids.clear();
+    }
+
+    fn commit(mut self) -> Vec<u32> {
+        self.committed = true;
+        std::mem::take(&mut self.pids)
+    }
+}
+
+impl Drop for StartedPidGuard {
+    fn drop(&mut self) {
+        if !self.committed {
+            terminate_started_pids(&self.pids);
+        }
+    }
 }
 
 impl From<&WorkspaceRun> for WorkspaceRunOwnership {
@@ -535,6 +1080,9 @@ impl From<&WorkspaceRun> for WorkspaceRunOwnership {
 pub struct RunRegistry {
     pub runs: Mutex<HashMap<String, WorkspaceRun>>,
     starting_profile: Mutex<Option<String>>,
+    starting_operation: Arc<SingleFlight>,
+    health_operation: Arc<SingleFlight>,
+    pub(crate) preview_operation: Arc<SingleFlight>,
 }
 
 struct WorkspaceTransitionClaim<'a> {
@@ -633,14 +1181,108 @@ fn code_pad_open_request(profile: &ProjectProfile) -> Result<devbox_applink::Ope
     }))
 }
 
+fn launch_open_with_profile_environment(
+    app_id: &str,
+    request: &devbox_applink::OpenRequest,
+    environment: Option<&EnvironmentInjection>,
+) -> Result<u32, String> {
+    // The boundary is applied even when the profile has no enabled `.env` so
+    // callers use one launch path. As with an ordinary desktop launch, the
+    // child inherits unrelated host variables; this slice only adds the
+    // reviewed project overlay and never serializes it.
+    let pairs = environment
+        .map(EnvironmentInjection::pairs)
+        .unwrap_or_default();
+    devbox_launch::launch_open_with_environment(app_id, request, &pairs)
+}
+
+const PROFILE_CHANGED_ERROR: &str =
+    "프로필이 변경되어 Workspace 시작을 중단했습니다. 다시 시도하세요";
+
+fn operation_message(error: OperationError) -> String {
+    error.message().to_string()
+}
+
+async fn revalidate_start_profile(
+    app: &AppHandle,
+    expected: &ProjectProfile,
+    token: &OperationToken,
+    budget: OperationBudget,
+    claim: &OperationClaim,
+) -> Result<ProjectProfile, String> {
+    let document = load_store_document_async(app, token.clone(), budget, claim).await?;
+    let current = document
+        .store
+        .profiles
+        .into_iter()
+        .find(|profile| profile.id == expected.id)
+        .ok_or_else(|| PROFILE_CHANGED_ERROR.to_string())?;
+    if &current != expected {
+        return Err(PROFILE_CHANGED_ERROR.to_string());
+    }
+    Ok(current)
+}
+
+/// Explicit cancellation for the long-running Start Workspace transition.
+/// The command sets the same sticky bit observed by Git, WSL and port waits;
+/// it does not merely dismiss a frontend spinner.
+#[tauri::command]
+pub fn cancel_start_workspace(
+    registry: tauri::State<'_, Arc<RunRegistry>>,
+    profile_id: String,
+) -> Result<bool, String> {
+    validate_profile_id(&profile_id)?;
+    registry
+        .starting_operation
+        .cancel(&profile_id)
+        .map_err(str::to_string)
+}
+
 #[tauri::command]
 pub async fn start_workspace(
     app: AppHandle,
     registry: tauri::State<'_, Arc<RunRegistry>>,
     profile_id: String,
 ) -> Result<WorkspaceRun, String> {
+    validate_profile_id(&profile_id)?;
     let _start_claim = claim_workspace_transition(&registry.starting_profile, &profile_id)
         .map_err(str::to_string)?;
+    let _operation_claim = registry
+        .starting_operation
+        .claim_reject(profile_id.clone())
+        .map_err(str::to_string)?;
+    let token = _operation_claim.token();
+    let budget = OperationBudget::from_now(WORKSPACE_START_TIMEOUT);
+    // A profile navigation health request must not continue consuming native
+    // Git/WSL capacity while Start Workspace owns the transition.
+    registry
+        .health_operation
+        .cancel_active()
+        .map_err(str::to_string)?;
+    let _health_claim = loop {
+        budget.check(&token).map_err(operation_message)?;
+        match registry
+            .health_operation
+            .claim_reject_with_token("workspace-start", token.clone())
+        {
+            Ok(claim) => break claim,
+            Err("다른 작업이 이미 진행 중입니다") => {
+                // A health request can race the initial cancel/wait window.
+                // Cancel that newly active request and retry the claim rather
+                // than returning a false single-flight collision to Start.
+                registry
+                    .health_operation
+                    .cancel_active()
+                    .map_err(str::to_string)?;
+                registry
+                    .health_operation
+                    .wait_until_idle(token.clone(), budget)
+                    .await?;
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    };
+    budget.check(&token).map_err(operation_message)?;
     if !registry
         .runs
         .lock()
@@ -649,93 +1291,266 @@ pub async fn start_workspace(
     {
         return Err("현재 Workspace 실행을 먼저 중지하세요".to_string());
     }
-    let store = load_store(&app)?;
+    let document = load_store_document_async(&app, token.clone(), budget, &_health_claim).await?;
+    let store = document.store;
     let profile = store
         .profiles
         .iter()
         .find(|p| p.id == profile_id)
         .cloned()
         .ok_or_else(|| "프로필을 찾을 수 없습니다".to_string())?;
-
-    let mut steps = Vec::new();
-
-    // 사전 점검 (health)
-    let health = project_health(app.clone(), profile_id.clone()).await?;
-    for item in health.items {
-        steps.push(RunStep {
-            name: item.name,
-            ok: item.ok,
-            detail: item.detail,
-        });
+    // The review shown by the UI is read-only and not a reservation. Repeat
+    // the exact probes here before resolving `.env` or spawning either child;
+    // a changed app/distro/path/port/service state must fail closed without a
+    // partial Workspace launch.
+    let preflight: WorkspacePreflight =
+        crate::commands::preflight::preflight_profile(&profile).await;
+    if !preflight.ready {
+        return Err("Workspace 사전 점검을 통과하지 못했습니다".to_string());
     }
+    let mut steps = preflight
+        .items
+        .iter()
+        .map(|item| RunStep {
+            name: item.key.clone(),
+            ok: item.status.is_non_blocking(),
+            detail: item.detail.clone(),
+            status: item.status,
+        })
+        .collect::<Vec<_>>();
 
-    // 예상 포트 대기 (닫힌 포트는 최대 5×2초 대기)
+    // 예상 포트 대기. 여러 포트가 있어도 하나의 bounded deadline만 쓴다.
+    let port_deadline = Instant::now()
+        .checked_add(PORT_WAIT_TIMEOUT)
+        .unwrap_or_else(Instant::now);
     for port in &profile.expected_ports {
-        let mut waited = false;
-        for _ in 0..5 {
-            if port_open(*port) {
+        budget.check(&token).map_err(operation_message)?;
+        let mut ready = Instant::now() < port_deadline
+            && port_open_with_control(*port, &token, budget).map_err(operation_message)?;
+        while !ready {
+            budget.check(&token).map_err(operation_message)?;
+            let remaining = port_deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
                 break;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
-            waited = true;
+            delay_with_control(remaining.min(PORT_RETRY_INTERVAL), token.clone(), budget)
+                .await
+                .map_err(operation_message)?;
+            ready = Instant::now() < port_deadline
+                && port_open_with_control(*port, &token, budget).map_err(operation_message)?;
         }
-        if waited && !port_open(*port) {
+        budget.check(&token).map_err(operation_message)?;
+        if !ready {
             steps.push(RunStep {
                 name: "wait-port".into(),
                 ok: false,
                 detail: format!("{port} 여전히 닫힘"),
+                status: PreflightStatus::Failure,
             });
         }
     }
 
-    // 앱 열기 (best-effort). Workbench가 시작한 것만 기록한다.
-    let mut started_pids = Vec::new();
-    match wsl_desktop_open_request(&profile) {
-        Ok(request) => match devbox_launch::launch_open("wsl-desktop", &request) {
-            Ok(pid) => started_pids.push(pid),
+    // Resolve and revalidate as close as possible to the child boundary. The
+    // health/port waits above can take seconds, so resolving before them
+    // would allow a changed `.env` to become stale while we wait.
+    //
+    // A changed file or unavailable secret therefore fails before either
+    // child is launched and cannot result in a partially injected workspace.
+    let mut started_pids = StartedPidGuard::new();
+    let mut current_profile =
+        revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await?;
+    let mut environment =
+        match crate::commands::environment::resolve_profile_environment_async_with_control(
+            current_profile.clone(),
+            token.clone(),
+            budget,
+            &_health_claim,
+        )
+        .await
+        {
+            Ok(environment) => environment,
+            Err(error) => {
+                started_pids.rollback();
+                return Err(error);
+            }
+        };
+    // The resolver is a blocking boundary and may give an external profile
+    // writer time to finish. Revalidate again after it returns so the first
+    // child is not launched from a profile that changed while its overlay was
+    // being prepared.
+    current_profile =
+        match revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await {
+            Ok(profile) => profile,
+            Err(error) => {
+                started_pids.rollback();
+                return Err(error);
+            }
+        };
+
+    // 앱 열기 (best-effort). Workbench가 시작한 것만 기록한다. Preflight
+    // provenance is copied as stable metadata; executable paths/PIDs never
+    // cross the UI boundary.
+    let mut resource_provenance = preflight.resources().cloned().collect::<Vec<_>>();
+    budget.check(&token).map_err(operation_message)?;
+    match wsl_desktop_open_request(&current_profile) {
+        Ok(request) => match launch_open_with_profile_environment(
+            "wsl-desktop",
+            &request,
+            environment.as_ref(),
+        ) {
+            Ok(pid) => {
+                started_pids.push(pid);
+                resource_provenance.push(ResourceProvenance {
+                    kind: "process".into(),
+                    id: "wsl-desktop".into(),
+                    state: ResourceState::WorkbenchStarted,
+                });
+                if let Err(error) = budget.check(&token) {
+                    started_pids.rollback();
+                    return Err(error.message().to_string());
+                }
+            }
             Err(_) => steps.push(RunStep {
                 name: "open".into(),
                 ok: false,
                 detail: "wsl-desktop을 시작할 수 없습니다".into(),
+                status: PreflightStatus::Failure,
             }),
         },
         Err(e) => steps.push(RunStep {
             name: "open".into(),
             ok: false,
             detail: e,
+            status: PreflightStatus::Failure,
         }),
     }
-    match code_pad_open_request(&profile) {
-        Ok(request) => match devbox_launch::launch_open("code-pad", &request) {
-            Ok(pid) => started_pids.push(pid),
-            Err(_) => steps.push(RunStep {
-                name: "open".into(),
-                ok: false,
-                detail: "code-pad를 시작할 수 없습니다".into(),
-            }),
-        },
+    let mut current_profile =
+        match revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await {
+            Ok(profile) => profile,
+            Err(error) => {
+                started_pids.rollback();
+                return Err(error);
+            }
+        };
+    // The first child may have taken long enough for `.env` to change. Re-read
+    // the source and compare its immutable revision immediately before the
+    // second spawn; a preview or an earlier injection must never authorize a
+    // later child after its source has changed.
+    environment =
+        match crate::commands::environment::resolve_profile_environment_async_with_control(
+            current_profile.clone(),
+            token.clone(),
+            budget,
+            &_health_claim,
+        )
+        .await
+        {
+            Ok(environment) => environment,
+            Err(error) => {
+                started_pids.rollback();
+                return Err(error);
+            }
+        };
+    current_profile =
+        match revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await {
+            Ok(profile) => profile,
+            Err(error) => {
+                started_pids.rollback();
+                return Err(error);
+            }
+        };
+    budget.check(&token).map_err(|error| {
+        started_pids.rollback();
+        error.message().to_string()
+    })?;
+    match code_pad_open_request(&current_profile) {
+        Ok(request) => {
+            match launch_open_with_profile_environment("code-pad", &request, environment.as_ref()) {
+                Ok(pid) => {
+                    started_pids.push(pid);
+                    resource_provenance.push(ResourceProvenance {
+                        kind: "process".into(),
+                        id: "code-pad".into(),
+                        state: ResourceState::WorkbenchStarted,
+                    });
+                    if let Err(error) = budget.check(&token) {
+                        started_pids.rollback();
+                        return Err(error.message().to_string());
+                    }
+                }
+                Err(_) => steps.push(RunStep {
+                    name: "open".into(),
+                    ok: false,
+                    detail: "code-pad를 시작할 수 없습니다".into(),
+                    status: PreflightStatus::Failure,
+                }),
+            }
+        }
         Err(e) => steps.push(RunStep {
             name: "open".into(),
             ok: false,
             detail: e,
+            status: PreflightStatus::Failure,
         }),
     }
+    // No later transition step needs the resolved values. Drop the holder as
+    // soon as the second spawn boundary has returned so zeroizing values do
+    // not remain live through registry bookkeeping or the final revalidation.
+    drop(environment);
 
+    if let Err(error) =
+        revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await
+    {
+        started_pids.rollback();
+        return Err(error);
+    }
+    if let Err(error) = budget.check(&token) {
+        started_pids.rollback();
+        return Err(error.message().to_string());
+    }
+    let mut runs = match registry.runs.lock() {
+        Ok(runs) => runs,
+        Err(_) => {
+            started_pids.rollback();
+            return Err("실행 상태를 저장할 수 없습니다".to_string());
+        }
+    };
+    if let Err(error) = budget.check(&token) {
+        drop(runs);
+        started_pids.rollback();
+        return Err(error.message().to_string());
+    }
+    if !runs.is_empty() {
+        drop(runs);
+        started_pids.rollback();
+        return Err("Workspace 실행 상태가 변경되어 결과를 저장할 수 없습니다".to_string());
+    }
     let run = WorkspaceRun {
         run_id: uuid::Uuid::new_v4().to_string(),
         profile_id,
         steps,
-        started_pids,
+        started_pids: started_pids.commit(),
+        resource_provenance,
     };
-    let mut runs = registry
-        .runs
-        .lock()
-        .map_err(|_| "실행 상태를 저장할 수 없습니다".to_string())?;
-    if !runs.is_empty() {
-        return Err("Workspace 실행 상태가 변경되어 결과를 저장할 수 없습니다".to_string());
-    }
     runs.insert(run.run_id.clone(), run.clone());
     Ok(run)
+}
+
+fn terminate_started_pids(pids: &[u32]) {
+    for pid in pids {
+        #[cfg(target_os = "windows")]
+        {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .output();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = std::process::Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .output();
+        }
+    }
 }
 
 /// Workbench가 시작한 것만 정리한다 (이미 실행 중이던 자원은 건드리지 않는다).
@@ -792,6 +1607,9 @@ pub fn run_registry() -> Arc<RunRegistry> {
     Arc::new(RunRegistry {
         runs: Mutex::new(HashMap::new()),
         starting_profile: Mutex::new(None),
+        starting_operation: SingleFlight::new(),
+        health_operation: SingleFlight::new(),
+        preview_operation: SingleFlight::new(),
     })
 }
 
@@ -1007,6 +1825,29 @@ mod tests {
     }
 
     #[test]
+    fn health_operation_keys_do_not_collide_on_printable_separators() {
+        assert_ne!(
+            health_operation_key("project:one", Some("request")),
+            health_operation_key("project", Some("one:request"))
+        );
+        assert_ne!(
+            health_operation_key("project", None),
+            health_operation_key("project", Some("request"))
+        );
+    }
+
+    #[test]
+    fn port_probe_honors_cancellation_before_connecting() {
+        let token = OperationToken::new();
+        token.cancel();
+        let budget = OperationBudget::from_now(Duration::from_secs(1));
+        assert_eq!(
+            port_open_with_control(9, &token, budget),
+            Err(OperationError::Cancelled)
+        );
+    }
+
+    #[test]
     fn store_document_rejects_stale_or_missing_bytes() {
         let document = ProfileStoreDocument {
             store: ProfileStore::empty(),
@@ -1068,7 +1909,7 @@ mod tests {
         let configured = vec!["api".to_string()];
         let missing = service_health_item(&configured, Ok(HashSet::new()));
         assert!(!missing.ok);
-        assert_eq!(missing.detail, "미실행: api");
+        assert_eq!(missing.detail, "미실행 서비스 1개");
 
         let unavailable = service_health_item(&configured, Err(()));
         assert!(!unavailable.ok);
@@ -1081,6 +1922,7 @@ mod tests {
             profile_id: profile_id.to_string(),
             steps: Vec::new(),
             started_pids: vec![101],
+            resource_provenance: Vec::new(),
         }
     }
 
@@ -1123,6 +1965,7 @@ mod tests {
             name: "health".to_string(),
             ok: false,
             detail: r"C:\TOP_SECRET\project".to_string(),
+            status: PreflightStatus::Failure,
         });
         let one = HashMap::from([("run-1".to_string(), sensitive_run)]);
         let ownership = single_workspace_run(&one).unwrap().unwrap();
@@ -1132,6 +1975,10 @@ mod tests {
         assert!(!json.contains("startedPids"));
         assert!(!json.contains("steps"));
 
+        let full_run_json = serde_json::to_string(&workspace_run("run-1", "profile-a")).unwrap();
+        assert!(!full_run_json.contains("startedPids"));
+        assert!(!full_run_json.contains("101"));
+
         let multiple = HashMap::from([
             ("run-1".to_string(), workspace_run("run-1", "profile-1")),
             ("run-2".to_string(), workspace_run("run-2", "profile-2")),
@@ -1140,6 +1987,26 @@ mod tests {
             single_workspace_run(&multiple),
             Err("여러 Workspace 실행 상태를 안전하게 복원할 수 없습니다")
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn profile_store_reader_rejects_symlinked_file_at_handle_boundary() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "workbench-profile-reader-link-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let real = root.join("real.json");
+        let link = root.join("project-profiles.json");
+        std::fs::write(&real, br#"{"version":1,"profiles":[]}"#).unwrap();
+        symlink(&real, &link).unwrap();
+
+        assert!(read_profile_file(&link).is_err());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

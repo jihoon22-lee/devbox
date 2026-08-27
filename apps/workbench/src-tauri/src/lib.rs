@@ -1,6 +1,7 @@
 mod applink;
 mod commands;
 mod core;
+mod platform;
 
 use commands::workspace::{profile_store_state, run_registry, ProfileStoreState};
 use std::sync::Arc;
@@ -80,6 +81,11 @@ pub fn run() {
             commands::workspace::delete_profile,
             commands::workspace::git_status,
             commands::workspace::project_health,
+            commands::workspace::cancel_project_health,
+            commands::environment::preview_project_environment,
+            commands::environment::cancel_project_environment,
+            commands::preflight::workspace_preflight,
+            commands::workspace::cancel_start_workspace,
             commands::workspace::start_workspace,
             commands::workspace::stop_workspace,
             commands::workspace::current_workspace_run,

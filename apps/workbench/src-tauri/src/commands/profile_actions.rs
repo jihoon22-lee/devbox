@@ -54,6 +54,8 @@ pub fn open_profile_in(
     let targets = actionable_targets(&profile, available_targets());
     let (target_id, request) = prepare_open_request(&profile, &targets, &app_id)
         .map_err(|_| "선택한 앱으로 프로필을 열 수 없습니다".to_string())?;
+    // Context-menu launches do not apply the reviewed project `.env`; only
+    // the explicit Start Workspace transition uses that overlay.
     devbox_launch::launch_open(&target_id, &request)
         .map(|_| ())
         .map_err(|_| "선택한 앱으로 프로필을 열 수 없습니다".to_string())

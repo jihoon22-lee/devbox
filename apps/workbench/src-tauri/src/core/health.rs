@@ -32,13 +32,24 @@ pub fn parse_git_status(path: &str, input: &str) -> GitStatus {
 pub fn has_distro(distro: &str, wsl_list_output: &str) -> bool {
     wsl_list_output
         .lines()
-        .filter_map(distro_name_from_row)
-        .any(|name| name.eq_ignore_ascii_case(distro))
+        .filter_map(distro_info_from_row)
+        .any(|(name, _state)| name.eq_ignore_ascii_case(distro))
+}
+
+/// Return whether a named distro is already running. A stopped distro is not
+/// started just to inspect its working directory; callers can surface that
+/// state as unavailable and let the user explicitly start WSL.
+pub fn distro_is_running(distro: &str, wsl_list_output: &str) -> Option<bool> {
+    wsl_list_output
+        .lines()
+        .filter_map(distro_info_from_row)
+        .find(|(name, _state)| name.eq_ignore_ascii_case(distro))
+        .map(|(_name, state)| state.eq_ignore_ascii_case("running"))
 }
 
 /// Parse one `wsl.exe -l -v` row. STATE and VERSION are the two rightmost
 /// columns, so the NAME column may contain spaces.
-fn distro_name_from_row(line: &str) -> Option<String> {
+fn distro_info_from_row(line: &str) -> Option<(String, String)> {
     let row = line.trim().trim_start_matches('*').trim();
     if row.is_empty() || row.starts_with("NAME") || row.starts_with("Windows") {
         return None;
@@ -46,9 +57,9 @@ fn distro_name_from_row(line: &str) -> Option<String> {
 
     let mut fields = row.split_whitespace();
     fields.next_back()?; // VERSION
-    fields.next_back()?; // STATE
+    let state = fields.next_back()?.to_string(); // STATE
     let name = fields.collect::<Vec<_>>().join(" ");
-    (!name.is_empty()).then_some(name)
+    (!name.is_empty()).then_some((name, state))
 }
 
 #[cfg(test)]
@@ -79,6 +90,14 @@ mod tests {
             "  NAME             STATE           VERSION\n* Ubuntu 24.04     Running         2\n";
         assert!(has_distro("Ubuntu 24.04", out));
         assert!(!has_distro("Ubuntu 24", out));
+    }
+
+    #[test]
+    fn distro_running_state_is_observed_without_starting_a_stopped_distro() {
+        let out = "  NAME      STATE           VERSION\n* Ubuntu    Running         2\n  Debian    Stopped         2\n";
+        assert_eq!(distro_is_running("Ubuntu", out), Some(true));
+        assert_eq!(distro_is_running("Debian", out), Some(false));
+        assert_eq!(distro_is_running("Fedora", out), None);
     }
 
     /// `wsl.exe -l -v`는 실제로 UTF-16LE(BOM 있음)로 출력한다. 호출부가 이를
