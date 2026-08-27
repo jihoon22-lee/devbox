@@ -61,3 +61,24 @@ export interface ContainerStopHandoff {
 export type ListenerActionResult =
   | { kind: "terminated" }
   | { kind: "handoff"; handoff: ContainerStopHandoff };
+
+export interface PortFavorite {
+  source: ListenerSource;
+  proto: string;
+  local_addr: string;
+  port: number;
+}
+
+export interface ProcessFavorite {
+  source: ListenerSource;
+  identity: ListenerIdentity;
+}
+
+/** Native-owned, bounded view state. It deliberately has no path or command fields. */
+export interface PortManagerPreferences {
+  schema_version: 1;
+  refresh_interval_ms: number;
+  pinned_only: boolean;
+  favorite_ports: PortFavorite[];
+  favorite_processes: ProcessFavorite[];
+}

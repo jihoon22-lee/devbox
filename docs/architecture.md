@@ -116,7 +116,11 @@ smoke에서 공통 회귀 행렬로 검증한다.
 port-manager:    React → invoke → bounded commands → native netstat / wsl.exe
                    ├ Windows process handle (PID + creation FILETIME) → identity re-check → terminate
                    ├ WSL ss + /proc stat/cmdline (distro + PID + start tick) → identity re-check → SIGTERM
-                   └ Docker published port → validated WSL Desktop stop handoff (never process kill)
+                   ├ Docker published port → validated WSL Desktop stop handoff (never process kill)
+                   ├ bounded single-flight refresh → stable snapshot → identity-based
+                      new/closed/changed diff; failed polls retain rows/favorites and lock kill
+                   └ app-local strict preferences (interval, pinned, port/process identities)
+                      → atomic JSON replace (no path/command/secret fields)
 wsl-desktop:     React(xterm + pane/tab context-menu) → invoke → commands → wsl crate → wsl.exe
                    (wsl-dashboard 흡수; split/close/tab action은 exact ID와 확인 경계 사용)
                    └ distro·docker 패널 (`docker ps --format` 5필드 원문 → compact summary/detail,
@@ -237,8 +241,20 @@ command는 이를 받지 않고 endpoint와 creation FILETIME만 받는다. WSL 
 identity가 모두 일치할 때만 고정된 Windows handle 또는 wsl.exe kill argv를 사용한다. Docker
 published port는 container identity를 별도로 표시하고 process kill 대신 WSL Desktop stop
 handoff descriptor를 반환한다. WSL detail은 distro/PID별 bounded cache로 재사용하며 snapshot의
-모든 child 명령은 하나의 15초 deadline과 2 MiB stdout 상한을 공유한다. auto-refresh, diff,
-favorite와 arbitrary PID kill은 이 흐름에 포함하지 않는다.
+모든 child 명령은 하나의 15초 deadline과 2 MiB stdout 상한, Windows kill-on-close Job Object를
+공유해 timeout·output failure·root exit 뒤 WSL/container descendant가 남지 않게 한다. P3-04는 이 snapshot
+producer를 재사용해 1–60초 bounded auto-refresh와 manual pause를 제공한다. refresh promise는
+single-flight라 native child poll을 중첩하지 않으며, 첫 성공 결과는 baseline으로만 삼는다. 이후
+성공 결과는 exact identity+endpoint match를 먼저 예약한 뒤 남은 strong identity move만
+fallback matching해 new/closed/changed를 만들고, 실패 결과는
+stable rows, baseline, favorites를 덮어쓰지 않는다. 실패 중에는 #285 kill/handoff 버튼도
+fail-closed로 잠긴다. 성공한 kill은 pre-kill in-flight poll을 기다린 뒤 fresh snapshot을 한 번
+더 요청한다. 포트 favorite와 process identity favorite, pinned filter는 app-local
+data 아래 strict `port-manager-preferences-v1.json`으로만 저장한다. 문서는 64 KiB와 종류별
+256개 상한, 1–60초 interval, endpoint/identity bounds, unknown-field rejection을 적용하고
+`crates/filesystem::atomic_write`로 완전한 JSON만 교체한다. command line/path/credential은
+favorite DTO에 존재하지 않는다. source/provenance는 Windows, WSL+distro, container+
+engine/distro/ID로 화면과 저장 identity를 일치시킨다.
 
 API Playground의 History·Collection context menu는 v2에 저장되고 backend sanitizer read-back을
 통과한 `PersistedHistoryRequest`만 복제·이름 변경·삭제·마스킹 cURL 복사의 입력으로 사용한다.

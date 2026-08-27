@@ -49,12 +49,12 @@
 - [x] **`crates/window-state` (#322)** — 일반 persistent window의 bounds, maximized,
   monitor identity, scale factor를 bounded/strict JSON으로 보존하고, monitor 제거·DPI·해상도
   변화에서 안전한 restore geometry와 visible-titlebar clamp를 순수 로직으로 계산한다.
-- [ ] **앱별 window-state wiring (#323–#336)** — 위 계약을 소비하는 하나의 cross-app PR에서
-  각 persistent window에 적용한다. Launcher/dialog/splash 등 transient window는 제외한다.
+- [x] **앱별 window-state wiring (#323–#336)** — 위 계약을 소비하는 하나의 cross-app PR에서
+  각 persistent window에 적용했다. Launcher/dialog/splash 등 transient window는 제외한다.
 
-현재 목표 범위는 기존 13개 앱과 Log Lens를 합친 #323–#336의 persistent `main` 14개다.
-#322 공용 계약과 #321 Log Lens bootstrap이 모두 main에 병합돼 같은 cross-app PR에서 최종
-wiring한다. 15번째 앱인 Devbox Launcher palette는 transient라 window-state 대상에서
+기존 13개 앱과 Log Lens를 합친 #323–#336의 persistent `main` 14개 wiring이 완료됐다.
+#322 공용 계약과 #321 Log Lens bootstrap을 선행한 같은 cross-app PR에서 적용했다. 15번째
+앱인 Devbox Launcher palette는 transient라 window-state 대상에서
 제외한다. 공용 adapter는 physical bounds/monitor/DPI transform, visible-titlebar clamp,
 strict bounded JSON, corrupt fallback, atomic persistence와 close/tray/explicit-exit flush를
 동일하게 적용한다.
@@ -380,6 +380,24 @@ producer를 임의로 구현하거나 등록하지 않는다. missing/stale/corr
 격리된다. 기존 Life Log→Knowledge `knowledge-draft/v1` action은 유지하고 Launcher가 이를
 plain text로 바꾸지 않으며, `toolbox-text/v1`은 실제 claim/ack receiver가 준비된 뒤 연결한다.
 Windows W3 packaged shortcut/focus/설치 handoff smoke는 release gate에서 확인한다.
+
+P3-04 Port Manager grouped acceptance (#337/#338/#339):
+
+- #337 auto-refresh/pause는 1–60초 bounded interval, manual pause/resume, native poll
+  single-flight, request/unmount stale guard를 공유한다. 실패한 poll은 stable rows/favorites를
+  유지하고 kill/handoff를 잠근다. Windows fixed child는 kill-on-close Job Object로 root와
+  descendant를 함께 정리하고, 성공한 kill은 pre-kill poll 뒤 fresh snapshot을 강제한다.
+- #338 diff는 첫 성공을 baseline으로만 사용하고 이후 성공 snapshot의 exact
+  identity+endpoint를 먼저 예약한 뒤 남은 strong identity move에서
+  `new`/`closed`/`changed`를 생성한다. identity 없는 row는 endpoint fallback만 사용하며 실패
+  결과는 baseline을 바꾸지 않는다.
+- #339는 port endpoint와 process identity favorite를 strict bounded/duplicate-free DTO로
+  저장하고 pinned filter로 합친다. app-local 64 KiB JSON, 종류별 256개, 1–60초 interval,
+  endpoint/source/identity validation과 atomic write를 적용하며 path/command/secret을 저장하지
+  않는다. Windows/WSL distro/container provenance는 row와 detail에 함께 표시한다.
+- 세 이슈는 같은 화면/state model/native fixture를 공유하는 한 PR 경계이며 #313 preflight,
+  arbitrary kill, established-connection termination은 별도 범위다. Port Manager version
+  bump는 v0.5.0 release gate까지 보류한다.
 
 지원 형식, buffer·파일·시간 상한, secret/privacy, destructive safety, public schema,
 앱별 목표 버전, PR 지도와 acceptance는 [상세 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을

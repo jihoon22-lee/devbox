@@ -7,18 +7,35 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getProcessInfo,
   handoffContainerStop,
+  loadPortManagerPreferences,
   killListener,
   listPorts,
   openBrowser,
   revealProcess,
+  savePortManagerPreferences,
 } from "./api";
 import type {
   ListenerActionResult,
   ListenerKillRequest,
+  PortManagerPreferences,
   PortRow,
   ProtoFilter,
   StateFilter,
 } from "./types";
+import {
+  DEFAULT_PREFERENCES,
+  MAX_FAVORITES_PER_KIND,
+  MAX_REFRESH_INTERVAL_MS,
+  MIN_REFRESH_INTERVAL_MS,
+  diffPortRows,
+  isPinnedRow,
+  isPortFavorite,
+  isProcessFavorite,
+  portFavoriteFor,
+  processFavoriteFor,
+  sameProcessFavorite,
+  type RefreshDiff,
+} from "./refresh";
 import "./App.css";
 
 const PROTO_FILTERS: { value: ProtoFilter; label: string }[] = [
@@ -32,6 +49,8 @@ const STATE_FILTERS: { value: StateFilter; label: string }[] = [
   { value: "listening", label: "LISTENING" },
   { value: "established", label: "ESTABLISHED" },
 ];
+
+const REFRESH_INTERVALS = [1_000, 2_000, 5_000, 10_000, 30_000, 60_000];
 
 export function matches(row: PortRow, query: string): boolean {
   const q = query.trim().toLowerCase();
@@ -83,12 +102,27 @@ export function portRowKey(row: PortRow): string {
       ":" +
       row.local_addr +
       ":" +
+      identity.engine +
+      ":" +
       identity.distro +
       ":" +
       identity.container_id
     );
   }
-  return row.proto + ":" + row.local_addr + ":" + (row.pid ?? 0);
+  // An identity-less row is keyed by its complete endpoint and source.  A
+  // PID-only fallback can collide for two source rows or for malformed
+  // fixtures whose address does not include the port.
+  return (
+    (row.source ?? "windows") +
+    ":" +
+    row.proto +
+    ":" +
+    row.local_addr +
+    ":" +
+    row.port +
+    ":" +
+    (row.pid ?? 0)
+  );
 }
 
 export function localhostUrl(row: PortRow): string | null {
@@ -117,6 +151,18 @@ export function sourceLabel(row: PortRow): string {
     default:
       return "Windows";
   }
+}
+
+export function provenanceLabel(row: PortRow): string {
+  const source = sourceLabel(row);
+  if (row.source === "wsl" && row.wsl_distro) return source + " · " + row.wsl_distro;
+  if (row.source === "container") {
+    const engine = row.container_engine ?? "container";
+    const distro = row.wsl_distro ? " · " + row.wsl_distro : "";
+    const container = row.container_id ? " · " + row.container_id : "";
+    return source + " · " + engine + distro + container;
+  }
+  return source;
 }
 
 export function safeActionError(_error: unknown): string {
@@ -150,6 +196,27 @@ function displayValue(value: string | number | null | undefined): string {
   return value === null || value === undefined || value === "" ? "-" : String(value);
 }
 
+function clonePreferences(value: PortManagerPreferences): PortManagerPreferences {
+  const rawInterval = Number(value?.refresh_interval_ms);
+  const interval = Number.isFinite(rawInterval)
+    ? Math.round(rawInterval)
+    : DEFAULT_PREFERENCES.refresh_interval_ms;
+  const favoritePorts = Array.isArray(value?.favorite_ports) ? value.favorite_ports : [];
+  const favoriteProcesses = Array.isArray(value?.favorite_processes)
+    ? value.favorite_processes
+    : [];
+  return {
+    schema_version: 1,
+    refresh_interval_ms: Math.min(
+      MAX_REFRESH_INTERVAL_MS,
+      Math.max(MIN_REFRESH_INTERVAL_MS, interval),
+    ),
+    pinned_only: value?.pinned_only === true,
+    favorite_ports: favoritePorts.slice(0, MAX_FAVORITES_PER_KIND),
+    favorite_processes: favoriteProcesses.slice(0, MAX_FAVORITES_PER_KIND),
+  };
+}
+
 type ProcessPathState = {
   rowKey: string;
   path: string | null;
@@ -168,51 +235,223 @@ export default function App() {
   const [processPath, setProcessPath] = useState<ProcessPathState | null>(null);
   const [handoff, setHandoff] = useState<string | null>(null);
   const [isComposing, setIsComposing] = useState(false);
+  const [preferences, setPreferences] = useState<PortManagerPreferences>(DEFAULT_PREFERENCES);
+  const [preferencesReady, setPreferencesReady] = useState(false);
+  const [preferencesSaving, setPreferencesSaving] = useState(false);
+  const [settingsWarning, setSettingsWarning] = useState<string | null>(null);
+  const [autoRefreshPaused, setAutoRefreshPaused] = useState(false);
+  const [snapshotHealthy, setSnapshotHealthy] = useState(false);
+  const [diffs, setDiffs] = useState<RefreshDiff[]>([]);
+  const [hasComparedSnapshot, setHasComparedSnapshot] = useState(false);
   const processPathRequest = useRef(0);
   const refreshRequest = useRef(0);
+  const refreshInFlight = useRef<Promise<void> | null>(null);
+  const previousSnapshot = useRef<PortRow[] | null>(null);
   const busyActionRef = useRef<string | null>(null);
+  const snapshotHealthyRef = useRef(false);
+  const preferencesRef = useRef<PortManagerPreferences>(DEFAULT_PREFERENCES);
+  const preferenceSaveInFlight = useRef(false);
+  const preferenceSaveRequest = useRef(0);
+  const initializeRequest = useRef(0);
   const mounted = useRef(false);
+
+  const markSnapshotHealthy = useCallback((healthy: boolean) => {
+    snapshotHealthyRef.current = healthy;
+    setSnapshotHealthy(healthy);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!mounted.current) return;
+    if (refreshInFlight.current) return refreshInFlight.current;
     const request = ++refreshRequest.current;
     setLoading(true);
     setError(null);
+
+    const operation = (async () => {
+      try {
+        const next = await listPorts();
+        if (mounted.current && refreshRequest.current === request) {
+          const prior = previousSnapshot.current;
+          previousSnapshot.current = next;
+          setPorts(next);
+          setDiffs(diffPortRows(prior, next));
+          setHasComparedSnapshot(prior !== null);
+          markSnapshotHealthy(true);
+
+          const nextByKey = new Map(next.map((row) => [portRowKey(row), row]));
+          setSelectedRowKey((selected) =>
+            selected && nextByKey.has(selected) ? selected : null,
+          );
+          setContextRow((current) => {
+            if (!current) return null;
+            return nextByKey.get(portRowKey(current)) ?? null;
+          });
+          processPathRequest.current += 1;
+          setProcessPath(null);
+        }
+      } catch (caught) {
+        if (mounted.current && refreshRequest.current === request) {
+          // Keep the last stable rows and favorites, but fail closed for
+          // process actions until a complete snapshot succeeds again.
+          markSnapshotHealthy(false);
+          setDiffs([]);
+          setHasComparedSnapshot(false);
+          setError(safeActionError(caught));
+        }
+      } finally {
+        if (mounted.current && refreshRequest.current === request) {
+          setLoading(false);
+        }
+      }
+    })();
+    refreshInFlight.current = operation;
     try {
-      const next = await listPorts();
-      if (mounted.current && refreshRequest.current === request) {
-        setPorts(next);
+      await operation;
+    } finally {
+      if (refreshInFlight.current === operation) {
+        refreshInFlight.current = null;
+      }
+    }
+  }, [markSnapshotHealthy]);
+
+  const refreshAfterMutation = useCallback(async () => {
+    // A timer poll may have captured its native snapshot before the listener
+    // mutation completed. Wait for that single-flight operation and then
+    // require a fresh call so a successful Kill never leaves pre-kill rows on
+    // screen until the next interval.
+    const inFlight = refreshInFlight.current;
+    if (inFlight) await inFlight;
+    if (mounted.current) await refresh();
+  }, [refresh]);
+
+  const savePreferences = useCallback(async (next: PortManagerPreferences) => {
+    if (!mounted.current || preferenceSaveInFlight.current) return;
+    if (
+      next.favorite_ports.length > MAX_FAVORITES_PER_KIND ||
+      next.favorite_processes.length > MAX_FAVORITES_PER_KIND
+    ) {
+      setError("Too many favorites. Remove one before adding another.");
+      return;
+    }
+    const safe = clonePreferences(next);
+    const request = ++preferenceSaveRequest.current;
+    preferenceSaveInFlight.current = true;
+    setPreferencesSaving(true);
+    try {
+      await savePortManagerPreferences(safe);
+      if (mounted.current && preferenceSaveRequest.current === request) {
+        preferencesRef.current = safe;
+        setPreferences(safe);
+        setSettingsWarning(null);
       }
     } catch (caught) {
-      if (mounted.current && refreshRequest.current === request) {
+      if (mounted.current && preferenceSaveRequest.current === request) {
         setError(safeActionError(caught));
       }
     } finally {
-      if (mounted.current && refreshRequest.current === request) {
-        setLoading(false);
+      if (preferenceSaveRequest.current === request) {
+        preferenceSaveInFlight.current = false;
+        if (mounted.current) setPreferencesSaving(false);
       }
     }
   }, []);
 
+  const togglePortFavorite = useCallback(
+    (row: PortRow) => {
+      if (row.port <= 0) return;
+      const current = preferencesRef.current;
+      const favorite = portFavoriteFor(row);
+      const exists = isPortFavorite(row, current.favorite_ports);
+      const favorite_ports = exists
+        ? current.favorite_ports.filter(
+            (candidate) =>
+              !(
+                candidate.source === favorite.source &&
+                candidate.proto === favorite.proto &&
+                candidate.local_addr === favorite.local_addr &&
+                candidate.port === favorite.port
+              ),
+          )
+        : [...current.favorite_ports, favorite];
+      void savePreferences({ ...current, favorite_ports });
+    },
+    [savePreferences],
+  );
+
+  const toggleProcessFavorite = useCallback(
+    (row: PortRow) => {
+      const favorite = processFavoriteFor(row);
+      if (!favorite) return;
+      const current = preferencesRef.current;
+      const exists = isProcessFavorite(row, current.favorite_processes);
+      const favorite_processes = exists
+        ? current.favorite_processes.filter(
+            (candidate) => !sameProcessFavorite(candidate, favorite),
+          )
+        : [...current.favorite_processes, favorite];
+      void savePreferences({ ...current, favorite_processes });
+    },
+    [savePreferences],
+  );
+
+  const initialize = useCallback(async () => {
+    const request = ++initializeRequest.current;
+    try {
+      const loaded = clonePreferences(await loadPortManagerPreferences());
+      if (!mounted.current || initializeRequest.current !== request) return;
+      preferencesRef.current = loaded;
+      setPreferences(loaded);
+    } catch {
+      if (!mounted.current || initializeRequest.current !== request) return;
+      preferencesRef.current = clonePreferences(DEFAULT_PREFERENCES);
+      setPreferences(clonePreferences(DEFAULT_PREFERENCES));
+      setSettingsWarning("Saved view settings were unavailable; using safe defaults.");
+    } finally {
+      if (mounted.current && initializeRequest.current === request) setPreferencesReady(true);
+    }
+    if (!mounted.current || initializeRequest.current !== request) return;
+    await refresh();
+  }, [refresh]);
+
   useEffect(() => {
     mounted.current = true;
-    void refresh();
+    previousSnapshot.current = null;
+    setPreferencesReady(false);
+    setDiffs([]);
+    setHasComparedSnapshot(false);
+    markSnapshotHealthy(false);
+    void initialize();
     return () => {
       mounted.current = false;
+      initializeRequest.current += 1;
       refreshRequest.current += 1;
+      refreshInFlight.current = null;
+      previousSnapshot.current = null;
       processPathRequest.current += 1;
       busyActionRef.current = null;
+      preferenceSaveRequest.current += 1;
+      preferenceSaveInFlight.current = false;
+      snapshotHealthyRef.current = false;
     };
-  }, [refresh]);
+  }, [initialize, markSnapshotHealthy]);
+
+  useEffect(() => {
+    if (!preferencesReady || autoRefreshPaused) return;
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, preferences.refresh_interval_ms);
+    return () => window.clearInterval(timer);
+  }, [autoRefreshPaused, preferences.refresh_interval_ms, preferencesReady, refresh]);
 
   const visible = useMemo(() => {
     return ports.filter(
       (row) =>
         matches(row, query) &&
         (protoFilter === "all" || row.proto.toLowerCase().startsWith(protoFilter)) &&
-        matchesStateFilter(row, stateFilter),
+        matchesStateFilter(row, stateFilter) &&
+        (!preferences.pinned_only || isPinnedRow(row, preferences)),
     );
-  }, [ports, query, protoFilter, stateFilter]);
+  }, [ports, preferences, query, protoFilter, stateFilter]);
 
   const counts = useMemo(() => {
     const listening = ports.filter((p) => isListener(p)).length;
@@ -231,6 +470,10 @@ export default function App() {
 
   const onKill = async (row: PortRow) => {
     if (!mounted.current || busyActionRef.current !== null) return;
+    if (!snapshotHealthyRef.current) {
+      setError("The listener snapshot is unavailable. Refresh before trying again.");
+      return;
+    }
     const request = listenerKillRequest(row);
     if (!request || !isListener(row)) {
       setError("Identity unavailable. Refresh the list before trying again.");
@@ -255,7 +498,7 @@ export default function App() {
           "WSL Desktop에서 " + result.handoff.container_id + " 컨테이너를 중지하세요.",
         );
       } else {
-        await refresh();
+        await refreshAfterMutation();
       }
     } catch (caught) {
       if (mounted.current) setError(safeActionError(caught));
@@ -313,6 +556,8 @@ export default function App() {
     const request = listenerKillRequest(contextRow);
     const isContainer = contextRow.source === "container";
     const isBusy = busyRowKey === portRowKey(contextRow);
+    const portFavorite = isPortFavorite(contextRow, preferences.favorite_ports);
+    const processFavorite = isProcessFavorite(contextRow, preferences.favorite_processes);
     return [
       { type: "item", id: "copy-port", label: "Copy port", disabled: contextRow.port <= 0 },
       { type: "item", id: "copy-pid", label: "Copy PID", disabled: !hasPid },
@@ -336,6 +581,19 @@ export default function App() {
         label: "Show in Explorer",
         disabled: !hasPid || !contextPath || contextRow.source !== "windows",
       },
+      { type: "separator", id: "favorite-separator" },
+      {
+        type: "item",
+        id: "toggle-port-favorite",
+        label: portFavorite ? "Unfavorite port" : "Favorite port",
+        disabled: preferencesSaving || contextRow.port <= 0,
+      },
+      {
+        type: "item",
+        id: "toggle-process-favorite",
+        label: processFavorite ? "Unfavorite process" : "Favorite process",
+        disabled: !contextRow.identity || preferencesSaving,
+      },
       { type: "separator", id: "danger-separator" },
       {
         type: "item",
@@ -344,14 +602,22 @@ export default function App() {
           ? isBusy
             ? "Preparing handoff…"
             : "Stop in WSL Desktop"
-          : isBusy
+            : isBusy
             ? "Killing…"
             : "Kill listener",
-        disabled: !request || !isListener(contextRow) || isBusy,
+        disabled: !snapshotHealthy || !request || !isListener(contextRow) || isBusy,
         danger: true,
       },
     ];
-  }, [busyRowKey, contextPath, contextRow]);
+  }, [
+    busyRowKey,
+    contextPath,
+    contextRow,
+    preferences.favorite_ports,
+    preferences.favorite_processes,
+    preferencesSaving,
+    snapshotHealthy,
+  ]);
 
   const onContextMenuSelect = (id: string) => {
     const row = contextRow;
@@ -379,6 +645,12 @@ export default function App() {
           const pid = row.pid;
           void runAction(() => revealProcess(pid));
         }
+        break;
+      case "toggle-port-favorite":
+        togglePortFavorite(row);
+        break;
+      case "toggle-process-favorite":
+        toggleProcessFavorite(row);
         break;
       case "kill-listener":
       case "handoff-container-stop":
@@ -433,17 +705,74 @@ export default function App() {
               {filter.label}
             </button>
           ))}
+          <button
+            type="button"
+            className={"chip " + (preferences.pinned_only ? "active" : "")}
+            aria-pressed={preferences.pinned_only}
+            disabled={preferencesSaving}
+            onClick={() =>
+              void savePreferences({
+                ...preferencesRef.current,
+                pinned_only: !preferencesRef.current.pinned_only,
+              })
+            }
+          >
+            Pinned
+          </button>
         </div>
+        <label className="refresh-settings">
+          <span>Auto-refresh</span>
+          <select
+            aria-label="Auto-refresh interval"
+            value={preferences.refresh_interval_ms}
+            disabled={!preferencesReady || preferencesSaving}
+            onChange={(event) => {
+              const value = Number(event.currentTarget.value);
+              if (
+                Number.isInteger(value) &&
+                value >= MIN_REFRESH_INTERVAL_MS &&
+                value <= MAX_REFRESH_INTERVAL_MS
+              ) {
+                void savePreferences({ ...preferencesRef.current, refresh_interval_ms: value });
+              }
+            }}
+          >
+            {REFRESH_INTERVALS.map((interval) => (
+              <option key={interval} value={interval}>
+                {interval / 1_000}s
+              </option>
+            ))}
+            {!REFRESH_INTERVALS.includes(preferences.refresh_interval_ms) && (
+              <option value={preferences.refresh_interval_ms}>
+                {preferences.refresh_interval_ms / 1_000}s
+              </option>
+            )}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="btn pause"
+          aria-pressed={autoRefreshPaused}
+          disabled={!preferencesReady}
+          onClick={() => setAutoRefreshPaused((paused) => !paused)}
+        >
+          {autoRefreshPaused ? "Resume" : "Pause"}
+        </button>
         <button
           type="button"
           className="btn refresh"
           onClick={() => void refresh()}
-          disabled={loading}
+          disabled={loading || !preferencesReady}
         >
           {loading ? "Refreshing..." : "Refresh"}
         </button>
       </header>
 
+      {settingsWarning && (
+        <div className="warning" role="status" aria-live="polite">
+          {settingsWarning}
+        </div>
+      )}
       {error && (
         <div className="error" role="alert" aria-live="assertive">
           {error}
@@ -460,7 +789,34 @@ export default function App() {
           {visible.length} / {counts.total} rows
         </span>
         <span className="dot-green" /> {counts.listening} listeners
+        <span className={snapshotHealthy ? "snapshot-ok" : "snapshot-stale"}>
+          {snapshotHealthy ? "Snapshot stable" : "Snapshot unavailable · actions locked"}
+        </span>
+        <span>{autoRefreshPaused ? "Auto-refresh paused" : "Auto-refresh on"}</span>
       </div>
+
+      {hasComparedSnapshot && (
+        <section className="diff-panel" aria-label="Refresh changes">
+          <div className="diff-heading">
+            <strong>Refresh changes</strong>
+            <span>{diffs.length === 0 ? "No changes" : `${diffs.length} changes`}</span>
+          </div>
+          {diffs.length > 0 && (
+            <ul>
+              {diffs.map((change, index) => {
+                const row = change.after ?? change.before;
+                return (
+                  <li key={change.key + ":" + index}>
+                    <span className={"diff-kind diff-" + change.kind}>{change.kind}</span>
+                    <span className="mono">{row?.local_addr ?? "-"}</span>
+                    <span>{row?.process_name ?? "unknown process"}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      )}
 
       <div className="table-wrap">
         <table aria-label="Listener list">
@@ -487,13 +843,17 @@ export default function App() {
                   data-port-row-key={rowKey}
                   tabIndex={0}
                   aria-selected={selected}
-                  aria-label={sourceLabel(row) + " " + row.local_addr}
+                  aria-label={provenanceLabel(row) + " " + row.local_addr}
                   className={selected ? "selected" : undefined}
                   {...contextMenu.triggerProps}
                   onClick={() => setSelectedRowKey(rowKey)}
                   onKeyDown={(event) => {
                     contextMenu.triggerProps.onKeyDown?.(event);
                     if (event.defaultPrevented) return;
+                    // Action buttons inside the row own their keyboard
+                    // activation. Preventing their Enter/Space default here
+                    // would make favorite/kill/open inaccessible by keyboard.
+                    if (event.target !== event.currentTarget) return;
                     if (shouldIgnoreComposingShortcut(isComposing, event.key)) return;
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
@@ -501,7 +861,7 @@ export default function App() {
                     }
                   }}
                 >
-                  <td>{sourceLabel(row)}</td>
+                  <td>{provenanceLabel(row)}</td>
                   <td>{row.proto}</td>
                   <td className="mono">{row.port || "-"}</td>
                   <td className="mono dim">{row.local_addr}</td>
@@ -509,6 +869,36 @@ export default function App() {
                   <td className="mono">{row.pid ?? "-"}</td>
                   <td>{row.process_name ?? "-"}</td>
                   <td className="actions">
+                    <button
+                      type="button"
+                      className="btn favorite"
+                      aria-label={
+                        isPortFavorite(row, preferences.favorite_ports)
+                          ? "Unfavorite port"
+                          : "Favorite port"
+                      }
+                      aria-pressed={isPortFavorite(row, preferences.favorite_ports)}
+                      disabled={preferencesSaving || row.port <= 0}
+                      onClick={() => togglePortFavorite(row)}
+                    >
+                      {isPortFavorite(row, preferences.favorite_ports) ? "★" : "☆"}
+                    </button>
+                    {row.identity && (
+                      <button
+                        type="button"
+                        className="btn favorite"
+                        aria-label={
+                          isProcessFavorite(row, preferences.favorite_processes)
+                            ? "Unfavorite process"
+                            : "Favorite process"
+                        }
+                        aria-pressed={isProcessFavorite(row, preferences.favorite_processes)}
+                        disabled={preferencesSaving}
+                        onClick={() => toggleProcessFavorite(row)}
+                      >
+                        {isProcessFavorite(row, preferences.favorite_processes) ? "●" : "○"}
+                      </button>
+                    )}
                     {row.identity && isListener(row) && (
                       <button
                         type="button"
@@ -516,7 +906,7 @@ export default function App() {
                         aria-label={
                           row.source === "container" ? "Stop in WSL Desktop" : "Kill listener"
                         }
-                        disabled={busy}
+                        disabled={busy || !snapshotHealthy}
                         onClick={() => void onKill(row)}
                       >
                         {busy
@@ -552,9 +942,13 @@ export default function App() {
         <aside className="details" aria-label="Listener details">
           <div className="details-heading">
             <h2>Listener details</h2>
-            <span>{sourceLabel(selectedRow)}</span>
+            <span>{provenanceLabel(selectedRow)}</span>
           </div>
           <dl>
+            <div>
+              <dt>Provenance</dt>
+              <dd>{provenanceLabel(selectedRow)}</dd>
+            </div>
             <div>
               <dt>Endpoint</dt>
               <dd className="mono">
@@ -608,11 +1002,47 @@ export default function App() {
               </div>
             )}
           </dl>
+          <div className="details-actions">
+            <button
+              type="button"
+              className="btn favorite"
+              aria-label={
+                isPortFavorite(selectedRow, preferences.favorite_ports)
+                  ? "Unfavorite port"
+                  : "Favorite port"
+              }
+              aria-pressed={isPortFavorite(selectedRow, preferences.favorite_ports)}
+              disabled={preferencesSaving || selectedRow.port <= 0}
+              onClick={() => togglePortFavorite(selectedRow)}
+            >
+              {isPortFavorite(selectedRow, preferences.favorite_ports)
+                ? "Unfavorite port"
+                : "Favorite port"}
+            </button>
+            {selectedRow.identity && (
+              <button
+                type="button"
+                className="btn favorite"
+                aria-label={
+                  isProcessFavorite(selectedRow, preferences.favorite_processes)
+                    ? "Unfavorite process"
+                    : "Favorite process"
+                }
+                aria-pressed={isProcessFavorite(selectedRow, preferences.favorite_processes)}
+                disabled={preferencesSaving}
+                onClick={() => toggleProcessFavorite(selectedRow)}
+              >
+                {isProcessFavorite(selectedRow, preferences.favorite_processes)
+                  ? "Unfavorite process"
+                  : "Favorite process"}
+              </button>
+            )}
+          </div>
           {selectedRow.source === "container" && listenerKillRequest(selectedRow) && (
             <button
               type="button"
               className="btn danger"
-              disabled={busyRowKey === portRowKey(selectedRow)}
+              disabled={busyRowKey === portRowKey(selectedRow) || !snapshotHealthy}
               onClick={() => void onKill(selectedRow)}
             >
               Stop in WSL Desktop

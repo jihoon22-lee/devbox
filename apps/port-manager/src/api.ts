@@ -4,9 +4,11 @@ import type {
   ContainerStopHandoff,
   ListenerActionResult,
   ListenerKillRequest,
+  PortManagerPreferences,
   PortRow,
   ProcessInfo,
 } from "./types";
+import { DEFAULT_PREFERENCES } from "./refresh";
 
 /** Tauri 없이 브라우저에서 UI를 미리 볼 수 있게 하는 샘플 데이터 */
 const MOCK_PORTS: PortRow[] = [
@@ -82,11 +84,42 @@ const MOCK_PORTS: PortRow[] = [
   },
 ];
 
+let mockPreferences: PortManagerPreferences = {
+  ...DEFAULT_PREFERENCES,
+  favorite_ports: [],
+  favorite_processes: [],
+};
+
 export async function listPorts(): Promise<PortRow[]> {
   if (!isTauri()) {
     return MOCK_PORTS;
   }
   return invoke<PortRow[]>("list_ports");
+}
+
+export async function loadPortManagerPreferences(): Promise<PortManagerPreferences> {
+  if (!isTauri()) {
+    return {
+      ...mockPreferences,
+      favorite_ports: [...mockPreferences.favorite_ports],
+      favorite_processes: [...mockPreferences.favorite_processes],
+    };
+  }
+  return invoke<PortManagerPreferences>("load_port_manager_preferences");
+}
+
+export async function savePortManagerPreferences(
+  preferences: PortManagerPreferences,
+): Promise<void> {
+  if (!isTauri()) {
+    mockPreferences = {
+      ...preferences,
+      favorite_ports: [...preferences.favorite_ports],
+      favorite_processes: [...preferences.favorite_processes],
+    };
+    return;
+  }
+  await invoke("save_port_manager_preferences", { preferences });
 }
 
 export async function killListener(

@@ -40,6 +40,8 @@ pub fn run() {
             commands::ports::get_process_info,
             commands::ports::reveal_process,
             commands::ports::open_browser,
+            commands::preferences::load_port_manager_preferences,
+            commands::preferences::save_port_manager_preferences,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
