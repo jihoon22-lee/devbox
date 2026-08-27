@@ -191,11 +191,10 @@ pub fn start_global_listener(app: &AppHandle, config: &ShortcutConfig, runtime: 
     #[cfg(windows)]
     {
         use windows::Win32::UI::Input::KeyboardAndMouse::{
-            MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, VK_J, VK_L, VK_SPACE,
+            RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, VK_J, VK_L,
+            VK_SPACE,
         };
-        use windows::Win32::UI::WindowsAndMessaging::{
-            PeekMessageW, RegisterHotKey, UnregisterHotKey, MSG, PM_REMOVE, WM_HOTKEY,
-        };
+        use windows::Win32::UI::WindowsAndMessaging::{PeekMessageW, MSG, PM_REMOVE, WM_HOTKEY};
         let key = match config.accelerator.as_str() {
             "Ctrl+Alt+Space" => VK_SPACE.0 as u32,
             "Ctrl+Alt+L" => VK_L.0 as u32,
