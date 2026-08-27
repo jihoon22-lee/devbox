@@ -1,0 +1,15 @@
+[package]
+name = "window-state"
+version = "0.1.0"
+publish = false
+description = "Bounded, portable persistent window state and monitor-aware restore"
+authors = ["jihoon22.lee"]
+edition.workspace = true
+
+[lib]
+name = "window_state"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -40,6 +40,14 @@
 `docs/product-opportunities.md` §17(PR 1~39 + Stage 4/5)은 **전부 완료**됐다. 이후 작업은
 2026-08-22에 확정한 네이티브 우선 계획과 하위 설계 문서를 따른다.
 
+### v0.5.0 공용 window-state 선행 계약
+
+- [x] **`crates/window-state` (#322)** — 일반 persistent window의 bounds, maximized,
+  monitor identity, scale factor를 bounded/strict JSON으로 보존하고, monitor 제거·DPI·해상도
+  변화에서 안전한 restore geometry와 visible-titlebar clamp를 순수 로직으로 계산한다.
+- [ ] **앱별 window-state wiring (#323–#336)** — 위 계약을 소비하는 하나의 cross-app PR에서
+  각 persistent window에 적용한다. Launcher/dialog/splash 등 transient window는 제외한다.
+
 | 문서 | 범위 |
 |---|---|
 | [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3 전체 범위, 외부 도구 원칙, 신규 앱, PR·테스트·릴리스 gate의 단일 기준 |
@@ -319,8 +327,10 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 1. 신규 **Devbox Launcher 0.1.0** — devbox 앱·profile·repo·job·saved query 전용 launcher와
    current clipboard 일회성 routing.
 2. 신규 **Log Lens 0.1.0** — local/Run/WSL/container log tail·merge·filter·export.
-3. 전 앱 monitor/DPI-safe window state. #323–#336은 공용 crate와 같은 restore/clamp 회귀 행렬을
-   공유하므로 하나의 cross-app PR로 적용한다.
+3. 전 앱 monitor/DPI-safe window state. 공용 계약·순수 계산 기반인 #322는 선행 독립 PR로
+   확정하고, #323–#336은 그 crate를 소비하면서 같은 restore/clamp 회귀 행렬을 공유하므로
+   앱 경계와 무관하게 하나의 cross-app 적용 PR로 묶는다. 신규 Log Lens의 #336은 #321과
+   #322가 병합된 뒤 같은 적용 PR에 포함한다.
 4. Port auto-refresh/diff/favorite/source provenance, Toolbox detection/pipeline/recent/favorite,
    WSL resource/broadcast 안전, API collection import/export/history/binary, Everything filter/saved
    query, Knowledge template, Life Log source explanation/Knowledge draft 상태.

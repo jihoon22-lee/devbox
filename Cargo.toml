@@ -27,6 +27,7 @@ members = [
     "crates/git",
     "crates/applink",
     "crates/catalog",
+    "crates/window-state",
     # "crates/database",
 ]
 
