@@ -21,7 +21,7 @@ pub const MAX_QUIET_ZONE: u8 = 16;
 const MAX_VERSION: u8 = 40;
 const MAX_MODULE_SCALE: u32 = 64;
 const MAX_BINARY_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
-const MAX_BINARY_OUTPUT_BASE64_LENGTH: usize = MAX_BINARY_OUTPUT_BYTES.div_ceil(3) * 4;
+const MAX_BINARY_OUTPUT_BASE64_LENGTH: usize = MAX_BINARY_OUTPUT_BYTES;
 const MAX_SVG_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 
 const EMPTY_INPUT_ERROR: &str = "QR 입력은 비어 있을 수 없습니다.";
@@ -226,15 +226,17 @@ fn bounded_url(value: &str) -> Result<Vec<u8>, BuildError> {
     if value.len() > MAX_PAYLOAD_BYTES {
         return Err(BuildError::InputTooLong);
     }
-    if !(value.starts_with("https://") || value.starts_with("http://"))
-        || value.bytes().any(|byte| byte <= 0x20 || byte == 0x7f)
+    let Some((scheme, rest)) = value.split_once("://") else {
+        return Err(BuildError::InvalidInput);
+    };
+    if !(scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https"))
+        || value.chars().any(|character| {
+            character.is_whitespace() || character.is_control() || character == '\u{feff}'
+        })
     {
         return Err(BuildError::InvalidInput);
     }
-    let authority = value
-        .split_once("://")
-        .and_then(|(_, rest)| rest.split(['/', '?', '#']).next())
-        .unwrap_or_default();
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
     if authority.is_empty() {
         return Err(BuildError::InvalidInput);
     }
@@ -462,6 +464,19 @@ mod tests {
         valid.text = None;
         valid.url = Some("https://example.com/a%20b".to_string());
         assert!(generate(valid).is_ok());
+
+        let mut uppercase = request("url");
+        uppercase.text = None;
+        uppercase.url = Some("HTTPS://example.com/path".to_string());
+        assert!(generate(uppercase).is_ok());
+
+        let mut unicode_whitespace = request("url");
+        unicode_whitespace.text = None;
+        unicode_whitespace.url = Some("https://example.com/\u{00a0}path".to_string());
+        assert_eq!(
+            generate(unicode_whitespace),
+            Err(INVALID_INPUT_ERROR.to_string())
+        );
     }
 
     #[test]

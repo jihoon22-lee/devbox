@@ -69,6 +69,16 @@ describe("generateQr", () => {
       code: "invalidInput",
       message: QR_ERROR_MESSAGES.invalidInput,
     });
+    await expect(generateQr(request({
+      preset: "url",
+      text: undefined,
+      url: "HTTPS://example.com/path",
+    }))).resolves.toBeTruthy();
+    await expect(generateQr(request({
+      preset: "url",
+      text: undefined,
+      url: "https://example.com/\u00a0path",
+    }))).rejects.toThrow(QR_ERROR_MESSAGES.invalidInput);
 
     await expect(generateQr(request({ version: 41 as never }))).rejects.toThrow(
       QR_ERROR_MESSAGES.invalidVersion,
@@ -98,7 +108,7 @@ describe("generateQr", () => {
     expect(result.width).toBeLessThanOrEqual(MAX_OUTPUT_SIZE);
 
     vi.spyOn(HTMLCanvasElement.prototype, "toDataURL")
-      .mockReturnValue(`data:image/png;base64,${"A".repeat(5_592_409)}`);
+      .mockReturnValue(`data:image/png;base64,${"A".repeat(4 * 1024 * 1024 + 1)}`);
     await expect(generateQr(request())).rejects.toMatchObject({
       code: "render",
       message: QR_ERROR_MESSAGES.render,

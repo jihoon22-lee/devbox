@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QrTool } from "./QrTool";
-import type { QrResult } from "./qr";
+import { MAX_PAYLOAD_BYTES, type QrResult } from "./qr";
 
 const { generateQrMock } = vi.hoisted(() => ({
   generateQrMock: vi.fn(),
@@ -43,6 +43,8 @@ describe("QrTool", () => {
     render(<QrTool />);
     const input = screen.getByRole("textbox", { name: "텍스트 payload" });
     expect(generateQrMock).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "가".repeat(Math.floor(MAX_PAYLOAD_BYTES / 3) + 1) } });
+    expect((input as HTMLTextAreaElement).value).toBe("");
     fireEvent.change(input, { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "QR 생성" }));
 
@@ -74,6 +76,9 @@ describe("QrTool", () => {
     const button = screen.getByRole("button", { name: "QR 생성" });
     fireEvent.click(button);
     fireEvent.click(button);
+    expect(generateQrMock).toHaveBeenCalledTimes(1);
+    expect((screen.getByRole("textbox", { name: "텍스트 payload" }) as HTMLTextAreaElement).disabled).toBe(true);
+    fireEvent.change(screen.getByRole("textbox", { name: "텍스트 payload" }), { target: { value: "late edit" } });
     expect(generateQrMock).toHaveBeenCalledTimes(1);
     rendered.unmount();
     resolve(RESULT);

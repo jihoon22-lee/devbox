@@ -65,13 +65,22 @@ export function QrTool() {
   const requestId = useRef(0);
   const runningRef = useRef(false);
   const composing = useRef(false);
+  const actionId = useRef(0);
+  const mounted = useRef(true);
 
-  useEffect(() => () => {
-    requestId.current += 1;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      requestId.current += 1;
+      actionId.current += 1;
+      mounted.current = false;
+    };
   }, []);
 
   const invalidate = (change: () => void) => {
+    if (runningRef.current) return;
     requestId.current += 1;
+    actionId.current += 1;
     runningRef.current = false;
     setRunning(false);
     setResult(null);
@@ -102,6 +111,7 @@ export function QrTool() {
       quietZone,
     };
     const currentRequest = ++requestId.current;
+    actionId.current += 1;
     runningRef.current = true;
     setRunning(true);
     setError(null);
@@ -127,20 +137,26 @@ export function QrTool() {
   };
 
   const copySvg = () => {
+    const currentAction = ++actionId.current;
     if (!result || !navigator.clipboard?.writeText) {
       setActionError(FIXED_ACTION_ERROR);
       return;
     }
     try {
       void navigator.clipboard.writeText(result.svg)
-        .then(() => setActionError(null))
-        .catch(() => setActionError(FIXED_ACTION_ERROR));
+        .then(() => {
+          if (mounted.current && actionId.current === currentAction) setActionError(null);
+        })
+        .catch(() => {
+          if (mounted.current && actionId.current === currentAction) setActionError(FIXED_ACTION_ERROR);
+        });
     } catch {
       setActionError(FIXED_ACTION_ERROR);
     }
   };
 
   const copyPng = () => {
+    const currentAction = ++actionId.current;
     if (!result || typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
       setActionError("이 환경에서는 PNG clipboard를 사용할 수 없습니다. PNG 저장을 사용하세요.");
       return;
@@ -149,14 +165,21 @@ export function QrTool() {
       const bytes = decodeBase64(result.pngBase64);
       const item = new ClipboardItem({ "image/png": new Blob([bytes], { type: "image/png" }) });
       void navigator.clipboard.write([item])
-        .then(() => setActionError(null))
-        .catch(() => setActionError("PNG clipboard를 사용할 수 없습니다. PNG 저장을 사용하세요."));
+        .then(() => {
+          if (mounted.current && actionId.current === currentAction) setActionError(null);
+        })
+        .catch(() => {
+          if (mounted.current && actionId.current === currentAction) {
+            setActionError("PNG clipboard를 사용할 수 없습니다. PNG 저장을 사용하세요.");
+          }
+        });
     } catch {
       setActionError(FIXED_ACTION_ERROR);
     }
   };
 
   const saveSvg = () => {
+    actionId.current += 1;
     if (!result) return;
     try {
       downloadTextResult(result.svg, "devbox-qr.svg");
@@ -167,6 +190,7 @@ export function QrTool() {
   };
 
   const savePng = () => {
+    actionId.current += 1;
     if (!result) return;
     try {
       downloadBinaryResult(result.pngBase64, "devbox-qr.png", "image/png");
@@ -178,7 +202,7 @@ export function QrTool() {
 
   return (
     <div className="tool qr-tool" aria-busy={running}>
-      <div className="qr-preset-toolbar" aria-label="QR 입력 유형">
+      <div className="qr-preset-toolbar" role="group" aria-label="QR 입력 유형">
         {PRESETS.map((option) => (
           <button
             key={option.value}
@@ -193,7 +217,7 @@ export function QrTool() {
         ))}
       </div>
 
-      <div className="qr-options" aria-label="QR 출력 옵션">
+      <div className="qr-options" role="group" aria-label="QR 출력 옵션">
         <label>
           버전
           <select
@@ -269,8 +293,11 @@ export function QrTool() {
             placeholder="QR로 만들 텍스트를 입력하세요..."
             rows={8}
             value={text}
-            onValueChange={(value) => invalidate(() => setText(value))}
+            onValueChange={(value) => {
+              if (withinUtf8Limit(value, MAX_PAYLOAD_BYTES)) invalidate(() => setText(value));
+            }}
             fixedActionError={FIXED_ACTION_ERROR}
+            disabled={running}
             maxLength={MAX_PAYLOAD_BYTES}
             spellCheck={false}
             onCompositionStart={() => { composing.current = true; }}
@@ -288,8 +315,11 @@ export function QrTool() {
             className="qr-single-input"
             placeholder="https://example.com/..."
             value={url}
-            onValueChange={(value) => invalidate(() => setUrl(value))}
+            onValueChange={(value) => {
+              if (withinUtf8Limit(value, MAX_PAYLOAD_BYTES)) invalidate(() => setUrl(value));
+            }}
             fixedActionError={FIXED_ACTION_ERROR}
+            disabled={running}
             maxLength={MAX_PAYLOAD_BYTES}
             onCompositionStart={() => { composing.current = true; }}
             onCompositionEnd={() => { composing.current = false; }}
@@ -305,8 +335,11 @@ export function QrTool() {
             <ToolTextField
               aria-label="Wi-Fi SSID"
               value={wifi.ssid}
-              onValueChange={(value) => setWifiField("ssid", value)}
+              onValueChange={(value) => {
+                if (withinUtf8Limit(value, MAX_WIFI_SSID_BYTES)) setWifiField("ssid", value);
+              }}
               fixedActionError={FIXED_ACTION_ERROR}
+              disabled={running}
               maxLength={MAX_WIFI_SSID_BYTES}
               onCompositionStart={() => { composing.current = true; }}
               onCompositionEnd={() => { composing.current = false; }}
@@ -326,8 +359,11 @@ export function QrTool() {
               aria-label="Wi-Fi 비밀번호"
               type="password"
               value={wifi.password}
-              onValueChange={(value) => setWifiField("password", value)}
+              onValueChange={(value) => {
+                if (withinUtf8Limit(value, MAX_WIFI_PASSWORD_BYTES)) setWifiField("password", value);
+              }}
               fixedActionError={FIXED_ACTION_ERROR}
+              disabled={running}
               maxLength={MAX_WIFI_PASSWORD_BYTES}
               onCompositionStart={() => { composing.current = true; }}
               onCompositionEnd={() => { composing.current = false; }}
@@ -370,8 +406,8 @@ export function QrTool() {
           <div className="io-label">
             SVG 결과
             <span className="conversion-actions">
-              <button type="button" className="copy-btn" disabled={!result} onClick={copySvg}>복사</button>
-              <button type="button" className="copy-btn" disabled={!result} onClick={saveSvg}>저장</button>
+              <button type="button" className="copy-btn" aria-label="SVG 복사" disabled={!result} onClick={copySvg}>복사</button>
+              <button type="button" className="copy-btn" aria-label="SVG 저장" disabled={!result} onClick={saveSvg}>저장</button>
             </span>
           </div>
           <ToolOutput
@@ -393,4 +429,8 @@ function decodeBase64(value: string): Uint8Array {
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return bytes;
+}
+
+function withinUtf8Limit(value: string, maximumBytes: number): boolean {
+  return new TextEncoder().encode(value).byteLength <= maximumBytes;
 }

@@ -200,6 +200,18 @@ passed
 
 ## Next Steps and Known Limitations
 
+### Review follow-up (2026-08-27)
+
+- 생성 중 payload field까지 disable하고 변경 callback도 running 상태에서 무시해 실제
+  single-flight 경계를 보강했다. 입력 후보는 한 번의 UTF-8 byte 계산으로 text/URL/Wi-Fi
+  상한을 먼저 적용한다.
+- SVG/PNG copy와 공용 input/output context-menu의 늦은 clipboard 결과가 unmount 또는
+  새 action 뒤에 state를 갱신하지 않도록 mounted/action sequence guard를 추가했다.
+- PNG raw와 base64 각각의 4 MiB 계약을 일치시키고, URL scheme 대소문자·Unicode
+  whitespace 검사를 browser/native에 맞췄다. SVG action label도 구체화했다.
+- Review follow-up 뒤 QR focused frontend fixture는 다시 실행해 2 files/8 tests가 통과했다.
+  Cargo/build와 Windows W2는 이 review 범위에서 실행하지 않았고 release gate에 남아 있다.
+
 - Windows W2 packaged build/smoke, packaged image clipboard behavior, actual WebView canvas
   output, installer size and release evidence remain root/CI release-gate work.
 - Native qrcode-rust and browser qrcode-generator can choose different valid matrices because

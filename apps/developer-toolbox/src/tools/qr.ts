@@ -10,7 +10,7 @@ export const MAX_QUIET_ZONE = 16;
 const MAX_VERSION = 40;
 const MAX_MODULE_SCALE = 64;
 const MAX_BINARY_OUTPUT_BYTES = 4 * 1024 * 1024;
-const MAX_BINARY_OUTPUT_BASE64_LENGTH = Math.ceil(MAX_BINARY_OUTPUT_BYTES / 3) * 4;
+const MAX_BINARY_OUTPUT_BASE64_LENGTH = MAX_BINARY_OUTPUT_BYTES;
 const MAX_SVG_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 export const QR_ERROR_MESSAGES = {
@@ -136,7 +136,6 @@ function preparePayload(request: GenerateQrRequest): PreparedPayload | QrGenerat
       }
       if (typeof request.url !== "string") return new QrGenerationError("invalidInput");
       text = request.url;
-      if (!isSafeHttpUrl(text)) return new QrGenerationError("invalidInput");
       break;
     case "wifi":
       if (!request.wifi) return new QrGenerationError("invalidWifi");
@@ -153,6 +152,7 @@ function preparePayload(request: GenerateQrRequest): PreparedPayload | QrGenerat
   const bytes = encodeUtf8(text);
   if (bytes === null) return new QrGenerationError("invalidInput");
   if (bytes.length > MAX_PAYLOAD_BYTES) return new QrGenerationError("inputTooLong");
+  if (request.preset === "url" && !isSafeHttpUrl(text)) return new QrGenerationError("invalidInput");
   return { text, bytes };
 }
 
@@ -175,9 +175,10 @@ function validateErrorCorrection(value: string): QrErrorCorrection | QrGeneratio
 }
 
 function isSafeHttpUrl(value: string): boolean {
-  if (value.length === 0 || !(value.startsWith("https://") || value.startsWith("http://"))) return false;
-  if ([...value].some((character) => character <= " " || character === "\u007f")) return false;
-  const authority = value.split("://", 2)[1]?.split(/[/?#]/, 1)[0] ?? "";
+  const scheme = /^https?:\/\//iu.exec(value);
+  if (!scheme) return false;
+  if ([...value].some((character) => /[\p{White_Space}\p{Cc}]/u.test(character) || character === "\ufeff")) return false;
+  const authority = value.slice(scheme[0].length).split(/[/?#]/u, 1)[0] ?? "";
   return authority.length > 0;
 }
 
