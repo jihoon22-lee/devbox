@@ -230,6 +230,16 @@ pending --atomic claim(consumer+lease)--> claimed --ack--> consumed/deleted
 `toolbox-text/v1`이다. 새 kind는 source/target/payload schema와 redaction 규칙을 설계 문서에
 먼저 추가한다.
 
+`knowledge-draft/v1`의 Life Log→Knowledge 구현은 이 generic lifecycle 위에 aggregate-only
+앱 계약을 둔다. Life Log는 검증된 native digest에서 period/range/timezone, bounded summary,
+결정론적 Markdown body, 고정 tags와 네 source provenance만 publish하고, session/window title/
+Git project path/note path/credential은 payload와 argv에서 제외한다. Knowledge는 source·target·
+kind·schema와 body 재현성/size/privacy bounds를 다시 검증해 process-local claim slot에서
+preview를 제공한다. `Save draft` 확정 뒤에만 exclusive Journal note create→SQLite index→ack/
+delete 순서를 따르며, cancel·pre-commit 실패는 restore한다. envelope TTL은 10분, preview lease는
+최대 60초(30초 cadence)이고 만료·손상·launch race는 고정 오류와 새 digest 재생성으로 격리한다.
+이 구현은 persistent pending/sent/consumed/expired 상태 저장이 아니라 P3 상태 보강의 기반이다.
+
 Run Manager의 #311 local validation은 `log-source/v1` reference를
 `{ kind, sourceId, runId, stream }`으로 한정한다. `sourceId`는
 `run-manager:<opaque-run-id>:<stdout|stderr>`와 exact 일치해야 하며 absolute path,
@@ -403,6 +413,12 @@ parser를 섞지 않는다. 기존 `ContainerInfo.ports`는 #276 detail UI가 �
 `core::runtime_snapshot` parser로 validated `portMappings`만 발행한다. 이 분리는 원문 detail을
 runtime snapshot에 실수로 저장하지 않게 하며, Workbench consumer가 주소가 다른 IPv4/IPv6
 binding을 deterministic tuple로 dedupe할 수 있게 한다.
+
+일회성 `knowledge-draft/v1` 전달은 snapshot bus와 별개로 공용 handoff store를 사용한다.
+producer가 공용 root의 pending envelope를 atomic publish하고 `launch_open`에는 `Handoff`의
+kind/id만 넘긴다. Knowledge가 claim한 payload를 preview한 뒤 사용자가 저장할 때만 파일과
+index를 변경하고 ack하며, validation/file/index 오류는 restore해 다른 producer와 저장소의
+원문 경계를 침범하지 않는다.
 
 **2026-08-26 #410 구현 상태.** WSL Desktop은 `wsl.exe --list --running --quiet`로 이미
 실행 중인 distro만 순차 열거하고, 각 distro에서 `wsl.exe -d <validated-distro> -- docker ps

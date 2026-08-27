@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getDigest: vi.fn(),
   getDay: vi.fn(),
   saveLifeLog: vi.fn(),
+  sendDigestToKnowledge: vi.fn(),
 }));
 
 vi.mock("./api", () => ({
@@ -56,6 +57,7 @@ vi.mock("./api", () => ({
   setPrivacyRules: vi.fn(),
   setProjects: vi.fn(),
   saveLifeLog: mocks.saveLifeLog,
+  sendDigestToKnowledge: mocks.sendDigestToKnowledge,
   startTracking: vi.fn().mockResolvedValue(true),
   stopTracking: vi.fn().mockResolvedValue(undefined),
 }));
@@ -136,6 +138,11 @@ beforeEach(() => {
     content: "# fixture\n",
   });
   mocks.getDigest.mockReset().mockImplementation((input: DigestInput) => Promise.resolve(digestFixture(input)));
+  mocks.sendDigestToKnowledge.mockReset().mockResolvedValue({
+    id: "0123456789abcdef0123456789abcdef",
+    kind: "knowledge-draft/v1",
+    expiresAtMs: Date.now() + 600_000,
+  });
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: { writeText: mocks.writeText },
@@ -209,6 +216,15 @@ describe("Life Log daily digest", () => {
     resolveSecond();
     await screen.findByRole("heading", { name: "Daily local digest" });
     expect(dateInput.value).not.toBe(initialDate);
+  });
+
+  it("keeps Knowledge handoff disabled in browser preview without creating an IPC side effect", async () => {
+    await renderLoadedApp();
+
+    const handoff = screen.getByRole("button", { name: "Send to Knowledge" });
+    expect((handoff as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(handoff);
+    expect(mocks.sendDigestToKnowledge).not.toHaveBeenCalled();
   });
 });
 

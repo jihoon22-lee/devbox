@@ -38,7 +38,8 @@ export type OpenTarget =
   | { kind: "path"; path: string; line: number | null; column: number | null }
   | { kind: "profile"; id: string }
   | { kind: "workspace"; path: string }
-  | { kind: "query"; text: string };
+  | { kind: "query"; text: string }
+  | { kind: "handoff"; handoffKind: string; id: string };
 
 export interface OpenRequest {
   target: OpenTarget;
@@ -73,6 +74,56 @@ export interface RenamePreview {
 export interface RenameApplied {
   from: string;
   to: string;
+}
+
+export interface KnowledgeDraftSummary {
+  period: "day" | "week" | "month";
+  startDate: string;
+  endDate: string;
+  timezone: string;
+  filter: string | null;
+  pcUsageMs: number;
+  sessionCount: number;
+  activeDays: number;
+  totalDays: number;
+  averageDailyUsageMs: number;
+  gitCommits: number;
+  topApp: string | null;
+}
+
+export interface KnowledgeDraftSource {
+  id: string;
+  available: boolean;
+  schemaVersion: number | null;
+  snapshotVersion: number | null;
+  producerVersion: string | null;
+  generatedAt: string | null;
+  freshnessMs: number | null;
+  view: string | null;
+  scope: string;
+  errorCode: string | null;
+}
+
+export interface KnowledgeDraftPreview {
+  id: string;
+  kind: "knowledge-draft/v1";
+  expiresAtMs: number;
+  leaseUntilMs: number;
+  title: string;
+  body: string;
+  tags: string[];
+  summary: KnowledgeDraftSummary;
+  sources: KnowledgeDraftSource[];
+}
+
+export interface SaveKnowledgeDraftResult {
+  saved: boolean;
+  path: string;
+  handoffDeleted: boolean;
+}
+
+export interface RenewKnowledgeDraftResult {
+  leaseUntilMs: number;
 }
 
 const MOCK_OPEN_TARGETS: KnowledgeOpenTarget[] = [
@@ -176,6 +227,30 @@ export async function applyRename(planId: string): Promise<RenameApplied> {
 export async function discardRenamePreview(planId: string): Promise<void> {
   if (!isTauri()) return;
   await invoke("discard_rename_preview", { planId });
+}
+
+/** Claim a native handoff for preview; no file is written at this stage. */
+export async function previewKnowledgeDraft(id: string): Promise<KnowledgeDraftPreview> {
+  if (!isTauri()) throw new Error("Knowledge draft preview는 데스크톱 앱에서 사용할 수 없습니다");
+  return invoke<KnowledgeDraftPreview>("preview_knowledge_draft", { id });
+}
+
+/** Save a confirmed preview and acknowledge/delete the one-time handoff. */
+export async function saveKnowledgeDraft(id: string): Promise<SaveKnowledgeDraftResult> {
+  if (!isTauri()) throw new Error("Knowledge draft 저장은 데스크톱 앱에서 사용할 수 없습니다");
+  return invoke<SaveKnowledgeDraftResult>("save_knowledge_draft", { id });
+}
+
+/** Restore a claimed draft without creating a note. */
+export async function discardKnowledgeDraft(id: string): Promise<void> {
+  if (!isTauri()) throw new Error("Knowledge draft 취소는 데스크톱 앱에서 사용할 수 없습니다");
+  await invoke("discard_knowledge_draft", { id });
+}
+
+/** Keep a long-running preview within the bounded claim lease. */
+export async function renewKnowledgeDraft(id: string): Promise<RenewKnowledgeDraftResult> {
+  if (!isTauri()) throw new Error("Knowledge draft 갱신은 데스크톱 앱에서 사용할 수 없습니다");
+  return invoke<RenewKnowledgeDraftResult>("renew_knowledge_draft", { id });
 }
 
 export async function deleteFile(rel: string): Promise<void> {

@@ -28,7 +28,10 @@ mod tests {
             .iter()
             .find(|app| app.id == "knowledge-base")
             .expect("Knowledge must remain in the repository catalog");
-        assert_eq!(knowledge.accepts, vec!["path", "query"]);
+        assert_eq!(
+            knowledge.accepts,
+            vec!["path", "query", "handoff:knowledge-draft/v1"]
+        );
         let everything = catalog
             .apps
             .iter()
@@ -46,7 +49,15 @@ mod tests {
             .iter()
             .find(|app| app.id == "life-log")
             .expect("Life Log must remain in the repository catalog");
-        assert_eq!(life_log.produces, vec!["snapshot:life-log/projects/v1"]);
+        assert_eq!(
+            life_log.produces,
+            vec![
+                "snapshot:life-log/projects/v1",
+                "handoff:knowledge-draft/v1"
+            ]
+        );
+        assert_eq!(life_log.actions.len(), 1);
+        assert_eq!(life_log.actions[0].target, "knowledge-base");
     }
 
     #[test]

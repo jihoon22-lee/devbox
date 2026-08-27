@@ -13,6 +13,7 @@ import {
   createDirectory,
   dailyNote,
   deleteFile,
+  discardKnowledgeDraft,
   discardRenamePreview,
   entryPath,
   listTags,
@@ -24,18 +25,22 @@ import {
   openInboundNote,
   openIn,
   openTargets,
+  previewKnowledgeDraft,
   readFile,
+  renewKnowledgeDraft,
   revealEntry,
   previewRename,
   quickCaptureShortcutStatus,
   renderMarkdown,
   saveImageAsset,
   searchDocs,
+  saveKnowledgeDraft,
   takePendingOpen,
   writeFile,
   wikilinkCandidates,
   type OpenRequest,
   type KnowledgeOpenTarget,
+  type KnowledgeDraftPreview,
   type RenamePreview,
 } from "./api";
 import MarkdownEditor from "./components/MarkdownEditor";
@@ -101,6 +106,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [mode, setMode] = useState<ViewMode>("edit");
   const [rendered, setRendered] = useState<RenderedDoc | null>(null);
   const [contextTarget, setContextTarget] = useState<TreeContextTarget | null>(null);
@@ -115,9 +121,17 @@ export default function App() {
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
   const [quickCaptureNotice, setQuickCaptureNotice] = useState<string | null>(null);
   const [quickCaptureShortcut, setQuickCaptureShortcut] = useState<QuickCaptureShortcutStatus | null>(null);
+  const [draftPreview, setDraftPreview] = useState<KnowledgeDraftPreview | null>(null);
+  const [draftBusy, setDraftBusy] = useState(false);
   const renameBusyRef = useRef(false);
+  const draftBusyRef = useRef(false);
+  const draftPreviewRef = useRef<KnowledgeDraftPreview | null>(null);
   const cursorTokenRef = useRef(0);
   const quickCaptureButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    draftPreviewRef.current = draftPreview;
+  }, [draftPreview]);
 
   // 인플라이트 렌더 응답이 도착했을 때 "그사이 다른 문서로 전환했는지"를 판단하기 위해
   // 최신 선택값을 ref로도 들고 있는다(설계 결정 3 — 응답 시점에 최신값과 비교).
@@ -348,6 +362,99 @@ export default function App() {
     return saveImageAsset(note, bytes);
   }, []);
 
+  const cancelDraftPreview = async () => {
+    const preview = draftPreview;
+    if (!preview || draftBusyRef.current) return;
+    draftBusyRef.current = true;
+    setDraftBusy(true);
+    setError(null);
+    try {
+      await discardKnowledgeDraft(preview.id);
+      setDraftPreview(null);
+      setNotice("Knowledge draft 미리보기를 취소했습니다. 다시 열 수 있습니다.");
+    } catch {
+      setError("Knowledge draft를 취소하지 못했습니다. 잠시 후 다시 시도하세요.");
+    } finally {
+      draftBusyRef.current = false;
+      setDraftBusy(false);
+    }
+  };
+
+  const commitDraftPreview = async () => {
+    const preview = draftPreview;
+    if (!preview || draftBusyRef.current) return;
+    draftBusyRef.current = true;
+    setDraftBusy(true);
+    setError(null);
+    try {
+      const result = await saveKnowledgeDraft(preview.id);
+      setDraftPreview(null);
+      try {
+        const saved = await readFile(result.path);
+        setSelected(result.path);
+        setSelectedTreePath(result.path);
+        setContent(saved);
+      } catch {
+        // The native save/index transaction succeeded. Keep the selected path
+        // visible without fabricating stale editor content if a reread fails.
+        setSelected(result.path);
+        setSelectedTreePath(result.path);
+        setContent("");
+      }
+      setDirty(false);
+      setCursorRequest(null);
+      await loadMeta();
+      setNotice(result.handoffDeleted
+        ? "Knowledge draft를 저장했습니다. handoff는 소비되어 삭제되었습니다."
+        : "Knowledge draft를 저장했습니다. handoff 정리는 만료 시 완료됩니다.");
+    } catch {
+      setError("Knowledge draft를 저장하지 못했습니다. 미리보기는 유지됩니다.");
+    } finally {
+      draftBusyRef.current = false;
+      setDraftBusy(false);
+    }
+  };
+
+  const openDraftPreview = async (id: string) => {
+    if (dirty && !confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?")) return;
+    if (draftBusyRef.current) return;
+    draftBusyRef.current = true;
+    setDraftBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      setDraftPreview(await previewKnowledgeDraft(id));
+    } catch {
+      setError("Knowledge draft를 미리볼 수 없습니다. Life Log에서 새로 생성하세요.");
+    } finally {
+      draftBusyRef.current = false;
+      setDraftBusy(false);
+    }
+  };
+
+  // A preview may outlive the generic 60-second claim lease. Renewal never
+  // extends the envelope TTL, and a failure leaves the preview visible so the
+  // user receives a fixed message instead of a raw storage error.
+  useEffect(() => {
+    if (!draftPreview) return;
+    const id = draftPreview.id;
+    const renew = () => {
+      void renewKnowledgeDraft(id)
+        .then((result) => {
+          setDraftPreview((current) => current?.id === id
+            ? { ...current, leaseUntilMs: result.leaseUntilMs }
+            : current);
+        })
+        .catch(() => {
+          if (draftPreviewRef.current?.id === id) {
+            setError("Knowledge draft 미리보기 시간이 만료될 수 있습니다. 저장하거나 취소하세요.");
+          }
+        });
+    };
+    const timer = window.setInterval(renew, 30_000);
+    return () => window.clearInterval(timer);
+  }, [draftPreview]);
+
   const runSearch = async (requestedQuery = query) => {
     const normalized = requestedQuery.trim();
     if (!normalized) {
@@ -382,6 +489,9 @@ export default function App() {
       case "search":
         setQuery(action.query);
         await runSearch(action.query);
+        break;
+      case "draft":
+        await openDraftPreview(action.id);
         break;
       case "error":
         setError(action.message);
@@ -655,6 +765,37 @@ export default function App() {
           restoreFocusRef={quickCaptureButtonRef}
         />
       )}
+      {draftPreview && (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="rename-dialog handoff-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-busy={draftBusy}
+            aria-labelledby="knowledge-draft-title"
+          >
+            <h2 id="knowledge-draft-title">Life Log draft 미리보기</h2>
+            <p className="rename-note">
+              저장하기 전 요약·출처·태그를 확인하세요. 취소하면 파일을 만들지 않고
+              handoff를 다시 대기 상태로 돌립니다.
+            </p>
+            <div className="handoff-meta">
+              <div><span className="dim">Title</span><strong>{draftPreview.title}</strong></div>
+              <div><span className="dim">Tags</span><span>{draftPreview.tags.join(", ")}</span></div>
+              <div><span className="dim">Range</span><span>{draftPreview.summary.startDate} ~ {draftPreview.summary.endDate} · {draftPreview.summary.timezone}</span></div>
+            </div>
+            <pre className="handoff-body" aria-label="Knowledge draft body">{draftPreview.body}</pre>
+            <div className="handoff-actions">
+              <button type="button" className="btn" onClick={() => void cancelDraftPreview()} disabled={draftBusy}>
+                취소
+              </button>
+              <button type="button" className="btn active" onClick={() => void commitDraftPreview()} disabled={draftBusy}>
+                {draftBusy ? "처리 중…" : "Save draft"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {renamePreview && (
         <div className="modal-backdrop" role="presentation">
           <section
@@ -689,6 +830,7 @@ export default function App() {
           해당 앱의 단축키 설정을 변경한 뒤 Knowledge를 다시 시작하거나, 아래 버튼으로 계속 빠르게 기록할 수 있습니다.
         </div>
       )}
+      {notice && <div className="notice" role="status">{notice}</div>}
       <aside className="sidebar">
         <h1 className="app-title">Knowledge</h1>
         <div className="sidebar-row">

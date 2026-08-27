@@ -6,6 +6,7 @@ const MAX_PATH_CHARS = 32_768;
 export type KnowledgeOpenAction =
   | { kind: "openNote"; path: string }
   | { kind: "search"; query: string }
+  | { kind: "draft"; id: string }
   | { kind: "error"; message: string };
 
 /**
@@ -29,5 +30,10 @@ export function routeOpenRequest(request: OpenRequest): KnowledgeOpenAction {
     case "profile":
     case "workspace":
       return { kind: "error", message: "지원하지 않는 열기 요청입니다" };
+    case "handoff":
+      return target.handoffKind === "knowledge-draft/v1"
+          && /^[0-9a-f]{32}$/u.test(target.id)
+        ? { kind: "draft", id: target.id }
+        : { kind: "error", message: "지원하지 않는 handoff 요청입니다" };
   }
 }

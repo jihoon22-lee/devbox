@@ -82,7 +82,7 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["path", "query"],
+      "accepts": ["path", "query", "handoff:knowledge-draft/v1"],
       "produces": ["snapshot:knowledge-base/activity/v1"],
       "actions": []
     },
@@ -97,8 +97,16 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": [],
-      "produces": ["snapshot:life-log/projects/v1"],
-      "actions": []
+      "produces": ["snapshot:life-log/projects/v1", "handoff:knowledge-draft/v1"],
+      "actions": [
+        {
+          "actionId": "capture-knowledge-draft",
+          "actionVersion": 1,
+          "label": "Capture Knowledge draft",
+          "target": "knowledge-base",
+          "payloadKind": "handoff:knowledge-draft/v1"
+        }
+      ]
     },
     {
       "id": "devbox-manager",

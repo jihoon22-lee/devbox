@@ -3005,10 +3005,12 @@ dependencies = [
 name = "life-log"
 version = "0.3.1"
 dependencies = [
+ "applink",
  "dirs",
  "filesystem",
  "git",
  "integration",
+ "launch",
  "regex",
  "rusqlite",
  "serde",

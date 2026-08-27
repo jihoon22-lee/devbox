@@ -592,6 +592,19 @@ empty result, Markdown escaping, source/freshness ordering, fixed errors와 immu
 clipboard failure와 empty state를 검증한다. #306은 #307 handoff/Knowledge 저장, 자동 AI 요약,
 cloud export를 구현하지 않는다.
 
+**2026-08-27 #307 구현 상태.** Life Log native digest의 명시적 `Send to Knowledge`가
+`knowledge-draft/v1` aggregate-only payload를 공용 applink handoff store에 10분 TTL로
+발행하고, `launch_open`에는 kind와 128-bit opaque id만 전달한다. producer/consumer가
+title/body/tags/schema·source provenance와 512KiB body/768KiB payload bounds를 각각
+검증하며 session·window title·Git project path·note path·credential은 경계를 넘지 않는다.
+Knowledge cold/hot receiver는 claim token을 process-local preview slot에만 보관하고,
+사용자가 `Save draft`를 확정할 때만 bounded `Journal/YYYY-MM-DD-life-log-<period>[-n].md`
+를 exclusive create한 뒤 SQLite index와 applink ack/delete를 수행한다. cancel·검증·파일·index
+실패는 restore하고, 만료/lease expiry는 원 envelope TTL 안에서만 재시도하며 새 digest로
+재생성한다. 고정 오류·fixture lifecycle, frontend preview/save/cancel, catalog capability와
+README/architecture/spec/workthrough를 함께 갱신했다. persistent pending/sent/consumed/
+expired 상태 UI는 P3-10(#353) 후속으로 남긴다.
+
 **2026-08-26 #410 구현 상태.** WSL Desktop이 Workbench #281과 Life Log가 읽을 수 있는
 `wsl-desktop/runtime/v1` snapshot producer를 맡도록 연결했다. 기존
 `crates/integration::Envelope::with_views`와 `write_atomic`을 사용해

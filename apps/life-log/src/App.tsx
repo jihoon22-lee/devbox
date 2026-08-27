@@ -24,6 +24,7 @@ import {
   setProjects,
   saveLifeLog,
   saveDigest,
+  sendDigestToKnowledge,
   startTracking,
   stopTracking,
   type ExportDayBoundary,
@@ -552,6 +553,25 @@ export default function App() {
     } catch {
       if (isCurrentDigestAction(action)) {
         setError(isTauri() ? "digest를 저장하지 못했습니다." : "digest 미리보기를 다운로드하지 못했습니다.");
+      }
+    } finally {
+      finishDigestAction(action);
+    }
+  };
+
+  const sendDigestDraft = async () => {
+    if (!isTauri()) return;
+    const response = digest;
+    const action = beginDigestAction();
+    if (!response || action === null) return;
+    try {
+      const result = await sendDigestToKnowledge(digestInputFromResponse(response));
+      if (isCurrentDigestAction(action) && result.kind === "knowledge-draft/v1") {
+        setNotice("Knowledge draft를 미리보기로 보냈습니다. 저장 전 내용을 확인하세요.");
+      }
+    } catch {
+      if (isCurrentDigestAction(action)) {
+        setError("Knowledge draft를 보내지 못했습니다. 잠시 후 다시 시도하세요.");
       }
     } finally {
       finishDigestAction(action);
@@ -1141,6 +1161,15 @@ export default function App() {
                         disabled={!digest || contextActionBusy || loading}
                       >
                         {isTauri() ? "Save digest" : "Download preview"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => void sendDigestDraft()}
+                        disabled={!isTauri() || !digest || contextActionBusy || loading}
+                        title={isTauri() ? undefined : "Knowledge handoff는 native 데스크톱에서만 사용할 수 있습니다"}
+                      >
+                        Send to Knowledge
                       </button>
                     </div>
                   </div>

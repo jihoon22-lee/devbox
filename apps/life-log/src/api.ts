@@ -143,6 +143,12 @@ export interface SaveDigestResult {
   byteLength: number;
 }
 
+export interface SendKnowledgeDraftResult {
+  id: string;
+  kind: "knowledge-draft/v1";
+  expiresAtMs: number;
+}
+
 const DAY_MS = 86_400_000;
 const MIN_CIVIL_DAY_MS = DAY_MS - 3_600_000;
 const MAX_CIVIL_DAY_MS = DAY_MS + 3_600_000;
@@ -846,4 +852,11 @@ export async function saveDigest(handle: string): Promise<SaveDigestResult> {
     throw new Error("digest 저장 핸들이 만료되었습니다");
   }
   return invoke<SaveDigestResult>("save_digest", { request: { handle } });
+}
+
+/** Native-only explicit handoff. Browser preview never publishes or launches. */
+export async function sendDigestToKnowledge(input: DigestInput): Promise<SendKnowledgeDraftResult> {
+  if (!isTauri()) throw new Error("Knowledge handoff는 데스크톱 앱에서 사용할 수 없습니다");
+  validateDigestInput(input);
+  return invoke<SendKnowledgeDraftResult>("send_digest_to_knowledge", { input });
 }
