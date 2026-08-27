@@ -24,6 +24,10 @@ import {
 } from "./api";
 import { routeOpenRequest, sameRepositoryKey } from "./lib/applink";
 import { buildRepositoryContextMenu } from "./lib/contextMenu";
+import GitSafetyPanel from "./components/GitSafetyPanel";
+import HistoryDiffPanel from "./components/HistoryDiffPanel";
+import RemoteSyncPanel from "./components/RemoteSyncPanel";
+import StageCommitPanel from "./components/StageCommitPanel";
 import "./App.css";
 
 function usesNativeTextContext(target: EventTarget | null): boolean {
@@ -304,6 +308,10 @@ export default function App() {
     }
   };
 
+  const selectedRepo = repos.find((repo) =>
+    sameRepositoryKey(repo.canonicalKey, selectedRepoKey ?? ""),
+  ) ?? null;
+
   return (
     <div className="app">
       <header className="toolbar">
@@ -411,6 +419,10 @@ export default function App() {
         })}
         {repos.length === 0 && <div className="dim">repository가 없습니다.</div>}
       </div>
+      <HistoryDiffPanel repo={selectedRepo} />
+      <StageCommitPanel repo={selectedRepo} />
+      <GitSafetyPanel repo={selectedRepo} />
+      <RemoteSyncPanel repo={selectedRepo} />
       <div className="note dim">force delete·reset·clean은 기본 동작으로 제공하지 않습니다. remove 전 검사만 지원합니다.</div>
       <ContextMenu
         open={repositoryContextMenu.open}

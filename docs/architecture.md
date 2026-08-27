@@ -133,8 +133,41 @@ workbench:        React → commands → ProjectProfile/read-only health + 다�
                    post-release로 계속 관리한다.
                    ./superpowers/specs/2026-08-17-app-interop-design.md)
 webhook-lab:      inbound HTTP → core/server → history·rule·fixture → React
-repo-manager:     React → commands → git crate(wsl) → repository/worktree 탐색·생성
+repo-manager:     React → commands → git crate → repository/worktree 탐색·생성
+                   ├ read-only history/detail/diff → run_bounded → bounded parser → React
+                   ├ selected stage/unstage + explicit commit → run_mutating → Git index/commit
+                   ├ Git safety preflight → run_bounded → porcelain-v2/marker parser → React
+                   └ remote status/preflight → bounded parser → fetch/FF-only pull/exact branch push
+                      → run_mutating_with_cancel → configured Git remote
 ```
+
+Repo Manager의 Git history·diff(#316)는 선택된 canonical repository에서만 실행되는 native
+read-only 흐름이다. repo_history, repo_commit_detail, repo_diff는 hexadecimal object ID와
+고정된 argv만 허용하고 공용 crates/git::run_bounded로 stdin/stderr·timeout·stdout 상한을
+강제한다. parser는 NUL metadata, repository-relative path, text/binary marker를 검증하며
+history/detail/diff와 원문을 storage·telemetry·remote network로 복제하지 않는다.
+
+selected stage/unstage·explicit commit(#317)은 별도 mutable flow다. status는 bounded NUL
+porcelain parser를 거친 DTO로만 표시하고, backend가 재검증한 repository-relative path를
+--literal-pathspecs와 -- 뒤에 전달해 선택한 파일만 index에 반영한다. commit은 현재 index만
+대상으로 하며 unstaged 파일을 자동 추가하지 않는다. 공용 crates/git::run_mutating은 Git
+config와 credential helper 해석을 그대로 두되 stdin/stderr를 닫고 timeout/stdout 상한을
+적용하며 credential·raw path·message·stderr를 devbox가 저장하거나 반환하지 않는다.
+
+Git 상태 사전 검사(#319)는 선택 repository에 대해 고정된 porcelain-v2 branch status와
+rev-parse --git-path의 rebase/merge marker만 읽는다. dirty, detached, upstream 없음,
+ahead/behind·diverged와 진행 중인 rebase/merge를 deterministic issue ID로 분류하며,
+malformed/overflow·권한·busy·unmount·marker race는 고정 오류로 닫힌다. repository/index/ref/
+remote/credential를 변경하지 않고 force push/reset/clean 또는 automatic recovery도 제공하지 않는다.
+
+remote sync(#318)는 fetch --no-tags, pull --ff-only --no-rebase, native가 검증한 configured
+remote/upstream 대상의 exact current-branch push만 사용한다. pull/push는 clean·attached·
+upstream·non-diverged preflight를 통과해야 하며, 모든 remote action은 in-progress merge/rebase를
+차단한다. local mutation과 remote mutation은 canonical repository별 single-flight registry와
+RAII guard를 공유하고, cancellation/timeout은 Unix process group 또는 Windows kill-on-close
+Job Object로 Git hook·credential helper·SSH/transport descendant까지 종료한다. root Git이 먼저
+끝나도 process tree를 먼저 닫아 inherited stdout pipe가 reader join을 무기한 유지하지 않는다.
+UI의 busy/unmount/request-sequence guard는 duplicate와 stale 결과를 폐기한다.
 
 Port Manager의 listener row는 source별 display metadata와 kill precondition을 분리한다. Windows
 row의 command line/path는 읽기 전용·bounded·credential-redacted projection이며, Windows creation

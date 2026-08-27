@@ -2053,6 +2053,10 @@ dependencies = [
 [[package]]
 name = "git"
 version = "0.1.0"
+dependencies = [
+ "libc",
+ "windows 0.58.0",
+]
 
 [[package]]
 name = "glib"

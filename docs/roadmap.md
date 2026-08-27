@@ -630,6 +630,31 @@ vault identity를 캡처·재검증하고 default-root/Journal 자동 생성을 
 modal은 UTF-8 byte budget·focus trap·stale/expiry/unmount guard를 제공한다. persistent
 pending/sent/consumed/expired 상태 UI는 P3-10(#353) 후속으로 남긴다.
 
+**2026-08-27 #316–#319 grouped Repo Manager 구현 상태 (PR 후보).** #316 history/detail/diff,
+#317 selected stage/unstage/explicit index-only commit, #318 fetch/FF-only pull/current-branch push,
+#319 read-only Git safety preflight를 하나의 사용자 흐름과 하나의 native operation guard로 묶었다.
+history/detail/diff는 fixed argv·NUL/relative-path parser·read-only bounded runner를 사용하며,
+stage/unstage는 status snapshot에 있는 repository-relative literal path만 전달하고 commit은
+현재 index 외의 unstaged 파일을 자동 추가하지 않는다. remote는 configured remote/upstream만
+사용하고 force push·reset·clean·자동 merge/rebase를 생성하지 않는다.
+
+모든 mutable Git 호출은 canonical repository별 single-flight와 RAII guard를 공유한다. native
+cancel/timeout은 root Git뿐 아니라 hook·credential helper·SSH/transport descendant까지
+Unix process group 또는 Windows kill-on-close Job Object로 종료하고, root 종료 후에도 tree를
+먼저 닫아 stdout reader가 남지 않게 한다. remote admission/final status와 push destination
+revalidation 사이의 race는 mutation을 차단하며, frontend busy/sequence/unmount guard는
+중복·stale 결과를 폐기한다. credential·remote URL·raw path/stderr/message는 저장하거나 UI에
+반향하지 않는다.
+
+이슈별 fixture는 history graph/merge·binary·oversize·unsafe path, selected-only stage/unstage/
+commit·multiline message·unborn repository, bare-remote FF pull/exact push/no-upstream/dirty/
+detached/diverged/in-progress 차단, preflight marker/malformed/overflow와 cancel/timeout/
+stale/unmount/double-action을 각각 고정한다. 기존 후보 worktree의 root 보강은 보존해 새
+latest-main worktree에서 grouped 코드와 문서를 정적 이식했으며, Windows packaged Git/credential
+helper/hook descendant와 real bare-remote smoke는 native Windows W2에서 최종 확인할 잔여
+위험이다. #316–#319에는 #307 handoff, arbitrary shell, destructive recovery와 version bump가
+포함되지 않는다.
+
 **2026-08-26 #410 구현 상태.** WSL Desktop이 Workbench #281과 Life Log가 읽을 수 있는
 `wsl-desktop/runtime/v1` snapshot producer를 맡도록 연결했다. 기존
 `crates/integration::Envelope::with_views`와 `write_atomic`을 사용해

@@ -19,6 +19,10 @@ import {
 } from "./api";
 
 vi.mock("./api", () => ({
+  GIT_REMOTE_BUSY: "이미 다른 Git 작업이 진행 중입니다.",
+  GIT_REMOTE_CANCELLED: "Git 원격 작업을 취소했습니다.",
+  GIT_REMOTE_ERROR: "Git 원격 작업을 실행하지 못했습니다.",
+  GIT_REMOTE_STATE_CHANGED: "저장소 상태가 변경되어 Git 원격 작업을 실행하지 않았습니다.",
   createWorktree: vi.fn(),
   onOpenRequest: vi.fn(),
   openIn: vi.fn(),
