@@ -283,8 +283,10 @@ mod windows_impl {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 struct UnsupportedSealer;
 
+#[cfg(not(target_os = "windows"))]
 impl devbox_secrets::Sealer for UnsupportedSealer {
     fn seal(&self, _plaintext: &str) -> Result<Vec<u8>, SealError> {
         Err(SealError::CryptoFailure)
