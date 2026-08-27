@@ -13,7 +13,12 @@ use crate::core::export::{
 use devbox_filesystem::parse_safe_project_path;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::hash::{BuildHasher, RandomState};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const DIGEST_SCHEMA_VERSION: u32 = 1;
 pub const MAX_DIGEST_DAYS: usize = export::MAX_EXPORT_DAYS;
@@ -140,6 +145,108 @@ pub struct DigestResponse {
     pub origin: DigestOrigin,
     pub document: DigestDocument,
     pub markdown: String,
+    /// Native responses carry a server-owned immutable save handle. Browser
+    /// previews deliberately leave it absent because they have no native
+    /// storage boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+}
+
+pub const DIGEST_HANDLE_TTL: Duration = Duration::from_secs(120);
+const MAX_DIGEST_HANDLES: usize = 8;
+const DIGEST_HANDLE_BYTES: usize = 32;
+
+struct StoredDigest {
+    created_at: Instant,
+    response: DigestResponse,
+}
+
+/// Short-lived immutable native save artifacts. The UI never sends the
+/// digest input back for saving; it sends only this opaque handle, so the
+/// bytes shown on screen and the bytes passed to `atomic_write` are identical
+/// even if the database or Git repository changes after rendering.
+pub struct DigestHandleStore {
+    entries: Mutex<HashMap<String, StoredDigest>>,
+    sequence: AtomicU64,
+    entropy: RandomState,
+}
+
+impl Default for DigestHandleStore {
+    fn default() -> Self {
+        Self {
+            entries: Mutex::new(HashMap::new()),
+            sequence: AtomicU64::new(0),
+            entropy: RandomState::new(),
+        }
+    }
+}
+
+impl DigestHandleStore {
+    pub fn issue(&self, mut response: DigestResponse) -> Result<DigestResponse, String> {
+        if !validate_response(&response) {
+            return Err("digest_output_invalid".into());
+        }
+        let handle = self.new_handle();
+        response.handle = Some(handle.clone());
+        if !validate_response(&response) {
+            return Err("digest_output_invalid".into());
+        }
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| "digest 저장 핸들을 잠글 수 없습니다".to_string())?;
+        self.prune_expired(&mut entries);
+        if entries.len() >= MAX_DIGEST_HANDLES {
+            if let Some(oldest) = entries
+                .iter()
+                .min_by_key(|(_, value)| value.created_at)
+                .map(|(key, _)| key.clone())
+            {
+                entries.remove(&oldest);
+            }
+        }
+        entries.insert(
+            handle,
+            StoredDigest {
+                created_at: Instant::now(),
+                response: response.clone(),
+            },
+        );
+        Ok(response)
+    }
+
+    pub fn get(&self, handle: &str) -> Result<DigestResponse, String> {
+        if !valid_handle(handle) {
+            return Err("digest_handle_expired".into());
+        }
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| "digest 저장 핸들을 잠글 수 없습니다".to_string())?;
+        self.prune_expired(&mut entries);
+        entries
+            .get(handle)
+            .map(|stored| stored.response.clone())
+            .ok_or_else(|| "digest_handle_expired".into())
+    }
+
+    fn prune_expired(&self, entries: &mut HashMap<String, StoredDigest>) {
+        entries.retain(|_, stored| stored.created_at.elapsed() <= DIGEST_HANDLE_TTL);
+    }
+
+    fn new_handle(&self) -> String {
+        let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_nanos() as u64)
+            .unwrap_or_default();
+        let entropy = self.entropy.hash_one((now, sequence, std::process::id()));
+        format!("{entropy:016x}{sequence:016x}")
+    }
+}
+
+fn valid_handle(handle: &str) -> bool {
+    handle.len() == DIGEST_HANDLE_BYTES && handle.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 /// Validate digest fields and delegate the shared range/boundary contract to
@@ -160,7 +267,8 @@ pub fn validate_input(input: &DigestInput) -> Result<(), String> {
         }
         DigestPeriod::Month
             if !input.start_date.ends_with("-01")
-                || date_prefix(&input.start_date) != date_prefix(&input.end_date) =>
+                || date_prefix(&input.start_date) != date_prefix(&input.end_date)
+                || !export::is_month_end_date(&input.end_date) =>
         {
             return Err("digest 월 범위가 올바르지 않습니다".into());
         }
@@ -282,24 +390,48 @@ fn export_input(input: &DigestInput) -> ExportInput {
 /// Prepare bounded DB rows and validated local snapshots before the command
 /// releases its DB mutex.  Git is still performed by `build_response` after
 /// the lock is released.
+#[cfg(test)]
 pub fn prepare(
     conn: &Connection,
     projects: &[String],
     input: &DigestInput,
 ) -> Result<export::PreparedExport, String> {
+    prepare_with_cancel(conn, projects, input, Arc::new(AtomicBool::new(false)))
+}
+
+pub fn prepare_with_cancel(
+    conn: &Connection,
+    projects: &[String],
+    input: &DigestInput,
+    cancellation: Arc<AtomicBool>,
+) -> Result<export::PreparedExport, String> {
     validate_input(input)?;
-    export::prepare_document(conn, projects, &export_input(input))
+    export::prepare_document_with_cancel(conn, projects, &export_input(input), cancellation)
 }
 
 /// Build a small digest from the already bounded export snapshot.  No network,
 /// LLM, filesystem, or external process is introduced here; those boundaries
 /// are inherited from `core::export`.
+#[cfg(test)]
 pub async fn build_response(
     prepared: export::PreparedExport,
     input: &DigestInput,
 ) -> Result<DigestResponse, String> {
+    build_response_with_cancel(prepared, input, Arc::new(AtomicBool::new(false))).await
+}
+
+pub async fn build_response_with_cancel(
+    prepared: export::PreparedExport,
+    input: &DigestInput,
+    cancellation: Arc<AtomicBool>,
+) -> Result<DigestResponse, String> {
     validate_input(input)?;
-    let export_document = export::build_document(prepared).await?;
+    if cancellation.load(Ordering::Acquire) {
+        return Err("digest_cancelled".into());
+    }
+    let export_document =
+        export::build_document_with_cancel(prepared, Arc::clone(&cancellation)).await?;
+    check_cancelled(&cancellation)?;
     if !range_matches_input(&export_document.range, input) {
         return Err("digest 기간이 올바르지 않습니다".into());
     }
@@ -314,41 +446,43 @@ pub async fn build_response(
                 .is_none_or(|app| app == session.app)
         })
         .collect::<Vec<_>>();
-    let app_totals = build_app_totals(&selected_sessions)?;
+    check_cancelled(&cancellation)?;
+    let app_totals = build_app_totals_with_cancel(&selected_sessions, Some(&cancellation))?;
 
-    let daily = export_document
+    let mut daily = Vec::with_capacity(export_document.range.day_boundaries.len());
+    for (boundary, exported_day) in export_document
         .range
         .day_boundaries
         .iter()
         .zip(export_document.daily.iter())
-        .map(|(boundary, exported_day)| {
-            let day_sessions = selected_sessions
-                .iter()
-                .filter(|session| {
-                    session.start_ts_ms >= boundary.start_ms
-                        && session.start_ts_ms < boundary.end_ms
-                })
-                .copied()
-                .collect::<Vec<_>>();
-            let pc_usage_ms = sum_durations(day_sessions.iter().map(|s| s.duration_ms));
-            let session_count = day_sessions.len();
-            DigestDay {
-                date: boundary.date.clone(),
-                start_ms: boundary.start_ms,
-                end_ms: boundary.end_ms,
-                pc_usage_ms,
-                session_count,
-                // Git is independent of the application filter.  A future
-                // project filter must add per-project daily provenance before
-                // it is allowed to change this value.
-                git_commits: exported_day.git_commits,
-                top_app: top_app(&day_sessions),
-                has_activity: pc_usage_ms > 0 || session_count > 0 || exported_day.git_commits > 0,
-            }
-        })
-        .collect::<Vec<_>>();
+    {
+        check_cancelled(&cancellation)?;
+        let day_sessions = selected_sessions
+            .iter()
+            .filter(|session| {
+                session.start_ts_ms >= boundary.start_ms && session.start_ts_ms < boundary.end_ms
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        check_cancelled(&cancellation)?;
+        let pc_usage_ms = sum_durations(day_sessions.iter().map(|s| s.duration_ms))?;
+        let session_count = day_sessions.len();
+        daily.push(DigestDay {
+            date: boundary.date.clone(),
+            start_ms: boundary.start_ms,
+            end_ms: boundary.end_ms,
+            pc_usage_ms,
+            session_count,
+            // Git is independent of the application filter.  A future
+            // project filter must add per-project daily provenance before
+            // it is allowed to change this value.
+            git_commits: exported_day.git_commits,
+            top_app: top_app(&day_sessions),
+            has_activity: pc_usage_ms > 0 || session_count > 0 || exported_day.git_commits > 0,
+        });
+    }
 
-    let pc_usage_ms = sum_durations(selected_sessions.iter().map(|session| session.duration_ms));
+    let pc_usage_ms = sum_durations(selected_sessions.iter().map(|session| session.duration_ms))?;
     let session_count = selected_sessions.len();
     let total_days = daily.len();
     let active_days = daily.iter().filter(|day| day.has_activity).count();
@@ -406,10 +540,20 @@ pub async fn build_response(
         origin: DigestOrigin::Native,
         document,
         markdown,
+        handle: None,
     };
+    check_cancelled(&cancellation)?;
     validate_response(&response)
         .then_some(response)
         .ok_or_else(|| "digest 결과를 검증하지 못했습니다".into())
+}
+
+fn check_cancelled(cancellation: &AtomicBool) -> Result<(), String> {
+    if cancellation.load(Ordering::Acquire) {
+        Err("digest_cancelled".into())
+    } else {
+        Ok(())
+    }
 }
 
 fn range_matches_input(range: &ExportRange, input: &DigestInput) -> bool {
@@ -452,12 +596,34 @@ fn digest_headline(
     )
 }
 
+#[cfg(test)]
 fn build_app_totals(sessions: &[&ExportSession]) -> Result<Vec<ExportAppTotal>, String> {
+    build_app_totals_with_cancel(sessions, None)
+}
+
+fn build_app_totals_with_cancel(
+    sessions: &[&ExportSession],
+    cancellation: Option<&AtomicBool>,
+) -> Result<Vec<ExportAppTotal>, String> {
+    if let Some(cancellation) = cancellation {
+        check_cancelled(cancellation)?;
+    }
     let mut totals = BTreeMap::<String, (i64, usize)>::new();
-    for session in sessions {
+    for (index, session) in sessions.iter().enumerate() {
+        if index % 1_024 == 0 {
+            if let Some(cancellation) = cancellation {
+                check_cancelled(cancellation)?;
+            }
+        }
         let entry = totals.entry(session.app.clone()).or_default();
-        entry.0 = entry.0.saturating_add(session.duration_ms);
-        entry.1 = entry.1.saturating_add(1);
+        entry.0 = entry
+            .0
+            .checked_add(session.duration_ms)
+            .ok_or_else(|| "digest duration overflow".to_string())?;
+        entry.1 = entry
+            .1
+            .checked_add(1)
+            .ok_or_else(|| "digest session count overflow".to_string())?;
     }
     if totals.len() > MAX_DIGEST_APPS {
         return Err("digest 앱 수 제한을 초과했습니다".into());
@@ -483,7 +649,7 @@ fn top_app(sessions: &[&ExportSession]) -> Option<String> {
     let mut totals = BTreeMap::<String, i64>::new();
     for session in sessions {
         let value = totals.entry(session.app.clone()).or_default();
-        *value = value.saturating_add(session.duration_ms);
+        *value = value.checked_add(session.duration_ms)?;
     }
     totals
         .into_iter()
@@ -495,8 +661,12 @@ fn top_app(sessions: &[&ExportSession]) -> Option<String> {
         .map(|(app, _)| app)
 }
 
-fn sum_durations(values: impl Iterator<Item = i64>) -> i64 {
-    values.fold(0, i64::saturating_add)
+fn sum_durations(mut values: impl Iterator<Item = i64>) -> Result<i64, String> {
+    values.try_fold(0_i64, |total, value| {
+        total
+            .checked_add(value)
+            .ok_or_else(|| "digest duration overflow".to_string())
+    })
 }
 
 fn markdown_cell(value: &str) -> String {
@@ -523,7 +693,7 @@ fn render_markdown(document: &DigestDocument) -> String {
     output.push_str(&document.range.start_date);
     output.push_str("` to `");
     output.push_str(&document.range.end_date);
-    output.push_str("` (exclusive end)\n- Timezone: `");
+    output.push_str("` (date keys inclusive; end timestamp exclusive)\n- Timezone: `");
     output.push_str(&markdown_cell(&document.range.timezone));
     output.push_str("`\n- Filter: ");
     output.push_str(&markdown_cell(
@@ -659,8 +829,13 @@ fn render_markdown(document: &DigestDocument) -> String {
 /// renderer and rejects malformed/stale in-memory responses without exposing
 /// their contents in an error.
 pub fn validate_response(response: &DigestResponse) -> bool {
-    if response.origin != DigestOrigin::Native
+    if serde_json::to_vec(response).map_or(true, |bytes| bytes.len() > MAX_DIGEST_BYTES)
+        || response.origin != DigestOrigin::Native
         || response.document.schema_version != DIGEST_SCHEMA_VERSION
+        || response
+            .handle
+            .as_deref()
+            .is_some_and(|handle| !valid_handle(handle))
         || response.markdown.len() > MAX_DIGEST_BYTES
         || !response.markdown.starts_with(DIGEST_MARKDOWN_HEADER)
         || response.document.daily.len() != response.document.range.day_boundaries.len()
@@ -740,7 +915,14 @@ pub fn validate_response(response: &DigestResponse) -> bool {
                     || day.pc_usage_ms < 0
                     || day.session_count > export::MAX_EXPORT_SESSIONS
                     || day.top_app.as_deref().is_some_and(|app| {
-                        !bounded_metadata(app, 256) || contains_secret_marker(app)
+                        !bounded_metadata(app, 256)
+                            || contains_secret_marker(app)
+                            || response
+                                .document
+                                .filter
+                                .app
+                                .as_deref()
+                                .is_some_and(|filter| filter != app)
                     })
                     || (day.session_count == 0 && day.top_app.is_some())
                     || (day.session_count > 0
@@ -767,6 +949,12 @@ pub fn validate_response(response: &DigestResponse) -> bool {
     for app in &response.document.app_totals {
         if !bounded_metadata(&app.app, 256)
             || contains_secret_marker(&app.app)
+            || response
+                .document
+                .filter
+                .app
+                .as_deref()
+                .is_some_and(|filter| filter != app.app)
             || app.duration_ms < 0
             || app.sessions == 0
             || app.sessions > export::MAX_EXPORT_SESSIONS
@@ -780,7 +968,9 @@ pub fn validate_response(response: &DigestResponse) -> bool {
         .iter()
         .fold(0usize, |sum, day| sum.saturating_add(day.session_count));
     let expected_pc_usage =
-        sum_durations(response.document.daily.iter().map(|day| day.pc_usage_ms));
+        sum_durations(response.document.daily.iter().map(|day| day.pc_usage_ms))
+            .ok()
+            .unwrap_or(i64::MIN);
     let app_session_count = response
         .document
         .app_totals
@@ -792,7 +982,9 @@ pub fn validate_response(response: &DigestResponse) -> bool {
             .app_totals
             .iter()
             .map(|app| app.duration_ms),
-    );
+    )
+    .ok()
+    .unwrap_or(i64::MIN);
     let expected_active_days = response
         .document
         .daily
@@ -811,7 +1003,7 @@ pub fn validate_response(response: &DigestResponse) -> bool {
     expected_git_errors.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
     expected_git_errors.dedup();
     let mut project_identities = Vec::new();
-    let projects_valid = response.document.git.projects.len() <= 64
+    let projects_valid = response.document.git.projects.len() <= export::MAX_EXPORT_PROJECTS
         && response.document.git.projects.iter().all(|project| {
             let Some(path) = parse_safe_project_path(&project.path) else {
                 return false;
@@ -914,6 +1106,9 @@ fn valid_source(source: &SourceMetadata, expected_id: &str, git: &ExportGit) -> 
             .generated_at
             .as_deref()
             .is_some_and(|value| !valid_generated_at(value))
+        || source
+            .freshness_ms
+            .is_some_and(|value| value > export::MAX_PROVENANCE_FRESHNESS_MS)
     {
         return false;
     }
@@ -987,6 +1182,7 @@ fn safe_snapshot_error(value: &str) -> bool {
             | "snapshot_schema_unsupported"
             | "snapshot_payload_invalid"
             | "snapshot_changed_during_read"
+            | "snapshot_stale"
     )
 }
 
@@ -1093,6 +1289,7 @@ mod tests {
     use super::*;
     use crate::core::db;
     use crate::core::models::ClosedSession;
+    use std::sync::atomic::AtomicBool;
 
     fn input(period: DigestPeriod, days: usize) -> DigestInput {
         let boundaries = (0..days)
@@ -1110,6 +1307,26 @@ mod tests {
             day_end: days as i64 * 86_400_000,
             day_boundaries: boundaries,
             period,
+            filter: DigestFilter::default(),
+        }
+    }
+
+    fn calendar_month_input(year: i32, month: u32, days: usize) -> DigestInput {
+        let boundaries = (1..=days)
+            .map(|day| ExportDayBoundary {
+                date: format!("{year:04}-{month:02}-{day:02}"),
+                start_ms: (day as i64 - 1) * 86_400_000,
+                end_ms: day as i64 * 86_400_000,
+            })
+            .collect::<Vec<_>>();
+        DigestInput {
+            start_date: format!("{year:04}-{month:02}-01"),
+            end_date: format!("{year:04}-{month:02}-{days:02}"),
+            timezone: "UTC".into(),
+            day_start: 0,
+            day_end: days as i64 * 86_400_000,
+            day_boundaries: boundaries,
+            period: DigestPeriod::Month,
             filter: DigestFilter::default(),
         }
     }
@@ -1132,6 +1349,10 @@ mod tests {
         );
         assert!(validate_input(&input(DigestPeriod::Month, 31)).is_ok());
         assert!(validate_input(&input(DigestPeriod::Month, 7)).is_err());
+
+        assert!(validate_input(&calendar_month_input(2023, 2, 28)).is_ok());
+        assert!(validate_input(&calendar_month_input(2024, 2, 29)).is_ok());
+        assert!(validate_input(&calendar_month_input(2024, 2, 28)).is_err());
 
         let mut invalid_date = input(DigestPeriod::Week, 7);
         invalid_date.start_date = "2024-02-30".into();
@@ -1215,6 +1436,12 @@ mod tests {
         );
         assert_eq!(build_app_totals(&[]).unwrap(), Vec::<ExportAppTotal>::new());
         assert_eq!(top_app(&[]), None);
+
+        let cancellation = AtomicBool::new(true);
+        assert_eq!(
+            build_app_totals_with_cancel(&sessions, Some(&cancellation)).unwrap_err(),
+            "digest_cancelled"
+        );
     }
 
     #[test]
@@ -1244,6 +1471,9 @@ mod tests {
         assert_eq!(response.document.summary.active_days, 1);
         assert!(validate_response(&response));
         assert!(!response.markdown.contains("ordinary title"));
+        assert!(response
+            .markdown
+            .contains("date keys inclusive; end timestamp exclusive"));
     }
 
     #[test]
@@ -1327,5 +1557,52 @@ mod tests {
             .unwrap();
         response.document.sources[2].view = Some("raw-local-path".into());
         assert!(!validate_response(&response));
+    }
+
+    #[test]
+    fn save_handle_is_opaque_immutable_and_bounded_by_ttl_store() {
+        let connection = Connection::open_in_memory().unwrap();
+        db::migrate(&connection).unwrap();
+        let digest_input = input(DigestPeriod::Week, 7);
+        let prepared = prepare(&connection, &[], &digest_input).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let response = runtime
+            .block_on(build_response(prepared, &digest_input))
+            .unwrap();
+        let store = DigestHandleStore::default();
+        let issued = store.issue(response).unwrap();
+        let handle = issued.handle.clone().unwrap();
+        assert_eq!(handle.len(), 32);
+        assert!(handle.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_eq!(store.get(&handle).unwrap(), issued);
+
+        let mut tampered = store.get(&handle).unwrap();
+        tampered.markdown.push('x');
+        assert_ne!(tampered, store.get(&handle).unwrap());
+        assert_eq!(
+            store.get("not-a-handle").unwrap_err(),
+            "digest_handle_expired"
+        );
+    }
+
+    #[test]
+    fn cancellation_is_rejected_before_native_db_or_git_work() {
+        let connection = Connection::open_in_memory().unwrap();
+        db::migrate(&connection).unwrap();
+        let cancellation = Arc::new(AtomicBool::new(true));
+        assert_eq!(
+            prepare_with_cancel(
+                &connection,
+                &[],
+                &input(DigestPeriod::Week, 7),
+                cancellation
+            )
+            .err()
+            .unwrap(),
+            "digest_cancelled"
+        );
     }
 }

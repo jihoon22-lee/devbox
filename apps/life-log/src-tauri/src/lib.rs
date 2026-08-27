@@ -2,7 +2,7 @@ mod commands;
 mod core;
 mod integration;
 
-use commands::tracking::{spawn_poller, AppState};
+use commands::tracking::{spawn_poller, AppState, DigestOperationState};
 use core::db::init;
 use core::sessionizer::Sessionizer;
 use std::sync::atomic::AtomicBool;
@@ -41,6 +41,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::digest::get_digest,
+            commands::digest::cancel_digest,
             commands::digest::save_digest,
             commands::export::export_life_log,
             commands::export::save_life_log,
@@ -79,6 +80,8 @@ pub fn run() {
                 sessionizer: Mutex::new(Sessionizer::new()),
                 tracking: AtomicBool::new(true),
                 snapshot_writer: Mutex::new(()),
+                digest_operations: Arc::new(DigestOperationState::default()),
+                digest_handles: core::digest::DigestHandleStore::default(),
             });
             app.manage(state.clone());
             integration::spawn_snapshot_writer(state);

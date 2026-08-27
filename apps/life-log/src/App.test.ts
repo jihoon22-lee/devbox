@@ -155,6 +155,13 @@ describe("buildDigestInput", () => {
     expect(input?.dayBoundaries).toHaveLength(29);
     expect(input?.filter).toEqual({ app: "Code.exe" });
   });
+
+  it("uses the actual non-leap February month end", () => {
+    const input = buildDigestInput(new Date(2023, 1, 10), "month");
+    expect(input?.startDate).toBe("2023-02-01");
+    expect(input?.endDate).toBe("2023-02-28");
+    expect(input?.dayBoundaries).toHaveLength(28);
+  });
 });
 
 describe("DataSourceRow", () => {

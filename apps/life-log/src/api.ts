@@ -134,6 +134,8 @@ export interface DigestResponse {
   origin: ExportOrigin;
   document: DigestDocument;
   markdown: string;
+  /** Native responses expose a short-lived server-owned save handle. */
+  handle?: string | null;
 }
 
 export interface SaveDigestResult {
@@ -142,6 +144,8 @@ export interface SaveDigestResult {
 }
 
 const DAY_MS = 86_400_000;
+const MIN_CIVIL_DAY_MS = DAY_MS - 3_600_000;
+const MAX_CIVIL_DAY_MS = DAY_MS + 3_600_000;
 const MAX_EXPORT_DAYS = 366;
 const MAX_EXPORT_BYTES = 4 * 1024 * 1024;
 const EXPORT_CSV_HEADER = "record_type,date,range_start_date,range_end_date,id,app,title,start_ts_ms,end_ts_ms,duration_ms,project_path,commits,metric,value,source,available,schema_version,snapshot_version,producer_version,generated_at,freshness_ms,view,scope,error_code";
@@ -199,6 +203,19 @@ function nextLocalDateKey(value: string): string {
 
 function isMondayDateKey(value: string): boolean {
   return parseLocalDateKey(value)?.getDay() === 1;
+}
+
+function isMonthEndDateKey(value: string): boolean {
+  const date = parseLocalDateKey(value);
+  if (!date) return false;
+  const nextMonth = new Date(0);
+  nextMonth.setHours(0, 0, 0, 0);
+  nextMonth.setFullYear(date.getFullYear(), date.getMonth() + 1, 0);
+  return date.getDate() === nextMonth.getDate();
+}
+
+function isCivilDaySpan(value: number): boolean {
+  return value === MIN_CIVIL_DAY_MS || value === DAY_MS || value === MAX_CIVIL_DAY_MS;
 }
 
 function isControlCharacter(character: string): boolean {
@@ -469,7 +486,7 @@ function validateBrowserExportInput(input: ExportInput): void {
         || boundary.startMs !== previousEnd
         || boundary.endMs <= boundary.startMs
         || !Number.isSafeInteger(boundary.endMs - boundary.startMs)
-        || boundary.endMs - boundary.startMs > DAY_MS * 2) {
+        || !isCivilDaySpan(boundary.endMs - boundary.startMs)) {
       throw new Error("브라우저 미리보기 입력이 올바르지 않습니다");
     }
     previousEnd = boundary.endMs;
@@ -665,7 +682,8 @@ export function validateDigestInput(input: DigestInput): void {
       || (input.period === "week" && (days !== 7 || !isMondayDateKey(input.startDate)))
       || (input.period === "month" && (days < 28 || days > 31
         || !input.startDate.endsWith("-01")
-        || input.startDate.slice(0, 7) !== input.endDate.slice(0, 7)))) {
+        || input.startDate.slice(0, 7) !== input.endDate.slice(0, 7)
+        || !isMonthEndDateKey(input.endDate)))) {
     throw digestError();
   }
 }
@@ -703,7 +721,7 @@ function browserDigestMarkdown(input: DigestInput, document: DigestDocument): st
     "# Life Log local digest",
     "",
     `- Period: \`${input.period}\``,
-    `- Range: \`${input.startDate}\` to \`${input.endDate}\` (exclusive end)`,
+    `- Range: \`${input.startDate}\` to \`${input.endDate}\` (date keys inclusive; end timestamp exclusive)`,
     `- Timezone: \`${markdownPreview(input.timezone)}\``,
     `- Filter: ${markdownPreview(filter)}`,
     "- Browser preview only: native DB, Git, and local snapshots are not included.",
@@ -808,7 +826,7 @@ function browserDigest(input: DigestInput): DigestResponse {
   const markdown = browserDigestMarkdown(input, document);
   const byteLength = new TextEncoder().encode(markdown).byteLength;
   if (byteLength > MAX_EXPORT_BYTES) throw new Error("digest 미리보기 결과가 너무 큽니다");
-  return { origin: "browser-preview", document, markdown };
+  return { origin: "browser-preview", document, markdown, handle: null };
 }
 
 export async function getDigest(input: DigestInput): Promise<DigestResponse> {
@@ -817,8 +835,15 @@ export async function getDigest(input: DigestInput): Promise<DigestResponse> {
   return invoke<DigestResponse>("get_digest", { input });
 }
 
-export async function saveDigest(input: DigestInput): Promise<SaveDigestResult> {
+export async function cancelDigest(): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("cancel_digest");
+}
+
+export async function saveDigest(handle: string): Promise<SaveDigestResult> {
   if (!isTauri()) throw new Error("native digest 저장은 데스크톱 앱에서 사용할 수 없습니다");
-  validateDigestInput(input);
-  return invoke<SaveDigestResult>("save_digest", { input });
+  if (typeof handle !== "string" || !/^[0-9a-f]{32}$/i.test(handle)) {
+    throw new Error("digest 저장 핸들이 만료되었습니다");
+  }
+  return invoke<SaveDigestResult>("save_digest", { request: { handle } });
 }

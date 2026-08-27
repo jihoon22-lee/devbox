@@ -67,25 +67,53 @@ pub fn project_attribution(
     day_start: i64,
     day_end: i64,
 ) -> Result<AttributionResult, String> {
-    let conn = state.db.lock().unwrap();
-    let sessions = db::get_timeline(&conn, day_start, day_end).map_err(|e| e.to_string())?;
-    let projects = db::get_setting(&conn, "projects", "")
-        .lines()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>();
+    let operation = state.digest_operations.begin()?;
+    let cancellation = operation.cancellation();
+    let conn = state
+        .db
+        .lock()
+        .map_err(|_| "Life Log DB를 잠글 수 없습니다".to_string())?;
+    let sessions = db::get_timeline_limited_with_cancel(
+        &conn,
+        day_start,
+        day_end,
+        crate::core::export::MAX_EXPORT_SESSIONS + 1,
+        Arc::clone(&cancellation),
+    )
+    .map_err(|_| {
+        if operation.is_cancelled() {
+            "digest_cancelled".to_string()
+        } else {
+            "Life Log 활동 데이터를 읽을 수 없습니다".to_string()
+        }
+    })?;
+    if sessions.len() > crate::core::export::MAX_EXPORT_SESSIONS {
+        return Err("Life Log 활동 데이터가 제한을 초과했습니다".into());
+    }
+    let raw_projects = db::get_setting_bounded(
+        &conn,
+        "projects",
+        "",
+        crate::core::export::MAX_PROJECT_SETTING_BYTES,
+    )
+    .unwrap_or_default();
+    let projects = crate::core::export::parse_project_setting(&raw_projects).unwrap_or_default();
     drop(conn);
+    if operation.is_cancelled() {
+        return Err("digest_cancelled".into());
+    }
 
     let profiles: Vec<ProjectMatch> = projects
         .iter()
         .filter_map(|p| {
+            let safe = devbox_filesystem::parse_safe_project_path(p)?;
             let basename = p
                 .trim_end_matches(['/', '\\'])
                 .rsplit(['/', '\\'])
                 .next()
                 .filter(|b| !b.is_empty())?;
             Some(ProjectMatch {
-                project_id: p.clone(),
+                project_id: safe.as_str().to_owned(),
                 basenames: vec![basename.to_string()],
             })
         })
@@ -95,6 +123,9 @@ pub fn project_attribution(
         .into_iter()
         .map(|s| (s.app, s.title, s.duration_ms))
         .collect();
+    if operation.is_cancelled() {
+        return Err("digest_cancelled".into());
+    }
     let (attributed, unattributed) = attribute_sessions(&rows, &profiles);
 
     Ok(AttributionResult {
@@ -322,6 +353,7 @@ pub fn set_projects(
     state: tauri::State<'_, Arc<AppState>>,
     paths: Vec<String>,
 ) -> Result<(), String> {
+    crate::core::export::validate_project_settings(&paths)?;
     db::set_setting(&state.db.lock().unwrap(), "projects", &paths.join("\n"));
     crate::integration::request_snapshot_write(state.inner().clone());
     Ok(())
@@ -329,19 +361,25 @@ pub fn set_projects(
 
 #[tauri::command]
 pub fn get_projects(state: tauri::State<'_, Arc<AppState>>) -> Vec<String> {
-    db::get_setting(&state.db.lock().unwrap(), "projects", "")
-        .lines()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
+    let raw = db::get_setting_bounded(
+        &state.db.lock().unwrap(),
+        "projects",
+        "",
+        crate::core::export::MAX_PROJECT_SETTING_BYTES,
+    )
+    .unwrap_or_default();
+    crate::core::export::parse_project_setting(&raw).unwrap_or_default()
 }
 
 fn saved_projects(state: &tauri::State<'_, Arc<AppState>>) -> Vec<String> {
-    db::get_setting(&state.db.lock().unwrap(), "projects", "")
-        .lines()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
+    let raw = db::get_setting_bounded(
+        &state.db.lock().unwrap(),
+        "projects",
+        "",
+        crate::core::export::MAX_PROJECT_SETTING_BYTES,
+    )
+    .unwrap_or_default();
+    crate::core::export::parse_project_setting(&raw).unwrap_or_default()
 }
 
 /// 하루 요약. 내부 활동 DB(동기) + git(비동기)을 합친다.

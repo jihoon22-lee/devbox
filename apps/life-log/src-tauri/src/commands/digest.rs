@@ -7,7 +7,11 @@
 use crate::commands::tracking::AppState;
 use crate::core::db;
 use crate::core::digest::{self, DigestInput, DigestResponse};
+use serde::Deserialize;
 use std::sync::Arc;
+use tokio::time::{sleep, Duration, Instant};
+
+const DIGEST_CANCEL_WAIT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,26 +23,29 @@ pub struct SaveDigestResult {
 fn prepare(
     state: &tauri::State<'_, Arc<AppState>>,
     input: &DigestInput,
+    cancellation: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<crate::core::export::PreparedExport, String> {
     let conn = state
         .db
         .lock()
         .map_err(|_| "digest 데이터를 잠글 수 없습니다".to_string())?;
-    let projects = db::get_setting(&conn, "projects", "")
-        .lines()
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-        .map(ToOwned::to_owned)
-        .collect::<Vec<_>>();
-    digest::prepare(&conn, &projects, input)
+    let raw_projects = db::get_setting_bounded(
+        &conn,
+        "projects",
+        "",
+        crate::core::export::MAX_PROJECT_SETTING_BYTES,
+    )?;
+    let projects = crate::core::export::parse_project_setting(&raw_projects)?;
+    digest::prepare_with_cancel(&conn, &projects, input, cancellation)
 }
 
 async fn build_for_state(
     state: &tauri::State<'_, Arc<AppState>>,
     input: DigestInput,
+    cancellation: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<DigestResponse, String> {
-    let prepared = prepare(state, &input)?;
-    digest::build_response(prepared, &input).await
+    let prepared = prepare(state, &input, Arc::clone(&cancellation))?;
+    digest::build_response_with_cancel(prepared, &input, cancellation).await
 }
 
 /// Build a bounded, deterministic local digest.  This command has no file,
@@ -48,7 +55,50 @@ pub async fn get_digest(
     state: tauri::State<'_, Arc<AppState>>,
     input: DigestInput,
 ) -> Result<DigestResponse, String> {
-    build_for_state(&state, input).await
+    let operation = state.digest_operations.begin()?;
+    let cancellation = operation.cancellation();
+    let response = build_for_state(&state, input, cancellation).await?;
+    if operation.is_cancelled() {
+        return Err("digest_cancelled".into());
+    }
+    let issued = state.digest_handles.issue(response)?;
+    if operation.is_cancelled() {
+        return Err("digest_cancelled".into());
+    }
+    Ok(issued)
+}
+
+/// Cancel the currently running native digest. Cancellation is cooperative:
+/// the DB progress hook and Git child observe the same generation token, and
+/// the single-flight guard remains held until both have stopped.
+#[tauri::command]
+pub async fn cancel_digest(state: tauri::State<'_, Arc<AppState>>) -> Result<bool, String> {
+    let generation = state.digest_operations.cancel_generation();
+    let Some(generation) = generation else {
+        // `cancel_generation` returns None both when there is no active
+        // operation and when the state lock is poisoned. Treat the latter as
+        // a hard failure so a caller can never start a new generation while
+        // the old one may still own the single-flight slot.
+        if state.digest_operations.is_active() {
+            return Err("digest_cancel_timeout".into());
+        }
+        return Ok(false);
+    };
+    let deadline = Instant::now() + DIGEST_CANCEL_WAIT;
+    while state.digest_operations.is_active_generation(generation) && Instant::now() < deadline {
+        sleep(Duration::from_millis(5)).await;
+    }
+    if state.digest_operations.is_active_generation(generation) {
+        Err("digest_cancel_timeout".into())
+    } else {
+        Ok(true)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SaveDigestRequest {
+    pub handle: String,
 }
 
 /// Save the already rendered digest only after the user confirms a native
@@ -56,9 +106,13 @@ pub async fn get_digest(
 #[tauri::command]
 pub async fn save_digest(
     state: tauri::State<'_, Arc<AppState>>,
-    input: DigestInput,
+    request: SaveDigestRequest,
 ) -> Result<SaveDigestResult, String> {
-    let response = build_for_state(&state, input).await?;
+    let operation = state.digest_operations.begin()?;
+    let response = state.digest_handles.get(&request.handle)?;
+    if operation.is_cancelled() {
+        return Err("digest_cancelled".into());
+    }
     if !digest::validate_response(&response) {
         return Err("digest_output_invalid".into());
     }
@@ -71,9 +125,14 @@ pub async fn save_digest(
                 byte_length: response.markdown.len(),
             });
         };
+        if operation.is_cancelled() {
+            return Err("digest_cancelled".into());
+        }
         validate_save_path(&path)?;
-        devbox_filesystem::atomic_write(&path, response.markdown.as_bytes())
-            .map_err(|_| "digest 파일을 저장하지 못했습니다".to_string())?;
+        operation.commit_if_not_cancelled(|| {
+            devbox_filesystem::atomic_write(&path, response.markdown.as_bytes())
+                .map_err(|_| "digest 파일을 저장하지 못했습니다".to_string())
+        })?;
         return Ok(SaveDigestResult {
             saved: true,
             byte_length: response.markdown.len(),

@@ -6,16 +6,19 @@ import type { DigestInput, DigestResponse } from "./api";
 const mocks = vi.hoisted(() => ({
   writeText: vi.fn<(value: string) => Promise<void>>(),
   exportLifeLog: vi.fn(),
+  cancelDigest: vi.fn().mockResolvedValue(false),
   getDigest: vi.fn(),
+  getDay: vi.fn(),
   saveLifeLog: vi.fn(),
 }));
 
 vi.mock("./api", () => ({
   autostartStatus: vi.fn().mockResolvedValue({ supported: true, enabled: false, command: null }),
+  cancelDigest: mocks.cancelDigest,
   exportLifeLog: mocks.exportLifeLog,
   getDigest: mocks.getDigest,
   getAppStats: vi.fn().mockResolvedValue([]),
-  getDay: vi.fn().mockImplementation(async (date: string) => ({
+  getDay: mocks.getDay.mockImplementation(async (date: string) => ({
     date,
     pc_usage_ms: 3_600_000,
     app_totals: [],
@@ -151,7 +154,8 @@ afterEach(() => cleanup());
 
 async function renderLoadedApp() {
   render(<App />);
-  await screen.findByText("1h 0m");
+  await screen.findByRole("heading", { name: "Daily local digest" });
+  await waitFor(() => expect(screen.queryByText("Loading...")).toBeNull());
   return screen.getByLabelText(/\d{4}-\d{2}-\d{2} 선택된 날짜/u) as HTMLInputElement;
 }
 
@@ -160,6 +164,7 @@ describe("Life Log daily digest", () => {
     await renderLoadedApp();
 
     expect(await screen.findByRole("heading", { name: "Daily local digest" })).toBeTruthy();
+    expect(mocks.getDay).not.toHaveBeenCalled();
     expect(screen.getByText(/Browser preview only · native local data unavailable/u)).toBeTruthy();
     expect(screen.getByLabelText("Application filter")).toBeTruthy();
 
@@ -172,6 +177,38 @@ describe("Life Log daily digest", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Download preview" }));
     await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
+  });
+
+  it("clears stale digest state before a newer navigation request completes", async () => {
+    let firstInput: DigestInput | null = null;
+    let resolveFirst!: (response: DigestResponse) => void;
+    let resolveSecond!: () => void;
+    const first = new Promise<DigestResponse>((resolve) => { resolveFirst = resolve; });
+    const second = new Promise<void>((resolve) => { resolveSecond = resolve; });
+    mocks.getDigest
+      .mockReset()
+      .mockImplementationOnce((input: DigestInput) => {
+        firstInput = input;
+        return first;
+      })
+      .mockImplementationOnce((input: DigestInput) => second.then(() => digestFixture(input)));
+
+    render(<App />);
+    await waitFor(() => expect(mocks.getDigest).toHaveBeenCalledTimes(1));
+    const dateInput = screen.getByLabelText(/\d{4}-\d{2}-\d{2} 선택된 날짜/u) as HTMLInputElement;
+    const initialDate = dateInput.value;
+    fireEvent.click(screen.getByRole("button", { name: "다음 날짜" }));
+    await waitFor(() => expect(mocks.getDigest).toHaveBeenCalledTimes(2));
+    expect(dateInput.value).not.toBe(initialDate);
+    expect(screen.queryByRole("heading", { name: "Daily local digest" })).toBeNull();
+
+    resolveFirst(digestFixture(firstInput!));
+    await Promise.resolve();
+    expect(screen.queryByText("day fixture")).toBeNull();
+
+    resolveSecond();
+    await screen.findByRole("heading", { name: "Daily local digest" });
+    expect(dateInput.value).not.toBe(initialDate);
   });
 });
 
@@ -220,10 +257,12 @@ describe("Life Log date context menu", () => {
     fireEvent.keyDown(target, { key: "F10", code: "F10", shiftKey: true });
 
     await waitFor(() => expect(dateInput.value).toBe(chartDateKey));
-    expect(target.getAttribute("aria-current")).toBe("date");
+    await waitFor(() => expect(screen.queryByText("Loading...")).toBeNull());
+    const currentTarget = await screen.findByRole("button", { name: `${chartDateKey} 날짜` });
+    expect(currentTarget.getAttribute("aria-current")).toBe("date");
     fireEvent.click(screen.getByRole("menuitem", { name: "날짜 복사" }));
     await waitFor(() => expect(mocks.writeText).toHaveBeenCalledWith(chartDateKey));
-    await waitFor(() => expect(document.activeElement).toBe(target));
+    await waitFor(() => expect(document.activeElement).toBe(currentTarget));
   });
 
   it("invalid target은 이전 context date로 retarget하지 않는다", async () => {
@@ -337,7 +376,8 @@ describe("Life Log date context menu", () => {
     });
     mocks.exportLifeLog.mockReturnValueOnce(pending);
     const { unmount } = render(<App />);
-    await screen.findByText("1h 0m");
+    await screen.findByRole("heading", { name: "Daily local digest" });
+    await waitFor(() => expect(screen.queryByText("Loading...")).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Export preview" }));
     fireEvent.click(await screen.findByRole("button", { name: "미리보기 다운로드" }));
     await waitFor(() => expect(screen.getByRole("dialog", { name: "Life Log export" }).getAttribute("aria-busy")).toBe("true"));

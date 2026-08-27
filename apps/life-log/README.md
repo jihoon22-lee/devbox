@@ -134,21 +134,25 @@ millisecond exclusive), 각 local civil day의 `dayBoundaries`, `period`(`day`, 
 `filter.app`(없으면 `null`)으로 고정한다. native는 export와 동일하게 `dayBoundaries`를
 authoritative input으로 사용하므로 DST 전환일을 고정 24시간으로 다시 계산하지 않는다. 일간은
 정확히 하나의 local civil day, 주간은 월요일 시작 정확히 7일, 월간은 해당 월의 1일부터
-마지막 날까지 28~31일만 허용하며, invalid date, non-contiguous boundary, 음수/역전 epoch,
-과도한 범위는 DB·Git 조회 전에 고정 오류로 거부한다.
+실제 달력 마지막 날(윤년 2월 29일 포함)까지 정확히 28~31일만 허용한다. 각 boundary 폭은
+정상 24시간 또는 DST의 23/25시간이어야 하며, invalid date, non-contiguous boundary, 음수/역전
+epoch, 과도한 범위는 DB·Git 조회 전에 고정 오류로 거부한다.
 
 session은 기존 `life-log/export/v1`와 같은 bounded half-open SQL window(최대 50,000행)를
 거치고 privacy/obvious credential marker를 재적용한 뒤 앱 exact filter를 적용한다. filter는
 최대 256 UTF-8 bytes·control/credential marker 금지이며, 필터된 세션이 없으면 성공한 빈
-digest(`0 sessions`, `0 active days`, 빈 app 목록)로 표시한다. app 합계는 duration 내림차순,
-동률이면 UTF-8 byte 순으로 정렬하고 unique app은 2,048개까지다. 각 날짜에는 PC 사용량,
-session 수, Git commit 수, top app, `hasActivity`를 제공하고 전체에는 평균 일일 사용량과
-top app을 제공한다. 저장된 duration은 range에서 자르지 않고 시작 timestamp가 속한 boundary에
-귀속한다.
+digest(`0 sessions`, `0 active days`, 빈 app 목록)로 표시한다. app 합계와 duration 합산은
+checked arithmetic로 overflow를 발견하면 fail-closed하고, duration 내림차순/UTF-8 byte 순으로
+정렬하며 unique app은 2,048개까지다. 각 날짜에는 PC 사용량, session 수, Git commit 수, top
+app, `hasActivity`를 제공하고 전체에는 평균 일일 사용량과 top app을 제공한다. 저장된 duration은
+range에서 자르지 않고 시작 timestamp가 속한 boundary에 귀속한다.
 
 Git은 export producer의 safe absolute project path·identity dedupe·fixed argv·null stdin·2초
-timeout·256KiB stdout·폐기 stderr·stable error code를 그대로 공유한다. 앱 필터는 Git 결과에
-영향을 주지 않으며, Git 오류 project row에는 count 0과 고정 code를 남긴다. Run Manager와
+timeout·256KiB stdout·폐기 stderr·stable error code를 그대로 공유한다. 프로젝트 설정은 raw
+문자열 단계에서 64개/경로 4KiB/전체 byte 상한을 먼저 검사하며, invalid/duplicate 경로는
+native Git argv에 전달하지 않는다. 한 digest operation은 DB progress hook와 Git child에 같은
+cancellation token을 전달하고 한 번에 하나만 실행한다. 앱 필터는 Git 결과에 영향을 주지
+않으며, Git 오류 project row에는 count 0과 고정 code를 남긴다. Run Manager와
 Knowledge는 현재 range-keyed history가 아닌 latest local snapshot이므로 digest 수치에 섞지
 않고 `sources`에 producer/schema/snapshot version, generatedAt, freshness, named view와
 `latest-snapshot-out-of-range` scope만 보존한다. source 순서는 `life-log`, `git`,
@@ -160,15 +164,21 @@ Knowledge는 현재 range-keyed history가 아닌 latest local snapshot이므로
 `markdown`을 포함한다. Markdown에는 Summary/Daily digest/Applications/Git projects/
 Sources/Rules를 항상 포함하고 데이터가 없으면 명시적 empty 문장을 쓴다. 규칙 문장은 session
 window·duration·DST bucket·privacy·app filter·Git·snapshot scope·외부 처리 금지를 펼쳐서
-설명한다. 전체 document와 Markdown은 각각 4MiB 이하이며, serializer/renderer 오류와 내부
+설명한다. document·Markdown과 handle을 포함한 전체 serialized response는 모두 4MiB 이하이며, serializer/renderer 오류와 내부
 path·OS·Git stderr·원문 credential은 frontend에 반향하지 않는다.
 
 `Copy digest`는 사용자가 누른 현재 Markdown만 OS clipboard에 한 번 기록하고 history·storage·
-telemetry를 만들지 않는다. `Save digest`는 Windows native save dialog에서 사용자가 확정한
-`.md` 경로에만 sibling temporary file + `atomic_write`로 기록하며 cancel/invalid path/
-corrupt response는 파일을 만들지 않는다. 브라우저 빌드는 DB·Git·snapshot을 읽지 않고
+telemetry를 만들지 않는다. native `get_digest`는 화면에 반환하는 response를 서버 소유의
+opaque 32-hex handle registry에 120초 동안 immutable하게 보관한다. `Save digest`는 input을
+다시 계산하지 않고 이 handle로 같은 response를 조회한 뒤 Windows native save dialog에서
+사용자가 확정한 `.md` 경로에만 sibling temporary file + `atomic_write`로 기록한다. handle 만료/
+cancel/invalid path/corrupt response는 파일을 만들지 않는다. 최종 write는 operation generation
+mutex로 cancellation과 선형화해 취소와 파일 commit의 race도 허용하지 않는다. 브라우저 빌드는 DB·Git·snapshot을 읽지 않고
 `origin: browser-preview`와 네 source의 `browser_preview_only`를 포함한 동일한 구조의 preview를
 명시적 Download로만 제공한다. period 전환·앱 필터 변경·새로고침은 request token으로 stale
 응답을 폐기하고, busy 중 duplicate action을 막으며, copy/save 버튼·filter label·live status와
-기존 keyboard/IME 동작을 유지한다. 자동 일기 문장 생성, cloud/local LLM, network fetch와
+기존 keyboard/IME 동작을 유지한다. navigation은 이전 digest/day/range/attribution을 즉시
+지우고 native cancel 완료를 기다린 뒤 다음 요청을 시작한다. daily chart는 현재 날짜만
+roving tab stop으로 두고 Arrow/Home/End 및 focus-visible 상태를 제공하며, 앱명은 Unicode
+code point 단위로 잘라 표시한다. 자동 일기 문장 생성, cloud/local LLM, network fetch와
 개인 활동 원문 외부 전송은 이 기능에 포함하지 않는다.

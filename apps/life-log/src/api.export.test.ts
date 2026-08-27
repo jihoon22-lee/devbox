@@ -113,6 +113,7 @@ describe("Life Log browser local digest preview", () => {
       && source.errorCode === "browser_preview_only",
     )).toBe(true);
     expect(result.markdown).toContain("Period: `day`");
+    expect(result.markdown).toContain("date keys inclusive; end timestamp exclusive");
   });
 
   it("keeps all native sources unavailable and preserves daily boundaries", async () => {
@@ -148,6 +149,14 @@ describe("Life Log browser local digest preview", () => {
     expect(first.markdown).toContain("No activity was recorded in the browser preview.");
   });
 
+  it("rejects a monthly range whose end is not the actual calendar month end", () => {
+    const exportInput = buildExportInput("2024-02-01", "2024-02-28", "json");
+    if (!exportInput) throw new Error("fixture range could not be built");
+    expect(() => validateDigestInput(digestInput(exportInput, "month"))).toThrow(
+      "digest 입력이 올바르지 않습니다",
+    );
+  });
+
   it("rejects an app filter that resembles a credential without echoing it", () => {
     const exportInput = buildExportInput("2024-01-01", "2024-01-07", "json");
     if (!exportInput) throw new Error("fixture range could not be built");
@@ -173,6 +182,19 @@ describe("Life Log browser local digest preview", () => {
       expect(error).toBeInstanceOf(Error);
       expect((error as Error).message).not.toContain(raw);
     }
+  });
+
+  it("rejects a boundary width that is neither a normal day nor a DST day", () => {
+    const exportInput = buildExportInput("2024-01-01", "2024-01-01", "json");
+    if (!exportInput) throw new Error("fixture range could not be built");
+    const boundary = exportInput.dayBoundaries[0];
+    if (!boundary) throw new Error("fixture boundary missing");
+    const malformed = digestInput({
+      ...exportInput,
+      dayEnd: boundary.endMs + 1,
+      dayBoundaries: [{ ...boundary, endMs: boundary.endMs + 1 }],
+    }, "day");
+    expect(() => validateDigestInput(malformed)).toThrow("digest 입력이 올바르지 않습니다");
   });
 
   it("rejects a non-Monday weekly range and a multi-day daily range", () => {

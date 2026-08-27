@@ -24,7 +24,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite"] }
+rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite", "hooks"] }
 tokio = { version = "1.53.1", features = ["process", "time"] }
 devbox-git = { package = "git", path = "../../../crates/git" }
 dirs = "6.0.0"

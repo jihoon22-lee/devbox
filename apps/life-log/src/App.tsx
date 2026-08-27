@@ -3,13 +3,13 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   autostartStatus,
+  cancelDigest,
   exportLifeLog,
   getDigest,
   getAppStats,
-  getDay,
   getIdleThreshold,
   getPrivacyRules,
   getProjects,
@@ -50,7 +50,7 @@ function fmtDuration(ms: number): string {
 }
 
 function shortApp(app: string): string {
-  return app.replace(/\.exe$/i, "").slice(0, 22);
+  return Array.from(app.replace(/\.exe$/i, "")).slice(0, 22).join("");
 }
 
 export function toDateStr(d: Date): string {
@@ -142,6 +142,25 @@ function rangeFromDigest(response: DigestResponse, label: string): RangeSummary 
       day_ms: day.startMs,
       pc_usage_ms: day.pcUsageMs,
     })),
+  };
+}
+
+function dayFromDigest(response: DigestResponse): DaySummary {
+  return {
+    date: response.document.range.startDate,
+    pc_usage_ms: response.document.summary.pcUsageMs,
+    app_totals: response.document.appTotals.map((app) => ({
+      app: app.app,
+      duration_ms: app.durationMs,
+      sessions: app.sessions,
+    })),
+    git: {
+      projects: response.document.git.projects.map((project) => ({
+        path: project.path,
+        commits: project.commits,
+      })),
+      total_commits: response.document.git.totalCommits,
+    },
   };
 }
 
@@ -281,9 +300,27 @@ export default function App() {
   const digestBusyRef = useRef(false);
   const digestRequestRef = useRef(0);
   const loadRequestRef = useRef(0);
+  const dateContextFocusRequestRef = useRef(0);
   const exportDialogRef = useRef<HTMLElement>(null);
   const exportFirstFieldRef = useRef<HTMLInputElement>(null);
   const exportRestoreFocusRef = useRef<HTMLElement | null>(null);
+  const dailyChartRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const invalidatePendingLoad = useCallback(() => {
+    // Invalidate synchronously with the navigation event. The effect that
+    // starts the next load runs later, so copy/save cannot briefly target the
+    // previous period during React's batched state update.
+    loadRequestRef.current += 1;
+    setLoading(true);
+    setDigest(null);
+    setDay(null);
+    setRange(null);
+    setAttribution(null);
+    setSessions([]);
+    setStats([]);
+    setError(null);
+    setNotice(null);
+  }, []);
 
   // An export can outlive the component (for example when the window closes
   // while the native command is still preparing Git data). Invalidate the
@@ -295,6 +332,8 @@ export default function App() {
     digestRequestRef.current += 1;
     digestBusyRef.current = false;
     loadRequestRef.current += 1;
+    dateContextFocusRequestRef.current += 1;
+    void cancelDigest().catch(() => undefined);
   }, []);
 
   const prepareDateContext = useCallback((target: HTMLElement) => {
@@ -305,19 +344,21 @@ export default function App() {
       return;
     }
     setContextDate(value);
+    if (value === dateStr) return;
+    invalidatePendingLoad();
     setDate(parsed);
-  }, []);
+  }, [dateStr, invalidatePendingLoad]);
   const dateContextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareDateContext(target),
   });
   const dateContextItems = useMemo<readonly ContextMenuEntry[]>(
-    () => buildDateContextMenu(contextActionBusy || contextDate === null),
-    [contextActionBusy, contextDate],
+    () => buildDateContextMenu(contextActionBusy || loading || contextDate === null),
+    [contextActionBusy, contextDate, loading],
   );
 
   const copyContextDate = async () => {
     const value = contextDate;
-    if (!value || !parseDateKey(value) || contextActionBusy || exportBusyRef.current) return;
+    if (!value || !parseDateKey(value) || contextActionBusy || loading || exportBusyRef.current) return;
     setContextActionBusy(true);
     setError(null);
     setNotice(null);
@@ -373,7 +414,7 @@ export default function App() {
   };
 
   const beginExport = (): number | null => {
-    if (contextActionBusy || exportBusyRef.current) return null;
+    if (contextActionBusy || loading || exportBusyRef.current) return null;
     exportBusyRef.current = true;
     const request = exportRequestRef.current + 1;
     exportRequestRef.current = request;
@@ -417,7 +458,7 @@ export default function App() {
   };
 
   const openExportDialog = () => {
-    if (contextActionBusy || exportBusyRef.current) return;
+    if (contextActionBusy || loading || exportBusyRef.current) return;
     setExportStartDate(contextDate ?? dateStr);
     setExportEndDate(contextDate ?? dateStr);
     setExportFormat("markdown");
@@ -444,17 +485,6 @@ export default function App() {
       finishExport(request);
     }
   };
-
-  const digestInputFromResponse = (response: DigestResponse): DigestInput => ({
-    startDate: response.document.range.startDate,
-    endDate: response.document.range.endDate,
-    timezone: response.document.range.timezone,
-    dayStart: response.document.range.startMs,
-    dayEnd: response.document.range.endMs,
-    dayBoundaries: response.document.range.dayBoundaries,
-    period: response.document.period,
-    filter: response.document.filter,
-  });
 
   const beginDigestAction = (): { request: number; loadRequest: number } | null => {
     if (contextActionBusy || exportBusyRef.current || digestBusyRef.current || !digest) return null;
@@ -497,7 +527,8 @@ export default function App() {
     if (!response || action === null) return;
     try {
       if (isTauri()) {
-        const result = await saveDigest(digestInputFromResponse(response));
+        if (!response.handle) throw new Error("digest handle unavailable");
+        const result = await saveDigest(response.handle);
         if (isCurrentDigestAction(action) && result.saved) {
           setNotice("현재 digest를 저장했습니다.");
         }
@@ -573,11 +604,47 @@ export default function App() {
     };
   }, [exportDialogOpen]);
 
+  const restoreDateContextFocus = (
+    request: number,
+    target: HTMLElement | null,
+    value: string | null,
+  ) => {
+    if (!target || !value || !parseDateKey(value)) return;
+    const triggerClass = target.classList.contains("daily-col")
+      ? "daily-col"
+      : target.classList.contains("date-input")
+        ? "date-input"
+        : null;
+    window.setTimeout(() => {
+      if (dateContextFocusRequestRef.current !== request) return;
+      const replacement = target.isConnected
+        ? target
+        : Array.from(document.querySelectorAll<HTMLElement>("[data-date]")).find((element) =>
+          element.dataset.date === value
+          && (triggerClass === null || element.classList.contains(triggerClass)),
+        );
+      if (
+        !replacement
+        || (replacement instanceof HTMLButtonElement && replacement.disabled)
+        || (replacement instanceof HTMLInputElement && replacement.disabled)
+      ) return;
+      replacement.focus({ preventScroll: true });
+    }, 0);
+  };
+
   const onDateContextSelect = (id: string) => {
-    if (id === "copy-date") void copyContextDate();
-    if (id === "export-markdown") void exportDate("markdown");
-    if (id === "export-json") void exportDate("json");
-    if (id === "export-csv") void exportDate("csv");
+    const focusRequest = dateContextFocusRequestRef.current + 1;
+    dateContextFocusRequestRef.current = focusRequest;
+    const restoreFocusTo = dateContextMenu.restoreFocusTo;
+    const selectedDate = contextDate;
+    let action: Promise<void> | null = null;
+    if (id === "copy-date") action = copyContextDate();
+    if (id === "export-markdown") action = exportDate("markdown");
+    if (id === "export-json") action = exportDate("json");
+    if (id === "export-csv") action = exportDate("csv");
+    if (action) {
+      void action.finally(() => restoreDateContextFocus(focusRequest, restoreFocusTo, selectedDate));
+    }
   };
 
   const loadSettings = useCallback(async () => {
@@ -604,24 +671,37 @@ export default function App() {
     loadRequestRef.current = request;
     setLoading(true);
     setDigest(null);
+    setDay(null);
+    setRange(null);
+    setAttribution(null);
+    setSessions([]);
+    setStats([]);
     setError(null);
+    setNotice(null);
     try {
+      // A previous request may still be inside the native DB progress hook or
+      // bounded Git child. Wait for its cancellation command before claiming
+      // the single-flight slot for this generation.
+      if (isTauri()) {
+        try {
+          await cancelDigest();
+        } catch {
+          // The following native request still has its own fixed error path.
+        }
+      }
+      if (loadRequestRef.current !== request) return;
       if (view === "day") {
         const input = buildDigestInput(date, "day", digestAppFilter);
         if (!input) throw new Error("invalid digest range");
-        const [nextDay, nextAttribution] = await Promise.all([
-          getDay(dateStr, input.dayStart, input.dayEnd),
-          projectAttribution(input.dayStart, input.dayEnd),
-        ]);
+        const nextDigest = await getDigest(input);
         if (loadRequestRef.current !== request) return;
-        setDay(nextDay);
-        setAttribution(nextAttribution);
+        setDay(dayFromDigest(nextDigest));
+        setDigest(nextDigest);
         try {
-          const nextDigest = await getDigest(input);
-          if (loadRequestRef.current !== request) return;
-          setDigest(nextDigest);
+          const nextAttribution = await projectAttribution(input.dayStart, input.dayEnd);
+          if (loadRequestRef.current === request) setAttribution(nextAttribution);
         } catch {
-          if (loadRequestRef.current === request) setError("local digest를 불러오지 못했습니다.");
+          if (loadRequestRef.current === request) setAttribution(null);
         }
       } else if (view === "week") {
         const input = buildDigestInput(date, "week", digestAppFilter);
@@ -704,16 +784,74 @@ export default function App() {
   };
 
   const shift = (delta: number) => {
+    if (contextActionBusy) return;
     const d = new Date(date);
     if (view === "day") d.setDate(d.getDate() + delta);
     else if (view === "week") d.setDate(d.getDate() + delta * 7);
     else if (view === "month") d.setMonth(d.getMonth() + delta);
+    invalidatePendingLoad();
     setDate(d);
+  };
+
+  const selectDate = (next: Date) => {
+    if (contextActionBusy) return;
+    invalidatePendingLoad();
+    setDate(next);
+  };
+
+  const selectView = (next: ViewTab) => {
+    if (contextActionBusy || view === next) return;
+    invalidatePendingLoad();
+    setView(next);
+  };
+
+  const selectDigestFilter = (next: string | null) => {
+    if (contextActionBusy || loading) return;
+    invalidatePendingLoad();
+    setDigestAppFilter(next);
+  };
+
+  const cancelCurrentLoad = async () => {
+    if (!loading) return;
+    invalidatePendingLoad();
+    const cancellationRequest = loadRequestRef.current;
+    try {
+      await cancelDigest();
+      if (loadRequestRef.current === cancellationRequest) setLoading(false);
+    } catch {
+      // Keep the busy state while the native generation still owns the
+      // single-flight slot; a new Git/DB request must not race a timeout.
+      if (loadRequestRef.current === cancellationRequest) {
+        setError("현재 digest 작업을 취소하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      }
+    }
+  };
+
+  const onDailyChartKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    index: number,
+    points: RangeSummary["daily"],
+  ) => {
+    if (points.length === 0) return;
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = Math.max(0, index - 1);
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = Math.min(points.length - 1, index + 1);
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = points.length - 1;
+    if (nextIndex == null || nextIndex === index) return;
+    event.preventDefault();
+    const point = points[nextIndex];
+    const button = dailyChartRefs.current[nextIndex];
+    if (!point || !button) return;
+    button.focus();
+    selectDate(new Date(point.day_ms));
   };
 
   const topApp = day?.app_totals[0];
   const maxDaily = Math.max(1, ...(range?.daily.map((d) => d.pc_usage_ms) ?? []));
+  const maxStatDuration = Math.max(1, ...(stats.map((stat) => stat.duration_ms)));
   const summary = view === "day" ? day : range;
+  const maxSummaryDuration = Math.max(1, ...(summary?.app_totals.map((app) => app.duration_ms) ?? []));
   const digestAppOptions = useMemo(() => {
     const options = digest?.document.appTotals.map((app) => app.app) ?? [];
     if (digestAppFilter && !options.includes(digestAppFilter)) options.unshift(digestAppFilter);
@@ -723,7 +861,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="toolbar">
-        <button className="btn" onClick={() => shift(-1)}>
+        <button type="button" className="btn" aria-label="이전 날짜" onClick={() => shift(-1)} disabled={contextActionBusy}>
           ◀
         </button>
         <input
@@ -732,29 +870,44 @@ export default function App() {
           value={dateStr}
           data-date={dateStr}
           aria-label={`${dateStr} 선택된 날짜`}
+          disabled={contextActionBusy}
           onChange={(e) => {
             const parsed = parseDateKey(e.currentTarget.value);
-            if (parsed) setDate(parsed);
+            if (parsed) selectDate(parsed);
           }}
           {...dateContextMenu.triggerProps}
         />
-        <button className="btn" onClick={() => shift(1)}>
+        <button type="button" className="btn" aria-label="다음 날짜" onClick={() => shift(1)} disabled={contextActionBusy}>
           ▶
         </button>
-        <button className="btn" onClick={() => setDate(new Date())}>
+        <button type="button" className="btn" onClick={() => selectDate(new Date())} disabled={contextActionBusy}>
           Today
         </button>
         <span className="spacer" />
-        {loading && <span className="loading">Loading...</span>}
+        {loading && (
+          <>
+            <span className="loading" role="status" aria-live="polite">Loading...</span>
+            <button type="button" className="btn" onClick={() => void cancelCurrentLoad()} aria-label="데이터 불러오기 취소">
+              Cancel
+            </button>
+          </>
+        )}
         {(["day", "week", "month", "timeline", "settings"] as const).map((t) => (
-          <button key={t} className={`btn ${view === t ? "active" : ""}`} onClick={() => setView(t)}>
+          <button
+            type="button"
+            key={t}
+            className={`btn ${view === t ? "active" : ""}`}
+            aria-pressed={view === t}
+            onClick={() => selectView(t)}
+            disabled={contextActionBusy}
+          >
             {t[0].toUpperCase() + t.slice(1)}
           </button>
         ))}
-        <button className="btn refresh" onClick={() => void load()}>
+        <button type="button" className="btn refresh" onClick={() => void load()} disabled={contextActionBusy}>
           Refresh
         </button>
-        <button className="btn" onClick={openExportDialog} disabled={contextActionBusy}>
+        <button type="button" className="btn" onClick={openExportDialog} disabled={contextActionBusy || loading}>
           {isTauri() ? "Export range" : "Export preview"}
         </button>
       </header>
@@ -927,7 +1080,7 @@ export default function App() {
                 <div key={a.app} className="stat-row">
                   <span className="stat-app">{shortApp(a.app)}</span>
                   <div className="stat-bar">
-                    <div className="stat-fill" style={{ width: `${Math.min(100, (a.duration_ms / stats[0].duration_ms) * 100)}%` }} />
+                    <div className="stat-fill" style={{ width: `${Math.min(100, (a.duration_ms / maxStatDuration) * 100)}%` }} />
                   </div>
                   <span className="stat-dur">{fmtDuration(a.duration_ms)}</span>
                   <span className="dim">{a.sessions} sessions</span>
@@ -946,7 +1099,7 @@ export default function App() {
                   <div className="card-value">{fmtDuration(summary.pc_usage_ms)}</div>
                 </div>
                 <div className="card">
-                  <div className="card-label">Git commits</div>
+                  <div className="card-label">Git commits · 기간 전체</div>
                   <div className="card-value">{summary.git.total_commits}</div>
                 </div>
                 <div className="card">
@@ -963,6 +1116,16 @@ export default function App() {
                       <p className="dim">결정론적 규칙으로만 계산하며 네트워크·AI·외부 전송을 사용하지 않습니다.</p>
                     </div>
                     <div className="digest-actions">
+                      {loading && (
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => void cancelCurrentLoad()}
+                          aria-label="digest 불러오기 취소"
+                        >
+                          Cancel
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="btn"
@@ -989,18 +1152,18 @@ export default function App() {
                           <select
                             id="life-log-digest-app-filter"
                             value={digestAppFilter ?? ""}
-                            onChange={(event) => setDigestAppFilter(event.currentTarget.value || null)}
+                            onChange={(event) => selectDigestFilter(event.currentTarget.value || null)}
                             disabled={contextActionBusy || loading}
                           >
                             <option value="">All applications</option>
                             {digestAppOptions.map((app) => <option key={app} value={app}>{shortApp(app)}</option>)}
                           </select>
                         </label>
-                        <span className="dim" role="status">
+                        <span className="dim scope-note" role="status" aria-live="polite">
                           {digest.origin === "browser-preview"
                             ? "Browser preview only · native local data unavailable · "
                             : "Native local digest · "}
-                          {digest.document.range.startDate} ~ {digest.document.range.endDate} · {digest.document.range.timezone}
+                          {digest.document.range.startDate} ~ {digest.document.range.endDate} · {digest.document.range.timezone} · Git commits use the full requested period and ignore this app filter.
                         </span>
                       </div>
                       <div className="digest-cards">
@@ -1017,7 +1180,7 @@ export default function App() {
                           <div className="card-value">{digest.document.summary.sessionCount}</div>
                         </div>
                         <div className="card">
-                          <div className="card-label">Git commits</div>
+                          <div className="card-label">Git commits · 기간 전체</div>
                           <div className="card-value">{digest.document.summary.gitCommits}</div>
                         </div>
                       </div>
@@ -1070,7 +1233,7 @@ export default function App() {
                 <section className="panel">
                   <h2>{range.label} — daily usage</h2>
                   <div className="daily-chart">
-                    {range.daily.map((p) => {
+                    {range.daily.map((p, index) => {
                       const pointDate = new Date(p.day_ms);
                       const pointDateStr = toDateStr(pointDate);
                       return (
@@ -1082,7 +1245,11 @@ export default function App() {
                           data-date={pointDateStr}
                           aria-label={`${pointDateStr} 날짜`}
                           aria-current={pointDateStr === dateStr ? "date" : undefined}
-                          onClick={() => setDate(pointDate)}
+                          aria-roledescription="일별 사용량"
+                          tabIndex={pointDateStr === dateStr ? 0 : -1}
+                          ref={(element) => { dailyChartRefs.current[index] = element; }}
+                          onKeyDown={(event) => onDailyChartKeyDown(event, index, range.daily)}
+                          onClick={() => selectDate(pointDate)}
                           {...dateContextMenu.triggerProps}
                         >
                           <div className="daily-bar" style={{ height: `${Math.max(2, (p.pc_usage_ms / maxDaily) * 100)}%` }} />
@@ -1102,7 +1269,7 @@ export default function App() {
                     <div key={a.app} className="stat-row">
                       <span className="stat-app">{shortApp(a.app)}</span>
                       <div className="stat-bar">
-                        <div className="stat-fill" style={{ width: `${Math.min(100, (a.duration_ms / summary.app_totals[0].duration_ms) * 100)}%` }} />
+                        <div className="stat-fill" style={{ width: `${Math.min(100, (a.duration_ms / maxSummaryDuration) * 100)}%` }} />
                       </div>
                       <span className="stat-dur">{fmtDuration(a.duration_ms)}</span>
                     </div>
@@ -1112,7 +1279,7 @@ export default function App() {
 
               {attribution && attribution.profileCount > 0 && (
                 <section className="panel">
-                  <h2>Project attribution</h2>
+                  <h2>Project attribution · all applications</h2>
                   {attribution.attributed.map((a) => (
                     <div key={a.projectId} className="git-row">
                       <span className="mono dim">{a.projectId}</span>
@@ -1125,7 +1292,7 @@ export default function App() {
                       <span className="git-count">{attribution.unattributed.sessions} sessions · {fmtDuration(attribution.unattributed.durationMs)}</span>
                     </div>
                   )}
-                  <div className="dim">귀속은 창 제목의 프로젝트 이름 매치 기준입니다 (가장 긴 이름 우선, 중복 집계 없음).</div>
+                  <div className="dim">귀속은 창 제목의 프로젝트 이름 매치 기준이며 application filter와 독립적입니다 (가장 긴 이름 우선, 중복 집계 없음).</div>
                 </section>
               )}
 
