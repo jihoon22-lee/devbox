@@ -451,7 +451,7 @@ fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
     }
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len() / 2);
-    for pair in bytes.chunks_exact(2) {
+    for pair in bytes.as_chunks::<2>().0 {
         let high = hex_digit(pair[0]).ok_or_else(fixed_error)?;
         let low = hex_digit(pair[1]).ok_or_else(fixed_error)?;
         decoded.push((high << 4) | low);

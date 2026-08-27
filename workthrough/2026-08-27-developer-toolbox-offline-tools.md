@@ -72,6 +72,8 @@ QR generator를 하나의 cohesive offline-tools 기능 경계로 통합했다. 
   IPC field를 거부하는 strict serde fixture를 추가했다.
 - dependency notices를 lockfile에서 재생성하고 pinned Rust/JavaScript QR 라이브러리의 정책
   일치를 확인했다.
+- Rust 1.98 CI의 `chunks_exact_to_as_chunks` deny-by-default lint에 맞춰 canonical hex decoder의
+  이미 짝수 길이로 검증된 byte pair 순회를 `as_chunks::<2>()`로 갱신했다.
 
 ## Verification
 
