@@ -5,7 +5,7 @@
 `origin/main` `5719285`를 기준으로 한 전용 worktree와 branch에서 `6d637d5` grouped
 baseline을 만들고, 기존 repo-manager-git-safety 후보의 사용자 변경을 건드리지 않은 채 #316
 history/diff, #317 selected stage/unstage/commit, #318 remote sync, #319 Git safety preflight를
-하나의 P2-16 grouped PR 후보로 이식했다. 이후 미커밋 follow-up에서는 linked worktree identity
+하나의 P2-16 grouped PR 후보로 이식했다. 이후 review follow-up에서는 linked worktree identity
 lock, local operation cancellation, strict timestamp/ref parser와 confirmation/a11y 경계를
 보강했다. 이 문서는 변경 범위·이슈별 acceptance·검증 경계를 기록하며 #307 handoff와
 destructive recovery는 포함하지 않는다.
@@ -116,6 +116,10 @@ The complete local workspace gates and focused regression suites passed in the d
 - `pnpm build` — all frontend workspace projects passed.
 - `cargo check -p filesystem -p git --target x86_64-pc-windows-gnu` — Windows-specific
   filesystem identity and Job Object code compiled successfully.
+- `cargo test -p git runner_does_not_wait_for_an_escaped_descendant_holding_stdout` — CI 부하에서도
+  fixture가 먼저 escaped child PID를 게시하도록 handshake를 고정한 뒤 5회 연속 통과했다.
+- `cargo test -p repo-manager remote_real_git_fixture_covers_ff_pull_push_and_diverged_block` —
+  Git for Windows의 CRLF checkout도 같은 logical content로 검증하도록 정규화한 뒤 통과했다.
 - `git diff --check` — passed.
 
 The worktree restored frontend dependencies from the existing pnpm store with
@@ -123,14 +127,16 @@ The worktree restored frontend dependencies from the existing pnpm store with
 not change the lockfile. A full `repo-manager` cross-target check reached the Tauri Windows resource
 step and then stopped because this WSL environment has no `x86_64-w64-mingw32-windres`; the shared
 Windows-specific crates had already compiled. Windows packaged Git/credential-helper/hook descendant,
-reparse/path identity and real bare-remote smoke therefore remain W2 evidence, and Windows CI has not
-yet been claimed.
+reparse/path identity and real bare-remote smoke therefore remain W2 evidence. PR merge에는 GitHub
+Actions의 Windows compile/Clippy/test gate까지 모두 통과해야 하며, 이 문서는 실행 중인 CI
+결과를 미리 성공으로 기록하지 않는다.
 
 ## Scope and handoff
 
-- No commit, push, PR, rebase, reset, checkout, or existing worktree deletion was performed.
+- 기능 브랜치의 commit/push와 grouped PR 생성만 수행했다. rebase/reset/destructive checkout 또는
+  기존 사용자·source worktree 삭제는 수행하지 않았다.
 - Do not merge #307 Life Log→Knowledge handoff, arbitrary shell, force/reset/clean, runtime external
   download, or version bump into this candidate.
-- Before PR, rerun latest-main workspace CI and Windows W2 packaged smoke, especially Git for Windows
-  Job Object behavior, credential helper descendants, reparse/path identity, cancellation, and
-  final status race evidence.
+- Merge 전에 latest-main workspace CI를 통과하고, Windows W2 packaged smoke에서는 Git for
+  Windows Job Object behavior, credential helper descendants, reparse/path identity, cancellation,
+  final status race evidence를 확인한다.
