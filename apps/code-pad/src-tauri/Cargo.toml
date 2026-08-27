@@ -37,6 +37,7 @@ flate2 = "1.1.9"
 tar = { version = "0.4.46", default-features = false }
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 devbox-markdown = { package = "markdown", path = "../../../crates/markdown" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 

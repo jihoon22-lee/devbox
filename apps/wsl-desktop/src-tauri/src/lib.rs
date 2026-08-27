@@ -70,6 +70,7 @@ pub fn run() {
             commands::terminal::list_sessions,
         ])
         .setup(|app| {
+            devbox_window_state_tauri::restore_main_window(app.handle());
             app.manage(applink::PendingOpen::new());
             match devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>()) {
                 Ok(Some(req)) => app.state::<applink::PendingOpen>().set(req),
@@ -80,6 +81,9 @@ pub fn run() {
             app.manage(Arc::clone(&state));
             runtime_snapshot::spawn_snapshot_writer(state);
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            devbox_window_state_tauri::handle_window_event(window, event);
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

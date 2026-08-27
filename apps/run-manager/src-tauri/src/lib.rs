@@ -106,6 +106,7 @@ pub fn run() {
             commands::search_run_logs,
         ])
         .setup(|app| {
+            devbox_window_state_tauri::restore_main_window(app.handle());
             app.manage(applink::PendingOpen::new());
             if let Ok(Some(request)) =
                 devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>())
@@ -173,6 +174,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            devbox_window_state_tauri::handle_window_event(window, event);
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let state = window.state::<Arc<RuntimeState>>();
                 if !state.exit_authorized() {

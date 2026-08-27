@@ -30,6 +30,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            devbox_window_state_tauri::restore_main_window(app.handle());
             app.manage(applink::PendingOpen::new());
             match devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>()) {
                 Ok(Some(req)) => app.state::<applink::PendingOpen>().set(req),
@@ -72,6 +73,9 @@ pub fn run() {
                 }
             }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            devbox_window_state_tauri::handle_window_event(window, event);
         })
         .invoke_handler(tauri::generate_handler![
             applink::take_pending_open,

@@ -37,6 +37,7 @@ devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-secrets = { package = "secrets", path = "../../../crates/secrets" }
 dirs = "6.0.0"
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 
 [dev-dependencies]
 tempfile = "3"

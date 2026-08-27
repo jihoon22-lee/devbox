@@ -30,6 +30,7 @@ members = [
     "crates/applink",
     "crates/catalog",
     "crates/window-state",
+    "crates/window-state-tauri",
     # "crates/database",
 ]
 

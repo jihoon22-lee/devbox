@@ -53,6 +53,9 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
+        .on_window_event(|window, event| {
+            devbox_window_state_tauri::handle_window_event(window, event);
+        })
         .invoke_handler(tauri::generate_handler![
             commands::assets::save_image_asset,
             applink::take_pending_open,
@@ -89,6 +92,7 @@ pub fn run() {
             commands::wikilinks::backlinks,
         ])
         .setup(|app| {
+            devbox_window_state_tauri::restore_main_window(app.handle());
             app.manage(applink::PendingOpen::new());
             app.manage(commands::handoff::PendingKnowledgeDraft::new());
             match devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>()) {

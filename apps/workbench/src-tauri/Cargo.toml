@@ -27,6 +27,7 @@ serde_json = "1"
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 devbox-launch = { package = "launch", path = "../../../crates/launch" }
 devbox-git = { package = "git", path = "../../../crates/git" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }

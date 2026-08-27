@@ -54,6 +54,7 @@ pub fn run() {
             commands::open_repository_folder,
         ])
         .setup(|app| {
+            devbox_window_state_tauri::restore_main_window(app.handle());
             app.manage(applink::PendingOpen::new());
             match devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>()) {
                 Ok(Some(request)) => app.state::<applink::PendingOpen>().set(request),
@@ -61,6 +62,9 @@ pub fn run() {
                 Err(_) => eprintln!("applink: invalid request"),
             }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            devbox_window_state_tauri::handle_window_event(window, event);
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
