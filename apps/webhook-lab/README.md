@@ -1,4 +1,4 @@
-# webhook-lab — Webhook Lab (로컬 웹훅/콜백 서버)
+# webhook-lab — Webhook Lab v0.1.0 (로컬 웹훅/콜백 서버)
 
 API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound HTTP 요청을 받고 검사·재현**하는 로컬 서버.
 산출물: `WebhookLab.exe` (`apps/webhook-lab`).
@@ -97,10 +97,27 @@ history에서 **masked fixture 저장**을 선택하면 backend가 opaque histor
   symlink/non-file store는 고정 오류로 fail-closed하고 원본 파일을 자동 복구·덮어쓰지
   않는다. 목록은 capture timestamp 내림차순, 동일 timestamp에서는 ID 순으로 정렬한다.
 - fixture의 `응답 rule 초안`은 method/path만 편집기에 채우며 status 200·빈 response
-  headers/body·delay 0으로 시작한다. rule 저장은 별도 사용자 동작이고, API Playground
-  `api-request/v1` handoff(#315)나 request replay/sequence(#362)는 이 범위에 없다.
+  headers/body·delay 0으로 시작한다. rule 저장은 별도 사용자 동작이다.
 
-API Playground 변환 메뉴는 `api-request/v1` handoff(#315)가 준비될 때까지 계속 비활성화한다.
+### API Playground handoff (#315)
+
+history 또는 저장된 masked fixture의 `API Playground로 변환`은 backend가 보유한 opaque
+history/fixture ID만 IPC로 전달한다. Webhook Lab은 이미 masked 상태인 snapshot만 읽어
+`api-request/v1` payload를 만들고, 원본 header vault·raw body·clipboard를 이 경로에서
+읽거나 쓰지 않는다. origin-form URL은 host를 임의로 만들지 않고 API Playground preview에서
+확인한 뒤 적용 후 request editor에서 입력·수정할 수 있게 보존한다.
+
+catalog에서 `api-playground` 설치와 `handoff:api-request/v1` capability를 확인한 뒤 공용
+`crates/applink` store에 10분 TTL·10 MiB bounded envelope를 만들며, envelope에는
+`producer=webhook-lab`과 `consumer=api-playground`가 고정된다. 실행 인자에는 payload가
+아닌 kind와 128-bit opaque handoff ID만 들어간다. 수신 앱이 없거나 실행에 실패하면 fixed
+error만 표시하고 clipboard·임시 파일 fallback은 사용하지 않는다.
+
+API Playground는 cold/hot AppLink 모두에서 handoff를 claim한 뒤 적용 전 preview를 표시한다.
+`적용`은 claim을 ack/delete하고 요청 편집기에 반영하며, `취소`는 restore한다. 만료·손상·중복
+claim·lease 오류는 fixed error로 표시하고 자동 재전달이나 clipboard fallback을 하지 않는다.
+credential marker는 `${WEBHOOK_SECRET}` 같은 이름 참조로만 남으며 secret 원문은 handoff에
+포함되지 않는다.
 
 ### Example curl 계약
 

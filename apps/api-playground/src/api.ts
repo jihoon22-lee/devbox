@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "./lib/isTauri";
 import { applyToRequest, type EnvVariable } from "./lib/environments";
@@ -64,7 +65,14 @@ import type {
   WebSocketMessageInput,
   WebSocketUpdate,
 } from "./types";
-import type { ApiResponse, RequestTemplate, SseOptions, SseUpdate } from "./types";
+import type {
+  ApiRequestHandoffPreview,
+  ApiResponse,
+  OpenRequest,
+  RequestTemplate,
+  SseOptions,
+  SseUpdate,
+} from "./types";
 
 const SSE_EVENT = "api-playground/sse";
 const MAX_SSE_URL_BYTES = 8 * 1024;
@@ -85,6 +93,9 @@ const MAX_SSE_TOTAL_TIMEOUT_MS = 3_600_000;
 const MAX_RESPONSE_HEADERS = 100;
 const MAX_RESPONSE_HEADER_BYTES = 64 * 1024;
 let nativeRequestSequence = 0;
+
+const HANDOFF_BROWSER_ERROR =
+  "API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
 
 function nextNativeRequestId(): string {
   nativeRequestSequence = (nativeRequestSequence + 1) % Number.MAX_SAFE_INTEGER;
@@ -192,6 +203,36 @@ export async function pickMultipartFile(): Promise<PickedMultipartFile | null> {
   });
   if (typeof selected !== "string") return null;
   return { path: selected, name: safeMultipartFileName(selected) };
+}
+
+/** Takes the one-shot cold/hot AppLink request stored by the native shell. */
+export async function takePendingOpen(): Promise<OpenRequest | null> {
+  if (!isTauri()) return null;
+  return invoke<OpenRequest | null>("take_pending_open");
+}
+
+/** Registers the wake-up listener used by the native single-instance plugin. */
+export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise<UnlistenFn> {
+  if (!isTauri()) return () => undefined;
+  return listen<OpenRequest>("devbox://open", (event) => cb(event.payload));
+}
+
+/** Claim and validate a pending `api-request/v1` handoff for preview. */
+export async function claimApiRequest(handoffId: string): Promise<ApiRequestHandoffPreview> {
+  if (!isTauri()) throw new Error(HANDOFF_BROWSER_ERROR);
+  return invoke<ApiRequestHandoffPreview>("claim_api_request", { handoffId });
+}
+
+/** Acknowledge an applied preview and return its editable request template. */
+export async function ackApiRequest(handoffId: string): Promise<RequestTemplate> {
+  if (!isTauri()) throw new Error(HANDOFF_BROWSER_ERROR);
+  return invoke<RequestTemplate>("ack_api_request", { handoffId });
+}
+
+/** Return a cancelled preview to the shared pending queue. */
+export async function restoreApiRequest(handoffId: string): Promise<void> {
+  if (!isTauri()) throw new Error(HANDOFF_BROWSER_ERROR);
+  return invoke<void>("restore_api_request", { handoffId });
 }
 
 async function browserFetch(req: RequestTemplate, environment: EnvVariable[], signal?: AbortSignal): Promise<ApiResponse> {

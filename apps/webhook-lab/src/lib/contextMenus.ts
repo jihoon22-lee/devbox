@@ -10,8 +10,9 @@ export function buildHistoryContextMenu(busy: boolean): readonly ContextMenuEntr
       type: "item",
       id: "convert-api-playground",
       label: "API Playground로 변환",
-      // P2 #315의 api-request/v1 handoff가 준비되기 전에는 데이터를 임시 채널로 넘기지 않는다.
-      disabled: true,
+      // The backend publishes an opaque api-request/v1 handoff and launches
+      // API Playground; no request data travels through the browser clipboard.
+      disabled: busy,
     },
     { type: "separator", id: "history-danger-separator" },
     { type: "item", id: "delete", label: "삭제", disabled: busy, danger: true },

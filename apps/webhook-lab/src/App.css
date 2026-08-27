@@ -118,6 +118,14 @@ body {
   padding: 8px 14px;
 }
 
+.handoff-notice {
+  background: rgba(79, 140, 255, 0.12);
+  border-bottom: 1px solid var(--accent);
+  color: var(--text);
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
 .main {
   flex: 1;
   display: grid;

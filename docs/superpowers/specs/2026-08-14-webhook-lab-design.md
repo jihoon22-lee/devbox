@@ -1,6 +1,6 @@
 # Webhook Lab 설계 — Local Mock/Webhook Server
 
-- 상태: MVP 구현 중 — #314 captured fixture 저장 완료; #315 handoff·#362 replay 후속
+- 상태: MVP 구현 중 — #314 captured fixture 저장·#315 Webhook→API handoff 완료; #362 replay 후속
 - 작성일: 2026-08-14
 - 근거: `docs/product-opportunities.md` §15.3, §17.9
 
@@ -81,9 +81,8 @@ count, byte는 UTF-8 byte count이며 JS `Array.from`/`TextEncoder`와 Rust 구�
 invalid raw draft를 유지하고 stale id, double action, 접근성 오류를 처리한다. 이 PR은 기존
 HashMap 저장/순회·id·순서·matcher semantics를 변경하지 않고 priority를 만들지 않는다.
 예시 curl은 별도 완료 범위이고, captured fixture 저장은 아래 #314 계약으로 구현했다. captured
-request replay/sequence와 API Playground handoff는 각각 #362·#315 후속 이슈 범위다.
-따라서 위 MVP 목록에 적힌 handoff는 제품 설계의 전체 목표이며, #282 완료 상태는 rule
-설명·검증까지로 기록한다.
+request replay/sequence는 #362 후속 이슈 범위로 남겼다. API Playground handoff는 아래 #315
+계약으로 구현하며, #282 완료 상태는 rule 설명·검증까지로 기록한다.
 
 ## 8. #314 captured fixture 저장 계약 (2026-08-27)
 
@@ -99,3 +98,24 @@ corrupt·oversized·symlink/non-file 저장소는 고정 오류로 fail-closed�
 통해 partial write와 concurrent overwrite를 막고, 목록은 timestamp 내림차순·ID tie-break로
 결정한다. fixture에서 response-rule 초안을 만들 때는 method/path만 local editor에 채우며
 response metadata는 빈 값으로 둔다. API handoff와 replay/sequence는 이 계약에 포함하지 않는다.
+
+## 9. #315 Webhook Lab → API Playground handoff 계약 (2026-08-27)
+
+history 또는 저장된 fixture를 `API Playground로 변환`할 때 frontend는 history/fixture의
+opaque ID만 backend에 전달한다. producer는 backend-owned masked snapshot을 다시 검증해
+`api-request/v1` payload를 만들고 catalog에서 `api-playground`의
+`handoff:api-request/v1` capability와 설치 상태를 확인한다. URL은 origin-form을 그대로
+전달하며 Webhook Lab이 host나 secret을 추측하지 않는다.
+
+payload는 공용 `crates/applink` handoff store의 10분·10 MiB bounded envelope에 기록한다.
+envelope는 `producer=webhook-lab`, `consumer=api-playground`를 가지며 process argv에는
+kind와 128-bit lowercase opaque ID만 포함한다. 민감 header/query/body marker는
+`${WEBHOOK_SECRET}` 같은 environment reference로만 보존하고 raw credential, 파일 경로,
+clipboard, 임시 export를 사용하지 않는다.
+
+API Playground는 cold start와 second-instance callback 모두에서 pending ID를 claim한 뒤
+producer/consumer/handoff ID, expiry, 요청 method/URL/header/body를 적용 전 preview로
+보여준다. preview가 request editor·History·Collection·response를 바꾸지 않으며, 사용자가
+`적용`할 때만 claim을 ack/delete하고 editor에 넣는다. `취소`는 restore한다. 미설치·실행
+실패·만료·손상·wrong target/kind·중복 claim·lease/storage 오류는 원문 경로와 payload를
+반향하지 않는 fixed error이며 clipboard fallback이 없다.

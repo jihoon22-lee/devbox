@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 6,
+  "catalogRevision": 7,
   "apps": [
     {
       "id": "port-manager",
@@ -54,7 +54,7 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": [],
+      "accepts": ["handoff:api-request/v1"],
       "produces": [],
       "actions": []
     },
@@ -167,7 +167,7 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": [],
-      "produces": [],
+      "produces": ["handoff:api-request/v1"],
       "actions": []
     },
     {

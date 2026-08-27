@@ -14,13 +14,18 @@ import {
 import type { RequestTemplate } from "./types";
 
 vi.mock("./api", () => ({
+  ackApiRequest: vi.fn(),
   buildRevealedCurl: vi.fn(),
+  claimApiRequest: vi.fn(),
   copyRawResponseCookies: vi.fn(),
   copyRawResponseHeaders: vi.fn(),
+  onOpenRequest: vi.fn(async () => () => undefined),
+  restoreApiRequest: vi.fn(),
   sanitizePersistedJson: vi.fn(),
   sealSecret: vi.fn(),
   sendRequest: vi.fn(),
   startSseStream: vi.fn(),
+  takePendingOpen: vi.fn(async () => null),
 }));
 
 const RAW_SECRET = "direct-context-secret";

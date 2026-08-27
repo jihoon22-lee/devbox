@@ -2,6 +2,8 @@
 
 - 상태: v0.4.1 범위(§1의 Path/Workspace 라우팅·§3·§5.1) 구현 및 안정판 배포 완료;
   v0.5.0 catalog·Profile/Query·snapshot 정리와 protocol v2 handoff **범위 확정, 개발 착수**
+- 2026-08-27: Webhook Lab → API Playground `api-request/v1` producer/receiver draft 구현;
+  preview·claim/ack/restore·privacy/no-clipboard 경계는 #315에서 검증
 - 작성일: 2026-08-17
 - 범위: 저장소 전체 — `crates/applink`, `crates/launch`, `crates/integration`, 신규
   `crates/catalog`, `apps/catalog.json`, 기존 13개 앱 + 계획된 Devbox Launcher·Log Lens
@@ -502,7 +504,9 @@ repo-manager의 하드코딩 allowlist(`commands.rs:148`)는 §2의 카탈로그
 `crates/catalog` + `catalogRevision`/versioned install-root locator → §4 snapshot producer와
 자동 발견 → 나머지 앱 수신 → §1.5 handoff core(claim/ack/restore) → P2 Webhook Lab → API
 Playground → P2 Life Log → Knowledge → P3 Devbox Launcher/Log Lens bootstrap → P3 Toolbox
-→ API → P3 Run/WSL → Log Lens producer 순서다. 카탈로그와 locator가 있어야 컨텍스트
+→ API → P3 Run/WSL → Log Lens producer 순서다. 2026-08-27 현재 P2 Webhook Lab → API
+Playground 단계는 #315 draft로 구현되었고, catalog capability·shared store·cold/hot
+single-instance·preview/apply/cancel·fixed error/no-clipboard 경계를 포함한다. 카탈로그와 locator가 있어야 컨텍스트
 메뉴의 "다른 앱으로 열기"와 custom-root executable discovery가 생성되고, handoff kind를
 수신할 설치 앱도 안전하게 찾을 수 있다.
 

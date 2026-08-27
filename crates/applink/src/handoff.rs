@@ -691,8 +691,9 @@ fn is_safe_sensitive_value(value: &Value) -> bool {
 }
 
 fn sensitive_field(value: &str) -> bool {
+    let compact = normalize_field_name(value);
     matches!(
-        normalize_field_name(value).as_str(),
+        compact.as_str(),
         "authorization"
             | "proxyauthorization"
             | "cookie"
@@ -709,10 +710,23 @@ fn sensitive_field(value: &str) -> bool {
             | "credentials"
             | "apikey"
             | "xapikey"
+            | "xauth"
             | "accesskey"
             | "clientsecret"
             | "privatekey"
-    )
+    ) || [
+        "authorization",
+        "cookie",
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "credential",
+        "apikey",
+        "privatekey",
+    ]
+    .iter()
+    .any(|needle| compact.contains(needle))
 }
 
 fn path_field(value: &str) -> bool {
@@ -789,19 +803,7 @@ fn looks_like_raw_credential(value: &str) -> bool {
     {
         return true;
     }
-    if value
-        .split(|character: char| {
-            character.is_whitespace() || matches!(character, '&' | ',' | ';' | '?')
-        })
-        .filter_map(|segment| segment.split_once('=').or_else(|| segment.split_once(':')))
-        .any(|(key, raw_value)| {
-            sensitive_field(key.trim_matches(|character: char| {
-                matches!(character, '"' | '\'' | '{' | '}' | '[' | ']')
-            })) && !is_exact_secret_reference(raw_value.trim_matches(|character: char| {
-                matches!(character, '"' | '\'' | '{' | '}' | '[' | ']' | ',')
-            }))
-        })
-    {
+    if has_unsafe_sensitive_assignment(value) {
         return true;
     }
     if trimmed.split_once("://").is_some_and(|(_, rest)| {
@@ -816,6 +818,58 @@ fn looks_like_raw_credential(value: &str) -> bool {
         && jwt_parts.next().is_some_and(|part| part.len() >= 8)
         && jwt_parts.next().is_some_and(|part| part.len() >= 8)
         && jwt_parts.next().is_none()
+}
+
+fn has_unsafe_sensitive_assignment(value: &str) -> bool {
+    value
+        .split(['&', ',', ';', '?', '\n', '\r', '\t'])
+        .any(|segment| {
+            segment.char_indices().any(|(operator, character)| {
+                if !matches!(character, '=' | ':') {
+                    return false;
+                }
+                let before = &segment[..operator];
+                let key_end = before.trim_end().len();
+                let key_start = before[..key_end]
+                    .char_indices()
+                    .rev()
+                    .find(|(_, character)| {
+                        !character.is_ascii_alphanumeric() && !matches!(character, '_' | '-' | '.')
+                    })
+                    .map_or(0, |(index, character)| index + character.len_utf8());
+                let key = &before[key_start..key_end];
+                let raw_value = segment[operator + character.len_utf8()..].trim_start();
+                sensitive_field(key)
+                    && !raw_value.is_empty()
+                    && !is_safe_assignment_reference(raw_value)
+            })
+        })
+}
+
+/// Accept an exact reference inside the small amount of JSON punctuation that
+/// the conservative assignment scanner sees (`"${TOKEN}"}`).  Braces are not
+/// trimmed from the reference itself: `${TOKEN}` must remain an exact value,
+/// while arbitrary text around it remains rejected.
+fn is_safe_assignment_reference(raw_value: &str) -> bool {
+    let value = raw_value.trim();
+    let Some(quote) = value
+        .chars()
+        .next()
+        .filter(|character| *character == '"' || *character == '\'')
+    else {
+        return is_exact_secret_reference(value.trim_end_matches(','));
+    };
+    let quote_width = quote.len_utf8();
+    let rest = &value[quote_width..];
+    let Some(end) = rest.find(quote) else {
+        return false;
+    };
+    let candidate = &rest[..end];
+    let trailing = rest[end + quote_width..].trim();
+    trailing
+        .chars()
+        .all(|character| matches!(character, '}' | ']' | ','))
+        && is_exact_secret_reference(candidate)
 }
 
 fn encode_bounded<T: Serialize>(value: &T, max: u64) -> Result<Vec<u8>, HandoffError> {
@@ -1442,6 +1496,39 @@ mod tests {
             store.create(raw_header, 1_000),
             Err(HandoffError::InvalidPayload)
         );
+
+        let mut raw_named_token = request(None);
+        raw_named_token.payload = json!({
+            "headers": [{"name": "X-Client-Token", "value": "opaque-credential"}]
+        });
+        assert_eq!(
+            store.create(raw_named_token, 1_000),
+            Err(HandoffError::InvalidPayload)
+        );
+
+        let mut raw_x_auth = request(None);
+        raw_x_auth.payload = json!({
+            "headers": [{"name": "X-Auth", "value": "opaque-credential"}]
+        });
+        assert_eq!(
+            store.create(raw_x_auth, 1_000),
+            Err(HandoffError::InvalidPayload)
+        );
+
+        let mut spaced_raw_assignment = request(None);
+        spaced_raw_assignment.payload = json!({
+            "body": "mode=test token = opaque-credential"
+        });
+        assert_eq!(
+            store.create(spaced_raw_assignment, 1_000),
+            Err(HandoffError::InvalidPayload)
+        );
+
+        let mut spaced_reference = request(None);
+        spaced_reference.payload = json!({
+            "body": "mode=test token = ${WEBHOOK_SECRET}"
+        });
+        assert!(store.create(spaced_reference, 1_000).is_ok());
 
         let mut relative = request(None);
         relative.payload = json!({"path": "../outside.bin"});

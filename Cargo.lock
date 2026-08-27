@@ -84,12 +84,14 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "api-playground"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
+ "applink",
  "base64 0.22.1",
  "dirs",
  "filesystem",
  "futures-util",
+ "integration",
  "reqwest",
  "secrets",
  "serde",
@@ -98,6 +100,8 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
+ "tempfile",
  "tokio",
  "tokio-tungstenite",
  "windows 0.61.3",
@@ -6488,7 +6492,10 @@ dependencies = [
 name = "webhook-lab"
 version = "0.1.0"
 dependencies = [
+ "applink",
  "filesystem",
+ "integration",
+ "launch",
  "serde",
  "serde_json",
  "tauri",

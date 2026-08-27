@@ -5,10 +5,14 @@ import {
 } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ackApiRequest,
   buildRevealedCurl,
+  claimApiRequest,
   copyRawResponseCookies,
   copyRawResponseHeaders,
+  onOpenRequest,
   pickMultipartFile,
+  restoreApiRequest,
   sanitizePersistedJson,
   sealSecret,
   sendRequest,
@@ -16,6 +20,7 @@ import {
   type SseStreamHandle,
   startWebSocket,
   type WebSocketHandle,
+  takePendingOpen,
 } from "./api";
 import { CookieEditor } from "./CookieEditor";
 import { GraphqlEditor } from "./GraphqlEditor";
@@ -94,10 +99,12 @@ import { eventSize, MAX_DECODED_BYTES, MAX_RETAINED_EVENTS, type SseEvent } from
 import { isTauri } from "./lib/isTauri";
 import { WebSocketMessageBuffer } from "./lib/websocket";
 import type {
+  ApiRequestHandoffPreview,
   ApiResponse,
   GraphqlRequest,
   HistoryItem,
   KeyValue,
+  OpenRequest,
   RequestTemplate,
   SseOptions,
   SseUpdate,
@@ -113,6 +120,7 @@ const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const BODY_KINDS = ["none", "json", "form", "multipart", "raw", "graphql"];
 const AUTH_KINDS = ["none", "basic", "bearer", "apikey"];
 const MAX_SSE_UI_ROWS = 1_000;
+const API_REQUEST_HANDOFF_KIND = "api-request/v1";
 
 const defaultSseOptions = (): SseOptions => ({
   connectTimeoutMs: 10_000,
@@ -273,6 +281,14 @@ export default function App() {
   const webSocketTerminalGenerationRef = useRef<number | null>(null);
   const webSocketSequenceRef = useRef(0);
   const webSocketBufferRef = useRef(new WebSocketMessageBuffer());
+  const [handoffPreview, setHandoffPreview] = useState<ApiRequestHandoffPreview | null>(null);
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  const handoffPreviewRef = useRef<ApiRequestHandoffPreview | null>(null);
+  const handoffBusyRef = useRef(false);
+  const handoffDialogRef = useRef<HTMLElement | null>(null);
+  const handoffCancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const handoffPreviousFocusRef = useRef<HTMLElement | null>(null);
+  const cancelHandoffRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -284,6 +300,89 @@ export default function App() {
       const handle = webSocketHandleRef.current;
       webSocketHandleRef.current = null;
       if (handle) void handle.stop().catch(() => undefined);
+      const preview = handoffPreviewRef.current;
+      if (preview && !handoffBusyRef.current) {
+        // A preview is a native claim, not merely renderer state. Return it to
+        // pending when the renderer disappears before the user decides.
+        handoffPreviewRef.current = null;
+        void restoreApiRequest(preview.handoffId).catch(() => undefined);
+      }
+    };
+  }, []);
+
+  // AppLink delivery is intentionally independent of History migration. The
+  // native shell stores the request before emitting, so the listener is
+  // registered first and both cold/hot paths pull the same pending slot.
+  const handleOpenRequest = (request: OpenRequest) => {
+    if (request.target.kind !== "handoff") return;
+    if (request.target.handoffKind !== API_REQUEST_HANDOFF_KIND) {
+      setError("지원하지 않는 handoff 요청입니다");
+      return;
+    }
+    if (handoffBusyRef.current || handoffPreviewRef.current) {
+      setError("기존 handoff 미리보기를 먼저 적용하거나 취소하세요");
+      return;
+    }
+    handoffBusyRef.current = true;
+    setHandoffBusy(true);
+    setError(null);
+    void claimApiRequest(request.target.id)
+      .then((preview) => {
+        if (!mountedRef.current) {
+          // The claim may have completed after the renderer unmounted. Do not
+          // leave the native claim waiting for lease expiry in that case.
+          void restoreApiRequest(preview.handoffId).catch(() => undefined);
+          return;
+        }
+        handoffPreviewRef.current = preview;
+        setHandoffPreview(preview);
+      })
+      .catch((cause) => {
+        if (mountedRef.current) setError(safeHandoffError(cause));
+      })
+      .finally(() => {
+        handoffBusyRef.current = false;
+        if (mountedRef.current) setHandoffBusy(false);
+      });
+  };
+  const handleOpenRequestRef = useRef(handleOpenRequest);
+  handleOpenRequestRef.current = handleOpenRequest;
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    let coldStartConsumed = false;
+
+    const consumePendingOpen = () => {
+      void takePendingOpen()
+        .then((request) => {
+          if (!disposed && request) handleOpenRequestRef.current(request);
+        })
+        .catch((cause) => {
+          if (!disposed) setError(safeHandoffError(cause));
+        });
+    };
+    const consumeColdStart = () => {
+      if (disposed || coldStartConsumed) return;
+      coldStartConsumed = true;
+      consumePendingOpen();
+    };
+
+    void onOpenRequest(() => consumePendingOpen())
+      .then((stop) => {
+        if (disposed) stop();
+        else {
+          unlisten = stop;
+          consumeColdStart();
+        }
+      })
+      .catch(() => {
+        consumeColdStart();
+      });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
     };
   }, []);
 
@@ -848,6 +947,116 @@ export default function App() {
     }
   };
 
+  const onApplyHandoff = async () => {
+    const preview = handoffPreviewRef.current;
+    if (!preview || handoffBusyRef.current) return;
+    handoffBusyRef.current = true;
+    setHandoffBusy(true);
+    setError(null);
+    try {
+      const request = await ackApiRequest(preview.handoffId);
+      if (!mountedRef.current) return;
+      setReq(request);
+      setRequestEditorRevision((revision) => revision + 1);
+      setResp(null);
+      setPersistenceWarning(null);
+      handoffPreviewRef.current = null;
+      setHandoffPreview(null);
+    } catch (cause) {
+      const message = safeHandoffError(cause);
+      if (message === "handoff 요청을 사용할 수 없습니다"
+        || message === "handoff 요청이 만료되었거나 더 이상 사용할 수 없습니다"
+        || message === "handoff 미리보기가 만료되었습니다. 다시 전달하세요") {
+        handoffPreviewRef.current = null;
+        if (mountedRef.current) setHandoffPreview(null);
+      }
+      if (mountedRef.current) setError(message);
+    } finally {
+      handoffBusyRef.current = false;
+      if (mountedRef.current) setHandoffBusy(false);
+    }
+  };
+
+  const onCancelHandoff = async () => {
+    const preview = handoffPreviewRef.current;
+    if (!preview || handoffBusyRef.current) return;
+    handoffBusyRef.current = true;
+    setHandoffBusy(true);
+    setError(null);
+    try {
+      await restoreApiRequest(preview.handoffId);
+      if (!mountedRef.current) return;
+      handoffPreviewRef.current = null;
+      setHandoffPreview(null);
+    } catch (cause) {
+      const message = safeHandoffError(cause);
+      if (message === "handoff 요청을 사용할 수 없습니다"
+        || message === "handoff 요청이 만료되었거나 더 이상 사용할 수 없습니다"
+        || message === "handoff 미리보기가 만료되었습니다. 다시 전달하세요") {
+        handoffPreviewRef.current = null;
+        if (mountedRef.current) setHandoffPreview(null);
+      }
+      if (mountedRef.current) setError(message);
+    } finally {
+      handoffBusyRef.current = false;
+      if (mountedRef.current) setHandoffBusy(false);
+    }
+  };
+
+  cancelHandoffRef.current = onCancelHandoff;
+
+  useEffect(() => {
+    const preview = handoffPreview;
+    const dialog = handoffDialogRef.current;
+    if (!preview || !dialog) return undefined;
+
+    const active = document.activeElement;
+    const previous = active instanceof HTMLElement && !dialog.contains(active) ? active : null;
+    handoffPreviousFocusRef.current = previous;
+
+    const focusableElements = () => Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    handoffCancelButtonRef.current?.focus();
+
+    const onDialogKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (!handoffBusyRef.current) void cancelHandoffRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = focusableElements();
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!dialog.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    dialog.addEventListener("keydown", onDialogKeyDown);
+    return () => {
+      dialog.removeEventListener("keydown", onDialogKeyDown);
+      if (!handoffPreviewRef.current && handoffPreviousFocusRef.current === previous) {
+        previous?.focus();
+        handoffPreviousFocusRef.current = null;
+      }
+    };
+  }, [handoffPreview]);
+
   const setAuth = (patch: Partial<NonNullable<RequestTemplate["auth"]>>) =>
     setReq({
       ...req,
@@ -984,6 +1193,72 @@ export default function App() {
 
   return (
     <div className="app">
+      {handoffPreview && (
+        <div className="handoff-backdrop">
+          <section
+            className="handoff-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="handoff-dialog-title"
+            aria-describedby="handoff-dialog-description"
+            ref={handoffDialogRef}
+          >
+            <div className="handoff-dialog-head">
+              <div>
+                <h2 id="handoff-dialog-title">Webhook 요청 미리보기</h2>
+                <p id="handoff-dialog-description" className="handoff-subtitle">
+                  적용하기 전 요청을 확인하세요. origin-form URL은 적용 후 request editor에서 host를 입력할 수 있습니다. secret 원문은 전달되지 않고 환경 변수 참조만 보존됩니다.
+                </p>
+              </div>
+              <span className="handoff-kind">{handoffPreview.kind}</span>
+            </div>
+            <dl className="handoff-meta">
+              <div><dt>producer</dt><dd>{handoffPreview.producerId}</dd></div>
+              <div><dt>consumer</dt><dd>{handoffPreview.consumerId}</dd></div>
+              <div><dt>handoff</dt><dd><code>{handoffPreview.handoffId}</code></dd></div>
+              <div><dt>expires</dt><dd>{formatHandoffExpiry(handoffPreview.expiresAtMs)}</dd></div>
+            </dl>
+            <div className="handoff-request-preview">
+              <div className="handoff-request-line">
+                <strong>{handoffPreview.request.method}</strong>
+                <code>{handoffPreview.request.url}</code>
+              </div>
+              {handoffPreview.request.headers.length > 0 && (
+                <div className="handoff-header-preview">
+                  {handoffPreview.request.headers.map((header, index) => (
+                    <div className="handoff-header-line" key={`${header.key}-${index}`}>
+                      <span>{header.key}</span>
+                      <code>{header.value}</code>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {handoffPreview.request.body && (
+                <pre className="handoff-body-preview">{handoffPreview.request.body}</pre>
+              )}
+            </div>
+            <div className="handoff-dialog-actions">
+              <button
+                ref={handoffCancelButtonRef}
+                type="button"
+                className="btn"
+                disabled={handoffBusy}
+                onClick={() => void onCancelHandoff()}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="btn send"
+                disabled={handoffBusy}
+                onClick={() => void onApplyHandoff()}
+              >
+                {handoffBusy ? "처리 중..." : "적용"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <aside className="sidebar">
         <h1 className="app-title">API Playground</h1>
         <div className="group-name">History</div>
@@ -1703,6 +1978,28 @@ function safeWebSocketUiError(cause: unknown): string {
   const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
   const message = raw.replace(/^Error:\s*/u, "");
   return SAFE_WEBSOCKET_UI_MESSAGES.has(message) ? message : "WebSocket 요청에 실패했습니다.";
+}
+
+function formatHandoffExpiry(expiresAtMs: number): string {
+  const date = new Date(expiresAtMs);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString() : "시간 미상";
+}
+
+function safeHandoffError(cause: unknown): string {
+  const message = cause instanceof Error
+    ? cause.message
+    : typeof cause === "string" ? cause : "";
+  const safeMessages = new Set([
+    "handoff 요청을 사용할 수 없습니다",
+    "handoff 요청이 만료되었거나 더 이상 사용할 수 없습니다",
+    "handoff 요청이 다른 작업에서 사용 중입니다. 잠시 후 다시 시도하세요",
+    "handoff 저장소를 사용할 수 없습니다",
+    "handoff 미리보기가 만료되었습니다. 다시 전달하세요",
+    "지원하지 않는 handoff 요청입니다",
+    "기존 handoff 미리보기를 먼저 적용하거나 취소하세요",
+    "API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다",
+  ]);
+  return safeMessages.has(message) ? message : "handoff 요청을 처리하지 못했습니다";
 }
 
 export function shellQuote(s: string): string {

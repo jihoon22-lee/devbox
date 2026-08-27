@@ -64,7 +64,7 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
-    assert_eq!(catalog.catalog_revision, Some(6));
+    assert_eq!(catalog.catalog_revision, Some(7));
     assert_eq!(catalog.apps.len(), 13);
     assert!(catalog.apps.iter().all(|app| app.actions.is_empty()));
     assert_eq!(
@@ -100,6 +100,20 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
             .map(|app| app.id)
             .collect::<Vec<_>>(),
         vec!["wsl-desktop"]
+    );
+    assert_eq!(
+        capable_targets(&catalog, "handoff:api-request/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["api-playground"]
+    );
+    assert_eq!(
+        capable_producers(&catalog, "handoff:api-request/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["webhook-lab"]
     );
 }
 

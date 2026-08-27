@@ -29,6 +29,8 @@ pub fn run() {
             commands::delete_fixture,
             commands::clear_fixtures,
             commands::fixture_to_rule,
+            commands::send_history_to_api,
+            commands::send_fixture_to_api,
             commands::list_rules,
             commands::set_rule,
             commands::delete_rule,

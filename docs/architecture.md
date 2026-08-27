@@ -220,6 +220,15 @@ v0.5.0에서는 지속 상태는 snapshot, 일회성 작업 전달은 applink pr
 128-bit opaque id만 argv에 전달하고 공용 root의 TTL·크기 제한 payload를 한 번 소비한다.
 devbox가 양쪽 앱을 제어하면 clipboard·임시 export 파일 전달은 명시적 fallback으로만 둔다.
 
+2026-08-27 #315는 이 경계를 Webhook Lab → API Playground에 처음 적용했다. Webhook Lab은
+backend가 읽은 masked history/fixture만 `api-request/v1` payload로 만들고, catalog에서
+설치된 `api-playground` capability를 확인한 뒤 producer/consumer ID가 있는 envelope를
+공용 store에 기록한다. 실행 argv에는 kind와 opaque ID만 들어간다. API Playground는 cold/hot
+single-instance 경로에서 ID를 claim하고 적용 전 preview를 표시하며, 적용은 ack/delete,
+취소는 restore한다. TTL·size·target/kind/schema·lease와 URL/header/body privacy 검증을
+양쪽 경계에 두고, 미설치·실행 실패·만료·손상·중복 소비는 fixed error로 격리하며 clipboard
+fallback을 사용하지 않는다.
+
 Workbench는 Life Log의 app-local DB와 settings schema를 알지 않는다. 시작 시
 `life-log/projects/v1`을 producer/schema/freshness 기준으로 검증하고 안전한 절대 경로만
 ProjectProfile로 흡수한다. 파일 없음은 no-op이며 손상·schema mismatch·unsafe entry는 기존
@@ -313,9 +322,8 @@ schema v1은 fixture 200개·파일 8 MiB·bounded field limits를 적용하고,
 파일은 원본을 자동 복구하지 않고 fixed error로 중단한다. app-owned parent/file 검사,
 raw-byte CAS, process-local write lock, atomic replace로 concurrent update와 partial write를
 방지하며 timestamp 내림차순+ID tie-break로 목록을 결정적으로 만든다. fixture의 response-rule
-초안은 로컬 editor draft일 뿐이고 API Playground handoff(#315)·replay/sequence(#362)는 별도 범위다.
-example curl은 기존 bounded redaction contract를 따르고, API Playground `api-request/v1`
-handoff 메뉴는 #315가 준비되기 전까지 fail-closed로 비활성화한다.
+초안은 로컬 editor draft다. #315 handoff는 이 masked fixture 경계에서만 payload를 만들고,
+replay/sequence(#362)는 별도 범위다. example curl은 기존 bounded redaction contract를 따른다.
 
 Devbox Manager의 app-row context menu도 메뉴를 열기 전에 catalog app ID로 대상 행을 선택하고,
 설치/업데이트의 portable·setup 선택을 submenu로 보존한다. 실행·rollback·설치 폴더 열기·제거는
