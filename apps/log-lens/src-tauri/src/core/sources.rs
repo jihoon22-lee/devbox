@@ -213,7 +213,7 @@ fn read_file_with_limit(
     let byte_limit = byte_limit.min(MAX_SOURCE_BYTES);
     let mut file = File::open(path).map_err(|_| CoreError::Io)?;
     let metadata = file.metadata().map_err(|_| CoreError::Io)?;
-    let identity = file_identity(&metadata);
+    let identity = file_identity(&file, &metadata);
     let (mut offset, mut status, mut truncated) = match previous {
         None => (
             metadata.len().saturating_sub(MAX_SOURCE_BYTES as u64),
@@ -553,7 +553,7 @@ fn kill_process_tree(child: &mut Child) {
     }
 }
 
-fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
+fn file_identity(_file: &File, metadata: &fs::Metadata) -> FileIdentity {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -566,11 +566,30 @@ fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
     }
     #[cfg(windows)]
     {
-        use std::os::windows::fs::MetadataExt;
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::Storage::FileSystem::{
+            GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+        };
+
+        let mut information = BY_HANDLE_FILE_INFORMATION::default();
+        let handle = HANDLE(_file.as_raw_handle());
+        let (device, inode) =
+            if unsafe { GetFileInformationByHandle(handle, &mut information) }.is_ok() {
+                (
+                    Some(u64::from(information.dwVolumeSerialNumber)),
+                    Some(
+                        (u64::from(information.nFileIndexHigh) << 32)
+                            | u64::from(information.nFileIndexLow),
+                    ),
+                )
+            } else {
+                (None, None)
+            };
         return FileIdentity {
-            device: metadata.volume_serial_number().map(u64::from),
-            inode: metadata.file_index(),
-            size: metadata.file_size(),
+            device,
+            inode,
+            size: metadata.len(),
             modified_millis: modified_millis(metadata),
         };
     }

@@ -3088,6 +3088,7 @@ dependencies = [
  "tauri-build",
  "tempfile",
  "tokio",
+ "windows 0.61.3",
  "wsl",
 ]
 
