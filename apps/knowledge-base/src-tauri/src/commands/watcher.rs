@@ -16,9 +16,10 @@
 
 use crate::commands::docs::AppState;
 use crate::core::db::{index_doc, remove_doc};
+use crate::core::vault::VaultIdentity;
 use notify::{RecursiveMode, Watcher};
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -113,7 +114,7 @@ fn path_byte_len(path: &Path) -> usize {
 }
 
 enum Message {
-    Event(notify::Event),
+    Event(Vec<PathBuf>),
     Shutdown,
 }
 
@@ -123,7 +124,7 @@ pub struct KnowledgeWatcher {
     watcher: Mutex<Option<notify::RecommendedWatcher>>,
     sender: SyncSender<Message>,
     worker: Mutex<Option<JoinHandle<()>>>,
-    root: Mutex<Option<PathBuf>>,
+    root: Mutex<Option<VaultIdentity>>,
     overflow: Arc<AtomicBool>,
 }
 
@@ -150,37 +151,51 @@ impl KnowledgeWatcher {
 
     /// 루트를 감시한다. 이미 같은 루트면 no-op. 다른 루트면 재시작한다.
     pub fn set_root(&self, root: &Path) -> Result<(), String> {
-        let normalized = root.to_path_buf();
+        let vault = VaultIdentity::inspect(root)
+            .map_err(|_| "Knowledge watcher 저장 위치를 확인할 수 없습니다".to_string())?;
+        let normalized = vault.canonical_path().to_path_buf();
         {
             let current = self.root.lock().unwrap();
-            if current.as_ref() == Some(&normalized) {
+            if current.as_ref() == Some(&vault) {
                 return Ok(());
             }
         }
         let sender = self.sender.clone();
         let overflow = Arc::clone(&self.overflow);
-        let mut watcher = notify::recommended_watcher(move |result| match result {
-            Ok(event) => {
-                if sender.try_send(Message::Event(event)).is_err() {
-                    overflow.store(true, Ordering::Release);
+        let mut watcher = notify::recommended_watcher(
+            move |result: notify::Result<notify::Event>| match result {
+                Ok(event) => {
+                    let (paths, truncated) = bounded_event_paths(&event.paths);
+                    if truncated {
+                        overflow.store(true, Ordering::Release);
+                    }
+                    if !paths.is_empty() && sender.try_send(Message::Event(paths)).is_err() {
+                        overflow.store(true, Ordering::Release);
+                    }
                 }
-            }
-            Err(error) => {
-                eprintln!("knowledge-base watcher error: {error}");
-            }
-        })
+                Err(error) => {
+                    eprintln!("knowledge-base watcher error: {error}");
+                }
+            },
+        )
         .map_err(|e| format!("watcher 생성 실패: {e}"))?;
         watcher
             .watch(&normalized, RecursiveMode::Recursive)
             .map_err(|e| format!("watcher 등록 실패: {e}"))?;
         *self.watcher.lock().unwrap() = Some(watcher);
-        *self.root.lock().unwrap() = Some(normalized);
+        *self.root.lock().unwrap() = Some(vault);
         Ok(())
     }
 }
 
 impl Drop for KnowledgeWatcher {
     fn drop(&mut self) {
+        // Stop notify callbacks before waiting for the bounded queue to drain;
+        // otherwise a busy editor can keep refilling the queue while shutdown
+        // is trying to enqueue its sentinel.
+        if let Ok(mut watcher) = self.watcher.lock() {
+            watcher.take();
+        }
         let _ = self.sender.send(Message::Shutdown);
         if let Ok(mut worker) = self.worker.lock() {
             if let Some(worker) = worker.take() {
@@ -223,11 +238,7 @@ fn watcher_worker(
         };
         match message {
             Message::Event(event) => {
-                if event.paths.len() > MAX_EVENT_PATHS {
-                    debouncer.mark_overflow();
-                    continue;
-                }
-                for path in &event.paths {
+                for path in &event {
                     debouncer.record(path, Instant::now());
                 }
             }
@@ -236,34 +247,36 @@ fn watcher_worker(
     }
 }
 
+fn bounded_event_paths(paths: &[PathBuf]) -> (Vec<PathBuf>, bool) {
+    let bounded = paths
+        .iter()
+        .take(MAX_EVENT_PATHS)
+        .filter(|path| path_byte_len(path) <= MAX_WATCH_PATH_BYTES)
+        .cloned()
+        .collect::<Vec<_>>();
+    let truncated = bounded.len() != paths.len();
+    (bounded, truncated)
+}
+
 fn deliver_ready(state: &Arc<AppState>, app: &AppHandle, debouncer: &mut Debouncer) {
     let ready = debouncer.take_ready(Instant::now());
     let overflowed = debouncer.take_overflow();
     if ready.is_empty() && !overflowed {
         return;
     }
-    let root = {
+    let vault = {
         let conn = state.db.lock().unwrap();
-        let Ok(path) = crate::commands::docs::resolve_root(&conn) else {
-            return;
-        };
-        path.canonicalize().unwrap_or(path)
+        crate::commands::docs::resolve_configured_root(&conn)
+            .map(|root| VaultIdentity::inspect(&root))
     };
+    let Ok(Ok(vault)) = vault else { return };
     let conn = state.db.lock().unwrap();
     let mut changed = false;
     for path in &ready {
-        let event_path = path.canonicalize().unwrap_or_else(|_| path.clone());
-        let Ok(rel) = event_path.strip_prefix(&root) else {
+        let Some(rel) = safe_relative_path(&vault, path) else {
             continue;
         };
-        let rel = rel.to_string_lossy().replace('\\', "/");
-        if rel.is_empty() {
-            continue;
-        }
-        if path.is_dir() {
-            continue;
-        }
-        match read_watched_file(&event_path) {
+        match read_bounded_note(&vault, path) {
             Ok(content) => {
                 if index_doc(&conn, &rel, &content).is_ok() {
                     changed = true;
@@ -278,7 +291,7 @@ fn deliver_ready(state: &Arc<AppState>, app: &AppHandle, debouncer: &mut Debounc
         }
     }
     if overflowed {
-        changed |= reconcile_root(&conn, &root);
+        changed |= reconcile_root(&conn, &vault);
     }
     drop(conn);
     if changed {
@@ -288,30 +301,26 @@ fn deliver_ready(state: &Arc<AppState>, app: &AppHandle, debouncer: &mut Debounc
     }
 }
 
-fn read_watched_file(path: &Path) -> Result<String, ()> {
-    let metadata = std::fs::symlink_metadata(path).map_err(|_| ())?;
-    if !metadata.is_file() || is_link_or_reparse(&metadata) || metadata.len() > MAX_WATCH_FILE_BYTES
-    {
-        return Err(());
-    }
-    let file = File::open(path).map_err(|_| ())?;
-    let mut content = String::new();
-    file.take(MAX_WATCH_FILE_BYTES + 1)
-        .read_to_string(&mut content)
-        .map_err(|_| ())?;
-    if content.len() as u64 > MAX_WATCH_FILE_BYTES {
-        return Err(());
-    }
-    Ok(content)
-}
-
-fn reconcile_root(conn: &rusqlite::Connection, root: &Path) -> bool {
+fn reconcile_root(conn: &rusqlite::Connection, vault: &VaultIdentity) -> bool {
+    let root = vault.canonical_path();
     let mut pending = vec![root.to_path_buf()];
     let mut directories = 0usize;
     let mut files = 0usize;
     let mut bytes = 0u64;
     let mut changed = false;
     while let Some(directory) = pending.pop() {
+        if vault.revalidate().is_err() {
+            return changed;
+        }
+        if directory != root {
+            let Ok(relative) = directory.strip_prefix(root) else {
+                continue;
+            };
+            let relative = relative.to_string_lossy().replace('\\', "/");
+            if vault.new_entry(&relative).is_err() {
+                continue;
+            }
+        }
         directories += 1;
         if directories > MAX_RECONCILE_DIRECTORIES {
             return changed;
@@ -355,13 +364,12 @@ fn reconcile_root(conn: &rusqlite::Connection, root: &Path) -> bool {
             if !extension.eq_ignore_ascii_case("md") {
                 continue;
             }
-            let Ok(content) = read_watched_file(&path) else {
+            let Some(relative) = safe_relative_path(vault, &path) else {
                 continue;
             };
-            let Ok(relative) = path.strip_prefix(root) else {
+            let Ok(content) = read_bounded_note(vault, &path) else {
                 continue;
             };
-            let relative = relative.to_string_lossy().replace('\\', "/");
             bytes = bytes.saturating_add(content.len() as u64);
             if index_doc(conn, &relative, &content).is_ok() {
                 changed = true;
@@ -394,6 +402,58 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
     }
 }
 
+/// Resolve a notify path to a strict vault-relative document path.  Missing
+/// final components are allowed so delete/rename events can remove an old
+/// index row, but existing links/reparse points are never followed.
+fn safe_relative_path(vault: &VaultIdentity, path: &Path) -> Option<String> {
+    // Windows canonical paths normally use a verbatim prefix (`\\?\`) while
+    // notify/tests may provide the ordinary drive spelling. Resolve an
+    // existing entry through the vault first so both spellings converge on
+    // the same canonical root. Missing canonical event paths are retained for
+    // delete/rename index cleanup.
+    let scoped_path = vault
+        .existing_path(path)
+        .unwrap_or_else(|_| path.to_path_buf());
+    let relative = scoped_path.strip_prefix(vault.canonical_path()).ok()?;
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    let relative = relative.to_string_lossy().replace('\\', "/");
+    let candidate = vault.new_entry(&relative).ok()?;
+    if let Ok(metadata) = fs::symlink_metadata(&candidate) {
+        if metadata.file_type().is_symlink() || metadata.is_dir() || !metadata.is_file() {
+            return None;
+        }
+        vault.existing_path(&candidate).ok()?;
+    }
+    Some(relative)
+}
+
+fn read_bounded_note(vault: &VaultIdentity, path: &Path) -> Result<String, ()> {
+    if safe_relative_path(vault, path).is_none() {
+        return Err(());
+    }
+    let safe_path = vault.existing_path(path).map_err(|_| ())?;
+    let metadata = fs::symlink_metadata(&safe_path).map_err(|_| ())?;
+    if metadata.len() > MAX_WATCH_FILE_BYTES {
+        return Err(());
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    File::open(&safe_path)
+        .map_err(|_| ())?
+        .take(MAX_WATCH_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| ())?;
+    if bytes.len() as u64 > MAX_WATCH_FILE_BYTES {
+        return Err(());
+    }
+    String::from_utf8(bytes).map_err(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,13 +481,6 @@ mod tests {
     }
 
     #[test]
-    fn watcher_file_reader_is_bounded() {
-        let file = tempfile::NamedTempFile::new().unwrap();
-        file.as_file().set_len(MAX_WATCH_FILE_BYTES + 1).unwrap();
-        assert!(read_watched_file(file.path()).is_err());
-    }
-
-    #[test]
     fn reconciliation_budget_counts_unrelated_regular_files() {
         let mut files = 0;
         for _ in 0..MAX_RECONCILE_FILES {
@@ -435,5 +488,69 @@ mod tests {
         }
         assert!(!consume_reconcile_file(&mut files));
         assert_eq!(files, MAX_RECONCILE_FILES);
+    }
+
+    #[test]
+    fn event_path_payload_is_bounded_before_queueing() {
+        let mut paths = vec![PathBuf::from("x".repeat(MAX_WATCH_PATH_BYTES + 1))];
+        paths.extend((0..MAX_EVENT_PATHS + 1).map(|index| PathBuf::from(format!("note-{index}"))));
+        let (bounded, truncated) = bounded_event_paths(&paths);
+        assert!(bounded.len() <= MAX_EVENT_PATHS);
+        assert!(truncated);
+        assert!(bounded
+            .iter()
+            .all(|path| path_byte_len(path) <= MAX_WATCH_PATH_BYTES));
+    }
+
+    #[test]
+    fn safe_relative_path_rejects_directories_links_and_outside_paths() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("Journal")).unwrap();
+        fs::write(root.path().join("Journal/note.md"), b"ok").unwrap();
+        let vault = VaultIdentity::inspect(root.path()).unwrap();
+        assert_eq!(
+            safe_relative_path(&vault, &root.path().join("Journal/note.md")),
+            Some("Journal/note.md".into())
+        );
+        assert_eq!(
+            safe_relative_path(&vault, &vault.canonical_path().join("Journal/deleted.md")),
+            Some("Journal/deleted.md".into())
+        );
+        assert!(safe_relative_path(&vault, &root.path().join("Journal")).is_none());
+        assert!(safe_relative_path(&vault, Path::new("/tmp/outside.md")).is_none());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+
+            let outside = tempfile::tempdir().unwrap();
+            fs::write(outside.path().join("secret.md"), b"outside").unwrap();
+            symlink(
+                outside.path().join("secret.md"),
+                root.path().join("Journal/link.md"),
+            )
+            .unwrap();
+            assert!(safe_relative_path(&vault, &root.path().join("Journal/link.md")).is_none());
+        }
+    }
+
+    #[test]
+    fn bounded_reader_accepts_regular_documents_and_rejects_oversized_files() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("note.txt"), b"text").unwrap();
+        fs::write(root.path().join("note.md"), b"# ok").unwrap();
+        let oversized = File::create(root.path().join("oversized.bin")).unwrap();
+        oversized
+            .set_len(MAX_WATCH_FILE_BYTES + 1)
+            .expect("fixture should be sparse");
+        let vault = VaultIdentity::inspect(root.path()).unwrap();
+        assert_eq!(
+            read_bounded_note(&vault, &root.path().join("note.txt")).unwrap(),
+            "text"
+        );
+        assert_eq!(
+            read_bounded_note(&vault, &root.path().join("note.md")).unwrap(),
+            "# ok"
+        );
+        assert!(read_bounded_note(&vault, &root.path().join("oversized.bin")).is_err());
     }
 }

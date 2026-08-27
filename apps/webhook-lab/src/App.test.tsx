@@ -15,6 +15,8 @@ import {
   listHistory,
   listRules,
   saveFixture,
+  sendFixtureToApi,
+  sendHistoryToApi,
   serverStatus,
   setRule,
   startServer,
@@ -38,6 +40,8 @@ vi.mock("./api", () => ({
   listHistory: vi.fn(),
   listRules: vi.fn(),
   saveFixture: vi.fn(),
+  sendFixtureToApi: vi.fn(),
+  sendHistoryToApi: vi.fn(),
   serverStatus: vi.fn(),
   setRule: vi.fn(),
   startServer: vi.fn(),
@@ -86,6 +90,8 @@ const listFixturesMock = vi.mocked(listFixtures);
 const listHistoryMock = vi.mocked(listHistory);
 const listRulesMock = vi.mocked(listRules);
 const saveFixtureMock = vi.mocked(saveFixture);
+const sendFixtureToApiMock = vi.mocked(sendFixtureToApi);
+const sendHistoryToApiMock = vi.mocked(sendHistoryToApi);
 const serverStatusMock = vi.mocked(serverStatus);
 const setRuleMock = vi.mocked(setRule);
 const startServerMock = vi.mocked(startServer);
@@ -123,6 +129,20 @@ beforeEach(() => {
     };
     fixtures.push(fixture);
     return fixture;
+  });
+  sendHistoryToApiMock.mockReset().mockResolvedValue({
+    handoffId: "0123456789abcdef0123456789abcdef",
+    producerId: "webhook-lab",
+    consumerId: "api-playground",
+    createdAtMs: 1_700_000_000_000,
+    expiresAtMs: 1_700_000_600_000,
+  });
+  sendFixtureToApiMock.mockReset().mockResolvedValue({
+    handoffId: "fedcba9876543210fedcba9876543210",
+    producerId: "webhook-lab",
+    consumerId: "api-playground",
+    createdAtMs: 1_700_000_000_000,
+    expiresAtMs: 1_700_000_600_000,
   });
   fixtureToRuleMock.mockImplementation(async (id) => {
     const fixture = fixtures.find((candidate) => candidate.id === id);
@@ -342,7 +362,7 @@ describe("Webhook Lab history and rule context menus", () => {
       expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
     }
     expect(screen.getByRole("menuitem", { name: "API Playground로 변환" }).getAttribute("aria-disabled"))
-      .toBe("true");
+      .toBeNull();
     expect(screen.getByRole("menuitem", { name: "삭제" }).className).toContain("danger");
   });
 
@@ -600,6 +620,19 @@ describe("Webhook Lab history and rule context menus", () => {
     expect(screen.getByText(/원본 header·credential·안전하지 않은 path는 저장하지 않습니다/)).toBeTruthy();
   });
 
+  it("history handoff uses the backend producer and never falls back to clipboard", async () => {
+    render(<App />);
+    const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
+
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem", { name: "API Playground로 변환" }));
+
+    await waitFor(() => expect(sendHistoryToApiMock).toHaveBeenCalledWith(1));
+    expect((await screen.findByRole("status")).textContent).toContain("producer: webhook-lab");
+    expect(screen.getByRole("status").textContent).toContain("consumer: api-playground");
+    expect(writeTextMock).not.toHaveBeenCalled();
+  });
+
   it("fixture save uses the shared busy guard for double action", async () => {
     let release!: (fixture: CapturedFixture) => void;
     saveFixtureMock.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
@@ -652,6 +685,24 @@ describe("Webhook Lab history and rule context menus", () => {
     expect((screen.getByLabelText("method") as HTMLInputElement).value).toBe("POST");
     expect((screen.getByLabelText("path") as HTMLInputElement).value).toBe("/hooks/push?token=[REDACTED]");
     expect((screen.getByLabelText("status") as HTMLInputElement).value).toBe("200");
+  });
+
+  it("stored fixture handoff carries only its opaque ID", async () => {
+    fixtures = [{
+      id: "fixture-1",
+      method: "POST",
+      url: "/hooks/push?access_token=[REDACTED]",
+      headers: [],
+      body: '{"event":"push"}',
+      receivedAtMs: 1_700_000_000_000,
+    }];
+    render(<App />);
+    const action = await screen.findByRole("button", { name: "POST /hooks/push?access_token=[REDACTED] API Playground로 변환" });
+    fireEvent.click(action);
+
+    await waitFor(() => expect(sendFixtureToApiMock).toHaveBeenCalledWith("fixture-1"));
+    expect(screen.getByRole("status").textContent).toContain("handoff: fedcba9876543210fedcba9876543210");
+    expect(writeTextMock).not.toHaveBeenCalled();
   });
 
   it("fixture 삭제와 전체 삭제는 각각 확인을 거친다", async () => {

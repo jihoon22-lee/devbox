@@ -4,9 +4,13 @@ import App from "./App";
 import {
   onOpenRequest,
   openInboundNote,
+  previewKnowledgeDraft,
+  saveKnowledgeDraft,
+  discardKnowledgeDraft,
   searchDocs,
   takePendingOpen,
   type OpenRequest,
+  type KnowledgeDraftPreview,
 } from "./api";
 
 const mocks = vi.hoisted(() => ({
@@ -21,6 +25,10 @@ vi.mock("./api", () => ({
   listTags: vi.fn(async () => [] as string[]),
   readFile: vi.fn(async () => "# existing"),
   writeFile: vi.fn(async () => undefined),
+  previewKnowledgeDraft: vi.fn(),
+  saveKnowledgeDraft: vi.fn(),
+  discardKnowledgeDraft: vi.fn(async () => undefined),
+  renewKnowledgeDraft: vi.fn(async () => ({ leaseUntilMs: Date.now() + 60_000 })),
   createFile: vi.fn(async () => undefined),
   createDirectory: vi.fn(async () => undefined),
   previewRename: vi.fn(async () => { throw new Error("unused"); }),
@@ -77,6 +85,9 @@ const takePendingOpenMock = vi.mocked(takePendingOpen);
 const onOpenRequestMock = vi.mocked(onOpenRequest);
 const openInboundNoteMock = vi.mocked(openInboundNote);
 const searchDocsMock = vi.mocked(searchDocs);
+const previewKnowledgeDraftMock = vi.mocked(previewKnowledgeDraft);
+const saveKnowledgeDraftMock = vi.mocked(saveKnowledgeDraft);
+const discardKnowledgeDraftMock = vi.mocked(discardKnowledgeDraft);
 
 beforeEach(() => {
   mocks.openHandler = null;
@@ -96,6 +107,36 @@ beforeEach(() => {
   searchDocsMock.mockReset().mockImplementation(async (query) => [
     { path: "Notes/result.md", title: `Result ${query}` },
   ]);
+  previewKnowledgeDraftMock.mockReset().mockResolvedValue({
+    id: "0123456789abcdef0123456789abcdef",
+    kind: "knowledge-draft/v1",
+    expiresAtMs: Date.now() + 600_000,
+    leaseUntilMs: Date.now() + 60_000,
+    title: "Life Log digest · 2026-08-27 ~ 2026-08-27",
+    body: "# Life Log local digest\n\n## Summary\n\n| Sessions | 0 |",
+    tags: ["life-log", "digest", "day"],
+    summary: {
+      period: "day",
+      startDate: "2026-08-27",
+      endDate: "2026-08-27",
+      timezone: "UTC",
+      filter: null,
+      pcUsageMs: 0,
+      sessionCount: 0,
+      activeDays: 0,
+      totalDays: 1,
+      averageDailyUsageMs: 0,
+      gitCommits: 0,
+      topApp: null,
+    },
+    sources: [],
+  });
+  saveKnowledgeDraftMock.mockReset().mockResolvedValue({
+    saved: true,
+    path: "Journal/2026-08-27-life-log-day.md",
+    handoffDeleted: true,
+  });
+  discardKnowledgeDraftMock.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => cleanup());
@@ -190,5 +231,174 @@ describe("Knowledge Path/Query app-link delivery", () => {
     expect(await screen.findByText("요청한 검색어를 사용할 수 없습니다")).toBeTruthy();
     expect(screen.getByText("Knowledge")).toBeTruthy();
     expect(searchDocsMock).not.toHaveBeenCalled();
+  });
+
+  it("previews a knowledge-draft handoff and saves only after explicit confirmation", async () => {
+    takePendingOpenMock.mockResolvedValueOnce({
+      target: {
+        kind: "handoff",
+        handoffKind: "knowledge-draft/v1",
+        id: "0123456789abcdef0123456789abcdef",
+      },
+      from: "life-log",
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Life Log draft 미리보기" })).toBeTruthy();
+    expect(screen.getByText("Life Log digest · 2026-08-27 ~ 2026-08-27")).toBeTruthy();
+    expect(screen.getByText("life-log, digest, day")).toBeTruthy();
+    expect(screen.getByLabelText("Knowledge draft body")).toHaveTextContent("## Summary");
+    expect(screen.getByLabelText("Knowledge draft size")).toHaveTextContent(/Title .* bytes · Body .* bytes/u);
+    expect(screen.getByRole("dialog").getAttribute("aria-describedby")).toBe("knowledge-draft-description");
+    expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      screen.getByRole("button", { name: "Save draft" }).click();
+    });
+    await waitFor(() => expect(saveKnowledgeDraftMock).toHaveBeenCalledWith("0123456789abcdef0123456789abcdef"));
+    expect(discardKnowledgeDraftMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("Knowledge draft를 저장했습니다. handoff는 소비되어 삭제되었습니다.")).toBeTruthy();
+  });
+
+  it("cancels a handoff preview by restoring the one-time claim without saving", async () => {
+    takePendingOpenMock.mockResolvedValueOnce({
+      target: {
+        kind: "handoff",
+        handoffKind: "knowledge-draft/v1",
+        id: "0123456789abcdef0123456789abcdef",
+      },
+      from: "life-log",
+    });
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Life Log draft 미리보기" });
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+
+    await waitFor(() => expect(discardKnowledgeDraftMock).toHaveBeenCalledWith("0123456789abcdef0123456789abcdef"));
+    expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("Knowledge draft 미리보기를 취소했습니다. 다시 열 수 있습니다.")).toBeTruthy();
+  });
+
+  it("maps Escape to cancel and restores focus to the invoking control", async () => {
+    render(
+      <>
+        <button type="button">Open handoff</button>
+        <App />
+      </>,
+    );
+    await waitFor(() => expect(mocks.openHandler).not.toBeNull());
+    const opener = screen.getByRole("button", { name: "Open handoff" });
+    opener.focus();
+    takePendingOpenMock.mockResolvedValueOnce({
+      target: {
+        kind: "handoff",
+        handoffKind: "knowledge-draft/v1",
+        id: "0123456789abcdef0123456789abcdef",
+      },
+      from: "life-log",
+    });
+    await act(async () => {
+      mocks.openHandler?.({
+        target: {
+          kind: "handoff",
+          handoffKind: "knowledge-draft/v1",
+          id: "0123456789abcdef0123456789abcdef",
+        },
+        from: "life-log",
+      });
+    });
+    await screen.findByRole("heading", { name: "Life Log draft 미리보기" });
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(discardKnowledgeDraftMock).toHaveBeenCalledWith("0123456789abcdef0123456789abcdef"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
+  });
+
+  it("traps modal focus and turns a stale save into a fixed regenerate message", async () => {
+    takePendingOpenMock.mockResolvedValueOnce({
+      target: {
+        kind: "handoff",
+        handoffKind: "knowledge-draft/v1",
+        id: "0123456789abcdef0123456789abcdef",
+      },
+      from: "life-log",
+    });
+    saveKnowledgeDraftMock.mockRejectedValueOnce(
+      new Error("Knowledge 저장 위치가 변경되어 다시 확인해야 합니다: /raw/path"),
+    );
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Life Log draft 미리보기" });
+    const cancel = screen.getByRole("button", { name: "취소" });
+    const save = screen.getByRole("button", { name: "Save draft" });
+    save.focus();
+    fireEvent.keyDown(window, { key: "Tab" });
+    expect(document.activeElement).toBe(cancel);
+
+    fireEvent.click(save);
+    await waitFor(() => expect(saveKnowledgeDraftMock).toHaveBeenCalled());
+    expect(await screen.findByText(/저장 위치가 변경되었거나 draft가 만료되었습니다/u)).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.body.textContent).not.toContain("/raw/path");
+  });
+
+  it("restores a late native claim after the app unmounts", async () => {
+    let resolvePreview: ((preview: KnowledgeDraftPreview) => void) | undefined;
+    previewKnowledgeDraftMock.mockImplementationOnce(() => new Promise<KnowledgeDraftPreview>((resolve) => {
+      resolvePreview = resolve;
+    }));
+    takePendingOpenMock.mockResolvedValueOnce({
+      target: {
+        kind: "handoff",
+        handoffKind: "knowledge-draft/v1",
+        id: "0123456789abcdef0123456789abcdef",
+      },
+      from: "life-log",
+    });
+
+    const { unmount } = render(<App />);
+    await waitFor(() => expect(previewKnowledgeDraftMock).toHaveBeenCalled());
+    unmount();
+    await act(async () => {
+      resolvePreview?.({ id: "0123456789abcdef0123456789abcdef" } as KnowledgeDraftPreview);
+      await Promise.resolve();
+    });
+    expect(discardKnowledgeDraftMock).toHaveBeenCalledWith("0123456789abcdef0123456789abcdef");
+    expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
+  });
+
+  it("allows only one in-flight Save action", async () => {
+    let resolveSave: ((result: { saved: boolean; path: string; handoffDeleted: boolean }) => void) | undefined;
+    saveKnowledgeDraftMock.mockImplementationOnce(() => new Promise<{ saved: boolean; path: string; handoffDeleted: boolean }>((resolve) => {
+      resolveSave = resolve;
+    }));
+    takePendingOpenMock.mockResolvedValueOnce({
+      target: {
+        kind: "handoff",
+        handoffKind: "knowledge-draft/v1",
+        id: "0123456789abcdef0123456789abcdef",
+      },
+      from: "life-log",
+    });
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Life Log draft 미리보기" });
+    const save = screen.getByRole("button", { name: "Save draft" });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    expect(saveKnowledgeDraftMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSave?.({
+        saved: true,
+        path: "Journal/2026-08-27-life-log-day.md",
+        handoffDeleted: true,
+      });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });

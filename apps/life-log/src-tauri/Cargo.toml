@@ -30,6 +30,8 @@ devbox-git = { package = "git", path = "../../../crates/git" }
 dirs = "6.0.0"
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
+devbox-applink = { package = "applink", path = "../../../crates/applink" }
+devbox-launch = { package = "launch", path = "../../../crates/launch" }
 sysinfo = "0.39.6"
 regex = "1"
 

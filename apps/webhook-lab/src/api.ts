@@ -34,6 +34,17 @@ export interface CapturedFixture {
   receivedAtMs: number;
 }
 
+export interface ApiHandoffDispatch {
+  handoffId: string;
+  producerId: string;
+  consumerId: string;
+  createdAtMs: number;
+  expiresAtMs: number;
+}
+
+const HANDOFF_BROWSER_ERROR =
+  "API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
+
 const MOCK_HISTORY: RequestRecord[] = [
   { id: 1, method: "POST", url: "/hook", headers: [["content-type", "application/json"]], body: '{"event":"push"}', receivedAtMs: Date.now() - 30000 },
   { id: 2, method: "GET", url: "/health", headers: [], body: "", receivedAtMs: Date.now() - 10000 },
@@ -161,6 +172,18 @@ export function fixtureToRule(id: string): Promise<ResponseRule> {
     });
   }
   return invoke<ResponseRule>("fixture_to_rule", { id });
+}
+
+/** Send only a backend-owned masked history projection to API Playground. */
+export function sendHistoryToApi(historyId: number): Promise<ApiHandoffDispatch> {
+  if (!isTauri()) return Promise.reject(new Error(HANDOFF_BROWSER_ERROR));
+  return invoke<ApiHandoffDispatch>("send_history_to_api", { historyId });
+}
+
+/** Send only a backend-owned masked fixture to API Playground. */
+export function sendFixtureToApi(id: string): Promise<ApiHandoffDispatch> {
+  if (!isTauri()) return Promise.reject(new Error(HANDOFF_BROWSER_ERROR));
+  return invoke<ApiHandoffDispatch>("send_fixture_to_api", { id });
 }
 
 export function listRules(): Promise<ResponseRule[]> {

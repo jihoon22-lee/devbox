@@ -613,6 +613,13 @@ body {
   background: rgba(248, 81, 73, 0.1);
 }
 
+.notice {
+  background: rgba(63, 185, 80, 0.12);
+  border-bottom: 1px solid var(--accent);
+  color: var(--text);
+  padding: 8px 14px;
+}
+
 /* ── rename preview transaction ──────────────────────────────── */
 
 .modal-backdrop {
@@ -831,6 +838,54 @@ body {
   margin: 8px 0 14px;
   color: var(--dim);
   line-height: 1.5;
+}
+
+.handoff-meta {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.handoff-meta > div {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.handoff-meta .dim {
+  width: 54px;
+  flex: 0 0 auto;
+}
+
+.handoff-body {
+  min-height: 160px;
+  max-height: 52vh;
+  margin: 0 0 14px;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  white-space: pre-wrap;
+  font: 12px/1.55 "Cascadia Code", Consolas, monospace;
+}
+
+.handoff-size {
+  margin: -4px 0 12px;
+  color: var(--dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.handoff-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .rename-dialog .changeset {

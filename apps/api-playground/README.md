@@ -1,4 +1,4 @@
-# api-playground — API Playground v0.3.2
+# api-playground — API Playground v0.4.0
 
 로컬 REST/WebSocket API 테스트 앱. 데스크톱 실행에서는 Rust backend가 HTTP와 WebSocket 클라이언트를
 담당해 **CORS 제약 없이** 요청한다.
@@ -29,6 +29,24 @@
   `{{NAME}}` 참조를 지원하고, DPAPI로 보호된 secret은 backend가 요청 직전에 메모리에서만
   해제한다 (`crates/secrets`). Header table의 picker에는 현재 환경의 봉인된 secret 이름만
   표시하고 `${NAME}`을 삽입하며 frontend로 DPAPI secret을 unseal하지 않는다.
+
+## Webhook Lab handoff (`api-request/v1`, #315)
+
+Webhook Lab의 masked history 또는 fixture에서 `API Playground로 변환`을 선택하면 공용
+AppLink protocol v2가 전달한 opaque handoff ID를 claim한다. payload는 argv에 들어가지 않고
+공용 handoff store에 10분 동안만 보관되며, preview에는 `producer`, `consumer`, handoff ID,
+만료 시각과 요청 method/URL/header/body가 표시된다. origin-form URL은 이 단계에서 임의의
+host로 채우지 않으므로 사용자가 preview에서 확인한 뒤 적용하고 request editor에서 host를
+입력·수정해야 한다.
+
+preview는 적용 전까지 request editor·History·Collection·response를 변경하지 않는다. `적용`은
+backend claim을 ack/delete한 뒤 요청 editor에 넣고, `취소`는 claim을 restore한다. 만료·손상·
+중복 소비·lease/storage 오류는 원문 경로·payload를 반향하지 않는 fixed error로 처리하며
+clipboard·임시 파일로 자동 전환하지 않는다. Webhook credential은 `${WEBHOOK_SECRET}` 같은
+환경 변수 참조만 전달되고 원문 secret은 producer, handoff store, preview DTO에 들어가지 않는다.
+열린 preview는 30초마다 60초 claim lease를 갱신하지만 envelope의 10분 TTL은 늘리지 않는다.
+renderer가 사라지거나 claim 응답이 늦게 도착하면 native restore를 시도하며, 수신자는
+`webhook-lab` producer와 `api-playground` target이 정확히 일치하는 envelope만 허용한다.
 
 ## GraphQL 요청 (P2-05, #294)
 

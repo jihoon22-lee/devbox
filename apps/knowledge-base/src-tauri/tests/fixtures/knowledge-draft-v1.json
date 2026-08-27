@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "title": "Life Log digest · 2026-08-10 ~ 2026-08-16",
+  "body": "# Life Log local digest\n\n- Period: `week`\n- Range: `2026-08-10` to `2026-08-16` (date keys inclusive; end timestamp exclusive)\n- Timezone: `Asia/Seoul`\n- Filter: all apps\n\n## Summary\n\n| Metric | Value |\n| --- | ---: |\n| PC usage (ms) | 7200000 |\n| Sessions | 4 |\n| Active days | 2 / 7 |\n| Average daily usage (ms) | 1028571 |\n| Git commits | 3 |\n| Top app | Code.exe |\n\n## Sources\n\n| Source | Available | Scope | Error code |\n| --- | --- | --- | --- |\n| life-log | true | requested-range | - |\n| git | true | requested-range | - |\n| run-manager | false | latest-snapshot-out-of-range | snapshot_unavailable |\n| knowledge-base | true | latest-snapshot-out-of-range | - |\n",
+  "tags": ["life-log", "digest", "week"],
+  "summary": {
+    "period": "week",
+    "startDate": "2026-08-10",
+    "endDate": "2026-08-16",
+    "timezone": "Asia/Seoul",
+    "filter": null,
+    "pcUsageMs": 7200000,
+    "sessionCount": 4,
+    "activeDays": 2,
+    "totalDays": 7,
+    "averageDailyUsageMs": 1028571,
+    "gitCommits": 3,
+    "topApp": "Code.exe"
+  },
+  "sources": [
+    {
+      "id": "life-log",
+      "available": true,
+      "schemaVersion": 1,
+      "snapshotVersion": null,
+      "producerVersion": "0.3.1",
+      "generatedAt": null,
+      "freshnessMs": null,
+      "view": null,
+      "scope": "requested-range",
+      "errorCode": null
+    },
+    {
+      "id": "git",
+      "available": true,
+      "schemaVersion": null,
+      "snapshotVersion": null,
+      "producerVersion": null,
+      "generatedAt": null,
+      "freshnessMs": null,
+      "view": null,
+      "scope": "requested-range",
+      "errorCode": null
+    },
+    {
+      "id": "run-manager",
+      "available": false,
+      "schemaVersion": null,
+      "snapshotVersion": null,
+      "producerVersion": null,
+      "generatedAt": null,
+      "freshnessMs": null,
+      "view": null,
+      "scope": "latest-snapshot-out-of-range",
+      "errorCode": "snapshot_unavailable"
+    },
+    {
+      "id": "knowledge-base",
+      "available": true,
+      "schemaVersion": 1,
+      "snapshotVersion": 1,
+      "producerVersion": "0.3.1",
+      "generatedAt": "2026-08-27T01:02:03Z",
+      "freshnessMs": 1000,
+      "view": "activity",
+      "scope": "latest-snapshot-out-of-range",
+      "errorCode": null
+    }
+  ]
+}

@@ -25,6 +25,7 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
   발급한 일회성 opaque approval으로 저장하며, 취소·닫기·stale 응답은 실제로 폐기된다.
   단축키 충돌이어도 앱 내 동작은 유지하며, 클립보드는 사용자가 선택한 순간에만 한 번 읽는다
 - **앱 간 열기** — catalog의 `Path`로 Knowledge root 안의 Markdown 노트를 열고, `Query`로 즉시 검색. cold start와 실행 중 재호출 모두 같은 pending-open 경로를 사용
+- **Life Log draft 받기** — `knowledge-draft/v1` handoff를 claim한 뒤 저장 전 요약/출처/태그/본문을 preview한다. 사용자가 승인한 경우에만 새 Journal note를 만들고 handoff를 소비한다
 - **활동 snapshot** — 오늘 작성·수정된 노트 수와 경로 없는 불투명 식별자를 Life Log용 `activity/v1` view로 발행
 
 ## 기술
@@ -61,6 +62,25 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 - `crates/integration`의 multi-view envelope을 사용해 `%LOCALAPPDATA%\devbox\integration\knowledge-base\v1\summary.json`을 원자 교체한다
 - `activity/v1` entry는 `notesModifiedToday`, `lastModifiedAtMs`, `noteIds`, `identifiersTruncated`만 포함한다. `noteIds`는 DB row에서 만든 `note-<양의 정수>` 형식이며 최대 512개다
 - 노트 경로·제목·본문·tag·credential은 snapshot에 포함하지 않는다. 앱 저장·생성·이름변경·삭제·데일리 노트 생성과 watcher가 감지한 외부 편집 뒤에 같은 snapshot을 best-effort로 갱신한다
+- Life Log `knowledge-draft/v1` 수신은 `sourceApp=life-log`, `targetApp=knowledge-base`, exact kind/schema,
+  fixed source order, aggregate-only summary, bounded body/tags/title와 deterministic Markdown body를
+  모두 검증한다. 공용 handoff claim token은 process-local slot에만 보관하고 frontend에는 opaque id,
+  token, filesystem path를 노출하지 않는다. preview는 파일을 만들지 않으며, 명시적 `Save draft`가
+  exclusive `Journal/YYYY-MM-DD-life-log-<period>.md` create와 SQLite search index 갱신을 완료한
+  뒤 ack/delete한다. 같은 날짜 파일은 suffix를 붙여 보존하고 덮어쓰지 않는다. cancel 또는
+  validation/file/index 실패는 claim을 restore하고, 만료·손상·잘못된 target은 고정 안내만 표시한다.
+  lease는 30초 주기로 갱신하되 10분 envelope TTL은 연장하지 않는다. Life Log DB를 직접 읽거나
+  네트워크/LLM을 호출하지 않으며, browser preview에서는 native handoff API를 지원하지 않는다
+- handoff preview/save는 이미 설정된 absolute vault만 읽고 `Documents/Knowledge` 기본값이나
+  `Journal`을 수신 부수효과로 만들지 않는다. preview가 캡처한 `VaultIdentity`(canonical root와
+  filesystem identity)는 save 직전과 publication 전후에 재검증하며, root 교체·symlink/reparse
+  component·Journal 종류 변경은 새 digest를 요구하는 고정 오류로 중단한다. 완전히 flush한 임시
+  파일은 no-replace publication으로만 Journal에 연결하고, SQLite index transaction이 실패하면
+  같은 entry identity일 때만 파일을 정리한 뒤 claim을 restore한다.
+- 외부 편집 watcher는 bounded event queue와 이벤트당 128개·4KiB path, 4,096개 경로 debounce
+  상한을 사용하고, 현재 identity 안의 regular UTF-8 문서만 최대 10 MiB까지 읽는다. modal은 title/body UTF-8 byte
+  사용량, initial focus·Escape·Tab trap·focus restore를 제공하며, stale/expiry/unmount 응답과
+  중복 Save/Cancel은 화면 또는 native 상태를 다시 오염시키지 않는다
 - clipboard IPC는 `allow-read-text`만 허용하며 편집기에서 사용자가 붙여넣기를 고른 순간의 plain text만 읽는다. clipboard history나 background 수집은 하지 않는다
 - quick capture도 같은 clipboard read 권한을 사용하지만, 별도의 history·자동 수집은 하지 않는다.
   미리보기와 저장 모두 Rust가 최종 입력·태그·본문 상한, 제어문자, credential-like 패턴과

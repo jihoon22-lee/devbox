@@ -79,6 +79,10 @@ pub fn run() {
             commands::docs::list_tags,
             commands::docs::daily_note,
             platform::shortcut_status,
+            commands::handoff::preview_knowledge_draft,
+            commands::handoff::save_knowledge_draft,
+            commands::handoff::discard_knowledge_draft,
+            commands::handoff::renew_knowledge_draft,
             commands::markdown::render_markdown,
             commands::wikilinks::analyze_wikilinks,
             commands::wikilinks::wikilink_candidates,
@@ -86,6 +90,7 @@ pub fn run() {
         ])
         .setup(|app| {
             app.manage(applink::PendingOpen::new());
+            app.manage(commands::handoff::PendingKnowledgeDraft::new());
             match devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>()) {
                 Ok(Some(request)) => app.state::<applink::PendingOpen>().set(request),
                 Ok(None) => {}

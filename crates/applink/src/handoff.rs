@@ -406,6 +406,12 @@ impl HandoffStore {
         {
             return Err(HandoffError::TokenMismatch);
         }
+        // The claim carries the exact envelope snapshot that the consumer
+        // previewed.  A managed claim file changed in place must not be
+        // acknowledged as if it were the same immutable payload.
+        if record.envelope != claim.envelope {
+            return Err(HandoffError::Corrupt);
+        }
         validate_consumer(
             &record.envelope,
             &claim.envelope.id,
@@ -691,8 +697,9 @@ fn is_safe_sensitive_value(value: &Value) -> bool {
 }
 
 fn sensitive_field(value: &str) -> bool {
+    let compact = normalize_field_name(value);
     matches!(
-        normalize_field_name(value).as_str(),
+        compact.as_str(),
         "authorization"
             | "proxyauthorization"
             | "cookie"
@@ -705,14 +712,32 @@ fn sensitive_field(value: &str) -> bool {
             | "token"
             | "accesstoken"
             | "refreshtoken"
+            | "sessiontoken"
+            | "idtoken"
+            | "jwt"
             | "credential"
             | "credentials"
             | "apikey"
             | "xapikey"
+            | "xauth"
             | "accesskey"
             | "clientsecret"
+            | "clientid"
             | "privatekey"
-    )
+            | "signingkey"
+    ) || [
+        "authorization",
+        "cookie",
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "credential",
+        "apikey",
+        "privatekey",
+    ]
+    .iter()
+    .any(|needle| compact.contains(needle))
 }
 
 fn path_field(value: &str) -> bool {
@@ -782,26 +807,14 @@ fn looks_like_raw_credential(value: &str) -> bool {
     let lower = trimmed.to_ascii_lowercase();
     if lower.starts_with("bearer ")
         || lower.starts_with("basic ")
-        || trimmed.starts_with("sk-")
-        || trimmed.contains("-----BEGIN PRIVATE KEY-----")
-        || trimmed.contains("-----BEGIN RSA PRIVATE KEY-----")
-        || trimmed.contains("-----BEGIN OPENSSH PRIVATE KEY-----")
+        || lower.starts_with("sk-")
+        || lower.contains("-----begin private key-----")
+        || lower.contains("-----begin rsa private key-----")
+        || lower.contains("-----begin openssh private key-----")
     {
         return true;
     }
-    if value
-        .split(|character: char| {
-            character.is_whitespace() || matches!(character, '&' | ',' | ';' | '?')
-        })
-        .filter_map(|segment| segment.split_once('=').or_else(|| segment.split_once(':')))
-        .any(|(key, raw_value)| {
-            sensitive_field(key.trim_matches(|character: char| {
-                matches!(character, '"' | '\'' | '{' | '}' | '[' | ']')
-            })) && !is_exact_secret_reference(raw_value.trim_matches(|character: char| {
-                matches!(character, '"' | '\'' | '{' | '}' | '[' | ']' | ',')
-            }))
-        })
-    {
+    if has_unsafe_sensitive_assignment(value) {
         return true;
     }
     if trimmed.split_once("://").is_some_and(|(_, rest)| {
@@ -816,6 +829,58 @@ fn looks_like_raw_credential(value: &str) -> bool {
         && jwt_parts.next().is_some_and(|part| part.len() >= 8)
         && jwt_parts.next().is_some_and(|part| part.len() >= 8)
         && jwt_parts.next().is_none()
+}
+
+fn has_unsafe_sensitive_assignment(value: &str) -> bool {
+    value
+        .split(['&', ',', ';', '?', '\n', '\r', '\t'])
+        .any(|segment| {
+            segment.char_indices().any(|(operator, character)| {
+                if !matches!(character, '=' | ':') {
+                    return false;
+                }
+                let before = &segment[..operator];
+                let key_end = before.trim_end().len();
+                let key_start = before[..key_end]
+                    .char_indices()
+                    .rev()
+                    .find(|(_, character)| {
+                        !character.is_ascii_alphanumeric() && !matches!(character, '_' | '-' | '.')
+                    })
+                    .map_or(0, |(index, character)| index + character.len_utf8());
+                let key = &before[key_start..key_end];
+                let raw_value = segment[operator + character.len_utf8()..].trim_start();
+                sensitive_field(key)
+                    && !raw_value.is_empty()
+                    && !is_safe_assignment_reference(raw_value)
+            })
+        })
+}
+
+/// Accept an exact reference inside the small amount of JSON punctuation that
+/// the conservative assignment scanner sees (`"${TOKEN}"}`).  Braces are not
+/// trimmed from the reference itself: `${TOKEN}` must remain an exact value,
+/// while arbitrary text around it remains rejected.
+fn is_safe_assignment_reference(raw_value: &str) -> bool {
+    let value = raw_value.trim();
+    let Some(quote) = value
+        .chars()
+        .next()
+        .filter(|character| *character == '"' || *character == '\'')
+    else {
+        return is_exact_secret_reference(value.trim_end_matches(','));
+    };
+    let quote_width = quote.len_utf8();
+    let rest = &value[quote_width..];
+    let Some(end) = rest.find(quote) else {
+        return false;
+    };
+    let candidate = &rest[..end];
+    let trailing = rest[end + quote_width..].trim();
+    trailing
+        .chars()
+        .all(|character| matches!(character, '}' | ']' | ','))
+        && is_exact_secret_reference(candidate)
 }
 
 fn encode_bounded<T: Serialize>(value: &T, max: u64) -> Result<Vec<u8>, HandoffError> {
@@ -881,16 +946,37 @@ fn publish_new(path: &Path, contents: &[u8]) -> Result<(), PublishError> {
             return Err(PublishError::Storage);
         }
         let linked = fs::hard_link(&temporary, path);
-        let _ = fs::remove_file(&temporary);
         return match linked {
             Ok(()) => {
-                let _ = sync_parent(path);
+                // A published descriptor is not considered durable until the
+                // containing directory has also been flushed.  Returning
+                // success after a failed directory sync would let a producer
+                // report a handoff that can disappear on crash/restart.
+                let temporary_removed = fs::remove_file(&temporary).is_ok();
+                if !temporary_removed {
+                    let _ = fs::remove_file(path);
+                    let _ = sync_parent(path);
+                    return Err(PublishError::Storage);
+                }
+                if sync_parent(path).is_err() {
+                    // The target was created by this invocation and the
+                    // random managed name cannot alias a pre-existing
+                    // descriptor.  Remove it before reporting failure so a
+                    // retry cannot observe a false-success orphan.
+                    let _ = fs::remove_file(path);
+                    let _ = sync_parent(path);
+                    return Err(PublishError::Storage);
+                }
                 Ok(())
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let _ = fs::remove_file(&temporary);
                 Err(PublishError::Exists)
             }
-            Err(_) => Err(PublishError::Storage),
+            Err(_) => {
+                let _ = fs::remove_file(&temporary);
+                Err(PublishError::Storage)
+            }
         };
     }
     Err(PublishError::Storage)
@@ -1276,6 +1362,29 @@ mod tests {
     }
 
     #[test]
+    fn ack_rejects_a_claim_record_with_changed_payload_metadata() {
+        let root = TestRoot::new("immutable");
+        let store = root.store();
+        let descriptor = store.create(request(None), 1_000).unwrap();
+        let claim = store
+            .claim(&descriptor.id, "api-request/v1", "api-playground", 2_000)
+            .unwrap();
+        let mut record: Value =
+            serde_json::from_slice(&fs::read(root.claimed(&descriptor.id)).unwrap()).unwrap();
+        record["envelope"]["payload"]["body"] = json!("changed after preview");
+        fs::write(
+            root.claimed(&descriptor.id),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            store.ack(&claim, "api-playground", 3_000),
+            Err(HandoffError::Corrupt)
+        );
+    }
+
+    #[test]
     fn wrong_target_and_kind_leave_pending_bytes_for_the_right_consumer() {
         let root = TestRoot::new("routing");
         let store = root.store();
@@ -1442,6 +1551,39 @@ mod tests {
             store.create(raw_header, 1_000),
             Err(HandoffError::InvalidPayload)
         );
+
+        let mut raw_named_token = request(None);
+        raw_named_token.payload = json!({
+            "headers": [{"name": "X-Client-Token", "value": "opaque-credential"}]
+        });
+        assert_eq!(
+            store.create(raw_named_token, 1_000),
+            Err(HandoffError::InvalidPayload)
+        );
+
+        let mut raw_x_auth = request(None);
+        raw_x_auth.payload = json!({
+            "headers": [{"name": "X-Auth", "value": "opaque-credential"}]
+        });
+        assert_eq!(
+            store.create(raw_x_auth, 1_000),
+            Err(HandoffError::InvalidPayload)
+        );
+
+        let mut spaced_raw_assignment = request(None);
+        spaced_raw_assignment.payload = json!({
+            "body": "mode=test token = opaque-credential"
+        });
+        assert_eq!(
+            store.create(spaced_raw_assignment, 1_000),
+            Err(HandoffError::InvalidPayload)
+        );
+
+        let mut spaced_reference = request(None);
+        spaced_reference.payload = json!({
+            "body": "mode=test token = ${WEBHOOK_SECRET}"
+        });
+        assert!(store.create(spaced_reference, 1_000).is_ok());
 
         let mut relative = request(None);
         relative.payload = json!({"path": "../outside.bin"});

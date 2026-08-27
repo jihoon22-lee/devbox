@@ -5,9 +5,15 @@ use crate::core::fixtures::{
     save_document_if_current, sorted_fixtures, CapturedFixture, FixtureDocument, FixtureError,
     MAX_FIXTURES,
 };
+use crate::core::handoff::{
+    build_api_request_payload, API_REQUEST_HANDOFF_KIND, CONSUMER_APP_ID, HANDOFF_INPUT_ERROR,
+    PRODUCER_APP_ID,
+};
 use crate::core::history::{History, MAX_BODY_BYTES};
 use crate::core::rules::{matches, upsert, ResponseRule, INVALID_RULE_ERROR};
+use devbox_applink::{handoff_root_in, CreateHandoff, HandoffError, HandoffStore, OpenRequest};
 use serde::Serialize;
+use serde_json::to_value;
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::PathBuf;
@@ -22,6 +28,12 @@ pub const INVALID_BIND_ERROR: &str = "허용되지 않은 bind 주소입니다";
 pub const INVALID_PORT_ERROR: &str = "포트는 1~65535 범위여야 합니다";
 pub const RATE_LIMIT_ERROR: &str = "요청이 너무 많습니다. 잠시 후 다시 시도하세요";
 pub const BIND_ERROR: &str = "서버 bind에 실패했습니다";
+pub const API_TARGET_UNAVAILABLE_ERROR: &str =
+    "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다";
+pub const API_LAUNCH_ERROR: &str =
+    "API Playground를 실행하지 못했습니다. handoff는 잠시 보관되며 다시 시도할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
+pub const HANDOFF_CREATE_ERROR: &str =
+    "API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다";
 
 pub struct ServerState {
     pub running: Mutex<Option<Arc<AtomicBool>>>,
@@ -48,6 +60,16 @@ pub fn server_state() -> Arc<ServerState> {
 pub struct ServerStatus {
     pub running: bool,
     pub address: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiHandoffDispatch {
+    pub handoff_id: String,
+    pub producer_id: String,
+    pub consumer_id: String,
+    pub created_at_ms: u64,
+    pub expires_at_ms: u64,
 }
 
 #[tauri::command]
@@ -363,6 +385,115 @@ pub fn fixture_to_rule(
     response_rule_draft(fixture).map_err(fixture_error)
 }
 
+/// Publish a masked captured request to API Playground through the shared
+/// one-time handoff store.  The target is discovered from the catalog before
+/// publishing so a missing/old installation never leaves a misleading
+/// clipboard or temporary-file fallback.
+#[tauri::command]
+pub fn send_history_to_api(
+    state: tauri::State<'_, Arc<ServerState>>,
+    history_id: u64,
+) -> Result<ApiHandoffDispatch, String> {
+    let request = state
+        .history
+        .lock()
+        .map_err(|_| HANDOFF_INPUT_ERROR.to_string())?
+        .masked_record(history_id)
+        .ok_or_else(|| "요청 기록을 찾을 수 없습니다".to_string())?;
+    let fixture = fixture_from_request(format!("fixture-{history_id}"), &request)
+        .map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
+    publish_api_handoff(fixture)
+}
+
+/// Publish a stored masked fixture by opaque fixture ID.  The frontend cannot
+/// provide a path, URL, body, or header value to this command.
+#[tauri::command]
+pub fn send_fixture_to_api(
+    app: AppHandle,
+    state: tauri::State<'_, Arc<ServerState>>,
+    id: String,
+) -> Result<ApiHandoffDispatch, String> {
+    let _guard = state
+        .fixture_lock
+        .lock()
+        .map_err(|_| crate::core::fixtures::FIXTURE_READ_ERROR.to_string())?;
+    let document = load_document_with_raw(&fixture_path(&app)?).map_err(fixture_error)?;
+    let fixture = document
+        .document
+        .fixtures
+        .iter()
+        .find(|fixture| fixture.id == id)
+        .cloned()
+        .ok_or_else(|| FixtureError::NotFound.message().to_string())?;
+    drop(_guard);
+    publish_api_handoff(fixture)
+}
+
+fn publish_api_handoff(fixture: CapturedFixture) -> Result<ApiHandoffDispatch, String> {
+    let target_available =
+        devbox_launch::installed_targets(&format!("handoff:{API_REQUEST_HANDOFF_KIND}"))
+            .into_iter()
+            .any(|target| target.id == CONSUMER_APP_ID);
+    if !target_available {
+        return Err(API_TARGET_UNAVAILABLE_ERROR.to_string());
+    }
+
+    let payload =
+        build_api_request_payload(&fixture).map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
+    let created_at_ms = handoff_now_ms().ok_or_else(|| HANDOFF_CREATE_ERROR.to_string())?;
+    let expires_at_ms = created_at_ms
+        .checked_add(devbox_applink::DEFAULT_HANDOFF_TTL_MS)
+        .ok_or_else(|| HANDOFF_CREATE_ERROR.to_string())?;
+    let store = HandoffStore::new(handoff_root_in(&devbox_integration::common_root()));
+    let descriptor = store
+        .create(
+            CreateHandoff {
+                kind: API_REQUEST_HANDOFF_KIND.to_string(),
+                source_app: PRODUCER_APP_ID.to_string(),
+                target_app: Some(CONSUMER_APP_ID.to_string()),
+                payload: to_value(payload).map_err(|_| HANDOFF_CREATE_ERROR.to_string())?,
+            },
+            created_at_ms,
+        )
+        .map_err(map_handoff_create_error)?;
+    let request = OpenRequest {
+        target: descriptor.clone().into(),
+        from: Some(PRODUCER_APP_ID.to_string()),
+    };
+    if devbox_launch::launch_open(CONSUMER_APP_ID, &request).is_err() {
+        // The pending envelope is deliberately retained until TTL.  A later
+        // explicit retry can consume it, and no alternate data channel is
+        // opened when process launch fails.
+        return Err(API_LAUNCH_ERROR.to_string());
+    }
+    Ok(ApiHandoffDispatch {
+        handoff_id: descriptor.id,
+        producer_id: PRODUCER_APP_ID.to_string(),
+        consumer_id: CONSUMER_APP_ID.to_string(),
+        created_at_ms,
+        expires_at_ms,
+    })
+}
+
+fn map_handoff_create_error(error: HandoffError) -> String {
+    match error {
+        HandoffError::InvalidPayload | HandoffError::InvalidRequest | HandoffError::TooLarge => {
+            HANDOFF_INPUT_ERROR.to_string()
+        }
+        HandoffError::UnsafeStorage | HandoffError::Storage | HandoffError::RandomUnavailable => {
+            HANDOFF_CREATE_ERROR.to_string()
+        }
+        HandoffError::Missing
+        | HandoffError::AlreadyClaimed
+        | HandoffError::WrongTarget
+        | HandoffError::WrongKind
+        | HandoffError::Expired
+        | HandoffError::LeaseExpired
+        | HandoffError::TokenMismatch
+        | HandoffError::Corrupt => HANDOFF_CREATE_ERROR.to_string(),
+    }
+}
+
 #[tauri::command]
 pub fn list_rules(state: tauri::State<'_, Arc<ServerState>>) -> Vec<ResponseRule> {
     let mut rules: Vec<ResponseRule> = state.rules.lock().unwrap().values().cloned().collect();
@@ -396,4 +527,12 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+fn handoff_now_ms() -> Option<u64> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+        .filter(|now| *now > 0)
 }

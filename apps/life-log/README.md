@@ -182,3 +182,26 @@ mutex로 cancellation과 선형화해 취소와 파일 commit의 race도 허용�
 roving tab stop으로 두고 Arrow/Home/End 및 focus-visible 상태를 제공하며, 앱명은 Unicode
 code point 단위로 잘라 표시한다. 자동 일기 문장 생성, cloud/local LLM, network fetch와
 개인 활동 원문 외부 전송은 이 기능에 포함하지 않는다.
+
+## Knowledge draft handoff (`knowledge-draft/v1`)
+
+Native digest 화면의 `Send to Knowledge`는 사용자가 명시적으로 누른 경우에만 현재 native
+`DigestResponse`를 다시 검증해 실행한다. `knowledge-draft/v1` payload에는 period/range/timezone,
+집계된 사용량·session 수·활동일·Git commit 수·sanitized top app, 결정론적 Markdown `body`,
+고정 `life-log,digest,<period>` tags와 네 source의 version/freshness/error provenance만 담긴다.
+window title·개별 session·Git project path·note id·credential·원본 활동은 payload나 argv로
+복제하지 않는다. argv에는 `--handoff-kind`와 128-bit opaque `--handoff-id`만 전달하며, 공용
+handoff root의 10분 TTL·10 MiB 공통 상한에 더해 draft body 512 KiB/serialized 768 KiB 상한을
+적용한다.
+
+발행 전에 Knowledge 설치 경로를 확인하고, 발행 실패는 raw payload를 화면에 반향하지 않는
+고정 오류로 끝낸다. Knowledge는 claim 후 저장 전 preview를 표시한다. 저장 버튼을 누르면
+`Journal/YYYY-MM-DD-life-log-<period>.md`를 exclusive atomic create하고 검색 인덱스를 갱신한
+뒤에만 ack/delete한다. 같은 날짜 note가 있으면 bounded suffix를 사용하며 기존 note를 덮어쓰지
+않는다. 취소·검증/파일/인덱스 실패는 claim을 restore해 TTL 안에 재시도할 수 있고, 만료·손상
+handoff는 안전하게 폐기되어 Life Log에서 새 digest를 보내 재생성한다. preview가 오래 열려
+있으면 60초 claim lease를 30초마다 갱신하지만 envelope TTL은 연장하지 않는다.
+
+브라우저 preview에서는 handoff를 비활성화하고 Tauri IPC·다운로드·네트워크를 만들지 않는다.
+Knowledge의 cold/hot applink는 같은 one-shot pending slot을 사용하므로 stale event payload를
+직접 적용하지 않는다.

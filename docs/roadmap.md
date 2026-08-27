@@ -30,7 +30,8 @@
 
 ## Stage 5 — 신규 앱 ✅
 - [x] **webhook-lab** — 로컬 웹훅/콜백 서버 (inbound HTTP). request history, 응답 rule·delay·오류 재현,
-  민감 헤더 masking, LAN 공개 기본 차단, bounded masked JSON fixture 저장 (#314; API Playground handoff는 #315)
+  민감 헤더 masking, LAN 공개 기본 차단, bounded masked JSON fixture 저장과 API Playground
+  `api-request/v1` handoff (#314, #315)
 - [x] **dev environment doctor** — devbox-manager의 환경 진단 탭 (WSL/git/node/pnpm/rustc/cargo/devbox-data/catalog-ids)
 - [x] **repo-manager** — Git repository 탐색·브랜치/worktree/상태 목록, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기
   (파괴적 기본 동작 없음, remove 전 uncommitted/untracked 검사)
@@ -190,7 +191,14 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
      `kind`/128-bit `id`만 argv로 전달하고, 10분 TTL·10MiB 상한·target/kind/schema 검증,
      create-new publication, token 기반 claim/ack/restore, 60초 bounded lease와 crash recovery를
      공용 `crates/applink`에 구현했다. raw credential과 상대/symlink payload path는 publication과
-     claim 양쪽에서 거부한다. producer/consumer 화면과 clipboard fallback은 후속 issue 범위다.
+     claim 양쪽에서 거부한다. Webhook Lab → API Playground handoff의 producer/consumer ID,
+     preview, ack/delete, restore와 fixed no-clipboard failure path는 #315에서 연결한다.
+   - 2026-08-27 #315 구현 초안: Webhook Lab은 backend-owned masked history/fixture만
+     `api-request/v1` payload로 만들고 catalog capability를 확인한 뒤 공용 handoff store에
+     10분 TTL envelope를 발행한다. argv에는 kind와 128-bit opaque ID만 넣고, API Playground는
+     cold/hot single-instance 경로에서 claim 후 preview를 표시한다. 적용은 ack/delete, 취소는
+     restore이며, 미설치·실행 실패·만료·손상·중복 claim·lease/storage 오류는 fixed error로
+     격리한다. credential은 `${WEBHOOK_SECRET}` 같은 참조만 전달하고 clipboard fallback은 없다.
 2. Port Manager command line·WSL identity-safe kill.
    - 2026-08-26 draft: native/WSL/container listener rows, bounded full command/path,
      Windows creation FILETIME (decimal-string wire value) and WSL proc start tick identity,
@@ -239,7 +247,9 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
    deterministic rendering을 선행 계약으로 삼는다.
 7. Manager custom install root (#308)·데이터 보존형 안전 제거 (#309).
 8. Code Pad LSP cache/local archive, Run Manager log search, Workbench project environment,
-   Webhook API handoff (#315; captured fixture storage #314 완료), Repo Manager history/diff/stage/commit/fetch/FF-only pull/push.
+   Webhook API handoff (#315; captured fixture storage #314 완료), Repo Manager
+   history/diff/stage/commit/fetch/FF-only pull/push. Webhook Lab fixture와 API handoff
+   (#314, #315)는 구현되었고 replay/sequence(#362)는 남아 있다.
    Repo Manager의 #316–#319는 같은 repository discovery·bounded Git runner·status snapshot·
    in-progress operation guard를 쓰는 일상 Git workflow 한 PR로 묶고, read-only·mutation·remote·
    safety acceptance는 이슈별로 구분한다.
@@ -582,6 +592,27 @@ empty result, Markdown escaping, source/freshness ordering, fixed errors와 immu
 clipboard failure와 empty state를 검증한다. #306은 #307 handoff/Knowledge 저장, 자동 AI 요약,
 cloud export를 구현하지 않는다.
 
+**PR grouping.** 사용자 결정에 따라 #307과 #315는 공용 one-time app handoff lifecycle을
+검증하는 하나의 `feat/integration/app-handoffs` PR로 전달한다. 아래 acceptance와 후속 범위는
+producer/consumer 흐름별로 계속 분리해 추적한다.
+
+**2026-08-27 #307 구현 상태.** Life Log native digest의 명시적 `Send to Knowledge`가
+`knowledge-draft/v1` aggregate-only payload를 공용 applink handoff store에 10분 TTL로
+발행하고, `launch_open`에는 kind와 128-bit opaque id만 전달한다. producer/consumer가
+title/body/tags/schema·source provenance와 512KiB body/768KiB payload bounds를 각각
+검증하며 session·window title·Git project path·note path·credential은 경계를 넘지 않는다.
+Knowledge cold/hot receiver는 claim token을 process-local preview slot에만 보관하고,
+사용자가 `Save draft`를 확정할 때만 bounded `Journal/YYYY-MM-DD-life-log-<period>[-n].md`
+를 exclusive create한 뒤 SQLite index와 applink ack/delete를 수행한다. cancel·검증·파일·index
+실패는 restore하고, 만료/lease expiry는 원 envelope TTL 안에서만 재시도하며 새 digest로
+재생성한다. 고정 오류·fixture lifecycle, frontend preview/save/cancel, catalog capability와
+README/architecture/spec/workthrough를 함께 갱신했다. 수신 preview/save는 명시적으로 설정된
+vault identity를 캡처·재검증하고 default-root/Journal 자동 생성을 금지한다. Journal 파일은
+완전 flush 후 no-replace로 publish하며 같은 entry identity일 때만 index rollback cleanup을
+허용한다. watcher는 이벤트당 path 수·길이와 bounded queue·4,096 pending path·10 MiB regular UTF-8 document read를 사용하고,
+modal은 UTF-8 byte budget·focus trap·stale/expiry/unmount guard를 제공한다. persistent
+pending/sent/consumed/expired 상태 UI는 P3-10(#353) 후속으로 남긴다.
+
 **2026-08-26 #410 구현 상태.** WSL Desktop이 Workbench #281과 Life Log가 읽을 수 있는
 `wsl-desktop/runtime/v1` snapshot producer를 맡도록 연결했다. 기존
 `crates/integration::Envelope::with_views`와 `write_atomic`을 사용해
@@ -665,8 +696,17 @@ absolute/path-traversal target은 고정 marker가 되며 frontend가 경로나 
 corrupt·oversized·symlink 파일은 자동 복구하지 않고 fixed error로 보존하며, atomic replace와
 raw-byte CAS/process-local lock으로 partial write와 concurrent overwrite를 방지한다. 목록은
 timestamp 내림차순+ID tie-break로 결정적이며 UI는 fixture 저장·삭제·전체 삭제·로컬 response-rule
-초안 action을 하나의 busy guard와 접근 가능한 label로 보호한다. #315 API handoff와 #362 replay/
-sequence는 구현하지 않는다.
+초안 action을 하나의 busy guard와 접근 가능한 label로 보호한다.
+
+**2026-08-27 #315 구현 상태.** Webhook Lab history/masked fixture에서 API Playground로
+전달하는 `api-request/v1` producer와 API Playground receiver를 연결했다. producer는 opaque
+ID로 backend masked data를 읽고 target capability를 확인한 뒤 공용 handoff store에 producer/
+consumer ID, 10분 TTL, bounded payload를 기록한다. receiver는 cold/hot AppLink에서 claim하고
+producer/consumer/handoff ID·expiry·request를 preview한 뒤 사용자 `적용`에서만 ack/delete하며,
+`취소`는 restore한다. URL/header/body bounds와 raw credential rejection, corrupt/expired/duplicate/
+lease/storage fixed errors, 30초 lease 갱신(10분 TTL 불변), renderer 종료 restore,
+no-clipboard fallback, unit/Rust integration/UI fixture tests를
+포함한다. request replay/sequence(#362)는 구현하지 않는다.
 
 #293 API Playground OpenAPI import는 로컬 파일과 HTTP(S) URL의 JSON/YAML 3.0/3.1 문서를 대상으로
 bounded source/parser 경계와 operation preview를 고정한다. 로컬 file read는 완전 오프라인이고 URL은

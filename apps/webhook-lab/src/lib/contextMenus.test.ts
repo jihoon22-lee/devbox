@@ -17,7 +17,7 @@ describe("Webhook Lab context menu contracts", () => {
       "삭제",
     ]);
     expect(items.find((item) => item.id === "delete")?.danger).toBe(true);
-    expect(items.find((item) => item.id === "convert-api-playground")?.disabled).toBe(true);
+    expect(items.find((item) => item.id === "convert-api-playground")?.disabled).toBe(false);
   });
 
   it("rule 메뉴의 정확한 항목과 분리된 후속 기능을 유지한다", () => {

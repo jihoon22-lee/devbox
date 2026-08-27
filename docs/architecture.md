@@ -55,7 +55,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   crates/filesystem ◄── applink, api-playground, code-pad, developer-toolbox, devbox-manager,
                        everything-plus, knowledge-base, life-log, port-manager,
                        repo-manager, run-manager, wsl-desktop
-  crates/applink    ◄── code-pad, repo-manager, wsl-desktop, workbench
+  crates/applink    ◄── code-pad, knowledge-base, life-log, repo-manager, wsl-desktop, workbench
   crates/markdown   ◄── knowledge-base, code-pad
   crates/process    ◄── port-manager, run-manager
   crates/wsl        ◄── port-manager, wsl-desktop, run-manager, workbench, repo-manager
@@ -63,7 +63,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   crates/integration◄── run-manager, workbench, knowledge-base, life-log 등 snapshot 계약·자동 발견
   crates/secrets    ◄── api-playground, run-manager (DPAPI)
   crates/git        ◄── devbox-manager, life-log, repo-manager, workbench
-  crates/launch     ◄── everything-plus, knowledge-base, repo-manager, workbench
+  crates/launch     ◄── everything-plus, knowledge-base, life-log, repo-manager, workbench
   crates/catalog    ◄── devbox-manager (후속에서 launch·capability 메뉴 소비자 확대)
   crates/window-state ◄── 일반 persistent window 소비 앱 (후속 cross-app wiring)
 ```
@@ -101,6 +101,7 @@ life-log:        tray/poller(상시) → sessionizer → SQLite → bounded dige
                    digest 한 번의 Git 결과에서 summary/chart를 파생하며 legacy get_day Git을
                    함께 호출하지 않는다. crates/integration으로 snapshot을 자동 발견하며
                    Knowledge activity/v1을 검증·집계하고 외부 DB 직접 조회 없음)
+                   └ explicit digest → applink handoff store → launch_open → Knowledge preview
 everything-plus:  validated roots → filesystem crate → bounded text extractor →
                    search crate(FTS5 + content metadata) → React
 knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror + context-menu)
@@ -110,6 +111,8 @@ knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror + co
                    │  → vault/assets/<sha256>.<safe-ext> + note-relative Markdown node
                    ├ canonical tree entry → opener 또는 catalog/launch crate → 설치된 대상 앱
                    └ path/body-free activity/v1 snapshot → Life Log Data Sources
+                   └ applink handoff claim → draft preview → exclusive Journal note/index save → ack
+                      (검증·파일·index 실패는 restore, 만료는 새 digest 재생성)
 api-playground:   React(context-menu + History/Collection v2 + GraphQL editor/response projection)
                    → commands(secrets sanitizer + bounded cancellation)
                    → reqwest → HTTP
@@ -220,6 +223,37 @@ v0.5.0에서는 지속 상태는 snapshot, 일회성 작업 전달은 applink pr
 128-bit opaque id만 argv에 전달하고 공용 root의 TTL·크기 제한 payload를 한 번 소비한다.
 devbox가 양쪽 앱을 제어하면 clipboard·임시 export 파일 전달은 명시적 fallback으로만 둔다.
 
+2026-08-27 #307+#315 그룹 작업은 이 경계를 두 개의 명시적 앱 간 흐름에 적용한다.
+Webhook Lab은
+backend가 읽은 masked history/fixture만 `api-request/v1` payload로 만들고, catalog에서
+설치된 `api-playground` capability를 확인한 뒤 producer/consumer ID가 있는 envelope를
+공용 store에 기록한다. 실행 argv에는 kind와 opaque ID만 들어간다. API Playground는 cold/hot
+single-instance 경로에서 ID를 claim하고 적용 전 preview를 표시하며, 적용은 ack/delete,
+취소는 restore한다. TTL·size·target/kind/schema·lease와 URL/header/body privacy 검증을
+양쪽 경계에 두고, 미설치·실행 실패·만료·손상·중복 소비는 fixed error로 격리하며 clipboard
+fallback을 사용하지 않는다.
+
+Life Log의 `Send to Knowledge`는 이 일회성 경계를 `knowledge-draft/v1`에 적용한다. native
+digest를 다시 검증한 producer가 aggregate-only summary, 결정론적 Markdown body, 고정 tags와
+source provenance만 10분 TTL envelope에 기록하고 `launch_open`에는 target kind와 opaque id만
+전달한다. Knowledge는 source/target/kind/schema, body/title/tags/summary bounds와 privacy
+marker를 다시 검증한 뒤 process-local claim slot에서 저장 전 preview를 제공한다. 사용자가
+`Save draft`를 확정하면 `Journal/YYYY-MM-DD-life-log-<period>[-n].md`를 exclusive create하고
+검색 index를 갱신한 다음 ack/delete하며, cancel·validation·file/index 실패는 claim을 restore한다.
+만료·손상·미설치/실행 race는 raw payload·path·OS 오류 없이 고정 안내로 격리하고 Life Log의
+새 digest 재생성으로 회복한다. preview lease는 30초마다 갱신하지만 envelope TTL은 연장하지
+않으며, 어느 앱도 상대 앱의 DB나 원문 노트를 직접 읽지 않는다.
+
+Knowledge handoff의 preview/save는 명시적으로 설정된 vault만 대상으로 하며, default-root
+초기화나 Journal 자동 생성으로 외부 요청을 승격하지 않는다. preview가 보관한 canonical root와
+filesystem object identity를 save·파일 publication 직전에 재검증하고, symlink/reparse ancestor,
+root 교체, Journal 종류 변경은 fixed error와 claim restore로 격리한다. 파일은 완전히 flush한
+temporary sibling을 no-replace primitive로 publish하고, 그 entry identity가 일치할 때만 index
+실패 cleanup을 허용한다. watcher도 같은 vault identity 경계와 regular UTF-8 document/10 MiB 제한을
+사용하며 이벤트당 path 수·길이와 raw event queue·pending path를 각각 bounded하게 유지한다. frontend modal은 title/body
+UTF-8 byte budget과 explicit Save/Cancel, stale/expiry/unmount guard, focus trap/restore를
+제공한다.
+
 Workbench는 Life Log의 app-local DB와 settings schema를 알지 않는다. 시작 시
 `life-log/projects/v1`을 producer/schema/freshness 기준으로 검증하고 안전한 절대 경로만
 ProjectProfile로 흡수한다. 파일 없음은 no-op이며 손상·schema mismatch·unsafe entry는 기존
@@ -313,9 +347,8 @@ schema v1은 fixture 200개·파일 8 MiB·bounded field limits를 적용하고,
 파일은 원본을 자동 복구하지 않고 fixed error로 중단한다. app-owned parent/file 검사,
 raw-byte CAS, process-local write lock, atomic replace로 concurrent update와 partial write를
 방지하며 timestamp 내림차순+ID tie-break로 목록을 결정적으로 만든다. fixture의 response-rule
-초안은 로컬 editor draft일 뿐이고 API Playground handoff(#315)·replay/sequence(#362)는 별도 범위다.
-example curl은 기존 bounded redaction contract를 따르고, API Playground `api-request/v1`
-handoff 메뉴는 #315가 준비되기 전까지 fail-closed로 비활성화한다.
+초안은 로컬 editor draft다. #315 handoff는 이 masked fixture 경계에서만 payload를 만들고,
+replay/sequence(#362)는 별도 범위다. example curl은 기존 bounded redaction contract를 따른다.
 
 Devbox Manager의 app-row context menu도 메뉴를 열기 전에 catalog app ID로 대상 행을 선택하고,
 설치/업데이트의 portable·setup 선택을 submenu로 보존한다. 실행·rollback·설치 폴더 열기·제거는

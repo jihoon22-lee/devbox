@@ -39,7 +39,7 @@ fn prepare(
     digest::prepare_with_cancel(&conn, &projects, input, cancellation)
 }
 
-async fn build_for_state(
+pub(crate) async fn build_for_state(
     state: &tauri::State<'_, Arc<AppState>>,
     input: DigestInput,
     cancellation: Arc<std::sync::atomic::AtomicBool>,

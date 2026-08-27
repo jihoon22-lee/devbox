@@ -26,6 +26,9 @@ serde_json = "1"
 tiny_http = "0.12"
 uuid = { version = "1", features = ["v4"] }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+devbox-applink = { package = "applink", path = "../../../crates/applink" }
+devbox-integration = { package = "integration", path = "../../../crates/integration" }
+devbox-launch = { package = "launch", path = "../../../crates/launch" }
 
 [dev-dependencies]
 tempfile = "3"

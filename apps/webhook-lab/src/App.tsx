@@ -18,6 +18,8 @@ import {
   listHistory,
   listRules,
   saveFixture,
+  sendFixtureToApi,
+  sendHistoryToApi,
   serverStatus,
   setRule,
   startServer,
@@ -26,6 +28,7 @@ import {
   type ResponseRule,
   type ServerStatus,
   type CapturedFixture,
+  type ApiHandoffDispatch,
 } from "./api";
 import { buildHistoryContextMenu, buildRuleContextMenu } from "./lib/contextMenus";
 import { buildExampleCurl, type CurlShell } from "./lib/exampleCurl";
@@ -58,6 +61,10 @@ const SAFE_ERROR_MESSAGES = new Set([
   "허용되지 않은 bind 주소입니다",
   "포트는 1~65535 범위여야 합니다",
   "서버 bind에 실패했습니다",
+  "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다",
+  "API Playground를 실행하지 못했습니다. handoff는 잠시 보관되며 다시 시도할 수 있습니다. 클립보드로 자동 전환하지 않습니다",
+  "API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다",
+  "handoff 요청에 사용할 fixture가 유효하지 않습니다",
 ]);
 
 function emptyRule(): ResponseRule {
@@ -98,6 +105,7 @@ export default function App() {
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
   const [contextHistory, setContextHistory] = useState<RequestRecord | null>(null);
   const [contextRule, setContextRule] = useState<ResponseRule | null>(null);
+  const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
   const operationInFlight = useRef(false);
   const refreshRequest = useRef(0);
 
@@ -362,6 +370,38 @@ export default function App() {
     }
   };
 
+  const showHandoffSuccess = (dispatch: ApiHandoffDispatch) => {
+    setHandoffNotice(
+      `API Playground 미리보기로 전달했습니다. producer: ${dispatch.producerId} · consumer: ${dispatch.consumerId} · handoff: ${dispatch.handoffId}. 적용 전 내용을 확인하세요.`,
+    );
+  };
+
+  const onSendHistoryToApi = async (request: RequestRecord) => {
+    if (!beginBusy()) return;
+    setError(null);
+    setHandoffNotice(null);
+    try {
+      showHandoffSuccess(await sendHistoryToApi(request.id));
+    } catch (e) {
+      setError(safeMessage(e));
+    } finally {
+      endBusy();
+    }
+  };
+
+  const onSendFixtureToApi = async (fixture: CapturedFixture) => {
+    if (!beginBusy()) return;
+    setError(null);
+    setHandoffNotice(null);
+    try {
+      showHandoffSuccess(await sendFixtureToApi(fixture.id));
+    } catch (e) {
+      setError(safeMessage(e));
+    } finally {
+      endBusy();
+    }
+  };
+
   const onDraftFixture = async (fixture: CapturedFixture) => {
     if (!beginBusy()) return;
     setError(null);
@@ -499,6 +539,8 @@ export default function App() {
       );
     } else if (id === "save-fixture") {
       void onSaveFixture(request);
+    } else if (id === "convert-api-playground") {
+      void onSendHistoryToApi(request);
     } else if (id === "delete") {
       void onDeleteHistory(request);
     }
@@ -555,6 +597,7 @@ export default function App() {
 
       {lanBind && <div className="warn">LAN 공개는 명시적 설정입니다. 외부에서 접근 가능합니다.</div>}
       {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
+      {handoffNotice && <div className="handoff-notice" role="status" aria-live="polite">{handoffNotice}</div>}
 
       <div className="main">
         <section className="panel">
@@ -743,6 +786,15 @@ export default function App() {
                 </div>
                 {fixture.body && <pre className="body">{fixture.body.slice(0, 200)}</pre>}
                 <div className="fixture-actions">
+                  <button
+                    type="button"
+                    className="mini"
+                    disabled={busy}
+                    aria-label={`${fixture.method} ${fixture.url} API Playground로 변환`}
+                    onClick={() => void onSendFixtureToApi(fixture)}
+                  >
+                    API Playground로 변환
+                  </button>
                   <button
                     type="button"
                     className="mini"

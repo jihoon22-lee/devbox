@@ -78,6 +78,27 @@ export interface RequestTemplate {
   graphql?: GraphqlRequest | null;
 }
 
+export type OpenTarget =
+  | { kind: "path"; path: string; line: number | null; column: number | null }
+  | { kind: "profile"; id: string }
+  | { kind: "workspace"; path: string }
+  | { kind: "query"; text: string }
+  | { kind: "handoff"; handoffKind: string; id: string };
+
+export interface OpenRequest {
+  target: OpenTarget;
+  from: string | null;
+}
+
+export interface ApiRequestHandoffPreview {
+  handoffId: string;
+  kind: string;
+  producerId: string;
+  consumerId: string;
+  expiresAtMs: number;
+  request: RequestTemplate;
+}
+
 /**
  * 저장 직전에 민감한 직접 입력값을 제거한 요청.
  * 실제 전송에 쓰이는 ResolvedRequest는 Rust 내부에만 존재한다.

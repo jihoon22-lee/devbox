@@ -4,13 +4,17 @@ import App, { toDateStr } from "./App";
 import type { DigestInput, DigestResponse } from "./api";
 
 const mocks = vi.hoisted(() => ({
+  native: false,
   writeText: vi.fn<(value: string) => Promise<void>>(),
   exportLifeLog: vi.fn(),
   cancelDigest: vi.fn().mockResolvedValue(false),
   getDigest: vi.fn(),
   getDay: vi.fn(),
   saveLifeLog: vi.fn(),
+  sendDigestToKnowledge: vi.fn(),
 }));
+
+vi.mock("./lib/isTauri", () => ({ isTauri: () => mocks.native }));
 
 vi.mock("./api", () => ({
   autostartStatus: vi.fn().mockResolvedValue({ supported: true, enabled: false, command: null }),
@@ -56,6 +60,7 @@ vi.mock("./api", () => ({
   setPrivacyRules: vi.fn(),
   setProjects: vi.fn(),
   saveLifeLog: mocks.saveLifeLog,
+  sendDigestToKnowledge: mocks.sendDigestToKnowledge,
   startTracking: vi.fn().mockResolvedValue(true),
   stopTracking: vi.fn().mockResolvedValue(undefined),
 }));
@@ -126,6 +131,7 @@ function digestFixture(input: DigestInput): DigestResponse {
 }
 
 beforeEach(() => {
+  mocks.native = false;
   mocks.writeText.mockReset().mockResolvedValue(undefined);
   mocks.exportLifeLog.mockReset().mockResolvedValue({
     origin: "browser-preview",
@@ -136,6 +142,11 @@ beforeEach(() => {
     content: "# fixture\n",
   });
   mocks.getDigest.mockReset().mockImplementation((input: DigestInput) => Promise.resolve(digestFixture(input)));
+  mocks.sendDigestToKnowledge.mockReset().mockResolvedValue({
+    id: "0123456789abcdef0123456789abcdef",
+    kind: "knowledge-draft/v1",
+    expiresAtMs: Date.now() + 600_000,
+  });
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: { writeText: mocks.writeText },
@@ -209,6 +220,31 @@ describe("Life Log daily digest", () => {
     resolveSecond();
     await screen.findByRole("heading", { name: "Daily local digest" });
     expect(dateInput.value).not.toBe(initialDate);
+  });
+
+  it("keeps Knowledge handoff disabled in browser preview without creating an IPC side effect", async () => {
+    await renderLoadedApp();
+
+    const handoff = screen.getByRole("button", { name: "Send to Knowledge" });
+    expect((handoff as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(handoff);
+    expect(mocks.sendDigestToKnowledge).not.toHaveBeenCalled();
+  });
+
+  it("sends the current native digest once and reports preview-before-save", async () => {
+    mocks.native = true;
+    await renderLoadedApp();
+
+    const handoff = screen.getByRole("button", { name: "Send to Knowledge" });
+    expect((handoff as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(handoff);
+    fireEvent.click(handoff);
+
+    await waitFor(() => expect(mocks.sendDigestToKnowledge).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Knowledge draft를 미리보기로 보냈습니다. 저장 전 내용을 확인하세요.")).toBeTruthy();
+    expect(mocks.sendDigestToKnowledge).toHaveBeenCalledWith(expect.objectContaining({
+      period: "day",
+    }));
   });
 });
 

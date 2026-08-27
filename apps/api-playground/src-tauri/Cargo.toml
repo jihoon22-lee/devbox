@@ -1,6 +1,6 @@
 [package]
 name = "api-playground"
-version = "0.3.2"
+version = "0.4.0"
 publish = false
 description = "API Playground"
 authors = ["jihoon22.lee"]
@@ -22,6 +22,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.13.4", features = ["brotli", "deflate", "gzip", "multipart", "stream", "zstd"] }
@@ -31,12 +32,16 @@ base64 = "0.22"
 zeroize = "1"
 dirs = "6.0.0"
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+devbox-applink = { package = "applink", path = "../../../crates/applink" }
+devbox-integration = { package = "integration", path = "../../../crates/integration" }
 tokio = { version = "1.53.1", features = ["macros", "sync", "time"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = [
     "connect",
     "rustls-tls-native-roots",
 ] }
 
+[dev-dependencies]
+tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
