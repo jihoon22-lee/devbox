@@ -1,10 +1,10 @@
 //! Bounded, offline text extraction for the Everything+ content index.
 //!
-//! Plain text/source/Markdown, PDF, legacy XLS, XLSX, and ODS are intentionally
-//! separate extractor formats. The PDF path uses lopdf only for text objects,
-//! while spreadsheet paths use calamine's pure-Rust readers; none renders
-//! pages, runs OCR, follows external resources, evaluates formulas, or
-//! executes document content.
+//! Plain text/source/Markdown, PDF, DOCX, legacy XLS, XLSX, and ODS are
+//! intentionally separate extractor formats. The PDF path uses lopdf only for
+//! text objects, DOCX uses bounded ZIP/XML readers, and spreadsheet paths use
+//! calamine's pure-Rust readers; none renders pages, runs OCR, follows external
+//! resources, evaluates formulas, or executes document content.
 
 use std::collections::HashSet;
 use std::fs::{self, File};
@@ -29,6 +29,20 @@ pub const EXTRACTOR_VERSION: &str = "text-v1";
 /// this separate from `EXTRACTOR_VERSION` lets startup reindex only PDFs when
 /// the PDF implementation changes.
 pub const PDF_EXTRACTOR_VERSION: &str = "pdf-v1";
+/// Bumped only when DOCX package admission or WordprocessingML text rules
+/// change. DOCX remains independent from spreadsheet OOXML because its part
+/// relationships and text semantics have a separate review/rollback boundary.
+pub const DOCX_EXTRACTOR_VERSION: &str = "docx-v1";
+pub const DOCX_MAX_ZIP_ENTRIES: usize = 4_096;
+pub const DOCX_MAX_ZIP_UNCOMPRESSED_BYTES: u64 = 64 * 1024 * 1024;
+pub const DOCX_MAX_ZIP_ENTRY_BYTES: u64 = 32 * 1024 * 1024;
+pub const DOCX_MAX_XML_DEPTH: usize = 128;
+pub const DOCX_MAX_XML_EVENTS: usize = 1_000_000;
+pub const DOCX_MAX_XML_SOURCE_BUDGET: usize = 8_000_000;
+pub const DOCX_MAX_RELATIONSHIPS: usize = 4_096;
+const DOCX_MAX_CONTENT_TYPES_BYTES: u64 = 2 * 1024 * 1024;
+const DOCX_MAX_PACKAGE_RELATIONSHIPS_BYTES: u64 = 1024 * 1024;
+const DOCX_MAX_DOCUMENT_RELATIONSHIPS_BYTES: u64 = 4 * 1024 * 1024;
 /// Bumped only when XLS parsing or cell-to-text normalization rules change.
 /// This is deliberately independent from both the plain-text and PDF versions
 /// so a spreadsheet upgrade never rereads unrelated content.
@@ -277,6 +291,18 @@ pub fn is_pdf_path(path: &Path) -> bool {
         .is_some_and(is_pdf_ext)
 }
 
+/// DOCX is the only Word container accepted by this extractor. Macro-enabled
+/// DOCM and legacy binary DOC files retain their explicit non-support status.
+pub fn is_docx_ext(ext: &str) -> bool {
+    ext.trim_start_matches('.').eq_ignore_ascii_case("docx")
+}
+
+pub fn is_docx_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(is_docx_ext)
+}
+
 /// Returns true for legacy binary Excel workbooks only.  XLSX/ODS are separate
 /// format features and must not enter this extractor through auto-detection.
 pub fn is_xls_ext(ext: &str) -> bool {
@@ -365,7 +391,12 @@ pub fn is_content_candidate(path: &Path) -> bool {
     let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
         return false;
     };
-    is_text_ext(ext) || is_pdf_ext(ext) || is_xls_ext(ext) || is_xlsx_ext(ext) || is_ods_ext(ext)
+    is_text_ext(ext)
+        || is_pdf_ext(ext)
+        || is_docx_ext(ext)
+        || is_xls_ext(ext)
+        || is_xlsx_ext(ext)
+        || is_ods_ext(ext)
 }
 
 /// Extract one file while enforcing byte, character, encoding, race, and time
@@ -373,6 +404,8 @@ pub fn is_content_candidate(path: &Path) -> bool {
 pub fn extract_file(path: &Path, expected_size: u64, started: Instant) -> ContentRecord {
     let extractor_version = if is_pdf_path(path) {
         PDF_EXTRACTOR_VERSION
+    } else if is_docx_path(path) {
+        DOCX_EXTRACTOR_VERSION
     } else if is_xls_path(path) {
         XLS_EXTRACTOR_VERSION
     } else if is_xlsx_path(path) {
@@ -501,6 +534,8 @@ pub fn extract_file(path: &Path, expected_size: u64, started: Instant) -> Conten
 
     if is_pdf_path(path) {
         extract_pdf_bytes(&bytes, started)
+    } else if is_docx_path(path) {
+        extract_docx_bytes(&bytes, started)
     } else if is_xls_path(path) {
         extract_xls_bytes(&bytes, started)
     } else if is_xlsx_path(path) {
@@ -699,6 +734,743 @@ fn pdf_page_limit_exceeded(page_count: usize) -> bool {
     page_count > PDF_MAX_PAGES
 }
 
+/// Extracts searchable WordprocessingML text from the canonical DOCX main part.
+/// The package is admitted entirely in memory and no relationship target is
+/// opened. Field instructions, macros, images, styles, embedded objects, and
+/// non-main parts are deliberately outside this text-only contract.
+pub fn extract_docx_bytes(bytes: &[u8], started: Instant) -> ContentRecord {
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return ContentRecord::failure_for(
+            DOCX_EXTRACTOR_VERSION,
+            ContentStatus::TooLarge,
+            "file_too_large",
+        );
+    }
+    if timed_out(started) {
+        return ContentRecord::failure_for(
+            DOCX_EXTRACTOR_VERSION,
+            ContentStatus::Timeout,
+            "processing_timeout",
+        );
+    }
+    if office_is_encrypted(bytes) {
+        return docx_failure_record(DocxFailure::UnsupportedEncrypted);
+    }
+
+    let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        extract_docx_package(bytes, started)
+    }));
+    match parsed {
+        Ok(Ok(record)) => record,
+        Ok(Err(failure)) => docx_failure_record(failure),
+        Err(_) => ContentRecord::failure_for(
+            DOCX_EXTRACTOR_VERSION,
+            ContentStatus::ExtractError,
+            "extract_error",
+        ),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DocxFailure {
+    Timeout,
+    UnsupportedEncrypted,
+    UnsupportedEncoding,
+    Extract(&'static str),
+}
+
+fn docx_failure_record(failure: DocxFailure) -> ContentRecord {
+    match failure {
+        DocxFailure::Timeout => ContentRecord::failure_for(
+            DOCX_EXTRACTOR_VERSION,
+            ContentStatus::Timeout,
+            "processing_timeout",
+        ),
+        DocxFailure::UnsupportedEncrypted => ContentRecord::failure_for(
+            DOCX_EXTRACTOR_VERSION,
+            ContentStatus::UnsupportedEncrypted,
+            "unsupported_encrypted",
+        ),
+        DocxFailure::UnsupportedEncoding => ContentRecord::failure_for(
+            DOCX_EXTRACTOR_VERSION,
+            ContentStatus::UnsupportedEncoding,
+            "unsupported_encoding",
+        ),
+        DocxFailure::Extract(error_code) => ContentRecord::failure_for(
+            DOCX_EXTRACTOR_VERSION,
+            ContentStatus::ExtractError,
+            error_code,
+        ),
+    }
+}
+
+fn extract_docx_package(bytes: &[u8], started: Instant) -> Result<ContentRecord, DocxFailure> {
+    validate_zip_envelope(bytes, DOCX_MAX_ZIP_ENTRIES).map_err(|failure| match failure {
+        ZipEnvelopeFailure::Invalid => DocxFailure::Extract("extract_error"),
+        ZipEnvelopeFailure::EntryLimit => DocxFailure::Extract("zip_limit"),
+    })?;
+    let mut archive =
+        ZipArchive::new(Cursor::new(bytes)).map_err(|_| DocxFailure::Extract("extract_error"))?;
+    if archive.len() > DOCX_MAX_ZIP_ENTRIES {
+        return Err(DocxFailure::Extract("zip_limit"));
+    }
+
+    let mut total_uncompressed = 0u64;
+    let mut seen_names = HashSet::with_capacity(archive.len());
+    let mut content_types_entry = None;
+    let mut package_relationships_entry = None;
+    let mut document_entry = None;
+    let mut document_relationships_entry = None;
+    for index in 0..archive.len() {
+        if timed_out(started) {
+            return Err(DocxFailure::Timeout);
+        }
+        let file = archive
+            .by_index_raw(index)
+            .map_err(|_| DocxFailure::Extract("extract_error"))?;
+        if file.encrypted() {
+            return Err(DocxFailure::UnsupportedEncrypted);
+        }
+        if file.name_raw().contains(&0)
+            || file.name().contains('\\')
+            || file.enclosed_name().is_none()
+        {
+            return Err(DocxFailure::Extract("zip_path"));
+        }
+        let size = file.size();
+        if size > DOCX_MAX_ZIP_ENTRY_BYTES {
+            return Err(DocxFailure::Extract("zip_limit"));
+        }
+        total_uncompressed = total_uncompressed.saturating_add(size);
+        if total_uncompressed > DOCX_MAX_ZIP_UNCOMPRESSED_BYTES {
+            return Err(DocxFailure::Extract("zip_limit"));
+        }
+        let lower_name = file.name().to_ascii_lowercase();
+        if !seen_names.insert(lower_name.clone()) {
+            return Err(DocxFailure::Extract("zip_path"));
+        }
+        match lower_name.as_str() {
+            "[content_types].xml" => {
+                require_docx_part_size(size, DOCX_MAX_CONTENT_TYPES_BYTES)?;
+                content_types_entry = Some(index);
+            }
+            "_rels/.rels" => {
+                require_docx_part_size(size, DOCX_MAX_PACKAGE_RELATIONSHIPS_BYTES)?;
+                package_relationships_entry = Some(index);
+            }
+            "word/document.xml" => {
+                require_docx_part_size(size, DOCX_MAX_ZIP_ENTRY_BYTES)?;
+                document_entry = Some(index);
+            }
+            "word/_rels/document.xml.rels" => {
+                require_docx_part_size(size, DOCX_MAX_DOCUMENT_RELATIONSHIPS_BYTES)?;
+                document_relationships_entry = Some(index);
+            }
+            _ => {}
+        }
+    }
+
+    let content_types_entry = content_types_entry.ok_or(DocxFailure::Extract("extract_error"))?;
+    let package_relationships_entry =
+        package_relationships_entry.ok_or(DocxFailure::Extract("extract_error"))?;
+    let document_entry = document_entry.ok_or(DocxFailure::Extract("extract_error"))?;
+
+    let content_types = read_docx_part(
+        &mut archive,
+        content_types_entry,
+        started,
+        DOCX_MAX_CONTENT_TYPES_BYTES,
+    )?;
+    scan_docx_content_types(&content_types, started)?;
+
+    let package_relationships = read_docx_part(
+        &mut archive,
+        package_relationships_entry,
+        started,
+        DOCX_MAX_PACKAGE_RELATIONSHIPS_BYTES,
+    )?;
+    scan_docx_relationships(&package_relationships, true, started)?;
+
+    if let Some(index) = document_relationships_entry {
+        let relationships = read_docx_part(
+            &mut archive,
+            index,
+            started,
+            DOCX_MAX_DOCUMENT_RELATIONSHIPS_BYTES,
+        )?;
+        scan_docx_relationships(&relationships, false, started)?;
+    }
+
+    let document = read_docx_part(
+        &mut archive,
+        document_entry,
+        started,
+        DOCX_MAX_ZIP_ENTRY_BYTES,
+    )?;
+    scan_docx_document(&document, started)
+}
+
+fn require_docx_part_size(size: u64, limit: u64) -> Result<(), DocxFailure> {
+    if size > limit {
+        Err(DocxFailure::Extract("zip_limit"))
+    } else {
+        Ok(())
+    }
+}
+
+fn read_docx_part(
+    archive: &mut ZipArchive<Cursor<&[u8]>>,
+    index: usize,
+    started: Instant,
+    max_bytes: u64,
+) -> Result<Vec<u8>, DocxFailure> {
+    let file = archive
+        .by_index(index)
+        .map_err(|_| DocxFailure::Extract("extract_error"))?;
+    read_docx_entry(file, started, max_bytes)
+}
+
+fn read_docx_entry<R: Read>(
+    mut reader: R,
+    started: Instant,
+    max_bytes: u64,
+) -> Result<Vec<u8>, DocxFailure> {
+    let mut output = Vec::new();
+    let mut chunk = [0u8; READ_CHUNK_BYTES];
+    loop {
+        if timed_out(started) {
+            return Err(DocxFailure::Timeout);
+        }
+        let read = reader
+            .read(&mut chunk)
+            .map_err(|_| DocxFailure::Extract("extract_error"))?;
+        if read == 0 {
+            break;
+        }
+        if output.len().saturating_add(read) as u64 > max_bytes {
+            return Err(DocxFailure::Extract("zip_limit"));
+        }
+        output.extend_from_slice(&chunk[..read]);
+    }
+    Ok(output)
+}
+
+fn scan_docx_content_types(xml: &[u8], started: Instant) -> Result<(), DocxFailure> {
+    const TRANSITIONAL_MAIN: &[u8] =
+        b"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
+    const MACRO_ENABLED_MAIN: &[u8] = b"application/vnd.ms-word.document.macroEnabled.main+xml";
+
+    let mut reader = XmlReader::from_reader(Cursor::new(xml));
+    reader.config_mut().trim_text(false);
+    reader.config_mut().expand_empty_elements = true;
+    let mut buffer = Vec::with_capacity(1024);
+    let mut depth = 0usize;
+    let mut events = 0usize;
+    let mut source_budget = 0usize;
+    let mut main_document_types = 0usize;
+    let mut saw_types_root = false;
+    loop {
+        if timed_out(started) {
+            return Err(DocxFailure::Timeout);
+        }
+        buffer.clear();
+        let event = reader
+            .read_event_into(&mut buffer)
+            .map_err(|_| DocxFailure::Extract("extract_error"))?;
+        events = events.saturating_add(1);
+        if events > DOCX_MAX_XML_EVENTS {
+            return Err(DocxFailure::Extract("xml_limit"));
+        }
+        match event {
+            Event::Start(element) => {
+                depth = depth.saturating_add(1);
+                if depth > DOCX_MAX_XML_DEPTH {
+                    return Err(DocxFailure::Extract("xml_limit"));
+                }
+                if depth == 1 {
+                    if element.local_name().as_ref() != b"Types" || saw_types_root {
+                        return Err(DocxFailure::Extract("extract_error"));
+                    }
+                    saw_types_root = true;
+                }
+                source_budget = source_budget.saturating_add(docx_attribute_bytes(&element)?);
+                if element.local_name().as_ref() == b"Override" {
+                    let part = docx_attribute_value(&element, b"PartName")?
+                        .ok_or(DocxFailure::Extract("extract_error"))?;
+                    let content_type = docx_attribute_value(&element, b"ContentType")?
+                        .ok_or(DocxFailure::Extract("extract_error"))?;
+                    if part == b"/word/document.xml" {
+                        if content_type.as_slice() == TRANSITIONAL_MAIN {
+                            main_document_types = main_document_types.saturating_add(1);
+                        } else if content_type.as_slice() == MACRO_ENABLED_MAIN {
+                            // Macro-enabled content is intentionally excluded
+                            // even when it is mislabeled with a .docx suffix.
+                            return Err(DocxFailure::Extract("unsupported_document"));
+                        } else {
+                            return Err(DocxFailure::Extract("extract_error"));
+                        }
+                    }
+                }
+            }
+            Event::Text(text) => {
+                let value = text
+                    .xml10_content()
+                    .map_err(|_| DocxFailure::UnsupportedEncoding)?;
+                source_budget = source_budget.saturating_add(docx_xml_text_chars(&value)?);
+            }
+            Event::CData(text) => {
+                let value = text
+                    .xml10_content()
+                    .map_err(|_| DocxFailure::UnsupportedEncoding)?;
+                source_budget = source_budget.saturating_add(docx_xml_text_chars(&value)?);
+            }
+            Event::GeneralRef(reference) => {
+                let reference: &[u8] = reference.as_ref();
+                decode_docx_reference(reference).ok_or(DocxFailure::Extract("extract_error"))?;
+                source_budget = source_budget.saturating_add(1);
+            }
+            Event::End(_) => {
+                if depth == 0 {
+                    return Err(DocxFailure::Extract("extract_error"));
+                }
+                depth -= 1;
+            }
+            Event::DocType(_) => return Err(DocxFailure::Extract("external_relationship")),
+            Event::Eof => break,
+            _ => {}
+        }
+        if source_budget > DOCX_MAX_XML_SOURCE_BUDGET {
+            return Err(DocxFailure::Extract("xml_limit"));
+        }
+    }
+    if depth != 0 || !saw_types_root || main_document_types != 1 {
+        return Err(DocxFailure::Extract("extract_error"));
+    }
+    Ok(())
+}
+
+fn scan_docx_relationships(
+    xml: &[u8],
+    package_root: bool,
+    started: Instant,
+) -> Result<(), DocxFailure> {
+    let mut reader = XmlReader::from_reader(Cursor::new(xml));
+    reader.config_mut().trim_text(false);
+    reader.config_mut().expand_empty_elements = true;
+    let mut buffer = Vec::with_capacity(1024);
+    let mut depth = 0usize;
+    let mut events = 0usize;
+    let mut source_budget = 0usize;
+    let mut relationships = 0usize;
+    let mut office_documents = 0usize;
+    let mut saw_relationships_root = false;
+    let mut ids = HashSet::new();
+    loop {
+        if timed_out(started) {
+            return Err(DocxFailure::Timeout);
+        }
+        buffer.clear();
+        let event = reader
+            .read_event_into(&mut buffer)
+            .map_err(|_| DocxFailure::Extract("extract_error"))?;
+        events = events.saturating_add(1);
+        if events > DOCX_MAX_XML_EVENTS {
+            return Err(DocxFailure::Extract("xml_limit"));
+        }
+        match event {
+            Event::Start(element) => {
+                depth = depth.saturating_add(1);
+                if depth > DOCX_MAX_XML_DEPTH {
+                    return Err(DocxFailure::Extract("xml_limit"));
+                }
+                if depth == 1 {
+                    if element.local_name().as_ref() != b"Relationships" || saw_relationships_root {
+                        return Err(DocxFailure::Extract("extract_error"));
+                    }
+                    saw_relationships_root = true;
+                }
+                source_budget = source_budget.saturating_add(docx_attribute_bytes(&element)?);
+                if element.local_name().as_ref() == b"Relationship" {
+                    relationships = relationships.saturating_add(1);
+                    if relationships > DOCX_MAX_RELATIONSHIPS {
+                        return Err(DocxFailure::Extract("xml_limit"));
+                    }
+                    let id = docx_attribute_value(&element, b"Id")?
+                        .ok_or(DocxFailure::Extract("extract_error"))?;
+                    if id.is_empty() || !ids.insert(id) {
+                        return Err(DocxFailure::Extract("extract_error"));
+                    }
+                    let relation_type = docx_attribute_value(&element, b"Type")?
+                        .ok_or(DocxFailure::Extract("extract_error"))?;
+                    let target = docx_attribute_value(&element, b"Target")?
+                        .ok_or(DocxFailure::Extract("extract_error"))?;
+                    let target_mode = docx_attribute_value(&element, b"TargetMode")?;
+                    let is_external = target_mode
+                        .as_deref()
+                        .is_some_and(|mode| mode.eq_ignore_ascii_case(b"external"));
+                    let is_internal = target_mode
+                        .as_deref()
+                        .is_none_or(|mode| mode.eq_ignore_ascii_case(b"internal"));
+                    let safe_internal_target = if package_root {
+                        xlsx_relationship_target_is_safe(&target)
+                    } else {
+                        docx_document_relationship_target_is_safe(&target)
+                    };
+                    if (!is_external && !is_internal)
+                        || (package_root && is_external)
+                        || (!is_external && !safe_internal_target)
+                    {
+                        return Err(DocxFailure::Extract("external_relationship"));
+                    }
+                    let is_office_document = matches!(
+                        relation_type.as_slice(),
+                        b"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
+                            | b"http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument"
+                    );
+                    if package_root
+                        && relation_type.ends_with(b"/relationships/officeDocument")
+                        && !is_office_document
+                    {
+                        return Err(DocxFailure::Extract("external_relationship"));
+                    }
+                    if package_root && is_office_document {
+                        office_documents = office_documents.saturating_add(1);
+                        let normalized = target.strip_prefix(b"/").unwrap_or(&target);
+                        if normalized != b"word/document.xml" || office_documents > 1 {
+                            return Err(DocxFailure::Extract("external_relationship"));
+                        }
+                    }
+                }
+            }
+            Event::Text(text) => {
+                let value = text
+                    .xml10_content()
+                    .map_err(|_| DocxFailure::UnsupportedEncoding)?;
+                source_budget = source_budget.saturating_add(docx_xml_text_chars(&value)?);
+            }
+            Event::CData(text) => {
+                let value = text
+                    .xml10_content()
+                    .map_err(|_| DocxFailure::UnsupportedEncoding)?;
+                source_budget = source_budget.saturating_add(docx_xml_text_chars(&value)?);
+            }
+            Event::GeneralRef(reference) => {
+                let reference: &[u8] = reference.as_ref();
+                decode_docx_reference(reference).ok_or(DocxFailure::Extract("extract_error"))?;
+                source_budget = source_budget.saturating_add(1);
+            }
+            Event::End(_) => {
+                if depth == 0 {
+                    return Err(DocxFailure::Extract("extract_error"));
+                }
+                depth -= 1;
+            }
+            Event::DocType(_) => return Err(DocxFailure::Extract("external_relationship")),
+            Event::Eof => break,
+            _ => {}
+        }
+        if source_budget > DOCX_MAX_XML_SOURCE_BUDGET {
+            return Err(DocxFailure::Extract("xml_limit"));
+        }
+    }
+    if depth != 0 || !saw_relationships_root || (package_root && office_documents != 1) {
+        return Err(DocxFailure::Extract("extract_error"));
+    }
+    Ok(())
+}
+
+fn scan_docx_document(xml: &[u8], started: Instant) -> Result<ContentRecord, DocxFailure> {
+    let mut reader = XmlReader::from_reader(Cursor::new(xml));
+    reader.config_mut().trim_text(false);
+    reader.config_mut().expand_empty_elements = true;
+    let mut buffer = Vec::with_capacity(1024);
+    let mut depth = 0usize;
+    let mut events = 0usize;
+    let mut source_budget = 0usize;
+    let mut text_depth = None;
+    let mut body_depth = None;
+    let mut body_count = 0usize;
+    let mut saw_document = false;
+    let mut output = DocxTextAccumulator::default();
+
+    loop {
+        if timed_out(started) {
+            return Err(DocxFailure::Timeout);
+        }
+        buffer.clear();
+        let event = reader
+            .read_event_into(&mut buffer)
+            .map_err(|_| DocxFailure::Extract("extract_error"))?;
+        events = events.saturating_add(1);
+        if events > DOCX_MAX_XML_EVENTS {
+            return Err(DocxFailure::Extract("xml_limit"));
+        }
+        match event {
+            Event::Start(element) => {
+                depth = depth.saturating_add(1);
+                if depth > DOCX_MAX_XML_DEPTH {
+                    return Err(DocxFailure::Extract("xml_limit"));
+                }
+                source_budget = source_budget.saturating_add(docx_attribute_bytes(&element)?);
+                let name = element.local_name();
+                if depth == 1 {
+                    if name.as_ref() != b"document" || saw_document {
+                        return Err(DocxFailure::Extract("extract_error"));
+                    }
+                    saw_document = true;
+                }
+                match name.as_ref() {
+                    b"body" => {
+                        if depth != 2 || body_depth.is_some() || body_count != 0 {
+                            return Err(DocxFailure::Extract("extract_error"));
+                        }
+                        body_depth = Some(depth);
+                        body_count = 1;
+                    }
+                    b"t" => {
+                        if body_depth.is_some() && text_depth.is_some() {
+                            return Err(DocxFailure::Extract("extract_error"));
+                        }
+                        if body_depth.is_some() {
+                            text_depth = Some(depth);
+                        }
+                    }
+                    b"tab" if body_depth.is_some() => output.queue_separator('\t'),
+                    b"br" | b"cr" if body_depth.is_some() => output.queue_separator('\n'),
+                    _ => {}
+                }
+            }
+            Event::Text(text) => {
+                let value = text
+                    .xml10_content()
+                    .map_err(|_| DocxFailure::UnsupportedEncoding)?;
+                let value_chars = docx_xml_text_chars(&value)?;
+                source_budget = source_budget.saturating_add(value_chars);
+                if text_depth.is_some() {
+                    output.push_text(&value, started)?;
+                }
+            }
+            Event::CData(text) => {
+                let value = text
+                    .xml10_content()
+                    .map_err(|_| DocxFailure::UnsupportedEncoding)?;
+                let value_chars = docx_xml_text_chars(&value)?;
+                source_budget = source_budget.saturating_add(value_chars);
+                if text_depth.is_some() {
+                    output.push_text(&value, started)?;
+                }
+            }
+            Event::GeneralRef(reference) => {
+                source_budget = source_budget.saturating_add(1);
+                let reference: &[u8] = reference.as_ref();
+                let decoded = decode_docx_reference(reference)
+                    .ok_or(DocxFailure::Extract("extract_error"))?;
+                if text_depth.is_some() {
+                    let mut encoded = [0u8; 4];
+                    output.push_text(decoded.encode_utf8(&mut encoded), started)?;
+                }
+            }
+            Event::End(element) => {
+                if depth == 0 {
+                    return Err(DocxFailure::Extract("extract_error"));
+                }
+                let name = element.local_name();
+                if name.as_ref() == b"t" && text_depth == Some(depth) {
+                    text_depth = None;
+                }
+                if name.as_ref() == b"p" && body_depth.is_some() {
+                    output.queue_separator('\n');
+                }
+                if name.as_ref() == b"body" && body_depth == Some(depth) {
+                    body_depth = None;
+                }
+                depth -= 1;
+            }
+            Event::DocType(_) => return Err(DocxFailure::Extract("external_relationship")),
+            Event::Eof => break,
+            _ => {}
+        }
+        if source_budget > DOCX_MAX_XML_SOURCE_BUDGET {
+            return Err(DocxFailure::Extract("xml_limit"));
+        }
+    }
+
+    if depth != 0
+        || text_depth.is_some()
+        || body_depth.is_some()
+        || body_count != 1
+        || !saw_document
+    {
+        return Err(DocxFailure::Extract("extract_error"));
+    }
+    if !output
+        .text
+        .chars()
+        .any(|character| !character.is_whitespace())
+    {
+        return Ok(ContentRecord::failure_for(
+            DOCX_EXTRACTOR_VERSION,
+            ContentStatus::NoText,
+            "no_text",
+        ));
+    }
+    Ok(ContentRecord {
+        text: output.text,
+        status: ContentStatus::Indexed,
+        extractor_version: DOCX_EXTRACTOR_VERSION,
+        encoding: Some("docx"),
+        truncated: output.truncated,
+        error_code: output.truncated.then_some("text_limit"),
+        text_chars: output.text_chars,
+    })
+}
+
+fn docx_attribute_bytes(element: &quick_xml::events::BytesStart<'_>) -> Result<usize, DocxFailure> {
+    let mut bytes = 0usize;
+    for attribute in element.attributes() {
+        let attribute = attribute.map_err(|_| DocxFailure::Extract("extract_error"))?;
+        bytes = bytes.saturating_add(attribute.value.len());
+    }
+    Ok(bytes)
+}
+
+fn docx_attribute_value(
+    element: &quick_xml::events::BytesStart<'_>,
+    wanted: &[u8],
+) -> Result<Option<Vec<u8>>, DocxFailure> {
+    for attribute in element.attributes() {
+        let attribute = attribute.map_err(|_| DocxFailure::Extract("extract_error"))?;
+        let key = attribute.key.as_ref();
+        let key = key.rsplit(|byte| *byte == b':').next().unwrap_or(key);
+        if key == wanted {
+            return Ok(Some(attribute.value.into_owned()));
+        }
+    }
+    Ok(None)
+}
+
+fn decode_docx_reference(reference: &[u8]) -> Option<char> {
+    let character = match reference {
+        b"amp" => '&',
+        b"lt" => '<',
+        b"gt" => '>',
+        b"apos" => '\'',
+        b"quot" => '"',
+        value if value.starts_with(b"#x") || value.starts_with(b"#X") => {
+            let digits = value.get(2..)?;
+            if digits.is_empty() || digits.len() > 6 {
+                return None;
+            }
+            char::from_u32(u32::from_str_radix(std::str::from_utf8(digits).ok()?, 16).ok()?)?
+        }
+        value if value.starts_with(b"#") => {
+            let digits = value.get(1..)?;
+            if digits.is_empty() || digits.len() > 7 {
+                return None;
+            }
+            char::from_u32(std::str::from_utf8(digits).ok()?.parse().ok()?)?
+        }
+        _ => return None,
+    };
+    is_xml_10_character(character).then_some(character)
+}
+
+fn docx_xml_text_chars(value: &str) -> Result<usize, DocxFailure> {
+    let mut chars = 0usize;
+    for character in value.chars() {
+        if !is_xml_10_character(character) {
+            return Err(DocxFailure::Extract("extract_error"));
+        }
+        chars = chars.saturating_add(1);
+    }
+    Ok(chars)
+}
+
+fn is_xml_10_character(character: char) -> bool {
+    matches!(character, '\u{9}' | '\u{a}' | '\u{d}')
+        || matches!(character as u32, 0x20..=0xd7ff | 0xe000..=0xfffd | 0x10000..=0x10ffff)
+}
+
+/// Relationship targets are never opened, but normal Word documents can use
+/// `../customXml/...` from `word/document.xml.rels`. Resolve those lexical
+/// parent segments against the known `word/` base while refusing a target
+/// that would escape the package root or introduce URI/path ambiguity.
+fn docx_document_relationship_target_is_safe(target: &[u8]) -> bool {
+    if target.starts_with(b"/") {
+        return xlsx_relationship_target_is_safe(target);
+    }
+    let mut depth = 1usize;
+    let mut ends_in_part = false;
+    for part in target.split(|byte| *byte == b'/') {
+        if part.is_empty() || part == b"." {
+            return false;
+        }
+        if part == b".." {
+            let Some(next_depth) = depth.checked_sub(1) else {
+                return false;
+            };
+            depth = next_depth;
+            ends_in_part = false;
+            continue;
+        }
+        if part.iter().any(|byte| {
+            byte.is_ascii_control() || matches!(*byte, b'\\' | b':' | b'?' | b'#' | b'%')
+        }) {
+            return false;
+        }
+        depth = depth.saturating_add(1);
+        ends_in_part = true;
+    }
+    ends_in_part
+}
+
+#[derive(Debug, Default)]
+struct DocxTextAccumulator {
+    text: String,
+    text_chars: usize,
+    pending_separator: Option<char>,
+    truncated: bool,
+}
+
+impl DocxTextAccumulator {
+    fn queue_separator(&mut self, separator: char) {
+        if self.text.is_empty() {
+            return;
+        }
+        self.pending_separator = match (self.pending_separator, separator) {
+            (Some('\n'), _) | (_, '\n') => Some('\n'),
+            (Some('\t'), _) | (_, '\t') => Some('\t'),
+            (_, value) => Some(value),
+        };
+    }
+
+    fn push_text(&mut self, value: &str, started: Instant) -> Result<(), DocxFailure> {
+        if value.is_empty() || self.truncated {
+            return Ok(());
+        }
+        if let Some(separator) = self.pending_separator.take() {
+            if self.text_chars == MAX_TEXT_CHARS {
+                self.truncated = true;
+                return Ok(());
+            }
+            self.text.push(separator);
+            self.text_chars += 1;
+        }
+        for (index, character) in value.chars().enumerate() {
+            if index.is_multiple_of(8192) && timed_out(started) {
+                return Err(DocxFailure::Timeout);
+            }
+            if self.text_chars == MAX_TEXT_CHARS {
+                self.truncated = true;
+                break;
+            }
+            self.text.push(character);
+            self.text_chars += 1;
+        }
+        Ok(())
+    }
+}
+
 /// Extracts worksheet cell values from an Office Open XML workbook using
 /// calamine's pure-Rust Xlsx reader. The reader is consumed through its
 /// streaming cell API rather than `worksheet_range`, because the latter
@@ -719,7 +1491,7 @@ pub fn extract_xlsx_bytes(bytes: &[u8], started: Instant) -> ContentRecord {
             "processing_timeout",
         );
     }
-    if xlsx_is_office_encrypted(bytes) {
+    if office_is_encrypted(bytes) {
         return xlsx_failure_record(XlsxFailure::UnsupportedEncrypted);
     }
 
@@ -753,8 +1525,8 @@ enum XlsxFailure {
 /// `EncryptedPackage` stream contains the ZIP payload after decryption. They
 /// are not ZIP archives that calamine can read, so identify them before ZIP
 /// preflight and return the stable unsupported-encrypted status. Malformed CFB
-/// input is intentionally treated as an ordinary corrupt XLSX candidate.
-fn xlsx_is_office_encrypted(bytes: &[u8]) -> bool {
+/// input is intentionally treated as an ordinary corrupt OOXML candidate.
+fn office_is_encrypted(bytes: &[u8]) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let container = cfb::CompoundFile::open(Cursor::new(bytes)).ok()?;
         Some(container.is_stream("/EncryptedPackage"))
@@ -3677,6 +4449,11 @@ pub(crate) fn xlsx_test_fixture_with(first_shared: &str) -> Vec<u8> {
 }
 
 #[cfg(test)]
+pub(crate) fn docx_test_fixture_with(text: &str) -> Vec<u8> {
+    tests::docx_fixture_with_text(text)
+}
+
+#[cfg(test)]
 pub(crate) fn ods_test_fixture_with(first_value: &str) -> Vec<u8> {
     tests::ods_fixture(first_value)
 }
@@ -3800,7 +4577,7 @@ mod tests {
         bytes
     }
 
-    fn office_encrypted_xlsx_bytes() -> Vec<u8> {
+    fn office_encrypted_bytes() -> Vec<u8> {
         let mut container = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
         {
             let mut stream = container.create_stream("/EncryptedPackage").unwrap();
@@ -3826,7 +4603,18 @@ mod tests {
         assert!(is_pdf_path(Path::new("report.PdF")));
         assert!(is_content_candidate(Path::new("report.pdf")));
         assert!(!is_pdf_path(Path::new("report.docx")));
-        assert!(!is_content_candidate(Path::new("report.docx")));
+    }
+
+    #[test]
+    fn recognizes_only_non_macro_docx_candidates_case_insensitively() {
+        assert!(is_docx_ext("docx"));
+        assert!(is_docx_ext(".DOCX"));
+        assert!(is_docx_path(Path::new("report.DoCx")));
+        assert!(is_content_candidate(Path::new("report.docx")));
+        assert!(!is_docx_ext("doc"));
+        assert!(!is_docx_ext("docm"));
+        assert!(!is_content_candidate(Path::new("report.doc")));
+        assert!(!is_content_candidate(Path::new("report.docm")));
     }
 
     #[test]
@@ -3847,6 +4635,190 @@ mod tests {
         assert!(is_ods_path(Path::new("report.OdS")));
         assert!(is_content_candidate(Path::new("report.ods")));
         assert!(!is_ods_ext("odt"));
+    }
+
+    #[test]
+    fn extracts_docx_korean_text_and_wordprocessingml_structure() {
+        let document = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+  <w:p><w:r><w:t>안녕하세요 &amp; hello &#x1F642;</w:t><w:tab/><w:t>탭</w:t><w:br/><w:t>다음 줄</w:t></w:r></w:p>
+  <w:p><w:r><w:instrText>DO_NOT_INDEX_FIELD_CODE</w:instrText><w:t>두 번째 문단</w:t></w:r></w:p>
+</w:body></w:document>"#;
+        let record = extract_docx_bytes(&docx_fixture_with_document(document), now());
+
+        assert_eq!(record.status, ContentStatus::Indexed);
+        assert_eq!(record.extractor_version, DOCX_EXTRACTOR_VERSION);
+        assert_eq!(record.encoding, Some("docx"));
+        assert_eq!(record.error_code, None);
+        assert_eq!(
+            record.text,
+            "안녕하세요 & hello 🙂\t탭\n다음 줄\n두 번째 문단"
+        );
+        assert!(!record.text.contains("DO_NOT_INDEX_FIELD_CODE"));
+    }
+
+    #[test]
+    fn isolates_empty_corrupt_oversized_timed_out_and_encrypted_docx_inputs() {
+        let empty = extract_docx_bytes(&docx_fixture_with_text("   "), now());
+        assert_eq!(empty.status, ContentStatus::NoText);
+        assert_eq!(empty.error_code, Some("no_text"));
+
+        let corrupt = extract_docx_bytes(b"not a DOCX package", now());
+        assert_eq!(corrupt.status, ContentStatus::ExtractError);
+        assert_eq!(corrupt.error_code, Some("extract_error"));
+        assert!(corrupt.text.is_empty());
+
+        let oversized = extract_docx_bytes(&vec![b'x'; MAX_FILE_BYTES as usize + 1], now());
+        assert_eq!(oversized.status, ContentStatus::TooLarge);
+        assert_eq!(oversized.error_code, Some("file_too_large"));
+
+        let timeout = extract_docx_bytes(
+            &docx_fixture_with_text("timeout"),
+            Instant::now() - PROCESSING_LIMIT,
+        );
+        assert_eq!(timeout.status, ContentStatus::Timeout);
+        assert_eq!(timeout.error_code, Some("processing_timeout"));
+
+        let encrypted = extract_docx_bytes(
+            &mark_zip_entry_encrypted(docx_fixture_with_text("protected")),
+            now(),
+        );
+        assert_eq!(encrypted.status, ContentStatus::UnsupportedEncrypted);
+        assert_eq!(encrypted.error_code, Some("unsupported_encrypted"));
+
+        let office_encrypted = extract_docx_bytes(&office_encrypted_bytes(), now());
+        assert_eq!(office_encrypted.status, ContentStatus::UnsupportedEncrypted);
+        assert_eq!(office_encrypted.error_code, Some("unsupported_encrypted"));
+    }
+
+    #[test]
+    fn indexes_docx_hyperlink_labels_without_following_external_targets() {
+        let record = extract_docx_bytes(&docx_fixture_with_external_hyperlink(), now());
+        assert_eq!(record.status, ContentStatus::Indexed);
+        assert_eq!(record.text, "링크 레이블");
+        assert!(!record.text.contains("example.invalid"));
+    }
+
+    #[test]
+    fn rejects_docx_external_paths_macros_duplicate_parts_and_xml_expansion() {
+        let external = extract_docx_bytes(
+            &docx_fixture_with_package_target(
+                "https://example.invalid/document.xml",
+                Some("External"),
+            ),
+            now(),
+        );
+        assert_eq!(external.status, ContentStatus::ExtractError);
+        assert_eq!(external.error_code, Some("external_relationship"));
+
+        let unsafe_internal = extract_docx_bytes(
+            &docx_fixture_with_package_target("../word/document.xml", None),
+            now(),
+        );
+        assert_eq!(unsafe_internal.status, ContentStatus::ExtractError);
+        assert_eq!(unsafe_internal.error_code, Some("external_relationship"));
+
+        let escaping_document_target = extract_docx_bytes(
+            &docx_fixture_with_document_relationship_target("../../outside.xml"),
+            now(),
+        );
+        assert_eq!(escaping_document_target.status, ContentStatus::ExtractError);
+        assert_eq!(
+            escaping_document_target.error_code,
+            Some("external_relationship")
+        );
+
+        let macro_enabled = extract_docx_bytes(
+            &docx_fixture_with_content_type(
+                "application/vnd.ms-word.document.macroEnabled.main+xml",
+            ),
+            now(),
+        );
+        assert_eq!(macro_enabled.status, ContentStatus::ExtractError);
+        assert_eq!(macro_enabled.error_code, Some("unsupported_document"));
+
+        let duplicate = extract_docx_bytes(&docx_fixture_with_duplicate_canonical_part(), now());
+        assert_eq!(duplicate.status, ContentStatus::ExtractError);
+        assert_eq!(duplicate.error_code, Some("zip_path"));
+
+        let deep = extract_docx_bytes(&docx_fixture_with_depth(DOCX_MAX_XML_DEPTH + 1), now());
+        assert_eq!(deep.status, ContentStatus::ExtractError);
+        assert_eq!(deep.error_code, Some("xml_limit"));
+
+        let doctype = extract_docx_bytes(&docx_fixture_with_doctype(), now());
+        assert_eq!(doctype.status, ContentStatus::ExtractError);
+        assert_eq!(doctype.error_code, Some("external_relationship"));
+
+        let missing_body = extract_docx_bytes(
+            &docx_fixture_with_document(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:t>outside body</w:t></w:document>"#,
+            ),
+            now(),
+        );
+        assert_eq!(missing_body.status, ContentStatus::ExtractError);
+        assert_eq!(missing_body.error_code, Some("extract_error"));
+
+        let invalid_control = extract_docx_bytes(
+            &docx_fixture_with_document(
+                "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>bad\u{1}text</w:t></w:r></w:p></w:body></w:document>",
+            ),
+            now(),
+        );
+        assert_eq!(invalid_control.status, ContentStatus::ExtractError);
+        assert_eq!(invalid_control.error_code, Some("extract_error"));
+    }
+
+    #[test]
+    fn bounds_docx_zip_metadata_xml_and_retained_text() {
+        let entries = extract_docx_bytes(
+            &with_declared_zip_entries(docx_fixture_with_text("bounded"), DOCX_MAX_ZIP_ENTRIES + 1),
+            now(),
+        );
+        assert_eq!(entries.status, ContentStatus::ExtractError);
+        assert_eq!(entries.error_code, Some("zip_limit"));
+
+        let entry_size = extract_docx_bytes(
+            &with_declared_zip_entry_size(
+                docx_fixture_with_text("bounded"),
+                DOCX_MAX_ZIP_ENTRY_BYTES + 1,
+            ),
+            now(),
+        );
+        assert_eq!(entry_size.status, ContentStatus::ExtractError);
+        assert_eq!(entry_size.error_code, Some("zip_limit"));
+
+        let long_text = "가".repeat(MAX_TEXT_CHARS + 1);
+        let bounded = extract_docx_bytes(&docx_fixture_with_text(&long_text), now());
+        assert_eq!(bounded.status, ContentStatus::Indexed);
+        assert!(bounded.truncated);
+        assert_eq!(bounded.text_chars, MAX_TEXT_CHARS);
+        assert_eq!(bounded.error_code, Some("text_limit"));
+
+        let compressed_source_bomb = extract_docx_bytes(
+            &docx_fixture_with_text(&"x".repeat(DOCX_MAX_XML_SOURCE_BUDGET + 1)),
+            now(),
+        );
+        assert_eq!(compressed_source_bomb.status, ContentStatus::ExtractError);
+        assert_eq!(compressed_source_bomb.error_code, Some("xml_limit"));
+
+        let oversized = extract_file(Path::new("report.docx"), MAX_FILE_BYTES + 1, now());
+        assert_eq!(oversized.status, ContentStatus::TooLarge);
+        assert_eq!(oversized.extractor_version, DOCX_EXTRACTOR_VERSION);
+    }
+
+    #[test]
+    fn docx_snippets_redact_credentials_and_sensitive_names_are_not_read() {
+        let credential = "Authorization: Bearer document-secret";
+        let record = extract_docx_bytes(&docx_fixture_with_text(credential), now());
+        assert_eq!(record.status, ContentStatus::Indexed);
+        let snippet = redact_snippet(&record.text);
+        assert!(!snippet.contains("document-secret"));
+        assert!(snippet.contains("[REDACTED]"));
+
+        let sensitive = extract_file(Path::new("credentials.docx"), 0, now());
+        assert_eq!(sensitive.status, ContentStatus::SkippedSensitive);
+        assert_eq!(sensitive.extractor_version, DOCX_EXTRACTOR_VERSION);
+        assert_eq!(sensitive.error_code, Some("sensitive_file"));
     }
 
     #[test]
@@ -3880,7 +4852,7 @@ mod tests {
         assert_eq!(encrypted.status, ContentStatus::UnsupportedEncrypted);
         assert_eq!(encrypted.error_code, Some("unsupported_encrypted"));
 
-        let office_encrypted = extract_xlsx_bytes(&office_encrypted_xlsx_bytes(), now());
+        let office_encrypted = extract_xlsx_bytes(&office_encrypted_bytes(), now());
         assert_eq!(office_encrypted.status, ContentStatus::UnsupportedEncrypted);
         assert_eq!(office_encrypted.error_code, Some("unsupported_encrypted"));
     }
@@ -4411,6 +5383,141 @@ mod tests {
         let redacted = redact_snippet(&snippet);
         assert_eq!(redacted.chars().count(), MAX_SNIPPET_CHARS);
         assert!(redacted.ends_with('…'));
+    }
+
+    pub(super) fn docx_fixture_with_text(text: &str) -> Vec<u8> {
+        let document = format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p></w:body></w:document>"#,
+            xml_escape(text),
+        );
+        docx_fixture_with_document(&document)
+    }
+
+    fn docx_fixture_with_document(document: &str) -> Vec<u8> {
+        build_docx_fixture(
+            document,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+            "word/document.xml",
+            None,
+        )
+    }
+
+    fn docx_fixture_with_content_type(content_type: &str) -> Vec<u8> {
+        build_docx_fixture(
+            &docx_document("macro marker"),
+            content_type,
+            "word/document.xml",
+            None,
+        )
+    }
+
+    fn docx_fixture_with_package_target(target: &str, target_mode: Option<&str>) -> Vec<u8> {
+        build_docx_fixture(
+            &docx_document("relationship marker"),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+            target,
+            target_mode,
+        )
+    }
+
+    fn docx_fixture_with_depth(depth: usize) -> Vec<u8> {
+        let nested = "<w:r>".repeat(depth);
+        let close = "</w:r>".repeat(depth);
+        let document = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p>{nested}<w:t>deep</w:t>{close}</w:p></w:body></w:document>"#,
+        );
+        docx_fixture_with_document(&document)
+    }
+
+    fn docx_fixture_with_doctype() -> Vec<u8> {
+        let document = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE w:document SYSTEM "https://example.invalid/external.dtd">
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>blocked</w:t></w:r></w:p></w:body></w:document>"#;
+        docx_fixture_with_document(document)
+    }
+
+    fn docx_fixture_with_duplicate_canonical_part() -> Vec<u8> {
+        let mut writer =
+            ZipWriter::new_append(Cursor::new(docx_fixture_with_text("duplicate"))).unwrap();
+        write_zip_entry(&mut writer, "WORD/DOCUMENT.XML", b"duplicate");
+        writer.finish().unwrap().into_inner()
+    }
+
+    fn docx_fixture_with_external_hyperlink() -> Vec<u8> {
+        let document = r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:hyperlink r:id="rIdExternal"><w:r><w:t>링크 레이블</w:t></w:r></w:hyperlink></w:p></w:body></w:document>"#;
+        let mut writer =
+            ZipWriter::new_append(Cursor::new(docx_fixture_with_document(document))).unwrap();
+        write_zip_entry(
+            &mut writer,
+            "word/_rels/document.xml.rels",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdExternal" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/never-opened" TargetMode="External"/>
+  <Relationship Id="rIdCustomXml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item1.xml"/>
+</Relationships>"#,
+        );
+        writer.finish().unwrap().into_inner()
+    }
+
+    fn docx_fixture_with_document_relationship_target(target: &str) -> Vec<u8> {
+        let mut writer =
+            ZipWriter::new_append(Cursor::new(docx_fixture_with_text("relationship"))).unwrap();
+        let relationships = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="{}"/>
+</Relationships>"#,
+            xml_escape(target),
+        );
+        write_zip_entry(
+            &mut writer,
+            "word/_rels/document.xml.rels",
+            relationships.as_bytes(),
+        );
+        writer.finish().unwrap().into_inner()
+    }
+
+    fn docx_document(text: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{}</w:t></w:r></w:p></w:body></w:document>"#,
+            xml_escape(text),
+        )
+    }
+
+    fn build_docx_fixture(
+        document: &str,
+        content_type: &str,
+        package_target: &str,
+        target_mode: Option<&str>,
+    ) -> Vec<u8> {
+        let content_types = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="{}"/>
+</Types>"#,
+            xml_escape(content_type),
+        );
+        let target_mode = target_mode
+            .map(|mode| format!(r#" TargetMode="{}""#, xml_escape(mode)))
+            .unwrap_or_default();
+        let package_relationships = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="{}"{target_mode}/>
+</Relationships>"#,
+            xml_escape(package_target),
+        );
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        write_zip_entry(&mut writer, "[Content_Types].xml", content_types.as_bytes());
+        write_zip_entry(&mut writer, "_rels/.rels", package_relationships.as_bytes());
+        write_zip_entry(&mut writer, "word/document.xml", document.as_bytes());
+        writer.finish().unwrap().into_inner()
     }
 
     pub(super) fn xlsx_fixture() -> Vec<u8> {

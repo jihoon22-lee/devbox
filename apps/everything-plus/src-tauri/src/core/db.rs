@@ -1,11 +1,12 @@
 use crate::core::content::{
-    ContentRecord, ODS_EXTRACTOR_VERSION, PDF_EXTRACTOR_VERSION, XLSX_EXTRACTOR_VERSION,
-    XLS_EXTRACTOR_VERSION,
+    ContentRecord, DOCX_EXTRACTOR_VERSION, ODS_EXTRACTOR_VERSION, PDF_EXTRACTOR_VERSION,
+    XLSX_EXTRACTOR_VERSION, XLS_EXTRACTOR_VERSION,
 };
 use crate::core::models::{ContentResult, FileEntry, RootInfo};
 use rusqlite::{params, Connection, OptionalExtension};
 
 const PDF_EXTRACTOR_META_KEY: &str = "pdf_extractor_version";
+const DOCX_EXTRACTOR_META_KEY: &str = "docx_extractor_version";
 const XLS_EXTRACTOR_META_KEY: &str = "xls_extractor_version";
 const XLSX_EXTRACTOR_META_KEY: &str = "xlsx_extractor_version";
 const ODS_EXTRACTOR_META_KEY: &str = "ods_extractor_version";
@@ -338,6 +339,12 @@ pub fn clear_pdf(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     clear_format(conn, root_path, "pdf")
 }
 
+/// Remove only DOCX-derived rows below one root. DOCX reindexing must leave
+/// text/source/Markdown and other document-format rows untouched.
+pub fn clear_docx(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
+    clear_format(conn, root_path, "docx")
+}
+
 fn clear_format(conn: &Connection, root_path: &str, extension: &str) -> rusqlite::Result<()> {
     let normalized = normalize_path(root_path);
     let prefix = if normalized.ends_with('/') {
@@ -364,6 +371,18 @@ fn clear_format(conn: &Connection, root_path: &str, extension: &str) -> rusqlite
 /// rows at all, which must still trigger the first PDF scan.
 pub fn pdf_reindex_required(conn: &Connection) -> rusqlite::Result<bool> {
     format_reindex_required(conn, PDF_EXTRACTOR_META_KEY, "pdf", PDF_EXTRACTOR_VERSION)
+}
+
+/// Whether DOCX rows need a format-specific rebuild. The marker is required
+/// even when no DOCX row exists so an upgraded database receives its first
+/// bounded WordprocessingML scan.
+pub fn docx_reindex_required(conn: &Connection) -> rusqlite::Result<bool> {
+    format_reindex_required(
+        conn,
+        DOCX_EXTRACTOR_META_KEY,
+        "docx",
+        DOCX_EXTRACTOR_VERSION,
+    )
 }
 
 fn format_reindex_required(
@@ -412,6 +431,12 @@ pub fn clear_ods(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
 /// this marker after cancellation or a partial-root scan.
 pub fn record_pdf_extractor_version(conn: &Connection) -> rusqlite::Result<()> {
     record_format_version(conn, PDF_EXTRACTOR_META_KEY, PDF_EXTRACTOR_VERSION)
+}
+
+/// Record a successfully completed full/DOCX-only scan. Callers must not set
+/// this marker after cancellation or a partial-root scan.
+pub fn record_docx_extractor_version(conn: &Connection) -> rusqlite::Result<()> {
+    record_format_version(conn, DOCX_EXTRACTOR_META_KEY, DOCX_EXTRACTOR_VERSION)
 }
 
 fn record_format_version(
@@ -595,8 +620,8 @@ pub fn search_content(
 mod tests {
     use super::*;
     use crate::core::content::{
-        ContentStatus, EXTRACTOR_VERSION, ODS_EXTRACTOR_VERSION, XLSX_EXTRACTOR_VERSION,
-        XLS_EXTRACTOR_VERSION,
+        ContentStatus, DOCX_EXTRACTOR_VERSION, EXTRACTOR_VERSION, ODS_EXTRACTOR_VERSION,
+        XLSX_EXTRACTOR_VERSION, XLS_EXTRACTOR_VERSION,
     };
 
     fn mem() -> Connection {
@@ -623,6 +648,18 @@ mod tests {
             status: ContentStatus::Indexed,
             extractor_version,
             encoding: Some("pdf"),
+            truncated: false,
+            error_code: None,
+            text_chars: content.chars().count(),
+        }
+    }
+
+    fn indexed_docx_record(content: &str, extractor_version: &'static str) -> ContentRecord {
+        ContentRecord {
+            text: content.to_string(),
+            status: ContentStatus::Indexed,
+            extractor_version,
+            encoding: Some("docx"),
             truncated: false,
             error_code: None,
             text_chars: content.chars().count(),
@@ -907,6 +944,66 @@ mod tests {
         )
         .unwrap();
         assert!(!pdf_reindex_required(&conn).unwrap());
+    }
+
+    #[test]
+    fn clear_docx_only_removes_docx_rows_below_the_requested_root() {
+        let conn = mem();
+        add_root(&conn, "C:/A", true).unwrap();
+        add_root(&conn, "C:/B", true).unwrap();
+        let text_a = upsert_file(&conn, "C:/A/notes.md", 1, 0, 1).unwrap();
+        let xlsx_a = upsert_file(&conn, "C:/A/report.xlsx", 1, 0, 1).unwrap();
+        let docx_a = upsert_file(&conn, "C:/A/report.docx", 1, 0, 1).unwrap();
+        let docx_b = upsert_file(&conn, "C:/B/report.docx", 1, 0, 2).unwrap();
+        upsert_content_record(&conn, text_a, &indexed_record("ordinary source"), 1).unwrap();
+        upsert_content_record(
+            &conn,
+            xlsx_a,
+            &indexed_xlsx_record("xlsx stays", XLSX_EXTRACTOR_VERSION),
+            1,
+        )
+        .unwrap();
+        upsert_content_record(&conn, docx_a, &indexed_docx_record("docx A", "docx-old"), 2)
+            .unwrap();
+        upsert_content_record(
+            &conn,
+            docx_b,
+            &indexed_docx_record("docx B", DOCX_EXTRACTOR_VERSION),
+            3,
+        )
+        .unwrap();
+
+        clear_docx(&conn, "C:/A").unwrap();
+
+        assert_eq!(search_content(&conn, "ordinary", 10).unwrap().len(), 1);
+        assert_eq!(search_content(&conn, "xlsx stays", 10).unwrap().len(), 1);
+        assert!(search_content(&conn, "docx A", 10).unwrap().is_empty());
+        assert_eq!(search_content(&conn, "docx B", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn docx_reindex_metadata_detects_first_install_and_stale_rows_independently() {
+        let conn = mem();
+        assert!(docx_reindex_required(&conn).unwrap());
+        record_docx_extractor_version(&conn).unwrap();
+        assert!(!docx_reindex_required(&conn).unwrap());
+        assert!(xlsx_reindex_required(&conn).unwrap());
+
+        let text_id = upsert_file(&conn, "C:/notes/readme.md", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, text_id, &indexed_record("text-v1 row"), 1).unwrap();
+        let docx_id = upsert_file(&conn, "C:/notes/report.docx", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, docx_id, &indexed_docx_record("old", "docx-old"), 2).unwrap();
+        assert!(docx_reindex_required(&conn).unwrap());
+
+        upsert_content_record(
+            &conn,
+            docx_id,
+            &indexed_docx_record("current", DOCX_EXTRACTOR_VERSION),
+            3,
+        )
+        .unwrap();
+        assert!(!docx_reindex_required(&conn).unwrap());
+        assert!(xlsx_reindex_required(&conn).unwrap());
     }
 
     #[test]

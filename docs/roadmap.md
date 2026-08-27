@@ -293,8 +293,20 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
    - `#299`·`#300`·`#301`은 하나의 spreadsheet content-index PR로 검증하되 각각 독립
      extractor version·acceptance를 유지한다. compact `FormatSet`이 stale format 조합을 처리하고
      성공한 full/format-only scan만 marker를 기록한다. partial/cancel scan은 재시도를 보장하며
-     XLS/XLSX/ODS-only rebuild는 서로 및 text/PDF row를 보존한다. DOCX/OCR/semantic search는
-     이 PR에 포함하지 않는다.
+     XLS/XLSX/ODS-only rebuild는 서로 및 text/PDF row를 보존한다. DOCX는 독립 parser 경계로
+     이 묶음에 포함하지 않았다.
+   - 2026-08-27 `#302` DOCX extractor 구현: `.docx`만 case-insensitive candidate로 추가하고
+     MIT `zip` + `quick-xml` streaming scan으로 `word/document.xml`의 text와 paragraph/tab/
+     line-break를 오프라인 추출해 `docx-v1`을 기록한다. raw ZIP envelope와 실제 archive에서
+     entry 4,096개, entry 32 MiB, 전체 uncompressed 64 MiB, unsafe/중복 path와 encryption을
+     제한한다. canonical content type/package relationship/main part, XML depth 128/event
+     1,000,000개/text Unicode scalar+raw attribute byte 합산 8,000,000 budget/relationship
+     4,096개를 fail-closed로 검사한다.
+     CFB `EncryptedPackage`와 encrypted entry는 `unsupported_encrypted`, 빈 본문은 `no_text`,
+     손상/limit/DTD/macro-enabled package는 raw detail 없는 고정 실패 metadata로 격리한다.
+     성공한 full/DOCX-only 전체-root scan만 독립 marker를 갱신하고 DOCX-only reindex는
+     text/PDF/XLS/XLSX/ODS hit를 보존한다. legacy DOC/DOCM, non-main part, OCR/semantic search,
+     image/style/macro/embedded object는 이 기능에 포함하지 않는다.
 
 #### P3 — 선택 확정
 

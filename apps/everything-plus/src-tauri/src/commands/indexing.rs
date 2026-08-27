@@ -1,11 +1,13 @@
 use crate::core::content::{
-    extract_file, is_content_candidate, is_ods_path, is_pdf_path, is_xls_path, is_xlsx_path,
+    extract_file, is_content_candidate, is_docx_path, is_ods_path, is_pdf_path, is_xls_path,
+    is_xlsx_path,
 };
 use crate::core::db::{
-    add_root as db_add_root, clear_all, clear_ods, clear_pdf, clear_root, clear_xls, clear_xlsx,
-    content_status_summary, list_roots as db_list_roots, record_ods_extractor_version,
-    record_pdf_extractor_version, record_xls_extractor_version, record_xlsx_extractor_version,
-    remove_root as db_remove_root, total_files, upsert_content_record, upsert_file,
+    add_root as db_add_root, clear_all, clear_docx, clear_ods, clear_pdf, clear_root, clear_xls,
+    clear_xlsx, content_status_summary, list_roots as db_list_roots, record_docx_extractor_version,
+    record_ods_extractor_version, record_pdf_extractor_version, record_xls_extractor_version,
+    record_xlsx_extractor_version, remove_root as db_remove_root, total_files,
+    upsert_content_record, upsert_file,
 };
 use crate::core::models::IndexStatus;
 use filesystem::collect;
@@ -52,7 +54,9 @@ impl FormatSet {
     pub(crate) const XLS: Self = Self(1 << 1);
     pub(crate) const XLSX: Self = Self(1 << 2);
     pub(crate) const ODS: Self = Self(1 << 3);
-    pub(crate) const ALL: Self = Self(Self::PDF.0 | Self::XLS.0 | Self::XLSX.0 | Self::ODS.0);
+    pub(crate) const DOCX: Self = Self(1 << 4);
+    pub(crate) const ALL: Self =
+        Self(Self::PDF.0 | Self::XLS.0 | Self::XLSX.0 | Self::ODS.0 | Self::DOCX.0);
 
     pub(crate) const fn empty() -> Self {
         Self(0)
@@ -86,6 +90,7 @@ impl IndexFilter {
                     || (formats.contains(FormatSet::XLS) && is_xls_path(path))
                     || (formats.contains(FormatSet::XLSX) && is_xlsx_path(path))
                     || (formats.contains(FormatSet::ODS) && is_ods_path(path))
+                    || (formats.contains(FormatSet::DOCX) && is_docx_path(path))
             }
         }
     }
@@ -473,6 +478,9 @@ fn clear_format_rows(
     if formats.contains(FormatSet::ODS) {
         clear_ods(conn, root_path)?;
     }
+    if formats.contains(FormatSet::DOCX) {
+        clear_docx(conn, root_path)?;
+    }
     Ok(())
 }
 
@@ -488,6 +496,9 @@ fn record_format_markers(conn: &Connection, formats: FormatSet) -> rusqlite::Res
     }
     if formats.contains(FormatSet::ODS) {
         record_ods_extractor_version(conn)?;
+    }
+    if formats.contains(FormatSet::DOCX) {
+        record_docx_extractor_version(conn)?;
     }
     Ok(())
 }
@@ -651,8 +662,13 @@ mod tests {
             IndexFilter::All
         );
         assert_eq!(
-            IndexFilter::Formats(FormatSet::XLS.with(FormatSet::XLSX).with(FormatSet::ODS))
-                .queued_restart(),
+            IndexFilter::Formats(
+                FormatSet::XLS
+                    .with(FormatSet::XLSX)
+                    .with(FormatSet::ODS)
+                    .with(FormatSet::DOCX),
+            )
+            .queued_restart(),
             IndexFilter::All
         );
         assert_eq!(IndexFilter::All.queued_restart(), IndexFilter::All);
@@ -665,7 +681,14 @@ mod tests {
         assert!(filter.matches(Path::new("report.ods")));
         assert!(!filter.matches(Path::new("report.xls")));
         assert!(!filter.matches(Path::new("report.pdf")));
+        assert!(!filter.matches(Path::new("report.docx")));
         assert!(!filter.matches(Path::new("notes.md")));
+
+        let docx_filter = IndexFilter::Formats(FormatSet::DOCX);
+        assert!(docx_filter.matches(Path::new("report.DOCX")));
+        assert!(!docx_filter.matches(Path::new("report.doc")));
+        assert!(!docx_filter.matches(Path::new("report.docm")));
+        assert!(FormatSet::ALL.contains(FormatSet::DOCX));
     }
 
     #[test]
@@ -747,6 +770,45 @@ mod tests {
         let conn = app_state.db.lock().unwrap();
         assert!(!crate::core::db::xls_reindex_required(&conn).unwrap());
         assert!(crate::core::db::pdf_reindex_required(&conn).unwrap());
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn docx_marker_requires_a_successful_full_format_scan() {
+        let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "everything-plus-docx-marker-{id}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        let stored_root = db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
+        let app_state = state(conn);
+
+        run_index_with_filter(
+            &app_state,
+            std::slice::from_ref(&stored_root),
+            IndexFilter::Formats(FormatSet::DOCX),
+        )
+        .unwrap();
+        assert!(crate::core::db::docx_reindex_required(&app_state.db.lock().unwrap()).unwrap());
+
+        app_state.cancel_requested.store(true, Ordering::SeqCst);
+        run_index_with_filter(&app_state, &[], IndexFilter::Formats(FormatSet::DOCX)).unwrap();
+        assert!(crate::core::db::docx_reindex_required(&app_state.db.lock().unwrap()).unwrap());
+
+        app_state.cancel_requested.store(false, Ordering::SeqCst);
+        run_index_with_filter(&app_state, &[], IndexFilter::Formats(FormatSet::DOCX)).unwrap();
+        let conn = app_state.db.lock().unwrap();
+        assert!(!crate::core::db::docx_reindex_required(&conn).unwrap());
+        assert!(crate::core::db::pdf_reindex_required(&conn).unwrap());
+        assert!(crate::core::db::xls_reindex_required(&conn).unwrap());
+        assert!(crate::core::db::xlsx_reindex_required(&conn).unwrap());
+        assert!(crate::core::db::ods_reindex_required(&conn).unwrap());
         drop(conn);
         fs::remove_dir_all(root).unwrap();
     }
@@ -987,6 +1049,69 @@ mod tests {
         assert_eq!(search_content(&conn, "ods-new", 10).unwrap().len(), 1);
         drop(conn);
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn docx_reindex_replaces_only_docx_content_and_preserves_other_formats() {
+        let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "everything-plus-docx-reindex-{id}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let text = root.join("notes.md");
+        let docx = root.join("report.DOCX");
+        let xlsx = root.join("report.xlsx");
+        let corrupt = root.join("broken.docx");
+        fs::write(&text, "ordinary text remains").unwrap();
+        fs::write(
+            &docx,
+            crate::core::content::docx_test_fixture_with("docx-old"),
+        )
+        .unwrap();
+        fs::write(
+            &xlsx,
+            crate::core::content::xlsx_test_fixture_with("xlsx-stays"),
+        )
+        .unwrap();
+        fs::write(&corrupt, b"not a valid DOCX fixture").unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
+        let app_state = state(conn);
+        run_index_with_filter(&app_state, &[], IndexFilter::All).unwrap();
+        {
+            let conn = app_state.db.lock().unwrap();
+            assert_eq!(search_content(&conn, "remains", 10).unwrap().len(), 1);
+            assert_eq!(search_content(&conn, "docx-old", 10).unwrap().len(), 1);
+            assert_eq!(search_content(&conn, "xlsx-stays", 10).unwrap().len(), 1);
+            let status: String = conn
+                .query_row(
+                    "SELECT content_status FROM file_content WHERE file_id =
+                        (SELECT id FROM files WHERE path = ?1)",
+                    [crate::core::db::normalize_path(corrupt.to_str().unwrap())],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(status, "extract_error");
+        }
+
+        fs::write(
+            &docx,
+            crate::core::content::docx_test_fixture_with("docx-new"),
+        )
+        .unwrap();
+        run_index_with_filter(&app_state, &[], IndexFilter::Formats(FormatSet::DOCX)).unwrap();
+        let conn = app_state.db.lock().unwrap();
+        assert_eq!(search_content(&conn, "remains", 10).unwrap().len(), 1);
+        assert!(search_content(&conn, "docx-old", 10).unwrap().is_empty());
+        assert_eq!(search_content(&conn, "docx-new", 10).unwrap().len(), 1);
+        assert_eq!(search_content(&conn, "xlsx-stays", 10).unwrap().len(), 1);
+        assert_eq!(search(&conn, "broken", 10).unwrap().len(), 1);
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
     }
 
     fn utf16le(value: &str) -> Vec<u8> {
