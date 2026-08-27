@@ -4,9 +4,11 @@
   v0.5.0 catalog·Profile/Query·snapshot 정리와 protocol v2 handoff **범위 확정, 개발 착수**
 - 2026-08-27: Webhook Lab → API Playground `api-request/v1` producer/receiver draft 구현;
   preview·claim/ack/restore·privacy/no-clipboard 경계는 #315에서 검증
+- 2026-08-28: `#320` Devbox Launcher bounded catalog/snapshot consumer와 `Task`/`Install`
+  routing 구현. 기존 Life Log→Knowledge 구조화 handoff 계약은 유지
 - 작성일: 2026-08-17
 - 범위: 저장소 전체 — `crates/applink`, `crates/launch`, `crates/integration`, 신규
-  `crates/catalog`, `apps/catalog.json`, 기존 13개 앱 + 계획된 Devbox Launcher·Log Lens
+  `crates/catalog`, `apps/catalog.json`, 기존 13개 앱 + 구현된 Devbox Launcher·계획된 Log Lens
 - 관련: [UX 개선 설계](./2026-08-15-ux-improvements-design.md) §4.2, [wsl-desktop 터미널 설계](./2026-08-17-wsl-desktop-terminal-design.md) §4.4
 - 근거: `docs/product-opportunities.md` §10.1(versioned read-only snapshot), §12.4(앱 간 연결)
 
@@ -166,16 +168,19 @@ degrade한다.** 크래시하거나 오류 대화상자를 띄우지 않는다. 
 |---|---|---|
 | code-pad | `Path`(+line/column), `Workspace` (v0.4.1) | 파일 열기 / 워크스페이스 열기 |
 | wsl-desktop | `Path` (v0.4.1), `Profile` (v0.5.0) | 그 경로에서 터미널 / 프로필 레이아웃 (터미널 설계 §4.4) |
-| workbench | `Path` | 해당 프로필 선택, 없으면 생성 초안 |
+| workbench | `Path` (v0.4.1), `Profile` (v0.5.0) | 경로로 기존 프로필 선택·없으면 생성 초안 / opaque profile id로 정확히 선택 |
 | knowledge-base | `Path`, `Query`, `Handoff(knowledge-draft/v1)` | 노트 열기 / 검색 / 저장 전 draft preview |
 | everything-plus | `Query` | 검색어로 시작 |
 | repo-manager | `Path` | 해당 저장소 선택 |
 | api-playground | `Handoff(api-request/v1)` | 전달된 templated request를 저장 전 preview |
-| developer-toolbox | `Handoff(toolbox-text/v1)` | text와 추천 transformer를 입력 초안으로 적용 |
+| developer-toolbox | 없음 | receiver integration 이후 text와 추천 transformer를 입력 초안으로 적용 |
+| run-manager | `Task` (v0.5.0) | 저장된 job/service id를 재검증하고 확인 후 실행 |
+| devbox-manager | `Install` (v0.5.0, hidden) | embedded catalog app id를 재검증하고 설치 화면 표시 |
 | webhook-lab | `Handoff(webhook-fixture/v1)` | response fixture 초안 preview |
 | log-lens | `Handoff(log-source/v1)` | local/Run/WSL log source 연결 |
 
-이 표는 §2의 `accepts` 선언과 1:1 대응한다.
+이 표는 §2의 `accepts` 선언과 1:1 대응한다. 선언하지 않은 target은 수신 앱이 명시적인
+no-op/error로 처리하며 다른 기본 동작으로 fall through하지 않는다.
 
 ### 1.5 v0.5.0 protocol v2 — one-time handoff
 
@@ -191,9 +196,15 @@ pub enum OpenTarget {
     Profile { id: String },
     Workspace { path: String },
     Query { text: String },
+    Task { id: String },
+    Install { app_id: String },
     Handoff { kind: String, id: String },
 }
 ```
+
+`Task`와 `Install`은 장문 payload를 운반하지 않는 bounded routing target이다. 수신 앱이 현재
+저장된 task 또는 embedded catalog를 다시 확인하며 one-time handoff envelope을 바꾸지 않으므로
+protocol version은 2를 유지한다.
 
 handoff envelope:
 
@@ -454,23 +465,26 @@ life-log의 "Data sources" 패널(`apps/life-log/src/App.tsx:233-235`)이 하드
 기존 `SourceStatus`(available / schemaVersion / producerVersion / generatedAt / freshnessMs /
 error)는 그대로 쓰고, 목록만 발견 결과로 채운다.
 
-Devbox Launcher가 소비하는 동적 source는 다음 versioned snapshot을 producer가 발행한다.
+Devbox Launcher가 소비할 수 있는 동적 source path는 다음과 같다. 이는 consumer-side 지원
+계약이며 `#320`이 모든 producer를 구현하거나 등록한다는 뜻이 아니다. path가 아직 없으면
+Launcher는 해당 source를 `missing`으로 격리하고 나머지 검색을 계속한다.
 
-| snapshot | producer | 내용 |
+| snapshot path | 예상 producer | 내용 |
 |---|---|---|
-| `workbench/profiles/v1` | Workbench | recent profile/workspace id와 표시 metadata |
-| `repo-manager/repositories/v1` | Repo Manager | repository/worktree id와 path label |
-| `run-manager/jobs-services/v1` | Run Manager | job/service id, 상태와 실행 action metadata |
-| `everything-plus/saved-queries/v1` | Everything+ | query/filter만, 결과 목록은 제외 |
-| `wsl-desktop/profiles/v1` | WSL Desktop | profile/layout/distro/cwd metadata |
+| `workbench/profiles/v1` | Workbench (후속 producer) | recent profile/workspace id와 표시 metadata |
+| `repo-manager/repositories/v1` | Repo Manager (후속 producer) | repository/worktree id와 path label |
+| `run-manager/jobs-services/v1` (`status/v1` 호환) | Run Manager | job/service id, 상태와 실행 action metadata |
+| `everything-plus/saved-queries/v1` | Everything+ (후속 producer) | query/filter만, 결과 목록은 제외 |
+| `wsl-desktop/profiles/v1` | WSL Desktop (후속 profile producer) | profile/layout/distro/cwd metadata |
 
 각 envelope은 `schemaVersion`, `producer`, `producerVersion`, `generatedAt`과 `data.views`를
 포함하고 `%LOCALAPPDATA%\devbox\integration\<app-id>\v1\summary.json`에 atomic replace로
 쓴다. 각 view는 자체 `schemaVersion`, `freshnessMs`, `entries`를 가지며 entry에는 versioned
 action payload와 안정적인 id만 둔다. secret, environment value, raw log, full query result는
-금지한다. stale·손상 source 하나가 다른 source 검색을 막지 않는다. Developer Toolbox
-transformer와 Knowledge capture는 동적 snapshot이 아니라 catalog의 static action entry로
-선언한다.
+금지한다. stale·손상 source 하나가 다른 source 검색을 막지 않는다. 기존 Life Log→Knowledge
+`knowledge-draft/v1`은 구조화 catalog action으로 유지하지만 Launcher가 clipboard text로
+변환하지 않는다. Developer Toolbox `toolbox-text/v1` static action은 실제 claim/ack receiver가
+준비된 뒤 선언한다.
 
 기존 snapshot path에는 producer/version별 파일이 하나뿐이다. 여러 kind를 발행하는 WSL
 Desktop과 Run Manager는 `data.views` 아래 `runtime`/`profiles`, `status`/`jobs-services` view를

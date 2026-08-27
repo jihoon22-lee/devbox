@@ -1,6 +1,6 @@
 # Windows 11에서 devbox 앱 사용 가이드
 
-이 가이드는 **Windows 11 PC(예: 회사 PC)에서 13개 앱을 직접 빌드하고 실행**하는 방법을 설명한다.
+이 가이드는 **Windows 11 PC(예: 회사 PC)에서 14개 앱을 직접 빌드하고 실행**하는 방법을 설명한다.
 개발은 WSL에서 했지만, 앱 자체는 Windows 데스크톱 앱(Tauri)이므로 Windows PC에서 `.exe`로 빌드하면 그대로 쓸 수 있다.
 
 > 저장소: `https://github.com/jihoon22-lee/devbox` (공개 저장소)
@@ -8,7 +8,7 @@
 > `PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`
 > `EverythingPlus.exe` `Knowledge.exe` `LifeLog.exe`
 > `DevboxManager.exe` `CodePad.exe` `RunManager.exe`
-> `Workbench.exe` `WebhookLab.exe` `RepoManager.exe`
+> `Workbench.exe` `WebhookLab.exe` `RepoManager.exe` `DevboxLauncher.exe`
 
 ---
 
@@ -26,7 +26,7 @@
 > 1. 루트 `CHANGELOG.md`에 새 버전 섹션(`## [vX.Y.Z] - 날짜`)으로 변경점 기록
 > 2. **방법 1 (태그로 배포, 권장)**: WSL/로컬에서 `git tag v0.1.1 && git push origin v0.1.1`
 >    - **방법 2 (수동)**: GitHub → Actions 탭 → **Release** → **Run workflow** → 버전 입력(예: `v0.1.1`)
-> 3. 그러면 Windows CI가 13개 앱을 빌드해 **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 새 릴리스를 만든다.
+> 3. 그러면 Windows CI가 현재 catalog의 14개 앱을 빌드해 **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 새 릴리스를 만든다.
 >    버전(tag)은 **매번 새로** 써야 한다(기존 tag 재사용 불가).
 
 > 참고: 개인 빌드라 코드 서명이 없어 SmartScreen 경고가 뜨면 `추가 정보 → 실행`을 누르면 된다.
@@ -160,7 +160,7 @@ cd devbox
 pnpm install
 ```
 
-- `pnpm install`은 13개 앱의 의존성을 한 번에 설치한다 (몇 분).
+- `pnpm install`은 14개 앱의 의존성을 한 번에 설치한다 (몇 분).
 - `node_modules`는 워크스페이스 루트에 통합 관리된다.
 
 ---
@@ -180,7 +180,7 @@ pnpm tauri build
 
 ```powershell
 cd C:\devbox
-$apps = "port-manager","developer-toolbox","api-playground","everything-plus","knowledge-base","life-log","wsl-desktop","devbox-manager","code-pad","run-manager","workbench","webhook-lab","repo-manager"
+$apps = "port-manager","developer-toolbox","api-playground","everything-plus","knowledge-base","life-log","wsl-desktop","devbox-manager","code-pad","run-manager","workbench","webhook-lab","repo-manager","devbox-launcher"
 foreach ($a in $apps) {
   Write-Host "===== BUILDING $a =====" -ForegroundColor Cyan
   Push-Location "apps\$a"
@@ -218,6 +218,7 @@ ProductName 매핑:
 | workbench | Workbench |
 | webhook-lab | WebhookLab |
 | repo-manager | RepoManager |
+| devbox-launcher | DevboxLauncher |
 
 ---
 
@@ -249,6 +250,7 @@ SmartScreen 경고("인식할 수 없는 앱")가 뜨면:
 | **Workbench** | 프로젝트 등록 후 `Start Workspace`로 사전 점검(Git/WSL/포트/서비스)과 Run Manager·WSL Desktop·Code Pad 시작을 한 번에. `Stop What I Started`는 Workbench가 시작한 자원만 정리. |
 | **WebhookLab** | 포트 선택 후 서버 시작 → 외부 서비스의 웹훅/콜백을 로컬에서 수신해 검사. 응답 rule·지연·오류 재현, 수신 요청을 API Playground 요청으로 변환. |
 | **RepoManager** | 검색 root를 등록하면 그 아래 Git 저장소를 목록화. 브랜치/dirty/ahead-behind/worktree 상태 확인, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기. |
+| **DevboxLauncher** | `Ctrl+Alt+Space`로 transient 검색창을 열고 앱·사용 가능한 snapshot을 실행한다. source가 없거나 손상되어도 다른 검색은 계속되며, 설정에서 선택한 대체 단축키는 즉시 적용된다. |
 
 ---
 

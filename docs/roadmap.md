@@ -1,6 +1,6 @@
 # Roadmap
 
-13개 앱을 순차적으로 완성하고, 공통 코드가 실제로 필요해지면 그때 `crates/`·`packages/`로 추출한다.
+14개 앱을 순차적으로 완성하고, 공통 코드가 실제로 필요해지면 그때 `crates/`·`packages/`로 추출한다.
 처음 8개 앱(port-manager~devbox-manager)을 완성한 뒤 에디터(code-pad)·예약 실행·서비스 관리자(run-manager),
 그리고 Stage 4·5 앱(workbench·webhook-lab·repo-manager)을 추가했다.
 
@@ -163,7 +163,7 @@ v0.5.0 P1-02의 회귀 기준으로 유지하며 P1·P2·선택 P3, Devbox Launc
 ### v0.5.0
 
 v0.5.0은 외부 도구 설치 허브가 아니라 **오프라인 native 기능과 앱 간 직접 전달**을 강화하는
-release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 추가해 목표 15개 앱으로
+release다. 현재 14개 앱을 강화하고 `log-lens`를 추가해 목표 15개 앱으로
 확장한다. 아래 P3도 검토 후 선택된 release 범위이며 임의로 탈락시키지 않는다.
 
 #### P1 — 선행 필수
@@ -343,7 +343,10 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 #### P3 — 선택 확정
 
 1. 신규 **Devbox Launcher 0.1.0** — devbox 앱·profile·repo·job·saved query 전용 launcher와
-   current clipboard 일회성 routing.
+   사용자가 고른 current clipboard explicit preview fallback. 기존 Life Log→Knowledge의
+   구조화 `knowledge-draft/v1` capability/action은 유지하되 Launcher가 clipboard text로
+   위조하거나 노출하지 않는다. Developer Toolbox의 `toolbox-text/v1` text action은 receiver의
+   claim/ack integration 전까지 Launcher에 노출하지 않는다.
 2. 신규 **Log Lens 0.1.0** — local/Run/WSL/container log tail·merge·filter·export.
 3. 전 앱 monitor/DPI-safe window state. 공용 계약·순수 계산 기반인 #322는 선행 독립 PR로
    확정하고, #323–#336은 그 crate를 소비하면서 같은 restore/clamp 회귀 행렬을 공유하므로
@@ -357,6 +360,15 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
    Repo merged/stale cleanup.
 6. Manager의 제한된 Related Tools 감지·사용자 확인 설치·실행. 외부 도구는 모든 native
    action의 secondary 보완재로만 제공한다.
+
+2026-08-28 `#320` Launcher bootstrap은 독립 앱, bounded catalog·snapshot path consumer,
+실행 직전 target 재검증, Manager 설치 handoff, 즉시 변경 가능한 transient shortcut과 명시적
+clipboard preview를 구현했다. Workbench profile, Repo Manager repository, Everything+ saved
+query, WSL Desktop profile source는 consumer-side versioned path 계약이며, 이 bootstrap이
+producer를 임의로 구현하거나 등록하지 않는다. missing/stale/corrupt/permission source는 서로
+격리된다. 기존 Life Log→Knowledge `knowledge-draft/v1` action은 유지하고 Launcher가 이를
+plain text로 바꾸지 않으며, `toolbox-text/v1`은 실제 claim/ack receiver가 준비된 뒤 연결한다.
+Windows W3 packaged shortcut/focus/설치 handoff smoke는 release gate에서 확인한다.
 
 지원 형식, buffer·파일·시간 상한, secret/privacy, destructive safety, public schema,
 앱별 목표 버전, PR 지도와 acceptance는 [상세 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을
@@ -873,7 +885,7 @@ v0.5.0     네이티브 기능 강화 + handoff + Devbox Launcher·Log Lens (목
 ```
 
 ## 현재 상태
-- 13개 앱 모두 WSL에서 구현 완료 (Rust 유닛 테스트 + clippy + 프론트 빌드 통과)
+- 현재 14개 앱(기존 13개 + Devbox Launcher)이 WSL에서 구현·검증 완료
 - 각 앱은 기능 단위 PR로 main에 머지됨
 - v0.4.0 정식 배포 완료 (13개 앱)
 - v0.4.1 안정판 핫픽스 배포 완료; C1/C2는 legacy path 제거로 재현하지 못했으므로 Windows packaged-runtime

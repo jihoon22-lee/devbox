@@ -1435,7 +1435,7 @@ JWT decode와 signature verify는 별도 기능으로 구분한다. decode 성�
 | log-lens | 4 | 4 | 4 | 4 | 3 | **v0.5.0 신규 앱 선택** |
 | repo-manager | 3 | 4 | 4 | 4 | 3 | 구현 완료, v0.5.0 강화 |
 | data-inspector | 3 | 3 | 4 | 4 | 4 | v0.5.0 Manager 내부 기능 |
-| devbox-launcher | 5 | 5 | 5 | 4 | 3 | **v0.5.0 신규 앱 선택** |
+| devbox-launcher | 5 | 5 | 5 | 4 | 3 | **v0.5.0 신규 앱 구현 완료** |
 
 최초본의 “신규 앱 후보를 추가로 제안하지 않는다”는 결론은 **기반이 갖춰지기 전의 조건부
 판단**으로 정정한다. v0.4.0~v0.4.1에서 catalog, `crates/applink`, `crates/integration`,
@@ -1575,10 +1575,12 @@ read-only open, `PRAGMA query_only=ON`, authorizer write 차단을 함께 적용
 
 ### 15.8 Devbox Launcher — Devbox Action Entrypoint
 
-**v0.5.0 선택 확정.** PowerToys와 경쟁하는 범용 OS launcher가 아니다. catalog capability와
-snapshot에서 devbox 앱, Workbench profile, repository/worktree, Run task/service, Everything+
-saved query, WSL profile, Knowledge capture, Toolbox transformer를 발견하고 versioned applink와
-handoff로 실행하는 devbox 전용 진입점이다.
+**v0.5.0 선택·bootstrap 구현 완료.** PowerToys와 경쟁하는 범용 OS launcher가 아니다.
+catalog app과 제공되는 versioned snapshot에서 Workbench profile, repository/worktree, Run
+task/service, Everything+ saved query, WSL profile을 발견하고 실행 직전 다시 검증하는 devbox
+전용 진입점이다. 아직 없는 producer path는 source별 `missing`으로 격리한다. 기존 Life Log→
+Knowledge 구조화 action은 유지하지만 clipboard text로 바꾸지 않고, Toolbox transformer는
+실제 claim/ack receiver가 준비된 뒤 catalog action으로 연결한다.
 
 기본 단축키는 `Ctrl+Alt+Space`이며 current clipboard/selected text는 실행 전 preview하고
 저장하지 않는다. 범용 파일·웹·Windows 설정 검색, arbitrary shell command, clipboard history,
@@ -3939,7 +3941,7 @@ PR 2(identifier), PR 4(DB 흡수)는 사용자 데이터를 옮긴다. 다음을
 
 ### 20.1 2026-08-22 현재 결론
 
-위 전제는 v0.4.0~v0.4.1에서 충족됐다. 현재 저장소에는 13개 앱, release catalog/manifest,
+위 전제는 v0.4.0~v0.4.1에서 충족됐고 Launcher bootstrap까지 반영됐다. 현재 저장소에는 14개 앱, release catalog/manifest,
 `crates/wsl`·`search`·`integration`·`applink`·`launch`, ProjectProfile과 실제 inbound 계약이
 있다. 다음 단계는 다시 기반만 만드는 것이 아니라 그 기반으로 사용자의 앱 전환과 수동
 데이터 운반을 실제로 줄이는 것이다.
