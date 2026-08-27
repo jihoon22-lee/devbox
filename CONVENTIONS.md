@@ -243,6 +243,20 @@ docs/<scope>           문서 작업   예: docs/roadmap
 - `app`은 kebab-case 앱 이름, 공통 작업은 `workspace`/`crates`/`packages` 사용
 - 기능 완성 후 `main`으로 merge (squash 또는 --no-ff)
 
+### PR 단위 규칙
+
+- 기준은 이슈 개수가 아니라 **사용자에게 하나로 보이는 기능 경계**다. 따라서 이슈와 PR은
+  반드시 1:1일 필요가 없다.
+- 같은 앱·같은 사용자 흐름에 속하고 구현 기반, 상태 모델, migration/reindex, 보안·자원
+  제한, 테스트 fixture를 공유하는 형식별 변형이나 밀접한 보강은 여러 이슈를 한 PR로
+  묶을 수 있다. 관련 README·architecture·roadmap·workthrough 갱신도 그 PR에 포함한다.
+- 독립적으로 배포하거나 되돌려야 하는 작업, 권한·비밀·외부 mutation처럼 위험 경계가 다른
+  작업, 선행 작업 없이는 검증할 수 없는 작업, 한 번에 리뷰하기 과도한 작업은 별도 PR로
+  유지한다. 단순히 같은 앱이라는 이유만으로 묶지 않는다.
+- 여러 이슈를 묶은 PR은 본문에 모든 이슈 번호, 묶는 이유, 이슈별 acceptance와 검증 결과를
+  구분해 적고 `Closes #...`를 각각 선언한다. CI와 Windows 검증 gate는 최종 통합 상태에서
+  한 번 수행하되, 각 이슈의 집중 회귀 테스트를 생략하지 않는다.
+
 ### 커밋 규칙 (Conventional Commits, 영어)
 ```
 <type>(<scope>): <subject>

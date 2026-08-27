@@ -26,7 +26,10 @@ devbox — Tauri 13개 데스크톱 앱 모노레포. v0.4.1 안정판을 기준
 
 ## 워크플로 (필수 규칙)
 - 브랜치: `feat/<app>/<scope>` (예: `feat/port-manager/netstat-parser`) — CONVENTIONS §8
-- **기능 단위 1개 = PR 1개**. 여러 기능을 한 PR에 묶지 않음
+- **사용자에게 하나로 보이는 기능 경계 1개 = PR 1개**. 이슈 번호와 PR은 1:1일 필요가 없다.
+  같은 앱·같은 사용자 흐름에서 구현/검증 기반을 공유하는 형식별 변형, 밀접한 보강 작업,
+  관련 문서는 여러 이슈를 한 PR로 묶을 수 있다. 독립 배포·rollback·보안 경계이거나 리뷰
+  범위가 과도해지는 작업은 계속 분리한다. PR 본문에 포함 이슈와 묶음 근거를 명시한다.
 - **모든 PR은 GitHub Actions CI(`.github/workflows/ci.yml`) 통과 후에만 main으로 머지**
 - 커밋: Conventional Commits, 영어, 현재형 — `feat(port-manager): add netstat parser`
 - 코드 산출물의 완료 정의: `cargo test` + `cargo check` + `pnpm build` 통과

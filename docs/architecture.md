@@ -468,6 +468,37 @@ reindex를 수행하고, 성공한 full/PDF scan 뒤 marker를 기록한다. PDF
 새 root/index 요청이 들어오면 다음 실행을 `All`로 승격해 요청을 놓치지 않는다. OCR·image·
 format extraction은 이 경계에 포함하지 않는다.
 
+legacy XLS는 별도 `xls-v1` extractor가 MIT pure-Rust `calamine::Xls`로 worksheet 셀 값만
+bounded offline 추출한다. pure-Rust `cfb` preflight가 calamine의 eager range allocation 전에
+Workbook stream의 구조와 sheet/dimension/record/formula/SST 상한을 fail-closed로 검증하고,
+unique SST text와 `LabelSst` clone 확장량 및 256 MiB 추정 peak memory를 별도로 계산한다. 수식 재계산,
+VBA/macro, image/style, 외부 resource는 사용하지 않는다. encrypted/corrupt/resource-limit XLS는
+각각 `unsupported_encrypted`/`extract_error`/`resource_limit` 고정 코드로 격리한다.
+`meta.xls_extractor_version`이 없거나 현재 `xls-v1`과 다르면 XLS-only reindex를 수행하고,
+성공한 full/XLS scan 뒤 marker를 기록한다. 각 format-only worker의 queued restart는 `All`로
+승격한다.
+
+XLSX와 ODS는 각각 `xlsx-v1`/`ods-v1` extractor와 독립 완료 marker를 소유하지만 XLS와 같은
+`FormatSet` reindex 상태 기계를 사용한다. startup은 누락/불일치 marker와 stale row를 format별로
+합성하고, 성공한 full/선택-format scan만 해당 marker를 기록한다. partial-root/cancel/error pass는
+marker를 기록하지 않으며, 새 root나 사용자 full-index 요청은 queued pass를 `All`로 승격한다.
+clear와 candidate match는 bit set에 포함된 확장자만 대상으로 하므로 text/PDF/다른 spreadsheet
+row가 보존된다.
+
+두 modern spreadsheet 형식은 `calamine` 진입 전에 in-memory ZIP/XML admission을 거친다.
+공통 ZIP envelope 검사는 EOCD/ZIP64 locator에서 선언 entry 수 4,096개 상한과 single-disk 구조를
+먼저 확인해 central-directory metadata 대량 할당을 막은 뒤, `ZipArchive`의 실제 entry 수,
+unsafe/중복 path, encryption, entry 32 MiB와 전체 uncompressed 64 MiB를 재검사한다. XLSX는
+표준 package/workbook relationship root, external target/DTD 금지, XML depth 128/event 1,000,000,
+shared string 1,000,000개·8,000,000자와 worksheet 좌표/논리 cell 4,000,000개를 검사하고,
+calamine의 streaming cell API만 사용한다. ODS는 manifest encryption/DTD를 차단하고
+`content.xml`의 sheet/row/column repeat와 non-empty value/formula clone 확장량을 계산한다.
+calamine이 기존 row vector와 dense range vector를 동시에 보유하는 구간까지 반영해 Data/formula
+slot을 각각 두 벌로 추정하며, expanded text 16,000,000자와 peak memory 256 MiB를 넘기면 parser
+진입 전에 거부한다. 두 형식 모두 formula를 평가하지 않고 cached value만 text로 취급하며,
+macro/image/style/external resource/network를 사용하지 않는다. DOCX/OCR/semantic search는 계속
+별도 후속 경계다.
+
 Repo Manager는 catalog revision 4부터 `path`를 수신한다. cold/hot request를 listener-first
 `PendingOpen` 경로로 한 번만 소비하고 기존 scan 결과와 canonical identity가 같은 repository를
 선택·focus한다. 목록에 없는 유효한 Git repository는 자동 등록하거나 Git 명령을 실행하지 않고

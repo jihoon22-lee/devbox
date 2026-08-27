@@ -1,8 +1,14 @@
-use crate::core::content::{ContentRecord, PDF_EXTRACTOR_VERSION};
+use crate::core::content::{
+    ContentRecord, ODS_EXTRACTOR_VERSION, PDF_EXTRACTOR_VERSION, XLSX_EXTRACTOR_VERSION,
+    XLS_EXTRACTOR_VERSION,
+};
 use crate::core::models::{ContentResult, FileEntry, RootInfo};
 use rusqlite::{params, Connection, OptionalExtension};
 
 const PDF_EXTRACTOR_META_KEY: &str = "pdf_extractor_version";
+const XLS_EXTRACTOR_META_KEY: &str = "xls_extractor_version";
+const XLSX_EXTRACTOR_META_KEY: &str = "xlsx_extractor_version";
+const ODS_EXTRACTOR_META_KEY: &str = "ods_extractor_version";
 
 /// 현재 스키마/정규화 규칙의 버전. 값을 올리면 다음 `migrate()` 호출 시
 /// 기존 인덱스(파생 데이터)를 지우고 재인덱싱을 유도한다. 인덱스는 언제든
@@ -329,6 +335,10 @@ pub fn upsert_content_record(
 /// must leave text/source/Markdown rows untouched when the PDF extractor
 /// version changes.
 pub fn clear_pdf(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
+    clear_format(conn, root_path, "pdf")
+}
+
+fn clear_format(conn: &Connection, root_path: &str, extension: &str) -> rusqlite::Result<()> {
     let normalized = normalize_path(root_path);
     let prefix = if normalized.ends_with('/') {
         normalized
@@ -339,12 +349,12 @@ pub fn clear_pdf(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     let pattern = format!("{escaped}%");
     conn.execute(
         "DELETE FROM file_content WHERE file_id IN
-             (SELECT id FROM files WHERE ext = 'pdf' AND path LIKE ?1 ESCAPE '\\')",
-        params![pattern],
+             (SELECT id FROM files WHERE ext = ?1 AND path LIKE ?2 ESCAPE '\\')",
+        params![extension, pattern],
     )?;
     conn.execute(
-        "DELETE FROM files WHERE ext = 'pdf' AND path LIKE ?1 ESCAPE '\\'",
-        params![pattern],
+        "DELETE FROM files WHERE ext = ?1 AND path LIKE ?2 ESCAPE '\\'",
+        params![extension, pattern],
     )?;
     Ok(())
 }
@@ -353,37 +363,102 @@ pub fn clear_pdf(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
 /// required even when no PDF row exists: an upgraded v0.4 database has no PDF
 /// rows at all, which must still trigger the first PDF scan.
 pub fn pdf_reindex_required(conn: &Connection) -> rusqlite::Result<bool> {
+    format_reindex_required(conn, PDF_EXTRACTOR_META_KEY, "pdf", PDF_EXTRACTOR_VERSION)
+}
+
+fn format_reindex_required(
+    conn: &Connection,
+    meta_key: &str,
+    extension: &str,
+    extractor_version: &str,
+) -> rusqlite::Result<bool> {
     let recorded: Option<String> = conn
-        .query_row(
-            "SELECT value FROM meta WHERE key = ?1",
-            [PDF_EXTRACTOR_META_KEY],
-            |row| row.get(0),
-        )
+        .query_row("SELECT value FROM meta WHERE key = ?1", [meta_key], |row| {
+            row.get(0)
+        })
         .optional()?;
-    if recorded.as_deref() != Some(PDF_EXTRACTOR_VERSION) {
+    if recorded.as_deref() != Some(extractor_version) {
         return Ok(true);
     }
+
     conn.query_row(
         "SELECT EXISTS(
             SELECT 1
             FROM file_content fc
             JOIN files f ON f.id = fc.file_id
-            WHERE f.ext = 'pdf' AND fc.extractor_version <> ?1
+            WHERE f.ext = ?1 AND fc.extractor_version <> ?2
         )",
-        [PDF_EXTRACTOR_VERSION],
+        params![extension, extractor_version],
         |row| row.get(0),
     )
+}
+
+/// Remove only legacy XLS-derived rows below one root. Format-specific
+/// reindexing must leave text/source/Markdown/PDF rows untouched when the XLS
+/// extractor version changes.
+pub fn clear_xls(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
+    clear_format(conn, root_path, "xls")
+}
+
+pub fn clear_xlsx(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
+    clear_format(conn, root_path, "xlsx")
+}
+
+pub fn clear_ods(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
+    clear_format(conn, root_path, "ods")
 }
 
 /// Record a successfully completed full/PDF-only scan.  Callers must not set
 /// this marker after cancellation or a partial-root scan.
 pub fn record_pdf_extractor_version(conn: &Connection) -> rusqlite::Result<()> {
+    record_format_version(conn, PDF_EXTRACTOR_META_KEY, PDF_EXTRACTOR_VERSION)
+}
+
+fn record_format_version(
+    conn: &Connection,
+    meta_key: &str,
+    extractor_version: &str,
+) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT INTO meta (key, value) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        params![PDF_EXTRACTOR_META_KEY, PDF_EXTRACTOR_VERSION],
+        params![meta_key, extractor_version],
     )?;
     Ok(())
+}
+
+/// Whether XLS rows need a format-specific rebuild. The metadata key is
+/// required even when no XLS row exists so a pre-XLS database still receives
+/// its first bounded workbook scan.
+pub fn xls_reindex_required(conn: &Connection) -> rusqlite::Result<bool> {
+    format_reindex_required(conn, XLS_EXTRACTOR_META_KEY, "xls", XLS_EXTRACTOR_VERSION)
+}
+
+pub fn xlsx_reindex_required(conn: &Connection) -> rusqlite::Result<bool> {
+    format_reindex_required(
+        conn,
+        XLSX_EXTRACTOR_META_KEY,
+        "xlsx",
+        XLSX_EXTRACTOR_VERSION,
+    )
+}
+
+pub fn ods_reindex_required(conn: &Connection) -> rusqlite::Result<bool> {
+    format_reindex_required(conn, ODS_EXTRACTOR_META_KEY, "ods", ODS_EXTRACTOR_VERSION)
+}
+
+/// Record a successfully completed full/XLS-only scan. Callers must not set
+/// this marker after cancellation or a partial-root scan.
+pub fn record_xls_extractor_version(conn: &Connection) -> rusqlite::Result<()> {
+    record_format_version(conn, XLS_EXTRACTOR_META_KEY, XLS_EXTRACTOR_VERSION)
+}
+
+pub fn record_xlsx_extractor_version(conn: &Connection) -> rusqlite::Result<()> {
+    record_format_version(conn, XLSX_EXTRACTOR_META_KEY, XLSX_EXTRACTOR_VERSION)
+}
+
+pub fn record_ods_extractor_version(conn: &Connection) -> rusqlite::Result<()> {
+    record_format_version(conn, ODS_EXTRACTOR_META_KEY, ODS_EXTRACTOR_VERSION)
 }
 
 /// Remove content metadata when a file becomes non-text, is no longer covered
@@ -519,7 +594,10 @@ pub fn search_content(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::content::{ContentStatus, EXTRACTOR_VERSION};
+    use crate::core::content::{
+        ContentStatus, EXTRACTOR_VERSION, ODS_EXTRACTOR_VERSION, XLSX_EXTRACTOR_VERSION,
+        XLS_EXTRACTOR_VERSION,
+    };
 
     fn mem() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -545,6 +623,42 @@ mod tests {
             status: ContentStatus::Indexed,
             extractor_version,
             encoding: Some("pdf"),
+            truncated: false,
+            error_code: None,
+            text_chars: content.chars().count(),
+        }
+    }
+
+    fn indexed_xls_record(content: &str, extractor_version: &'static str) -> ContentRecord {
+        ContentRecord {
+            text: content.to_string(),
+            status: ContentStatus::Indexed,
+            extractor_version,
+            encoding: Some("xls"),
+            truncated: false,
+            error_code: None,
+            text_chars: content.chars().count(),
+        }
+    }
+
+    fn indexed_xlsx_record(content: &str, extractor_version: &'static str) -> ContentRecord {
+        ContentRecord {
+            text: content.to_string(),
+            status: ContentStatus::Indexed,
+            extractor_version,
+            encoding: Some("xlsx"),
+            truncated: false,
+            error_code: None,
+            text_chars: content.chars().count(),
+        }
+    }
+
+    fn indexed_ods_record(content: &str, extractor_version: &'static str) -> ContentRecord {
+        ContentRecord {
+            text: content.to_string(),
+            status: ContentStatus::Indexed,
+            extractor_version,
+            encoding: Some("ods"),
             truncated: false,
             error_code: None,
             text_chars: content.chars().count(),
@@ -793,6 +907,154 @@ mod tests {
         )
         .unwrap();
         assert!(!pdf_reindex_required(&conn).unwrap());
+    }
+
+    #[test]
+    fn clear_xls_only_removes_xls_rows_below_the_requested_root() {
+        let conn = mem();
+        add_root(&conn, "C:/A", true).unwrap();
+        add_root(&conn, "C:/B", true).unwrap();
+        let text_id = upsert_file(&conn, "C:/A/notes.md", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, text_id, &indexed_record("ordinary source"), 1).unwrap();
+        let xls_a = upsert_file(&conn, "C:/A/report.xls", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, xls_a, &indexed_xls_record("old xls A", "xls-old"), 2)
+            .unwrap();
+        let xls_b = upsert_file(&conn, "C:/B/report.xls", 1, 0, 2).unwrap();
+        upsert_content_record(
+            &conn,
+            xls_b,
+            &indexed_xls_record("old xls B", XLS_EXTRACTOR_VERSION),
+            3,
+        )
+        .unwrap();
+
+        clear_xls(&conn, "C:/A").unwrap();
+
+        assert_eq!(search_content(&conn, "ordinary", 10).unwrap().len(), 1);
+        assert!(search_content(&conn, "old xls A", 10).unwrap().is_empty());
+        assert_eq!(search_content(&conn, "old xls B", 10).unwrap().len(), 1);
+        record_xls_extractor_version(&conn).unwrap();
+        assert!(!xls_reindex_required(&conn).unwrap());
+    }
+
+    #[test]
+    fn xls_reindex_metadata_detects_first_install_and_stale_rows() {
+        let conn = mem();
+        assert!(xls_reindex_required(&conn).unwrap());
+        record_xls_extractor_version(&conn).unwrap();
+        assert!(!xls_reindex_required(&conn).unwrap());
+
+        let text_id = upsert_file(&conn, "C:/notes/readme.md", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, text_id, &indexed_record("text-v1 row"), 1).unwrap();
+        let xls_id = upsert_file(&conn, "C:/notes/report.xls", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, xls_id, &indexed_xls_record("old", "xls-old"), 2).unwrap();
+        assert!(xls_reindex_required(&conn).unwrap());
+
+        upsert_content_record(
+            &conn,
+            xls_id,
+            &indexed_xls_record("current", XLS_EXTRACTOR_VERSION),
+            3,
+        )
+        .unwrap();
+        assert!(!xls_reindex_required(&conn).unwrap());
+    }
+
+    #[test]
+    fn modern_spreadsheet_clear_is_scoped_by_format_and_root() {
+        let conn = mem();
+        let text = upsert_file(&conn, "C:/A/notes.md", 1, 0, 1).unwrap();
+        let xls = upsert_file(&conn, "C:/A/legacy.xls", 1, 0, 1).unwrap();
+        let xlsx_a = upsert_file(&conn, "C:/A/modern.xlsx", 1, 0, 1).unwrap();
+        let xlsx_b = upsert_file(&conn, "C:/B/modern.xlsx", 1, 0, 1).unwrap();
+        let ods_a = upsert_file(&conn, "C:/A/open.ods", 1, 0, 1).unwrap();
+        let ods_b = upsert_file(&conn, "C:/B/open.ods", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, text, &indexed_record("ordinary"), 1).unwrap();
+        upsert_content_record(
+            &conn,
+            xls,
+            &indexed_xls_record("legacy", XLS_EXTRACTOR_VERSION),
+            1,
+        )
+        .unwrap();
+        upsert_content_record(
+            &conn,
+            xlsx_a,
+            &indexed_xlsx_record("xlsx A", XLSX_EXTRACTOR_VERSION),
+            1,
+        )
+        .unwrap();
+        upsert_content_record(
+            &conn,
+            xlsx_b,
+            &indexed_xlsx_record("xlsx B", XLSX_EXTRACTOR_VERSION),
+            1,
+        )
+        .unwrap();
+        upsert_content_record(
+            &conn,
+            ods_a,
+            &indexed_ods_record("ods A", ODS_EXTRACTOR_VERSION),
+            1,
+        )
+        .unwrap();
+        upsert_content_record(
+            &conn,
+            ods_b,
+            &indexed_ods_record("ods B", ODS_EXTRACTOR_VERSION),
+            1,
+        )
+        .unwrap();
+
+        clear_xlsx(&conn, "C:/A").unwrap();
+        assert!(search_content(&conn, "xlsx A", 10).unwrap().is_empty());
+        assert_eq!(search_content(&conn, "xlsx B", 10).unwrap().len(), 1);
+        assert_eq!(search_content(&conn, "ods A", 10).unwrap().len(), 1);
+        assert_eq!(search_content(&conn, "ordinary", 10).unwrap().len(), 1);
+        assert_eq!(search_content(&conn, "legacy", 10).unwrap().len(), 1);
+
+        clear_ods(&conn, "C:/A").unwrap();
+        assert!(search_content(&conn, "ods A", 10).unwrap().is_empty());
+        assert_eq!(search_content(&conn, "ods B", 10).unwrap().len(), 1);
+        assert_eq!(search_content(&conn, "xlsx B", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn modern_spreadsheet_metadata_detects_first_install_and_stale_rows_independently() {
+        let conn = mem();
+        assert!(xlsx_reindex_required(&conn).unwrap());
+        assert!(ods_reindex_required(&conn).unwrap());
+        record_xlsx_extractor_version(&conn).unwrap();
+        assert!(!xlsx_reindex_required(&conn).unwrap());
+        assert!(ods_reindex_required(&conn).unwrap());
+        record_ods_extractor_version(&conn).unwrap();
+        assert!(!ods_reindex_required(&conn).unwrap());
+
+        let xlsx = upsert_file(&conn, "C:/notes/report.xlsx", 1, 0, 1).unwrap();
+        let ods = upsert_file(&conn, "C:/notes/report.ods", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, xlsx, &indexed_xlsx_record("old", "xlsx-old"), 1).unwrap();
+        upsert_content_record(&conn, ods, &indexed_ods_record("old", "ods-old"), 1).unwrap();
+        assert!(xlsx_reindex_required(&conn).unwrap());
+        assert!(ods_reindex_required(&conn).unwrap());
+
+        upsert_content_record(
+            &conn,
+            xlsx,
+            &indexed_xlsx_record("current", XLSX_EXTRACTOR_VERSION),
+            2,
+        )
+        .unwrap();
+        assert!(!xlsx_reindex_required(&conn).unwrap());
+        assert!(ods_reindex_required(&conn).unwrap());
+
+        upsert_content_record(
+            &conn,
+            ods,
+            &indexed_ods_record("current", ODS_EXTRACTOR_VERSION),
+            2,
+        )
+        .unwrap();
+        assert!(!ods_reindex_required(&conn).unwrap());
     }
 
     #[test]
