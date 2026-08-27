@@ -7,18 +7,21 @@ import { HashTool, UuidTool } from "./security";
 import { HmacTool } from "./HmacTool";
 import { JsonYamlTool } from "./JsonYamlTool";
 import { JsonTypescriptTool } from "./JsonTypescriptTool";
+import { LoremTool } from "./LoremTool";
+import { MarkdownTableTool } from "./MarkdownTableTool";
 import { RadixTool } from "./RadixTool";
+import { QrTool } from "./QrTool";
 import {
   CaseConverter,
   HtmlEntityDecoder,
   HtmlEntityEncoder,
   jsonFormatter,
   jsonMinifier,
-  JwtDecoder,
   TimestampConverter,
   UrlDecoder,
   UrlEncoder,
 } from "./transformers";
+import { JwtDecoder } from "./JwtTool";
 
 export interface ToolDef {
   id: string;
@@ -41,6 +44,7 @@ const encodingTools: ToolDef[] = [
   { id: "html-entity-decode", group: "Encoding", name: "HTML Entity Decode", component: HtmlEntityDecoder },
   { id: "url-encode", group: "Encoding", name: "URL Component Encode", component: UrlEncoder },
   { id: "url-decode", group: "Encoding", name: "URL Component Decode", component: UrlDecoder },
+  { id: "qr", group: "Encoding", name: "QR Generator", component: QrTool },
 ];
 
 const timeTools: ToolDef[] = [
@@ -49,6 +53,8 @@ const timeTools: ToolDef[] = [
 
 const textTools: ToolDef[] = [
   { id: "case", group: "Text", name: "Case Converter", component: CaseConverter },
+  { id: "lorem", group: "Text", name: "Lorem Generator", component: LoremTool },
+  { id: "markdown-table", group: "Text", name: "Markdown Table Formatter", component: MarkdownTableTool },
 ];
 
 const securityTools: ToolDef[] = [

@@ -223,12 +223,18 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
      GraphQL subscription은 제외한다. Windows W2 packaged smoke는 release gate에서 확인한다.
 5. Everything+ text/code/Markdown 및 PDF/DOCX/XLS(X)/ODS content index.
 6. Knowledge global quick capture·image asset, Life Log Markdown/JSON/CSV export·규칙 기반 요약.
+   Knowledge의 #303 quick capture와 #304 image asset은 같은 vault identity·atomic publication·
+   clipboard/drop 안전 경계를 공유하므로 하나의 Knowledge capture PR로 구현하고, 각 이슈의
+   저장/삽입 acceptance와 fixture는 독립적으로 추적한다.
    Life Log export는 #305 범위의 native-first date-range artifact와 browser-preview 경계를
    포함하며, exact `[start,end)`/DST boundaries·bounded Git·snapshot provenance·privacy/
    deterministic rendering을 선행 계약으로 삼는다.
 7. Manager custom install root (#308)·데이터 보존형 안전 제거 (#309).
 8. Code Pad LSP cache/local archive, Run Manager log search, Workbench project environment,
    Webhook API handoff (#315; captured fixture storage #314 완료), Repo Manager history/diff/stage/commit/fetch/FF-only pull/push.
+   Repo Manager의 #316–#319는 같은 repository discovery·bounded Git runner·status snapshot·
+   in-progress operation guard를 쓰는 일상 Git workflow 한 PR로 묶고, read-only·mutation·remote·
+   safety acceptance는 이슈별로 구분한다.
 
    - Code Pad LSP offline path draft (#310): reviewed catalog의 exact archive를 app-owned
      SHA-256 cache에서 재사용하고, native archive 또는 Node reviewed dependency closure `.tgz`
@@ -313,7 +319,8 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 1. 신규 **Devbox Launcher 0.1.0** — devbox 앱·profile·repo·job·saved query 전용 launcher와
    current clipboard 일회성 routing.
 2. 신규 **Log Lens 0.1.0** — local/Run/WSL/container log tail·merge·filter·export.
-3. 전 앱 monitor/DPI-safe window state.
+3. 전 앱 monitor/DPI-safe window state. #323–#336은 공용 crate와 같은 restore/clamp 회귀 행렬을
+   공유하므로 하나의 cross-app PR로 적용한다.
 4. Port auto-refresh/diff/favorite/source provenance, Toolbox detection/pipeline/recent/favorite,
    WSL resource/broadcast 안전, API collection import/export/history/binary, Everything filter/saved
    query, Knowledge template, Life Log source explanation/Knowledge draft 상태.
@@ -384,6 +391,72 @@ cut/copy/paste·IME·keyboard 동작을 유지한다. HTML parser, 외부 conver
 자동 저장/전송은 포함하지 않는다. 이미 lock에 있던 BSD-2-Clause codec의 direct edge와 notice
 digest를 dependency gate로 검증한다. Windows W2 packaged smoke evidence는 P2 checkpoint에서
 수행한다.
+
+**2026-08-27 #289–#292 통합 구현 상태.** 네 기능은 Developer Toolbox 0.3.0의 같은 offline
+도구 surface와 입력/output·clipboard·접근성·배포 경계를 공유하므로 하나의 cohesive PR에서
+각 acceptance와 fixture를 독립 추적한다.
+
+**#290/#291.** Developer Toolbox Text 그룹에 Lorem Generator와 Markdown
+Table Formatter를 하나의 cohesive text-transform 사용자 경계로 추가했다. 두 기능 모두 외부
+generator/formatter·network·filesystem read·random source 없이 앱에 번들된 deterministic
+TypeScript 경로를 사용한다. Lorem은 고정 5문장 corpus에서 문단·문장·단어를 생성하고 수량
+1–100, count paste UTF-8 3바이트, 결과 65,536바이트 상한을 적용한다. Markdown formatter는
+pipe 행을 원본 순서대로 파싱해 불균일 행을 빈 셀로 보정하고 선택적 `---`/`:---`/`---:`/`:---:`
+정렬을 보존한다. 입력 1,000,000바이트·1,000행·100열·셀 4,096 code point·출력 4,000,000바이트
+상한과 제어문자·lone surrogate·malformed row/separator fixed error를 적용한다.
+
+공용 Toolbox context surface는 기존 API를 깨지 않는 선택적 `AbortSignal`, bounded explicit
+Paste, output action busy callback과 fixed error를 지원한다. Formatter는 다음 event-loop task에
+예약하고 superseded queued task를 취소하며, 시작된 bounded core 결과는 sequence·unmount guard로
+폐기한다. copy/save와 output context menu는
+하나의 in-flight action만 허용한다. 두 UI는 accessible Input/Output label, `aria-busy`, live
+status, fixed `role=alert`를 제공하고 native cut/copy/paste·IME keyboard를 가로채지 않는다.
+입력·결과를 자동 저장하거나 전송하지 않으며 clipboard read, copy, 고정 plain-text 파일 저장은
+사용자가 명시적으로 요청한 경우에만 수행한다. 순수·통합 fixture와 README, v0.5.0 계획,
+workthrough를 갱신했으며 신규 의존성·IPC·Rust command는 없다. 필수 cargo/frontend 전체 gate와
+Windows W2 packaged offline smoke는 root release checkpoint에서 수행한다.
+
+**#289.** Developer Toolbox Auth group의 JWT compact decode·verify를 완성한다. decoder는 token을
+256KiB, header/payload segment를 96KiB, JSON을 64KiB·depth 32·10,000개 값/key node·문자열
+16KiB·formatted output 256KiB로 제한하고, unpadded canonical Base64URL·fatal UTF-8·strict
+JSON을 사용한다. duplicate JSON key, non-zero pad bit/`=`, malformed `crit`·unknown critical
+header, `alg=none`, casing 변형, 잘못된 signature 길이와 비대칭 algorithm은 부분 결과 없이
+고정 오류로 거부한다. Header/payload를 보여 주는 decode 결과는 항상 `unverified`로 표시하며
+signature를 확인한 것처럼 표현하지 않는다.
+
+Verify는 사용자가 명시적으로 실행한 경우에만 HS256·HS384·HS512를 RustCrypto `hmac 0.13.0`의
+  constant-time `verify_slice`(packaged native) 또는 Web Crypto HMAC `verify`(browser preview)로
+  확인한다. key encoding은 raw UTF-8·hex·padded Base64·unpadded Base64URL로 고정하고 decoded
+  key 1,000,000바이트/encoded 2,100,000바이트 및 알고리즘별 최소 32/48/64바이트를 적용한다.
+  PEM/JWK/RSA/EC parser와 token storage는 이 PR의 비범위이며, strict camelCase native DTO는
+  `{algorithm, signingInput, signature, key, keyEncoding}`만 받고 boolean 또는 fixed error만
+  반환한다. Base64URL signing input·signature와 key를 native에서도 재검증해 browser/native
+  key·error parity를 보장하고 raw secret/signature/calculated tag를 되돌리지 않는다.
+
+`exp`·`nbf`·`iat`는 raw NumericDate와 UTC ISO-8601을 표시한다. Verify 시작 시 캡처한 현재 UTC
+epoch seconds와 고정 ±60초 skew를 사용하고, malformed/future/expired time claim은 crypto
+호출 전에 `invalid_claims`로 분리한다. signature와 time claim이 모두 통과한 경우만 `verified`,
+길이·형식이 맞고 tag가 다른 경우는 `invalid_signature`로 표시한다. token/key는 localStorage,
+history, telemetry, network, automatic clipboard에 기록하지 않으며 결과 copy/save·input Paste는
+explicit action으로만 제공한다. UI는 password key, accessible labels/ARIA live status/fixed alert,
+IME·double-action·stale/unmount guard를 포함한다. RFC/negative vector, bounds, duplicate/critical,
+encoding/key length, temporal skew, browser/native parity와 Windows W2 packaged/offline smoke를
+이 기능의 완료 증거로 남긴다.
+
+**#292.** Developer Toolbox Encoding group에 오프라인 QR Generator를 추가한다. text·HTTP(S)
+URL·Wi-Fi preset, QR version auto/1–40, 오류 보정 L/M/Q/H, 64–2,048px 출력과 quiet zone
+4–16 modules를 bounded request로 검증한다. payload는 UTF-8 4,096바이트까지이며 Wi-Fi
+SSID/password는 32/63바이트와 WPA/WEP/nopass 규칙을 적용하고 예약 문자를 표준 WIFI payload로
+escape한다. URL은 문자열 형식만 검사하고 fetch·network·dynamic service를 실행하지 않는다.
+명시 version capacity, SVG 4MiB, PNG raw/base64 각 4MiB 상한은 부분 결과 없이 고정 오류로
+중단한다.
+
+Tauri는 `qrcode 0.14.1` pure-Rust byte mode와 `png 0.18.1` grayscale encoder를 사용하고,
+browser fallback은 bundled `qrcode-generator 2.0.4`로 같은 bounded contract를 적용한다. SVG는
+payload를 XML에 포함하지 않는 deterministic matrix renderer이며 결과 DTO에는 payload·path·
+credential이 없다. 생성 중 input/options를 잠그고 sequence·mounted guard로 stale 결과/action을
+폐기하며, SVG/PNG preview와 명시적 copy/save만 제공한다. dependency source/license/integrity와
+notice digest를 함께 검증하고 camera scan·decode·remote generator는 포함하지 않는다.
 
 #278은 기존 언어 서버 status에 retry 실패 횟수·남은 backoff·열린 circuit을 표시하고, 같은 카드에서
 수동 `다시 시도`를 실행하도록 확장한다. 관리형 server ref는 설치 index 검증 결과와 결합해 cache

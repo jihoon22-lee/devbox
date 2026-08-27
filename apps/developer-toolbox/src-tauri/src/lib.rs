@@ -35,6 +35,8 @@ pub fn run() {
             commands::tools::generate_ids,
             commands::tools::regex_test,
             commands::tools::diff,
+            commands::tools::jwt_verify,
+            commands::qr::generate_qr,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -8,18 +8,36 @@
 | 그룹 | 도구 | 구현 |
 |---|---|---|
 | JSON | Formatter / Minifier / Validator, JSON ↔ YAML 1.2, JSON → TypeScript | TS (`jsonc-parser`·`yaml`) |
-| Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, 진법 변환, HTML Entity Encode·Decode, URL Component Encode·Decode | TS |
+| Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, 진법 변환, HTML Entity Encode·Decode, URL Component Encode·Decode, QR Generator | TS + Rust |
 | Time | Unix Timestamp ↔ Date | TS |
-| Text | Case Converter, Diff | Diff는 Rust(`similar`) |
+| Text | Case Converter, Lorem Generator, Markdown Table Formatter, Diff | Lorem/table은 deterministic TS, Diff는 Rust(`similar`) |
 | Security | Hash(MD5/SHA-256/SHA-512), HMAC-SHA-256/384/512 생성·검증, UUID v4/v7, ULID | Rust(`md-5`·`hmac`·`sha2`·`base64`·`uuid`·`getrandom`) |
 | Regex | Regex Tester (매치 하이라이트) | Rust(`regex`) |
-| Auth | JWT Decoder (헤더/페이로드) | TS(base64url) |
+| Auth | JWT Decoder / Verify (HS256/HS384/HS512) | TS bounded decoder + RustCrypto HMAC/Web Crypto |
 
 ## 주요 특징
 
 - 오프라인 즉시 사용 (외부 서비스 없음)
 - 좌측 사이드바에서 도구 선택
 - JS로 충분한 것과 Rust가 필요한 것의 경계 분리 — 계산·검증은 Rust 연동
+- Lorem Generator는 고정된 로컬 corpus에서 문단·문장·단어를 deterministic하게 생성한다.
+  수량은 1–100이고 결과는 UTF-8 65,536바이트 이하로 제한한다. 입력 변경이나 옵션 변경만으로
+  결과를 자동 저장·복사하지 않으며, 명시적인 복사·저장 버튼과 결과 context menu에서만
+  `lorem-ipsum.txt`로 내보낸다. 수량 paste는 UTF-8 3바이트와 3자리 입력 상한을 함께 적용하고,
+  clipboard·download 실패는 고정 오류로만 표시한다.
+- Markdown Table Formatter는 붙여 넣은 pipe-delimited 행을 원본 순서대로 정렬·패딩한다.
+  선택적인 두 번째 `---`/`:---`/`---:`/`:---:` 행으로 열 정렬을 지정할 수 있으며, 불균일한
+  행은 빈 셀로 채우고 구분 행이 없으면 자동 삽입한다. 전체 Markdown 문서 parser/editor나
+  HTML renderer가 아니며, 입력 1,000,000바이트·1,000행·100열·셀 4,096 code point·출력
+  4,000,000바이트 상한을 fail-closed로 적용한다. `\\|`와 matched backtick code span 안의 pipe를
+  cell data로 해석하고 backtick·tag-like text를 데이터로 보존한다.
+- 두 Text 도구는 네트워크·외부 converter·random·filesystem read 없이 동일한 bundled TS
+  경로에서 동작한다. 입력 변경 시 이전 결과와 action 오류를 지운다. bounded formatter는 다음
+  event-loop task에 예약해 먼저 화면을 갱신하고, 시작 전 supersede는 취소하며 시작 뒤에는 엄격한
+  상한과 sequence·unmount guard로 오래된 결과를 버린다.
+  입력과 출력은 접근 가능한 label/`aria-busy`/live status를 가지며, 일반 cut/copy/paste와
+  IME keyboard 동작을 가로채지 않는다. explicit Paste 때만 clipboard를 읽고, paste 결과는
+  UTF-8 상한 안에서만 삽입한다.
 - UUID / ULID 생성기는 UUID v4·v7과 canonical Crockford Base32 ULID를 한 번의 batch
   요청으로 최대 100개까지 생성한다. UUID는 표준 hyphen/compact와 대·소문자를 선택할 수
   있고, ULID는 canonical 대문자·hyphenless 형식을 기본으로 하며 표시용 그룹 hyphen도
@@ -97,10 +115,34 @@
 - 입력 우클릭 메뉴에서 명시적 Paste·전체 선택·비우기, 출력 메뉴에서 복사·전체 선택·텍스트
   파일 저장 지원. Clipboard read는 Paste를 누른 순간에만 수행하며 저장·로그하지 않음
 
+- JWT는 compact `header.payload.signature`를 strict Base64URL·UTF-8·JSON으로 해석해 헤더와
+  페이로드를 **검증되지 않음** 상태로 표시한다. `alg=none`, 대소문자 변형, RSA/EC 알고리즘,
+  non-canonical padding, 중복 JSON key, 알 수 없는 `crit` header와 잘못된 signature 길이는
+  고정 오류로 거부한다. JSON은 64KiB, 32단계, 10,000개 값, 문자열 16KiB, 전체 token
+  256KiB의 bounded parser를 사용하며 원문 token·signature를 오류나 로그에 반향하지 않는다.
+- Verify는 사용자가 명시적으로 누른 경우에만 실행하고 HS256·HS384·HS512만 허용한다. key는
+  raw UTF-8, hex, padded Base64, unpadded Base64URL 중 하나로 명시하며 각각의 decoded key는
+  알고리즘 digest 길이 이상(32/48/64바이트)이어야 한다. PEM/JWK/RSA/EC key parsing은 이
+  기능의 범위가 아니며 HMAC secret은 UI memory에서만 사용한다. Native는 RustCrypto의
+  constant-time `verify_slice`를, browser preview는 Web Crypto HMAC `verify`를 사용하고
+  둘 다 key/signature/tag를 반환하지 않는다. Native command도 header/payload JSON bounds,
+  duplicate key, critical header, canonical segment를 다시 확인해 direct IPC 호출이 browser
+  검사를 우회하지 못하게 한다.
+- `exp`·`nbf`·`iat`는 raw NumericDate와 UTC ISO-8601을 함께 표시한다. 검증 시각은 요청
+  시작 시 한 번 캡처한 현재 UTC epoch seconds이고 고정 clock skew는 ±60초다. 시간 claim이
+  malformed이거나 범위를 벗어나면 signature primitive를 호출하지 않고 invalid 상태로
+  표시한다. 유효한 signature와 시간 claim을 모두 통과해야만 `verified`가 된다.
+- JWT 입력과 key는 localStorage/history/telemetry/network/자동 clipboard에 절대 기록하지
+  않는다. 결과 JSON의 copy/save와 input context-menu Paste는 사용자가 명시적으로 선택한
+  경우에만 동작하며, 실행 중 중복 action·IME 입력·늦은 async/native 결과·unmount state
+  반영을 막고 accessible label/status/alert를 제공한다.
+
 JSON ↔ YAML의 `jsonc-parser` 3.3.1(MIT)·`yaml` 2.9.0(ISC)과 HTML entity의
-`entities` 8.0.0(BSD-2-Clause)은 앱에 함께 번들된다. 실행 중
-다운로드나 network 요청은 없으며 버전·무결성·라이선스는 `pnpm-lock.yaml`, dependency policy,
-`THIRD_PARTY_NOTICES.md`로 검증한다.
+`entities` 8.0.0(BSD-2-Clause), JWT verify의 RustCrypto `hmac` 0.13.0(MIT OR
+Apache-2.0)·`base64` 0.22.1(MIT OR Apache-2.0)은 앱에 함께 번들된다. 실행 중 다운로드나
+network 요청은 없으며 버전·무결성·라이선스는 `Cargo.lock`, `pnpm-lock.yaml`, dependency
+policy, `THIRD_PARTY_NOTICES.md`로 검증한다. `cmov`·`ctutils` 등 RustCrypto 전이 의존성도
+동일한 lock/notices/dependency gate를 통과해야 한다.
 
 Rust의 HMAC 순수 로직은 `src-tauri/src/core/hmac.rs`, Tauri 경계는
 `src-tauri/src/commands/tools.rs`의 `hmac_generate`·`hmac_verify` 명령에 있다. 요청 wire
@@ -113,6 +155,39 @@ Apache-2.0)이며, `sha2 0.11.0`과 기존에 잠겨 있던 `base64 0.22.1`을 �
 `cmov`/`ctutils`·checksum·license는 루트 `Cargo.lock`과 생성된
 `THIRD_PARTY_NOTICES.md`에서 검증한다. 자체 암호 구현, 외부 generator, runtime download는
 추가하지 않는다.
+
+- QR Generator는 text, HTTP(S) URL, Wi-Fi preset을 지원한다. URL은 가져오거나 열지 않고
+  입력 문자열만 payload로 사용하며, Wi-Fi는 WPA/WEP/nopass·SSID·비밀번호·hidden 필드를
+  표준 WIFI 형식으로 escape한다. 텍스트와 URL payload는 UTF-8 4,096바이트, SSID는
+  32바이트, 비밀번호는 63바이트까지이며 빈 값·lone surrogate·지원하지 않는 URL/보안
+  설정은 고정된 오류로 거부한다.
+- QR 버전은 자동(맞는 가장 작은 normal version) 또는 1–40을 선택하고 오류 보정은
+  L/M/Q/H를 선택한다. 출력 크기는 64–2,048px, quiet zone은 4–16 modules로 제한하며
+  실제 이미지는 module 경계에 맞춰 요청한 최대 크기 이하로 생성된다. 선택한 버전에
+  payload가 들어가지 않으면 일부 결과를 만들지 않고 capacity 오류로 중단한다.
+- Tauri에서는 feature-gated pure-Rust qrcode 0.14.1을 byte mode로 사용하고 작은
+  grayscale PNG encoder(png 0.18.1)와 deterministic SVG renderer로 결과를 만든다.
+  browser preview/fallback은 고정 버전 qrcode-generator 2.0.4를 사용하되 동일한
+  payload·option bounds, UTF-8 byte semantics, module-aligned dimension 계약을 적용한다.
+  두 경로 모두 runtime download, network request, dynamic QR service와 camera scan을
+  사용하지 않는다.
+- 미리보기와 SVG/PNG 결과는 메모리에만 두며 자동 저장·history·telemetry·clipboard
+  write는 없다. 사용자가 명시적으로 SVG/PNG 복사 또는 저장을 눌렀을 때만 action이
+  실행되고, SVG/PNG는 고정 파일명으로 저장된다. PNG image clipboard를 지원하지 않는
+  WebView/Windows 환경에서는 원문이나 경로를 노출하지 않는 고정 안내와 PNG 파일 저장
+  fallback을 제공한다. 생성 오류·clipboard 오류·canvas/encoder 오류도 raw payload,
+  credential, path 또는 플랫폼 오류를 반향하지 않는다.
+- 생성 요청 중에는 입력과 option을 잠그고 중복 action을 무시한다. 입력 변경·preset 변경과
+  unmount는 request sequence를 무효화해 늦은 결과가 화면을 덮어쓰지 않게 하며,
+  composition/IME 중에는 생성하지 않는다. preset/option label, live status, alert,
+  preview alt text, keyboard/native context menu를 제공해 접근 가능한 explicit workflow를
+  유지한다.
+
+QR 기능의 native matrix encoder(qrcode 0.14.1, MIT OR Apache-2.0)와 grayscale PNG
+encoder(png 0.18.1, MIT OR Apache-2.0), browser fallback(qrcode-generator 2.0.4, MIT)은
+버전과 integrity를 lockfile에 고정한다. qrcode의 optional image/svg/pic feature는 사용하지
+않고, 새 license·source·advisory·bundle 크기는 dependency policy와 notice generator의
+검사 대상이다.
 
 ## 개발
 

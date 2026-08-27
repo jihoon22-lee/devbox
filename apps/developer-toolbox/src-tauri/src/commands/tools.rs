@@ -3,6 +3,8 @@ use std::sync::Mutex;
 
 use crate::core::hmac as hmac_core;
 pub use crate::core::hmac::{HmacRequest, HmacVerifyRequest};
+use crate::core::jwt as jwt_core;
+pub use crate::core::jwt::JwtVerifyRequest;
 
 const MAX_IDENTIFIER_BATCH: usize = 100;
 const MAX_IDENTIFIER_TIMESTAMP: u64 = (1u64 << 48) - 1;
@@ -61,6 +63,14 @@ pub fn hash(data: String, algorithm: String) -> Result<String, String> {
             "지원하지 않는 알고리즘: {other} (md5/sha256/sha512)"
         )),
     }
+}
+
+/// Verify a JWT signature with an allow-listed HMAC primitive.  The command
+/// returns only a boolean for a valid request; keys and signatures never
+/// cross back into the frontend or a persistence/logging boundary.
+#[tauri::command]
+pub fn jwt_verify(request: JwtVerifyRequest) -> Result<bool, String> {
+    jwt_core::verify(&request)
 }
 
 fn hex(bytes: &[u8]) -> String {

@@ -33,4 +33,6 @@ sha2 = "0.11.0"
 uuid = "1.24.0"
 regex = "1.13.1"
 similar = "3.1.2"
+qrcode = { version = "0.14.1", default-features = false }
+png = "0.18.1"
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }

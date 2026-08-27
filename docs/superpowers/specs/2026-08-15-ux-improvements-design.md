@@ -188,7 +188,7 @@ type MenuItem =
 | UUID v4/v7 다량 생성 + ULID | Security | Rust(기존 `uuid` 확장) | 중간 |
 | HTML Entity Encode/Decode | Encoding | TS | 중간 |
 | URL Component Encode/Decode | Encoding | TS | 중간 |
-| HMAC / JWT 서명 검증(HS256) | Auth | Rust(`hmac`) | 중간 — 기존 JWT 확장 |
+| HMAC / JWT 서명 검증(HS256/384/512) | Auth | Rust(`hmac`) | 중간 — 기존 JWT 확장 |
 | Lorem Ipsum/placeholder 생성 | Text | TS | 중간 |
 | Markdown 테이블 생성기 | Text | TS | 중간 |
 | QR 생성 | Encoding | Rust(`qrcode`) | 중간 — URL/Wi-Fi/text를 오프라인 export |
@@ -205,6 +205,11 @@ type MenuItem =
   `js-yaml`은 브라우저 번들 친화적이며 추가 런타임 의존이 없다.
 - **HMAC를 Rust로 두는 것은 일관성이 있다** — `hash`/`generateUuid`가 이미 Rust 커맨드다
   (`tools/security.tsx:2`, `src-tauri/src/commands/tools.rs`).
+- **JWT는 decode와 verify를 분리한다.** compact header/payload는 offline strict parser로 먼저
+  `unverified`로 표시하고, 사용자가 명시적으로 Verify를 눌렀을 때만 HS256/384/512 HMAC를
+  검사한다. `alg=none`, RSA/EC 및 PEM/JWK key parser는 algorithm confusion과 범위 확대를
+  막기 위해 거부하며, token/key는 저장·로그·자동 clipboard에 남기지 않는다. 시간 claim은
+  verify 시작 시 캡처한 UTC 시각과 고정 clock skew를 사용해 signature 성공과 함께 평가한다.
 - **QR은 제외에서 복원한다.** permissive pure-Rust `qrcode`를 설치물에 정적으로 포함할 수
   있고, 별도 웹 서비스·실행 파일·network 없이 SVG/PNG를 만들 수 있어 devbox 목적과 맞는다.
 

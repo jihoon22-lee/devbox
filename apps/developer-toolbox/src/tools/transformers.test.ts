@@ -79,35 +79,35 @@ describe("Base64 인코딩/디코딩", () => {
 });
 
 describe("decodeJwt", () => {
-  function makeJwt(payload: unknown): string {
-    const b64url = (s: string) => btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-    const body = b64url(JSON.stringify(payload));
-    return `${header}.${body}.fakesignature`;
-  }
+  const token =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.AL_nmexgcwawKDK5uJ0RtfAxT1GguksdPuaahEACpHc";
 
-  it("유효한 JWT의 페이로드를 예쁘게 출력한다", async () => {
-    const token = makeJwt({ sub: "user-1", role: "admin" });
+  it("유효한 JWT의 헤더와 페이로드를 검증되지 않음으로 출력한다", async () => {
     const res = await decodeJwt(token);
     expect(res.error).toBeUndefined();
-    expect(JSON.parse(res.output)).toEqual({ sub: "user-1", role: "admin" });
+    const output = JSON.parse(res.output) as Record<string, unknown>;
+    expect(output.verification).toBe("unverified");
+    expect((output.header as Record<string, unknown>).alg).toBe("HS256");
+    expect((output.payload as Record<string, unknown>).sub).toBe("1234567890");
   });
 
-  it("점(.)이 없어 페이로드가 없으면 에러를 반환한다", async () => {
+  it("compact 구조가 아니면 고정 오류를 반환한다", async () => {
     const res = await decodeJwt("not-a-jwt-token");
     expect(res.output).toBe("");
-    expect(res.error).toContain("페이로드");
+    expect(res.error).toBeTruthy();
+    expect(res.error).not.toContain("not-a-jwt-token");
   });
 
-  it("페이로드가 유효한 Base64가 아니면 에러를 반환한다", async () => {
-    const res = await decodeJwt("header.!!!notbase64!!!.sig");
+  it("서명이 없거나 유효한 길이가 아니면 에러를 반환한다", async () => {
+    const res = await decodeJwt(`${token.slice(0, token.lastIndexOf(".") + 1)}AA`);
     expect(res.output).toBe("");
     expect(res.error).toBeTruthy();
   });
 
   it("페이로드를 디코딩해도 JSON이 아니면 에러를 반환한다", async () => {
-    const notJsonB64 = btoa("this is not json");
-    const res = await decodeJwt(`header.${notJsonB64}.sig`);
+    const notJsonB64 = btoa("this is not json").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const header = "eyJhbGciOiJIUzI1NiJ9";
+    const res = await decodeJwt(`${header}.${notJsonB64}.${token.split(".")[2]}`);
     expect(res.output).toBe("");
     expect(res.error).toBeTruthy();
   });

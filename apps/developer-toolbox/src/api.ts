@@ -8,6 +8,15 @@ import {
   type HmacRequest,
   type HmacVerifyRequest,
 } from "./tools/hmac";
+import { browserVerifyJwt, type JwtVerifyRequest } from "./tools/jwt";
+import {
+  generateQr as generateBrowserQr,
+  QR_ERROR_MESSAGES,
+  QrGenerationError,
+  type GenerateQrRequest,
+  type QrErrorCode,
+  type QrResult,
+} from "./tools/qr";
 import type { DiffHunk, RegexMatch } from "./types";
 
 /** 데이터를 해시한다. browser 미리보기에서는 Web Crypto(SHA)만 지원. */
@@ -26,6 +35,32 @@ export async function hmacGenerate(request: HmacRequest): Promise<string> {
 export async function hmacVerify(request: HmacVerifyRequest): Promise<boolean> {
   if (!isTauri()) return browserHmacVerify(request);
   return invoke<boolean>("hmac_verify", { request });
+}
+
+/** Verify a parsed JWT without returning its key, signature, or calculated tag. */
+export async function verifyJwt(request: JwtVerifyRequest): Promise<boolean> {
+  if (!isTauri()) return browserVerifyJwt(request);
+  return invoke<boolean>("jwt_verify", { request });
+}
+
+/** Native QR generation is primary; browser preview uses the same bounded contract. */
+export async function generateQr(request: GenerateQrRequest): Promise<QrResult> {
+  if (!isTauri()) return generateBrowserQr(request);
+  try {
+    return await invoke<QrResult>("generate_qr", { request });
+  } catch (error) {
+    throw normalizeQrError(error);
+  }
+}
+
+function normalizeQrError(error: unknown): QrGenerationError {
+  if (error instanceof QrGenerationError) return error;
+  if (typeof error === "string") {
+    for (const [code, message] of Object.entries(QR_ERROR_MESSAGES) as Array<[QrErrorCode, string]>) {
+      if (error === message) return new QrGenerationError(code);
+    }
+  }
+  return new QrGenerationError("render");
 }
 
 /** UUID v4/v7 또는 ULID를 제한된 수량으로 생성한다. */
