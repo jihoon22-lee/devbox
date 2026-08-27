@@ -219,6 +219,17 @@ result expression. Removing the redundant return leaves the exact success and
 fixed AlreadyExists/error mapping unchanged and allows the Windows clippy/test
 stages to continue.
 
+The next Windows test stage reached the Knowledge Base watcher suite and
+exposed a path-spelling mismatch: `Path::canonicalize` returns a verbatim
+`\\?\` path while notify and tests can supply the ordinary drive spelling.
+The watcher now resolves each existing event entry through `VaultIdentity`
+before comparing it with the canonical root, so both spellings converge only
+after the existing symlink/reparse and root-identity checks pass. Missing
+canonical paths remain accepted solely for delete/rename index cleanup under
+the configured root. Both focused watcher regressions and the full 112-test
+Knowledge Base suite, check, strict clippy, rustfmt, and `git diff --check`
+passed before the final CI rerun.
+
 ## Next Steps
 
 - Verify Windows W2 cold/hot receiver, packaged launch, expiry/regenerate smoke, and final CI.

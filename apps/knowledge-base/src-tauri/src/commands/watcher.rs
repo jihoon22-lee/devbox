@@ -406,7 +406,15 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
 /// final components are allowed so delete/rename events can remove an old
 /// index row, but existing links/reparse points are never followed.
 fn safe_relative_path(vault: &VaultIdentity, path: &Path) -> Option<String> {
-    let relative = path.strip_prefix(vault.canonical_path()).ok()?;
+    // Windows canonical paths normally use a verbatim prefix (`\\?\`) while
+    // notify/tests may provide the ordinary drive spelling. Resolve an
+    // existing entry through the vault first so both spellings converge on
+    // the same canonical root. Missing canonical event paths are retained for
+    // delete/rename index cleanup.
+    let scoped_path = vault
+        .existing_path(path)
+        .unwrap_or_else(|_| path.to_path_buf());
+    let relative = scoped_path.strip_prefix(vault.canonical_path()).ok()?;
     if relative.as_os_str().is_empty()
         || relative
             .components()
@@ -503,6 +511,10 @@ mod tests {
         assert_eq!(
             safe_relative_path(&vault, &root.path().join("Journal/note.md")),
             Some("Journal/note.md".into())
+        );
+        assert_eq!(
+            safe_relative_path(&vault, &vault.canonical_path().join("Journal/deleted.md")),
+            Some("Journal/deleted.md".into())
         );
         assert!(safe_relative_path(&vault, &root.path().join("Journal")).is_none());
         assert!(safe_relative_path(&vault, Path::new("/tmp/outside.md")).is_none());
