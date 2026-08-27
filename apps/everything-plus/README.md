@@ -6,7 +6,7 @@
 ## 주요 기능
 
 - **파일명 검색** — FTS5 인덱스, 파일명·경로 부분 일치, 밀리초 응답
-- **내용 검색** — 텍스트 파일(TXT/MD/JSON/CSV/소스코드)과 PDF text 내용 FTS5, 스니펫 하이라이트
+- **내용 검색** — 텍스트 파일(TXT/MD/JSON/CSV/소스코드), PDF text, legacy XLS 셀 값 내용 FTS5, 스니펫 하이라이트
 - **정규식 모드** — regex 검색
 - **인덱스 관리** — 검색 루트(드라이브/폴더) 추가·제외 규칙, re-index 진행률 표시, 파일 감시로 최신성 유지
 - **결과 작업** — 열기·폴더에서 보기·경로/파일명 복사와 설치된 `path` capability 앱으로 열기 context menu
@@ -16,10 +16,11 @@
 
 `index content`를 켠 검색 루트만 내용 인덱싱 대상이 된다. Everything+는 파일을 전부
 읽지 않고 `src-tauri/src/core/content.rs`의 명시적 source/Markdown/plain-text 확장자와
-PDF, `README`, `LICENSE`, `Dockerfile`, `.gitignore` 같은 소수의 이름만 선택한다. plain
-text extractor 버전은 `text-v1`, PDF extractor 버전은 `pdf-v1`이며, `meta`의
-`pdf_extractor_version` marker가 첫 설치와 PDF parser 버전 전환을 감지한다. Office 컨테이너,
-OCR, semantic search는 이 기능에 포함하지 않는다.
+PDF, legacy Excel `.xls`, `README`, `LICENSE`, `Dockerfile`, `.gitignore` 같은 소수의 이름만
+선택한다. plain-text extractor 버전은 `text-v1`, PDF extractor 버전은 `pdf-v1`, XLS
+extractor 버전은 `xls-v1`이다. `meta`의 독립적인 `pdf_extractor_version`과
+`xls_extractor_version` marker가 첫 설치와 각 parser 버전 전환을 감지한다.
+XLSX/ODS/DOCX 컨테이너, OCR, semantic search는 이 기능에 포함하지 않는다.
 
 - UTF-8(선택적 BOM)과 UTF-16 little/big endian(BOM, 안정적으로 식별 가능한 BOM 없는
   텍스트)을 strict decode한다. invalid UTF-8/UTF-16, binary/NUL 데이터는 검색 hit가 되지
@@ -36,6 +37,15 @@ OCR, semantic search는 이 기능에 포함하지 않는다.
   password/encrypted PDF는 `unsupported_encrypted`, corrupt PDF와 parser/decompression
   실패는 `extract_error`, object/page resource bound 초과는 `extract_error`와
   `resource_limit`으로 격리한다. 해당 상태에서도 filename search는 계속 제공된다.
+- legacy XLS는 MIT `calamine`의 pure-Rust `Xls` reader로 worksheet 셀 값만 오프라인
+  추출한다. 수식 재계산·VBA/macro·이미지·서식·외부 resource는 사용하지 않으며, XLSX와
+  ODS는 확장자 dispatch에서 이 경로로 들어오지 않는다. password/encrypted workbook은
+  `unsupported_encrypted`, 손상 workbook은 `extract_error`, resource-limit workbook은
+  `extract_error`와 `resource_limit`으로
+  격리하고 filename search는 계속 제공한다. workbook은 최대 256개 sheet와 4,000,000개
+  logical cell을 허용한다. parser 진입 전 fail-closed BIFF preflight가 record 1,000,000개,
+  formula 100,000개, shared string 200,000개·8,000,000자, 반복 참조로 확장되는 string
+  16,000,000자와 추정 peak memory 256 MiB를 함께 제한한다.
 - `.env`, credential/netrc/npmrc/secrets 계열 파일과 private-key 확장자/이름은 읽지 않고
   `skipped_sensitive`로 기록한다. FTS snippet은 Authorization/Bearer/password/token/
   secret/API-key/private-key 형태와 독립적으로 노출된 common provider token·AWS access key·
@@ -52,15 +62,19 @@ OCR, semantic search는 이 기능에 포함하지 않는다.
   metadata를 재생성한다. `content_status`, `extractor_version`, `truncated`,
   `indexed_at`, `error_code`, `encoding`, `text_chars`를 함께 저장하므로 검색 결과와
   상태 화면이 단순히 "없음"과 실패를 혼동하지 않는다.
-- text와 PDF extractor 버전은 독립적으로 기록된다. PDF parser 규칙이 바뀌거나
-  `pdf_extractor_version` marker가 없거나 다르면 PDF-only scan을 걸어 PDF row만 지우고 PDF
-  후보만 다시 읽어 text/source/Markdown 인덱스를 보존한다. PDF-only worker 중
-  새 root/index 요청이 큐에 들어오면 다음 실행을 `All`로 승격해 요청을 놓치지 않으며, 성공한
-  full/PDF scan만 현재 `pdf-v1` marker를 기록한다.
+- text/PDF/XLS extractor 버전은 서로 독립적으로 기록된다. PDF parser 규칙이 바뀌면 stale
+  `pdf-v1` row만, XLS cell normalization 규칙이 바뀌면 stale `xls-v1` row만 지우고 해당
+  형식 후보만 다시 읽어 text/source/Markdown 및 다른 문서 형식 인덱스를 보존한다. 각 marker가
+  없거나 현재 버전과 달라도 해당 형식 scan을 수행하며, 성공한 full/format-only scan만 marker를
+  갱신한다. format-only worker 중 새 root/index 요청이 들어오면 다음 실행을 `All`로 승격한다.
 
 ## 기술
 
 - 공용 크레이트 `crates/filesystem`(제한 순회)·`crates/search`(FTS5) 사용
+- legacy XLS reader는 `calamine = 0.36.1`(MIT, pure Rust, `Cargo.lock` 고정)을 사용하고,
+  `cfb = 0.7.3`(MIT, pure Rust) preflight로 calamine의 eager range allocation 전에 CFB
+  Workbook stream과 BIFF record/dimension/SST 참조를 fail-closed로 확인한다. 설치물 고지에는
+  lockfile 기반 transitive dependency inventory가 포함된다.
 - 백그라운드 watcher + 주기 재스캔
 - inbound Query와 search input은 UTF-8 4 KiB 및 control-character 경계를 적용하며 원문을
   로그·오류·지속 저장소에 남기지 않는다

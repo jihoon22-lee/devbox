@@ -468,6 +468,16 @@ reindex를 수행하고, 성공한 full/PDF scan 뒤 marker를 기록한다. PDF
 새 root/index 요청이 들어오면 다음 실행을 `All`로 승격해 요청을 놓치지 않는다. OCR·image·
 format extraction은 이 경계에 포함하지 않는다.
 
+legacy XLS는 별도 `xls-v1` extractor가 MIT pure-Rust `calamine::Xls`로 worksheet 셀 값만
+bounded offline 추출한다. pure-Rust `cfb` preflight가 calamine의 eager range allocation 전에
+Workbook stream의 구조와 sheet/dimension/record/formula/SST 상한을 fail-closed로 검증하고,
+unique SST text와 `LabelSst` clone 확장량 및 256 MiB 추정 peak memory를 별도로 계산한다. 수식 재계산,
+VBA/macro, image/style, 외부 resource는 사용하지 않는다. encrypted/corrupt/resource-limit XLS는
+각각 `unsupported_encrypted`/`extract_error`/`resource_limit` 고정 코드로 격리한다.
+`meta.xls_extractor_version`이 없거나 현재 `xls-v1`과 다르면 XLS-only reindex를 수행하고,
+성공한 full/XLS scan 뒤 marker를 기록한다. 각 format-only worker의 queued restart는 `All`로
+승격한다. XLSX/ODS/DOCX는 각 후속 issue가 별도 extractor와 독립 marker를 소유한다.
+
 Repo Manager는 catalog revision 4부터 `path`를 수신한다. cold/hot request를 listener-first
 `PendingOpen` 경로로 한 번만 소비하고 기존 scan 결과와 canonical identity가 같은 repository를
 선택·focus한다. 목록에 없는 유효한 Git repository는 자동 등록하거나 Git 명령을 실행하지 않고

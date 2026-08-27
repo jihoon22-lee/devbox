@@ -99,9 +99,19 @@ pub fn run() {
                     commands::indexing::spawn_index(state.clone(), Vec::new());
                 } else {
                     core::db::record_pdf_extractor_version(&state.db.lock().unwrap())?;
+                    core::db::record_xls_extractor_version(&state.db.lock().unwrap())?;
                 }
-            } else if core::db::pdf_reindex_required(&state.db.lock().unwrap()).unwrap_or(true) {
-                commands::indexing::spawn_pdf_reindex(state.clone());
+            } else {
+                let conn = state.db.lock().unwrap();
+                let stale_pdf = core::db::pdf_reindex_required(&conn).unwrap_or(true);
+                let stale_xls = core::db::xls_reindex_required(&conn).unwrap_or(true);
+                drop(conn);
+                match (stale_pdf, stale_xls) {
+                    (true, true) => commands::indexing::spawn_index_with_formats(state.clone()),
+                    (true, false) => commands::indexing::spawn_pdf_reindex(state.clone()),
+                    (false, true) => commands::indexing::spawn_xls_reindex(state.clone()),
+                    (false, false) => {}
+                }
             }
             app.manage(state);
             app.manage(watcher.clone());

@@ -1,8 +1,8 @@
-use crate::core::content::{extract_file, is_content_candidate, is_pdf_path};
+use crate::core::content::{extract_file, is_content_candidate, is_pdf_path, is_xls_path};
 use crate::core::db::{
-    add_root as db_add_root, clear_all, clear_pdf, clear_root, content_status_summary,
-    list_roots as db_list_roots, record_pdf_extractor_version, remove_root as db_remove_root,
-    total_files, upsert_content_record, upsert_file,
+    add_root as db_add_root, clear_all, clear_pdf, clear_root, clear_xls, content_status_summary,
+    list_roots as db_list_roots, record_pdf_extractor_version, record_xls_extractor_version,
+    remove_root as db_remove_root, total_files, upsert_content_record, upsert_file,
 };
 use crate::core::models::IndexStatus;
 use filesystem::collect;
@@ -46,6 +46,8 @@ pub struct AppState {
 pub(crate) enum IndexFilter {
     All,
     Pdf,
+    Xls,
+    PdfAndXls,
 }
 
 impl IndexFilter {
@@ -53,6 +55,8 @@ impl IndexFilter {
         match self {
             Self::All => true,
             Self::Pdf => is_pdf_path(path),
+            Self::Xls => is_xls_path(path),
+            Self::PdfAndXls => is_pdf_path(path) || is_xls_path(path),
         }
     }
 
@@ -201,6 +205,19 @@ pub(crate) fn spawn_pdf_reindex(state: Arc<AppState>) {
     spawn_index_with_filter(state, Vec::new(), IndexFilter::Pdf);
 }
 
+/// Rebuilds only legacy XLS rows for every registered root. This is used after
+/// an XLS extractor version change and intentionally preserves all other
+/// content rows.
+pub(crate) fn spawn_xls_reindex(state: Arc<AppState>) {
+    spawn_index_with_filter(state, Vec::new(), IndexFilter::Xls);
+}
+
+/// Rebuilds both format-specific rows when an upgrade leaves stale PDF and XLS
+/// records at the same time. Plain-text/source/Markdown rows remain untouched.
+pub(crate) fn spawn_index_with_formats(state: Arc<AppState>) {
+    spawn_index_with_filter(state, Vec::new(), IndexFilter::PdfAndXls);
+}
+
 fn spawn_index_with_filter(state: Arc<AppState>, only_roots: Vec<String>, filter: IndexFilter) {
     {
         let _lifecycle = state
@@ -304,6 +321,17 @@ fn run_index_with_filter(
                         clear_pdf(&conn, &root.path)?;
                     }
                 }
+                IndexFilter::Xls => {
+                    for root in &roots {
+                        clear_xls(&conn, &root.path)?;
+                    }
+                }
+                IndexFilter::PdfAndXls => {
+                    for root in &roots {
+                        clear_pdf(&conn, &root.path)?;
+                        clear_xls(&conn, &root.path)?;
+                    }
+                }
             }
             roots
         } else {
@@ -315,6 +343,11 @@ fn run_index_with_filter(
                 match filter {
                     IndexFilter::All => clear_root(&conn, &root.path)?,
                     IndexFilter::Pdf => clear_pdf(&conn, &root.path)?,
+                    IndexFilter::Xls => clear_xls(&conn, &root.path)?,
+                    IndexFilter::PdfAndXls => {
+                        clear_pdf(&conn, &root.path)?;
+                        clear_xls(&conn, &root.path)?;
+                    }
                 }
             }
             targets
@@ -403,9 +436,22 @@ fn run_index_with_filter(
             }
         }
     }
+    // A root change can request cancellation after the last batch commits but
+    // before the format marker is recorded.  Treat that narrow handoff window
+    // as incomplete so the queued worker still owns the required full scan.
+    if state.cancel_requested.load(Ordering::SeqCst) {
+        return Ok(());
+    }
     if full_reindex {
         let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
-        record_pdf_extractor_version(&conn)?;
+        match filter {
+            IndexFilter::All | IndexFilter::PdfAndXls => {
+                record_pdf_extractor_version(&conn)?;
+                record_xls_extractor_version(&conn)?;
+            }
+            IndexFilter::Pdf => record_pdf_extractor_version(&conn)?,
+            IndexFilter::Xls => record_xls_extractor_version(&conn)?,
+        }
     }
     state
         .last_indexed_at
@@ -568,7 +614,45 @@ mod tests {
     #[test]
     fn queued_format_reindex_escalates_to_a_full_rebuild() {
         assert_eq!(IndexFilter::Pdf.queued_restart(), IndexFilter::All);
+        assert_eq!(IndexFilter::Xls.queued_restart(), IndexFilter::All);
+        assert_eq!(IndexFilter::PdfAndXls.queued_restart(), IndexFilter::All);
         assert_eq!(IndexFilter::All.queued_restart(), IndexFilter::All);
+    }
+
+    #[test]
+    fn xls_marker_requires_a_successful_full_format_scan() {
+        let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "everything-plus-xls-marker-{id}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        let stored_root = db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
+        let app_state = state(conn);
+
+        run_index_with_filter(
+            &app_state,
+            std::slice::from_ref(&stored_root),
+            IndexFilter::Xls,
+        )
+        .unwrap();
+        assert!(crate::core::db::xls_reindex_required(&app_state.db.lock().unwrap()).unwrap());
+
+        app_state.cancel_requested.store(true, Ordering::SeqCst);
+        run_index_with_filter(&app_state, &[], IndexFilter::Xls).unwrap();
+        assert!(crate::core::db::xls_reindex_required(&app_state.db.lock().unwrap()).unwrap());
+
+        app_state.cancel_requested.store(false, Ordering::SeqCst);
+        run_index_with_filter(&app_state, &[], IndexFilter::Xls).unwrap();
+        let conn = app_state.db.lock().unwrap();
+        assert!(!crate::core::db::xls_reindex_required(&conn).unwrap());
+        assert!(crate::core::db::pdf_reindex_required(&conn).unwrap());
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -700,11 +784,108 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
+    #[test]
+    fn xls_reindex_replaces_only_xls_content_and_preserves_text_content() {
+        let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "everything-plus-xls-reindex-{id}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let text = root.join("notes.md");
+        let xls = root.join("report.xls");
+        let corrupt = root.join("broken.xls");
+        fs::write(&text, "ordinary text remains").unwrap();
+        let original = xls_fixture();
+        fs::write(&xls, &original).unwrap();
+        fs::write(&corrupt, b"not a valid XLS fixture").unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
+        let app_state = state(conn);
+        run_index_with_filter(&app_state, &[], IndexFilter::All).unwrap();
+        {
+            let conn = app_state.db.lock().unwrap();
+            assert_eq!(search_content(&conn, "remains", 10).unwrap().len(), 1);
+            assert_eq!(search_content(&conn, "sheetjs", 10).unwrap().len(), 1);
+            assert_eq!(search(&conn, "broken", 10).unwrap().len(), 1);
+            let status: String = conn
+                .query_row(
+                    "SELECT content_status FROM file_content WHERE file_id =
+                        (SELECT id FROM files WHERE path = ?1)",
+                    [crate::core::db::normalize_path(corrupt.to_str().unwrap())],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(status, "extract_error");
+        }
+
+        let mut updated = original;
+        replace_bytes(&mut updated, b"sheetjs", b"new-xls");
+        fs::write(&xls, &updated).unwrap();
+        run_index_with_filter(&app_state, &[], IndexFilter::Xls).unwrap();
+        let conn = app_state.db.lock().unwrap();
+        assert_eq!(search_content(&conn, "remains", 10).unwrap().len(), 1);
+        assert!(search_content(&conn, "sheetjs", 10).unwrap().is_empty());
+        assert_eq!(search_content(&conn, "new-xls", 10).unwrap().len(), 1);
+        assert_eq!(search(&conn, "broken", 10).unwrap().len(), 1);
+        drop(conn);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
     fn utf16le(value: &str) -> Vec<u8> {
         let mut bytes = vec![0xFF, 0xFE];
         for unit in value.encode_utf16() {
             bytes.extend(unit.to_le_bytes());
         }
         bytes
+    }
+
+    fn xls_fixture() -> Vec<u8> {
+        let encoded = include_str!("../../fixtures/biff5_write.xls.b64");
+        let mut output = Vec::new();
+        let mut buffer = 0_u32;
+        let mut bits = 0_u8;
+        for byte in encoded.bytes() {
+            let value = match byte {
+                b'A'..=b'Z' => byte - b'A',
+                b'a'..=b'z' => byte - b'a' + 26,
+                b'0'..=b'9' => byte - b'0' + 52,
+                b'+' => 62,
+                b'/' => 63,
+                b'=' => break,
+                b'\r' | b'\n' | b' ' | b'\t' => continue,
+                _ => panic!("invalid fixture base64"),
+            };
+            buffer = (buffer << 6) | u32::from(value);
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                output.push((buffer >> bits) as u8);
+                if bits == 0 {
+                    buffer = 0;
+                } else {
+                    buffer &= (1_u32 << bits) - 1;
+                }
+            }
+        }
+        output
+    }
+
+    fn replace_bytes(bytes: &mut [u8], old: &[u8], new: &[u8]) {
+        assert_eq!(old.len(), new.len());
+        let mut replaced = false;
+        if old.is_empty() || bytes.len() < old.len() {
+            panic!("fixture replacement bounds are invalid");
+        }
+        for index in 0..=bytes.len() - old.len() {
+            if &bytes[index..index + old.len()] == old {
+                bytes[index..index + old.len()].copy_from_slice(new);
+                replaced = true;
+            }
+        }
+        assert!(replaced, "fixture cell text was not found");
     }
 }

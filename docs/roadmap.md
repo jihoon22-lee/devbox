@@ -267,6 +267,17 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
      시 PDF row만 format-specific reindex해 text/source/Markdown row를 보존하되, PDF-only
      reindex 중 큐 요청은 `All`로 승격해 새 root/index 요청을 놓치지 않는다. Office/OCR/
      image/format extraction은 후속 별도 issue로 남긴다.
+   - 2026-08-27 `#299` XLS extractor 구현: MIT `calamine::Xls`로 legacy `.xls`의
+     worksheet 셀 값만 bounded offline 추출하고 `xls-v1` metadata를 기록한다. 파일 20 MiB,
+     text 2,000,000 Unicode scalar characters, candidate 10초 상한과 256 sheet/4,000,000
+     logical-cell 방어선을 적용한다. fail-closed BIFF preflight는 record/formula/metadata,
+     shared-string 원본과 반복 clone 확장량, 256 MiB 추정 parser memory도 parser 진입 전에
+     제한한다. formula evaluation·VBA/macro·image/style/외부 resource는 사용하지 않는다.
+     encrypted/corrupt/논리 resource-limit workbook은 각각
+     `unsupported_encrypted`/`extract_error`/`resource_limit`로 격리한다.
+     `meta.xls_extractor_version` marker가 첫 설치와 parser version 전환을 보장하고 성공한
+     full/XLS scan 뒤 갱신된다. XLS row만 format-specific reindex해 text/PDF/다른 문서 인덱스를
+     보존하며, queued request는 `All`로 승격한다. XLSX/ODS/DOCX/OCR은 별도 issue 범위로 남긴다.
 
 #### P3 — 선택 확정
 
