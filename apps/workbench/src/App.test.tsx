@@ -199,7 +199,6 @@ beforeEach(() => {
     runId: `run-${profileId}`,
     profileId,
     steps: [],
-    startedPids: [101],
     resourceProvenance: [
       { kind: "tcp-port", id: "port-1", state: "existing" },
       { kind: "process", id: "code-pad", state: "workbenchStarted" },
@@ -340,6 +339,22 @@ describe("Workbench profile context menu", () => {
     expect(startWorkspaceMock).not.toHaveBeenCalled();
   });
 
+  it("keeps keyboard focus inside the preflight review", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Start Workspace" }));
+    const dialog = await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    const continueButton = screen.getByRole("button", { name: "계속 시작" });
+    const cancelButton = screen.getByRole("button", { name: "취소" });
+
+    cancelButton.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(continueButton).toHaveFocus();
+
+    continueButton.focus();
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(cancelButton).toHaveFocus();
+  });
+
   it("requires a fresh review when the backend rejects a stale preflight", async () => {
     startWorkspaceMock.mockRejectedValueOnce(new Error("C:\\private\\TOP_SECRET"));
     render(<App />);
@@ -372,7 +387,6 @@ describe("Workbench profile context menu", () => {
       runId: "run-p-1",
       profileId: "p-1",
       steps: [],
-      startedPids: [101],
       resourceProvenance: [],
     });
     await screen.findByRole("button", { name: "Stop What I Started" });

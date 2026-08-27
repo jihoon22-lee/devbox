@@ -44,14 +44,18 @@
 | 1 | required app/WSL/cwd/포트/service read-only preflight | 필수 점검 통과 또는 경고 표시 | warning은 Continue 검토, failure/unavailable는 중단 |
 | 2 | explicit Continue 후 실행 직전 재검증 | 같은 profile/resource identity 유지 | 변경·stale이면 environment read/child spawn 없이 중단 |
 | 3 | 예상 포트 준비 확인 | 포트 open 또는 bounded retry | 전체 deadline 후 실패 표시 |
-| 4 | WSL Desktop layout 열기 | 프로세스 시작 | 실패·부분 시작이면 이번 PID만 rollback |
-| 5 | Code Pad workspace 열기 | 프로세스 시작 | 실패·부분 시작이면 이번 PID만 rollback |
+| 4 | WSL Desktop layout 열기 | 프로세스 시작 또는 고정된 단계 실패 기록 | 앱 실행 실패는 부분 결과로 유지; 이후 무결성 실패면 이번 PID만 rollback |
+| 5 | Code Pad workspace 열기 | 프로세스 시작 또는 고정된 단계 실패 기록 | 앱 실행 실패는 부분 결과로 유지; 이후 무결성 실패면 이번 PID만 rollback |
 | 6 | API request 열기 (선택) | 후속 범위 | 이 grouped PR에서는 열지 않음 |
 
 - "이미 실행 중이던 자원"과 "Workbench가 시작한 자원"을 구분한다:
   - 사전 점검에서 이미 running이던 서비스/포트 → Workbench가 종료하지 않는다.
   - Workbench가 시작한 것만 `Stop What I Started`의 대상.
-- 부분 실패 후 상태를 사용자가 이해할 수 있어야 한다 (단계별 결과 + rollback 가능 여부 표시).
+- 일반적인 child 실행 실패는 성공한 child를 즉시 종료하지 않고 단계별 부분 결과로 게시한다.
+  사용자는 실패 원인과 Workbench-owned resource를 확인한 뒤 `Stop What I Started`로 정리할 수 있다.
+- 반대로 profile/source revision 변경, 취소·시간 초과, environment provider 실패, run registry
+  게시 실패처럼 검토한 실행의 무결성이 깨진 경로는 부분 결과를 게시하지 않고 이번 transition이
+  시작한 PID만 자동 rollback한다.
 
 ## 5. 실행 기록과 idempotency
 

@@ -607,7 +607,7 @@ mod tests {
     #[test]
     fn preview_has_only_metadata_mask_and_revision() {
         let root = fixture_root("preview");
-        std::fs::write(&root.join(".env"), b"TOKEN=top-secret\nNAME=devbox\n").unwrap();
+        std::fs::write(root.join(".env"), b"TOKEN=top-secret\nNAME=devbox\n").unwrap();
         let parsed = read_source_file(&root, ".env").unwrap();
         let value = serde_json::to_string(&preview(&parsed)).unwrap();
         assert!(!value.contains("top-secret"));
@@ -619,7 +619,7 @@ mod tests {
     #[test]
     fn source_must_be_project_env_file_and_links_are_rejected() {
         let root = fixture_root("source");
-        std::fs::write(&root.join(".env.local"), b"NAME=ok").unwrap();
+        std::fs::write(root.join(".env.local"), b"NAME=ok").unwrap();
         assert!(read_source_file(&root, ".env.local").is_ok());
         for source in ["/tmp/.env", "../.env", ".env/child", "config.json"] {
             assert!(
@@ -687,7 +687,7 @@ mod tests {
     #[test]
     fn stale_metadata_prevents_injection() {
         let root = fixture_root("stale");
-        std::fs::write(&root.join(".env"), b"NAME=before").unwrap();
+        std::fs::write(root.join(".env"), b"NAME=before").unwrap();
         let parsed = read_source_file(&root, ".env").unwrap();
         let mut profile = ProjectProfile::new("project");
         profile.windows_path = Some(root.to_string_lossy().into_owned());
@@ -697,7 +697,7 @@ mod tests {
             revision: parsed.revision().into(),
             variables: parsed.metadata(),
         });
-        std::fs::write(&root.join(".env"), b"NAME=after").unwrap();
+        std::fs::write(root.join(".env"), b"NAME=after").unwrap();
         assert_eq!(
             resolve_profile_environment(&profile).unwrap_err(),
             ENVIRONMENT_STALE_ERROR

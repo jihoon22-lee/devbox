@@ -1057,6 +1057,9 @@ pub struct WorkspaceRun {
     pub profile_id: String,
     pub steps: Vec<RunStep>,
     /// Workbench가 시작한 프로세스 PID (Stop What I Started 대상).
+    /// This remains backend-only ownership state and is never serialized to
+    /// the webview.
+    #[serde(skip_serializing)]
     pub started_pids: Vec<u32>,
     /// Stable resource ownership observed by the preflight and start steps.
     pub resource_provenance: Vec<ResourceProvenance>,
@@ -1228,9 +1231,10 @@ fn launch_open_with_profile_environment(
     request: &devbox_applink::OpenRequest,
     environment: Option<&EnvironmentInjection>,
 ) -> Result<u32, String> {
-    // The boundary is applied even when the profile has no enabled `.env`:
-    // an absent overlay must not silently fall back to inheriting every
-    // desktop variable (which may include credentials).
+    // The boundary is applied even when the profile has no enabled `.env` so
+    // callers use one launch path. As with an ordinary desktop launch, the
+    // child inherits unrelated host variables; this slice only adds the
+    // reviewed project overlay and never serializes it.
     let pairs = environment
         .map(EnvironmentInjection::pairs)
         .unwrap_or_default();
@@ -2015,6 +2019,10 @@ mod tests {
         assert!(!json.contains("TOP_SECRET"));
         assert!(!json.contains("startedPids"));
         assert!(!json.contains("steps"));
+
+        let full_run_json = serde_json::to_string(&workspace_run("run-1", "profile-a")).unwrap();
+        assert!(!full_run_json.contains("startedPids"));
+        assert!(!full_run_json.contains("101"));
 
         let multiple = HashMap::from([
             ("run-1".to_string(), workspace_run("run-1", "profile-1")),

@@ -111,9 +111,11 @@ claim start/profile + operation budget
   → drop sensitive holder, revalidate, then atomically publish run ownership
 ```
 
-All transition failure paths use the existing `StartedPidGuard`; the run is
-published only after final checks. A profile or source mutation cannot silently
-turn a preview into authority for a later child.
+All transition-integrity failure paths use the existing `StartedPidGuard`; the
+run is published only after final checks. A profile or source mutation cannot
+silently turn a preview into authority for a later child. An ordinary child
+launch failure is instead recorded as a fixed partial-run step so the user can
+inspect the result and stop only the process Workbench successfully started.
 
 ### Frontend flow
 
@@ -204,19 +206,53 @@ backend stale rejection redaction, Continue target lock, unmount late result,
 and native start cancellation. Existing #312 masked-preview and metadata-only
 save fixtures remain in the same file.
 
+### Parent review hardening and actual results
+
+The parent review rebased the grouped worktree onto the #444 handoff merge and
+closed five gaps before PR preparation:
+
+- backend-owned child PIDs now use `serde(skip_serializing)` and are absent
+  from both the start response type and restored ownership DTO;
+- all configured TCP probes share one two-second monotonic deadline in a
+  blocking worker, while WSL probe children use `kill_on_drop` in addition to
+  explicit timeout kill/reap;
+- `.env..name` and uppercase/non-canonical revisions are rejected identically
+  by native and frontend validators;
+- the preflight dialog traps forward/reverse Tab focus and the launch comments
+  accurately state that unrelated host variables retain normal process
+  inheritance while only the reviewed project overlay is added;
+- required app discovery preserves the exact `(app, capability)` pair, so an
+  installed app with the wrong handoff capability fails closed instead of
+  passing through an app-ID-only union.
+
+```text
+cargo test -j2 -p devbox-launch                           23 passed; 0 failed
+cargo test -j2 -p devbox-secrets                           5 passed; 0 failed
+cargo test -j2 -p workbench --lib                         90 passed; 0 failed
+cargo check -j2 -p workbench --all-targets                passed
+cargo clippy -j2 -p workbench --all-targets -- -D warnings passed
+pnpm --filter workbench test -- --maxWorkers=2             59 passed; 0 failed
+pnpm --filter workbench build                             passed
+dependency policy/catalog/manifest checks                passed
+cargo fmt --all -- --check                                passed
+git diff --check                                          passed
+```
+
 ## Remaining gates and risks
 
 - The packaged Windows W2 gate remains required: real installed capability
   discovery, WSL stopped/missing behavior, junction/reparse races, occupied
   port changes, changed/missing `.env`, DPAPI/secret provider behavior, child
   environment visibility, and StartedPid rollback.
-- `workspace_preflight` itself is read-only but currently has no separate UI
-  cancel IPC; generation invalidation prevents stale rendering, while the
-  bounded native probes cap the work. If product requires cancellation while
-  a WSL list probe is in flight, add a shared preflight operation slot before
-  final merge.
+- `workspace_preflight` itself is read-only and has no separate UI cancel IPC;
+  generation invalidation prevents stale rendering, WSL children are killed
+  on timeout/drop, and the complete port set shares one deadline. A dedicated
+  preflight cancellation slot remains a possible follow-up rather than an
+  unbounded worker in this PR.
 - The current `project_health` display remains a legacy observation surface;
-  the grouped preflight DTO is redacted and fixed, but a parent review should
-  decide whether the existing health detail should be normalized before PR.
+  parent review confirmed that its existing details are limited to fixed text,
+  counts and configured port numbers. It does not expose project paths, distro
+  names, service IDs, child output or environment values, so normalization is
+  not required by this grouped PR.
 - Source worktrees and branches are intentionally left in place for parent
   comparison. This task does not rebase or delete them.

@@ -103,7 +103,6 @@ export interface WorkspaceRun {
   runId: string;
   profileId: string;
   steps: RunStep[];
-  startedPids: number[];
   resourceProvenance: ResourceProvenance[];
 }
 
@@ -248,7 +247,7 @@ export function workspacePreflight(profileId: string): Promise<WorkspacePrefligh
 
 export function startWorkspace(profileId: string): Promise<WorkspaceRun> {
   if (!isTauri()) {
-    return Promise.resolve({ runId: "r-1", profileId, steps: [], startedPids: [1], resourceProvenance: [] });
+    return Promise.resolve({ runId: "r-1", profileId, steps: [], resourceProvenance: [] });
   }
   return invoke<WorkspaceRun>("start_workspace", { profileId });
 }

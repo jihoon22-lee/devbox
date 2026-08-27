@@ -170,7 +170,7 @@ export default function App() {
       const [list, activeRun] = await Promise.all([listProfiles(), currentWorkspaceRun()]);
       if (request !== refreshRequest.current) return;
       setProfiles(list);
-      setRun(activeRun ? { ...activeRun, steps: [], startedPids: [], resourceProvenance: [] } : null);
+      setRun(activeRun ? { ...activeRun, steps: [], resourceProvenance: [] } : null);
       setSelectedId((prev) => (prev && list.some((p) => p.id === prev) ? prev : list[0]?.id ?? ""));
       setProfilesRevision((revision) => revision + 1);
     } catch {
@@ -1174,6 +1174,24 @@ export default function App() {
                   aria-labelledby="workspace-preflight-title"
                   aria-describedby="workspace-preflight-description"
                   onKeyDown={(event) => {
+                    if (event.key === "Tab") {
+                      const focusable = Array.from(
+                        event.currentTarget.querySelectorAll<HTMLElement>(
+                          "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+                        ),
+                      );
+                      const first = focusable[0];
+                      const last = focusable[focusable.length - 1];
+                      if (first && last) {
+                        if (event.shiftKey && document.activeElement === first) {
+                          event.preventDefault();
+                          last.focus();
+                        } else if (!event.shiftKey && document.activeElement === last) {
+                          event.preventDefault();
+                          first.focus();
+                        }
+                      }
+                    }
                     if (event.key === "Escape" && !event.nativeEvent.isComposing && !busy) {
                       event.preventDefault();
                       onCancelPreflight();

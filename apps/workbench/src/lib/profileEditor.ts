@@ -134,6 +134,7 @@ function isSafeEnvironmentSource(value: string): boolean {
   if (!value.startsWith(".env.")) return false;
   const suffix = value.slice(".env.".length);
   return Boolean(suffix)
+    && !suffix.startsWith(".")
     && !suffix.includes("..")
     && !suffix.endsWith(".")
     && /^[A-Za-z0-9._-]+$/u.test(suffix);
@@ -367,7 +368,7 @@ export function validateProfileDraft(draft: ProfileDraft): ProfileDraftValidatio
     }
   } else if (!isSafeEnvironmentSource(environmentSource)) {
     errors.environment = "환경 파일은 프로젝트 안의 .env 또는 .env.<이름>만 선택할 수 있습니다.";
-  } else if (!/^[0-9a-fA-F]{64}$/u.test(draft.environmentRevision)) {
+  } else if (!/^[0-9a-f]{64}$/u.test(draft.environmentRevision)) {
     errors.environment = "환경 파일을 확인한 뒤 저장하세요.";
   } else {
     const metadataError = validateEnvironmentMetadata(environmentSource, draft.environmentVariables);

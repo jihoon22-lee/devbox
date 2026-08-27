@@ -465,6 +465,9 @@ explicit continue → execution-time revalidation 순서를 가진다.
 4. 첫 child가 시작된 뒤 profile/source가 바뀌거나 두 번째 child의 environment provider가 실패하면
    `StartedPidGuard`가 Workbench가 이번 transition에서 만든 PID만 rollback한다. 성공한 run에는
    고정된 preflight/resource provenance만 남고 PID·경로·stderr·secret은 restore/IPC DTO에 없다.
+   검토 상태가 그대로인 일반 child launch 실패는 성공한 child를 자동 종료하지 않고 고정된 단계
+   실패를 포함한 partial run으로 게시한다. 사용자는 그 결과를 확인한 뒤 `Stop What I Started`로
+   Workbench-owned process만 정리한다.
 
 이 grouped PR은 사용자 흐름과 재검증 기반을 공유하지만 acceptance/rollback은 독립적으로 추적한다.
 #313은 service 생성·수정·자동 복구를 소유하지 않으며 #312는 `.env` write/upload, global/cloud

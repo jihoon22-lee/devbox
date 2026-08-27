@@ -97,7 +97,9 @@ v0.4.1의 `Path`에는 distro나 profile 정보가 없다. 따라서 Start Works
 `Start Workspace`로 묶는다. 두 acceptance는 독립된 fixture·문서·rollback 판단을 유지한다.
 환경 metadata/secret provider가 실패해도 preflight가 이미 관찰한 resource를 변경하지 않고,
 preflight가 실패해도 `.env`를 읽거나 child를 시작하지 않는다. 둘 중 하나가 stale이면 전체
-start를 fail-closed하고 Workbench가 시작한 PID만 rollback한다.
+start를 fail-closed하고 Workbench가 시작한 PID만 rollback한다. 검토한 상태가 유지된 채 개별 앱
+실행만 실패한 경우에는 성공한 앱과 고정된 실패 단계를 부분 run으로 게시하며, 사용자가
+`Stop What I Started`로 Workbench-owned PID를 정리한다.
 
 - preflight는 앱 capability(`wsl-desktop:path`, `code-pad:workspace`), 선택한 WSL distro의
   존재·running 상태, Windows/WSL working directory, 예상 TCP port, Run Manager service

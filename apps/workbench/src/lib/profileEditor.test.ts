@@ -155,14 +155,31 @@ describe("profile editor draft", () => {
   });
 
   it("requires a native revision and rejects unsafe or over-bounded environment metadata", () => {
-    const invalidSource = validateProfileDraft({
+    const environmentDraft = {
       ...emptyProfileDraft(),
       name: "devbox",
       windowsPath: "E:\\projects\\devbox",
+      environmentSource: ".env",
+      environmentRevision: "a".repeat(ENVIRONMENT_REVISION_BYTES),
+    };
+    const invalidSource = validateProfileDraft({
+      ...environmentDraft,
       environmentSource: "../.env",
     });
     expect(invalidSource.profile).toBeNull();
     expect(invalidSource.errors.environment).toContain(".env");
+
+    const ambiguousSource = validateProfileDraft({
+      ...environmentDraft,
+      environmentSource: ".env..local",
+    });
+    expect(ambiguousSource.errors.environment).toContain(".env");
+
+    const nonCanonicalRevision = validateProfileDraft({
+      ...environmentDraft,
+      environmentRevision: "A".repeat(64),
+    });
+    expect(nonCanonicalRevision.errors.environment).toContain("확인");
 
     const withoutPreview = validateProfileDraft({
       ...emptyProfileDraft(),

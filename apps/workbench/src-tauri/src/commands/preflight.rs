@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::time::{timeout_at, Instant as TokioInstant};
@@ -44,7 +44,8 @@ async fn run_bounded_stdout(mut command: Command) -> Result<(CommandProbe, Vec<u
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
     let mut child = command.spawn().map_err(|_| ())?;
     let Some(stdout) = child.stdout.take() else {
         terminate(&mut child).await;
@@ -97,6 +98,7 @@ async fn run_fixed_command(argv: &[String]) -> CommandProbe {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .kill_on_drop(true)
         .spawn()
     else {
         return CommandProbe::Unavailable;
@@ -213,28 +215,46 @@ fn windows_directory_probe(path: &str) -> DirectoryProbe {
     }
 }
 
-fn port_probe(port: u16) -> PortProbe {
+fn port_probe_until(port: u16, deadline: Instant) -> PortProbe {
+    if Instant::now() >= deadline {
+        return PortProbe::Unavailable;
+    }
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
     match TcpListener::bind(address) {
         Ok(listener) => {
             drop(listener);
             PortProbe::Free
         }
-        Err(_) => match TcpStream::connect_timeout(&address, Duration::from_millis(150)) {
-            Ok(_) => PortProbe::Existing,
-            Err(_) => PortProbe::Conflict,
-        },
+        Err(_) => {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return PortProbe::Unavailable;
+            }
+            match TcpStream::connect_timeout(&address, remaining.min(Duration::from_millis(150))) {
+                Ok(_) => PortProbe::Existing,
+                Err(_) => PortProbe::Conflict,
+            }
+        }
     }
 }
 
-fn installed_required_app_ids() -> Vec<String> {
-    let mut ids = HashSet::new();
+fn port_probes_bounded(ports: &[u16]) -> Vec<PortProbe> {
+    let now = Instant::now();
+    let deadline = now.checked_add(PREFLIGHT_TIMEOUT).unwrap_or(now);
+    ports
+        .iter()
+        .map(|port| port_probe_until(*port, deadline))
+        .collect()
+}
+
+fn installed_required_app_capabilities() -> Vec<(String, &'static str)> {
+    let mut capabilities = HashSet::new();
     for capability in ["path", "workspace"] {
         for target in devbox_launch::installed_targets(capability) {
-            ids.insert(target.id);
+            capabilities.insert((target.id, capability));
         }
     }
-    ids.into_iter().collect()
+    capabilities.into_iter().collect()
 }
 
 fn service_snapshot_probe(profile: &ProjectProfile) -> (ServiceSnapshotProbe, HashSet<String>) {
@@ -263,8 +283,18 @@ fn service_snapshot_probe(profile: &ProjectProfile) -> (ServiceSnapshotProbe, Ha
 }
 
 pub(crate) async fn preflight_profile(profile: &ProjectProfile) -> WorkspacePreflight {
-    let installed = installed_required_app_ids();
-    let installed_refs = installed.iter().map(String::as_str).collect::<Vec<_>>();
+    // TCP connect probes are synchronous on every supported platform. Run the
+    // complete bounded set away from the async runtime while WSL observations
+    // proceed; all 128 configured ports share one deadline rather than each
+    // receiving an independent timeout.
+    let expected_ports = profile.expected_ports.clone();
+    let port_worker = tokio::task::spawn_blocking(move || port_probes_bounded(&expected_ports));
+
+    let installed = installed_required_app_capabilities();
+    let installed_refs = installed
+        .iter()
+        .map(|(app_id, capability)| (app_id.as_str(), *capability))
+        .collect::<Vec<_>>();
     let required_apps = assess_required_apps(&installed_refs);
 
     let (distro_item, wsl_directory) = match profile.wsl.as_ref() {
@@ -300,12 +330,9 @@ pub(crate) async fn preflight_profile(profile: &ProjectProfile) -> WorkspacePref
     }
     let directories = assess_working_directories(&directory_probes);
 
-    let port_probes = profile
-        .expected_ports
-        .iter()
-        .copied()
-        .map(port_probe)
-        .collect::<Vec<_>>();
+    let port_probes = port_worker
+        .await
+        .unwrap_or_else(|_| vec![PortProbe::Unavailable; profile.expected_ports.len()]);
     let ports = assess_ports(&port_probes);
     let (service_probe, active_services) = service_snapshot_probe(profile);
     let service_running = profile
@@ -374,7 +401,14 @@ mod tests {
     fn port_probe_reports_a_free_ephemeral_port() {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let occupied = listener.local_addr().unwrap().port();
-        assert_eq!(port_probe(occupied), PortProbe::Existing);
+        assert_eq!(
+            port_probe_until(occupied, Instant::now() + Duration::from_secs(1)),
+            PortProbe::Existing
+        );
+        assert_eq!(
+            port_probe_until(occupied, Instant::now()),
+            PortProbe::Unavailable
+        );
     }
 
     #[test]

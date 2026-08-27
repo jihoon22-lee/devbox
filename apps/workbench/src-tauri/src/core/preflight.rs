@@ -143,12 +143,20 @@ fn resource(kind: &str, id: impl Into<String>, state: ResourceState) -> Resource
     }
 }
 
-/// 판정 가능한 required app 목록을 결과 DTO로 바꾼다.
-pub fn assess_required_apps(installed_ids: &[&str]) -> PreflightItem {
+/// 판정 가능한 required app/capability 목록을 결과 DTO로 바꾼다.
+///
+/// App identity alone is insufficient: a catalog entry may be installed but
+/// still lack the exact handoff capability required by Start Workspace.
+pub fn assess_required_apps(installed_capabilities: &[(&str, &str)]) -> PreflightItem {
     let resources = REQUIRED_APP_SPECS
         .iter()
         .map(|(app_id, capability)| {
-            let installed = installed_ids.iter().any(|candidate| candidate == app_id);
+            let installed =
+                installed_capabilities
+                    .iter()
+                    .any(|(candidate_id, candidate_capability)| {
+                        candidate_id == app_id && candidate_capability == capability
+                    });
             resource(
                 "app",
                 format!("{app_id}:{capability}"),
@@ -371,7 +379,7 @@ mod tests {
 
     #[test]
     fn required_apps_fail_closed_without_reflecting_executable_paths() {
-        let item = assess_required_apps(&["wsl-desktop"]);
+        let item = assess_required_apps(&[("wsl-desktop", "path")]);
         assert_eq!(item.status, PreflightStatus::Failure);
         assert_eq!(item.resources[0].state, ResourceState::Available);
         assert_eq!(item.resources[1].state, ResourceState::Missing);
@@ -382,12 +390,22 @@ mod tests {
 
     #[test]
     fn required_apps_pass_only_when_each_capability_is_installed() {
-        let item = assess_required_apps(&["wsl-desktop", "code-pad"]);
+        let item = assess_required_apps(&[("wsl-desktop", "path"), ("code-pad", "workspace")]);
         assert_eq!(item.status, PreflightStatus::Pass);
         assert!(item
             .resources
             .iter()
             .all(|resource| resource.state == ResourceState::Available));
+    }
+
+    #[test]
+    fn required_apps_reject_the_right_apps_with_the_wrong_capabilities() {
+        let item = assess_required_apps(&[("wsl-desktop", "workspace"), ("code-pad", "path")]);
+        assert_eq!(item.status, PreflightStatus::Failure);
+        assert!(item
+            .resources
+            .iter()
+            .all(|resource| resource.state == ResourceState::Missing));
     }
 
     #[test]

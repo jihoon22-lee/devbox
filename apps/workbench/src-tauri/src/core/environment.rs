@@ -224,6 +224,7 @@ pub fn validate_source_name(source: &str) -> Result<(), EnvironmentError> {
 
 fn valid_source_suffix(suffix: &str) -> bool {
     !suffix.is_empty()
+        && !suffix.starts_with('.')
         && !suffix.contains("..")
         && !suffix.ends_with('.')
         && suffix
@@ -234,7 +235,10 @@ fn valid_source_suffix(suffix: &str) -> bool {
 pub fn validate_config(config: &ProjectEnvironmentConfig) -> Result<(), EnvironmentError> {
     validate_source_name(&config.source)?;
     if config.revision.len() != ENVIRONMENT_REVISION_BYTES
-        || !config.revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || !config
+            .revision
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
     {
         return Err(EnvironmentError::InvalidMetadata);
     }
@@ -656,7 +660,7 @@ LITERAL='${NOT_EXPANDED}'
             .unwrap_err(),
             EnvironmentError::LineTooLong
         );
-        for source in [".env/escape", ".env."] {
+        for source in [".env/escape", ".env.", ".env..local"] {
             assert_eq!(
                 parse_environment(source, b"A=x").unwrap_err(),
                 EnvironmentError::InvalidSource
@@ -692,6 +696,13 @@ LITERAL='${NOT_EXPANDED}'
         invalid.revision = "not-a-revision".into();
         assert_eq!(
             validate_config(&invalid),
+            Err(EnvironmentError::InvalidMetadata)
+        );
+
+        let mut non_canonical_revision = parsed.config(true);
+        non_canonical_revision.revision = "A".repeat(64);
+        assert_eq!(
+            validate_config(&non_canonical_revision),
             Err(EnvironmentError::InvalidMetadata)
         );
 
