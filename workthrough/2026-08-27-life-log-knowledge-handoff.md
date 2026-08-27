@@ -213,6 +213,12 @@ inode or Windows file-index reuse during the race window. The deterministic
 identity test and all 112 Knowledge Rust tests, check, strict clippy, and
 rustfmt passed before the final CI rerun.
 
+That Windows rerun completed the workspace compile and then exposed one
+target-only strict-clippy `needless_return` in the no-replace publication
+result expression. Removing the redundant return leaves the exact success and
+fixed AlreadyExists/error mapping unchanged and allows the Windows clippy/test
+stages to continue.
+
 ## Next Steps
 
 - Verify Windows W2 cold/hot receiver, packaged launch, expiry/regenerate smoke, and final CI.

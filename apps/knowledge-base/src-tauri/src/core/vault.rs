@@ -407,7 +407,7 @@ pub(crate) fn publish_new_file(temporary: &Path, target: &Path) -> Result<(), st
                 MOVEFILE_WRITE_THROUGH,
             )
         };
-        return match result {
+        match result {
             Ok(()) => Ok(()),
             Err(error)
                 if WIN32_ERROR::from_error(&error).is_some_and(|code| {
@@ -422,7 +422,7 @@ pub(crate) fn publish_new_file(temporary: &Path, target: &Path) -> Result<(), st
                 ))
             }
             Err(error) => Err(std::io::Error::other(error)),
-        };
+        }
     }
 
     #[cfg(not(windows))]
