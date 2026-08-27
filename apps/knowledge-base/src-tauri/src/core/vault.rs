@@ -58,6 +58,20 @@ impl EntryIdentity {
     }
 }
 
+/// Keeps a validated directory object alive while a caller performs a
+/// path-based publication beneath it. Holding the object prevents its stable
+/// filesystem identifier from being recycled after a delete-and-recreate race.
+pub(crate) struct EntryLease {
+    marker: EntryIdentity,
+    _lease: RootLease,
+}
+
+impl EntryLease {
+    pub(crate) fn identity(&self) -> &EntryIdentity {
+        &self.marker
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 enum FileIdentity {
     #[cfg(unix)]
@@ -285,6 +299,18 @@ impl VaultIdentity {
             return Err(VaultError::InvalidEntry);
         }
         Ok(Self::entry_identity_from_metadata(&canonical, &metadata))
+    }
+
+    /// Validate and hold an existing ordinary directory for the duration of a
+    /// child publication. The returned lease must stay in scope until the
+    /// path-based operation has completed.
+    pub(crate) fn lease_existing_directory(&self, path: &Path) -> Result<EntryLease, VaultError> {
+        let canonical = self.existing_path(path)?;
+        let (lease, marker) = open_root_lease(&canonical).map_err(|_| VaultError::InvalidEntry)?;
+        Ok(EntryLease {
+            marker: EntryIdentity(marker),
+            _lease: lease,
+        })
     }
 
     /// Capture a file identity from an already-open file's metadata.  The
@@ -604,7 +630,7 @@ fn open_root_lease(path: &Path) -> Result<(RootLease, FileIdentity), VaultError>
 fn open_root_lease(path: &Path) -> Result<(RootLease, FileIdentity), VaultError> {
     let handle = open_windows_path_handle(path).map_err(|_| VaultError::InvalidRoot)?;
     let identity = windows_handle_identity(handle);
-    if !identity.is_usable() {
+    if !identity.is_usable() || !windows_handle_is_directory(handle) {
         unsafe {
             let _ = ::windows::Win32::Foundation::CloseHandle(handle);
         }
@@ -661,6 +687,17 @@ fn windows_handle_identity(handle: ::windows::Win32::Foundation::HANDLE) -> File
             (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
         ),
     }
+}
+
+#[cfg(windows)]
+fn windows_handle_is_directory(handle: ::windows::Win32::Foundation::HANDLE) -> bool {
+    use ::windows::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY,
+    };
+
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    unsafe { GetFileInformationByHandle(handle, &mut information) }.is_ok()
+        && information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0
 }
 
 #[cfg(not(any(unix, windows)))]

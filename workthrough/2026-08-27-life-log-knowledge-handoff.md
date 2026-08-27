@@ -204,6 +204,15 @@ checks cancellation both after aggregation and immediately before publication.
 The remediation passed the focused Life Log check, strict clippy, rustfmt, and
 all 89 Life Log Rust tests before the Windows CI rerun.
 
+The following Linux CI run also exposed a filesystem-dependent test assumption:
+an unleased, deleted empty directory can receive the same inode immediately
+when recreated. The implementation was strengthened instead of only relaxing
+the test: Knowledge now holds an open lease on the validated Journal directory
+through temporary-file creation and no-replace publication, preventing Unix
+inode or Windows file-index reuse during the race window. The deterministic
+identity test and all 112 Knowledge Rust tests, check, strict clippy, and
+rustfmt passed before the final CI rerun.
+
 ## Next Steps
 
 - Verify Windows W2 cold/hot receiver, packaged launch, expiry/regenerate smoke, and final CI.

@@ -412,11 +412,12 @@ fn write_new_note(
     let parent = vault
         .existing_path(path.parent().ok_or(NewNoteError::Storage)?)
         .map_err(|_| NewNoteError::Stale)?;
-    let parent_metadata = fs::symlink_metadata(&parent).map_err(|_| NewNoteError::Storage)?;
-    if !parent_metadata.is_dir() || parent_metadata.file_type().is_symlink() {
-        return Err(NewNoteError::Storage);
-    }
-    let parent_identity = VaultIdentity::entry_identity_from_metadata(&parent, &parent_metadata);
+    // Keep the validated parent object alive through publication. Without the
+    // lease, a very fast delete-and-recreate can recycle a filesystem ID and
+    // make a path-only recheck mistake the replacement for the original.
+    let parent_lease = vault
+        .lease_existing_directory(&parent)
+        .map_err(|_| NewNoteError::Stale)?;
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -449,7 +450,7 @@ fn write_new_note(
             }
         };
         let identity = VaultIdentity::entry_identity_from_metadata(&temporary, &metadata);
-        if !entry_identity_matches(vault, &parent, &parent_identity) {
+        if !entry_identity_matches(vault, &parent, parent_lease.identity()) {
             drop(file);
             vault::cleanup_file_by_identity(&temporary, &identity);
             return Err(NewNoteError::Stale);
@@ -466,7 +467,7 @@ fn write_new_note(
         // The parent was checked before the temporary file was created.  A
         // final identity check closes the ordinary root-replacement window
         // before the no-replace publication primitive follows that parent.
-        if !entry_identity_matches(vault, &parent, &parent_identity) {
+        if !entry_identity_matches(vault, &parent, parent_lease.identity()) {
             vault::cleanup_file_by_identity(&temporary, &identity);
             return Err(NewNoteError::Stale);
         }
@@ -591,18 +592,26 @@ mod tests {
     }
 
     #[test]
-    fn replaced_journal_identity_is_rejected_before_publication() {
+    fn journal_lease_rejects_a_different_directory_identity() {
         let root = tempfile::tempdir().unwrap();
         let journal = root.path().join("Journal");
+        let other = root.path().join("Other");
         fs::create_dir(&journal).unwrap();
+        fs::create_dir(&other).unwrap();
         let vault = VaultIdentity::inspect(root.path()).unwrap();
-        let metadata = fs::symlink_metadata(&journal).unwrap();
-        let identity = VaultIdentity::entry_identity_from_metadata(&journal, &metadata);
+        let journal_lease = vault.lease_existing_directory(&journal).unwrap();
+        let other_lease = vault.lease_existing_directory(&other).unwrap();
 
-        fs::remove_dir(&journal).unwrap();
-        fs::create_dir(&journal).unwrap();
-
-        assert!(!entry_identity_matches(&vault, &journal, &identity));
+        assert!(entry_identity_matches(
+            &vault,
+            &journal,
+            journal_lease.identity()
+        ));
+        assert!(!entry_identity_matches(
+            &vault,
+            &journal,
+            other_lease.identity()
+        ));
     }
 
     #[test]
