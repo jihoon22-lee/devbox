@@ -109,11 +109,14 @@ fn read_profile_file_with_control(
         return Err("프로필 저장소 크기 제한을 초과했습니다".into());
     }
 
-    let file = open_profile_file(path).map_err(|_| PROFILE_READ_ERROR.to_string())?;
+    let source_identity =
+        crate::platform::path_identity(path, false).map_err(|_| PROFILE_PATH_ERROR.to_string())?;
+    let (file, opened_identity) = crate::platform::open_readonly_with_identity(path, false)
+        .map_err(|_| PROFILE_READ_ERROR.to_string())?;
     let opened_metadata = file
         .metadata()
         .map_err(|_| PROFILE_READ_ERROR.to_string())?;
-    if is_link_metadata(&opened_metadata) || !same_file_identity(&metadata, &opened_metadata) {
+    if is_link_metadata(&opened_metadata) || source_identity != opened_identity {
         return Err(PROFILE_PATH_ERROR.into());
     }
     let mut reader = file.take((crate::core::profile::MAX_PROFILE_FILE_BYTES + 1) as u64);
@@ -149,60 +152,12 @@ fn read_profile_file_with_control(
     reject_links_in_existing_path(path)?;
     let after_metadata =
         std::fs::symlink_metadata(path).map_err(|_| PROFILE_PATH_ERROR.to_string())?;
-    if is_link_metadata(&after_metadata) || !same_file_identity(&metadata, &after_metadata) {
+    let after_identity =
+        crate::platform::path_identity(path, false).map_err(|_| PROFILE_PATH_ERROR.to_string())?;
+    if is_link_metadata(&after_metadata) || source_identity != after_identity {
         return Err(PROFILE_PATH_ERROR.into());
     }
     Ok(Some(bytes))
-}
-
-fn same_file_identity(left: &Metadata, right: &Metadata) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        left.dev() == right.dev() && left.ino() == right.ino()
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        left.volume_serial_number() == right.volume_serial_number()
-            && left.file_index() == right.file_index()
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        left.len() == right.len()
-            && left.modified().ok() == right.modified().ok()
-            && left.file_type() == right.file_type()
-    }
-}
-
-fn open_profile_file(path: &std::path::Path) -> std::io::Result<std::fs::File> {
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(0x20000) // O_NOFOLLOW
-            .open(path)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        return std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(0x100) // O_NOFOLLOW
-            .open(path);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-        return std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-            .open(path);
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-    std::fs::File::open(path)
 }
 
 fn reject_links_in_existing_path(path: &std::path::Path) -> Result<(), String> {

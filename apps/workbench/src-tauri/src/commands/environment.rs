@@ -251,7 +251,7 @@ fn read_request_source_with_control(
         &request.source,
         token,
         budget,
-        Some(&root.metadata),
+        Some(root.identity),
     )
 }
 
@@ -272,13 +272,13 @@ fn read_profile_source_with_control(
         &config.source,
         token,
         budget,
-        Some(&root.metadata),
+        Some(root.identity),
     )
 }
 
 struct ProjectRoot {
     path: PathBuf,
-    metadata: Metadata,
+    identity: crate::platform::FileIdentity,
 }
 
 fn project_root(
@@ -353,6 +353,8 @@ fn project_root(
     if is_link_metadata(&raw_metadata) || !raw_metadata.file_type().is_dir() {
         return Err(EnvironmentError::InvalidSource);
     }
+    let raw_identity =
+        crate::platform::path_identity(raw, true).map_err(|_| EnvironmentError::InvalidSource)?;
     let canonical = raw
         .canonicalize()
         .map_err(|_| EnvironmentError::InvalidSource)?;
@@ -363,19 +365,21 @@ fn project_root(
     reject_links_in_existing_path(raw)?;
     let after_raw_metadata =
         std::fs::symlink_metadata(raw).map_err(|_| EnvironmentError::InvalidSource)?;
-    if is_link_metadata(&after_raw_metadata)
-        || !same_file_identity(&raw_metadata, &after_raw_metadata)
-    {
+    let after_raw_identity =
+        crate::platform::path_identity(raw, true).map_err(|_| EnvironmentError::InvalidSource)?;
+    if is_link_metadata(&after_raw_metadata) || raw_identity != after_raw_identity {
         return Err(EnvironmentError::InvalidSource);
     }
     let metadata = std::fs::metadata(&canonical).map_err(|_| EnvironmentError::InvalidSource)?;
-    if !metadata.is_dir() || !same_file_identity(&raw_metadata, &metadata) {
+    let canonical_identity = crate::platform::path_identity(&canonical, true)
+        .map_err(|_| EnvironmentError::InvalidSource)?;
+    if !metadata.is_dir() || raw_identity != canonical_identity {
         return Err(EnvironmentError::InvalidSource);
     }
     reject_links_in_existing_path(&canonical)?;
     Ok(ProjectRoot {
         path: canonical,
-        metadata,
+        identity: raw_identity,
     })
 }
 
@@ -401,7 +405,7 @@ fn read_source_file_with_root_control(
     source: &str,
     token: &OperationToken,
     budget: OperationBudget,
-    expected_root_metadata: Option<&Metadata>,
+    expected_root: Option<crate::platform::FileIdentity>,
 ) -> Result<ParsedEnvironment, EnvironmentError> {
     budget.check(token).map_err(environment_operation_error)?;
     crate::core::environment::validate_source_name(source)?;
@@ -411,8 +415,9 @@ fn read_source_file_with_root_control(
     if is_link_metadata(&root_metadata) || !root_metadata.file_type().is_dir() {
         return Err(EnvironmentError::InvalidSource);
     }
-    if expected_root_metadata.is_some_and(|expected| !same_file_identity(expected, &root_metadata))
-    {
+    let root_identity =
+        crate::platform::path_identity(root, true).map_err(|_| EnvironmentError::InvalidSource)?;
+    if expected_root.is_some_and(|expected_identity| expected_identity != root_identity) {
         return Err(EnvironmentError::InvalidSource);
     }
     reject_links_in_existing_path(&path)?;
@@ -440,11 +445,15 @@ fn read_source_file_with_root_control(
     // fixed upper-bound capacity also prevents a file-growth race from
     // reallocating an intermediate, non-zeroized Vec backing allocation.
     budget.check(token).map_err(environment_operation_error)?;
-    let file = open_source_file(&canonical_source).map_err(|_| EnvironmentError::InvalidSource)?;
+    let source_identity = crate::platform::path_identity(&canonical_source, false)
+        .map_err(|_| EnvironmentError::InvalidSource)?;
+    let (file, opened_identity) =
+        crate::platform::open_readonly_with_identity(&canonical_source, false)
+            .map_err(|_| EnvironmentError::InvalidSource)?;
     let opened_metadata = file
         .metadata()
         .map_err(|_| EnvironmentError::InvalidSource)?;
-    if is_link_metadata(&opened_metadata) || !same_file_identity(&metadata, &opened_metadata) {
+    if is_link_metadata(&opened_metadata) || source_identity != opened_identity {
         return Err(EnvironmentError::InvalidSource);
     }
     let mut reader = file.take((MAX_ENV_FILE_BYTES + 1) as u64);
@@ -470,10 +479,11 @@ fn read_source_file_with_root_control(
     budget.check(token).map_err(environment_operation_error)?;
     let after_root_metadata =
         std::fs::symlink_metadata(root).map_err(|_| EnvironmentError::InvalidSource)?;
-    if !same_file_identity(&root_metadata, &after_root_metadata)
+    let after_root_identity =
+        crate::platform::path_identity(root, true).map_err(|_| EnvironmentError::InvalidSource)?;
+    if root_identity != after_root_identity
         || is_link_metadata(&after_root_metadata)
-        || expected_root_metadata
-            .is_some_and(|expected| !same_file_identity(expected, &after_root_metadata))
+        || expected_root.is_some_and(|expected_identity| expected_identity != after_root_identity)
     {
         return Err(EnvironmentError::InvalidSource);
     }
@@ -486,9 +496,9 @@ fn read_source_file_with_root_control(
     }
     let after_source_metadata = std::fs::symlink_metadata(&canonical_source)
         .map_err(|_| EnvironmentError::InvalidSource)?;
-    if is_link_metadata(&after_source_metadata)
-        || !same_file_identity(&metadata, &after_source_metadata)
-    {
+    let after_source_identity = crate::platform::path_identity(&canonical_source, false)
+        .map_err(|_| EnvironmentError::InvalidSource)?;
+    if is_link_metadata(&after_source_metadata) || source_identity != after_source_identity {
         return Err(EnvironmentError::InvalidSource);
     }
     Ok(parsed)
@@ -499,59 +509,6 @@ fn environment_operation_error(error: OperationError) -> EnvironmentError {
         OperationError::Cancelled => EnvironmentError::Cancelled,
         OperationError::TimedOut => EnvironmentError::TimedOut,
     }
-}
-
-fn same_file_identity(left: &Metadata, right: &Metadata) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        left.dev() == right.dev() && left.ino() == right.ino()
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        left.volume_serial_number() == right.volume_serial_number()
-            && left.file_index() == right.file_index()
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        left.len() == right.len()
-            && left.modified().ok() == right.modified().ok()
-            && left.file_type() == right.file_type()
-    }
-}
-
-fn open_source_file(path: &Path) -> std::io::Result<std::fs::File> {
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        // O_NOFOLLOW makes the final component a handle-level check in
-        // addition to the symlink_metadata/canonical path checks above. The
-        // parent components are still rechecked before and after the read.
-        std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(0x20000) // O_NOFOLLOW
-            .open(path)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        return std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(0x100) // O_NOFOLLOW
-            .open(path);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-        return std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-            .open(path);
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-    std::fs::File::open(path)
 }
 
 fn reject_links_in_existing_path(path: &Path) -> Result<(), EnvironmentError> {

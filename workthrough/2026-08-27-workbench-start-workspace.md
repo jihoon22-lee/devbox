@@ -225,6 +225,19 @@ closed five gaps before PR preparation:
   installed app with the wrong handoff capability fails closed instead of
   passing through an app-ID-only union.
 
+The first remote Windows check then exposed stable-Rust rejection of
+`std::os::windows::fs::MetadataExt::{volume_serial_number,file_index}`. The
+follow-up replaces those unstable accessors with the repository's established
+Win32 handle pattern: `CreateFileW` opens the exact final component with
+`FILE_FLAG_OPEN_REPARSE_POINT`, `GetFileInformationByHandle` supplies
+volume/file-index identity, and `File` owns the handle through every read and
+error path. Root/source/profile-store swaps are compared by handle identity on
+both sides of the read instead of weakening the Windows TOCTOU boundary to
+timestamps. The exact `platform.rs` Windows configuration also passed an
+isolated `x86_64-pc-windows-msvc` cargo check; the full app cross-check reached
+Tauri's host-side `llvm-rc` requirement before compiling the crate, so the
+remote Windows job remains the authoritative complete gate.
+
 ```text
 cargo test -j2 -p devbox-launch                           23 passed; 0 failed
 cargo test -j2 -p devbox-secrets                           5 passed; 0 failed
