@@ -327,8 +327,10 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 1. 신규 **Devbox Launcher 0.1.0** — devbox 앱·profile·repo·job·saved query 전용 launcher와
    current clipboard 일회성 routing.
 2. 신규 **Log Lens 0.1.0** — local/Run/WSL/container log tail·merge·filter·export.
-3. 전 앱 monitor/DPI-safe window state. #323–#336은 공용 crate와 같은 restore/clamp 회귀 행렬을
-   공유하므로 하나의 cross-app PR로 적용한다.
+3. 전 앱 monitor/DPI-safe window state. 공용 계약·순수 계산 기반인 #322는 선행 독립 PR로
+   확정하고, #323–#336은 그 crate를 소비하면서 같은 restore/clamp 회귀 행렬을 공유하므로
+   앱 경계와 무관하게 하나의 cross-app 적용 PR로 묶는다. 신규 Log Lens의 #336은 #321과
+   #322가 병합된 뒤 같은 적용 PR에 포함한다.
 4. Port auto-refresh/diff/favorite/source provenance, Toolbox detection/pipeline/recent/favorite,
    WSL resource/broadcast 안전, API collection import/export/history/binary, Everything filter/saved
    query, Knowledge template, Life Log source explanation/Knowledge draft 상태.
