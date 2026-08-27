@@ -214,6 +214,10 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 8. Code Pad LSP cache/local archive, Run Manager log search, Workbench project environment,
    Webhook API handoff (#315; captured fixture storage #314 완료), Repo Manager history/diff/stage/commit/fetch/FF-only pull/push.
 
+   - Code Pad LSP offline path draft (#310): reviewed catalog의 exact archive를 app-owned
+     SHA-256 cache에서 재사용하고, native archive 또는 Node reviewed dependency closure `.tgz`
+     archive set의 명시적 local import와 source/last-verification 상태를 제공한다. 선택 set은
+     검증된 cache와 결합할 수 있으며, 실패 시 editor·save·preview·Quick Open은 계속 사용할 수 있다.
    - Run Manager log search draft (#311): 기존 retained stdout/stderr만 대상으로 literal
      우선·명시적 regex·level/source/time filter, bounded non-blocking scan, line/stream
      navigation과 `log-source/v1` opaque source validation을 구현 중이다. Log Lens 연결,

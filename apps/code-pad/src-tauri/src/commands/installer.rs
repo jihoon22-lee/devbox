@@ -9,6 +9,7 @@ use crate::lsp::{
     initial_catalog, InstallError, LspManager, ManagedInstallStatus, ManagedInstaller,
     ServerManifest,
 };
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 
@@ -46,6 +47,29 @@ pub async fn lsp_install(
         .await
         .map(|_| ())
         .map_err(public_install_error)
+}
+
+/// Import user-selected archives only after the native picker has returned
+/// paths. The installer resolves the exact catalog manifest and reviewed Node
+/// lock, performs all digest/archive checks, and never reflects a selected
+/// path or parser detail across IPC.
+#[tauri::command]
+pub async fn lsp_import_archive(
+    installer: State<'_, Arc<ManagedInstaller>>,
+    manifest_id: String,
+    version: String,
+    platform: String,
+    archive_paths: Vec<String>,
+) -> Result<(), String> {
+    let installer = Arc::clone(installer.inner());
+    let archive_paths: Vec<PathBuf> = archive_paths.into_iter().map(PathBuf::from).collect();
+    tauri::async_runtime::spawn_blocking(move || {
+        installer.import_catalog_archives(&manifest_id, &version, &platform, &archive_paths)
+    })
+    .await
+    .map_err(|_| "관리형 서버 작업을 완료하지 못했습니다".to_owned())?
+    .map(|_| ())
+    .map_err(public_install_error)
 }
 
 #[tauri::command]
@@ -97,6 +121,16 @@ mod tests {
     }
 
     #[test]
+    fn selected_archive_path_is_never_reflected_before_ipc() {
+        let public = public_install_error(InstallError::InvalidArchive(
+            r#"C:\Users\alice\private\server.tgz"#.into(),
+        ));
+        assert_eq!(public, "관리형 서버 작업을 완료하지 못했습니다");
+        assert!(!public.contains("server.tgz"));
+        assert!(!public.contains("alice"));
+    }
+
+    #[test]
     fn corrupt_index_keeps_only_a_safe_recovery_signal() {
         assert_eq!(
             public_install_error(InstallError::IndexCorrupt),
@@ -113,6 +147,7 @@ mod tests {
             state: ManagedInstallState::NeedsReinstall,
             reason: Some(r#"metadata at C:\private token=secret"#.into()),
             installed: None,
+            archive_cached: false,
         });
         assert_eq!(
             status.reason.as_deref(),

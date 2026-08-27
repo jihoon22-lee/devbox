@@ -39,6 +39,19 @@ pub enum RuntimeKind {
     Node,
 }
 
+/// How a managed runtime entered the app-owned install tree.  `Unknown` is
+/// retained only for schema-v1 entries written before offline archive import
+/// was available; new installs always record one of the concrete sources.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InstallSource {
+    #[default]
+    Unknown,
+    Network,
+    ArchiveCache,
+    LocalArchive,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LanguageSupport {
     pub language_id: String,
@@ -513,6 +526,13 @@ pub struct InstalledServer {
     pub installed_at: String,
     #[serde(default)]
     pub package_lock_sha256: Option<String>,
+    #[serde(default)]
+    pub install_source: InstallSource,
+    /// The last successful verification performed before this entry became
+    /// active.  It is optional for schema-v1 installations imported before
+    /// this field existed.
+    #[serde(default)]
+    pub last_verified_at: Option<String>,
 }
 
 impl InstalledServer {
@@ -528,6 +548,9 @@ impl InstalledServer {
         validate_relative_path("entrypoint", &self.entrypoint, false)?;
         self.runtime.validate_at("runtime")?;
         validate_rfc3339("installed_at", &self.installed_at)?;
+        if let Some(last_verified_at) = &self.last_verified_at {
+            validate_rfc3339("last_verified_at", last_verified_at)?;
+        }
         if let Some(digest) = &self.package_lock_sha256 {
             validate_sha256("package_lock_sha256", digest)?;
         } else if self.runtime.kind == RuntimeKind::Node {
@@ -1637,6 +1660,8 @@ mod tests {
             runtime: manifest.runtime,
             installed_at: "2026-08-12T00:00:00Z".into(),
             package_lock_sha256: None,
+            install_source: InstallSource::Network,
+            last_verified_at: Some("2026-08-12T00:00:00Z".into()),
         };
         let index = InstalledServerIndex {
             version: LSP_INSTALLED_SCHEMA_VERSION,

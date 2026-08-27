@@ -1,7 +1,7 @@
 use code_pad_lib::lsp::{
-    initial_catalog, save_to_app_local_data_dir, InstalledServer, InstalledServerIndex, LspConfig,
-    LspEvent, LspManager, LspManagerError, LspPosition, ServerRef, LSP_CONFIG_SCHEMA_VERSION,
-    LSP_INSTALLED_SCHEMA_VERSION,
+    initial_catalog, save_to_app_local_data_dir, InstallSource, InstalledServer,
+    InstalledServerIndex, LspConfig, LspEvent, LspManager, LspManagerError, LspPosition, ServerRef,
+    LSP_CONFIG_SCHEMA_VERSION, LSP_INSTALLED_SCHEMA_VERSION,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -822,6 +822,8 @@ async fn managed_start_revalidates_index_and_starts_only_the_reviewed_native_com
         runtime: manifest.runtime.clone(),
         installed_at: "2026-08-13T00:00:00Z".into(),
         package_lock_sha256: manifest.files.package_lock_sha256.clone(),
+        install_source: InstallSource::Network,
+        last_verified_at: Some("2026-08-13T00:00:00Z".into()),
     };
     let index_path = app_data.path().join("lsp/installed.json");
     let write_index = |server: InstalledServer| {

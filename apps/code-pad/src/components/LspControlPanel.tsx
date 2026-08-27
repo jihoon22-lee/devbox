@@ -110,6 +110,7 @@ function managedCacheLabel(
     const minimum = manifest.runtime.min_version ? ` ${manifest.runtime.min_version}` : "";
     return `검증된 캐시 사용 가능 · ${manifest.runtime.kind} · ${manifest.runtime.executable}${minimum}`;
   }
+  if (status.archive_cached) return "검증된 archive cache 사용 가능 · 설치 필요";
   if (status.state === "needs_reinstall") return "캐시 검증 실패 · 재설치 필요";
   return "캐시 없음 · 설치 필요";
 }

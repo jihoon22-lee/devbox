@@ -6,8 +6,8 @@
 
 use crate::commands::session::atomic_write;
 use crate::lsp::catalog::{
-    initial_catalog, ArtifactKind, InstalledServer, InstalledServerIndex, RuntimeSpec,
-    ServerManifest, WINDOWS_X86_64_PLATFORM,
+    initial_catalog, ArtifactKind, InstallSource, InstalledServer, InstalledServerIndex,
+    RuntimeSpec, ServerManifest, WINDOWS_X86_64_PLATFORM,
 };
 use crate::lsp::node_lock::{
     reviewed_node_lock, NodeDependencyLock, NodeLockError, NodePackageLock,
@@ -34,8 +34,10 @@ use tokio::io::AsyncWriteExt;
 
 pub const DEFAULT_MAX_INSTALL_BYTES: u64 = 512 * 1024 * 1024;
 pub const DEFAULT_MAX_ARCHIVE_ENTRIES: usize = 100_000;
+pub const DEFAULT_MAX_ARCHIVE_DEPTH: usize = 32;
 const MAX_REDIRECTS: usize = 5;
 const INDEX_FILE: &str = "installed.json";
+const ARCHIVE_CACHE_DIRECTORY: &str = "cache";
 
 static NONCE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -44,6 +46,7 @@ pub struct InstallLimits {
     pub max_download_bytes: u64,
     pub max_extracted_bytes: u64,
     pub max_archive_entries: usize,
+    pub max_archive_depth: usize,
 }
 
 impl Default for InstallLimits {
@@ -52,6 +55,7 @@ impl Default for InstallLimits {
             max_download_bytes: DEFAULT_MAX_INSTALL_BYTES,
             max_extracted_bytes: DEFAULT_MAX_INSTALL_BYTES,
             max_archive_entries: DEFAULT_MAX_ARCHIVE_ENTRIES,
+            max_archive_depth: DEFAULT_MAX_ARCHIVE_DEPTH,
         }
     }
 }
@@ -61,6 +65,7 @@ impl InstallLimits {
         if self.max_download_bytes == 0
             || self.max_extracted_bytes == 0
             || self.max_archive_entries == 0
+            || self.max_archive_depth == 0
         {
             return Err(InstallError::InvalidLimits);
         }
@@ -101,6 +106,10 @@ pub struct ManagedInstallStatus {
     pub reason: Option<String>,
     #[serde(default)]
     pub installed: Option<InstalledServerMetadata>,
+    /// True only when the exact catalog artifact is present in the
+    /// app-owned cache and passes both size and SHA-256 verification.
+    #[serde(default)]
+    pub archive_cached: bool,
 }
 
 /// Safe status metadata exposed to the UI. The process keeps the canonical
@@ -120,6 +129,10 @@ pub struct InstalledServerMetadata {
     pub installed_at: String,
     #[serde(default)]
     pub package_lock_sha256: Option<String>,
+    #[serde(default)]
+    pub install_source: InstallSource,
+    #[serde(default)]
+    pub last_verified_at: Option<String>,
 }
 
 impl From<&InstalledServer> for InstalledServerMetadata {
@@ -136,6 +149,8 @@ impl From<&InstalledServer> for InstalledServerMetadata {
             runtime: server.runtime.clone(),
             installed_at: server.installed_at.clone(),
             package_lock_sha256: server.package_lock_sha256.clone(),
+            install_source: server.install_source,
+            last_verified_at: server.last_verified_at.clone(),
         }
     }
 }
@@ -169,6 +184,7 @@ pub enum InstallError {
     InvalidArchive(String),
     UnsafeArchivePath,
     UnsupportedArchiveEntry,
+    ArchiveDepthExceeded,
     EntrypointMissing,
     InstallConflict,
     InstallBusy,
@@ -237,6 +253,9 @@ impl fmt::Display for InstallError {
             Self::UnsupportedArchiveEntry => {
                 formatter.write_str("artifact contains a link or special entry")
             }
+            Self::ArchiveDepthExceeded => {
+                formatter.write_str("artifact path depth exceeds the installer limit")
+            }
             Self::EntrypointMissing => formatter.write_str("artifact entrypoint is missing"),
             Self::InstallConflict => {
                 formatter.write_str("immutable install destination already exists")
@@ -288,6 +307,8 @@ impl ManagedInstaller {
         reject_symlink_tree(&lsp_root)?;
         fs::create_dir_all(lsp_root.join("downloads"))
             .map_err(|error| InstallError::io("creating downloads directory", error))?;
+        fs::create_dir_all(lsp_root.join("downloads").join(ARCHIVE_CACHE_DIRECTORY))
+            .map_err(|error| InstallError::io("creating archive cache directory", error))?;
         fs::create_dir_all(lsp_root.join("staging"))
             .map_err(|error| InstallError::io("creating staging directory", error))?;
         fs::create_dir_all(lsp_root.join("servers"))
@@ -412,6 +433,7 @@ impl ManagedInstaller {
                     state: ManagedInstallState::NotInstalled,
                     reason: None,
                     installed: None,
+                    archive_cached: self.cached_archive_is_verified(manifest)?,
                 },
                 Some(server) => match self.validate_installed_entry(manifest, server) {
                     Ok(()) => ManagedInstallStatus {
@@ -421,6 +443,7 @@ impl ManagedInstaller {
                         state: ManagedInstallState::Installed,
                         reason: None,
                         installed: Some(InstalledServerMetadata::from(server)),
+                        archive_cached: self.cached_archive_is_verified(manifest)?,
                     },
                     Err(error) => ManagedInstallStatus {
                         manifest_id: manifest.id.clone(),
@@ -429,6 +452,7 @@ impl ManagedInstaller {
                         state: ManagedInstallState::NeedsReinstall,
                         reason: Some(error.to_string()),
                         installed: Some(InstalledServerMetadata::from(server)),
+                        archive_cached: self.cached_archive_is_verified(manifest)?,
                     },
                 },
             };
@@ -445,6 +469,7 @@ impl ManagedInstaller {
                     state: ManagedInstallState::NeedsReinstall,
                     reason: Some("installed entry is not present in the reviewed catalog".into()),
                     installed: Some(InstalledServerMetadata::from(server)),
+                    archive_cached: false,
                 });
             }
         }
@@ -558,8 +583,8 @@ impl ManagedInstaller {
             .join(format!("{nonce}.part"));
         let staging = self.lsp_root.join("staging").join(&nonce);
         let result = async {
-            self.download(manifest, &partial).await?;
-            self.install_verified_archive(manifest, installed_at, &partial, &staging)
+            let (archive, source) = self.prepare_archive(manifest, &partial).await?;
+            self.install_verified_archive(manifest, installed_at, &archive, &staging, source)
         }
         .await;
         let _ = fs::remove_file(&partial);
@@ -569,8 +594,10 @@ impl ManagedInstaller {
         result
     }
 
-    /// Local fixture boundary. The archive still passes all size, digest,
-    /// extraction, entrypoint, promotion, and index checks.
+    /// Local archive boundary. The selected file is verified against the
+    /// supplied manifest, copied into the app-owned cache, and then follows
+    /// the same extraction, entrypoint, promotion, and index checks as a
+    /// network artifact. The selected path is never persisted or returned.
     pub fn install_archive(
         &self,
         manifest: &ServerManifest,
@@ -589,14 +616,112 @@ impl ManagedInstaller {
                 "Node installs require the complete reviewed package archive set".into(),
             ));
         }
-        verify_archive_file(manifest, archive.as_ref(), self.limits.max_download_bytes)?;
+        let cached = self.cache_archive(manifest, archive.as_ref())?;
         let staging = self.lsp_root.join("staging").join(unique_nonce());
-        let result =
-            self.install_verified_archive(manifest, installed_at, archive.as_ref(), &staging);
+        let result = self.install_verified_archive(
+            manifest,
+            installed_at,
+            &cached,
+            &staging,
+            InstallSource::LocalArchive,
+        );
         if staging.exists() {
             let _ = fs::remove_dir_all(&staging);
         }
         result
+    }
+
+    /// Import exact reviewed catalog artifacts selected by the user. The
+    /// catalog and, for Node servers, the dependency lock are process-owned;
+    /// the UI can provide only exact lookup keys and native picker paths.
+    /// Native archives use the single-file boundary above, while Node imports
+    /// match a multi-file `.tgz` set against the complete reviewed closure.
+    pub fn import_catalog_archives(
+        &self,
+        manifest_id: &str,
+        version: &str,
+        platform: &str,
+        archive_paths: &[PathBuf],
+    ) -> Result<InstallResult, InstallError> {
+        let _operation = self
+            .operation_lock
+            .try_lock()
+            .map_err(|_| InstallError::InstallBusy)?;
+        let manifest = Self::catalog_manifest(manifest_id, version, platform)?;
+        self.validate_request(&manifest, &manifest.version)?;
+        self.read_index()?;
+        // The catalog version identifies the artifact; it is not a valid
+        // installation timestamp. Capture one trusted wall-clock value for
+        // either import path so persisted schema validation cannot fail after
+        // an otherwise successful promotion.
+        let installed_at = current_rfc3339();
+        if manifest.runtime.kind != crate::lsp::catalog::RuntimeKind::Node {
+            if archive_paths.len() != 1 {
+                return Err(InstallError::DependencyLock(
+                    "native imports require exactly one archive".into(),
+                ));
+            }
+            let cached = self.cache_archive(&manifest, &archive_paths[0])?;
+            let staging = self.lsp_root.join("staging").join(unique_nonce());
+            let result = self.install_verified_archive(
+                &manifest,
+                &installed_at,
+                &cached,
+                &staging,
+                InstallSource::LocalArchive,
+            );
+            if staging.exists() {
+                let _ = fs::remove_dir_all(&staging);
+            }
+            return result;
+        }
+
+        let lock = reviewed_node_lock().map_err(node_lock_error)?;
+        let packages = lock
+            .packages_for_server(&manifest.id)
+            .map_err(node_lock_error)?;
+        let (archives, source) =
+            self.resolve_node_archive_set(&manifest.platform, &packages, archive_paths)?;
+        let staging = self.lsp_root.join("staging").join(unique_nonce());
+        let result = self.install_node_archives_with_lock(
+            &manifest,
+            &installed_at,
+            &lock,
+            &archives,
+            &staging,
+            source,
+        );
+        if staging.exists() {
+            let _ = fs::remove_dir_all(&staging);
+        }
+        result
+    }
+
+    /// Backward-compatible single-file native import helper. Node callers
+    /// must use `import_catalog_archives` so a primary tarball cannot bypass
+    /// the reviewed dependency-closure check.
+    pub fn import_catalog_archive(
+        &self,
+        manifest_id: &str,
+        version: &str,
+        platform: &str,
+        archive: impl AsRef<Path>,
+    ) -> Result<InstallResult, InstallError> {
+        let archive_paths = vec![archive.as_ref().to_path_buf()];
+        self.import_catalog_archives(manifest_id, version, platform, &archive_paths)
+    }
+
+    async fn prepare_archive(
+        &self,
+        manifest: &ServerManifest,
+        partial: &Path,
+    ) -> Result<(PathBuf, InstallSource), InstallError> {
+        if let Some(cached) = self.cached_archive(manifest)? {
+            return Ok((cached, InstallSource::ArchiveCache));
+        }
+        self.download(manifest, partial).await?;
+        let cached = self.cache_archive(manifest, partial)?;
+        Ok((cached, InstallSource::Network))
     }
 
     /// Install a reviewed Node package closure from local fixture archives.
@@ -622,8 +747,14 @@ impl ManagedInstaller {
         }
         let lock = reviewed_node_lock().map_err(node_lock_error)?;
         let staging = self.lsp_root.join("staging").join(unique_nonce());
-        let result =
-            self.install_node_archives_with_lock(manifest, installed_at, &lock, archives, &staging);
+        let result = self.install_node_archives_with_lock(
+            manifest,
+            installed_at,
+            &lock,
+            archives,
+            &staging,
+            InstallSource::LocalArchive,
+        );
         if staging.exists() {
             let _ = fs::remove_dir_all(&staging);
         }
@@ -642,6 +773,7 @@ impl ManagedInstaller {
             .map_err(|error| InstallError::io("creating Node download directory", error))?;
         reject_symlink_tree(download_dir)?;
         let mut archives = Vec::new();
+        let mut source = InstallSource::ArchiveCache;
         for (index, package) in lock
             .packages_for_server(&manifest.id)
             .map_err(node_lock_error)?
@@ -657,15 +789,28 @@ impl ManagedInstaller {
                     package.name, package.version
                 )));
             }
-            let archive = download_dir.join(format!("{index}.tgz"));
-            self.download_package(package, &archive).await?;
+            let archive = if let Some(cached) = self.cached_node_archive(package)? {
+                cached
+            } else {
+                source = InstallSource::Network;
+                let partial = download_dir.join(format!("{index}.part"));
+                self.download_package(package, &partial).await?;
+                self.cache_node_package(package, &partial)?
+            };
             archives.push(NodePackageArchive {
                 name: package.name.clone(),
                 version: package.version.clone(),
                 archive,
             });
         }
-        self.install_node_archives_with_lock(manifest, installed_at, lock, &archives, staging)
+        self.install_node_archives_with_lock(
+            manifest,
+            installed_at,
+            lock,
+            &archives,
+            staging,
+            source,
+        )
     }
 
     fn install_node_archives_with_lock(
@@ -675,6 +820,7 @@ impl ManagedInstaller {
         lock: &NodeDependencyLock,
         archives: &[NodePackageArchive],
         staging: &Path,
+        install_source: InstallSource,
     ) -> Result<InstallResult, InstallError> {
         lock.validate().map_err(node_lock_error)?;
         let packages = lock
@@ -708,12 +854,12 @@ impl ManagedInstaller {
             let archive = archive_by_package.get(&key).ok_or_else(|| {
                 InstallError::DependencyLock(format!("missing archive for {key}"))
             })?;
-            verify_node_package_archive(package, &archive.archive, self.limits)?;
+            let archive_path = self.cache_node_package(package, &archive.archive)?;
             let relative = lock
                 .install_path(&manifest.id, package)
                 .map_err(node_lock_error)?;
             let (entries, bytes) =
-                extract_node_package(package, &archive.archive, staging, &relative, self.limits)?;
+                extract_node_package(package, &archive_path, staging, &relative, self.limits)?;
             extracted_entries = extracted_entries
                 .checked_add(entries)
                 .ok_or(InstallError::SizeLimitExceeded)?;
@@ -735,7 +881,350 @@ impl ManagedInstaller {
                 "archive set contains a package outside the reviewed closure".into(),
             ));
         }
-        self.promote_staging(manifest, installed_at, staging)
+        self.promote_staging(manifest, installed_at, staging, install_source)
+    }
+
+    fn resolve_node_archive_set(
+        &self,
+        platform: &str,
+        packages: &[&NodePackageLock],
+        archive_paths: &[PathBuf],
+    ) -> Result<(Vec<NodePackageArchive>, InstallSource), InstallError> {
+        if archive_paths.is_empty() {
+            return Err(InstallError::DependencyLock(
+                "at least one local Node archive is required".into(),
+            ));
+        }
+
+        let mut supported = Vec::new();
+        let mut expected_by_sha256: BTreeMap<&str, Vec<&NodePackageLock>> = BTreeMap::new();
+        for package in packages {
+            if !node_package_supported(package, platform) {
+                if package.optional {
+                    continue;
+                }
+                return Err(InstallError::UnsupportedNodePackage(format!(
+                    "{}@{}",
+                    package.name, package.version
+                )));
+            }
+            supported.push(*package);
+            expected_by_sha256
+                .entry(package.sha256.as_str())
+                .or_default()
+                .push(*package);
+        }
+        if expected_by_sha256
+            .values()
+            .any(|matches| matches.len() != 1)
+        {
+            return Err(InstallError::DependencyLock(
+                "reviewed Node archive digest is ambiguous".into(),
+            ));
+        }
+        if archive_paths.len() > supported.len() {
+            return Err(InstallError::DependencyLock(
+                "local Node archive set contains extra archives".into(),
+            ));
+        }
+
+        let mut seen_paths: Vec<PathBuf> = Vec::with_capacity(archive_paths.len());
+        let mut selected = BTreeMap::new();
+        for archive in archive_paths {
+            validate_node_archive_selection_path(archive)?;
+            let canonical = fs::canonicalize(archive).map_err(|_| {
+                InstallError::DependencyLock("selected Node archive is unavailable".into())
+            })?;
+            validate_node_archive_selection_path(&canonical)?;
+            if seen_paths.iter().any(|seen| is_same_path(seen, &canonical)) {
+                return Err(InstallError::DependencyLock(
+                    "local Node archive set contains duplicate archives".into(),
+                ));
+            }
+            seen_paths.push(canonical.clone());
+
+            let digest = hash_archive(&canonical, self.limits.max_download_bytes)?;
+            let digest_hex = hex_digest(&digest.sha256);
+            let package = match expected_by_sha256.get(digest_hex.as_str()) {
+                None => {
+                    return Err(InstallError::DependencyLock(
+                        "local Node archive set contains an extra archive".into(),
+                    ))
+                }
+                Some(matches) => matches[0],
+            };
+            if digest.size != package.size_bytes {
+                return Err(InstallError::SizeMismatch {
+                    expected: package.size_bytes,
+                    actual: digest.size,
+                });
+            }
+            verify_digest(&digest.sha256, &package.sha256)?;
+            verify_integrity(&digest.sha512, &package.integrity)?;
+            let key = package_key(&package.name, &package.version);
+            if selected
+                .insert(
+                    key,
+                    NodePackageArchive {
+                        name: package.name.clone(),
+                        version: package.version.clone(),
+                        archive: canonical,
+                    },
+                )
+                .is_some()
+            {
+                return Err(InstallError::DependencyLock(
+                    "local Node archive set contains duplicate packages".into(),
+                ));
+            }
+        }
+
+        let mut source = InstallSource::ArchiveCache;
+        let mut archives = Vec::with_capacity(supported.len());
+        for package in supported {
+            let key = package_key(&package.name, &package.version);
+            if let Some(archive) = selected.remove(&key) {
+                source = InstallSource::LocalArchive;
+                archives.push(archive);
+                continue;
+            }
+            if let Some(archive) = self.cached_node_archive(package)? {
+                archives.push(NodePackageArchive {
+                    name: package.name.clone(),
+                    version: package.version.clone(),
+                    archive,
+                });
+                continue;
+            }
+            return Err(InstallError::DependencyLock(
+                "local Node archive set is missing a reviewed package".into(),
+            ));
+        }
+        if !selected.is_empty() {
+            return Err(InstallError::DependencyLock(
+                "local Node archive set contains an extra archive".into(),
+            ));
+        }
+        Ok((archives, source))
+    }
+
+    /// Return a verified cached copy of the exact catalog artifact, if one is
+    /// available. A malformed regular cache file is treated as unavailable so
+    /// an explicit install can replace it with a newly verified artifact; a
+    /// symlink/reparse target is a hard failure and is never followed.
+    fn cached_archive(&self, manifest: &ServerManifest) -> Result<Option<PathBuf>, InstallError> {
+        let path = self.archive_cache_path(&manifest.artifact.sha256, manifest.artifact.kind)?;
+        if manifest.runtime.kind == crate::lsp::catalog::RuntimeKind::Node {
+            let lock = reviewed_node_lock().map_err(node_lock_error)?;
+            for package in lock
+                .packages_for_server(&manifest.id)
+                .map_err(node_lock_error)?
+            {
+                if !node_package_supported(package, &manifest.platform) {
+                    if package.optional {
+                        continue;
+                    }
+                    return Ok(None);
+                }
+                if self.cached_node_archive(package)?.is_none() {
+                    return Ok(None);
+                }
+            }
+            return Ok(Some(path));
+        }
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata_has_reparse_point(&metadata) => {
+                Err(InstallError::UnsafeArchivePath)
+            }
+            Ok(metadata) if !metadata.file_type().is_file() => Err(InstallError::UnsafeArchivePath),
+            Ok(_) => match self.verify_cached_archive(manifest, &path) {
+                Ok(()) => Ok(Some(path)),
+                Err(InstallError::DigestMismatch)
+                | Err(InstallError::SizeMismatch { .. })
+                | Err(InstallError::SizeLimitExceeded) => Ok(None),
+                Err(error) => Err(error),
+            },
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(InstallError::io("checking archive cache", error)),
+        }
+    }
+
+    fn verify_cached_archive(
+        &self,
+        manifest: &ServerManifest,
+        archive: &Path,
+    ) -> Result<(), InstallError> {
+        verify_archive_file(manifest, archive, self.limits.max_download_bytes)
+    }
+
+    fn cached_node_archive(
+        &self,
+        package: &NodePackageLock,
+    ) -> Result<Option<PathBuf>, InstallError> {
+        let path = self.archive_cache_path(&package.sha256, ArtifactKind::NpmTarball)?;
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata_has_reparse_point(&metadata) => {
+                Err(InstallError::UnsafeArchivePath)
+            }
+            Ok(metadata) if !metadata.file_type().is_file() => Err(InstallError::UnsafeArchivePath),
+            Ok(_) => match verify_node_package_archive(package, &path, self.limits) {
+                Ok(()) => Ok(Some(path)),
+                Err(InstallError::DigestMismatch)
+                | Err(InstallError::SizeMismatch { .. })
+                | Err(InstallError::SizeLimitExceeded)
+                | Err(InstallError::InvalidArchive(_)) => Ok(None),
+                Err(error) => Err(error),
+            },
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(InstallError::io("checking Node archive cache", error)),
+        }
+    }
+
+    fn cached_archive_is_verified(&self, manifest: &ServerManifest) -> Result<bool, InstallError> {
+        Ok(self.cached_archive(manifest)?.is_some())
+    }
+
+    fn archive_cache_path(
+        &self,
+        sha256: &str,
+        kind: ArtifactKind,
+    ) -> Result<PathBuf, InstallError> {
+        if decode_sha256(sha256).is_none() {
+            return Err(InstallError::InvalidManifest(
+                "artifact SHA-256 is invalid".into(),
+            ));
+        }
+        let extension = match kind {
+            ArtifactKind::Zip => "zip",
+            ArtifactKind::NpmTarball => "tgz",
+        };
+        let cache_dir = self
+            .lsp_root
+            .join("downloads")
+            .join(ARCHIVE_CACHE_DIRECTORY);
+        reject_symlink_tree(&cache_dir)?;
+        Ok(cache_dir.join(format!("{sha256}.{extension}")))
+    }
+
+    fn cache_archive(
+        &self,
+        manifest: &ServerManifest,
+        archive: &Path,
+    ) -> Result<PathBuf, InstallError> {
+        validate_external_archive(archive)?;
+        verify_archive_file(manifest, archive, self.limits.max_download_bytes)?;
+        let destination =
+            self.archive_cache_path(&manifest.artifact.sha256, manifest.artifact.kind)?;
+        self.copy_verified_to_cache(
+            archive,
+            &destination,
+            manifest
+                .artifact
+                .size_bytes
+                .ok_or_else(|| InstallError::InvalidManifest("artifact size is required".into()))?,
+            &manifest.artifact.sha256,
+        )
+    }
+
+    fn cache_node_package(
+        &self,
+        package: &NodePackageLock,
+        archive: &Path,
+    ) -> Result<PathBuf, InstallError> {
+        validate_external_archive(archive)?;
+        verify_node_package_archive(package, archive, self.limits)?;
+        let destination = self.archive_cache_path(&package.sha256, ArtifactKind::NpmTarball)?;
+        self.copy_verified_to_cache(archive, &destination, package.size_bytes, &package.sha256)
+    }
+
+    fn copy_verified_to_cache(
+        &self,
+        source: &Path,
+        destination: &Path,
+        expected_size: u64,
+        expected_sha256: &str,
+    ) -> Result<PathBuf, InstallError> {
+        if source == destination {
+            return Ok(destination.to_path_buf());
+        }
+        let parent = destination
+            .parent()
+            .ok_or(InstallError::UnsafeArchivePath)?;
+        reject_symlink_tree(parent)?;
+        let temporary = parent.join(format!(
+            ".{}.part-{}",
+            destination
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or(InstallError::UnsafeArchivePath)?,
+            unique_nonce()
+        ));
+        let result = (|| {
+            let mut input = File::open(source)
+                .map_err(|error| InstallError::io("opening archive for cache", error))?;
+            let mut output = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)
+                .map_err(|error| InstallError::io("creating archive cache", error))?;
+            let mut hasher = Sha256::new();
+            let mut copied = 0_u64;
+            let mut buffer = [0_u8; 64 * 1024];
+            loop {
+                let read = input
+                    .read(&mut buffer)
+                    .map_err(|error| InstallError::io("reading archive for cache", error))?;
+                if read == 0 {
+                    break;
+                }
+                copied = copied
+                    .checked_add(read as u64)
+                    .ok_or(InstallError::SizeLimitExceeded)?;
+                if copied > expected_size || copied > self.limits.max_download_bytes {
+                    return Err(InstallError::SizeLimitExceeded);
+                }
+                hasher.update(&buffer[..read]);
+                output
+                    .write_all(&buffer[..read])
+                    .map_err(|error| InstallError::io("writing archive cache", error))?;
+            }
+            output
+                .flush()
+                .and_then(|_| output.sync_all())
+                .map_err(|error| InstallError::io("syncing archive cache", error))?;
+            if copied != expected_size {
+                return Err(InstallError::SizeMismatch {
+                    expected: expected_size,
+                    actual: copied,
+                });
+            }
+            verify_digest(&hasher.finalize(), expected_sha256)?;
+
+            reject_symlink_tree(parent)?;
+            match fs::symlink_metadata(destination) {
+                Ok(metadata) if metadata_has_reparse_point(&metadata) => {
+                    return Err(InstallError::UnsafeArchivePath)
+                }
+                Ok(metadata) if !metadata.file_type().is_file() => {
+                    return Err(InstallError::UnsafeArchivePath)
+                }
+                Ok(_) => {
+                    // Cache files are app-owned. Replacing a regular stale
+                    // cache is safe, but never remove a link or directory.
+                    fs::remove_file(destination)
+                        .map_err(|error| InstallError::io("replacing archive cache", error))?;
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(InstallError::io("checking archive cache target", error)),
+            }
+            fs::rename(&temporary, destination)
+                .map_err(|error| InstallError::io("committing archive cache", error))?;
+            Ok(destination.to_path_buf())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        result
     }
 
     fn validate_request(
@@ -832,6 +1321,12 @@ impl ManagedInstaller {
         allowed_redirect_hosts: &[String],
         partial: &Path,
     ) -> Result<(), InstallError> {
+        // The parent is app-owned and was created by the constructor or the
+        // Node download boundary. Recheck it immediately before opening the
+        // nonce file so a replaced downloads/cache component cannot redirect
+        // a download through a symlink or Windows reparse point.
+        reject_symlink_tree(partial.parent().ok_or(InstallError::UnsafeArchivePath)?)?;
+        reject_symlink_tree(partial)?;
         let initial = Url::parse(url)
             .map_err(|_| InstallError::InvalidManifest("artifact URL is invalid".to_string()))?;
         let initial_host = initial
@@ -933,12 +1428,13 @@ impl ManagedInstaller {
         installed_at: &str,
         archive: &Path,
         staging: &Path,
+        install_source: InstallSource,
     ) -> Result<InstallResult, InstallError> {
         fs::create_dir(staging)
             .map_err(|error| InstallError::io("creating staging directory", error))?;
         reject_symlink_tree(staging)?;
         extract_archive(manifest, archive, staging, self.limits)?;
-        self.promote_staging(manifest, installed_at, staging)
+        self.promote_staging(manifest, installed_at, staging, install_source)
     }
 
     fn promote_staging(
@@ -946,6 +1442,7 @@ impl ManagedInstaller {
         manifest: &ServerManifest,
         installed_at: &str,
         staging: &Path,
+        install_source: InstallSource,
     ) -> Result<InstallResult, InstallError> {
         let entrypoint = safe_relative_path(&manifest.files.entrypoint)?;
         let entrypoint_path = staging.join(&entrypoint);
@@ -980,7 +1477,8 @@ impl ManagedInstaller {
         }
         fs::rename(staging, &destination)
             .map_err(|error| InstallError::io("promoting staged installation", error))?;
-        let result = self.persist_installed(manifest, installed_at, &destination, false);
+        let result =
+            self.persist_installed(manifest, installed_at, &destination, install_source, false);
         if result.is_err() {
             // Promotion is not active until the index commit succeeds.
             let _ = fs::remove_dir_all(&destination);
@@ -1188,6 +1686,7 @@ impl ManagedInstaller {
         manifest: &ServerManifest,
         installed_at: &str,
         destination: &Path,
+        install_source: InstallSource,
         already_installed: bool,
     ) -> Result<InstallResult, InstallError> {
         let destination = fs::canonicalize(destination)
@@ -1205,6 +1704,8 @@ impl ManagedInstaller {
             runtime: manifest.runtime.clone(),
             installed_at: installed_at.to_string(),
             package_lock_sha256: manifest.files.package_lock_sha256.clone(),
+            install_source,
+            last_verified_at: Some(current_rfc3339()),
         };
         server
             .validate()
@@ -1306,6 +1807,87 @@ fn civil_date_from_days(days_since_1970: i64) -> (i64, u32, u32) {
     (year, month as u32, day as u32)
 }
 
+fn validate_external_archive(archive: &Path) -> Result<(), InstallError> {
+    validate_absolute_clean_path(archive)?;
+    reject_symlink_tree(archive)?;
+    let metadata = fs::symlink_metadata(archive)
+        .map_err(|error| InstallError::io("reading selected archive", error))?;
+    if metadata_has_reparse_point(&metadata) || !metadata.file_type().is_file() {
+        return Err(InstallError::InvalidArchive(
+            "selected archive is not a regular file".into(),
+        ));
+    }
+    reject_hard_link(archive)?;
+    Ok(())
+}
+
+fn validate_node_archive_selection_path(archive: &Path) -> Result<(), InstallError> {
+    validate_external_archive(archive)?;
+    let is_tgz = archive
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("tgz"));
+    if !is_tgz {
+        return Err(InstallError::DependencyLock(
+            "local Node archives must use the .tgz extension".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_absolute_clean_path(path: &Path) -> Result<(), InstallError> {
+    if !path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, Component::CurDir | Component::ParentDir))
+        || path
+            .as_os_str()
+            .to_string_lossy()
+            .split(['/', '\\'])
+            .any(|component| matches!(component, "." | ".."))
+    {
+        return Err(InstallError::UnsafeArchivePath);
+    }
+    Ok(())
+}
+
+struct ArchiveDigest {
+    size: u64,
+    sha256: [u8; 32],
+    sha512: [u8; 64],
+}
+
+fn hash_archive(archive: &Path, max_bytes: u64) -> Result<ArchiveDigest, InstallError> {
+    validate_external_archive(archive)?;
+    let mut file =
+        File::open(archive).map_err(|error| InstallError::io("opening selected archive", error))?;
+    let mut sha256 = Sha256::new();
+    let mut sha512 = Sha512::new();
+    let mut size = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| InstallError::io("hashing selected archive", error))?;
+        if read == 0 {
+            break;
+        }
+        size = size
+            .checked_add(read as u64)
+            .ok_or(InstallError::SizeLimitExceeded)?;
+        if size > max_bytes {
+            return Err(InstallError::SizeLimitExceeded);
+        }
+        sha256.update(&buffer[..read]);
+        sha512.update(&buffer[..read]);
+    }
+    Ok(ArchiveDigest {
+        size,
+        sha256: sha256.finalize().into(),
+        sha512: sha512.finalize().into(),
+    })
+}
+
 fn verify_archive_file(
     manifest: &ServerManifest,
     archive: &Path,
@@ -1315,6 +1897,7 @@ fn verify_archive_file(
         .artifact
         .size_bytes
         .ok_or_else(|| InstallError::InvalidManifest("artifact size is required".to_string()))?;
+    validate_external_archive(archive)?;
     let metadata = fs::symlink_metadata(archive)
         .map_err(|error| InstallError::io("reading artifact metadata", error))?;
     if !metadata.file_type().is_file() || metadata.len() > max_download_bytes {
@@ -1347,6 +1930,7 @@ fn verify_node_package_archive(
     archive: &Path,
     limits: InstallLimits,
 ) -> Result<(), InstallError> {
+    validate_external_archive(archive)?;
     let metadata = fs::symlink_metadata(archive)
         .map_err(|error| InstallError::io("reading Node package metadata", error))?;
     if !metadata.file_type().is_file() {
@@ -1443,12 +2027,14 @@ fn extract_node_package(
         let raw_path = entry.path().map_err(|_| InstallError::UnsafeArchivePath)?;
         let raw_path = raw_path.to_str().ok_or(InstallError::UnsafeArchivePath)?;
         let archive_path = strict_archive_path(raw_path)?;
+        enforce_archive_depth(&archive_path, limits)?;
         let Some(relative) = strip_archive_root(&archive_path, "package")? else {
             continue;
         };
         if relative.as_os_str().is_empty() {
             continue;
         }
+        enforce_archive_depth(&relative, limits)?;
         if relative
             .components()
             .any(|component| matches!(component, Component::Normal(name) if name == "node_modules"))
@@ -1544,6 +2130,10 @@ fn verify_digest(actual: &[u8], expected_hex: &str) -> Result<(), InstallError> 
     }
 }
 
+fn hex_digest(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 fn verify_integrity(actual: &[u8], expected_integrity: &str) -> Result<(), InstallError> {
     let encoded = expected_integrity.strip_prefix("sha512-").ok_or_else(|| {
         InstallError::DependencyLock("Node package SHA-512 integrity is invalid".into())
@@ -1615,6 +2205,7 @@ fn extract_zip(
             return Err(InstallError::UnsupportedArchiveEntry);
         }
         let archive_path = strict_archive_path(entry.name())?;
+        enforce_archive_depth(&archive_path, limits)?;
         let Some(relative) = strip_archive_root(&archive_path, &manifest.artifact.archive_root)?
         else {
             continue;
@@ -1622,6 +2213,7 @@ fn extract_zip(
         if relative.as_os_str().is_empty() {
             continue;
         }
+        enforce_archive_depth(&relative, limits)?;
         let destination = checked_destination(staging, &relative)?;
         if entry.is_dir() {
             create_checked_dir_all(staging, &destination)?;
@@ -1669,6 +2261,7 @@ fn extract_tar_gz(
         let raw_path = entry.path().map_err(|_| InstallError::UnsafeArchivePath)?;
         let raw_path = raw_path.to_str().ok_or(InstallError::UnsafeArchivePath)?;
         let archive_path = strict_archive_path(raw_path)?;
+        enforce_archive_depth(&archive_path, limits)?;
         let Some(relative) = strip_archive_root(&archive_path, &manifest.artifact.archive_root)?
         else {
             continue;
@@ -1676,6 +2269,7 @@ fn extract_tar_gz(
         if relative.as_os_str().is_empty() {
             continue;
         }
+        enforce_archive_depth(&relative, limits)?;
         let destination = checked_destination(staging, &relative)?;
         if entry_type == EntryType::Directory {
             create_checked_dir_all(staging, &destination)?;
@@ -1694,7 +2288,17 @@ fn extract_tar_gz(
 }
 
 fn strict_archive_path(name: &str) -> Result<PathBuf, InstallError> {
-    let name = name.strip_suffix('/').unwrap_or(name);
+    let name = if name.ends_with('/') {
+        let trimmed = name
+            .strip_suffix('/')
+            .ok_or(InstallError::UnsafeArchivePath)?;
+        if trimmed.ends_with('/') {
+            return Err(InstallError::UnsafeArchivePath);
+        }
+        trimmed
+    } else {
+        name
+    };
     if name.is_empty()
         || name.contains('\0')
         || name.contains('\\')
@@ -1710,6 +2314,17 @@ fn strict_archive_path(name: &str) -> Result<PathBuf, InstallError> {
         return Err(InstallError::UnsafeArchivePath);
     }
     safe_relative_path(name)
+}
+
+fn enforce_archive_depth(path: &Path, limits: InstallLimits) -> Result<(), InstallError> {
+    let depth = path
+        .components()
+        .filter(|component| matches!(component, Component::Normal(_)))
+        .count();
+    if depth > limits.max_archive_depth {
+        return Err(InstallError::ArchiveDepthExceeded);
+    }
+    Ok(())
 }
 
 fn safe_relative_path(path: &str) -> Result<PathBuf, InstallError> {
@@ -2105,10 +2720,17 @@ mod tests {
             .unwrap();
 
         assert!(!result.already_installed);
+        assert_eq!(result.server.install_source, InstallSource::LocalArchive);
+        assert!(result.server.last_verified_at.is_some());
         assert_eq!(
             fs::read(Path::new(&result.server.installed_path).join("server.exe")).unwrap(),
             b"fixture"
         );
+        let cache_path = installer
+            .archive_cache_path(&manifest.artifact.sha256, manifest.artifact.kind)
+            .unwrap();
+        assert_eq!(fs::read(cache_path).unwrap(), archive);
+        assert!(installer.cached_archive(&manifest).unwrap().is_some());
         let index = InstalledServerIndex::from_json(
             &fs::read_to_string(installer.lsp_root().join(INDEX_FILE)).unwrap(),
         )
@@ -2118,6 +2740,60 @@ mod tests {
             .unwrap()
             .next()
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn verified_archive_cache_is_reused_without_network() {
+        let archive = zip(&[("server.exe", b"offline fixture")]);
+        let mut manifest = manifest(&archive, "server.exe");
+        // This URL is intentionally unreachable. A cache miss would try the
+        // network and fail; a verified cache hit must complete offline.
+        manifest.artifact.url = "https://127.0.0.1:9/unreachable.zip".into();
+        let temp = TempDir::new().unwrap();
+        let archive_path = write_fixture(&temp, "selected.zip", &archive);
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+
+        installer
+            .install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path)
+            .unwrap();
+        installer
+            .uninstall_catalog(&manifest.id, &manifest.version, &manifest.platform)
+            .unwrap();
+
+        let partial = installer.lsp_root().join("downloads/offline.part");
+        let (cached, source) = installer
+            .prepare_archive(&manifest, &partial)
+            .await
+            .unwrap();
+        assert_eq!(source, InstallSource::ArchiveCache);
+        assert!(cached.is_file());
+        assert!(!partial.exists());
+
+        let result = installer
+            .install(&manifest, "1.2.3", "2026-08-13T01:02:03Z")
+            .await
+            .unwrap();
+        assert_eq!(result.server.install_source, InstallSource::ArchiveCache);
+        assert_eq!(
+            fs::read(Path::new(&result.server.installed_path).join("server.exe")).unwrap(),
+            b"offline fixture"
+        );
+    }
+
+    #[test]
+    fn local_archive_selection_is_not_persisted_or_reflected() {
+        let archive = zip(&[("server.exe", b"fixture")]);
+        let manifest = manifest(&archive, "server.exe");
+        let temp = TempDir::new().unwrap();
+        let archive_path = write_fixture(&temp, "user-private-selection.zip", &archive);
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+
+        installer
+            .install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path)
+            .unwrap();
+
+        let index = fs::read_to_string(installer.lsp_root().join(INDEX_FILE)).unwrap();
+        assert!(!index.contains("user-private-selection.zip"));
     }
 
     #[test]
@@ -2251,6 +2927,7 @@ mod tests {
                 max_download_bytes: archive.len() as u64,
                 max_extracted_bytes: 4,
                 max_archive_entries: 1,
+                max_archive_depth: DEFAULT_MAX_ARCHIVE_DEPTH,
             },
         )
         .unwrap();
@@ -2268,6 +2945,179 @@ mod tests {
             installer.install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path),
             Err(InstallError::InstallConflict)
         ));
+    }
+
+    #[test]
+    fn archive_depth_bound_fails_before_promotion() {
+        let archive = zip(&[("one/two/three/server.exe", b"fixture")]);
+        let manifest = manifest(&archive, "one/two/three/server.exe");
+        let temp = TempDir::new().unwrap();
+        let archive_path = write_fixture(&temp, "deep.zip", &archive);
+        let installer = ManagedInstaller::with_limits(
+            temp.path().join("data"),
+            InstallLimits {
+                max_download_bytes: archive.len() as u64,
+                max_extracted_bytes: 1024,
+                max_archive_entries: 10,
+                max_archive_depth: 2,
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(
+            installer.install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path),
+            Err(InstallError::ArchiveDepthExceeded)
+        ));
+        assert!(!installer
+            .lsp_root()
+            .join("servers/fixture-server/1.2.3/windows-x86_64")
+            .exists());
+        assert!(!installer.lsp_root().join(INDEX_FILE).exists());
+    }
+
+    #[test]
+    fn failed_new_archive_preserves_previous_active_install_and_index() {
+        let old_archive = zip(&[("server.exe", b"old fixture")]);
+        let new_archive = zip(&[("server.exe", b"new fixture")]);
+        let old_manifest = manifest(&old_archive, "server.exe");
+        let new_manifest = manifest(&new_archive, "server.exe");
+        let temp = TempDir::new().unwrap();
+        let old_path = write_fixture(&temp, "old.zip", &old_archive);
+        let new_path = write_fixture(&temp, "new.zip", &new_archive);
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        let old_result = installer
+            .install_archive(&old_manifest, "1.2.3", "2026-08-13T01:02:03Z", &old_path)
+            .unwrap();
+        let old_index = fs::read_to_string(installer.lsp_root().join(INDEX_FILE)).unwrap();
+
+        assert!(matches!(
+            installer.install_archive(&new_manifest, "1.2.3", "2026-08-13T01:02:03Z", &new_path),
+            Err(InstallError::InstallConflict)
+        ));
+        assert_eq!(
+            fs::read(Path::new(&old_result.server.installed_path).join("server.exe")).unwrap(),
+            b"old fixture"
+        );
+        assert_eq!(
+            fs::read_to_string(installer.lsp_root().join(INDEX_FILE)).unwrap(),
+            old_index
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn selected_archive_symlink_is_rejected_without_cache_or_install() {
+        use std::os::unix::fs::symlink;
+
+        let archive = zip(&[("server.exe", b"fixture")]);
+        let manifest = manifest(&archive, "server.exe");
+        let temp = TempDir::new().unwrap();
+        let outside = write_fixture(&temp, "outside.zip", &archive);
+        let selected = temp.path().join("selected.zip");
+        symlink(&outside, &selected).unwrap();
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+
+        assert!(matches!(
+            installer.install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &selected),
+            Err(InstallError::UnsafeArchivePath)
+        ));
+        assert!(!installer.lsp_root().join(INDEX_FILE).exists());
+        assert!(fs::read_dir(installer.lsp_root().join("downloads/cache"))
+            .unwrap()
+            .next()
+            .is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cache_symlink_is_never_followed_or_replaced() {
+        use std::os::unix::fs::symlink;
+
+        let archive = zip(&[("server.exe", b"fixture")]);
+        let manifest = manifest(&archive, "server.exe");
+        let temp = TempDir::new().unwrap();
+        let archive_path = write_fixture(&temp, "selected.zip", &archive);
+        let outside = write_fixture(&temp, "outside.bin", b"outside");
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        let cache_path = installer
+            .archive_cache_path(&manifest.artifact.sha256, manifest.artifact.kind)
+            .unwrap();
+        symlink(&outside, &cache_path).unwrap();
+
+        assert!(matches!(
+            installer.install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path),
+            Err(InstallError::UnsafeArchivePath)
+        ));
+        assert_eq!(fs::read(&outside).unwrap(), b"outside");
+        assert!(!installer.lsp_root().join(INDEX_FILE).exists());
+        assert!(fs::symlink_metadata(cache_path)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    #[test]
+    fn selected_archive_requires_an_absolute_clean_regular_file() {
+        let archive = zip(&[("server.exe", b"fixture")]);
+        assert!(matches!(
+            validate_external_archive(Path::new("selected.zip")),
+            Err(InstallError::UnsafeArchivePath)
+        ));
+
+        let temp = TempDir::new().unwrap();
+        let archive_path = write_fixture(&temp, "selected.zip", &archive);
+        let cur_dir = temp.path().join(".").join("selected.zip");
+        let parent_dir = temp.path().join("nested").join("..").join("selected.zip");
+        assert!(matches!(
+            validate_external_archive(&cur_dir),
+            Err(InstallError::UnsafeArchivePath)
+        ));
+        assert!(matches!(
+            validate_external_archive(&parent_dir),
+            Err(InstallError::UnsafeArchivePath)
+        ));
+        assert!(validate_external_archive(&archive_path).is_ok());
+
+        let directory = temp.path().join("directory.tgz");
+        fs::create_dir(&directory).unwrap();
+        assert!(matches!(
+            validate_external_archive(&directory),
+            Err(InstallError::InvalidArchive(_))
+        ));
+
+        #[cfg(unix)]
+        {
+            let hard_link = temp.path().join("hard-link.zip");
+            fs::hard_link(&archive_path, &hard_link).unwrap();
+            assert!(matches!(
+                validate_external_archive(&hard_link),
+                Err(InstallError::UnsafeArchivePath)
+            ));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn status_fails_closed_on_a_symlinked_reviewed_cache() {
+        use std::os::unix::fs::symlink;
+
+        let manifest = initial_catalog()
+            .into_iter()
+            .find(|manifest| manifest.id == "rust-analyzer")
+            .unwrap();
+        let temp = TempDir::new().unwrap();
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        let outside = write_fixture(&temp, "outside.bin", b"outside");
+        let cache_path = installer
+            .archive_cache_path(&manifest.artifact.sha256, manifest.artifact.kind)
+            .unwrap();
+        symlink(&outside, &cache_path).unwrap();
+
+        assert!(matches!(
+            installer.installed_status(),
+            Err(InstallError::UnsafeArchivePath)
+        ));
+        assert_eq!(fs::read(outside).unwrap(), b"outside");
     }
 
     #[test]
@@ -2412,6 +3262,7 @@ mod tests {
                     },
                 ],
                 &staging,
+                InstallSource::LocalArchive,
             )
             .unwrap();
         let mut wrong_integrity = lock.packages[0].clone();
@@ -2438,6 +3289,101 @@ mod tests {
         assert!(!root
             .join("node_modules/fixture-dependency/dependency-marker.txt")
             .exists());
+    }
+
+    #[test]
+    fn node_local_archive_set_matches_lock_by_digest_and_rejects_duplicates() {
+        let archive = tar_gz_files(&[
+            (
+                "package/package.json",
+                br#"{"name":"fixture-server","version":"1.2.3"}"#,
+            ),
+            ("package/bin/server.js", b"fixture"),
+        ]);
+        let temp = TempDir::new().unwrap();
+        let archive_path = write_fixture(&temp, "fixture.tgz", &archive);
+        let dependency_archive = tar_gz_files(&[(
+            "package/package.json",
+            br#"{"name":"fixture-dependency","version":"0.1.0"}"#,
+        )]);
+        let dependency_archive_path =
+            write_fixture(&temp, "fixture-dependency.tgz", &dependency_archive);
+        let package = NodePackageLock {
+            name: "fixture-server".into(),
+            version: "1.2.3".into(),
+            path: "node_modules/fixture-server".into(),
+            tarball: "https://registry.npmjs.org/fixture-server/-/fixture-server-1.2.3.tgz".into(),
+            sha256: digest(&archive),
+            size_bytes: archive.len() as u64,
+            integrity: integrity(&archive),
+            dependencies: BTreeMap::new(),
+            optional_dependencies: BTreeMap::new(),
+            optional: false,
+            os: None,
+            cpu: None,
+            has_install_script: false,
+        };
+        let dependency_package = NodePackageLock {
+            name: "fixture-dependency".into(),
+            version: "0.1.0".into(),
+            path: "node_modules/fixture-dependency".into(),
+            tarball: "https://registry.npmjs.org/fixture-dependency/-/fixture-dependency-0.1.0.tgz"
+                .into(),
+            sha256: digest(&dependency_archive),
+            size_bytes: dependency_archive.len() as u64,
+            integrity: integrity(&dependency_archive),
+            dependencies: BTreeMap::new(),
+            optional_dependencies: BTreeMap::new(),
+            optional: false,
+            os: None,
+            cpu: None,
+            has_install_script: false,
+        };
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        installer
+            .cache_node_package(&dependency_package, &dependency_archive_path)
+            .unwrap();
+        let packages = vec![&package, &dependency_package];
+        let (archives, source) = installer
+            .resolve_node_archive_set(
+                WINDOWS_X86_64_PLATFORM,
+                &packages,
+                std::slice::from_ref(&archive_path),
+            )
+            .unwrap();
+        assert_eq!(source, InstallSource::LocalArchive);
+        assert_eq!(archives.len(), 2);
+        assert_eq!(archives[0].name, package.name);
+        assert_eq!(archives[0].version, package.version);
+        // `TempDir` may expose an 8.3 path on Windows while canonicalization
+        // returns the extended, long-name form. Compare against the same
+        // canonical contract returned by `resolve_node_archive_set`.
+        assert_eq!(
+            archives[0].archive,
+            fs::canonicalize(&archive_path).unwrap()
+        );
+        assert_eq!(archives[1].name, dependency_package.name);
+        assert_eq!(archives[1].version, dependency_package.version);
+        assert_eq!(
+            archives[1].archive,
+            installer
+                .archive_cache_path(&dependency_package.sha256, ArtifactKind::NpmTarball,)
+                .unwrap()
+        );
+
+        let duplicate = write_fixture(&temp, "duplicate.tgz", &archive);
+        assert!(matches!(
+            installer.resolve_node_archive_set(
+                WINDOWS_X86_64_PLATFORM,
+                &packages,
+                &[archive_path, duplicate],
+            ),
+            Err(InstallError::DependencyLock(_))
+        ));
+        assert!(matches!(
+            installer.resolve_node_archive_set(WINDOWS_X86_64_PLATFORM, &packages, &[]),
+            Err(InstallError::DependencyLock(_))
+        ));
     }
 
     #[test]

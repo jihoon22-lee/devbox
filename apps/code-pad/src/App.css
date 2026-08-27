@@ -975,6 +975,7 @@ h1 {
 .lsp-installer-actions,
 .lsp-confirmation-actions {
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .lsp-confirmation-backdrop {
