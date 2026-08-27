@@ -96,8 +96,11 @@ pub fn parse_history(input: &str, limit: usize) -> Result<HistoryResult, String>
         return Err(fixed_error());
     }
 
-    let mut entries = Vec::with_capacity(fields.len() / 6);
-    for record in fields.chunks_exact(6) {
+    let (records, remainder) = fields.as_chunks::<6>();
+    debug_assert!(remainder.is_empty());
+
+    let mut entries = Vec::with_capacity(records.len());
+    for record in records {
         entries.push(CommitSummary {
             id: parse_commit_id(record[0])?,
             short_id: short_id(record[0])?,
