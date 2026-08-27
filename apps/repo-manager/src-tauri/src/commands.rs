@@ -2727,7 +2727,9 @@ mod scan_tests {
         )))
         .unwrap();
         assert_eq!(
-            fs::read_to_string(local.join("fixture.txt")).unwrap(),
+            fs::read_to_string(local.join("fixture.txt"))
+                .unwrap()
+                .replace("\r\n", "\n"),
             "base\nremote\n"
         );
 
