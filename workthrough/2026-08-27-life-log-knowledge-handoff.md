@@ -197,6 +197,13 @@ digest reconstruction, duplicate-click single-flight behavior, preview-before-
 save messaging, post-transaction reread failure without stale editor content,
 and modal Escape timing. Windows packaged launch remains W2 evidence.
 
+The first Windows CI compile exposed a target-gated call-site mismatch after
+the digest builder gained a generation cancellation token. The handoff now
+enters the same digest single-flight guard, forwards its generation token, and
+checks cancellation both after aggregation and immediately before publication.
+The remediation passed the focused Life Log check, strict clippy, rustfmt, and
+all 89 Life Log Rust tests before the Windows CI rerun.
+
 ## Next Steps
 
 - Verify Windows W2 cold/hot receiver, packaged launch, expiry/regenerate smoke, and final CI.

@@ -46,10 +46,21 @@ pub async fn send_digest_to_knowledge(
         {
             return Err("Knowledge 앱을 실행할 수 없습니다".into());
         }
-        let response = build_for_state(&state, input).await?;
+        // Reuse the digest command's single-flight/cancellation boundary so
+        // an explicit handoff cannot race a visible digest generation or
+        // publish a result from a cancelled generation.
+        let operation = state.digest_operations.begin()?;
+        let cancellation = operation.cancellation();
+        let response = build_for_state(&state, input, cancellation).await?;
+        if operation.is_cancelled() {
+            return Err("digest_cancelled".into());
+        }
         let payload = handoff::build_knowledge_draft(&response)?;
         let payload = serde_json::to_value(payload)
             .map_err(|_| "Knowledge draft를 준비하지 못했습니다".to_string())?;
+        if operation.is_cancelled() {
+            return Err("digest_cancelled".into());
+        }
         let now_ms = current_epoch_ms()
             .ok_or_else(|| "Knowledge draft를 준비하지 못했습니다".to_string())?;
         let store = devbox_applink::HandoffStore::new(devbox_applink::handoff_root_in(
