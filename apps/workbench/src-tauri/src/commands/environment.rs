@@ -387,7 +387,16 @@ fn project_root(
 fn read_source_file(root: &Path, source: &str) -> Result<ParsedEnvironment, EnvironmentError> {
     let token = OperationToken::new();
     let budget = OperationBudget::from_now(Duration::from_secs(5));
-    read_source_file_with_control(root, source, &token, budget)
+    // Production callers always pass `ProjectRoot::path`, which has already
+    // been canonicalized. Keep the test-only convenience wrapper on the same
+    // contract: Windows canonicalization commonly adds the `\\?\` prefix, so
+    // comparing a canonical source against the raw temp-dir spelling would
+    // otherwise fail the containment check even though both name the same
+    // directory.
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|_| EnvironmentError::InvalidSource)?;
+    read_source_file_with_control(&canonical_root, source, &token, budget)
 }
 
 #[cfg(test)]

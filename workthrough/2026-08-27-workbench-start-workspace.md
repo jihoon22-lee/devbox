@@ -238,6 +238,19 @@ isolated `x86_64-pc-windows-msvc` cargo check; the full app cross-check reached
 Tauri's host-side `llvm-rc` requirement before compiling the crate, so the
 remote Windows job remains the authoritative complete gate.
 
+The next remote Windows strict-Clippy run found that the non-Windows fallback
+sealer was still compiled as unused code on Windows. Both the fallback type
+and its implementation are now guarded by the same non-Windows `cfg`, and the
+exact Windows platform module passes isolated strict Clippy. The subsequent
+Windows workspace tests then exposed a test-contract mismatch rather than a
+production path failure: the test-only `.env` reader passed a raw temporary
+directory, while production always passes `ProjectRoot::path` after
+canonicalization. Windows adds the extended `\\?\` spelling during source
+canonicalization, so the mixed raw/canonical containment comparison rejected
+all otherwise-valid fixture files. The test helper now canonicalizes its root
+before entering the production reader, preserving the same identity/link
+checks and exercising the actual production invariant on every platform.
+
 ```text
 cargo test -j2 -p devbox-launch                           23 passed; 0 failed
 cargo test -j2 -p devbox-secrets                           5 passed; 0 failed
@@ -252,6 +265,7 @@ pnpm build (17 workspace projects)                        passed
 dependency policy/catalog/manifest checks                passed
 cargo fmt --all -- --check                                passed
 git diff --check                                          passed
+cargo test -j2 -p workbench commands::environment::tests   7 passed; 0 failed
 ```
 
 ## Remaining gates and risks
