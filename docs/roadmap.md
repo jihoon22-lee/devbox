@@ -30,7 +30,7 @@
 
 ## Stage 5 — 신규 앱 ✅
 - [x] **webhook-lab** — 로컬 웹훅/콜백 서버 (inbound HTTP). request history, 응답 rule·delay·오류 재현,
-  민감 헤더 masking, LAN 공개 기본 차단 (JSON fixture·API Playground 변환은 설계 문서의 향후 항목)
+  민감 헤더 masking, LAN 공개 기본 차단, bounded masked JSON fixture 저장 (#314; API Playground handoff는 #315)
 - [x] **dev environment doctor** — devbox-manager의 환경 진단 탭 (WSL/git/node/pnpm/rustc/cargo/devbox-data/catalog-ids)
 - [x] **repo-manager** — Git repository 탐색·브랜치/worktree/상태 목록, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기
   (파괴적 기본 동작 없음, remove 전 uncommitted/untracked 검사)
@@ -212,7 +212,7 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
    deterministic rendering을 선행 계약으로 삼는다.
 7. Manager custom install root (#308)·데이터 보존형 안전 제거 (#309).
 8. Code Pad LSP cache/local archive, Run Manager log search, Workbench project environment,
-   Webhook fixture/API handoff, Repo Manager history/diff/stage/commit/fetch/FF-only pull/push.
+   Webhook API handoff (#315; captured fixture storage #314 완료), Repo Manager history/diff/stage/commit/fetch/FF-only pull/push.
 
    - Run Manager log search draft (#311): 기존 retained stdout/stderr만 대상으로 literal
      우선·명시적 regex·level/source/time filter, bounded non-blocking scan, line/stream
@@ -442,6 +442,17 @@ manifest를 먼저 CAS claim하고 실패·부분 제거 시 동일 digest일 �
 user-data 보존을 preview panel에 표시하며 stale preview, pending duplicate action, unmount 뒤
 늦은 응답을 폐기한다. Manager 81개 focused Rust test와 21개 frontend test를 통과시키고,
 Windows junction/ACL/packaged W2 및 전체 workspace gate는 CI/W2에서 확인한다.
+
+**2026-08-27 #314 구현 상태.** Webhook Lab은 opaque history ID로 읽은 masked request만
+앱 전용 `%LOCALAPPDATA%\com.devbox.webhooklab\fixtures.json`에 저장한다. schema v1은 fixture
+200개·파일 8 MiB·bounded method/target/header/body/timestamp를 적용하고, Authorization/Cookie/
+token/secret/password/auth 계열과 known credential marker를 `[REDACTED]`로 치환한다. unsafe
+absolute/path-traversal target은 고정 marker가 되며 frontend가 경로나 raw body를 제공하지 않는다.
+corrupt·oversized·symlink 파일은 자동 복구하지 않고 fixed error로 보존하며, atomic replace와
+raw-byte CAS/process-local lock으로 partial write와 concurrent overwrite를 방지한다. 목록은
+timestamp 내림차순+ID tie-break로 결정적이며 UI는 fixture 저장·삭제·전체 삭제·로컬 response-rule
+초안 action을 하나의 busy guard와 접근 가능한 label로 보호한다. #315 API handoff와 #362 replay/
+sequence는 구현하지 않는다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

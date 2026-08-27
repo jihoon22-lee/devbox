@@ -2,31 +2,42 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
+  clearFixtures,
   clearHistory,
   copyHistoryHeaders,
   copyMaskedHistory,
   copyRawHistory,
+  deleteFixture,
   deleteHistory,
   deleteRule,
+  fixtureToRule,
+  listFixtures,
   listHistory,
   listRules,
+  saveFixture,
   serverStatus,
   setRule,
   startServer,
   stopServer,
   type RequestRecord,
   type ResponseRule,
+  type CapturedFixture,
 } from "./api";
 
 vi.mock("./api", () => ({
+  clearFixtures: vi.fn(),
   clearHistory: vi.fn(),
   copyHistoryHeaders: vi.fn(),
   copyMaskedHistory: vi.fn(),
   copyRawHistory: vi.fn(),
+  deleteFixture: vi.fn(),
   deleteHistory: vi.fn(),
   deleteRule: vi.fn(),
+  fixtureToRule: vi.fn(),
+  listFixtures: vi.fn(),
   listHistory: vi.fn(),
   listRules: vi.fn(),
+  saveFixture: vi.fn(),
   serverStatus: vi.fn(),
   setRule: vi.fn(),
   startServer: vi.fn(),
@@ -62,14 +73,19 @@ const initialRule: ResponseRule = {
   delayMs: 25,
 };
 
+const clearFixturesMock = vi.mocked(clearFixtures);
 const clearHistoryMock = vi.mocked(clearHistory);
 const copyHistoryHeadersMock = vi.mocked(copyHistoryHeaders);
 const copyMaskedHistoryMock = vi.mocked(copyMaskedHistory);
 const copyRawHistoryMock = vi.mocked(copyRawHistory);
+const deleteFixtureMock = vi.mocked(deleteFixture);
 const deleteHistoryMock = vi.mocked(deleteHistory);
 const deleteRuleMock = vi.mocked(deleteRule);
+const fixtureToRuleMock = vi.mocked(fixtureToRule);
+const listFixturesMock = vi.mocked(listFixtures);
 const listHistoryMock = vi.mocked(listHistory);
 const listRulesMock = vi.mocked(listRules);
+const saveFixtureMock = vi.mocked(saveFixture);
 const serverStatusMock = vi.mocked(serverStatus);
 const setRuleMock = vi.mocked(setRule);
 const startServerMock = vi.mocked(startServer);
@@ -78,6 +94,7 @@ const confirmMock = vi.fn<(message?: string) => boolean>();
 const writeTextMock = vi.fn<(value: string) => Promise<void>>();
 let history: RequestRecord[];
 let rules: ResponseRule[];
+let fixtures: CapturedFixture[];
 
 beforeEach(() => {
   history = initialHistory.map((request) => ({
@@ -85,12 +102,48 @@ beforeEach(() => {
     headers: request.headers.map((header) => [...header] as [string, string]),
   }));
   rules = [{ ...initialRule }];
+  fixtures = [];
   serverStatusMock.mockReset().mockResolvedValue({ running: false, address: null });
   listHistoryMock.mockReset().mockImplementation(async () => history.map((request) => ({ ...request })));
   listRulesMock.mockReset().mockImplementation(async () => rules.map((rule) => ({ ...rule })));
+  listFixturesMock.mockReset().mockImplementation(async () => fixtures.map((fixture) => ({
+    ...fixture,
+    headers: fixture.headers.map((header) => [...header] as [string, string]),
+  })));
+  saveFixtureMock.mockReset().mockImplementation(async (historyId) => {
+    const request = history.find((candidate) => candidate.id === historyId);
+    if (!request) throw new Error("fixture를 찾을 수 없습니다");
+    const fixture: CapturedFixture = {
+      id: `fixture-${historyId}`,
+      method: request.method,
+      url: request.url,
+      headers: request.headers.map((header) => [...header] as [string, string]),
+      body: request.body,
+      receivedAtMs: request.receivedAtMs,
+    };
+    fixtures.push(fixture);
+    return fixture;
+  });
+  fixtureToRuleMock.mockImplementation(async (id) => {
+    const fixture = fixtures.find((candidate) => candidate.id === id);
+    if (!fixture) throw new Error("fixture를 찾을 수 없습니다");
+    return {
+      id: "",
+      method: fixture.method,
+      path: fixture.url,
+      status: 200,
+      headers: [],
+      body: "",
+      delayMs: 0,
+    };
+  });
   clearHistoryMock.mockReset().mockImplementation(async () => { history = []; });
+  clearFixturesMock.mockReset().mockImplementation(async () => { fixtures = []; });
   deleteHistoryMock.mockReset().mockImplementation(async (id) => {
     history = history.filter((request) => request.id !== id);
+  });
+  deleteFixtureMock.mockReset().mockImplementation(async (id) => {
+    fixtures = fixtures.filter((fixture) => fixture.id !== id);
   });
   copyMaskedHistoryMock.mockReset().mockImplementation(async (id) => `masked:${id}`);
   copyRawHistoryMock.mockReset().mockImplementation(async (id) => `raw-secret:${id}`);
@@ -530,5 +583,121 @@ describe("Webhook Lab history and rule context menus", () => {
     fireEvent.click(screen.getByRole("checkbox"));
 
     expect(await screen.findByText(/LAN 공개는 명시적 설정입니다/)).toBeTruthy();
+  });
+
+  it("history context action saves one masked fixture and exposes a stable action label", async () => {
+    render(<App />);
+    const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
+
+    fireEvent.contextMenu(target);
+    const save = screen.getByRole("menuitem", { name: "masked fixture 저장" });
+    expect(save.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(saveFixtureMock).toHaveBeenCalledWith(1));
+    await screen.findByText("Fixtures (1)");
+    expect(screen.getByLabelText("POST /hook fixture")).toBeTruthy();
+    expect(screen.getByText(/원본 header·credential·안전하지 않은 path는 저장하지 않습니다/)).toBeTruthy();
+  });
+
+  it("fixture save uses the shared busy guard for double action", async () => {
+    let release!: (fixture: CapturedFixture) => void;
+    saveFixtureMock.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+    render(<App />);
+    await screen.findByLabelText("GET /health 요청");
+    const visibleSave = screen.getByRole("button", { name: "GET /health masked fixture 저장" });
+
+    fireEvent.click(visibleSave);
+    fireEvent.click(visibleSave);
+    await waitFor(() => expect(saveFixtureMock).toHaveBeenCalledTimes(1));
+    expect(visibleSave.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "GET /health masked fixture 저장" }).closest(".app")?.getAttribute("aria-busy"))
+      .toBe("true");
+
+    release({
+      id: "fixture-2",
+      method: "GET",
+      url: "/health",
+      headers: [],
+      body: "",
+      receivedAtMs: 1_700_000_001_000,
+    });
+    await waitFor(() => expect(visibleSave.hasAttribute("disabled")).toBe(false));
+  });
+
+  it("fixture action converts a validated fixture to a local response-rule draft", async () => {
+    fixtures = [{
+      id: "fixture-1",
+      method: "POST",
+      url: "/hooks/push?token=[REDACTED]",
+      headers: [["Authorization", "[REDACTED]"]],
+      body: "{\"token\":\"[REDACTED]\"}",
+      receivedAtMs: 1_700_000_000_000,
+    }];
+    fixtureToRuleMock.mockResolvedValueOnce({
+      id: "",
+      method: "POST",
+      path: "/hooks/push?token=[REDACTED]",
+      status: 200,
+      headers: [],
+      body: "",
+      delayMs: 0,
+    });
+    render(<App />);
+    await screen.findByLabelText("POST /hooks/push?token=[REDACTED] fixture");
+    const draft = screen.getByRole("button", { name: "POST /hooks/push?token=[REDACTED] 응답 rule 초안" });
+    fireEvent.click(draft);
+
+    await waitFor(() => expect(fixtureToRuleMock).toHaveBeenCalledWith("fixture-1"));
+    expect((screen.getByLabelText("method") as HTMLInputElement).value).toBe("POST");
+    expect((screen.getByLabelText("path") as HTMLInputElement).value).toBe("/hooks/push?token=[REDACTED]");
+    expect((screen.getByLabelText("status") as HTMLInputElement).value).toBe("200");
+  });
+
+  it("fixture 삭제와 전체 삭제는 각각 확인을 거친다", async () => {
+    fixtures = [
+      { id: "fixture-1", method: "POST", url: "/hook", headers: [], body: "", receivedAtMs: 1_700_000_000_000 },
+      { id: "fixture-2", method: "GET", url: "/health", headers: [], body: "", receivedAtMs: 1_700_000_001_000 },
+    ];
+    render(<App />);
+    await screen.findByText("Fixtures (2)");
+
+    fireEvent.click(screen.getByRole("button", { name: "POST /hook fixture 삭제" }));
+    expect(deleteFixtureMock).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(screen.getByRole("button", { name: "POST /hook fixture 삭제" }));
+    await waitFor(() => expect(deleteFixtureMock).toHaveBeenCalledWith("fixture-1"));
+    await screen.findByText("Fixtures (1)");
+
+    const clear = screen.getByRole("button", { name: "저장된 fixture 모두 삭제" });
+    fireEvent.click(clear);
+    expect(clearFixturesMock).not.toHaveBeenCalled();
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(clear);
+    await waitFor(() => expect(clearFixturesMock).toHaveBeenCalledTimes(1));
+    await screen.findByText("Fixtures (0)");
+  });
+
+  it("fixture storage failures stay fixed and do not reflect filesystem or secret details", async () => {
+    listFixturesMock.mockRejectedValue(new Error("/tmp/private/fixture-secret.json: Bearer raw-secret"));
+    render(<App />);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("요청을 처리하지 못했습니다. 입력과 서버 상태를 확인하세요.");
+    expect(document.body.textContent).not.toContain("private/fixture-secret");
+    expect(document.body.textContent).not.toContain("raw-secret");
+  });
+
+  it("LAN start requires a second explicit confirmation and sends the allow flag", async () => {
+    confirmMock.mockReturnValueOnce(false);
+    render(<App />);
+    await screen.findByText(/중지/, { selector: ".status" });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+    expect(startServerMock).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+    await waitFor(() => expect(startServerMock).toHaveBeenCalledWith("0.0.0.0", 9000, true));
   });
 });
