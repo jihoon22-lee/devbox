@@ -1,6 +1,6 @@
 # 개발자 가이드
 
-devbox는 Tauri 14개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소다.
+devbox는 안정판 13개와 v0.5.0 Devbox Launcher·Log Lens를 포함한 Tauri 15개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소다.
 
 - **pnpm workspace** — `apps/*`, `packages/*`
 - **Cargo workspace** — 앱(src-tauri) + 공용 crates
@@ -24,6 +24,7 @@ apps/        독립 Tauri 앱 (각각 독립 .exe)
   webhook-lab         로컬 웹훅/콜백 서버
   repo-manager        Git worktree/저장소 관리
   devbox-launcher     catalog app·integration snapshot launcher와 explicit clipboard preview
+  log-lens            bounded local/WSL/container log viewer (v0.5.0 bootstrap)
 packages/    공용 React 패키지 (tokens·editor·diff-view·context-menu)
 crates/      공용 Rust 크레이트 (applink·catalog·filesystem·git·integration·launch·markdown·process·search·secrets·window-state·wsl)
 docs/        architecture / roadmap / projects

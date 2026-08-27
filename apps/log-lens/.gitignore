@@ -1,0 +1,7 @@
+node_modules
+dist
+
+# The parser regression fixture is intentionally a tracked log-shaped file;
+# the repository-wide *.log rule would otherwise hide it from the app.
+!src-tauri/tests/fixtures/mixed.log
+src-tauri/target

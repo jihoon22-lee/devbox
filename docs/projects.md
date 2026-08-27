@@ -1,6 +1,6 @@
 # Projects
 
-14개 구현 앱의 요약. 상세 소개는 각 `apps/<AppName>/README.md`, 설계는 `docs/superpowers/specs/`를 참조한다.
+15개 구현 앱의 요약. 상세 소개는 각 `apps/<AppName>/README.md`, 설계는 `docs/superpowers/specs/`를 참조한다.
 
 | # | 앱 | 디렉터리 | 핵심 목적 | Phase | 연계 |
 |---|---|---|---|---|---|
@@ -18,6 +18,7 @@
 | 12 | webhook-lab | `apps/webhook-lab` | 로컬 웹훅/콜백 서버 | Stage 5 | api-playground, port-manager |
 | 13 | repo-manager | `apps/repo-manager` | git 저장소·worktree 관리 | Stage 5 | wsl crate, code-pad/workbench |
 | 14 | devbox-launcher | `apps/devbox-launcher` | catalog app과 제공될 때 검증된 integration snapshot 검색·AppLink 실행, explicit clipboard preview | P3-01 | catalog, integration, applink, launch |
+| 15 | log-lens | `apps/log-lens` | local/Run/WSL/container log tail·merge·filter | P3-02 | `log-source/v1`, bounded in-memory ring |
 
 ## 공유 후보 매트릭스
 
@@ -37,18 +38,16 @@
 | webhook-lab | http, rules, masking |
 | repo-manager | wsl, git |
 | devbox-launcher | catalog, integration, applink, launch |
+| log-lens | WSL fixed adapters, app-local parser, `log-source/v1` |
 
 ## 산출물 (각각 독립 .exe)
 `PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`
 `EverythingPlus.exe` `Knowledge.exe` `LifeLog.exe` `DevboxManager.exe` `CodePad.exe` `RunManager.exe`
-`Workbench.exe` `WebhookLab.exe` `RepoManager.exe` `DevboxLauncher.exe`
+`Workbench.exe` `WebhookLab.exe` `RepoManager.exe` `DevboxLauncher.exe` `LogLens.exe`
 
-## v0.5.0 계획 앱 (아직 미구현)
+## v0.5.0 신규 앱 진행 상태
 
-| 목표 # | 앱 | 예정 디렉터리 | 독립 책임 | 주요 연계 |
-|---|---|---|---|---|
-| 15 | log-lens | `apps/log-lens` | local/Run/WSL/container log tail·merge·filter | logs crate, `log-source/v1` handoff |
-
-Log Lens는 v0.5.0에 선택 확정됐지만 아직 구현 앱에는 포함하지 않는다.
+Devbox Launcher와 Log Lens bootstrap은 구현됐다. Log Lens의 Run/WSL producer handoff는
+별도 integration PR에서 연결한다.
 기존 앱의 P1·P2·선택 P3 강화, 앱별 목표 version, 신규 앱의 안전 경계와 acceptance는
 [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을 따른다.

@@ -64,8 +64,8 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
-    assert_eq!(catalog.catalog_revision, Some(8));
-    assert_eq!(catalog.apps.len(), 14);
+    assert_eq!(catalog.catalog_revision, Some(9));
+    assert_eq!(catalog.apps.len(), 15);
     assert_eq!(
         capable_targets(&catalog, "path")
             .into_iter()
@@ -106,6 +106,13 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
             .map(|app| app.id)
             .collect::<Vec<_>>(),
         vec!["knowledge-base"]
+    );
+    assert_eq!(
+        capable_targets(&catalog, "handoff:log-source/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["log-lens"]
     );
     assert_eq!(
         capable_producers(&catalog, "snapshot:life-log/projects/v1")
@@ -149,6 +156,14 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
             .collect::<Vec<_>>(),
         vec!["knowledge-base"]
     );
+    let log_lens = catalog
+        .apps
+        .iter()
+        .find(|app| app.id == "log-lens")
+        .expect("Log Lens must remain in the repository catalog");
+    assert_eq!(log_lens.accepts, vec!["handoff:log-source/v1"]);
+    assert!(log_lens.produces.is_empty());
+    assert!(log_lens.actions.is_empty());
     let life_log = catalog
         .apps
         .iter()

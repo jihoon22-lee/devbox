@@ -1,6 +1,6 @@
 # AGENTS.md
 
-devbox — Tauri 14개 데스크톱 앱 모노레포. v0.4.1 안정판을 기준으로 v0.5.0 개발에 착수한 상태다. 모든 규약의 기준은 루트 `CONVENTIONS.md` (반드시 먼저 읽을 것). 앱별 상세는 각 `apps/<app>/README.md` 또는 `docs/superpowers/specs/` 설계 문서.
+devbox — Tauri 15개 데스크톱 앱 모노레포. v0.4.1 안정판을 기준으로 v0.5.0 개발에 착수한 상태다. 모든 규약의 기준은 루트 `CONVENTIONS.md` (반드시 먼저 읽을 것). 앱별 상세는 각 `apps/<app>/README.md` 또는 `docs/superpowers/specs/` 설계 문서.
 
 ## 저장소 사실
 - 원격: `https://github.com/jihoon22-lee/devbox` (로컬 디렉터리명 `devbox`와 동일)
@@ -9,8 +9,8 @@ devbox — Tauri 14개 데스크톱 앱 모노레포. v0.4.1 안정판을 기준
 - git identity: `jihoon22.lee <zkemzld1004@gmail.com>` (전역·로컬 설정됨)
 
 ## 현재 상태
-- 14개 앱 구현 완료 (v0.4.1 안정판 13개 + v0.5.0 Devbox Launcher): port-manager, developer-toolbox, wsl-desktop, api-playground,
-  everything-plus, knowledge-base, life-log, devbox-manager, code-pad, run-manager, workbench, webhook-lab, repo-manager, devbox-launcher
+- 15개 앱 구현 완료 (v0.4.1 안정판 13개 + v0.5.0 Devbox Launcher·Log Lens): port-manager, developer-toolbox, wsl-desktop, api-playground,
+  everything-plus, knowledge-base, life-log, devbox-manager, code-pad, run-manager, workbench, webhook-lab, repo-manager, devbox-launcher, log-lens
 - 공용 크레이트: `crates/wsl`·`search`·`integration`·`secrets`·`filesystem`·`markdown`·`process`·`git`·`launch`·`applink`·`catalog`·`window-state`
 - 공용 패키지: `packages/tokens`·`editor`·`diff-view`·`context-menu`
 - 루트 `Cargo.toml`의 `[workspace] members`에 앱/크레이트가 생길 때마다 추가해야 함

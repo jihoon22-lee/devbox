@@ -21,8 +21,8 @@ mod tests {
     fn parses_the_repository_v2_catalog_through_the_shared_contract() {
         let catalog = parse_catalog(BUILD_CATALOG).unwrap();
         assert_eq!(catalog.schema_version, 2);
-        assert_eq!(catalog.catalog_revision, Some(8));
-        assert_eq!(catalog.apps.len(), 14);
+        assert_eq!(catalog.catalog_revision, Some(9));
+        assert_eq!(catalog.apps.len(), 15);
         let knowledge = catalog
             .apps
             .iter()
@@ -70,6 +70,12 @@ mod tests {
         );
         assert_eq!(life_log.actions.len(), 1);
         assert_eq!(life_log.actions[0].target, "knowledge-base");
+        let log_lens = catalog
+            .apps
+            .iter()
+            .find(|app| app.id == "log-lens")
+            .expect("Log Lens must remain in the repository catalog");
+        assert_eq!(log_lens.accepts, vec!["handoff:log-source/v1"]);
     }
 
     #[test]

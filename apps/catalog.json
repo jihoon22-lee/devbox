@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 8,
+  "catalogRevision": 9,
   "apps": [
     {
       "id": "port-manager",
@@ -203,6 +203,20 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": [],
+      "produces": [],
+      "actions": []
+    },
+    {
+      "id": "log-lens",
+      "displayName": "Log Lens",
+      "productName": "LogLens",
+      "identifier": "com.devbox.loglens",
+      "cargoPackage": "log-lens",
+      "appDir": "apps/log-lens",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false,
+      "accepts": ["handoff:log-source/v1"],
       "produces": [],
       "actions": []
     }
