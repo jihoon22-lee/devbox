@@ -233,6 +233,9 @@ cargo check -j2 -p workbench --all-targets                passed
 cargo clippy -j2 -p workbench --all-targets -- -D warnings passed
 pnpm --filter workbench test -- --maxWorkers=2             59 passed; 0 failed
 pnpm --filter workbench build                             passed
+cargo test -j2 --workspace                                passed
+cargo check -j2 --workspace --all-targets                 passed
+pnpm build (17 workspace projects)                        passed
 dependency policy/catalog/manifest checks                passed
 cargo fmt --all -- --check                                passed
 git diff --check                                          passed
