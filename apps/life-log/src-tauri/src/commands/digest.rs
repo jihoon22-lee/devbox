@@ -133,10 +133,10 @@ pub async fn save_digest(
             devbox_filesystem::atomic_write(&path, response.markdown.as_bytes())
                 .map_err(|_| "digest 파일을 저장하지 못했습니다".to_string())
         })?;
-        return Ok(SaveDigestResult {
+        Ok(SaveDigestResult {
             saved: true,
             byte_length: response.markdown.len(),
-        });
+        })
     }
 
     #[cfg(not(target_os = "windows"))]
