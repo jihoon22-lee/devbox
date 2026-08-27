@@ -133,6 +133,11 @@ function utf8ByteLength(value: string): number {
   return UTF8_ENCODER.encode(value).byteLength;
 }
 
+/** Shared UI guard; one bounded encode avoids UTF-16 length/UTF-8 byte drift. */
+export function jwtUtf8ByteLength(value: string): number {
+  return utf8ByteLength(value);
+}
+
 function assertWellFormedUnicode(value: string, code: JwtErrorCode): void {
   for (let index = 0; index < value.length; index += 1) {
     const unit = value.charCodeAt(index);
@@ -592,6 +597,8 @@ function validateNativeRequest(request: JwtVerifyRequest): {
   // algorithm/key-type mismatch.
   const parsed = parseJwt(`${request.signingInput}.${request.signature}`);
   if (parsed.algorithm !== algorithm) throw error("algorithm_not_allowed");
+  const temporal = validateJwtTimes(parsed.payload, Math.floor(Date.now() / 1000));
+  if (!temporal.valid) throw error("invalid_claims");
   const key = decodeJwtKey(request.key, request.keyEncoding);
   if (key.length < ALGORITHM_TAG_LENGTH[algorithm]) throw error("key_too_short");
   return { algorithm, key, signature, signingInput: request.signingInput };

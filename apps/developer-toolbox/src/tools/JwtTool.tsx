@@ -8,12 +8,16 @@ import {
   jwtErrorCode,
   jwtErrorMessage,
   jwtMinimumKeyBytes,
+  jwtUtf8ByteLength,
   JWT_LIMITS,
   parseJwt,
   type JwtKeyEncoding,
   type JwtVerificationStatus,
   validateJwtTimes,
 } from "./jwt";
+
+const FIXED_CLIPBOARD_ERROR = "JWT 입력을 clipboard에서 읽지 못했습니다.";
+const FIXED_OUTPUT_ERROR = "JWT 결과 작업을 완료하지 못했습니다.";
 
 const KEY_ENCODINGS: ReadonlyArray<{ value: JwtKeyEncoding; label: string }> = [
   { value: "utf8", label: "UTF-8 text" },
@@ -64,13 +68,13 @@ export function JwtDecoder() {
     // The native maxLength attribute also protects normal typing. This guard
     // covers the app-owned context-menu paste path, which updates controlled
     // state programmatically and can otherwise bypass that browser limit.
-    if (value.length > JWT_LIMITS.maxTokenBytes) return;
+    if (jwtUtf8ByteLength(value) > JWT_LIMITS.maxTokenBytes) return;
     invalidateResult();
     setToken(value);
   };
 
   const changeKey = (value: string) => {
-    if (value.length > JWT_LIMITS.maxKeyTextBytes) return;
+    if (jwtUtf8ByteLength(value) > JWT_LIMITS.maxKeyTextBytes) return;
     invalidateResult();
     setKey(value);
   };
@@ -188,6 +192,8 @@ export function JwtDecoder() {
             onValueChange={changeKey}
             disabled={running}
             maxLength={JWT_LIMITS.maxKeyTextBytes}
+            maxPasteBytes={JWT_LIMITS.maxKeyTextBytes}
+            clipboardErrorMessage={FIXED_CLIPBOARD_ERROR}
             spellCheck={false}
           />
         </label>
@@ -228,6 +234,8 @@ export function JwtDecoder() {
             onValueChange={changeToken}
             disabled={running}
             maxLength={JWT_LIMITS.maxTokenBytes}
+            maxPasteBytes={JWT_LIMITS.maxTokenBytes}
+            clipboardErrorMessage={FIXED_CLIPBOARD_ERROR}
             spellCheck={false}
           />
         </div>
@@ -238,6 +246,7 @@ export function JwtDecoder() {
             className={`io-output jwt-output ${error ? "io-error" : ""}`}
             value={output}
             downloadName="dev-toolbox-jwt-result.json"
+            actionErrorMessage={FIXED_OUTPUT_ERROR}
           />
         </div>
       </div>

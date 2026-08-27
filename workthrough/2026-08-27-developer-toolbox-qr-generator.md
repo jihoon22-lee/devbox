@@ -1,5 +1,9 @@
 # Developer Toolbox QR Generator 구현
 
+> 2026-08-27 PR 경계 갱신: #292 acceptance는 사용자 결정에 따라 #289–#291과 같은 Developer
+> Toolbox 0.3.0 offline tools PR에서 검증한다. QR의 encoder/dependency/security fixture와 이
+> workthrough는 독립적으로 유지한다.
+
 ## Overview
 
 Issue #292(P2-03)에 따라 Developer Toolbox에 text·HTTP(S) URL·Wi-Fi payload를 오프라인에서

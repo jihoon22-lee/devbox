@@ -16,6 +16,7 @@ use serde::Deserialize;
 use sha2::{Sha256, Sha384, Sha512};
 use std::collections::HashSet;
 use std::fmt;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Stable, intentionally non-descriptive error exposed to the UI.
 pub const JWT_VERIFY_ERROR: &str = "JWT 검증을 처리할 수 없습니다.";
@@ -32,6 +33,8 @@ const MAX_JSON_DEPTH: usize = 32;
 const MAX_JSON_NODES: usize = 10_000;
 const MAX_JSON_STRING_BYTES: usize = 16 * 1024;
 const MAX_CRITICAL_HEADERS: usize = 8;
+const MAX_NUMERIC_DATE_SECONDS: f64 = 8_640_000_000_000.0;
+const CLOCK_SKEW_SECONDS: f64 = 60.0;
 pub const MAX_KEY_BYTES: usize = 1_000_000;
 
 /// Strict native DTO.  Secret-bearing fields intentionally do not implement
@@ -116,9 +119,20 @@ fn fixed_error() -> String {
 /// policy violation is a fixed error so malformed data cannot be mistaken for
 /// a normal signature mismatch.
 pub fn verify(request: &JwtVerifyRequest) -> Result<bool, String> {
+    let now_seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| fixed_error())?
+        .as_secs_f64();
+    verify_at(request, now_seconds)
+}
+
+fn verify_at(request: &JwtVerifyRequest, now_seconds: f64) -> Result<bool, String> {
+    if !now_seconds.is_finite() || now_seconds.abs() > MAX_NUMERIC_DATE_SECONDS {
+        return Err(fixed_error());
+    }
     let algorithm = Algorithm::parse(&request.algorithm)?;
     let key_encoding = KeyEncoding::parse(&request.key_encoding)?;
-    let signing_input = validate_signing_input(&request.signing_input, algorithm)?;
+    let signing_input = validate_signing_input_at(&request.signing_input, algorithm, now_seconds)?;
     let signature = decode_signature(&request.signature, algorithm.tag_len())?;
     let key = decode_key(&request.key, key_encoding)?;
     if key.len() < algorithm.tag_len() {
@@ -128,7 +142,20 @@ pub fn verify(request: &JwtVerifyRequest) -> Result<bool, String> {
     verify_with(algorithm, &key, signing_input.as_bytes(), &signature)
 }
 
+#[cfg(test)]
 fn validate_signing_input(value: &str, expected: Algorithm) -> Result<String, String> {
+    let now_seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| fixed_error())?
+        .as_secs_f64();
+    validate_signing_input_at(value, expected, now_seconds)
+}
+
+fn validate_signing_input_at(
+    value: &str,
+    expected: Algorithm,
+    now_seconds: f64,
+) -> Result<String, String> {
     if value.is_empty() || value.len() > MAX_SIGNING_INPUT_BYTES || !value.is_ascii() {
         return Err(fixed_error());
     }
@@ -151,7 +178,36 @@ fn validate_signing_input(value: &str, expected: Algorithm) -> Result<String, St
         return Err(fixed_error());
     }
     validate_json(&payload_bytes)?;
+    validate_temporal_claims(&payload_bytes, now_seconds)?;
     Ok(value.to_string())
+}
+
+fn validate_temporal_claims(payload: &[u8], now_seconds: f64) -> Result<(), String> {
+    if !now_seconds.is_finite() || now_seconds.abs() > MAX_NUMERIC_DATE_SECONDS {
+        return Err(fixed_error());
+    }
+    let value = serde_json::from_slice::<serde_json::Value>(payload).map_err(|_| fixed_error())?;
+    let Some(object) = value.as_object() else {
+        return Ok(());
+    };
+    let claim = |name: &str| -> Result<Option<f64>, String> {
+        let Some(value) = object.get(name) else {
+            return Ok(None);
+        };
+        let number = value.as_f64().ok_or_else(fixed_error)?;
+        if !number.is_finite() || number.abs() > MAX_NUMERIC_DATE_SECONDS {
+            return Err(fixed_error());
+        }
+        Ok(Some(number))
+    };
+
+    if claim("exp")?.is_some_and(|exp| now_seconds > exp + CLOCK_SKEW_SECONDS)
+        || claim("nbf")?.is_some_and(|nbf| now_seconds + CLOCK_SKEW_SECONDS < nbf)
+        || claim("iat")?.is_some_and(|iat| iat > now_seconds + CLOCK_SKEW_SECONDS)
+    {
+        return Err(fixed_error());
+    }
+    Ok(())
 }
 
 fn header_algorithm(bytes: &[u8]) -> Result<String, String> {
@@ -495,6 +551,12 @@ mod tests {
         }
     }
 
+    fn signing_input_for(payload: &str) -> String {
+        let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(payload.as_bytes());
+        format!("{header}.{payload}")
+    }
+
     #[test]
     fn verifies_known_hs256_vector_and_rejects_modified_signature() {
         let valid = request("HS256", SIGNING_INPUT, HS256_SIGNATURE, KEY_HEX, "hex");
@@ -627,6 +689,42 @@ mod tests {
             validate_json(oversized_string.as_bytes()),
             Err(JWT_VERIFY_ERROR.to_string())
         );
+    }
+
+    #[test]
+    fn native_boundary_validates_exp_nbf_and_iat_with_fixed_skew() {
+        let now = 1_700_000_000.0;
+        for payload in [
+            r#"{"exp":1699999940}"#,
+            r#"{"nbf":1700000060}"#,
+            r#"{"iat":1700000060}"#,
+        ] {
+            assert!(
+                validate_signing_input_at(&signing_input_for(payload), Algorithm::Hs256, now,)
+                    .is_ok()
+            );
+        }
+
+        for payload in [
+            r#"{"exp":1699999939}"#,
+            r#"{"nbf":1700000061}"#,
+            r#"{"iat":1700000061}"#,
+            r#"{"exp":"not-a-number"}"#,
+        ] {
+            assert_eq!(
+                validate_signing_input_at(&signing_input_for(payload), Algorithm::Hs256, now,),
+                Err(JWT_VERIFY_ERROR.to_string())
+            );
+        }
+
+        let expired = request(
+            "HS256",
+            &signing_input_for(r#"{"exp":1699999939}"#),
+            HS256_SIGNATURE,
+            KEY_HEX,
+            "hex",
+        );
+        assert_eq!(verify_at(&expired, now), Err(JWT_VERIFY_ERROR.to_string()));
     }
 
     #[test]

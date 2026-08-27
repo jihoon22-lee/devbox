@@ -65,6 +65,11 @@ describe("JwtDecoder", () => {
     const token = screen.getByLabelText("JWT compact token") as HTMLTextAreaElement;
     fireEvent.change(token, { target: { value: "x".repeat(JWT_LIMITS.maxTokenBytes + 1) } });
     expect(token.value).toBe("");
+
+    fireEvent.change(token, {
+      target: { value: "가".repeat(Math.floor(JWT_LIMITS.maxTokenBytes / 3) + 1) },
+    });
+    expect(token.value).toBe("");
   });
 
   it("performs verification only after an explicit action and reports verified state", async () => {
@@ -129,5 +134,34 @@ describe("JwtDecoder", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe("JWT 검증을 처리할 수 없습니다.");
     expect(alert.textContent).not.toContain("DO_NOT_REFLECT");
+  });
+
+  it("uses fixed clipboard and output action errors without reflecting platform details", async () => {
+    mocks.readClipboardText.mockRejectedValueOnce(new Error("C:\\private\\secret"));
+    const writeText = vi.fn().mockRejectedValue(new Error("/private/output/path"));
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    render(<JwtDecoder />);
+
+    const token = screen.getByLabelText("JWT compact token");
+    fireEvent.contextMenu(token, { clientX: 10, clientY: 10 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "JWT 입력을 clipboard에서 읽지 못했습니다.",
+    );
+
+    fireEvent.change(token, { target: { value: TOKEN } });
+    fireEvent.click(screen.getByRole("button", { name: "Decode" }));
+    const output = screen.getByLabelText("JWT decoded output");
+    await waitFor(() => expect(output.textContent).toContain("unverified"));
+    fireEvent.contextMenu(output, { clientX: 10, clientY: 10 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
+    await waitFor(() => {
+      expect(screen.getAllByRole("alert").some((entry) =>
+        entry.textContent === "JWT 결과 작업을 완료하지 못했습니다.",
+      )).toBe(true);
+    });
   });
 });

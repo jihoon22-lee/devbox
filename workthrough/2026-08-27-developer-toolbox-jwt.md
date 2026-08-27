@@ -180,6 +180,11 @@ error and a validly shaped but wrong tag returns `false`.
 
 ## Verification results
 
+2026-08-27 grouped-PR root review에서 native/browser direct verification 경계에도 `exp`/`nbf`/
+`iat` ±60초 검증을 추가했다. UI 입력은 UTF-16 code-unit가 아니라 UTF-8 byte 상한으로 제한하고
+explicit paste·output context action에 고정 오류를 적용했다. #289 acceptance는 #290/#291/#292와
+같은 Developer Toolbox PR에서 독립 fixture로 검증한다.
+
 All commands were run in `/mnt/e/projects/devbox-worktrees/developer-toolbox-jwt` with the
 Rust target cache on the Linux filesystem and bounded worker counts.
 

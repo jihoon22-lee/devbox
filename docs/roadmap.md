@@ -223,12 +223,18 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
      GraphQL subscription은 제외한다. Windows W2 packaged smoke는 release gate에서 확인한다.
 5. Everything+ text/code/Markdown 및 PDF/DOCX/XLS(X)/ODS content index.
 6. Knowledge global quick capture·image asset, Life Log Markdown/JSON/CSV export·규칙 기반 요약.
+   Knowledge의 #303 quick capture와 #304 image asset은 같은 vault identity·atomic publication·
+   clipboard/drop 안전 경계를 공유하므로 하나의 Knowledge capture PR로 구현하고, 각 이슈의
+   저장/삽입 acceptance와 fixture는 독립적으로 추적한다.
    Life Log export는 #305 범위의 native-first date-range artifact와 browser-preview 경계를
    포함하며, exact `[start,end)`/DST boundaries·bounded Git·snapshot provenance·privacy/
    deterministic rendering을 선행 계약으로 삼는다.
 7. Manager custom install root (#308)·데이터 보존형 안전 제거 (#309).
 8. Code Pad LSP cache/local archive, Run Manager log search, Workbench project environment,
    Webhook API handoff (#315; captured fixture storage #314 완료), Repo Manager history/diff/stage/commit/fetch/FF-only pull/push.
+   Repo Manager의 #316–#319는 같은 repository discovery·bounded Git runner·status snapshot·
+   in-progress operation guard를 쓰는 일상 Git workflow 한 PR로 묶고, read-only·mutation·remote·
+   safety acceptance는 이슈별로 구분한다.
 
    - Code Pad LSP offline path draft (#310): reviewed catalog의 exact archive를 app-owned
      SHA-256 cache에서 재사용하고, native archive 또는 Node reviewed dependency closure `.tgz`
@@ -313,7 +319,8 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
 1. 신규 **Devbox Launcher 0.1.0** — devbox 앱·profile·repo·job·saved query 전용 launcher와
    current clipboard 일회성 routing.
 2. 신규 **Log Lens 0.1.0** — local/Run/WSL/container log tail·merge·filter·export.
-3. 전 앱 monitor/DPI-safe window state.
+3. 전 앱 monitor/DPI-safe window state. #323–#336은 공용 crate와 같은 restore/clamp 회귀 행렬을
+   공유하므로 하나의 cross-app PR로 적용한다.
 4. Port auto-refresh/diff/favorite/source provenance, Toolbox detection/pipeline/recent/favorite,
    WSL resource/broadcast 안전, API collection import/export/history/binary, Everything filter/saved
    query, Knowledge template, Life Log source explanation/Knowledge draft 상태.

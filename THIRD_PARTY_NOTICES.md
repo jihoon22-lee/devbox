@@ -4,8 +4,8 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `5aaa7810dc43e876cda6a958c8f1912d6f28ba4cb0c59fbe2418d5b95c85b59d`
-- pnpm-lock.yaml SHA-256: `c49f2e10098da67eaf9af9bf737d06f517fc6efda1883d2bc810d8068027f440`
+- Cargo.lock SHA-256: `b20eb17a32918759eae19c44c6bbe5e3541fda385cd9329ce40641460b4b988e`
+- pnpm-lock.yaml SHA-256: `1057f53d90e714e8a55aa780932ef5ebf0821f0a98ae001812a4a04517059a12`
 
 ## Rust dependencies
 
@@ -384,6 +384,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | pulldown-cmark | 0.13.4 | MIT | https://github.com/raphlinus/pulldown-cmark | `sha256:e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e` |
 | pulldown-cmark-escape | 0.11.0 | MIT | https://github.com/raphlinus/pulldown-cmark | `sha256:007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae` |
 | pxfm | 0.1.30 | BSD-3-Clause OR Apache-2.0 | https://github.com/awxkee/pxfm | `sha256:d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea` |
+| qrcode | 0.14.1 | MIT OR Apache-2.0 | https://github.com/kennytm/qrcode-rust | `sha256:d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec` |
 | quick-error | 2.0.1 | MIT/Apache-2.0 | http://github.com/tailhook/quick-error | `sha256:a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3` |
 | quick-xml | 0.41.0 | MIT | https://github.com/tafia/quick-xml | `sha256:e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1` |
 | quinn | 0.11.11 | MIT OR Apache-2.0 | https://github.com/quinn-rs/quinn | `sha256:0c1a41e437b6bbd489372cd4971de128e85c855f56c57f283d20ff016cf7c0a8` |
@@ -863,6 +864,7 @@ to the CI license gate but are not shipped in the compiled frontend bundle.
 | path-data-parser | 0.1.0 | MIT | https://github.com/pshihn/path-data-parser#readme | `sha512-NOnmBpt5Y2RWbuv0LMzsayp3lVylAHLPUTut412ZA3l+C4uw4ZVkQbjShYCQ8TCpUMdPapr4YjUqLYD6v68j+w==` |
 | points-on-curve | 0.2.0 | MIT | https://github.com/pshihn/bezier-points#readme | `sha512-0mYKnYYe9ZcqMCWhUjItv/oHjvgEsfKvnUTg8sAtnHr3GVy7rGkXCb6d5cSyqrWqL4k81b9CPg3urd+T7aop3A==` |
 | points-on-path | 0.2.1 | MIT | https://github.com/pshihn/points-on-path#readme | `sha512-25ClnWWuw7JbWZcgqY/gJ4FQWadKxGWk+3kR/7kD0tCaDtPPMj7oHu2ToLaVhfpnHrZzYby2w6tUA0eOIuUg8g==` |
+| qrcode-generator | 2.0.4 | MIT | https://github.com/kazuhikoarase/qrcode-generator#readme | `sha512-mZSiP6RnbHl4xL2Ap5HfkjLnmxfKcPWpWe/c+5XxCuetEenqmNFf1FH/ftXPCtFG5/TDobjsjz6sSNL0Sr8Z9g==` |
 | react | 19.2.8 | MIT | https://react.dev/ | `sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw==` |
 | react-dom | 19.2.8 | MIT | https://react.dev/ | `sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ==` |
 | robust-predicates | 3.0.3 | Unlicense | https://github.com/mourner/robust-predicates#readme | `sha512-NS3levdsRIUOmiJ8FZWCP7LG3QpJyrs/TE0Zpf1yvZu8cAJJ6QMW92H1c7kWpdIHo8RvmLxN/o2JXTKHp74lUA==` |

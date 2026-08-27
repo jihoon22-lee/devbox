@@ -37,8 +37,8 @@ const CAPACITY_ERROR: &str = "QR 용량을 초과했습니다. 버전 또는 오
 const RENDER_ERROR: &str = "QR 이미지를 생성하지 못했습니다.";
 
 /// UI request shared by native command and deterministic Rust fixtures.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GenerateQrRequest {
     pub preset: String,
     pub text: Option<String>,
@@ -52,8 +52,8 @@ pub struct GenerateQrRequest {
     pub quiet_zone: u8,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WifiRequest {
     pub ssid: String,
     pub password: String,
@@ -423,6 +423,7 @@ fn render_png(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn request(preset: &str) -> GenerateQrRequest {
         GenerateQrRequest {
@@ -435,6 +436,31 @@ mod tests {
             size: 256,
             quiet_zone: 4,
         }
+    }
+
+    #[test]
+    fn serde_contract_rejects_unknown_request_and_wifi_fields() {
+        let unknown_request = json!({
+            "preset": "text",
+            "text": "safe",
+            "url": null,
+            "wifi": null,
+            "version": null,
+            "errorCorrection": "M",
+            "size": 256,
+            "quietZone": 4,
+            "unexpected": "ignored-by-a-lenient-boundary"
+        });
+        assert!(serde_json::from_value::<GenerateQrRequest>(unknown_request).is_err());
+
+        let unknown_wifi = json!({
+            "ssid": "devbox",
+            "password": "secret",
+            "security": "WPA",
+            "hidden": false,
+            "unexpected": true
+        });
+        assert!(serde_json::from_value::<WifiRequest>(unknown_wifi).is_err());
     }
 
     #[test]

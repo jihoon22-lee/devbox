@@ -161,4 +161,5 @@ runtime storage change was made. Windows W2 packaged offline smoke remains a rel
 - On Windows, verify offline packaged cold start, exact Lorem copy/save, malformed/oversized table
   behavior, keyboard/IME/focus, narrow output scrolling, and absence of automatic clipboard/storage/
   network side effects.
-- Keep QR, HMAC/JWT, UUID/ULID, and Toolbox→API handoff as separate feature boundaries.
+- #289 JWT와 #292 QR은 사용자 결정에 따라 #290/#291과 같은 Developer Toolbox 0.3.0 offline
+  tool release PR에서 통합 검증한다. 각 parser/crypto/renderer acceptance와 workthrough는 분리한다.

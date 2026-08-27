@@ -126,6 +126,17 @@ describe("JWT key and browser verification boundary", () => {
     expect(invalid).toBe(false);
   });
 
+  it("rejects invalid time claims at the direct browser verification boundary", async () => {
+    const expired = tokenFor({ alg: "HS256" }, { exp: 0 }).split(".");
+    await expect(browserVerifyJwt({
+      algorithm: "HS256",
+      signingInput: `${expired[0]}.${expired[1]}`,
+      signature: SIGNATURE,
+      key: KEY_HEX,
+      keyEncoding: "hex",
+    })).rejects.toMatchObject({ code: "invalid_claims" });
+  });
+
   it.each([
     ["HS384", HS384_SIGNING_INPUT, "58Hc1lXLsSwvo-Mor4Son_yMVfSf4OA5qsVBjYpWacUeSlLSMVjLgTZ-rk5ORQrr"],
     ["HS512", HS512_SIGNING_INPUT, "Ck5IG3CaU-sZxfd1TzD9VxRVRbNb45Hv5mO0wzo8cJlVFKgUhVH8ofN1XBNgpq8J9kzS7zfDLKXA-y9bjc4EBw"],
