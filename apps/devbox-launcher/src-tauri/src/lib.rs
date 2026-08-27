@@ -72,11 +72,19 @@ pub fn run() {
             // keep the initial window visible so the user can choose another
             // allow-listed shortcut instead of being stranded with a hidden
             // process.
-            if app.state::<hotkey::RuntimeState>().registration()
-                == hotkey::RegistrationState::Registered
-            {
-                if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_webview_window("main") {
+                if app.state::<hotkey::RuntimeState>().registration()
+                    == hotkey::RegistrationState::Registered
+                {
                     let _ = window.hide();
+                } else {
+                    // `tauri.conf.json` starts this transient window hidden to
+                    // avoid a successful registration flashing on screen.
+                    // Registration failure therefore has to show it
+                    // explicitly or the user cannot choose an alternative.
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
                 }
             }
             Ok(())
