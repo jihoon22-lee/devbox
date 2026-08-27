@@ -29,6 +29,7 @@ tokio = { version = "1.53.1", features = ["process", "time"] }
 devbox-git = { package = "git", path = "../../../crates/git" }
 dirs = "6.0.0"
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-launch = { package = "launch", path = "../../../crates/launch" }

@@ -34,6 +34,7 @@ search = { path = "../../../crates/search" }
 notify = "8.2.0"
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-launch = { package = "launch", path = "../../../crates/launch" }
 

@@ -33,6 +33,7 @@ cfb = "=0.7.3"
 quick-xml = { version = "=0.41.0", default-features = false, features = ["encoding"] }
 zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
 filesystem = { path = "../../../crates/filesystem" }
+devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 search = { path = "../../../crates/search" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-launch = { package = "launch", path = "../../../crates/launch" }

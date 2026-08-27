@@ -21,7 +21,8 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 ├──────────────────────────────┤
 │ crates/*    Rust 공용        │  filesystem, markdown, process, wsl,
 │                              │  search, integration, secrets, git, launch,
-│                              │  applink, catalog, window-state
+│                              │  applink, catalog, window-state,
+│                              │  window-state-tauri
 ├──────────────────────────────┤
 │ 공통 인프라: Cargo workspace, │
 │ pnpm workspace, git 모노레포,  │
@@ -55,7 +56,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 ```
   crates/filesystem ◄── applink, api-playground, code-pad, developer-toolbox, devbox-manager,
                        everything-plus, knowledge-base, life-log, port-manager,
-                       repo-manager, run-manager, wsl-desktop, devbox-launcher
+                       repo-manager, run-manager, wsl-desktop, devbox-launcher, window-state-tauri
   crates/applink    ◄── code-pad, knowledge-base, life-log, repo-manager, wsl-desktop, workbench,
                        run-manager, devbox-manager, devbox-launcher
   crates/markdown   ◄── knowledge-base, code-pad
@@ -67,7 +68,8 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   crates/git        ◄── devbox-manager, life-log, repo-manager, workbench
   crates/launch     ◄── everything-plus, knowledge-base, life-log, repo-manager, workbench, devbox-launcher
   crates/catalog    ◄── devbox-manager, devbox-launcher
-  crates/window-state ◄── 일반 persistent window 소비 앱 (후속 cross-app wiring)
+  crates/window-state ◄── window-state-tauri
+  crates/window-state-tauri ◄── 14개 persistent 앱의 `main` window (#323–#336)
   apps/log-lens     ◄── wsl (fixed WSL argv validation; parser remains app-local until a second consumer)
 ```
 
@@ -85,6 +87,28 @@ monitor로 fallback한다. 저장 work area와 현재 scale factor를 사용해 
 size를 physical pixels로 변환한 뒤, titlebar의 최소 가시 영역을 남기도록 clamp한다.
 손상·과대 문서는 `restore_from_bytes`가 고정 오류 없이 기본 bounds로 fail-closed하며,
 Launcher/dialog/splash 같은 transient window는 이 계약의 소비 대상이 아니다.
+
+### `window-state-tauri` cross-app adapter (#323–#336)
+
+`crates/window-state-tauri`는 Tauri의 physical `outer_position`/`inner_size`와 monitor
+snapshot을 위 순수 계약에 연결하고, 앱별 `app_local_data_dir/window-state-v1.json`에
+`crates/filesystem::atomic_write`로 저장한다. `main` label만 처리하므로 dialogs, file
+pickers, splash, child windows는 state를 만들지 않는다. moved/resized/DPI 이벤트는 단일
+bounded debounce slot을 사용하고 close/programmatic exit는 flush한다.
+
+현재 #323–#336의 14개 persistent 앱이 모두 manifest dependency, setup restore,
+window-event save를 갖는다. Life Log와 Run Manager는 저장을 hide/prevent-close보다 먼저
+수행하고, Life Log·Run Manager·Code Pad의 programmatic exit은 `app.exit` 직전 explicit
+save를 유지한다. Log Lens도 persistent `main`만 같은 adapter를 사용한다. 현재 picker와
+export는 별도 Tauri window가 아닌 native/browser dialog지만, label filter가 향후 추가될
+transient picker/export/preview window도 state 파일에서 배제한다.
+
+15번째 앱인 Devbox Launcher의 palette는 transient이므로 adapter를 설치하지 않는다.
+통합 선행 관계는 `#322 window-state 계약 → #321 Log Lens bootstrap → #323–#336 wiring`으로
+완료됐고, #323–#336은 같은 monitor/DPI 회귀 행렬을 공유하는 하나의 사용자-visible 기능
+묶음으로 적용한다. monitor 제거/DPI/해상도 축소/virtual-origin 변경,
+corrupt·oversized/future schema, atomic write 실패 보존은 pure fixture와 packaged W4
+smoke에서 공통 회귀 행렬로 검증한다.
 
 ## 앱별 데이터 흐름
 

@@ -66,6 +66,7 @@ pub fn run() {
             commands::queries::app_stats,
         ])
         .setup(|app| {
+            devbox_window_state_tauri::restore_main_window(app.handle());
             let dir = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let conn = init(&dir.join("data.db"))?;
@@ -91,6 +92,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            devbox_window_state_tauri::handle_window_event(window, event);
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // 닫기 버튼 = 트레이로 숨기기 (백그라운드 추적 유지)
                 let _ = window.hide();
@@ -127,7 +129,12 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => focus_main_window(app),
-            "quit" => app.exit(0),
+            "quit" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    devbox_window_state_tauri::save_main_webview_window(&window);
+                }
+                app.exit(0);
+            }
             _ => {}
         })
         .build(app)?;

@@ -26,6 +26,13 @@ pub fn run() {
     migrate_local_data();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            devbox_window_state_tauri::restore_main_window(app.handle());
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            devbox_window_state_tauri::handle_window_event(window, event);
+        })
         .invoke_handler(tauri::generate_handler![
             commands::ports::list_ports,
             commands::ports::kill_listener,

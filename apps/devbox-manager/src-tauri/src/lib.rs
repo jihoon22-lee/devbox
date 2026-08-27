@@ -45,6 +45,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            devbox_window_state_tauri::restore_main_window(app.handle());
             app.manage(applink::PendingOpen::new());
             if let Ok(Some(request)) =
                 devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>())
@@ -78,6 +79,9 @@ pub fn run() {
             commands::manager::remove_portable_app,
             commands::doctor::run_diagnosis,
         ])
+        .on_window_event(|window, event| {
+            devbox_window_state_tauri::handle_window_event(window, event);
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -280,6 +280,9 @@ pub fn request_orderly_exit(app: &AppHandle, state: Arc<RuntimeState>) {
     tauri::async_runtime::spawn(async move {
         if wait_for_scheduler_cleanup(&state, scheduler_task, maintenance_task).await {
             state.authorize_exit();
+            if let Some(window) = app.get_webview_window("main") {
+                devbox_window_state_tauri::save_main_webview_window(&window);
+            }
             app.exit(0);
         }
     });

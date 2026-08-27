@@ -55,7 +55,11 @@ pub fn run() {
         .manage(commands::handoff::ApiHandoffState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .on_window_event(|window, event| {
+            devbox_window_state_tauri::handle_window_event(window, event);
+        })
         .setup(|app| {
+            devbox_window_state_tauri::restore_main_window(app.handle());
             app.manage(applink::PendingOpen::new());
             match devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>()) {
                 Ok(Some(request)) => app.state::<applink::PendingOpen>().set(request),

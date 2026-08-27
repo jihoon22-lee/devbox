@@ -1,0 +1,16 @@
+[package]
+name = "window-state-tauri"
+version = "0.1.0"
+publish = false
+description = "Tauri adapter for bounded persistent window state"
+authors = ["jihoon22.lee"]
+edition.workspace = true
+
+[lib]
+name = "window_state_tauri"
+path = "src/lib.rs"
+
+[dependencies]
+filesystem = { path = "../filesystem" }
+tauri = { version = "2", features = [] }
+window-state = { path = "../window-state" }

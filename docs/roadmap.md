@@ -52,6 +52,13 @@
 - [ ] **앱별 window-state wiring (#323–#336)** — 위 계약을 소비하는 하나의 cross-app PR에서
   각 persistent window에 적용한다. Launcher/dialog/splash 등 transient window는 제외한다.
 
+현재 목표 범위는 기존 13개 앱과 Log Lens를 합친 #323–#336의 persistent `main` 14개다.
+#322 공용 계약과 #321 Log Lens bootstrap이 모두 main에 병합돼 같은 cross-app PR에서 최종
+wiring한다. 15번째 앱인 Devbox Launcher palette는 transient라 window-state 대상에서
+제외한다. 공용 adapter는 physical bounds/monitor/DPI transform, visible-titlebar clamp,
+strict bounded JSON, corrupt fallback, atomic persistence와 close/tray/explicit-exit flush를
+동일하게 적용한다.
+
 | 문서 | 범위 |
 |---|---|
 | [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3 전체 범위, 외부 도구 원칙, 신규 앱, PR·테스트·릴리스 gate의 단일 기준 |

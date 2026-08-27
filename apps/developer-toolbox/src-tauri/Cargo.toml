@@ -36,3 +36,4 @@ similar = "3.1.2"
 qrcode = { version = "0.14.1", default-features = false }
 png = "0.18.1"
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
