@@ -29,6 +29,8 @@ export function routeOpenRequest(request: OpenRequest): KnowledgeOpenAction {
     }
     case "profile":
     case "workspace":
+    case "task":
+    case "install":
       return { kind: "error", message: "지원하지 않는 열기 요청입니다" };
     case "handoff":
       return target.handoffKind === "knowledge-draft/v1"

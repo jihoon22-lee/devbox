@@ -1,3 +1,4 @@
+mod applink;
 pub mod cleanup;
 mod commands;
 pub mod core;
@@ -48,6 +49,12 @@ pub fn run() {
     // otherwise initialize a second scheduler before the duplicate exits.
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            if let Ok(Some(request)) = devbox_applink::parse_argv(&args) {
+                if applink::is_task_request(&request) {
+                    app.state::<applink::PendingOpen>().set(request.clone());
+                    let _ = app.emit("devbox://open", request);
+                }
+            }
             let background = args.iter().any(|arg| arg == "--background");
             if app
                 .try_state::<Arc<RuntimeState>>()
@@ -62,6 +69,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            applink::take_pending_open,
             commands::runtime_status,
             commands::show_main_window,
             commands::hide_main_window,
@@ -98,6 +106,14 @@ pub fn run() {
             commands::search_run_logs,
         ])
         .setup(|app| {
+            app.manage(applink::PendingOpen::new());
+            if let Ok(Some(request)) =
+                devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>())
+            {
+                if applink::is_task_request(&request) {
+                    app.state::<applink::PendingOpen>().set(request);
+                }
+            }
             let data_dir = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             std::fs::create_dir_all(data_dir.join("logs/runs"))?;

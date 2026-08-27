@@ -16,6 +16,7 @@ members = [
     "apps/workbench/src-tauri",
     "apps/webhook-lab/src-tauri",
     "apps/repo-manager/src-tauri",
+    "apps/devbox-launcher/src-tauri",
     "crates/filesystem",
     "crates/markdown",
     "crates/process",

@@ -15,7 +15,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 
 ```
 ┌──────────────────────────────┐
-│ apps/*   독립 Tauri 앱 (.exe) │  13개
+│ apps/*   독립 Tauri 앱 (.exe) │  14개
 ├──────────────────────────────┤
 │ packages/*  React 공용       │  tokens, editor, diff-view, context-menu
 ├──────────────────────────────┤
@@ -32,7 +32,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 위 그림은 v0.5.0 개발 중인 현재 구조다. 기존 동작을 유지하면서 다음 계획 요소를
 순차적으로 추가한다. 구현 전인 항목은 현재 앱/크레이트 수에 포함하지 않는다.
 
-- 신규 독립 앱 `devbox-launcher`, `log-lens` — 목표 15개 앱
+- 신규 독립 앱 `log-lens` — 구현 후 목표 15개 앱
 - 구현된 순수 `crates/catalog` — catalog v1/v2 type·revision freshness·runtime/build-time
   fallback·capability filter. runtime file I/O는 후속 Manager 기능이 담당한다.
 - 신규 `crates/logs` — Log Lens가 두 번째 소비자가 되는 시점의 순수 log parsing
@@ -54,17 +54,18 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 ```
   crates/filesystem ◄── applink, api-playground, code-pad, developer-toolbox, devbox-manager,
                        everything-plus, knowledge-base, life-log, port-manager,
-                       repo-manager, run-manager, wsl-desktop
-  crates/applink    ◄── code-pad, knowledge-base, life-log, repo-manager, wsl-desktop, workbench
+                       repo-manager, run-manager, wsl-desktop, devbox-launcher
+  crates/applink    ◄── code-pad, knowledge-base, life-log, repo-manager, wsl-desktop, workbench,
+                       run-manager, devbox-manager, devbox-launcher
   crates/markdown   ◄── knowledge-base, code-pad
   crates/process    ◄── port-manager, run-manager
   crates/wsl        ◄── port-manager, wsl-desktop, run-manager, workbench, repo-manager
   crates/search     ◄── everything-plus, knowledge-base
-  crates/integration◄── run-manager, workbench, knowledge-base, life-log 등 snapshot 계약·자동 발견
+  crates/integration◄── run-manager, workbench, knowledge-base, life-log, devbox-launcher 등 snapshot 계약·자동 발견
   crates/secrets    ◄── api-playground, run-manager (DPAPI)
   crates/git        ◄── devbox-manager, life-log, repo-manager, workbench
-  crates/launch     ◄── everything-plus, knowledge-base, life-log, repo-manager, workbench
-  crates/catalog    ◄── devbox-manager (후속에서 launch·capability 메뉴 소비자 확대)
+  crates/launch     ◄── everything-plus, knowledge-base, life-log, repo-manager, workbench, devbox-launcher
+  crates/catalog    ◄── devbox-manager, devbox-launcher
   crates/window-state ◄── 일반 persistent window 소비 앱 (후속 cross-app wiring)
 ```
 
@@ -139,6 +140,11 @@ repo-manager:     React → commands → git crate → repository/worktree 탐�
                    ├ Git safety preflight → run_bounded → porcelain-v2/marker parser → React
                    └ remote status/preflight → bounded parser → default-remote fetch/
                       FF-only pull/exact branch push → run_mutating_with_cancel → configured Git remote
+devbox-launcher:  transient React → bounded catalog/optional snapshot index → revalidated AppLink
+                   ├ catalog app 검색과 profile/repo/query/task target 재검증
+                   ├ missing target → Devbox Manager install handoff
+                   ├ source path가 없거나 손상되면 해당 source만 격리
+                   └ selected/clipboard text는 명시적 preview 동안에만 표시
 ```
 
 Repo Manager의 Git history·diff(#316)는 선택된 canonical repository에서만 실행되는 native
@@ -535,7 +541,7 @@ environment store와 다른 앱 DB 변경을 하지 않는다.
 
 ### CSP 기준선
 
-13개 앱 전부 다음 최소 기준선을 쓴다 (PR 17 + 신규 앱 반영).
+14개 앱 전부 다음 최소 기준선을 쓴다 (PR 17 + 신규 앱 반영).
 
 ```
 default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline';
@@ -743,7 +749,7 @@ Manager service를 변경하지 않고 snapshot path·raw Docker detail·contain
 
 `apps/workbench`는 기존 앱의 UI를 복제하는 통합 앱이 아니라, 프로젝트를 기준으로
 여러 앱·서비스를 조정하고 상태를 요약하는 **orchestration 셸**이다. 기존 `crates/`·
-`packages/`를 재사용하며, 결과물은 **독립 앱 13개**(workbench 포함) 구조다.
+`packages/`를 재사용하며, 결과물은 **독립 앱 14개**(workbench 포함) 구조다.
 상세: `docs/product-opportunities.md` §15.2, `docs/superpowers/specs/2026-08-14-workbench-design.md`
 
 ## 신규 앱 설계 문서

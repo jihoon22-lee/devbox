@@ -1,5 +1,8 @@
+mod applink;
 mod commands;
 mod core;
+
+use tauri::{Emitter, Manager};
 
 // TODO(0.5.0): v0.4.x 이전 사용자를 위한 1회성 마이그레이션. 두 릴리스 뒤 제거한다.
 const LEGACY_IDENTIFIER: &str = "com.workbench.devboxmanager";
@@ -25,8 +28,31 @@ fn migrate_local_data() {
 pub fn run() {
     migrate_local_data();
     tauri::Builder::default()
+        // Launcher's install handoff must focus the existing Manager instance;
+        // arbitrary argv targets are intentionally ignored here.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if let Ok(Some(request)) = devbox_applink::parse_argv(&args) {
+                if applink::is_install_request(&request) {
+                    app.state::<applink::PendingOpen>().set(request.clone());
+                    let _ = app.emit("devbox://open", request);
+                }
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            app.manage(applink::PendingOpen::new());
+            if let Ok(Some(request)) =
+                devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>())
+            {
+                if applink::is_install_request(&request) {
+                    app.state::<applink::PendingOpen>().set(request);
+                }
+            }
             // 중단된 다운로드의 .partial 정리 (재시도/안전 정리)
             commands::manager::cleanup_partials(app.handle());
             if let Err(error) = commands::manager::sync_runtime_metadata(app.handle()) {
@@ -35,6 +61,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            applink::take_pending_open,
             commands::manager::catalog,
             commands::manager::available,
             commands::manager::installed,

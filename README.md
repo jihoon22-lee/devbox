@@ -1,6 +1,6 @@
 # devbox
 
-Tauri 13개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소. 각 앱은 **독립적으로 실행되고 독립적으로 `.exe`가 만들어집니다.**
+Tauri 14개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소. 각 앱은 **독립적으로 실행되고 독립적으로 `.exe`가 만들어집니다.**
 
 ## 앱 소개
 
@@ -19,6 +19,7 @@ Tauri 13개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소
 | 🛠 **Workbench** | 프로젝트 기반 orchestration 셸 — Git/WSL/포트/서비스 사전 점검, Run Manager·WSL Desktop·Code Pad 시작, Stop What I Started |
 | 🔁 **Webhook Lab** | 로컬 웹훅/콜백 서버 — 수신 요청 history, 응답 rule·delay·오류 재현, 민감 헤더 masking |
 | 🗂 **Repo Manager** | Git repository 탐색·브랜치/worktree/상태 목록, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기 |
+| 🚀 **Devbox Launcher** | Devbox 앱과 제공될 때 검증된 profile·repo·job·saved query snapshot 검색, 안전한 AppLink 실행 및 명시적 clipboard preview |
 
 ## 다운로드 / 설치
 

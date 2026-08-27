@@ -33,6 +33,7 @@ regex = "1.13.1"
 zeroize = "1"
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
+devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-secrets = { package = "secrets", path = "../../../crates/secrets" }
 dirs = "6.0.0"
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }

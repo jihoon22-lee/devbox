@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import catalogJson from "../../catalog.json";
 import { isTauri } from "./lib/isTauri";
 import type {
@@ -19,6 +20,11 @@ import type {
 
 const MOCK_CATALOG: CatalogApp[] = catalogJson.apps;
 
+export type ManagerOpenRequest = {
+  target: { kind: "install"; appId: string };
+  from: string | null;
+};
+
 const MOCK_MANIFEST: ReleaseManifest = {
   schemaVersion: 1,
   releaseTag: "v0.4.0-rc3",
@@ -37,12 +43,23 @@ const MOCK_MANIFEST: ReleaseManifest = {
     { id: "workbench", version: "0.1.0", portable: { name: "workbench.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "workbench_0.1.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
     { id: "webhook-lab", version: "0.1.0", portable: { name: "webhook-lab.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "webhook-lab_0.1.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
     { id: "repo-manager", version: "0.1.1", portable: { name: "repo-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "repo-manager_0.1.1_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "devbox-launcher", version: "0.1.0", portable: { name: "devbox-launcher.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "devbox-launcher_0.1.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
   ],
 };
 
 export async function catalog(): Promise<CatalogApp[]> {
   if (!isTauri()) return MOCK_CATALOG;
   return invoke<CatalogApp[]>("catalog");
+}
+
+export async function takePendingOpen(): Promise<ManagerOpenRequest | null> {
+  if (!isTauri()) return null;
+  return invoke<ManagerOpenRequest | null>("take_pending_open");
+}
+
+export function onPendingOpen(handler: (request: ManagerOpenRequest) => void): Promise<UnlistenFn> {
+  if (!isTauri()) return Promise.resolve(() => undefined);
+  return listen<ManagerOpenRequest>("devbox://open", (event) => handler(event.payload));
 }
 
 export async function available(): Promise<ReleaseManifest> {
@@ -156,7 +173,7 @@ export async function runDiagnosis(): Promise<DiagnosisItem[]> {
       { name: "pnpm", ok: true, detail: "9.0.0" },
       { name: "rustc", ok: true, detail: "rustc 1.97.1" },
       { name: "cargo", ok: true, detail: "cargo 1.97.1" },
-      { name: "devbox-data", ok: true, detail: "카탈로그 13개 · 데이터 디렉터리 존재 10개" },
+      { name: "devbox-data", ok: true, detail: "카탈로그 14개 · 데이터 디렉터리 존재 10개" },
       { name: "catalog-ids", ok: true, detail: "모든 identifier가 com.devbox.*" },
       { name: "runtime-metadata", ok: true, detail: "runtime catalog와 install-root locator 정합" },
     ];

@@ -46,8 +46,11 @@ pub use handoff::{
 
 use serde::{Deserialize, Serialize};
 
-/// 이 계약의 프로토콜 버전. `OpenRequest`/`OpenTarget`의 필드 모양이 바뀌면 올린다.
+/// Handoff envelope의 프로토콜 버전. `OpenRequest` argv에 새 forward-compatible
+/// target flag를 추가하는 것만으로는 one-time handoff envelope의 모양이 바뀌지 않는다.
 pub const PROTOCOL_VERSION: u32 = 2;
+const MAX_TASK_ID_BYTES: usize = 128;
+const MAX_INSTALL_APP_ID_BYTES: usize = 64;
 
 /// "어디를 열지"를 나타내는 타깃.
 ///
@@ -70,6 +73,16 @@ pub enum OpenTarget {
     },
     Query {
         text: String,
+    },
+    /// Run Manager의 저장된 job/service 하나를 연다. id만 전달하며 실제 job
+    /// 명령·환경변수는 수신 앱이 자기 저장소에서 재검증한다.
+    Task {
+        id: String,
+    },
+    /// 대상 앱이 설치되어 있지 않을 때 Manager의 해당 앱 설치 화면을 연다.
+    Install {
+        #[serde(rename = "appId")]
+        app_id: String,
     },
     Handoff {
         #[serde(rename = "handoffKind")]
@@ -131,6 +144,8 @@ fn parse_rest(rest: &[String]) -> Result<Option<OpenRequest>, ParseError> {
     let mut profile: Option<String> = None;
     let mut workspace: Option<String> = None;
     let mut query: Option<String> = None;
+    let mut task: Option<String> = None;
+    let mut install_app: Option<String> = None;
     let mut handoff_kind: Option<String> = None;
     let mut handoff_id: Option<String> = None;
     let mut from: Option<String> = None;
@@ -154,6 +169,20 @@ fn parse_rest(rest: &[String]) -> Result<Option<OpenRequest>, ParseError> {
             "--profile" => profile = Some(take_value(rest, &mut i, flag)?),
             "--workspace" => workspace = Some(take_value(rest, &mut i, flag)?),
             "--query" => query = Some(take_value(rest, &mut i, flag)?),
+            "--task" => {
+                let value = take_value(rest, &mut i, flag)?;
+                if !valid_opaque_id(&value, MAX_TASK_ID_BYTES, true) {
+                    return Err(ParseError("--task 값이 올바르지 않음".into()));
+                }
+                task = Some(value);
+            }
+            "--install-app" => {
+                let value = take_value(rest, &mut i, flag)?;
+                if !valid_opaque_id(&value, MAX_INSTALL_APP_ID_BYTES, false) {
+                    return Err(ParseError("--install-app 값이 올바르지 않음".into()));
+                }
+                install_app = Some(value);
+            }
             "--handoff-kind" => handoff_kind = Some(take_value(rest, &mut i, flag)?),
             "--handoff-id" => handoff_id = Some(take_value(rest, &mut i, flag)?),
             "--from" => from = Some(take_value(rest, &mut i, flag)?),
@@ -178,6 +207,8 @@ fn parse_rest(rest: &[String]) -> Result<Option<OpenRequest>, ParseError> {
         .or_else(|| profile.map(|id| OpenTarget::Profile { id }))
         .or_else(|| workspace.map(|path| OpenTarget::Workspace { path }))
         .or_else(|| query.map(|text| OpenTarget::Query { text }))
+        .or_else(|| task.map(|id| OpenTarget::Task { id }))
+        .or_else(|| install_app.map(|app_id| OpenTarget::Install { app_id }))
         .or(handoff);
 
     Ok(target.map(|target| OpenRequest { target, from }))
@@ -192,6 +223,17 @@ fn take_value(rest: &[String], i: &mut usize, flag: &str) -> Result<String, Pars
         .clone();
     *i += 2;
     Ok(value)
+}
+
+fn valid_opaque_id(value: &str, max_bytes: usize, extended: bool) -> bool {
+    !value.is_empty()
+        && value.len() <= max_bytes
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase()
+                || byte.is_ascii_digit()
+                || matches!(byte, b'-' | b'_')
+                || (extended && (byte.is_ascii_uppercase() || matches!(byte, b'.' | b':')))
+        })
 }
 
 /// `take_value` + u32 파싱. 값이 숫자가 아니면 `Err`.
@@ -234,6 +276,14 @@ pub fn build_argv(req: &OpenRequest) -> Vec<String> {
         OpenTarget::Query { text } => {
             out.push("--query".to_string());
             out.push(text.clone());
+        }
+        OpenTarget::Task { id } => {
+            out.push("--task".to_string());
+            out.push(id.clone());
+        }
+        OpenTarget::Install { app_id } => {
+            out.push("--install-app".to_string());
+            out.push(app_id.clone());
         }
         OpenTarget::Handoff { kind, id } => {
             out.push("--handoff-kind".to_string());
@@ -680,6 +730,41 @@ mod tests {
     }
 
     #[test]
+    fn round_trip_task_and_install_targets() {
+        round_trip(OpenRequest {
+            target: OpenTarget::Task { id: s("job-1") },
+            from: Some(s("devbox-launcher")),
+        });
+        round_trip(OpenRequest {
+            target: OpenTarget::Install {
+                app_id: s("repo-manager"),
+            },
+            from: Some(s("devbox-launcher")),
+        });
+    }
+
+    #[test]
+    fn task_and_install_targets_are_bounded_before_becoming_ipc_payloads() {
+        let secret = "TOP_SECRET_VALUE";
+        let task_error =
+            parse_argv(&argv(&["exe", "--task", &format!("../{secret}")])).unwrap_err();
+        assert!(!task_error.0.contains(secret));
+        assert!(parse_argv(&[
+            "exe".into(),
+            "--task".into(),
+            "x".repeat(MAX_TASK_ID_BYTES + 1),
+        ])
+        .is_err());
+        assert!(parse_argv(&argv(&["exe", "--install-app", "Unknown_App"])).is_err());
+        assert!(parse_argv(&[
+            "exe".into(),
+            "--install-app".into(),
+            "x".repeat(MAX_INSTALL_APP_ID_BYTES + 1),
+        ])
+        .is_err());
+    }
+
+    #[test]
     fn parses_and_round_trips_handoff_descriptor_without_payload() {
         let request = parse_argv(&argv(&[
             "exe",
@@ -767,6 +852,16 @@ mod tests {
             OpenRequest {
                 target: OpenTarget::Query { text: s("t") },
                 from: None,
+            },
+            OpenRequest {
+                target: OpenTarget::Task { id: s("job-1") },
+                from: Some(s("devbox-launcher")),
+            },
+            OpenRequest {
+                target: OpenTarget::Install {
+                    app_id: s("run-manager"),
+                },
+                from: Some(s("devbox-launcher")),
             },
             OpenRequest {
                 target: OpenTarget::Handoff {

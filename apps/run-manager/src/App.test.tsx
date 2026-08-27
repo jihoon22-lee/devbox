@@ -9,6 +9,7 @@ import {
   listJobs,
   listRuns,
   listServices,
+  onOpenRequest,
   restartService,
   runJobNow,
   setJobEnabled,
@@ -16,6 +17,7 @@ import {
   stopActiveRun,
   stopService,
   tailLog,
+  takePendingOpen,
 } from "./api";
 import type { Job, Run, ServiceInstance } from "./types";
 
@@ -45,6 +47,7 @@ vi.mock("./api", () => ({
     enabled: false,
     shortcutPath: "startup-link",
   })),
+  onOpenRequest: vi.fn(async () => () => undefined),
   previewCron: vi.fn(async () => []),
   quitApp: vi.fn(async () => undefined),
   restartService: vi.fn(),
@@ -56,6 +59,7 @@ vi.mock("./api", () => ({
   stopActiveRun: vi.fn(),
   stopService: vi.fn(),
   tailLog: vi.fn(),
+  takePendingOpen: vi.fn(async () => null),
   updateJob: vi.fn(),
   updateService: vi.fn(),
 }));
@@ -132,6 +136,8 @@ const restartServiceMock = vi.mocked(restartService);
 const deleteJobMock = vi.mocked(deleteJob);
 const deleteServiceMock = vi.mocked(deleteService);
 const tailLogMock = vi.mocked(tailLog);
+const onOpenRequestMock = vi.mocked(onOpenRequest);
+const takePendingOpenMock = vi.mocked(takePendingOpen);
 const confirmMock = vi.fn<(message?: string) => boolean>();
 
 function card(name: string): HTMLElement {
@@ -160,6 +166,8 @@ beforeEach(() => {
     nextCursor: "0",
     truncated: false,
   });
+  onOpenRequestMock.mockReset().mockResolvedValue(() => undefined);
+  takePendingOpenMock.mockReset().mockResolvedValue(null);
   confirmMock.mockReset().mockReturnValue(false);
   Object.defineProperty(window, "confirm", {
     configurable: true,
@@ -170,6 +178,22 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Run Manager context menus", () => {
+  it("requires explicit confirmation before a Launcher task mutates runtime state", async () => {
+    takePendingOpenMock.mockResolvedValueOnce({
+      target: { kind: "task", id: job.id },
+      from: "devbox-launcher",
+    });
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", { name: "Launcher 요청 확인" });
+    expect(runJobNowMock).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "취소" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "실행" }));
+    await waitFor(() => expect(runJobNowMock).toHaveBeenCalledWith(job.id));
+    await waitFor(() => expect(dialog.isConnected).toBe(false));
+  });
+
   it("selects the right-clicked job and exposes every job-owned action", async () => {
     render(<App />);
     await screen.findByRole("heading", { name: "백업" });

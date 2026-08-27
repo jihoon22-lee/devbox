@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 7,
+  "catalogRevision": 8,
   "apps": [
     {
       "id": "port-manager",
@@ -40,7 +40,7 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["path"],
+      "accepts": ["path", "profile"],
       "produces": ["snapshot:wsl-desktop/runtime/v1"],
       "actions": []
     },
@@ -146,7 +146,7 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": [],
+      "accepts": ["task"],
       "produces": ["snapshot:run-manager/status/v1"],
       "actions": []
     },
@@ -160,7 +160,7 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["path"],
+      "accepts": ["path", "profile"],
       "produces": [],
       "actions": []
     },
@@ -189,6 +189,20 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["path"],
+      "produces": [],
+      "actions": []
+    },
+    {
+      "id": "devbox-launcher",
+      "displayName": "Devbox Launcher",
+      "productName": "DevboxLauncher",
+      "identifier": "com.devbox.devboxlauncher",
+      "cargoPackage": "devbox-launcher",
+      "appDir": "apps/devbox-launcher",
+      "release": true,
+      "managerVisible": true,
+      "selfManaged": false,
+      "accepts": [],
       "produces": [],
       "actions": []
     }

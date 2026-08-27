@@ -68,14 +68,23 @@ describe("workbench applink routing", () => {
     });
   });
 
-  it("no-ops profile, workspace and query targets with a reason instead of failing silently", () => {
-    const profileReq: OpenRequest = { target: { kind: "profile", id: "p-1" }, from: null };
+  it("selects a profile target only when the opaque id exists", () => {
+    const request: OpenRequest = { target: { kind: "profile", id: "p-1" }, from: "devbox-launcher" };
+    expect(routeOpenRequest(request, [profile({ id: "p-1" })])).toEqual({
+      kind: "selectProfile",
+      profileId: "p-1",
+    });
+    expect(routeOpenRequest(request, [])).toEqual({
+      kind: "noop",
+      reason: expect.stringContaining("찾을 수 없다"),
+    });
+  });
+
+  it("no-ops workspace, query and newer foreign targets with a reason", () => {
     const workspaceReq: OpenRequest = { target: { kind: "workspace", path: "/tmp/ws" }, from: null };
     const queryReq: OpenRequest = { target: { kind: "query", text: "hello" }, from: null };
-    expect(routeOpenRequest(profileReq, [])).toEqual({
-      kind: "noop",
-      reason: expect.stringContaining("profile"),
-    });
+    const taskReq: OpenRequest = { target: { kind: "task", id: "job-1" }, from: null };
+    const installReq: OpenRequest = { target: { kind: "install", appId: "code-pad" }, from: null };
     expect(routeOpenRequest(workspaceReq, [])).toEqual({
       kind: "noop",
       reason: expect.stringContaining("workspace"),
@@ -83,6 +92,14 @@ describe("workbench applink routing", () => {
     expect(routeOpenRequest(queryReq, [])).toEqual({
       kind: "noop",
       reason: expect.stringContaining("query"),
+    });
+    expect(routeOpenRequest(taskReq, [])).toEqual({
+      kind: "noop",
+      reason: expect.stringContaining("task"),
+    });
+    expect(routeOpenRequest(installReq, [])).toEqual({
+      kind: "noop",
+      reason: expect.stringContaining("install"),
     });
   });
 });

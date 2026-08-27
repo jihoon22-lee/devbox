@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauri } from "./lib/isTauri";
 import type {
   CronPreviewItem,
@@ -14,6 +15,21 @@ import type {
   StartupShortcutStatus,
   TailResponse,
 } from "./types";
+
+export interface OpenRequest {
+  target: { kind: "task"; id: string };
+  from: string | null;
+}
+
+export async function takePendingOpen(): Promise<OpenRequest | null> {
+  if (!isTauri()) return null;
+  return invoke<OpenRequest | null>("take_pending_open");
+}
+
+export function onOpenRequest(handler: () => void): Promise<UnlistenFn> {
+  if (!isTauri()) return Promise.resolve(() => undefined);
+  return listen<OpenRequest>("devbox://open", () => handler());
+}
 
 let mockJobs: Job[] = [];
 let mockServices: Job[] = [];
