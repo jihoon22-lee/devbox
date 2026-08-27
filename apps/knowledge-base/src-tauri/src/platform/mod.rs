@@ -149,19 +149,19 @@ pub fn shortcut_status(state: tauri::State<'_, Arc<QuickCaptureShortcutState>>) 
 #[cfg(target_os = "windows")]
 mod windows {
     use super::*;
+    use ::windows::Win32::Foundation::{LPARAM, WPARAM};
+    use ::windows::Win32::System::Threading::GetCurrentThreadId;
+    use ::windows::Win32::UI::Input::KeyboardAndMouse::{
+        RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, VK_K,
+    };
+    use ::windows::Win32::UI::WindowsAndMessaging::{
+        DispatchMessageW, GetMessageW, PeekMessageW, PostThreadMessageW, TranslateMessage, MSG,
+        PM_NOREMOVE, WM_HOTKEY, WM_QUIT,
+    };
     use std::sync::mpsc::sync_channel;
     use std::thread;
     use std::time::Duration;
     use tauri::Manager;
-    use windows::Win32::Foundation::{LPARAM, WPARAM};
-    use windows::Win32::System::Threading::GetCurrentThreadId;
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, VK_K,
-    };
-    use windows::Win32::UI::WindowsAndMessaging::{
-        DispatchMessageW, GetMessageW, PeekMessageW, PostThreadMessageW, TranslateMessage, MSG,
-        PM_NOREMOVE, WM_HOTKEY, WM_QUIT,
-    };
 
     // The ID is private to the worker thread because the registration uses a
     // null HWND.  It only needs to be stable for message discrimination.
@@ -237,8 +237,8 @@ mod windows {
                         let _ = worker_app.emit(QUICK_CAPTURE_EVENT, ());
                     }
                     unsafe {
-                        TranslateMessage(&message);
-                        DispatchMessageW(&message);
+                        let _ = TranslateMessage(&message);
+                        let _ = DispatchMessageW(&message);
                     }
                 }
                 let _ = unsafe { UnregisterHotKey(None, HOTKEY_ID) };

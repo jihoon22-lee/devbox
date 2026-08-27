@@ -351,6 +351,36 @@ review:
 - dependency policy/notices and `git diff --check` are rerun on the committed
   PR tree; GitHub Actions remains the authoritative Windows compile gate.
 
+The first latest-head Windows CI compile completed `cargo check` and then
+exposed four Windows-only `-D warnings` findings during Clippy. The follow-up
+fix removed a non-Unix directory-sync fallback that cannot be called on
+Windows, made both reparse-point cfg branches expression-valued, and explicitly
+discarded the Win32 `TranslateMessage`/`DispatchMessageW` return values. The
+same grouped tree then passed Linux `cargo fmt --check` and
+`cargo clippy -p knowledge-base --all-targets -- -D warnings`; a fresh Windows
+CI run is required before merge.
+
+The next Linux workspace run exposed a real root-identity race rather than a
+test-only timing problem: after deleting a directory, the filesystem may reuse
+its `(device, inode)` for an immediate replacement. `VaultIdentity` now keeps
+an `Arc`-owned open directory lease from preview through save (a directory
+`File` on Unix and a share-delete `CreateFileW` handle on Windows), and
+cross-checks the lease identity against both path metadata snapshots. Keeping
+the original object open prevents inode/file-index reuse while the approval is
+valid, so replacement remains stale even under immediate reuse. Focused and
+full Knowledge tests (100) plus strict Clippy passed after this fix.
+
+The following Windows test run passed compile and Clippy but exposed a path-
+spelling bug in the rollback identity fixture: `Path::canonicalize` adds the
+Windows verbatim prefix while the caller can still hold the equivalent normal
+drive spelling. `existing_path` previously compared those strings before
+canonicalizing the child and rejected a valid in-vault regular file. It now
+walks the caller spelling first to reject every symlink/reparse component,
+canonicalizes the child, and only then derives the root-relative path. This
+preserves the fail-closed link boundary while accepting equivalent Windows
+prefix spellings; the replacement-safe rollback test remains unchanged and is
+rerun by the fresh Windows gate.
+
 The Windows-only hotkey, `MoveFileExW`, filesystem-identity, clipboard/drop,
 and watcher overflow paths still require packaged runtime evidence at W2.
 

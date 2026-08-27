@@ -580,11 +580,6 @@ fn sync_vault_directory(path: &Path) -> Result<(), std::io::Error> {
     File::open(path)?.sync_all()
 }
 
-#[cfg(not(unix))]
-fn sync_vault_directory(_path: &Path) -> Result<(), std::io::Error> {
-    Ok(())
-}
-
 #[cfg(test)]
 fn save_capture_in_root(
     conn: &Connection,

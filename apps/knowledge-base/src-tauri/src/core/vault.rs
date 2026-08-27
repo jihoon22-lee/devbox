@@ -8,16 +8,29 @@
 
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 const INVALID_ROOT: &str = "빠른 캡처 저장 위치를 사용할 수 없습니다";
 const INVALID_ENTRY: &str = "Knowledge 항목 경로가 올바르지 않습니다";
 const STALE_ROOT: &str = "빠른 캡처 미리보기가 오래되어 다시 확인하세요";
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct VaultIdentity {
     canonical_path: PathBuf,
     marker: FileIdentity,
+    // Keep the original directory object alive from preview through save.
+    // This prevents Unix inode / Windows file-index reuse from making a
+    // delete-and-recreate replacement compare equal to the preview snapshot.
+    _root_lease: Arc<RootLease>,
 }
+
+impl PartialEq for VaultIdentity {
+    fn eq(&self, other: &Self) -> bool {
+        self.canonical_path == other.canonical_path && self.marker == other.marker
+    }
+}
+
+impl Eq for VaultIdentity {}
 
 /// Filesystem identity captured for one regular file.  Rollback callers must
 /// provide this token so a path replaced by another writer is never deleted
@@ -57,6 +70,33 @@ enum FileIdentity {
     #[cfg(not(any(unix, windows)))]
     Path(PathBuf),
 }
+
+#[cfg(unix)]
+struct RootLease {
+    _file: std::fs::File,
+}
+
+#[cfg(windows)]
+struct RootLease {
+    handle: ::windows::Win32::Foundation::HANDLE,
+}
+
+#[cfg(windows)]
+unsafe impl Send for RootLease {}
+#[cfg(windows)]
+unsafe impl Sync for RootLease {}
+
+#[cfg(windows)]
+impl Drop for RootLease {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = ::windows::Win32::Foundation::CloseHandle(self.handle);
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+struct RootLease;
 
 impl FileIdentity {
     fn is_usable(&self) -> bool {
@@ -141,9 +181,14 @@ impl VaultIdentity {
         if marker != original_marker {
             return Err(VaultError::InvalidRoot);
         }
+        let (root_lease, lease_marker) = open_root_lease(&canonical_path)?;
+        if !lease_marker.is_usable() || lease_marker != marker {
+            return Err(VaultError::InvalidRoot);
+        }
         Ok(Self {
             canonical_path,
             marker,
+            _root_lease: Arc::new(root_lease),
         })
     }
 
@@ -209,20 +254,26 @@ impl VaultIdentity {
     /// converting platform paths to lossy strings during rollback/cleanup.
     pub fn existing_path(&self, path: &Path) -> Result<PathBuf, VaultError> {
         self.revalidate()?;
-        let relative = path
-            .strip_prefix(&self.canonical_path)
-            .map_err(|_| VaultError::InvalidEntry)?;
-        validate_relative_path(relative)?;
-        self.reject_link_components_path(relative)?;
-
         let metadata = std::fs::symlink_metadata(path).map_err(|_| VaultError::InvalidEntry)?;
         if is_link_or_reparse(&metadata) {
             return Err(VaultError::InvalidEntry);
         }
+        // Reject links/reparse points in the caller's spelling before
+        // canonicalization. On Windows `Path::canonicalize` commonly adds a
+        // verbatim (`\\?\`) prefix, so the raw path cannot be compared
+        // lexically with the canonical vault root first. Walking the original
+        // spelling closes the ancestor-link boundary without depending on
+        // those equivalent prefix forms.
+        reject_root_link_components(path).map_err(|_| VaultError::InvalidEntry)?;
         let canonical = path.canonicalize().map_err(|_| VaultError::InvalidEntry)?;
         if canonical == self.canonical_path || !canonical.starts_with(&self.canonical_path) {
             return Err(VaultError::InvalidEntry);
         }
+        let relative = canonical
+            .strip_prefix(&self.canonical_path)
+            .map_err(|_| VaultError::InvalidEntry)?;
+        validate_relative_path(relative)?;
+        self.reject_link_components_path(relative)?;
         Ok(canonical)
     }
 
@@ -336,7 +387,7 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
         use std::os::windows::fs::MetadataExt;
         // FILE_ATTRIBUTE_REPARSE_POINT.  Using the std metadata extension
         // keeps junction detection in this app without another dependency.
-        return metadata.file_attributes() & 0x400 != 0;
+        metadata.file_attributes() & 0x400 != 0
     }
     #[cfg(not(windows))]
     {
@@ -345,7 +396,7 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
 }
 
 fn file_identity(path: &Path, metadata: &std::fs::Metadata) -> FileIdentity {
-    let _ = path;
+    let _ = (path, metadata);
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -356,16 +407,110 @@ fn file_identity(path: &Path, metadata: &std::fs::Metadata) -> FileIdentity {
     }
     #[cfg(windows)]
     {
-        use std::os::windows::fs::MetadataExt;
-        FileIdentity::Windows {
-            volume: metadata.volume_serial_number(),
-            file_index: metadata.file_index(),
+        let Ok(handle) = open_windows_path_handle(path) else {
+            return FileIdentity::Windows {
+                volume: None,
+                file_index: None,
+            };
+        };
+        let identity = windows_handle_identity(handle);
+        let close_result = unsafe { ::windows::Win32::Foundation::CloseHandle(handle) };
+        if close_result.is_err() {
+            return FileIdentity::Windows {
+                volume: None,
+                file_index: None,
+            };
         }
+        identity
     }
     #[cfg(not(any(unix, windows)))]
     {
         FileIdentity::Path(path.to_path_buf())
     }
+}
+
+#[cfg(unix)]
+fn open_root_lease(path: &Path) -> Result<(RootLease, FileIdentity), VaultError> {
+    use std::os::unix::fs::MetadataExt;
+
+    let file = std::fs::File::open(path).map_err(|_| VaultError::InvalidRoot)?;
+    let metadata = file.metadata().map_err(|_| VaultError::InvalidRoot)?;
+    if !metadata.is_dir() {
+        return Err(VaultError::InvalidRoot);
+    }
+    let identity = FileIdentity::Unix {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    };
+    Ok((RootLease { _file: file }, identity))
+}
+
+#[cfg(windows)]
+fn open_root_lease(path: &Path) -> Result<(RootLease, FileIdentity), VaultError> {
+    let handle = open_windows_path_handle(path).map_err(|_| VaultError::InvalidRoot)?;
+    let identity = windows_handle_identity(handle);
+    if !identity.is_usable() {
+        unsafe {
+            let _ = ::windows::Win32::Foundation::CloseHandle(handle);
+        }
+        return Err(VaultError::InvalidRoot);
+    }
+    Ok((RootLease { handle }, identity))
+}
+
+#[cfg(windows)]
+fn open_windows_path_handle(
+    path: &Path,
+) -> Result<::windows::Win32::Foundation::HANDLE, ::windows::core::Error> {
+    use ::windows::core::PCWSTR;
+    use ::windows::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+        FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+    use std::os::windows::ffi::OsStrExt;
+
+    let wide = path
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    unsafe {
+        CreateFileW(
+            PCWSTR(wide.as_ptr()),
+            FILE_READ_ATTRIBUTES.0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            None,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            None,
+        )
+    }
+}
+
+#[cfg(windows)]
+fn windows_handle_identity(handle: ::windows::Win32::Foundation::HANDLE) -> FileIdentity {
+    use ::windows::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    if unsafe { GetFileInformationByHandle(handle, &mut information) }.is_err() {
+        return FileIdentity::Windows {
+            volume: None,
+            file_index: None,
+        };
+    }
+    FileIdentity::Windows {
+        volume: Some(information.dwVolumeSerialNumber),
+        file_index: Some(
+            (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
+        ),
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn open_root_lease(path: &Path) -> Result<(RootLease, FileIdentity), VaultError> {
+    Ok((RootLease, FileIdentity::Path(path.to_path_buf())))
 }
 
 #[cfg(test)]
