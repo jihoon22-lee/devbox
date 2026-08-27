@@ -11,6 +11,7 @@ import {
   type RepoEntry,
 } from "../api";
 import RemoteSyncPanel from "./RemoteSyncPanel";
+import { createRemoteOperationId } from "./RemoteSyncPanel";
 
 vi.mock("../api", () => ({
   GIT_REMOTE_BUSY: "이미 다른 Git 작업이 진행 중입니다.",
@@ -64,6 +65,87 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("RemoteSyncPanel", () => {
+  it("requires explicit pull confirmation and keeps remote details out of the summary", async () => {
+    render(<RemoteSyncPanel repo={repo} />);
+    fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
+    await screen.findByText("원격 작업을 실행할 수 있습니다.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Pull (FF only)" }));
+    expect(repoPullMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Pull (FF only)을 실행할까요?" })).toBeTruthy();
+    expect(document.body.textContent).not.toContain("https://user:credential@secret.example/repo");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "취소" }));
+  });
+
+  it("cancels a confirmation with Escape and returns focus without a native call", async () => {
+    render(<RemoteSyncPanel repo={repo} />);
+    fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
+    await screen.findByText("원격 작업을 실행할 수 있습니다.");
+
+    const trigger = screen.getByRole("button", { name: "Push" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Push을 실행할까요?" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(repoPushMock).not.toHaveBeenCalled();
+  });
+
+  it("invalidates a pull confirmation when the native status changes", async () => {
+    repoRemoteStatusMock
+      .mockResolvedValueOnce({ ...cleanState })
+      .mockResolvedValueOnce({ ...cleanState, dirty: true });
+    render(<RemoteSyncPanel repo={repo} />);
+    fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
+    await screen.findByText("원격 작업을 실행할 수 있습니다.");
+    fireEvent.click(screen.getByRole("button", { name: "Pull (FF only)" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
+    await screen.findByText("working tree에 변경 사항이 있어 pull/push를 실행할 수 없습니다.");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(repoPullMock).not.toHaveBeenCalled();
+  });
+
+  it("creates unique opaque operation IDs only when a confirmed remote mutation starts", async () => {
+    const first = createRemoteOperationId();
+    const second = createRemoteOperationId();
+    expect(first).not.toBe(second);
+    expect(first).toMatch(/^[A-Za-z0-9._-]+$/u);
+
+    render(<RemoteSyncPanel repo={repo} />);
+    fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
+    await screen.findByText("원격 작업을 실행할 수 있습니다.");
+    fireEvent.click(screen.getByRole("button", { name: "Pull (FF only)" }));
+    expect(repoPullMock).not.toHaveBeenCalled();
+    expect(repoRemoteCancelMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Pull (FF only) 실행" }));
+    await waitFor(() => expect(repoPullMock).toHaveBeenCalledWith(repo.path, expect.any(String)));
+    const operationId = repoPullMock.mock.calls[0][1];
+    expect(operationId).toMatch(/^[A-Za-z0-9._-]+$/u);
+  });
+
+  it("does not offer cancel during the post-mutation status refresh", async () => {
+    let resolveRefresh: ((value: RemoteState) => void) | undefined;
+    repoRemoteStatusMock
+      .mockResolvedValueOnce({ ...cleanState })
+      .mockReturnValueOnce(new Promise((resolve) => { resolveRefresh = resolve; }));
+    repoPullMock.mockResolvedValueOnce(undefined);
+    render(<RemoteSyncPanel repo={repo} />);
+    fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
+    await screen.findByText("원격 작업을 실행할 수 있습니다.");
+    fireEvent.click(screen.getByRole("button", { name: "Pull (FF only)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pull (FF only) 실행" }));
+    await waitFor(() => expect(repoPullMock).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("완료"));
+    expect(screen.queryByRole("button", { name: "취소" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Git remote sync" }).getAttribute("aria-busy")).toBe("true");
+    resolveRefresh?.({ ...cleanState });
+    await waitFor(() => expect(screen.getByRole("region", { name: "Git remote sync" }).getAttribute("aria-busy")).toBe("false"));
+  });
+
   it("loads state and sends exact repository-only actions", async () => {
     render(<RemoteSyncPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
@@ -83,9 +165,12 @@ describe("RemoteSyncPanel", () => {
     await screen.findByText("원격 작업을 실행할 수 있습니다.");
 
     fireEvent.click(screen.getByRole("button", { name: "Pull (FF only)" }));
+    expect(repoPullMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Pull (FF only) 실행" }));
     await waitFor(() => expect(repoPullMock).toHaveBeenCalledWith(repo.path, expect.any(String)));
     await waitFor(() => expect(screen.getByRole("region", { name: "Git remote sync" }).getAttribute("aria-busy")).toBe("false"));
     fireEvent.click(screen.getByRole("button", { name: "Push" }));
+    fireEvent.click(screen.getByRole("button", { name: "Push 실행" }));
     await waitFor(() => expect(repoPushMock).toHaveBeenCalledWith(repo.path, expect.any(String)));
     expect(screen.queryByRole("button", { name: /force|merge|rebase/i })).toBeNull();
   });

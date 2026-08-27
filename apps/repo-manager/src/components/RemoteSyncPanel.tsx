@@ -12,6 +12,7 @@ import {
   type RemoteState,
   type RepoEntry,
 } from "../api";
+import ConfirmDialog from "./ConfirmDialog";
 
 interface Props {
   repo: RepoEntry | null;
@@ -78,11 +79,32 @@ function stateSummary(state: RemoteState | null): string {
   return "원격 작업을 실행할 수 있습니다.";
 }
 
-function createRemoteOperationId(): string {
+function remoteStateSignature(state: RemoteState | null): string {
+  if (!state) return "none";
+  return JSON.stringify([
+    state.currentBranch,
+    state.upstream,
+    state.ahead,
+    state.behind,
+    state.dirty,
+    state.detached,
+    state.diverged,
+    state.operationInProgress,
+  ]);
+}
+
+export function createRemoteOperationId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
   return `remote-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+interface RemoteConfirmation {
+  repositoryKey: string;
+  repositoryPath: string;
+  action: Exclude<RemoteAction, "fetch">;
+  stateSignature: string;
 }
 
 /** Bounded fetch/FF-only pull/current-branch push surface for one repository. */
@@ -97,6 +119,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
   const mountedRef = useRef(false);
   const operationIdRef = useRef<string | null>(null);
   const [cancelPending, setCancelPending] = useState(false);
+  const [remoteConfirmation, setRemoteConfirmation] = useState<RemoteConfirmation | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -107,6 +130,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
     setState(null);
     setBusy(false);
     setAction(null);
+    setRemoteConfirmation(null);
     setStatus("원격 상태를 불러오면 fetch·pull·push를 실행할 수 있습니다.");
     setError(null);
 
@@ -131,6 +155,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
     busyRef.current = true;
     setBusy(true);
     setAction(null);
+    setRemoteConfirmation(null);
     setState(null);
     setError(null);
     setStatus("원격 상태를 확인하는 중입니다.");
@@ -198,6 +223,12 @@ export default function RemoteSyncPanel({ repo }: Props) {
     void operation
       .then(async () => {
         if (!isCurrent(sequence)) return;
+        // The Git mutation has finished. The remaining status read is a
+        // separate, non-cancellable refresh phase, so never offer cancel for
+        // an operation that native has already completed.
+        operationIdRef.current = null;
+        setCancelPending(false);
+        setAction(null);
         setStatus(`${ACTION_LABELS[nextAction]} 완료.`);
         try {
           const refreshed = await repoRemoteStatus(path);
@@ -231,6 +262,44 @@ export default function RemoteSyncPanel({ repo }: Props) {
           setAction(null);
         }
       });
+  };
+
+  const requestAction = (nextAction: RemoteAction) => {
+    if (nextAction === "fetch") {
+      runAction(nextAction);
+      return;
+    }
+    if (busyRef.current || !state) return;
+    const reason = blockedReason(state, nextAction);
+    if (reason) {
+      setError(reason);
+      return;
+    }
+    setError(null);
+    setRemoteConfirmation({
+      repositoryKey: repo.canonicalKey,
+      repositoryPath: repo.path,
+      action: nextAction,
+      stateSignature: remoteStateSignature(state),
+    });
+  };
+
+  const confirmAction = () => {
+    const pending = remoteConfirmation;
+    if (!pending) return;
+    const stillCurrent = pending.repositoryKey === repo.canonicalKey
+      && pending.repositoryPath === repo.path
+      && state !== null
+      && pending.stateSignature === remoteStateSignature(state)
+      && blockedReason(state, pending.action) === null;
+    setRemoteConfirmation(null);
+    if (!stillCurrent) {
+      setError(GIT_REMOTE_STATE_CHANGED);
+      return;
+    }
+    // Generate the opaque operation identity only after the user confirms.
+    // `runAction` is also used by fetch, which has no confirmation gate.
+    runAction(pending.action);
   };
 
   const cancel = () => {
@@ -291,7 +360,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
           type="button"
           className="btn primary"
           disabled={busy || !state || Boolean(state.operationInProgress)}
-          onClick={() => runAction("fetch")}
+          onClick={() => requestAction("fetch")}
         >
           Fetch
         </button>
@@ -300,7 +369,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
           className="btn primary"
           disabled={busy || pullBlocked}
           title={state ? blockedReason(state, "pull") ?? "fast-forward-only pull" : undefined}
-          onClick={() => runAction("pull")}
+          onClick={() => requestAction("pull")}
         >
           Pull (FF only)
         </button>
@@ -309,7 +378,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
           className="btn primary"
           disabled={busy || pushBlocked}
           title={state ? blockedReason(state, "push") ?? "current branch push" : undefined}
-          onClick={() => runAction("push")}
+          onClick={() => requestAction("push")}
         >
           Push
         </button>
@@ -317,6 +386,20 @@ export default function RemoteSyncPanel({ repo }: Props) {
       <div className="remote-sync-help dim">
         Pull은 fast-forward만 허용하며 force push·merge/rebase 자동화는 제공하지 않습니다.
       </div>
+      {remoteConfirmation ? (
+        <ConfirmDialog
+          title={`${ACTION_LABELS[remoteConfirmation.action]}을 실행할까요?`}
+          summary={[
+            remoteConfirmation.action === "pull"
+              ? "현재 repository의 configured upstream에서 fast-forward만 pull합니다."
+              : "현재 branch의 configured upstream destination으로 push합니다.",
+            "remote URL, credential과 repository 경로는 이 확인창에 표시하지 않습니다.",
+          ]}
+          confirmLabel={`${ACTION_LABELS[remoteConfirmation.action]} 실행`}
+          onCancel={() => setRemoteConfirmation(null)}
+          onConfirm={confirmAction}
+        />
+      ) : null}
     </section>
   );
 }

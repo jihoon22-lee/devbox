@@ -655,6 +655,41 @@ helper/hook descendant와 real bare-remote smoke는 native Windows W2에서 최�
 위험이다. #316–#319에는 #307 handoff, arbitrary shell, destructive recovery와 version bump가
 포함되지 않는다.
 
+**#316–#319 세부 계약 보강.** Native request는 read-only 조회와 mutation을 분리하며,
+`repo_stage`/`repo_unstage`/`repo_commit`은 `{ path, paths/message, operationId }`, remote
+`repo_fetch`/`repo_pull`/`repo_push`는 `{ path, operationId }`, 취소는 각각
+`repo_local_cancel({ request: { operationId } })`와 `repo_remote_cancel({ request: { operationId } })`
+로 고정한다. `operationId`는 128 bytes 이하의 opaque `[A-Za-z0-9._-]` 값이며 첫 async
+await 전에 등록된다. cancel은 path를 다시 열지 않고 해당 child의 cancellation token만
+설정하고, frontend는 unmount·stale 결과를 sequence guard로 폐기한다.
+
+Fetch argv는 remote/refspec 없이 `git ... fetch --no-tags`만 사용한다. Git의 현재 branch
+configured remote를 우선하고 branch remote가 없으면 `origin`을 기본값으로 선택하며 `--all`은
+사용하지 않는다. Pull은 `--ff-only --no-rebase`만 허용하고, push는 native가 확인한 현재
+branch의 configured remote와 upstream destination으로 `HEAD:refs/heads/<destination>`만
+전송한다. force push/reset/clean/자동 merge/rebase는 없으며, dirty·detached·no-upstream·
+diverged·merge/rebase 진행 중 상태는 고정 오류로 차단한다(push는 behind도 차단). Fetch도
+merge/rebase 또는 다른 Git 작업 진행 중에는 차단한다.
+
+모든 local/remote mutation과 `create_worktree`는 표시 경로가 아니라 `git --git-common-dir`
+directory의 filesystem identity로 native single-flight lock을 공유한다. linked worktree는
+같은 common identity를 가지므로 서로와 create_worktree를 동시에 실행할 수 없다. Unix는
+열린 디렉터리의 `dev/inode`, Windows는 native handle의 `volume serial/file index`를 비교하고,
+최종 symlink/reparse point를 따르지 않는다. worktree/common directory와 새 worktree target
+parent identity는 mutation 직전에 재검증하며 바뀌면 child를 생성하지 않는다. Git child에는
+repository-selection override(`GIT_DIR`, `GIT_COMMON_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
+object/alternate-object/discovery/prefix/quarantine 관련 변수)를 제거하지만 Git config와
+credential/SSH/askpass 환경은 유지해 사용자의 credential helper를 그대로 사용한다.
+
+History authored timestamp는 strict `%aI` calendar/time과 `Z` 또는 `±14:00` offset을 검증하고,
+history/detail/diff와 remote branch/upstream 및 push ref parser는 bounded UTF-8·control/
+whitespace·URL/userinfo·traversal/ref syntax 경계에서 fail-closed한다. Scan과 각 panel은
+mounted/request sequence guard를 사용하며 backend/UI 오류는 raw path·stderr·remote URL·
+credential·commit message를 반향하지 않는 fixed error다. Commit/pull/push는 검토한 snapshot이
+바뀌면 무효화되는 explicit confirmation이 필요하고, 확인창은 취소 버튼에 initial focus,
+Tab focus trap, Escape 취소, 닫힌 뒤 원래 trigger focus 복원을 제공한다. Fetch는 working-tree
+read-only 경계라 확인 없이 시작하되 같은 ID·lock·cancel 규칙을 적용한다.
+
 **2026-08-26 #410 구현 상태.** WSL Desktop이 Workbench #281과 Life Log가 읽을 수 있는
 `wsl-desktop/runtime/v1` snapshot producer를 맡도록 연결했다. 기존
 `crates/integration::Envelope::with_views`와 `write_atomic`을 사용해

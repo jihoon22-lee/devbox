@@ -137,19 +137,24 @@ repo-manager:     React → commands → git crate → repository/worktree 탐�
                    ├ read-only history/detail/diff → run_bounded → bounded parser → React
                    ├ selected stage/unstage + explicit commit → run_mutating → Git index/commit
                    ├ Git safety preflight → run_bounded → porcelain-v2/marker parser → React
-                   └ remote status/preflight → bounded parser → fetch/FF-only pull/exact branch push
-                      → run_mutating_with_cancel → configured Git remote
+                   └ remote status/preflight → bounded parser → default-remote fetch/
+                      FF-only pull/exact branch push → run_mutating_with_cancel → configured Git remote
 ```
 
 Repo Manager의 Git history·diff(#316)는 선택된 canonical repository에서만 실행되는 native
 read-only 흐름이다. repo_history, repo_commit_detail, repo_diff는 hexadecimal object ID와
 고정된 argv만 허용하고 공용 crates/git::run_bounded로 stdin/stderr·timeout·stdout 상한을
 강제한다. parser는 NUL metadata, repository-relative path, text/binary marker를 검증하며
-history/detail/diff와 원문을 storage·telemetry·remote network로 복제하지 않는다.
+history/detail/diff와 원문을 storage·telemetry·remote network로 복제하지 않는다. History는
+기본 50개(최대 100개), detail 128KiB, 전체 diff 2MiB·파일당 patch 512KiB·최대 256파일로
+제한한다. `%aI` authored timestamp는 calendar/date-time과 `Z` 또는 `±14:00` offset까지
+strict ISO로 확인하며, 잘못된 날짜·시간·offset·hex ID는 fixed error로 폐기한다.
 
 selected stage/unstage·explicit commit(#317)은 별도 mutable flow다. status는 bounded NUL
 porcelain parser를 거친 DTO로만 표시하고, backend가 재검증한 repository-relative path를
---literal-pathspecs와 -- 뒤에 전달해 선택한 파일만 index에 반영한다. commit은 현재 index만
+`--literal-pathspecs`와 `--` 뒤에 전달해 선택한 파일만 index에 반영한다. rename 선택은
+new/old path를 함께 검증해 전달하고, unborn repository unstage는 `git rm --cached`로
+worktree를 보존한다. Commit은 `operationId`를 가진 명시적 확인을 통과한 뒤 현재 index만
 대상으로 하며 unstaged 파일을 자동 추가하지 않는다. 공용 crates/git::run_mutating은 Git
 config와 credential helper 해석을 그대로 두되 stdin/stderr를 닫고 timeout/stdout 상한을
 적용하며 credential·raw path·message·stderr를 devbox가 저장하거나 반환하지 않는다.
@@ -159,15 +164,37 @@ rev-parse --git-path의 rebase/merge marker만 읽는다. dirty, detached, upstr
 ahead/behind·diverged와 진행 중인 rebase/merge를 deterministic issue ID로 분류하며,
 malformed/overflow·권한·busy·unmount·marker race는 고정 오류로 닫힌다. repository/index/ref/
 remote/credential를 변경하지 않고 force push/reset/clean 또는 automatic recovery도 제공하지 않는다.
+Frontend는 scan·preflight·panel 요청마다 mounted/request-sequence guard를 적용해 stale
+응답을 폐기하며, failure는 raw path·Git stderr·remote URL·credential 없는 fixed error만
+보인다. Preflight의 `safe`는 read-only snapshot의 known blocker가 없다는 의미일 뿐
+mutation authority가 아니다.
 
-remote sync(#318)는 fetch --no-tags, pull --ff-only --no-rebase, native가 검증한 configured
-remote/upstream 대상의 exact current-branch push만 사용한다. pull/push는 clean·attached·
-upstream·non-diverged preflight를 통과해야 하며, 모든 remote action은 in-progress merge/rebase를
-차단한다. local mutation과 remote mutation은 canonical repository별 single-flight registry와
-RAII guard를 공유하고, cancellation/timeout은 Unix process group 또는 Windows kill-on-close
-Job Object로 Git hook·credential helper·SSH/transport descendant까지 종료한다. root Git이 먼저
-끝나도 process tree를 먼저 닫아 inherited stdout pipe가 reader join을 무기한 유지하지 않는다.
-UI의 busy/unmount/request-sequence guard는 duplicate와 stale 결과를 폐기한다.
+remote sync(#318)는 remote/refspec 없이 `fetch --no-tags`를 호출해 Git의 기본 선택 규칙
+(현재 branch에 configured remote, 없으면 `origin` fallback)를 사용하며 `--all`은 금지한다.
+Pull은 `--ff-only --no-rebase`, push는 native가 읽어 검증한 configured remote와 upstream
+destination에 대한 `HEAD:refs/heads/<destination>`만 사용한다. Pull/push는 clean·attached·
+upstream·non-diverged 상태를 요구하고 push는 behind도 차단하며, 모든 remote action은
+in-progress merge/rebase를 차단한다. Commit/pull/push는 UI 확인창을 거친다(검토 snapshot이
+바뀌면 무효화); fetch는 read-only working tree 경계 때문에 확인 없이 시작할 수 있다.
+
+Local·remote operation ID는 bounded opaque `operationId`로 첫 async await 전에 등록되고,
+`repo_local_cancel({request:{operationId}})`/`repo_remote_cancel({request:{operationId}})`가
+path 재검증 없이 해당 child를 취소한다. local mutation, remote mutation, `create_worktree`는
+표시 경로가 아니라 `git --git-common-dir`의 common Git directory filesystem identity로
+single-flight lock을 공유한다. linked worktree도 같은 common identity를 사용하므로 서로
+동시 진입할 수 없다. Unix identity는 `dev/inode`, Windows identity는 native handle의
+`volume serial/file index`이며, worktree/common directory와 worktree-create target parent는
+mutation 직전에 다시 확인한다. cancellation/timeout은 Unix process group 또는 Windows
+kill-on-close Job Object로 Git hook·credential helper·SSH/transport descendant까지 종료하고,
+root Git이 먼저 끝나도 process tree와 bounded stdout reader를 회수한다.
+
+`crates/git` child 환경에서는 `GIT_DIR`, `GIT_COMMON_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
+`GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_CEILING_DIRECTORIES`,
+`GIT_DISCOVERY_ACROSS_FILESYSTEM`, `GIT_PREFIX`, `GIT_QUARANTINE_PATH` 같은 repository-selection
+override만 제거한다. Git config 및 credential/SSH/askpass 환경은 유지해 사용자의 credential
+helper가 동작하도록 하며 devbox가 credential을 읽거나 저장하지 않는다. UI의 busy,
+unmount/request-sequence와 confirmation focus trap/initial-cancel-focus/Escape/trigger-focus
+restore는 duplicate·stale·우발적 mutation을 차단한다.
 
 Port Manager의 listener row는 source별 display metadata와 kill precondition을 분리한다. Windows
 row의 command line/path는 읽기 전용·bounded·credential-redacted projection이며, Windows creation

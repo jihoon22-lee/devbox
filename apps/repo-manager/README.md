@@ -15,10 +15,10 @@
   repository 카드로 포커스를 돌려보낸다. 카드 안의 텍스트 입력은 기본 우클릭·IME 동작을 유지한다.
 - **정리 후보** — merged/stale branch 후보, remove 전 uncommitted/untracked 검사
 - **일상 Git 흐름 (#317)** — 변경 파일을 읽어 선택한 경로만 stage/unstage하고, 현재
-  index에 올라간 파일만 명시적으로 commit
-- **원격 Git 흐름 (#318)** — configured remote를 fetch하고, clean·attached·upstream 상태에서
+  index에 올라간 파일만 명시적으로 commit한다. Commit은 별도 확인 후에만 실행된다.
+- **원격 Git 흐름 (#318)** — Git 기본 remote를 fetch하고, clean·attached·upstream 상태에서
   fast-forward-only/no-rebase pull과 configured upstream destination으로 제한한 현재 branch
-  push를 실행
+  push를 실행한다. Pull/push는 별도 확인 후에만 실행된다.
 
 ## 안전 경계
 
@@ -36,12 +36,27 @@
   bounded message로 현재 index만 실행하고 unstaged 파일을 자동 추가하지 않는다.
 - Git의 기본 credential helper/config 경계를 그대로 사용하되 devbox가 credential을 읽거나 저장하지
   않는다. stdin/stderr는 bounded runner에서 차단하고 실패는 고정 오류로 표시한다.
+- Git child에는 선택 repository를 바꿀 수 있는 `GIT_DIR`, `GIT_COMMON_DIR`, `GIT_WORK_TREE`,
+  `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
+  `GIT_CEILING_DIRECTORIES`, `GIT_DISCOVERY_ACROSS_FILESYSTEM`, `GIT_PREFIX`,
+  `GIT_QUARANTINE_PATH`를 전달하지 않는다. `GIT_ASKPASS`를 포함한 credential/SSH/askpass
+  환경과 Git config는 제거하지 않아 사용자의 configured credential helper가 계속 동작하며,
+  devbox는 그 값을 읽거나 저장하지 않는다.
 - 원격 작업은 remote URL·refspec·credential을 frontend에서 받지 않으며, force push·reset·clean·
   merge/rebase 자동화를 제공하지 않는다. dirty/detached/no-upstream/diverged/in-progress 상태는
   pull/push 전 고정 오류로 차단하고, fetch도 진행 중인 merge/rebase에서는 차단한다.
 - stage/unstage/commit과 fetch/pull/push는 canonical repository별 native single-flight lock을
   공유한다. 서로 다른 UI panel에서 동시에 실행해도 한 작업만 진입하며, blocking Git/파일시스템
   호출은 Tauri async runtime 밖의 blocking worker에서 실행한다.
+- 이 lock의 키는 표시 경로나 문자열이 아니라 Git의 `--git-common-dir` filesystem identity다.
+  따라서 linked worktree와 `create_worktree`도 같은 common Git directory를 공유하면 서로
+  차단된다. Unix에서는 열린 디렉터리의 `dev/inode`, Windows에서는 native handle의
+  `volume serial/file index`를 비교하고, 최종 symlink/reparse point는 따라가지 않는다.
+  worktree/common directory와 worktree-create target parent identity는 Git mutation 직전에
+  다시 확인하며 바뀌면 fixed error로 child를 생성하지 않는다.
+- scan과 각 panel은 mounted 상태와 monotonically increasing request sequence를 함께 확인해
+  늦은 응답이 새 root/repository 상태를 덮지 못하게 한다. backend와 UI는 raw path, Git stderr,
+  remote URL, credential, commit message를 오류에 반향하지 않고 작업별 고정 오류만 표시한다.
 
 ## Git 상태 사전 검사 (#319)
 
@@ -57,6 +72,13 @@ dirty tree, detached HEAD, upstream 없음, ahead/behind와 diverged 상태를 �
 않는다. UI는 상태 검사·새 repository 선택·unmount 사이의 늦은 응답을 버리고 duplicate 검사를
 무시한다. 이 기능은 상태만 읽으며 force push, reset, clean, force delete와 자동 복구 action을
 제공하지 않는다.
+
+Remote status의 branch/upstream metadata와 exact push ref는 bounded parser로 확인하며
+control/whitespace, URL·userinfo, 경로 traversal 및 Git ref syntax가 섞인 값은 fail-closed한다.
+Preflight branch label도 bounded/control 검사를 통과해야 한다. `issues`는
+`dirty`, `detached`, `noUpstream`, `diverged`, `rebaseInProgress`, `mergeInProgress` 순서의
+안정적인 ID다. `safe`는 이 read-only snapshot에 알려진 차단 사유가 없다는 뜻일 뿐 mutation
+권한이나 자동 복구 승인이 아니다.
 
 ## Git history · diff (#316)
 
@@ -83,12 +105,16 @@ native command contract는 다음 read-only request와 명시적 mutation reques
   `binary`, bounded `patch`, `truncated`를 가진다.
 - `repo_changes({ request: { path } })` — porcelain-v1 NUL status를 `{ path, oldPath,
   indexStatus, worktreeStatus, kind, staged, unstaged }`로 반환한다.
-- `repo_stage({ request: { path, paths } })`와 `repo_unstage({ request: { path, paths } })` —
+- `repo_stage({ request: { path, paths, operationId } })`와
+  `repo_unstage({ request: { path, paths, operationId } })` —
   검증된 상대 경로를 선택한 순서대로 `git add` 또는 `git restore --staged`에 전달한다.
   아직 HEAD가 없는 저장소의 unstage는 `git rm --cached`로 index만 되돌리고 worktree 파일은
-  보존한다.
-- `repo_commit({ request: { path, message } })` — bounded message를 `git commit --message`로
-  전달하며 현재 index만 commit한다. unstaged 파일을 자동 stage하지 않는다.
+  보존한다. `operationId`는 local cancel이 주소 지정하는 bounded opaque ID다.
+- `repo_commit({ request: { path, message, operationId } })` — bounded message를
+  `git commit --message`로 전달하며 현재 index만 commit한다. unstaged 파일을 자동 stage하지
+  않는다.
+- `repo_local_cancel({ request: { operationId } })` — path를 다시 열지 않고 해당 local
+  stage/unstage/commit child의 취소 token만 설정하며, 반환값은 실제 in-flight ID를 찾았는지다.
 
 모든 request DTO는 unknown field를 거부한다. path는 absolute·existing Git repository·canonical
 identity로 재검증하며 control character, traversal, device path를 허용하지 않는다. commit
@@ -110,11 +136,19 @@ remote network, persistent history를 사용하지 않는다.
 공백과 ` b/`를 포함한 일반 UTF-8 경로도 손실 없이 표시하며, control/non-UTF-8 path는 계속
 fail-closed한다.
 
+`%aI` timestamp는 표시 전에 strict ISO 형태, 실제 calendar 날짜/시간, year zero 금지,
+`Z` 또는 `±14:00` 이내 offset을 모두 검사한다. Commit ID는 7..64 hexadecimal 입력만,
+history object ID는 실제 40..64 hexadecimal만 허용한다. Body·subject·author metadata와
+stdout/파일 patch는 각각 byte cap을 넘으면 원문 없이 고정 오류 또는 `truncated`로 처리한다.
+
 Frontend는 선택 repository에만 panel을 표시하고, history limit 입력의 Enter를 포함한 모든
 action을 explicit하게 실행한다. busy 상태에서 field/action을 잠그고 duplicate submit을
 무시하며, request sequence와 unmount cleanup으로 늦은 결과가 새 repository를 덮지 못하게
 한다. IME composition 중 Enter는 실행하지 않고, `aria-busy`, `role=status`, `role=alert`,
-keyboard-focusable commit buttons와 binary/oversize empty state를 제공한다.
+keyboard-focusable commit buttons와 binary/oversize empty state를 제공한다. Commit 확인창은
+검토한 repository identity·staged 개수·message snapshot이 바뀌면 무효화되고, message·경로·
+remote URL·credential 원문을 표시하지 않는다. 열릴 때 취소 버튼에 focus하고 Tab을 dialog 안에
+가두며 Escape 취소와 닫힌 뒤 원래 trigger로 focus 복원을 지원한다.
 
 ## Git remote sync (#318)
 
@@ -124,17 +158,23 @@ keyboard-focusable commit buttons와 binary/oversize empty state를 제공한다
 - `repo_remote_status({ request: { path } })` — 현재 branch, upstream, ahead/behind, dirty,
   detached, diverged, merge/rebase 진행 여부를 반환한다. change filename, remote URL, stderr,
   credential helper 정보는 반환하지 않는다.
-- `repo_fetch({ request: { path } })` — `git --no-pager --no-optional-locks fetch --no-tags`.
-  working tree를 변경하지 않으므로 dirty/detached/no-upstream/diverged에서도 사용할 수 있지만,
-  merge/rebase 진행 중에는 차단한다.
-- `repo_pull({ request: { path } })` — clean·attached·upstream·non-diverged 상태에서
+- `repo_fetch({ request: { path, operationId } })` — `git --no-pager --no-optional-locks fetch
+  --no-tags`. remote/refspec을 argv로 받지 않는다. 따라서 Git의 기본 선택 규칙, 즉 현재
+  branch에 configured remote가 있으면 그것을 사용하고 없으면 `origin`을 fallback으로 사용하며,
+  절대로 `--all`을 사용하지 않는다. working tree를 변경하지 않으므로 dirty/detached/
+  no-upstream/diverged에서도 사용할 수 있지만 merge/rebase 또는 다른 Git 작업 진행 중에는
+  차단한다.
+- `repo_pull({ request: { path, operationId } })` — clean·attached·upstream·non-diverged 상태에서
   `git --no-pager --no-optional-locks pull --ff-only --no-rebase`만 실행한다. 사용자 Git config가
-  `pull.rebase=true`여도 rebase로 바뀌지 않는다.
-- `repo_push({ request: { path } })` — clean·attached·upstream·non-diverged 상태에서
+  `pull.rebase=true`여도 rebase로 바뀌지 않는다. `operationId`는 remote cancel용 bounded
+  opaque ID이며, pull은 확인창에서 승인한 동일 status snapshot에 대해서만 시작한다.
+- `repo_push({ request: { path, operationId } })` — clean·attached·upstream·non-diverged 상태에서
   native가 현재 branch의 configured remote와 upstream destination을 읽은 뒤
   `git --no-pager --no-optional-locks push -- <remote> HEAD:refs/heads/<destination>`을 실행한다.
   따라서 `push.default`나 추가 push refspec이 다른 branch를 함께 전송하지 못하며,
-  remote/refspec을 frontend가 지정하지 않고 force push도 제공하지 않는다.
+  remote/refspec을 frontend가 지정하지 않고 force push도 제공하지 않는다. upstream보다 local
+  branch가 뒤처져 있거나 diverged이면 차단하며, push는 확인창에서 승인한 동일 status snapshot에
+  대해서만 시작한다.
 - `repo_remote_cancel({ request: { operationId } })` — path와 분리된 bounded opaque ID로 정확한
   in-flight child의 cancellation token을 설정한다. repository가 unmount/deleted된 뒤에도 path를
   다시 열지 않는다. ID는 첫 async await 전에 등록하고 canonical path는 blocking validation 뒤
@@ -154,6 +194,13 @@ frontend는 상태별 pull/push 비활성화, busy 중 중복 방지, 취소 버
 remote mutation은 native lock을 잡은 상태에서 status를 두 번 읽고, push는 configured remote를
 읽은 뒤 status를 한 번 더 확인한다. 안전 관련 snapshot이 달라지면 child를 생성하지 않으며,
 RAII operation guard가 성공·실패·panic에서 registry를 정리한다.
+
+local과 remote의 `operationId`는 128 bytes 이하 ASCII `[A-Za-z0-9._-]`로 제한되고 첫 async
+await 전에 registry에 등록된다. 취소·timeout은 Unix process group, Windows kill-on-close
+Job Object를 통해 Git root뿐 아니라 hook, credential helper, SSH/transport descendant까지
+종료하고, root가 먼저 끝나도 owned tree와 bounded stdout reader를 정리한 뒤 결과를 반환한다.
+Fetch는 pull/push와 달리 confirmation 없이 버튼 action으로 시작되지만 동일한 operation ID,
+lock, preflight 및 cancellation 경계를 사용한다.
 
 ## 기술
 

@@ -18,12 +18,13 @@ use crate::core::stage_commit::{
     parse_status_changes, validate_change_path, validate_commit_message, ChangeEntry,
     GIT_MUTATION_ERROR, MAX_SELECTED_PATHS, MAX_STATUS_OUTPUT_BYTES,
 };
+use devbox_filesystem::{filesystem_identity, FilesystemIdentity};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::ErrorKind;
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tauri_plugin_opener::OpenerExt;
@@ -51,6 +52,10 @@ const MAX_REMOTE_MARKER_OUTPUT_BYTES: usize = 4 * 1024;
 const MAX_REMOTE_OUTPUT_BYTES: usize = 64 * 1024;
 const MAX_REMOTE_OPERATION_ID_BYTES: usize = 128;
 const REMOTE_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_WORKTREE_OUTPUT_BYTES: usize = 512 * 1024;
+const GIT_STATUS_ERROR: &str = "Git 상태를 불러올 수 없습니다.";
+const GIT_WORKTREE_ERROR: &str = "Git worktree 작업을 실행하지 못했습니다.";
+const GIT_LOCAL_CANCELLED: &str = "Git 로컬 작업을 취소했습니다.";
 const REMOTE_MARKERS: &[&str] = &[
     "MERGE_HEAD",
     "CHERRY_PICK_HEAD",
@@ -59,28 +64,35 @@ const REMOTE_MARKERS: &[&str] = &[
     "rebase-merge",
     "rebase-apply",
 ];
+static NEXT_INTERNAL_OPERATION: AtomicU64 = AtomicU64::new(0);
 
-struct ActiveRemoteOperation {
+struct ActiveGitOperation {
     cancellation: Arc<AtomicBool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum ActivePathOperation {
-    Local,
-    Remote(String),
+struct ActiveRepositoryOperation {
+    operation_id: String,
 }
 
 #[derive(Default)]
-struct ActiveRemoteOperations {
-    by_id: HashMap<String, ActiveRemoteOperation>,
-    by_path: HashMap<String, ActivePathOperation>,
+struct ActiveGitOperations {
+    by_id: HashMap<String, ActiveGitOperation>,
+    by_repository: HashMap<FilesystemIdentity, ActiveRepositoryOperation>,
 }
 
-type ActiveRemoteOperationsState = Mutex<ActiveRemoteOperations>;
+type ActiveGitOperationsState = Mutex<ActiveGitOperations>;
 
-fn active_remote_operations() -> &'static ActiveRemoteOperationsState {
-    static ACTIVE: OnceLock<ActiveRemoteOperationsState> = OnceLock::new();
-    ACTIVE.get_or_init(|| Mutex::new(ActiveRemoteOperations::default()))
+fn active_git_operations() -> &'static ActiveGitOperationsState {
+    static ACTIVE: OnceLock<ActiveGitOperationsState> = OnceLock::new();
+    ACTIVE.get_or_init(|| Mutex::new(ActiveGitOperations::default()))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RepositoryContext {
+    worktree: PathBuf,
+    worktree_identity: FilesystemIdentity,
+    common_git_identity: FilesystemIdentity,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -159,10 +171,6 @@ fn walk(
     }
 }
 
-fn git(args: &[&str], cwd: &str) -> Result<String, String> {
-    devbox_git::run(args, cwd)
-}
-
 /// Execute a read-only Git query through the shared bounded runner. Its stderr,
 /// timeout, argument, UTF-8, and stdout-cap failures are intentionally mapped
 /// to one UI-safe error here.
@@ -181,6 +189,29 @@ fn run_git_status_bounded(args: &[String], cwd: &Path) -> Result<String, String>
     let cwd = cwd.to_string_lossy().into_owned();
     devbox_git::run_bounded(&args, &cwd, MUTATION_TIMEOUT, MAX_STATUS_OUTPUT_BYTES)
         .map_err(|_| GIT_MUTATION_ERROR.to_string())
+}
+
+fn run_git_status_bounded_with_cancel(
+    args: &[String],
+    cwd: &Path,
+    cancellation: &AtomicBool,
+) -> Result<String, String> {
+    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let cwd = cwd.to_string_lossy().into_owned();
+    devbox_git::run_bounded_with_cancel(
+        &args,
+        &cwd,
+        MUTATION_TIMEOUT,
+        MAX_STATUS_OUTPUT_BYTES,
+        cancellation,
+    )
+    .map_err(|error| {
+        if error == "git_cancelled" {
+            GIT_LOCAL_CANCELLED.to_string()
+        } else {
+            GIT_MUTATION_ERROR.to_string()
+        }
+    })
 }
 
 /// Fixed argv for the read-only Git safety snapshot. Porcelain-v2 branch
@@ -303,6 +334,30 @@ fn run_git_mutation(args: &[String], cwd: &Path) -> Result<(), String> {
         .map_err(|_| GIT_MUTATION_ERROR.to_string())
 }
 
+fn run_git_mutation_with_cancel(
+    args: &[String],
+    cwd: &Path,
+    cancellation: &AtomicBool,
+) -> Result<(), String> {
+    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let cwd = cwd.to_string_lossy().into_owned();
+    devbox_git::run_mutating_with_cancel(
+        &args,
+        &cwd,
+        MUTATION_TIMEOUT,
+        MAX_MUTATION_OUTPUT_BYTES,
+        cancellation,
+    )
+    .map(|_| ())
+    .map_err(|error| {
+        if error == "git_cancelled" {
+            GIT_LOCAL_CANCELLED.to_string()
+        } else {
+            GIT_MUTATION_ERROR.to_string()
+        }
+    })
+}
+
 fn git_remote_status_args() -> Vec<String> {
     vec![
         "--no-pager".to_string(),
@@ -325,9 +380,10 @@ fn git_remote_marker_args(marker: &str) -> Vec<String> {
     ]
 }
 
-/// Fetch only configured remote-tracking data. `--no-tags` keeps a routine
-/// refresh from changing the local tag namespace; no remote URL or refspec is
-/// accepted from the frontend.
+/// Fetch only Git's default configured remote: the current branch's remote,
+/// or `origin` when no branch remote is configured. This is deliberately not
+/// `--all`. `--no-tags` keeps a routine refresh from changing the local tag
+/// namespace; no remote URL or refspec is accepted from the frontend.
 fn git_fetch_args() -> Vec<String> {
     vec![
         "--no-pager".to_string(),
@@ -422,7 +478,7 @@ fn exact_push_args(
     cwd: &Path,
     state: &RemoteState,
     cancellation: &AtomicBool,
-) -> Result<Vec<String>, String> {
+) -> Result<(Vec<String>, String), String> {
     let branch = state
         .current_branch
         .as_deref()
@@ -438,11 +494,8 @@ fn exact_push_args(
         Some(cancellation),
     )?;
     let remote = parse_remote_name(&output)?;
-    git_push_args(&remote, upstream)
-}
-
-fn remote_operation_key(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+    let args = git_push_args(&remote, upstream)?;
+    Ok((args, remote))
 }
 
 fn valid_remote_operation_id(operation_id: &str) -> bool {
@@ -453,96 +506,111 @@ fn valid_remote_operation_id(operation_id: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
-fn active_remote_operation_in_progress(
-    cwd: &Path,
+fn active_git_operation_in_progress(
+    repository: FilesystemIdentity,
     excluded_operation_id: Option<&str>,
+    error: &'static str,
 ) -> Result<bool, String> {
-    let key = remote_operation_key(cwd);
-    let active = active_remote_operations()
+    let active = active_git_operations()
         .lock()
-        .map_err(|_| GIT_REMOTE_ERROR.to_string())?;
-    Ok(match active.by_path.get(&key) {
-        None => false,
-        Some(ActivePathOperation::Local) => true,
-        Some(ActivePathOperation::Remote(operation_id)) => {
-            Some(operation_id.as_str()) != excluded_operation_id
-        }
-    })
+        .map_err(|_| error.to_string())?;
+    Ok(active
+        .by_repository
+        .get(&repository)
+        .is_some_and(|operation| Some(operation.operation_id.as_str()) != excluded_operation_id))
 }
 
 #[derive(Debug)]
-struct RemoteOperationGuard {
+struct GitOperationGuard {
     operation_id: String,
-    path_key: Option<String>,
+    repository: Option<FilesystemIdentity>,
     cancellation: Arc<AtomicBool>,
 }
 
-impl RemoteOperationGuard {
-    fn bind_path(&mut self, path: &Path) -> Result<(), String> {
-        if self.path_key.is_some() {
-            return Err(GIT_REMOTE_ERROR.to_string());
+impl GitOperationGuard {
+    fn bind_repository(
+        &mut self,
+        repository: FilesystemIdentity,
+        error: &'static str,
+        busy_error: &'static str,
+    ) -> Result<(), String> {
+        if self.repository.is_some() {
+            return Err(error.to_string());
         }
-        let path_key = remote_operation_key(path);
-        let mut active = active_remote_operations()
+        let mut active = active_git_operations()
             .lock()
-            .map_err(|_| GIT_REMOTE_ERROR.to_string())?;
-        if active.by_path.contains_key(&path_key) {
-            return Err(GIT_REMOTE_BUSY.to_string());
+            .map_err(|_| error.to_string())?;
+        if active.by_repository.contains_key(&repository) {
+            return Err(busy_error.to_string());
         }
-        active.by_path.insert(
-            path_key.clone(),
-            ActivePathOperation::Remote(self.operation_id.clone()),
+        active.by_repository.insert(
+            repository,
+            ActiveRepositoryOperation {
+                operation_id: self.operation_id.clone(),
+            },
         );
-        self.path_key = Some(path_key);
+        self.repository = Some(repository);
         Ok(())
     }
 }
 
-impl Drop for RemoteOperationGuard {
+impl Drop for GitOperationGuard {
     fn drop(&mut self) {
-        finish_remote_operation(&self.operation_id, self.path_key.as_deref());
+        finish_git_operation(&self.operation_id, self.repository);
     }
 }
 
-fn begin_remote_operation(operation_id: &str) -> Result<RemoteOperationGuard, String> {
+fn begin_git_operation(
+    operation_id: &str,
+    error: &'static str,
+    busy_error: &'static str,
+) -> Result<GitOperationGuard, String> {
     if !valid_remote_operation_id(operation_id) {
-        return Err(GIT_REMOTE_ERROR.to_string());
+        return Err(error.to_string());
     }
-    let mut active = active_remote_operations()
+    let mut active = active_git_operations()
         .lock()
-        .map_err(|_| GIT_REMOTE_ERROR.to_string())?;
+        .map_err(|_| error.to_string())?;
     if active.by_id.contains_key(operation_id) {
-        return Err(GIT_REMOTE_BUSY.to_string());
+        return Err(busy_error.to_string());
     }
     let cancellation = Arc::new(AtomicBool::new(false));
     active.by_id.insert(
         operation_id.to_owned(),
-        ActiveRemoteOperation {
+        ActiveGitOperation {
             cancellation: Arc::clone(&cancellation),
         },
     );
-    Ok(RemoteOperationGuard {
+    Ok(GitOperationGuard {
         operation_id: operation_id.to_owned(),
-        path_key: None,
+        repository: None,
         cancellation,
     })
 }
 
-fn finish_remote_operation(operation_id: &str, path_key: Option<&str>) {
-    if let Ok(mut active) = active_remote_operations().lock() {
+fn begin_internal_git_operation(error: &'static str) -> Result<GitOperationGuard, String> {
+    let sequence = NEXT_INTERNAL_OPERATION.fetch_add(1, Ordering::Relaxed);
+    let operation_id = format!("internal-{}-{sequence}", std::process::id());
+    begin_git_operation(&operation_id, error, error)
+}
+
+fn finish_git_operation(operation_id: &str, repository: Option<FilesystemIdentity>) {
+    if let Ok(mut active) = active_git_operations().lock() {
         active.by_id.remove(operation_id);
-        if let Some(path_key) = path_key {
-            if active.by_path.get(path_key).is_some_and(
-                |value| matches!(value, ActivePathOperation::Remote(value) if value == operation_id),
-            ) {
-                active.by_path.remove(path_key);
+        if let Some(repository) = repository {
+            if active
+                .by_repository
+                .get(&repository)
+                .is_some_and(|value| value.operation_id == operation_id)
+            {
+                active.by_repository.remove(&repository);
             }
         }
     }
 }
 
-fn cancel_remote_operation(operation_id: &str) -> bool {
-    let Ok(active) = active_remote_operations().lock() else {
+fn cancel_git_operation(operation_id: &str) -> bool {
+    let Ok(active) = active_git_operations().lock() else {
         return false;
     };
     if let Some(operation) = active.by_id.get(operation_id) {
@@ -550,46 +618,6 @@ fn cancel_remote_operation(operation_id: &str) -> bool {
         return true;
     }
     false
-}
-
-#[derive(Debug)]
-struct LocalOperationGuard {
-    path_key: String,
-}
-
-impl Drop for LocalOperationGuard {
-    fn drop(&mut self) {
-        if let Ok(mut active) = active_remote_operations().lock() {
-            if matches!(
-                active.by_path.get(&self.path_key),
-                Some(ActivePathOperation::Local)
-            ) {
-                active.by_path.remove(&self.path_key);
-            }
-        }
-    }
-}
-
-fn begin_local_operation(path: &Path) -> Result<LocalOperationGuard, String> {
-    let path_key = remote_operation_key(path);
-    let mut active = active_remote_operations()
-        .lock()
-        .map_err(|_| GIT_MUTATION_ERROR.to_string())?;
-    if active.by_path.contains_key(&path_key) {
-        return Err(GIT_MUTATION_ERROR.to_string());
-    }
-    active
-        .by_path
-        .insert(path_key.clone(), ActivePathOperation::Local);
-    Ok(LocalOperationGuard { path_key })
-}
-
-fn run_registered_local_operation<T, F>(path: &Path, operation: F) -> Result<T, String>
-where
-    F: FnOnce() -> Result<T, String>,
-{
-    let _guard = begin_local_operation(path)?;
-    operation()
 }
 
 async fn spawn_git_task<T, F>(join_error: &'static str, operation: F) -> Result<T, String>
@@ -657,15 +685,19 @@ fn remote_marker_exists(
 }
 
 fn remote_operation_in_progress(
-    cwd: &Path,
+    context: &RepositoryContext,
     cancellation: Option<&AtomicBool>,
     excluded_operation_id: Option<&str>,
 ) -> Result<bool, String> {
-    if active_remote_operation_in_progress(cwd, excluded_operation_id)? {
+    if active_git_operation_in_progress(
+        context.common_git_identity,
+        excluded_operation_id,
+        GIT_REMOTE_ERROR,
+    )? {
         return Ok(true);
     }
     for marker in REMOTE_MARKERS {
-        if remote_marker_exists(cwd, marker, cancellation)? {
+        if remote_marker_exists(&context.worktree, marker, cancellation)? {
             return Ok(true);
         }
     }
@@ -673,35 +705,37 @@ fn remote_operation_in_progress(
 }
 
 fn read_remote_state(
-    cwd: &Path,
+    context: &RepositoryContext,
     cancellation: Option<&AtomicBool>,
     excluded_operation_id: Option<&str>,
 ) -> Result<RemoteState, String> {
     let output = run_git_remote_bounded(
         &git_remote_status_args(),
-        cwd,
+        &context.worktree,
         MAX_REMOTE_STATUS_OUTPUT_BYTES,
         cancellation,
     )?;
-    let in_progress = remote_operation_in_progress(cwd, cancellation, excluded_operation_id)?;
+    let in_progress = remote_operation_in_progress(context, cancellation, excluded_operation_id)?;
     parse_remote_status(&output, in_progress).map_err(|_| GIT_REMOTE_ERROR.to_string())
 }
 
-fn run_registered_remote_operation<F>(
-    cwd: &Path,
+fn run_registered_remote_operation<F, G>(
+    context: &RepositoryContext,
     action: RemoteAction,
     operation_id: &str,
     cancellation: &AtomicBool,
     before_final_recheck: F,
+    before_spawn: G,
 ) -> Result<(), String>
 where
     F: FnOnce(),
+    G: FnOnce(),
 {
     (|| {
         if cancellation.load(Ordering::Acquire) {
             return Err(GIT_REMOTE_CANCELLED.to_string());
         }
-        let state = read_remote_state(cwd, Some(cancellation), Some(operation_id))?;
+        let state = read_remote_state(context, Some(cancellation), Some(operation_id))?;
         preflight_remote(&state, action).map_err(|reason| reason.message())?;
         if cancellation.load(Ordering::Acquire) {
             return Err(GIT_REMOTE_CANCELLED.to_string());
@@ -714,7 +748,8 @@ where
         if cancellation.load(Ordering::Acquire) {
             return Err(GIT_REMOTE_CANCELLED.to_string());
         }
-        let final_state = read_remote_state(cwd, Some(cancellation), Some(operation_id))?;
+        revalidate_repository_context(context, GIT_REMOTE_STATE_CHANGED)?;
+        let final_state = read_remote_state(context, Some(cancellation), Some(operation_id))?;
         if cancellation.load(Ordering::Acquire) {
             return Err(GIT_REMOTE_CANCELLED.to_string());
         }
@@ -725,23 +760,41 @@ where
         if cancellation.load(Ordering::Acquire) {
             return Err(GIT_REMOTE_CANCELLED.to_string());
         }
-        let args = match action {
-            RemoteAction::Fetch => git_fetch_args(),
-            RemoteAction::Pull => git_pull_args(),
+        let (mut args, configured_remote) = match action {
+            RemoteAction::Fetch => (git_fetch_args(), None),
+            RemoteAction::Pull => (git_pull_args(), None),
             RemoteAction::Push => {
-                let args = exact_push_args(cwd, &final_state, cancellation)?;
+                let (args, remote) =
+                    exact_push_args(&context.worktree, &final_state, cancellation)?;
                 // The branch/upstream snapshot used to construct the exact
                 // refspec must still be current after reading branch config.
                 let post_config_state =
-                    read_remote_state(cwd, Some(cancellation), Some(operation_id))?;
+                    read_remote_state(context, Some(cancellation), Some(operation_id))?;
                 if post_config_state != final_state {
                     return Err(GIT_REMOTE_STATE_CHANGED.to_string());
                 }
-                args
+                (args, Some(remote))
             }
         };
+        before_spawn();
+        if cancellation.load(Ordering::Acquire) {
+            return Err(GIT_REMOTE_CANCELLED.to_string());
+        }
+        revalidate_repository_context(context, GIT_REMOTE_STATE_CHANGED)?;
+        let pre_spawn_state = read_remote_state(context, Some(cancellation), Some(operation_id))?;
+        if pre_spawn_state != final_state {
+            return Err(GIT_REMOTE_STATE_CHANGED.to_string());
+        }
+        if let Some(expected_remote) = configured_remote {
+            let (confirmed_args, confirmed_remote) =
+                exact_push_args(&context.worktree, &pre_spawn_state, cancellation)?;
+            if confirmed_remote != expected_remote || confirmed_args != args {
+                return Err(GIT_REMOTE_STATE_CHANGED.to_string());
+            }
+            args = confirmed_args;
+        }
         let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-        let cwd_string = cwd.to_string_lossy().into_owned();
+        let cwd_string = context.worktree.to_string_lossy().into_owned();
         devbox_git::run_mutating_with_cancel(
             &args,
             &cwd_string,
@@ -770,15 +823,117 @@ fn run_remote_operation_with_hook<F>(
 where
     F: FnOnce(),
 {
-    let mut operation = begin_remote_operation(operation_id)?;
-    operation.bind_path(cwd)?;
+    run_remote_operation_with_hooks(cwd, action, operation_id, before_final_recheck, || {})
+}
+
+#[cfg(test)]
+fn run_remote_operation_with_hooks<F, G>(
+    cwd: &Path,
+    action: RemoteAction,
+    operation_id: &str,
+    before_final_recheck: F,
+    before_spawn: G,
+) -> Result<(), String>
+where
+    F: FnOnce(),
+    G: FnOnce(),
+{
+    let context = repository_context_for_worktree(cwd.to_path_buf(), GIT_REMOTE_ERROR)?;
+    let mut operation = begin_git_operation(operation_id, GIT_REMOTE_ERROR, GIT_REMOTE_BUSY)?;
+    operation.bind_repository(
+        context.common_git_identity,
+        GIT_REMOTE_ERROR,
+        GIT_REMOTE_BUSY,
+    )?;
     run_registered_remote_operation(
-        cwd,
+        &context,
         action,
         operation_id,
         operation.cancellation.as_ref(),
         before_final_recheck,
+        before_spawn,
     )
+}
+
+fn git_common_dir_args() -> Vec<String> {
+    vec![
+        "--no-pager".to_string(),
+        "--no-optional-locks".to_string(),
+        "rev-parse".to_string(),
+        "--git-common-dir".to_string(),
+    ]
+}
+
+fn repository_context_for_worktree(
+    worktree: PathBuf,
+    error: &'static str,
+) -> Result<RepositoryContext, String> {
+    let worktree_identity = filesystem_identity(&worktree, true).map_err(|_| error.to_string())?;
+    let args = git_common_dir_args();
+    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let cwd = worktree.to_string_lossy().into_owned();
+    let output = devbox_git::run_bounded(
+        &args,
+        &cwd,
+        Duration::from_secs(5),
+        MAX_REPOSITORY_PATH_BYTES + 2,
+    )
+    .map_err(|_| error.to_string())?;
+    let value = output
+        .strip_suffix("\r\n")
+        .or_else(|| output.strip_suffix('\n'))
+        .ok_or_else(|| error.to_string())?;
+    if value.is_empty()
+        || value.len() > MAX_REPOSITORY_PATH_BYTES
+        || value.chars().any(char::is_control)
+    {
+        return Err(error.to_string());
+    }
+    let common = Path::new(value);
+    let common = if common.is_absolute() {
+        common.to_path_buf()
+    } else {
+        worktree.join(common)
+    };
+    let common = common.canonicalize().map_err(|_| error.to_string())?;
+    if !common.is_dir() {
+        return Err(error.to_string());
+    }
+    let common_git_identity = filesystem_identity(&common, true).map_err(|_| error.to_string())?;
+    // The worktree may have been exchanged while `rev-parse` ran. Compare the
+    // exact directory object again before returning an operation authority.
+    if filesystem_identity(&worktree, true).map_err(|_| error.to_string())? != worktree_identity {
+        return Err(error.to_string());
+    }
+    Ok(RepositoryContext {
+        worktree,
+        worktree_identity,
+        common_git_identity,
+    })
+}
+
+fn validated_repository_context(
+    path: &str,
+    error: &'static str,
+) -> Result<RepositoryContext, String> {
+    let entry = validated_repository(path).map_err(|_| error.to_string())?;
+    let worktree = Path::new(&entry.path)
+        .canonicalize()
+        .map_err(|_| error.to_string())?;
+    repository_context_for_worktree(worktree, error)
+}
+
+fn revalidate_repository_context(
+    expected: &RepositoryContext,
+    error: &'static str,
+) -> Result<(), String> {
+    let current = repository_context_for_worktree(expected.worktree.clone(), error)?;
+    if current.worktree_identity != expected.worktree_identity
+        || current.common_git_identity != expected.common_git_identity
+    {
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 
 fn validated_git_path(path: &str) -> Result<std::path::PathBuf, String> {
@@ -911,11 +1066,11 @@ fn git_head_args() -> Vec<String> {
     ]
 }
 
-fn repository_has_head(cwd: &Path) -> Result<bool, String> {
+fn repository_has_head(cwd: &Path, cancellation: &AtomicBool) -> Result<bool, String> {
     let args = git_head_args();
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
     let cwd = cwd.to_string_lossy().into_owned();
-    match devbox_git::run_bounded(&args, &cwd, MUTATION_TIMEOUT, 128) {
+    match devbox_git::run_bounded_with_cancel(&args, &cwd, MUTATION_TIMEOUT, 128, cancellation) {
         Ok(_) => Ok(true),
         Err(error) if error == "git_failed" => Ok(false),
         Err(_) => Err(GIT_MUTATION_ERROR.to_string()),
@@ -959,8 +1114,9 @@ fn resolve_current_selection(
     cwd: &Path,
     paths: &[String],
     require_staged: bool,
+    cancellation: &AtomicBool,
 ) -> Result<Vec<String>, String> {
-    let text = run_git_status_bounded(&git_status_changes_args(), cwd)?;
+    let text = run_git_status_bounded_with_cancel(&git_status_changes_args(), cwd, cancellation)?;
     let changes = parse_status_changes(&text)?;
     let available = changes
         .into_iter()
@@ -1001,8 +1157,23 @@ fn resolve_current_selection(
 
 #[tauri::command]
 pub async fn repo_status(path: String) -> Result<RepoSnapshot, String> {
-    let status = git(&["status", "--porcelain", "--branch"], &path)?;
-    Ok(parse_status(&path, &status))
+    spawn_git_task(GIT_STATUS_ERROR, move || {
+        let worktree = validated_git_path(&path).map_err(|_| GIT_STATUS_ERROR.to_string())?;
+        let args = [
+            "--no-pager",
+            "--no-optional-locks",
+            "status",
+            "--porcelain",
+            "--branch",
+            "--",
+        ];
+        let cwd = worktree.to_string_lossy().into_owned();
+        let status =
+            devbox_git::run_bounded(&args, &cwd, Duration::from_secs(5), MAX_STATUS_OUTPUT_BYTES)
+                .map_err(|_| GIT_STATUS_ERROR.to_string())?;
+        Ok(parse_status(&cwd, &status))
+    })
+    .await
 }
 
 /// Read-only request for the selected repository's bounded Git safety state.
@@ -1041,8 +1212,26 @@ pub async fn repo_preflight(request: RepoPreflightRequest) -> Result<GitSafetySn
 
 #[tauri::command]
 pub async fn worktrees(path: String) -> Result<Vec<String>, String> {
-    let out = git(&["worktree", "list", "--porcelain"], &path)?;
-    Ok(parse_worktrees(&out))
+    spawn_git_task(GIT_WORKTREE_ERROR, move || {
+        let worktree = validated_git_path(&path).map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
+        let args = [
+            "--no-pager",
+            "--no-optional-locks",
+            "worktree",
+            "list",
+            "--porcelain",
+        ];
+        let cwd = worktree.to_string_lossy().into_owned();
+        let out = devbox_git::run_bounded(
+            &args,
+            &cwd,
+            Duration::from_secs(5),
+            MAX_WORKTREE_OUTPUT_BYTES,
+        )
+        .map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
+        Ok(parse_worktrees(&out))
+    })
+    .await
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1057,15 +1246,61 @@ pub async fn create_worktree(
     branch: String,
     target_dir: String,
 ) -> Result<WorktreeCreate, String> {
-    git(&["worktree", "add", "-b", &branch, &target_dir], &repo_path)?;
-    Ok(WorktreeCreate { path: target_dir })
+    spawn_git_task(GIT_WORKTREE_ERROR, move || {
+        if branch.len() > MAX_REMOTE_BRANCH_BYTES
+            || branch.starts_with('-')
+            || !valid_ref_path_fragment(&branch)
+        {
+            return Err(GIT_WORKTREE_ERROR.to_string());
+        }
+        let (target, target_parent_identity) = validated_new_worktree_target(&target_dir)?;
+        let context = validated_repository_context(&repo_path, GIT_WORKTREE_ERROR)?;
+        let mut operation = begin_internal_git_operation(GIT_WORKTREE_ERROR)?;
+        operation.bind_repository(
+            context.common_git_identity,
+            GIT_WORKTREE_ERROR,
+            GIT_WORKTREE_ERROR,
+        )?;
+        revalidate_repository_context(&context, GIT_WORKTREE_ERROR)?;
+        let target_parent = target
+            .parent()
+            .ok_or_else(|| GIT_WORKTREE_ERROR.to_string())?;
+        if filesystem_identity(target_parent, true).map_err(|_| GIT_WORKTREE_ERROR.to_string())?
+            != target_parent_identity
+            || target
+                .try_exists()
+                .map_err(|_| GIT_WORKTREE_ERROR.to_string())?
+        {
+            return Err(GIT_WORKTREE_ERROR.to_string());
+        }
+        let args = vec![
+            "--no-pager".to_string(),
+            "--no-optional-locks".to_string(),
+            "worktree".to_string(),
+            "add".to_string(),
+            "-b".to_string(),
+            branch,
+            "--".to_string(),
+            target.to_string_lossy().into_owned(),
+        ];
+        run_git_mutation(&args, &context.worktree)?;
+        Ok(WorktreeCreate {
+            path: target.to_string_lossy().into_owned(),
+        })
+    })
+    .await
 }
 
 /// remove 전 uncommitted/untracked 검사. 없으면 true.
 #[tauri::command]
 pub async fn worktree_clean(path: String) -> Result<bool, String> {
-    let status = git(&["status", "--porcelain"], &path)?;
-    Ok(status.trim().is_empty())
+    spawn_git_task(GIT_WORKTREE_ERROR, move || {
+        let worktree = validated_git_path(&path).map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
+        let status = run_git_status_bounded(&git_status_changes_args(), &worktree)
+            .map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
+        Ok(status.is_empty())
+    })
+    .await
 }
 
 /// Read-only history request. `limit` is intentionally part of the typed
@@ -1157,6 +1392,7 @@ pub struct RepoChangesRequest {
 pub struct StagePathsRequest {
     pub path: String,
     pub paths: Vec<String>,
+    pub operation_id: String,
 }
 
 /// Explicit selected paths to unstage from the index.
@@ -1165,6 +1401,7 @@ pub struct StagePathsRequest {
 pub struct UnstagePathsRequest {
     pub path: String,
     pub paths: Vec<String>,
+    pub operation_id: String,
 }
 
 /// Explicit commit request. The command commits the current index only; it
@@ -1174,6 +1411,7 @@ pub struct UnstagePathsRequest {
 pub struct CommitRequest {
     pub path: String,
     pub message: String,
+    pub operation_id: String,
 }
 
 #[tauri::command]
@@ -1189,12 +1427,31 @@ pub async fn repo_changes(request: RepoChangesRequest) -> Result<Vec<ChangeEntry
 #[tauri::command]
 pub async fn repo_stage(request: StagePathsRequest) -> Result<(), String> {
     let paths = validated_selected_paths(&request.paths)?;
+    let operation = begin_git_operation(
+        &request.operation_id,
+        GIT_MUTATION_ERROR,
+        GIT_MUTATION_ERROR,
+    )?;
     spawn_git_task(GIT_MUTATION_ERROR, move || {
-        let path = validated_git_path(&request.path).map_err(|_| GIT_MUTATION_ERROR.to_string())?;
-        run_registered_local_operation(&path, || {
-            let paths = resolve_current_selection(&path, &paths, false)?;
-            run_git_mutation(&git_stage_args(&paths), &path)
-        })
+        let mut operation = operation;
+        let context = validated_repository_context(&request.path, GIT_MUTATION_ERROR)?;
+        operation.bind_repository(
+            context.common_git_identity,
+            GIT_MUTATION_ERROR,
+            GIT_MUTATION_ERROR,
+        )?;
+        let paths = resolve_current_selection(
+            &context.worktree,
+            &paths,
+            false,
+            operation.cancellation.as_ref(),
+        )?;
+        revalidate_repository_context(&context, GIT_MUTATION_ERROR)?;
+        run_git_mutation_with_cancel(
+            &git_stage_args(&paths),
+            &context.worktree,
+            operation.cancellation.as_ref(),
+        )
     })
     .await
 }
@@ -1202,13 +1459,32 @@ pub async fn repo_stage(request: StagePathsRequest) -> Result<(), String> {
 #[tauri::command]
 pub async fn repo_unstage(request: UnstagePathsRequest) -> Result<(), String> {
     let paths = validated_selected_paths(&request.paths)?;
+    let operation = begin_git_operation(
+        &request.operation_id,
+        GIT_MUTATION_ERROR,
+        GIT_MUTATION_ERROR,
+    )?;
     spawn_git_task(GIT_MUTATION_ERROR, move || {
-        let path = validated_git_path(&request.path).map_err(|_| GIT_MUTATION_ERROR.to_string())?;
-        run_registered_local_operation(&path, || {
-            let paths = resolve_current_selection(&path, &paths, true)?;
-            let has_head = repository_has_head(&path)?;
-            run_git_mutation(&git_unstage_args_for_head(&paths, has_head), &path)
-        })
+        let mut operation = operation;
+        let context = validated_repository_context(&request.path, GIT_MUTATION_ERROR)?;
+        operation.bind_repository(
+            context.common_git_identity,
+            GIT_MUTATION_ERROR,
+            GIT_MUTATION_ERROR,
+        )?;
+        let paths = resolve_current_selection(
+            &context.worktree,
+            &paths,
+            true,
+            operation.cancellation.as_ref(),
+        )?;
+        let has_head = repository_has_head(&context.worktree, operation.cancellation.as_ref())?;
+        revalidate_repository_context(&context, GIT_MUTATION_ERROR)?;
+        run_git_mutation_with_cancel(
+            &git_unstage_args_for_head(&paths, has_head),
+            &context.worktree,
+            operation.cancellation.as_ref(),
+        )
     })
     .await
 }
@@ -1216,11 +1492,25 @@ pub async fn repo_unstage(request: UnstagePathsRequest) -> Result<(), String> {
 #[tauri::command]
 pub async fn repo_commit(request: CommitRequest) -> Result<(), String> {
     let message = validate_commit_message(&request.message)?;
+    let operation = begin_git_operation(
+        &request.operation_id,
+        GIT_MUTATION_ERROR,
+        GIT_MUTATION_ERROR,
+    )?;
     spawn_git_task(GIT_MUTATION_ERROR, move || {
-        let path = validated_git_path(&request.path).map_err(|_| GIT_MUTATION_ERROR.to_string())?;
-        run_registered_local_operation(&path, || {
-            run_git_mutation(&git_commit_args(&message), &path)
-        })
+        let mut operation = operation;
+        let context = validated_repository_context(&request.path, GIT_MUTATION_ERROR)?;
+        operation.bind_repository(
+            context.common_git_identity,
+            GIT_MUTATION_ERROR,
+            GIT_MUTATION_ERROR,
+        )?;
+        revalidate_repository_context(&context, GIT_MUTATION_ERROR)?;
+        run_git_mutation_with_cancel(
+            &git_commit_args(&message),
+            &context.worktree,
+            operation.cancellation.as_ref(),
+        )
     })
     .await
 }
@@ -1258,18 +1548,23 @@ async fn run_remote_request(
     // Register the opaque ID before the first await. An immediate UI cancel or
     // unmount therefore cannot race ahead of filesystem validation and lose
     // the cancellation signal.
-    let operation = begin_remote_operation(&request.operation_id)?;
+    let operation = begin_git_operation(&request.operation_id, GIT_REMOTE_ERROR, GIT_REMOTE_BUSY)?;
     let operation_id = request.operation_id;
     let request_path = request.path;
     spawn_git_task(GIT_REMOTE_ERROR, move || {
         let mut operation = operation;
-        let path = validated_git_path(&request_path).map_err(|_| GIT_REMOTE_ERROR.to_string())?;
-        operation.bind_path(&path)?;
+        let context = validated_repository_context(&request_path, GIT_REMOTE_ERROR)?;
+        operation.bind_repository(
+            context.common_git_identity,
+            GIT_REMOTE_ERROR,
+            GIT_REMOTE_BUSY,
+        )?;
         run_registered_remote_operation(
-            &path,
+            &context,
             action,
             &operation_id,
             operation.cancellation.as_ref(),
+            || {},
             || {},
         )
     })
@@ -1279,8 +1574,8 @@ async fn run_remote_request(
 #[tauri::command]
 pub async fn repo_remote_status(request: RemoteSyncRequest) -> Result<RemoteState, String> {
     spawn_git_task(GIT_REMOTE_ERROR, move || {
-        let path = validated_git_path(&request.path).map_err(|_| GIT_REMOTE_ERROR.to_string())?;
-        read_remote_state(&path, None, None)
+        let context = validated_repository_context(&request.path, GIT_REMOTE_ERROR)?;
+        read_remote_state(&context, None, None)
     })
     .await
 }
@@ -1300,7 +1595,7 @@ pub async fn repo_push(request: RemoteOperationRequest) -> Result<(), String> {
     run_remote_request(request, RemoteAction::Push).await
 }
 
-/// Cancel the in-flight local remote operation for this repository. The
+/// Cancel an in-flight fetch/pull/push operation for this repository. The
 /// operation remains owned by its original command until the child exits, so
 /// a caller can safely ignore the result and rely on the command's fixed
 /// cancellation error. No Git command is run by this handler.
@@ -1312,7 +1607,18 @@ pub fn repo_remote_cancel(request: RemoteCancelRequest) -> Result<bool, String> 
     if !valid_remote_operation_id(&request.operation_id) {
         return Err(GIT_REMOTE_ERROR.to_string());
     }
-    Ok(cancel_remote_operation(&request.operation_id))
+    Ok(cancel_git_operation(&request.operation_id))
+}
+
+/// Cancel an in-flight selected stage/unstage/commit operation. The shared ID
+/// registry also prevents a local and remote operation from reusing one ID or
+/// mutating the same common Git directory concurrently.
+#[tauri::command]
+pub fn repo_local_cancel(request: RemoteCancelRequest) -> Result<bool, String> {
+    if !valid_remote_operation_id(&request.operation_id) {
+        return Err(GIT_MUTATION_ERROR.to_string());
+    }
+    Ok(cancel_git_operation(&request.operation_id))
 }
 
 fn available_open_targets() -> Vec<RepoOpenTarget> {
@@ -1370,6 +1676,34 @@ fn valid_repository_path_syntax(path: &str) -> bool {
         return false;
     }
     true
+}
+
+fn validated_new_worktree_target(value: &str) -> Result<(PathBuf, FilesystemIdentity), String> {
+    if !valid_repository_path_syntax(value) {
+        return Err(GIT_WORKTREE_ERROR.to_string());
+    }
+    let raw = Path::new(value);
+    let name = raw
+        .file_name()
+        .ok_or_else(|| GIT_WORKTREE_ERROR.to_string())?;
+    let parent = raw
+        .parent()
+        .ok_or_else(|| GIT_WORKTREE_ERROR.to_string())?
+        .canonicalize()
+        .map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
+    if !parent.is_dir() {
+        return Err(GIT_WORKTREE_ERROR.to_string());
+    }
+    let parent_identity =
+        filesystem_identity(&parent, true).map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
+    let target = parent.join(name);
+    if target
+        .try_exists()
+        .map_err(|_| GIT_WORKTREE_ERROR.to_string())?
+    {
+        return Err(GIT_WORKTREE_ERROR.to_string());
+    }
+    Ok((target, parent_identity))
 }
 
 /// Windows device namespaces are not ordinary repository paths. Reject their
@@ -1606,6 +1940,7 @@ mod scan_tests {
         tauri::async_runtime::block_on(repo_stage(StagePathsRequest {
             path: path.clone(),
             paths: vec!["selected.txt".to_string()],
+            operation_id: "stage-selected-initial".to_string(),
         }))
         .unwrap();
         let after_stage =
@@ -1627,6 +1962,7 @@ mod scan_tests {
         tauri::async_runtime::block_on(repo_unstage(UnstagePathsRequest {
             path: path.clone(),
             paths: vec!["selected.txt".to_string()],
+            operation_id: "unstage-selected-initial".to_string(),
         }))
         .unwrap();
         let after_unstage =
@@ -1641,11 +1977,13 @@ mod scan_tests {
         tauri::async_runtime::block_on(repo_stage(StagePathsRequest {
             path: path.clone(),
             paths: vec!["selected.txt".to_string()],
+            operation_id: "stage-selected-commit".to_string(),
         }))
         .unwrap();
         tauri::async_runtime::block_on(repo_commit(CommitRequest {
             path: path.clone(),
             message: "Commit selected\nfixture".to_string(),
+            operation_id: "commit-selected".to_string(),
         }))
         .unwrap();
 
@@ -1679,11 +2017,13 @@ mod scan_tests {
         tauri::async_runtime::block_on(repo_stage(StagePathsRequest {
             path: path.clone(),
             paths: vec!["selected.txt".to_string()],
+            operation_id: "stage-selected-again".to_string(),
         }))
         .unwrap();
         tauri::async_runtime::block_on(repo_unstage(UnstagePathsRequest {
             path: path.clone(),
             paths: vec!["selected.txt".to_string()],
+            operation_id: "unstage-selected-again".to_string(),
         }))
         .unwrap();
         let after_head_unstage =
@@ -1693,6 +2033,54 @@ mod scan_tests {
             .find(|change| change.path == "selected.txt")
             .unwrap();
         assert!(!selected.staged && selected.unstaged);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_commit_can_be_cancelled_by_its_opaque_operation_id() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::time::Instant;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        init_real_git_dir(repo);
+        fs::write(repo.join("base.txt"), "base\n").unwrap();
+        git_fixture(repo, &["add", "base.txt"]);
+        git_fixture(repo, &["commit", "--quiet", "-m", "base"]);
+        fs::write(repo.join("pending.txt"), "pending\n").unwrap();
+        git_fixture(repo, &["add", "pending.txt"]);
+        let head_before = git_fixture(repo, &["rev-parse", "HEAD"]);
+        let hook_started = repo.join("hook-started");
+        let hook = repo.join(".git/hooks/pre-commit");
+        fs::write(&hook, "#!/bin/sh\necho started > hook-started\nsleep 5\n").unwrap();
+        let mut permissions = fs::metadata(&hook).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&hook, permissions).unwrap();
+
+        let path = repo.to_string_lossy().into_owned();
+        let started = Instant::now();
+        let worker = std::thread::spawn(move || {
+            tauri::async_runtime::block_on(repo_commit(CommitRequest {
+                path,
+                message: "cancelled commit".to_string(),
+                operation_id: "cancel-local-commit".to_string(),
+            }))
+        });
+        assert!((0..200).any(|_| {
+            if hook_started.exists() {
+                true
+            } else {
+                std::thread::sleep(Duration::from_millis(5));
+                false
+            }
+        }));
+        assert!(repo_local_cancel(RemoteCancelRequest {
+            operation_id: "cancel-local-commit".to_string(),
+        })
+        .unwrap());
+        assert_eq!(worker.join().unwrap().unwrap_err(), GIT_LOCAL_CANCELLED);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(git_fixture(repo, &["rev-parse", "HEAD"]), head_before);
     }
 
     #[test]
@@ -1719,6 +2107,7 @@ mod scan_tests {
         tauri::async_runtime::block_on(repo_stage(StagePathsRequest {
             path: path.clone(),
             paths: vec!["old-name.txt".to_string(), "new-name.txt".to_string()],
+            operation_id: "stage-rename".to_string(),
         }))
         .unwrap();
         let cached = git_fixture(repo, &["diff", "--cached", "--name-status"]);
@@ -1727,6 +2116,7 @@ mod scan_tests {
         tauri::async_runtime::block_on(repo_unstage(UnstagePathsRequest {
             path: path.clone(),
             paths: vec!["new-name.txt".to_string()],
+            operation_id: "unstage-rename".to_string(),
         }))
         .unwrap();
         assert!(git_fixture(repo, &["diff", "--cached", "--name-status"]).is_empty());
@@ -1768,6 +2158,7 @@ mod scan_tests {
         let error = tauri::async_runtime::block_on(repo_stage(StagePathsRequest {
             path: path.clone(),
             paths: vec![format!("../{secret}")],
+            operation_id: "stage-invalid-parent".to_string(),
         }))
         .unwrap_err();
         assert_eq!(error, GIT_MUTATION_ERROR);
@@ -1776,6 +2167,7 @@ mod scan_tests {
         let error = tauri::async_runtime::block_on(repo_stage(StagePathsRequest {
             path: repo.to_string_lossy().into_owned(),
             paths: vec!["not-in-status.txt".to_string()],
+            operation_id: "stage-invalid-selection".to_string(),
         }))
         .unwrap_err();
         assert_eq!(error, GIT_MUTATION_ERROR);
@@ -1784,6 +2176,7 @@ mod scan_tests {
         let error = tauri::async_runtime::block_on(repo_commit(CommitRequest {
             path,
             message: format!("invalid\0{secret}"),
+            operation_id: "commit-invalid-message".to_string(),
         }))
         .unwrap_err();
         assert_eq!(error, GIT_MUTATION_ERROR);
@@ -2220,6 +2613,54 @@ mod scan_tests {
         );
         fs::remove_file(local.join("race-writer.txt")).unwrap();
 
+        // Changing branch.<name>.remote after the final status snapshot must
+        // invalidate the exact push target. Neither the original nor the new
+        // configured remote may receive a ref update from the rejected run.
+        let config_branch = git_fixture(&local, &["branch", "--show-current"])
+            .trim()
+            .to_owned();
+        let remote_head_before = git_fixture(
+            &remote,
+            &["rev-parse", &format!("refs/heads/{config_branch}")],
+        );
+        git_fixture(
+            &local,
+            &["remote", "add", "backup", remote.to_str().unwrap()],
+        );
+        let config_race_error = run_remote_operation_with_hooks(
+            &local,
+            RemoteAction::Push,
+            "push-config-race",
+            || {},
+            || {
+                git_fixture(
+                    &local,
+                    &[
+                        "config",
+                        &format!("branch.{config_branch}.remote"),
+                        "backup",
+                    ],
+                );
+            },
+        )
+        .unwrap_err();
+        assert_eq!(config_race_error, GIT_REMOTE_STATE_CHANGED);
+        assert_eq!(
+            git_fixture(
+                &remote,
+                &["rev-parse", &format!("refs/heads/{config_branch}")]
+            ),
+            remote_head_before
+        );
+        git_fixture(
+            &local,
+            &[
+                "config",
+                &format!("branch.{config_branch}.remote"),
+                "origin",
+            ],
+        );
+
         // Pull/push never start with uncommitted work in the working tree.
         fs::write(local.join("uncommitted.txt"), "dirty\n").unwrap();
         assert_eq!(
@@ -2385,53 +2826,247 @@ mod scan_tests {
     fn opaque_cancel_id_survives_repository_removal_and_enforces_single_flight() {
         let tmp = tempfile::tempdir().unwrap();
         let operation_path = tmp.path().join("vanishing-repository");
-        fs::create_dir(&operation_path).unwrap();
+        init_real_git_dir(&operation_path);
+        let context = repository_context_for_worktree(
+            operation_path.canonicalize().unwrap(),
+            GIT_REMOTE_ERROR,
+        )
+        .unwrap();
 
-        let pending = begin_remote_operation("cancel-before-path-validation").unwrap();
-        assert!(cancel_remote_operation("cancel-before-path-validation"));
+        let pending = begin_git_operation(
+            "cancel-before-path-validation",
+            GIT_REMOTE_ERROR,
+            GIT_REMOTE_BUSY,
+        )
+        .unwrap();
+        assert!(cancel_git_operation("cancel-before-path-validation"));
         assert!(pending.cancellation.load(Ordering::Acquire));
         drop(pending);
-        assert!(!cancel_remote_operation("cancel-before-path-validation"));
+        assert!(!cancel_git_operation("cancel-before-path-validation"));
 
         let operation_id = "opaque-cancel-id";
-        let mut operation = begin_remote_operation(operation_id).unwrap();
-        operation.bind_path(&operation_path).unwrap();
+        let mut operation =
+            begin_git_operation(operation_id, GIT_REMOTE_ERROR, GIT_REMOTE_BUSY).unwrap();
+        operation
+            .bind_repository(
+                context.common_git_identity,
+                GIT_REMOTE_ERROR,
+                GIT_REMOTE_BUSY,
+            )
+            .unwrap();
         assert!(!operation.cancellation.load(Ordering::Acquire));
         assert_eq!(
-            begin_remote_operation(operation_id).unwrap_err(),
+            begin_git_operation(operation_id, GIT_REMOTE_ERROR, GIT_REMOTE_BUSY).unwrap_err(),
             GIT_REMOTE_BUSY
         );
-        let mut second = begin_remote_operation("second-operation").unwrap();
+        let mut second =
+            begin_git_operation("second-operation", GIT_REMOTE_ERROR, GIT_REMOTE_BUSY).unwrap();
         assert_eq!(
-            second.bind_path(&operation_path).unwrap_err(),
+            second
+                .bind_repository(
+                    context.common_git_identity,
+                    GIT_REMOTE_ERROR,
+                    GIT_REMOTE_BUSY,
+                )
+                .unwrap_err(),
             GIT_REMOTE_BUSY
         );
         drop(second);
 
         fs::remove_dir_all(&operation_path).unwrap();
-        assert!(cancel_remote_operation(operation_id));
+        assert!(cancel_git_operation(operation_id));
         assert!(operation.cancellation.load(Ordering::Acquire));
         drop(operation);
-        assert!(!cancel_remote_operation(operation_id));
+        assert!(!cancel_git_operation(operation_id));
     }
 
     #[test]
     fn local_and_remote_mutations_share_one_repository_lock() {
         let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path();
-        let local = begin_local_operation(path).unwrap();
-        let mut blocked_remote = begin_remote_operation("blocked-remote").unwrap();
-        assert_eq!(blocked_remote.bind_path(path).unwrap_err(), GIT_REMOTE_BUSY);
+        init_real_git_dir(tmp.path());
+        let context =
+            repository_context_for_worktree(tmp.path().canonicalize().unwrap(), GIT_REMOTE_ERROR)
+                .unwrap();
+        let mut local =
+            begin_git_operation("active-local", GIT_MUTATION_ERROR, GIT_MUTATION_ERROR).unwrap();
+        local
+            .bind_repository(
+                context.common_git_identity,
+                GIT_MUTATION_ERROR,
+                GIT_MUTATION_ERROR,
+            )
+            .unwrap();
+        let mut blocked_remote =
+            begin_git_operation("blocked-remote", GIT_REMOTE_ERROR, GIT_REMOTE_BUSY).unwrap();
+        assert_eq!(
+            blocked_remote
+                .bind_repository(
+                    context.common_git_identity,
+                    GIT_REMOTE_ERROR,
+                    GIT_REMOTE_BUSY,
+                )
+                .unwrap_err(),
+            GIT_REMOTE_BUSY
+        );
         drop(blocked_remote);
-        assert!(active_remote_operation_in_progress(path, None).unwrap());
+        assert!(active_git_operation_in_progress(
+            context.common_git_identity,
+            None,
+            GIT_REMOTE_ERROR,
+        )
+        .unwrap());
         drop(local);
 
-        let mut remote = begin_remote_operation("active-remote").unwrap();
-        remote.bind_path(path).unwrap();
-        assert_eq!(begin_local_operation(path).unwrap_err(), GIT_MUTATION_ERROR);
+        let mut remote =
+            begin_git_operation("active-remote", GIT_REMOTE_ERROR, GIT_REMOTE_BUSY).unwrap();
+        remote
+            .bind_repository(
+                context.common_git_identity,
+                GIT_REMOTE_ERROR,
+                GIT_REMOTE_BUSY,
+            )
+            .unwrap();
+        let mut blocked_local =
+            begin_git_operation("blocked-local", GIT_MUTATION_ERROR, GIT_MUTATION_ERROR).unwrap();
+        assert_eq!(
+            blocked_local
+                .bind_repository(
+                    context.common_git_identity,
+                    GIT_MUTATION_ERROR,
+                    GIT_MUTATION_ERROR,
+                )
+                .unwrap_err(),
+            GIT_MUTATION_ERROR
+        );
+        drop(blocked_local);
         assert!(!remote.cancellation.load(Ordering::Acquire));
         drop(remote);
-        assert!(!active_remote_operation_in_progress(path, None).unwrap());
+        assert!(!active_git_operation_in_progress(
+            context.common_git_identity,
+            None,
+            GIT_REMOTE_ERROR,
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn linked_worktrees_share_the_common_git_directory_lock() {
+        let tmp = tempfile::tempdir().unwrap();
+        let main = tmp.path().join("main");
+        let linked = tmp.path().join("linked");
+        let independent = tmp.path().join("independent");
+        init_real_git_dir(&main);
+        fs::write(main.join("fixture.txt"), "fixture\n").unwrap();
+        git_fixture(&main, &["add", "fixture.txt"]);
+        git_fixture(&main, &["commit", "--quiet", "-m", "fixture"]);
+        git_fixture(
+            &main,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "-b",
+                "linked-fixture",
+                linked.to_str().unwrap(),
+            ],
+        );
+        init_real_git_dir(&independent);
+
+        let main_context =
+            repository_context_for_worktree(main.canonicalize().unwrap(), GIT_REMOTE_ERROR)
+                .unwrap();
+        let linked_context =
+            repository_context_for_worktree(linked.canonicalize().unwrap(), GIT_REMOTE_ERROR)
+                .unwrap();
+        let independent_context =
+            repository_context_for_worktree(independent.canonicalize().unwrap(), GIT_REMOTE_ERROR)
+                .unwrap();
+        assert_eq!(
+            main_context.common_git_identity,
+            linked_context.common_git_identity
+        );
+        assert_ne!(
+            main_context.worktree_identity,
+            linked_context.worktree_identity
+        );
+        assert_ne!(
+            main_context.common_git_identity,
+            independent_context.common_git_identity
+        );
+
+        let mut main_operation =
+            begin_git_operation("main-worktree-lock", GIT_MUTATION_ERROR, GIT_MUTATION_ERROR)
+                .unwrap();
+        main_operation
+            .bind_repository(
+                main_context.common_git_identity,
+                GIT_MUTATION_ERROR,
+                GIT_MUTATION_ERROR,
+            )
+            .unwrap();
+        let mut linked_operation =
+            begin_git_operation("linked-worktree-lock", GIT_REMOTE_ERROR, GIT_REMOTE_BUSY).unwrap();
+        assert_eq!(
+            linked_operation
+                .bind_repository(
+                    linked_context.common_git_identity,
+                    GIT_REMOTE_ERROR,
+                    GIT_REMOTE_BUSY,
+                )
+                .unwrap_err(),
+            GIT_REMOTE_BUSY
+        );
+        let linked_state = read_remote_state(&linked_context, None, None).unwrap();
+        assert!(linked_state.operation_in_progress);
+        let blocked_target = tmp.path().join("blocked-worktree");
+        assert_eq!(
+            tauri::async_runtime::block_on(create_worktree(
+                main.to_string_lossy().into_owned(),
+                "blocked-worktree-fixture".to_string(),
+                blocked_target.to_string_lossy().into_owned(),
+            ))
+            .unwrap_err(),
+            GIT_WORKTREE_ERROR
+        );
+        assert!(!blocked_target.exists());
+
+        let mut independent_operation = begin_git_operation(
+            "independent-repository-lock",
+            GIT_REMOTE_ERROR,
+            GIT_REMOTE_BUSY,
+        )
+        .unwrap();
+        independent_operation
+            .bind_repository(
+                independent_context.common_git_identity,
+                GIT_REMOTE_ERROR,
+                GIT_REMOTE_BUSY,
+            )
+            .unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn repository_symlink_alias_resolves_to_the_same_operation_identity() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let repository = tmp.path().join("repository");
+        let alias = tmp.path().join("repository-alias");
+        init_real_git_dir(&repository);
+        symlink(&repository, &alias).unwrap();
+
+        let direct =
+            validated_repository_context(repository.to_string_lossy().as_ref(), GIT_REMOTE_ERROR)
+                .unwrap();
+        let through_alias =
+            validated_repository_context(alias.to_string_lossy().as_ref(), GIT_REMOTE_ERROR)
+                .unwrap();
+        assert_eq!(direct.worktree_identity, through_alias.worktree_identity);
+        assert_eq!(
+            direct.common_git_identity,
+            through_alias.common_git_identity
+        );
     }
 
     #[cfg(unix)]

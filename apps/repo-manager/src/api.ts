@@ -310,19 +310,24 @@ export function repoChanges(path: string): Promise<ChangeEntry[]> {
   return invoke<ChangeEntry[]>("repo_changes", { request: { path } });
 }
 
-export function repoStage(path: string, paths: string[]): Promise<void> {
+export function repoStage(path: string, paths: string[], operationId: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("repo_stage", { request: { path, paths } });
+  return invoke<void>("repo_stage", { request: { path, paths, operationId } });
 }
 
-export function repoUnstage(path: string, paths: string[]): Promise<void> {
+export function repoUnstage(path: string, paths: string[], operationId: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("repo_unstage", { request: { path, paths } });
+  return invoke<void>("repo_unstage", { request: { path, paths, operationId } });
 }
 
-export function repoCommit(path: string, message: string): Promise<void> {
+export function repoCommit(path: string, message: string, operationId: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("repo_commit", { request: { path, message } });
+  return invoke<void>("repo_commit", { request: { path, message, operationId } });
+}
+
+export function repoLocalCancel(operationId: string): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  return invoke<boolean>("repo_local_cancel", { request: { operationId } });
 }
 
 export function repoRemoteStatus(path: string): Promise<RemoteState> {

@@ -165,15 +165,20 @@ fn parse_header(header: &str) -> Result<ParsedHeader, RemoteStateParseError> {
     let upstream_gone = upstream_and_counts
         .split_once('[')
         .is_some_and(|(_, counts)| counts.trim_matches(']').trim() == "gone");
-    let upstream = if upstream.is_empty() {
+    let validated_upstream = if upstream.is_empty() {
         return Err(RemoteStateParseError::InvalidUpstream);
-    } else if upstream_gone {
-        // `[gone]` means the configured remote-tracking ref disappeared.  It
-        // is not a usable upstream for pull/push, so expose it as no upstream
-        // and let the normal preflight stop before Git mutation.
-        None
     } else {
         Some(validate_upstream(upstream)?)
+    };
+    let upstream = if upstream_gone {
+        // `[gone]` means the configured remote-tracking ref disappeared.  It
+        // is not a usable upstream for pull/push, so expose it as no upstream
+        // and let the normal preflight stop before Git mutation. Validate the
+        // hidden name first so malformed/path-like metadata cannot bypass the
+        // parser merely by claiming that its remote is gone.
+        None
+    } else {
+        validated_upstream
     };
 
     if let Some((_, counts)) = upstream_and_counts.split_once('[') {
@@ -215,17 +220,36 @@ fn parse_header(header: &str) -> Result<ParsedHeader, RemoteStateParseError> {
 }
 
 fn validate_metadata(value: &str) -> Result<String, RemoteStateParseError> {
-    if value.is_empty()
-        || value.len() > MAX_REMOTE_BRANCH_BYTES
-        || value
-            .bytes()
-            .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
-        || value == "."
-        || value == ".."
-    {
+    if !valid_ref_metadata(value) {
         return Err(RemoteStateParseError::InvalidBranch);
     }
     Ok(value.to_owned())
+}
+
+/// Validate branch-like metadata without treating it as a filesystem path.
+/// Git names legitimately contain `/` (for example `feature/ui` and
+/// `origin/release/v1`), but path traversal, absolute/path-shaped input, and
+/// ref syntax that Git itself rejects must never be accepted from status
+/// output. Keeping this check local also means detached/upstream metadata
+/// shares the same fail-closed boundary.
+fn valid_ref_metadata(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_REMOTE_BRANCH_BYTES
+        && !value.starts_with('/')
+        && !value.ends_with('/')
+        && !value.ends_with('.')
+        && !value.contains("//")
+        && !value.contains("..")
+        && !value.contains("@{")
+        && value != "@"
+        && !value.chars().any(|character| {
+            character.is_control()
+                || character.is_whitespace()
+                || matches!(character, '~' | '^' | ':' | '?' | '*' | '[' | '\\')
+        })
+        && value.split('/').all(|component| {
+            !component.is_empty() && !component.starts_with('.') && !component.ends_with(".lock")
+        })
 }
 
 fn validate_upstream(value: &str) -> Result<String, RemoteStateParseError> {
@@ -345,6 +369,17 @@ mod tests {
     }
 
     #[test]
+    fn accepts_nested_branch_and_upstream_ref_names() {
+        let parsed = state("## feature/ui/release-v1...origin/team/release/v1 [ahead 1]\n");
+        assert_eq!(
+            parsed.current_branch.as_deref(),
+            Some("feature/ui/release-v1")
+        );
+        assert_eq!(parsed.upstream.as_deref(), Some("origin/team/release/v1"));
+        assert_eq!(parsed.ahead, 1);
+    }
+
+    #[test]
     fn gone_upstream_is_treated_as_no_upstream() {
         let parsed = state("## main...origin/main [gone]\n");
         assert!(parsed.upstream.is_none());
@@ -393,6 +428,41 @@ mod tests {
             ),
             Err(RemoteStateParseError::InvalidUpstream)
         );
+        for upstream in [
+            "../secret",
+            "foo/../secret",
+            "origin/.",
+            "origin/..",
+            "origin//main",
+            "/origin/main",
+            r"origin\main",
+            "C:/secret",
+        ] {
+            assert_eq!(
+                parse_remote_status(&format!("## main...{upstream}\n"), false),
+                Err(RemoteStateParseError::InvalidUpstream),
+                "upstream: {upstream}"
+            );
+        }
+        assert_eq!(
+            parse_remote_status("## main...../secret [gone]\n", false),
+            Err(RemoteStateParseError::InvalidUpstream)
+        );
+        for branch in [
+            "../secret",
+            "foo/../secret",
+            "origin/.",
+            "origin/..",
+            "origin//main",
+            "/origin/main",
+            r"origin\main",
+        ] {
+            assert_eq!(
+                parse_remote_status(&format!("## {branch}\n"), false),
+                Err(RemoteStateParseError::InvalidBranch),
+                "branch: {branch}"
+            );
+        }
         let long = "x".repeat(MAX_REMOTE_BRANCH_BYTES + 1);
         assert_eq!(
             parse_remote_status(&format!("## {long}\n"), false),

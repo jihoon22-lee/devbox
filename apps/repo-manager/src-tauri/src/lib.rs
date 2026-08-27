@@ -42,6 +42,7 @@ pub fn run() {
             commands::repo_stage,
             commands::repo_unstage,
             commands::repo_commit,
+            commands::repo_local_cancel,
             commands::repo_remote_status,
             commands::repo_fetch,
             commands::repo_pull,

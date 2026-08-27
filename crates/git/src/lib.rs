@@ -45,6 +45,29 @@ const KNOWN_GIT_PATHS: &[&str] = &[
     r"C:\Program Files (x86)\Git\bin\git.exe",
 ];
 
+/// Repository-selection overrides must not redirect `git -C <validated cwd>`
+/// to a different index, object database, or worktree inherited from the GUI
+/// process. Credential/SSH/askpass variables are intentionally not removed;
+/// Git and the user's configured credential helper continue to own auth.
+const REPOSITORY_OVERRIDE_ENV: &[&str] = &[
+    "GIT_DIR",
+    "GIT_COMMON_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+    "GIT_PREFIX",
+    "GIT_QUARANTINE_PATH",
+];
+
+fn clear_repository_overrides(command: &mut Command) {
+    for name in REPOSITORY_OVERRIDE_ENV {
+        command.env_remove(name);
+    }
+}
+
 /// Own the complete Git process tree on Windows. Git can spawn hooks,
 /// credential helpers, SSH, and transport children, so killing only the root
 /// `git.exe` is not a sufficient cancellation boundary.
@@ -84,10 +107,18 @@ impl ProcessTree {
         Ok(Self { handle })
     }
 
-    fn terminate(&self, child: &mut Child) {
+    fn terminate(&mut self, child: &mut Child) {
         let _ = unsafe { TerminateJobObject(self.handle, 1) };
         let _ = child.wait();
     }
+
+    fn terminate_descendants(&mut self) {
+        // The root may already have exited, but the stable Job handle still
+        // owns every non-breakaway helper/hook/transport descendant.
+        let _ = unsafe { TerminateJobObject(self.handle, 1) };
+    }
+
+    fn close(self) {}
 }
 
 #[cfg(target_os = "windows")]
@@ -112,23 +143,22 @@ impl ProcessTree {
         })
     }
 
-    fn terminate(&self, child: &mut Child) {
+    fn terminate(&mut self, child: &mut Child) {
         self.terminate_group();
         let _ = child.wait();
     }
+
+    fn terminate_descendants(&mut self) {
+        self.terminate_group();
+    }
+
+    fn close(self) {}
 
     fn terminate_group(&self) {
         // The child is spawned as its own process-group leader below. A
         // negative pid therefore addresses Git and every hook/helper child
         // without touching the desktop application's process group.
         let _ = unsafe { libc::kill(-self.process_group, libc::SIGKILL) };
-    }
-}
-
-#[cfg(unix)]
-impl Drop for ProcessTree {
-    fn drop(&mut self) {
-        self.terminate_group();
     }
 }
 
@@ -141,10 +171,14 @@ impl ProcessTree {
         Ok(Self)
     }
 
-    fn terminate(&self, child: &mut Child) {
+    fn terminate(&mut self, child: &mut Child) {
         let _ = child.kill();
         let _ = child.wait();
     }
+
+    fn terminate_descendants(&mut self) {}
+
+    fn close(self) {}
 }
 
 /// 실행에 쓸 git 프로그램 경로. 기본 설치 경로가 있으면 절대 경로, 없으면 `git`(PATH).
@@ -165,6 +199,7 @@ pub fn resolve_git() -> PathBuf {
 pub fn run(args: &[&str], cwd: &str) -> Result<String, String> {
     let mut cmd = std::process::Command::new(resolve_git());
     cmd.args(["-C", cwd]).args(args);
+    clear_repository_overrides(&mut cmd);
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: 콘솔 창 깜빡임 방지
     let out = cmd.output().map_err(|e| format!("git 실행 불가: {e}"))?;
@@ -263,6 +298,7 @@ fn run_bounded_inner(
         // Git diagnostics can contain a path, remote URL, or credential. They
         // are deliberately not read or returned to the caller.
         .stderr(Stdio::null());
+    clear_repository_overrides(&mut command);
     #[cfg(target_os = "windows")]
     command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     #[cfg(unix)]
@@ -271,7 +307,7 @@ fn run_bounded_inner(
     let mut child = command
         .spawn()
         .map_err(|_| "git_spawn_failed".to_string())?;
-    let process_tree = match ProcessTree::assign_to(&child) {
+    let mut process_tree = match ProcessTree::assign_to(&child) {
         Ok(process_tree) => process_tree,
         Err(()) => {
             let _ = child.kill();
@@ -286,10 +322,25 @@ fn run_bounded_inner(
 
     let overflow = Arc::new(AtomicBool::new(false));
     let read_failed = Arc::new(AtomicBool::new(false));
+    let reader_stop = Arc::new(AtomicBool::new(false));
     let overflow_for_reader = Arc::clone(&overflow);
     let read_failed_for_reader = Arc::clone(&read_failed);
+    let stop_for_reader = Arc::clone(&reader_stop);
     let reader = std::thread::spawn(move || {
         let mut stdout = stdout;
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+
+            let descriptor = stdout.as_raw_fd();
+            let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFL) };
+            if flags < 0
+                || unsafe { libc::fcntl(descriptor, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
+            {
+                read_failed_for_reader.store(true, Ordering::Release);
+                return Vec::new();
+            }
+        }
         let mut bytes = Vec::with_capacity(max_stdout_bytes.min(16 * 1024));
         let mut chunk = [0u8; 8 * 1024];
         loop {
@@ -303,8 +354,17 @@ fn run_bounded_inner(
                     bytes.extend_from_slice(&chunk[..read]);
                 }
                 Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                #[cfg(unix)]
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    if stop_for_reader.load(Ordering::Acquire) {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
                 Err(_) => {
-                    read_failed_for_reader.store(true, Ordering::Release);
+                    if !stop_for_reader.load(Ordering::Acquire) {
+                        read_failed_for_reader.store(true, Ordering::Release);
+                    }
                     break;
                 }
             }
@@ -316,11 +376,15 @@ fn run_bounded_inner(
     let status = loop {
         if overflow.load(Ordering::Acquire) {
             process_tree.terminate(&mut child);
+            reader_stop.store(true, Ordering::Release);
+            process_tree.close();
             let _ = reader.join();
             return Err("git_output_too_large".into());
         }
         if read_failed.load(Ordering::Acquire) {
             process_tree.terminate(&mut child);
+            reader_stop.store(true, Ordering::Release);
+            process_tree.close();
             let _ = reader.join();
             return Err("git_output_read_failed".into());
         }
@@ -329,18 +393,24 @@ fn run_bounded_inner(
             Ok(None) => {
                 if cancellation.is_some_and(|signal| signal.load(Ordering::Acquire)) {
                     process_tree.terminate(&mut child);
+                    reader_stop.store(true, Ordering::Release);
+                    process_tree.close();
                     let _ = reader.join();
                     return Err("git_cancelled".into());
                 }
             }
             Err(_) => {
                 process_tree.terminate(&mut child);
+                reader_stop.store(true, Ordering::Release);
+                process_tree.close();
                 let _ = reader.join();
                 return Err("git_wait_failed".into());
             }
         }
         if deadline.is_none_or(|value| Instant::now() >= value) {
             process_tree.terminate(&mut child);
+            reader_stop.store(true, Ordering::Release);
+            process_tree.close();
             let _ = reader.join();
             return Err("git_timeout".into());
         }
@@ -348,9 +418,13 @@ fn run_bounded_inner(
     };
 
     // Root Git may exit while a hook/helper descendant still owns the stdout
-    // pipe. Tear down the owned Job Object/process group before joining the
-    // reader so an inherited handle cannot bypass the operation timeout.
-    drop(process_tree);
+    // pipe. Tear down the owned Job Object/process group once, then tell the
+    // Unix nonblocking reader to stop after draining currently available
+    // bytes. No Drop implementation sends a second signal after the root PID
+    // has been reaped.
+    process_tree.terminate_descendants();
+    reader_stop.store(true, Ordering::Release);
+    process_tree.close();
     let bytes = reader.join().map_err(|_| "git_reader_failed".to_string())?;
     if overflow.load(Ordering::Acquire) {
         return Err("git_output_too_large".into());
@@ -410,6 +484,33 @@ mod tests {
         // 어느 플랫폼이든 `git`(PATH) 또는 절대 경로 중 하나를 반환한다.
         let p = resolve_git();
         assert!(!p.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn repository_overrides_are_removed_without_disabling_credential_helpers() {
+        let mut command = Command::new(resolve_git());
+        command.env("GIT_DIR", "untrusted-repository-override");
+        command.env("GIT_INDEX_FILE", "untrusted-index-override");
+        command.env("GIT_ASKPASS", "configured-credential-helper");
+        clear_repository_overrides(&mut command);
+        let environment = command
+            .get_envs()
+            .map(|(name, value)| (name.to_owned(), value.map(ToOwned::to_owned)))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            environment.get(std::ffi::OsStr::new("GIT_DIR")),
+            Some(&None)
+        );
+        assert_eq!(
+            environment.get(std::ffi::OsStr::new("GIT_INDEX_FILE")),
+            Some(&None)
+        );
+        assert_eq!(
+            environment.get(std::ffi::OsStr::new("GIT_ASKPASS")),
+            Some(&Some(std::ffi::OsString::from(
+                "configured-credential-helper"
+            )))
+        );
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -651,6 +752,63 @@ mod tests {
         assert_eq!(result.unwrap_err(), "git_cancelled");
         assert!(started.elapsed() < Duration::from_secs(2));
         assert!(!tmp.join(".git/COMMIT_EDITMSG").exists());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runner_does_not_wait_for_an_escaped_descendant_holding_stdout() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = std::env::temp_dir().join(format!(
+            "devbox-git-escaped-writer-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        init_repo(&tmp);
+        let hook = tmp.join(".git/hooks/pre-commit");
+        std::fs::write(
+            &hook,
+            "#!/bin/sh\nsetsid sh -c 'echo $$ > escaped-writer.pid; sleep 10' &\nexit 0\n",
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&hook).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&hook, permissions).unwrap();
+
+        let started = Instant::now();
+        run_mutating(
+            &[
+                "commit",
+                "--allow-empty",
+                "-m",
+                "escaped writer fixture",
+                "--",
+            ],
+            &tmp.to_string_lossy(),
+            Duration::from_secs(5),
+            4 * 1024,
+        )
+        .unwrap();
+        assert!(started.elapsed() < Duration::from_secs(2));
+
+        let pid_path = tmp.join("escaped-writer.pid");
+        let pid = (0..100)
+            .find_map(|_| {
+                let pid = std::fs::read_to_string(&pid_path)
+                    .ok()
+                    .and_then(|value| value.trim().parse::<i32>().ok());
+                if pid.is_none() {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                pid
+            })
+            .expect("escaped writer must publish its pid");
+        let _ = unsafe { libc::kill(pid, libc::SIGKILL) };
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }

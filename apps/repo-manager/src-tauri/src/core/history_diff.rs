@@ -102,7 +102,7 @@ pub fn parse_history(input: &str, limit: usize) -> Result<HistoryResult, String>
             id: parse_commit_id(record[0])?,
             short_id: short_id(record[0])?,
             parents: parse_parents(record[1])?,
-            authored_at: bounded_text(record[2], MAX_TIMESTAMP_BYTES, false)?,
+            authored_at: parse_git_timestamp(record[2])?,
             author: bounded_text(record[3], MAX_AUTHOR_FIELD_BYTES, false)?,
             author_email: bounded_text(record[4], MAX_AUTHOR_FIELD_BYTES, false)?,
             subject: bounded_text(record[5], MAX_COMMIT_SUBJECT_BYTES, false)?,
@@ -124,7 +124,7 @@ pub fn parse_detail(input: &str) -> Result<CommitDetail, String> {
     Ok(CommitDetail {
         id: parse_commit_id(fields[0])?,
         parents: parse_parents(fields[1])?,
-        authored_at: bounded_text(fields[2], MAX_TIMESTAMP_BYTES, false)?,
+        authored_at: parse_git_timestamp(fields[2])?,
         author: bounded_text(fields[3], MAX_AUTHOR_FIELD_BYTES, false)?,
         author_email: bounded_text(fields[4], MAX_AUTHOR_FIELD_BYTES, false)?,
         subject: bounded_text(fields[5], MAX_COMMIT_SUBJECT_BYTES, false)?,
@@ -273,6 +273,105 @@ fn short_id(value: &str) -> Result<String, String> {
 
 fn parse_parents(value: &str) -> Result<Vec<String>, String> {
     value.split_whitespace().map(parse_commit_id).collect()
+}
+
+/// Validate the exact timestamp shape emitted by Git's `%aI` pretty-format.
+///
+/// `%aI` is not an arbitrary ISO-8601 input field: Git emits an extended
+/// calendar date, a `T` separator, a seconds-resolution wall-clock time, and
+/// either `Z` or a signed offset.  Keep the original value for display only
+/// after checking every component.  In particular, parsing only the shape
+/// would allow impossible dates such as February 31 or offsets outside the
+/// range accepted by Git's raw identity format.
+fn parse_git_timestamp(value: &str) -> Result<String, String> {
+    let bytes = value.as_bytes();
+    if bytes.len() > MAX_TIMESTAMP_BYTES || bytes.len() < 20 || !value.is_ascii() {
+        return Err(fixed_error());
+    }
+
+    // The year is four or more decimal digits. Git's formatter uses a
+    // variable-width year for dates beyond 9999, so do not silently reject a
+    // valid Git object solely because its year is expanded.
+    let separator = bytes
+        .iter()
+        .position(|byte| *byte == b'T')
+        .ok_or_else(fixed_error)?;
+    if separator < 10
+        || bytes[separator - 6] != b'-'
+        || bytes[separator - 3] != b'-'
+        || !bytes[..separator - 6]
+            .iter()
+            .all(|byte| byte.is_ascii_digit())
+        || bytes[..separator - 6].iter().all(|byte| *byte == b'0')
+    {
+        return Err(fixed_error());
+    }
+
+    let year = &bytes[..separator - 6];
+    let month = parse_two_digits(bytes, separator - 5).ok_or_else(fixed_error)?;
+    let day = parse_two_digits(bytes, separator - 2).ok_or_else(fixed_error)?;
+    if !(1..=12).contains(&month) || day == 0 || day > days_in_month(year, month) {
+        return Err(fixed_error());
+    }
+
+    // `HH:MM:SS` is exactly eight bytes and the timezone begins immediately
+    // after it. This also rejects fractional seconds and trailing whitespace.
+    if separator + 9 > bytes.len() || bytes[separator + 3] != b':' || bytes[separator + 6] != b':' {
+        return Err(fixed_error());
+    }
+    let hour = parse_two_digits(bytes, separator + 1).ok_or_else(fixed_error)?;
+    let minute = parse_two_digits(bytes, separator + 4).ok_or_else(fixed_error)?;
+    let second = parse_two_digits(bytes, separator + 7).ok_or_else(fixed_error)?;
+    if hour > 23 || minute > 59 || second > 59 {
+        return Err(fixed_error());
+    }
+
+    let offset = &bytes[separator + 9..];
+    if offset == b"Z" {
+        return Ok(value.to_owned());
+    }
+    if offset.len() != 6 || !matches!(offset[0], b'+' | b'-') || offset[3] != b':' {
+        return Err(fixed_error());
+    }
+    let offset_hour = parse_two_digits(offset, 1).ok_or_else(fixed_error)?;
+    let offset_minute = parse_two_digits(offset, 4).ok_or_else(fixed_error)?;
+    // Git accepts offsets through ±14:00; values beyond that are not emitted
+    // by `%aI`, and 14:01..14:59 are not valid timezone offsets either.
+    if offset_hour > 14 || offset_minute > 59 || (offset_hour == 14 && offset_minute != 0) {
+        return Err(fixed_error());
+    }
+
+    Ok(value.to_owned())
+}
+
+fn parse_two_digits(bytes: &[u8], start: usize) -> Option<u8> {
+    let first = *bytes.get(start)?;
+    let second = *bytes.get(start + 1)?;
+    if !first.is_ascii_digit() || !second.is_ascii_digit() {
+        return None;
+    }
+    Some((first - b'0') * 10 + second - b'0')
+}
+
+fn days_in_month(year: &[u8], month: u8) -> u8 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+fn is_leap_year(year: &[u8]) -> bool {
+    // Avoid parsing an expanded Git year into a fixed-width integer. The
+    // Gregorian rule depends only on the year modulo 4, 100, and 400.
+    let modulo = |divisor: u16| {
+        year.iter().fold(0u16, |remainder, digit| {
+            (remainder * 10 + u16::from(digit - b'0')) % divisor
+        })
+    };
+    modulo(4) == 0 && (modulo(100) != 0 || modulo(400) == 0)
 }
 
 fn bounded_text(value: &str, max_bytes: usize, allow_newlines: bool) -> Result<String, String> {
@@ -436,6 +535,46 @@ mod tests {
 
         let second = parse_history(&input, 2).unwrap();
         assert_eq!(second.entries[1].parents, vec![PARENT, OID]);
+    }
+
+    #[test]
+    fn accepts_git_iso_strict_timestamp_forms() {
+        for timestamp in [
+            "1970-01-01T00:00:00Z",
+            "2024-02-29T23:59:59+14:00",
+            "2026-08-27T09:00:00-05:30",
+            "10000-02-29T09:00:00+00:00",
+        ] {
+            let input = format!("{OID}\0\0{timestamp}\0Alice\0alice@example.test\0subject\0");
+            assert!(parse_history(&input, 1).is_ok(), "timestamp: {timestamp}");
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_git_iso_strict_timestamps() {
+        for timestamp in [
+            "2026-02-29T09:00:00+09:00",     // non-leap year
+            "0000-02-29T09:00:00+09:00",     // Git dates have no year zero
+            "2024-04-31T09:00:00+09:00",     // impossible calendar day
+            "2026-13-01T09:00:00+09:00",     // month out of range
+            "2026-08-27T24:00:00+09:00",     // hour out of range
+            "2026-08-27T09:60:00+09:00",     // minute out of range
+            "2026-08-27T09:00:60+09:00",     // second out of range
+            "2026-08-27T09:00:00+14:01",     // Git's maximum offset is +14:00
+            "2026-08-27T09:00:00-15:00",     // offset hour out of range
+            "2026-08-27T09:00:00+09:60",     // offset minute out of range
+            "2026-08-27 09:00:00+09:00",     // wrong separator
+            "2026-08-27T09:00:00.123+09:00", // fractional seconds
+            "2026-08-27T09:00:00+0900",      // non-strict offset
+            "2026-08-27T09:00:00+09:00 ",    // trailing whitespace
+        ] {
+            let input = format!("{OID}\0\0{timestamp}\0Alice\0alice@example.test\0subject\0");
+            assert_eq!(
+                parse_history(&input, 1),
+                Err(GIT_VIEW_ERROR.to_string()),
+                "timestamp: {timestamp}"
+            );
+        }
     }
 
     #[test]
