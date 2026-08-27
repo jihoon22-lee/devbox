@@ -381,7 +381,7 @@ fn decode_utf16(
         return Err(DecodeFailure::Unsupported);
     }
     let mut units = Vec::with_capacity(bytes.len() / 2);
-    for (index, pair) in bytes.chunks_exact(2).enumerate() {
+    for (index, pair) in bytes.as_chunks::<2>().0.iter().enumerate() {
         if index % 8192 == 0 && timed_out(started) {
             return Err(DecodeFailure::Timeout);
         }

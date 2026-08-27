@@ -159,7 +159,7 @@ test result: ok. 47 passed; 0 failed
 cargo check --locked -p everything-plus -j2
 Finished `dev` profile
 
-cargo clippy --locked -p everything-plus --lib --all-targets -j2 -- -D warnings
+cargo clippy --locked -p everything-plus --all-targets -j2 -- -D warnings
 Finished `dev` profile
 
 pnpm --filter everything-plus exec tsc --noEmit
@@ -204,6 +204,11 @@ The first repository-wide frontend build attempt exposed that this dedicated wor
 created the two app-local symlinks for dependencies already present in the frozen lockfile.
 `pnpm install --frozen-lockfile` repaired only `node_modules` (no source or lockfile change), and
 the complete 17-project build then passed.
+
+The first GitHub Rust job passed `cargo check` but Rust 1.98 denied the newer
+`chunks_exact_to_as_chunks` clippy lint. The UTF-16 pair iterator was changed to the equivalent
+`as_chunks::<2>()` API, and the exact package `--all-targets -D warnings` command plus all 47 Rust
+tests passed locally before the corrective push.
 
 Focused Rust coverage includes UTF-8 English/Korean, UTF-16 LE/BE with and without BOM,
 empty input, invalid/binary data, 20 MiB and 2M-character bounds, timeout, sensitive names,
