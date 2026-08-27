@@ -1,10 +1,11 @@
+use crate::core::content::{ContentRecord, EXTRACTOR_VERSION};
 use crate::core::models::{ContentResult, FileEntry, RootInfo};
 use rusqlite::{params, Connection};
 
 /// 현재 스키마/정규화 규칙의 버전. 값을 올리면 다음 `migrate()` 호출 시
 /// 기존 인덱스(파생 데이터)를 지우고 재인덱싱을 유도한다. 인덱스는 언제든
 /// 다시 만들 수 있으므로 별도 마이그레이션 코드를 쓰지 않는다.
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 /// DB를 열고 스키마(FTS5 외부 콘텐츠 테이블 + 트리거)를 준비한다.
 /// 반환하는 `bool`은 `migrate()`가 스키마 버전 상승으로 파생 인덱스를
@@ -27,7 +28,15 @@ pub fn init(path: &std::path::Path) -> rusqlite::Result<(Connection, bool)> {
 /// `C:/`(그 드라이브의 루트)와 다르다 — 구분자를 지우면 걷는 대상 디렉터리
 /// 자체가 바뀐다.
 pub fn normalize_path(path: &str) -> String {
-    let unified = path.replace('\\', "/");
+    let mut unified = path.replace('\\', "/");
+    // Windows canonicalize() may return an extended-length spelling. Keep the
+    // stored/event spelling stable so a watcher callback using `C:/...` still
+    // matches a root that was canonicalized as `\\\\?\\C:\\...`.
+    if let Some(rest) = unified.strip_prefix("//?/UNC/") {
+        unified = format!("//{rest}");
+    } else if let Some(rest) = unified.strip_prefix("//?/") {
+        unified = rest.to_string();
+    }
     let trimmed = unified.trim_end_matches('/');
     if trimmed.is_empty() {
         // 입력이 "/"류(유닉스 루트)뿐이었던 경우
@@ -79,7 +88,14 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<bool> {
         CREATE TABLE IF NOT EXISTS file_content (
             id INTEGER PRIMARY KEY,
             file_id INTEGER UNIQUE NOT NULL,
-            content TEXT NOT NULL
+            content TEXT NOT NULL,
+            content_status TEXT NOT NULL DEFAULT 'indexed',
+            extractor_version TEXT NOT NULL DEFAULT 'text-v1',
+            truncated INTEGER NOT NULL DEFAULT 0,
+            indexed_at INTEGER,
+            error_code TEXT,
+            encoding TEXT,
+            text_chars INTEGER NOT NULL DEFAULT 0
         );
         CREATE VIRTUAL TABLE IF NOT EXISTS file_content_fts USING fts5(content, content='file_content', content_rowid='id');
         CREATE TRIGGER IF NOT EXISTS file_content_ai AFTER INSERT ON file_content BEGIN
@@ -98,13 +114,36 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<bool> {
         );
         ",
     )?;
-    // 기존 DB에 roots.content 컬럼 추가 (마이그레이션)
-    let has_content = conn
-        .prepare("SELECT 1 FROM pragma_table_info('roots') WHERE name='content'")?
-        .exists([])?;
-    if !has_content {
-        conn.execute_batch("ALTER TABLE roots ADD COLUMN content INTEGER NOT NULL DEFAULT 0")?;
-    }
+    // 기존 v0.4.x DB는 roots.content와 content metadata가 없을 수 있다.  먼저
+    // 컬럼을 보강한 뒤 schema_version을 올리면서 파생 index를 재생성한다.
+    ensure_column(conn, "roots", "content", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(
+        conn,
+        "file_content",
+        "content_status",
+        "TEXT NOT NULL DEFAULT 'indexed'",
+    )?;
+    ensure_column(
+        conn,
+        "file_content",
+        "extractor_version",
+        "TEXT NOT NULL DEFAULT 'text-v1'",
+    )?;
+    ensure_column(
+        conn,
+        "file_content",
+        "truncated",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(conn, "file_content", "indexed_at", "INTEGER")?;
+    ensure_column(conn, "file_content", "error_code", "TEXT")?;
+    ensure_column(conn, "file_content", "encoding", "TEXT")?;
+    ensure_column(
+        conn,
+        "file_content",
+        "text_chars",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
     // schema_version이 낮으면(신규 DB 포함) 파생 데이터(files/file_content)만 지워
     // 재인덱싱을 유도한다. roots(사용자가 등록한 경로 목록)는 그대로 둔다.
     let current_version: i64 = conn
@@ -128,6 +167,27 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<bool> {
     Ok(cleared)
 }
 
+fn ensure_column(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> rusqlite::Result<()> {
+    // Table and column names are compile-time literals at every call site; do
+    // not accept user input here because SQLite cannot bind identifiers.
+    let present = conn
+        .prepare(&format!(
+            "SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?1"
+        ))?
+        .exists([column])?;
+    if !present {
+        conn.execute_batch(&format!(
+            "ALTER TABLE {table} ADD COLUMN {column} {definition}"
+        ))?;
+    }
+    Ok(())
+}
+
 /// 루트를 등록하고, 실제로 저장된(정규화된) 경로를 반환한다.
 /// 호출자(커맨드 계층)는 이 반환값을 그대로 인덱싱 대상으로 써야 한다 —
 /// 원본 입력 문자열을 다시 쓰면 정규화 전후 값이 어긋나 `run_index`의
@@ -135,7 +195,8 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<bool> {
 pub fn add_root(conn: &Connection, path: &str, index_content: bool) -> rusqlite::Result<String> {
     let path = normalize_path(path);
     conn.execute(
-        "INSERT OR IGNORE INTO roots (path, content) VALUES (?1, ?2)",
+        "INSERT INTO roots (path, content) VALUES (?1, ?2)
+         ON CONFLICT(path) DO UPDATE SET content = excluded.content",
         params![path, index_content],
     )?;
     Ok(path)
@@ -171,12 +232,17 @@ pub fn clear_root(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     } else {
         format!("{normalized}/")
     };
-    let pattern = format!("{prefix}%");
+    let escaped = prefix.replace('%', "\\%").replace('_', "\\_");
+    let pattern = format!("{escaped}%");
     conn.execute(
-        "DELETE FROM file_content WHERE file_id IN (SELECT id FROM files WHERE path LIKE ?1)",
+        "DELETE FROM file_content WHERE file_id IN
+             (SELECT id FROM files WHERE path LIKE ?1 ESCAPE '\\')",
         params![pattern],
     )?;
-    conn.execute("DELETE FROM files WHERE path LIKE ?1", params![pattern])?;
+    conn.execute(
+        "DELETE FROM files WHERE path LIKE ?1 ESCAPE '\\'",
+        params![pattern],
+    )?;
     Ok(())
 }
 
@@ -219,13 +285,75 @@ pub fn upsert_file(
     )
 }
 
-pub fn upsert_content(conn: &Connection, file_id: i64, content: &str) -> rusqlite::Result<()> {
+/// Store a bounded extraction result.  Failed records contain an empty FTS
+/// body but retain fixed status metadata so the UI can explain why a filename
+/// exists without making a content hit.
+pub fn upsert_content_record(
+    conn: &Connection,
+    file_id: i64,
+    record: &ContentRecord,
+    indexed_at: i64,
+) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO file_content (file_id, content) VALUES (?1, ?2)
-         ON CONFLICT(file_id) DO UPDATE SET content = excluded.content",
-        params![file_id, content],
+        "INSERT INTO file_content
+            (file_id, content, content_status, extractor_version, truncated,
+             indexed_at, error_code, encoding, text_chars)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(file_id) DO UPDATE SET
+            content = excluded.content,
+            content_status = excluded.content_status,
+            extractor_version = excluded.extractor_version,
+            truncated = excluded.truncated,
+            indexed_at = excluded.indexed_at,
+            error_code = excluded.error_code,
+            encoding = excluded.encoding,
+            text_chars = excluded.text_chars",
+        params![
+            file_id,
+            record.text.as_str(),
+            record.status.as_str(),
+            EXTRACTOR_VERSION,
+            record.truncated,
+            indexed_at,
+            record.error_code,
+            record.encoding,
+            record.text_chars as i64,
+        ],
     )?;
     Ok(())
+}
+
+/// Remove content metadata when a file becomes non-text, is no longer covered
+/// by a content-enabled root, or is replaced by a directory/symlink.
+pub fn delete_content(conn: &Connection, file_id: i64) -> rusqlite::Result<bool> {
+    Ok(conn.execute("DELETE FROM file_content WHERE file_id = ?1", [file_id])? > 0)
+}
+
+pub fn content_status_summary(conn: &Connection) -> rusqlite::Result<ContentStatusSummary> {
+    let mut stmt = conn.prepare(
+        "SELECT
+            COALESCE(SUM(CASE WHEN content_status = 'indexed' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN truncated != 0 THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN content_status != 'indexed' THEN 1 ELSE 0 END), 0),
+            MAX(indexed_at)
+         FROM file_content",
+    )?;
+    stmt.query_row([], |row| {
+        Ok(ContentStatusSummary {
+            indexed_files: row.get(0)?,
+            truncated_files: row.get(1)?,
+            failed_files: row.get(2)?,
+            last_indexed_at: row.get(3)?,
+        })
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContentStatusSummary {
+    pub indexed_files: i64,
+    pub truncated_files: i64,
+    pub failed_files: i64,
+    pub last_indexed_at: Option<i64>,
 }
 
 /// 파일과 그 내용 인덱스를 삭제한다. 삭제된 행이 있었으면 true.
@@ -274,6 +402,9 @@ pub fn total_files(conn: &Connection) -> rusqlite::Result<i64> {
 
 /// FTS5 파일명 검색. 쿼리는 토큰 단위 prefix 매치로 안전하게 이스케이프한다.
 pub fn search(conn: &Connection, query: &str, limit: i64) -> rusqlite::Result<Vec<FileEntry>> {
+    // Regex filename mode asks for a larger bounded FTS candidate set and then
+    // performs the regular-expression match in the frontend.
+    let limit = limit.clamp(0, 2_000);
     let q = search::build_fts_query(query);
     let mut stmt = conn.prepare(
         "SELECT f.id, f.path, f.name, f.ext, f.size, f.modified_ts
@@ -301,13 +432,14 @@ pub fn search_content(
     query: &str,
     limit: i64,
 ) -> rusqlite::Result<Vec<ContentResult>> {
+    let limit = limit.clamp(0, 200);
     let q = search::build_fts_query(query);
     let mut stmt = conn.prepare(
         "SELECT f.path, f.name, snippet(file_content_fts, 0, '[', ']', '…', 20) AS snip
          FROM file_content_fts
          JOIN file_content fc ON fc.id = file_content_fts.rowid
          JOIN files f ON f.id = fc.file_id
-         WHERE file_content_fts MATCH ?1
+         WHERE file_content_fts MATCH ?1 AND fc.content_status = 'indexed'
          ORDER BY f.name
          LIMIT ?2",
     )?;
@@ -315,7 +447,7 @@ pub fn search_content(
         Ok(ContentResult {
             path: r.get(0)?,
             name: r.get(1)?,
-            snippet: r.get(2)?,
+            snippet: crate::core::content::redact_snippet(&r.get::<_, String>(2)?),
         })
     })?;
     rows.collect()
@@ -324,11 +456,23 @@ pub fn search_content(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::content::ContentStatus;
 
     fn mem() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
         conn
+    }
+
+    fn indexed_record(content: &str) -> ContentRecord {
+        ContentRecord {
+            text: content.to_string(),
+            status: ContentStatus::Indexed,
+            encoding: Some("utf8"),
+            truncated: false,
+            error_code: None,
+            text_chars: content.chars().count(),
+        }
     }
 
     fn seed(conn: &Connection) {
@@ -369,6 +513,22 @@ mod tests {
     }
 
     #[test]
+    fn filename_search_preserves_regex_candidate_limit_above_two_hundred() {
+        let conn = mem();
+        for index in 0..205 {
+            upsert_file(
+                &conn,
+                &format!("C:/projects/shared/candidate-{index:03}.txt"),
+                1,
+                0,
+                1,
+            )
+            .unwrap();
+        }
+        assert_eq!(search(&conn, "candidate", 500).unwrap().len(), 205);
+    }
+
+    #[test]
     fn upsert_replace_keeps_fts_in_sync() {
         let conn = mem();
         seed(&conn);
@@ -384,7 +544,8 @@ mod tests {
     fn content_search_matches_body() {
         let conn = mem();
         let id = upsert_file(&conn, "C:/notes/meeting.md", 10, 0, 1).unwrap();
-        upsert_content(&conn, id, "quarterly review with the team").unwrap();
+        let record = indexed_record("quarterly review with the team");
+        upsert_content_record(&conn, id, &record, 1).unwrap();
         let res = search_content(&conn, "quarterly", 10).unwrap();
         assert_eq!(res.len(), 1);
         assert!(res[0].snippet.contains("quarterly"));
@@ -393,6 +554,51 @@ mod tests {
         let _ = id2;
         let res = search_content(&conn, "quarterly", 10).unwrap();
         assert_eq!(res.len(), 1);
+    }
+
+    #[test]
+    fn content_metadata_filters_failures_and_redacts_snippets() {
+        let conn = mem();
+        let indexed = upsert_file(&conn, "C:/notes/meeting.md", 10, 0, 1).unwrap();
+        let mut record = indexed_record("Authorization: Bearer abc123 quarterly review");
+        record.text_chars = 46;
+        upsert_content_record(&conn, indexed, &record, 123).unwrap();
+        let failed = upsert_file(&conn, "C:/notes/large.txt", 20, 0, 1).unwrap();
+        let failed_record = ContentRecord {
+            text: String::new(),
+            status: ContentStatus::TooLarge,
+            encoding: None,
+            truncated: false,
+            error_code: Some("file_too_large"),
+            text_chars: 0,
+        };
+        upsert_content_record(&conn, failed, &failed_record, 124).unwrap();
+
+        let results = search_content(&conn, "quarterly", 500).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].snippet.contains("abc123"));
+        let summary = content_status_summary(&conn).unwrap();
+        assert_eq!(summary.indexed_files, 1);
+        assert_eq!(summary.failed_files, 1);
+        assert_eq!(summary.last_indexed_at, Some(124));
+        let extractor_version: String = conn
+            .query_row(
+                "SELECT extractor_version FROM file_content WHERE file_id = ?1",
+                [indexed],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(extractor_version, EXTRACTOR_VERSION);
+    }
+
+    #[test]
+    fn clear_root_escapes_like_wildcards_and_keeps_sibling_paths() {
+        let conn = mem();
+        upsert_file(&conn, "C:/a%/inside.md", 1, 0, 1).unwrap();
+        upsert_file(&conn, "C:/aX/sibling.md", 1, 0, 1).unwrap();
+        clear_root(&conn, "C:/a%").unwrap();
+        assert!(search(&conn, "inside", 10).unwrap().is_empty());
+        assert_eq!(search(&conn, "sibling", 10).unwrap().len(), 1);
     }
 
     #[test]
@@ -415,13 +621,22 @@ mod tests {
         assert_eq!(normalize_path("C:"), "C:");
         // 유닉스 루트
         assert_eq!(normalize_path("/"), "/");
+        assert_eq!(
+            normalize_path("\\\\?\\C:\\projects\\foo"),
+            "C:/projects/foo"
+        );
+        assert_eq!(
+            normalize_path("\\\\?\\UNC\\server\\share\\project"),
+            "//server/share/project"
+        );
     }
 
     #[test]
     fn upsert_file_preserves_id_on_reindex() {
         let conn = mem();
         let id1 = upsert_file(&conn, "C:/projects/foo/bar.rs", 10, 100, 1).unwrap();
-        upsert_content(&conn, id1, "fn main() {}").unwrap();
+        let record = indexed_record("fn main() {}");
+        upsert_content_record(&conn, id1, &record, 1).unwrap();
         // 같은 경로를 다시 인덱싱해도(크기/수정시각 변경) id는 그대로여야
         // file_content가 고아가 되지 않는다.
         let id2 = upsert_file(&conn, "C:/projects/foo/bar.rs", 20, 200, 1).unwrap();
@@ -473,7 +688,8 @@ mod tests {
     fn remove_root_deletes_file_content_rows() {
         let conn = mem();
         let id = upsert_file(&conn, "C:/notes/todo.md", 1, 0, 1).unwrap();
-        upsert_content(&conn, id, "buy milk").unwrap();
+        let record = indexed_record("buy milk");
+        upsert_content_record(&conn, id, &record, 1).unwrap();
         remove_root(&conn, "C:/notes").unwrap();
         let remaining: i64 = conn
             .query_row("SELECT COUNT(*) FROM file_content", [], |r| r.get(0))
@@ -497,6 +713,61 @@ mod tests {
             "이미 최신 버전이면 clear_all을 다시 실행하면 안 된다"
         );
         assert_eq!(total_files(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn migrate_preserves_roots_and_upgrades_legacy_content_schema() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE roots (id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL);
+             CREATE TABLE files (id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL, ext TEXT, size INTEGER NOT NULL,
+                modified_ts INTEGER NOT NULL, root_id INTEGER);
+             CREATE VIRTUAL TABLE files_fts USING fts5(name, content='files', content_rowid='id');
+             CREATE TRIGGER files_ad AFTER DELETE ON files BEGIN
+                INSERT INTO files_fts(files_fts, rowid, name) VALUES ('delete', old.id, old.name);
+             END;
+             CREATE TABLE file_content (id INTEGER PRIMARY KEY, file_id INTEGER UNIQUE NOT NULL,
+                content TEXT NOT NULL);
+             CREATE VIRTUAL TABLE file_content_fts USING fts5(content, content='file_content', content_rowid='id');
+             CREATE TRIGGER file_content_ad AFTER DELETE ON file_content BEGIN
+                INSERT INTO file_content_fts(file_content_fts, rowid, content)
+                    VALUES ('delete', old.id, old.content);
+             END;
+             CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO roots(path) VALUES ('C:/legacy');
+             INSERT INTO meta(key, value) VALUES ('schema_version', '1');
+             INSERT INTO files(path, name, ext, size, modified_ts, root_id)
+                VALUES ('C:/legacy/a.md', 'a.md', 'md', 1, 0, 1);
+             INSERT INTO file_content(file_id, content) VALUES (1, 'old text');",
+        )
+        .unwrap();
+        conn.execute("INSERT INTO files_fts(rowid, name) VALUES (1, 'a.md')", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO file_content_fts(rowid, content) VALUES (1, 'old text')",
+            [],
+        )
+        .unwrap();
+
+        assert!(migrate(&conn).unwrap());
+        assert_eq!(list_roots(&conn).unwrap()[0].path, "C:/legacy");
+        assert_eq!(total_files(&conn).unwrap(), 0);
+        for column in [
+            "content_status",
+            "extractor_version",
+            "truncated",
+            "indexed_at",
+            "error_code",
+            "encoding",
+            "text_chars",
+        ] {
+            assert!(conn
+                .prepare("SELECT 1 FROM pragma_table_info('file_content') WHERE name = ?1")
+                .unwrap()
+                .exists([column])
+                .unwrap());
+        }
     }
 
     #[test]
@@ -539,7 +810,8 @@ mod tests {
     fn delete_file_removes_file_and_content() {
         let conn = mem();
         let id = upsert_file(&conn, "C:/notes/todo.md", 10, 0, 1).unwrap();
-        upsert_content(&conn, id, "buy milk").unwrap();
+        let record = indexed_record("buy milk");
+        upsert_content_record(&conn, id, &record, 1).unwrap();
         assert!(delete_file(&conn, "C:\\notes\\todo.md").unwrap());
         assert!(search(&conn, "todo", 10).unwrap().is_empty());
         assert!(search_content(&conn, "milk", 10).unwrap().is_empty());

@@ -71,6 +71,12 @@ body {
   font-size: 12px;
 }
 
+.content-status {
+  color: var(--dim);
+  white-space: nowrap;
+  font-size: 11px;
+}
+
 .mode-tabs {
   display: flex;
   border: 1px solid var(--border);
@@ -155,6 +161,11 @@ body {
 
 .btn:hover:not(:disabled) {
   border-color: var(--accent);
+}
+
+.btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .error {
