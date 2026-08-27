@@ -496,8 +496,27 @@ calamine의 streaming cell API만 사용한다. ODS는 manifest encryption/DTD�
 calamine이 기존 row vector와 dense range vector를 동시에 보유하는 구간까지 반영해 Data/formula
 slot을 각각 두 벌로 추정하며, expanded text 16,000,000자와 peak memory 256 MiB를 넘기면 parser
 진입 전에 거부한다. 두 형식 모두 formula를 평가하지 않고 cached value만 text로 취급하며,
-macro/image/style/external resource/network를 사용하지 않는다. DOCX/OCR/semantic search는 계속
+macro/image/style/external resource/network를 사용하지 않는다. OCR/semantic search는 계속
 별도 후속 경계다.
+
+DOCX는 spreadsheet 묶음과 별도의 `docx-v1` parser/rollback 경계를 가진다. Everything+에
+이미 고정된 MIT `zip`과 `quick-xml`을 재사용하되 Office/LibreOffice나 sidecar를 설치·실행하지
+않는다. raw EOCD/ZIP64 envelope에서 선언 entry 수를 먼저 제한하고, `ZipArchive` 생성 뒤 실제
+entry 4,096개, case-insensitive duplicate/unsafe path, encrypted flag, entry 32 MiB와 전체
+uncompressed 64 MiB를 다시 검사한다. canonical `[Content_Types].xml`, `_rels/.rels`,
+`word/document.xml`만 main-document trust root로 인정하며 macro-enabled content type, external/
+unsafe package target과 DTD는 거부한다. XML은 depth 128, event 1,000,000개, text Unicode
+scalar와 raw attribute byte를 합산한 8,000,000 budget, relationship 4,096개 안에서 streaming
+scan한다.
+
+본문 계약은 `word/document.xml`의 `w:t`와 paragraph/tab/line-break를 FTS text로 정규화하는
+것뿐이다. field instruction과 non-main part(header/footer/footnote/comment), image/style,
+embedded object, macro는 읽거나 실행하지 않고 relationship target도 열지 않는다. output은 기존
+2,000,000 Unicode scalar/10초 경계를 공유한다. OOXML CFB `EncryptedPackage`와 encrypted ZIP은
+`unsupported_encrypted`, 빈 main text는 `no_text`, 손상/ZIP/XML/resource 실패는 raw path/parser
+detail 없는 고정 코드와 빈 FTS body로 격리한다. `meta.docx_extractor_version` 누락/불일치 또는
+stale row는 startup의 compact `FormatSet`에 DOCX bit를 더하고, 성공한 full/DOCX-only 전체-root
+pass만 marker를 기록한다. DOCX-only clear/reindex는 text/PDF/XLS/XLSX/ODS row를 보존한다.
 
 Repo Manager는 catalog revision 4부터 `path`를 수신한다. cold/hot request를 listener-first
 `PendingOpen` 경로로 한 번만 소비하고 기존 scan 결과와 canonical identity가 같은 repository를

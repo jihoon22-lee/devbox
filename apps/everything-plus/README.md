@@ -6,7 +6,7 @@
 ## 주요 기능
 
 - **파일명 검색** — FTS5 인덱스, 파일명·경로 부분 일치, 밀리초 응답
-- **내용 검색** — 텍스트 파일(TXT/MD/JSON/CSV/소스코드), PDF text, XLS/XLSX/ODS 셀 값 내용 FTS5, 스니펫 하이라이트
+- **내용 검색** — 텍스트 파일(TXT/MD/JSON/CSV/소스코드), PDF/DOCX text, XLS/XLSX/ODS 셀 값 내용 FTS5, 스니펫 하이라이트
 - **정규식 모드** — regex 검색
 - **인덱스 관리** — 검색 루트(드라이브/폴더) 추가·제외 규칙, re-index 진행률 표시, 파일 감시로 최신성 유지
 - **결과 작업** — 열기·폴더에서 보기·경로/파일명 복사와 설치된 `path` capability 앱으로 열기 context menu
@@ -16,11 +16,11 @@
 
 `index content`를 켠 검색 루트만 내용 인덱싱 대상이 된다. Everything+는 파일을 전부
 읽지 않고 `src-tauri/src/core/content.rs`의 명시적 source/Markdown/plain-text 확장자와
-PDF, Excel `.xls`/`.xlsx`, OpenDocument `.ods`, `README`, `LICENSE`, `Dockerfile`, `.gitignore`
-같은 소수의 이름만 선택한다. plain-text/PDF/XLS/XLSX/ODS extractor 버전은 각각
-`text-v1`/`pdf-v1`/`xls-v1`/`xlsx-v1`/`ods-v1`이다. `meta`의 독립적인 format marker가
-첫 설치와 각 parser 버전 전환을 감지한다. DOCX, OCR, semantic search는 이 기능에
-포함하지 않는다.
+PDF, Word `.docx`, Excel `.xls`/`.xlsx`, OpenDocument `.ods`, `README`, `LICENSE`,
+`Dockerfile`, `.gitignore` 같은 소수의 이름만 선택한다. plain-text/PDF/DOCX/XLS/XLSX/ODS
+extractor 버전은 각각 `text-v1`/`pdf-v1`/`docx-v1`/`xls-v1`/`xlsx-v1`/`ods-v1`이다.
+`meta`의 독립적인 format marker가 첫 설치와 각 parser 버전 전환을 감지한다. legacy DOC,
+macro-enabled DOCM, OCR, semantic search는 이 기능에 포함하지 않는다.
 
 - UTF-8(선택적 BOM)과 UTF-16 little/big endian(BOM, 안정적으로 식별 가능한 BOM 없는
   텍스트)을 strict decode한다. invalid UTF-8/UTF-16, binary/NUL 데이터는 검색 hit가 되지
@@ -37,6 +37,18 @@ PDF, Excel `.xls`/`.xlsx`, OpenDocument `.ods`, `README`, `LICENSE`, `Dockerfile
   password/encrypted PDF는 `unsupported_encrypted`, corrupt PDF와 parser/decompression
   실패는 `extract_error`, object/page resource bound 초과는 `extract_error`와
   `resource_limit`으로 격리한다. 해당 상태에서도 filename search는 계속 제공된다.
+- DOCX는 이미 앱에 고정된 MIT `zip`과 `quick-xml`만 사용해 canonical
+  `[Content_Types].xml`, `_rels/.rels`, `word/document.xml`을 메모리 안에서 bounded read하고,
+  main document의 `w:t` text와 paragraph/tab/line-break 구조만 오프라인 추출한다. field
+  instruction, header/footer/footnote/comment, image/style/embedded object, macro와 외부 resource는
+  읽거나 실행하지 않는다. package root는 유일한 internal `word/document.xml` target이어야 하며,
+  unsafe/중복 ZIP path, external package relationship, DTD와 macro-enabled main content type은
+  fail-closed한다. ZIP은 선언/실제 entry 각각 4,096개, entry 32 MiB, 전체 uncompressed
+  64 MiB, XML depth 128/event 1,000,000개/text Unicode scalar와 raw attribute byte를 합산한
+  8,000,000 budget, relationship 4,096개를 제한한다. password-protected OOXML CFB와
+  encrypted ZIP entry는
+  `unsupported_encrypted`, 빈 본문은 `no_text`, 손상/limit 문서는 고정 `extract_error`로
+  격리하며 filename search는 유지한다.
 - legacy XLS는 MIT `calamine`의 pure-Rust `Xls` reader로 worksheet 셀 값만 오프라인
   추출한다. 수식 재계산·VBA/macro·이미지·서식·외부 resource는 사용하지 않으며, XLSX와
   ODS는 확장자 dispatch에서 이 경로로 들어오지 않는다. password/encrypted workbook은
@@ -79,7 +91,7 @@ PDF, Excel `.xls`/`.xlsx`, OpenDocument `.ods`, `README`, `LICENSE`, `Dockerfile
   metadata를 재생성한다. `content_status`, `extractor_version`, `truncated`,
   `indexed_at`, `error_code`, `encoding`, `text_chars`를 함께 저장하므로 검색 결과와
   상태 화면이 단순히 "없음"과 실패를 혼동하지 않는다.
-- text/PDF/XLS/XLSX/ODS extractor 버전은 서로 독립적으로 기록된다. parser 또는 cell
+- text/PDF/DOCX/XLS/XLSX/ODS extractor 버전은 서로 독립적으로 기록된다. parser 또는 cell
   normalization 규칙이 바뀌면 stale format row만 지우고 해당 확장자 후보만 다시 읽어 다른
   형식 인덱스를 보존한다. 각 marker가 없거나 현재 버전과 달라도 해당 형식 scan을 수행하며,
   성공한 full/format-only scan만 marker를 갱신한다. partial/cancelled scan은 marker를 남기지
@@ -90,9 +102,10 @@ PDF, Excel `.xls`/`.xlsx`, OpenDocument `.ods`, `README`, `LICENSE`, `Dockerfile
 - 공용 크레이트 `crates/filesystem`(제한 순회)·`crates/search`(FTS5) 사용
 - legacy XLS reader는 `calamine = 0.36.1`(MIT, pure Rust, `Cargo.lock` 고정)을 사용하고,
   `cfb = 0.7.3`(MIT, pure Rust) preflight로 calamine의 eager range allocation 전에 CFB
-  Workbook stream과 BIFF record/dimension/SST 참조를 fail-closed로 확인한다. 설치물 고지에는
+  Workbook stream과 BIFF record/dimension/SST 참조를 fail-closed로 확인한다. 같은 CFB reader는
+  password-protected DOCX의 표준 `EncryptedPackage` stream 식별에만 재사용한다. 설치물 고지에는
   lockfile 기반 transitive dependency inventory가 포함된다.
-- XLSX/ODS 컨테이너 preflight는 exact `zip = 8.6.0`(MIT)과
+- DOCX/XLSX/ODS 컨테이너 preflight는 exact `zip = 8.6.0`(MIT)과
   `quick-xml = 0.41.0`(MIT)을 default feature 없이 사용한다. 모두 앱에 정적으로 포함되어
   별도 다운로드·Office/LibreOffice 설치·network 연결이 필요하지 않다.
 - 백그라운드 watcher + 주기 재스캔

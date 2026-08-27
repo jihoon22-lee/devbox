@@ -99,6 +99,7 @@ pub fn run() {
                     commands::indexing::spawn_index(state.clone(), Vec::new());
                 } else {
                     core::db::record_pdf_extractor_version(&state.db.lock().unwrap())?;
+                    core::db::record_docx_extractor_version(&state.db.lock().unwrap())?;
                     core::db::record_xls_extractor_version(&state.db.lock().unwrap())?;
                     core::db::record_xlsx_extractor_version(&state.db.lock().unwrap())?;
                     core::db::record_ods_extractor_version(&state.db.lock().unwrap())?;
@@ -106,6 +107,7 @@ pub fn run() {
             } else {
                 let conn = state.db.lock().unwrap();
                 let stale_pdf = core::db::pdf_reindex_required(&conn).unwrap_or(true);
+                let stale_docx = core::db::docx_reindex_required(&conn).unwrap_or(true);
                 let stale_xls = core::db::xls_reindex_required(&conn).unwrap_or(true);
                 let stale_xlsx = core::db::xlsx_reindex_required(&conn).unwrap_or(true);
                 let stale_ods = core::db::ods_reindex_required(&conn).unwrap_or(true);
@@ -113,6 +115,9 @@ pub fn run() {
                 let mut formats = commands::indexing::FormatSet::empty();
                 if stale_pdf {
                     formats = formats.with(commands::indexing::FormatSet::PDF);
+                }
+                if stale_docx {
+                    formats = formats.with(commands::indexing::FormatSet::DOCX);
                 }
                 if stale_xls {
                     formats = formats.with(commands::indexing::FormatSet::XLS);
