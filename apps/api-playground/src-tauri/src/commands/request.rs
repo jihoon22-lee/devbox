@@ -1168,6 +1168,23 @@ impl Redactor {
             self.redact_text(value)
         }
     }
+
+    pub(crate) fn contains_binary_secret(&self, value: &[u8]) -> bool {
+        let direct_match = self
+            .secrets
+            .iter()
+            .filter(|secret| !secret.is_empty())
+            .any(|secret| {
+                let bytes = secret.as_bytes();
+                bytes.len() <= value.len()
+                    && value.windows(bytes.len()).any(|window| window == bytes)
+            });
+        if direct_match {
+            return true;
+        }
+        let text = String::from_utf8_lossy(value);
+        self.redact_text(&text) != text
+    }
 }
 
 fn collect_request_secrets(req: &ResolvedRequest, secrets: &mut Vec<Zeroizing<String>>) {
@@ -1913,7 +1930,7 @@ fn bounded_cookie_attribute(value: &str) -> String {
     }
 }
 
-fn is_sensitive_name(name: &str) -> bool {
+pub(crate) fn is_sensitive_name(name: &str) -> bool {
     let normalized = name.to_ascii_lowercase().replace('_', "-");
     let compact = normalized.replace('-', "");
     compact.contains("authorization")

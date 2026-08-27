@@ -1,6 +1,7 @@
 # api-playground — API Playground v0.3.2
 
-로컬 REST API 테스트 앱. 데스크톱 실행에서는 Rust backend가 HTTP 클라이언트를 담당해 **CORS 제약 없이** 요청한다.
+로컬 REST/WebSocket API 테스트 앱. 데스크톱 실행에서는 Rust backend가 HTTP와 WebSocket 클라이언트를
+담당해 **CORS 제약 없이** 요청한다.
 산출물: `ApiPlayground.exe` (`apps/api-playground`).
 
 ## 주요 기능
@@ -133,6 +134,43 @@ Windows packaged W2에서는 loopback GET/POST stream, chunk boundary와 reconne
   fixed error, redaction, bounded eviction, Stop/unmount, keyboard/IME/focus와 offline/no-persistence
   evidence를 확인한다. 외부 SSE service, WebSocket, unbounded/background auto reconnect,
   arbitrary `Last-Event-ID` replay, raw event export는 이 기능에 포함하지 않는다.
+## WebSocket 요청 (P2-07, #296)
+
+WebSocket panel은 현재 request의 URL·params·headers·cookies·auth·environment를 재사용한다.
+`Connect` 후에만 `Send`, `Ping`, `Close`를 실행할 수 있고 `Disconnect`는 정상 close(1000)로
+종료한다. endpoint는 `ws://` 또는 `wss://`만 허용하며 URL userinfo, fragment, credential-shaped
+query key와 제어 문자는 fail-closed로 거부한다.
+
+### Wire contract
+
+- 데스크톱 native transport는 `tokio-tungstenite`와 rustls native root로 TLS를 검증한다. 사용자가
+  입력한 `Host`, `Connection`, `Upgrade`, `Sec-WebSocket-*`, `Content-Length`,
+  `Transfer-Encoding` 같은 transport 파생 header는 무시하고 나머지 enabled header와 Basic /
+  Bearer / API Key auth, request Cookie를 handshake에 전달한다. certificate verification을
+  끄는 옵션은 없다.
+- Text와 binary frame은 UTF-8 text 또는 hex 입력으로 보낼 수 있다. native에서는 ping/pong을
+  명시적으로 보내며 peer ping에는 pong으로 응답하고, close code/reason과 연결 상태
+  (`connecting`, `open`, `closing`, `closed`, `error`)를 별도 event로 표시한다. Socket.IO,
+  STOMP, GraphQL subscription은 지원하지 않는다.
+- 각 message는 최대 4 MiB이고 ping/pong payload는 RFC 6455 control-frame 상한 125 bytes,
+  close reason은 UTF-8 123 bytes다. 화면은 최대 10,000개 또는 20 MiB까지 오래된 message부터
+  제거하며 제거 수를 표시한다. binary는 bounded hex/UTF-8 preview만 렌더링하고 실행하지
+  않으며, `Save binary`를 명시적으로 눌렀을 때만 native file picker로 현재 memory payload를
+  선택한 파일에 원자적으로 저장한다. 종료된 session의 bounded binary는 다음 Connect 또는 앱
+  종료 전까지 저장할 수 있지만 listener와 network task는 terminal state에서 즉시 정리한다.
+
+### Security and browser preview
+
+- backend는 resolved header/auth/environment와 raw binary를 webview event에 보내지 않는다.
+  text, close reason, binary hex/UTF-8 preview와 error는 기존 redactor 및 fixed message를
+  통과하며 session ID는 opaque numeric ID다. raw binary는 process memory의 bounded buffer에만
+  남고 History·Collection·localStorage·로그에 저장하지 않는다. 저장 경로는 webview가 정하지
+  않고 native dialog의 사용자 선택만 허용한다.
+- Tauri 밖에서는 표준 browser WebSocket preview를 제공하지만 custom header/auth/cookie와
+  direct ping/pong은 browser API 제약 때문에 차단한다. secret environment가 있는 요청은
+  native에서만 실행할 수 있다. browser와 native 모두 같은 endpoint, payload, close, preview,
+  retention bounds와 request timeout을 적용한다. browser socket이 timeout까지 `CONNECTING`이면
+  고정 오류만 표시하고 socket을 닫는다.
 
 ## 보안·저장 경계
 
@@ -227,7 +265,8 @@ Windows packaged W2에서는 loopback GET/POST stream, chunk boundary와 reconne
 
 ## 기술
 
-- Rust(`reqwest` multipart stream)와 Tauri dialog plugin이 직접 요청·파일 선택 → 브라우저 CORS 없음
+- Rust(`reqwest` multipart stream, `tokio-tungstenite`)와 Tauri dialog plugin이 직접 요청·파일
+  선택 → 브라우저 CORS 없음. WebSocket raw frame은 backend bounded memory buffer에만 둔다.
 - OpenAPI parser는 `yaml@2.9.0` 및 `jsonc-parser@3.3.1`을 사용하며 앱 내부 순수 변환 계층에
   격리한다. URL source만 기존 native `reqwest`로 bounded fetch하며, gzip/deflate/brotli/zstd 응답도
   해제 후 4 MiB에서 자른다. 공용 integration/applink 변경은 없다.
@@ -235,7 +274,8 @@ Windows packaged W2에서는 loopback GET/POST stream, chunk boundary와 reconne
 
 ## 개발
 
-- 순수 로직: `src-tauri/src/core/graphql.rs`·`src-tauri/src/commands/request.rs` → `cargo test`
+- 순수 로직: `src-tauri/src/core/graphql.rs`·`src-tauri/src/core/sse.rs`·
+  `src-tauri/src/core/websocket.rs`·`src-tauri/src/commands/request.rs` → `cargo test`
 - OpenAPI URL 경계: `src-tauri/src/commands/openapi.rs` → `cargo test -p api-playground`
 - OpenAPI 순수 로직: `src/lib/openapi.test.ts` → `pnpm --filter api-playground test`
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
