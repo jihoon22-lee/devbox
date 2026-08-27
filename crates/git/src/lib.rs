@@ -773,7 +773,7 @@ mod tests {
         let hook = tmp.join(".git/hooks/pre-commit");
         std::fs::write(
             &hook,
-            "#!/bin/sh\nsetsid sh -c 'echo $$ > escaped-writer.pid; sleep 10' &\nexit 0\n",
+            "#!/bin/sh\nsetsid sh -c 'echo $$ > escaped-writer.pid; sleep 10' &\ni=0\nwhile [ ! -s escaped-writer.pid ] && [ \"$i\" -lt 100 ]; do\n  i=$((i + 1))\n  sleep 0.01\ndone\ntest -s escaped-writer.pid\n",
         )
         .unwrap();
         let mut permissions = std::fs::metadata(&hook).unwrap().permissions();
@@ -797,7 +797,7 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(2));
 
         let pid_path = tmp.join("escaped-writer.pid");
-        let pid = (0..100)
+        let pid = (0..20)
             .find_map(|_| {
                 let pid = std::fs::read_to_string(&pid_path)
                     .ok()
