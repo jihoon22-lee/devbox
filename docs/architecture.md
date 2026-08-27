@@ -106,6 +106,8 @@ everything-plus:  validated roots → filesystem crate → bounded text extracto
 knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror + context-menu)
                    ├ Markdown 원문 → wikilink parser → SQLite 재생성 가능 key/link index
                    │  → autocomplete·unresolved decoration·backlink source position
+                   ├ explicit image paste/drop → bounded browser bytes → save_image_asset
+                   │  → vault/assets/<sha256>.<safe-ext> + note-relative Markdown node
                    ├ canonical tree entry → opener 또는 catalog/launch crate → 설치된 대상 앱
                    └ path/body-free activity/v1 snapshot → Life Log Data Sources
 api-playground:   React(context-menu + History/Collection v2 + GraphQL editor/response projection)
@@ -180,6 +182,26 @@ FTS/link transaction을 실행한다. 실패 시 역순 rollback과 생성한 �
 강제 종료를 복구할 persistent journal은 이 기능 범위가 아니다. watcher는 같은 DB mutex 뒤에서 후속
 event를 처리하므로 command transaction과 인덱스를 동시에 수정하지 않는다.
 
+Knowledge의 이미지 자산은 노트 파일과 분리된 root-level `assets/` 저장소를 사용한다. 명시적인
+clipboard image paste 또는 단일 image drop만 bounded bytes를 frontend에서 native
+`save_image_asset`으로 보낸다. native는 PNG/JPEG/GIF/WebP magic과 header dimension을 확인하고
+2 MiB, 한 변 16,384px, 총 64M pixel 경계를 적용한다. 입력 MIME과 original filename은 저장
+계약에 참여하지 않으며, 파일명은 SHA-256 lowercase content hash와 고정 확장자로만 생성한다.
+`assets/`와 기존 note 경로는 canonical root 안에서 다시 검증하고 symlink/reparse·absolute/
+drive/UNC·control/traversal 경로를 거부한다.
+
+저장은 temp file의 bounded write/flush/sync 뒤 no-overwrite atomic publication(Unix hard-link와
+parent directory `fsync`, Windows non-replacing `MoveFileExW`의 `MOVEFILE_WRITE_THROUGH`)으로
+노출한다.
+동일 hash의 동일 bytes만 idempotent reuse하고, collision·partial write·storage 오류는 기존
+파일을 덮어쓰지 않는 고정 오류로 종료한다. native는 note를 직접 수정하지 않는다. 성공 응답은
+현재 note directory에서 계산한 `../assets/...` Markdown node와 opaque `reused` boolean만
+반환하며, frontend가 현재 editor document와 note identity를 재검증한 뒤 in-memory draft에
+삽입한다. 사용자가 Save를 선택하기 전에는 note 원문/검색 인덱스를 변경하지 않는다. 응답이
+늦게 도착한 동안 문서가 바뀌거나 note가 전환·unmount되면 asset node를 삽입하지 않는다.
+preview loader도 nested relative destination을 안전하게 normalize한 뒤 canonical existing
+entry로만 읽고, 이미지 원문·경로를 snapshot/telemetry/external service로 보내지 않는다.
+
 ## 앱 간 데이터 교환
 
 상대 앱의 `app_local_data_dir`을 직접 읽지 않는다. producer가
@@ -234,17 +256,20 @@ atomic write한다. 최종 write는 generation mutex로 cancellation과 선형�
 | `ammonia` HTML 살균 | `crates/markdown` `sanitize()` | 마크다운 HTML의 `<script>` 제거, `javascript:` URI 차단 |
 | mermaid `securityLevel: "strict"` | code-pad `PreviewPane`, knowledge-base `MarkdownPreview` | 다이어그램 HTML의 XSS |
 | CSP (`csp` 정책) | 각 앱 `tauri.conf.json` | DOM injection 시에도 임의 `invoke`/네트워크 접근 차단 |
-| Clipboard 최소 권한 | Developer Toolbox·Knowledge·Code Pad `clipboard-manager:allow-read-text` | 명시적 Paste 이외의 image/write/clear IPC와 background clipboard 수집 차단 |
+| Clipboard 최소 권한 | Developer Toolbox·Knowledge·Code Pad `clipboard-manager:allow-read-text`; Knowledge image는 명시적 browser Clipboard API read | 명시적 Paste 이외의 image/write/clear IPC와 background clipboard 수집 차단 |
 
 `csp: null` + `core:default` 조합은 DOM injection이 성립하면 곧바로 `invoke`에 닿게 만든다.
 앱들이 임의 로컬 파일(code-pad, knowledge-base, everything-plus)과 임의 원격 응답
 (api-playground)을 다루므로 명시적 CSP 정책을 둔다. (상세: `docs/product-opportunities.md` §7.5)
 
 Developer Toolbox, Knowledge, Code Pad는 input/editor context menu에서 사용자가 붙여넣기를 선택한 순간에만
-system clipboard의 plain text를 읽는다. 읽은 값은 현재 controlled input 또는 CodeMirror
-selection에만 삽입하며 log, snapshot, settings에 기록하지 않는다. Copy는 기존 WebView clipboard
-write 경로를 쓰고, Toolbox 결과 파일 저장은 사용자가 누른 항목에서 생성한 local text
-download로만 수행한다.
+system clipboard의 plain text를 읽는다. Knowledge image paste는 같은 명시적 action의
+`navigator.clipboard.read()` 또는 browser paste event에서 image bytes를 한 번 읽으며,
+clipboard-manager image/clear/write 권한을 추가하지 않는다. 읽은 값/bytes는 현재 controlled
+input 또는 CodeMirror selection에만 연결되고 log, snapshot, settings, history, telemetry에
+기록하지 않는다. Knowledge asset은 native vault 저장 후 generated Markdown node만 draft에
+삽입한다. Copy는 기존 WebView clipboard write 경로를 쓰고, Toolbox 결과 파일 저장은 사용자가
+누른 항목에서 생성한 local text download로만 수행한다.
 
 Run Manager의 job/service/history context menu는 열기 전에 대상 행을 선택하고, 메뉴 action은
 그 snapshot의 불투명 ID만 backend에 전달한다. 활성 실행 stop과 service stop, job/service delete는

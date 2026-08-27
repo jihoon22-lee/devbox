@@ -2,6 +2,7 @@ mod applink;
 mod commands;
 mod core;
 mod integration;
+mod platform;
 
 use commands::docs::AppState;
 use commands::watcher::KnowledgeWatcher;
@@ -53,6 +54,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            commands::assets::save_image_asset,
             applink::take_pending_open,
             commands::docs::get_root,
             commands::docs::set_root,
@@ -70,9 +72,13 @@ pub fn run() {
             commands::docs::reveal_entry,
             commands::docs::open_targets,
             commands::docs::open_in,
+            commands::docs::preview_quick_capture,
+            commands::docs::save_quick_capture,
+            commands::docs::discard_quick_capture_preview,
             commands::docs::search_docs,
             commands::docs::list_tags,
             commands::docs::daily_note,
+            platform::shortcut_status,
             commands::markdown::render_markdown,
             commands::wikilinks::analyze_wikilinks,
             commands::wikilinks::wikilink_candidates,
@@ -96,6 +102,9 @@ pub fn run() {
             let state = Arc::new(AppState {
                 db: Mutex::new(conn),
                 rename_plans: Mutex::new(core::rename::RenamePlanStore::default()),
+                quick_capture_previews: Mutex::new(
+                    commands::docs::QuickCapturePreviewStore::default(),
+                ),
                 image_cache: Mutex::new(HashMap::new()),
             });
             // watcher 생성 후 루트에 연결 (앱 재시작 시 외부 편집 계속 반영)
@@ -105,6 +114,9 @@ pub fn run() {
             }
             // integration snapshot producer (두 번째, §10.1)
             let _ = integration::write_snapshot(&state.db.lock().unwrap());
+            let shortcut_state = Arc::new(platform::QuickCaptureShortcutState::default());
+            app.manage(shortcut_state.clone());
+            platform::install(app.handle().clone(), shortcut_state);
             app.manage(state);
             app.manage(watcher);
             Ok(())

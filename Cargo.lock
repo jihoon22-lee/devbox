@@ -2889,6 +2889,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tempfile",
+ "windows 0.61.3",
 ]
 
 [[package]]

@@ -19,13 +19,17 @@ import {
   listTree,
   onDocsChanged,
   onOpenRequest,
+  onQuickCaptureRequested,
+  onQuickCaptureShortcutStatusChanged,
   openInboundNote,
   openIn,
   openTargets,
   readFile,
   revealEntry,
   previewRename,
+  quickCaptureShortcutStatus,
   renderMarkdown,
+  saveImageAsset,
   searchDocs,
   takePendingOpen,
   writeFile,
@@ -36,6 +40,7 @@ import {
 } from "./api";
 import MarkdownEditor from "./components/MarkdownEditor";
 import MarkdownPreview from "./components/MarkdownPreview";
+import QuickCaptureDialog from "./components/QuickCaptureDialog";
 import type {
   Backlink,
   EditorCursorRequest,
@@ -43,8 +48,10 @@ import type {
   SearchResult,
   TreeEntry,
   WikilinkOccurrence,
+  QuickCaptureShortcutStatus,
 } from "./types";
 import { routeOpenRequest } from "./lib/applink";
+import { IMAGE_STALE_ERROR, readImageBytes } from "./lib/imageAssets";
 import "./App.css";
 
 type ViewMode = "edit" | "split" | "preview";
@@ -105,12 +112,20 @@ export default function App() {
   const [cursorRequest, setCursorRequest] = useState<EditorCursorRequest | null>(null);
   const [renamePreview, setRenamePreview] = useState<RenamePreview | null>(null);
   const [renameBusy, setRenameBusy] = useState(false);
+  const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
+  const [quickCaptureNotice, setQuickCaptureNotice] = useState<string | null>(null);
+  const [quickCaptureShortcut, setQuickCaptureShortcut] = useState<QuickCaptureShortcutStatus | null>(null);
   const renameBusyRef = useRef(false);
   const cursorTokenRef = useRef(0);
+  const quickCaptureButtonRef = useRef<HTMLButtonElement>(null);
 
   // 인플라이트 렌더 응답이 도착했을 때 "그사이 다른 문서로 전환했는지"를 판단하기 위해
   // 최신 선택값을 ref로도 들고 있는다(설계 결정 3 — 응답 시점에 최신값과 비교).
   const selectedRef = useRef<string | null>(selected);
+  // An editor event can arrive immediately after a render (before passive
+  // effects run), so image import must not observe the previous note during
+  // that short commit window.
+  selectedRef.current = selected;
   useEffect(() => {
     selectedRef.current = selected;
   }, [selected]);
@@ -230,6 +245,51 @@ export default function App() {
     return () => unlisten?.();
   }, [loadMeta]);
 
+  // Native owns the global registration.  The frontend only receives a
+  // bounded event and opens the same modal as the in-app button; it never
+  // reads clipboard or filesystem data in the background.
+  useEffect(() => {
+    let disposed = false;
+    let stopRequest: (() => void) | undefined;
+    let stopStatus: (() => void) | undefined;
+    void onQuickCaptureRequested(() => {
+      if (!disposed) setQuickCaptureOpen(true);
+    }).then((stop) => {
+      if (disposed) stop();
+      else stopRequest = stop;
+    }).catch(() => {
+      if (!disposed) setQuickCaptureShortcut((current) => current ?? {
+        shortcut: "Ctrl+Alt+K",
+        state: "unavailable",
+      });
+    });
+    void onQuickCaptureShortcutStatusChanged((status) => {
+      if (!disposed) setQuickCaptureShortcut(status);
+    }).then((stop) => {
+      if (disposed) stop();
+      else stopStatus = stop;
+    }).catch(() => {
+      if (!disposed) setQuickCaptureShortcut((current) => current ?? {
+        shortcut: "Ctrl+Alt+K",
+        state: "unavailable",
+      });
+    });
+    void quickCaptureShortcutStatus().then((status) => {
+      if (!disposed) setQuickCaptureShortcut(status);
+    });
+    return () => {
+      disposed = true;
+      stopRequest?.();
+      stopStatus?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!quickCaptureNotice) return;
+    const timer = window.setTimeout(() => setQuickCaptureNotice(null), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [quickCaptureNotice]);
+
   const openFile = async (path: string) => {
     if (dirty && !confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?")) return;
     setError(null);
@@ -275,6 +335,18 @@ export default function App() {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+
+  const importImageAsset = useCallback(async (file: File) => {
+    const note = selectedRef.current;
+    if (!note || !isMarkdown(note)) {
+      throw new Error("이미지 자산 저장은 마크다운 노트에서만 사용할 수 있습니다");
+    }
+    const bytes = await readImageBytes(file);
+    if (selectedRef.current !== note) {
+      throw new Error(IMAGE_STALE_ERROR);
+    }
+    return saveImageAsset(note, bytes);
+  }, []);
 
   const runSearch = async (requestedQuery = query) => {
     const normalized = requestedQuery.trim();
@@ -572,6 +644,17 @@ export default function App() {
 
   return (
     <div className="app">
+      {quickCaptureOpen && (
+        <QuickCaptureDialog
+          open={quickCaptureOpen}
+          onClose={() => setQuickCaptureOpen(false)}
+          onSaved={() => {
+            setQuickCaptureNotice("빠른 캡처를 Inbox에 저장했습니다");
+            void loadMeta();
+          }}
+          restoreFocusRef={quickCaptureButtonRef}
+        />
+      )}
       {renamePreview && (
         <div className="modal-backdrop" role="presentation">
           <section
@@ -598,10 +681,26 @@ export default function App() {
           </section>
         </div>
       )}
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" role="alert">{error}</div>}
+      {quickCaptureNotice && <div className="quick-capture-notice" role="status">{quickCaptureNotice}</div>}
+      {quickCaptureShortcut && ["conflict", "unavailable"].includes(quickCaptureShortcut.state) && (
+        <div className="quick-capture-shortcut-warning" role="status">
+          전역 단축키 {quickCaptureShortcut.shortcut}를 등록하지 못했습니다. 다른 앱이 사용 중일 수 있습니다.
+          해당 앱의 단축키 설정을 변경한 뒤 Knowledge를 다시 시작하거나, 아래 버튼으로 계속 빠르게 기록할 수 있습니다.
+        </div>
+      )}
       <aside className="sidebar">
         <h1 className="app-title">Knowledge</h1>
         <div className="sidebar-row">
+          <button
+            ref={quickCaptureButtonRef}
+            className="btn small quick-capture-trigger"
+            type="button"
+            aria-keyshortcuts="Control+Alt+K"
+            onClick={() => setQuickCaptureOpen(true)}
+          >
+            빠른 캡처 <span className="dim">Ctrl+Alt+K</span>
+          </button>
           <button className="btn small" onClick={() => void openDaily()}>
             Daily note
           </button>
@@ -741,6 +840,8 @@ export default function App() {
                     loadWikilinkCandidates={wikilinkCandidates}
                     onNavigateWikilink={(path) => void openIndexedNoteAt(path)}
                     cursorRequest={cursorRequest}
+                    documentKey={selected}
+                    onImageImport={isMarkdown(selected) ? importImageAsset : undefined}
                   />
                 )}
                 {mode !== "edit" && (

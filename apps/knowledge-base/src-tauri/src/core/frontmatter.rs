@@ -5,6 +5,16 @@ pub struct DocMeta {
     pub tags: Vec<String>,
 }
 
+fn parse_scalar(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.starts_with('"') && trimmed.ends_with('"') {
+        if let Ok(decoded) = serde_json::from_str::<String>(trimmed) {
+            return decoded;
+        }
+    }
+    trimmed.trim_matches('"').to_string()
+}
+
 /// Markdown frontmatter 파싱.
 /// ```text
 /// ---
@@ -26,18 +36,18 @@ pub fn parse(content: &str) -> (DocMeta, &str) {
 
     for line in front.lines() {
         if let Some(v) = line.strip_prefix("title:") {
-            meta.title = Some(v.trim().trim_matches('"').to_string());
+            meta.title = Some(parse_scalar(v));
         } else if let Some(v) = line.strip_prefix("tags:") {
             let v = v.trim();
             // `[a, b]` 또는 다음 줄에 `- a` 형태
             if let Some(inner) = v.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
                 meta.tags = inner
                     .split(',')
-                    .map(|t| t.trim().trim_matches('"').to_string())
+                    .map(parse_scalar)
                     .filter(|t| !t.is_empty())
                     .collect();
             } else if !v.is_empty() && !v.starts_with('-') {
-                meta.tags.push(v.trim_matches('"').to_string());
+                meta.tags.push(parse_scalar(v));
             } else if v.is_empty() {
                 // `tags:` 아래의 `- item` 줄들을 수집
                 let items: Vec<String> = front
@@ -45,13 +55,7 @@ pub fn parse(content: &str) -> (DocMeta, &str) {
                     .skip_while(|l| !l.trim_start().starts_with("tags:"))
                     .skip(1)
                     .take_while(|l| l.trim_start().starts_with('-'))
-                    .map(|l| {
-                        l.trim()
-                            .trim_start_matches('-')
-                            .trim()
-                            .trim_matches('"')
-                            .to_string()
-                    })
+                    .map(|l| parse_scalar(l.trim().trim_start_matches('-')))
                     .filter(|t| !t.is_empty())
                     .collect();
                 meta.tags = items;
@@ -78,6 +82,18 @@ mod tests {
         let content = "---\ntags: [rust, tauri]\n---\nbody";
         let (meta, _) = parse(content);
         assert_eq!(meta.tags, vec!["rust", "tauri"]);
+    }
+
+    #[test]
+    fn parses_json_quoted_capture_scalars() {
+        let content = r##"---
+title: "Release: \"stable\""
+tags: ["C:\\tools", "#rust"]
+---
+body"##;
+        let (meta, _) = parse(content);
+        assert_eq!(meta.title.as_deref(), Some(r#"Release: "stable""#));
+        assert_eq!(meta.tags, vec![r"C:\tools", "#rust"]);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
@@ -11,6 +11,8 @@ import {
 
 const mocks = vi.hoisted(() => ({
   openHandler: null as ((request: OpenRequest) => void) | null,
+  quickCaptureHandler: null as (() => void) | null,
+  shortcutStatusHandler: null as ((status: { shortcut: string; state: string }) => void) | null,
   order: [] as string[],
 }));
 
@@ -30,12 +32,34 @@ vi.mock("./api", () => ({
   openTargets: vi.fn(async () => []),
   openIn: vi.fn(async () => undefined),
   readClipboardText: vi.fn(async () => ""),
+  readClipboardImage: vi.fn(async () => null),
+  saveImageAsset: vi.fn(async () => ({
+    relativePath: "assets/" + "a".repeat(64) + ".png",
+    markdown: "![image](assets/" + "a".repeat(64) + ".png)",
+    reused: false,
+  })),
   dailyNote: vi.fn(async () => ["Journal/today.md", "# Today"] as [string, string]),
   renderMarkdown: vi.fn(async () => ({ title: null, tags: [], html: "<p>rendered</p>", mermaid: [] })),
   analyzeWikilinks: vi.fn(async () => []),
   wikilinkCandidates: vi.fn(async () => []),
   backlinks: vi.fn(async () => []),
   onDocsChanged: vi.fn(async () => () => undefined),
+  onQuickCaptureRequested: vi.fn().mockImplementation(async (handler: () => void) => {
+    mocks.quickCaptureHandler = handler;
+    return () => undefined;
+  }),
+  onQuickCaptureShortcutStatusChanged: vi.fn().mockImplementation(async (handler: (status: { shortcut: string; state: string }) => void) => {
+    mocks.shortcutStatusHandler = handler;
+    return () => undefined;
+  }),
+  quickCaptureShortcutStatus: vi.fn(async () => ({ shortcut: "Ctrl+Alt+K", state: "registered" })),
+  previewQuickCapture: vi.fn(async (input: { title: string; body: string; tags: string[] }) => ({
+    previewId: "qc-1",
+    target: "Inbox",
+    ...input,
+  })),
+  saveQuickCapture: vi.fn(async () => ({ path: "Inbox/quick-capture-test.md" })),
+  discardQuickCapturePreview: vi.fn(async () => undefined),
   openInboundNote: vi.fn(async () => ({ path: "Notes/inbound.md", content: "# inbound" })),
   searchDocs: vi.fn(async (query: string) => [{ path: "Notes/result.md", title: `Result ${query}` }]),
   takePendingOpen: vi.fn().mockImplementation(async () => {
@@ -56,6 +80,8 @@ const searchDocsMock = vi.mocked(searchDocs);
 
 beforeEach(() => {
   mocks.openHandler = null;
+  mocks.quickCaptureHandler = null;
+  mocks.shortcutStatusHandler = null;
   mocks.order.length = 0;
   takePendingOpenMock.mockReset().mockImplementation(async () => {
     mocks.order.push("take");
@@ -75,6 +101,27 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Knowledge Path/Query app-link delivery", () => {
+  it("opens the same modal from the native quick-capture event and the in-app button", async () => {
+    render(<App />);
+    await waitFor(() => expect(mocks.quickCaptureHandler).not.toBeNull());
+
+    mocks.quickCaptureHandler?.();
+    expect(await screen.findByRole("dialog", { name: "빠른 캡처" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "빠른 캡처 닫기" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /빠른 캡처 Ctrl\+Alt\+K/u }));
+    expect(await screen.findByRole("dialog", { name: "빠른 캡처" })).toBeInTheDocument();
+  });
+
+  it("keeps the in-app action available when the global shortcut is occupied", async () => {
+    render(<App />);
+    await waitFor(() => expect(mocks.shortcutStatusHandler).not.toBeNull());
+    mocks.shortcutStatusHandler?.({ shortcut: "Ctrl+Alt+K", state: "conflict" });
+    expect(await screen.findByText(/전역 단축키 Ctrl\+Alt\+K를 등록하지 못했습니다/u)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /빠른 캡처 Ctrl\+Alt\+K/u }));
+    expect(await screen.findByRole("dialog", { name: "빠른 캡처" })).toBeInTheDocument();
+  });
+
   it("registers the listener before taking and opens a cold-start Path once", async () => {
     takePendingOpenMock.mockImplementationOnce(async () => {
       mocks.order.push("take");

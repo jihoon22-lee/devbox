@@ -252,6 +252,14 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
      우선·명시적 regex·level/source/time filter, bounded non-blocking scan, line/stream
      navigation과 `log-source/v1` opaque source validation을 구현 중이다. Log Lens 연결,
      원격 로그와 permanent archive는 이 작업에서 제외하고 별도 P3 integration으로 남긴다.
+   - Knowledge image asset draft (#304): 명시적 image paste/drop만 받아 PNG/JPEG/GIF/WebP를
+     native에서 2 MiB·dimension/pixel·`VaultIdentity` canonical vault 경계로 검증하고,
+     `assets/<sha256>.<safe-ext>`에 no-overwrite atomic publish한 뒤 note-relative Markdown
+     node를 draft에 삽입한다. #303과 같은 cohesive PR에 포함하되 acceptance/tests/workthrough는
+     독립 유지하고, `VaultIdentity`·shared no-replace publication·clipboard/drop bounds를
+     함께 검증한다. same-content reuse, collision/partial failure, nested-note preview
+     normalization, stale/unmount/IME/double-action과 fixed error 경계를 fixture로 고정했다.
+     OCR, external hosting, clipboard history와 note 직접 저장은 이 issue에서 제외한다.
 
    - 2026-08-27 `#297` BASE 구현: Everything+의 내용 검색은 content-enabled root에서
      명시적 source/Markdown/plain-text 후보만 선택해 UTF-8 및 UTF-16 LE/BE를 strict
@@ -704,6 +712,33 @@ all-target check/Clippy/fmt, frontend 20 files/160 tests와 production build, de
 catalog gate를 통과했다. Windows W2에서는 loopback GET/POST stream, native/browser parity,
 cancel/reconnect, CORS/redirect, redaction, no-persistence, bounded failure와 keyboard/IME/focus를
 packaged smoke로 확인한다.
+#303/#304 grouped 구현은 Knowledge에 고정 `Inbox` target의 offline quick capture를 추가한다. Windows
+`Ctrl+Alt+K`는 native `RegisterHotKey`로 등록하고 충돌·미지원 상태를 안전한 상태 DTO로 안내하며,
+앱 내부 버튼은 항상 유지한다. modal은 title/body/tags 입력 뒤 preview를 먼저 보여 주고, native가
+발급한 일회성 `qc-<positive integer>` approval ID를 저장할 때만 새 Markdown과 검색 인덱스를 만든다.
+Rust/TypeScript 양쪽에서 제목 200 scalar/800 bytes, LF body 64 KiB(raw 128 KiB), 태그 20개·항목
+48 scalar/192 bytes·총 1 KiB, C0/C1 및 Unicode line separator, frontmatter injection과
+credential-like 입력을 재검증한다. UTC bounded filename collision·staged sibling publication
+(`create_new`·flush/sync·no-replace)·SQLite transaction 실패 시 반쪽 파일과 temporary residue를
+남기지 않으며, renderer와 반환 path grammar도 native 경계에서 재확인한다. `Inbox`는 preview에서
+생성하지 않고 save에서 canonical root의 path+filesystem identity와 기존 조상을 재검증한 뒤 한
+단계만 지연 생성한다. root 교체·symlink·Windows reparse point는 stale approval으로 중단한다.
+clipboard는 버튼을 누른 순간 한 번만 읽고 bounded/credential 정책을 통과한 값만 draft에 넣으며
+history·cloud·template/handoff는 포함하지 않는다. #304 image asset은 같은 cohesive PR에서
+독립 acceptance/workthrough로 유지하되 `VaultIdentity`와 no-replace publication 경계를 공유한다.
+preview/save/clipboard/drop의 stale 응답과
+중복 실행은 generation/busy guard로 버리고 modal은 ARIA·focus trap·Escape·Ctrl+Enter와 닫힌 뒤
+trigger focus 복원을 제공한다. watcher도 bounded channel/debounce/reconcile 상한과 overflow
+수렴을 사용한다.
+
+전용 grouped branch `feat/knowledge-base/quick-capture`는 최신 `main`(`a018065`, #441)에
+rebase해 #304를 통합하고 최종 경계 검토를 마쳤다. 열린 file identity 기반 asset dedupe·preview
+cache 재확인, temp write 전후 vault 재검증, 전체 regular-file을 소비하는 watcher reconcile budget,
+renderer safe-error redaction을 추가로 보강했다. 최종 Linux gate는 Knowledge Rust 100 tests,
+check/Clippy/fmt와 frontend 11 files/68 tests, production build를 통과했다. merge 뒤
+Windows W2에서 shortcut conflict/focus, preview-before-save, cancel/late-response, clipboard
+one-shot, image clipboard/drop, root replacement/reparse, collision/failure와 실제 watcher overflow
+evidence를 남긴다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅
