@@ -657,6 +657,9 @@ describe("LspControlPanel", () => {
       (rendered.getByRole("option", { name: "설치된 관리형 서버" }) as HTMLOptionElement).disabled,
     ).toBe(false));
     fireEvent.change(rendered.getByLabelText("서버 종류"), { target: { value: "managed" } });
+    await waitFor(() => expect(
+      (rendered.getByLabelText("관리형 서버 버전") as HTMLSelectElement).value,
+    ).toBe(`${manifest.id}\u001f${manifest.version}`));
     fireEvent.click(rendered.getByRole("button", { name: "이 언어 설정 적용" }));
     await waitFor(() => expect(rendered.getByText("managed")).toBeTruthy());
     fireEvent.click(rendered.getByRole("button", { name: "설정 저장" }));
