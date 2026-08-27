@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "bounds": {
+    "x": 100,
+    "y": 140,
+    "width": 1200,
+    "height": 800
+  },
+  "monitorId": "DISPLAY1",
+  "monitorWorkArea": {
+    "x": 0,
+    "y": 0,
+    "width": 1920,
+    "height": 1040
+  },
+  "scaleFactor": 1.0,
+  "maximized": false
+}

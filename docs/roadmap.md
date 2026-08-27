@@ -40,6 +40,14 @@
 `docs/product-opportunities.md` §17(PR 1~39 + Stage 4/5)은 **전부 완료**됐다. 이후 작업은
 2026-08-22에 확정한 네이티브 우선 계획과 하위 설계 문서를 따른다.
 
+### v0.5.0 공용 window-state 선행 계약
+
+- [x] **`crates/window-state` (#322)** — 일반 persistent window의 bounds, maximized,
+  monitor identity, scale factor를 bounded/strict JSON으로 보존하고, monitor 제거·DPI·해상도
+  변화에서 안전한 restore geometry와 visible-titlebar clamp를 순수 로직으로 계산한다.
+- [ ] **앱별 window-state wiring (#323–#336)** — 위 계약을 소비하는 하나의 cross-app PR에서
+  각 persistent window에 적용한다. Launcher/dialog/splash 등 transient window는 제외한다.
+
 | 문서 | 범위 |
 |---|---|
 | [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3 전체 범위, 외부 도구 원칙, 신규 앱, PR·테스트·릴리스 gate의 단일 기준 |

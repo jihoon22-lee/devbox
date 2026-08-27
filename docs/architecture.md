@@ -21,7 +21,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 ├──────────────────────────────┤
 │ crates/*    Rust 공용        │  filesystem, markdown, process, wsl,
 │                              │  search, integration, secrets, git, launch,
-│                              │  applink, catalog
+│                              │  applink, catalog, window-state
 ├──────────────────────────────┤
 │ 공통 인프라: Cargo workspace, │
 │ pnpm workspace, git 모노레포,  │
@@ -40,7 +40,9 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   disabled/danger 표현만 소유한다. Port Manager, Developer Toolbox, Everything+, Knowledge, Code Pad,
   Run Manager, Devbox Manager, Workbench, Webhook Lab, Repo Manager, API Playground, WSL Desktop, Life Log의
   기존 13개 앱에 기능 단위로 적용됐다. 신규 앱은 처음부터 적용한다.
-- 신규 `crates/window-state`
+- 구현된 순수 `crates/window-state` — bounds/maximized/monitor identity/scale을 bounded
+  JSON으로 보존하고 monitor·DPI 변화 시 visible titlebar가 남도록 복원 geometry를 계산한다.
+  파일 I/O와 Tauri/Windows monitor adapter는 소비 앱이 소유하며 transient window는 제외한다.
 - 구현된 `crates/applink` protocol v2 one-time handoff — argv에는 kind와 opaque 128-bit id만
   전달하고, bounded payload는 공용 data root 아래에서 atomic claim/ack/restore와 60초 lease로
   한 번만 소비한다. producer/consumer UI는 각 integration PR이 소유한다.
@@ -63,7 +65,23 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   crates/git        ◄── devbox-manager, life-log, repo-manager, workbench
   crates/launch     ◄── everything-plus, knowledge-base, repo-manager, workbench
   crates/catalog    ◄── devbox-manager (후속에서 launch·capability 메뉴 소비자 확대)
+  crates/window-state ◄── 일반 persistent window 소비 앱 (후속 cross-app wiring)
 ```
+
+### `crates/window-state` 선행 계약
+
+`WindowState`의 v1 JSON은 physical-pixel `bounds`, 저장 당시의
+`monitorId`·`monitorWorkArea`, `scaleFactor`, `maximized`를 포함한다. 문서는 16 KiB,
+monitor identity는 256 UTF-8 bytes, scale factor는 0.5–8.0, 좌표·dimension은 bounded
+geometry로 제한하고 unknown field와 future schema를 거부한다. `encode_state`/`decode_state`는
+파일을 읽거나 쓰지 않으며, 각 앱은 `crates/filesystem` 등의 atomic storage 경계와 앱별
+설정 경로를 계속 소유한다.
+
+`restore_window`는 현재 monitor identity를 우선 매칭하고, 제거된 경우 primary → 첫 유효
+monitor로 fallback한다. 저장 work area와 현재 scale factor를 사용해 relative position과
+size를 physical pixels로 변환한 뒤, titlebar의 최소 가시 영역을 남기도록 clamp한다.
+손상·과대 문서는 `restore_from_bytes`가 고정 오류 없이 기본 bounds로 fail-closed하며,
+Launcher/dialog/splash 같은 transient window는 이 계약의 소비 대상이 아니다.
 
 ## 앱별 데이터 흐름
 
