@@ -28,6 +28,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(commands::request::ResponseHeaderVault::default())
         .manage(commands::request::RequestCancellation::default())
+        .manage(std::sync::Arc::new(commands::sse::SseState::default()))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -39,6 +40,8 @@ pub fn run() {
             commands::request::copy_raw_response_cookies,
             commands::request::sanitize_persisted_json,
             commands::secrets::seal_secret,
+            commands::sse::start_sse_stream,
+            commands::sse::stop_sse_stream,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -141,18 +141,18 @@ pub struct RequestTemplate {
 
 /// 전송 직전 backend 메모리에만 존재하며 직렬화하지 않는다.
 #[derive(Debug, Clone)]
-struct ResolvedRequest {
-    method: String,
-    url: String,
-    headers: Vec<RequestHeader>,
-    cookies: Vec<RequestCookie>,
-    multipart: Vec<MultipartPart>,
-    params: Vec<KeyValue>,
-    body_kind: String,
-    body: String,
-    auth: Option<AuthConfig>,
-    timeout_ms: u64,
-    graphql: Option<GraphqlRequest>,
+pub(crate) struct ResolvedRequest {
+    pub(crate) method: String,
+    pub(crate) url: String,
+    pub(crate) headers: Vec<RequestHeader>,
+    pub(crate) cookies: Vec<RequestCookie>,
+    pub(crate) multipart: Vec<MultipartPart>,
+    pub(crate) params: Vec<KeyValue>,
+    pub(crate) body_kind: String,
+    pub(crate) body: String,
+    pub(crate) auth: Option<AuthConfig>,
+    pub(crate) timeout_ms: u64,
+    pub(crate) graphql: Option<GraphqlRequest>,
 }
 
 /// History v2의 wire 형식을 Rust 테스트에서도 고정한다.
@@ -691,7 +691,7 @@ async fn execute_request(
     Err("리다이렉트 처리에 실패했습니다".to_string())
 }
 
-async fn apply_body(
+pub(crate) async fn apply_body(
     builder: reqwest::RequestBuilder,
     req: &ResolvedRequest,
 ) -> Result<reqwest::RequestBuilder, String> {
@@ -762,7 +762,7 @@ async fn build_multipart_form(req: &ResolvedRequest) -> Result<reqwest::multipar
     Ok(form)
 }
 
-fn resolve_template(
+pub(crate) fn resolve_template(
     req: &RequestTemplate,
     environment: &[EnvironmentVariable],
     sealer: &dyn devbox_secrets::Sealer,
@@ -1133,13 +1133,16 @@ fn is_reference_char(character: char) -> bool {
     character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | '-')
 }
 
-struct Redactor {
+pub(crate) struct Redactor {
     secrets: Vec<Zeroizing<String>>,
     mask_graphql_query: bool,
 }
 
 impl Redactor {
-    fn for_request(req: &ResolvedRequest, mut environment_secrets: Vec<Zeroizing<String>>) -> Self {
+    pub(crate) fn for_request(
+        req: &ResolvedRequest,
+        mut environment_secrets: Vec<Zeroizing<String>>,
+    ) -> Self {
         collect_request_secrets(req, &mut environment_secrets);
         environment_secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
         environment_secrets.dedup_by(|left, right| left.as_str() == right.as_str());
@@ -1149,15 +1152,15 @@ impl Redactor {
         }
     }
 
-    fn redact_text(&self, value: &str) -> String {
+    pub(crate) fn redact_text(&self, value: &str) -> String {
         redact_text(value, &self.secrets)
     }
 
-    fn redact_url(&self, value: &str) -> String {
+    pub(crate) fn redact_url(&self, value: &str) -> String {
         redact_url(value, &self.secrets, self.mask_graphql_query)
     }
 
-    fn redact_body(&self, value: &str) -> String {
+    pub(crate) fn redact_body(&self, value: &str) -> String {
         if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(value) {
             sanitize_json_value(&mut json, "", &self.secrets);
             serde_json::to_string(&json).unwrap_or_else(|_| REDACTED.to_string())
@@ -1925,11 +1928,11 @@ fn is_sensitive_name(name: &str) -> bool {
         || compact.contains("username")
 }
 
-fn should_send_header(name: &str, allow_sensitive: bool) -> bool {
+pub(crate) fn should_send_header(name: &str, allow_sensitive: bool) -> bool {
     allow_sensitive || !is_sensitive_name(name)
 }
 
-fn is_body_header(name: &str) -> bool {
+pub(crate) fn is_body_header(name: &str) -> bool {
     let normalized = name.to_ascii_lowercase().replace('_', "-");
     normalized.starts_with("content-")
         || matches!(
@@ -1938,7 +1941,7 @@ fn is_body_header(name: &str) -> bool {
         )
 }
 
-fn is_multipart_derived_header(name: &str) -> bool {
+pub(crate) fn is_multipart_derived_header(name: &str) -> bool {
     matches!(
         name.trim().to_ascii_lowercase().replace('_', "-").as_str(),
         "content-type" | "content-length" | "transfer-encoding"
@@ -1972,11 +1975,11 @@ fn multipart_part_has_content(part: &MultipartPart) -> bool {
         || !part.content_type.is_empty()
 }
 
-fn validate_multipart_rows(req: &RequestTemplate) -> Result<(), String> {
+pub(crate) fn validate_multipart_rows(req: &RequestTemplate) -> Result<(), String> {
     validate_multipart_parts(&req.body_kind, &req.multipart)
 }
 
-fn validate_multipart_configuration(req: &ResolvedRequest) -> Result<(), String> {
+pub(crate) fn validate_multipart_configuration(req: &ResolvedRequest) -> Result<(), String> {
     validate_multipart_parts(&req.body_kind, &req.multipart)
 }
 
@@ -2063,7 +2066,7 @@ fn is_content_type_char(byte: u8) -> bool {
         )
 }
 
-fn prepare_multipart_files(req: &mut ResolvedRequest) -> Result<(), String> {
+pub(crate) fn prepare_multipart_files(req: &mut ResolvedRequest) -> Result<(), String> {
     if req.body_kind != "multipart" {
         return Ok(());
     }
@@ -2115,11 +2118,11 @@ fn safe_file_name(value: &str) -> String {
         .collect()
 }
 
-fn validate_cookie_configuration(req: &ResolvedRequest) -> Result<(), String> {
+pub(crate) fn validate_cookie_configuration(req: &ResolvedRequest) -> Result<(), String> {
     validate_cookie_rows(&req.headers, &req.cookies)
 }
 
-fn validate_cookie_rows(
+pub(crate) fn validate_cookie_rows(
     headers: &[RequestHeader],
     cookies: &[RequestCookie],
 ) -> Result<(), String> {
@@ -2158,7 +2161,7 @@ fn is_valid_cookie_value(value: &str) -> bool {
         .all(|byte| matches!(byte, 0x21 | 0x23..=0x2b | 0x2d..=0x3a | 0x3c..=0x5b | 0x5d..=0x7e))
 }
 
-fn build_cookie_header(cookies: &[RequestCookie]) -> Option<String> {
+pub(crate) fn build_cookie_header(cookies: &[RequestCookie]) -> Option<String> {
     let value = cookies
         .iter()
         .filter(|cookie| {
@@ -2173,18 +2176,18 @@ fn build_cookie_header(cookies: &[RequestCookie]) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-fn is_cross_origin(from: &reqwest::Url, to: &reqwest::Url) -> bool {
+pub(crate) fn is_cross_origin(from: &reqwest::Url, to: &reqwest::Url) -> bool {
     from.scheme() != to.scheme()
         || from.host_str() != to.host_str()
         || from.port_or_known_default() != to.port_or_known_default()
 }
 
-fn redirect_switches_to_get(status: u16, method: &reqwest::Method) -> bool {
+pub(crate) fn redirect_switches_to_get(status: u16, method: &reqwest::Method) -> bool {
     status == 303 && *method != reqwest::Method::HEAD
         || matches!(status, 301 | 302) && *method == reqwest::Method::POST
 }
 
-fn safe_secret_error() -> String {
+pub(crate) fn safe_secret_error() -> String {
     "요청에 필요한 secret을 안전하게 해제할 수 없습니다".to_string()
 }
 
@@ -2204,7 +2207,7 @@ fn response_copy_error() -> String {
     "현재 응답의 원문 header를 안전하게 복사할 수 없습니다".to_string()
 }
 
-fn append_query(url: &str, params: &[KeyValue]) -> String {
+pub(crate) fn append_query(url: &str, params: &[KeyValue]) -> String {
     let pairs = params
         .iter()
         .filter(|pair| !pair.key.is_empty())

@@ -86,6 +86,54 @@ GET/POST만 허용한다.
   browser GraphQL redirect는 auth 재전달을 막기 위해 manual mode로 멈춘다. packaged native
   loopback test가 실제 HTTP acceptance의 기준이다.
 
+## SSE streaming
+
+SSE는 기존 요청 편집기 아래에서 `Start SSE`/`Stop SSE`로 실행한다. GET/POST, 기존
+environment reference·Basic/Bearer/API-key auth·header·Cookie·JSON/form/raw/multipart text body를
+재사용하며, method·URL·params·header·Cookie·auth·body를 native 경계에서 다시 검증한다. 브라우저
+미리보기는 secret environment를 포함한 요청을 거부하고 CORS와 브라우저의 forbidden `Cookie`
+header 제약을 따른다. browser fetch는 redirect를 차단하며, file multipart와 part별 Content-Type은
+데스크톱 전용이다.
+
+- **Parser contract** — native와 browser가 같은 incremental parser 계약을 사용한다. UTF-8 chunk
+  경계를 보존하고 BOM, CR/LF/CRLF, comment, `event`, multiline `data`, `id`, empty `id`와
+  decimal `retry`를 처리한다. EOF의 마지막 unterminated line을 flush하며 malformed UTF-8,
+  NUL id/event, malformed/oversized retry와 line은 replacement 없이 고정 오류로 종료한다.
+- **Bounds** — decoded stream은 20 MiB, retained history는 10,000 event 또는 20 MiB, line/field는
+  64 KiB, event name/id는 각각 256 bytes, event data는 1 MiB, retry는 0–60,000 ms다. request는
+  URL 8 KiB, headers/params/Cookies/environment 각 100행, header·Cookie·parameter field 64 KiB,
+  environment key 128 bytes, body 4 MiB,
+  multipart 50 part와 기존 file/text bounds를 사용한다. UI에는 최근 1,000개만 렌더링하고 오래된
+  항목의 누적 제거 수를 표시한다.
+- **Reconnect and lifecycle** — reconnect는 기본 off이며 사용자가 켠 경우에도 최대 5회,
+  server `retry`는 250 ms–60 s로 clamp한다. `Last-Event-ID`를 보내지 않고, redirect는 native에서
+  최대 10회만 따라가며 cross-origin 이동에서는 sensitive header/auth/body를 제거하고 credential이
+  있는 목적지는 차단한다. connect/idle/total timeout은 각각 100–30,000 ms, 100–300,000 ms,
+  1,000–3,600,000 ms 범위다. pause는 rendering만 멈추고 bounded buffer는 계속 유지하며 Stop,
+  unmount, 새 generation은 network task와 늦은 event를 취소/폐기한다.
+- **Privacy and output** — native stream은 opaque session ID와 masked `event/data/id/retry` DTO만
+  Tauri event로 보낸다. URL, local path, raw chunk, request credential, redirect location,
+  network/parser stderr는 UI·log·history·telemetry에 반영하지 않는다. event는 자동 저장·export하지
+  않고 process memory에만 둔다. `Copy masked events`를 명시적으로 눌렀을 때에만 현재 표시 범위를
+  masked SSE text로 clipboard에 한 번 기록한다.
+- **Native/browser parity** — pure Rust `src-tauri/src/core/sse.rs`와 browser
+  `src/lib/sse.ts` fixture가 chunk split, BOM, lone CR/CRLF/LF, multiline, empty id, retry,
+  invalid UTF-8, bounds와 eviction을 고정한다. native command fixture는 loopback HTTP chunked response의
+  media type·Accept·Last-Event-ID 차단과 split UTF-8 metadata도 확인한다. native command는 기존 request resolver/redactor와 동일한 secret
+  boundary를 재사용하고, browser path는 동일 parser·redaction·generation contract를 따르되
+  CORS/forbidden-header 차이를 화면에 고지한다. 새 parser/transport third-party dependency는
+  추가하지 않았고, command의 direct `tokio::time` edge는 이미 workspace lock에 있는 Tokio를
+  timeout/sleep에만 사용한다.
+- **Preflight and cleanup** — GET은 일반 body뿐 아니라 enabled multipart content도 native/browser
+  시작 전에 거부한다. browser file part와 text part별 Content-Type도 background fetch 전에
+  데스크톱 전용 고정 오류로 거부한다. terminal `closed`/`error`와 component unmount는
+  idempotent stop을 통해 native event listener와 browser AbortController를 정리한다.
+
+Windows packaged W2에서는 loopback GET/POST stream, chunk boundary와 reconnect/cancel, native/browser
+  fixed error, redaction, bounded eviction, Stop/unmount, keyboard/IME/focus와 offline/no-persistence
+  evidence를 확인한다. 외부 SSE service, WebSocket, unbounded/background auto reconnect,
+  arbitrary `Last-Event-ID` replay, raw event export는 이 기능에 포함하지 않는다.
+
 ## 보안·저장 경계
 
 - **History migration** — v1 `apip-history`는 평문 포함 여부를 증명할 수 없어 UI·검색·재전송에서

@@ -124,3 +124,27 @@ export interface HistoryItem {
   request: PersistedHistoryRequest;
   status?: number;
 }
+
+export interface SseOptions {
+  connectTimeoutMs: number;
+  idleTimeoutMs: number;
+  totalTimeoutMs: number;
+  /** Native reconnect is deliberately opt-in and is capped by the transport. */
+  reconnect: boolean;
+}
+
+export type SseUpdateKind = "connected" | "event" | "closed" | "error";
+
+/** Safe event envelope emitted by the native task or browser preview. */
+export interface SseUpdate {
+  sessionId: string;
+  kind: SseUpdateKind;
+  event?: string;
+  data?: string;
+  id?: string;
+  retryMs?: number;
+  sequence: number;
+  dropped: number;
+  message?: string;
+  attempt?: number;
+}
