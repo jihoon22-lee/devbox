@@ -76,8 +76,12 @@ wsl-desktop:     React(xterm + pane/tab context-menu) → invoke → commands �
                    (wsl-dashboard 흡수; split/close/tab action은 exact ID와 확인 경계 사용)
                    └ distro·docker 패널 (`docker ps --format` 5필드 원문 → compact summary/detail,
                       gitStatus는 Workbench로 이관 완료)
-life-log:        tray/poller(상시) → sessionizer → SQLite → commands → React(date context-menu)
-                   (activity-timeline 흡수. crates/integration으로 snapshot을 자동 발견하며
+life-log:        tray/poller(상시) → sessionizer → SQLite → bounded digest/export commands → React(date context-menu)
+                   (activity-timeline 흡수. digest는 authoritative local civil-day boundaries,
+                   shared privacy/snapshot rules와 safe Git collector를 사용하고 DB progress
+                   cancellation + single-flight guard를 native 작업까지 전달한다. day 화면은
+                   digest 한 번의 Git 결과에서 summary/chart를 파생하며 legacy get_day Git을
+                   함께 호출하지 않는다. crates/integration으로 snapshot을 자동 발견하며
                    Knowledge activity/v1을 검증·집계하고 외부 DB 직접 조회 없음)
 everything-plus:  validated roots → filesystem crate → bounded text extractor →
                    search crate(FTS5 + content metadata) → React
@@ -188,6 +192,20 @@ Knowledge Base는 `knowledge-base/activity/v1` view에 UTC 기준 오늘 작성�
 읽지 않는다. Life Log는 producer/envelope/view schema와 단일 entry, 식별자 형식·유일성·
 개수 관계를 검증하고 UI에는 수와 시각만 전달한다. 구버전 flat v1은 롤링 업그레이드
 fallback으로만 허용하며, 손상된 Knowledge snapshot은 다른 producer 발견과 집계를 막지 않는다.
+
+Life Log `digest/v1`는 `export/v1`의 bounded producer를 입력 단계로 공유한다. native command는
+실제 달력 월말(윤년 포함), 연속된 23/24/25시간 civil-day boundary, timezone 문자열과
+exclusive epoch 범위를 DB/Git 조회 전에 검증한다. project setting은 raw bytes/count/path
+bound를 적용한 뒤 safe absolute path를 identity 기준으로 중복 제거한다. 하나의 digest
+operation만 DB progress handler와 순차 bounded Git child를 소유하며, 취소 시 같은 generation
+token으로 SQLite와 child를 모두 중단하고 다음 operation은 이전 guard가 해제된 뒤 시작한다.
+앱 filter는 sanitized session 집계에만 적용되고 Git은 전체 requested range를 유지하므로 UI와
+Markdown에 두 scope를 함께 설명한다. native response의 Markdown은 120초 TTL server-owned
+immutable handle로 저장되어 `save_digest`가 입력을 재계산하지 않고 화면과 동일한 bytes를
+atomic write한다. 최종 write는 generation mutex로 cancellation과 선형화해 취소 직전 commit race를
+막는다. handle·document·Markdown은 모두 bounded이고, stale provenance는 30일 상한을
+넘으면 수치 없이 `snapshot_stale`로 격리한다. #306은 Knowledge handoff/저장(#307)을 호출하지
+않는다.
 
 ## 보안 경계
 

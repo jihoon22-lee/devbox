@@ -14,21 +14,27 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+use std::sync::Arc;
 use std::time::Duration;
 
 pub const EXPORT_SCHEMA_VERSION: u32 = 1;
 pub const MAX_EXPORT_DAYS: usize = 366;
 pub const MAX_EXPORT_SESSIONS: usize = 50_000;
 pub const MAX_EXPORT_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_EXPORT_PROJECTS: usize = 64;
+pub const MAX_PROJECT_SETTING_BYTES: usize = MAX_EXPORT_PROJECTS * (MAX_PROJECT_PATH_BYTES + 1);
 pub const EXPORT_CSV_HEADER: &str = "record_type,date,range_start_date,range_end_date,id,app,title,start_ts_ms,end_ts_ms,duration_ms,project_path,commits,metric,value,source,available,schema_version,snapshot_version,producer_version,generated_at,freshness_ms,view,scope,error_code";
 const DAY_MS: i64 = 86_400_000;
 const MAX_TIMEZONE_BYTES: usize = 128;
 const MAX_APP_BYTES: usize = 256;
 const MAX_TITLE_BYTES: usize = 4 * 1024;
 const MAX_PATH_BYTES: usize = MAX_PROJECT_PATH_BYTES;
-const MAX_PROJECTS: usize = 64;
 const MAX_GIT_OUTPUT_BYTES: usize = 256 * 1024;
 const GIT_TIMEOUT: Duration = Duration::from_secs(2);
+const MIN_CIVIL_DAY_MS: i64 = DAY_MS - 60 * 60 * 1_000;
+const MAX_CIVIL_DAY_MS: i64 = DAY_MS + 60 * 60 * 1_000;
+pub const MAX_PROVENANCE_FRESHNESS_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 const MAX_PRIVACY_JSON_BYTES: usize = 64 * 1024;
 const MAX_PRIVACY_RULES: usize = 128;
 const MAX_REGEX_BYTES: usize = 512;
@@ -328,6 +334,66 @@ fn days_in_month(year: i32, month: u32) -> u32 {
     }
 }
 
+/// Calendar helper shared by digest validation without exposing the internal
+/// range representation. A month boundary is valid only when the supplied
+/// end date is the actual final civil date of its month.
+pub(crate) fn is_month_end_date(value: &str) -> bool {
+    DateKey::parse(value).is_ok_and(|date| date.day == days_in_month(date.year, date.month))
+}
+
+fn is_civil_day_span(value: i64) -> bool {
+    value == MIN_CIVIL_DAY_MS || value == DAY_MS || value == MAX_CIVIL_DAY_MS
+}
+
+/// Parse the newline-delimited project setting with limits applied before any
+/// path normalization or Git process is considered. Invalid paths are kept
+/// as bounded values so the caller can report settings faithfully while
+/// `safe_project_path` still excludes them from native execution.
+pub fn parse_project_setting(raw: &str) -> Result<Vec<String>, String> {
+    if raw.len() > MAX_PROJECT_SETTING_BYTES {
+        return Err("export 프로젝트 설정이 크기 제한을 초과했습니다".into());
+    }
+    let mut projects = Vec::new();
+    for line in raw.lines() {
+        if line.len() > MAX_PATH_BYTES {
+            return Err("export 프로젝트 경로가 크기 제한을 초과했습니다".into());
+        }
+        let path = line.trim();
+        if path.is_empty() {
+            continue;
+        }
+        projects.push(path.to_owned());
+        if projects.len() > MAX_EXPORT_PROJECTS {
+            return Err("export 프로젝트 수 제한을 초과했습니다".into());
+        }
+    }
+    validate_project_settings(&projects)?;
+    Ok(projects)
+}
+
+/// Validate the in-memory form used by settings commands and export callers.
+/// This check deliberately runs before filtering unsafe/relative paths so a
+/// malformed raw setting cannot hide an oversized count behind filtering.
+pub fn validate_project_settings(projects: &[String]) -> Result<(), String> {
+    if projects.len() > MAX_EXPORT_PROJECTS {
+        return Err("export 프로젝트 수 제한을 초과했습니다".into());
+    }
+    let mut bytes = 0usize;
+    for path in projects {
+        if path.len() > MAX_PATH_BYTES || path.chars().any(char::is_control) {
+            return Err("export 프로젝트 경로가 올바르지 않습니다".into());
+        }
+        bytes = bytes
+            .checked_add(path.len())
+            .and_then(|value| value.checked_add(1))
+            .ok_or_else(|| "export 프로젝트 설정이 크기 제한을 초과했습니다".to_string())?;
+        if bytes > MAX_PROJECT_SETTING_BYTES {
+            return Err("export 프로젝트 설정이 크기 제한을 초과했습니다".into());
+        }
+    }
+    Ok(())
+}
+
 fn validate_range(input: &ExportInput) -> Result<ValidatedRange, String> {
     let start_date = DateKey::parse(&input.start_date)?;
     let end_date = DateKey::parse(&input.end_date)?;
@@ -342,11 +408,14 @@ fn validate_range(input: &ExportInput) -> Result<ValidatedRange, String> {
         .day_end
         .checked_sub(input.day_start)
         .ok_or_else(|| "export 기간이 올바르지 않습니다".to_string())?;
+    let max_span = DAY_MS
+        .checked_mul(MAX_EXPORT_DAYS as i64 + 1)
+        .ok_or_else(|| "export 기간이 올바르지 않습니다".to_string())?;
     if start_date > end_date
         || span <= 0
         // DST/일광절약 전환으로 civil-day 범위가 24시간에서 벗어날 수 있다.
         // 하루 수 제한은 아래의 달력 날짜 계산으로 별도 검증한다.
-        || span > DAY_MS.saturating_mul(MAX_EXPORT_DAYS as i64 + 1)
+        || span > max_span
     {
         return Err("export 기간이 올바르지 않습니다".into());
     }
@@ -376,7 +445,7 @@ fn validate_range(input: &ExportInput) -> Result<ValidatedRange, String> {
             // The frontend owns timezone/DST conversion. A single civil day
             // may be 23/24/25 hours, but an arbitrary multi-day boundary is
             // not accepted as a substitute for a timezone calculation.
-            || boundary_span > DAY_MS.saturating_mul(2)
+            || !is_civil_day_span(boundary_span)
             || previous_end.is_some_and(|value| value != boundary.start_ms)
         {
             return Err("export 날짜 경계가 올바르지 않습니다".into());
@@ -387,7 +456,11 @@ fn validate_range(input: &ExportInput) -> Result<ValidatedRange, String> {
             end_ms: boundary.end_ms,
         });
         previous_end = Some(boundary.end_ms);
-        expected_date = expected_date.next();
+        if expected_date < end_date {
+            // Do not advance the terminal representable YYYY-MM-DD value
+            // (9999-12-31) past the four-digit date contract.
+            expected_date = expected_date.next();
+        }
     }
     if days
         .first()
@@ -406,6 +479,15 @@ fn validate_range(input: &ExportInput) -> Result<ValidatedRange, String> {
     })
 }
 
+/// Validate an export-compatible range without exposing the internal parsed
+/// representation. Other local producers (for example the daily/weekly
+/// digest, which retains existing monthly support) use this at their own save
+/// boundary so date, timezone, DST, and contiguous-boundary rules cannot drift
+/// between artifacts.
+pub fn validate_range_input(input: &ExportInput) -> Result<(), String> {
+    validate_range(input).map(|_| ())
+}
+
 /// DB와 snapshot에서 await 이전에 수집할 데이터를 준비한다. Tauri command는
 /// `PreparedExport`를 만든 뒤 DB mutex를 풀고 비동기 git 집계를 수행해야 한다.
 pub fn prepare_document(
@@ -413,21 +495,63 @@ pub fn prepare_document(
     projects: &[String],
     input: &ExportInput,
 ) -> Result<PreparedExport, String> {
+    prepare_document_inner(conn, projects, input, None)
+}
+
+/// Prepare an export using a caller-owned cancellation flag. DB progress is
+/// interrupted before Git is started when a stale UI request is cancelled.
+pub fn prepare_document_with_cancel(
+    conn: &Connection,
+    projects: &[String],
+    input: &ExportInput,
+    cancellation: Arc<AtomicBool>,
+) -> Result<PreparedExport, String> {
+    prepare_document_inner(conn, projects, input, Some(cancellation))
+}
+
+fn prepare_document_inner(
+    conn: &Connection,
+    projects: &[String],
+    input: &ExportInput,
+    cancellation: Option<Arc<AtomicBool>>,
+) -> Result<PreparedExport, String> {
+    validate_project_settings(projects)?;
     let range = validate_range(input)?;
+    check_cancelled(cancellation.as_deref())?;
     let rules = read_privacy_rules(conn);
-    let rows =
+    let rows = if let Some(cancellation) = cancellation.as_ref() {
+        db::get_timeline_limited_with_cancel(
+            conn,
+            range.start_ms,
+            range.end_ms,
+            MAX_EXPORT_SESSIONS + 1,
+            Arc::clone(cancellation),
+        )
+        .map_err(|_| {
+            if cancellation.load(AtomicOrdering::Acquire) {
+                "digest_cancelled".to_string()
+            } else {
+                "Life Log 활동 데이터를 읽을 수 없습니다".to_string()
+            }
+        })?
+    } else {
         db::get_timeline_limited(conn, range.start_ms, range.end_ms, MAX_EXPORT_SESSIONS + 1)
-            .map_err(|_| "Life Log 활동 데이터를 읽을 수 없습니다".to_string())?;
+            .map_err(|_| "Life Log 활동 데이터를 읽을 수 없습니다".to_string())?
+    };
+    check_cancelled(cancellation.as_deref())?;
     if rows.len() > MAX_EXPORT_SESSIONS {
         return Err("export 활동 수가 제한을 초과했습니다".into());
     }
-    let sessions = rows
-        .into_iter()
-        .map(|session| sanitized_session(session, &rules))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+    let mut sessions = Vec::with_capacity(rows.len());
+    for (index, session) in rows.into_iter().enumerate() {
+        if index % 1_024 == 0 {
+            check_cancelled(cancellation.as_deref())?;
+        }
+        if let Some(session) = sanitized_session(session, &rules)? {
+            sessions.push(session);
+        }
+    }
+    check_cancelled(cancellation.as_deref())?;
     let session_text_bytes = sessions.iter().fold(0usize, |total, session| {
         total
             .saturating_add(session.app.len())
@@ -452,20 +576,33 @@ pub fn prepare_document(
             .then_with(|| left.as_str().as_bytes().cmp(right.as_str().as_bytes()))
     });
     safe_projects.dedup_by(|left, right| left.identity() == right.identity());
-    if safe_projects.len() > MAX_PROJECTS {
+    if safe_projects.len() > MAX_EXPORT_PROJECTS {
         return Err("export 프로젝트 수 제한을 초과했습니다".into());
     }
     let safe_projects = safe_projects
         .into_iter()
         .map(|path| path.into_string())
         .collect::<Vec<_>>();
+    check_cancelled(cancellation.as_deref())?;
+    let run_source = read_run_source();
+    check_cancelled(cancellation.as_deref())?;
+    let knowledge_source = read_knowledge_source();
+    check_cancelled(cancellation.as_deref())?;
     Ok(PreparedExport {
         range,
         sessions,
         safe_projects,
-        run_source: read_run_source(),
-        knowledge_source: read_knowledge_source(),
+        run_source,
+        knowledge_source,
     })
+}
+
+fn check_cancelled(cancellation: Option<&AtomicBool>) -> Result<(), String> {
+    if cancellation.is_some_and(|value| value.load(AtomicOrdering::Acquire)) {
+        Err("digest_cancelled".into())
+    } else {
+        Ok(())
+    }
 }
 
 pub struct PreparedExport {
@@ -479,6 +616,16 @@ pub struct PreparedExport {
 /// 준비된 DB/snapshot 자료만 받아 export document를 만든다. 이 함수가
 /// `Connection`을 보유하지 않으므로 Tauri async command가 안전하게 await할 수 있다.
 pub async fn build_document(prepared: PreparedExport) -> Result<ExportDocument, String> {
+    build_document_with_cancel(prepared, Arc::new(AtomicBool::new(false))).await
+}
+
+/// Build an export while propagating cancellation into the native Git worker.
+/// The Git collector is intentionally sequential, so this also establishes a
+/// hard per-operation process concurrency limit of one.
+pub async fn build_document_with_cancel(
+    prepared: PreparedExport,
+    cancellation: Arc<AtomicBool>,
+) -> Result<ExportDocument, String> {
     let PreparedExport {
         range,
         sessions,
@@ -489,14 +636,20 @@ pub async fn build_document(prepared: PreparedExport) -> Result<ExportDocument, 
     // One bounded query per configured repository is enough. Git output is
     // post-filtered against the exact millisecond range, then assigned to the
     // supplied civil-day boundaries; this avoids a 366-day N+1 process storm.
+    check_cancelled(Some(cancellation.as_ref()))?;
     let git_projects = safe_projects.clone();
     let git_range = range.clone();
-    let git = tokio::task::spawn_blocking(move || collect_git_export(&git_projects, &git_range))
-        .await
-        .map_err(|_| "git export 작업을 완료하지 못했습니다".to_string())?;
+    let git_cancellation = Arc::clone(&cancellation);
+    let git = tokio::task::spawn_blocking(move || {
+        collect_git_export(&git_projects, &git_range, git_cancellation.as_ref())
+    })
+    .await
+    .map_err(|_| "git export 작업을 완료하지 못했습니다".to_string())??;
+    check_cancelled(Some(cancellation.as_ref()))?;
 
     let mut daily = Vec::with_capacity(range.days.len());
     for (day_index, day) in range.days.iter().enumerate() {
+        check_cancelled(Some(cancellation.as_ref()))?;
         let cursor = day.start_ms;
         let day_end = day.end_ms;
         let day_sessions = sessions
@@ -507,13 +660,14 @@ pub async fn build_document(prepared: PreparedExport) -> Result<ExportDocument, 
             date: day.date.as_string(),
             start_ms: cursor,
             end_ms: day_end,
-            pc_usage_ms: sum_durations(day_sessions.iter().map(|session| session.duration_ms)),
+            pc_usage_ms: sum_durations(day_sessions.iter().map(|session| session.duration_ms))?,
             session_count: day_sessions.len(),
             git_commits: git.daily_commits.get(day_index).copied().unwrap_or(0),
         });
     }
 
-    let app_totals = build_app_totals(&sessions);
+    let app_totals = build_app_totals(&sessions)?;
+    let pc_usage_ms = sum_durations(sessions.iter().map(|session| session.duration_ms))?;
     let sources = vec![
         SourceMetadata {
             id: "life-log".into(),
@@ -567,7 +721,7 @@ pub async fn build_document(prepared: PreparedExport) -> Result<ExportDocument, 
         },
         rules: export_rules(),
         summary: ExportSummary {
-            pc_usage_ms: sum_durations(sessions.iter().map(|session| session.duration_ms)),
+            pc_usage_ms,
             session_count: sessions.len(),
             app_totals,
             git: export_git(git),
@@ -651,12 +805,19 @@ pub fn validate_document(document: &ExportDocument) -> bool {
     let Ok(range) = validate_range(&input) else {
         return false;
     };
+    let Some(expected_pc_usage) =
+        sum_durations(document.sessions.iter().map(|session| session.duration_ms)).ok()
+    else {
+        return false;
+    };
+    let Some(expected_app_totals) = build_app_totals(&document.sessions).ok() else {
+        return false;
+    };
     if document.sessions.len() > MAX_EXPORT_SESSIONS
         || document.daily.len() != range.days.len()
         || document.summary.session_count != document.sessions.len()
-        || document.summary.pc_usage_ms
-            != sum_durations(document.sessions.iter().map(|session| session.duration_ms))
-        || document.summary.app_totals != build_app_totals(&document.sessions)
+        || document.summary.pc_usage_ms != expected_pc_usage
+        || document.summary.app_totals != expected_app_totals
     {
         return false;
     }
@@ -666,9 +827,11 @@ pub fn validate_document(document: &ExportDocument) -> bool {
             || !is_bounded_export_text(&session.title, MAX_TITLE_BYTES, true)
             || session.start_ts_ms < range.start_ms
             || session.start_ts_ms >= range.end_ms
-            || session.end_ts_ms < session.start_ts_ms
             || session.duration_ms < 0
-            || session.duration_ms > session.end_ts_ms.saturating_sub(session.start_ts_ms)
+            || session
+                .end_ts_ms
+                .checked_sub(session.start_ts_ms)
+                .is_none_or(|span| session.duration_ms > span)
     }) {
         return false;
     }
@@ -687,6 +850,8 @@ pub fn validate_document(document: &ExportDocument) -> bool {
             || day.session_count != expected_sessions.len()
             || day.pc_usage_ms
                 != sum_durations(expected_sessions.iter().map(|session| session.duration_ms))
+                    .ok()
+                    .unwrap_or(i64::MIN)
         {
             return false;
         }
@@ -700,7 +865,7 @@ pub fn validate_document(document: &ExportDocument) -> bool {
         return false;
     }
 
-    if document.summary.git.projects.len() > MAX_PROJECTS
+    if document.summary.git.projects.len() > MAX_EXPORT_PROJECTS
         || !projects_are_deterministic(&document.summary.git.projects)
         || document.summary.git.total_commits
             != document
@@ -709,7 +874,7 @@ pub fn validate_document(document: &ExportDocument) -> bool {
                 .projects
                 .iter()
                 .fold(0u32, |total, project| total.saturating_add(project.commits))
-        || document.summary.git.error_codes.len() > MAX_PROJECTS
+        || document.summary.git.error_codes.len() > MAX_EXPORT_PROJECTS
         || document
             .summary
             .git
@@ -818,6 +983,9 @@ fn valid_snapshot_source(source: &SourceMetadata, expected_id: &str, knowledge: 
             .as_deref()
             .is_none_or(is_valid_generated_at)
         && source
+            .freshness_ms
+            .is_none_or(|value| value <= MAX_PROVENANCE_FRESHNESS_MS)
+        && source
             .view
             .as_deref()
             .is_none_or(|value| knowledge && matches!(value, "activity" | "legacy-data"))
@@ -905,6 +1073,7 @@ fn is_safe_error_code(value: &str) -> bool {
             | "snapshot_schema_unsupported"
             | "snapshot_payload_invalid"
             | "snapshot_changed_during_read"
+            | "snapshot_stale"
             | "git_invalid_arguments"
             | "git_spawn_failed"
             | "git_stdout_unavailable"
@@ -947,14 +1116,15 @@ fn is_snapshot_error_code(value: &str) -> bool {
             | "snapshot_schema_unsupported"
             | "snapshot_payload_invalid"
             | "snapshot_changed_during_read"
+            | "snapshot_stale"
     )
 }
 
 fn read_privacy_rules(conn: &Connection) -> PrivacyRules {
-    let raw = db::get_setting(conn, "privacy_rules", "{}");
-    if raw.len() > MAX_PRIVACY_JSON_BYTES {
-        return privacy_fail_closed();
-    }
+    let raw = match db::get_setting_bounded(conn, "privacy_rules", "{}", MAX_PRIVACY_JSON_BYTES) {
+        Ok(raw) => raw,
+        Err(_) => return privacy_fail_closed(),
+    };
     let rules = match serde_json::from_str::<PrivacyRules>(&raw) {
         Ok(rules) => rules,
         Err(_) => return privacy_fail_closed(),
@@ -994,11 +1164,11 @@ fn sanitized_session(
     session: Session,
     rules: &PrivacyRules,
 ) -> Result<Option<ExportSession>, String> {
-    if session.id < 0
-        || session.end_ts < session.start_ts
-        || session.duration_ms < 0
-        || session.duration_ms > session.end_ts.saturating_sub(session.start_ts)
-    {
+    let session_span = session
+        .end_ts
+        .checked_sub(session.start_ts)
+        .ok_or_else(|| "export 활동 데이터가 올바르지 않습니다".to_string())?;
+    if session.id < 0 || session.duration_ms < 0 || session.duration_ms > session_span {
         return Err("export 활동 데이터가 올바르지 않습니다".into());
     }
     // Bound untrusted DB text before regex/privacy work so a malformed local
@@ -1088,12 +1258,18 @@ fn secret_assignment(value: &str, key: &str) -> bool {
     false
 }
 
-fn build_app_totals(sessions: &[ExportSession]) -> Vec<ExportAppTotal> {
+fn build_app_totals(sessions: &[ExportSession]) -> Result<Vec<ExportAppTotal>, String> {
     let mut totals = BTreeMap::<String, (i64, usize)>::new();
     for session in sessions {
         let entry = totals.entry(session.app.clone()).or_default();
-        entry.0 = entry.0.saturating_add(session.duration_ms);
-        entry.1 += 1;
+        entry.0 = entry
+            .0
+            .checked_add(session.duration_ms)
+            .ok_or_else(|| "export duration overflow".to_string())?;
+        entry.1 = entry
+            .1
+            .checked_add(1)
+            .ok_or_else(|| "export session count overflow".to_string())?;
     }
     let mut output = totals
         .into_iter()
@@ -1109,7 +1285,7 @@ fn build_app_totals(sessions: &[ExportSession]) -> Vec<ExportAppTotal> {
             .cmp(&left.duration_ms)
             .then_with(|| left.app.as_bytes().cmp(right.app.as_bytes()))
     });
-    output
+    Ok(output)
 }
 
 #[derive(Debug, Default)]
@@ -1120,12 +1296,17 @@ struct GitExport {
     error_codes: Vec<String>,
 }
 
-fn collect_git_export(projects: &[String], range: &ValidatedRange) -> GitExport {
+fn collect_git_export(
+    projects: &[String],
+    range: &ValidatedRange,
+    cancellation: &AtomicBool,
+) -> Result<GitExport, String> {
     let mut output = GitExport {
         daily_commits: vec![0; range.days.len()],
         ..GitExport::default()
     };
     for path in projects {
+        check_cancelled(Some(cancellation))?;
         let since = format!("--since=@{}", range.start_ms.div_euclid(1_000));
         let before = format!("--before=@{}", ceil_seconds(range.end_ms));
         // Keep every argument as an individual argv value. In particular,
@@ -1138,14 +1319,23 @@ fn collect_git_export(projects: &[String], range: &ValidatedRange) -> GitExport 
             "--format=%ct",
             "--",
         ];
-        let result = devbox_git::run_bounded(&args, path, GIT_TIMEOUT, MAX_GIT_OUTPUT_BYTES)
-            .and_then(|stdout| {
-                parse_git_timestamps(&stdout, range, &mut output.daily_commits)
-                    .map_err(ToOwned::to_owned)
-            });
+        let result = devbox_git::run_bounded_with_cancel(
+            &args,
+            path,
+            GIT_TIMEOUT,
+            MAX_GIT_OUTPUT_BYTES,
+            cancellation,
+        )
+        .and_then(|stdout| {
+            parse_git_timestamps(&stdout, range, &mut output.daily_commits)
+                .map_err(ToOwned::to_owned)
+        });
         let (commits, error_code) = match result {
             Ok(commits) => (commits, None),
             Err(code) => {
+                if code == "git_cancelled" {
+                    return Err("digest_cancelled".into());
+                }
                 output.error_codes.push(code.clone());
                 (0, Some(code))
             }
@@ -1161,7 +1351,7 @@ fn collect_git_export(projects: &[String], range: &ValidatedRange) -> GitExport 
         .error_codes
         .sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
     output.error_codes.dedup();
-    output
+    Ok(output)
 }
 
 fn ceil_seconds(milliseconds: i64) -> i64 {
@@ -1846,7 +2036,7 @@ fn read_run_source_in(root: &Path) -> SourceResult<RunDigest> {
                         .active_services
                         .iter()
                         .map(|service| service.uptime_ms),
-                ),
+                )?,
                 last_run_at_ms: payload.last_run_at_ms,
             })
         },
@@ -1903,6 +2093,9 @@ fn read_knowledge_source_in(root: &Path) -> SourceResult<KnowledgeDigest> {
         LATEST_SNAPSHOT_OUT_OF_RANGE_SCOPE,
         initial_view,
     );
+    if reference.freshness_ms > MAX_PROVENANCE_FRESHNESS_MS {
+        return invalid_source(metadata, "snapshot_stale");
+    }
     if reference.version != EXPORT_SCHEMA_VERSION {
         return invalid_source(metadata, "snapshot_schema_unsupported");
     }
@@ -1948,6 +2141,9 @@ fn read_knowledge_source_in(root: &Path) -> SourceResult<KnowledgeDigest> {
             || view_ref.entry_count != view.entries.len()
         {
             return invalid_source(metadata, "snapshot_schema_unsupported");
+        }
+        if view_ref.freshness_ms > MAX_PROVENANCE_FRESHNESS_MS {
+            return invalid_source(metadata, "snapshot_stale");
         }
         metadata.freshness_ms = Some(view_ref.freshness_ms);
         serde_json::from_value::<KnowledgeSnapshot>(view.entries[0].clone()).and_then(|value| {
@@ -2013,8 +2209,12 @@ fn valid_note_id(value: &str) -> bool {
         && number.parse::<u64>().is_ok_and(|value| value > 0)
 }
 
-fn sum_durations(values: impl Iterator<Item = i64>) -> i64 {
-    values.fold(0, i64::saturating_add)
+fn sum_durations(mut values: impl Iterator<Item = i64>) -> Result<i64, String> {
+    values.try_fold(0_i64, |total, value| {
+        total
+            .checked_add(value)
+            .ok_or_else(|| "export duration overflow".to_string())
+    })
 }
 
 fn read_snapshot_source_in<T>(
@@ -2036,6 +2236,9 @@ fn read_snapshot_source_in<T>(
         }
     };
     let metadata = source_metadata_from_reference(&reference, scope, None);
+    if reference.freshness_ms > MAX_PROVENANCE_FRESHNESS_MS {
+        return invalid_source(metadata, "snapshot_stale");
+    }
     if reference.version != EXPORT_SCHEMA_VERSION {
         return invalid_source(metadata, "snapshot_schema_unsupported");
     }
@@ -2169,7 +2372,7 @@ fn source_metadata_from_reference(
         snapshot_version: Some(reference.version),
         producer_version: Some(reference.producer_version.clone()),
         generated_at: Some(reference.generated_at.clone()),
-        freshness_ms: Some(reference.freshness_ms),
+        freshness_ms: Some(reference.freshness_ms.min(MAX_PROVENANCE_FRESHNESS_MS)),
         view: view.map(ToOwned::to_owned),
         scope: scope.into(),
         error_code: None,
@@ -2375,6 +2578,32 @@ mod tests {
     }
 
     #[test]
+    fn rejects_non_civil_day_boundary_widths_between_dst_sizes() {
+        let mut value = input(ExportFormat::Json);
+        value.day_end = DAY_MS + 1;
+        value.day_boundaries[0].end_ms = value.day_end;
+        assert!(validate_range(&value).is_err());
+    }
+
+    #[test]
+    fn validates_the_terminal_four_digit_calendar_date_without_overflowing() {
+        let value = ExportInput {
+            start_date: "9999-12-31".into(),
+            end_date: "9999-12-31".into(),
+            timezone: "UTC".into(),
+            day_start: 0,
+            day_end: DAY_MS,
+            day_boundaries: vec![ExportDayBoundary {
+                date: "9999-12-31".into(),
+                start_ms: 0,
+                end_ms: DAY_MS,
+            }],
+            format: ExportFormat::Json,
+        };
+        assert!(validate_range(&value).is_ok());
+    }
+
+    #[test]
     fn safe_project_path_rejects_relative_traversal_and_device_paths() {
         assert!(safe_project_path("relative/project").is_none());
         assert!(safe_project_path("C:\\projects\\..\\secret").is_none());
@@ -2388,6 +2617,47 @@ mod tests {
             safe_project_path("/home/user/devbox"),
             Some("/home/user/devbox".into())
         );
+    }
+
+    #[test]
+    fn project_setting_bounds_apply_before_invalid_path_filtering() {
+        let too_many = (0..=MAX_EXPORT_PROJECTS)
+            .map(|index| format!("relative/project-{index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            parse_project_setting(&too_many).unwrap_err(),
+            "export 프로젝트 수 제한을 초과했습니다"
+        );
+        let oversized = format!("C:\\work\\{}", "a".repeat(MAX_PATH_BYTES));
+        assert_eq!(
+            parse_project_setting(&oversized).unwrap_err(),
+            "export 프로젝트 경로가 크기 제한을 초과했습니다"
+        );
+    }
+
+    #[test]
+    fn duration_addition_overflow_fails_closed() {
+        let sessions = vec![
+            ExportSession {
+                id: 1,
+                app: "app".into(),
+                title: "safe".into(),
+                start_ts_ms: 0,
+                end_ts_ms: i64::MAX,
+                duration_ms: i64::MAX,
+            },
+            ExportSession {
+                id: 2,
+                app: "app".into(),
+                title: "safe".into(),
+                start_ts_ms: 0,
+                end_ts_ms: i64::MAX,
+                duration_ms: 1,
+            },
+        ];
+        assert!(build_app_totals(&sessions).is_err());
+        assert!(sum_durations(sessions.iter().map(|session| session.duration_ms)).is_err());
     }
 
     #[test]
@@ -2598,7 +2868,8 @@ mod tests {
                     end_ms: day.end_ms,
                     pc_usage_ms: sum_durations(
                         day_sessions.iter().map(|session| session.duration_ms),
-                    ),
+                    )
+                    .unwrap(),
                     session_count: day_sessions.len(),
                     git_commits: 0,
                 }
@@ -2624,9 +2895,10 @@ mod tests {
             },
             rules: export_rules(),
             summary: ExportSummary {
-                pc_usage_ms: sessions.iter().map(|session| session.duration_ms).sum(),
+                pc_usage_ms: sum_durations(sessions.iter().map(|session| session.duration_ms))
+                    .unwrap(),
                 session_count: sessions.len(),
-                app_totals: build_app_totals(&sessions),
+                app_totals: build_app_totals(&sessions).unwrap(),
                 git: ExportGit::default(),
                 run: None,
                 knowledge: None,
@@ -2921,6 +3193,23 @@ mod tests {
             result.metadata.error_code.as_deref(),
             Some("snapshot_schema_unsupported")
         );
+    }
+
+    #[test]
+    fn provenance_freshness_bound_rejects_stale_snapshot_metadata() {
+        let source = SourceMetadata {
+            id: "run-manager".into(),
+            available: true,
+            schema_version: Some(1),
+            snapshot_version: Some(1),
+            producer_version: Some("0.5.0".into()),
+            generated_at: Some("2024-01-01T00:00:00Z".into()),
+            freshness_ms: Some(MAX_PROVENANCE_FRESHNESS_MS + 1),
+            view: None,
+            scope: LATEST_SNAPSHOT_OUT_OF_RANGE_SCOPE.into(),
+            error_code: None,
+        };
+        assert!(!valid_snapshot_source(&source, "run-manager", false));
     }
 
     #[test]

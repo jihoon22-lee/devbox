@@ -8,12 +8,124 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+/// One native digest at a time. The guard owns the exact cancellation token
+/// used by DB/Git work, and cancellation only clears the matching generation
+/// when the guard is dropped.
+pub struct DigestOperationState {
+    active: Mutex<Option<(u64, Arc<AtomicBool>)>>,
+    next_id: std::sync::atomic::AtomicU64,
+}
+
+pub struct DigestOperationGuard {
+    state: Arc<DigestOperationState>,
+    id: u64,
+    cancellation: Arc<AtomicBool>,
+}
+
+impl Default for DigestOperationState {
+    fn default() -> Self {
+        Self {
+            active: Mutex::new(None),
+            next_id: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+}
+
+impl DigestOperationState {
+    pub fn begin(self: &Arc<Self>) -> Result<DigestOperationGuard, String> {
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| "digest 작업을 잠글 수 없습니다".to_string())?;
+        if active.is_some() {
+            return Err("digest_busy".into());
+        }
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let cancellation = Arc::new(AtomicBool::new(false));
+        *active = Some((id, Arc::clone(&cancellation)));
+        Ok(DigestOperationGuard {
+            state: Arc::clone(self),
+            id,
+            cancellation,
+        })
+    }
+
+    /// Mark the current generation cancelled and return its identity. A caller
+    /// waiting for cancellation must retain this id so a newer generation that
+    /// starts immediately after the old guard drops is never mistaken for the
+    /// operation being cancelled.
+    pub fn cancel_generation(&self) -> Option<u64> {
+        let Ok(active) = self.active.lock() else {
+            return None;
+        };
+        let (id, cancellation) = active.as_ref()?;
+        cancellation.store(true, Ordering::Release);
+        Some(*id)
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active.lock().map_or(true, |active| active.is_some())
+    }
+
+    pub fn is_active_generation(&self, id: u64) -> bool {
+        self.active.lock().map_or(true, |active| {
+            active.as_ref().is_some_and(|(current, _)| *current == id)
+        })
+    }
+}
+
+impl DigestOperationGuard {
+    pub fn cancellation(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.cancellation)
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellation.load(Ordering::Acquire)
+    }
+
+    /// Linearize a non-interruptible native commit against cancellation. The
+    /// active-generation mutex is held while `commit` runs, so cancellation
+    /// either wins before the write starts or waits until the write has
+    /// completed; it can never report cancellation while a write races the
+    /// final pre-write check.
+    #[cfg(any(target_os = "windows", test))]
+    pub fn commit_if_not_cancelled<T>(
+        &self,
+        commit: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let active = self
+            .state
+            .active
+            .lock()
+            .map_err(|_| "digest 작업을 잠글 수 없습니다".to_string())?;
+        let Some((id, cancellation)) = active.as_ref() else {
+            return Err("digest_cancelled".into());
+        };
+        if *id != self.id || cancellation.load(Ordering::Acquire) {
+            return Err("digest_cancelled".into());
+        }
+        commit()
+    }
+}
+
+impl Drop for DigestOperationGuard {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.state.active.lock() {
+            if active.as_ref().is_some_and(|(id, _)| *id == self.id) {
+                *active = None;
+            }
+        }
+    }
+}
+
 /// 앱 전역 상태: DB 커넥션 + 세션 병합기 + 추적 플래그
 pub struct AppState {
     pub db: Mutex<Connection>,
     pub sessionizer: Mutex<Sessionizer>,
     pub tracking: AtomicBool,
     pub snapshot_writer: Mutex<()>,
+    pub digest_operations: Arc<DigestOperationState>,
+    pub digest_handles: crate::core::digest::DigestHandleStore,
 }
 
 pub fn now_ms() -> i64 {
@@ -186,4 +298,41 @@ fn last_input_ms() -> Option<i64> {
 #[cfg(not(target_os = "windows"))]
 fn last_input_ms() -> Option<i64> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DigestOperationState;
+    use std::sync::Arc;
+
+    #[test]
+    fn digest_operations_are_single_flight_and_generation_scoped() {
+        let state = Arc::new(DigestOperationState::default());
+        let first = state.begin().unwrap();
+        assert!(matches!(state.begin(), Err(error) if error == "digest_busy"));
+        let first_generation = state.cancel_generation().unwrap();
+        assert!(state.is_active_generation(first_generation));
+        assert!(first.is_cancelled());
+        drop(first);
+        assert!(!state.is_active_generation(first_generation));
+
+        let second = state.begin().unwrap();
+        assert!(!second.is_cancelled());
+        let second_generation = state.cancel_generation().unwrap();
+        assert_ne!(first_generation, second_generation);
+        assert!(second.is_cancelled());
+        drop(second);
+        assert!(state.cancel_generation().is_none());
+    }
+
+    #[test]
+    fn commit_gate_rejects_a_cancelled_generation_before_writing() {
+        let state = Arc::new(DigestOperationState::default());
+        let operation = state.begin().unwrap();
+        assert!(state.cancel_generation().is_some());
+        let error = operation
+            .commit_if_not_cancelled(|| Ok::<_, String>(()))
+            .unwrap_err();
+        assert_eq!(error, "digest_cancelled");
+    }
 }

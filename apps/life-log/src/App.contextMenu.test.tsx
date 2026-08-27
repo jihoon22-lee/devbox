@@ -1,18 +1,24 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App from "./App";
+import App, { toDateStr } from "./App";
+import type { DigestInput, DigestResponse } from "./api";
 
 const mocks = vi.hoisted(() => ({
   writeText: vi.fn<(value: string) => Promise<void>>(),
   exportLifeLog: vi.fn(),
+  cancelDigest: vi.fn().mockResolvedValue(false),
+  getDigest: vi.fn(),
+  getDay: vi.fn(),
   saveLifeLog: vi.fn(),
 }));
 
 vi.mock("./api", () => ({
   autostartStatus: vi.fn().mockResolvedValue({ supported: true, enabled: false, command: null }),
+  cancelDigest: mocks.cancelDigest,
   exportLifeLog: mocks.exportLifeLog,
+  getDigest: mocks.getDigest,
   getAppStats: vi.fn().mockResolvedValue([]),
-  getDay: vi.fn().mockImplementation(async (date: string) => ({
+  getDay: mocks.getDay.mockImplementation(async (date: string) => ({
     date,
     pc_usage_ms: 3_600_000,
     app_totals: [],
@@ -54,6 +60,71 @@ vi.mock("./api", () => ({
   stopTracking: vi.fn().mockResolvedValue(undefined),
 }));
 
+function digestFixture(input: DigestInput): DigestResponse {
+  return {
+    origin: "browser-preview",
+    document: {
+      schemaVersion: 1,
+      period: input.period,
+      range: {
+        startDate: input.startDate,
+        endDate: input.endDate,
+        timezone: input.timezone,
+        startMs: input.dayStart,
+        endMs: input.dayEnd,
+        dayBoundaries: input.dayBoundaries,
+      },
+      filter: input.filter,
+      rules: {
+        sessionWindow: "session window",
+        sessionDuration: "session duration",
+        dailyBuckets: "daily buckets",
+        appFilter: "app filter",
+        appTotals: "app totals",
+        gitCommits: "git commits",
+        snapshotScope: "snapshot scope",
+        privacy: "privacy",
+        externalProcessing: "external processing",
+      },
+      headline: `${input.period} fixture`,
+      summary: {
+        pcUsageMs: 0,
+        sessionCount: 0,
+        activeDays: 0,
+        totalDays: input.dayBoundaries.length,
+        averageDailyUsageMs: 0,
+        topApp: null,
+        gitCommits: 0,
+      },
+      daily: input.dayBoundaries.map((boundary) => ({
+        date: boundary.date,
+        startMs: boundary.startMs,
+        endMs: boundary.endMs,
+        pcUsageMs: 0,
+        sessionCount: 0,
+        gitCommits: 0,
+        topApp: null,
+        hasActivity: false,
+      })),
+      appTotals: [],
+      git: { projects: [], totalCommits: 0, errorCodes: ["browser_preview_only"] },
+      sources: ["life-log", "git", "run-manager", "knowledge-base"].map((id) => ({
+        id,
+        available: false,
+        schemaVersion: null,
+        snapshotVersion: null,
+        producerVersion: null,
+        generatedAt: null,
+        freshnessMs: null,
+        view: null,
+        scope: "browser-preview-only",
+        errorCode: "browser_preview_only",
+      })),
+    },
+    markdown: "# Life Log local digest\n",
+  };
+}
+
 beforeEach(() => {
   mocks.writeText.mockReset().mockResolvedValue(undefined);
   mocks.exportLifeLog.mockReset().mockResolvedValue({
@@ -64,6 +135,7 @@ beforeEach(() => {
     byteLength: 10,
     content: "# fixture\n",
   });
+  mocks.getDigest.mockReset().mockImplementation((input: DigestInput) => Promise.resolve(digestFixture(input)));
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: { writeText: mocks.writeText },
@@ -82,9 +154,63 @@ afterEach(() => cleanup());
 
 async function renderLoadedApp() {
   render(<App />);
-  await screen.findByText("1h 0m");
+  await screen.findByRole("heading", { name: "Daily local digest" });
+  await waitFor(() => expect(screen.queryByText("Loading...")).toBeNull());
   return screen.getByLabelText(/\d{4}-\d{2}-\d{2} 선택된 날짜/u) as HTMLInputElement;
 }
+
+describe("Life Log daily digest", () => {
+  it("exposes day source/rule provenance and explicit copy/download actions", async () => {
+    await renderLoadedApp();
+
+    expect(await screen.findByRole("heading", { name: "Daily local digest" })).toBeTruthy();
+    expect(mocks.getDay).not.toHaveBeenCalled();
+    expect(screen.getByText(/Browser preview only · native local data unavailable/u)).toBeTruthy();
+    expect(screen.getByLabelText("Application filter")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy digest" }));
+    await waitFor(() => expect(mocks.writeText).toHaveBeenCalledWith("# Life Log local digest\n"));
+
+    fireEvent.click(screen.getByText("Sources and aggregation rules"));
+    expect(screen.getByText("life-log")).toBeTruthy();
+    expect(screen.getByText("sessionWindow")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Download preview" }));
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
+  });
+
+  it("clears stale digest state before a newer navigation request completes", async () => {
+    let firstInput: DigestInput | null = null;
+    let resolveFirst!: (response: DigestResponse) => void;
+    let resolveSecond!: () => void;
+    const first = new Promise<DigestResponse>((resolve) => { resolveFirst = resolve; });
+    const second = new Promise<void>((resolve) => { resolveSecond = resolve; });
+    mocks.getDigest
+      .mockReset()
+      .mockImplementationOnce((input: DigestInput) => {
+        firstInput = input;
+        return first;
+      })
+      .mockImplementationOnce((input: DigestInput) => second.then(() => digestFixture(input)));
+
+    render(<App />);
+    await waitFor(() => expect(mocks.getDigest).toHaveBeenCalledTimes(1));
+    const dateInput = screen.getByLabelText(/\d{4}-\d{2}-\d{2} 선택된 날짜/u) as HTMLInputElement;
+    const initialDate = dateInput.value;
+    fireEvent.click(screen.getByRole("button", { name: "다음 날짜" }));
+    await waitFor(() => expect(mocks.getDigest).toHaveBeenCalledTimes(2));
+    expect(dateInput.value).not.toBe(initialDate);
+    expect(screen.queryByRole("heading", { name: "Daily local digest" })).toBeNull();
+
+    resolveFirst(digestFixture(firstInput!));
+    await Promise.resolve();
+    expect(screen.queryByText("day fixture")).toBeNull();
+
+    resolveSecond();
+    await screen.findByRole("heading", { name: "Daily local digest" });
+    expect(dateInput.value).not.toBe(initialDate);
+  });
+});
 
 describe("Life Log date context menu", () => {
   it("선택 날짜 입력에 exact menu를 열고 날짜만 복사한 뒤 focus를 복원한다", async () => {
@@ -121,17 +247,22 @@ describe("Life Log date context menu", () => {
 
   it("키보드로 연 exact chart date를 먼저 선택하고 그 날짜를 복사한다", async () => {
     const dateInput = await renderLoadedApp();
+    const chartDate = new Date(`${dateInput.value}T00:00:00`);
+    chartDate.setDate(chartDate.getDate() + 1);
+    const chartDateKey = toDateStr(chartDate);
     fireEvent.click(screen.getByRole("button", { name: "Week" }));
-    const target = await screen.findByRole("button", { name: "2024-01-02 날짜" });
+    const target = await screen.findByRole("button", { name: `${chartDateKey} 날짜` });
     target.focus();
 
     fireEvent.keyDown(target, { key: "F10", code: "F10", shiftKey: true });
 
-    await waitFor(() => expect(dateInput.value).toBe("2024-01-02"));
-    expect(target.getAttribute("aria-current")).toBe("date");
+    await waitFor(() => expect(dateInput.value).toBe(chartDateKey));
+    await waitFor(() => expect(screen.queryByText("Loading...")).toBeNull());
+    const currentTarget = await screen.findByRole("button", { name: `${chartDateKey} 날짜` });
+    expect(currentTarget.getAttribute("aria-current")).toBe("date");
     fireEvent.click(screen.getByRole("menuitem", { name: "날짜 복사" }));
-    await waitFor(() => expect(mocks.writeText).toHaveBeenCalledWith("2024-01-02"));
-    await waitFor(() => expect(document.activeElement).toBe(target));
+    await waitFor(() => expect(mocks.writeText).toHaveBeenCalledWith(chartDateKey));
+    await waitFor(() => expect(document.activeElement).toBe(currentTarget));
   });
 
   it("invalid target은 이전 context date로 retarget하지 않는다", async () => {
@@ -245,7 +376,8 @@ describe("Life Log date context menu", () => {
     });
     mocks.exportLifeLog.mockReturnValueOnce(pending);
     const { unmount } = render(<App />);
-    await screen.findByText("1h 0m");
+    await screen.findByRole("heading", { name: "Daily local digest" });
+    await waitFor(() => expect(screen.queryByText("Loading...")).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Export preview" }));
     fireEvent.click(await screen.findByRole("button", { name: "미리보기 다운로드" }));
     await waitFor(() => expect(screen.getByRole("dialog", { name: "Life Log export" }).getAttribute("aria-busy")).toBe("true"));

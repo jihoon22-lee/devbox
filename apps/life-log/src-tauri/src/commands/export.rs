@@ -32,12 +32,9 @@ fn prepare(
         .db
         .lock()
         .map_err(|_| "Life Log DB를 잠글 수 없습니다".to_string())?;
-    let projects = db::get_setting(&conn, "projects", "")
-        .lines()
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-        .map(ToOwned::to_owned)
-        .collect::<Vec<_>>();
+    let raw_projects =
+        db::get_setting_bounded(&conn, "projects", "", export::MAX_PROJECT_SETTING_BYTES)?;
+    let projects = export::parse_project_setting(&raw_projects)?;
     export::prepare_document(&conn, &projects, input)
 }
 

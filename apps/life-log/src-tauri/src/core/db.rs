@@ -1,6 +1,8 @@
 use crate::core::models::{AppTotal, ClosedSession, Session};
 use rusqlite::Connection;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// 데이터베이스를 열고 스키마를 준비한다.
 ///
@@ -35,16 +37,14 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 pub fn insert_session(conn: &Connection, s: &ClosedSession) -> rusqlite::Result<()> {
+    let duration_ms = s
+        .end_ts
+        .checked_sub(s.start_ts)
+        .ok_or_else(|| rusqlite::Error::InvalidParameterName("session duration overflow".into()))?;
     conn.execute(
         "INSERT INTO sessions (app, title, start_ts, end_ts, duration_ms)
          VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![
-            s.app,
-            s.title,
-            s.start_ts,
-            s.end_ts,
-            (s.end_ts - s.start_ts).max(0),
-        ],
+        rusqlite::params![s.app, s.title, s.start_ts, s.end_ts, duration_ms.max(0),],
     )?;
     Ok(())
 }
@@ -103,6 +103,42 @@ pub fn get_timeline_limited(
     rows.collect()
 }
 
+/// Bounded timeline query with a cooperative cancellation hook. The caller
+/// owns the token and can interrupt a long SQLite VM before a stale digest
+/// proceeds to Git. The hook is removed on every return path so it cannot
+/// affect the next query using this connection.
+pub fn get_timeline_limited_with_cancel(
+    conn: &Connection,
+    day_start: i64,
+    day_end: i64,
+    limit: usize,
+    cancellation: Arc<AtomicBool>,
+) -> rusqlite::Result<Vec<Session>> {
+    conn.progress_handler(1_000, Some(move || cancellation.load(Ordering::Acquire)));
+    let result = (|| {
+        let mut stmt = conn.prepare(
+            "SELECT id, app, title, start_ts, end_ts, duration_ms
+             FROM sessions
+             WHERE start_ts >= ?1 AND start_ts < ?2
+             ORDER BY start_ts, end_ts, app, title, id
+             LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![day_start, day_end, limit as i64], |r| {
+            Ok(Session {
+                id: r.get(0)?,
+                app: r.get(1)?,
+                title: r.get(2)?,
+                start_ts: r.get(3)?,
+                end_ts: r.get(4)?,
+                duration_ms: r.get(5)?,
+            })
+        })?;
+        rows.collect()
+    })();
+    conn.progress_handler(0, None::<fn() -> bool>);
+    result
+}
+
 /// 기간 내 앱별 사용 합계를 반환한다.
 pub fn get_app_stats(conn: &Connection, start: i64, end: i64) -> rusqlite::Result<Vec<AppTotal>> {
     let mut stmt = conn.prepare(
@@ -158,6 +194,28 @@ pub fn get_setting(conn: &Connection, key: &str, default: &str) -> String {
         |r| r.get::<_, String>(0),
     )
     .unwrap_or_else(|_| default.to_string())
+}
+
+/// Read one setting only when its UTF-8 byte length is within the caller's
+/// bound. The SQL CASE keeps an oversized value from being materialized into
+/// a Rust `String`; callers can then fail closed before parsing raw settings.
+pub fn get_setting_bounded(
+    conn: &Connection,
+    key: &str,
+    default: &str,
+    max_bytes: usize,
+) -> Result<String, String> {
+    match conn.query_row(
+        "SELECT CASE WHEN length(CAST(value AS BLOB)) <= ?2 THEN value ELSE NULL END
+         FROM settings WHERE key = ?1",
+        rusqlite::params![key, max_bytes as i64],
+        |row| row.get::<_, Option<String>>(0),
+    ) {
+        Ok(Some(value)) => Ok(value),
+        Ok(None) => Err("setting value exceeds byte limit".into()),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(default.to_owned()),
+        Err(_) => Err("setting value cannot be read".into()),
+    }
 }
 
 pub fn set_setting(conn: &Connection, key: &str, value: &str) {
@@ -277,6 +335,24 @@ mod tests {
         assert_eq!(stats[0].duration_ms, 200);
         assert_eq!(stats[0].sessions, 2);
         assert_eq!(stats[1].app, "chrome");
+    }
+
+    #[test]
+    fn bounded_setting_reader_rejects_oversized_raw_values() {
+        let conn = mem();
+        set_setting(&conn, "projects", "a\nb\nc");
+        assert_eq!(
+            get_setting_bounded(&conn, "projects", "", 3).unwrap_err(),
+            "setting value exceeds byte limit"
+        );
+        assert_eq!(
+            get_setting_bounded(&conn, "projects", "", 5).unwrap(),
+            "a\nb\nc"
+        );
+        assert_eq!(
+            get_setting_bounded(&conn, "missing", "fallback", 1).unwrap(),
+            "fallback"
+        );
     }
 
     #[test]

@@ -68,6 +68,32 @@ pub fn run_bounded(
     timeout: Duration,
     max_stdout_bytes: usize,
 ) -> Result<String, String> {
+    run_bounded_inner(args, cwd, timeout, max_stdout_bytes, None)
+}
+
+/// Bounded read-only git execution with cooperative cancellation.
+///
+/// The cancellation flag is checked before spawning, while waiting for the
+/// child, and after stdout has been drained.  Cancellation always terminates
+/// the child before returning so a stale digest cannot leave a native git
+/// process behind.
+pub fn run_bounded_with_cancel(
+    args: &[&str],
+    cwd: &str,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+    cancellation: &AtomicBool,
+) -> Result<String, String> {
+    run_bounded_inner(args, cwd, timeout, max_stdout_bytes, Some(cancellation))
+}
+
+fn run_bounded_inner(
+    args: &[&str],
+    cwd: &str,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+    cancellation: Option<&AtomicBool>,
+) -> Result<String, String> {
     if cwd.is_empty()
         || cwd.len() > 4_096
         || cwd.chars().any(char::is_control)
@@ -77,6 +103,9 @@ pub fn run_bounded(
             .any(|arg| arg.len() > 4_096 || arg.chars().any(char::is_control))
     {
         return Err("git_invalid_arguments".into());
+    }
+    if cancellation.is_some_and(|value| value.load(Ordering::Acquire)) {
+        return Err("git_cancelled".into());
     }
 
     let mut command = Command::new(resolve_git());
@@ -132,6 +161,11 @@ pub fn run_bounded(
 
     let deadline = Instant::now().checked_add(timeout);
     let status = loop {
+        if cancellation.is_some_and(|value| value.load(Ordering::Acquire)) {
+            terminate_child(&mut child);
+            let _ = reader.join();
+            return Err("git_cancelled".into());
+        }
         if overflow.load(Ordering::Acquire) {
             terminate_child(&mut child);
             let _ = reader.join();
@@ -160,6 +194,9 @@ pub fn run_bounded(
     };
 
     let bytes = reader.join().map_err(|_| "git_reader_failed".to_string())?;
+    if cancellation.is_some_and(|value| value.load(Ordering::Acquire)) {
+        return Err("git_cancelled".into());
+    }
     if overflow.load(Ordering::Acquire) {
         return Err("git_output_too_large".into());
     }
@@ -265,6 +302,20 @@ mod tests {
         .unwrap_err();
         assert_eq!(err, "git_invalid_arguments");
         assert!(!err.contains("safe/project"));
+    }
+
+    #[test]
+    fn bounded_runner_honors_cancellation_before_spawning() {
+        let cancellation = AtomicBool::new(true);
+        let error = run_bounded_with_cancel(
+            &["status"],
+            "/safe/project",
+            Duration::from_secs(2),
+            4 * 1024,
+            &cancellation,
+        )
+        .unwrap_err();
+        assert_eq!(error, "git_cancelled");
     }
 
     #[test]
