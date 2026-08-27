@@ -16,10 +16,20 @@
   표시한다. 컨테이너는 OS PID로 종료하지 않고 WSL Desktop의 명시적 stop action
   handoff 대상으로만 취급한다.
 - **검색·필터** — port 번호, process/container name, distro, PID, endpoint,
-  protocol/state를 부분 일치로 검색하고 TCP/UDP·state를 필터링한다.
+  protocol/state를 부분 일치로 검색하고 TCP/UDP·state·pinned를 필터링한다.
 - **Open localhost** — LISTENING native/WSL/container row의 localhost URL을
   제한적으로 열 수 있다.
-- **수동 새로고침** — auto-refresh는 별도 P3 기능으로 남겨 둔다.
+- **bounded auto-refresh와 pause** — 1–60초 범위의 interval을 저장하고, 수동
+  pause/resume 중에는 timer가 새 native poll을 시작하지 않는다. 이미 진행 중인
+  poll은 single-flight로 한 번만 완료된다.
+- **refresh diff** — 첫 성공 snapshot은 baseline으로만 삼고, 다음 성공 snapshot부터
+  process/container identity를 기준으로 `new`·`closed`·`changed`를 표시한다. 실패한
+  poll은 baseline과 diff를 덮어쓰지 않는다.
+- **favorite와 pinned filter** — endpoint(port) favorite와 validated process identity
+  favorite를 별도로 저장하고 pinned filter에서 합집합으로 표시한다. 저장 문서에는
+  command line, executable path, secret, raw process input이 없다.
+- **provenance** — 행과 상세 패널에 Windows, WSL distro, container engine/distro/ID를
+  표시해 동일한 port 숫자의 출처를 구분한다.
 
 ## Identity-safe 종료 계약
 
@@ -57,6 +67,10 @@ applink protocol v2 작업의 소유 영역이며, 이 앱은 그 경계 밖에�
   화면에 표시하기 전에 redacted 처리한다.
 - child stderr와 OS 오류 원문은 UI로 전달하지 않는다. 실패 메시지는 PID, path,
   distro, command, credential을 포함하지 않는 고정 문구다.
+- view preference JSON은 app-local data 아래에서만 읽고 64 KiB, 종류별 favorite 256개,
+  endpoint field bounds, 1–60초 interval을 strict 검증한다. `deny_unknown_fields`와
+  atomic replace를 사용하며 invalid/oversized/symlink 문서는 읽지 않는다. 저장 실패 시
+  현재 화면 preference를 commit하지 않는다.
 - 외부 실행은 Windows netstat와 검증된 WSL argv뿐이며 셸 문자열 조합,
   임의 executable/path, arbitrary process kill, 자동 재실행은 제공하지 않는다.
 
@@ -68,11 +82,16 @@ applink protocol v2 작업의 소유 영역이며, 이 앱은 그 경계 밖에�
 - Docker ps의 ID/name/published-port bounded parser
 - 공용 크레이트 crates/process, crates/wsl 사용
 - Tauri child process는 console window 없이 실행하고 bounded stdout만 읽는다
+- native preferences: `src-tauri/src/core/preferences.rs` + atomic app-local JSON
+- frontend refresh/diff/favorite model: `src/refresh.ts` + request generation/unmount guards
 
 ## 개발
 
 - 순수 로직: src-tauri/src/core/listeners.rs
-- Tauri adapter: src-tauri/src/commands/ports.rs
-- frontend fixture: src/App.test.tsx
+- preferences/adapter: src-tauri/src/core/preferences.rs,
+  src-tauri/src/commands/preferences.rs
+- Tauri listener adapter: src-tauri/src/commands/ports.rs
+- frontend state/fixture: src/App.tsx, src/refresh.ts, src/App.test.tsx
 - Windows 실행/빌드: pnpm tauri dev / pnpm tauri build
-- focused Rust 검증: cargo test --manifest-path apps/port-manager/src-tauri/Cargo.toml --lib
+- focused Rust 검증: cargo test --manifest-path apps/port-manager/src-tauri/Cargo.toml --lib -j2
+- focused frontend 검증: pnpm --filter port-manager test && pnpm --filter port-manager build

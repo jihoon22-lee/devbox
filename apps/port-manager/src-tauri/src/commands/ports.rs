@@ -660,6 +660,75 @@ fn command_deadline() -> std::time::Instant {
     std::time::Instant::now() + std::time::Duration::from_secs(15)
 }
 
+/// Own every descendant of a fixed discovery command. Auto-refresh invokes
+/// `wsl.exe`, Docker, and Podman repeatedly; killing only the root on timeout
+/// can otherwise leave a descendant holding the stdout pipe and accumulating
+/// across polls.
+#[cfg(target_os = "windows")]
+struct FixedCommandJob {
+    handle: windows::Win32::Foundation::HANDLE,
+}
+
+#[cfg(target_os = "windows")]
+impl FixedCommandJob {
+    fn assign_to(child: &std::process::Child) -> Result<Self, ListenerError> {
+        use std::mem::size_of;
+        use std::os::windows::io::AsRawHandle;
+        use windows::core::PCWSTR;
+        use windows::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows::Win32::System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+            SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+
+        let handle = unsafe { CreateJobObjectW(None, PCWSTR::null()) }
+            .map_err(|_| ListenerError::SourceUnavailable)?;
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if unsafe {
+            SetInformationJobObject(
+                handle,
+                JobObjectExtendedLimitInformation,
+                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        }
+        .is_err()
+        {
+            unsafe {
+                let _ = CloseHandle(handle);
+            }
+            return Err(ListenerError::SourceUnavailable);
+        }
+        if unsafe { AssignProcessToJobObject(handle, HANDLE(child.as_raw_handle())) }.is_err() {
+            unsafe {
+                let _ = CloseHandle(handle);
+            }
+            return Err(ListenerError::SourceUnavailable);
+        }
+        Ok(Self { handle })
+    }
+
+    fn terminate(&self, child: &mut std::process::Child) {
+        use windows::Win32::System::JobObjects::TerminateJobObject;
+        let _ = unsafe { TerminateJobObject(self.handle, 1) };
+        let _ = child.wait();
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for FixedCommandJob {
+    fn drop(&mut self) {
+        use windows::Win32::Foundation::CloseHandle;
+        unsafe {
+            // KILL_ON_JOB_CLOSE guarantees that a successful root command
+            // cannot leave a helper holding the bounded stdout pipe either.
+            let _ = CloseHandle(self.handle);
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn run_fixed_command(
     program: &str,
@@ -686,9 +755,16 @@ fn run_fixed_command(
     let mut child = command
         .spawn()
         .map_err(|_| ListenerError::SourceUnavailable)?;
+    let job = match FixedCommandJob::assign_to(&child) {
+        Ok(job) => job,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
+    };
     let Some(mut stdout) = child.stdout.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
+        job.terminate(&mut child);
         return Err(ListenerError::SourceUnavailable);
     };
     let (sender, receiver) = mpsc::sync_channel(1);
@@ -715,13 +791,11 @@ fn run_fixed_command(
             match receiver.try_recv() {
                 Ok(Ok(bytes)) => output = Some(bytes),
                 Ok(Err(error)) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    job.terminate(&mut child);
                     return Err(error);
                 }
                 Err(TryRecvError::Disconnected) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    job.terminate(&mut child);
                     return Err(ListenerError::SourceUnavailable);
                 }
                 Err(TryRecvError::Empty) => {}
@@ -737,16 +811,14 @@ fn run_fixed_command(
             }
             Ok(None) => {}
             Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                job.terminate(&mut child);
                 return Err(ListenerError::SourceUnavailable);
             }
         }
 
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {
-            let _ = child.kill();
-            let _ = child.wait();
+            job.terminate(&mut child);
             return Err(ListenerError::CommandTimedOut);
         }
         thread::sleep(remaining.min(Duration::from_millis(10)));
