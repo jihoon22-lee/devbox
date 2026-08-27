@@ -4612,6 +4612,7 @@ version = "0.1.0"
 name = "secrets"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "zeroize",
 ]
 
@@ -7329,15 +7330,19 @@ dependencies = [
  "git",
  "integration",
  "launch",
+ "secrets",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tokio",
  "uuid",
+ "windows 0.61.3",
  "wsl",
+ "zeroize",
 ]
 
 [[package]]

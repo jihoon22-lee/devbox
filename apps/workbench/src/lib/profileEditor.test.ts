@@ -3,6 +3,10 @@ import type { ProjectProfile } from "../api";
 import {
   draftFromProfile,
   emptyProfileDraft,
+  ENVIRONMENT_REVISION_BYTES,
+  MAX_ENVIRONMENT_NAME_BYTES,
+  MAX_ENVIRONMENT_SOURCE_BYTES,
+  MAX_ENVIRONMENT_VARIABLES,
   MAX_EXPECTED_PORTS,
   MAX_PROFILE_PATH_BYTES,
   MAX_SERVICES,
@@ -19,6 +23,7 @@ const profile: ProjectProfile = {
   gitRoot: "E:\\projects\\devbox",
   expectedPorts: [3000, 5173],
   runManagerServiceIds: ["devbox-dev"],
+  environment: null,
 };
 
 describe("profile editor draft", () => {
@@ -118,5 +123,137 @@ describe("profile editor draft", () => {
     });
     expect(validation.profile).toBeNull();
     expect(validation.errors.wsl).toBe("WSL distro 이름에 허용되지 않는 문자가 있습니다.");
+  });
+
+  it("round-trips environment metadata without adding values to the storage DTO", () => {
+    const environment = {
+      enabled: true,
+      source: ".env.local",
+      revision: "a".repeat(ENVIRONMENT_REVISION_BYTES),
+      variables: [
+        {
+          name: "API_TOKEN",
+          source: ".env.local",
+          conflict: "none" as const,
+          secretReference: { kind: "secret-ref/v1" as const, name: "API_TOKEN" },
+        },
+        {
+          name: "NODE_ENV",
+          source: ".env.local",
+          conflict: "none" as const,
+          secretReference: null,
+        },
+      ],
+    };
+    const draft = draftFromProfile({ ...profile, environment });
+    expect(draft.environmentRevision).toBe(environment.revision);
+    expect(draft.environmentPreview).toBeNull();
+    const validation = validateProfileDraft(draft);
+    expect(validation.errors.environment).toBeUndefined();
+    expect(validation.profile?.environment).toEqual(environment);
+    expect(JSON.stringify(validation.profile)).not.toContain("secret-value");
+  });
+
+  it("requires a native revision and rejects unsafe or over-bounded environment metadata", () => {
+    const invalidSource = validateProfileDraft({
+      ...emptyProfileDraft(),
+      name: "devbox",
+      windowsPath: "E:\\projects\\devbox",
+      environmentSource: "../.env",
+    });
+    expect(invalidSource.profile).toBeNull();
+    expect(invalidSource.errors.environment).toContain(".env");
+
+    const withoutPreview = validateProfileDraft({
+      ...emptyProfileDraft(),
+      name: "devbox",
+      windowsPath: "E:\\projects\\devbox",
+      environmentSource: ".env",
+    });
+    expect(withoutPreview.profile).toBeNull();
+    expect(withoutPreview.errors.environment).toContain("확인");
+
+    const bounded = validateProfileDraft({
+      ...emptyProfileDraft(),
+      name: "devbox",
+      windowsPath: "E:\\projects\\devbox",
+      environmentSource: ".env",
+      environmentRevision: "a".repeat(64),
+      environmentVariables: Array.from({ length: MAX_ENVIRONMENT_VARIABLES + 1 }, (_, index) => ({
+        name: `KEY_${index}`,
+        source: ".env",
+        conflict: "none" as const,
+        secretReference: null,
+      })),
+    });
+    expect(bounded.profile).toBeNull();
+    expect(bounded.errors.environment).toContain("128개");
+    expect(MAX_ENVIRONMENT_SOURCE_BYTES).toBe(256);
+    expect(MAX_ENVIRONMENT_NAME_BYTES).toBe(128);
+  });
+
+  it("blocks enabled duplicate/reserved metadata but permits an explicitly disabled selection", () => {
+    const conflict = {
+      name: "PATH",
+      source: ".env",
+      conflict: "reserved" as const,
+      secretReference: null,
+    };
+    const enabled = validateProfileDraft({
+      ...emptyProfileDraft(),
+      name: "devbox",
+      windowsPath: "E:\\projects\\devbox",
+      environmentEnabled: true,
+      environmentSource: ".env",
+      environmentRevision: "a".repeat(64),
+      environmentVariables: [conflict],
+    });
+    expect(enabled.profile).toBeNull();
+    expect(enabled.errors.environment).toContain("충돌");
+
+    const disabled = validateProfileDraft({
+      ...emptyProfileDraft(),
+      name: "devbox",
+      windowsPath: "E:\\projects\\devbox",
+      environmentSource: ".env",
+      environmentRevision: "a".repeat(64),
+      environmentVariables: [conflict],
+    });
+    expect(disabled.profile).not.toBeNull();
+    expect(disabled.profile?.environment?.enabled).toBe(false);
+  });
+
+  it("round-trips parser metadata when both duplicate occurrences are marked", () => {
+    const validation = validateProfileDraft({
+      ...emptyProfileDraft(),
+      name: "devbox",
+      windowsPath: "E:\\projects\\devbox",
+      environmentSource: ".env",
+      environmentRevision: "a".repeat(64),
+      environmentVariables: [
+        { name: "TOKEN", source: ".env", conflict: "duplicate", secretReference: { kind: "secret-ref/v1", name: "TOKEN" } },
+        { name: "token", source: ".env", conflict: "duplicate", secretReference: { kind: "secret-ref/v1", name: "token" } },
+      ],
+    });
+    expect(validation.errors.environment).toBeUndefined();
+    expect(validation.profile?.environment?.variables).toHaveLength(2);
+  });
+
+  it("fails closed when a malformed preview omits the nullable secret reference", () => {
+    const malformed = {
+      ...emptyProfileDraft(),
+      name: "devbox",
+      windowsPath: "E:\\projects\\devbox",
+      environmentSource: ".env",
+      environmentRevision: "a".repeat(64),
+      environmentVariables: [{
+        name: "API_TOKEN",
+        source: ".env",
+        conflict: "none" as const,
+        secretReference: undefined,
+      }],
+    } as never;
+    expect(() => validateProfileDraft(malformed)).not.toThrow();
+    expect(validateProfileDraft(malformed).errors.environment).toContain("reference");
   });
 });

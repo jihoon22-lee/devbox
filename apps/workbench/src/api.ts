@@ -10,6 +10,45 @@ export interface ProjectProfile {
   gitRoot: string | null;
   expectedPorts: number[];
   runManagerServiceIds: string[];
+  environment: ProjectEnvironment | null;
+}
+
+export type EnvironmentConflict = "none" | "duplicate" | "reserved" | "duplicateAndReserved";
+
+export interface SecretReference {
+  kind: "secret-ref/v1";
+  name: string;
+}
+
+export interface EnvironmentVariableMetadata {
+  name: string;
+  source: string;
+  conflict: EnvironmentConflict;
+  secretReference: SecretReference | null;
+}
+
+export interface ProjectEnvironment {
+  enabled: boolean;
+  source: string;
+  revision: string;
+  variables: EnvironmentVariableMetadata[];
+}
+
+export interface EnvironmentVariablePreview extends EnvironmentVariableMetadata {
+  maskedValue: string;
+}
+
+export interface ProjectEnvironmentPreview {
+  source: string;
+  revision: string;
+  variables: EnvironmentVariablePreview[];
+  hasConflicts: boolean;
+}
+
+export interface ProjectEnvironmentPreviewRequest {
+  windowsPath: string | null;
+  wsl: { distro: string; path: string } | null;
+  source: string;
 }
 
 export interface HealthItem {
@@ -23,10 +62,41 @@ export interface ProjectHealth {
   items: HealthItem[];
 }
 
+export type PreflightStatus = "pass" | "warning" | "failure" | "unavailable";
+export type ResourceState =
+  | "available"
+  | "existing"
+  | "workbenchStarted"
+  | "notRunning"
+  | "missing"
+  | "conflict"
+  | "unsafe"
+  | "unavailable";
+
+export interface ResourceProvenance {
+  kind: string;
+  id: string;
+  state: ResourceState;
+}
+
+export interface PreflightItem {
+  key: string;
+  status: PreflightStatus;
+  detail: string;
+  resources: ResourceProvenance[];
+}
+
+export interface WorkspacePreflight {
+  profileId: string;
+  ready: boolean;
+  items: PreflightItem[];
+}
+
 export interface RunStep {
   name: string;
   ok: boolean;
   detail: string;
+  status: PreflightStatus;
 }
 
 export interface WorkspaceRun {
@@ -34,6 +104,7 @@ export interface WorkspaceRun {
   profileId: string;
   steps: RunStep[];
   startedPids: number[];
+  resourceProvenance: ResourceProvenance[];
 }
 
 export interface WorkspaceRunOwnership {
@@ -71,7 +142,7 @@ export interface RuntimeSuggestions {
 }
 
 const MOCK_PROFILES: ProjectProfile[] = [
-  { id: "p-1", name: "devbox", windowsPath: "C:\\projects\\devbox", wsl: { distro: "Ubuntu", path: "/mnt/e/projects/devbox" }, gitRoot: "C:\\projects\\devbox", expectedPorts: [1420], runManagerServiceIds: ["devbox-dev"] },
+  { id: "p-1", name: "devbox", windowsPath: "C:\\projects\\devbox", wsl: { distro: "Ubuntu", path: "/mnt/e/projects/devbox" }, gitRoot: "C:\\projects\\devbox", expectedPorts: [1420], runManagerServiceIds: ["devbox-dev"], environment: null },
 ];
 
 export function listProfiles(): Promise<ProjectProfile[]> {
@@ -106,14 +177,86 @@ export function projectHealth(profileId: string): Promise<ProjectHealth> {
       ],
     });
   }
-  return invoke<ProjectHealth>("project_health", { profileId });
+  const requestId = createOperationRequestId("health");
+  activeProjectHealthRequest = { profileId, requestId };
+  return invoke<ProjectHealth>("project_health", { profileId, requestId }).finally(() => {
+    if (activeProjectHealthRequest?.requestId === requestId) activeProjectHealthRequest = null;
+  });
+}
+
+/** Cancels the exact health request when navigation leaves its profile. */
+export function cancelProjectHealth(profileId: string): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  const request = activeProjectHealthRequest;
+  if (!request || request.profileId !== profileId) return Promise.resolve(false);
+  return invoke<boolean>("cancel_project_health", {
+    profileId,
+    requestId: request.requestId,
+  });
+}
+
+function createOperationRequestId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+let activeProjectHealthRequest: { profileId: string; requestId: string } | null = null;
+
+export function workspacePreflight(profileId: string): Promise<WorkspacePreflight> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      profileId,
+      ready: true,
+      items: [
+        {
+          key: "required-apps",
+          status: "pass",
+          detail: "필수 devbox 앱을 사용할 수 있습니다",
+          resources: [
+            { kind: "app", id: "wsl-desktop:path", state: "available" },
+            { kind: "app", id: "code-pad:workspace", state: "available" },
+          ],
+        },
+        {
+          key: "wsl-distro",
+          status: "pass",
+          detail: "설정한 WSL distro를 사용할 수 있습니다",
+          resources: [{ kind: "distro", id: "wsl-distro", state: "available" }],
+        },
+        {
+          key: "working-directory",
+          status: "pass",
+          detail: "Workspace working directory를 사용할 수 있습니다",
+          resources: [{ kind: "directory", id: "workspace-1", state: "available" }],
+        },
+        {
+          key: "ports",
+          status: "pass",
+          detail: "예상 TCP port를 사용할 수 있습니다",
+          resources: [],
+        },
+        {
+          key: "service-dependencies",
+          status: "pass",
+          detail: "필요한 Run Manager service가 실행 중입니다",
+          resources: [],
+        },
+      ],
+    });
+  }
+  return invoke<WorkspacePreflight>("workspace_preflight", { profileId });
 }
 
 export function startWorkspace(profileId: string): Promise<WorkspaceRun> {
   if (!isTauri()) {
-    return Promise.resolve({ runId: "r-1", profileId, steps: [], startedPids: [1] });
+    return Promise.resolve({ runId: "r-1", profileId, steps: [], startedPids: [1], resourceProvenance: [] });
   }
   return invoke<WorkspaceRun>("start_workspace", { profileId });
+}
+
+/** Cancels the backend transition and its native child/git work. */
+export function cancelStartWorkspace(profileId: string): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  return invoke<boolean>("cancel_start_workspace", { profileId });
 }
 
 export function stopWorkspace(runId: string, profileId: string): Promise<number> {
@@ -124,6 +267,33 @@ export function stopWorkspace(runId: string, profileId: string): Promise<number>
 export function currentWorkspaceRun(): Promise<WorkspaceRunOwnership | null> {
   if (!isTauri()) return Promise.resolve(null);
   return invoke<WorkspaceRunOwnership | null>("current_workspace_run");
+}
+
+/**
+ * Reads and parses one project-relative `.env` source in native code. There
+ * is no browser approximation: a browser caller cannot inspect the local
+ * project file and therefore receives a rejection instead of a fabricated
+ * successful preview.
+ */
+export function previewProjectEnvironment(
+  request: ProjectEnvironmentPreviewRequest,
+): Promise<ProjectEnvironmentPreview> {
+  if (!isTauri()) return Promise.reject(new Error("native preview unavailable"));
+  const requestId = createOperationRequestId("preview");
+  activeEnvironmentPreviewRequestId = requestId;
+  return invoke<ProjectEnvironmentPreview>("preview_project_environment", {
+    request: { ...request, requestId },
+  }).finally(() => {
+    if (activeEnvironmentPreviewRequestId === requestId) activeEnvironmentPreviewRequestId = null;
+  });
+}
+
+let activeEnvironmentPreviewRequestId: string | null = null;
+
+/** Cancels one native preview request currently owned by this renderer. */
+export function cancelProjectEnvironment(requestId = activeEnvironmentPreviewRequestId): Promise<boolean> {
+  if (!isTauri() || !requestId) return Promise.resolve(false);
+  return invoke<boolean>("cancel_project_environment", { requestId });
 }
 
 /** Reads WSL Desktop's versioned snapshot. It never invokes WSL or Docker. */

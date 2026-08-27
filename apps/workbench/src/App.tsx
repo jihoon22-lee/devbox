@@ -6,6 +6,9 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createProfile,
+  cancelStartWorkspace,
+  cancelProjectEnvironment,
+  cancelProjectHealth,
   currentWorkspaceRun,
   deleteProfile,
   listProfiles,
@@ -18,11 +21,17 @@ import {
   stopWorkspace,
   takePendingOpen,
   updateProfile,
+  previewProjectEnvironment,
+  workspacePreflight,
   wslRuntimeSuggestions,
   type OpenRequest,
+  type PreflightItem,
+  type ProjectEnvironmentPreview,
   type ProjectHealth,
   type ProjectProfile,
+  type ResourceProvenance,
   type WorkspaceRun,
+  type WorkspacePreflight,
   type WorkbenchOpenTarget,
   type RuntimeSuggestions,
 } from "./api";
@@ -31,6 +40,7 @@ import {
   draftFromProfile,
   emptyProfileDraft,
   MAX_EXPECTED_PORTS_INPUT_CHARS,
+  MAX_ENVIRONMENT_SOURCE_BYTES,
   MAX_PROFILE_NAME_CHARS,
   MAX_PROFILE_PATH_BYTES,
   MAX_SERVICE_ID_CHARS,
@@ -52,18 +62,50 @@ const RUNTIME_STATUS_LABEL: Record<RuntimeSuggestions["status"], string> = {
   corrupt: "WSL Desktop snapshot을 안전하게 읽을 수 없음",
 };
 
+const PREFLIGHT_ITEM_LABEL: Record<string, string> = {
+  "required-apps": "필수 앱",
+  "wsl-distro": "WSL distro",
+  "working-directory": "working directory",
+  ports: "예상 port",
+  "service-dependencies": "service dependency",
+};
+
+const PREFLIGHT_STATUS_LABEL: Record<PreflightItem["status"], string> = {
+  pass: "통과",
+  warning: "경고",
+  failure: "차단",
+  unavailable: "확인 불가",
+};
+
+const RESOURCE_STATE_LABEL: Record<ResourceProvenance["state"], string> = {
+  available: "사용 가능",
+  existing: "이미 실행 중",
+  workbenchStarted: "Workbench가 시작",
+  notRunning: "실행 전",
+  missing: "없음",
+  conflict: "충돌",
+  unsafe: "안전하지 않음",
+  unavailable: "확인 불가",
+};
+
 export default function App() {
   const [profiles, setProfiles] = useState<ProjectProfile[]>([]);
   const [editing, setEditing] = useState<ProfileDraft | null>(null);
   const [selectedId, setSelectedId] = useState<string>("");
   const [health, setHealth] = useState<ProjectHealth | null>(null);
   const [run, setRun] = useState<WorkspaceRun | null>(null);
+  const [preflight, setPreflight] = useState<WorkspacePreflight | null>(null);
+  const [preflightLoading, setPreflightLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [runtimeSuggestions, setRuntimeSuggestions] = useState<RuntimeSuggestions | null>(null);
   const [selectedRuntimePorts, setSelectedRuntimePorts] = useState<Set<number>>(new Set());
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [runtimeAccepting, setRuntimeAccepting] = useState(false);
+  const [environmentLoading, setEnvironmentLoading] = useState(false);
+  const [startingProfileId, setStartingProfileId] = useState<string | null>(null);
+  const [startCancelRequested, setStartCancelRequested] = useState(false);
+  const startCancelRequestedRef = useRef(false);
   const [contextProfile, setContextProfile] = useState<ProjectProfile | null>(null);
   const [contextTargets, setContextTargets] = useState<{
     profileId: string;
@@ -72,8 +114,14 @@ export default function App() {
   const contextTargetRequest = useRef(0);
   const refreshRequest = useRef(0);
   const healthRequest = useRef(0);
+  const healthProfileId = useRef<string | null>(null);
   const saveInFlight = useRef(false);
+  const preflightRequest = useRef(0);
+  const preflightTarget = useRef<string | null>(null);
+  const preflightFocusReturn = useRef<HTMLElement | null>(null);
+  const preflightStartInFlight = useRef(false);
   const runtimeRequest = useRef(0);
+  const environmentRequest = useRef(0);
   const editingRef = useRef(editing);
   editingRef.current = editing;
   const [profilesRevision, setProfilesRevision] = useState(0);
@@ -83,6 +131,7 @@ export default function App() {
   const [profilesLoaded, setProfilesLoaded] = useState(false);
 
   const prepareProfileContext = useCallback((target: HTMLElement) => {
+    if (busy && !preflightLoading) return;
     const id = target.dataset.profileId;
     const profile = profiles.find((candidate) => candidate.id === id);
     if (!profile) return;
@@ -102,24 +151,35 @@ export default function App() {
           setError("다른 앱으로 열기 대상을 확인하지 못했습니다");
         }
       });
-  }, [profiles]);
+  }, [busy, preflightLoading, profiles]);
   const profileContextMenu = useContextMenu({
+    disabled: busy && !preflightLoading,
     onBeforeOpen: (_reason, target) => prepareProfileContext(target),
   });
 
   const refresh = useCallback(async () => {
+    const hadPreflightOperation = preflightTarget.current !== null;
+    preflightRequest.current += 1;
+    preflightTarget.current = null;
+    preflightFocusReturn.current = null;
+    setPreflight(null);
+    setPreflightLoading(false);
+    if (hadPreflightOperation) setBusy(false);
     const request = ++refreshRequest.current;
     try {
       const [list, activeRun] = await Promise.all([listProfiles(), currentWorkspaceRun()]);
       if (request !== refreshRequest.current) return;
       setProfiles(list);
-      setRun(activeRun ? { ...activeRun, steps: [], startedPids: [] } : null);
+      setRun(activeRun ? { ...activeRun, steps: [], startedPids: [], resourceProvenance: [] } : null);
       setSelectedId((prev) => (prev && list.some((p) => p.id === prev) ? prev : list[0]?.id ?? ""));
       setProfilesRevision((revision) => revision + 1);
     } catch {
       if (request === refreshRequest.current) {
         // A failed read must not leave actionable stale profiles on screen.
         healthRequest.current += 1;
+        const previousProfileId = healthProfileId.current;
+        healthProfileId.current = null;
+        if (previousProfileId) void cancelProjectHealth(previousProfileId).catch(() => undefined);
         setProfiles([]);
         setSelectedId("");
         setHealth(null);
@@ -147,6 +207,41 @@ export default function App() {
   }, [editing?.id]);
 
   useEffect(() => {
+    environmentRequest.current += 1;
+    setEnvironmentLoading(false);
+    return () => {
+      environmentRequest.current += 1;
+    };
+  }, [editing?.id]);
+
+  useEffect(() => {
+    const target = preflightTarget.current;
+    const mismatch = (
+      (preflightLoading && target !== null && target !== selectedId)
+      || (preflight !== null && preflight.profileId !== selectedId)
+    );
+    if (!mismatch) return;
+    // Once Continue has crossed into the backend start operation, preserve the
+    // target selection until that operation settles. A profile click must not
+    // make a successful start disappear or clear busy under its promise.
+    if (busy && !preflightLoading && target !== null) {
+      setSelectedId(target);
+      return;
+    }
+    preflightRequest.current += 1;
+    preflightTarget.current = null;
+    preflightFocusReturn.current = null;
+    setPreflight(null);
+    setPreflightLoading(false);
+    if (busy && preflightLoading) setBusy(false);
+  }, [busy, preflight, preflightLoading, selectedId]);
+
+  useEffect(() => () => {
+    preflightRequest.current += 1;
+    preflightTarget.current = null;
+  }, []);
+
+  useEffect(() => {
     const id = contextProfile?.id;
     if (!id) return;
     const current = profiles.find((profile) => profile.id === id) ?? null;
@@ -164,19 +259,35 @@ export default function App() {
   // below is set up once and lives for the app's lifetime, so without this a
   // relaunch long after mount would match against a stale profile list.
   const handleOpenRequest = (request: OpenRequest) => {
+    if ((busy && !preflightLoading) || preflightStartInFlight.current) return;
     const action = routeOpenRequest(request, profiles);
     switch (action.kind) {
-      case "selectProfile":
+      case "selectProfile": {
+        const hadPreflightOperation = preflightTarget.current !== null;
+        preflightRequest.current += 1;
+        preflightTarget.current = null;
+        setPreflight(null);
+        setPreflightLoading(false);
+        preflightFocusReturn.current = null;
+        if (hadPreflightOperation) setBusy(false);
         setSelectedId(action.profileId);
-        setEditing(null);
+        closeEditor();
         break;
+      }
       case "draftProfile": {
         // No matching profile — surface it via the create-profile draft form
         // (this app's existing affordance) instead of silently doing nothing.
+        const hadPreflightOperation = preflightTarget.current !== null;
+        preflightRequest.current += 1;
+        preflightTarget.current = null;
+        setPreflight(null);
+        setPreflightLoading(false);
+        preflightFocusReturn.current = null;
+        if (hadPreflightOperation) setBusy(false);
         const draft = emptyProfileDraft();
         if (action.looksWindows) draft.windowsPath = action.path;
         else draft.wslPath = action.path;
-        setEditing(draft);
+        openEditor(draft);
         setError("연결된 프로필을 찾지 못해 새 프로필 초안을 열었습니다.");
         break;
       }
@@ -230,6 +341,11 @@ export default function App() {
 
   useEffect(() => {
     const request = ++healthRequest.current;
+    const previousProfileId = healthProfileId.current;
+    healthProfileId.current = selectedId || null;
+    if (previousProfileId && previousProfileId !== selectedId) {
+      void cancelProjectHealth(previousProfileId).catch(() => undefined);
+    }
     if (!selectedId) {
       setHealth(null);
       return;
@@ -319,7 +435,7 @@ export default function App() {
   };
 
   const onSave = async () => {
-    if (!editing || saveInFlight.current) return;
+    if (!editing || saveInFlight.current || environmentLoading) return;
     const validation = validateProfileDraft(editing);
     if (!validation.profile) {
       setError("프로필 입력값을 확인한 뒤 저장하세요.");
@@ -334,7 +450,7 @@ export default function App() {
       } else {
         await createProfile(validation.profile);
       }
-      setEditing(null);
+      closeEditor();
       await refresh();
     } catch {
       // Backend errors are deliberately not echoed: path strings and future
@@ -368,20 +484,149 @@ export default function App() {
     }
   };
 
+  const restorePreflightFocus = () => {
+    preflightFocusReturn.current?.focus({ preventScroll: true });
+    preflightFocusReturn.current = null;
+  };
+
   const onStart = async (profileId: string) => {
-    if (!profileId) return;
+    if (!profileId || busy || preflightLoading || preflightStartInFlight.current) return;
     if (run) {
       setError("현재 Workspace 실행을 먼저 중지하세요.");
       return;
     }
+    const focused = profileContextMenu.restoreFocusTo ?? document.activeElement;
+    preflightFocusReturn.current = focused instanceof HTMLElement ? focused : null;
+    const request = ++preflightRequest.current;
+    preflightTarget.current = profileId;
+    setPreflight(null);
+    setPreflightLoading(true);
     setBusy(true);
     setError(null);
     try {
-      setRun(await startWorkspace(profileId));
+      const result = await workspacePreflight(profileId);
+      if (request !== preflightRequest.current) return;
+      if (result.profileId !== profileId) {
+        preflightTarget.current = null;
+        setPreflight(null);
+        setError("Workspace 사전 점검 결과가 현재 프로필과 일치하지 않습니다.");
+        restorePreflightFocus();
+        return;
+      }
+      setPreflight(result);
+      if (!result.ready) setError("Workspace 사전 점검에서 시작을 차단했습니다.");
     } catch {
-      setError("Workspace를 시작할 수 없습니다.");
+      if (request === preflightRequest.current) {
+        preflightTarget.current = null;
+        setPreflight(null);
+        setError("Workspace 사전 점검을 수행할 수 없습니다.");
+        restorePreflightFocus();
+      }
     } finally {
-      setBusy(false);
+      if (request === preflightRequest.current) {
+        setPreflightLoading(false);
+        setBusy(false);
+      }
+    }
+  };
+
+  const onContinueStart = async () => {
+    const candidate = preflight;
+    if (!candidate || !candidate.ready || busy || run || preflightStartInFlight.current) return;
+    const request = preflightRequest.current;
+    preflightStartInFlight.current = true;
+    setStartingProfileId(candidate.profileId);
+    setStartCancelRequested(false);
+    startCancelRequestedRef.current = false;
+    setBusy(true);
+    setError(null);
+    try {
+      const nextRun = await startWorkspace(candidate.profileId);
+      if (request !== preflightRequest.current) return;
+      setRun(nextRun);
+      preflightTarget.current = null;
+      setPreflight(null);
+      restorePreflightFocus();
+    } catch {
+      if (request === preflightRequest.current) {
+        preflightTarget.current = null;
+        setPreflight(null);
+        setError(startCancelRequestedRef.current
+          ? "Workspace 시작을 취소했습니다."
+          : "Workspace 시작 전 상태가 변경되었습니다. 사전 점검을 다시 실행하세요.");
+        restorePreflightFocus();
+      }
+    } finally {
+      preflightStartInFlight.current = false;
+      setStartingProfileId(null);
+      setStartCancelRequested(false);
+      startCancelRequestedRef.current = false;
+      if (request === preflightRequest.current) setBusy(false);
+    }
+  };
+
+  const onCancelPreflight = () => {
+    if (busy) return;
+    preflightRequest.current += 1;
+    preflightTarget.current = null;
+    setPreflight(null);
+    setPreflightLoading(false);
+    setError(null);
+    restorePreflightFocus();
+  };
+
+  const onCancelStart = async (profileId: string) => {
+    if (startingProfileId !== profileId || !busy) return;
+    setStartCancelRequested(true);
+    startCancelRequestedRef.current = true;
+    try {
+      await cancelStartWorkspace(profileId);
+    } catch {
+      setStartCancelRequested(false);
+      startCancelRequestedRef.current = false;
+      setError("Workspace 시작을 취소할 수 없습니다.");
+    }
+  };
+
+  const inspectEnvironment = async () => {
+    const draft = editingRef.current;
+    if (!draft || busy || environmentLoading) return;
+    const source = draft.environmentSource.trim();
+    if (!source || (!draft.windowsPath.trim() && !draft.wslPath.trim())) {
+      setError("프로젝트 경로와 환경 파일을 입력한 뒤 확인하세요.");
+      return;
+    }
+    const request = ++environmentRequest.current;
+    setEnvironmentLoading(true);
+    setError(null);
+    try {
+      const preview: ProjectEnvironmentPreview = await previewProjectEnvironment({
+        windowsPath: draft.windowsPath.trim() || null,
+        wsl: draft.wslDistro.trim() && draft.wslPath.trim()
+          ? { distro: draft.wslDistro.trim(), path: draft.wslPath.trim() }
+          : null,
+        source,
+      });
+      if (request !== environmentRequest.current || editingRef.current !== draft) return;
+      const metadata = preview.variables.map((variable) => ({
+        name: variable.name,
+        source: variable.source,
+        conflict: variable.conflict,
+        secretReference: variable.secretReference,
+      }));
+      setEditing((previous) => previous === draft ? {
+        ...previous,
+        environmentSource: preview.source,
+        environmentRevision: preview.revision,
+        environmentVariables: metadata,
+        environmentPreview: preview,
+      } : previous);
+    } catch {
+      if (request === environmentRequest.current) {
+        setError("환경 파일을 확인할 수 없습니다. 프로젝트 경로와 파일을 확인하세요.");
+      }
+    } finally {
+      if (request === environmentRequest.current) setEnvironmentLoading(false);
     }
   };
 
@@ -432,6 +677,7 @@ export default function App() {
     ? contextTargets.targets
     : null;
   const contextRun = contextProfile && run?.profileId === contextProfile.id ? run : null;
+  const contextPreflight = contextProfile && preflight?.profileId === contextProfile.id ? preflight : null;
   const contextHasPath = Boolean(
     contextProfile?.windowsPath?.trim() || contextProfile?.wsl?.path.trim(),
   );
@@ -447,22 +693,22 @@ export default function App() {
         type: "item",
         id: "start",
         label: "Start Workspace",
-        disabled: busy || run !== null,
+        disabled: busy || environmentLoading || run !== null || contextPreflight !== null,
       },
       {
         type: "item",
         id: "stop",
         label: "Stop What I Started",
-        disabled: busy || contextRun === null,
+        disabled: busy || environmentLoading || contextRun === null,
         danger: true,
       },
       { type: "separator", id: "lifecycle-separator" },
-      { type: "item", id: "edit", label: "프로필 편집", disabled: busy },
+      { type: "item", id: "edit", label: "프로필 편집", disabled: busy || environmentLoading || contextPreflight !== null },
       {
         type: "item",
         id: "delete",
         label: "삭제",
-        disabled: busy || contextRun !== null,
+        disabled: busy || environmentLoading || contextRun !== null || contextPreflight !== null,
         danger: true,
       },
       { type: "separator", id: "path-separator" },
@@ -470,24 +716,27 @@ export default function App() {
         type: "item",
         id: "copy-path",
         label: "경로 복사",
-        disabled: busy || !contextHasPath,
+        disabled: busy || environmentLoading || contextPreflight !== null || !contextHasPath,
       },
       {
         type: "submenu",
         id: "open-in",
         label: "다른 앱으로 열기",
-        disabled: busy || resolvedContextTargets === null || openTargetItems.length === 0,
+        disabled: busy || environmentLoading || contextPreflight !== null || resolvedContextTargets === null || openTargetItems.length === 0,
         items: openTargetItems,
       },
     ];
-  }, [busy, contextHasPath, contextProfile, contextRun, resolvedContextTargets, run]);
+  }, [busy, contextHasPath, contextPreflight, contextProfile, contextRun, environmentLoading, resolvedContextTargets, run]);
 
   const onProfileContextSelect = (id: string) => {
     const profile = contextProfile;
     if (!profile) return;
     if (id === "start") void onStart(profile.id);
     else if (id === "stop") void onStop(profile);
-    else if (id === "edit") setEditing(draftFromProfile(profile));
+    else if (id === "edit") {
+      onCancelPreflight();
+      openEditor(draftFromProfile(profile));
+    }
     else if (id === "delete") void onDelete(profile);
     else if (id === "copy-path") void onCopyProfilePath(profile.id);
     else {
@@ -497,6 +746,34 @@ export default function App() {
   };
 
   const patch = (p: Partial<ProfileDraft>) => setEditing((prev) => (prev ? { ...prev, ...p } : prev));
+  const patchProjectLocation = (p: Partial<ProfileDraft>) => {
+    environmentRequest.current += 1;
+    // Capture the old request ID synchronously. The native cancel may resolve
+    // after a new preview has claimed its slot, but the backend exact-key
+    // check then cannot cancel that newer request.
+    void cancelProjectEnvironment().catch(() => undefined);
+    setEnvironmentLoading(false);
+    setEditing((prev) => (prev ? {
+      ...prev,
+      ...p,
+      environmentRevision: "",
+      environmentVariables: [],
+      environmentPreview: null,
+    } : prev));
+  };
+  const patchEnvironmentSource = (source: string) => patchProjectLocation({ environmentSource: source });
+  const closeEditor = () => {
+    environmentRequest.current += 1;
+    void cancelProjectEnvironment().catch(() => undefined);
+    setEnvironmentLoading(false);
+    setEditing(null);
+  };
+  const openEditor = (draft: ProfileDraft) => {
+    environmentRequest.current += 1;
+    void cancelProjectEnvironment().catch(() => undefined);
+    setEnvironmentLoading(false);
+    setEditing(draft);
+  };
   const draftValidation = editing ? validateProfileDraft(editing) : null;
   const existingRuntimePorts = new Set(
     editing ? parseExpectedPorts(editing.expectedPortsText).ports : [],
@@ -510,8 +787,8 @@ export default function App() {
     <div className="app">
       <header className="toolbar">
         <h1 className="title">Workbench</h1>
-        <button type="button" className="btn" disabled={busy} onClick={() => { setEditing(emptyProfileDraft()); }}>+ 프로필</button>
-        <button type="button" className="btn refresh" disabled={busy} onClick={() => void refresh()}>새로고침</button>
+        <button type="button" className="btn" disabled={busy || environmentLoading} onClick={() => { onCancelPreflight(); openEditor(emptyProfileDraft()); }}>+ 프로필</button>
+        <button type="button" className="btn refresh" disabled={busy || environmentLoading} onClick={() => void refresh()}>새로고침</button>
       </header>
 
       {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
@@ -526,24 +803,24 @@ export default function App() {
               tabIndex={0}
               aria-current={p.id === selectedId ? "true" : undefined}
               data-profile-id={p.id}
-              onClick={() => setSelectedId(p.id)}
+              onClick={() => { if (!busy || preflightLoading) setSelectedId(p.id); }}
               {...profileContextMenu.triggerProps}
             >
-              <button type="button" className="profile-name" disabled={busy} onClick={() => setSelectedId(p.id)}>
+              <button type="button" className="profile-name" disabled={busy || environmentLoading} onClick={() => { if (!busy || preflightLoading) setSelectedId(p.id); }}>
                 {p.name}
               </button>
               <button
                 type="button"
                 className="mini"
-                disabled={busy}
-                onClick={() => setEditing(draftFromProfile(p))}
+                disabled={busy || environmentLoading}
+                onClick={() => { onCancelPreflight(); openEditor(draftFromProfile(p)); }}
                 title="편집"
                 aria-label={`${p.name} 프로필 편집`}
               >✏️</button>
               <button
                 type="button"
                 className="mini"
-                disabled={busy || run?.profileId === p.id}
+                disabled={busy || environmentLoading || preflight !== null || run?.profileId === p.id}
                 onClick={() => void onDelete(p)}
                 title="삭제"
                 aria-label={`${p.name} 프로필 삭제`}
@@ -560,11 +837,12 @@ export default function App() {
             <section
               className="panel editor-panel"
               aria-labelledby="profile-editor-title"
-              aria-busy={busy || runtimeLoading || runtimeAccepting}
+              aria-busy={busy || runtimeLoading || runtimeAccepting || environmentLoading}
               onKeyDown={(event) => {
                 if (event.key === "Escape" && !event.nativeEvent.isComposing && !busy) {
                   event.preventDefault();
-                  setEditing(null);
+                  onCancelPreflight();
+                  closeEditor();
                 }
               }}
             >
@@ -595,10 +873,10 @@ export default function App() {
                     id="profile-windows-path"
                     value={editing.windowsPath}
                     maxLength={MAX_PROFILE_PATH_BYTES}
-                    disabled={busy}
+                    disabled={busy || environmentLoading}
                     aria-invalid={Boolean(draftValidation?.errors.projectPath)}
                     aria-describedby={draftValidation?.errors.projectPath ? "profile-project-path-error" : undefined}
-                    onChange={(e) => patch({ windowsPath: e.currentTarget.value })}
+                    onChange={(e) => patchProjectLocation({ windowsPath: e.currentTarget.value })}
                   />
                 </label>
                 <label className="field" htmlFor="profile-wsl-distro">
@@ -607,10 +885,10 @@ export default function App() {
                     id="profile-wsl-distro"
                     value={editing.wslDistro}
                     maxLength={MAX_WSL_DISTRO_CHARS}
-                    disabled={busy}
+                    disabled={busy || environmentLoading}
                     aria-invalid={Boolean(draftValidation?.errors.wsl)}
                     aria-describedby={draftValidation?.errors.wsl ? "profile-wsl-error" : undefined}
-                    onChange={(e) => patch({ wslDistro: e.currentTarget.value })}
+                    onChange={(e) => patchProjectLocation({ wslDistro: e.currentTarget.value })}
                   />
                 </label>
                 <label className="field" htmlFor="profile-wsl-path">
@@ -619,10 +897,10 @@ export default function App() {
                     id="profile-wsl-path"
                     value={editing.wslPath}
                     maxLength={MAX_PROFILE_PATH_BYTES}
-                    disabled={busy}
+                    disabled={busy || environmentLoading}
                     aria-invalid={Boolean(draftValidation?.errors.projectPath || draftValidation?.errors.wsl)}
                     aria-describedby={draftValidation?.errors.projectPath ? "profile-project-path-error" : draftValidation?.errors.wsl ? "profile-wsl-error" : undefined}
-                    onChange={(e) => patch({ wslPath: e.currentTarget.value })}
+                    onChange={(e) => patchProjectLocation({ wslPath: e.currentTarget.value })}
                   />
                   {draftValidation?.errors.wsl && <span id="profile-wsl-error" className="field-error" role="alert">{draftValidation.errors.wsl}</span>}
                 </label>
@@ -639,6 +917,83 @@ export default function App() {
                   />
                   {draftValidation?.errors.gitRoot && <span id="profile-git-root-error" className="field-error" role="alert">{draftValidation.errors.gitRoot}</span>}
                 </label>
+                <fieldset
+                  className="editor-section environment-editor"
+                  disabled={busy}
+                  aria-describedby={draftValidation?.errors.environment ? "profile-environment-error" : "profile-environment-help"}
+                >
+                  <legend>프로젝트 환경 (.env)</legend>
+                  <p id="profile-environment-help" className="field-help">
+                    프로젝트 루트의 .env 파일만 native에서 읽습니다. profile에는 파일 원문 대신
+                    변수 이름·source·충돌·revision·secret reference만 저장하고, 실행 직전에 다시 확인합니다.
+                  </p>
+                  <label className="checkbox-field" htmlFor="profile-environment-enabled">
+                    <input
+                      id="profile-environment-enabled"
+                      type="checkbox"
+                      checked={editing.environmentEnabled}
+                      disabled={environmentLoading}
+                      onChange={(event) => patch({ environmentEnabled: event.currentTarget.checked })}
+                    />
+                    <span>Start Workspace에서 환경 주입 사용</span>
+                  </label>
+                  <label className="field" htmlFor="profile-environment-source">
+                    <span>환경 파일 이름 (프로젝트 상대)</span>
+                    <input
+                      id="profile-environment-source"
+                      value={editing.environmentSource}
+                      maxLength={MAX_ENVIRONMENT_SOURCE_BYTES}
+                      placeholder=".env"
+                      disabled={environmentLoading}
+                      aria-invalid={Boolean(draftValidation?.errors.environment)}
+                      aria-describedby={draftValidation?.errors.environment ? "profile-environment-error" : "profile-environment-help"}
+                      onChange={(event) => patchEnvironmentSource(event.currentTarget.value)}
+                    />
+                  </label>
+                  <div className="inline-actions">
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={environmentLoading || !editing.environmentSource.trim() || (!editing.windowsPath.trim() && !editing.wslPath.trim())}
+                      onClick={() => void inspectEnvironment()}
+                    >
+                      {environmentLoading ? "환경 파일 확인 중..." : "환경 파일 확인"}
+                    </button>
+                    {editing.environmentRevision && !environmentLoading ? (
+                      <span className="field-help" role="status" aria-live="polite">
+                        확인된 변수 {editing.environmentVariables.length}개 · 실행 시 변경 여부 재확인
+                      </span>
+                    ) : null}
+                  </div>
+                  {editing.environmentPreview ? (
+                    <div className="environment-preview" role="status" aria-live="polite">
+                      <strong>마스킹된 미리보기</strong>
+                      {editing.environmentPreview.variables.length === 0 ? (
+                        <p className="field-help">환경 변수가 없는 빈 파일입니다. 주입할 값이 없습니다.</p>
+                      ) : (
+                        <div className="environment-variable-list" aria-label="마스킹된 환경 변수 미리보기">
+                          {editing.environmentPreview.variables.map((variable) => (
+                            <div className="environment-variable-row" key={`${variable.name}-${variable.source}`}>
+                              <span className="environment-variable-name">{variable.name}</span>
+                              <span className="environment-variable-value" aria-label="마스킹된 환경 변수 값">{variable.maskedValue || "(empty)"}</span>
+                              <span className="environment-variable-source">{variable.source}</span>
+                              {variable.secretReference ? <span className="environment-variable-secret">secret reference</span> : null}
+                              {variable.conflict !== "none" ? <span className="environment-variable-conflict">충돌: {variable.conflict}</span> : null}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {editing.environmentPreview.hasConflicts ? (
+                        <p className="field-error" role="alert">중복 또는 예약된 환경 변수 이름이 있어 주입할 수 없습니다.</p>
+                      ) : null}
+                    </div>
+                  ) : editing.environmentVariables.length > 0 ? (
+                    <p className="field-help">저장된 metadata가 있습니다. 원문 없이 다시 확인하면 마스킹된 미리보기를 표시합니다.</p>
+                  ) : null}
+                  {draftValidation?.errors.environment && (
+                    <span id="profile-environment-error" className="field-error" role="alert">{draftValidation.errors.environment}</span>
+                  )}
+                </fieldset>
                 <label className="field" htmlFor="profile-expected-ports">
                   <span>예상 포트 (쉼표)</span>
                   <input
@@ -779,8 +1134,8 @@ export default function App() {
                 {draftValidation?.errors.projectPath && <div id="profile-project-path-error" className="field-error form-error" role="alert">{draftValidation.errors.projectPath}</div>}
                 {draftValidation?.errors.id && <div className="field-error form-error" role="alert">{draftValidation.errors.id}</div>}
                 <div className="actions">
-                  <button type="submit" className="btn primary" disabled={busy || !draftValidation?.profile}>저장</button>
-                  <button type="button" className="btn" disabled={busy} onClick={() => setEditing(null)}>취소</button>
+                  <button type="submit" className="btn primary" disabled={busy || environmentLoading || !draftValidation?.profile}>저장</button>
+                  <button type="button" className="btn" disabled={busy} onClick={() => { onCancelPreflight(); closeEditor(); }}>취소</button>
                 </div>
               </form>
             </section>
@@ -790,17 +1145,85 @@ export default function App() {
               <div className="row-actions">
                 <button
                   className="btn primary"
-                  disabled={busy || run !== null}
+                  disabled={busy || run !== null || preflight?.profileId === selectedProfile.id}
                   onClick={() => void onStart(selectedProfile.id)}
                 >
-                  Start Workspace
+                  {startingProfileId === selectedProfile.id ? "Workspace 시작 중…" : "Start Workspace"}
                 </button>
+                {startingProfileId === selectedProfile.id && (
+                  <button
+                    className="btn danger"
+                    disabled={!busy || startCancelRequested}
+                    onClick={() => void onCancelStart(selectedProfile.id)}
+                  >
+                    {startCancelRequested ? "취소 요청 중…" : "시작 취소"}
+                  </button>
+                )}
                 {run?.profileId === selectedProfile.id && (
                   <button className="btn danger" disabled={busy} onClick={() => void onStop(selectedProfile)}>
-                    Stop What I Started
+                  Stop What I Started
                   </button>
                 )}
               </div>
+
+              {preflight?.profileId === selectedProfile.id && (
+                <div
+                  className={`preflight-dialog ${preflight.ready ? "ready" : "blocked"}`}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="workspace-preflight-title"
+                  aria-describedby="workspace-preflight-description"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape" && !event.nativeEvent.isComposing && !busy) {
+                      event.preventDefault();
+                      onCancelPreflight();
+                    }
+                  }}
+                >
+                  <h3 id="workspace-preflight-title">Start Workspace 사전 점검</h3>
+                  <p id="workspace-preflight-description" className="field-help">
+                    실행 전에 읽기 전용으로 확인한 결과입니다. 경고는 기존 resource를 유지한 채 계속할 수 있고,
+                    차단·확인 불가 항목이 있으면 어떤 앱도 시작하지 않습니다.
+                  </p>
+                  <div className="preflight-list" aria-label="Workspace 사전 점검 결과">
+                    {preflight.items.map((item) => (
+                      <div className={`preflight-row status-${item.status}`} key={item.key}>
+                        <div className="preflight-row-heading">
+                          <strong>{PREFLIGHT_ITEM_LABEL[item.key] ?? item.key}</strong>
+                          <span className="preflight-status">{PREFLIGHT_STATUS_LABEL[item.status]}</span>
+                        </div>
+                        <span className="preflight-detail">{item.detail}</span>
+                        {item.resources.length > 0 && (
+                          <ul className="preflight-resources">
+                            {item.resources.map((resource) => (
+                              <li key={`${resource.kind}:${resource.id}`}>
+                                {resource.id} · {RESOURCE_STATE_LABEL[resource.state]}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {!preflight.ready && (
+                    <div className="field-error form-error" role="alert">
+                      차단된 항목을 해결한 뒤 사전 점검을 다시 실행하세요.
+                    </div>
+                  )}
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="btn primary"
+                      autoFocus={preflight.ready}
+                      disabled={!preflight.ready || busy}
+                      onClick={() => void onContinueStart()}
+                    >
+                      {busy ? "Workspace 시작 중…" : "계속 시작"}
+                    </button>
+                    <button type="button" className="btn" autoFocus={!preflight.ready} disabled={busy} onClick={onCancelPreflight}>취소</button>
+                  </div>
+                </div>
+              )}
 
               <h3 className="subtitle">Health</h3>
               {health?.items.map((item) => (
@@ -816,9 +1239,20 @@ export default function App() {
                   {run.steps.map((step, i) => (
                     <div key={i} className={`health-row ${step.ok ? "ok" : "bad"}`}>
                       <span className="health-name">{step.name}</span>
-                      <span className="health-detail">{step.detail}</span>
+                      <span className="health-detail">{PREFLIGHT_STATUS_LABEL[step.status]} · {step.detail}</span>
                     </div>
                   ))}
+                  {run.resourceProvenance.length > 0 && (
+                    <>
+                      <h3 className="subtitle">Resource ownership</h3>
+                      {run.resourceProvenance.map((resource) => (
+                        <div key={`${resource.kind}:${resource.id}`} className="health-row">
+                          <span className="health-name">{resource.id}</span>
+                          <span className="health-detail">{RESOURCE_STATE_LABEL[resource.state]}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </>
               )}
             </section>

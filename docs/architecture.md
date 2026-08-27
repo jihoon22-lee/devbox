@@ -448,6 +448,28 @@ capability 교집합에서 생성하며 executable과 profile path를 frontend�
 workspace를 모두 받으면 workspace를 우선한다. 경로 복사는 사용자가 항목을 누른 순간에만 같은 검증을
 통과한 현재 path를 frontend로 반환해 system clipboard에 기록한다.
 
+Workbench의 #312+#313 grouped Start Workspace 흐름은 다음과 같은 read-only observation →
+explicit continue → execution-time revalidation 순서를 가진다.
+
+1. 사용자가 Start를 누르면 `workspace_preflight`가 필수 앱 capability, WSL distro/실행 상태,
+   Windows·WSL working directory, 예상 TCP port와 Run Manager snapshot dependency를 bounded
+   probe한다. stopped distro를 확인만 하려고 시작하지 않고, probe 실패는 fixed status/detail로
+   줄인다. 결과의 `ResourceProvenance`는 existing/notRunning과 Workbench-started를 구분한다.
+2. UI modal은 warning을 검토 가능한 상태로 보여 주되 Continue를 명시적으로 요구하고, failure/
+   unavailable에서는 Continue를 비활성화한다. profile selection, Escape/Cancel, unmount와 late
+   result는 generation guard로 폐기하며 Continue 중 target/profile은 고정한다.
+3. backend `start_workspace`는 modal 결과를 신뢰하지 않고 동일 preflight를 다시 실행한다. 실패하면
+   `.env` source를 읽거나 child를 열지 않는다. 통과한 뒤에도 profile store와 project root/source
+   identity를 child 직전에 재검증하고, #312의 metadata-only environment revision이 맞을 때만
+   zeroizing ephemeral overlay를 전달한다.
+4. 첫 child가 시작된 뒤 profile/source가 바뀌거나 두 번째 child의 environment provider가 실패하면
+   `StartedPidGuard`가 Workbench가 이번 transition에서 만든 PID만 rollback한다. 성공한 run에는
+   고정된 preflight/resource provenance만 남고 PID·경로·stderr·secret은 restore/IPC DTO에 없다.
+
+이 grouped PR은 사용자 흐름과 재검증 기반을 공유하지만 acceptance/rollback은 독립적으로 추적한다.
+#313은 service 생성·수정·자동 복구를 소유하지 않으며 #312는 `.env` write/upload, global/cloud
+environment store와 다른 앱 DB 변경을 하지 않는다.
+
 ### CSP 기준선
 
 13개 앱 전부 다음 최소 기준선을 쓴다 (PR 17 + 신규 앱 반영).

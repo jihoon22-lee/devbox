@@ -2,30 +2,42 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
+  cancelProjectEnvironment,
+  cancelProjectHealth,
+  cancelStartWorkspace,
   createProfile,
   currentWorkspaceRun,
   deleteProfile,
   listProfiles,
   openProfileIn,
+  previewProjectEnvironment,
   profileCopyPath,
   profileOpenTargets,
   projectHealth,
   startWorkspace,
   stopWorkspace,
   updateProfile,
+  workspacePreflight,
   wslRuntimeSuggestions,
+  type ProjectEnvironmentPreview,
   type ProjectHealth,
   type ProjectProfile,
+  type WorkspacePreflight,
+  type WorkspaceRun,
   type RuntimeSuggestions,
 } from "./api";
 
 vi.mock("./api", () => ({
+  cancelProjectEnvironment: vi.fn(),
+  cancelProjectHealth: vi.fn(),
+  cancelStartWorkspace: vi.fn(),
   createProfile: vi.fn(),
   currentWorkspaceRun: vi.fn(),
   deleteProfile: vi.fn(),
   listProfiles: vi.fn(),
   onOpenRequest: vi.fn(async () => () => undefined),
   openProfileIn: vi.fn(),
+  previewProjectEnvironment: vi.fn(),
   profileCopyPath: vi.fn(),
   profileOpenTargets: vi.fn(),
   projectHealth: vi.fn(),
@@ -33,6 +45,7 @@ vi.mock("./api", () => ({
   stopWorkspace: vi.fn(),
   takePendingOpen: vi.fn(async () => null),
   updateProfile: vi.fn(),
+  workspacePreflight: vi.fn(),
   wslRuntimeSuggestions: vi.fn(),
 }));
 
@@ -44,6 +57,7 @@ const firstProfile: ProjectProfile = {
   gitRoot: "C:\\projects\\devbox",
   expectedPorts: [1420],
   runManagerServiceIds: ["devbox-dev"],
+  environment: null,
 };
 const secondProfile: ProjectProfile = {
   id: "p-2",
@@ -53,19 +67,25 @@ const secondProfile: ProjectProfile = {
   gitRoot: "E:\\projects\\toolbox",
   expectedPorts: [],
   runManagerServiceIds: [],
+  environment: null,
 };
 
 const listProfilesMock = vi.mocked(listProfiles);
 const createProfileMock = vi.mocked(createProfile);
+const cancelStartWorkspaceMock = vi.mocked(cancelStartWorkspace);
+const cancelProjectEnvironmentMock = vi.mocked(cancelProjectEnvironment);
+const cancelProjectHealthMock = vi.mocked(cancelProjectHealth);
 const currentWorkspaceRunMock = vi.mocked(currentWorkspaceRun);
 const updateProfileMock = vi.mocked(updateProfile);
 const deleteProfileMock = vi.mocked(deleteProfile);
 const projectHealthMock = vi.mocked(projectHealth);
 const startWorkspaceMock = vi.mocked(startWorkspace);
 const stopWorkspaceMock = vi.mocked(stopWorkspace);
+const workspacePreflightMock = vi.mocked(workspacePreflight);
 const profileOpenTargetsMock = vi.mocked(profileOpenTargets);
 const profileCopyPathMock = vi.mocked(profileCopyPath);
 const openProfileInMock = vi.mocked(openProfileIn);
+const previewProjectEnvironmentMock = vi.mocked(previewProjectEnvironment);
 const wslRuntimeSuggestionsMock = vi.mocked(wslRuntimeSuggestions);
 const confirmMock = vi.fn<(message?: string) => boolean>();
 const writeTextMock = vi.fn<(value: string) => Promise<void>>();
@@ -88,6 +108,56 @@ const freshRuntimeSuggestions: RuntimeSuggestions = {
   }],
 };
 
+const freshEnvironmentPreview: ProjectEnvironmentPreview = {
+  source: ".env.local",
+  revision: "b".repeat(64),
+  hasConflicts: false,
+  variables: [
+    {
+      name: "API_TOKEN",
+      source: ".env.local",
+      conflict: "none",
+      maskedValue: "********",
+      secretReference: { kind: "secret-ref/v1", name: "API_TOKEN" },
+    },
+    {
+      name: "NODE_ENV",
+      source: ".env.local",
+      conflict: "none",
+      maskedValue: "de*****",
+      secretReference: null,
+    },
+  ],
+};
+
+const readyPreflight: WorkspacePreflight = {
+  profileId: "p-1",
+  ready: true,
+  items: [
+    {
+      key: "required-apps",
+      status: "pass",
+      detail: "필수 devbox 앱을 사용할 수 있습니다",
+      resources: [
+        { kind: "app", id: "wsl-desktop:path", state: "available" },
+        { kind: "app", id: "code-pad:workspace", state: "available" },
+      ],
+    },
+    {
+      key: "working-directory",
+      status: "pass",
+      detail: "Workspace working directory를 사용할 수 있습니다",
+      resources: [{ kind: "directory", id: "workspace-1", state: "available" }],
+    },
+    {
+      key: "ports",
+      status: "warning",
+      detail: "이미 사용 중인 예상 port가 있습니다",
+      resources: [{ kind: "tcp-port", id: "port-1", state: "existing" }],
+    },
+  ],
+};
+
 function profileRow(name: string): HTMLDivElement {
   const row = screen.getByRole("button", { name }).closest(".profile-row");
   if (!(row instanceof HTMLDivElement)) throw new Error(`${name} profile row was not rendered`);
@@ -96,16 +166,21 @@ function profileRow(name: string): HTMLDivElement {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((promiseResolve) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
     resolve = promiseResolve;
+    reject = promiseReject;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 beforeEach(() => {
   profiles = [{ ...firstProfile }, { ...secondProfile }];
   listProfilesMock.mockReset().mockImplementation(async () => profiles.map((profile) => ({ ...profile })));
   createProfileMock.mockReset().mockResolvedValue(firstProfile);
+  cancelStartWorkspaceMock.mockReset().mockResolvedValue(true);
+  cancelProjectEnvironmentMock.mockReset().mockResolvedValue(false);
+  cancelProjectHealthMock.mockReset().mockResolvedValue(false);
   currentWorkspaceRunMock.mockReset().mockResolvedValue(null);
   updateProfileMock.mockReset().mockImplementation(async (profile) => {
     profiles = profiles.map((candidate) => (candidate.id === profile.id ? { ...profile } : candidate));
@@ -125,6 +200,14 @@ beforeEach(() => {
     profileId,
     steps: [],
     startedPids: [101],
+    resourceProvenance: [
+      { kind: "tcp-port", id: "port-1", state: "existing" },
+      { kind: "process", id: "code-pad", state: "workbenchStarted" },
+    ],
+  }));
+  workspacePreflightMock.mockReset().mockImplementation(async (profileId) => ({
+    ...readyPreflight,
+    profileId,
   }));
   stopWorkspaceMock.mockReset().mockResolvedValue(1);
   profileOpenTargetsMock.mockReset().mockResolvedValue([
@@ -135,6 +218,7 @@ beforeEach(() => {
     profileId === firstProfile.id ? firstProfile.windowsPath! : secondProfile.windowsPath!
   ));
   openProfileInMock.mockReset().mockResolvedValue(undefined);
+  previewProjectEnvironmentMock.mockReset().mockRejectedValue(new Error("native preview unavailable"));
   wslRuntimeSuggestionsMock.mockReset().mockResolvedValue(freshRuntimeSuggestions);
   confirmMock.mockReset().mockReturnValue(false);
   writeTextMock.mockReset().mockResolvedValue(undefined);
@@ -195,9 +279,135 @@ describe("Workbench profile context menu", () => {
     fireEvent.keyDown(target, { key: "F10", code: "F10", shiftKey: true });
     fireEvent.click(screen.getByRole("menuitem", { name: "Start Workspace" }));
 
+    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
     await waitFor(() => expect(startWorkspaceMock).toHaveBeenCalledWith("p-2"));
     await waitFor(() => expect(document.activeElement).toBe(target));
     expect(await screen.findByRole("button", { name: "Stop What I Started" })).toBeTruthy();
+    expect(screen.getByText("Resource ownership")).toBeTruthy();
+    expect(screen.getByText("port-1")).toBeTruthy();
+    expect(screen.getByText("Workbench가 시작")).toBeTruthy();
+  });
+
+  it("blocks the launcher when preflight reports a required resource failure", async () => {
+    workspacePreflightMock.mockResolvedValueOnce({
+      ...readyPreflight,
+      ready: false,
+      items: [{
+        key: "required-apps",
+        status: "failure",
+        detail: "필수 devbox 앱이 없습니다. Devbox Manager에서 설치하세요",
+        resources: [{ kind: "app", id: "code-pad:workspace", state: "missing" }],
+      }],
+    });
+
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+
+    expect(await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" })).toBeTruthy();
+    expect(screen.getByText("필수 devbox 앱이 없습니다. Devbox Manager에서 설치하세요")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "계속 시작" })).toBeDisabled();
+    expect(startWorkspaceMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a late preflight result after the selected profile changes", async () => {
+    const pending = deferred<WorkspacePreflight>();
+    workspacePreflightMock.mockReturnValueOnce(pending.promise);
+
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+    await waitFor(() => expect(workspacePreflightMock).toHaveBeenCalledWith("p-1"));
+
+    fireEvent.click(profileRow("toolbox"));
+    pending.resolve({ ...readyPreflight, profileId: "p-1" });
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Start Workspace 사전 점검" })).toBeNull());
+    expect(startWorkspaceMock).not.toHaveBeenCalled();
+  });
+
+  it("cancels the review with Escape without launching anything", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    expect(screen.getByRole("button", { name: "계속 시작" })).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog", { name: "Start Workspace 사전 점검" })).toBeNull();
+    expect(startWorkspaceMock).not.toHaveBeenCalled();
+  });
+
+  it("requires a fresh review when the backend rejects a stale preflight", async () => {
+    startWorkspaceMock.mockRejectedValueOnce(new Error("C:\\private\\TOP_SECRET"));
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Start Workspace 사전 점검" })).toBeNull());
+    expect(screen.getByRole("alert")).toHaveTextContent("사전 점검을 다시 실행하세요");
+    expect(screen.queryByText(/TOP_SECRET|private/)).toBeNull();
+  });
+
+  it("keeps the target profile selected while Continue is starting it", async () => {
+    const pending = deferred<WorkspaceRun>();
+    startWorkspaceMock.mockReturnValueOnce(pending.promise);
+
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
+    await waitFor(() => expect(startWorkspaceMock).toHaveBeenCalledWith("p-1"));
+
+    fireEvent.click(profileRow("toolbox"));
+    expect(profileRow("devbox").getAttribute("aria-current")).toBe("true");
+    expect(profileRow("toolbox").getAttribute("aria-current")).toBeNull();
+
+    pending.resolve({
+      runId: "run-p-1",
+      profileId: "p-1",
+      steps: [],
+      startedPids: [101],
+      resourceProvenance: [],
+    });
+    await screen.findByRole("button", { name: "Stop What I Started" });
+  });
+
+  it("ignores a late preflight result after the component unmounts", async () => {
+    const pending = deferred<WorkspacePreflight>();
+    workspacePreflightMock.mockReturnValueOnce(pending.promise);
+    const rendered = render(<App />);
+
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+    await waitFor(() => expect(workspacePreflightMock).toHaveBeenCalledWith("p-1"));
+    rendered.unmount();
+
+    pending.resolve({ ...readyPreflight, profileId: "p-1" });
+    await pending.promise;
+    expect(startWorkspaceMock).not.toHaveBeenCalled();
+  });
+
+  it("sends native cancellation for an in-flight Start Workspace", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof startWorkspace>>>();
+    startWorkspaceMock.mockReturnValueOnce(pending.promise);
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
+    const cancel = await screen.findByRole("button", { name: "시작 취소" });
+    fireEvent.click(cancel);
+    await waitFor(() => expect(cancelStartWorkspaceMock).toHaveBeenCalledWith("p-1"));
+
+    pending.reject(new Error("cancelled"));
+    expect(await screen.findByText("Workspace 시작을 취소했습니다.")).toBeTruthy();
   });
 
   it("gates active-run lifecycle by profile and confirms exact stop ownership", async () => {
@@ -208,6 +418,8 @@ describe("Workbench profile context menu", () => {
 
     fireEvent.contextMenu(first);
     fireEvent.click(screen.getByRole("menuitem", { name: "Start Workspace" }));
+    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
     await waitFor(() => expect(startWorkspaceMock).toHaveBeenCalledWith("p-1"));
 
     fireEvent.contextMenu(second);
@@ -365,6 +577,98 @@ describe("Workbench profile context menu", () => {
 
     expect(await screen.findByRole("heading", { name: "새 프로필" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+  });
+
+  it("inspects a native project environment and saves only masked metadata", async () => {
+    previewProjectEnvironmentMock.mockResolvedValueOnce(freshEnvironmentPreview);
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+
+    fireEvent.change(screen.getByRole("textbox", { name: "환경 파일 이름 (프로젝트 상대)" }), {
+      target: { value: ".env.local" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "환경 파일 확인" }));
+
+    expect(await screen.findByText("마스킹된 미리보기")).toBeTruthy();
+    expect(screen.getByText("********")).toBeTruthy();
+    expect(screen.getByText("de*****")).toBeTruthy();
+    expect(screen.getByText("secret reference")).toBeTruthy();
+    expect(screen.queryByText("top-secret")).toBeNull();
+    expect(previewProjectEnvironmentMock).toHaveBeenCalledWith({
+      windowsPath: "C:\\projects\\devbox",
+      wsl: { distro: "Ubuntu", path: "/mnt/e/projects/devbox" },
+      source: ".env.local",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(updateProfileMock).toHaveBeenCalledWith({
+      ...firstProfile,
+      environment: {
+        enabled: false,
+        source: ".env.local",
+        revision: "b".repeat(64),
+        variables: freshEnvironmentPreview.variables.map(({ name, source, conflict, secretReference }) => ({
+          name,
+          source,
+          conflict,
+          secretReference,
+        })),
+      },
+    }));
+  });
+
+  it("blocks saving an inspected environment with a conflict when enabled", async () => {
+    previewProjectEnvironmentMock.mockResolvedValueOnce({
+      ...freshEnvironmentPreview,
+      hasConflicts: true,
+      variables: [{
+        ...freshEnvironmentPreview.variables[0],
+        name: "PATH",
+        conflict: "reserved",
+        secretReference: null,
+      }],
+    });
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "환경 파일 이름 (프로젝트 상대)" }), {
+      target: { value: ".env" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "환경 파일 확인" }));
+    await screen.findByText("마스킹된 미리보기");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Start Workspace에서 환경 주입 사용" }));
+
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+    expect(screen.getByText(/충돌을 해결한 뒤 저장/)).toBeTruthy();
+    expect(updateProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a late environment preview after cancel", async () => {
+    const pending = deferred<ProjectEnvironmentPreview>();
+    previewProjectEnvironmentMock.mockReturnValueOnce(pending.promise);
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "환경 파일 이름 (프로젝트 상대)" }), {
+      target: { value: ".env" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "환경 파일 확인" }));
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    pending.resolve({
+      ...freshEnvironmentPreview,
+      variables: [{
+        ...freshEnvironmentPreview.variables[0],
+        name: "DO_NOT_RENDER_LATE_SECRET",
+        maskedValue: "late-secret",
+      }],
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(screen.queryByText("DO_NOT_RENDER_LATE_SECRET")).toBeNull();
+    expect(screen.queryByText("late-secret")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "프로필 편집" })).toBeNull();
   });
 
   it("submits the form with Enter and closes the editor with Escape", async () => {

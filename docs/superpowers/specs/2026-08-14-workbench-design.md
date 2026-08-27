@@ -14,8 +14,9 @@
 
 ```text
 프로젝트 선택
-  → Git/WSL/포트/서비스 사전 점검
-  → Run Manager 서비스 시작
+  → required app/WSL/cwd/포트/service read-only 사전 점검
+  → 사용자의 explicit Continue
+  → 실행 직전 profile/environment 재검증
   → 예상 포트 준비 확인
   → WSL Desktop layout 열기
   → Code Pad workspace 열기
@@ -40,12 +41,12 @@
 
 | # | 단계 | 성공 기준 | 실패 시 |
 |---|---|---|---|
-| 1 | 사전 점검 (Git/WSL/포트/서비스) | 모든 필수 점검 통과 또는 경고 표시 | 경고는 계속 진행, 치명 실패는 중단 |
-| 2 | Run Manager 서비스 시작 | 서비스가 running | 해당 단계 실패 표시, 이후 단계 진행 |
-| 3 | 예상 포트 준비 확인 | 포트 open 또는 retry 대기 | 대기(2초 × 5) 후 실패 표시 |
-| 4 | WSL Desktop layout 열기 | 프로세스 시작 | 계속 (비차단) |
-| 5 | Code Pad workspace 열기 | 프로세스 시작 | 계속 (비차단) |
-| 6 | API request 열기 (선택) | 프로세스 시작 | 계속 (비차단) |
+| 1 | required app/WSL/cwd/포트/service read-only preflight | 필수 점검 통과 또는 경고 표시 | warning은 Continue 검토, failure/unavailable는 중단 |
+| 2 | explicit Continue 후 실행 직전 재검증 | 같은 profile/resource identity 유지 | 변경·stale이면 environment read/child spawn 없이 중단 |
+| 3 | 예상 포트 준비 확인 | 포트 open 또는 bounded retry | 전체 deadline 후 실패 표시 |
+| 4 | WSL Desktop layout 열기 | 프로세스 시작 | 실패·부분 시작이면 이번 PID만 rollback |
+| 5 | Code Pad workspace 열기 | 프로세스 시작 | 실패·부분 시작이면 이번 PID만 rollback |
+| 6 | API request 열기 (선택) | 후속 범위 | 이 grouped PR에서는 열지 않음 |
 
 - "이미 실행 중이던 자원"과 "Workbench가 시작한 자원"을 구분한다:
   - 사전 점검에서 이미 running이던 서비스/포트 → Workbench가 종료하지 않는다.
@@ -142,6 +143,44 @@ load bytes (missing만 empty 허용)
   Windows packaged smoke(W1)로 확인한다. 기능 단위는 이 services·ports 입력/저장
   계약 하나로 한정하며, Run Manager 서비스 lifecycle·environment preflight·template
   wizard는 별도 후속 PR이다.
+
+### 6.6 #312+#313 grouped Start Workspace 계약
+
+이 grouped PR은 #312 project environment와 #313 workspace preflight가 같은 Start Workspace
+사용자 흐름과 native revalidation 기반을 공유한다는 이유로 함께 리뷰한다. 각 issue의
+acceptance, fixture, error taxonomy와 rollback은 독립적으로 유지한다.
+
+- #313의 `workspace_preflight`는 required app capability, WSL distro 존재·running 상태,
+  Windows/WSL working directory, 예상 TCP port와 Run Manager `activeServices` snapshot을
+  bounded read-only로 검사한다. stopped distro를 probe 때문에 시작하지 않으며, missing/
+  existing/notRunning/unsafe/unavailable와 Workbench-started provenance를 고정 DTO로 구분한다.
+- UI는 명시적 Start action 뒤 review modal을 열고 warning만 Continue 가능하게 한다. failure/
+  unavailable는 차단하며 Escape/Cancel, profile navigation, unmount와 late response는
+  generation guard로 폐기한다. Continue 중에는 target profile과 busy/cancel lifecycle을
+  고정해 double submit이나 뒤늦은 결과가 다른 profile을 덮지 못한다.
+- backend는 modal snapshot을 권한으로 사용하지 않고 `start_workspace` 직전에 preflight를
+  재실행한다. 실패하면 #312 source를 읽거나 child를 시작하지 않는다. 통과 뒤 profile/root/
+  source identity와 environment revision/metadata를 각 child 경계에서 다시 비교하고,
+  process-local zeroizing overlay만 `crates/launch`로 전달한다.
+- 첫 child 이후 변경·cancel·provider failure가 발생하면 `StartedPidGuard`가 이번 transition이
+  만든 PID만 rollback한다. run/restore DTO에는 stable step status와 resource provenance만
+  남기고 PID, path, stderr, raw service payload, secret value/ciphertext를 저장하지 않는다.
+- #313은 service create/update/start, 자동 복구와 destructive cleanup을 포함하지 않는다.
+  #312는 `.env` write/upload, global/system editor, cloud secret store와 다른 앱 DB 변경을
+  포함하지 않는다. 둘의 공용 rollback boundary는 Workbench-owned process만 대상으로 한다.
+
+#### 6.6.1 grouped fixture와 verification
+
+- Rust `core/preflight`는 installed/missing app, running/stopped/missing distro, available/
+  unsafe/missing cwd, free/existing/conflict port, missing/partial/unavailable service snapshot과
+  stable resource serialization을 검증한다. command probe는 fixed argv, null stdin,
+  discarded stderr, 2초 stdout/child timeout과 16 KiB WSL output bound를 사용한다.
+- React는 ready warning, blocking failure, explicit Continue, Escape/Cancel, stale profile/
+  unmount response, Continue 중 selection lock, backend stale rejection과 provenance rendering을
+  검증한다. #312 parser/preview/masked metadata fixture는 별도 test file로 보존한다.
+- Linux focused test/check/fmt와 frontend test/build 뒤 packaged Windows W2에서 real installed
+  capability, WSL stopped/missing, junction/reparse, port race, changed `.env`, child overlay,
+  rollback/no-replace를 확인한다. service lifecycle와 API handoff는 이 PR의 acceptance가 아니다.
 
 ## 7. MVP 범위
 

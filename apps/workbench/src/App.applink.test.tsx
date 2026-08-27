@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./api", () => ({
+  cancelProjectEnvironment: vi.fn().mockResolvedValue(false),
+  cancelProjectHealth: vi.fn().mockResolvedValue(false),
+  cancelStartWorkspace: vi.fn().mockResolvedValue(false),
   listProfiles: vi.fn().mockResolvedValue([
     {
       id: "p-1",
@@ -18,6 +21,7 @@ vi.mock("./api", () => ({
       gitRoot: "C:\\projects\\devbox",
       expectedPorts: [1420],
       runManagerServiceIds: ["devbox-dev"],
+      environment: null,
     },
   ]),
   createProfile: vi.fn(),
@@ -27,9 +31,11 @@ vi.mock("./api", () => ({
   projectHealth: vi.fn().mockResolvedValue({ profileId: "p-1", items: [] }),
   startWorkspace: vi.fn(),
   stopWorkspace: vi.fn(),
+  workspacePreflight: vi.fn().mockResolvedValue({ profileId: "p-1", ready: true, items: [] }),
   profileOpenTargets: vi.fn().mockResolvedValue([]),
   profileCopyPath: vi.fn(),
   openProfileIn: vi.fn(),
+  previewProjectEnvironment: vi.fn(),
   takePendingOpen: vi.fn().mockImplementation(async () => {
     mocks.order.push("take");
     return null;

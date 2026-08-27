@@ -186,6 +186,28 @@ pub fn launch(app_id: &str, args: &[&str]) -> Result<u32, String> {
         .map_err(|_| "설치된 앱 실행에 실패했습니다".to_string())
 }
 
+/// Launch an installed app with a short-lived project environment overlay.
+///
+/// The caller owns validation and the lifetime of the values.  This function
+/// only forwards already-resolved key/value pairs to the child process; it
+/// never serializes, logs, or persists them.  The caller supplies a stable
+/// ordered slice for deterministic tests while `Command::envs` preserves the
+/// host environment entries that are unrelated to the project overlay.
+pub fn launch_with_environment(
+    app_id: &str,
+    args: &[&str],
+    environment: &[(&str, &str)],
+) -> Result<u32, String> {
+    let exe = resolve_installed(app_id)
+        .ok_or_else(|| "앱 설치 없음 — Devbox Manager에서 먼저 설치하세요".to_string())?;
+    std::process::Command::new(&exe)
+        .args(args)
+        .envs(environment.iter().copied())
+        .spawn()
+        .map(|child| child.id())
+        .map_err(|_| "설치된 앱 실행에 실패했습니다".to_string())
+}
+
 /// `OpenRequest`를 `devbox_applink::build_argv`로 argv에 인코딩한 뒤 실행한다.
 ///
 /// 발신 앱(repo-manager·workbench 등)이 argv를 직접 문자열 리터럴로 조립하던 것을
@@ -199,6 +221,17 @@ pub fn launch_open(app_id: &str, req: &devbox_applink::OpenRequest) -> Result<u3
     let argv = open_argv(req);
     let args: Vec<&str> = argv.iter().map(String::as_str).collect();
     launch(app_id, &args)
+}
+
+/// `launch_open` with a non-persistent project environment overlay.
+pub fn launch_open_with_environment(
+    app_id: &str,
+    req: &devbox_applink::OpenRequest,
+    environment: &[(&str, &str)],
+) -> Result<u32, String> {
+    let argv = open_argv(req);
+    let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+    launch_with_environment(app_id, &args, environment)
 }
 
 /// [`launch_open`]에서 프로세스 spawn 없이 argv 구성만 떼어낸 부분. 테스트가 실제

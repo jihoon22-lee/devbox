@@ -6,6 +6,10 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::environment::{
+    validate_config as validate_environment_config, ProjectEnvironmentConfig,
+};
+
 pub const PROFILE_VERSION: u32 = 1;
 
 pub const MAX_PROFILE_NAME_CHARS: usize = 120;
@@ -30,6 +34,11 @@ pub struct ProjectProfile {
     pub expected_ports: Vec<u16>,
     #[serde(default)]
     pub run_manager_service_ids: Vec<String>,
+    /// Project-scoped environment metadata.  The selected file's values are
+    /// intentionally absent; only source, names, conflicts, references and
+    /// the opaque revision are persisted.
+    #[serde(default)]
+    pub environment: Option<ProjectEnvironmentConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -203,6 +212,7 @@ impl ProjectProfile {
             git_root: None,
             expected_ports: Vec::new(),
             run_manager_service_ids: Vec::new(),
+            environment: None,
         }
     }
 
@@ -319,6 +329,9 @@ impl ProjectProfile {
             if !service_ids.insert(id.as_str()) {
                 return Err("같은 서비스 ID를 두 번 등록할 수 없습니다".into());
             }
+        }
+        if let Some(environment) = &self.environment {
+            validate_environment_config(environment).map_err(|error| error.to_string())?;
         }
         Ok(())
     }

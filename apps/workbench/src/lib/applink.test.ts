@@ -11,6 +11,7 @@ function profile(overrides: Partial<ProjectProfile>): ProjectProfile {
     gitRoot: null,
     expectedPorts: [],
     runManagerServiceIds: [],
+    environment: null,
     ...overrides,
   };
 }
