@@ -7,6 +7,8 @@ import { HashTool, UuidTool } from "./security";
 import { HmacTool } from "./HmacTool";
 import { JsonYamlTool } from "./JsonYamlTool";
 import { JsonTypescriptTool } from "./JsonTypescriptTool";
+import { LoremTool } from "./LoremTool";
+import { MarkdownTableTool } from "./MarkdownTableTool";
 import { RadixTool } from "./RadixTool";
 import {
   CaseConverter,
@@ -49,6 +51,8 @@ const timeTools: ToolDef[] = [
 
 const textTools: ToolDef[] = [
   { id: "case", group: "Text", name: "Case Converter", component: CaseConverter },
+  { id: "lorem", group: "Text", name: "Lorem Generator", component: LoremTool },
+  { id: "markdown-table", group: "Text", name: "Markdown Table Formatter", component: MarkdownTableTool },
 ];
 
 const securityTools: ToolDef[] = [

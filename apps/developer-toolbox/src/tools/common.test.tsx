@@ -1,8 +1,8 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readClipboardText } from "../api";
-import { ToolOutput, ToolTextArea } from "./common";
+import { ToolOutput, ToolTextArea, TransformerTool } from "./common";
 
 vi.mock("../api", () => ({
   readClipboardText: vi.fn(),
@@ -15,13 +15,20 @@ const revokeObjectUrlMock = vi.fn<(url: string) => void>();
 let clickedDownload = "";
 let clickedHref = "";
 
-function InputHarness({ initial = "alpha beta" }: { initial?: string }) {
+function InputHarness({
+  initial = "alpha beta",
+  maxPasteBytes,
+}: {
+  initial?: string;
+  maxPasteBytes?: number;
+}) {
   const [value, setValue] = useState(initial);
   return (
     <ToolTextArea
       aria-label="Tool input"
       value={value}
       onValueChange={setValue}
+      maxPasteBytes={maxPasteBytes}
       rows={4}
     />
   );
@@ -137,6 +144,54 @@ describe("ToolTextArea context menu", () => {
     );
     expect(input.value).toBe("alpha beta");
   });
+
+  it("bounds the resulting UTF-8 value without splitting multibyte characters", async () => {
+    readClipboardTextMock.mockResolvedValueOnce("😀z");
+    render(<InputHarness initial="a가" maxPasteBytes={8} />);
+    const input = screen.getByRole("textbox", { name: "Tool input" }) as HTMLTextAreaElement;
+    input.focus();
+    input.setSelectionRange(1, 1);
+
+    openMenu(input);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+
+    await waitFor(() => expect(input.value).toBe("a😀가"));
+    expect(new TextEncoder().encode(input.value).byteLength).toBe(8);
+  });
+
+  it("stops before malformed Unicode and discards a paste after the value changes", async () => {
+    readClipboardTextMock.mockResolvedValueOnce(`a${"\ud800"}b`);
+    const view = render(<InputHarness initial="" maxPasteBytes={10} />);
+    const input = screen.getByRole("textbox", { name: "Tool input" }) as HTMLTextAreaElement;
+    openMenu(input);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    await waitFor(() => expect(input.value).toBe("a"));
+
+    let resolvePaste: (value: string) => void = () => undefined;
+    readClipboardTextMock.mockReturnValueOnce(new Promise<string>((resolve) => {
+      resolvePaste = resolve;
+    }));
+    openMenu(input);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    fireEvent.change(input, { target: { value: "new" } });
+    await act(async () => {
+      resolvePaste("stale");
+      await Promise.resolve();
+    });
+    expect(input.value).toBe("new");
+
+    let resolveUnmountedPaste: (value: string) => void = () => undefined;
+    readClipboardTextMock.mockReturnValueOnce(new Promise<string>((resolve) => {
+      resolveUnmountedPaste = resolve;
+    }));
+    openMenu(input);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    view.unmount();
+    await act(async () => {
+      resolveUnmountedPaste("after-unmount");
+      await Promise.resolve();
+    });
+  });
 });
 
 describe("ToolOutput context menu", () => {
@@ -192,5 +247,32 @@ describe("ToolOutput context menu", () => {
       "Output action failed: clipboard busy",
     );
     expect(output.textContent).toBe("safe result");
+  });
+});
+
+describe("useAsyncTransform cancellation", () => {
+  it("aborts the superseded request and the unmounted request", () => {
+    const signals: AbortSignal[] = [];
+    const run = (_input: string, signal?: AbortSignal) => {
+      if (signal) signals.push(signal);
+      return new Promise<{ output: string }>(() => undefined);
+    };
+    const view = render(
+      <TransformerTool
+        placeholder="Text"
+        run={run}
+        clearOutputOnInput
+      />,
+    );
+    const input = screen.getByRole("textbox", { name: "Input" });
+
+    fireEvent.change(input, { target: { value: "first" } });
+    expect(signals[signals.length - 1]?.aborted).toBe(false);
+    fireEvent.change(input, { target: { value: "second" } });
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[signals.length - 1]?.aborted).toBe(false);
+
+    view.unmount();
+    expect(signals[signals.length - 1]?.aborted).toBe(true);
   });
 });

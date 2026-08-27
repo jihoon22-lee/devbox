@@ -463,6 +463,125 @@ select {
   font-size: 11px;
 }
 
+.lorem-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.lorem-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.lorem-field select,
+.lorem-count {
+  height: 30px;
+}
+
+.lorem-field select {
+  min-width: 104px;
+}
+
+.lorem-count {
+  width: 74px;
+  padding: 5px 8px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.lorem-count:focus {
+  border-color: var(--accent);
+}
+
+.lorem-field select:disabled,
+.lorem-count:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.lorem-help {
+  max-width: 850px;
+  margin: 12px 0 10px;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.lorem-error {
+  margin: 8px 0;
+  color: var(--red);
+}
+
+.lorem-status {
+  min-height: 18px;
+  margin: 4px 0;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.lorem-output-toolbar {
+  display: flex;
+  align-items: center;
+  min-height: 29px;
+  margin-top: 8px;
+}
+
+.lorem-output {
+  min-height: 260px;
+  max-height: calc(100vh - 280px);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.markdown-table-tool .conversion-notice {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.markdown-table-tool .conversion-notice code {
+  color: var(--text);
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.markdown-table-input,
+.markdown-table-output {
+  min-width: 0;
+  min-height: 360px;
+  max-height: calc(100vh - 250px);
+  overflow: auto;
+}
+
+.markdown-table-tool .io-grid,
+.markdown-table-tool .io-col {
+  min-width: 0;
+}
+
+.markdown-table-tool .conversion-output-label {
+  flex-wrap: wrap;
+}
+
+.markdown-table-output {
+  white-space: pre;
+  word-break: normal;
+}
+
+.markdown-table-help {
+  display: block;
+  margin-top: 6px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
 .uuid-list {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -670,6 +789,16 @@ select {
 
 .diff-gap {
   min-height: 1.4em;
+}
+
+@media (max-width: 760px) {
+  .lorem-tool .lorem-output {
+    max-height: min(60vh, 420px);
+  }
+
+  .markdown-table-tool .io-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .dim {

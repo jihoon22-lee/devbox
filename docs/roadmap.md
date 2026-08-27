@@ -385,6 +385,26 @@ cut/copy/paste·IME·keyboard 동작을 유지한다. HTML parser, 외부 conver
 digest를 dependency gate로 검증한다. Windows W2 packaged smoke evidence는 P2 checkpoint에서
 수행한다.
 
+**2026-08-27 #290/#291 구현 상태.** Developer Toolbox Text 그룹에 Lorem Generator와 Markdown
+Table Formatter를 하나의 cohesive text-transform 사용자 경계로 추가했다. 두 기능 모두 외부
+generator/formatter·network·filesystem read·random source 없이 앱에 번들된 deterministic
+TypeScript 경로를 사용한다. Lorem은 고정 5문장 corpus에서 문단·문장·단어를 생성하고 수량
+1–100, count paste UTF-8 3바이트, 결과 65,536바이트 상한을 적용한다. Markdown formatter는
+pipe 행을 원본 순서대로 파싱해 불균일 행을 빈 셀로 보정하고 선택적 `---`/`:---`/`---:`/`:---:`
+정렬을 보존한다. 입력 1,000,000바이트·1,000행·100열·셀 4,096 code point·출력 4,000,000바이트
+상한과 제어문자·lone surrogate·malformed row/separator fixed error를 적용한다.
+
+공용 Toolbox context surface는 기존 API를 깨지 않는 선택적 `AbortSignal`, bounded explicit
+Paste, output action busy callback과 fixed error를 지원한다. Formatter는 다음 event-loop task에
+예약하고 superseded queued task를 취소하며, 시작된 bounded core 결과는 sequence·unmount guard로
+폐기한다. copy/save와 output context menu는
+하나의 in-flight action만 허용한다. 두 UI는 accessible Input/Output label, `aria-busy`, live
+status, fixed `role=alert`를 제공하고 native cut/copy/paste·IME keyboard를 가로채지 않는다.
+입력·결과를 자동 저장하거나 전송하지 않으며 clipboard read, copy, 고정 plain-text 파일 저장은
+사용자가 명시적으로 요청한 경우에만 수행한다. 순수·통합 fixture와 README, v0.5.0 계획,
+workthrough를 갱신했으며 신규 의존성·IPC·Rust command는 없다. 필수 cargo/frontend 전체 gate와
+Windows W2 packaged offline smoke는 root release checkpoint에서 수행한다.
+
 #278은 기존 언어 서버 status에 retry 실패 횟수·남은 backoff·열린 circuit을 표시하고, 같은 카드에서
 수동 `다시 시도`를 실행하도록 확장한다. 관리형 server ref는 설치 index 검증 결과와 결합해 cache
 사용 가능/재설치 필요/미설치 상태만 보여 주며 설치 경로는 frontend DTO에 추가하지 않는다. lifecycle

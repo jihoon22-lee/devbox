@@ -10,7 +10,7 @@
 | JSON | Formatter / Minifier / Validator, JSON ↔ YAML 1.2, JSON → TypeScript | TS (`jsonc-parser`·`yaml`) |
 | Encoding | UTF-8 / Hex / Base64 / Base64URL byte codec, 진법 변환, HTML Entity Encode·Decode, URL Component Encode·Decode | TS |
 | Time | Unix Timestamp ↔ Date | TS |
-| Text | Case Converter, Diff | Diff는 Rust(`similar`) |
+| Text | Case Converter, Lorem Generator, Markdown Table Formatter, Diff | Lorem/table은 deterministic TS, Diff는 Rust(`similar`) |
 | Security | Hash(MD5/SHA-256/SHA-512), HMAC-SHA-256/384/512 생성·검증, UUID v4/v7, ULID | Rust(`md-5`·`hmac`·`sha2`·`base64`·`uuid`·`getrandom`) |
 | Regex | Regex Tester (매치 하이라이트) | Rust(`regex`) |
 | Auth | JWT Decoder (헤더/페이로드) | TS(base64url) |
@@ -20,6 +20,24 @@
 - 오프라인 즉시 사용 (외부 서비스 없음)
 - 좌측 사이드바에서 도구 선택
 - JS로 충분한 것과 Rust가 필요한 것의 경계 분리 — 계산·검증은 Rust 연동
+- Lorem Generator는 고정된 로컬 corpus에서 문단·문장·단어를 deterministic하게 생성한다.
+  수량은 1–100이고 결과는 UTF-8 65,536바이트 이하로 제한한다. 입력 변경이나 옵션 변경만으로
+  결과를 자동 저장·복사하지 않으며, 명시적인 복사·저장 버튼과 결과 context menu에서만
+  `lorem-ipsum.txt`로 내보낸다. 수량 paste는 UTF-8 3바이트와 3자리 입력 상한을 함께 적용하고,
+  clipboard·download 실패는 고정 오류로만 표시한다.
+- Markdown Table Formatter는 붙여 넣은 pipe-delimited 행을 원본 순서대로 정렬·패딩한다.
+  선택적인 두 번째 `---`/`:---`/`---:`/`:---:` 행으로 열 정렬을 지정할 수 있으며, 불균일한
+  행은 빈 셀로 채우고 구분 행이 없으면 자동 삽입한다. 전체 Markdown 문서 parser/editor나
+  HTML renderer가 아니며, 입력 1,000,000바이트·1,000행·100열·셀 4,096 code point·출력
+  4,000,000바이트 상한을 fail-closed로 적용한다. `\\|`와 matched backtick code span 안의 pipe를
+  cell data로 해석하고 backtick·tag-like text를 데이터로 보존한다.
+- 두 Text 도구는 네트워크·외부 converter·random·filesystem read 없이 동일한 bundled TS
+  경로에서 동작한다. 입력 변경 시 이전 결과와 action 오류를 지운다. bounded formatter는 다음
+  event-loop task에 예약해 먼저 화면을 갱신하고, 시작 전 supersede는 취소하며 시작 뒤에는 엄격한
+  상한과 sequence·unmount guard로 오래된 결과를 버린다.
+  입력과 출력은 접근 가능한 label/`aria-busy`/live status를 가지며, 일반 cut/copy/paste와
+  IME keyboard 동작을 가로채지 않는다. explicit Paste 때만 clipboard를 읽고, paste 결과는
+  UTF-8 상한 안에서만 삽입한다.
 - UUID / ULID 생성기는 UUID v4·v7과 canonical Crockford Base32 ULID를 한 번의 batch
   요청으로 최대 100개까지 생성한다. UUID는 표준 hyphen/compact와 대·소문자를 선택할 수
   있고, ULID는 canonical 대문자·hyphenless 형식을 기본으로 하며 표시용 그룹 hyphen도
