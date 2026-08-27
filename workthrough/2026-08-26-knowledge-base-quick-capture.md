@@ -10,13 +10,18 @@ the final authority for validation, privacy, root containment, collision
 handling, and SQLite indexing; the browser side only provides a preview and
 never claims that a note was saved.
 
-The work is intentionally limited to issue #303. Image assets, templates,
-clipboard history, cloud sync, and cross-app handoff remain follow-up work.
-The existing draft was checkpointed and rebased onto the latest `origin/main`
-(`2c20eb5`, after #424) in the dedicated worktree
+The acceptance below remains specific to issue #303. For the cohesive Knowledge
+PR, issue #304 image assets are integrated in the same final worktree, with a
+separate acceptance matrix and workthrough so the two rollback/evidence slices
+remain independently reviewable. Templates, clipboard history, cloud sync,
+and cross-app handoff remain follow-up work.
+The grouped implementation was finalized in the dedicated worktree
 `/mnt/e/projects/devbox-worktrees/knowledge-base-quick-capture` on
-`feat/knowledge-base/quick-capture`. The post-rebase audit kept the feature
-isolated to #303; no push, merge, or PR is part of this checkpoint.
+`feat/knowledge-base/quick-capture`. The quick-capture commits were rebased
+onto current `main` (`a018065`, #441), then the independently developed #304
+slice was integrated without preserving a separate final commit. The final
+review and gates therefore exercised the exact combined PR tree while keeping
+the two issue acceptance matrices separate.
 
 ## Context and decisions
 
@@ -49,6 +54,93 @@ isolated to #303; no push, merge, or PR is part of this checkpoint.
   already present in the workspace; the dependency is target-specific and no
   install or runtime sidecar was added.
 
+## 2026-08-27 hardening checkpoint
+
+The follow-up review identified that a path-only preview, direct save payload,
+single `create_new` write, detached hotkey worker, and unbounded watcher/input
+paths were not sufficient for the #303 acceptance contract. The following
+changes close those boundaries; #304 is integrated separately in the same
+worktree and reuses the vault/publication boundary described below:
+
+- Preview now stores normalized values in one native app-managed slot and
+  returns only an opaque, bounded `qc-<positive integer>` ID. A new preview
+  replaces the old slot; save and discard consume only a matching ID, and the
+  save command accepts no title/body/tags/path payload. The pending normalized
+  capture is intentionally neither `Debug` nor `Serialize`.
+- Preview releases the DB mutex before taking the preview-slot mutex; save uses
+  the same slot-then-DB order, so concurrent preview/save IPC cannot deadlock
+  while replacing or consuming the one-shot approval.
+- `VaultIdentity` records the canonical root and platform filesystem identity
+  (Unix device/inode or Windows volume/file index). Preview is read-only and
+  never calls the default-root initializer. Save compares the selected vault
+  again, revalidates before directory/file publication, rejects symlink and
+  Windows reparse components, and checks every existing ancestor. A replaced
+  root returns a fixed stale-preview message before `Inbox` creation. The
+  image command uses the same identity object and shared no-replace publication
+  and cleanup helpers, so #304 cannot fall back to path-only asset writes.
+- Publication is staged in a sibling temporary file created with `create_new`,
+  fully written, flushed, and synced. Unix publishes by same-directory
+  hard-link then removes the temporary name and syncs the directory; Windows
+  uses no-replace `MoveFileExW(..., MOVEFILE_WRITE_THROUGH)`. Existing same-
+  second captures therefore advance a bounded suffix instead of being
+  overwritten. Any publication/index/commit failure removes the new file and
+  temporary residue.
+- The credential scanner now covers assignment/header spellings (`api-key`,
+  `x-api-key`, access/refresh/session/client secrets, authorization, cookie,
+  connection/database/password/secret/token), PEM/private-key markers, GitHub,
+  Slack, AWS/env keys, Google, Stripe, SendGrid, GitLab, npm, PyPI, Vault,
+  Sentry, and app-token prefixes, plus Basic/Bearer/Token schemes, JWT-like
+  three-segment values, and Telegram bot tokens. Rust and the browser mirror
+  use the same conservative policy and fixed errors.
+- The custom serde visitors borrow strings when possible and cap title/body,
+  tag count/item bytes, and preview ID before app-managed storage. Clipboard
+  reads remain explicit and one-shot; a raw value over 128 KiB or failing the
+  capture policy is never put into controlled dialog state.
+- The Windows hotkey worker owns its message queue and thread ID, unregisters
+  on conflict/inactive/WM_QUIT, and is joined through `Drop`. The React
+  listener handles registration promises after unmount, and a late preview
+  response explicitly discards its native slot. Dialog cancel/close/edit,
+  save failure, and unmount all clear approval state; preview/clipboard cancel
+  invalidates the generation while an in-flight save remains modal-blocking
+  until its already-consumed approval settles. Busy/generation guards suppress
+  duplicate or stale mutations.
+- The dialog exposes live UTF-8/LF/raw byte and tag-count budgets, fixed target,
+  safe errors, focus trap, Escape/Ctrl+Enter/IME handling, and trigger focus
+  restoration. The watcher uses a bounded sync channel, event/path/debounce
+  caps, bounded reads, and bounded overflow reconciliation that skips
+  symlink/reparse and oversized files.
+- The final parent review made read-side identity checks as strict as writes:
+  asset dedupe and Markdown image preview capture metadata from the open file,
+  compare the current target identity after the bounded read, and cache image
+  previews by mtime, length, and filesystem identity. Capture temp files are
+  revalidated around create/write, poisoned approval mutexes return fixed
+  errors, and overflow reconciliation charges every regular file—not only
+  Markdown candidates—against its scan budget.
+- The renderer safe-error adapter now handles both JavaScript `Error` objects
+  and Tauri string rejections through the same allowlist. Explicit context
+  paste consults the image Clipboard API only when image import is available;
+  otherwise normal text paste remains intact. Targeted fixtures cover both
+  paths and jsdom's CodeMirror layout boundary.
+
+The integration checkpoint rebased the branch onto `a018065` before applying
+#304. The roadmap conflict was manually merged with all main entries preserved.
+The image worktree stayed read-only; its changes were applied without creating
+a separate final commit, and the combined tree received one parent review and
+one final gate.
+
+## Acceptance matrix
+
+| Review boundary | Implementation anchor | Static/fixture evidence | Deferred runtime evidence |
+| --- | --- | --- | --- |
+| Atomic publication and collision | `stage_capture_file` + shared `publish_new_vault_file` (Unix hard-link / Windows no-replace `MoveFileExW`), bounded timestamp suffix | deterministic filename, collision preservation, index-failure cleanup, no `.tmp` residue tests; image reuse/collision tests use the same helper | packaged Windows same-second collision and locked/disk-failure run |
+| Vault identity, TOCTOU, reparse | `VaultIdentity` canonical path + device/inode or volume/file index; repeated root/ancestor/Inbox/assets checks; `existing_path` for cleanup/read | root replacement, root/child symlink, traversal, fixed Inbox and image `assets/` tests | Windows junction/reparse and concurrent replacement smoke |
+| Save-preview bypass/default mutation | native one-slot `QuickCapturePreviewStore`; `save_quick_capture(QuickCaptureApproval)` only; `resolve_configured_root` | wire-shape rejects title/body/path; one-shot replace/take/discard; unconfigured preview leaves DB/root unchanged | packaged preview → save/cancel interaction |
+| Credential completeness | shared Rust/browser marker, prefix, auth-scheme, JWT-like conservative gate | API/header/cookie/private-key/GitHub/provider prefix fixtures, no secret echo | false-positive review with representative user notes |
+| Clipboard/serde bounds | explicit clipboard action; raw 128 KiB check; borrowed bounded serde visitors for body/tags/ID | oversized clipboard never enters draft; oversized body/tag/ID and unknown fields rejected | packaged clipboard one-shot and OS clipboard failure |
+| Cancel/hotkey lifecycle/race | native `WM_QUIT` + unregister/join; React generation/busy/discard including late preview | busy duplicate/IME, cancel discard, late response discard, bounded status tests | Windows conflict/focus/reopen/close and shutdown smoke |
+| Modal/byte-limit UX | live UTF-8/LF/raw counters, fixed target, ARIA/focus/Escape/Ctrl+Enter | dialog counter and keyboard fixture coverage | narrow-window + screen-reader/manual keyboard pass |
+| Watcher bound | bounded sync channel, event/path/debounce/read/reconcile caps, overflow polling | debouncer/path/file reader bound fixtures | event storm/overflow convergence on packaged app |
+
 ## Changes made
 
 ### Native policy and persistence
@@ -72,13 +164,22 @@ isolated to #303; no push, merge, or PR is part of this checkpoint.
     preserving the existing plain and list frontmatter forms.
 - `apps/knowledge-base/src-tauri/src/core/mod.rs`
   - Registered the capture policy module.
+- `apps/knowledge-base/src-tauri/src/core/vault.rs`
+  - Added canonical vault identity, existing-entry/path validation, and
+    root-relative reparse checks shared by quick capture, image assets, and
+    preview loading.
+  - Windows identity is accepted only when both volume serial and file index
+    are available; an unknown identity fails closed instead of weakening the
+    root replacement check.
 - `apps/knowledge-base/src-tauri/src/core/store.rs`
   - Kept the existing default layout unchanged; the quick-capture `Inbox`
     directory is created lazily only after its fixed target passes validation,
     avoiding an unrelated startup write through a pre-existing symlink.
 - `apps/knowledge-base/src-tauri/src/commands/docs.rs`
   - Added preview/save DTOs and Tauri commands.
-  - Reused canonical root and existing-ancestor/symlink validation.
+  - Reused canonical root and existing-ancestor/symlink validation. The image
+    command uses the configured-root-only resolver and the shared no-replace
+    publication/cleanup helpers rather than a path-only asset writer.
   - Preview validates the fixed target without creating it. Save creates only
     the one-level `Inbox` directory with `create_dir`, revalidates it, and no
     longer uses recursive `create_dir_all` before the new-file operation.
@@ -86,7 +187,7 @@ isolated to #303; no push, merge, or PR is part of this checkpoint.
     creation, cleanup on the database failure path, and root-relative result
   paths only. The write/commit cleanup branches remain explicit in the
   implementation for runtime I/O failures.
-  - During the post-rebase audit, the collision fixture was corrected to create
+  - During the draft audit, the collision fixture was corrected to create
     the lazy `Inbox` explicitly, and the rejection fixture now asserts that a
     rejected secret does not create the directory as a side effect.
 - `apps/knowledge-base/src-tauri/src/lib.rs`
@@ -134,6 +235,9 @@ isolated to #303; no push, merge, or PR is part of this checkpoint.
   - Wired the native event/status listeners and in-app fallback button.
   - Added success/conflict notices and responsive modal styling with bounded
     vertical preview scrolling and wrapped long content.
+  - Keeps the selected-note ref current during render as well as after commit,
+    so an image paste immediately after note switching cannot target the prior
+    note during the passive-effect window.
 
 ### Tests and regression mocks
 
@@ -160,11 +264,12 @@ isolated to #303; no push, merge, or PR is part of this checkpoint.
   parity and shortcut conflict fallback without changing existing app-link,
   editor, or wikilink behavior.
 
-### Post-rebase audit
+### Draft audit before hardening
 
 - Re-read the native command boundary, capture policy, shortcut platform
   boundary, frontend API, dialog, capability, README, roadmap, and detailed
-  plan after rebasing onto `origin/main` at `2c20eb5`.
+  plan after the explicit rebase onto current `main`. The image-assets commit
+  was applied without a commit and its shared boundary was reviewed here.
 - Confirmed that preview has no filesystem/SQLite mutation, save has a fixed
   root-relative target and bounded collision loop, and clipboard access occurs
   only from the explicit button handler. Native and frontend error adapters
@@ -180,37 +285,38 @@ isolated to #303; no push, merge, or PR is part of this checkpoint.
 ### Documentation
 
 - `apps/knowledge-base/README.md` documents the user flow, bounds, privacy,
-  root/file/index transaction, Windows shortcut behavior, and explicit
-  out-of-scope items.
+  root/file/index transaction, Windows shortcut behavior, and the independently
+  reviewed #303/#304 acceptance slices in this cohesive PR.
 - `docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md` records the
   detailed #303 implementation contract and the Windows W2 evidence still
   required before merge.
 - `docs/roadmap.md` records the local checkpoint draft, acceptance evidence,
-  and the distinction between this quick-capture slice and future
-  image/template/handoff work.
+  and the distinction between the independently tested #303/#304 slices in
+  this cohesive PR; template/handoff work remains out of scope.
 
 ## Key implementation examples
 
-### Native final validation and deterministic file creation
+### Native approval and atomic publication
 
 ```rust
 // apps/knowledge-base/src-tauri/src/commands/docs.rs
-let normalized = capture::normalize(input).map_err(|error| error.to_string())?;
-let document = capture::render_markdown(&normalized)
-    .map_err(|error| error.to_string())?;
-let rel = format!(
-    "{}/{}",
-    capture::INBOX_DIR,
-    capture::filename_for_timestamp(now_seconds, ordinal),
-);
-let path = validated_new_entry(root, &rel).map_err(str::to_string)?;
-create_new_capture_file(&path, document.as_bytes())?;
+let pending = previews
+    .lock().unwrap()
+    .take(&approval.preview_id)
+    .ok_or_else(|| "빠른 캡처 미리보기가 오래되어 다시 확인하세요")?;
+let current_vault = VaultIdentity::inspect(&configured_root)?;
+let document = capture::render_markdown(&pending.capture)?;
+let temporary = stage_capture_file(&current_vault, &inbox, &filename, document.as_bytes())?;
+publish_new_vault_file(&temporary, &path)?;
+db_transaction.index_doc(&relative, &document)?;
 ```
 
-The command never accepts a destination path. `validated_new_entry` checks
-the canonical root and existing ancestors, while `create_new_capture_file`
-uses `OpenOptions::create_new` and cleans up a file that cannot be fully
-flushed/synced.
+The command accepts only the opaque approval ID; the destination is always
+`Inbox`. `VaultIdentity` checks canonical root path plus filesystem identity
+and existing ancestors around each mutation. `stage_capture_file` uses
+`OpenOptions::create_new`, write/flush/sync, and same-directory no-replace
+publication. SQLite indexing is committed only after publication succeeds and
+failure cleanup removes the new note and its temporary sibling.
 
 ### Payload-less native shortcut event
 
@@ -229,45 +335,24 @@ if message.message == WM_HOTKEY && message.wParam.0 == HOTKEY_ID as usize {
 The event contains no note content, path, clipboard value, or platform error;
 the React listener only opens the same modal as the visible button.
 
-## Verification results
+## Verification status
 
-The following focused checks were run without installing dependencies or
-running a full workspace gate:
+The exact grouped tree passed the final Linux gates after the parent boundary
+review:
 
-```text
-cargo fmt --all -- --check
-exit 0
+- `cargo test -p knowledge-base -j2`: 100 passed.
+- `cargo check -p knowledge-base -j2`: passed.
+- `cargo clippy -p knowledge-base --all-targets -j2 -- -D warnings`: passed.
+- `cargo fmt --all -- --check`: passed.
+- `pnpm --filter knowledge-base exec vitest run --maxWorkers=2`: 11 files,
+  68 tests passed. The focused regression subset also passed 25 tests.
+- `pnpm --filter knowledge-base build`: TypeScript and Vite production build
+  passed (2,156 modules transformed).
+- dependency policy/notices and `git diff --check` are rerun on the committed
+  PR tree; GitHub Actions remains the authoritative Windows compile gate.
 
-cargo test --manifest-path apps/knowledge-base/src-tauri/Cargo.toml --lib -j2
-test result: ok. 67 passed; 0 failed
-
-cargo check --manifest-path apps/knowledge-base/src-tauri/Cargo.toml --lib -j2
-exit 0
-
-cargo clippy --manifest-path apps/knowledge-base/src-tauri/Cargo.toml --all-targets -j2 -- -D warnings
-exit 0
-
-tsc -p apps/knowledge-base/tsconfig.json --noEmit (Linux-native dependency mirror)
-exit 0
-
-vitest run --config vite.config.ts src/lib/quickCapture.test.ts src/components/QuickCaptureDialog.test.tsx --pool=forks --maxWorkers=1 --no-file-parallelism --reporter=dot
-Test Files  2 passed (2)
-Tests       16 passed (16)
-
-vite build (Knowledge Base, Linux-native dependency mirror)
-exit 0
-
-git diff --check
-exit 0
-```
-
-The TypeScript, Vitest, and Vite checks used the repository's existing local
-dependency snapshot through a Linux-native mirror; the feature worktree has no
-`node_modules` directory. The focused Rust commands were limited to the
-Knowledge Base crate and used two cargo jobs. The Windows MSVC target check was
-not repeated in this audit; the earlier attempt reached the Windows dependency
-graph but could not finish because the WSL host has no `lib.exe` for the bundled
-SQLite build. The Windows packaged W2 manual check was not run in WSL.
+The Windows-only hotkey, `MoveFileExW`, filesystem-identity, clipboard/drop,
+and watcher overflow paths still require packaged runtime evidence at W2.
 
 ## Remaining risks and next steps
 
@@ -275,17 +360,17 @@ SQLite build. The Windows packaged W2 manual check was not run in WSL.
    while another application owns it, verify focus after global invocation,
    verify preview-before-save and one-shot clipboard behavior, and collect
    collision/write/index failure evidence.
-2. Run the normal repository-wide pre-PR gates and CI before merging. The
-   Windows-only `RegisterHotKey` path still needs a real Windows runtime because
-   WSL cannot execute it.
-3. Keep image assets, templates, clipboard history, cloud sync, and handoff in
-   separate issues/PRs as documented; they are not hidden in this draft.
-4. The save path uses bounded canonical-root/ancestor revalidation followed by
-   `create_new`; this narrows filesystem TOCTOU exposure but is not an
-   OS-level openat-style transaction against a concurrent attacker. Keep the
-   fixed target and revalidation contract in place if persistence is refactored.
+2. Require all GitHub Actions checks before merging. The Windows-only
+   `RegisterHotKey` path still needs a real Windows runtime because WSL cannot
+   execute it.
+3. Keep #303 and #304 acceptance/test/workthrough evidence independently
+   reviewable inside the cohesive PR. Templates, clipboard history, cloud sync,
+   and handoff remain separate follow-up scope.
+4. Keep the vault identity/path/reparse checks immediately around every save
+   step if persistence is refactored; do not replace the staged no-replace
+   publication with a path-only overwrite helper.
 5. Treat filesystem cleanup as bounded execution rollback only: an abrupt
    process/OS termination during the file/index sequence is not covered by a
    persistent journal. The credential gate is deliberately conservative
-   pattern detection, so it should not be described as a complete secret
-   scanner.
+   pattern coverage rather than a formal secret scanner, so representative
+   false-positive review remains part of acceptance.

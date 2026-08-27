@@ -4,9 +4,19 @@ import { baseEditorExtensions, markdownEditorExtensions } from "@devbox/editor";
 import { defaultKeymap } from "@codemirror/commands";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
-import { readClipboardText } from "../api";
+import { readClipboardImage, readClipboardText } from "../api";
+import {
+  clipboardImageFiles,
+  droppedImageFiles,
+  IMAGE_BUSY_ERROR,
+  IMAGE_MULTIPLE_ERROR,
+  IMAGE_STALE_ERROR,
+  IMAGE_TOO_LARGE_ERROR,
+  imageErrorMessage,
+} from "../lib/imageAssets";
 import type {
   EditorCursorRequest,
+  ImageAsset,
   WikilinkCandidate,
   WikilinkOccurrence,
 } from "../types";
@@ -29,6 +39,9 @@ interface Props {
   loadWikilinkCandidates?: (query: string) => Promise<WikilinkCandidate[]>;
   onNavigateWikilink?: (path: string) => void;
   cursorRequest?: EditorCursorRequest | null;
+  /** Stable identity of the currently edited note; prevents cross-note stale inserts. */
+  documentKey?: string | null;
+  onImageImport?: (file: File) => Promise<ImageAsset>;
 }
 
 export default function MarkdownEditor({
@@ -40,11 +53,17 @@ export default function MarkdownEditor({
   loadWikilinkCandidates,
   onNavigateWikilink,
   cursorRequest = null,
+  documentKey = null,
+  onImageImport,
 }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const syncingValueRef = useRef(false);
   const [hasSelection, setHasSelection] = useState(false);
+  const [imageBusy, setImageBusy] = useState(false);
+  const imageBusyRef = useRef(false);
+  const imageTokenRef = useRef(0);
+  const mountedRef = useRef(true);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const onSaveRef = useRef(onSave);
@@ -55,6 +74,13 @@ export default function MarkdownEditor({
   loadCandidatesRef.current = loadWikilinkCandidates;
   const navigateWikilinkRef = useRef(onNavigateWikilink);
   navigateWikilinkRef.current = onNavigateWikilink;
+  const documentKeyRef = useRef<string | null>(documentKey);
+  documentKeyRef.current = documentKey;
+  const onImageImportRef = useRef(onImageImport);
+  onImageImportRef.current = onImageImport;
+  const importImageRef = useRef<(file: File, dropPosition?: number) => Promise<boolean>>(
+    async () => false,
+  );
   const editorMenu = useContextMenu();
   const openMenuRef = useRef(editorMenu.openAt);
   openMenuRef.current = editorMenu.openAt;
@@ -63,15 +89,16 @@ export default function MarkdownEditor({
     () => [
       { type: "item", id: "cut", label: "잘라내기", shortcut: "Ctrl+X", disabled: !hasSelection },
       { type: "item", id: "copy", label: "복사", shortcut: "Ctrl+C", disabled: !hasSelection },
-      { type: "item", id: "paste", label: "붙여넣기", shortcut: "Ctrl+V" },
+      { type: "item", id: "paste", label: "붙여넣기", shortcut: "Ctrl+V", disabled: imageBusy },
       { type: "separator", id: "link-separator" },
       { type: "item", id: "insert-link", label: "링크 삽입" },
     ],
-    [hasSelection],
+    [hasSelection, imageBusy],
   );
 
   useEffect(() => {
     if (!mountRef.current) return;
+    mountedRef.current = true;
     const view = new EditorView({
       state: EditorState.create({
         doc: value,
@@ -130,6 +157,49 @@ export default function MarkdownEditor({
               );
               return true;
             },
+            paste(event, currentView) {
+              const clipboardEvent = event as ClipboardEvent;
+              const isComposing = (clipboardEvent as ClipboardEvent & { isComposing?: boolean }).isComposing;
+              if (currentView.compositionStarted || isComposing) return false;
+              const files = clipboardImageFiles(clipboardEvent.clipboardData);
+              if (files.length === 0 || !onImageImportRef.current) return false;
+              event.preventDefault();
+              if (files.length > 1) {
+                onErrorRef.current(IMAGE_MULTIPLE_ERROR);
+                return true;
+              }
+              void importImageRef.current(files[0]);
+              return true;
+            },
+            dragover(event) {
+              const files = droppedImageFiles((event as DragEvent).dataTransfer);
+              if (files.length === 0 || !onImageImportRef.current) return false;
+              event.preventDefault();
+              return true;
+            },
+            drop(event, currentView) {
+              const dragEvent = event as DragEvent;
+              const files = droppedImageFiles(dragEvent.dataTransfer);
+              if (files.length === 0 || !onImageImportRef.current) return false;
+              event.preventDefault();
+              if (files.length > 1) {
+                onErrorRef.current(IMAGE_MULTIPLE_ERROR);
+                return true;
+              }
+              let position = currentView.state.selection.main.head;
+              try {
+                position = currentView.posAtCoords({
+                  x: dragEvent.clientX,
+                  y: dragEvent.clientY,
+                }) ?? position;
+              } catch {
+                // WebViews can reject coordinate mapping while the editor has
+                // no layout yet. The current selection is a safe fallback.
+              }
+              currentView.dispatch({ selection: EditorSelection.cursor(position) });
+              void importImageRef.current(files[0], position);
+              return true;
+            },
           }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged && !syncingValueRef.current) {
@@ -142,6 +212,8 @@ export default function MarkdownEditor({
     });
     viewRef.current = view;
     return () => {
+      mountedRef.current = false;
+      imageTokenRef.current += 1;
       view.destroy();
       viewRef.current = null;
     };
@@ -181,9 +253,66 @@ export default function MarkdownEditor({
     view.focus();
   }, [cursorRequest]);
 
+  const importImage = async (file: File, dropPosition?: number): Promise<boolean> => {
+    const callback = onImageImportRef.current;
+    const view = viewRef.current;
+    if (!callback || !view) return false;
+    if (imageBusyRef.current) {
+      onErrorRef.current(IMAGE_BUSY_ERROR);
+      return true;
+    }
+
+    const token = ++imageTokenRef.current;
+    const documentBefore = view.state.doc.toString();
+    const documentKeyBefore = documentKeyRef.current;
+    const selectionBefore = dropPosition === undefined
+      ? view.state.selection.main
+      : { from: dropPosition, to: dropPosition };
+    imageBusyRef.current = true;
+    if (mountedRef.current) setImageBusy(true);
+    onErrorRef.current(null);
+    try {
+      const asset = await callback(file);
+      if (
+        !mountedRef.current
+        || token !== imageTokenRef.current
+        || viewRef.current !== view
+        || documentKeyRef.current !== documentKeyBefore
+      ) {
+        if (mountedRef.current && token === imageTokenRef.current && documentKeyRef.current !== documentKeyBefore) {
+          onErrorRef.current(IMAGE_STALE_ERROR);
+        }
+        return true;
+      }
+      if (view.state.doc.toString() !== documentBefore) {
+        onErrorRef.current(IMAGE_STALE_ERROR);
+        return true;
+      }
+      const from = Math.min(Math.max(selectionBefore.from, 0), view.state.doc.length);
+      const to = Math.min(Math.max(selectionBefore.to, from), view.state.doc.length);
+      view.dispatch({ changes: { from, to, insert: asset.markdown } });
+      view.focus();
+    } catch (cause) {
+      if (mountedRef.current && token === imageTokenRef.current) {
+        onErrorRef.current(imageErrorMessage(cause));
+      }
+    } finally {
+      if (token === imageTokenRef.current) {
+        imageBusyRef.current = false;
+        if (mountedRef.current) setImageBusy(false);
+      }
+    }
+    return true;
+  };
+  importImageRef.current = importImage;
+
   const runAction = async (id: string) => {
     const view = viewRef.current;
     if (!view) return;
+    if (id === "paste" && imageBusyRef.current) {
+      onErrorRef.current(IMAGE_BUSY_ERROR);
+      return;
+    }
     onErrorRef.current(null);
     if (id === "copy" || id === "cut") {
       const text = selectedText(view.state);
@@ -193,6 +322,27 @@ export default function MarkdownEditor({
       return;
     }
     if (id === "paste") {
+      let image: File | null = null;
+      if (onImageImportRef.current) {
+        try {
+          image = await readClipboardImage();
+        } catch (cause) {
+          if (cause instanceof Error && cause.message === IMAGE_TOO_LARGE_ERROR) {
+            // A known oversized image must not silently turn into a text paste;
+            // the user needs a bounded, actionable result for this explicit
+            // image action. Capability/permission failures still use the text
+            // fallback below.
+            onErrorRef.current(IMAGE_TOO_LARGE_ERROR);
+            return;
+          }
+          // Clipboard API image reads are optional in WebView2; text paste
+          // remains the explicit fallback when the capability is absent.
+        }
+      }
+      if (image) {
+        await importImageRef.current(image);
+        return;
+      }
       const text = await readClipboardText();
       view.dispatch(view.state.replaceSelection(text));
       return;
@@ -212,7 +362,18 @@ export default function MarkdownEditor({
 
   return (
     <>
-      <div ref={mountRef} className="editor codemirror-editor" />
+      <div
+        ref={mountRef}
+        className="editor codemirror-editor"
+        aria-busy={imageBusy}
+        aria-label="Markdown 편집기"
+      >
+        {imageBusy && (
+          <div className="image-upload-status" role="status" aria-live="polite">
+            이미지 저장 중…
+          </div>
+        )}
+      </div>
       <ContextMenu
         open={editorMenu.open}
         anchor={editorMenu.anchor}

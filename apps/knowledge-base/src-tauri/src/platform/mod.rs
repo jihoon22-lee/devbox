@@ -5,8 +5,12 @@
 //! registration conflict be reported without exposing a platform error.
 
 use serde::Serialize;
-use std::sync::atomic::{AtomicU8, Ordering};
+#[cfg(target_os = "windows")]
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
+#[cfg(target_os = "windows")]
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
 pub const QUICK_CAPTURE_SHORTCUT: &str = "Ctrl+Alt+K";
@@ -31,17 +35,35 @@ pub struct ShortcutStatus {
     pub state: ShortcutRegistration,
 }
 
-/// Tauri state shared by the status command and the platform registration
-/// thread.  The atomic contains only a small enum; no input, path, or OS
-/// error is retained.
-pub struct QuickCaptureShortcutState {
+/// Internal lifecycle shared by the status command and registration worker.
+/// The worker keeps this small inner value rather than the public Tauri state,
+/// so dropping the app state can actually signal and join the worker.
+struct ShortcutInner {
     state: AtomicU8,
+    active: AtomicBool,
+    #[cfg(target_os = "windows")]
+    thread_id: AtomicU32,
+    #[cfg(target_os = "windows")]
+    worker: Mutex<Option<std::thread::JoinHandle<()>>>,
+}
+
+/// Tauri state shared by the status command and the platform registration
+/// thread.  No input, path, or OS error is retained.
+pub struct QuickCaptureShortcutState {
+    inner: Arc<ShortcutInner>,
 }
 
 impl Default for QuickCaptureShortcutState {
     fn default() -> Self {
         Self {
-            state: AtomicU8::new(ShortcutRegistration::Registering as u8),
+            inner: Arc::new(ShortcutInner {
+                state: AtomicU8::new(ShortcutRegistration::Registering as u8),
+                active: AtomicBool::new(true),
+                #[cfg(target_os = "windows")]
+                thread_id: AtomicU32::new(0),
+                #[cfg(target_os = "windows")]
+                worker: Mutex::new(None),
+            }),
         }
     }
 }
@@ -50,12 +72,44 @@ impl QuickCaptureShortcutState {
     pub fn status(&self) -> ShortcutStatus {
         ShortcutStatus {
             shortcut: QUICK_CAPTURE_SHORTCUT.to_string(),
-            state: decode_state(self.state.load(Ordering::Acquire)),
+            state: decode_state(self.inner.state.load(Ordering::Acquire)),
         }
     }
 
     fn set(&self, state: ShortcutRegistration) {
-        self.state.store(state as u8, Ordering::Release);
+        self.inner.state.store(state as u8, Ordering::Release);
+    }
+
+    #[cfg(target_os = "windows")]
+    fn set_inner(inner: &ShortcutInner, state: ShortcutRegistration) {
+        inner.state.store(state as u8, Ordering::Release);
+    }
+}
+
+impl Drop for QuickCaptureShortcutState {
+    fn drop(&mut self) {
+        self.inner.stop();
+    }
+}
+
+impl ShortcutInner {
+    #[cfg(target_os = "windows")]
+    fn stop(&self) {
+        self.active.store(false, Ordering::Release);
+        let thread_id = self.thread_id.load(Ordering::Acquire);
+        if thread_id != 0 {
+            windows::stop(thread_id);
+        }
+        if let Ok(mut worker) = self.worker.lock() {
+            if let Some(worker) = worker.take() {
+                let _ = worker.join();
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn stop(&self) {
+        self.active.store(false, Ordering::Release);
     }
 }
 
@@ -99,11 +153,14 @@ mod windows {
     use std::thread;
     use std::time::Duration;
     use tauri::Manager;
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, VK_K,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        DispatchMessageW, GetMessageW, TranslateMessage, MSG, WM_HOTKEY,
+        DispatchMessageW, GetMessageW, PeekMessageW, PostThreadMessageW, TranslateMessage, MSG,
+        PM_NOREMOVE, WM_HOTKEY, WM_QUIT,
     };
 
     // The ID is private to the worker thread because the registration uses a
@@ -114,11 +171,20 @@ mod windows {
         state.set(ShortcutRegistration::Registering);
         let _ = app.emit(QUICK_CAPTURE_STATUS_EVENT, state.status());
         let (ready_sender, ready_receiver) = sync_channel(1);
-        let worker_state = Arc::clone(&state);
+        let worker_inner = Arc::clone(&state.inner);
         let worker_app = app.clone();
         let worker = thread::Builder::new()
             .name("knowledge-quick-capture-hotkey".to_string())
             .spawn(move || {
+                // A thread without a window still needs a message queue before
+                // another thread can post WM_QUIT during shutdown.
+                unsafe {
+                    let mut message = MSG::default();
+                    let _ = PeekMessageW(&mut message, None, 0, 0, PM_NOREMOVE);
+                }
+                worker_inner
+                    .thread_id
+                    .store(unsafe { GetCurrentThreadId() }, Ordering::Release);
                 // RegisterHotKey returns an error for an unavailable/conflicting
                 // accelerator.  Deliberately collapse it to a safe UI state.
                 let registered = unsafe {
@@ -130,14 +196,26 @@ mod windows {
                     )
                     .is_ok()
                 };
-                worker_state.set(if registered {
-                    ShortcutRegistration::Registered
-                } else {
-                    ShortcutRegistration::Conflict
-                });
-                let _ = worker_app.emit(QUICK_CAPTURE_STATUS_EVENT, worker_state.status());
+                QuickCaptureShortcutState::set_inner(
+                    &worker_inner,
+                    if registered {
+                        ShortcutRegistration::Registered
+                    } else {
+                        ShortcutRegistration::Conflict
+                    },
+                );
+                let _ = worker_app.emit(
+                    QUICK_CAPTURE_STATUS_EVENT,
+                    ShortcutStatus {
+                        shortcut: QUICK_CAPTURE_SHORTCUT.to_string(),
+                        state: decode_state(worker_inner.state.load(Ordering::Acquire)),
+                    },
+                );
                 let _ = ready_sender.send(());
-                if !registered {
+                if !registered || !worker_inner.active.load(Ordering::Acquire) {
+                    if registered {
+                        let _ = unsafe { UnregisterHotKey(None, HOTKEY_ID) };
+                    }
                     return;
                 }
 
@@ -147,7 +225,10 @@ mod windows {
                     if result.0 <= 0 {
                         break;
                     }
-                    if message.message == WM_HOTKEY && message.wParam.0 == HOTKEY_ID as usize {
+                    if message.message == WM_HOTKEY
+                        && message.wParam.0 == HOTKEY_ID as usize
+                        && worker_inner.active.load(Ordering::Acquire)
+                    {
                         if let Some(window) = worker_app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.unminimize();
@@ -169,10 +250,14 @@ mod windows {
             return;
         }
 
+        *state.inner.worker.lock().unwrap() = worker.ok();
+
         // Let setup observe a conflict before the first frontend status query.
-        // The worker remains alive for the process lifetime; Windows releases
-        // the registration when the process exits.
         let _ = ready_receiver.recv_timeout(Duration::from_millis(500));
+    }
+
+    pub(super) fn stop(thread_id: u32) {
+        let _ = unsafe { PostThreadMessageW(thread_id, WM_QUIT, WPARAM(0), LPARAM(0)) };
     }
 }
 
@@ -193,7 +278,7 @@ mod tests {
         let state = QuickCaptureShortcutState::default();
         state.set(ShortcutRegistration::Conflict);
         assert_eq!(state.status().state, ShortcutRegistration::Conflict);
-        state.state.store(255, Ordering::Release);
+        state.inner.state.store(255, Ordering::Release);
         assert_eq!(state.status().state, ShortcutRegistration::Registering);
     }
 }

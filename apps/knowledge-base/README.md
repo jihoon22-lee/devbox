@@ -7,6 +7,10 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 
 - **폴더/파일 탐색** — 왼쪽 트리, 생성/이름변경/이동/삭제. 우클릭·Shift+F10·Menu 키 메뉴에서 경로 복사, 탐색기 표시, 설치된 catalog 대상 앱으로 열기를 지원
 - **Markdown 편집** — CodeMirror(공용 `packages/editor`) + 프리뷰 토글, Ctrl+S 저장, mermaid 다이어그램 렌더. CM6 DOM event 경유 메뉴에서 잘라내기·복사·명시적 붙여넣기·Markdown 링크 삽입을 지원
+- **이미지 붙여넣기·드롭** — Markdown 노트 편집 중 클립보드 이미지 붙여넣기와 단일 이미지 드롭을
+  지원한다. PNG/JPEG/GIF/WebP만 native에서 판정하고, vault 루트 `assets/`에 content hash 이름으로
+  저장한 뒤 현재 노트 기준 relative Markdown image node를 편집기에 삽입한다. 같은 bytes는 재사용하며
+  원래 파일명은 보존하지 않는다
 - **Wikilink / backlink** — `[[target]]`·`[[target|alias]]` 자동완성, resolved/unresolved 표시,
   Ctrl/Cmd+클릭 노트 이동과 backlink source line·column 이동. fenced/inline code와 escape된 문법은
   링크로 인덱스하지 않는다
@@ -17,8 +21,9 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 - **태그** — YAML frontmatter(`tags:`) 파싱, 태그 목록·필터
 - **데일리 노트** — 날짜별 생성·연결
 - **빠른 캡처** — `Ctrl+Alt+K`(Windows 전역 단축키) 또는 앱 내 버튼으로 제목·본문·태그를
-  먼저 미리 본 뒤 오프라인 `Inbox/`에 새 Markdown 노트를 저장. 단축키 충돌이어도 앱 내
-  동작은 유지하며, 클립보드는 사용자가 선택한 순간에만 한 번 읽는다
+  먼저 미리 본 뒤 오프라인 `Inbox/`에 새 Markdown 노트를 저장한다. 미리보기는 native가
+  발급한 일회성 opaque approval으로 저장하며, 취소·닫기·stale 응답은 실제로 폐기된다.
+  단축키 충돌이어도 앱 내 동작은 유지하며, 클립보드는 사용자가 선택한 순간에만 한 번 읽는다
 - **앱 간 열기** — catalog의 `Path`로 Knowledge root 안의 Markdown 노트를 열고, `Query`로 즉시 검색. cold start와 실행 중 재호출 모두 같은 pending-open 경로를 사용
 - **활동 snapshot** — 오늘 작성·수정된 노트 수와 경로 없는 불투명 식별자를 Life Log용 `activity/v1` view로 발행
 
@@ -64,21 +69,58 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
   Unicode scalar/UTF-8 byte·line separator·credential policy를 먼저 적용하며, clipboard 값은
   이 검사를 통과한 경우에만 controlled draft에 넣는다
 - quick capture native 저장은 `Inbox/quick-capture-YYYY-MM-DD-HH-mm-ss[-N].md` 형식의
-  UTC 파일명을 사용하고, 기존 파일은 `create_new`로 절대 덮어쓰지 않는다. 파일 flush/sync,
-  SQLite FTS/link index transaction이 실패하면 새 파일을 정리해 반쪽 노트를 남기지 않는다.
-  본문 line ending은 LF로 정규화하고 동일 입력의 Markdown은 결정론적으로 생성한다. 정규화된
-  본문은 64 KiB, raw CRLF 입력은 128 KiB, 제목은 200 scalar/800 byte, 태그는 20개·항목
-  48 scalar/192 byte·총 1 KiB로 제한하며 renderer도 같은 경계를 다시 확인한다
+  UTC 파일명을 사용한다. 같은 디렉터리의 bounded temporary sibling을 `create_new`로
+  flush/sync한 뒤 Unix hard-link 또는 Windows no-replace `MoveFileExW`로 publish하므로
+  경쟁 파일을 덮어쓰지 않는다(Unix parent directory `fsync`, Windows
+  `MOVEFILE_WRITE_THROUGH`). vault identity가 유지되는 동안 SQLite FTS/link index
+  transaction이 실패하면 새 파일과 temporary residue를 정리해 반쪽 노트를 남기지 않는다.
+  identity가 바뀐 경우에는 경로를 따라 삭제하지 않고 stale로 중단해 교체된 vault를 보호한다.
+  본문 line ending은 LF로 정규화하고
+  동일 입력의 Markdown은 결정론적으로 생성한다. 정규화된 본문은 64 KiB, raw CRLF 입력은
+  128 KiB, 제목은 200 scalar/800 byte, 태그는 20개·항목 48 scalar/192 byte·총 1 KiB로
+  제한하며 renderer도 같은 경계를 다시 확인한다
 - preview는 이미 설정된 root를 읽어 고정 `Inbox`를 metadata로만 확인하고 폴더나 기본 root를
-  초기화하지 않는다. save만 canonical root의 기존 조상을 재검사한 뒤 `Inbox` 한 단계
-  디렉터리를 지연 생성하고, `Inbox`가 파일·symlink로
-  바뀌었거나 root 밖으로 해석되면 쓰기를 중단한다. 반환되는 저장 path도 고정된 timestamp
+  초기화하지 않는다. preview는 vault canonical path와 filesystem identity를 기억하고 save
+  직전에 root·existing ancestor·`Inbox`를 반복 재검사한다. save만 검증된 고정 한 단계
+  디렉터리를 지연 생성하며, root 또는 `Inbox`가 교체·파일·symlink·Windows reparse point로
+  바뀌면 approval을 stale 처리하고 쓰기를 중단한다. 반환되는 저장 path도 고정된 timestamp
   filename grammar만 허용하며 임의의 상대·절대 path를 UI 계약으로 받아들이지 않는다
 - `Ctrl+Alt+K` 등록은 Windows `RegisterHotKey` 메시지 루프가 담당한다. 다른 앱이 이미
   사용 중이거나 플랫폼이 지원되지 않으면 상태를 `conflict`/`unsupported`로만 표시하고,
-  앱 내부 빠른 캡처 버튼은 계속 사용할 수 있다. 단축키 event에는 문서 내용·경로가 없다
-- #303 범위는 quick capture와 Inbox note뿐이다. image asset, template, cloud sync, clipboard
-  history 및 다른 앱으로의 handoff는 이 기능에서 구현하지 않는다
+  앱 내부 빠른 캡처 버튼은 계속 사용할 수 있다. worker는 실제 message queue를 만든 뒤
+  종료 시 `WM_QUIT`를 받아 unregister하고 join하며, 중복 listener·늦은 hotkey event를
+  무시한다. 단축키 event에는 문서 내용·경로가 없다
+- watcher는 bounded sync channel·debounce map·event/path/file/reconcile 상한을 사용한다.
+  overflow는 제한된 root reconcile로 수렴하며 symlink/reparse와 10 MiB 초과 파일은 읽지
+  않는다. clipboard/serde 입력도 raw body·tag list·preview ID·image base64 envelope를
+  native와 UI 양쪽에서 bounded 처리해 큰 payload가 modal state나 app-managed slot에 머물지
+  않게 한다
+- #303 acceptance는 quick capture와 Inbox note 흐름으로 독립 유지하며, 이 PR에서 함께 묶인 #304
+  image asset acceptance는 아래 image 항목과 별도 fixture/workthrough로 검증한다. template, cloud
+  sync, clipboard history 및 다른 앱으로의 handoff는 양쪽 범위에서 구현하지 않는다
+- 이미지 입력도 백그라운드 clipboard 수집이나 clipboard history를 만들지 않는다. Ctrl/Cmd+V의
+  browser paste/drop event 또는 사용자가 편집기 context menu에서 명시적으로 고른 순간의
+  `navigator.clipboard.read()`만 사용한다. 지원되지 않는 WebView의 이미지 Clipboard API는
+  plain-text paste로 안전하게 fallback하며, 자동 업로드·외부 image hosting은 하지 않는다
+- 이미지 자산 저장 경계는 frontend와 native 양쪽에 있다. bytes는 2 MiB 이하로 먼저 제한하고,
+  native `save_image_asset`이 magic 및 dimension을 최종 판정한다. PNG/JPEG/GIF/WebP의 최대 한
+  변은 16,384px, 총 pixel은 64M이며 MIME과 원본 filename은 신뢰하지 않는다. 저장 파일은
+  `assets/<sha256 lowercase>.<png|jpg|gif|webp>`로만 생성된다
+- `assets/`는 vault 바로 아래의 고정 디렉터리이며 symlink/reparse 또는 파일로 바뀐 경우 전체
+  작업을 거부한다. 생성 시 bounded temp file을 write/flush/sync한 뒤 no-overwrite atomic
+  publication(Unix hard-link + parent directory `fsync`, Windows non-replacing
+  `MoveFileExW(..., MOVEFILE_WRITE_THROUGH)`)을 하고, 동일 hash의 동일 bytes만
+  `reused`로 재사용한다. 충돌·partial write·경로
+  오류는 고정된 안전 오류로 반환하고 기존 파일을 덮어쓰지 않는다
+- Markdown 링크는 노트 위치에서 `../`를 계산한 POSIX relative destination으로 native가 생성한다.
+  nested note의 `../../assets/...`도 preview에서 vault 내부로만 normalize하며 absolute path,
+  drive/UNC path, traversal·control 문자·외부 URI를 거부한다. asset command는 문서 파일을
+  직접 수정하지 않고, 성공한 node만 현재 CodeMirror 초안에 삽입하며 실제 노트 파일 변경은
+  사용자가 명시적으로 Save를 선택할 때만 일어난다
+- image paste/drop은 한 번에 한 파일만 처리한다. 처리 중인 두 번째 action, IME paste,
+  unmounted editor, 다른 note로 전환된 stale 응답, 변경된 문서에 대한 늦은 응답은 저장/삽입하지
+  않는다. ordinary text paste와 IME 경로는 기존 CodeMirror 동작을 유지한다. OCR, asset
+  transformation, clipboard history, external hosting, cloud sync는 이 기능에 포함하지 않는다
 - 이름 변경은 외부 binary, network, runtime download 없이 동작한다. 직접 추가한 `sha2 0.11`은
   기존 workspace lock과 고지에 있던 MIT/Apache-2.0 dependency이며, preview UI는 기존
   `@devbox/diff-view`를 세 번째 소비자로 재사용한다

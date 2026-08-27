@@ -29,6 +29,7 @@ import {
   previewRename,
   quickCaptureShortcutStatus,
   renderMarkdown,
+  saveImageAsset,
   searchDocs,
   takePendingOpen,
   writeFile,
@@ -50,6 +51,7 @@ import type {
   QuickCaptureShortcutStatus,
 } from "./types";
 import { routeOpenRequest } from "./lib/applink";
+import { IMAGE_STALE_ERROR, readImageBytes } from "./lib/imageAssets";
 import "./App.css";
 
 type ViewMode = "edit" | "split" | "preview";
@@ -120,6 +122,10 @@ export default function App() {
   // 인플라이트 렌더 응답이 도착했을 때 "그사이 다른 문서로 전환했는지"를 판단하기 위해
   // 최신 선택값을 ref로도 들고 있는다(설계 결정 3 — 응답 시점에 최신값과 비교).
   const selectedRef = useRef<string | null>(selected);
+  // An editor event can arrive immediately after a render (before passive
+  // effects run), so image import must not observe the previous note during
+  // that short commit window.
+  selectedRef.current = selected;
   useEffect(() => {
     selectedRef.current = selected;
   }, [selected]);
@@ -329,6 +335,18 @@ export default function App() {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+
+  const importImageAsset = useCallback(async (file: File) => {
+    const note = selectedRef.current;
+    if (!note || !isMarkdown(note)) {
+      throw new Error("이미지 자산 저장은 마크다운 노트에서만 사용할 수 있습니다");
+    }
+    const bytes = await readImageBytes(file);
+    if (selectedRef.current !== note) {
+      throw new Error(IMAGE_STALE_ERROR);
+    }
+    return saveImageAsset(note, bytes);
+  }, []);
 
   const runSearch = async (requestedQuery = query) => {
     const normalized = requestedQuery.trim();
@@ -663,12 +681,12 @@ export default function App() {
           </section>
         </div>
       )}
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" role="alert">{error}</div>}
       {quickCaptureNotice && <div className="quick-capture-notice" role="status">{quickCaptureNotice}</div>}
       {quickCaptureShortcut && ["conflict", "unavailable"].includes(quickCaptureShortcut.state) && (
         <div className="quick-capture-shortcut-warning" role="status">
           전역 단축키 {quickCaptureShortcut.shortcut}를 등록하지 못했습니다. 다른 앱이 사용 중일 수 있습니다.
-          해당 앱의 단축키 설정을 변경한 뒤 다시 시도하거나, 아래 버튼으로 계속 빠르게 기록할 수 있습니다.
+          해당 앱의 단축키 설정을 변경한 뒤 Knowledge를 다시 시작하거나, 아래 버튼으로 계속 빠르게 기록할 수 있습니다.
         </div>
       )}
       <aside className="sidebar">
@@ -822,6 +840,8 @@ export default function App() {
                     loadWikilinkCandidates={wikilinkCandidates}
                     onNavigateWikilink={(path) => void openIndexedNoteAt(path)}
                     cursorRequest={cursorRequest}
+                    documentKey={selected}
+                    onImageImport={isMarkdown(selected) ? importImageAsset : undefined}
                   />
                 )}
                 {mode !== "edit" && (

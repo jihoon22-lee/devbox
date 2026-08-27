@@ -32,6 +32,12 @@ vi.mock("./api", () => ({
   openTargets: vi.fn(async () => []),
   openIn: vi.fn(async () => undefined),
   readClipboardText: vi.fn(async () => ""),
+  readClipboardImage: vi.fn(async () => null),
+  saveImageAsset: vi.fn(async () => ({
+    relativePath: "assets/" + "a".repeat(64) + ".png",
+    markdown: "![image](assets/" + "a".repeat(64) + ".png)",
+    reused: false,
+  })),
   dailyNote: vi.fn(async () => ["Journal/today.md", "# Today"] as [string, string]),
   renderMarkdown: vi.fn(async () => ({ title: null, tags: [], html: "<p>rendered</p>", mermaid: [] })),
   analyzeWikilinks: vi.fn(async () => []),
@@ -48,10 +54,12 @@ vi.mock("./api", () => ({
   }),
   quickCaptureShortcutStatus: vi.fn(async () => ({ shortcut: "Ctrl+Alt+K", state: "registered" })),
   previewQuickCapture: vi.fn(async (input: { title: string; body: string; tags: string[] }) => ({
+    previewId: "qc-1",
     target: "Inbox",
     ...input,
   })),
   saveQuickCapture: vi.fn(async () => ({ path: "Inbox/quick-capture-test.md" })),
+  discardQuickCapturePreview: vi.fn(async () => undefined),
   openInboundNote: vi.fn(async () => ({ path: "Notes/inbound.md", content: "# inbound" })),
   searchDocs: vi.fn(async (query: string) => [{ path: "Notes/result.md", title: `Result ${query}` }]),
   takePendingOpen: vi.fn().mockImplementation(async () => {

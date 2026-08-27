@@ -25,14 +25,18 @@ describe("quick capture input policy", () => {
   it("rejects line breaks in title and tags before the native call", () => {
     expect(() => normalizeQuickCapture({ title: "bad\nname", body: "note", tags: [] }))
       .toThrow("빠른 캡처 입력이 올바르지 않습니다");
-    expect(() => normalizeQuickCapture({ title: "title", body: "note", tags: ["bad\n tag"] }))
+    expect(() => normalizeQuickCapture({ title: "title\n", body: "note", tags: [] }))
       .toThrow("빠른 캡처 입력이 올바르지 않습니다");
+    expect(() => normalizeQuickCapture({ title: "title", body: "note", tags: ["bad\n tag"] }))
+      .toThrow("태그에 줄바꿈·쉼표·대괄호·따옴표를 사용할 수 없습니다");
     expect(() => normalizeQuickCapture({ title: "title", body: "bad\u0085text", tags: [] }))
       .toThrow("빠른 캡처 입력이 올바르지 않습니다");
     expect(() => normalizeQuickCapture({ title: "title\u2028name", body: "note", tags: [] }))
       .toThrow("빠른 캡처 입력이 올바르지 않습니다");
     expect(() => normalizeQuickCapture({ title: "title", body: "bad\ud800text", tags: [] }))
       .toThrow("빠른 캡처 입력이 올바르지 않습니다");
+    expect(() => normalizeQuickCapture({ title: "title", body: "note", tags: ["safe\n"] }))
+      .toThrow("태그에 줄바꿈·쉼표·대괄호·따옴표를 사용할 수 없습니다");
   });
 
   it("rejects credential-like values without exposing their content", () => {
@@ -59,7 +63,7 @@ describe("quick capture input policy", () => {
       title: "😀".repeat(201),
       body: "note",
       tags: [],
-    })).toThrow("빠른 캡처 입력이 올바르지 않습니다");
+    })).toThrow("제목은 UTF-8 800바이트·200자 이내로 입력하세요");
     expect(normalizeQuickCapture({
       title: "title",
       body: "😀".repeat(16_384),
@@ -69,28 +73,45 @@ describe("quick capture input policy", () => {
       title: "title",
       body: "😀".repeat(32_769),
       tags: [],
-    })).toThrow("빠른 캡처 입력이 올바르지 않습니다");
+    })).toThrow("본문은 LF 기준 64 KiB(원문 128 KiB) 이내로 입력하세요");
     const rawAtLimit = `${"\r\n".repeat(65_535)}x`;
     expect(normalizeQuickCapture({ title: "title", body: rawAtLimit, tags: [] }).body)
       .toHaveLength(65_536);
     const rawOverLimit = `${"\r\n".repeat(65_536)}x`;
     expect(() => normalizeQuickCapture({ title: "title", body: rawOverLimit, tags: [] }))
-      .toThrow("빠른 캡처 입력이 올바르지 않습니다");
+      .toThrow("본문은 LF 기준 64 KiB(원문 128 KiB) 이내로 입력하세요");
     expect(normalizeQuickCapture({ title: "title", body: "note", tags: ["😀".repeat(48)] }).tags)
       .toHaveLength(1);
     expect(() => normalizeQuickCapture({
       title: "title",
       body: "note",
       tags: ["😀".repeat(49)],
-    })).toThrow("빠른 캡처 입력이 올바르지 않습니다");
+    })).toThrow("태그 하나는 UTF-8 192바이트·48자 이내로 입력하세요");
   });
 
   it("scans all credential prefix occurrences and blocks header-shaped secrets", () => {
     for (const body of [
       "X-API-Key: hidden-value",
+      '{"api_key": "hidden-value"}',
       "ghp_short ghp_abcdefghijklmnop",
       "sk-abcdefghijklmnop",
       "Bearer 😀😀😀",
+      "Authorization: Basic abcdefghijklmnop",
+      "token: abcdefghijklmnop",
+      "Bearer `abcdefghijklmnop`",
+      "SECRET_KEY=abcdefghijklmnop",
+      "Cookie: session=abcdefghijklmnop",
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signaturevalue",
+      "hf_abcdefghijklmnop",
+      "ya29.abcdefghijklmnop",
+      "whsec_abcdefghijklmnop",
+      "AWS_SECRET_ACCESS_KEY=abcdefghijklmnop",
+      "ACCOUNT_KEY=abcdefghijklmnop",
+      "AZURE_CLIENT_SECRET=abcdefghijklmnop",
+      "CLOUDFLARE_API_TOKEN=abcdefghijklmnop",
+      "private_token: abcdefghijklmnop",
+      "123456789:abcdefghijklmnopqrstuvwxyzABCDE",
+      "hvs.abcdefghijklmnop",
     ]) {
       expect(() => normalizeQuickCapture({ title: "title", body, tags: [] }))
         .toThrow("민감한 정보가 포함되어 있어 저장하지 않았습니다");
@@ -115,5 +136,12 @@ describe("quick capture input policy", () => {
 
   it("parses tags only when the user submits the comma-separated field", () => {
     expect(parseQuickCaptureTags("rust, offline, rust")).toEqual(["rust", "offline", "rust"]);
+  });
+
+  it("caps direct tag parsing before allocating an untrusted tag list", () => {
+    const value = `${"x".repeat(100_000)},${"y".repeat(100_000)}`;
+    const parsed = parseQuickCaptureTags(value);
+    expect(parsed).toHaveLength(2);
+    expect(parsed.every((tag) => tag.length === 385)).toBe(true);
   });
 });
