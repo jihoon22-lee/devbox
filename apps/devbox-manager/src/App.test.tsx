@@ -190,7 +190,7 @@ describe("Devbox Manager app row context menu", () => {
     render(<App />);
     await screen.findByText("Code Pad");
 
-    expect(screen.getAllByRole("row")).toHaveLength(14);
+    expect(screen.getAllByRole("row")).toHaveLength(15);
     expect(screen.getAllByText("Devbox Manager")).toHaveLength(1);
     const target = appRow("Code Pad");
     fireEvent.contextMenu(target, { clientX: 20, clientY: 24 });

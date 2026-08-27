@@ -1,7 +1,7 @@
-# devbox — Tauri 14개 데스크톱 앱 모노레포 공통 규약
+# devbox — Tauri 15개 데스크톱 앱 모노레포 공통 규약
 
-14개 앱(port-manager, developer-toolbox, wsl-desktop, api-playground, everything-plus, knowledge-base,
-life-log, devbox-manager, code-pad, run-manager, workbench, webhook-lab, repo-manager, devbox-launcher)을 하나의 저장소에서 관리하되,
+15개 앱(port-manager, developer-toolbox, wsl-desktop, api-playground, everything-plus, knowledge-base,
+life-log, devbox-manager, code-pad, run-manager, workbench, webhook-lab, repo-manager, devbox-launcher, log-lens)을 하나의 저장소에서 관리하되,
 각각은 **독립적으로 실행되고 독립적으로 .exe가 만들어지는 Tauri 앱**이다. 소스 저장소와 공통 코드만 공유한다.
 
 ```
@@ -212,7 +212,7 @@ pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnp
 3. 두 번째 앱에서 중복 코드 발생 시 → `crates/`·`packages/`로 추출
 4. 최종: Windows에서 `pnpm tauri dev/build`
 
-## 7. 개발 순서 (현재 14개)
+## 7. 개발 순서 (현재 15개)
 ```
 Phase 1: port-manager → developer-toolbox     # Tauri 기본기 (IPC, Rust 기초, 설정)
 Phase 2: api-playground → everything-plus      # 자식 프로세스, async, HTTP, 상태관리
@@ -221,9 +221,9 @@ Phase 3: knowledge-base → life-log             # 개인 데이터 플랫폼 �
 추가:    code-pad, run-manager                 # 경량 코드 에디터(LSP), 예약 실행·서비스
 Stage4:  workbench                             # 프로젝트 기반 orchestration 셸
 Stage5:  webhook-lab, repo-manager             # 로컬 웹훅 서버, git worktree 관리
-P3:      devbox-launcher                       # devbox catalog/snapshot 전용 진입점
+P3:      devbox-launcher, log-lens             # devbox 전용 진입점, bounded 로그 검사
 ```
-- 현재 14개 앱 구현 완료. 진행 상황은 [docs/roadmap.md](./docs/roadmap.md) 참조
+- 현재 15개 앱 구현 완료. 진행 상황은 [docs/roadmap.md](./docs/roadmap.md) 참조
 - 공통 코드 발견 시점에 `crates/process`, `crates/wsl`, `packages/tokens` 등을 하나씩 추출
 - 각 프로젝트 상세는 `apps/<AppName>/README.md` 또는 설계 문서(`docs/superpowers/specs/`) 참조
 
@@ -324,7 +324,7 @@ docs/<scope>           문서 작업   예: docs/roadmap
 ## 10. 통합 전략 (Workbench)
 - `apps/workbench`를 프로젝트 기반 orchestration 셸로 구현했다 (구현 완료)
 - workbench는 기존 `crates/`·`packages/`를 그대로 재사용 → 공통화가 통합을 쉽게 만든다
-- Workbench까지 원래 13개 구조를 완성했고, Devbox Launcher 추가 후 현재 독립 앱은 14개다.
+- Workbench까지 원래 13개 구조를 완성했고, Devbox Launcher와 Log Lens 추가 후 현재 독립 앱은 15개다.
 - Workbench project environment는 native-first/offline 경계를 따른다. 사용자가 고른
   프로젝트 상대 `.env`/`.env.<name>`만 읽고, profile·IPC·snapshot·로그에는 원문 값을
   넣지 않는다. 저장되는 것은 source, 변수 이름, 충돌 상태, opaque revision과

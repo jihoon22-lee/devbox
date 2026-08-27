@@ -1432,7 +1432,7 @@ JWT decode와 signature verify는 별도 기능으로 구분한다. decode 성�
 | workbench | 5 | 5 | 5 | 3 | 4 | 구현 완료 |
 | webhook-lab | 4 | 4 | 5 | 5 | 3 | 구현 완료 |
 | dev-env-doctor | 4 | 4 | 4 | 5 | 2 | Manager 내부 구현 완료 |
-| log-lens | 4 | 4 | 4 | 4 | 3 | **v0.5.0 신규 앱 선택** |
+| log-lens | 4 | 4 | 4 | 4 | 3 | **v0.5.0 신규 앱 구현 완료** |
 | repo-manager | 3 | 4 | 4 | 4 | 3 | 구현 완료, v0.5.0 강화 |
 | data-inspector | 3 | 3 | 4 | 4 | 4 | v0.5.0 Manager 내부 기능 |
 | devbox-launcher | 5 | 5 | 5 | 4 | 3 | **v0.5.0 신규 앱 구현 완료** |
@@ -3941,7 +3941,7 @@ PR 2(identifier), PR 4(DB 흡수)는 사용자 데이터를 옮긴다. 다음을
 
 ### 20.1 2026-08-22 현재 결론
 
-위 전제는 v0.4.0~v0.4.1에서 충족됐고 Launcher bootstrap까지 반영됐다. 현재 저장소에는 14개 앱, release catalog/manifest,
+위 전제는 v0.4.0~v0.4.1에서 충족됐고 Launcher·Log Lens bootstrap까지 반영됐다. 현재 저장소에는 15개 앱, release catalog/manifest,
 `crates/wsl`·`search`·`integration`·`applink`·`launch`, ProjectProfile과 실제 inbound 계약이
 있다. 다음 단계는 다시 기반만 만드는 것이 아니라 그 기반으로 사용자의 앱 전환과 수동
 데이터 운반을 실제로 줄이는 것이다.

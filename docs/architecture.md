@@ -15,7 +15,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 
 ```
 ┌──────────────────────────────┐
-│ apps/*   독립 Tauri 앱 (.exe) │  14개
+│ apps/*   독립 Tauri 앱 (.exe) │  15개
 ├──────────────────────────────┤
 │ packages/*  React 공용       │  tokens, editor, diff-view, context-menu
 ├──────────────────────────────┤
@@ -29,10 +29,11 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 └──────────────────────────────┘
 ```
 
-위 그림은 v0.5.0 개발 중인 현재 구조다. 기존 동작을 유지하면서 다음 계획 요소를
+위 그림은 v0.5.0 개발 중인 현재 구조다. 기존 동작을 유지하면서 계획 요소를
 순차적으로 추가한다. 구현 전인 항목은 현재 앱/크레이트 수에 포함하지 않는다.
 
-- 신규 독립 앱 `log-lens` — 구현 후 목표 15개 앱
+- 신규 독립 앱 `devbox-launcher`·`log-lens` bootstrap 구현 — 현재 15개 앱. Log Lens의
+  Run/WSL producer handoff는 후속 integration PR이다.
 - 구현된 순수 `crates/catalog` — catalog v1/v2 type·revision freshness·runtime/build-time
   fallback·capability filter. runtime file I/O는 후속 Manager 기능이 담당한다.
 - 신규 `crates/logs` — Log Lens가 두 번째 소비자가 되는 시점의 순수 log parsing
@@ -67,6 +68,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   crates/launch     ◄── everything-plus, knowledge-base, life-log, repo-manager, workbench, devbox-launcher
   crates/catalog    ◄── devbox-manager, devbox-launcher
   crates/window-state ◄── 일반 persistent window 소비 앱 (후속 cross-app wiring)
+  apps/log-lens     ◄── wsl (fixed WSL argv validation; parser remains app-local until a second consumer)
 ```
 
 ### `crates/window-state` 선행 계약
@@ -145,6 +147,7 @@ devbox-launcher:  transient React → bounded catalog/optional snapshot index �
                    ├ missing target → Devbox Manager install handoff
                    ├ source path가 없거나 손상되면 해당 source만 격리
                    └ selected/clipboard text는 명시적 preview 동안에만 표시
+log-lens:         React → bounded commands → app-local parser/ring → local file or fixed WSL/container adapter
 ```
 
 Repo Manager의 Git history·diff(#316)는 선택된 canonical repository에서만 실행되는 native
@@ -319,6 +322,16 @@ temporary sibling을 no-replace primitive로 publish하고, 그 entry identity�
 사용하며 이벤트당 path 수·길이와 raw event queue·pending path를 각각 bounded하게 유지한다. frontend modal은 title/body
 UTF-8 byte budget과 explicit Save/Cancel, stale/expiry/unmount guard, focus trap/restore를
 제공한다.
+
+Log Lens는 local file/directory, fixed WSL `cat`/`journalctl`, fixed Docker/Podman `logs`
+adapter만 읽는다. Source path, command, environment, credential은 source identity나 error로
+반향하지 않으며, parser는 app-local core에 남겨 `crates/logs` 조기 추출을 피한다. 100,000 line
+또는 64MiB process-memory ring과 16KiB line cap을 함께 적용하고, rotation/truncate는 file
+identity와 size cursor로 재시작한다. operation ID/generation guard와 cancellation은 stale
+callback·unmount·single-flight 결과를 폐기한다. saved view는 source 설정과 filter만 memory에
+보관하며 raw log는 저장하지 않는다. export/copy는 사용자가 누른 현재 selection에 한해서만
+수행한다. Run Manager의 `log-source/v1` receiver는 이 bootstrap에서 identity만 검증하며,
+producer claim/ack와 WSL/Run 실연결은 후속 integration PR의 책임이다.
 
 Workbench는 Life Log의 app-local DB와 settings schema를 알지 않는다. 시작 시
 `life-log/projects/v1`을 producer/schema/freshness 기준으로 검증하고 안전한 절대 경로만
@@ -541,7 +554,7 @@ environment store와 다른 앱 DB 변경을 하지 않는다.
 
 ### CSP 기준선
 
-14개 앱 전부 다음 최소 기준선을 쓴다 (PR 17 + 신규 앱 반영).
+15개 앱 전부 다음 최소 기준선을 쓴다 (PR 17 + 신규 앱 반영).
 
 ```
 default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline';
@@ -749,7 +762,7 @@ Manager service를 변경하지 않고 snapshot path·raw Docker detail·contain
 
 `apps/workbench`는 기존 앱의 UI를 복제하는 통합 앱이 아니라, 프로젝트를 기준으로
 여러 앱·서비스를 조정하고 상태를 요약하는 **orchestration 셸**이다. 기존 `crates/`·
-`packages/`를 재사용하며, 결과물은 **독립 앱 14개**(workbench 포함) 구조다.
+`packages/`를 재사용하며, 결과물은 **독립 앱 15개**(workbench, Devbox Launcher, Log Lens 포함) 구조다.
 상세: `docs/product-opportunities.md` §15.2, `docs/superpowers/specs/2026-08-14-workbench-design.md`
 
 ## 신규 앱 설계 문서
