@@ -4,6 +4,7 @@ import {
   type ContextMenuEntry,
 } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   createService,
   createJob,
@@ -27,6 +28,8 @@ import {
   startService,
   stopActiveRun,
   stopService,
+  onOpenRequest,
+  takePendingOpen,
   updateService,
   updateJob,
 } from "./api";
@@ -118,11 +121,14 @@ export default function App() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [activeSnapshotError, setActiveSnapshotError] = useState<string | null>(null);
   const [activeSnapshotFresh, setActiveSnapshotFresh] = useState(false);
+  const [launcherTask, setLauncherTask] = useState<{ id: string; kind: "job" | "service" } | null>(null);
   const activeRefresh = useRef<{ promise: Promise<void> | null; pending: boolean; generation: number }>({
     promise: null,
     pending: false,
     generation: 0,
   });
+  const openRequestRef = useRef<(id: string) => void>(() => undefined);
+  const launcherCancelRef = useRef<HTMLButtonElement>(null);
 
   const prepareJobContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.jobId;
@@ -198,6 +204,75 @@ export default function App() {
     setServiceInstances(snapshot.instances);
   }, []);
 
+  const handleLauncherTask = useCallback((id: string) => {
+    const job = jobs.find((candidate) => candidate.id === id);
+    const service = services.find((candidate) => candidate.id === id);
+    const task = job ?? service;
+    if (!task) {
+      setError("Launcher가 요청한 작업을 찾지 못했습니다.");
+      return;
+    }
+    setError(null);
+    setScreen(task.kind === "job" ? "jobs" : "services");
+    if (task.kind === "job") setSelectedJobId(task.id);
+    else setSelectedServiceId(task.id);
+    setLauncherTask({ id: task.id, kind: task.kind });
+  }, [jobs, services]);
+
+  const confirmLauncherTask = async () => {
+    if (!launcherTask || busy) return;
+    const task = launcherTask.kind === "job"
+      ? jobs.find((candidate) => candidate.id === launcherTask.id && candidate.kind === "job")
+      : services.find((candidate) => candidate.id === launcherTask.id && candidate.kind === "service");
+    if (!task) {
+      setLauncherTask(null);
+      setError("Launcher가 요청한 작업을 찾지 못했습니다.");
+      return;
+    }
+    setBusy(true);
+    try {
+      if (task.kind === "job") {
+        await runJobNow(task.id);
+        await refreshActiveRuns();
+      } else {
+        await startService(task.id);
+        await refreshServices();
+      }
+    } catch {
+      setError("Launcher가 요청한 작업을 실행하지 못했습니다.");
+    } finally {
+      setLauncherTask(null);
+      setBusy(false);
+    }
+  };
+
+  openRequestRef.current = (id) => { void handleLauncherTask(id); };
+
+  useEffect(() => {
+    if (launcherTask) launcherCancelRef.current?.focus();
+    else document.querySelector<HTMLElement>(".job-card.selected")?.focus();
+  }, [launcherTask]);
+
+  const onLauncherDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (!busy) setLauncherTask(null);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not([disabled])"));
+    if (controls.length === 0) return;
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   const onToggleObs = async (id: string) => {
     setObsOpen((prev) => ({ ...prev, [id]: !prev[id] }));
     if (!obsMap[id]) {
@@ -266,6 +341,37 @@ export default function App() {
       active = false;
     };
   }, [refreshActiveRuns]);
+
+  // AppLink events are only a wake-up signal. The authoritative request is
+  // pulled from the native one-shot slot, then the current job/service list is
+  // checked before any run or service action is invoked.
+  useEffect(() => {
+    if (loading) return;
+    const consumePendingOpen = () => {
+      void takePendingOpen()
+        .then((request) => {
+          if (request?.target.kind === "task") openRequestRef.current(request.target.id);
+        })
+        .catch(() => setError("Launcher 요청을 처리하지 못했습니다."));
+    };
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void onOpenRequest(() => {
+      if (!disposed) consumePendingOpen();
+    })
+      .then((stop) => {
+        if (disposed) stop();
+        else {
+          unlisten = stop;
+          consumePendingOpen();
+        }
+      })
+      .catch(() => consumePendingOpen());
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [loading]);
 
   useEffect(() => {
     if (screen !== "jobs") {
@@ -858,6 +964,44 @@ export default function App() {
           }}
           onClose={() => setImportOpen(false)}
         />
+      )}
+      {launcherTask && (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="launcher-task-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="launcher-task-title"
+            aria-describedby="launcher-task-description"
+            onKeyDown={onLauncherDialogKeyDown}
+          >
+            <h2 id="launcher-task-title">Launcher 요청 확인</h2>
+            <p id="launcher-task-description">
+              {launcherTask.kind === "job"
+                ? "현재 저장된 작업을 한 번 실행합니다."
+                : "현재 저장된 서비스를 시작합니다."}
+            </p>
+            <div className="launcher-task-actions">
+              <button
+                ref={launcherCancelRef}
+                type="button"
+                className="button-secondary"
+                disabled={busy}
+                onClick={() => setLauncherTask(null)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="button-primary"
+                disabled={busy}
+                onClick={() => void confirmLauncherTask()}
+              >
+                {launcherTask.kind === "job" ? "실행" : "시작"}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
       <ContextMenu
         open={jobContextMenu.open}

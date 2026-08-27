@@ -1,0 +1,29 @@
+:root { color: #e6edf3; background: transparent; font-family: Inter, "Segoe UI", sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 520px; background: transparent; }
+button, input, select { font: inherit; }
+.launcher-shell { padding: 18px; min-height: 100vh; background: rgba(15, 23, 42, .96); }
+.launcher-panel { max-width: 684px; margin: auto; }
+.launcher-header, .launcher-footer, .modal-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { margin: 0; font-size: 22px; } h2 { margin-top: 0; } p { margin: 5px 0 14px; color: #9fb0c2; }
+.icon-button { border: 0; background: transparent; color: #9fb0c2; font-size: 24px; cursor: pointer; }
+.search-label { display: block; font-size: 12px; color: #9fb0c2; margin-bottom: 6px; }
+.search-input { width: 100%; border: 1px solid #39516f; border-radius: 8px; background: #101c2e; color: white; padding: 12px 14px; outline: none; }
+.search-input:focus { border-color: #62a0ea; box-shadow: 0 0 0 2px rgba(98,160,234,.3); }
+.status { min-height: 24px; padding: 7px 2px; color: #a9b9cc; font-size: 12px; }
+.result-list { padding: 0; margin: 0; list-style: none; max-height: 310px; overflow: auto; }
+.result { display: flex; width: 100%; flex-direction: column; align-items: flex-start; border: 1px solid transparent; border-radius: 7px; padding: 10px 12px; color: #e6edf3; background: transparent; cursor: pointer; text-align: left; }
+.result:hover, .result.selected { background: #1b3454; border-color: #3f6592; }
+.result:focus-visible, .icon-button:focus-visible, .modal-actions button:focus-visible, select:focus-visible { outline: 2px solid #9ecbff; outline-offset: 2px; }
+.result-label { font-weight: 600; } .result-detail { color: #9fb0c2; font-size: 12px; margin-top: 3px; }
+.empty { padding: 22px; text-align: center; color: #9fb0c2; }
+.launcher-footer { border-top: 1px solid #2c4058; margin-top: 12px; padding-top: 12px; color: #9fb0c2; font-size: 12px; }
+.shortcut-status { margin: 8px 0 0; padding: 8px 10px; border: 1px solid #8b6d34; border-radius: 6px; color: #f5d58a; font-size: 12px; }
+select { margin-left: 5px; color: #e6edf3; background: #101c2e; border: 1px solid #39516f; border-radius: 4px; padding: 3px; }
+.sources { color: #71869e; font-size: 11px; margin-top: 12px; } .sources span { display: inline-block; margin: 5px 12px 0 0; }
+.modal-backdrop { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.62); }
+.preview-modal { width: min(600px, calc(100vw - 32px)); border-radius: 10px; background: #17263b; border: 1px solid #466487; padding: 18px; box-shadow: 0 20px 60px #0008; }
+.confirmation-modal { width: min(520px, calc(100vw - 32px)); }
+.preview-modal pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: #0b1422; border-radius: 6px; }
+.modal-actions { justify-content: flex-end; } .modal-actions button { border: 1px solid #577a9f; background: #233e61; color: white; border-radius: 6px; padding: 7px 15px; cursor: pointer; }
+.modal-actions button:first-child { background: transparent; }

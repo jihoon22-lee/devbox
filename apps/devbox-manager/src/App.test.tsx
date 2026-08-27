@@ -12,12 +12,14 @@ import {
   installMany,
   installed,
   launchApp,
+  onPendingOpen,
   openInstallFolder,
   previewRemoveApp,
   previewInstallRoot,
   removeApp,
   rollback,
   runDiagnosis,
+  takePendingOpen,
 } from "./api";
 import type {
   CatalogApp,
@@ -40,12 +42,14 @@ vi.mock("./api", () => ({
   installMany: vi.fn(),
   installed: vi.fn(),
   launchApp: vi.fn(),
+  onPendingOpen: vi.fn(async () => () => undefined),
   openInstallFolder: vi.fn(),
   previewRemoveApp: vi.fn(),
   previewInstallRoot: vi.fn(),
   removeApp: vi.fn(),
   rollback: vi.fn(),
   runDiagnosis: vi.fn(),
+  takePendingOpen: vi.fn(async () => null),
 }));
 
 const catalogApps = catalogJson.apps as CatalogApp[];
@@ -94,6 +98,8 @@ const previewRemoveAppMock = vi.mocked(previewRemoveApp);
 const removeAppMock = vi.mocked(removeApp);
 const runDiagnosisMock = vi.mocked(runDiagnosis);
 const previewInstallRootMock = vi.mocked(previewInstallRoot);
+const onPendingOpenMock = vi.mocked(onPendingOpen);
+const takePendingOpenMock = vi.mocked(takePendingOpen);
 const confirmMock = vi.fn<(message?: string) => boolean>();
 const portablePath: InstallPathInfo = {
   appId: "port-manager",
@@ -110,6 +116,8 @@ function appRow(name: string): HTMLTableRowElement {
 }
 
 beforeEach(() => {
+  onPendingOpenMock.mockReset().mockResolvedValue(() => undefined);
+  takePendingOpenMock.mockReset().mockResolvedValue(null);
   catalogMock.mockReset().mockResolvedValue(catalogApps);
   availableMock.mockReset().mockResolvedValue(manifest);
   installedMock.mockReset().mockResolvedValue([portable]);
@@ -182,13 +190,27 @@ describe("Devbox Manager app row context menu", () => {
     render(<App />);
     await screen.findByText("Code Pad");
 
-    expect(screen.getAllByRole("row")).toHaveLength(13);
+    expect(screen.getAllByRole("row")).toHaveLength(14);
     expect(screen.getAllByText("Devbox Manager")).toHaveLength(1);
     const target = appRow("Code Pad");
     fireEvent.contextMenu(target, { clientX: 20, clientY: 24 });
 
     expect(target.getAttribute("aria-current")).toBe("true");
     expect(screen.getByRole("menu", { name: "앱 메뉴" })).toBeTruthy();
+  });
+
+  it("selects the catalog-validated install target from Launcher", async () => {
+    takePendingOpenMock.mockResolvedValueOnce({
+      target: { kind: "install", appId: "devbox-launcher" },
+      from: "devbox-launcher",
+    });
+    render(<App />);
+
+    const target = await screen.findByText("Devbox Launcher");
+    const row = target.closest("tr");
+    if (!(row instanceof HTMLTableRowElement)) throw new Error("Launcher row was not rendered");
+    await waitFor(() => expect(row.getAttribute("aria-current")).toBe("true"));
+    expect(screen.getByText("Launcher 요청: 선택한 앱의 설치 방법을 고르세요.")).toBeTruthy();
   });
 
   it("shows the exact app actions with portable state gates", async () => {

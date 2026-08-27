@@ -176,6 +176,49 @@ importers:
         specifier: ^7.0.4
         version: 7.3.6(yaml@2.9.0)
 
+  apps/devbox-launcher:
+    dependencies:
+      '@devbox/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
+      '@tauri-apps/api':
+        specifier: ^2
+        version: 2.11.1
+      '@tauri-apps/plugin-clipboard-manager':
+        specifier: ^2
+        version: 2.3.2
+      react:
+        specifier: ^19.1.0
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.8(react@19.2.8)
+    devDependencies:
+      '@tauri-apps/cli':
+        specifier: ^2
+        version: 2.11.4
+      '@types/react':
+        specifier: ^19.1.8
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.1.6
+        version: 19.2.4(@types/react@19.2.18)
+      '@vitejs/plugin-react':
+        specifier: ^4.6.0
+        version: 4.7.0(vite@7.3.6(yaml@2.9.0))
+      jsdom:
+        specifier: ^30.0.1
+        version: 30.0.1
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^7.0.4
+        version: 7.3.6(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(jsdom@30.0.1)(vite@7.3.6(yaml@2.9.0))
+
   apps/devbox-manager:
     dependencies:
       '@devbox/context-menu':

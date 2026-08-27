@@ -39,6 +39,8 @@ export type OpenTarget =
   | { kind: "profile"; id: string }
   | { kind: "workspace"; path: string }
   | { kind: "query"; text: string }
+  | { kind: "task"; id: string }
+  | { kind: "install"; appId: string }
   | { kind: "handoff"; handoffKind: string; id: string };
 
 export interface OpenRequest {

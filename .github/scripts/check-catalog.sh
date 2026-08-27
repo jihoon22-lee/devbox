@@ -58,7 +58,7 @@ def valid_version(value):
     return bool(re.fullmatch(r"v[1-9][0-9]*", value))
 
 def capability_shape(value):
-    if value in {"path", "workspace", "query", "profile"}:
+    if value in {"path", "workspace", "query", "profile", "task"}:
         return "basic"
     if isinstance(value, str) and value.startswith("handoff:"):
         parts = value.removeprefix("handoff:").split("/")

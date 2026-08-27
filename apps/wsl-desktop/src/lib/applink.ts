@@ -21,6 +21,8 @@ export function routeOpenRequest(request: OpenRequest): WslDesktopOpenAction {
       return { kind: "openProfile", id: target.id };
     case "workspace":
     case "query":
+    case "task":
+    case "install":
       return { kind: "noop", reason: `wsl-desktop은 "${target.kind}" 타깃을 받지 않는다 (설계 §1.4)` };
   }
 }

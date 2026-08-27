@@ -28,6 +28,8 @@ export function routeOpenRequest(request: OpenRequest): CodePadOpenAction {
       return { kind: "openWorkspace", path: target.path };
     case "profile":
     case "query":
+    case "task":
+    case "install":
       return { kind: "noop", reason: `code-pad는 "${target.kind}" 타깃을 받지 않는다 (설계 §1.4)` };
   }
 }

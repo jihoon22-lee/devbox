@@ -15,11 +15,13 @@ import {
   installed,
   launchApp,
   openInstallFolder,
+  onPendingOpen,
   previewRemoveApp,
   previewInstallRoot,
   removeApp,
   rollback,
   runDiagnosis,
+  takePendingOpen,
   type DiagnosisItem,
 } from "./api";
 import type {
@@ -206,6 +208,22 @@ export default function App() {
       removeRequestIdRef.current += 1;
     };
   }, [refresh]);
+
+  useEffect(() => {
+    let alive = true;
+    const applyInstallRequest = (request: { target: { kind: "install"; appId: string } }) => {
+      if (!alive || request.target.kind !== "install") return;
+      setTab("apps");
+      setSelectedAppId(request.target.appId);
+      setNotice("Launcher 요청: 선택한 앱의 설치 방법을 고르세요.");
+    };
+    let unlisten: (() => void) | undefined;
+    void onPendingOpen((request) => applyInstallRequest(request)).then((dispose) => {
+      unlisten = dispose;
+      void takePendingOpen().then((request) => { if (request) applyInstallRequest(request); }).catch(() => undefined);
+    }).catch(() => undefined);
+    return () => { alive = false; unlisten?.(); };
+  }, []);
 
   const onInstallRootInput = (value: string) => {
     // A late preview/apply response must never resurrect a preview for an

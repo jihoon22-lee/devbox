@@ -1239,9 +1239,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "devbox-launcher"
+version = "0.1.0"
+dependencies = [
+ "applink",
+ "catalog",
+ "filesystem",
+ "integration",
+ "launch",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-single-instance",
+ "windows 0.61.3",
+]
+
+[[package]]
 name = "devbox-manager"
 version = "0.3.1"
 dependencies = [
+ "applink",
  "catalog",
  "dirs",
  "filesystem",
@@ -1257,6 +1276,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
  "windows 0.61.3",
  "wsl",
 ]
@@ -4387,6 +4407,7 @@ dependencies = [
 name = "run-manager"
 version = "0.3.3"
 dependencies = [
+ "applink",
  "chrono",
  "chrono-tz",
  "croner",

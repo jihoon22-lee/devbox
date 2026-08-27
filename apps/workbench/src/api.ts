@@ -355,7 +355,9 @@ export type OpenTarget =
   | { kind: "path"; path: string; line: number | null; column: number | null }
   | { kind: "profile"; id: string }
   | { kind: "workspace"; path: string }
-  | { kind: "query"; text: string };
+  | { kind: "query"; text: string }
+  | { kind: "task"; id: string }
+  | { kind: "install"; appId: string };
 
 export interface OpenRequest {
   target: OpenTarget;

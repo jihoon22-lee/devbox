@@ -487,7 +487,7 @@ fn validate_action_links(apps: &[CatalogApp]) -> Result<(), CatalogError> {
 }
 
 fn capability_shape(value: &str) -> Option<CapabilityShape> {
-    if matches!(value, "path" | "workspace" | "query" | "profile") {
+    if matches!(value, "path" | "workspace" | "query" | "profile" | "task") {
         return Some(CapabilityShape::Basic);
     }
     if let Some(kind) = value.strip_prefix("handoff:") {
