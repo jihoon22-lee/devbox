@@ -120,6 +120,9 @@ The complete local workspace gates and focused regression suites passed in the d
   fixture가 먼저 escaped child PID를 게시하도록 handshake를 고정한 뒤 5회 연속 통과했다.
 - `cargo test -p repo-manager remote_real_git_fixture_covers_ff_pull_push_and_diverged_block` —
   Git for Windows의 CRLF checkout도 같은 logical content로 검증하도록 정규화한 뒤 통과했다.
+- `cargo test -p code-pad --lib lsp::runtime::tests::managed_node_rejects_old_missing_and_hanging_runtimes` —
+  output-limit fixture를 느린 9,000회 shell loop에서 단일 POSIX `printf` 호출로 바꿨다. 부하가
+  큰 Linux CI에서도 8 KiB output 경계가 5초 timeout보다 먼저 결정되도록 고정했다.
 - `git diff --check` — passed.
 
 The worktree restored frontend dependencies from the existing pnpm store with
