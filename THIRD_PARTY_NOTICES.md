@@ -4,8 +4,8 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `aff7684acc5c53ff047ba8b1e82cae188d33808cd5cec329fbf4953e0e9ad334`
-- pnpm-lock.yaml SHA-256: `6ad0ed7ec2391b0c1980a132f3047c673770dfaa47655d63e3589280e5ef1969`
+- Cargo.lock SHA-256: `ced4ed69928bcfb3ffa1be829e8bdb5f5eb60f268525f2f40e9b3df4f5816943`
+- pnpm-lock.yaml SHA-256: `c49f2e10098da67eaf9af9bf737d06f517fc6efda1883d2bc810d8068027f440`
 
 ## Rust dependencies
 
@@ -23,6 +23,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | ascii | 1.1.0 | Apache-2.0 OR MIT | https://github.com/tomprogrammer/rust-ascii | `sha256:d92bec98840b8f03a5ff5413de5293bfcd8bf96467cf5452609f939ec6f5de16` |
 | async-broadcast | 0.7.2 | MIT OR Apache-2.0 | https://github.com/smol-rs/async-broadcast | `sha256:435a87a52755b8f27fcf321ac4f04b2802e337c8c4872923137471ec39c37532` |
 | async-channel | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/async-channel | `sha256:924ed96dd52d1b75e9c1a3e6275715fd320f5f9439fb5a4a11fa51f4221158d2` |
+| async-compression | 0.4.43 | MIT OR Apache-2.0 | https://github.com/Nullus157/async-compression | `sha256:3976abdc8fe7d1133d43d304afd42abdf5bc3e1319d263d223bde07b5efc4be8` |
 | async-executor | 1.14.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/async-executor | `sha256:c96bf972d85afc50bf5ab8fe2d54d1586b4e0b46c97c50a0c9e71e2f7bcd812a` |
 | async-io | 2.6.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/async-io | `sha256:456b8a8feb6f42d237746d4b3e9a178494627745c3c56c6ea55d92ba50d026fc` |
 | async-lock | 3.4.2 | Apache-2.0 OR MIT | https://github.com/smol-rs/async-lock | `sha256:290f7f2596bd5b78a9fec8088ccd89180d7f9f55b94b0576823bbbdc72ee8311` |
@@ -78,6 +79,8 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | cmake | 0.1.58 | MIT OR Apache-2.0 | https://github.com/rust-lang/cmake-rs | `sha256:c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678` |
 | cmov | 0.5.4 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils | `sha256:0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a` |
 | combine | 4.6.7 | MIT | https://github.com/Marwes/combine | `sha256:ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd` |
+| compression-codecs | 0.4.38 | MIT OR Apache-2.0 | https://github.com/Nullus157/async-compression | `sha256:ce2548391e9c1929c21bf6aa2680af86fe4c1b33e6cea9ac1cfeec0bd11218cf` |
+| compression-core | 0.4.32 | MIT OR Apache-2.0 | https://github.com/Nullus157/async-compression | `sha256:cc14f565cf027a105f7a44ccf9e5b424348421a1d8952a8fc9d499d313107789` |
 | concurrent-queue | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/concurrent-queue | `sha256:4ca0197aee26d1ae37445ee532fefce43251d24cc7c166799f4d46817f1d3973` |
 | const-oid | 0.10.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats | `sha256:a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c` |
 | cookie | 0.18.2 | MIT OR Apache-2.0 | https://github.com/SergioBenitez/cookie-rs | `sha256:1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87` |
@@ -675,6 +678,9 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | zerovec-derive | 0.11.3 | Unicode-3.0 | https://github.com/unicode-org/icu4x | `sha256:625dc425cab0dca6dc3c3319506e6593dcb08a9f387ea3b284dbd52a92c40555` |
 | zip | 8.6.0 | MIT | https://github.com/zip-rs/zip2 | `sha256:2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b` |
 | zmij | 1.0.23 | MIT | https://github.com/dtolnay/zmij | `sha256:29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b` |
+| zstd | 0.13.3 | MIT | https://github.com/gyscos/zstd-rs | `sha256:e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a` |
+| zstd-safe | 7.2.4 | MIT OR Apache-2.0 | https://github.com/gyscos/zstd-rs | `sha256:8f49c4d5f0abb602a93fb8736af2a4f4dd9512e36f7f570d66e65ff867ed3b9d` |
+| zstd-sys | 2.0.16+zstd.1.5.7 | MIT/Apache-2.0 | https://github.com/gyscos/zstd-rs | `sha256:91e19ebc2adc8f83e43039e79776e3fda8ca919132d68a1fed6a5faca2683748` |
 | zune-core | 0.5.3 | MIT OR Apache-2.0 OR Zlib | https://github.com/etemesi254/zune-image | `sha256:d56377fd46368984a170bc5aac5567e52ca5da874caa60bea39fcbca78fb658b` |
 | zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib | https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg | `sha256:27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296` |
 | zvariant | 5.14.0 | MIT | https://github.com/z-galaxy/zbus/ | `sha256:b5e28c25bd8bb8da5a1f3e7065d0c156b9ee9a7973adf78b0e35eaefdf3b1b5c` |

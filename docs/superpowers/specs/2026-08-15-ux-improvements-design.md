@@ -227,7 +227,7 @@ type MenuItem =
 | knowledge-base | 첨부파일(이미지) 관리 | root 내 attachment 폴더, 이미지 드롭·삽입·프리뷰 | 중 |
 | api-playground | 파일 업로드 | `multipart/form-data`, `reqwest::multipart`; #270에서 runtime-only picker 경로·bounded stream·safe history로 구현 | 저 |
 | api-playground | 응답 헤더/쿠키 뷰어 | #271 Body/Headers/Cookies 탭, Set-Cookie 기본 masking, bounded native raw-copy 확인 경계 | 저 |
-| api-playground | OpenAPI 3 import | 스펙 파싱 → endpoint 요청 초안. **기존 collection 덮어쓰기 방지를 위해 적용 전 preview 필요** — `packages/diff-view`가 이미 있으므로 소비자로 연결 | 중 |
+| api-playground | OpenAPI 3 import | 로컬 파일/HTTP(S) URL의 JSON/YAML 스펙을 bounded source 경계와 parser로 읽어 endpoint 요청 초안 생성. **기존 collection 덮어쓰기 방지를 위해 적용 전 preview 필요**. 로컬은 완전 오프라인, URL만 제한된 native fetch, 자동 전송은 제외 | 중 |
 | life-log | Markdown/JSON export | 집계 결과 직렬화 | 저 |
 | port-manager | 프로세스 명령줄 표시+복사 | Win32 process command line 조회. **타 사용자/권한 프로세스는 접근 거부되므로 "권한 없음" 표시 경로를 함께 설계** | 중 |
 

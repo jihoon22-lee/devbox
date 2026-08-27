@@ -205,6 +205,11 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
      in-flight connect/body cancellation까지 루트 review fixture로 고정했고 frontend 전체
      test/build를 통과했다. persisted query/introspection/schema cache/subscription/codegen/replay는
      제외하며 Windows W2는 PR gate에서 확인한다.
+   - OpenAPI 첫 독립 범위는 로컬 파일과 HTTP(S) URL의 JSON/YAML 3.0/3.1 bounded import 및
+   operation preview/apply다. 로컬 경로는 완전 오프라인이고 URL 선택 때만 제한된 native fetch를
+   수행한다. Swagger UI bundle·자동 전송·secret 주입은 제외한다. `$ref`·unsupported auth/method·unsafe graph는
+   operation 단위로 격리하며, 기존 Collection overwrite 없이 현재 draft 또는 새 항목으로만
+   명시적으로 적용한다.
 5. Everything+ text/code/Markdown 및 PDF/DOCX/XLS(X)/ODS content index.
 6. Knowledge global quick capture·image asset, Life Log Markdown/JSON/CSV export·규칙 기반 요약.
    Life Log export는 #305 범위의 native-first date-range artifact와 browser-preview 경계를
@@ -457,6 +462,16 @@ raw-byte CAS/process-local lock으로 partial write와 concurrent overwrite를 �
 timestamp 내림차순+ID tie-break로 결정적이며 UI는 fixture 저장·삭제·전체 삭제·로컬 response-rule
 초안 action을 하나의 busy guard와 접근 가능한 label로 보호한다. #315 API handoff와 #362 replay/
 sequence는 구현하지 않는다.
+
+#293 API Playground OpenAPI import는 로컬 파일과 HTTP(S) URL의 JSON/YAML 3.0/3.1 문서를 대상으로
+bounded source/parser 경계와 operation preview를 고정한다. 로컬 file read는 완전 오프라인이고 URL은
+2,048자, connect 5초/수동 redirect를 포함한 전체 15초, 같은 host·유효 port redirect 3회, decoded response 4 MiB 상한의 native fetch만
+사용하며 gzip/deflate/brotli/zstd는 해제 후 상한을 적용한다. userinfo/credential-shaped query/fragment 및 원문 URL 반향을 거부한다. server/path/method/parameter/body/auth metadata를 deterministic하게
+미리 보고 한 operation을 현재 draft에 적용하거나 체크한 operation을 새 Collection에 추가하며,
+기존 Collection overwrite와 자동 전송은 없다. JSON/YAML unsafe graph·prototype key·`$ref`·지원하지
+않는 auth/method와 표현할 수 없는 path/operation-level server override는 고정 오류와 operation 단위
+격리로 처리한다. 생성 request의 parameter/header/cookie row는 각각 100개, 구조화 body는 512 KiB로 제한하며
+environment reference도 secret처럼 비워 둔다. Swagger UI bundle, code generation, secret 주입은 범위에서 제외한다.
 
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅

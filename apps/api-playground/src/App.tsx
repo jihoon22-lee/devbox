@@ -17,6 +17,7 @@ import { CookieEditor } from "./CookieEditor";
 import { GraphqlEditor } from "./GraphqlEditor";
 import { HeaderTable } from "./HeaderTable";
 import { MultipartEditor } from "./MultipartEditor";
+import { OpenApiImport } from "./OpenApiImport";
 import { ResponseViewer, type RawResponseCopyKind } from "./ResponseViewer";
 import {
   addEntry,
@@ -83,6 +84,7 @@ import {
   validateMultipartParts,
 } from "./lib/multipart";
 import type { ApiResponse, GraphqlRequest, HistoryItem, KeyValue, RequestTemplate } from "./types";
+import { OPENAPI_LIMITS, type OpenApiOperationPreview } from "./lib/openapi";
 import "./App.css";
 
 export { statusClass } from "./ResponseViewer";
@@ -197,6 +199,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [showCurl, setShowCurl] = useState(false);
+  const [showOpenApiImport, setShowOpenApiImport] = useState(false);
   const [tab, setTab] = useState<"params" | "headers" | "cookies" | "body" | "auth">("params");
   const [pretty, setPretty] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -215,6 +218,7 @@ export default function App() {
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [requestEditorRevision, setRequestEditorRevision] = useState(0);
+  const openApiCollectionSavingRef = useRef(false);
   const [contextHistory, setContextHistory] = useState<HistoryItem | null>(null);
   const [contextCollection, setContextCollection] = useState<CollectionEntry | null>(null);
   const mountedRef = useRef(true);
@@ -288,7 +292,7 @@ export default function App() {
 
   const persistCollections = async (store: ReturnType<typeof emptyCollectionStore>) => {
     const safe = await saveStore(store, sanitizeForPersistence);
-    setCollections(safe);
+    if (mountedRef.current) setCollections(safe);
     return safe;
   };
 
@@ -315,6 +319,60 @@ export default function App() {
       setPersistenceWarning("민감정보 안전 검증에 실패해 Collection을 저장하지 않았습니다.");
     } finally {
       setCollSaving(false);
+    }
+  };
+
+  const onOpenApiApply = (operation: OpenApiOperationPreview) => {
+    setReq(operation.request);
+    setRequestEditorRevision((revision) => revision + 1);
+    setTab(operation.request.body_kind !== "none" ? "body" : "params");
+    setResp(null);
+    setError(null);
+    setPersistenceWarning(null);
+  };
+
+  const onOpenApiAddToCollection = async (operations: OpenApiOperationPreview[]) => {
+    if (openApiCollectionSavingRef.current) throw new Error("OpenAPI Collection 저장이 이미 진행 중입니다");
+    openApiCollectionSavingRef.current = true;
+    setCollSaving(true);
+    const timestamp = Date.now();
+    let sequence = 0;
+    let next = collections;
+    const usedIds = new Set(next.collections.map((entry) => entry.id));
+    try {
+      // addEntry prepends new items; reverse the batch so the deterministic
+      // preview order is retained in the Collection list.
+      for (const operation of [...operations].reverse()) {
+        const id = () => {
+          let randomId = "";
+          try {
+            randomId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+              ? `c-${crypto.randomUUID()}`
+              : "";
+          } catch {
+            // A restricted WebView may expose randomUUID but reject it. The
+            // collision-checked local fallback still keeps IDs unique.
+            randomId = "";
+          }
+          let candidate = randomId;
+          while (!candidate || usedIds.has(candidate)) {
+            candidate = `c-openapi-${timestamp}-${sequence}`;
+            sequence += 1;
+          }
+          usedIds.add(candidate);
+          return candidate;
+        };
+        next = addEntry(
+          next,
+          { name: operation.label.slice(0, OPENAPI_LIMITS.maxCollectionNameLength), folder: "OpenAPI", request: operation.request },
+          timestamp + sequence,
+          id,
+        );
+      }
+      await persistCollections(next);
+    } finally {
+      openApiCollectionSavingRef.current = false;
+      if (mountedRef.current) setCollSaving(false);
     }
   };
 
@@ -807,6 +865,9 @@ export default function App() {
           <button className={`btn ${showCurl ? "active" : ""}`} onClick={() => setShowCurl((v) => !v)} disabled={!req.url || Boolean(requestConfigurationError)}>
             cURL
           </button>
+          <button className="btn" type="button" onClick={() => setShowOpenApiImport(true)} disabled={!persistenceReady || sending || contextActionBusy || collSaving}>
+            OpenAPI
+          </button>
         </div>
 
         {showCurl && !requestConfigurationError && (
@@ -976,6 +1037,13 @@ export default function App() {
         onClose={collectionContextMenu.close}
         ariaLabel="Collection 메뉴"
       />
+      {showOpenApiImport && (
+        <OpenApiImport
+          onClose={() => setShowOpenApiImport(false)}
+          onApply={onOpenApiApply}
+          onAddToCollection={onOpenApiAddToCollection}
+        />
+      )}
     </div>
   );
 }

@@ -31,6 +31,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            commands::openapi::fetch_openapi_source,
             commands::request::send_request,
             commands::request::cancel_request,
             commands::request::build_revealed_curl,
