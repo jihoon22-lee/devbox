@@ -19,6 +19,10 @@ import {
 } from "./api";
 
 vi.mock("./api", () => ({
+  GIT_REMOTE_BUSY: "이미 다른 Git 작업이 진행 중입니다.",
+  GIT_REMOTE_CANCELLED: "Git 원격 작업을 취소했습니다.",
+  GIT_REMOTE_ERROR: "Git 원격 작업을 실행하지 못했습니다.",
+  GIT_REMOTE_STATE_CHANGED: "저장소 상태가 변경되어 Git 원격 작업을 실행하지 않았습니다.",
   createWorktree: vi.fn(),
   onOpenRequest: vi.fn(),
   openIn: vi.fn(),
@@ -102,6 +106,56 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Repo Manager repository context menu", () => {
+  it("keeps the newest root scan when an older response resolves later", async () => {
+    let resolveOlder: ((value: { repos: RepoEntry[]; truncated: boolean }) => void) | undefined;
+    let resolveNewest: ((value: { repos: RepoEntry[]; truncated: boolean }) => void) | undefined;
+    scanRootMock
+      .mockReturnValueOnce(new Promise((resolve) => { resolveOlder = resolve; }))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveNewest = resolve; }));
+    render(<App />);
+    await waitFor(() => expect(scanRootMock).toHaveBeenCalledWith("C:\\projects"));
+
+    fireEvent.change(screen.getByLabelText("탐색 root"), {
+      target: { value: "D:\\projects" },
+    });
+    await waitFor(() => expect(scanRootMock).toHaveBeenCalledWith("D:\\projects"));
+    resolveNewest?.({ repos: [repositories[1]], truncated: true });
+    await screen.findByLabelText("E:\\projects\\sample repository");
+    expect(screen.getByText(/일부 디렉터리를 건너뛰었습니다/)).toBeTruthy();
+
+    resolveOlder?.({ repos: [repositories[0]], truncated: false });
+    await Promise.resolve();
+    expect(screen.queryByLabelText("C:\\projects\\devbox repository")).toBeNull();
+    expect(screen.getByLabelText("E:\\projects\\sample repository")).toBeTruthy();
+  });
+
+  it("maps legacy native failures to an alert without echoing sensitive details", async () => {
+    const secret = "C:\\secret\\credential-root";
+    scanRootMock.mockRejectedValueOnce(new Error(secret));
+    render(<App />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("repository 목록을 불러오지 못했습니다.");
+    expect(alert.textContent).not.toContain(secret);
+    expect(document.body.textContent).not.toContain(secret);
+  });
+
+  it("selects a repository with Enter and Space and exposes labelled inputs", async () => {
+    render(<App />);
+    const first = await screen.findByLabelText("C:\\projects\\devbox repository");
+    const second = await screen.findByLabelText("E:\\projects\\sample repository");
+    expect(screen.getByLabelText("탐색 root")).toBeTruthy();
+    expect(screen.getAllByLabelText("새 브랜치")).toHaveLength(2);
+    expect(screen.getAllByLabelText("대상 디렉터리")).toHaveLength(2);
+
+    first.focus();
+    fireEvent.keyDown(first, { key: "Enter" });
+    expect(first.getAttribute("aria-current")).toBe("true");
+    second.focus();
+    fireEvent.keyDown(second, { key: " " });
+    expect(second.getAttribute("aria-current")).toBe("true");
+  });
+
   it("repository와 기존 worktree 안전 검사 UI를 유지한다", async () => {
     render(<App />);
 

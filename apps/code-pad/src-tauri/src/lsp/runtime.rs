@@ -1755,7 +1755,10 @@ mod tests {
 
         executable_fixture(
             &bin.join("node"),
-            "#!/bin/sh\ni=0\nwhile [ $i -lt 9000 ]; do printf x; i=$((i+1)); done\n",
+            // One builtin call deterministically crosses the 8 KiB boundary.
+            // A 9,000-iteration shell loop can hit the probe timeout first on
+            // a contended CI runner and turn this output-limit fixture flaky.
+            "#!/bin/sh\nprintf '%09000d' 0\n",
         );
         assert!(matches!(
             resolver

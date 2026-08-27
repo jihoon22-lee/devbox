@@ -28,6 +28,103 @@ export interface RepoSnapshot {
   changes: number;
 }
 
+export type GitSafetyIssue =
+  | "dirty"
+  | "detached"
+  | "noUpstream"
+  | "diverged"
+  | "rebaseInProgress"
+  | "mergeInProgress";
+
+export interface GitSafetySnapshot {
+  branch: string;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  dirty: boolean;
+  detached: boolean;
+  noUpstream: boolean;
+  diverged: boolean;
+  rebaseInProgress: boolean;
+  mergeInProgress: boolean;
+  safe: boolean;
+  issues: GitSafetyIssue[];
+}
+
+export const GIT_VIEW_ERROR = "Git history 또는 diff를 불러올 수 없습니다.";
+export const GIT_SAFETY_ERROR = "Git 상태를 확인하지 못했습니다.";
+
+export interface CommitSummary {
+  id: string;
+  shortId: string;
+  parents: string[];
+  authoredAt: string;
+  author: string;
+  authorEmail: string;
+  subject: string;
+}
+
+export interface HistoryResult {
+  entries: CommitSummary[];
+  hasMore: boolean;
+}
+
+export interface CommitDetail {
+  id: string;
+  parents: string[];
+  authoredAt: string;
+  author: string;
+  authorEmail: string;
+  subject: string;
+  body: string;
+}
+
+export interface DiffFile {
+  path: string;
+  oldPath: string | null;
+  status: "modified" | "added" | "deleted" | "renamed";
+  binary: boolean;
+  patch: string;
+  truncated: boolean;
+}
+
+export interface DiffResult {
+  scope: "workingTree" | "commit";
+  commitId: string | null;
+  files: DiffFile[];
+  truncated: boolean;
+}
+
+export type ChangeKind = "modified" | "added" | "deleted" | "renamed" | "copied" | "untracked" | "conflict";
+
+export interface ChangeEntry {
+  path: string;
+  oldPath: string | null;
+  indexStatus: string;
+  worktreeStatus: string;
+  kind: ChangeKind;
+  staged: boolean;
+  unstaged: boolean;
+}
+
+export const GIT_MUTATION_ERROR = "Git 변경 사항을 적용하지 못했습니다.";
+
+export const GIT_REMOTE_ERROR = "Git 원격 작업을 실행하지 못했습니다.";
+export const GIT_REMOTE_CANCELLED = "Git 원격 작업을 취소했습니다.";
+export const GIT_REMOTE_BUSY = "이미 다른 Git 작업이 진행 중입니다.";
+export const GIT_REMOTE_STATE_CHANGED = "저장소 상태가 변경되어 Git 원격 작업을 실행하지 않았습니다.";
+
+export interface RemoteState {
+  currentBranch: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  dirty: boolean;
+  detached: boolean;
+  diverged: boolean;
+  operationInProgress: boolean;
+}
+
 export interface RepoOpenTarget {
   id: string;
   displayName: string;
@@ -48,6 +145,71 @@ export interface OpenRequest {
 const MOCK_RESULT: ScanResult = {
   repos: [{ path: "C:\\projects\\devbox", canonicalKey: "win:c:/projects/devbox", hasWorktrees: true }],
   truncated: false,
+};
+
+const MOCK_HISTORY: HistoryResult = {
+  entries: [
+    {
+      id: "0123456789abcdef0123456789abcdef01234567",
+      shortId: "0123456789ab",
+      parents: [],
+      authoredAt: "2026-08-27T09:00:00+09:00",
+      author: "devbox fixture",
+      authorEmail: "fixture@example.test",
+      subject: "Initial repository fixture",
+    },
+  ],
+  hasMore: false,
+};
+
+const MOCK_DETAIL: CommitDetail = {
+  ...MOCK_HISTORY.entries[0],
+  body: "Initial repository fixture\n",
+};
+
+const MOCK_DIFF: DiffResult = {
+  scope: "workingTree",
+  commitId: null,
+  files: [],
+  truncated: false,
+};
+
+const MOCK_SAFETY: GitSafetySnapshot = {
+  branch: "main",
+  upstream: "origin/main",
+  ahead: 0,
+  behind: 0,
+  dirty: false,
+  detached: false,
+  noUpstream: false,
+  diverged: false,
+  rebaseInProgress: false,
+  mergeInProgress: false,
+  safe: true,
+  issues: [],
+};
+
+const MOCK_CHANGES: ChangeEntry[] = [
+  {
+    path: "src/App.tsx",
+    oldPath: null,
+    indexStatus: " ",
+    worktreeStatus: "M",
+    kind: "modified",
+    staged: false,
+    unstaged: true,
+  },
+];
+
+const MOCK_REMOTE_STATE: RemoteState = {
+  currentBranch: "main",
+  upstream: "origin/main",
+  ahead: 0,
+  behind: 0,
+  dirty: false,
+  detached: false,
+  diverged: false,
+  operationInProgress: false,
 };
 
 const MOCK_CATALOG_APPS = catalogJson.apps as Array<{
@@ -101,6 +263,11 @@ export function repoStatus(path: string): Promise<RepoSnapshot> {
   return invoke<RepoSnapshot>("repo_status", { path });
 }
 
+export function repoPreflight(path: string): Promise<GitSafetySnapshot> {
+  if (!isTauri()) return Promise.resolve({ ...MOCK_SAFETY });
+  return invoke<GitSafetySnapshot>("repo_preflight", { request: { path } });
+}
+
 export function worktrees(path: string): Promise<string[]> {
   if (!isTauri()) return Promise.resolve(["C:\\projects\\devbox", "C:\\projects\\devbox-wt"]);
   return invoke<string[]>("worktrees", { path });
@@ -114,6 +281,78 @@ export function createWorktree(repoPath: string, branch: string, targetDir: stri
 export function worktreeClean(path: string): Promise<boolean> {
   if (!isTauri()) return Promise.resolve(true);
   return invoke<boolean>("worktree_clean", { path });
+}
+
+export function repoHistory(path: string, limit: number): Promise<HistoryResult> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      entries: MOCK_HISTORY.entries.slice(0, limit),
+      hasMore: MOCK_HISTORY.entries.length > limit,
+    });
+  }
+  return invoke<HistoryResult>("repo_history", { request: { path, limit } });
+}
+
+export function repoCommitDetail(path: string, commitId: string): Promise<CommitDetail> {
+  if (!isTauri()) return Promise.resolve(MOCK_DETAIL);
+  return invoke<CommitDetail>("repo_commit_detail", { request: { path, commitId } });
+}
+
+export function repoDiff(path: string, commitId: string | null): Promise<DiffResult> {
+  if (!isTauri()) {
+    return Promise.resolve({ ...MOCK_DIFF, commitId, scope: commitId ? "commit" : "workingTree" });
+  }
+  return invoke<DiffResult>("repo_diff", { request: { path, commitId } });
+}
+
+export function repoChanges(path: string): Promise<ChangeEntry[]> {
+  if (!isTauri()) return Promise.resolve(MOCK_CHANGES.map((change) => ({ ...change })));
+  return invoke<ChangeEntry[]>("repo_changes", { request: { path } });
+}
+
+export function repoStage(path: string, paths: string[], operationId: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("repo_stage", { request: { path, paths, operationId } });
+}
+
+export function repoUnstage(path: string, paths: string[], operationId: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("repo_unstage", { request: { path, paths, operationId } });
+}
+
+export function repoCommit(path: string, message: string, operationId: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("repo_commit", { request: { path, message, operationId } });
+}
+
+export function repoLocalCancel(operationId: string): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  return invoke<boolean>("repo_local_cancel", { request: { operationId } });
+}
+
+export function repoRemoteStatus(path: string): Promise<RemoteState> {
+  if (!isTauri()) return Promise.resolve({ ...MOCK_REMOTE_STATE });
+  return invoke<RemoteState>("repo_remote_status", { request: { path } });
+}
+
+export function repoFetch(path: string, operationId: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("repo_fetch", { request: { path, operationId } });
+}
+
+export function repoPull(path: string, operationId: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("repo_pull", { request: { path, operationId } });
+}
+
+export function repoPush(path: string, operationId: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("repo_push", { request: { path, operationId } });
+}
+
+export function repoRemoteCancel(operationId: string): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  return invoke<boolean>("repo_remote_cancel", { request: { operationId } });
 }
 
 export function openTargets(): Promise<RepoOpenTarget[]> {

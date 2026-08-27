@@ -24,11 +24,28 @@ import {
 } from "./api";
 import { routeOpenRequest, sameRepositoryKey } from "./lib/applink";
 import { buildRepositoryContextMenu } from "./lib/contextMenu";
+import GitSafetyPanel from "./components/GitSafetyPanel";
+import HistoryDiffPanel from "./components/HistoryDiffPanel";
+import RemoteSyncPanel from "./components/RemoteSyncPanel";
+import StageCommitPanel from "./components/StageCommitPanel";
 import "./App.css";
 
 function usesNativeTextContext(target: EventTarget | null): boolean {
   return target instanceof HTMLElement
-    && target.closest("input, textarea, [contenteditable='true']") !== null;
+    && target.closest("button, a, input, select, textarea, [contenteditable='true']") !== null;
+}
+
+const SAFE_APP_ERRORS = new Set([
+  "지원하지 않는 열기 요청입니다",
+  "요청한 repository 경로를 사용할 수 없습니다",
+  "repository 경로를 확인할 수 없습니다",
+]);
+
+/** Keep legacy/native details out of the top-level App error banner. */
+export function safeRepoManagerError(cause: unknown, fallback: string): string {
+  const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
+  const message = raw.replace(/^Error:\s*/u, "");
+  return SAFE_APP_ERRORS.has(message) ? message : fallback;
 }
 
 export default function App() {
@@ -50,8 +67,18 @@ export default function App() {
   const pendingSelectionKeyRef = useRef<string | null>(null);
   const selectedCardRef = useRef<HTMLDivElement | null>(null);
   const openSequenceRef = useRef(0);
+  const scanSequenceRef = useRef(0);
+  const mountedRef = useRef(false);
   const branchInputRefs = useRef(new Map<string, HTMLInputElement>());
   reposRef.current = repos;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      scanSequenceRef.current += 1;
+    };
+  }, []);
 
   const prepareRepositoryContext = useCallback((target: HTMLElement) => {
     const key = target.dataset.repoKey;
@@ -66,9 +93,13 @@ export default function App() {
   });
 
   const scan = useCallback(async () => {
+    const sequence = ++scanSequenceRef.current;
+    const requestedRoot = root;
+    const isCurrentScan = () => mountedRef.current && sequence === scanSequenceRef.current;
     setError(null);
     try {
-      const { repos: list, truncated: wasTruncated } = await scanRoot(root);
+      const { repos: list, truncated: wasTruncated } = await scanRoot(requestedRoot);
+      if (!isCurrentScan()) return;
       reposRef.current = list;
       setRepos(list);
       setTruncated(wasTruncated);
@@ -100,15 +131,18 @@ export default function App() {
       const ws: Record<string, string[]> = {};
       for (const r of list) {
         st[r.path] = await repoStatus(r.path).catch(() => st[r.path] ?? { path: r.path, branch: { current: "?", ahead: 0, behind: 0, dirty: false, detached: false }, changes: 0 });
+        if (!isCurrentScan()) return;
         ws[r.path] = await worktrees(r.path).catch(() => []);
+        if (!isCurrentScan()) return;
       }
       setStatus(st);
       setWt(ws);
     } catch (e) {
+      if (!isCurrentScan()) return;
       pendingSelectionKeyRef.current = null;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(safeRepoManagerError(e, "repository 목록을 불러오지 못했습니다."));
     } finally {
-      setReposLoaded(true);
+      if (isCurrentScan()) setReposLoaded(true);
     }
   }, [root]);
 
@@ -130,7 +164,7 @@ export default function App() {
     pendingSelectionKeyRef.current = null;
     const action = routeOpenRequest(request);
     if (action.kind === "error") {
-      setError(action.message);
+      setError(safeRepoManagerError(action.message, "repository 열기 요청을 처리하지 못했습니다"));
       return;
     }
 
@@ -148,9 +182,9 @@ export default function App() {
         setSelectedRepoKey(null);
         setRegistrationDraft(inbound);
       }
-    } catch {
+    } catch (cause) {
       if (sequence === openSequenceRef.current) {
-        setError("repository 경로를 확인할 수 없습니다");
+        setError(safeRepoManagerError(cause, "repository 경로를 확인할 수 없습니다"));
       }
     }
   };
@@ -227,7 +261,7 @@ export default function App() {
     try {
       await openIn(target.id, path);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(safeRepoManagerError(e, "다른 앱으로 repository를 열 수 없습니다"));
     }
   };
 
@@ -267,7 +301,7 @@ export default function App() {
       setNewDir("");
       await scan();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(safeRepoManagerError(e, "worktree를 생성하지 못했습니다"));
     } finally {
       setBusy(false);
     }
@@ -283,7 +317,7 @@ export default function App() {
         setError(`worktree ${wtPath}에 uncommitted/untracked 변경이 있습니다. 제거 전 정리하세요.`);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(safeRepoManagerError(e, "worktree 상태를 확인하지 못했습니다"));
     }
   };
 
@@ -304,14 +338,25 @@ export default function App() {
     }
   };
 
+  const selectedRepo = repos.find((repo) =>
+    sameRepositoryKey(repo.canonicalKey, selectedRepoKey ?? ""),
+  ) ?? null;
+
   return (
     <div className="app">
       <header className="toolbar">
         <h1 className="title">Repo Manager</h1>
-        <input className="root-input" value={root} onChange={(e) => setRoot(e.currentTarget.value)} placeholder="탐색 root" />
+        <label className="sr-only" htmlFor="repo-scan-root">탐색 root</label>
+        <input
+          id="repo-scan-root"
+          className="root-input"
+          value={root}
+          onChange={(e) => setRoot(e.currentTarget.value)}
+          placeholder="탐색 root"
+        />
         <button className="btn primary" onClick={() => void scan()}>탐색</button>
       </header>
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
       {truncated && (
         <div className="note dim">
           탐색 범위가 커서 일부 디렉터리를 건너뛰었습니다 (깊이·개수 상한). root를 더 좁혀서 다시 탐색하세요.
@@ -331,15 +376,19 @@ export default function App() {
       )}
 
       <div className="repos">
-        {repos.map((r) => {
+        {repos.map((r, index) => {
           const s = status[r.path];
+          const branchInputId = `worktree-branch-${index}`;
+          const directoryInputId = `worktree-directory-${index}`;
+          const isSelected = sameRepositoryKey(r.canonicalKey, selectedRepoKey ?? "");
           return (
             <div
               key={r.path}
-              ref={sameRepositoryKey(r.canonicalKey, selectedRepoKey ?? "") ? selectedCardRef : undefined}
-              className={`repo-card ${sameRepositoryKey(r.canonicalKey, selectedRepoKey ?? "") ? "selected" : ""}`}
+              ref={isSelected ? selectedCardRef : undefined}
+              className={`repo-card ${isSelected ? "selected" : ""}`}
+              role="group"
               tabIndex={0}
-              aria-current={sameRepositoryKey(r.canonicalKey, selectedRepoKey ?? "") ? "true" : undefined}
+              aria-current={isSelected ? "true" : undefined}
               aria-label={`${r.path} repository`}
               data-repo-key={r.canonicalKey}
               onClick={(event) => {
@@ -356,6 +405,12 @@ export default function App() {
               }}
               onKeyDown={(event) => {
                 if (!usesNativeTextContext(event.target)) {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedRepoKey(r.canonicalKey);
+                    setRegistrationDraft(null);
+                    return;
+                  }
                   repositoryContextMenu.triggerProps.onKeyDown?.(event);
                 }
               }}
@@ -394,7 +449,9 @@ export default function App() {
                 </div>
               )}
               <div className="wt-create">
+                <label className="sr-only" htmlFor={branchInputId}>새 브랜치</label>
                 <input
+                  id={branchInputId}
                   ref={(node) => {
                     if (node) branchInputRefs.current.set(r.canonicalKey, node);
                     else branchInputRefs.current.delete(r.canonicalKey);
@@ -403,7 +460,13 @@ export default function App() {
                   value={newBranch}
                   onChange={(e) => setNewBranch(e.currentTarget.value)}
                 />
-                <input placeholder="대상 디렉터리" value={newDir} onChange={(e) => setNewDir(e.currentTarget.value)} />
+                <label className="sr-only" htmlFor={directoryInputId}>대상 디렉터리</label>
+                <input
+                  id={directoryInputId}
+                  placeholder="대상 디렉터리"
+                  value={newDir}
+                  onChange={(e) => setNewDir(e.currentTarget.value)}
+                />
                 <button className="btn" disabled={busy} onClick={() => void onCreate(r.path)}>worktree 생성</button>
               </div>
             </div>
@@ -411,6 +474,10 @@ export default function App() {
         })}
         {repos.length === 0 && <div className="dim">repository가 없습니다.</div>}
       </div>
+      <HistoryDiffPanel repo={selectedRepo} />
+      <StageCommitPanel repo={selectedRepo} />
+      <GitSafetyPanel repo={selectedRepo} />
+      <RemoteSyncPanel repo={selectedRepo} />
       <div className="note dim">force delete·reset·clean은 기본 동작으로 제공하지 않습니다. remove 전 검사만 지원합니다.</div>
       <ContextMenu
         open={repositoryContextMenu.open}
