@@ -1,7 +1,10 @@
-use crate::core::content::{extract_file, is_content_candidate, is_pdf_path, is_xls_path};
+use crate::core::content::{
+    extract_file, is_content_candidate, is_ods_path, is_pdf_path, is_xls_path, is_xlsx_path,
+};
 use crate::core::db::{
-    add_root as db_add_root, clear_all, clear_pdf, clear_root, clear_xls, content_status_summary,
-    list_roots as db_list_roots, record_pdf_extractor_version, record_xls_extractor_version,
+    add_root as db_add_root, clear_all, clear_ods, clear_pdf, clear_root, clear_xls, clear_xlsx,
+    content_status_summary, list_roots as db_list_roots, record_ods_extractor_version,
+    record_pdf_extractor_version, record_xls_extractor_version, record_xlsx_extractor_version,
     remove_root as db_remove_root, total_files, upsert_content_record, upsert_file,
 };
 use crate::core::models::IndexStatus;
@@ -39,24 +42,51 @@ pub struct AppState {
     pub last_error: Mutex<Option<String>>,
 }
 
-/// Scope used by a re-index worker.  `Pdf` is deliberately narrower than a
-/// root re-index so changing the PDF extractor version cannot discard or
-/// reread text/source/Markdown rows.
+/// A compact set avoids one enum variant for every format combination. New
+/// document formats add one bit and reuse the same clear/scan/marker flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum IndexFilter {
+pub(crate) struct FormatSet(u8);
+
+impl FormatSet {
+    pub(crate) const PDF: Self = Self(1 << 0);
+    pub(crate) const XLS: Self = Self(1 << 1);
+    pub(crate) const XLSX: Self = Self(1 << 2);
+    pub(crate) const ODS: Self = Self(1 << 3);
+    pub(crate) const ALL: Self = Self(Self::PDF.0 | Self::XLS.0 | Self::XLSX.0 | Self::ODS.0);
+
+    pub(crate) const fn empty() -> Self {
+        Self(0)
+    }
+
+    pub(crate) const fn with(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    pub(crate) const fn contains(self, format: Self) -> bool {
+        self.0 & format.0 != 0
+    }
+
+    pub(crate) const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IndexFilter {
     All,
-    Pdf,
-    Xls,
-    PdfAndXls,
+    Formats(FormatSet),
 }
 
 impl IndexFilter {
     fn matches(self, path: &Path) -> bool {
         match self {
             Self::All => true,
-            Self::Pdf => is_pdf_path(path),
-            Self::Xls => is_xls_path(path),
-            Self::PdfAndXls => is_pdf_path(path) || is_xls_path(path),
+            Self::Formats(formats) => {
+                (formats.contains(FormatSet::PDF) && is_pdf_path(path))
+                    || (formats.contains(FormatSet::XLS) && is_xls_path(path))
+                    || (formats.contains(FormatSet::XLSX) && is_xlsx_path(path))
+                    || (formats.contains(FormatSet::ODS) && is_ods_path(path))
+            }
         }
     }
 
@@ -198,24 +228,10 @@ pub(crate) fn spawn_index(state: Arc<AppState>, only_roots: Vec<String>) {
     spawn_index_with_filter(state, only_roots, IndexFilter::All);
 }
 
-/// Rebuilds only PDF rows for every registered root.  This is used after a
-/// PDF extractor version change and intentionally preserves ordinary content
-/// rows.
-pub(crate) fn spawn_pdf_reindex(state: Arc<AppState>) {
-    spawn_index_with_filter(state, Vec::new(), IndexFilter::Pdf);
-}
-
-/// Rebuilds only legacy XLS rows for every registered root. This is used after
-/// an XLS extractor version change and intentionally preserves all other
-/// content rows.
-pub(crate) fn spawn_xls_reindex(state: Arc<AppState>) {
-    spawn_index_with_filter(state, Vec::new(), IndexFilter::Xls);
-}
-
-/// Rebuilds both format-specific rows when an upgrade leaves stale PDF and XLS
-/// records at the same time. Plain-text/source/Markdown rows remain untouched.
-pub(crate) fn spawn_index_with_formats(state: Arc<AppState>) {
-    spawn_index_with_filter(state, Vec::new(), IndexFilter::PdfAndXls);
+pub(crate) fn spawn_format_reindex(state: Arc<AppState>, formats: FormatSet) {
+    if !formats.is_empty() {
+        spawn_index_with_filter(state, Vec::new(), IndexFilter::Formats(formats));
+    }
 }
 
 fn spawn_index_with_filter(state: Arc<AppState>, only_roots: Vec<String>, filter: IndexFilter) {
@@ -316,20 +332,9 @@ fn run_index_with_filter(
         if full_reindex {
             match filter {
                 IndexFilter::All => clear_all(&conn)?,
-                IndexFilter::Pdf => {
+                IndexFilter::Formats(formats) => {
                     for root in &roots {
-                        clear_pdf(&conn, &root.path)?;
-                    }
-                }
-                IndexFilter::Xls => {
-                    for root in &roots {
-                        clear_xls(&conn, &root.path)?;
-                    }
-                }
-                IndexFilter::PdfAndXls => {
-                    for root in &roots {
-                        clear_pdf(&conn, &root.path)?;
-                        clear_xls(&conn, &root.path)?;
+                        clear_format_rows(&conn, &root.path, formats)?;
                     }
                 }
             }
@@ -342,12 +347,7 @@ fn run_index_with_filter(
             for root in &targets {
                 match filter {
                     IndexFilter::All => clear_root(&conn, &root.path)?,
-                    IndexFilter::Pdf => clear_pdf(&conn, &root.path)?,
-                    IndexFilter::Xls => clear_xls(&conn, &root.path)?,
-                    IndexFilter::PdfAndXls => {
-                        clear_pdf(&conn, &root.path)?;
-                        clear_xls(&conn, &root.path)?;
-                    }
+                    IndexFilter::Formats(formats) => clear_format_rows(&conn, &root.path, formats)?,
                 }
             }
             targets
@@ -444,18 +444,51 @@ fn run_index_with_filter(
     }
     if full_reindex {
         let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
-        match filter {
-            IndexFilter::All | IndexFilter::PdfAndXls => {
-                record_pdf_extractor_version(&conn)?;
-                record_xls_extractor_version(&conn)?;
-            }
-            IndexFilter::Pdf => record_pdf_extractor_version(&conn)?,
-            IndexFilter::Xls => record_xls_extractor_version(&conn)?,
-        }
+        let formats = match filter {
+            IndexFilter::All => FormatSet::ALL,
+            IndexFilter::Formats(formats) => formats,
+        };
+        record_format_markers(&conn, formats)?;
     }
     state
         .last_indexed_at
         .store(now_ms().max(1), Ordering::SeqCst);
+    Ok(())
+}
+
+fn clear_format_rows(
+    conn: &Connection,
+    root_path: &str,
+    formats: FormatSet,
+) -> rusqlite::Result<()> {
+    if formats.contains(FormatSet::PDF) {
+        clear_pdf(conn, root_path)?;
+    }
+    if formats.contains(FormatSet::XLS) {
+        clear_xls(conn, root_path)?;
+    }
+    if formats.contains(FormatSet::XLSX) {
+        clear_xlsx(conn, root_path)?;
+    }
+    if formats.contains(FormatSet::ODS) {
+        clear_ods(conn, root_path)?;
+    }
+    Ok(())
+}
+
+fn record_format_markers(conn: &Connection, formats: FormatSet) -> rusqlite::Result<()> {
+    if formats.contains(FormatSet::PDF) {
+        record_pdf_extractor_version(conn)?;
+    }
+    if formats.contains(FormatSet::XLS) {
+        record_xls_extractor_version(conn)?;
+    }
+    if formats.contains(FormatSet::XLSX) {
+        record_xlsx_extractor_version(conn)?;
+    }
+    if formats.contains(FormatSet::ODS) {
+        record_ods_extractor_version(conn)?;
+    }
     Ok(())
 }
 
@@ -613,10 +646,73 @@ mod tests {
 
     #[test]
     fn queued_format_reindex_escalates_to_a_full_rebuild() {
-        assert_eq!(IndexFilter::Pdf.queued_restart(), IndexFilter::All);
-        assert_eq!(IndexFilter::Xls.queued_restart(), IndexFilter::All);
-        assert_eq!(IndexFilter::PdfAndXls.queued_restart(), IndexFilter::All);
+        assert_eq!(
+            IndexFilter::Formats(FormatSet::PDF).queued_restart(),
+            IndexFilter::All
+        );
+        assert_eq!(
+            IndexFilter::Formats(FormatSet::XLS.with(FormatSet::XLSX).with(FormatSet::ODS))
+                .queued_restart(),
+            IndexFilter::All
+        );
         assert_eq!(IndexFilter::All.queued_restart(), IndexFilter::All);
+    }
+
+    #[test]
+    fn format_set_matches_only_the_selected_document_extensions() {
+        let filter = IndexFilter::Formats(FormatSet::XLSX.with(FormatSet::ODS));
+        assert!(filter.matches(Path::new("report.XLSX")));
+        assert!(filter.matches(Path::new("report.ods")));
+        assert!(!filter.matches(Path::new("report.xls")));
+        assert!(!filter.matches(Path::new("report.pdf")));
+        assert!(!filter.matches(Path::new("notes.md")));
+    }
+
+    #[test]
+    fn modern_spreadsheet_markers_require_a_successful_full_format_scan() {
+        let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "everything-plus-spreadsheet-marker-{id}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        let stored_root = db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
+        let app_state = state(conn);
+        let formats = FormatSet::XLSX.with(FormatSet::ODS);
+
+        run_index_with_filter(
+            &app_state,
+            std::slice::from_ref(&stored_root),
+            IndexFilter::Formats(formats),
+        )
+        .unwrap();
+        {
+            let conn = app_state.db.lock().unwrap();
+            assert!(crate::core::db::xlsx_reindex_required(&conn).unwrap());
+            assert!(crate::core::db::ods_reindex_required(&conn).unwrap());
+        }
+
+        app_state.cancel_requested.store(true, Ordering::SeqCst);
+        run_index_with_filter(&app_state, &[], IndexFilter::Formats(formats)).unwrap();
+        {
+            let conn = app_state.db.lock().unwrap();
+            assert!(crate::core::db::xlsx_reindex_required(&conn).unwrap());
+            assert!(crate::core::db::ods_reindex_required(&conn).unwrap());
+        }
+
+        app_state.cancel_requested.store(false, Ordering::SeqCst);
+        run_index_with_filter(&app_state, &[], IndexFilter::Formats(formats)).unwrap();
+        let conn = app_state.db.lock().unwrap();
+        assert!(!crate::core::db::xlsx_reindex_required(&conn).unwrap());
+        assert!(!crate::core::db::ods_reindex_required(&conn).unwrap());
+        assert!(crate::core::db::pdf_reindex_required(&conn).unwrap());
+        assert!(crate::core::db::xls_reindex_required(&conn).unwrap());
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -637,17 +733,17 @@ mod tests {
         run_index_with_filter(
             &app_state,
             std::slice::from_ref(&stored_root),
-            IndexFilter::Xls,
+            IndexFilter::Formats(FormatSet::XLS),
         )
         .unwrap();
         assert!(crate::core::db::xls_reindex_required(&app_state.db.lock().unwrap()).unwrap());
 
         app_state.cancel_requested.store(true, Ordering::SeqCst);
-        run_index_with_filter(&app_state, &[], IndexFilter::Xls).unwrap();
+        run_index_with_filter(&app_state, &[], IndexFilter::Formats(FormatSet::XLS)).unwrap();
         assert!(crate::core::db::xls_reindex_required(&app_state.db.lock().unwrap()).unwrap());
 
         app_state.cancel_requested.store(false, Ordering::SeqCst);
-        run_index_with_filter(&app_state, &[], IndexFilter::Xls).unwrap();
+        run_index_with_filter(&app_state, &[], IndexFilter::Formats(FormatSet::XLS)).unwrap();
         let conn = app_state.db.lock().unwrap();
         assert!(!crate::core::db::xls_reindex_required(&conn).unwrap());
         assert!(crate::core::db::pdf_reindex_required(&conn).unwrap());
@@ -775,7 +871,7 @@ mod tests {
         }
 
         fs::write(&pdf, pdf_fixture("new PDF content")).unwrap();
-        run_index_with_filter(&app_state, &[], IndexFilter::Pdf).unwrap();
+        run_index_with_filter(&app_state, &[], IndexFilter::Formats(FormatSet::PDF)).unwrap();
         let conn = app_state.db.lock().unwrap();
         assert_eq!(search_content(&conn, "remains", 10).unwrap().len(), 1);
         assert!(search_content(&conn, "old PDF", 10).unwrap().is_empty());
@@ -825,12 +921,70 @@ mod tests {
         let mut updated = original;
         replace_bytes(&mut updated, b"sheetjs", b"new-xls");
         fs::write(&xls, &updated).unwrap();
-        run_index_with_filter(&app_state, &[], IndexFilter::Xls).unwrap();
+        run_index_with_filter(&app_state, &[], IndexFilter::Formats(FormatSet::XLS)).unwrap();
         let conn = app_state.db.lock().unwrap();
         assert_eq!(search_content(&conn, "remains", 10).unwrap().len(), 1);
         assert!(search_content(&conn, "sheetjs", 10).unwrap().is_empty());
         assert_eq!(search_content(&conn, "new-xls", 10).unwrap().len(), 1);
         assert_eq!(search(&conn, "broken", 10).unwrap().len(), 1);
+        drop(conn);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn modern_spreadsheet_reindex_isolates_each_format_and_preserves_text() {
+        let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "everything-plus-modern-spreadsheet-reindex-{id}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let text = root.join("notes.md");
+        let xlsx = root.join("report.xlsx");
+        let ods = root.join("report.ods");
+        fs::write(&text, "ordinary text remains").unwrap();
+        fs::write(
+            &xlsx,
+            crate::core::content::xlsx_test_fixture_with("xlsx-old"),
+        )
+        .unwrap();
+        fs::write(&ods, crate::core::content::ods_test_fixture_with("ods-old")).unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
+        let app_state = state(conn);
+        run_index_with_filter(&app_state, &[], IndexFilter::All).unwrap();
+        {
+            let conn = app_state.db.lock().unwrap();
+            assert_eq!(search_content(&conn, "remains", 10).unwrap().len(), 1);
+            assert_eq!(search_content(&conn, "xlsx-old", 10).unwrap().len(), 1);
+            assert_eq!(search_content(&conn, "ods-old", 10).unwrap().len(), 1);
+        }
+
+        fs::write(
+            &xlsx,
+            crate::core::content::xlsx_test_fixture_with("xlsx-new"),
+        )
+        .unwrap();
+        fs::write(&ods, crate::core::content::ods_test_fixture_with("ods-new")).unwrap();
+        run_index_with_filter(&app_state, &[], IndexFilter::Formats(FormatSet::XLSX)).unwrap();
+        {
+            let conn = app_state.db.lock().unwrap();
+            assert_eq!(search_content(&conn, "remains", 10).unwrap().len(), 1);
+            assert!(search_content(&conn, "xlsx-old", 10).unwrap().is_empty());
+            assert_eq!(search_content(&conn, "xlsx-new", 10).unwrap().len(), 1);
+            assert_eq!(search_content(&conn, "ods-old", 10).unwrap().len(), 1);
+            assert!(search_content(&conn, "ods-new", 10).unwrap().is_empty());
+        }
+
+        run_index_with_filter(&app_state, &[], IndexFilter::Formats(FormatSet::ODS)).unwrap();
+        let conn = app_state.db.lock().unwrap();
+        assert_eq!(search_content(&conn, "remains", 10).unwrap().len(), 1);
+        assert_eq!(search_content(&conn, "xlsx-new", 10).unwrap().len(), 1);
+        assert!(search_content(&conn, "ods-old", 10).unwrap().is_empty());
+        assert_eq!(search_content(&conn, "ods-new", 10).unwrap().len(), 1);
         drop(conn);
         fs::remove_dir_all(&root).unwrap();
     }

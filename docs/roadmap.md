@@ -277,7 +277,24 @@ release다. 현재 13개 앱을 강화하고 `devbox-launcher`, `log-lens`를 �
      `unsupported_encrypted`/`extract_error`/`resource_limit`로 격리한다.
      `meta.xls_extractor_version` marker가 첫 설치와 parser version 전환을 보장하고 성공한
      full/XLS scan 뒤 갱신된다. XLS row만 format-specific reindex해 text/PDF/다른 문서 인덱스를
-     보존하며, queued request는 `All`로 승격한다. XLSX/ODS/DOCX/OCR은 별도 issue 범위로 남긴다.
+     보존하며, queued request는 `All`로 승격한다.
+   - 2026-08-27 `#300` XLSX extractor 통합: MIT pure-Rust `calamine::Xlsx`의 streaming cell
+     API로 cached worksheet 값만 오프라인 추출하고 `xlsx-v1`을 기록한다. parser보다 먼저
+     EOCD/ZIP64의 선언 entry 수와 실제 central directory를 각각 4,096개로 제한하고, entry
+     32 MiB·전체 uncompressed 64 MiB, canonical package/workbook relationship, unsafe/중복
+     path, encryption/external target/DTD, XML depth/event, shared string 및 4,000,000 logical/
+     visited cell 상한을 fail-closed로 검증한다. dense worksheet range, formula evaluation,
+     macro/image/style/network는 사용하지 않는다.
+   - 2026-08-27 `#301` ODS extractor 통합: MIT pure-Rust `calamine::Ods`로 cached cell 값만
+     추출하고 `ods-v1`을 기록한다. 같은 ZIP envelope/entry/uncompressed/XML/sheet/row/column/
+     cell 경계를 적용하며 manifest encryption과 DTD를 차단한다. dense range parser 진입 전에
+     row/column repeat, non-empty value/formula clone 16,000,000자, 기존/신규 Data·formula
+     vector가 겹치는 256 MiB peak memory를 계산해 작은 XML의 반복 증폭을 거부한다.
+   - `#299`·`#300`·`#301`은 하나의 spreadsheet content-index PR로 검증하되 각각 독립
+     extractor version·acceptance를 유지한다. compact `FormatSet`이 stale format 조합을 처리하고
+     성공한 full/format-only scan만 marker를 기록한다. partial/cancel scan은 재시도를 보장하며
+     XLS/XLSX/ODS-only rebuild는 서로 및 text/PDF row를 보존한다. DOCX/OCR/semantic search는
+     이 PR에 포함하지 않는다.
 
 #### P3 — 선택 확정
 

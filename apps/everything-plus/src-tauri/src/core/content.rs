@@ -1,17 +1,21 @@
 //! Bounded, offline text extraction for the Everything+ content index.
 //!
-//! Plain text/source/Markdown, PDF, and legacy XLS are intentionally separate
-//! extractor formats. The PDF path uses lopdf only for text objects and the
-//! XLS path uses calamine's pure-Rust Xls reader; neither renders pages, runs
-//! OCR, follows external resources, evaluates formulas, or executes document
-//! content.
+//! Plain text/source/Markdown, PDF, legacy XLS, XLSX, and ODS are intentionally
+//! separate extractor formats. The PDF path uses lopdf only for text objects,
+//! while spreadsheet paths use calamine's pure-Rust readers; none renders
+//! pages, runs OCR, follows external resources, evaluates formulas, or
+//! executes document content.
 
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{Cursor, Read};
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime};
 
-use calamine::{Data, Reader, Xls, XlsError};
+use calamine::{Data, DataRef, Dimensions, Ods, OdsError, Reader, Xls, XlsError, Xlsx, XlsxError};
+use quick_xml::events::Event;
+use quick_xml::Reader as XmlReader;
+use zip::read::ZipArchive;
 
 /// Maximum bytes read from one content-index candidate.
 pub const MAX_FILE_BYTES: u64 = 20 * 1024 * 1024;
@@ -42,6 +46,39 @@ pub const XLS_MAX_EXPANDED_STRING_CHARS: usize = 16_000_000;
 pub const XLS_MAX_FORMULAS: usize = 100_000;
 pub const XLS_MAX_METADATA_RECORDS: usize = 200_000;
 pub const XLS_MAX_ESTIMATED_MEMORY_BYTES: usize = 256 * 1024 * 1024;
+/// Bumped only when XLSX parsing or cell-to-text normalization rules change.
+pub const XLSX_EXTRACTOR_VERSION: &str = "xlsx-v1";
+pub const XLSX_MAX_SHEETS: usize = 256;
+pub const XLSX_MAX_ROWS: u32 = 1_048_576;
+pub const XLSX_MAX_COLUMNS: u32 = 16_384;
+pub const XLSX_MAX_CELLS: usize = 4_000_000;
+pub const XLSX_MAX_ZIP_ENTRIES: usize = 4_096;
+pub const XLSX_MAX_ZIP_UNCOMPRESSED_BYTES: u64 = 64 * 1024 * 1024;
+pub const XLSX_MAX_ZIP_ENTRY_BYTES: u64 = 32 * 1024 * 1024;
+pub const XLSX_MAX_SHARED_STRINGS: usize = 1_000_000;
+pub const XLSX_MAX_SHARED_STRING_CHARS: usize = 8_000_000;
+pub const XLSX_MAX_SHARED_STRING_XML_BYTES: u64 = 16 * 1024 * 1024;
+pub const XLSX_MAX_XML_DEPTH: usize = 128;
+pub const XLSX_MAX_XML_EVENTS: usize = 1_000_000;
+pub const XLSX_MAX_XML_TEXT_CHARS: usize = 8_000_000;
+pub const XLSX_MAX_RELATIONSHIPS: usize = 4_096;
+const XLSX_MAX_PACKAGE_RELATIONSHIPS_BYTES: u64 = 1024 * 1024;
+const XLSX_MAX_WORKBOOK_RELATIONSHIPS_BYTES: u64 = 4 * 1024 * 1024;
+const XLSX_MAX_WORKBOOK_XML_BYTES: u64 = 8 * 1024 * 1024;
+const XLSX_MAX_STYLES_XML_BYTES: u64 = 8 * 1024 * 1024;
+/// Bumped only when ODS parsing or cell-to-text normalization rules change.
+pub const ODS_EXTRACTOR_VERSION: &str = "ods-v1";
+pub const ODS_MAX_SHEETS: usize = 256;
+pub const ODS_MAX_ROWS: u32 = 1_048_576;
+pub const ODS_MAX_COLUMNS: u32 = 16_384;
+pub const ODS_MAX_CELLS: usize = 4_000_000;
+pub const ODS_MAX_ZIP_ENTRIES: usize = 4_096;
+pub const ODS_MAX_ZIP_UNCOMPRESSED_BYTES: u64 = 64 * 1024 * 1024;
+pub const ODS_MAX_ZIP_ENTRY_BYTES: u64 = 32 * 1024 * 1024;
+pub const ODS_MAX_XML_DEPTH: usize = 128;
+pub const ODS_MAX_XML_EVENTS: usize = 1_000_000;
+pub const ODS_MAX_EXPANDED_TEXT_CHARS: usize = 16_000_000;
+pub const ODS_MAX_ESTIMATED_MEMORY_BYTES: usize = 256 * 1024 * 1024;
 /// Maximum decompressed bytes allowed for one PDF page/object stream.  A PDF
 /// can be much smaller than its inflated content, so the file-size bound alone
 /// is not sufficient to defend the parser from decompression bombs.
@@ -55,6 +92,16 @@ pub const MAX_SNIPPET_CHARS: usize = 4 * 1024;
 
 const READ_CHUNK_BYTES: usize = 64 * 1024;
 const UTF16_SAMPLE_BYTES: usize = 16 * 1024;
+const ZIP_EOCD_MIN_BYTES: usize = 22;
+const ZIP_MAX_COMMENT_BYTES: usize = u16::MAX as usize;
+const ZIP64_LOCATOR_BYTES: usize = 20;
+const ZIP64_EOCD_MIN_BYTES: usize = 56;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ZipEnvelopeFailure {
+    Invalid,
+    EntryLimit,
+}
 
 /// Extensions whose contents are useful for local developer search.  The list
 /// is intentionally explicit: a content root never means "read every file".
@@ -242,6 +289,26 @@ pub fn is_xls_path(path: &Path) -> bool {
         .is_some_and(is_xls_ext)
 }
 
+pub fn is_xlsx_ext(ext: &str) -> bool {
+    ext.trim_start_matches('.').eq_ignore_ascii_case("xlsx")
+}
+
+pub fn is_xlsx_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(is_xlsx_ext)
+}
+
+pub fn is_ods_ext(ext: &str) -> bool {
+    ext.trim_start_matches('.').eq_ignore_ascii_case("ods")
+}
+
+pub fn is_ods_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(is_ods_ext)
+}
+
 /// Returns true for files that commonly contain credentials or private key
 /// material.  These are skipped before reading, even when their extension is a
 /// text extension.  Normal source files containing a word such as `secret` are
@@ -298,7 +365,7 @@ pub fn is_content_candidate(path: &Path) -> bool {
     let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
         return false;
     };
-    is_text_ext(ext) || is_pdf_ext(ext) || is_xls_ext(ext)
+    is_text_ext(ext) || is_pdf_ext(ext) || is_xls_ext(ext) || is_xlsx_ext(ext) || is_ods_ext(ext)
 }
 
 /// Extract one file while enforcing byte, character, encoding, race, and time
@@ -308,6 +375,10 @@ pub fn extract_file(path: &Path, expected_size: u64, started: Instant) -> Conten
         PDF_EXTRACTOR_VERSION
     } else if is_xls_path(path) {
         XLS_EXTRACTOR_VERSION
+    } else if is_xlsx_path(path) {
+        XLSX_EXTRACTOR_VERSION
+    } else if is_ods_path(path) {
+        ODS_EXTRACTOR_VERSION
     } else {
         EXTRACTOR_VERSION
     };
@@ -432,6 +503,10 @@ pub fn extract_file(path: &Path, expected_size: u64, started: Instant) -> Conten
         extract_pdf_bytes(&bytes, started)
     } else if is_xls_path(path) {
         extract_xls_bytes(&bytes, started)
+    } else if is_xlsx_path(path) {
+        extract_xlsx_bytes(&bytes, started)
+    } else if is_ods_path(path) {
+        extract_ods_bytes(&bytes, started)
     } else {
         extract_bytes(&bytes, started)
     }
@@ -622,6 +697,1762 @@ fn pdf_object_limit_exceeded(object_count: usize) -> bool {
 
 fn pdf_page_limit_exceeded(page_count: usize) -> bool {
     page_count > PDF_MAX_PAGES
+}
+
+/// Extracts worksheet cell values from an Office Open XML workbook using
+/// calamine's pure-Rust Xlsx reader. The reader is consumed through its
+/// streaming cell API rather than `worksheet_range`, because the latter
+/// materializes a dense range from an untrusted worksheet dimension. Formula
+/// text is not evaluated; a cached value, when present, is simply parser data.
+pub fn extract_xlsx_bytes(bytes: &[u8], started: Instant) -> ContentRecord {
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return ContentRecord::failure_for(
+            XLSX_EXTRACTOR_VERSION,
+            ContentStatus::TooLarge,
+            "file_too_large",
+        );
+    }
+    if timed_out(started) {
+        return ContentRecord::failure_for(
+            XLSX_EXTRACTOR_VERSION,
+            ContentStatus::Timeout,
+            "processing_timeout",
+        );
+    }
+    if xlsx_is_office_encrypted(bytes) {
+        return xlsx_failure_record(XlsxFailure::UnsupportedEncrypted);
+    }
+
+    if let Err(failure) = xlsx_preflight(bytes, started) {
+        return xlsx_failure_record(failure);
+    }
+
+    let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        extract_xlsx_with_calamine(bytes, started)
+    }));
+    match parsed {
+        Ok(Ok(record)) => record,
+        Ok(Err(failure)) => xlsx_failure_record(failure),
+        Err(_) => ContentRecord::failure_for(
+            XLSX_EXTRACTOR_VERSION,
+            ContentStatus::ExtractError,
+            "extract_error",
+        ),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum XlsxFailure {
+    Timeout,
+    UnsupportedEncrypted,
+    UnsupportedEncoding,
+    Extract(&'static str),
+}
+
+/// Office's password-protected OOXML files are CFB containers whose
+/// `EncryptedPackage` stream contains the ZIP payload after decryption. They
+/// are not ZIP archives that calamine can read, so identify them before ZIP
+/// preflight and return the stable unsupported-encrypted status. Malformed CFB
+/// input is intentionally treated as an ordinary corrupt XLSX candidate.
+fn xlsx_is_office_encrypted(bytes: &[u8]) -> bool {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let container = cfb::CompoundFile::open(Cursor::new(bytes)).ok()?;
+        Some(container.is_stream("/EncryptedPackage"))
+    }))
+    .ok()
+    .flatten()
+    .unwrap_or(false)
+}
+
+fn xlsx_failure_record(failure: XlsxFailure) -> ContentRecord {
+    match failure {
+        XlsxFailure::Timeout => ContentRecord::failure_for(
+            XLSX_EXTRACTOR_VERSION,
+            ContentStatus::Timeout,
+            "processing_timeout",
+        ),
+        XlsxFailure::UnsupportedEncrypted => ContentRecord::failure_for(
+            XLSX_EXTRACTOR_VERSION,
+            ContentStatus::UnsupportedEncrypted,
+            "unsupported_encrypted",
+        ),
+        XlsxFailure::UnsupportedEncoding => ContentRecord::failure_for(
+            XLSX_EXTRACTOR_VERSION,
+            ContentStatus::UnsupportedEncoding,
+            "unsupported_encoding",
+        ),
+        XlsxFailure::Extract(error_code) => ContentRecord::failure_for(
+            XLSX_EXTRACTOR_VERSION,
+            ContentStatus::ExtractError,
+            error_code,
+        ),
+    }
+}
+
+fn extract_xlsx_with_calamine(
+    bytes: &[u8],
+    started: Instant,
+) -> Result<ContentRecord, XlsxFailure> {
+    let mut workbook = match Xlsx::new(Cursor::new(bytes)) {
+        Ok(workbook) => workbook,
+        Err(XlsxError::Password) => return Err(XlsxFailure::UnsupportedEncrypted),
+        Err(_) => return Err(XlsxFailure::Extract("extract_error")),
+    };
+    if timed_out(started) {
+        return Err(XlsxFailure::Timeout);
+    }
+
+    let sheet_names = workbook.sheet_names();
+    if sheet_names.len() > XLSX_MAX_SHEETS {
+        return Err(XlsxFailure::Extract("sheet_limit"));
+    }
+
+    let mut output = XlsTextAccumulator::default();
+    let mut logical_cells = 0usize;
+    let mut visited_cells = 0usize;
+
+    for sheet_name in sheet_names {
+        if timed_out(started) {
+            return Err(XlsxFailure::Timeout);
+        }
+        let mut reader = match workbook.worksheet_cells_reader(&sheet_name) {
+            Ok(reader) => reader,
+            Err(XlsxError::NotAWorksheet(_)) => continue,
+            Err(XlsxError::Password) => return Err(XlsxFailure::UnsupportedEncrypted),
+            Err(_) => return Err(XlsxFailure::Extract("extract_error")),
+        };
+        let dimensions = reader.dimensions();
+        let dimension_cells = xlsx_dimension_cell_count(dimensions)?;
+        logical_cells = logical_cells.saturating_add(dimension_cells);
+        if logical_cells > XLSX_MAX_CELLS {
+            return Err(XlsxFailure::Extract("cell_limit"));
+        }
+
+        // Cell coordinates restart at row zero for every worksheet. Keep a
+        // sheet-local row state so the first value of a new sheet cannot be
+        // mistaken for another cell in the final row of the previous sheet.
+        let mut last_row = None;
+        let mut row_has_value = false;
+
+        loop {
+            if timed_out(started) {
+                return Err(XlsxFailure::Timeout);
+            }
+            let cell = match reader.next_cell() {
+                Ok(Some(cell)) => cell,
+                Ok(None) => break,
+                Err(XlsxError::Password) => return Err(XlsxFailure::UnsupportedEncrypted),
+                Err(_) => return Err(XlsxFailure::Extract("extract_error")),
+            };
+            visited_cells = visited_cells.saturating_add(1);
+            if visited_cells > XLSX_MAX_CELLS {
+                return Err(XlsxFailure::Extract("cell_limit"));
+            }
+            if visited_cells.is_multiple_of(8192) && timed_out(started) {
+                return Err(XlsxFailure::Timeout);
+            }
+
+            let (row, column) = cell.get_position();
+            if row >= XLSX_MAX_ROWS {
+                return Err(XlsxFailure::Extract("row_limit"));
+            }
+            if column >= XLSX_MAX_COLUMNS {
+                return Err(XlsxFailure::Extract("column_limit"));
+            }
+            let Some(value) = xlsx_cell_value(cell.get_value()) else {
+                continue;
+            };
+            if value.contains('\0') {
+                return Err(XlsxFailure::UnsupportedEncoding);
+            }
+
+            if last_row != Some(row) {
+                if output.has_value {
+                    output.push_separator('\n');
+                }
+                last_row = Some(row);
+            } else if row_has_value {
+                output.push_separator('\t');
+            }
+            row_has_value = true;
+            match output.push_value(&value, started) {
+                XlsAppendResult::Complete => {}
+                XlsAppendResult::Truncated => {
+                    return Ok(ContentRecord {
+                        text: output.text,
+                        status: ContentStatus::Indexed,
+                        extractor_version: XLSX_EXTRACTOR_VERSION,
+                        encoding: Some("xlsx"),
+                        truncated: true,
+                        error_code: Some("text_limit"),
+                        text_chars: output.text_chars,
+                    })
+                }
+                XlsAppendResult::Timeout => return Err(XlsxFailure::Timeout),
+            }
+        }
+    }
+    if timed_out(started) {
+        return Err(XlsxFailure::Timeout);
+    }
+    if !output.has_value {
+        return Ok(ContentRecord::failure_for(
+            XLSX_EXTRACTOR_VERSION,
+            ContentStatus::NoText,
+            "no_text",
+        ));
+    }
+
+    Ok(ContentRecord {
+        text: output.text,
+        status: ContentStatus::Indexed,
+        extractor_version: XLSX_EXTRACTOR_VERSION,
+        encoding: Some("xlsx"),
+        truncated: false,
+        error_code: None,
+        text_chars: output.text_chars,
+    })
+}
+
+/// Extracts worksheet cell values from an OpenDocument Spreadsheet using
+/// calamine's native, pure-Rust Ods reader. ODS parsing is text-only: formulas
+/// are never evaluated, and images, styles, macros, rendering, and external
+/// resources are ignored. The preflight below is required because calamine's
+/// ODS implementation materializes each worksheet into a dense range.
+pub fn extract_ods_bytes(bytes: &[u8], started: Instant) -> ContentRecord {
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return ContentRecord::failure_for(
+            ODS_EXTRACTOR_VERSION,
+            ContentStatus::TooLarge,
+            "file_too_large",
+        );
+    }
+    if timed_out(started) {
+        return ContentRecord::failure_for(
+            ODS_EXTRACTOR_VERSION,
+            ContentStatus::Timeout,
+            "processing_timeout",
+        );
+    }
+    if let Err(failure) = ods_preflight(bytes, started) {
+        return ods_failure_record(failure);
+    }
+
+    let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        extract_ods_with_calamine(bytes, started)
+    }));
+    match parsed {
+        Ok(Ok(record)) => record,
+        Ok(Err(failure)) => ods_failure_record(failure),
+        Err(_) => ContentRecord::failure_for(
+            ODS_EXTRACTOR_VERSION,
+            ContentStatus::ExtractError,
+            "extract_error",
+        ),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OdsFailure {
+    Timeout,
+    UnsupportedEncrypted,
+    UnsupportedEncoding,
+    Extract(&'static str),
+}
+
+fn ods_failure_record(failure: OdsFailure) -> ContentRecord {
+    match failure {
+        OdsFailure::Timeout => ContentRecord::failure_for(
+            ODS_EXTRACTOR_VERSION,
+            ContentStatus::Timeout,
+            "processing_timeout",
+        ),
+        OdsFailure::UnsupportedEncrypted => ContentRecord::failure_for(
+            ODS_EXTRACTOR_VERSION,
+            ContentStatus::UnsupportedEncrypted,
+            "unsupported_encrypted",
+        ),
+        OdsFailure::UnsupportedEncoding => ContentRecord::failure_for(
+            ODS_EXTRACTOR_VERSION,
+            ContentStatus::UnsupportedEncoding,
+            "unsupported_encoding",
+        ),
+        OdsFailure::Extract(error_code) => ContentRecord::failure_for(
+            ODS_EXTRACTOR_VERSION,
+            ContentStatus::ExtractError,
+            error_code,
+        ),
+    }
+}
+
+fn extract_ods_with_calamine(bytes: &[u8], started: Instant) -> Result<ContentRecord, OdsFailure> {
+    let mut workbook = match Ods::new(Cursor::new(bytes)) {
+        Ok(workbook) => workbook,
+        Err(OdsError::Password) => return Err(OdsFailure::UnsupportedEncrypted),
+        Err(_) => return Err(OdsFailure::Extract("extract_error")),
+    };
+    if timed_out(started) {
+        return Err(OdsFailure::Timeout);
+    }
+
+    let sheet_names = workbook.sheet_names();
+    if sheet_names.len() > ODS_MAX_SHEETS {
+        return Err(OdsFailure::Extract("sheet_limit"));
+    }
+
+    let mut output = XlsTextAccumulator::default();
+    let mut logical_cells = 0usize;
+    for sheet_name in sheet_names {
+        if timed_out(started) {
+            return Err(OdsFailure::Timeout);
+        }
+        let range = match workbook.worksheet_range(&sheet_name) {
+            Ok(range) => range,
+            Err(OdsError::Password) => return Err(OdsFailure::UnsupportedEncrypted),
+            Err(_) => return Err(OdsFailure::Extract("extract_error")),
+        };
+        let (rows, columns) = range.get_size();
+        if rows > ODS_MAX_ROWS as usize {
+            return Err(OdsFailure::Extract("row_limit"));
+        }
+        if columns > ODS_MAX_COLUMNS as usize {
+            return Err(OdsFailure::Extract("column_limit"));
+        }
+        logical_cells = logical_cells.saturating_add(rows.saturating_mul(columns));
+        if logical_cells > ODS_MAX_CELLS {
+            return Err(OdsFailure::Extract("cell_limit"));
+        }
+
+        let mut visited_cells = 0usize;
+        for row in range.rows() {
+            let mut row_has_value = false;
+            for cell in row {
+                visited_cells = visited_cells.saturating_add(1);
+                if visited_cells.is_multiple_of(8192) && timed_out(started) {
+                    return Err(OdsFailure::Timeout);
+                }
+                if matches!(cell, Data::Empty) {
+                    continue;
+                }
+                let value = cell.to_string();
+                if value.is_empty() {
+                    continue;
+                }
+                if value.contains('\0') {
+                    return Err(OdsFailure::UnsupportedEncoding);
+                }
+                if row_has_value {
+                    output.push_separator('\t');
+                } else if output.has_value {
+                    output.push_separator('\n');
+                }
+                row_has_value = true;
+                match output.push_value(&value, started) {
+                    XlsAppendResult::Complete => {}
+                    XlsAppendResult::Truncated => {
+                        return Ok(ContentRecord {
+                            text: output.text,
+                            status: ContentStatus::Indexed,
+                            extractor_version: ODS_EXTRACTOR_VERSION,
+                            encoding: Some("ods"),
+                            truncated: true,
+                            error_code: Some("text_limit"),
+                            text_chars: output.text_chars,
+                        })
+                    }
+                    XlsAppendResult::Timeout => return Err(OdsFailure::Timeout),
+                }
+            }
+        }
+    }
+    if timed_out(started) {
+        return Err(OdsFailure::Timeout);
+    }
+    if !output.has_value {
+        return Ok(ContentRecord::failure_for(
+            ODS_EXTRACTOR_VERSION,
+            ContentStatus::NoText,
+            "no_text",
+        ));
+    }
+
+    Ok(ContentRecord {
+        text: output.text,
+        status: ContentStatus::Indexed,
+        extractor_version: ODS_EXTRACTOR_VERSION,
+        encoding: Some("ods"),
+        truncated: false,
+        error_code: None,
+        text_chars: output.text_chars,
+    })
+}
+
+/// Inspect the ODS ZIP package and content.xml before calamine constructs its
+/// dense in-memory ranges. The archive is handled entirely from the supplied
+/// byte buffer; no member path, relationship, or external resource is opened.
+fn ods_preflight(bytes: &[u8], started: Instant) -> Result<(), OdsFailure> {
+    const MIME_TYPE: &[u8] = b"application/vnd.oasis.opendocument.spreadsheet";
+
+    validate_zip_envelope(bytes, ODS_MAX_ZIP_ENTRIES).map_err(|failure| match failure {
+        ZipEnvelopeFailure::Invalid => OdsFailure::Extract("extract_error"),
+        ZipEnvelopeFailure::EntryLimit => OdsFailure::Extract("zip_limit"),
+    })?;
+    let mut archive =
+        ZipArchive::new(Cursor::new(bytes)).map_err(|_| OdsFailure::Extract("extract_error"))?;
+    if archive.len() > ODS_MAX_ZIP_ENTRIES {
+        return Err(OdsFailure::Extract("zip_limit"));
+    }
+
+    let mut total_uncompressed = 0u64;
+    let mut seen_names = HashSet::with_capacity(archive.len());
+    let mut mimetype_entry = None;
+    let mut manifest_entry = None;
+    let mut content_entry = None;
+    for index in 0..archive.len() {
+        if timed_out(started) {
+            return Err(OdsFailure::Timeout);
+        }
+        let file = archive
+            .by_index_raw(index)
+            .map_err(|_| OdsFailure::Extract("extract_error"))?;
+        if file.encrypted() {
+            return Err(OdsFailure::UnsupportedEncrypted);
+        }
+        if file.name_raw().contains(&0) || file.enclosed_name().is_none() {
+            return Err(OdsFailure::Extract("zip_path"));
+        }
+        let size = file.size();
+        if size > ODS_MAX_ZIP_ENTRY_BYTES {
+            return Err(OdsFailure::Extract("zip_limit"));
+        }
+        total_uncompressed = total_uncompressed.saturating_add(size);
+        if total_uncompressed > ODS_MAX_ZIP_UNCOMPRESSED_BYTES {
+            return Err(OdsFailure::Extract("zip_limit"));
+        }
+        let name = file.name().replace('\\', "/");
+        if !seen_names.insert(name.clone()) {
+            return Err(OdsFailure::Extract("zip_path"));
+        }
+        match name.as_str() {
+            "mimetype" => mimetype_entry = Some(index),
+            "META-INF/manifest.xml" => manifest_entry = Some(index),
+            "content.xml" => content_entry = Some(index),
+            _ => {}
+        }
+    }
+
+    let mimetype_entry = mimetype_entry.ok_or(OdsFailure::Extract("extract_error"))?;
+    let manifest_entry = manifest_entry.ok_or(OdsFailure::Extract("extract_error"))?;
+    let content_entry = content_entry.ok_or(OdsFailure::Extract("extract_error"))?;
+
+    let mimetype = {
+        let file = archive
+            .by_index(mimetype_entry)
+            .map_err(|_| OdsFailure::Extract("extract_error"))?;
+        read_ods_entry(file, started, MIME_TYPE.len() as u64)?
+    };
+    if mimetype != MIME_TYPE {
+        return Err(OdsFailure::Extract("extract_error"));
+    }
+
+    let manifest = {
+        let file = archive
+            .by_index(manifest_entry)
+            .map_err(|_| OdsFailure::Extract("extract_error"))?;
+        read_ods_entry(file, started, ODS_MAX_ZIP_ENTRY_BYTES)?
+    };
+    scan_ods_manifest(&manifest, started)?;
+
+    let content = {
+        let file = archive
+            .by_index(content_entry)
+            .map_err(|_| OdsFailure::Extract("extract_error"))?;
+        read_ods_entry(file, started, ODS_MAX_ZIP_ENTRY_BYTES)?
+    };
+    scan_ods_content(&content, started)?;
+    Ok(())
+}
+
+/// Read the ZIP end records before `ZipArchive::new` allocates one metadata
+/// object per central-directory entry. This keeps an attacker from using a
+/// small file with hundreds of thousands of empty entries to bypass the
+/// post-construction entry cap. Multi-disk containers are not valid document
+/// packages and are rejected. ZIP64 is accepted when its locator and minimum
+/// end record are present and in bounds.
+fn validate_zip_envelope(bytes: &[u8], max_entries: usize) -> Result<(), ZipEnvelopeFailure> {
+    if bytes.len() < ZIP_EOCD_MIN_BYTES {
+        return Err(ZipEnvelopeFailure::Invalid);
+    }
+    let search_start = bytes
+        .len()
+        .saturating_sub(ZIP_EOCD_MIN_BYTES + ZIP_MAX_COMMENT_BYTES);
+    let search_end = bytes.len() - ZIP_EOCD_MIN_BYTES;
+    let mut candidates = (search_start..=search_end).rev().filter(|offset| {
+        bytes.get(*offset..offset.saturating_add(4)) == Some(b"PK\x05\x06")
+            && read_u16_le(bytes, offset.saturating_add(20)).is_some_and(|comment_bytes| {
+                offset
+                    .saturating_add(ZIP_EOCD_MIN_BYTES)
+                    .saturating_add(comment_bytes as usize)
+                    == bytes.len()
+            })
+    });
+    let eocd = candidates.next().ok_or(ZipEnvelopeFailure::Invalid)?;
+    // A second end record hidden in the first record's comment could make the
+    // ZIP reader reject the last candidate and fall back to a different entry
+    // count after this admission check. Document packages do not need nested
+    // EOCD candidates, so reject the ambiguity instead of guessing.
+    if candidates.next().is_some() {
+        return Err(ZipEnvelopeFailure::Invalid);
+    }
+
+    let disk = read_u16_le(bytes, eocd + 4).ok_or(ZipEnvelopeFailure::Invalid)?;
+    let central_disk = read_u16_le(bytes, eocd + 6).ok_or(ZipEnvelopeFailure::Invalid)?;
+    let entries_on_disk = read_u16_le(bytes, eocd + 8).ok_or(ZipEnvelopeFailure::Invalid)?;
+    let total_entries = read_u16_le(bytes, eocd + 10).ok_or(ZipEnvelopeFailure::Invalid)?;
+    let central_size = read_u32_le(bytes, eocd + 12).ok_or(ZipEnvelopeFailure::Invalid)?;
+    let central_offset = read_u32_le(bytes, eocd + 16).ok_or(ZipEnvelopeFailure::Invalid)?;
+    if disk != 0 || central_disk != 0 {
+        return Err(ZipEnvelopeFailure::Invalid);
+    }
+
+    let uses_zip64 = entries_on_disk == u16::MAX
+        || total_entries == u16::MAX
+        || central_size == u32::MAX
+        || central_offset == u32::MAX;
+    let entries = if uses_zip64 {
+        let locator = eocd
+            .checked_sub(ZIP64_LOCATOR_BYTES)
+            .ok_or(ZipEnvelopeFailure::Invalid)?;
+        if bytes.get(locator..locator + 4) != Some(b"PK\x06\x07")
+            || read_u32_le(bytes, locator + 4) != Some(0)
+            || read_u32_le(bytes, locator + 16) != Some(1)
+        {
+            return Err(ZipEnvelopeFailure::Invalid);
+        }
+        let zip64_offset = read_u64_le(bytes, locator + 8)
+            .and_then(|offset| usize::try_from(offset).ok())
+            .ok_or(ZipEnvelopeFailure::Invalid)?;
+        if zip64_offset.saturating_add(ZIP64_EOCD_MIN_BYTES) > locator
+            || bytes.get(zip64_offset..zip64_offset + 4) != Some(b"PK\x06\x06")
+            || read_u32_le(bytes, zip64_offset + 16) != Some(0)
+            || read_u32_le(bytes, zip64_offset + 20) != Some(0)
+        {
+            return Err(ZipEnvelopeFailure::Invalid);
+        }
+        let record_size = read_u64_le(bytes, zip64_offset + 4)
+            .and_then(|size| usize::try_from(size).ok())
+            .ok_or(ZipEnvelopeFailure::Invalid)?;
+        if record_size < ZIP64_EOCD_MIN_BYTES - 12
+            || zip64_offset.saturating_add(12).saturating_add(record_size) > locator
+        {
+            return Err(ZipEnvelopeFailure::Invalid);
+        }
+        let entries_on_disk =
+            read_u64_le(bytes, zip64_offset + 24).ok_or(ZipEnvelopeFailure::Invalid)?;
+        let total_entries =
+            read_u64_le(bytes, zip64_offset + 32).ok_or(ZipEnvelopeFailure::Invalid)?;
+        if entries_on_disk != total_entries {
+            return Err(ZipEnvelopeFailure::Invalid);
+        }
+        total_entries
+    } else {
+        if entries_on_disk != total_entries {
+            return Err(ZipEnvelopeFailure::Invalid);
+        }
+        u64::from(total_entries)
+    };
+    if entries > max_entries as u64 {
+        return Err(ZipEnvelopeFailure::EntryLimit);
+    }
+    Ok(())
+}
+
+fn read_u16_le(bytes: &[u8], offset: usize) -> Option<u16> {
+    Some(u16::from_le_bytes(
+        bytes.get(offset..offset + 2)?.try_into().ok()?,
+    ))
+}
+
+fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32> {
+    Some(u32::from_le_bytes(
+        bytes.get(offset..offset + 4)?.try_into().ok()?,
+    ))
+}
+
+fn read_u64_le(bytes: &[u8], offset: usize) -> Option<u64> {
+    Some(u64::from_le_bytes(
+        bytes.get(offset..offset + 8)?.try_into().ok()?,
+    ))
+}
+
+fn read_ods_entry<R: Read>(
+    mut reader: R,
+    started: Instant,
+    max_bytes: u64,
+) -> Result<Vec<u8>, OdsFailure> {
+    let mut output = Vec::new();
+    let mut chunk = [0u8; READ_CHUNK_BYTES];
+    loop {
+        if timed_out(started) {
+            return Err(OdsFailure::Timeout);
+        }
+        let read = reader
+            .read(&mut chunk)
+            .map_err(|_| OdsFailure::Extract("extract_error"))?;
+        if read == 0 {
+            break;
+        }
+        if output.len().saturating_add(read) as u64 > max_bytes {
+            return Err(OdsFailure::Extract("zip_limit"));
+        }
+        output.extend_from_slice(&chunk[..read]);
+    }
+    Ok(output)
+}
+
+fn scan_ods_manifest(xml: &[u8], started: Instant) -> Result<(), OdsFailure> {
+    let mut reader = XmlReader::from_reader(Cursor::new(xml));
+    reader.config_mut().trim_text(false);
+    reader.config_mut().expand_empty_elements = true;
+    let mut buffer = Vec::with_capacity(1024);
+    let mut depth = 0usize;
+    let mut events = 0usize;
+    loop {
+        if timed_out(started) {
+            return Err(OdsFailure::Timeout);
+        }
+        buffer.clear();
+        let event = reader
+            .read_event_into(&mut buffer)
+            .map_err(|_| OdsFailure::Extract("extract_error"))?;
+        events = events.saturating_add(1);
+        if events > ODS_MAX_XML_EVENTS {
+            return Err(OdsFailure::Extract("xml_limit"));
+        }
+        match event {
+            Event::Start(element) => {
+                depth = depth.saturating_add(1);
+                if depth > ODS_MAX_XML_DEPTH {
+                    return Err(OdsFailure::Extract("xml_limit"));
+                }
+                if element.local_name().as_ref() == b"encryption-data" {
+                    return Err(OdsFailure::UnsupportedEncrypted);
+                }
+            }
+            Event::Empty(element) => {
+                if element.local_name().as_ref() == b"encryption-data" {
+                    return Err(OdsFailure::UnsupportedEncrypted);
+                }
+            }
+            Event::End(_) => {
+                if depth == 0 {
+                    return Err(OdsFailure::Extract("extract_error"));
+                }
+                depth -= 1;
+            }
+            Event::DocType(_) => return Err(OdsFailure::Extract("external_relationship")),
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return Err(OdsFailure::Extract("extract_error"));
+    }
+    Ok(())
+}
+
+/// Count the logical ODS dimensions represented by row/column repeat
+/// attributes. This conservative physical-area bound mirrors the range that
+/// calamine may materialize and rejects repeat bombs before parser allocation.
+fn scan_ods_content(xml: &[u8], started: Instant) -> Result<(), OdsFailure> {
+    let mut reader = XmlReader::from_reader(Cursor::new(xml));
+    reader.config_mut().trim_text(false);
+    reader.config_mut().expand_empty_elements = true;
+    let mut buffer = Vec::with_capacity(1024);
+    let mut depth = 0usize;
+    let mut sheet_count = 0usize;
+    let mut logical_cells = 0usize;
+    let mut source_chars = 0usize;
+    let mut expanded_text_chars = 0usize;
+    let mut estimated_memory_bytes = 0usize;
+    let mut events = 0usize;
+    let mut in_table = false;
+    let mut in_row = false;
+    let mut in_cell = false;
+    let mut table_rows = 0u64;
+    let mut row_width = 0u64;
+    let mut row_repeats = 1u64;
+    let mut row_value_chars = 0usize;
+    let mut cell_repeats = 1u64;
+    let mut cell_value_chars = 0usize;
+
+    loop {
+        if timed_out(started) {
+            return Err(OdsFailure::Timeout);
+        }
+        buffer.clear();
+        let event = reader
+            .read_event_into(&mut buffer)
+            .map_err(|_| OdsFailure::Extract("extract_error"))?;
+        events = events.saturating_add(1);
+        if events > ODS_MAX_XML_EVENTS {
+            return Err(OdsFailure::Extract("xml_limit"));
+        }
+        match event {
+            Event::Start(element) => {
+                depth = depth.saturating_add(1);
+                if depth > ODS_MAX_XML_DEPTH {
+                    return Err(OdsFailure::Extract("xml_limit"));
+                }
+                ods_count_attribute_chars(&element, &mut source_chars)?;
+                match element.local_name().as_ref() {
+                    b"table" => {
+                        if in_table {
+                            return Err(OdsFailure::Extract("extract_error"));
+                        }
+                        sheet_count = sheet_count.saturating_add(1);
+                        if sheet_count > ODS_MAX_SHEETS {
+                            return Err(OdsFailure::Extract("sheet_limit"));
+                        }
+                        in_table = true;
+                        table_rows = 0;
+                    }
+                    b"table-row" if in_table => {
+                        if in_row {
+                            return Err(OdsFailure::Extract("extract_error"));
+                        }
+                        row_repeats = ods_repeat_attribute(
+                            &element,
+                            b"number-rows-repeated",
+                            ODS_MAX_ROWS as u64,
+                            "row_limit",
+                        )?;
+                        in_row = true;
+                        row_width = 0;
+                        row_value_chars = 0;
+                    }
+                    b"table-cell" | b"covered-table-cell" if in_row => {
+                        if in_cell {
+                            return Err(OdsFailure::Extract("extract_error"));
+                        }
+                        let repeats = ods_repeat_attribute(
+                            &element,
+                            b"number-columns-repeated",
+                            ODS_MAX_COLUMNS as u64,
+                            "column_limit",
+                        )?;
+                        row_width = row_width.saturating_add(repeats);
+                        if row_width > ODS_MAX_COLUMNS as u64 {
+                            return Err(OdsFailure::Extract("column_limit"));
+                        }
+                        in_cell = true;
+                        cell_repeats = repeats;
+                        cell_value_chars = ods_cell_value_chars(&element)?;
+                    }
+                    b"s" => {
+                        let spaces = ods_repeat_attribute(
+                            &element,
+                            b"c",
+                            ODS_MAX_SOURCE_TEXT_CHARS as u64,
+                            "text_limit",
+                        )?;
+                        if in_cell {
+                            cell_value_chars = cell_value_chars.saturating_add(spaces as usize);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Event::Empty(element) => {
+                ods_count_attribute_chars(&element, &mut source_chars)?;
+                match element.local_name().as_ref() {
+                    b"table" => {
+                        sheet_count = sheet_count.saturating_add(1);
+                        if sheet_count > ODS_MAX_SHEETS {
+                            return Err(OdsFailure::Extract("sheet_limit"));
+                        }
+                    }
+                    b"table-row" if in_table => {
+                        let repeats = ods_repeat_attribute(
+                            &element,
+                            b"number-rows-repeated",
+                            ODS_MAX_ROWS as u64,
+                            "row_limit",
+                        )?;
+                        if repeats.saturating_mul(ODS_MAX_COLUMNS as u64) > ODS_MAX_CELLS as u64 {
+                            return Err(OdsFailure::Extract("cell_limit"));
+                        }
+                    }
+                    b"table-cell" | b"covered-table-cell" if in_row => {
+                        let repeats = ods_repeat_attribute(
+                            &element,
+                            b"number-columns-repeated",
+                            ODS_MAX_COLUMNS as u64,
+                            "column_limit",
+                        )?;
+                        row_width = row_width.saturating_add(repeats);
+                        if row_width > ODS_MAX_COLUMNS as u64 {
+                            return Err(OdsFailure::Extract("column_limit"));
+                        }
+                        let value_chars = ods_cell_value_chars(&element)?;
+                        row_value_chars = row_value_chars.saturating_add(
+                            value_chars.saturating_mul(repeats.min(usize::MAX as u64) as usize),
+                        );
+                        if row_value_chars > ODS_MAX_EXPANDED_TEXT_CHARS {
+                            return Err(OdsFailure::Extract("resource_limit"));
+                        }
+                    }
+                    b"s" => {
+                        let spaces = ods_repeat_attribute(
+                            &element,
+                            b"c",
+                            ODS_MAX_SOURCE_TEXT_CHARS as u64,
+                            "text_limit",
+                        )?;
+                        if in_cell {
+                            cell_value_chars = cell_value_chars.saturating_add(spaces as usize);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Event::Text(text) => {
+                let value = text
+                    .xml10_content()
+                    .map_err(|_| OdsFailure::UnsupportedEncoding)?;
+                let value_chars = value.chars().count();
+                source_chars = source_chars.saturating_add(value_chars);
+                if source_chars > ODS_MAX_SOURCE_TEXT_CHARS {
+                    return Err(OdsFailure::Extract("text_limit"));
+                }
+                if in_cell {
+                    cell_value_chars = cell_value_chars.saturating_add(value_chars);
+                }
+            }
+            Event::CData(text) => {
+                let value = text
+                    .xml10_content()
+                    .map_err(|_| OdsFailure::UnsupportedEncoding)?;
+                let value_chars = value.chars().count();
+                source_chars = source_chars.saturating_add(value_chars);
+                if source_chars > ODS_MAX_SOURCE_TEXT_CHARS {
+                    return Err(OdsFailure::Extract("text_limit"));
+                }
+                if in_cell {
+                    cell_value_chars = cell_value_chars.saturating_add(value_chars);
+                }
+            }
+            Event::GeneralRef(_) => {
+                source_chars = source_chars.saturating_add(1);
+                if source_chars > ODS_MAX_SOURCE_TEXT_CHARS {
+                    return Err(OdsFailure::Extract("text_limit"));
+                }
+                if in_cell {
+                    cell_value_chars = cell_value_chars.saturating_add(1);
+                }
+            }
+            Event::End(element) => {
+                if depth == 0 {
+                    return Err(OdsFailure::Extract("extract_error"));
+                }
+                match element.local_name().as_ref() {
+                    b"table-cell" | b"covered-table-cell" if in_cell => {
+                        row_value_chars = row_value_chars.saturating_add(
+                            cell_value_chars
+                                .saturating_mul(cell_repeats.min(usize::MAX as u64) as usize),
+                        );
+                        if row_value_chars > ODS_MAX_EXPANDED_TEXT_CHARS {
+                            return Err(OdsFailure::Extract("resource_limit"));
+                        }
+                        in_cell = false;
+                        cell_repeats = 1;
+                        cell_value_chars = 0;
+                    }
+                    b"table-row" if in_row => {
+                        if in_cell {
+                            return Err(OdsFailure::Extract("extract_error"));
+                        }
+                        let cells = row_repeats.saturating_mul(row_width);
+                        table_rows = table_rows.saturating_add(row_repeats);
+                        if table_rows > ODS_MAX_ROWS as u64 {
+                            return Err(OdsFailure::Extract("row_limit"));
+                        }
+                        logical_cells =
+                            logical_cells.saturating_add(cells.min(usize::MAX as u64) as usize);
+                        if logical_cells > ODS_MAX_CELLS {
+                            return Err(OdsFailure::Extract("cell_limit"));
+                        }
+
+                        let repeated_rows = row_repeats.min(usize::MAX as u64) as usize;
+                        let expanded_row_chars = row_value_chars.saturating_mul(repeated_rows);
+                        expanded_text_chars =
+                            expanded_text_chars.saturating_add(expanded_row_chars);
+                        if expanded_text_chars > ODS_MAX_EXPANDED_TEXT_CHARS {
+                            return Err(OdsFailure::Extract("resource_limit"));
+                        }
+
+                        // calamine first builds one row-oriented Data/formula
+                        // vector and then materializes each into a dense range.
+                        // During each rebuild the old and new vectors overlap,
+                        // so account for two Data and two String slots per
+                        // logical cell rather than only the final ranges.
+                        let parser_bytes_per_cell = std::mem::size_of::<Data>()
+                            .saturating_mul(2)
+                            .saturating_add(std::mem::size_of::<String>().saturating_mul(2));
+                        let cell_storage_bytes = (cells.min(usize::MAX as u64) as usize)
+                            .saturating_mul(parser_bytes_per_cell);
+                        estimated_memory_bytes = estimated_memory_bytes
+                            .saturating_add(cell_storage_bytes)
+                            .saturating_add(expanded_row_chars.saturating_mul(4));
+                        if estimated_memory_bytes > ODS_MAX_ESTIMATED_MEMORY_BYTES {
+                            return Err(OdsFailure::Extract("resource_limit"));
+                        }
+
+                        in_row = false;
+                        row_width = 0;
+                        row_repeats = 1;
+                        row_value_chars = 0;
+                    }
+                    b"table" if in_table => {
+                        if in_row || in_cell {
+                            return Err(OdsFailure::Extract("extract_error"));
+                        }
+                        in_table = false;
+                        table_rows = 0;
+                    }
+                    _ => {}
+                }
+                depth -= 1;
+            }
+            Event::DocType(_) => return Err(OdsFailure::Extract("external_relationship")),
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if depth != 0 || in_table || in_row || in_cell {
+        return Err(OdsFailure::Extract("extract_error"));
+    }
+    Ok(())
+}
+
+const ODS_MAX_SOURCE_TEXT_CHARS: usize = 8_000_000;
+
+fn ods_cell_value_chars(element: &quick_xml::events::BytesStart<'_>) -> Result<usize, OdsFailure> {
+    let mut value_chars = 0usize;
+    for attribute in element.attributes() {
+        let attribute = attribute.map_err(|_| OdsFailure::Extract("extract_error"))?;
+        let key = attribute.key.as_ref();
+        let local_key = key.rsplit(|byte| *byte == b':').next().unwrap_or(key);
+        if matches!(
+            local_key,
+            b"value"
+                | b"string-value"
+                | b"date-value"
+                | b"time-value"
+                | b"boolean-value"
+                | b"formula"
+        ) {
+            value_chars = value_chars.saturating_add(attribute.value.len());
+            if value_chars > ODS_MAX_EXPANDED_TEXT_CHARS {
+                return Err(OdsFailure::Extract("resource_limit"));
+            }
+        }
+    }
+    Ok(value_chars)
+}
+
+fn ods_count_attribute_chars(
+    element: &quick_xml::events::BytesStart<'_>,
+    source_chars: &mut usize,
+) -> Result<(), OdsFailure> {
+    for attribute in element.attributes() {
+        let attribute = attribute.map_err(|_| OdsFailure::Extract("extract_error"))?;
+        *source_chars = source_chars.saturating_add(attribute.value.len());
+        if *source_chars > ODS_MAX_SOURCE_TEXT_CHARS {
+            return Err(OdsFailure::Extract("text_limit"));
+        }
+    }
+    Ok(())
+}
+
+fn ods_repeat_attribute(
+    element: &quick_xml::events::BytesStart<'_>,
+    wanted: &[u8],
+    max: u64,
+    limit_code: &'static str,
+) -> Result<u64, OdsFailure> {
+    let Some(value) = ods_attribute_value(element, wanted)? else {
+        return Ok(1);
+    };
+    let value = std::str::from_utf8(&value).map_err(|_| OdsFailure::UnsupportedEncoding)?;
+    let parsed = value
+        .parse::<u64>()
+        .map_err(|_| OdsFailure::Extract("extract_error"))?;
+    if parsed == 0 {
+        return Err(OdsFailure::Extract("extract_error"));
+    }
+    if parsed > max {
+        return Err(OdsFailure::Extract(limit_code));
+    }
+    Ok(parsed)
+}
+
+fn ods_attribute_value(
+    element: &quick_xml::events::BytesStart<'_>,
+    wanted: &[u8],
+) -> Result<Option<Vec<u8>>, OdsFailure> {
+    for attribute in element.attributes() {
+        let attribute = attribute.map_err(|_| OdsFailure::Extract("extract_error"))?;
+        let key = attribute.key.as_ref();
+        let key = key.rsplit(|byte| *byte == b':').next().unwrap_or(key);
+        if key == wanted {
+            return Ok(Some(attribute.value.into_owned()));
+        }
+    }
+    Ok(None)
+}
+
+fn xlsx_cell_value(value: &DataRef<'_>) -> Option<String> {
+    let value = match value {
+        DataRef::Empty => None,
+        DataRef::Int(value) => Some(value.to_string()),
+        DataRef::Float(value) => Some(value.to_string()),
+        DataRef::String(value) => Some(value.clone()),
+        DataRef::SharedString(value) => Some((*value).to_string()),
+        DataRef::Bool(value) => Some(value.to_string()),
+        DataRef::DateTime(value) => Some(value.to_string()),
+        DataRef::DateTimeIso(value) => Some(value.clone()),
+        DataRef::DurationIso(value) => Some(value.clone()),
+        DataRef::Error(value) => Some(value.to_string()),
+    }?;
+    (!value.is_empty()).then_some(value)
+}
+
+fn xlsx_dimension_cell_count(dimensions: Dimensions) -> Result<usize, XlsxFailure> {
+    if dimensions.end < dimensions.start {
+        return Err(XlsxFailure::Extract("cell_limit"));
+    }
+    if dimensions.end.0 >= XLSX_MAX_ROWS {
+        return Err(XlsxFailure::Extract("row_limit"));
+    }
+    if dimensions.end.1 >= XLSX_MAX_COLUMNS {
+        return Err(XlsxFailure::Extract("column_limit"));
+    }
+    let rows = dimensions
+        .end
+        .0
+        .saturating_sub(dimensions.start.0)
+        .saturating_add(1) as usize;
+    let columns = dimensions
+        .end
+        .1
+        .saturating_sub(dimensions.start.1)
+        .saturating_add(1) as usize;
+    let cells = rows.saturating_mul(columns);
+    if cells > XLSX_MAX_CELLS {
+        return Err(XlsxFailure::Extract("cell_limit"));
+    }
+    Ok(cells)
+}
+
+/// Inspect the ZIP central directory and the bounded XML metadata needed by
+/// calamine before constructing its workbook. In particular, calamine trusts
+/// `sharedStrings.xml`'s `uniqueCount` for a `Vec::reserve`, so the declaration
+/// must be checked before `Xlsx::new` can see the bytes. No archive entry is
+/// opened as a path and no external relationship is followed.
+fn xlsx_preflight(bytes: &[u8], started: Instant) -> Result<(), XlsxFailure> {
+    validate_zip_envelope(bytes, XLSX_MAX_ZIP_ENTRIES).map_err(|failure| match failure {
+        ZipEnvelopeFailure::Invalid => XlsxFailure::Extract("extract_error"),
+        ZipEnvelopeFailure::EntryLimit => XlsxFailure::Extract("zip_limit"),
+    })?;
+    let mut archive =
+        ZipArchive::new(Cursor::new(bytes)).map_err(|_| XlsxFailure::Extract("extract_error"))?;
+    if archive.len() > XLSX_MAX_ZIP_ENTRIES {
+        return Err(XlsxFailure::Extract("zip_limit"));
+    }
+
+    let mut total_uncompressed = 0u64;
+    let mut seen_names = HashSet::with_capacity(archive.len());
+    let mut package_relationships_entry = None;
+    let mut workbook_entry = None;
+    let mut workbook_relationships_entry = None;
+    let mut styles_entry = None;
+    let mut shared_string_entries = Vec::new();
+    let mut worksheet_entries = Vec::new();
+    for index in 0..archive.len() {
+        if timed_out(started) {
+            return Err(XlsxFailure::Timeout);
+        }
+        // `by_index` refuses to open an encrypted entry before exposing its
+        // metadata. The raw view is metadata-only and lets us map that case
+        // to the fixed unsupported-encrypted status without attempting to
+        // decrypt or inflate attacker-controlled bytes.
+        let file = archive
+            .by_index_raw(index)
+            .map_err(|_| XlsxFailure::Extract("extract_error"))?;
+        if file.encrypted() {
+            return Err(XlsxFailure::UnsupportedEncrypted);
+        }
+        if file.name_raw().contains(&0) || file.enclosed_name().is_none() {
+            return Err(XlsxFailure::Extract("zip_path"));
+        }
+        let size = file.size();
+        if size > XLSX_MAX_ZIP_ENTRY_BYTES {
+            return Err(XlsxFailure::Extract("zip_limit"));
+        }
+        total_uncompressed = total_uncompressed.saturating_add(size);
+        if total_uncompressed > XLSX_MAX_ZIP_UNCOMPRESSED_BYTES {
+            return Err(XlsxFailure::Extract("zip_limit"));
+        }
+        let name = file.name().replace('\\', "/");
+        let lower_name = name.to_ascii_lowercase();
+        if !seen_names.insert(lower_name.clone()) {
+            return Err(XlsxFailure::Extract("zip_path"));
+        }
+        match lower_name.as_str() {
+            "_rels/.rels" => {
+                require_xlsx_part_size(size, XLSX_MAX_PACKAGE_RELATIONSHIPS_BYTES)?;
+                package_relationships_entry = Some(index);
+            }
+            "xl/workbook.xml" => {
+                require_xlsx_part_size(size, XLSX_MAX_WORKBOOK_XML_BYTES)?;
+                workbook_entry = Some(index);
+            }
+            "xl/_rels/workbook.xml.rels" => {
+                require_xlsx_part_size(size, XLSX_MAX_WORKBOOK_RELATIONSHIPS_BYTES)?;
+                workbook_relationships_entry = Some(index);
+            }
+            "xl/styles.xml" => {
+                require_xlsx_part_size(size, XLSX_MAX_STYLES_XML_BYTES)?;
+                styles_entry = Some(index);
+            }
+            "xl/sharedstrings.xml" => {
+                require_xlsx_part_size(size, XLSX_MAX_SHARED_STRING_XML_BYTES)
+                    .map_err(|_| XlsxFailure::Extract("shared_string_limit"))?;
+                shared_string_entries.push(index);
+            }
+            _ if lower_name.starts_with("xl/worksheets/") && lower_name.ends_with(".xml") => {
+                worksheet_entries.push(index);
+            }
+            _ => {}
+        }
+    }
+    let package_relationships_entry =
+        package_relationships_entry.ok_or(XlsxFailure::Extract("extract_error"))?;
+    let workbook_entry = workbook_entry.ok_or(XlsxFailure::Extract("extract_error"))?;
+    let workbook_relationships_entry =
+        workbook_relationships_entry.ok_or(XlsxFailure::Extract("extract_error"))?;
+    if shared_string_entries.len() > 1 {
+        return Err(XlsxFailure::Extract("zip_path"));
+    }
+    if worksheet_entries.len() > XLSX_MAX_SHEETS {
+        return Err(XlsxFailure::Extract("sheet_limit"));
+    }
+
+    let package_relationships = read_xlsx_part(
+        &mut archive,
+        package_relationships_entry,
+        started,
+        XLSX_MAX_PACKAGE_RELATIONSHIPS_BYTES,
+    )?;
+    scan_xlsx_relationships(&package_relationships, true, started)?;
+
+    let workbook_relationships = read_xlsx_part(
+        &mut archive,
+        workbook_relationships_entry,
+        started,
+        XLSX_MAX_WORKBOOK_RELATIONSHIPS_BYTES,
+    )?;
+    scan_xlsx_relationships(&workbook_relationships, false, started)?;
+
+    let workbook_xml = read_xlsx_part(
+        &mut archive,
+        workbook_entry,
+        started,
+        XLSX_MAX_WORKBOOK_XML_BYTES,
+    )?;
+    let workbook_sheets = scan_xlsx_xml_limits(&workbook_xml, Some(b"sheet"), started)?;
+    if workbook_sheets > XLSX_MAX_SHEETS {
+        return Err(XlsxFailure::Extract("sheet_limit"));
+    }
+    if let Some(index) = styles_entry {
+        let styles = read_xlsx_part(&mut archive, index, started, XLSX_MAX_STYLES_XML_BYTES)?;
+        scan_xlsx_xml_limits(&styles, None, started)?;
+    }
+
+    let mut shared_strings = 0usize;
+    let mut shared_string_chars = 0usize;
+    for index in shared_string_entries {
+        if timed_out(started) {
+            return Err(XlsxFailure::Timeout);
+        }
+        let file = archive
+            .by_index(index)
+            .map_err(|_| XlsxFailure::Extract("extract_error"))?;
+        let xml = read_zip_entry(file, started, XLSX_MAX_SHARED_STRING_XML_BYTES)?;
+        let (count, chars) = scan_shared_strings(&xml, started)?;
+        shared_strings = shared_strings.saturating_add(count);
+        shared_string_chars = shared_string_chars.saturating_add(chars);
+        if shared_strings > XLSX_MAX_SHARED_STRINGS
+            || shared_string_chars > XLSX_MAX_SHARED_STRING_CHARS
+        {
+            return Err(XlsxFailure::Extract("shared_string_limit"));
+        }
+    }
+
+    let mut logical_cells = 0usize;
+    for index in worksheet_entries {
+        if timed_out(started) {
+            return Err(XlsxFailure::Timeout);
+        }
+        let file = archive
+            .by_index(index)
+            .map_err(|_| XlsxFailure::Extract("extract_error"))?;
+        let xml = read_zip_entry(file, started, XLSX_MAX_ZIP_ENTRY_BYTES)?;
+        let sheet_cells = scan_worksheet_xml(&xml, started)?;
+        logical_cells = logical_cells.saturating_add(sheet_cells);
+        if logical_cells > XLSX_MAX_CELLS {
+            return Err(XlsxFailure::Extract("cell_limit"));
+        }
+    }
+    Ok(())
+}
+
+fn require_xlsx_part_size(size: u64, limit: u64) -> Result<(), XlsxFailure> {
+    if size > limit {
+        Err(XlsxFailure::Extract("zip_limit"))
+    } else {
+        Ok(())
+    }
+}
+
+fn read_xlsx_part(
+    archive: &mut ZipArchive<Cursor<&[u8]>>,
+    index: usize,
+    started: Instant,
+    max_bytes: u64,
+) -> Result<Vec<u8>, XlsxFailure> {
+    let file = archive
+        .by_index(index)
+        .map_err(|_| XlsxFailure::Extract("extract_error"))?;
+    read_zip_entry(file, started, max_bytes)
+}
+
+fn read_zip_entry<R: Read>(
+    mut reader: R,
+    started: Instant,
+    max_bytes: u64,
+) -> Result<Vec<u8>, XlsxFailure> {
+    let mut output = Vec::new();
+    let mut chunk = [0u8; READ_CHUNK_BYTES];
+    loop {
+        if timed_out(started) {
+            return Err(XlsxFailure::Timeout);
+        }
+        let read = reader
+            .read(&mut chunk)
+            .map_err(|_| XlsxFailure::Extract("extract_error"))?;
+        if read == 0 {
+            break;
+        }
+        if output.len().saturating_add(read) as u64 > max_bytes {
+            return Err(XlsxFailure::Extract("zip_limit"));
+        }
+        output.extend_from_slice(&chunk[..read]);
+    }
+    Ok(output)
+}
+
+fn scan_xlsx_relationships(
+    xml: &[u8],
+    package_root: bool,
+    started: Instant,
+) -> Result<(), XlsxFailure> {
+    let mut reader = XmlReader::from_reader(Cursor::new(xml));
+    reader.config_mut().trim_text(false);
+    reader.config_mut().expand_empty_elements = true;
+    let mut buffer = Vec::with_capacity(1024);
+    let mut depth = 0usize;
+    let mut events = 0usize;
+    let mut relationships = 0usize;
+    let mut office_documents = 0usize;
+    let mut ids = HashSet::new();
+    loop {
+        if timed_out(started) {
+            return Err(XlsxFailure::Timeout);
+        }
+        buffer.clear();
+        let event = reader
+            .read_event_into(&mut buffer)
+            .map_err(|_| XlsxFailure::Extract("extract_error"))?;
+        events = events.saturating_add(1);
+        if events > XLSX_MAX_XML_EVENTS {
+            return Err(XlsxFailure::Extract("xml_limit"));
+        }
+        match event {
+            Event::Start(element) => {
+                depth = depth.saturating_add(1);
+                if depth > XLSX_MAX_XML_DEPTH {
+                    return Err(XlsxFailure::Extract("xml_limit"));
+                }
+                if element.local_name().as_ref() == b"Relationship" {
+                    relationships = relationships.saturating_add(1);
+                    if relationships > XLSX_MAX_RELATIONSHIPS {
+                        return Err(XlsxFailure::Extract("xml_limit"));
+                    }
+                    let id = attribute_value(&element, b"Id")?
+                        .ok_or(XlsxFailure::Extract("extract_error"))?;
+                    if id.is_empty() || !ids.insert(id) {
+                        return Err(XlsxFailure::Extract("extract_error"));
+                    }
+                    let relation_type = attribute_value(&element, b"Type")?
+                        .ok_or(XlsxFailure::Extract("extract_error"))?;
+                    let target = attribute_value(&element, b"Target")?
+                        .ok_or(XlsxFailure::Extract("extract_error"))?;
+                    if attribute_value(&element, b"TargetMode")?
+                        .is_some_and(|mode| !mode.as_slice().eq_ignore_ascii_case(b"internal"))
+                    {
+                        return Err(XlsxFailure::Extract("external_relationship"));
+                    }
+                    if !xlsx_relationship_target_is_safe(&target) {
+                        return Err(XlsxFailure::Extract("external_relationship"));
+                    }
+                    if package_root && relation_type.ends_with(b"/relationships/officeDocument") {
+                        office_documents = office_documents.saturating_add(1);
+                        let normalized = target.strip_prefix(b"/").unwrap_or(&target);
+                        if normalized != b"xl/workbook.xml" || office_documents > 1 {
+                            return Err(XlsxFailure::Extract("external_relationship"));
+                        }
+                    }
+                }
+            }
+            Event::End(_) => {
+                if depth == 0 {
+                    return Err(XlsxFailure::Extract("extract_error"));
+                }
+                depth -= 1;
+            }
+            Event::DocType(_) => return Err(XlsxFailure::Extract("external_relationship")),
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if depth != 0 || (package_root && office_documents != 1) {
+        return Err(XlsxFailure::Extract("extract_error"));
+    }
+    Ok(())
+}
+
+fn xlsx_relationship_target_is_safe(target: &[u8]) -> bool {
+    let target = target.strip_prefix(b"/").unwrap_or(target);
+    !target.is_empty()
+        && !target.iter().any(|byte| {
+            byte.is_ascii_control() || matches!(*byte, b'\\' | b':' | b'?' | b'#' | b'%')
+        })
+        && target
+            .split(|byte| *byte == b'/')
+            .all(|part| !part.is_empty() && part != b"." && part != b"..")
+}
+
+fn scan_xlsx_xml_limits(
+    xml: &[u8],
+    counted_element: Option<&[u8]>,
+    started: Instant,
+) -> Result<usize, XlsxFailure> {
+    let mut reader = XmlReader::from_reader(Cursor::new(xml));
+    reader.config_mut().trim_text(false);
+    reader.config_mut().expand_empty_elements = true;
+    let mut buffer = Vec::with_capacity(1024);
+    let mut depth = 0usize;
+    let mut events = 0usize;
+    let mut text_chars = 0usize;
+    let mut counted = 0usize;
+    loop {
+        if timed_out(started) {
+            return Err(XlsxFailure::Timeout);
+        }
+        buffer.clear();
+        let event = reader
+            .read_event_into(&mut buffer)
+            .map_err(|_| XlsxFailure::Extract("extract_error"))?;
+        events = events.saturating_add(1);
+        if events > XLSX_MAX_XML_EVENTS {
+            return Err(XlsxFailure::Extract("xml_limit"));
+        }
+        match event {
+            Event::Start(element) => {
+                depth = depth.saturating_add(1);
+                if depth > XLSX_MAX_XML_DEPTH {
+                    return Err(XlsxFailure::Extract("xml_limit"));
+                }
+                for attribute in element.attributes() {
+                    let attribute = attribute.map_err(|_| XlsxFailure::Extract("extract_error"))?;
+                    text_chars = text_chars.saturating_add(attribute.value.len());
+                }
+                if counted_element.is_some_and(|wanted| element.local_name().as_ref() == wanted) {
+                    counted = counted.saturating_add(1);
+                }
+            }
+            Event::Text(text) => {
+                let value = text
+                    .xml10_content()
+                    .map_err(|_| XlsxFailure::UnsupportedEncoding)?;
+                text_chars = text_chars.saturating_add(value.chars().count());
+            }
+            Event::CData(text) => {
+                let value = text
+                    .xml10_content()
+                    .map_err(|_| XlsxFailure::UnsupportedEncoding)?;
+                text_chars = text_chars.saturating_add(value.chars().count());
+            }
+            Event::GeneralRef(_) => text_chars = text_chars.saturating_add(1),
+            Event::End(_) => {
+                if depth == 0 {
+                    return Err(XlsxFailure::Extract("extract_error"));
+                }
+                depth -= 1;
+            }
+            Event::DocType(_) => return Err(XlsxFailure::Extract("external_relationship")),
+            Event::Eof => break,
+            _ => {}
+        }
+        if text_chars > XLSX_MAX_XML_TEXT_CHARS {
+            return Err(XlsxFailure::Extract("xml_limit"));
+        }
+    }
+    if depth != 0 {
+        return Err(XlsxFailure::Extract("extract_error"));
+    }
+    Ok(counted)
+}
+
+fn scan_shared_strings(xml: &[u8], started: Instant) -> Result<(usize, usize), XlsxFailure> {
+    let mut reader = XmlReader::from_reader(Cursor::new(xml));
+    reader.config_mut().trim_text(false);
+    let mut buffer = Vec::with_capacity(1024);
+    let mut depth = 0usize;
+    let mut shared_item_depth = 0usize;
+    let mut count = 0usize;
+    let mut chars = 0usize;
+    let mut events = 0usize;
+    let mut declared_unique_count = None;
+
+    loop {
+        if timed_out(started) {
+            return Err(XlsxFailure::Timeout);
+        }
+        buffer.clear();
+        let event = reader
+            .read_event_into(&mut buffer)
+            .map_err(|_| XlsxFailure::Extract("extract_error"))?;
+        events = events.saturating_add(1);
+        if events > XLSX_MAX_XML_EVENTS {
+            return Err(XlsxFailure::Extract("xml_limit"));
+        }
+        match event {
+            Event::Start(element) => {
+                depth = depth.saturating_add(1);
+                if depth > XLSX_MAX_XML_DEPTH {
+                    return Err(XlsxFailure::Extract("xml_limit"));
+                }
+                match element.local_name().as_ref() {
+                    b"sst" => {
+                        declared_unique_count = parse_unique_count(&element)?;
+                    }
+                    b"si" => {
+                        count = count.saturating_add(1);
+                        if count > XLSX_MAX_SHARED_STRINGS {
+                            return Err(XlsxFailure::Extract("shared_string_limit"));
+                        }
+                        shared_item_depth = shared_item_depth.saturating_add(1);
+                    }
+                    _ => {}
+                }
+            }
+            Event::Empty(element) => {
+                if element.local_name().as_ref() == b"si" {
+                    count = count.saturating_add(1);
+                    if count > XLSX_MAX_SHARED_STRINGS {
+                        return Err(XlsxFailure::Extract("shared_string_limit"));
+                    }
+                }
+            }
+            Event::Text(text) => {
+                if shared_item_depth != 0 {
+                    let value = text
+                        .xml10_content()
+                        .map_err(|_| XlsxFailure::UnsupportedEncoding)?;
+                    chars = chars.saturating_add(value.chars().count());
+                    if chars > XLSX_MAX_SHARED_STRING_CHARS {
+                        return Err(XlsxFailure::Extract("shared_string_limit"));
+                    }
+                }
+            }
+            Event::CData(text) => {
+                if shared_item_depth != 0 {
+                    let value = text
+                        .xml10_content()
+                        .map_err(|_| XlsxFailure::UnsupportedEncoding)?;
+                    chars = chars.saturating_add(value.chars().count());
+                    if chars > XLSX_MAX_SHARED_STRING_CHARS {
+                        return Err(XlsxFailure::Extract("shared_string_limit"));
+                    }
+                }
+            }
+            Event::End(element) => {
+                if depth == 0 {
+                    return Err(XlsxFailure::Extract("extract_error"));
+                }
+                if element.local_name().as_ref() == b"si" && shared_item_depth != 0 {
+                    shared_item_depth -= 1;
+                }
+                depth -= 1;
+            }
+            Event::DocType(_) => return Err(XlsxFailure::Extract("external_relationship")),
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if depth != 0 || shared_item_depth != 0 {
+        return Err(XlsxFailure::Extract("extract_error"));
+    }
+    if declared_unique_count.is_some_and(|declared| declared > XLSX_MAX_SHARED_STRINGS) {
+        return Err(XlsxFailure::Extract("shared_string_limit"));
+    }
+    Ok((count, chars))
+}
+
+fn parse_unique_count(
+    element: &quick_xml::events::BytesStart<'_>,
+) -> Result<Option<usize>, XlsxFailure> {
+    for attribute in element.attributes() {
+        let attribute = attribute.map_err(|_| XlsxFailure::Extract("extract_error"))?;
+        if attribute.key.as_ref().eq_ignore_ascii_case(b"uniqueCount") {
+            let value = std::str::from_utf8(attribute.value.as_ref())
+                .map_err(|_| XlsxFailure::UnsupportedEncoding)?;
+            let count = value
+                .parse::<usize>()
+                .map_err(|_| XlsxFailure::Extract("extract_error"))?;
+            return Ok(Some(count));
+        }
+    }
+    Ok(None)
+}
+
+fn scan_worksheet_xml(xml: &[u8], started: Instant) -> Result<usize, XlsxFailure> {
+    let mut reader = XmlReader::from_reader(Cursor::new(xml));
+    reader.config_mut().trim_text(false);
+    let mut buffer = Vec::with_capacity(1024);
+    let mut depth = 0usize;
+    let mut sheet_data_depth = 0usize;
+    let mut current_row = 0u32;
+    let mut current_column = 0u32;
+    let mut row_records = 0usize;
+    let mut cells = 0usize;
+    let mut declared_cells = None;
+    let mut events = 0usize;
+
+    loop {
+        if timed_out(started) {
+            return Err(XlsxFailure::Timeout);
+        }
+        buffer.clear();
+        let event = reader
+            .read_event_into(&mut buffer)
+            .map_err(|_| XlsxFailure::Extract("extract_error"))?;
+        events = events.saturating_add(1);
+        if events > XLSX_MAX_XML_EVENTS {
+            return Err(XlsxFailure::Extract("xml_limit"));
+        }
+        match event {
+            Event::Start(element) => {
+                depth = depth.saturating_add(1);
+                if depth > XLSX_MAX_XML_DEPTH {
+                    return Err(XlsxFailure::Extract("xml_limit"));
+                }
+                match element.local_name().as_ref() {
+                    b"sheetData" => sheet_data_depth = sheet_data_depth.saturating_add(1),
+                    b"dimension" => {
+                        if let Some(reference) = attribute_value(&element, b"ref")? {
+                            declared_cells = Some(parse_xlsx_dimension(&reference)?);
+                        }
+                    }
+                    b"row" if sheet_data_depth != 0 => {
+                        row_records = row_records.saturating_add(1);
+                        if row_records > XLSX_MAX_ROWS as usize {
+                            return Err(XlsxFailure::Extract("row_limit"));
+                        }
+                        current_column = 0;
+                        current_row = parse_row_attribute(&element)?.unwrap_or(current_row);
+                        if current_row >= XLSX_MAX_ROWS {
+                            return Err(XlsxFailure::Extract("row_limit"));
+                        }
+                    }
+                    b"c" if sheet_data_depth != 0 => {
+                        cells = cells.saturating_add(1);
+                        if cells > XLSX_MAX_CELLS {
+                            return Err(XlsxFailure::Extract("cell_limit"));
+                        }
+                        let (row, column) = match attribute_value(&element, b"r")? {
+                            Some(reference) => parse_cell_reference(&reference)?,
+                            None => (current_row, current_column),
+                        };
+                        if row >= XLSX_MAX_ROWS {
+                            return Err(XlsxFailure::Extract("row_limit"));
+                        }
+                        if column >= XLSX_MAX_COLUMNS {
+                            return Err(XlsxFailure::Extract("column_limit"));
+                        }
+                        current_row = row;
+                        current_column = column.saturating_add(1);
+                    }
+                    _ => {}
+                }
+            }
+            Event::Empty(element) => match element.local_name().as_ref() {
+                b"dimension" => {
+                    if let Some(reference) = attribute_value(&element, b"ref")? {
+                        declared_cells = Some(parse_xlsx_dimension(&reference)?);
+                    }
+                }
+                b"row" if sheet_data_depth != 0 => {
+                    row_records = row_records.saturating_add(1);
+                    if row_records > XLSX_MAX_ROWS as usize {
+                        return Err(XlsxFailure::Extract("row_limit"));
+                    }
+                }
+                b"c" if sheet_data_depth != 0 => {
+                    cells = cells.saturating_add(1);
+                    if cells > XLSX_MAX_CELLS {
+                        return Err(XlsxFailure::Extract("cell_limit"));
+                    }
+                    let (row, column) = match attribute_value(&element, b"r")? {
+                        Some(reference) => parse_cell_reference(&reference)?,
+                        None => (current_row, current_column),
+                    };
+                    if row >= XLSX_MAX_ROWS {
+                        return Err(XlsxFailure::Extract("row_limit"));
+                    }
+                    if column >= XLSX_MAX_COLUMNS {
+                        return Err(XlsxFailure::Extract("column_limit"));
+                    }
+                    current_column = column.saturating_add(1);
+                }
+                _ => {}
+            },
+            Event::End(element) => {
+                if depth == 0 {
+                    return Err(XlsxFailure::Extract("extract_error"));
+                }
+                if element.local_name().as_ref() == b"sheetData" && sheet_data_depth != 0 {
+                    sheet_data_depth -= 1;
+                }
+                depth -= 1;
+            }
+            Event::DocType(_) => return Err(XlsxFailure::Extract("external_relationship")),
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if depth != 0 || sheet_data_depth != 0 {
+        return Err(XlsxFailure::Extract("extract_error"));
+    }
+    let logical_cells = declared_cells.unwrap_or(cells);
+    if logical_cells > XLSX_MAX_CELLS {
+        return Err(XlsxFailure::Extract("cell_limit"));
+    }
+    Ok(logical_cells)
+}
+
+fn attribute_value(
+    element: &quick_xml::events::BytesStart<'_>,
+    wanted: &[u8],
+) -> Result<Option<Vec<u8>>, XlsxFailure> {
+    for attribute in element.attributes() {
+        let attribute = attribute.map_err(|_| XlsxFailure::Extract("extract_error"))?;
+        let key = attribute.key.as_ref();
+        let key = key.rsplit(|byte| *byte == b':').next().unwrap_or(key);
+        if key == wanted {
+            return Ok(Some(attribute.value.into_owned()));
+        }
+    }
+    Ok(None)
+}
+
+fn parse_row_attribute(
+    element: &quick_xml::events::BytesStart<'_>,
+) -> Result<Option<u32>, XlsxFailure> {
+    let Some(value) = attribute_value(element, b"r")? else {
+        return Ok(None);
+    };
+    let row = std::str::from_utf8(&value)
+        .map_err(|_| XlsxFailure::UnsupportedEncoding)?
+        .parse::<u32>()
+        .map_err(|_| XlsxFailure::Extract("extract_error"))?;
+    let row = row
+        .checked_sub(1)
+        .ok_or(XlsxFailure::Extract("row_limit"))?;
+    Ok(Some(row))
+}
+
+fn parse_xlsx_dimension(reference: &[u8]) -> Result<usize, XlsxFailure> {
+    let mut parts = reference.split(|byte| *byte == b':');
+    let start = parse_cell_reference(parts.next().ok_or(XlsxFailure::Extract("extract_error"))?)?;
+    let end = match parts.next() {
+        Some(end) => parse_cell_reference(end)?,
+        None => start,
+    };
+    if parts.next().is_some() || end < start {
+        return Err(XlsxFailure::Extract("cell_limit"));
+    }
+    if end.0 >= XLSX_MAX_ROWS {
+        return Err(XlsxFailure::Extract("row_limit"));
+    }
+    if end.1 >= XLSX_MAX_COLUMNS {
+        return Err(XlsxFailure::Extract("column_limit"));
+    }
+    let rows = end.0.saturating_sub(start.0).saturating_add(1) as usize;
+    let columns = end.1.saturating_sub(start.1).saturating_add(1) as usize;
+    let cells = rows.saturating_mul(columns);
+    if cells > XLSX_MAX_CELLS {
+        return Err(XlsxFailure::Extract("cell_limit"));
+    }
+    Ok(cells)
+}
+
+fn parse_cell_reference(reference: &[u8]) -> Result<(u32, u32), XlsxFailure> {
+    let mut index = 0usize;
+    let mut column = 0u32;
+    while index < reference.len() && reference[index].is_ascii_alphabetic() {
+        let upper = reference[index].to_ascii_uppercase();
+        column = column
+            .checked_mul(26)
+            .and_then(|value| value.checked_add(u32::from(upper - b'A' + 1)))
+            .ok_or(XlsxFailure::Extract("column_limit"))?;
+        index += 1;
+    }
+    if index == 0 || column == 0 {
+        return Err(XlsxFailure::Extract("extract_error"));
+    }
+    let row_start = index;
+    let mut row = 0u32;
+    while index < reference.len() && reference[index].is_ascii_digit() {
+        row = row
+            .checked_mul(10)
+            .and_then(|value| value.checked_add(u32::from(reference[index] - b'0')))
+            .ok_or(XlsxFailure::Extract("row_limit"))?;
+        index += 1;
+    }
+    if index == row_start || index != reference.len() || row == 0 {
+        return Err(XlsxFailure::Extract("extract_error"));
+    }
+    Ok((
+        row.checked_sub(1)
+            .ok_or(XlsxFailure::Extract("row_limit"))?,
+        column
+            .checked_sub(1)
+            .ok_or(XlsxFailure::Extract("column_limit"))?,
+    ))
 }
 
 /// Extracts cell values from a legacy binary Excel workbook using calamine's
@@ -1841,12 +3672,24 @@ fn looks_like_known_token(candidate: &str) -> bool {
 }
 
 #[cfg(test)]
+pub(crate) fn xlsx_test_fixture_with(first_shared: &str) -> Vec<u8> {
+    tests::xlsx_fixture_with(first_shared, "0000003", "A1:B2")
+}
+
+#[cfg(test)]
+pub(crate) fn ods_test_fixture_with(first_value: &str) -> Vec<u8> {
+    tests::ods_fixture(first_value)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use lopdf::content::{Content, Operation};
     use lopdf::{
         dictionary, Document, EncryptionState, EncryptionVersion, Object, Permissions, Stream,
     };
+    use std::io::Write;
+    use zip::{write::SimpleFileOptions, ZipWriter};
 
     fn now() -> Instant {
         Instant::now()
@@ -1957,6 +3800,15 @@ mod tests {
         bytes
     }
 
+    fn office_encrypted_xlsx_bytes() -> Vec<u8> {
+        let mut container = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        {
+            let mut stream = container.create_stream("/EncryptedPackage").unwrap();
+            stream.write_all(b"encrypted fixture").unwrap();
+        }
+        container.into_inner().into_inner()
+    }
+
     #[test]
     fn recognizes_developer_text_extensions_case_insensitively() {
         assert!(is_text_ext("RS"));
@@ -1984,8 +3836,233 @@ mod tests {
         assert!(is_xls_path(Path::new("report.XlS")));
         assert!(is_content_candidate(Path::new("report.xls")));
         assert!(!is_xls_path(Path::new("report.xlsx")));
-        assert!(!is_content_candidate(Path::new("report.xlsx")));
-        assert!(!is_content_candidate(Path::new("report.ods")));
+        assert!(is_xlsx_ext("xlsx"));
+        assert!(is_xlsx_ext(".XLSX"));
+        assert!(is_xlsx_path(Path::new("report.XlSx")));
+        assert!(is_content_candidate(Path::new("report.xlsx")));
+        assert!(!is_xlsx_ext("xlsm"));
+        assert!(!is_content_candidate(Path::new("report.xlsm")));
+        assert!(is_ods_ext("ods"));
+        assert!(is_ods_ext(".ODS"));
+        assert!(is_ods_path(Path::new("report.OdS")));
+        assert!(is_content_candidate(Path::new("report.ods")));
+        assert!(!is_ods_ext("odt"));
+    }
+
+    #[test]
+    fn extracts_xlsx_shared_strings_and_typed_values_offline() {
+        let record = extract_xlsx_bytes(&xlsx_fixture(), now());
+        assert_eq!(record.status, ContentStatus::Indexed);
+        assert_eq!(record.extractor_version, XLSX_EXTRACTOR_VERSION);
+        assert_eq!(record.encoding, Some("xlsx"));
+        assert_eq!(record.error_code, None);
+        assert!(record.text.contains("shared alpha\tinline gamma\n42\ttrue"));
+        assert!(record.text.contains("rich beta\tshared gamma"));
+        assert!(!record.text.contains("SUM(40,2)"));
+    }
+
+    #[test]
+    fn isolates_corrupt_oversized_timed_out_and_encrypted_xlsx_inputs() {
+        let corrupt = extract_xlsx_bytes(b"not an XLSX workbook", now());
+        assert_eq!(corrupt.status, ContentStatus::ExtractError);
+        assert_eq!(corrupt.error_code, Some("extract_error"));
+        assert!(corrupt.text.is_empty());
+
+        let oversized = extract_xlsx_bytes(&vec![b'x'; MAX_FILE_BYTES as usize + 1], now());
+        assert_eq!(oversized.status, ContentStatus::TooLarge);
+        assert_eq!(oversized.error_code, Some("file_too_large"));
+
+        let timeout = extract_xlsx_bytes(&xlsx_fixture(), Instant::now() - PROCESSING_LIMIT);
+        assert_eq!(timeout.status, ContentStatus::Timeout);
+        assert_eq!(timeout.error_code, Some("processing_timeout"));
+
+        let encrypted = extract_xlsx_bytes(&mark_zip_entry_encrypted(xlsx_fixture()), now());
+        assert_eq!(encrypted.status, ContentStatus::UnsupportedEncrypted);
+        assert_eq!(encrypted.error_code, Some("unsupported_encrypted"));
+
+        let office_encrypted = extract_xlsx_bytes(&office_encrypted_xlsx_bytes(), now());
+        assert_eq!(office_encrypted.status, ContentStatus::UnsupportedEncrypted);
+        assert_eq!(office_encrypted.error_code, Some("unsupported_encrypted"));
+    }
+
+    #[test]
+    fn rejects_xlsx_relationship_coordinate_and_package_bounds_before_parsing() {
+        let shared_limit = extract_xlsx_bytes(
+            &xlsx_fixture_with("shared alpha", "1000001", "A1:B2"),
+            now(),
+        );
+        assert_eq!(shared_limit.status, ContentStatus::ExtractError);
+        assert_eq!(shared_limit.error_code, Some("shared_string_limit"));
+
+        let cell_limit = extract_xlsx_bytes(
+            &xlsx_fixture_with("shared alpha", "0000003", "A1:XFD1048576"),
+            now(),
+        );
+        assert_eq!(cell_limit.status, ContentStatus::ExtractError);
+        assert_eq!(cell_limit.error_code, Some("cell_limit"));
+
+        let external = extract_xlsx_bytes(
+            &xlsx_fixture_with_package_target(
+                "https://example.invalid/workbook.xml",
+                Some("External"),
+            ),
+            now(),
+        );
+        assert_eq!(external.status, ContentStatus::ExtractError);
+        assert_eq!(external.error_code, Some("external_relationship"));
+
+        let duplicate = extract_xlsx_bytes(&xlsx_fixture_with_duplicate_canonical_part(), now());
+        assert_eq!(duplicate.status, ContentStatus::ExtractError);
+        assert_eq!(duplicate.error_code, Some("zip_path"));
+    }
+
+    #[test]
+    fn bounds_xlsx_text_and_preserves_the_format_version_at_file_boundaries() {
+        let long_value = "x".repeat(MAX_TEXT_CHARS + 1);
+        let bounded =
+            extract_xlsx_bytes(&xlsx_fixture_with(&long_value, "0000003", "A1:B2"), now());
+        assert_eq!(bounded.status, ContentStatus::Indexed);
+        assert!(bounded.truncated);
+        assert_eq!(bounded.text_chars, MAX_TEXT_CHARS);
+        assert_eq!(bounded.error_code, Some("text_limit"));
+
+        let oversized = extract_file(Path::new("report.xlsx"), MAX_FILE_BYTES + 1, now());
+        assert_eq!(oversized.status, ContentStatus::TooLarge);
+        assert_eq!(oversized.extractor_version, XLSX_EXTRACTOR_VERSION);
+    }
+
+    #[test]
+    fn extracts_ods_values_without_evaluating_formulas() {
+        let record = extract_ods_bytes(&ods_fixture("shared alpha"), now());
+        assert_eq!(record.status, ContentStatus::Indexed);
+        assert_eq!(record.extractor_version, ODS_EXTRACTOR_VERSION);
+        assert_eq!(record.encoding, Some("ods"));
+        assert_eq!(record.error_code, None);
+        assert!(record.text.contains("shared alpha\trich beta"));
+        assert!(record.text.contains("42\ttrue"));
+        assert!(record.text.contains("2026-08-27"));
+        assert!(!record.text.contains("SUM(A1:A2)"));
+    }
+
+    #[test]
+    fn isolates_corrupt_timed_out_and_encrypted_ods_inputs() {
+        let corrupt = extract_ods_bytes(b"not an ODS workbook", now());
+        assert_eq!(corrupt.status, ContentStatus::ExtractError);
+        assert_eq!(corrupt.error_code, Some("extract_error"));
+
+        let timeout = extract_ods_bytes(
+            &ods_fixture("shared alpha"),
+            Instant::now() - PROCESSING_LIMIT,
+        );
+        assert_eq!(timeout.status, ContentStatus::Timeout);
+
+        let encrypted = extract_ods_bytes(
+            &ods_fixture_with_manifest("<manifest:encryption-data/>"),
+            now(),
+        );
+        assert_eq!(encrypted.status, ContentStatus::UnsupportedEncrypted);
+        assert_eq!(encrypted.error_code, Some("unsupported_encrypted"));
+
+        let marked_encrypted = extract_ods_bytes(
+            &mark_zip_entry_encrypted(ods_fixture("shared alpha")),
+            now(),
+        );
+        assert_eq!(marked_encrypted.status, ContentStatus::UnsupportedEncrypted);
+    }
+
+    #[test]
+    fn rejects_ods_repeat_and_xml_expansion_before_calamine_allocation() {
+        let row_limit =
+            extract_ods_bytes(&ods_fixture_with_row_repeat(ODS_MAX_ROWS as u64 + 1), now());
+        assert_eq!(row_limit.error_code, Some("row_limit"));
+
+        let column_limit = extract_ods_bytes(
+            &ods_fixture_with_column_repeat(ODS_MAX_COLUMNS as u64 + 1),
+            now(),
+        );
+        assert_eq!(column_limit.error_code, Some("column_limit"));
+
+        let cell_limit = extract_ods_bytes(
+            &ods_fixture_with_repeats(ODS_MAX_ROWS as u64, ODS_MAX_COLUMNS as u64),
+            now(),
+        );
+        assert_eq!(cell_limit.error_code, Some("cell_limit"));
+
+        let repeated_value = "x".repeat(1_100);
+        let clone_bomb = extract_ods_bytes(
+            &ods_fixture_with_repeated_value(&repeated_value, 16_000),
+            now(),
+        );
+        assert_eq!(clone_bomb.status, ContentStatus::ExtractError);
+        assert_eq!(clone_bomb.error_code, Some("resource_limit"));
+
+        let deep = extract_ods_bytes(&ods_fixture_with_depth(ODS_MAX_XML_DEPTH + 1), now());
+        assert_eq!(deep.error_code, Some("xml_limit"));
+
+        let doctype = extract_ods_bytes(&ods_fixture_with_doctype(), now());
+        assert_eq!(doctype.error_code, Some("external_relationship"));
+    }
+
+    #[test]
+    fn rejects_declared_zip_entry_bombs_before_archive_construction() {
+        let xlsx = extract_xlsx_bytes(
+            &with_declared_zip_entries(xlsx_fixture(), XLSX_MAX_ZIP_ENTRIES + 1),
+            now(),
+        );
+        assert_eq!(xlsx.status, ContentStatus::ExtractError);
+        assert_eq!(xlsx.error_code, Some("zip_limit"));
+
+        let ods = extract_ods_bytes(
+            &with_declared_zip_entries(ods_fixture("shared alpha"), ODS_MAX_ZIP_ENTRIES + 1),
+            now(),
+        );
+        assert_eq!(ods.status, ContentStatus::ExtractError);
+        assert_eq!(ods.error_code, Some("zip_limit"));
+
+        let ambiguous = extract_xlsx_bytes(&with_ambiguous_zip_end_record(xlsx_fixture()), now());
+        assert_eq!(ambiguous.status, ContentStatus::ExtractError);
+        assert_eq!(ambiguous.error_code, Some("extract_error"));
+
+        let oversized_entry = extract_xlsx_bytes(
+            &with_declared_zip_entry_size(xlsx_fixture(), XLSX_MAX_ZIP_ENTRY_BYTES + 1),
+            now(),
+        );
+        assert_eq!(oversized_entry.status, ContentStatus::ExtractError);
+        assert_eq!(oversized_entry.error_code, Some("zip_limit"));
+    }
+
+    #[test]
+    fn spreadsheet_snippets_redact_credentials_and_sensitive_names_are_not_read() {
+        let credential = "Authorization: Bearer spreadsheet-secret";
+        for record in [
+            extract_xlsx_bytes(&xlsx_fixture_with(credential, "0000003", "A1:B2"), now()),
+            extract_ods_bytes(&ods_fixture(credential), now()),
+        ] {
+            assert_eq!(record.status, ContentStatus::Indexed);
+            let snippet = redact_snippet(&record.text);
+            assert!(!snippet.contains("spreadsheet-secret"));
+            assert!(snippet.contains("[REDACTED]"));
+        }
+
+        let xlsx = extract_file(Path::new("credentials.xlsx"), 0, now());
+        let ods = extract_file(Path::new("credentials.ods"), 0, now());
+        assert_eq!(xlsx.status, ContentStatus::SkippedSensitive);
+        assert_eq!(xlsx.extractor_version, XLSX_EXTRACTOR_VERSION);
+        assert_eq!(ods.status, ContentStatus::SkippedSensitive);
+        assert_eq!(ods.extractor_version, ODS_EXTRACTOR_VERSION);
+    }
+
+    #[test]
+    fn bounds_ods_text_and_preserves_the_format_version_at_file_boundaries() {
+        let long_value = "x".repeat(MAX_TEXT_CHARS + 1);
+        let bounded = extract_ods_bytes(&ods_fixture(&long_value), now());
+        assert_eq!(bounded.status, ContentStatus::Indexed);
+        assert!(bounded.truncated);
+        assert_eq!(bounded.text_chars, MAX_TEXT_CHARS);
+
+        let oversized = extract_file(Path::new("report.ods"), MAX_FILE_BYTES + 1, now());
+        assert_eq!(oversized.status, ContentStatus::TooLarge);
+        assert_eq!(oversized.extractor_version, ODS_EXTRACTOR_VERSION);
     }
 
     #[test]
@@ -2334,6 +4411,283 @@ mod tests {
         let redacted = redact_snippet(&snippet);
         assert_eq!(redacted.chars().count(), MAX_SNIPPET_CHARS);
         assert!(redacted.ends_with('…'));
+    }
+
+    pub(super) fn xlsx_fixture() -> Vec<u8> {
+        xlsx_fixture_with("shared alpha", "0000003", "A1:B2")
+    }
+
+    pub(super) fn xlsx_fixture_with(
+        first_shared: &str,
+        unique_count: &str,
+        dimension: &str,
+    ) -> Vec<u8> {
+        build_xlsx_fixture(
+            first_shared,
+            unique_count,
+            dimension,
+            "xl/workbook.xml",
+            None,
+        )
+    }
+
+    fn xlsx_fixture_with_package_target(target: &str, target_mode: Option<&str>) -> Vec<u8> {
+        build_xlsx_fixture("shared alpha", "0000003", "A1:B2", target, target_mode)
+    }
+
+    fn build_xlsx_fixture(
+        first_shared: &str,
+        unique_count: &str,
+        dimension: &str,
+        package_target: &str,
+        target_mode: Option<&str>,
+    ) -> Vec<u8> {
+        let shared_strings = format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3" uniqueCount="{}">
+  <si><t>{}</t></si><si><r><t>rich beta</t></r></si><si><t>shared gamma</t></si>
+</sst>"#,
+            xml_escape(unique_count),
+            xml_escape(first_shared),
+        );
+        let sheet_one = format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="{}"/>
+  <sheetData>
+    <row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="str"><v>inline gamma</v></c></row>
+    <row r="2"><c r="A2" t="n"><f>SUM(40,2)</f><v>42</v></c><c r="B2" t="b"><v>1</v></c></row>
+  </sheetData>
+</worksheet>"#,
+            xml_escape(dimension),
+        );
+        let sheet_two = br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:B1"/>
+  <sheetData><row r="1"><c r="A1" t="s"><v>1</v></c><c r="B1" t="s"><v>2</v></c></row></sheetData>
+</worksheet>"#;
+        let target_mode = target_mode
+            .map(|mode| format!(r#" TargetMode="{}""#, xml_escape(mode)))
+            .unwrap_or_default();
+        let package_relationships = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="{}"{target_mode}/>
+</Relationships>"#,
+            xml_escape(package_target),
+        );
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        write_zip_entry(
+            &mut writer,
+            "[Content_Types].xml",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>"#,
+        );
+        write_zip_entry(&mut writer, "_rels/.rels", package_relationships.as_bytes());
+        write_zip_entry(
+            &mut writer,
+            "xl/workbook.xml",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Summary" sheetId="1" r:id="rId1"/><sheet name="Detail" sheetId="2" r:id="rId2"/></sheets>
+</workbook>"#,
+        );
+        write_zip_entry(
+            &mut writer,
+            "xl/_rels/workbook.xml.rels",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+</Relationships>"#,
+        );
+        write_zip_entry(
+            &mut writer,
+            "xl/sharedStrings.xml",
+            shared_strings.as_bytes(),
+        );
+        write_zip_entry(
+            &mut writer,
+            "xl/worksheets/sheet1.xml",
+            sheet_one.as_bytes(),
+        );
+        write_zip_entry(&mut writer, "xl/worksheets/sheet2.xml", sheet_two);
+        writer.finish().unwrap().into_inner()
+    }
+
+    fn xlsx_fixture_with_duplicate_canonical_part() -> Vec<u8> {
+        let mut writer = ZipWriter::new_append(Cursor::new(xlsx_fixture())).unwrap();
+        write_zip_entry(&mut writer, "XL/WORKBOOK.XML", b"duplicate");
+        writer.finish().unwrap().into_inner()
+    }
+
+    pub(super) fn ods_fixture(first_value: &str) -> Vec<u8> {
+        ods_fixture_with_manifest_and_content("", &ods_content(&xml_escape(first_value), "", ""))
+    }
+
+    fn ods_fixture_with_manifest(marker: &str) -> Vec<u8> {
+        ods_fixture_with_manifest_and_content(marker, &ods_content("shared alpha", "", ""))
+    }
+
+    fn ods_fixture_with_row_repeat(repeats: u64) -> Vec<u8> {
+        ods_fixture_with_manifest_and_content(
+            "",
+            &ods_content(
+                "shared alpha",
+                &format!(" table:number-rows-repeated=\"{repeats}\""),
+                "",
+            ),
+        )
+    }
+
+    fn ods_fixture_with_column_repeat(repeats: u64) -> Vec<u8> {
+        ods_fixture_with_manifest_and_content(
+            "",
+            &ods_content(
+                "shared alpha",
+                "",
+                &format!(" table:number-columns-repeated=\"{repeats}\""),
+            ),
+        )
+    }
+
+    fn ods_fixture_with_repeated_value(value: &str, repeats: u64) -> Vec<u8> {
+        ods_fixture_with_manifest_and_content(
+            "",
+            &ods_content(
+                &xml_escape(value),
+                "",
+                &format!(" table:number-columns-repeated=\"{repeats}\""),
+            ),
+        )
+    }
+
+    fn ods_fixture_with_repeats(row_repeats: u64, column_repeats: u64) -> Vec<u8> {
+        let content = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"><office:body><office:spreadsheet><table:table table:name="Summary"><table:table-row table:number-rows-repeated="{row_repeats}"><table:table-cell office:value-type="string" office:string-value="shared alpha" table:number-columns-repeated="{column_repeats}"/></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>"#,
+        );
+        ods_fixture_with_manifest_and_content("", &content)
+    }
+
+    fn ods_fixture_with_depth(depth: usize) -> Vec<u8> {
+        let open = "<nested>".repeat(depth);
+        let close = "</nested>".repeat(depth);
+        let content = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:spreadsheet><table:table table:name="Summary"><table:table-row><table:table-cell office:value-type="string"><text:p>{open}deep{close}</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>"#,
+        );
+        ods_fixture_with_manifest_and_content("", &content)
+    }
+
+    fn ods_fixture_with_doctype() -> Vec<u8> {
+        let content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE office:document-content SYSTEM "https://example.invalid/external.dtd">
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"><office:body><office:spreadsheet><table:table table:name="Summary"/></office:spreadsheet></office:body></office:document-content>"#;
+        ods_fixture_with_manifest_and_content("", content)
+    }
+
+    fn ods_fixture_with_manifest_and_content(marker: &str, content: &str) -> Vec<u8> {
+        let manifest = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">
+  <manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>
+  <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml">{marker}</manifest:file-entry>
+</manifest:manifest>"#,
+        );
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        write_zip_entry(
+            &mut writer,
+            "mimetype",
+            b"application/vnd.oasis.opendocument.spreadsheet",
+        );
+        write_zip_entry(&mut writer, "META-INF/manifest.xml", manifest.as_bytes());
+        write_zip_entry(&mut writer, "content.xml", content.as_bytes());
+        writer.finish().unwrap().into_inner()
+    }
+
+    fn ods_content(first_value: &str, row_attributes: &str, cell_attributes: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.2">
+  <office:body><office:spreadsheet>
+    <table:table table:name="Summary">
+      <table:table-row{row_attributes}><table:table-cell office:value-type="string" office:string-value="{first_value}"{cell_attributes}/><table:table-cell office:value-type="string"><text:p>rich beta</text:p><text:p>line two</text:p></table:table-cell></table:table-row>
+      <table:table-row><table:table-cell office:value-type="float" office:value="42"/><table:table-cell office:value-type="boolean" office:boolean-value="true"/></table:table-row>
+      <table:table-row><table:table-cell office:value-type="date" office:date-value="2026-08-27"/><table:table-cell office:value-type="float" office:value="0" table:formula="of:=SUM(A1:A2)"/></table:table-row>
+    </table:table>
+    <table:table table:name="Detail"><table:table-row><table:table-cell office:value-type="string" office:string-value="shared gamma"/></table:table-row></table:table>
+  </office:spreadsheet></office:body>
+</office:document-content>"#,
+        )
+    }
+
+    fn xml_escape(value: &str) -> String {
+        value
+            .replace('&', "&amp;")
+            .replace('"', "&quot;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    }
+
+    fn write_zip_entry(writer: &mut ZipWriter<Cursor<Vec<u8>>>, name: &str, bytes: &[u8]) {
+        writer
+            .start_file(name, SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(bytes).unwrap();
+    }
+
+    fn mark_zip_entry_encrypted(mut bytes: Vec<u8>) -> Vec<u8> {
+        let mut offset = 0;
+        while offset + 4 <= bytes.len() {
+            if &bytes[offset..offset + 4] == b"PK\x01\x02" {
+                bytes[offset + 8] |= 0x01;
+            }
+            offset += 1;
+        }
+        bytes
+    }
+
+    fn with_declared_zip_entries(mut bytes: Vec<u8>, entries: usize) -> Vec<u8> {
+        let entries = u16::try_from(entries).unwrap();
+        let eocd = bytes
+            .windows(4)
+            .rposition(|window| window == b"PK\x05\x06")
+            .expect("fixture EOCD");
+        bytes[eocd + 8..eocd + 10].copy_from_slice(&entries.to_le_bytes());
+        bytes[eocd + 10..eocd + 12].copy_from_slice(&entries.to_le_bytes());
+        bytes
+    }
+
+    fn with_ambiguous_zip_end_record(mut bytes: Vec<u8>) -> Vec<u8> {
+        let eocd = bytes
+            .windows(4)
+            .rposition(|window| window == b"PK\x05\x06")
+            .expect("fixture EOCD");
+        let fake = [
+            b'P', b'K', 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        bytes[eocd + 20..eocd + 22].copy_from_slice(&(fake.len() as u16).to_le_bytes());
+        bytes.extend_from_slice(&fake);
+        bytes
+    }
+
+    fn with_declared_zip_entry_size(mut bytes: Vec<u8>, size: u64) -> Vec<u8> {
+        let size = u32::try_from(size).unwrap();
+        let central = bytes
+            .windows(4)
+            .position(|window| window == b"PK\x01\x02")
+            .expect("fixture central directory");
+        bytes[central + 24..central + 28].copy_from_slice(&size.to_le_bytes());
+        bytes
     }
 
     fn xls_fixture() -> Vec<u8> {

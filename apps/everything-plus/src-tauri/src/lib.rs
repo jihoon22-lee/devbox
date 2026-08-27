@@ -100,18 +100,30 @@ pub fn run() {
                 } else {
                     core::db::record_pdf_extractor_version(&state.db.lock().unwrap())?;
                     core::db::record_xls_extractor_version(&state.db.lock().unwrap())?;
+                    core::db::record_xlsx_extractor_version(&state.db.lock().unwrap())?;
+                    core::db::record_ods_extractor_version(&state.db.lock().unwrap())?;
                 }
             } else {
                 let conn = state.db.lock().unwrap();
                 let stale_pdf = core::db::pdf_reindex_required(&conn).unwrap_or(true);
                 let stale_xls = core::db::xls_reindex_required(&conn).unwrap_or(true);
+                let stale_xlsx = core::db::xlsx_reindex_required(&conn).unwrap_or(true);
+                let stale_ods = core::db::ods_reindex_required(&conn).unwrap_or(true);
                 drop(conn);
-                match (stale_pdf, stale_xls) {
-                    (true, true) => commands::indexing::spawn_index_with_formats(state.clone()),
-                    (true, false) => commands::indexing::spawn_pdf_reindex(state.clone()),
-                    (false, true) => commands::indexing::spawn_xls_reindex(state.clone()),
-                    (false, false) => {}
+                let mut formats = commands::indexing::FormatSet::empty();
+                if stale_pdf {
+                    formats = formats.with(commands::indexing::FormatSet::PDF);
                 }
+                if stale_xls {
+                    formats = formats.with(commands::indexing::FormatSet::XLS);
+                }
+                if stale_xlsx {
+                    formats = formats.with(commands::indexing::FormatSet::XLSX);
+                }
+                if stale_ods {
+                    formats = formats.with(commands::indexing::FormatSet::ODS);
+                }
+                commands::indexing::spawn_format_reindex(state.clone(), formats);
             }
             app.manage(state);
             app.manage(watcher.clone());

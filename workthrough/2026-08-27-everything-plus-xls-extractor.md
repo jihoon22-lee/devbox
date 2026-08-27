@@ -11,7 +11,7 @@ independent `xls-v1` extractor changes.
 The work is rebased on the merged PDF extractor commit
 `c6327f690deb083ea498bcbdd92628e6fcbe7800` in the dedicated worktree
 `/mnt/e/projects/devbox-worktrees/everything-issue299` on
-`feat/everything-plus/xls-extractor`. Issue #299 does not make XLSX/ODS enter
+`feat/everything-plus/spreadsheet-extractors`. Issue #299 does not make XLSX/ODS enter
 the legacy BIFF parser; those format acceptances remain isolated. The final PR
 will nevertheless close #299, #300, and #301 together because the three
 spreadsheet extractors share one user-facing content-index flow and common
@@ -89,10 +89,11 @@ Files: `apps/everything-plus/src-tauri/src/core/db.rs`,
   `meta.xls_extractor_version` completion marker. The marker is required even
   when no XLS row exists, so first rollout and clear-then-cancel both retry.
   Successful full/XLS scans record it; partial or cancelled scans do not.
-- Added `IndexFilter::Xls` and `IndexFilter::PdfAndXls`, including startup
-  dispatch when either or both format versions are stale. Full scans and the
-  watcher use the same candidate predicate and extractor dispatch. A queued
-  root/full request escalates every format-only worker to `All`.
+- The final grouped implementation replaces combination-specific variants with
+  a compact `FormatSet`. XLS contributes one independent bit to the same
+  startup/clear/marker path as PDF/XLSX/ODS. Full scans and the watcher use the
+  same candidate predicate and extractor dispatch. A queued root/full request
+  escalates every format-only worker to `All`.
 - Added DB and temporary-root integration tests proving that XLS replacement
   removes the old cell hit, adds the new cell hit, preserves ordinary text,
   and leaves a corrupt workbook's filename/status visible.
@@ -100,16 +101,8 @@ Files: `apps/everything-plus/src-tauri/src/core/db.rs`,
 The reindex boundary is intentionally narrow:
 
 ```rust
-match filter {
-    IndexFilter::Xls => {
-        for root in &roots {
-            clear_xls(&conn, &root.path)?;
-        }
-    }
-    IndexFilter::PdfAndXls => {
-        // clear_pdf and clear_xls; ordinary text rows remain intact
-    }
-    _ => {}
+if formats.contains(FormatSet::XLS) {
+    clear_xls(conn, root_path)?;
 }
 ```
 
@@ -212,13 +205,14 @@ Rust workspace gates will run once on the final integrated branch rather than
 three times. Windows W2 packaged smoke was not run because this WSL environment
 has no Windows `cargo`, `rustc`, or `pnpm` on `PATH`.
 
-## Next Steps
+## Final grouped integration
 
-- Integrate #300 XLSX and #301 ODS behind a generic format set without allowing
-  either format to bypass the XLS CFB/BIFF admission boundary.
-- Run the final integrated workspace gates and Windows W2 packaged smoke with
-  real `.xls`, `.xlsx`, and `.ods` files, watcher updates, cancellation, and
-  evidence that logs/screens contain no raw credential or unsafe path/error
-  details.
-- Open one PR with separate `Closes #299`, `Closes #300`, and `Closes #301`
-  acceptance/verification sections, then merge only after every CI job passes.
+XLSX and ODS are now integrated without changing this XLS CFB/BIFF admission
+boundary. The final common lifecycle, modern ZIP/XML threat models, integrated
+verification evidence, dependency review, and remaining Windows W2 gate are
+recorded in
+`workthrough/2026-08-27-everything-plus-spreadsheet-extractors.md`.
+
+The grouped PR retains separate `Closes #299`, `Closes #300`, and
+`Closes #301` acceptance sections and must merge only after every required CI
+job passes.

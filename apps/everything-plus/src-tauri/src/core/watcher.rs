@@ -144,6 +144,8 @@ mod tests {
         assert!(should_index_content(true, "C:/a.md", 10));
         assert!(should_index_content(true, "C:/report.PDF", 10));
         assert!(should_index_content(true, "C:/report.xls", 10));
+        assert!(should_index_content(true, "C:/report.XLSX", 10));
+        assert!(should_index_content(true, "C:/report.ods", 10));
         assert!(!should_index_content(false, "C:/a.md", 10));
         assert!(!should_index_content(true, "C:/a.png", 10));
         assert!(!should_index_content(

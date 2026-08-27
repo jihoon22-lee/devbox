@@ -30,6 +30,8 @@ rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite"] }
 lopdf = { version = "=0.44.0", default-features = false }
 calamine = { version = "=0.36.1", default-features = false }
 cfb = "=0.7.3"
+quick-xml = { version = "=0.41.0", default-features = false, features = ["encoding"] }
+zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
 filesystem = { path = "../../../crates/filesystem" }
 search = { path = "../../../crates/search" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }

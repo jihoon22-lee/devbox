@@ -1570,6 +1570,7 @@ dependencies = [
  "launch",
  "lopdf",
  "notify",
+ "quick-xml",
  "rusqlite",
  "search",
  "serde",
@@ -1578,6 +1579,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "zip",
 ]
 
 [[package]]
