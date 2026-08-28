@@ -83,4 +83,29 @@ describe("Log Lens handoff API", () => {
     });
     await expect(renewLogSource("a".repeat(32))).rejects.toThrow("response is invalid");
   });
+
+  it("binds preview responses to the requested opaque id and rejects unsafe WSL values", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    invokeMock
+      .mockResolvedValueOnce({
+        id: "b".repeat(32),
+        kind: "log-source/v1",
+        sourceApp: "run-manager",
+        expiresAtMs: 10_000,
+        leaseUntilMs: 5_000,
+        source: {
+          sourceId: "log-source:0123456789abcdef",
+          kind: "run",
+          displayName: "Run Manager handoff",
+          readOnly: true,
+          handoff: true,
+        },
+      })
+      .mockResolvedValueOnce({ kind: "wslFile", distro: "--help", path: "/var/log/app.log" })
+      .mockResolvedValueOnce({ kind: "wslFile", distro: "Ubuntu", path: "/" });
+
+    await expect(previewLogSource("a".repeat(32))).rejects.toThrow("response is invalid");
+    await expect(acceptLogSource("a".repeat(32))).rejects.toThrow("response is invalid");
+    await expect(acceptLogSource("a".repeat(32))).rejects.toThrow("response is invalid");
+  });
 });

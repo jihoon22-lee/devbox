@@ -330,14 +330,88 @@ Job Object API pattern, but a Windows host/toolchain check is still required.
 - WSL/container adapter behavior, single-instance forwarding, real file
   identity, and focus/IME behavior still need a packaged Windows W3 smoke on a
   host with the installed WSL/Docker/Podman environment and resource compiler.
-- Unix process-tree termination currently invokes the system `kill` utility
-  directly with a numeric process-group id and no shell/user arguments. This
-  avoids command injection; a later hardening pass could replace that helper
-  with a direct libc syscall if PATH tampering is part of the deployment threat
-  model.
+- Unix process-tree termination now uses a direct `libc::kill` syscall for the
+  private process group, avoiding ambient PATH lookup. A same-user attacker
+  could still replace a parent directory between layout validation and a later
+  file operation; eliminating that race would require an `openat`/
+  directory-handle design.
 - The full WSL frontend suite should be rerun serially after swap pressure is
   reduced. The focused suite and build provide useful evidence but do not
   replace that full run.
 - Worktree status is intentionally dirty and no branch/worktree cleanup was
   performed. Parent integration must review/rebase, run CI, and only then
   commit/PR/merge and clean the worktree according to repository policy.
+
+## Follow-up static/security audit (2026-08-28)
+
+The final bounded audit found concrete edge cases in the candidate handoff
+implementation. These changes are intentionally left uncommitted in the
+producer worktree for the parent agent's review.
+
+### Remediations
+
+- `crates/applink/src/handoff.rs` rejects claims before the envelope's
+  advertised creation time, validates claim timestamps against the envelope,
+  removes future-dated claim records during reconciliation, and opens managed
+  state files without following a final symlink/reparse point. This prevents a
+  clock-skewed or forged state file from being claimable early, reserving a
+  payload indefinitely, or winning the metadata/open race at the final path
+  component.
+- `crates/applink/src/lib.rs` exposes a 64-argument/32 KiB AppLink argv bound,
+  applies it before parsing, and no longer reflects malformed numeric values in
+  parse errors. `crates/launch/src/lib.rs` applies the same bound before
+  forwarding generated argv to a child. Unix/Windows target dependencies were
+  added only for the no-follow handle boundary.
+- `crates/wsl/src/distro.rs` rejects names beginning with `-`, preventing a
+  validated distro value from being interpreted as a `wsl.exe` option.
+- `apps/log-lens/src-tauri/src/core/sources.rs` kills Unix adapter process
+  groups through `libc` instead of ambient PATH lookup and bounds reader thread
+  joins after process-tree termination. `read_sources` rejects more than
+  `MAX_SOURCES` before walking cursor/source data.
+- `apps/log-lens/src/App.tsx` keeps one latest pending refresh request, cancels
+  superseded native reads, drains the latest request after the current flight,
+  clears pending work on unmount/empty-source transitions, and clears stale
+  busy state. Malformed native previews restore their claim; lease failures
+  also attempt best-effort discard.
+- `apps/log-lens/src/api.ts` binds a preview response to the requested opaque
+  id, measures text limits in UTF-8 bytes, and rejects root/option-like WSL
+  values at the WebView boundary. `apps/log-lens/src/api.test.ts` covers the
+  response identity and unsafe-value regressions.
+
+### Verification
+
+```text
+cargo fmt --all -- --check                                  passed
+git diff --check                                            passed
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  CARGO_BUILD_JOBS=1 cargo test -p applink --lib -j1        63 passed
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  CARGO_BUILD_JOBS=1 cargo test -p wsl --lib -j1            31 passed
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  CARGO_BUILD_JOBS=1 cargo test -p launch --lib -j1         23 passed
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  CARGO_BUILD_JOBS=1 cargo test -p log-lens --lib -j1       45 passed
+pnpm --filter log-lens test -- --run                         13 passed
+pnpm --filter log-lens build                                 passed
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  CARGO_BUILD_JOBS=1 cargo check -p log-lens -p launch -p applink -p wsl -j1 passed
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  CARGO_BUILD_JOBS=1 cargo check -p applink --target x86_64-pc-windows-gnu -j1 passed
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  CARGO_BUILD_JOBS=1 cargo clippy -p applink -p launch -p wsl -p log-lens \
+    --lib -j1 -- -D warnings                                  passed
+```
+
+### Residual risks
+
+- The shared handoff directory remains a same-user coordination surface;
+  parent-directory replacement between layout validation and open/rename would
+  require an `openat`/directory-handle design to eliminate completely.
+- Claim/lease sidecars are file-based and cross-process renew/ack operations
+  can still observe a concurrent state transition; token checks prevent
+  resurrection, but callers must handle fixed failure responses and retry.
+- Run handoffs still carry identity only; Log Lens reports that adapter as
+  unavailable until a separate app-owned Run log adapter is implemented.
+- Full Windows Tauri packaging/build and an end-to-end two-process handoff
+  were not run in this WSL audit; Windows-specific AppLink handle code was
+  compile-checked for the GNU target.

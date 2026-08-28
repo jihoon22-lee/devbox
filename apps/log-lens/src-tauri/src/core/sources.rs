@@ -524,7 +524,7 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
     // successful operation cannot leak a pipe/thread indefinitely.
     process_tree.terminate_descendants();
     drop(receiver);
-    let _ = reader.join();
+    join_reader_bounded(reader);
     if !status.success() {
         return Err(CoreError::AdapterUnavailable);
     }
@@ -539,7 +539,22 @@ fn terminate_child(
 ) {
     drop(receiver);
     process_tree.terminate(child);
-    let _ = reader.join();
+    join_reader_bounded(reader);
+}
+
+/// A descendant that inherited stdout can keep the pipe open after the root
+/// exits. The process-tree boundary normally closes it, but joining without a
+/// bound would turn a cleanup failure into a permanently stuck worker. A
+/// finished reader is still joined so its resources are reclaimed; an
+/// unfinished reader is detached after the bounded grace period.
+fn join_reader_bounded(reader: thread::JoinHandle<()>) {
+    let wait_until = Instant::now() + TERMINATION_WAIT;
+    while !reader.is_finished() && Instant::now() < wait_until {
+        thread::sleep(Duration::from_millis(10));
+    }
+    if reader.is_finished() {
+        let _ = reader.join();
+    }
 }
 
 /// Reap a child without an unbounded `wait()`. The second bounded pass is a
@@ -651,16 +666,10 @@ impl ProcessTree {
     }
 
     fn terminate_descendants(&mut self) {
-        let process_group = format!("-{}", self.process_group);
-        let result = Command::new("kill")
-            .args(["-KILL", "--", process_group.as_str()])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if !result.is_ok_and(|status| status.success()) {
-            // The group may already have disappeared after a normal exit.
-        }
+        // `Command::new("kill")` would trust the ambient PATH during cleanup
+        // and can leave an inherited stdout pipe open if that utility is
+        // replaced or unavailable. Kill the private process group directly.
+        let _ = unsafe { libc::kill(-self.process_group, libc::SIGKILL) };
     }
 }
 

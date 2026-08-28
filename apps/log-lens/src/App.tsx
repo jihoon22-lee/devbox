@@ -162,6 +162,14 @@ function App() {
   const operation = useRef<string | null>(null);
   const mounted = useRef(true);
   const refreshInFlight = useRef(false);
+  const refreshPending = useRef<{
+    sources: SourceSpec[];
+    cursors: Array<FileCursor | null>;
+  } | null>(null);
+  const refreshRef = useRef<(
+    nextSources?: SourceSpec[],
+    nextCursors?: Array<FileCursor | null>,
+  ) => Promise<void>>(async () => undefined);
   const pausedRef = useRef(paused);
   const compositionRef = useRef(false);
   const contextRecordRef = useRef<LogRecord | null>(null);
@@ -198,7 +206,25 @@ function App() {
     nextSources = sources,
     nextCursors = cursors,
   ) => {
-    if (nextSources.length === 0 || refreshInFlight.current) return;
+    if (!mounted.current || nextSources.length === 0) {
+      refreshPending.current = null;
+      return;
+    }
+    if (refreshInFlight.current) {
+      // Reads are intentionally single-flight, but a source add/remove/view
+      // load must not disappear behind the current request. Keep only the
+      // latest bounded descriptor set and cancel the superseded native read;
+      // its finally block drains this slot after releasing the flight lock.
+      refreshPending.current = {
+        sources: [...nextSources],
+        cursors: [...nextCursors],
+      };
+      generation.current += 1;
+      const active = operation.current;
+      operation.current = null;
+      if (active) void cancelRead(active);
+      return;
+    }
     refreshInFlight.current = true;
     const currentGeneration = generation.current + 1;
     generation.current = currentGeneration;
@@ -227,13 +253,24 @@ function App() {
         setError("The log source could not be read. Check the source and try again.");
       }
     } finally {
+      const pending = refreshPending.current;
+      refreshPending.current = null;
       refreshInFlight.current = false;
-      if (mounted.current && generation.current === currentGeneration) {
+      if (mounted.current && pending) {
+        void refreshRef.current(pending.sources, pending.cursors);
+      } else if (mounted.current && generation.current === currentGeneration) {
+        setBusy(false);
+        operation.current = null;
+      } else if (mounted.current) {
+        // A superseding empty-source change invalidates this operation without
+        // starting a replacement read. Do not leave the toolbar permanently
+        // busy in that stale-generation case.
         setBusy(false);
         operation.current = null;
       }
     }
   }, [cursors, paused, records, snapshot, sources]);
+  refreshRef.current = refresh;
 
   const clearHandoffPreview = useCallback(() => {
     handoffPreviewRef.current = null;
@@ -254,6 +291,7 @@ function App() {
     setHandoffBusy(true);
     setError(null);
     setNotice(null);
+    let restoring = false;
     try {
       const preview = await previewLogSource(id);
       if (!mounted.current || handoffGeneration.current !== actionGeneration) {
@@ -263,12 +301,27 @@ function App() {
       handoffPreviewRef.current = preview;
       setHandoffPreview(preview);
     } catch {
+      // previewLogSource claims before returning a response. If native data is
+      // malformed (or the command fails after claiming), restore the claim so
+      // the producer can retry instead of pinning the receiver slot until TTL.
+      restoring = true;
+      void discardLogSource(id)
+        .catch(() => undefined)
+        .finally(() => {
+          if (!mounted.current || handoffGeneration.current !== actionGeneration) return;
+          handoffBusyRef.current = false;
+          setHandoffBusy(false);
+        });
       if (mounted.current && handoffGeneration.current === actionGeneration) {
         setError("Log Lens source handoff를 미리볼 수 없습니다. 다시 보내 주세요.");
       }
     } finally {
-      handoffBusyRef.current = false;
-      if (mounted.current && handoffGeneration.current === actionGeneration) setHandoffBusy(false);
+      if (!restoring) {
+        handoffBusyRef.current = false;
+        if (mounted.current && handoffGeneration.current === actionGeneration) {
+          setHandoffBusy(false);
+        }
+      }
     }
   }, []);
 
@@ -346,6 +399,7 @@ function App() {
     return () => {
       mounted.current = false;
       generation.current += 1;
+      refreshPending.current = null;
       handoffGeneration.current += 1;
       queuedHandoffRef.current = null;
       const active = operation.current;
@@ -400,8 +454,20 @@ function App() {
         .catch(() => {
           if (!mounted.current || handoffPreviewRef.current?.id !== id) return;
           handoffGeneration.current += 1;
-          clearHandoffPreview();
-          setError("Log Lens source handoff 미리보기 시간이 만료되었습니다. 다시 보내 주세요.");
+          // Keep the slot busy until the best-effort restore finishes. This
+          // prevents the latest-request queue from racing a still-claimed
+          // native envelope after a lease/renewal failure.
+          handoffBusyRef.current = true;
+          setHandoffBusy(true);
+          void discardLogSource(id)
+            .catch(() => undefined)
+            .finally(() => {
+              if (!mounted.current || handoffPreviewRef.current?.id !== id) return;
+              handoffBusyRef.current = false;
+              clearHandoffPreview();
+              setHandoffBusy(false);
+              setError("Log Lens source handoff 미리보기 시간이 만료되었습니다. 다시 보내 주세요.");
+            });
         });
     }, 30_000);
     return () => window.clearInterval(timer);
@@ -512,6 +578,11 @@ function App() {
     if (nextSources.length) void refresh(nextSources, nextCursors);
     else {
       generation.current += 1;
+      refreshPending.current = null;
+      const active = operation.current;
+      operation.current = null;
+      if (active) void cancelRead(active);
+      setBusy(false);
       setRecords([]);
       setSnapshot(null);
     }

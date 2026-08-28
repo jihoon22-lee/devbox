@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { browserSnapshot } from "./browserFixture";
-import { filterRecords as applyFilter } from "./filter";
+import { filterRecords as applyFilter, utf8ByteLength } from "./filter";
 import { isTauri } from "./lib/isTauri";
 import type {
   ExportedText,
@@ -40,6 +40,7 @@ function isSafeText(value: unknown, maxLength: number, allowEmpty = false): valu
   return typeof value === "string"
     && (allowEmpty || value.length > 0)
     && value.length <= maxLength
+    && utf8ByteLength(value) <= maxLength
     && !/[\u0000-\u001f\u007f-\u009f]/.test(value);
 }
 
@@ -125,10 +126,12 @@ function parseHandoffSource(value: unknown): SourceSpec | null {
     if (!hasOnlyKeys(value, ["kind", "distro", "path"])
       || !isSafeText(value.distro, 128)
       || value.distro.trim() !== value.distro
+      || value.distro.startsWith("-")
       || WSL_INJECTION_PATTERN.test(value.distro)
       || !isSafeText(value.path, 4_096)
       || value.path.trim() !== value.path
       || !value.path.startsWith("/")
+      || value.path === "/"
       || value.path.split("/").slice(1).some((part) => !part || part === "." || part === "..")
       || WSL_INJECTION_PATTERN.test(value.path)) return null;
     return { kind: "wslFile", distro: value.distro, path: value.path };
@@ -138,6 +141,7 @@ function parseHandoffSource(value: unknown): SourceSpec | null {
     if (!hasOnlyKeys(value, ["kind", "distro", "unit"])
       || !isSafeText(value.distro, 128)
       || value.distro.trim() !== value.distro
+      || value.distro.startsWith("-")
       || WSL_INJECTION_PATTERN.test(value.distro)
       || (unit !== undefined
         && unit !== null
@@ -166,7 +170,7 @@ export async function previewLogSource(id: string): Promise<LogSourcePreview> {
   if (!isTauri()) throw new Error("Log Lens source handoff is desktop-only");
   if (!HANDOFF_ID_PATTERN.test(id)) throw new Error("Log Lens source handoff request is invalid");
   const preview = parseLogSourcePreview(await invoke<unknown>("preview_log_source", { id }));
-  if (!preview) throw new Error("Log Lens source handoff response is invalid");
+  if (!preview || preview.id !== id) throw new Error("Log Lens source handoff response is invalid");
   return preview;
 }
 

@@ -115,8 +115,10 @@ version = "0.1.0"
 dependencies = [
  "filesystem",
  "getrandom 0.4.3",
+ "libc",
  "serde",
  "serde_json",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -3084,6 +3086,7 @@ dependencies = [
  "applink",
  "chrono",
  "integration",
+ "libc",
  "regex",
  "serde",
  "serde_json",

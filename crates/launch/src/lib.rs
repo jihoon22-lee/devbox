@@ -343,6 +343,7 @@ fn is_runtime_environment_name(name: &str) -> bool {
 /// argv 없이 실행하고 싶은 호출자(요청이 없는 경우)는 그대로 [`launch`]를 쓴다.
 pub fn launch_open(app_id: &str, req: &devbox_applink::OpenRequest) -> Result<u32, String> {
     let argv = open_argv(req)?;
+    devbox_applink::validate_argv(&argv).map_err(|_| "앱 실행 인자가 너무 큽니다".to_string())?;
     let args: Vec<&str> = argv.iter().map(String::as_str).collect();
     launch(app_id, &args)
 }
@@ -354,6 +355,7 @@ pub fn launch_open_with_environment(
     environment: &[(&str, &str)],
 ) -> Result<u32, String> {
     let argv = open_argv(req)?;
+    devbox_applink::validate_argv(&argv).map_err(|_| "앱 실행 인자가 너무 큽니다".to_string())?;
     let args: Vec<&str> = argv.iter().map(String::as_str).collect();
     launch_with_environment(app_id, &args, environment)
 }
