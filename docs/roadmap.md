@@ -922,6 +922,46 @@ Windows W2에서 shortcut conflict/focus, preview-before-save, cancel/late-respo
 one-shot, image clipboard/drop, root replacement/reparse, collision/failure와 실제 watcher overflow
 evidence를 남긴다.
 
+**2026-08-28 #346–#348 API Playground grouped implementation candidate.** Collection/Environment
+JSON transfer(#346), History search/filter(#347), binary response preview/save(#348)는 서로 다른
+메뉴처럼 보이지만 모두 API Playground 안에서 안전한 요청 자산과 bounded 응답을 다시 사용하는
+하나의 사용자 흐름이므로 `feat/api-playground/collection-history-binary` cohesive PR 후보로
+진행한다. 이 묶음은 외부 도구 설치나 온라인 service에 의존하지 않고, v2 persistence·existing
+redaction·request cancellation 경계를 유지한다. 세 issue의 acceptance와 fixture는 PR 안에서
+각각 추적한다.
+
+- **Collection/Environment transfer.** `devbox.api-playground.collection-export`와
+  `devbox.api-playground.environment-export`, `schema_version: 1`만 허용한다. UTF-8 JSON은
+  1 MiB, Collection 256건, Environment 64건, 환경별 변수 256건, 이름 120자, request field
+  64 KiB, header/cookie/param 100행, multipart 50 part로 제한하고 unknown key, malformed
+  schema/version, duplicate key와 overflow를 부분 적용 없이 거부한다. Collection은 existing
+  sanitizer/read-back을 다시 통과하고 file path/generated body를 저장하지 않으며 import는
+  기존 항목을 덮어쓰지 않고 새 ID로 append한다.
+- **Secret/file safety.** secret·credential-shaped variable은 export에 평문이나 DPAPI
+  blob을 넣지 않고 `${NAME}` reference와 `secret: true`만 남긴다. importer는 `secret: false`
+  로 위장한 민감 key/token-shaped value를 거부하고, imported secret은 `미설정` placeholder로
+  저장해 재입력을 요구한다. native는 user-selected regular file만 bounded read하고 native
+  dialog + atomic write를 사용하며, browser는 explicit file input/download만 제공한다.
+- **History search/filter.** History v2 순서를 유지한 채 display name·method·redacted URL·
+  status만 최대 128자 query로 검색하고 method와 success(200–399)/error/all 필터를 조합한다.
+  body/header/Cookie/auth/GraphQL variable/multipart path/environment secret은 검색 대상에
+  넣지 않는다. no-result, long query와 stale persistence는 fixed 상태로 처리하고 input/select
+  label, focus-visible, keyboard 선택 상태를 제공한다.
+- **Binary response.** Content-Type과 strict UTF-8/제어문자 판별로 binary를 분리하고 ordinary
+  response 16 MiB, GraphQL response 4 MiB의 bounded stream만 읽는다. UI에는 type/size와 최대
+  4 KiB hex·UTF-8 preview만 보내며 raw bytes는 current opaque response ID에 매달린 process
+  memory에만 둔다. History/Collection/localStorage/log/event DTO에는 저장하지 않고 preview와
+  media metadata는 secret/token redaction을 거친다. native에서만 explicit save dialog와
+  regular destination/atomic write를 허용하고, 새 요청·stale ID·cancel/unmount 때 이전
+  buffer를 폐기한다. browser save, 자동 download, clipboard fallback, arbitrary execution은
+  제공하지 않는다.
+- **현재 draft와 검증.** 전용 fresh-base worktree에 순수 transfer/history/binary helper,
+  native transfer dialog/current-response vault, UI busy/accessible controls와 fixture를 추가
+  중이다. PR 전 `git diff --check`, API app-only Rust test/check/fmt/Clippy와 frontend
+  typecheck/test/build를 수행하고, Windows W3 packaged smoke에서 offline round-trip, secret
+  plaintext 부재, overflow, binary save/cancel/stale, History filter keyboard/a11y를 확인한다.
+  현재 bounded pass에서는 공용 crate·다른 앱 변경과 commit/push/PR 및 build/test를 하지 않는다.
+
 ```
 Stage -1   결정을 문서에 고정 (PR 1)                                  ✅
 Stage 0a   통폐합·네이밍 (PR 2~4) — identifier com.devbox.*          ✅

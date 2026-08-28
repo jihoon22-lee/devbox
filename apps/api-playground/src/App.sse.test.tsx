@@ -1,18 +1,22 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { sanitizePersistedJson, startSseStream } from "./api";
+import { discardCurrentResponse, sanitizePersistedJson, startSseStream } from "./api";
 import type { SseUpdate } from "./types";
 
 vi.mock("./api", () => ({
   buildRevealedCurl: vi.fn(),
   copyRawResponseCookies: vi.fn(),
   copyRawResponseHeaders: vi.fn(),
+  discardCurrentResponse: vi.fn(async () => undefined),
   fetchOpenApiSource: vi.fn(),
   onOpenRequest: vi.fn(async () => () => undefined),
   pickMultipartFile: vi.fn(),
+  readJsonFile: vi.fn(),
   renewApiRequest: vi.fn(),
   restoreApiRequest: vi.fn(),
+  saveJsonFile: vi.fn(),
+  saveResponseBinary: vi.fn(),
   sanitizePersistedJson: vi.fn(),
   sealSecret: vi.fn(),
   sendRequest: vi.fn(),
@@ -22,6 +26,7 @@ vi.mock("./api", () => ({
 
 const sanitizePersistedJsonMock = vi.mocked(sanitizePersistedJson);
 const startSseStreamMock = vi.mocked(startSseStream);
+const discardCurrentResponseMock = vi.mocked(discardCurrentResponse);
 const stopMock = vi.fn<() => Promise<void>>();
 let emitUpdate: ((update: SseUpdate) => void) | undefined;
 
@@ -39,6 +44,7 @@ beforeEach(() => {
   localStorage.clear();
   emitUpdate = undefined;
   stopMock.mockReset().mockResolvedValue(undefined);
+  discardCurrentResponseMock.mockReset().mockResolvedValue(undefined);
   sanitizePersistedJsonMock.mockReset().mockImplementation(async (serialized) => serialized);
   startSseStreamMock.mockReset().mockImplementation(async (_request, _environment, _options, onUpdate) => {
     emitUpdate = onUpdate;
@@ -86,5 +92,23 @@ describe("API Playground SSE lifecycle", () => {
 
     unmount();
     await waitFor(() => expect(stopMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(discardCurrentResponseMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("releases a browser import after the native picker is cancelled", async () => {
+    const { unmount } = await renderReady();
+    const importButton = screen.getAllByRole("button", { name: "JSON 가져오기" })[0] as HTMLButtonElement;
+    const input = screen.getByLabelText("JSON 파일 가져오기") as HTMLInputElement;
+
+    fireEvent.click(importButton);
+    await waitFor(() => expect(importButton.disabled).toBe(true));
+    fireEvent(input, new Event("cancel", { bubbles: true }));
+    await waitFor(() => expect(importButton.disabled).toBe(false));
+
+    // A second attempt is accepted, proving the cancelled attempt did not
+    // leave browserImportKind latched in the renderer.
+    fireEvent.click(importButton);
+    await waitFor(() => expect(importButton.disabled).toBe(true));
+    unmount();
   });
 });

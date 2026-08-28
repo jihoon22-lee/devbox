@@ -28,18 +28,56 @@ export function emptyStore(): EnvironmentStore {
 
 export function loadStore(): EnvironmentStore {
   try {
-    const parsed = JSON.parse(localStorage.getItem(ENVIRONMENT_LS_KEY) ?? "null") as EnvironmentStore | null;
-    if (parsed && parsed.version === ENVIRONMENT_VERSION && Array.isArray(parsed.environments)) {
-      return parsed;
-    }
+    return parseStore(localStorage.getItem(ENVIRONMENT_LS_KEY)) ?? emptyStore();
   } catch {
-    // 손상은 빈 스토어
+    // Storage access can be denied by the host WebView; treat it like a
+    // corrupted store without surfacing the raw browser error.
+    return emptyStore();
   }
-  return emptyStore();
 }
 
-export function saveStore(store: EnvironmentStore): void {
-  localStorage.setItem(ENVIRONMENT_LS_KEY, JSON.stringify(store));
+/** Parse only the bounded environment wire shape used by localStorage. */
+export function parseStore(raw: string | null): EnvironmentStore | null {
+  try {
+    const parsed = JSON.parse(raw ?? "null") as Partial<EnvironmentStore> | null;
+    if (!parsed || parsed.version !== ENVIRONMENT_VERSION || !Array.isArray(parsed.environments)) return null;
+    if (!parsed.environments.every(isEnvironment)) return null;
+    return {
+      version: ENVIRONMENT_VERSION,
+      environments: parsed.environments.map((environment) => ({
+        id: environment.id,
+        name: environment.name,
+        variables: environment.variables.map((variable) => ({
+          key: variable.key,
+          value: variable.value,
+          secret: variable.secret,
+        })),
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Persist with read-back verification and restore the previous value on failure. */
+export function saveStore(store: EnvironmentStore, storage: Storage = localStorage): EnvironmentStore {
+  const previous = storage.getItem(ENVIRONMENT_LS_KEY);
+  const serialized = JSON.stringify(store);
+  try {
+    storage.setItem(ENVIRONMENT_LS_KEY, serialized);
+    const readBack = parseStore(storage.getItem(ENVIRONMENT_LS_KEY));
+    if (!readBack) throw new Error("Environment 안전 저장을 확인할 수 없습니다");
+    return readBack;
+  } catch (cause) {
+    try {
+      if (previous === null) storage.removeItem(ENVIRONMENT_LS_KEY);
+      else storage.setItem(ENVIRONMENT_LS_KEY, previous);
+    } catch {
+      // Preserve the original persistence failure; callers must not treat a
+      // failed rollback as a successful environment mutation.
+    }
+    throw cause;
+  }
 }
 
 export function addEnvironment(
@@ -75,6 +113,23 @@ export function setVariable(
       };
     }),
   };
+}
+
+function isEnvironment(value: unknown): value is Environment {
+  if (!value || typeof value !== "object") return false;
+  const environment = value as Partial<Environment>;
+  return typeof environment.id === "string"
+    && typeof environment.name === "string"
+    && Array.isArray(environment.variables)
+    && environment.variables.every(isEnvironmentVariable);
+}
+
+function isEnvironmentVariable(value: unknown): value is EnvVariable {
+  if (!value || typeof value !== "object") return false;
+  const variable = value as Partial<EnvVariable>;
+  return typeof variable.key === "string"
+    && typeof variable.value === "string"
+    && typeof variable.secret === "boolean";
 }
 
 /// 문자열의 `{{name}}` 또는 `${name}`을 치환한다. 알 수 없는 변수는 그대로 둔다.

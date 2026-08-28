@@ -248,6 +248,29 @@ describe("collections v2 store", () => {
     expect(storage.entries().some(([key]) => /backup|quarantine/i.test(key))).toBe(false);
   });
 
+  it("sanitizer가 오래된 결과를 반환하면 commit guard 전에 저장하지 않는다", async () => {
+    const storage = new RecordingStorage();
+    const existing = JSON.stringify(emptyStore());
+    storage.setItem(COLLECTION_V2_LS_KEY, existing);
+    storage.events.length = 0;
+    let releaseSanitizer!: () => void;
+    const pending = new Promise<void>((resolve) => { releaseSanitizer = resolve; });
+    const saving = saveStore(
+      addEntry(emptyStore(), { name: "stale", folder: "", request: request() }, 1, () => "c-stale"),
+      async (serialized) => {
+        await pending;
+        return serialized;
+      },
+      storage,
+      () => false,
+    );
+
+    releaseSanitizer();
+    await expect(saving).rejects.toThrow("오래되어 저장하지 않았습니다");
+    expect(storage.getItem(COLLECTION_V2_LS_KEY)).toBe(existing);
+    expect(storage.events).toEqual([]);
+  });
+
   it("이름이 비면 template URL을 사용한다", () => {
     const store = addEntry(emptyStore(), { name: "  ", folder: "", request: request() }, 1, () => "c-1");
     expect(store.collections[0].name).toBe("https://api.example.com/x");

@@ -121,7 +121,19 @@ export interface ApiResponse {
   response_id: string | null;
   raw_headers_available: boolean;
   headers_truncated: boolean;
+  binary?: BinaryResponse | null;
   graphql?: GraphqlResponse | null;
+}
+
+/** Safe projection of a binary HTTP response. Raw bytes stay in native memory until explicit save. */
+export interface BinaryResponse {
+  media_type: string;
+  size_bytes: number;
+  hex_preview: string;
+  text_preview?: string | null;
+  hex_truncated: boolean;
+  text_truncated: boolean;
+  save_available: boolean;
 }
 
 export interface ResponseCookie {

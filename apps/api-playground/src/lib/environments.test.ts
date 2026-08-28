@@ -5,6 +5,7 @@ import {
   applyVariables,
   loadStore,
   removeEnvironment,
+  saveStore,
   setVariable,
   emptyStore,
 } from "./environments";
@@ -13,6 +14,21 @@ import type { RequestTemplate } from "../types";
 beforeEach(() => {
   localStorage.clear();
 });
+
+class EnvironmentStorage implements Storage {
+  private readonly values = new Map<string, string>();
+  failWrite = false;
+
+  get length(): number { return this.values.size; }
+  clear(): void { this.values.clear(); }
+  getItem(key: string): string | null { return this.values.get(key) ?? null; }
+  key(index: number): string | null { return [...this.values.keys()][index] ?? null; }
+  removeItem(key: string): void { this.values.delete(key); }
+  setItem(key: string, value: string): void {
+    if (this.failWrite) throw new Error("write failed");
+    this.values.set(key, value);
+  }
+}
 
 describe("variable substitution", () => {
   it("기본 치환", () => {
@@ -171,5 +187,27 @@ describe("environment store", () => {
     ]);
     store = removeEnvironment(store, "e-1");
     expect(store.environments).toEqual([]);
+  });
+
+  it("환경 저장은 read-back된 allowlist를 반환한다", () => {
+    const storage = new EnvironmentStorage();
+    const store = addEnvironment(emptyStore(), "dev", () => "e-1");
+    store.environments[0].variables.push({ key: "BASE_URL", value: "https://dev", secret: false });
+    const saved = saveStore(store, storage);
+
+    expect(saved).toEqual(store);
+    expect(loadStore()).toEqual(emptyStore());
+    expect(JSON.parse(storage.getItem("apip-environments") ?? "null")).toEqual(store);
+  });
+
+  it("환경 write/read-back 실패 시 기존 저장 값을 유지한다", () => {
+    const storage = new EnvironmentStorage();
+    const original = addEnvironment(emptyStore(), "original", () => "e-original");
+    saveStore(original, storage);
+    const originalRaw = storage.getItem("apip-environments");
+    storage.failWrite = true;
+
+    expect(() => saveStore(addEnvironment(original, "new", () => "e-new"), storage)).toThrow("write failed");
+    expect(storage.getItem("apip-environments")).toBe(originalRaw);
   });
 });

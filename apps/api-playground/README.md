@@ -24,11 +24,42 @@
 - **Auth 프리셋** — Basic / Bearer / API Key
 - **History / Collection** — 최근 요청과 저장 요청을 v2 형식으로 보존·재호출. 항목 우클릭 또는
   `Shift+F10`/Menu 키로 복제·이름 변경·확인 후 삭제·마스킹 cURL 복사를 실행한다.
+- **History 검색·필터** — History의 표시 이름·method·안전하게 정화한 URL·상태 코드만 대상으로
+  최대 128자 검색어와 method/성공·실패 필터를 적용한다. 표시 label도 bounded 상태로 유지하며,
+  header, Cookie, auth, body와 환경 secret은 검색 색인이나 검색 결과 문자열에 포함하지 않는다.
+- **Collection / Environment JSON transfer** — Collection과 Environment 사이드바에서 각각
+  versioned JSON 문서를 내보내거나 가져온다. 문서 schema는
+  `devbox.api-playground.collection-export` 또는 `devbox.api-playground.environment-export`,
+  `schema_version: 1`이며 입력·출력 전체는 1 MiB, Collection 256건, Environment 64건,
+  Environment 변수 256건의 bounded 계약을 따른다. 가져오기는 기존 ID를 덮어쓰지 않고 새
+  항목으로 추가하며, 데스크톱에서는 native file picker와 atomic write를 사용하고 브라우저에서는
+  명시적인 JSON download/file selection만 사용한다.
+- **Secret transfer policy** — Environment export는 secret 변수의 DPAPI blob이나 평문 값을
+  포함하지 않고 `${NAME}` reference와 `secret: true` metadata만 남긴다. 민감한 이름 또는
+  token-shaped 값을 `secret: false`로 위조한 문서는 거부하며, 가져온 secret reference는
+  `미설정` 상태로 저장되어 사용자가 새 값을 다시 입력해야 한다. Collection request도
+  기존 persistence sanitizer/read-back을 다시 통과하고, multipart runtime path와 generated
+  body를 저장하지 않는다.
 - **cURL 변환** — 기본 masking cURL 복사, 확인 후 원문 cURL 1회 복사
 - **환경(environment)·비밀(secret)** — URL·params·headers·cookies·body·auth에서 `${NAME}`과
   `{{NAME}}` 참조를 지원하고, DPAPI로 보호된 secret은 backend가 요청 직전에 메모리에서만
   해제한다 (`crates/secrets`). Header table의 picker에는 현재 환경의 봉인된 secret 이름만
   표시하고 `${NAME}`을 삽입하며 frontend로 DPAPI secret을 unseal하지 않는다.
+
+## Binary response preview (`#348`)
+
+응답 `Content-Type`과 strict UTF-8/제어문자 판별을 조합해 binary 응답을 별도 projection으로
+표시한다. 일반 HTTP 응답은 최대 16 MiB, GraphQL 응답은 최대 4 MiB까지만 bounded stream으로
+읽으며, 화면에는 media type·원래 크기와 최대 4 KiB hex/UTF-8 preview만 보낸다. invalid UTF-8은
+억지로 text로 변환하지 않고 binary로 분류한다. preview와 response metadata는 기존 request
+secret/token redaction을 거치며 raw bytes는 History·Collection·localStorage·log·Tauri event
+DTO에 들어가지 않는다.
+
+데스크톱에서만 현재 response ID에 묶인 process-memory bounded buffer를 명시적으로 native save
+dialog에서 선택한 위치에 atomic write할 수 있다. 새 요청이 시작되거나 response ID가 stale하면
+이전 buffer를 즉시 폐기하고 저장을 거부한다. 브라우저 preview에서는 save를 비활성화하고
+bounded preview만 제공한다. binary save는 자동 다운로드·실행·clipboard fallback을 만들지 않으며,
+취소·경로·파일 오류는 원문 path나 backend 오류를 반향하지 않는 고정 오류로 표시한다.
 
 ## Webhook Lab handoff (`api-request/v1`, #315)
 

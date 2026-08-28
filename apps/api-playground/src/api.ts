@@ -2,6 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "./lib/isTauri";
+import {
+  isBinaryResponse,
+  MAX_RESPONSE_BODY_BYTES,
+  projectBinaryResponse,
+} from "./lib/binary";
 import { applyToRequest, type EnvVariable } from "./lib/environments";
 import {
   buildCookieHeader,
@@ -92,6 +97,8 @@ const MAX_SSE_TOTAL_TIMEOUT_MS = 3_600_000;
 
 const MAX_RESPONSE_HEADERS = 100;
 const MAX_RESPONSE_HEADER_BYTES = 64 * 1024;
+const MAX_RESPONSE_MEDIA_TYPE_BYTES = 128;
+const SAFE_RESPONSE_MEDIA_TYPE = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u;
 let nativeRequestSequence = 0;
 
 const HANDOFF_BROWSER_ERROR =
@@ -152,6 +159,12 @@ async function cancelRequest(requestId: string): Promise<void> {
   await invoke("cancel_request", { requestId });
 }
 
+/** Drop the native current-response vault after the renderer leaves the page. */
+export async function discardCurrentResponse(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("discard_current_response");
+}
+
 /** 값을 봉인해 base64 blob을 반환한다. */
 export async function sealSecret(value: string): Promise<string> {
   if (!isTauri()) throw new Error("secret 봉인은 데스크톱 앱에서만 사용할 수 있습니다");
@@ -191,6 +204,27 @@ export async function copyRawResponseHeaders(responseId: string): Promise<string
 export async function copyRawResponseCookies(responseId: string): Promise<string> {
   if (!isTauri()) throw new Error("원문 응답 Cookie 복사는 데스크톱 앱에서만 사용할 수 있습니다");
   return invoke<string>("copy_raw_response_cookies", { responseId });
+}
+
+/** Save the current bounded binary response through the native dialog only. */
+export async function saveResponseBinary(responseId: string): Promise<boolean> {
+  if (!isTauri()) throw new Error("binary 응답 저장은 데스크톱 앱에서만 사용할 수 있습니다");
+  if (responseId.length > 64 || !/^response-[0-9]+$/u.test(responseId)) {
+    throw new Error("binary 응답을 안전하게 저장할 수 없습니다");
+  }
+  return invoke<boolean>("save_response_binary", { responseId });
+}
+
+/** Read a user-selected JSON transfer file. Browser mode is handled by the UI file input. */
+export async function readJsonFile(): Promise<string | null> {
+  if (!isTauri()) throw new Error("JSON 파일 가져오기는 데스크톱 앱에서 사용할 수 없습니다");
+  return invoke<string | null>("read_json_file");
+}
+
+/** Save an already-sanitized transfer document through a native dialog. */
+export async function saveJsonFile(content: string, defaultName: string): Promise<boolean> {
+  if (!isTauri()) throw new Error("JSON 파일 저장은 데스크톱 앱에서 사용할 수 없습니다");
+  return invoke<boolean>("save_json_file", { content, defaultName });
 }
 
 /** 데스크톱 file picker의 사용자 선택 결과만 runtime multipart 경로로 반환한다. */
@@ -344,11 +378,14 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[], si
     throw new Error("GraphQL 리다이렉트를 브라우저 미리보기에서 처리할 수 없습니다");
   }
   const duration_ms = Math.round(performance.now() - start);
-  const text = await readResponseText(
+  const bytes = await readResponseBytes(
     resp,
-    resolved.body_kind === "graphql" ? 4 * 1024 * 1024 : Number.MAX_SAFE_INTEGER,
+    resolved.body_kind === "graphql" ? 4 * 1024 * 1024 : MAX_RESPONSE_BODY_BYTES,
   );
-  const maskedBody = redactBrowserText(text, resolved);
+  const mediaType = normalizeResponseMediaType(resp.headers.get("content-type") ?? "");
+  const binary = isBinaryResponse(mediaType, bytes);
+  const decodedText = binary ? null : new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  const maskedBody = decodedText === null ? "" : redactBrowserText(decodedText, resolved);
   const respHeaders: { key: string; value: string }[] = [];
   let responseHeaderBytes = 0;
   let headersTruncated = false;
@@ -370,41 +407,39 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[], si
     status_text: resp.statusText,
     headers: respHeaders,
     duration_ms,
-    size_bytes: new TextEncoder().encode(text).byteLength,
+    size_bytes: bytes.byteLength,
     body: maskedBody,
-    is_json: (resp.headers.get("content-type") ?? "").includes("json"),
+    is_json: mediaType.includes("json"),
     final_url: redactUrl(resp.url, resolved.body_kind === "graphql"),
     redirects: [],
     cookies: [],
     response_id: null,
     raw_headers_available: false,
     headers_truncated: headersTruncated,
-    ...(resolved.body_kind === "graphql" ? { graphql: projectGraphqlResponse(maskedBody) } : {}),
+    binary: binary
+      ? projectBinaryResponse(mediaType, bytes, (value) => redactBrowserText(value, resolved), false)
+      : null,
+    ...(resolved.body_kind === "graphql" && !binary ? { graphql: projectGraphqlResponse(maskedBody) } : {}),
   };
 }
 
-async function readResponseText(response: Response, maxBytes: number): Promise<string> {
+export async function readResponseBytes(response: Response, maxBytes: number): Promise<Uint8Array> {
+  // Fetch uses a null body for 204/205/HEAD and other responses with no
+  // payload. Do not call arrayBuffer() as a fallback: a synthetic or hostile
+  // response could otherwise bypass the streaming size boundary.
   if (!response.body) {
-    const output = await response.text();
-    if (new TextEncoder().encode(output).byteLength > maxBytes) {
-      throw new Error("응답 본문이 허용된 크기를 초과했습니다");
-    }
-    return output;
+    return new Uint8Array();
   }
   const reader = response.body.getReader();
-  const decoder = new TextDecoder();
+  const chunks: Uint8Array[] = [];
   let total = 0;
-  let output = "";
   try {
     while (true) {
       const next = await reader.read();
-      if (next.done) {
-        output += decoder.decode();
-        return output;
-      }
+      if (next.done) break;
       total += next.value.byteLength;
       if (total > maxBytes) throw new Error("응답 본문이 허용된 크기를 초과했습니다");
-      output += decoder.decode(next.value, { stream: true });
+      chunks.push(next.value);
     }
   } catch (error) {
     await reader.cancel().catch(() => undefined);
@@ -412,6 +447,22 @@ async function readResponseText(response: Response, maxBytes: number): Promise<s
   } finally {
     reader.releaseLock();
   }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+function normalizeResponseMediaType(value: string): string {
+  const candidate = value.split(";", 1)[0].trim().toLowerCase().slice(0, MAX_RESPONSE_MEDIA_TYPE_BYTES);
+  // Content-Type is response metadata, but it is still untrusted input. Keep
+  // only the bounded MIME token and avoid reflecting credential-shaped values.
+  return candidate && !isSensitiveName(candidate) && SAFE_RESPONSE_MEDIA_TYPE.test(candidate)
+    ? candidate
+    : "";
 }
 
 function isSensitiveName(name: string): boolean {

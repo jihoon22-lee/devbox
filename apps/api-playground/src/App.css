@@ -63,6 +63,39 @@ body {
   padding: 6px 0;
 }
 
+.transfer-input {
+  display: none;
+}
+
+.history-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 0 6px;
+}
+
+.history-search {
+  width: 100%;
+}
+
+.history-filter-row {
+  display: flex;
+  gap: 4px;
+}
+
+.history-filter-row .coll-filter {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.history-search:focus,
+.history-filter-row .coll-filter:focus,
+.transfer-actions .btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .history-item {
   display: flex;
   align-items: center;
@@ -823,6 +856,17 @@ body {
   border-bottom: 1px solid var(--db-color-border, #262c36);
 }
 
+.transfer-actions {
+  display: flex;
+  gap: 4px;
+  padding: 0 8px 4px;
+}
+
+.transfer-actions .btn {
+  flex: 1;
+  min-width: 0;
+}
+
 .coll-input {
   background: var(--db-color-bg, #111418);
   color: var(--db-color-text, #e6e9ef);
@@ -1167,6 +1211,51 @@ body {
   font-family: var(--db-font-mono, monospace);
   font-size: 12px;
   letter-spacing: 2px;
+}
+
+.env-var-secret.unconfigured {
+  color: var(--amber);
+  letter-spacing: 0;
+}
+
+.binary-response-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 78%, var(--bg));
+}
+
+.binary-response-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.binary-response-field {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.binary-response-label {
+  flex: 0 0 100px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.binary-response-field code {
+  min-width: 0;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "Cascadia Code", Consolas, monospace;
 }
 
 .graphql-editor {
