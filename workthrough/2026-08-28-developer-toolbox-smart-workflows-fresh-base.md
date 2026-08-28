@@ -34,6 +34,10 @@ cross-app one-time handoff는 별도의 explicit action·저장·수명 경계�
   읽기 전후 identity 교체를 차단하며 process-local I/O lock으로 직접 IPC 동시 저장도
   한 번에 하나씩 수행한다. pipeline 20개가 모두 찼을 때 다른 entry를 암묵적으로
   덮어쓰지 않는다.
+- 공용 filesystem identity helper는 Windows `CreateFileW`의 Win32 오류 코드를
+  `std::io::Error`로 보존한다. 존재하지 않는 metadata 파일이 `NotFound`가 아닌
+  불명확한 `Other`로 축약되어 최초 저장을 막지 않으며, 다른 native 오류는 계속
+  fail-closed한다.
 - Smart Workflow UI는 기존 `ToolTextArea`/`ToolOutput`의 명시적 paste/copy/save
   동작을 사용한다. labelled sections, live status/error, keyboard focus-visible
   outline과 explicit run/save/favorite/open actions를 유지한다.
@@ -112,6 +116,15 @@ cross-app one-time handoff는 별도의 explicit action·저장·수명 경계�
   실패했다. 제품 코드는 이 PR에서 바뀌지 않았고, fixture를 동일 `waitFor` 안에서
   호출 횟수와 textarea 값까지 기다리도록 보정했다. focused Quick Capture 11 tests가
   통과했으며 갱신 CI에서 전체 suite를 다시 확인한다.
+- 다음 CI에서 Windows 최초 metadata save 3개 fixture가 모두 같은 고정 오류로
+  실패했다. 원인은 공용 `filesystem_identity`의 Windows 오류 변환이 Win32
+  `ERROR_FILE_NOT_FOUND`를 `ErrorKind::Other`로 잃어버려, 정상적인 신규 파일 slot을
+  unsafe storage처럼 거부한 것이었다. Win32 코드를 raw OS error로 보존하고 공용
+  identity test에 missing-path `NotFound` 회귀 검증을 추가했다. Linux 공용 identity,
+  Developer Toolbox는 각각 17/51 tests 및 strict Clippy가 통과했고, 공용 filesystem의
+  `x86_64-pc-windows-msvc` check도 통과했다. Tauri app 전체의 local Windows check는
+  host에 `llvm-rc`가 없어 resource build 단계에서 중단되므로 Windows CI로 최종
+  실행 검증한다.
 
 ## Remaining risks and follow-up
 
