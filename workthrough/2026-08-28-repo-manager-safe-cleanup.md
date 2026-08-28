@@ -8,9 +8,10 @@ linked or detached worktrees are shown with explicit safety blockers. Only
 targets selected from the latest preview and confirmation can reach the native
 mutation boundary.
 
-The implementation is a PR candidate on a dedicated worktree based on
-`origin/main` commit `952d2a7604eb2739c8e88eb1c3f21a597ae931eb`. No commit,
-push, or pull request was created.
+The implementation is a committed PR candidate on a dedicated worktree. It was
+rebased onto `main` commit `4a1a61a746ef03b7f6f9c548e75e81d2df32064c`
+after Run Manager #357/#358 merged. The candidate has not yet been pushed and
+no pull request has been opened.
 
 ## Context
 
@@ -280,36 +281,33 @@ summary={[
 ## Verification Results
 
 Focused verification completed with the dedicated Linux-native target
-`/home/jihoon/.cache/targets/repo-364` and single-job execution:
+`/home/jihoon/.cache/targets/repo-364`. After the final rebase, the parent
+reran the complete affected native and frontend package gates:
 
 ```text
-CARGO_TARGET_DIR=.../repo-364 CARGO_BUILD_JOBS=1 cargo check -p repo-manager -j1                  PASS
-CARGO_TARGET_DIR=.../repo-364 CARGO_BUILD_JOBS=1 cargo test -p repo-manager --lib --tests -j1     PASS (75 tests)
-CARGO_TARGET_DIR=.../repo-364 CARGO_BUILD_JOBS=1 cargo test -p git --lib -j1                     PASS (14 tests)
-CARGO_TARGET_DIR=.../repo-364 CARGO_BUILD_JOBS=1 cargo clippy -p repo-manager --lib --all-targets PASS (-D warnings)
-CARGO_TARGET_DIR=.../repo-364 CARGO_BUILD_JOBS=1 cargo clippy -p git --all-targets                PASS (-D warnings)
-cargo fmt --all -- --check                                                                      PASS
-git diff --check                                                                                 PASS
+CARGO_TARGET_DIR=.../repo-364 cargo test -p git -p repo-manager --lib -j2              PASS (14 + 78 tests)
+CARGO_TARGET_DIR=.../repo-364 cargo check -p repo-manager -j2                           PASS
+CARGO_TARGET_DIR=.../repo-364 cargo clippy -p git -p repo-manager --all-targets -j2 \
+  -- -D warnings                                                                    PASS
+CARGO_TARGET_DIR=.../repo-364 cargo check -p git --target x86_64-pc-windows-gnu -j1    PASS
+cargo fmt --all -- --check                                                            PASS
+git diff --check                                                                       PASS
+check-dependencies policy/regressions + build-manifest notice tests                    PASS
+check-catalog.sh                                                                       PASS
 ```
 
-Frontend dependencies were installed only for the filtered Repo Manager
-workspace (`pnpm install --filter repo-manager... --frozen-lockfile
---ignore-scripts --child-concurrency=1 --network-concurrency=2`). The focused
-cleanup suite and package build then passed:
+The complete Repo Manager frontend suite and production package build passed
+after the final rebase:
 
 ```text
-pnpm --dir apps/repo-manager exec vitest run src/components/CleanupPanel.test.tsx \
-  --maxWorkers=1 --no-file-parallelism --reporter=dot                             PASS (8 tests)
-pnpm --dir apps/repo-manager build                                                 PASS (tsc + Vite, 50 modules)
+pnpm --filter repo-manager test                                                     PASS (10 files, 74 tests)
+pnpm --filter repo-manager build                                                    PASS (tsc + Vite, 50 modules)
 ```
 
-The first all-file Vitest run exercised 74 tests and reached 73 passes with one
-test-only exact-text matcher failure. The rendered UI correctly contained the
-required guidance as part of its complete status sentence; after changing the
-matcher to an anchored substring/regex assertion, the entire affected
-CleanupPanel file passed. The complete all-file suite was not repeated in this
-worktree because its jsdom environment startup is serial and took over six
-minutes; the parent CI gate remains authoritative for the workspace-wide run.
+An earlier all-file Vitest run found one test-only exact-text matcher failure.
+The rendered UI already contained the required guidance as part of its complete
+status sentence; after changing the matcher to an anchored substring/regex
+assertion, the final complete package run passed all 74 tests.
 
 Windows packaged W3 smoke and CI remain release-gate work for the parent agent.
 
@@ -334,11 +332,12 @@ platform gates.
 
 ## Handoff
 
-- Base: `origin/main` / `952d2a7604eb2739c8e88eb1c3f21a597ae931eb`
+- Base: `main` / `4a1a61a746ef03b7f6f9c548e75e81d2df32064c`
 - Branch: `feat/repo-manager/advanced-workflow`
 - Worktree: `/mnt/e/projects/devbox-worktrees/repo-manager-advanced-workflow`
-- Worktree remains dirty by design with the candidate changes and is not to be
-  removed until the parent agent reviews/merges the work.
+- The candidate is committed and the worktree is clean. It must remain until
+  the PR has passed CI and merged; only then may its exact worktree and branch
+  be removed.
 - Remaining risk: a filesystem path can still be swapped in the narrow interval
   after final identity observation and before Git resolves `worktree remove`;
   Git's own registration checks and no-force command are the final boundary,
