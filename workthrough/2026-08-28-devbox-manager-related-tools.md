@@ -372,3 +372,14 @@ The cross-target attempt reached the existing `aws-lc-sys` build script and
 stopped because `x86_64-w64-mingw32-gcc` is not installed. It therefore does
 not count as a Windows application compile result; the rerun MSVC CI job is the
 required evidence for this correction.
+
+The second MSVC run passed `cargo check` and exposed two strict-clippy-only
+dead-code diagnostics: each outcome enum keeps an `UnsupportedPlatform`
+variant for the non-Windows implementation, so that variant is intentionally
+unconstructed in a Windows build. The existing enum-level allowance covered
+the inverse non-Windows case only. A narrow Windows-only allowance now sits on
+those two variants; all other enum variants remain covered by strict dead-code
+checking on the platforms that own them. No runtime branch or result mapping
+changed. The focused Linux rerun again passes formatting, diff hygiene, all
+123 library tests, and strict all-target clippy; MSVC CI is rerun for the
+platform-specific diagnostic.

@@ -104,6 +104,7 @@ pub struct RelatedToolActionView {
 #[cfg_attr(not(windows), allow(dead_code))]
 enum InstallOutcome {
     Installed,
+    #[cfg_attr(windows, allow(dead_code))]
     UnsupportedPlatform,
     WinGetUnavailable,
     Failed,
@@ -114,6 +115,7 @@ enum InstallOutcome {
 #[cfg_attr(not(windows), allow(dead_code))]
 enum LaunchOutcome {
     Launched,
+    #[cfg_attr(windows, allow(dead_code))]
     UnsupportedPlatform,
     NotInstalled,
 }
