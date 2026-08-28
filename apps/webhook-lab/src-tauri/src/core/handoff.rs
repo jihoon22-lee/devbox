@@ -150,29 +150,26 @@ fn is_sensitive_name(name: &str) -> bool {
         .filter(|character| character.is_ascii_alphanumeric())
         .flat_map(char::to_lowercase)
         .collect();
-    matches!(
-        compact.as_str(),
-        "authorization"
-            | "proxyauthorization"
-            | "cookie"
-            | "setcookie"
-            | "password"
-            | "passwd"
-            | "secret"
-            | "secrets"
-            | "secretkey"
-            | "token"
-            | "accesstoken"
-            | "refreshtoken"
-            | "credential"
-            | "credentials"
-            | "apikey"
-            | "xapikey"
-            | "accesskey"
-            | "clientsecret"
-            | "privatekey"
-            | "auth"
-    )
+    [
+        "authorization",
+        "proxyauthorization",
+        "cookie",
+        "setcookie",
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "accesstoken",
+        "refreshtoken",
+        "credential",
+        "apikey",
+        "accesskey",
+        "clientsecret",
+        "privatekey",
+        "auth",
+    ]
+    .iter()
+    .any(|needle| compact.contains(needle))
 }
 
 fn percent_decode(value: &str) -> Option<String> {
@@ -235,6 +232,15 @@ mod tests {
         assert!(payload.body.contains(WEBHOOK_SECRET_REFERENCE));
         let serialized = serde_json::to_string(&payload).unwrap();
         assert!(!serialized.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn payload_rewrites_substring_sensitive_query_names_consistently() {
+        let mut candidate = fixture();
+        candidate.url = "/hook?x-access-token=[REDACTED]".into();
+        let payload = build_api_request_payload(&candidate).unwrap();
+        assert_eq!(payload.url, "/hook?x-access-token=${WEBHOOK_SECRET}");
+        assert!(!payload.url.contains(REDACTED));
     }
 
     #[test]

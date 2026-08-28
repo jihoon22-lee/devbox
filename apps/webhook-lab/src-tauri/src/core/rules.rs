@@ -26,6 +26,9 @@ pub const MAX_RULE_COLLECTION_BYTES: usize = 8_000_000;
 pub const MIN_RESPONSE_STATUS: u16 = 100;
 pub const MAX_RESPONSE_STATUS: u16 = 599;
 pub const MAX_RESPONSE_DELAY_MS: u64 = 60_000;
+/// A sequence is intentionally short and data-only.  It is a local testing
+/// aid, not an arbitrary scripting or workflow engine.
+pub const MAX_RESPONSE_SEQUENCE: usize = 16;
 pub const INVALID_RULE_ERROR: &str = "규칙 입력이 유효하지 않습니다";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +64,15 @@ impl StringMetrics {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct ResponseSequenceStep {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+    pub delay_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ResponseRule {
     pub id: String,
     /// None이면 모든 method
@@ -74,6 +86,53 @@ pub struct ResponseRule {
     pub body: String,
     /// HTTP response를 보내기 전 대기 시간 (ms)
     pub delay_ms: u64,
+    /// Additional responses after the base response.  Request number zero
+    /// uses the base fields above, then steps are consumed in order.  Once
+    /// the final step is reached it remains active until an explicit reset.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sequence: Vec<ResponseSequenceStep>,
+}
+
+impl ResponseRule {
+    /// Return the response for a zero-based matched-request position.  The
+    /// final step is held after the sequence is exhausted so a webhook sender
+    /// cannot accidentally wrap around and create an unbounded scenario.
+    pub fn response_at(&self, sequence_index: usize) -> ResponseSequenceStep {
+        if sequence_index == 0 || self.sequence.is_empty() {
+            return ResponseSequenceStep {
+                status: self.status,
+                headers: self.headers.clone(),
+                body: self.body.clone(),
+                delay_ms: self.delay_ms,
+            };
+        }
+        let step_index = (sequence_index - 1).min(self.sequence.len() - 1);
+        self.sequence[step_index].clone()
+    }
+}
+
+/// Process-local cursor state for response sequences.  Keeping this separate
+/// from `ResponseRule` makes it explicit that current position is ephemeral:
+/// it is never serialized, persisted, or shared with another process.
+#[derive(Debug, Default)]
+pub struct ResponseSequenceState {
+    cursors: HashMap<String, usize>,
+}
+
+impl ResponseSequenceState {
+    pub fn next_response(&mut self, rule: &ResponseRule) -> ResponseSequenceStep {
+        if rule.sequence.is_empty() {
+            return rule.response_at(0);
+        }
+        let cursor = self.cursors.entry(rule.id.clone()).or_insert(0);
+        let index = *cursor;
+        *cursor = cursor.saturating_add(1);
+        rule.response_at(index)
+    }
+
+    pub fn reset(&mut self, rule_id: &str) {
+        self.cursors.remove(rule_id);
+    }
 }
 
 fn within(value: &str, max_chars: usize, max_bytes: usize) -> bool {
@@ -116,6 +175,21 @@ fn is_header_name(value: &str) -> bool {
     is_token(value)
 }
 
+fn is_transport_header(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "connection"
+            | "content-length"
+            | "expect"
+            | "host"
+            | "proxy-connection"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+    )
+}
+
 fn validate_headers(headers: &[(String, String)]) -> Result<(), RuleValidationError> {
     if headers.len() > MAX_RULE_HEADERS {
         return Err(RuleValidationError);
@@ -125,7 +199,12 @@ fn validate_headers(headers: &[(String, String)]) -> Result<(), RuleValidationEr
     for (name, value) in headers {
         if !within(name, MAX_HEADER_NAME_CHARS, MAX_HEADER_NAME_BYTES)
             || !is_header_name(name)
+            || is_transport_header(name)
             || !within(value, MAX_HEADER_VALUE_CHARS, MAX_HEADER_VALUE_BYTES)
+            // The native response writer emits visible ASCII header values.
+            // Reject anything it cannot encode at the rule boundary so a
+            // saved rule never differs from the wire.
+            || !value.is_ascii()
             || has_control(value)
         {
             return Err(RuleValidationError);
@@ -138,6 +217,21 @@ fn validate_headers(headers: &[(String, String)]) -> Result<(), RuleValidationEr
         return Err(RuleValidationError);
     }
     Ok(())
+}
+
+fn validate_response_payload(
+    status: u16,
+    headers: &[(String, String)],
+    body: &str,
+    delay_ms: u64,
+) -> Result<(), RuleValidationError> {
+    if !(MIN_RESPONSE_STATUS..=MAX_RESPONSE_STATUS).contains(&status)
+        || !within(body, MAX_BODY_CHARS, MAX_BODY_BYTES)
+        || delay_ms > MAX_RESPONSE_DELAY_MS
+    {
+        return Err(RuleValidationError);
+    }
+    validate_headers(headers)
 }
 
 fn rule_metrics(rule: &ResponseRule) -> Option<StringMetrics> {
@@ -158,6 +252,13 @@ fn rule_metrics(rule: &ResponseRule) -> Option<StringMetrics> {
         metrics.add_str(value)?;
     }
     metrics.add_str(&rule.body)?;
+    for step in &rule.sequence {
+        for (name, value) in &step.headers {
+            metrics.add_str(name)?;
+            metrics.add_str(value)?;
+        }
+        metrics.add_str(&step.body)?;
+    }
     Some(metrics)
 }
 
@@ -167,6 +268,7 @@ pub fn validate_rule(rule: &ResponseRule) -> Result<(), RuleValidationError> {
         && (!within(&rule.id, MAX_RULE_ID_CHARS, MAX_RULE_ID_BYTES) || has_control(&rule.id)))
         || !within(&rule.path, MAX_PATH_CHARS, MAX_PATH_BYTES)
         || !rule.path.starts_with('/')
+        || !rule.path.is_ascii()
         || has_control(&rule.path)
         || !within(&rule.body, MAX_BODY_CHARS, MAX_BODY_BYTES)
     {
@@ -178,13 +280,13 @@ pub fn validate_rule(rule: &ResponseRule) -> Result<(), RuleValidationError> {
             return Err(RuleValidationError);
         }
     }
-    if rule.status < MIN_RESPONSE_STATUS || rule.status > MAX_RESPONSE_STATUS {
+    if rule.sequence.len() > MAX_RESPONSE_SEQUENCE {
         return Err(RuleValidationError);
     }
-    if rule.delay_ms > MAX_RESPONSE_DELAY_MS {
-        return Err(RuleValidationError);
+    validate_response_payload(rule.status, &rule.headers, &rule.body, rule.delay_ms)?;
+    for step in &rule.sequence {
+        validate_response_payload(step.status, &step.headers, &step.body, step.delay_ms)?;
     }
-    validate_headers(&rule.headers)?;
 
     let metrics = rule_metrics(rule).ok_or(RuleValidationError)?;
     if metrics.chars > MAX_RULE_COLLECTION_CHARS || metrics.bytes > MAX_RULE_COLLECTION_BYTES {
@@ -230,6 +332,12 @@ where
 /// 시작해야 한다. `HashMap`에서 여러 rule이 매치되는 경우의 우선순위는 이 함수의
 /// 계약이 아니다.
 pub fn matches(rule: &ResponseRule, method: &str, path: &str) -> bool {
+    // The native request parser and replay client emit/accept ASCII targets
+    // only.  Keep direct matcher callers fail-closed even if an invalid rule
+    // is constructed outside the storage validator.
+    if !rule.path.is_ascii() || !path.is_ascii() {
+        return false;
+    }
     if let Some(m) = &rule.method {
         if !m.eq_ignore_ascii_case(method) {
             return false;
@@ -284,6 +392,7 @@ mod tests {
             headers: vec![],
             body: String::new(),
             delay_ms: 0,
+            sequence: vec![],
         }
     }
 
@@ -365,6 +474,24 @@ mod tests {
     }
 
     #[test]
+    fn rejects_transport_response_headers_that_would_override_wire_framing() {
+        for name in [
+            "Connection",
+            "Content-Length",
+            "Transfer-Encoding",
+            "Upgrade",
+            "Host",
+        ] {
+            let mut candidate = rule("transport", None, "/hook");
+            candidate.headers = vec![(name.into(), "1".into())];
+            assert!(
+                validate_rule(&candidate).is_err(),
+                "{name} should be reserved"
+            );
+        }
+    }
+
+    #[test]
     fn validates_method_path_and_body_shape_and_size() {
         let mut invalid = rule("r", Some("POST"), "/hook");
         invalid.method = Some("post-json".into());
@@ -385,6 +512,8 @@ mod tests {
         invalid.path = format!("/{}", "p".repeat(MAX_PATH_CHARS));
         assert!(validate_rule(&invalid).is_err());
         invalid.path = "/hook\u{0085}".into();
+        assert!(validate_rule(&invalid).is_err());
+        invalid.path = "/hook/한글".into();
         assert!(validate_rule(&invalid).is_err());
 
         invalid = rule("r", None, "/hook");
@@ -419,6 +548,8 @@ mod tests {
         invalid.headers = vec![("not a header".into(), "ok".into())];
         assert!(validate_rule(&invalid).is_err());
         invalid.headers = vec![("X-Test".into(), "bad\nvalue".into())];
+        assert!(validate_rule(&invalid).is_err());
+        invalid.headers = vec![("X-Test".into(), "한글".into())];
         assert!(validate_rule(&invalid).is_err());
 
         invalid.headers = vec![("X-Test".into(), "v".repeat(MAX_HEADER_VALUE_CHARS + 1))];
@@ -481,5 +612,88 @@ mod tests {
             .map(|index| rule(&format!("r-{index}"), None, "/hook"))
             .collect();
         assert!(validate_rule_collection(too_many.iter()).is_err());
+    }
+
+    #[test]
+    fn response_sequence_consumes_in_order_and_holds_the_final_step() {
+        let mut candidate = rule("sequence", Some("POST"), "/hook");
+        candidate.status = 202;
+        candidate.body = "first".into();
+        candidate.sequence = vec![
+            ResponseSequenceStep {
+                status: 500,
+                headers: vec![],
+                body: "retry".into(),
+                delay_ms: 10,
+            },
+            ResponseSequenceStep {
+                status: 204,
+                headers: vec![("X-Ready".into(), "yes".into())],
+                body: String::new(),
+                delay_ms: 0,
+            },
+        ];
+
+        assert_eq!(candidate.response_at(0).status, 202);
+        assert_eq!(candidate.response_at(1).body, "retry");
+        assert_eq!(candidate.response_at(2).status, 204);
+        assert_eq!(candidate.response_at(99).status, 204);
+        assert!(validate_rule(&candidate).is_ok());
+    }
+
+    #[test]
+    fn response_sequence_is_bounded_and_validated_like_the_base_response() {
+        let mut candidate = rule("sequence", None, "/hook");
+        candidate.sequence = vec![
+            ResponseSequenceStep {
+                status: 200,
+                headers: vec![],
+                body: String::new(),
+                delay_ms: 0,
+            };
+            MAX_RESPONSE_SEQUENCE + 1
+        ];
+        assert!(validate_rule(&candidate).is_err());
+
+        candidate.sequence = vec![ResponseSequenceStep {
+            status: 600,
+            headers: vec![],
+            body: String::new(),
+            delay_ms: 0,
+        }];
+        assert!(validate_rule(&candidate).is_err());
+
+        candidate.sequence = vec![ResponseSequenceStep {
+            status: 200,
+            headers: vec![("X-Bad".into(), "line\nfeed".into())],
+            body: String::new(),
+            delay_ms: 0,
+        }];
+        assert!(validate_rule(&candidate).is_err());
+    }
+
+    #[test]
+    fn response_sequence_state_reset_starts_at_the_base_response() {
+        let mut candidate = rule("sequence", Some("POST"), "/hook");
+        candidate.body = "first".into();
+        candidate.sequence = vec![ResponseSequenceStep {
+            status: 500,
+            headers: vec![],
+            body: "retry".into(),
+            delay_ms: 0,
+        }];
+        let mut state = ResponseSequenceState::default();
+        assert_eq!(state.next_response(&candidate).body, "first");
+        assert_eq!(state.next_response(&candidate).body, "retry");
+        assert_eq!(state.next_response(&candidate).body, "retry");
+        state.reset(&candidate.id);
+        assert_eq!(state.next_response(&candidate).body, "first");
+    }
+
+    #[test]
+    fn matcher_rejects_non_ascii_paths_even_for_unvalidated_rules() {
+        let candidate = rule("unicode", None, "/hook/한글");
+        assert!(!matches(&candidate, "GET", "/hook/한글"));
+        assert!(!matches(&rule("ascii", None, "/hook"), "GET", "/hook/한글"));
     }
 }

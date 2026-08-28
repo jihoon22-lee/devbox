@@ -1,4 +1,4 @@
-import type { ResponseRule } from "../api";
+import type { ResponseRule, ResponseSequenceStep } from "../api";
 
 /**
  * These limits mirror `src-tauri/src/core/rules.rs`. The Rust command remains
@@ -26,6 +26,7 @@ export const MAX_RULE_COLLECTION_BYTES = 8_000_000;
 export const MIN_RESPONSE_STATUS = 100;
 export const MAX_RESPONSE_STATUS = 599;
 export const MAX_RESPONSE_DELAY_MS = 60_000;
+export const MAX_RESPONSE_SEQUENCE = 16;
 
 export type RuleValidationField =
   | "id"
@@ -35,6 +36,7 @@ export type RuleValidationField =
   | "headers"
   | "body"
   | "delayMs"
+  | "sequence"
   | "collection";
 
 export interface RuleValidationIssue {
@@ -44,7 +46,7 @@ export interface RuleValidationIssue {
 
 export type RuleValidationInput =
   & Pick<ResponseRule, "path" | "status" | "delayMs">
-  & Partial<Pick<ResponseRule, "id" | "method" | "headers" | "body">>;
+  & Partial<Pick<ResponseRule, "id" | "method" | "headers" | "body" | "sequence">>;
 
 interface StringMetrics {
   chars: number;
@@ -54,6 +56,17 @@ interface StringMetrics {
 const GENERATED_RULE_ID = "00000000-0000-0000-0000-000000000000";
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/;
 const UTF8_ENCODER = new TextEncoder();
+const TRANSPORT_HEADERS = new Set([
+  "connection",
+  "content-length",
+  "expect",
+  "host",
+  "proxy-connection",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
 
 function hasUnpairedSurrogate(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
@@ -91,6 +104,17 @@ function isHeaderName(value: string): boolean {
   return /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(value);
 }
 
+function isAscii(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) > 0x7f) return false;
+  }
+  return true;
+}
+
+function isTransportHeader(value: string): boolean {
+  return TRANSPORT_HEADERS.has(value.toLowerCase());
+}
+
 function addIssue(
   issues: RuleValidationIssue[],
   field: RuleValidationField,
@@ -105,6 +129,7 @@ function normalizedStrings(rule: RuleValidationInput): {
   path: unknown;
   headers: unknown;
   body: unknown;
+  sequence: unknown;
 } {
   return {
     id: rule.id ?? "",
@@ -112,7 +137,54 @@ function normalizedStrings(rule: RuleValidationInput): {
     path: rule.path,
     headers: rule.headers ?? [],
     body: rule.body ?? "",
+    sequence: rule.sequence === undefined ? [] : rule.sequence,
   };
+}
+
+function validHeaderList(headers: unknown): headers is Array<[string, string]> {
+  if (!Array.isArray(headers) || headers.length > MAX_RULE_HEADERS) return false;
+  let headerChars = 0;
+  let headerBytes = 0;
+  for (const header of headers) {
+    if (
+      !Array.isArray(header)
+      || header.length !== 2
+      || typeof header[0] !== "string"
+      || !within(header[0], MAX_HEADER_NAME_CHARS, MAX_HEADER_NAME_BYTES)
+      || !isHeaderName(header[0])
+      || isTransportHeader(header[0])
+      || typeof header[1] !== "string"
+      || !within(header[1], MAX_HEADER_VALUE_CHARS, MAX_HEADER_VALUE_BYTES)
+      || !isAscii(header[1])
+      || CONTROL_CHARACTERS.test(header[1])
+    ) {
+      return false;
+    }
+    const nameMetrics = stringMetrics(header[0]);
+    const valueMetrics = stringMetrics(header[1]);
+    if (!nameMetrics || !valueMetrics) return false;
+    headerChars += nameMetrics.chars + valueMetrics.chars;
+    headerBytes += nameMetrics.bytes + valueMetrics.bytes;
+  }
+  return headerChars <= MAX_HEADER_TOTAL_CHARS && headerBytes <= MAX_HEADER_TOTAL_BYTES;
+}
+
+function validResponseStep(value: unknown): value is ResponseSequenceStep {
+  if (!value || typeof value !== "object") return false;
+  const step = value as Partial<ResponseSequenceStep>;
+  return (
+    typeof step.status === "number"
+    && Number.isInteger(step.status)
+    && step.status >= MIN_RESPONSE_STATUS
+    && step.status <= MAX_RESPONSE_STATUS
+    && validHeaderList(step.headers)
+    && typeof step.body === "string"
+    && within(step.body, MAX_BODY_CHARS, MAX_BODY_BYTES)
+    && typeof step.delayMs === "number"
+    && Number.isInteger(step.delayMs)
+    && step.delayMs >= 0
+    && step.delayMs <= MAX_RESPONSE_DELAY_MS
+  );
 }
 
 function ruleMetrics(rule: RuleValidationInput): StringMetrics | null {
@@ -133,6 +205,14 @@ function ruleMetrics(rule: RuleValidationInput): StringMetrics | null {
     if (!Array.isArray(header) || header.length !== 2 || !add(header[0]) || !add(header[1])) {
       return null;
     }
+  }
+  if (!Array.isArray(normalized.sequence)) return null;
+  for (const step of normalized.sequence) {
+    if (!validResponseStep(step)) return null;
+    for (const header of step.headers) {
+      if (!add(header[0]) || !add(header[1])) return null;
+    }
+    if (!add(step.body)) return null;
   }
   return add(normalized.body) ? metrics : null;
 }
@@ -170,9 +250,10 @@ export function validateRule(
     typeof normalized.path !== "string"
     || !within(normalized.path, MAX_PATH_CHARS, MAX_PATH_BYTES)
     || !normalized.path.startsWith("/")
+    || !isAscii(normalized.path)
     || CONTROL_CHARACTERS.test(normalized.path)
   ) {
-    addIssue(issues, "path", "path는 /로 시작해야 하며 제어 문자를 포함할 수 없습니다.");
+    addIssue(issues, "path", "path는 ASCII / 경로여야 하며 제어 문자를 포함할 수 없습니다.");
   }
 
   if (
@@ -200,8 +281,10 @@ export function validateRule(
         || typeof header[0] !== "string"
         || !within(header[0], MAX_HEADER_NAME_CHARS, MAX_HEADER_NAME_BYTES)
         || !isHeaderName(header[0])
+        || isTransportHeader(header[0])
         || typeof header[1] !== "string"
         || !within(header[1], MAX_HEADER_VALUE_CHARS, MAX_HEADER_VALUE_BYTES)
+        || !isAscii(header[1])
         || CONTROL_CHARACTERS.test(header[1])
       ) {
         addIssue(issues, "headers", "response header의 이름·값 또는 제어 문자가 유효하지 않습니다.");
@@ -232,6 +315,17 @@ export function validateRule(
     || rule.delayMs > MAX_RESPONSE_DELAY_MS
   ) {
     addIssue(issues, "delayMs", `delay는 0~${MAX_RESPONSE_DELAY_MS}ms 범위의 정수여야 합니다.`);
+  }
+
+  if (!Array.isArray(normalized.sequence) || normalized.sequence.length > MAX_RESPONSE_SEQUENCE) {
+    addIssue(issues, "sequence", `response sequence는 최대 ${MAX_RESPONSE_SEQUENCE}단계까지 추가할 수 있습니다.`);
+  } else {
+    for (const step of normalized.sequence) {
+      if (!validResponseStep(step)) {
+        addIssue(issues, "sequence", "response sequence의 status·headers·body·delay 형식이 유효하지 않습니다.");
+        break;
+      }
+    }
   }
 
   const metrics = ruleMetrics(rule);

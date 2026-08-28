@@ -13,6 +13,7 @@ import {
   MAX_PATH_BYTES,
   MAX_PATH_CHARS,
   MAX_RESPONSE_DELAY_MS,
+  MAX_RESPONSE_SEQUENCE,
   MAX_RESPONSE_STATUS,
   MAX_RULES,
   MAX_RULE_HEADERS,
@@ -63,6 +64,7 @@ describe("validateRule", () => {
   it("rejects paths that cannot represent a local request path", () => {
     expect(validateRule({ ...validRule, path: "hook" })[0]).toMatchObject({ field: "path" });
     expect(validateRule({ ...validRule, path: "/hook\u0085secret" })[0]).toMatchObject({ field: "path" });
+    expect(validateRule({ ...validRule, path: "/hook/한글" })[0]).toMatchObject({ field: "path" });
     expect(validateRule({
       ...validRule,
       path: `/${"p".repeat(MAX_PATH_CHARS - 1)}`,
@@ -133,6 +135,15 @@ describe("validateRule", () => {
     expect(MAX_HEADER_TOTAL_BYTES).toBe(MAX_HEADER_TOTAL_CHARS * 4);
   });
 
+  it("rejects response transport headers so the native writer owns wire framing", () => {
+    for (const name of ["Connection", "Content-Length", "Transfer-Encoding", "Upgrade", "Host"]) {
+      expect(validateRule({
+        ...validRule,
+        headers: [[name, "1"]],
+      }).some((issue) => issue.field === "headers")).toBe(true);
+    }
+  });
+
   it("validates the complete collection before an add or edit", () => {
     const atCount = Array.from({ length: MAX_RULES }, (_, index) => ({
       ...validRule,
@@ -150,4 +161,35 @@ describe("validateRule", () => {
     }));
     expect(validateRuleCollection(overAggregate).some((issue) => issue.field === "collection")).toBe(true);
   });
-});
+
+  it("validates bounded response sequence steps and counts their strings", () => {
+    const step = {
+      status: 503,
+      headers: [["Retry-After", "1"]] as Array<[string, string]>,
+      body: "retry",
+      delayMs: 25,
+    };
+    expect(validateRule({ ...validRule, sequence: [step] })).toEqual([]);
+    expect(validateRule({
+      ...validRule,
+      sequence: Array.from({ length: MAX_RESPONSE_SEQUENCE + 1 }, () => step),
+    }).some((issue) => issue.field === "sequence")).toBe(true);
+    expect(validateRule({
+      ...validRule,
+      sequence: [{ ...step, status: 600 }],
+    }).some((issue) => issue.field === "sequence")).toBe(true);
+    expect(validateRule({
+      ...validRule,
+      sequence: [{ ...step, headers: [["X-Bad", "line\nfeed"]] }],
+    }).some((issue) => issue.field === "sequence")).toBe(true);
+    expect(validateRule({
+      ...validRule,
+      sequence: [{ ...step, body: "x".repeat(MAX_BODY_CHARS + 1) }],
+    }).some((issue) => issue.field === "sequence")).toBe(true);
+    });
+  });
+
+  it("rejects non-ASCII response header values that the native writer cannot emit", () => {
+    expect(validateRule({ ...validRule, headers: [["X-Label", "한글"]] })
+      .some((issue) => issue.field === "headers")).toBe(true);
+  });

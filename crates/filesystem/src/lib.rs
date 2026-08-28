@@ -12,6 +12,8 @@
 //!   비교하고, 검사한 같은 handle로 후속 읽기를 이어 가는 helper
 //! - [`ensure_no_links`]: 파일과 모든 ancestor의 symbolic link/reparse point를
 //!   따라가지 않는 경로 검증 helper
+//! - [`try_lock_exclusive`] / [`unlock_exclusive`]: 이미 열린 파일에 대한
+//!   bounded caller가 사용할 수 있는 non-blocking OS advisory lock primitive
 //! - [`migrate_legacy_identifier_dir`]: 새 identifier 디렉터리가 아직 없을 때
 //!   구 identifier 디렉터리를 통째로 옮기는 rename-only migration
 //!
@@ -238,6 +240,122 @@ pub fn ensure_no_links(path: impl AsRef<Path>) -> io::Result<()> {
         current = component.parent();
     }
     Ok(())
+}
+
+/// Try to take an exclusive advisory lock on an already-open file.
+///
+/// The operation is deliberately non-blocking: callers that need a bounded
+/// wait can retry with their own deadline and map contention to their fixed
+/// application error.  The lock belongs to this file handle and is released
+/// when [`unlock_exclusive`] is called or the handle is closed.  This helper
+/// does not create, remove, or repair lock files.
+#[cfg(unix)]
+pub fn try_lock_exclusive(file: &std::fs::File) -> io::Result<bool> {
+    use std::os::unix::io::AsRawFd;
+
+    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if result == 0 {
+        return Ok(true);
+    }
+    let error = io::Error::last_os_error();
+    if matches!(error.raw_os_error(), Some(code) if code == libc::EAGAIN || code == libc::EWOULDBLOCK)
+    {
+        Ok(false)
+    } else {
+        Err(error)
+    }
+}
+
+/// Try to take an exclusive advisory lock on an already-open file on Windows.
+/// See [`try_lock_exclusive`] for the bounded, non-blocking contract.
+#[cfg(windows)]
+pub fn try_lock_exclusive(file: &std::fs::File) -> io::Result<bool> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::{ERROR_LOCK_VIOLATION, HANDLE, WIN32_ERROR};
+    use windows::Win32::Storage::FileSystem::{
+        LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
+    };
+    use windows::Win32::System::IO::OVERLAPPED;
+
+    let mut overlapped = OVERLAPPED::default();
+    let result = unsafe {
+        LockFileEx(
+            HANDLE(file.as_raw_handle()),
+            LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+            None,
+            u32::MAX,
+            u32::MAX,
+            &mut overlapped,
+        )
+    };
+    match result {
+        Ok(()) => Ok(true),
+        Err(error)
+            if WIN32_ERROR::from_error(&error).is_some_and(|code| code == ERROR_LOCK_VIOLATION) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(io::Error::other(error)),
+    }
+}
+
+/// Try to take an exclusive advisory lock on an already-open file.
+///
+/// The Webhook Lab target platforms are Unix and Windows.  Keep an explicit
+/// fallback for other targets so this crate remains diagnosable rather than
+/// silently pretending that a lock was acquired.
+#[cfg(not(any(unix, windows)))]
+pub fn try_lock_exclusive(_file: &std::fs::File) -> io::Result<bool> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "exclusive file locking is unsupported on this target",
+    ))
+}
+
+/// Release an exclusive advisory lock previously returned by
+/// [`try_lock_exclusive`].  Releasing an unlocked handle is left to the native
+/// platform and is treated as an I/O error if the platform rejects it.
+#[cfg(unix)]
+pub fn unlock_exclusive(file: &std::fs::File) -> io::Result<()> {
+    use std::os::unix::io::AsRawFd;
+
+    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+/// Release a Windows exclusive advisory lock previously returned by
+/// [`try_lock_exclusive`].
+#[cfg(windows)]
+pub fn unlock_exclusive(file: &std::fs::File) -> io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Storage::FileSystem::UnlockFileEx;
+    use windows::Win32::System::IO::OVERLAPPED;
+
+    let mut overlapped = OVERLAPPED::default();
+    unsafe {
+        UnlockFileEx(
+            HANDLE(file.as_raw_handle()),
+            None,
+            u32::MAX,
+            u32::MAX,
+            &mut overlapped,
+        )
+    }
+    .map_err(io::Error::other)
+}
+
+/// Release an exclusive advisory lock on unsupported targets.
+#[cfg(not(any(unix, windows)))]
+pub fn unlock_exclusive(_file: &std::fs::File) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "exclusive file locking is unsupported on this target",
+    ))
 }
 
 /// Atomically replace one file with complete bytes from a unique sibling.

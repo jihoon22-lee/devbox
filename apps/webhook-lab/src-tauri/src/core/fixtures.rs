@@ -11,12 +11,18 @@ use super::rules::ResponseRule;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
-use std::fs::{self, File, Metadata};
+use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 pub const FIXTURE_FILE_NAME: &str = "fixtures.json";
+/// Persistent sidecar used for an OS advisory lock. It is intentionally
+/// never deleted: an unlocked sidecar is harmless, while deleting and
+/// recreating one would permit a second process to observe a different inode
+/// and bypass the lock held by the first process.
+pub const FIXTURE_LOCK_FILE_NAME: &str = ".fixtures.json.lock";
 pub const FIXTURE_SCHEMA_VERSION: u32 = 1;
 pub const MAX_FIXTURES: usize = 200;
 pub const MAX_FIXTURE_FILE_BYTES: usize = 8 * 1024 * 1024;
@@ -35,6 +41,9 @@ pub const MAX_FIXTURE_HEADER_TOTAL_CHARS: usize = 64_000;
 pub const MAX_FIXTURE_HEADER_TOTAL_BYTES: usize = 256_000;
 pub const MAX_FIXTURE_BODY_CHARS: usize = 256_000;
 pub const MAX_FIXTURE_BODY_BYTES: usize = 1_024_000;
+const MAX_REFERENCE_NAME_CHARS: usize = 128;
+const MAX_JSON_DEPTH: usize = 32;
+const MAX_JSON_NODES: usize = 10_000;
 /// Keep persisted timestamps inside both JavaScript's safe-integer range and
 /// the range accepted by `Date#toISOString`, so a validated fixture cannot
 /// make the renderer throw while formatting its capture time.
@@ -48,10 +57,14 @@ pub const FIXTURE_WRITE_ERROR: &str = "fixture 저장소를 저장할 수 없습
 pub const FIXTURE_SIZE_ERROR: &str = "fixture 저장소 크기 제한을 초과했습니다";
 pub const FIXTURE_CONFLICT_ERROR: &str =
     "fixture 저장소가 다른 작업으로 변경되었습니다. 다시 시도하세요";
+pub const FIXTURE_LOCK_ERROR: &str =
+    "fixture 저장소가 다른 작업에서 사용 중입니다. 잠시 후 다시 시도하세요";
 pub const FIXTURE_NOT_FOUND_ERROR: &str = "fixture를 찾을 수 없습니다";
 pub const FIXTURE_INPUT_ERROR: &str = "fixture 입력이 유효하지 않습니다";
 
 static FIXTURE_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+const FIXTURE_LOCK_TIMEOUT: Duration = Duration::from_millis(500);
+const FIXTURE_LOCK_POLL: Duration = Duration::from_millis(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FixtureError {
@@ -59,6 +72,7 @@ pub enum FixtureError {
     Write,
     Size,
     Conflict,
+    Lock,
     NotFound,
     Invalid,
     Path,
@@ -71,6 +85,7 @@ impl FixtureError {
             Self::Write => FIXTURE_WRITE_ERROR,
             Self::Size => FIXTURE_SIZE_ERROR,
             Self::Conflict => FIXTURE_CONFLICT_ERROR,
+            Self::Lock => FIXTURE_LOCK_ERROR,
             Self::NotFound => FIXTURE_NOT_FOUND_ERROR,
             Self::Invalid => FIXTURE_INPUT_ERROR,
             Self::Path => FIXTURE_WRITE_ERROR,
@@ -188,9 +203,29 @@ fn is_token(value: &str) -> bool {
 }
 
 fn is_reference(value: &str) -> bool {
-    let trimmed = value.trim();
-    (trimmed.starts_with("${") && trimmed.ends_with('}'))
-        || (trimmed.starts_with("{{") && trimmed.ends_with("}}"))
+    // A reference is safe to preserve only when the complete value is a
+    // small identifier.  Merely checking the delimiters would preserve a
+    // literal such as `${raw-secret}` (or an arbitrarily long value) in a
+    // sensitive field and mistake it for an environment reference.
+    if value.trim() != value {
+        return false;
+    }
+    let name = if value.starts_with("${") && value.ends_with('}') && value.len() >= 4 {
+        &value[2..value.len() - 1]
+    } else if value.starts_with("{{") && value.ends_with("}}") && value.len() >= 5 {
+        &value[2..value.len() - 2]
+    } else {
+        return false;
+    };
+    !name.is_empty()
+        && name.len() <= MAX_REFERENCE_NAME_CHARS
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+}
+
+fn contains_reference_marker(value: &str) -> bool {
+    value.contains("${") || value.contains("{{")
 }
 
 fn sensitive_name(name: &str) -> bool {
@@ -242,9 +277,13 @@ fn known_token(value: &str) -> bool {
         if candidate.len() == 20 && candidate.starts_with("AKIA") {
             return true;
         }
-        let segments: Vec<&str> = candidate.split('.').collect();
-        if segments.len() == 3
-            && segments.iter().all(|segment| {
+        let mut segments = candidate.split('.');
+        let first = segments.next();
+        let second = segments.next();
+        let third = segments.next();
+        if third.is_some()
+            && segments.next().is_none()
+            && [first, second, third].into_iter().flatten().all(|segment| {
                 segment.len() >= 10
                     && segment
                         .bytes()
@@ -292,6 +331,7 @@ fn unsafe_path(path: &str) -> bool {
         || path != path.trim()
         || !path.starts_with('/')
         || path.starts_with("//")
+        || contains_reference_marker(path)
         || path.contains('\\')
         || path.contains('#')
         || has_control(path)
@@ -302,7 +342,11 @@ fn unsafe_path(path: &str) -> bool {
     let Some(decoded) = percent_decode(path) else {
         return true;
     };
-    if decoded.starts_with("//") || decoded.contains('\\') || has_control(&decoded) {
+    if decoded.starts_with("//")
+        || contains_reference_marker(&decoded)
+        || decoded.contains('\\')
+        || has_control(&decoded)
+    {
         return true;
     }
     decoded
@@ -346,6 +390,9 @@ pub fn sanitize_target(target: &str) -> String {
             return REDACTED_PATH.to_string();
         };
         if key.is_empty()
+            || contains_reference_marker(raw_key)
+            || contains_reference_marker(&key)
+            || key.chars().any(char::is_control)
             || key.chars().any(char::is_whitespace)
             || value.chars().any(char::is_control)
             || value.chars().any(char::is_whitespace)
@@ -383,9 +430,12 @@ fn redact_scheme_tokens(value: &str) -> String {
     let mut index = 0;
     while index < bytes.len() {
         let remaining = &value[index..];
-        let scheme_len = if remaining.len() >= 7 && remaining[..7].eq_ignore_ascii_case("Bearer ") {
+        let scheme_len = if remaining.len() >= 7
+            && remaining.as_bytes()[..7].eq_ignore_ascii_case(b"Bearer ")
+        {
             Some(7)
-        } else if remaining.len() >= 6 && remaining[..6].eq_ignore_ascii_case("Basic ") {
+        } else if remaining.len() >= 6 && remaining.as_bytes()[..6].eq_ignore_ascii_case(b"Basic ")
+        {
             Some(6)
         } else {
             None
@@ -485,25 +535,81 @@ fn redact_text(value: &str) -> String {
     if sensitive_assignment(value) {
         return REDACTED.to_string();
     }
-    let mut output = redact_scheme_tokens(value);
-    // Token candidates are delimited before replacement, which avoids an
-    // unbounded regular-expression scan on a large ordinary body.
-    let candidates: Vec<String> = output
-        .split(|character: char| {
-            !character.is_ascii_alphanumeric() && !matches!(character, '_' | '-' | '.')
-        })
-        .filter(|candidate| !candidate.is_empty() && known_token(candidate))
-        .map(ToString::to_string)
-        .collect();
-    for candidate in candidates {
-        output = output.replace(&candidate, REDACTED);
+    let output = redact_scheme_tokens(value);
+    // Replace token-shaped segments in one pass.  Repeatedly calling
+    // `String::replace` for every candidate made a body containing many
+    // distinct tokens scan the whole body once per token (quadratic work) and
+    // allocated an intermediate String for every pass.  The body is bounded,
+    // but it is still untrusted input, so keep the redaction pass linear in
+    // the number of UTF-8 bytes.
+    let mut redacted = String::with_capacity(output.len());
+    let mut segment_start = 0;
+    for (index, character) in output.char_indices() {
+        if character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.') {
+            continue;
+        }
+        append_redacted_segment(&mut redacted, &output[segment_start..index]);
+        redacted.push(character);
+        segment_start = index + character.len_utf8();
     }
-    output
+    append_redacted_segment(&mut redacted, &output[segment_start..]);
+    redacted
+}
+
+fn append_redacted_segment(output: &mut String, segment: &str) {
+    if segment.is_empty() {
+        return;
+    }
+    if known_token(segment) {
+        output.push_str(REDACTED);
+    } else {
+        output.push_str(segment);
+    }
 }
 
 #[derive(Default)]
 struct JsonBudget {
     nodes: usize,
+}
+
+impl JsonBudget {
+    fn visit(&mut self, depth: usize) -> Result<(), FixtureError> {
+        if depth > MAX_JSON_DEPTH || self.nodes >= MAX_JSON_NODES {
+            return Err(FixtureError::Size);
+        }
+        self.nodes += 1;
+        Ok(())
+    }
+}
+
+fn looks_like_json(value: &str) -> bool {
+    let trimmed = value.trim_start();
+    trimmed.starts_with('{') || trimmed.starts_with('[')
+}
+
+/// Sanitize a JSON document embedded in a JSON string value.  Captured
+/// payloads commonly wrap a nested request as a string (for example a
+/// `payload` field containing `{"password":"..."}`).  Running the normal
+/// text redactor over that string cannot reliably decode escaped object keys,
+/// so parse the bounded value again and share the caller's depth/node budget.
+/// A string that looks like JSON but is malformed is replaced wholesale: there
+/// is no trustworthy key/value boundary from which it would be safe to keep a
+/// prefix.
+fn sanitize_embedded_json(
+    text: &str,
+    depth: usize,
+    budget: &mut JsonBudget,
+) -> Result<Option<String>, FixtureError> {
+    if !looks_like_json(text) {
+        return Ok(None);
+    }
+    let Ok(value) = serde_json::from_str::<Value>(text) else {
+        return Ok(Some(REDACTED.to_string()));
+    };
+    let value = sanitize_json(value, "", depth + 1, budget)?;
+    serde_json::to_string(&value)
+        .map(Some)
+        .map_err(|_| FixtureError::Invalid)
 }
 
 fn sanitize_json(
@@ -512,54 +618,62 @@ fn sanitize_json(
     depth: usize,
     budget: &mut JsonBudget,
 ) -> Result<Value, FixtureError> {
-    if depth > 32 || budget.nodes >= 10_000 {
-        return Err(FixtureError::Size);
-    }
-    budget.nodes += 1;
-    match value {
+    budget.visit(depth)?;
+    let sensitive = sensitive_name(key);
+    let sanitized = match value {
         Value::String(text) => {
-            if text.chars().count() > MAX_FIXTURE_BODY_CHARS {
+            if !within(&text, MAX_FIXTURE_BODY_CHARS, MAX_FIXTURE_BODY_BYTES) {
                 return Err(FixtureError::Size);
             }
-            if sensitive_name(key) {
-                Ok(if is_reference(&text) {
+            if sensitive {
+                // Parse JSON-looking sensitive values too.  The sanitized
+                // result is discarded below, but traversing it preserves the
+                // same depth/node bounds for sensitive arrays/objects and
+                // prevents a nested oversized value from bypassing admission.
+                if !is_reference(&text) {
+                    let _embedded = sanitize_embedded_json(&text, depth, budget)?;
+                }
+                if is_reference(&text) {
                     Value::String(text)
                 } else {
                     Value::String(REDACTED.to_string())
-                })
+                }
             } else {
-                Ok(Value::String(redact_text(&text)))
+                let text = match sanitize_embedded_json(&text, depth, budget)? {
+                    Some(text) => text,
+                    None => redact_text(&text),
+                };
+                Value::String(text)
             }
         }
         Value::Array(items) => items
             .into_iter()
             .map(|item| sanitize_json(item, "", depth + 1, budget))
             .collect::<Result<Vec<_>, _>>()
-            .map(Value::Array),
+            .map(Value::Array)?,
         Value::Object(entries) => entries
             .into_iter()
             .map(|(child_key, child)| {
-                if child_key.chars().count() > MAX_FIXTURE_BODY_CHARS || has_control(&child_key) {
+                if !within(&child_key, MAX_FIXTURE_BODY_CHARS, MAX_FIXTURE_BODY_BYTES)
+                    || has_control(&child_key)
+                {
                     return Err(FixtureError::Invalid);
                 }
-                let child = if sensitive_name(&child_key) {
-                    if let Value::String(text) = child {
-                        if is_reference(&text) {
-                            Value::String(text)
-                        } else {
-                            Value::String(REDACTED.to_string())
-                        }
-                    } else {
-                        Value::String(REDACTED.to_string())
-                    }
-                } else {
-                    sanitize_json(child, &child_key, depth + 1, budget)?
-                };
+                let child = sanitize_json(child, &child_key, depth + 1, budget)?;
                 Ok((child_key, child))
             })
             .collect::<Result<serde_json::Map<_, _>, _>>()
-            .map(Value::Object),
-        other => Ok(other),
+            .map(Value::Object)?,
+        other => other,
+    };
+
+    // A sensitive key may contain an object/array.  It was still traversed to
+    // account for bounds, but only a complete bounded reference is allowed to
+    // survive in the output; every other shape collapses to the fixed marker.
+    if sensitive && !matches!(&sanitized, Value::String(text) if is_reference(text)) {
+        Ok(Value::String(REDACTED.to_string()))
+    } else {
+        Ok(sanitized)
     }
 }
 
@@ -575,6 +689,7 @@ pub fn sanitize_body(body: &str) -> Result<String, FixtureError> {
             serde_json::to_string(&sanitize_json(value, "", 0, &mut JsonBudget::default())?)
                 .map_err(|_| FixtureError::Invalid)?
         }
+        Err(_) if looks_like_json(body) => REDACTED.to_string(),
         Err(_) => redact_text(body),
     };
     if within(&sanitized, MAX_FIXTURE_BODY_CHARS, MAX_FIXTURE_BODY_BYTES) {
@@ -582,6 +697,61 @@ pub fn sanitize_body(body: &str) -> Result<String, FixtureError> {
     } else {
         Err(FixtureError::Size)
     }
+}
+
+/// Sanitize a captured body before applying the history display cap.  A raw
+/// prefix can cut a credential/token in half, so redaction must see the whole
+/// bounded request body first.  The server admission layer caps the input at
+/// `MAX_FIXTURE_BODY_BYTES + 1`; this helper then applies the renderer's
+/// character/byte prefix bound without exposing a token-shaped suffix.
+pub fn sanitize_body_for_history(body: &str) -> String {
+    // `History::push` is normally fed by the listener's bounded reader, but
+    // keep this public core boundary safe for direct callers too. Returning a
+    // fixed marker avoids scanning or allocating in proportion to an
+    // arbitrarily large input that could never fit a fixture/history entry.
+    if body.len() > MAX_FIXTURE_BODY_BYTES {
+        return REDACTED.to_string();
+    }
+    if within(body, MAX_FIXTURE_BODY_CHARS, MAX_FIXTURE_BODY_BYTES) {
+        return sanitize_body(body).unwrap_or_else(|_| REDACTED.to_string());
+    }
+
+    // Once the display character cap is exceeded, parsing structured JSON is
+    // still important for privacy: escaped sensitive keys (for example
+    // `"\\u0070assword"`) are invisible to the text redactor.  Keep the
+    // structured path bounded by the same depth/node/string limits; if it
+    // cannot be sanitized safely, return one fixed marker instead of exposing
+    // a prefix of a credential-bearing payload.
+    if let Ok(value) = serde_json::from_str::<Value>(body) {
+        let mut budget = JsonBudget::default();
+        let Ok(value) = sanitize_json(value, "", 0, &mut budget) else {
+            return REDACTED.to_string();
+        };
+        let Ok(serialized) = serde_json::to_string(&value) else {
+            return REDACTED.to_string();
+        };
+        return bounded_history_prefix(&serialized);
+    }
+    if looks_like_json(body) {
+        // A JSON-looking but malformed body has no reliable key/value
+        // boundary.  Do not let a large malformed object bypass the
+        // structured sanitizer and leak an escaped or oddly-delimited secret.
+        return REDACTED.to_string();
+    }
+
+    let redacted = redact_text(body);
+    bounded_history_prefix(&redacted)
+}
+
+fn bounded_history_prefix(value: &str) -> String {
+    let mut bounded = String::new();
+    for character in value.chars().take(MAX_FIXTURE_BODY_CHARS) {
+        if bounded.len().saturating_add(character.len_utf8()) > MAX_FIXTURE_BODY_BYTES {
+            break;
+        }
+        bounded.push(character);
+    }
+    bounded
 }
 
 pub fn sanitize_headers(
@@ -605,6 +775,7 @@ pub fn sanitize_headers(
                 MAX_FIXTURE_HEADER_VALUE_CHARS,
                 MAX_FIXTURE_HEADER_VALUE_BYTES,
             )
+            || (!value.is_ascii() && !sensitive_name(name))
             || has_control(value)
         {
             return Err(FixtureError::Invalid);
@@ -730,6 +901,7 @@ pub fn response_rule_draft(fixture: &CapturedFixture) -> Result<ResponseRule, Fi
         headers: Vec::new(),
         body: String::new(),
         delay_ms: 0,
+        sequence: Vec::new(),
     })
 }
 
@@ -751,11 +923,210 @@ fn is_link(metadata: &Metadata) -> bool {
     false
 }
 
-fn read_raw(path: &Path) -> Result<Option<Vec<u8>>, FixtureError> {
+/// Open the final store component without following a symlink/reparse point.
+/// The metadata check in `read_raw` is useful for diagnostics, but it is not a
+/// sufficient TOCTOU defence on its own: a path can be swapped between that
+/// check and `File::open`. Keep the no-follow flag on the actual read too.
+fn open_store_read(path: &Path) -> io::Result<File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        #[cfg(target_os = "linux")]
+        const NO_FOLLOW: i32 = 0x20000; // O_NOFOLLOW
+        #[cfg(target_os = "macos")]
+        const NO_FOLLOW: i32 = 0x100; // O_NOFOLLOW
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        const NO_FOLLOW: i32 = 0;
+
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(NO_FOLLOW)
+            .open(path)
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        // FILE_FLAG_OPEN_REPARSE_POINT asks CreateFileW to open the final
+        // reparse point itself instead of following it.
+        const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(OPEN_REPARSE_POINT)
+            .open(path)
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        File::open(path)
+    }
+}
+
+fn open_store_lock(path: &Path) -> io::Result<File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        #[cfg(target_os = "linux")]
+        const NO_FOLLOW: i32 = 0x20000; // O_NOFOLLOW
+        #[cfg(target_os = "macos")]
+        const NO_FOLLOW: i32 = 0x100; // O_NOFOLLOW
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        const NO_FOLLOW: i32 = 0;
+
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .custom_flags(NO_FOLLOW)
+            .open(path)
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        // Keep the sidecar itself from becoming a reparse-point target. The
+        // metadata check below also rejects an existing reparse point.
+        const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .custom_flags(OPEN_REPARSE_POINT)
+            .open(path)
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)
+    }
+}
+
+fn fixture_lock_path(path: &Path) -> Result<PathBuf, FixtureError> {
+    let parent = path.parent().ok_or(FixtureError::Path)?;
+    Ok(parent.join(FIXTURE_LOCK_FILE_NAME))
+}
+
+fn required_parent_identity(
+    path: &Path,
+    create_missing: bool,
+) -> Result<devbox_filesystem::FilesystemIdentity, FixtureError> {
+    validate_parent(path, create_missing)?;
+    let parent = path.parent().ok_or(FixtureError::Path)?;
+    devbox_filesystem::filesystem_identity(parent, true).map_err(|_| FixtureError::Path)
+}
+
+fn readable_parent_identity(
+    path: &Path,
+) -> Result<Option<devbox_filesystem::FilesystemIdentity>, FixtureError> {
     validate_parent(path, false)?;
+    let parent = path.parent().ok_or(FixtureError::Path)?;
+    match devbox_filesystem::filesystem_identity(parent, true) {
+        Ok(identity) => Ok(Some(identity)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(FixtureError::Path),
+    }
+}
+
+fn revalidate_read_parent(
+    path: &Path,
+    before: Option<devbox_filesystem::FilesystemIdentity>,
+) -> Result<(), FixtureError> {
+    if readable_parent_identity(path)? != before {
+        return Err(FixtureError::Read);
+    }
+    Ok(())
+}
+
+struct FixtureStoreLock {
+    file: File,
+    target: PathBuf,
+    parent: PathBuf,
+    parent_identity: devbox_filesystem::FilesystemIdentity,
+}
+
+impl FixtureStoreLock {
+    /// Re-run the path checks and compare the immediate parent identity. This
+    /// closes ordinary parent replacement between the lock/open and the
+    /// atomic mutation, but it remains path based and cannot anchor every
+    /// ancestor against a concurrent replacement.
+    fn revalidate_parent(&self) -> Result<(), FixtureError> {
+        validate_parent(&self.target, false)?;
+        let current = devbox_filesystem::filesystem_identity(&self.parent, true)
+            .map_err(|_| FixtureError::Path)?;
+        if current != self.parent_identity {
+            return Err(FixtureError::Path);
+        }
+        Ok(())
+    }
+}
+
+impl Drop for FixtureStoreLock {
+    fn drop(&mut self) {
+        // The sidecar remains in place. Deleting it here would allow a
+        // concurrent process to create a different inode and bypass a lock
+        // still held on the original one.
+        let _ = devbox_filesystem::unlock_exclusive(&self.file);
+    }
+}
+
+fn acquire_store_lock(path: &Path) -> Result<FixtureStoreLock, FixtureError> {
+    let lock_path = fixture_lock_path(path)?;
+    let parent = path.parent().ok_or(FixtureError::Path)?.to_path_buf();
+    let parent_identity = required_parent_identity(path, false)?;
+
+    match fs::symlink_metadata(&lock_path) {
+        Ok(metadata) if is_link(&metadata) || !metadata.file_type().is_file() => {
+            return Err(FixtureError::Path);
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(_) => return Err(FixtureError::Lock),
+    }
+
+    let file = open_store_lock(&lock_path).map_err(|_| FixtureError::Lock)?;
+    let opened_metadata = file.metadata().map_err(|_| FixtureError::Lock)?;
+    if is_link(&opened_metadata) || !opened_metadata.file_type().is_file() {
+        return Err(FixtureError::Path);
+    }
+
+    let deadline = Instant::now() + FIXTURE_LOCK_TIMEOUT;
+    loop {
+        match devbox_filesystem::try_lock_exclusive(&file) {
+            Ok(true) => break,
+            Ok(false) if Instant::now() < deadline => {
+                std::thread::sleep(FIXTURE_LOCK_POLL);
+            }
+            Ok(false) => return Err(FixtureError::Lock),
+            Err(_) => return Err(FixtureError::Lock),
+        }
+    }
+
+    let lock = FixtureStoreLock {
+        file,
+        target: path.to_path_buf(),
+        parent,
+        parent_identity,
+    };
+    lock.revalidate_parent()?;
+    Ok(lock)
+}
+
+fn read_raw(path: &Path) -> Result<Option<Vec<u8>>, FixtureError> {
+    let parent_identity = readable_parent_identity(path)?;
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            revalidate_read_parent(path, parent_identity)?;
+            return Ok(None);
+        }
         Err(_) => return Err(FixtureError::Read),
     };
     if is_link(&metadata) || !metadata.file_type().is_file() {
@@ -764,7 +1135,11 @@ fn read_raw(path: &Path) -> Result<Option<Vec<u8>>, FixtureError> {
     if metadata.len() > MAX_FIXTURE_FILE_BYTES as u64 {
         return Err(FixtureError::Size);
     }
-    let file = File::open(path).map_err(|_| FixtureError::Read)?;
+    let file = open_store_read(path).map_err(|_| FixtureError::Read)?;
+    let opened_metadata = file.metadata().map_err(|_| FixtureError::Read)?;
+    if is_link(&opened_metadata) || !opened_metadata.file_type().is_file() {
+        return Err(FixtureError::Read);
+    }
     let mut bytes = Vec::new();
     file.take((MAX_FIXTURE_FILE_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
@@ -772,6 +1147,7 @@ fn read_raw(path: &Path) -> Result<Option<Vec<u8>>, FixtureError> {
     if bytes.len() > MAX_FIXTURE_FILE_BYTES {
         return Err(FixtureError::Size);
     }
+    revalidate_read_parent(path, parent_identity)?;
     Ok(Some(bytes))
 }
 
@@ -792,7 +1168,18 @@ fn parse_raw(raw: Option<Vec<u8>>) -> Result<LoadedFixtureDocument, FixtureError
 }
 
 pub fn load_document_with_raw(path: &Path) -> Result<LoadedFixtureDocument, FixtureError> {
-    parse_raw(read_raw(path)?)
+    // A read of an existing store participates in the same cooperative
+    // cross-process critical section as mutations. If the parent does not yet
+    // exist there is no sidecar to lock; read_raw still validates the path and
+    // returns the empty-document view for that first-use case.
+    if readable_parent_identity(path)?.is_some() {
+        let lock = acquire_store_lock(path)?;
+        let loaded = parse_raw(read_raw(path)?)?;
+        lock.revalidate_parent()?;
+        Ok(loaded)
+    } else {
+        parse_raw(read_raw(path)?)
+    }
 }
 
 #[cfg(test)]
@@ -866,6 +1253,7 @@ fn target_is_owned_file(path: &Path) -> Result<(), FixtureError> {
     }
 }
 
+#[cfg(test)]
 pub fn save_document_if_current(
     path: &Path,
     expected_raw: Option<&[u8]>,
@@ -881,14 +1269,62 @@ pub fn save_document_if_current(
         .lock()
         .map_err(|_| FixtureError::Write)?;
     validate_document(document)?;
+    // The persistent sidecar is opened and locked before reading the
+    // revision token. This makes the full read/compare/atomic-replace
+    // sequence one cross-process critical section as well as one
+    // process-local critical section.
+    validate_parent(path, true)?;
+    let lock = acquire_store_lock(path)?;
     let current = read_raw(path)?;
     if current.as_deref() != expected_raw {
         return Err(FixtureError::Conflict);
     }
-    validate_parent(path, true)?;
+    lock.revalidate_parent()?;
     target_is_owned_file(path)?;
     let bytes = serialize_document(document)?;
-    devbox_filesystem::atomic_write(path, &bytes).map_err(|_| FixtureError::Write)
+    devbox_filesystem::atomic_write(path, &bytes).map_err(|_| FixtureError::Write)?;
+    // Atomic replace changes the target inode, so revalidate the directory
+    // identity and all path components after the mutation too.
+    lock.revalidate_parent()?;
+    target_is_owned_file(path)?;
+    Ok(())
+}
+
+/// Apply one fixture-store mutation while holding both the process-local
+/// writer mutex and the persistent cross-process OS lock. The closure reads
+/// and edits the document loaded after the lock is acquired, so delete and
+/// other read/modify/write actions cannot use a stale pre-lock snapshot.
+pub fn update_document<T, F>(path: &Path, update: F) -> Result<T, FixtureError>
+where
+    F: FnOnce(&mut FixtureDocument) -> Result<T, FixtureError>,
+{
+    let _write_guard = FIXTURE_WRITE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| FixtureError::Write)?;
+    validate_parent(path, true)?;
+    let lock = acquire_store_lock(path)?;
+    let loaded = parse_raw(read_raw(path)?)?;
+    let expected_raw = loaded.raw;
+    let mut document = loaded.document;
+    let result = update(&mut document)?;
+    validate_document(&document)?;
+    lock.revalidate_parent()?;
+    target_is_owned_file(path)?;
+    // Advisory locks coordinate cooperating Webhook Lab processes, but an
+    // unrelated writer can ignore them. Re-read the exact bounded bytes just
+    // before replacement and fail closed if that writer changed the store
+    // after this transaction loaded its revision.
+    if read_raw(path)? != expected_raw {
+        return Err(FixtureError::Conflict);
+    }
+    lock.revalidate_parent()?;
+    target_is_owned_file(path)?;
+    let bytes = serialize_document(&document)?;
+    devbox_filesystem::atomic_write(path, &bytes).map_err(|_| FixtureError::Write)?;
+    lock.revalidate_parent()?;
+    target_is_owned_file(path)?;
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -980,10 +1416,105 @@ mod tests {
     }
 
     #[test]
+    fn path_and_query_keys_never_preserve_placeholder_markers() {
+        assert_eq!(sanitize_target("/hook/${TOKEN}"), REDACTED_PATH);
+        assert_eq!(sanitize_target("/hook?${TOKEN}=value"), REDACTED_PATH);
+        assert_eq!(
+            sanitize_target("/hook?value=${TOKEN}"),
+            "/hook?value=${TOKEN}"
+        );
+    }
+
+    #[test]
+    fn sensitive_fields_preserve_only_bounded_reference_names() {
+        let invalid = sanitize_body(r#"{"password":"${bad value}"}"#).unwrap();
+        assert_eq!(invalid, r#"{"password":"[REDACTED]"}"#);
+
+        let long_name = format!("${{{}}}", "A".repeat(MAX_REFERENCE_NAME_CHARS + 1));
+        let body = format!(r#"{{"password":"{long_name}"}}"#);
+        assert_eq!(
+            sanitize_body(&body).unwrap(),
+            r#"{"password":"[REDACTED]"}"#
+        );
+
+        assert_eq!(
+            sanitize_body(r#"{"password":"{{A}}"}"#).unwrap(),
+            r#"{"password":"{{A}}"}"#
+        );
+        // The redactor must not slice a UTF-8 string at a byte offset while
+        // looking for an ASCII auth scheme.
+        assert_eq!(
+            sanitize_body("🙂 ordinary body").unwrap(),
+            "🙂 ordinary body"
+        );
+    }
+
+    #[test]
+    fn encoded_control_query_keys_fail_closed() {
+        assert_eq!(sanitize_target("/hook?%00=present"), REDACTED_PATH);
+    }
+
+    #[test]
     fn malformed_json_still_redacts_quoted_sensitive_assignments() {
         let sanitized = sanitize_body(r#"{"token":"raw-body-secret""#).unwrap();
         assert_eq!(sanitized, REDACTED);
         assert!(!sanitized.contains("raw-body-secret"));
+    }
+
+    #[test]
+    fn recursively_sanitizes_embedded_json_strings_and_decodes_escaped_keys() {
+        let body = r#"{"payload":"{\"ok\":true,\"\\u0070assword\":\"raw-password\",\"nested\":{\"\\u0074oken\":\"raw-token\"}}"}"#;
+        let sanitized = sanitize_body(body).unwrap();
+        let outer: Value = serde_json::from_str(&sanitized).unwrap();
+        let embedded = outer["payload"].as_str().unwrap();
+        let embedded: Value = serde_json::from_str(embedded).unwrap();
+
+        assert_eq!(embedded["ok"], Value::Bool(true));
+        assert_eq!(embedded["password"], REDACTED);
+        assert_eq!(embedded["nested"]["token"], REDACTED);
+        assert!(!sanitized.contains("raw-password"));
+        assert!(!sanitized.contains("raw-token"));
+    }
+
+    #[test]
+    fn malformed_embedded_json_looking_strings_fail_closed() {
+        let body = serde_json::json!({
+            "payload": "{\"\\u0070assword\":\"raw-password\"",
+        })
+        .to_string();
+        let sanitized = sanitize_body(&body).unwrap();
+        let outer: Value = serde_json::from_str(&sanitized).unwrap();
+        assert_eq!(outer["payload"], REDACTED);
+        assert!(!sanitized.contains("raw-password"));
+
+        let malformed = serde_json::json!({"payload": "[1,2,}"}).to_string();
+        let sanitized = sanitize_body(&malformed).unwrap();
+        let outer: Value = serde_json::from_str(&sanitized).unwrap();
+        assert_eq!(outer["payload"], REDACTED);
+    }
+
+    #[test]
+    fn embedded_json_shares_depth_and_node_budgets() {
+        let mut nested = "true".to_string();
+        for _ in 0..=MAX_JSON_DEPTH {
+            nested = format!("[{}]", nested);
+        }
+        let body = serde_json::json!({"payload": nested}).to_string();
+        assert_eq!(sanitize_body(&body), Err(FixtureError::Size));
+
+        let values = std::iter::repeat_n("0", MAX_JSON_NODES)
+            .collect::<Vec<_>>()
+            .join(",");
+        let body = format!(r#"{{"payload":"[{values}]"}}"#);
+        assert_eq!(sanitize_body(&body), Err(FixtureError::Size));
+    }
+
+    #[test]
+    fn oversized_embedded_json_string_fails_closed_without_partial_output() {
+        let nested = format!(r#"{{"safe":"{}"}}"#, "x".repeat(MAX_FIXTURE_BODY_CHARS + 1));
+        let body = serde_json::json!({"payload": nested}).to_string();
+        assert_eq!(sanitize_body(&body), Err(FixtureError::Size));
+        assert_eq!(sanitize_body_for_history(&body), REDACTED);
     }
 
     #[test]
@@ -1123,7 +1654,54 @@ mod tests {
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(names, vec![FIXTURE_FILE_NAME.to_string()]);
+        let mut names = names;
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                FIXTURE_LOCK_FILE_NAME.to_string(),
+                FIXTURE_FILE_NAME.to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn independent_lock_handle_times_out_without_mutating_store() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join(FIXTURE_FILE_NAME);
+        let initial = FixtureDocument::default();
+        save_document(&path, &initial).unwrap();
+        let loaded = load_document_with_raw(&path).unwrap();
+        let held = acquire_store_lock(&path).unwrap();
+        let started = Instant::now();
+
+        let mut next = initial;
+        next.next_id = 2;
+        let result = save_document_if_current(&path, loaded.raw.as_deref(), &next);
+
+        assert_eq!(result, Err(FixtureError::Lock));
+        assert_eq!(FixtureError::Lock.message(), FIXTURE_LOCK_ERROR);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        drop(held);
+        assert_eq!(load_document(&path).unwrap(), FixtureDocument::default());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn parent_identity_revalidation_rejects_replaced_immediate_parent() {
+        let directory = tempdir().unwrap();
+        let store_directory = directory.path().join("store");
+        fs::create_dir(&store_directory).unwrap();
+        let path = store_directory.join(FIXTURE_FILE_NAME);
+        save_document(&path, &FixtureDocument::default()).unwrap();
+
+        let held = acquire_store_lock(&path).unwrap();
+        let moved_directory = directory.path().join("moved-store");
+        fs::rename(&store_directory, &moved_directory).unwrap();
+        fs::create_dir(&store_directory).unwrap();
+
+        assert_eq!(held.revalidate_parent(), Err(FixtureError::Path));
+        drop(held);
     }
 
     #[test]
@@ -1169,6 +1747,28 @@ mod tests {
         );
         let final_document = load_document(&path).unwrap();
         assert_eq!(final_document.fixtures.len(), 1);
+    }
+
+    #[test]
+    fn locked_update_rejects_a_non_cooperating_writer_before_replace() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join(FIXTURE_FILE_NAME);
+        save_document(&path, &FixtureDocument::default()).unwrap();
+        let replacement = FixtureDocument {
+            schema_version: FIXTURE_SCHEMA_VERSION,
+            next_id: 2,
+            fixtures: vec![fixture(1, 9)],
+        };
+        let replacement_bytes = serialize_document(&replacement).unwrap();
+
+        let result = update_document(&path, |document| {
+            document.next_id = 3;
+            fs::write(&path, &replacement_bytes).unwrap();
+            Ok(())
+        });
+
+        assert_eq!(result, Err(FixtureError::Conflict));
+        assert_eq!(load_document(&path).unwrap(), replacement);
     }
 
     #[test]

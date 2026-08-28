@@ -1,11 +1,15 @@
 import type { ContextMenuEntry } from "@devbox/context-menu";
 
-export function buildHistoryContextMenu(busy: boolean): readonly ContextMenuEntry[] {
+export function buildHistoryContextMenu(
+  busy: boolean,
+  canReplay = false,
+): readonly ContextMenuEntry[] {
   return [
     { type: "item", id: "copy-masked", label: "마스킹 복사", disabled: busy },
     { type: "item", id: "copy-raw", label: "원본 복사", disabled: busy },
     { type: "item", id: "copy-headers", label: "헤더 복사", disabled: busy },
     { type: "item", id: "save-fixture", label: "masked fixture 저장", disabled: busy },
+    { type: "item", id: "replay", label: "masked 요청 replay", disabled: busy || !canReplay },
     {
       type: "item",
       id: "convert-api-playground",
@@ -38,6 +42,7 @@ export function buildRuleContextMenu(
       label: "POSIX sh curl 복사",
       disabled: busy || !canCopyExampleCurl,
     },
+    { type: "item", id: "reset-sequence", label: "response sequence 초기화", disabled: busy },
     { type: "separator", id: "rule-danger-separator" },
     { type: "item", id: "delete", label: "삭제", disabled: busy, danger: true },
   ];

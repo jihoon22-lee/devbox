@@ -1,4 +1,4 @@
-# webhook-lab — Webhook Lab v0.1.0 (로컬 웹훅/콜백 서버)
+# webhook-lab — Webhook Lab v0.2.0 (로컬 웹훅/콜백 서버)
 
 API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound HTTP 요청을 받고 검사·재현**하는 로컬 서버.
 산출물: `WebhookLab.exe` (`apps/webhook-lab`).
@@ -6,12 +6,17 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
 ## 주요 기능
 
 - **서버 시작/정지** — localhost bind 주소·포트 선택 (기본 `127.0.0.1`)
-- **request history** — method/path별 headers/query/body/timestamp 기록
+- **request history** — method/path별 headers/query/body/timestamp 기록과 masked replay. renderer에
+  노출되는 snapshot을 캡처 시점부터 공용 sanitizer로 처리하므로 Authorization·Cookie·token/
+  secret/password/auth 계열 header, query 값, JSON/text body credential과 known token은 history
+  목록·마스킹 복사·fixture/replay 입력에 평문으로 남지 않는다. 원본 header vault는 bounded
+  process memory에서 사용자가 별도 확인한 일회성 raw copy에만 접근한다.
 - **응답 rule** — 고정 status/header/body, delay와 대표 오류 응답(500/404 등)
+- **response sequence** — 첫 응답 뒤 bounded 단계별 status/body/delay를 순서대로 반환하고 현재 위치를 초기화
 - **rule 설명** — method 대소문자 무시·빈 값 전체 적용, path 정확 일치·후행 `*` wildcard,
   status 응답 코드, delay 밀리초 의미를 편집 중 항상 표시
 - **대상별 컨텍스트 메뉴** — history의 마스킹 복사·확인 후 원본 복사·마스킹 헤더
-  복사·개별 삭제, rule의 편집·복제·PowerShell/POSIX curl 복사·삭제. 우클릭과 `Shift+F10`/Menu 키를 지원하고 닫은 뒤
+  복사·masked replay·개별 삭제, rule의 편집·복제·PowerShell/POSIX curl 복사·response sequence 초기화·삭제. 우클릭과 `Shift+F10`/Menu 키를 지원하고 닫은 뒤
   원래 행으로 포커스를 돌려보낸다.
 - **예시 curl** — 실행 중인 서버의 fresh bind 주소와 rule의 method/path를 반영한 실행 가능한
   요청을 `PowerShell curl.exe` 또는 `POSIX sh curl` 형식으로 복사한다. rule의
@@ -32,6 +37,8 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
 - `status`, `headers`, `body`는 요청 조건이 아니라 매치된 요청에 돌려줄 HTTP **응답**이다.
   `delay`는 그 응답을 보내기 전에 기다리는 밀리초이며, 매치가 없으면 `404 Not Found`를
   지연 없이 반환한다.
+- native response framing은 `1xx`, `204`, `205`, `304`, `HEAD` 응답에 body와 `Content-Length`를
+  쓰지 않으며, `Connection`과 `Content-Length` 등 transport header는 rule이 덮어쓸 수 없다.
 - 여러 rule이 동시에 매치되는 경우 `HashMap` 순회 순서는 우선순위나 결정성 계약이 아니다.
   겹치는 rule 중 어느 것이 선택되는지에 의존하지 말고, method/path 조합이 겹치지 않게
   작성한다.
@@ -54,13 +61,16 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
   36자/36바이트 footprint를 예약한다.
 - method는 `null`(전체 method) 또는 ASCII HTTP token이며 최대 16자/16바이트다. 편집기의
   빈 값은 `null`로 변환하고, `Some("")`이나 공백/제어 문자는 저장하지 않는다.
-- path는 최대 4,096자/16,384 UTF-8 바이트이며 `/`로 시작하고 모든 Unicode control 문자를
-  포함할 수 없다. 문자열을 decode, normalize, query 제거하지 않는다. 매칭은 저장된 path와
-  요청 URL의 전체 문자열 exact 비교이거나 **마지막** `*` 하나에 대한 prefix 비교이며,
-  중간 `*`는 literal로 남는다.
+- path는 ASCII 기준 최대 4,096자/16,384 바이트이며 `/`로 시작하고 모든 Unicode control
+  문자를 포함할 수 없다. native parser/replay matcher가 ASCII request-target만 지원하므로
+  non-ASCII path는 저장하지 않는다. 문자열을 decode, normalize, query 제거하지 않는다.
+  매칭은 저장된 path와 요청 URL의 전체 문자열 exact 비교이거나 **마지막** `*` 하나에 대한
+  prefix 비교이며, 중간 `*`는 literal로 남는다.
 - response headers는 최대 100개다. 각 이름은 HTTP token, 최대 256자/256바이트, 각 값은
-  최대 16,384자/65,536바이트이고 control 문자를 허용하지 않는다. 이름과 값을 합한 rule별
-  전체는 64,000자/256,000바이트 이하여야 한다.
+  ASCII 기준 최대 16,384자/65,536바이트이고 control 문자를 허용하지 않는다. native
+  HTTP/1.x transport의 wire header가 ASCII 전용인 점과 충돌하지 않도록 `Host`, `Content-Length`, `Connection`,
+  `Transfer-Encoding` 등 transport framing header는 rule에서 예약되어 거부된다. 이름과 값을
+  합한 rule별 전체는 64,000자/256,000바이트 이하여야 한다.
 - response body는 최대 256,000자/1,024,000 UTF-8 바이트다. body는 매칭 조건이 아니라
   반환 payload이므로 별도 텍스트 변환 없이 저장한다. status는 100~599 정수, delay는
   0~60,000ms 정수다.
@@ -90,12 +100,23 @@ history에서 **masked fixture 저장**을 선택하면 backend가 opaque histor
   method 16자, origin-form target 4,096자/16 KiB, header 100개·이름 256자·값
   16,384자·총 64,000자/256 KiB, body 256,000자/1 MiB 경계를 적용한다.
 - `Authorization`·`Cookie`·token/secret/password/auth 계열 header와 JSON/text의 같은
-  credential 표시는 `[REDACTED]`가 된다. 절대 URL·`..`/`.`·역슬래시·잘못된 percent
+  credential 표시는 `[REDACTED]`가 된다. JSON string 안의 bounded embedded JSON도 같은
+  depth/node/size 경계로 재귀 sanitization하며, escaped sensitive key와 malformed
+  JSON-looking string은 각각 decode·redaction 또는 fixed marker로 fail-closed 처리한다.
+  절대 URL·`..`/`.`·역슬래시·잘못된 percent
   encoding·token-shaped path는 고정 `/[REDACTED_PATH]`로 바꾸고, 안전한 query만
   보존한다. 입력을 넘으면 부분 fixture를 만들지 않는다.
-- 파일은 atomic replace와 raw-byte compare-and-swap으로 저장한다. corrupt·oversized·
-  symlink/non-file store는 고정 오류로 fail-closed하고 원본 파일을 자동 복구·덮어쓰지
-  않는다. 목록은 capture timestamp 내림차순, 동일 timestamp에서는 ID 순으로 정렬한다.
+- 파일은 atomic replace와 raw-byte compare-and-swap으로 저장한다. read/revision/compare/write와
+  fixture add/edit/delete/clear mutation은 `.fixtures.json.lock` persistent sidecar에 대한
+  OS exclusive advisory lock으로 cross-process 직렬화하며, lock 획득은 500ms bounded retry와
+  fixed error를 사용한다. sidecar는 stale lock-file 삭제를 하지 않고 계속 유지한다. corrupt·
+  oversized·symlink/non-file store 또는 lock sidecar는 고정 오류로 fail-closed하고 원본 파일을
+  자동 복구·덮어쓰지 않는다. 읽기 시 최종 파일을 no-follow open으로 다시 확인해 metadata 검사와
+  실제 read 사이의 symlink/reparse TOCTOU도 거부하고, mutation 전후에는 모든 부모 link 검사와
+  immediate parent filesystem identity를 다시 확인한다. 이 identity check는 path-based
+  재검증이며 handle-relative ancestor 보장은 아니므로, 확인 사이의 ancestor
+  symlink/junction/reparse 교체 race는 남는다. 목록은 capture timestamp 내림차순, 동일 timestamp에서는
+  ID 순으로 정렬한다.
 - fixture의 `응답 rule 초안`은 method/path만 편집기에 채우며 status 200·빈 response
   headers/body·delay 0으로 시작한다. rule 저장은 별도 사용자 동작이다.
 
@@ -120,6 +141,61 @@ preview가 열린 동안 30초마다 claim lease를 갱신하되 원 envelope TT
 credential marker는 `${WEBHOOK_SECRET}` 같은 이름 참조로만 남으며 secret 원문은 handoff에
 포함되지 않는다.
 
+### Captured request replay 계약 (#362)
+
+history 또는 저장된 masked fixture의 opaque ID로 현재 실행 중인 Webhook Lab listener에 한
+건의 요청을 다시 보낸다. frontend는 body·header·path를 IPC 인자로 보내지 않으며 backend가
+memory history 또는 앱 전용 fixture store에서 masked snapshot을 읽고 replay 직전에 같은
+fixture sanitizer와 validator를 다시 적용한다.
+
+- destination은 현재 serverStatus의 listener 주소에서만 유도한다. 127.0.0.1·localhost·::1과
+  wildcard bind(0.0.0.0·[::])의 loopback destination만 허용하고 DNS·외부 IPv4/IPv6·사용자
+  지정 URL은 사용하지 않는다.
+- Authorization·Cookie·API key·token/secret/password/auth 계열 header와 알려진 token,
+  unsafe path/query/body credential은 [REDACTED] 또는 고정 path marker로 남는다. Host,
+  Content-Length, transfer-encoding 같은 transport header는 무시하고 client가 안전한 값을
+  다시 만든다.
+- 한 action은 한 request만 만들고 process-local 1초 창에서 최대 20건으로 제한한다. body는
+  기존 history/fixture의 256,000자·1,024,000바이트 상한을 따르며 connect/read timeout과
+  response header 상한을 적용한다. connect 2초, write idle 2초, response read idle 2초,
+  write+response 전체 5초의 별도 deadline을 둔다. `Host`·`Content-Length`·`Connection`을 native client가
+  고정 생성하므로 입력 header는 97개까지 예약하고, 생성된 전체 wire header가 listener의
+  100개·64,000자·256,000바이트 admission을 넘으면 replay를 시작하지 않는다. 동시에 들어온 native replay는 process-local mutex로
+  직렬화해 response sequence의 순서를 보존한다. replay 전송은 ASCII HTTP wire 경계를 다시
+  확인하고, transport header는 입력에서 제거한다.
+- 결과에는 source opaque label과 HTTP status만 포함하고 response body·raw request·network
+  오류 원문은 renderer나 log에 반환하지 않는다. 서버가 중지되었거나 stale/corrupt
+  snapshot이면 fixed error로 중단하며 clipboard/file/external request fallback은 없다.
+
+listener도 history에 보관하기 전에 요청을 admission한다. native bounded HTTP/1.x transport는
+connection마다 HTTP/1.0/1.1 고정 Content-Length 한 건만 읽고, chunked/Expect/알 수 없는
+transfer encoding은 추측하지 않고 거부한다. request line/header/body 전체에 5초 wall-clock
+deadline과 5초 socket idle timeout을 적용하며 동시에 최대 64개 connection만 worker로
+허용한다. method/request-target이 초과하면
+`414`, header 개수·문자·바이트가 초과하면 `431`, 선언된/실제 body가 1,024,000바이트를
+초과하면 `413`, body read timeout/오류는 `408`, 고정 window 초과는 `429`로 응답하며 어떠한
+부분 body도 history에 저장하지 않는다. 응답 rule의 delay는 최대 60초지만 stop 시 50ms
+단위로 중단되어 lifecycle join을 붙잡지 않는다. stop은 active socket을 shutdown하고,
+replay 중인 bounded I/O도 cancellation flag로 중단한다. native transport는 application
+admission 전에 request line/header/body를 직접 bounded parser로 읽으므로 parser 내부의
+무제한 allocation·declared length drain·socket slowloris를 외부 HTTP parser에 위임하지 않는다.
+
+### Response sequence 계약 (#363)
+
+각 response rule은 기존 status/headers/body/delay 응답을 첫 단계로 사용하고, 선택적으로
+최대 16개의 data-only response step을 순서대로 소비한다. 마지막 step에 도달하면 해당
+응답을 유지하며 자동으로 처음으로 돌아가지 않는다. 현재 위치는 process memory의
+ephemeral cursor일 뿐 fixture·설정 파일·handoff에 저장하지 않는다.
+
+- 각 step은 기존 response status 100~599, delay 0~60,000ms, headers/body의 동일한 개수·
+  문자·UTF-8 byte 상한을 적용한다. arbitrary scripting, expression, distributed state는
+  지원하지 않는다.
+- 요청이 rule에 매치될 때만 cursor가 한 칸 전진한다. 규칙을 편집하거나 삭제하면 해당
+  cursor를 버리고, rule row의 sequence 초기화 또는 context-menu의 response sequence 초기화
+  action은 첫 응답부터 다시 시작한다.
+- sequence reset은 rule 정의·fixture·history를 변경하지 않는 bounded local action이며,
+  없는 rule과 concurrent stale 대상은 고정 오류로 중단한다.
+
 ### Example curl 계약
 
 - context menu에는 **PowerShell curl.exe 복사**와 **POSIX sh curl 복사**를 별도 항목으로
@@ -142,7 +218,7 @@ credential marker는 `${WEBHOOK_SECRET}` 같은 이름 참조로만 남으며 se
   `Bearer ${TOKEN}`, `prefix ${TOKEN}`처럼 raw text와 섞인 값은 전체 `[REDACTED]`로
   대체하고, JSON object key와 path에서는 placeholder를 허용하지 않는다. response metadata는 요청
   `--header`/`--data`로 복사하지 않으며, `--include`가 실제 response headers/body를
-  출력한다. raw secret reveal·request replay는 제공하지 않는다.
+  출력한다. example curl 복사 action 자체는 request replay를 실행하지 않으며 raw secret reveal도 제공하지 않는다.
 - builder bounds는 path 4,096자, headers 100개/이름 256자/값 16,384자/합계 64,000자,
   body 256,000자, JSON depth 32·node 10,000개·string 64,000자, 최종 출력 512,000자다.
   status는 100~599, delay는 0~60,000ms 정수만 허용한다. parsing·URI·clipboard 예외는
@@ -154,17 +230,22 @@ credential marker는 `${WEBHOOK_SECRET}` 같은 이름 참조로만 남으며 se
 ## 안전 경계
 
 - 기본 bind `127.0.0.1`, LAN 공개(`0.0.0.0`)는 명시적 경고 + 별도 설정
-- `Authorization`·`Cookie`·API key 헤더는 일반 history DTO와 기본 복사에서 masking
-- example curl도 같은 민감정보 경계를 따르며 raw secret reveal이나 request replay를 제공하지 않는다
+- `Authorization`·`Cookie`·API key·token/secret/password/auth 계열 header와 body/query
+  credential은 일반 history DTO와 기본 복사에서 capture-time masking
+- example curl과 masked replay 모두 같은 민감정보 경계를 따른다. example curl은 실행하지 않고,
+  replay는 현재 localhost listener로만 한 건씩 전송하며 raw secret reveal은 제공하지 않는다.
 - 원본 헤더는 persistence·log·snapshot·일반 DTO에 넣지 않고 현재 프로세스의 bounded history
   entry에만 보관한다. 사용자가 원본 복사 경고를 확인한 뒤 정확한 history ID로 요청한 한 번의
   clipboard write에만 사용한다.
 - body 크기 상한(256K자)·history 개수 상한(200건)·요청당 보관 헤더 상한(100개/총 64K자)
+- server lifecycle은 start/stop transition lock과 accept-thread join으로 직렬화하며, accept/
+  handler 오류는 stale running 상태를 남기지 않는다. response sequence cursor는 rule
+  mutation/reset과 같은 lock 순서로 원자화하고 concurrent replay는 직렬화한다.
 - history를 비운 뒤에도 프로세스 안에서 ID를 재사용하지 않아 열린 메뉴가 새 요청을 가리키지 않는다.
 
 ## 기술
 
-- Rust 경량 HTTP 서버(`tiny_http`)
+- Rust 표준 `TcpListener` 기반 bounded HTTP/1.x transport (`src-tauri/src/core/http.rs`)
 
 ## 개발
 

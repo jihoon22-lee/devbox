@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `4fabb833c74a2c78e971115674bf1c99ab1f8b58721a6346e0fc53ec77bf8f95`
+- Cargo.lock SHA-256: `a3f5330731a99d3a7970a580f8ed7376ba023198198b037cd8503dfdf0fa0736`
 - pnpm-lock.yaml SHA-256: `94885f0421ed363aba0c3fc3eb84cf80aac71ff027ffc50818d20ed0960107be`
 
 ## Rust dependencies
@@ -21,7 +21,6 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | android_system_properties | 0.1.6 | MIT OR Apache-2.0 | https://github.com/nical/android_system_properties | `sha256:ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc` |
 | anyhow | 1.0.104 | MIT OR Apache-2.0 | https://github.com/dtolnay/anyhow | `sha256:330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470` |
 | arboard | 3.6.1 | MIT OR Apache-2.0 | https://github.com/1Password/arboard | `sha256:0348a1c054491f4bfe6ab86a7b6ab1e44e45d899005de92f58b3df180b36ddaf` |
-| ascii | 1.1.0 | Apache-2.0 OR MIT | https://github.com/tomprogrammer/rust-ascii | `sha256:d92bec98840b8f03a5ff5413de5293bfcd8bf96467cf5452609f939ec6f5de16` |
 | async-broadcast | 0.7.2 | MIT OR Apache-2.0 | https://github.com/smol-rs/async-broadcast | `sha256:435a87a52755b8f27fcf321ac4f04b2802e337c8c4872923137471ec39c37532` |
 | async-channel | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/async-channel | `sha256:924ed96dd52d1b75e9c1a3e6275715fd320f5f9439fb5a4a11fa51f4221158d2` |
 | async-compression | 0.4.43 | MIT OR Apache-2.0 | https://github.com/Nullus157/async-compression | `sha256:3976abdc8fe7d1133d43d304afd42abdf5bc3e1319d263d223bde07b5efc4be8` |
@@ -79,7 +78,6 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | chardetng | 1.0.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/chardetng | `sha256:13de944a44b5064ee5d3a5ceccc49a41bfec50f2580e66f82e87703acdb88b53` |
 | chrono | 0.4.45 | MIT OR Apache-2.0 | https://github.com/chronotope/chrono | `sha256:1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327` |
 | chrono-tz | 0.10.4 | MIT OR Apache-2.0 | https://github.com/chronotope/chrono-tz | `sha256:a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3` |
-| chunked_transfer | 1.5.0 | MIT OR Apache-2.0 | https://github.com/frewsxcv/rust-chunked-transfer | `sha256:6e4de3bc4ea267985becf712dc6d9eed8b04c953b3fcfb339ebc87acd9804901` |
 | cipher | 0.5.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits | `sha256:e8cf2a2c93cd704877c0858356ed03480ff301ee950b43f1cbe4573b088bfa6c` |
 | clipboard-win | 5.4.1 | BSL-1.0 | https://github.com/DoumanAsh/clipboard-win | `sha256:bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4` |
 | cmake | 0.1.58 | MIT OR Apache-2.0 | https://github.com/rust-lang/cmake-rs | `sha256:c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678` |
@@ -232,7 +230,6 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | http-body | 1.1.0 | MIT | https://github.com/hyperium/http-body | `sha256:ca2a8f2913ee65f60facd6a5905613afaa448497a0230cc41ce022d93290bc2c` |
 | http-body-util | 0.1.4 | MIT | https://github.com/hyperium/http-body | `sha256:e9f41fd6a08e4d4ec69df65976da761afd5ad5e58a9d4acb46bd1c953a9e3ff2` |
 | httparse | 1.10.1 | MIT OR Apache-2.0 | https://github.com/seanmonstar/httparse | `sha256:6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87` |
-| httpdate | 1.0.3 | MIT OR Apache-2.0 | https://github.com/pyfisch/httpdate | `sha256:df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9` |
 | hybrid-array | 0.4.14 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hybrid-array | `sha256:707114b52a152fa7bdb290cd7cd5912d9467273b6d74e21b8d81aca1f8533f6b` |
 | hyper | 1.11.0 | MIT | https://github.com/hyperium/hyper | `sha256:d22053281f852e11534f5198498373cbb59295120a20771d90f7ed1897490a72` |
 | hyper-rustls | 0.27.9 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/hyper-rustls | `sha256:33ca68d021ef39cf6463ab54c1d0f5daf03377b70561305bb89a8f83aab66e0f` |
@@ -514,7 +511,6 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | time | 0.3.55 | MIT OR Apache-2.0 | https://github.com/time-rs/time | `sha256:cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134` |
 | time-core | 0.1.9 | MIT OR Apache-2.0 | https://github.com/time-rs/time | `sha256:9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109` |
 | time-macros | 0.2.32 | MIT OR Apache-2.0 | https://github.com/time-rs/time | `sha256:7e689342a48d2ea927c87ea50cabf8594854bf940e9310208848d680d668ed85` |
-| tiny_http | 0.12.0 | MIT OR Apache-2.0 | https://github.com/tiny-http/tiny-http | `sha256:389915df6413a2e74fb181895f933386023c71110878cd0825588928e64cdc82` |
 | tinystr | 0.8.3 | Unicode-3.0 | https://github.com/unicode-org/icu4x | `sha256:c8323304221c2a851516f22236c5722a72eaa19749016521d6dff0824447d96d` |
 | tinyvec | 1.12.0 | Zlib OR Apache-2.0 OR MIT | https://github.com/Lokathor/tinyvec | `sha256:bb4ebadaa0af04fab11ae01eb5f9fdb5f9c5b875506e210e71c07873528baa7f` |
 | tinyvec_macros | 0.1.1 | MIT OR Apache-2.0 OR Zlib | https://github.com/Soveu/tinyvec_macros | `sha256:1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20` |

@@ -1,6 +1,6 @@
 [package]
 name = "webhook-lab"
-version = "0.1.0"
+version = "0.2.0"
 publish = false
 description = "Local Mock/Webhook Server"
 authors = ["jihoon22.lee"]
@@ -23,7 +23,6 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tiny_http = "0.12"
 uuid = { version = "1", features = ["v4"] }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
 devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }

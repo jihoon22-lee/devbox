@@ -28,16 +28,19 @@ pub fn run() {
             commands::copy_raw_history,
             commands::copy_history_headers,
             commands::delete_history,
+            commands::replay_history,
             commands::list_fixtures,
             commands::save_fixture,
             commands::delete_fixture,
             commands::clear_fixtures,
             commands::fixture_to_rule,
+            commands::replay_fixture,
             commands::send_history_to_api,
             commands::send_fixture_to_api,
             commands::list_rules,
             commands::set_rule,
             commands::delete_rule,
+            commands::reset_rule_sequence,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
