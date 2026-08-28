@@ -327,6 +327,13 @@ That exact non-Unix cleanup call now carries a narrowly scoped allowance with
 its fixture-only rationale; production code does not clear readonly
 permissions.
 
+Windows unit tests then exposed that copying a directory's `Permissions` onto
+a newly created journal file can propagate the directory readonly attribute and
+prevent the atomic publication. New Windows journals now inherit the already
+private app-data directory ACL directly; Unix journals continue to receive an
+explicit `0600` mode, while updates to existing journals preserve their file
+permissions on both platforms.
+
 ## Next Steps
 
 - Exercise real Windows Job Object/long-path and WSL path behavior manually;

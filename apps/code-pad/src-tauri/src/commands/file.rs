@@ -413,7 +413,8 @@ pub(crate) fn save_path_limited(
     let bytes = encode_for_save(text, encoding, line_ending)?;
     let saved_content_hash = content_hash(&bytes);
     let permissions = current.permissions();
-    let (temporary, prepared_metadata) = write_sibling_temp(&canonical, &bytes, &permissions)?;
+    let (temporary, prepared_metadata) =
+        write_sibling_temp(&canonical, &bytes, Some(&permissions))?;
     let fallback_mtime = modified_epoch_nanos(&prepared_metadata)?;
     let fallback_size = prepared_metadata.len();
 
@@ -692,7 +693,7 @@ pub(crate) fn restore_sibling_backup_if_current_limited(
         return Err(FileError::BackupIntegrity);
     }
     let permissions = metadata.permissions();
-    let (temporary, _) = write_sibling_temp(target, &bytes, &permissions)?;
+    let (temporary, _) = write_sibling_temp(target, &bytes, Some(&permissions))?;
     if let Some(expected) = expected {
         if let Err(error) = validate_file_snapshot_limited(target, expected, max_bytes) {
             let _ = fs::remove_file(&temporary);
@@ -1086,7 +1087,7 @@ pub(crate) fn modified_epoch_nanos(metadata: &fs::Metadata) -> Result<i64, FileE
 fn write_sibling_temp(
     target: &Path,
     bytes: &[u8],
-    permissions: &std::fs::Permissions,
+    permissions: Option<&std::fs::Permissions>,
 ) -> Result<(PathBuf, fs::Metadata), FileError> {
     let parent = target
         .parent()
@@ -1115,11 +1116,13 @@ fn write_sibling_temp(
         };
 
         let result = (|| {
-            file.set_permissions(permissions.clone())
-                .map_err(|source| FileError::Io {
-                    operation: "preserve file permissions",
-                    source,
-                })?;
+            if let Some(permissions) = permissions {
+                file.set_permissions(permissions.clone())
+                    .map_err(|source| FileError::Io {
+                        operation: "preserve file permissions",
+                        source,
+                    })?;
+            }
             file.write_all(bytes).map_err(|source| FileError::Io {
                 operation: "write temporary file",
                 source,
@@ -1180,22 +1183,21 @@ pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), File
         }
     }
     let permissions = match fs::metadata(path) {
-        Ok(metadata) => metadata.permissions(),
+        Ok(metadata) => Some(metadata.permissions()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            let permissions = fs::metadata(parent)
-                .map_err(|source| FileError::Io {
-                    operation: "read private atomic-write parent permissions",
-                    source,
-                })?
-                .permissions();
             #[cfg(unix)]
-            let permissions = {
+            {
                 use std::os::unix::fs::PermissionsExt;
-                let mut permissions = permissions;
-                permissions.set_mode(0o600);
-                permissions
-            };
-            permissions
+                Some(PermissionsExt::from_mode(0o600))
+            }
+            #[cfg(not(unix))]
+            {
+                // A newly created Windows file inherits the app-private
+                // directory ACL. Copying directory `Permissions` onto the
+                // file is not meaningful and can propagate the directory's
+                // readonly attribute, making the journal unpublishable.
+                None
+            }
         }
         Err(source) => {
             return Err(FileError::Io {
@@ -1204,7 +1206,7 @@ pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), File
             });
         }
     };
-    let (temporary, _) = write_sibling_temp(path, bytes, &permissions)?;
+    let (temporary, _) = write_sibling_temp(path, bytes, permissions.as_ref())?;
     // Never use overwrite-capable rename for the create branch: an attacker or
     // stale recovery process can create the journal path between the earlier
     // metadata check and this decision. The no-replace helper keeps that race
