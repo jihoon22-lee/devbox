@@ -397,6 +397,40 @@ fn validate_selection_ids(selected: &[String], error_code: &'static str) -> Resu
     Ok(())
 }
 
+fn selected_definition_ids(
+    selected: &[String],
+    jobs: &[Job],
+    services: &[Job],
+    error_code: &'static str,
+) -> Result<HashSet<String>, String> {
+    validate_selection_ids(selected, error_code)?;
+    let available = jobs
+        .iter()
+        .chain(services.iter())
+        .map(|job| job.id.as_str())
+        .collect::<HashSet<_>>();
+    if selected.iter().any(|id| !available.contains(id.as_str())) {
+        return Err(error_code.to_owned());
+    }
+    Ok(selected.iter().cloned().collect())
+}
+
+fn selected_project_ids(
+    selected: &[String],
+    plan: &ProjectImportPlan,
+) -> Result<HashSet<String>, String> {
+    validate_selection_ids(selected, "project-import-invalid")?;
+    let available = plan
+        .items
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<HashSet<_>>();
+    if selected.iter().any(|id| !available.contains(id.as_str())) {
+        return Err("project-import-invalid".to_owned());
+    }
+    Ok(selected.iter().cloned().collect())
+}
+
 fn validate_import_definition(job: &Job, expected_kind: JobKind) -> Result<(), String> {
     if job.kind != expected_kind
         || job.id.len() > 128
@@ -530,8 +564,12 @@ pub fn apply_import(
     if selected.len() > MAX_IMPORT_DEFINITIONS {
         return Err("definition-import-too-many-items".to_owned());
     }
-    validate_selection_ids(&selected, "definition-import-invalid")?;
-    let selected_set: HashSet<String> = selected.into_iter().collect();
+    let selected_set = selected_definition_ids(
+        &selected,
+        &doc.jobs,
+        &doc.services,
+        "definition-import-invalid",
+    )?;
     let mut jobs = Vec::new();
     for job in &doc.jobs {
         if !selected_set.contains(&job.id) {
@@ -663,7 +701,7 @@ pub fn apply_project_import(
         operation.control(),
     )
     .map_err(project_import_error)?;
-    let selected: HashSet<String> = selected.into_iter().collect();
+    let selected = selected_project_ids(&selected, &plan)?;
     let mut imported_inputs = Vec::new();
     for item in plan.items.iter().filter(|item| selected.contains(&item.id)) {
         imported_inputs.push(imported_job_input(item, &plan.source_root));
@@ -1105,6 +1143,40 @@ mod tests {
         assert_eq!(
             validate_selection_ids(&["x".repeat(MAX_SELECTION_ID_BYTES + 1)], "invalid"),
             Err("invalid".to_owned())
+        );
+    }
+
+    #[test]
+    fn import_selection_ids_must_belong_to_the_preview_plan() {
+        assert_eq!(
+            selected_definition_ids(&["unknown".to_owned()], &[], &[], "invalid"),
+            Err("invalid".to_owned())
+        );
+
+        let plan = ProjectImportPlan {
+            schema_version: 1,
+            source_root: "/work/demo".to_owned(),
+            revision: "a".repeat(64),
+            files: Vec::new(),
+            items: vec![crate::core::imports::ProjectImportItem {
+                id: "npm:script:build".to_owned(),
+                name: "npm · build".to_owned(),
+                status: "new".to_owned(),
+                command: "npm run -- build".to_owned(),
+                kind: JobKind::Job,
+                source: crate::core::imports::ProjectImportSource::PackageScript,
+                source_name: "scripts.build".to_owned(),
+                source_path: "package.json".to_owned(),
+                cwd: "/work/demo".to_owned(),
+                environment_keys: Vec::new(),
+                requires_confirmation: true,
+                detail: "fixture".to_owned(),
+            }],
+        };
+        assert!(selected_project_ids(&["npm:script:build".to_owned()], &plan).is_ok());
+        assert_eq!(
+            selected_project_ids(&["npm:script:missing".to_owned()], &plan),
+            Err("project-import-invalid".to_owned())
         );
     }
 }

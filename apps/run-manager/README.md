@@ -32,6 +32,10 @@ npm/Cargo/shell/network/.env를 실행하거나 읽지 않으며, script body와
 않고 환경 키 이름만 preview에 표시한다. target name은 제한된 문자 집합으로 검증하고 생성된
 `npm run -- <name>`/`cargo run|test|bench --...` 명령과 canonical cwd를 확인한다. 모든 항목은
 사용자 승인 전 `enabled=false` draft로 저장된다.
+Cargo의 `autobins=false`는 자동 발견되는 기본 `cargo run`을 만들지 않으며, 명시적인 `[[bin]]`은
+`name`이 없을 때 안전한 상대 `path`의 파일명에서 target 이름을 추론한다. 선택 ID는 preview에
+실제로 존재하는 항목만 허용해 임의 항목을 apply할 수 없게 한다. VS Code `tasks.json` parsing은
+이 후보의 범위가 아니며, 정의 export/import의 별도 후속 요구로 남긴다.
 
 preview에는 root filesystem identity를 포함한 SHA-256 opaque source revision이 붙는다. 적용 시
 파일·root를 다시 읽어 revision을 비교하고 변경되었거나 안전하지 않으면 고정된 stale 오류로

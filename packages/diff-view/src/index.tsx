@@ -75,7 +75,7 @@ export default function ChangeSetPreview({
       <div className="changeset-head">
         <span className="changeset-title">{title} ({items.length})</span>
         {selectable && (
-          <button className="btn mini" disabled={disabled} onClick={toggleAll}>
+          <button type="button" className="btn mini" disabled={disabled} onClick={toggleAll}>
             {allSelected ? "전체 해제" : "전체 선택"}
           </button>
         )}
@@ -111,6 +111,7 @@ export default function ChangeSetPreview({
 
       <div className="changeset-actions">
         <button
+          type="button"
           className="btn"
           disabled={disabled || (selectable ? selectedItems.length === 0 : items.length === 0)}
           onClick={() => onApprove((selectable ? selectedItems : items).map((i) => i.path))}
@@ -118,12 +119,12 @@ export default function ChangeSetPreview({
           {approveLabel} ({selectable ? selectedItems.length : items.length})
         </button>
         {onReject && (
-          <button className="btn" disabled={disabled || selectedItems.length === 0} onClick={() => onReject(selectedItems.map((i) => i.path))}>
+          <button type="button" className="btn" disabled={disabled || selectedItems.length === 0} onClick={() => onReject(selectedItems.map((i) => i.path))}>
             폐기 ({selectedItems.length})
           </button>
         )}
         {onCancel && (
-          <button className="btn" disabled={cancelDisabled} onClick={onCancel}>
+          <button type="button" className="btn" disabled={cancelDisabled} onClick={onCancel}>
             취소
           </button>
         )}

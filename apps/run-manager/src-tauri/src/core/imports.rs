@@ -474,20 +474,15 @@ pub fn parse_cargo_targets(bytes: &[u8]) -> Result<Vec<ProjectImportItem>, Proje
             let entry = entry
                 .as_table()
                 .ok_or(ProjectImportError::InvalidSourceEntry)?;
-            let name = match entry.get("name") {
-                Some(value) => value
-                    .as_str()
-                    .ok_or(ProjectImportError::InvalidSourceEntry)?,
-                None => package_name,
-            };
-            validate_cargo_name(name)?;
-            if !bin_names.insert(name.to_owned()) {
+            let name = cargo_bin_name(entry, package_name)?;
+            validate_cargo_name(&name)?;
+            if !bin_names.insert(name.clone()) {
                 return Err(ProjectImportError::InvalidSourceEntry);
             }
             ensure_item_capacity(&items)?;
             items.push(cargo_item(
                 "bin",
-                name,
+                &name,
                 format!("cargo run --bin {name}"),
                 "[[bin]]",
             )?);
@@ -545,6 +540,53 @@ pub fn parse_cargo_targets(bytes: &[u8]) -> Result<Vec<ProjectImportItem>, Proje
         return Err(ProjectImportError::TooManyItems);
     }
     Ok(items)
+}
+
+/// Cargo derives an explicit `[[bin]]` target name from its `path` when the
+/// optional `name` field is omitted.  Keep that derivation local and bounded;
+/// the path is metadata only and is never opened or passed to a process.
+fn cargo_bin_name(
+    entry: &toml::value::Table,
+    package_name: &str,
+) -> Result<String, ProjectImportError> {
+    if let Some(name) = entry.get("name") {
+        return name
+            .as_str()
+            .map(str::to_owned)
+            .ok_or(ProjectImportError::InvalidSourceEntry);
+    }
+    let Some(path) = entry.get("path") else {
+        return Ok(package_name.to_owned());
+    };
+    let path = path
+        .as_str()
+        .ok_or(ProjectImportError::InvalidSourceEntry)?;
+    if path.is_empty()
+        || path.len() > MAX_COMMAND_BYTES
+        || path.chars().any(char::is_control)
+        || path.starts_with('/')
+        || path.starts_with('\\')
+    {
+        return Err(ProjectImportError::InvalidSourceEntry);
+    }
+    let mut components = path.split(['/', '\\']);
+    if components.clone().any(|component| {
+        component.is_empty() || matches!(component, "." | "..") || component.contains(':')
+    }) {
+        return Err(ProjectImportError::InvalidSourceEntry);
+    }
+    let leaf = components
+        .next_back()
+        .ok_or(ProjectImportError::InvalidSourceEntry)?;
+    let name = leaf
+        .rsplit_once('.')
+        .map_or(leaf, |(stem, _)| stem)
+        .trim_end_matches('.')
+        .to_owned();
+    if name.is_empty() {
+        return Err(ProjectImportError::InvalidSourceEntry);
+    }
+    Ok(name)
 }
 
 fn ensure_item_capacity(items: &[ProjectImportItem]) -> Result<(), ProjectImportError> {
@@ -1055,6 +1097,33 @@ autobins = "false"
 "#;
         assert_eq!(
             parse_cargo_targets(invalid),
+            Err(ProjectImportError::InvalidSourceEntry)
+        );
+    }
+
+    #[test]
+    fn cargo_import_derives_explicit_bin_name_from_relative_path() {
+        let manifest = br#"[package]
+name = "demo"
+version = "0.1.0"
+autobins = false
+
+[[bin]]
+path = "src/bin/worker.rs"
+"#;
+        let items = parse_cargo_targets(manifest).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].command, "cargo run --bin worker");
+
+        let unsafe_path = br#"[package]
+name = "demo"
+version = "0.1.0"
+
+[[bin]]
+path = "../worker.rs"
+"#;
+        assert_eq!(
+            parse_cargo_targets(unsafe_path),
             Err(ProjectImportError::InvalidSourceEntry)
         );
     }

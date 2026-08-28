@@ -97,9 +97,11 @@ describe("RunHistory", () => {
     await waitFor(() => expect(listRunsMock).toHaveBeenCalledWith(job.id, expect.objectContaining({ limit: 50 })));
     await waitFor(() => expect(tailLogMock).toHaveBeenCalledWith(run.id, "stdout", null));
     expect((await view.findByLabelText("stdout 로그")).textContent).toContain("finished");
+    expect(view.getByRole("button", { name: "stdout" }).getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(view.getByRole("button", { name: "stderr" }));
     await waitFor(() => expect(tailLogMock).toHaveBeenCalledWith(run.id, "stderr", null));
+    expect(view.getByRole("button", { name: "stderr" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("does not silently drop an invalid non-empty duration filter", async () => {

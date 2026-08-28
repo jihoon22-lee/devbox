@@ -1357,6 +1357,10 @@ PR은 package `process`를 `devbox_process`로 import하고, `PortInfo`,
   아닌 `npm run -- <safe-name>`, Cargo target은 제한된 name을 사용한
   `cargo run/test/bench --...` command로 변환한다. Windows `%KEY%`, POSIX `$KEY`/
   `${KEY}`는 이름만 최대 64개 preview에 보여주고 값은 읽거나 저장하지 않는다.
+  `autobins=false`에서는 자동 발견되는 기본 `cargo run`을 만들지 않으며, 명시적인
+  `[[bin]]`의 `name`이 생략된 경우에만 안전한 상대 `path`의 파일명에서 target 이름을
+  추론한다. preview에 없는 selection ID는 apply에서 거부한다. VS Code `tasks.json`
+  parsing은 이 #358 후보에 포함하지 않고, §13.2 정의 import 후속 범위로 보류한다.
 - 선택 루트는 absolute/non-symlink/no-follow filesystem identity로 canonicalize하고
   source file의 metadata·canonical parent/name을 확인한다. source path와 실제 열린 file
   handle fingerprint를 read 전후 비교하고 현재 path identity/fingerprint도 다시 확인한다.
@@ -1370,8 +1374,9 @@ PR은 package `process`를 `devbox_process`로 import하고, `PortInfo`,
   flag이고, transaction 각 row 전·commit 직전에 확인하여 commit 전 취소는 전체
   rollback한다. 이미 커밋된 transaction은 되돌리지 않는다.
 - import dialog는 preview generation으로 늦은 응답을 무시하고, operation timeout/
-  unmount 시 exact operation을 취소한다. modal focus trap, Escape semantics,
-  `aria-busy`/tab/tabpanel 관계와 완료 후 trigger focus 복구를 유지한다.
+  unmount 시 exact operation을 취소하며 unmount 뒤에는 비동기 state를 갱신하지 않는다.
+  modal focus trap, Escape semantics, `aria-busy`/tab/tabpanel 관계와 완료 후 trigger
+  focus 복구를 유지한다. 변경집합 액션은 form 안에서도 submit으로 오인되지 않는다.
 
 ### 구현 검증 및 잔여 범위
 

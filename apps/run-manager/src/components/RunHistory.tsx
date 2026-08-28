@@ -256,6 +256,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   }, [contextRun?.id, runContextMenu.close, runs]);
 
   const refresh = useCallback(async () => {
+    if (!mountedRef.current) return;
     const existing = refreshInFlight.current;
     if (existing) {
       refreshPending.current = true;
@@ -264,11 +265,13 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     }
     const operation = (async () => {
       do {
+        if (!mountedRef.current) break;
         refreshPending.current = false;
         const generation = viewGeneration.current;
         const query = queryRef.current;
         setLoading(true);
         if (jobs.length === 0) {
+          if (!mountedRef.current || generation !== viewGeneration.current) break;
           setRuns([]);
           setActiveRuns([]);
           setActiveSnapshotFresh(true);
@@ -287,7 +290,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
               }),
               listActiveRuns(),
             ]);
-            if (generation !== viewGeneration.current) continue;
+            if (!mountedRef.current || generation !== viewGeneration.current) continue;
             if (historyResult.status === "fulfilled") {
               const next = historyResult.value;
               setRuns(next);
@@ -308,10 +311,10 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
               setActiveSnapshotError(activeResult.reason instanceof Error ? activeResult.reason.message : String(activeResult.reason));
             }
           } finally {
-            if (generation === viewGeneration.current) setLoading(false);
+            if (mountedRef.current && generation === viewGeneration.current) setLoading(false);
           }
         }
-      } while (refreshPending.current);
+      } while (mountedRef.current && refreshPending.current);
     })();
     refreshInFlight.current = operation;
     try {
@@ -319,7 +322,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     } finally {
       if (refreshInFlight.current === operation) {
         refreshInFlight.current = null;
-        if (refreshPending.current) {
+        if (mountedRef.current && refreshPending.current) {
           refreshPending.current = false;
           await refreshRef.current();
         }
@@ -350,11 +353,11 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     try {
       await runJobNow(jobId);
       await refresh();
-      setError(null);
+      if (mountedRef.current) setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setActionBusy(false);
+      if (mountedRef.current) setActionBusy(false);
     }
   };
 
@@ -366,11 +369,11 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     try {
       await stopActiveRun(jobId);
       await refresh();
-      setError(null);
+      if (mountedRef.current) setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setActionBusy(false);
+      if (mountedRef.current) setActionBusy(false);
     }
   };
 
@@ -385,11 +388,11 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     try {
       await runJobNow(run.jobId);
       await refresh();
-      setError(null);
+      if (mountedRef.current) setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setActionBusy(false);
+      if (mountedRef.current) setActionBusy(false);
     }
   };
 
@@ -408,15 +411,17 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
       } finally {
         URL.revokeObjectURL(url);
       }
-      setError(
-        collected.truncated
-          ? "로그 보존 범위가 바뀌었거나 저장 상한을 넘어 현재 확인 가능한 부분만 저장했습니다."
-          : null,
-      );
+      if (mountedRef.current) {
+        setError(
+          collected.truncated
+            ? "로그 보존 범위가 바뀌었거나 저장 상한을 넘어 현재 확인 가능한 부분만 저장했습니다."
+            : null,
+        );
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setActionBusy(false);
+      if (mountedRef.current) setActionBusy(false);
     }
   };
 
@@ -699,7 +704,13 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
                   {selectedRun.logsAvailable ? (
                     <div className="stream-tabs" aria-label="로그 스트림">
                       {(["stdout", "stderr"] as const).map((value) => (
-                        <button key={value} type="button" className={stream === value ? "active" : ""} onClick={() => setStream(value)}>{value}</button>
+                        <button
+                          key={value}
+                          type="button"
+                          className={stream === value ? "active" : ""}
+                          aria-pressed={stream === value}
+                          onClick={() => setStream(value)}
+                        >{value}</button>
                       ))}
                     </div>
                   ) : null}

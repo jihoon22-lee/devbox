@@ -202,7 +202,7 @@ smoke remain the parent PR's responsibility.
 rustfmt --edition 2021 <run-manager Rust files>    pass (exit 0)
 git diff --check              pass (exit 0)
 source ~/.cargo/env && CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-run-manager \
-  cargo test -p run-manager --lib -j1                         pass (186 tests)
+  cargo test -p run-manager --lib -j1                         pass (186 tests at baseline)
 source ~/.cargo/env && CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-run-manager \
   cargo check -p run-manager --lib -j1                        pass (exit 0)
 source ~/.cargo/env && cargo clippy -p run-manager --all-targets -- -D warnings
@@ -219,8 +219,10 @@ CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-run-manager \
 The Rust unit/fixture tests cover parser bounds, unsafe symlinks, root/file
 identity and source revision changes, operation duplicate/cancel/timeout state,
 history filter combinations, normalized cwd conflicts, and atomic duplicate/
-invalid definition/project import batches. All 186 Run Manager library tests
-passed. Frontend dependencies were restored from the local offline pnpm store;
+invalid definition/project import batches. All 186 baseline Run Manager library
+tests passed; the final candidate inventory is 189 after the autobins and
+re-audit fixtures. Frontend dependencies were restored from the local offline
+pnpm store;
 the complete Vitest suite and production TypeScript/Vite build passed. Windows
 W3 packaged smoke is pending.
 
@@ -243,3 +245,79 @@ W3 packaged smoke is pending.
 - Definition and project apply are atomic at the SQLite boundary, but an
   already committed transaction is intentionally not undone by a later UI
   cancellation acknowledgement.
+
+## Final Re-audit (2026-08-28)
+
+The final #357/#358 review was performed again on the candidate without
+rebasing, committing, pushing, or opening a PR. The branch was intentionally left
+dirty with only the remediation changes below. GitHub issue #358 explicitly scopes
+the native importer to `package.json` scripts and Cargo targets; VS Code
+`tasks.json` parsing remains the separate §13.2 follow-up and is documented as such
+instead of silently expanding this PR boundary.
+
+### Remediation changes
+
+- `apps/run-manager/src-tauri/src/core/imports.rs` now follows Cargo's explicit
+  `[[bin]]` name derivation when `name` is omitted: a bounded, relative, non-
+  traversal `path` supplies the filename stem, while path-less entries retain the
+  package name. The path is metadata only and is never opened or executed. A
+  regression fixture covers both inference and traversal rejection.
+- `apps/run-manager/src-tauri/src/commands.rs` now treats selection IDs as an
+  allow-list: definition apply and project apply reject IDs not present in the
+  validated preview plan. This closes a fail-open no-op/forged-selection path and
+  preserves the existing count, revision, transaction, conflict, and disabled-draft
+  invariants.
+- `apps/run-manager/src/components/RunHistory.tsx` guards history/active refresh
+  results and run actions with the mounted and generation checks, prevents a pending
+  refresh loop from continuing after unmount, and exposes stream selection through
+  `aria-pressed`.
+- `apps/run-manager/src/components/ImportDialog.tsx` guards preview/apply state
+  updates after unmount (including StrictMode-safe mounted setup), while retaining
+  exact operation cancellation. All local action buttons now declare
+  `type="button"`; `packages/diff-view/src/index.tsx` applies the same form-safe
+  default to shared change-set actions.
+- README/spec/workthrough text now records Cargo `autobins` behavior, selection
+  allow-listing, the VS Code follow-up boundary, and the final stale/a11y behavior.
+
+### Re-audit conclusions
+
+- History filters remain native-boundary validated: negative timestamps, inverted
+  or zero-length ranges, negative/out-of-range durations, zero limits, and limits
+  over 500 fail closed. The legacy positional `list_runs` command builds the same
+  filter and maps validation failures to the fixed
+  `run-history-invalid-filter` code; it cannot bypass the structured query.
+- Import still reads only immediate `package.json` and `Cargo.toml`, with 512 KiB
+  per-file, 128-item, operation-ID, command/name, environment-key, and 5-second
+  cooperative bounds. npm/Cargo/shell/network/.env are not invoked or read; script
+  bodies and environment values are not persisted. Generated command names remain
+  allow-listed and imported definitions are disabled drafts.
+- Root and source-file identity checks, opened-handle fingerprints, opaque SHA-256
+  revision comparison, normalized Windows cwd conflict checks, transaction-local
+  duplicate checks, and pre-commit cancellation/rollback remain in force. The
+  committed-transaction cancellation and final check-to-use filesystem race remain
+  documented residual OS boundaries.
+
+## Re-audit Verification
+
+The remediation was verified with the dedicated target cache
+`/home/jihoon/.cache/targets/devbox-run-manager` and `-j1`; no new large target
+directory was created. The existing full-suite/build passes above belong to the
+pre-remediation candidate; the final re-audit intentionally ran only changed-
+boundary checks because the parent worktree was under resource pressure.
+
+```text
+git diff --check                                      pass (exit 0)
+cargo fmt --all -- --check                            pass (exit 0)
+source ~/.cargo/env && CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-run-manager \
+  cargo test -p run-manager --lib cargo_import_derives_explicit_bin_name_from_relative_path -j1
+                                                       pass (1; 188 filtered; 189 total)
+source ~/.cargo/env && CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-run-manager \
+  cargo test -p run-manager --lib import_selection_ids_must_belong_to_the_preview_plan -j1
+                                                       pass (1; 188 filtered; 189 total)
+source ~/.cargo/env && CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-run-manager \
+  cargo test -p run-manager --lib -- --list                     pass (189 tests)
+pnpm --dir apps/run-manager exec tsc --noEmit              pass (exit 0)
+pnpm --dir apps/run-manager test -- --maxWorkers=1 --no-file-parallelism
+                                                       interrupted: /mnt/e 9p I/O stall
+                                                       before a result; not counted as a pass
+```

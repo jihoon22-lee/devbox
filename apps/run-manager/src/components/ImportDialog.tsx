@@ -69,6 +69,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
   const activeOperationId = useRef<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
+  const mountedRef = useRef(true);
   const cancelPendingRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const onCloseRef = useRef(onClose);
   busyRef.current = busy;
@@ -114,6 +115,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
   }, []);
 
   const previewDefinitions = async () => {
+    if (!mountedRef.current) return;
     const generation = ++previewGeneration.current;
     activeOperationId.current = null;
     setBusy(true);
@@ -121,16 +123,23 @@ export default function ImportDialog({ onDone, onClose }: Props) {
     setError(null);
     try {
       const plan = await importDefinitions(json);
-      if (generation === previewGeneration.current) setPreview({ kind: "definitions", plan, json });
+      if (mountedRef.current && generation === previewGeneration.current) {
+        setPreview({ kind: "definitions", plan, json });
+      }
     } catch (cause) {
-      if (generation === previewGeneration.current) setError(errorMessage(cause));
+      if (mountedRef.current && generation === previewGeneration.current) {
+        setError(errorMessage(cause));
+      }
     } finally {
-      setBusy(false);
-      setCancelRequested(false);
+      if (mountedRef.current) {
+        setBusy(false);
+        setCancelRequested(false);
+      }
     }
   };
 
   const previewProject = async () => {
+    if (!mountedRef.current) return;
     const generation = ++previewGeneration.current;
     const currentOperationId = operationId("preview");
     activeOperationId.current = currentOperationId;
@@ -142,24 +151,30 @@ export default function ImportDialog({ onDone, onClose }: Props) {
         previewProjectImport(projectPath, currentOperationId),
         "project-import-timeout",
       );
-      if (generation === previewGeneration.current) setPreview({ kind: "project", plan, path: projectPath });
+      if (mountedRef.current && generation === previewGeneration.current) {
+        setPreview({ kind: "project", plan, path: projectPath });
+      }
     } catch (cause) {
       if (cause instanceof Error && cause.message === "project-import-timeout") {
         await cancelProjectImport(currentOperationId).catch(() => undefined);
       }
-      if (generation === previewGeneration.current) setError(errorMessage(cause));
+      if (mountedRef.current && generation === previewGeneration.current) {
+        setError(errorMessage(cause));
+      }
     } finally {
       if (activeOperationId.current === currentOperationId) {
         activeOperationId.current = null;
       }
-      setBusy(false);
-      setCancelRequested(false);
+      if (mountedRef.current) {
+        setBusy(false);
+        setCancelRequested(false);
+      }
     }
   };
 
   const cancelPending = async () => {
     const currentOperationId = activeOperationId.current;
-    if (!busy || cancelRequested || !currentOperationId) return;
+    if (!mountedRef.current || !busy || cancelRequested || !currentOperationId) return;
     previewGeneration.current += 1;
     setCancelRequested(true);
     setPreview(null);
@@ -168,6 +183,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
   };
 
   const discardPreview = () => {
+    if (!mountedRef.current) return;
     previewGeneration.current += 1;
     setPreview(null);
     setError(null);
@@ -192,7 +208,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
       })) : [];
 
   const apply = async (selectedPaths: string[]) => {
-    if (!preview) return;
+    if (!mountedRef.current || !preview) return;
     const generation = previewGeneration.current;
     let currentOperationId: string | null = null;
     setBusy(true);
@@ -203,7 +219,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
         .map((item) => item.id);
       if (preview.kind === "definitions") {
         const created = await applyImport(preview.json, selectedIds, preview.plan.revision);
-        if (generation !== previewGeneration.current) return;
+        if (!mountedRef.current || generation !== previewGeneration.current) return;
         onDone(created);
       } else {
         currentOperationId = operationId("apply");
@@ -215,7 +231,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
           selectedIds,
           currentOperationId,
         ), "project-import-timeout");
-        if (generation !== previewGeneration.current) return;
+        if (!mountedRef.current || generation !== previewGeneration.current) return;
         onDone(result.created);
       }
     } catch (cause) {
@@ -226,25 +242,33 @@ export default function ImportDialog({ onDone, onClose }: Props) {
       ) {
         await cancelProjectImport(currentOperationId).catch(() => undefined);
       }
-      if (generation === previewGeneration.current) setError(errorMessage(cause));
+      if (mountedRef.current && generation === previewGeneration.current) {
+        setError(errorMessage(cause));
+      }
     } finally {
       if (currentOperationId && activeOperationId.current === currentOperationId) {
         activeOperationId.current = null;
       }
-      setBusy(false);
-      setCancelRequested(false);
+      if (mountedRef.current) {
+        setBusy(false);
+        setCancelRequested(false);
+      }
     }
   };
 
   cancelPendingRef.current = cancelPending;
   const canCancel = busy && mode === "project";
 
-  useEffect(() => () => {
-    previewGeneration.current += 1;
-    const currentOperationId = activeOperationId.current;
-    if (currentOperationId) {
-      void cancelProjectImport(currentOperationId).catch(() => undefined);
-    }
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      previewGeneration.current += 1;
+      const currentOperationId = activeOperationId.current;
+      if (currentOperationId) {
+        void cancelProjectImport(currentOperationId).catch(() => undefined);
+      }
+    };
   }, []);
 
   return (
@@ -286,8 +310,8 @@ export default function ImportDialog({ onDone, onClose }: Props) {
                 />
                 <div className="import-notice">환경변수 값은 가져오지 않습니다. 작업 디렉터리와 활성화 여부를 확인한 뒤 저장합니다.</div>
                 <div className="import-actions">
-                  <button className="button-primary" disabled={busy || !json.trim()} onClick={() => void previewDefinitions()}>미리보기</button>
-                  <button className="button-secondary" disabled={cancelRequested || (busy && !canCancel)} onClick={() => {
+                  <button type="button" className="button-primary" disabled={busy || !json.trim()} onClick={() => void previewDefinitions()}>미리보기</button>
+                  <button type="button" className="button-secondary" disabled={cancelRequested || (busy && !canCancel)} onClick={() => {
                     if (canCancel) void cancelPending();
                     else onClose();
                   }}>{busy ? (canCancel ? "취소 중…" : "처리 중…") : "취소"}</button>
@@ -308,8 +332,8 @@ export default function ImportDialog({ onDone, onClose }: Props) {
                 </label>
                 <div className="import-notice">가져온 task는 비활성 draft로 저장되며, cwd와 환경 키를 확인하기 전에는 실행되지 않습니다.</div>
                 <div className="import-actions">
-                  <button className="button-primary" disabled={busy || !projectPath.trim()} onClick={() => void previewProject()}>로컬 파일 미리보기</button>
-                  <button className="button-secondary" disabled={cancelRequested || (busy && !canCancel)} onClick={() => {
+                  <button type="button" className="button-primary" disabled={busy || !projectPath.trim()} onClick={() => void previewProject()}>로컬 파일 미리보기</button>
+                  <button type="button" className="button-secondary" disabled={cancelRequested || (busy && !canCancel)} onClick={() => {
                     if (canCancel) void cancelPending();
                     else onClose();
                   }}>{busy ? (canCancel ? "취소 중…" : "처리 중…") : "취소"}</button>
@@ -339,7 +363,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
             />
             {busy && preview.kind === "project" ? (
               <div className="import-actions">
-                <button className="button-secondary" disabled={cancelRequested} onClick={() => void cancelPending()}>
+                <button type="button" className="button-secondary" disabled={cancelRequested} onClick={() => void cancelPending()}>
                   {cancelRequested ? "취소 중…" : "import 취소"}
                 </button>
               </div>
