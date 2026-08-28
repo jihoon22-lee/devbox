@@ -243,6 +243,20 @@ OS-level atomic delete guarantee. Reimplementing Git's worktree administration
 and recursive deletion is intentionally rejected as a less reliable safety
 boundary.
 
+The first GitHub Windows CI run compiled the new ToolHelp path successfully but
+strict clippy flagged the nested exact-PID/thread ambiguity check as
+`collapsible_if`. The condition was mechanically collapsed without changing
+the fail-closed semantics, then rechecked with the Windows GNU target before
+the replacement CI run:
+
+```text
+cargo clippy -p git --target x86_64-pc-windows-gnu --all-targets -j1 \
+  -- -D warnings                                                                    PASS
+cargo test -p git -j1                                                               PASS (14 tests)
+cargo fmt --all -- --check                                                          PASS
+git diff --check                                                                     PASS
+```
+
 ## Code Examples
 
 ```rust

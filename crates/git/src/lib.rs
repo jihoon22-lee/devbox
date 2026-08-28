@@ -167,13 +167,13 @@ fn resume_suspended_process(process_id: u32) -> Result<(), ()> {
     let mut thread_id = None;
     if unsafe { Thread32First(snapshot, &mut entry) }.is_ok() {
         loop {
-            if entry.th32OwnerProcessID == process_id {
-                if thread_id.replace(entry.th32ThreadID).is_some() {
-                    unsafe {
-                        let _ = CloseHandle(snapshot);
-                    }
-                    return Err(());
+            if entry.th32OwnerProcessID == process_id
+                && thread_id.replace(entry.th32ThreadID).is_some()
+            {
+                unsafe {
+                    let _ = CloseHandle(snapshot);
                 }
+                return Err(());
             }
             if unsafe { Thread32Next(snapshot, &mut entry) }.is_err() {
                 break;
