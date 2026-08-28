@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 9,
+  "catalogRevision": 10,
   "apps": [
     {
       "id": "port-manager",
@@ -27,8 +27,16 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": [],
-      "produces": [],
-      "actions": []
+      "produces": ["handoff:api-request/v1"],
+      "actions": [
+        {
+          "actionId": "send-output-to-api",
+          "actionVersion": 1,
+          "label": "Send output to API Playground",
+          "target": "api-playground",
+          "payloadKind": "handoff:api-request/v1"
+        }
+      ]
     },
     {
       "id": "wsl-desktop",

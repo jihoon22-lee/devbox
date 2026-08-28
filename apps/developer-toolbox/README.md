@@ -195,8 +195,9 @@ Smart Workflows는 입력을 한 번 붙여 넣고 안전한 변환 후보를 �
 typed 단계만 실행하는 오프라인 작업 영역이다. 감지·파이프라인·메타데이터 저장은 같은 화면을
 공유하지만 각 issue의 fixture와 acceptance는 독립적으로 유지한다.
 
-이번 #340–#343 묶음 검토에서 Developer Toolbox 내부의 #340–#342는 이 offline 흐름으로
-통합하고, #343은 API Playground·integration을 함께 변경하는 별도 handoff 경계로 남긴다.
+이번 #340–#343 묶음은 Developer Toolbox 내부의 offline 흐름과 API Playground로 보내는
+명시적 handoff 경계를 한 PR에서 제공하되, pipeline 실행과 cross-app 전달은 별도 사용자
+동작·저장 계약으로 분리한다.
 
 - **#340 Smart detection** — UTF-8 1,000,000바이트(최대 2,100,000 code unit) 안에서 JSON,
   허용된 HS JWT compact, HTTP(S) URL, canonical Base64/Base64URL, Hex byte 표현을 로컬에서
@@ -232,14 +233,29 @@ typed 단계만 실행하는 오프라인 작업 영역이다. 감지·파이프
 | #341 | output→input 타입 연결, mismatch 선차단, bounded local run | `transformPipeline.test.ts` |
 | #342 | metadata schema redaction, bounded ordering, restart round-trip, atomic native file | `workflowStore.test.ts`, Rust `core::workflows` tests |
 
-`#343 Toolbox→API text handoff`는 별도 보안·integration 경계이므로 이 PR에서 의도적으로
-구현하지 않는다. packaged Windows W3 smoke는 각 후보 선택, mismatch 표시, pipeline 실행,
-재시작 후 metadata-only 복원과 외부 action 부재를 확인해야 한다.
+packaged Windows W3 smoke는 각 후보 선택, mismatch 표시, pipeline 실행, 재시작 후
+metadata-only 복원, handoff preview/edit/cancel/apply와 no-auto-send를 확인해야 한다.
+
+## API Playground handoff (`api-request/v1`, #343)
+
+각 결과 화면의 `API Playground로 보내기`는 사용자가 보고 있는 현재 output만 대상으로 하는
+명시적 수동 handoff다. 먼저 `POST /`와 `text/plain; charset=utf-8` draft를 미리 보여 주고,
+body를 편집한 뒤 `API Playground로 전달`을 눌러야 공용 AppLink protocol v2의 opaque one-time
+handoff store에 bounded envelope가 만들어진다. API Playground는 이를 claim해 preview한 뒤
+사용자가 적용할 때만 request editor에 넣으며 요청을 자동으로 보내지 않는다.
+
+output은 256,000 chars·1,024,000 UTF-8 bytes와 NUL 입력 상한을 넘을 수 없고, shared handoff
+validator가 raw credential과 unsafe path field를 fail-closed로 거부한다. producer는 input/history,
+secret, raw credential, file path를 저장하거나 argv·로그·clipboard로 보내지 않는다. 대상 앱이
+설치되지 않았거나 실행에 실패해도 clipboard fallback은 없다. 실행 실패 시 아직 pending인 정확한
+envelope를 폐기하고, 브라우저 preview에서는 native handoff를 사용할 수 없다는 고정 오류만 표시한다.
+in-flight 전달 중 output이 바뀌어도 두 번째 publish를 시작하지 않으며 완료 상태에 opaque ID를
+노출하지 않는다.
 
 ## 개발
 
-- 순수 로직: `src-tauri/src/core/hmac.rs`·`src-tauri/src/core/workflows.rs` 및
-  `src-tauri/src/commands/tools.rs` → `cargo test`
+- 순수 로직: `src-tauri/src/core/hmac.rs`·`src-tauri/src/core/workflows.rs`·
+  `src-tauri/src/core/handoff.rs` 및 `src-tauri/src/commands/tools.rs` → `cargo test`
 - Smart Workflows의 감지·typed pipeline·metadata 테스트는 `src/workflows/*.test.ts(x)`에
   issue별 fixture로 분리한다. Rust metadata 파일은 `app_local_data_dir()` 내부의
   `smart-workflows.json`만 원자 교체한다.

@@ -11,3 +11,11 @@ export interface DiffHunk {
   new_start: number;
   new_end: number;
 }
+
+export interface ApiHandoffDispatch {
+  handoffId: string;
+  producerId: string;
+  consumerId: string;
+  createdAtMs: number;
+  expiresAtMs: number;
+}

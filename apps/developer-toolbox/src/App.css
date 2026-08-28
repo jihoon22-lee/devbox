@@ -1357,3 +1357,125 @@ select {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+.api-handoff-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.api-handoff-button {
+  margin-left: 0;
+}
+
+.api-handoff-status {
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.api-handoff-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.api-handoff-dialog {
+  width: min(680px, 100%);
+  max-height: min(760px, 100%);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+}
+
+.api-handoff-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.api-handoff-dialog p {
+  margin: 0 0 12px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+.api-handoff-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.api-handoff-meta div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.api-handoff-meta dt {
+  color: var(--dim);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.api-handoff-meta dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.api-handoff-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.api-handoff-editor textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+.api-handoff-editor textarea:focus {
+  border-color: var(--accent);
+}
+
+.api-handoff-bounds {
+  margin: 5px 0 8px !important;
+  font-size: 11px;
+  text-align: right;
+}
+
+.api-handoff-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+@media (max-width: 600px) {
+  .api-handoff-meta {
+    grid-template-columns: 1fr;
+  }
+}

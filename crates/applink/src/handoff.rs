@@ -209,6 +209,30 @@ impl HandoffStore {
         Err(HandoffError::RandomUnavailable)
     }
 
+    /// Revoke an envelope that is still pending after its producer could not
+    /// deliver the corresponding open request. A claimed envelope is never
+    /// removed through this producer-only cleanup path.
+    pub fn revoke_pending(
+        &self,
+        descriptor: &HandoffDescriptor,
+        source_app: &str,
+    ) -> Result<(), HandoffError> {
+        validate_id(&descriptor.id)?;
+        validate_kind(&descriptor.kind)?;
+        validate_app_id(source_app)?;
+        let root = self.prepare_layout()?;
+        let path = pending_path(&root, &descriptor.id);
+        let envelope = read_json::<HandoffEnvelope>(&path, MAX_HANDOFF_BYTES)?;
+        validate_envelope(&envelope).map_err(|_| HandoffError::Corrupt)?;
+        if envelope.id != descriptor.id
+            || envelope.kind != descriptor.kind
+            || envelope.source_app != source_app
+        {
+            return Err(HandoffError::WrongTarget);
+        }
+        remove_envelope_if_equal(&path, &envelope)
+    }
+
     pub fn claim(
         &self,
         id: &str,

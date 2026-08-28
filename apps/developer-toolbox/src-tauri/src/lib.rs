@@ -46,6 +46,7 @@ pub fn run() {
             commands::qr::generate_qr,
             commands::workflows::load_workflow_metadata,
             commands::workflows::save_workflow_metadata,
+            commands::handoff::create_api_request_handoff,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
