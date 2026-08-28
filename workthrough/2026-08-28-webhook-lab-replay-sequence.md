@@ -489,3 +489,49 @@ build script and then stopped because this WSL environment does not provide
 from that attempt. The shared filesystem crate's new `LockFileEx` path did
 compile and pass strict Windows-target clippy. GitHub's native Windows job and
 the packaged W3 smoke remain authoritative for the complete app.
+
+## Rebase and mechanical validation on current main (2026-08-28)
+
+The dedicated Webhook worktree was clean before synchronization:
+`feat/webhook-lab/resilience-replay` had no modified or unmerged paths and was
+three commits ahead of the then-current `origin/main`. After `git fetch origin`,
+the branch was rebased successfully onto `origin/main` at `6050c79`
+(`feat(devbox-manager): add curated Related Tools (#460)`). The rebase stopped
+once on two mechanically separable conflicts. `THIRD_PARTY_NOTICES.md` was
+resolved to the merged lockfile digest and then regenerated with
+`.github/scripts/check-dependencies.py generate`; `crates/filesystem/src/lib.rs`
+kept the main branch's handle-based `open_filesystem_object` and
+`ensure_no_links` helpers and the Webhook branch's independent advisory-lock
+functions. No functional conflict required an interpretation-based resolution.
+The rebased branch HEAD is `b61e4e6`, three commits ahead of `origin/main`.
+
+The existing
+`/home/jihoon/.cache/targets/webhook-362-363` target was reused throughout;
+Rust commands used at most `-j2`, and no target/cache was created or cleaned.
+
+### Verification results
+
+- `cargo test -p webhook-lab --lib --tests -j2 -- --test-threads=1` — PASS,
+  77 tests.
+- `cargo test -p filesystem --lib -j2` — PASS, 18 tests.
+- `cargo check -p webhook-lab -p filesystem -j2` — PASS.
+- `cargo clippy -p webhook-lab -p filesystem --all-targets -j2 -- -D warnings`
+  — PASS.
+- `cargo check -p filesystem --target x86_64-pc-windows-gnu -j2` — PASS.
+- `cargo clippy -p filesystem --target x86_64-pc-windows-gnu --all-targets -j2
+  -- -D warnings` — PASS.
+- `pnpm --filter webhook-lab test -- --maxWorkers=2` — PASS, 4 files and 60
+  tests.
+- `pnpm --filter webhook-lab build` — PASS, TypeScript and Vite production
+  build.
+- `cargo fmt --all -- --check` and `git diff --check` — PASS.
+- `python3 .github/scripts/check-dependencies.py check` — PASS; notices match
+  `Cargo.lock` and `pnpm-lock.yaml`.
+- `python3 .github/scripts/test-check-dependencies.py` — PASS.
+- `python3 .github/scripts/test-build-manifest.py` — PASS.
+- `bash .github/scripts/check-catalog.sh` — PASS.
+
+The worktree was clean after the validation commands and before this
+documentation-only update. No build/test failure, design issue, commit, push,
+PR operation, or cache cleanup remains from this pass. The final state after
+this append intentionally contains only the uncommitted workthrough update.
