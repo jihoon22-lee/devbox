@@ -107,6 +107,11 @@ cross-app one-time handoff는 별도의 explicit action·저장·수명 경계�
   통과했다.
 - `pnpm --workspace-concurrency=2 -r build`는 19개 frontend project를 모두
   성공적으로 빌드했다. `git diff --check`도 통과했다.
+- 첫 PR CI의 전체 frontend 병렬 실행에서 Knowledge Quick Capture clipboard
+  fixture가 mock 호출만 기다린 뒤 React state 반영 전 값을 단언하는 race로 한 번
+  실패했다. 제품 코드는 이 PR에서 바뀌지 않았고, fixture를 동일 `waitFor` 안에서
+  호출 횟수와 textarea 값까지 기다리도록 보정했다. focused Quick Capture 11 tests가
+  통과했으며 갱신 CI에서 전체 suite를 다시 확인한다.
 
 ## Remaining risks and follow-up
 

@@ -47,8 +47,10 @@ describe("Knowledge quick capture dialog", () => {
     expect(within(dialog).getByLabelText(/본문/u)).toHaveValue("");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "클립보드에서 본문 가져오기" }));
-    await waitFor(() => expect(clipboardMock).toHaveBeenCalledTimes(1));
-    expect(within(dialog).getByLabelText(/본문/u)).toHaveValue("clipboard body");
+    await waitFor(() => {
+      expect(clipboardMock).toHaveBeenCalledTimes(1);
+      expect(within(dialog).getByLabelText(/본문/u)).toHaveValue("clipboard body");
+    });
 
     fireEvent.keyDown(within(dialog).getByLabelText(/본문/u), { key: "Escape" });
     expect(await screen.findByRole("button", { name: "빠른 캡처 닫기" })).toBeInTheDocument();
