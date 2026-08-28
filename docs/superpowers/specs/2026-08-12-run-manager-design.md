@@ -1351,21 +1351,34 @@ PR은 package `process`를 `devbox_process`로 import하고, `PortInfo`,
   확인한 뒤 별도로 활성화한다. definition 저장은 bounded non-cancellable
   operation이므로 저장 중 Escape가 이미 커밋될 수 있는 작업을 취소한다고 가장하지
   않는다.
-- 사용자가 고른 프로젝트 루트의 바로 아래 `package.json`/`Cargo.toml`만 native
+- 사용자가 고른 프로젝트 루트의 바로 아래 `package.json`/`Cargo.toml` 내용만 native
   parser로 읽는다. npm, Cargo metadata, shell, network, dotenv, imported command를
-  실행하지 않는다. 파일은 각각 512KiB, 결과는 128개로 제한한다. script는 body가
-  아닌 `npm run -- <safe-name>`, Cargo target은 제한된 name을 사용한
+  실행하지 않는다. 파일 내용은 각각 512KiB, 전체 결과는 128개로 제한한다. script는
+  body가 아닌 `npm run -- <safe-name>`, Cargo target은 제한된 name을 사용한
   `cargo run/test/bench --...` command로 변환한다. Windows `%KEY%`, POSIX `$KEY`/
   `${KEY}`는 이름만 최대 64개 preview에 보여주고 값은 읽거나 저장하지 않는다.
-  `autobins=false`에서는 자동 발견되는 기본 `cargo run`을 만들지 않으며, 명시적인
+  Cargo 자동 target 판정에는 source 내용·Cargo metadata 실행 없이 `src/lib.rs`,
+  `src/main.rs`, `src/bin`, `examples`, `tests`, `benches`의 표준 layout을 fixed-depth
+  bounded metadata로만 확인한다. workspace member의 다른 `Cargo.toml`은 읽지 않으며,
+  virtual workspace는 직접 target을 제공하지 않는 것으로 처리한다.
+  `autolib`/`autobins`/`autoexamples`/`autotests`/`autobenches`와 edition별 자동
+  discovery 기본값을 적용한다. 명시 target과 자동 target은 `(kind, name, path)`로
+  dedupe하고, 명시 target의 파일이 없거나 root 밖·symlink/reparse point이면
+  fail-closed 한다. `autobins=false`에서는 자동 binary를 만들지 않으며, 자동·명시
+  binary 모두 `cargo run --bin <name>`을 사용해 bare `cargo run`을 만들지 않는다.
+  non-bin example과 `required-features` target은 실행 task로 만들지 않는다. 명시적인
   `[[bin]]`의 `name`이 생략된 경우에만 안전한 상대 `path`의 파일명에서 target 이름을
   추론한다. preview에 없는 selection ID는 apply에서 거부한다. VS Code `tasks.json`
   parsing은 이 #358 후보에 포함하지 않고, §13.2 정의 import 후속 범위로 보류한다.
 - 선택 루트는 absolute/non-symlink/no-follow filesystem identity로 canonicalize하고
   source file의 metadata·canonical parent/name을 확인한다. source path와 실제 열린 file
   handle fingerprint를 read 전후 비교하고 현재 path identity/fingerprint도 다시 확인한다.
-  preview revision은 root identity와 정확한 두 source byte snapshot을 포함한
-  opaque SHA-256(64 hex)이며 절대 경로를 digest에 넣지 않는다. apply는 root/source를
+  Cargo layout discovery는 source 파일을 열거나 읽지 않고 fixed-depth directory entry,
+  regular-file metadata, no-follow identity만 확인한다. 표준 target directory와 target
+  파일의 symlink/reparse point는 따라가지 않고 거부하며, directory entry·target 수와
+  operation budget을 bounded하게 유지한다. preview revision은 root identity와 정확한
+  두 source byte snapshot, 정렬된 Cargo layout metadata snapshot을 포함한 opaque
+  SHA-256(64 hex)이며 절대 경로를 digest에 넣지 않는다. apply는 root/source/layout을
   다시 읽어 revision과 표시 root를 비교하고, 변경되면 stale 오류로 중단한다.
 - project apply의 `(kind, name, normalized cwd)` 충돌은 preview와 `BEGIN IMMEDIATE`
   transaction에서 같은 `SafeProjectPath` identity(Windows case/separator alias
@@ -1387,3 +1400,8 @@ Windows W3 packaged smoke는 CI/Windows acceptance에서 수행한다. directory
 relative open이 없는 OS의 final root identity-check 직후 교체 race와 committed
 transaction의 사후 취소는 알려진 잔여 경계다. 원격 host, Kubernetes, DAG orchestration,
 범용 tasks workflow는 이 구현 부록의 범위가 아니다.
+
+후속 P1 보강에서 Cargo target auto-discovery는 위의 동일한 no-execution 경계를 유지한 채
+고정된 표준 layout에 대한 bounded metadata-only 탐색으로 구현한다. `Cargo.toml` 외 source
+내용은 읽지 않으며, 자동 target layout snapshot도 preview revision에 포함해 apply 시 stale를
+검출한다. 이 보강의 focused Rust/Windows 검증은 해당 후보 PR의 CI gate에서 다시 수행한다.

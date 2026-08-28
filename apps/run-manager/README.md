@@ -27,15 +27,24 @@ epoch milliseconds 반열린 범위이며, 아직 끝나지 않은 run의 durati
 계산한다. query ID·기간·duration·limit은 native 경계에서 상한과 순서를 검증하고, 결과는 기존
 `RunView`의 redacted DTO만 반환한다. 로그 파일이나 환경변수는 이력 필터에서 읽지 않는다.
 
-task import는 선택한 프로젝트 루트 바로 아래의 `package.json`과 `Cargo.toml`만 bounded read한다.
-npm/Cargo/shell/network/.env를 실행하거나 읽지 않으며, script body와 environment 값은 저장하지
-않고 환경 키 이름만 preview에 표시한다. target name은 제한된 문자 집합으로 검증하고 생성된
-`npm run -- <name>`/`cargo run|test|bench --...` 명령과 canonical cwd를 확인한다. 모든 항목은
-사용자 승인 전 `enabled=false` draft로 저장된다.
-Cargo의 `autobins=false`는 자동 발견되는 기본 `cargo run`을 만들지 않으며, 명시적인 `[[bin]]`은
-`name`이 없을 때 안전한 상대 `path`의 파일명에서 target 이름을 추론한다. 선택 ID는 preview에
-실제로 존재하는 항목만 허용해 임의 항목을 apply할 수 없게 한다. VS Code `tasks.json` parsing은
-이 후보의 범위가 아니며, 정의 export/import의 별도 후속 요구로 남긴다.
+task import는 선택한 프로젝트 루트 바로 아래의 `package.json`과 `Cargo.toml` 내용만 bounded
+read한다. npm/Cargo/shell/network/.env를 실행하거나 읽지 않으며, script body와 environment 값은
+저장하지 않고 환경 키 이름만 preview에 표시한다. Cargo 자동 target을 판정할 때는 Cargo를
+실행하지 않고 `src/lib.rs`, `src/main.rs`, `src/bin`, `examples`, `tests`, `benches`의 표준
+layout을 fixed-depth·bounded metadata로만 확인한다. Rust source 내용이나 workspace member의
+다른 `Cargo.toml`은 읽지 않는다.
+
+target name은 제한된 문자 집합으로 검증하고 생성된 `npm run -- <name>`/`cargo run|test|bench
+--...` 명령과 canonical cwd를 확인한다. 모든 항목은 사용자 승인 전 `enabled=false` draft로
+저장된다. Cargo의 `autolib`/`autobins`/`autoexamples`/`autotests`/`autobenches`와 edition별
+자동 discovery 기본값을 적용하며, 명시 target과 자동 target은 `(kind, name, path)` 기준으로
+중복 제거한다. 명시 target의 파일이 없거나 target path가 root 밖·symlink/reparse point이면
+fail-closed 한다. 자동 발견 binary도 항상 `cargo run --bin <name>`을 사용해 bare `cargo run`을
+만들지 않는다. non-bin example과 `required-features` target은 실행 task로 만들지 않는다.
+
+layout metadata snapshot도 opaque revision에 포함해 preview와 apply 사이의 target 추가·삭제·교체를
+stale로 거부한다. VS Code `tasks.json` parsing과 virtual workspace member 탐색은 이 후보의
+범위가 아니며, 정의 export/import의 별도 후속 요구로 남긴다.
 
 preview에는 root filesystem identity를 포함한 SHA-256 opaque source revision이 붙는다. 적용 시
 파일·root를 다시 읽어 revision을 비교하고 변경되었거나 안전하지 않으면 고정된 stale 오류로

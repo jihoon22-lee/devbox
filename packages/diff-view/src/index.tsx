@@ -88,6 +88,7 @@ export default function ChangeSetPreview({
               <label className="changeset-check">
                 <input
                   type="checkbox"
+                  aria-label={`${item.path} 선택`}
                   checked={selected.has(item.path)}
                   disabled={disabled}
                   onChange={() => toggle(item.path)}

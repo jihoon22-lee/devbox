@@ -95,7 +95,7 @@ pub fn parse_safe_project_path(raw: &str) -> Option<SafeProjectPath> {
     let identity = match kind {
         ProjectPathKind::Posix => value.clone(),
         ProjectPathKind::WindowsDrive | ProjectPathKind::WindowsUnc => {
-            value.replace('/', "\\").to_ascii_lowercase()
+            value.replace('/', "\\").to_lowercase()
         }
     };
     Some(SafeProjectPath {
@@ -177,6 +177,10 @@ mod tests {
     fn folds_windows_case_and_separator_spelling_but_not_posix_case() {
         let first = parse_safe_project_path("C:\\Work\\Devbox").unwrap();
         let second = parse_safe_project_path("c:/work/devbox/").unwrap();
+        assert_eq!(first.identity(), second.identity());
+
+        let first = parse_safe_project_path("C:\\Work\\Équipe").unwrap();
+        let second = parse_safe_project_path("c:/work/équipe/").unwrap();
         assert_eq!(first.identity(), second.identity());
 
         let first = parse_safe_project_path("/work/Devbox").unwrap();

@@ -1,17 +1,20 @@
 //! Native, offline project-definition import.
 //!
-//! The importer reads only two files directly beneath a user-selected project
-//! root: `package.json` and `Cargo.toml`.  It never invokes npm, Cargo, a
-//! shell, a network client, or a dotenv loader.  Imported commands are stable
+//! The importer reads the contents of only two files directly beneath a
+//! user-selected project root: `package.json` and `Cargo.toml`.  Cargo target
+//! auto-discovery uses bounded metadata-only checks of the standard target
+//! layout; Rust source contents are never read.  It never invokes npm, Cargo,
+//! a shell, a network client, or a dotenv loader.  Imported commands are stable
 //! package/Cargo invocations, while environment values are deliberately not
-//! copied.  The command layer re-reads the same files and compares `revision`
-//! before saving, so a preview cannot silently apply stale source data.
+//! copied.  The command layer re-reads the same files, repeats the metadata
+//! snapshot, and compares `revision` before saving, so a preview cannot
+//! silently apply stale source data.
 
 use crate::core::models::JobKind;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::{hash_map::DefaultHasher, BTreeSet};
+use std::collections::{hash_map::DefaultHasher, BTreeMap, BTreeSet};
 use std::fs::{self, File, Metadata};
 use std::hash::{Hash, Hasher};
 use std::io::Read;
@@ -37,6 +40,11 @@ const MAX_ACTIVE_OPERATIONS: usize = 4;
 const PACKAGE_JSON: &str = "package.json";
 const CARGO_TOML: &str = "Cargo.toml";
 const DISABLED_IMPORT_CRON: &str = "0 0 1 1 *";
+const MAX_LAYOUT_DIRECTORY_ENTRIES: usize = MAX_ITEMS;
+// Explicit and automatic discovery can observe the same target twice. Keep
+// the pre-dedupe candidate set bounded while allowing those legitimate pairs
+// to coalesce before enforcing the public 128-item result limit.
+const MAX_LAYOUT_CANDIDATES: usize = MAX_ITEMS * 6;
 
 /// Errors intentionally contain no source path, command text, or file
 /// contents.  The command layer maps all variants to the same fixed public
@@ -260,6 +268,140 @@ struct SourceSnapshot<'a> {
     cargo: Option<&'a [u8]>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum CargoTargetKind {
+    Lib,
+    Bin,
+    Example,
+    Test,
+    Bench,
+}
+
+impl CargoTargetKind {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Lib => "lib",
+            Self::Bin => "bin",
+            Self::Example => "example",
+            Self::Test => "test",
+            Self::Bench => "bench",
+        }
+    }
+
+    const fn source_section(self) -> &'static str {
+        match self {
+            Self::Lib => "[lib]",
+            Self::Bin => "[[bin]]",
+            Self::Example => "[[example]]",
+            Self::Test => "[[test]]",
+            Self::Bench => "[[bench]]",
+        }
+    }
+
+    fn default_command(self, name: &str) -> String {
+        match self {
+            Self::Lib => "cargo test --lib".to_owned(),
+            Self::Bin => format!("cargo run --bin {name}"),
+            Self::Example => format!("cargo run --example {name}"),
+            Self::Test => format!("cargo test --test {name}"),
+            Self::Bench => format!("cargo bench --bench {name}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CargoEdition {
+    E2015,
+    E2018,
+    E2021,
+    E2024,
+}
+
+impl CargoEdition {
+    fn parse(value: &str) -> Result<Self, ProjectImportError> {
+        match value {
+            "2015" => Ok(Self::E2015),
+            "2018" => Ok(Self::E2018),
+            "2021" => Ok(Self::E2021),
+            "2024" => Ok(Self::E2024),
+            _ => Err(ProjectImportError::InvalidSourceEntry),
+        }
+    }
+
+    const fn automatic_default(self, has_manual_target: bool) -> bool {
+        match self {
+            Self::E2015 => !has_manual_target,
+            Self::E2018 | Self::E2021 | Self::E2024 => true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CargoAutoDiscovery {
+    lib: bool,
+    bins: bool,
+    examples: bool,
+    tests: bool,
+    benches: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct SafeRelativePath {
+    components: Vec<String>,
+}
+
+impl SafeRelativePath {
+    fn display(&self) -> String {
+        self.components.join("/")
+    }
+
+    fn join_to(&self, root: &Path) -> PathBuf {
+        self.components
+            .iter()
+            .fold(root.to_path_buf(), |mut path, component| {
+                path.push(component);
+                path
+            })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CargoExplicitTarget {
+    kind: CargoTargetKind,
+    name: String,
+    path: SafeRelativePath,
+    executable: bool,
+    required_features: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum CargoTargetOrigin {
+    Auto,
+    Explicit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CargoLayoutEntry {
+    kind: CargoTargetKind,
+    name: String,
+    path: SafeRelativePath,
+    origin: CargoTargetOrigin,
+    fingerprint: SourceFileFingerprint,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct CargoLayoutSnapshot {
+    entries: Vec<CargoLayoutEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CargoManifest {
+    package_name: String,
+    default_run: Option<String>,
+    auto: CargoAutoDiscovery,
+    explicit_targets: Vec<CargoExplicitTarget>,
+}
+
 /// Read and parse a project without starting an external process.
 pub fn preview_project(root: &Path) -> Result<ProjectImportPlan, ProjectImportError> {
     preview_project_with_control(root, &ImportControl::default())
@@ -291,12 +433,16 @@ pub fn preview_project_with_control(
     }
 
     let mut items = Vec::new();
+    let mut cargo_layout = None;
     if let Some(bytes) = snapshot.package {
         items.extend(parse_package_scripts(bytes)?);
         control.check()?;
     }
     if let Some(bytes) = snapshot.cargo {
-        items.extend(parse_cargo_targets(bytes)?);
+        let (cargo_items, layout) =
+            parse_cargo_targets_with_layout(&canonical_root, bytes, control, root_identity)?;
+        items.extend(cargo_items);
+        cargo_layout = Some(layout);
         control.check()?;
     }
     if items.len() > MAX_ITEMS {
@@ -326,7 +472,7 @@ pub fn preview_project_with_control(
     Ok(ProjectImportPlan {
         schema_version: PROJECT_IMPORT_SCHEMA_VERSION,
         source_root,
-        revision: source_revision_with_root(snapshot, Some(root_identity)),
+        revision: source_revision_with_layout(snapshot, Some(root_identity), cargo_layout.as_ref()),
         files,
         items,
     })
@@ -376,11 +522,17 @@ pub fn verify_preview_revision_with_control(
 /// Existing definition imports may carry a working directory from another
 /// machine.  Keep it as a reviewable absolute path, but reject traversal,
 /// device aliases, controls, and oversized strings before it reaches storage.
-pub fn validate_import_cwd(cwd: Option<&str>) -> bool {
+pub fn normalize_import_cwd(cwd: Option<&str>) -> Result<Option<String>, ProjectImportError> {
     let Some(cwd) = cwd else {
-        return true;
+        return Ok(None);
     };
-    devbox_filesystem::parse_safe_project_path(cwd).is_some()
+    devbox_filesystem::parse_safe_project_path(cwd)
+        .map(|path| Some(path.into_string()))
+        .ok_or(ProjectImportError::InvalidRoot)
+}
+
+pub fn validate_import_cwd(cwd: Option<&str>) -> bool {
+    normalize_import_cwd(cwd).is_ok()
 }
 
 /// Parse only the `scripts` object.  The actual imported command is
@@ -437,10 +589,34 @@ pub fn parse_package_scripts(bytes: &[u8]) -> Result<Vec<ProjectImportItem>, Pro
         .collect()
 }
 
-/// Parse common local Cargo targets without invoking Cargo metadata.  Targets
-/// are represented as safe Cargo argv-like command components, so a target
-/// name can never add a shell operator to the imported command.
+/// Parse only manifest-declared Cargo targets without invoking Cargo or
+/// touching the project filesystem.  The project preview uses
+/// `parse_cargo_targets_with_layout` below so automatic targets are resolved
+/// from bounded metadata-only layout discovery.
 pub fn parse_cargo_targets(bytes: &[u8]) -> Result<Vec<ProjectImportItem>, ProjectImportError> {
+    let Some(manifest) = parse_cargo_manifest(bytes)? else {
+        // A virtual workspace has no directly runnable target.  Workspace
+        // members are intentionally outside the immediate-file import scope.
+        return Ok(Vec::new());
+    };
+    explicit_cargo_items(&manifest)
+}
+
+fn parse_cargo_targets_with_layout(
+    root: &Path,
+    bytes: &[u8],
+    control: &ImportControl,
+    root_identity: devbox_filesystem::FilesystemIdentity,
+) -> Result<(Vec<ProjectImportItem>, CargoLayoutSnapshot), ProjectImportError> {
+    let Some(manifest) = parse_cargo_manifest(bytes)? else {
+        return Ok((Vec::new(), CargoLayoutSnapshot::default()));
+    };
+    let layout = discover_cargo_layout(root, &manifest, control, root_identity)?;
+    let items = merge_cargo_targets(&manifest, &layout)?;
+    Ok((items, layout))
+}
+
+fn parse_cargo_manifest(bytes: &[u8]) -> Result<Option<CargoManifest>, ProjectImportError> {
     if bytes.len() as u64 > MAX_SOURCE_FILE_BYTES {
         return Err(ProjectImportError::SourceTooLarge);
     }
@@ -448,9 +624,7 @@ pub fn parse_cargo_targets(bytes: &[u8]) -> Result<Vec<ProjectImportItem>, Proje
     let value: toml::Value = toml::from_str(text).map_err(|_| ProjectImportError::InvalidToml)?;
     let table = value.as_table().ok_or(ProjectImportError::InvalidToml)?;
     let Some(package) = table.get("package") else {
-        // A virtual workspace has no directly runnable target.  It is a
-        // valid source but cannot yield a safe single-package task.
-        return Ok(Vec::new());
+        return Ok(None);
     };
     let package = package
         .as_table()
@@ -458,93 +632,284 @@ pub fn parse_cargo_targets(bytes: &[u8]) -> Result<Vec<ProjectImportItem>, Proje
     let package_name = package
         .get("name")
         .and_then(toml::Value::as_str)
-        .ok_or(ProjectImportError::InvalidSourceEntry)?;
-    validate_cargo_name(package_name)?;
-    let autobins = match package.get("autobins") {
-        Some(value) => value
-            .as_bool()
-            .ok_or(ProjectImportError::InvalidSourceEntry)?,
-        None => true,
-    };
+        .ok_or(ProjectImportError::InvalidSourceEntry)?
+        .to_owned();
+    validate_cargo_name(&package_name)?;
 
-    let mut items = Vec::new();
-    let mut bin_names = BTreeSet::new();
+    let edition = package
+        .get("edition")
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or(ProjectImportError::InvalidSourceEntry)
+                .and_then(CargoEdition::parse)
+        })
+        .transpose()?
+        .unwrap_or(CargoEdition::E2015);
+    let default_run = package
+        .get("default-run")
+        .map(|value| {
+            let name = value
+                .as_str()
+                .ok_or(ProjectImportError::InvalidSourceEntry)?
+                .to_owned();
+            validate_cargo_name(&name)?;
+            Ok(name)
+        })
+        .transpose()?;
+
+    let mut explicit_targets = Vec::new();
+    if let Some(lib) = table.get("lib") {
+        let entry = lib
+            .as_table()
+            .ok_or(ProjectImportError::InvalidSourceEntry)?;
+        let name = entry
+            .get("name")
+            .map(|value| {
+                value
+                    .as_str()
+                    .ok_or(ProjectImportError::InvalidSourceEntry)
+                    .map(str::to_owned)
+            })
+            .transpose()?
+            .unwrap_or_else(|| package_name.replace('-', "_"));
+        validate_cargo_name(&name)?;
+        let path = explicit_target_path(
+            entry,
+            inferred_target_path(CargoTargetKind::Lib, &name, &package_name)?,
+        )?;
+        add_explicit_target(
+            &mut explicit_targets,
+            CargoExplicitTarget {
+                kind: CargoTargetKind::Lib,
+                name,
+                path,
+                executable: false,
+                required_features: parse_required_features(entry)?,
+            },
+        )?;
+    }
+
     if let Some(bins) = table.get("bin") {
-        for entry in bins.as_array().ok_or(ProjectImportError::InvalidToml)? {
-            let entry = entry
+        for value in bins.as_array().ok_or(ProjectImportError::InvalidToml)? {
+            let entry = value
                 .as_table()
                 .ok_or(ProjectImportError::InvalidSourceEntry)?;
-            let name = cargo_bin_name(entry, package_name)?;
+            let name = cargo_bin_name(entry, &package_name)?;
             validate_cargo_name(&name)?;
-            if !bin_names.insert(name.clone()) {
-                return Err(ProjectImportError::InvalidSourceEntry);
-            }
-            ensure_item_capacity(&items)?;
-            items.push(cargo_item(
-                "bin",
-                &name,
-                format!("cargo run --bin {name}"),
-                "[[bin]]",
-            )?);
+            let path = explicit_target_path(
+                entry,
+                inferred_target_path(CargoTargetKind::Bin, &name, &package_name)?,
+            )?;
+            add_explicit_target(
+                &mut explicit_targets,
+                CargoExplicitTarget {
+                    kind: CargoTargetKind::Bin,
+                    name,
+                    path,
+                    executable: true,
+                    required_features: parse_required_features(entry)?,
+                },
+            )?;
         }
-    }
-    if bin_names.is_empty() && autobins {
-        ensure_item_capacity(&items)?;
-        items.push(cargo_item(
-            "package",
-            package_name,
-            "cargo run".to_owned(),
-            "[package]",
-        )?);
     }
 
-    if let Some(lib) = table.get("lib") {
-        if !lib.is_table() {
-            return Err(ProjectImportError::InvalidSourceEntry);
-        }
-        ensure_item_capacity(&items)?;
-        items.push(cargo_item(
-            "lib",
-            package_name,
-            "cargo test --lib".to_owned(),
-            "[lib]",
-        )?);
-    }
-    for (section, flag, label) in [
-        ("example", "example", "[[example]]"),
-        ("test", "test", "[[test]]"),
-        ("bench", "bench", "[[bench]]"),
+    for (section, kind) in [
+        ("example", CargoTargetKind::Example),
+        ("test", CargoTargetKind::Test),
+        ("bench", CargoTargetKind::Bench),
     ] {
         if let Some(entries) = table.get(section) {
-            for entry in entries.as_array().ok_or(ProjectImportError::InvalidToml)? {
-                let entry = entry
+            for value in entries.as_array().ok_or(ProjectImportError::InvalidToml)? {
+                let entry = value
                     .as_table()
                     .ok_or(ProjectImportError::InvalidSourceEntry)?;
                 let name = entry
                     .get("name")
                     .and_then(toml::Value::as_str)
-                    .ok_or(ProjectImportError::InvalidSourceEntry)?;
-                validate_cargo_name(name)?;
-                let command = match flag {
-                    "example" => format!("cargo run --example {name}"),
-                    "test" => format!("cargo test --test {name}"),
-                    "bench" => format!("cargo bench --bench {name}"),
-                    _ => unreachable!("fixed Cargo target flag"),
-                };
-                ensure_item_capacity(&items)?;
-                items.push(cargo_item(flag, name, command, label)?);
+                    .ok_or(ProjectImportError::InvalidSourceEntry)?
+                    .to_owned();
+                validate_cargo_name(&name)?;
+                let path =
+                    explicit_target_path(entry, inferred_target_path(kind, &name, &package_name)?)?;
+                add_explicit_target(
+                    &mut explicit_targets,
+                    CargoExplicitTarget {
+                        kind,
+                        name,
+                        path,
+                        executable: target_is_executable(entry, kind)?,
+                        required_features: parse_required_features(entry)?,
+                    },
+                )?;
             }
         }
     }
-    if items.len() > MAX_ITEMS {
-        return Err(ProjectImportError::TooManyItems);
+
+    let has_manual_target = !explicit_targets.is_empty();
+    let automatic_default = edition.automatic_default(has_manual_target);
+    let auto = CargoAutoDiscovery {
+        lib: parse_auto_flag(package, "autolib", automatic_default)?,
+        bins: parse_auto_flag(package, "autobins", automatic_default)?,
+        examples: parse_auto_flag(package, "autoexamples", automatic_default)?,
+        tests: parse_auto_flag(package, "autotests", automatic_default)?,
+        benches: parse_auto_flag(package, "autobenches", automatic_default)?,
+    };
+
+    Ok(Some(CargoManifest {
+        package_name,
+        default_run,
+        auto,
+        explicit_targets,
+    }))
+}
+
+fn explicit_cargo_items(
+    manifest: &CargoManifest,
+) -> Result<Vec<ProjectImportItem>, ProjectImportError> {
+    let mut items = Vec::new();
+    for target in &manifest.explicit_targets {
+        if target.required_features
+            || (target.kind == CargoTargetKind::Example && !target.executable)
+        {
+            continue;
+        }
+        ensure_item_capacity(&items)?;
+        items.push(cargo_item(
+            target.kind.as_str(),
+            &target.name,
+            target.kind.default_command(&target.name),
+            target.kind.source_section(),
+        )?);
     }
+    items.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(items)
 }
 
+fn parse_auto_flag(
+    package: &toml::value::Table,
+    key: &str,
+    default: bool,
+) -> Result<bool, ProjectImportError> {
+    package
+        .get(key)
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or(ProjectImportError::InvalidSourceEntry)
+        })
+        .transpose()
+        .map(|value| value.unwrap_or(default))
+}
+
+fn add_explicit_target(
+    targets: &mut Vec<CargoExplicitTarget>,
+    target: CargoExplicitTarget,
+) -> Result<(), ProjectImportError> {
+    if targets.iter().any(|existing| {
+        existing.kind == target.kind
+            && (existing.name == target.name || existing.path == target.path)
+    }) {
+        return Err(ProjectImportError::InvalidSourceEntry);
+    }
+    if targets.len() >= MAX_ITEMS {
+        return Err(ProjectImportError::TooManyItems);
+    }
+    targets.push(target);
+    Ok(())
+}
+
+fn explicit_target_path(
+    entry: &toml::value::Table,
+    inferred: SafeRelativePath,
+) -> Result<SafeRelativePath, ProjectImportError> {
+    entry
+        .get("path")
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or(ProjectImportError::InvalidSourceEntry)
+                .and_then(parse_safe_relative_path)
+        })
+        .transpose()
+        .map(|path| path.unwrap_or(inferred))
+}
+
+fn inferred_target_path(
+    kind: CargoTargetKind,
+    name: &str,
+    package_name: &str,
+) -> Result<SafeRelativePath, ProjectImportError> {
+    let path = match kind {
+        CargoTargetKind::Lib => "src/lib.rs".to_owned(),
+        CargoTargetKind::Bin if name == package_name => "src/main.rs".to_owned(),
+        CargoTargetKind::Bin => format!("src/bin/{name}.rs"),
+        CargoTargetKind::Example => format!("examples/{name}.rs"),
+        CargoTargetKind::Test => format!("tests/{name}.rs"),
+        CargoTargetKind::Bench => format!("benches/{name}.rs"),
+    };
+    parse_safe_relative_path(&path)
+}
+
+fn parse_required_features(entry: &toml::value::Table) -> Result<bool, ProjectImportError> {
+    let Some(value) = entry.get("required-features") else {
+        return Ok(false);
+    };
+    let values = value
+        .as_array()
+        .ok_or(ProjectImportError::InvalidSourceEntry)?;
+    if values.len() > MAX_ITEMS {
+        return Err(ProjectImportError::TooManyItems);
+    }
+    for value in values {
+        let feature = value
+            .as_str()
+            .ok_or(ProjectImportError::InvalidSourceEntry)?;
+        if feature.is_empty()
+            || feature.len() > MAX_ITEM_NAME_BYTES
+            || feature.chars().any(char::is_control)
+        {
+            return Err(ProjectImportError::InvalidSourceEntry);
+        }
+    }
+    Ok(!values.is_empty())
+}
+
+fn target_is_executable(
+    entry: &toml::value::Table,
+    kind: CargoTargetKind,
+) -> Result<bool, ProjectImportError> {
+    if kind != CargoTargetKind::Example {
+        return Ok(true);
+    }
+    let Some(value) = entry.get("crate-type") else {
+        return Ok(true);
+    };
+    let values = value
+        .as_array()
+        .ok_or(ProjectImportError::InvalidSourceEntry)?;
+    if values.len() > MAX_ITEMS {
+        return Err(ProjectImportError::TooManyItems);
+    }
+    let mut executable = false;
+    for value in values {
+        let crate_type = value
+            .as_str()
+            .ok_or(ProjectImportError::InvalidSourceEntry)?;
+        if crate_type.is_empty()
+            || crate_type.len() > MAX_ITEM_NAME_BYTES
+            || crate_type.chars().any(char::is_control)
+        {
+            return Err(ProjectImportError::InvalidSourceEntry);
+        }
+        executable |= crate_type == "bin";
+    }
+    Ok(executable)
+}
+
 /// Cargo derives an explicit `[[bin]]` target name from its `path` when the
-/// optional `name` field is omitted.  Keep that derivation local and bounded;
-/// the path is metadata only and is never opened or passed to a process.
+/// optional `name` field is omitted.  The path is metadata only and is never
+/// opened or passed to a process by this parser.
 fn cargo_bin_name(
     entry: &toml::value::Table,
     package_name: &str,
@@ -561,32 +926,416 @@ fn cargo_bin_name(
     let path = path
         .as_str()
         .ok_or(ProjectImportError::InvalidSourceEntry)?;
-    if path.is_empty()
-        || path.len() > MAX_COMMAND_BYTES
-        || path.chars().any(char::is_control)
-        || path.starts_with('/')
-        || path.starts_with('\\')
-    {
-        return Err(ProjectImportError::InvalidSourceEntry);
-    }
-    let mut components = path.split(['/', '\\']);
-    if components.clone().any(|component| {
-        component.is_empty() || matches!(component, "." | "..") || component.contains(':')
-    }) {
-        return Err(ProjectImportError::InvalidSourceEntry);
-    }
-    let leaf = components
-        .next_back()
+    let path = parse_safe_relative_path(path)?;
+    let leaf = path
+        .components
+        .last()
         .ok_or(ProjectImportError::InvalidSourceEntry)?;
     let name = leaf
         .rsplit_once('.')
-        .map_or(leaf, |(stem, _)| stem)
+        .map_or(leaf.as_str(), |(stem, _)| stem)
         .trim_end_matches('.')
         .to_owned();
     if name.is_empty() {
         return Err(ProjectImportError::InvalidSourceEntry);
     }
     Ok(name)
+}
+
+fn parse_safe_relative_path(value: &str) -> Result<SafeRelativePath, ProjectImportError> {
+    if value.is_empty()
+        || value.len() > MAX_PROJECT_ROOT_BYTES
+        || value.chars().any(char::is_control)
+        || value.starts_with('/')
+        || value.starts_with('\\')
+        || value.as_bytes().get(1) == Some(&b':')
+    {
+        return Err(ProjectImportError::InvalidSourceEntry);
+    }
+    let components = value
+        .split(['/', '\\'])
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if components.is_empty()
+        || components.iter().any(|component| {
+            component.is_empty()
+                || matches!(component.as_str(), "." | "..")
+                || component.contains(':')
+        })
+    {
+        return Err(ProjectImportError::InvalidSourceEntry);
+    }
+    Ok(SafeRelativePath { components })
+}
+
+fn append_relative_component(base: &SafeRelativePath, component: &str) -> SafeRelativePath {
+    let mut components = base.components.clone();
+    components.push(component.to_owned());
+    SafeRelativePath { components }
+}
+
+fn fixed_relative_path(value: &str) -> SafeRelativePath {
+    parse_safe_relative_path(value).expect("fixed Cargo layout path must be safe")
+}
+
+fn discover_cargo_layout(
+    root: &Path,
+    manifest: &CargoManifest,
+    control: &ImportControl,
+    expected_root_identity: devbox_filesystem::FilesystemIdentity,
+) -> Result<CargoLayoutSnapshot, ProjectImportError> {
+    let mut entries = Vec::new();
+    for target in &manifest.explicit_targets {
+        control.check()?;
+        let Some(fingerprint) = inspect_target_file(root, &target.path, control, true)? else {
+            return Err(ProjectImportError::SourceUnavailable);
+        };
+        entries.push(CargoLayoutEntry {
+            kind: target.kind,
+            name: target.name.clone(),
+            path: target.path.clone(),
+            origin: CargoTargetOrigin::Explicit,
+            fingerprint,
+        });
+        ensure_root_identity(root, expected_root_identity)?;
+    }
+
+    if manifest.auto.lib {
+        discover_auto_file(
+            root,
+            CargoTargetKind::Lib,
+            &manifest.package_name.replace('-', "_"),
+            &fixed_relative_path("src/lib.rs"),
+            control,
+            &mut entries,
+        )?;
+        ensure_root_identity(root, expected_root_identity)?;
+    }
+    if manifest.auto.bins {
+        discover_auto_file(
+            root,
+            CargoTargetKind::Bin,
+            &manifest.package_name,
+            &fixed_relative_path("src/main.rs"),
+            control,
+            &mut entries,
+        )?;
+        scan_auto_directory(
+            root,
+            &fixed_relative_path("src/bin"),
+            CargoTargetKind::Bin,
+            control,
+            &mut entries,
+        )?;
+        ensure_root_identity(root, expected_root_identity)?;
+    }
+    if manifest.auto.examples {
+        scan_auto_directory(
+            root,
+            &fixed_relative_path("examples"),
+            CargoTargetKind::Example,
+            control,
+            &mut entries,
+        )?;
+        ensure_root_identity(root, expected_root_identity)?;
+    }
+    if manifest.auto.tests {
+        scan_auto_directory(
+            root,
+            &fixed_relative_path("tests"),
+            CargoTargetKind::Test,
+            control,
+            &mut entries,
+        )?;
+        ensure_root_identity(root, expected_root_identity)?;
+    }
+    if manifest.auto.benches {
+        scan_auto_directory(
+            root,
+            &fixed_relative_path("benches"),
+            CargoTargetKind::Bench,
+            control,
+            &mut entries,
+        )?;
+        ensure_root_identity(root, expected_root_identity)?;
+    }
+    ensure_root_identity(root, expected_root_identity)?;
+    coalesce_layout_entries(entries)
+}
+
+fn discover_auto_file(
+    root: &Path,
+    kind: CargoTargetKind,
+    name: &str,
+    path: &SafeRelativePath,
+    control: &ImportControl,
+    entries: &mut Vec<CargoLayoutEntry>,
+) -> Result<(), ProjectImportError> {
+    let Some(fingerprint) = inspect_target_file(root, path, control, false)? else {
+        return Ok(());
+    };
+    add_layout_entry(
+        entries,
+        CargoLayoutEntry {
+            kind,
+            name: name.to_owned(),
+            path: path.clone(),
+            origin: CargoTargetOrigin::Auto,
+            fingerprint,
+        },
+    )
+}
+
+fn scan_auto_directory(
+    root: &Path,
+    directory: &SafeRelativePath,
+    kind: CargoTargetKind,
+    control: &ImportControl,
+    entries: &mut Vec<CargoLayoutEntry>,
+) -> Result<(), ProjectImportError> {
+    control.check()?;
+    let directory_path = directory.join_to(root);
+    let metadata = match fs::symlink_metadata(&directory_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err(ProjectImportError::SourceUnavailable),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(ProjectImportError::UnsafeSource);
+    }
+    devbox_filesystem::ensure_no_links(&directory_path)
+        .map_err(|_| ProjectImportError::UnsafeSource)?;
+    let before_identity = devbox_filesystem::filesystem_identity(&directory_path, true)
+        .map_err(|_| ProjectImportError::UnsafeSource)?;
+    let read_dir =
+        fs::read_dir(&directory_path).map_err(|_| ProjectImportError::SourceUnavailable)?;
+    let mut seen_entries = 0usize;
+    for entry in read_dir {
+        control.check()?;
+        seen_entries += 1;
+        if seen_entries > MAX_LAYOUT_DIRECTORY_ENTRIES {
+            return Err(ProjectImportError::TooManyItems);
+        }
+        let entry = entry.map_err(|_| ProjectImportError::SourceUnavailable)?;
+        let file_name = entry.file_name();
+        let Some(file_name) = file_name.to_str() else {
+            continue;
+        };
+        let child_path = append_relative_component(directory, file_name);
+        let child_fs_path = child_path.join_to(root);
+        let child_metadata = fs::symlink_metadata(&child_fs_path)
+            .map_err(|_| ProjectImportError::SourceUnavailable)?;
+        if child_metadata.file_type().is_symlink() {
+            return Err(ProjectImportError::UnsafeSource);
+        }
+        devbox_filesystem::ensure_no_links(&child_fs_path)
+            .map_err(|_| ProjectImportError::UnsafeSource)?;
+
+        if child_metadata.is_file() {
+            let Some(name) = file_name.strip_suffix(".rs") else {
+                continue;
+            };
+            validate_cargo_name(name)?;
+            let Some(fingerprint) = inspect_target_file(root, &child_path, control, true)? else {
+                return Err(ProjectImportError::SourceUnavailable);
+            };
+            add_layout_entry(
+                entries,
+                CargoLayoutEntry {
+                    kind,
+                    name: name.to_owned(),
+                    path: child_path,
+                    origin: CargoTargetOrigin::Auto,
+                    fingerprint,
+                },
+            )?;
+        } else if child_metadata.is_dir() {
+            let main_path = append_relative_component(&child_path, "main.rs");
+            let Some(fingerprint) = inspect_target_file(root, &main_path, control, false)? else {
+                continue;
+            };
+            validate_cargo_name(file_name)?;
+            add_layout_entry(
+                entries,
+                CargoLayoutEntry {
+                    kind,
+                    name: file_name.to_owned(),
+                    path: main_path,
+                    origin: CargoTargetOrigin::Auto,
+                    fingerprint,
+                },
+            )?;
+        }
+    }
+    control.check()?;
+    let after_identity = devbox_filesystem::filesystem_identity(&directory_path, true)
+        .map_err(|_| ProjectImportError::StaleSource)?;
+    if before_identity != after_identity {
+        return Err(ProjectImportError::StaleSource);
+    }
+    Ok(())
+}
+
+fn inspect_target_file(
+    root: &Path,
+    path: &SafeRelativePath,
+    control: &ImportControl,
+    required: bool,
+) -> Result<Option<SourceFileFingerprint>, ProjectImportError> {
+    control.check()?;
+    let filesystem_path = path.join_to(root);
+    let metadata = match fs::symlink_metadata(&filesystem_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if required {
+                return Err(ProjectImportError::SourceUnavailable);
+            }
+            return Ok(None);
+        }
+        Err(_) => return Err(ProjectImportError::SourceUnavailable),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(ProjectImportError::UnsafeSource);
+    }
+    devbox_filesystem::ensure_no_links(&filesystem_path)
+        .map_err(|_| ProjectImportError::UnsafeSource)?;
+    let canonical = filesystem_path
+        .canonicalize()
+        .map_err(|_| ProjectImportError::UnsafeSource)?;
+    if canonical.strip_prefix(root).is_err() {
+        return Err(ProjectImportError::UnsafeSource);
+    }
+    let fingerprint = source_file_fingerprint(&metadata);
+    let identity = devbox_filesystem::filesystem_identity(&filesystem_path, false)
+        .map_err(|_| ProjectImportError::UnsafeSource)?;
+    control.check()?;
+    devbox_filesystem::ensure_no_links(&filesystem_path)
+        .map_err(|_| ProjectImportError::StaleSource)?;
+    let current_canonical = filesystem_path
+        .canonicalize()
+        .map_err(|_| ProjectImportError::StaleSource)?;
+    if current_canonical.strip_prefix(root).is_err() {
+        return Err(ProjectImportError::StaleSource);
+    }
+    let current_metadata =
+        fs::symlink_metadata(&filesystem_path).map_err(|_| ProjectImportError::StaleSource)?;
+    let current_identity = devbox_filesystem::filesystem_identity(&filesystem_path, false)
+        .map_err(|_| ProjectImportError::UnsafeSource)?;
+    if current_metadata.file_type().is_symlink()
+        || source_file_fingerprint(&current_metadata) != fingerprint
+        || current_identity != identity
+    {
+        return Err(ProjectImportError::StaleSource);
+    }
+    control.check()?;
+    Ok(Some(fingerprint))
+}
+
+fn add_layout_entry(
+    entries: &mut Vec<CargoLayoutEntry>,
+    entry: CargoLayoutEntry,
+) -> Result<(), ProjectImportError> {
+    if entries.len() >= MAX_LAYOUT_CANDIDATES {
+        return Err(ProjectImportError::TooManyItems);
+    }
+    entries.push(entry);
+    Ok(())
+}
+
+fn coalesce_layout_entries(
+    entries: Vec<CargoLayoutEntry>,
+) -> Result<CargoLayoutSnapshot, ProjectImportError> {
+    let explicit_paths = entries
+        .iter()
+        .filter(|entry| entry.origin == CargoTargetOrigin::Explicit)
+        .map(|entry| (entry.kind, entry.path.clone()))
+        .collect::<BTreeSet<_>>();
+    let mut by_key: BTreeMap<(CargoTargetKind, String), CargoLayoutEntry> = BTreeMap::new();
+    for entry in entries {
+        // Cargo's explicit target table is authoritative for a standard-layout
+        // source path. In particular, an executable auto-example must not be
+        // synthesized for a path that an explicit non-bin example renamed or
+        // configured with a library crate type.
+        if entry.origin == CargoTargetOrigin::Auto
+            && explicit_paths.contains(&(entry.kind, entry.path.clone()))
+        {
+            continue;
+        }
+        let key = (entry.kind, entry.name.clone());
+        if let Some(existing) = by_key.get(&key) {
+            if existing.path != entry.path {
+                return Err(ProjectImportError::InvalidSourceEntry);
+            }
+            if existing.fingerprint != entry.fingerprint {
+                return Err(ProjectImportError::StaleSource);
+            }
+            if entry.origin > existing.origin {
+                by_key.insert(key, entry);
+            }
+        } else {
+            by_key.insert(key, entry);
+        }
+    }
+    if by_key.len() > MAX_ITEMS {
+        return Err(ProjectImportError::TooManyItems);
+    }
+    Ok(CargoLayoutSnapshot {
+        entries: by_key.into_values().collect(),
+    })
+}
+
+fn merge_cargo_targets(
+    manifest: &CargoManifest,
+    layout: &CargoLayoutSnapshot,
+) -> Result<Vec<ProjectImportItem>, ProjectImportError> {
+    let mut by_key: BTreeMap<(CargoTargetKind, String), &CargoLayoutEntry> = BTreeMap::new();
+    for entry in &layout.entries {
+        let key = (entry.kind, entry.name.clone());
+        if let Some(existing) = by_key.get(&key) {
+            if existing.path != entry.path {
+                return Err(ProjectImportError::InvalidSourceEntry);
+            }
+        } else {
+            by_key.insert(key, entry);
+        }
+    }
+
+    let mut bin_names = BTreeSet::new();
+    let mut items = Vec::new();
+    for ((kind, name), entry) in by_key {
+        if kind == CargoTargetKind::Bin {
+            bin_names.insert(name.clone());
+        }
+        let explicit = manifest
+            .explicit_targets
+            .iter()
+            .find(|target| target.kind == kind && target.name == name);
+        if let Some(target) = explicit {
+            if target.required_features
+                || (target.kind == CargoTargetKind::Example && !target.executable)
+            {
+                continue;
+            }
+        }
+        ensure_item_capacity(&items)?;
+        items.push(cargo_item(
+            kind.as_str(),
+            &name,
+            kind.default_command(&name),
+            if entry.origin == CargoTargetOrigin::Explicit {
+                kind.source_section()
+            } else {
+                "auto-discovered layout"
+            },
+        )?);
+    }
+    if let Some(default_run) = &manifest.default_run {
+        if !bin_names.contains(default_run) {
+            return Err(ProjectImportError::InvalidSourceEntry);
+        }
+    }
+    items.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(items)
 }
 
 fn ensure_item_capacity(items: &[ProjectImportItem]) -> Result<(), ProjectImportError> {
@@ -766,6 +1515,7 @@ fn canonical_project_root(root: &Path) -> Result<PathBuf, ProjectImportError> {
         return Err(ProjectImportError::InvalidRoot);
     }
     reject_link_components(root)?;
+    devbox_filesystem::ensure_no_links(root).map_err(|_| ProjectImportError::UnsafeSource)?;
     let metadata = fs::symlink_metadata(root).map_err(|_| ProjectImportError::InvalidRoot)?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return Err(ProjectImportError::InvalidRoot);
@@ -844,6 +1594,7 @@ fn read_source_file(
         return Err(ProjectImportError::SourceTooLarge);
     }
     let expected_fingerprint = source_file_fingerprint(&metadata);
+    devbox_filesystem::ensure_no_links(&path).map_err(|_| ProjectImportError::UnsafeSource)?;
     let canonical = path
         .canonicalize()
         .map_err(|_| ProjectImportError::UnsafeSource)?;
@@ -932,8 +1683,16 @@ fn source_revision_with_root(
     snapshot: SourceSnapshot<'_>,
     root_identity: Option<devbox_filesystem::FilesystemIdentity>,
 ) -> String {
+    source_revision_with_layout(snapshot, root_identity, None)
+}
+
+fn source_revision_with_layout(
+    snapshot: SourceSnapshot<'_>,
+    root_identity: Option<devbox_filesystem::FilesystemIdentity>,
+    cargo_layout: Option<&CargoLayoutSnapshot>,
+) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(b"run-manager-project-import-v2");
+    hasher.update(b"run-manager-project-import-v3");
     // FilesystemIdentity intentionally keeps its platform-specific fields
     // private. Hash it once with the standard library and feed only that
     // opaque value into the cryptographic revision, so paths never enter the
@@ -962,7 +1721,62 @@ fn source_revision_with_root(
             None => hasher.update([0]),
         }
     }
+    match cargo_layout {
+        Some(layout) => {
+            hasher.update([1]);
+            let layout_revision = cargo_layout_revision(layout);
+            hasher.update((layout_revision.len() as u64).to_le_bytes());
+            hasher.update(layout_revision);
+        }
+        None => hasher.update([0]),
+    }
     hex_digest(hasher.finalize())
+}
+
+fn cargo_layout_revision(layout: &CargoLayoutSnapshot) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(b"run-manager-cargo-layout-v1");
+    for entry in &layout.entries {
+        hasher.update([match entry.kind {
+            CargoTargetKind::Lib => 0,
+            CargoTargetKind::Bin => 1,
+            CargoTargetKind::Example => 2,
+            CargoTargetKind::Test => 3,
+            CargoTargetKind::Bench => 4,
+        }]);
+        update_hashed_string(&mut hasher, &entry.name);
+        update_hashed_string(&mut hasher, &entry.path.display());
+        update_hashed_fingerprint(&mut hasher, entry.fingerprint);
+    }
+    hasher.finalize().to_vec()
+}
+
+fn update_hashed_string(hasher: &mut Sha256, value: &str) {
+    hasher.update((value.len() as u64).to_le_bytes());
+    hasher.update(value.as_bytes());
+}
+
+fn update_hashed_fingerprint(hasher: &mut Sha256, fingerprint: SourceFileFingerprint) {
+    hasher.update(fingerprint.byte_length.to_le_bytes());
+    match fingerprint.modified {
+        Some(modified) => match modified.duration_since(std::time::UNIX_EPOCH) {
+            Ok(duration) => {
+                hasher.update([1]);
+                hasher.update(duration.as_secs().to_le_bytes());
+                hasher.update(duration.subsec_nanos().to_le_bytes());
+            }
+            Err(_) => hasher.update([0]),
+        },
+        None => hasher.update([0]),
+    }
+    match fingerprint.object_identity {
+        Some((scope, object)) => {
+            hasher.update([1]);
+            hasher.update(scope.to_le_bytes());
+            hasher.update(object.to_le_bytes());
+        }
+        None => hasher.update([0]),
+    }
 }
 
 /// Convert a preview item into the disabled `JobInput` that the command layer
@@ -1063,6 +1877,16 @@ path = "tests/smoke.rs"
     }
 
     #[test]
+    fn definition_import_cwd_returns_the_validated_canonical_spelling() {
+        assert_eq!(
+            normalize_import_cwd(Some(" C:/Work/demo/ ")).unwrap(),
+            Some("C:/Work/demo".to_owned())
+        );
+        assert_eq!(normalize_import_cwd(None).unwrap(), None);
+        assert!(normalize_import_cwd(Some("relative/project")).is_err());
+    }
+
+    #[test]
     fn cargo_targets_are_bounded_and_never_execute_metadata() {
         let items = parse_cargo_targets(CARGO).unwrap();
         assert!(items
@@ -1099,6 +1923,13 @@ autobins = "false"
             parse_cargo_targets(invalid),
             Err(ProjectImportError::InvalidSourceEntry)
         );
+
+        let package_only = br#"[package]
+name = "package-only"
+version = "0.1.0"
+"#;
+        let items = parse_cargo_targets(package_only).unwrap();
+        assert!(items.is_empty());
     }
 
     #[test]
@@ -1126,6 +1957,298 @@ path = "../worker.rs"
             parse_cargo_targets(unsafe_path),
             Err(ProjectImportError::InvalidSourceEntry)
         );
+    }
+
+    fn write_project_file(root: &std::path::Path, relative: &str, contents: &[u8]) {
+        let path = relative
+            .split('/')
+            .fold(root.to_path_buf(), |mut path, component| {
+                path.push(component);
+                path
+            });
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    }
+
+    #[test]
+    fn preview_discovers_bounded_standard_cargo_layout_without_reading_sources() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join(CARGO_TOML),
+            br#"[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+        for path in [
+            "src/lib.rs",
+            "src/main.rs",
+            "src/bin/worker.rs",
+            "src/bin/tools/main.rs",
+            "examples/basic.rs",
+            "examples/multi/main.rs",
+            "tests/smoke.rs",
+            "tests/multi/main.rs",
+            "benches/throughput.rs",
+            "benches/multi/main.rs",
+        ] {
+            // Invalid source bytes prove discovery uses metadata only.
+            write_project_file(root.path(), path, b"\0not-rust");
+        }
+
+        let plan = preview_project(root.path()).unwrap();
+        let commands = plan
+            .items
+            .iter()
+            .map(|item| item.command.as_str())
+            .collect::<BTreeSet<_>>();
+        for command in [
+            "cargo test --lib",
+            "cargo run --bin demo",
+            "cargo run --bin worker",
+            "cargo run --bin tools",
+            "cargo run --example basic",
+            "cargo run --example multi",
+            "cargo test --test smoke",
+            "cargo test --test multi",
+            "cargo bench --bench throughput",
+            "cargo bench --bench multi",
+        ] {
+            assert!(commands.contains(command), "missing {command}");
+        }
+        assert!(!plan.items.iter().any(|item| item.command == "cargo run"));
+    }
+
+    #[test]
+    fn cargo_auto_flags_and_edition_follow_cargo_defaults() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join(CARGO_TOML),
+            br#"[package]
+name = "legacy"
+version = "0.1.0"
+edition = "2015"
+
+[[bin]]
+name = "worker"
+path = "src/bin/worker.rs"
+"#,
+        )
+        .unwrap();
+        write_project_file(root.path(), "src/main.rs", b"not-rust");
+        write_project_file(root.path(), "src/bin/worker.rs", b"not-rust");
+        let plan = preview_project(root.path()).unwrap();
+        assert_eq!(
+            plan.items
+                .iter()
+                .map(|item| item.command.as_str())
+                .collect::<Vec<_>>(),
+            vec!["cargo run --bin worker"]
+        );
+
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join(CARGO_TOML),
+            br#"[package]
+name = "flags"
+version = "0.1.0"
+edition = "2021"
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[[bin]]
+name = "worker"
+path = "custom/worker.rs"
+"#,
+        )
+        .unwrap();
+        for path in [
+            "src/lib.rs",
+            "src/main.rs",
+            "examples/basic.rs",
+            "tests/smoke.rs",
+            "benches/perf.rs",
+            "custom/worker.rs",
+        ] {
+            write_project_file(root.path(), path, b"not-rust");
+        }
+        let plan = preview_project(root.path()).unwrap();
+        assert_eq!(plan.items.len(), 1);
+        assert_eq!(plan.items[0].command, "cargo run --bin worker");
+    }
+
+    #[test]
+    fn explicit_and_automatic_targets_merge_by_kind_name_and_path() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join(CARGO_TOML),
+            br#"[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+default-run = "worker"
+
+[[bin]]
+name = "worker"
+path = "src/bin/worker.rs"
+"#,
+        )
+        .unwrap();
+        write_project_file(root.path(), "src/main.rs", b"not-rust");
+        write_project_file(root.path(), "src/bin/worker.rs", b"not-rust");
+        write_project_file(root.path(), "src/bin/other.rs", b"not-rust");
+        let plan = preview_project(root.path()).unwrap();
+        let bin_commands = plan
+            .items
+            .iter()
+            .filter(|item| item.command.starts_with("cargo run --bin"))
+            .map(|item| item.command.as_str())
+            .collect::<BTreeSet<_>>();
+        let expected = [
+            "cargo run --bin demo",
+            "cargo run --bin other",
+            "cargo run --bin worker",
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+        assert_eq!(bin_commands, expected);
+    }
+
+    #[test]
+    fn conflicting_explicit_and_automatic_target_paths_fail_closed() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join(CARGO_TOML),
+            br#"[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "worker"
+path = "custom/worker.rs"
+"#,
+        )
+        .unwrap();
+        write_project_file(root.path(), "custom/worker.rs", b"not-rust");
+        write_project_file(root.path(), "src/bin/worker.rs", b"not-rust");
+        assert_eq!(
+            preview_project(root.path()),
+            Err(ProjectImportError::InvalidSourceEntry)
+        );
+    }
+
+    #[test]
+    fn required_features_and_library_examples_are_not_execution_tasks() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join(CARGO_TOML),
+            br#"[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "feature-bin"
+path = "custom/feature.rs"
+required-features = ["feature"]
+
+[[example]]
+name = "library-example"
+path = "examples/library.rs"
+crate-type = ["staticlib"]
+
+[[test]]
+name = "smoke"
+path = "tests/smoke.rs"
+"#,
+        )
+        .unwrap();
+        for path in ["custom/feature.rs", "examples/library.rs", "tests/smoke.rs"] {
+            write_project_file(root.path(), path, b"not-rust");
+        }
+        let plan = preview_project(root.path()).unwrap();
+        assert_eq!(
+            plan.items
+                .iter()
+                .map(|item| item.command.as_str())
+                .collect::<Vec<_>>(),
+            vec!["cargo test --test smoke"]
+        );
+    }
+
+    #[test]
+    fn layout_changes_make_a_project_preview_stale() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join(CARGO_TOML),
+            br#"[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+        write_project_file(root.path(), "src/main.rs", b"not-rust");
+        let plan = preview_project(root.path()).unwrap();
+        assert!(!plan.revision.contains(root.path().to_str().unwrap()));
+        write_project_file(root.path(), "src/bin/new.rs", b"not-rust");
+        assert_eq!(
+            verify_preview_revision(root.path(), &plan.source_root, &plan.revision),
+            Err(ProjectImportError::StaleSource)
+        );
+    }
+
+    #[test]
+    fn explicit_target_files_are_required_but_auto_files_may_be_absent() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join(CARGO_TOML),
+            br#"[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "missing"
+path = "src/bin/missing.rs"
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            preview_project(root.path()),
+            Err(ProjectImportError::SourceUnavailable)
+        );
+    }
+
+    #[test]
+    fn symlinked_automatic_target_is_rejected_without_following_it() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            let root = tempfile::tempdir().unwrap();
+            std::fs::write(
+                root.path().join(CARGO_TOML),
+                br#"[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+"#,
+            )
+            .unwrap();
+            let outside = tempfile::NamedTempFile::new().unwrap();
+            std::fs::create_dir_all(root.path().join("src")).unwrap();
+            symlink(outside.path(), root.path().join("src/main.rs")).unwrap();
+            assert_eq!(
+                preview_project(root.path()),
+                Err(ProjectImportError::UnsafeSource)
+            );
+        }
     }
 
     #[test]

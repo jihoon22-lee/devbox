@@ -1,7 +1,8 @@
 use crate::core::imports::{
-    definition_revision, imported_job_input, preview_project_with_control, validate_import_cwd,
-    verify_preview_revision_with_control, ImportOperationRegistry, ProjectImportApplyResult,
-    ProjectImportError, ProjectImportPlan, MAX_DEFINITION_JSON_BYTES, MAX_ITEMS,
+    definition_revision, imported_job_input, normalize_import_cwd, preview_project_with_control,
+    validate_import_cwd, verify_preview_revision_with_control, ImportOperationRegistry,
+    ProjectImportApplyResult, ProjectImportError, ProjectImportPlan, MAX_DEFINITION_JSON_BYTES,
+    MAX_ITEMS,
 };
 use crate::core::log_search::{
     search_streams, validate_request, LogSearchError, LogSearchRequest, LogSearchResponse,
@@ -364,7 +365,7 @@ fn parse_definition_export(json: &str) -> Result<(DefinitionExport, String), Str
         return Err("definition-import-too-large".to_owned());
     }
     let revision = definition_revision(json).map_err(|_| "definition-import-invalid".to_owned())?;
-    let doc: DefinitionExport =
+    let mut doc: DefinitionExport =
         serde_json::from_str(json).map_err(|_| definition_import_error())?;
     if doc.schema_version != 1
         || doc.jobs.len().saturating_add(doc.services.len()) > MAX_IMPORT_DEFINITIONS
@@ -373,13 +374,17 @@ fn parse_definition_export(json: &str) -> Result<(DefinitionExport, String), Str
     }
 
     let mut ids = HashSet::new();
-    for job in &doc.jobs {
+    for job in &mut doc.jobs {
+        job.cwd =
+            normalize_import_cwd(job.cwd.as_deref()).map_err(|_| definition_import_error())?;
         validate_import_definition(job, JobKind::Job)?;
         if !ids.insert(job.id.clone()) {
             return Err("definition-import-duplicate".to_owned());
         }
     }
-    for service in &doc.services {
+    for service in &mut doc.services {
+        service.cwd =
+            normalize_import_cwd(service.cwd.as_deref()).map_err(|_| definition_import_error())?;
         validate_import_definition(service, JobKind::Service)?;
         if !ids.insert(service.id.clone()) {
             return Err("definition-import-duplicate".to_owned());

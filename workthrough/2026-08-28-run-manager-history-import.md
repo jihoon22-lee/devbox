@@ -6,8 +6,9 @@ Issues #357 and #358 are implemented as one Run Manager history/import candidate
 Run history now has a bounded, parameterized status/kind/target/date/duration query,
 and the import dialog can preview local `package.json` scripts and `Cargo.toml`
 targets before saving disabled drafts. The implementation stays native-first and
-offline: it reads only the two explicitly selected source files and never invokes
-npm, Cargo, a shell, a dotenv loader, a network client, or an imported command.
+offline: it reads the contents of only the two explicitly selected manifest files,
+uses bounded metadata for Cargo's fixed standard layout, and never invokes npm,
+Cargo, a shell, a dotenv loader, a network client, or an imported command.
 
 ## Context
 
@@ -56,16 +57,19 @@ Files: `apps/run-manager/src-tauri/src/core/imports.rs`,
 `apps/run-manager/src-tauri/src/lib.rs`,
 `apps/run-manager/src-tauri/Cargo.toml`, and `Cargo.lock`.
 
-- Reads only immediate `package.json` and `Cargo.toml` files below a canonical,
-  absolute, non-symlink project root. Reads are bounded to 512 KiB per file and
-  128 total items; root, command, name, environment-key, operation-ID, and
-  selection-ID limits are enforced before storage.
+- Reads only immediate `package.json` and `Cargo.toml` contents below a
+  canonical, absolute, non-symlink project root. Cargo's standard target layout
+  is inspected with fixed-depth, bounded metadata only. Reads are bounded to
+  512 KiB per manifest and 128 total items; root, command, name,
+  environment-key, operation-ID, and selection-ID limits are enforced before
+  storage.
 - Converts scripts into stable `npm run -- <name>` commands and Cargo targets
   into restricted `cargo run/test/bench` command forms. Target names are checked
   against a narrow safe character set, malformed Cargo target shapes fail closed,
-  and no parser path reaches a process adapter. A package with `autobins = false`
-  no longer receives a phantom default `cargo run`; an invalid non-boolean flag
-  fails closed while explicit `[[bin]]` targets remain importable.
+  and no parser path reaches a process adapter. Cargo auto targets are emitted
+  only after their bounded metadata path is present; a library-only package never
+  receives a phantom bare `cargo run`. An invalid non-boolean flag fails closed
+  while explicit `[[bin]]` targets remain importable.
 - Script bodies are not returned, persisted, or put into errors. Only bounded
   environment key names are shown; environment values and `.env` files are never
   read. Canonical cwd is displayed for confirmation and all imported jobs start
@@ -220,8 +224,9 @@ The Rust unit/fixture tests cover parser bounds, unsafe symlinks, root/file
 identity and source revision changes, operation duplicate/cancel/timeout state,
 history filter combinations, normalized cwd conflicts, and atomic duplicate/
 invalid definition/project import batches. All 186 baseline Run Manager library
-tests passed; the final candidate inventory is 189 after the autobins and
-re-audit fixtures. Frontend dependencies were restored from the local offline
+tests passed; the first re-audit inventory was 189 after the autobins and
+selection fixtures, and the metadata-only Cargo follow-up brings the final
+inventory to 198 passing tests as recorded below. Frontend dependencies were restored from the local offline
 pnpm store;
 the complete Vitest suite and production TypeScript/Vite build passed. Windows
 W3 packaged smoke is pending.
@@ -248,9 +253,8 @@ W3 packaged smoke is pending.
 
 ## Final Re-audit (2026-08-28)
 
-The final #357/#358 review was performed again on the candidate without
-rebasing, committing, pushing, or opening a PR. The branch was intentionally left
-dirty with only the remediation changes below. GitHub issue #358 explicitly scopes
+The final #357/#358 review was performed again on the candidate before
+rebasing, pushing, or opening a PR. GitHub issue #358 explicitly scopes
 the native importer to `package.json` scripts and Cargo targets; VS Code
 `tasks.json` parsing remains the separate §13.2 follow-up and is documented as such
 instead of silently expanding this PR boundary.
@@ -321,3 +325,73 @@ pnpm --dir apps/run-manager test -- --maxWorkers=1 --no-file-parallelism
                                                        interrupted: /mnt/e 9p I/O stall
                                                        before a result; not counted as a pass
 ```
+
+## Metadata-only Cargo auto-target follow-up
+
+### Overview
+
+The final P1 audit found that parsing `Cargo.toml` alone cannot identify Cargo's
+standard-layout targets. The importer previously created a phantom bare
+`cargo run` when no explicit `[[bin]]` existed, while omitting automatic
+`src/main.rs`, `src/bin`, examples, tests, and benchmarks. This follow-up keeps
+the no-Cargo/no-shell boundary but permits a fixed-depth, bounded, metadata-only
+layout probe. Cargo source contents are still never read.
+
+### Changes made
+
+- `apps/run-manager/src-tauri/src/core/imports.rs`
+  - Split Cargo manifest parsing from layout discovery and item merging.
+  - Apply Cargo edition defaults and all five `auto*` switches.
+  - Discover `src/lib.rs`, `src/main.rs`, direct `.rs` files and one-level
+    `main.rs` target directories under `src/bin`, `examples`, `tests`, and
+    `benches`.
+  - Validate explicit target paths without opening source contents. Missing
+    explicit targets, root escapes, symlinks, and reparse points fail closed.
+  - Merge explicit and automatic targets by kind, name, and safe relative path.
+    An explicit target is authoritative for the same standard-layout path;
+    conflicting same-kind names or duplicate explicit paths fail instead of
+    silently selecting one.
+  - Exclude non-binary examples and targets with `required-features` from
+    execution-task items. Every binary command now uses `cargo run --bin <name>`;
+    bare `cargo run` is never generated.
+  - Bound directory entries and layout items, sort the snapshot deterministically,
+    repeat cancellation/root/link/identity checks, and include target metadata
+    in the opaque preview revision so layout changes become stale at apply.
+  - Added regression fixtures for standard layout discovery with intentionally
+    invalid source bytes, edition/auto-flag behavior, explicit/automatic merge,
+    required-feature/non-binary exclusion, missing explicit files, layout stale
+    detection, and symlink rejection.
+- `apps/run-manager/README.md` and
+  `docs/superpowers/specs/2026-08-12-run-manager-design.md`
+  - Clarified that only the two manifest contents are read; Cargo layout
+    metadata is the sole additional read.
+  - Documented the fixed-depth boundary, auto flags, edition behavior, no bare
+    `cargo run`, no workspace-member traversal, and layout-aware stale revision.
+
+### Verification status
+
+The parent review ran the new boundary tests in the existing dedicated cache
+with one build job. The first compile exposed two unconstrained `BTreeMap`
+value types; after adding the exact entry/reference types, the first focused
+run exposed an explicit non-binary example path being rediscovered as an
+automatic executable example. The merge now treats an explicit target as
+authoritative for the same kind/path and rejects duplicate explicit paths.
+
+```text
+cargo fmt --all -- --check                                  pass
+cargo test -p run-manager core::imports --lib -j1           pass (22 tests)
+cargo test -p filesystem -j1                                pass (17 tests)
+cargo test -p run-manager --lib -j1                         pass (198 tests)
+```
+
+Cargo check, strict Clippy, frontend gates, rebase, commit, push, and Windows
+CI remain for the PR-final validation. Windows reparse-point behavior also
+remains part of the W3 packaged acceptance boundary.
+
+### Design boundary
+
+The public `parse_cargo_targets(bytes)` helper remains a pure manifest-only
+parser for callers that do not have a project root. Project preview uses the
+root-aware metadata path so automatic discovery cannot be faked from manifest
+bytes. Virtual workspaces remain unsupported because resolving members would
+require reading additional manifests or invoking Cargo.
