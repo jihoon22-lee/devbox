@@ -29,10 +29,18 @@ use windows::core::PCWSTR;
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 #[cfg(target_os = "windows")]
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+};
+#[cfg(target_os = "windows")]
 use windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
     SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+};
+#[cfg(target_os = "windows")]
+use windows::Win32::System::Threading::{
+    OpenThread, ResumeThread, CREATE_NO_WINDOW, CREATE_SUSPENDED, THREAD_SUSPEND_RESUME,
 };
 
 /// Git for Windows 기본 설치 위치 (우선순위 순). GUI 앱이 물려받은 PATH에
@@ -121,7 +129,12 @@ impl ProcessTree {
             }
             return Err(());
         }
-        Ok(Self { handle })
+        let mut tree = Self { handle };
+        if resume_suspended_process(child.id()).is_err() {
+            tree.terminate_descendants();
+            return Err(());
+        }
+        Ok(tree)
     }
 
     fn terminate(&mut self, child: &mut Child) {
@@ -136,6 +149,51 @@ impl ProcessTree {
     }
 
     fn close(self) {}
+}
+
+/// `std::process::Command` retains the caller-supplied `CREATE_SUSPENDED`
+/// flag but does not expose the primary thread handle. A newly created
+/// suspended process has not executed user code and therefore has exactly one
+/// thread. Resolve that thread by the exact child PID only after the process is
+/// assigned to the Job Object, then resume it once. Any ambiguity or unexpected
+/// suspend count fails closed while the Job still owns the process.
+#[cfg(target_os = "windows")]
+fn resume_suspended_process(process_id: u32) -> Result<(), ()> {
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }.map_err(|_| ())?;
+    let mut entry = THREADENTRY32 {
+        dwSize: size_of::<THREADENTRY32>() as u32,
+        ..Default::default()
+    };
+    let mut thread_id = None;
+    if unsafe { Thread32First(snapshot, &mut entry) }.is_ok() {
+        loop {
+            if entry.th32OwnerProcessID == process_id {
+                if thread_id.replace(entry.th32ThreadID).is_some() {
+                    unsafe {
+                        let _ = CloseHandle(snapshot);
+                    }
+                    return Err(());
+                }
+            }
+            if unsafe { Thread32Next(snapshot, &mut entry) }.is_err() {
+                break;
+            }
+        }
+    }
+    unsafe {
+        let _ = CloseHandle(snapshot);
+    }
+    let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, false, thread_id.ok_or(())?) }
+        .map_err(|_| ())?;
+    let previous_suspend_count = unsafe { ResumeThread(thread) };
+    unsafe {
+        let _ = CloseHandle(thread);
+    }
+    if previous_suspend_count == 1 {
+        Ok(())
+    } else {
+        Err(())
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -319,7 +377,7 @@ fn run_bounded_inner(
         .stderr(Stdio::null());
     clear_repository_overrides(&mut command);
     #[cfg(target_os = "windows")]
-    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    command.creation_flags(CREATE_NO_WINDOW.0 | CREATE_SUSPENDED.0);
     #[cfg(unix)]
     command.process_group(0);
 

@@ -148,7 +148,8 @@ refspec, credential을 입력하지 않으며, force push·merge/rebase 자동�
 - `repo_remote_status`는 512 KiB status/4 KiB marker output, 5초 read timeout을 사용하고,
   mutation은 64 KiB stdout·30초 timeout과 닫힌 stdin/stderr를 사용한다. Git credential helper
   해석은 Git에 맡기되 devbox는 credential을 읽거나 저장하지 않고 remote URL·stderr·raw path를
-  반환하지 않는다. Windows에서는 kill-on-close Job Object에 root Git을 fail-closed로 편입하고
+  반환하지 않는다. Windows에서는 root Git을 suspended로 생성하고 kill-on-close Job Object에
+  fail-closed로 편입한 뒤 primary thread를 한 번만 resume하며,
   Linux/WSL에서는 독립 process group을 사용해 hook·credential helper·SSH/transport descendant도
   cancel/timeout/drop 때 함께 종료한다. root 종료 뒤 tree를 먼저 닫아 inherited stdout pipe가
   reader join을 무기한 유지하지 못하게 한다.
@@ -222,6 +223,14 @@ path 재검증 없이 in-flight child를 취소하고, preview/재검증 read와
 각각 cancellation token과 bounded deadline을 적용한다. mutation batch는 120초 total budget과
 항목별 child timeout을 넘기면 다음 항목을 시작하지 않는다. 이 흐름은 native single-flight lock과 bounded process-tree runner를
 local/remote mutation과 공유한다.
+
+Unborn HEAD는 repository object format에 따라 40자리 SHA-1 또는 64자리 SHA-256 all-zero
+object ID로 표시될 수 있으며, parser는 두 값을 모두 `currentHead: null`로 정규화한다. cleanup의
+repository context 검증은 Git child에 남은 deadline과 cancellation token을 그대로 전달하고,
+canonicalize/filesystem identity 앞뒤에서도 같은 경계를 확인한다. 이 단계는 기존 Tauri
+`spawn_blocking` bounded worker 안에서 실행하며, OS filesystem syscall 자체를 중간에 강제 종료하기
+위한 detached/nested worker는 만들지 않는다. syscall이 반환된 직후 만료·취소를 재확인해 이후
+Git child 또는 mutation으로 진행하지 않는 것이 이 경계의 계약이다.
 
 `--force`/`-D`, `reset`, `clean`, `worktree prune`, 자동 branch 생성·복구는 request/argv/UI에
 존재하지 않는다. Parser fixture는 merged/stale 근거, malformed/oversized/unsafe metadata,

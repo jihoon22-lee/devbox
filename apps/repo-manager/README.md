@@ -199,8 +199,8 @@ remote URL·credential 원문을 표시하지 않는다. 열릴 때 취소 버�
 marker 4 KiB, mutation stdout 64 KiB, 30초 timeout을 적용한다. stdin/stderr를 닫고 Git의
 기본 credential helper만 사용하며, devbox는 credential을 읽거나 저장하지 않는다. 실패·취소·
 preflight 차단은 remote URL, raw path, credential, Git stderr를 포함하지 않는 고정 메시지다.
-Windows에서는 kill-on-close Job Object에 `git.exe`를 fail-closed로 편입하고 Linux/WSL에서는
-독립 process group을 사용해 hook·credential helper·SSH/transport 하위 프로세스까지
+Windows에서는 `git.exe`를 suspended로 생성해 kill-on-close Job Object에 편입한 뒤에만
+primary thread를 resume하고, Linux/WSL에서는 독립 process group을 사용해 hook·credential helper·SSH/transport 하위 프로세스까지
 timeout/cancel/drop 수명 경계에 둔다. root Git이 먼저 종료돼도 tree를 닫은 뒤 stdout reader를
 회수해 inherited pipe가 timeout을 우회하지 못한다.
 frontend는 상태별 pull/push 비활성화, busy 중 중복 방지, 취소 버튼, stale/unmount 폐기와
@@ -210,8 +210,8 @@ remote mutation은 native lock을 잡은 상태에서 status를 두 번 읽고, 
 RAII operation guard가 성공·실패·panic에서 registry를 정리한다.
 
 local과 remote의 `operationId`는 128 bytes 이하 ASCII `[A-Za-z0-9._-]`로 제한되고 첫 async
-await 전에 registry에 등록된다. 취소·timeout은 Unix process group, Windows kill-on-close
-Job Object를 통해 Git root뿐 아니라 hook, credential helper, SSH/transport descendant까지
+await 전에 registry에 등록된다. 취소·timeout은 Unix process group, Windows suspended 생성→
+kill-on-close Job Object 편입→resume 경계를 통해 Git root뿐 아니라 hook, credential helper, SSH/transport descendant까지
 종료하고, root가 먼저 끝나도 owned tree와 bounded stdout reader를 정리한 뒤 결과를 반환한다.
 Fetch는 pull/push와 달리 confirmation 없이 버튼 action으로 시작되지만 동일한 operation ID,
 lock, preflight 및 cancellation 경계를 사용한다.
@@ -245,6 +245,13 @@ Native contract는 다음과 같다.
   각각 cancellation-aware bounded deadline을 적용하며, mutation batch도 120초 total budget을
   넘기지 않는다. cleanup은 local/remote/stage/create와 동일한 canonical Git common-directory
   single-flight lock과 bounded process-tree runner를 사용한다.
+
+Git object format에 따른 unborn HEAD 표기는 40자리 SHA-1과 64자리 SHA-256 all-zero object ID를
+모두 `currentHead: null`로 처리한다. cleanup context의 canonicalize/filesystem identity 단계도
+Git 조회와 같은 cancellation token·남은 deadline 경계를 앞뒤로 확인하며, cleanup command 전체는
+Tauri의 bounded `spawn_blocking` worker 안에서 실행한다. 개별 OS filesystem syscall은 진입 후
+강제 중단할 수 없으므로, 완료 직후 경계를 다시 확인해 만료·취소된 작업이 다음 Git child를
+생성하지 않도록 닫는다.
 
 모든 요청 DTO는 unknown field를 거부하고 selection 수·branch/path·revision·operation ID를
 상한/문자 집합으로 검증한다. Preview와 실행 결과는 raw Git diagnostic을 오류에 반향하지

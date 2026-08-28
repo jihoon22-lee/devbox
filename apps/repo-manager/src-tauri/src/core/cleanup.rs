@@ -21,7 +21,6 @@ pub const MAX_CLEANUP_WORKTREES: usize = 256;
 pub const MAX_CLEANUP_PATH_BYTES: usize = 32_767;
 pub const MAX_CLEANUP_REF_BYTES: usize = 16 * 1024;
 pub const MAX_CLEANUP_SELECTIONS: usize = 256;
-const ZERO_OBJECT_ID: &str = "0000000000000000000000000000000000000000";
 
 /// A branch older than this threshold is shown as an `inactive` stale
 /// candidate when it is not protected by another safety rule.  Stale is a
@@ -156,6 +155,15 @@ pub fn valid_ref_name(value: &str) -> bool {
 
 fn valid_object_id(value: &str) -> bool {
     (40..=64).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+/// Git reports an unborn worktree HEAD as an all-zero object ID. The width is
+/// selected by the repository object format: SHA-1 uses 40 bytes and
+/// SHA-256 uses 64 bytes. Keep this check independent from the normal object
+/// ID validator so both formats remain explicit and no fixed-width constant
+/// can accidentally make the other format look like a real HEAD.
+fn is_unborn_head(value: &str) -> bool {
+    matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte == b'0')
 }
 
 fn valid_path(value: &str) -> bool {
@@ -415,7 +423,7 @@ pub fn parse_worktree_records(input: &str) -> Result<Vec<ParsedWorktree>, String
                     return Err(fixed_error());
                 }
                 saw_head = true;
-                if value != ZERO_OBJECT_ID {
+                if !is_unborn_head(value) {
                     worktree.head = Some(value.to_string());
                 }
             } else if let Some(value) = record.strip_prefix("branch ") {
@@ -811,6 +819,16 @@ mod tests {
         assert!(worktrees[1].locked);
         assert!(worktrees[2].bare);
         assert!(worktrees[2].head.is_none());
+    }
+
+    #[test]
+    fn treats_sha1_and_sha256_zero_heads_as_unborn() {
+        for zero_head in ["0".repeat(40), "0".repeat(64)] {
+            let input = format!("worktree C:/unborn\0HEAD {zero_head}\0branch refs/heads/main\0\0");
+            let worktrees = parse_worktree_records(&input).unwrap();
+            assert_eq!(worktrees.len(), 1);
+            assert!(worktrees[0].head.is_none());
+        }
     }
 
     #[test]

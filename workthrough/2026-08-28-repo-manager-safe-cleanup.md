@@ -184,6 +184,64 @@ The documents describe the public DTOs, fixed Git argv, identity/status
 revalidation, fixed errors, privacy boundary, and the deliberate absence of
 force/reset/clean/prune behavior.
 
+### 6. Focused follow-up remediation
+
+This follow-up keeps the existing #364 candidate intact and addresses the
+remaining small correctness gaps identified during the final pre-PR audit:
+
+- `apps/repo-manager/src-tauri/src/core/cleanup.rs` now recognizes an unborn
+  worktree HEAD by its repository object format. Both 40-character SHA-1 and
+  64-character SHA-256 all-zero object IDs normalize to `head: None`; the
+  parser no longer compares against a SHA-1-only constant. A focused fixture
+  covers both widths.
+- `apps/repo-manager/src-tauri/src/commands.rs` routes cleanup repository
+  context revalidation through the same `run_bounded_with_cancel` runner used
+  by the other cleanup reads. The remaining timeout calculated from the
+  caller's absolute deadline and the operation's cancellation token are
+  passed through the Git common-directory query. Cancellation is translated
+  to the fixed cleanup cancellation error rather than a generic state error.
+- The synchronous `canonicalize`/`filesystem_identity` portions of cleanup
+  context validation now have operation-boundary checks before and after each
+  filesystem step. Cleanup's initial repository validation and subsequent
+  context revalidation both use these checks, and the caller checks the same
+  deadline again after the helper returns. The whole command remains on the
+  existing Tauri bounded `spawn_blocking` worker; no nested or detached thread
+  is introduced. A native filesystem syscall cannot be forcibly interrupted
+  after entry, so the contract is to observe cancellation/deadline immediately
+  before/after the syscall and prevent any later Git child or mutation when it
+  returns late.
+- `commands.rs` adds focused tests for fixed cancellation mapping at the
+  cleanup runner boundary and for cancellation/expired-deadline behavior at
+  context revalidation boundaries.
+
+The requested scope deliberately does not alter the selected worktree
+remove-path TOCTOU boundary or the shared `crates/git` Windows process-tree /
+Unix descendant implementation; those items remain with the parent agent.
+
+### 7. Parent process-tree remediation
+
+The final parent review closed the actionable Windows process-tree ownership
+gap in the shared bounded Git runner. `crates/git` now creates every bounded
+Windows Git child with `CREATE_SUSPENDED | CREATE_NO_WINDOW`, assigns the root
+process to the kill-on-close Job Object, resolves the exact child PID's sole
+suspended primary thread, and resumes it only after assignment. Any missing or
+ambiguous thread, unexpected suspend count, Job assignment failure, or resume
+failure terminates and reaps the child without letting Git user code execute
+outside the Job. The existing Windows tests exercise this path through the
+ordinary bounded runner; a dedicated GNU Windows compile check covers the
+conditional API surface before GitHub's MSVC job.
+
+The selected-worktree path replacement interval cannot be made atomic while
+delegating registered-worktree deletion to the Git CLI: retaining a directory
+handle that denies rename would also deny Git's own removal, while an
+allow-delete handle does not prevent substitution. The implementation keeps
+the final identity/status/registration observation immediately before the
+no-force `git worktree remove -- <exact path>` child and documents this as a
+same-user concurrent filesystem mutation boundary rather than claiming an
+OS-level atomic delete guarantee. Reimplementing Git's worktree administration
+and recursive deletion is intentionally rejected as a less reliable safety
+boundary.
+
 ## Code Examples
 
 ```rust
@@ -255,6 +313,25 @@ minutes; the parent CI gate remains authoritative for the workspace-wide run.
 
 Windows packaged W3 smoke and CI remain release-gate work for the parent agent.
 
+The parent review verified the complete changed Rust boundary in the retained
+dedicated cache after applying the follow-up and Windows process-tree fix:
+
+```text
+cargo test -p git -j1                                  pass (14 tests)
+cargo test -p repo-manager -j1                         pass (78 tests)
+cargo check -p repo-manager -j1                        pass
+cargo clippy -p repo-manager --all-targets -j1 -- -D warnings pass
+cargo clippy -p git --all-targets -j1 -- -D warnings  pass
+cargo check -p git --target x86_64-pc-windows-gnu -j1 pass
+cargo fmt --all -- --check                             pass
+git diff --check                                      pass
+```
+
+The prior focused Repo Manager frontend suite and production build remain
+valid because this follow-up changes only native cleanup/process supervision
+and documentation. GitHub CI and Windows packaged W3 smoke remain the final
+platform gates.
+
 ## Handoff
 
 - Base: `origin/main` / `952d2a7604eb2739c8e88eb1c3f21a597ae931eb`
@@ -268,9 +345,9 @@ Windows packaged W3 smoke and CI remain release-gate work for the parent agent.
   but an OS-level open-handle/no-replace remove primitive is outside this
   issue. On Unix, a malicious descendant that explicitly escapes its process
   group can survive process-tree termination, although the bounded reader now
-  stops after the finite drain grace; Windows Job Object breakaway behavior and
-  packaged path/identity/process-tree/credential-helper/UI behavior still
-  require W3 smoke/CI. This review also preserves the limitation that
+  stops after the finite drain grace. Windows suspended Job assignment closes
+  the pre-assignment escape window; packaged path/identity/process-tree/
+  credential-helper/UI behavior still requires W3 smoke/CI. This review also preserves the limitation that
   synchronous filesystem metadata calls cannot be forcibly interrupted while
   resolving a hostile/unavailable network path. This worktree intentionally
   did not run the full workspace gate.

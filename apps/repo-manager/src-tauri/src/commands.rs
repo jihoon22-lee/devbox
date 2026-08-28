@@ -864,10 +864,24 @@ fn cleanup_revalidate_context(
             GIT_CLEANUP_STATE_CHANGED.to_string()
         }
     })?;
-    revalidate_repository_context_with_timeout(context, GIT_CLEANUP_STATE_CHANGED, timeout)?;
-    if cancellation.load(Ordering::Acquire) {
-        return Err(GIT_CLEANUP_CANCELLED.to_string());
-    }
+    revalidate_repository_context_with_timeout_and_cancel(
+        context,
+        GIT_CLEANUP_STATE_CHANGED,
+        timeout,
+        Some(cancellation),
+        Some(deadline),
+    )?;
+    // A filesystem metadata call (canonicalize/identity) cannot be forcibly
+    // interrupted once the OS has entered it. Re-check the same operation
+    // boundary after the context helper so a slow call cannot make a cleanup
+    // continue past its deadline or swallow a racing cancellation.
+    cleanup_remaining_timeout(deadline, Some(cancellation)).map_err(|error| {
+        if error == GIT_CLEANUP_CANCELLED {
+            error
+        } else {
+            GIT_CLEANUP_STATE_CHANGED.to_string()
+        }
+    })?;
     Ok(())
 }
 
@@ -1423,20 +1437,76 @@ fn repository_context_for_worktree(
     worktree: PathBuf,
     error: &'static str,
 ) -> Result<RepositoryContext, String> {
-    repository_context_for_worktree_with_timeout(worktree, error, Duration::from_secs(5))
+    repository_context_for_worktree_with_options(
+        worktree,
+        error,
+        Duration::from_secs(5),
+        None,
+        None,
+    )
 }
 
-fn repository_context_for_worktree_with_timeout(
+/// Keep cancellation/deadline checks around the synchronous filesystem part
+/// of repository identity validation. The cleanup command already runs this
+/// whole operation on Tauri's bounded `spawn_blocking` pool; nested ad-hoc
+/// threads would be unable to stop a blocked OS call and could leak workers.
+fn repository_context_boundary(
+    cancellation: Option<&AtomicBool>,
+    deadline: Option<Instant>,
+    error: &'static str,
+) -> Result<(), String> {
+    if cancellation.is_some_and(|signal| signal.load(Ordering::Acquire)) {
+        return Err(GIT_CLEANUP_CANCELLED.to_string());
+    }
+    if deadline.is_some_and(|value| Instant::now() >= value) {
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
+fn repository_context_filesystem_error(
+    cancellation: Option<&AtomicBool>,
+    error: &'static str,
+) -> String {
+    if cancellation.is_some_and(|signal| signal.load(Ordering::Acquire)) {
+        GIT_CLEANUP_CANCELLED.to_string()
+    } else {
+        error.to_string()
+    }
+}
+
+fn repository_context_for_worktree_with_options(
     worktree: PathBuf,
     error: &'static str,
     timeout: Duration,
+    cancellation: Option<&AtomicBool>,
+    deadline: Option<Instant>,
 ) -> Result<RepositoryContext, String> {
-    let worktree_identity = filesystem_identity(&worktree, true).map_err(|_| error.to_string())?;
+    repository_context_boundary(cancellation, deadline, error)?;
+    let worktree_identity = filesystem_identity(&worktree, true)
+        .map_err(|_| repository_context_filesystem_error(cancellation, error))?;
+    repository_context_boundary(cancellation, deadline, error)?;
     let args = git_common_dir_args();
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
     let cwd = worktree.to_string_lossy().into_owned();
-    let output = devbox_git::run_bounded(&args, &cwd, timeout, MAX_REPOSITORY_PATH_BYTES + 2)
-        .map_err(|_| error.to_string())?;
+    let output = match cancellation {
+        Some(signal) => devbox_git::run_bounded_with_cancel(
+            &args,
+            &cwd,
+            timeout,
+            MAX_REPOSITORY_PATH_BYTES + 2,
+            signal,
+        ),
+        None => devbox_git::run_bounded(&args, &cwd, timeout, MAX_REPOSITORY_PATH_BYTES + 2),
+    }
+    .map_err(|runner_error| {
+        if cancellation.is_some() && runner_error == "git_cancelled" {
+            GIT_CLEANUP_CANCELLED.to_string()
+        } else {
+            error.to_string()
+        }
+    })?;
+    repository_context_boundary(cancellation, deadline, error)?;
     let value = output
         .strip_suffix("\r\n")
         .or_else(|| output.strip_suffix('\n'))
@@ -1453,14 +1523,23 @@ fn repository_context_for_worktree_with_timeout(
     } else {
         worktree.join(common)
     };
-    let common = common.canonicalize().map_err(|_| error.to_string())?;
+    let common = common
+        .canonicalize()
+        .map_err(|_| repository_context_filesystem_error(cancellation, error))?;
+    repository_context_boundary(cancellation, deadline, error)?;
     if !common.is_dir() {
         return Err(error.to_string());
     }
-    let common_git_identity = filesystem_identity(&common, true).map_err(|_| error.to_string())?;
+    repository_context_boundary(cancellation, deadline, error)?;
+    let common_git_identity = filesystem_identity(&common, true)
+        .map_err(|_| repository_context_filesystem_error(cancellation, error))?;
+    repository_context_boundary(cancellation, deadline, error)?;
     // The worktree may have been exchanged while `rev-parse` ran. Compare the
     // exact directory object again before returning an operation authority.
-    if filesystem_identity(&worktree, true).map_err(|_| error.to_string())? != worktree_identity {
+    let current_worktree_identity = filesystem_identity(&worktree, true)
+        .map_err(|_| repository_context_filesystem_error(cancellation, error))?;
+    repository_context_boundary(cancellation, deadline, error)?;
+    if current_worktree_identity != worktree_identity {
         return Err(error.to_string());
     }
     Ok(RepositoryContext {
@@ -1481,6 +1560,45 @@ fn validated_repository_context(
     repository_context_for_worktree(worktree, error)
 }
 
+/// Cleanup owns an operation cancellation token from the first blocking
+/// validation step. Keep the synchronous canonicalize/metadata calls inside
+/// the same bounded worker and check the shared operation boundary before and
+/// after each call; no per-call thread is created because a detached worker
+/// cannot safely interrupt an OS filesystem syscall.
+fn cleanup_validated_repository_context(
+    path: &str,
+    error: &'static str,
+    cancellation: &AtomicBool,
+    deadline: Instant,
+) -> Result<RepositoryContext, String> {
+    repository_context_boundary(Some(cancellation), Some(deadline), error)?;
+    if !valid_repository_path_syntax(path) {
+        return Err(error.to_string());
+    }
+    let worktree = Path::new(path)
+        .canonicalize()
+        .map_err(|_| repository_context_filesystem_error(Some(cancellation), error))?;
+    repository_context_boundary(Some(cancellation), Some(deadline), error)?;
+    if !worktree.is_dir() || !worktree.join(".git").exists() {
+        return Err(error.to_string());
+    }
+    repository_context_boundary(Some(cancellation), Some(deadline), error)?;
+    let timeout = cleanup_remaining_timeout(deadline, Some(cancellation)).map_err(|error| {
+        if error == GIT_CLEANUP_CANCELLED {
+            error
+        } else {
+            GIT_CLEANUP_ERROR.to_string()
+        }
+    })?;
+    repository_context_for_worktree_with_options(
+        worktree,
+        error,
+        timeout,
+        Some(cancellation),
+        Some(deadline),
+    )
+}
+
 fn revalidate_repository_context(
     expected: &RepositoryContext,
     error: &'static str,
@@ -1493,8 +1611,23 @@ fn revalidate_repository_context_with_timeout(
     error: &'static str,
     timeout: Duration,
 ) -> Result<(), String> {
-    let current =
-        repository_context_for_worktree_with_timeout(expected.worktree.clone(), error, timeout)?;
+    revalidate_repository_context_with_timeout_and_cancel(expected, error, timeout, None, None)
+}
+
+fn revalidate_repository_context_with_timeout_and_cancel(
+    expected: &RepositoryContext,
+    error: &'static str,
+    timeout: Duration,
+    cancellation: Option<&AtomicBool>,
+    deadline: Option<Instant>,
+) -> Result<(), String> {
+    let current = repository_context_for_worktree_with_options(
+        expected.worktree.clone(),
+        error,
+        timeout,
+        cancellation,
+        deadline,
+    )?;
     if current.worktree_identity != expected.worktree_identity
         || current.common_git_identity != expected.common_git_identity
     {
@@ -2117,7 +2250,15 @@ fn run_cleanup_request(
     if operation.cancellation.load(Ordering::Acquire) {
         return Err(GIT_CLEANUP_CANCELLED.to_string());
     }
-    let context = validated_repository_context(&request.path, GIT_CLEANUP_ERROR)?;
+    let context_validation_deadline = Instant::now()
+        .checked_add(CLEANUP_OBSERVATION_BUDGET)
+        .ok_or_else(|| GIT_CLEANUP_ERROR.to_string())?;
+    let context = cleanup_validated_repository_context(
+        &request.path,
+        GIT_CLEANUP_ERROR,
+        operation.cancellation.as_ref(),
+        context_validation_deadline,
+    )?;
     if operation.cancellation.load(Ordering::Acquire) {
         return Err(GIT_CLEANUP_CANCELLED.to_string());
     }
@@ -2126,7 +2267,25 @@ fn run_cleanup_request(
         GIT_CLEANUP_ERROR,
         GIT_CLEANUP_BUSY,
     )?;
-    revalidate_repository_context(&context, GIT_CLEANUP_ERROR)?;
+    let context_deadline = Instant::now()
+        .checked_add(CLEANUP_REVALIDATION_BUDGET)
+        .ok_or_else(|| GIT_CLEANUP_ERROR.to_string())?;
+    let context_timeout =
+        cleanup_remaining_timeout(context_deadline, Some(operation.cancellation.as_ref()))
+            .map_err(|error| {
+                if error == GIT_CLEANUP_CANCELLED {
+                    error
+                } else {
+                    GIT_CLEANUP_ERROR.to_string()
+                }
+            })?;
+    revalidate_repository_context_with_timeout_and_cancel(
+        &context,
+        GIT_CLEANUP_ERROR,
+        context_timeout,
+        Some(operation.cancellation.as_ref()),
+        Some(context_deadline),
+    )?;
     if operation.cancellation.load(Ordering::Acquire) {
         return Err(GIT_CLEANUP_CANCELLED.to_string());
     }
@@ -2323,7 +2482,15 @@ pub async fn repo_cleanup_preview(
         if operation.cancellation.load(Ordering::Acquire) {
             return Err(GIT_CLEANUP_CANCELLED.to_string());
         }
-        let context = validated_repository_context(&request.path, GIT_CLEANUP_ERROR)?;
+        let context_validation_deadline = Instant::now()
+            .checked_add(CLEANUP_OBSERVATION_BUDGET)
+            .ok_or_else(|| GIT_CLEANUP_ERROR.to_string())?;
+        let context = cleanup_validated_repository_context(
+            &request.path,
+            GIT_CLEANUP_ERROR,
+            operation.cancellation.as_ref(),
+            context_validation_deadline,
+        )?;
         if operation.cancellation.load(Ordering::Acquire) {
             return Err(GIT_CLEANUP_CANCELLED.to_string());
         }
@@ -2332,7 +2499,25 @@ pub async fn repo_cleanup_preview(
             GIT_CLEANUP_ERROR,
             GIT_CLEANUP_BUSY,
         )?;
-        revalidate_repository_context(&context, GIT_CLEANUP_ERROR)?;
+        let context_deadline = Instant::now()
+            .checked_add(CLEANUP_REVALIDATION_BUDGET)
+            .ok_or_else(|| GIT_CLEANUP_ERROR.to_string())?;
+        let context_timeout =
+            cleanup_remaining_timeout(context_deadline, Some(operation.cancellation.as_ref()))
+                .map_err(|error| {
+                    if error == GIT_CLEANUP_CANCELLED {
+                        error
+                    } else {
+                        GIT_CLEANUP_ERROR.to_string()
+                    }
+                })?;
+        revalidate_repository_context_with_timeout_and_cancel(
+            &context,
+            GIT_CLEANUP_ERROR,
+            context_timeout,
+            Some(operation.cancellation.as_ref()),
+            Some(context_deadline),
+        )?;
         if operation.cancellation.load(Ordering::Acquire) {
             return Err(GIT_CLEANUP_CANCELLED.to_string());
         }
@@ -3309,6 +3494,56 @@ mod scan_tests {
         let revision_a = cleanup_identity_revision(preview.clone(), &[], &context_a).revision;
         let revision_b = cleanup_identity_revision(preview, &[], &context_b).revision;
         assert_ne!(revision_a, revision_b);
+    }
+
+    #[test]
+    fn cleanup_context_revalidation_propagates_cancel_and_expired_deadline() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_real_git_dir(tmp.path());
+        let context =
+            repository_context_for_worktree(tmp.path().canonicalize().unwrap(), GIT_CLEANUP_ERROR)
+                .unwrap();
+
+        let cancelled = AtomicBool::new(true);
+        assert_eq!(
+            revalidate_repository_context_with_timeout_and_cancel(
+                &context,
+                GIT_CLEANUP_STATE_CHANGED,
+                Duration::from_secs(5),
+                Some(&cancelled),
+                Some(Instant::now() + Duration::from_secs(5)),
+            )
+            .unwrap_err(),
+            GIT_CLEANUP_CANCELLED
+        );
+
+        let active = AtomicBool::new(false);
+        assert_eq!(
+            revalidate_repository_context_with_timeout_and_cancel(
+                &context,
+                GIT_CLEANUP_STATE_CHANGED,
+                Duration::from_secs(5),
+                Some(&active),
+                Some(Instant::now()),
+            )
+            .unwrap_err(),
+            GIT_CLEANUP_STATE_CHANGED
+        );
+    }
+
+    #[test]
+    fn cleanup_read_runner_maps_pre_cancel_to_fixed_cleanup_error() {
+        let cancellation = AtomicBool::new(true);
+        assert_eq!(
+            run_git_cleanup_bounded_with_timeout(
+                &git_cleanup_branch_args(),
+                Path::new("."),
+                Duration::from_secs(5),
+                Some(&cancellation),
+            )
+            .unwrap_err(),
+            GIT_CLEANUP_CANCELLED
+        );
     }
 
     #[test]
