@@ -156,13 +156,26 @@ deadline, not only the cleanup command's direct argv:
   caller cannot accidentally use the broad commit-message allowance for a
   path, remote, hook, author, or other control-bearing argument.
 - The bounded stdout reader drains bytes already available after Git exits, but
-  uses a 100ms finite post-exit drain window. This preserves ordinary Git
-  output while preventing a Unix descendant that escaped the process group and
-  retained the pipe from making `reader.join()` unbounded.
+  uses a 100ms finite post-exit drain window. Unix uses a nonblocking descriptor;
+  Windows polls synchronous pipe availability and treats a normal broken-pipe
+  close as EOF. This preserves ordinary Git output while preventing a
+  descendant that escaped process-tree ownership and retained the pipe from
+  making `reader.join()` unbounded.
 - Cleanup's 120-second mutation budget is now propagated through repository
   identity revalidation, branch/worktree metadata reads, final context checks,
   and each child mutation. Every operation receives only the remaining parent
   budget, and cancellation is checked at each boundary.
+- Cleanup preview/revalidation now derives the merge base from the selected
+  repository worktree, not blindly from `worktree list`'s primary-first row.
+  This keeps a linked-worktree invocation from presenting branches merged only
+  into another worktree as candidates. The opaque revision also binds the
+  common Git-directory identity, so an equivalent-looking `.git` replacement
+  cannot reuse an earlier approval; selected-worktree identity is checked once
+  more immediately before the remove child.
+- The shared mutation runner only allows line-break controls in a message
+  argument that follows an actual `commit` command. Cleanup/remote/future
+  mutation arguments cannot opt into the commit-message exception merely by
+  spelling `--message=`.
 - The frontend state-change assertion was corrected to match the complete
   status sentence while still checking the required fresh-preview guidance;
   this avoids coupling a test to an implementation detail of one status node.
@@ -213,7 +226,7 @@ Focused verification completed with the dedicated Linux-native target
 
 ```text
 CARGO_TARGET_DIR=.../repo-364 CARGO_BUILD_JOBS=1 cargo check -p repo-manager -j1                  PASS
-CARGO_TARGET_DIR=.../repo-364 CARGO_BUILD_JOBS=1 cargo test -p repo-manager --lib --tests -j1     PASS (73 tests)
+CARGO_TARGET_DIR=.../repo-364 CARGO_BUILD_JOBS=1 cargo test -p repo-manager --lib --tests -j1     PASS (75 tests)
 CARGO_TARGET_DIR=.../repo-364 CARGO_BUILD_JOBS=1 cargo test -p git --lib -j1                     PASS (14 tests)
 CARGO_TARGET_DIR=.../repo-364 CARGO_BUILD_JOBS=1 cargo clippy -p repo-manager --lib --all-targets PASS (-D warnings)
 CARGO_TARGET_DIR=.../repo-364 CARGO_BUILD_JOBS=1 cargo clippy -p git --all-targets                PASS (-D warnings)
@@ -257,5 +270,7 @@ Windows packaged W3 smoke and CI remain release-gate work for the parent agent.
   group can survive process-tree termination, although the bounded reader now
   stops after the finite drain grace; Windows Job Object breakaway behavior and
   packaged path/identity/process-tree/credential-helper/UI behavior still
-  require W3 smoke/CI. This worktree intentionally did not run the full
-  workspace gate.
+  require W3 smoke/CI. This review also preserves the limitation that
+  synchronous filesystem metadata calls cannot be forcibly interrupted while
+  resolving a hostile/unavailable network path. This worktree intentionally
+  did not run the full workspace gate.

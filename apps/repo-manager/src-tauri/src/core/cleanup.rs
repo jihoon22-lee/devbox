@@ -163,9 +163,61 @@ fn valid_path(value: &str) -> bool {
         && value.len() <= MAX_CLEANUP_PATH_BYTES
         && !value.chars().any(char::is_control)
         && !is_unsafe_device_path(value)
+        && !is_filesystem_root(value)
         && !value
             .split(['/', '\\'])
             .any(|component| matches!(component, "." | ".."))
+}
+
+/// A worktree path may be outside the repository, but a filesystem root is
+/// never a safe removal target. Keep the same guard available at the final
+/// argv boundary as well as in the porcelain parser.
+pub fn valid_cleanup_worktree_path(value: &str) -> bool {
+    valid_path(value)
+}
+
+fn is_filesystem_root(value: &str) -> bool {
+    let normalized = value.replace('\\', "/");
+    if normalized.is_empty() || normalized.chars().all(|character| character == '/') {
+        return true;
+    }
+    let lower = normalized.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && bytes[2..].iter().all(|byte| *byte == b'/')
+    {
+        return true;
+    }
+    if let Some(rest) = lower.strip_prefix("//?/") {
+        let rest_bytes = rest.as_bytes();
+        if rest_bytes.len() >= 3
+            && rest_bytes[0].is_ascii_alphabetic()
+            && rest_bytes[1] == b':'
+            && rest_bytes[2..].iter().all(|byte| *byte == b'/')
+        {
+            return true;
+        }
+        if let Some(unc) = rest.strip_prefix("unc/") {
+            let components = unc.split('/').filter(|component| !component.is_empty());
+            if components.count() == 2 {
+                return true;
+            }
+        }
+    }
+    if lower.starts_with("//") {
+        let components = lower
+            .trim_start_matches('/')
+            .split('/')
+            .filter(|component| !component.is_empty());
+        if components.count() == 2 {
+            return true;
+        }
+    }
+    std::path::Path::new(value)
+        .parent()
+        .is_some_and(|parent| parent == std::path::Path::new(value))
 }
 
 /// Git for Windows may report a canonical long path with the `\\?\` prefix.
@@ -909,6 +961,14 @@ mod tests {
             .unwrap_err(),
             GIT_CLEANUP_ERROR
         );
+        assert_eq!(
+            parse_worktree_records("worktree /\0HEAD 0123456789abcdef0123456789abcdef01234567\0\0")
+                .unwrap_err(),
+            GIT_CLEANUP_ERROR
+        );
+        for root in ["C://", "\\\\?\\C:\\\\"] {
+            assert!(!valid_path(root));
+        }
         let extended = parse_worktree_records(
             "worktree \\\\?\\C:\\secret\0HEAD 0123456789abcdef0123456789abcdef01234567\0\0",
         )

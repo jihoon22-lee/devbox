@@ -347,6 +347,15 @@ fn run_bounded_inner(
     let stop_for_reader = Arc::clone(&reader_stop);
     let reader = std::thread::spawn(move || {
         let mut stdout = stdout;
+        #[cfg(windows)]
+        use std::os::windows::io::AsRawHandle;
+        #[cfg(windows)]
+        use windows::Win32::Foundation::{ERROR_BROKEN_PIPE, HANDLE};
+        #[cfg(windows)]
+        use windows::Win32::System::Pipes::PeekNamedPipe;
+
+        #[cfg(windows)]
+        let stdout_handle = HANDLE(stdout.as_raw_handle());
         #[cfg(unix)]
         {
             use std::os::fd::AsRawFd;
@@ -375,7 +384,37 @@ fn run_bounded_inner(
                     break;
                 }
             }
-            match stdout.read(&mut chunk) {
+
+            // ChildStdout is a synchronous Windows pipe. A blocking Read can
+            // outlive the bounded drain window when a breakaway descendant
+            // keeps the write end open, so poll availability before reading.
+            // Unix uses O_NONBLOCK above and can read directly.
+            #[cfg(windows)]
+            let read_len = {
+                let mut available = 0u32;
+                if let Err(error) = unsafe {
+                    PeekNamedPipe(stdout_handle, None, 0, None, Some(&mut available), None)
+                } {
+                    // A normal child exit closes the write end and may make
+                    // PeekNamedPipe report ERROR_BROKEN_PIPE. That is EOF,
+                    // not a failed read; any other error remains fail-closed.
+                    if !stop_for_reader.load(Ordering::Acquire)
+                        && error.code() != ERROR_BROKEN_PIPE.to_hresult()
+                    {
+                        read_failed_for_reader.store(true, Ordering::Release);
+                    }
+                    break;
+                }
+                if available == 0 {
+                    std::thread::sleep(Duration::from_millis(5));
+                    continue;
+                }
+                available.min(chunk.len() as u32) as usize
+            };
+            #[cfg(not(windows))]
+            let read_len = chunk.len();
+
+            match stdout.read(&mut chunk[..read_len]) {
                 Ok(0) => break,
                 Ok(read) => {
                     if bytes.len().saturating_add(read) > max_stdout_bytes {
@@ -385,6 +424,8 @@ fn run_bounded_inner(
                     bytes.extend_from_slice(&chunk[..read]);
                 }
                 Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                #[cfg(windows)]
+                Err(error) if error.kind() == ErrorKind::BrokenPipe => break,
                 #[cfg(unix)]
                 Err(error) if error.kind() == ErrorKind::WouldBlock => {
                     if stop_for_reader.load(Ordering::Acquire)
@@ -477,6 +518,40 @@ fn run_bounded_inner(
 /// mutation argument cap as permission to pass a newline-bearing path,
 /// command, remote, or hook option.
 fn is_commit_message_argument(args: &[&str], index: usize) -> bool {
+    // The mutating runner is shared by commands other than `commit` (for
+    // example cleanup and remote operations).  A generic `--message=` check
+    // would accidentally allow control bytes in an arbitrary argument for a
+    // future caller.  Only an argument following the actual `commit` command
+    // can opt into the line-break allowance.
+    let mut command_index = 0usize;
+    while let Some(argument) = args.get(command_index) {
+        match *argument {
+            "--no-pager" | "--no-optional-locks" | "--literal-pathspecs" => {
+                command_index += 1;
+            }
+            "-c" => {
+                // Git's `-c key=value` is a global option. Skip its value so
+                // a config value equal to `commit` cannot be mistaken for
+                // the subcommand itself.
+                command_index = command_index.saturating_add(2);
+            }
+            value if value.starts_with("--config=") => {
+                command_index += 1;
+            }
+            _ => break,
+        }
+    }
+    if args.get(command_index) != Some(&"commit") {
+        return false;
+    }
+    if index <= command_index
+        || args
+            .iter()
+            .position(|argument| *argument == "--")
+            .is_some_and(|separator| index >= separator)
+    {
+        return false;
+    }
     args.get(index)
         .is_some_and(|argument| argument.starts_with("--message="))
         || index
@@ -726,6 +801,38 @@ mod tests {
     fn mutating_runner_rejects_controls_outside_the_commit_message_slot() {
         let error = run_mutating(
             &["status\n--porcelain"],
+            "/safe/project",
+            Duration::from_secs(1),
+            1024,
+        )
+        .unwrap_err();
+        assert_eq!(error, "git_invalid_arguments");
+
+        let error = run_mutating(
+            &["--message=not-a-command\nwith-controls"],
+            "/safe/project",
+            Duration::from_secs(1),
+            1024,
+        )
+        .unwrap_err();
+        assert_eq!(error, "git_invalid_arguments");
+
+        let error = run_mutating(
+            &[
+                "-c",
+                "commit",
+                "status",
+                "--message=not-a-command\nwith-controls",
+            ],
+            "/safe/project",
+            Duration::from_secs(1),
+            1024,
+        )
+        .unwrap_err();
+        assert_eq!(error, "git_invalid_arguments");
+
+        let error = run_mutating(
+            &["commit", "--", "-m", "not-a-message\nwith-controls"],
             "/safe/project",
             Duration::from_secs(1),
             1024,
