@@ -61,6 +61,9 @@ pub fn run() {
             commands::indexing::index_status,
             commands::search::search_files,
             commands::search::search_content,
+            commands::saved_queries::list_saved_queries,
+            commands::saved_queries::save_saved_query,
+            commands::saved_queries::delete_saved_query,
             commands::watcher::watcher_statuses,
             commands::actions::open_file,
             commands::actions::reveal_file,
@@ -134,8 +137,14 @@ pub fn run() {
                 }
                 commands::indexing::spawn_format_reindex(state.clone(), formats);
             }
-            app.manage(state);
+            app.manage(state.clone());
             app.manage(watcher.clone());
+            if let Err(error) = commands::saved_queries::publish_snapshot(&state) {
+                // Search remains available when the optional cross-app
+                // snapshot directory is unavailable; Launcher reports the
+                // source as missing/stale instead of receiving partial data.
+                eprintln!("everything-plus: saved query snapshot unavailable: {error}");
+            }
             // 앱 재시작 시 등록된 루트의 watcher를 복원한다
             watcher.restore_all();
             Ok(())

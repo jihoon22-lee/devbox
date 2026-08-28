@@ -10,6 +10,7 @@ import {
   copyPath,
   indexNow,
   indexStatus,
+  listSavedQueries,
   listRoots,
   onOpenRequest,
   openFile,
@@ -17,6 +18,8 @@ import {
   openTargets,
   removeRoot,
   revealFile,
+  deleteSavedQuery,
+  saveSavedQuery,
   searchContent,
   searchFiles,
   takePendingOpen,
@@ -24,15 +27,45 @@ import {
   type EverythingOpenTarget,
   type OpenRequest,
 } from "./api";
-import type { ContentResult, FileEntry, IndexStatus, RootInfo, RootStatus } from "./types";
-import { routeOpenRequest } from "./lib/applink";
+import type {
+  ContentResult,
+  FileEntry,
+  IndexStatus,
+  RootInfo,
+  RootStatus,
+  SavedQuery,
+  SearchFilter,
+} from "./types";
+import { normalizeFilter, routeOpenRequest } from "./lib/applink";
 import "./App.css";
 
 const MAX_SEARCH_QUERY_BYTES = 4 * 1024;
 const MAX_ROOT_BYTES = 4 * 1024;
+const MAX_SAVED_NAME_BYTES = 128;
+const MAX_SAVED_QUERY_BYTES = 512;
 const SEARCH_INPUT_ERROR = "검색어가 너무 길거나 사용할 수 없는 문자를 포함합니다.";
 const SEARCH_ERROR = "검색을 처리하지 못했습니다.";
 const INDEX_ERROR = "인덱싱 작업을 처리하지 못했습니다.";
+const SAVED_QUERY_ERROR = "저장된 검색을 처리하지 못했습니다.";
+const FILTER_ERROR = "검색 필터를 사용할 수 없습니다.";
+
+const EMPTY_FILTER: SearchFilter = {};
+const CONTENT_STATUS_OPTIONS = [
+  ["", "Any content status"],
+  ["indexed", "Indexed"],
+  ["truncated", "Truncated / partial"],
+  ["failed", "Failed extraction"],
+  ["not_indexed", "Not indexed"],
+  ["too_large", "Too large"],
+  ["unsupported_encoding", "Unsupported encoding"],
+  ["read_error", "Read error"],
+  ["timeout", "Timed out"],
+  ["changed_during_read", "Changed during read"],
+  ["skipped_sensitive", "Skipped sensitive"],
+  ["no_text", "No text"],
+  ["unsupported_encrypted", "Unsupported encrypted"],
+  ["extract_error", "Extraction error"],
+] as const;
 
 function utf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
@@ -46,6 +79,66 @@ function isSearchQueryAllowed(value: string): boolean {
       return code < 0x20 || code === 0x7f;
     })
   );
+}
+
+function isSavedDefinitionAllowed(name: string, value: string): boolean {
+  return (
+    utf8ByteLength(name.trim()) <= MAX_SAVED_NAME_BYTES &&
+    utf8ByteLength(value.trim()) <= MAX_SAVED_QUERY_BYTES
+  );
+}
+
+function isFilterEmpty(filter: SearchFilter): boolean {
+  return (
+    !(filter.extensions?.length) &&
+    filter.modifiedAfter == null &&
+    filter.modifiedBefore == null &&
+    filter.minSize == null &&
+    filter.maxSize == null &&
+    filter.sourceRootId == null &&
+    !filter.contentStatus
+  );
+}
+
+function normalizeUiFilter(filter: SearchFilter): SearchFilter | null {
+  const normalized = normalizeFilter(filter);
+  if (normalized) return normalized;
+  return isFilterEmpty(filter) ? EMPTY_FILTER : null;
+}
+
+function filterCount(filter: SearchFilter): number {
+  return [
+    Boolean(filter.extensions?.length),
+    filter.modifiedAfter != null,
+    filter.modifiedBefore != null,
+    filter.minSize != null,
+    filter.maxSize != null,
+    filter.sourceRootId != null,
+    Boolean(filter.contentStatus),
+  ].filter(Boolean).length;
+}
+
+function parseExtensions(value: string): string[] {
+  return [...new Set(value.split(",").map((extension) => extension.trim().replace(/^\.+/, "").toLowerCase()).filter(Boolean))];
+}
+
+function optionalSize(value: string): number | null | undefined {
+  if (!value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function dateInputValue(timestamp: number | undefined): string {
+  if (timestamp === undefined) return "";
+  const date = new Date(timestamp);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function contentStatusLabel(status: string | null | undefined, truncated = false): string {
+  if (truncated || status === "truncated" || status === "partial") return "Truncated / partial";
+  if (!status) return "Not indexed";
+  return status === "indexed" ? "Indexed" : status.replace(/_/g, " ");
 }
 
 function fmtSize(bytes: number): string {
@@ -81,6 +174,14 @@ export default function App() {
   const [watchStatus, setWatchStatus] = useState<RootStatus[]>([]);
   const [newRoot, setNewRoot] = useState("");
   const [newRootContent, setNewRootContent] = useState(false);
+  const [filter, setFilter] = useState<SearchFilter>(EMPTY_FILTER);
+  const [extensionInput, setExtensionInput] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
+  const [savedName, setSavedName] = useState("");
+  const [editingSavedId, setEditingSavedId] = useState<number | undefined>(undefined);
+  const [savedSelection, setSavedSelection] = useState("");
+  const [savedQueryBusy, setSavedQueryBusy] = useState(false);
   const [regexError, setRegexError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeIdx, setActiveIdx] = useState(-1);
@@ -89,6 +190,9 @@ export default function App() {
   const [indexActionBusy, setIndexActionBusy] = useState(false);
   const mounted = useRef(true);
   const seq = useRef(0);
+  const savedQueriesSeq = useRef(0);
+  const openRequestSeq = useRef(0);
+  const metaSeq = useRef(0);
 
   useEffect(() => {
     mounted.current = true;
@@ -98,14 +202,15 @@ export default function App() {
   }, []);
 
   const loadMeta = useCallback(async () => {
+    const requestSeq = ++metaSeq.current;
     try {
       const [st, rs, ws] = await Promise.all([indexStatus(), listRoots(), watcherStatuses()]);
-      if (!mounted.current) return;
+      if (!mounted.current || requestSeq !== metaSeq.current) return;
       setStatus(st);
       setRoots(rs);
       setWatchStatus(ws);
     } catch {
-      if (!mounted.current) return;
+      if (!mounted.current || requestSeq !== metaSeq.current) return;
       setError(INDEX_ERROR);
     }
   }, []);
@@ -120,6 +225,21 @@ export default function App() {
   useEffect(() => {
     void loadMeta();
   }, [loadMeta]);
+
+  useEffect(() => {
+    let disposed = false;
+    const requestSeq = ++savedQueriesSeq.current;
+    void listSavedQueries()
+      .then((saved) => {
+        if (!disposed && savedQueriesSeq.current === requestSeq) setSavedQueries(saved);
+      })
+      .catch(() => {
+        if (!disposed && savedQueriesSeq.current === requestSeq) setError(SAVED_QUERY_ERROR);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -150,6 +270,9 @@ export default function App() {
     setMode("name");
     setRegexMode(false);
     setQuery(action.query);
+    setFilter(action.filter ?? EMPTY_FILTER);
+    setExtensionInput(action.filter?.extensions?.join(", ") ?? "");
+    setFilterOpen(Boolean(action.filter));
   };
   const handleOpenRequestRef = useRef(handleOpenRequest);
   handleOpenRequestRef.current = handleOpenRequest;
@@ -161,12 +284,17 @@ export default function App() {
     let unlisten: (() => void) | undefined;
 
     const consumePendingOpen = () => {
+      const requestSeq = ++openRequestSeq.current;
       void takePendingOpen()
         .then((request) => {
-          if (!disposed && request) handleOpenRequestRef.current(request);
+          if (!disposed && requestSeq === openRequestSeq.current && request) {
+            handleOpenRequestRef.current(request);
+          }
         })
         .catch(() => {
-          if (!disposed) setError("검색 요청을 처리하지 못했습니다");
+          if (!disposed && requestSeq === openRequestSeq.current) {
+            setError("검색 요청을 처리하지 못했습니다");
+          }
         });
     };
     let coldStartConsumed = false;
@@ -209,26 +337,31 @@ export default function App() {
       setRegexError(null);
       return;
     }
+    if (mode !== "name" || !regexMode) setRegexError(null);
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
         if (mode === "content") {
-          const next = await searchContent(q);
+          const next = isFilterEmpty(filter) ? await searchContent(q) : await searchContent(q, undefined, filter);
           if (!cancelled && seq.current === current) setContentResults(next);
         } else if (regexMode) {
           let re: RegExp;
           try {
             re = new RegExp(q, "i");
           } catch {
-            setRegexError("정규식을 해석할 수 없습니다.");
+            if (!cancelled && seq.current === current) {
+              setRegexError("정규식을 해석할 수 없습니다.");
+            }
             return;
           }
-          setRegexError(null);
-          const all = await searchFiles(q.replace(/[^a-zA-Z0-9\s]/g, ""), 2000);
+          if (!cancelled && seq.current === current) setRegexError(null);
+          const all = isFilterEmpty(filter)
+            ? await searchFiles(q.replace(/[^a-zA-Z0-9\s]/g, ""), 2000)
+            : await searchFiles(q.replace(/[^a-zA-Z0-9\s]/g, ""), 2000, filter);
           if (!cancelled && seq.current === current) setResults(all.filter((f) => re.test(f.name)));
         } else {
-          setRegexError(null);
-          const next = await searchFiles(q);
+          if (!cancelled && seq.current === current) setRegexError(null);
+          const next = isFilterEmpty(filter) ? await searchFiles(q) : await searchFiles(q, undefined, filter);
           if (!cancelled && seq.current === current) setResults(next);
         }
       } catch {
@@ -241,7 +374,7 @@ export default function App() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [query, mode, regexMode]);
+  }, [query, mode, regexMode, filter]);
 
   useEffect(() => {
     if (status.last_error === "indexing_failed") {
@@ -275,6 +408,85 @@ export default function App() {
     } finally {
       if (mounted.current) setIndexActionBusy(false);
     }
+  };
+
+  const onSaveQuery = async () => {
+    if (savedQueryBusy) return;
+    if (!isSavedDefinitionAllowed(savedName, query)) {
+      setError(SAVED_QUERY_ERROR);
+      return;
+    }
+    const normalizedFilter = normalizeFilter(filter);
+    if (!normalizedFilter && !isFilterEmpty(filter)) {
+      setError(FILTER_ERROR);
+      return;
+    }
+    setSavedQueryBusy(true);
+    ++savedQueriesSeq.current;
+    setError(null);
+    try {
+      const saved = await saveSavedQuery({
+        ...(editingSavedId === undefined ? {} : { id: editingSavedId }),
+        name: savedName,
+        query: query.trim(),
+        filter: normalizedFilter ?? EMPTY_FILTER,
+      });
+      if (mounted.current) {
+        setSavedQueries((previous) => [saved, ...previous.filter((item) => item.id !== saved.id)]);
+        setSavedName("");
+        setEditingSavedId(undefined);
+        setSavedSelection("");
+      }
+    } catch {
+      if (mounted.current) setError(SAVED_QUERY_ERROR);
+    } finally {
+      if (mounted.current) setSavedQueryBusy(false);
+    }
+  };
+
+  const onLoadSavedQuery = (id: string) => {
+    setSavedSelection("");
+    const saved = savedQueries.find((item) => String(item.id) === id);
+    if (!saved) return;
+    const normalizedFilter = normalizeFilter(saved.filter);
+    if (saved.filter && !normalizedFilter && Object.keys(saved.filter).length > 0) {
+      setError(SAVED_QUERY_ERROR);
+      return;
+    }
+    setQuery(saved.query);
+    setFilter(normalizedFilter ?? EMPTY_FILTER);
+    setExtensionInput(normalizedFilter?.extensions?.join(", ") ?? "");
+    setSavedName(saved.name);
+    setEditingSavedId(saved.id);
+    setFilterOpen(true);
+    setError(null);
+  };
+
+  const onDeleteSavedQuery = async (saved: SavedQuery) => {
+    if (savedQueryBusy) return;
+    setSavedQueryBusy(true);
+    ++savedQueriesSeq.current;
+    setError(null);
+    try {
+      await deleteSavedQuery(saved.id);
+      if (mounted.current) {
+        setSavedQueries((previous) => previous.filter((item) => item.id !== saved.id));
+        if (editingSavedId === saved.id) {
+          setEditingSavedId(undefined);
+          setSavedName("");
+        }
+      }
+    } catch {
+      if (mounted.current) setError(SAVED_QUERY_ERROR);
+    } finally {
+      if (mounted.current) setSavedQueryBusy(false);
+    }
+  };
+
+  const clearFilters = () => {
+    setFilter(EMPTY_FILTER);
+    setExtensionInput("");
+    setError(null);
   };
 
   const pct = status.total_files > 0 ? Math.round((status.indexed_files / status.total_files) * 100) : 0;
@@ -475,6 +687,239 @@ export default function App() {
       {error && <div className="error">{error}</div>}
       {regexError && <div className="error">{regexError}</div>}
 
+      <div className="query-tools" aria-label="Saved searches and filters">
+        <button
+          className="btn"
+          type="button"
+          aria-expanded={filterOpen}
+          aria-controls="search-filters"
+          onClick={() => setFilterOpen((open) => !open)}
+        >
+          Filters{filterCount(filter) > 0 ? ` (${filterCount(filter)})` : ""}
+        </button>
+        <label className="saved-name-label">
+          Save current query as
+          <input
+            className="saved-name"
+            aria-label="Saved query name"
+            placeholder="Saved query name"
+            value={savedName}
+            maxLength={MAX_SAVED_NAME_BYTES}
+            onChange={(event) => setSavedName(event.currentTarget.value)}
+          />
+        </label>
+        <button
+          className="btn"
+          type="button"
+          onClick={() => void onSaveQuery()}
+          disabled={
+            savedQueryBusy
+              || !query.trim()
+              || !savedName.trim()
+              || !isSavedDefinitionAllowed(savedName, query)
+          }
+          aria-busy={savedQueryBusy}
+        >
+          Save query
+        </button>
+        <select
+          className="saved-select"
+          aria-label="Load saved query"
+          value={savedSelection}
+          onChange={(event) => onLoadSavedQuery(event.currentTarget.value)}
+        >
+          <option value="">Load saved query…</option>
+          {savedQueries.map((saved) => (
+            <option key={saved.id} value={saved.id}>
+              {saved.name}
+            </option>
+          ))}
+        </select>
+        {savedQueries.length > 0 && (
+          <div className="saved-list" aria-label="Saved query actions">
+            {savedQueries.map((saved) => (
+              <span className="saved-chip" key={saved.id}>
+                <button type="button" className="saved-load" onClick={() => onLoadSavedQuery(String(saved.id))}>
+                  {saved.name}
+                </button>
+                <button
+                  type="button"
+                  className="saved-delete"
+                  aria-label={`Delete saved query ${saved.name}`}
+                  title={`Delete ${saved.name}`}
+                  onClick={() => void onDeleteSavedQuery(saved)}
+                  disabled={savedQueryBusy}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {filterOpen && (
+        <section id="search-filters" className="filter-panel" aria-label="Search filters">
+          <label>
+            Extensions
+            <input
+              aria-label="File extensions"
+              placeholder="rs, md, pdf"
+              value={extensionInput}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setExtensionInput(value);
+                const next = normalizeUiFilter({ ...filter, extensions: parseExtensions(value) });
+                if (!next) {
+                  setError(FILTER_ERROR);
+                  return;
+                }
+                setError(null);
+                setFilter(next);
+              }}
+            />
+          </label>
+          <label>
+            Minimum size (bytes)
+            <input
+              aria-label="Minimum size in bytes"
+              type="number"
+              min={0}
+              value={filter.minSize ?? ""}
+              onChange={(event) => {
+                const value = optionalSize(event.currentTarget.value);
+                if (value === null) {
+                  setError(FILTER_ERROR);
+                  return;
+                }
+                const next = normalizeUiFilter({ ...filter, minSize: value });
+                if (!next) {
+                  setError(FILTER_ERROR);
+                  return;
+                }
+                setError(null);
+                setFilter(next);
+              }}
+            />
+          </label>
+          <label>
+            Maximum size (bytes)
+            <input
+              aria-label="Maximum size in bytes"
+              type="number"
+              min={0}
+              value={filter.maxSize ?? ""}
+              onChange={(event) => {
+                const value = optionalSize(event.currentTarget.value);
+                if (value === null) {
+                  setError(FILTER_ERROR);
+                  return;
+                }
+                const next = normalizeUiFilter({ ...filter, maxSize: value });
+                if (!next) {
+                  setError(FILTER_ERROR);
+                  return;
+                }
+                setError(null);
+                setFilter(next);
+              }}
+            />
+          </label>
+          <label>
+            Modified after
+            <input
+              aria-label="Modified after"
+              type="datetime-local"
+              value={dateInputValue(filter.modifiedAfter)}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                const timestamp = value ? Date.parse(value) : Number.NaN;
+                if (value && !Number.isSafeInteger(timestamp)) {
+                  setError(FILTER_ERROR);
+                  return;
+                }
+                const next = normalizeUiFilter({ ...filter, modifiedAfter: value ? timestamp : undefined });
+                if (!next) {
+                  setError(FILTER_ERROR);
+                  return;
+                }
+                setError(null);
+                setFilter(next);
+              }}
+            />
+          </label>
+          <label>
+            Modified before
+            <input
+              aria-label="Modified before"
+              type="datetime-local"
+              value={dateInputValue(filter.modifiedBefore)}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                const timestamp = value ? Date.parse(value) : Number.NaN;
+                if (value && !Number.isSafeInteger(timestamp)) {
+                  setError(FILTER_ERROR);
+                  return;
+                }
+                const next = normalizeUiFilter({ ...filter, modifiedBefore: value ? timestamp : undefined });
+                if (!next) {
+                  setError(FILTER_ERROR);
+                  return;
+                }
+                setError(null);
+                setFilter(next);
+              }}
+            />
+          </label>
+          <label>
+            Source root
+            <select
+              aria-label="Source root"
+              value={filter.sourceRootId ?? ""}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                const next = normalizeUiFilter({
+                  ...filter,
+                  sourceRootId: value ? Number(value) : undefined,
+                });
+                if (!next) {
+                  setError(FILTER_ERROR);
+                  return;
+                }
+                setError(null);
+                setFilter(next);
+              }}
+            >
+              <option value="">All roots</option>
+              {roots.map((root) => <option key={root.id} value={root.id}>{root.path}</option>)}
+            </select>
+          </label>
+          <label>
+            Content status
+            <select
+              aria-label="Content status filter"
+              value={filter.contentStatus ?? ""}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                const next = normalizeUiFilter({ ...filter, contentStatus: value || undefined });
+                if (!next) {
+                  setError(FILTER_ERROR);
+                  return;
+                }
+                setError(null);
+                setFilter(next);
+              }}
+            >
+              {CONTENT_STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <button className="btn" type="button" onClick={clearFilters} disabled={isFilterEmpty(filter)}>
+            Clear filters
+          </button>
+          <p className="filter-note">Filters are applied in the native bounded query; saved searches store only query and filter definitions.</p>
+        </section>
+      )}
+
       <div className="roots">
         <span className="dim">Roots:</span>
         {roots.map((r) => {
@@ -521,6 +966,7 @@ export default function App() {
                 <th>NAME</th>
                 <th>SNIPPET</th>
                 <th>PATH</th>
+                <th>CONTENT</th>
                 <th />
               </tr>
             </thead>
@@ -544,6 +990,7 @@ export default function App() {
                   </td>
                   <td className="snippet">{f.snippet}</td>
                   <td className="mono dim">{f.path}</td>
+                  <td className="status-cell">{contentStatusLabel(f.content_status, f.truncated)}</td>
                   <td className="row-actions">
                     <button className="mini" title="Open" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "open"); }}>Open</button>
                     <button className="mini" title="Show in folder" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "folder"); }}>Folder</button>
@@ -553,14 +1000,14 @@ export default function App() {
               ))}
               {query.trim() && contentResults.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="empty">
+                  <td colSpan={5} className="empty">
                     No content matches
                   </td>
                 </tr>
               )}
               {!query.trim() && (
                 <tr>
-                  <td colSpan={4} className="empty">
+                  <td colSpan={5} className="empty">
                     Type to search file contents
                   </td>
                 </tr>
@@ -574,6 +1021,7 @@ export default function App() {
                 <th>NAME</th>
                 <th>PATH</th>
                 <th>SIZE</th>
+                <th>CONTENT</th>
                 <th />
               </tr>
             </thead>
@@ -597,6 +1045,7 @@ export default function App() {
                   </td>
                   <td className="mono dim">{f.path}</td>
                   <td className="mono">{fmtSize(f.size)}</td>
+                  <td className="status-cell">{contentStatusLabel(f.content_status, f.content_truncated)}</td>
                   <td className="row-actions">
                     <button className="mini" title="Open" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "open"); }}>Open</button>
                     <button className="mini" title="Show in folder" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "folder"); }}>Folder</button>
@@ -606,14 +1055,14 @@ export default function App() {
               ))}
               {query.trim() && results.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="empty">
+                  <td colSpan={5} className="empty">
                     No results
                   </td>
                 </tr>
               )}
               {!query.trim() && (
                 <tr>
-                  <td colSpan={4} className="empty">
+                  <td colSpan={5} className="empty">
                     Type to search
                   </td>
                 </tr>

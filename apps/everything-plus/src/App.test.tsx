@@ -4,12 +4,15 @@ import App from "./App";
 import {
   cancelIndex,
   copyPath,
+  deleteSavedQuery,
   indexStatus,
+  listSavedQueries,
   onOpenRequest,
   openFile,
   openIn,
   openTargets,
   revealFile,
+  saveSavedQuery,
   searchContent,
   searchFiles,
   takePendingOpen,
@@ -35,6 +38,7 @@ vi.mock("./api", () => ({
     last_error: null,
   })),
   listRoots: vi.fn(async () => []),
+  listSavedQueries: vi.fn(async () => []),
   watcherStatuses: vi.fn(async () => []),
   searchFiles: vi.fn(async (query: string) => [{ id: 1, path: `C:\\files\\${query}`, name: query, ext: "", size: 1, modified_ts: 0 }]),
   searchContent: vi.fn(async () => []),
@@ -50,6 +54,15 @@ vi.mock("./api", () => ({
     { id: "workbench", displayName: "Workbench" },
   ]),
   openIn: vi.fn(async () => undefined),
+  saveSavedQuery: vi.fn(async () => ({
+    id: 1,
+    name: "saved",
+    query: "query",
+    filter: {},
+    createdAt: 0,
+    updatedAt: 0,
+  })),
+  deleteSavedQuery: vi.fn(async () => undefined),
   takePendingOpen: vi.fn().mockImplementation(async () => {
     mocks.order.push("take");
     return null;
@@ -66,6 +79,9 @@ const onOpenRequestMock = vi.mocked(onOpenRequest);
 const searchFilesMock = vi.mocked(searchFiles);
 const searchContentMock = vi.mocked(searchContent);
 const indexStatusMock = vi.mocked(indexStatus);
+const listSavedQueriesMock = vi.mocked(listSavedQueries);
+const saveSavedQueryMock = vi.mocked(saveSavedQuery);
+const deleteSavedQueryMock = vi.mocked(deleteSavedQuery);
 const cancelIndexMock = vi.mocked(cancelIndex);
 const openFileMock = vi.mocked(openFile);
 const revealFileMock = vi.mocked(revealFile);
@@ -90,6 +106,16 @@ beforeEach(() => {
     { id: 1, path: `C:\\files\\${query}`, name: query, ext: "", size: 1, modified_ts: 0 },
   ]);
   searchContentMock.mockReset().mockResolvedValue([]);
+  listSavedQueriesMock.mockReset().mockResolvedValue([]);
+  saveSavedQueryMock.mockReset().mockResolvedValue({
+    id: 1,
+    name: "saved",
+    query: "fixture",
+    filter: {},
+    createdAt: 0,
+    updatedAt: 0,
+  });
+  deleteSavedQueryMock.mockReset().mockResolvedValue(undefined);
   indexStatusMock.mockReset().mockResolvedValue({
     indexing: false,
     cancel_requested: false,
@@ -148,6 +174,26 @@ describe("Everything+ Query app-link delivery", () => {
     await waitFor(() => expect(searchFilesMock).toHaveBeenCalledWith("fresh"));
     expect(searchFilesMock).not.toHaveBeenCalledWith("stale-secret");
     expect(document.body.textContent).not.toContain("stale-secret");
+  });
+
+  it("applies a Launcher query filter at the native search boundary", async () => {
+    takePendingOpenMock.mockResolvedValueOnce({
+      target: {
+        kind: "query",
+        text: "  cargo  ",
+        filter: { extensions: [".RS"], sourceRootId: 3, contentStatus: "TRUNCATED" },
+      },
+      from: "devbox-launcher",
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(searchFilesMock).toHaveBeenCalledWith(
+      "cargo",
+      undefined,
+      { extensions: ["rs"], sourceRootId: 3, contentStatus: "truncated" },
+    ));
+    expect(screen.getByText("Filters (3)")).toBeTruthy();
   });
 
   it("does not let an older search response replace the inbound Query results", async () => {
@@ -358,5 +404,82 @@ describe("Everything+ result context menu", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Workbench" }));
 
     expect(await screen.findByText("대상 앱을 실행하지 못했습니다")).toBeTruthy();
+  });
+});
+
+describe("Everything+ filters and saved queries", () => {
+  it("passes bounded native filters instead of filtering only in the renderer", async () => {
+    searchFilesMock.mockResolvedValueOnce([
+      { id: 1, path: "C:\\files\\main.rs", name: "main.rs", ext: "rs", size: 20, modified_ts: 100 },
+    ]);
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.change(screen.getByLabelText("File extensions"), { target: { value: " .RS, md " } });
+    fireEvent.change(screen.getByPlaceholderText("Search file names..."), { target: { value: "main" } });
+
+    await waitFor(() => expect(searchFilesMock).toHaveBeenCalledWith(
+      "main",
+      undefined,
+      { extensions: ["rs", "md"] },
+    ));
+    expect(screen.getByText("main.rs")).toBeTruthy();
+    expect(screen.getByText("Filters (1)")).toBeTruthy();
+  });
+
+  it("saves a query definition and loads it without persisting result rows", async () => {
+    saveSavedQueryMock.mockResolvedValueOnce({
+      id: 7,
+      name: "Rust sources",
+      query: "cargo",
+      filter: { extensions: ["rs"] },
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    render(<App />);
+    fireEvent.change(screen.getByPlaceholderText("Search file names..."), { target: { value: "cargo" } });
+    fireEvent.change(screen.getByLabelText("Saved query name"), { target: { value: "Rust sources" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save query" }));
+
+    await waitFor(() => expect(saveSavedQueryMock).toHaveBeenCalledWith({
+      name: "Rust sources",
+      query: "cargo",
+      filter: {},
+    }));
+    expect(await screen.findByRole("button", { name: "Rust sources" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Rust sources" }));
+    expect((screen.getByPlaceholderText("Search file names...") as HTMLInputElement).value).toBe("cargo");
+    expect(screen.getByLabelText("File extensions")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete saved query Rust sources" }));
+    await waitFor(() => expect(deleteSavedQueryMock).toHaveBeenCalledWith(7));
+    expect(screen.queryByRole("button", { name: "Rust sources" })).toBeNull();
+  });
+
+  it("does not let the initial saved-query response overwrite a completed save", async () => {
+    let resolveInitial: ((value: Awaited<ReturnType<typeof listSavedQueries>>) => void) | undefined;
+    listSavedQueriesMock.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveInitial = resolve;
+      }),
+    );
+    saveSavedQueryMock.mockResolvedValueOnce({
+      id: 9,
+      name: "Saved during load",
+      query: "cargo",
+      filter: {},
+      createdAt: 1,
+      updatedAt: 2,
+    });
+
+    render(<App />);
+    fireEvent.change(screen.getByPlaceholderText("Search file names..."), { target: { value: "cargo" } });
+    fireEvent.change(screen.getByLabelText("Saved query name"), { target: { value: "Saved during load" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save query" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Saved during load" })).toBeTruthy());
+    await act(async () => {
+      resolveInitial?.([]);
+    });
+    expect(screen.getByRole("button", { name: "Saved during load" })).toBeTruthy();
   });
 });

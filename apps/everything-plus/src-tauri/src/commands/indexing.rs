@@ -3,11 +3,11 @@ use crate::core::content::{
     is_xlsx_path,
 };
 use crate::core::db::{
-    add_root as db_add_root, clear_all, clear_docx, clear_ods, clear_pdf, clear_root, clear_xls,
-    clear_xlsx, content_status_summary, list_roots as db_list_roots, record_docx_extractor_version,
-    record_ods_extractor_version, record_pdf_extractor_version, record_xls_extractor_version,
-    record_xlsx_extractor_version, remove_root as db_remove_root, total_files,
-    upsert_content_record, upsert_file,
+    add_root as db_add_root, clear_all, clear_content_for_file, clear_docx, clear_ods, clear_pdf,
+    clear_root, clear_xls, clear_xlsx, content_status_summary, delete_file_by_id,
+    list_roots as db_list_roots, record_docx_extractor_version, record_ods_extractor_version,
+    record_pdf_extractor_version, record_xls_extractor_version, record_xlsx_extractor_version,
+    remove_root as db_remove_root, root_row_for, total_files, upsert_content_record, upsert_file,
 };
 use crate::core::models::IndexStatus;
 use filesystem::collect;
@@ -137,13 +137,28 @@ pub fn remove_root(
     state: tauri::State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<(), String> {
-    {
+    let reindex_root = {
         let conn = state.db.lock().map_err(|_| ROOT_ERROR.to_string())?;
         db_remove_root(&conn, &path).map_err(|_| ROOT_ERROR.to_string())?;
-    }
+        // Removing a nested content-disabled root can promote its files to a
+        // content-enabled ancestor. The ownership repair above clears stale
+        // disallowed content, while this targeted scan repopulates content
+        // newly allowed by the remaining deepest ancestor. If indexing is
+        // already running, spawn_index coalesces this into its safe restart.
+        let removed_path = crate::core::db::normalize_path(&path);
+        db_list_roots(&conn)
+            .map_err(|_| ROOT_ERROR.to_string())?
+            .into_iter()
+            .filter(|root| crate::core::watcher::is_within_root(&root.path, &removed_path))
+            .max_by_key(|root| root.path.len())
+            .map(|root| root.path)
+    };
     // watcher 해제 (루트와 함께 pending 해제)
     let watcher = app.state::<Arc<crate::commands::watcher::WatcherManager>>();
     watcher.remove(&path);
+    if let Some(root) = reindex_root {
+        spawn_index(state.inner().clone(), vec![root]);
+    }
     Ok(())
 }
 
@@ -380,7 +395,17 @@ fn run_index_with_filter(
                     return Ok(());
                 }
                 let path = file.path.to_string_lossy().into_owned();
-                let record = if root.content && is_content_candidate(&file.path) {
+                let effective_content = targets
+                    .iter()
+                    .filter(|candidate| {
+                        crate::core::watcher::is_within_root(
+                            &candidate.path,
+                            &file.path.to_string_lossy(),
+                        )
+                    })
+                    .max_by_key(|candidate| candidate.path.len())
+                    .is_some_and(|candidate| candidate.content);
+                let record = if effective_content && is_content_candidate(&file.path) {
                     Some(extract_file(
                         &file.path,
                         file.size.max(0) as u64,
@@ -412,18 +437,30 @@ fn run_index_with_filter(
             conn.execute("BEGIN TRANSACTION", [])?;
             let mut failed = None;
             for (path, size, modified_ts, record) in &prepared {
-                let file_id = match upsert_file(&conn, path, *size, *modified_ts, 0) {
+                let file_id = match upsert_file(&conn, path, *size, *modified_ts, root.id) {
                     Ok(file_id) => file_id,
                     Err(error) => {
                         failed = Some(error);
                         break;
                     }
                 };
-                if let Some(record) = record {
-                    if let Err(error) = upsert_content_record(&conn, file_id, record, now_ms()) {
-                        failed = Some(error);
-                        break;
+                let Some((_, content_enabled)) = root_row_for(&conn, path)? else {
+                    // A root can be removed while this bounded batch is being
+                    // committed. Never resurrect the row through the stale
+                    // fallback root id supplied by the scan snapshot.
+                    delete_file_by_id(&conn, file_id)?;
+                    continue;
+                };
+                if content_enabled {
+                    if let Some(record) = record {
+                        if let Err(error) = upsert_content_record(&conn, file_id, record, now_ms())
+                        {
+                            failed = Some(error);
+                            break;
+                        }
                     }
+                } else {
+                    clear_content_for_file(&conn, file_id)?;
                 }
             }
             if let Some(error) = failed {
@@ -541,6 +578,10 @@ pub(crate) fn validate_root(input: &str) -> Result<String, String> {
     {
         return Err(ROOT_ERROR.to_string());
     }
+    // Canonicalization follows parent links. Reject those links before it so
+    // a root selected through a junction/symlink cannot later authorize a
+    // different filesystem subtree.
+    filesystem::ensure_no_links(raw).map_err(|_| ROOT_ERROR.to_string())?;
     let metadata = std::fs::symlink_metadata(raw).map_err(|_| ROOT_ERROR.to_string())?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return Err(ROOT_ERROR.to_string());

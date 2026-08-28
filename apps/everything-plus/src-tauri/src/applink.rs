@@ -35,6 +35,7 @@ mod tests {
         OpenRequest {
             target: OpenTarget::Query {
                 text: text.to_string(),
+                filter: None,
             },
             from: Some("devbox-launcher".to_string()),
         }

@@ -2,8 +2,17 @@ use crate::core::content::{
     ContentRecord, DOCX_EXTRACTOR_VERSION, ODS_EXTRACTOR_VERSION, PDF_EXTRACTOR_VERSION,
     XLSX_EXTRACTOR_VERSION, XLS_EXTRACTOR_VERSION,
 };
-use crate::core::models::{ContentResult, FileEntry, RootInfo};
-use rusqlite::{params, Connection, OptionalExtension};
+use crate::core::models::{ContentResult, FileEntry, RootInfo, SavedQuery, SearchFilter};
+use devbox_applink::contains_sensitive_value;
+use rusqlite::types::Value;
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
+
+const MAX_SAVED_QUERIES: i64 = 2_048;
+const MAX_SAVED_NAME_BYTES: usize = 128;
+const MAX_SAVED_QUERY_BYTES: usize = 512;
+const MAX_FILTER_JSON_BYTES: usize = 8 * 1024;
+const NEXT_ROOT_ID_META_KEY: &str = "next_root_id";
+const ROOT_OWNERSHIP_VERSION_KEY: &str = "root_ownership_version";
 
 const PDF_EXTRACTOR_META_KEY: &str = "pdf_extractor_version";
 const DOCX_EXTRACTOR_META_KEY: &str = "docx_extractor_version";
@@ -38,6 +47,8 @@ pub fn init(path: &std::path::Path) -> rusqlite::Result<(Connection, bool)> {
 /// 자체가 바뀐다.
 pub fn normalize_path(path: &str) -> String {
     let mut unified = path.replace('\\', "/");
+    #[cfg(windows)]
+    unified.make_ascii_lowercase();
     // Windows canonicalize() may return an extended-length spelling. Keep the
     // stored/event spelling stable so a watcher callback using `C:/...` still
     // matches a root that was canonicalized as `\\\\?\\C:\\...`.
@@ -70,7 +81,7 @@ fn is_drive_letter(s: &str) -> bool {
 pub fn migrate(conn: &Connection) -> rusqlite::Result<bool> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS roots (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             path TEXT UNIQUE NOT NULL,
             content INTEGER NOT NULL DEFAULT 0
         );
@@ -121,6 +132,14 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<bool> {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS saved_queries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            query TEXT NOT NULL,
+            filter_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
         ",
     )?;
     // 기존 v0.4.x DB는 roots.content와 content metadata가 없을 수 있다.  먼저
@@ -153,6 +172,14 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<bool> {
         "text_chars",
         "INTEGER NOT NULL DEFAULT 0",
     )?;
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS files_ext_idx ON files(ext);
+         CREATE INDEX IF NOT EXISTS files_modified_ts_idx ON files(modified_ts);
+         CREATE INDEX IF NOT EXISTS files_size_idx ON files(size);
+         CREATE INDEX IF NOT EXISTS files_root_id_idx ON files(root_id);
+         CREATE INDEX IF NOT EXISTS file_content_status_idx ON file_content(content_status, truncated);
+         CREATE INDEX IF NOT EXISTS saved_queries_updated_idx ON saved_queries(updated_at DESC, id ASC);",
+    )?;
     // schema_version이 낮으면(신규 DB 포함) 파생 데이터(files/file_content)만 지워
     // 재인덱싱을 유도한다. roots(사용자가 등록한 경로 목록)는 그대로 둔다.
     let current_version: i64 = conn
@@ -173,7 +200,97 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<bool> {
             params![SCHEMA_VERSION.to_string()],
         )?;
     }
+    ensure_root_id_sequence(conn)?;
+    let ownership_version = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            [ROOT_OWNERSHIP_VERSION_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .ok();
+    if ownership_version.as_deref() != Some("2") {
+        backfill_root_ids(conn)?;
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?1, '2')
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [ROOT_OWNERSHIP_VERSION_KEY],
+        )?;
+    }
     Ok(cleared)
+}
+
+/// Repair indexed ownership by choosing the deepest registered root for every
+/// stored path. Rows outside every registered root are stale and removed; no
+/// filesystem access is performed here.
+fn backfill_root_ids(conn: &Connection) -> rusqlite::Result<()> {
+    let roots = list_roots(conn)?;
+    if roots.is_empty() {
+        // With no registered source, every indexed row is orphaned state.
+        clear_all(conn)?;
+        return Ok(());
+    }
+    let mut statement = conn.prepare("SELECT id, path, root_id FROM files")?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<i64>>(2)?,
+        ))
+    })?;
+    let pending: Vec<_> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    for (file_id, path, current_root_id) in pending {
+        let Some(root) = roots
+            .iter()
+            .filter(|root| crate::core::watcher::is_within_root(&root.path, &path))
+            .max_by_key(|root| root.path.len())
+        else {
+            // Rows outside every registered root are stale index state. Remove
+            // their content first because the schema intentionally has no FK.
+            conn.execute("DELETE FROM file_content WHERE file_id = ?1", [file_id])?;
+            conn.execute("DELETE FROM files WHERE id = ?1", [file_id])?;
+            continue;
+        };
+        if current_root_id != Some(root.id) {
+            conn.execute(
+                "UPDATE files SET root_id = ?1 WHERE id = ?2",
+                params![root.id, file_id],
+            )?;
+        }
+        if !root.content {
+            conn.execute("DELETE FROM file_content WHERE file_id = ?1", [file_id])?;
+        }
+    }
+    // `file_content` intentionally has no foreign key because old databases
+    // predate the table. Remove rows left behind by a crash/manual repair so
+    // status counts and FTS metadata cannot retain stale content forever.
+    conn.execute(
+        "DELETE FROM file_content WHERE file_id NOT IN (SELECT id FROM files)",
+        [],
+    )?;
+    Ok(())
+}
+
+fn ensure_root_id_sequence(conn: &Connection) -> rusqlite::Result<()> {
+    let maximum: i64 = conn.query_row("SELECT COALESCE(MAX(id), 0) + 1 FROM roots", [], |row| {
+        row.get(0)
+    })?;
+    let recorded = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            [NEXT_ROOT_ID_META_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(maximum);
+    let next = recorded.max(maximum);
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![NEXT_ROOT_ID_META_KEY, next.to_string()],
+    )?;
+    Ok(())
 }
 
 fn ensure_column(
@@ -203,20 +320,54 @@ fn ensure_column(
 /// 루트 필터가 아무 것도 매치하지 못할 수 있다.
 pub fn add_root(conn: &Connection, path: &str, index_content: bool) -> rusqlite::Result<String> {
     let path = normalize_path(path);
+    if conn
+        .query_row("SELECT id FROM roots WHERE path = ?1", [&path], |row| {
+            row.get::<_, i64>(0)
+        })
+        .optional()?
+        .is_some()
+    {
+        conn.execute(
+            "UPDATE roots SET content = ?1 WHERE path = ?2",
+            params![index_content, path],
+        )?;
+        backfill_root_ids(conn)?;
+        return Ok(path);
+    }
+    let maximum: i64 = conn.query_row("SELECT COALESCE(MAX(id), 0) + 1 FROM roots", [], |row| {
+        row.get(0)
+    })?;
+    let recorded = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            [NEXT_ROOT_ID_META_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(maximum);
+    let id = recorded.max(maximum);
     conn.execute(
-        "INSERT INTO roots (path, content) VALUES (?1, ?2)
-         ON CONFLICT(path) DO UPDATE SET content = excluded.content",
-        params![path, index_content],
+        "INSERT INTO roots (id, path, content) VALUES (?1, ?2, ?3)",
+        params![id, path, index_content],
     )?;
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![NEXT_ROOT_ID_META_KEY, id.saturating_add(1).to_string()],
+    )?;
+    backfill_root_ids(conn)?;
     Ok(path)
 }
 
 pub fn list_roots(conn: &Connection) -> rusqlite::Result<Vec<RootInfo>> {
-    let mut stmt = conn.prepare("SELECT path, content FROM roots ORDER BY id")?;
+    let mut stmt = conn.prepare("SELECT id, path, content FROM roots ORDER BY id")?;
     let rows = stmt.query_map([], |r| {
         Ok(RootInfo {
-            path: r.get(0)?,
-            content: r.get::<_, i64>(1)? != 0,
+            id: r.get(0)?,
+            path: r.get(1)?,
+            content: r.get::<_, i64>(2)? != 0,
         })
     })?;
     rows.collect()
@@ -225,8 +376,24 @@ pub fn list_roots(conn: &Connection) -> rusqlite::Result<Vec<RootInfo>> {
 /// 루트 하나를 등록 해제하고, 그 아래 인덱스된 데이터를 모두 지운다.
 pub fn remove_root(conn: &Connection, path: &str) -> rusqlite::Result<()> {
     let path = normalize_path(path);
-    clear_root(conn, &path)?;
-    conn.execute("DELETE FROM roots WHERE path = ?1", params![path])?;
+    let root_id = conn
+        .query_row("SELECT id FROM roots WHERE path = ?1", [&path], |row| {
+            row.get::<_, i64>(0)
+        })
+        .optional()?;
+    if let Some(root_id) = root_id {
+        conn.execute("DELETE FROM roots WHERE id = ?1", [root_id])?;
+        // Recompute ownership for every row, not only rows whose root_id
+        // already names the removed root. A corrupt/null root_id, a nested
+        // root row written by an older scanner, or a stale orphan must not
+        // survive removal or miss reassignment to the deepest remaining root.
+        backfill_root_ids(conn)?;
+    } else {
+        clear_root(conn, &path)?;
+        conn.execute("DELETE FROM roots WHERE path = ?1", params![path])?;
+        backfill_root_ids(conn)?;
+        return Ok(());
+    }
     Ok(())
 }
 
@@ -234,6 +401,21 @@ pub fn remove_root(conn: &Connection, path: &str) -> rusqlite::Result<()> {
 /// CASCADE가 없으므로 순서가 중요하다). `remove_root`과 부분 재인덱싱이 공유한다.
 pub fn clear_root(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     let normalized = normalize_path(root_path);
+    if let Some(root_id) = conn
+        .query_row(
+            "SELECT id FROM roots WHERE path = ?1",
+            [&normalized],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+    {
+        conn.execute(
+            "DELETE FROM file_content WHERE file_id IN (SELECT id FROM files WHERE root_id = ?1)",
+            [root_id],
+        )?;
+        conn.execute("DELETE FROM files WHERE root_id = ?1", [root_id])?;
+        return Ok(());
+    }
     // 드라이브 루트("C:/")와 유닉스 루트("/")는 normalize_path가 이미 끝에
     // 구분자를 남겨두므로, 여기서 또 붙이면 "C://%"가 되어 매치가 0건이 된다.
     let prefix = if normalized.ends_with('/') {
@@ -272,6 +454,7 @@ pub fn upsert_file(
     root_id: i64,
 ) -> rusqlite::Result<i64> {
     let path = normalize_path(path);
+    let root_id = deepest_root_id(conn, &path)?.unwrap_or(root_id);
     let name = path.rsplit('/').next().unwrap_or(&path).to_string();
     let ext = path
         .rsplit('.')
@@ -292,6 +475,26 @@ pub fn upsert_file(
         params![path, name, ext, size, modified_ts, root_id],
         |r| r.get(0),
     )
+}
+
+fn deepest_root_id(conn: &Connection, path: &str) -> rusqlite::Result<Option<i64>> {
+    conn.query_row(
+        "SELECT id FROM roots
+         WHERE ?1 = path
+            OR (substr(?1, 1, length(path)) = path
+                AND (substr(path, -1, 1) = '/'
+                     OR substr(?1, length(path) + 1, 1) = '/'))
+         ORDER BY length(path) DESC, id ASC
+         LIMIT 1",
+        [path],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+pub fn clear_content_for_file(conn: &Connection, file_id: i64) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM file_content WHERE file_id = ?1", [file_id])?;
+    Ok(())
 }
 
 /// Store a bounded extraction result.  Failed records contain an empty FTS
@@ -347,6 +550,25 @@ pub fn clear_docx(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
 
 fn clear_format(conn: &Connection, root_path: &str, extension: &str) -> rusqlite::Result<()> {
     let normalized = normalize_path(root_path);
+    if let Some(root_id) = conn
+        .query_row(
+            "SELECT id FROM roots WHERE path = ?1",
+            [&normalized],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+    {
+        conn.execute(
+            "DELETE FROM file_content WHERE file_id IN
+                 (SELECT id FROM files WHERE root_id = ?1 AND ext = ?2)",
+            params![root_id, extension],
+        )?;
+        conn.execute(
+            "DELETE FROM files WHERE root_id = ?1 AND ext = ?2",
+            params![root_id, extension],
+        )?;
+        return Ok(());
+    }
     let prefix = if normalized.ends_with('/') {
         normalized
     } else {
@@ -495,7 +717,7 @@ pub fn delete_content(conn: &Connection, file_id: i64) -> rusqlite::Result<bool>
 pub fn content_status_summary(conn: &Connection) -> rusqlite::Result<ContentStatusSummary> {
     let mut stmt = conn.prepare(
         "SELECT
-            COALESCE(SUM(CASE WHEN content_status = 'indexed' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN content_status = 'indexed' AND truncated = 0 THEN 1 ELSE 0 END), 0),
             COALESCE(SUM(CASE WHEN truncated != 0 THEN 1 ELSE 0 END), 0),
             COALESCE(SUM(CASE WHEN content_status != 'indexed' THEN 1 ELSE 0 END), 0),
             MAX(indexed_at)
@@ -530,6 +752,12 @@ pub fn delete_file(conn: &Connection, path: &str) -> rusqlite::Result<bool> {
     Ok(deleted > 0 || removed > 0)
 }
 
+pub fn delete_file_by_id(conn: &Connection, file_id: i64) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM file_content WHERE file_id = ?1", [file_id])?;
+    conn.execute("DELETE FROM files WHERE id = ?1", [file_id])?;
+    Ok(())
+}
+
 /// 경로를 포함하는 루트를 찾는다 (가장 긴 prefix 우선).
 pub fn find_root_for(conn: &Connection, path: &str) -> rusqlite::Result<Option<RootInfo>> {
     let path = normalize_path(path);
@@ -559,24 +787,72 @@ pub fn root_row_for(conn: &Connection, path: &str) -> rusqlite::Result<Option<(i
     Ok(Some((id, root.content)))
 }
 
+pub fn is_indexed_path(conn: &Connection, path: &str) -> rusqlite::Result<bool> {
+    let path = normalize_path(path);
+    conn.query_row(
+        "SELECT EXISTS(
+            SELECT 1 FROM files f
+            JOIN roots r ON r.id = f.root_id
+            WHERE f.path = ?1
+              AND (f.path = r.path
+                OR (substr(f.path, 1, length(r.path)) = r.path
+                    AND (substr(r.path, -1, 1) = '/'
+                         OR substr(f.path, length(r.path) + 1, 1) = '/')))
+              AND f.root_id = (
+                SELECT deepest.id FROM roots deepest
+                WHERE ?1 = deepest.path
+                   OR (substr(?1, 1, length(deepest.path)) = deepest.path
+                       AND (substr(deepest.path, -1, 1) = '/'
+                            OR substr(?1, length(deepest.path) + 1, 1) = '/'))
+                ORDER BY length(deepest.path) DESC, deepest.id ASC
+                LIMIT 1
+              )
+        )",
+        [path],
+        |row| row.get(0),
+    )
+}
+
 pub fn total_files(conn: &Connection) -> rusqlite::Result<i64> {
     conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
 }
 
 /// FTS5 파일명 검색. 쿼리는 토큰 단위 prefix 매치로 안전하게 이스케이프한다.
 pub fn search(conn: &Connection, query: &str, limit: i64) -> rusqlite::Result<Vec<FileEntry>> {
+    search_with_filter(conn, query, limit, &SearchFilter::default())
+}
+
+/// FTS5 파일명 검색의 bounded filter 경로. 모든 filter value는 SQLite
+/// parameter로 전달하고, source는 등록된 root id만 받으므로 path를 다시
+/// filesystem authority로 사용하지 않는다.
+pub fn search_with_filter(
+    conn: &Connection,
+    query: &str,
+    limit: i64,
+    filter: &SearchFilter,
+) -> rusqlite::Result<Vec<FileEntry>> {
     // Regex filename mode asks for a larger bounded FTS candidate set and then
     // performs the regular-expression match in the frontend.
     let limit = limit.clamp(0, 2_000);
     let q = search::build_fts_query(query);
-    let mut stmt = conn.prepare(
-        "SELECT f.id, f.path, f.name, f.ext, f.size, f.modified_ts
-         FROM files_fts JOIN files f ON f.id = files_fts.rowid
-         WHERE files_fts MATCH ?1
-         ORDER BY f.name
-         LIMIT ?2",
-    )?;
-    let rows = stmt.query_map(params![q, limit], |r| {
+    let filter = filter
+        .normalized()
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let (where_sql, mut values) = filter_sql(&filter, "f", Some("fc"));
+    let sql = format!(
+        "SELECT f.id, f.path, f.name, COALESCE(f.ext, ''), f.size, f.modified_ts,
+                f.root_id, fc.content_status, COALESCE(fc.truncated, 0)
+         FROM files_fts
+         JOIN files f ON f.id = files_fts.rowid
+         LEFT JOIN file_content fc ON fc.file_id = f.id
+         WHERE files_fts MATCH ? {where_sql}
+         ORDER BY f.name COLLATE NOCASE, f.path
+         LIMIT ?"
+    );
+    values.insert(0, Value::Text(q));
+    values.push(Value::Integer(limit));
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params_from_iter(values.iter()), |r| {
         Ok(FileEntry {
             id: r.get(0)?,
             path: r.get(1)?,
@@ -584,6 +860,9 @@ pub fn search(conn: &Connection, query: &str, limit: i64) -> rusqlite::Result<Ve
             ext: r.get(3)?,
             size: r.get(4)?,
             modified_ts: r.get(5)?,
+            root_id: r.get(6)?,
+            content_status: r.get(7)?,
+            content_truncated: r.get::<_, i64>(8)? != 0,
         })
     })?;
     rows.collect()
@@ -595,25 +874,330 @@ pub fn search_content(
     query: &str,
     limit: i64,
 ) -> rusqlite::Result<Vec<ContentResult>> {
+    search_content_with_filter(conn, query, limit, &SearchFilter::default())
+}
+
+pub fn search_content_with_filter(
+    conn: &Connection,
+    query: &str,
+    limit: i64,
+    filter: &SearchFilter,
+) -> rusqlite::Result<Vec<ContentResult>> {
     let limit = limit.clamp(0, 200);
     let q = search::build_fts_query(query);
-    let mut stmt = conn.prepare(
-        "SELECT f.path, f.name, snippet(file_content_fts, 0, '[', ']', '…', 20) AS snip
+    let filter = filter
+        .normalized()
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let (mut where_sql, mut values) = filter_sql(&filter, "f", Some("fc"));
+    if filter.content_status.is_none() {
+        where_sql.push_str(" AND fc.content_status = 'indexed'");
+    }
+    let sql = format!(
+        "SELECT f.path, f.name, COALESCE(f.ext, ''), f.size, f.modified_ts, f.root_id,
+                fc.content_status, fc.truncated, fc.error_code,
+                fc.extractor_version, fc.indexed_at, fc.encoding, fc.text_chars,
+                snippet(file_content_fts, 0, '[', ']', '…', 20) AS snip
          FROM file_content_fts
          JOIN file_content fc ON fc.id = file_content_fts.rowid
          JOIN files f ON f.id = fc.file_id
-         WHERE file_content_fts MATCH ?1 AND fc.content_status = 'indexed'
-         ORDER BY f.name
-         LIMIT ?2",
-    )?;
-    let rows = stmt.query_map(params![q, limit], |r| {
+         WHERE file_content_fts MATCH ? {where_sql}
+         ORDER BY f.name COLLATE NOCASE, f.path
+         LIMIT ?"
+    );
+    values.insert(0, Value::Text(q));
+    values.push(Value::Integer(limit));
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params_from_iter(values.iter()), |r| {
         Ok(ContentResult {
             path: r.get(0)?,
             name: r.get(1)?,
-            snippet: crate::core::content::redact_snippet(&r.get::<_, String>(2)?),
+            ext: r.get(2)?,
+            size: r.get(3)?,
+            modified_ts: r.get(4)?,
+            root_id: r.get(5)?,
+            content_status: r.get(6)?,
+            truncated: r.get::<_, i64>(7)? != 0,
+            error_code: r.get(8)?,
+            extractor_version: r.get(9)?,
+            indexed_at: r.get(10)?,
+            encoding: r.get(11)?,
+            text_chars: r.get(12)?,
+            snippet: crate::core::content::redact_snippet(&r.get::<_, String>(13)?),
         })
     })?;
     rows.collect()
+}
+
+/// Read saved query definitions. The result list is deliberately reconstructed
+/// from the current index later; no search result is persisted here.
+pub fn list_saved_queries(conn: &Connection) -> rusqlite::Result<Vec<SavedQuery>> {
+    let mut statement = conn.prepare(
+        "SELECT id, name, query, filter_json, created_at, updated_at
+         FROM saved_queries ORDER BY updated_at DESC, id ASC LIMIT ?1",
+    )?;
+    let rows = statement.query_map([MAX_SAVED_QUERIES + 1], saved_query_from_row)?;
+    let saved = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    if saved.len() as i64 > MAX_SAVED_QUERIES {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    Ok(saved)
+}
+
+pub fn count_saved_queries(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row("SELECT COUNT(*) FROM saved_queries", [], |row| row.get(0))
+}
+
+pub fn upsert_saved_query(
+    conn: &Connection,
+    id: Option<i64>,
+    name: &str,
+    query: &str,
+    filter: &SearchFilter,
+    now: i64,
+) -> rusqlite::Result<SavedQuery> {
+    let name = name.trim();
+    let query = query.trim();
+    if name.is_empty()
+        || query.is_empty()
+        || name.len() > MAX_SAVED_NAME_BYTES
+        || query.len() > MAX_SAVED_QUERY_BYTES
+        || name.chars().any(char::is_control)
+        || query.chars().any(char::is_control)
+        || contains_sensitive_value(name)
+        || contains_sensitive_value(query)
+    {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    let filter = filter
+        .normalized()
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let filter_json = serde_json::to_string(&filter).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    if filter_json.len() > MAX_FILTER_JSON_BYTES {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    let saved_id = match id {
+        Some(id) => {
+            let changed = conn.execute(
+                "UPDATE saved_queries
+                 SET name = ?1, query = ?2, filter_json = ?3, updated_at = ?4
+                 WHERE id = ?5",
+                params![name, query, filter_json, now, id],
+            )?;
+            if changed == 0 {
+                return Err(rusqlite::Error::QueryReturnedNoRows);
+            }
+            id
+        }
+        None => {
+            if count_saved_queries(conn)? >= MAX_SAVED_QUERIES {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            conn.execute(
+                "INSERT INTO saved_queries
+                    (name, query, filter_json, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?4)",
+                params![name, query, filter_json, now],
+            )?;
+            conn.last_insert_rowid()
+        }
+    };
+    conn.query_row(
+        "SELECT id, name, query, filter_json, created_at, updated_at
+         FROM saved_queries WHERE id = ?1",
+        [saved_id],
+        saved_query_from_row,
+    )
+}
+
+pub fn delete_saved_query(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
+    Ok(conn.execute("DELETE FROM saved_queries WHERE id = ?1", [id])? > 0)
+}
+
+/// Restore a complete bounded definition set after a snapshot publication
+/// failure. This is intentionally private to the saved-query command layer's
+/// compensating write path; result rows and filesystem data are never copied.
+pub fn replace_saved_queries(conn: &Connection, saved: &[SavedQuery]) -> rusqlite::Result<()> {
+    if saved.len() as i64 > MAX_SAVED_QUERIES {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+        conn.execute("DELETE FROM saved_queries", [])?;
+        for query in saved {
+            let name = query.name.trim();
+            let text = query.query.trim();
+            if query.id <= 0
+                || name.is_empty()
+                || text.is_empty()
+                || name.len() > MAX_SAVED_NAME_BYTES
+                || text.len() > MAX_SAVED_QUERY_BYTES
+                || name.chars().any(char::is_control)
+                || text.chars().any(char::is_control)
+                || contains_sensitive_value(name)
+                || contains_sensitive_value(text)
+            {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            let filter = query
+                .filter
+                .normalized()
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
+            let filter_json =
+                serde_json::to_string(&filter).map_err(|_| rusqlite::Error::InvalidQuery)?;
+            if filter_json.len() > MAX_FILTER_JSON_BYTES {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            conn.execute(
+                "INSERT INTO saved_queries
+                    (id, name, query, filter_json, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    query.id,
+                    name,
+                    text,
+                    filter_json,
+                    query.created_at,
+                    query.updated_at,
+                ],
+            )?;
+        }
+        Ok::<(), rusqlite::Error>(())
+    })();
+    match result {
+        Ok(()) => conn.execute_batch("COMMIT"),
+        Err(error) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(error)
+        }
+    }
+}
+
+fn saved_query_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SavedQuery> {
+    let id: i64 = row.get(0)?;
+    let name: String = row.get(1)?;
+    let query: String = row.get(2)?;
+    let filter_json: String = row.get(3)?;
+    if id <= 0
+        || name.len() > MAX_SAVED_NAME_BYTES
+        || query.len() > MAX_SAVED_QUERY_BYTES
+        || filter_json.len() > MAX_FILTER_JSON_BYTES
+        || name.is_empty()
+        || query.is_empty()
+        || name.chars().any(char::is_control)
+        || query.chars().any(char::is_control)
+        || contains_sensitive_value(&name)
+        || contains_sensitive_value(&query)
+    {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    let filter: SearchFilter = serde_json::from_str::<SearchFilter>(&filter_json)
+        .map_err(|_| rusqlite::Error::InvalidQuery)?
+        .normalized()
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    Ok(SavedQuery {
+        id,
+        name,
+        query,
+        filter,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+    })
+}
+
+/// Build a fixed SQL predicate and bound values for both search projections.
+/// `content_alias` is optional so the helper remains suitable for future
+/// filename-only queries, while current results always include content state.
+fn filter_sql(
+    filter: &SearchFilter,
+    file_alias: &str,
+    content_alias: Option<&str>,
+) -> (String, Vec<Value>) {
+    let mut predicates = Vec::new();
+    let mut values = Vec::new();
+
+    // Never expose rows whose ownership root was removed or whose stored path
+    // no longer belongs to that root. This remains a cheap indexed existence
+    // check and protects the no-filter search path as well as source filters.
+    predicates.push(format!(
+        "(NOT EXISTS (SELECT 1 FROM roots)
+          OR EXISTS (
+            SELECT 1 FROM roots indexed_root
+            WHERE indexed_root.id = {file_alias}.root_id
+              AND ({file_alias}.path = indexed_root.path
+                OR (substr({file_alias}.path, 1, length(indexed_root.path)) = indexed_root.path
+                  AND (substr(indexed_root.path, -1, 1) = '/'
+                    OR substr({file_alias}.path, length(indexed_root.path) + 1, 1) = '/')))
+              AND indexed_root.id = (
+                SELECT deepest.id FROM roots deepest
+                WHERE {file_alias}.path = deepest.path
+                   OR (substr({file_alias}.path, 1, length(deepest.path)) = deepest.path
+                       AND (substr(deepest.path, -1, 1) = '/'
+                            OR substr({file_alias}.path, length(deepest.path) + 1, 1) = '/'))
+                ORDER BY length(deepest.path) DESC, deepest.id ASC
+                LIMIT 1
+              )
+          ))"
+    ));
+
+    if !filter.extensions.is_empty() {
+        let placeholders = (0..filter.extensions.len())
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(", ");
+        predicates.push(format!("{file_alias}.ext IN ({placeholders})"));
+        values.extend(filter.extensions.iter().cloned().map(Value::Text));
+    }
+    if let Some(modified_after) = filter.modified_after {
+        predicates.push(format!("{file_alias}.modified_ts >= ?"));
+        values.push(Value::Integer(modified_after));
+    }
+    if let Some(modified_before) = filter.modified_before {
+        predicates.push(format!("{file_alias}.modified_ts <= ?"));
+        values.push(Value::Integer(modified_before));
+    }
+    if let Some(min_size) = filter.min_size {
+        predicates.push(format!("{file_alias}.size >= ?"));
+        values.push(Value::Integer(min_size));
+    }
+    if let Some(max_size) = filter.max_size {
+        predicates.push(format!("{file_alias}.size <= ?"));
+        values.push(Value::Integer(max_size));
+    }
+    if let Some(source_root_id) = filter.source_root_id {
+        predicates.push(format!("{file_alias}.root_id = ?"));
+        values.push(Value::Integer(source_root_id));
+    }
+    if let (Some(content_alias), Some(content_status)) =
+        (content_alias, filter.content_status.as_deref())
+    {
+        match content_status {
+            "indexed" => predicates.push(format!(
+                "{content_alias}.content_status = 'indexed' AND {content_alias}.truncated = 0"
+            )),
+            "truncated" | "partial" => predicates.push(format!(
+                "{content_alias}.content_status = 'indexed' AND {content_alias}.truncated != 0"
+            )),
+            "failed" => predicates.push(format!(
+                "{content_alias}.content_status IS NOT NULL AND {content_alias}.content_status != 'indexed'"
+            )),
+            "not_indexed" => predicates.push(format!("{content_alias}.id IS NULL")),
+            _ => predicates.push(format!("{content_alias}.content_status = ?")),
+        }
+        if let Some(exact) = (!matches!(
+            content_status,
+            "indexed" | "truncated" | "partial" | "failed" | "not_indexed"
+        ))
+        .then_some(content_status)
+        {
+            values.push(Value::Text(exact.to_string()));
+        }
+    }
+
+    let where_sql = predicates
+        .into_iter()
+        .map(|predicate| format!(" AND {predicate}"))
+        .collect::<String>();
+    (where_sql, values)
 }
 
 #[cfg(test)]
@@ -820,6 +1404,408 @@ mod tests {
     }
 
     #[test]
+    fn filtered_search_combines_extension_size_source_date_and_partial_status() {
+        let conn = mem();
+        add_root(&conn, "C:/workspace", true).unwrap();
+        add_root(&conn, "C:/other", true).unwrap();
+        let matching = upsert_file(&conn, "C:/workspace/src/main.rs", 42, 200, 1).unwrap();
+        let wrong_extension = upsert_file(&conn, "C:/workspace/src/main.md", 42, 200, 1).unwrap();
+        let wrong_source = upsert_file(&conn, "C:/other/main.rs", 42, 200, 2).unwrap();
+        let wrong_size = upsert_file(&conn, "C:/workspace/src/large.rs", 10_000, 200, 1).unwrap();
+        upsert_content_record(&conn, matching, &indexed_record("partial body"), 200).unwrap();
+        conn.execute(
+            "UPDATE file_content SET truncated = 1 WHERE file_id = ?1",
+            [matching],
+        )
+        .unwrap();
+        let _ = (wrong_extension, wrong_source, wrong_size);
+
+        let filter = SearchFilter {
+            extensions: vec![".RS".into()],
+            modified_after: Some(100),
+            modified_before: Some(300),
+            min_size: Some(20),
+            max_size: Some(100),
+            source_root_id: Some(1),
+            content_status: Some("truncated".into()),
+        }
+        .normalized()
+        .unwrap();
+        let results = search_with_filter(&conn, "main", 20, &filter).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].root_id, Some(1));
+        assert_eq!(results[0].content_status.as_deref(), Some("indexed"));
+        assert!(results[0].content_truncated);
+    }
+
+    #[test]
+    fn saved_query_round_trips_only_definition_and_supports_delete() {
+        let conn = mem();
+        let filter = SearchFilter {
+            extensions: vec!["rs".into()],
+            source_root_id: Some(1),
+            ..SearchFilter::default()
+        };
+        let saved = upsert_saved_query(&conn, None, "Rust files", "cargo", &filter, 10).unwrap();
+        assert_eq!(saved.name, "Rust files");
+        assert_eq!(saved.filter, filter);
+        assert_eq!(list_saved_queries(&conn).unwrap(), vec![saved.clone()]);
+        assert!(delete_saved_query(&conn, saved.id).unwrap());
+        assert!(list_saved_queries(&conn).unwrap().is_empty());
+        assert!(!delete_saved_query(&conn, saved.id).unwrap());
+    }
+
+    #[test]
+    fn saved_query_storage_rejects_bounds_and_credentials_even_below_commands() {
+        let conn = mem();
+        let filter = SearchFilter::default();
+        assert!(upsert_saved_query(&conn, None, " ", "cargo", &filter, 1).is_err());
+        assert!(upsert_saved_query(
+            &conn,
+            None,
+            "safe",
+            &"x".repeat(MAX_SAVED_QUERY_BYTES + 1),
+            &filter,
+            1,
+        )
+        .is_err());
+        assert!(upsert_saved_query(
+            &conn,
+            None,
+            "safe",
+            "Authorization: Bearer secret",
+            &filter,
+            1,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn saved_query_read_rejects_corrupt_filter_and_credential_rows() {
+        let conn = mem();
+        conn.execute(
+            "INSERT INTO saved_queries
+                (name, query, filter_json, created_at, updated_at)
+             VALUES ('safe', 'cargo', '{\"futureField\":true}', 1, 1)",
+            [],
+        )
+        .unwrap();
+        assert!(list_saved_queries(&conn).is_err());
+
+        conn.execute("DELETE FROM saved_queries", []).unwrap();
+        conn.execute(
+            "INSERT INTO saved_queries
+                (name, query, filter_json, created_at, updated_at)
+             VALUES ('safe', 'Bearer hidden', '{}', 1, 1)",
+            [],
+        )
+        .unwrap();
+        assert!(list_saved_queries(&conn).is_err());
+    }
+
+    #[test]
+    fn saved_query_replacement_rolls_back_as_one_transaction() {
+        let conn = mem();
+        let original = upsert_saved_query(
+            &conn,
+            None,
+            "original",
+            "cargo",
+            &SearchFilter::default(),
+            1,
+        )
+        .unwrap();
+        let mut invalid = original.clone();
+        invalid.name = " ".into();
+
+        assert!(replace_saved_queries(&conn, &[invalid]).is_err());
+        assert_eq!(list_saved_queries(&conn).unwrap(), vec![original]);
+    }
+
+    #[test]
+    fn migration_backfills_missing_root_ids_using_the_deepest_root() {
+        let conn = mem();
+        add_root(&conn, "C:/workspace", true).unwrap();
+        add_root(&conn, "C:/workspace/project", true).unwrap();
+        let id = upsert_file(&conn, "C:/workspace/project/src/main.rs", 1, 0, 0).unwrap();
+
+        backfill_root_ids(&conn).unwrap();
+
+        let root_id: i64 = conn
+            .query_row("SELECT root_id FROM files WHERE id = ?1", [id], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(root_id, 2);
+    }
+
+    #[test]
+    fn root_ids_are_monotonic_and_deleted_ids_never_retarget_saved_filters() {
+        let conn = mem();
+        add_root(&conn, "C:/old", true).unwrap();
+        let old_id = list_roots(&conn).unwrap()[0].id;
+        remove_root(&conn, "C:/old").unwrap();
+        add_root(&conn, "C:/new", true).unwrap();
+        let new_id = list_roots(&conn).unwrap()[0].id;
+        assert!(new_id > old_id);
+
+        upsert_file(&conn, "C:/new/current.rs", 1, 0, old_id).unwrap();
+        assert!(search_with_filter(
+            &conn,
+            "current",
+            10,
+            &SearchFilter {
+                source_root_id: Some(old_id),
+                ..SearchFilter::default()
+            }
+        )
+        .unwrap()
+        .is_empty());
+        assert_eq!(
+            search_with_filter(
+                &conn,
+                "current",
+                10,
+                &SearchFilter {
+                    source_root_id: Some(new_id),
+                    ..SearchFilter::default()
+                }
+            )
+            .unwrap()
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn nested_root_owns_files_regardless_of_scan_hint_and_parent_removal_keeps_child_rows() {
+        let conn = mem();
+        add_root(&conn, "C:/workspace", false).unwrap();
+        add_root(&conn, "C:/workspace/project", true).unwrap();
+        let roots = list_roots(&conn).unwrap();
+        let parent_id = roots
+            .iter()
+            .find(|root| root.path == "C:/workspace")
+            .unwrap()
+            .id;
+        let child_id = roots
+            .iter()
+            .find(|root| root.path == "C:/workspace/project")
+            .unwrap()
+            .id;
+        let file_id =
+            upsert_file(&conn, "C:/workspace/project/src/main.rs", 1, 0, parent_id).unwrap();
+        let stored_root: i64 = conn
+            .query_row(
+                "SELECT root_id FROM files WHERE id = ?1",
+                [file_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored_root, child_id);
+
+        remove_root(&conn, "C:/workspace").unwrap();
+        assert!(is_indexed_path(&conn, "C:/workspace/project/src/main.rs").unwrap());
+        assert_eq!(
+            conn.query_row(
+                "SELECT root_id FROM files WHERE id = ?1",
+                [file_id],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            child_id
+        );
+    }
+
+    #[test]
+    fn removing_nested_root_reassigns_its_rows_to_the_parent() {
+        let conn = mem();
+        add_root(&conn, "C:/workspace", true).unwrap();
+        add_root(&conn, "C:/workspace/project", true).unwrap();
+        let roots = list_roots(&conn).unwrap();
+        let parent_id = roots
+            .iter()
+            .find(|root| root.path == "C:/workspace")
+            .unwrap()
+            .id;
+        let child_id = roots
+            .iter()
+            .find(|root| root.path == "C:/workspace/project")
+            .unwrap()
+            .id;
+        let file_id =
+            upsert_file(&conn, "C:/workspace/project/src/main.rs", 1, 0, parent_id).unwrap();
+
+        assert_eq!(
+            conn.query_row(
+                "SELECT root_id FROM files WHERE id = ?1",
+                [file_id],
+                |row| { row.get::<_, i64>(0) }
+            )
+            .unwrap(),
+            child_id
+        );
+        remove_root(&conn, "C:/workspace/project").unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT root_id FROM files WHERE id = ?1",
+                [file_id],
+                |row| { row.get::<_, i64>(0) }
+            )
+            .unwrap(),
+            parent_id
+        );
+    }
+
+    #[test]
+    fn repair_removes_orphans_and_content_disallowed_by_effective_root() {
+        let conn = mem();
+        add_root(&conn, "C:/workspace", false).unwrap();
+        let file_id = upsert_file(&conn, "C:/workspace/old.md", 1, 0, 1).unwrap();
+        upsert_content_record(&conn, file_id, &indexed_record("stale body"), 1).unwrap();
+        upsert_file(&conn, "C:/elsewhere/orphan.md", 1, 0, 1).unwrap();
+        // A crash/manual repair can leave content metadata with no owning
+        // file. It must not inflate status counts or remain in the FTS table.
+        upsert_content_record(&conn, 999_999, &indexed_record("orphan body"), 1).unwrap();
+
+        backfill_root_ids(&conn).unwrap();
+
+        assert!(conn
+            .query_row(
+                "SELECT 1 FROM file_content WHERE file_id = ?1",
+                [file_id],
+                |row| row.get::<_, i64>(0)
+            )
+            .optional()
+            .unwrap()
+            .is_none());
+        assert!(search(&conn, "orphan", 10).unwrap().is_empty());
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM file_content WHERE file_id = 999999",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn removing_a_root_repairs_misowned_rows_before_reassigning_content() {
+        let conn = mem();
+        add_root(&conn, "C:/workspace", true).unwrap();
+        add_root(&conn, "C:/workspace/project", false).unwrap();
+        let roots = list_roots(&conn).unwrap();
+        let parent_id = roots
+            .iter()
+            .find(|root| root.path == "C:/workspace")
+            .unwrap()
+            .id;
+        let child_id = roots
+            .iter()
+            .find(|root| root.path == "C:/workspace/project")
+            .unwrap()
+            .id;
+        let file_id =
+            upsert_file(&conn, "C:/workspace/project/src/main.rs", 1, 0, parent_id).unwrap();
+        // Simulate an older/corrupt scanner assigning the child file to the
+        // root that is about to be removed.
+        conn.execute(
+            "UPDATE files SET root_id = ?1 WHERE id = ?2",
+            params![parent_id, file_id],
+        )
+        .unwrap();
+        upsert_content_record(&conn, file_id, &indexed_record("stale body"), 1).unwrap();
+
+        remove_root(&conn, "C:/workspace").unwrap();
+
+        assert_eq!(
+            conn.query_row(
+                "SELECT root_id FROM files WHERE id = ?1",
+                [file_id],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            child_id
+        );
+        assert!(conn
+            .query_row(
+                "SELECT 1 FROM file_content WHERE file_id = ?1",
+                [file_id],
+                |row| row.get::<_, i64>(0)
+            )
+            .optional()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn search_hides_orphan_rows_even_before_repair_runs() {
+        let conn = mem();
+        add_root(&conn, "C:/registered-root", true).unwrap();
+        let orphan = upsert_file(&conn, "C:/deleted-root/orphan.md", 1, 0, 999).unwrap();
+        upsert_content_record(&conn, orphan, &indexed_record("orphan body"), 1).unwrap();
+
+        assert!(search(&conn, "orphan", 10).unwrap().is_empty());
+        assert!(search_content(&conn, "orphan", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn search_and_open_membership_hide_rows_owned_by_a_shallower_nested_root() {
+        let conn = mem();
+        add_root(&conn, "C:/workspace", true).unwrap();
+        add_root(&conn, "C:/workspace/project", true).unwrap();
+        let roots = list_roots(&conn).unwrap();
+        let parent_id = roots
+            .iter()
+            .find(|root| root.path == "C:/workspace")
+            .unwrap()
+            .id;
+        let child_id = roots
+            .iter()
+            .find(|root| root.path == "C:/workspace/project")
+            .unwrap()
+            .id;
+        let file_id = upsert_file(&conn, "C:/workspace/project/main.rs", 1, 0, parent_id).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT root_id FROM files WHERE id = ?1",
+                [file_id],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            child_id
+        );
+        conn.execute(
+            "UPDATE files SET root_id = ?1 WHERE id = ?2",
+            params![parent_id, file_id],
+        )
+        .unwrap();
+
+        assert!(search(&conn, "main", 10).unwrap().is_empty());
+        assert!(!is_indexed_path(&conn, "C:/workspace/project/main.rs").unwrap());
+    }
+
+    #[test]
+    fn removing_the_last_root_purges_residual_orphan_rows() {
+        let conn = mem();
+        add_root(&conn, "C:/registered-root", true).unwrap();
+        let orphan = upsert_file(&conn, "C:/deleted-root/orphan.md", 1, 0, 999).unwrap();
+        upsert_content_record(&conn, orphan, &indexed_record("orphan body"), 1).unwrap();
+
+        remove_root(&conn, "C:/registered-root").unwrap();
+
+        assert_eq!(total_files(&conn).unwrap(), 0);
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM file_content", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
     fn clear_root_escapes_like_wildcards_and_keeps_sibling_paths() {
         let conn = mem();
         upsert_file(&conn, "C:/a%/inside.md", 1, 0, 1).unwrap();
@@ -856,6 +1842,49 @@ mod tests {
         assert_eq!(
             normalize_path("\\\\?\\UNC\\server\\share\\project"),
             "//server/share/project"
+        );
+    }
+
+    #[test]
+    fn drive_and_unix_root_ownership_includes_descendants() {
+        let conn = mem();
+        add_root(&conn, "C:/", true).unwrap();
+        add_root(&conn, "/", true).unwrap();
+
+        let drive_file = upsert_file(&conn, "C:\\notes\\todo.txt", 1, 0, 999).unwrap();
+        let unix_file = upsert_file(&conn, "/tmp/notes/todo.txt", 1, 0, 999).unwrap();
+        let drive_root: i64 = conn
+            .query_row(
+                "SELECT root_id FROM files WHERE id = ?1",
+                [drive_file],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let unix_root: i64 = conn
+            .query_row(
+                "SELECT root_id FROM files WHERE id = ?1",
+                [unix_file],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(
+            drive_root,
+            list_roots(&conn)
+                .unwrap()
+                .into_iter()
+                .find(|root| root.path == "C:/")
+                .unwrap()
+                .id
+        );
+        assert_eq!(
+            unix_root,
+            list_roots(&conn)
+                .unwrap()
+                .into_iter()
+                .find(|root| root.path == "/")
+                .unwrap()
+                .id
         );
     }
 

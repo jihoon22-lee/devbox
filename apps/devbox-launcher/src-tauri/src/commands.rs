@@ -107,8 +107,8 @@ pub fn launch_result(app: tauri::AppHandle, result_id: String) -> Result<LaunchR
             target: devbox_applink::OpenTarget::Workspace { path },
             from: Some("devbox-launcher".into()),
         }),
-        launcher::Target::Query { text } => Some(devbox_applink::OpenRequest {
-            target: devbox_applink::OpenTarget::Query { text },
+        launcher::Target::Query { text, filter } => Some(devbox_applink::OpenRequest {
+            target: devbox_applink::OpenTarget::Query { text, filter },
             from: Some("devbox-launcher".into()),
         }),
         launcher::Target::Task { id } => Some(devbox_applink::OpenRequest {

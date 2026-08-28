@@ -41,11 +41,18 @@ pub fn classify_event(kind: &notify::EventKind) -> EventClass {
 /// 이벤트 경로가 감시 루트 아래인지 문자열 prefix로 판단한다.
 /// (canonicalize는 command 레이어에서 수행 — 여기서는 IO 없음)
 pub fn is_within_root(root: &str, path: &str) -> bool {
+    let root = root.replace('\\', "/");
+    let path = path.replace('\\', "/");
+    // Windows drive and NTFS paths are case-insensitive. Canonical paths
+    // normally preserve one spelling, but watcher events may not; compare an
+    // ASCII-folded representation while retaining case-sensitive POSIX rules.
+    #[cfg(windows)]
+    let (root, path) = (root.to_ascii_lowercase(), path.to_ascii_lowercase());
     if path == root {
         return true;
     }
-    if let Some(rest) = path.strip_prefix(root) {
-        return rest.starts_with('/') || rest.starts_with('\\');
+    if let Some(rest) = path.strip_prefix(&root) {
+        return root.ends_with('/') || rest.starts_with('/');
     }
     false
 }
@@ -135,8 +142,14 @@ mod tests {
     fn within_root_prefix() {
         assert!(is_within_root("C:/proj", "C:/proj"));
         assert!(is_within_root("C:/proj", "C:/proj/a.rs"));
+        assert!(is_within_root("C:/", "C:/a.rs"));
+        assert!(is_within_root("C:\\", "C:/a.rs"));
+        assert!(is_within_root("/", "/tmp/a.rs"));
+        assert!(is_within_root("C:\\proj", "C:/proj/a.rs"));
         assert!(!is_within_root("C:/proj", "C:/projects/x.rs"));
         assert!(!is_within_root("C:/proj", "C:/proj2/a.rs"));
+        #[cfg(windows)]
+        assert!(is_within_root("C:/Proj", "c:/proj/a.rs"));
     }
 
     #[test]
