@@ -757,7 +757,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "code-pad"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "applink",
  "base64 0.22.1",
@@ -1252,7 +1252,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-manager"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "applink",
  "catalog",
@@ -1279,7 +1279,7 @@ dependencies = [
 
 [[package]]
 name = "developer-toolbox"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "applink",
  "base64 0.22.1",
@@ -1588,7 +1588,7 @@ dependencies = [
 
 [[package]]
 name = "everything-plus"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "applink",
  "calamine",
@@ -2895,7 +2895,7 @@ dependencies = [
 
 [[package]]
 name = "knowledge-base"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "applink",
  "base64 0.22.1",
@@ -3029,7 +3029,7 @@ dependencies = [
 
 [[package]]
 name = "life-log"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "applink",
  "dirs",
@@ -3914,7 +3914,7 @@ dependencies = [
 
 [[package]]
 name = "port-manager"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "dirs",
  "filesystem",
@@ -4330,7 +4330,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "repo-manager"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "applink",
  "filesystem",
@@ -4431,7 +4431,7 @@ dependencies = [
 
 [[package]]
 name = "run-manager"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "applink",
  "chrono",
@@ -7375,7 +7375,7 @@ dependencies = [
 
 [[package]]
 name = "workbench"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "applink",
  "filesystem",
@@ -7455,7 +7455,7 @@ version = "0.1.0"
 
 [[package]]
 name = "wsl-desktop"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "applink",
  "dirs",
