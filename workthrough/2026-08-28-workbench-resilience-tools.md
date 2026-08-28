@@ -314,7 +314,7 @@ retry receipt rollback.
 
 ### Latest-main integration validation (2026-08-28)
 
-The branch was rebased onto `origin/main` at `6050c79`. The only textual
+The branch was first rebased onto `origin/main` at `6050c79`. The only textual
 conflict was the generated `THIRD_PARTY_NOTICES.md` digest, which was regenerated
 from the rebased lockfile. The rebase also exposed an API integration mismatch:
 main had changed `open_argv` to return `Result<Vec<String>, String>`, while the
@@ -348,6 +348,13 @@ The focused Vitest run took 222 seconds because jsdom environment setup on the
 `/mnt/e` 9p mount consumed 140 seconds; test execution itself took 3.58 seconds.
 The run completed normally and left no test failure. `cargo deny` emitted the
 repository's allowed duplicate-version diagnostics and exited successfully.
+
+Immediately before opening the PR, Webhook Lab PR #461 advanced main to
+`03c28e7`. The final rebase again conflicted only in the generated notices
+digest; it was regenerated from the combined lockfile. No Workbench, launch,
+frontend, or shared runtime source overlapped that merge. The parent reran the
+focused Rust tests/check, Workbench production build, formatting/diff checks,
+and dependency/catalog policies on this final base before push.
 
 ## Rollback and risk notes
 
