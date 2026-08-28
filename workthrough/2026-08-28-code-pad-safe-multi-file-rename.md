@@ -312,6 +312,9 @@ other than `NotFound`. This keeps the behavior portable without weakening the
 private journal boundary. A second Windows run showed that explicitly clearing
 the readonly bit is rejected by the strict permissions lint, so the Windows
 branch deliberately relies on inherited app-data ACLs instead.
+The final form also scopes the mutable permission value to the Unix-only block,
+so the Windows strict build does not retain a configuration-specific
+`unused_mut` warning.
 
 ## Next Steps
 

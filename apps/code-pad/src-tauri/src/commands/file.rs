@@ -1182,17 +1182,19 @@ pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), File
     let permissions = match fs::metadata(path) {
         Ok(metadata) => metadata.permissions(),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            let mut permissions = fs::metadata(parent)
+            let permissions = fs::metadata(parent)
                 .map_err(|source| FileError::Io {
                     operation: "read private atomic-write parent permissions",
                     source,
                 })?
                 .permissions();
             #[cfg(unix)]
-            {
+            let permissions = {
                 use std::os::unix::fs::PermissionsExt;
+                let mut permissions = permissions;
                 permissions.set_mode(0o600);
-            }
+                permissions
+            };
             permissions
         }
         Err(source) => {
