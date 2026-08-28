@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 1,
+  "apps": [
+    {
+      "id": "port-manager",
+      "additionalProcessNames": ["PortManager.exe"],
+      "version": "0.3.0",
+      "identifier": "com.devbox.portmanager",
+      "legacyIdentifiers": ["com.workbench.portmanager"],
+      "title": "Port Manager",
+      "markers": ["Port Manager"],
+      "probes": [{"name": "native listener inventory", "command": "list_ports", "expectedType": "array"}]
+    },
+    {
+      "id": "developer-toolbox",
+      "additionalProcessNames": ["DevToolbox.exe"],
+      "version": "0.3.0",
+      "identifier": "com.devbox.developertoolbox",
+      "legacyIdentifiers": ["com.workbench.developertoolbox"],
+      "title": "Developer Toolbox",
+      "markers": ["Dev Toolbox", "Smart Workflows"],
+      "probes": [{"name": "native UUID generation", "command": "generate_uuid", "expectedType": "string", "minimumLength": 36}]
+    },
+    {
+      "id": "api-playground",
+      "additionalProcessNames": ["ApiPlayground.exe"],
+      "version": "0.4.0",
+      "identifier": "com.devbox.apiplayground",
+      "legacyIdentifiers": ["com.workbench.apiplayground"],
+      "title": "API Playground",
+      "markers": ["API Playground", "History"],
+      "probes": [{"name": "pending AppLink slot", "command": "take_pending_open", "expectedType": "null"}]
+    },
+    {
+      "id": "everything-plus",
+      "additionalProcessNames": ["EverythingPlus.exe"],
+      "version": "0.4.0",
+      "identifier": "com.devbox.everythingplus",
+      "legacyIdentifiers": ["com.workbench.everythingplus"],
+      "title": "Everything+",
+      "markers": ["Everything+"],
+      "probes": [{"name": "indexed roots", "command": "list_roots", "expectedType": "array"}]
+    },
+    {
+      "id": "knowledge-base",
+      "additionalProcessNames": ["Knowledge.exe"],
+      "version": "0.4.0",
+      "identifier": "com.devbox.knowledgebase",
+      "legacyIdentifiers": ["com.workbench.knowledgebase"],
+      "isolatedKnowledgeRoot": true,
+      "title": "Knowledge Base",
+      "markers": ["Knowledge"],
+      "probes": [{"name": "note templates", "command": "list_templates", "expectedType": "array"}]
+    },
+    {
+      "id": "devbox-manager",
+      "additionalProcessNames": ["DevboxManager.exe"],
+      "version": "0.4.0",
+      "identifier": "com.devbox.devboxmanager",
+      "legacyIdentifiers": ["com.workbench.devboxmanager"],
+      "title": "Devbox Manager",
+      "markers": ["Devbox Manager"],
+      "probes": [{"name": "embedded/runtime catalog", "command": "catalog", "expectedType": "array", "minimumLength": 15}]
+    },
+    {
+      "id": "code-pad",
+      "additionalProcessNames": ["Code Pad.exe"],
+      "version": "0.4.0",
+      "identifier": "com.devbox.codepad",
+      "legacyIdentifiers": ["com.workbench.codepad"],
+      "title": "Code Pad",
+      "markers": ["Code Pad"],
+      "probes": [{"name": "session restore", "command": "load_session", "expectedType": "object", "requiredKeys": ["persistAllowed", "session"]}]
+    },
+    {
+      "id": "run-manager",
+      "additionalProcessNames": ["Run Manager.exe"],
+      "version": "0.4.0",
+      "identifier": "com.devbox.runmanager",
+      "legacyIdentifiers": ["com.workbench.runmanager"],
+      "title": "Run Manager",
+      "markers": ["Run Manager"],
+      "probes": [{"name": "scheduler runtime", "command": "runtime_status", "expectedType": "object", "requiredKeys": ["backgroundLaunch", "databasePath", "schedulerRunning", "shutdownRequested"]}],
+      "quitCommand": "quit_app"
+    },
+    {
+      "id": "workbench",
+      "additionalProcessNames": ["Workbench.exe"],
+      "version": "0.2.0",
+      "identifier": "com.devbox.workbench",
+      "legacyIdentifiers": [],
+      "title": "Workbench",
+      "markers": ["Workbench", "프로젝트"],
+      "probes": [{"name": "workspace profiles", "command": "list_profiles", "expectedType": "array"}]
+    },
+    {
+      "id": "webhook-lab",
+      "additionalProcessNames": ["WebhookLab.exe"],
+      "version": "0.2.0",
+      "identifier": "com.devbox.webhooklab",
+      "legacyIdentifiers": [],
+      "title": "Webhook Lab",
+      "markers": ["Webhook Lab", "Rules"],
+      "probes": [{"name": "loopback server status", "command": "server_status", "expectedType": "object", "requiredKeys": ["address", "running"]}]
+    },
+    {
+      "id": "repo-manager",
+      "additionalProcessNames": ["RepoManager.exe"],
+      "version": "0.2.0",
+      "identifier": "com.devbox.repomanager",
+      "legacyIdentifiers": [],
+      "title": "Repo Manager",
+      "markers": ["Repo Manager"],
+      "probes": [{"name": "pending AppLink slot", "command": "take_pending_open", "expectedType": "null"}]
+    },
+    {
+      "id": "devbox-launcher",
+      "additionalProcessNames": ["DevboxLauncher.exe"],
+      "version": "0.1.0",
+      "identifier": "com.devbox.devboxlauncher",
+      "legacyIdentifiers": [],
+      "title": "Devbox Launcher",
+      "markers": ["Devbox Launcher", "snapshot source 상태"],
+      "probes": [{"name": "global shortcut status", "command": "shortcut_config", "expectedType": "object", "requiredKeys": ["accelerator", "alternatives", "enabled", "registration"]}],
+      "allowHiddenWindow": true
+    },
+    {
+      "id": "log-lens",
+      "additionalProcessNames": ["LogLens.exe"],
+      "version": "0.1.0",
+      "identifier": "com.devbox.loglens",
+      "legacyIdentifiers": [],
+      "title": "Log Lens",
+      "markers": ["Log Lens", "Sources", "Merged output"],
+      "probes": [{"name": "pending AppLink slot", "command": "take_pending_open", "expectedType": "null"}]
+    },
+    {
+      "id": "life-log",
+      "additionalProcessNames": ["LifeLog.exe"],
+      "version": "0.4.0",
+      "identifier": "com.devbox.lifelog",
+      "legacyIdentifiers": ["com.workbench.lifelog"],
+      "title": "Life Log",
+      "markers": ["Today"],
+      "probes": [{"name": "tracked projects", "command": "get_projects", "expectedType": "array"}]
+    },
+    {
+      "id": "wsl-desktop",
+      "additionalProcessNames": ["WSLDesktop.exe"],
+      "version": "0.4.0",
+      "identifier": "com.devbox.wsldesktop",
+      "legacyIdentifiers": ["com.workbench.wsldesktop"],
+      "title": "WSL Desktop",
+      "markers": ["WSL Desktop", "터미널 프로필"],
+      "probes": [{"name": "workspace profiles", "command": "list_workspace_profiles", "expectedType": "array"}]
+    }
+  ]
+}

@@ -195,13 +195,35 @@ v0.5.0은 외부 도구 설치 허브가 아니라 **오프라인 native 기능�
 release다. 기존 13개 앱을 강화하고 Devbox Launcher·Log Lens를 더한 현재 15개 앱을
 완성한다. 아래 P3도 검토 후 선택된 release 범위이며 임의로 탈락시키지 않는다.
 
+#### RC1 historical checkpoint (완료·보존)
+
 2026-08-28 기준 P1·P2·선택 P3의 milestone 구현 이슈는 모두 닫혔고 해당 PR은 required
-CI 뒤 main에 병합됐다. 현재 단계는 기능 축소가 아닌 **v0.5.0-rc1 release preparation**이다.
-11개 앱을 §7.4 목표 version으로 정렬하고, 15개 앱 catalog/workspace/release matrix,
-dependency notices와 전체 CI를 다시 확인한 뒤 RC package를 게시한다. Windows W1~W4는
-아직 완료로 기록하지 않으며, exact RC package에서 통과하기 전에는 `v0.5.0` stable tag를
-만들지 않는다. 실행 순서와 증거 형식은 [v0.5.0 릴리스 계획](./superpowers/plans/2026-08-28-v0.5.0-release.md)을
-기준으로 한다.
+CI 뒤 main에 병합됐다. RC1 preparation PR [#464](https://github.com/jihoon22-lee/devbox/pull/464)의
+CI [33173371194](https://github.com/jihoon22-lee/devbox/actions/runs/33173371194)와
+release workflow [33175165583](https://github.com/jihoon22-lee/devbox/actions/runs/33175165583)의
+Build/Publish/Verify가 모두 성공했다. annotated tag object
+`7d1936b6e05fa797b0dcab19d05c87e544666dba`는 source commit
+`734c3401c7290a29213ce3a476749002f09f34b1`에 고정됐다.
+
+RC1 공개 release는 `draft=false`, `prerelease=true`, `isLatest=false`이고 v0.4.2가 Latest로
+남았다. 15개 portable + 15개 installer + notices + manifest인 정확한 32 assets를 게시했으며,
+E: 독립 download는 15 apps/31 manifest-declared/32 verified/missing 0/undeclared 0인
+**PASS**다. 다만 source audit에서 Port Manager·Developer Toolbox·Webhook Lab 3/15개 앱의
+single-instance 누락을 찾았고 active life-log/WSL Desktop user process도 있어 W4는 의도적으로
+시작하지 않았다. RC1은 immutable historical checkpoint이지 stable 완료가 아니다.
+
+#### RC2 release preparation (현재)
+
+fix PR [#465](https://github.com/jihoon22-lee/devbox/pull/465)의 CI
+[33178381902](https://github.com/jihoon22-lee/devbox/actions/runs/33178381902)가 성공했고
+수정 merge commit은 `a5256fe252fb0c2115adfd02d303c277aaf7bccb`다. RC2는 이 correction
+baseline에서 release-preparation 변경을 검증·merge한 exact descendant commit에 새 immutable tag/package를
+준비한다. offline full-release verifier, 15-app packaged
+smoke/config와 static tests, catalog single-instance gate, release workflow exact-download
+verifier를 함께 준비하지만 RC2 PR/CI/tag/package와 independent assets, W1~W4는 아직
+미완료다. RC2는 independent asset verification과 exact package의 W1→W2→W3→W4 전체를
+다시 통과하기 전에는 `v0.5.0` stable tag를 만들지 않는다. 실행 순서와 증거 형식은
+[v0.5.0 릴리스 계획](./superpowers/plans/2026-08-28-v0.5.0-release.md)을 기준으로 한다.
 
 #### P1 — 선행 필수
 
@@ -1071,7 +1093,8 @@ Stage 4    Workbench — ProjectProfile 기반 orchestration 앱          ✅
 Stage 5    Webhook Lab, Dev Environment Doctor, Repo Manager          ✅
 v0.4.1     핫픽스 — 터미널 PTY·끊긴 앱 간 링크·Run Manager 시작 panic·identifier 이관 수정  ✅ (C1/C2 Windows 수동 acceptance는 issue #176에서 post-release 관리)
 v0.4.2     API Playground secret persistence 보안 핫픽스 — stable 27 assets·packaged H1  ✅
-v0.5.0     네이티브 기능 강화 + handoff + Devbox Launcher·Log Lens (15개 앱, RC 준비)  ◐
+v0.5.0-rc1 RC1 immutable checkpoint — 32 assets independent PASS, source audit 3/15; W4 미실행  ◐
+v0.5.0-rc2 single-instance fix 반영, 새 assets·W1~W4 재검증 준비 (stable pending)  ◐
 ```
 
 ## 현재 상태
@@ -1084,7 +1107,11 @@ v0.5.0     네이티브 기능 강화 + handoff + Devbox Launcher·Log Lens (15�
   검증과 구분한다.
 - v0.4.2 안정판 보안 핫픽스 배포 완료; exact stable asset의 manifest·size·SHA-256과 packaged
   H1-A~D·cleanup을 통과했다.
-- v0.5.0은 RC 준비 단계다. 목표 version·32 assets·Windows W1~W4·stable 재검증이 남아 있으며,
-  이 항목들을 직접 통과하기 전에는 완료로 표시하지 않는다.
+- v0.5.0-rc1은 32-asset publication과 independent download PASS를 남긴 immutable historical
+  checkpoint다. source audit 3/15와 active user process 때문에 W4를 의도적으로 시작하지 않았다.
+- v0.5.0-rc2는 fix PR #465가 merge된 `a5256fe252fb0c2115adfd02d303c277aaf7bccb`를
+  correction baseline으로 시작한다. release-preparation PR의 exact merge commit을 대상으로 한
+  새 tag/package, independent asset verification, W1~W4, stable 재검증과 evidence
+  cleanup이 남아 있으며, 이 항목들을 직접 통과하기 전에는 완료로 표시하지 않는다.
 - [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176) — 남은 Windows 실기·패키지·프로토콜·경로·시각
   acceptance를 post-release 수동 체크리스트로 관리한다.

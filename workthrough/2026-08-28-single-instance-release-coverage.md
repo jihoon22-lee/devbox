@@ -2,11 +2,12 @@
 
 ## Summary
 
-The v0.5.0-rc1 source review found that Port Manager, Developer Toolbox, and Webhook Lab were the
+The v0.5.0-rc1 source audit found that Port Manager, Developer Toolbox, and Webhook Lab were the
 only release applications without Tauri's single-instance plugin. That made the documented W4
 contract impossible to pass for all 15 packaged applications: starting a second copy of any of
 these three apps could leave an additional process and window instead of restoring and focusing the
-existing main window.
+existing main window. The audit therefore found a **3/15 release-app source gap**, not a packaged
+runtime pass.
 
 This change completes the same behavior across those three apps and adds a catalog gate that rejects
 future release apps when either the plugin dependency or its initialization is missing. It does not
@@ -14,8 +15,12 @@ change AppLink support or interpret command-line arguments for apps that do not 
 contract.
 
 The already-published `v0.5.0-rc1` source tag remains immutable. RC1 is retained as a historical
-candidate whose package acceptance cannot satisfy W4; this correction must be merged, packaged, and
-fully revalidated as a new release candidate.
+candidate whose package acceptance cannot satisfy W4. RC1 W4 was intentionally not started because
+the source failure was already known and active life-log/WSL Desktop user processes prevented safe
+exact isolation. Fix PR [#465](https://github.com/jihoon22-lee/devbox/pull/465), CI
+[33178381902](https://github.com/jihoon22-lee/devbox/actions/runs/33178381902), and merge
+`a5256fe252fb0c2115adfd02d303c277aaf7bccb` now provide the corrected source baseline; it must still
+be packaged and fully revalidated as a new release candidate.
 
 ## Scope and behavior
 
@@ -113,9 +118,12 @@ The first locked check correctly refused the stale lockfile before it was regene
 expected dependency-lock safeguard, not a product failure. The offline regeneration succeeded
 because the plugin was already present in the repository's dependency graph.
 
-The pull request still requires the complete GitHub Actions matrix before merge. After merge, a new
-immutable RC must pass independent release-asset verification and the full Windows W1-W4 packaged
-matrix. Linux checks cannot establish Windows process exclusivity or focus behavior.
+The correction PR and its required CI are complete, but that does not validate a release package.
+RC2 must pass independent release-asset verification and the full Windows W1-W4 packaged matrix.
+Linux checks cannot establish Windows process exclusivity or focus behavior. The offline full-release
+verifier, 15-app packaged smoke/config contract and static tests, catalog single-instance gate, and
+release-workflow exact downloaded-release verifier are preparation aids; RC2 PR/CI/tag/package and
+W1-W4 remain release gates.
 
 ## Resource and cleanup handling
 
@@ -123,20 +131,45 @@ matrix. Linux checks cannot establish Windows process exclusivity or focus behav
 - No duplicate target directory, frontend install, Windows package, or release download was created
   for this focused correction.
 - C: free space remained above the user-defined 100GB floor; no WSL compaction was attempted.
-- The dedicated worktree and branch remain required until the correction PR is green and merged.
-  They will then be removed in the repository-prescribed order.
-- RC packages and validation scratch stay on E: and are retained only until their evidence has been
-  incorporated. At final release closeout, superseded worktrees, release downloads, runtime scratch,
-  stale worktree metadata/branches, and safely reproducible project caches will be removed so the
-  repository can move to `/home/jihoon/projects` without carrying historical build state.
+- The correction PR is now green and merged, but an old correction worktree or branch is removable
+  only after it is independently confirmed clean, merged/superseded, inactive, and free of user
+  changes. A merged PR is not by itself permission to remove a dirty or locked worktree.
+
+### Stale cleanup checkpoint
+
+- [ ] Preserve RC1 tag/release, exact assets, `release.json`, `release-manifest.json`,
+  `asset-verification.json`, configs, and redacted results until RC1 evidence is incorporated into
+  the RC2 release record. Never force-update or replace the immutable RC1 release.
+- [ ] Audit all 15 old registered `/mnt/e/projects/devbox-worktrees` worktrees. The snapshot found
+  11 dirty worktrees and four clean candidates; clean candidates still require main/squash and
+  owner confirmation. Dirty, unmerged, or unique user changes remain preserved.
+- [ ] Preserve the unregistered `api-playground` directory because its `graphql.rs` differs from
+  main, and preserve all three host-owned `.claude/worktrees`; the remaining agent lock is not
+  removed merely because its recorded PID is absent.
+- [ ] Treat source/test historical absolute paths as evidence, not disposable artifacts. No source
+  symlink or dangling symlink was found outside generated directories; generated pnpm links are
+  relative. `node_modules` and `dist` are regenerable only after source/evidence review, while no
+  regular file over 50 MiB was found outside generated directories.
+- [ ] Keep packages, downloads, harnesses, runtime scratch, and redacted results on E: during
+  acceptance. After final evidence is preserved and every devbox task is closed, the user will move
+  the WSL distribution storage from C: to E: and then move projects from `/mnt/e/projects` to
+  `/home/jihoon/projects` inside the relocated WSL environment. Those verified copy boundaries do
+  not authorize release automation to delete source or user state early.
+- [ ] At closeout, remove only verified clean merged/superseded worktrees in this order:
+  `git worktree remove` → `git worktree prune` → local branch delete → confirmed remote branch
+  delete. Do not remove dirty/locked/unmerged/host-owned worktrees, orphan files, user data, or
+  active process paths.
 
 ## Release boundary
 
 This correction changes neither the v0.5.0 feature scope nor the stable-release claim. It closes a
-release-contract gap discovered during RC review:
+release-contract gap discovered during RC review and moves the release from the completed RC1
+publication checkpoint into an RC2 reset:
 
-1. preserve RC1 and record its real package results;
-2. merge this correction only after required CI passes;
-3. prepare and tag RC2 from the corrected main commit;
-4. verify all RC2 assets independently and execute W1-W4 on the exact packages;
-5. proceed to stable preparation only after every mandatory acceptance row passes.
+1. preserve RC1 and record its real package results, including the deliberate W4 non-start;
+2. retain the correction evidence: PR #465, CI 33178381902, and merge `a5256fe`;
+3. prepare RC2 from corrected main, merge the preparation PR after CI, and tag its exact merge commit;
+4. independently verify all RC2 assets and execute W1-W4 on the exact packages, including the
+   three newly covered single-instance applications;
+5. proceed to stable preparation only after every mandatory acceptance row and relocation-safe
+   cleanup decision passes.

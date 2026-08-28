@@ -204,3 +204,7 @@ for a in apps:
 
 sys.exit(1 if failures else 0)
 PY
+
+python3 .github/scripts/test-windows-packaged-smoke-config.py
+python3 .github/scripts/test-verify-downloaded-release.py
+node --check .github/scripts/windows-packaged-smoke.mjs

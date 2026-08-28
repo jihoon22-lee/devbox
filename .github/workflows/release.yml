@@ -11,11 +11,69 @@ on:
 
 concurrency:
   group: release
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: Verify immutable release tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.contract.outputs.tag }}
+      prerelease: ${{ steps.contract.outputs.prerelease }}
+      make_latest: ${{ steps.contract.outputs.make_latest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: contract
+        name: Require a new release for an annotated tag at this source commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.version }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "invalid release tag"
+            exit 1
+          fi
+          if [[ -z "$(git ls-remote --tags --refs origin "refs/tags/$TAG")" ]]; then
+            echo "remote tag $TAG does not exist"
+            exit 1
+          fi
+          git fetch --force --no-tags origin "+refs/tags/$TAG:refs/tags/$TAG"
+          if [[ "$(git cat-file -t "refs/tags/$TAG")" != "tag" ]]; then
+            echo "release tag $TAG must be annotated"
+            exit 1
+          fi
+          tag_commit=$(git rev-parse "refs/tags/$TAG^{}")
+          if [[ "$tag_commit" != "$EXPECTED_COMMIT" ]]; then
+            echo "tag commit $tag_commit does not match workflow source $EXPECTED_COMMIT"
+            exit 1
+          fi
+          existing_release_ids=$(gh api --paginate \
+            "repos/jihoon22-lee/devbox/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          if [[ -n "$existing_release_ids" ]]; then
+            echo "release $TAG already exists"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build-windows:
     name: Build Windows installers
+    needs: preflight
     runs-on: windows-latest
     permissions:
       contents: read
@@ -102,8 +160,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish release
-    needs: build-windows
+    name: Stage draft release
+    needs: [preflight, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -120,79 +178,126 @@ jobs:
           name: release-manifest
           path: artifacts/staging
 
-      - name: Determine tag
-        id: tag
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PUSH_TAG: ${{ github.ref_name }}
-          DISPATCH_TAG: ${{ github.event.inputs.version }}
-        run: |
-          if [ "$EVENT_NAME" = "push" ]; then
-            tag="$PUSH_TAG"
-          else
-            tag="$DISPATCH_TAG"
-          fi
-
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if [[ "$tag" == *-* ]]; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "make_latest=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "make_latest=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Fail if tag already exists
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "release $TAG already exists"; exit 1
-          fi
-
       - name: Extract changelog section
         id: notes
         shell: bash
         env:
-          TAG: ${{ steps.tag.outputs.tag }}
+          TAG: ${{ needs.preflight.outputs.tag }}
         run: |
           python3 .github/scripts/extract-release-notes.py CHANGELOG.md "$TAG" > /tmp/release-notes.md
           echo "path=/tmp/release-notes.md" >> "$GITHUB_OUTPUT"
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: devbox ${{ steps.tag.outputs.tag }}
-          body_path: ${{ steps.notes.outputs.path }}
-          files: |
-            artifacts/staging/**/*.exe
-            artifacts/staging/THIRD_PARTY_NOTICES.md
-            artifacts/staging/release-manifest.json
-          draft: false
-          prerelease: ${{ steps.tag.outputs.prerelease }}
-          make_latest: ${{ steps.tag.outputs.make_latest }}
-
-  verify:
-    name: Verify release assets against manifest
-    needs: publish
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: release-manifest
-          path: manifest
-
-      - name: Verify assets
+      - name: Atomically create a new draft release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.version }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          PRERELEASE: ${{ needs.preflight.outputs.prerelease }}
+          NOTES_FILE: ${{ steps.notes.outputs.path }}
         run: |
-          python3 .github/scripts/verify-release.py "jihoon22-lee/devbox" "$TAG" manifest/release-manifest.json "$GH_TOKEN"
+          set -euo pipefail
+          existing_release_ids=$(gh api --paginate \
+            "repos/jihoon22-lee/devbox/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          if [[ -n "$existing_release_ids" ]]; then
+            echo "release $TAG already exists"
+            exit 1
+          fi
+          shopt -s nullglob
+          assets=(
+            artifacts/staging/*/portable/*.exe
+            artifacts/staging/*/installer/*.exe
+            artifacts/staging/THIRD_PARTY_NOTICES.md
+            artifacts/staging/release-manifest.json
+          )
+          if [[ ${#assets[@]} -ne 32 ]]; then
+            echo "draft release requires exactly 32 staged assets"
+            exit 1
+          fi
+          command=(
+            gh release create "$TAG"
+            --repo jihoon22-lee/devbox
+            --verify-tag
+            --draft
+            --title "devbox $TAG"
+            --notes-file "$NOTES_FILE"
+          )
+          if [[ "$PRERELEASE" == "true" ]]; then
+            command+=(--prerelease)
+          fi
+          "${command[@]}" "${assets[@]}"
+
+  verify:
+    name: Verify and publish release
+    needs: [preflight, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Independently verify the complete downloaded release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --force --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
+          tag_commit=$(git rev-parse "$TAG^{}")
+          if [[ "$tag_commit" != "$EXPECTED_COMMIT" ]]; then
+            echo "tag commit $tag_commit does not match workflow source $EXPECTED_COMMIT"
+            exit 1
+          fi
+          prerelease=false
+          if [[ "$TAG" == *-* ]]; then
+            prerelease=true
+          fi
+
+          mkdir downloaded-release
+          gh release download "$TAG" --repo jihoon22-lee/devbox --dir downloaded-release
+          gh release view "$TAG" --repo jihoon22-lee/devbox \
+            --json tagName,isDraft,isPrerelease,targetCommitish,assets \
+            | jq --arg targetCommit "$EXPECTED_COMMIT" '. + {targetCommit: $targetCommit}' \
+            > downloaded-release-metadata.json
+
+          python3 .github/scripts/verify-downloaded-release.py \
+            --assets downloaded-release \
+            --release downloaded-release-metadata.json \
+            --config .github/scripts/windows-packaged-smoke-config.json \
+            --tag "$TAG" \
+            --commit "$EXPECTED_COMMIT" \
+            --draft true \
+            --prerelease "$prerelease"
+
+      - name: Publish only the verified draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          PRERELEASE: ${{ needs.preflight.outputs.prerelease }}
+          MAKE_LATEST: ${{ needs.preflight.outputs.make_latest }}
+        run: |
+          set -euo pipefail
+          if [[ "$PRERELEASE" == "true" ]]; then
+            gh release edit "$TAG" --repo jihoon22-lee/devbox --draft=false --prerelease
+          elif [[ "$MAKE_LATEST" == "true" ]]; then
+            gh release edit "$TAG" --repo jihoon22-lee/devbox --draft=false --latest
+          else
+            echo "invalid release publication state"
+            exit 1
+          fi
+          gh release view "$TAG" --repo jihoon22-lee/devbox \
+            --json tagName,isDraft,isPrerelease \
+            | jq -e \
+                --arg tag "$TAG" \
+                --argjson prerelease "$PRERELEASE" \
+                '.tagName == $tag and .isDraft == false and
+                 .isPrerelease == $prerelease'
+          gh release list --repo jihoon22-lee/devbox --limit 100 \
+            --json tagName,isLatest \
+            | jq -e \
+                --arg tag "$TAG" \
+                --argjson latest "$MAKE_LATEST" \
+                'any(.[]; .tagName == $tag and .isLatest == $latest)'
