@@ -203,7 +203,7 @@ mod tests {
             id: "b".repeat(32),
             kind: log_handoff::HANDOFF_KIND.into(),
         });
-        let argv = devbox_launch::open_argv(&request);
+        let argv = devbox_launch::open_argv(&request).expect("valid handoff AppLink request");
         assert_eq!(argv[0], "--handoff-kind");
         assert_eq!(argv[1], "log-source/v1");
         assert_eq!(argv[2], "--handoff-id");

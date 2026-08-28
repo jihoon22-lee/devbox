@@ -364,7 +364,7 @@ function App() {
           : "preview";
         const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
         updateHandoffRecovery({ id, action, attempts: nextAttempts });
-        setError(handoffRetryMessage(action, nextAttempts));
+        setError(null);
       } else {
         clearHandoffState();
         setError(handoffFailureMessage(
@@ -406,7 +406,7 @@ function App() {
       if (classifyHandoffError(error) === "retryable") {
         const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
         updateHandoffRecovery({ id, action: "discard", attempts: nextAttempts });
-        setError(handoffRetryMessage("discard", nextAttempts));
+        setError(null);
       } else {
         clearHandoffState();
         setError(handoffFailureMessage(error, "Log Lens source handoff를 취소하지 못했습니다."));
@@ -461,7 +461,7 @@ function App() {
         && handoffErrorCode(error) !== "handoff-response-invalid") {
         const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
         updateHandoffRecovery({ id, action: "accept", attempts: nextAttempts });
-        setError(handoffRetryMessage("accept", nextAttempts));
+        setError(null);
       } else {
         clearHandoffState();
         setError(handoffFailureMessage(
@@ -505,11 +505,11 @@ function App() {
         // a UI state whose native slot remains live.
         const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
         updateHandoffRecovery({ id, action: "discard", attempts: nextAttempts });
-        setError(handoffRetryMessage("discard", nextAttempts));
+        setError(null);
       } else if (classifyHandoffError(error) === "retryable") {
         const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
         updateHandoffRecovery({ id, action: "renew", attempts: nextAttempts });
-        setError(handoffRetryMessage("renew", nextAttempts));
+        setError(null);
       } else {
         clearHandoffState();
         setError(handoffFailureMessage(

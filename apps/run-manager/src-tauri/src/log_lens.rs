@@ -240,7 +240,7 @@ mod tests {
             kind: log_handoff::HANDOFF_KIND.into(),
         });
         assert_eq!(
-            devbox_launch::open_argv(&request),
+            devbox_launch::open_argv(&request).expect("valid handoff AppLink request"),
             vec![
                 "--handoff-kind",
                 "log-source/v1",

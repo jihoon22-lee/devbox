@@ -591,3 +591,72 @@ git diff --check                                               passed
 
 No cargo, full frontend suite, build, commit, push, rebase, or cache cleanup
 was performed for this follow-up.
+
+## Latest-main integration and final local gates (2026-08-28)
+
+The four producer commits were rebased onto `origin/main` at `03c28e7` after
+Webhook Lab #461 merged. Conflict resolution preserved both sides of every
+shared contract:
+
+- AppLink keeps main's metadata-only lifecycle status sidecars and producer
+  discard/revoke APIs alongside the exact immutable `HandoffPublication`
+  cleanup used by these producers.
+- `launch::open_argv` retains main's fallible request encoding while producer
+  launch paths continue enforcing the bounded AppLink argv contract.
+- WSL Desktop keeps the shared dashboard snapshot/freshness model and resource
+  summaries while separately locking Log Lens, Docker, distro, terminal, and
+  workspace operations.
+- Run History keeps the newer job/service/status/duration filters and freezes
+  every filter plus run/stream selection while a Log Lens handoff is pending.
+
+The rebase exposed two test/API mismatches, both corrected at their actual
+contract boundary: producer argv tests now unwrap the validated fallible
+encoder, and the WSL AppLink fixture supplies its Docker container through the
+authoritative dashboard snapshot rather than the removed `dockerPs` refresh
+path. The Log Lens recovery message also had duplicate ownership in both the
+modal status and the global alert; retryable recovery now derives one message
+from the retained modal state and reserves the global alert for terminal
+errors.
+
+Final local validation reused
+`/home/jihoon/.cache/targets/devbox-app-handoffs`, kept Cargo at `-j2`, and did
+not remove the cache:
+
+```text
+cargo fmt --all -- --check                                  passed
+git diff --check                                            passed
+python3 .github/scripts/check-dependencies.py check         passed
+bash .github/scripts/check-catalog.sh                       passed
+cargo test -p applink -p integration -p launch -p log-lens \
+  -p run-manager -p wsl-desktop -p wsl -j2                 passed
+  applink 73; integration 14; launch 24; log-lens 47;
+  run-manager 206; wsl-desktop 89; wsl 31; doctests passed
+cargo check -p applink -p integration -p launch -p log-lens \
+  -p run-manager -p wsl-desktop -p wsl -j2                 passed
+cargo clippy -p applink -p integration -p launch -p log-lens \
+  -p run-manager -p wsl-desktop -p wsl --all-targets -j2 \
+  -- -D warnings                                            passed
+pnpm --dir apps/log-lens test -- --maxWorkers=1 \
+  --no-file-parallelism                                     20 passed, 1 duplicate-message assertion exposed
+pnpm --dir apps/log-lens exec vitest run src/App.handoff.test.tsx \
+  --maxWorkers=1 --no-file-parallelism                      passed (6)
+pnpm --dir apps/run-manager test -- --maxWorkers=1 \
+  --no-file-parallelism                                     passed (6 files, 42 tests)
+pnpm --dir apps/wsl-desktop test -- --maxWorkers=1 \
+  --no-file-parallelism                                     132 passed, 1 obsolete snapshot-fixture assertion exposed
+pnpm --dir apps/wsl-desktop exec vitest run src/App.applink.test.tsx \
+  --maxWorkers=1 --no-file-parallelism                      passed (8)
+pnpm --dir apps/log-lens build                              passed
+pnpm --dir apps/run-manager build                           passed
+pnpm --dir apps/wsl-desktop build                           passed (existing chunk-size warning only)
+python3 .github/scripts/test-check-dependencies.py          passed
+python3 .github/scripts/test-build-manifest.py              passed
+pnpm audit --audit-level moderate                           passed (no known vulnerabilities)
+cargo deny --locked check                                   passed (advisories, bans, licenses, sources)
+```
+
+The corrected focused files cover every assertion that failed in the full
+runs; all other files in those full runs passed. GitHub Actions remains the
+authoritative clean-workspace frontend aggregate and native Windows compile
+gate. Packaged Windows two-process handoff acceptance and the separately
+tracked Run log receiver remain outside this producer-only PR.

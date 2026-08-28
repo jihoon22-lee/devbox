@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
   dockerAction,
-  dockerPs,
+  getDashboardSnapshot,
   getWindowsBuildNumber,
   listWorkspaceProfiles,
   onOpenRequest,
@@ -86,7 +86,7 @@ const takePendingOpenMock = vi.mocked(takePendingOpen);
 const getWindowsBuildNumberMock = vi.mocked(getWindowsBuildNumber);
 const listWorkspaceProfilesMock = vi.mocked(listWorkspaceProfiles);
 const dockerActionMock = vi.mocked(dockerAction);
-const dockerPsMock = vi.mocked(dockerPs);
+const getDashboardSnapshotMock = vi.mocked(getDashboardSnapshot);
 const openWslJournalInLogLensMock = vi.mocked(openWslJournalInLogLens);
 
 const profile: WorkspaceProfile = {
@@ -116,7 +116,7 @@ beforeEach(() => {
   getWindowsBuildNumberMock.mockClear();
   listWorkspaceProfilesMock.mockReset().mockResolvedValue([]);
   dockerActionMock.mockReset().mockResolvedValue(undefined);
-  dockerPsMock.mockReset().mockResolvedValue([]);
+  getDashboardSnapshotMock.mockClear();
   openWslJournalInLogLensMock.mockReset().mockResolvedValue(undefined);
   Object.defineProperty(window, "confirm", { configurable: true, value: vi.fn(() => true) });
 });
@@ -228,9 +228,29 @@ describe("App app-link delivery", () => {
         resolveHandoff = resolve;
       }),
     );
-    dockerPsMock.mockResolvedValue([
-      { id: "container-1", name: "worker", image: "worker:latest", status: "Exited (1)", ports: "" },
-    ]);
+    getDashboardSnapshotMock.mockResolvedValueOnce({
+      revision: 2,
+      capturedAtMs: Date.now(),
+      staleAfterMs: 30_000,
+      distros: [{
+        name: "Ubuntu",
+        version: 2,
+        default: true,
+        state: "Running",
+        terminalCount: 0,
+        dockerAvailability: "available",
+        containers: [
+          { id: "container-1", name: "worker", image: "worker:latest", status: "Exited (1)", ports: "" },
+        ],
+        resource: {
+          cpuPercent: 10,
+          memoryUsedBytes: 1,
+          memoryTotalBytes: 2,
+          diskUsedBytes: 1,
+          diskTotalBytes: 2,
+        },
+      }],
+    });
 
     render(<App />);
     const journalButton = await screen.findByRole("button", { name: "Open journal in Log Lens" });
@@ -242,10 +262,12 @@ describe("App app-link delivery", () => {
     expect(journalButton).toBeDisabled();
     expect(startButton).toBeDisabled();
     expect(addTerminalButton).toBeDisabled();
-    const distroSelectors = screen.getAllByRole("combobox")
-      .filter((element) => element.tagName === "SELECT" && !element.hasAttribute("aria-label"));
-    expect(distroSelectors).toHaveLength(2);
-    expect(distroSelectors.every((element) => element.disabled)).toBe(true);
+    const toolbarDistroSelector = screen.getAllByRole("combobox")
+      .find((element) => element.tagName === "SELECT" && !element.hasAttribute("aria-label"));
+    const panelDistroSelector = screen.getByRole("combobox", { name: "WSL distro 선택" });
+    expect(toolbarDistroSelector).toBeDefined();
+    expect(toolbarDistroSelector).toBeDisabled();
+    expect(panelDistroSelector).toBeDisabled();
 
     fireEvent.click(startButton);
     expect(dockerActionMock).not.toHaveBeenCalled();
