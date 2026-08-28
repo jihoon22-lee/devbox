@@ -212,3 +212,23 @@ export interface SupportBundleExport {
   byteCount: number;
   redactionVersion: string;
 }
+
+export type RelatedToolDetection = "path" | "known-location" | "not-found" | "unavailable";
+
+export interface RelatedTool {
+  id: string;
+  displayName: string;
+  summary: string;
+  wingetId: string;
+  officialUrl: string;
+  licenseUrl: string;
+  license: string;
+  installed: boolean;
+  detection: RelatedToolDetection;
+}
+
+export interface RelatedToolActionResult {
+  toolId: string;
+  status: "installed" | "launched";
+  message: string;
+}

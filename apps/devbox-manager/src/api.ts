@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import catalogJson from "../../catalog.json";
 import { isTauri } from "./lib/isTauri";
 import type {
@@ -20,12 +21,202 @@ import type {
   RemoveAppRequest,
   RemovePreview,
   RemoveResult,
+  RelatedTool,
+  RelatedToolActionResult,
   ReleaseManifest,
   SupportBundleExport,
   SupportBundlePreview,
 } from "./types";
 
 const MOCK_CATALOG: CatalogApp[] = catalogJson.apps;
+
+const MOCK_RELATED_TOOLS: RelatedTool[] = [
+  {
+    id: "power-toys",
+    displayName: "PowerToys",
+    summary: "Windows 생산성 유틸리티 모음",
+    wingetId: "Microsoft.PowerToys",
+    officialUrl: "https://learn.microsoft.com/windows/powertoys/",
+    licenseUrl: "https://github.com/microsoft/PowerToys/blob/main/LICENSE",
+    license: "MIT (소스)",
+    installed: false,
+    detection: "unavailable",
+  },
+  {
+    id: "windows-terminal",
+    displayName: "Windows Terminal",
+    summary: "탭·프로필을 지원하는 Windows 터미널",
+    wingetId: "Microsoft.WindowsTerminal",
+    officialUrl: "https://github.com/microsoft/terminal",
+    licenseUrl: "https://github.com/microsoft/terminal/blob/main/LICENSE",
+    license: "MIT",
+    installed: false,
+    detection: "unavailable",
+  },
+  {
+    id: "vs-code",
+    displayName: "Visual Studio Code",
+    summary: "경량 코드 편집기",
+    wingetId: "Microsoft.VisualStudioCode",
+    officialUrl: "https://code.visualstudio.com/",
+    licenseUrl: "https://code.visualstudio.com/License",
+    license: "Microsoft 배포 약관 · 소스 MIT",
+    installed: false,
+    detection: "unavailable",
+  },
+  {
+    id: "bruno",
+    displayName: "Bruno",
+    summary: "오프라인 우선 API 클라이언트",
+    wingetId: "Bruno.Bruno",
+    officialUrl: "https://www.usebruno.com/",
+    licenseUrl: "https://github.com/usebruno/bruno/blob/main/LICENSE.md",
+    license: "MIT",
+    installed: false,
+    detection: "unavailable",
+  },
+  {
+    id: "dbeaver",
+    displayName: "DBeaver Community",
+    summary: "관계형 데이터베이스 탐색기",
+    wingetId: "DBeaver.DBeaver.Community",
+    officialUrl: "https://dbeaver.io/",
+    licenseUrl: "https://github.com/dbeaver/dbeaver/blob/devel/LICENSE",
+    license: "Apache-2.0",
+    installed: false,
+    detection: "unavailable",
+  },
+  {
+    id: "db-browser",
+    displayName: "DB Browser for SQLite",
+    summary: "SQLite 데이터베이스 브라우저",
+    wingetId: "DBBrowserForSQLite.DBBrowserForSQLite",
+    officialUrl: "https://sqlitebrowser.org/",
+    licenseUrl: "https://github.com/sqlitebrowser/sqlitebrowser/blob/master/LICENSE",
+    license: "MPL-2.0",
+    installed: false,
+    detection: "unavailable",
+  },
+  {
+    id: "github-desktop",
+    displayName: "GitHub Desktop",
+    summary: "GitHub 저장소용 데스크톱 클라이언트",
+    wingetId: "GitHub.GitHubDesktop",
+    officialUrl: "https://desktop.github.com/",
+    licenseUrl: "https://github.com/desktop/desktop/blob/development/LICENSE",
+    license: "MIT",
+    installed: false,
+    detection: "unavailable",
+  },
+  {
+    id: "podman-desktop",
+    displayName: "Podman Desktop",
+    summary: "컨테이너와 Pod를 관리하는 데스크톱 앱",
+    wingetId: "RedHat.Podman-Desktop",
+    officialUrl: "https://podman-desktop.io/",
+    licenseUrl: "https://github.com/containers/podman-desktop/blob/main/LICENSE",
+    license: "Apache-2.0",
+    installed: false,
+    detection: "unavailable",
+  },
+  {
+    id: "docker-desktop",
+    displayName: "Docker Desktop",
+    summary: "Docker 컨테이너 개발 환경",
+    wingetId: "Docker.DockerDesktop",
+    officialUrl: "https://www.docker.com/products/docker-desktop/",
+    licenseUrl: "https://www.docker.com/legal/docker-software-license/",
+    license: "Docker Software License",
+    installed: false,
+    detection: "unavailable",
+  },
+];
+
+const RELATED_TOOL_ID_SET = new Set(MOCK_RELATED_TOOLS.map((tool) => tool.id));
+const RELATED_TOOL_ACTION_MESSAGES = {
+  installed: "WinGet 설치가 완료되었습니다.",
+  launched: "관련 도구를 실행했습니다.",
+} as const;
+
+function isRelatedToolId(value: string): boolean {
+  return value.length <= 64
+    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)
+    && RELATED_TOOL_ID_SET.has(value);
+}
+
+function isRelatedDetection(value: unknown): value is RelatedTool["detection"] {
+  return value === "path"
+    || value === "known-location"
+    || value === "not-found"
+    || value === "unavailable";
+}
+
+/**
+ * Native returns a deliberately small DTO. Validate it at the API boundary
+ * before React renders anything so a stale/tampered response cannot inject a
+ * path, credential, arbitrary URL, or action state into the Manager screen.
+ */
+function validateRelatedTools(value: unknown): RelatedTool[] {
+  if (!Array.isArray(value) || value.length !== MOCK_RELATED_TOOLS.length) {
+    throw new Error("관련 도구 감지 응답이 올바르지 않습니다.");
+  }
+  const seen = new Set<string>();
+  const result: RelatedTool[] = [];
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== "object") {
+      throw new Error("관련 도구 감지 응답이 올바르지 않습니다.");
+    }
+    const tool = candidate as Partial<RelatedTool>;
+    const expected = typeof tool.id === "string"
+      ? MOCK_RELATED_TOOLS.find((item) => item.id === tool.id)
+      : undefined;
+    const detection = tool.detection;
+    if (
+      !expected
+      || seen.has(expected.id)
+      || !isRelatedDetection(detection)
+      || tool.displayName !== expected.displayName
+      || tool.summary !== expected.summary
+      || tool.wingetId !== expected.wingetId
+      || tool.officialUrl !== expected.officialUrl
+      || tool.licenseUrl !== expected.licenseUrl
+      || tool.license !== expected.license
+      || typeof tool.installed !== "boolean"
+      || tool.installed !== (detection === "path" || detection === "known-location")
+    ) {
+      throw new Error("관련 도구 감지 응답이 올바르지 않습니다.");
+    }
+    seen.add(expected.id);
+    result.push({
+      ...expected,
+      installed: tool.installed,
+      detection,
+    });
+  }
+  return result;
+}
+
+function validateRelatedAction(
+  value: unknown,
+  toolId: string,
+  status: RelatedToolActionResult["status"],
+): RelatedToolActionResult {
+  if (
+    !value
+    || typeof value !== "object"
+    || (value as Partial<RelatedToolActionResult>).toolId !== toolId
+    || (value as Partial<RelatedToolActionResult>).status !== status
+  ) {
+    throw new Error("관련 도구 작업 결과가 올바르지 않습니다.");
+  }
+  return {
+    toolId,
+    status,
+    // Never render native-provided message text: a future process error must
+    // not turn into a path, account name, credential, or package-manager log.
+    message: RELATED_TOOL_ACTION_MESSAGES[status],
+  };
+}
 
 export type ManagerOpenRequest = {
   target: { kind: "install"; appId: string };
@@ -295,6 +486,82 @@ export async function exportSupportBundle(previewId: string): Promise<SupportBun
 export async function launchApp(name: string): Promise<void> {
   if (!isTauri()) return;
   await invoke("launch", { appId: name });
+}
+
+export async function relatedTools(): Promise<RelatedTool[]> {
+  const result = isTauri()
+    ? await invoke<unknown>("related_tools")
+    : MOCK_RELATED_TOOLS.map((tool) => ({ ...tool }));
+  return validateRelatedTools(result);
+}
+
+export async function installRelatedTool(
+  toolId: string,
+  confirmed: boolean,
+): Promise<RelatedToolActionResult> {
+  if (!isRelatedToolId(toolId)) throw new Error("관련 도구 식별자가 올바르지 않습니다.");
+  if (typeof confirmed !== "boolean") throw new Error("관련 도구 설치 확인값이 올바르지 않습니다.");
+  if (!isTauri()) {
+    if (!confirmed) throw new Error("관련 도구 설치는 사용자 확인이 필요합니다.");
+    return validateRelatedAction({
+      toolId,
+      status: "installed",
+      message: "WinGet 설치가 완료되었습니다.",
+    }, toolId, "installed");
+  }
+  const result = await invoke<unknown>("install_related_tool", {
+    request: { toolId, confirmed },
+  });
+  return validateRelatedAction(result, toolId, "installed");
+}
+
+export async function launchRelatedTool(toolId: string): Promise<RelatedToolActionResult> {
+  if (!isRelatedToolId(toolId)) throw new Error("관련 도구 식별자가 올바르지 않습니다.");
+  if (!isTauri()) {
+    return validateRelatedAction({
+      toolId,
+      status: "launched",
+      message: "관련 도구를 실행했습니다.",
+    }, toolId, "launched");
+  }
+  const result = await invoke<unknown>("launch_related_tool", { toolId });
+  return validateRelatedAction(result, toolId, "launched");
+}
+
+const RELATED_TOOL_OFFICIAL_HOSTS = new Set([
+  "learn.microsoft.com",
+  "github.com",
+  "code.visualstudio.com",
+  "www.usebruno.com",
+  "dbeaver.io",
+  "sqlitebrowser.org",
+  "desktop.github.com",
+  "podman-desktop.io",
+  "www.docker.com",
+]);
+
+function isSafeRelatedToolUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:"
+      && !url.username
+      && !url.password
+      && !url.port
+      && url.hostname.length > 0
+      && RELATED_TOOL_OFFICIAL_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Open only a URL that passed the Related Tools official-host allowlist. */
+export async function openRelatedToolUrl(url: string): Promise<void> {
+  if (!isSafeRelatedToolUrl(url)) throw new Error("공식 링크가 올바르지 않습니다.");
+  if (!isTauri()) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  await openUrl(url);
 }
 
 export async function openInstallFolder(appId: string): Promise<void> {

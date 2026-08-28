@@ -7,6 +7,7 @@ pub mod download;
 pub mod layout;
 pub mod managed_install;
 pub mod manifest;
+pub mod related_tools;
 pub mod removal;
 pub mod runtime_metadata;
 pub mod support_bundle;
