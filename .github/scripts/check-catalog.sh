@@ -11,6 +11,7 @@
 #   6. 모든 identifier가 com.devbox. 로 시작한다
 #   7. release 앱은 third-party notices를 installer resource로 포함한다
 #   8. catalog v2 revision/capability/action 계약이 유효하다
+#   9. 모든 release 앱이 W4 second-instance focus 계약을 설치·초기화한다
 #
 # 의존: bash + python3 (러너에 이미 존재). jq 사용 금지.
 
@@ -115,6 +116,7 @@ for a in apps:
             report(f"{app_id}: {field}가 중복된다")
         seen.add(value)
     cargo_path = f"{app_dir}/src-tauri/Cargo.toml"
+    lib_path = f"{app_dir}/src-tauri/src/lib.rs"
     tauri_path = f"{app_dir}/src-tauri/tauri.conf.json"
     pkg_path = f"{app_dir}/package.json"
 
@@ -153,6 +155,16 @@ for a in apps:
     resources = tauri.get("bundle", {}).get("resources", [])
     if a.get("release") and "../../../THIRD_PARTY_NOTICES.md" not in resources:
         report(f"{app_id}: bundle.resources에 THIRD_PARTY_NOTICES.md가 없다")
+
+    # 9. W4에서는 15개 release 앱 모두 두 번째 프로세스가 새 window를
+    # 남기지 않고 기존 main window를 복구·focus해야 한다. dependency만 선언하고
+    # 초기화를 빠뜨리는 회귀도 함께 차단한다.
+    if a.get("release"):
+        lib = open(lib_path).read() if os.path.isfile(lib_path) else ""
+        if not re.search(r'^tauri-plugin-single-instance\s*=\s*"2"', cargo, re.M):
+            report(f"{app_id}: tauri-plugin-single-instance dependency가 없다")
+        if "tauri_plugin_single_instance::init" not in lib:
+            report(f"{app_id}: single-instance plugin을 초기화하지 않는다")
 
     # 8. v2 capability/action은 정적이고 versioned인 선언만 허용
     accepts = a.get("accepts")
