@@ -3,7 +3,7 @@
 ## Overview
 
 Audited and completed the Devbox Manager Related Tools feature from issue
-#365/P3-17 in the existing dirty feature worktree. Manager now exposes a small,
+#365/P3-17 in its dedicated feature worktree. Manager now exposes a small,
 reviewed list of optional developer tools with official and license links, local
 installed detection, an explicitly confirmed exact WinGet install, and direct
 launch of detected tools. The remediation pass kept the feature native-first:
@@ -14,9 +14,8 @@ prevented untrusted native responses/errors from reaching the UI.
 The implementation stays separate from the devbox app catalog and applink
 contracts. It does not add package search, automatic updates or removal, native
 action replacements, arbitrary paths, arbitrary commands, or external state
-changes without confirmation. The repository's pre-existing dirty changes were
-preserved; this worktree remains uncommitted for the parent agent's grouped PR
-review.
+changes without confirmation. The feature commits and follow-up review changes
+were preserved for the parent agent's final rebase and PR review.
 
 ## Context
 
@@ -232,9 +231,8 @@ Job Object accounting, Known Folder, and System Directory bindings.
 No Windows packaged/W3 smoke run was performed. Windows WinGet availability,
 PATH/app-execution-alias behavior, standard installation layouts, Job Object
 assignment, opener capabilities, and packaged process timeout behavior remain
-CI/release-checkpoint risks. The worktree is intentionally dirty and
-uncommitted; no commit, push, PR, branch deletion, or worktree removal was
-performed.
+CI/release-checkpoint risks. At that review checkpoint, the follow-up edits
+were intentionally left for the parent agent to validate and commit.
 
 ## Follow-up audit (2026-08-28)
 
@@ -281,5 +279,35 @@ An attempted local `x86_64-pc-windows-gnu` check used the required dedicated
 target and `-j1`, but the environment has no `x86_64-w64-mingw32-gcc`; Cargo
 stopped in the unrelated `aws-lc-sys` build before compiling the application.
 No Windows cfg result is claimed from that attempt. CI/Windows remains the
-authoritative check for Win32 bindings and packaged WinGet behavior. No commit,
-push, PR, rebase, cleanup, or other worktree was changed.
+authoritative check for Win32 bindings and packaged WinGet behavior.
+
+## Final platform and API boundary review
+
+The final parent review made platform support explicit in the native Related
+Tools DTO. Windows returns `platformSupported: true`; non-Windows builds return
+false. The frontend validates this boolean together with the fixed catalog and
+rejects the impossible state of an installed tool on an unsupported platform.
+Unsupported platforms now show a disabled `WinGet 설치: Windows 전용` control,
+while official and license links remain usable on every platform when network
+access is available. The screen copy no longer incorrectly describes those
+links as Windows-only.
+
+A separate frontend API-boundary suite now exercises the real validators rather
+than mocking the complete API module: tampered catalog URLs, impossible platform
+state, mismatched action IDs/status, arbitrary IDs, and unapproved URLs all
+fail closed. Native action message text is replaced with the fixed UI message,
+so an injected path or credential-like value cannot be rendered.
+
+```text
+pnpm --dir apps/devbox-manager test -- --maxWorkers=2 pass (2 files / 33 tests)
+pnpm --dir apps/devbox-manager build                  pass
+cargo fmt --all -- --check                           pass
+git diff --check                                     pass
+cargo test/check/clippy -p devbox-manager             pending after rebase:
+                                                        stale branch launch/applink
+                                                        API mismatch blocks compile
+```
+
+The Rust failure is a base-age mismatch (`launch::open_argv` still expects the
+pre-main `applink::build_argv` return type), not a Related Tools compile result.
+The parent must rebase onto the current main before claiming native gates.

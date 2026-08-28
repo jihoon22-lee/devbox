@@ -39,6 +39,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     officialUrl: "https://learn.microsoft.com/windows/powertoys/",
     licenseUrl: "https://github.com/microsoft/PowerToys/blob/main/LICENSE",
     license: "MIT (소스)",
+    platformSupported: false,
     installed: false,
     detection: "unavailable",
   },
@@ -50,6 +51,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     officialUrl: "https://github.com/microsoft/terminal",
     licenseUrl: "https://github.com/microsoft/terminal/blob/main/LICENSE",
     license: "MIT",
+    platformSupported: false,
     installed: false,
     detection: "unavailable",
   },
@@ -61,6 +63,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     officialUrl: "https://code.visualstudio.com/",
     licenseUrl: "https://code.visualstudio.com/License",
     license: "Microsoft 배포 약관 · 소스 MIT",
+    platformSupported: false,
     installed: false,
     detection: "unavailable",
   },
@@ -72,6 +75,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     officialUrl: "https://www.usebruno.com/",
     licenseUrl: "https://github.com/usebruno/bruno/blob/main/LICENSE.md",
     license: "MIT",
+    platformSupported: false,
     installed: false,
     detection: "unavailable",
   },
@@ -83,6 +87,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     officialUrl: "https://dbeaver.io/",
     licenseUrl: "https://github.com/dbeaver/dbeaver/blob/devel/LICENSE",
     license: "Apache-2.0",
+    platformSupported: false,
     installed: false,
     detection: "unavailable",
   },
@@ -94,6 +99,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     officialUrl: "https://sqlitebrowser.org/",
     licenseUrl: "https://github.com/sqlitebrowser/sqlitebrowser/blob/master/LICENSE",
     license: "MPL-2.0",
+    platformSupported: false,
     installed: false,
     detection: "unavailable",
   },
@@ -105,6 +111,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     officialUrl: "https://desktop.github.com/",
     licenseUrl: "https://github.com/desktop/desktop/blob/development/LICENSE",
     license: "MIT",
+    platformSupported: false,
     installed: false,
     detection: "unavailable",
   },
@@ -116,6 +123,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     officialUrl: "https://podman-desktop.io/",
     licenseUrl: "https://github.com/containers/podman-desktop/blob/main/LICENSE",
     license: "Apache-2.0",
+    platformSupported: false,
     installed: false,
     detection: "unavailable",
   },
@@ -127,6 +135,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     officialUrl: "https://www.docker.com/products/docker-desktop/",
     licenseUrl: "https://www.docker.com/legal/docker-software-license/",
     license: "Docker Software License",
+    platformSupported: false,
     installed: false,
     detection: "unavailable",
   },
@@ -183,7 +192,9 @@ function validateRelatedTools(value: unknown): RelatedTool[] {
       || tool.officialUrl !== expected.officialUrl
       || tool.licenseUrl !== expected.licenseUrl
       || tool.license !== expected.license
+      || typeof tool.platformSupported !== "boolean"
       || typeof tool.installed !== "boolean"
+      || (!tool.platformSupported && tool.installed)
       || tool.installed !== (detection === "path" || detection === "known-location")
     ) {
       throw new Error("관련 도구 감지 응답이 올바르지 않습니다.");
@@ -191,6 +202,7 @@ function validateRelatedTools(value: unknown): RelatedTool[] {
     seen.add(expected.id);
     result.push({
       ...expected,
+      platformSupported: tool.platformSupported,
       installed: tool.installed,
       detection,
     });

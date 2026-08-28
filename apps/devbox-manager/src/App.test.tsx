@@ -154,6 +154,7 @@ const relatedTool: RelatedTool = {
   officialUrl: "https://code.visualstudio.com/",
   licenseUrl: "https://code.visualstudio.com/License",
   license: "Microsoft 배포 약관 · 소스 MIT",
+  platformSupported: true,
   installed: false,
   detection: "not-found",
 };
@@ -912,6 +913,25 @@ describe("Devbox Manager Related Tools", () => {
 
     expect(screen.queryByRole("link", { name: "공식 사이트" })).toBeNull();
     expect(screen.queryByRole("link", { name: "라이선스" })).toBeNull();
+  });
+
+  it("keeps official links usable while disabling WinGet on unsupported platforms", async () => {
+    relatedToolsMock.mockResolvedValueOnce([{
+      ...relatedTool,
+      platformSupported: false,
+      detection: "unavailable",
+    }]);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+
+    const install = await screen.findByRole("button", { name: "WinGet 설치: Windows 전용" });
+    expect((install as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("link", { name: "공식 사이트" }));
+    await waitFor(() => expect(openRelatedToolUrlMock).toHaveBeenCalledWith(
+      "https://code.visualstudio.com/",
+    ));
+    expect(installRelatedToolMock).not.toHaveBeenCalled();
   });
 
   it("does not parse unbounded official-link values", async () => {

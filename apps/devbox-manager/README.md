@@ -128,7 +128,8 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
   frontend API도 고정 catalog metadata와 detection/installed 정합성, action tool ID/status를
   검증하고 native message·오류는 고정된 안전 문구로 치환한다. 늦은 install/launch 응답은
   mount/action generation과 일치할 때만 화면 상태를 갱신한다. Related Tools 화면에는 감지·기존
-  실행은 오프라인 가능하고 WinGet 설치·공식 링크는 Windows/네트워크 전제라는 안내를 표시하며,
+  실행은 오프라인 가능하고 WinGet 설치는 Windows/네트워크, 공식·라이선스 링크는 네트워크
+  전제라는 안내를 표시한다. non-Windows에서는 설치 control만 명시적으로 비활성화하며,
   오프라인 또는 WinGet 부재 오류는 선택 기능의 상태로만 남고 Manager native 기능을 막지 않는다.
 
 설치 root 경계의 public 오류는 고정된 안전 메시지만 반환하고 입력 경로, locator/manifest 원문,

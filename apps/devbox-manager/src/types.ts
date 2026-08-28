@@ -223,6 +223,7 @@ export interface RelatedTool {
   officialUrl: string;
   licenseUrl: string;
   license: string;
+  platformSupported: boolean;
   installed: boolean;
   detection: RelatedToolDetection;
 }

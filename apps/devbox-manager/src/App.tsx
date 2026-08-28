@@ -1312,7 +1312,7 @@ export default function App() {
               <h2 id="related-tools-heading">Related Tools</h2>
               <p className="dim">
                 개발 흐름을 보완하는 작은 공식 도구 목록입니다. 설치 여부만 로컬에서 감지하며 경로와 버전은 표시하지 않습니다.
-                감지와 이미 설치된 도구 실행은 인터넷 없이 가능하지만, WinGet 설치와 공식 링크는 Windows 및 네트워크가 필요합니다.
+                감지와 이미 설치된 도구 실행은 인터넷 없이 가능합니다. WinGet 설치는 Windows와 네트워크가 필요하고, 공식·라이선스 링크는 플랫폼과 관계없이 네트워크 연결 시 열 수 있습니다.
               </p>
             </div>
             <button
@@ -1394,10 +1394,13 @@ export default function App() {
                         className="btn"
                         type="button"
                         aria-busy={busy === `related:${tool.id}:install`}
-                        disabled={batchBusy || busy !== null || installRootBusy || readBusy}
+                        disabled={!tool.platformSupported || batchBusy || busy !== null || installRootBusy || readBusy}
+                        title={tool.platformSupported ? undefined : "WinGet 설치는 Windows에서만 사용할 수 있습니다."}
                         onClick={() => void onRelatedInstall(tool)}
                       >
-                        {busy === `related:${tool.id}:install` ? "설치 중..." : "확인 후 WinGet 설치"}
+                        {busy === `related:${tool.id}:install`
+                          ? "설치 중..."
+                          : tool.platformSupported ? "확인 후 WinGet 설치" : "WinGet 설치: Windows 전용"}
                       </button>
                     )}
                   </div>

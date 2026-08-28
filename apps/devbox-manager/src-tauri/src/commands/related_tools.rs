@@ -77,6 +77,7 @@ pub struct RelatedToolView {
     pub official_url: String,
     pub license_url: String,
     pub license: String,
+    pub platform_supported: bool,
     pub installed: bool,
     pub detection: String,
 }
@@ -361,6 +362,7 @@ fn detect_related_tools() -> Vec<RelatedToolView> {
                 official_url: spec.official_url.to_string(),
                 license_url: spec.license_url.to_string(),
                 license: spec.license_summary.to_string(),
+                platform_supported: cfg!(windows),
                 installed: matches!(
                     source,
                     DetectionSource::Path | DetectionSource::KnownLocation
@@ -1061,6 +1063,7 @@ mod tests {
         let views = detect_related_tools();
         assert_eq!(views.len(), curated_tools().len());
         for view in views {
+            assert_eq!(view.platform_supported, cfg!(windows));
             assert!(!view.id.contains('/') && !view.id.contains('\\'));
             assert!(matches!(
                 view.detection.as_str(),
