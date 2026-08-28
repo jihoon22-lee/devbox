@@ -35,10 +35,15 @@ https://github.com/jihoon22-lee/devbox/releases
   assets 독립 size·SHA-256 대조와 exact stable API Playground portable의 packaged
   H1-A~D·cleanup을 통과했다. [상세 release plan](./docs/superpowers/plans/2026-08-24-v0.4.2-release.md)에서
   RC1 historical failure, RC2 수정 검증과 stable evidence를 함께 확인할 수 있다.
-- **v0.5.0 상태:** 15개 앱의 P1·P2·선택 P3 구현은 main에 반영됐고 목표 앱 version을
-  RC1 기준으로 정렬하는 중이다. required CI, 공식 32-asset prerelease와 Windows W1~W4
-  acceptance 전에는 검증 완료나 안정판으로 표시하지 않는다. [v0.5.0 release plan](./docs/superpowers/plans/2026-08-28-v0.5.0-release.md)
-  에서 RC·stable gate와 실제 증거를 추적한다.
+- **v0.5.0 상태:** 15개 앱의 P1·P2·선택 P3 구현과 목표 version은 main에 반영됐다.
+  `v0.5.0-rc1`은 PR #464/CI `33173371194`, release workflow `33175165583`와 정확한
+  32-asset 독립 다운로드 검증을 마친 immutable historical checkpoint지만, source audit에서
+  3/15 single-instance 누락을 확인해 active life-log/WSL Desktop user process와 함께 W4를
+  의도적으로 시작하지 않았다. fix PR #465/CI `33178381902`가
+  `a5256fe252fb0c2115adfd02d303c277aaf7bccb`에 병합됐고, RC2는 새 package에서 independent
+  asset verification과 W1~W4를 다시 실행해야 한다. RC2 PR/CI/tag/package/W1~W4와 stable
+  승격 전에는 검증 완료나 안정판으로 표시하지 않는다. [v0.5.0 release plan](./docs/superpowers/plans/2026-08-28-v0.5.0-release.md)
+  에서 RC1 historical checkpoint, RC2 reset, stable gate와 실제 증거를 추적한다.
 
 - 각 앱의 `*-setup.exe`를 내려받아 설치하면 됩니다. WebView2 런타임(Windows 11 기본 포함)만 있으면 별도 도구 설치가 필요 없습니다.
 - 자세한 사용/설치/트러블슈팅: [docs/windows-guide.md](./docs/windows-guide.md)
