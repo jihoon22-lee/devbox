@@ -11,6 +11,7 @@ interface DocHostProps {
   views: [DocId[], DocId[]];
   activeDocByView: [DocId | null, DocId | null];
   split: boolean;
+  renameApplyBusy?: boolean;
   fontSize: number;
   onChange: (docId: DocId, text: string) => void;
   onCursorChange?: (docId: DocId, cursor: number) => void;
@@ -62,6 +63,7 @@ export default function DocHost({
   views,
   activeDocByView,
   split,
+  renameApplyBusy = false,
   fontSize,
   onChange,
   onCursorChange,
@@ -92,7 +94,7 @@ export default function DocHost({
             docId={doc.id}
             path={doc.path}
             value={doc.text}
-            readOnly={doc.readOnly}
+            readOnly={doc.readOnly || renameApplyBusy}
             syntaxHighlightingEnabled={!doc.readOnly || doc.size <= 5 * 1024 * 1024}
             fontSize={fontSize}
             style={placement?.style ?? { display: "none" }}

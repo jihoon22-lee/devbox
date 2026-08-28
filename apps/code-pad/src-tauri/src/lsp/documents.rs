@@ -130,6 +130,30 @@ impl WorkspaceRoot {
         }
         Ok(canonical)
     }
+
+    /// Return a workspace-relative path using the same component comparison
+    /// as URI resolution. `Path::strip_prefix` is byte/case sensitive even on
+    /// Windows, while drive and UNC paths are case-insensitive there; using
+    /// this method for IPC display paths keeps long/case-varied Windows paths
+    /// from being rejected or accidentally treated as outside the workspace.
+    pub fn relative_path(&self, path: impl AsRef<Path>) -> Option<PathBuf> {
+        let path = path.as_ref();
+        if !path_is_within(&self.canonical_path, path) {
+            return None;
+        }
+        let mut components = path.components();
+        for _ in self.canonical_path.components() {
+            components.next()?;
+        }
+        let mut relative = PathBuf::new();
+        for component in components {
+            if !matches!(component, Component::Normal(_)) {
+                return None;
+            }
+            relative.push(component.as_os_str());
+        }
+        Some(relative)
+    }
 }
 
 pub fn file_uri_from_absolute_path(path: &Path) -> Result<Url, DocumentError> {
@@ -632,7 +656,13 @@ mod tests {
         let parsed = Url::parse(&opened.uri).unwrap();
         assert_eq!(
             store.workspace().resolve_uri(&parsed).unwrap(),
-            fs::canonicalize(path).unwrap()
+            fs::canonicalize(&path).unwrap()
+        );
+        assert_eq!(
+            store
+                .workspace()
+                .relative_path(fs::canonicalize(&path).unwrap()),
+            Some(PathBuf::from("space 한글 %.rs"))
         );
     }
 

@@ -29,6 +29,7 @@ chardetng = "1"
 base64 = "0.22"
 sha2 = "0.11.0"
 subtle = "2.6.1"
+uuid = { version = "1", features = ["v4"] }
 url = "2"
 lsp-types = "0.97.0"
 notify = "8.2.0"
@@ -57,3 +58,6 @@ windows = { version = "0.58", features = [
     "Win32_System_Threading",
 ]
 }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

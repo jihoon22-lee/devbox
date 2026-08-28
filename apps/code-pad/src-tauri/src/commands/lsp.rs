@@ -3,7 +3,8 @@
 use crate::lsp::{
     AppliedDocumentEdits, CompletionResult, DiagnosticResult, DidChange, DidClose, DidOpen,
     DidSave, FeatureResponse, FilteredLocations, LanguageServerLog, LanguageServerStatus,
-    LoadedLspConfig, LspConfig, LspManager, LspManagerError, LspPosition, SanitizedHover,
+    LoadedLspConfig, LspConfig, LspManager, LspManagerError, LspPosition, RenameApplyResult,
+    RenamePreview, SanitizedHover,
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -101,7 +102,7 @@ fn public_loaded_config(mut loaded: LoadedLspConfig) -> LoadedLspConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{public_control_error, public_loaded_config};
+    use super::{public_control_error, public_loaded_config, public_rename_error};
     use crate::lsp::{LoadedLspConfig, LspConfig, LspManagerError};
 
     #[test]
@@ -128,6 +129,19 @@ mod tests {
         assert_eq!(
             loaded.error.as_deref(),
             Some("저장된 LSP 설정이 손상되었습니다")
+        );
+    }
+
+    #[test]
+    fn rename_errors_do_not_echo_paths_or_server_details() {
+        let secret = r#"C:\Users\dev\workspace\token=raw-secret"#;
+        assert_eq!(
+            public_rename_error(LspManagerError::Protocol(secret.into())),
+            "이름 변경을 준비하거나 적용하지 못했습니다"
+        );
+        assert_eq!(
+            public_rename_error(LspManagerError::NotRunning(secret.into())),
+            "이름 변경을 적용할 언어 서버가 실행 중이 아닙니다"
         );
     }
 }
@@ -268,11 +282,55 @@ pub async fn request_lsp_rename(
     uri: String,
     position: LspPosition,
     new_name: String,
-) -> Result<AppliedDocumentEdits, String> {
+) -> Result<RenamePreview, String> {
     manager
         .rename(&language_id, &uri, position, new_name)
         .await
-        .map_err(|error| error.to_string())
+        .map_err(public_rename_error)
+}
+
+#[tauri::command]
+pub async fn apply_lsp_rename(
+    manager: State<'_, Arc<LspManager>>,
+    plan_id: String,
+) -> Result<RenameApplyResult, String> {
+    manager
+        .apply_rename(&plan_id)
+        .await
+        .map_err(public_rename_error)
+}
+
+#[tauri::command]
+pub async fn cancel_lsp_rename(
+    manager: State<'_, Arc<LspManager>>,
+    plan_id: String,
+) -> Result<bool, String> {
+    Ok(manager.cancel_rename(&plan_id).await)
+}
+
+#[tauri::command]
+pub async fn discard_lsp_rename(
+    manager: State<'_, Arc<LspManager>>,
+    plan_id: String,
+) -> Result<bool, String> {
+    Ok(manager.discard_rename(&plan_id).await)
+}
+
+/// Rename plans can contain filesystem and protocol details that must stay on
+/// the native side.  Keep the IPC error intentionally categorical; the
+/// structured preview/apply result carries only workspace-relative paths and
+/// safe per-file statuses.
+fn public_rename_error(error: LspManagerError) -> String {
+    match error {
+        LspManagerError::NotRunning(_) => {
+            "이름 변경을 적용할 언어 서버가 실행 중이 아닙니다".into()
+        }
+        LspManagerError::UnsupportedFeature { .. } => {
+            "언어 서버가 이름 변경을 지원하지 않습니다".into()
+        }
+        LspManagerError::Disabled => "LSP가 비활성화되어 있습니다".into(),
+        _ => "이름 변경을 준비하거나 적용하지 못했습니다".into(),
+    }
 }
 
 #[tauri::command]

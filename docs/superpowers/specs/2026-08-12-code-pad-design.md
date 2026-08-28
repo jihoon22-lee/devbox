@@ -992,11 +992,21 @@ definition/reference location은 결과 목록에서 제외하거나 "workspace 
 | hover | `textDocument/hover` | 현재 position에 해당하는 markdown/plaintext만 표시; timeout이면 닫힘 |
 | 정의 | `textDocument/definition` | workspace 내부 Location만 탭/Quick Open으로 연결 |
 | references | `textDocument/references` | workspace 내부 결과만 목록에 표시; 결과는 요청 version snapshot과 함께 보관 |
-| rename | `textDocument/rename` | WorkspaceEdit를 preflight하여 모든 URI·range·version을 검증한 뒤 한 번에 editor buffers에 적용. 자동 저장하지 않음 |
+| rename | `textDocument/rename` | text-only WorkspaceEdit를 모든 URI·range·version에 대해 preflight하고 작업 폴더 상대 경로·범위·before/after를 미리 보여준다. before/after preview는 각각 UTF-8 16KiB, 실제 저장 결과는 선택 인코딩·줄바꿈 복원 후 2MiB aggregate로 제한하며 UTF-16/CRLF 확장 초과도 승인 전에 거부한다. 사용자가 승인한 뒤에만 mtime·크기·SHA-256·filesystem identity와 final regular-file/reparse 상태를 재검증해 디스크와 열린 buffer를 함께 적용하며, 실패하면 app-local `0700` transaction 백업과 journal로 전체 rollback |
 | formatting | `textDocument/formatting` | 사용자가 명시적으로 실행할 때만 TextEdit 적용; 범위를 벗어난 edit는 거부 |
 
 WorkspaceEdit는 문서별 현재 version과 비교한 뒤 충돌하면 전체 적용을 중단하고
-사용자에게 재시도하도록 한다. 한 파일만 일부 적용해 rename을 망가뜨리지 않는다.
+사용자에게 재시도하도록 한다. rename은 dirty buffer·손실 디코딩·읽기 전용 파일·작업
+폴더 밖 URI·resource operation을 거부하고, preview 승인 전에는 editor/disk 어느 쪽도
+변경하지 않는다. 승인 후 한 파일이라도 파일 쓰기 또는 LSP mirror 반영에 실패하면
+app-local `0700` transaction 디렉터리의 identity/hash 검증 durable backup으로 이미 쓴
+파일을 역순 되돌려 한 파일만 일부 적용되는 상태를 막는다. journal recovery는 target이
+기록된 post-write bytes와 정확히 일치할 때만 복구하며, 외부 변경·symlink/reparse 파일은
+덮어쓰지 않고 명시적 복구 대상으로 남긴다. startup recovery 전체에도 bounded scan budget을
+적용하고, journal directory 이름과 plan id가 일치하지 않으면 복구하지 않는다. preview 승인
+대기 중 문서/작업 폴더가 바뀌거나 취소가 mirror flush보다 먼저 도착하면 stale plan을 폐기하고
+native apply를 호출하지 않는다. Windows drive/UNC 및 W3 long path의 상대 경로는 case-insensitive
+component 기준으로 계산한다. formatting은 기존대로 editor buffer만 바꾸고 자동 저장하지 않는다.
 server의 custom command/code action은 Phase 2 API에 노출하지 않으며, 위 표 밖의
 method는 capability와 무관하게 무시한다. LSP server가 `diagnosticProvider`만 광고하면
 `textDocument/diagnostic` pull을 Phase 2에서 구현해 열기·변경·저장 뒤 debounce하여
@@ -1103,6 +1113,10 @@ editor의 dirty/undo/session state는 유지한다. `stderr` ring buffer와 cras
 | workspace 밖 URI/path 또는 malformed edit | 해당 result/edit만 거부하고 보안 로그에 남김; 전체 session은 유지 |
 | stale diagnostics/response | 현재 document version보다 낮으면 화면에 적용하지 않음 |
 | `WorkspaceEdit` 중 한 문서 충돌 | 모든 edit를 preflight에서 폐기하고 partial rename/formatting을 하지 않음 |
+| rename 적용 직전 mtime/크기/hash/identity 또는 final symlink·reparse 변경 | 백업과 쓰기를 시작하기 전에 전체 대상의 snapshot을 다시 확인하고, bounded save/rollback 경계에서도 final regular-file 상태를 재확인한다. 충돌 파일을 표시한 뒤 어떠한 파일도 쓰지 않음 |
+| rename 파일 쓰기 또는 LSP didChange/didSave 실패 | app-local transaction journal과 identity/hash 검증 backup으로 이미 적용한 파일을 역순 복구하고 파일별 `applied`/`rolledBack`/`rollbackFailed` 결과를 표시. backup/rollback 오류는 숨기지 않고 재시도 가능한 journal과 categorical 오류로 표시 |
+| rename preview/apply resource bound 초과 | URI/file/edit/replacement와 normalized/encoded aggregate, preview excerpt, journal 및 startup recovery 전체 scan budget을 모두 적용한다. UTF-16·CRLF 확장으로 실제 저장 바이트가 초과하면 preview 단계에서 거부 |
+| preview 대기 중 문서/작업 폴더 변경 또는 flush 전 취소 | stale plan은 native apply 전에 discard하고, mirror flush 이후에도 취소 의도가 남아 있으면 `applyRename`을 호출하지 않는다 |
 
 자동 재시작은 사용자가 이미 활성화한 managed/local/custom server에만 적용하며,
 다운로드나 version 변경을 포함하지 않는다. backoff가 끝난 뒤에도 process가 죽으면
@@ -1132,8 +1146,16 @@ release/package metadata의 검증은 catalog update 작업에서 별도로 수�
   확인한다.
 - **Vitest**: server 미설치/disabled에서 CodeMirror editor·word completion·save가
   정상인 경우, capability별 UI 노출, diagnostics mapping, completion cancellation,
-  stale response, definition/references workspace filtering, rename/formatting
-  preflight, install confirmation과 version/license/source/SHA 표시를 테스트한다.
+  stale response, definition/references workspace filtering, rename preview 승인·충돌
+  결과·LSP mirror 미진행, formatting preflight, install confirmation과
+  version/license/source/SHA 표시를 테스트한다.
+- **Rust rename integration**: 열린/닫힌 작업 폴더 파일의 text-only WorkspaceEdit
+  preview, opaque plan·TTL/discard/cancel, 상대 경로·범위·diff bounded payload,
+  dirty/outside/resource/sensitive/no-sync 거부, 승인 직전 mtime/hash/identity/final
+  symlink 충돌, UTF-16·CRLF encoded output bound, exact UTF-8 preview bound, journal
+  plan-id binding, recovery scan budget, 부분 didChange 실패와 app-local journal/identity
+  backup rollback을 deterministic fake LSP fixture로 검증한다. Windows W3 long-path
+  packaged smoke는 별도 수동 gate다.
 - **Windows 수동 smoke**: 검증된 rust-analyzer와 Node 서버를 사용자가 직접 설치한
   뒤 실제 Windows path/UTF-16 위치, Rust/TS/Python/JSON·HTML·CSS의 diagnostics와
   completion/hover/definition/references/rename/formatting, server stop/restart,

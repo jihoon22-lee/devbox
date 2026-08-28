@@ -23,6 +23,8 @@ interface Props {
   /** false면 전체 변경을 하나의 transaction처럼 승인하는 고정 목록으로 표시한다. */
   selectable?: boolean;
   disabled?: boolean;
+  /** Keep approval disabled while allowing an in-flight operation to cancel. */
+  cancelDisabled?: boolean;
   /** 승인할 항목의 path 목록을 넘긴다. */
   onApprove: (paths: string[]) => void;
   /** 거부할 항목의 path 목록을 넘긴다. */
@@ -36,6 +38,7 @@ export default function ChangeSetPreview({
   approveLabel = "적용",
   selectable = true,
   disabled = false,
+  cancelDisabled = disabled,
   onApprove,
   onReject,
   onCancel,
@@ -120,7 +123,7 @@ export default function ChangeSetPreview({
           </button>
         )}
         {onCancel && (
-          <button className="btn" disabled={disabled} onClick={onCancel}>
+          <button className="btn" disabled={cancelDisabled} onClick={onCancel}>
             취소
           </button>
         )}

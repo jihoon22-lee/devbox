@@ -9,6 +9,8 @@ import type {
   LspFeatureResponse,
   LspFilteredLocations,
   LspHoverResult,
+  LspRenameApplyResult,
+  LspRenamePreview,
 } from "./types";
 import {
   languageIdForPath,
@@ -124,7 +126,17 @@ function transportFor(
       value: { locations: [], rejected: 0 },
       stale: false,
     })),
-    rename: vi.fn(async (): Promise<AppliedDocumentEdits> => ({ documents: [] })),
+    rename: vi.fn(async (): Promise<LspRenamePreview> => ({ planId: "", files: [] })),
+    applyRename: vi.fn(async (planId: string): Promise<LspRenameApplyResult> => ({
+      planId,
+      success: false,
+      rolledBack: false,
+      files: [],
+      documents: [],
+      error: null,
+    })),
+    cancelRename: vi.fn(async () => false),
+    discardRename: vi.fn(async () => false),
     formatting: vi.fn(async (): Promise<AppliedDocumentEdits> => ({ documents: [] })),
     restart: vi.fn(async (languageId: string) => {
       calls.push(`restart:${languageId}`);
@@ -268,6 +280,48 @@ describe("LspDocumentSync", () => {
     await sync.flush();
 
     expect(calls[calls.length - 1]).toBe("reload:rust:file:///work/src/main.rs:from disk");
+  });
+
+  it("keeps rename preview and approval as separate native transactions", async () => {
+    const calls: string[] = [];
+    const transport = transportFor(calls);
+    const sync = new LspDocumentSync(transport);
+    await sync.setWorkspace("/work");
+    await sync.setConfig(config());
+    await sync.open(document());
+    transport.rename = vi.fn(async () => ({
+      planId: "rename-1",
+      files: [{
+        path: "src/main.rs",
+        ranges: [{
+          range: { start: { line: 0, character: 3 }, end: { line: 0, character: 7 } },
+          newText: "start",
+        }],
+        before: "fn main() {}",
+        after: "fn start() {}",
+      }],
+    }));
+    const preview = await sync.requestRename("doc-1", 3, "start");
+    expect(preview?.planId).toBe("rename-1");
+    expect(transport.applyRename).not.toHaveBeenCalled();
+
+    await sync.applyRename("rename-1");
+    expect(transport.applyRename).toHaveBeenCalledWith("rename-1");
+  });
+
+  it("does not offer rename when the server cannot accept didChange", async () => {
+    const calls: string[] = [];
+    const transport = transportFor(calls);
+    transport.statuses = vi.fn(async () => [readyStatus({
+      capabilities: { ...readyStatus().capabilities, syncKind: null },
+    })]);
+    const sync = new LspDocumentSync(transport);
+    await sync.setWorkspace("/work");
+    await sync.setConfig(config());
+    await sync.open(document());
+
+    await expect(sync.requestRename("doc-1", 3, "start")).resolves.toBeNull();
+    expect(transport.rename).not.toHaveBeenCalled();
   });
 
   it("records transport failures as state without rejecting editor operations", async () => {

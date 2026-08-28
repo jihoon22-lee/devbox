@@ -172,6 +172,55 @@ export interface AppliedDocumentEdits {
   documents: EditedLspDocument[];
 }
 
+export interface LspRenamePreviewFile {
+  /** Workspace-relative display path returned by the native boundary. */
+  path: string;
+  ranges: Array<{
+    range: LspDiagnosticRange;
+    newText: string;
+  }>;
+  before: string;
+  after: string;
+}
+
+export interface LspRenamePreview {
+  planId: string;
+  files: LspRenamePreviewFile[];
+}
+
+export type LspRenameFileStatus =
+  | "applied"
+  | "rolledBack"
+  | "failed"
+  | "notApplied"
+  | "conflict"
+  | "rollbackFailed";
+
+export interface LspRenameFileResult {
+  path: string;
+  status: LspRenameFileStatus;
+  mtimeNanos: string | null;
+  size: number | null;
+  contentHash: string | null;
+  error: string | null;
+}
+
+export interface LspRenameApplyResult {
+  planId: string;
+  success: boolean;
+  rolledBack: boolean;
+  files: LspRenameFileResult[];
+  documents: RenamedLspDocument[];
+  error: string | null;
+}
+
+export interface RenamedLspDocument {
+  /** Workspace-relative path; native absolute URIs stay out of this result. */
+  path: string;
+  version: number;
+  text: string;
+}
+
 export interface LspCapabilities {
   positionEncoding: LspPositionEncoding;
   legacyPositionEncoding: boolean;
