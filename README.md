@@ -40,10 +40,15 @@ https://github.com/jihoon22-lee/devbox/releases
   32-asset 독립 다운로드 검증을 마친 immutable historical checkpoint지만, source audit에서
   3/15 single-instance 누락을 확인해 active life-log/WSL Desktop user process와 함께 W4를
   의도적으로 시작하지 않았다. fix PR #465/CI `33178381902`가
-  `a5256fe252fb0c2115adfd02d303c277aaf7bccb`에 병합됐고, RC2는 새 package에서 independent
-  asset verification과 W1~W4를 다시 실행해야 한다. RC2 PR/CI/tag/package/W1~W4와 stable
-  승격 전에는 검증 완료나 안정판으로 표시하지 않는다. [v0.5.0 release plan](./docs/superpowers/plans/2026-08-28-v0.5.0-release.md)
-  에서 RC1 historical checkpoint, RC2 reset, stable gate와 실제 증거를 추적한다.
+  `a5256fe252fb0c2115adfd02d303c277aaf7bccb`에 병합됐다. `v0.5.0-rc2`는 PR #466/CI
+  `33190371594`, release workflow `33192179195`와 새 32-asset 독립 검증까지 통과했지만,
+  후속 source-equivalence 감사에서 Workbench preflight 경로 종류·symlink/reparse parent
+  경계 누락을 발견했다. fix PR #467/CI `33201855818`은
+  `9dc237e23717bc294da0ff66d86df1bdce3cb595`에 병합됐다. RC1/RC2는 immutable historical
+  prerelease로 보존하고, RC3 새 package의 독립 asset 검증과 W1~W4 전체를 다시 실행한다.
+  RC3와 exact stable replay 전에는 v0.5.0을 검증 완료나 안정판으로 표시하지 않는다.
+  [v0.5.0 release plan](./docs/superpowers/plans/2026-08-28-v0.5.0-release.md)에서 각 RC의
+  경계, stable gate와 실제 증거를 추적한다.
 
 - 각 앱의 `*-setup.exe`를 내려받아 설치하면 됩니다. WebView2 런타임(Windows 11 기본 포함)만 있으면 별도 도구 설치가 필요 없습니다.
 - 자세한 사용/설치/트러블슈팅: [docs/windows-guide.md](./docs/windows-guide.md)

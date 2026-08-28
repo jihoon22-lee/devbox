@@ -3,6 +3,69 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [v0.5.0-rc3] - 2026-08-29
+
+v0.5.0-rc3는 immutable RC2의 release asset 검증 뒤 source-equivalence 감사에서 발견한
+Workbench preflight 경로 경계 누락을 수정한 새 release candidate다. RC1과 RC2의
+tag·release·asset은 덮어쓰지 않고 historical checkpoint로 보존한다. 최신 안정판은 계속
+v0.4.2이며, RC3의 새 preparation PR·required CI·annotated tag·32 assets와 exact package의
+Windows W1~W4가 모두 통과하기 전에는 v0.5.0 stable로 승격하지 않는다.
+
+### RC2 immutable checkpoint
+
+- RC2 preparation PR [#466](https://github.com/jihoon22-lee/devbox/pull/466)의 required CI
+  [33190371594](https://github.com/jihoon22-lee/devbox/actions/runs/33190371594)가 모두
+  통과했고, source commit은 `eb5d2253deb59ec460a9619ad64e0ff29e2d20e5`다. annotated tag
+  object `dbc40e60fdea71c8d7d2ce42680b25acc60a2343`도 이 exact commit을 가리킨다.
+- RC2 release workflow
+  [33192179195](https://github.com/jihoon22-lee/devbox/actions/runs/33192179195)의 immutable-tag
+  preflight, Windows build, draft stage, independent draft verification, publish/read-back이 모두
+  성공했다. 공개 [`v0.5.0-rc2`](https://github.com/jihoon22-lee/devbox/releases/tag/v0.5.0-rc2)는
+  `draft=false`, `prerelease=true`, 32 assets이며 v0.4.2가 Latest로 남았다.
+- E:의 fresh download는 15 apps, 31 manifest-declared assets, 32 verified assets,
+  missing 0, undeclared 0인 **PASS**다. release metadata SHA-256은
+  `0eb0580328000f2ed2d4b6e402c648f5c4a1c65cde1d709977c762427ccee8d4`, verification
+  result는 `60513df3e0194a24d394ebf22a27d45e3f133063fa98291a1622415bbcb5d36a`, manifest는
+  `3fc51055e86b49869349a5bd3e949df41191103b1b035e3d69022fe426f59125`다. acceptance
+  config와 harness SHA-256은 각각
+  `e10d52c98dd1faa3495ba62b68123eef9724d017fd1c5a4e632ea8dab7235a83`,
+  `12f2f9cf6f2e037cde4facb879f3bb960051e427de243cd3e0cc6e28368bddd0`다.
+- exact RC2 smoke preflight는 기존 `life-log`와 `wsl-desktop` 사용자 process를 발견해
+  app-data 격리나 package 실행 전에 fail-closed했다. result/runtime/lock/backup residue를
+  만들지 않았고 기존 process도 변경하지 않았다. 따라서 이 관찰은 안전성 증거이지 W4
+  실행 또는 통과가 아니다.
+
+### Fixed
+
+- **Workbench preflight path namespace** — Windows directory probe는 drive/UNC, WSL probe는
+  POSIX 경로만 허용한다. 잘못된 namespace는 filesystem 또는 `wsl.exe` 실행 전에
+  `Unsafe`로 거부한다.
+- **Missing descendant link boundary** — 최종 target metadata보다 먼저 existing component의
+  symlink 또는 Windows reparse point를 검사한다. link 아래의 아직 없는 descendant를 일반
+  `Missing`으로 낮추지 않으며, 기존 operation budget·cancellation·process-tree ownership은
+  그대로 유지한다.
+
+수정 PR [#467](https://github.com/jihoon22-lee/devbox/pull/467)의 required CI
+[33201855818](https://github.com/jihoon22-lee/devbox/actions/runs/33201855818) 6개가 모두
+통과했고 correction merge commit은 `9dc237e23717bc294da0ff66d86df1bdce3cb595`다. RC2는
+immutable하게 보존하지만 stable 승격 대상에서는 제외한다.
+
+### RC3 verification boundary
+
+- 새 RC3 preparation PR의 exact merge commit이 `9dc237e23717bc294da0ff66d86df1bdce3cb595`를
+  포함하고 product source를 임의로 바꾸지 않았는지 확인한 뒤에만 annotated
+  `v0.5.0-rc3` tag를 만든다.
+- release workflow가 새 Windows binaries를 빌드하고, 정확한 15 portable + 15 NSIS
+  installer + notices + manifest인 32 assets를 draft 상태에서 독립 검증한 뒤에만
+  prerelease로 게시해야 한다. 게시 뒤에는 E:의 새 directory에서 15/31/32, missing 0,
+  undeclared 0과 모든 size·SHA-256을 다시 확인한다.
+- Windows W1→W2→W3→W4는 exact RC3 packages에서 처음부터 다시 실행한다. RC1/RC2의
+  package 또는 미실행 결과를 승계하지 않으며, 기존 사용자 process나 disposable installer/
+  multi-monitor·DPI·IME·offline 환경이 안전하게 확보되지 않으면 해당 release-blocking gate를
+  통과로 표시하지 않는다.
+- RC3 package acceptance, stable preparation·tag·release, exact stable replay, evidence PR,
+  milestone close와 relocation-ready worktree/cache cleanup은 아직 미완료다.
+
 ## [v0.5.0-rc2] - 2026-08-29
 
 v0.5.0-rc2는 immutable RC1 package에서 발견한 source release-contract 결함을 수정한
