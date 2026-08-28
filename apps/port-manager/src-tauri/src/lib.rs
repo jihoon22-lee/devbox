@@ -1,6 +1,8 @@
 mod commands;
 mod core;
 
+use tauri::Manager;
+
 // TODO(0.5.0): v0.4.x 이전 사용자를 위한 1회성 마이그레이션. 두 릴리스 뒤 제거한다.
 const LEGACY_IDENTIFIER: &str = "com.workbench.portmanager";
 const CURRENT_IDENTIFIER: &str = "com.devbox.portmanager";
@@ -25,6 +27,13 @@ fn migrate_local_data() {
 pub fn run() {
     migrate_local_data();
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             devbox_window_state_tauri::restore_main_window(app.handle());
