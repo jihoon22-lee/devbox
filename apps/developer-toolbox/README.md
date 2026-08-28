@@ -189,7 +189,58 @@ encoder(png 0.18.1, MIT OR Apache-2.0), browser fallback(qrcode-generator 2.0.4,
 않고, 새 license·source·advisory·bundle 크기는 dependency policy와 notice generator의
 검사 대상이다.
 
+## Smart Workflows (P3-05, #340–#342)
+
+Smart Workflows는 입력을 한 번 붙여 넣고 안전한 변환 후보를 확인한 뒤, 사용자가 선택한
+typed 단계만 실행하는 오프라인 작업 영역이다. 감지·파이프라인·메타데이터 저장은 같은 화면을
+공유하지만 각 issue의 fixture와 acceptance는 독립적으로 유지한다.
+
+이번 #340–#343 묶음 검토에서 Developer Toolbox 내부의 #340–#342는 이 offline 흐름으로
+통합하고, #343은 API Playground·integration을 함께 변경하는 별도 handoff 경계로 남긴다.
+
+- **#340 Smart detection** — UTF-8 1,000,000바이트(최대 2,100,000 code unit) 안에서 JSON,
+  허용된 HS JWT compact, HTTP(S) URL, canonical Base64/Base64URL, Hex byte 표현을 로컬에서
+  판별한다. 결과에는 static kind/tool/transformer ID와 confidence만 들어가며 입력 원문은
+  후보·오류·로그에 포함하지 않는다. credential-shaped assignment, bearer/token prefix,
+  URL userinfo·credential query, `file://`·Windows/POSIX 경로와 제어문자는 fail-closed한다.
+  URL은 절대 열거나 요청하지 않으며 JWT는 Decode 후보일 뿐 Verify가 아니다. 순수 fixture는
+  정상·binary·ambiguous·invalid·oversized·credential/path redaction을 각각 고정한다.
+- **#341 typed transformer pipeline** — `text`, `json`, `jwt`, `url`, `base64`, `base64url`,
+  `hex`, `yaml`, `typescript` 등의 타입을 단계별로 확인하며, 현재 출력 타입을 다음 단계의
+  허용 입력 타입과 비교한다. 단계는 최대 8개, 전체 입력 1,000,000바이트, 중간/최종 출력
+  4,000,000바이트다. incompatible/unknown 단계는 실행 전에 고정 오류로 중단하고, 단계 실행은
+  파이프라인 실행 버튼을 눌렀을 때만 한다. shell command, network, `api-request/v1`,
+  `toolbox-text/v1` receiver는 이 issue에 없다.
+- **#342 recent/favorite 저장** — native Tauri 실행은 `app_local_data_dir()` 아래
+  `smart-workflows.json`을 version 1 metadata로 원자 교체한다. 브라우저 preview만 같은
+  allow-listed schema를 `localStorage`에 저장한다. 저장되는 것은 tool ID, transformer ID,
+  pipeline 입력 타입, pipeline ID와 timestamp뿐이며 input/output/clipboard/credential/path와
+  사용자 지정 이름은 스키마에 존재하지 않는다. recent 20개, favorite 50개, pipeline 20개,
+  단계 8개, serialized metadata 64KiB를 넘으면 안전하게 버린다. malformed/unknown entry는
+  화면에 반향하지 않고 fail-closed한다. 재시작 시 metadata만 복원하며 draft text는 복원하지
+  않는다.
+- 입력 context menu의 Paste는 기존 공용 `ToolTextArea`를 통해 사용자가 누른 순간에만 읽고,
+  UTF-8 byte 상한을 넘는 부분은 삽입하지 않는다. 결과 copy/save도 `ToolOutput`의 명시적
+  action에서만 가능하며 smart workflow는 clipboard history, raw archive, API handoff를
+  만들지 않는다. 오류는 fixed message로만 표시한다.
+
+### Issue별 acceptance/fixture 추적
+
+| 이슈 | 독립적으로 확인하는 계약 | 집중 fixture |
+|---|---|---|
+| #340 | 구조 후보·추천 transformer, ambiguous/invalid, credential/path 비반향 | `smartDetection.test.ts` |
+| #341 | output→input 타입 연결, mismatch 선차단, bounded local run | `transformPipeline.test.ts` |
+| #342 | metadata schema redaction, bounded ordering, restart round-trip, atomic native file | `workflowStore.test.ts`, Rust `core::workflows` tests |
+
+`#343 Toolbox→API text handoff`는 별도 보안·integration 경계이므로 이 PR에서 의도적으로
+구현하지 않는다. packaged Windows W3 smoke는 각 후보 선택, mismatch 표시, pipeline 실행,
+재시작 후 metadata-only 복원과 외부 action 부재를 확인해야 한다.
+
 ## 개발
 
-- 순수 로직: `src-tauri/src/core/hmac.rs` 및 `src-tauri/src/commands/tools.rs` → `cargo test`
+- 순수 로직: `src-tauri/src/core/hmac.rs`·`src-tauri/src/core/workflows.rs` 및
+  `src-tauri/src/commands/tools.rs` → `cargo test`
+- Smart Workflows의 감지·typed pipeline·metadata 테스트는 `src/workflows/*.test.ts(x)`에
+  issue별 fixture로 분리한다. Rust metadata 파일은 `app_local_data_dir()` 내부의
+  `smart-workflows.json`만 원자 교체한다.
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`

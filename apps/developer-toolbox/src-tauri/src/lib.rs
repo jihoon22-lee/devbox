@@ -44,6 +44,8 @@ pub fn run() {
             commands::tools::diff,
             commands::tools::jwt_verify,
             commands::qr::generate_qr,
+            commands::workflows::load_workflow_metadata,
+            commands::workflows::save_workflow_metadata,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

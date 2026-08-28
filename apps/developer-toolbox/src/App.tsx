@@ -1,6 +1,7 @@
 import { useState } from "react";
 import "./App.css";
 import { GROUPS, TOOLS } from "./tools";
+import { SmartWorkflowPanel } from "./workflows/SmartWorkflowPanel";
 
 export default function App() {
   const [activeId, setActiveId] = useState(TOOLS[0].id);
@@ -27,6 +28,7 @@ export default function App() {
         ))}
       </aside>
       <main className="content">
+        <SmartWorkflowPanel activeToolId={activeId} onOpenTool={setActiveId} />
         <h2 className="tool-title">{active.name}</h2>
         <ActiveComponent />
       </main>
