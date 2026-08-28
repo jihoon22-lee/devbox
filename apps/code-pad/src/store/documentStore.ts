@@ -31,6 +31,17 @@ export type EditorAction =
       expectedRevisions?: Readonly<Record<DocId, number>>;
     }
   | {
+      type: "applyLspRename";
+      documents: Array<EditedLspDocument & {
+        docId: DocId;
+        mtimeNanos: string;
+        size: number;
+        contentHash: string;
+      }>;
+      /** Rechecked before replacing clean buffers after native disk commit. */
+      expectedRevisions?: Readonly<Record<DocId, number>>;
+    }
+  | {
       type: "saveDoc";
       docId: DocId;
       mtimeNanos: string;
@@ -459,6 +470,34 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           const edited = edits.get(doc.id);
           return edited
             ? { ...doc, text: edited.text, dirty: true, revision: doc.revision + 1 }
+            : doc;
+        }),
+      };
+    }
+
+    case "applyLspRename": {
+      const byId = new Map(state.docs.map((doc) => [doc.id, doc]));
+      if (action.documents.some((edited) => !byId.has(edited.docId))) return state;
+      if (action.expectedRevisions && action.documents.some((edited) => {
+        const expectedRevision = action.expectedRevisions?.[edited.docId];
+        return expectedRevision === undefined || byId.get(edited.docId)?.revision !== expectedRevision;
+      })) return state;
+      const edits = new Map(action.documents.map((edited) => [edited.docId, edited]));
+      return {
+        ...state,
+        docs: state.docs.map((doc) => {
+          const edited = edits.get(doc.id);
+          return edited
+            ? {
+                ...doc,
+                text: edited.text,
+                dirty: false,
+                revision: doc.revision + 1,
+                mtimeNanos: edited.mtimeNanos,
+                size: edited.size,
+                contentHash: edited.contentHash,
+                durabilityWarning: null,
+              }
             : doc;
         }),
       };

@@ -540,7 +540,7 @@ async fn newer_completion_and_hover_cancel_the_previous_request() {
 }
 
 #[tokio::test]
-async fn rename_and_formatting_apply_complete_dirty_buffers_atomically() {
+async fn rename_previews_disk_files_then_applies_clean_buffers_atomically() {
     let app_data = tempdir().unwrap();
     let workspace = tempdir().unwrap();
     let main = workspace.path().join("main.rs");
@@ -565,7 +565,7 @@ async fn rename_and_formatting_apply_complete_dirty_buffers_atomically() {
         .await
         .unwrap();
 
-    let renamed = manager
+    let preview = manager
         .rename(
             "rust",
             &main_opened.uri,
@@ -574,11 +574,34 @@ async fn rename_and_formatting_apply_complete_dirty_buffers_atomically() {
         )
         .await
         .unwrap();
-    assert_eq!(renamed.documents.len(), 2);
+    assert_eq!(preview.files.len(), 2);
+    assert!(preview.files.iter().all(|file| {
+        matches!(file.path.as_str(), "main.rs" | "lib.rs")
+            && file.before.contains("fixture")
+            && file.after.starts_with("renamed")
+            && file.ranges.len() == 1
+    }));
+    assert_eq!(fs::read_to_string(&main).unwrap(), "fixture\n");
+    assert_eq!(fs::read_to_string(&library).unwrap(), "fixture library\n");
+
+    let renamed = manager.apply_rename(&preview.plan_id).await.unwrap();
+    assert!(renamed.success);
+    assert!(!renamed.rolled_back);
+    assert_eq!(renamed.files.len(), 2);
     assert!(renamed
         .documents
         .iter()
         .all(|document| document.version == 2 && document.text.starts_with("renamed")));
+    assert!(renamed.files.iter().all(|file| {
+        file.status == code_pad_lib::lsp::RenameFileStatus::Applied
+            && file.mtime_nanos.is_some()
+            && file.content_hash.is_some()
+    }));
+    assert_eq!(fs::read_to_string(&main).unwrap(), "renamedxture\n");
+    assert_eq!(
+        fs::read_to_string(&library).unwrap(),
+        "renamedxture library\n"
+    );
 
     let formatted = manager
         .formatting("rust", &main_opened.uri, 4, true)
@@ -600,6 +623,43 @@ async fn rename_and_formatting_apply_complete_dirty_buffers_atomically() {
         .formatting("rust", &main_opened.uri, 0, true)
         .await
         .is_err());
+    manager.stop("rust").await.unwrap();
+}
+
+#[tokio::test]
+async fn rename_is_rejected_before_disk_access_when_server_cannot_sync_changes() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let main = workspace.path().join("main.rs");
+    fs::write(&main, "fixture\n").unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    save_to_app_local_data_dir(
+        app_data.path(),
+        &feature_config(workspace.path(), &executable, "no_sync"),
+    )
+    .unwrap();
+
+    let manager = LspManager::new(app_data.path(), "0.3.0");
+    manager.start("rust").await.unwrap();
+    let opened = manager
+        .open_document("rust", &main, "fixture\n".into())
+        .await
+        .unwrap();
+    let error = manager
+        .rename(
+            "rust",
+            &opened.uri,
+            LspPosition::new(0, 0),
+            "renamed".into(),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        LspManagerError::UnsupportedFeature { method, .. }
+            if method == "textDocument/didChange"
+    ));
+    assert_eq!(fs::read_to_string(&main).unwrap(), "fixture\n");
     manager.stop("rust").await.unwrap();
 }
 
@@ -647,8 +707,16 @@ async fn mutation_version_race_rejects_every_document_without_partial_commit() {
         .await
         .unwrap();
     let error = request.await.unwrap().unwrap_err().to_string();
-    assert!(error.contains("version conflict"));
+    assert!(error.contains("최신 문서 상태"));
 
+    // A retry is permitted only after the editor has reconciled the changed
+    // buffer with disk. This keeps a stale/dirty buffer from becoming a
+    // write source for a multi-file rename.
+    fs::write(&main, "changed\n").unwrap();
+    manager
+        .change_document("rust", &main_opened.uri, "changed\n".into(), false)
+        .await
+        .unwrap();
     let retry = manager
         .rename(
             "rust",
@@ -658,13 +726,69 @@ async fn mutation_version_race_rejects_every_document_without_partial_commit() {
         )
         .await
         .unwrap();
-    let library = retry
+    assert_eq!(retry.files.len(), 2);
+    let applied = manager.apply_rename(&retry.plan_id).await.unwrap();
+    assert!(applied.success);
+    let library = applied
         .documents
         .iter()
-        .find(|document| document.uri.ends_with("/lib.rs"))
+        .find(|document| document.path == "lib.rs")
         .unwrap();
     assert_eq!(library.version, 2, "the rejected request changed lib.rs");
     assert_eq!(library.text, "renamedxture library\n");
+    manager.stop("rust").await.unwrap();
+}
+
+#[tokio::test]
+async fn rename_apply_rechecks_mtime_and_hash_before_writing_any_file() {
+    let app_data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let main = workspace.path().join("main.rs");
+    let library = workspace.path().join("lib.rs");
+    fs::write(&main, "fixture\n").unwrap();
+    fs::write(&library, "fixture library\n").unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    save_to_app_local_data_dir(
+        app_data.path(),
+        &feature_config(workspace.path(), &executable, "mutation_features"),
+    )
+    .unwrap();
+
+    let manager = LspManager::new(app_data.path(), "0.3.0");
+    manager.start("rust").await.unwrap();
+    let main_opened = manager
+        .open_document("rust", &main, "fixture\n".into())
+        .await
+        .unwrap();
+    manager
+        .open_document("rust", &library, "fixture library\n".into())
+        .await
+        .unwrap();
+
+    let preview = manager
+        .rename(
+            "rust",
+            &main_opened.uri,
+            LspPosition::new(0, 0),
+            "renamed".into(),
+        )
+        .await
+        .unwrap();
+    fs::write(&main, "external\n").unwrap();
+
+    let result = manager.apply_rename(&preview.plan_id).await.unwrap();
+    assert!(!result.success);
+    assert!(!result.rolled_back);
+    assert_eq!(
+        result
+            .files
+            .iter()
+            .find(|file| file.path == "main.rs")
+            .map(|file| file.status),
+        Some(code_pad_lib::lsp::RenameFileStatus::Conflict)
+    );
+    assert_eq!(fs::read_to_string(&main).unwrap(), "external\n");
+    assert_eq!(fs::read_to_string(&library).unwrap(), "fixture library\n");
     manager.stop("rust").await.unwrap();
 }
 
@@ -704,7 +828,7 @@ async fn failed_multi_document_mutation_restarts_and_replays_the_authoritative_s
         .await
         .unwrap();
 
-    let error = manager
+    let preview = manager
         .rename(
             "rust",
             &main_opened.uri,
@@ -712,11 +836,19 @@ async fn failed_multi_document_mutation_restarts_and_replays_the_authoritative_s
             "renamed".into(),
         )
         .await
-        .expect_err("the second didChange must fail");
-    assert!(
-        error.to_string().contains("workspace edit notification"),
-        "unexpected partial mutation error: {error}"
-    );
+        .expect("rename preview must not write before approval");
+    let result = manager
+        .apply_rename(&preview.plan_id)
+        .await
+        .expect("apply returns a structured rollback result");
+    assert!(!result.success);
+    assert!(result.rolled_back);
+    assert!(result
+        .files
+        .iter()
+        .any(|file| { file.status == code_pad_lib::lsp::RenameFileStatus::RolledBack }));
+    assert_eq!(fs::read_to_string(&main).unwrap(), "fixture\n");
+    assert_eq!(fs::read_to_string(&library).unwrap(), "fixture library\n");
 
     tokio::time::timeout(Duration::from_secs(4), async {
         loop {

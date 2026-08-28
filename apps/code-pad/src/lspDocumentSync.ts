@@ -11,6 +11,9 @@ import {
   requestLspHover,
   requestLspReferences,
   requestLspRename,
+  applyLspRename,
+  cancelLspRename,
+  discardLspRename,
   restartLanguageServer,
   reloadLspDocument,
   saveLspDocument,
@@ -20,6 +23,8 @@ import {
 import type {
   LanguageServerStatus,
   AppliedDocumentEdits,
+  LspRenameApplyResult,
+  LspRenamePreview,
   LoadedLspConfig,
   LspConfig,
   LspCompletionResult,
@@ -96,7 +101,10 @@ export interface LspDocumentTransport {
   hover: (languageId: string, uri: string, position: LspPosition) => Promise<LspFeatureResponse<LspHoverResult | null>>;
   definition: (languageId: string, uri: string, position: LspPosition) => Promise<LspFeatureResponse<LspFilteredLocations>>;
   references: (languageId: string, uri: string, position: LspPosition, includeDeclaration: boolean) => Promise<LspFeatureResponse<LspFilteredLocations>>;
-  rename: (languageId: string, uri: string, position: LspPosition, newName: string) => Promise<AppliedDocumentEdits>;
+  rename: (languageId: string, uri: string, position: LspPosition, newName: string) => Promise<LspRenamePreview>;
+  applyRename: (planId: string) => Promise<LspRenameApplyResult>;
+  cancelRename: (planId: string) => Promise<boolean>;
+  discardRename: (planId: string) => Promise<boolean>;
   formatting: (languageId: string, uri: string, tabSize: number, insertSpaces: boolean) => Promise<AppliedDocumentEdits>;
   restart: (languageId: string) => Promise<void>;
 }
@@ -117,6 +125,9 @@ export const nativeLspDocumentTransport: LspDocumentTransport = {
   definition: requestLspDefinition,
   references: requestLspReferences,
   rename: requestLspRename,
+  applyRename: applyLspRename,
+  cancelRename: cancelLspRename,
+  discardRename: discardLspRename,
   formatting: requestLspFormatting,
   restart: restartLanguageServer,
 };
@@ -215,6 +226,14 @@ function pathWithinWorkspace(path: string, workspaceRoot: string | null): boolea
   return pathsEqual(path, workspaceRoot) || candidate.startsWith(`${root}/`);
 }
 
+function relativeWorkspacePath(path: string, workspaceRoot: string | null): string | null {
+  if (!pathWithinWorkspace(path, workspaceRoot) || !workspaceRoot) return null;
+  const normalizedValue = normalizedPath(path);
+  const normalizedRoot = normalizedPath(workspaceRoot);
+  if (pathsEqual(path, workspaceRoot)) return "";
+  return normalizedValue.slice(normalizedRoot.length).replace(/^\/+/u, "");
+}
+
 /**
  * Ordered, failure-tolerant bridge between editor documents and the native
  * language-server commands.
@@ -298,6 +317,10 @@ export class LspDocumentSync {
 
   documentText(documentId: string): string | null {
     return this.documents.get(documentId)?.opened?.text ?? null;
+  }
+
+  documentUri(documentId: string): string | null {
+    return this.documents.get(documentId)?.opened?.uri ?? null;
   }
 
   acceptStatusEvent(event: LspStatusEvent): void {
@@ -552,14 +575,28 @@ export class LspDocumentSync {
     });
   }
 
-  requestRename(documentId: string, offset: number, newName: string): Promise<AppliedDocumentEdits | null> {
+  requestRename(documentId: string, offset: number, newName: string): Promise<LspRenamePreview | null> {
     const token = this.nextFeatureToken(documentId);
     return this.requestFeature(documentId, token, async (state, opened, status) => {
-      if (status?.capabilities.rename === false) return null;
+      if (status?.capabilities.rename === false || (status && status.capabilities.syncKind == null)) return null;
       const position = positionForOffset(state.doc.text, offset, status?.capabilities.positionEncoding);
       const result = await this.transport.rename(state.languageId!, opened.uri, position, newName);
-      return this.isFeatureCurrent(documentId, token) ? result : null;
+      if (this.isFeatureCurrent(documentId, token)) return result;
+      if (result.planId) void this.transport.discardRename(result.planId);
+      return null;
     });
+  }
+
+  applyRename(planId: string): Promise<LspRenameApplyResult> {
+    return this.transport.applyRename(planId);
+  }
+
+  cancelRename(planId: string): Promise<boolean> {
+    return this.transport.cancelRename(planId);
+  }
+
+  discardRename(planId: string): Promise<boolean> {
+    return this.transport.discardRename(planId);
   }
 
   requestFormatting(
@@ -576,17 +613,55 @@ export class LspDocumentSync {
   }
 
   /** Advance the native mirror after App atomically accepts a mutation result. */
-  applyDocuments(documents: AppliedDocumentEdits["documents"]): void {
+  applyDocuments(
+    documents: AppliedDocumentEdits["documents"],
+    saved = false,
+  ): void {
     for (const edited of documents) {
       const match = [...this.documents.values()].find((state) => state.opened?.uri === edited.uri);
       if (match?.opened) {
         match.opened.version = edited.version;
         match.opened.text = edited.text;
-        match.doc = { ...match.doc, text: edited.text, dirty: true };
+        match.doc = { ...match.doc, text: edited.text, dirty: !saved };
       }
     }
     for (const [documentId, snapshot] of this.diagnostics) {
       if (documents.some((edited) => edited.uri === snapshot.response.metadata.uri)) {
+        this.invalidateDiagnostics(documentId);
+        this.diagnostics.delete(documentId);
+      }
+    }
+    this.stateSnapshot = {
+      ...this.stateSnapshot,
+      staleDiagnostics: [...this.diagnostics.values()].some((item) => item.response.stale),
+    };
+    this.publishState();
+  }
+
+  /** Advance rename documents without exposing native absolute URIs to the
+   * renderer. The workspace-relative path is matched against the logical
+   * editor document and its existing native URI is retained internally. */
+  applyRenameDocuments(
+    documents: LspRenameApplyResult["documents"],
+    saved = true,
+  ): void {
+    const workspaceRoot = this.workspaceRoot;
+    for (const edited of documents) {
+      const state = [...this.documents.values()].find((candidate) =>
+        relativeWorkspacePath(candidate.doc.path, workspaceRoot) === edited.path,
+      );
+      if (!state?.opened) continue;
+      state.opened.version = edited.version;
+      state.opened.text = edited.text;
+      state.doc = { ...state.doc, text: edited.text, dirty: !saved };
+    }
+    for (const documentId of this.diagnostics.keys()) {
+      if (documents.some((edited) =>
+        relativeWorkspacePath(
+          this.documents.get(documentId)?.doc.path ?? "",
+          workspaceRoot,
+        ) === edited.path,
+      )) {
         this.invalidateDiagnostics(documentId);
         this.diagnostics.delete(documentId);
       }

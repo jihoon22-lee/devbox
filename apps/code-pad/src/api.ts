@@ -14,6 +14,8 @@ import type {
   LoadedLspConfig,
   LspConfig,
   AppliedDocumentEdits,
+  LspRenameApplyResult,
+  LspRenamePreview,
   LspPosition,
   LspDidChange,
   LspDidClose,
@@ -262,13 +264,25 @@ export function requestLspRename(
   uri: string,
   position: LspPosition,
   newName: string,
-): Promise<AppliedDocumentEdits> {
-  return invoke<AppliedDocumentEdits>("request_lsp_rename", {
+): Promise<LspRenamePreview> {
+  return invoke<LspRenamePreview>("request_lsp_rename", {
     languageId,
     uri,
     position,
     newName,
   });
+}
+
+export function applyLspRename(planId: string): Promise<LspRenameApplyResult> {
+  return invoke<LspRenameApplyResult>("apply_lsp_rename", { planId });
+}
+
+export function cancelLspRename(planId: string): Promise<boolean> {
+  return invoke<boolean>("cancel_lsp_rename", { planId });
+}
+
+export function discardLspRename(planId: string): Promise<boolean> {
+  return invoke<boolean>("discard_lsp_rename", { planId });
 }
 
 export function requestLspFormatting(

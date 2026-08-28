@@ -138,6 +138,9 @@ pub fn run() {
             commands::lsp::request_lsp_definition,
             commands::lsp::request_lsp_references,
             commands::lsp::request_lsp_rename,
+            commands::lsp::apply_lsp_rename,
+            commands::lsp::cancel_lsp_rename,
+            commands::lsp::discard_lsp_rename,
             commands::lsp::request_lsp_formatting,
         ])
         .on_window_event(|window, event| {

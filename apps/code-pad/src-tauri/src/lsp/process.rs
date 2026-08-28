@@ -16,6 +16,8 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+#[cfg(unix)]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
@@ -31,6 +33,11 @@ use windows_job::WindowsJobObject;
 
 pub const DEFAULT_STDERR_CAPACITY: usize = 64 * 1024;
 pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+/// A cancellation is best effort, but it must not inherit an unbounded wait
+/// for the protocol writer. If the writer is wedged, the stream may contain a
+/// partial frame; terminating the child is safer than continuing to reuse a
+/// corrupt JSON-RPC channel.
+const ABORT_NOTIFICATION_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// An argv-only child command.  No shell string is ever accepted or expanded.
 #[derive(Debug, Clone)]
@@ -311,6 +318,38 @@ enum ChildCommand {
     Kill,
 }
 
+#[cfg(unix)]
+fn kill_process_group(process_group: libc::pid_t) {
+    // A negative pid targets the process group created for this LSP child. Do
+    // not ever send a group signal to the caller's own process group.
+    if process_group > 1 {
+        unsafe {
+            let _ = libc::kill(-process_group, libc::SIGKILL);
+        }
+    }
+}
+
+#[derive(Clone)]
+struct ProcessTreeCleanup {
+    #[cfg(windows)]
+    job: Arc<WindowsJobObject>,
+    #[cfg(unix)]
+    process_group: libc::pid_t,
+    #[cfg(unix)]
+    process_group_alive: Arc<AtomicBool>,
+}
+
+impl ProcessTreeCleanup {
+    fn terminate(&self) {
+        #[cfg(windows)]
+        let _ = self.job.terminate();
+        #[cfg(unix)]
+        if self.process_group_alive.swap(false, Ordering::AcqRel) {
+            kill_process_group(self.process_group);
+        }
+    }
+}
+
 struct ProcessInner {
     writer: Mutex<JsonRpcWriter<ChildStdin>>,
     pending: PendingRequests,
@@ -320,14 +359,12 @@ struct ProcessInner {
     messages: broadcast::Sender<IncomingMessage>,
     stderr: Arc<Mutex<BoundedStderr>>,
     stderr_events: broadcast::Sender<StderrEvent>,
-    #[cfg(windows)]
-    job: Arc<WindowsJobObject>,
+    cleanup: ProcessTreeCleanup,
 }
 
 impl Drop for ProcessInner {
     fn drop(&mut self) {
-        #[cfg(windows)]
-        let _ = self.job.terminate();
+        self.cleanup.terminate();
         let _ = self.child_commands.try_send(ChildCommand::Kill);
     }
 }
@@ -371,12 +408,25 @@ impl LspProcess {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
+        #[cfg(unix)]
+        command.process_group(0);
         #[cfg(windows)]
         {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             command.creation_flags(CREATE_NO_WINDOW);
         }
         let mut child = command.spawn().map_err(ProcessError::Spawn)?;
+        #[cfg(unix)]
+        let process_group = match child.id().and_then(|id| i32::try_from(id).ok()) {
+            Some(id) if id > 1 => id,
+            _ => {
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                return Err(ProcessError::Spawn(io::Error::other(
+                    "child process group unavailable",
+                )));
+            }
+        };
         #[cfg(windows)]
         let job = match WindowsJobObject::assign_to(&child) {
             Ok(job) => Arc::new(job),
@@ -404,6 +454,16 @@ impl LspProcess {
         let (messages, _) = broadcast::channel(64);
         let (stderr_events, _) = broadcast::channel(64);
         let stderr = Arc::new(Mutex::new(BoundedStderr::new(stderr_capacity)));
+        #[cfg(unix)]
+        let process_group_alive = Arc::new(AtomicBool::new(true));
+        let cleanup = ProcessTreeCleanup {
+            #[cfg(windows)]
+            job: Arc::clone(&job),
+            #[cfg(unix)]
+            process_group,
+            #[cfg(unix)]
+            process_group_alive: Arc::clone(&process_group_alive),
+        };
         let inner = Arc::new(ProcessInner {
             writer: Mutex::new(JsonRpcWriter::with_limits(stdin, frame_limits)),
             pending: PendingRequests::new(),
@@ -413,8 +473,7 @@ impl LspProcess {
             messages,
             stderr: Arc::clone(&stderr),
             stderr_events,
-            #[cfg(windows)]
-            job: Arc::clone(&job),
+            cleanup: cleanup.clone(),
         });
 
         spawn_stdout_task(
@@ -437,8 +496,7 @@ impl LspProcess {
             inner.state.clone(),
             inner.messages.clone(),
             inner.exit_notify.clone(),
-            #[cfg(windows)]
-            job,
+            cleanup,
         );
         Ok(Self { inner })
     }
@@ -513,22 +571,67 @@ impl LspProcess {
         cancellation: Option<RequestCancellation>,
     ) -> Result<Value, RequestError> {
         let (id, mut receiver) = self.inner.pending.register().await;
-        if let Err(error) = self
-            .write_message(JsonRpcMessage::request(id, method, params))
-            .await
+        if cancellation
+            .as_ref()
+            .is_some_and(RequestCancellation::is_cancelled)
         {
             let _ = self.inner.pending.cancel(id).await;
-            return Err(RequestError::Transport(process_error_transport(error)));
+            return Err(RequestError::Cancelled);
+        }
+        if timeout.is_zero() {
+            let _ = self.inner.pending.cancel(id).await;
+            return Err(RequestError::Timeout);
+        }
+
+        // The request deadline covers serialization, writer-lock contention,
+        // pipe backpressure, and the response wait. Previously the timeout
+        // started only after write_message completed, so a child that stopped
+        // reading stdin could pin the caller indefinitely.
+        let deadline = Instant::now() + timeout;
+        let write_future = self.write_message(JsonRpcMessage::request(id, method, params));
+        tokio::pin!(write_future);
+        let write_result: Result<Result<(), ProcessError>, RequestError> =
+            if let Some(cancellation) = cancellation.as_ref() {
+                tokio::select! {
+                    result = &mut write_future => Ok(result),
+                    _ = sleep(timeout) => Err(RequestError::Timeout),
+                    _ = cancellation.cancelled() => Err(RequestError::Cancelled),
+                }
+            } else {
+                match tokio::time::timeout(timeout, &mut write_future).await {
+                    Ok(result) => Ok(result),
+                    Err(_) => Err(RequestError::Timeout),
+                }
+            };
+        match write_result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                let _ = self.inner.pending.cancel(id).await;
+                return Err(RequestError::Transport(process_error_transport(error)));
+            }
+            Err(error) => {
+                // A timed-out/cancelled write may have emitted only part of a
+                // frame. Do not leave a potentially corrupted process alive
+                // for later requests.
+                let _ = self.inner.pending.cancel(id).await;
+                self.force_kill();
+                return Err(error);
+            }
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(self.abort_request(id, false).await);
         }
 
         let result = if let Some(cancellation) = cancellation {
             tokio::select! {
                 result = &mut receiver => map_pending_result(result),
-                _ = sleep(timeout) => Err(self.abort_request(id, false).await),
+                _ = sleep(remaining) => Err(self.abort_request(id, false).await),
                 _ = cancellation.cancelled() => Err(self.abort_request(id, true).await),
             }
         } else {
-            match tokio::time::timeout(timeout, &mut receiver).await {
+            match tokio::time::timeout(remaining, &mut receiver).await {
                 Ok(result) => map_pending_result(result),
                 Err(_) => Err(self.abort_request(id, false).await),
             }
@@ -538,9 +641,16 @@ impl LspProcess {
 
     async fn abort_request(&self, id: RequestId, cancelled: bool) -> RequestError {
         if self.inner.pending.cancel(id).await {
-            let _ = self
-                .notify("$/cancelRequest", Some(json!({ "id": id.value() })))
-                .await;
+            let notification = self.notify("$/cancelRequest", Some(json!({ "id": id.value() })));
+            match tokio::time::timeout(ABORT_NOTIFICATION_TIMEOUT, notification).await {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) | Err(_) => {
+                    // A partial/blocked cancellation notification makes the
+                    // stdio stream unsafe to reuse. The child command is
+                    // bounded and the wait task owns process-tree cleanup.
+                    self.force_kill();
+                }
+            }
         }
         if cancelled {
             RequestError::Cancelled
@@ -576,15 +686,31 @@ impl LspProcess {
             let response_timeout = deadline.saturating_duration_since(Instant::now());
             self.request("shutdown", None, response_timeout).await.err()
         };
-        let _ = self.notify("exit", None).await;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if !remaining.is_zero()
+            && tokio::time::timeout(remaining, self.notify("exit", None))
+                .await
+                .is_err()
         {
-            let mut writer = self.inner.writer.lock().await;
-            let _ = writer.shutdown().await;
+            self.force_kill();
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if !remaining.is_zero() {
+            let writer_shutdown = async {
+                let mut writer = self.inner.writer.lock().await;
+                let _ = writer.shutdown().await;
+            };
+            if tokio::time::timeout(remaining, writer_shutdown)
+                .await
+                .is_err()
+            {
+                self.force_kill();
+            }
         }
 
         let remaining = deadline.saturating_duration_since(Instant::now());
         if !self.wait_for_exit(remaining).await {
-            self.force_kill().await;
+            self.force_kill();
             let _ = self.wait_for_exit(Duration::from_millis(500)).await;
             return Err(ProcessError::ShutdownTimeout);
         }
@@ -608,8 +734,8 @@ impl LspProcess {
         is_finished(&self.state().await)
     }
 
-    async fn force_kill(&self) {
-        let _ = self.inner.child_commands.send(ChildCommand::Kill).await;
+    fn force_kill(&self) {
+        let _ = self.inner.child_commands.try_send(ChildCommand::Kill);
     }
 }
 
@@ -722,22 +848,35 @@ fn spawn_wait_task(
     state: Arc<Mutex<ProcessState>>,
     messages: broadcast::Sender<IncomingMessage>,
     exit_notify: Arc<Notify>,
-    #[cfg(windows)] job: Arc<WindowsJobObject>,
+    cleanup: ProcessTreeCleanup,
 ) {
     tokio::spawn(async move {
-        let status = tokio::select! {
-            result = child.wait() => result,
+        let (status, kill_requested) = tokio::select! {
+            result = child.wait() => (result, false),
             command = commands.recv() => {
-                if matches!(command, Some(ChildCommand::Kill)) {
-                    #[cfg(windows)]
-                    let _ = job.terminate();
+                let kill_requested = matches!(command, Some(ChildCommand::Kill));
+                if kill_requested {
+                    cleanup.terminate();
                     let _ = child.start_kill();
                 }
-                child.wait().await
+                // A closed command channel is not an explicit kill request.
+                // The child still gets reaped, but on Unix the post-exit
+                // process-group cleanup must remain enabled so descendants
+                // cannot survive after an unexpected owner/task shutdown.
+                (child.wait().await, kill_requested)
             }
         };
         #[cfg(windows)]
-        let _ = job.terminate();
+        let _ = kill_requested;
+        #[cfg(windows)]
+        cleanup.terminate();
+        #[cfg(unix)]
+        if !kill_requested {
+            // The leader can exit while descendants keep the group alive;
+            // clean that group once, but never again from Drop after the
+            // process group has been marked inactive.
+            cleanup.terminate();
+        }
         match status {
             Ok(status) => {
                 let code = status.code();

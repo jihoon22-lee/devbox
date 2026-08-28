@@ -26,6 +26,20 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
   multi-file picker로 reviewed dependency closure의 `.tgz`들을 선택해 exact size·SHA-256·lock
   integrity를 확인한다. 선택 set은 이미 검증된 cache와 결합해 설치할 수 있으며, 선택한 원본 경로는
   index·status·로그에 저장하거나 반환하지 않는다.
+  LSP 이름 변경은 요청과 적용을 분리한다. 서버가 반환한 text-only WorkspaceEdit를 작업 폴더
+  내부의 상대 경로·범위·before/after diff로 먼저 미리 보여주고, 사용자가 `전체 적용`을 승인한
+  뒤에만 저장한다. 적용 직전 각 파일의 mtime·크기·SHA-256을 다시 확인하며, 열린 dirty 문서,
+  손실 디코딩·읽기 전용 파일, 작업 폴더 밖 URI, resource operation은 거부한다. 여러 파일 중
+  하나라도 쓰기 또는 LSP 반영에 실패하면 app-local `0700` transaction 디렉터리의
+  identity/hash 검증 백업으로 이미 쓴 파일을 역순 되돌리고 파일별 결과를 표시한다.
+  취소·timeout과 서버 중단 시에도 pending plan을 폐기하며, journal recovery는 외부 변경
+  파일을 덮어쓰지 않는다. 미리보기의 before/after와 range payload는 각각 UTF-8
+  16KiB·전체 저장 결과는 정규화/인코딩 후 2MiB aggregate 안에서만 허용하며, UTF-16·CRLF
+  확장으로 이 상한을 넘으면 적용 전에 거부한다. 미리보기에는 절대 경로·서버 오류·credential이
+  포함되지 않으며, 서버가 반환한 전체 텍스트는 native pending plan에만 보관한다. Windows
+  drive/UNC 및 W3 long path는 canonical component 기준으로 상대 경로를 만들고, 적용·rollback
+  경계에서 final reparse point/symlink를 fail-closed로 거부한다. 적용 중 Ctrl/⌘+Escape와
+  `취소`가 먼저 도착해도 mirror flush가 끝난 뒤 native apply를 호출하지 않는다.
 
 ## 기술
 
@@ -34,7 +48,7 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
 - mermaid `securityLevel: "strict"`
 - LSP 관리 dialog는 header/footer를 고정하고 본문 하나만 scroll한다. 상태와 설치 목록에 별도 nested
   scroll을 만들지 않으며 viewport 안에서 최대 900px 높이를 사용한다
-- 파일 이름 변경은 같은 폴더의 단일 이름만 허용하고 기존 대상을 덮어쓰지 않는다. 삭제는 복구 불가·미저장 버퍼 손실을 명시적으로 확인하며, 두 작업 모두 mtime·크기·SHA-256이 열린 탭의 스냅샷과 일치할 때만 실행한다
+- 파일 이름 변경(탭 컨텍스트 메뉴)은 같은 폴더의 단일 이름만 허용하고 기존 대상을 덮어쓰지 않는다. 삭제는 복구 불가·미저장 버퍼 손실을 명시적으로 확인하며, 두 작업 모두 mtime·크기·SHA-256이 열린 탭의 스냅샷과 일치할 때만 실행한다. LSP의 여러 파일 내용 변경은 위의 별도 preview/rollback 경로를 사용한다.
 - clipboard IPC는 `allow-read-text`만 허용한다. 사용자가 편집기 메뉴의 붙여넣기를 고른 순간에만 plain text를 읽어 현재 CodeMirror selection에 삽입하며 history·background 수집은 하지 않는다
 
 ## 개발

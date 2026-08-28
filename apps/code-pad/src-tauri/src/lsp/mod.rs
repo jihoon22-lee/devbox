@@ -61,7 +61,8 @@ pub use installer::{
 pub use logs::{LanguageServerLog, LspLogEntry, LspLogLevel};
 pub use manager::{
     AppliedDocumentEdits, EditedDocument, LanguageServerStatus, LspDiagnosticsEvent, LspEvent,
-    LspManager, LspManagerError, LspStatusEvent,
+    LspManager, LspManagerError, LspStatusEvent, RenameApplyResult, RenameFileResult,
+    RenameFileStatus, RenamePreview, RenamePreviewFile, RenamePreviewRange, RenamedDocument,
 };
 pub use node_lock::{
     reviewed_node_lock, NodeDependencyLock, NodeLockError, NodePackageLock, NodePackageRef,

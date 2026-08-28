@@ -199,6 +199,11 @@ async fn handle_request(
                     "referencesProvider": {},
                     "diagnosticProvider": {}
                 }),
+                "no_sync" => json!({
+                    "positionEncoding": "utf-8",
+                    "renameProvider": { "prepareProvider": true },
+                    "documentFormattingProvider": true
+                }),
                 "stale_features"
                 | "supersede_features"
                 | "mutation_features"

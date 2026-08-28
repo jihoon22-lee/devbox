@@ -5,7 +5,10 @@ import App from "./App";
 import {
   changeLspDocument,
   closeLspDocument,
+  applyLspRename,
+  cancelLspRename,
   deleteFileAction,
+  discardLspRename,
   languageServerStatuses,
   listWorkspaceFiles,
   loadLspConfig,
@@ -30,7 +33,12 @@ import {
   validateEncoding,
   watchFile,
 } from "./api";
-import type { LanguageServerStatus, LspDiagnosticsEvent, LspStatusEvent } from "./types";
+import type {
+  LanguageServerStatus,
+  LspDiagnosticsEvent,
+  LspRenamePreview,
+  LspStatusEvent,
+} from "./types";
 
 const fileChangedHandlerRef: {
   current: ((event: { payload: { path: string; mtimeNanos: string; contentHash: string; size: number } }) => void) | null;
@@ -157,7 +165,10 @@ vi.mock("./api", () => ({
   requestLspFormatting: vi.fn().mockResolvedValue({ documents: [] }),
   requestLspHover: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: null, stale: false }),
   requestLspReferences: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false }),
-  requestLspRename: vi.fn().mockResolvedValue({ documents: [] }),
+  requestLspRename: vi.fn().mockResolvedValue({ planId: "", files: [] }),
+  applyLspRename: vi.fn(),
+  cancelLspRename: vi.fn().mockResolvedValue(false),
+  discardLspRename: vi.fn().mockResolvedValue(false),
   renameFileAction: vi.fn(),
   revealFileAction: vi.fn().mockResolvedValue(undefined),
   restartLanguageServer: vi.fn().mockResolvedValue(undefined),
@@ -186,6 +197,9 @@ const requestLspDefinitionMock = vi.mocked(requestLspDefinition);
 const requestLspFormattingMock = vi.mocked(requestLspFormatting);
 const requestLspReferencesMock = vi.mocked(requestLspReferences);
 const requestLspRenameMock = vi.mocked(requestLspRename);
+const applyLspRenameMock = vi.mocked(applyLspRename);
+const cancelLspRenameMock = vi.mocked(cancelLspRename);
+const discardLspRenameMock = vi.mocked(discardLspRename);
 const renameFileActionMock = vi.mocked(renameFileAction);
 const renderPreviewMock = vi.mocked(renderPreview);
 const revealFileActionMock = vi.mocked(revealFileAction);
@@ -352,7 +366,10 @@ beforeEach(() => {
   requestLspDefinitionMock.mockReset().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false });
   requestLspFormattingMock.mockReset().mockResolvedValue({ documents: [] });
   requestLspReferencesMock.mockReset().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false });
-  requestLspRenameMock.mockReset().mockResolvedValue({ documents: [] });
+  requestLspRenameMock.mockReset().mockResolvedValue({ planId: "", files: [] });
+  applyLspRenameMock.mockReset();
+  cancelLspRenameMock.mockReset().mockResolvedValue(false);
+  discardLspRenameMock.mockReset().mockResolvedValue(false);
   renameFileActionMock.mockReset();
   renderPreviewMock.mockReset().mockResolvedValue({
     kind: "markdown",
@@ -920,7 +937,31 @@ describe("App editor shell operations", () => {
       documents: [{ uri: "file:///tmp/one.ts", version: 2, text: "formatted" }],
     });
     requestLspRenameMock.mockResolvedValue({
-      documents: [{ uri: "file:///tmp/one.ts", version: 3, text: "renamed" }],
+      planId: "rename-1",
+      files: [{
+        path: "one.ts",
+        ranges: [{
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
+          newText: "renamed",
+        }],
+        before: "formatted",
+        after: "renamed",
+      }],
+    });
+    applyLspRenameMock.mockResolvedValue({
+      planId: "rename-1",
+      success: true,
+      rolledBack: false,
+      files: [{
+        path: "one.ts",
+        status: "applied",
+        mtimeNanos: "2",
+        size: 7,
+        contentHash: "hash-2",
+        error: null,
+      }],
+      documents: [{ path: "one.ts", version: 3, text: "renamed" }],
+      error: null,
     });
     const rendered = await openOne();
     const prompt = vi.spyOn(window, "prompt").mockReturnValue("renamed");
@@ -928,32 +969,61 @@ describe("App editor shell operations", () => {
     fireEvent.click(rendered.getByRole("button", { name: "포맷" }));
     await waitFor(() => expect(rendered.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("formatted"));
     fireEvent.click(rendered.getByRole("button", { name: "이름 변경" }));
+    expect(await rendered.findByRole("dialog", { name: "여러 파일 이름 변경 미리보기" })).toBeTruthy();
+    expect(rendered.getByText("one.ts")).toBeTruthy();
+    fireEvent.click(rendered.getByRole("button", { name: /전체 적용/ }));
     await waitFor(() => expect(rendered.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("renamed"));
 
     expect(saveFileMock).not.toHaveBeenCalled();
+    expect(applyLspRenameMock).toHaveBeenCalledWith("rename-1");
     prompt.mockRestore();
   });
 
-  it("rejects a conflicting rename without advancing the LSP mirror", async () => {
+  it("reports a conflicting rename without advancing the LSP mirror", async () => {
     configureDiagnosticsApp();
     changeLspDocumentMock.mockResolvedValue({
       uri: "file:///tmp/one.ts",
       version: 2,
       contentChanges: [{ text: "before!" }],
     });
-    const rename = deferred<{ documents: Array<{ uri: string; version: number; text: string }> }>();
-    requestLspRenameMock.mockReturnValue(rename.promise);
+    requestLspRenameMock.mockResolvedValue({
+      planId: "rename-1",
+      files: [{
+        path: "one.ts",
+        ranges: [{
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
+          newText: "renamed",
+        }],
+        before: "before",
+        after: "renamed",
+      }],
+    });
+    applyLspRenameMock.mockResolvedValue({
+      planId: "rename-1",
+      success: false,
+      rolledBack: false,
+      files: [{
+        path: "one.ts",
+        status: "conflict",
+        mtimeNanos: null,
+        size: null,
+        contentHash: null,
+        error: "적용 전 파일이 변경되었습니다",
+      }],
+      documents: [],
+      error: "적용 전 파일이 변경되어 이름 변경을 중단했습니다",
+    });
     const rendered = await openOne();
     const prompt = vi.spyOn(window, "prompt").mockReturnValue("renamed");
     fireEvent.click(rendered.getByRole("button", { name: "이름 변경" }));
     await waitFor(() => expect(requestLspRenameMock).toHaveBeenCalledTimes(1));
+    expect(await rendered.findByRole("dialog", { name: "여러 파일 이름 변경 미리보기" })).toBeTruthy();
 
     fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
-    rename.resolve({
-      documents: [{ uri: "file:///tmp/one.ts", version: 3, text: "renamed" }],
-    });
-    await waitFor(() => expect(rendered.getByRole("alert").textContent).toContain("문서가 변경되었습니다"));
+    fireEvent.click(rendered.getByRole("button", { name: /전체 적용/ }));
+    await waitFor(() => expect(rendered.getByRole("dialog").textContent).toContain("충돌"));
     expect(rendered.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before!");
+    expect(applyLspRenameMock).toHaveBeenCalledWith("rename-1");
     await waitFor(() => expect(changeLspDocumentMock).toHaveBeenCalledWith(
       "typescript",
       "file:///tmp/one.ts",
@@ -961,11 +1031,82 @@ describe("App editor shell operations", () => {
       true,
     ));
 
-    // The rejected version-3 mutation must not make a version-2 diagnostic
-    // stale after the user's local edit has already advanced the mirror.
+    // The rejected disk mutation must not make a version-2 diagnostic stale
+    // after the user's local edit has already advanced the mirror.
     lspDiagnosticsHandlerRef.current?.({ payload: diagnosticEvent(2, "after-conflict") });
     const diagnostics = rendered.getAllByTestId(/^lsp-diagnostics-/u)[0];
     await waitFor(() => expect(diagnostics.textContent).toBe("after-conflict"));
+    prompt.mockRestore();
+  });
+
+  it("discards a rename preview when the active document changes while the request is pending", async () => {
+    configureDiagnosticsApp();
+    const renameResponse = deferred<LspRenamePreview>();
+    requestLspRenameMock.mockReturnValue(renameResponse.promise);
+    changeLspDocumentMock.mockResolvedValue({
+      uri: "file:///tmp/one.ts",
+      version: 2,
+      contentChanges: [{ text: "before!" }],
+    });
+    const rendered = await openOne();
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("renamed");
+
+    fireEvent.click(rendered.getByRole("button", { name: "이름 변경" }));
+    await waitFor(() => expect(requestLspRenameMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+    renameResponse.resolve({
+      planId: "rename-stale",
+      files: [{
+        path: "one.ts",
+        ranges: [],
+        before: "before",
+        after: "renamed",
+      }],
+    });
+
+    await waitFor(() => expect(discardLspRenameMock).toHaveBeenCalledWith("rename-stale"));
+    expect(rendered.queryByRole("dialog", { name: "여러 파일 이름 변경 미리보기" })).toBeNull();
+    expect(rendered.getByRole("alert").textContent).toContain("폐기했습니다");
+    prompt.mockRestore();
+  });
+
+  it("does not apply a rename when cancellation wins during the mirror flush", async () => {
+    configureDiagnosticsApp();
+    const changeResponse = deferred<{
+      uri: string;
+      version: number;
+      contentChanges: Array<{ text: string }>;
+    }>();
+    changeLspDocumentMock.mockReturnValue(changeResponse.promise);
+    requestLspRenameMock.mockResolvedValue({
+      planId: "rename-cancelled",
+      files: [{
+        path: "one.ts",
+        ranges: [],
+        before: "before",
+        after: "renamed",
+      }],
+    });
+    discardLspRenameMock.mockResolvedValue(true);
+    const rendered = await openOne();
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("renamed");
+
+    fireEvent.click(rendered.getByRole("button", { name: "이름 변경" }));
+    expect(await rendered.findByRole("dialog", { name: "여러 파일 이름 변경 미리보기" })).toBeTruthy();
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+    await waitFor(() => expect(changeLspDocumentMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(rendered.getByRole("button", { name: /전체 적용/u }));
+    fireEvent.click(rendered.getByRole("button", { name: "취소" }));
+    expect(cancelLspRenameMock).toHaveBeenCalledWith("rename-cancelled");
+    changeResponse.resolve({
+      uri: "file:///tmp/one.ts",
+      version: 2,
+      contentChanges: [{ text: "before!" }],
+    });
+
+    await waitFor(() => expect(discardLspRenameMock).toHaveBeenCalledWith("rename-cancelled"));
+    expect(applyLspRenameMock).not.toHaveBeenCalled();
+    expect(rendered.queryByRole("dialog", { name: "여러 파일 이름 변경 미리보기" })).toBeNull();
     prompt.mockRestore();
   });
 

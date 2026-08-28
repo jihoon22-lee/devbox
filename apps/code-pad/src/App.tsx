@@ -20,6 +20,7 @@ import {
   watchFile,
 } from "./api";
 import DocHost from "./components/DocHost";
+import ChangeSetPreview, { type ChangeSetItem } from "./components/ChangeSetPreview";
 import PreviewPane from "./components/PreviewPane";
 import ProblemsPanel from "./components/ProblemsPanel";
 import QuickOpen from "./components/QuickOpen";
@@ -55,6 +56,8 @@ import type {
   SessionState,
   WorkspaceFile,
   EditedLspDocument,
+  LspRenameApplyResult,
+  LspRenamePreview,
   LspDiagnosticsEvent,
   LspStatusEvent,
   OpenRequest,
@@ -93,6 +96,39 @@ function isPreviewable(path: string): boolean {
 function fileNameForPath(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
   return parts[parts.length - 1] ?? path;
+}
+
+function relativeWorkspacePath(path: string, workspaceRoot: string): string | null {
+  const normalize = (value: string) => {
+    const slashValue = value.replace(/\\/gu, "/");
+    const prefix = slashValue.startsWith("//") ? "//" : "";
+    const normalized = `${prefix}${slashValue.slice(prefix.length).replace(/\/{2,}/gu, "/")}`;
+    if (normalized === "/" || /^[A-Za-z]:\/$/u.test(normalized)) return normalized;
+    return normalized.replace(/\/$/u, "");
+  };
+  const normalizedPath = normalize(path);
+  const normalizedRoot = normalize(workspaceRoot);
+  const windowsPath = /^[A-Za-z]:\//u.test(normalizedPath)
+    || /^[A-Za-z]:\//u.test(normalizedRoot)
+    || normalizedPath.startsWith("//")
+    || normalizedRoot.startsWith("//");
+  const candidate = windowsPath ? normalizedPath.toLowerCase() : normalizedPath;
+  const root = windowsPath ? normalizedRoot.toLowerCase() : normalizedRoot;
+  if (candidate === root) return "";
+  const prefix = root === "/" || /^[a-z]:\/$/u.test(root) ? root : `${root}/`;
+  if (!candidate.startsWith(prefix)) return null;
+  return normalizedPath.slice(prefix.length);
+}
+
+function renameFileStatusLabel(status: LspRenameApplyResult["files"][number]["status"]): string {
+  switch (status) {
+    case "applied": return "적용됨";
+    case "rolledBack": return "되돌림";
+    case "failed": return "실패";
+    case "notApplied": return "미적용";
+    case "conflict": return "충돌";
+    case "rollbackFailed": return "되돌리기 실패";
+  }
 }
 
 function snapshotMatches(
@@ -155,7 +191,8 @@ export default function App() {
   const [navForward, setNavForward] = useState<NavEntry[]>([]);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryChecked, setRecoveryChecked] = useState(false);
-  const [lspSync] = useState(() => new LspDocumentSync());  const [lspSyncState, setLspSyncState] = useState(lspSync.getState());
+  const [lspSync] = useState(() => new LspDocumentSync());
+  const [lspSyncState, setLspSyncState] = useState(lspSync.getState());
   const [lspDiagnostics, setLspDiagnostics] = useState<Record<DocId, import("@codemirror/lint").Diagnostic[]>>({});
   const [lspNavigation, setLspNavigation] = useState<{
     kind: "definition" | "references";
@@ -163,6 +200,32 @@ export default function App() {
     rejected: number;
   } | null>(null);
   const [lspBusy, setLspBusy] = useState(false);
+  const [renamePreview, setRenamePreview] = useState<{
+    preview: LspRenamePreview;
+    revisions: Map<DocId, number>;
+    workspaceRoot: string;
+  } | null>(null);
+  const [renameResult, setRenameResult] = useState<LspRenameApplyResult | null>(null);
+  const [renameApplyBusy, setRenameApplyBusy] = useState(false);
+  const renameApplyBusyRef = useRef(false);
+  // `cancelRename` can race the pre-apply mirror flush, before the native
+  // transaction has registered its cancellation token. Keep an explicit UI
+  // intent bit so that a late flush cannot turn a cancelled approval into a
+  // disk mutation.
+  const renameCancelRequestedRef = useRef(false);
+  renameApplyBusyRef.current = renameApplyBusy;
+
+  const discardRenamePreview = () => {
+    const planId = renamePreview?.preview.planId;
+    if (planId) void lspSync.discardRename(planId);
+    setRenamePreview(null);
+  };
+
+  const renameApplyGuard = () => {
+    if (!renameApplyBusyRef.current) return false;
+    setError("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
+    return true;
+  };
 
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -179,6 +242,7 @@ export default function App() {
   const sessionSaveInFlightRef = useRef<Promise<void> | null>(null);
   const watchOperationRef = useRef(new Map<string, Promise<void>>());
   const externalChangeVersionRef = useRef(new Map<string, number>());
+  const workspaceChangeTokenRef = useRef(0);
   const lspFeatureRequestRef = useRef(0);
   const lspBusyRef = useRef(false);
   const quickOpenRef = useRef<() => void>(() => undefined);
@@ -340,12 +404,24 @@ export default function App() {
     });
 
   const openPath = async (path: string, metadata?: SessionState["docs"][number]) => {
+    if (renameApplyGuard()) {
+      throw new Error("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
+    }
     const opened = await openFile(path, null);
+    if (renameApplyGuard()) {
+      throw new Error("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
+    }
     // The document registry is global across both views. Reopening an
     // already-open path only activates its existing entry; it must not add a
     // second native watch reference that a single close could not release.
+    let watchRegistered = false;
     if (!stateRef.current.docs.some((doc) => doc.path === opened.path)) {
       await registerWatch(opened.path);
+      watchRegistered = true;
+    }
+    if (renameApplyGuard()) {
+      if (watchRegistered) await unregisterWatch(opened.path);
+      throw new Error("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
     }
     const alreadyOpen = stateRef.current.docs.some((doc) => doc.path === opened.path);
     const doc = docFromOpenedFile(opened, metadata);
@@ -355,7 +431,7 @@ export default function App() {
   };
 
   const handleOpen = () => {
-    if (!hydrated) return;
+    if (!hydrated || renameApplyGuard()) return;
     const path = pathInput.trim();
     if (!path) {
       setError("열 파일 경로를 입력하세요.");
@@ -368,6 +444,7 @@ export default function App() {
   };
 
   const saveDocument = async (docId: DocId): Promise<SaveOutcome | undefined> => {
+    if (renameApplyBusyRef.current) return undefined;
     const doc = stateRef.current.docs.find((item) => item.id === docId);
     if (!doc) {
       setError("저장할 문서가 없습니다.");
@@ -396,6 +473,9 @@ export default function App() {
       ),
     );
     if (!saved) return undefined;
+    if (renameApplyBusyRef.current) {
+      throw new Error("이름 변경 적용이 시작되어 저장 결과를 반영하지 않았습니다.");
+    }
     dispatchAction({
       type: "saveDoc",
       docId,
@@ -418,7 +498,7 @@ export default function App() {
   };
 
   const handleSave = () => {
-    if (!hydrated) return;
+    if (!hydrated || renameApplyBusyRef.current) return;
     if (!activeDoc) {
       setError("저장할 문서가 없습니다.");
       return;
@@ -436,7 +516,7 @@ export default function App() {
   };
 
   const requestCloseDocuments = (docIds: readonly DocId[]) => {
-    if (!hydrated) return;
+    if (!hydrated || renameApplyBusyRef.current) return;
     const requested = [...new Set(docIds)]
       .map((docId) => stateRef.current.docs.find((doc) => doc.id === docId))
       .filter((doc): doc is Doc => doc !== undefined);
@@ -456,13 +536,13 @@ export default function App() {
   };
 
   const handleDiscardClose = () => {
-    if (!pendingCloseDocId) return;
+    if (!pendingCloseDocId || renameApplyBusyRef.current) return;
     removeDocument(pendingCloseDocId);
     advanceCloseQueue(pendingCloseDocId);
   };
 
   const handleSaveAndClose = () => {
-    if (!pendingCloseDocId) return;
+    if (!pendingCloseDocId || renameApplyBusyRef.current) return;
     const docId = pendingCloseDocId;
     void (async () => {
       const outcome = await saveDocument(docId);
@@ -496,7 +576,9 @@ export default function App() {
     capability: keyof NonNullable<ReturnType<LspDocumentSync["statusForDocument"]>>["capabilities"],
   ) => {
     if (!docId) return false;
-    return Boolean(lspSync.statusForDocument(docId)?.capabilities[capability]);
+    const status = lspSync.statusForDocument(docId);
+    if (capability === "rename" && status?.capabilities.syncKind == null) return false;
+    return Boolean(status?.capabilities[capability]);
   };
 
   const lspCapability = (capability: keyof NonNullable<ReturnType<LspDocumentSync["statusForDocument"]>>["capabilities"]) =>
@@ -519,6 +601,7 @@ export default function App() {
   };
 
   const openLspLocation = async (target: import("./types").LspLocationTarget) => {
+    if (renameApplyGuard()) return;
     const path = pathFromFileUri(target.uri);
     if (!path) {
       setError("LSP가 파일이 아닌 탐색 대상을 반환했습니다.");
@@ -539,6 +622,7 @@ export default function App() {
     });
   };
   const handleProblemsNavigate = async (docId: string, offset: number) => {
+    if (renameApplyGuard()) return;
     const doc = stateRef.current.docs.find((d) => d.id === docId);
     if (!doc) return;
     if (activeDoc) {
@@ -550,6 +634,7 @@ export default function App() {
   };
 
   const navigateTo = async (entry: NavEntry) => {
+    if (renameApplyGuard()) return;
     const doc = stateRef.current.docs.find((d) => d.id === entry.docId);
     if (doc) {
       dispatchAction({ type: "setCursor", docId: entry.docId, cursor: entry.cursor });
@@ -588,6 +673,7 @@ export default function App() {
     docId: DocId | null = activeDoc?.id ?? null,
     cursor?: number,
   ) => {
+    if (renameApplyBusyRef.current) return;
     const sourceDoc = stateRef.current.docs.find((doc) => doc.id === docId);
     if (!sourceDoc || !lspCapabilityFor(sourceDoc.id, kind)) return;
     const requestId = ++lspFeatureRequestRef.current;
@@ -628,19 +714,160 @@ export default function App() {
     });
   };
 
+  const applyLspRenameResult = (
+    result: LspRenameApplyResult,
+    revisions: Map<DocId, number>,
+    expectedWorkspaceRoot: string,
+  ) => {
+    if (stateRef.current.workspaceFolder !== expectedWorkspaceRoot) {
+      throw new Error("작업 폴더가 변경되어 이름 변경 결과를 적용하지 않았습니다.");
+    }
+    if (!result.success) {
+      setRenameResult(result);
+      setRenamePreview(null);
+      return;
+    }
+    const workspaceRoot = stateRef.current.workspaceFolder;
+    if (!workspaceRoot) throw new Error("이름 변경 결과의 작업 폴더가 없습니다.");
+    const documents = result.documents.map((edited) => {
+      const doc = stateRef.current.docs.find((item) =>
+        relativeWorkspacePath(item.path, workspaceRoot) === edited.path,
+      );
+      const docId = doc?.id;
+      if (!docId) throw new Error("이름 변경 결과가 열려 있지 않은 문서를 반환했습니다.");
+      if (!doc || doc.revision !== revisions.get(docId)) {
+        throw new Error("이름 변경을 적용하는 동안 문서가 변경되었습니다. 다시 시도하세요.");
+      }
+      const file = result.files.find((item) => item.path === edited.path && item.status === "applied");
+      if (!file || file.mtimeNanos === null || file.size === null || file.contentHash === null) {
+        throw new Error("이름 변경 결과의 파일 스냅샷이 없습니다.");
+      }
+      const uri = lspSync.documentUri(docId);
+      if (!uri) throw new Error("이름 변경 결과의 LSP 문서가 열려 있지 않습니다.");
+      return {
+        ...edited,
+        docId,
+        uri,
+        mtimeNanos: file.mtimeNanos,
+        size: file.size,
+        contentHash: file.contentHash,
+      };
+    });
+    const before = stateRef.current;
+    const next = dispatchAction({
+      type: "applyLspRename",
+      documents,
+      expectedRevisions: Object.fromEntries(revisions),
+    });
+    if (next === before) {
+      throw new Error("이름 변경을 적용하는 동안 문서가 변경되었습니다. 다시 시도하세요.");
+    }
+    lspSync.applyRenameDocuments(result.documents, true);
+    for (const file of result.files) {
+      if (file.status !== "applied") continue;
+      const document = stateRef.current.docs.find((candidate) =>
+        relativeWorkspacePath(candidate.path, workspaceRoot) === file.path,
+      );
+      if (document) removeExternalChange(document.path);
+    }
+    setRenamePreview(null);
+    setRenameResult(result);
+  };
+
+  const applyPendingRename = () => {
+    const pending = renamePreview;
+    if (!pending || renameApplyBusyRef.current) return;
+    if (busyRef.current) {
+      setError("진행 중인 파일 작업이 끝난 뒤 이름 변경을 적용하세요.");
+      return;
+    }
+    renameCancelRequestedRef.current = false;
+    renameApplyBusyRef.current = true;
+    setRenameApplyBusy(true);
+    void runLspOperation(async () => {
+      // A local edit may still be queued behind the editor event. Let the
+      // mirror observe it before the native plan is consumed, otherwise the
+      // disk commit could race a just-typed change.
+      await lspSync.flush();
+      if (renameCancelRequestedRef.current) {
+        // The native plan is still pending until applyRename is called. Drop
+        // it explicitly so cancellation during flush cannot be converted into
+        // an approval after the user has already pressed Cancel.
+        await lspSync.discardRename(pending.preview.planId);
+        return undefined;
+      }
+      const result = await lspSync.applyRename(pending.preview.planId);
+      applyLspRenameResult(result, pending.revisions, pending.workspaceRoot);
+      return result;
+    }).then((result) => {
+      // A native transport failure consumes the opaque plan before returning
+      // the error. Do not leave an approval dialog whose handle can never be
+      // applied again.
+      if (!result) {
+        setRenamePreview((current) => (
+          current?.preview.planId === pending.preview.planId ? null : current
+        ));
+      }
+    }).finally(() => {
+      renameCancelRequestedRef.current = false;
+      renameApplyBusyRef.current = false;
+      setRenameApplyBusy(false);
+    });
+  };
+
+  const cancelPendingRename = () => {
+    const planId = renamePreview?.preview.planId;
+    if (!planId) return;
+    if (renameApplyBusyRef.current) {
+      renameCancelRequestedRef.current = true;
+      void lspSync.cancelRename(planId);
+      return;
+    }
+    discardRenamePreview();
+  };
+
   const handleLspRename = () => {
-    if (!activeDoc || !lspCapability("rename")) return;
+    if (!activeDoc || !lspCapability("rename") || renamePreview) return;
     const requestedName = window.prompt("새 이름", "");
     if (!requestedName?.trim()) return;
-    const snapshots = new Map(stateRef.current.docs.map((doc) => [doc.id, doc.revision]));
+    const requestedDocumentId = activeDoc.id;
+    const requestedCursor = activeDoc.cursor;
+    const requestedRevision = activeDoc.revision;
+    const requestedWorkspaceRoot = stateRef.current.workspaceFolder;
+    const requestedWorkspaceChangeToken = workspaceChangeTokenRef.current;
+    if (!requestedWorkspaceRoot) {
+      setError("이름 변경을 사용할 작업 폴더가 없습니다.");
+      return;
+    }
+    const revisions = new Map(stateRef.current.docs.map((doc) => [doc.id, doc.revision]));
     void runLspOperation(async () => {
-      const result = await lspSync.requestRename(activeDoc.id, activeDoc.cursor, requestedName.trim());
-      if (result) applyLspEdits(result, snapshots);
+      const preview = await lspSync.requestRename(
+        requestedDocumentId,
+        requestedCursor,
+        requestedName.trim(),
+      );
+      if (!preview || preview.files.length === 0) {
+        setError("LSP가 적용할 이름 변경을 반환하지 않았습니다.");
+        return;
+      }
+      const current = stateRef.current.docs.find((doc) => doc.id === requestedDocumentId);
+      if (
+        stateRef.current.workspaceFolder !== requestedWorkspaceRoot
+        || workspaceChangeTokenRef.current !== requestedWorkspaceChangeToken
+        || !current
+        || current.revision !== requestedRevision
+      ) {
+        await lspSync.discardRename(preview.planId);
+        setError("문서 또는 작업 폴더가 변경되어 이름 변경 미리보기를 폐기했습니다.");
+        return;
+      }
+      setRenameResult(null);
+      setRenamePreview({ preview, revisions, workspaceRoot: requestedWorkspaceRoot });
     });
   };
 
   const handleLspFormatting = () => {
-    if (!activeDoc || !lspCapability("formatting")) return;
+    if (renameApplyBusyRef.current || !activeDoc || !lspCapability("formatting")) return;
     const snapshots = new Map(stateRef.current.docs.map((doc) => [doc.id, doc.revision]));
     void runLspOperation(async () => {
       const result = await lspSync.requestFormatting(activeDoc.id);
@@ -649,7 +876,7 @@ export default function App() {
   };
 
   const handleLspRestart = () => {
-    if (!activeDoc) return;
+    if (renameApplyBusyRef.current || !activeDoc) return;
     const status = lspSync.statusForDocument(activeDoc.id);
     if (status) void runLspOperation(() => lspSync.restart(status.languageId));
   };
@@ -705,6 +932,7 @@ export default function App() {
   };
 
   const handleLineEndingChange = (docId: DocId, lineEnding: LineEnding) => {
+    if (renameApplyBusyRef.current) return;
     const doc = stateRef.current.docs.find((item) => item.id === docId);
     if (doc?.readOnly) {
       setError("읽기 전용 문서는 저장 형식을 바꿀 수 없습니다.");
@@ -714,6 +942,7 @@ export default function App() {
   };
 
   const handleEncodingConversion = (docId: DocId, encoding: Encoding) => {
+    if (renameApplyBusyRef.current) return;
     const doc = stateRef.current.docs.find((item) => item.id === docId);
     if (!doc) return;
     if (doc.readOnly) {
@@ -741,10 +970,16 @@ export default function App() {
   };
 
   const reopenWithEncoding = async (docId: DocId, encoding: Encoding): Promise<boolean> => {
+    if (renameApplyBusyRef.current) {
+      throw new Error("이름 변경 적용이 끝난 뒤 인코딩을 다시 열 수 있습니다.");
+    }
     const before = stateRef.current.docs.find((doc) => doc.id === docId);
     if (!before) return false;
     const expectedChangeVersion = externalChangeVersionRef.current.get(before.path);
     const opened = await openFile(before.path, encoding);
+    if (renameApplyBusyRef.current) {
+      throw new Error("이름 변경이 시작되어 인코딩 다시 열기 결과를 반영하지 않았습니다.");
+    }
     const latest = stateRef.current.docs.find((doc) => doc.id === docId);
     // Explicit reopen is intentionally transactional. A response arriving
     // after another edit must not discard that edit or its metadata.
@@ -767,6 +1002,7 @@ export default function App() {
   };
 
   const requestEncodingReopen = (docId: DocId, encoding: Encoding) => {
+    if (renameApplyBusyRef.current) return;
     const doc = stateRef.current.docs.find((item) => item.id === docId);
     if (!doc) return;
     if (doc.dirty) {
@@ -785,7 +1021,7 @@ export default function App() {
   };
 
   const handleOpenFromQuickOpen = (path: string) => {
-    if (!hydrated) return;
+    if (!hydrated || renameApplyGuard()) return;
     setQuickOpen(false);
     void runFileOperation(async () => {
       await openPath(path);
@@ -879,6 +1115,7 @@ export default function App() {
     docId: DocId,
     action: TabContextAction,
   ) => {
+    if (renameApplyBusyRef.current) return;
     const current = stateRef.current;
     const doc = current.docs.find((candidate) => candidate.id === docId);
     if (!doc) return;
@@ -904,8 +1141,18 @@ export default function App() {
   // Shared by the toolbar "작업 폴더" button and applink `workspace` targets
   // (§1.4) — both open a folder as the workspace through the same path.
   const setWorkspaceRoot = async (path: string) => {
+    if (renameApplyBusyRef.current) {
+      setError("이름 변경 적용이 끝난 뒤 작업 폴더를 변경할 수 있습니다.");
+      return;
+    }
+    const workspaceChangeToken = ++workspaceChangeTokenRef.current;
+    discardRenamePreview();
+    setRenameResult(null);
     const root = await canonicalizeWorkspace(path);
     const listing = await listWorkspaceFiles(root);
+    if (renameApplyGuard() || workspaceChangeToken !== workspaceChangeTokenRef.current) {
+      throw new Error("이름 변경 적용이 끝난 뒤 작업 폴더를 변경할 수 있습니다.");
+    }
     dispatchAction({ type: "setWorkspace", workspaceFolder: root });
     void lspSync.setWorkspace(root);
     setWorkspaceFiles(listing.files);
@@ -914,7 +1161,7 @@ export default function App() {
   };
 
   const handleSetWorkspace = () => {
-    if (!hydrated) return;
+    if (!hydrated || renameApplyGuard()) return;
     const path = pathInput.trim();
     if (!path) {
       setError("작업 폴더 경로를 입력하세요.");
@@ -943,7 +1190,7 @@ export default function App() {
   };
 
   const handleQuickOpen = () => {
-    if (!hydrated) return;
+    if (!hydrated || renameApplyGuard()) return;
     setQuickOpen(true);
     if (state.workspaceFolder && workspaceListingRoot !== state.workspaceFolder) {
       void loadWorkspaceSnapshot(state.workspaceFolder).catch((cause) => {
@@ -957,6 +1204,7 @@ export default function App() {
   quickOpenRef.current = handleQuickOpen;
 
   const reloadExternallyChanged = (path: string) => {
+    if (renameApplyBusyRef.current) return;
     const before = stateRef.current.docs.find((doc) => doc.path === path);
     if (!before) {
       removeExternalChange(path);
@@ -969,7 +1217,7 @@ export default function App() {
       const current = stateRef.current.docs.find((doc) => doc.path === path);
       // An explicit reload is allowed to discard the dirty buffer, but never
       // clobbers an edit made while the asynchronous open was in flight.
-      if (!current || !snapshotMatches(current, expected)) {
+      if (renameApplyBusyRef.current || !current || !snapshotMatches(current, expected)) {
         enqueueExternalChange(path);
         return;
       }
@@ -1056,6 +1304,13 @@ export default function App() {
     let disposed = false;
     let unlisten: (() => void) | undefined;
     const handleEvent = (payload: FileChangedEvent) => {
+      if (renameApplyBusyRef.current) {
+        // The native transaction owns its snapshot boundary while applying.
+        // Queue watcher evidence without replacing the editor buffer; a
+        // successful result clears entries for its committed paths below.
+        enqueueExternalChange(payload.path);
+        return;
+      }
       const current = stateRef.current.docs.find((doc) => doc.path === payload.path);
       if (!current) return;
       if (
@@ -1075,7 +1330,7 @@ export default function App() {
           const latest = stateRef.current.docs.find((doc) => doc.path === payload.path);
           // Recheck every in-memory condition immediately before applying the
           // response. The user may have typed while open_file was pending.
-          if (!latest || !snapshotMatches(latest, expected)) {
+          if (renameApplyBusyRef.current || !latest || !snapshotMatches(latest, expected)) {
             enqueueExternalChange(payload.path);
             return;
           }
@@ -1259,6 +1514,7 @@ export default function App() {
           quickOpenRef.current();
         }
       } else if (key === "h") {
+        if (renameApplyBusyRef.current) return;
         const current = activeDocForState(stateRef.current);
         const command = current ? replaceCommandsRef.current.get(current.id) : undefined;
         if (command) {
@@ -1470,8 +1726,10 @@ export default function App() {
             views={state.views}
             activeDocByView={state.activeDocByView}
             split={state.split}
+            renameApplyBusy={renameApplyBusy}
             fontSize={(13 * zoom) / 100}
             onChange={(docId, text) => {
+              if (renameApplyBusyRef.current) return;
               const before = stateRef.current.docs.find((doc) => doc.id === docId);
               dispatchAction({ type: "setDocText", docId, text });
               const latest = stateRef.current.docs.find((doc) => doc.id === docId);
@@ -1581,6 +1839,71 @@ export default function App() {
                 변경 내용 버리고 다시 열기
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {(renamePreview || renameResult) && (
+        <div className="modal-backdrop" role="presentation">
+          <div
+            className="rename-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="여러 파일 이름 변경 미리보기"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancelPendingRename();
+                if (!renameApplyBusy) setRenameResult(null);
+              }
+            }}
+          >
+            {renamePreview && (
+              <>
+                <h2>여러 파일 이름 변경 미리보기</h2>
+                <p className="rename-note">
+                  변경 범위와 위치를 확인한 뒤 적용하세요. 모든 파일은 적용 직전에 mtime·크기·SHA-256을 다시 확인하며,
+                  하나라도 실패하면 이미 바뀐 파일을 백업으로 되돌립니다.
+                </p>
+                <ChangeSetPreview
+                  items={renamePreview.preview.files.map((file): ChangeSetItem => ({
+                    path: file.path,
+                    before: file.before,
+                    after: file.after,
+                    meta: file.ranges.map(({ range }) => `${range.start.line + 1}:${range.start.character + 1}–${range.end.line + 1}:${range.end.character + 1}`).join(", "),
+                  }))}
+                  title="LSP 이름 변경"
+                  approveLabel="전체 적용"
+                  selectable={false}
+                  disabled={renameApplyBusy}
+                  cancelDisabled={false}
+                  onApprove={() => applyPendingRename()}
+                  onCancel={() => cancelPendingRename()}
+                />
+              </>
+            )}
+            {renameResult && (
+              <>
+                <h2>{renameResult.success ? "이름 변경 완료" : "이름 변경 결과"}</h2>
+                <p className="rename-note">
+                  {renameResult.error ?? "변경된 파일별 결과를 확인하세요."}
+                </p>
+                <ul className="rename-results">
+                  {renameResult.files.map((file) => (
+                    <li key={file.path} className={`rename-result ${file.status}`}>
+                      <code>{file.path}</code>
+                      <span>{renameFileStatusLabel(file.status)}</span>
+                      {file.error && <small>{file.error}</small>}
+                    </li>
+                  ))}
+                </ul>
+                <div className="confirm-dialog-actions">
+                  <button type="button" className="toolbar-button selected" autoFocus onClick={() => setRenameResult(null)}>
+                    닫기
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
