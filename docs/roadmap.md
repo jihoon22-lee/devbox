@@ -757,6 +757,30 @@ bounds/privacy, atomic replacement, last-good 보존과 temp residue를 검증�
 상세 wire contract와 W1 packaged 검증 항목은 [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)의
 P1-05 `#410` 절을 따른다.
 
+**2026-08-27 #344/#345 구현 상태 (PR 전, grouped `resource-broadcast-safety`).** WSL Desktop의
+resource summary와 broadcast safety UI는 한 번의 `dashboard_snapshot` collection을 공유한다.
+`wsl.exe -l -v`의 distro/state, session의 distro별 active terminal 수, Running distro의 고정
+Docker query와 `/proc/stat`·`/proc/meminfo`·`df -P -B1 -- /` numeric 결과를 같은
+collection generation으로 묶어 `DashboardSnapshot`으로 반환하고, background runtime producer도 같은
+collection lock과 last-good atomic envelope를 사용한다. resource bytes는 checked arithmetic와
+JavaScript safe-integer 상한을 적용하고, 출력·line·distro/container·terminal bounds를 넘거나
+malformed/timeout/partial이면 정상 빈 결과로 바꾸지 않는다. stopped distro를 조회 때문에 시작하지
+않으며 shell, 임의 command, 환경 확장, 외부 설치와 raw credential/path/image/status/ports 저장을
+사용하지 않는다.
+
+#344 acceptance는 연속 정상 `/proc/stat` 표본 delta CPU 사용률(첫 표본·counter reset은 `—`)과
+memory/disk used/total, container state, active terminal 수의 panel summary 및 numeric
+proc/df/parser·실패/last-good fixture로 구분한다. #345 acceptance는 기본 OFF,
+활성 탭 pane selector, unique target 2~32개 대상 수 badge, multiline paste 및 `sudo`/`rm`/redirection
+위험 pattern(공백 없는 `<`, `>`, `<<`, `>>` 포함) 재확인과 target-count fixture로 구분한다. snapshot이 loading/refreshing/stale/error이면 broadcast
+target/ON을 fail-closed하고 단일 terminal PTY I/O는 계속 허용한다. frontend는 single-flight
+refresh, snapshot TTL 자동 재조회와 stale response discard를 적용해 rapid navigation에서 이전 distro/resource/container
+상태가 새 화면에 남지 않게 하며, 다국어 label·busy focus·keyboard target 선택을 보존한다.
+이 두 이슈는 동일한 snapshot generation/revision·rollback·fixture 경계를 공유하므로 하나의 grouped PR로
+검토하지만, #307 Knowledge handoff·resource mutation·arbitrary shell·기본 broadcast 활성화는
+포함하지 않는다. 남은 W3는 Windows packaged WSL/Docker installed·absent/poll-failure 화면 및
+PTY I/O smoke evidence다.
+
 **2026-08-26 #281 구현 상태.** Workbench가 `wsl-desktop/runtime/v1`을 read-only로 소비해
 published TCP host port를 편집 중인 profile draft에 제안한다. consumer는 envelope/view와 distro,
 container, mapping 전체 bounds/identity를 검증하고 port 숫자순·source provenance순으로 dedupe한다.

@@ -52,6 +52,30 @@ export interface ContainerInfo {
   ports: string;
 }
 
+export interface ResourceSummary {
+  /** Null until two successful `/proc/stat` samples establish a delta. */
+  cpuPercent: number | null;
+  memoryUsedBytes: number;
+  memoryTotalBytes: number;
+  diskUsedBytes: number;
+  diskTotalBytes: number;
+}
+
+/** One generation shared by the resource panel and broadcast safety state. */
+export interface DashboardDistroSnapshot extends DistroInfo {
+  terminalCount: number;
+  dockerAvailability: "available" | "missing" | "error" | "notQueried";
+  containers: ContainerInfo[];
+  resource: ResourceSummary | null;
+}
+
+export interface DashboardSnapshot {
+  revision: number;
+  capturedAtMs: number;
+  staleAfterMs: number;
+  distros: DashboardDistroSnapshot[];
+}
+
 /**
  * Inbound cross-app open request (`crates/applink::OpenTarget`/`OpenRequest`).
  * `Option` fields serialize as `null`, never omitted, so every optional field

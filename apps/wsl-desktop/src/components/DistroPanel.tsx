@@ -1,5 +1,6 @@
-import type { ContainerInfo, DistroInfo } from "../types";
+import type { ContainerInfo, DashboardDistroSnapshot, DistroInfo } from "../types";
 import { compactDockerPorts, dockerDisplayState } from "../lib/dockerDisplay";
+import { resourceSummaryLabel, type DashboardFreshness } from "../lib/resourceDisplay";
 
 interface Props {
   distros: DistroInfo[];
@@ -11,6 +12,9 @@ interface Props {
   busy: string | null;
   onAction: (id: string, action: "start" | "stop" | "restart") => void;
   onRefresh: () => void;
+  /** Complete resource/session generation shared with broadcast safety. */
+  dashboardDistros?: DashboardDistroSnapshot[];
+  snapshotState?: DashboardFreshness;
 }
 
 export default function DistroPanel({
@@ -23,19 +27,45 @@ export default function DistroPanel({
   busy,
   onAction,
   onRefresh,
+  dashboardDistros = [],
+  snapshotState = "loading",
 }: Props) {
   const running = containers.filter((c) => dockerDisplayState(c.status).running).length;
+  const snapshotFresh = snapshotState === "fresh";
+  const snapshotByDistro = new Map(dashboardDistros.map((distro) => [distro.name, distro]));
+  const selectedSnapshot = snapshotByDistro.get(selectedDistro);
+  const dockerError = selectedSnapshot?.dockerAvailability === "error";
+  const dockerNotQueried = selectedSnapshot?.dockerAvailability === "notQueried";
+  const snapshotLabel = {
+    loading: "조회 중…",
+    refreshing: "새로 고치는 중…",
+    fresh: "최신 snapshot",
+    stale: "오래된 snapshot",
+    error: "마지막 정상 snapshot",
+  }[snapshotState];
 
   return (
     <div className="dash-section">
       <div className="dash-header">
         <span>WSL</span>
-        <button className="btn refresh" onClick={onRefresh}>
+        <span className={`snapshot-state snapshot-state-${snapshotState}`} role="status">
+          {snapshotLabel}
+        </span>
+        <button
+          className="btn refresh"
+          type="button"
+          disabled={snapshotState === "loading" || snapshotState === "refreshing" || busy !== null}
+          onClick={onRefresh}
+        >
           Refresh
         </button>
       </div>
 
-      <select value={selectedDistro} onChange={(e) => onSelectDistro(e.currentTarget.value)}>
+      <select
+        aria-label="WSL distro 선택"
+        value={selectedDistro}
+        onChange={(e) => onSelectDistro(e.currentTarget.value)}
+      >
         {distros.map((d) => (
           <option key={d.name} value={d.name}>
             {d.name} {d.default ? "(default)" : ""}
@@ -49,30 +79,51 @@ export default function DistroPanel({
           Desktop을 설치하세요.
         </div>
       )}
+      {dockerError && <div className="banner">선택한 WSL distro의 Docker 상태를 읽지 못했습니다. 다음 snapshot에서 다시 시도하세요.</div>}
+      {dockerNotQueried && <div className="banner">중지된 WSL distro에서는 Docker를 조회하지 않습니다.</div>}
 
       <div className="cards">
-        {distros.map((d) => (
-          <div key={d.name} className={`card ${d.default ? "card-default" : ""}`}>
-            <div className="card-title">{d.name}</div>
-            <div className="card-row">
-              <span>Version</span>
-              <span>{d.version}</span>
+        {distros.map((d) => {
+          const snapshot = snapshotByDistro.get(d.name);
+          return (
+            <div key={d.name} className={`card ${d.default ? "card-default" : ""}`}>
+              <div className="card-title">{d.name}</div>
+              <div className="card-row">
+                <span>Version</span>
+                <span>{d.version}</span>
+              </div>
+              <div className="card-row">
+                <span>Status</span>
+                <span className={d.state.toLowerCase() === "running" ? "status-on" : "status-off"}>
+                  ● {d.state}
+                </span>
+              </div>
+              <div className="card-row">
+                <span>Active terminals</span>
+                <span>{snapshot ? snapshot.terminalCount : "—"}</span>
+              </div>
+              <div
+                className="resource-summary"
+                role="group"
+                aria-label={`${d.name} resource summary`}
+              >
+                {resourceSummaryLabel(snapshot?.resource)}
+              </div>
+              <button
+                className="btn"
+                type="button"
+                aria-label={`${d.name} 터미널 열기`}
+                onClick={() => onOpenTerminal(d.name)}
+              >
+                Open Terminal
+              </button>
             </div>
-            <div className="card-row">
-              <span>Status</span>
-              <span className={d.state.toLowerCase() === "running" ? "status-on" : "status-off"}>
-                ● {d.state}
-              </span>
-            </div>
-            <button className="btn" onClick={() => onOpenTerminal(d.name)}>
-              Open Terminal
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <h3 className="dash-subtitle">Docker ({running}/{containers.length} running)</h3>
-      {!dockerMissing && (
+      {!dockerMissing && !dockerError && !dockerNotQueried && (
         <div className="docker-list" aria-label="Docker containers">
           {containers.map((c) => {
             const state = dockerDisplayState(c.status);
@@ -116,7 +167,8 @@ export default function DistroPanel({
                     {canStart ? (
                       <button
                         className="btn"
-                        disabled={busy === `${c.id}:start`}
+                        type="button"
+                        disabled={busy === `${c.id}:start` || !snapshotFresh}
                         onClick={() => onAction(c.id, "start")}
                       >
                         Start
@@ -125,14 +177,16 @@ export default function DistroPanel({
                       <>
                         <button
                           className="btn danger"
-                          disabled={busy === `${c.id}:stop`}
+                          type="button"
+                          disabled={busy === `${c.id}:stop` || !snapshotFresh}
                           onClick={() => onAction(c.id, "stop")}
                         >
                           Stop
                         </button>
                         <button
                           className="btn"
-                          disabled={busy === `${c.id}:restart`}
+                          type="button"
+                          disabled={busy === `${c.id}:restart` || !snapshotFresh}
                           onClick={() => onAction(c.id, "restart")}
                         >
                           Restart

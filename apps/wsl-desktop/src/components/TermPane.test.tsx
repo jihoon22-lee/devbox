@@ -610,4 +610,22 @@ describe("TermPane — profile command와 safe broadcast (#263)", () => {
     expect(mockBroadcast).not.toHaveBeenCalled();
     expect(mockWriteSession).toHaveBeenCalledWith("s1", "echo local");
   });
+
+  it("backend가 broadcast 대상을 거부하면 owner에 fail-closed를 알리고 raw 오류를 숨긴다", async () => {
+    const onBroadcastFailure = vi.fn();
+    const onTerminalError = vi.fn();
+    const raw = "C:\\secret\\stale-session credential-raw";
+    mockBroadcast.mockRejectedValueOnce(new Error(raw));
+    render(<TermPane {...baseProps({
+      broadcastOn: true,
+      broadcastTargetIds: ["s1", "s2"],
+      onBroadcastFailure,
+      onTerminalError,
+    })} />);
+
+    act(() => createdTerminals[0].dataHandler?.("echo safe"));
+    await waitFor(() => expect(onBroadcastFailure).toHaveBeenCalledTimes(1));
+    expect(onTerminalError).toHaveBeenCalledWith("broadcast 입력을 모든 대상 터미널에 전달하지 못했습니다.");
+    expect(onTerminalError).not.toHaveBeenCalledWith(expect.stringContaining(raw));
+  });
 });

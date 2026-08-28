@@ -27,16 +27,21 @@
   한 번만 보낸다.
 - **명령 팔레트** — `Ctrl+Shift+P`에서 활성 팬 분할·닫기·출력 검색·cwd 복사와 프로필
   전환을 키보드로 실행한다.
-- **동시 입력(broadcast)** — 기본 OFF. 활성 탭의 팬을 2개 이상 직접 선택하고 대상 수를
+- **동시 입력(broadcast)** — 기본 OFF. 활성 탭의 팬을 최소 2개, 최대 32개까지 직접 선택하고 대상 수를
   확인해야 켤 수 있다. 여러 줄 붙여넣기와 위험 명령 Enter는 대상 수와 실행 위험을 다시
-  확인하며 취소한 위험 명령은 다음 Enter에서도 재확인한다.
+  확인한다. 셸 redirection(`<`, `>`, `<<`, `>>`)은 공백이 없어도 위험 명령으로 분류한다.
+  취소한 위험 명령은 다음 Enter에서도 재확인한다. resource/session snapshot이
+  새로 고쳐지는 중이거나 오래되면 동시 입력은 자동으로 OFF/fail-closed가 되고, 일반 팬의
+  단일 입력·PTY I/O는 계속 사용할 수 있다.
 - **선택적 프로세스 유지** — native workspace는 외부 도구 없이 완전하게 동작한다. 이미
   설치된 tmux/zellij만 감지해 stable `wsld-*` 세션에 opt-in attach하며, 설치·download하지
   않고 부재/감지 실패 시 native로 폴백한다.
 - **상태 패널** — WSL 배포판과 선택 distro의 Docker 컨테이너를 표시한다. 260px의 좁은
   패널에서도 이름·정규화 상태·축약 port mapping을 먼저 보여 주고, 컨테이너를 펼치면 Docker가
   반환한 ID·image·status·ports 원문을 확인하고 start/stop/restart할 수 있다. Docker가 없으면
-  설치 안내만 표시하며 engine 설치·설정·리소스 관리는 수행하지 않는다.
+  설치 안내만 표시하며 engine 설치·설정·리소스 관리는 수행하지 않는다. 같은 dashboard
+  snapshot에서 distro별 CPU 사용률·memory used/total·disk used/total과 active terminal 수를
+  함께 표시하고, 마지막 정상 결과·stale 상태를 명시한다.
 - **runtime snapshot producer** — Workbench와 Life Log가 별도 앱 전환 없이 현재 상태를
   사용할 수 있도록, 이미 실행 중인 distro만 `wsl-desktop/runtime/v1` read-only snapshot으로
   발행한다. distro별 실행 중 terminal 수와 Docker availability, bounded container 목록,
@@ -59,15 +64,18 @@
   canonical project key 정규화를 제공한다.
 - Docker 목록은 기본 공백 table을 추측해 파싱하지 않고 `docker ps -a --no-trunc --format`으로
   ID/name/image/status/ports 다섯 필드만 요청한다. 요약용 상태·port만 frontend에서 파생하며 원문
-  필드는 변경하거나 저장하지 않는다. COMMAND, 환경 변수, credential과 resource summary는
-  조회하지 않는다.
-- runtime producer의 Docker 조회는 별도 고정 argv
+  필드는 변경하거나 저장하지 않는다. Docker query 자체는 COMMAND·환경 변수·credential·resource
+  summary를 조회하지 않는다.
+- dashboard/runtime producer는 하나의 고정 collection에서 `wsl.exe -l -v`로 distro·state를
+  확인하고, Running distro에만 다음 read-only argv를 순차 실행한다:
   `wsl.exe -d <validated-distro> -- docker ps -a --no-trunc --format
-  '{{.ID}}\\t{{.Names}}\\t{{.State}}\\t{{.Ports}}'`만 사용한다. WSL distro 목록도
-  `wsl.exe --list --running --quiet`로 고정해 stopped distro의 암묵적 시작을 막는다. 두
-  명령 모두 shell/`bash -lc`/사용자 명령/환경 확장을 사용하지 않으며, child stdin은 닫고
-  stdout·stderr는 bounded reader로 처리한다. stderr는 오류 분류에 반영하지 않고 decode·log·
-  IPC·snapshot에 노출하지 않는다.
+  '{{.ID}}\\t{{.Names}}\\t{{.Image}}\\t{{.Status}}\\t{{.Ports}}'`,
+  `/proc/stat`, `/proc/meminfo`, `df -P -B1 -- /`. 모든 값은 별도 argv 요소로
+  전달하며 shell/`bash -lc`/사용자 command/환경 확장·외부 설치를 사용하지 않는다. child stdin은
+  닫고 stdout·stderr는 bounded reader와 child 5초 timeout, 전체 collection 30초 deadline으로 처리한다. stderr는 오류 분류에
+  반영하지 않고 decode·log·IPC·snapshot에 노출하지 않는다. dashboard command와 60초
+  background writer는 같은 collection lock·revision을 공유하고, 수집 실패 시 last-good을
+  보존한다.
 - WSL 기준선은 `wsl.exe --cd <cwd>`를 지원하는 최신 Microsoft Store WSL이다. 구형 inbox WSL은
   `wsl --update`로 먼저 업데이트하는 것을 권장한다. WSL2는 필요하면 `wsl --install` 후 재부팅하며,
   컨테이너 패널에는 선택 distro에서 실행 가능한 Docker CLI와 engine이 필요하다. devbox가 이를
@@ -119,18 +127,55 @@
   `paused`, `removing`, `restarting`, `running`, `unknown` 중 하나다. Docker의 image, raw
   status/ports, command, labels, mounts, environment, volume/socket/path와 terminal session
   id, cwd, title, profile command는 snapshot에 들어가지 않는다.
+
+  화면 전용 `dashboard_snapshot` IPC 응답은 위 integration view와 같은 collection generation을
+  사용하며, 여기에만 distro `version`, `default`, stopped/running `state`, active
+  `terminalCount`, Docker detail과 다음 numeric resource summary를 포함한다:
+
+  ```json
+  {
+    "revision": 4,
+    "capturedAtMs": 1725000000000,
+    "staleAfterMs": 30000,
+    "distros": [{
+      "name": "Ubuntu",
+      "version": 2,
+      "default": true,
+      "state": "Running",
+      "terminalCount": 1,
+      "dockerAvailability": "available",
+      "resource": {
+        "cpuPercent": 18,
+        "memoryUsedBytes": 4194304,
+        "memoryTotalBytes": 8388608,
+        "diskUsedBytes": 10485760,
+        "diskTotalBytes": 20971520
+      }
+    }]
+  }
+  ```
+
+  이 IPC 응답은 process memory에만 존재하며 localStorage/profile/integration envelope에 저장하지
+  않는다.
 - producer bounds는 distro 64개·이름 128 bytes, distro당 container 256개·전체 512개,
   container ID 64 bytes hex·이름 256 bytes, container당 port mapping 32개·전체 1,024개,
-  distro당 terminal 256개, Docker stdout 4MiB·line 16KiB·stderr 64KiB다. 최종 envelope는
-  공용 `crates/integration`의 10MiB 상한도 통과해야 한다.
+  distro당 terminal 256개, Docker stdout 4MiB·line 16KiB·stderr 64KiB다. resource 명령별
+  stdout는 64KiB이며, CPU는 연속해서 성공한 `/proc/stat` aggregate counter 두 개의 delta만
+  0~100%로 표시한다. 첫 표본·counter reset은 거짓 0% 대신 `null`/`—`로 표시하고, distro가
+  중지되거나 제거되면 이전 표본을 폐기한다. memory/disk byte는 JavaScript safe integer와 checked
+  arithmetic 상한을 따른다. 최종 envelope는 공용 `crates/integration`의 10MiB 상한도 통과해야 한다.
 - snapshot은 완성된 envelope만 `crates/integration::write_atomic`으로 교체한다. WSL/Docker
   timeout(5초), child I/O/출력 상한, malformed row/identity/privacy 검증 실패는 빈 결과나
   부분 결과로 덮어쓰지 않고 직전 last-good 파일을 보존한다. Docker exit 127은 `missing`,
   기타 non-zero 종료는 `error`, 성공한 빈 출력은 `available` + 빈 목록으로 구분한다.
-- 앱 시작은 60초 주기 writer를 만들고, dashboard의 성공적인 distro 조회와 terminal
-  start/close/reader cleanup은 250ms debounce trigger를 공유한다. producer당 단일 worker가
-  동시 trigger를 합치며, 수집은 distro별 순차 실행으로 고정한다. snapshot 갱신 실패가
-  terminal I/O나 기존 Docker 패널 동작을 막지는 않는다.
+- 앱 시작은 60초 주기 writer를 만들고, renderer도 snapshot TTL(정상 30초, 5~60초 clamp)에
+  맞춰 single-flight refresh한다. dashboard의 성공적인 refresh와 terminal
+  start/close/reader cleanup은 250ms debounce trigger를 공유한다. producer당 단일 worker와
+  dashboard command의 collection lock이 동시 trigger/수동 refresh를 합치며, 수집은 distro별
+  순차 실행으로 고정한다. 화면은 snapshot revision 하나의 distro/resource/Docker/terminal
+  결과만 사용하고, stale/refreshing/error 또는 Docker/workspace action 중에는 Docker mutation,
+  broadcast target과 ON 상태를 fail-closed한다.
+  snapshot 갱신 실패가 terminal I/O나 기존 read-only Docker panel display를 막지는 않는다.
 - `app_local_data_dir/terminal-profiles.json`: version 1 이름 있는 터미널 프로필. atomic replace,
   탭 16개·팬 32개·한 줄 시작 명령 4,096자 제한, 참조 무결성·안전한 절대 cwd·명백한 평문
   credential 검증을 적용한다.

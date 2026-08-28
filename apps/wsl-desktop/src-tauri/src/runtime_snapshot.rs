@@ -6,12 +6,16 @@
 //! `summary.json`을 쓰지 않으므로 직전 last-good 파일이 그대로 남는다.
 
 use crate::commands::terminal::SessionState;
+use crate::core::models::ContainerInfo;
+use crate::core::parsers::{parse_docker_ps, parse_wsl_list_checked};
+use crate::core::resources::{self, ResourceSummary};
 use crate::core::runtime_snapshot as model;
 use devbox_integration::{Envelope, SnapshotView, SnapshotViews};
 use std::collections::BTreeMap;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};
 use tokio::time::{sleep, timeout, Duration};
@@ -21,8 +25,11 @@ const RUNTIME_VIEW_KIND: &str = "runtime";
 const SNAPSHOT_INTERVAL: Duration = Duration::from_secs(60);
 const SNAPSHOT_DEBOUNCE: Duration = Duration::from_millis(250);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+const COLLECTION_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_STDERR_BYTES: usize = 64 * 1024;
+#[allow(dead_code)]
 const DOCKER_PS_FORMAT: &str = "{{.ID}}\t{{.Names}}\t{{.State}}\t{{.Ports}}";
+const DASHBOARD_DOCKER_PS_FORMAT: &str = "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}";
 const COLLECTION_ERROR: &str = "WSL runtime 상태를 수집하지 못했습니다";
 
 /// 한 producer 파일을 쓰는 worker를 하나만 유지하기 위한 상태.
@@ -34,6 +41,9 @@ pub struct SnapshotCoordinator {
     pending: AtomicBool,
     running: AtomicBool,
     write_lock: Mutex<()>,
+    collection_lock: tokio::sync::Mutex<()>,
+    revision: std::sync::atomic::AtomicU64,
+    cpu_samples: Mutex<BTreeMap<String, resources::CpuSample>>,
 }
 
 impl SnapshotCoordinator {
@@ -42,6 +52,9 @@ impl SnapshotCoordinator {
             pending: AtomicBool::new(false),
             running: AtomicBool::new(false),
             write_lock: Mutex::new(()),
+            collection_lock: tokio::sync::Mutex::new(()),
+            revision: std::sync::atomic::AtomicU64::new(0),
+            cpu_samples: Mutex::new(BTreeMap::new()),
         }
     }
 }
@@ -106,11 +119,9 @@ async fn run_pending_writes(state: Arc<SessionState>, coordinator: Arc<SnapshotC
 
 async fn write_snapshot(
     state: Arc<SessionState>,
-    coordinator: Arc<SnapshotCoordinator>,
+    _coordinator: Arc<SnapshotCoordinator>,
 ) -> Result<(), String> {
-    let entries = collect_entries(state).await?;
-    let envelope = build_envelope(entries)?;
-    write_envelope(&coordinator, &envelope)
+    refresh_dashboard_snapshot(state).await.map(|_| ())
 }
 
 fn write_envelope(coordinator: &SnapshotCoordinator, envelope: &Envelope) -> Result<(), String> {
@@ -121,61 +132,210 @@ fn write_envelope(coordinator: &SnapshotCoordinator, envelope: &Envelope) -> Res
         .lock()
         .map_err(|_| COLLECTION_ERROR.to_owned())?;
     let directory = devbox_integration::snapshot_dir(PRODUCER_ID, model::SNAPSHOT_SCHEMA_VERSION);
-    devbox_integration::write_atomic(envelope, &directory)
+    // The integration writer may include its filesystem target in an underlying I/O error.
+    // Keep that implementation detail out of the dashboard IPC and worker logs.
+    devbox_integration::write_atomic(envelope, &directory).map_err(|_| COLLECTION_ERROR.to_owned())
 }
 
-async fn collect_entries(
+/// Collect and publish the complete dashboard snapshot through the same single-flight lock
+/// used by the periodic runtime producer.  Concurrent UI refreshes therefore never combine
+/// one request's distro/session list with another request's resource or Docker result.
+pub async fn refresh_dashboard_snapshot(
     state: Arc<SessionState>,
-) -> Result<Vec<model::RuntimeDistroEntry>, String> {
-    let running_output = run_fixed_command(&build_running_distros_argv())
-        .await
-        .map_err(|_| COLLECTION_ERROR)?;
-    if !running_output.success {
+) -> Result<model::DashboardSnapshot, String> {
+    let coordinator = Arc::clone(&state.snapshot_coordinator);
+    // Bound both lock wait and the complete multi-distro collection. Individual children have a
+    // shorter deadline too; this outer guard keeps a large distro set from making the dashboard
+    // appear permanently busy and cancels the in-flight direct child on timeout.
+    let snapshot = timeout(COLLECTION_TIMEOUT, async {
+        let _collection_guard = coordinator.collection_lock.lock().await;
+        let collected = collect_entries(Arc::clone(&state)).await?;
+        // Keep collection_lock through revision assignment and the atomic writer. If another
+        // refresh were allowed to publish between collection and write, an older collection
+        // could receive a newer revision and replace a newer last-good snapshot.
+        let revision = coordinator.revision.fetch_add(1, Ordering::Relaxed) + 1;
+        let snapshot = model::DashboardSnapshot {
+            revision,
+            captured_at_ms: unix_now_ms(),
+            stale_after_ms: model::DASHBOARD_STALE_AFTER_MS,
+            distros: collected.dashboard,
+        };
+        let envelope = build_envelope(collected.runtime)?;
+        write_envelope(&coordinator, &envelope)?;
+        Ok::<model::DashboardSnapshot, String>(snapshot)
+    })
+    .await
+    .map_err(|_| COLLECTION_ERROR.to_owned())??;
+    Ok(snapshot)
+}
+
+struct CollectedSnapshot {
+    dashboard: Vec<model::DashboardDistro>,
+    runtime: Vec<model::RuntimeDistroEntry>,
+}
+
+async fn collect_entries(state: Arc<SessionState>) -> Result<CollectedSnapshot, String> {
+    let distro_output = run_fixed_command_with_output_limit(
+        &build_dashboard_distros_argv(),
+        resources::MAX_RESOURCE_OUTPUT_BYTES,
+    )
+    .await
+    .map_err(|_| COLLECTION_ERROR)?;
+    if !distro_output.success {
         return Err(COLLECTION_ERROR.into());
     }
-    let running_distros =
-        model::parse_running_distros(&devbox_wsl::output::decode_output(&running_output.stdout))
+    let mut distros =
+        parse_wsl_list_checked(&devbox_wsl::output::decode_output(&distro_output.stdout))
             .map_err(|_| COLLECTION_ERROR)?;
+    distros.sort_by(|left, right| left.name.cmp(&right.name));
     let terminal_counts = state
         .terminal_counts_by_distro()
         .map_err(|_| COLLECTION_ERROR)?;
-
-    let mut docker_results = BTreeMap::new();
-    for distro in &running_distros {
-        let argv = build_docker_argv(distro).map_err(|_| COLLECTION_ERROR)?;
-        let result = match run_fixed_command(&argv).await {
-            Ok(output) if output.success => model::DockerResult {
-                availability: model::DockerAvailability::Available,
-                containers: model::parse_docker_snapshot(&devbox_wsl::output::decode_output(
-                    &output.stdout,
-                ))
-                .map_err(|_| COLLECTION_ERROR)?,
-            },
-            Ok(output) if output.exit_code == Some(127) && output.stdout.is_empty() => {
-                model::DockerResult {
-                    availability: model::DockerAvailability::Missing,
-                    containers: Vec::new(),
-                }
-            }
-            Ok(output) if output.stdout.is_empty() => model::DockerResult {
-                availability: model::DockerAvailability::Error,
-                containers: Vec::new(),
-            },
-            // A non-zero command with stdout is a partial result, not a trustworthy error
-            // status. Preserve last-good rather than publishing a mixed collection.
-            Ok(_output) => return Err(COLLECTION_ERROR.into()),
-            // A timeout, output overflow, I/O failure or inability to spawn wsl.exe is a
-            // partial collection, not a valid empty/error result. Preserve last-good.
-            Err(_) => return Err(COLLECTION_ERROR.into()),
-        };
-        docker_results.insert(distro.clone(), result);
+    let known_distros = distros
+        .iter()
+        .map(|distro| distro.name.trim())
+        .collect::<std::collections::BTreeSet<_>>();
+    if terminal_counts
+        .keys()
+        .any(|distro| !known_distros.contains(distro.as_str()))
+    {
+        // Do not publish a snapshot that silently drops a live session whose distro disappeared
+        // between the WSL list and session lock. The next refresh can establish a new generation.
+        return Err(COLLECTION_ERROR.into());
     }
 
-    model::build_entries(&running_distros, &terminal_counts, &docker_results)
-        .map_err(|_| COLLECTION_ERROR.into())
+    let running_names = distros
+        .iter()
+        .filter(|distro| distro.state.eq_ignore_ascii_case(model::RUNNING_STATE))
+        .map(|distro| distro.name.trim().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    state
+        .snapshot_coordinator
+        .cpu_samples
+        .lock()
+        .map_err(|_| COLLECTION_ERROR.to_owned())?
+        .retain(|distro, _| running_names.contains(distro));
+
+    let mut running_distros = Vec::new();
+    let mut docker_results = BTreeMap::new();
+    let mut dashboard = Vec::with_capacity(distros.len());
+    for distro in distros {
+        let normalized_name = distro.name.trim().to_owned();
+        let terminal_count = *terminal_counts.get(&normalized_name).unwrap_or(&0);
+        let running = distro.state.eq_ignore_ascii_case(model::RUNNING_STATE);
+        if !running && terminal_count > 0 {
+            // A live PTY and a stopped distro in one collection is not a trustworthy shared
+            // snapshot. Keep the prior last-good file and let the UI show stale state instead.
+            return Err(COLLECTION_ERROR.into());
+        }
+
+        let mut docker_availability = model::DockerAvailability::NotQueried;
+        let mut containers = Vec::<ContainerInfo>::new();
+        let mut resource = None;
+        if running {
+            running_distros.push(normalized_name.clone());
+            let docker_argv =
+                build_dashboard_docker_argv(&normalized_name).map_err(|_| COLLECTION_ERROR)?;
+            (docker_availability, containers) =
+                classify_dashboard_docker(run_fixed_command(&docker_argv).await)?;
+
+            resource = Some(collect_resource_summary(&state, &normalized_name).await?);
+            let runtime_containers =
+                model::sanitize_dashboard_containers(&containers).map_err(|_| COLLECTION_ERROR)?;
+            docker_results.insert(
+                normalized_name.clone(),
+                model::DockerResult {
+                    availability: docker_availability.clone(),
+                    containers: runtime_containers,
+                },
+            );
+        }
+
+        dashboard.push(model::DashboardDistro {
+            name: normalized_name,
+            version: distro.version,
+            default: distro.default,
+            state: distro.state,
+            terminal_count: terminal_count as u16,
+            docker_availability,
+            containers,
+            resource,
+        });
+    }
+
+    let runtime = model::build_entries(&running_distros, &terminal_counts, &docker_results)
+        .map_err(|_| COLLECTION_ERROR)?;
+    Ok(CollectedSnapshot { dashboard, runtime })
+}
+
+fn classify_dashboard_docker(
+    result: Result<CommandOutput, CommandFailure>,
+) -> Result<(model::DockerAvailability, Vec<ContainerInfo>), String> {
+    match result {
+        Ok(output) if output.success => {
+            let containers = parse_docker_ps(&devbox_wsl::output::decode_output(&output.stdout))
+                .map_err(|_| COLLECTION_ERROR.to_owned())?;
+            Ok((model::DockerAvailability::Available, containers))
+        }
+        Ok(output) if output.exit_code == Some(127) && output.stdout.is_empty() => {
+            Ok((model::DockerAvailability::Missing, Vec::new()))
+        }
+        Ok(output) if output.stdout.is_empty() => {
+            Ok((model::DockerAvailability::Error, Vec::new()))
+        }
+        // A non-zero command with stdout is a partial result, not a trustworthy error status.
+        // Preserve the last-good snapshot rather than publishing mixed data.
+        Ok(_) | Err(_) => Err(COLLECTION_ERROR.to_owned()),
+    }
+}
+
+async fn collect_resource_summary(
+    state: &SessionState,
+    distro: &str,
+) -> Result<ResourceSummary, String> {
+    let cpu_stat = run_resource_command(
+        &build_resource_file_argv(distro, "/proc/stat").map_err(|_| COLLECTION_ERROR)?,
+    )
+    .await?;
+    let memory = run_resource_command(
+        &build_resource_file_argv(distro, "/proc/meminfo").map_err(|_| COLLECTION_ERROR)?,
+    )
+    .await?;
+    let disk = run_resource_command(
+        &build_resource_command_argv(distro, "df", &["-P", "-B1", "--", "/"])
+            .map_err(|_| COLLECTION_ERROR)?,
+    )
+    .await?;
+    let previous_cpu = state
+        .snapshot_coordinator
+        .cpu_samples
+        .lock()
+        .map_err(|_| COLLECTION_ERROR.to_owned())?
+        .get(distro)
+        .copied();
+    let (summary, current_cpu) = resources::build_summary(&cpu_stat, &memory, &disk, previous_cpu)
+        .map_err(|_| COLLECTION_ERROR.to_owned())?;
+    state
+        .snapshot_coordinator
+        .cpu_samples
+        .lock()
+        .map_err(|_| COLLECTION_ERROR.to_owned())?
+        .insert(distro.to_owned(), current_cpu);
+    Ok(summary)
+}
+
+async fn run_resource_command(argv: &[String]) -> Result<String, String> {
+    let output = run_fixed_command_with_output_limit(argv, resources::MAX_RESOURCE_OUTPUT_BYTES)
+        .await
+        .map_err(|_| COLLECTION_ERROR.to_owned())?;
+    if !output.success {
+        return Err(COLLECTION_ERROR.to_owned());
+    }
+    Ok(devbox_wsl::output::decode_output(&output.stdout))
 }
 
 /// Build the exact argv used to enumerate only already-running distros.
+#[allow(dead_code)]
 fn build_running_distros_argv() -> Vec<String> {
     ["wsl.exe", "--list", "--running", "--quiet"]
         .into_iter()
@@ -183,8 +343,16 @@ fn build_running_distros_argv() -> Vec<String> {
         .collect()
 }
 
+fn build_dashboard_distros_argv() -> Vec<String> {
+    ["wsl.exe", "-l", "-v"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
 /// Build the exact read-only Docker query. The distro is one validated argv element; no
 /// shell, `bash -lc`, environment expansion or user-provided command is involved.
+#[allow(dead_code)]
 fn build_docker_argv(distro: &str) -> Result<Vec<String>, String> {
     if distro.is_empty() || distro.len() > model::MAX_DISTRO_NAME_BYTES {
         return Err(COLLECTION_ERROR.to_owned());
@@ -197,6 +365,60 @@ fn build_docker_argv(distro: &str) -> Result<Vec<String>, String> {
             .map(str::to_owned),
     );
     Ok(argv)
+}
+
+fn build_dashboard_docker_argv(distro: &str) -> Result<Vec<String>, String> {
+    if distro.is_empty() || distro.len() > model::MAX_DISTRO_NAME_BYTES {
+        return Err(COLLECTION_ERROR.to_owned());
+    }
+    let mut argv = devbox_wsl::argv::build_exec_argv(distro, None, "docker")
+        .map_err(|_| COLLECTION_ERROR.to_owned())?;
+    argv.extend(
+        [
+            "ps",
+            "-a",
+            "--no-trunc",
+            "--format",
+            DASHBOARD_DOCKER_PS_FORMAT,
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    );
+    Ok(argv)
+}
+
+fn build_resource_file_argv(distro: &str, path: &str) -> Result<Vec<String>, String> {
+    if !matches!(path, "/proc/stat" | "/proc/meminfo") {
+        return Err(COLLECTION_ERROR.to_owned());
+    }
+    build_resource_command_argv(distro, "cat", &[path])
+}
+
+fn build_resource_command_argv(
+    distro: &str,
+    command: &str,
+    args: &[&str],
+) -> Result<Vec<String>, String> {
+    let allowed = match command {
+        "cat" => matches!(args, ["/proc/stat"] | ["/proc/meminfo"]),
+        "df" => matches!(args, ["-P", "-B1", "--", "/"]),
+        _ => false,
+    };
+    if !allowed {
+        return Err(COLLECTION_ERROR.to_owned());
+    }
+    let mut argv = devbox_wsl::argv::build_exec_argv(distro, None, command)
+        .map_err(|_| COLLECTION_ERROR.to_owned())?;
+    argv.extend(args.iter().map(|arg| (*arg).to_owned()));
+    Ok(argv)
+}
+
+fn unix_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,6 +445,22 @@ async fn run_fixed_command(argv: &[String]) -> Result<CommandOutput, CommandFail
 async fn run_fixed_command_with_timeout(
     argv: &[String],
     command_timeout: Duration,
+) -> Result<CommandOutput, CommandFailure> {
+    run_fixed_command_with_timeout_and_limit(argv, command_timeout, model::MAX_DOCKER_OUTPUT_BYTES)
+        .await
+}
+
+async fn run_fixed_command_with_output_limit(
+    argv: &[String],
+    max_output_bytes: usize,
+) -> Result<CommandOutput, CommandFailure> {
+    run_fixed_command_with_timeout_and_limit(argv, COMMAND_TIMEOUT, max_output_bytes).await
+}
+
+async fn run_fixed_command_with_timeout_and_limit(
+    argv: &[String],
+    command_timeout: Duration,
+    max_output_bytes: usize,
 ) -> Result<CommandOutput, CommandFailure> {
     let Some(program) = argv.first() else {
         return Err(CommandFailure::Io);
@@ -255,7 +493,7 @@ async fn run_fixed_command_with_timeout(
 
     let result = timeout(command_timeout, async {
         let (stdout, _) = tokio::try_join!(
-            read_bounded(stdout, model::MAX_DOCKER_OUTPUT_BYTES),
+            read_bounded(stdout, max_output_bytes),
             drain_bounded(stderr, MAX_STDERR_BYTES),
         )?;
         let status = child.wait().await.map_err(|_| CommandFailure::Io)?;
@@ -381,6 +619,7 @@ fn write_snapshot_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::resources::ResourceSummary;
     use crate::core::runtime_snapshot::{
         build_entries, parse_docker_snapshot, DockerAvailability, DockerResult,
     };
@@ -438,6 +677,72 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_and_resource_argv_are_fixed_read_only_arguments() {
+        assert_eq!(build_dashboard_distros_argv(), vec!["wsl.exe", "-l", "-v"]);
+        assert_eq!(
+            build_dashboard_docker_argv("Ubuntu").unwrap(),
+            vec![
+                "wsl.exe",
+                "-d",
+                "Ubuntu",
+                "--",
+                "docker",
+                "ps",
+                "-a",
+                "--no-trunc",
+                "--format",
+                DASHBOARD_DOCKER_PS_FORMAT,
+            ]
+        );
+        assert_eq!(
+            build_resource_file_argv("Ubuntu", "/proc/stat").unwrap(),
+            vec!["wsl.exe", "-d", "Ubuntu", "--", "cat", "/proc/stat"]
+        );
+        assert_eq!(
+            build_resource_command_argv("Ubuntu", "df", &["-P", "-B1", "--", "/"]).unwrap(),
+            vec!["wsl.exe", "-d", "Ubuntu", "--", "df", "-P", "-B1", "--", "/"]
+        );
+        assert!(build_resource_file_argv("Ubuntu;rm", "/proc/loadavg").is_err());
+        assert!(build_resource_command_argv("Ubuntu", "sh -c", &["echo unsafe"]).is_err());
+    }
+
+    #[test]
+    fn dashboard_docker_fixture_distinguishes_installed_missing_and_poll_failure() {
+        let available = classify_dashboard_docker(Ok(CommandOutput {
+            stdout: b"abc123\tapi\tnginx:latest\tUp 1 minute\t8080->80/tcp\n".to_vec(),
+            success: true,
+            exit_code: Some(0),
+        }))
+        .unwrap();
+        assert_eq!(available.0, DockerAvailability::Available);
+        assert_eq!(available.1.len(), 1);
+
+        let missing = classify_dashboard_docker(Ok(CommandOutput {
+            stdout: Vec::new(),
+            success: false,
+            exit_code: Some(127),
+        }))
+        .unwrap();
+        assert_eq!(missing.0, DockerAvailability::Missing);
+        assert!(missing.1.is_empty());
+
+        let poll_failure = classify_dashboard_docker(Ok(CommandOutput {
+            stdout: Vec::new(),
+            success: false,
+            exit_code: Some(1),
+        }))
+        .unwrap();
+        assert_eq!(poll_failure.0, DockerAvailability::Error);
+        assert!(classify_dashboard_docker(Ok(CommandOutput {
+            stdout: b"partial row\n".to_vec(),
+            success: false,
+            exit_code: Some(1),
+        }))
+        .is_err());
+        assert!(classify_dashboard_docker(Err(CommandFailure::TimedOut)).is_err());
+    }
+
+    #[test]
     fn running_distro_fixture_accepts_wsl_utf16_output() {
         let mut bytes = vec![0xFF, 0xFE];
         for character in "* Ubuntu 24.04\r\n".encode_utf16() {
@@ -466,6 +771,38 @@ mod tests {
         assert!(!json.contains("0.0.0.0"));
         assert!(!json.contains("image"));
         assert!(!json.contains("status"));
+        assert!(!json.contains("command"));
+    }
+
+    #[test]
+    fn dashboard_snapshot_keeps_resource_summary_numeric_and_path_free() {
+        let snapshot = model::DashboardSnapshot {
+            revision: 4,
+            captured_at_ms: 1_725_000_000_000,
+            stale_after_ms: model::DASHBOARD_STALE_AFTER_MS,
+            distros: vec![model::DashboardDistro {
+                name: "Ubuntu".to_owned(),
+                version: 2,
+                default: true,
+                state: "Running".to_owned(),
+                terminal_count: 1,
+                docker_availability: DockerAvailability::Missing,
+                containers: Vec::new(),
+                resource: Some(ResourceSummary {
+                    cpu_percent: Some(42),
+                    memory_used_bytes: 4 * 1024,
+                    memory_total_bytes: 8 * 1024,
+                    disk_used_bytes: 10 * 1024,
+                    disk_total_bytes: 20 * 1024,
+                }),
+            }],
+        };
+        let json = serde_json::to_string(&snapshot).unwrap();
+        assert!(json.contains("cpuPercent"));
+        assert!(json.contains("memoryUsedBytes"));
+        assert!(json.contains("diskTotalBytes"));
+        assert!(!json.contains("/proc"));
+        assert!(!json.contains("cat"));
         assert!(!json.contains("command"));
     }
 

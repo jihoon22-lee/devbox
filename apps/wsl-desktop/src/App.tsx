@@ -9,9 +9,8 @@ import {
   deleteWorkspaceProfile,
   detectMultiplexers,
   dockerAction,
-  dockerPs,
+  getDashboardSnapshot,
   getWindowsBuildNumber,
-  listDistros,
   listWorkspaceProfiles,
   onOpenRequest,
   onTerminalClosed,
@@ -30,6 +29,10 @@ import { routeOpenRequest } from "./lib/applink";
 import { makeId } from "./lib/id";
 import { buildPaneContextMenu, buildTabContextMenu, normalizeTabName } from "./lib/contextMenu";
 import { matchShortcut, type ShortcutAction } from "./lib/shortcuts";
+import {
+  MAX_BROADCAST_TARGETS,
+  nextBroadcastTargets,
+} from "./lib/broadcastSafety";
 import {
   loadCopyOnSelect,
   loadPinned,
@@ -57,6 +60,7 @@ import {
 } from "./lib/terminalUx";
 import type {
   ContainerInfo,
+  DashboardSnapshot,
   DistroInfo,
   Layout,
   MultiplexerAvailability,
@@ -67,13 +71,18 @@ import type {
   WorkspaceDefinition,
   WorkspaceProfile,
 } from "./types";
+import type { DashboardFreshness } from "./lib/resourceDisplay";
 import "./App.css";
+
+const DASHBOARD_ERROR_MESSAGE = "WSL resource snapshot을 갱신하지 못했습니다. 마지막 정상 상태를 유지합니다.";
 
 export default function App() {
   const [distros, setDistros] = useState<DistroInfo[]>([]);
   const [selected, setSelected] = useState("");
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [dockerMissing, setDockerMissing] = useState(false);
+  const [dashboardSnapshot, setDashboardSnapshot] = useState<DashboardSnapshot | null>(null);
+  const [dashboardState, setDashboardState] = useState<DashboardFreshness>("loading");
   const [busy, setBusy] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [pinned, setPinned] = useState<boolean>(loadPinned);
@@ -111,7 +120,7 @@ export default function App() {
   // TermPane must not create xterm until this one-time lookup resolves, so
   // every terminal receives its final ConPTY build-number option.
   const [windowsBuildNumber, setWindowsBuildNumber] = useState<number | null | undefined>(undefined);
-  // Flips true once the first listDistros() resolves. Gates applink handling
+  // Flips true once the first shared dashboard snapshot resolves. Gates applink handling
   // (below) so a `path` target has a real default distro to open into,
   // rather than racing the empty initial `selected` state.
   const [distrosLoaded, setDistrosLoaded] = useState(false);
@@ -121,6 +130,13 @@ export default function App() {
   const restoreStarted = useRef(false);
   const workspaceLoadingRef = useRef(false);
   const layoutSaveTimer = useRef<number | undefined>(undefined);
+  const dashboardRequestRef = useRef<Promise<void> | null>(null);
+  const dashboardRefreshQueuedRef = useRef(false);
+  const dashboardRequestSequence = useRef(0);
+  const dashboardClockRef = useRef<number>(Date.now());
+  const dashboardSnapshotRef = useRef<DashboardSnapshot | null>(null);
+  const dashboardMountedRef = useRef(true);
+  dashboardSnapshotRef.current = dashboardSnapshot;
 
   // onTerminalClosed 구독은 마운트 시 한 번만 걸린다(아래 effect, deps []). 그 콜백이
   // dropPane을 부를 때 tabs/activeTabId/activePaneId를 직접 클로저로 참조하면 마운트
@@ -184,14 +200,6 @@ export default function App() {
   }, [activePaneId, panes]);
 
   useEffect(() => {
-    void listDistros().then((ds) => {
-      setDistros(ds);
-      setSelected((prev) => prev || ds.find((d) => d.default)?.name || ds[0]?.name || "Ubuntu");
-      setDistrosLoaded(true);
-    });
-  }, []);
-
-  useEffect(() => {
     let disposed = false;
     void listWorkspaceProfiles()
       .then((items) => {
@@ -241,37 +249,134 @@ export default function App() {
       .catch(() => setWindowsBuildNumber(null));
   }, []);
 
-  const refreshDashboard = useCallback(async () => {
-    const ds = await listDistros();
-    setDistros(ds);
-    const distro = ds.find((d) => d.default)?.name ?? ds[0]?.name ?? "Ubuntu";
-    setSelected((prev) => prev || distro);
-    try {
-      setContainers(await dockerPs(distro));
-      setDockerMissing(false);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/command not found|docker/i.test(msg)) {
-        setContainers([]);
-        setDockerMissing(true);
-      } else {
-        setError(msg);
-      }
+  const refreshDashboard = useCallback((force = false): Promise<void> => {
+    // A refresh is a shared single-flight operation. Keeping one promise here also means the
+    // manual button, lifecycle triggers and the periodic freshness guard cannot race their
+    // responses and regress the resource/session generation shown by the UI.
+    if (dashboardRequestRef.current) {
+      // A lifecycle mutation that happens while an older collection is in flight needs one
+      // follow-up generation. Coalesce all such requests into one queued refresh rather than
+      // letting each caller start its own native collection.
+      if (force) dashboardRefreshQueuedRef.current = true;
+      return dashboardRequestRef.current;
     }
+    const sequence = ++dashboardRequestSequence.current;
+    setDashboardState(dashboardSnapshotRef.current ? "refreshing" : "loading");
+    const request = getDashboardSnapshot()
+      .then((next) => {
+        if (!dashboardMountedRef.current || sequence !== dashboardRequestSequence.current) return;
+        dashboardSnapshotRef.current = next;
+        setDashboardSnapshot(next);
+        setDistros(next.distros.map(({ name, version, default: isDefault, state }) => ({
+          name,
+          version,
+          default: isDefault,
+          state,
+        })));
+        const fallback = next.distros.find((distro) => distro.default)?.name
+          ?? next.distros[0]?.name
+          ?? "Ubuntu";
+        setSelected((previous) =>
+          next.distros.some((distro) => distro.name === previous) ? previous : fallback,
+        );
+        setError((current) => (current === DASHBOARD_ERROR_MESSAGE ? null : current));
+        setDashboardState("fresh");
+        setDistrosLoaded(true);
+      })
+      .catch(() => {
+        if (!dashboardMountedRef.current || sequence !== dashboardRequestSequence.current) return;
+        // Keep the last good snapshot and its Docker/session/resource data. The terminal
+        // transport remains usable; only broadcast is fail-closed by the shared status below.
+        // Keep an error state even when the last snapshot is still younger than its normal TTL;
+        // a failed poll must never silently re-enable broadcast on the next freshness tick.  On
+        // the initial failure, leave distro hydration incomplete so profile restore cannot start
+        // a guessed distro before the server-owned snapshot has established one.
+        setDashboardState("error");
+        setError(DASHBOARD_ERROR_MESSAGE);
+      })
+      .finally(() => {
+        if (dashboardMountedRef.current && sequence === dashboardRequestSequence.current) {
+          dashboardRequestRef.current = null;
+          if (dashboardRefreshQueuedRef.current) {
+            dashboardRefreshQueuedRef.current = false;
+            void refreshDashboard().catch(() => undefined);
+          }
+        }
+      });
+    dashboardRequestRef.current = request;
+    return request;
+  }, []);
+
+  useEffect(() => {
+    // React StrictMode replays effect setup/cleanup in development. Restore this instance's
+    // mounted flag in setup so the replay cannot make every later snapshot look unmounted.
+    dashboardMountedRef.current = true;
+    return () => {
+      dashboardMountedRef.current = false;
+      dashboardRequestSequence.current += 1;
+      dashboardRequestRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
     void refreshDashboard().catch(() => undefined);
+    // The callback is intentionally stable: its single-flight state lives in refs and must not
+    // be retriggered every time a new successful snapshot is committed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const entry = dashboardSnapshot?.distros.find((distro) => distro.name === selected);
+    if (!entry) {
+      setContainers([]);
+      setDockerMissing(false);
+      return;
+    }
+    setContainers(entry.containers);
+    setDockerMissing(entry.dockerAvailability === "missing");
+  }, [dashboardSnapshot, selected]);
+
+  useEffect(() => {
+    if (!dashboardSnapshot) return;
+    const updateFreshness = () => {
+      dashboardClockRef.current = Date.now();
+      if (dashboardRequestRef.current) return;
+      const stale = dashboardClockRef.current - dashboardSnapshot.capturedAtMs > dashboardSnapshot.staleAfterMs;
+      setDashboardState((current) => (current === "error" ? current : stale ? "stale" : "fresh"));
+    };
+    updateFreshness();
+    const timer = window.setInterval(updateFreshness, 1_000);
+    return () => window.clearInterval(timer);
+  }, [dashboardSnapshot]);
+
+  useEffect(() => {
+    if (!dashboardSnapshot) return;
+    // Refresh before a successful snapshot can remain stale indefinitely. Bounds protect the
+    // renderer from a corrupt/native-regressed TTL while the promise ref keeps this single-flight.
+    const intervalMs = Math.min(60_000, Math.max(5_000, dashboardSnapshot.staleAfterMs));
+    const timer = window.setInterval(() => {
+      void refreshDashboard().catch(() => undefined);
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [dashboardSnapshot, refreshDashboard]);
+
   const onDockerAction = async (id: string, action: "start" | "stop" | "restart") => {
+    const snapshot = dashboardSnapshot?.distros.find((distro) => distro.name === selected);
+    if (
+      !snapshot
+      || dashboardState !== "fresh"
+      || snapshot.dockerAvailability !== "available"
+      || !snapshot.containers.some((container) => container.id === id)
+    ) {
+      setError("최신 Docker snapshot이 준비될 때까지 상태를 변경할 수 없습니다.");
+      return;
+    }
     setBusy(`${id}:${action}`);
     try {
       await dockerAction(selected, id, action);
-      setContainers(await dockerPs(selected));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      await refreshDashboard(true);
+    } catch {
+      setError("Docker 상태를 안전하게 변경하지 못했습니다.");
     } finally {
       setBusy(null);
     }
@@ -464,9 +569,16 @@ export default function App() {
 
       if (usedCwd) setRecentPaths(pushRecentPath(usedCwd));
       if (cwdOverride === undefined && !pinned) setCwd("");
+      // A newly attached/started PTY changes the session half of the shared dashboard
+      // generation. Refresh in the background; the terminal itself does not wait on WSL/Docker
+      // polling and broadcast remains disabled until the new generation is fresh.
+      void refreshDashboard(true).catch(() => undefined);
       return true;
-    } catch (e) {
-      setError(safeFailureMessage ?? (e instanceof Error ? e.message : String(e)));
+    } catch {
+      // Native PTY errors may contain the requested cwd, executable path or OS details. Keep
+      // those implementation details out of the renderer; callers that need context provide a
+      // fixed feature-specific message.
+      setError(safeFailureMessage ?? "터미널을 시작하지 못했습니다.");
       return false;
     }
   };
@@ -576,6 +688,7 @@ export default function App() {
         ].filter(Boolean).join(" · ");
         setError(`프로필을 부분적으로 열었습니다. ${details}`);
       }
+      void refreshDashboard(true).catch(() => undefined);
       return true;
     } finally {
       workspaceLoadingRef.current = false;
@@ -685,6 +798,7 @@ export default function App() {
     try {
       await closeSession(paneId);
       dropPane(paneId);
+      void refreshDashboard(true).catch(() => undefined);
     } catch {
       setError("터미널 팬을 닫지 못했습니다.");
     } finally {
@@ -744,6 +858,7 @@ export default function App() {
       if (results.some((result) => result.status === "rejected")) {
         setError("터미널 탭을 모두 닫지 못했습니다.");
       }
+      void refreshDashboard(true).catch(() => undefined);
     } finally {
       setContextActionBusy(false);
     }
@@ -1022,6 +1137,14 @@ export default function App() {
   const activeLayout = activeTab?.layout ?? "grid";
   const activePaneIds = activeTab?.paneIds ?? [];
   const selectedBroadcastIds = activePaneIds.filter((id) => broadcastTargetIds.has(id));
+  const broadcastReady = dashboardState === "fresh"
+    && !workspaceLoading
+    && !contextActionBusy
+    && busy === null;
+
+  useEffect(() => {
+    if (!broadcastReady) setBroadcastOn(false);
+  }, [broadcastReady]);
 
   useEffect(() => {
     const allowed = new Set(activePaneIds);
@@ -1034,9 +1157,11 @@ export default function App() {
   }, [activeTabId, activePaneIds.join("|")]);
 
   const toggleBroadcastTarget = (id: string, checked: boolean) => {
-    const next = new Set(broadcastTargetIds);
-    if (checked) next.add(id);
-    else next.delete(id);
+    const next = nextBroadcastTargets(broadcastTargetIds, id, checked);
+    if (!next) {
+      setError(`동시 입력 대상은 최대 ${MAX_BROADCAST_TARGETS}개까지 선택할 수 있습니다.`);
+      return;
+    }
     setBroadcastTargetIds(next);
     if (next.size < 2) setBroadcastOn(false);
   };
@@ -1165,11 +1290,17 @@ export default function App() {
           명령…
         </button>
         <span className="spacer" />
-        <label className="toggle">
+        <label
+          className="toggle"
+          title={broadcastReady
+            ? "선택한 팬에 동시 입력을 보냅니다"
+            : "최신 WSL snapshot이 준비될 때까지 동시 입력을 사용할 수 없습니다"}
+        >
           <input
             type="checkbox"
+            aria-label="동시 입력 활성화"
             checked={broadcastOn}
-            disabled={selectedBroadcastIds.length < 2}
+            disabled={selectedBroadcastIds.length < 2 || !broadcastReady}
             onChange={(event) => setBroadcastOn(event.currentTarget.checked)}
           />
           동시 입력 {broadcastOn ? "ON" : "OFF"}
@@ -1177,7 +1308,9 @@ export default function App() {
         <button
           type="button"
           className={`btn compact ${broadcastPickerOpen ? "active" : ""}`}
+          aria-label={`동시 입력 대상 선택 (${selectedBroadcastIds.length}/${activePaneIds.length})`}
           aria-expanded={broadcastPickerOpen}
+          aria-controls="broadcast-target-picker"
           onClick={() => setBroadcastPickerOpen((open) => !open)}
         >대상 {selectedBroadcastIds.length}/{activePaneIds.length}</button>
         <label className="toggle" title="선택한 터미널 텍스트를 자동으로 복사합니다">
@@ -1220,16 +1353,18 @@ export default function App() {
       </header>
 
       {broadcastPickerOpen && (
-        <div className="broadcast-picker" role="group" aria-label="동시 입력 대상 팬 선택">
+        <div id="broadcast-target-picker" className="broadcast-picker" role="group" aria-label="동시 입력 대상 팬 선택">
           <strong>동시 입력 대상</strong>
-          <span className="dim">기본 OFF · 최소 2개를 직접 선택해야 켤 수 있습니다.</span>
+          <span className="dim">기본 OFF · 최소 2개, 최대 {MAX_BROADCAST_TARGETS}개를 직접 선택해야 켤 수 있습니다.</span>
           {activePaneIds.map((id, index) => {
             const pane = panes.find((item) => item.sessionId === id);
+            const checked = broadcastTargetIds.has(id);
             return (
               <label key={id}>
                 <input
                   type="checkbox"
-                  checked={broadcastTargetIds.has(id)}
+                  checked={checked}
+                  disabled={!broadcastReady || (!checked && broadcastTargetIds.size >= MAX_BROADCAST_TARGETS)}
                   onChange={(event) => toggleBroadcastTarget(id, event.currentTarget.checked)}
                 />
                 {index + 1}. {pane?.title?.trim() || pane?.distro || "터미널"}
@@ -1253,6 +1388,8 @@ export default function App() {
               busy={busy}
               onAction={onDockerAction}
               onRefresh={() => void refreshDashboard().catch(() => undefined)}
+              dashboardDistros={dashboardSnapshot?.distros}
+              snapshotState={dashboardState}
             />
             <WorkspacePanel
               profiles={profiles}
@@ -1266,7 +1403,7 @@ export default function App() {
         )}
 
         <div className="terminal-area">
-          {error && <div className="error">{error}</div>}
+          {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
 
           <TabBar
             tabs={tabs}
@@ -1286,7 +1423,7 @@ export default function App() {
               panes={panes}
               activeTabId={activeTabId}
               activePaneId={activePaneId}
-              broadcastOn={broadcastOn}
+              broadcastOn={broadcastOn && broadcastReady}
               broadcastTargetIds={selectedBroadcastIds}
               copyOnSelect={copyOnSelect}
               fontSize={terminalFontSize}
@@ -1306,6 +1443,7 @@ export default function App() {
               onFontSizeChange={updateTerminalFontSize}
               onMetadataChange={updatePaneMetadata}
               onTerminalError={setError}
+              onBroadcastFailure={() => setBroadcastOn(false)}
               windowsBuildNumber={windowsBuildNumber}
               contextMenuTriggerProps={paneContextMenu.triggerProps}
               actionsDisabled={contextActionBusy || workspaceLoading}

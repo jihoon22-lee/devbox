@@ -12,7 +12,7 @@ pub struct DistroInfo {
 }
 
 /// Docker 컨테이너 정보
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ContainerInfo {
     pub id: String,
     pub name: String,

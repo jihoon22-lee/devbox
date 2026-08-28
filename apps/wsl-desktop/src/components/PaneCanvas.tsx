@@ -25,6 +25,7 @@ interface PaneCanvasProps {
   onFontSizeChange: (fontSize: number) => void;
   onMetadataChange: (id: string, metadata: { title?: string; cwd?: string }) => void;
   onTerminalError: (message: string) => void;
+  onBroadcastFailure?: () => void;
   windowsBuildNumber: number | null;
   contextMenuTriggerProps: ContextMenuTriggerProps;
   actionsDisabled: boolean;
@@ -66,6 +67,7 @@ export default function PaneCanvas({
   onFontSizeChange,
   onMetadataChange,
   onTerminalError,
+  onBroadcastFailure,
   windowsBuildNumber,
   contextMenuTriggerProps,
   actionsDisabled,
@@ -124,6 +126,7 @@ export default function PaneCanvas({
             onFontSizeChange={onFontSizeChange}
             onMetadataChange={onMetadataChange}
             onTerminalError={onTerminalError}
+            onBroadcastFailure={onBroadcastFailure}
             windowsBuildNumber={windowsBuildNumber}
             contextMenuTriggerProps={contextMenuTriggerProps}
             actionsDisabled={actionsDisabled}

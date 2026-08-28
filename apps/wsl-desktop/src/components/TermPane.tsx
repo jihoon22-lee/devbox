@@ -69,6 +69,8 @@ interface TermPaneProps {
   onFontSizeChange: (fontSize: number) => void;
   onMetadataChange: (id: string, metadata: { title?: string; cwd?: string }) => void;
   onTerminalError: (message: string) => void;
+  /** Disable broadcast at the owner when the backend rejects a stale target set. */
+  onBroadcastFailure?: () => void;
   /** Windows build number for xterm's ConPTY soft-wrap heuristics, or null off Windows. */
   windowsBuildNumber: number | null;
   contextMenuTriggerProps: ContextMenuTriggerProps;
@@ -125,6 +127,7 @@ export default function TermPane({
   onFontSizeChange,
   onMetadataChange,
   onTerminalError,
+  onBroadcastFailure,
   windowsBuildNumber,
   contextMenuTriggerProps,
   actionsDisabled,
@@ -158,6 +161,8 @@ export default function TermPane({
   onMetadataChangeRef.current = onMetadataChange;
   const onTerminalErrorRef = useRef(onTerminalError);
   onTerminalErrorRef.current = onTerminalError;
+  const onBroadcastFailureRef = useRef(onBroadcastFailure);
+  onBroadcastFailureRef.current = onBroadcastFailure;
 
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -391,6 +396,8 @@ export default function TermPane({
         if (assessment.confirmation && !window.confirm(assessment.confirmation)) return;
         broadcastPendingCommandRef.current = assessment.nextPendingCommand;
         void broadcast(targets, data).catch(() => {
+          broadcastPendingCommandRef.current = "";
+          onBroadcastFailureRef.current?.();
           onTerminalErrorRef.current("broadcast 입력을 모든 대상 터미널에 전달하지 못했습니다.");
         });
       } else {

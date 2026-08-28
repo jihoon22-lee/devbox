@@ -1,11 +1,13 @@
 const MAX_PENDING_COMMAND = 4096;
 
+export const MAX_BROADCAST_TARGETS = 32;
+
 export interface BroadcastAssessment {
   confirmation: string | null;
   nextPendingCommand: string;
 }
 
-const DANGEROUS_COMMAND = /(?:^|[;&|]\s*)(?:sudo\s+)?(?:rm\s+(?:[^\s\r\n]+\s+)*-[^\s\r\n]*r|shutdown|reboot|poweroff|mkfs(?:\.|\s)|dd\s+[^\r\n]*\bof=|docker\s+system\s+prune|kubectl\s+delete|drop\s+(?:database|table)|truncate\s+table|git\s+clean\s+-[^\r\n]*f)/iu;
+const DANGEROUS_COMMAND = /(?:^|[;&|]\s*)(?:sudo(?:\s|$)|rm(?:\s|$)|shutdown|reboot|poweroff|mkfs(?:\.|\s)|dd\s+[^\r\n]*\bof=|docker\s+system\s+prune|kubectl\s+delete|drop\s+(?:database|table)|truncate\s+table|git\s+clean\s+-[^\r\n]*f)|(?:^|[\s;&|])\d{0,2}(?:>>?|<<?)|(?:>>?|<<?)/iu;
 
 function updatePending(previous: string, data: string): string {
   let pending = previous;
@@ -34,4 +36,20 @@ export function assessBroadcastInput(
     confirmation = `${targetCount}개 터미널에 위험할 수 있는 명령을 동시에 보낼까요?`;
   }
   return { confirmation, nextPendingCommand: updatePending(pendingCommand, data) };
+}
+
+/** Apply one explicit pane-target toggle without exceeding the native broadcast bound. */
+export function nextBroadcastTargets(
+  previous: ReadonlySet<string>,
+  id: string,
+  checked: boolean,
+): Set<string> | null {
+  const next = new Set(previous);
+  if (checked) {
+    if (!previous.has(id) && previous.size >= MAX_BROADCAST_TARGETS) return null;
+    next.add(id);
+  } else {
+    next.delete(id);
+  }
+  return next;
 }

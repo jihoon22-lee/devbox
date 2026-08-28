@@ -777,15 +777,26 @@ Knowledge Base가 catalog에 선언한 `snapshot:knowledge-base/activity/v1`은 
 Sources에 표시하되, 불투명 note ID와 원문 입력은 frontend로 전달하지 않는다.
 
 WSL Desktop은 catalog revision 6부터 `snapshot:wsl-desktop/runtime/v1`을 생산한다. producer는
-`wsl-desktop/v1/summary.json` 하나에 `runtime` view를 원자적으로 발행하며, 이미 실행 중인
-WSL distro만 bounded 순차 조회한다. distro별 terminal 수와 Docker availability, validated
-container state/name/hex ID, published `portMappings`만 공개하고, WSL/Docker path·command·env·
-credential·image·raw status/ports·terminal session identity는 snapshot과 오류에서 제외한다.
-`wsl.exe --list --running --quiet`와 `wsl.exe -d <distro> -- docker ps -a --no-trunc --format`
-는 fixed argv·5초 timeout·stdout/stderr bounds를 사용한다. malformed/partial/timeout 수집은
-정상 빈 결과로 교체하지 않고 기존 last-good을 보존한다. Workbench #281은 이 snapshot을 읽는
-consumer이며 WSL Desktop producer PR에서는 Workbench 파일이나 Docker resource mutation을
-수정하지 않는다.
+`wsl-desktop/v1/summary.json` 하나에 `runtime` view를 원자적으로 발행하며, dashboard command와
+background writer가 동일한 collection lock 아래 하나의 revision을 만든다. collection은
+`wsl.exe -l -v`로 distro/state와 session의 distro별 terminal 수를 한 번 캡처하고, Running
+distro에만 Docker와 numeric resource query를 순차 실행한다. 화면의 `DashboardSnapshot`은 이
+generation의 distro, terminal count, Docker availability/container state 및 CPU 사용률·memory/
+disk used/total을 함께 소유하고, runtime view는 기존 Workbench 호환 필드의 같은 generation을
+원자적으로 발행한다. stopped distro는 resource/Docker query 때문에 시작하지 않는다.
+
+공개되는 runtime 값은 validated container state/name/hex ID와 published `portMappings`이며,
+bounded numeric resource summary는 화면 전용 `DashboardSnapshot` IPC에만 존재한다. WSL/Docker
+path·command·env·credential·image·raw status/ports·terminal session identity는 snapshot과 오류에서
+제외한다. `wsl.exe`, `docker`, `cat`,
+`df` 호출은 fixed argv·5초 timeout·stdout/stderr bounds를 사용하며 shell/사용자 command/환경
+확장·설치를 사용하지 않는다. child 5초·전체 collection 30초 deadline 또는 bounds를 넘은
+malformed/partial 수집은 정상 빈 결과로 교체하지 않고 기존 last-good을 보존한다. dashboard
+refresh는 single-flight로 중복 요청을 합치고 snapshot TTL마다 자동 재조회하며 UI는
+`capturedAtMs + staleAfterMs`를 기준으로 loading/refreshing/fresh/stale/error를 표시한다.
+stale/refreshing/error 동안 Docker mutation과 broadcast는 fail-closed하지만 단일 terminal PTY I/O는 계속 허용한다.
+Workbench #281은 이 snapshot을 읽는 consumer이며 WSL Desktop producer PR에서는 Workbench 파일이나
+Docker resource mutation을 수정하지 않는다.
 
 Workbench는 이 runtime view의 첫 consumer다. 공용 discovery/read 경계 뒤에서 v1 payload 전체를
 엄격하게 재검증하고 published TCP host port만 숫자순으로 묶으며, 같은 port의 distro/container/
