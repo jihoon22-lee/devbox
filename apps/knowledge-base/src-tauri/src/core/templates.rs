@@ -136,20 +136,42 @@ pub fn render(
     }
     validate_placeholders(content)?;
 
-    let values = [
-        ("{{title}}", input.title.as_str()),
-        ("{{date}}", input.date.as_str()),
-        ("{{time}}", input.time.as_str()),
-        ("{{vault-relative-path}}", input.target.as_str()),
-    ];
-    let mut output = content.to_owned();
-    for (placeholder, value) in values {
-        output = output.replace(placeholder, value);
+    // Expand the template in one pass. A substituted title/path is user data,
+    // not template syntax, so placeholder-looking text inside a value must
+    // remain literal instead of being recursively expanded by a later pass.
+    let mut output = String::with_capacity(content.len());
+    let mut rest = content;
+    while let Some(start) = rest.find("{{") {
+        push_bounded(&mut output, &rest[..start])?;
+        let candidate = &rest[start..];
+        let end = candidate
+            .find("}}")
+            .ok_or(TemplateError::UnknownPlaceholder)?;
+        let token = &candidate[..end + 2];
+        let value = match token {
+            "{{title}}" => input.title.as_str(),
+            "{{date}}" => input.date.as_str(),
+            "{{time}}" => input.time.as_str(),
+            "{{vault-relative-path}}" => input.target.as_str(),
+            _ => return Err(TemplateError::UnknownPlaceholder),
+        };
+        push_bounded(&mut output, value)?;
+        rest = &candidate[end + 2..];
     }
-    if output.len() > MAX_TEMPLATE_OUTPUT_BYTES {
+    push_bounded(&mut output, rest)?;
+    Ok(output)
+}
+
+fn push_bounded(output: &mut String, value: &str) -> Result<(), TemplateError> {
+    if output
+        .len()
+        .checked_add(value.len())
+        .is_none_or(|length| length > MAX_TEMPLATE_OUTPUT_BYTES)
+    {
         return Err(TemplateError::OutputTooLarge);
     }
-    Ok(output)
+    output.push_str(value);
+    Ok(())
 }
 
 fn validate_placeholders(content: &str) -> Result<(), TemplateError> {
@@ -269,6 +291,17 @@ mod tests {
         assert_eq!(
             result,
             "# Focus log\n2026-08-28 09:30\nJournal/2026-08-28.md"
+        );
+    }
+
+    #[test]
+    fn substituted_values_are_not_interpreted_as_template_syntax() {
+        let mut input = input();
+        input.title = "literal {{date}}".into();
+        input.target = "Journal/{{title}}.md".into();
+        assert_eq!(
+            render(1, "{{title}} · {{vault-relative-path}}", &input).unwrap(),
+            "literal {{date}} · Journal/{{title}}.md"
         );
     }
 

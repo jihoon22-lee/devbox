@@ -229,7 +229,7 @@ function validateTemplateDraftInput(draft: TemplateDraft): void {
   validateTemplatePlaceholders(draft.content);
 }
 
-function validateTemplateApplyInput(input: TemplateApplyInput, content: string): void {
+function validateTemplateApplyInput(input: TemplateApplyInput, content: string): string {
   const normalized = input.target.split("\\").join("/");
   if (!templateTextIsSafe(input.target, MAX_TEMPLATE_PATH_BYTES, true)
     || [...input.target].some(isTemplateControl)
@@ -260,13 +260,38 @@ function validateTemplateApplyInput(input: TemplateApplyInput, content: string):
     throw new Error("템플릿 시간이 올바르지 않습니다");
   }
   validateTemplatePlaceholders(content);
-  const output = content
-    .split("{{title}}").join(input.title)
-    .split("{{date}}").join(input.date)
-    .split("{{time}}").join(input.time)
-    .split("{{vault-relative-path}}").join(input.target);
-  if (templateBytes(output) > MAX_TEMPLATE_OUTPUT_BYTES) {
-    throw new Error("템플릿 결과가 크기 제한을 초과했습니다");
+  return renderTemplateContent(input, content);
+}
+
+function renderTemplateContent(input: TemplateApplyInput, content: string): string {
+  const parts: string[] = [];
+  let outputBytes = 0;
+  let offset = 0;
+  const append = (value: string) => {
+    outputBytes += templateBytes(value);
+    if (outputBytes > MAX_TEMPLATE_OUTPUT_BYTES) {
+      throw new Error("템플릿 결과가 크기 제한을 초과했습니다");
+    }
+    parts.push(value);
+  };
+  while (true) {
+    const start = content.indexOf("{{", offset);
+    if (start < 0) {
+      append(content.slice(offset));
+      return parts.join("");
+    }
+    append(content.slice(offset, start));
+    const end = content.indexOf("}}", start + 2);
+    if (end < 0) throw new Error("지원하지 않는 템플릿 변수가 있습니다");
+    const token = content.slice(start, end + 2);
+    const value = token === "{{title}}" ? input.title
+      : token === "{{date}}" ? input.date
+      : token === "{{time}}" ? input.time
+      : token === "{{vault-relative-path}}" ? input.target
+      : null;
+    if (value === null) throw new Error("지원하지 않는 템플릿 변수가 있습니다");
+    append(value);
+    offset = end + 2;
   }
 }
 
@@ -449,12 +474,7 @@ export async function previewTemplate(input: TemplateApplyInput): Promise<Templa
   if (!isTauri()) {
     const template = mockTemplates.find((item) => item.id === input.templateId);
     if (!template) throw new Error("템플릿을 찾을 수 없습니다");
-    validateTemplateApplyInput(input, template.content);
-    const content = template.content
-      .split("{{title}}").join(input.title)
-      .split("{{date}}").join(input.date)
-      .split("{{time}}").join(input.time)
-      .split("{{vault-relative-path}}").join(input.target);
+    const content = validateTemplateApplyInput(input, template.content);
     mockTemplatePreview = {
       previewId: `tpl-${Date.now()}`,
       templateId: input.templateId,

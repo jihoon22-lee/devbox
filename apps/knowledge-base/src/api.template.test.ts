@@ -43,6 +43,21 @@ describe("Knowledge browser template contract", () => {
     await expect(saveTemplate(preview.previewId)).rejects.toThrow("템플릿 미리보기가 없습니다");
   });
 
+  it("keeps placeholder-looking substitution values literal", async () => {
+    const template = await createTemplate({
+      name: `Literal values ${Date.now()}`,
+      content: "{{title}} · {{vault-relative-path}}",
+    });
+    const preview = await previewTemplate({
+      ...input,
+      templateId: template.id,
+      title: "literal {{date}}",
+      target: "Notes/{{title}}.md",
+    });
+    expect(preview.content).toBe("literal {{date}} · Notes/{{title}}.md");
+    await deleteTemplate(template.id);
+  });
+
   it("rejects a preview after its template definition revision changes", async () => {
     const preview = await previewTemplate(input);
     await updateTemplate(1, { name: "Daily revised", content: "# {{title}}" });

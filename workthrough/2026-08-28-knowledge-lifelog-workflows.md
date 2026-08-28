@@ -231,6 +231,10 @@ adds the missing P1/P2 safeguards.
   under the immediate writer transaction. The table's `NOCASE UNIQUE`
   constraint and list-time duplicate detection keep browser/native and
   externally modified stores from presenting ambiguous definitions.
+- Native rendering expands the original template in one bounded pass. A title
+  or vault-relative path containing text such as `{{date}}` remains literal
+  user data and cannot be recursively interpreted as another template token;
+  the output limit is checked before every append.
 
 ### P1 remediation 6 — browser/native validation and truthful success
 
@@ -334,13 +338,16 @@ workthrough/2026-08-28-knowledge-lifelog-workflows.md
 
 ```rust
 // apps/knowledge-base/src-tauri/src/core/templates.rs
-for (placeholder, value) in values {
-    output = output.replace(placeholder, value);
+while let Some(start) = rest.find("{{") {
+    push_bounded(&mut output, &rest[..start])?;
+    // Match one allowlisted token from the original template only.
+    push_bounded(&mut output, value)?;
 }
 ```
 
 Only the four allowlisted tokens reach this loop; the validator rejects every
-other `{{...}}` token before rendering.
+other `{{...}}` token before rendering, and substituted values are never scanned
+again as template syntax.
 
 ### Metadata-only handoff status
 
@@ -397,20 +404,22 @@ Focused validation was run serially (`-j1`/single worker) in this worktree:
 
 - `cargo test -p applink --lib -j1`: **65 passed**.
 - `cargo test -p life-log --lib -j1`: **100 passed**.
-- `cargo test -p knowledge-base --lib -j1`: **121 passed**.
+- `CARGO_TARGET_DIR=/home/jihoon/.cache/targets/knowledge-lifelog-351-353 cargo test -p knowledge-base --lib`: **122 passed** after the one-pass substitution regression was added.
 - `cargo clippy -p applink -p knowledge-base -p life-log --all-targets -j1 -- -D warnings`: passed.
 - `pnpm --filter knowledge-base test -- src/api.template.test.ts src/components/TemplateManager.test.tsx --maxWorkers=1 --pool=forks`: **8 passed**.
 - `pnpm --filter life-log test -- src/App.contextMenu.test.tsx --maxWorkers=1 --pool=forks`: **15 passed**. Vitest's jsdom emitted its existing non-fatal `Not implemented: navigation to another Document` stderr for download anchors; no test failed and no raw fixture value was reflected.
 - `pnpm --filter life-log exec tsc --noEmit`: passed.
 - `pnpm --filter knowledge-base exec tsc --noEmit`: passed.
+- `pnpm --dir apps/knowledge-base test -- --run`: **83 passed**.
+- `pnpm --dir apps/knowledge-base build`: passed (Vite retained its existing large-chunk advisory).
 - `cargo fmt --all -- --check`: passed.
 - `git diff --check`: passed.
 
 Windows-only producer compensation helpers are cfg-gated so strict Linux
 Clippy does not carry dead-code warnings. Full workspace `cargo check`, root
 `pnpm build`, CI, and Windows packaged W3 evidence remain parent/release gates
-until this candidate is rebased onto the latest merged main. No commit, push,
-PR, or destructive worktree operation has been made yet.
+until this candidate is rebased onto the latest merged main. The implementation
+is committed only on its local feature branch; no push or PR has been made yet.
 
 ## Next Steps
 
