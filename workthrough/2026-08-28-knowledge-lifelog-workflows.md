@@ -409,30 +409,37 @@ and Windows packaged gates.
 
 Focused validation was run serially (`-j1`/single worker) in this worktree:
 
-- `cargo test -p applink --lib -j1`: **65 passed**.
+- `CARGO_TARGET_DIR=/home/jihoon/.cache/targets/knowledge-lifelog-351-353 cargo test -p applink --lib`: **68 passed** on the latest merged `main` baseline.
 - `CARGO_TARGET_DIR=/home/jihoon/.cache/targets/knowledge-lifelog-351-353 cargo test -p life-log --lib`: **101 passed** after the expiry-boundary status fixture was added.
 - `CARGO_TARGET_DIR=/home/jihoon/.cache/targets/knowledge-lifelog-351-353 cargo test -p knowledge-base --lib`: **122 passed** after the one-pass substitution regression was added.
 - `cargo clippy -p applink -p knowledge-base -p life-log --all-targets -j1 -- -D warnings`: passed.
 - `pnpm --filter knowledge-base test -- src/api.template.test.ts src/components/TemplateManager.test.tsx --maxWorkers=1 --pool=forks`: **8 passed**.
 - `pnpm --filter life-log test -- src/App.contextMenu.test.tsx --maxWorkers=1 --pool=forks`: **15 passed**. Vitest's jsdom emitted its existing non-fatal `Not implemented: navigation to another Document` stderr for download anchors; no test failed and no raw fixture value was reflected.
+- `pnpm --dir apps/life-log test -- --run`: **48 passed** with the same non-fatal jsdom download-anchor advisory.
+- `pnpm --dir apps/life-log build`: passed.
 - `pnpm --filter life-log exec tsc --noEmit`: passed.
 - `pnpm --filter knowledge-base exec tsc --noEmit`: passed.
 - `pnpm --dir apps/knowledge-base test -- --run`: **83 passed**.
 - `pnpm --dir apps/knowledge-base build`: passed (Vite retained its existing large-chunk advisory).
+- `CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox cargo test --workspace`: passed on the latest merged `main` baseline.
+- `CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox cargo check --workspace --all-targets`: passed.
+- `pnpm build`: passed for every frontend workspace package after an offline frozen install restored the worktree-local Log Lens executable links. Existing bundle-size/dynamic-import advisories remain non-fatal.
+- `python3 .github/scripts/check-dependencies.py check`: passed; notices match both lockfiles.
+- `bash .github/scripts/check-catalog.sh`: passed.
 - `cargo fmt --all -- --check`: passed.
 - `git diff --check`: passed.
 
 Windows-only producer compensation helpers are cfg-gated so strict Linux
-Clippy does not carry dead-code warnings. Full workspace `cargo check`, root
-`pnpm build`, CI, and Windows packaged W3 evidence remain parent/release gates
-until this candidate is rebased onto the latest merged main. The implementation
-is committed only on its local feature branch; no push or PR has been made yet.
+Clippy does not carry dead-code warnings. The candidate is rebased onto the
+latest merged `main`, and all Linux/workspace completion gates above pass.
+GitHub CI and Windows packaged W3 evidence remain the remote/release gates.
+The implementation is committed only on its local feature branch; no push or
+PR has been made yet.
 
 ## Next Steps
 
-- Run the repository completion gates (`cargo test`, `cargo check`, and
-  `pnpm build`) in the parent-controlled environment, followed by Windows W3
-  packaged smoke and the final CI workflow.
+- Run GitHub CI, then perform the Windows W3 packaged smoke before the release
+  checkpoint.
 - On Windows, exercise a real vault/template update race, locked/index-failure
   rollback, cold/hot Life→Knowledge handoff, and process termination during
   status-lock ownership. The Linux fixtures cover the same state transitions
