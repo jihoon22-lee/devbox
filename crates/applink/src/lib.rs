@@ -41,8 +41,9 @@ mod handoff;
 
 pub use handoff::{
     handoff_root_in, validate_handoff_text, CreateHandoff, HandoffClaim, HandoffDescriptor,
-    HandoffEnvelope, HandoffError, HandoffStatus, HandoffStatusRecord, HandoffStore,
-    RecordHandoffStatus, DEFAULT_CLAIM_LEASE_MS, DEFAULT_HANDOFF_TTL_MS, MAX_HANDOFF_BYTES,
+    HandoffEnvelope, HandoffError, HandoffPublication, HandoffStatus, HandoffStatusRecord,
+    HandoffStore, RecordHandoffStatus, DEFAULT_CLAIM_LEASE_MS, DEFAULT_HANDOFF_TTL_MS,
+    MAX_HANDOFF_BYTES,
 };
 
 use serde::{Deserialize, Serialize};
@@ -50,6 +51,11 @@ use serde::{Deserialize, Serialize};
 /// Handoff envelope의 프로토콜 버전. `OpenRequest` argv에 새 forward-compatible
 /// target flag를 추가하는 것만으로는 one-time handoff envelope의 모양이 바뀌지 않는다.
 pub const PROTOCOL_VERSION: u32 = 2;
+/// Keep cross-app command lines below the smallest supported Windows command
+/// line budget. This bounds both parser work and the values that launchers can
+/// forward through AppLink, including unknown forward-compatible flags.
+pub const MAX_ARGV_ARGS: usize = 64;
+pub const MAX_ARGV_BYTES: usize = 32 * 1024;
 const MAX_TASK_ID_BYTES: usize = 128;
 const MAX_INSTALL_APP_ID_BYTES: usize = 64;
 
@@ -398,8 +404,31 @@ impl std::error::Error for ParseError {}
 /// - `Ok(None)` — 알려진 타깃이 전혀 없다. 모르는 플래그만 있어도 여기 해당한다.
 /// - `Err(ParseError)` — 알려진 플래그인데 값이 없거나 형식이 잘못됐다.
 pub fn parse_argv(args: &[String]) -> Result<Option<OpenRequest>, ParseError> {
+    validate_argv(args)?;
     let rest = if args.is_empty() { args } else { &args[1..] };
     parse_rest(rest)
+}
+
+/// Validate the bounded command-line shape used by AppLink. The OS has its
+/// own process command-line limit, but checking here keeps each receiver's
+/// parser and IPC payload bounded before any known value is cloned.
+pub fn validate_argv(args: &[String]) -> Result<(), ParseError> {
+    if args.len() > MAX_ARGV_ARGS {
+        return Err(ParseError("applink argv가 너무 큼".into()));
+    }
+    let total = args
+        .iter()
+        .try_fold(0usize, |total, value| {
+            total
+                .checked_add(value.len())
+                .and_then(|next| next.checked_add(1))
+                .ok_or(())
+        })
+        .map_err(|_| ParseError("applink argv가 너무 큼".into()))?;
+    if total > MAX_ARGV_BYTES {
+        return Err(ParseError("applink argv가 너무 큼".into()));
+    }
+    Ok(())
 }
 
 fn parse_rest(rest: &[String]) -> Result<Option<OpenRequest>, ParseError> {
@@ -521,7 +550,7 @@ fn valid_opaque_id(value: &str, max_bytes: usize, extended: bool) -> bool {
 fn take_u32(rest: &[String], i: &mut usize, flag: &str) -> Result<u32, ParseError> {
     let raw = take_value(rest, i, flag)?;
     raw.parse::<u32>()
-        .map_err(|_| ParseError(format!("{flag} 값이 숫자가 아님: {raw}")))
+        .map_err(|_| ParseError(format!("{flag} 값이 숫자가 아님")))
 }
 
 /// `OpenRequest`를 argv로 인코딩한다. 값이 계약의 범위/형식을 벗어나면 부분 argv를
@@ -681,6 +710,24 @@ mod tests {
     fn non_numeric_column_is_err() {
         let err = parse_argv(&argv(&["exe", "--path", "/tmp/x", "--column", "abc"])).unwrap_err();
         assert!(err.0.contains("--column"), "{err}");
+    }
+
+    #[test]
+    fn argv_shape_is_bounded_before_known_values_are_parsed() {
+        let too_many = std::iter::once(s("exe"))
+            .chain((0..MAX_ARGV_ARGS).map(|_| s("--unknown")))
+            .collect::<Vec<_>>();
+        assert!(parse_argv(&too_many).is_err());
+
+        let too_large = vec![s("exe"), s("--query"), "x".repeat(MAX_ARGV_BYTES)];
+        assert!(parse_argv(&too_large).is_err());
+    }
+
+    #[test]
+    fn malformed_numeric_values_are_not_reflected_in_errors() {
+        let secret = "Bearer top-secret-token";
+        let error = parse_argv(&argv(&["exe", "--line", secret])).unwrap_err();
+        assert!(!error.0.contains(secret));
     }
 
     #[test]

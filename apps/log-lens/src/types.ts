@@ -92,6 +92,17 @@ export interface SavedView {
   filter: FilterSpec;
 }
 
+export type HandoffOpenTarget = { kind: "handoff"; handoffKind: string; id: string };
+
+export interface LogSourcePreview {
+  id: string;
+  kind: "log-source/v1";
+  sourceApp: "run-manager" | "wsl-desktop";
+  expiresAtMs: number;
+  leaseUntilMs: number;
+  source: SourceSummary;
+}
+
 export interface ExportedText {
   text: string;
   truncated: boolean;

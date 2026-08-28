@@ -7,9 +7,12 @@ interface Props {
   selectedDistro: string;
   onSelectDistro: (name: string) => void;
   onOpenTerminal: (name: string) => void;
+  onOpenJournalInLogLens?: (name: string) => void;
+  onOpenFileInLogLens?: (name: string) => void;
   containers: ContainerInfo[];
   dockerMissing: boolean;
   busy: string | null;
+  logLensBusy?: string | null;
   onAction: (id: string, action: "start" | "stop" | "restart") => void;
   onRefresh: () => void;
   /** Complete resource/session generation shared with broadcast safety. */
@@ -22,9 +25,12 @@ export default function DistroPanel({
   selectedDistro,
   onSelectDistro,
   onOpenTerminal,
+  onOpenJournalInLogLens,
+  onOpenFileInLogLens,
   containers,
   dockerMissing,
   busy,
+  logLensBusy = null,
   onAction,
   onRefresh,
   dashboardDistros = [],
@@ -43,6 +49,7 @@ export default function DistroPanel({
     stale: "오래된 snapshot",
     error: "마지막 정상 snapshot",
   }[snapshotState];
+  const anyBusy = busy !== null || logLensBusy !== null;
 
   return (
     <div className="dash-section">
@@ -54,7 +61,7 @@ export default function DistroPanel({
         <button
           className="btn refresh"
           type="button"
-          disabled={snapshotState === "loading" || snapshotState === "refreshing" || busy !== null}
+          disabled={snapshotState === "loading" || snapshotState === "refreshing" || anyBusy}
           onClick={onRefresh}
         >
           Refresh
@@ -63,6 +70,7 @@ export default function DistroPanel({
 
       <select
         aria-label="WSL distro 선택"
+        disabled={logLensBusy !== null}
         value={selectedDistro}
         onChange={(e) => onSelectDistro(e.currentTarget.value)}
       >
@@ -113,10 +121,33 @@ export default function DistroPanel({
                 className="btn"
                 type="button"
                 aria-label={`${d.name} 터미널 열기`}
+                disabled={logLensBusy !== null}
                 onClick={() => onOpenTerminal(d.name)}
               >
                 Open Terminal
               </button>
+              {onOpenJournalInLogLens && (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={anyBusy}
+                  aria-busy={logLensBusy === `log-lens-journal:${d.name}`}
+                  onClick={() => onOpenJournalInLogLens(d.name)}
+                >
+                  Open journal in Log Lens
+                </button>
+              )}
+              {onOpenFileInLogLens && (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={anyBusy}
+                  aria-busy={logLensBusy === `log-lens-file:${d.name}`}
+                  onClick={() => onOpenFileInLogLens(d.name)}
+                >
+                  Open file in Log Lens
+                </button>
+              )}
             </div>
           );
         })}
@@ -168,7 +199,7 @@ export default function DistroPanel({
                       <button
                         className="btn"
                         type="button"
-                        disabled={busy === `${c.id}:start` || !snapshotFresh}
+                        disabled={anyBusy || !snapshotFresh}
                         onClick={() => onAction(c.id, "start")}
                       >
                         Start
@@ -178,7 +209,7 @@ export default function DistroPanel({
                         <button
                           className="btn danger"
                           type="button"
-                          disabled={busy === `${c.id}:stop` || !snapshotFresh}
+                          disabled={anyBusy || !snapshotFresh}
                           onClick={() => onAction(c.id, "stop")}
                         >
                           Stop
@@ -186,7 +217,7 @@ export default function DistroPanel({
                         <button
                           className="btn"
                           type="button"
-                          disabled={busy === `${c.id}:restart` || !snapshotFresh}
+                          disabled={anyBusy || !snapshotFresh}
                           onClick={() => onAction(c.id, "restart")}
                         >
                           Restart

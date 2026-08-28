@@ -592,6 +592,13 @@ export function searchRunLogs(runId: string, options: LogSearchOptions): Promise
   return invoke<LogSearchResponse>("search_run_logs", { input });
 }
 
+/** Start the explicit Run Manager -> Log Lens handoff. Browser fixtures never
+ * publish a pending envelope or launch another application. */
+export async function openRunLogInLogLens(runId: string, stream: LogStream): Promise<void> {
+  if (!isTauri()) throw new Error("Log Lens handoff는 데스크톱 앱에서만 사용할 수 있습니다");
+  await invoke("open_run_log_in_log_lens", { runId, stream });
+}
+
 /**
  * Browser preview data is only a development fallback; the Tauri command
  * above is authoritative and uses core::cron. Keeping a small fallback makes

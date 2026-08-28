@@ -49,7 +49,7 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["path", "profile"],
-      "produces": ["snapshot:wsl-desktop/runtime/v1"],
+      "produces": ["snapshot:wsl-desktop/runtime/v1", "handoff:log-source/v1"],
       "actions": []
     },
     {
@@ -155,7 +155,7 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["task"],
-      "produces": ["snapshot:run-manager/status/v1"],
+      "produces": ["snapshot:run-manager/status/v1", "handoff:log-source/v1"],
       "actions": []
     },
     {

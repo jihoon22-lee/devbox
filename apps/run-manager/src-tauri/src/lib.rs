@@ -4,6 +4,7 @@ mod commands;
 pub mod core;
 pub mod integration;
 mod lifecycle;
+mod log_lens;
 pub mod logs;
 pub mod notifications;
 pub mod platform;
@@ -108,6 +109,7 @@ pub fn run() {
             commands::preview_cron,
             commands::tail_log,
             commands::search_run_logs,
+            log_lens::open_run_log_in_log_lens,
         ])
         .setup(|app| {
             devbox_window_state_tauri::restore_main_window(app.handle());

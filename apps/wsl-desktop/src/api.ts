@@ -82,6 +82,19 @@ export async function dockerAction(distro: string, containerId: string, action: 
   await invoke("docker_action", { distro, containerId, action });
 }
 
+/** Publish a validated WSL file adapter handoff. Browser preview never writes
+ * a pending envelope or launches another app. */
+export async function openWslFileInLogLens(distro: string, wslPath: string): Promise<void> {
+  if (!isTauri()) throw new Error("Log Lens handoff는 데스크톱 앱에서만 사용할 수 있습니다");
+  await invoke("open_wsl_file_in_log_lens", { distro, wslPath });
+}
+
+/** Publish a validated fixed journal adapter handoff. */
+export async function openWslJournalInLogLens(distro: string, unit: string | null): Promise<void> {
+  if (!isTauri()) throw new Error("Log Lens handoff는 데스크톱 앱에서만 사용할 수 있습니다");
+  await invoke("open_wsl_journal_in_log_lens", { distro, unit });
+}
+
 export interface StartedSession {
   sessionId: string;
   resumed: boolean;

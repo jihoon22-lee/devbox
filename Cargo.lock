@@ -115,8 +115,10 @@ version = "0.1.0"
 dependencies = [
  "filesystem",
  "getrandom 0.4.3",
+ "libc",
  "serde",
  "serde_json",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -3081,12 +3083,16 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 name = "log-lens"
 version = "0.1.0"
 dependencies = [
+ "applink",
  "chrono",
+ "integration",
+ "libc",
  "regex",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "tauri-plugin-single-instance",
  "tempfile",
  "tokio",
  "window-state-tauri",
@@ -4434,6 +4440,7 @@ dependencies = [
  "dirs",
  "filesystem",
  "integration",
+ "launch",
  "regex",
  "rusqlite",
  "secrets",
@@ -7454,6 +7461,7 @@ dependencies = [
  "dirs",
  "filesystem",
  "integration",
+ "launch",
  "portable-pty",
  "serde",
  "serde_json",
@@ -7462,6 +7470,7 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tempfile",
  "tokio",
  "uuid",
  "window-state-tauri",

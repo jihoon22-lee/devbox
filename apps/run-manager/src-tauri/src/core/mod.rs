@@ -1,5 +1,6 @@
 pub mod cron;
 pub mod imports;
+pub mod log_handoff;
 pub mod log_search;
 pub mod models;
 pub mod policies;

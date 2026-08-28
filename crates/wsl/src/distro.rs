@@ -12,6 +12,9 @@ pub fn validate_distro_name(name: &str) -> Result<(), WslError> {
     if name.is_empty() {
         return Err(WslError::InvalidDistro("빈 문자열".into()));
     }
+    if name.starts_with('-') {
+        return Err(WslError::InvalidDistro("옵션처럼 해석될 수 있음".into()));
+    }
     if name.chars().any(|c| c.is_control()) {
         return Err(WslError::InvalidDistro("제어 문자 포함".into()));
     }
@@ -66,6 +69,7 @@ mod tests {
     fn rejects_empty_and_whitespace() {
         assert!(validate_distro_name("").is_err());
         assert!(validate_distro_name("   ").is_err());
+        assert!(validate_distro_name("--help").is_err());
     }
 
     #[test]

@@ -14,7 +14,7 @@
 - **행 컨텍스트 메뉴** — 작업·서비스·실행 이력의 우클릭/Shift+F10/Menu key 메뉴, 대상 행 우선 선택, 닫힌 뒤 focus 복구
   - 작업: 지금 실행, 활성화/비활성화, 편집, 로그 열기, 확인 후 삭제
   - 서비스: 실제 초기 인스턴스 상태에 따른 시작/정지/재시작, 편집, 정지 상태에서만 확인 후 삭제
-  - 실행 이력: 로그 보기, 해당 작업 재실행, 현재 stdout/stderr 스트림 로그 저장
+  - 실행 이력: 로그 보기, 해당 작업 재실행, 현재 stdout/stderr 스트림 로그 저장, 확인 후 Log Lens 읽기 전용 열기
 - **안전한 lifecycle action** — 작업 활성 실행과 서비스 정지는 모든 UI 진입점에서 확인하고, 활성 작업 삭제와 정지 중이거나 snapshot을 확인할 수 없는 서비스 lifecycle 변경은 fail-closed로 비활성화
 - **재시도 제어** — `retry_waiting` 서비스의 명시적 정지는 예약된 backoff를 취소하고, 재시작은 대기 시간을 건너뛰어 새 generation을 시작
 - **제한된 로그 저장** — backend가 run ID로 해석한 app-owned 회전 로그만 decimal cursor로 읽고, 현재 스트림을 최대 50MiB까지 저장. 파일명에는 bounded opaque run ID만 사용하며 명령·경로·환경변수를 넣지 않음
@@ -94,9 +94,22 @@ non-cancellable operation으로 처리 중에는 취소를 가장하지 않는�
 - request와 `log-source/v1` DTO는 알 수 없는 field를 거부하므로 `absolutePath` 같은 추가
   경로를 payload에 숨길 수 없다. 모든 epoch-millisecond 입력·출력은 JavaScript safe integer
   범위 안에서만 WebView 경계를 통과한다.
-- `log-source/v1` source reference를 local boundary에서 검증하지만 이 PR은 Log Lens
-  producer/handoff, remote logs, permanent archive를 연결하지 않는다. 해당 연결은 Log Lens
-  bootstrap 이후 별도 integration PR에서 수행한다.
+- `log-source/v1` source reference는 `{ kind, sourceId, runId, stream }`으로만 발행한다.
+  `sourceId`는 `run-manager:<run-id>:<stdout|stderr>`와 exact 일치하며, 실행 명령·cwd·환경변수·
+  credential·절대 경로·로그 원문은 payload와 argv에 들어가지 않는다. 사용자가 실행 이력의
+  `Log Lens` 버튼/메뉴에서 확인한 경우에만 공용 handoff store에 10분 TTL envelope을 만들고,
+  AppLink argv에는 opaque kind/id만 전달한다. 발행 전에 DB의 `log_dir`는 canonical app-owned
+  `logs/runs/<run-id>` 경로로 다시 resolve하며, 디렉터리가 없거나 소유 경계를 벗어나면 고정
+  `logs-unavailable` 오류로 중단한다. 이 integration은 Run Manager producer만 포함하고,
+  Log Lens의 실제 Run log reader는 별도 후속 작업으로 추적한다.
+- Log Lens는 envelope을 claim한 뒤 source summary를 미리보기로 보여 준다. 사용자가 `읽기 전용
+  source 추가`를 누를 때만 ack하고 지원되는 fixed adapter로 넘기며, 취소/실패는 restore한다.
+  Run source는 현재 identity-only producer 경계에 머물고, 실제 Run log reader adapter는 별도
+  후속 작업이다. 수동 검색·tail과 handoff source 모두 permanent archive를 만들지 않는다.
+- handoff publish와 Log Lens launch는 producer 프로세스에서 single-flight로 직렬화한다. 이미
+  같은 흐름을 처리 중이면 고정 `handoff-busy` 오류를 반환해 중복 envelope·중복 창 생성을 막고,
+  launch 실패 시에는 방금 만든 exact pending envelope을 안전하게 제거한다. raw payload나
+  경로는 오류에 노출하지 않으며, 이 producer 정리는 Log Lens receiver 읽기를 구현하지 않는다.
 
 ## 개발
 

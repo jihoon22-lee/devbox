@@ -1,7 +1,16 @@
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { getWindowsBuildNumber, listWorkspaceProfiles, onOpenRequest, startSession, takePendingOpen } from "./api";
+import {
+  dockerAction,
+  getDashboardSnapshot,
+  getWindowsBuildNumber,
+  listWorkspaceProfiles,
+  onOpenRequest,
+  openWslJournalInLogLens,
+  startSession,
+  takePendingOpen,
+} from "./api";
 import type { OpenRequest, WorkspaceProfile } from "./types";
 
 const mocks = vi.hoisted(() => ({
@@ -58,6 +67,8 @@ vi.mock("./api", () => ({
   onTerminalClosed: vi.fn().mockResolvedValue(() => undefined),
   onTerminalOutput: vi.fn().mockResolvedValue(() => undefined),
   getWindowsBuildNumber: vi.fn().mockResolvedValue(null),
+  openWslFileInLogLens: vi.fn().mockResolvedValue(undefined),
+  openWslJournalInLogLens: vi.fn().mockResolvedValue(undefined),
   takePendingOpen: vi.fn().mockImplementation(async () => {
     mocks.order.push("take");
     return null;
@@ -74,6 +85,9 @@ const onOpenRequestMock = vi.mocked(onOpenRequest);
 const takePendingOpenMock = vi.mocked(takePendingOpen);
 const getWindowsBuildNumberMock = vi.mocked(getWindowsBuildNumber);
 const listWorkspaceProfilesMock = vi.mocked(listWorkspaceProfiles);
+const dockerActionMock = vi.mocked(dockerAction);
+const getDashboardSnapshotMock = vi.mocked(getDashboardSnapshot);
+const openWslJournalInLogLensMock = vi.mocked(openWslJournalInLogLens);
 
 const profile: WorkspaceProfile = {
   id: "profile-1",
@@ -101,6 +115,10 @@ beforeEach(() => {
   takePendingOpenMock.mockClear();
   getWindowsBuildNumberMock.mockClear();
   listWorkspaceProfilesMock.mockReset().mockResolvedValue([]);
+  dockerActionMock.mockReset().mockResolvedValue(undefined);
+  getDashboardSnapshotMock.mockClear();
+  openWslJournalInLogLensMock.mockReset().mockResolvedValue(undefined);
+  Object.defineProperty(window, "confirm", { configurable: true, value: vi.fn(() => true) });
 });
 
 afterEach(() => cleanup());
@@ -201,5 +219,76 @@ describe("App app-link delivery", () => {
       expect(props.panes).toHaveLength(1);
       expect(props.activePaneId).toBe("session-pane-1");
     });
+  });
+
+  it("isolates a pending Log Lens handoff from Docker, distro, and new terminal actions", async () => {
+    let resolveHandoff: (() => void) | undefined;
+    openWslJournalInLogLensMock.mockImplementationOnce(
+      () => new Promise<void>((resolve) => {
+        resolveHandoff = resolve;
+      }),
+    );
+    getDashboardSnapshotMock.mockResolvedValueOnce({
+      revision: 2,
+      capturedAtMs: Date.now(),
+      staleAfterMs: 30_000,
+      distros: [{
+        name: "Ubuntu",
+        version: 2,
+        default: true,
+        state: "Running",
+        terminalCount: 0,
+        dockerAvailability: "available",
+        containers: [
+          { id: "container-1", name: "worker", image: "worker:latest", status: "Exited (1)", ports: "" },
+        ],
+        resource: {
+          cpuPercent: 10,
+          memoryUsedBytes: 1,
+          memoryTotalBytes: 2,
+          diskUsedBytes: 1,
+          diskTotalBytes: 2,
+        },
+      }],
+    });
+
+    render(<App />);
+    const journalButton = await screen.findByRole("button", { name: "Open journal in Log Lens" });
+    const startButton = await screen.findByRole("button", { name: "Start" });
+    const addTerminalButton = await screen.findByRole("button", { name: "+ Terminal" });
+
+    fireEvent.click(journalButton);
+    await waitFor(() => expect(openWslJournalInLogLensMock).toHaveBeenCalledWith("Ubuntu", null));
+    expect(journalButton).toBeDisabled();
+    expect(startButton).toBeDisabled();
+    expect(addTerminalButton).toBeDisabled();
+    const toolbarDistroSelector = screen.getAllByRole("combobox")
+      .find((element) => element.tagName === "SELECT" && !element.hasAttribute("aria-label"));
+    const panelDistroSelector = screen.getByRole("combobox", { name: "WSL distro 선택" });
+    expect(toolbarDistroSelector).toBeDefined();
+    expect(toolbarDistroSelector).toBeDisabled();
+    expect(panelDistroSelector).toBeDisabled();
+
+    fireEvent.click(startButton);
+    expect(dockerActionMock).not.toHaveBeenCalled();
+    await act(async () => resolveHandoff?.());
+    await waitFor(() => expect(journalButton).toBeEnabled());
+    expect(startButton).toBeEnabled();
+    expect(addTerminalButton).toBeEnabled();
+  });
+
+  it("clears a failed handoff error after a later successful handoff", async () => {
+    openWslJournalInLogLensMock
+      .mockRejectedValueOnce(new Error("native path /secret/run.log"))
+      .mockResolvedValueOnce(undefined);
+
+    render(<App />);
+    const journalButton = await screen.findByRole("button", { name: "Open journal in Log Lens" });
+    fireEvent.click(journalButton);
+    await screen.findByText("Log Lens journal handoff를 시작하지 못했습니다.");
+
+    fireEvent.click(journalButton);
+    await waitFor(() => expect(openWslJournalInLogLensMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText("Log Lens journal handoff를 시작하지 못했습니다.")).not.toBeInTheDocument());
   });
 });

@@ -15,6 +15,8 @@ import {
   onOpenRequest,
   onTerminalClosed,
   onTerminalOutput,
+  openWslFileInLogLens,
+  openWslJournalInLogLens,
   startSession,
   saveWorkspaceProfile,
   takePendingOpen,
@@ -84,6 +86,7 @@ export default function App() {
   const [dashboardSnapshot, setDashboardSnapshot] = useState<DashboardSnapshot | null>(null);
   const [dashboardState, setDashboardState] = useState<DashboardFreshness>("loading");
   const [busy, setBusy] = useState<string | null>(null);
+  const [logLensBusy, setLogLensBusy] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [pinned, setPinned] = useState<boolean>(loadPinned);
   const [cwd, setCwd] = useState<string>(() => (loadPinned() ? loadPinnedCwd() : ""));
@@ -137,6 +140,22 @@ export default function App() {
   const dashboardSnapshotRef = useRef<DashboardSnapshot | null>(null);
   const dashboardMountedRef = useRef(true);
   dashboardSnapshotRef.current = dashboardSnapshot;
+  const mountedRef = useRef(true);
+  const logLensGeneration = useRef(0);
+  const busyRef = useRef<string | null>(null);
+  const logLensBusyRef = useRef<string | null>(null);
+  const dashboardOperationToken = useRef(0);
+  const logLensOperationToken = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      logLensGeneration.current += 1;
+      busyRef.current = null;
+      logLensBusyRef.current = null;
+    };
+  }, []);
 
   // onTerminalClosed 구독은 마운트 시 한 번만 걸린다(아래 effect, deps []). 그 콜백이
   // dropPane을 부를 때 tabs/activeTabId/activePaneId를 직접 클로저로 참조하면 마운트
@@ -250,6 +269,7 @@ export default function App() {
   }, []);
 
   const refreshDashboard = useCallback((force = false): Promise<void> => {
+    if (logLensBusyRef.current !== null) return Promise.resolve();
     // A refresh is a shared single-flight operation. Keeping one promise here also means the
     // manual button, lifecycle triggers and the periodic freshness guard cannot race their
     // responses and regress the resource/session generation shown by the UI.
@@ -361,6 +381,7 @@ export default function App() {
   }, [dashboardSnapshot, refreshDashboard]);
 
   const onDockerAction = async (id: string, action: "start" | "stop" | "restart") => {
+    if (busyRef.current !== null || logLensBusyRef.current !== null) return;
     const snapshot = dashboardSnapshot?.distros.find((distro) => distro.name === selected);
     if (
       !snapshot
@@ -371,19 +392,107 @@ export default function App() {
       setError("최신 Docker snapshot이 준비될 때까지 상태를 변경할 수 없습니다.");
       return;
     }
-    setBusy(`${id}:${action}`);
+    const token = ++dashboardOperationToken.current;
+    const operation = `${id}:${action}`;
+    busyRef.current = operation;
+    setBusy(operation);
     try {
       await dockerAction(selected, id, action);
       await refreshDashboard(true);
     } catch {
       setError("Docker 상태를 안전하게 변경하지 못했습니다.");
     } finally {
-      setBusy(null);
+      if (dashboardOperationToken.current === token) {
+        busyRef.current = null;
+        if (mountedRef.current) setBusy(null);
+      }
     }
   };
 
+  const selectDistro = (name: string) => {
+    if (logLensBusyRef.current !== null) return;
+    setSelected(name);
+  };
+
+  const openJournalInLogLens = (name: string) => {
+    if (busyRef.current !== null
+      || logLensBusyRef.current !== null
+      || workspaceLoadingRef.current
+      || contextActionBusy) return;
+    if (!window.confirm(`'${name}'의 WSL journal을 Log Lens에서 읽기 전용으로 열까요?\n\n로그 원문·명령·자격 증명은 handoff에 포함되지 않습니다.`)) return;
+    const generation = ++logLensGeneration.current;
+    const token = ++logLensOperationToken.current;
+    const operation = `log-lens-journal:${name}`;
+    logLensBusyRef.current = operation;
+    setLogLensBusy(operation);
+    setError(null);
+    void openWslJournalInLogLens(name, null)
+      .then(() => {
+        if (mountedRef.current
+          && token === logLensOperationToken.current
+          && generation === logLensGeneration.current) {
+          setError(null);
+        }
+      })
+      .catch(() => {
+        if (mountedRef.current
+          && token === logLensOperationToken.current
+          && generation === logLensGeneration.current) {
+          setError("Log Lens journal handoff를 시작하지 못했습니다.");
+        }
+      })
+      .finally(() => {
+        if (token === logLensOperationToken.current && generation === logLensGeneration.current) {
+          logLensBusyRef.current = null;
+          if (mountedRef.current) setLogLensBusy(null);
+        }
+      });
+  };
+
+  const openFileInLogLens = (name: string) => {
+    if (busyRef.current !== null
+      || logLensBusyRef.current !== null
+      || workspaceLoadingRef.current
+      || contextActionBusy) return;
+    const entered = window.prompt("Log Lens에서 열 WSL 파일의 절대 경로를 입력하세요 (예: /var/log/app.log)");
+    if (entered === null) return;
+    const wslPath = entered.trim();
+    if (!wslPath) {
+      setError("WSL 파일 경로를 입력해야 합니다.");
+      return;
+    }
+    if (!window.confirm(`'${name}'의 선택한 WSL 파일을 Log Lens에서 읽기 전용으로 열까요?\n\n경로는 검증된 WSL adapter 설정으로만 한 번 전달됩니다.`)) return;
+    const generation = ++logLensGeneration.current;
+    const token = ++logLensOperationToken.current;
+    const operation = `log-lens-file:${name}`;
+    logLensBusyRef.current = operation;
+    setLogLensBusy(operation);
+    setError(null);
+    void openWslFileInLogLens(name, wslPath)
+      .then(() => {
+        if (mountedRef.current
+          && token === logLensOperationToken.current
+          && generation === logLensGeneration.current) {
+          setError(null);
+        }
+      })
+      .catch(() => {
+        if (mountedRef.current
+          && token === logLensOperationToken.current
+          && generation === logLensGeneration.current) {
+          setError("Log Lens file handoff를 시작하지 못했습니다.");
+        }
+      })
+      .finally(() => {
+        if (token === logLensOperationToken.current && generation === logLensGeneration.current) {
+          logLensBusyRef.current = null;
+          if (mountedRef.current) setLogLensBusy(null);
+        }
+      });
+  };
+
   const openDistroTerminal = (name: string) => {
-    if (!workspaceReady || workspaceLoading) return;
+    if (!workspaceReady || workspaceLoading || logLensBusyRef.current !== null) return;
     setSelected(name);
     void startInTab(null, name);
   };
@@ -528,7 +637,7 @@ export default function App() {
       multiplexer?: MultiplexerKind;
     },
   ): Promise<boolean> => {
-    if (workspaceLoadingRef.current) return false;
+    if (workspaceLoadingRef.current || logLensBusyRef.current !== null) return false;
     setError(null);
     const usedCwd = (cwdOverride ?? cwd).trim() || undefined;
     const usedStartCommand = (options?.startCommand === undefined ? startCommand : options.startCommand)?.trim() || undefined;
@@ -587,7 +696,7 @@ export default function App() {
     workspace: WorkspaceDefinition,
     options: { replaceExisting: boolean; label: string },
   ): Promise<boolean> => {
-    if (workspaceLoadingRef.current) return false;
+    if (workspaceLoadingRef.current || logLensBusyRef.current !== null) return false;
     const oldSessionIds = panes.flatMap((pane) => pane.sessionId ? [pane.sessionId] : []);
     if (
       options.replaceExisting
@@ -746,7 +855,7 @@ export default function App() {
   };
 
   const requestDeleteProfile = async (profile: WorkspaceProfile): Promise<void> => {
-    if (workspaceLoadingRef.current) return;
+    if (workspaceLoadingRef.current || logLensBusyRef.current !== null) return;
     if (!window.confirm(`'${profile.name}' 터미널 프로필을 삭제할까요? 실행 중인 터미널은 닫히지 않습니다.`)) return;
     workspaceLoadingRef.current = true;
     setWorkspaceLoading(true);
@@ -1236,7 +1345,7 @@ export default function App() {
         >
           ☰
         </button>
-        <select value={selected} onChange={(e) => setSelected(e.currentTarget.value)}>
+        <select disabled={logLensBusy !== null} value={selected} onChange={(e) => selectDistro(e.currentTarget.value)}>
           {distros.map((d) => (
             <option key={d.name} value={d.name}>
               {d.name} {d.default ? "(default)" : ""}
@@ -1283,7 +1392,7 @@ export default function App() {
         >
           📌
         </button>
-        <button className="btn" disabled={contextActionBusy || workspaceLoading || !workspaceReady} onClick={() => void addPane()}>
+        <button className="btn" disabled={contextActionBusy || workspaceLoading || logLensBusy !== null || !workspaceReady} onClick={() => void addPane()}>
           + Terminal
         </button>
         <button className="btn" title="명령 팔레트 (Ctrl+Shift+P)" onClick={() => setPaletteOpen(true)}>
@@ -1381,20 +1490,25 @@ export default function App() {
             <DistroPanel
               distros={distros}
               selectedDistro={selected}
-              onSelectDistro={setSelected}
+              onSelectDistro={selectDistro}
               onOpenTerminal={openDistroTerminal}
+              onOpenJournalInLogLens={openJournalInLogLens}
+              onOpenFileInLogLens={openFileInLogLens}
               containers={containers}
               dockerMissing={dockerMissing}
               busy={busy}
+              logLensBusy={logLensBusy}
               onAction={onDockerAction}
-              onRefresh={() => void refreshDashboard().catch(() => undefined)}
+              onRefresh={() => {
+                if (logLensBusyRef.current === null) void refreshDashboard().catch(() => undefined);
+              }}
               dashboardDistros={dashboardSnapshot?.distros}
               snapshotState={dashboardState}
             />
             <WorkspacePanel
               profiles={profiles}
               muxAvailability={muxAvailability}
-              busy={workspaceLoading || contextActionBusy}
+              busy={workspaceLoading || contextActionBusy || logLensBusy !== null}
               onSaveCurrent={() => void saveCurrentProfile()}
               onOpen={(profile) => void openProfile(profile)}
               onDelete={(profile) => void requestDeleteProfile(profile)}

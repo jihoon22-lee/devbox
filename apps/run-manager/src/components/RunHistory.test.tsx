@@ -1,12 +1,13 @@
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listActiveRuns, listRuns, runJobNow, searchRunLogs, stopActiveRun, tailLog } from "../api";
+import { listActiveRuns, listRuns, openRunLogInLogLens, runJobNow, searchRunLogs, stopActiveRun, tailLog } from "../api";
 import type { Job, LogSearchResponse, Run } from "../types";
 import RunHistory, { collectRunLog } from "./RunHistory";
 
 vi.mock("../api", () => ({
   listRuns: vi.fn(),
   listActiveRuns: vi.fn(),
+  openRunLogInLogLens: vi.fn(),
   runJobNow: vi.fn(),
   searchRunLogs: vi.fn(),
   stopActiveRun: vi.fn(),
@@ -16,6 +17,7 @@ vi.mock("../api", () => ({
 const listRunsMock = vi.mocked(listRuns);
 const listActiveRunsMock = vi.mocked(listActiveRuns);
 const runJobNowMock = vi.mocked(runJobNow);
+const openRunLogInLogLensMock = vi.mocked(openRunLogInLogLens);
 const searchRunLogsMock = vi.mocked(searchRunLogs);
 const stopActiveRunMock = vi.mocked(stopActiveRun);
 const tailLogMock = vi.mocked(tailLog);
@@ -64,6 +66,7 @@ beforeEach(() => {
   listRunsMock.mockReset().mockResolvedValue([run]);
   listActiveRunsMock.mockReset().mockResolvedValue([]);
   runJobNowMock.mockReset().mockResolvedValue({ ...run, id: "run-now", status: "running", endedAt: null, exitCode: null });
+  openRunLogInLogLensMock.mockReset().mockResolvedValue(undefined);
   searchRunLogsMock.mockReset().mockResolvedValue({
     matches: [],
     scannedLines: 1,
@@ -91,6 +94,63 @@ afterEach(() => {
 });
 
 describe("RunHistory", () => {
+  it("requires an explicit confirmation before publishing the selected stream to Log Lens", async () => {
+    confirmMock.mockReturnValueOnce(false);
+    const view = render(<RunHistory jobs={[job]} />);
+    await waitFor(() => expect(view.getByLabelText("stdout 로그")).toBeInTheDocument());
+    fireEvent.click(view.getByRole("button", { name: "Log Lens" }));
+    expect(openRunLogInLogLensMock).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(view.getByRole("button", { name: "Log Lens" }));
+    await waitFor(() => expect(openRunLogInLogLensMock).toHaveBeenCalledWith("run-1", "stdout"));
+    expect(confirmMock.mock.calls[1]?.[0]).toContain("로그 원문·경로·명령·환경변수");
+  });
+
+  it("locks run and stream context while a Log Lens handoff is pending", async () => {
+    const second = { ...run, id: "run-2", status: "failed" as const, exitCode: 1 };
+    listRunsMock.mockResolvedValue([run, second]);
+    let resolveHandoff: (() => void) | undefined;
+    openRunLogInLogLensMock.mockImplementationOnce(
+      () => new Promise<void>((resolve) => {
+        resolveHandoff = resolve;
+      }),
+    );
+    confirmMock.mockReturnValue(true);
+    const view = render(<RunHistory jobs={[job]} />);
+    await waitFor(() => expect(view.getByLabelText("stdout 로그")).toBeInTheDocument());
+
+    fireEvent.click(view.getByRole("button", { name: "Log Lens" }));
+    await waitFor(() => expect(openRunLogInLogLensMock).toHaveBeenCalledWith("run-1", "stdout"));
+
+    const secondRow = view.container.querySelector<HTMLButtonElement>('[data-run-id="run-2"]');
+    const stderrButton = view.getByRole("button", { name: "stderr" });
+    expect(secondRow).not.toBeNull();
+    expect(secondRow).toBeDisabled();
+    expect(stderrButton).toBeDisabled();
+    fireEvent.click(secondRow as HTMLButtonElement);
+    fireEvent.click(stderrButton);
+    expect(view.getByLabelText("stdout 로그")).toBeInTheDocument();
+
+    await act(async () => resolveHandoff?.());
+    await waitFor(() => expect(view.getByRole("button", { name: "Log Lens" })).toBeEnabled());
+    expect(secondRow).toBeEnabled();
+    expect(stderrButton).toBeEnabled();
+  });
+
+  it("restores the Log Lens action after IPC failure without exposing the raw error", async () => {
+    openRunLogInLogLensMock.mockRejectedValueOnce(new Error("native path /secret/run.log"));
+    confirmMock.mockReturnValue(true);
+    const view = render(<RunHistory jobs={[job]} />);
+    await waitFor(() => expect(view.getByLabelText("stdout 로그")).toBeInTheDocument());
+
+    fireEvent.click(view.getByRole("button", { name: "Log Lens" }));
+    const alert = await view.findByRole("alert");
+    expect(alert).toHaveTextContent("Log Lens handoff를 시작하지 못했습니다.");
+    expect(alert).not.toHaveTextContent("/secret/run.log");
+    await waitFor(() => expect(view.getByRole("button", { name: "Log Lens" })).toBeEnabled());
+  });
+
   it("loads bounded history and tails stdout with a decimal cursor", async () => {
     const view = render(<RunHistory jobs={[job]} />);
 

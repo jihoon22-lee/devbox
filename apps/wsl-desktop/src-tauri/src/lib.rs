@@ -1,6 +1,7 @@
 mod applink;
 mod commands;
 mod core;
+mod log_lens;
 mod runtime_snapshot;
 
 use commands::terminal::SessionState;
@@ -69,6 +70,8 @@ pub fn run() {
             commands::terminal::resize_session,
             commands::terminal::close_session,
             commands::terminal::list_sessions,
+            log_lens::open_wsl_file_in_log_lens,
+            log_lens::open_wsl_journal_in_log_lens,
         ])
         .setup(|app| {
             devbox_window_state_tauri::restore_main_window(app.handle());

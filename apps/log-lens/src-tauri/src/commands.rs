@@ -98,7 +98,8 @@ pub async fn read_sources(
     generation: u64,
     operation_id: String,
 ) -> Result<SourcesSnapshot, String> {
-    if sources.len() != cursors.len()
+    if sources.len() > crate::core::MAX_SOURCES
+        || sources.len() != cursors.len()
         || sources.len() != sequence_starts.len()
         || sequence_starts
             .iter()

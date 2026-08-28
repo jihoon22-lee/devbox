@@ -127,6 +127,16 @@ pub struct RecordHandoffStatus {
     pub expires_at_ms: u64,
 }
 
+/// The immutable publication snapshot a producer can use for launch-failure
+/// cleanup. The envelope stays private to the store so it cannot accidentally
+/// become an AppLink or renderer payload; the descriptor remains the only
+/// value used to build the opaque argv target.
+#[derive(Clone)]
+pub struct HandoffPublication {
+    pub descriptor: HandoffDescriptor,
+    envelope: HandoffEnvelope,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct HandoffClaim {
     pub envelope: HandoffEnvelope,
@@ -259,6 +269,27 @@ impl HandoffStore {
         now_ms: u64,
         ttl_ms: u64,
     ) -> Result<HandoffDescriptor, HandoffError> {
+        self.create_with_ttl_publication(request, now_ms, ttl_ms)
+            .map(|publication| publication.descriptor)
+    }
+
+    /// Publish an envelope and retain its immutable snapshot for an exact
+    /// post-launch cleanup. Consumers should continue using `create` or
+    /// `create_with_ttl` when no producer launch follows publication.
+    pub fn create_with_publication(
+        &self,
+        request: CreateHandoff,
+        now_ms: u64,
+    ) -> Result<HandoffPublication, HandoffError> {
+        self.create_with_ttl_publication(request, now_ms, DEFAULT_HANDOFF_TTL_MS)
+    }
+
+    fn create_with_ttl_publication(
+        &self,
+        request: CreateHandoff,
+        now_ms: u64,
+        ttl_ms: u64,
+    ) -> Result<HandoffPublication, HandoffError> {
         if now_ms == 0 || ttl_ms == 0 || ttl_ms > DEFAULT_HANDOFF_TTL_MS {
             return Err(HandoffError::InvalidRequest);
         }
@@ -295,9 +326,12 @@ impl HandoffStore {
             let bytes = encode_bounded(&envelope, MAX_HANDOFF_BYTES)?;
             match publish_new(&pending_path(&root, &id), &bytes) {
                 Ok(()) => {
-                    return Ok(HandoffDescriptor {
-                        id,
-                        kind: request.kind,
+                    return Ok(HandoffPublication {
+                        descriptor: HandoffDescriptor {
+                            id,
+                            kind: request.kind.clone(),
+                        },
+                        envelope,
                     })
                 }
                 Err(PublishError::Exists) => continue,
@@ -373,6 +407,28 @@ impl HandoffStore {
         Ok(())
     }
 
+    /// Remove one pending envelope by its exact producer-issued publication.
+    ///
+    /// Producers use this only when the corresponding launch failed after
+    /// publication. Re-read and compare the complete immutable envelope
+    /// before removal so a stale cleanup cannot delete a replacement, and do
+    /// not inspect or remove claimed state owned by a consumer.
+    pub fn remove_pending(&self, publication: &HandoffPublication) -> Result<(), HandoffError> {
+        let descriptor = &publication.descriptor;
+        validate_id(&descriptor.id)?;
+        validate_kind(&descriptor.kind)?;
+        let root = self.prepare_layout()?;
+        let pending = pending_path(&root, &descriptor.id);
+        let envelope = read_json::<HandoffEnvelope>(&pending, MAX_HANDOFF_BYTES)?;
+        if envelope != publication.envelope
+            || envelope.id != descriptor.id
+            || envelope.kind != descriptor.kind
+        {
+            return Err(HandoffError::Corrupt);
+        }
+        remove_envelope_if_equal(&pending, &publication.envelope)
+    }
+
     pub fn claim(
         &self,
         id: &str,
@@ -406,6 +462,12 @@ impl HandoffStore {
             return Err(error);
         }
         validate_consumer(&envelope, id, expected_kind, consumer_app)?;
+        // A producer clock that is ahead of the consumer must not make a
+        // future-dated envelope claimable early. Keep it pending so a later
+        // retry can succeed once the advertised creation time is reached.
+        if now_ms < envelope.created_at_ms {
+            return Err(HandoffError::InvalidRequest);
+        }
         if now_ms >= envelope.expires_at_ms {
             remove_managed_file(&pending)?;
             return Err(HandoffError::Expired);
@@ -585,6 +647,9 @@ impl HandoffStore {
         if record.consumer_app != consumer_app {
             return Err(HandoffError::TokenMismatch);
         }
+        if now_ms < record.claimed_at_ms || now_ms < record.envelope.created_at_ms {
+            return Err(HandoffError::InvalidRequest);
+        }
         if now_ms >= record.envelope.expires_at_ms {
             remove_claim_if_token(&path, &record.claim_token)?;
             remove_lease_if_token(&lease_path(root, &record.envelope.id), &record.claim_token)?;
@@ -618,6 +683,15 @@ impl HandoffStore {
             Err(error) => return Err(error),
         };
         if validate_claim_record(&record).is_err() || record.envelope.id != id {
+            remove_managed_file(&path)?;
+            remove_orphan_lease(&lease_path(root, id))?;
+            return Err(HandoffError::Corrupt);
+        }
+        // A claim recorded in the future must not reserve an envelope until a
+        // producer/consumer clock catches up. Treat it as corrupt and remove
+        // it so a malformed or stale writer cannot create a long-lived denial
+        // of service for the real pending handoff.
+        if now_ms < record.claimed_at_ms || now_ms < record.envelope.created_at_ms {
             remove_managed_file(&path)?;
             remove_orphan_lease(&lease_path(root, id))?;
             return Err(HandoffError::Corrupt);
@@ -696,6 +770,7 @@ fn validate_envelope(envelope: &HandoffEnvelope) -> Result<(), HandoffError> {
 fn validate_claim_record(record: &ClaimRecord) -> Result<(), HandoffError> {
     if record.schema_version != HANDOFF_STORE_VERSION
         || record.claimed_at_ms == 0
+        || record.claimed_at_ms < record.envelope.created_at_ms
         || record.lease_until_ms <= record.claimed_at_ms
         || record.lease_until_ms > record.envelope.expires_at_ms
     {
@@ -1350,6 +1425,71 @@ fn read_optional_json<T: for<'de> Deserialize<'de>>(
     }
 }
 
+/// Open a managed state file without following its final link/reparse point.
+/// The metadata check in `read_bounded` remains useful for regular-file/type
+/// validation, but this handle-level boundary closes the check/open race for
+/// descriptor files in a shared per-user handoff directory.
+fn open_managed_file(path: &Path) -> Result<File, std::io::Error> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use std::os::windows::io::FromRawHandle;
+        use windows::core::PCWSTR;
+        use windows::Win32::Foundation::GENERIC_READ;
+        use windows::Win32::Storage::FileSystem::{
+            CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+            FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE,
+            FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+        };
+
+        let wide = path
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<_>>();
+        let handle = unsafe {
+            CreateFileW(
+                PCWSTR(wide.as_ptr()),
+                GENERIC_READ.0,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                None,
+                OPEN_EXISTING,
+                FILE_FLAG_OPEN_REPARSE_POINT,
+                None,
+            )
+        }
+        .map_err(std::io::Error::other)?;
+        // Transfer ownership immediately so every later error closes exactly
+        // this handle once through `File::drop`.
+        let file = unsafe { File::from_raw_handle(handle.0) };
+        let mut information = BY_HANDLE_FILE_INFORMATION::default();
+        if unsafe { GetFileInformationByHandle(handle, &mut information) }.is_err() {
+            return Err(std::io::Error::last_os_error());
+        }
+        if information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "managed handoff file is a reparse point",
+            ));
+        }
+        Ok(file)
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        File::open(path)
+    }
+}
+
 fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>, HandoffError> {
     let metadata = fs::symlink_metadata(path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
@@ -1364,7 +1504,7 @@ fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>, HandoffError> {
     if metadata.len() > max {
         return Err(HandoffError::TooLarge);
     }
-    let file = File::open(path).map_err(|_| HandoffError::Storage)?;
+    let file = open_managed_file(path).map_err(|_| HandoffError::Storage)?;
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
     file.take(max + 1)
         .read_to_end(&mut bytes)
@@ -1714,6 +1854,51 @@ mod tests {
     }
 
     #[test]
+    fn failed_launch_cleanup_removes_only_the_exact_pending_envelope() {
+        let root = TestRoot::new("remove-pending");
+        let store = root.store();
+        let publication = store
+            .create_with_publication(request(Some("api-playground")), 1_000)
+            .unwrap();
+
+        store.remove_pending(&publication).unwrap();
+        assert!(!root.pending(&publication.descriptor.id).exists());
+        assert_eq!(
+            store.claim(
+                &publication.descriptor.id,
+                "api-request/v1",
+                "api-playground",
+                2_000,
+            ),
+            Err(HandoffError::Missing)
+        );
+    }
+
+    #[test]
+    fn failed_launch_cleanup_rejects_changed_pending_data_for_publication() {
+        let root = TestRoot::new("remove-pending-immutable");
+        let store = root.store();
+        let publication = store
+            .create_with_publication(request(Some("api-playground")), 1_000)
+            .unwrap();
+        let mut envelope: Value =
+            serde_json::from_slice(&fs::read(root.pending(&publication.descriptor.id)).unwrap())
+                .unwrap();
+        envelope["payload"]["url"] = json!("https://changed.example.test");
+        fs::write(
+            root.pending(&publication.descriptor.id),
+            serde_json::to_vec(&envelope).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            store.remove_pending(&publication),
+            Err(HandoffError::Corrupt)
+        );
+        assert!(root.pending(&publication.descriptor.id).is_file());
+    }
+
+    #[test]
     fn ack_rejects_a_claim_record_with_changed_payload_metadata() {
         let root = TestRoot::new("immutable");
         let store = root.store();
@@ -1864,6 +2049,31 @@ mod tests {
         assert_eq!(error, HandoffError::Corrupt);
         assert!(!error.to_string().contains(raw_secret));
         assert!(!root.pending(&corrupt.id).exists());
+    }
+
+    #[test]
+    fn future_dated_envelope_cannot_be_claimed_before_creation_time() {
+        let root = TestRoot::new("future-created");
+        let store = root.store();
+        let descriptor = store.create(request(None), 1_000).unwrap();
+        let mut envelope: Value =
+            serde_json::from_slice(&fs::read(root.pending(&descriptor.id)).unwrap()).unwrap();
+        envelope["createdAtMs"] = json!(5_000);
+        envelope["expiresAtMs"] = json!(65_000);
+        fs::write(
+            root.pending(&descriptor.id),
+            serde_json::to_vec(&envelope).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            store.claim(&descriptor.id, "api-request/v1", "api-playground", 4_999),
+            Err(HandoffError::InvalidRequest)
+        );
+        assert!(root.pending(&descriptor.id).is_file());
+        assert!(store
+            .claim(&descriptor.id, "api-request/v1", "api-playground", 5_000)
+            .is_ok());
     }
 
     #[test]

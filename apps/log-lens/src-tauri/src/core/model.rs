@@ -411,12 +411,44 @@ fn validate_wsl_path(path: &str) -> Result<(), CoreError> {
         return Err(CoreError::InvalidPath);
     }
     if !trimmed.starts_with('/')
+        || trimmed
+            .split('/')
+            .skip(1)
+            .any(|component| component.is_empty() || component == "." || component == "..")
+        || trimmed.split('/').nth(1).is_none()
         || trimmed.contains("\0")
-        || trimmed.split('/').any(|component| component == "..")
+        || trimmed.chars().any(is_wsl_path_injection_char)
     {
         return Err(CoreError::InvalidPath);
     }
     Ok(())
+}
+
+fn is_wsl_path_injection_char(character: char) -> bool {
+    matches!(
+        character,
+        ';' | '&'
+            | '|'
+            | '<'
+            | '>'
+            | '`'
+            | '$'
+            | '"'
+            | '\''
+            | '\\'
+            | '('
+            | ')'
+            | '{'
+            | '}'
+            | '*'
+            | '?'
+            | '['
+            | ']'
+            | '!'
+            | '~'
+            | '#'
+            | '%'
+    )
 }
 
 fn validate_pattern(pattern: &str) -> Result<(), CoreError> {
@@ -554,7 +586,13 @@ impl SourceSpec {
             kind: self.kind(),
             display_name: display_name.to_string(),
             read_only: true,
-            handoff: matches!(self, Self::Run { .. }),
+            // Every source accepted by the #366/#367 receiver is a fixed
+            // handoff adapter. Keep this flag aligned with the source
+            // contract instead of marking only the original Run variant.
+            handoff: matches!(
+                self,
+                Self::Run { .. } | Self::WslFile { .. } | Self::WslJournal { .. }
+            ),
         })
     }
 }
@@ -688,6 +726,30 @@ mod tests {
             }
             .validate(),
             Err(CoreError::InvalidSource)
+        );
+        assert_eq!(
+            SourceSpec::WslFile {
+                distro: "Ubuntu".to_string(),
+                path: "/".to_string(),
+            }
+            .validate(),
+            Err(CoreError::InvalidPath)
+        );
+        assert_eq!(
+            SourceSpec::WslFile {
+                distro: "Ubuntu".to_string(),
+                path: "/./".to_string(),
+            }
+            .validate(),
+            Err(CoreError::InvalidPath)
+        );
+        assert_eq!(
+            SourceSpec::WslFile {
+                distro: "Ubuntu".to_string(),
+                path: "/var/log/app;touch".to_string(),
+            }
+            .validate(),
+            Err(CoreError::InvalidPath)
         );
     }
 
