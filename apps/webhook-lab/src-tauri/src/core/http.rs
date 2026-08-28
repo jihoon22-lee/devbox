@@ -329,11 +329,17 @@ where
         remaining -= read;
     }
 
+    // Request bodies are retained as text in history/fixtures.  Reject
+    // invalid UTF-8 instead of using a lossy conversion: replacing every
+    // invalid byte with U+FFFD can expand a bounded 1 MiB wire body to nearly
+    // 3 MiB per worker and defeats the advertised body-memory bound.
+    let body = String::from_utf8(body).map_err(|_| ParseError::Malformed)?;
+
     Ok(ParsedRequest {
         method,
         target,
         headers,
-        body: String::from_utf8_lossy(&body).into_owned(),
+        body,
     })
 }
 
@@ -533,6 +539,19 @@ mod tests {
             Err(ParseError::Timeout)
         );
         drop(client);
+    }
+
+    #[test]
+    fn parser_rejects_non_utf8_body_without_lossy_expansion() {
+        let (mut client, mut server) = pair();
+        client
+            .write_all(b"POST /hook HTTP/1.1\r\nContent-Length: 1\r\n\r\n\xff")
+            .unwrap();
+        let running = AtomicBool::new(true);
+        assert_eq!(
+            read_request(&mut server, &running, || true),
+            Err(ParseError::Malformed)
+        );
     }
 
     #[test]

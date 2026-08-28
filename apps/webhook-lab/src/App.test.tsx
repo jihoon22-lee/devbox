@@ -308,6 +308,9 @@ describe("Webhook Lab history and rule context menus", () => {
     fireEvent.click(save);
     await waitFor(() => expect(setRuleMock).toHaveBeenCalledTimes(1));
     expect(save.hasAttribute("disabled")).toBe(true);
+    for (const label of ["method", "path", "status", "delay (ms)", "응답 body"]) {
+      expect(screen.getByLabelText(label).hasAttribute("disabled")).toBe(true);
+    }
     expect(screen.getByRole("button", { name: "규칙 추가" }).closest(".app")?.getAttribute("aria-busy")).toBe("true");
 
     release("rule-2");

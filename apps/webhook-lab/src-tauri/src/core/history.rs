@@ -344,6 +344,17 @@ mod tests {
     }
 
     #[test]
+    fn oversized_json_body_is_sanitized_before_history_prefixing() {
+        let body = format!(
+            r#"{{"\u0070assword":"raw-body-secret"{}}}"#,
+            " ".repeat(MAX_BODY_CHARS)
+        );
+        let visible = crate::core::fixtures::sanitize_body_for_history(&body);
+        assert!(!visible.contains("raw-body-secret"));
+        assert!(visible.contains(crate::core::fixtures::REDACTED));
+    }
+
+    #[test]
     fn renderer_visible_history_masks_body_query_and_custom_credentials() {
         let mut h = History::default();
         h.push(

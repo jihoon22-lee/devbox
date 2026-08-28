@@ -35,6 +35,7 @@ pub const MAX_FIXTURE_HEADER_TOTAL_CHARS: usize = 64_000;
 pub const MAX_FIXTURE_HEADER_TOTAL_BYTES: usize = 256_000;
 pub const MAX_FIXTURE_BODY_CHARS: usize = 256_000;
 pub const MAX_FIXTURE_BODY_BYTES: usize = 1_024_000;
+const MAX_REFERENCE_NAME_CHARS: usize = 128;
 /// Keep persisted timestamps inside both JavaScript's safe-integer range and
 /// the range accepted by `Date#toISOString`, so a validated fixture cannot
 /// make the renderer throw while formatting its capture time.
@@ -188,9 +189,29 @@ fn is_token(value: &str) -> bool {
 }
 
 fn is_reference(value: &str) -> bool {
-    let trimmed = value.trim();
-    (trimmed.starts_with("${") && trimmed.ends_with('}'))
-        || (trimmed.starts_with("{{") && trimmed.ends_with("}}"))
+    // A reference is safe to preserve only when the complete value is a
+    // small identifier.  Merely checking the delimiters would preserve a
+    // literal such as `${raw-secret}` (or an arbitrarily long value) in a
+    // sensitive field and mistake it for an environment reference.
+    if value.trim() != value {
+        return false;
+    }
+    let name = if value.starts_with("${") && value.ends_with('}') && value.len() >= 4 {
+        &value[2..value.len() - 1]
+    } else if value.starts_with("{{") && value.ends_with("}}") && value.len() >= 5 {
+        &value[2..value.len() - 2]
+    } else {
+        return false;
+    };
+    !name.is_empty()
+        && name.len() <= MAX_REFERENCE_NAME_CHARS
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+}
+
+fn contains_reference_marker(value: &str) -> bool {
+    value.contains("${") || value.contains("{{")
 }
 
 fn sensitive_name(name: &str) -> bool {
@@ -296,6 +317,7 @@ fn unsafe_path(path: &str) -> bool {
         || path != path.trim()
         || !path.starts_with('/')
         || path.starts_with("//")
+        || contains_reference_marker(path)
         || path.contains('\\')
         || path.contains('#')
         || has_control(path)
@@ -306,7 +328,11 @@ fn unsafe_path(path: &str) -> bool {
     let Some(decoded) = percent_decode(path) else {
         return true;
     };
-    if decoded.starts_with("//") || decoded.contains('\\') || has_control(&decoded) {
+    if decoded.starts_with("//")
+        || contains_reference_marker(&decoded)
+        || decoded.contains('\\')
+        || has_control(&decoded)
+    {
         return true;
     }
     decoded
@@ -350,6 +376,8 @@ pub fn sanitize_target(target: &str) -> String {
             return REDACTED_PATH.to_string();
         };
         if key.is_empty()
+            || contains_reference_marker(raw_key)
+            || contains_reference_marker(&key)
             || key.chars().any(char::is_control)
             || key.chars().any(char::is_whitespace)
             || value.chars().any(char::is_control)
@@ -388,9 +416,12 @@ fn redact_scheme_tokens(value: &str) -> String {
     let mut index = 0;
     while index < bytes.len() {
         let remaining = &value[index..];
-        let scheme_len = if remaining.len() >= 7 && remaining[..7].eq_ignore_ascii_case("Bearer ") {
+        let scheme_len = if remaining.len() >= 7
+            && remaining.as_bytes()[..7].eq_ignore_ascii_case(b"Bearer ")
+        {
             Some(7)
-        } else if remaining.len() >= 6 && remaining[..6].eq_ignore_ascii_case("Basic ") {
+        } else if remaining.len() >= 6 && remaining.as_bytes()[..6].eq_ignore_ascii_case(b"Basic ")
+        {
             Some(6)
         } else {
             None
@@ -621,9 +652,38 @@ pub fn sanitize_body_for_history(body: &str) -> String {
     if within(body, MAX_FIXTURE_BODY_CHARS, MAX_FIXTURE_BODY_BYTES) {
         return sanitize_body(body).unwrap_or_else(|_| REDACTED.to_string());
     }
+
+    // Once the display character cap is exceeded, parsing structured JSON is
+    // still important for privacy: escaped sensitive keys (for example
+    // `"\\u0070assword"`) are invisible to the text redactor.  Keep the
+    // structured path bounded by the same depth/node/string limits; if it
+    // cannot be sanitized safely, return one fixed marker instead of exposing
+    // a prefix of a credential-bearing payload.
+    let trimmed = body.trim_start();
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        if let Ok(value) = serde_json::from_str::<Value>(body) {
+            let mut budget = JsonBudget::default();
+            let Ok(value) = sanitize_json(value, "", 0, &mut budget) else {
+                return REDACTED.to_string();
+            };
+            let Ok(serialized) = serde_json::to_string(&value) else {
+                return REDACTED.to_string();
+            };
+            return bounded_history_prefix(&serialized);
+        }
+        // A JSON-looking but malformed body has no reliable key/value
+        // boundary.  Do not let a large malformed object bypass the
+        // structured sanitizer and leak an escaped or oddly-delimited secret.
+        return REDACTED.to_string();
+    }
+
     let redacted = redact_text(body);
+    bounded_history_prefix(&redacted)
+}
+
+fn bounded_history_prefix(value: &str) -> String {
     let mut bounded = String::new();
-    for character in redacted.chars().take(MAX_FIXTURE_BODY_CHARS) {
+    for character in value.chars().take(MAX_FIXTURE_BODY_CHARS) {
         if bounded.len().saturating_add(character.len_utf8()) > MAX_FIXTURE_BODY_BYTES {
             break;
         }
@@ -1072,6 +1132,40 @@ mod tests {
         .unwrap();
         assert_eq!(captured.url, "/hook?event=push&access_token=[REDACTED]");
         assert_eq!(captured.body, "plain body");
+    }
+
+    #[test]
+    fn path_and_query_keys_never_preserve_placeholder_markers() {
+        assert_eq!(sanitize_target("/hook/${TOKEN}"), REDACTED_PATH);
+        assert_eq!(sanitize_target("/hook?${TOKEN}=value"), REDACTED_PATH);
+        assert_eq!(
+            sanitize_target("/hook?value=${TOKEN}"),
+            "/hook?value=${TOKEN}"
+        );
+    }
+
+    #[test]
+    fn sensitive_fields_preserve_only_bounded_reference_names() {
+        let invalid = sanitize_body(r#"{"password":"${bad value}"}"#).unwrap();
+        assert_eq!(invalid, r#"{"password":"[REDACTED]"}"#);
+
+        let long_name = format!("${{{}}}", "A".repeat(MAX_REFERENCE_NAME_CHARS + 1));
+        let body = format!(r#"{{"password":"{long_name}"}}"#);
+        assert_eq!(
+            sanitize_body(&body).unwrap(),
+            r#"{"password":"[REDACTED]"}"#
+        );
+
+        assert_eq!(
+            sanitize_body(r#"{"password":"{{A}}"}"#).unwrap(),
+            r#"{"password":"{{A}}"}"#
+        );
+        // The redactor must not slice a UTF-8 string at a byte offset while
+        // looking for an ASCII auth scheme.
+        assert_eq!(
+            sanitize_body("🙂 ordinary body").unwrap(),
+            "🙂 ordinary body"
+        );
     }
 
     #[test]

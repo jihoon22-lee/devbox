@@ -765,6 +765,7 @@ export default function App() {
                 placeholder="method (없으면 전체)"
                 value={rule.method ?? ""}
                 maxLength={MAX_METHOD_CHARS}
+                disabled={busy}
                 aria-describedby={`rule-method-help${methodIssue ? " rule-method-error" : ""}`}
                 aria-invalid={methodIssue ? "true" : undefined}
                 onChange={(e) => setRuleDraft({ ...rule, method: e.currentTarget.value || null })}
@@ -780,6 +781,7 @@ export default function App() {
                 id="rule-path"
                 placeholder="path (예: /hook 또는 /events/*)"
                 value={rule.path}
+                disabled={busy}
                 aria-describedby={`rule-path-help${pathIssue ? " rule-path-error" : ""}`}
                 aria-invalid={pathIssue ? "true" : undefined}
                 onChange={(e) => setRuleDraft({ ...rule, path: e.currentTarget.value })}
@@ -799,6 +801,7 @@ export default function App() {
                 min={MIN_RESPONSE_STATUS}
                 max={MAX_RESPONSE_STATUS}
                 step={1}
+                disabled={busy}
                 aria-describedby={`rule-status-help${statusIssue ? " rule-status-error" : ""}`}
                 aria-invalid={statusIssue ? "true" : undefined}
                 onChange={(e) => setRuleDraft({ ...rule, status: Number(e.currentTarget.value) })}
@@ -818,6 +821,7 @@ export default function App() {
                 min={0}
                 max={MAX_RESPONSE_DELAY_MS}
                 step={1}
+                disabled={busy}
                 aria-describedby={`rule-delay-help${delayIssue ? " rule-delay-error" : ""}`}
                 aria-invalid={delayIssue ? "true" : undefined}
                 onChange={(e) => setRuleDraft({ ...rule, delayMs: Number(e.currentTarget.value) })}
@@ -833,6 +837,7 @@ export default function App() {
                 id="rule-body"
                 placeholder="응답 body"
                 value={rule.body}
+                disabled={busy}
                 aria-describedby={`rule-body-help rule-headers-help${bodyIssue ? " rule-body-error" : ""}${headersIssue ? " rule-headers-error" : ""}`}
                 aria-invalid={bodyIssue || headersIssue ? "true" : undefined}
                 onChange={(e) => setRuleDraft({ ...rule, body: e.currentTarget.value })}

@@ -276,3 +276,38 @@ commit, push, or PR was performed here.
   material.
 - Windows packaged replay, IPv6 bind smoke, and full workspace gates still need
   parent-agent/CI verification.
+
+## Final bounded audit follow-up (2026-08-28)
+
+This follow-up audited the candidate against the #362/#363 security and
+concurrency boundaries without broadening the feature scope. The concrete
+issues found and fixed were:
+
+- The native HTTP reader used lossy UTF-8 conversion for request bodies. A
+  bounded invalid-byte body could therefore expand in memory before history
+  storage. Bodies are now strict UTF-8 and malformed input is rejected.
+- Reference preservation previously checked only `${...}`/`{{...}}` delimiters.
+  Sensitive JSON values now preserve only a complete bounded ASCII identifier;
+  path and query-key placeholders fail closed. Oversized JSON-like history
+  bodies are sanitized structurally (including escaped sensitive keys) before
+  the visible prefix cap. A UTF-8-safe redactor regression is covered too.
+- Handoff sensitive-query rewriting now uses the same substring-sensitive-name
+  policy as fixture masking, so names such as `X-Access-Token` consistently
+  become the explicit `${WEBHOOK_SECRET}` reference.
+- Listener bind aliases are canonicalized before OS binding, so `localhost`
+  cannot invoke hostname resolution. A monotonic listener generation rejects
+  replay calls queued across stop/start or unexpected listener exit; the
+  cancellation flag remains responsible for interrupting in-flight I/O.
+- The main rule draft fields now join sequence controls in the busy lock. This
+  prevents edits during an async save from being silently overwritten by the
+  successful save refresh, with a frontend regression assertion.
+- Replay status parsing accepts only the HTTP/1.0 and HTTP/1.1 versions emitted
+  by the native listener.
+
+Focused verification after these changes:
+
+- `source ~/.cargo/env && CARGO_TARGET_DIR=/home/jihoon/.cache/targets/webhook-362-363 CARGO_BUILD_JOBS=1 cargo test -p webhook-lab --lib -- --test-threads=1` — passed, 64 tests.
+- `source ~/.cargo/env && cargo fmt --manifest-path apps/webhook-lab/src-tauri/Cargo.toml -- --check` — passed.
+- `pnpm --filter webhook-lab test -- --maxWorkers=2` — passed, 4 test files and 60 tests.
+
+No commit, push, PR, rebase, or worktree cleanup was performed by this audit.

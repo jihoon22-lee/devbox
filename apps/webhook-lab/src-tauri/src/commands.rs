@@ -77,6 +77,10 @@ pub struct ServerState {
     /// Stop requests set this before waiting for the lifecycle lock so an
     /// in-flight replay can cancel its bounded socket I/O promptly.
     pub replay_cancel: AtomicBool,
+    /// Monotonic listener epoch used to reject replay IPC calls that were
+    /// queued across a stop/start transition. A cancellation flag alone can
+    /// be reset by the new listener before an old waiter acquires the lock.
+    listener_generation: AtomicU64,
     /// Serializes load/validate/mutate/write so two fixture commands cannot
     /// overwrite one another between their compare-and-swap checks.
     pub fixture_lock: Mutex<()>,
@@ -96,6 +100,7 @@ pub fn server_state() -> Arc<ServerState> {
         replay_rate: Mutex::new(ReplayRateLimiter::default()),
         replay_lock: Mutex::new(()),
         replay_cancel: AtomicBool::new(false),
+        listener_generation: AtomicU64::new(0),
         fixture_lock: Mutex::new(()),
         address: Mutex::new(None),
     })
@@ -187,11 +192,19 @@ pub fn start_server(
     }
 
     let bind = bind.unwrap_or_else(|| DEFAULT_BIND.to_string());
+    // Never let the OS resolve a hostname for the listener. `localhost` is a
+    // user-friendly alias, but binding it directly can consult mutable
+    // hosts/DNS configuration and is inconsistent with loopback-only replay.
+    let bind = if bind.eq_ignore_ascii_case("localhost") {
+        DEFAULT_BIND.to_string()
+    } else {
+        bind
+    };
     if port == 0 {
         return Err(INVALID_PORT_ERROR.to_string());
     }
     let lan_bind = matches!(bind.as_str(), "0.0.0.0" | "[::]");
-    let loopback_bind = matches!(bind.as_str(), "127.0.0.1" | "localhost" | "::1");
+    let loopback_bind = matches!(bind.as_str(), "127.0.0.1" | "::1");
     if !lan_bind && !loopback_bind {
         return Err(INVALID_BIND_ERROR.to_string());
     }
@@ -224,6 +237,7 @@ pub fn start_server(
         .lock()
         .map_err(|_| BIND_ERROR.to_string())? = Some(thread);
     *state.address.lock().map_err(|_| BIND_ERROR.to_string())? = Some(address);
+    advance_listener_generation(state.inner());
     Ok(current_server_status(state.inner()))
 }
 
@@ -233,6 +247,10 @@ pub fn stop_server(state: tauri::State<'_, Arc<ServerState>>) -> Result<ServerSt
     // lock while connecting/reading; this lets it observe stop immediately
     // instead of making stop wait for its full network budget.
     state.replay_cancel.store(true, Ordering::Release);
+    // Invalidate replay calls that are waiting for lifecycle_lock. The new
+    // listener resets replay_cancel, so cancellation alone cannot distinguish
+    // an old queued call from a call issued after restart.
+    advance_listener_generation(state.inner());
     let _lifecycle = state
         .lifecycle_lock
         .lock()
@@ -483,6 +501,7 @@ fn run_listener(listener: TcpListener, state: Arc<ServerState>, running: Arc<Ato
     // keeps the socket alive while an already-running replay observes the
     // cancellation, preventing a freed port from being reused by another
     // local process during that final check.
+    advance_listener_generation(&state);
     state.replay_cancel.store(true, Ordering::Release);
     let _replay_exit_guard = match state.replay_lock.lock() {
         Ok(guard) => guard,
@@ -601,6 +620,7 @@ fn replay_masked_fixture(
     fixture: CapturedFixture,
     source_id: String,
 ) -> Result<ReplayResult, String> {
+    let expected_generation = state.listener_generation.load(Ordering::Acquire);
     // Keep the listener lifecycle stable for the complete bounded send. A
     // status/address snapshot followed by an unlocked connect would permit a
     // stop/restart (or another local process taking the freed port) to turn a
@@ -611,6 +631,9 @@ fn replay_masked_fixture(
         .lifecycle_lock
         .lock()
         .map_err(|_| REPLAY_SERVER_ERROR.to_string())?;
+    if state.listener_generation.load(Ordering::Acquire) != expected_generation {
+        return Err(REPLAY_SERVER_ERROR.to_string());
+    }
     let address = {
         let running = state
             .running
@@ -1006,6 +1029,10 @@ pub fn reset_rule_sequence(
 
 fn history_not_found() -> String {
     "요청 기록을 찾을 수 없습니다".to_string()
+}
+
+fn advance_listener_generation(state: &Arc<ServerState>) {
+    state.listener_generation.fetch_add(1, Ordering::AcqRel);
 }
 
 fn now_ms() -> i64 {

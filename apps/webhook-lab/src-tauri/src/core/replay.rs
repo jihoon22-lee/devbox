@@ -342,7 +342,11 @@ fn read_response_status(
             .and_then(|code| code.parse::<u16>().ok())
             .filter(|status| (100..=599).contains(status))
             .ok_or(ReplayError::InvalidResponse)?;
-        if !version.starts_with("HTTP/1.") {
+        // The local listener emits only HTTP/1.0 or HTTP/1.1.  Accepting an
+        // arbitrary `HTTP/1.*` token would make a malformed/intercepted
+        // response look valid and could disagree with downstream framing
+        // parsers.
+        if !matches!(version, "HTTP/1.0" | "HTTP/1.1") {
             return Err(ReplayError::InvalidResponse);
         }
         return Ok(ReplayResponse { status });
