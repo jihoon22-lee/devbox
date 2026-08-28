@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["alloc", "std"] }
@@ -22,11 +23,14 @@ regex = "1"
 tokio = { version = "1", features = ["rt"] }
 wsl = { path = "../../../crates/wsl" }
 devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
+devbox-applink = { package = "applink", path = "../../../crates/applink" }
+devbox-integration = { package = "integration", path = "../../../crates/integration" }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
+    "Win32_System_JobObjects",
 ] }
 
 [dev-dependencies]

@@ -15,6 +15,8 @@ import {
   onOpenRequest,
   onTerminalClosed,
   onTerminalOutput,
+  openWslFileInLogLens,
+  openWslJournalInLogLens,
   startSession,
   saveWorkspaceProfile,
   takePendingOpen,
@@ -137,6 +139,16 @@ export default function App() {
   const dashboardSnapshotRef = useRef<DashboardSnapshot | null>(null);
   const dashboardMountedRef = useRef(true);
   dashboardSnapshotRef.current = dashboardSnapshot;
+  const mountedRef = useRef(true);
+  const logLensGeneration = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      logLensGeneration.current += 1;
+    };
+  }, []);
 
   // onTerminalClosed 구독은 마운트 시 한 번만 걸린다(아래 effect, deps []). 그 콜백이
   // dropPane을 부를 때 tabs/activeTabId/activePaneId를 직접 클로저로 참조하면 마운트
@@ -380,6 +392,45 @@ export default function App() {
     } finally {
       setBusy(null);
     }
+  };
+
+  const openJournalInLogLens = (name: string) => {
+    if (busy !== null) return;
+    if (!window.confirm(`'${name}'의 WSL journal을 Log Lens에서 읽기 전용으로 열까요?\n\n로그 원문·명령·자격 증명은 handoff에 포함되지 않습니다.`)) return;
+    const generation = ++logLensGeneration.current;
+    setBusy(`log-lens-journal:${name}`);
+    void openWslJournalInLogLens(name, null)
+      .catch(() => {
+        if (mountedRef.current && generation === logLensGeneration.current) {
+          setError("Log Lens journal handoff를 시작하지 못했습니다.");
+        }
+      })
+      .finally(() => {
+        if (mountedRef.current && generation === logLensGeneration.current) setBusy(null);
+      });
+  };
+
+  const openFileInLogLens = (name: string) => {
+    if (busy !== null) return;
+    const entered = window.prompt("Log Lens에서 열 WSL 파일의 절대 경로를 입력하세요 (예: /var/log/app.log)");
+    if (entered === null) return;
+    const wslPath = entered.trim();
+    if (!wslPath) {
+      setError("WSL 파일 경로를 입력해야 합니다.");
+      return;
+    }
+    if (!window.confirm(`'${name}'의 선택한 WSL 파일을 Log Lens에서 읽기 전용으로 열까요?\n\n경로는 검증된 WSL adapter 설정으로만 한 번 전달됩니다.`)) return;
+    const generation = ++logLensGeneration.current;
+    setBusy(`log-lens-file:${name}`);
+    void openWslFileInLogLens(name, wslPath)
+      .catch(() => {
+        if (mountedRef.current && generation === logLensGeneration.current) {
+          setError("Log Lens file handoff를 시작하지 못했습니다.");
+        }
+      })
+      .finally(() => {
+        if (mountedRef.current && generation === logLensGeneration.current) setBusy(null);
+      });
   };
 
   const openDistroTerminal = (name: string) => {
@@ -1383,6 +1434,8 @@ export default function App() {
               selectedDistro={selected}
               onSelectDistro={setSelected}
               onOpenTerminal={openDistroTerminal}
+              onOpenJournalInLogLens={openJournalInLogLens}
+              onOpenFileInLogLens={openFileInLogLens}
               containers={containers}
               dockerMissing={dockerMissing}
               busy={busy}

@@ -16,15 +16,27 @@ in-memory ring (100,000 lines or 64 MiB).
 - Container sources use only `docker logs --timestamps --tail 100000 <id>` or
   the equivalent Podman argv. The adapter does not start, stop, or pull a
   container and does not ingest a network endpoint.
-- Run Manager handoff accepts only the opaque `log-source/v1` identity. The
-  producer claim/ack integration is intentionally a follow-up PR after this
-  receiver bootstrap.
+- Run Manager and WSL Desktop handoffs accept only the bounded `log-source/v1`
+  source contract. Run payloads are the existing strict `{kind, sourceId,
+  runId, stream}` identity; WSL payloads are an allowlisted `sourceType` plus
+  validated distro and `wslPath`/unit. The AppLink argv carries only the
+  opaque one-time envelope kind/id.
+- The receiver re-checks protocol version, opaque envelope/claim identity,
+  timestamps, lease bounds, target, producer, and source-family parity at the
+  claim boundary. Native responses are schema-validated again in the frontend
+  before a source can be added; a WSL journal with no unit is represented as
+  an absent unit (both `undefined` and native `null` are accepted).
 
 Source paths, commands, credentials, and environment values are never placed
-in a snapshot or error string. The viewer does not write a permanent log
-archive. An explicit Export or Copy action operates on the currently visible
-selection only; saved views contain source settings and filters, never log
-text.
+in a snapshot or error string. A WSL path is present only in the bounded,
+ten-minute one-time pending envelope and the in-memory adapter configuration;
+it is not copied to the AppLink argv, clipboard, or a durable source/saved-view
+record. A handoff is claimed only for an explicit preview, kept in process
+memory during the modal, and acknowledged only after the user adds the source.
+Cancel, validation failure, or lease expiry restores the pending envelope. The
+viewer does not write a permanent log archive. An explicit Export or Copy
+action operates on the currently visible selection only; saved views contain
+source settings and filters, never log text.
 
 ## Safety and lifecycle
 
@@ -33,8 +45,13 @@ deadline, bounded process output reader, cancellation token, opaque operation
 ID, generation check, and single-flight registry protect WSL/container reads.
 The registry remains bounded even when a caller repeats one generation, and
 adapter termination falls back to the direct child when process-tree cleanup
-helpers fail. Windows device namespace paths and adapter-boundary whitespace
-are rejected before any read.
+helpers fail. On Windows a Job Object with kill-on-close contains descendants;
+on Unix the adapter uses a process group and bounded reap. Windows device
+namespace paths and adapter-boundary whitespace are rejected before any read.
+The handoff modal is also single-flight: while a preview or accept/discard
+action is active, only the newest opaque request is queued. Escape/Tab focus
+handling, opener restoration, unmount guards, and generation checks prevent a
+stale native response from mutating the source UI.
 
 Parser timestamps accept RFC3339, journal-style numeric offsets, fractional ISO
 forms, and timezone-less local forms on a best-effort basis. Browser fixtures

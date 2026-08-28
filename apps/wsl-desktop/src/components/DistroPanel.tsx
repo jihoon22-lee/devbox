@@ -7,6 +7,8 @@ interface Props {
   selectedDistro: string;
   onSelectDistro: (name: string) => void;
   onOpenTerminal: (name: string) => void;
+  onOpenJournalInLogLens?: (name: string) => void;
+  onOpenFileInLogLens?: (name: string) => void;
   containers: ContainerInfo[];
   dockerMissing: boolean;
   busy: string | null;
@@ -22,6 +24,8 @@ export default function DistroPanel({
   selectedDistro,
   onSelectDistro,
   onOpenTerminal,
+  onOpenJournalInLogLens,
+  onOpenFileInLogLens,
   containers,
   dockerMissing,
   busy,
@@ -117,6 +121,28 @@ export default function DistroPanel({
               >
                 Open Terminal
               </button>
+              {onOpenJournalInLogLens && (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={busy !== null}
+                  aria-busy={busy === `log-lens-journal:${d.name}`}
+                  onClick={() => onOpenJournalInLogLens(d.name)}
+                >
+                  Open journal in Log Lens
+                </button>
+              )}
+              {onOpenFileInLogLens && (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={busy !== null}
+                  aria-busy={busy === `log-lens-file:${d.name}`}
+                  onClick={() => onOpenFileInLogLens(d.name)}
+                >
+                  Open file in Log Lens
+                </button>
+              )}
             </div>
           );
         })}

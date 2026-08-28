@@ -241,6 +241,39 @@ pending --atomic claim(consumer+lease)--> claimed --ack--> consumed/deleted
 `toolbox-text/v1`이다. 새 kind는 source/target/payload schema와 redaction 규칙을 설계 문서에
 먼저 추가한다.
 
+**2026-08-28 `log-source/v1` producer/receiver contract (#366/#367).** Run Manager는 기존
+`{ kind, sourceId, runId, stream }` reference를 그대로 payload로 사용한다. `sourceId`는
+`run-manager:<run-id>:<stdout|stderr>`와 exact 일치하며 run 저장소의 상대 log directory,
+명령, cwd, 환경변수, credential, 원문은 포함하지 않는다. WSL Desktop은 arbitrary command를
+전달하지 않고 다음 두 payload만 허용한다:
+
+```json
+{ "sourceType": "wslFile", "distro": "Ubuntu", "wslPath": "/var/log/app.log" }
+{ "sourceType": "wslJournal", "distro": "Ubuntu", "unit": "sshd.service" }
+```
+
+`wslPath`는 host `path`와 구별되는 bounded absolute WSL path이며 `..`, root, 제어 문자와
+argv injection 문자를 거부한다. 두 producer는 catalog가 선언한 설치된 Log Lens를 확인한 뒤
+공용 one-time store에 10분 TTL envelope을 만들고 AppLink에는 kind/id만 전달한다. Log Lens는
+cold/hot request를 자동으로 source에 추가하지 않고 claim→summary preview를 먼저 표시한다.
+사용자가 명시적으로 `읽기 전용 source 추가`를 누를 때만 ack 후 fixed adapter를 읽고, 취소·검증
+실패·lease expiry는 restore한다. payload와 argv에는 secret/raw credential/로그 원문을 넣지
+않으며, WSL path는 이 일회성 TTL envelope과 process-local adapter 설정 밖에 저장하지 않는다.
+clipboard·shell·network ingest·permanent archive 경로를 제공하지 않는다.
+
+Producer publish와 launch는 각 producer 프로세스 안에서 single-flight로 묶는다. 이미 처리 중인
+요청은 고정 `handoff-busy` 오류로 종료하고 새 envelope을 만들지 않는다. Receiver는 claim 시
+protocol version, opaque id/token, timestamp와 lease 범위, target/source-family parity를 다시
+검증하며, frontend도 native preview/source 응답의 허용 key·identity·경로·unit을 재검증한다.
+기존 preview/action 중 새 요청이 들어오면 최신 opaque id 하나만 bounded queue에 보존하고, 오래된
+React 응답은 generation/unmount guard로 폐기한다. `wslJournal`의 선택적 `unit`은 native JSON의
+`null` 또는 누락을 동일하게 “unit 없음”으로 해석한다. modal은 명시적 add/cancel, Escape/Tab
+focus trap과 opener 복원을 제공한다.
+
+Adapter cancellation은 Windows Job Object kill-on-close 또는 Unix process-group 종료와 bounded
+reap을 사용하며, helper 종료 실패 시 direct child fallback을 유지한다. shell/network/clipboard
+fallback이나 raw log/path/credential 전달은 없다.
+
 `knowledge-draft/v1`의 Life Log→Knowledge 구현은 이 generic lifecycle 위에 aggregate-only
 앱 계약을 둔다. Life Log는 검증된 native digest에서 period/range/timezone, bounded summary,
 결정론적 Markdown body, 고정 tags와 네 source provenance만 publish하고, session/window title/
@@ -256,8 +289,8 @@ Run Manager의 #311 local validation은 `log-source/v1` reference를
 `run-manager:<opaque-run-id>:<stdout|stderr>`와 exact 일치해야 하며 absolute path,
 command, environment, credential, remote address를 payload에 넣지 않는다. 이 reference는
 unknown field도 거부하므로 추가 path field를 숨길 수 없다. 현재 검색 결과의 source
-identity를 검증하기 위한 것으로, Log Lens producer/consumer handoff는 Log Lens bootstrap
-이후 별도 integration PR에서 claim/ack 경계와 함께 구현한다.
+identity를 검증하기 위한 local boundary이며, grouped #366/#367은 이 DTO를 변경하지 않고
+위의 one-time claim/ack handoff 경계로 확장한다.
 
 ---
 

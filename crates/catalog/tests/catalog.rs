@@ -115,6 +115,13 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
         vec!["log-lens"]
     );
     assert_eq!(
+        capable_producers(&catalog, "handoff:log-source/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["wsl-desktop", "run-manager"]
+    );
+    assert_eq!(
         capable_producers(&catalog, "snapshot:life-log/projects/v1")
             .into_iter()
             .map(|app| app.id)

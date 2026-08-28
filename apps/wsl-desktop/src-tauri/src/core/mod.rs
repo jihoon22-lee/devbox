@@ -1,3 +1,4 @@
+pub mod log_handoff;
 pub mod models;
 pub mod multiplexer;
 pub mod parsers;

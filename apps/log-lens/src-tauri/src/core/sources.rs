@@ -9,17 +9,33 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
+#[cfg(windows)]
+use std::mem::size_of;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
+#[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
+#[cfg(windows)]
+use windows::core::PCWSTR;
+#[cfg(windows)]
+use windows::Win32::Foundation::{CloseHandle, HANDLE};
+#[cfg(windows)]
+use windows::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+    SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+};
+
 const READ_CHUNK_BYTES: usize = 64 * 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_DIRECTORY_FILES: usize = 256;
 const MAX_CONTAINER_LINES: &str = "100000";
 const CURSOR_ANCHOR_BYTES: u64 = 4 * 1024;
+const TERMINATION_WAIT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -383,19 +399,29 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     // A fixed adapter can still create descendants (for example a WSL
-    // helper). Give it a private process group on Unix so cancellation can
-    // clean up the complete tree; Windows uses taskkill /T below.
+    // helper). Give it a private process group on Unix; Windows assigns the
+    // child to a kill-on-close Job Object below. Both boundaries cover the
+    // complete adapter tree without passing user input to a shell utility.
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
     let mut child = command.spawn().map_err(|_| CoreError::AdapterUnavailable)?;
+    let mut process_tree = match ProcessTree::assign_to(&child) {
+        Ok(process_tree) => process_tree,
+        Err(()) => {
+            // Fail closed if the platform cannot establish ownership. A
+            // detached adapter must never survive a cancelled/read-limited
+            // operation, even if only the root process can be reaped here.
+            kill_child_and_reap(&mut child);
+            return Err(CoreError::AdapterUnavailable);
+        }
+    };
     let mut stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
-            kill_process_tree(&mut child);
-            let _ = child.wait();
+            process_tree.terminate(&mut child);
             return Err(CoreError::AdapterUnavailable);
         }
     };
@@ -425,8 +451,7 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
         Ok(reader) => reader,
         Err(_) => {
             drop(receiver);
-            kill_process_tree(&mut child);
-            let _ = child.wait();
+            process_tree.terminate(&mut child);
             return Err(CoreError::Io);
         }
     };
@@ -434,19 +459,19 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
     let mut child_done = false;
     loop {
         if let Err(error) = context.check() {
-            terminate_child(&mut child, receiver, reader);
+            terminate_child(&mut child, &mut process_tree, receiver, reader);
             return Err(error);
         }
         match receiver.recv_timeout(Duration::from_millis(20)) {
             Ok(Ok(chunk)) => {
                 if bytes.len().saturating_add(chunk.len()) > MAX_SOURCE_BYTES {
-                    terminate_child(&mut child, receiver, reader);
+                    terminate_child(&mut child, &mut process_tree, receiver, reader);
                     return Err(CoreError::OutputLimit);
                 }
                 bytes.extend_from_slice(&chunk);
             }
             Ok(Err(())) => {
-                terminate_child(&mut child, receiver, reader);
+                terminate_child(&mut child, &mut process_tree, receiver, reader);
                 return Err(CoreError::Io);
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -456,7 +481,7 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
             child_done = match child.try_wait() {
                 Ok(status) => status.is_some(),
                 Err(_) => {
-                    terminate_child(&mut child, receiver, reader);
+                    terminate_child(&mut child, &mut process_tree, receiver, reader);
                     return Err(CoreError::Io);
                 }
             };
@@ -465,13 +490,13 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
             match receiver.try_recv() {
                 Ok(Ok(chunk)) => {
                     if bytes.len().saturating_add(chunk.len()) > MAX_SOURCE_BYTES {
-                        terminate_child(&mut child, receiver, reader);
+                        terminate_child(&mut child, &mut process_tree, receiver, reader);
                         return Err(CoreError::OutputLimit);
                     }
                     bytes.extend_from_slice(&chunk);
                 }
                 Ok(Err(())) => {
-                    terminate_child(&mut child, receiver, reader);
+                    terminate_child(&mut child, &mut process_tree, receiver, reader);
                     return Err(CoreError::Io);
                 }
                 Err(TryRecvError::Disconnected) => break,
@@ -484,16 +509,20 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
             Ok(Some(status)) => break status,
             Ok(None) => {}
             Err(_) => {
-                terminate_child(&mut child, receiver, reader);
+                terminate_child(&mut child, &mut process_tree, receiver, reader);
                 return Err(CoreError::Io);
             }
         }
         if let Err(error) = context.check() {
-            terminate_child(&mut child, receiver, reader);
+            terminate_child(&mut child, &mut process_tree, receiver, reader);
             return Err(error);
         }
         thread::sleep(Duration::from_millis(10));
     };
+    // The root adapter may exit while a helper still owns stdout. Terminate
+    // only descendants owned by this operation before joining the reader so a
+    // successful operation cannot leak a pipe/thread indefinitely.
+    process_tree.terminate_descendants();
     drop(receiver);
     let _ = reader.join();
     if !status.success() {
@@ -504,37 +533,125 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
 
 fn terminate_child(
     child: &mut Child,
+    process_tree: &mut ProcessTree,
     receiver: mpsc::Receiver<Result<Vec<u8>, ()>>,
     reader: thread::JoinHandle<()>,
 ) {
     drop(receiver);
-    kill_process_tree(child);
-    let _ = child.wait();
+    process_tree.terminate(child);
     let _ = reader.join();
 }
 
-/// Terminate an adapter and every process it could have spawned. The command
-/// and all arguments are fixed before this function is reached; the only
-/// Windows argument is the OS-assigned numeric PID.
-fn kill_process_tree(child: &mut Child) {
-    #[cfg(windows)]
-    {
-        let pid = child.id().to_string();
-        let result = Command::new("taskkill")
-            .args(["/PID", pid.as_str(), "/T", "/F"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if !result.is_ok_and(|status| status.success()) {
-            let _ = child.kill();
+/// Reap a child without an unbounded `wait()`. The second bounded pass is a
+/// last-resort root kill; platform process-tree ownership is closed by the
+/// caller so descendants cannot remain attached to the reader pipe.
+fn reap_child_bounded(child: &mut Child) {
+    let wait_until = Instant::now() + TERMINATION_WAIT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return,
+            Err(_) => {
+                let _ = child.kill();
+                return;
+            }
+            Ok(None) if Instant::now() >= wait_until => break,
+            Ok(None) => thread::sleep(Duration::from_millis(10)),
         }
-        return;
+    }
+    let _ = child.kill();
+    let wait_until = Instant::now() + TERMINATION_WAIT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) | Err(_) => return,
+            Ok(None) if Instant::now() >= wait_until => return,
+            Ok(None) => thread::sleep(Duration::from_millis(10)),
+        }
+    }
+}
+
+fn kill_child_and_reap(child: &mut Child) {
+    let _ = child.kill();
+    reap_child_bounded(child);
+}
+
+/// Own an adapter's complete process tree. Windows uses a Job Object with
+/// kill-on-close; Unix uses the process group assigned before spawn.
+#[cfg(windows)]
+struct ProcessTree {
+    handle: HANDLE,
+}
+
+#[cfg(windows)]
+impl ProcessTree {
+    fn assign_to(child: &Child) -> Result<Self, ()> {
+        let handle = unsafe { CreateJobObjectW(None, PCWSTR::null()) }.map_err(|_| ())?;
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if unsafe {
+            SetInformationJobObject(
+                handle,
+                JobObjectExtendedLimitInformation,
+                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        }
+        .is_err()
+        {
+            unsafe {
+                let _ = CloseHandle(handle);
+            }
+            return Err(());
+        }
+        let process = HANDLE(child.as_raw_handle());
+        if unsafe { AssignProcessToJobObject(handle, process) }.is_err() {
+            unsafe {
+                let _ = CloseHandle(handle);
+            }
+            return Err(());
+        }
+        Ok(Self { handle })
     }
 
-    #[cfg(unix)]
-    {
-        let process_group = format!("-{}", child.id());
+    fn terminate(&mut self, child: &mut Child) {
+        self.terminate_descendants();
+        reap_child_bounded(child);
+    }
+
+    fn terminate_descendants(&mut self) {
+        let _ = unsafe { TerminateJobObject(self.handle, 1) };
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ProcessTree {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = CloseHandle(self.handle);
+        }
+    }
+}
+
+#[cfg(unix)]
+struct ProcessTree {
+    process_group: i32,
+}
+
+#[cfg(unix)]
+impl ProcessTree {
+    fn assign_to(child: &Child) -> Result<Self, ()> {
+        let process_group = i32::try_from(child.id()).map_err(|_| ())?;
+        (process_group > 0)
+            .then_some(Self { process_group })
+            .ok_or(())
+    }
+
+    fn terminate(&mut self, child: &mut Child) {
+        self.terminate_descendants();
+        reap_child_bounded(child);
+    }
+
+    fn terminate_descendants(&mut self) {
+        let process_group = format!("-{}", self.process_group);
         let result = Command::new("kill")
             .args(["-KILL", "--", process_group.as_str()])
             .stdin(Stdio::null())
@@ -542,15 +659,23 @@ fn kill_process_tree(child: &mut Child) {
             .stderr(Stdio::null())
             .status();
         if !result.is_ok_and(|status| status.success()) {
-            let _ = child.kill();
+            // The group may already have disappeared after a normal exit.
         }
-        return;
     }
+}
 
-    #[allow(unreachable_code)]
-    {
-        let _ = child.kill();
+#[cfg(not(any(windows, unix)))]
+struct ProcessTree;
+
+#[cfg(not(any(windows, unix)))]
+impl ProcessTree {
+    fn assign_to(_child: &Child) -> Result<Self, ()> {
+        Ok(Self)
     }
+    fn terminate(&mut self, child: &mut Child) {
+        kill_child_and_reap(child);
+    }
+    fn terminate_descendants(&mut self) {}
 }
 
 fn file_identity(_file: &File, metadata: &fs::Metadata) -> FileIdentity {

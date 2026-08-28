@@ -7,6 +7,7 @@
 //! safety and ordering rules testable on every platform.
 
 mod buffer;
+pub mod handoff;
 mod lifecycle;
 mod model;
 mod parser;

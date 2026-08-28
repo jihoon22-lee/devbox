@@ -71,4 +71,12 @@ mark { border-radius: 2px; background: #d5ad4a; color: #151b22; padding: 0 1px; 
 .bookmark.active { color: #ffd16a; }
 .empty { color: var(--muted); padding: 30px; text-align: center; }
 .statusbar { color: var(--muted); font-size: 11px; flex-wrap: wrap; justify-content: space-between; padding: 0 4px; }
+.handoff-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.58); }
+.handoff-dialog { width: min(560px, 100%); border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 20px; box-shadow: 0 16px 60px rgba(0,0,0,.4); }
+.handoff-dialog h2 { margin-bottom: 10px; font-size: 17px; }
+.handoff-details { display: grid; gap: 8px; margin: 18px 0; }
+.handoff-details div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding-bottom: 7px; }
+.handoff-details dt { color: var(--muted); font-size: 11px; }
+.handoff-details dd { margin: 0; text-align: right; }
+.handoff-actions { display: flex; justify-content: flex-end; gap: 8px; }
 @media (max-width: 900px) { .log-row { grid-template-columns: 28px 145px 62px 100px minmax(120px,1fr) 36px; } .topbar { align-items: flex-start; flex-direction: column; } .top-actions { justify-content: flex-start; } }

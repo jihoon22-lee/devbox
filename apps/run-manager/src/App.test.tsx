@@ -48,6 +48,7 @@ vi.mock("./api", () => ({
     shortcutPath: "startup-link",
   })),
   onOpenRequest: vi.fn(async () => () => undefined),
+  openRunLogInLogLens: vi.fn(async () => undefined),
   previewCron: vi.fn(async () => []),
   quitApp: vi.fn(async () => undefined),
   restartService: vi.fn(),

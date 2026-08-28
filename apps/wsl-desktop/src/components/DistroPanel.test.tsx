@@ -24,6 +24,25 @@ function baseProps(
 }
 
 describe("DistroPanel distro state", () => {
+  it("exposes explicit fixed-adapter handoff actions without reading or copying output", () => {
+    const onOpenJournalInLogLens = vi.fn();
+    const onOpenFileInLogLens = vi.fn();
+    render(
+      <DistroPanel
+        {...baseProps({
+          distros: [{ name: "Ubuntu", version: 2, default: true, state: "Running" }],
+          onOpenJournalInLogLens,
+          onOpenFileInLogLens,
+        })}
+      />,
+    );
+
+    screen.getByRole("button", { name: "Open journal in Log Lens" }).click();
+    screen.getByRole("button", { name: "Open file in Log Lens" }).click();
+    expect(onOpenJournalInLogLens).toHaveBeenCalledWith("Ubuntu");
+    expect(onOpenFileInLogLens).toHaveBeenCalledWith("Ubuntu");
+  });
+
   it("renders a stopped distro as Stopped with the non-running class", () => {
     render(
       <DistroPanel

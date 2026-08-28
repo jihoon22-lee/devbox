@@ -1,12 +1,13 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listActiveRuns, listRuns, runJobNow, searchRunLogs, stopActiveRun, tailLog } from "../api";
+import { listActiveRuns, listRuns, openRunLogInLogLens, runJobNow, searchRunLogs, stopActiveRun, tailLog } from "../api";
 import type { Job, LogSearchResponse, Run } from "../types";
 import RunHistory, { collectRunLog } from "./RunHistory";
 
 vi.mock("../api", () => ({
   listRuns: vi.fn(),
   listActiveRuns: vi.fn(),
+  openRunLogInLogLens: vi.fn(),
   runJobNow: vi.fn(),
   searchRunLogs: vi.fn(),
   stopActiveRun: vi.fn(),
@@ -16,6 +17,7 @@ vi.mock("../api", () => ({
 const listRunsMock = vi.mocked(listRuns);
 const listActiveRunsMock = vi.mocked(listActiveRuns);
 const runJobNowMock = vi.mocked(runJobNow);
+const openRunLogInLogLensMock = vi.mocked(openRunLogInLogLens);
 const searchRunLogsMock = vi.mocked(searchRunLogs);
 const stopActiveRunMock = vi.mocked(stopActiveRun);
 const tailLogMock = vi.mocked(tailLog);
@@ -64,6 +66,7 @@ beforeEach(() => {
   listRunsMock.mockReset().mockResolvedValue([run]);
   listActiveRunsMock.mockReset().mockResolvedValue([]);
   runJobNowMock.mockReset().mockResolvedValue({ ...run, id: "run-now", status: "running", endedAt: null, exitCode: null });
+  openRunLogInLogLensMock.mockReset().mockResolvedValue(undefined);
   searchRunLogsMock.mockReset().mockResolvedValue({
     matches: [],
     scannedLines: 1,
@@ -91,6 +94,19 @@ afterEach(() => {
 });
 
 describe("RunHistory", () => {
+  it("requires an explicit confirmation before publishing the selected stream to Log Lens", async () => {
+    confirmMock.mockReturnValueOnce(false);
+    const view = render(<RunHistory jobs={[job]} />);
+    await waitFor(() => expect(view.getByLabelText("stdout 로그")).toBeInTheDocument());
+    fireEvent.click(view.getByRole("button", { name: "Log Lens" }));
+    expect(openRunLogInLogLensMock).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(view.getByRole("button", { name: "Log Lens" }));
+    await waitFor(() => expect(openRunLogInLogLensMock).toHaveBeenCalledWith("run-1", "stdout"));
+    expect(confirmMock.mock.calls[1]?.[0]).toContain("로그 원문·경로·명령·환경변수");
+  });
+
   it("loads bounded history and tails stdout with a decimal cursor", async () => {
     const view = render(<RunHistory jobs={[job]} />);
 

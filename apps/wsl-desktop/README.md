@@ -46,6 +46,17 @@
   사용할 수 있도록, 이미 실행 중인 distro만 `wsl-desktop/runtime/v1` read-only snapshot으로
   발행한다. distro별 실행 중 terminal 수와 Docker availability, bounded container 목록,
   검증된 published port mapping을 제공하며 stopped distro를 조회 때문에 시작하지 않는다.
+- **Log Lens handoff producer** — 선택한 distro 카드에서 사용자가 확인한 경우에만 WSL file 또는
+  journal source를 `log-source/v1` one-time envelope으로 보낸다. file payload는 `sourceType`,
+  검증된 distro와 절대 WSL 경로(`wslPath`)만, journal payload는 `sourceType`, distro와 제한된
+  unit만 포함한다. AppLink argv에는 opaque handoff kind/id만 들어가며, shell·arbitrary WSL
+  command·환경변수·credential·로그 원문·clipboard fallback은 사용하지 않는다. `wslPath`는
+  10분 TTL의 one-time pending envelope에만 잠시 존재하며 DB/localStorage/saved view/clipboard와
+  AppLink argv에는 복사하지 않는다. Log Lens에서 preview를 확인하고 `읽기 전용 source 추가`를
+  눌러야 claim이 ack되고 fixed adapter가 시작된다.
+- publish와 launch는 producer single-flight로 보호하며, 이미 진행 중인 handoff에는 고정
+  `handoff-busy` 오류를 반환한다. Log Lens는 producer/source-family와 lease를 다시 검증하고,
+  journal의 선택적 `unit`이 없는 경우도 포함해 동일한 receiver contract로 변환한다.
 - **open path 핀·최근 경로** — 자주 쓰는 작업 경로 저장
 
 ## 기술

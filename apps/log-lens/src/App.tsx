@@ -4,7 +4,17 @@ import {
   type ContextMenuEntry,
 } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { cancelRead, exportRecords, readSources } from "./api";
+import {
+  acceptLogSource,
+  cancelRead,
+  discardLogSource,
+  exportRecords,
+  onOpenRequest,
+  previewLogSource,
+  readSources,
+  renewLogSource,
+  takePendingOpen,
+} from "./api";
 import { browserSnapshot } from "./browserFixture";
 import {
   createLiteralRegex,
@@ -20,6 +30,7 @@ import type {
   FilterSpec,
   LogLevel,
   LogRecord,
+  LogSourcePreview,
   SourceKind,
   SourceSpec,
   SavedView,
@@ -144,6 +155,8 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [handoffPreview, setHandoffPreview] = useState<LogSourcePreview | null>(null);
+  const [handoffBusy, setHandoffBusy] = useState(false);
   const [contextRecord, setContextRecord] = useState<LogRecord | null>(null);
   const generation = useRef(0);
   const operation = useRef<string | null>(null);
@@ -152,6 +165,16 @@ function App() {
   const pausedRef = useRef(paused);
   const compositionRef = useRef(false);
   const contextRecordRef = useRef<LogRecord | null>(null);
+  const handoffPreviewRef = useRef<LogSourcePreview | null>(null);
+  const handoffBusyRef = useRef(false);
+  const handoffGeneration = useRef(0);
+  // Native single-instance delivery is at-least-once from the UI's point of
+  // view. Keep one bounded latest-id slot while the current preview/action is
+  // busy so a second producer handoff is not silently dropped.
+  const queuedHandoffRef = useRef<string | null>(null);
+  const handoffOpenerRef = useRef<HTMLElement | null>(null);
+  const handoffCancelRef = useRef<HTMLButtonElement | null>(null);
+  const handoffAcceptRef = useRef<HTMLButtonElement | null>(null);
   pausedRef.current = paused;
 
   const prepareLogContext = useCallback((_reason: "pointer" | "keyboard", target: HTMLElement) => {
@@ -212,16 +235,222 @@ function App() {
     }
   }, [cursors, paused, records, snapshot, sources]);
 
+  const clearHandoffPreview = useCallback(() => {
+    handoffPreviewRef.current = null;
+    setHandoffPreview(null);
+  }, []);
+
+  const openLogSourcePreview = useCallback(async (id: string) => {
+    if (!/^[0-9a-f]{32}$/.test(id)) return;
+    if (handoffBusyRef.current || handoffPreviewRef.current) {
+      queuedHandoffRef.current = id;
+      if (mounted.current) setNotice("다른 Log Lens handoff를 처리한 뒤 최신 요청을 미리봅니다.");
+      return;
+    }
+    const actionGeneration = ++handoffGeneration.current;
+    const activeElement = document.activeElement;
+    handoffOpenerRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+    handoffBusyRef.current = true;
+    setHandoffBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const preview = await previewLogSource(id);
+      if (!mounted.current || handoffGeneration.current !== actionGeneration) {
+        void discardLogSource(preview.id).catch(() => undefined);
+        return;
+      }
+      handoffPreviewRef.current = preview;
+      setHandoffPreview(preview);
+    } catch {
+      if (mounted.current && handoffGeneration.current === actionGeneration) {
+        setError("Log Lens source handoff를 미리볼 수 없습니다. 다시 보내 주세요.");
+      }
+    } finally {
+      handoffBusyRef.current = false;
+      if (mounted.current && handoffGeneration.current === actionGeneration) setHandoffBusy(false);
+    }
+  }, []);
+
+  const cancelLogSourcePreview = useCallback(async () => {
+    const preview = handoffPreviewRef.current;
+    if (!preview || handoffBusyRef.current) return;
+    const actionGeneration = ++handoffGeneration.current;
+    const previewId = preview.id;
+    handoffBusyRef.current = true;
+    setHandoffBusy(true);
+    try {
+      await discardLogSource(previewId);
+      if (!mounted.current || handoffGeneration.current !== actionGeneration) return;
+      clearHandoffPreview();
+      setError(null);
+      setNotice("Log Lens source handoff를 취소했습니다. 다시 열 수 있습니다.");
+    } catch {
+      if (mounted.current && handoffGeneration.current === actionGeneration) {
+        setError("Log Lens source handoff를 취소하지 못했습니다.");
+      }
+    } finally {
+      handoffBusyRef.current = false;
+      if (mounted.current && handoffGeneration.current === actionGeneration) setHandoffBusy(false);
+    }
+  }, [clearHandoffPreview]);
+
+  const acceptLogSourcePreview = useCallback(async () => {
+    const preview = handoffPreviewRef.current;
+    if (!preview || handoffBusyRef.current) return;
+    if (sources.length >= MAX_SOURCES) {
+      setError(`A maximum of ${MAX_SOURCES} sources can be loaded at once.`);
+      return;
+    }
+    const actionGeneration = ++handoffGeneration.current;
+    const previewId = preview.id;
+    handoffBusyRef.current = true;
+    setHandoffBusy(true);
+    setError(null);
+    try {
+      const source = await acceptLogSource(previewId);
+      if (!mounted.current || handoffGeneration.current !== actionGeneration) return;
+      clearHandoffPreview();
+      if (sources.some((candidate) => JSON.stringify(candidate) === JSON.stringify(source))) {
+        setNotice("이 source는 이미 선택되어 있습니다. handoff는 소비되었습니다.");
+        return;
+      }
+      const nextSources = [...sources, source];
+      const nextCursors = nextSources.map(() => null);
+      setSources(nextSources);
+      setCursors(nextCursors);
+      setNotice("Log Lens source를 추가했습니다. 읽기 전용 adapter로 불러옵니다.");
+      void refresh(nextSources, nextCursors);
+    } catch {
+      if (mounted.current && handoffGeneration.current === actionGeneration) {
+        setError("Log Lens source handoff를 적용하지 못했습니다. 다시 보내 주세요.");
+      }
+    } finally {
+      handoffBusyRef.current = false;
+      if (mounted.current && handoffGeneration.current === actionGeneration) setHandoffBusy(false);
+    }
+  }, [clearHandoffPreview, refresh, sources]);
+
+  // Drain at most one latest queued id after the current claim/action has
+  // released its slot. This avoids unbounded UI memory while preserving a
+  // deterministic handoff when producers race each other.
+  useEffect(() => {
+    if (handoffBusy || handoffPreview || !queuedHandoffRef.current) return;
+    const queued = queuedHandoffRef.current;
+    queuedHandoffRef.current = null;
+    void openLogSourcePreview(queued);
+  }, [handoffBusy, handoffPreview, openLogSourcePreview]);
+
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
       generation.current += 1;
+      handoffGeneration.current += 1;
+      queuedHandoffRef.current = null;
       const active = operation.current;
       operation.current = null;
       if (active) void cancelRead(active);
     };
   }, []);
+
+  // Cold-start pull and single-instance forwarding converge on the same
+  // preview path. Merely receiving argv never reads a source or auto-adds it.
+  useEffect(() => {
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    const consumePending = () => {
+      void takePendingOpen()
+        .then((request) => {
+          if (disposed || !request || request.target.kind !== "handoff") return;
+          if (request.target.handoffKind !== "log-source/v1") {
+            setError("지원하지 않는 Log Lens handoff입니다.");
+            return;
+          }
+          void openLogSourcePreview(request.target.id);
+        })
+        .catch(() => {
+          if (!disposed) setError("Log Lens source handoff를 확인하지 못했습니다.");
+        });
+    };
+    void onOpenRequest(consumePending)
+      .then((unlisten) => {
+        if (disposed) unlisten(); else stop = unlisten;
+      })
+      .catch(() => {
+        if (!disposed) setError("Log Lens source handoff listener를 시작하지 못했습니다.");
+      });
+    consumePending();
+    return () => {
+      disposed = true;
+      stop?.();
+    };
+  }, [openLogSourcePreview]);
+
+  useEffect(() => {
+    if (!handoffPreview) return undefined;
+    const id = handoffPreview.id;
+    const timer = window.setInterval(() => {
+      void renewLogSource(id)
+        .then((leaseUntilMs) => {
+          if (mounted.current) {
+            setHandoffPreview((current) => current?.id === id ? { ...current, leaseUntilMs } : current);
+          }
+        })
+        .catch(() => {
+          if (!mounted.current || handoffPreviewRef.current?.id !== id) return;
+          handoffGeneration.current += 1;
+          clearHandoffPreview();
+          setError("Log Lens source handoff 미리보기 시간이 만료되었습니다. 다시 보내 주세요.");
+        });
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [clearHandoffPreview, handoffPreview]);
+
+  useEffect(() => {
+    return () => {
+      const preview = handoffPreviewRef.current;
+      if (preview) void discardLogSource(preview.id).catch(() => undefined);
+    };
+  }, []);
+
+  // Keep the handoff modal keyboard-contained and return focus to the element
+  // that was active before an external request arrived. The action refs avoid
+  // re-installing this listener for lease-only preview updates.
+  useEffect(() => {
+    const id = handoffPreview?.id;
+    if (!id) return undefined;
+    const opener = handoffOpenerRef.current;
+    const focusTimer = window.setTimeout(() => handoffCancelRef.current?.focus(), 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (handoffBusyRef.current) return;
+        event.preventDefault();
+        void cancelLogSourcePreview();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [handoffCancelRef.current, handoffAcceptRef.current]
+        .filter((element): element is HTMLButtonElement => Boolean(element && !element.disabled));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey ? active === first : active === last) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (!focusable.includes(active as HTMLButtonElement)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", onKeyDown);
+      if (handoffPreviewRef.current?.id !== id && opener?.isConnected) opener.focus();
+    };
+  }, [cancelLogSourcePreview, handoffPreview?.id]);
 
   useEffect(() => {
     if (!follow || paused || sources.length === 0) return undefined;
@@ -438,6 +667,31 @@ function App() {
 
   return (
     <main className="app-shell">
+      {handoffPreview && <div className="handoff-backdrop" role="presentation">
+        <section
+          className="handoff-dialog"
+          role="dialog"
+          tabIndex={-1}
+          aria-modal="true"
+          aria-labelledby="log-source-handoff-title"
+          aria-describedby="log-source-handoff-description"
+          aria-busy={handoffBusy}
+        >
+          <h2 id="log-source-handoff-title">Log Lens source 미리보기</h2>
+          <p id="log-source-handoff-description" className="muted">
+            아래의 검증된 읽기 전용 source만 추가합니다. 로그 원문, 명령, 환경변수, 자격 증명은 handoff에 포함되지 않습니다.
+          </p>
+          <dl className="handoff-details">
+            <div><dt>Producer</dt><dd>{handoffPreview.sourceApp}</dd></div>
+            <div><dt>Adapter</dt><dd>{handoffPreview.source.displayName}</dd></div>
+            <div><dt>Opaque source</dt><dd><code>{handoffPreview.source.sourceId}</code></dd></div>
+          </dl>
+          <div className="handoff-actions">
+            <button ref={handoffCancelRef} type="button" className="button" onClick={() => void cancelLogSourcePreview()} disabled={handoffBusy}>취소</button>
+            <button ref={handoffAcceptRef} type="button" className="button primary" onClick={() => void acceptLogSourcePreview()} disabled={handoffBusy}>읽기 전용 source 추가</button>
+          </div>
+        </section>
+      </div>}
       <header className="topbar">
         <div>
           <p className="eyebrow">DEVBOX · OFFLINE</p>

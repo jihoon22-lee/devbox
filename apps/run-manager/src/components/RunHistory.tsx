@@ -4,7 +4,7 @@ import {
   type ContextMenuEntry,
 } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listActiveRuns, listRuns, runJobNow, searchRunLogs, stopActiveRun, tailLog } from "../api";
+import { listActiveRuns, listRuns, openRunLogInLogLens, runJobNow, searchRunLogs, stopActiveRun, tailLog } from "../api";
 import type {
   Job,
   LogLevel,
@@ -213,6 +213,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   const refreshRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const selectedStatusRef = useRef<RunStatus | null>(null);
   const searchGeneration = useRef(0);
+  const logLensGeneration = useRef(0);
   const searchBusyRef = useRef(false);
   const mountedRef = useRef(true);
   const logLineRefs = useRef(new Map<number, HTMLSpanElement>());
@@ -224,6 +225,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     return () => {
       mountedRef.current = false;
       searchGeneration.current += 1;
+      logLensGeneration.current += 1;
     };
   }, []);
 
@@ -425,6 +427,24 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     }
   };
 
+  const handleOpenInLogLens = async (run: Run) => {
+    if (!run.logsAvailable || actionBusy) return;
+    const selectedStream = stream;
+    if (!window.confirm(`선택한 실행의 ${selectedStream} 로그를 Log Lens에서 읽기 전용으로 열까요?\n\n로그 원문·경로·명령·환경변수는 handoff에 포함되지 않습니다.`)) return;
+    const generation = ++logLensGeneration.current;
+    setActionBusy(true);
+    try {
+      await openRunLogInLogLens(run.id, selectedStream);
+      if (mountedRef.current && generation === logLensGeneration.current) setError(null);
+    } catch {
+      if (mountedRef.current && generation === logLensGeneration.current) {
+        setError("Log Lens handoff를 시작하지 못했습니다.");
+      }
+    } finally {
+      if (mountedRef.current && generation === logLensGeneration.current) setActionBusy(false);
+    }
+  };
+
   const handleSearch = async () => {
     const run = selectedRun;
     if (!run?.logsAvailable || !searchQuery || searchBusyRef.current) return;
@@ -495,6 +515,12 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
         label: "로그 저장",
         disabled: actionBusy || !contextRun.logsAvailable,
       },
+      {
+        type: "item",
+        id: "open-log-lens",
+        label: "Log Lens에서 읽기 전용 열기",
+        disabled: actionBusy || !contextRun.logsAvailable,
+      },
     ];
   }, [actionBusy, contextRun, jobs]);
 
@@ -504,6 +530,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     if (id === "view-log") setSelectedRunId(run.id);
     else if (id === "rerun") void handleRerun(run);
     else if (id === "save-log") void handleSaveLog(run);
+    else if (id === "open-log-lens") void handleOpenInLogLens(run);
   };
 
   useEffect(() => {
@@ -712,6 +739,15 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
                           onClick={() => setStream(value)}
                         >{value}</button>
                       ))}
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={actionBusy}
+                        aria-busy={actionBusy}
+                        onClick={() => void handleOpenInLogLens(selectedRun)}
+                      >
+                        Log Lens
+                      </button>
                     </div>
                   ) : null}
                 </div>

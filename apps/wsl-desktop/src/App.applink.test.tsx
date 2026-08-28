@@ -58,6 +58,8 @@ vi.mock("./api", () => ({
   onTerminalClosed: vi.fn().mockResolvedValue(() => undefined),
   onTerminalOutput: vi.fn().mockResolvedValue(() => undefined),
   getWindowsBuildNumber: vi.fn().mockResolvedValue(null),
+  openWslFileInLogLens: vi.fn().mockResolvedValue(undefined),
+  openWslJournalInLogLens: vi.fn().mockResolvedValue(undefined),
   takePendingOpen: vi.fn().mockImplementation(async () => {
     mocks.order.push("take");
     return null;
