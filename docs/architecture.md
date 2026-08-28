@@ -513,12 +513,14 @@ command executor 밖의 blocking worker에서 수행한다. Log Lens handoff/rem
 archive는 Log Lens bootstrap 뒤 별도 integration 범위다.
 
 Webhook Lab의 history/rule context menu도 열기 전에 대상의 opaque ID를 선택한다. 일반 history
-DTO, 마스킹 복사, 헤더 복사는 Authorization·Cookie·API key 값을 마스킹하며, 원본 헤더를 가진
-내부 entry는 Serialize/Debug를 구현하지 않고 process memory에만 최대 200건 유지한다. 요청별
-보관 헤더는 100개·총 64K자, body는 256K자로 제한한다. raw copy command는 사용자가 별도 경고를
-확인한 뒤에만 호출하고 반환값은 일회성 clipboard write 이외에는 저장·기록하지 않는다. 개별
-history/rule 삭제와 전체 history 비우기는 기존 버튼을 포함해 확인을 요구하며, clear 뒤에도
-프로세스 안의 history ID를 재사용하지 않는다.
+DTO, 마스킹 복사, 헤더 복사는 Authorization·Cookie·API key·token/secret/password/auth 계열
+header와 credential-shaped query/body를 캡처 시점부터 마스킹하며, 원본 헤더를 가진 내부
+entry는 Serialize/Debug를 구현하지 않고 process memory에만 최대 200건 유지한다. 요청별 보관
+헤더는 100개·총 64K자/256KiB, body는 256K자/1MiB로 제한하고, prefix를 잘라내기 전에 bounded
+redaction을 수행해 경계에서 잘린 token도 renderer에 남기지 않는다. raw copy command는 사용자가
+별도 경고를 확인한 뒤에만 호출하고 반환값은 일회성 clipboard write 이외에는 저장·기록하지
+않는다. 개별 history/rule 삭제와 전체 history 비우기는 기존 버튼을 포함해 확인을 요구하며,
+clear 뒤에도 프로세스 안의 history ID를 재사용하지 않는다.
 
 Captured fixture는 history의 masked snapshot만 opaque ID로 읽어
 `app_local_data_dir()/fixtures.json`에 저장한다. fixture 자체도 method·origin-form target·header·
@@ -526,10 +528,28 @@ body·timestamp를 다시 검증하며, Authorization/Cookie/token/secret/passwo
 known credential marker를 `[REDACTED]`로 바꾸고 절대/unsafe path는 고정 marker로 대체한다.
 schema v1은 fixture 200개·파일 8 MiB·bounded field limits를 적용하고, corrupt·oversized·link-backed
 파일은 원본을 자동 복구하지 않고 fixed error로 중단한다. app-owned parent/file 검사,
-raw-byte CAS, process-local write lock, atomic replace로 concurrent update와 partial write를
-방지하며 timestamp 내림차순+ID tie-break로 목록을 결정적으로 만든다. fixture의 response-rule
-초안은 로컬 editor draft다. #315 handoff는 이 masked fixture 경계에서만 payload를 만들고,
-replay/sequence(#362)는 별도 범위다. example curl은 기존 bounded redaction contract를 따른다.
+최종 store component의 no-follow read, raw-byte CAS, process-local write lock, atomic replace로
+symlink/reparse read race·partial write·경쟁 update를 방어하며 timestamp 내림차순+ID tie-break로
+목록을 결정적으로 만든다. fixture의 response-rule 초안은 로컬 editor draft다. #315 handoff는
+이 masked fixture 경계에서만 payload를 만들고, replay/sequence(#362/#363)는 masked loopback
+replay와 process-local response cursor/reset 계약을 따른다. example curl은 기존 bounded
+redaction contract를 따른다.
+
+Webhook Lab listener는 method/target·header·body를 history 복사 전에 admission한다(각각 414/
+431/413, read 오류 408, request window 429). start/stop은 lifecycle lock과 accept-thread join으로
+선형화하고 accept/handler 실패 시 stale running/address를 폐기한다. response delay는 50ms
+단위로 stop 신호를 확인한다. response rule의 framing header와 비 ASCII header value는 native
+wire semantics가 달라지는 것을 막기 위해 저장 전에 거부하며, native replay는 loopback·ASCII
+wire·status-only·2초 connect/read idle timeout·write+response 5초 deadline·1초 20건 rate limit과
+concurrent-send serialization을 공유한다.
+replay client는 고정 transport header 3개를 위해 입력 header를 97개로 예약하고, 생성된 전체
+wire header도 listener의 100개·64,000자·256,000바이트 경계를 다시 검사한다.
+native `core/http.rs` transport는 HTTP/1.0/1.1 한 connection 한 request와 고정
+Content-Length만 읽으며 chunked/Expect/알 수 없는 transfer encoding은 거부한다. request
+line/header/body에 5초 wall-clock·socket timeout과 line/header/body/active-connection 상한을
+적용하고 stop 시 active socket shutdown과 replay cancellation을 수행해 parser allocation,
+declared-length drain, socket slowloris가 lifecycle을 붙잡지 않게 한다. replay는 lifecycle lock을
+destination 확인부터 bounded send까지 유지해 stop/restart와 local port 재사용 TOCTOU도 막는다.
 
 Devbox Manager의 app-row context menu도 메뉴를 열기 전에 catalog app ID로 대상 행을 선택하고,
 설치/업데이트의 portable·setup 선택을 submenu로 보존한다. 실행·rollback·설치 폴더 열기·제거는

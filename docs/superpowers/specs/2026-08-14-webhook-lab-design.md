@@ -1,6 +1,6 @@
 # Webhook Lab 설계 — Local Mock/Webhook Server
 
-- 상태: MVP 구현 중 — #314 captured fixture 저장·#315 Webhook→API handoff 완료; #362 replay 후속
+- 상태: MVP 구현 중 — #314 captured fixture 저장·#315 Webhook→API handoff·#362 captured replay·#363 response sequence 완료
 - 작성일: 2026-08-14
 - 근거: `docs/product-opportunities.md` §15.3, §17.9
 
@@ -23,7 +23,8 @@ API Playground가 outbound HTTP client라면 Webhook Lab은 **inbound HTTP 요�
 ## 3. 안전 경계
 
 - 기본 bind는 `127.0.0.1`. LAN 공개(`0.0.0.0`)는 명시적 경고 + 별도 설정.
-- `Authorization`·`Cookie`·`API key` 헤더는 history에서 기본 masking.
+- `Authorization`·`Cookie`·`API key`·token/secret/password/auth 계열 header와
+  credential-shaped query/body는 history snapshot 생성 시점부터 masking.
 - body 크기·history 개수·request rate 상한.
 - fixture root 밖의 파일을 응답하지 못하게 한다 (safe_join, knowledge-base 패턴).
 - request를 받아 외부 command를 실행하는 hook은 **MVP 제외**.
@@ -32,8 +33,11 @@ API Playground가 outbound HTTP client라면 Webhook Lab은 **inbound HTTP 요�
 
 - Rust에서 경량 HTTP 서버를 띄운다. 현재 사용 중인 `reqwest`(client)와 별개로
   서버 역할이 필요하다.
-- [설계] 서버 구현: `tiny_http` 또는 `axum`. **단일 응답 파일·짧은 history용으로
-  `tiny_http` 권장** (경량, 비동기 불필요, 의존 최소). 요청이 밀리면 후보 재검토.
+- 서버 구현은 Rust 표준 `TcpListener` 기반 `core/http.rs` bounded HTTP/1.x transport다.
+  HTTP/1.0/1.1의 한 connection 한 request와 고정 `Content-Length`만 지원하고,
+  chunked/Expect/알 수 없는 transfer encoding은 추측하지 않는다. 앱 admission 이전에
+  request line/header/body의 총 deadline·socket timeout·line/header/body/connection 상한을
+  적용해 parser 내부 allocation과 slowloris가 lifecycle을 붙잡지 않게 한다.
 
 ## 5. 아키텍처
 
@@ -43,6 +47,7 @@ apps/webhook-lab/
 │  ├─ core/
 │  │  ├─ server.rs      # 경량 HTTP 서버 (요청 수신 → history 기록 → rule 응답)
 │  │  ├─ rules.rs       # response rule 파싱·매칭 (순수)
+│  │  ├─ replay.rs      # masked loopback replay client (bounded, pure builder + native send)
 │  │  ├─ history.rs     # 수신 요청 기록 (순수, 상한 적용)
 │  │  └─ masking.rs     # 민감 헤더 마스킹 (순수)
 │  └─ commands.rs       # start/stop/list_history/rule CRUD
@@ -81,7 +86,7 @@ count, byte는 UTF-8 byte count이며 JS `Array.from`/`TextEncoder`와 Rust 구�
 invalid raw draft를 유지하고 stale id, double action, 접근성 오류를 처리한다. 이 PR은 기존
 HashMap 저장/순회·id·순서·matcher semantics를 변경하지 않고 priority를 만들지 않는다.
 예시 curl은 별도 완료 범위이고, captured fixture 저장은 아래 #314 계약으로 구현했다. captured
-request replay/sequence는 #362 후속 이슈 범위로 남겼다. API Playground handoff는 아래 #315
+request replay/sequence는 아래 #362/#363 계약으로 구현했다. API Playground handoff는 아래 #315
 계약으로 구현하며, #282 완료 상태는 rule 설명·검증까지로 기록한다.
 
 ## 8. #314 captured fixture 저장 계약 (2026-08-27)
@@ -94,10 +99,11 @@ schema v1, 최대 200개·8 MiB 파일, method/target/header/body/timestamp의 b
 명령에 전달하지 않는다.
 
 corrupt·oversized·symlink/non-file 저장소는 고정 오류로 fail-closed하며 기존 bytes를 자동
-복구하지 않는다. app-owned path 검사, atomic replace, raw-byte CAS와 process-local writer lock을
-통해 partial write와 concurrent overwrite를 막고, 목록은 timestamp 내림차순·ID tie-break로
-결정한다. fixture에서 response-rule 초안을 만들 때는 method/path만 local editor에 채우며
-response metadata는 빈 값으로 둔다. API handoff와 replay/sequence는 이 계약에 포함하지 않는다.
+복구하지 않는다. app-owned path 검사, 최종 store component의 no-follow read, atomic replace,
+raw-byte CAS와 process-local writer lock을 통해 partial write와 경쟁 업데이트를 방어하고,
+목록은 timestamp 내림차순·ID tie-break로 결정한다. fixture에서 response-rule 초안을 만들
+때는 method/path만 local editor에 채우며 response metadata는 빈 값으로 둔다. API handoff와
+replay/sequence는 각각 아래의 별도 계약으로 관리한다.
 
 ## 9. #315 Webhook Lab → API Playground handoff 계약 (2026-08-27)
 
@@ -119,3 +125,44 @@ producer/consumer/handoff ID, expiry, 요청 method/URL/header/body를 적용 �
 `적용`할 때만 claim을 ack/delete하고 editor에 넣는다. `취소`는 restore한다. 미설치·실행
 실패·만료·손상·wrong target/kind·중복 claim·lease/storage 오류는 원문 경로와 payload를
 반향하지 않는 fixed error이며 clipboard fallback이 없다.
+
+## 10. #362 captured request replay 계약
+
+history 또는 저장된 masked fixture의 opaque ID만 IPC로 받아 현재 실행 중인 Webhook Lab
+listener에 한 건의 HTTP 요청을 전송한다. backend는 history snapshot 또는 fixture store에서
+masked 값을 읽고 replay 직전에 fixture sanitizer/validator를 다시 통과시킨다. destination은
+현재 server status에서 유도하며 loopback과 wildcard bind의 loopback mapping만 허용하고 DNS,
+외부 주소, frontend URL은 사용하지 않는다.
+
+replay는 body 256,000자/1,024,000바이트, history와 같은 header 경계, ASCII HTTP wire
+경계, 2초 connect timeout·write/read idle timeout, write+response 전체 5초 deadline,
+response header 64 KiB, process-local 1초·20건 rate limit을 적용한다. Host, Content-Length,
+transfer-encoding 등 transport header는 입력에서 제거하고
+client가 고정된 안전한 값으로 생성한다. 고정 `Host`·`Content-Length`·`Connection` 3개를
+위해 입력 header는 97개까지 예약하며, 생성된 전체 wire header가 listener의 100개·64,000자·
+256,000바이트 경계를 넘는 fixture는 replay하지 않는다. 동시에 호출된 native replay는 하나의 local lock으로
+직렬화해 response sequence cursor 소비 순서를 안정화한다. 결과는 opaque source label과
+status만 반환하며 response body, raw request, network/parser detail은 renderer·log로 보내지
+않는다. 실패는 fixed error이고 clipboard/file/external request fallback은 없다.
+
+listener admission도 native 경계에서 수행한다. method/target 초과는 414, header count·char·
+byte 초과는 431, 선언 또는 실제 body 초과는 413, body read 오류는 408, 고정 request window
+초과는 429로 응답하며 부분 요청을 history에 남기지 않는다. 서버 lifecycle은 transition lock과
+accept-thread join으로 start/stop을 선형화하고, accept/handler 오류가 나면 running/address를
+stale 상태로 유지하지 않는다. response delay도 50ms 단위로 running flag를 확인해 stop 시
+join을 오래 붙잡지 않는다. stop은 active connection socket을 shutdown하고 replay cancellation
+flag를 먼저 세워 진행 중인 native I/O도 중단한다. lifecycle lock은 replay의 주소 확인부터
+bounded connect/write/read까지 유지해 stop/restart와 외부 local process의 port 재사용 사이
+TOCTOU를 차단한다.
+
+## 11. #363 response sequence/reset 계약
+
+response rule의 기존 status/headers/body/delay를 첫 단계로 사용하고 최대 16개의 data-only
+step을 순서대로 소비한다. 마지막 step은 유지하며 자동 반복하지 않는다. cursor는
+process-local memory에만 존재하고 fixture·설정·handoff에 저장하지 않는다. 매치된 요청만
+cursor를 전진시키며 rule 수정·삭제와 명시적인 response sequence 초기화 action은 cursor를
+첫 단계로 되돌린다. rule mutation/reset과 request handler는 rules→cursor lock 순서를
+공유해 stale cursor를 소비하지 않는다. 각 step은 기존 response status/delay/header/body
+상한과 control/token 검사를 공유하며, native transport framing을 덮어쓸 수 있는 response
+header와 비 ASCII header value는 거부한다. arbitrary scripting과 distributed state는 범위
+밖이다.

@@ -23,6 +23,15 @@ export interface ResponseRule {
   headers: Array<[string, string]>;
   body: string;
   delayMs: number;
+  /** Additional responses after the base response; absent means no sequence. */
+  sequence?: ResponseSequenceStep[];
+}
+
+export interface ResponseSequenceStep {
+  status: number;
+  headers: Array<[string, string]>;
+  body: string;
+  delayMs: number;
 }
 
 export interface CapturedFixture {
@@ -42,8 +51,15 @@ export interface ApiHandoffDispatch {
   expiresAtMs: number;
 }
 
+export interface ReplayResult {
+  sourceId: string;
+  status: number;
+}
+
 const HANDOFF_BROWSER_ERROR =
   "API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
+const REPLAY_BROWSER_ERROR =
+  "replay는 데스크톱 앱에서만 사용할 수 있습니다";
 
 const MOCK_HISTORY: RequestRecord[] = [
   { id: 1, method: "POST", url: "/hook", headers: [["content-type", "application/json"]], body: '{"event":"push"}', receivedAtMs: Date.now() - 30000 },
@@ -115,6 +131,12 @@ export function deleteHistory(id: number): Promise<void> {
   return invoke<void>("delete_history", { id });
 }
 
+/** Replay only a backend-owned masked history snapshot to the local server. */
+export function replayHistory(id: number): Promise<ReplayResult> {
+  if (!isTauri()) return Promise.reject(new Error(REPLAY_BROWSER_ERROR));
+  return invoke<ReplayResult>("replay_history", { historyId: id });
+}
+
 export function listFixtures(): Promise<CapturedFixture[]> {
   if (!isTauri()) {
     return Promise.resolve(MOCK_FIXTURES.map((fixture) => ({ ...fixture })).sort(fixtureOrder));
@@ -174,6 +196,12 @@ export function fixtureToRule(id: string): Promise<ResponseRule> {
   return invoke<ResponseRule>("fixture_to_rule", { id });
 }
 
+/** Replay only a backend-owned masked fixture to the local server. */
+export function replayFixture(id: string): Promise<ReplayResult> {
+  if (!isTauri()) return Promise.reject(new Error(REPLAY_BROWSER_ERROR));
+  return invoke<ReplayResult>("replay_fixture", { id });
+}
+
 /** Send only a backend-owned masked history projection to API Playground. */
 export function sendHistoryToApi(historyId: number): Promise<ApiHandoffDispatch> {
   if (!isTauri()) return Promise.reject(new Error(HANDOFF_BROWSER_ERROR));
@@ -199,4 +227,9 @@ export function setRule(rule: ResponseRule): Promise<string> {
 export function deleteRule(id: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   return invoke<void>("delete_rule", { id });
+}
+
+export function resetRuleSequence(id: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("reset_rule_sequence", { id });
 }

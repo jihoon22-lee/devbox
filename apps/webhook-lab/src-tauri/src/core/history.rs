@@ -7,10 +7,14 @@ use serde::Serialize;
 use std::collections::VecDeque;
 
 pub const MAX_HISTORY: usize = 200;
+#[allow(dead_code)]
 pub const MAX_BODY_CHARS: usize = 256_000;
 pub const MAX_BODY_BYTES: usize = 1_024_000;
 pub const MAX_HEADERS: usize = 100;
 pub const MAX_HEADER_CHARS: usize = 64_000;
+pub const MAX_HEADER_BYTES: usize = 256_000;
+pub const MAX_METHOD_CHARS: usize = 16;
+pub const MAX_METHOD_BYTES: usize = 16;
 /// A busy local endpoint must not let an unbounded stream of requests keep
 /// allocating history entries. This is deliberately a small, fixed window;
 /// it is a server admission limit, not a persistence policy.
@@ -34,16 +38,24 @@ struct HistoryEntry {
     raw_headers: Vec<(String, String)>,
 }
 
-/// 민감 헤더 이름 (대소문자 무시).
-const SENSITIVE_HEADERS: &[&str] = &["authorization", "cookie", "x-api-key", "api-key"];
+#[allow(dead_code)]
+const REDACTED: &str = "[REDACTED]";
 
+/// Keep the small public helper used by older callers, while routing its
+/// decision through the single fixture sanitizer used by history/replay.
+#[allow(dead_code)]
 pub fn mask_header(name: &str, value: &str) -> String {
-    let lower = name.to_lowercase();
-    if SENSITIVE_HEADERS.iter().any(|s| *s == lower) {
-        "•••••".to_string()
-    } else {
-        value.to_string()
-    }
+    crate::core::fixtures::sanitize_headers(&[(name.to_string(), value.to_string())])
+        .ok()
+        .and_then(|mut headers| headers.pop().map(|(_, value)| value))
+        .map(|value| {
+            if value == crate::core::fixtures::REDACTED {
+                "•••••".to_string()
+            } else {
+                value
+            }
+        })
+        .unwrap_or_else(|| "•••••".to_string())
 }
 
 pub struct History {
@@ -72,16 +84,34 @@ impl History {
         body: String,
         received_at_ms: i64,
     ) {
+        // Never wrap a user-visible identifier.  Reaching u64::MAX is
+        // practically impossible for one process, but a bounded history must
+        // still fail closed instead of creating duplicate IDs after overflow.
+        if self.next_id == u64::MAX {
+            return;
+        }
         let headers = bound_headers(headers);
-        let masked: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), mask_header(k, v)))
-            .collect();
-        let body = if body.chars().count() > MAX_BODY_CHARS {
-            body.chars().take(MAX_BODY_CHARS).collect()
-        } else {
-            body
-        };
+        // History is a renderer-visible snapshot, not merely an intermediate
+        // fixture source. Apply the same sanitizer used by fixture storage at
+        // capture time so credentials in body/query/custom headers cannot be
+        // exposed by list/copy/replay before the user chooses an action.
+        let mut masked = crate::core::fixtures::sanitize_headers(&headers).unwrap_or_else(|_| {
+            if headers.is_empty() {
+                Vec::new()
+            } else {
+                vec![("X-Webhook-Header".to_string(), "•••••".to_string())]
+            }
+        });
+        // Keep the established history display marker while the fixture store
+        // uses the explicit `[REDACTED]` marker on disk and in replay payloads.
+        for (_, value) in &mut masked {
+            if value == crate::core::fixtures::REDACTED {
+                *value = "•••••".to_string();
+            }
+        }
+        let body = crate::core::fixtures::sanitize_body_for_history(&body);
+        let method = bounded_method(&method);
+        let url = crate::core::fixtures::sanitize_target(&url);
         let record = RequestRecord {
             id: self.next_id,
             method,
@@ -94,7 +124,7 @@ impl History {
             masked: record,
             raw_headers: headers,
         });
-        self.next_id += 1;
+        self.next_id = self.next_id.saturating_add(1);
         if self.entries.len() > MAX_HISTORY {
             let overflow = self.entries.len() - MAX_HISTORY;
             self.entries.drain(0..overflow);
@@ -190,19 +220,64 @@ impl History {
 }
 
 fn bound_headers(headers: Vec<(String, String)>) -> Vec<(String, String)> {
-    let mut remaining = MAX_HEADER_CHARS;
+    let mut remaining_chars = MAX_HEADER_CHARS;
+    let mut remaining_bytes = MAX_HEADER_BYTES;
     let mut bounded = Vec::new();
     for (name, value) in headers.into_iter().take(MAX_HEADERS) {
-        if remaining == 0 {
+        if remaining_chars == 0 || remaining_bytes == 0 {
             break;
         }
-        let name: String = name.chars().take(remaining).collect();
-        remaining -= name.chars().count();
-        let value: String = value.chars().take(remaining).collect();
-        remaining -= value.chars().count();
+        let name = take_bounded(&name, remaining_chars, remaining_bytes);
+        remaining_chars -= name.chars().count();
+        remaining_bytes -= name.len();
+        let value = take_bounded(&value, remaining_chars, remaining_bytes);
+        remaining_chars -= value.chars().count();
+        remaining_bytes -= value.len();
         bounded.push((name, value));
     }
     bounded
+}
+
+fn take_bounded(value: &str, max_chars: usize, max_bytes: usize) -> String {
+    let mut output = String::new();
+    for character in value.chars().take(max_chars) {
+        if output.len().saturating_add(character.len_utf8()) > max_bytes {
+            break;
+        }
+        output.push(character);
+    }
+    output
+}
+
+fn bounded_method(method: &str) -> String {
+    if method.chars().count() <= MAX_METHOD_CHARS
+        && method.len() <= MAX_METHOD_BYTES
+        && !method.is_empty()
+        && method.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
+                )
+        })
+    {
+        method.to_ascii_uppercase()
+    } else {
+        "UNKNOWN".to_string()
+    }
 }
 
 fn serialize_record(record: &RequestRecord) -> Result<String, serde_json::Error> {
@@ -255,6 +330,57 @@ mod tests {
         let records = h.list_masked();
         assert_eq!(records[0].headers[0].1, "•••••");
         assert_eq!(records[0].body.chars().count(), MAX_BODY_CHARS);
+    }
+
+    #[test]
+    fn history_redacts_token_before_truncating_the_visible_prefix() {
+        let mut h = History::default();
+        let body = format!("{} sk-{}", "x".repeat(MAX_BODY_CHARS - 5), "a".repeat(12));
+        h.push("POST".into(), "/hook".into(), vec![], body, 1);
+        let visible = &h.list_masked()[0].body;
+        assert_eq!(visible.chars().count(), MAX_BODY_CHARS);
+        assert!(!visible.contains("sk-"));
+        assert!(!visible.contains(&"a".repeat(12)));
+    }
+
+    #[test]
+    fn renderer_visible_history_masks_body_query_and_custom_credentials() {
+        let mut h = History::default();
+        h.push(
+            "post".into(),
+            "/hooks/../private?access_token=raw-query-secret&event=push".into(),
+            vec![
+                ("X-Access-Token".into(), "raw-header-secret".into()),
+                ("X-Trace".into(), "trace-value".into()),
+            ],
+            r#"{"event":"push","password":"raw-body-secret"}"#.into(),
+            1,
+        );
+
+        let record = h.list_masked().pop().unwrap();
+        let encoded = serde_json::to_string(&record).unwrap();
+        assert_eq!(record.method, "POST");
+        assert_eq!(record.url, crate::core::fixtures::REDACTED_PATH);
+        assert_eq!(record.headers[0].1, "•••••");
+        assert!(!encoded.contains("raw-query-secret"));
+        assert!(!encoded.contains("raw-header-secret"));
+        assert!(!encoded.contains("raw-body-secret"));
+        assert!(record.body.contains(REDACTED));
+    }
+
+    #[test]
+    fn history_bounds_utf8_header_bytes_and_invalid_methods() {
+        let mut h = History::default();
+        h.push(
+            "method with spaces".into(),
+            "/hook".into(),
+            vec![("X-Value".into(), "🙂".repeat(MAX_HEADER_BYTES))],
+            "".into(),
+            1,
+        );
+        let record = h.list_masked().pop().unwrap();
+        assert_eq!(record.method, "UNKNOWN");
+        assert!(record.headers[0].1.len() <= MAX_HEADER_BYTES);
     }
 
     #[test]

@@ -14,6 +14,9 @@ import {
   listFixtures,
   listHistory,
   listRules,
+  replayFixture,
+  replayHistory,
+  resetRuleSequence,
   saveFixture,
   sendFixtureToApi,
   sendHistoryToApi,
@@ -39,6 +42,9 @@ vi.mock("./api", () => ({
   listFixtures: vi.fn(),
   listHistory: vi.fn(),
   listRules: vi.fn(),
+  replayFixture: vi.fn(),
+  replayHistory: vi.fn(),
+  resetRuleSequence: vi.fn(),
   saveFixture: vi.fn(),
   sendFixtureToApi: vi.fn(),
   sendHistoryToApi: vi.fn(),
@@ -89,6 +95,9 @@ const fixtureToRuleMock = vi.mocked(fixtureToRule);
 const listFixturesMock = vi.mocked(listFixtures);
 const listHistoryMock = vi.mocked(listHistory);
 const listRulesMock = vi.mocked(listRules);
+const replayFixtureMock = vi.mocked(replayFixture);
+const replayHistoryMock = vi.mocked(replayHistory);
+const resetRuleSequenceMock = vi.mocked(resetRuleSequence);
 const saveFixtureMock = vi.mocked(saveFixture);
 const sendFixtureToApiMock = vi.mocked(sendFixtureToApi);
 const sendHistoryToApiMock = vi.mocked(sendHistoryToApi);
@@ -116,6 +125,15 @@ beforeEach(() => {
     ...fixture,
     headers: fixture.headers.map((header) => [...header] as [string, string]),
   })));
+  replayHistoryMock.mockReset().mockResolvedValue({
+    sourceId: "history-1",
+    status: 200,
+  });
+  replayFixtureMock.mockReset().mockResolvedValue({
+    sourceId: "fixture-fixture-1",
+    status: 200,
+  });
+  resetRuleSequenceMock.mockReset().mockResolvedValue();
   saveFixtureMock.mockReset().mockImplementation(async (historyId) => {
     const request = history.find((candidate) => candidate.id === historyId);
     if (!request) throw new Error("fixture를 찾을 수 없습니다");
@@ -382,6 +400,24 @@ describe("Webhook Lab history and rule context menus", () => {
     expect(writeTextMock).toHaveBeenCalledWith("masked-headers:2");
   });
 
+  it("unmount 뒤 늦게 도착한 복사 결과는 clipboard side effect를 만들지 않는다", async () => {
+    let release!: (value: string) => void;
+    copyMaskedHistoryMock.mockReturnValueOnce(new Promise((resolve) => {
+      release = resolve;
+    }));
+    render(<App />);
+    const target = await screen.findByLabelText("GET /health 요청") as HTMLDivElement;
+
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem", { name: "마스킹 복사" }));
+    await waitFor(() => expect(copyMaskedHistoryMock).toHaveBeenCalledWith(2));
+
+    cleanup();
+    release("late-secret");
+    await Promise.resolve();
+    expect(writeTextMock).not.toHaveBeenCalled();
+  });
+
   it("원본 복사는 확인 전 backend를 호출하지 않고 키보드 메뉴 종료 후 포커스를 복원한다", async () => {
     render(<App />);
     const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
@@ -500,6 +536,93 @@ describe("Webhook Lab history and rule context menus", () => {
     )));
     expect(serverStatusMock).toHaveBeenCalledTimes(2);
     expect(writeTextMock.mock.calls[writeTextMock.mock.calls.length - 1]?.[0]).toContain("Concrete trailing-* sample path: /events/example");
+  });
+
+  it("replays a selected masked history request only when the local server is running", async () => {
+    serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
+    render(<App />);
+    const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
+
+    fireEvent.contextMenu(target);
+    const replay = screen.getByRole("menuitem", { name: "masked 요청 replay" });
+    expect(replay.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(replay);
+
+    await waitFor(() => expect(replayHistoryMock).toHaveBeenCalledWith(1));
+    expect(screen.getByRole("status").textContent).toContain("localhost에 replay했습니다");
+    expect(screen.getByRole("status").textContent).toContain("status: 200");
+    expect(writeTextMock).not.toHaveBeenCalled();
+  });
+
+  it("replay errors stay fixed and never expose a source or response detail", async () => {
+    serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
+    replayHistoryMock.mockRejectedValueOnce(new Error("Bearer raw-replay-secret at C:\\private"));
+    render(<App />);
+    const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
+
+    fireEvent.click(target);
+    fireEvent.click(screen.getByRole("button", { name: "POST /hook masked replay" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("요청을 처리하지 못했습니다. 입력과 서버 상태를 확인하세요.");
+    expect(document.body.textContent).not.toContain("raw-replay-secret");
+    expect(document.body.textContent).not.toContain("C:\\private");
+  });
+
+  it("edits a bounded response sequence and sends it with the rule", async () => {
+    render(<App />);
+    await screen.findByText("History (2)");
+
+    fireEvent.click(screen.getByRole("button", { name: /응답 단계 추가/ }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "응답 단계 1 status" }), {
+      target: { value: "503" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "응답 단계 1 delay" }), {
+      target: { value: "100" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "응답 단계 1 body" }), {
+      target: { value: "retry" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "규칙 추가" }));
+
+    await waitFor(() => expect(setRuleMock).toHaveBeenCalledWith(expect.objectContaining({
+      sequence: [{
+        status: 503,
+        headers: [],
+        body: "retry",
+        delayMs: 100,
+      }],
+    })));
+  });
+
+  it("resets the selected response sequence without changing the rule", async () => {
+    rules = [{
+      ...initialRule,
+      sequence: [{ status: 500, headers: [], body: "retry", delayMs: 0 }],
+    }];
+    render(<App />);
+    await screen.findByLabelText("GET /health 규칙");
+    expect(screen.getByText("2 responses")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "GET /health response sequence 초기화" }));
+    await waitFor(() => expect(resetRuleSequenceMock).toHaveBeenCalledWith("rule-1"));
+    expect(setRuleMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("status").textContent).toContain("첫 응답으로 초기화했습니다");
+  });
+
+  it("exposes sequence reset from the rule context menu and preserves focus", async () => {
+    rules = [{
+      ...initialRule,
+      sequence: [{ status: 500, headers: [], body: "retry", delayMs: 0 }],
+    }];
+    render(<App />);
+    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    target.focus();
+    fireEvent.keyDown(target, { key: "F10", shiftKey: true });
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "response sequence 초기화" }));
+    await waitFor(() => expect(resetRuleSequenceMock).toHaveBeenCalledWith("rule-1"));
+    await waitFor(() => expect(document.activeElement).toBe(target));
   });
 
   it("stale rule selection fails closed without copying", async () => {

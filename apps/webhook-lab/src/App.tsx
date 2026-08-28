@@ -17,6 +17,9 @@ import {
   listFixtures,
   listHistory,
   listRules,
+  replayFixture,
+  replayHistory,
+  resetRuleSequence,
   saveFixture,
   sendFixtureToApi,
   sendHistoryToApi,
@@ -29,12 +32,14 @@ import {
   type ServerStatus,
   type CapturedFixture,
   type ApiHandoffDispatch,
+  type ResponseSequenceStep,
 } from "./api";
 import { buildHistoryContextMenu, buildRuleContextMenu } from "./lib/contextMenus";
 import { buildExampleCurl, type CurlShell } from "./lib/exampleCurl";
 import {
   MAX_METHOD_CHARS,
   MAX_RESPONSE_DELAY_MS,
+  MAX_RESPONSE_SEQUENCE,
   MAX_RESPONSE_STATUS,
   MIN_RESPONSE_STATUS,
   validateRule,
@@ -45,6 +50,7 @@ import "./App.css";
 
 const DEFAULT_PORT = 9000;
 const GENERIC_ERROR_MESSAGE = "요청을 처리하지 못했습니다. 입력과 서버 상태를 확인하세요.";
+const STALE_HISTORY_MESSAGE = "선택한 요청 기록이 더 이상 존재하지 않습니다. 목록을 새로 고친 뒤 다시 시도하세요.";
 const STALE_RULE_MESSAGE = "선택한 규칙이 더 이상 존재하지 않습니다. 목록을 새로 고친 뒤 다시 시도하세요.";
 const SAFE_ERROR_MESSAGES = new Set([
   "요청 기록을 찾을 수 없습니다",
@@ -65,6 +71,13 @@ const SAFE_ERROR_MESSAGES = new Set([
   "API Playground를 실행하지 못했습니다. handoff는 잠시 보관되며 다시 시도할 수 있습니다. 클립보드로 자동 전환하지 않습니다",
   "API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다",
   "handoff 요청에 사용할 fixture가 유효하지 않습니다",
+  "localhost 서버가 실행 중이 아니거나 주소가 유효하지 않습니다",
+  "replay 입력이 유효하지 않습니다",
+  "replay 요청이 너무 많습니다. 잠시 후 다시 시도하세요",
+  "replay 요청을 보내지 못했습니다",
+  "replay 응답을 읽지 못했습니다",
+  "replay는 데스크톱 앱에서만 사용할 수 있습니다",
+  "response sequence를 초기화하지 못했습니다",
 ]);
 
 function emptyRule(): ResponseRule {
@@ -72,6 +85,16 @@ function emptyRule(): ResponseRule {
     id: "",
     method: "POST",
     path: "/hook",
+    status: 200,
+    headers: [],
+    body: "",
+    delayMs: 0,
+    sequence: [],
+  };
+}
+
+function emptySequenceStep(): ResponseSequenceStep {
+  return {
     status: 200,
     headers: [],
     body: "",
@@ -106,11 +129,12 @@ export default function App() {
   const [contextHistory, setContextHistory] = useState<RequestRecord | null>(null);
   const [contextRule, setContextRule] = useState<ResponseRule | null>(null);
   const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
+  const mountedRef = useRef(true);
   const operationInFlight = useRef(false);
   const refreshRequest = useRef(0);
 
   const beginBusy = useCallback(() => {
-    if (operationInFlight.current) return false;
+    if (!mountedRef.current || operationInFlight.current) return false;
     operationInFlight.current = true;
     setBusy(true);
     return true;
@@ -118,13 +142,18 @@ export default function App() {
 
   const endBusy = useCallback(() => {
     operationInFlight.current = false;
-    setBusy(false);
+    if (mountedRef.current) setBusy(false);
   }, []);
 
   const prepareHistoryContext = useCallback((target: HTMLElement) => {
     const id = Number(target.dataset.historyId);
     const request = history.find((candidate) => candidate.id === id);
-    if (!request) return;
+    if (!request) {
+      setContextHistory(null);
+      setSelectedHistoryId(null);
+      setError(STALE_HISTORY_MESSAGE);
+      return;
+    }
     setSelectedHistoryId(request.id);
     setContextHistory(request);
   }, [history]);
@@ -159,7 +188,7 @@ export default function App() {
       listRules(),
       listFixtures(),
     ]);
-    if (refreshRequest.current !== request) return;
+    if (!mountedRef.current || refreshRequest.current !== request) return;
     if (statusResult.status === "fulfilled") setStatus(statusResult.value);
     if (historyResult.status === "fulfilled") setHistory(historyResult.value);
     if (rulesResult.status === "fulfilled") setRules(rulesResult.value);
@@ -171,12 +200,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     void refresh();
     return () => {
       // Invalidate the mount refresh and any action-owned refresh before a
       // late promise can update a newer view or an unmounted app.
       refreshRequest.current += 1;
       operationInFlight.current = false;
+      mountedRef.current = false;
     };
   }, [refresh]);
 
@@ -210,10 +241,12 @@ export default function App() {
     setError(null);
     try {
       const bind = lanBind ? "0.0.0.0" : "127.0.0.1";
-      setStatus(await startServer(bind, port, lanBind));
+      const nextStatus = await startServer(bind, port, lanBind);
+      if (!mountedRef.current) return;
+      setStatus(nextStatus);
       await refresh();
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
@@ -223,12 +256,14 @@ export default function App() {
     if (!beginBusy()) return;
     setError(null);
     try {
-      setStatus(await stopServer());
+      const nextStatus = await stopServer();
+      if (!mountedRef.current) return;
+      setStatus(nextStatus);
       // Stop changes the source of truth. A refresh that started before the
       // stop must not restore the old running status or stale rule/history view.
       await refresh();
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
@@ -259,10 +294,11 @@ export default function App() {
     setError(null);
     try {
       await setRule(rule);
+      if (!mountedRef.current) return;
       setRuleDraft(emptyRule());
       await refresh();
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
@@ -276,9 +312,12 @@ export default function App() {
     setError(null);
     try {
       const text = await load();
+      // Do not let a late IPC response trigger a clipboard write after the
+      // view that requested it has been unmounted.
+      if (!mountedRef.current) return;
       await navigator.clipboard.writeText(text);
     } catch {
-      setError(failureMessage);
+      if (mountedRef.current) setError(failureMessage);
     } finally {
       endBusy();
     }
@@ -293,7 +332,7 @@ export default function App() {
       // A menu can remain open while another actor stops the server or removes the
       // rule. Re-read both sources before generating or copying anything.
       const [freshStatus, freshRules] = await Promise.all([serverStatus(), listRules()]);
-      if (refreshRequest.current !== request) return;
+      if (!mountedRef.current || refreshRequest.current !== request) return;
       setStatus(freshStatus);
       setRules(freshRules);
 
@@ -318,10 +357,10 @@ export default function App() {
       try {
         await navigator.clipboard.writeText(curl);
       } catch {
-        setError("예시 curl을 복사하지 못했습니다.");
+        if (mountedRef.current) setError("예시 curl을 복사하지 못했습니다.");
       }
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
@@ -333,10 +372,11 @@ export default function App() {
     setError(null);
     try {
       await deleteHistory(request.id);
+      if (!mountedRef.current) return;
       setSelectedHistoryId(null);
       await refresh();
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
@@ -348,10 +388,11 @@ export default function App() {
     setError(null);
     try {
       await clearHistory();
+      if (!mountedRef.current) return;
       setSelectedHistoryId(null);
       await refresh();
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
@@ -362,15 +403,55 @@ export default function App() {
     setError(null);
     try {
       await saveFixture(request.id);
+      if (!mountedRef.current) return;
       await refresh();
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
+    } finally {
+      endBusy();
+    }
+  };
+
+  const showReplaySuccess = (source: string, statusCode: number) => {
+    if (mountedRef.current) {
+      setHandoffNotice("masked " + source + " 요청을 localhost에 replay했습니다 (현재 로컬 listener). 응답 status: " + statusCode + ".");
+    }
+  };
+
+  const onReplayHistory = async (request: RequestRecord) => {
+    if (!beginBusy()) return;
+    setError(null);
+    setHandoffNotice(null);
+    try {
+      const result = await replayHistory(request.id);
+      if (!mountedRef.current) return;
+      showReplaySuccess("history", result.status);
+      await refresh();
+    } catch (e) {
+      if (mountedRef.current) setError(safeMessage(e));
+    } finally {
+      endBusy();
+    }
+  };
+
+  const onReplayFixture = async (fixture: CapturedFixture) => {
+    if (!beginBusy()) return;
+    setError(null);
+    setHandoffNotice(null);
+    try {
+      const result = await replayFixture(fixture.id);
+      if (!mountedRef.current) return;
+      showReplaySuccess("fixture", result.status);
+      await refresh();
+    } catch (e) {
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
   };
 
   const showHandoffSuccess = (dispatch: ApiHandoffDispatch) => {
+    if (!mountedRef.current) return;
     setHandoffNotice(
       `API Playground 미리보기로 전달했습니다. producer: ${dispatch.producerId} · consumer: ${dispatch.consumerId} · handoff: ${dispatch.handoffId}. 적용 전 내용을 확인하세요.`,
     );
@@ -381,9 +462,11 @@ export default function App() {
     setError(null);
     setHandoffNotice(null);
     try {
-      showHandoffSuccess(await sendHistoryToApi(request.id));
+      const dispatch = await sendHistoryToApi(request.id);
+      if (!mountedRef.current) return;
+      showHandoffSuccess(dispatch);
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
@@ -394,9 +477,31 @@ export default function App() {
     setError(null);
     setHandoffNotice(null);
     try {
-      showHandoffSuccess(await sendFixtureToApi(fixture.id));
+      const dispatch = await sendFixtureToApi(fixture.id);
+      if (!mountedRef.current) return;
+      showHandoffSuccess(dispatch);
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
+    } finally {
+      endBusy();
+    }
+  };
+
+  const onResetSequence = async (targetRule: ResponseRule) => {
+    const currentRule = rules.find((candidate) => candidate.id === targetRule.id);
+    if (!currentRule) {
+      setError(STALE_RULE_MESSAGE);
+      return;
+    }
+    if (!beginBusy()) return;
+    setError(null);
+    setHandoffNotice(null);
+    try {
+      await resetRuleSequence(currentRule.id);
+      if (!mountedRef.current) return;
+      setHandoffNotice("response sequence의 현재 위치를 첫 응답으로 초기화했습니다.");
+    } catch (e) {
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
@@ -406,9 +511,11 @@ export default function App() {
     if (!beginBusy()) return;
     setError(null);
     try {
-      setRuleDraft(await fixtureToRule(fixture.id));
+      const draft = await fixtureToRule(fixture.id);
+      if (!mountedRef.current) return;
+      setRuleDraft(draft);
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
@@ -420,9 +527,10 @@ export default function App() {
     setError(null);
     try {
       await deleteFixture(fixture.id);
+      if (!mountedRef.current) return;
       await refresh();
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
@@ -434,9 +542,10 @@ export default function App() {
     setError(null);
     try {
       await clearFixtures();
+      if (!mountedRef.current) return;
       await refresh();
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
@@ -453,11 +562,12 @@ export default function App() {
     setError(null);
     try {
       await deleteRule(targetRule.id);
+      if (!mountedRef.current) return;
       setSelectedRuleId(null);
       if (rule.id === targetRule.id) setRuleDraft(emptyRule());
       await refresh();
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
@@ -470,7 +580,15 @@ export default function App() {
       return;
     }
 
-    const duplicate = { ...currentRule, id: "" };
+    const duplicate = {
+      ...currentRule,
+      id: "",
+      headers: [...currentRule.headers],
+      sequence: (currentRule.sequence ?? []).map((step) => ({
+        ...step,
+        headers: [...step.headers],
+      })),
+    };
     const [validationIssue] = validateRule(duplicate);
     if (validationIssue) {
       setError(validationIssue.message);
@@ -487,17 +605,18 @@ export default function App() {
     setError(null);
     try {
       await setRule(duplicate);
+      if (!mountedRef.current) return;
       await refresh();
     } catch (e) {
-      setError(safeMessage(e));
+      if (mountedRef.current) setError(safeMessage(e));
     } finally {
       endBusy();
     }
   };
 
   const historyContextItems = useMemo<readonly ContextMenuEntry[]>(
-    () => buildHistoryContextMenu(busy),
-    [busy],
+    () => buildHistoryContextMenu(busy, status.running && Boolean(status.address)),
+    [busy, status.address, status.running],
   );
   const ruleContextItems = useMemo<readonly ContextMenuEntry[]>(
     () => buildRuleContextMenu(busy, status.running && Boolean(status.address)),
@@ -505,6 +624,7 @@ export default function App() {
   );
 
   const ruleIssues = validateRule(rule);
+  const sequence = rule.sequence ?? [];
   const ruleIssueFor = (field: RuleValidationField) =>
     ruleIssues.find((issue) => issue.field === field);
   const methodIssue = ruleIssueFor("method");
@@ -513,10 +633,33 @@ export default function App() {
   const headersIssue = ruleIssueFor("headers");
   const bodyIssue = ruleIssueFor("body");
   const delayIssue = ruleIssueFor("delayMs");
+  const sequenceIssue = ruleIssueFor("sequence");
+
+  const addSequenceStep = () => {
+    if (sequence.length >= MAX_RESPONSE_SEQUENCE) return;
+    setRuleDraft({ ...rule, sequence: [...sequence, emptySequenceStep()] });
+  };
+
+  const updateSequenceStep = (index: number, patch: Partial<ResponseSequenceStep>) => {
+    setRuleDraft({
+      ...rule,
+      sequence: sequence.map((step, stepIndex) => stepIndex === index ? { ...step, ...patch } : step),
+    });
+  };
+
+  const removeSequenceStep = (index: number) => {
+    setRuleDraft({
+      ...rule,
+      sequence: sequence.filter((_step, stepIndex) => stepIndex !== index),
+    });
+  };
 
   const onHistoryContextSelect = (id: string) => {
     const request = contextHistory;
-    if (!request) return;
+    if (!request) {
+      setError(STALE_HISTORY_MESSAGE);
+      return;
+    }
     if (id === "copy-masked") {
       void copyHistoryText(
         () => copyMaskedHistory(request.id),
@@ -539,6 +682,8 @@ export default function App() {
       );
     } else if (id === "save-fixture") {
       void onSaveFixture(request);
+    } else if (id === "replay") {
+      void onReplayHistory(request);
     } else if (id === "convert-api-playground") {
       void onSendHistoryToApi(request);
     } else if (id === "delete") {
@@ -565,8 +710,18 @@ export default function App() {
       setError(STALE_RULE_MESSAGE);
       return;
     }
-    if (id === "edit") setRuleDraft({ ...currentRule, headers: [...currentRule.headers] });
+    if (id === "edit") {
+      setRuleDraft({
+        ...currentRule,
+        headers: [...currentRule.headers],
+        sequence: (currentRule.sequence ?? []).map((step) => ({
+          ...step,
+          headers: [...step.headers],
+        })),
+      });
+    }
     else if (id === "duplicate") void onDuplicateRule(currentRule);
+    else if (id === "reset-sequence") void onResetSequence(currentRule);
     else if (id === "delete") void onDeleteRule(currentRule);
   };
 
@@ -691,6 +846,82 @@ export default function App() {
               {bodyIssue && <p id="rule-body-error" className="field-error">{bodyIssue.message}</p>}
               {headersIssue && <p id="rule-headers-error" className="field-error">{headersIssue.message}</p>}
             </div>
+            <div
+              className="sequence-editor"
+              aria-describedby={"rule-sequence-help" + (sequenceIssue ? " rule-sequence-error" : "")}
+              aria-invalid={sequenceIssue ? "true" : undefined}
+            >
+              <div className="sequence-heading">
+                <div>
+                  <h3>Response sequence</h3>
+                  <p id="rule-sequence-help" className="field-help">
+                    위 응답을 첫 단계로 사용한 뒤 아래 단계를 순서대로 적용합니다. 마지막 단계는 유지되며 자동 반복하지 않습니다 (최대 {MAX_RESPONSE_SEQUENCE}단계).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="mini"
+                  disabled={busy || sequence.length >= MAX_RESPONSE_SEQUENCE}
+                  onClick={addSequenceStep}
+                >
+                  응답 단계 추가 ({sequence.length}/{MAX_RESPONSE_SEQUENCE})
+                </button>
+              </div>
+              {sequence.map((step, index) => (
+                <div className="sequence-step" key={index}>
+                  <div className="sequence-step-heading">
+                    <span className="mono">단계 {index + 1}</span>
+                    <button
+                      type="button"
+                      className="mini danger-text"
+                      disabled={busy}
+                      aria-label={"응답 단계 " + (index + 1) + " 삭제"}
+                      onClick={() => removeSequenceStep(index)}
+                    >
+                      삭제
+                    </button>
+                  </div>
+                  <div className="sequence-step-grid">
+                    <label>
+                      status
+                      <input
+                        type="number"
+                        min={MIN_RESPONSE_STATUS}
+                        max={MAX_RESPONSE_STATUS}
+                        step={1}
+                        value={step.status}
+                        aria-label={"응답 단계 " + (index + 1) + " status"}
+                        disabled={busy}
+                        onChange={(event) => updateSequenceStep(index, { status: Number(event.currentTarget.value) })}
+                      />
+                    </label>
+                    <label>
+                      delay (ms)
+                      <input
+                        type="number"
+                        min={0}
+                        max={MAX_RESPONSE_DELAY_MS}
+                        step={1}
+                        value={step.delayMs}
+                        aria-label={"응답 단계 " + (index + 1) + " delay"}
+                        disabled={busy}
+                        onChange={(event) => updateSequenceStep(index, { delayMs: Number(event.currentTarget.value) })}
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    응답 body
+                    <textarea
+                      value={step.body}
+                      aria-label={"응답 단계 " + (index + 1) + " body"}
+                      disabled={busy}
+                      onChange={(event) => updateSequenceStep(index, { body: event.currentTarget.value })}
+                    />
+                  </label>
+                </div>
+              ))}
+              {sequenceIssue && <p id="rule-sequence-error" className="field-error">{sequenceIssue.message}</p>}
+            </div>
             <button className="btn primary" disabled={busy} onClick={() => void onSaveRule()}>{rule.id ? "규칙 저장" : "규칙 추가"}</button>
           </div>
           {rules.map((targetRule) => (
@@ -704,6 +935,21 @@ export default function App() {
               onClick={() => setSelectedRuleId(targetRule.id)}
               {...ruleContextMenu.triggerProps}
             >
+              {(targetRule.sequence?.length ?? 0) > 0 && (
+                <span className="sequence-badge">{(targetRule.sequence?.length ?? 0) + 1} responses</span>
+              )}
+              <button
+                type="button"
+                className="mini"
+                aria-label={(targetRule.method ?? "*") + " " + targetRule.path + " response sequence 초기화"}
+                disabled={busy}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void onResetSequence(targetRule);
+                }}
+              >
+                sequence 초기화
+              </button>
               <span className="mono">{targetRule.method ?? "*"} {targetRule.path} → {targetRule.status}{targetRule.delayMs ? ` (+${targetRule.delayMs}ms)` : ""}</span>
               <button
                 type="button"
@@ -742,6 +988,18 @@ export default function App() {
               {request.headers.some(([, value]) => value === "•••••") && (
                 <span className="masked">민감 헤더 마스킹됨</span>
               )}
+              <button
+                type="button"
+                className="mini"
+                aria-label={request.method + " " + request.url + " masked replay"}
+                disabled={busy || !status.running || !status.address}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void onReplayHistory(request);
+                }}
+              >
+                masked replay
+              </button>
               <button
                 type="button"
                 className="mini fixture-save"
@@ -786,6 +1044,15 @@ export default function App() {
                 </div>
                 {fixture.body && <pre className="body">{fixture.body.slice(0, 200)}</pre>}
                 <div className="fixture-actions">
+                  <button
+                    type="button"
+                    className="mini"
+                    disabled={busy || !status.running || !status.address}
+                    aria-label={fixture.method + " " + fixture.url + " masked replay"}
+                    onClick={() => void onReplayFixture(fixture)}
+                  >
+                    masked replay
+                  </button>
                   <button
                     type="button"
                     className="mini"

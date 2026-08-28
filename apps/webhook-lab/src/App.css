@@ -161,6 +161,62 @@ body {
   gap: 4px;
 }
 
+.sequence-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.sequence-editor[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.sequence-heading,
+.sequence-step-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sequence-heading h3 {
+  margin: 0 0 3px;
+  font-size: 12px;
+}
+
+.sequence-step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.sequence-step-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.sequence-step-grid label,
+.sequence-step > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.sequence-badge {
+  color: var(--accent);
+  font-size: 11px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
 .rule-field label {
   color: var(--text);
   font-size: 12px;
@@ -231,6 +287,12 @@ body {
   border: none;
   color: var(--dim);
   cursor: pointer;
+}
+
+.mini:disabled,
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .history-head {

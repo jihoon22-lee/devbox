@@ -11,7 +11,7 @@ use super::rules::ResponseRule;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
-use std::fs::{self, File, Metadata};
+use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -242,9 +242,13 @@ fn known_token(value: &str) -> bool {
         if candidate.len() == 20 && candidate.starts_with("AKIA") {
             return true;
         }
-        let segments: Vec<&str> = candidate.split('.').collect();
-        if segments.len() == 3
-            && segments.iter().all(|segment| {
+        let mut segments = candidate.split('.');
+        let first = segments.next();
+        let second = segments.next();
+        let third = segments.next();
+        if third.is_some()
+            && segments.next().is_none()
+            && [first, second, third].into_iter().flatten().all(|segment| {
                 segment.len() >= 10
                     && segment
                         .bytes()
@@ -346,6 +350,7 @@ pub fn sanitize_target(target: &str) -> String {
             return REDACTED_PATH.to_string();
         };
         if key.is_empty()
+            || key.chars().any(char::is_control)
             || key.chars().any(char::is_whitespace)
             || value.chars().any(char::is_control)
             || value.chars().any(char::is_whitespace)
@@ -485,20 +490,36 @@ fn redact_text(value: &str) -> String {
     if sensitive_assignment(value) {
         return REDACTED.to_string();
     }
-    let mut output = redact_scheme_tokens(value);
-    // Token candidates are delimited before replacement, which avoids an
-    // unbounded regular-expression scan on a large ordinary body.
-    let candidates: Vec<String> = output
-        .split(|character: char| {
-            !character.is_ascii_alphanumeric() && !matches!(character, '_' | '-' | '.')
-        })
-        .filter(|candidate| !candidate.is_empty() && known_token(candidate))
-        .map(ToString::to_string)
-        .collect();
-    for candidate in candidates {
-        output = output.replace(&candidate, REDACTED);
+    let output = redact_scheme_tokens(value);
+    // Replace token-shaped segments in one pass.  Repeatedly calling
+    // `String::replace` for every candidate made a body containing many
+    // distinct tokens scan the whole body once per token (quadratic work) and
+    // allocated an intermediate String for every pass.  The body is bounded,
+    // but it is still untrusted input, so keep the redaction pass linear in
+    // the number of UTF-8 bytes.
+    let mut redacted = String::with_capacity(output.len());
+    let mut segment_start = 0;
+    for (index, character) in output.char_indices() {
+        if character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.') {
+            continue;
+        }
+        append_redacted_segment(&mut redacted, &output[segment_start..index]);
+        redacted.push(character);
+        segment_start = index + character.len_utf8();
     }
-    output
+    append_redacted_segment(&mut redacted, &output[segment_start..]);
+    redacted
+}
+
+fn append_redacted_segment(output: &mut String, segment: &str) {
+    if segment.is_empty() {
+        return;
+    }
+    if known_token(segment) {
+        output.push_str(REDACTED);
+    } else {
+        output.push_str(segment);
+    }
 }
 
 #[derive(Default)]
@@ -584,6 +605,33 @@ pub fn sanitize_body(body: &str) -> Result<String, FixtureError> {
     }
 }
 
+/// Sanitize a captured body before applying the history display cap.  A raw
+/// prefix can cut a credential/token in half, so redaction must see the whole
+/// bounded request body first.  The server admission layer caps the input at
+/// `MAX_FIXTURE_BODY_BYTES + 1`; this helper then applies the renderer's
+/// character/byte prefix bound without exposing a token-shaped suffix.
+pub fn sanitize_body_for_history(body: &str) -> String {
+    // `History::push` is normally fed by the listener's bounded reader, but
+    // keep this public core boundary safe for direct callers too. Returning a
+    // fixed marker avoids scanning or allocating in proportion to an
+    // arbitrarily large input that could never fit a fixture/history entry.
+    if body.len() > MAX_FIXTURE_BODY_BYTES {
+        return REDACTED.to_string();
+    }
+    if within(body, MAX_FIXTURE_BODY_CHARS, MAX_FIXTURE_BODY_BYTES) {
+        return sanitize_body(body).unwrap_or_else(|_| REDACTED.to_string());
+    }
+    let redacted = redact_text(body);
+    let mut bounded = String::new();
+    for character in redacted.chars().take(MAX_FIXTURE_BODY_CHARS) {
+        if bounded.len().saturating_add(character.len_utf8()) > MAX_FIXTURE_BODY_BYTES {
+            break;
+        }
+        bounded.push(character);
+    }
+    bounded
+}
+
 pub fn sanitize_headers(
     headers: &[(String, String)],
 ) -> Result<Vec<(String, String)>, FixtureError> {
@@ -605,6 +653,7 @@ pub fn sanitize_headers(
                 MAX_FIXTURE_HEADER_VALUE_CHARS,
                 MAX_FIXTURE_HEADER_VALUE_BYTES,
             )
+            || (!value.is_ascii() && !sensitive_name(name))
             || has_control(value)
         {
             return Err(FixtureError::Invalid);
@@ -730,6 +779,7 @@ pub fn response_rule_draft(fixture: &CapturedFixture) -> Result<ResponseRule, Fi
         headers: Vec::new(),
         body: String::new(),
         delay_ms: 0,
+        sequence: Vec::new(),
     })
 }
 
@@ -751,6 +801,47 @@ fn is_link(metadata: &Metadata) -> bool {
     false
 }
 
+/// Open the final store component without following a symlink/reparse point.
+/// The metadata check in `read_raw` is useful for diagnostics, but it is not a
+/// sufficient TOCTOU defence on its own: a path can be swapped between that
+/// check and `File::open`. Keep the no-follow flag on the actual read too.
+fn open_store_read(path: &Path) -> io::Result<File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        #[cfg(target_os = "linux")]
+        const NO_FOLLOW: i32 = 0x20000; // O_NOFOLLOW
+        #[cfg(target_os = "macos")]
+        const NO_FOLLOW: i32 = 0x100; // O_NOFOLLOW
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        const NO_FOLLOW: i32 = 0;
+
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(NO_FOLLOW)
+            .open(path)
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        // FILE_FLAG_OPEN_REPARSE_POINT asks CreateFileW to open the final
+        // reparse point itself instead of following it.
+        const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(OPEN_REPARSE_POINT)
+            .open(path)
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        File::open(path)
+    }
+}
+
 fn read_raw(path: &Path) -> Result<Option<Vec<u8>>, FixtureError> {
     validate_parent(path, false)?;
     let metadata = match fs::symlink_metadata(path) {
@@ -764,7 +855,11 @@ fn read_raw(path: &Path) -> Result<Option<Vec<u8>>, FixtureError> {
     if metadata.len() > MAX_FIXTURE_FILE_BYTES as u64 {
         return Err(FixtureError::Size);
     }
-    let file = File::open(path).map_err(|_| FixtureError::Read)?;
+    let file = open_store_read(path).map_err(|_| FixtureError::Read)?;
+    let opened_metadata = file.metadata().map_err(|_| FixtureError::Read)?;
+    if is_link(&opened_metadata) || !opened_metadata.file_type().is_file() {
+        return Err(FixtureError::Read);
+    }
     let mut bytes = Vec::new();
     file.take((MAX_FIXTURE_FILE_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
@@ -977,6 +1072,11 @@ mod tests {
         .unwrap();
         assert_eq!(captured.url, "/hook?event=push&access_token=[REDACTED]");
         assert_eq!(captured.body, "plain body");
+    }
+
+    #[test]
+    fn encoded_control_query_keys_fail_closed() {
+        assert_eq!(sanitize_target("/hook?%00=present"), REDACTED_PATH);
     }
 
     #[test]

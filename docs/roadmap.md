@@ -31,7 +31,7 @@
 ## Stage 5 — 신규 앱 ✅
 - [x] **webhook-lab** — 로컬 웹훅/콜백 서버 (inbound HTTP). request history, 응답 rule·delay·오류 재현,
   민감 헤더 masking, LAN 공개 기본 차단, bounded masked JSON fixture 저장과 API Playground
-  `api-request/v1` handoff (#314, #315)
+  `api-request/v1` handoff, masked localhost replay와 response sequence (#314, #315, #362, #363)
 - [x] **dev environment doctor** — devbox-manager의 환경 진단 탭 (WSL/git/node/pnpm/rustc/cargo/devbox-data/catalog-ids)
 - [x] **repo-manager** — Git repository 탐색·브랜치/worktree/상태 목록, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기
   (파괴적 기본 동작 없음, remove 전 uncommitted/untracked 검사)
@@ -277,8 +277,8 @@ release다. 기존 13개 앱을 강화하고 Devbox Launcher·Log Lens를 더한
 7. Manager custom install root (#308)·데이터 보존형 안전 제거 (#309).
 8. Code Pad LSP cache/local archive, Run Manager log search, Workbench project environment,
    Webhook API handoff (#315; captured fixture storage #314 완료), Repo Manager
-   history/diff/stage/commit/fetch/FF-only pull/push. Webhook Lab fixture와 API handoff
-   (#314, #315)는 구현되었고 replay/sequence(#362)는 남아 있다.
+   history/diff/stage/commit/fetch/FF-only pull/push. Webhook Lab fixture·API handoff·
+   replay·response sequence (#314, #315, #362, #363)는 구현되었다.
    Repo Manager의 #316–#319는 같은 repository discovery·bounded Git runner·status snapshot·
    in-progress operation guard를 쓰는 일상 Git workflow 한 PR로 묶고, read-only·mutation·remote·
    safety acceptance는 이슈별로 구분한다.
@@ -892,7 +892,26 @@ producer/consumer/handoff ID·expiry·request를 preview한 뒤 사용자 `적�
 `취소`는 restore한다. URL/header/body bounds와 raw credential rejection, corrupt/expired/duplicate/
 lease/storage fixed errors, 30초 lease 갱신(10분 TTL 불변), renderer 종료 restore,
 no-clipboard fallback, unit/Rust integration/UI fixture tests를
-포함한다. request replay/sequence(#362)는 구현하지 않는다.
+포함한다. request replay/sequence는 별도 P3-15 (#362/#363) 범위로 구현했다.
+
+**2026-08-28 #362+#363 resilience 보강 상태.** replay와 sequence를 단순한 버튼/상태 추가로
+끝내지 않고, history·fixture·listener·renderer가 같은 보안 경계를 공유하도록 보강했다.
+history snapshot은 capture-time에 custom credential header, query, JSON/text body와 known token을
+마스킹하고, body prefix를 자르기 전에 redaction해 경계에서 잘린 token도 노출하지 않는다. fixture
+store read는 final component no-follow open을 사용하고 corrupt/oversized/link-backed 데이터는
+고정 오류로 유지한다. replay는 loopback/ASCII HTTP wire만 허용하고 transport header를 재생성하며,
+concurrent send는 직렬화해 response sequence cursor 순서를 보존한다. listener는 native bounded
+request-line/header/body admission(414/431/413), body read 오류(408), rate limit(429), start/stop lifecycle lock,
+accept-thread join, stale running/address retirement를 적용한다. response delay는 50ms 단위로
+stop 신호를 확인한다. replay client는 고정 transport header 3개를 위해 입력 header를 97개로
+예약하고 생성된 전체 header도 listener budget에 맞춰 검사한다. response rule은 native transport
+framing header와 비 ASCII response header를 거부한다. frontend async action은 unmount/stale
+응답을 폐기하고 late clipboard/handoff side effect를 막는다. native parser가 request line/header/
+body를 직접 bounded read하므로 low-level slowloris·initial-line/header allocation·early 413 drain
+위험은 해소되었고, stop은 active socket과 in-flight replay를 cancellation flag로 깨운다. replay는
+lifecycle lock을 destination 확인부터 bounded I/O까지 유지해 stop/restart와 local port 재사용
+TOCTOU를 막는다. fixture store의 완전한 cross-process CAS lock과 Windows packaged/IPv6 smoke는
+후속 검증 위험으로 남기고, 이번 PR은 focused Rust/frontend 검증으로 확인한다.
 
 #293 API Playground OpenAPI import는 로컬 파일과 HTTP(S) URL의 JSON/YAML 3.0/3.1 문서를 대상으로
 bounded source/parser 경계와 operation preview를 고정한다. 로컬 file read는 완전 오프라인이고 URL은
