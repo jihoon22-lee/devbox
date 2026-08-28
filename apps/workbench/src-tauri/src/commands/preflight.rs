@@ -19,7 +19,7 @@ use crate::core::preflight::{
     WorkspacePreflight,
 };
 use crate::core::profile::{validate_profile_id, ProjectProfile};
-use devbox_filesystem::parse_safe_project_path;
+use devbox_filesystem::{parse_safe_project_path, ProjectPathKind};
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -223,8 +223,11 @@ async fn wsl_directory_probe(
     token: OperationToken,
     budget: OperationBudget,
 ) -> Result<DirectoryProbe, OperationError> {
+    let Some(parsed_path) = parse_safe_project_path(path) else {
+        return Ok(DirectoryProbe::Unsafe);
+    };
     if devbox_wsl::distro::validate_distro_name(distro).is_err()
-        || parse_safe_project_path(path).is_none()
+        || parsed_path.kind() != ProjectPathKind::Posix
     {
         return Ok(DirectoryProbe::Unsafe);
     }
@@ -244,8 +247,8 @@ fn path_has_link_component(path: &Path) -> Result<bool, ()> {
         current.push(component);
         let metadata = match std::fs::symlink_metadata(&current) {
             Ok(metadata) => metadata,
-            // A missing parent is already covered by the target metadata
-            // check. Other metadata failures must not be treated as a safe
+            // Keep inspecting the existing prefix when a later component is
+            // missing. Other metadata failures must not be treated as a safe
             // path because the link/reparse property is unknown.
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(_) => return Err(()),
@@ -266,10 +269,22 @@ fn path_has_link_component(path: &Path) -> Result<bool, ()> {
 }
 
 fn windows_directory_probe(path: &str) -> DirectoryProbe {
-    if parse_safe_project_path(path).is_none() {
+    let Some(parsed_path) = parse_safe_project_path(path) else {
+        return DirectoryProbe::Unsafe;
+    };
+    if parsed_path.kind() == ProjectPathKind::Posix {
         return DirectoryProbe::Unsafe;
     }
     let path = Path::new(path);
+    // Inspect every existing component before the final target metadata. A
+    // missing child below a junction/symlink must not be downgraded to an
+    // ordinary `Missing` result, because a later creation could escape the
+    // path boundary.
+    match path_has_link_component(path) {
+        Ok(true) => return DirectoryProbe::Unsafe,
+        Ok(false) => {}
+        Err(()) => return DirectoryProbe::Unavailable,
+    }
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -279,11 +294,6 @@ fn windows_directory_probe(path: &str) -> DirectoryProbe {
     };
     if metadata.file_type().is_symlink() {
         return DirectoryProbe::Unsafe;
-    }
-    match path_has_link_component(path) {
-        Ok(true) => return DirectoryProbe::Unsafe,
-        Ok(false) => {}
-        Err(()) => return DirectoryProbe::Unavailable,
     }
     #[cfg(windows)]
     {
@@ -652,14 +662,27 @@ mod tests {
             "relative/project",
             "C:\\\\?\\\\unsafe",
             "C:\\work\\..\\escape",
+            "/mnt/e/projects/devbox",
         ] {
             assert_eq!(windows_directory_probe(path), DirectoryProbe::Unsafe);
         }
     }
 
+    #[tokio::test]
+    async fn wsl_probe_rejects_a_windows_path_before_spawning_wsl() {
+        let probe = wsl_directory_probe(
+            "Ubuntu",
+            "C:\\work\\devbox",
+            OperationToken::new(),
+            OperationBudget::from_now(Duration::from_secs(1)),
+        )
+        .await;
+        assert_eq!(probe, Ok(DirectoryProbe::Unsafe));
+    }
+
     #[cfg(unix)]
     #[test]
-    fn windows_probe_rejects_a_symlink_component() {
+    fn path_probe_detects_a_symlink_component() {
         let root =
             std::env::temp_dir().join(format!("workbench-preflight-link-{}", std::process::id()));
         let real = root.join("real");
@@ -667,10 +690,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&real).unwrap();
         std::os::unix::fs::symlink(&real, &link).unwrap();
-        assert_eq!(
-            windows_directory_probe(link.to_str().unwrap()),
-            DirectoryProbe::Unsafe
-        );
+        assert_eq!(path_has_link_component(&link), Ok(true));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_descendant_below_a_symlink_is_not_a_plain_missing_path() {
+        let root = std::env::temp_dir().join(format!(
+            "workbench-preflight-missing-link-{}",
+            std::process::id()
+        ));
+        let real = root.join("real");
+        let link = root.join("link");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        assert_eq!(path_has_link_component(&link.join("future")), Ok(true));
         std::fs::remove_dir_all(root).unwrap();
     }
 

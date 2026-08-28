@@ -106,7 +106,9 @@ start를 fail-closed하고 Workbench가 시작한 opaque owned receipt만 rollba
 - preflight는 앱 capability(`wsl-desktop:path`, `code-pad:workspace`), 선택한 WSL distro의
   존재·running 상태, Windows/WSL working directory, 예상 TCP port, Run Manager service
   dependency를 read-only로 확인한다. stopped/missing/unsafe/unavailable는 구분하며 WSL을
-  확인만 하려고 시작하지 않는다.
+  확인만 하려고 시작하지 않는다. Windows probe는 drive/UNC, WSL probe는 POSIX 경로만
+  허용하고, 최종 대상 metadata보다 먼저 모든 existing component의 symlink/reparse 여부를
+  확인하므로 link 아래의 아직 없는 descendant도 일반 `missing`으로 낮추지 않는다.
 - UI는 사용자가 누른 Start 뒤에만 bounded 결과 modal을 열고, `warning`은 기존 resource를
   유지한다는 설명과 함께 명시적 Continue를 요구한다. failure/unavailable는 Continue를
   막는다. Escape/Cancel, profile selection, unmount와 late response는 generation guard로
