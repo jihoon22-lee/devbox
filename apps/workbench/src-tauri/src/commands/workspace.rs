@@ -1,6 +1,7 @@
 //! Workbench command — 프로필 CRUD, health, Start/Stop Workspace.
 
 use crate::commands::environment::EnvironmentInjection;
+use crate::commands::process_tree::ProcessTree;
 use crate::core::health::{has_distro, parse_git_status};
 use crate::core::operation::{
     poll_interval, wait_for_change, OperationBudget, OperationClaim, OperationError,
@@ -11,6 +12,10 @@ use crate::core::preflight::{
 };
 use crate::core::profile::{
     validate_profile_id, validate_service_id, ProfileStore, ProjectProfile, MAX_SERVICES,
+};
+use crate::core::retry::{
+    can_retry, failed_step, plan_retry, RetryPlanError, RetryStep, OPEN_CODE_PAD_STEP,
+    OPEN_WSL_STEP, WAIT_PORT_STEP,
 };
 use devbox_filesystem::{parse_safe_project_path, ProjectPathKind};
 use serde::{Deserialize, Serialize};
@@ -42,6 +47,8 @@ const WSL_COMMAND_STDOUT_BYTES: usize = 64 * 1024;
 const WSL_COMMAND_STDERR_BYTES: usize = 64 * 1024;
 const PORT_WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 const PORT_RETRY_INTERVAL: Duration = Duration::from_secs(2);
+const PROCESS_TERMINATION_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_PROCESS_STAT_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LifeLogAbsorbReport {
@@ -240,7 +247,7 @@ fn load_store_document_at_path(
     })
 }
 
-async fn load_store_document_async(
+pub(crate) async fn load_store_document_async(
     app: &AppHandle,
     token: OperationToken,
     budget: OperationBudget,
@@ -402,7 +409,11 @@ pub async fn git_status(
 ) -> Result<Vec<crate::core::health::GitStatus>, String> {
     let operation = &registry.health_operation;
     let budget = OperationBudget::from_now(PROJECT_HEALTH_TIMEOUT);
-    operation.cancel_active().map_err(str::to_string)?;
+    // Supersede only an older Git-status request. Other read-only surfaces and
+    // a mutating Workspace transition keep their own lane ownership.
+    operation
+        .cancel_kind("git-status")
+        .map_err(str::to_string)?;
     let pending = operation.prepare("git-status").map_err(str::to_string)?;
     let token = pending.token();
     operation.wait_until_idle(token.clone(), budget).await?;
@@ -591,15 +602,24 @@ async fn run_fixed_native_command_inner(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
     #[cfg(target_os = "windows")]
     command.creation_flags(0x0800_0000);
     let mut child = command.spawn().map_err(|_| NativeCommandError::Io)?;
+    let mut process_tree = match ProcessTree::assign(&child) {
+        Ok(tree) => tree,
+        Err(()) => {
+            ProcessTree::terminate_unassigned(&mut child).await;
+            return Err(NativeCommandError::Io);
+        }
+    };
     let Some(stdout) = child.stdout.take() else {
-        terminate_native_child(&mut child).await;
+        terminate_native_tree(&mut process_tree, &mut child).await;
         return Err(NativeCommandError::Io);
     };
     let Some(stderr) = child.stderr.take() else {
-        terminate_native_child(&mut child).await;
+        terminate_native_tree(&mut process_tree, &mut child).await;
         return Err(NativeCommandError::Io);
     };
 
@@ -648,14 +668,18 @@ async fn run_fixed_native_command_inner(
         }
     }
     if result.is_err() {
-        terminate_native_child(&mut child).await;
+        terminate_native_tree(&mut process_tree, &mut child).await;
+    } else {
+        // A successful root exit is not proof that a helper it spawned has
+        // gone away. Close the complete probe tree before releasing the
+        // health single-flight worker guard.
+        process_tree.terminate_descendants();
     }
     result
 }
 
-async fn terminate_native_child(child: &mut Child) {
-    let _ = child.kill().await;
-    let _ = child.wait().await;
+async fn terminate_native_tree(tree: &mut ProcessTree, child: &mut Child) {
+    tree.terminate(child).await;
 }
 
 async fn read_native_bounded<R: AsyncRead + Unpin>(
@@ -794,7 +818,11 @@ pub async fn project_health(
     let operation_key = health_operation_key(&profile_id, request_id.as_deref());
     let operation = &registry.health_operation;
     let budget = OperationBudget::from_now(PROJECT_HEALTH_TIMEOUT);
-    operation.cancel_active().map_err(str::to_string)?;
+    // Supersede only an older project-health request. Dependency health and
+    // Start Workspace use the same lane without cancelling this request.
+    operation
+        .cancel_kind("project-health")
+        .map_err(str::to_string)?;
     let pending = operation.prepare(operation_key).map_err(str::to_string)?;
     let token = pending.token();
     operation.wait_until_idle(token.clone(), budget).await?;
@@ -821,7 +849,7 @@ pub fn cancel_project_health(
         .map_err(str::to_string)
 }
 
-fn validate_operation_request_id(request_id: Option<&str>) -> Result<(), String> {
+pub(crate) fn validate_operation_request_id(request_id: Option<&str>) -> Result<(), String> {
     if request_id.is_some_and(|value| {
         value.is_empty() || value.len() > 128 || value.chars().any(char::is_control)
     }) {
@@ -837,8 +865,8 @@ fn health_operation_key(profile_id: &str, request_id: Option<&str>) -> String {
         // unambiguous because both IPC inputs reject control characters, so
         // an old request can never cancel a different profile/request pair
         // through string-key concatenation.
-        Some(request_id) => format!("health\0{profile_id}\0{request_id}"),
-        None => format!("health\0{profile_id}"),
+        Some(request_id) => format!("project-health\0{profile_id}\0{request_id}"),
+        None => format!("project-health\0{profile_id}"),
     }
 }
 
@@ -1015,9 +1043,57 @@ pub struct WorkspaceRun {
     /// This remains backend-only ownership state and is never serialized to
     /// the webview.
     #[serde(skip_serializing)]
-    pub started_pids: Vec<u32>,
+    started_pids: Vec<StartedProcess>,
     /// Stable resource ownership observed by the preflight and start steps.
     pub resource_provenance: Vec<ResourceProvenance>,
+    /// Number of explicit retries performed for this run.
+    pub retry_count: u32,
+    /// A retry is offered only when a bounded, known step failed.
+    pub can_retry: bool,
+    /// Stable step key for the first failure; never a path or native error.
+    pub failed_step: Option<String>,
+}
+
+/// A PID is only a location in the process table. Keep a creation identity
+/// beside it so a later Stop cannot accidentally target an unrelated process
+/// after the operating system reuses the PID. This remains backend-only and
+/// is never serialized to the renderer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StartedProcess {
+    /// Stable app identity associated with this PID. It is backend-only and
+    /// lets an interrupted transition publish the exact resource ownership
+    /// needed for a later Stop without exposing process details.
+    app_id: &'static str,
+    pid: u32,
+    identity: ProcessIdentity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessIdentity {
+    #[cfg(windows)]
+    Windows(u64),
+    #[cfg(unix)]
+    Unix(u64),
+    Gone,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessObservation {
+    Match,
+    Missing,
+    Mismatch,
+    Unavailable,
+}
+
+impl StartedProcess {
+    fn new(app_id: &'static str, pid: u32) -> Self {
+        Self {
+            app_id,
+            pid,
+            identity: capture_process_identity(pid),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -1025,44 +1101,186 @@ pub struct WorkspaceRun {
 pub struct WorkspaceRunOwnership {
     pub run_id: String,
     pub profile_id: String,
+    pub retry_count: u32,
+    pub can_retry: bool,
+    pub failed_step: Option<String>,
 }
 
-/// Owns children during Start Workspace until the run is committed. Any
-/// early return or dropped Tauri invocation therefore rolls back only the
-/// PIDs this transition recorded; a successful registry insert transfers the
-/// vector to `WorkspaceRun` and disables the guard.
+/// Owns children during Start Workspace until the run is committed. Any early
+/// return or dropped Tauri invocation therefore rolls back only the PIDs this
+/// transition recorded. If the OS refuses cleanup, the remaining ownership is
+/// published into the registry so Stop What I Started can recover it instead
+/// of allowing an untracked child to outlive the transition.
 struct StartedPidGuard {
-    pids: Vec<u32>,
+    pids: Vec<StartedProcess>,
+    recorded: Vec<StartedProcess>,
+    published_run_id: Option<String>,
+    registry: Arc<RunRegistry>,
+    profile_id: String,
+    existing_run_id: Option<String>,
     committed: bool,
 }
 
 impl StartedPidGuard {
-    fn new() -> Self {
+    fn new(
+        registry: &Arc<RunRegistry>,
+        profile_id: impl Into<String>,
+        existing_run_id: Option<String>,
+    ) -> Self {
         Self {
             pids: Vec::new(),
+            recorded: Vec::new(),
+            published_run_id: None,
+            registry: Arc::clone(registry),
+            profile_id: profile_id.into(),
+            existing_run_id,
             committed: false,
         }
     }
 
-    fn push(&mut self, pid: u32) {
-        self.pids.push(pid);
+    fn push(&mut self, app_id: &'static str, pid: u32) {
+        let process = StartedProcess::new(app_id, pid);
+        self.pids.push(process);
+        self.recorded.push(process);
     }
 
     fn rollback(&mut self) {
-        terminate_started_pids(&self.pids);
-        self.pids.clear();
+        self.cleanup();
     }
 
-    fn commit(mut self) -> Vec<u32> {
+    fn commit(mut self) -> Vec<StartedProcess> {
         self.committed = true;
         std::mem::take(&mut self.pids)
+    }
+
+    fn cleanup(&mut self) {
+        let mut remaining = Vec::with_capacity(self.pids.len());
+        for process in &self.pids {
+            if !terminate_started_process(process) {
+                remaining.push(*process);
+            }
+        }
+        self.pids = remaining;
+        self.sync_registry();
+    }
+
+    /// Synchronize failed cleanup with the authoritative run. Existing retry
+    /// runs keep their prior metadata; only this guard's process identities are
+    /// added/removed. A Start failure without an existing run gets a minimal
+    /// stop-only run (no failed retry step), making the ownership visible to
+    /// the UI while avoiding a malformed retry plan.
+    fn sync_registry(&mut self) {
+        if self.recorded.is_empty() {
+            return;
+        }
+        let Ok(mut runs) = self.registry.runs.lock() else {
+            // Do not include paths, PIDs, or OS errors in the diagnostic. A
+            // poisoned registry is unrecoverable for this process lifetime,
+            // but the normal path still retains ownership in this guard.
+            eprintln!("workbench: failed cleanup ownership registry unavailable");
+            return;
+        };
+
+        if let Some(run_id) = self.existing_run_id.as_deref() {
+            if let Some(run) = runs
+                .get_mut(run_id)
+                .filter(|run| run.profile_id == self.profile_id)
+            {
+                sync_guard_processes(run, &self.recorded, &self.pids);
+            }
+            return;
+        }
+
+        let run_id = self
+            .published_run_id
+            .get_or_insert_with(|| uuid::Uuid::new_v4().to_string())
+            .clone();
+        if self.pids.is_empty() {
+            // A synthetic stop-only run is no longer needed once every child
+            // recorded by this guard has been safely cleaned up.
+            runs.remove(&run_id);
+            self.published_run_id = None;
+            return;
+        }
+
+        if let Some(run) = runs
+            .get_mut(&run_id)
+            .filter(|run| run.profile_id == self.profile_id)
+        {
+            sync_guard_processes(run, &self.recorded, &self.pids);
+        } else if runs.is_empty() {
+            let resource_provenance = self
+                .pids
+                .iter()
+                .map(|process| ResourceProvenance {
+                    kind: "process".into(),
+                    id: process.app_id.into(),
+                    state: ResourceState::WorkbenchStarted,
+                })
+                .collect();
+            runs.insert(
+                run_id,
+                WorkspaceRun {
+                    run_id: self
+                        .published_run_id
+                        .as_deref()
+                        .unwrap_or_default()
+                        .to_string(),
+                    profile_id: self.profile_id.clone(),
+                    steps: Vec::new(),
+                    started_pids: self.pids.clone(),
+                    resource_provenance,
+                    retry_count: 0,
+                    can_retry: false,
+                    failed_step: None,
+                },
+            );
+        } else {
+            // A concurrent run should be impossible under the transition
+            // claim. Keep the vector in this guard if that invariant is ever
+            // violated rather than publishing ambiguous ownership.
+            self.published_run_id = None;
+        }
     }
 }
 
 impl Drop for StartedPidGuard {
     fn drop(&mut self) {
         if !self.committed {
-            terminate_started_pids(&self.pids);
+            self.cleanup();
+        }
+    }
+}
+
+fn sync_guard_processes(
+    run: &mut WorkspaceRun,
+    recorded: &[StartedProcess],
+    remaining: &[StartedProcess],
+) {
+    run.started_pids
+        .retain(|process| !recorded.contains(process) || remaining.contains(process));
+    for process in remaining {
+        if !run.started_pids.contains(process) {
+            run.started_pids.push(*process);
+        }
+    }
+    let app_ids = recorded
+        .iter()
+        .map(|process| process.app_id)
+        .collect::<HashSet<_>>();
+    for app_id in app_ids {
+        let owned = run
+            .started_pids
+            .iter()
+            .any(|process| process.app_id == app_id);
+        if owned {
+            append_process_resource(&mut run.resource_provenance, app_id);
+        } else {
+            run.resource_provenance.retain(|resource| {
+                !(resource.kind == "process"
+                    && resource.id == app_id
+                    && resource.state == ResourceState::WorkbenchStarted)
+            });
         }
     }
 }
@@ -1072,6 +1290,9 @@ impl From<&WorkspaceRun> for WorkspaceRunOwnership {
         Self {
             run_id: run.run_id.clone(),
             profile_id: run.profile_id.clone(),
+            retry_count: run.retry_count,
+            can_retry: run.can_retry,
+            failed_step: run.failed_step.clone(),
         }
     }
 }
@@ -1081,7 +1302,7 @@ pub struct RunRegistry {
     pub runs: Mutex<HashMap<String, WorkspaceRun>>,
     starting_profile: Mutex<Option<String>>,
     starting_operation: Arc<SingleFlight>,
-    health_operation: Arc<SingleFlight>,
+    pub(crate) health_operation: Arc<SingleFlight>,
     pub(crate) preview_operation: Arc<SingleFlight>,
 }
 
@@ -1116,6 +1337,7 @@ fn has_active_profile_run(runs: &HashMap<String, WorkspaceRun>, profile_id: &str
     runs.values().any(|run| run.profile_id == profile_id)
 }
 
+#[cfg(test)]
 fn take_profile_run(
     runs: &mut HashMap<String, WorkspaceRun>,
     run_id: &str,
@@ -1203,6 +1425,84 @@ fn operation_message(error: OperationError) -> String {
     error.message().to_string()
 }
 
+fn retry_step_snapshots(steps: &[RunStep]) -> Vec<RetryStep<'_>> {
+    steps
+        .iter()
+        .map(|step| RetryStep {
+            name: step.name.as_str(),
+            ok: step.ok,
+        })
+        .collect()
+}
+
+fn retry_metadata(steps: &[RunStep], resources: &[ResourceProvenance]) -> (bool, Option<String>) {
+    let snapshots = retry_step_snapshots(steps);
+    let Ok(plan) = plan_retry(&snapshots, resources) else {
+        return (false, None);
+    };
+    (
+        can_retry(&snapshots, resources) && !plan.pending_steps.is_empty(),
+        failed_step(&snapshots).map(str::to_owned),
+    )
+}
+
+fn set_run_step(steps: &mut Vec<RunStep>, next: RunStep) {
+    if let Some(existing) = steps.iter_mut().find(|step| step.name == next.name) {
+        *existing = next;
+    } else {
+        steps.push(next);
+    }
+}
+
+fn has_successful_step(steps: &[RunStep], name: &str) -> bool {
+    steps.iter().any(|step| step.name == name && step.ok)
+}
+
+fn has_owned_process(resources: &[ResourceProvenance], app_id: &str) -> bool {
+    resources.iter().any(|resource| {
+        resource.kind == "process"
+            && resource.id == app_id
+            && resource.state == ResourceState::WorkbenchStarted
+    })
+}
+
+fn has_process_resource(resources: &[ResourceProvenance], app_id: &str) -> bool {
+    resources
+        .iter()
+        .any(|resource| resource.kind == "process" && resource.id == app_id)
+}
+
+fn append_process_resource(resources: &mut Vec<ResourceProvenance>, app_id: &str) {
+    if !has_process_resource(resources, app_id) {
+        resources.push(ResourceProvenance {
+            kind: "process".into(),
+            id: app_id.into(),
+            state: ResourceState::WorkbenchStarted,
+        });
+    }
+}
+
+fn merge_resource_provenance(
+    observed: impl IntoIterator<Item = ResourceProvenance>,
+    existing: &[ResourceProvenance],
+) -> Vec<ResourceProvenance> {
+    let mut merged = Vec::new();
+    let mut keys = HashSet::new();
+    for resource in observed {
+        let key = format!("{}\0{}", resource.kind, resource.id);
+        if keys.insert(key) {
+            merged.push(resource);
+        }
+    }
+    for resource in existing {
+        let key = format!("{}\0{}", resource.kind, resource.id);
+        if keys.insert(key) {
+            merged.push(resource.clone());
+        }
+    }
+    merged
+}
+
 async fn revalidate_start_profile(
     app: &AppHandle,
     expected: &ProjectProfile,
@@ -1238,6 +1538,95 @@ pub fn cancel_start_workspace(
         .map_err(str::to_string)
 }
 
+async fn claim_workspace_health_operation(
+    registry: &RunRegistry,
+    token: OperationToken,
+    budget: OperationBudget,
+) -> Result<OperationClaim, String> {
+    // A profile navigation health request must not continue consuming native
+    // Git/WSL capacity while a Workspace transition owns the lane.
+    registry
+        .health_operation
+        .cancel_active_except("workspace-start")
+        .map_err(str::to_string)?;
+    loop {
+        budget.check(&token).map_err(operation_message)?;
+        match registry
+            .health_operation
+            .claim_reject_with_token("workspace-start", token.clone())
+        {
+            Ok(claim) => return Ok(claim),
+            Err("다른 작업이 이미 진행 중입니다") => {
+                // A health request can race the initial cancel/wait window.
+                // Cancel any newly active read-only request and retry the
+                // claim rather than returning a false collision to Start.
+                // `workspace-start` is protected and therefore remains a
+                // bounded wait/error instead of being cancelled by a second
+                // transition.
+                registry
+                    .health_operation
+                    .cancel_active_except("workspace-start")
+                    .map_err(str::to_string)?;
+                registry
+                    .health_operation
+                    .wait_until_idle(token.clone(), budget)
+                    .await?;
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+}
+
+async fn wait_for_expected_ports(
+    profile: &ProjectProfile,
+    token: &OperationToken,
+    budget: OperationBudget,
+) -> Result<RunStep, String> {
+    let port_deadline = Instant::now()
+        .checked_add(PORT_WAIT_TIMEOUT)
+        .unwrap_or_else(Instant::now);
+    let mut closed_ports = Vec::new();
+    for port in &profile.expected_ports {
+        budget.check(token).map_err(operation_message)?;
+        let mut ready = Instant::now() < port_deadline
+            && port_open_with_control(*port, token, budget).map_err(operation_message)?;
+        while !ready {
+            budget.check(token).map_err(operation_message)?;
+            let remaining = port_deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            delay_with_control(remaining.min(PORT_RETRY_INTERVAL), token.clone(), budget)
+                .await
+                .map_err(operation_message)?;
+            ready = Instant::now() < port_deadline
+                && port_open_with_control(*port, token, budget).map_err(operation_message)?;
+        }
+        budget.check(token).map_err(operation_message)?;
+        if !ready {
+            closed_ports.push(*port);
+        }
+    }
+    Ok(RunStep {
+        name: WAIT_PORT_STEP.into(),
+        ok: closed_ports.is_empty(),
+        detail: if closed_ports.is_empty() {
+            if profile.expected_ports.is_empty() {
+                "확인할 예상 port가 없습니다".into()
+            } else {
+                "예상 TCP port를 사용할 수 있습니다".into()
+            }
+        } else {
+            format!("예상 TCP port {}개가 닫혀 있습니다", closed_ports.len())
+        },
+        status: if closed_ports.is_empty() {
+            PreflightStatus::Pass
+        } else {
+            PreflightStatus::Failure
+        },
+    })
+}
+
 #[tauri::command]
 pub async fn start_workspace(
     app: AppHandle,
@@ -1253,35 +1642,7 @@ pub async fn start_workspace(
         .map_err(str::to_string)?;
     let token = _operation_claim.token();
     let budget = OperationBudget::from_now(WORKSPACE_START_TIMEOUT);
-    // A profile navigation health request must not continue consuming native
-    // Git/WSL capacity while Start Workspace owns the transition.
-    registry
-        .health_operation
-        .cancel_active()
-        .map_err(str::to_string)?;
-    let _health_claim = loop {
-        budget.check(&token).map_err(operation_message)?;
-        match registry
-            .health_operation
-            .claim_reject_with_token("workspace-start", token.clone())
-        {
-            Ok(claim) => break claim,
-            Err("다른 작업이 이미 진행 중입니다") => {
-                // A health request can race the initial cancel/wait window.
-                // Cancel that newly active request and retry the claim rather
-                // than returning a false single-flight collision to Start.
-                registry
-                    .health_operation
-                    .cancel_active()
-                    .map_err(str::to_string)?;
-                registry
-                    .health_operation
-                    .wait_until_idle(token.clone(), budget)
-                    .await?;
-            }
-            Err(error) => return Err(error.to_string()),
-        }
-    };
+    let _health_claim = claim_workspace_health_operation(&registry, token.clone(), budget).await?;
     budget.check(&token).map_err(operation_message)?;
     if !registry
         .runs
@@ -1303,8 +1664,13 @@ pub async fn start_workspace(
     // the exact probes here before resolving `.env` or spawning either child;
     // a changed app/distro/path/port/service state must fail closed without a
     // partial Workspace launch.
-    let preflight: WorkspacePreflight =
-        crate::commands::preflight::preflight_profile(&profile).await;
+    let preflight: WorkspacePreflight = crate::commands::preflight::preflight_profile(
+        &profile,
+        token.clone(),
+        budget,
+        &_health_claim,
+    )
+    .await?;
     if !preflight.ready {
         return Err("Workspace 사전 점검을 통과하지 못했습니다".to_string());
     }
@@ -1320,35 +1686,8 @@ pub async fn start_workspace(
         .collect::<Vec<_>>();
 
     // 예상 포트 대기. 여러 포트가 있어도 하나의 bounded deadline만 쓴다.
-    let port_deadline = Instant::now()
-        .checked_add(PORT_WAIT_TIMEOUT)
-        .unwrap_or_else(Instant::now);
-    for port in &profile.expected_ports {
-        budget.check(&token).map_err(operation_message)?;
-        let mut ready = Instant::now() < port_deadline
-            && port_open_with_control(*port, &token, budget).map_err(operation_message)?;
-        while !ready {
-            budget.check(&token).map_err(operation_message)?;
-            let remaining = port_deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                break;
-            }
-            delay_with_control(remaining.min(PORT_RETRY_INTERVAL), token.clone(), budget)
-                .await
-                .map_err(operation_message)?;
-            ready = Instant::now() < port_deadline
-                && port_open_with_control(*port, &token, budget).map_err(operation_message)?;
-        }
-        budget.check(&token).map_err(operation_message)?;
-        if !ready {
-            steps.push(RunStep {
-                name: "wait-port".into(),
-                ok: false,
-                detail: format!("{port} 여전히 닫힘"),
-                status: PreflightStatus::Failure,
-            });
-        }
-    }
+    let port_step = wait_for_expected_ports(&profile, &token, budget).await?;
+    set_run_step(&mut steps, port_step);
 
     // Resolve and revalidate as close as possible to the child boundary. The
     // health/port waits above can take seconds, so resolving before them
@@ -1356,7 +1695,7 @@ pub async fn start_workspace(
     //
     // A changed file or unavailable secret therefore fails before either
     // child is launched and cannot result in a partially injected workspace.
-    let mut started_pids = StartedPidGuard::new();
+    let mut started_pids = StartedPidGuard::new(&registry, profile_id.clone(), None);
     let mut current_profile =
         revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await?;
     let mut environment =
@@ -1399,30 +1738,41 @@ pub async fn start_workspace(
             environment.as_ref(),
         ) {
             Ok(pid) => {
-                started_pids.push(pid);
-                resource_provenance.push(ResourceProvenance {
-                    kind: "process".into(),
-                    id: "wsl-desktop".into(),
-                    state: ResourceState::WorkbenchStarted,
-                });
+                started_pids.push("wsl-desktop", pid);
+                append_process_resource(&mut resource_provenance, "wsl-desktop");
+                set_run_step(
+                    &mut steps,
+                    RunStep {
+                        name: OPEN_WSL_STEP.into(),
+                        ok: true,
+                        detail: "wsl-desktop을 시작했습니다".into(),
+                        status: PreflightStatus::Pass,
+                    },
+                );
                 if let Err(error) = budget.check(&token) {
                     started_pids.rollback();
                     return Err(error.message().to_string());
                 }
             }
-            Err(_) => steps.push(RunStep {
-                name: "open".into(),
-                ok: false,
-                detail: "wsl-desktop을 시작할 수 없습니다".into(),
-                status: PreflightStatus::Failure,
-            }),
+            Err(_) => set_run_step(
+                &mut steps,
+                RunStep {
+                    name: OPEN_WSL_STEP.into(),
+                    ok: false,
+                    detail: "wsl-desktop을 시작할 수 없습니다".into(),
+                    status: PreflightStatus::Failure,
+                },
+            ),
         },
-        Err(e) => steps.push(RunStep {
-            name: "open".into(),
-            ok: false,
-            detail: e,
-            status: PreflightStatus::Failure,
-        }),
+        Err(_) => set_run_step(
+            &mut steps,
+            RunStep {
+                name: OPEN_WSL_STEP.into(),
+                ok: false,
+                detail: "wsl-desktop 경로를 준비할 수 없습니다".into(),
+                status: PreflightStatus::Failure,
+            },
+        ),
     }
     let mut current_profile =
         match revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await {
@@ -1467,31 +1817,42 @@ pub async fn start_workspace(
         Ok(request) => {
             match launch_open_with_profile_environment("code-pad", &request, environment.as_ref()) {
                 Ok(pid) => {
-                    started_pids.push(pid);
-                    resource_provenance.push(ResourceProvenance {
-                        kind: "process".into(),
-                        id: "code-pad".into(),
-                        state: ResourceState::WorkbenchStarted,
-                    });
+                    started_pids.push("code-pad", pid);
+                    append_process_resource(&mut resource_provenance, "code-pad");
+                    set_run_step(
+                        &mut steps,
+                        RunStep {
+                            name: OPEN_CODE_PAD_STEP.into(),
+                            ok: true,
+                            detail: "code-pad를 시작했습니다".into(),
+                            status: PreflightStatus::Pass,
+                        },
+                    );
                     if let Err(error) = budget.check(&token) {
                         started_pids.rollback();
                         return Err(error.message().to_string());
                     }
                 }
-                Err(_) => steps.push(RunStep {
-                    name: "open".into(),
-                    ok: false,
-                    detail: "code-pad를 시작할 수 없습니다".into(),
-                    status: PreflightStatus::Failure,
-                }),
+                Err(_) => set_run_step(
+                    &mut steps,
+                    RunStep {
+                        name: OPEN_CODE_PAD_STEP.into(),
+                        ok: false,
+                        detail: "code-pad를 시작할 수 없습니다".into(),
+                        status: PreflightStatus::Failure,
+                    },
+                ),
             }
         }
-        Err(e) => steps.push(RunStep {
-            name: "open".into(),
-            ok: false,
-            detail: e,
-            status: PreflightStatus::Failure,
-        }),
+        Err(_) => set_run_step(
+            &mut steps,
+            RunStep {
+                name: OPEN_CODE_PAD_STEP.into(),
+                ok: false,
+                detail: "code-pad 경로를 준비할 수 없습니다".into(),
+                status: PreflightStatus::Failure,
+            },
+        ),
     }
     // No later transition step needs the resolved values. Drop the holder as
     // soon as the second spawn boundary has returned so zeroizing values do
@@ -1529,27 +1890,594 @@ pub async fn start_workspace(
         run_id: uuid::Uuid::new_v4().to_string(),
         profile_id,
         steps,
-        started_pids: started_pids.commit(),
         resource_provenance,
+        retry_count: 0,
+        can_retry: false,
+        failed_step: None,
+        started_pids: Vec::new(),
     };
+    let mut run = run;
+    let (can_retry, failed_step) = retry_metadata(&run.steps, &run.resource_provenance);
+    run.can_retry = can_retry;
+    run.failed_step = failed_step;
+    run.started_pids = started_pids.commit();
     runs.insert(run.run_id.clone(), run.clone());
     Ok(run)
 }
 
-fn terminate_started_pids(pids: &[u32]) {
-    for pid in pids {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChildLaunchOutcome {
+    Started(u32),
+    Failed,
+}
+
+/// Revalidate the profile and environment immediately before one child
+/// boundary.  Launch failures become a stable step result; cancellation,
+/// timeout, stale profile, and provider failures remain transition errors so
+/// the caller can roll back only the PIDs created by this attempt.
+async fn launch_workspace_child(
+    app: &AppHandle,
+    expected: &ProjectProfile,
+    app_id: &str,
+    token: &OperationToken,
+    budget: OperationBudget,
+    claim: &OperationClaim,
+) -> Result<ChildLaunchOutcome, String> {
+    let current_profile = revalidate_start_profile(app, expected, token, budget, claim).await?;
+    let environment = crate::commands::environment::resolve_profile_environment_async_with_control(
+        current_profile.clone(),
+        token.clone(),
+        budget,
+        claim,
+    )
+    .await?;
+    let current_profile = revalidate_start_profile(app, expected, token, budget, claim).await?;
+    budget.check(token).map_err(operation_message)?;
+    let request = match app_id {
+        "wsl-desktop" => wsl_desktop_open_request(&current_profile),
+        "code-pad" => code_pad_open_request(&current_profile),
+        _ => return Ok(ChildLaunchOutcome::Failed),
+    };
+    let Ok(request) = request else {
+        return Ok(ChildLaunchOutcome::Failed);
+    };
+    let outcome = match launch_open_with_profile_environment(app_id, &request, environment.as_ref())
+    {
+        Ok(pid) => ChildLaunchOutcome::Started(pid),
+        Err(_) => ChildLaunchOutcome::Failed,
+    };
+    drop(environment);
+    // Do not check the budget after spawning before returning the PID: the
+    // caller must first put a successful child into its StartedPidGuard so an
+    // immediately-expired budget can still roll that child back.
+    Ok(outcome)
+}
+
+fn process_step_name(app_id: &str) -> Option<&'static str> {
+    match app_id {
+        "wsl-desktop" => Some(OPEN_WSL_STEP),
+        "code-pad" => Some(OPEN_CODE_PAD_STEP),
+        _ => None,
+    }
+}
+
+fn process_step_detail(app_id: &str, outcome: ChildLaunchOutcome) -> &'static str {
+    match (app_id, outcome) {
+        ("wsl-desktop", ChildLaunchOutcome::Started(_)) => "wsl-desktop을 시작했습니다",
+        ("wsl-desktop", ChildLaunchOutcome::Failed) => "wsl-desktop을 시작할 수 없습니다",
+        ("code-pad", ChildLaunchOutcome::Started(_)) => "code-pad를 시작했습니다",
+        ("code-pad", ChildLaunchOutcome::Failed) => "code-pad를 시작할 수 없습니다",
+        _ => "Workspace 앱을 시작할 수 없습니다",
+    }
+}
+
+fn process_step(app_id: &str, outcome: ChildLaunchOutcome) -> Option<RunStep> {
+    let name = process_step_name(app_id)?;
+    let started = matches!(outcome, ChildLaunchOutcome::Started(_));
+    Some(RunStep {
+        name: name.into(),
+        ok: started,
+        detail: process_step_detail(app_id, outcome).into(),
+        status: if started {
+            PreflightStatus::Pass
+        } else {
+            PreflightStatus::Failure
+        },
+    })
+}
+
+/// Retry only the failed suffix of a Workspace run.  The existing run stays
+/// authoritative until the new attempt has finished; newly spawned PIDs are
+/// held by a separate guard and are rolled back if profile/revision/budget
+/// validation fails.
+#[tauri::command]
+pub async fn retry_workspace(
+    app: AppHandle,
+    registry: tauri::State<'_, Arc<RunRegistry>>,
+    run_id: String,
+    profile_id: String,
+) -> Result<WorkspaceRun, String> {
+    validate_profile_id(&profile_id)?;
+    validate_profile_id(&run_id)?;
+    let _start_claim = claim_workspace_transition(&registry.starting_profile, &profile_id)
+        .map_err(str::to_string)?;
+    let _operation_claim = registry
+        .starting_operation
+        .claim_reject(profile_id.clone())
+        .map_err(str::to_string)?;
+    let token = _operation_claim.token();
+    let budget = OperationBudget::from_now(WORKSPACE_START_TIMEOUT);
+    let _health_claim = claim_workspace_health_operation(&registry, token.clone(), budget).await?;
+
+    let existing = {
+        let runs = registry
+            .runs
+            .lock()
+            .map_err(|_| "실행 상태를 확인할 수 없습니다".to_string())?;
+        let run = runs
+            .get(&run_id)
+            .ok_or_else(|| "Workspace 실행 기록을 찾을 수 없습니다".to_string())?;
+        if run.profile_id != profile_id {
+            return Err("선택한 프로필의 실행 기록이 아닙니다".into());
+        }
+        run.clone()
+    };
+    let snapshots = retry_step_snapshots(&existing.steps);
+    let plan =
+        plan_retry(&snapshots, &existing.resource_provenance).map_err(RetryPlanError::message)?;
+    if plan.pending_steps.is_empty() {
+        return Err("다시 시도할 실패 단계가 없습니다".into());
+    }
+
+    let document = load_store_document_async(&app, token.clone(), budget, &_health_claim).await?;
+    let profile = document
+        .store
+        .profiles
+        .iter()
+        .find(|candidate| candidate.id == profile_id)
+        .cloned()
+        .ok_or_else(|| PROFILE_CHANGED_ERROR.to_string())?;
+    let preflight = crate::commands::preflight::preflight_profile(
+        &profile,
+        token.clone(),
+        budget,
+        &_health_claim,
+    )
+    .await?;
+    if !preflight.ready {
+        return Err("Workspace 사전 점검을 통과하지 못했습니다".into());
+    }
+
+    let mut steps = existing.steps.clone();
+    for item in &preflight.items {
+        set_run_step(
+            &mut steps,
+            RunStep {
+                name: item.key.clone(),
+                ok: item.status.is_non_blocking(),
+                detail: item.detail.clone(),
+                status: item.status,
+            },
+        );
+    }
+    let mut resource_provenance = merge_resource_provenance(
+        preflight.resources().cloned(),
+        &existing.resource_provenance,
+    );
+    let mut new_pids = StartedPidGuard::new(&registry, profile_id.clone(), Some(run_id.clone()));
+
+    for step in &plan.pending_steps {
+        budget.check(&token).map_err(operation_message)?;
+        match step.as_str() {
+            WAIT_PORT_STEP => {
+                let port_step = wait_for_expected_ports(&profile, &token, budget).await?;
+                let ok = port_step.ok;
+                set_run_step(&mut steps, port_step);
+                if !ok {
+                    // Waiting is the failed dependency boundary. Do not
+                    // launch later children while the port contract remains
+                    // unsatisfied; the same run can be retried again.
+                    break;
+                }
+            }
+            OPEN_WSL_STEP | OPEN_CODE_PAD_STEP => {
+                let app_id = if step == OPEN_WSL_STEP {
+                    "wsl-desktop"
+                } else {
+                    "code-pad"
+                };
+                if has_successful_step(&steps, step)
+                    || has_owned_process(&resource_provenance, app_id)
+                {
+                    continue;
+                }
+                let outcome =
+                    launch_workspace_child(&app, &profile, app_id, &token, budget, &_health_claim)
+                        .await?;
+                if let ChildLaunchOutcome::Started(pid) = outcome {
+                    new_pids.push(app_id, pid);
+                    append_process_resource(&mut resource_provenance, app_id);
+                }
+                if let Some(step_result) = process_step(app_id, outcome) {
+                    set_run_step(&mut steps, step_result);
+                }
+            }
+            _ => return Err(RetryPlanError::UnknownStep.message().into()),
+        }
+    }
+
+    revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await?;
+    budget.check(&token).map_err(operation_message)?;
+    let mut runs = registry
+        .runs
+        .lock()
+        .map_err(|_| "실행 상태를 저장할 수 없습니다".to_string())?;
+    let current = runs
+        .get(&run_id)
+        .ok_or_else(|| "Workspace 실행 기록이 변경되어 결과를 저장할 수 없습니다".to_string())?;
+    if current.profile_id != profile_id || current.retry_count != existing.retry_count {
+        drop(runs);
+        new_pids.rollback();
+        return Err("Workspace 실행 상태가 변경되어 결과를 저장할 수 없습니다".into());
+    }
+    let (can_retry, failed_step) = retry_metadata(&steps, &resource_provenance);
+    let mut updated = existing;
+    updated.steps = steps;
+    updated.resource_provenance = resource_provenance;
+    updated.retry_count = updated.retry_count.saturating_add(1);
+    updated.can_retry = can_retry;
+    updated.failed_step = failed_step;
+    let mut owned_pids = updated.started_pids;
+    owned_pids.extend(new_pids.commit());
+    updated.started_pids = owned_pids;
+    runs.insert(run_id, updated.clone());
+    Ok(updated)
+}
+
+fn terminate_started_process(process: &StartedProcess) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        return terminate_started_process_windows(process);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    match process.identity {
+        #[cfg(unix)]
+        ProcessIdentity::Unix(_) => match observe_process_identity(process) {
+            ProcessObservation::Match => terminate_started_pid(process.pid),
+            // The root may have exited while a child in its private process
+            // group is still alive. The creation identity was captured before
+            // this observation, so targeting that group is safe; a reused PID
+            // would have produced Mismatch above and is retained instead.
+            ProcessObservation::Missing => terminate_started_process_group(process),
+            // Never issue a PID-only kill when the creation identity cannot be
+            // proven. Retain the ownership record for a later safe attempt.
+            ProcessObservation::Mismatch | ProcessObservation::Unavailable => false,
+        },
+        // If the process exited before its creation identity could be
+        // captured, there is no safe authority to signal a later PID/group.
+        // Forget the already-gone root, but do not risk killing an unrelated
+        // process which reused that PID.
+        ProcessIdentity::Gone => true,
+        ProcessIdentity::Unavailable => false,
+        #[cfg(windows)]
+        ProcessIdentity::Windows(_) => false,
+    }
+}
+
+#[cfg(unix)]
+fn terminate_started_process_group(process: &StartedProcess) -> bool {
+    // Workbench launches use `process_group(0)` in crates/launch, so the
+    // recorded root PID is also the private group ID. `terminate_started_pid`
+    // performs bounded TERM/KILL escalation and only reports success after the
+    // group is gone.
+    terminate_started_pid(process.pid)
+}
+
+#[cfg(target_os = "windows")]
+struct HeldWindowsProcess(windows::Win32::Foundation::HANDLE);
+
+#[cfg(target_os = "windows")]
+impl Drop for HeldWindowsProcess {
+    fn drop(&mut self) {
+        use windows::Win32::Foundation::CloseHandle;
+        unsafe {
+            let _ = CloseHandle(self.0);
+        }
+    }
+}
+
+/// Verify and hold the exact Windows process object before invoking the
+/// process-tree helper. Holding the query handle prevents the verified PID's
+/// process object from being destroyed/reused during the PID-based `/T` call,
+/// closing the check-then-kill race as far as the OS helper permits.
+#[cfg(target_os = "windows")]
+fn terminate_started_process_windows(process: &StartedProcess) -> bool {
+    use windows::core::HRESULT;
+    use windows::Win32::Foundation::ERROR_INVALID_PARAMETER;
+    use windows::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    let ProcessIdentity::Windows(expected) = process.identity else {
+        return matches!(process.identity, ProcessIdentity::Gone);
+    };
+    let handle = match unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process.pid) }
+    {
+        Ok(handle) => handle,
+        Err(error) if error.code() == HRESULT::from_win32(ERROR_INVALID_PARAMETER.0) => {
+            return true
+        }
+        Err(_) => return false,
+    };
+    let held = HeldWindowsProcess(handle);
+    let mut creation = windows::Win32::Foundation::FILETIME::default();
+    let mut exit = windows::Win32::Foundation::FILETIME::default();
+    let mut kernel = windows::Win32::Foundation::FILETIME::default();
+    let mut user = windows::Win32::Foundation::FILETIME::default();
+    let Ok(()) =
+        (unsafe { GetProcessTimes(held.0, &mut creation, &mut exit, &mut kernel, &mut user) })
+    else {
+        return false;
+    };
+    let observed = (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime);
+    if observed != expected {
+        return false;
+    }
+
+    // Keep `held` alive until taskkill has returned. The helper still owns the
+    // process-tree traversal (`/T`), while the handle prevents root PID reuse
+    // between the identity check and that traversal.
+    terminate_started_pid(process.pid)
+}
+
+fn capture_process_identity(pid: u32) -> ProcessIdentity {
+    if pid == 0 {
+        return ProcessIdentity::Unavailable;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::HRESULT;
+        use windows::Win32::Foundation::{CloseHandle, ERROR_INVALID_PARAMETER};
+        use windows::Win32::System::Threading::{
+            GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+
+        let handle = match unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) } {
+            Ok(handle) => handle,
+            Err(error) if error.code() == HRESULT::from_win32(ERROR_INVALID_PARAMETER.0) => {
+                return ProcessIdentity::Gone
+            }
+            Err(_) => return ProcessIdentity::Unavailable,
+        };
+        let mut creation = windows::Win32::Foundation::FILETIME::default();
+        let mut exit = windows::Win32::Foundation::FILETIME::default();
+        let mut kernel = windows::Win32::Foundation::FILETIME::default();
+        let mut user = windows::Win32::Foundation::FILETIME::default();
+        let result =
+            unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) };
+        unsafe {
+            let _ = CloseHandle(handle);
+        }
+        return result
+            .ok()
+            .map(|_| {
+                ProcessIdentity::Windows(
+                    (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime),
+                )
+            })
+            .unwrap_or(ProcessIdentity::Unavailable);
+    }
+
+    #[cfg(unix)]
+    return match read_unix_process_start_ticks(pid) {
+        Ok(start_ticks) => ProcessIdentity::Unix(start_ticks),
+        Err(ProcessObservation::Missing) => ProcessIdentity::Gone,
+        Err(_) => ProcessIdentity::Unavailable,
+    };
+
+    #[cfg(not(any(target_os = "windows", unix)))]
+    {
+        let _ = pid;
+        ProcessIdentity::Unavailable
+    }
+}
+
+fn observe_process_identity(process: &StartedProcess) -> ProcessObservation {
+    match process.identity {
+        ProcessIdentity::Gone => ProcessObservation::Missing,
+        ProcessIdentity::Unavailable => ProcessObservation::Unavailable,
         #[cfg(target_os = "windows")]
-        {
-            let _ = std::process::Command::new("taskkill")
-                .args(["/PID", &pid.to_string(), "/T", "/F"])
-                .output();
+        ProcessIdentity::Windows(expected) => observe_windows_process(process.pid, expected),
+        #[cfg(unix)]
+        ProcessIdentity::Unix(expected) => match read_unix_process_start_ticks(process.pid) {
+            Ok(observed) if observed == expected => ProcessObservation::Match,
+            Ok(_) => ProcessObservation::Mismatch,
+            Err(ProcessObservation::Missing) => ProcessObservation::Missing,
+            Err(_) => ProcessObservation::Unavailable,
+        },
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn observe_windows_process(pid: u32, expected: u64) -> ProcessObservation {
+    use windows::core::HRESULT;
+    use windows::Win32::Foundation::{CloseHandle, ERROR_INVALID_PARAMETER, FILETIME};
+    use windows::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    let handle = match unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) } {
+        Ok(handle) => handle,
+        Err(error) if error.code() == HRESULT::from_win32(ERROR_INVALID_PARAMETER.0) => {
+            return ProcessObservation::Missing
         }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = std::process::Command::new("kill")
-                .args(["-TERM", &pid.to_string()])
-                .output();
+        Err(_) => return ProcessObservation::Unavailable,
+    };
+    let mut creation = FILETIME::default();
+    let mut exit = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    let result =
+        unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) };
+    unsafe {
+        let _ = CloseHandle(handle);
+    }
+    let Ok(()) = result else {
+        return ProcessObservation::Unavailable;
+    };
+    let observed = (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime);
+    if observed == expected {
+        ProcessObservation::Match
+    } else {
+        ProcessObservation::Mismatch
+    }
+}
+
+#[cfg(unix)]
+fn read_unix_process_start_ticks(pid: u32) -> Result<u64, ProcessObservation> {
+    let path = format!("/proc/{pid}/stat");
+    let file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(ProcessObservation::Missing)
         }
+        Err(_) => return Err(ProcessObservation::Unavailable),
+    };
+    let mut text = String::new();
+    let mut bounded = file.take((MAX_PROCESS_STAT_BYTES + 1) as u64);
+    bounded
+        .read_to_string(&mut text)
+        .map_err(|_| ProcessObservation::Unavailable)?;
+    if text.len() > MAX_PROCESS_STAT_BYTES {
+        return Err(ProcessObservation::Unavailable);
+    }
+    // The comm field may contain spaces and parentheses, so locate its final
+    // closing parenthesis before splitting the remaining fields. Field 22
+    // (starttime) is the 20th token after `comm`.
+    let Some(comm_end) = text.rfind(") ") else {
+        return Err(ProcessObservation::Unavailable);
+    };
+    text[comm_end + 2..]
+        .split_whitespace()
+        .nth(19)
+        .and_then(|value| value.parse::<u64>().ok())
+        .ok_or(ProcessObservation::Unavailable)
+}
+
+#[cfg(not(unix))]
+fn wait_for_termination(mut child: std::process::Child) -> bool {
+    let deadline = Instant::now()
+        .checked_add(PROCESS_TERMINATION_TIMEOUT)
+        .unwrap_or_else(Instant::now);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Ok(None) => {
+                // Never leave the helper command itself running after the
+                // bounded cleanup window. A timeout is reported as a failed
+                // termination so the run keeps ownership for a later retry.
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+            Err(_) => return false,
+        }
+    }
+}
+
+/// Terminate one process tree and report whether the OS accepted the request.
+/// The caller deliberately does not expose the command output: taskkill/kill
+/// diagnostics can contain machine paths or account names.  A failed stop is
+/// retained in the run registry so a transient access/exit race cannot turn a
+/// still-owned process into an untracked orphan.
+fn terminate_started_pid(pid: u32) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        // `/T` is required because the devbox app may have spawned a WebView2
+        // or helper process; `/F` is restricted to this Workbench-owned PID
+        // tree and is never used for an externally discovered process.
+        use std::os::windows::process::CommandExt;
+        let mut command = std::process::Command::new("taskkill");
+        command
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .creation_flags(0x0800_0000)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        return command.spawn().is_ok_and(wait_for_termination);
+    }
+
+    #[cfg(unix)]
+    {
+        let Ok(process_group) = i32::try_from(pid) else {
+            return false;
+        };
+        // launch::launch creates a private process group for Workbench-owned
+        // apps. Signal the group, not just the root, and wait until every
+        // member is gone. An app which ignores TERM receives one bounded KILL
+        // escalation; failure to prove disappearance retains ownership.
+        let term_result = unsafe { libc::kill(-process_group, libc::SIGTERM) };
+        if term_result != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::ESRCH) {
+                return true;
+            }
+            return false;
+        }
+        if wait_for_process_group(process_group, PROCESS_TERMINATION_TIMEOUT) {
+            return true;
+        }
+        if unsafe { libc::kill(-process_group, libc::SIGKILL) } != 0 {
+            return std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+        }
+        wait_for_process_group(process_group, Duration::from_millis(500))
+    }
+
+    #[cfg(not(any(target_os = "windows", unix)))]
+    {
+        let mut command = std::process::Command::new("kill");
+        command
+            .args(["-TERM", &pid.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        command.spawn().is_ok_and(wait_for_termination)
+    }
+}
+
+#[cfg(unix)]
+fn wait_for_process_group(process_group: i32, timeout: Duration) -> bool {
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .unwrap_or_else(Instant::now);
+    loop {
+        let result = unsafe { libc::kill(-process_group, 0) };
+        if result == 0 {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+            continue;
+        }
+        return match std::io::Error::last_os_error().raw_os_error() {
+            Some(libc::ESRCH) => true,
+            // EPERM means a process in the group still exists but cannot be
+            // inspected. Keep ownership rather than claiming cleanup.
+            Some(libc::EPERM) => {
+                if Instant::now() >= deadline {
+                    false
+                } else {
+                    std::thread::sleep(Duration::from_millis(25));
+                    continue;
+                }
+            }
+            _ => false,
+        };
     }
 }
 
@@ -1560,33 +2488,55 @@ pub fn stop_workspace(
     run_id: String,
     profile_id: String,
 ) -> Result<usize, String> {
+    validate_profile_id(&profile_id)?;
+    validate_profile_id(&run_id)?;
+    let _transition_claim = claim_workspace_transition(&registry.starting_profile, &profile_id)
+        .map_err(str::to_string)?;
+    let mut run = {
+        let runs = registry
+            .runs
+            .lock()
+            .map_err(|_| "실행 상태를 확인할 수 없습니다".to_string())?;
+        let Some(current) = runs.get(&run_id) else {
+            return Ok(0);
+        };
+        if current.profile_id != profile_id {
+            return Err("선택한 프로필의 실행 기록이 아닙니다".into());
+        }
+        current.clone()
+    };
+    let mut remaining_pids = Vec::new();
+    let mut stopped = 0;
+    for process in std::mem::take(&mut run.started_pids) {
+        if terminate_started_process(&process) {
+            stopped += 1;
+        } else {
+            remaining_pids.push(process);
+        }
+    }
+    // Keep the authoritative run visible while the OS helper runs. Commit the
+    // removal only after all recorded roots have been handled; a concurrent
+    // current_workspace_run therefore never observes a transient "no run"
+    // state during Stop. Failed/mismatched ownership remains actionable.
     let mut runs = registry
         .runs
         .lock()
-        .map_err(|_| "실행 상태를 확인할 수 없습니다".to_string())?;
-    let Some(run) = take_profile_run(&mut runs, &run_id, &profile_id).map_err(str::to_string)?
-    else {
-        return Ok(0);
-    };
-    let stopped: usize = run
-        .started_pids
-        .iter()
-        .filter(|pid| {
-            #[cfg(target_os = "windows")]
-            {
-                // 생성한 프로세스만 종료 (Workbench가 시작한 것)
-                std::process::Command::new("taskkill")
-                    .args(["/PID", &pid.to_string(), "/T", "/F"])
-                    .output()
-                    .is_ok()
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                let _ = pid;
-                false
-            }
-        })
-        .count();
+        .map_err(|_| "실행 상태를 저장할 수 없습니다".to_string())?;
+    let current = runs
+        .get(&run_id)
+        .ok_or_else(|| "Workspace 실행 상태가 변경되어 중지를 완료할 수 없습니다".to_string())?;
+    if current.profile_id != profile_id {
+        return Err("선택한 프로필의 실행 기록이 아닙니다".into());
+    }
+    if remaining_pids.is_empty() {
+        runs.remove(&run_id);
+    } else if let Some(current) = runs.get_mut(&run_id) {
+        // Keep only ownership that still needs a subsequent stop attempt. We
+        // intentionally retain the run when any OS termination was rejected;
+        // removing it here would make Stop What I Started unable to recover
+        // from a temporary process/access race.
+        current.started_pids = remaining_pids;
+    }
     Ok(stopped)
 }
 
@@ -1826,6 +2776,7 @@ mod tests {
 
     #[test]
     fn health_operation_keys_do_not_collide_on_printable_separators() {
+        assert!(health_operation_key("project", None).starts_with("project-health\0"));
         assert_ne!(
             health_operation_key("project:one", Some("request")),
             health_operation_key("project", Some("one:request"))
@@ -1845,6 +2796,70 @@ mod tests {
             port_open_with_control(9, &token, budget),
             Err(OperationError::Cancelled)
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn started_process_identity_matches_the_same_linux_process() {
+        let pid = std::process::id();
+        let process = StartedProcess::new("workbench-test", pid);
+        assert!(matches!(process.identity, ProcessIdentity::Unix(_)));
+        assert_eq!(
+            observe_process_identity(&process),
+            ProcessObservation::Match
+        );
+
+        let mismatched = StartedProcess {
+            app_id: "workbench-test",
+            pid,
+            identity: ProcessIdentity::Unix(match process.identity {
+                ProcessIdentity::Unix(start_ticks) => start_ticks.saturating_add(1),
+                _ => unreachable!("the current Linux process must have a /proc identity"),
+            }),
+        };
+        assert_eq!(
+            observe_process_identity(&mismatched),
+            ProcessObservation::Mismatch
+        );
+    }
+
+    #[test]
+    fn gone_process_identity_is_a_safe_cleanup_outcome() {
+        let process = StartedProcess {
+            app_id: "workbench-test",
+            pid: u32::MAX,
+            identity: ProcessIdentity::Gone,
+        };
+        assert_eq!(
+            observe_process_identity(&process),
+            ProcessObservation::Missing
+        );
+    }
+
+    #[test]
+    fn failed_transition_cleanup_publishes_stop_only_ownership() {
+        let registry = run_registry();
+        let mut guard = StartedPidGuard::new(&registry, "profile-1", None);
+        let process = StartedProcess {
+            app_id: "code-pad",
+            pid: u32::MAX,
+            identity: ProcessIdentity::Unavailable,
+        };
+        guard.pids.push(process);
+        guard.recorded.push(process);
+
+        guard.rollback();
+
+        let runs = registry.runs.lock().unwrap();
+        let run = runs.values().next().expect("failed cleanup is visible");
+        assert_eq!(run.profile_id, "profile-1");
+        assert!(!run.can_retry);
+        assert_eq!(run.started_pids, vec![process]);
+        assert!(run.resource_provenance.iter().any(|resource| {
+            resource.kind == "process"
+                && resource.id == "code-pad"
+                && resource.state == ResourceState::WorkbenchStarted
+        }));
     }
 
     #[test]
@@ -1921,8 +2936,11 @@ mod tests {
             run_id: run_id.to_string(),
             profile_id: profile_id.to_string(),
             steps: Vec::new(),
-            started_pids: vec![101],
+            started_pids: vec![StartedProcess::new("workbench-test", 101)],
             resource_provenance: Vec::new(),
+            retry_count: 0,
+            can_retry: false,
+            failed_step: None,
         }
     }
 
@@ -1970,6 +2988,7 @@ mod tests {
         let one = HashMap::from([("run-1".to_string(), sensitive_run)]);
         let ownership = single_workspace_run(&one).unwrap().unwrap();
         assert_eq!(ownership.run_id, "run-1");
+        assert!(ownership.failed_step.is_none());
         let json = serde_json::to_string(&ownership).unwrap();
         assert!(!json.contains("TOP_SECRET"));
         assert!(!json.contains("startedPids"));
@@ -1987,6 +3006,77 @@ mod tests {
             single_workspace_run(&multiple),
             Err("여러 Workspace 실행 상태를 안전하게 복원할 수 없습니다")
         ));
+    }
+
+    #[test]
+    fn retry_metadata_exposes_only_known_failed_step_and_owned_processes() {
+        let steps = vec![
+            RunStep {
+                name: "required-apps".into(),
+                ok: true,
+                detail: "필수 devbox 앱을 사용할 수 있습니다".into(),
+                status: PreflightStatus::Pass,
+            },
+            RunStep {
+                name: WAIT_PORT_STEP.into(),
+                ok: true,
+                detail: "예상 TCP port를 사용할 수 있습니다".into(),
+                status: PreflightStatus::Pass,
+            },
+            RunStep {
+                name: OPEN_WSL_STEP.into(),
+                ok: true,
+                detail: "wsl-desktop을 시작했습니다".into(),
+                status: PreflightStatus::Pass,
+            },
+            RunStep {
+                name: OPEN_CODE_PAD_STEP.into(),
+                ok: false,
+                detail: "code-pad를 시작할 수 없습니다".into(),
+                status: PreflightStatus::Failure,
+            },
+        ];
+        let resources = vec![ResourceProvenance {
+            kind: "process".into(),
+            id: "wsl-desktop".into(),
+            state: ResourceState::WorkbenchStarted,
+        }];
+        let (can_retry, failed_step) = retry_metadata(&steps, &resources);
+        assert!(can_retry);
+        assert_eq!(failed_step.as_deref(), Some(OPEN_CODE_PAD_STEP));
+    }
+
+    #[test]
+    fn merge_resource_provenance_keeps_existing_process_ownership_once() {
+        let observed = vec![ResourceProvenance {
+            kind: "app".into(),
+            id: "code-pad:workspace".into(),
+            state: ResourceState::Available,
+        }];
+        let existing = vec![
+            ResourceProvenance {
+                kind: "app".into(),
+                id: "code-pad:workspace".into(),
+                state: ResourceState::Available,
+            },
+            ResourceProvenance {
+                kind: "process".into(),
+                id: "wsl-desktop".into(),
+                state: ResourceState::WorkbenchStarted,
+            },
+        ];
+        let merged = merge_resource_provenance(observed, &existing);
+        assert_eq!(merged.len(), 2);
+        assert!(has_owned_process(&merged, "wsl-desktop"));
+
+        let mut external = vec![ResourceProvenance {
+            kind: "process".into(),
+            id: "code-pad".into(),
+            state: ResourceState::Existing,
+        }];
+        append_process_resource(&mut external, "code-pad");
+        assert_eq!(external.len(), 1);
+        assert!(!has_owned_process(&external, "code-pad"));
     }
 
     #[cfg(unix)]

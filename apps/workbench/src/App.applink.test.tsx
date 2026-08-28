@@ -9,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./api", () => ({
+  cancelDependencyHealth: vi.fn().mockResolvedValue(false),
   cancelProjectEnvironment: vi.fn().mockResolvedValue(false),
   cancelProjectHealth: vi.fn().mockResolvedValue(false),
   cancelStartWorkspace: vi.fn().mockResolvedValue(false),
+  cancelWorkspacePreflight: vi.fn().mockResolvedValue(false),
   listProfiles: vi.fn().mockResolvedValue([
     {
       id: "p-1",
@@ -25,10 +27,17 @@ vi.mock("./api", () => ({
     },
   ]),
   createProfile: vi.fn(),
+  createProfileFromTemplate: vi.fn(),
+  createProfileTemplate: vi.fn(),
   currentWorkspaceRun: vi.fn().mockResolvedValue(null),
   deleteProfile: vi.fn(),
+  deleteProfileTemplate: vi.fn(),
+  dependencyHealth: vi.fn().mockResolvedValue({ profileId: "p-1", ready: true, items: [] }),
+  listProfileTemplates: vi.fn().mockResolvedValue([]),
   updateProfile: vi.fn(),
+  updateProfileTemplate: vi.fn(),
   projectHealth: vi.fn().mockResolvedValue({ profileId: "p-1", items: [] }),
+  retryWorkspace: vi.fn(),
   startWorkspace: vi.fn(),
   stopWorkspace: vi.fn(),
   workspacePreflight: vi.fn().mockResolvedValue({ profileId: "p-1", ready: true, items: [] }),

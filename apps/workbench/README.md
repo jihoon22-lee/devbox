@@ -69,7 +69,9 @@ v0.4.1의 `Path`에는 distro나 profile 정보가 없다. 따라서 Start Works
   clipboard, telemetry, snapshot, Run Manager DB에는 raw value가 없다.
 - preview(5초), health/Git/WSL/snapshot(10초), Start Workspace(30초)는 하나의
   monotonic operation budget을 공유한다. 같은 종류의 native 요청은 single-flight로
-  제한하고, 새 preview/health는 이전 작업의 cancellation bit를 세운다. preview와 health의
+  제한하고, 새 preview/health는 같은 read-only operation family의 이전 작업만
+  cancellation bit를 세운다. 서로 다른 health surface는 같은 lane에서 순차 실행되며,
+  read-only refresh는 진행 중인 `workspace-start` mutation을 취소하지 않는다. preview와 health의
   cancel은 per-request exact key를 사용해 늦은 navigation 요청이 새 작업을 취소하지 않는다.
   이전 작업 종료를 기다리는 pending request도 같은 exact key ticket으로 취소할 수 있고,
   blocking worker와 WSL native-child worker lease가 실제 native 작업 종료 전 slot을 유지한다.
@@ -116,6 +118,50 @@ start를 fail-closed하고 Workbench가 시작한 PID만 rollback한다. 검토�
 - #313는 service 생성·수정·시작, 자동 복구/강제 종료, global environment editor, cloud
   store, `.env` write/upload를 포함하지 않는다. #312의 bounded parser·masked preview·revision/
   metadata-only persistence와 child overlay 보안 경계는 별도 acceptance로 유지한다.
+
+### P3-14 resilience/inspection 후보 (#359, #360, #361)
+
+세 이슈는 `프로필 템플릿 선택 → 새 프로젝트 wizard → dependency health 확인 →
+Start Workspace 결과 → 실패 단계 retry`라는 하나의 Workbench 사용자 흐름으로
+검토한다. 전용 구현 후보와 acceptance/rollback 표는
+[`docs/superpowers/plans/2026-08-28-workbench-resilience-tools.md`](../../docs/superpowers/plans/2026-08-28-workbench-resilience-tools.md)에
+기록되어 있으며, 세 이슈의 데이터·관찰·실행 경계는 서로 섞지 않는다.
+
+- **프로필 템플릿과 wizard (#359)** — `%LOCALAPPDATA%\com.devbox.workbench\profile-templates.json`
+  별도 저장소에 bounded template CRUD를 둔다. 이름, 선택적 Windows/WSL/Git 기본
+  경로, 예상 port와 Run Manager service ID만 저장하며 `.env`, secret reference,
+  raw value/ciphertext는 저장하지 않는다. wizard는 사용자가 입력한 값을 우선하고
+  비어 있는 field에만 기본값을 적용한다. template/profile validation, symlink/reparse
+  거부, raw-byte CAS와 atomic write가 실패하면 기존 파일과 프로젝트 파일을 보존한다.
+- **Dependency health (#360)** — `dependency_health`와 `workspace_preflight`는
+  `health_operation` single-flight lane에서 Start Workspace/project health와
+  native probe를 직렬화한다. Start Workspace preflight의 bounded DTO와 probe를
+  그대로 재사용해 required app capability, distro/path, port와 service dependency를
+  `pass/warning/failure/unavailable` 및 `ResourceProvenance`로 표시한다. read-only
+  관찰만 하며 앱 설치, WSL/service 시작, 자동 복구와 외부 DB 변경은 하지 않는다.
+  stale 응답은 현재 profile 화면을 덮어쓰지 않는다.
+- **Idempotent retry (#361)** — 실패한 `wait-port → open-wsl-desktop → open-code-pad`
+  suffix만 다시 실행하고, 성공한 단계·Workbench가 시작한 process·기존 external
+  resource는 다시 시작하지 않는다. profile/preflight/environment를 실행 직전에
+  재검증하고, 전환 무결성이 깨지면 이번 retry가 새로 만든 PID만 rollback한다.
+  일반적인 앱 launch failure는 고정된 partial run으로 남겨 `Stop What I Started`가
+  Workbench-owned process tree만 정리하게 한다. OS가 종료를 거부한 PID는 실행
+  기록에 남겨 후속 Stop 재시도가 가능하다. 서비스 자동 시작이나 전체 Workspace
+  재시작은 범위 밖이다.
+
+구현 보강 단계에서는 동시 작업과 `/mnt/e` 9p I/O를 고려해 검증 worker를 직렬화했다.
+최신 변경 기준으로 `cargo fmt --all -- --check`, `git diff --check`,
+`cargo check -p workbench -p launch -j1`,
+`cargo test -p workbench -p launch -j1`(workbench 113개, launch 25개),
+`cargo clippy -p workbench -p launch --all-targets -j1 -- -D warnings`, 그리고
+`pnpm --dir apps/workbench exec tsc --noEmit`, `pnpm --dir apps/workbench build`를 통과했다. 프론트 Vitest는
+9p 마운트의 정체를 피하려고 제한 worker로 시도했으나 최신 UI 취소/Stop 회귀 fixture를
+포함한 재실행이 오래 대기하여 우리 프로세스만 중단했다. 따라서 parent가 자원 여유가
+있는 시점에 최신 `pnpm --dir apps/workbench test`, 전체 workspace gate, CI와 Windows
+packaged acceptance를 PR 직전에 다시 수행해야 한다.
+WSL의 Windows GNU source check는 Tauri build script 단계에서 호스트에
+`x86_64-w64-mingw32-windres`가 없어 중단되었으므로, 이는 소스 오류가 아닌 toolchain
+환경 제약이며 Windows packaged acceptance를 별도로 통과해야 한다.
 
 ## 개발
 

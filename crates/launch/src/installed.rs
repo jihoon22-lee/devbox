@@ -12,6 +12,7 @@ pub const MAX_INSTALL_ROOT_PATH_BYTES: usize = 4_096;
 pub const MAX_INSTALL_ROOT_LOCATOR_BYTES: u64 = 16 * 1024;
 pub const MAX_INSTALL_MANIFEST_BYTES: u64 = 1_048_576;
 pub const MAX_INSTALL_MANIFEST_ENTRIES: usize = 256;
+const MAX_RUNTIME_CATALOG_BYTES: u64 = 1_048_576;
 const BUILD_CATALOG: &str = include_str!("../../../apps/catalog.json");
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -173,7 +174,8 @@ pub fn installed_targets_from_paths(
     legacy_base: Option<&Path>,
     capability: &str,
 ) -> Result<Vec<InstalledTarget>, InstallLookupError> {
-    let runtime = runtime_catalog_path.and_then(|path| std::fs::read_to_string(path).ok());
+    let runtime = runtime_catalog_path
+        .and_then(|path| read_bounded_text(path, MAX_RUNTIME_CATALOG_BYTES).ok());
     let selected = select_catalog(build_catalog, runtime.as_deref()).map_err(map_catalog_error)?;
     let targets = capable_targets(&selected.catalog, capability);
     let locator = read_locator_state(locator_path);
@@ -206,7 +208,8 @@ pub fn validate_installation_metadata_from_paths(
     runtime_catalog_path: Option<&Path>,
     locator_path: &Path,
 ) -> Result<(), InstallLookupError> {
-    let runtime = runtime_catalog_path.and_then(|path| std::fs::read_to_string(path).ok());
+    let runtime = runtime_catalog_path
+        .and_then(|path| read_bounded_text(path, MAX_RUNTIME_CATALOG_BYTES).ok());
     let selected = select_catalog(build_catalog, runtime.as_deref()).map_err(map_catalog_error)?;
     let LocatorState::Valid(locator) = read_locator_state(Some(locator_path)) else {
         return Err(InstallLookupError::InvalidLocator);
@@ -233,7 +236,8 @@ pub fn installed_path_details_from_paths(
     if path_is_link_or_reparse(&locator_metadata) || !locator_metadata.is_file() {
         return Err(InstallLookupError::InvalidLocator);
     }
-    let runtime = runtime_catalog_path.and_then(|path| std::fs::read_to_string(path).ok());
+    let runtime = runtime_catalog_path
+        .and_then(|path| read_bounded_text(path, MAX_RUNTIME_CATALOG_BYTES).ok());
     let selected = select_catalog(build_catalog, runtime.as_deref()).map_err(map_catalog_error)?;
     if !selected
         .catalog
@@ -1018,6 +1022,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(newer[0].id, "fake-sixteenth");
+
+        fs::write(
+            &runtime_path,
+            vec![b'x'; (MAX_RUNTIME_CATALOG_BYTES as usize).saturating_add(1)],
+        )
+        .unwrap();
+        let oversized = installed_targets_from_paths(
+            &build,
+            Some(&runtime_path),
+            Some(&layout.locator),
+            None,
+            "path",
+        )
+        .unwrap();
+        assert_eq!(oversized[0].id, "code-pad");
     }
 
     #[test]

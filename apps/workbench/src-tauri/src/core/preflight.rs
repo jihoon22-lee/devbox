@@ -106,6 +106,12 @@ pub struct WorkspacePreflight {
     pub items: Vec<PreflightItem>,
 }
 
+/// Dependency health uses the same bounded, provenance-carrying DTO as the
+/// Start Workspace review.  Keeping one wire shape prevents the inspection
+/// view and the launch gate from disagreeing about installed/absent/conflict
+/// states.
+pub type DependencyHealth = WorkspacePreflight;
+
 impl WorkspacePreflight {
     pub fn new(profile_id: impl Into<String>, items: Vec<PreflightItem>) -> Self {
         let ready = items.iter().all(|item| item.status.is_non_blocking());

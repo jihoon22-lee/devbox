@@ -105,8 +105,8 @@ impl OperationBudget {
 }
 
 /// A process-local single-flight coordinator. Command layers cancel an older
-/// claim, wait for its worker to drop the slot, and then use `claim_reject` to
-/// admit exactly one native operation.
+/// same-family claim when appropriate, wait for its worker to drop the slot,
+/// and then use `claim_reject` to admit exactly one native operation.
 pub struct SingleFlight {
     state: Mutex<FlightState>,
 }
@@ -377,9 +377,9 @@ impl SingleFlight {
     }
 
     /// Claim a slot with a caller-owned token. Start Workspace uses this to
-    /// reserve the health/Git native lane for its whole transition while
-    /// still letting an explicit newer health request cancel the transition's
-    /// shared token.
+    /// reserve the health/Git native lane for its whole transition. Read-only
+    /// refreshes cancel their own older health work, but the command boundary
+    /// protects this transition's shared token.
     pub fn claim_reject_with_token(
         self: &Arc<Self>,
         key: impl Into<String>,
@@ -467,6 +467,62 @@ impl SingleFlight {
         Ok(cancelled)
     }
 
+    /// Cancel active and queued operations except one protected transition.
+    /// Read-only refreshes use this boundary so a health request cannot cancel
+    /// an in-progress mutation such as Start Workspace. The protected key is
+    /// supplied by the command layer and is never derived from renderer input.
+    pub fn cancel_active_except(&self, protected_key: &str) -> Result<bool, &'static str> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| "작업 상태를 확인할 수 없습니다")?;
+        let mut cancelled = false;
+        if let Some(current) = state
+            .active
+            .as_ref()
+            .filter(|current| current.key != protected_key)
+        {
+            current.token.cancel();
+            cancelled = true;
+        }
+        for (key, current) in &state.pending {
+            if key != protected_key {
+                current.cancel();
+                cancelled = true;
+            }
+        }
+        Ok(cancelled)
+    }
+
+    /// Supersede only one read-only operation family. Independent health
+    /// surfaces (for example project health and dependency health) share the
+    /// same native lane but must not cancel one another merely because their
+    /// requests start during the same render. The command layer supplies a
+    /// fixed family name; renderer input is part of the exact key, not this
+    /// selector.
+    pub fn cancel_kind(&self, kind: &str) -> Result<bool, &'static str> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| "작업 상태를 확인할 수 없습니다")?;
+        let mut cancelled = false;
+        if let Some(current) = state
+            .active
+            .as_ref()
+            .filter(|current| operation_kind(&current.key) == kind)
+        {
+            current.token.cancel();
+            cancelled = true;
+        }
+        for (key, current) in &state.pending {
+            if operation_kind(key) == kind {
+                current.cancel();
+                cancelled = true;
+            }
+        }
+        Ok(cancelled)
+    }
+
     /// Wait until a previously cancelled claim has dropped its slot. A new
     /// native operation must not merely replace the pointer while the old
     /// worker is still unwinding; doing so would turn single-flight into a
@@ -508,6 +564,10 @@ pub async fn wait_for_change(token: OperationToken, budget: OperationBudget) -> 
 
 pub const fn poll_interval() -> Duration {
     POLL_INTERVAL
+}
+
+fn operation_kind(key: &str) -> &str {
+    key.split('\0').next().unwrap_or(key)
 }
 
 #[cfg(test)]
@@ -587,6 +647,38 @@ mod tests {
         assert!(flight.claim_reject("next").is_err());
         drop(worker);
         assert!(flight.claim_reject("next").is_ok());
+    }
+
+    #[test]
+    fn read_only_cancellation_does_not_cancel_a_protected_transition() {
+        let flight = SingleFlight::new();
+        let transition = flight.claim_reject("workspace-start").unwrap();
+        let transition_token = transition.token();
+        let pending = flight.prepare("health\0profile").unwrap();
+        let health_token = pending.token();
+
+        assert!(flight.cancel_active_except("workspace-start").unwrap());
+        assert!(!transition_token.is_cancelled());
+        assert!(health_token.is_cancelled());
+
+        drop(pending);
+        drop(transition);
+    }
+
+    #[test]
+    fn independent_read_only_families_share_the_lane_without_cancelling_each_other() {
+        let flight = SingleFlight::new();
+        let project = flight.claim_reject("project-health\0p-1\0req-1").unwrap();
+        let project_token = project.token();
+        let dependency = flight.prepare("dependency-health\0p-1\0req-2").unwrap();
+        let dependency_token = dependency.token();
+
+        assert!(flight.cancel_kind("project-health").unwrap());
+        assert!(project_token.is_cancelled());
+        assert!(!dependency_token.is_cancelled());
+
+        drop(dependency);
+        drop(project);
     }
 
     #[test]

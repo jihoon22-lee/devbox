@@ -13,6 +13,17 @@ export interface ProjectProfile {
   environment: ProjectEnvironment | null;
 }
 
+/** Safe, project-independent defaults stored by Workbench's template CRUD. */
+export interface ProfileTemplate {
+  id: string;
+  name: string;
+  windowsPath: string | null;
+  wsl: { distro: string; path: string } | null;
+  gitRoot: string | null;
+  expectedPorts: number[];
+  runManagerServiceIds: string[];
+}
+
 export type EnvironmentConflict = "none" | "duplicate" | "reserved" | "duplicateAndReserved";
 
 export interface SecretReference {
@@ -104,11 +115,17 @@ export interface WorkspaceRun {
   profileId: string;
   steps: RunStep[];
   resourceProvenance: ResourceProvenance[];
+  retryCount?: number;
+  canRetry?: boolean;
+  failedStep?: string | null;
 }
 
 export interface WorkspaceRunOwnership {
   runId: string;
   profileId: string;
+  retryCount?: number;
+  canRetry?: boolean;
+  failedStep?: string | null;
 }
 
 export interface WorkbenchOpenTarget {
@@ -152,6 +169,36 @@ export function listProfiles(): Promise<ProjectProfile[]> {
 export function createProfile(profile: ProjectProfile): Promise<ProjectProfile> {
   if (!isTauri()) return Promise.resolve(profile);
   return invoke<ProjectProfile>("create_profile", { profile });
+}
+
+export function listProfileTemplates(): Promise<ProfileTemplate[]> {
+  if (!isTauri()) return Promise.resolve([]);
+  return invoke<ProfileTemplate[]>("list_profile_templates");
+}
+
+export function createProfileTemplate(template: ProfileTemplate): Promise<ProfileTemplate> {
+  if (!isTauri()) return Promise.resolve(template);
+  return invoke<ProfileTemplate>("create_profile_template", { template });
+}
+
+export function updateProfileTemplate(template: ProfileTemplate): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("update_profile_template", { template });
+}
+
+export function deleteProfileTemplate(id: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("delete_profile_template", { id });
+}
+
+export function createProfileFromTemplate(
+  templateId: string | null,
+  profile: ProjectProfile,
+): Promise<ProjectProfile> {
+  if (!isTauri()) return Promise.resolve(profile);
+  return invoke<ProjectProfile>("create_profile_from_template", {
+    request: { templateId, profile },
+  });
 }
 
 export function updateProfile(profile: ProjectProfile): Promise<void> {
@@ -199,6 +246,8 @@ function createOperationRequestId(prefix: string): string {
 }
 
 let activeProjectHealthRequest: { profileId: string; requestId: string } | null = null;
+let activeWorkspacePreflightRequest: { profileId: string; requestId: string } | null = null;
+let activeDependencyHealthRequest: { profileId: string; requestId: string } | null = null;
 
 export function workspacePreflight(profileId: string): Promise<WorkspacePreflight> {
   if (!isTauri()) {
@@ -242,7 +291,47 @@ export function workspacePreflight(profileId: string): Promise<WorkspacePrefligh
       ],
     });
   }
-  return invoke<WorkspacePreflight>("workspace_preflight", { profileId });
+  const requestId = createOperationRequestId("preflight");
+  activeWorkspacePreflightRequest = { profileId, requestId };
+  return invoke<WorkspacePreflight>("workspace_preflight", { profileId, requestId }).finally(() => {
+    if (activeWorkspacePreflightRequest?.requestId === requestId) {
+      activeWorkspacePreflightRequest = null;
+    }
+  });
+}
+
+/** Read-only dependency health shares the preflight DTO and provenance. */
+export function dependencyHealth(profileId: string): Promise<WorkspacePreflight> {
+  if (!isTauri()) return workspacePreflight(profileId);
+  const requestId = createOperationRequestId("dependency-health");
+  activeDependencyHealthRequest = { profileId, requestId };
+  return invoke<WorkspacePreflight>("dependency_health", { profileId, requestId }).finally(() => {
+    if (activeDependencyHealthRequest?.requestId === requestId) {
+      activeDependencyHealthRequest = null;
+    }
+  });
+}
+
+/** Cancels the exact preflight request currently owned by this renderer. */
+export function cancelWorkspacePreflight(profileId: string): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  const request = activeWorkspacePreflightRequest;
+  if (!request || request.profileId !== profileId) return Promise.resolve(false);
+  return invoke<boolean>("cancel_workspace_preflight", {
+    profileId,
+    requestId: request.requestId,
+  });
+}
+
+/** Cancels the exact dependency-health request currently owned by this renderer. */
+export function cancelDependencyHealth(profileId: string): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  const request = activeDependencyHealthRequest;
+  if (!request || request.profileId !== profileId) return Promise.resolve(false);
+  return invoke<boolean>("cancel_dependency_health", {
+    profileId,
+    requestId: request.requestId,
+  });
 }
 
 export function startWorkspace(profileId: string): Promise<WorkspaceRun> {
@@ -250,6 +339,22 @@ export function startWorkspace(profileId: string): Promise<WorkspaceRun> {
     return Promise.resolve({ runId: "r-1", profileId, steps: [], resourceProvenance: [] });
   }
   return invoke<WorkspaceRun>("start_workspace", { profileId });
+}
+
+/** Retry only the first failed bounded step and its unfinished suffix. */
+export function retryWorkspace(runId: string, profileId: string): Promise<WorkspaceRun> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      runId,
+      profileId,
+      steps: [],
+      resourceProvenance: [],
+      retryCount: 1,
+      canRetry: false,
+      failedStep: null,
+    });
+  }
+  return invoke<WorkspaceRun>("retry_workspace", { runId, profileId });
 }
 
 /** Cancels the backend transition and its native child/git work. */
