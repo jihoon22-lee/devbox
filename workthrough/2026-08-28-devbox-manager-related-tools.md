@@ -15,11 +15,12 @@ The implementation stays separate from the devbox app catalog and applink
 contracts. It does not add package search, automatic updates or removal, native
 action replacements, arbitrary paths, arbitrary commands, or external state
 changes without confirmation. The feature commits and follow-up review changes
-were preserved for the parent agent's final rebase and PR review.
+were integrated with the existing Data Inspector/support-bundle UI during the
+final rebase and preserved as independent Manager capabilities.
 
 ## Context
 
-- Base: existing feature branch / `2b537440ad5510d7d636e36ac40e7b95398d939f`
+- Base: `main` / `4a1a61a746ef03b7f6f9c548e75e81d2df32064c`
 - Worktree: `/mnt/e/projects/devbox-worktrees/devbox-manager-related-tools`
 - Branch: `feat/devbox-manager/related-tools`
 - Issue: `https://github.com/jihoon22-lee/devbox/issues/365`
@@ -311,3 +312,34 @@ cargo test/check/clippy -p devbox-manager             pending after rebase:
 The Rust failure is a base-age mismatch (`launch::open_argv` still expects the
 pre-main `applink::build_argv` return type), not a Related Tools compile result.
 The parent must rebase onto the current main before claiming native gates.
+
+## Post-rebase integrated validation
+
+The parent rebased the candidate onto `main` at `4a1a61a` and resolved the
+overlap with Devbox Manager Data Inspector/support bundle by retaining both
+feature sets: command registrations, types, state/request guards, tests,
+documentation, and CSS remain present. The rebase removed the stale
+`launch`/`applink` API mismatch, and the complete affected package now compiles
+and tests together.
+
+The Windows suspended-process boundary was tightened once more: after
+`CreateProcessW(CREATE_SUSPENDED)` and Job assignment, `ResumeThread` must
+return an exact previous suspend count of one. Any other value terminates and
+reaps the process instead of returning a potentially still-suspended or
+unexpectedly resumed installer.
+
+```text
+CARGO_TARGET_DIR=.../devbox-manager-354 cargo test -p devbox-manager --lib -j2   PASS (123 tests)
+CARGO_TARGET_DIR=.../devbox-manager-354 cargo check -p devbox-manager -j2        PASS
+CARGO_TARGET_DIR=.../devbox-manager-354 cargo clippy -p devbox-manager \
+  --all-targets -j2 -- -D warnings                                               PASS
+cargo fmt --all -- --check                                                       PASS
+git diff --check                                                                  PASS
+pnpm --filter devbox-manager test                                                 PASS (2 files, 37 tests)
+pnpm --filter devbox-manager build                                                PASS (tsc + Vite, 42 modules)
+```
+
+The worktree is committed and clean. GitHub Actions' Windows job remains the
+authoritative Win32 compile/test gate, while actual packaged WinGet, launch,
+offline, timeout, and opener behavior remains the explicitly unclaimed W3
+release checkpoint.

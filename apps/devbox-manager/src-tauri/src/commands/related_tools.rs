@@ -477,7 +477,11 @@ fn spawn_guarded_winget(path: &Path, spec: &RelatedToolSpec) -> Result<WingetPro
     unsafe {
         let _ = CloseHandle(process_info.hThread);
     }
-    if resume_result == u32::MAX {
+    // A process created with CREATE_SUSPENDED must have exactly one suspend
+    // count here. Any other value means the thread did not cross the audited
+    // suspended -> Job-owned -> running transition, so fail closed instead of
+    // returning a process that may still be suspended or was resumed early.
+    if resume_result != 1 {
         let _ = unsafe { TerminateProcess(process_info.hProcess, 1) };
         let _ = unsafe { WaitForSingleObject(process_info.hProcess, 1_000) };
         unsafe {
