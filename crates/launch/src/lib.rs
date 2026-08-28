@@ -368,7 +368,7 @@ pub fn launch_open_owned_with_environment(
     req: &devbox_applink::OpenRequest,
     environment: &[(&str, &str)],
 ) -> Result<OwnedProcess, String> {
-    let argv = open_argv(req);
+    let argv = open_argv(req)?;
     let args: Vec<&str> = argv.iter().map(String::as_str).collect();
     launch_owned_with_environment(app_id, &args, environment)
 }

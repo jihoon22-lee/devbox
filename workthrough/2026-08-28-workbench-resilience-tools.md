@@ -312,6 +312,43 @@ process-tree termination with a suspended-to-assigned-to-resumed child, Windows 
 attack scenarios, Unix group-ID residual behavior, failed-stop ownership retention, and
 retry receipt rollback.
 
+### Latest-main integration validation (2026-08-28)
+
+The branch was rebased onto `origin/main` at `6050c79`. The only textual
+conflict was the generated `THIRD_PARTY_NOTICES.md` digest, which was regenerated
+from the rebased lockfile. The rebase also exposed an API integration mismatch:
+main had changed `open_argv` to return `Result<Vec<String>, String>`, while the
+new owned-launch wrapper still treated it as a plain vector. The wrapper now
+propagates validation failure with `?`; no invalid AppLink request reaches a
+process launch.
+
+Post-rebase validation used the same retained target cache and bounded jobs:
+
+```text
+cargo fmt --all -- --check                                      PASS
+git diff --check                                                PASS
+cargo test -p launch -p workbench -j2                           PASS
+  launch: 29; workbench: 115; main/doc tests: 0 failures
+cargo check -p launch -p workbench -j2                          PASS
+cargo clippy -p launch -p workbench --all-targets -j2 \
+  -- -D warnings                                                PASS
+cargo check -p launch --target x86_64-pc-windows-gnu -j2        PASS
+cargo clippy -p launch --target x86_64-pc-windows-gnu \
+  --all-targets -j2 -- -D warnings                              PASS
+pnpm --filter workbench test -- --run --maxWorkers=1 \
+  --no-file-parallelism                                         PASS (6 files, 72 tests)
+pnpm --filter workbench build                                   PASS
+bash .github/scripts/check-catalog.sh                           PASS
+python3 .github/scripts/test-check-dependencies.py              PASS
+python3 .github/scripts/check-dependencies.py check             PASS
+cargo deny --locked check                                       PASS
+```
+
+The focused Vitest run took 222 seconds because jsdom environment setup on the
+`/mnt/e` 9p mount consumed 140 seconds; test execution itself took 3.58 seconds.
+The run completed normally and left no test failure. `cargo deny` emitted the
+repository's allowed duplicate-version diagnostics and exited successfully.
+
 ## Rollback and risk notes
 
 - #359 template/profile writes are separate atomic/CAS operations. A crash
@@ -328,11 +365,10 @@ retry receipt rollback.
 
 ## Next Steps
 
-1. Run the focused and latest Workbench Vitest when `/mnt/e` I/O and memory have headroom.
-2. Run the full workspace gates and GitHub Actions CI.
-3. Run Windows packaged W2 acceptance for path/reparse, capability, stopped
+1. Run the GitHub Actions CI gates for the grouped PR.
+2. Run Windows packaged W2 acceptance for path/reparse, capability, stopped
    distro, port race, child launch, cancellation/timeout, PID reuse, process-tree,
    and ownership rollback behavior.
-4. Review the three independent acceptance/rollback sections in
+3. Review the three independent acceptance/rollback sections in
    `docs/superpowers/plans/2026-08-28-workbench-resilience-tools.md` before
    opening the single grouped PR.
