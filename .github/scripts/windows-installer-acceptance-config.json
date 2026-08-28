@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "tag": "v0.4.2",
+    "commit": "c9a320ef52ac2d6abe30d9f6e5364a09780b54c4"
+  },
+  "apps": [
+    {
+      "id": "port-manager",
+      "productName": "PortManager",
+      "binaryName": "port-manager.exe",
+      "identifier": "com.devbox.portmanager",
+      "legacyIdentifiers": ["com.workbench.portmanager"],
+      "baseline": true
+    },
+    {
+      "id": "developer-toolbox",
+      "productName": "DevToolbox",
+      "binaryName": "developer-toolbox.exe",
+      "identifier": "com.devbox.developertoolbox",
+      "legacyIdentifiers": ["com.workbench.developertoolbox"],
+      "baseline": true
+    },
+    {
+      "id": "wsl-desktop",
+      "productName": "WSLDesktop",
+      "binaryName": "wsl-desktop.exe",
+      "identifier": "com.devbox.wsldesktop",
+      "legacyIdentifiers": ["com.workbench.wsldesktop"],
+      "baseline": true
+    },
+    {
+      "id": "api-playground",
+      "productName": "ApiPlayground",
+      "binaryName": "api-playground.exe",
+      "identifier": "com.devbox.apiplayground",
+      "legacyIdentifiers": ["com.workbench.apiplayground"],
+      "baseline": true
+    },
+    {
+      "id": "everything-plus",
+      "productName": "EverythingPlus",
+      "binaryName": "everything-plus.exe",
+      "identifier": "com.devbox.everythingplus",
+      "legacyIdentifiers": ["com.workbench.everythingplus"],
+      "baseline": true
+    },
+    {
+      "id": "knowledge-base",
+      "productName": "Knowledge",
+      "binaryName": "knowledge-base.exe",
+      "identifier": "com.devbox.knowledgebase",
+      "legacyIdentifiers": ["com.workbench.knowledgebase"],
+      "baseline": true
+    },
+    {
+      "id": "life-log",
+      "productName": "LifeLog",
+      "binaryName": "life-log.exe",
+      "identifier": "com.devbox.lifelog",
+      "legacyIdentifiers": ["com.workbench.lifelog"],
+      "baseline": true
+    },
+    {
+      "id": "devbox-manager",
+      "productName": "DevboxManager",
+      "binaryName": "devbox-manager.exe",
+      "identifier": "com.devbox.devboxmanager",
+      "legacyIdentifiers": ["com.workbench.devboxmanager"],
+      "baseline": true
+    },
+    {
+      "id": "code-pad",
+      "productName": "Code Pad",
+      "binaryName": "code-pad.exe",
+      "identifier": "com.devbox.codepad",
+      "legacyIdentifiers": ["com.workbench.codepad"],
+      "baseline": true
+    },
+    {
+      "id": "run-manager",
+      "productName": "Run Manager",
+      "binaryName": "run-manager.exe",
+      "identifier": "com.devbox.runmanager",
+      "legacyIdentifiers": ["com.workbench.runmanager"],
+      "baseline": true
+    },
+    {
+      "id": "workbench",
+      "productName": "Workbench",
+      "binaryName": "workbench.exe",
+      "identifier": "com.devbox.workbench",
+      "legacyIdentifiers": [],
+      "baseline": true
+    },
+    {
+      "id": "webhook-lab",
+      "productName": "WebhookLab",
+      "binaryName": "webhook-lab.exe",
+      "identifier": "com.devbox.webhooklab",
+      "legacyIdentifiers": [],
+      "baseline": true
+    },
+    {
+      "id": "repo-manager",
+      "productName": "RepoManager",
+      "binaryName": "repo-manager.exe",
+      "identifier": "com.devbox.repomanager",
+      "legacyIdentifiers": [],
+      "baseline": true
+    },
+    {
+      "id": "devbox-launcher",
+      "productName": "DevboxLauncher",
+      "binaryName": "devbox-launcher.exe",
+      "identifier": "com.devbox.devboxlauncher",
+      "legacyIdentifiers": [],
+      "baseline": false
+    },
+    {
+      "id": "log-lens",
+      "productName": "LogLens",
+      "binaryName": "log-lens.exe",
+      "identifier": "com.devbox.loglens",
+      "legacyIdentifiers": [],
+      "baseline": false
+    }
+  ]
+}

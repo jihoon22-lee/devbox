@@ -207,4 +207,20 @@ PY
 
 python3 .github/scripts/test-windows-packaged-smoke-config.py
 python3 .github/scripts/test-verify-downloaded-release.py
+python3 .github/scripts/test-windows-installer-acceptance-config.py
 node --check .github/scripts/windows-packaged-smoke.mjs
+if command -v pwsh >/dev/null 2>&1; then
+  pwsh -NoLogo -NoProfile -NonInteractive -Command '
+    $tokens = $null
+    $errors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+      ".github/scripts/windows-installer-acceptance.ps1",
+      [ref]$tokens,
+      [ref]$errors
+    ) | Out-Null
+    if ($errors.Count -ne 0) {
+      $errors | ForEach-Object { Write-Error $_.Message }
+      exit 1
+    }
+  '
+fi
