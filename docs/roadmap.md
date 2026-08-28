@@ -195,6 +195,14 @@ v0.5.0은 외부 도구 설치 허브가 아니라 **오프라인 native 기능�
 release다. 기존 13개 앱을 강화하고 Devbox Launcher·Log Lens를 더한 현재 15개 앱을
 완성한다. 아래 P3도 검토 후 선택된 release 범위이며 임의로 탈락시키지 않는다.
 
+2026-08-28 기준 P1·P2·선택 P3의 milestone 구현 이슈는 모두 닫혔고 해당 PR은 required
+CI 뒤 main에 병합됐다. 현재 단계는 기능 축소가 아닌 **v0.5.0-rc1 release preparation**이다.
+11개 앱을 §7.4 목표 version으로 정렬하고, 15개 앱 catalog/workspace/release matrix,
+dependency notices와 전체 CI를 다시 확인한 뒤 RC package를 게시한다. Windows W1~W4는
+아직 완료로 기록하지 않으며, exact RC package에서 통과하기 전에는 `v0.5.0` stable tag를
+만들지 않는다. 실행 순서와 증거 형식은 [v0.5.0 릴리스 계획](./superpowers/plans/2026-08-28-v0.5.0-release.md)을
+기준으로 한다.
+
 #### P1 — 선행 필수
 
 1. 네이티브 우선·외부 도구 보완 원칙과 bundled dependency/license 지침.
@@ -1063,17 +1071,20 @@ Stage 4    Workbench — ProjectProfile 기반 orchestration 앱          ✅
 Stage 5    Webhook Lab, Dev Environment Doctor, Repo Manager          ✅
 v0.4.1     핫픽스 — 터미널 PTY·끊긴 앱 간 링크·Run Manager 시작 panic·identifier 이관 수정  ✅ (C1/C2 Windows 수동 acceptance는 issue #176에서 post-release 관리)
 v0.4.2     API Playground secret persistence 보안 핫픽스 — stable 27 assets·packaged H1  ✅
-v0.5.0     네이티브 기능 강화 + handoff + Devbox Launcher·Log Lens (목표 15개 앱)  ◻
+v0.5.0     네이티브 기능 강화 + handoff + Devbox Launcher·Log Lens (15개 앱, RC 준비)  ◐
 ```
 
 ## 현재 상태
-- 현재 15개 앱(기존 13개 + Devbox Launcher + Log Lens)이 구현됐다. 기존 14개 앱은 WSL에서
-  검증 완료했으며 Log Lens bootstrap은 Rust/frontend gate와 Windows W3 packaged smoke를 별도로 관리한다.
+- 현재 15개 앱(기존 13개 + Devbox Launcher + Log Lens)의 P1·P2·선택 P3 구현 이슈는 모두
+  main에 병합됐다. 앱별 focused Rust/frontend gate와 PR CI 증거는 완료됐고, exact RC package의
+  Windows W1~W4 acceptance는 release gate로 별도 관리한다.
 - 각 앱은 기능 단위 PR로 main에 머지됨
 - v0.4.0 정식 배포 완료 (13개 앱)
 - v0.4.1 안정판 핫픽스 배포 완료; C1/C2는 legacy path 제거로 재현하지 못했으므로 Windows packaged-runtime
   검증과 구분한다.
 - v0.4.2 안정판 보안 핫픽스 배포 완료; exact stable asset의 manifest·size·SHA-256과 packaged
   H1-A~D·cleanup을 통과했다.
+- v0.5.0은 RC 준비 단계다. 목표 version·32 assets·Windows W1~W4·stable 재검증이 남아 있으며,
+  이 항목들을 직접 통과하기 전에는 완료로 표시하지 않는다.
 - [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176) — 남은 Windows 실기·패키지·프로토콜·경로·시각
   acceptance를 post-release 수동 체크리스트로 관리한다.

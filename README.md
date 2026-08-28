@@ -35,6 +35,10 @@ https://github.com/jihoon22-lee/devbox/releases
   assets 독립 size·SHA-256 대조와 exact stable API Playground portable의 packaged
   H1-A~D·cleanup을 통과했다. [상세 release plan](./docs/superpowers/plans/2026-08-24-v0.4.2-release.md)에서
   RC1 historical failure, RC2 수정 검증과 stable evidence를 함께 확인할 수 있다.
+- **v0.5.0 상태:** 15개 앱의 P1·P2·선택 P3 구현은 main에 반영됐고 목표 앱 version을
+  RC1 기준으로 정렬하는 중이다. required CI, 공식 32-asset prerelease와 Windows W1~W4
+  acceptance 전에는 검증 완료나 안정판으로 표시하지 않는다. [v0.5.0 release plan](./docs/superpowers/plans/2026-08-28-v0.5.0-release.md)
+  에서 RC·stable gate와 실제 증거를 추적한다.
 
 - 각 앱의 `*-setup.exe`를 내려받아 설치하면 됩니다. WebView2 런타임(Windows 11 기본 포함)만 있으면 별도 도구 설치가 필요 없습니다.
 - 자세한 사용/설치/트러블슈팅: [docs/windows-guide.md](./docs/windows-guide.md)
@@ -48,6 +52,7 @@ https://github.com/jihoon22-lee/devbox/releases
 | [아키텍처](./docs/architecture.md) | 모노레포 구조, 레이어, 데이터 흐름 |
 | [로드맵](./docs/roadmap.md) | 진행 상황 / v0.5.0 확정 범위 |
 | [v0.5.0 네이티브 우선 계획](./docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3, 신규 앱, 앱 간 handoff, 테스트·릴리스 gate |
+| [v0.5.0 릴리스 계획](./docs/superpowers/plans/2026-08-28-v0.5.0-release.md) | 목표 version, RC asset, Windows W1~W4, stable 승격·정리 gate |
 | [의존성·제3자 고지 정책](./docs/dependency-policy.md) | Cargo·pnpm allowlist, advisory 예외 만료, notices 생성·배포 규칙 |
 | [프로젝트 요약](./docs/projects.md) | 앱별 상세 요약 |
 | [UX 개선 설계](./docs/superpowers/specs/2026-08-15-ux-improvements-design.md) | v0.5.0 컨텍스트 메뉴·클립보드·도구 확장 |

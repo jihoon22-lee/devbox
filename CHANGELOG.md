@@ -3,6 +3,71 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [v0.5.0-rc1] - 2026-08-28
+
+v0.5.0-rc1은 기존 13개 앱의 native/offline 기능을 강화하고 신규 Devbox Launcher와
+Log Lens를 더한 15개 앱 release candidate다. 기능 이슈와 PR은 모두 main에 반영됐지만,
+이 section은 **RC 준비 상태**를 기록한다. release-preparation PR의 required CI, immutable
+annotated tag, 공식 Windows package 32개 asset 검증과 W1~W4 packaged acceptance가 모두
+끝나기 전에는 RC1을 검증 완료나 안정판으로 간주하지 않는다. 최신 안정판은 계속 v0.4.2다.
+
+### Added
+
+- **native-first 공용 기반** — catalog schema v2·runtime fallback·install-root discovery,
+  one-time `applink` handoff의 claim/ack/restore, bounded integration snapshot discovery,
+  monitor/DPI-safe window state와 keyboard/IME-aware context menu를 공용 crate/package로
+  제공한다. 핵심 흐름은 별도 runtime download나 외부 도구 실행에 의존하지 않는다.
+- **15개 앱의 P1·P2 기능** — WSL workspace/profile/clipboard·terminal 안전성, API
+  multipart/cookie/OpenAPI/GraphQL/SSE/WebSocket, Everything+의 bounded offline
+  text/PDF/DOCX/XLS/XLSX/ODS index, Knowledge capture/image/wikilink, Life Log export·요약,
+  Manager batch/custom-root/data-preserving remove, Code Pad Quick Open·offline LSP,
+  Run log search, Workbench environment/preflight, Webhook fixture/handoff/replay/sequence,
+  Repo Manager의 safe Git 일상 흐름을 추가했다.
+- **선택 P3 보강** — Port refresh/diff/favorite/provenance, Toolbox smart workflow와 API
+  handoff, WSL resource broadcast, API collection/history/binary, Everything saved query,
+  Knowledge template, Life Log source explanation, Manager Data Inspector/support bundle/
+  Related Tools, Code Pad multi-file rename, Run import/history, Workbench resilience tools,
+  Webhook replay sequence와 Repo cleanup을 포함한다.
+- **Devbox Launcher 0.1.0** — 앱과 검증된 profile/repository/job/saved-query snapshot을
+  로컬에서 검색하고, 실행 직전 capability를 재검증해 AppLink 또는 명시적 handoff로 연다.
+- **Log Lens 0.1.0** — local/WSL/journal/container 로그를 read-only로 tail·merge·filter·
+  export하며, bounded ring과 Run Manager·WSL Desktop producer handoff를 제공한다.
+
+### Changed
+
+- v0.5.0 목표에 맞춰 Port Manager와 Developer Toolbox는 0.3.0, 기존 0.3 계열 앱 중
+  API Playground·Code Pad·WSL Desktop·Everything+·Knowledge·Life Log·Devbox Manager·
+  Run Manager는 0.4.0, Workbench·Webhook Lab·Repo Manager는 0.2.0으로 정렬한다.
+  Launcher와 Log Lens는 0.1.0을 유지한다. 각 앱의 `package.json`, Cargo package와
+  `tauri.conf.json` version은 서로 일치한다.
+- 외부 도구는 native core flow의 대체물이 아니라 사용자가 명시적으로 선택하는 보완재로
+  제한한다. 오프라인 환경에서 반복 작업은 devbox 내부에서 완결되고 WSL·Git·container처럼
+  대상 자체가 필요한 기능만 해당 대상의 설치를 전제로 한다.
+
+### Security
+
+- v0.4.2에서 검증한 API secret의 backend-only resolve와 History·Collection fail-closed
+  persistence/redaction 경계를 그대로 유지한다.
+- handoff·snapshot·custom install root·document extractor·Git/process mutation은 opaque ID,
+  canonical path, size/time/count bounds, stale identity 재검증과 fixed error를 적용한다.
+- dependency allowlist, `cargo-deny`, pnpm audit와 lockfile 기반 `THIRD_PARTY_NOTICES.md`를
+  15개 앱 installer와 release asset에 포함한다.
+
+### Verification status
+
+- v0.5.0 milestone의 구현 이슈는 0개 open이고 모든 기능 PR은 required CI 뒤 main에
+  병합됐다. 이번 release-preparation 변경은 target version 15개와 catalog/workspace/release
+  matrix를 다시 검증하고 전체 Cargo/pnpm/dependency gate를 통과해야 한다.
+- RC1 공식 release는 15 portable + 15 NSIS installer + `THIRD_PARTY_NOTICES.md` +
+  `release-manifest.json`인 정확한 32 assets를 게시해야 한다. 별도 E: 다운로드에서
+  31개 manifest-declared asset의 size·SHA-256, missing 0, undeclared 0을 다시 확인한다.
+- Windows W1은 P1/runtime fallback, W2는 handoff·stream/document·custom-root, W3는
+  Launcher·Log Lens와 producer 연결, W4는 15개 cold start·second-instance·설치/upgrade/
+  rollback·monitor/DPI/IME/긴 path를 실제 RC package에서 검증한다. 직접 관찰하지 않은
+  항목은 통과로 표시하지 않는다.
+- RC1 실패는 기존 tag/release를 덮어쓰지 않고 별도 수정 PR과 새 immutable RC tag에서
+  처음부터 재검증한다. W1~W4와 cleanup이 통과하기 전에는 `v0.5.0` stable tag를 만들지 않는다.
+
 ## [v0.4.2] - 2026-08-24
 
 v0.4.2는 API Playground 0.3.2의 secret persistence 보안 핫픽스다. backend-only
