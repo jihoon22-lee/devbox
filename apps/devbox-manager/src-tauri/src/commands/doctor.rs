@@ -478,8 +478,10 @@ pub(crate) fn collect_diagnosis(app: &tauri::AppHandle) -> Vec<DiagnosisItem> {
 
 /// 전체 진단 실행 (read-only).
 #[tauri::command]
-pub fn run_diagnosis(app: tauri::AppHandle) -> Vec<DiagnosisItem> {
-    collect_diagnosis(&app)
+pub async fn run_diagnosis(app: tauri::AppHandle) -> Result<Vec<DiagnosisItem>, String> {
+    tauri::async_runtime::spawn_blocking(move || collect_diagnosis(&app))
+        .await
+        .map_err(|_| "환경 진단 작업을 완료할 수 없습니다.".to_string())
 }
 
 #[cfg(test)]

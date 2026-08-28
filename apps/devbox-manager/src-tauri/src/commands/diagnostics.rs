@@ -158,58 +158,68 @@ fn generated_id(prefix: &str, input: &str) -> String {
 }
 
 #[tauri::command]
-pub fn inspect_data_databases(
+pub async fn inspect_data_databases(
     state: tauri::State<'_, DiagnosticsState>,
     operation_id: String,
 ) -> Result<DataInspectorSnapshot, String> {
     let cancel = register_operation(&state.active_queries, &operation_id)?;
-    let result = (|| {
+    let task = tauri::async_runtime::spawn_blocking(move || {
         let catalog = catalog()?;
         let root = data_root()?;
         data_inspector::inspect_databases(&catalog, &root, Some(cancel)).map_err(query_error)
-    })();
+    });
+    let result = match task.await {
+        Ok(result) => result,
+        Err(_) => Err("데이터베이스 진단 작업을 완료할 수 없습니다.".to_string()),
+    };
     finish_operation(&state.active_queries, &operation_id);
     result
 }
 
 #[tauri::command]
-pub fn preview_data_query(
+pub async fn preview_data_query(
     state: tauri::State<'_, DiagnosticsState>,
     request: DataQueryRequest,
 ) -> Result<DataQueryResult, String> {
-    let cancel = register_operation(&state.active_queries, &request.query_id)?;
-    let result = (|| {
+    let operation_id = request.query_id.clone();
+    let cancel = register_operation(&state.active_queries, &operation_id)?;
+    let task = tauri::async_runtime::spawn_blocking(move || {
         let catalog = catalog()?;
         let root = data_root()?;
-        let (mut result, _) = data_inspector::preview_query(&catalog, &root, &request, cancel)
-            .map_err(query_error)?;
-        result.preview_id = generated_id("query", &request.query_id);
-        let mut previews = lock_map(&state.query_previews)?;
-        let mut retained_bytes = previews
-            .values()
-            .map(|preview| preview.result.result_bytes)
-            .sum::<usize>();
-        while previews.len() >= MAX_STORED_QUERY_PREVIEWS
-            || retained_bytes.saturating_add(result.result_bytes) > MAX_STORED_QUERY_PREVIEW_BYTES
-        {
-            if let Some(key) = previews.keys().next().cloned() {
-                if let Some(evicted) = previews.remove(&key) {
-                    retained_bytes = retained_bytes.saturating_sub(evicted.result.result_bytes);
-                }
-            } else {
-                break;
+        data_inspector::preview_query(&catalog, &root, &request, cancel)
+            .map(|(result, _)| result)
+            .map_err(query_error)
+    });
+    let result = match task.await {
+        Ok(result) => result,
+        Err(_) => Err("읽기 전용 조회 작업을 완료할 수 없습니다.".to_string()),
+    };
+    finish_operation(&state.active_queries, &operation_id);
+    let mut result = result?;
+    result.preview_id = generated_id("query", &operation_id);
+    let mut previews = lock_map(&state.query_previews)?;
+    let mut retained_bytes = previews
+        .values()
+        .map(|preview| preview.result.result_bytes)
+        .sum::<usize>();
+    while previews.len() >= MAX_STORED_QUERY_PREVIEWS
+        || retained_bytes.saturating_add(result.result_bytes) > MAX_STORED_QUERY_PREVIEW_BYTES
+    {
+        if let Some(key) = previews.keys().next().cloned() {
+            if let Some(evicted) = previews.remove(&key) {
+                retained_bytes = retained_bytes.saturating_sub(evicted.result.result_bytes);
             }
+        } else {
+            break;
         }
-        previews.insert(
-            result.preview_id.clone(),
-            StoredQueryPreview {
-                result: result.clone(),
-            },
-        );
-        Ok(result)
-    })();
-    finish_operation(&state.active_queries, &request.query_id);
-    result
+    }
+    previews.insert(
+        result.preview_id.clone(),
+        StoredQueryPreview {
+            result: result.clone(),
+        },
+    );
+    Ok(result)
 }
 
 #[tauri::command]
@@ -230,7 +240,7 @@ pub fn cancel_data_diagnostics(
 }
 
 #[tauri::command]
-pub fn export_data_preview(
+pub async fn export_data_preview(
     state: tauri::State<'_, DiagnosticsState>,
     request: DataExportRequest,
 ) -> Result<DataExport, String> {
@@ -239,11 +249,14 @@ pub fn export_data_preview(
     // and removing it later would allow concurrent export commands to clone
     // the same one-time result.
     let stored = take_query_preview(&state, &request.preview_id)?;
-    let catalog = catalog()?;
-    let root = data_root()?;
-    let current_revision =
-        data_inspector::database_revision(&catalog, &root, &stored.result.app_id)
-            .map_err(query_error)?;
+    let app_id = stored.result.app_id.clone();
+    let current_revision = tauri::async_runtime::spawn_blocking(move || {
+        let catalog = catalog()?;
+        let root = data_root()?;
+        data_inspector::database_revision(&catalog, &root, &app_id).map_err(query_error)
+    })
+    .await
+    .map_err(|_| "조회 원본 상태를 확인할 수 없습니다.".to_string())??;
     if current_revision != stored.result.database_revision {
         return Err(QueryFailure::Stale.message().to_string());
     }
@@ -274,13 +287,13 @@ fn installed_for_bundle(app: &tauri::AppHandle) -> Vec<SupportInstalledApp> {
 }
 
 #[tauri::command]
-pub fn preview_support_bundle(
+pub async fn preview_support_bundle(
     app: tauri::AppHandle,
     state: tauri::State<'_, DiagnosticsState>,
     operation_id: String,
 ) -> Result<SupportBundlePreview, String> {
     let cancel = register_operation(&state.active_bundles, &operation_id)?;
-    let result = (|| {
+    let task = tauri::async_runtime::spawn_blocking(move || {
         let catalog = catalog()?;
         let root = data_root()?;
         let draft = support_bundle::build_bundle(
@@ -291,50 +304,55 @@ pub fn preview_support_bundle(
             cancel,
         )
         .map_err(bundle_error)?;
-        let preview_id = generated_id("support", &operation_id);
-        let expires_at_ms = now_ms().saturating_add(SUPPORT_PREVIEW_TTL_MS);
-        let preview = SupportBundlePreview {
-            preview_id: preview_id.clone(),
-            catalog_revision: catalog.catalog_revision,
-            expires_at_ms,
-            estimated_bytes: draft.bytes.len(),
-            database_count: draft.available_database_count(),
-            included_sections: vec![
-                "app-metadata".to_string(),
-                "catalog-metadata".to_string(),
-                "schema-metadata".to_string(),
-                "log-metadata".to_string(),
-                "diagnosis".to_string(),
-            ],
-            omitted_sections: vec![
-                "raw-database".to_string(),
-                "raw-logs".to_string(),
-                "paths".to_string(),
-                "environment-values".to_string(),
-                "credentials".to_string(),
-                "authorization".to_string(),
-            ],
-            redaction_version: data_inspector::REDACTION_VERSION.to_string(),
-        };
-        let mut previews = lock_map(&state.bundle_previews)?;
-        if previews.len() >= MAX_STORED_BUNDLE_PREVIEWS {
-            if let Some(key) = previews.keys().next().cloned() {
-                previews.remove(&key);
-            }
-        }
-        previews.insert(
-            preview_id,
-            StoredBundlePreview {
-                expires_at_ms,
-                catalog_revision: catalog.catalog_revision,
-                source_revision: draft.source_revision.clone(),
-                draft,
-            },
-        );
-        Ok(preview)
-    })();
+        Ok::<_, String>((draft, catalog.catalog_revision))
+    });
+    let result = match task.await {
+        Ok(result) => result,
+        Err(_) => Err("지원 번들 작업을 완료할 수 없습니다.".to_string()),
+    };
     finish_operation(&state.active_bundles, &operation_id);
-    result
+    let (draft, catalog_revision) = result?;
+    let preview_id = generated_id("support", &operation_id);
+    let expires_at_ms = now_ms().saturating_add(SUPPORT_PREVIEW_TTL_MS);
+    let preview = SupportBundlePreview {
+        preview_id: preview_id.clone(),
+        catalog_revision,
+        expires_at_ms,
+        estimated_bytes: draft.bytes.len(),
+        database_count: draft.available_database_count(),
+        included_sections: vec![
+            "app-metadata".to_string(),
+            "catalog-metadata".to_string(),
+            "schema-metadata".to_string(),
+            "log-metadata".to_string(),
+            "diagnosis".to_string(),
+        ],
+        omitted_sections: vec![
+            "raw-database".to_string(),
+            "raw-logs".to_string(),
+            "paths".to_string(),
+            "environment-values".to_string(),
+            "credentials".to_string(),
+            "authorization".to_string(),
+        ],
+        redaction_version: data_inspector::REDACTION_VERSION.to_string(),
+    };
+    let mut previews = lock_map(&state.bundle_previews)?;
+    if previews.len() >= MAX_STORED_BUNDLE_PREVIEWS {
+        if let Some(key) = previews.keys().next().cloned() {
+            previews.remove(&key);
+        }
+    }
+    previews.insert(
+        preview_id,
+        StoredBundlePreview {
+            expires_at_ms,
+            catalog_revision,
+            source_revision: draft.source_revision.clone(),
+            draft,
+        },
+    );
+    Ok(preview)
 }
 
 #[tauri::command]
@@ -355,7 +373,7 @@ pub fn cancel_support_bundle(
 }
 
 #[tauri::command]
-pub fn export_support_bundle(
+pub async fn export_support_bundle(
     state: tauri::State<'_, DiagnosticsState>,
     preview_id: String,
 ) -> Result<SupportBundleExport, String> {
@@ -367,15 +385,24 @@ pub fn export_support_bundle(
     if now_ms() >= stored.expires_at_ms {
         return Err("지원 번들 미리 보기가 만료되었습니다. 다시 미리 확인하세요.".to_string());
     }
-    let catalog = catalog()?;
-    let root = data_root()?;
-    let current_source_revision =
-        support_bundle::current_source_revision(&catalog, &root).map_err(bundle_error)?;
-    if catalog.catalog_revision != stored.catalog_revision
-        || current_source_revision != stored.source_revision
-    {
-        return Err("진단 상태가 바뀌었습니다. 최신 지원 번들을 다시 미리 확인하세요.".to_string());
-    }
+    let expected_catalog_revision = stored.catalog_revision;
+    let expected_source_revision = stored.source_revision.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let catalog = catalog()?;
+        let root = data_root()?;
+        let current_source_revision =
+            support_bundle::current_source_revision(&catalog, &root).map_err(bundle_error)?;
+        if catalog.catalog_revision != expected_catalog_revision
+            || current_source_revision != expected_source_revision
+        {
+            return Err(
+                "진단 상태가 바뀌었습니다. 최신 지원 번들을 다시 미리 확인하세요.".to_string(),
+            );
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|_| "지원 번들 원본 상태를 확인할 수 없습니다.".to_string())??;
     support_bundle::export_bundle(&stored.draft).map_err(bundle_error)
 }
 

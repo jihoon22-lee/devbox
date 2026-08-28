@@ -9,10 +9,11 @@ It can also preview and explicitly export a bounded support bundle containing
 app/catalog/schema/log metadata and diagnosis state without raw databases,
 raw logs, paths, credentials, or authorization data.
 
-The candidate is intentionally left dirty for review. No commit, push, PR, or
-rebase was performed. A focused security/remediation pass was then applied in
-the same worktree; it preserves the candidate changes and closes the known
-#354/#355 review blockers before parent-agent integration.
+The candidate received a focused security/remediation pass in the same
+worktree, was committed, and was rebased onto the current `main`. A final
+integration review then moved blocking database, bundle, and doctor work off
+the Tauri IPC executor so cancellation and unrelated UI commands stay
+responsive while native work is in progress.
 
 ## Context
 
@@ -22,7 +23,9 @@ the same worktree; it preserves the candidate changes and closes the known
 - #355 requires app/catalog/schema/log metadata, path/user/secret/auth
   redaction, and explicit exclusion of full DBs, raw logs, credentials,
   Authorization/Cookie, and arbitrary uploads.
-- The work was based on `origin/main` at `2968660d085e0ce67c6104e7845bed493039a6f8`.
+- The implementation started from `origin/main` at
+  `2968660d085e0ce67c6104e7845bed493039a6f8` and was rebased onto
+  `1b9921ac673526456d4ebac0f80b866608d7aed6` before final verification.
 - The initial candidate was prepared conservatively while shared resources
   were constrained. The remediation pass was explicitly authorized to run
   focused checks with Rust parallelism `-j1`; it did not run a full workspace
@@ -136,6 +139,14 @@ commands accept app IDs, operation IDs, or preview IDs only; they never accept
 arbitrary filesystem paths and never create an output file. The browser layer
 receives content only after an explicit export action.
 
+Database discovery/query/revision checks, support-bundle construction and
+revision checks, and the full environment doctor run execute through bounded
+blocking workers rather than on the async IPC executor. Cancellation commands
+remain synchronous and can therefore set the cooperative cancellation flag
+while a query or bundle is still running. Active-operation entries are removed
+after both ordinary worker completion and worker join failure, preventing a
+failed worker from permanently reserving an operation ID.
+
 `commands/doctor.rs` now exposes a reusable read-only diagnosis collector and
 uses `data_local_dir`/`data_dir_path` without creating the Manager data
 directory. Every fixed version probe closes stdin/stderr, caps stdout at 64
@@ -207,6 +218,10 @@ The following review findings were addressed in the candidate before handoff:
 8. Adding a global live notice made successful removal render the same message
    in two `role=status` regions. The existing detailed removal result remains
    the single live region, while diagnostic exports use the global notice.
+9. Long-running native commands were synchronous Tauri handlers, which could
+   prevent cancellation IPC from being scheduled until the work had already
+   completed. Database, support-bundle, and doctor operations now run in
+   blocking workers, with active-operation cleanup on every join outcome.
 
 ### 7. Documentation
 
@@ -231,6 +246,20 @@ PASS
 
 git diff --check
 PASS
+
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-manager-354 \
+cargo check -p devbox-manager --all-targets -j1
+PASS — after async worker/cancellation integration
+
+pnpm --filter devbox-manager test -- --maxWorkers=1 --no-file-parallelism
+PASS — 26 passed
+
+pnpm --filter devbox-manager build
+PASS
+
+bash .github/scripts/check-catalog.sh
+python3 .github/scripts/check-dependencies.py check
+PASS
 ```
 
 The focused Rust test includes the data inspector, support bundle, diagnostics
@@ -247,9 +276,10 @@ because the environment has no `x86_64-w64-mingw32-gcc` for `aws-lc-sys`; this
 is an environment/toolchain blocker, not a Rust diagnostic error. Windows
 compile and W3 smoke therefore remain pending on a Windows CI/host runner.
 
-Not run: full workspace `cargo test`, full workspace `cargo check`, Windows
-W3 packaged smoke, commit, push, PR creation, and rebase. No other worktree
-was touched.
+Not run locally: full workspace `cargo test`, full workspace `cargo check`, and
+Windows W3 packaged smoke. The grouped PR's GitHub Actions workflow is the
+required Windows and workspace gate before merge. No other worktree was
+touched.
 
 ## Risks and follow-up
 
@@ -284,6 +314,6 @@ was touched.
 
 - Worktree: `/mnt/e/projects/devbox-worktrees/devbox-manager-data-inspector-support-bundle`
 - Branch: `feat/devbox-manager/data-inspector-support-bundle`
-- Base: `origin/main` / `2968660d085e0ce67c6104e7845bed493039a6f8`
-- State: reviewed dirty candidate plus remediation; no push/PR/rebase yet;
-  other worktrees were not modified.
+- Base: `origin/main` / `1b9921ac673526456d4ebac0f80b866608d7aed6`
+- State: rebased and final local verification passed; push/PR pending. Other
+  worktrees were not modified.
