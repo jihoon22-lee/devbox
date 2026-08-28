@@ -343,3 +343,32 @@ The worktree is committed and clean. GitHub Actions' Windows job remains the
 authoritative Win32 compile/test gate, while actual packaged WinGet, launch,
 offline, timeout, and opener behavior remains the explicitly unclaimed W3
 release checkpoint.
+
+## Windows CI lifetime remediation
+
+The first pull-request CI run exposed a Windows-only borrow-check failure in
+the trusted executable path comparison. The code borrowed a trimmed `str`
+directly from a temporary `Cow<str>` returned by `Path::to_string_lossy()`.
+Linux did not compile this `cfg(windows)` helper, so its otherwise complete
+local gate set could not detect the lifetime error.
+
+The helper now retains the `Cow<str>` in a local binding for the full duration
+of the case-insensitive comparison. This is a lifetime-only correction: it
+does not broaden accepted paths or change the path-boundary check. The Windows
+compile job is rerun as the authoritative MSVC verification after the focused
+local checks below.
+
+```text
+cargo fmt --all -- --check                                      PASS
+git diff --check                                                PASS
+cargo test -p devbox-manager --lib -j2                          PASS (123 tests)
+cargo clippy -p devbox-manager --all-targets -j2 -- -D warnings PASS
+cargo check -p devbox-manager --target x86_64-pc-windows-gnu    BLOCKED before
+                                                                 app compile:
+                                                                 MinGW GCC absent
+```
+
+The cross-target attempt reached the existing `aws-lc-sys` build script and
+stopped because `x86_64-w64-mingw32-gcc` is not installed. It therefore does
+not count as a Windows application compile result; the rerun MSVC CI job is the
+required evidence for this correction.

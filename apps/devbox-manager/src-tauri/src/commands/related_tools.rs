@@ -697,7 +697,8 @@ fn system_directory() -> Option<PathBuf> {
 #[cfg(windows)]
 fn path_is_under(path: &Path, root: &Path) -> bool {
     let path = path.to_string_lossy();
-    let root = root.to_string_lossy().trim_end_matches(['\\', '/']);
+    let root_lossy = root.to_string_lossy();
+    let root = root_lossy.trim_end_matches(['\\', '/']);
     path.eq_ignore_ascii_case(root)
         || path
             .get(root.len()..)
