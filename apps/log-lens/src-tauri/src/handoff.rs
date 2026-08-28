@@ -7,12 +7,15 @@
 
 use crate::core::handoff::{self, LogSourcePreview};
 use crate::core::SourceSpec;
-use devbox_applink::{HandoffClaim, HandoffError, HandoffStore};
+use devbox_applink::{HandoffClaim, HandoffStore};
 use std::sync::{Mutex, MutexGuard};
 
 struct ClaimedLogSource {
     claim: HandoffClaim,
-    source: SourceSpec,
+    // Keep the claim even when a bounded preview cannot be decoded.  A
+    // restore/storage failure must retain the exact claim so the frontend can
+    // retry that same id/token instead of silently losing ownership.
+    source: Option<SourceSpec>,
 }
 
 /// At most one source handoff can be previewed in one Log Lens process.  This
@@ -29,27 +32,6 @@ impl PendingLogSource {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    fn put_if_empty(&self, claimed: ClaimedLogSource) -> Result<(), Box<ClaimedLogSource>> {
-        let mut slot = self.slot();
-        if slot.is_some() {
-            return Err(Box::new(claimed));
-        }
-        *slot = Some(claimed);
-        Ok(())
-    }
-
-    fn take(&self, id: &str) -> Result<ClaimedLogSource, String> {
-        let mut slot = self.slot();
-        let Some(current) = slot.as_ref() else {
-            return Err("Log Lens source preview is not open".to_string());
-        };
-        if current.claim.envelope.id != id {
-            return Err("another Log Lens source preview is open".to_string());
-        }
-        slot.take()
-            .ok_or_else(|| "Log Lens source preview is not open".to_string())
     }
 }
 
@@ -79,6 +61,41 @@ fn valid_handoff_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+/// Restore the exact claim held in the in-process slot.  Terminal lifecycle
+/// errors mean the claim is no longer usable and remove the slot; all other
+/// failures retain it for an explicit bounded retry.
+fn restore_slot(
+    slot: &mut Option<ClaimedLogSource>,
+    store: &HandoffStore,
+    now: u64,
+) -> Result<(), String> {
+    let result = match slot.as_ref() {
+        Some(current) => store.restore(&current.claim, handoff::CONSUMER_APP, now),
+        None => return Err(handoff::ERROR_NOT_OPEN.to_string()),
+    };
+    match result {
+        Ok(()) => {
+            slot.take();
+            Ok(())
+        }
+        Err(error) if handoff::is_terminal_claim_error(&error) => {
+            slot.take();
+            Err(handoff::map_restore_error(&error).to_string())
+        }
+        Err(error) => Err(handoff::map_restore_error(&error).to_string()),
+    }
+}
+
+fn preview_restore_error(
+    slot: &mut Option<ClaimedLogSource>,
+    store: &HandoffStore,
+    now: u64,
+) -> String {
+    restore_slot(slot, store, now)
+        .err()
+        .unwrap_or_else(|| handoff::ERROR_INVALID.to_string())
+}
+
 /// Claim and validate a pending producer envelope.  The response contains a
 /// bounded source summary and no claim token, path, command, or log bytes.
 #[tauri::command]
@@ -87,39 +104,41 @@ pub fn preview_log_source(
     id: String,
 ) -> Result<LogSourcePreview, String> {
     if !valid_handoff_id(&id) {
-        return Err("Log Lens source handoff is unavailable".to_string());
-    }
-    if pending.slot().is_some() {
-        return Err("Log Lens source handoff is already being previewed".to_string());
+        return Err(handoff::ERROR_INVALID.to_string());
     }
     let now = now_ms();
     if now == 0 {
-        return Err("Log Lens source handoff is unavailable".to_string());
+        return Err(handoff::ERROR_STORAGE.to_string());
     }
-    let claim = handoff_store()
+    // Hold the slot lock across claim/validation/restoration.  This removes
+    // the take/restore gap in which a second inbound request could race the
+    // first claim and makes the retained id/token unambiguous.
+    let mut slot = pending.slot();
+    if slot.is_some() {
+        return Err(handoff::ERROR_BUSY.to_string());
+    }
+    let store = handoff_store();
+    let claim = store
         .claim(&id, handoff::HANDOFF_KIND, handoff::CONSUMER_APP, now)
         .map_err(|error| handoff::map_claim_error(&error).to_string())?;
-    let source = match handoff::parse_claim(&claim) {
+    *slot = Some(ClaimedLogSource {
+        claim,
+        source: None,
+    });
+    let source = match handoff::parse_claim(&slot.as_ref().expect("claim slot").claim) {
         Ok(source) => source,
         Err(_) => {
-            let _ = handoff_store().restore(&claim, handoff::CONSUMER_APP, now);
-            return Err("Log Lens source handoff is invalid".to_string());
+            return Err(preview_restore_error(&mut slot, &store, now));
         }
     };
-    let preview = match LogSourcePreview::from_claim(&claim, &source) {
-        Ok(preview) => preview,
-        Err(_) => {
-            let _ = handoff_store().restore(&claim, handoff::CONSUMER_APP, now);
-            return Err("Log Lens source handoff is invalid".to_string());
-        }
-    };
-    if let Err(claimed) = pending.put_if_empty(ClaimedLogSource { claim, source }) {
-        // Another request won the in-process slot while this claim was being
-        // parsed. Restore this envelope rather than losing it.
-        let claimed = *claimed;
-        let _ = handoff_store().restore(&claimed.claim, handoff::CONSUMER_APP, now);
-        return Err("Log Lens source handoff is already being previewed".to_string());
-    }
+    let preview =
+        match LogSourcePreview::from_claim(&slot.as_ref().expect("claim slot").claim, &source) {
+            Ok(preview) => preview,
+            Err(_) => {
+                return Err(preview_restore_error(&mut slot, &store, now));
+            }
+        };
+    slot.as_mut().expect("claim slot").source = Some(source);
     Ok(preview)
 }
 
@@ -131,23 +150,28 @@ pub fn accept_log_source(
     pending: tauri::State<'_, PendingLogSource>,
     id: String,
 ) -> Result<SourceSpec, String> {
-    let claimed = pending.take(&id)?;
+    let mut slot = pending.slot();
+    let Some(current) = slot.as_ref() else {
+        return Err(handoff::ERROR_NOT_OPEN.to_string());
+    };
+    if current.claim.envelope.id != id {
+        return Err(handoff::ERROR_BUSY.to_string());
+    }
+    let Some(source) = current.source.clone() else {
+        return Err(handoff::ERROR_INVALID.to_string());
+    };
     let now = now_ms();
-    if now == 0 {
-        let _ = pending.put_if_empty(claimed);
-        return Err("Log Lens source handoff is unavailable. Send it again.".to_string());
-    }
-    if now >= claimed.claim.envelope.expires_at_ms {
-        let _ = handoff_store().ack(&claimed.claim, handoff::CONSUMER_APP, now);
-        return Err("Log Lens source handoff has expired. Send it again.".to_string());
-    }
-    match handoff_store().ack(&claimed.claim, handoff::CONSUMER_APP, now) {
-        Ok(()) => Ok(claimed.source),
-        Err(
-            error @ (HandoffError::Expired | HandoffError::LeaseExpired | HandoffError::Missing),
-        ) => Err(handoff::map_claim_error(&error).to_string()),
+    let store = handoff_store();
+    let result = store.ack(&current.claim, handoff::CONSUMER_APP, now);
+    match result {
+        Ok(()) => {
+            slot.take();
+            Ok(source)
+        }
         Err(error) => {
-            let _ = pending.put_if_empty(claimed);
+            if handoff::is_terminal_claim_error(&error) {
+                slot.take();
+            }
             Err(handoff::map_claim_error(&error).to_string())
         }
     }
@@ -159,17 +183,14 @@ pub fn discard_log_source(
     pending: tauri::State<'_, PendingLogSource>,
     id: String,
 ) -> Result<(), String> {
-    let claimed = pending.take(&id)?;
-    match handoff_store().restore(&claimed.claim, handoff::CONSUMER_APP, now_ms()) {
-        Ok(()) => Ok(()),
-        Err(HandoffError::Expired | HandoffError::LeaseExpired | HandoffError::Missing) => {
-            Err("Log Lens source handoff has expired. Send it again.".to_string())
-        }
-        Err(error) => {
-            let _ = pending.put_if_empty(claimed);
-            Err(handoff::map_claim_error(&error).to_string())
-        }
+    let mut slot = pending.slot();
+    let Some(current) = slot.as_ref() else {
+        return Err(handoff::ERROR_NOT_OPEN.to_string());
+    };
+    if current.claim.envelope.id != id {
+        return Err(handoff::ERROR_BUSY.to_string());
     }
+    restore_slot(&mut slot, &handoff_store(), now_ms())
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -187,10 +208,10 @@ pub fn renew_log_source(
 ) -> Result<RenewLogSourceResult, String> {
     let mut slot = pending.slot();
     let Some(current) = slot.as_mut() else {
-        return Err("Log Lens source preview is not open".to_string());
+        return Err(handoff::ERROR_NOT_OPEN.to_string());
     };
     if current.claim.envelope.id != id {
-        return Err("another Log Lens source preview is open".to_string());
+        return Err(handoff::ERROR_BUSY.to_string());
     }
     let renewed = match handoff_store().renew(
         &current.claim,
@@ -200,13 +221,7 @@ pub fn renew_log_source(
     ) {
         Ok(claim) => claim,
         Err(error) => {
-            if matches!(
-                &error,
-                HandoffError::Expired
-                    | HandoffError::LeaseExpired
-                    | HandoffError::Missing
-                    | HandoffError::Corrupt
-            ) {
+            if handoff::is_terminal_claim_error(&error) {
                 slot.take();
             }
             return Err(handoff::map_claim_error(&error).to_string());
@@ -233,34 +248,53 @@ mod tests {
     #[test]
     fn pending_slot_is_one_shot_and_rejects_other_ids() {
         let pending = PendingLogSource::new();
-        assert!(pending
-            .put_if_empty(ClaimedLogSource {
-                claim: HandoffClaim {
-                    envelope: devbox_applink::HandoffEnvelope {
-                        protocol_version: devbox_applink::PROTOCOL_VERSION,
-                        id: "a".repeat(32),
-                        kind: handoff::HANDOFF_KIND.into(),
-                        source_app: handoff::RUN_SOURCE_APP.into(),
-                        target_app: Some(handoff::CONSUMER_APP.into()),
-                        created_at_ms: 1,
-                        expires_at_ms: 10,
-                        payload: serde_json::json!({
-                            "kind": "log-source/v1",
-                            "sourceId": "run-manager:run-1:stdout",
-                            "runId": "run-1",
-                            "stream": "stdout"
-                        }),
-                    },
-                    claim_token: "b".repeat(32),
-                    lease_until_ms: 5,
+        let claimed = ClaimedLogSource {
+            claim: HandoffClaim {
+                envelope: devbox_applink::HandoffEnvelope {
+                    protocol_version: devbox_applink::PROTOCOL_VERSION,
+                    id: "a".repeat(32),
+                    kind: handoff::HANDOFF_KIND.into(),
+                    source_app: handoff::RUN_SOURCE_APP.into(),
+                    target_app: Some(handoff::CONSUMER_APP.into()),
+                    created_at_ms: 1,
+                    expires_at_ms: 10,
+                    payload: serde_json::json!({
+                        "kind": "log-source/v1",
+                        "sourceId": "run-manager:run-1:stdout",
+                        "runId": "run-1",
+                        "stream": "stdout"
+                    }),
                 },
-                source: SourceSpec::Run {
-                    source_id: "run-manager:run-1:stdout".into()
-                },
-            })
-            .is_ok());
-        assert!(pending.take(&"c".repeat(32)).is_err());
-        assert!(pending.take(&"a".repeat(32)).is_ok());
-        assert!(pending.take(&"a".repeat(32)).is_err());
+                claim_token: "b".repeat(32),
+                lease_until_ms: 5,
+            },
+            source: Some(SourceSpec::Run {
+                source_id: "run-manager:run-1:stdout".into(),
+            }),
+        };
+        {
+            let mut slot = pending.slot();
+            assert!(slot.is_none());
+            *slot = Some(claimed);
+        }
+        assert_eq!(
+            pending
+                .slot()
+                .as_ref()
+                .map(|current| current.claim.envelope.id.as_str()),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
+        assert_ne!(
+            pending
+                .slot()
+                .as_ref()
+                .map(|current| current.claim.envelope.id.as_str()),
+            Some("cccccccccccccccccccccccccccccccc")
+        );
+        {
+            let mut slot = pending.slot();
+            assert!(slot.take().is_some());
+        }
+        assert!(pending.slot().is_none());
     }
 }

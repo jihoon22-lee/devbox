@@ -20,7 +20,9 @@ in-memory ring (100,000 lines or 64 MiB).
   source contract. Run payloads are the existing strict `{kind, sourceId,
   runId, stream}` identity; WSL payloads are an allowlisted `sourceType` plus
   validated distro and `wslPath`/unit. The AppLink argv carries only the
-  opaque one-time envelope kind/id.
+  opaque one-time envelope kind/id. This grouped integration is producer-only:
+  Run Manager publishes an identity handoff, while the app-owned Run receiver
+  adapter that reads its logs is a separately tracked follow-up.
 - The receiver re-checks protocol version, opaque envelope/claim identity,
   timestamps, lease bounds, target, producer, and source-family parity at the
   claim boundary. Native responses are schema-validated again in the frontend
@@ -33,10 +35,14 @@ ten-minute one-time pending envelope and the in-memory adapter configuration;
 it is not copied to the AppLink argv, clipboard, or a durable source/saved-view
 record. A handoff is claimed only for an explicit preview, kept in process
 memory during the modal, and acknowledged only after the user adds the source.
-Cancel, validation failure, or lease expiry restores the pending envelope. The
-viewer does not write a permanent log archive. An explicit Export or Copy
-action operates on the currently visible selection only; saved views contain
-source settings and filters, never log text.
+Terminal missing/expired/lease-expired claim errors clear stale preview state;
+storage or restore failures retain the exact claim when one is held (or the
+exact request ID for a claim retry) and expose at most three bounded recovery
+attempts. Native errors are reduced to fixed public codes and never
+show raw paths, payloads, or storage details. The viewer does not write a
+permanent log archive. An explicit Export or Copy action operates on the
+currently visible selection only; saved views contain source settings and
+filters, never log text.
 
 ## Safety and lifecycle
 
@@ -48,10 +54,11 @@ adapter termination falls back to the direct child when process-tree cleanup
 helpers fail. On Windows a Job Object with kill-on-close contains descendants;
 on Unix the adapter uses a process group and bounded reap. Windows device
 namespace paths and adapter-boundary whitespace are rejected before any read.
-The handoff modal is also single-flight: while a preview or accept/discard
-action is active, only the newest opaque request is queued. Escape/Tab focus
-handling, opener restoration, unmount guards, and generation checks prevent a
-stale native response from mutating the source UI.
+The handoff modal is also single-flight: while a preview, accept/discard
+action, or bounded recovery is active, only the newest opaque request is
+queued. Escape/Tab focus handling, opener restoration, unmount guards, and
+generation checks prevent a stale native response from mutating the source
+UI. Run receiver reading remains outside this producer/claim-preview scope.
 
 Parser timestamps accept RFC3339, journal-style numeric offsets, fractional ISO
 forms, and timezone-less local forms on a best-effort basis. Browser fixtures

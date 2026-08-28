@@ -127,6 +127,16 @@ pub struct RecordHandoffStatus {
     pub expires_at_ms: u64,
 }
 
+/// The immutable publication snapshot a producer can use for launch-failure
+/// cleanup. The envelope stays private to the store so it cannot accidentally
+/// become an AppLink or renderer payload; the descriptor remains the only
+/// value used to build the opaque argv target.
+#[derive(Clone)]
+pub struct HandoffPublication {
+    pub descriptor: HandoffDescriptor,
+    envelope: HandoffEnvelope,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct HandoffClaim {
     pub envelope: HandoffEnvelope,
@@ -259,6 +269,27 @@ impl HandoffStore {
         now_ms: u64,
         ttl_ms: u64,
     ) -> Result<HandoffDescriptor, HandoffError> {
+        self.create_with_ttl_publication(request, now_ms, ttl_ms)
+            .map(|publication| publication.descriptor)
+    }
+
+    /// Publish an envelope and retain its immutable snapshot for an exact
+    /// post-launch cleanup. Consumers should continue using `create` or
+    /// `create_with_ttl` when no producer launch follows publication.
+    pub fn create_with_publication(
+        &self,
+        request: CreateHandoff,
+        now_ms: u64,
+    ) -> Result<HandoffPublication, HandoffError> {
+        self.create_with_ttl_publication(request, now_ms, DEFAULT_HANDOFF_TTL_MS)
+    }
+
+    fn create_with_ttl_publication(
+        &self,
+        request: CreateHandoff,
+        now_ms: u64,
+        ttl_ms: u64,
+    ) -> Result<HandoffPublication, HandoffError> {
         if now_ms == 0 || ttl_ms == 0 || ttl_ms > DEFAULT_HANDOFF_TTL_MS {
             return Err(HandoffError::InvalidRequest);
         }
@@ -295,9 +326,12 @@ impl HandoffStore {
             let bytes = encode_bounded(&envelope, MAX_HANDOFF_BYTES)?;
             match publish_new(&pending_path(&root, &id), &bytes) {
                 Ok(()) => {
-                    return Ok(HandoffDescriptor {
-                        id,
-                        kind: request.kind,
+                    return Ok(HandoffPublication {
+                        descriptor: HandoffDescriptor {
+                            id,
+                            kind: request.kind.clone(),
+                        },
+                        envelope,
                     })
                 }
                 Err(PublishError::Exists) => continue,
@@ -371,6 +405,28 @@ impl HandoffStore {
             }
         }
         Ok(())
+    }
+
+    /// Remove one pending envelope by its exact producer-issued publication.
+    ///
+    /// Producers use this only when the corresponding launch failed after
+    /// publication. Re-read and compare the complete immutable envelope
+    /// before removal so a stale cleanup cannot delete a replacement, and do
+    /// not inspect or remove claimed state owned by a consumer.
+    pub fn remove_pending(&self, publication: &HandoffPublication) -> Result<(), HandoffError> {
+        let descriptor = &publication.descriptor;
+        validate_id(&descriptor.id)?;
+        validate_kind(&descriptor.kind)?;
+        let root = self.prepare_layout()?;
+        let pending = pending_path(&root, &descriptor.id);
+        let envelope = read_json::<HandoffEnvelope>(&pending, MAX_HANDOFF_BYTES)?;
+        if envelope != publication.envelope
+            || envelope.id != descriptor.id
+            || envelope.kind != descriptor.kind
+        {
+            return Err(HandoffError::Corrupt);
+        }
+        remove_envelope_if_equal(&pending, &publication.envelope)
     }
 
     pub fn claim(
@@ -1795,6 +1851,51 @@ mod tests {
             store.claim(&descriptor.id, "api-request/v1", "api-playground", 4_000,),
             Err(HandoffError::Missing)
         );
+    }
+
+    #[test]
+    fn failed_launch_cleanup_removes_only_the_exact_pending_envelope() {
+        let root = TestRoot::new("remove-pending");
+        let store = root.store();
+        let publication = store
+            .create_with_publication(request(Some("api-playground")), 1_000)
+            .unwrap();
+
+        store.remove_pending(&publication).unwrap();
+        assert!(!root.pending(&publication.descriptor.id).exists());
+        assert_eq!(
+            store.claim(
+                &publication.descriptor.id,
+                "api-request/v1",
+                "api-playground",
+                2_000,
+            ),
+            Err(HandoffError::Missing)
+        );
+    }
+
+    #[test]
+    fn failed_launch_cleanup_rejects_changed_pending_data_for_publication() {
+        let root = TestRoot::new("remove-pending-immutable");
+        let store = root.store();
+        let publication = store
+            .create_with_publication(request(Some("api-playground")), 1_000)
+            .unwrap();
+        let mut envelope: Value =
+            serde_json::from_slice(&fs::read(root.pending(&publication.descriptor.id)).unwrap())
+                .unwrap();
+        envelope["payload"]["url"] = json!("https://changed.example.test");
+        fs::write(
+            root.pending(&publication.descriptor.id),
+            serde_json::to_vec(&envelope).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            store.remove_pending(&publication),
+            Err(HandoffError::Corrupt)
+        );
+        assert!(root.pending(&publication.descriptor.id).is_file());
     }
 
     #[test]

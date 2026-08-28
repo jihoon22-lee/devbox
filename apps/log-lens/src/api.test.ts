@@ -3,7 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   acceptLogSource,
+  classifyHandoffError,
   discardLogSource,
+  HandoffApiError,
+  handoffErrorCode,
   onOpenRequest,
   previewLogSource,
   renewLogSource,
@@ -81,7 +84,9 @@ describe("Log Lens handoff API", () => {
       kind: "wslJournal",
       distro: "Ubuntu",
     });
-    await expect(renewLogSource("a".repeat(32))).rejects.toThrow("response is invalid");
+    await expect(renewLogSource("a".repeat(32))).rejects.toMatchObject({
+      code: "handoff-response-invalid",
+    });
   });
 
   it("binds preview responses to the requested opaque id and rejects unsafe WSL values", async () => {
@@ -104,8 +109,39 @@ describe("Log Lens handoff API", () => {
       .mockResolvedValueOnce({ kind: "wslFile", distro: "--help", path: "/var/log/app.log" })
       .mockResolvedValueOnce({ kind: "wslFile", distro: "Ubuntu", path: "/" });
 
-    await expect(previewLogSource("a".repeat(32))).rejects.toThrow("response is invalid");
-    await expect(acceptLogSource("a".repeat(32))).rejects.toThrow("response is invalid");
-    await expect(acceptLogSource("a".repeat(32))).rejects.toThrow("response is invalid");
+    await expect(previewLogSource("a".repeat(32))).rejects.toMatchObject({
+      code: "handoff-response-invalid",
+    });
+    await expect(acceptLogSource("a".repeat(32))).rejects.toMatchObject({
+      code: "handoff-response-invalid",
+    });
+    await expect(acceptLogSource("a".repeat(32))).rejects.toMatchObject({
+      code: "handoff-response-invalid",
+    });
+  });
+
+  it("classifies only fixed terminal and retryable codes", () => {
+    expect(classifyHandoffError(new HandoffApiError("handoff-missing"))).toBe("terminal");
+    expect(classifyHandoffError(new HandoffApiError("handoff-expired"))).toBe("terminal");
+    expect(classifyHandoffError(new HandoffApiError("handoff-lease-expired"))).toBe("terminal");
+    expect(classifyHandoffError(new HandoffApiError("handoff-restore-failed"))).toBe("retryable");
+    expect(classifyHandoffError(new HandoffApiError("handoff-storage-failed"))).toBe("retryable");
+    expect(handoffErrorCode(new Error("C:\\Users\\alice\\secret.log"))).toBeNull();
+    expect(handoffErrorCode(new Error("handoff-expired: C:\\secret.log"))).toBeNull();
+  });
+
+  it("sanitizes native rejection details into a fixed retryable code", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    invokeMock.mockRejectedValueOnce(new Error("storage failed at C:\\Users\\alice\\token.log"));
+
+    const rejection = discardLogSource("a".repeat(32));
+    await expect(rejection).rejects.toMatchObject({
+      name: "HandoffApiError",
+      code: "handoff-restore-failed",
+      message: "handoff-restore-failed",
+    });
+    await rejection.catch((error: unknown) => {
+      expect(error instanceof Error ? error.message : String(error)).toBe("handoff-restore-failed");
+    });
   });
 });

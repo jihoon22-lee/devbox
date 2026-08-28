@@ -6,7 +6,8 @@ This work groups the Run Manager and WSL Desktop Log Lens integrations into one
 user-visible handoff flow. A producer publishes a short-lived, one-time
 `log-source/v1` envelope only after an explicit user action; AppLink carries
 only an opaque reference; Log Lens previews a fixed read-only source and waits
-for an explicit user confirmation before acknowledging and reading it.
+for an explicit user confirmation before acknowledging and handing it to a
+supported adapter. Run identity reading remains a separately tracked follow-up.
 
 The implementation was reviewed as a security and lifecycle boundary, not just
 as a UI shortcut. The review covered command/argv separation, path and secret
@@ -45,6 +46,8 @@ Files:
 - `Cargo.lock`
 - `THIRD_PARTY_NOTICES.md`
 - `docs/superpowers/specs/2026-08-17-app-interop-design.md`
+- `apps/devbox-launcher/src-tauri/src/commands.rs`
+- `crates/applink/src/lib.rs`
 
 Both producers declare the `handoff:log-source/v1` capability and use the
 catalog's installed-target lookup before publishing. Catalog revision and
@@ -71,6 +74,7 @@ Files:
 - `apps/run-manager/src/test/setup.ts`
 - `apps/run-manager/vite.config.ts`
 - `apps/run-manager/README.md`
+- `crates/applink/src/handoff.rs`
 
 The strict Run payload retains only `{ kind, sourceId, runId, stream }`, with
 bounded identity values and unknown-field rejection. The command confirms run
@@ -83,10 +87,11 @@ payload, argv, error, clipboard, or frontend state.
 Publish and launch are guarded by a process-local single-flight mutex. A
 concurrent request returns the fixed `handoff-busy` error before creating a
 second envelope. Spawn failure does not fall back to shell or clipboard; the
-bounded pending envelope remains available until its TTL expires. The history
-button/context action has explicit confirmation and mounted/generation guards,
-and its busy state is exposed to assistive technology. The frontend test setup
-also registers `jest-dom` matchers used by the existing component tests.
+producer removes the exact newly-created pending envelope before returning its
+fixed launch error. The history button/context action has explicit confirmation
+and mounted/generation guards, and its busy state is exposed to assistive
+technology. The frontend test setup also registers `jest-dom` matchers used by
+the existing component tests.
 
 ### 3. WSL Desktop producer
 
@@ -121,7 +126,7 @@ configuration; it is not copied to a durable source, saved view, localStorage,
 argv, or error text. Publish and launch share the same single-flight behavior
 as Run Manager, including the fixed busy error and no duplicate envelope.
 
-### 4. Log Lens receiver and one-time lifecycle
+### 4. Log Lens claim/preview boundary and one-time lifecycle
 
 Files:
 
@@ -137,6 +142,7 @@ Files:
 - `apps/log-lens/src/api.ts`
 - `apps/log-lens/src/api.test.ts`
 - `apps/log-lens/src/App.tsx`
+- `apps/log-lens/src/App.handoff.test.tsx`
 - `apps/log-lens/src/App.css`
 - `apps/log-lens/README.md`
 
@@ -147,7 +153,8 @@ version, envelope id and claim token shape, target/producer/source-family
 parity, creation/expiry bounds, and lease range even if an upstream producer
 already validated them. The process-local state machine keeps the claim token
 out of the UI and supports `preview`, `renew`, `accept`, `discard`, restore on
-cancel/failure, and one-time ack semantics.
+cancel/failure, and one-time ack semantics. The app-owned Run receiver adapter
+that reads Run Manager logs remains a separately tracked follow-up.
 
 The source summary is always read-only and bounded. Run handoffs remain an
 identity boundary until a later app-owned Run adapter is implemented; no raw
@@ -177,11 +184,15 @@ imports are cfg-gated and the dependency enables
 The Log Lens modal has one current preview/action and a one-item latest opaque
 request queue. Preview, accept, discard, renew, and unmount paths use mounted
 and generation guards; stale native responses are discarded and cannot replace
-sources or overwrite current errors. A pending native claim is discarded on
-unmount. The modal exposes dialog semantics, an explicit read-only add action,
-Escape cancellation, Tab/Shift+Tab containment, initial focus on cancel, and
-focus restoration to the opener. Producer UI actions use explicit button types
-and `aria-busy`; the WSL card no longer submits an enclosing form accidentally.
+sources or overwrite current errors. Terminal missing/expired/lease-expired
+claim failures clear stale modal state and release the queue. Storage/restore
+failures retain the exact native claim and expose at most three bounded recovery
+attempts; raw native error details are reduced to fixed public codes. A pending
+native claim is discarded on unmount. The modal exposes dialog semantics, an
+explicit read-only add action, Escape cancellation, Tab/Shift+Tab containment,
+initial focus on cancel, and focus restoration to the opener. Producer UI
+actions use explicit button types and `aria-busy`; the WSL card no longer
+submits an enclosing form accidentally.
 
 ## Code examples
 
@@ -195,7 +206,7 @@ The path, command, environment, credential, raw log, and WSL descriptor are
 not present in this argv. They are recovered only after the receiver claims the
 short-lived envelope and passes the contract checks.
 
-### Bounded receiver flow
+### Bounded claim/preview flow
 
 ```text
 pending envelope
@@ -203,7 +214,7 @@ pending envelope
   -> read-only source summary preview
   -> explicit user confirmation
   -> fixed SourceSpec + atomic ack
-  -> bounded adapter read
+  -> bounded adapter read when the source family is implemented
 ```
 
 Cancel, malformed input, lease expiry, or pre-ack failure restores the envelope
@@ -415,3 +426,134 @@ CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
 - Full Windows Tauri packaging/build and an end-to-end two-process handoff
   were not run in this WSL audit; Windows-specific AppLink handle code was
   compile-checked for the GNU target.
+
+## Producer lifecycle/documentation follow-up (2026-08-28)
+
+This follow-up is limited to the audited #366/#367 producer and validated
+claim-handoff boundary. Log Lens core bootstrap work and the full Run receiver
+adapter remain separately tracked and were not expanded here.
+
+### Remediations
+
+- `apps/log-lens/src-tauri/src/handoff.rs` now holds the mutex across claim,
+  validation, and restore/ack operations. A malformed preview keeps the exact
+  claim when restoration fails; accept/discard/renew use fixed lifecycle codes,
+  clear native state only for terminal claim failures, and retain storage
+  failures for retry.
+- `apps/log-lens/src-tauri/src/core/handoff.rs` and
+  `apps/log-lens/src/api.ts` define an allowlisted fixed-code boundary. The
+  frontend classifies missing/expired/lease-expired as terminal, retains the
+  modal/claim when one exists (or the exact request ID for a claim retry) for
+  storage or restore failures, offers at most three bounded recovery attempts,
+  keeps the bounded latest-request queue behind recovery, and never
+  renders raw native error details. `apps/log-lens/src/api.test.ts` and the
+  added frontend handoff tests cover classification, redaction, queue drain,
+  terminal cleanup, and exact-id retry behavior.
+- `crates/applink/src/handoff.rs` adds exact immutable pending-envelope
+  removal for producer launch failure. Run Manager and WSL Desktop call it
+  after a failed Log Lens launch and cover the cleanup path with tests.
+- Run Manager validates the published `log_dir` through the existing canonical
+  app-owned `resolve_run_directory` path before creating the envelope. Errors
+  stay fixed and do not include a raw path.
+- `docs/projects.md`, the Log Lens/Run Manager/WSL Desktop READMEs, and the
+  interop/run-manager specs now state producer-only scope and record the Run
+  receiver-reading follow-up.
+
+### Verification status
+
+Mechanical validation was run after the implementation using the dedicated
+Cargo target cache `/home/jihoon/.cache/targets/devbox-app-handoffs` and
+`-j2` where applicable:
+
+```text
+cargo fmt --all -- --check                                  passed
+git diff --check                                            passed
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  CARGO_BUILD_JOBS=2 cargo test -p applink -p integration -p log-lens \
+  -p run-manager -p wsl-desktop -j2                         passed
+  applink 65, integration 14, log-lens 46, run-manager 176,
+  wsl-desktop 77 tests; doctests passed
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  CARGO_BUILD_JOBS=2 cargo check -p applink -p integration -p log-lens \
+  -p run-manager -p wsl-desktop -j2                         passed
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  CARGO_BUILD_JOBS=2 cargo clippy -p applink -p integration -p log-lens \
+  -p run-manager -p wsl-desktop --all-targets -j2 -- -D warnings passed
+pnpm --filter log-lens test -- --run --maxWorkers=1 --no-file-parallelism
+  4 files, 21 tests passed
+pnpm --filter run-manager test -- --run --maxWorkers=1 --no-file-parallelism
+  6 files, 39 tests passed
+pnpm --filter wsl-desktop test -- --run --maxWorkers=1 --no-file-parallelism
+  15 files, 118 tests passed
+pnpm --filter log-lens build                                 passed
+pnpm --filter run-manager build                              passed
+pnpm --filter wsl-desktop build                              passed
+bash .github/scripts/check-catalog.sh                       passed
+python3 .github/scripts/test-check-dependencies.py           passed
+python3 .github/scripts/check-dependencies.py generate       regenerated notices
+python3 .github/scripts/check-dependencies.py check          passed
+```
+
+The first Rust test attempt exposed a test-only self-deadlock: the pending-slot
+test retained its `MutexGuard` while reacquiring the same slot. The guard is now
+scoped before the second assertion; the rerun passed. The frontend suites were
+slow because of jsdom/9p initialization, not a hang. The WSL build emitted its
+existing large-chunk warning but succeeded. No commit, push, rebase, or cache
+cleanup was performed.
+
+### Residual and out-of-scope risks
+
+- Same-user ancestor replacement between managed-store layout validation and a
+  later filesystem operation still needs an `openat`/directory-handle design;
+  it is not part of this producer lifecycle fix.
+- Existing local-adapter FIFO/UNC reader behavior and its associated reader
+  risks remain residual and out of scope; this work only validates the
+  producer envelope and claim-preview lifecycle.
+- Run handoffs still carry identity only. Reading Run Manager's app-owned log
+  directory from Log Lens requires the separately tracked receiver adapter.
+
+## Root final-review hardening (2026-08-28)
+
+The pre-PR critical review traced the fixed WSL/container adapter from process
+creation through root exit, descendant cleanup, reader shutdown, and bounded
+reaping. It found two related ownership gaps and corrected both:
+
+- Windows adapters now start with `CREATE_SUSPENDED`, enter a preconfigured
+  kill-on-close Job Object, verify that the Job contains exactly the new root,
+  and resume its sole primary thread. This closes the interval in which a
+  normally-running process could create a descendant before Job assignment.
+- When an adapter root exits while a helper still owns stdout, Log Lens now
+  terminates the remaining owned Job/process group immediately and then drains
+  the bounded channel. Previously the reader could retain the inherited pipe
+  until the ten-second operation deadline. A Unix regression fixture starts a
+  background child that inherits stdout and proves successful cleanup without
+  reaching the deadline.
+
+The review also corrected the recovery-limit guidance: because a retained
+native claim intentionally blocks later requests after three failed storage
+retries, the UI now tells the user to check storage and restart Log Lens before
+sending a new handoff instead of implying that a same-session handoff can
+proceed.
+
+Focused post-review verification:
+
+```text
+cargo fmt --all -- --check                                  passed
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  cargo test -p log-lens -j2                                passed (46 pre-hardening tests)
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  cargo test -p log-lens \
+  core::sources::tests::adapter_root_exit_closes_a_descendant_inherited_pipe \
+  -j2                                                       passed (1 regression test)
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-app-handoffs \
+  cargo clippy -p log-lens --all-targets -j2 -- -D warnings passed
+git diff --check                                            passed
+cargo check -p log-lens --target x86_64-pc-windows-gnu -j2 blocked before
+  crate compilation because the WSL host has no x86_64-w64-mingw32-windres;
+  the repository Windows CI remains the authoritative compile gate
+```
+
+The Windows suspended-create/Job/thread-resume implementation follows the
+same reviewed native ownership pattern used by `crates/launch::OwnedProcess`.
+Actual packaged W3 execution still requires the Windows checkpoint already
+listed above.

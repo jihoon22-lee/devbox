@@ -36,5 +36,8 @@ devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem
 devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 uuid = { version = "1", features = ["v4"] }
 
+[dev-dependencies]
+tempfile = "3"
+
 [target.'cfg(windows)'.dependencies]
 windows-version = "0.1.7"

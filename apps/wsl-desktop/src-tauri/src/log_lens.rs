@@ -5,7 +5,9 @@
 //! only the opaque handoff id/kind through AppLink argv.
 
 use crate::core::log_handoff;
-use devbox_applink::{CreateHandoff, HandoffDescriptor, HandoffStore, OpenRequest};
+use devbox_applink::{
+    CreateHandoff, HandoffDescriptor, HandoffError, HandoffPublication, HandoffStore, OpenRequest,
+};
 use serde::Serialize;
 use std::sync::{Mutex, MutexGuard, OnceLock, TryLockError};
 
@@ -56,6 +58,34 @@ fn dispatch_lock() -> Result<MutexGuard<'static, ()>, String> {
     }
 }
 
+fn cleanup_after_launch_failure(
+    store: &HandoffStore,
+    publication: &HandoffPublication,
+) -> Result<(), String> {
+    match store.remove_pending(publication) {
+        Ok(()) | Err(HandoffError::Missing) => Ok(()),
+        Err(_) => Err("handoff-cleanup-failed".to_string()),
+    }
+}
+
+fn launch_or_cleanup<F>(
+    store: &HandoffStore,
+    publication: &HandoffPublication,
+    launch: F,
+) -> Result<u32, String>
+where
+    F: FnOnce() -> Result<u32, String>,
+{
+    match launch() {
+        Ok(pid) => Ok(pid),
+        Err(_) => {
+            cleanup_after_launch_failure(store, publication)
+                .map_err(|_| "handoff-cleanup-failed".to_string())?;
+            Err("log-lens-launch-failed".to_string())
+        }
+    }
+}
+
 fn publish_and_launch(payload: serde_json::Value) -> Result<LogLensDispatch, String> {
     let _dispatch_guard = dispatch_lock()?;
     if !log_lens_is_installed() {
@@ -65,8 +95,9 @@ fn publish_and_launch(payload: serde_json::Value) -> Result<LogLensDispatch, Str
     if now == 0 {
         return Err("handoff-unavailable".to_string());
     }
-    let descriptor = handoff_store()
-        .create(
+    let store = handoff_store();
+    let publication = store
+        .create_with_publication(
             CreateHandoff {
                 kind: log_handoff::HANDOFF_KIND.to_string(),
                 source_app: log_handoff::SOURCE_APP.to_string(),
@@ -76,13 +107,14 @@ fn publish_and_launch(payload: serde_json::Value) -> Result<LogLensDispatch, Str
             now,
         )
         .map_err(|_| "handoff-unavailable".to_string())?;
-    let request = open_request(&descriptor);
-    // Spawn failure leaves the bounded pending handoff for a retry; it never
-    // falls back to a shell command, clipboard, or implicit relaunch.
-    devbox_launch::launch_open(log_handoff::TARGET_APP, &request)
-        .map_err(|_| "log-lens-launch-failed".to_string())?;
+    let request = open_request(&publication.descriptor);
+    // A failed spawn must not strand a descriptor that has no usable caller.
+    // Remove only the exact immutable envelope just published.
+    launch_or_cleanup(&store, &publication, || {
+        devbox_launch::launch_open(log_handoff::TARGET_APP, &request)
+    })?;
     Ok(LogLensDispatch {
-        handoff_id: descriptor.id,
+        handoff_id: publication.descriptor.id,
     })
 }
 
@@ -132,6 +164,37 @@ mod tests {
         assert!(json.contains("handoffId"));
         assert!(!json.contains("Ubuntu"));
         assert!(!json.contains("var/log"));
+    }
+
+    #[test]
+    fn launch_failure_cleanup_removes_the_new_pending_envelope() {
+        let root = tempfile::tempdir().expect("handoff root");
+        let store = HandoffStore::new(root.path().join("handoff/v1"));
+        let publication = store
+            .create_with_publication(
+                CreateHandoff {
+                    kind: log_handoff::HANDOFF_KIND.into(),
+                    source_app: log_handoff::SOURCE_APP.into(),
+                    target_app: Some(log_handoff::TARGET_APP.into()),
+                    payload: log_handoff::file_payload("Ubuntu", "/var/log/app.log")
+                        .expect("payload"),
+                },
+                1_000,
+            )
+            .expect("publication");
+
+        let error = launch_or_cleanup(&store, &publication, || Err("spawn failed".to_string()))
+            .expect_err("launch failure");
+        assert_eq!(error, "log-lens-launch-failed");
+        assert_eq!(
+            store.claim(
+                &publication.descriptor.id,
+                log_handoff::HANDOFF_KIND,
+                log_handoff::TARGET_APP,
+                2_000,
+            ),
+            Err(devbox_applink::HandoffError::Missing)
+        );
     }
 
     #[test]

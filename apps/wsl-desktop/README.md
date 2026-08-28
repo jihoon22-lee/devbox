@@ -56,7 +56,10 @@
   눌러야 claim이 ack되고 fixed adapter가 시작된다.
 - publish와 launch는 producer single-flight로 보호하며, 이미 진행 중인 handoff에는 고정
   `handoff-busy` 오류를 반환한다. Log Lens는 producer/source-family와 lease를 다시 검증하고,
-  journal의 선택적 `unit`이 없는 경우도 포함해 동일한 receiver contract로 변환한다.
+  journal의 선택적 `unit`이 없는 경우도 포함해 동일한 receiver contract로 변환한다. launch
+  실패 시에는 방금 만든 exact pending envelope을 안전하게 제거하며, raw payload·경로·로그
+  원문은 오류에 노출하지 않는다. 이 범위는 WSL Desktop producer와 Log Lens claim/preview
+  lifecycle에 한정되고, Run log를 읽는 Log Lens receiver adapter는 별도 후속 작업이다.
 - **open path 핀·최근 경로** — 자주 쓰는 작업 경로 저장
 
 ## 기술

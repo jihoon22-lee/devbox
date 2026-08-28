@@ -904,9 +904,12 @@ JavaScript safe integer 범위만 허용한다. request DTO는 unknown field를 
 변환한다. `log-source/v1` reference는 `run-manager:<opaque-run-id>:<stream>` identity와
 kind를 local boundary에서 exact 검증하며 absolute path·command·environment·secret은
 payload에 없고 unknown field도 거부한다. retained segment metadata 복원과 bounded core
-scan은 blocking worker로 옮겨 async command executor를 점유하지 않는다. Log Lens
-receiver/producer handoff와 remote/permanent log archive는 이 PR에 포함하지 않고 Log Lens
-bootstrap 뒤 별도 integration PR로 남긴다.
+scan은 blocking worker로 옮겨 async command executor를 점유하지 않는다. #366/#367은 이
+경계를 재사용하는 Run Manager producer handoff만 포함한다. 발행 전 `log_dir`는 canonical
+app-owned `logs/runs/<run-id>` directory resolve/ownership check를 통과해야 하고, Log Lens
+launch 실패 시 방금 만든 exact pending envelope을 제거한다. Run log를 실제로 읽는 Log Lens
+receiver adapter는 별도 후속 작업이며, remote/permanent log archive와 함께 이 producer 범위에
+포함하지 않는다.
 
 ### 스키마 버전
 

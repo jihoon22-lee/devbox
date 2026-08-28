@@ -18,7 +18,7 @@
 | 12 | webhook-lab | `apps/webhook-lab` | 로컬 웹훅/콜백 서버 | Stage 5 | api-playground, port-manager |
 | 13 | repo-manager | `apps/repo-manager` | git 저장소·worktree 관리 | Stage 5 | wsl crate, code-pad/workbench |
 | 14 | devbox-launcher | `apps/devbox-launcher` | catalog app과 제공될 때 검증된 integration snapshot 검색·AppLink 실행, explicit clipboard preview | P3-01 | catalog, integration, applink, launch |
-| 15 | log-lens | `apps/log-lens` | local/Run/WSL/container log tail·merge·filter | P3-02 | `log-source/v1`, bounded in-memory ring |
+| 15 | log-lens | `apps/log-lens` | local/WSL/container log tail·merge·filter, Run identity handoff preview | P3-02 | `log-source/v1`, bounded in-memory ring |
 
 ## 공유 후보 매트릭스
 
@@ -38,7 +38,7 @@
 | webhook-lab | http, rules, masking |
 | repo-manager | wsl, git |
 | devbox-launcher | catalog, integration, applink, launch |
-| log-lens | WSL fixed adapters, app-local parser, `log-source/v1` |
+| log-lens | WSL fixed adapters, app-local parser, `log-source/v1` producer/claim-preview lifecycle (Run receiver follow-up) |
 
 ## 산출물 (각각 독립 .exe)
 `PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`
@@ -47,7 +47,9 @@
 
 ## v0.5.0 신규 앱 진행 상태
 
-Devbox Launcher와 Log Lens bootstrap은 구현됐다. Log Lens의 Run/WSL producer handoff는
-별도 integration PR에서 연결한다.
+Devbox Launcher와 Log Lens bootstrap은 구현됐다. #366/#367의 현재 integration 범위는
+Run Manager·WSL Desktop producer와 Log Lens의 bounded claim/preview lifecycle이다.
+Run log를 실제로 읽는 Log Lens receiver adapter는 별도 후속 작업으로 추적하며, 기존
+ancestor TOCTOU와 local-adapter FIFO/UNC reader 위험도 이 producer 범위에 포함하지 않는다.
 기존 앱의 P1·P2·선택 P3 강화, 앱별 목표 version, 신규 앱의 안전 경계와 acceptance는
 [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을 따른다.

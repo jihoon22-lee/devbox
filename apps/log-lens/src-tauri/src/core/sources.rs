@@ -407,17 +407,8 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let mut child = command.spawn().map_err(|_| CoreError::AdapterUnavailable)?;
-    let mut process_tree = match ProcessTree::assign_to(&child) {
-        Ok(process_tree) => process_tree,
-        Err(()) => {
-            // Fail closed if the platform cannot establish ownership. A
-            // detached adapter must never survive a cancelled/read-limited
-            // operation, even if only the root process can be reaped here.
-            kill_child_and_reap(&mut child);
-            return Err(CoreError::AdapterUnavailable);
-        }
-    };
+    let (mut child, mut process_tree) =
+        ProcessTree::spawn(&mut command).map_err(|_| CoreError::AdapterUnavailable)?;
     let mut stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
@@ -456,7 +447,7 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
         }
     };
     let mut bytes = Vec::new();
-    let mut child_done = false;
+    let mut exit_status = None;
     loop {
         if let Err(error) = context.check() {
             terminate_child(&mut child, &mut process_tree, receiver, reader);
@@ -477,16 +468,24 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
-        if !child_done {
-            child_done = match child.try_wait() {
-                Ok(status) => status.is_some(),
+        if exit_status.is_none() {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    // The root may exit while one of its helpers still owns
+                    // stdout. Close the owned tree immediately so the reader
+                    // can disconnect instead of waiting until the operation
+                    // deadline with a live inherited pipe.
+                    process_tree.terminate_descendants();
+                    exit_status = Some(status);
+                }
+                Ok(None) => {}
                 Err(_) => {
                     terminate_child(&mut child, &mut process_tree, receiver, reader);
                     return Err(CoreError::Io);
                 }
-            };
+            }
         }
-        if child_done {
+        if exit_status.is_some() {
             match receiver.try_recv() {
                 Ok(Ok(chunk)) => {
                     if bytes.len().saturating_add(chunk.len()) > MAX_SOURCE_BYTES {
@@ -504,25 +503,27 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
             }
         }
     }
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => {}
-            Err(_) => {
-                terminate_child(&mut child, &mut process_tree, receiver, reader);
-                return Err(CoreError::Io);
+    let status = match exit_status {
+        Some(status) => status,
+        None => loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    process_tree.terminate_descendants();
+                    break status;
+                }
+                Ok(None) => {}
+                Err(_) => {
+                    terminate_child(&mut child, &mut process_tree, receiver, reader);
+                    return Err(CoreError::Io);
+                }
             }
-        }
-        if let Err(error) = context.check() {
-            terminate_child(&mut child, &mut process_tree, receiver, reader);
-            return Err(error);
-        }
-        thread::sleep(Duration::from_millis(10));
+            if let Err(error) = context.check() {
+                terminate_child(&mut child, &mut process_tree, receiver, reader);
+                return Err(error);
+            }
+            thread::sleep(Duration::from_millis(10));
+        },
     };
-    // The root adapter may exit while a helper still owns stdout. Terminate
-    // only descendants owned by this operation before joining the reader so a
-    // successful operation cannot leak a pipe/thread indefinitely.
-    process_tree.terminate_descendants();
     drop(receiver);
     join_reader_bounded(reader);
     if !status.success() {
@@ -598,7 +599,15 @@ struct ProcessTree {
 
 #[cfg(windows)]
 impl ProcessTree {
-    fn assign_to(child: &Child) -> Result<Self, ()> {
+    fn spawn(command: &mut Command) -> Result<(Child, Self), ()> {
+        use std::os::windows::process::CommandExt;
+        use windows::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
+
+        // A normally-running child could create an unowned descendant in the
+        // interval between spawn and Job assignment. Start the sole primary
+        // thread suspended, establish exact Job ownership, prove the Job
+        // contains exactly this root, and only then resume it.
+        command.creation_flags(CREATE_NO_WINDOW.0 | CREATE_SUSPENDED.0);
         let handle = unsafe { CreateJobObjectW(None, PCWSTR::null()) }.map_err(|_| ())?;
         let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
@@ -617,14 +626,34 @@ impl ProcessTree {
             }
             return Err(());
         }
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(_) => {
+                unsafe {
+                    let _ = CloseHandle(handle);
+                }
+                return Err(());
+            }
+        };
         let process = HANDLE(child.as_raw_handle());
         if unsafe { AssignProcessToJobObject(handle, process) }.is_err() {
+            kill_child_and_reap(&mut child);
             unsafe {
                 let _ = CloseHandle(handle);
             }
             return Err(());
         }
-        Ok(Self { handle })
+        if query_job_active_processes(handle) != Some(1)
+            || resume_primary_thread(child.id(), handle).is_err()
+        {
+            let _ = unsafe { TerminateJobObject(handle, 1) };
+            reap_child_bounded(&mut child);
+            unsafe {
+                let _ = CloseHandle(handle);
+            }
+            return Err(());
+        }
+        Ok((child, Self { handle }))
     }
 
     fn terminate(&mut self, child: &mut Child) {
@@ -653,11 +682,20 @@ struct ProcessTree {
 
 #[cfg(unix)]
 impl ProcessTree {
-    fn assign_to(child: &Child) -> Result<Self, ()> {
-        let process_group = i32::try_from(child.id()).map_err(|_| ())?;
-        (process_group > 0)
-            .then_some(Self { process_group })
-            .ok_or(())
+    fn spawn(command: &mut Command) -> Result<(Child, Self), ()> {
+        let mut child = command.spawn().map_err(|_| ())?;
+        let process_group = match i32::try_from(child.id()) {
+            Ok(process_group) => process_group,
+            Err(_) => {
+                kill_child_and_reap(&mut child);
+                return Err(());
+            }
+        };
+        if process_group <= 0 {
+            kill_child_and_reap(&mut child);
+            return Err(());
+        }
+        Ok((child, Self { process_group }))
     }
 
     fn terminate(&mut self, child: &mut Child) {
@@ -678,13 +716,90 @@ struct ProcessTree;
 
 #[cfg(not(any(windows, unix)))]
 impl ProcessTree {
-    fn assign_to(_child: &Child) -> Result<Self, ()> {
-        Ok(Self)
+    fn spawn(command: &mut Command) -> Result<(Child, Self), ()> {
+        command.spawn().map(|child| (child, Self)).map_err(|_| ())
     }
     fn terminate(&mut self, child: &mut Child) {
         kill_child_and_reap(child);
     }
     fn terminate_descendants(&mut self) {}
+}
+
+#[cfg(windows)]
+fn query_job_active_processes(handle: HANDLE) -> Option<u32> {
+    use windows::Win32::System::JobObjects::{
+        JobObjectBasicAccountingInformation, QueryInformationJobObject,
+        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+    };
+    let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+    unsafe {
+        QueryInformationJobObject(
+            Some(handle),
+            JobObjectBasicAccountingInformation,
+            (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+            size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+            None,
+        )
+    }
+    .ok()
+    .map(|_| accounting.ActiveProcesses)
+}
+
+#[cfg(windows)]
+fn resume_primary_thread(pid: u32, job: HANDLE) -> Result<(), ()> {
+    use windows::Win32::Foundation::{GetLastError, ERROR_NO_MORE_FILES};
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+    };
+    use windows::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }.map_err(|_| ())?;
+    let mut entry = THREADENTRY32 {
+        dwSize: size_of::<THREADENTRY32>() as u32,
+        ..Default::default()
+    };
+    let mut thread_id = None;
+    if unsafe { Thread32First(snapshot, &mut entry) }.is_err() {
+        unsafe {
+            let _ = CloseHandle(snapshot);
+        }
+        return Err(());
+    }
+    loop {
+        if entry.th32OwnerProcessID == pid && thread_id.replace(entry.th32ThreadID).is_some() {
+            unsafe {
+                let _ = CloseHandle(snapshot);
+            }
+            return Err(());
+        }
+        entry.dwSize = size_of::<THREADENTRY32>() as u32;
+        if unsafe { Thread32Next(snapshot, &mut entry) }.is_err() {
+            let finished = unsafe { GetLastError() } == ERROR_NO_MORE_FILES;
+            unsafe {
+                let _ = CloseHandle(snapshot);
+            }
+            if !finished {
+                return Err(());
+            }
+            break;
+        }
+    }
+    unsafe {
+        let _ = CloseHandle(snapshot);
+    }
+    let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, false, thread_id.ok_or(())?) }
+        .map_err(|_| ())?;
+    if query_job_active_processes(job) != Some(1) {
+        unsafe {
+            let _ = CloseHandle(thread);
+        }
+        return Err(());
+    }
+    let previous_suspend_count = unsafe { ResumeThread(thread) };
+    unsafe {
+        let _ = CloseHandle(thread);
+    }
+    (previous_suspend_count == 1).then_some(()).ok_or(())
 }
 
 fn file_identity(_file: &File, metadata: &fs::Metadata) -> FileIdentity {
@@ -974,6 +1089,30 @@ mod tests {
         let mut context = context("deadline", 1, &token, &registry);
         context.deadline = Instant::now();
         assert_eq!(context.check(), Err(CoreError::Timeout));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn adapter_root_exit_closes_a_descendant_inherited_pipe() {
+        let registry = OperationRegistry::default();
+        let token = registry.begin("adapter-descendant", 1).unwrap();
+        let mut context = context("adapter-descendant", 1, &token, &registry);
+        context.deadline = Instant::now() + Duration::from_secs(2);
+        let plan = AdapterPlan {
+            program: "sh".to_string(),
+            args: vec![
+                "-c".to_string(),
+                "sleep 30 & printf 'INFO root\\n'".to_string(),
+            ],
+            source_kind: SourceKind::WslJournal,
+            read_only: true,
+        };
+
+        let started = Instant::now();
+        let bytes = run_fixed_adapter(&plan, &context).expect("adapter output");
+
+        assert_eq!(bytes, b"INFO root\n");
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]

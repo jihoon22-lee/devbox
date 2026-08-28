@@ -7,8 +7,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import {
   acceptLogSource,
   cancelRead,
+  classifyHandoffError,
   discardLogSource,
   exportRecords,
+  handoffErrorCode,
   onOpenRequest,
   previewLogSource,
   readSources,
@@ -42,6 +44,42 @@ const MAX_RENDERED_ROWS = 2_000;
 const MAX_SOURCES = 16;
 const MAX_SAVED_VIEWS = 20;
 const MAX_HIGHLIGHTS = 256;
+const MAX_HANDOFF_RECOVERY_ATTEMPTS = 3;
+
+type HandoffRecoveryAction = "preview" | "accept" | "discard" | "renew";
+
+interface HandoffRecovery {
+  id: string;
+  action: HandoffRecoveryAction;
+  attempts: number;
+}
+
+function handoffFailureMessage(error: unknown, fallback: string): string {
+  switch (handoffErrorCode(error)) {
+    case "handoff-missing":
+    case "handoff-expired":
+    case "handoff-lease-expired":
+      return "Log Lens source handoff가 만료되었거나 이미 처리되었습니다. 다시 보내 주세요.";
+    case "handoff-busy":
+      return "다른 Log Lens source handoff를 처리 중입니다.";
+    default:
+      return fallback;
+  }
+}
+
+function handoffRetryMessage(action: HandoffRecoveryAction, attempts: number): string {
+  if (attempts >= MAX_HANDOFF_RECOVERY_ATTEMPTS) {
+    return "Log Lens source handoff 복구 재시도 한도에 도달했습니다. 저장소 상태를 확인하고 Log Lens를 재시작한 뒤 새 handoff를 보내 주세요.";
+  }
+  const operation = action === "discard"
+    ? "취소"
+    : action === "accept"
+      ? "추가"
+      : action === "renew"
+        ? "lease 갱신"
+        : "미리보기";
+  return `Log Lens source handoff ${operation} 저장소 작업을 완료하지 못했습니다. 재시도할 수 있습니다 (${attempts}/${MAX_HANDOFF_RECOVERY_ATTEMPTS}).`;
+}
 
 function makeOperationId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -157,6 +195,7 @@ function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [handoffPreview, setHandoffPreview] = useState<LogSourcePreview | null>(null);
   const [handoffBusy, setHandoffBusy] = useState(false);
+  const [handoffRecovery, setHandoffRecovery] = useState<HandoffRecovery | null>(null);
   const [contextRecord, setContextRecord] = useState<LogRecord | null>(null);
   const generation = useRef(0);
   const operation = useRef<string | null>(null);
@@ -175,6 +214,7 @@ function App() {
   const contextRecordRef = useRef<LogRecord | null>(null);
   const handoffPreviewRef = useRef<LogSourcePreview | null>(null);
   const handoffBusyRef = useRef(false);
+  const handoffRecoveryRef = useRef<HandoffRecovery | null>(null);
   const handoffGeneration = useRef(0);
   // Native single-instance delivery is at-least-once from the UI's point of
   // view. Keep one bounded latest-id slot while the current preview/action is
@@ -183,6 +223,7 @@ function App() {
   const handoffOpenerRef = useRef<HTMLElement | null>(null);
   const handoffCancelRef = useRef<HTMLButtonElement | null>(null);
   const handoffAcceptRef = useRef<HTMLButtonElement | null>(null);
+  const handoffRetryRef = useRef<HTMLButtonElement | null>(null);
   pausedRef.current = paused;
 
   const prepareLogContext = useCallback((_reason: "pointer" | "keyboard", target: HTMLElement) => {
@@ -272,18 +313,22 @@ function App() {
   }, [cursors, paused, records, snapshot, sources]);
   refreshRef.current = refresh;
 
+  const updateHandoffRecovery = useCallback((next: HandoffRecovery | null) => {
+    handoffRecoveryRef.current = next;
+    setHandoffRecovery(next);
+  }, []);
+
   const clearHandoffPreview = useCallback(() => {
     handoffPreviewRef.current = null;
     setHandoffPreview(null);
   }, []);
 
-  const openLogSourcePreview = useCallback(async (id: string) => {
-    if (!/^[0-9a-f]{32}$/.test(id)) return;
-    if (handoffBusyRef.current || handoffPreviewRef.current) {
-      queuedHandoffRef.current = id;
-      if (mounted.current) setNotice("다른 Log Lens handoff를 처리한 뒤 최신 요청을 미리봅니다.");
-      return;
-    }
+  const clearHandoffState = useCallback(() => {
+    clearHandoffPreview();
+    updateHandoffRecovery(null);
+  }, [clearHandoffPreview, updateHandoffRecovery]);
+
+  const startLogSourcePreview = useCallback(async (id: string, attempts = 0) => {
     const actionGeneration = ++handoffGeneration.current;
     const activeElement = document.activeElement;
     handoffOpenerRef.current = activeElement instanceof HTMLElement ? activeElement : null;
@@ -291,7 +336,6 @@ function App() {
     setHandoffBusy(true);
     setError(null);
     setNotice(null);
-    let restoring = false;
     try {
       const preview = await previewLogSource(id);
       if (!mounted.current || handoffGeneration.current !== actionGeneration) {
@@ -300,70 +344,104 @@ function App() {
       }
       handoffPreviewRef.current = preview;
       setHandoffPreview(preview);
-    } catch {
-      // previewLogSource claims before returning a response. If native data is
-      // malformed (or the command fails after claiming), restore the claim so
-      // the producer can retry instead of pinning the receiver slot until TTL.
-      restoring = true;
-      void discardLogSource(id)
-        .catch(() => undefined)
-        .finally(() => {
-          if (!mounted.current || handoffGeneration.current !== actionGeneration) return;
-          handoffBusyRef.current = false;
-          setHandoffBusy(false);
-        });
-      if (mounted.current && handoffGeneration.current === actionGeneration) {
-        setError("Log Lens source handoff를 미리볼 수 없습니다. 다시 보내 주세요.");
+      updateHandoffRecovery(null);
+    } catch (error: unknown) {
+      if (!mounted.current || handoffGeneration.current !== actionGeneration) {
+        // The native command may have claimed before reporting a retryable
+        // storage/restore failure. Best-effort release the same opaque id;
+        // the native id check makes this harmless if no claim was acquired.
+        void discardLogSource(id).catch(() => undefined);
+        return;
+      }
+      const code = handoffErrorCode(error);
+      if (classifyHandoffError(error) === "retryable") {
+        // A malformed successful preview or a native restore failure means
+        // the native slot still owns this exact claim; retry restoration
+        // rather than attempting a second claim for the same id.
+        const action: HandoffRecoveryAction = code === "handoff-response-invalid"
+          || code === "handoff-restore-failed"
+          ? "discard"
+          : "preview";
+        const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
+        updateHandoffRecovery({ id, action, attempts: nextAttempts });
+        setError(handoffRetryMessage(action, nextAttempts));
+      } else {
+        clearHandoffState();
+        setError(handoffFailureMessage(
+          error,
+          "Log Lens source handoff를 미리볼 수 없습니다. 다시 보내 주세요.",
+        ));
       }
     } finally {
-      if (!restoring) {
+      if (handoffGeneration.current === actionGeneration) {
         handoffBusyRef.current = false;
-        if (mounted.current && handoffGeneration.current === actionGeneration) {
-          setHandoffBusy(false);
-        }
+        if (mounted.current) setHandoffBusy(false);
       }
     }
-  }, []);
+  }, [clearHandoffState, updateHandoffRecovery]);
 
-  const cancelLogSourcePreview = useCallback(async () => {
-    const preview = handoffPreviewRef.current;
-    if (!preview || handoffBusyRef.current) return;
+  const openLogSourcePreview = useCallback((id: string) => {
+    if (!/^[0-9a-f]{32}$/.test(id)) return;
+    if (handoffBusyRef.current || handoffPreviewRef.current || handoffRecoveryRef.current) {
+      queuedHandoffRef.current = id;
+      if (mounted.current) setNotice("다른 Log Lens handoff를 처리한 뒤 최신 요청을 미리봅니다.");
+      return;
+    }
+    void startLogSourcePreview(id);
+  }, [startLogSourcePreview]);
+
+  const restoreHandoffClaim = useCallback(async (id: string, attempts = 0) => {
     const actionGeneration = ++handoffGeneration.current;
-    const previewId = preview.id;
     handoffBusyRef.current = true;
     setHandoffBusy(true);
+    updateHandoffRecovery(null);
     try {
-      await discardLogSource(previewId);
+      await discardLogSource(id);
       if (!mounted.current || handoffGeneration.current !== actionGeneration) return;
-      clearHandoffPreview();
+      clearHandoffState();
       setError(null);
       setNotice("Log Lens source handoff를 취소했습니다. 다시 열 수 있습니다.");
-    } catch {
-      if (mounted.current && handoffGeneration.current === actionGeneration) {
-        setError("Log Lens source handoff를 취소하지 못했습니다.");
+    } catch (error: unknown) {
+      if (!mounted.current || handoffGeneration.current !== actionGeneration) return;
+      if (classifyHandoffError(error) === "retryable") {
+        const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
+        updateHandoffRecovery({ id, action: "discard", attempts: nextAttempts });
+        setError(handoffRetryMessage("discard", nextAttempts));
+      } else {
+        clearHandoffState();
+        setError(handoffFailureMessage(error, "Log Lens source handoff를 취소하지 못했습니다."));
       }
     } finally {
-      handoffBusyRef.current = false;
-      if (mounted.current && handoffGeneration.current === actionGeneration) setHandoffBusy(false);
+      if (handoffGeneration.current === actionGeneration) {
+        handoffBusyRef.current = false;
+        if (mounted.current) setHandoffBusy(false);
+      }
     }
-  }, [clearHandoffPreview]);
+  }, [clearHandoffState, updateHandoffRecovery]);
 
-  const acceptLogSourcePreview = useCallback(async () => {
+  const cancelLogSourcePreview = useCallback(() => {
     const preview = handoffPreviewRef.current;
     if (!preview || handoffBusyRef.current) return;
+    const recovery = handoffRecoveryRef.current;
+    if (recovery && recovery.attempts >= MAX_HANDOFF_RECOVERY_ATTEMPTS) return;
+    const attempts = recovery?.attempts ?? 0;
+    void restoreHandoffClaim(preview.id, attempts);
+  }, [restoreHandoffClaim]);
+
+  const applyAcceptedSource = useCallback(async (id: string, attempts = 0) => {
     if (sources.length >= MAX_SOURCES) {
       setError(`A maximum of ${MAX_SOURCES} sources can be loaded at once.`);
       return;
     }
     const actionGeneration = ++handoffGeneration.current;
-    const previewId = preview.id;
     handoffBusyRef.current = true;
     setHandoffBusy(true);
+    updateHandoffRecovery(null);
     setError(null);
     try {
-      const source = await acceptLogSource(previewId);
+      const source = await acceptLogSource(id);
       if (!mounted.current || handoffGeneration.current !== actionGeneration) return;
-      clearHandoffPreview();
+      clearHandoffState();
       if (sources.some((candidate) => JSON.stringify(candidate) === JSON.stringify(source))) {
         setNotice("이 source는 이미 선택되어 있습니다. handoff는 소비되었습니다.");
         return;
@@ -374,25 +452,107 @@ function App() {
       setCursors(nextCursors);
       setNotice("Log Lens source를 추가했습니다. 읽기 전용 adapter로 불러옵니다.");
       void refresh(nextSources, nextCursors);
-    } catch {
-      if (mounted.current && handoffGeneration.current === actionGeneration) {
-        setError("Log Lens source handoff를 적용하지 못했습니다. 다시 보내 주세요.");
+    } catch (error: unknown) {
+      if (!mounted.current || handoffGeneration.current !== actionGeneration) return;
+      // Native ack failures retain the claim for this exact id. Keep the
+      // modal and expose a bounded retry instead of clearing its busy state
+      // into an unowned/irrecoverable envelope.
+      if (classifyHandoffError(error) === "retryable"
+        && handoffErrorCode(error) !== "handoff-response-invalid") {
+        const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
+        updateHandoffRecovery({ id, action: "accept", attempts: nextAttempts });
+        setError(handoffRetryMessage("accept", nextAttempts));
+      } else {
+        clearHandoffState();
+        setError(handoffFailureMessage(
+          error,
+          "Log Lens source handoff를 적용하지 못했습니다. 다시 보내 주세요.",
+        ));
       }
     } finally {
-      handoffBusyRef.current = false;
-      if (mounted.current && handoffGeneration.current === actionGeneration) setHandoffBusy(false);
+      if (handoffGeneration.current === actionGeneration) {
+        handoffBusyRef.current = false;
+        if (mounted.current) setHandoffBusy(false);
+      }
     }
-  }, [clearHandoffPreview, refresh, sources]);
+  }, [clearHandoffState, refresh, sources, updateHandoffRecovery]);
+
+  const acceptLogSourcePreview = useCallback(() => {
+    const preview = handoffPreviewRef.current;
+    if (!preview || handoffBusyRef.current) return;
+    const attempts = handoffRecoveryRef.current?.action === "accept"
+      ? handoffRecoveryRef.current.attempts
+      : 0;
+    void applyAcceptedSource(preview.id, attempts);
+  }, [applyAcceptedSource]);
+
+  const renewPreviewLease = useCallback(async (id: string, attempts = 0) => {
+    const actionGeneration = ++handoffGeneration.current;
+    handoffBusyRef.current = true;
+    setHandoffBusy(true);
+    updateHandoffRecovery(null);
+    try {
+      const leaseUntilMs = await renewLogSource(id);
+      if (!mounted.current || handoffGeneration.current !== actionGeneration) return;
+      setHandoffPreview((current) => current?.id === id ? { ...current, leaseUntilMs } : current);
+      setError(null);
+    } catch (error: unknown) {
+      if (!mounted.current || handoffGeneration.current !== actionGeneration) return;
+      const code = handoffErrorCode(error);
+      if (code === "handoff-response-invalid") {
+        // Native renewal succeeded before the response failed validation, so
+        // the claim is still held. Restore that exact id instead of clearing
+        // a UI state whose native slot remains live.
+        const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
+        updateHandoffRecovery({ id, action: "discard", attempts: nextAttempts });
+        setError(handoffRetryMessage("discard", nextAttempts));
+      } else if (classifyHandoffError(error) === "retryable") {
+        const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
+        updateHandoffRecovery({ id, action: "renew", attempts: nextAttempts });
+        setError(handoffRetryMessage("renew", nextAttempts));
+      } else {
+        clearHandoffState();
+        setError(handoffFailureMessage(
+          error,
+          "Log Lens source handoff lease를 갱신하지 못했습니다.",
+        ));
+      }
+    } finally {
+      if (handoffGeneration.current === actionGeneration) {
+        handoffBusyRef.current = false;
+        if (mounted.current) setHandoffBusy(false);
+      }
+    }
+  }, [clearHandoffState, updateHandoffRecovery]);
+
+  const retryHandoffRecovery = useCallback(() => {
+    const recovery = handoffRecoveryRef.current;
+    if (!recovery || handoffBusyRef.current || recovery.attempts >= MAX_HANDOFF_RECOVERY_ATTEMPTS) return;
+    switch (recovery.action) {
+      case "preview":
+        void startLogSourcePreview(recovery.id, recovery.attempts);
+        break;
+      case "discard":
+        void restoreHandoffClaim(recovery.id, recovery.attempts);
+        break;
+      case "accept":
+        void applyAcceptedSource(recovery.id, recovery.attempts);
+        break;
+      case "renew":
+        void renewPreviewLease(recovery.id, recovery.attempts);
+        break;
+    }
+  }, [applyAcceptedSource, renewPreviewLease, restoreHandoffClaim, startLogSourcePreview]);
 
   // Drain at most one latest queued id after the current claim/action has
   // released its slot. This avoids unbounded UI memory while preserving a
   // deterministic handoff when producers race each other.
   useEffect(() => {
-    if (handoffBusy || handoffPreview || !queuedHandoffRef.current) return;
+    if (handoffBusy || handoffPreview || handoffRecovery || !queuedHandoffRef.current) return;
     const queued = queuedHandoffRef.current;
     queuedHandoffRef.current = null;
     void openLogSourcePreview(queued);
-  }, [handoffBusy, handoffPreview, openLogSourcePreview]);
+  }, [handoffBusy, handoffPreview, handoffRecovery, openLogSourcePreview]);
 
   useEffect(() => {
     mounted.current = true;
@@ -445,38 +605,18 @@ function App() {
     if (!handoffPreview) return undefined;
     const id = handoffPreview.id;
     const timer = window.setInterval(() => {
-      void renewLogSource(id)
-        .then((leaseUntilMs) => {
-          if (mounted.current) {
-            setHandoffPreview((current) => current?.id === id ? { ...current, leaseUntilMs } : current);
-          }
-        })
-        .catch(() => {
-          if (!mounted.current || handoffPreviewRef.current?.id !== id) return;
-          handoffGeneration.current += 1;
-          // Keep the slot busy until the best-effort restore finishes. This
-          // prevents the latest-request queue from racing a still-claimed
-          // native envelope after a lease/renewal failure.
-          handoffBusyRef.current = true;
-          setHandoffBusy(true);
-          void discardLogSource(id)
-            .catch(() => undefined)
-            .finally(() => {
-              if (!mounted.current || handoffPreviewRef.current?.id !== id) return;
-              handoffBusyRef.current = false;
-              clearHandoffPreview();
-              setHandoffBusy(false);
-              setError("Log Lens source handoff 미리보기 시간이 만료되었습니다. 다시 보내 주세요.");
-            });
-        });
+      if (handoffBusyRef.current || handoffRecoveryRef.current) return;
+      void renewPreviewLease(id);
     }, 30_000);
     return () => window.clearInterval(timer);
-  }, [clearHandoffPreview, handoffPreview]);
+  }, [handoffPreview, renewPreviewLease]);
 
   useEffect(() => {
     return () => {
       const preview = handoffPreviewRef.current;
-      if (preview) void discardLogSource(preview.id).catch(() => undefined);
+      const recovery = handoffRecoveryRef.current;
+      const id = preview?.id ?? recovery?.id;
+      if (id) void discardLogSource(id).catch(() => undefined);
     };
   }, []);
 
@@ -484,10 +624,14 @@ function App() {
   // that was active before an external request arrived. The action refs avoid
   // re-installing this listener for lease-only preview updates.
   useEffect(() => {
-    const id = handoffPreview?.id;
+    const id = handoffPreview?.id ?? handoffRecovery?.id;
+    const recoveryActive = handoffRecovery !== null;
     if (!id) return undefined;
     const opener = handoffOpenerRef.current;
-    const focusTimer = window.setTimeout(() => handoffCancelRef.current?.focus(), 0);
+    const focusTimer = window.setTimeout(() => {
+      if (recoveryActive) handoffRetryRef.current?.focus();
+      else handoffCancelRef.current?.focus();
+    }, 0);
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         if (handoffBusyRef.current) return;
@@ -496,7 +640,7 @@ function App() {
         return;
       }
       if (event.key !== "Tab") return;
-      const focusable = [handoffCancelRef.current, handoffAcceptRef.current]
+      const focusable = [handoffCancelRef.current, handoffAcceptRef.current, handoffRetryRef.current]
         .filter((element): element is HTMLButtonElement => Boolean(element && !element.disabled));
       if (!focusable.length) return;
       const first = focusable[0];
@@ -514,9 +658,11 @@ function App() {
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener("keydown", onKeyDown);
-      if (handoffPreviewRef.current?.id !== id && opener?.isConnected) opener.focus();
+      if (handoffPreviewRef.current?.id !== id
+        && handoffRecoveryRef.current?.id !== id
+        && opener?.isConnected) opener.focus();
     };
-  }, [cancelLogSourcePreview, handoffPreview?.id]);
+  }, [cancelLogSourcePreview, handoffPreview?.id, handoffRecovery?.id, handoffRecovery !== null]);
 
   useEffect(() => {
     if (!follow || paused || sources.length === 0) return undefined;
@@ -738,7 +884,7 @@ function App() {
 
   return (
     <main className="app-shell">
-      {handoffPreview && <div className="handoff-backdrop" role="presentation">
+      {(handoffPreview || handoffRecovery) && <div className="handoff-backdrop" role="presentation">
         <section
           className="handoff-dialog"
           role="dialog"
@@ -748,18 +894,40 @@ function App() {
           aria-describedby="log-source-handoff-description"
           aria-busy={handoffBusy}
         >
-          <h2 id="log-source-handoff-title">Log Lens source 미리보기</h2>
+          <h2 id="log-source-handoff-title">{handoffPreview ? "Log Lens source 미리보기" : "Log Lens source handoff 복구"}</h2>
           <p id="log-source-handoff-description" className="muted">
-            아래의 검증된 읽기 전용 source만 추가합니다. 로그 원문, 명령, 환경변수, 자격 증명은 handoff에 포함되지 않습니다.
+            {handoffPreview
+              ? "아래의 검증된 읽기 전용 source만 추가합니다. 로그 원문, 명령, 환경변수, 자격 증명은 handoff에 포함되지 않습니다."
+              : handoffRecovery?.action === "preview"
+                ? "handoff 요청 ID를 유지하고 있습니다. 저장소 작업을 다시 시도해 주세요. 원문이나 경로는 표시하지 않습니다."
+                : "handoff claim은 유지되고 있습니다. 저장소 복구를 다시 시도해 주세요. 원문이나 경로는 표시하지 않습니다."}
           </p>
-          <dl className="handoff-details">
+          {handoffPreview && <dl className="handoff-details">
             <div><dt>Producer</dt><dd>{handoffPreview.sourceApp}</dd></div>
             <div><dt>Adapter</dt><dd>{handoffPreview.source.displayName}</dd></div>
             <div><dt>Opaque source</dt><dd><code>{handoffPreview.source.sourceId}</code></dd></div>
-          </dl>
+          </dl>}
+          {handoffRecovery && <p className="notice" role="status">
+            {handoffRetryMessage(handoffRecovery.action, handoffRecovery.attempts)}
+          </p>}
           <div className="handoff-actions">
-            <button ref={handoffCancelRef} type="button" className="button" onClick={() => void cancelLogSourcePreview()} disabled={handoffBusy}>취소</button>
-            <button ref={handoffAcceptRef} type="button" className="button primary" onClick={() => void acceptLogSourcePreview()} disabled={handoffBusy}>읽기 전용 source 추가</button>
+            {handoffPreview && <button ref={handoffCancelRef} type="button" className="button" onClick={() => cancelLogSourcePreview()} disabled={handoffBusy || Boolean(handoffRecovery)}>취소</button>}
+            {handoffPreview && <button ref={handoffAcceptRef} type="button" className="button primary" onClick={() => acceptLogSourcePreview()} disabled={handoffBusy || Boolean(handoffRecovery)}>읽기 전용 source 추가</button>}
+            {handoffRecovery && <button
+              ref={handoffRetryRef}
+              type="button"
+              className="button primary"
+              onClick={() => retryHandoffRecovery()}
+              disabled={handoffBusy || handoffRecovery.attempts >= MAX_HANDOFF_RECOVERY_ATTEMPTS}
+            >
+              {handoffRecovery.action === "discard"
+                ? "복구 재시도"
+                : handoffRecovery.action === "accept"
+                  ? "source 추가 재시도"
+                  : handoffRecovery.action === "renew"
+                    ? "lease 갱신 재시도"
+                    : "미리보기 재시도"}
+            </button>}
           </div>
         </section>
       </div>}

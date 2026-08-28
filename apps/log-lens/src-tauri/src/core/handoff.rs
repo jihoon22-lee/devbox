@@ -1,4 +1,5 @@
-//! Log Lens receiver for the Run Manager/WSL Desktop `log-source/v1` handoff.
+//! Log Lens claim/preview boundary for the Run Manager/WSL Desktop
+//! `log-source/v1` handoff.
 //!
 //! The generic applink store validates protocol, target, size, and one-time
 //! claim state.  This module validates the producer-specific allowlist and
@@ -16,6 +17,19 @@ pub const WSL_SOURCE_APP: &str = "wsl-desktop";
 pub const WSL_FILE_SOURCE_TYPE: &str = "wslFile";
 pub const WSL_JOURNAL_SOURCE_TYPE: &str = "wslJournal";
 pub const MAX_PAYLOAD_BYTES: usize = 16 * 1024;
+
+// These values cross the Tauri boundary. Keep them opaque and stable so the
+// frontend can distinguish a terminal claim from a retryable store/restore
+// failure without ever displaying a native error string or payload detail.
+pub const ERROR_INVALID: &str = "handoff-invalid";
+pub const ERROR_MISSING: &str = "handoff-missing";
+pub const ERROR_EXPIRED: &str = "handoff-expired";
+pub const ERROR_LEASE_EXPIRED: &str = "handoff-lease-expired";
+pub const ERROR_BUSY: &str = "handoff-busy";
+pub const ERROR_STORAGE: &str = "handoff-storage-failed";
+pub const ERROR_CLAIM_STORAGE: &str = "handoff-claim-storage-failed";
+pub const ERROR_RESTORE: &str = "handoff-restore-failed";
+pub const ERROR_NOT_OPEN: &str = "handoff-not-open";
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -137,15 +151,49 @@ impl LogSourcePreview {
 
 pub fn map_claim_error(error: &HandoffError) -> &'static str {
     match error {
-        HandoffError::Missing | HandoffError::Expired | HandoffError::LeaseExpired => {
-            "Log Lens source handoff is unavailable or expired. Send it again."
-        }
-        HandoffError::AlreadyClaimed => "Log Lens source handoff is already being previewed.",
-        HandoffError::WrongTarget | HandoffError::WrongKind => {
-            "Log Lens source handoff target is invalid."
-        }
-        _ => "Log Lens source handoff could not be processed.",
+        HandoffError::Missing => ERROR_MISSING,
+        HandoffError::Expired => ERROR_EXPIRED,
+        HandoffError::LeaseExpired => ERROR_LEASE_EXPIRED,
+        HandoffError::AlreadyClaimed => ERROR_BUSY,
+        HandoffError::WrongTarget | HandoffError::WrongKind => ERROR_INVALID,
+        HandoffError::Storage | HandoffError::UnsafeStorage => ERROR_CLAIM_STORAGE,
+        _ => ERROR_INVALID,
     }
+}
+
+/// Map an operation that is trying to put a claimed envelope back into the
+/// pending queue. Terminal lifecycle failures mean that this process no
+/// longer owns a usable claim; storage failures keep the exact claim in the
+/// native slot so a bounded frontend retry can try the same id/token again.
+pub fn map_restore_error(error: &HandoffError) -> &'static str {
+    match error {
+        HandoffError::Missing => ERROR_MISSING,
+        HandoffError::Expired => ERROR_EXPIRED,
+        HandoffError::LeaseExpired => ERROR_LEASE_EXPIRED,
+        HandoffError::Storage | HandoffError::UnsafeStorage => ERROR_RESTORE,
+        HandoffError::Corrupt | HandoffError::TooLarge => ERROR_INVALID,
+        _ => map_claim_error(error),
+    }
+}
+
+/// Errors that prove the native claim is no longer usable.  Storage failures
+/// deliberately stay outside this set so an action can retain its exact
+/// claim for a bounded retry.
+pub fn is_terminal_claim_error(error: &HandoffError) -> bool {
+    matches!(
+        error,
+        HandoffError::InvalidRequest
+            | HandoffError::InvalidPayload
+            | HandoffError::TooLarge
+            | HandoffError::Missing
+            | HandoffError::AlreadyClaimed
+            | HandoffError::WrongTarget
+            | HandoffError::WrongKind
+            | HandoffError::Expired
+            | HandoffError::LeaseExpired
+            | HandoffError::TokenMismatch
+            | HandoffError::Corrupt
+    )
 }
 
 #[cfg(test)]
@@ -335,5 +383,22 @@ mod tests {
             store.claim(&descriptor.id, HANDOFF_KIND, CONSUMER_APP, 6),
             Err(devbox_applink::HandoffError::Missing)
         ));
+    }
+
+    #[test]
+    fn public_error_mapping_separates_terminal_claims_from_restore_failures() {
+        assert_eq!(map_claim_error(&HandoffError::Missing), ERROR_MISSING);
+        assert_eq!(map_claim_error(&HandoffError::Expired), ERROR_EXPIRED);
+        assert_eq!(
+            map_claim_error(&HandoffError::LeaseExpired),
+            ERROR_LEASE_EXPIRED
+        );
+        assert_eq!(map_claim_error(&HandoffError::Storage), ERROR_CLAIM_STORAGE);
+        assert_eq!(map_restore_error(&HandoffError::Storage), ERROR_RESTORE);
+        assert!(!map_restore_error(&HandoffError::Storage).contains("secret"));
+        assert!(is_terminal_claim_error(&HandoffError::Expired));
+        assert!(is_terminal_claim_error(&HandoffError::Corrupt));
+        assert!(is_terminal_claim_error(&HandoffError::AlreadyClaimed));
+        assert!(!is_terminal_claim_error(&HandoffError::Storage));
     }
 }

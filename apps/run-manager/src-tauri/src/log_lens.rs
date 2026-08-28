@@ -7,10 +7,13 @@
 use crate::core::log_handoff;
 use crate::logs::LogStream;
 use crate::storage::{DatabaseState, StorageError};
-use devbox_applink::{CreateHandoff, HandoffDescriptor, HandoffStore, OpenRequest};
+use devbox_applink::{
+    CreateHandoff, HandoffDescriptor, HandoffError, HandoffPublication, HandoffStore, OpenRequest,
+};
 use serde::Serialize;
+use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, TryLockError};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 const HANDOFF_CAPABILITY: &str = "handoff:log-source/v1";
 
@@ -67,6 +70,45 @@ fn dispatch_lock() -> Result<MutexGuard<'static, ()>, String> {
     }
 }
 
+fn cleanup_after_launch_failure(
+    store: &HandoffStore,
+    publication: &HandoffPublication,
+) -> Result<(), String> {
+    match store.remove_pending(publication) {
+        Ok(()) | Err(HandoffError::Missing) => Ok(()),
+        Err(_) => Err("handoff-cleanup-failed".to_string()),
+    }
+}
+
+fn launch_or_cleanup<F>(
+    store: &HandoffStore,
+    publication: &HandoffPublication,
+    launch: F,
+) -> Result<u32, String>
+where
+    F: FnOnce() -> Result<u32, String>,
+{
+    match launch() {
+        Ok(pid) => Ok(pid),
+        Err(_) => {
+            cleanup_after_launch_failure(store, publication)
+                .map_err(|_| "handoff-cleanup-failed".to_string())?;
+            Err("log-lens-launch-failed".to_string())
+        }
+    }
+}
+
+fn validate_run_log_dir_for_handoff(
+    data_root: &Path,
+    run_id: &str,
+    log_dir: Option<&str>,
+) -> Result<(), String> {
+    let log_dir = log_dir.ok_or_else(|| "logs-unavailable".to_string())?;
+    crate::logs::resolve_run_directory(data_root, log_dir, run_id)
+        .map(|_| ())
+        .map_err(|_| "logs-unavailable".to_string())
+}
+
 /// Publish one selected run stream and launch the installed Log Lens target.
 /// The run database is consulted only to prove that the selected app-owned
 /// log exists; its relative path is never copied into the payload or argv.
@@ -74,6 +116,7 @@ fn dispatch_lock() -> Result<MutexGuard<'static, ()>, String> {
 pub fn open_run_log_in_log_lens(
     run_id: String,
     stream: LogStream,
+    app: AppHandle,
     state: State<'_, Arc<DatabaseState>>,
 ) -> Result<LogLensDispatch, String> {
     let _dispatch_guard = dispatch_lock()?;
@@ -81,9 +124,11 @@ pub fn open_run_log_in_log_lens(
         .get_run(&run_id)
         .map_err(map_storage_error)?
         .ok_or_else(|| "run-not-found".to_string())?;
-    if run.log_dir.is_none() {
-        return Err("logs-unavailable".to_string());
-    }
+    let data_root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "logs-unavailable".to_string())?;
+    validate_run_log_dir_for_handoff(&data_root, &run_id, run.log_dir.as_deref())?;
     if !log_lens_is_installed() {
         return Err("log-lens-unavailable".to_string());
     }
@@ -93,8 +138,9 @@ pub fn open_run_log_in_log_lens(
     if now == 0 {
         return Err("handoff-unavailable".to_string());
     }
-    let descriptor = handoff_store()
-        .create(
+    let store = handoff_store();
+    let publication = store
+        .create_with_publication(
             CreateHandoff {
                 kind: log_handoff::HANDOFF_KIND.to_string(),
                 source_app: log_handoff::SOURCE_APP.to_string(),
@@ -104,13 +150,15 @@ pub fn open_run_log_in_log_lens(
             now,
         )
         .map_err(|_| "handoff-unavailable".to_string())?;
-    let request = open_request(&descriptor);
-    // A failed spawn intentionally leaves the pending envelope available for
-    // its bounded TTL; no second implicit launch or clipboard fallback occurs.
-    devbox_launch::launch_open(log_handoff::TARGET_APP, &request)
-        .map_err(|_| "log-lens-launch-failed".to_string())?;
+    let request = open_request(&publication.descriptor);
+    // Do not leave a descriptor that no caller can reliably associate with
+    // this failed launch.  The cleanup re-reads the exact immutable envelope
+    // before removing it and never touches claimed state.
+    launch_or_cleanup(&store, &publication, || {
+        devbox_launch::launch_open(log_handoff::TARGET_APP, &request)
+    })?;
     Ok(LogLensDispatch {
-        handoff_id: descriptor.id,
+        handoff_id: publication.descriptor.id,
     })
 }
 
@@ -132,6 +180,57 @@ mod tests {
         let json = serde_json::to_string(&dispatch).expect("dispatch json");
         assert!(!json.contains("path"));
         assert!(!json.contains("log"));
+    }
+
+    #[test]
+    fn launch_failure_cleanup_removes_the_new_pending_envelope() {
+        let root = tempfile::tempdir().expect("handoff root");
+        let store = HandoffStore::new(root.path().join("handoff/v1"));
+        let publication = store
+            .create_with_publication(
+                CreateHandoff {
+                    kind: log_handoff::HANDOFF_KIND.into(),
+                    source_app: log_handoff::SOURCE_APP.into(),
+                    target_app: Some(log_handoff::TARGET_APP.into()),
+                    payload: log_handoff::payload_for_run("run-1", LogStream::Stdout)
+                        .expect("payload"),
+                },
+                1_000,
+            )
+            .expect("publication");
+
+        let error = launch_or_cleanup(&store, &publication, || Err("spawn failed".to_string()))
+            .expect_err("launch failure");
+        assert_eq!(error, "log-lens-launch-failed");
+        assert_eq!(
+            store.claim(
+                &publication.descriptor.id,
+                log_handoff::HANDOFF_KIND,
+                log_handoff::TARGET_APP,
+                2_000,
+            ),
+            Err(devbox_applink::HandoffError::Missing)
+        );
+    }
+
+    #[test]
+    fn handoff_requires_the_canonical_app_owned_run_directory() {
+        let root = tempfile::tempdir().expect("app data root");
+        let run_directory = root.path().join("logs/runs/run-1");
+        std::fs::create_dir_all(&run_directory).expect("run logs");
+
+        assert!(
+            validate_run_log_dir_for_handoff(root.path(), "run-1", Some("logs/runs/run-1"),)
+                .is_ok()
+        );
+        assert_eq!(
+            validate_run_log_dir_for_handoff(root.path(), "run-1", None),
+            Err("logs-unavailable".to_string())
+        );
+        assert_eq!(
+            validate_run_log_dir_for_handoff(root.path(), "run-1", Some("logs/runs/other")),
+            Err("logs-unavailable".to_string())
+        );
     }
 
     #[test]

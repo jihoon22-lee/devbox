@@ -17,6 +17,72 @@ import type {
 const MAX_RECORDS = 100_000;
 const MAX_EXPORT_BYTES = 8 * 1024 * 1024;
 
+const HANDOFF_FAILURE_CODES = [
+  "handoff-invalid",
+  "handoff-response-invalid",
+  "handoff-missing",
+  "handoff-expired",
+  "handoff-lease-expired",
+  "handoff-busy",
+  "handoff-storage-failed",
+  "handoff-claim-storage-failed",
+  "handoff-restore-failed",
+  "handoff-not-open",
+] as const;
+
+export type HandoffFailureCode = typeof HANDOFF_FAILURE_CODES[number];
+export type HandoffFailureClass = "terminal" | "retryable";
+
+/**
+ * Safe, fixed-code errors crossing the native handoff boundary.  Native
+ * storage messages can contain paths or other sensitive details, so callers
+ * must use `code` rather than an arbitrary Error string.
+ */
+export class HandoffApiError extends Error {
+  readonly code: HandoffFailureCode;
+
+  constructor(code: HandoffFailureCode) {
+    super(code);
+    this.name = "HandoffApiError";
+    this.code = code;
+  }
+}
+
+function isHandoffFailureCode(value: unknown): value is HandoffFailureCode {
+  return typeof value === "string"
+    && (HANDOFF_FAILURE_CODES as readonly string[]).includes(value);
+}
+
+/** Extract only an exact allow-listed native code; never return raw details. */
+export function handoffErrorCode(error: unknown): HandoffFailureCode | null {
+  if (error instanceof HandoffApiError) return error.code;
+  if (isRecord(error) && isHandoffFailureCode(error.code)) return error.code;
+  const value = typeof error === "string"
+    ? error
+    : error instanceof Error
+      ? error.message
+      : null;
+  return isHandoffFailureCode(value) ? value : null;
+}
+
+/**
+ * Claim expiration/mismatch is terminal for this UI instance.  Storage and
+ * restore failures are retryable and must keep the exact id/claim in place.
+ */
+export function classifyHandoffError(error: unknown): HandoffFailureClass {
+  const code = handoffErrorCode(error);
+  return code === "handoff-storage-failed"
+    || code === "handoff-claim-storage-failed"
+    || code === "handoff-restore-failed"
+    || code === "handoff-response-invalid"
+    ? "retryable"
+    : "terminal";
+}
+
+function sanitizedHandoffError(error: unknown, fallback: HandoffFailureCode): HandoffApiError {
+  return new HandoffApiError(handoffErrorCode(error) ?? fallback);
+}
+
 export interface OpenRequest {
   target: { kind: "handoff"; handoffKind: string; id: string };
   from: string | null;
@@ -168,37 +234,59 @@ export async function onOpenRequest(handler: () => void): Promise<() => void> {
 
 export async function previewLogSource(id: string): Promise<LogSourcePreview> {
   if (!isTauri()) throw new Error("Log Lens source handoff is desktop-only");
-  if (!HANDOFF_ID_PATTERN.test(id)) throw new Error("Log Lens source handoff request is invalid");
-  const preview = parseLogSourcePreview(await invoke<unknown>("preview_log_source", { id }));
-  if (!preview || preview.id !== id) throw new Error("Log Lens source handoff response is invalid");
+  if (!HANDOFF_ID_PATTERN.test(id)) throw new HandoffApiError("handoff-invalid");
+  let response: unknown;
+  try {
+    response = await invoke<unknown>("preview_log_source", { id });
+  } catch (error) {
+    throw sanitizedHandoffError(error, "handoff-claim-storage-failed");
+  }
+  const preview = parseLogSourcePreview(response);
+  if (!preview || preview.id !== id) throw new HandoffApiError("handoff-response-invalid");
   return preview;
 }
 
 export async function acceptLogSource(id: string): Promise<SourceSpec> {
   if (!isTauri()) throw new Error("Log Lens source handoff is desktop-only");
-  if (!HANDOFF_ID_PATTERN.test(id)) throw new Error("Log Lens source handoff request is invalid");
-  const source = parseHandoffSource(await invoke<unknown>("accept_log_source", { id }));
-  if (!source) throw new Error("Log Lens source handoff response is invalid");
+  if (!HANDOFF_ID_PATTERN.test(id)) throw new HandoffApiError("handoff-invalid");
+  let response: unknown;
+  try {
+    response = await invoke<unknown>("accept_log_source", { id });
+  } catch (error) {
+    throw sanitizedHandoffError(error, "handoff-storage-failed");
+  }
+  const source = parseHandoffSource(response);
+  if (!source) throw new HandoffApiError("handoff-response-invalid");
   return source;
 }
 
 export async function discardLogSource(id: string): Promise<void> {
   if (!isTauri()) throw new Error("Log Lens source handoff is desktop-only");
-  if (!HANDOFF_ID_PATTERN.test(id)) throw new Error("Log Lens source handoff request is invalid");
-  await invoke("discard_log_source", { id });
+  if (!HANDOFF_ID_PATTERN.test(id)) throw new HandoffApiError("handoff-invalid");
+  try {
+    await invoke("discard_log_source", { id });
+  } catch (error) {
+    throw sanitizedHandoffError(error, "handoff-restore-failed");
+  }
 }
 
 export async function renewLogSource(id: string): Promise<number> {
   if (!isTauri()) throw new Error("Log Lens source handoff is desktop-only");
-  if (!HANDOFF_ID_PATTERN.test(id)) throw new Error("Log Lens source handoff request is invalid");
-  const result = await invoke<unknown>("renew_log_source", { id });
+  if (!HANDOFF_ID_PATTERN.test(id)) throw new HandoffApiError("handoff-invalid");
+  let response: unknown;
+  try {
+    response = await invoke<unknown>("renew_log_source", { id });
+  } catch (error) {
+    throw sanitizedHandoffError(error, "handoff-storage-failed");
+  }
+  const result = response;
   if (!isRecord(result)
     || !hasOnlyKeys(result, ["leaseUntilMs"])
     || !Number.isSafeInteger(result.leaseUntilMs)) {
-    throw new Error("Log Lens source handoff response is invalid");
+    throw new HandoffApiError("handoff-response-invalid");
   }
   const leaseUntilMs = result.leaseUntilMs as number;
-  if (leaseUntilMs <= 0) throw new Error("Log Lens source handoff response is invalid");
+  if (leaseUntilMs <= 0) throw new HandoffApiError("handoff-response-invalid");
   return leaseUntilMs;
 }
 

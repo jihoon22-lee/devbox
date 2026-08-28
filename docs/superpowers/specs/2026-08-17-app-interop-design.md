@@ -6,6 +6,9 @@
   preview·claim/ack/restore·privacy/no-clipboard 경계는 #315에서 검증
 - 2026-08-28: `#320` Devbox Launcher bounded catalog/snapshot consumer와 `Task`/`Install`
   routing 구현. 기존 Life Log→Knowledge 구조화 handoff 계약은 유지
+- 2026-08-28: `#366/#367` Run Manager·WSL Desktop producer와 Log Lens bounded
+  claim/preview lifecycle 보강. Run log를 실제로 읽는 Log Lens receiver adapter는 별도
+  후속 작업이며, 기존 ancestor TOCTOU와 local-adapter FIFO/UNC reader 위험은 잔여 범위다.
 - 작성일: 2026-08-17
 - 범위: 저장소 전체 — `crates/applink`, `crates/launch`, `crates/integration`, 신규
   `crates/catalog`, `apps/catalog.json`, 기존 13개 앱 + 구현된 Devbox Launcher·계획된 Log Lens
@@ -177,7 +180,7 @@ degrade한다.** 크래시하거나 오류 대화상자를 띄우지 않는다. 
 | run-manager | `Task` (v0.5.0) | 저장된 job/service id를 재검증하고 확인 후 실행 |
 | devbox-manager | `Install` (v0.5.0, hidden) | embedded catalog app id를 재검증하고 설치 화면 표시 |
 | webhook-lab | `Handoff(webhook-fixture/v1)` | response fixture 초안 preview |
-| log-lens | `Handoff(log-source/v1)` | local/Run/WSL log source 연결 |
+| log-lens | `Handoff(log-source/v1)` | local/WSL source 연결과 Run identity handoff preview (Run receiver follow-up) |
 
 이 표는 §2의 `accepts` 선언과 1:1 대응한다. 선언하지 않은 target은 수신 앱이 명시적인
 no-op/error로 처리하며 다른 기본 동작으로 fall through하지 않는다.
@@ -241,7 +244,7 @@ pending --atomic claim(consumer+lease)--> claimed --ack--> consumed/deleted
 `toolbox-text/v1`이다. 새 kind는 source/target/payload schema와 redaction 규칙을 설계 문서에
 먼저 추가한다.
 
-**2026-08-28 `log-source/v1` producer/receiver contract (#366/#367).** Run Manager는 기존
+**2026-08-28 `log-source/v1` producer/claim-preview contract (#366/#367).** Run Manager는 기존
 `{ kind, sourceId, runId, stream }` reference를 그대로 payload로 사용한다. `sourceId`는
 `run-manager:<run-id>:<stdout|stderr>`와 exact 일치하며 run 저장소의 상대 log directory,
 명령, cwd, 환경변수, credential, 원문은 포함하지 않는다. WSL Desktop은 arbitrary command를
@@ -256,17 +259,32 @@ pending --atomic claim(consumer+lease)--> claimed --ack--> consumed/deleted
 argv injection 문자를 거부한다. 두 producer는 catalog가 선언한 설치된 Log Lens를 확인한 뒤
 공용 one-time store에 10분 TTL envelope을 만들고 AppLink에는 kind/id만 전달한다. Log Lens는
 cold/hot request를 자동으로 source에 추가하지 않고 claim→summary preview를 먼저 표시한다.
-사용자가 명시적으로 `읽기 전용 source 추가`를 누를 때만 ack 후 fixed adapter를 읽고, 취소·검증
-실패·lease expiry는 restore한다. payload와 argv에는 secret/raw credential/로그 원문을 넣지
-않으며, WSL path는 이 일회성 TTL envelope과 process-local adapter 설정 밖에 저장하지 않는다.
-clipboard·shell·network ingest·permanent archive 경로를 제공하지 않는다.
+사용자가 명시적으로 `읽기 전용 source 추가`를 누를 때만 ack 후 지원되는 fixed adapter로 넘기고,
+취소·검증 실패·lease expiry는 restore한다. missing/expired/lease-expired claim 오류는 stale modal을
+정리하고, storage/restore 실패는 claim이 있는 경우 exact claim(그 외에는 exact request ID)을
+유지한 채 최대 세 번의 bounded recovery 시도를 제공한다.
+native 오류는 고정 코드만 frontend로 건너가며 raw path/payload/storage detail은 노출하지 않는다.
+payload와 argv에는 secret/raw credential/로그 원문을 넣지 않으며, WSL path는 이 일회성 TTL
+envelope과 process-local adapter 설정 밖에 저장하지 않는다. Run payload는 identity-only이므로
+Run log를 읽는 app-owned receiver adapter는 별도 후속 작업이다. clipboard·shell·network
+ingest·permanent archive 경로를 제공하지 않는다.
+
+producer가 envelope을 만든 뒤 Log Lens launch가 실패하면 방금 만든 descriptor와 immutable
+envelope을 다시 대조해 exact pending 파일만 제거한다. 따라서 launch 실패가 사용 불가능한
+pending handoff를 남기지 않으며, cleanup/launch 오류는 payload나 경로가 없는 고정 코드로
+반환한다.
+
+이 범위에는 shared store의 same-user ancestor replacement TOCTOU를 없애는
+`openat`/directory-handle 전환이나 기존 local-adapter FIFO/UNC reader 위험을 해결하는 작업은
+포함하지 않는다. 둘 다 별도 후속 보안/reader 작업으로 남긴다.
 
 Producer publish와 launch는 각 producer 프로세스 안에서 single-flight로 묶는다. 이미 처리 중인
 요청은 고정 `handoff-busy` 오류로 종료하고 새 envelope을 만들지 않는다. Receiver는 claim 시
 protocol version, opaque id/token, timestamp와 lease 범위, target/source-family parity를 다시
 검증하며, frontend도 native preview/source 응답의 허용 key·identity·경로·unit을 재검증한다.
-기존 preview/action 중 새 요청이 들어오면 최신 opaque id 하나만 bounded queue에 보존하고, 오래된
-React 응답은 generation/unmount guard로 폐기한다. `wslJournal`의 선택적 `unit`은 native JSON의
+기존 preview/action 중 새 요청이 들어오면 최신 opaque id 하나만 bounded queue에 보존하고,
+복구 중인 claim이 있으면 queue를 drain하지 않는다. 오래된 React 응답은 generation/unmount
+guard로 폐기한다. `wslJournal`의 선택적 `unit`은 native JSON의
 `null` 또는 누락을 동일하게 “unit 없음”으로 해석한다. modal은 명시적 add/cancel, Escape/Tab
 focus trap과 opener 복원을 제공한다.
 
@@ -622,8 +640,8 @@ single-instance·preview/apply/cancel·fixed error/no-clipboard 경계를 포함
 | 13 | Webhook Lab → API Playground `api-request/v1` | v0.5.0 |
 | 14 | Life Log → Knowledge `knowledge-draft/v1` | v0.5.0 |
 | 15 | Devbox Launcher catalog/snapshot action consumer bootstrap | v0.5.0 |
-| 16 | Log Lens `log-source/v1` receiver bootstrap | v0.5.0 |
+| 16 | Log Lens `log-source/v1` claim/preview boundary; app-owned Run receiver adapter remains a follow-up | v0.5.0 |
 | 17 | Developer Toolbox → API Playground `api-request/v1` (P3 integration) | v0.5.0 |
-| 18 | Run Manager·WSL Desktop → Log Lens `log-source/v1` (P3 integration) | v0.5.0 |
+| 18 | Run Manager·WSL Desktop → Log Lens `log-source/v1` producer integration (Run receiver reading is a separate follow-up) | v0.5.0 |
 
 1과 2는 한 PR로 묶는다 — 계약과 첫 소비자를 분리하면 검증이 안 된다.
