@@ -28,6 +28,8 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::time::{timeout_at, Instant as TokioInstant};
+#[cfg(target_os = "windows")]
+use windows::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
 
 const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(2);
 const PREFLIGHT_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
@@ -59,6 +61,11 @@ async fn run_bounded_stdout(
         .kill_on_drop(true);
     #[cfg(unix)]
     command.process_group(0);
+    #[cfg(target_os = "windows")]
+    // ProcessTree::assign resumes the sole primary thread only after the Job
+    // Object has been configured and assigned, so no probe helper can run
+    // before ownership is established.
+    command.creation_flags(CREATE_NO_WINDOW.0 | CREATE_SUSPENDED.0);
     let Ok(mut child) = command.spawn() else {
         return Ok((CommandProbe::Unavailable, Vec::new()));
     };
@@ -115,7 +122,9 @@ async fn run_bounded_stdout(
         process_tree.terminate_descendants();
         return Err(error);
     }
-    process_tree.terminate_descendants();
+    if !process_tree.terminate_descendants() {
+        return Ok((CommandProbe::Unavailable, Vec::new()));
+    }
     Ok((
         if status.success() {
             CommandProbe::Success
@@ -140,7 +149,7 @@ async fn run_fixed_command(
     #[cfg(unix)]
     command.process_group(0);
     #[cfg(target_os = "windows")]
-    command.creation_flags(0x0800_0000);
+    command.creation_flags(CREATE_NO_WINDOW.0 | CREATE_SUSPENDED.0);
     let Ok(mut child) = command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -176,7 +185,9 @@ async fn run_fixed_command(
         process_tree.terminate_descendants();
         return Err(error);
     }
-    process_tree.terminate_descendants();
+    if !process_tree.terminate_descendants() {
+        return Ok(CommandProbe::Unavailable);
+    }
     Ok(probe)
 }
 
@@ -191,7 +202,7 @@ async fn wsl_distro_probe(
     let mut command = Command::new("wsl.exe");
     command.args(["-l", "-v"]);
     #[cfg(target_os = "windows")]
-    command.creation_flags(0x0800_0000);
+    command.creation_flags(CREATE_NO_WINDOW.0 | CREATE_SUSPENDED.0);
     let (probe, bytes) = run_bounded_stdout(command, token, budget).await?;
     if probe != CommandProbe::Success {
         return Ok((DirectoryProbe::Unavailable, false));
@@ -504,8 +515,8 @@ pub(crate) async fn preflight_profile(
 /// health and Start Workspace.  The probes themselves are read-only; the
 /// lease is still important because WSL/TCP/snapshot work must not overlap a
 /// transition or another health request and consume duplicate native
-/// capacity.  A cancelled request is allowed to finish its already-bounded
-/// child probe, then its result is discarded before the lease is released.
+/// capacity. Cancellation terminates an active native tree; any blocking port
+/// worker is still joined before the lease is released.
 async fn run_preflight_command(
     app: &tauri::AppHandle,
     registry: &RunRegistry,

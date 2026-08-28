@@ -24,6 +24,7 @@
 //! (`docs/superpowers/specs/2026-08-17-app-interop-design.md` §1.1, §7 #3).
 
 mod installed;
+mod owned;
 
 pub use installed::{
     install_root_registry_path, installed_path_details_from_paths, installed_targets,
@@ -32,6 +33,7 @@ pub use installed::{
     InstallRootLocator, InstalledPathDetails, InstalledTarget, INSTALL_ROOT_SCHEMA_VERSION,
     MAX_INSTALL_ROOT_LOCATOR_BYTES,
 };
+pub use owned::OwnedProcess;
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -48,6 +50,7 @@ const RUNTIME_ENV_ALLOWLIST: &[&str] = &[
     "LANG",
     "TERM",
     "TMPDIR",
+    "XDG_RUNTIME_DIR",
     "XDG_CONFIG_HOME",
     "XDG_DATA_HOME",
     "XDG_CACHE_HOME",
@@ -227,7 +230,11 @@ pub fn launch(app_id: &str, args: &[&str]) -> Result<u32, String> {
     command.process_group(0);
     command
         .spawn()
-        .map(|c| c.id())
+        .map(|child| {
+            let pid = child.id();
+            owned::reap_detached(child);
+            pid
+        })
         .map_err(|_| "설치된 앱 실행에 실패했습니다".to_string())
 }
 
@@ -265,8 +272,37 @@ pub fn launch_with_environment(
     command.process_group(0);
     command
         .spawn()
-        .map(|child| child.id())
+        .map(|child| {
+            let pid = child.id();
+            owned::reap_detached(child);
+            pid
+        })
         .map_err(|_| "설치된 앱 실행에 실패했습니다".to_string())
+}
+
+/// Launch an installed app with a process-tree receipt and a short-lived
+/// project environment overlay.  Unlike [`launch_with_environment`], this
+/// function retains a backend-only tree receipt for the caller to stop later.
+pub fn launch_owned_with_environment(
+    app_id: &str,
+    args: &[&str],
+    environment: &[(&str, &str)],
+) -> Result<OwnedProcess, String> {
+    if environment
+        .iter()
+        .any(|(name, _)| is_runtime_environment_name(name))
+    {
+        return Err("프로젝트 환경이 runtime 환경을 덮어쓸 수 없습니다".into());
+    }
+    let exe = resolve_installed(app_id)
+        .ok_or_else(|| "앱 설치 없음 — Devbox Manager에서 먼저 설치하세요".to_string())?;
+    let mut command = std::process::Command::new(&exe);
+    command
+        .args(args)
+        .env_clear()
+        .envs(runtime_environment())
+        .envs(environment.iter().copied());
+    owned::spawn_owned(command)
 }
 
 fn runtime_environment() -> BTreeMap<String, String> {
@@ -322,6 +358,21 @@ pub fn launch_open_with_environment(
     launch_with_environment(app_id, &args, environment)
 }
 
+/// [`launch_open_with_environment`] with Workbench-owned process-tree
+/// authority. The returned receipt is backend-only and must not be serialized
+/// or reduced to a PID for later cleanup. Windows retains an exact Job handle;
+/// Unix retains the launch-time private process group with its documented
+/// process-group limitations.
+pub fn launch_open_owned_with_environment(
+    app_id: &str,
+    req: &devbox_applink::OpenRequest,
+    environment: &[(&str, &str)],
+) -> Result<OwnedProcess, String> {
+    let argv = open_argv(req);
+    let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+    launch_owned_with_environment(app_id, &args, environment)
+}
+
 /// [`launch_open`]에서 프로세스 spawn 없이 argv 구성만 떼어낸 부분. 테스트가 실제
 /// 프로세스를 띄우지 않고도 각 호출부가 만드는 argv를 단언할 수 있도록 공개한다.
 pub fn open_argv(req: &devbox_applink::OpenRequest) -> Result<Vec<String>, String> {
@@ -334,7 +385,8 @@ mod tests {
 
     #[test]
     fn runtime_environment_drops_unrelated_host_values() {
-        let environment = allowlisted_environment([
+        #[cfg_attr(not(unix), allow(unused_mut))]
+        let mut variables = vec![
             ("PATH".to_string(), "safe-path".to_string()),
             (
                 "AWS_SECRET_ACCESS_KEY".to_string(),
@@ -344,7 +396,10 @@ mod tests {
                 "PROJECT_VALUE".to_string(),
                 "overlay-is-separate".to_string(),
             ),
-        ]);
+        ];
+        #[cfg(unix)]
+        variables.push(("XDG_RUNTIME_DIR".to_string(), "/run/user/1000".to_string()));
+        let environment = allowlisted_environment(variables);
 
         assert_eq!(
             environment.get("PATH").map(String::as_str),
@@ -354,6 +409,11 @@ mod tests {
         );
         assert!(!environment.contains_key("AWS_SECRET_ACCESS_KEY"));
         assert!(!environment.contains_key("PROJECT_VALUE"));
+        #[cfg(unix)]
+        assert_eq!(
+            environment.get("XDG_RUNTIME_DIR").map(String::as_str),
+            Some("/run/user/1000")
+        );
     }
 
     #[test]

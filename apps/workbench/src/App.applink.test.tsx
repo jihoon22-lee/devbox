@@ -33,7 +33,7 @@ vi.mock("./api", () => ({
   deleteProfile: vi.fn(),
   deleteProfileTemplate: vi.fn(),
   dependencyHealth: vi.fn().mockResolvedValue({ profileId: "p-1", ready: true, items: [] }),
-  listProfileTemplates: vi.fn().mockResolvedValue([]),
+  listProfileTemplates: vi.fn().mockResolvedValue({ revision: "a".repeat(64), templates: [] }),
   updateProfile: vi.fn(),
   updateProfileTemplate: vi.fn(),
   projectHealth: vi.fn().mockResolvedValue({ profileId: "p-1", items: [] }),

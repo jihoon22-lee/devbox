@@ -39,6 +39,7 @@ import {
   type ProjectHealth,
   type ProjectProfile,
   type ProfileTemplate,
+  type ProfileTemplateSnapshot,
   type ResourceProvenance,
   type WorkspaceRun,
   type WorkspaceRunOwnership,
@@ -147,6 +148,7 @@ function trapModalFocus(
 export default function App() {
   const [profiles, setProfiles] = useState<ProjectProfile[]>([]);
   const [templates, setTemplates] = useState<ProfileTemplate[]>([]);
+  const [templateRevision, setTemplateRevision] = useState("");
   const [editing, setEditing] = useState<ProfileDraft | null>(null);
   const [templateDialog, setTemplateDialog] = useState<"wizard" | "manage" | null>(null);
   const [wizardDraft, setWizardDraft] = useState<ProfileDraft | null>(null);
@@ -284,22 +286,26 @@ export default function App() {
     }
   }, []);
 
-  const loadTemplates = useCallback(async () => {
+  const loadTemplates = useCallback(async (): Promise<ProfileTemplateSnapshot | null> => {
     const request = ++templateRequest.current;
     setTemplateError(null);
     try {
       const loaded = await listProfileTemplates();
       if (request !== templateRequest.current) return null;
-      setTemplates(loaded);
+      setTemplates(loaded.templates);
+      setTemplateRevision(loaded.revision);
       return loaded;
     } catch {
       if (request === templateRequest.current) {
         // A failed refresh must not leave an older template list actionable in
         // a newly opened dialog. Keep only the fixed error state visible.
         setTemplates([]);
+        setTemplateRevision("");
         setTemplateError("프로필 템플릿을 불러올 수 없습니다.");
       }
-      return request === templateRequest.current ? [] : null;
+      return request === templateRequest.current
+        ? { revision: "", templates: [] }
+        : null;
     }
   }, []);
 
@@ -317,9 +323,9 @@ export default function App() {
       const loadRequest = templateRequest.current + 1;
       const loaded = await loadTemplates();
       if (loadRequest !== templateRequest.current) return;
-      if (loaded && loaded.length > 0) {
-        setWizardTemplateId(loaded[0].id);
-        setWizardDraft(profileDraftFromTemplate(loaded[0]));
+      if (loaded && loaded.templates.length > 0) {
+        setWizardTemplateId(loaded.templates[0].id);
+        setWizardDraft(profileDraftFromTemplate(loaded.templates[0]));
       }
     } finally {
       setTemplateBusy(false);
@@ -339,7 +345,9 @@ export default function App() {
       const loadRequest = templateRequest.current + 1;
       const loaded = await loadTemplates();
       if (loadRequest !== templateRequest.current) return;
-      setTemplateEditing(loaded && loaded[0] ? templateDraftFromTemplate(loaded[0]) : emptyProfileTemplateDraft());
+      setTemplateEditing(loaded && loaded.templates[0]
+        ? templateDraftFromTemplate(loaded.templates[0])
+        : emptyProfileTemplateDraft());
     } finally {
       setTemplateBusy(false);
     }
@@ -389,7 +397,10 @@ export default function App() {
     const template = templates.find((candidate) => candidate.id === templateId);
     setWizardDraft((previous) => {
       const defaults = profileDraftFromTemplate(template ?? null);
-      if (!previous || !template) return defaults;
+      // “직접 입력” is a mode switch, not a reset action. Keep values the
+      // user already entered when the empty option is selected.
+      if (!previous) return defaults;
+      if (!template) return previous;
       return {
         ...previous,
         windowsPath: previous.windowsPath.trim() ? previous.windowsPath : defaults.windowsPath,
@@ -445,14 +456,17 @@ export default function App() {
     setTemplateError(null);
     try {
       if (validation.template.id) {
-        await updateProfileTemplate(validation.template);
+        await updateProfileTemplate(validation.template, templateRevision);
       } else {
         const created = await createProfileTemplate(validation.template);
         setTemplateEditing(templateDraftFromTemplate(created));
       }
       const loaded = await loadTemplates();
       if (loaded && validation.template.id) {
-        setTemplateEditing(templateDraftFromTemplate(loaded.find((candidate) => candidate.id === validation.template!.id) ?? validation.template));
+        setTemplateEditing(templateDraftFromTemplate(
+          loaded.templates.find((candidate) => candidate.id === validation.template!.id)
+            ?? validation.template,
+        ));
       }
     } catch {
       if (operationRequest === templateRequest.current) {
@@ -471,10 +485,12 @@ export default function App() {
     setTemplateBusy(true);
     setTemplateError(null);
     try {
-      await deleteProfileTemplate(templateId);
+      await deleteProfileTemplate(templateId, templateRevision);
       const loaded = await loadTemplates();
       if (loaded) {
-        setTemplateEditing(loaded[0] ? templateDraftFromTemplate(loaded[0]) : emptyProfileTemplateDraft());
+        setTemplateEditing(loaded.templates[0]
+          ? templateDraftFromTemplate(loaded.templates[0])
+          : emptyProfileTemplateDraft());
       }
     } catch {
       if (operationRequest === templateRequest.current) {

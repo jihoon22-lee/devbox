@@ -27,10 +27,10 @@ transition, 실행 소유권)를 순서대로 통과하므로 한 PR 후보로 �
 |---|---|---|---|
 | #359 | template CRUD와 템플릿 기반 새 프로젝트 wizard | project-independent defaults만 복사하고 environment/secret은 복사하지 않음 | template 파일 CAS/atomic write 실패 또는 profile validation 실패 시 기존 template/profile 파일과 프로젝트 파일을 그대로 유지 |
 | #360 | app/distro/path/port/service dependency health | 기존 bounded preflight DTO와 provenance를 read-only inspection에서 재사용; 자동 설치·시작·복구 없음 | health는 자원 mutation/cleanup을 하지 않음. stale 응답은 renderer sequence로 버리고 기존 화면을 유지 |
-| #361 | 실패한 단계부터 idempotent retry | known step suffix만 실행하고 성공 step·external resource·Workbench-owned process를 재시작하지 않음 | 기존 run은 commit 전 authoritative 상태로 유지. 이번 retry가 새로 만든 PID만 guard로 rollback; 일반 launch failure는 partial run으로 남김 |
+| #361 | 실패한 단계부터 idempotent retry | known step suffix만 실행하고, 성공한 비-process step과 cloneable `OwnedProcess` receipt로 현재 살아 있음이 확인된 Workbench-owned process만 skip. 과거 `Existing`/`WorkbenchStarted` provenance만으로 process를 skip하지 않음 | 기존 run은 commit 전 authoritative 상태로 유지. 이번 retry가 새로 만든 owned receipt만 guard로 rollback; 일반 launch failure는 partial run으로 남김 |
 
 한 이슈의 실패는 다른 이슈의 저장소나 외부 앱 DB를 되돌리지 않는다. #359는
-템플릿/profile 데이터 경계, #360은 관찰 전용 경계, #361은 run/PID 소유권 경계를
+템플릿/profile 데이터 경계, #360은 관찰 전용 경계, #361은 run/process-receipt 소유권 경계를
 각각 소유한다.
 
 ## Acceptance #359 — profile template CRUD + wizard
@@ -45,9 +45,11 @@ transition, 실행 소유권)를 순서대로 통과하므로 한 PR 후보로 �
   reference는 타입과 저장소 모두에 존재하지 않는다.
 - wizard는 기존 입력값을 우선하고 빈 field에만 템플릿 기본값을 채운다. 새 profile
   ID는 backend가 생성하며, template 적용 후에도 profile 전체를 다시 validate한다.
-- profile template CRUD는 Workbench profile store lock과 CAS/atomic write를
-  공유하지만 두 JSON 파일을 한 트랜잭션으로 묶지 않는다. profile 생성 실패 시
-  template 파일은 바뀌지 않는다.
+- `list_profile_templates`는 템플릿 배열과 native가 계산한 opaque SHA-256
+  `revision`을 함께 반환한다. renderer는 편집·삭제 당시의 `expectedRevision`을
+  보내며, backend는 Workbench profile store lock을 잡은 같은 critical section에서
+  현재 revision과 비교한 뒤에만 atomic write한다. stale revision이면 변경하지
+  않고 충돌을 반환한다. 두 JSON 파일을 한 트랜잭션으로 묶지는 않는다.
 
 ### Fixtures
 
@@ -55,8 +57,10 @@ transition, 실행 소유권)를 순서대로 통과하므로 한 PR 후보로 �
   unsafe path, apply-only-empty-fields, environment drop.
 - Rust command: missing file → empty store, regular-file round-trip, symlink/link
   rejection, malformed/credential-looking bytes with fixed error.
-- React: template draft round-trip, path-less template, invalid port/service input,
-  wizard selection and create payload with `environment: null`, manager update.
+- React: template snapshot/revision round-trip, stale update/delete payload,
+  template draft round-trip, path-less template, invalid port/service input, wizard
+  selection/direct-entry draft preservation and create payload with `environment: null`,
+  manager update.
 
 ### Rollback boundary
 
@@ -108,37 +112,46 @@ health 명령에는 rollback이 없다. read-only probe 중 오류는 fixed unav
 
 - `WorkspaceRun`은 `retryCount`, `canRetry`, `failedStep`을 추가하고 기존
   bounded `steps`와 stable resource provenance를 유지한다. ownership restore
-  DTO에는 PID가 계속 노출되지 않는다.
+  DTO에는 PID나 native handle이 계속 노출되지 않는다.
 - retry planner가 허용하는 순서는 `wait-port` → `open-wsl-desktop` →
-  `open-code-pad`뿐이다. 첫 failed known step에서 시작하며, 성공한 step과
-  `Existing`/`WorkbenchStarted` process provenance를 skip한다. unknown failed
-  step/no failed step은 fail-closed한다.
+  `open-code-pad`뿐이다. 첫 failed known step에서 시작하며, 성공한 step만
+  무조건 skip한다. process provenance는 과거 관찰일 뿐이므로 단독으로 신뢰하지
+  않고, backend가 보관한 exact `OwnedProcess` receipt의 liveness를 재확인해 실제로
+  살아 있는 Workbench-owned process만 skip한다. 종료된 owned process와 receipt가
+  없는 `Existing` 관찰은 retry 대상이 되며, unknown failed step/no failed step은
+  fail-closed한다.
 - retry 시작 전 profile을 다시 로드하고 preflight를 재실행한다. profile 변경,
-  cancellation/timeout, environment/provider 오류, publish 전 오류는 새 PID만
-  `StartedPidGuard`로 정리하고 기존 run을 보존한다.
+  cancellation/timeout, environment/provider 오류, publish 전 오류는 새 owned receipt만
+  `StartedProcessGuard`로 정리하고 기존 run을 보존한다.
+- liveness는 profile/preflight처럼 시간이 걸리는 read-only 작업 뒤에 다시
+  샘플링하고, bounded canonical step을 실제로 처리하는 경계에서도 다시 확인한다.
+  따라서 port wait 중에 기존 Workbench-owned 앱이 종료되거나 반대로 다시 살아난
+  경우에도 오래된 계획 샘플만으로 해당 child를 누락·중복 실행하지 않는다.
 - child launch 자체의 fixed failure는 고정된 failed step으로 기록한다. 서비스
   자동 시작, 기존 external process 강제 종료, 전체 Workspace 재시작과 destructive
   auto-repair는 포함하지 않는다.
 
 ### Fixtures
 
-- Pure retry fixture: failure-step resume, successful/Workbench-owned process skip,
-  external existing process is not restarted, no-failure and unknown-step rejection.
+- Pure retry fixture: failure-step resume, successful/non-process and currently live
+  Workbench-owned process skip, exited owned process retry, provenance-only process
+  retry, no-failure and unknown-step rejection.
 - Rust workspace fixture: failed-step metadata, provenance merge/deduplication,
-  run ownership/stop identity checks.
+  run ownership and opaque receipt liveness/stop checks.
 - React fixture: failed Code Pad retry, existing WSL provenance preserved, retry
   result/remaining failure rendering and fixed error path.
 
 ### Rollback boundary
 
 retry의 기존 `WorkspaceRun`은 마지막 commit 전까지 authoritative하다. retry 중 새로
-생긴 PID는 별도 guard에만 들어가며 any stale profile/budget/operation failure에서
-그 PID만 terminate한다. 성공한 child는 즉시 종료하지 않고 partial run으로 게시해
-사용자가 `Stop What I Started`로 Workbench-owned PID만 정리한다.
+  생긴 receipt는 별도 guard에만 들어가며 any stale profile/budget/operation failure에서
+  그 receipt만 terminate한다. 성공한 child는 즉시 종료하지 않고 partial run으로 게시해
+  사용자가 `Stop What I Started`로 Workbench-owned process tree만 정리한다.
 
 Stop What I Started는 OS의 process-tree 종료 결과를 확인한다. 종료가 거부되거나
-일시적으로 실패한 PID가 있으면 실행 기록을 삭제하지 않고 남은 ownership만 보존해
-재시도할 수 있게 한다. taskkill/kill의 원문 출력은 UI/오류로 전달하지 않는다.
+일시적으로 실패한 owned receipt가 있으면 실행 기록을 삭제하지 않고 남은 ownership만
+보존해 재시도할 수 있게 한다. native handle/PID 또는 taskkill/kill 원문 출력은 UI/오류로
+전달하지 않는다.
 
 ## Implementation map
 
@@ -155,6 +168,12 @@ Stop What I Started는 OS의 process-tree 종료 결과를 확인한다. 종료�
   `health_operation` single-flight boundary.
 - `apps/workbench/src-tauri/src/commands/workspace.rs` — step/provenance metadata,
   child launch guard, retry command and stop/start transition gate.
+- `apps/workbench/src-tauri/src/commands/process_tree.rs` — bounded probe-tree
+  ownership, suspended Windows Job assignment/resume, and full group/Job
+  disappearance checks.
+- `crates/launch/src/owned.rs` and `crates/launch/src/lib.rs` — cloneable opaque
+  `OwnedProcess` receipts, exact launch-boundary authority, and legacy-child
+  background reaping.
 - `apps/workbench/src-tauri/src/{core,commands}/mod.rs` and `lib.rs` — module and IPC
   registration.
 
@@ -177,23 +196,20 @@ Stop What I Started는 OS의 process-tree 종료 결과를 확인한다. 종료�
 ## Verification plan and preparation status
 
 The original dirty-candidate phase intentionally deferred resource-heavy commands while
-other grouped work was running. The remediation pass then used a single Rust worker and
-the native target directory, and completed the following checks on the latest changes:
+other grouped work was running. This ownership-hardening pass was limited to source
+formatting and diff checks; the parent must rerun the resource-heavy gates after merging
+the complete grouped change:
 
 ```text
 cargo fmt --all -- --check                         PASS
 git diff --check                                   PASS
-cargo check -p workbench -p launch -j1             PASS
-cargo test -p workbench -p launch -j1              PASS
-  workbench: 113 passed; launch: 25 passed
-cargo clippy -p workbench -p launch --all-targets -j1 -- -D warnings
-                                                     PASS
-pnpm --dir apps/workbench exec tsc --noEmit        PASS
+parent gate: cargo check/test/clippy -p workbench -p launch
+parent gate: pnpm --dir apps/workbench exec tsc --noEmit && build
 ```
 
 The focused Rust fixtures include template bounds/CAS/path safety, preflight probe
-outcomes, cancellation-before-spawn, retry planning, and Linux process-creation
-identity/failed-cleanup outcomes. The frontend fixtures include template focus and stale
+outcomes, cancellation-before-spawn, retry planning, opaque receipt terminal-state and
+failed-cleanup outcomes. The frontend fixtures include template focus and stale
 request handling, health refresh, retry rendering, preflight cancellation from its
 loading state, and keeping a run visible when Stop retains failed ownership.
 
@@ -202,13 +218,8 @@ small platform runtime allowlist and the validated project overlay. This keeps u
 host secrets and shell hooks out of Workbench-launched apps while preserving the normal
 no-overlay launch API. The launch crate has a focused allowlist fixture.
 
-`pnpm --dir apps/workbench build` passed independently. The latest full Vitest attempt
-was deliberately limited to our own process because the `/mnt/e` 9p mount became
-I/O-bound under concurrent workspace work. The run was stopped safely after prolonged
-no-progress; the earlier baseline run had 6 files/69 tests passing before the newest
-cancellation/Stop fixtures. Parent must rerun the latest `pnpm --dir apps/workbench test`
-when the host has headroom, then run the full Rust/frontend gates, CI, and Windows
-packaged acceptance.
+No build/test command was run in this pass. Parent must rerun the latest Workbench
+Vitest, full Rust/frontend gates, CI, and Windows packaged acceptance.
 
 A source-level Windows GNU check reached the Tauri build script but could not complete on
 this WSL host because `x86_64-w64-mingw32-windres` is not installed. This is an environment
@@ -227,15 +238,22 @@ this candidate.
   without cancelling one another, and it preserves an active `workspace-start` mutation. The renderer
   shows a cancellable loading status and does not let stale or unmounted requests
   overwrite the selected profile.
-- Workbench-owned process records capture a creation identity (Windows process creation
-  time or Unix `/proc` start ticks), so PID reuse is treated as mismatch rather than a
-  valid cleanup target. Workbench launches use a private Unix process group; when the
-  root exits first, Stop still performs bounded TERM/KILL escalation against that group
-  after the recorded identity check. Windows Stop uses `taskkill /PID /T /F` with bounded
-  waiting; failed or unavailable termination is retained in ownership and the UI re-reads
-  the authoritative run before clearing it. Short-lived native probes use a Unix process
-  group or Windows kill-on-close Job Object, including the assignment-failure fallback,
-  so timeout/cancel/drop cannot silently degrade to root-only cleanup.
+- Workbench-owned process records retain a cloneable opaque `OwnedProcess` receipt created
+  at spawn time, so cleanup never performs a later PID/creation-time identity lookup. On
+  Windows the receipt retains the exact kill-on-close Job Object and queries active-process
+  accounting until the full Job is empty, even after the root exits. On Unix it retains a
+  private process group and performs bounded TERM/KILL escalation plus full-group
+  disappearance checks; terminal emptiness is sticky and prevents later signalling. The
+  weak root reaper reaps `Child` without keeping a dropped receipt alive and immediately
+  cleans remaining group members after root exit. Failed bounded
+  termination is retained in ownership and the UI re-reads the authoritative run before
+  clearing it. Short-lived native probes use the same Unix group or Windows suspended
+  create → Job assignment → sole-primary-thread resume boundary, including fail-closed
+  assignment/resume cleanup, so timeout/cancel/drop cannot silently degrade to root-only
+  cleanup. Unlike a Windows Job handle, a Unix/macOS process group is a numeric identity:
+  deliberate `setsid()` descendants remain outside it, and an empty group could
+  theoretically be reused before terminal emptiness is observed. macOS has no `/proc`
+  identity path.
 - The Workbench environment launch boundary clears inherited host variables and restores
   only the platform runtime allowlist before applying the validated project overlay. This
   closes the documented host-secret inheritance gap without changing the ordinary launch
@@ -243,13 +261,14 @@ this candidate.
 - Runtime app-capability catalog reads are bounded to 1 MiB before parsing, preventing a
   corrupted/oversized catalog from becoming an unbounded health probe.
 - Native Windows packaged checks must exercise app capability discovery, stopped distro
-  behavior, junction/reparse handling, port races, cancellation/timeout, and
-  child-process PID rollback/reuse.
+  behavior, junction/reparse handling, port races, cancellation/timeout, suspended
+  Job assignment/resume, full-tree accounting after root exit, and child-receipt rollback.
 - Retry launch calls are intentionally narrow and do not auto-start Run Manager
   services; product review must confirm that partial-run UX is sufficient.
 - The template file is independently atomic from the profile file. A crash between
   the two writes can leave a newly created profile and an unchanged template, which
   is safe but should remain visible in the PR rationale.
-- `WorkspaceRun` persisted/IPC compatibility and TypeScript command payloads passed the
-  focused Rust check/clippy and TypeScript compile. The latest frontend build passed;
-  the full Vitest run and full workspace/Windows review remain parent gates.
+- The receipt/process-tree hardening was source-formatted and diff-checked only; no build
+  or test command was run in this pass. `WorkspaceRun` persisted/IPC compatibility,
+  TypeScript payloads, full Rust/frontend gates, CI, and Windows packaged review remain
+  parent gates.

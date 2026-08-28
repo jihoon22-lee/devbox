@@ -99,9 +99,9 @@ v0.4.1의 `Path`에는 distro나 profile 정보가 없다. 따라서 Start Works
 `Start Workspace`로 묶는다. 두 acceptance는 독립된 fixture·문서·rollback 판단을 유지한다.
 환경 metadata/secret provider가 실패해도 preflight가 이미 관찰한 resource를 변경하지 않고,
 preflight가 실패해도 `.env`를 읽거나 child를 시작하지 않는다. 둘 중 하나가 stale이면 전체
-start를 fail-closed하고 Workbench가 시작한 PID만 rollback한다. 검토한 상태가 유지된 채 개별 앱
-실행만 실패한 경우에는 성공한 앱과 고정된 실패 단계를 부분 run으로 게시하며, 사용자가
-`Stop What I Started`로 Workbench-owned PID를 정리한다.
+start를 fail-closed하고 Workbench가 시작한 opaque owned receipt만 rollback한다. 검토한 상태가
+유지된 채 개별 앱 실행만 실패한 경우에는 성공한 앱과 고정된 실패 단계를 부분 run으로 게시하며,
+사용자가 `Stop What I Started`로 Workbench-owned process tree를 정리한다.
 
 - preflight는 앱 capability(`wsl-desktop:path`, `code-pad:workspace`), 선택한 WSL distro의
   존재·running 상태, Windows/WSL working directory, 예상 TCP port, Run Manager service
@@ -130,9 +130,13 @@ Start Workspace 결과 → 실패 단계 retry`라는 하나의 Workbench 사용
 - **프로필 템플릿과 wizard (#359)** — `%LOCALAPPDATA%\com.devbox.workbench\profile-templates.json`
   별도 저장소에 bounded template CRUD를 둔다. 이름, 선택적 Windows/WSL/Git 기본
   경로, 예상 port와 Run Manager service ID만 저장하며 `.env`, secret reference,
-  raw value/ciphertext는 저장하지 않는다. wizard는 사용자가 입력한 값을 우선하고
-  비어 있는 field에만 기본값을 적용한다. template/profile validation, symlink/reparse
-  거부, raw-byte CAS와 atomic write가 실패하면 기존 파일과 프로젝트 파일을 보존한다.
+  raw value/ciphertext는 저장하지 않는다. template read는 템플릿 배열과 native가
+  계산한 opaque SHA-256 revision을 함께 반환한다. renderer는 편집/삭제 당시 읽은
+  revision을 expected revision으로 보내고, backend는 profile store lock을 잡은
+  critical section 안에서 현재 revision을 다시 확인한 뒤 atomic write한다. stale
+  revision이면 변경을 거부하고, wizard는 사용자가 입력한 값을 우선하고 비어 있는
+  field에만 기본값을 적용한다. template/profile validation, symlink/reparse 거부,
+  revision CAS와 atomic write가 실패하면 기존 파일과 프로젝트 파일을 보존한다.
 - **Dependency health (#360)** — `dependency_health`와 `workspace_preflight`는
   `health_operation` single-flight lane에서 Start Workspace/project health와
   native probe를 직렬화한다. Start Workspace preflight의 bounded DTO와 probe를
@@ -141,24 +145,32 @@ Start Workspace 결과 → 실패 단계 retry`라는 하나의 Workbench 사용
   관찰만 하며 앱 설치, WSL/service 시작, 자동 복구와 외부 DB 변경은 하지 않는다.
   stale 응답은 현재 profile 화면을 덮어쓰지 않는다.
 - **Idempotent retry (#361)** — 실패한 `wait-port → open-wsl-desktop → open-code-pad`
-  suffix만 다시 실행하고, 성공한 단계·Workbench가 시작한 process·기존 external
-  resource는 다시 시작하지 않는다. profile/preflight/environment를 실행 직전에
-  재검증하고, 전환 무결성이 깨지면 이번 retry가 새로 만든 PID만 rollback한다.
+  suffix만 다시 실행하고, 성공한 단계는 다시 실행하지 않는다. process provenance는
+  과거 상태만으로 skip하지 않고 backend가 보관한 cloneable `OwnedProcess` receipt의
+  authoritative liveness를 다시 확인한다. 실제로 살아 있는 Workbench-owned process만
+  건너뛰며, 종료된 owned process와 receipt가 없는 `Existing` 관찰은 retry 대상이 된다.
+  profile/preflight 뒤와 각 child 경계에서 liveness를 다시 샘플링해 port 대기 중 종료·재기동된
+  상태도 반영한다. profile/preflight/environment를 실행 직전에 재검증하고, 전환 무결성이
+  깨지면 이번 retry가 새로 만든 owned receipt만 rollback한다.
   일반적인 앱 launch failure는 고정된 partial run으로 남겨 `Stop What I Started`가
-  Workbench-owned process tree만 정리하게 한다. OS가 종료를 거부한 PID는 실행
-  기록에 남겨 후속 Stop 재시도가 가능하다. 서비스 자동 시작이나 전체 Workspace
-  재시작은 범위 밖이다.
+  Workbench-owned process tree만 정리하게 한다. owned authority가 bounded stop을
+  거부하면 실행 기록에 남겨 후속 Stop 재시도가 가능하다. 서비스 자동 시작이나 전체
+  Workspace 재시작은 범위 밖이다.
+
+`crates/launch::OwnedProcess`는 Windows에서 CREATE_SUSPENDED child의 sole primary
+thread를 Job Object에 할당한 뒤 한 번만 resume하고, Job active-process accounting이
+0이 될 때까지 전체 tree를 기다린다. Unix에서는 launch-time private process group에
+TERM→KILL과 bounded full-group disappearance check를 적용한다. 모든 clone은 같은
+authority를 공유하고 root `Child`는 weak background reaper가 회수하며, root 종료 직후
+남은 group도 즉시 정리한다. Unix/macOS의 numeric process group은 Windows Job handle과
+동일한 kernel identity가 아니므로 group이 비고 terminal 상태를 관찰하기 전 같은 ID가
+재사용되는 극히 짧은 경쟁과, group 밖으로 탈출하는 malicious `setsid()` descendant는
+잔여 경계다. macOS에는 Linux `/proc` identity fallback을 사용하지 않는다.
 
 구현 보강 단계에서는 동시 작업과 `/mnt/e` 9p I/O를 고려해 검증 worker를 직렬화했다.
-최신 변경 기준으로 `cargo fmt --all -- --check`, `git diff --check`,
-`cargo check -p workbench -p launch -j1`,
-`cargo test -p workbench -p launch -j1`(workbench 113개, launch 25개),
-`cargo clippy -p workbench -p launch --all-targets -j1 -- -D warnings`, 그리고
-`pnpm --dir apps/workbench exec tsc --noEmit`, `pnpm --dir apps/workbench build`를 통과했다. 프론트 Vitest는
-9p 마운트의 정체를 피하려고 제한 worker로 시도했으나 최신 UI 취소/Stop 회귀 fixture를
-포함한 재실행이 오래 대기하여 우리 프로세스만 중단했다. 따라서 parent가 자원 여유가
-있는 시점에 최신 `pnpm --dir apps/workbench test`, 전체 workspace gate, CI와 Windows
-packaged acceptance를 PR 직전에 다시 수행해야 한다.
+이번 owned-receipt/process-tree 변경은 `cargo fmt --all`과 `git diff --check`만 수행했으며,
+parent가 `cargo check`·`cargo test`·`clippy`·TypeScript/프론트 빌드, CI와 Windows packaged
+acceptance를 PR 직전에 최신 소스로 다시 수행해야 한다.
 WSL의 Windows GNU source check는 Tauri build script 단계에서 호스트에
 `x86_64-w64-mingw32-windres`가 없어 중단되었으므로, 이는 소스 오류가 아닌 toolchain
 환경 제약이며 Windows packaged acceptance를 별도로 통과해야 한다.

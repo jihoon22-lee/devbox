@@ -32,6 +32,7 @@ import {
   type ProjectHealth,
   type ProjectProfile,
   type ProfileTemplate,
+  type ProfileTemplateSnapshot,
   type WorkspacePreflight,
   type WorkspaceRun,
   type RuntimeSuggestions,
@@ -168,6 +169,11 @@ const nodeTemplate: ProfileTemplate = {
   runManagerServiceIds: ["node-dev"],
 };
 
+const templateSnapshot: ProfileTemplateSnapshot = {
+  revision: "a".repeat(64),
+  templates: [nodeTemplate],
+};
+
 const readyPreflight: WorkspacePreflight = {
   profileId: "p-1",
   ready: true,
@@ -232,7 +238,7 @@ beforeEach(() => {
     profiles = profiles.filter((profile) => profile.id !== id);
   });
   deleteProfileTemplateMock.mockReset().mockResolvedValue(undefined);
-  listProfileTemplatesMock.mockReset().mockResolvedValue([nodeTemplate]);
+  listProfileTemplatesMock.mockReset().mockResolvedValue(templateSnapshot);
   dependencyHealthMock.mockReset().mockImplementation(async (profileId) => ({
     ...readyPreflight,
     profileId,
@@ -1068,6 +1074,21 @@ describe("Workbench profile context menu", () => {
     expect(dialog).toBeTruthy();
   });
 
+  it("preserves wizard input when switching to direct entry", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "새 프로젝트 wizard" }));
+    await screen.findByRole("dialog", { name: "새 프로젝트 wizard" });
+    await screen.findByDisplayValue("/mnt/e/projects/node");
+
+    fireEvent.change(screen.getByLabelText("프로젝트 이름"), { target: { value: "node-app" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "프로필 템플릿" }), { target: { value: "" } });
+
+    expect(screen.getByLabelText("프로젝트 이름")).toHaveValue("node-app");
+    expect(screen.getByLabelText("WSL 경로")).toHaveValue("/mnt/e/projects/node");
+    expect(screen.getByLabelText("예상 포트 (쉼표)")).toHaveValue("3000");
+  });
+
   it("supports template CRUD in the dedicated manager", async () => {
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
@@ -1077,6 +1098,7 @@ describe("Workbench profile context menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "템플릿 저장" }));
     await waitFor(() => expect(updateProfileTemplateMock).toHaveBeenCalledWith(
       expect.objectContaining({ id: "template-node", name: "Node updated" }),
+      templateSnapshot.revision,
     ));
   });
 
@@ -1095,7 +1117,10 @@ describe("Workbench profile context menu", () => {
 
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(screen.getByRole("button", { name: "Node 서비스 템플릿 삭제" }));
-    await waitFor(() => expect(deleteProfileTemplateMock).toHaveBeenCalledWith("template-node"));
+    await waitFor(() => expect(deleteProfileTemplateMock).toHaveBeenCalledWith(
+      "template-node",
+      templateSnapshot.revision,
+    ));
     expect(updateProfileMock).not.toHaveBeenCalled();
   });
 

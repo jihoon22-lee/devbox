@@ -24,6 +24,12 @@ export interface ProfileTemplate {
   runManagerServiceIds: string[];
 }
 
+/** A template read snapshot and its opaque native CAS revision. */
+export interface ProfileTemplateSnapshot {
+  revision: string;
+  templates: ProfileTemplate[];
+}
+
 export type EnvironmentConflict = "none" | "duplicate" | "reserved" | "duplicateAndReserved";
 
 export interface SecretReference {
@@ -171,9 +177,9 @@ export function createProfile(profile: ProjectProfile): Promise<ProjectProfile> 
   return invoke<ProjectProfile>("create_profile", { profile });
 }
 
-export function listProfileTemplates(): Promise<ProfileTemplate[]> {
-  if (!isTauri()) return Promise.resolve([]);
-  return invoke<ProfileTemplate[]>("list_profile_templates");
+export function listProfileTemplates(): Promise<ProfileTemplateSnapshot> {
+  if (!isTauri()) return Promise.resolve({ revision: "", templates: [] });
+  return invoke<ProfileTemplateSnapshot>("list_profile_templates");
 }
 
 export function createProfileTemplate(template: ProfileTemplate): Promise<ProfileTemplate> {
@@ -181,14 +187,18 @@ export function createProfileTemplate(template: ProfileTemplate): Promise<Profil
   return invoke<ProfileTemplate>("create_profile_template", { template });
 }
 
-export function updateProfileTemplate(template: ProfileTemplate): Promise<void> {
+export function updateProfileTemplate(template: ProfileTemplate, expectedRevision: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("update_profile_template", { template });
+  return invoke<void>("update_profile_template", {
+    request: { template, expectedRevision },
+  });
 }
 
-export function deleteProfileTemplate(id: string): Promise<void> {
+export function deleteProfileTemplate(id: string, expectedRevision: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("delete_profile_template", { id });
+  return invoke<void>("delete_profile_template", {
+    request: { id, expectedRevision },
+  });
 }
 
 export function createProfileFromTemplate(

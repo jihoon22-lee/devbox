@@ -13,6 +13,7 @@ use crate::core::templates::{
 };
 use crate::platform::{open_readonly_with_identity, path_identity};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::fs::Metadata;
 use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
@@ -25,6 +26,8 @@ const TEMPLATE_WRITE_ERROR: &str = "프로필 템플릿을 저장할 수 없습�
 const TEMPLATE_PATH_ERROR: &str = "프로필 템플릿 경로를 확인할 수 없습니다";
 const TEMPLATE_CONFLICT_ERROR: &str =
     "프로필 템플릿 저장소가 다른 작업으로 변경되었습니다. 다시 시도하세요";
+const TEMPLATE_REVISION_BYTES: usize = 64;
+const MISSING_TEMPLATE_REVISION_INPUT: &[u8] = b"devbox.workbench.profile-templates.missing.v1";
 
 fn ensure_profile_id(mut profile: ProjectProfile) -> ProjectProfile {
     if profile.id.is_empty() {
@@ -36,7 +39,28 @@ fn ensure_profile_id(mut profile: ProjectProfile) -> ProjectProfile {
 #[derive(Debug)]
 struct TemplateStoreDocument {
     store: ProfileTemplateStore,
-    raw: Option<Vec<u8>>,
+    revision: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileTemplateSnapshot {
+    pub revision: String,
+    pub templates: Vec<ProfileTemplate>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateProfileTemplateRequest {
+    pub template: ProfileTemplate,
+    pub expected_revision: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeleteProfileTemplateRequest {
+    pub id: String,
+    pub expected_revision: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -158,14 +182,14 @@ fn load_template_document_at_path(path: &Path) -> Result<TemplateStoreDocument, 
     let Some(bytes) = read_template_file(path)? else {
         return Ok(TemplateStoreDocument {
             store: ProfileTemplateStore::empty(),
-            raw: None,
+            revision: template_revision(None),
         });
     };
     let text = std::str::from_utf8(&bytes).map_err(|_| TEMPLATE_READ_ERROR.to_string())?;
     let store = ProfileTemplateStore::load(text).map_err(|_| TEMPLATE_READ_ERROR.to_string())?;
     Ok(TemplateStoreDocument {
         store,
-        raw: Some(bytes),
+        revision: template_revision(Some(&bytes)),
     })
 }
 
@@ -181,9 +205,7 @@ fn save_template_document(
     let json = store.to_json_checked()?;
     let path = template_path(app)?;
     let current = read_template_file(&path)?;
-    if expected.raw.as_deref() != current.as_deref() {
-        return Err(TEMPLATE_CONFLICT_ERROR.into());
-    }
+    ensure_template_revision(&template_revision(current.as_deref()), &expected.revision)?;
     ensure_template_directory(&path)?;
     match std::fs::symlink_metadata(&path) {
         Ok(metadata) if is_link_metadata(&metadata) => return Err(TEMPLATE_PATH_ERROR.into()),
@@ -196,9 +218,37 @@ fn save_template_document(
         .map_err(|_| TEMPLATE_WRITE_ERROR.to_string())
 }
 
+fn template_revision(raw: Option<&[u8]>) -> String {
+    let digest = Sha256::digest(raw.unwrap_or(MISSING_TEMPLATE_REVISION_INPUT));
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn validate_template_revision(revision: &str) -> Result<(), String> {
+    if revision.len() != TEMPLATE_REVISION_BYTES
+        || !revision
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(TEMPLATE_CONFLICT_ERROR.into());
+    }
+    Ok(())
+}
+
+fn ensure_template_revision(current: &str, expected: &str) -> Result<(), String> {
+    validate_template_revision(expected)?;
+    if current != expected {
+        return Err(TEMPLATE_CONFLICT_ERROR.into());
+    }
+    Ok(())
+}
+
 #[tauri::command]
-pub fn list_profile_templates(app: AppHandle) -> Result<Vec<ProfileTemplate>, String> {
-    Ok(load_template_document(&app)?.store.templates)
+pub fn list_profile_templates(app: AppHandle) -> Result<ProfileTemplateSnapshot, String> {
+    let document = load_template_document(&app)?;
+    Ok(ProfileTemplateSnapshot {
+        revision: document.revision,
+        templates: document.store.templates,
+    })
 }
 
 #[tauri::command]
@@ -232,15 +282,16 @@ pub fn create_profile_template(
 pub fn update_profile_template(
     app: AppHandle,
     store_state: tauri::State<'_, Arc<ProfileStoreState>>,
-    template: ProfileTemplate,
+    request: UpdateProfileTemplateRequest,
 ) -> Result<(), String> {
     let _lock = store_state
         .lock
         .lock()
         .map_err(|_| TEMPLATE_WRITE_ERROR.to_string())?;
     let document = load_template_document(&app)?;
+    ensure_template_revision(&document.revision, &request.expected_revision)?;
     let mut store = document.store.clone();
-    store.replace(template)?;
+    store.replace(request.template)?;
     save_template_document(&app, &document, &store)
 }
 
@@ -248,16 +299,17 @@ pub fn update_profile_template(
 pub fn delete_profile_template(
     app: AppHandle,
     store_state: tauri::State<'_, Arc<ProfileStoreState>>,
-    id: String,
+    request: DeleteProfileTemplateRequest,
 ) -> Result<(), String> {
-    validate_profile_id(&id)?;
+    validate_profile_id(&request.id)?;
     let _lock = store_state
         .lock
         .lock()
         .map_err(|_| TEMPLATE_WRITE_ERROR.to_string())?;
     let document = load_template_document(&app)?;
+    ensure_template_revision(&document.revision, &request.expected_revision)?;
     let mut store = document.store.clone();
-    if !store.remove(&id) {
+    if !store.remove(&request.id) {
         return Err("프로필 템플릿을 찾을 수 없습니다".into());
     }
     save_template_document(&app, &document, &store)
@@ -358,6 +410,25 @@ mod tests {
         std::fs::write(&path, store.to_json_checked().unwrap()).unwrap();
         assert_eq!(load_template_document_at_path(&path).unwrap().store, store);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn template_snapshot_revision_is_opaque_and_changes_with_file_bytes() {
+        let missing = template_revision(None);
+        assert_eq!(missing.len(), TEMPLATE_REVISION_BYTES);
+        assert!(validate_template_revision(&missing).is_ok());
+
+        let store = ProfileTemplateStore {
+            version: PROFILE_TEMPLATE_VERSION,
+            templates: vec![template()],
+        };
+        let bytes = store.to_json_checked().unwrap();
+        let present = template_revision(Some(bytes.as_bytes()));
+        assert_eq!(present.len(), TEMPLATE_REVISION_BYTES);
+        assert_ne!(missing, present);
+        assert!(ensure_template_revision(&present, &present).is_ok());
+        assert!(ensure_template_revision(&present, &missing).is_err());
+        assert!(validate_template_revision("not-a-revision").is_err());
     }
 
     #[cfg(unix)]
