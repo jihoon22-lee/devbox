@@ -77,6 +77,29 @@ vi.mock("./components/TermPane", () => ({
 }));
 
 vi.mock("./api", () => ({
+  getDashboardSnapshot: vi.fn().mockResolvedValue({
+    revision: 1,
+    capturedAtMs: Date.now(),
+    staleAfterMs: 30_000,
+    distros: [
+      {
+        name: "Ubuntu",
+        version: 2,
+        default: true,
+        state: "Running",
+        terminalCount: 0,
+        dockerAvailability: "available",
+        containers: [],
+        resource: {
+          cpuPercent: 10,
+          memoryUsedBytes: 1,
+          memoryTotalBytes: 2,
+          diskUsedBytes: 1,
+          diskTotalBytes: 2,
+        },
+      },
+    ],
+  }),
   listDistros: vi.fn().mockResolvedValue([
     { name: "Ubuntu", version: 2, default: true, state: "Running" },
   ]),
@@ -316,6 +339,20 @@ describe("WSL Desktop pane and tab context menus", () => {
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(screen.getByTitle("Close terminal session-1"));
     expect(await screen.findByText("터미널 팬을 닫지 못했습니다.")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(raw);
+  });
+
+  it("새 터미널 시작 실패는 backend raw path나 오류를 화면에 반향하지 않는다", async () => {
+    const raw = "C:\\secret\\start credential-raw";
+    render(<App />);
+    await screen.findAllByRole("option", { name: /Ubuntu/u });
+    const addButton = screen.getByRole("button", { name: "+ Terminal" });
+    await waitFor(() => expect(addButton).toBeEnabled());
+    startSessionMock.mockRejectedValueOnce(new Error(raw));
+
+    fireEvent.click(addButton);
+
+    expect(await screen.findByText("터미널을 시작하지 못했습니다.")).toBeInTheDocument();
     expect(document.body.textContent).not.toContain(raw);
   });
 });

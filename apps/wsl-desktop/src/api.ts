@@ -5,6 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { isTauri } from "./lib/isTauri";
 import type {
   ContainerInfo,
+  DashboardSnapshot,
   DistroInfo,
   MultiplexerAvailability,
   MultiplexerKind,
@@ -33,6 +34,33 @@ const MOCK_CONTAINERS: ContainerInfo[] = [
   { id: "ghi789", name: "nginx", image: "nginx:1.25", status: "Exited (0) 3 days ago", ports: "80/tcp" },
 ];
 let nextMockSession = 0;
+
+let mockDashboardRevision = 0;
+
+export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
+  if (isTauri()) return invoke<DashboardSnapshot>("dashboard_snapshot");
+  mockDashboardRevision += 1;
+  return {
+    revision: mockDashboardRevision,
+    capturedAtMs: Date.now(),
+    staleAfterMs: 30_000,
+    distros: MOCK_DISTROS.map((distro) => ({
+      ...distro,
+      terminalCount: 0,
+      dockerAvailability: distro.state.toLowerCase() === "running" ? "available" : "notQueried",
+      containers: distro.default ? MOCK_CONTAINERS : [],
+      resource: distro.state.toLowerCase() === "running"
+        ? {
+            cpuPercent: 12,
+            memoryUsedBytes: 512 * 1024 * 1024,
+            memoryTotalBytes: 2 * 1024 * 1024 * 1024,
+            diskUsedBytes: 8 * 1024 * 1024 * 1024,
+            diskTotalBytes: 64 * 1024 * 1024 * 1024,
+          }
+        : null,
+    })),
+  };
+}
 
 export async function listDistros(): Promise<DistroInfo[]> {
   if (!isTauri()) return MOCK_DISTROS;

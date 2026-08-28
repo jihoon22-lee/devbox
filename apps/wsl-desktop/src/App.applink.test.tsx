@@ -17,6 +17,29 @@ vi.mock("./components/PaneCanvas", () => ({
   },
 }));
 vi.mock("./api", () => ({
+  getDashboardSnapshot: vi.fn().mockResolvedValue({
+    revision: 1,
+    capturedAtMs: Date.now(),
+    staleAfterMs: 30_000,
+    distros: [
+      {
+        name: "Ubuntu",
+        version: 2,
+        default: true,
+        state: "Running",
+        terminalCount: 0,
+        dockerAvailability: "available",
+        containers: [],
+        resource: {
+          cpuPercent: 10,
+          memoryUsedBytes: 1,
+          memoryTotalBytes: 2,
+          diskUsedBytes: 1,
+          diskTotalBytes: 2,
+        },
+      },
+    ],
+  }),
   listDistros: vi.fn().mockResolvedValue([
     { name: "Ubuntu", version: 2, default: true, state: "Running" },
   ]),

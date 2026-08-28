@@ -53,6 +53,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             applink::take_pending_open,
             commands::dashboard::list_distros,
+            commands::dashboard::dashboard_snapshot,
             commands::dashboard::run_wsl_command,
             commands::dashboard::docker_ps,
             commands::dashboard::docker_action,

@@ -21,7 +21,9 @@ pub const MAX_PORT_MAPPINGS_PER_CONTAINER: usize = 32;
 pub const MAX_PORT_MAPPINGS_TOTAL: usize = 1_024;
 pub const MAX_TERMINALS_PER_DISTRO: usize = 256;
 pub const MAX_DOCKER_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
+#[allow(dead_code)]
 pub const MAX_OUTPUT_LINE_BYTES: usize = 16 * 1024;
+pub const DASHBOARD_STALE_AFTER_MS: u64 = 30_000;
 
 pub const RUNNING_STATE: &str = "running";
 
@@ -69,6 +71,30 @@ pub enum DockerAvailability {
     NotQueried,
 }
 
+/// One complete dashboard view. Resource, Docker and terminal state are captured together so
+/// the UI never combines a new resource reading with an older distro/session list.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardDistro {
+    pub name: String,
+    pub version: u32,
+    pub default: bool,
+    pub state: String,
+    pub terminal_count: u16,
+    pub docker_availability: DockerAvailability,
+    pub containers: Vec<crate::core::models::ContainerInfo>,
+    pub resource: Option<crate::core::resources::ResourceSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardSnapshot {
+    pub revision: u64,
+    pub captured_at_ms: u64,
+    pub stale_after_ms: u64,
+    pub distros: Vec<DashboardDistro>,
+}
+
 /// A single distro's Docker result supplied by the process runner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DockerResult {
@@ -76,11 +102,43 @@ pub struct DockerResult {
     pub containers: Vec<RuntimeContainer>,
 }
 
+/// Strip the local dashboard's Docker detail fields down to the public runtime contract.
+/// Resource/dashboard IPC may retain the detail needed by its disclosure UI, while the
+/// integration snapshot must never copy image/status/host-path-like raw values.
+pub fn sanitize_dashboard_containers(
+    containers: &[crate::core::models::ContainerInfo],
+) -> Result<Vec<RuntimeContainer>, &'static str> {
+    if containers.len() > MAX_CONTAINERS_PER_DISTRO {
+        return Err(ERR_RUNTIME_BOUNDS);
+    }
+    let mut ids = BTreeSet::new();
+    let mut sanitized = Vec::with_capacity(containers.len());
+    for container in containers {
+        let id = normalize_container_id(&container.id).ok_or(ERR_DOCKER_LIST)?;
+        if !ids.insert(id.clone()) {
+            return Err(ERR_DOCKER_LIST);
+        }
+        let name = normalize_container_name(&container.name).ok_or(ERR_RUNTIME_PRIVACY)?;
+        let state =
+            normalize_container_state(container.status.split_whitespace().next().unwrap_or(""));
+        let port_mappings = parse_port_mappings(&container.ports)?;
+        sanitized.push(RuntimeContainer {
+            id,
+            name,
+            state,
+            port_mappings,
+        });
+    }
+    sanitized.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(sanitized)
+}
+
 /// Parse the output of `wsl.exe --list --running --quiet`.
 ///
 /// The parser accepts the optional default-distro marker for compatibility with WSL builds
 /// that still emit it, trims only presentation whitespace, rejects unsafe/oversized names,
 /// and returns a stable sorted unique list. Any structural or bound violation fails closed.
+#[allow(dead_code)]
 pub fn parse_running_distros(input: &str) -> Result<Vec<String>, &'static str> {
     if input.len() > MAX_DOCKER_OUTPUT_BYTES {
         return Err(ERR_RUNTIME_BOUNDS);
@@ -129,6 +187,7 @@ pub fn parse_running_distros(input: &str) -> Result<Vec<String>, &'static str> {
 /// Only validated IDs/names, an enum-like state and normalized published mappings survive.
 /// Exposed-only ports and malformed individual port tokens are omitted; a malformed row or
 /// duplicate container ID aborts the complete collection so callers can preserve last-good.
+#[allow(dead_code)]
 pub fn parse_docker_snapshot(input: &str) -> Result<Vec<RuntimeContainer>, &'static str> {
     if input.len() > MAX_DOCKER_OUTPUT_BYTES {
         return Err(ERR_RUNTIME_BOUNDS);

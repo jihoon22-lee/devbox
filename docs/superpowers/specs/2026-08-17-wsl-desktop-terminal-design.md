@@ -474,6 +474,51 @@ pub trait Multiplexer {
 > 위험 명령 Enter는 raw command를 오류/확인문에 반향하지 않고 대상 수와 실행 위험을 다시
 > 확인한다. W1 packaged build 실기 checkpoint는 남아 있다.
 
+### 4.5 Resource summary와 broadcast safety의 공통 snapshot (#344/#345)
+
+두 기능은 화면상 별개처럼 보이지만 같은 distro/session generation을 표시해야 한다. 따라서
+backend는 `dashboard_snapshot` 하나에서 다음 순서로 수집한 값을 `revision`,
+`capturedAtMs`, `staleAfterMs`와 함께 반환한다.
+
+```text
+wsl.exe -l -v
+  └─ running distro마다
+      ├─ docker ps -a --no-trunc --format (ID, name, image, status, ports)
+      ├─ cat /proc/stat
+      ├─ cat /proc/meminfo
+      └─ df -P -B1 -- /
+```
+
+모든 child는 고정 argv·stdin null·5초 deadline·bounded stdout/stderr를 사용하고, 전체 collection도
+30초 deadline으로 제한한다. shell,
+`bash -lc`, 사용자 명령, 환경 확장, engine/resource 설치는 없다. stopped distro는 resource나
+Docker query를 위해 깨우지 않는다. resource parser는 연속 정상 `/proc/stat` aggregate counter의
+delta CPU 사용률과 memory/disk used/total만 numeric field로 보존한다. 첫 CPU 표본이나 counter
+reset에는 거짓 비율을 만들지 않고 `null`을 반환하며 checked arithmetic와 JavaScript safe-integer
+상한을 적용한다. Docker
+detail은 dashboard 메모리에서만 사용하고 runtime integration snapshot에는 정규화된 state/name/
+hex ID/공개 port mapping만 남긴다. malformed, partial, timeout, overflow와 session count
+불일치는 빈 성공 결과가 아니라 last-good atomic envelope로 격리한다.
+
+`SnapshotCoordinator`의 collection lock은 background runtime writer와 manual/lifecycle dashboard
+refresh의 single-flight 경계다. frontend는 snapshot TTL에 맞춘 자동 poll도 같은 promise 경계로
+합치며, 한 `DashboardSnapshot`에서 distro card, active
+terminal count, resource label, selected Docker list를 함께 파생한다. broadcast target은 unique
+pane ID를 최소 2개·최대 32개까지 명시적으로 선택하며, `<`, `>`, `<<`, `>>` redirection은
+공백 유무와 관계없이 danger confirmation을 요구한다. `refreshing` 중에는 Refresh 버튼이
+재진입하지 않고, stale/error/refreshing 또는 Docker/workspace/context action
+busy 중에는 마지막 정상 panel을 표시하되 broadcast를 자동 OFF하고 target checkbox를 잠근다.
+단일 terminal의 PTY read/write는 이 상태와
+무관하게 계속 허용한다. refresh promise의 sequence guard는 rapid navigation에서 이전 distro의
+resource/container 상태가 새 선택에 재삽입되는 것을 막는다.
+
+#344의 독립 acceptance는 numeric resource fixture, Docker available/missing/empty/error,
+active-terminal count, parser/byte/CPU/memory/disk bounds, timeout·poll failure·last-good이다.
+#345의 독립 acceptance는 기본 OFF, active pane selector, target count badge, multiline paste와
+`sudo`/`rm`/shell redirection danger confirmation, cancel 후 재확인, keyboard/focus/a11y label이다.
+두 issue는 이 snapshot/rollback fixture를 공유하므로 grouped PR로 검토하지만, destructive
+Docker action 추가·arbitrary shell·외부 설치·#307 Knowledge handoff는 포함하지 않는다.
+
 ---
 
 ## 5. 테스트 계획
@@ -489,6 +534,10 @@ pub trait Multiplexer {
 | 레이아웃 복원 | 직렬화 → 역직렬화 왕복. 손상된 JSON·버전 불일치는 빈 상태로 폴백 |
 | 멀티플렉서 백엔드 | `Command` 호출을 가로채 argv 검증. **plugin pane이 없는 레이아웃을 쓰는지 명시적으로 단언**(§4.2 회귀 방지). `list` 파서는 실제 출력 3종(running/EXITED/없음) fixture |
 | 단축키 | `matchShortcut`에 `Ctrl+Shift+C/V/F` 추가 케이스 (`shortcuts.test.ts` 확장) |
+| resource parser/collection | `/proc/stat`, `/proc/meminfo`, `df -P -B1 -- /` numeric fixture와 first/delta/reset CPU, memory/disk bounds, malformed/timeout/last-good 경로. 고정 argv에 shell·임의 command·path가 없는지 단언 |
+| dashboard single-flight | background writer와 manual refresh가 하나의 collection lock/revision을 공유하는 fixture. same snapshot의 distro/state/resource/container/terminal count를 반환하고 refresh 중 두 번째 버튼 호출을 막는지 단언 |
+| broadcast safety | target count 0/1/2+, 기본 OFF, multiline paste, `sudo`·`rm`·redirection 확인 및 취소 후 재확인. loading/refreshing/stale/error에서는 target/ON을 차단하되 단일 PTY I/O가 살아 있는지 단언 |
+| snapshot navigation | 이전 promise가 늦게 도착하는 rapid refresh/selected-distro 전환 fixture에서 stale response와 이전 container/resource가 폐기되는지, Unicode label과 keyboard focus가 유지되는지 단언 |
 
 **Windows 실기 검증 (WSL에서 불가능 — ConPTY·`windowsPty`·WebView2 클립보드는 전부
 Windows 전용 경로다).** `CONVENTIONS.md §1`의 "편집은 WSL, 빌드·실행은 Windows" 규약대로
@@ -523,5 +572,6 @@ Windows 전용 경로다).** `CONVENTIONS.md §1`의 "편집은 WSL, 빌드·실
 | 10 | 레이아웃 복원 (§4.1) | v0.5.0 | 재시작 후 탭/팬/cwd 복원 |
 | 11 | 멀티플렉서 opt-in (§4.2) | v0.5.0 | 앱 재시작 후 프로세스 생존 |
 | 12 | 워크스페이스 + 명령 팔레트 (§4.4) | v0.5.0 | `--profile`로 레이아웃 열림 |
+| 13 | Resource summary + broadcast safety (§4.5, #344/#345) | v0.5.0 | shared snapshot/stale guard, numeric resource panel, target/multiline/danger confirmation |
 
 각 항목 1 PR.

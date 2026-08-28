@@ -440,6 +440,8 @@ pub fn write_session(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+    validate_terminal_input(&data)?;
     let sessions = state.sessions.lock().unwrap();
     if let Some(h) = sessions.get(&session_id) {
         let mut h = h.lock().unwrap();
@@ -456,11 +458,42 @@ pub fn write_session(
 /// 다른 탭의 세션에도 입력이 새는 문제가 됐다. 프론트는 활성 탭의
 /// 세션 id만 넘긴다.
 fn validate_broadcast_request(session_ids: &[String], data: &str) -> Result<(), String> {
-    if session_ids.len() < 2 || session_ids.len() > 32 || data.len() > 1_000_000 {
+    if session_ids.len() < 2 || session_ids.len() > MAX_BROADCAST_TARGETS {
         return Err("broadcast 입력 범위가 올바르지 않습니다".into());
     }
+    for session_id in session_ids {
+        validate_session_id(session_id)?;
+    }
+    validate_terminal_input(data)?;
     if session_ids.iter().collect::<HashSet<_>>().len() != session_ids.len() {
         return Err("broadcast 대상이 중복되었습니다".into());
+    }
+    Ok(())
+}
+
+const MAX_BROADCAST_TARGETS: usize = 32;
+const MAX_TERMINAL_INPUT_BYTES: usize = 1_000_000;
+const MAX_SESSION_ID_BYTES: usize = 128;
+
+/// Session ids are opaque map keys, never shell fragments. Keep the IPC boundary bounded and
+/// reject controls/separators before a malicious renderer can make diagnostics or logs
+/// ambiguous. The generated ids are currently `s<number>`, while the wider safe alphabet keeps
+/// test fixtures and future reconnect ids compatible.
+fn validate_session_id(session_id: &str) -> Result<(), String> {
+    if session_id.is_empty()
+        || session_id.len() > MAX_SESSION_ID_BYTES
+        || !session_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err("터미널 세션 식별자가 올바르지 않습니다".into());
+    }
+    Ok(())
+}
+
+fn validate_terminal_input(data: &str) -> Result<(), String> {
+    if data.len() > MAX_TERMINAL_INPUT_BYTES {
+        return Err("터미널 입력 범위를 초과했습니다".into());
     }
     Ok(())
 }
@@ -614,6 +647,8 @@ mod tests {
             validate_broadcast_request(&["one".into(), "two".into()], &"x".repeat(1_000_001),)
                 .is_err()
         );
+        assert!(validate_broadcast_request(&["one\n".into(), "two".into()], "echo ok").is_err());
+        assert!(validate_broadcast_request(&["one".into(), "two".into()], "ok").is_ok());
     }
 
     /// 문자열을 모든 바이트 경계에서 2조각으로 나눠 각각 별도 청크로 넘기고,

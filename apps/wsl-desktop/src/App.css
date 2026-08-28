@@ -440,6 +440,26 @@ select {
   font-weight: 600;
 }
 
+.snapshot-state {
+  margin-left: auto;
+  color: var(--dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.snapshot-state-fresh {
+  color: var(--accent);
+}
+
+.snapshot-state-refreshing {
+  color: var(--accent);
+}
+
+.snapshot-state-stale,
+.snapshot-state-error {
+  color: var(--red);
+}
+
 .dash-subtitle {
   font-size: 12px;
   font-weight: 600;
@@ -494,6 +514,14 @@ select {
   color: var(--dim);
   margin-bottom: 4px;
   font-size: 12px;
+}
+
+.resource-summary {
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  margin: 6px 0;
 }
 
 .status-on {

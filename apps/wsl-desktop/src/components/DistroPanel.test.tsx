@@ -5,7 +5,9 @@ import DistroPanel from "./DistroPanel";
 
 afterEach(() => cleanup());
 
-function baseProps(overrides: Partial<ComponentProps<typeof DistroPanel>> = {}) {
+function baseProps(
+  overrides: Partial<ComponentProps<typeof DistroPanel>> = {},
+): ComponentProps<typeof DistroPanel> {
   return {
     distros: [],
     selectedDistro: "",
@@ -16,6 +18,7 @@ function baseProps(overrides: Partial<ComponentProps<typeof DistroPanel>> = {}) 
     busy: null,
     onAction: vi.fn(),
     onRefresh: vi.fn(),
+    snapshotState: "fresh",
     ...overrides,
   };
 }
@@ -45,6 +48,110 @@ describe("DistroPanel distro state", () => {
     );
 
     expect(screen.getByText("● Running")).toHaveClass("status-on");
+  });
+
+  it("renders the same snapshot's resource and active-terminal summary", () => {
+    render(
+      <DistroPanel
+        {...baseProps({
+          distros: [{ name: "Ubuntu", version: 2, default: true, state: "Running" }],
+          dashboardDistros: [{
+            name: "Ubuntu",
+            version: 2,
+            default: true,
+            state: "Running",
+            terminalCount: 3,
+            dockerAvailability: "available",
+            containers: [],
+            resource: {
+              cpuPercent: 25,
+              memoryUsedBytes: 1024,
+              memoryTotalBytes: 2048,
+              diskUsedBytes: 3 * 1024,
+              diskTotalBytes: 4 * 1024,
+            },
+          }],
+          snapshotState: "fresh",
+        })}
+      />,
+    );
+
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByLabelText("Ubuntu resource summary")).toHaveTextContent("CPU 25%");
+    expect(screen.getByRole("status")).toHaveTextContent("최신 snapshot");
+  });
+
+  it("marks an old snapshot while allowing the next refresh", () => {
+    render(<DistroPanel {...baseProps({ snapshotState: "stale" })} />);
+    expect(screen.getByRole("status")).toHaveTextContent("오래된 snapshot");
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
+  });
+
+  it("shows the shared single-flight state and blocks a second refresh", () => {
+    render(<DistroPanel {...baseProps({ snapshotState: "refreshing" })} />);
+    expect(screen.getByRole("status")).toHaveTextContent("새로 고치는 중");
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled();
+  });
+
+  it("does not start a poll while a Docker action is mutating state", () => {
+    render(<DistroPanel {...baseProps({ busy: "abc123:start", snapshotState: "fresh" })} />);
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled();
+  });
+
+  it("fails closed for Docker mutations when the shared snapshot is stale", () => {
+    render(
+      <DistroPanel
+        {...baseProps({
+          snapshotState: "stale",
+          containers: [{ id: "abc123", name: "api", image: "api:latest", status: "Created", ports: "" }],
+        })}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Start" })).toBeDisabled();
+  });
+
+  it("does not present a stopped or failed Docker query as an empty list", () => {
+    const { rerender } = render(
+      <DistroPanel
+        {...baseProps({
+          distros: [{ name: "Ubuntu", version: 2, default: true, state: "Stopped" }],
+          selectedDistro: "Ubuntu",
+          dashboardDistros: [{
+            name: "Ubuntu",
+            version: 2,
+            default: true,
+            state: "Stopped",
+            terminalCount: 0,
+            dockerAvailability: "notQueried",
+            containers: [],
+            resource: null,
+          }],
+        })}
+      />,
+    );
+    expect(screen.getByText("중지된 WSL distro에서는 Docker를 조회하지 않습니다.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Docker containers")).toBeNull();
+
+    rerender(
+      <DistroPanel
+        {...baseProps({
+          distros: [{ name: "Ubuntu", version: 2, default: true, state: "Running" }],
+          selectedDistro: "Ubuntu",
+          dashboardDistros: [{
+            name: "Ubuntu",
+            version: 2,
+            default: true,
+            state: "Running",
+            terminalCount: 0,
+            dockerAvailability: "error",
+            containers: [],
+            resource: null,
+          }],
+        })}
+      />,
+    );
+    expect(screen.getByText("선택한 WSL distro의 Docker 상태를 읽지 못했습니다. 다음 snapshot에서 다시 시도하세요.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Docker containers")).toBeNull();
   });
 });
 
