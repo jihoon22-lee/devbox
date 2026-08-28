@@ -268,6 +268,7 @@ pub fn validate_rule(rule: &ResponseRule) -> Result<(), RuleValidationError> {
         && (!within(&rule.id, MAX_RULE_ID_CHARS, MAX_RULE_ID_BYTES) || has_control(&rule.id)))
         || !within(&rule.path, MAX_PATH_CHARS, MAX_PATH_BYTES)
         || !rule.path.starts_with('/')
+        || !rule.path.is_ascii()
         || has_control(&rule.path)
         || !within(&rule.body, MAX_BODY_CHARS, MAX_BODY_BYTES)
     {
@@ -331,6 +332,12 @@ where
 /// 시작해야 한다. `HashMap`에서 여러 rule이 매치되는 경우의 우선순위는 이 함수의
 /// 계약이 아니다.
 pub fn matches(rule: &ResponseRule, method: &str, path: &str) -> bool {
+    // The native request parser and replay client emit/accept ASCII targets
+    // only.  Keep direct matcher callers fail-closed even if an invalid rule
+    // is constructed outside the storage validator.
+    if !rule.path.is_ascii() || !path.is_ascii() {
+        return false;
+    }
     if let Some(m) = &rule.method {
         if !m.eq_ignore_ascii_case(method) {
             return false;
@@ -506,6 +513,8 @@ mod tests {
         assert!(validate_rule(&invalid).is_err());
         invalid.path = "/hook\u{0085}".into();
         assert!(validate_rule(&invalid).is_err());
+        invalid.path = "/hook/한글".into();
+        assert!(validate_rule(&invalid).is_err());
 
         invalid = rule("r", None, "/hook");
         invalid.body = "b".repeat(MAX_BODY_CHARS + 1);
@@ -679,5 +688,12 @@ mod tests {
         assert_eq!(state.next_response(&candidate).body, "retry");
         state.reset(&candidate.id);
         assert_eq!(state.next_response(&candidate).body, "first");
+    }
+
+    #[test]
+    fn matcher_rejects_non_ascii_paths_even_for_unvalidated_rules() {
+        let candidate = rule("unicode", None, "/hook/한글");
+        assert!(!matches(&candidate, "GET", "/hook/한글"));
+        assert!(!matches(&rule("ascii", None, "/hook"), "GET", "/hook/한글"));
     }
 }

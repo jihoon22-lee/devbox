@@ -1674,6 +1674,7 @@ dependencies = [
 name = "filesystem"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "walkdir",
  "windows 0.61.3",
 ]

@@ -2,8 +2,7 @@
 
 use crate::core::fixtures::{
     fixture_from_request, fixture_path_from_dir, load_document_with_raw, response_rule_draft,
-    save_document_if_current, sorted_fixtures, CapturedFixture, FixtureDocument, FixtureError,
-    MAX_FIXTURES,
+    sorted_fixtures, update_document, CapturedFixture, FixtureDocument, FixtureError, MAX_FIXTURES,
 };
 use crate::core::handoff::{
     build_api_request_payload, API_REQUEST_HANDOFF_KIND, CONSUMER_APP_ID, HANDOFF_INPUT_ERROR,
@@ -370,7 +369,13 @@ fn handle_request(
             received_at,
         );
     } else {
-        let _ = http::write_response(stream, 500, &[], SERVER_INTERNAL_ERROR);
+        let _ = http::write_response_for_method(
+            stream,
+            500,
+            &[],
+            SERVER_INTERNAL_ERROR,
+            Some(&request.method),
+        );
         return;
     }
 
@@ -383,7 +388,13 @@ fn handle_request(
             .find(|rule| matches(rule, &request.method, &request.target))
             .map(|rule| cursors.next_response(rule)),
         _ => {
-            let _ = http::write_response(stream, 500, &[], SERVER_INTERNAL_ERROR);
+            let _ = http::write_response_for_method(
+                stream,
+                500,
+                &[],
+                SERVER_INTERNAL_ERROR,
+                Some(&request.method),
+            );
             return;
         }
     };
@@ -402,7 +413,13 @@ fn handle_request(
         return;
     }
 
-    let _ = http::write_response(stream, status, &response_headers, &response_body);
+    let _ = http::write_response_for_method(
+        stream,
+        status,
+        &response_headers,
+        &response_body,
+        Some(&request.method),
+    );
 }
 
 fn serve_connection(
@@ -767,20 +784,18 @@ pub fn save_fixture(
         .lock()
         .map_err(|_| crate::core::fixtures::FIXTURE_WRITE_ERROR.to_string())?;
     let path = fixture_path(&app)?;
-    let loaded = load_document_with_raw(&path).map_err(fixture_error)?;
-    if loaded.document.fixtures.len() >= MAX_FIXTURES {
-        return Err(crate::core::fixtures::FIXTURE_SIZE_ERROR.to_string());
-    }
-    let next_id = loaded.document.next_id;
-    let fixture_id = format!("fixture-{next_id}");
-    let fixture = fixture_from_request(fixture_id, &request).map_err(fixture_error)?;
-    let mut document = loaded.document;
-    document.next_id = next_id
-        .checked_add(1)
-        .ok_or_else(|| crate::core::fixtures::FIXTURE_SIZE_ERROR.to_string())?;
-    document.fixtures.push(fixture.clone());
-    save_document_if_current(&path, loaded.raw.as_deref(), &document).map_err(fixture_error)?;
-    Ok(fixture)
+    update_document(&path, |document| {
+        if document.fixtures.len() >= MAX_FIXTURES {
+            return Err(FixtureError::Size);
+        }
+        let next_id = document.next_id;
+        let fixture_id = format!("fixture-{next_id}");
+        let fixture = fixture_from_request(fixture_id, &request)?;
+        document.next_id = next_id.checked_add(1).ok_or(FixtureError::Size)?;
+        document.fixtures.push(fixture.clone());
+        Ok(fixture)
+    })
+    .map_err(fixture_error)
 }
 
 #[tauri::command]
@@ -794,14 +809,15 @@ pub fn delete_fixture(
         .lock()
         .map_err(|_| crate::core::fixtures::FIXTURE_WRITE_ERROR.to_string())?;
     let path = fixture_path(&app)?;
-    let loaded = load_document_with_raw(&path).map_err(fixture_error)?;
-    let mut document = loaded.document;
-    let original_len = document.fixtures.len();
-    document.fixtures.retain(|fixture| fixture.id != id);
-    if document.fixtures.len() == original_len {
-        return Err(FixtureError::NotFound.message().to_string());
-    }
-    save_document_if_current(&path, loaded.raw.as_deref(), &document).map_err(fixture_error)
+    update_document(&path, |document| {
+        let original_len = document.fixtures.len();
+        document.fixtures.retain(|fixture| fixture.id != id);
+        if document.fixtures.len() == original_len {
+            return Err(FixtureError::NotFound);
+        }
+        Ok(())
+    })
+    .map_err(fixture_error)
 }
 
 #[tauri::command]
@@ -814,13 +830,16 @@ pub fn clear_fixtures(
         .lock()
         .map_err(|_| crate::core::fixtures::FIXTURE_WRITE_ERROR.to_string())?;
     let path = fixture_path(&app)?;
-    let loaded = load_document_with_raw(&path).map_err(fixture_error)?;
-    if loaded.document.fixtures.is_empty() {
-        return Ok(());
-    }
-    let mut document = FixtureDocument::default();
-    document.next_id = loaded.document.next_id;
-    save_document_if_current(&path, loaded.raw.as_deref(), &document).map_err(fixture_error)
+    update_document(&path, |document| {
+        if document.fixtures.is_empty() {
+            return Ok(());
+        }
+        let next_id = document.next_id;
+        *document = FixtureDocument::default();
+        document.next_id = next_id;
+        Ok(())
+    })
+    .map_err(fixture_error)
 }
 
 /// Return a validated response-rule draft for local editing. This command is
@@ -1115,6 +1134,35 @@ mod tests {
         assert_eq!(history[0].method, "POST");
         assert_eq!(history[0].url, "/hook");
         assert_eq!(history[0].body, "body ok");
+        stop_test_listener(&state, &running, thread);
+    }
+
+    #[test]
+    fn native_listener_omits_body_and_content_length_for_head_requests() {
+        let (state, running, address, thread) = spawn_test_listener();
+        let rule = ResponseRule {
+            id: "rule-head".into(),
+            method: Some("HEAD".into()),
+            path: "/hook".into(),
+            status: 200,
+            headers: vec![("Content-Type".into(), "text/plain".into())],
+            body: "must not be sent".into(),
+            delay_ms: 0,
+            sequence: Vec::new(),
+        };
+        upsert(&mut state.rules.lock().unwrap(), rule).unwrap();
+
+        let mut client = TcpStream::connect(address).unwrap();
+        client.write_all(b"HEAD /hook HTTP/1.1\r\n\r\n").unwrap();
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).unwrap();
+        let response = String::from_utf8(response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(response.contains("Content-Type: text/plain\r\n"));
+        assert!(!response.contains("Content-Length:"));
+        assert!(response.ends_with("\r\n\r\n"));
+        assert!(!response.contains("must not be sent"));
+
         stop_test_listener(&state, &running, thread);
     }
 

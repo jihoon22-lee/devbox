@@ -9,9 +9,13 @@ edition.workspace = true
 [dependencies]
 walkdir = "2.5.0"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Storage_FileSystem",
+    "Win32_System_IO",
 ] }

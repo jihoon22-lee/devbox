@@ -37,6 +37,8 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
 - `status`, `headers`, `body`는 요청 조건이 아니라 매치된 요청에 돌려줄 HTTP **응답**이다.
   `delay`는 그 응답을 보내기 전에 기다리는 밀리초이며, 매치가 없으면 `404 Not Found`를
   지연 없이 반환한다.
+- native response framing은 `1xx`, `204`, `205`, `304`, `HEAD` 응답에 body와 `Content-Length`를
+  쓰지 않으며, `Connection`과 `Content-Length` 등 transport header는 rule이 덮어쓸 수 없다.
 - 여러 rule이 동시에 매치되는 경우 `HashMap` 순회 순서는 우선순위나 결정성 계약이 아니다.
   겹치는 rule 중 어느 것이 선택되는지에 의존하지 말고, method/path 조합이 겹치지 않게
   작성한다.
@@ -59,10 +61,11 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
   36자/36바이트 footprint를 예약한다.
 - method는 `null`(전체 method) 또는 ASCII HTTP token이며 최대 16자/16바이트다. 편집기의
   빈 값은 `null`로 변환하고, `Some("")`이나 공백/제어 문자는 저장하지 않는다.
-- path는 최대 4,096자/16,384 UTF-8 바이트이며 `/`로 시작하고 모든 Unicode control 문자를
-  포함할 수 없다. 문자열을 decode, normalize, query 제거하지 않는다. 매칭은 저장된 path와
-  요청 URL의 전체 문자열 exact 비교이거나 **마지막** `*` 하나에 대한 prefix 비교이며,
-  중간 `*`는 literal로 남는다.
+- path는 ASCII 기준 최대 4,096자/16,384 바이트이며 `/`로 시작하고 모든 Unicode control
+  문자를 포함할 수 없다. native parser/replay matcher가 ASCII request-target만 지원하므로
+  non-ASCII path는 저장하지 않는다. 문자열을 decode, normalize, query 제거하지 않는다.
+  매칭은 저장된 path와 요청 URL의 전체 문자열 exact 비교이거나 **마지막** `*` 하나에 대한
+  prefix 비교이며, 중간 `*`는 literal로 남는다.
 - response headers는 최대 100개다. 각 이름은 HTTP token, 최대 256자/256바이트, 각 값은
   ASCII 기준 최대 16,384자/65,536바이트이고 control 문자를 허용하지 않는다. native
   HTTP/1.x transport의 wire header가 ASCII 전용인 점과 충돌하지 않도록 `Host`, `Content-Length`, `Connection`,
@@ -97,13 +100,22 @@ history에서 **masked fixture 저장**을 선택하면 backend가 opaque histor
   method 16자, origin-form target 4,096자/16 KiB, header 100개·이름 256자·값
   16,384자·총 64,000자/256 KiB, body 256,000자/1 MiB 경계를 적용한다.
 - `Authorization`·`Cookie`·token/secret/password/auth 계열 header와 JSON/text의 같은
-  credential 표시는 `[REDACTED]`가 된다. 절대 URL·`..`/`.`·역슬래시·잘못된 percent
+  credential 표시는 `[REDACTED]`가 된다. JSON string 안의 bounded embedded JSON도 같은
+  depth/node/size 경계로 재귀 sanitization하며, escaped sensitive key와 malformed
+  JSON-looking string은 각각 decode·redaction 또는 fixed marker로 fail-closed 처리한다.
+  절대 URL·`..`/`.`·역슬래시·잘못된 percent
   encoding·token-shaped path는 고정 `/[REDACTED_PATH]`로 바꾸고, 안전한 query만
   보존한다. 입력을 넘으면 부분 fixture를 만들지 않는다.
-- 파일은 atomic replace와 raw-byte compare-and-swap으로 저장한다. corrupt·oversized·
-  symlink/non-file store는 고정 오류로 fail-closed하고 원본 파일을 자동 복구·덮어쓰지
-  않는다. 읽기 시 최종 파일을 no-follow open으로 다시 확인해 metadata 검사와 실제 read 사이의
-  symlink/reparse TOCTOU도 거부한다. 목록은 capture timestamp 내림차순, 동일 timestamp에서는
+- 파일은 atomic replace와 raw-byte compare-and-swap으로 저장한다. read/revision/compare/write와
+  fixture add/edit/delete/clear mutation은 `.fixtures.json.lock` persistent sidecar에 대한
+  OS exclusive advisory lock으로 cross-process 직렬화하며, lock 획득은 500ms bounded retry와
+  fixed error를 사용한다. sidecar는 stale lock-file 삭제를 하지 않고 계속 유지한다. corrupt·
+  oversized·symlink/non-file store 또는 lock sidecar는 고정 오류로 fail-closed하고 원본 파일을
+  자동 복구·덮어쓰지 않는다. 읽기 시 최종 파일을 no-follow open으로 다시 확인해 metadata 검사와
+  실제 read 사이의 symlink/reparse TOCTOU도 거부하고, mutation 전후에는 모든 부모 link 검사와
+  immediate parent filesystem identity를 다시 확인한다. 이 identity check는 path-based
+  재검증이며 handle-relative ancestor 보장은 아니므로, 확인 사이의 ancestor
+  symlink/junction/reparse 교체 race는 남는다. 목록은 capture timestamp 내림차순, 동일 timestamp에서는
   ID 순으로 정렬한다.
 - fixture의 `응답 rule 초안`은 method/path만 편집기에 채우며 status 200·빈 response
   headers/body·delay 0으로 시작한다. rule 저장은 별도 사용자 동작이다.

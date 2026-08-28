@@ -67,19 +67,21 @@ apps/webhook-lab/
 
 현재 rule editor 보강은 response rule의 의미를 설명하고 입력 경계를 고정하는 독립 PR이다.
 method가 비어 있으면 `None`으로 저장되어 모든 method에 매치하고, 값이 있으면 대소문자를
-무시한 HTTP token 비교를 한다. path는 저장 문자열과 요청 URL의 전체 exact match가 기본이며,
-rule path의 마지막 `*`일 때만 앞부분 prefix match를 한다. 중간 `*`는 literal이고 query를
-별도로 제거하거나 path를 normalize하지 않는다. `status`·`headers`·`body`는 요청 조건이
-아닌 반환 response metadata이며 `delay`는 응답 직전 대기 시간이다.
+무시한 HTTP token 비교를 한다. path는 ASCII request-target만 지원하며 저장 문자열과 요청
+URL의 전체 exact match가 기본이다. rule path의 마지막 `*`일 때만 앞부분 prefix match를
+한다. 중간 `*`는 literal이고 query를 별도로 제거하거나 path를 normalize하지 않는다.
+`status`·`headers`·`body`는 요청 조건이 아닌 반환 response metadata이며 `delay`는 응답 직전
+대기 시간이다.
 
 `set_rule` IPC와 `core/rules.rs::upsert`가 frontend보다 우선하는 storage 경계다. rule 최대
 200개, id 128자/128 UTF-8 바이트, method 16자/16바이트, path 4,096자/16,384바이트,
 response headers 100개(이름 256자/256바이트, 값 16,384자/65,536바이트, 합계 64,000자/
 256,000바이트), body 256,000자/1,024,000바이트, collection 문자열 합계 2,000,000자/
 8,000,000바이트, status 100~599, delay 0~60,000ms를 적용한다. path/header value의
-control 문자는 거부하고 method/header name은 ASCII token이어야 한다. char는 Unicode scalar
-count, byte는 UTF-8 byte count이며 JS `Array.from`/`TextEncoder`와 Rust 구현이 같은 단위를
-사용한다. 빈 신규 id는 UUID가 되기 전 36자 footprint를 예약한다.
+control 문자는 거부하고 method/header name은 ASCII token이어야 한다. path도 parser/replay
+matcher와 동일하게 ASCII만 허용한다. char는 Unicode scalar count, byte는 UTF-8 byte count이며
+JS `Array.from`/`TextEncoder`와 Rust 구현이 같은 단위를 사용한다. 빈 신규 id는 UUID가 되기 전
+36자 footprint를 예약한다.
 
 검증 실패는 raw input·secret·경로를 포함하지 않는 `규칙 입력이 유효하지 않습니다`로만
 응답하고 map을 변경하지 않는다. editor는 같은 validator로 add/edit/duplicate를 검사하며
@@ -95,12 +97,19 @@ history의 opaque ID로 backend가 읽은 masked snapshot만 앱 전용
 `app_local_data_dir()/fixtures.json`에 저장한다. fixture ID는 `fixture-<number>`로 발급하고
 schema v1, 최대 200개·8 MiB 파일, method/target/header/body/timestamp의 bounded validator를
 적용한다. Authorization·Cookie·token·secret·password·auth 계열 값과 known credential marker는
-`[REDACTED]`, 절대/unsafe path는 `/[REDACTED_PATH]`로 바꾼다. frontend는 path·body를 저장
-명령에 전달하지 않는다.
+`[REDACTED]`, 절대/unsafe path는 `/[REDACTED_PATH]`로 바꾼다. JSON string 안의 bounded
+embedded JSON도 같은 depth/node/size 경계로 재귀 sanitization하며 escaped sensitive key를
+decode하고 malformed JSON-looking string은 fixed marker로 fail-closed 처리한다. frontend는
+path·body를 저장 명령에 전달하지 않는다.
 
 corrupt·oversized·symlink/non-file 저장소는 고정 오류로 fail-closed하며 기존 bytes를 자동
 복구하지 않는다. app-owned path 검사, 최종 store component의 no-follow read, atomic replace,
-raw-byte CAS와 process-local writer lock을 통해 partial write와 경쟁 업데이트를 방어하고,
+raw-byte CAS와 process-local writer lock에 더해 persistent `.fixtures.json.lock` sidecar의
+OS exclusive advisory lock을 사용한다. lock은 read/revision/compare/write와 add/edit/delete/
+clear mutation을 cross-process로 직렬화하고 500ms bounded acquisition 뒤 fixed lock error를
+반환한다. sidecar는 stale lock-file 삭제 없이 유지한다. mutation 전후에는 모든 부모 link 검사와
+immediate parent filesystem identity를 재검증한다. 이는 path-based 보강이며 handle-relative
+ancestor 보장은 아니므로 확인 사이 ancestor symlink/junction/reparse 교체 race는 남는다.
 목록은 timestamp 내림차순·ID tie-break로 결정한다. fixture에서 response-rule 초안을 만들
 때는 method/path만 local editor에 채우며 response metadata는 빈 값으로 둔다. API handoff와
 replay/sequence는 각각 아래의 별도 계약으로 관리한다.
@@ -164,5 +173,6 @@ cursor를 전진시키며 rule 수정·삭제와 명시적인 response sequence 
 첫 단계로 되돌린다. rule mutation/reset과 request handler는 rules→cursor lock 순서를
 공유해 stale cursor를 소비하지 않는다. 각 step은 기존 response status/delay/header/body
 상한과 control/token 검사를 공유하며, native transport framing을 덮어쓸 수 있는 response
-header와 비 ASCII header value는 거부한다. arbitrary scripting과 distributed state는 범위
-밖이다.
+header와 비 ASCII header value는 거부한다. native writer는 `1xx`, `204`, `205`, `304`, `HEAD`
+응답에 body와 `Content-Length`를 쓰지 않는다. arbitrary scripting과 distributed state는
+범위 밖이다.

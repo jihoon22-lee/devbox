@@ -381,11 +381,18 @@ fn safe_response_header(name: &str, value: &str) -> bool {
 
 /// Write a bounded response and close the connection at the caller boundary.
 /// Transport headers are owned here; rule headers cannot override framing.
-pub fn write_response(
+///
+/// HTTP/1.x forbids a response body for informational statuses, 204, 205, and 304.
+/// A HEAD response is likewise header-only.  Keep request-method awareness in
+/// this writer so a rule cannot accidentally turn a HEAD request into a body
+/// response; callers that are handling a parse error can use the wrapper below
+/// when no method was safely recovered.
+pub fn write_response_for_method(
     stream: &mut TcpStream,
     status: u16,
     headers: &[(String, String)],
     body: &str,
+    request_method: Option<&str>,
 ) -> io::Result<()> {
     if body.len() > MAX_BODY_BYTES {
         return Err(io::Error::new(
@@ -444,14 +451,29 @@ pub fn write_response(
             let _ = write!(&mut head, "{name}: {value}\r\n");
         }
     }
-    let _ = write!(
-        &mut head,
-        "Content-Length: {}\r\nConnection: close\r\n\r\n",
-        body.len()
-    );
+    let suppress_body = request_method.is_some_and(|method| method.eq_ignore_ascii_case("HEAD"))
+        || (100..=199).contains(&status)
+        || matches!(status, 204 | 205 | 304);
+    if !suppress_body {
+        let _ = write!(&mut head, "Content-Length: {}\r\n", body.len());
+    }
+    head.push_str("Connection: close\r\n\r\n");
     stream.write_all(head.as_bytes())?;
-    stream.write_all(body.as_bytes())?;
+    if !suppress_body {
+        stream.write_all(body.as_bytes())?;
+    }
     stream.flush()
+}
+
+/// Write a response when the request method is unavailable (for example, a
+/// malformed request line).  Status-based no-body rules still apply.
+pub fn write_response(
+    stream: &mut TcpStream,
+    status: u16,
+    headers: &[(String, String)],
+    body: &str,
+) -> io::Result<()> {
+    write_response_for_method(stream, status, headers, body, None)
 }
 
 #[cfg(test)]
@@ -508,6 +530,19 @@ mod tests {
         assert_eq!(
             read_request(&mut server, &running, || true),
             Err(ParseError::HeaderTooLarge)
+        );
+    }
+
+    #[test]
+    fn parser_rejects_non_ascii_request_targets() {
+        let (mut client, mut server) = pair();
+        client
+            .write_all("GET /hook/한글 HTTP/1.1\r\n\r\n".as_bytes())
+            .unwrap();
+        let running = AtomicBool::new(true);
+        assert_eq!(
+            read_request(&mut server, &running, || true),
+            Err(ParseError::Malformed)
         );
     }
 
@@ -582,5 +617,53 @@ mod tests {
         assert!(response.contains("Content-Length: 4\r\n"));
         assert!(!response.contains("Content-Length: 999"));
         assert!(!response.contains("attacker.invalid"));
+    }
+
+    #[test]
+    fn response_writer_suppresses_body_and_content_length_for_no_body_statuses() {
+        for status in [100, 103, 204, 205, 304] {
+            let (mut client, mut server) = pair();
+            server
+                .set_write_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
+            let writer = thread::spawn(move || {
+                write_response(&mut server, status, &[], "must not be sent").unwrap();
+            });
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).unwrap();
+            writer.join().unwrap();
+            let response = String::from_utf8(bytes).unwrap();
+            assert!(response.starts_with(&format!("HTTP/1.1 {status} ")));
+            assert!(!response.contains("Content-Length:"));
+            assert!(response.ends_with("\r\n\r\n"));
+            assert!(!response.contains("must not be sent"));
+        }
+    }
+
+    #[test]
+    fn response_writer_suppresses_body_and_content_length_for_head() {
+        let (mut client, mut server) = pair();
+        server
+            .set_write_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        let writer = thread::spawn(move || {
+            write_response_for_method(
+                &mut server,
+                200,
+                &[("Content-Type".into(), "text/plain".into())],
+                "must not be sent",
+                Some("HEAD"),
+            )
+            .unwrap();
+        });
+        let mut bytes = Vec::new();
+        client.read_to_end(&mut bytes).unwrap();
+        writer.join().unwrap();
+        let response = String::from_utf8(bytes).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(response.contains("Content-Type: text/plain\r\n"));
+        assert!(!response.contains("Content-Length:"));
+        assert!(response.ends_with("\r\n\r\n"));
+        assert!(!response.contains("must not be sent"));
     }
 }

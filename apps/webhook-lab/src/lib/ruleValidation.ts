@@ -250,9 +250,10 @@ export function validateRule(
     typeof normalized.path !== "string"
     || !within(normalized.path, MAX_PATH_CHARS, MAX_PATH_BYTES)
     || !normalized.path.startsWith("/")
+    || !isAscii(normalized.path)
     || CONTROL_CHARACTERS.test(normalized.path)
   ) {
-    addIssue(issues, "path", "path는 /로 시작해야 하며 제어 문자를 포함할 수 없습니다.");
+    addIssue(issues, "path", "path는 ASCII / 경로여야 하며 제어 문자를 포함할 수 없습니다.");
   }
 
   if (

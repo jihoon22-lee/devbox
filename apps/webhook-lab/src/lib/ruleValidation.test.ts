@@ -64,6 +64,7 @@ describe("validateRule", () => {
   it("rejects paths that cannot represent a local request path", () => {
     expect(validateRule({ ...validRule, path: "hook" })[0]).toMatchObject({ field: "path" });
     expect(validateRule({ ...validRule, path: "/hook\u0085secret" })[0]).toMatchObject({ field: "path" });
+    expect(validateRule({ ...validRule, path: "/hook/한글" })[0]).toMatchObject({ field: "path" });
     expect(validateRule({
       ...validRule,
       path: `/${"p".repeat(MAX_PATH_CHARS - 1)}`,

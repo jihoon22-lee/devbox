@@ -294,6 +294,34 @@ fn header_end(bytes: &[u8]) -> Option<usize> {
     bytes.windows(4).position(|window| window == b"\r\n\r\n")
 }
 
+fn parse_response_head(bytes: &[u8]) -> Result<(u16, usize), ReplayError> {
+    let end = header_end(bytes).ok_or(ReplayError::InvalidResponse)?;
+    // `end` points at the CRLF that starts the header terminator. Include
+    // that first CRLF in the search so a valid headerless informational
+    // response (`status-line\r\n\r\n`) still exposes its status-line end.
+    let line_end = bytes[..end + 2]
+        .windows(2)
+        .position(|window| window == b"\r\n")
+        .ok_or(ReplayError::InvalidResponse)?;
+    let line = std::str::from_utf8(&bytes[..line_end]).map_err(|_| ReplayError::InvalidResponse)?;
+    let mut fields = line.splitn(3, ' ');
+    let version = fields.next().ok_or(ReplayError::InvalidResponse)?;
+    let status = fields
+        .next()
+        .filter(|code| code.len() == 3 && code.bytes().all(|byte| byte.is_ascii_digit()))
+        .and_then(|code| code.parse::<u16>().ok())
+        .filter(|status| (100..=599).contains(status))
+        .ok_or(ReplayError::InvalidResponse)?;
+    // The local listener emits only HTTP/1.0 or HTTP/1.1.  Accepting an
+    // arbitrary `HTTP/1.*` token would make a malformed/intercepted
+    // response look valid and could disagree with downstream framing
+    // parsers.
+    if !matches!(version, "HTTP/1.0" | "HTTP/1.1") {
+        return Err(ReplayError::InvalidResponse);
+    }
+    Ok((status, end + 4))
+}
+
 fn read_response_status(
     stream: &mut TcpStream,
     deadline: Instant,
@@ -304,6 +332,19 @@ fn read_response_status(
     loop {
         if cancel.load(Ordering::Acquire) {
             return Err(ReplayError::Cancelled);
+        }
+
+        // A server may send one or more informational responses before the
+        // final response (for example `100 Continue` followed by `201`).
+        // Keep any bytes already read after an interim header so a single TCP
+        // read containing both responses is not accidentally discarded.
+        if header_end(&bytes).is_some() {
+            let (status, consumed) = parse_response_head(&bytes)?;
+            if !(100..=199).contains(&status) {
+                return Ok(ReplayResponse { status });
+            }
+            bytes.drain(..consumed);
+            continue;
         }
         if bytes.len() >= MAX_REPLAY_RESPONSE_HEADER_BYTES {
             return Err(ReplayError::InvalidResponse);
@@ -325,31 +366,9 @@ fn read_response_status(
         }
         let remaining = MAX_REPLAY_RESPONSE_HEADER_BYTES - bytes.len();
         bytes.extend_from_slice(&chunk[..read.min(remaining)]);
-        let Some(end) = header_end(&bytes) else {
+        if header_end(&bytes).is_none() {
             continue;
-        };
-        let line_end = bytes[..end]
-            .windows(2)
-            .position(|window| window == b"\r\n")
-            .ok_or(ReplayError::InvalidResponse)?;
-        let line =
-            std::str::from_utf8(&bytes[..line_end]).map_err(|_| ReplayError::InvalidResponse)?;
-        let mut fields = line.splitn(3, ' ');
-        let version = fields.next().ok_or(ReplayError::InvalidResponse)?;
-        let status = fields
-            .next()
-            .filter(|code| code.len() == 3 && code.bytes().all(|byte| byte.is_ascii_digit()))
-            .and_then(|code| code.parse::<u16>().ok())
-            .filter(|status| (100..=599).contains(status))
-            .ok_or(ReplayError::InvalidResponse)?;
-        // The local listener emits only HTTP/1.0 or HTTP/1.1.  Accepting an
-        // arbitrary `HTTP/1.*` token would make a malformed/intercepted
-        // response look valid and could disagree with downstream framing
-        // parsers.
-        if !matches!(version, "HTTP/1.0" | "HTTP/1.1") {
-            return Err(ReplayError::InvalidResponse);
         }
-        return Ok(ReplayResponse { status });
     }
 }
 
@@ -517,6 +536,31 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let result = send(&fixture(), &address, &cancel).unwrap();
         assert_eq!(result, ReplayResponse { status: 503 });
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn native_send_skips_interim_informational_responses_until_final_status() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut byte = [0u8; 1];
+            while !request.ends_with(b"\r\n\r\n") && request.len() < 64 * 1024 {
+                stream.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+            }
+            stream
+                .write_all(
+                    b"HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n",
+                )
+                .unwrap();
+        });
+
+        let cancel = AtomicBool::new(false);
+        let result = send(&fixture(), &address, &cancel).unwrap();
+        assert_eq!(result, ReplayResponse { status: 201 });
         server.join().unwrap();
     }
 }
