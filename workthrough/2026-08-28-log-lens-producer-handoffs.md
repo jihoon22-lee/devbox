@@ -594,9 +594,16 @@ was performed for this follow-up.
 
 ## Latest-main integration and final local gates (2026-08-28)
 
-The four producer commits were rebased onto `origin/main` at `03c28e7` after
-Webhook Lab #461 merged. Conflict resolution preserved both sides of every
-shared contract:
+The initial four producer commits were rebased onto `origin/main` at `03c28e7`
+after Webhook Lab #461 merged. After the final integration correction, the
+five-commit branch was rebased again onto `main` at `03245df` after Workbench
+#462 merged. The final rebase preserved Workbench's owned-launch/process-tree
+support and Log Lens's fallible, bounded AppLink argv validation. Its only
+manual conflict was the generated Cargo lock digest in `THIRD_PARTY_NOTICES.md`;
+the notice inventory was regenerated from the combined final lockfile.
+
+Across both latest-main integrations, conflict resolution preserved both sides
+of every shared contract:
 
 - AppLink keeps main's metadata-only lifecycle status sidecars and producer
   discard/revoke APIs alongside the exact immutable `HandoffPublication`
@@ -629,7 +636,7 @@ python3 .github/scripts/check-dependencies.py check         passed
 bash .github/scripts/check-catalog.sh                       passed
 cargo test -p applink -p integration -p launch -p log-lens \
   -p run-manager -p wsl-desktop -p wsl -j2                 passed
-  applink 73; integration 14; launch 24; log-lens 47;
+  applink 73; integration 14; launch 29; log-lens 47;
   run-manager 206; wsl-desktop 89; wsl 31; doctests passed
 cargo check -p applink -p integration -p launch -p log-lens \
   -p run-manager -p wsl-desktop -p wsl -j2                 passed
@@ -637,15 +644,11 @@ cargo clippy -p applink -p integration -p launch -p log-lens \
   -p run-manager -p wsl-desktop -p wsl --all-targets -j2 \
   -- -D warnings                                            passed
 pnpm --dir apps/log-lens test -- --maxWorkers=1 \
-  --no-file-parallelism                                     20 passed, 1 duplicate-message assertion exposed
-pnpm --dir apps/log-lens exec vitest run src/App.handoff.test.tsx \
-  --maxWorkers=1 --no-file-parallelism                      passed (6)
+  --no-file-parallelism                                     passed (4 files, 21 tests)
 pnpm --dir apps/run-manager test -- --maxWorkers=1 \
   --no-file-parallelism                                     passed (6 files, 42 tests)
 pnpm --dir apps/wsl-desktop test -- --maxWorkers=1 \
-  --no-file-parallelism                                     132 passed, 1 obsolete snapshot-fixture assertion exposed
-pnpm --dir apps/wsl-desktop exec vitest run src/App.applink.test.tsx \
-  --maxWorkers=1 --no-file-parallelism                      passed (8)
+  --no-file-parallelism                                     passed (16 files, 133 tests)
 pnpm --dir apps/log-lens build                              passed
 pnpm --dir apps/run-manager build                           passed
 pnpm --dir apps/wsl-desktop build                           passed (existing chunk-size warning only)
@@ -655,8 +658,7 @@ pnpm audit --audit-level moderate                           passed (no known vul
 cargo deny --locked check                                   passed (advisories, bans, licenses, sources)
 ```
 
-The corrected focused files cover every assertion that failed in the full
-runs; all other files in those full runs passed. GitHub Actions remains the
-authoritative clean-workspace frontend aggregate and native Windows compile
-gate. Packaged Windows two-process handoff acceptance and the separately
-tracked Run log receiver remain outside this producer-only PR.
+The corrected full frontend suites passed on the final combined branch.
+GitHub Actions remains the authoritative clean-workspace aggregate and native
+Windows compile gate. Packaged Windows two-process handoff acceptance and the
+separately tracked Run log receiver remain outside this producer-only PR.
