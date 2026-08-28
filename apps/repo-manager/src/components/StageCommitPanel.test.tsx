@@ -145,6 +145,8 @@ describe("StageCommitPanel", () => {
     resolveStage?.();
     await waitFor(() => expect(screen.getByRole("button", { name: "변경 파일 불러오기" })).toBeTruthy());
     expect(screen.queryByRole("button", { name: "취소" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "stage src/main.ts" })).toBeNull();
+    expect(screen.getByRole("alert").textContent).toBe(GIT_MUTATION_ERROR);
   });
 
   it("loads status and stages only the explicitly selected path", async () => {

@@ -1,3 +1,4 @@
+pub mod cleanup;
 pub mod git;
 pub mod git_safety;
 pub mod history_diff;

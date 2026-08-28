@@ -118,6 +118,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
   const busyRef = useRef(false);
   const mountedRef = useRef(false);
   const operationIdRef = useRef<string | null>(null);
+  const cancelledOperationRef = useRef<string | null>(null);
   const [cancelPending, setCancelPending] = useState(false);
   const [remoteConfirmation, setRemoteConfirmation] = useState<RemoteConfirmation | null>(null);
 
@@ -126,6 +127,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
     sequenceRef.current += 1;
     busyRef.current = false;
     operationIdRef.current = null;
+    cancelledOperationRef.current = null;
     setCancelPending(false);
     setState(null);
     setBusy(false);
@@ -142,6 +144,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
         void repoRemoteCancel(operationId).catch(() => undefined);
       }
       busyRef.current = false;
+      cancelledOperationRef.current = null;
     };
   }, [repo?.canonicalKey, repo?.path]);
 
@@ -194,6 +197,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
     const operationId = createRemoteOperationId();
     busyRef.current = true;
     operationIdRef.current = operationId;
+    cancelledOperationRef.current = null;
     setCancelPending(false);
     setBusy(true);
     setAction(nextAction);
@@ -254,7 +258,14 @@ export default function RemoteSyncPanel({ repo }: Props) {
         setStatus("원격 작업을 완료하지 못했습니다.");
       })
       .finally(() => {
-        if (isCurrent(sequence)) {
+        const cancelled = cancelledOperationRef.current === operationId;
+        if (isCurrent(sequence) || (cancelled && mountedRef.current)) {
+          if (cancelled) {
+            cancelledOperationRef.current = null;
+            setState(null);
+            setError(GIT_REMOTE_CANCELLED);
+            setStatus("원격 작업을 취소했습니다. 최신 상태를 다시 확인하세요.");
+          }
           if (operationIdRef.current === operationId) operationIdRef.current = null;
           setCancelPending(false);
           busyRef.current = false;
@@ -305,6 +316,8 @@ export default function RemoteSyncPanel({ repo }: Props) {
   const cancel = () => {
     const operationId = operationIdRef.current;
     if (!busyRef.current || !action || !operationId || cancelPending) return;
+    cancelledOperationRef.current = operationId;
+    sequenceRef.current += 1;
     setCancelPending(true);
     setStatus("취소 요청 중입니다.");
     void repoRemoteCancel(operationId)

@@ -69,6 +69,7 @@ export default function StageCommitPanel({ repo }: Props) {
   const busyRef = useRef(false);
   const mountedRef = useRef(false);
   const operationIdRef = useRef<string | null>(null);
+  const cancelledOperationRef = useRef<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -84,6 +85,7 @@ export default function StageCommitPanel({ repo }: Props) {
     setCancelPending(false);
     setOperationStatus(null);
     operationIdRef.current = null;
+    cancelledOperationRef.current = null;
     setCommitConfirmation(null);
 
     return () => {
@@ -95,6 +97,7 @@ export default function StageCommitPanel({ repo }: Props) {
       }
       operationIdRef.current = null;
       busyRef.current = false;
+      cancelledOperationRef.current = null;
     };
   }, [repo?.canonicalKey, repo?.path]);
 
@@ -115,8 +118,20 @@ export default function StageCommitPanel({ repo }: Props) {
     setUnstageSelection((current) => new Set([...current].filter((path) => unstagePaths.has(path))));
   };
 
-  const finishBusy = (sequence: number) => {
-    if (!isCurrent(sequence)) return;
+  const finishBusy = (sequence: number, operationId?: string) => {
+    const cancelled = operationId !== undefined && cancelledOperationRef.current === operationId;
+    if (!isCurrent(sequence) && !(cancelled && mountedRef.current)) return;
+    if (cancelled) {
+      cancelledOperationRef.current = null;
+      if (operationIdRef.current === operationId) operationIdRef.current = null;
+      setChanges(null);
+      setStageSelection(new Set());
+      setUnstageSelection(new Set());
+      setCommitConfirmation(null);
+      setMessage("");
+      setError(GIT_MUTATION_ERROR);
+      setOperationStatus("Git 작업을 취소했습니다. 최신 변경 파일을 다시 불러오세요.");
+    }
     busyRef.current = false;
     setBusy(false);
   };
@@ -155,6 +170,7 @@ export default function StageCommitPanel({ repo }: Props) {
     const operationId = createLocalOperationId();
     busyRef.current = true;
     operationIdRef.current = operationId;
+    cancelledOperationRef.current = null;
     setBusy(true);
     setLocalAction(selection);
     setCancelPending(false);
@@ -187,7 +203,7 @@ export default function StageCommitPanel({ repo }: Props) {
         setError(GIT_MUTATION_ERROR);
       }
     } finally {
-      finishBusy(sequence);
+      finishBusy(sequence, operationId);
     }
   };
 
@@ -201,6 +217,7 @@ export default function StageCommitPanel({ repo }: Props) {
     const operationId = createLocalOperationId();
     busyRef.current = true;
     operationIdRef.current = operationId;
+    cancelledOperationRef.current = null;
     setBusy(true);
     setLocalAction("commit");
     setCancelPending(false);
@@ -231,7 +248,7 @@ export default function StageCommitPanel({ repo }: Props) {
         setError(GIT_MUTATION_ERROR);
       }
     } finally {
-      finishBusy(sequence);
+      finishBusy(sequence, operationId);
     }
   };
 
@@ -271,6 +288,8 @@ export default function StageCommitPanel({ repo }: Props) {
   const cancel = () => {
     const operationId = operationIdRef.current;
     if (!busyRef.current || !localAction || !operationId || cancelPending) return;
+    cancelledOperationRef.current = operationId;
+    sequenceRef.current += 1;
     setCancelPending(true);
     setOperationStatus("취소 요청 중입니다.");
     void repoLocalCancel(operationId)

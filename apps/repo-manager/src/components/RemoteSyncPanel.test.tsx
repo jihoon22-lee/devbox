@@ -230,10 +230,13 @@ describe("RemoteSyncPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
     await waitFor(() => expect(repoRemoteCancelMock).toHaveBeenCalledWith(repoFetchMock.mock.calls[0][1]));
     resolveFetch?.();
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("완료"));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("취소했습니다"));
     await waitFor(() => expect(screen.getByRole("region", { name: "Git remote sync" }).getAttribute("aria-busy")).toBe("false"));
+    expect(screen.getByRole("alert").textContent).toBe("Git 원격 작업을 취소했습니다.");
 
     repoFetchMock.mockRejectedValueOnce(new Error("https://user:credential@secret.example/repo"));
+    fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
+    await screen.findByText("원격 작업을 실행할 수 있습니다.");
     fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe(GIT_REMOTE_ERROR);

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
   createWorktree,
+  repoCleanupPreview,
   onOpenRequest,
   openIn,
   openRepositoryFolder,
@@ -12,18 +13,25 @@ import {
   repositoryCopyPath,
   scanRoot,
   takePendingOpen,
-  worktreeClean,
   worktrees,
+  type CleanupPreview,
   type RepoEntry,
   type RepoOpenTarget,
 } from "./api";
 
 vi.mock("./api", () => ({
+  GIT_CLEANUP_BUSY: "이미 다른 Git 작업이 진행 중입니다.",
+  GIT_CLEANUP_CANCELLED: "Git 정리 작업을 취소했습니다.",
+  GIT_CLEANUP_ERROR: "Git 정리 작업을 실행하지 못했습니다.",
+  GIT_CLEANUP_STATE_CHANGED: "저장소 상태가 변경되어 Git 정리를 실행하지 않았습니다.",
   GIT_REMOTE_BUSY: "이미 다른 Git 작업이 진행 중입니다.",
   GIT_REMOTE_CANCELLED: "Git 원격 작업을 취소했습니다.",
   GIT_REMOTE_ERROR: "Git 원격 작업을 실행하지 못했습니다.",
   GIT_REMOTE_STATE_CHANGED: "저장소 상태가 변경되어 Git 원격 작업을 실행하지 않았습니다.",
   createWorktree: vi.fn(),
+  repoCleanup: vi.fn(),
+  repoCleanupCancel: vi.fn(),
+  repoCleanupPreview: vi.fn(),
   onOpenRequest: vi.fn(),
   openIn: vi.fn(),
   openRepositoryFolder: vi.fn(),
@@ -33,7 +41,6 @@ vi.mock("./api", () => ({
   repositoryCopyPath: vi.fn(),
   scanRoot: vi.fn(),
   takePendingOpen: vi.fn(),
-  worktreeClean: vi.fn(),
   worktrees: vi.fn(),
 }));
 
@@ -59,7 +66,7 @@ const scanRootMock = vi.mocked(scanRoot);
 const repoStatusMock = vi.mocked(repoStatus);
 const worktreesMock = vi.mocked(worktrees);
 const createWorktreeMock = vi.mocked(createWorktree);
-const worktreeCleanMock = vi.mocked(worktreeClean);
+const repoCleanupPreviewMock = vi.mocked(repoCleanupPreview);
 const openTargetsMock = vi.mocked(openTargets);
 const openInMock = vi.mocked(openIn);
 const repositoryCopyPathMock = vi.mocked(repositoryCopyPath);
@@ -80,7 +87,30 @@ beforeEach(() => {
     ? [repositories[0].path, "C:\\projects\\devbox-wt"]
     : [path]);
   createWorktreeMock.mockReset().mockImplementation(async (_repoPath, _branch, targetDir) => ({ path: targetDir }));
-  worktreeCleanMock.mockReset().mockResolvedValue(true);
+  repoCleanupPreviewMock.mockReset().mockResolvedValue({
+    revision: "cleanup-0123456789abcdef",
+    currentBranch: "main",
+    currentHead: "0123456789abcdef0123456789abcdef01234567",
+    branches: [],
+    worktrees: [
+      {
+        path: repositories[0].path,
+        head: "0123456789abcdef0123456789abcdef01234567",
+        branch: "main",
+        isMain: true,
+        bare: false,
+        locked: false,
+        prunable: false,
+        dirty: false,
+        untracked: false,
+        ignored: false,
+        candidate: false,
+        eligible: false,
+        reasons: ["primaryWorktree"],
+        blocked: ["mainWorktree", "currentWorktree"],
+      },
+    ],
+  } satisfies CleanupPreview);
   openTargetsMock.mockReset().mockResolvedValue(targets);
   openInMock.mockReset().mockResolvedValue(undefined);
   repositoryCopyPathMock.mockReset().mockImplementation(async (path) => path);
@@ -156,13 +186,18 @@ describe("Repo Manager repository context menu", () => {
     expect(second.getAttribute("aria-current")).toBe("true");
   });
 
-  it("repository와 기존 worktree 안전 검사 UI를 유지한다", async () => {
+  it("repository와 정리 preview UI를 유지한다", async () => {
     render(<App />);
 
     await screen.findByText("C:\\projects\\devbox", { selector: ".repo-path" });
     expect(screen.getByText("C:\\projects\\devbox-wt")).toBeTruthy();
-    fireEvent.click(screen.getAllByRole("button", { name: "remove 확인" })[0]);
-    expect(await screen.findByText(/제거 가능 \(동작 미구현: remove는 신중히\)/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("C:\\projects\\devbox repository"));
+    fireEvent.click(screen.getByRole("button", { name: "정리 후보 검사" }));
+    expect(await screen.findByText(/기본 worktree라서 차단됨/)).toBeTruthy();
+    expect(repoCleanupPreviewMock).toHaveBeenCalledWith(
+      repositories[0].path,
+      expect.stringMatching(/^[A-Za-z0-9._-]+$/u),
+    );
   });
 
   it("우클릭한 exact repository를 선택하고 설계의 네 항목만 표시한다", async () => {

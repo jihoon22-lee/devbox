@@ -13,7 +13,8 @@
 - **repository 컨텍스트 메뉴** — 다른 앱으로 열기, worktree 생성 입력으로 이동, backend에서
   재검증한 경로 복사, 탐색기에서 열기. 우클릭과 `Shift+F10`/Menu 키를 지원하고 닫은 뒤 원래
   repository 카드로 포커스를 돌려보낸다. 카드 안의 텍스트 입력은 기본 우클릭·IME 동작을 유지한다.
-- **정리 후보** — merged/stale branch 후보, remove 전 uncommitted/untracked 검사
+- **정리 후보** — merged/stale branch와 안전한 linked/detached worktree 후보를 bounded
+  preview로 확인하고, 대상·근거·차단 사유를 검토한 뒤 선택 항목만 정리
 - **일상 Git 흐름 (#317)** — 변경 파일을 읽어 선택한 경로만 stage/unstage하고, 현재
   index에 올라간 파일만 명시적으로 commit한다. Commit은 별도 확인 후에만 실행된다.
 - **원격 Git 흐름 (#318)** — Git 기본 remote를 fetch하고, clean·attached·upstream 상태에서
@@ -29,8 +30,12 @@
 - 등록 초안은 자동 저장·Git 명령·임의 경로 쓰기를 수행하지 않고 사용자의 명시적 탐색 전까지 UI state로만 유지
 - 경로 복사와 탐색기 열기는 action 시점에 존재하는 절대 Git repository인지 backend에서 다시
   확인한다. copy 외에는 새 path DTO를 만들지 않으며 opener 상세 오류나 거부된 raw path를 반향하지 않는다.
-- 실제 worktree/branch 제거는 이 메뉴 PR에 포함하지 않는다. 현재는 read-only clean 검사만 유지하고,
-  dirty/untracked/locked/main 차단과 preview를 갖춘 safe cleanup(#364)에서만 파괴 action을 추가한다.
+- 실제 worktree/branch 제거는 safe cleanup(#364)의 bounded preview·정확한 대상 확인·명시적
+  확인·eligible 차단을 통과한 경우에만 수행한다. dirty/untracked/ignored/locked/main/current/
+  prunable/state-unavailable 대상은 항상 mutation 전에 차단된다. 확인창에는 선택한 branch 이름과
+  worktree 경로를 그대로 나열하고, mutation 직전 branch object/upstream/current HEAD와 worktree
+  HEAD·branch·registration·filesystem identity·status를 다시 읽는다. 한 항목이라도 바뀌면
+  해당 batch를 실행하지 않으며 취소·timeout·실패 뒤에는 이전 preview를 폐기해 재검사를 요구한다.
 - stage/unstage는 porcelain-v1 NUL status와 검증된 repository-relative path만 사용하며,
   `git add`/`git restore --staged`에 선택 경로를 명시적으로 전달한다. commit은 사용자가 입력한
   bounded message로 현재 index만 실행하고 unstaged 파일을 자동 추가하지 않는다.
@@ -39,9 +44,10 @@
 - Git child에는 선택 repository를 바꿀 수 있는 `GIT_DIR`, `GIT_COMMON_DIR`, `GIT_WORK_TREE`,
   `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
   `GIT_CEILING_DIRECTORIES`, `GIT_DISCOVERY_ACROSS_FILESYSTEM`, `GIT_PREFIX`,
-  `GIT_QUARANTINE_PATH`를 전달하지 않는다. `GIT_ASKPASS`를 포함한 credential/SSH/askpass
-  환경과 Git config는 제거하지 않아 사용자의 configured credential helper가 계속 동작하며,
-  devbox는 그 값을 읽거나 저장하지 않는다.
+  `GIT_QUARANTINE_PATH`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT` 및 일반적인
+  `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` override를 전달하지 않는다. `GIT_ASKPASS`를 포함한
+  credential/SSH/askpass 환경과 사용자의 일반 Git config는 유지해 configured credential
+  helper가 계속 동작하며, devbox는 그 값을 읽거나 저장하지 않는다.
 - 원격 작업은 remote URL·refspec·credential을 frontend에서 받지 않으며, force push·reset·clean·
   merge/rebase 자동화를 제공하지 않는다. dirty/detached/no-upstream/diverged/in-progress 상태는
   pull/push 전 고정 오류로 차단하고, fetch도 진행 중인 merge/rebase에서는 차단한다.
@@ -116,6 +122,12 @@ native command contract는 다음 read-only request와 명시적 mutation reques
 - `repo_local_cancel({ request: { operationId } })` — path를 다시 열지 않고 해당 local
   stage/unstage/commit child의 취소 token만 설정하며, 반환값은 실제 in-flight ID를 찾았는지다.
 
+local panel에서 사용자가 취소를 누르면 native 응답이 취소 직후 성공하더라도 해당 요청
+sequence를 즉시 폐기한다. UI는 변경 파일·선택·commit 확인 snapshot을 비우고 고정된 취소
+오류와 `최신 변경 파일을 다시 불러오세요` 안내만 남긴다. stage/unstage/commit은 Git의
+여러 파일 동작 또는 hook을 원자적으로 되돌릴 수 없으므로 취소 시 자동 rollback을 시도하지
+않으며, 다음 명시적 새로고침이 실제 index/working tree 상태의 유일한 기준이다.
+
 모든 request DTO는 unknown field를 거부한다. path는 absolute·existing Git repository·canonical
 identity로 재검증하며 control character, traversal, device path를 허용하지 않는다. commit
 revision은 arbitrary rev expression/pathspec으로 전달하지 않는다. Git invocation은 shared
@@ -179,14 +191,16 @@ remote URL·credential 원문을 표시하지 않는다. 열릴 때 취소 버�
   in-flight child의 cancellation token을 설정한다. repository가 unmount/deleted된 뒤에도 path를
   다시 열지 않는다. ID는 첫 async await 전에 등록하고 canonical path는 blocking validation 뒤
   같은 RAII guard에 bind하므로 즉시 취소도 유실되지 않으며, 늦은 결과는 frontend sequence
-  guard가 폐기한다.
+  guard가 폐기한다. 사용자가 취소를 누른 순간 sequence도 무효화하므로 native 작업이 그 직후
+  성공해도 UI에 성공 상태를 반영하지 않고, 최신 상태를 다시 읽으라는 고정 안내와 함께
+  remote snapshot을 비운다.
 
 모든 remote command는 absolute/existing Git repository를 다시 검증하고, status 512 KiB,
 marker 4 KiB, mutation stdout 64 KiB, 30초 timeout을 적용한다. stdin/stderr를 닫고 Git의
 기본 credential helper만 사용하며, devbox는 credential을 읽거나 저장하지 않는다. 실패·취소·
 preflight 차단은 remote URL, raw path, credential, Git stderr를 포함하지 않는 고정 메시지다.
-Windows에서는 kill-on-close Job Object에 `git.exe`를 fail-closed로 편입하고 Linux/WSL에서는
-독립 process group을 사용해 hook·credential helper·SSH/transport 하위 프로세스까지
+Windows에서는 `git.exe`를 suspended로 생성해 kill-on-close Job Object에 편입한 뒤에만
+primary thread를 resume하고, Linux/WSL에서는 독립 process group을 사용해 hook·credential helper·SSH/transport 하위 프로세스까지
 timeout/cancel/drop 수명 경계에 둔다. root Git이 먼저 종료돼도 tree를 닫은 뒤 stdout reader를
 회수해 inherited pipe가 timeout을 우회하지 못한다.
 frontend는 상태별 pull/push 비활성화, busy 중 중복 방지, 취소 버튼, stale/unmount 폐기와
@@ -196,11 +210,62 @@ remote mutation은 native lock을 잡은 상태에서 status를 두 번 읽고, 
 RAII operation guard가 성공·실패·panic에서 registry를 정리한다.
 
 local과 remote의 `operationId`는 128 bytes 이하 ASCII `[A-Za-z0-9._-]`로 제한되고 첫 async
-await 전에 registry에 등록된다. 취소·timeout은 Unix process group, Windows kill-on-close
-Job Object를 통해 Git root뿐 아니라 hook, credential helper, SSH/transport descendant까지
+await 전에 registry에 등록된다. 취소·timeout은 Unix process group, Windows suspended 생성→
+kill-on-close Job Object 편입→resume 경계를 통해 Git root뿐 아니라 hook, credential helper, SSH/transport descendant까지
 종료하고, root가 먼저 끝나도 owned tree와 bounded stdout reader를 정리한 뒤 결과를 반환한다.
 Fetch는 pull/push와 달리 confirmation 없이 버튼 action으로 시작되지만 동일한 operation ID,
 lock, preflight 및 cancellation 경계를 사용한다.
+
+## Safe branch · worktree cleanup (#364)
+
+정리는 항상 read-only preview를 먼저 읽고, preview에서 선택한 대상만 명시적 확인 뒤 실행한다.
+Preview는 고정된 bounded Git 출력에서 local branch의 `mergedIntoCurrent`, `upstreamGone`,
+`inactive`(90일) 근거를 계산하고, worktree의 linked/detached 상태와 dirty/untracked/ignored/
+locked/prunable 상태를 함께 표시한다. 기본(main) worktree, 현재 열려 있는 worktree, 현재 branch,
+`main` branch, worktree에서 사용 중인 branch, locked 또는 상태를 확인하지 못한 worktree는 `eligible=false`로
+닫힌다. stale/prunable metadata를 자동 prune하지 않는다.
+
+Native contract는 다음과 같다.
+
+- `repo_cleanup_preview({ request: { path, operationId } })` — `{ revision, currentBranch, currentHead,
+  branches, worktrees }`를 반환한다. branch/worktree 항목에는 `candidate`, `eligible`,
+  stable `reasons`, `blocked` ID가 있으며 raw Git stderr·credential·잠금 사유 원문은 반환하지
+  않는다. `operationId`는 preview 관찰을 취소할 때만 사용하는 bounded opaque ID다.
+- `repo_cleanup({ request: { path, branchNames, worktreePaths, previewRevision, operationId } })`
+  — fresh preview의 opaque revision·common-directory identity와 선택 대상의
+  filesystem identity·status가 일치하고 eligible일 때만 `git branch --delete -- <branch>` 또는
+  `git worktree remove -- <path>`를 실행한다. 실행 직전에도 branch는 name/object/upstream/
+  merged·stale·current·checked-out 판정을, worktree는 canonical path/identity·HEAD·branch/
+  main/bare/locked/prunable/status 판정을 다시 읽어 preview와 완전히 비교한다. `-D/--force`,
+  `reset`, `clean`, `worktree prune`은 argv/UI에 존재하지 않는다. blocked selection은 mutation
+  없이 per-item 결과로 반환하며, stale preview·path exchange·ref/worktree registration/
+  dirty/untracked/ignored 상태 변화는 고정 오류로 중단한다.
+- `repo_cleanup_cancel({ request: { operationId } })` — path를 다시 열지 않고 bounded
+  operation의 cancellation token만 설정한다. preview/재검증 read와 선택 batch mutation에는
+  각각 cancellation-aware bounded deadline을 적용하며, mutation batch도 120초 total budget을
+  넘기지 않는다. cleanup은 local/remote/stage/create와 동일한 canonical Git common-directory
+  single-flight lock과 bounded process-tree runner를 사용한다.
+
+Git object format에 따른 unborn HEAD 표기는 40자리 SHA-1과 64자리 SHA-256 all-zero object ID를
+모두 `currentHead: null`로 처리한다. cleanup context의 canonicalize/filesystem identity 단계도
+Git 조회와 같은 cancellation token·남은 deadline 경계를 앞뒤로 확인하며, cleanup command 전체는
+Tauri의 bounded `spawn_blocking` worker 안에서 실행한다. 개별 OS filesystem syscall은 진입 후
+강제 중단할 수 없으므로, 완료 직후 경계를 다시 확인해 만료·취소된 작업이 다음 Git child를
+생성하지 않도록 닫는다.
+
+모든 요청 DTO는 unknown field를 거부하고 selection 수·branch/path·revision·operation ID를
+상한/문자 집합으로 검증한다. Preview와 실행 결과는 raw Git diagnostic을 오류에 반향하지
+않으며, path는 명시적 preview/result와 사용자가 승인하는 대상 목록에서만 확인할 수 있다.
+Frontend는 candidate rationale와 block reason을 보여 주고, confirmation snapshot·repository
+identity·선택 집합이 바뀌면 native 호출을 생략한다. native cleanup 실패·취소·state-change는
+기존 preview와 선택을 폐기해 다음 실행 전에 명시적인 `정리 후보 검사`를 요구하며, 성공 응답의
+`previewRevision`도 승인 snapshot과 일치하지 않으면 같은 방식으로 폐기한다.
+
+cleanup batch는 여러 branch/worktree mutation을 하나의 OS/Git transaction으로 되돌릴 수 없다.
+앞선 항목이 이미 제거된 뒤 후속 항목의 재검증·Git 실행이 실패할 수 있으므로 자동 rollback이나
+강제 복구를 시도하지 않으며, 결과가 불확실하거나 부분 적용이면 UI가 전체 preview와 선택을
+폐기하고 새 preview에서 실제 상태를 다시 확인하게 한다. 취소 직후 도착한 native 성공 응답도
+현재 sequence에 반영하지 않는다.
 
 ## 기술
 
