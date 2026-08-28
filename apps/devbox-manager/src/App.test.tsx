@@ -888,6 +888,7 @@ describe("Devbox Manager Related Tools", () => {
 
     expect(await screen.findByText("Visual Studio Code")).toBeTruthy();
     expect(screen.getByText("표준 감지 위치에서 찾지 못했습니다.")).toBeTruthy();
+    expect(screen.getByText(/감지와 이미 설치된 도구 실행은 인터넷 없이 가능/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "공식 사이트" }).getAttribute("href"))
       .toBe("https://code.visualstudio.com/");
     expect(screen.getByRole("link", { name: "라이선스" }).getAttribute("href"))
@@ -911,6 +912,19 @@ describe("Devbox Manager Related Tools", () => {
 
     expect(screen.queryByRole("link", { name: "공식 사이트" })).toBeNull();
     expect(screen.queryByRole("link", { name: "라이선스" })).toBeNull();
+  });
+
+  it("does not parse unbounded official-link values", async () => {
+    relatedToolsMock.mockResolvedValueOnce([{
+      ...relatedTool,
+      officialUrl: `https://code.visualstudio.com/${"x".repeat(2048)}`,
+    }]);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+    await screen.findByText("Visual Studio Code");
+
+    expect(screen.queryByRole("link", { name: "공식 사이트" })).toBeNull();
   });
 
   it("requires confirmation before invoking WinGet install", async () => {

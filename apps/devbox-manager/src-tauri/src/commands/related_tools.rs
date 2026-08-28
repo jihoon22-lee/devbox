@@ -420,6 +420,14 @@ fn run_winget_install(spec: &RelatedToolSpec) -> InstallOutcome {
 
 #[cfg(windows)]
 fn spawn_guarded_winget(path: &Path, spec: &RelatedToolSpec) -> Result<WingetProcess, ()> {
+    // The resolver already checked this path, but resolution and process
+    // creation are separate operations. Re-check immediately before building
+    // the native process request so a replaced executable is not silently
+    // trusted after a long environment/argument preparation step.
+    if !safe_existing_executable(path) {
+        return Err(());
+    }
+
     // Both application name and argv originate from the fixed catalog. The
     // mutable command-line buffer is still quoted with the documented Windows
     // argv rules so an installation path containing spaces cannot alter argv.
@@ -438,6 +446,9 @@ fn spawn_guarded_winget(path: &Path, spec: &RelatedToolSpec) -> Result<WingetPro
         ..Default::default()
     };
     let mut process_info = PROCESS_INFORMATION::default();
+    if !safe_existing_executable(path) {
+        return Err(());
+    }
     let created = unsafe {
         CreateProcessW(
             PCWSTR(application_name.as_ptr()),

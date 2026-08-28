@@ -137,9 +137,11 @@ const RELATED_TOOL_ACTION_MESSAGES = {
   installed: "WinGet 설치가 완료되었습니다.",
   launched: "관련 도구를 실행했습니다.",
 } as const;
+const MAX_RELATED_TOOL_URL_LENGTH = 2048;
 
-function isRelatedToolId(value: string): boolean {
-  return value.length <= 64
+function isRelatedToolId(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length <= 64
     && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)
     && RELATED_TOOL_ID_SET.has(value);
 }
@@ -540,8 +542,9 @@ const RELATED_TOOL_OFFICIAL_HOSTS = new Set([
   "www.docker.com",
 ]);
 
-function isSafeRelatedToolUrl(value: string): boolean {
+function isSafeRelatedToolUrl(value: unknown): value is string {
   try {
+    if (typeof value !== "string" || value.length > MAX_RELATED_TOOL_URL_LENGTH) return false;
     const url = new URL(value);
     return url.protocol === "https:"
       && !url.username

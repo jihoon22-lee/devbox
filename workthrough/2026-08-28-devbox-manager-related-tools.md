@@ -235,3 +235,51 @@ assignment, opener capabilities, and packaged process timeout behavior remain
 CI/release-checkpoint risks. The worktree is intentionally dirty and
 uncommitted; no commit, push, PR, branch deletion, or worktree removal was
 performed.
+
+## Follow-up audit (2026-08-28)
+
+The final #365 review re-read the complete branch diff and repository
+conventions, then checked the Windows-only process path against the stated
+CreateProcessW suspended→Job assignment→resume, active-process polling, trusted
+WinGet root, bounded environment, timeout, and tree-cleanup contract. The core
+boundary was already present and was kept intact. Three small hardening and UX
+gaps were addressed:
+
+- `spawn_guarded_winget` now rechecks the resolved WinGet executable both at
+  entry and immediately before `CreateProcessW`. This narrows the resolver →
+  process-creation replacement window while preserving the fixed application
+  name and argv contract; a failed check creates no unmanaged process.
+- `isRelatedToolId` and the official-link validator now fail closed for
+  JavaScript callers that pass non-string values. Related URL parsing is capped
+  at 2 KiB in both API and render guards, so malformed or unbounded native/UI
+  data cannot reach URL parsing or the opener.
+- Related Tools UI, README, and the native-first plan now explicitly state the
+  offline boundary: local detection and launching an already detected tool do
+  not require network access; WinGet installation requires Windows App
+  Installer and network; official/license links follow browser/network state;
+  none of these optional failures disable Manager-native app operations. The
+  frontend test asserts that this boundary remains visible and rejects an
+  overlong official URL.
+
+Focused revalidation after the follow-up changes:
+
+```text
+source ~/.cargo/env && cargo fmt --all -- --check PASS
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-manager-354 \
+  RUSTFLAGS='-C metadata=devbox_manager_365_review' \
+  cargo test --manifest-path apps/devbox-manager/src-tauri/Cargo.toml \
+  related_tools --lib -j1 PASS (13 related-tools tests)
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-manager-354 \
+  RUSTFLAGS='-C metadata=devbox_manager_365_review' \
+  cargo check -p devbox-manager --lib -j1 PASS
+pnpm --dir apps/devbox-manager test PASS (29 tests)
+pnpm --dir apps/devbox-manager build PASS (tsc + Vite)
+git diff --check PASS
+```
+
+An attempted local `x86_64-pc-windows-gnu` check used the required dedicated
+target and `-j1`, but the environment has no `x86_64-w64-mingw32-gcc`; Cargo
+stopped in the unrelated `aws-lc-sys` build before compiling the application.
+No Windows cfg result is claimed from that attempt. CI/Windows remains the
+authoritative check for Win32 bindings and packaged WinGet behavior. No commit,
+push, PR, rebase, cleanup, or other worktree was changed.

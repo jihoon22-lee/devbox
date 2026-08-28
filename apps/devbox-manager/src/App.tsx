@@ -196,9 +196,11 @@ const RELATED_TOOL_OFFICIAL_HOSTS = new Set([
   "podman-desktop.io",
   "www.docker.com",
 ]);
+const MAX_RELATED_TOOL_URL_LENGTH = 2048;
 
 function safeExternalUrl(value: string): string | null {
   try {
+    if (value.length > MAX_RELATED_TOOL_URL_LENGTH) return null;
     const url = new URL(value);
     if (
       url.protocol !== "https:"
@@ -1310,6 +1312,7 @@ export default function App() {
               <h2 id="related-tools-heading">Related Tools</h2>
               <p className="dim">
                 개발 흐름을 보완하는 작은 공식 도구 목록입니다. 설치 여부만 로컬에서 감지하며 경로와 버전은 표시하지 않습니다.
+                감지와 이미 설치된 도구 실행은 인터넷 없이 가능하지만, WinGet 설치와 공식 링크는 Windows 및 네트워크가 필요합니다.
               </p>
             </div>
             <button

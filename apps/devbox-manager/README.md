@@ -52,7 +52,10 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
   소비되므로 UI도 재시도 버튼을 남기지 않고 새 preview를 요구한다.
 - **Related Tools** — PowerToys, Windows Terminal, VS Code, Bruno, DBeaver/DB Browser, GitHub Desktop,
   Podman/Docker Desktop의 공식 사이트·라이선스와 Windows 설치 감지를 표시한다. WinGet 설치는
-  사용자가 확인한 한 건만 exact ID로 실행하며, 설치된 실행 파일만 직접 실행한다.
+  사용자가 확인한 한 건만 exact ID로 실행하며, 설치된 실행 파일만 직접 실행한다. 감지와 이미
+  설치된 도구 실행은 네트워크 없이도 가능하지만, WinGet 설치에는 Windows App Installer와
+  네트워크가 필요하고 공식·라이선스 링크는 브라우저/네트워크 상태를 따른다. WinGet이 없어도
+  Manager의 native 앱 설치·업데이트·실행에는 영향을 주지 않는다.
 - **실행** — 설치된 앱 실행
 
 ## 기술
@@ -124,7 +127,9 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
   timeout·실패·앱 종료 시 root와 helper를 bounded reap/종료한다.
   frontend API도 고정 catalog metadata와 detection/installed 정합성, action tool ID/status를
   검증하고 native message·오류는 고정된 안전 문구로 치환한다. 늦은 install/launch 응답은
-  mount/action generation과 일치할 때만 화면 상태를 갱신한다.
+  mount/action generation과 일치할 때만 화면 상태를 갱신한다. Related Tools 화면에는 감지·기존
+  실행은 오프라인 가능하고 WinGet 설치·공식 링크는 Windows/네트워크 전제라는 안내를 표시하며,
+  오프라인 또는 WinGet 부재 오류는 선택 기능의 상태로만 남고 Manager native 기능을 막지 않는다.
 
 설치 root 경계의 public 오류는 고정된 안전 메시지만 반환하고 입력 경로, locator/manifest 원문,
 OS 오류, credential을 반사하지 않는다. locator/manifest bytes와 row 수, path 길이에는 상한이 있으며
