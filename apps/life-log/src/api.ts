@@ -147,6 +147,36 @@ export interface SendKnowledgeDraftResult {
   id: string;
   kind: "knowledge-draft/v1";
   expiresAtMs: number;
+  historyId: string;
+}
+
+export type DraftHandoffStatus = "pending" | "sent" | "consumed" | "expired";
+
+export interface KnowledgeDraftSummary {
+  period: "day" | "week" | "month";
+  startDate: string;
+  endDate: string;
+  timezone: string;
+  filter: string | null;
+  pcUsageMs: number;
+  sessionCount: number;
+  activeDays: number;
+  totalDays: number;
+  averageDailyUsageMs: number;
+  gitCommits: number;
+  topApp: string | null;
+}
+
+export interface KnowledgeDraftHistoryEntry {
+  handoffId: string;
+  kind: "knowledge-draft/v1";
+  status: DraftHandoffStatus;
+  summary: KnowledgeDraftSummary;
+  sources: DigestDocument["sources"];
+  createdAtMs: number;
+  updatedAtMs: number;
+  expiresAtMs: number;
+  regeneratedFrom: string | null;
 }
 
 const DAY_MS = 86_400_000;
@@ -383,6 +413,10 @@ export interface SourceStatus {
   producerVersion: string | null;
   generatedAt: string | null;
   freshnessMs: number | null;
+  freshnessState?: "fresh" | "stale" | "expired" | "unknown" | "error";
+  scope?: string;
+  errorCode?: string | null;
+  explanation?: string;
   error: string | null;
   knowledgeActivity: KnowledgeActivity | null;
 }
@@ -405,6 +439,10 @@ export async function integrationSources(): Promise<SourceStatus[]> {
         producerVersion: "0.5.0",
         generatedAt: new Date().toISOString(),
         freshnessMs: 30_000,
+        freshnessState: "fresh",
+        scope: "latest-snapshot-out-of-range",
+        errorCode: null,
+        explanation: "Knowledge의 최신 local snapshot을 provenance로만 표시하며 활동 원문은 읽지 않습니다.",
         error: null,
         knowledgeActivity: {
           notesModifiedToday: 4,
@@ -421,6 +459,10 @@ export async function integrationSources(): Promise<SourceStatus[]> {
         producerVersion: "0.3.0",
         generatedAt: new Date().toISOString(),
         freshnessMs: 30_000,
+        freshnessState: "fresh",
+        scope: "latest-snapshot-out-of-range",
+        errorCode: null,
+        explanation: "Run Manager의 최신 local snapshot을 provenance로만 표시하며 PC 통계에는 합치지 않습니다.",
         error: null,
         knowledgeActivity: null,
       },
@@ -855,8 +897,13 @@ export async function saveDigest(handle: string): Promise<SaveDigestResult> {
 }
 
 /** Native-only explicit handoff. Browser preview never publishes or launches. */
-export async function sendDigestToKnowledge(input: DigestInput): Promise<SendKnowledgeDraftResult> {
+export async function sendDigestToKnowledge(input: DigestInput, regeneratedFrom: string | null = null): Promise<SendKnowledgeDraftResult> {
   if (!isTauri()) throw new Error("Knowledge handoff는 데스크톱 앱에서 사용할 수 없습니다");
   validateDigestInput(input);
-  return invoke<SendKnowledgeDraftResult>("send_digest_to_knowledge", { input });
+  return invoke<SendKnowledgeDraftResult>("send_digest_to_knowledge", { input, regeneratedFrom });
+}
+
+export async function knowledgeDraftHistory(): Promise<KnowledgeDraftHistoryEntry[]> {
+  if (!isTauri()) return [];
+  return invoke<KnowledgeDraftHistoryEntry[]>("knowledge_draft_history");
 }

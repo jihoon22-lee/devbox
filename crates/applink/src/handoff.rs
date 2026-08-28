@@ -25,6 +25,10 @@ const MAX_PAYLOAD_STRING_BYTES: usize = 1024 * 1024;
 const MAX_KIND_BYTES: usize = 128;
 const MAX_APP_ID_BYTES: usize = 64;
 const MAX_CREATE_ATTEMPTS: usize = 16;
+const MAX_STATUS_RECORD_BYTES: u64 = 4 * 1024;
+const HANDOFF_STATUS_SCHEMA_VERSION: u32 = 1;
+const MAX_STATUS_LOCK_ATTEMPTS: usize = 32;
+const MAX_STATUS_RECORDS: usize = 512;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HandoffError {
@@ -86,6 +90,43 @@ pub struct HandoffDescriptor {
     pub kind: String,
 }
 
+/// Durable metadata for a producer-owned handoff lifecycle.  The status
+/// sidecar deliberately contains no payload, path, token, or secret; it lets
+/// a producer explain pending/sent/consumed/expired state after either app
+/// restarts without retaining the handoff body.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HandoffStatus {
+    Pending,
+    Sent,
+    Consumed,
+    Expired,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HandoffStatusRecord {
+    pub schema_version: u32,
+    pub id: String,
+    pub kind: String,
+    pub source_app: String,
+    pub target_app: Option<String>,
+    pub status: HandoffStatus,
+    pub updated_at_ms: u64,
+    pub expires_at_ms: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct RecordHandoffStatus {
+    pub id: String,
+    pub kind: String,
+    pub source_app: String,
+    pub target_app: Option<String>,
+    pub status: HandoffStatus,
+    pub updated_at_ms: u64,
+    pub expires_at_ms: u64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct HandoffClaim {
     pub envelope: HandoffEnvelope,
@@ -145,6 +186,63 @@ impl HandoffStore {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Record a lifecycle transition in a tiny metadata-only sidecar.
+    /// Terminal states are monotonic and stale writers cannot move a consumed
+    /// or expired handoff back to a live state. The payload files remain owned
+    /// by the regular pending/claimed protocol.
+    pub fn record_status(
+        &self,
+        update: RecordHandoffStatus,
+    ) -> Result<HandoffStatusRecord, HandoffError> {
+        let record = HandoffStatusRecord {
+            schema_version: HANDOFF_STATUS_SCHEMA_VERSION,
+            id: update.id,
+            kind: update.kind,
+            source_app: update.source_app,
+            target_app: update.target_app,
+            status: update.status,
+            updated_at_ms: update.updated_at_ms,
+            expires_at_ms: update.expires_at_ms,
+        };
+        validate_status_record(&record)?;
+        let root = self.prepare_layout()?;
+        let lock = acquire_status_lock(&root, &record.id)?;
+        let path = status_path(&root, &record.id);
+        reject_link_slot(&path)?;
+        validate_status_update(&path, &record)?;
+        let bytes = encode_bounded(&record, MAX_STATUS_RECORD_BYTES)?;
+        devbox_filesystem::atomic_write(&path, &bytes).map_err(|_| HandoffError::Storage)?;
+        prune_status_records(&root, &path);
+        drop(lock);
+        Ok(record)
+    }
+
+    /// Read lifecycle metadata only. A missing sidecar is not inferred as a
+    /// consumed handoff: callers may mark it expired only after the envelope
+    /// TTL has elapsed.
+    pub fn read_status(&self, id: &str) -> Result<Option<HandoffStatusRecord>, HandoffError> {
+        validate_id(id)?;
+        let root = self.prepare_layout()?;
+        let lock = acquire_status_lock(&root, id)?;
+        match read_optional_json::<HandoffStatusRecord>(
+            &status_path(&root, id),
+            MAX_STATUS_RECORD_BYTES,
+        )? {
+            Some(record) => {
+                validate_status_record(&record)?;
+                if record.id != id {
+                    return Err(HandoffError::Corrupt);
+                }
+                drop(lock);
+                Ok(Some(record))
+            }
+            None => {
+                drop(lock);
+                Ok(None)
+            }
+        }
     }
 
     pub fn create(
@@ -231,6 +329,48 @@ impl HandoffStore {
             return Err(HandoffError::WrongTarget);
         }
         remove_envelope_if_equal(&path, &envelope)
+    }
+
+    /// Abort a producer transaction before the envelope is handed to a
+    /// consumer. This removes only the exact pending envelope and its pending
+    /// metadata sidecar; a claimed or terminal envelope is never touched.
+    /// Producers use this as compensation when a later local persistence step
+    /// fails after `create` succeeded.
+    pub fn discard_created(&self, descriptor: &HandoffDescriptor) -> Result<(), HandoffError> {
+        validate_id(&descriptor.id)?;
+        validate_kind(&descriptor.kind)?;
+        let root = self.prepare_layout()?;
+        let pending = pending_path(&root, &descriptor.id);
+        let removed_pending =
+            match read_optional_json::<HandoffEnvelope>(&pending, MAX_HANDOFF_BYTES)? {
+                Some(envelope) if envelope.kind == descriptor.kind => {
+                    remove_envelope_if_equal(&pending, &envelope)?;
+                    true
+                }
+                Some(_) => return Err(HandoffError::Corrupt),
+                None => false,
+            };
+        if !removed_pending || managed_file_exists(&claimed_path(&root, &descriptor.id))? {
+            // Once a consumer has published a claim, producer compensation
+            // no longer owns either the envelope or its lifecycle metadata.
+            return Ok(());
+        }
+
+        let _lock = acquire_status_lock(&root, &descriptor.id)?;
+        let status = status_path(&root, &descriptor.id);
+        if let Some(record) =
+            read_optional_json::<HandoffStatusRecord>(&status, MAX_STATUS_RECORD_BYTES)?
+        {
+            validate_status_record(&record)?;
+            if record.kind == descriptor.kind
+                && matches!(record.status, HandoffStatus::Pending | HandoffStatus::Sent)
+            {
+                if let Ok(bytes) = fs::read(&status) {
+                    let _ = remove_file_if_bytes(&status, &bytes);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn claim(
@@ -529,6 +669,7 @@ impl HandoffStore {
         }
         ensure_directory_component(&root, "pending")?;
         ensure_directory_component(&root, "claimed")?;
+        ensure_directory_component(&root, "status")?;
         Ok(root)
     }
 }
@@ -948,6 +1089,182 @@ fn claimed_path(root: &Path, id: &str) -> PathBuf {
 
 fn lease_path(root: &Path, id: &str) -> PathBuf {
     root.join("claimed").join(format!("{id}.lease.json"))
+}
+
+fn status_path(root: &Path, id: &str) -> PathBuf {
+    root.join("status").join(format!("{id}.json"))
+}
+
+fn status_lock_path(root: &Path) -> PathBuf {
+    root.join("status").join(".store.lock")
+}
+
+struct StatusLock {
+    file: File,
+}
+
+impl Drop for StatusLock {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
+}
+
+fn acquire_status_lock(root: &Path, id: &str) -> Result<StatusLock, HandoffError> {
+    for _ in 0..MAX_STATUS_LOCK_ATTEMPTS {
+        match try_acquire_status_lock(root, id)? {
+            Some(lock) => return Ok(lock),
+            None => std::thread::sleep(std::time::Duration::from_millis(5)),
+        }
+    }
+    Err(HandoffError::Storage)
+}
+
+fn try_acquire_status_lock(root: &Path, id: &str) -> Result<Option<StatusLock>, HandoffError> {
+    validate_id(id)?;
+    // One persistent lock file serializes the small metadata-only status
+    // store. Per-ID lock files cannot be safely removed on Unix while another
+    // process may still hold the old inode, and retaining them would grow the
+    // directory without bound as handoffs expire.
+    let path = status_lock_path(root);
+    reject_link_slot(&path)?;
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options.open(&path).map_err(|_| HandoffError::Storage)?;
+    let path_metadata = fs::symlink_metadata(&path).map_err(|_| HandoffError::Storage)?;
+    let file_metadata = file.metadata().map_err(|_| HandoffError::Storage)?;
+    if is_link_or_reparse(&path_metadata) || !path_metadata.is_file() || !file_metadata.is_file() {
+        return Err(HandoffError::UnsafeStorage);
+    }
+    match file.try_lock() {
+        Ok(()) => Ok(Some(StatusLock { file })),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(std::fs::TryLockError::Error(_)) => Err(HandoffError::Storage),
+    }
+}
+
+fn remove_file_if_bytes(path: &Path, expected: &[u8]) -> bool {
+    let Ok(current) = fs::read(path) else {
+        return false;
+    };
+    if current != expected {
+        return false;
+    }
+    fs::remove_file(path).is_ok()
+}
+
+fn validate_status_update(path: &Path, record: &HandoffStatusRecord) -> Result<(), HandoffError> {
+    if let Some(current) = read_optional_json::<HandoffStatusRecord>(path, MAX_STATUS_RECORD_BYTES)?
+    {
+        validate_status_record(&current)?;
+        if current.id != record.id
+            || current.kind != record.kind
+            || current.source_app != record.source_app
+            || current.target_app != record.target_app
+            || current.expires_at_ms != record.expires_at_ms
+            || record.updated_at_ms < current.updated_at_ms
+            || !valid_status_transition(current.status, record.status)
+        {
+            return Err(HandoffError::InvalidRequest);
+        }
+    } else if record.status != HandoffStatus::Pending
+        && !(record.status == HandoffStatus::Expired
+            && record.updated_at_ms >= record.expires_at_ms)
+    {
+        return Err(HandoffError::InvalidRequest);
+    }
+    Ok(())
+}
+
+fn prune_status_records(root: &Path, keep: &Path) {
+    let directory = root.join("status");
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    let available_slots = MAX_STATUS_RECORDS.saturating_sub(1);
+    let mut records: Vec<(std::time::SystemTime, PathBuf)> = Vec::with_capacity(available_slots);
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") || path == keep {
+            continue;
+        }
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if is_link_or_reparse(&metadata) || !metadata.is_file() {
+            continue;
+        }
+        let modified = metadata
+            .modified()
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        if records.len() < available_slots {
+            records.push((modified, path));
+            continue;
+        }
+        let Some((oldest_index, oldest)) = records
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, (modified, _))| *modified)
+        else {
+            continue;
+        };
+        if modified.duration_since(oldest.0).is_ok() {
+            let (_, old_path) = std::mem::replace(&mut records[oldest_index], (modified, path));
+            remove_status_record(&old_path);
+        } else {
+            remove_status_record(&path);
+        }
+    }
+}
+
+fn remove_status_record(path: &Path) {
+    let Ok(bytes) = fs::read(path) else {
+        return;
+    };
+    if !bytes.is_empty() {
+        let _ = remove_file_if_bytes(path, &bytes);
+    }
+}
+
+fn validate_status_record(record: &HandoffStatusRecord) -> Result<(), HandoffError> {
+    if record.schema_version != HANDOFF_STATUS_SCHEMA_VERSION
+        || record.updated_at_ms == 0
+        || (record.status == HandoffStatus::Expired && record.updated_at_ms < record.expires_at_ms)
+        || (record.status != HandoffStatus::Expired && record.expires_at_ms <= record.updated_at_ms)
+        || (record.status != HandoffStatus::Expired
+            && record.expires_at_ms.saturating_sub(record.updated_at_ms) > DEFAULT_HANDOFF_TTL_MS)
+        || record.updated_at_ms < record.expires_at_ms.saturating_sub(DEFAULT_HANDOFF_TTL_MS)
+    {
+        return Err(HandoffError::Corrupt);
+    }
+    validate_id(&record.id).map_err(|_| HandoffError::Corrupt)?;
+    validate_kind(&record.kind).map_err(|_| HandoffError::Corrupt)?;
+    validate_app_id(&record.source_app).map_err(|_| HandoffError::Corrupt)?;
+    if let Some(target) = &record.target_app {
+        validate_app_id(target).map_err(|_| HandoffError::Corrupt)?;
+    }
+    let _ = encode_bounded(record, MAX_STATUS_RECORD_BYTES)?;
+    Ok(())
+}
+
+fn valid_status_transition(from: HandoffStatus, to: HandoffStatus) -> bool {
+    matches!(
+        (from, to),
+        (HandoffStatus::Pending, HandoffStatus::Pending)
+            | (HandoffStatus::Pending, HandoffStatus::Sent)
+            | (HandoffStatus::Pending, HandoffStatus::Consumed)
+            | (HandoffStatus::Pending, HandoffStatus::Expired)
+            | (HandoffStatus::Sent, HandoffStatus::Sent)
+            | (HandoffStatus::Sent, HandoffStatus::Pending)
+            | (HandoffStatus::Sent, HandoffStatus::Consumed)
+            | (HandoffStatus::Sent, HandoffStatus::Expired)
+            | (HandoffStatus::Consumed, HandoffStatus::Consumed)
+            | (HandoffStatus::Expired, HandoffStatus::Expired)
+    )
 }
 
 fn publish_new(path: &Path, contents: &[u8]) -> Result<(), PublishError> {
@@ -1716,5 +2033,215 @@ mod tests {
             Err(HandoffError::UnsafeStorage)
         );
         assert_eq!(fs::read_dir(&target).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn status_sidecar_is_metadata_only_and_has_monotonic_terminal_states() {
+        let root = TestRoot::new("status");
+        let store = root.store();
+        let descriptor = store.create(request(None), 1_000).unwrap();
+        let update = |status| RecordHandoffStatus {
+            id: descriptor.id.clone(),
+            kind: descriptor.kind.clone(),
+            source_app: "webhook-lab".into(),
+            target_app: None,
+            status,
+            updated_at_ms: 1_000,
+            expires_at_ms: 601_000,
+        };
+        store.record_status(update(HandoffStatus::Pending)).unwrap();
+        store
+            .record_status(RecordHandoffStatus {
+                updated_at_ms: 2_000,
+                ..update(HandoffStatus::Sent)
+            })
+            .unwrap();
+        store
+            .record_status(RecordHandoffStatus {
+                updated_at_ms: 3_000,
+                ..update(HandoffStatus::Consumed)
+            })
+            .unwrap();
+        assert_eq!(
+            store.record_status(RecordHandoffStatus {
+                updated_at_ms: 4_000,
+                ..update(HandoffStatus::Pending)
+            }),
+            Err(HandoffError::InvalidRequest)
+        );
+        assert_eq!(
+            store.record_status(RecordHandoffStatus {
+                expires_at_ms: 602_000,
+                updated_at_ms: 4_000,
+                ..update(HandoffStatus::Pending)
+            }),
+            Err(HandoffError::InvalidRequest)
+        );
+        let status = store.read_status(&descriptor.id).unwrap().unwrap();
+        assert_eq!(status.status, HandoffStatus::Consumed);
+
+        // The receiver can observe a just-published envelope before the
+        // producer's pre-launch `sent` write.  Consumed is therefore a valid
+        // monotonic transition directly from pending; it must not leave the
+        // producer history stuck forever when that race occurs.
+        let direct = store.create(request(None), 1_000).unwrap();
+        let direct_update = |status| RecordHandoffStatus {
+            id: direct.id.clone(),
+            kind: direct.kind.clone(),
+            source_app: "webhook-lab".into(),
+            target_app: None,
+            status,
+            updated_at_ms: 1_000,
+            expires_at_ms: 601_000,
+        };
+        store
+            .record_status(direct_update(HandoffStatus::Pending))
+            .unwrap();
+        store
+            .record_status(direct_update(HandoffStatus::Consumed))
+            .unwrap();
+        let bytes = fs::read(
+            root.path
+                .join("status")
+                .join(format!("{}.json", descriptor.id)),
+        )
+        .unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("payload"));
+    }
+
+    #[test]
+    fn status_lock_excludes_other_owners_until_drop() {
+        let root = TestRoot::new("status-owner");
+        let store = root.store();
+        let descriptor = store.create(request(None), 1_000).unwrap();
+        let prepared = store.prepare_layout().unwrap();
+        let first = acquire_status_lock(&prepared, &descriptor.id).unwrap();
+        assert!(try_acquire_status_lock(&prepared, &descriptor.id)
+            .unwrap()
+            .is_none());
+        drop(first);
+        let second = try_acquire_status_lock(&prepared, &descriptor.id)
+            .unwrap()
+            .expect("operating-system lock must be released when its file handle is dropped");
+        drop(second);
+        assert!(status_lock_path(&prepared).is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn status_lock_rejects_a_symlink_slot() {
+        use std::os::unix::fs::symlink;
+
+        let root = TestRoot::new("status-symlink-lock");
+        let store = root.store();
+        let descriptor = store.create(request(None), 1_000).unwrap();
+        let prepared = store.prepare_layout().unwrap();
+        let lock_path = status_lock_path(&prepared);
+        let target = root.path.join("outside-lock");
+        fs::write(&target, b"outside").unwrap();
+        symlink(&target, &lock_path).unwrap();
+        assert!(matches!(
+            try_acquire_status_lock(&prepared, &descriptor.id),
+            Err(HandoffError::UnsafeStorage)
+        ));
+        assert_eq!(fs::read(target).unwrap(), b"outside");
+    }
+
+    #[test]
+    fn discarding_created_handoff_removes_only_pending_payload_and_status() {
+        let root = TestRoot::new("discard-created");
+        let store = root.store();
+        let descriptor = store.create(request(None), 1_000).unwrap();
+        store
+            .record_status(RecordHandoffStatus {
+                id: descriptor.id.clone(),
+                kind: descriptor.kind.clone(),
+                source_app: "webhook-lab".into(),
+                target_app: None,
+                status: HandoffStatus::Pending,
+                updated_at_ms: 1_000,
+                expires_at_ms: 601_000,
+            })
+            .unwrap();
+        store.discard_created(&descriptor).unwrap();
+        assert!(!root.pending(&descriptor.id).exists());
+        assert_eq!(store.read_status(&descriptor.id).unwrap(), None);
+
+        let sent = store.create(request(None), 2_000).unwrap();
+        store
+            .record_status(RecordHandoffStatus {
+                id: sent.id.clone(),
+                kind: sent.kind.clone(),
+                source_app: "webhook-lab".into(),
+                target_app: None,
+                status: HandoffStatus::Pending,
+                updated_at_ms: 2_000,
+                expires_at_ms: 602_000,
+            })
+            .unwrap();
+        store
+            .record_status(RecordHandoffStatus {
+                id: sent.id.clone(),
+                kind: sent.kind.clone(),
+                source_app: "webhook-lab".into(),
+                target_app: None,
+                status: HandoffStatus::Sent,
+                updated_at_ms: 2_001,
+                expires_at_ms: 602_000,
+            })
+            .unwrap();
+        store.discard_created(&sent).unwrap();
+        assert!(!root.pending(&sent.id).exists());
+        assert_eq!(store.read_status(&sent.id).unwrap(), None);
+    }
+
+    #[test]
+    fn producer_discard_does_not_touch_a_claimed_handoff_or_status() {
+        let root = TestRoot::new("discard-claimed");
+        let store = root.store();
+        let descriptor = store.create(request(None), 1_000).unwrap();
+        store
+            .record_status(RecordHandoffStatus {
+                id: descriptor.id.clone(),
+                kind: descriptor.kind.clone(),
+                source_app: "webhook-lab".into(),
+                target_app: None,
+                status: HandoffStatus::Sent,
+                updated_at_ms: 1_000,
+                expires_at_ms: 601_000,
+            })
+            .unwrap_err();
+        store
+            .record_status(RecordHandoffStatus {
+                id: descriptor.id.clone(),
+                kind: descriptor.kind.clone(),
+                source_app: "webhook-lab".into(),
+                target_app: None,
+                status: HandoffStatus::Pending,
+                updated_at_ms: 1_000,
+                expires_at_ms: 601_000,
+            })
+            .unwrap();
+        store
+            .record_status(RecordHandoffStatus {
+                id: descriptor.id.clone(),
+                kind: descriptor.kind.clone(),
+                source_app: "webhook-lab".into(),
+                target_app: None,
+                status: HandoffStatus::Sent,
+                updated_at_ms: 1_001,
+                expires_at_ms: 601_000,
+            })
+            .unwrap();
+        let claim = store
+            .claim(&descriptor.id, &descriptor.kind, "knowledge-base", 1_002)
+            .unwrap();
+        store.discard_created(&descriptor).unwrap();
+        assert!(root.claimed(&descriptor.id).is_file());
+        assert_eq!(
+            store.read_status(&descriptor.id).unwrap().unwrap().status,
+            HandoffStatus::Sent
+        );
+        store.ack(&claim, "knowledge-base", 1_003).unwrap();
     }
 }

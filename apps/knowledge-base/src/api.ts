@@ -122,10 +122,46 @@ export interface SaveKnowledgeDraftResult {
   saved: boolean;
   path: string;
   handoffDeleted: boolean;
+  handoffStatusRecorded?: boolean;
 }
 
 export interface RenewKnowledgeDraftResult {
   leaseUntilMs: number;
+}
+
+export interface NoteTemplate {
+  id: number;
+  name: string;
+  content: string;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface TemplateDraft {
+  name: string;
+  content: string;
+}
+
+export interface TemplateApplyInput {
+  templateId: number;
+  target: string;
+  title: string;
+  date: string;
+  time: string;
+}
+
+export interface TemplatePreview {
+  previewId: string;
+  templateId: number;
+  templateUpdatedAtMs: number;
+  target: string;
+  content: string;
+  byteLength: number;
+}
+
+export interface SaveTemplateResult {
+  saved: boolean;
+  path: string;
 }
 
 const MOCK_OPEN_TARGETS: KnowledgeOpenTarget[] = [
@@ -141,6 +177,136 @@ const MOCK_TREE: TreeEntry[] = [
   { path: "Journal", is_dir: true },
   { path: "Journal/2026-08-11.md", is_dir: false },
 ];
+
+const TEMPLATE_PLACEHOLDERS = ["{{title}}", "{{date}}", "{{time}}", "{{vault-relative-path}}"] as const;
+const MAX_TEMPLATE_NAME_BYTES = 128;
+const MAX_TEMPLATE_CONTENT_BYTES = 64 * 1024;
+const MAX_TEMPLATE_OUTPUT_BYTES = 256 * 1024;
+const MAX_TEMPLATE_TITLE_BYTES = 256;
+const MAX_TEMPLATE_PATH_BYTES = 512;
+const MAX_TEMPLATES = 100;
+const TEMPLATE_PREVIEW_TTL_MS = 2 * 60 * 1_000;
+
+function templateBytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function isTemplateControl(character: string): boolean {
+  const code = character.codePointAt(0) ?? 0;
+  return code <= 0x1f || (code >= 0x7f && code <= 0x9f);
+}
+
+function templateTextIsSafe(value: string, maxBytes: number, nonEmpty: boolean): boolean {
+  return templateBytes(value) <= maxBytes
+    && (!nonEmpty || value.trim().length > 0)
+    && [...value].every((character) => !isTemplateControl(character)
+      || "\n\r\t".includes(character));
+}
+
+function validateTemplatePlaceholders(content: string): void {
+  let offset = 0;
+  while (true) {
+    const start = content.indexOf("{{", offset);
+    if (start < 0) return;
+    const end = content.indexOf("}}", start + 2);
+    const token = end < 0 ? "" : content.slice(start, end + 2);
+    if (!TEMPLATE_PLACEHOLDERS.includes(token as typeof TEMPLATE_PLACEHOLDERS[number])) {
+      throw new Error("지원하지 않는 템플릿 변수가 있습니다");
+    }
+    offset = end + 2;
+  }
+}
+
+function validateTemplateDraftInput(draft: TemplateDraft): void {
+  if (!templateTextIsSafe(draft.name, MAX_TEMPLATE_NAME_BYTES, true)
+    || /[\\/]/u.test(draft.name)
+    || [...draft.name].some(isTemplateControl)) {
+    throw new Error("템플릿 이름이 올바르지 않습니다");
+  }
+  if (!templateTextIsSafe(draft.content, MAX_TEMPLATE_CONTENT_BYTES, false)) {
+    throw new Error("템플릿 본문이 올바르지 않습니다");
+  }
+  validateTemplatePlaceholders(draft.content);
+}
+
+function validateTemplateApplyInput(input: TemplateApplyInput, content: string): string {
+  const normalized = input.target.split("\\").join("/");
+  if (!templateTextIsSafe(input.target, MAX_TEMPLATE_PATH_BYTES, true)
+    || [...input.target].some(isTemplateControl)
+    || normalized !== input.target
+    || normalized.startsWith("/")
+    || normalized.includes("//")
+    || normalized.includes(":")
+    || normalized.split("/").some((part) => part === "" || part === "." || part === "..")
+    || !normalized.toLowerCase().endsWith(".md")) {
+    throw new Error("템플릿 저장 경로가 올바르지 않습니다");
+  }
+  if (!templateTextIsSafe(input.title, MAX_TEMPLATE_TITLE_BYTES, false)
+    || [...input.title].some(isTemplateControl)) {
+    throw new Error("템플릿 제목이 올바르지 않습니다");
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(input.date)) {
+    throw new Error("템플릿 날짜가 올바르지 않습니다");
+  }
+  const date = new Date(`${input.date}T00:00:00Z`);
+  if (Number(input.date.slice(0, 4)) < 1
+    || Number.isNaN(date.getTime())
+    || date.toISOString().slice(0, 10) !== input.date) {
+    throw new Error("템플릿 날짜가 올바르지 않습니다");
+  }
+  if (!/^\d{2}:\d{2}$/u.test(input.time)
+    || Number(input.time.slice(0, 2)) > 23
+    || Number(input.time.slice(3, 5)) > 59) {
+    throw new Error("템플릿 시간이 올바르지 않습니다");
+  }
+  validateTemplatePlaceholders(content);
+  return renderTemplateContent(input, content);
+}
+
+function renderTemplateContent(input: TemplateApplyInput, content: string): string {
+  const parts: string[] = [];
+  let outputBytes = 0;
+  let offset = 0;
+  const append = (value: string) => {
+    outputBytes += templateBytes(value);
+    if (outputBytes > MAX_TEMPLATE_OUTPUT_BYTES) {
+      throw new Error("템플릿 결과가 크기 제한을 초과했습니다");
+    }
+    parts.push(value);
+  };
+  while (true) {
+    const start = content.indexOf("{{", offset);
+    if (start < 0) {
+      append(content.slice(offset));
+      return parts.join("");
+    }
+    append(content.slice(offset, start));
+    const end = content.indexOf("}}", start + 2);
+    if (end < 0) throw new Error("지원하지 않는 템플릿 변수가 있습니다");
+    const token = content.slice(start, end + 2);
+    const value = token === "{{title}}" ? input.title
+      : token === "{{date}}" ? input.date
+      : token === "{{time}}" ? input.time
+      : token === "{{vault-relative-path}}" ? input.target
+      : null;
+    if (value === null) throw new Error("지원하지 않는 템플릿 변수가 있습니다");
+    append(value);
+    offset = end + 2;
+  }
+}
+
+let nextMockTemplateId = 2;
+let mockTemplates: NoteTemplate[] = [
+  {
+    id: 1,
+    name: "Daily note",
+    content: "---\ntitle: {{title}}\ndate: {{date}}\n---\n\n# {{title}}\n\nCreated at {{time}} in {{vault-relative-path}}.\n",
+    createdAtMs: Date.now(),
+    updatedAtMs: Date.now(),
+  },
+];
+let mockTemplatePreview: TemplatePreview | null = null;
+let mockTemplatePreviewExpiresAtMs = 0;
 
 export async function getRoot(): Promise<string> {
   if (!isTauri()) return "C:\\Users\\me\\Documents\\Knowledge";
@@ -253,6 +419,111 @@ export async function discardKnowledgeDraft(id: string): Promise<void> {
 export async function renewKnowledgeDraft(id: string): Promise<RenewKnowledgeDraftResult> {
   if (!isTauri()) throw new Error("Knowledge draft 갱신은 데스크톱 앱에서 사용할 수 없습니다");
   return invoke<RenewKnowledgeDraftResult>("renew_knowledge_draft", { id });
+}
+
+export async function listTemplates(): Promise<NoteTemplate[]> {
+  if (!isTauri()) return mockTemplates.map((template) => ({ ...template }));
+  return invoke<NoteTemplate[]>("list_templates");
+}
+
+export async function createTemplate(draft: TemplateDraft): Promise<NoteTemplate> {
+  if (!isTauri()) {
+    const normalized = { ...draft, name: draft.name.trim() };
+    validateTemplateDraftInput(normalized);
+    if (mockTemplates.length >= MAX_TEMPLATES) throw new Error("템플릿 개수가 제한을 초과했습니다");
+    if (mockTemplates.some((template) => template.name.toLocaleLowerCase() === normalized.name.toLocaleLowerCase())) {
+      throw new Error("템플릿 이름이 이미 있습니다");
+    }
+    const now = Date.now();
+    const template = { id: nextMockTemplateId++, ...normalized, createdAtMs: now, updatedAtMs: now };
+    mockTemplates = [...mockTemplates, template];
+    return template;
+  }
+  return invoke<NoteTemplate>("create_template", { draft });
+}
+
+export async function updateTemplate(id: number, draft: TemplateDraft): Promise<NoteTemplate> {
+  if (!isTauri()) {
+    const normalized = { ...draft, name: draft.name.trim() };
+    validateTemplateDraftInput(normalized);
+    const index = mockTemplates.findIndex((template) => template.id === id);
+    if (index < 0) throw new Error("템플릿을 찾을 수 없습니다");
+    if (mockTemplates.some((template) => template.id !== id
+      && template.name.toLocaleLowerCase() === normalized.name.toLocaleLowerCase())) {
+      throw new Error("템플릿 이름이 이미 있습니다");
+    }
+    const template = { ...mockTemplates[index], ...normalized, updatedAtMs: Date.now() };
+    mockTemplates = mockTemplates.map((item, itemIndex) => itemIndex === index ? template : item);
+    return template;
+  }
+  return invoke<NoteTemplate>("update_template", { id, draft });
+}
+
+export async function deleteTemplate(id: number): Promise<void> {
+  if (!isTauri()) {
+    if (!mockTemplates.some((template) => template.id === id)) {
+      throw new Error("템플릿을 찾을 수 없습니다");
+    }
+    mockTemplates = mockTemplates.filter((template) => template.id !== id);
+    return;
+  }
+  await invoke("delete_template", { id });
+}
+
+export async function previewTemplate(input: TemplateApplyInput): Promise<TemplatePreview> {
+  if (!isTauri()) {
+    const template = mockTemplates.find((item) => item.id === input.templateId);
+    if (!template) throw new Error("템플릿을 찾을 수 없습니다");
+    const content = validateTemplateApplyInput(input, template.content);
+    mockTemplatePreview = {
+      previewId: `tpl-${Date.now()}`,
+      templateId: input.templateId,
+      templateUpdatedAtMs: template.updatedAtMs,
+      target: input.target,
+      content,
+      byteLength: new TextEncoder().encode(content).byteLength,
+    };
+    mockTemplatePreviewExpiresAtMs = Date.now() + TEMPLATE_PREVIEW_TTL_MS;
+    return mockTemplatePreview;
+  }
+  return invoke<TemplatePreview>("preview_template", { approval: input });
+}
+
+export async function saveTemplate(previewId: string): Promise<SaveTemplateResult> {
+  if (!isTauri()) {
+    if (!mockTemplatePreview || mockTemplatePreview.previewId !== previewId) {
+      throw new Error("템플릿 미리보기가 없습니다");
+    }
+    if (Date.now() >= mockTemplatePreviewExpiresAtMs) {
+      mockTemplatePreview = null;
+      mockTemplatePreviewExpiresAtMs = 0;
+      throw new Error("템플릿 미리보기가 오래되어 다시 확인하세요");
+    }
+    const template = mockTemplates.find((item) => item.id === mockTemplatePreview?.templateId);
+    if (!template || template.updatedAtMs !== mockTemplatePreview.templateUpdatedAtMs) {
+      mockTemplatePreview = null;
+      mockTemplatePreviewExpiresAtMs = 0;
+      throw new Error("템플릿 미리보기가 오래되어 다시 확인하세요");
+    }
+    // Browser mode deliberately has no vault filesystem.  Treat approval as
+    // consumed preview state, not as a fabricated note creation.
+    const result = { saved: false, path: mockTemplatePreview.target };
+    mockTemplatePreview = null;
+    mockTemplatePreviewExpiresAtMs = 0;
+    return result;
+  }
+  return invoke<SaveTemplateResult>("save_template", { previewId });
+}
+
+export async function discardTemplatePreview(previewId: string): Promise<void> {
+  if (!isTauri()) {
+    if (mockTemplatePreview?.previewId === previewId) {
+      mockTemplatePreview = null;
+      mockTemplatePreviewExpiresAtMs = 0;
+    }
+    return;
+  }
+  await invoke("discard_template_preview", { previewId });
 }
 
 export async function deleteFile(rel: string): Promise<void> {

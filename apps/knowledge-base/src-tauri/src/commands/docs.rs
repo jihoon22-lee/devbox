@@ -25,6 +25,7 @@ pub struct AppState {
     pub db: Mutex<Connection>,
     pub rename_plans: Mutex<crate::core::rename::RenamePlanStore>,
     pub quick_capture_previews: Mutex<QuickCapturePreviewStore>,
+    pub template_previews: Mutex<crate::commands::templates::TemplatePreviewStore>,
     /// 렌더 프리뷰용 이미지 인라인 캐시: (경로, mtime)이 같으면 base64 재인코딩을
     /// 건너뛴다. 항목 32개를 넘기면 통째로 비운다(LRU까지 갈 필요 없음).
     pub image_cache: Mutex<HashMap<PathBuf, (SystemTime, u64, EntryIdentity, String)>>,

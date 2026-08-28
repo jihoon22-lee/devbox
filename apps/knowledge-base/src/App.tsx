@@ -46,6 +46,7 @@ import {
 import MarkdownEditor from "./components/MarkdownEditor";
 import MarkdownPreview from "./components/MarkdownPreview";
 import QuickCaptureDialog from "./components/QuickCaptureDialog";
+import TemplateManager from "./components/TemplateManager";
 import type {
   Backlink,
   EditorCursorRequest,
@@ -132,6 +133,7 @@ export default function App() {
   const [renamePreview, setRenamePreview] = useState<RenamePreview | null>(null);
   const [renameBusy, setRenameBusy] = useState(false);
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
+  const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
   const [quickCaptureNotice, setQuickCaptureNotice] = useState<string | null>(null);
   const [quickCaptureShortcut, setQuickCaptureShortcut] = useState<QuickCaptureShortcutStatus | null>(null);
   const [draftPreview, setDraftPreview] = useState<KnowledgeDraftPreview | null>(null);
@@ -450,9 +452,9 @@ export default function App() {
       setCursorRequest(null);
       await loadMeta();
       if (!draftMountedRef.current) return;
-      setNotice(result.handoffDeleted
+      setNotice(result.handoffDeleted && result.handoffStatusRecorded !== false
         ? "Knowledge draft를 저장했습니다. handoff는 소비되어 삭제되었습니다."
-        : "Knowledge draft를 저장했습니다. handoff 정리는 만료 시 완료됩니다.");
+        : "Knowledge draft는 저장했지만 소비 상태 기록을 완료하지 못했습니다. Life Log 상태가 sent 또는 expired로 남을 수 있습니다.");
     } catch (cause) {
       if (!draftMountedRef.current) return;
       if (draftNeedsRegeneration(cause)) {
@@ -891,6 +893,18 @@ export default function App() {
           restoreFocusRef={quickCaptureButtonRef}
         />
       )}
+      {templateManagerOpen && (
+        <TemplateManager
+          onClose={() => setTemplateManagerOpen(false)}
+          onSaved={(result) => {
+            setTemplateManagerOpen(false);
+            setNotice(result.saved
+              ? `템플릿으로 새 노트를 만들었습니다: ${result.path}`
+              : "브라우저 미리보기에서는 파일을 만들지 않았습니다. 데스크톱 앱에서 적용하세요.");
+            void loadMeta();
+          }}
+        />
+      )}
       {draftPreview && (
         <div className="modal-backdrop" role="presentation">
           <section
@@ -976,6 +990,9 @@ export default function App() {
           </button>
           <button className="btn small" onClick={() => void openDaily()}>
             Daily note
+          </button>
+          <button className="btn small" onClick={() => setTemplateManagerOpen(true)}>
+            Templates
           </button>
           <button className="btn small" onClick={() => void newFile()}>
             + File

@@ -50,6 +50,17 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS note_templates (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL COLLATE NOCASE UNIQUE
+                CHECK(length(CAST(name AS BLOB)) BETWEEN 1 AND 128),
+            content TEXT NOT NULL
+                CHECK(length(CAST(content AS BLOB)) <= 65536),
+            created_ts INTEGER NOT NULL CHECK(created_ts > 0),
+            updated_ts INTEGER NOT NULL CHECK(updated_ts >= created_ts)
+        );
+        CREATE INDEX IF NOT EXISTS note_templates_updated_idx
+            ON note_templates(updated_ts DESC, id DESC);
         CREATE TABLE IF NOT EXISTS docs (
             id INTEGER PRIMARY KEY,
             path TEXT UNIQUE NOT NULL,

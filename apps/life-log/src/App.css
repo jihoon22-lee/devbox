@@ -407,6 +407,95 @@ select:disabled {
   color: var(--text);
 }
 
+.freshness-badge {
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.freshness-fresh {
+  color: #3fb950;
+  background: rgb(63 185 80 / 12%);
+}
+
+.freshness-stale,
+.freshness-unknown {
+  color: #d29922;
+  background: rgb(210 153 34 / 14%);
+}
+
+.freshness-expired,
+.freshness-error {
+  color: var(--red);
+  background: rgb(248 81 73 / 12%);
+}
+
+.source-explanation {
+  max-width: 420px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.panel-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.handoff-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.handoff-history-row:last-child {
+  border-bottom: 0;
+}
+
+.handoff-history-main,
+.handoff-history-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  align-items: center;
+}
+
+.handoff-history-sources {
+  flex-direction: column;
+  align-items: flex-start;
+  font-size: 11px;
+}
+
+.handoff-status {
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.handoff-status-pending,
+.handoff-status-sent {
+  color: #d29922;
+  background: rgb(210 153 34 / 14%);
+}
+
+.handoff-status-consumed {
+  color: #3fb950;
+  background: rgb(63 185 80 / 12%);
+}
+
+.handoff-status-expired {
+  color: var(--red);
+  background: rgb(248 81 73 / 12%);
+}
+
 .export-backdrop {
   position: fixed;
   z-index: 30;
@@ -670,5 +759,9 @@ select:disabled {
 
   .digest-day {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .handoff-history-row {
+    grid-template-columns: 1fr;
   }
 }

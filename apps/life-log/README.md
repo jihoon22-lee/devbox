@@ -16,7 +16,7 @@
 - **기간 통계** — 주/월 사용량 차트, 앱 순위, 커밋 트렌드
 - **git 프로젝트 연동** — git 경로 등록으로 커밋 집계
 - **프로젝트 snapshot** — 등록 프로젝트와 최근 7일 활동의 숫자 요약을 Workbench용 `projects/v1` view로 발행
-- **Knowledge 활동 source** — `knowledge-base/activity/v1`의 오늘 작성·수정 수와 최근 수정 시각을 Data Sources에 freshness와 함께 표시
+- **Knowledge 활동 source** — `knowledge-base/activity/v1`의 오늘 작성·수정 수와 최근 수정 시각을 Data Sources에 freshness와 함께 표시한다. 각 source에는 `fresh`, `stale`, `expired`/`unavailable` 상태, `requested-range` 또는 `latest-snapshot-out-of-range` 범위, stable error code와 사람이 읽을 수 있는 설명을 함께 노출한다.
 - **로컬 export** — session·Git과 Run Manager·Knowledge source provenance를 같은
   `life-log/export/v1` 문서로 정렬해 Markdown/JSON/CSV로 만든다. export 시 현재 privacy
   규칙을 다시 적용하고, source의 producer/schema/snapshot version/generatedAt/freshness/
@@ -29,6 +29,10 @@
 
 - 백그라운드 폴러·세션 추적 → SQLite → React
 - `crates/integration`의 자동 발견·검증 API로 모든 snapshot producer를 Data Sources에 표시 — 외부 DB 직접 조회 없음
+- Data Sources의 설명은 producer가 전달한 원문이나 OS 오류를 그대로 노출하지 않고, source ID별 고정 문장과
+  `freshness_ms` 경계(2분/15분)를 사용한다. snapshot이 요청 범위 밖이면 수치에 섞지 않고
+  `latest-snapshot-out-of-range`로 설명하며, 읽기 실패도 다른 source를 막지 않는다. Life Log 자신은
+  `live-local` 범위의 synthetic source로 표시한다.
 - 공용 `packages/context-menu`는 위치·keyboard·focus만 공유하고 날짜 파싱·선택·
   clipboard·export 가용성은 Life Log가 소유
 - native export는 DB·read-only integration snapshot·read-only `git log`만 사용하며
@@ -205,3 +209,13 @@ handoff는 안전하게 폐기되어 Life Log에서 새 digest를 보내 재생�
 브라우저 preview에서는 handoff를 비활성화하고 Tauri IPC·다운로드·네트워크를 만들지 않는다.
 Knowledge의 cold/hot applink는 같은 one-shot pending slot을 사용하므로 stale event payload를
 직접 적용하지 않는다.
+
+발행한 draft마다 Life Log DB에는 aggregate summary와 source provenance만 담긴 최대 100건의
+history를 보관하고, 공용 handoff root에는 동일한 opaque ID의 metadata-only status sidecar를
+보관한다. history에는 body·activity row·project/vault path·claim token·credential이 들어가지
+않는다. 화면의 status는 sidecar를 authoritative하게 재조정해 `pending`, `sent`, `consumed`,
+`expired`로 표시하며, sidecar 부재를 consumed로 추정하지 않는다. cancel·preview close·수신
+검증/저장 실패는 pending/재시도 경계로 남고, TTL 만료는 expired로 고정된다. `Regenerate`는
+기존 ID를 재사용하지 않고 현재 digest에서 새 handoff/history ID를 발급하며 `regeneratedFrom`
+관계만 기록한다. history 조회와 상태 갱신은 native 로컬 DB/sidecar만 사용하고 browser build는
+빈 history를 반환한다.
