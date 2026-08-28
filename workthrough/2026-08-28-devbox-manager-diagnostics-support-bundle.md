@@ -222,6 +222,11 @@ The following review findings were addressed in the candidate before handoff:
    prevent cancellation IPC from being scheduled until the work had already
    completed. Database, support-bundle, and doctor operations now run in
    blocking workers, with active-operation cleanup on every join outcome.
+10. The first Windows CI compile exposed unstable standard-library metadata
+    methods for volume/file-index identity. Database fingerprints now reuse
+    the shared `devbox_filesystem::filesystem_identity` Windows handle API,
+    retain the full opaque identity for stale equality, and hash it only when
+    producing the renderer-safe revision token.
 
 ### 7. Documentation
 

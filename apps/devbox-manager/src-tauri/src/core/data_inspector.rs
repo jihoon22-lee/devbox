@@ -17,6 +17,8 @@ use std::ffi::CStr;
 #[cfg(unix)]
 use std::fs::OpenOptions;
 use std::fs::{self, Metadata};
+#[cfg(windows)]
+use std::hash::{Hash, Hasher};
 use std::path::{Component, Path, PathBuf};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -166,7 +168,37 @@ struct DatabaseFingerprint {
     // Size/mtime alone can remain unchanged when a path is atomically
     // replaced. Include the platform file identity in stale checks whenever
     // the OS exposes one.
-    file_identity: Option<(u64, u64)>,
+    file_identity: Option<DatabaseFileIdentity>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DatabaseFileIdentity {
+    #[cfg(unix)]
+    Unix(u64, u64),
+    #[cfg(windows)]
+    Windows(devbox_filesystem::FilesystemIdentity),
+}
+
+impl DatabaseFileIdentity {
+    fn update_revision(self, digest: &mut Sha256) {
+        match self {
+            #[cfg(unix)]
+            Self::Unix(device, inode) => {
+                digest.update(device.to_le_bytes());
+                digest.update(inode.to_le_bytes());
+            }
+            #[cfg(windows)]
+            Self::Windows(identity) => {
+                // The shared filesystem helper intentionally keeps native
+                // volume/file-index fields private. Hash its opaque identity
+                // for the external revision while retaining the full value
+                // above for in-process equality checks.
+                let mut opaque = std::collections::hash_map::DefaultHasher::new();
+                identity.hash(&mut opaque);
+                digest.update(opaque.finish().to_le_bytes());
+            }
+        }
+    }
 }
 
 impl DatabaseFingerprint {
@@ -177,10 +209,9 @@ impl DatabaseFingerprint {
         digest.update([0]);
         digest.update(self.byte_length.to_le_bytes());
         digest.update(self.modified_ns.to_le_bytes());
-        if let Some((first, second)) = self.file_identity {
+        if let Some(identity) = self.file_identity {
             digest.update([1]);
-            digest.update(first.to_le_bytes());
-            digest.update(second.to_le_bytes());
+            identity.update_revision(&mut digest);
         } else {
             digest.update([0]);
         }
@@ -310,7 +341,7 @@ fn inspect_one_database(
         };
     }
 
-    let expected_fingerprint = fingerprint(&metadata);
+    let expected_fingerprint = fingerprint(&path, &metadata);
     let revision = Some(expected_fingerprint.revision(&app.id));
     if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
         return DataDatabaseInfo {
@@ -583,7 +614,7 @@ pub fn database_state_revisions(
             Ok(Some(metadata)) if metadata.len() <= MAX_DATABASE_BYTES => format!(
                 "{}:available:{}",
                 app.id,
-                fingerprint(&metadata).revision(&app.id)
+                fingerprint(&path, &metadata).revision(&app.id)
             ),
             Ok(Some(_)) => format!("{}:unreadable:", app.id),
             Ok(None) => format!("{}:missing:", app.id),
@@ -809,10 +840,11 @@ fn resolve_database(
     if metadata.len() > MAX_DATABASE_BYTES {
         return Err(QueryFailure::DatabaseUnavailable);
     }
+    let fingerprint = fingerprint(&path, &metadata);
     Ok(ResolvedDatabase {
         app_id: app.id.clone(),
         path,
-        fingerprint: fingerprint(&metadata),
+        fingerprint,
     })
 }
 
@@ -863,7 +895,7 @@ fn open_read_only(
     if is_link_or_reparse(&metadata) || !metadata.is_file() {
         return Err(QueryFailure::UnsafePath);
     }
-    if expected_fingerprint.is_some_and(|expected| fingerprint(&metadata) != expected) {
+    if expected_fingerprint.is_some_and(|expected| fingerprint(path, &metadata) != expected) {
         return Err(QueryFailure::Stale);
     }
     validate_sidecars(path)?;
@@ -879,7 +911,8 @@ fn open_read_only(
     let opened_metadata = fs::symlink_metadata(path).map_err(|_| QueryFailure::Stale)?;
     if is_link_or_reparse(&opened_metadata)
         || !opened_metadata.is_file()
-        || expected_fingerprint.is_some_and(|expected| fingerprint(&opened_metadata) != expected)
+        || expected_fingerprint
+            .is_some_and(|expected| fingerprint(path, &opened_metadata) != expected)
     {
         return Err(QueryFailure::Stale);
     }
@@ -960,7 +993,7 @@ fn open_sqlite_connection(
     if is_link_or_reparse(&metadata) || !metadata.is_file() {
         return Err(QueryFailure::UnsafePath);
     }
-    if expected_fingerprint.is_some_and(|expected| fingerprint(&metadata) != expected) {
+    if expected_fingerprint.is_some_and(|expected| fingerprint(path, &metadata) != expected) {
         return Err(QueryFailure::Stale);
     }
     let fd = file.as_raw_fd();
@@ -1647,7 +1680,7 @@ pub(crate) fn is_link_or_reparse(metadata: &Metadata) -> bool {
         || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
 }
 
-fn fingerprint(metadata: &Metadata) -> DatabaseFingerprint {
+fn fingerprint(path: &Path, metadata: &Metadata) -> DatabaseFingerprint {
     let modified_ns = metadata
         .modified()
         .ok()
@@ -1657,27 +1690,25 @@ fn fingerprint(metadata: &Metadata) -> DatabaseFingerprint {
     DatabaseFingerprint {
         byte_length: metadata.len(),
         modified_ns,
-        file_identity: file_identity(metadata),
+        file_identity: file_identity(path, metadata),
     }
 }
 
 #[cfg(unix)]
-fn file_identity(metadata: &Metadata) -> Option<(u64, u64)> {
+fn file_identity(_path: &Path, metadata: &Metadata) -> Option<DatabaseFileIdentity> {
     use std::os::unix::fs::MetadataExt;
-    Some((metadata.dev(), metadata.ino()))
+    Some(DatabaseFileIdentity::Unix(metadata.dev(), metadata.ino()))
 }
 
 #[cfg(windows)]
-fn file_identity(metadata: &Metadata) -> Option<(u64, u64)> {
-    use std::os::windows::fs::MetadataExt;
-    Some((
-        u64::from(metadata.volume_serial_number()),
-        metadata.file_index(),
-    ))
+fn file_identity(path: &Path, _metadata: &Metadata) -> Option<DatabaseFileIdentity> {
+    devbox_filesystem::filesystem_identity(path, false)
+        .ok()
+        .map(DatabaseFileIdentity::Windows)
 }
 
 #[cfg(not(any(unix, windows)))]
-fn file_identity(_metadata: &Metadata) -> Option<(u64, u64)> {
+fn file_identity(_path: &Path, _metadata: &Metadata) -> Option<DatabaseFileIdentity> {
     None
 }
 
@@ -1685,7 +1716,7 @@ fn current_database_fingerprint(path: &Path) -> Option<DatabaseFingerprint> {
     fs::symlink_metadata(path)
         .ok()
         .filter(|metadata| !is_link_or_reparse(metadata) && metadata.is_file())
-        .map(|metadata| fingerprint(&metadata))
+        .map(|metadata| fingerprint(path, &metadata))
 }
 
 fn sanitize_value_text(value: &str, app_id: &str) -> String {
@@ -1998,7 +2029,7 @@ mod tests {
                 &request.sql,
                 cancel,
                 Duration::from_millis(50),
-                Some(fingerprint(&metadata)),
+                Some(fingerprint(&fixture.db, &metadata)),
             )
             .unwrap_err(),
             QueryFailure::TimedOut
@@ -2044,7 +2075,8 @@ mod tests {
     fn opened_database_stays_bound_when_catalog_path_is_replaced() {
         let fixture = Fixture::new();
         let metadata = fs::metadata(&fixture.db).unwrap();
-        let connection = open_read_only(&fixture.db, Some(fingerprint(&metadata))).unwrap();
+        let connection =
+            open_read_only(&fixture.db, Some(fingerprint(&fixture.db, &metadata))).unwrap();
 
         let moved = fixture.db.with_file_name("data.db-original");
         fs::rename(&fixture.db, &moved).unwrap();
