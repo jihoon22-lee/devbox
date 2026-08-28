@@ -1271,6 +1271,7 @@ dependencies = [
  "launch",
  "libc",
  "reqwest",
+ "rusqlite",
  "semver",
  "serde",
  "serde_json",

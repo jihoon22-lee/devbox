@@ -7,6 +7,11 @@ import type {
   BatchInstallResult,
   CatalogApp,
   Current,
+  DataDatabaseInfo,
+  DataExport,
+  DataInspectorSnapshot,
+  DataQueryRequest,
+  DataQueryResult,
   InstalledApp,
   InstallPathInfo,
   InstallRootApplyResult,
@@ -16,6 +21,8 @@ import type {
   RemovePreview,
   RemoveResult,
   ReleaseManifest,
+  SupportBundleExport,
+  SupportBundlePreview,
 } from "./types";
 
 const MOCK_CATALOG: CatalogApp[] = catalogJson.apps;
@@ -179,6 +186,110 @@ export async function runDiagnosis(): Promise<DiagnosisItem[]> {
     ];
   }
   return invoke<DiagnosisItem[]>("run_diagnosis");
+}
+
+export async function inspectDataDatabases(operationId: string): Promise<DataInspectorSnapshot> {
+  // Browser values are deterministic, sanitized screen-flow fixtures only;
+  // native Tauri commands own path discovery and all safety checks.
+  if (!isTauri()) {
+    const app: DataDatabaseInfo = {
+      appId: "everything-plus",
+      displayName: "Everything+",
+      identifier: "com.devbox.everythingplus",
+      state: "available",
+      revision: "browser-preview-revision",
+      byteLength: 4096,
+      schemaVersion: 1,
+      tables: [{ name: "files", rowCount: 12 }],
+      views: [],
+      integrity: "ok",
+      warning: null,
+    };
+    return { catalogRevision: Number(catalogJson.catalogRevision ?? 1), databases: [app] };
+  }
+  return invoke<DataInspectorSnapshot>("inspect_data_databases", { operationId });
+}
+
+export async function previewDataQuery(request: DataQueryRequest): Promise<DataQueryResult> {
+  if (!isTauri()) {
+    if (!request.appId || !request.sql.trim()) throw new Error("조회 요청이 올바르지 않습니다.");
+    return {
+      previewId: `browser-query-${request.queryId}`,
+      queryId: request.queryId,
+      appId: request.appId,
+      databaseRevision: "browser-preview-revision",
+      columns: ["id", "name", "status"],
+      rows: [[1, "browser preview", "ok"]],
+      rowCount: 1,
+      resultBytes: 42,
+      truncated: false,
+      elapsedMs: 1,
+    };
+  }
+  return invoke<DataQueryResult>("preview_data_query", { request });
+}
+
+export async function cancelDataDiagnostics(operationId: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("cancel_data_diagnostics", { request: { operationId } });
+}
+
+export async function exportDataPreview(
+  previewId: string,
+  format: "json" | "csv",
+): Promise<DataExport> {
+  if (!isTauri()) {
+    const content = format === "json"
+      ? JSON.stringify({ schemaVersion: 1, redactionVersion: "v1", rows: [[1, "browser preview", "ok"]] }, null, 2)
+      : "id,name,status\n1,browser preview,ok\n";
+    return {
+      filename: `devbox-data-browser.${format}`,
+      mimeType: format === "json" ? "application/json" : "text/csv;charset=utf-8",
+      format,
+      content,
+      byteCount: content.length,
+    };
+  }
+  return invoke<DataExport>("export_data_preview", { request: { previewId, format } });
+}
+
+export async function previewSupportBundle(operationId: string): Promise<SupportBundlePreview> {
+  if (!isTauri()) {
+    return {
+      previewId: `browser-support-${operationId}`,
+      catalogRevision: Number(catalogJson.catalogRevision ?? 1),
+      expiresAtMs: Date.now() + 300_000,
+      estimatedBytes: 2048,
+      databaseCount: 1,
+      includedSections: ["app-metadata", "catalog-metadata", "schema-metadata", "log-metadata", "diagnosis"],
+      omittedSections: ["raw-database", "raw-logs", "paths", "environment-values", "credentials", "authorization"],
+      redactionVersion: "v1",
+    };
+  }
+  return invoke<SupportBundlePreview>("preview_support_bundle", { operationId });
+}
+
+export async function cancelSupportBundle(operationId: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("cancel_support_bundle", { request: { operationId } });
+}
+
+export async function exportSupportBundle(previewId: string): Promise<SupportBundleExport> {
+  if (!isTauri()) {
+    const content = JSON.stringify({
+      schemaVersion: 1,
+      redaction: { version: "v1", paths: "omitted", secrets: "omitted", rawLogs: "omitted" },
+      omitted: ["raw-database-bytes", "raw-log-lines", "filesystem-paths", "credentials"],
+    }, null, 2);
+    return {
+      filename: "devbox-support-bundle.json",
+      mimeType: "application/json",
+      content,
+      byteCount: content.length,
+      redactionVersion: "v1",
+    };
+  }
+  return invoke<SupportBundleExport>("export_support_bundle", { previewId });
 }
 
 export async function launchApp(name: string): Promise<void> {

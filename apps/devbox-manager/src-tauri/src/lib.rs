@@ -47,6 +47,7 @@ pub fn run() {
         .setup(|app| {
             devbox_window_state_tauri::restore_main_window(app.handle());
             app.manage(applink::PendingOpen::new());
+            app.manage(commands::diagnostics::DiagnosticsState::default());
             if let Ok(Some(request)) =
                 devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>())
             {
@@ -78,6 +79,13 @@ pub fn run() {
             commands::manager::preview_remove_app,
             commands::manager::remove_portable_app,
             commands::doctor::run_diagnosis,
+            commands::diagnostics::inspect_data_databases,
+            commands::diagnostics::preview_data_query,
+            commands::diagnostics::cancel_data_diagnostics,
+            commands::diagnostics::export_data_preview,
+            commands::diagnostics::preview_support_bundle,
+            commands::diagnostics::cancel_support_bundle,
+            commands::diagnostics::export_support_bundle,
         ])
         .on_window_event(|window, event| {
             devbox_window_state_tauri::handle_window_event(window, event);

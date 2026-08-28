@@ -8,7 +8,12 @@ import {
   available,
   applyInstallRoot,
   catalog,
+  cancelDataDiagnostics,
+  cancelSupportBundle,
   current,
+  exportDataPreview,
+  exportSupportBundle,
+  inspectDataDatabases,
   installApp,
   installPath,
   installMany,
@@ -17,6 +22,8 @@ import {
   openInstallFolder,
   onPendingOpen,
   previewRemoveApp,
+  previewDataQuery,
+  previewSupportBundle,
   previewInstallRoot,
   removeApp,
   rollback,
@@ -29,6 +36,9 @@ import type {
   BatchInstallResult,
   CatalogApp,
   Current,
+  DataDatabaseInfo,
+  DataInspectorSnapshot,
+  DataQueryResult,
   InstalledApp,
   InstallPathInfo,
   InstallRootPreview,
@@ -37,6 +47,7 @@ import type {
   RemovePreview,
   RemoveResult,
   ReleaseManifest,
+  SupportBundlePreview,
 } from "./types";
 import "./App.css";
 
@@ -93,6 +104,42 @@ function formatBytes(bytes: number): string {
   return `${Math.floor(bytes / 1024 / 1024)} MiB`;
 }
 
+function operationId(prefix: string): string {
+  const random = globalThis.crypto?.randomUUID?.();
+  return `${prefix}-${random ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+}
+
+function downloadTextFile(filename: string, mimeType: string, content: string): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function dataStateLabel(state: DataDatabaseInfo["state"]): string {
+  switch (state) {
+    case "available": return "사용 가능";
+    case "missing": return "없음";
+    case "unsafe-path": return "안전하지 않은 경로";
+    case "unreadable": return "읽을 수 없음";
+  }
+}
+
+function dataIntegrityLabel(integrity: DataDatabaseInfo["integrity"]): string {
+  switch (integrity) {
+    case "ok": return "정상";
+    case "failed": return "무결성 실패";
+    case "timed-out": return "시간 초과";
+    case "unavailable": return "확인 불가";
+  }
+}
+
 export default function App() {
   const [apps, setApps] = useState<CatalogApp[]>([]);
   const [manifest, setManifest] = useState<ReleaseManifest | null>(null);
@@ -103,6 +150,13 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<"apps" | "doctor">("apps");
   const [diagnosis, setDiagnosis] = useState<DiagnosisItem[]>([]);
+  const [dataSnapshot, setDataSnapshot] = useState<DataInspectorSnapshot | null>(null);
+  const [dataAppId, setDataAppId] = useState<string | null>(null);
+  const [dataSql, setDataSql] = useState("SELECT name, type FROM sqlite_schema");
+  const [dataResult, setDataResult] = useState<DataQueryResult | null>(null);
+  const [dataBusy, setDataBusy] = useState(false);
+  const [supportPreview, setSupportPreview] = useState<SupportBundlePreview | null>(null);
+  const [supportBusy, setSupportBusy] = useState(false);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [contextApp, setContextApp] = useState<CatalogApp | null>(null);
   const [batchSelection, setBatchSelection] = useState<Set<string>>(() => new Set());
@@ -126,6 +180,10 @@ export default function App() {
   const mountedRef = useRef(true);
   const refreshRequestIdRef = useRef(0);
   const removeRequestIdRef = useRef(0);
+  const dataRequestIdRef = useRef(0);
+  const dataOperationIdRef = useRef<string | null>(null);
+  const supportRequestIdRef = useRef(0);
+  const supportOperationIdRef = useRef<string | null>(null);
 
   const prepareAppContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.appId;
@@ -158,6 +216,183 @@ export default function App() {
       }
     }
   }, []);
+
+  const onInspectData = useCallback(async () => {
+    if (operationBusyRef.current || readBusyRef.current || dataBusy || supportBusy) return;
+    const requestId = ++dataRequestIdRef.current;
+    const id = operationId("data");
+    dataOperationIdRef.current = id;
+    readBusyRef.current = true;
+    setReadBusy(true);
+    setDataBusy(true);
+    setError(null);
+    setDataResult(null);
+    try {
+      const snapshot = await inspectDataDatabases(id);
+      if (mountedRef.current && requestId === dataRequestIdRef.current) {
+        setDataSnapshot(snapshot);
+        const firstAvailable = snapshot.databases.find((database) => database.state === "available");
+        setDataAppId((currentId) => (
+          currentId && snapshot.databases.some((database) => (
+            database.appId === currentId && database.state === "available"
+          ))
+            ? currentId
+            : firstAvailable?.appId ?? null
+        ));
+      }
+    } catch (e) {
+      if (mountedRef.current && requestId === dataRequestIdRef.current) {
+        setError(e instanceof Error ? e.message : "데이터베이스를 확인할 수 없습니다.");
+      }
+    } finally {
+      if (requestId === dataRequestIdRef.current) {
+        dataOperationIdRef.current = null;
+        readBusyRef.current = false;
+        if (mountedRef.current) {
+          setDataBusy(false);
+          setReadBusy(false);
+        }
+      }
+    }
+  }, [dataBusy, supportBusy]);
+
+  const onCancelData = useCallback(() => {
+    const id = dataOperationIdRef.current;
+    if (id) void cancelDataDiagnostics(id).catch(() => undefined);
+  }, []);
+
+  const onPreviewData = useCallback(async () => {
+    if (operationBusyRef.current || readBusyRef.current || dataBusy || supportBusy) return;
+    const database = dataSnapshot?.databases.find((candidate) => candidate.appId === dataAppId);
+    if (!database || database.state !== "available" || !dataSql.trim()) {
+      setError("사용 가능한 데이터베이스와 조회문을 선택하세요.");
+      return;
+    }
+    const queryId = operationId("query");
+    const requestId = ++dataRequestIdRef.current;
+    dataOperationIdRef.current = queryId;
+    readBusyRef.current = true;
+    setReadBusy(true);
+    setDataBusy(true);
+    setDataResult(null);
+    setError(null);
+    try {
+      const result = await previewDataQuery({
+        appId: database.appId,
+        sql: dataSql,
+        queryId,
+        expectedRevision: database.revision,
+      });
+      if (mountedRef.current && requestId === dataRequestIdRef.current) setDataResult(result);
+    } catch (e) {
+      if (mountedRef.current && requestId === dataRequestIdRef.current) {
+        setError(e instanceof Error ? e.message : "읽기 전용 조회에 실패했습니다.");
+      }
+    } finally {
+      if (requestId === dataRequestIdRef.current) {
+        dataOperationIdRef.current = null;
+        readBusyRef.current = false;
+        if (mountedRef.current) {
+          setDataBusy(false);
+          setReadBusy(false);
+        }
+      }
+    }
+  }, [dataAppId, dataBusy, dataSnapshot, dataSql, supportBusy]);
+
+  const onExportData = useCallback(async (format: "json" | "csv") => {
+    const result = dataResult;
+    if (!result || operationBusyRef.current || readBusyRef.current || dataBusy || supportBusy) return;
+    readBusyRef.current = true;
+    setReadBusy(true);
+    setDataBusy(true);
+    setError(null);
+    try {
+      const exportResult = await exportDataPreview(result.previewId, format);
+      downloadTextFile(exportResult.filename, exportResult.mimeType, exportResult.content);
+      setNotice(`${format.toUpperCase()} 파일을 준비했습니다.`);
+      // Native export claims the preview before validation, so the result is
+      // one-time even after a successful download. Do not leave export
+      // buttons pointing at a token that the backend has already consumed.
+      setDataResult(null);
+    } catch (e) {
+      // Stale/failed claims are also consumed to prevent replay. Require a
+      // fresh native preview instead of keeping a misleading retry button.
+      setDataResult(null);
+      setError(e instanceof Error ? e.message : "조회 결과를 내보낼 수 없습니다.");
+    } finally {
+      readBusyRef.current = false;
+      if (mountedRef.current) {
+        setDataBusy(false);
+        setReadBusy(false);
+      }
+    }
+  }, [dataBusy, dataResult, supportBusy]);
+
+  const onPreviewSupport = useCallback(async () => {
+    if (operationBusyRef.current || readBusyRef.current || dataBusy || supportBusy) return;
+    const requestId = ++supportRequestIdRef.current;
+    const id = operationId("support");
+    supportOperationIdRef.current = id;
+    readBusyRef.current = true;
+    setReadBusy(true);
+    setSupportBusy(true);
+    setSupportPreview(null);
+    setError(null);
+    try {
+      const preview = await previewSupportBundle(id);
+      if (mountedRef.current && requestId === supportRequestIdRef.current) setSupportPreview(preview);
+    } catch (e) {
+      if (mountedRef.current && requestId === supportRequestIdRef.current) {
+        setError(e instanceof Error ? e.message : "지원 번들 미리 보기에 실패했습니다.");
+      }
+    } finally {
+      if (requestId === supportRequestIdRef.current) {
+        supportOperationIdRef.current = null;
+        readBusyRef.current = false;
+        if (mountedRef.current) {
+          setSupportBusy(false);
+          setReadBusy(false);
+        }
+      }
+    }
+  }, [dataBusy, supportBusy]);
+
+  const onCancelSupport = useCallback(() => {
+    const id = supportOperationIdRef.current;
+    if (id) void cancelSupportBundle(id).catch(() => undefined);
+  }, []);
+
+  const onExportSupport = useCallback(async () => {
+    const preview = supportPreview;
+    if (!preview || operationBusyRef.current || readBusyRef.current || supportBusy || dataBusy) return;
+    if (Date.now() > preview.expiresAtMs) {
+      setSupportPreview(null);
+      setError("지원 번들 미리 보기가 만료되었습니다. 다시 미리 확인하세요.");
+      return;
+    }
+    readBusyRef.current = true;
+    setReadBusy(true);
+    setSupportBusy(true);
+    setError(null);
+    try {
+      const exportResult = await exportSupportBundle(preview.previewId);
+      downloadTextFile(exportResult.filename, exportResult.mimeType, exportResult.content);
+      setNotice("redacted 지원 번들을 준비했습니다.");
+      setSupportPreview(null);
+    } catch (e) {
+      // Support export claims/removes its token before source revalidation;
+      // stale and failed attempts therefore require a fresh preview too.
+      setSupportPreview(null);
+      setError(e instanceof Error ? e.message : "지원 번들을 내보낼 수 없습니다.");
+    } finally {
+      readBusyRef.current = false;
+      if (mountedRef.current) {
+        setSupportBusy(false);
+        setReadBusy(false);
+      }
+    }
+  }, [dataBusy, supportBusy, supportPreview]);
 
   const refresh = useCallback(async (internal = false) => {
     if (!internal && (operationBusyRef.current || readBusyRef.current)) return;
@@ -206,6 +441,12 @@ export default function App() {
       refreshRequestIdRef.current += 1;
       rootRequestIdRef.current += 1;
       removeRequestIdRef.current += 1;
+      dataRequestIdRef.current += 1;
+      supportRequestIdRef.current += 1;
+      const dataOperationId = dataOperationIdRef.current;
+      if (dataOperationId) void cancelDataDiagnostics(dataOperationId).catch(() => undefined);
+      const supportOperationId = supportOperationIdRef.current;
+      if (supportOperationId) void cancelSupportBundle(supportOperationId).catch(() => undefined);
     };
   }, [refresh]);
 
@@ -548,7 +789,9 @@ export default function App() {
         setRemovePreview(null);
         setRemoveResult(result);
         if (result.status === "partial") setRemovePreviewError(result.message);
-        else setNotice(result.message);
+        // The detailed removal result already owns the live status region.
+        // Repeating the same message in the global notice would announce it
+        // twice and make the page expose two indistinguishable status nodes.
       }
       await refresh(true);
     } catch {
@@ -636,6 +879,10 @@ export default function App() {
     else if (id === "remove") void onPreviewRemove(app);
   };
 
+  const selectedDataDatabase = dataSnapshot?.databases.find(
+    (database) => database.appId === dataAppId,
+  ) ?? null;
+
   return (
     <div className="app">
       <header className="toolbar">
@@ -665,8 +912,8 @@ export default function App() {
         </button>
       </header>
 
-      {error && <div className="error">{error}</div>}
-      {notice && <div className="notice">{notice}</div>}
+      {error && <div className="error" role="alert">{error}</div>}
+      {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
 
       {tab === "doctor" ? (
         <div className="doctor">
@@ -688,6 +935,172 @@ export default function App() {
           ))}
           {diagnosis.length === 0 && <div className="dim">진단을 실행해 주세요.</div>}
           <div className="dim doctor-note">지원 번들·path·환경변수는 redaction되어야 합니다 (§15.4 경계).</div>
+
+          <section className="diagnostic-tool" aria-labelledby="data-inspector-heading">
+            <div className="diagnostic-tool-head">
+              <div>
+                <h2 id="data-inspector-heading">Data Inspector</h2>
+                <p className="dim">
+                  catalog가 아는 devbox 앱의 data.db만 자동 발견합니다. 경로 입력·쓰기·migration·network는 없습니다.
+                </p>
+              </div>
+              <div className="diagnostic-tool-actions">
+                {dataBusy && dataOperationIdRef.current && (
+                  <button className="btn" type="button" onClick={onCancelData}>취소</button>
+                )}
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={dataBusy || supportBusy || installRootBusy}
+                  onClick={() => void onInspectData()}
+                >
+                  {dataBusy ? "확인 중..." : "데이터 다시 확인"}
+                </button>
+              </div>
+            </div>
+            <div className="diagnostic-safety-note">
+              read-only open · PRAGMA query_only=ON · SQLite authorizer · 2초 · 최대 1,000행 / 1 MiB ·
+              secret/username/path masking
+            </div>
+            {dataSnapshot && (
+              <>
+                <div className="database-list" aria-label="발견된 devbox 데이터베이스">
+                  {dataSnapshot.databases.map((database) => (
+                    <button
+                      key={database.appId}
+                      type="button"
+                      className={`database-card ${dataAppId === database.appId ? "selected" : ""} ${database.state}`}
+                      disabled={database.state !== "available" || dataBusy || supportBusy}
+                      onClick={() => {
+                        setDataAppId(database.appId);
+                        setDataResult(null);
+                      }}
+                    >
+                      <span className="database-card-name">{database.displayName}</span>
+                      <span className="database-card-state">{dataStateLabel(database.state)}</span>
+                      {database.state === "available" && (
+                        <span className="database-card-meta">
+                          table {database.tables.length} · view {database.views.length} · integrity {dataIntegrityLabel(database.integrity)}
+                        </span>
+                      )}
+                      {database.warning && <span className="database-card-warning">{database.warning}</span>}
+                    </button>
+                  ))}
+                </div>
+                {selectedDataDatabase && selectedDataDatabase.state === "available" && (
+                  <div className="database-schema" aria-label="SQLite schema 요약">
+                    <strong>{selectedDataDatabase.displayName} schema</strong>
+                    <div className="schema-items">
+                      {selectedDataDatabase.tables.map((table) => (
+                        <span key={`table:${table.name}`} className="schema-item">
+                          table {table.name} ({table.rowCount == null ? "?" : table.rowCount} rows)
+                        </span>
+                      ))}
+                      {selectedDataDatabase.views.map((view) => (
+                        <span key={`view:${view.name}`} className="schema-item">view {view.name}</span>
+                      ))}
+                      {selectedDataDatabase.tables.length === 0 && selectedDataDatabase.views.length === 0 && (
+                        <span className="dim">표시할 table/view가 없습니다.</span>
+                      )}
+                    </div>
+                    <div className="dim schema-note">schema version {selectedDataDatabase.schemaVersion ?? "?"} · database path는 표시하지 않습니다.</div>
+                  </div>
+                )}
+                <div className="query-panel">
+                  <label htmlFor="data-query">읽기 전용 SQL preview</label>
+                  <textarea
+                    id="data-query"
+                    value={dataSql}
+                    maxLength={16 * 1024}
+                    disabled={dataBusy || supportBusy || !selectedDataDatabase || selectedDataDatabase.state !== "available"}
+                    spellCheck={false}
+                    rows={3}
+                    onChange={(event) => {
+                      setDataSql(event.target.value);
+                      setDataResult(null);
+                    }}
+                  />
+                  <div className="query-actions">
+                    <span className="dim">SELECT/WITH/EXPLAIN만 허용 · PRAGMA/ATTACH/쓰기문 차단</span>
+                    <button
+                      className="btn primary"
+                      type="button"
+                      disabled={dataBusy || supportBusy || !selectedDataDatabase || selectedDataDatabase.state !== "available" || !dataSql.trim()}
+                      onClick={() => void onPreviewData()}
+                    >
+                      {dataBusy ? "조회 중..." : "미리 보기"}
+                    </button>
+                  </div>
+                  {dataResult && (
+                    <div className="query-result" aria-live="polite">
+                      <div className="query-result-head">
+                        <strong>조회 결과 preview</strong>
+                        <span className="dim">{dataResult.rowCount} rows · {formatBytes(dataResult.resultBytes)} · {dataResult.elapsedMs} ms{dataResult.truncated ? " · 일부 결과만 표시" : ""}</span>
+                      </div>
+                      <div className="query-result-table-wrap">
+                        <table className="query-result-table">
+                          <thead><tr>{dataResult.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+                          <tbody>
+                            {dataResult.rows.map((row, rowIndex) => (
+                              <tr key={`query-row-${rowIndex}`}>
+                                {row.map((value, columnIndex) => <td key={`${rowIndex}:${columnIndex}`}>{value == null ? <span className="dim">null</span> : String(value)}</td>)}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="query-export-actions">
+                        <span className="dim">내보내기 전 preview를 검토하세요. credential·path·raw body는 backend에서 masking됩니다.</span>
+                        <button className="btn" type="button" disabled={dataBusy || supportBusy} onClick={() => void onExportData("json")}>JSON export</button>
+                        <button className="btn" type="button" disabled={dataBusy || supportBusy} onClick={() => void onExportData("csv")}>CSV export</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+            {!dataSnapshot && <div className="dim diagnostic-empty">데이터 다시 확인을 눌러 catalog 기반 DB를 발견하세요.</div>}
+          </section>
+
+          <section className="diagnostic-tool support-tool" aria-labelledby="support-bundle-heading">
+            <div className="diagnostic-tool-head">
+              <div>
+                <h2 id="support-bundle-heading">Redacted support bundle</h2>
+                <p className="dim">app/catalog/schema/log metadata와 진단 상태만 포함하며 raw DB·raw log·path·user·secret·Authorization/Cookie는 포함하지 않습니다.</p>
+              </div>
+              <div className="diagnostic-tool-actions">
+                {supportBusy && supportOperationIdRef.current && (
+                  <button className="btn" type="button" onClick={onCancelSupport}>취소</button>
+                )}
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={supportBusy || dataBusy || installRootBusy}
+                  onClick={() => void onPreviewSupport()}
+                >
+                  {supportBusy ? "준비 중..." : "번들 미리 확인"}
+                </button>
+              </div>
+            </div>
+            {supportPreview && (
+              <div className="support-preview" role="status" aria-live="polite">
+                <div className="query-result-head">
+                  <strong>내보내기 preview · redaction {supportPreview.redactionVersion}</strong>
+                  <span className="dim">{formatBytes(supportPreview.estimatedBytes)} · DB {supportPreview.databaseCount}개 · 5분 이내 1회 export</span>
+                </div>
+                <div className="support-sections">
+                  <div><strong>포함</strong>{supportPreview.includedSections.map((section) => <span key={section}>{section}</span>)}</div>
+                  <div><strong>제외</strong>{supportPreview.omittedSections.map((section) => <span key={section}>{section}</span>)}</div>
+                </div>
+                <div className="query-export-actions">
+                  <span className="dim">진단 상태가 바뀌면 stale로 중단되며 새 preview가 필요합니다.</span>
+                  <button className="btn primary" type="button" disabled={supportBusy} onClick={() => void onExportSupport()}>확인 후 JSON export</button>
+                  <button className="btn" type="button" disabled={supportBusy} onClick={() => setSupportPreview(null)}>취소</button>
+                </div>
+              </div>
+            )}
+            {!supportPreview && <div className="dim diagnostic-empty">번들 미리 확인 후 포함/제외 범위를 검토할 수 있습니다.</div>}
+          </section>
         </div>
       ) : (
       <div className="table-wrap">
