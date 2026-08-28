@@ -42,6 +42,92 @@ export interface StorageMigration<T> {
 
 export type PersistenceSanitizer = (serialized: string) => Promise<string>;
 
+export const MAX_HISTORY_METHOD_CHARS = 32;
+export const MAX_HISTORY_ID_CHARS = 256;
+export const MAX_HISTORY_DISPLAY_CHARS = 512;
+const HISTORY_KNOWN_TOKEN = /(?:sk[_-]|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_.-]{12,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/iu;
+const HISTORY_KNOWN_TOKEN_GLOBAL = /(?:sk[_-]|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_.-]{12,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/giu;
+const SAFE_HISTORY_METHOD = /^[A-Z][A-Z0-9!#$%&'*+.^_`|~-]{0,31}$/u;
+
+export interface HistoryVisibleMetadata {
+  id: string;
+  method: string;
+  name: string;
+  url: string;
+  status?: number;
+}
+
+function hasHistoryControl(value: string): boolean {
+  return /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value);
+}
+
+function boundHistoryText(value: string, maxChars = MAX_HISTORY_DISPLAY_CHARS): string {
+  const normalized = value
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/gu, " ")
+    .replace(HISTORY_KNOWN_TOKEN_GLOBAL, REDACTED)
+    .trim();
+  const characters = Array.from(normalized);
+  return characters.length <= maxChars
+    ? normalized
+    : `${characters.slice(0, maxChars).join("")}…`;
+}
+
+function safeHistoryMethod(value: string): string {
+  const normalized = value.trim().toUpperCase();
+  if (
+    !normalized
+    || Array.from(normalized).length > MAX_HISTORY_METHOD_CHARS
+    || hasHistoryControl(normalized)
+    || HISTORY_KNOWN_TOKEN.test(normalized)
+    || !SAFE_HISTORY_METHOD.test(normalized)
+  ) {
+    return "UNKNOWN";
+  }
+  return normalized;
+}
+
+function safeHistoryId(value: string, index: number): string {
+  const safe = boundHistoryText(value, MAX_HISTORY_ID_CHARS);
+  return safe && !HISTORY_KNOWN_TOKEN.test(safe) ? safe : `history-${index + 1}`;
+}
+
+function safeHistoryStatus(value: number | undefined): number | undefined {
+  return value !== undefined && Number.isSafeInteger(value) && value >= 100 && value <= 599
+    ? value
+    : undefined;
+}
+
+/**
+ * Convert a localStorage History item into the bounded metadata and sanitized
+ * request that the renderer is allowed to display or replay.
+ */
+export function projectHistoryItem(item: HistoryItem, index = 0): HistoryItem {
+  const normalizedRequest = normalizePersistedRequest(item.request);
+  const safeRequest = sanitizeRequestForPersistence(normalizedRequest);
+  const method = safeHistoryMethod(safeRequest.method);
+  const url = boundHistoryText(safeRequest.url);
+  const name = boundHistoryText(item.name ?? "");
+  const status = safeHistoryStatus(item.status);
+  return {
+    id: safeHistoryId(item.id, index),
+    ...(name ? { name } : {}),
+    saved_at: Number.isSafeInteger(item.saved_at) && item.saved_at >= 0 ? item.saved_at : 0,
+    request: { ...safeRequest, method, url },
+    ...(status === undefined ? {} : { status }),
+  };
+}
+
+export function historyVisibleMetadata(item: HistoryItem): HistoryVisibleMetadata {
+  const projected = projectHistoryItem(item);
+  return {
+    id: projected.id,
+    method: projected.request.method,
+    name: boundHistoryText(projected.name ?? ""),
+    url: boundHistoryText(projected.request.url),
+    ...(projected.status === undefined ? {} : { status: projected.status }),
+  };
+}
+
 export function emptyHistoryStore(): HistoryStore {
   return { version: HISTORY_VERSION, history: [] };
 }
@@ -113,10 +199,7 @@ export function parseHistoryStore(raw: string | null): HistoryStore | null {
     const history = parsed.history
       .filter(isHistoryItem)
       .slice(0, 50)
-      .map((item) => ({
-        ...item,
-        request: normalizePersistedRequest(item.request),
-      }));
+      .map((item, index) => projectHistoryItem(item, index));
     return { version: HISTORY_VERSION, history };
   } catch {
     return null;
@@ -193,11 +276,29 @@ export function toRequestTemplate(request: PersistedHistoryRequest): RequestTemp
 export function normalizePersistedRequest(
   request: PersistedHistoryRequest,
 ): PersistedHistoryRequest {
+  // Rebuild the allowlisted wire shape instead of spreading an object parsed from
+  // localStorage. This drops hand-edited/legacy fields before an export or a new save.
   return {
-    ...request,
+    method: request.method,
+    url: request.url,
     headers: normalizeHeaders(request.headers),
     cookies: normalizeCookies(request.cookies),
     multipart: normalizeMultipartParts(request.multipart),
+    params: request.params.map((param) => ({ key: param.key, value: param.value })),
+    body_kind: request.body_kind,
+    body: request.body,
+    auth: request.auth
+      ? {
+          kind: request.auth.kind,
+          username: request.auth.username,
+          password: request.auth.password,
+          token: request.auth.token,
+          api_key: request.auth.api_key,
+          api_value: request.auth.api_value,
+        }
+      : null,
+    timeout_ms: request.timeout_ms,
+    requiresSecretReview: request.requiresSecretReview,
     ...(request.body_kind === "graphql" && request.graphql
       ? { graphql: normalizeGraphqlRequest(request.graphql) }
       : {}),
@@ -229,7 +330,7 @@ function sanitizePair(
   mark: (original: string, sanitized: string) => string,
 ): KeyValue {
   const sensitive = isSensitiveName(pair.key);
-  const value = sensitive && pair.value && !containsReference(pair.value)
+  const value = sensitive && pair.value && !isExactVariableReference(pair.value)
     ? REDACTED
     : redactKnownTokenPatterns(pair.value);
   return { key: pair.key, value: mark(pair.value, value) };
@@ -240,7 +341,7 @@ function sanitizeAuth(
   mark: (original: string, sanitized: string) => string,
 ): AuthConfig {
   const secretField = (value: string) =>
-    mark(value, value && !containsReference(value) ? REDACTED : redactKnownTokenPatterns(value));
+    mark(value, value && !isExactVariableReference(value) ? REDACTED : redactKnownTokenPatterns(value));
   return {
     kind: auth.kind,
     username: secretField(auth.username),
@@ -283,22 +384,22 @@ function sanitizeUrl(value: string): string {
     const url = new URL(value);
     for (const key of [...url.searchParams.keys()]) {
       const current = url.searchParams.get(key) ?? "";
-      if (isSensitiveName(key) && !containsReference(current)) url.searchParams.set(key, REDACTED);
+      if (isSensitiveName(key) && !isExactVariableReference(current)) url.searchParams.set(key, REDACTED);
     }
-    if (url.username && !containsReference(url.username)) url.username = "REDACTED";
-    if (url.password && !containsReference(url.password)) url.password = "REDACTED";
+    if (url.username && !isExactVariableReference(url.username)) url.username = "REDACTED";
+    if (url.password && !isExactVariableReference(url.password)) url.password = "REDACTED";
     return redactKnownTokenPatterns(url.toString());
   } catch {
     const withoutCredentials = value.replace(
       /^([a-z][a-z0-9+.-]*:\/\/)([^/@]+)@/i,
       (_match, scheme: string, credentials: string) =>
-        containsReference(credentials) ? `${scheme}${credentials}@` : `${scheme}REDACTED:REDACTED@`,
+        isExactVariableReference(credentials) ? `${scheme}${credentials}@` : `${scheme}REDACTED:REDACTED@`,
     );
     const safeQuery = withoutCredentials.replace(
       /([?&])([^=&#]+)=([^&#]*)/g,
       (_match, separator: string, rawKey: string, rawValue: string) => {
         const key = decodeURIComponentSafely(rawKey);
-        const value = isSensitiveName(key) && !containsReference(rawValue) ? REDACTED : rawValue;
+        const value = isSensitiveName(key) && !isExactVariableReference(rawValue) ? REDACTED : rawValue;
         return `${separator}${rawKey}=${value}`;
       },
     );
@@ -323,7 +424,7 @@ function sanitizeBody(body: string, kind: string): string {
         const parts = line.split("=");
         if (parts.length < 2 || !isSensitiveName(parts[0].trim())) return redactKnownTokenPatterns(line);
         const raw = parts.slice(1).join("=");
-        return `${parts[0]}=${containsReference(raw) ? raw : REDACTED}`;
+        return `${parts[0]}=${isExactVariableReference(raw) ? raw : REDACTED}`;
       })
       .join("\n");
   }
@@ -368,7 +469,7 @@ function sanitizeGraphqlVariables(value: unknown, key = ""): unknown {
 
 function sanitizeJsonValue(value: unknown, key = ""): unknown {
   if (isSensitiveName(key)) {
-    return typeof value === "string" && containsReference(value) ? value : REDACTED;
+    return typeof value === "string" && isExactVariableReference(value) ? value : REDACTED;
   }
   if (Array.isArray(value)) return value.map((item) => sanitizeJsonValue(item));
   if (value && typeof value === "object") {
@@ -397,7 +498,7 @@ function redactMalformedJsonFields(value: string): string {
   return value.replace(
     /"([^"]+)"\s*:\s*"([^"]*)"/g,
     (match, key: string, raw: string) =>
-      isSensitiveName(key) && !containsReference(raw) ? match.replace(raw, REDACTED) : match,
+      isSensitiveName(key) && !isExactVariableReference(raw) ? match.replace(raw, REDACTED) : match,
   );
 }
 
@@ -410,7 +511,7 @@ function decodeURIComponentSafely(value: string): string {
 }
 
 function looksLikeSecret(value: string): boolean {
-  if (/^(?:sk-|ghp_|github_pat_|glpat-|xox[baprs]-)[A-Za-z0-9_.-]{12,}$/.test(value)) return true;
+  if (/^(?:sk[_-]|ghp_|github_pat_|glpat-|xox[baprs]-)[A-Za-z0-9_.-]{12,}$/.test(value)) return true;
   if (/^AKIA[A-Z0-9]{16}$/.test(value)) return true;
   const jwt = value.split(".");
   return jwt.length === 3 && jwt.every((part) => part.length >= 10 && /^[A-Za-z0-9_-]+$/.test(part));

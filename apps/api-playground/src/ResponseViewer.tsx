@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
-import type { ApiResponse, GraphqlResponse, ResponseCookie } from "./types";
+import type { ApiResponse, BinaryResponse, GraphqlResponse, ResponseCookie } from "./types";
 
 export type RawResponseCopyKind = "headers" | "cookies";
 type ResponseTab = "body" | "headers" | "cookies";
@@ -12,6 +12,7 @@ interface ResponseViewerProps {
   pretty: boolean;
   onPrettyChange: (pretty: boolean) => void;
   onRawCopy: (kind: RawResponseCopyKind, responseId: string) => Promise<string>;
+  onBinarySave: (responseId: string) => Promise<boolean>;
   onError: (message: string) => void;
 }
 
@@ -77,20 +78,68 @@ function GraphqlResponseSummary({ response, graphql }: { response: ApiResponse; 
   );
 }
 
+function BinaryResponseSummary({
+  response,
+  binary,
+  saving,
+  onSave,
+}: {
+  response: ApiResponse;
+  binary: BinaryResponse;
+  saving: boolean;
+  onSave: () => void;
+}) {
+  const canSave = binary.save_available && Boolean(response.response_id);
+  return (
+    <section className="binary-response-summary" aria-label="Binary response preview">
+      <div className="binary-response-meta">
+        <span><strong>Type</strong> {binary.media_type}</span>
+        <span><strong>Size</strong> {binary.size_bytes.toLocaleString()} bytes</span>
+        <span className="spacer" />
+        <button
+          type="button"
+          className="btn"
+          disabled={!canSave || saving}
+          title={canSave ? "현재 응답 binary를 native dialog에서 한 번 저장" : "현재 응답을 native 앱에서만 저장할 수 있습니다"}
+          onClick={onSave}
+        >
+          {saving ? "Saving..." : "Save binary"}
+        </button>
+      </div>
+      <div className="binary-response-field">
+        <span className="binary-response-label">Hex preview</span>
+        <code>{binary.hex_preview || "(empty)"}</code>
+        {binary.hex_truncated && <span className="dim">preview truncated</span>}
+      </div>
+      {binary.text_preview !== null && binary.text_preview !== undefined && (
+        <div className="binary-response-field">
+          <span className="binary-response-label">UTF-8 preview</span>
+          <code>{binary.text_preview || "(empty)"}</code>
+          {binary.text_truncated && <span className="dim">preview truncated</span>}
+        </div>
+      )}
+      {!canSave && <div className="dim">Binary 원문은 bounded memory에만 있으며 데스크톱 native save에서만 내보낼 수 있습니다.</div>}
+    </section>
+  );
+}
+
 export function ResponseViewer({
   response,
   responseText,
   pretty,
   onPrettyChange,
   onRawCopy,
+  onBinarySave,
   onError,
 }: ResponseViewerProps) {
   const [tab, setTab] = useState<ResponseTab>("body");
   const [copyingRaw, setCopyingRaw] = useState<RawResponseCopyKind | null>(null);
+  const [savingBinary, setSavingBinary] = useState(false);
 
   useEffect(() => {
     setTab("body");
     setCopyingRaw(null);
+    setSavingBinary(false);
   }, [response]);
 
   const copyMasked = async (text: string, failureMessage: string) => {
@@ -116,6 +165,18 @@ export function ResponseViewer({
       onError(`원문 응답 ${label}를 안전하게 복사하지 못했습니다.`);
     } finally {
       setCopyingRaw(null);
+    }
+  };
+
+  const saveBinary = async () => {
+    if (!response?.binary?.save_available || !response.response_id || savingBinary) return;
+    setSavingBinary(true);
+    try {
+      await onBinarySave(response.response_id);
+    } catch {
+      onError("binary 응답을 안전하게 저장하지 못했습니다.");
+    } finally {
+      setSavingBinary(false);
     }
   };
 
@@ -196,7 +257,7 @@ export function ResponseViewer({
           className="response-panel body-panel"
         >
           <div className="response-actions">
-            {response.is_json && (
+            {response.is_json && !response.binary && (
               <label className="toggle">
                 <input
                   type="checkbox"
@@ -210,13 +271,23 @@ export function ResponseViewer({
             <button
               type="button"
               className="btn"
+              disabled={Boolean(response.binary)}
+              title={response.binary ? "Binary 응답은 bounded preview와 명시적 저장만 지원합니다" : "마스킹된 응답 본문 복사"}
               onClick={() => void copyMasked(responseText, "마스킹된 응답 본문을 복사하지 못했습니다.")}
             >
               Copy body
             </button>
           </div>
-          {response.graphql && <GraphqlResponseSummary response={response} graphql={response.graphql} />}
-          <pre className="resp-body">{responseText || " "}</pre>
+          {response.binary && (
+            <BinaryResponseSummary
+              response={response}
+              binary={response.binary}
+              saving={savingBinary}
+              onSave={() => void saveBinary()}
+            />
+          )}
+          {response.graphql && !response.binary && <GraphqlResponseSummary response={response} graphql={response.graphql} />}
+          {!response.binary && <pre className="resp-body">{responseText || " "}</pre>}
         </section>
       )}
 

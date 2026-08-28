@@ -22,14 +22,18 @@ vi.mock("./api", () => ({
   claimApiRequest: vi.fn(),
   copyRawResponseCookies: vi.fn(),
   copyRawResponseHeaders: vi.fn(),
+  discardCurrentResponse: vi.fn(async () => undefined),
   onOpenRequest: vi.fn().mockImplementation(async (handler: (request: OpenRequest) => void) => {
     mocks.order.push("listen");
     mocks.openHandler = handler;
     return () => undefined;
   }),
   pickMultipartFile: vi.fn(),
+  readJsonFile: vi.fn(),
   renewApiRequest: vi.fn(),
   restoreApiRequest: vi.fn(),
+  saveJsonFile: vi.fn(),
+  saveResponseBinary: vi.fn(),
   sanitizePersistedJson: vi.fn(async (serialized: string) => serialized),
   sealSecret: vi.fn(),
   sendRequest: vi.fn(),

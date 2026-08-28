@@ -3,17 +3,21 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   ackApiRequest,
   buildRevealedCurl,
   claimApiRequest,
   copyRawResponseCookies,
   copyRawResponseHeaders,
+  discardCurrentResponse,
+  readJsonFile,
   onOpenRequest,
   pickMultipartFile,
   renewApiRequest,
   restoreApiRequest,
+  saveJsonFile,
+  saveResponseBinary,
   sanitizePersistedJson,
   sealSecret,
   sendRequest,
@@ -56,7 +60,6 @@ import {
   setVariable,
 } from "./lib/environments";
 import {
-  containsReference,
   emptyHistoryStore,
   migrateHistoryStorage,
   sanitizeRequestForPersistence,
@@ -64,6 +67,18 @@ import {
   toRequestTemplate,
   type HistoryStore,
 } from "./lib/persistence";
+import { isExactVariableReference } from "./lib/references";
+import { filterHistory, historyDisplayLabel, historyMethod as historyMethodOf, MAX_HISTORY_QUERY_CHARS, type HistoryStatusFilter } from "./lib/history";
+import {
+  mergeImportedCollections,
+  mergeImportedEnvironments,
+  MAX_TRANSFER_BYTES,
+  parseCollectionExport,
+  parseEnvironmentExport,
+  readTransferFile,
+  serializeCollectionExport,
+  serializeEnvironmentExport,
+} from "./lib/transfer";
 import {
   buildCookieHeader,
   hasActiveCookieHeader,
@@ -122,6 +137,16 @@ const BODY_KINDS = ["none", "json", "form", "multipart", "raw", "graphql"];
 const AUTH_KINDS = ["none", "basic", "bearer", "apikey"];
 const MAX_SSE_UI_ROWS = 1_000;
 const API_REQUEST_HANDOFF_KIND = "api-request/v1";
+
+function downloadJson(content: string, fileName: string): void {
+  const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 
 const defaultSseOptions = (): SseOptions => ({
   connectTimeoutMs: 10_000,
@@ -252,6 +277,9 @@ export default function App() {
   const [tab, setTab] = useState<"params" | "headers" | "cookies" | "body" | "auth">("params");
   const [pretty, setPretty] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyMethod, setHistoryMethod] = useState("");
+  const [historyStatus, setHistoryStatus] = useState<HistoryStatusFilter>("all");
   const [collections, setCollections] = useState(emptyCollectionStore);
   const [collName, setCollName] = useState("");
   const [collFolder, setCollFolder] = useState("");
@@ -263,6 +291,9 @@ export default function App() {
   const [migrationNotice, setMigrationNotice] = useState<string | null>(null);
   const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null);
   const [persistenceReady, setPersistenceReady] = useState(false);
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [browserImportKind, setBrowserImportKind] = useState<"collection" | "environment" | null>(null);
+  const [environmentBusy, setEnvironmentBusy] = useState(false);
   const [contextActionBusy, setContextActionBusy] = useState(false);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
@@ -288,8 +319,24 @@ export default function App() {
   const handoffBusyRef = useRef(false);
   const handoffDialogRef = useRef<HTMLElement | null>(null);
   const handoffCancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const browserImportInputRef = useRef<HTMLInputElement | null>(null);
+  const browserImportKindRef = useRef<"collection" | "environment" | null>(null);
   const handoffPreviousFocusRef = useRef<HTMLElement | null>(null);
   const cancelHandoffRef = useRef<() => void>(() => undefined);
+  const collectionStoreRef = useRef(collections);
+  const collectionRevisionRef = useRef(0);
+  const collectionMutationBusyRef = useRef(false);
+  const envStoreRef = useRef(envStore);
+  const environmentRevisionRef = useRef(0);
+  const environmentMutationBusyRef = useRef(false);
+  const environmentBusyRef = useRef(false);
+  const transferBusyRef = useRef(false);
+
+  // Keep imperative async continuations on the latest stores instead of on a
+  // render-time closure. This is especially important for native secret
+  // sealing and file transfer, both of which can finish after another edit.
+  collectionStoreRef.current = collections;
+  envStoreRef.current = envStore;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -297,6 +344,11 @@ export default function App() {
       mountedRef.current = false;
       requestSequenceRef.current += 1;
       abortControllerRef.current?.abort();
+      browserImportKindRef.current = null;
+      // Abort only stops the renderer-side wait. Explicitly clear the native
+      // one-shot response vault as well so a late result cannot survive this
+      // renderer instance.
+      void discardCurrentResponse().catch(() => undefined);
       webSocketGenerationRef.current += 1;
       const handle = webSocketHandleRef.current;
       webSocketHandleRef.current = null;
@@ -308,6 +360,30 @@ export default function App() {
         handoffPreviewRef.current = null;
         void restoreApiRequest(preview.handoffId).catch(() => undefined);
       }
+    };
+  }, []);
+
+  // Browsers do not dispatch `change` when the native file picker is
+  // cancelled. Listen to the input's cancel event and use a focus fallback so
+  // a cancelled picker never leaves the import flow permanently busy.
+  useEffect(() => {
+    const input = browserImportInputRef.current;
+    if (!input) return undefined;
+    const clearPicker = () => {
+      browserImportKindRef.current = null;
+      if (mountedRef.current) setBrowserImportKind(null);
+    };
+    const onCancel = () => clearPicker();
+    const onWindowFocus = () => {
+      window.setTimeout(() => {
+        if (browserImportKindRef.current && !input.files?.length) clearPicker();
+      }, 0);
+    };
+    input.addEventListener("cancel", onCancel);
+    window.addEventListener("focus", onWindowFocus);
+    return () => {
+      input.removeEventListener("cancel", onCancel);
+      window.removeEventListener("focus", onWindowFocus);
     };
   }, []);
 
@@ -433,6 +509,14 @@ export default function App() {
   });
 
   const currentEnv = envStore.environments.find((e) => e.id === currentEnvId) ?? null;
+  const historyMethods = useMemo(
+    () => [...new Set(history.map(historyMethodOf))].sort(),
+    [history],
+  );
+  const visibleHistory = useMemo(
+    () => filterHistory(history, { query: historyQuery, method: historyMethod, status: historyStatus }),
+    [history, historyMethod, historyQuery, historyStatus],
+  );
   const cookieIssues = validateCookies(req.cookies);
   const cookieConflict = hasCookieSourceConflict(req.cookies, req.headers);
   const cookieConfigurationError = cookieConflict
@@ -450,26 +534,121 @@ export default function App() {
       : null
   );
 
-  const persistEnvs = (store: ReturnType<typeof loadEnvStore>) => {
-    setEnvStore(store);
-    saveEnvStore(store);
+  const persistEnvs = (
+    store: ReturnType<typeof loadEnvStore>,
+    expectedRevision = environmentRevisionRef.current,
+    allowEnvironmentBusy = false,
+  ): ReturnType<typeof loadEnvStore> => {
+    if (expectedRevision !== environmentRevisionRef.current
+      || environmentMutationBusyRef.current
+      || (environmentBusyRef.current && !allowEnvironmentBusy)) {
+      throw new Error("environment mutation is stale or busy");
+    }
+    environmentMutationBusyRef.current = true;
+    try {
+      const saved = saveEnvStore(store);
+      envStoreRef.current = saved;
+      environmentRevisionRef.current += 1;
+      setEnvStore(saved);
+      return saved;
+    } finally {
+      environmentMutationBusyRef.current = false;
+    }
+  };
+
+  const tryPersistEnvs = (
+    store: ReturnType<typeof loadEnvStore>,
+    expectedRevision = environmentRevisionRef.current,
+    allowEnvironmentBusy = false,
+  ): ReturnType<typeof loadEnvStore> | null => {
+    try {
+      return persistEnvs(store, expectedRevision, allowEnvironmentBusy);
+    } catch {
+      if (mountedRef.current) setPersistenceWarning("Environment를 안전하게 저장하지 못했습니다. 기존 값은 유지됩니다.");
+      return null;
+    }
+  };
+
+  const startSecretSeal = (
+    environmentId: string,
+    key: string,
+    plain: string,
+    expectedValue: string,
+    expectedSecret: boolean,
+    secret: boolean,
+  ) => {
+    if (environmentMutationBusyRef.current || environmentBusyRef.current || transferBusyRef.current) return;
+    const revision = environmentRevisionRef.current;
+    environmentBusyRef.current = true;
+    setEnvironmentBusy(true);
+    setError(null);
+    void sealSecret(plain)
+      .then((blob) => {
+        if (!mountedRef.current) return;
+        const current = envStoreRef.current.environments
+          .find((environment) => environment.id === environmentId)
+          ?.variables.find((variable) => variable.key === key);
+        if (revision !== environmentRevisionRef.current
+          || !current
+          || current.value !== expectedValue
+          || current.secret !== expectedSecret) {
+          setPersistenceWarning("Environment가 변경되어 오래된 secret 저장 결과를 적용하지 않았습니다.");
+          return;
+        }
+        tryPersistEnvs(
+          setVariable(envStoreRef.current, environmentId, key, blob, secret),
+          revision,
+          true,
+        );
+      })
+      .catch(() => {
+        if (mountedRef.current) setError("secret 봉인에 실패했습니다. 데스크톱 앱에서 다시 시도하세요.");
+      })
+      .finally(() => {
+        environmentBusyRef.current = false;
+        if (mountedRef.current) setEnvironmentBusy(false);
+      });
   };
 
   const onCreateEnv = () => {
-    const next = addEnvironment(envStore, envName, () => `e-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
-    persistEnvs(next);
-    setCurrentEnvId(next.environments[0].id);
-    setEnvName("");
+    if (environmentBusyRef.current || transferBusyRef.current || !persistenceReady) return;
+    try {
+      const next = addEnvironment(envStoreRef.current, envName, () => `e-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
+      const saved = persistEnvs(next);
+      setCurrentEnvId(saved.environments[0]?.id ?? "");
+      setEnvName("");
+    } catch {
+      setPersistenceWarning("Environment를 안전하게 저장하지 못했습니다. 기존 값은 유지됩니다.");
+    }
   };
 
   const environmentVariables = envStore.environments.flatMap((environment) => environment.variables);
   const sanitizeForPersistence = (serialized: string) =>
     sanitizePersistedJson(serialized, environmentVariables);
 
-  const persistCollections = async (store: ReturnType<typeof emptyCollectionStore>) => {
-    const safe = await saveStore(store, sanitizeForPersistence);
-    if (mountedRef.current) setCollections(safe);
-    return safe;
+  const persistCollections = async (
+    store: ReturnType<typeof emptyCollectionStore>,
+    expectedRevision = collectionRevisionRef.current,
+  ) => {
+    if (expectedRevision !== collectionRevisionRef.current || collectionMutationBusyRef.current) {
+      throw new Error("collection mutation is stale or busy");
+    }
+    collectionMutationBusyRef.current = true;
+    try {
+      const safe = await saveStore(
+        store,
+        sanitizeForPersistence,
+        localStorage,
+        () => expectedRevision === collectionRevisionRef.current,
+      );
+      if (expectedRevision !== collectionRevisionRef.current) throw new Error("collection mutation is stale");
+      collectionStoreRef.current = safe;
+      collectionRevisionRef.current += 1;
+      if (mountedRef.current) setCollections(safe);
+      return safe;
+    } finally {
+      collectionMutationBusyRef.current = false;
+    }
   };
 
   const persistHistory = async (store: HistoryStore) => {
@@ -478,12 +657,163 @@ export default function App() {
     return safe;
   };
 
+  const applyImportedTransfer = async (
+    kind: "collection" | "environment",
+    raw: string,
+    expectedCollectionRevision: number,
+    expectedEnvironmentRevision: number,
+  ) => {
+    if (kind === "collection") {
+      const imported = parseCollectionExport(raw);
+      if (!imported) throw new Error("Collection JSON 형식이 올바르지 않습니다");
+      if (expectedCollectionRevision !== collectionRevisionRef.current) {
+        throw new Error("Collection import가 오래된 상태를 덮어쓰지 않았습니다");
+      }
+      let sequence = 0;
+      const merged = mergeImportedCollections(
+        collectionStoreRef.current,
+        imported,
+        () => `c-import-${Date.now()}-${sequence++}`,
+      );
+      if (!merged) throw new Error("Collection import를 한 번에 적용할 수 없습니다");
+      const previousCount = collectionStoreRef.current.collections.length;
+      const safe = await persistCollections(merged, expectedCollectionRevision);
+      if (!mountedRef.current) return;
+      const added = Math.max(0, safe.collections.length - previousCount);
+      setSelectedCollectionId(safe.collections[0]?.id ?? null);
+      setMigrationNotice(`Collection ${added}건을 추가했습니다. 기존 항목은 덮어쓰지 않았습니다.`);
+      return;
+    }
+
+    const imported = parseEnvironmentExport(raw);
+    if (!imported) throw new Error("Environment JSON 형식이 올바르지 않습니다");
+    if (expectedEnvironmentRevision !== environmentRevisionRef.current) {
+      throw new Error("Environment import가 오래된 상태를 덮어쓰지 않았습니다");
+    }
+    let sequence = 0;
+    const next = mergeImportedEnvironments(
+      envStoreRef.current,
+      imported,
+      () => `e-import-${Date.now()}-${sequence++}`,
+    );
+    if (!next) throw new Error("Environment import를 한 번에 적용할 수 없습니다");
+    const previousCount = envStoreRef.current.environments.length;
+    const saved = persistEnvs(next, expectedEnvironmentRevision);
+    if (!mountedRef.current) return;
+    const added = Math.max(0, saved.environments.length - previousCount);
+    if (!currentEnvId) setCurrentEnvId(saved.environments[0]?.id ?? "");
+    setMigrationNotice(`Environment ${added}건을 추가했습니다. secret 값은 보안상 다시 입력해야 합니다.`);
+  };
+
+  const onImportTransfer = (kind: "collection" | "environment") => {
+    if (!persistenceReady || transferBusyRef.current || browserImportKind || environmentBusyRef.current || sending || collSaving || contextActionBusy) return;
+    const expectedCollectionRevision = collectionRevisionRef.current;
+    const expectedEnvironmentRevision = environmentRevisionRef.current;
+    if (isTauri()) {
+      transferBusyRef.current = true;
+      setTransferBusy(true);
+      setPersistenceWarning(null);
+      void (async () => {
+        try {
+          const raw = await readJsonFile();
+          if (raw !== null) {
+            await applyImportedTransfer(kind, raw, expectedCollectionRevision, expectedEnvironmentRevision);
+          }
+        } catch {
+          if (mountedRef.current) setPersistenceWarning("JSON 파일을 가져오지 않았습니다. 파일 선택과 schema를 확인하세요.");
+        } finally {
+          transferBusyRef.current = false;
+          if (mountedRef.current) setTransferBusy(false);
+        }
+      })();
+      return;
+    }
+    const input = browserImportInputRef.current;
+    if (!input) return;
+    browserImportKindRef.current = kind;
+    input.value = "";
+    setBrowserImportKind(kind);
+    input.click();
+  };
+
+  const onBrowserImportFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    const kind = browserImportKindRef.current;
+    event.currentTarget.value = "";
+    browserImportKindRef.current = null;
+    setBrowserImportKind(null);
+    if (!file || !kind) return;
+    if (file.size > MAX_TRANSFER_BYTES) {
+      setPersistenceWarning("JSON 파일이 허용된 크기(1 MiB)를 초과해 가져오지 않았습니다.");
+      return;
+    }
+    transferBusyRef.current = true;
+    setTransferBusy(true);
+    setPersistenceWarning(null);
+    const expectedCollectionRevision = collectionRevisionRef.current;
+    const expectedEnvironmentRevision = environmentRevisionRef.current;
+    void readTransferFile(file).then(async (raw) => {
+      try {
+        await applyImportedTransfer(kind, raw, expectedCollectionRevision, expectedEnvironmentRevision);
+      } catch {
+        if (mountedRef.current) {
+          setPersistenceWarning(`${kind === "collection" ? "Collection" : "Environment"} JSON을 가져오지 않았습니다. schema, 크기와 secret 정책을 확인하세요.`);
+        }
+      }
+    }).catch(() => {
+      if (mountedRef.current) setPersistenceWarning("JSON 파일을 읽지 못해 가져오지 않았습니다.");
+    }).finally(() => {
+      transferBusyRef.current = false;
+      if (mountedRef.current) setTransferBusy(false);
+    });
+  };
+
+  const onExportTransfer = (kind: "collection" | "environment") => {
+    if (!persistenceReady || transferBusyRef.current || environmentBusyRef.current || sending || collSaving || contextActionBusy) return;
+    transferBusyRef.current = true;
+    setTransferBusy(true);
+    setPersistenceWarning(null);
+    try {
+      const content = kind === "collection"
+        ? serializeCollectionExport(collectionStoreRef.current)
+        : serializeEnvironmentExport(envStoreRef.current);
+      if (new TextEncoder().encode(content).byteLength > MAX_TRANSFER_BYTES) {
+        throw new Error("transfer too large");
+      }
+      const fileName = kind === "collection"
+        ? "api-playground-collections.json"
+        : "api-playground-environments.json";
+      if (isTauri()) {
+        void saveJsonFile(content, fileName).then((saved) => {
+          if (saved && mountedRef.current) {
+            setMigrationNotice(`${kind === "collection" ? "Collection" : "Environment"} JSON 내보내기를 완료했습니다.`);
+          }
+        }).catch(() => {
+          if (mountedRef.current) setPersistenceWarning("JSON 파일을 저장하지 않았습니다. native 저장 위치를 확인하세요.");
+        }).finally(() => {
+          transferBusyRef.current = false;
+          if (mountedRef.current) setTransferBusy(false);
+        });
+      } else {
+        downloadJson(content, fileName);
+        setMigrationNotice(`${kind === "collection" ? "Collection" : "Environment"} JSON 다운로드를 시작했습니다.`);
+        transferBusyRef.current = false;
+        setTransferBusy(false);
+      }
+    } catch {
+      setPersistenceWarning("JSON export를 생성하지 못했습니다. 항목 수와 크기를 확인하세요.");
+      transferBusyRef.current = false;
+      setTransferBusy(false);
+    }
+  };
+
   const onSaveCollection = async () => {
+    if (collectionMutationBusyRef.current || environmentBusyRef.current || transferBusyRef.current) return;
     setCollSaving(true);
     setPersistenceWarning(null);
     try {
       const next = addEntry(
-        collections,
+        collectionStoreRef.current,
         { name: collName, folder: collFolder, request: req },
         Date.now(),
         () => `c-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
@@ -575,6 +905,8 @@ export default function App() {
     }
 
     const collectionTask = migrateCollections((serialized) => sanitizePersistedJson(serialized, initialVariables)).then((migration) => {
+      collectionStoreRef.current = migration.store;
+      collectionRevisionRef.current += 1;
       setCollections(migration.store);
       if (migration.failed) {
         setPersistenceWarning("이전 Collection 안전 변환을 완료하지 못했습니다. 원본은 격리되며 다음 실행에서 재시도합니다.");
@@ -1106,11 +1438,19 @@ export default function App() {
       ? copyRawResponseHeaders(responseId)
       : copyRawResponseCookies(responseId)
   );
+  const saveBinaryResponse = async (responseId: string): Promise<boolean> => {
+    try {
+      return await saveResponseBinary(responseId);
+    } catch {
+      setError("binary 응답을 안전하게 저장하지 못했습니다.");
+      return false;
+    }
+  };
   const contextItems = useMemo<readonly ContextMenuEntry[]>(
     () => buildRequestItemContextMenu(
-      contextActionBusy || collSaving || sending || !persistenceReady,
+      contextActionBusy || collSaving || sending || transferBusy || environmentBusy || !persistenceReady,
     ),
-    [collSaving, contextActionBusy, persistenceReady, sending],
+    [collSaving, contextActionBusy, environmentBusy, persistenceReady, sending, transferBusy],
   );
 
   const runContextAction = async (action: () => Promise<void>, failureMessage: string) => {
@@ -1173,7 +1513,7 @@ export default function App() {
   const duplicateCollection = (item: CollectionEntry) => {
     void runContextAction(async () => {
       const safe = await persistCollections(duplicateEntry(
-        collections,
+        collectionStoreRef.current,
         item.id,
         Date.now(),
         () => `c-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
@@ -1190,14 +1530,14 @@ export default function App() {
       return;
     }
     void runContextAction(async () => {
-      await persistCollections(renameEntry(collections, item.id, name));
+      await persistCollections(renameEntry(collectionStoreRef.current, item.id, name));
     }, "Collection 이름을 안전하게 저장하지 못했습니다.");
   };
 
   const deleteCollection = (item: CollectionEntry) => {
     if (!window.confirm(`'${item.name}' Collection을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
     void runContextAction(async () => {
-      await persistCollections(removeEntry(collections, item.id));
+      await persistCollections(removeEntry(collectionStoreRef.current, item.id));
     }, "Collection 삭제 상태를 안전하게 저장하지 못했습니다.");
   };
 
@@ -1221,6 +1561,14 @@ export default function App() {
 
   return (
     <div className="app">
+      <input
+        ref={browserImportInputRef}
+        className="transfer-input"
+        type="file"
+        accept="application/json,.json"
+        aria-label="JSON 파일 가져오기"
+        onChange={onBrowserImportFile}
+      />
       {handoffPreview && (
         <div className="handoff-backdrop">
           <section
@@ -1290,12 +1638,44 @@ export default function App() {
       <aside className="sidebar">
         <h1 className="app-title">API Playground</h1>
         <div className="group-name">History</div>
-        {history.map((h) => (
+        <div className="history-toolbar" aria-label="History 검색 및 필터">
+          <input
+            className="coll-input history-search"
+            aria-label="History 검색"
+            placeholder="이름, URL, method 검색"
+            value={historyQuery}
+            maxLength={MAX_HISTORY_QUERY_CHARS}
+            onChange={(event) => setHistoryQuery(event.currentTarget.value)}
+            spellCheck={false}
+          />
+          <div className="history-filter-row">
+            <select
+              className="coll-filter"
+              aria-label="History method 필터"
+              value={historyMethod}
+              onChange={(event) => setHistoryMethod(event.currentTarget.value)}
+            >
+              <option value="">모든 method</option>
+              {historyMethods.map((method) => <option key={method} value={method}>{method}</option>)}
+            </select>
+            <select
+              className="coll-filter"
+              aria-label="History 상태 필터"
+              value={historyStatus}
+              onChange={(event) => setHistoryStatus(event.currentTarget.value as HistoryStatusFilter)}
+            >
+              <option value="all">모든 상태</option>
+              <option value="success">성공</option>
+              <option value="error">실패</option>
+            </select>
+          </div>
+        </div>
+        {visibleHistory.map((h) => (
           <button
             key={h.id}
             className={`history-item ${selectedHistoryId === h.id ? "selected" : ""}`}
             aria-current={selectedHistoryId === h.id ? "true" : undefined}
-            aria-label={`History 항목: ${(h.name ?? h.request.url) || "(no url)"}`}
+            aria-label={`History 항목: ${historyDisplayLabel(h)}`}
             data-history-id={h.id}
             onClick={() => {
               setSelectedHistoryId(h.id);
@@ -1308,15 +1688,34 @@ export default function App() {
             }}
             {...historyContextMenu.triggerProps}
           >
-            <span className={`method ${h.request.method.toLowerCase()}`}>{h.request.method}</span>
-            <span className="history-url" title={h.name ?? h.request.url}>
-              {(h.name ?? h.request.url) || "(no url)"}
+            <span className={`method ${historyMethodOf(h).toLowerCase()}`}>{historyMethodOf(h)}</span>
+            <span className="history-url" title={historyDisplayLabel(h)}>
+              {historyDisplayLabel(h)}
             </span>
           </button>
         ))}
         {history.length === 0 && <div className="dim">No requests yet</div>}
+        {history.length > 0 && visibleHistory.length === 0 && <div className="dim" role="status" aria-live="polite">검색 결과 없음</div>}
 
         <div className="group-name">Collections</div>
+        <div className="transfer-actions" aria-label="Collection JSON transfer">
+          <button
+            type="button"
+            className="btn mini"
+            disabled={!persistenceReady || transferBusy || Boolean(browserImportKind) || environmentBusy || sending || collSaving || contextActionBusy}
+            onClick={() => onExportTransfer("collection")}
+          >
+            JSON 내보내기
+          </button>
+          <button
+            type="button"
+            className="btn mini"
+            disabled={!persistenceReady || transferBusy || Boolean(browserImportKind) || environmentBusy || sending || collSaving || contextActionBusy}
+            onClick={() => onImportTransfer("collection")}
+          >
+            JSON 가져오기
+          </button>
+        </div>
         <div className="coll-save-row">
           <input
             className="coll-input"
@@ -1330,7 +1729,7 @@ export default function App() {
             value={collFolder}
             onChange={(e) => setCollFolder(e.currentTarget.value)}
           />
-          <button className="btn" disabled={!persistenceReady || collSaving || contextActionBusy || !req.url.trim()} onClick={() => void onSaveCollection()}>
+          <button className="btn" disabled={!persistenceReady || transferBusy || environmentBusy || collSaving || contextActionBusy || !req.url.trim()} onClick={() => void onSaveCollection()}>
             Save
           </button>
         </div>
@@ -1380,7 +1779,7 @@ export default function App() {
               <button
                 className="coll-del"
                 aria-label={`${c.name} Collection 삭제`}
-                disabled={contextActionBusy || collSaving || sending || !persistenceReady}
+                disabled={contextActionBusy || transferBusy || environmentBusy || collSaving || sending || !persistenceReady}
                 onClick={() => deleteCollection(c)}
               >
                 ✕
@@ -1390,6 +1789,24 @@ export default function App() {
         {collections.collections.length === 0 && <div className="dim">저장된 collection 없음</div>}
 
         <div className="group-name">Environments</div>
+        <div className="transfer-actions" aria-label="Environment JSON transfer">
+          <button
+            type="button"
+            className="btn mini"
+            disabled={!persistenceReady || transferBusy || Boolean(browserImportKind) || environmentBusy || sending || collSaving || contextActionBusy}
+            onClick={() => onExportTransfer("environment")}
+          >
+            JSON 내보내기
+          </button>
+          <button
+            type="button"
+            className="btn mini"
+            disabled={!persistenceReady || transferBusy || Boolean(browserImportKind) || environmentBusy || sending || collSaving || contextActionBusy}
+            onClick={() => onImportTransfer("environment")}
+          >
+            JSON 가져오기
+          </button>
+        </div>
         <div className="coll-save-row">
           <input
             className="coll-input"
@@ -1397,7 +1814,7 @@ export default function App() {
             value={envName}
             onChange={(e) => setEnvName(e.currentTarget.value)}
           />
-          <button className="btn" onClick={onCreateEnv}>
+          <button className="btn" disabled={!persistenceReady || transferBusy || environmentBusy} onClick={onCreateEnv}>
             추가
           </button>
         </div>
@@ -1406,7 +1823,11 @@ export default function App() {
             <button className="env-name" onClick={() => setCurrentEnvId(env.id)}>
               {env.name}
             </button>
-            <button className="coll-del" onClick={() => persistEnvs(removeEnvironment(envStore, env.id))}>
+            <button
+              className="coll-del"
+              disabled={environmentBusy || transferBusy || sending || contextActionBusy || !persistenceReady}
+              onClick={() => { tryPersistEnvs(removeEnvironment(envStoreRef.current, env.id)); }}
+            >
               ✕
             </button>
           </div>
@@ -1418,20 +1839,23 @@ export default function App() {
                 <span className="env-var-key">{v.key}</span>
                 {v.secret ? (
                   <>
-                    <span className="env-var-secret" title="봉인됨 — 평문 미보관">
-                      ••••••••
+                    <span className={`env-var-secret ${v.value ? "" : "unconfigured"}`} title={v.value ? "봉인됨 — 평문 미보관" : "export에서 secret 원문을 제외해 다시 입력해야 합니다"}>
+                      {v.value ? "••••••••" : "미설정"}
                     </span>
-                    <button className="btn mini" onClick={() => {
+                    <button className="btn mini" disabled={environmentBusy || transferBusy} onClick={() => {
                       const plain = window.prompt(`${v.key} 새 값 입력`);
                       if (plain != null) {
-                        void sealSecret(plain)
-                          .then((blob) => persistEnvs(setVariable(envStore, currentEnv.id, v.key, blob, true)))
-                          .catch(() => setError("secret 봉인에 실패했습니다. 데스크톱 앱에서 다시 시도하세요."));
+                        startSecretSeal(currentEnv.id, v.key, plain, v.value, true, true);
                       }
                     }}>
                       변경
                     </button>
-                    <button className="btn mini" title="secret 해제 (저장 값 삭제)" onClick={() => persistEnvs(setVariable(envStore, currentEnv.id, v.key, "", false))}>
+                    <button
+                      className="btn mini"
+                      disabled={environmentBusy || transferBusy}
+                      title="secret 해제 (저장 값 삭제)"
+                      onClick={() => { tryPersistEnvs(setVariable(envStoreRef.current, currentEnv.id, v.key, "", false)); }}
+                    >
                       해제
                     </button>
                   </>
@@ -1440,13 +1864,12 @@ export default function App() {
                     <input
                       className="coll-input"
                       value={v.value}
-                      onChange={(e) => persistEnvs(setVariable(envStore, currentEnv.id, v.key, e.currentTarget.value, false))}
+                      disabled={environmentBusy || transferBusy}
+                      onChange={(e) => { tryPersistEnvs(setVariable(envStoreRef.current, currentEnv.id, v.key, e.currentTarget.value, false)); }}
                     />
-                    <button className="btn mini" title="이 변수를 봉인해 secret으로 저장" onClick={() => {
+                    <button className="btn mini" disabled={environmentBusy || transferBusy} title="이 변수를 봉인해 secret으로 저장" onClick={() => {
                       if (v.value) {
-                        void sealSecret(v.value)
-                          .then((blob) => persistEnvs(setVariable(envStore, currentEnv.id, v.key, blob, true)))
-                          .catch(() => setError("secret 봉인에 실패했습니다. 데스크톱 앱에서 다시 시도하세요."));
+                        startSecretSeal(currentEnv.id, v.key, v.value, v.value, false, true);
                       }
                     }}>
                       🔒
@@ -1459,9 +1882,10 @@ export default function App() {
             <div className="env-add-var">
               <button
                 className="btn"
+                disabled={environmentBusy || transferBusy || !persistenceReady}
                 onClick={() => {
                   const name = `var${currentEnv.variables.length + 1}`;
-                  persistEnvs(setVariable(envStore, currentEnv.id, name, "", false));
+                  tryPersistEnvs(setVariable(envStoreRef.current, currentEnv.id, name, "", false));
                 }}
               >
                 + 변수
@@ -1489,13 +1913,13 @@ export default function App() {
             onChange={(e) => setReq({ ...req, url: e.currentTarget.value })}
             spellCheck={false}
           />
-          <button className="btn send" onClick={() => sending ? onCancel() : void onSend()} disabled={!persistenceReady || contextActionBusy || (!sending && (sseActive || !req.url || Boolean(requestConfigurationError)))}>
+          <button className="btn send" onClick={() => sending ? onCancel() : void onSend()} disabled={!persistenceReady || transferBusy || contextActionBusy || (!sending && (sseActive || !req.url || Boolean(requestConfigurationError)))}>
             {!persistenceReady ? "Checking..." : sending ? "Cancel" : "Send"}
           </button>
           <button className={`btn ${showCurl ? "active" : ""}`} onClick={() => setShowCurl((v) => !v)} disabled={!req.url || Boolean(requestConfigurationError)}>
             cURL
           </button>
-          <button className="btn" type="button" onClick={() => setShowOpenApiImport(true)} disabled={!persistenceReady || sending || sseActive || contextActionBusy || collSaving}>
+          <button className="btn" type="button" onClick={() => setShowOpenApiImport(true)} disabled={!persistenceReady || transferBusy || sending || sseActive || contextActionBusy || collSaving}>
             OpenAPI
           </button>
         </div>
@@ -1739,6 +2163,7 @@ export default function App() {
           pretty={pretty}
           onPrettyChange={setPretty}
           onRawCopy={copyRawResponse}
+          onBinarySave={saveBinaryResponse}
           onError={setError}
         />
         <SseEventViewer
@@ -1864,9 +2289,9 @@ export function buildCurl(template: RequestTemplate): string {
   if (req.auth?.kind === "basic" && req.auth.username) {
     headers.push(["Authorization", "Basic [REDACTED]"]);
   } else if (req.auth?.kind === "bearer" && req.auth.token) {
-    headers.push(["Authorization", `Bearer ${containsReference(req.auth.token) ? req.auth.token : "[REDACTED]"}`]);
+    headers.push(["Authorization", `Bearer ${isExactVariableReference(req.auth.token) ? req.auth.token : "[REDACTED]"}`]);
   } else if (req.auth?.kind === "apikey" && req.auth.api_key) {
-    headers.push([req.auth.api_key, containsReference(req.auth.api_value) ? req.auth.api_value : "[REDACTED]"]);
+    headers.push([req.auth.api_key, isExactVariableReference(req.auth.api_value) ? req.auth.api_value : "[REDACTED]"]);
   }
   for (const [k, v] of headers) {
     lines.push(`  --header ${shellQuote(`${k}: ${v}`)}`);

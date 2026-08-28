@@ -7,9 +7,11 @@ use crate::platform::platform_sealer;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
+use tauri_plugin_dialog::DialogExt;
 use zeroize::Zeroizing;
 
 const REDACTED: &str = "[REDACTED]";
@@ -22,6 +24,10 @@ const MAX_MULTIPART_FILE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_MULTIPART_TOTAL_FILE_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_RESPONSE_HEADERS: usize = 100;
 const MAX_RESPONSE_HEADER_BYTES: usize = 64 * 1024;
+const MAX_RESPONSE_BODY_BYTES: usize = 16 * 1024 * 1024;
+const MAX_BINARY_PREVIEW_BYTES: usize = 4 * 1024;
+const MAX_BINARY_TEXT_PREVIEW_BYTES: usize = 4 * 1024;
+const MAX_RESPONSE_MEDIA_TYPE_BYTES: usize = 128;
 const MAX_GRAPHQL_URL_BYTES: usize = 8 * 1024;
 const MIN_GRAPHQL_TIMEOUT_MS: u64 = 100;
 const MAX_GRAPHQL_TIMEOUT_MS: u64 = 120_000;
@@ -36,6 +42,7 @@ const GRAPHQL_URL_TOO_LARGE: &str = "GraphQL URL이 허용된 크기를 초과�
 const REQUEST_CANCELLED: &str = "요청이 취소되었습니다";
 const MAX_REQUEST_ID_BYTES: usize = 128;
 const MAX_PENDING_CANCELLATIONS: usize = 32;
+const BINARY_SAVE_ERROR: &str = "binary 응답을 안전하게 저장할 수 없습니다";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KeyValue {
@@ -202,7 +209,20 @@ pub struct ApiResponse {
     pub raw_headers_available: bool,
     pub headers_truncated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub binary: Option<BinaryResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub graphql: Option<GraphqlResponse>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BinaryResponse {
+    pub media_type: String,
+    pub size_bytes: usize,
+    pub hex_preview: String,
+    pub text_preview: Option<String>,
+    pub hex_truncated: bool,
+    pub text_truncated: bool,
+    pub save_available: bool,
 }
 
 #[derive(Default)]
@@ -300,6 +320,7 @@ struct ResponseHeaderEntry {
     id: String,
     // Serialize/Debug를 구현하지 않는다. 명시적인 일회성 복사 외 경계로 내보내지 않는다.
     raw_headers: Vec<RawResponseHeader>,
+    binary_body: Option<Zeroizing<Vec<u8>>>,
 }
 
 struct ResponseHeaderVaultInner {
@@ -340,10 +361,20 @@ impl ResponseHeaderVault {
         Ok(id)
     }
 
+    #[cfg(test)]
     fn store_if_current(
         &self,
         id: &str,
         raw_headers: Vec<RawResponseHeader>,
+    ) -> Result<bool, String> {
+        self.store_if_current_with_body(id, raw_headers, None)
+    }
+
+    fn store_if_current_with_body(
+        &self,
+        id: &str,
+        raw_headers: Vec<RawResponseHeader>,
+        binary_body: Option<Zeroizing<Vec<u8>>>,
     ) -> Result<bool, String> {
         let mut inner = self.inner.lock().map_err(|_| response_copy_error())?;
         if inner.current_request_id.as_deref() != Some(id) {
@@ -352,8 +383,34 @@ impl ResponseHeaderVault {
         inner.entry = Some(ResponseHeaderEntry {
             id: id.to_string(),
             raw_headers,
+            binary_body,
         });
         Ok(true)
+    }
+
+    fn binary_payload(&self, id: &str) -> Result<Zeroizing<Vec<u8>>, String> {
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| BINARY_SAVE_ERROR.to_string())?;
+        let current = inner.current_request_id.as_deref() == Some(id);
+        inner
+            .entry
+            .as_ref()
+            .filter(|entry| current && entry.id == id)
+            .and_then(|entry| entry.binary_body.as_ref())
+            .map(|payload| Zeroizing::new(payload.to_vec()))
+            .ok_or_else(|| BINARY_SAVE_ERROR.to_string())
+    }
+
+    fn clear_current(&self) -> Result<(), String> {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| BINARY_SAVE_ERROR.to_string())?;
+        inner.current_request_id = None;
+        inner.entry = None;
+        Ok(())
     }
 
     fn copy(&self, id: &str, cookies_only: bool) -> Result<String, String> {
@@ -369,7 +426,7 @@ impl ResponseHeaderVault {
             .filter(|(name, _)| !cookies_only || name.as_str().eq_ignore_ascii_case("set-cookie"))
             .map(|(name, value)| format!("{}: {}", name.as_str(), value.as_str()))
             .collect::<Vec<_>>();
-        if cookies_only && lines.is_empty() {
+        if lines.is_empty() {
             return Err(response_copy_error());
         }
         Ok(lines.join("\n"))
@@ -379,6 +436,7 @@ impl ResponseHeaderVault {
 struct ExecutedResponse {
     response: ApiResponse,
     raw_headers: Vec<RawResponseHeader>,
+    raw_binary: Option<Zeroizing<Vec<u8>>>,
 }
 
 /// HTTP 요청을 backend-only resolve 뒤 수행한다. resolved 값은 응답에 포함하지 않는다.
@@ -422,6 +480,14 @@ pub fn cancel_request(cancellation: tauri::State<'_, RequestCancellation>, reque
     cancellation.cancel(&request_id);
 }
 
+/// Renderer teardown에서 현재 응답과 in-flight 결과의 보관 권한을 함께 폐기한다.
+#[tauri::command]
+pub fn discard_current_response(
+    response_headers: tauri::State<'_, ResponseHeaderVault>,
+) -> Result<(), String> {
+    response_headers.clear_current()
+}
+
 async fn send_request_with_vault_and_cancellation(
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
@@ -443,11 +509,22 @@ async fn send_request_with_vault_and_cancellation(
     prepare_graphql_request(&mut resolved)?;
     let redactor = Redactor::for_request(&resolved, environment_secrets);
     let mut executed = execute_request(resolved, &redactor, cancellation, request_token).await?;
-    if !executed.response.headers_truncated
-        && response_headers.store_if_current(&response_id, executed.raw_headers)?
-    {
+    let raw_headers = if executed.response.headers_truncated {
+        // A truncated header capture is never retained for an out-of-band IPC
+        // caller. Binary retention is independent and remains bounded/current-ID only.
+        Vec::new()
+    } else {
+        std::mem::take(&mut executed.raw_headers)
+    };
+    let raw_binary = std::mem::take(&mut executed.raw_binary);
+    let stored =
+        response_headers.store_if_current_with_body(&response_id, raw_headers, raw_binary)?;
+    if stored {
         executed.response.response_id = Some(response_id);
-        executed.response.raw_headers_available = true;
+        executed.response.raw_headers_available = !executed.response.headers_truncated;
+        if let Some(binary) = executed.response.binary.as_mut() {
+            binary.save_available = true;
+        }
     }
     Ok(executed.response)
 }
@@ -468,6 +545,75 @@ pub fn copy_raw_response_cookies(
     response_id: String,
 ) -> Result<String, String> {
     response_headers.copy(&response_id, true)
+}
+
+/// 확인된 현재 binary 응답을 native save dialog에서 선택한 위치에 한 번 저장한다.
+#[tauri::command]
+pub async fn save_response_binary(
+    app: tauri::AppHandle,
+    response_headers: tauri::State<'_, ResponseHeaderVault>,
+    response_id: String,
+) -> Result<bool, String> {
+    validate_response_id(&response_id)?;
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_file_name("api-response.bin")
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|_| BINARY_SAVE_ERROR.to_string())?;
+    let Some(path) = selected else {
+        return Ok(false);
+    };
+    let path = path
+        .into_path()
+        .map_err(|_| BINARY_SAVE_ERROR.to_string())?;
+    validate_response_save_path(&path)?;
+    // Re-read only after the user finishes the dialog. A new request may have
+    // invalidated the old response while the picker was open.
+    let payload = response_headers.binary_payload(&response_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        devbox_filesystem::atomic_write(path, payload.as_slice())
+    })
+    .await
+    .map_err(|_| BINARY_SAVE_ERROR.to_string())?
+    .map_err(|_| BINARY_SAVE_ERROR.to_string())?;
+    Ok(true)
+}
+
+fn validate_response_id(value: &str) -> Result<(), String> {
+    if value.len() > 64
+        || !value.strip_prefix("response-").is_some_and(|number| {
+            !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    {
+        return Err(BINARY_SAVE_ERROR.to_string());
+    }
+    Ok(())
+}
+
+fn validate_response_save_path(path: &Path) -> Result<(), String> {
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return Err(BINARY_SAVE_ERROR.to_string());
+    };
+    if file_name.is_empty()
+        || file_name.len() > 255
+        || file_name
+            .chars()
+            .any(|character| character.is_control() || matches!(character, '\u{2028}' | '\u{2029}'))
+        || path
+            .parent()
+            .is_none_or(|parent| !super::transfer::has_safe_directory_chain(parent))
+    {
+        return Err(BINARY_SAVE_ERROR.to_string());
+    }
+    if std::fs::symlink_metadata(path).is_ok()
+        && devbox_filesystem::filesystem_identity(path, false).is_err()
+    {
+        return Err(BINARY_SAVE_ERROR.to_string());
+    }
+    Ok(())
 }
 
 /// 사용자가 확인한 일회성 원문 복사에만 사용한다. 호출자는 결과를 저장해서는 안 된다.
@@ -651,29 +797,44 @@ async fn execute_request(
         }
 
         let captured_headers = capture_response_headers(response.headers(), redactor);
-        let body = read_response_body(
+        let media_type = response_media_type(response.headers(), redactor);
+        let body_bytes = read_response_body(
             response,
             if req.body_kind == "graphql" {
                 MAX_GRAPHQL_RESPONSE_BODY_BYTES
             } else {
-                usize::MAX
+                MAX_RESPONSE_BODY_BYTES
             },
             cancellation,
             request_token,
         )
         .await?;
-        let body = redactor.redact_body(&body);
-        let graphql = (req.body_kind == "graphql").then(|| parse_graphql_response(&body));
-        let is_json = captured_headers.masked.iter().any(|header| {
-            header.key.eq_ignore_ascii_case("content-type") && header.value.contains("json")
-        });
+        let body_size = body_bytes.len();
+        let is_json = media_type.contains("json");
+        let binary = is_binary_response(&media_type, &body_bytes);
+        let (body, binary_projection, raw_binary) = if binary {
+            (
+                String::new(),
+                Some(project_binary_response(&media_type, &body_bytes, redactor)),
+                Some(body_bytes),
+            )
+        } else {
+            let raw_text = Zeroizing::new(
+                String::from_utf8(body_bytes.to_vec())
+                    .map_err(|_| "응답 본문을 안전하게 읽지 못했습니다".to_string())?,
+            );
+            let body = redactor.redact_body(raw_text.as_str());
+            (body, None, None)
+        };
+        let graphql =
+            (req.body_kind == "graphql" && !binary).then(|| parse_graphql_response(&body));
         return Ok(ExecutedResponse {
             response: ApiResponse {
                 status: status.as_u16(),
                 status_text: status.canonical_reason().unwrap_or("").to_string(),
                 headers: captured_headers.masked,
                 duration_ms: started.elapsed().as_millis() as u64,
-                size_bytes: body.len(),
+                size_bytes: body_size,
                 body,
                 is_json,
                 final_url: redactor.redact_url(current_url.as_str()),
@@ -682,9 +843,11 @@ async fn execute_request(
                 response_id: None,
                 raw_headers_available: false,
                 headers_truncated: captured_headers.truncated,
+                binary: binary_projection,
                 graphql,
             },
             raw_headers: captured_headers.raw,
+            raw_binary,
         });
     }
 
@@ -716,8 +879,8 @@ async fn read_response_body(
     max_bytes: usize,
     cancellation: &RequestCancellation,
     request_token: u64,
-) -> Result<String, String> {
-    let mut bytes = Vec::new();
+) -> Result<Zeroizing<Vec<u8>>, String> {
+    let mut bytes = Zeroizing::new(Vec::new());
     loop {
         let chunk = tokio::select! {
             chunk = response.chunk() => {
@@ -733,7 +896,128 @@ async fn read_response_body(
         }
         bytes.extend_from_slice(&chunk);
     }
-    String::from_utf8(bytes).map_err(|_| "응답 본문을 안전하게 읽지 못했습니다".to_string())
+    Ok(bytes)
+}
+
+fn response_media_type(headers: &reqwest::header::HeaderMap, redactor: &Redactor) -> String {
+    let Some(value) = headers.get(reqwest::header::CONTENT_TYPE) else {
+        return String::new();
+    };
+    let Ok(value) = value.to_str() else {
+        return String::new();
+    };
+    let value = value
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .chars()
+        .take(MAX_RESPONSE_MEDIA_TYPE_BYTES)
+        .collect::<String>();
+    let value = redactor.redact_text(&value).to_ascii_lowercase();
+    if value.is_empty() || is_sensitive_name(&value) || !is_valid_content_type(&value) {
+        String::new()
+    } else {
+        value
+    }
+}
+
+fn is_textual_media_type(media_type: &str) -> bool {
+    if media_type.starts_with("text/") {
+        return true;
+    }
+    let subtype = media_type.split_once('/').map(|(_, subtype)| subtype);
+    subtype.is_some_and(|subtype| {
+        matches!(
+            subtype,
+            "json"
+                | "xml"
+                | "javascript"
+                | "x-javascript"
+                | "yaml"
+                | "x-yaml"
+                | "graphql"
+                | "csv"
+                | "x-www-form-urlencoded"
+        ) || subtype.ends_with("+json")
+            || subtype.ends_with("+xml")
+    })
+}
+
+fn is_binary_response(media_type: &str, bytes: &[u8]) -> bool {
+    if is_textual_media_type(media_type) {
+        return std::str::from_utf8(bytes).is_err() || has_binary_markers(bytes);
+    }
+    if !media_type.is_empty() {
+        return true;
+    }
+    if std::str::from_utf8(bytes).is_err() {
+        return true;
+    }
+    has_binary_markers(bytes)
+}
+
+fn has_binary_markers(bytes: &[u8]) -> bool {
+    if bytes.contains(&0) {
+        return true;
+    }
+    let controls = bytes
+        .iter()
+        .filter(|byte| **byte < 9 || (**byte > 13 && **byte < 32))
+        .count();
+    controls > bytes.len().max(2) / 20
+}
+
+fn project_binary_response(media_type: &str, bytes: &[u8], redactor: &Redactor) -> BinaryResponse {
+    let contains_secret = redactor.contains_binary_secret(bytes);
+    let (text_preview, text_truncated) = std::str::from_utf8(bytes)
+        .ok()
+        .map(|text| {
+            let safe = redactor.redact_text(text);
+            truncate_utf8(&safe, MAX_BINARY_TEXT_PREVIEW_BYTES)
+        })
+        .map_or((None, false), |(text, truncated)| (Some(text), truncated));
+    let shown = bytes.len().min(MAX_BINARY_PREVIEW_BYTES);
+    BinaryResponse {
+        media_type: if media_type.is_empty() {
+            "application/octet-stream".to_string()
+        } else {
+            media_type.to_string()
+        },
+        size_bytes: bytes.len(),
+        hex_preview: if contains_secret {
+            REDACTED.to_string()
+        } else {
+            format_binary_hex(&bytes[..shown], bytes.len() > shown)
+        },
+        text_preview,
+        hex_truncated: bytes.len() > shown,
+        text_truncated,
+        save_available: true,
+    }
+}
+
+fn truncate_utf8(value: &str, max_bytes: usize) -> (String, bool) {
+    if value.len() <= max_bytes {
+        return (value.to_string(), false);
+    }
+    let mut end = max_bytes;
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    (format!("{}…", &value[..end]), true)
+}
+
+fn format_binary_hex(bytes: &[u8], truncated: bool) -> String {
+    let mut output = String::with_capacity(bytes.len().saturating_mul(2) + 1);
+    for byte in bytes {
+        use std::fmt::Write;
+        let _ = write!(output, "{byte:02x}");
+    }
+    if truncated {
+        output.push('…');
+    }
+    output
 }
 
 async fn wait_for_cancellation(cancellation: &RequestCancellation, request_token: u64) {
@@ -1340,7 +1624,13 @@ fn sanitize_persisted_json_with_sealer(
     sealer: &dyn devbox_secrets::Sealer,
 ) -> Result<String, ()> {
     let mut secrets = Vec::new();
-    for variable in environment.iter().filter(|variable| variable.secret) {
+    // Imported environment bundles retain only secret references. An empty
+    // placeholder is intentionally not unsealed (and cannot be used for a
+    // request) but must not prevent an unrelated Collection save.
+    for variable in environment
+        .iter()
+        .filter(|variable| variable.secret && !variable.value.is_empty())
+    {
         secrets.push(unseal_environment_value(variable, sealer)?);
     }
     secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
@@ -2785,6 +3075,133 @@ mod tests {
         vault.inner.lock().unwrap().next_id = u64::MAX;
         assert!(vault.begin_request().is_err());
         assert!(vault.copy(&retained, false).is_err());
+    }
+
+    #[test]
+    fn binary_response_projection_is_bounded_and_masks_request_secrets() {
+        let redactor = Redactor {
+            secrets: vec![Zeroizing::new("binary-secret".to_string())],
+            mask_graphql_query: false,
+        };
+        let payload = format!(
+            "prefix-binary-secret-{}",
+            "x".repeat(MAX_BINARY_PREVIEW_BYTES)
+        );
+        let projection =
+            project_binary_response("application/octet-stream", payload.as_bytes(), &redactor);
+        assert_eq!(projection.media_type, "application/octet-stream");
+        assert_eq!(projection.size_bytes, payload.len());
+        assert_eq!(projection.hex_preview, REDACTED);
+        assert!(projection.text_preview.unwrap().contains(REDACTED));
+        assert!(projection.hex_truncated);
+        assert!(projection.text_truncated);
+        assert!(projection.save_available);
+
+        let invalid = project_binary_response("image/png", &[0, 0xff, 0x10], &redactor);
+        assert_eq!(invalid.text_preview, None);
+        assert_eq!(invalid.hex_preview, "00ff10");
+    }
+
+    #[test]
+    fn binary_response_classification_uses_media_type_and_utf8_safely() {
+        assert!(is_binary_response("application/octet-stream", b"plain"));
+        assert!(!is_binary_response("text/plain", b"plain"));
+        assert!(!is_binary_response("application/problem+json", b"{}"));
+        assert!(is_binary_response("application/notjsonpayload", b"plain"));
+        assert!(is_binary_response("text/plain", &[0xff, 0xfe]));
+        assert!(is_binary_response("text/plain", &[0, 1, 2]));
+        assert!(is_binary_response("", &[0, 1, 2]));
+    }
+
+    #[test]
+    fn native_binary_loopback_projects_masked_metadata_and_retains_only_current_raw_bytes() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let payload = b"prefix-binary-secret-\0\xff".to_vec();
+        let expected = payload.clone();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = read_http_request(&mut stream);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                payload.len()
+            )
+            .unwrap();
+            std::io::Write::write_all(&mut stream, &payload).unwrap();
+        });
+
+        let mut request = template();
+        request.method = "GET".into();
+        request.url = format!("http://127.0.0.1:{port}/binary");
+        request.body_kind = "none".into();
+        request.body.clear();
+        request.auth = Some(AuthConfig {
+            kind: "bearer".into(),
+            token: "binary-secret".into(),
+            ..Default::default()
+        });
+        let vault = ResponseHeaderVault::default();
+        let response =
+            tauri::async_runtime::block_on(send_request_with_vault(request, vec![], &vault))
+                .unwrap();
+        let binary = response.binary.as_ref().unwrap();
+        assert_eq!(response.body, "");
+        assert_eq!(binary.media_type, "application/octet-stream");
+        assert_eq!(binary.hex_preview, REDACTED);
+        assert!(binary.text_preview.as_deref().is_none());
+        let response_id = response.response_id.as_deref().unwrap();
+        assert_eq!(
+            vault.binary_payload(response_id).unwrap().as_slice(),
+            expected
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn native_binary_stream_stops_at_the_configured_bound() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = read_http_request(&mut stream);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: 5\r\nConnection: close\r\n\r\n12345"
+            )
+            .unwrap();
+        });
+        let response = tauri::async_runtime::block_on(reqwest::get(format!(
+            "http://127.0.0.1:{port}/overflow"
+        )))
+        .unwrap();
+        let cancellation = RequestCancellation::default();
+        let token = cancellation.begin("binary-overflow").unwrap();
+        let error =
+            tauri::async_runtime::block_on(read_response_body(response, 4, &cancellation, token))
+                .unwrap_err();
+        assert_eq!(error, "응답 본문이 허용된 크기를 초과했습니다");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn response_vault_retains_binary_only_for_current_response_id() {
+        let vault = ResponseHeaderVault::default();
+        let stale = vault.begin_request().unwrap();
+        let current = vault.begin_request().unwrap();
+        assert!(!vault
+            .store_if_current_with_body(&stale, Vec::new(), Some(Zeroizing::new(vec![1, 2, 3])),)
+            .unwrap());
+        assert!(vault.binary_payload(&stale).is_err());
+        assert!(vault
+            .store_if_current_with_body(&current, Vec::new(), Some(Zeroizing::new(vec![1, 2, 3])),)
+            .unwrap());
+        assert_eq!(
+            vault.binary_payload(&current).unwrap().as_slice(),
+            &[1, 2, 3]
+        );
+        vault.clear_current().unwrap();
+        assert!(vault.binary_payload(&current).is_err());
     }
 
     #[test]

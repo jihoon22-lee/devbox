@@ -6,6 +6,7 @@ import type { ApiResponse } from "./types";
 const writeTextMock = vi.fn<(text: string) => Promise<void>>();
 const confirmMock = vi.fn<(message?: string) => boolean>();
 const rawCopyMock = vi.fn<(kind: "headers" | "cookies", responseId: string) => Promise<string>>();
+const binarySaveMock = vi.fn<(responseId: string) => Promise<boolean>>();
 const errorMock = vi.fn<(message: string) => void>();
 
 function response(overrides: Partial<ApiResponse> = {}): ApiResponse {
@@ -45,6 +46,7 @@ function renderViewer(value = response()) {
       pretty
       onPrettyChange={vi.fn()}
       onRawCopy={rawCopyMock}
+      onBinarySave={binarySaveMock}
       onError={errorMock}
     />,
   );
@@ -54,6 +56,7 @@ beforeEach(() => {
   writeTextMock.mockReset().mockResolvedValue(undefined);
   confirmMock.mockReset().mockReturnValue(false);
   rawCopyMock.mockReset().mockResolvedValue("set-cookie: session=raw-secret");
+  binarySaveMock.mockReset().mockResolvedValue(true);
   errorMock.mockReset();
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -149,5 +152,46 @@ describe("ResponseViewer", () => {
     expect(screen.getByText("GraphQL envelope: valid")).toBeTruthy();
     expect(screen.getByRole("alert", { name: "GraphQL errors" }).textContent).toContain("field failed");
     expect(screen.getByText("GraphQL data")).toBeTruthy();
+  });
+
+  it("shows bounded binary type/size/hex previews and saves only after an explicit action", async () => {
+    renderViewer(response({
+      body: "",
+      is_json: false,
+      binary: {
+        media_type: "application/octet-stream",
+        size_bytes: 4,
+        hex_preview: "89504e47",
+        text_preview: null,
+        hex_truncated: false,
+        text_truncated: false,
+        save_available: true,
+      },
+    }));
+
+    expect(screen.getByText("application/octet-stream")).toBeTruthy();
+    expect(screen.getByText(/4 bytes/u)).toBeTruthy();
+    expect(screen.getByText("89504e47")).toBeTruthy();
+    expect(binarySaveMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save binary" }));
+    await waitFor(() => expect(binarySaveMock).toHaveBeenCalledWith("response-7"));
+  });
+
+  it("disables binary save when native retention is unavailable", () => {
+    renderViewer(response({
+      binary: {
+        media_type: "application/octet-stream",
+        size_bytes: 3,
+        hex_preview: "000102",
+        text_preview: null,
+        hex_truncated: false,
+        text_truncated: false,
+        save_available: false,
+      },
+    }));
+    const save = screen.getByRole("button", { name: "Save binary" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect(document.body.textContent).not.toContain("raw-secret");
   });
 });

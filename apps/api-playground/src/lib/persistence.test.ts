@@ -361,6 +361,49 @@ describe("request persistence sanitizer", () => {
     });
   });
 
+  it("민감한 값은 reference가 섞여 있어도 전체 값이 exact reference가 아니면 마스킹한다", () => {
+    const safe = sanitizeRequestForPersistence(request({
+      url: "https://prefix-${USER}:prefix-${PASS}@example.test/x?token=prefix-${TOKEN}&keep=${SAFE}",
+      headers: [
+        { key: "Authorization", value: "Bearer prefix-${HEADER_TOKEN}" },
+        { key: "X-Exact", value: "${EXACT}" },
+      ],
+      params: [
+        { key: "access_token", value: "prefix-${PARAM_TOKEN}" },
+        { key: "token", value: "${PARAM_REF}" },
+      ],
+      auth: {
+        kind: "basic",
+        username: "prefix-${USER}",
+        password: "${PASS}",
+        token: "prefix-${AUTH_TOKEN}",
+        api_key: "X-API-Key",
+        api_value: "prefix-${API_VALUE}",
+      },
+    }));
+
+    expect(safe.headers).toEqual([
+      { key: "Authorization", value: REDACTED, enabled: true },
+      { key: "X-Exact", value: "${EXACT}", enabled: true },
+    ]);
+    expect(safe.params).toEqual([
+      { key: "access_token", value: REDACTED },
+      { key: "token", value: "${PARAM_REF}" },
+    ]);
+    expect(safe.auth).toEqual({
+      kind: "basic",
+      username: REDACTED,
+      password: "${PASS}",
+      token: REDACTED,
+      api_key: "X-API-Key",
+      api_value: REDACTED,
+    });
+    expect(safe.url).not.toContain("prefix-${");
+    expect(decodeURIComponent(safe.url)).toContain("token=[REDACTED]");
+    expect(safe.url).toContain("keep=%24%7BSAFE%7D");
+    expect(safe.requiresSecretReview).toBe(true);
+  });
+
   it("form body의 token/password를 마스킹하고 reference와 일반 field를 보존한다", () => {
     const safe = sanitizeRequestForPersistence(
       request({

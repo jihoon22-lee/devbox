@@ -144,8 +144,8 @@ knowledge-base:   fs_store → filesystem/search crate → React(CodeMirror + co
                    └ path/body-free activity/v1 snapshot → Life Log Data Sources
                    └ applink handoff claim → draft preview → exclusive Journal note/index save → ack
                       (검증·파일·index 실패는 restore, 만료는 새 digest 재생성)
-api-playground:   React(context-menu + History/Collection v2 + GraphQL editor/response projection)
-                   → commands(secrets sanitizer + bounded cancellation)
+api-playground:   React(context-menu + History/Collection v2 + transfer/search/binary response projection)
+                   → commands(secrets sanitizer + bounded cancellation + native file dialogs)
                    → reqwest → HTTP
                    └ GraphQL GET/POST query·variables·operationName은 기존 native HTTP 경계를
                       재사용하며 persisted query/introspection/subscription은 별도 제공하지 않음
@@ -261,7 +261,25 @@ API Playground의 History·Collection context menu는 v2에 저장되고 backend
 History의 선택적 표시 이름은 기존 v2 wire shape에 하위 호환되며 이름까지 sanitizer가 검사한다.
 context action은 현재 editor의 raw request나 unsealed environment secret을 읽지 않는다. 삭제는
 확인 전 storage를 변경하지 않고, 복제는 마스킹 request를 깊은 복사한 뒤 전체 store를 다시
-sanitize/read-back 한다. Collection import/export와 앱 간 protocol은 각 후속 기능 경계에 남긴다.
+sanitize/read-back 한다.
+
+API Playground의 Collection/Environment transfer는 앱 내부에 versioned JSON 문서를 만들고 읽는
+오프라인 우선 기능이다. `devbox.api-playground.collection-export`와
+`devbox.api-playground.environment-export`의 `schema_version: 1`만 허용하며 문서 1 MiB,
+Collection 256건, Environment 64건, 환경별 변수 256건과 field byte 상한을 frontend parser와
+native file command에서 함께 적용한다. Collection request는 기존 persistence sanitizer와
+read-back을 다시 거치고, 가져오기는 기존 항목을 덮어쓰지 않고 새 opaque ID로 append한다.
+데스크톱 file picker가 선택한 regular file만 읽고 native atomic write로 내보내며, browser는 명시적
+file input/download만 사용한다. Environment secret은 DPAPI blob·평문을 export하지 않고
+`${NAME}` reference와 `secret: true`만 남긴다. 민감한 key 또는 token-shaped value를
+`secret: false`로 위조한 문서는 거부하고, 가져온 secret은 빈 placeholder로 표시되어 재입력을
+요구한다. transfer 중에는 request send/save/delete를 잠그며 parser·dialog·write 오류는 fixed
+message로 닫는다.
+
+History search/filter는 safe display name·method·정화된 URL·status만 대상으로 하며 query는
+최대 128자다. header/Cookie/auth/body와 environment secret은 검색 색인·정렬·결과 DTO에 들어가지
+않는다. filter는 기존 v2 History 순서를 보존하고 success(200–399)/error/전체 상태를 별도
+계산하므로 새로운 persistence schema나 network protocol을 만들지 않는다.
 
 API Playground response viewer의 일반 DTO는 마스킹된 headers와 값이 제거된 Cookie projection만
 포함한다. 원문 response headers는 `Serialize`/`Debug`를 구현하지 않은 app-managed vault가 현재
@@ -271,6 +289,16 @@ ID를 발급하며, 늦게 끝난 과거 요청은 current ID와
 일치하지 않아 raw entry를 저장하지 못한다. 상한 초과·비텍스트 header는 masked DTO에 안전한
 표시만 남기고 raw copy 전체를 fail-closed한다. 확인된 Headers/Set-Cookie copy command만 ID로
 원문을 조회하며 반환 문자열은 clipboard write 외 storage·history·log에 전달하지 않는다.
+
+Binary response는 response `Content-Type`과 strict UTF-8/제어문자 판별 뒤 text와 분리한 projection으로
+다룬다. ordinary response는 최대 16 MiB, GraphQL response는 최대 4 MiB만 읽고, UI에는 media
+type·size와 최대 4 KiB hex/UTF-8 preview만 보낸다. raw bytes는 current opaque response ID와
+연결된 process-memory `Zeroizing` buffer에만 남고 History·Collection·localStorage·log·event
+DTO에는 저장하지 않는다. binary secret 또는 token-shaped content가 확인되면 hex/text preview를
+redact하며, invalid UTF-8은 lossy text로 승격하지 않는다. native save는 명시적 사용자 선택,
+regular destination 검증과 atomic write를 모두 거치고 stale response ID·취소·오류는 fixed
+failure로 닫는다. browser preview는 저장하지 않고 projection만 표시한다. 이 기능은 protocol별
+streaming, arbitrary execution, 자동 download/clipboard fallback을 추가하지 않는다.
 
 Knowledge Base의 `doc_link_keys`와 `wikilinks`는 Markdown 파일이 원본인 재생성 가능 SQLite 보조
 인덱스다. 하나의 Rust parser가 앱 저장·watcher·편집 중 분석·preview를 함께 담당하며 frontmatter,

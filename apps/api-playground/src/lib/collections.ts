@@ -83,12 +83,29 @@ export async function saveStore(
   store: CollectionStore,
   sanitize: PersistenceSanitizer,
   storage: Storage = localStorage,
+  canCommit: () => boolean = () => true,
 ): Promise<CollectionStore> {
   const safe = await sanitizeStore(store, sanitize);
-  storage.setItem(COLLECTION_V2_LS_KEY, JSON.stringify(safe));
-  const readBack = parseStore(storage.getItem(COLLECTION_V2_LS_KEY));
-  if (!readBack) throw new Error("Collection 안전 저장을 확인할 수 없습니다");
-  return readBack;
+  // Sanitization may cross the native bridge and finish after a newer editor
+  // mutation. The guard is evaluated immediately before the first durable
+  // write so a stale result cannot replace the current v2 store.
+  if (!canCommit()) throw new Error("Collection 변경이 오래되어 저장하지 않았습니다");
+  const previous = storage.getItem(COLLECTION_V2_LS_KEY);
+  try {
+    storage.setItem(COLLECTION_V2_LS_KEY, JSON.stringify(safe));
+    const readBack = parseStore(storage.getItem(COLLECTION_V2_LS_KEY));
+    if (!readBack) throw new Error("Collection 안전 저장을 확인할 수 없습니다");
+    return readBack;
+  } catch (cause) {
+    try {
+      if (previous === null) storage.removeItem(COLLECTION_V2_LS_KEY);
+      else storage.setItem(COLLECTION_V2_LS_KEY, previous);
+    } catch {
+      // Preserve the original persistence failure; callers must not treat a
+      // failed rollback as a successful collection mutation.
+    }
+    throw cause;
+  }
 }
 
 export function addEntry(
