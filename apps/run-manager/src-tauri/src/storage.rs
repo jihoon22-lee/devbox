@@ -1,13 +1,14 @@
 use crate::core::models::{
     ClaimResult, EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, JobKind,
     NewNotification, NotificationOutboxItem, OverlapPolicy, RestartPolicy, Run,
-    RunExecutionMetadata, RunStatus, ServiceInput, ServiceInstance, ServiceInstanceState,
-    TargetKind, DEFAULT_SERVICE_START_GRACE_MS,
+    RunExecutionMetadata, RunHistoryFilter, RunStatus, ServiceInput, ServiceInstance,
+    ServiceInstanceState, TargetKind, DEFAULT_SERVICE_START_GRACE_MS,
 };
 use crate::core::policies::{
     decide_overlap, OverlapAction, OverlapPolicyInput, RunPolicySnapshot, StopAction,
 };
 use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, TransactionBehavior};
+use std::collections::HashSet;
 use std::fmt;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
@@ -243,13 +244,32 @@ impl DatabaseState {
         env_ciphertext: Option<Vec<u8>>,
         now: i64,
     ) -> Result<Job, StorageError> {
+        self.create_job_with_id_and_ciphertext_at(
+            Uuid::new_v4().to_string(),
+            input,
+            env_ciphertext,
+            now,
+        )
+    }
+
+    /// Insert an imported definition with its validated source ID.  Normal
+    /// UI creation still uses the UUID-generating method above; preserving a
+    /// definition ID makes preview conflict detection idempotent across a
+    /// repeated import without changing execution semantics.
+    pub(crate) fn create_job_with_id_and_ciphertext_at(
+        &self,
+        id: String,
+        input: JobInput,
+        env_ciphertext: Option<Vec<u8>>,
+        now: i64,
+    ) -> Result<Job, StorageError> {
+        validate_token("job id", &id)?;
         ensure_encrypted_input(&input)?;
         input
             .validate()
             .map_err(|error| StorageError::Validation(error.to_string()))?;
         let mut connection = self.lock_mut()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let id = Uuid::new_v4().to_string();
         let checkpoint = input.enabled.then_some(now);
         transaction.execute(
             "INSERT INTO jobs (
@@ -278,6 +298,234 @@ impl DatabaseState {
             .ok_or_else(|| StorageError::NotFound(format!("newly created job {id}")))?;
         transaction.commit()?;
         Ok(job)
+    }
+
+    /// Insert a project-import batch atomically while allowing the command
+    /// layer to abort before each row and before commit. Project imports are
+    /// always disabled drafts with no environment ciphertext, so duplicate
+    /// checks happen in this transaction instead of relying on a stale UI
+    /// preview. The `(kind, name, cwd)` check also catches duplicate items
+    /// within one source plan without adding a global uniqueness constraint to
+    /// user definitions. Any cancellation error drops the transaction, so a
+    /// late UI cancellation cannot leave a partially imported batch behind.
+    pub(crate) fn create_import_jobs_at_with_cancel<F>(
+        &self,
+        inputs: Vec<JobInput>,
+        now: i64,
+        mut check_cancelled: F,
+    ) -> Result<(u32, u32), StorageError>
+    where
+        F: FnMut() -> Result<(), StorageError>,
+    {
+        for input in &inputs {
+            ensure_encrypted_input(input)?;
+            if input.enabled {
+                return Err(StorageError::Validation(
+                    "project imports must be disabled drafts".to_string(),
+                ));
+            }
+            input
+                .validate()
+                .map_err(|error| StorageError::Validation(error.to_string()))?;
+        }
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut created = 0u32;
+        let mut skipped_conflicts = 0u32;
+        for input in inputs {
+            check_cancelled()?;
+            if import_definition_conflict(
+                &transaction,
+                JobKind::Job,
+                &input.name,
+                input.cwd.as_deref(),
+            )? {
+                skipped_conflicts = skipped_conflicts.saturating_add(1);
+                continue;
+            }
+
+            let id = Uuid::new_v4().to_string();
+            transaction.execute(
+                "INSERT INTO jobs (
+                    id, kind, name, command, cwd, target_kind, target_distro,
+                    env_ciphertext, cron_expr, enabled, overlap_policy, catch_up,
+                    last_evaluated_at, next_queue_sequence, created_at, updated_at
+                 ) VALUES (?, 'job', ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 0, ?, ?)",
+                params![
+                    id,
+                    input.name,
+                    input.command,
+                    input.cwd,
+                    input.target_kind.as_str(),
+                    input.target_distro,
+                    input.cron_expr,
+                    bool_to_sql(input.enabled),
+                    input.overlap_policy.as_str(),
+                    bool_to_sql(input.catch_up),
+                    Option::<i64>::None,
+                    now,
+                    now,
+                ],
+            )?;
+            created = created.saturating_add(1);
+        }
+        check_cancelled()?;
+        transaction.commit()?;
+        Ok((created, skipped_conflicts))
+    }
+
+    /// Check one definition's identity without materializing the whole
+    /// definition table. Import previews are bounded by item count, so callers
+    /// can perform at most one bounded name/cwd lookup per preview item.
+    pub(crate) fn has_import_definition_conflict(
+        &self,
+        kind: JobKind,
+        name: &str,
+        cwd: Option<&str>,
+    ) -> Result<bool, StorageError> {
+        let connection = self.lock()?;
+        let mut statement =
+            connection.prepare("SELECT cwd FROM jobs WHERE kind = ? AND name = ?")?;
+        let mut rows = statement.query(params![kind.as_str(), name])?;
+        while let Some(row) = rows.next()? {
+            let existing: Option<String> = row.get(0)?;
+            if import_cwd_matches(existing.as_deref(), cwd) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Check an imported definition ID through a single indexed existence
+    /// query instead of loading every existing definition into memory.
+    pub(crate) fn has_import_definition_id(&self, id: &str) -> Result<bool, StorageError> {
+        let connection = self.lock()?;
+        Ok(connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM jobs WHERE id = ?)",
+            [id],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Insert an explicit definition-import selection as one atomic batch.
+    /// Existing IDs are skipped inside the transaction, so a concurrent import
+    /// cannot turn a successful preview into a partial save. Imported rows are
+    /// always disabled/non-auto-start drafts and never carry environment
+    /// ciphertext. Any validation or SQLite failure drops the entire batch.
+    pub(crate) fn create_definition_import_at(
+        &self,
+        jobs: Vec<(String, JobInput)>,
+        services: Vec<(String, ServiceInput)>,
+        now: i64,
+    ) -> Result<(usize, usize), StorageError> {
+        let total = jobs.len().saturating_add(services.len());
+        let mut ids = HashSet::with_capacity(total);
+        for (id, input) in &jobs {
+            validate_token("job id", id)?;
+            if !ids.insert(id) {
+                return Err(StorageError::Validation(
+                    "duplicate definition import id".to_string(),
+                ));
+            }
+            ensure_encrypted_input(input)?;
+            if input.enabled {
+                return Err(StorageError::Validation(
+                    "definition imports must be disabled drafts".to_string(),
+                ));
+            }
+            input
+                .validate()
+                .map_err(|error| StorageError::Validation(error.to_string()))?;
+        }
+        for (id, input) in &services {
+            validate_token("service id", id)?;
+            if !ids.insert(id) {
+                return Err(StorageError::Validation(
+                    "duplicate definition import id".to_string(),
+                ));
+            }
+            ensure_encrypted_service_input(input)?;
+            if input.auto_start {
+                return Err(StorageError::Validation(
+                    "definition imports must not auto-start services".to_string(),
+                ));
+            }
+            input
+                .validate()
+                .map_err(|error| StorageError::Validation(error.to_string()))?;
+        }
+
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut created = 0usize;
+        let mut skipped = 0usize;
+
+        for (id, input) in jobs {
+            if definition_id_conflict(&transaction, &id)? {
+                skipped = skipped.saturating_add(1);
+                continue;
+            }
+            transaction.execute(
+                "INSERT INTO jobs (
+                    id, kind, name, command, cwd, target_kind, target_distro,
+                    env_ciphertext, cron_expr, enabled, overlap_policy, catch_up,
+                    last_evaluated_at, next_queue_sequence, created_at, updated_at
+                 ) VALUES (?, 'job', ?, ?, ?, ?, ?, NULL, ?, 0, ?, ?, NULL, 0, ?, ?)",
+                params![
+                    id,
+                    input.name,
+                    input.command,
+                    input.cwd,
+                    input.target_kind.as_str(),
+                    input.target_distro,
+                    input.cron_expr,
+                    input.overlap_policy.as_str(),
+                    bool_to_sql(input.catch_up),
+                    now,
+                    now,
+                ],
+            )?;
+            created = created.saturating_add(1);
+        }
+
+        for (id, input) in services {
+            if definition_id_conflict(&transaction, &id)? {
+                skipped = skipped.saturating_add(1);
+                continue;
+            }
+            transaction.execute(
+                "INSERT INTO jobs (
+                    id, kind, name, command, cwd, target_kind, target_distro,
+                    env_ciphertext, cron_expr, enabled, overlap_policy, catch_up,
+                    last_evaluated_at, next_queue_sequence, restart_policy, auto_start,
+                    health_tcp_address, health_tcp_port, health_start_grace_ms,
+                    created_at, updated_at
+                 ) VALUES (?, 'service', ?, ?, ?, ?, ?, NULL, NULL, 0, 'skip', 0,
+                           NULL, 0, ?, 0, ?, ?, ?, ?, ?)",
+                params![
+                    id,
+                    input.name,
+                    input.command,
+                    input.cwd,
+                    input.target_kind.as_str(),
+                    input.target_distro,
+                    input.restart_policy.as_str(),
+                    input.health_tcp_address,
+                    input.health_tcp_port,
+                    DEFAULT_SERVICE_START_GRACE_MS,
+                    now,
+                    now,
+                ],
+            )?;
+            transaction.execute(
+                "INSERT INTO service_instances (job_id, updated_at) VALUES (?, ?)",
+                params![id, now],
+            )?;
+            created = created.saturating_add(1);
+        }
+
+        transaction.commit()?;
+        Ok((created, skipped))
     }
 
     pub fn get_job(&self, id: &str) -> Result<Option<Job>, StorageError> {
@@ -333,13 +581,28 @@ impl DatabaseState {
         environment: EnvironmentCiphertextUpdate,
         now: i64,
     ) -> Result<Job, StorageError> {
+        self.create_service_with_id_and_ciphertext_at(
+            Uuid::new_v4().to_string(),
+            input,
+            environment,
+            now,
+        )
+    }
+
+    pub(crate) fn create_service_with_id_and_ciphertext_at(
+        &self,
+        id: String,
+        input: ServiceInput,
+        environment: EnvironmentCiphertextUpdate,
+        now: i64,
+    ) -> Result<Job, StorageError> {
+        validate_token("service id", &id)?;
         ensure_encrypted_service_input(&input)?;
         input
             .validate()
             .map_err(|error| StorageError::Validation(error.to_string()))?;
         let mut connection = self.lock_mut()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let id = Uuid::new_v4().to_string();
         let env_ciphertext = match environment {
             EnvironmentCiphertextUpdate::Keep | EnvironmentCiphertextUpdate::Clear => None,
             EnvironmentCiphertextUpdate::Replace(ciphertext) => Some(ciphertext),
@@ -1491,17 +1754,69 @@ impl DatabaseState {
         start_at: Option<i64>,
         end_at: Option<i64>,
     ) -> Result<Vec<Run>, StorageError> {
+        self.list_run_history(
+            &RunHistoryFilter {
+                job_id: Some(job_id.to_owned()),
+                start_at,
+                end_at,
+                limit: Some(limit),
+                ..RunHistoryFilter::default()
+            },
+            current_epoch_millis(),
+        )
+    }
+
+    /// Query job and service runs through one bounded, parameterized history
+    /// contract.  `now` is supplied by the command/scheduler so a duration
+    /// filter on an active row is deterministic in tests and never evaluates
+    /// host state or executes an imported command.
+    pub fn list_run_history(
+        &self,
+        filter: &RunHistoryFilter,
+        now: i64,
+    ) -> Result<Vec<Run>, StorageError> {
+        filter
+            .validate()
+            .map_err(|error| StorageError::Validation(error.to_string()))?;
         let connection = self.lock()?;
-        let limit = i64::from(limit.clamp(1, 500));
+        let limit = i64::from(
+            filter
+                .limit
+                .unwrap_or(50)
+                .clamp(1, RunHistoryFilter::MAX_LIMIT),
+        );
+        let kind = filter.kind.map(|kind| kind.as_str());
+        let status = filter.status.map(|status| status.as_str());
         let mut statement = connection.prepare(&format!(
-            "SELECT {RUN_COLUMNS} FROM runs
-             WHERE job_id = ?1
-               AND (?2 IS NULL OR COALESCE(started_at, created_at) >= ?2)
-               AND (?3 IS NULL OR COALESCE(started_at, created_at) < ?3)
-             ORDER BY COALESCE(started_at, created_at) DESC, queue_sequence DESC, id DESC
-             LIMIT ?4"
+            "SELECT {RUN_COLUMNS_QUALIFIED} FROM runs
+             JOIN jobs ON jobs.id = runs.job_id
+             WHERE (?1 IS NULL OR runs.job_id = ?1)
+               AND (?2 IS NULL OR jobs.kind = ?2)
+               AND (?3 IS NULL OR runs.status = ?3)
+               AND (?4 IS NULL OR COALESCE(runs.started_at, runs.created_at) >= ?4)
+               AND (?5 IS NULL OR COALESCE(runs.started_at, runs.created_at) < ?5)
+               AND (?6 IS NULL OR (runs.started_at IS NOT NULL
+                    AND MAX(0, COALESCE(runs.ended_at, ?9) - runs.started_at) >= ?6))
+               AND (?7 IS NULL OR (runs.started_at IS NOT NULL
+                    AND MAX(0, COALESCE(runs.ended_at, ?9) - runs.started_at) <= ?7))
+             ORDER BY COALESCE(runs.started_at, runs.created_at) DESC,
+                      runs.queue_sequence DESC, runs.id DESC
+             LIMIT ?8"
         ))?;
-        let rows = statement.query_map(params![job_id, start_at, end_at, limit], row_to_run)?;
+        let rows = statement.query_map(
+            params![
+                filter.job_id.as_deref(),
+                kind,
+                status,
+                filter.start_at,
+                filter.end_at,
+                filter.min_duration_ms,
+                filter.max_duration_ms,
+                limit,
+                now,
+            ],
+            row_to_run,
+        )?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(StorageError::from)
     }
@@ -1792,6 +2107,51 @@ fn ensure_encrypted_service_input(input: &ServiceInput) -> Result<(), StorageErr
     }
 }
 
+fn definition_id_conflict(
+    transaction: &Transaction<'_>,
+    id: &str,
+) -> Result<bool, rusqlite::Error> {
+    transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM jobs WHERE id = ?)",
+        [id],
+        |row| row.get(0),
+    )
+}
+
+/// Compare working directories using the same normalized identity contract as
+/// the command-layer preview. A malformed legacy path falls back to an exact
+/// comparison instead of silently broadening the conflict match.
+fn import_cwd_matches(existing: Option<&str>, imported: Option<&str>) -> bool {
+    match (existing, imported) {
+        (None, None) => true,
+        (Some(existing), Some(imported)) => match (
+            devbox_filesystem::parse_safe_project_path(existing),
+            devbox_filesystem::parse_safe_project_path(imported),
+        ) {
+            (Some(existing), Some(imported)) => existing.identity() == imported.identity(),
+            _ => existing == imported,
+        },
+        _ => false,
+    }
+}
+
+fn import_definition_conflict(
+    transaction: &Transaction<'_>,
+    kind: JobKind,
+    name: &str,
+    cwd: Option<&str>,
+) -> Result<bool, rusqlite::Error> {
+    let mut statement = transaction.prepare("SELECT cwd FROM jobs WHERE kind = ? AND name = ?")?;
+    let mut rows = statement.query(params![kind.as_str(), name])?;
+    while let Some(row) = rows.next()? {
+        let existing: Option<String> = row.get(0)?;
+        if import_cwd_matches(existing.as_deref(), cwd) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn ensure_job(transaction: &Transaction<'_>, id: &str) -> Result<Job, StorageError> {
     let job =
         fetch_job(transaction, id)?.ok_or_else(|| StorageError::NotFound(format!("job {id}")))?;
@@ -1888,6 +2248,13 @@ const RUN_COLUMNS: &str = "id, job_id, scheduled_at, occurrence_wall_key, queue_
     blocked_by_run_id, started_at, ended_at, exit_code, status, owner_instance_id,
     attempt_token, error_message, target_pid, target_process_created_at, target_pgid,
     target_sid, process_marker, log_dir, logs_deleted_at, created_at";
+
+const RUN_COLUMNS_QUALIFIED: &str = "runs.id, runs.job_id, runs.scheduled_at,
+    runs.occurrence_wall_key, runs.queue_sequence, runs.blocked_by_run_id,
+    runs.started_at, runs.ended_at, runs.exit_code, runs.status,
+    runs.owner_instance_id, runs.attempt_token, runs.error_message, runs.target_pid,
+    runs.target_process_created_at, runs.target_pgid, runs.target_sid,
+    runs.process_marker, runs.log_dir, runs.logs_deleted_at, runs.created_at";
 
 const NOTIFICATION_COLUMNS: &str = "id, kind, job_id, run_id, error_code,
     idempotency_key, created_at, delivered_at";
@@ -2619,6 +2986,259 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn history_filter_combines_kind_status_date_and_duration_without_logs() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let job = database.create_job_at(input(true), 100).unwrap();
+        let service = database.create_service_at(service_input(), 100).unwrap();
+
+        let succeeded = database.create_manual_run_at(&job.id, 1_000).unwrap();
+        assert!(database
+            .claim_run_starting(&succeeded.id, "owner-job-1", "attempt-job-1")
+            .unwrap());
+        assert!(database
+            .mark_run_running(&succeeded.id, "owner-job-1", "attempt-job-1", 1_100)
+            .unwrap());
+        assert!(database
+            .finish_run(
+                &succeeded.id,
+                "owner-job-1",
+                "attempt-job-1",
+                RunStatus::Succeeded,
+                Some(0),
+                None,
+                1_600,
+            )
+            .unwrap());
+
+        let failed = database.create_manual_run_at(&job.id, 2_000).unwrap();
+        assert!(database
+            .claim_run_starting(&failed.id, "owner-job-2", "attempt-job-2")
+            .unwrap());
+        assert!(database
+            .mark_run_running(&failed.id, "owner-job-2", "attempt-job-2", 2_100)
+            .unwrap());
+        assert!(database
+            .finish_run(
+                &failed.id,
+                "owner-job-2",
+                "attempt-job-2",
+                RunStatus::Failed,
+                None,
+                Some("nonzero-exit"),
+                3_100,
+            )
+            .unwrap());
+
+        let cancelled = database.create_service_run_at(&service.id, 2_500).unwrap();
+        assert!(database
+            .claim_run_starting(&cancelled.id, "owner-service", "attempt-service")
+            .unwrap());
+        assert!(database
+            .mark_run_running(&cancelled.id, "owner-service", "attempt-service", 2_600)
+            .unwrap());
+        assert!(database
+            .finish_run(
+                &cancelled.id,
+                "owner-service",
+                "attempt-service",
+                RunStatus::Cancelled,
+                None,
+                None,
+                2_900,
+            )
+            .unwrap());
+
+        let failed_only = database
+            .list_run_history(
+                &RunHistoryFilter {
+                    status: Some(RunStatus::Failed),
+                    kind: Some(JobKind::Job),
+                    start_at: Some(2_000),
+                    end_at: Some(4_000),
+                    min_duration_ms: Some(900),
+                    max_duration_ms: Some(1_100),
+                    limit: Some(10),
+                    ..RunHistoryFilter::default()
+                },
+                4_000,
+            )
+            .unwrap();
+        assert_eq!(
+            failed_only.iter().map(|run| &run.id).collect::<Vec<_>>(),
+            vec![&failed.id]
+        );
+
+        let service_only = database
+            .list_run_history(
+                &RunHistoryFilter {
+                    kind: Some(JobKind::Service),
+                    ..RunHistoryFilter::default()
+                },
+                4_000,
+            )
+            .unwrap();
+        assert_eq!(service_only.len(), 1);
+        assert_eq!(service_only[0].id, cancelled.id);
+
+        let all = database
+            .list_run_history(
+                &RunHistoryFilter {
+                    limit: Some(10),
+                    ..RunHistoryFilter::default()
+                },
+                4_000,
+            )
+            .unwrap();
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0].id, cancelled.id);
+        assert_eq!(all[1].id, failed.id);
+        assert_eq!(all[2].id, succeeded.id);
+    }
+
+    #[test]
+    fn project_import_batch_is_atomic_and_skips_duplicates_inside_transaction() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let mut first = input(false);
+        first.name = "imported".to_owned();
+        let mut duplicate = first.clone();
+        duplicate.command = "cargo run --bin worker".to_owned();
+
+        let result = database
+            .create_import_jobs_at_with_cancel(vec![first, duplicate], 100, || Ok(()))
+            .unwrap();
+        assert_eq!(result, (1, 1));
+        let jobs = database.list_jobs().unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert!(!jobs[0].enabled);
+        assert!(!jobs[0].env_configured);
+
+        let mut invalid = input(false);
+        invalid.command.push('\0');
+        assert!(matches!(
+            database.create_import_jobs_at_with_cancel(vec![invalid], 200, || Ok(())),
+            Err(StorageError::Validation(_))
+        ));
+        assert_eq!(database.list_jobs().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn project_import_cancellation_rolls_back_rows_inserted_before_abort() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let mut first = input(false);
+        first.name = "cancelled-one".to_owned();
+        let mut second = input(false);
+        second.name = "cancelled-two".to_owned();
+        let mut checks = 0;
+        let result = database.create_import_jobs_at_with_cancel(vec![first, second], 100, || {
+            checks += 1;
+            if checks >= 2 {
+                Err(StorageError::Validation(
+                    "project-import-cancelled".to_owned(),
+                ))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(matches!(
+            result,
+            Err(StorageError::Validation(code)) if code == "project-import-cancelled"
+        ));
+        assert!(database.list_jobs().unwrap().is_empty());
+    }
+
+    #[test]
+    fn project_import_conflicts_use_normalized_working_directory_identity() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let mut existing = input(false);
+        existing.name = "imported".to_owned();
+        existing.cwd = Some("C:\\Work\\Project".to_owned());
+        database.create_job_at(existing, 100).unwrap();
+
+        let mut imported = input(false);
+        imported.name = "imported".to_owned();
+        imported.cwd = Some("c:/work/project/".to_owned());
+        assert_eq!(
+            database
+                .create_import_jobs_at_with_cancel(vec![imported], 200, || Ok(()))
+                .unwrap(),
+            (0, 1)
+        );
+        assert_eq!(database.list_jobs().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn definition_import_batch_is_disabled_atomic_and_idempotent() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let job_id = "11111111-1111-4111-8111-111111111111".to_owned();
+        let service_id = "22222222-2222-4222-8222-222222222222".to_owned();
+        let service = ServiceInput {
+            name: "imported-service".to_owned(),
+            command: "node server.js".to_owned(),
+            cwd: Some("C:\\Work\\Project".to_owned()),
+            target_kind: TargetKind::Windows,
+            target_distro: None,
+            environment: EnvironmentUpdate::Keep,
+            restart_policy: RestartPolicy::Always,
+            auto_start: false,
+            health_tcp_address: None,
+            health_tcp_port: None,
+        };
+        let (created, skipped) = database
+            .create_definition_import_at(
+                vec![(job_id.clone(), input(false))],
+                vec![(service_id.clone(), service)],
+                100,
+            )
+            .unwrap();
+        assert_eq!((created, skipped), (2, 0));
+        assert_eq!(database.list_jobs().unwrap().len(), 1);
+        assert_eq!(database.list_services().unwrap().len(), 1);
+        assert!(!database.list_jobs().unwrap()[0].enabled);
+        assert!(database.list_services().unwrap()[0].auto_start == Some(false));
+        assert!(!database.list_jobs().unwrap()[0].env_configured);
+        assert!(!database.list_services().unwrap()[0].env_configured);
+
+        let (created, skipped) = database
+            .create_definition_import_at(
+                vec![(job_id, input(false))],
+                vec![(
+                    service_id,
+                    ServiceInput {
+                        name: "changed-but-skipped".to_owned(),
+                        command: "node other.js".to_owned(),
+                        cwd: None,
+                        target_kind: TargetKind::Windows,
+                        target_distro: None,
+                        environment: EnvironmentUpdate::Keep,
+                        restart_policy: RestartPolicy::Never,
+                        auto_start: false,
+                        health_tcp_address: None,
+                        health_tcp_port: None,
+                    },
+                )],
+                200,
+            )
+            .unwrap();
+        assert_eq!((created, skipped), (0, 2));
+
+        let mut invalid = input(false);
+        invalid.command.push('\0');
+        let result = database.create_definition_import_at(
+            vec![
+                (
+                    "33333333-3333-4333-8333-333333333333".to_owned(),
+                    input(false),
+                ),
+                ("44444444-4444-4444-8444-444444444444".to_owned(), invalid),
+            ],
+            Vec::new(),
+            300,
+        );
+        assert!(matches!(result, Err(StorageError::Validation(_))));
+        assert_eq!(database.list_jobs().unwrap().len(), 1);
     }
 
     #[test]

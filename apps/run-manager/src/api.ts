@@ -11,6 +11,7 @@ import type {
   ServiceInput,
   ServiceInstance,
   Run,
+  RunHistoryOptions,
   RuntimeStatus,
   StartupShortcutStatus,
   TailResponse,
@@ -315,23 +316,102 @@ export interface ImportItem {
   kind: "job" | "service";
   status: "new" | "conflict";
   detail: string;
+  cwd: string | null;
+  environmentKeys: string[];
+  requiresConfirmation: boolean;
 }
 
 export interface ImportPlan {
   schemaVersion: number;
+  revision: string;
   items: ImportItem[];
 }
 
 export function importDefinitions(json: string): Promise<ImportPlan> {
   if (!isTauri()) {
-    return Promise.resolve({ schemaVersion: 1, items: [] });
+    return Promise.resolve({ schemaVersion: 1, revision: "", items: [] });
   }
   return invoke<ImportPlan>("import_definitions", { json });
 }
 
-export function applyImport(json: string, selected: string[]): Promise<number> {
+export function applyImport(json: string, selected: string[], revision?: string): Promise<number> {
   if (!isTauri()) return Promise.resolve(0);
-  return invoke<number>("apply_import", { json, selected });
+  return invoke<number>("apply_import", { json, selected, revision: revision ?? null });
+}
+
+export type ProjectImportSource = "package-script" | "cargo-target";
+
+export interface ProjectImportFile {
+  path: string;
+  bytes: number;
+}
+
+export interface ProjectImportItem {
+  id: string;
+  name: string;
+  command: string;
+  kind: "job";
+  status: "new" | "conflict";
+  source: ProjectImportSource;
+  sourceName: string;
+  sourcePath: string;
+  cwd: string;
+  environmentKeys: string[];
+  requiresConfirmation: boolean;
+  detail: string;
+}
+
+export interface ProjectImportPlan {
+  schemaVersion: number;
+  sourceRoot: string;
+  revision: string;
+  files: ProjectImportFile[];
+  items: ProjectImportItem[];
+}
+
+export interface ProjectImportApplyResult {
+  created: number;
+  skippedConflicts: number;
+}
+
+function createImportOperationId(prefix: "preview" | "apply"): string {
+  const random = globalThis.crypto?.randomUUID?.();
+  return `${prefix}-${random ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`}`;
+}
+
+export function previewProjectImport(path: string, operationId = createImportOperationId("preview")): Promise<ProjectImportPlan> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      schemaVersion: 1,
+      sourceRoot: path,
+      revision: "",
+      files: [],
+      items: [],
+    });
+  }
+  return invoke<ProjectImportPlan>("preview_project_import", { path, operationId });
+}
+
+export function applyProjectImport(
+  path: string,
+  sourceRoot: string,
+  revision: string,
+  selected: string[],
+  operationId = createImportOperationId("apply"),
+): Promise<ProjectImportApplyResult> {
+  if (!isTauri()) return Promise.resolve({ created: selected.length, skippedConflicts: 0 });
+  return invoke<ProjectImportApplyResult>("apply_project_import", {
+    path,
+    sourceRoot,
+    revision,
+    selected,
+    operationId,
+  });
+}
+
+export function cancelProjectImport(operationId: string): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  return invoke<boolean>("cancel_project_import", { operationId });
 }
 
 export function startService(id: string): Promise<ServiceInstance> {
@@ -378,17 +458,39 @@ export function previewCron(cronExpr: string): Promise<CronPreviewItem[]> {
 }
 
 export function listRuns(
-  jobId: string,
-  options: { limit?: number; startAt?: number | null; endAt?: number | null } = {},
+  jobId: string | null,
+  options: RunHistoryOptions = {},
 ): Promise<Run[]> {
   if (!isTauri()) {
-    return Promise.resolve([...(mockRuns[jobId] ?? [])].slice(0, options.limit ?? 50));
+    const source = jobId ? (mockRuns[jobId] ?? []) : Object.values(mockRuns).flat();
+    const definitions = [...mockJobs, ...mockServices];
+    const filtered = source.filter((run) => {
+      const definition = definitions.find((item) => item.id === run.jobId);
+      if (options.kind && definition?.kind !== options.kind) return false;
+      if (options.status && run.status !== options.status) return false;
+      const timestamp = run.startedAt ?? run.createdAt;
+      if (options.startAt !== null && options.startAt !== undefined && timestamp < options.startAt) return false;
+      if (options.endAt !== null && options.endAt !== undefined && timestamp >= options.endAt) return false;
+      if (options.minDurationMs !== null && options.minDurationMs !== undefined) {
+        if (run.startedAt === null || (run.endedAt ?? Date.now()) - run.startedAt < options.minDurationMs) return false;
+      }
+      if (options.maxDurationMs !== null && options.maxDurationMs !== undefined) {
+        if (run.startedAt === null || (run.endedAt ?? Date.now()) - run.startedAt > options.maxDurationMs) return false;
+      }
+      return true;
+    });
+    const limit = Math.max(1, Math.min(options.limit ?? 50, 500));
+    return Promise.resolve(filtered.slice(0, limit));
   }
   return invoke<Run[]>("list_runs", {
-    jobId,
+    jobId: jobId ?? null,
     limit: options.limit ?? 50,
     startAt: options.startAt ?? null,
     endAt: options.endAt ?? null,
+    status: options.status ?? null,
+    kind: options.kind ?? null,
+    minDurationMs: options.minDurationMs ?? null,
+    maxDurationMs: options.maxDurationMs ?? null,
   });
 }
 

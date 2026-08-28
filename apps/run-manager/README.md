@@ -9,6 +9,8 @@
 - **실행 정책** — 중복 실행 정책(skip/queue/kill-previous), occurrence 원자적 claim
 - **서비스(service)** — start/stop/restart·자동 시작·재시작 정책(never/on-failure/always)·백오프·헬스체크(프로세스 생존/로컬 TCP)
 - **관찰성** — 실행 이력, stdout/stderr 회전 로그 tail·검색, 실패 Windows toast 알림
+- **실행 이력 필터** — 작업/서비스 종류, 대상, 상태, 시작·종료 날짜, 실행 시간(최대 30일) 조합
+- **로컬 task import** — `package.json` scripts와 `Cargo.toml`의 로컬 target을 native parser로 미리보기 후 비활성 draft로 저장
 - **행 컨텍스트 메뉴** — 작업·서비스·실행 이력의 우클릭/Shift+F10/Menu key 메뉴, 대상 행 우선 선택, 닫힌 뒤 focus 복구
   - 작업: 지금 실행, 활성화/비활성화, 편집, 로그 열기, 확인 후 삭제
   - 서비스: 실제 초기 인스턴스 상태에 따른 시작/정지/재시작, 편집, 정지 상태에서만 확인 후 삭제
@@ -17,6 +19,33 @@
 - **재시도 제어** — `retry_waiting` 서비스의 명시적 정지는 예약된 backoff를 취소하고, 재시작은 대기 시간을 건너뛰어 새 generation을 시작
 - **제한된 로그 저장** — backend가 run ID로 해석한 app-owned 회전 로그만 decimal cursor로 읽고, 현재 스트림을 최대 50MiB까지 저장. 파일명에는 bounded opaque run ID만 사용하며 명령·경로·환경변수를 넣지 않음
 - **실행 어댑터** — Windows(Job Object)·WSL(session/group), DPAPI 환경변수 보호
+
+## 실행 이력·task import 계약 (#357/#358)
+
+이력 조회는 하나의 parameterized SQLite query로 작업과 서비스 run을 함께 필터링한다. 날짜는
+epoch milliseconds 반열린 범위이며, 아직 끝나지 않은 run의 duration은 조회 시각을 기준으로
+계산한다. query ID·기간·duration·limit은 native 경계에서 상한과 순서를 검증하고, 결과는 기존
+`RunView`의 redacted DTO만 반환한다. 로그 파일이나 환경변수는 이력 필터에서 읽지 않는다.
+
+task import는 선택한 프로젝트 루트 바로 아래의 `package.json`과 `Cargo.toml`만 bounded read한다.
+npm/Cargo/shell/network/.env를 실행하거나 읽지 않으며, script body와 environment 값은 저장하지
+않고 환경 키 이름만 preview에 표시한다. target name은 제한된 문자 집합으로 검증하고 생성된
+`npm run -- <name>`/`cargo run|test|bench --...` 명령과 canonical cwd를 확인한다. 모든 항목은
+사용자 승인 전 `enabled=false` draft로 저장된다.
+
+preview에는 root filesystem identity를 포함한 SHA-256 opaque source revision이 붙는다. 적용 시
+파일·root를 다시 읽어 revision을 비교하고 변경되었거나 안전하지 않으면 고정된 stale 오류로
+중단한다. 같은 kind/name/cwd 충돌은 Windows 경로의 대소문자·separator alias까지 정규화해
+건너뛰며, 선택된 project batch와 기존 definition JSON batch 모두 SQLite 한 transaction으로
+저장한다. duplicate operation ID, cooperative cancel, 5초 native budget, 512KiB/file·128
+item·4KiB root 상한을 적용한다. project cancel은 transaction commit 전까지 각 경계에서
+확인되며 취소가 관찰되면 전체 batch를 rollback한다. definition JSON 저장은 bounded
+non-cancellable operation으로 처리 중에는 취소를 가장하지 않는다. cancel/close는 preview
+결과를 폐기하며, 이미 커밋된 transaction은 되돌리지 않는다.
+
+기존 Run Manager SQLite schema v2의 `jobs`/`meta` 구조를 그대로 사용하므로 별도 column migration
+없이 기존 DB에서 새 필터와 disabled draft를 읽고 쓸 수 있다. import preview schema는 DB schema와
+독립적인 version 1이며, migration은 시작 시 기존 idempotent migration으로 계속 수행된다.
 
 ## 기술
 

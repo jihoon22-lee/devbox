@@ -1318,3 +1318,67 @@ PR은 package `process`를 `devbox_process`로 import하고, `PortInfo`,
   추가한다. 미결 UX 값을 임의로 고정하거나 Linux core에 shortcut API를 넣지 않는다.
 - **프론트 vitest**: root `package.json`의 기존 vitest 및 `pnpm test` 배선을
   사용한다(`package.json:6-15`). 별도의 테스트 프레임워크를 추가하지 않는다.
+
+## 구현 부록 — v0.5.0 #357/#358
+
+이 설계의 초기 Phase 2 계획을 유지하면서, v0.5.0의 실행 이력·import 경계가 실제로
+구현된 계약을 아래에 고정한다. 이 부록은 원래 설계의 “구현은 하지 않는다”는 문서
+작성 시점 설명을 대체하지 않고, 구현 PR에서 확정된 보안·상한·상태 전이를 기록한다.
+
+### 실행 이력 필터
+
+- `RunHistoryFilter`는 `job_id`, `kind(job/service)`, `status`, half-open epoch-ms
+  `start_at`/`end_at`, 실행 시간 `min_duration_ms`/`max_duration_ms`, `limit`을
+  선택적으로 받는다. ID는 128바이트, 실행 시간은 0~30일, limit은 1~500으로
+  native 경계에서 검증하며 날짜 범위의 끝은 시작보다 엄격히 뒤여야 한다.
+- 저장소는 `runs JOIN jobs` 한 번의 parameterized SQLite query로 모든 조건을
+  조합한다. 종료하지 않은 run의 duration은 조회 시각을 사용하고, 시작하지 않은
+  queued/skipped row는 duration 조건에 포함하지 않는다. SQL, path, command, log
+  본문, environment ciphertext는 이 API의 입력·결과에 들어오지 않는다.
+- UI는 작업과 서비스를 함께 조회하거나 종류별로 좁힐 수 있고, service history
+  row에서는 job 전용 지금 실행/중지/재실행 동작을 노출하지 않는다. 기존 `RunView`
+  redaction과 반열린 시간 의미를 그대로 사용한다.
+
+### 정의 JSON 및 native task import
+
+- 기존 definition JSON은 schema version 1, 최대 512KiB/총 128개 정의로 제한한다.
+  UUID와 필드 shape를 검증하고, preview의 고정 SHA-256 revision을 apply에서 다시
+  비교한다. 선택된 job/service는 기존 ID와 충돌하면 건너뛰며, 모든 검증·삽입·service
+  instance 생성은 하나의 `BEGIN IMMEDIATE` transaction으로 처리한다.
+- import는 원본의 enabled/auto-start와 environment 값을 실행 경계로 전달하지
+  않는다. 생성된 모든 정의는 `enabled=false`, service `auto_start=false`,
+  environment `Keep`/ciphertext 없음인 disabled draft다. 사용자는 cwd·환경 상태를
+  확인한 뒤 별도로 활성화한다. definition 저장은 bounded non-cancellable
+  operation이므로 저장 중 Escape가 이미 커밋될 수 있는 작업을 취소한다고 가장하지
+  않는다.
+- 사용자가 고른 프로젝트 루트의 바로 아래 `package.json`/`Cargo.toml`만 native
+  parser로 읽는다. npm, Cargo metadata, shell, network, dotenv, imported command를
+  실행하지 않는다. 파일은 각각 512KiB, 결과는 128개로 제한한다. script는 body가
+  아닌 `npm run -- <safe-name>`, Cargo target은 제한된 name을 사용한
+  `cargo run/test/bench --...` command로 변환한다. Windows `%KEY%`, POSIX `$KEY`/
+  `${KEY}`는 이름만 최대 64개 preview에 보여주고 값은 읽거나 저장하지 않는다.
+- 선택 루트는 absolute/non-symlink/no-follow filesystem identity로 canonicalize하고
+  source file의 metadata·canonical parent/name을 확인한다. source path와 실제 열린 file
+  handle fingerprint를 read 전후 비교하고 현재 path identity/fingerprint도 다시 확인한다.
+  preview revision은 root identity와 정확한 두 source byte snapshot을 포함한
+  opaque SHA-256(64 hex)이며 절대 경로를 digest에 넣지 않는다. apply는 root/source를
+  다시 읽어 revision과 표시 root를 비교하고, 변경되면 stale 오류로 중단한다.
+- project apply의 `(kind, name, normalized cwd)` 충돌은 preview와 `BEGIN IMMEDIATE`
+  transaction에서 같은 `SafeProjectPath` identity(Windows case/separator alias
+  포함)로 재확인한다. operation ID는 64바이트/허용 문자만 받고 중복·동시 4개를
+  제한하며, native preview budget은 5초다. 취소는 exact operation의 cooperative
+  flag이고, transaction 각 row 전·commit 직전에 확인하여 commit 전 취소는 전체
+  rollback한다. 이미 커밋된 transaction은 되돌리지 않는다.
+- import dialog는 preview generation으로 늦은 응답을 무시하고, operation timeout/
+  unmount 시 exact operation을 취소한다. modal focus trap, Escape semantics,
+  `aria-busy`/tab/tabpanel 관계와 완료 후 trigger focus 복구를 유지한다.
+
+### 구현 검증 및 잔여 범위
+
+전용 worktree의 focused Rust gate는 `cargo test -p run-manager --lib -j1` 186개와
+`cargo check -p run-manager --lib -j1`을 통과했다. offline pnpm store로 의존성을 복원해
+Vitest 6 files/39 tests와 production build, `git diff --check`/format 검사를 통과했다.
+Windows W3 packaged smoke는 CI/Windows acceptance에서 수행한다. directory handle 기반
+relative open이 없는 OS의 final root identity-check 직후 교체 race와 committed
+transaction의 사후 취소는 알려진 잔여 경계다. 원격 host, Kubernetes, DAG orchestration,
+범용 tasks workflow는 이 구현 부록의 범위가 아니다.

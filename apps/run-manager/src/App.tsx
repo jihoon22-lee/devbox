@@ -106,6 +106,7 @@ export default function App() {
   const [obsMap, setObsMap] = useState<Record<string, ServiceObservability | null>>({});
   const [obsOpen, setObsOpen] = useState<Record<string, boolean>>({});
   const [importOpen, setImportOpen] = useState(false);
+  const importTriggerRef = useRef<HTMLButtonElement>(null);
   const [activeRuns, setActiveRuns] = useState<Record<string, Run | null>>({});
   const [screen, setScreen] = useState<Screen>("jobs");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
@@ -122,6 +123,12 @@ export default function App() {
   const [activeSnapshotError, setActiveSnapshotError] = useState<string | null>(null);
   const [activeSnapshotFresh, setActiveSnapshotFresh] = useState(false);
   const [launcherTask, setLauncherTask] = useState<{ id: string; kind: "job" | "service" } | null>(null);
+  const historyDefinitions = useMemo(() => [...jobs, ...services], [jobs, services]);
+
+  const closeImport = useCallback(() => {
+    setImportOpen(false);
+    window.setTimeout(() => importTriggerRef.current?.focus(), 0);
+  }, []);
   const activeRefresh = useRef<{ promise: Promise<void> | null; pending: boolean; generation: number }>({
     promise: null,
     pending: false,
@@ -768,7 +775,7 @@ export default function App() {
         ) : screen === "service-editor" ? (
           <ServiceEditor service={editingService} onSave={handleServiceSave} onCancel={closeServiceEditor} />
         ) : screen === "history" ? (
-          <RunHistory jobs={jobs.filter((job) => job.kind === "job")} requestedJobId={historyJobId} />
+          <RunHistory jobs={historyDefinitions} requestedJobId={historyJobId} />
         ) : screen === "services" ? (
           <section className="jobs-section" aria-labelledby="services-title">
             <div className="section-toolbar">
@@ -778,7 +785,7 @@ export default function App() {
               </div>
               <button type="button" className="button-primary" onClick={openServiceCreate}>+ 새 서비스</button>
               <button type="button" className="button-secondary" onClick={() => void onExportDefs()}>정의 내보내기</button>
-              <button type="button" className="button-secondary" onClick={() => setImportOpen(true)}>정의 가져오기</button>
+              <button ref={importTriggerRef} type="button" className="button-secondary" onClick={() => setImportOpen(true)}>정의 가져오기</button>
             </div>
             {loading ? <div className="empty-card compact"><div className="pulse" /><p>서비스를 불러오는 중…</p></div> : null}
             {!loading && services.length === 0 ? (
@@ -958,11 +965,11 @@ export default function App() {
       {importOpen && (
         <ImportDialog
           onDone={(_created) => {
-            setImportOpen(false);
+            closeImport();
             void refreshServices();
             void refreshJobs();
           }}
-          onClose={() => setImportOpen(false)}
+          onClose={closeImport}
         />
       )}
       {launcherTask && (

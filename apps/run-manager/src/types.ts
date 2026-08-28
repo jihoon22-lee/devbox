@@ -23,6 +23,7 @@ export type RunStatus =
   | "failed"
   | "cancelled"
   | "skipped";
+export type RunDefinitionKind = "job" | "service";
 export type LogStream = "stdout" | "stderr";
 export type LogSearchMode = "literal" | "regex";
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
@@ -96,6 +97,16 @@ export interface Run {
   logsAvailable: boolean;
   failureCode: string | null;
   createdAt: number;
+}
+
+export interface RunHistoryOptions {
+  limit?: number;
+  startAt?: number | null;
+  endAt?: number | null;
+  status?: RunStatus | null;
+  kind?: RunDefinitionKind | null;
+  minDurationMs?: number | null;
+  maxDurationMs?: number | null;
 }
 
 export interface TailResponse {

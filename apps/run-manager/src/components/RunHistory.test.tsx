@@ -102,6 +102,21 @@ describe("RunHistory", () => {
     await waitFor(() => expect(tailLogMock).toHaveBeenCalledWith(run.id, "stderr", null));
   });
 
+  it("does not silently drop an invalid non-empty duration filter", async () => {
+    const view = render(<RunHistory jobs={[job]} />);
+    await waitFor(() => expect(listRunsMock).toHaveBeenCalled());
+    listRunsMock.mockClear();
+
+    fireEvent.change(view.getByLabelText("최소 실행 시간(초)"), {
+      target: { value: "-1" },
+    });
+
+    await waitFor(() => expect(listRunsMock).toHaveBeenCalledWith(
+      job.id,
+      expect.objectContaining({ minDurationMs: -1_000 }),
+    ));
+  });
+
   it("shows the retained-range warning and does not expose numeric cursors", async () => {
     tailLogMock.mockResolvedValueOnce({
       data: Array.from(new TextEncoder().encode("tail")),
