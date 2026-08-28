@@ -28,7 +28,7 @@ const SAVED_QUERY_PRIVACY_ERROR: &str = "민감한 검색어는 저장할 수 �
 static SNAPSHOT_WRITER: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveSavedQueryRequest {
     pub id: Option<i64>,
     pub name: String,
@@ -241,6 +241,9 @@ fn validate_input(
 }
 
 fn validate_saved_query(saved: SavedQuery) -> Result<SavedQuery, String> {
+    if saved.created_at <= 0 || saved.updated_at < saved.created_at {
+        return Err(SAVED_QUERY_ERROR.to_string());
+    }
     let request = SaveSavedQueryRequest {
         id: Some(saved.id),
         name: saved.name,
@@ -307,6 +310,15 @@ mod tests {
 
     #[test]
     fn saved_queries_reject_raw_credentials_and_oversized_launcher_payloads() {
+        assert!(
+            serde_json::from_value::<SaveSavedQueryRequest>(serde_json::json!({
+                "name": "safe",
+                "query": "cargo",
+                "filter": {},
+                "futureField": true
+            }))
+            .is_err()
+        );
         for query in [
             "Bearer raw-secret",
             "Authorization : Bearer raw-secret",

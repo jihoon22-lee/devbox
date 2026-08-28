@@ -319,6 +319,16 @@ fn ensure_column(
 /// 원본 입력 문자열을 다시 쓰면 정규화 전후 값이 어긋나 `run_index`의
 /// 루트 필터가 아무 것도 매치하지 못할 수 있다.
 pub fn add_root(conn: &Connection, path: &str, index_content: bool) -> rusqlite::Result<String> {
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = add_root_transaction(conn, path, index_content);
+    finish_transaction(conn, result)
+}
+
+fn add_root_transaction(
+    conn: &Connection,
+    path: &str,
+    index_content: bool,
+) -> rusqlite::Result<String> {
     let path = normalize_path(path);
     if conn
         .query_row("SELECT id FROM roots WHERE path = ?1", [&path], |row| {
@@ -375,6 +385,12 @@ pub fn list_roots(conn: &Connection) -> rusqlite::Result<Vec<RootInfo>> {
 
 /// 루트 하나를 등록 해제하고, 그 아래 인덱스된 데이터를 모두 지운다.
 pub fn remove_root(conn: &Connection, path: &str) -> rusqlite::Result<()> {
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = remove_root_transaction(conn, path);
+    finish_transaction(conn, result)
+}
+
+fn remove_root_transaction(conn: &Connection, path: &str) -> rusqlite::Result<()> {
     let path = normalize_path(path);
     let root_id = conn
         .query_row("SELECT id FROM roots WHERE path = ?1", [&path], |row| {
@@ -395,6 +411,22 @@ pub fn remove_root(conn: &Connection, path: &str) -> rusqlite::Result<()> {
         return Ok(());
     }
     Ok(())
+}
+
+fn finish_transaction<T>(conn: &Connection, result: rusqlite::Result<T>) -> rusqlite::Result<T> {
+    match result {
+        Ok(value) => match conn.execute_batch("COMMIT") {
+            Ok(()) => Ok(value),
+            Err(error) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        },
+        Err(error) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(error)
+        }
+    }
 }
 
 /// 특정 루트 아래의 인덱스 데이터를 지운다 (`file_content` → `files` 순, FK
@@ -932,7 +964,15 @@ pub fn search_content_with_filter(
 /// from the current index later; no search result is persisted here.
 pub fn list_saved_queries(conn: &Connection) -> rusqlite::Result<Vec<SavedQuery>> {
     let mut statement = conn.prepare(
-        "SELECT id, name, query, filter_json, created_at, updated_at
+        "SELECT id,
+                length(CAST(name AS BLOB)),
+                length(CAST(query AS BLOB)),
+                length(CAST(filter_json AS BLOB)),
+                created_at,
+                updated_at,
+                name,
+                query,
+                filter_json
          FROM saved_queries ORDER BY updated_at DESC, id ASC LIMIT ?1",
     )?;
     let rows = statement.query_map([MAX_SAVED_QUERIES + 1], saved_query_from_row)?;
@@ -957,7 +997,9 @@ pub fn upsert_saved_query(
 ) -> rusqlite::Result<SavedQuery> {
     let name = name.trim();
     let query = query.trim();
-    if name.is_empty()
+    if now <= 0
+        || id.is_some_and(|saved_id| saved_id <= 0)
+        || name.is_empty()
         || query.is_empty()
         || name.len() > MAX_SAVED_NAME_BYTES
         || query.len() > MAX_SAVED_QUERY_BYTES
@@ -980,7 +1022,7 @@ pub fn upsert_saved_query(
             let changed = conn.execute(
                 "UPDATE saved_queries
                  SET name = ?1, query = ?2, filter_json = ?3, updated_at = ?4
-                 WHERE id = ?5",
+                 WHERE id = ?5 AND created_at > 0 AND created_at <= ?4",
                 params![name, query, filter_json, now, id],
             )?;
             if changed == 0 {
@@ -1002,7 +1044,15 @@ pub fn upsert_saved_query(
         }
     };
     conn.query_row(
-        "SELECT id, name, query, filter_json, created_at, updated_at
+        "SELECT id,
+                length(CAST(name AS BLOB)),
+                length(CAST(query AS BLOB)),
+                length(CAST(filter_json AS BLOB)),
+                created_at,
+                updated_at,
+                name,
+                query,
+                filter_json
          FROM saved_queries WHERE id = ?1",
         [saved_id],
         saved_query_from_row,
@@ -1027,6 +1077,8 @@ pub fn replace_saved_queries(conn: &Connection, saved: &[SavedQuery]) -> rusqlit
             let name = query.name.trim();
             let text = query.query.trim();
             if query.id <= 0
+                || query.created_at <= 0
+                || query.updated_at < query.created_at
                 || name.is_empty()
                 || text.is_empty()
                 || name.len() > MAX_SAVED_NAME_BYTES
@@ -1063,24 +1115,34 @@ pub fn replace_saved_queries(conn: &Connection, saved: &[SavedQuery]) -> rusqlit
         }
         Ok::<(), rusqlite::Error>(())
     })();
-    match result {
-        Ok(()) => conn.execute_batch("COMMIT"),
-        Err(error) => {
-            let _ = conn.execute_batch("ROLLBACK");
-            Err(error)
-        }
-    }
+    finish_transaction(conn, result)
 }
 
 fn saved_query_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SavedQuery> {
     let id: i64 = row.get(0)?;
-    let name: String = row.get(1)?;
-    let query: String = row.get(2)?;
-    let filter_json: String = row.get(3)?;
+    let name_bytes: i64 = row.get(1)?;
+    let query_bytes: i64 = row.get(2)?;
+    let filter_json_bytes: i64 = row.get(3)?;
+    let created_at: i64 = row.get(4)?;
+    let updated_at: i64 = row.get(5)?;
     if id <= 0
-        || name.len() > MAX_SAVED_NAME_BYTES
-        || query.len() > MAX_SAVED_QUERY_BYTES
-        || filter_json.len() > MAX_FILTER_JSON_BYTES
+        || !(0..=MAX_SAVED_NAME_BYTES as i64).contains(&name_bytes)
+        || !(0..=MAX_SAVED_QUERY_BYTES as i64).contains(&query_bytes)
+        || !(0..=MAX_FILTER_JSON_BYTES as i64).contains(&filter_json_bytes)
+        || created_at <= 0
+        || updated_at < created_at
+    {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    // Fetch variable-sized values only after SQLite's byte-length projection
+    // has passed. A locally corrupted database therefore cannot force an
+    // unbounded Rust allocation before the row is rejected.
+    let name: String = row.get(6)?;
+    let query: String = row.get(7)?;
+    let filter_json: String = row.get(8)?;
+    if name.len() != name_bytes as usize
+        || query.len() != query_bytes as usize
+        || filter_json.len() != filter_json_bytes as usize
         || name.is_empty()
         || query.is_empty()
         || name.chars().any(char::is_control)
@@ -1099,8 +1161,8 @@ fn saved_query_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SavedQuery>
         name,
         query,
         filter,
-        created_at: row.get(4)?,
-        updated_at: row.get(5)?,
+        created_at,
+        updated_at,
     })
 }
 
@@ -1119,8 +1181,7 @@ fn filter_sql(
     // no longer belongs to that root. This remains a cheap indexed existence
     // check and protects the no-filter search path as well as source filters.
     predicates.push(format!(
-        "(NOT EXISTS (SELECT 1 FROM roots)
-          OR EXISTS (
+        "EXISTS (
             SELECT 1 FROM roots indexed_root
             WHERE indexed_root.id = {file_alias}.root_id
               AND ({file_alias}.path = indexed_root.path
@@ -1136,7 +1197,7 @@ fn filter_sql(
                 ORDER BY length(deepest.path) DESC, deepest.id ASC
                 LIMIT 1
               )
-          ))"
+          )"
     ));
 
     if !filter.extensions.is_empty() {
@@ -1287,6 +1348,7 @@ mod tests {
     }
 
     fn seed(conn: &Connection) {
+        add_root(conn, "C:/projects", true).unwrap();
         for (path, size) in [
             ("C:/projects/PortManager/src/lib.rs", 10),
             ("C:/projects/PortManager/PLAN.md", 20),
@@ -1326,6 +1388,7 @@ mod tests {
     #[test]
     fn filename_search_preserves_regex_candidate_limit_above_two_hundred() {
         let conn = mem();
+        add_root(&conn, "C:/projects", false).unwrap();
         for index in 0..205 {
             upsert_file(
                 &conn,
@@ -1354,6 +1417,7 @@ mod tests {
     #[test]
     fn content_search_matches_body() {
         let conn = mem();
+        add_root(&conn, "C:/notes", true).unwrap();
         let id = upsert_file(&conn, "C:/notes/meeting.md", 10, 0, 1).unwrap();
         let record = indexed_record("quarterly review with the team");
         upsert_content_record(&conn, id, &record, 1).unwrap();
@@ -1370,6 +1434,7 @@ mod tests {
     #[test]
     fn content_metadata_filters_failures_and_redacts_snippets() {
         let conn = mem();
+        add_root(&conn, "C:/notes", true).unwrap();
         let indexed = upsert_file(&conn, "C:/notes/meeting.md", 10, 0, 1).unwrap();
         let mut record = indexed_record("Authorization: Bearer abc123 quarterly review");
         record.text_chars = 46;
@@ -1439,6 +1504,16 @@ mod tests {
     }
 
     #[test]
+    fn search_never_exposes_orphan_rows_when_no_roots_exist() {
+        let conn = mem();
+        let file_id = upsert_file(&conn, "C:/removed/orphan.rs", 42, 200, 99).unwrap();
+        upsert_content_record(&conn, file_id, &indexed_record("orphan body"), 200).unwrap();
+
+        assert!(search(&conn, "orphan", 20).unwrap().is_empty());
+        assert!(search_content(&conn, "orphan", 20).unwrap().is_empty());
+    }
+
+    #[test]
     fn saved_query_round_trips_only_definition_and_supports_delete() {
         let conn = mem();
         let filter = SearchFilter {
@@ -1501,6 +1576,26 @@ mod tests {
         )
         .unwrap();
         assert!(list_saved_queries(&conn).is_err());
+
+        conn.execute("DELETE FROM saved_queries", []).unwrap();
+        conn.execute(
+            "INSERT INTO saved_queries
+                (name, query, filter_json, created_at, updated_at)
+             VALUES (?1, 'cargo', '{}', 1, 1)",
+            [&"x".repeat(MAX_SAVED_NAME_BYTES + 1)],
+        )
+        .unwrap();
+        assert!(list_saved_queries(&conn).is_err());
+
+        conn.execute("DELETE FROM saved_queries", []).unwrap();
+        conn.execute(
+            "INSERT INTO saved_queries
+                (name, query, filter_json, created_at, updated_at)
+             VALUES ('safe', 'cargo', '{}', 10, 9)",
+            [],
+        )
+        .unwrap();
+        assert!(list_saved_queries(&conn).is_err());
     }
 
     #[test]
@@ -1519,6 +1614,11 @@ mod tests {
         invalid.name = " ".into();
 
         assert!(replace_saved_queries(&conn, &[invalid]).is_err());
+        assert_eq!(list_saved_queries(&conn).unwrap(), vec![original.clone()]);
+
+        let mut invalid_timestamp = original.clone();
+        invalid_timestamp.updated_at = invalid_timestamp.created_at - 1;
+        assert!(replace_saved_queries(&conn, &[invalid_timestamp]).is_err());
         assert_eq!(list_saved_queries(&conn).unwrap(), vec![original]);
     }
 
@@ -1611,6 +1711,64 @@ mod tests {
                 "SELECT root_id FROM files WHERE id = ?1",
                 [file_id],
                 |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            child_id
+        );
+    }
+
+    #[test]
+    fn root_add_and_remove_roll_back_ownership_when_repair_fails() {
+        let conn = mem();
+        add_root(&conn, "C:/workspace", true).unwrap();
+        let parent_id = list_roots(&conn).unwrap()[0].id;
+        let file_id =
+            upsert_file(&conn, "C:/workspace/project/src/main.rs", 1, 0, parent_id).unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER block_root_reassign
+             BEFORE UPDATE OF root_id ON files
+             BEGIN SELECT RAISE(ABORT, 'fixture'); END;",
+        )
+        .unwrap();
+
+        assert!(add_root(&conn, "C:/workspace/project", true).is_err());
+        assert_eq!(list_roots(&conn).unwrap().len(), 1);
+        assert_eq!(
+            conn.query_row(
+                "SELECT root_id FROM files WHERE id = ?1",
+                [file_id],
+                |row| { row.get::<_, i64>(0) }
+            )
+            .unwrap(),
+            parent_id
+        );
+
+        conn.execute_batch("DROP TRIGGER block_root_reassign")
+            .unwrap();
+        add_root(&conn, "C:/workspace/project", true).unwrap();
+        let child_id = list_roots(&conn)
+            .unwrap()
+            .into_iter()
+            .find(|root| root.path == "C:/workspace/project")
+            .unwrap()
+            .id;
+        conn.execute_batch(
+            "CREATE TRIGGER block_root_reassign
+             BEFORE UPDATE OF root_id ON files
+             BEGIN SELECT RAISE(ABORT, 'fixture'); END;",
+        )
+        .unwrap();
+
+        assert!(remove_root(&conn, "C:/workspace/project").is_err());
+        assert!(list_roots(&conn)
+            .unwrap()
+            .iter()
+            .any(|root| root.id == child_id));
+        assert_eq!(
+            conn.query_row(
+                "SELECT root_id FROM files WHERE id = ?1",
+                [file_id],
+                |row| { row.get::<_, i64>(0) }
             )
             .unwrap(),
             child_id
@@ -1808,6 +1966,7 @@ mod tests {
     #[test]
     fn clear_root_escapes_like_wildcards_and_keeps_sibling_paths() {
         let conn = mem();
+        add_root(&conn, "C:/", false).unwrap();
         upsert_file(&conn, "C:/a%/inside.md", 1, 0, 1).unwrap();
         upsert_file(&conn, "C:/aX/sibling.md", 1, 0, 1).unwrap();
         clear_root(&conn, "C:/a%").unwrap();
@@ -1891,6 +2050,7 @@ mod tests {
     #[test]
     fn upsert_file_preserves_id_on_reindex() {
         let conn = mem();
+        add_root(&conn, "C:/projects", true).unwrap();
         let id1 = upsert_file(&conn, "C:/projects/foo/bar.rs", 10, 100, 1).unwrap();
         let record = indexed_record("fn main() {}");
         upsert_content_record(&conn, id1, &record, 1).unwrap();
@@ -2089,6 +2249,8 @@ mod tests {
     #[test]
     fn modern_spreadsheet_clear_is_scoped_by_format_and_root() {
         let conn = mem();
+        add_root(&conn, "C:/A", true).unwrap();
+        add_root(&conn, "C:/B", true).unwrap();
         let text = upsert_file(&conn, "C:/A/notes.md", 1, 0, 1).unwrap();
         let xls = upsert_file(&conn, "C:/A/legacy.xls", 1, 0, 1).unwrap();
         let xlsx_a = upsert_file(&conn, "C:/A/modern.xlsx", 1, 0, 1).unwrap();

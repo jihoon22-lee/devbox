@@ -98,13 +98,17 @@ snapshot에는 query/filter 정의와 표시 metadata만 있으며 raw result li
 `snapshot:everything-plus/saved-queries/v1`를 통해서만 snapshot을 발견하고, 실행 시 현재
 catalog와 payload version을 재검증한 뒤 optional `query-filter-v1`을 포함한 Query AppLink를
 보낸다. filter를 모르는 구버전 수신기는 canonical `--query` text만 받아 하위 호환되고,
-Everything+ 수신기는 filter를 normalize한 뒤 native search에 적용한다.
+Everything+ 수신기는 filter를 normalize한 뒤 native search에 적용한다. 현재 payload version의
+unknown field나 잘못된 filter는 text-only 요청으로 조용히 강등하지 않고 source/action을
+fail-closed한다.
 
 저장된 검색을 다시 열면 현재 index에 query/filter를 재실행한다. 인덱싱 중 Cancel로 남은
 partial/truncated 상태나 root 삭제는 saved query를 변경하지 않으며, 다음 검색 시 최신 local
 index 상태가 반영된다. DB 변경 후 snapshot 준비/교체가 실패하면 이전 saved definition set을
 bounded SQLite transaction으로 복구하고, 다음 startup publication에서 다시 시도한다. DB lock은
-snapshot filesystem I/O 전에 반납한다.
+snapshot filesystem I/O 전에 반납한다. root 추가·삭제와 deepest ownership repair도 하나의
+`BEGIN IMMEDIATE` transaction으로 묶어 repair 실패가 root 목록과 file ownership을 반쪽만
+갱신하지 못하게 한다.
 
 ## 내용 인덱스 경계
 

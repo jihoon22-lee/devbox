@@ -420,7 +420,7 @@ describe("Everything+ filters and saved queries", () => {
     await waitFor(() => expect(searchFilesMock).toHaveBeenCalledWith(
       "main",
       undefined,
-      { extensions: ["rs", "md"] },
+      { extensions: ["md", "rs"] },
     ));
     expect(screen.getByText("main.rs")).toBeTruthy();
     expect(screen.getByText("Filters (1)")).toBeTruthy();

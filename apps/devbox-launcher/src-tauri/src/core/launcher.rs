@@ -170,12 +170,10 @@ struct PathPayload {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-// The query payload is an extensible, versioned producer contract. Keep the
-// optional filter readable by new Launchers while allowing an older Launcher
-// to ignore fields added after `text` (it still receives the text-only
-// AppLink). The filter object itself remains strict via QueryFilter's
-// deny_unknown_fields contract.
-#[serde(rename_all = "camelCase")]
+// Payload version 1 is strict: a future semantic field requires a version
+// bump. Older installed Launchers keep their own text-only behavior, while the
+// current consumer must not silently ignore a field from a corrupt snapshot.
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct QueryPayload {
     text: String,
     #[serde(default)]
@@ -843,8 +841,7 @@ mod tests {
                 "payloadVersion": 1,
                 "payload": {
                     "text": "cargo",
-                    "filter": {"extensions": ["rs"], "sourceRootId": 7},
-                    "futurePayloadField": "ignored-by-older-launcher"
+                    "filter": {"extensions": ["rs"], "sourceRootId": 7}
                 }
             })],
             0,
@@ -869,6 +866,34 @@ mod tests {
                 })
             }
         );
+    }
+
+    #[test]
+    fn everything_saved_query_rejects_unknown_payload_fields() {
+        let root = root("everything-unknown-field");
+        write_view(
+            &root,
+            "everything-plus",
+            "saved-queries",
+            vec![serde_json::json!({
+                "id": "saved-query-1",
+                "label": "Rust sources",
+                "targetApp": "everything-plus",
+                "targetKind": "query",
+                "payloadVersion": 1,
+                "payload": {"text": "cargo", "futureField": true}
+            })],
+            0,
+        );
+        let response = Index::build(catalog(), &root).unwrap().search("").unwrap();
+        assert!(response
+            .sources
+            .iter()
+            .any(|source| source.producer == "everything-plus" && source.status == "corrupt"));
+        assert!(!response
+            .results
+            .iter()
+            .any(|result| result.source == "everything-plus"));
     }
 
     #[test]

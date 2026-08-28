@@ -21,7 +21,7 @@ mod tests {
     fn parses_the_repository_v2_catalog_through_the_shared_contract() {
         let catalog = parse_catalog(BUILD_CATALOG).unwrap();
         assert_eq!(catalog.schema_version, 2);
-        assert_eq!(catalog.catalog_revision, Some(10));
+        assert_eq!(catalog.catalog_revision, Some(11));
         assert_eq!(catalog.apps.len(), 15);
         let knowledge = catalog
             .apps
@@ -38,6 +38,10 @@ mod tests {
             .find(|app| app.id == "everything-plus")
             .expect("Everything+ must remain in the repository catalog");
         assert_eq!(everything.accepts, vec!["query"]);
+        assert_eq!(
+            everything.produces,
+            vec!["snapshot:everything-plus/saved-queries/v1"]
+        );
         let wsl_desktop = catalog
             .apps
             .iter()

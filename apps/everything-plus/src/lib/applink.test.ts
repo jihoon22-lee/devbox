@@ -37,6 +37,12 @@ describe("Everything+ applink routing", () => {
   it("fails closed for malformed status and unknown filter fields", () => {
     expect(
       routeOpenRequest({
+        target: { kind: "query", text: "cargo", filter: 42 as never },
+        from: null,
+      }),
+    ).toEqual({ kind: "error", message: "요청한 검색 필터를 사용할 수 없습니다" });
+    expect(
+      routeOpenRequest({
         target: { kind: "query", text: "cargo", filter: { contentStatus: 42 as never } },
         from: null,
       }),
@@ -44,6 +50,12 @@ describe("Everything+ applink routing", () => {
     expect(
       routeOpenRequest({
         target: { kind: "query", text: "cargo", filter: { futureField: "ignored" } as never },
+        from: null,
+      }),
+    ).toEqual({ kind: "error", message: "요청한 검색 필터를 사용할 수 없습니다" });
+    expect(
+      routeOpenRequest({
+        target: { kind: "query", text: "cargo", filter: { futureField: null } as never },
         from: null,
       }),
     ).toEqual({ kind: "error", message: "요청한 검색 필터를 사용할 수 없습니다" });

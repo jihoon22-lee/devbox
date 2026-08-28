@@ -349,16 +349,6 @@ pub enum OpenTarget {
         #[serde(rename = "appId")]
         app_id: String,
     },
-    /// Run Manager의 저장된 job/service 하나를 연다. id만 전달하며 실제 job
-    /// 명령·환경변수는 수신 앱이 자기 저장소에서 재검증한다.
-    Task {
-        id: String,
-    },
-    /// 대상 앱이 설치되어 있지 않을 때 Manager의 해당 앱 설치 화면을 연다.
-    Install {
-        #[serde(rename = "appId")]
-        app_id: String,
-    },
     Handoff {
         #[serde(rename = "handoffKind")]
         kind: String,
@@ -484,6 +474,9 @@ fn parse_rest(rest: &[String]) -> Result<Option<OpenRequest>, ParseError> {
         (None, None) => None,
         _ => return Err(ParseError("handoff kind/id가 모두 필요함".into())),
     };
+    if query.is_none() && query_filter.is_some() {
+        return Err(ParseError("query filter에는 query가 필요함".into()));
+    }
 
     let target = path
         .map(|path| OpenTarget::Path { path, line, column })
@@ -531,13 +524,14 @@ fn take_u32(rest: &[String], i: &mut usize, flag: &str) -> Result<u32, ParseErro
         .map_err(|_| ParseError(format!("{flag} 값이 숫자가 아님: {raw}")))
 }
 
-/// `OpenRequest`를 argv로 인코딩한다.
+/// `OpenRequest`를 argv로 인코딩한다. 값이 계약의 범위/형식을 벗어나면 부분 argv를
+/// 만들거나 filter를 버리지 않고 오류를 반환한다.
 ///
 /// 반환값은 **실행 파일 경로를 포함하지 않는다** — `std::process::Command::args()`나
 /// `crates/launch::launch`의 `args: &[&str]`에 그대로 넘기는 모양이다. 항상 명시적
 /// 플래그(`--path` 등)만 만든다 — 맨 앞 위치 인자 형태는 구버전 발신자와의 하위
 /// 호환을 위해 `parse_argv`만 받아들이고, 새로 만들지는 않는다.
-pub fn build_argv(req: &OpenRequest) -> Vec<String> {
+pub fn build_argv(req: &OpenRequest) -> Result<Vec<String>, ParseError> {
     let mut out = Vec::new();
 
     match &req.target {
@@ -564,24 +558,15 @@ pub fn build_argv(req: &OpenRequest) -> Vec<String> {
         OpenTarget::Query { text, filter } => {
             out.push("--query".to_string());
             out.push(text.clone());
-            if let Some(filter) = filter
-                .as_ref()
-                .and_then(|filter| filter.normalized().ok())
-                .filter(|filter| !filter.is_empty())
-            {
-                if let Ok(json) = serde_json::to_string(&filter) {
+            if let Some(filter) = filter.as_ref() {
+                let filter = filter.normalized()?;
+                if !filter.is_empty() {
+                    let json = serde_json::to_string(&filter)
+                        .map_err(|_| ParseError("query filter encoding failed".into()))?;
                     out.push("--query-filter-v1".to_string());
                     out.push(json);
                 }
             }
-        }
-        OpenTarget::Task { id } => {
-            out.push("--task".to_string());
-            out.push(id.clone());
-        }
-        OpenTarget::Install { app_id } => {
-            out.push("--install-app".to_string());
-            out.push(app_id.clone());
         }
         OpenTarget::Task { id } => {
             out.push("--task".to_string());
@@ -604,7 +589,7 @@ pub fn build_argv(req: &OpenRequest) -> Vec<String> {
         out.push(from.clone());
     }
 
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -750,7 +735,7 @@ mod tests {
             from: Some(s("devbox-launcher")),
         };
         let mut full_argv = vec![s("everything-plus.exe")];
-        full_argv.extend(build_argv(&request));
+        full_argv.extend(build_argv(&request).unwrap());
         let parsed = parse_argv(&full_argv).unwrap().unwrap();
         assert_eq!(
             parsed.target,
@@ -790,6 +775,12 @@ mod tests {
         ] {
             assert!(filter.normalized().is_err());
         }
+        assert!(parse_argv(&argv(&[
+            "exe",
+            "--query-filter-v1",
+            "{\"extensions\":[\"rs\"]}"
+        ]))
+        .is_err());
     }
 
     // ---- --from: 모든 타깃 종류에서 캡처 ----
@@ -1000,7 +991,7 @@ mod tests {
             },
             from: None,
         };
-        assert_eq!(build_argv(&req), vec![s("--query"), s("q")]);
+        assert_eq!(build_argv(&req).unwrap(), vec![s("--query"), s("q")]);
     }
 
     #[test]
@@ -1010,7 +1001,7 @@ mod tests {
             from: Some(s("workbench")),
         };
         assert_eq!(
-            build_argv(&req),
+            build_argv(&req).unwrap(),
             vec![s("--profile"), s("p1"), s("--from"), s("workbench")]
         );
     }
@@ -1019,9 +1010,24 @@ mod tests {
 
     fn round_trip(req: OpenRequest) {
         let mut full = vec![s("devbox-app.exe")];
-        full.extend(build_argv(&req));
+        full.extend(build_argv(&req).unwrap());
         let parsed = parse_argv(&full).unwrap().unwrap();
         assert_eq!(parsed, req, "round-trip 실패: {full:?}");
+    }
+
+    #[test]
+    fn build_argv_rejects_invalid_query_filter_without_text_only_downgrade() {
+        let request = OpenRequest {
+            target: OpenTarget::Query {
+                text: s("cargo"),
+                filter: Some(QueryFilter {
+                    min_size: Some(-1),
+                    ..QueryFilter::default()
+                }),
+            },
+            from: Some(s("devbox-launcher")),
+        };
+        assert!(build_argv(&request).is_err());
     }
 
     #[test]

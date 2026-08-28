@@ -59,6 +59,20 @@
 strict bounded JSON, corrupt fallback, atomic persistence와 close/tray/explicit-exit flush를
 동일하게 적용한다.
 
+### v0.5.0 앱 보강 진행
+
+- [x] **Everything+ 고급 필터·저장 검색 (#349–#350)** — filename/content 검색에 extension,
+  modified range, size range, 등록 source root와 content status를 native SQL parameter로
+  결합했다. 중첩 root의 가장 깊은 ownership, 삭제 root ID 비재사용, root가 없거나 ownership이
+  어긋난 orphan row의 fail-closed 제외를 함께 적용했다.
+- [x] **Everything+ → Launcher 저장 검색 producer** — query/filter 정의만 bounded SQLite CRUD로
+  보관하고 `snapshot:everything-plus/saved-queries/v1` view를 원자 발행한다. Launcher는 같은
+  strict QueryFilter를 AppLink로 전달하며 유효하지 않은 filter는 text-only로 강등하지 않는다.
+  결과/path/content/credential 저장, arbitrary source path, 자동 검색 실행은 제외했다.
+- [ ] **#349–#350 Windows packaged 확인** — filter 조합과 저장/재시작/삭제, Launcher에서 열기,
+  snapshot 쓰기 실패 복구를 W3 smoke로 재확인한다. Linux Rust/frontend 및 CI gate 통과와 별개인
+  v0.5.0 release checkpoint다.
+
 | 문서 | 범위 |
 |---|---|
 | [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3 전체 범위, 외부 도구 원칙, 신규 앱, PR·테스트·릴리스 gate의 단일 기준 |

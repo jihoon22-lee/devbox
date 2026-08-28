@@ -9,6 +9,15 @@ export type EverythingOpenAction =
 
 const MAX_EXTENSIONS = 64;
 const MAX_EXTENSION_BYTES = 16;
+const FILTER_KEYS = new Set([
+  "extensions",
+  "modifiedAfter",
+  "modifiedBefore",
+  "minSize",
+  "maxSize",
+  "sourceRootId",
+  "contentStatus",
+]);
 const CONTENT_STATUSES = new Set([
   "indexed",
   "truncated",
@@ -28,16 +37,7 @@ const CONTENT_STATUSES = new Set([
 
 function normalizeFilter(value: SearchFilter | null | undefined): SearchFilter | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const allowedKeys = new Set([
-    "extensions",
-    "modifiedAfter",
-    "modifiedBefore",
-    "minSize",
-    "maxSize",
-    "sourceRootId",
-    "contentStatus",
-  ]);
-  if (Object.keys(value).some((key) => !allowedKeys.has(key))) return undefined;
+  if (Object.keys(value).some((key) => !FILTER_KEYS.has(key))) return undefined;
   // Missing is the only legacy-compatible empty value. An explicit null is
   // malformed for the array field (unlike nullable scalar options), so a
   // corrupt snapshot/request cannot silently drop the user's filter.
@@ -108,6 +108,12 @@ export function routeOpenRequest(request: OpenRequest): EverythingOpenAction {
     return { kind: "error", message: "요청한 검색어를 사용할 수 없습니다" };
   }
   if (request.target.filter !== undefined && request.target.filter !== null) {
+    if (typeof request.target.filter !== "object" || Array.isArray(request.target.filter)) {
+      return { kind: "error", message: "요청한 검색 필터를 사용할 수 없습니다" };
+    }
+    if (Object.keys(request.target.filter).some((key) => !FILTER_KEYS.has(key))) {
+      return { kind: "error", message: "요청한 검색 필터를 사용할 수 없습니다" };
+    }
     const filter = normalizeFilter(request.target.filter);
     const hasMeaningfulValue = Object.entries(request.target.filter).some(([key, candidate]) => {
       if (key === "extensions" && candidate === null) return true;
