@@ -18,13 +18,17 @@ import {
   installPath,
   installMany,
   installed,
+  installRelatedTool,
   launchApp,
+  launchRelatedTool,
+  openRelatedToolUrl,
   openInstallFolder,
   onPendingOpen,
   previewRemoveApp,
   previewDataQuery,
   previewSupportBundle,
   previewInstallRoot,
+  relatedTools,
   removeApp,
   rollback,
   runDiagnosis,
@@ -46,6 +50,7 @@ import type {
   RemoveAppRequest,
   RemovePreview,
   RemoveResult,
+  RelatedTool,
   ReleaseManifest,
   SupportBundlePreview,
 } from "./types";
@@ -82,6 +87,31 @@ function rootStatusDescription(preview: InstallRootPreview): string {
 
 const REMOVE_PREVIEW_ERROR = "제거 대상을 확인할 수 없습니다. 설치 상태를 확인한 뒤 다시 시도하세요.";
 const REMOVE_STALE_ERROR = "설치 상태가 바뀌었습니다. 최신 제거 미리 보기를 다시 확인하세요.";
+const RELATED_TOOL_GENERIC_ERROR = "관련 도구 작업을 완료할 수 없습니다.";
+const RELATED_TOOL_SAFE_ERRORS = new Set([
+  "관련 도구 식별자가 올바르지 않습니다.",
+  "관련 도구 설치 확인값이 올바르지 않습니다.",
+  "관련 도구 설치는 사용자 확인이 필요합니다.",
+  "다른 관련 도구 작업이 진행 중입니다. 잠시 후 다시 시도하세요.",
+  "관련 도구 감지를 완료할 수 없습니다.",
+  "관련 도구 감지 응답이 올바르지 않습니다.",
+  "관련 도구 작업 결과가 올바르지 않습니다.",
+  "관련 도구 설치를 시작할 수 없습니다.",
+  "관련 도구를 실행할 수 없습니다.",
+  "관련 도구를 실행할 수 없습니다. 잠시 후 다시 시도하세요.",
+  "설치된 실행 파일을 찾을 수 없습니다. 먼저 확인 후 설치하세요.",
+  "Related Tools는 Windows에서만 사용할 수 있습니다.",
+  "WinGet을 사용할 수 없습니다. Windows App Installer를 설치한 뒤 다시 시도하세요.",
+  "WinGet 설치가 실패했거나 취소되었습니다. 네트워크와 패키지 상태를 확인하세요.",
+  "WinGet 설치가 제한 시간 안에 끝나지 않았습니다. 설치 창과 앱 상태를 확인하세요.",
+]);
+
+function safeRelatedToolError(error: unknown): string {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === "string" ? error : "";
+  return RELATED_TOOL_SAFE_ERRORS.has(message) ? message : RELATED_TOOL_GENERIC_ERROR;
+}
 
 function removalStateDescription(preview: RemovePreview): string {
   if (preview.mode === "installer") {
@@ -140,6 +170,54 @@ function dataIntegrityLabel(integrity: DataDatabaseInfo["integrity"]): string {
   }
 }
 
+function relatedDetectionDescription(tool: RelatedTool): string {
+  switch (tool.detection) {
+    case "path":
+      return "시스템 명령에서 실행 파일을 확인했습니다.";
+    case "known-location":
+      return "표준 설치 위치에서 실행 파일을 확인했습니다.";
+    case "not-found":
+      return "표준 감지 위치에서 찾지 못했습니다.";
+    case "unavailable":
+      return "Windows 실행 환경에서 감지를 사용할 수 없습니다.";
+    default:
+      return "감지 결과를 표시할 수 없습니다.";
+  }
+}
+
+const RELATED_TOOL_OFFICIAL_HOSTS = new Set([
+  "learn.microsoft.com",
+  "github.com",
+  "code.visualstudio.com",
+  "www.usebruno.com",
+  "dbeaver.io",
+  "sqlitebrowser.org",
+  "desktop.github.com",
+  "podman-desktop.io",
+  "www.docker.com",
+]);
+const MAX_RELATED_TOOL_URL_LENGTH = 2048;
+
+function safeExternalUrl(value: string): string | null {
+  try {
+    if (value.length > MAX_RELATED_TOOL_URL_LENGTH) return null;
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:"
+      || url.username
+      || url.password
+      || url.port
+      || url.hostname.length === 0
+      || !RELATED_TOOL_OFFICIAL_HOSTS.has(url.hostname)
+    ) {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const [apps, setApps] = useState<CatalogApp[]>([]);
   const [manifest, setManifest] = useState<ReleaseManifest | null>(null);
@@ -148,7 +226,7 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<"apps" | "doctor">("apps");
+  const [tab, setTab] = useState<"apps" | "doctor" | "related-tools">("apps");
   const [diagnosis, setDiagnosis] = useState<DiagnosisItem[]>([]);
   const [dataSnapshot, setDataSnapshot] = useState<DataInspectorSnapshot | null>(null);
   const [dataAppId, setDataAppId] = useState<string | null>(null);
@@ -157,6 +235,9 @@ export default function App() {
   const [dataBusy, setDataBusy] = useState(false);
   const [supportPreview, setSupportPreview] = useState<SupportBundlePreview | null>(null);
   const [supportBusy, setSupportBusy] = useState(false);
+  const [relatedToolList, setRelatedToolList] = useState<RelatedTool[]>([]);
+  const [relatedBusy, setRelatedBusy] = useState(false);
+  const [relatedError, setRelatedError] = useState<string | null>(null);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [contextApp, setContextApp] = useState<CatalogApp | null>(null);
   const [batchSelection, setBatchSelection] = useState<Set<string>>(() => new Set());
@@ -184,6 +265,8 @@ export default function App() {
   const dataOperationIdRef = useRef<string | null>(null);
   const supportRequestIdRef = useRef(0);
   const supportOperationIdRef = useRef<string | null>(null);
+  const relatedRequestIdRef = useRef(0);
+  const relatedActionIdRef = useRef(0);
 
   const prepareAppContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.appId;
@@ -394,6 +477,34 @@ export default function App() {
     }
   }, [dataBusy, supportBusy, supportPreview]);
 
+  const refreshRelatedTools = useCallback(async () => {
+    if (operationBusyRef.current || readBusyRef.current) return;
+    const requestId = ++relatedRequestIdRef.current;
+    readBusyRef.current = true;
+    setReadBusy(true);
+    setRelatedBusy(true);
+    setRelatedError(null);
+    try {
+      const result = await relatedTools();
+      if (mountedRef.current && requestId === relatedRequestIdRef.current) {
+        setRelatedToolList(result);
+      }
+    } catch {
+      if (mountedRef.current && requestId === relatedRequestIdRef.current) {
+        setRelatedToolList([]);
+        setRelatedError("관련 도구 감지를 완료할 수 없습니다. Windows 환경을 확인하세요.");
+      }
+    } finally {
+      if (requestId === relatedRequestIdRef.current) {
+        readBusyRef.current = false;
+        if (mountedRef.current) {
+          setReadBusy(false);
+          setRelatedBusy(false);
+        }
+      }
+    }
+  }, []);
+
   const refresh = useCallback(async (internal = false) => {
     if (!internal && (operationBusyRef.current || readBusyRef.current)) return;
     readBusyRef.current = true;
@@ -447,6 +558,8 @@ export default function App() {
       if (dataOperationId) void cancelDataDiagnostics(dataOperationId).catch(() => undefined);
       const supportOperationId = supportOperationIdRef.current;
       if (supportOperationId) void cancelSupportBundle(supportOperationId).catch(() => undefined);
+      relatedRequestIdRef.current += 1;
+      relatedActionIdRef.current += 1;
     };
   }, [refresh]);
 
@@ -683,6 +796,76 @@ export default function App() {
     }
   };
 
+  const onRelatedInstall = async (tool: RelatedTool) => {
+    if (tool.installed || operationBusyRef.current || readBusyRef.current) return;
+    if (!window.confirm(
+      `'${tool.displayName}'을 WinGet으로 설치할까요? WinGet이 공식 패키지 설치를 진행합니다.`,
+    )) return;
+    const actionId = ++relatedActionIdRef.current;
+    operationBusyRef.current = true;
+    setBusy(`related:${tool.id}:install`);
+    setError(null);
+    setNotice(null);
+    let shouldRefresh = false;
+    try {
+      const result = await installRelatedTool(tool.id, true);
+      if (result.toolId !== tool.id || result.status !== "installed") {
+        throw new Error("관련 도구 작업 결과가 올바르지 않습니다.");
+      }
+      if (mountedRef.current && actionId === relatedActionIdRef.current) {
+        // The API boundary normalizes this message. Keep the local fallback
+        // as a second guard for mocked/older callers.
+        shouldRefresh = true;
+        setNotice(result.message === "WinGet 설치가 완료되었습니다."
+          ? result.message
+          : "WinGet 설치가 완료되었습니다.");
+      }
+    } catch (e) {
+      if (mountedRef.current && actionId === relatedActionIdRef.current) {
+        setError(safeRelatedToolError(e));
+      }
+    } finally {
+      operationBusyRef.current = false;
+      if (mountedRef.current && actionId === relatedActionIdRef.current) setBusy(null);
+    }
+    if (shouldRefresh && mountedRef.current && actionId === relatedActionIdRef.current) {
+      await refreshRelatedTools();
+    }
+  };
+
+  const onRelatedLaunch = async (tool: RelatedTool) => {
+    if (!tool.installed || operationBusyRef.current || readBusyRef.current) return;
+    const actionId = ++relatedActionIdRef.current;
+    operationBusyRef.current = true;
+    setBusy(`related:${tool.id}:launch`);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await launchRelatedTool(tool.id);
+      if (result.toolId !== tool.id || result.status !== "launched") {
+        throw new Error("관련 도구 작업 결과가 올바르지 않습니다.");
+      }
+      if (mountedRef.current && actionId === relatedActionIdRef.current) {
+        setNotice(result.message === "관련 도구를 실행했습니다."
+          ? result.message
+          : "관련 도구를 실행했습니다.");
+      }
+    } catch (e) {
+      if (mountedRef.current && actionId === relatedActionIdRef.current) {
+        setError(safeRelatedToolError(e));
+      }
+    } finally {
+      operationBusyRef.current = false;
+      if (mountedRef.current && actionId === relatedActionIdRef.current) setBusy(null);
+    }
+  };
+
+  const onRelatedExternalLink = (url: string) => {
+    void openRelatedToolUrl(url).catch(() => {
+      if (mountedRef.current) setError("공식 링크를 열 수 없습니다.");
+    });
+  };
+
   const onRollback = async (appId: string) => {
     if (operationBusyRef.current || readBusyRef.current) return;
     operationBusyRef.current = true;
@@ -889,6 +1072,8 @@ export default function App() {
         <h1 className="title">Devbox Manager</h1>
         <button
           className={`btn ${tab === "apps" ? "active" : ""}`}
+          type="button"
+          aria-current={tab === "apps" ? "page" : undefined}
           disabled={batchBusy || busy !== null || installRootBusy || readBusy}
           onClick={() => setTab("apps")}
         >
@@ -896,10 +1081,24 @@ export default function App() {
         </button>
         <button
           className={`btn ${tab === "doctor" ? "active" : ""}`}
+          type="button"
+          aria-current={tab === "doctor" ? "page" : undefined}
           disabled={batchBusy || busy !== null || installRootBusy || readBusy}
           onClick={() => { setTab("doctor"); void onDiagnose(); }}
         >
           환경 진단
+        </button>
+        <button
+          className={`btn ${tab === "related-tools" ? "active" : ""}`}
+          type="button"
+          aria-current={tab === "related-tools" ? "page" : undefined}
+          disabled={batchBusy || busy !== null || installRootBusy || readBusy}
+          onClick={() => {
+            setTab("related-tools");
+            if (relatedToolList.length === 0) void refreshRelatedTools();
+          }}
+        >
+          관련 도구
         </button>
         <span className="latest">Latest: {manifest ? manifest.releaseTag : "..."}</span>
         <span className="spacer" />
@@ -1102,6 +1301,117 @@ export default function App() {
             {!supportPreview && <div className="dim diagnostic-empty">번들 미리 확인 후 포함/제외 범위를 검토할 수 있습니다.</div>}
           </section>
         </div>
+      ) : tab === "related-tools" ? (
+        <section
+          className="related-tools"
+          aria-busy={relatedBusy || readBusy}
+          aria-labelledby="related-tools-heading"
+        >
+          <div className="related-tools-head">
+            <div>
+              <h2 id="related-tools-heading">Related Tools</h2>
+              <p className="dim">
+                개발 흐름을 보완하는 작은 공식 도구 목록입니다. 설치 여부만 로컬에서 감지하며 경로와 버전은 표시하지 않습니다.
+                감지와 이미 설치된 도구 실행은 인터넷 없이 가능합니다. WinGet 설치는 Windows와 네트워크가 필요하고, 공식·라이선스 링크는 플랫폼과 관계없이 네트워크 연결 시 열 수 있습니다.
+              </p>
+            </div>
+            <button
+              className="btn"
+              type="button"
+              disabled={batchBusy || busy !== null || installRootBusy || readBusy}
+              onClick={() => void refreshRelatedTools()}
+            >
+              {relatedBusy ? "감지 중..." : "다시 감지"}
+            </button>
+          </div>
+          {relatedError && <div className="error related-tools-error" role="alert">{relatedError}</div>}
+          {relatedToolList.length === 0 && !relatedBusy && !relatedError && (
+            <div className="dim related-tools-empty" role="status" aria-live="polite">
+              관련 도구 목록을 확인하려면 다시 감지를 누르세요.
+            </div>
+          )}
+          <div className="related-tools-grid">
+            {relatedToolList.map((tool) => {
+              const officialUrl = safeExternalUrl(tool.officialUrl);
+              const licenseUrl = safeExternalUrl(tool.licenseUrl);
+              return (
+                <article key={tool.id} className={`related-tool-card ${tool.installed ? "installed" : ""}`}>
+                  <div className="related-tool-card-head">
+                    <div>
+                      <h3>{tool.displayName}</h3>
+                      <p className="dim">{tool.summary}</p>
+                    </div>
+                    <span className={`related-tool-state ${tool.installed ? "ok" : "dim"}`}>
+                      {tool.installed ? "설치됨" : "미설치"}
+                    </span>
+                  </div>
+                  <dl className="related-tool-facts">
+                    <div><dt>감지</dt><dd>{relatedDetectionDescription(tool)}</dd></div>
+                    <div><dt>WinGet ID</dt><dd><code>{tool.wingetId}</code></dd></div>
+                    <div><dt>라이선스</dt><dd>{tool.license}</dd></div>
+                  </dl>
+                  <div className="related-tool-links">
+                    {officialUrl && (
+                      <a
+                        href={officialUrl}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          onRelatedExternalLink(officialUrl);
+                        }}
+                      >
+                        공식 사이트
+                      </a>
+                    )}
+                    {licenseUrl && (
+                      <a
+                        href={licenseUrl}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          onRelatedExternalLink(licenseUrl);
+                        }}
+                      >
+                        라이선스
+                      </a>
+                    )}
+                  </div>
+                  <div className="related-tool-actions">
+                    {tool.installed ? (
+                      <button
+                        className="btn"
+                        type="button"
+                        aria-busy={busy === `related:${tool.id}:launch`}
+                        disabled={batchBusy || busy !== null || installRootBusy || readBusy}
+                        onClick={() => void onRelatedLaunch(tool)}
+                      >
+                        {busy === `related:${tool.id}:launch` ? "실행 중..." : "실행"}
+                      </button>
+                    ) : (
+                      <button
+                        className="btn"
+                        type="button"
+                        aria-busy={busy === `related:${tool.id}:install`}
+                        disabled={!tool.platformSupported || batchBusy || busy !== null || installRootBusy || readBusy}
+                        title={tool.platformSupported ? undefined : "WinGet 설치는 Windows에서만 사용할 수 있습니다."}
+                        onClick={() => void onRelatedInstall(tool)}
+                      >
+                        {busy === `related:${tool.id}:install`
+                          ? "설치 중..."
+                          : tool.platformSupported ? "확인 후 WinGet 설치" : "WinGet 설치: Windows 전용"}
+                      </button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          <p className="dim related-tools-note">
+            Manager의 native 기능이 항상 기본 동작이며, 외부 도구는 선택적 보완재입니다. 자동 업데이트·제거·광범위한 WinGet 검색은 지원하지 않습니다.
+          </p>
+        </section>
       ) : (
       <div className="table-wrap">
         <section

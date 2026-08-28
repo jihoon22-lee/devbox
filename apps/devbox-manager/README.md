@@ -50,6 +50,12 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
   stale 처리하고, preview에서 검토한 bytes를 그대로 내보낸다. redaction contract와 omitted
   sections를 확인한 뒤에만 JSON export를 수행한다. export claim은 성공·stale·실패 모두
   소비되므로 UI도 재시도 버튼을 남기지 않고 새 preview를 요구한다.
+- **Related Tools** — PowerToys, Windows Terminal, VS Code, Bruno, DBeaver/DB Browser, GitHub Desktop,
+  Podman/Docker Desktop의 공식 사이트·라이선스와 Windows 설치 감지를 표시한다. WinGet 설치는
+  사용자가 확인한 한 건만 exact ID로 실행하며, 설치된 실행 파일만 직접 실행한다. 감지와 이미
+  설치된 도구 실행은 네트워크 없이도 가능하지만, WinGet 설치에는 Windows App Installer와
+  네트워크가 필요하고 공식·라이선스 링크는 브라우저/네트워크 상태를 따른다. WinGet이 없어도
+  Manager의 native 앱 설치·업데이트·실행에는 영향을 주지 않는다.
 - **실행** — 설치된 앱 실행
 
 ## 기술
@@ -101,6 +107,30 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
   single-flight guard로 비활성화한다. 반대로 metadata refresh/환경 진단 중에도 root·app
   mutation을 막아 locator 전환과 다른 Manager 상태 갱신이 겹치지 않게 한다.
 - `reqwest` + redirect 호스트 정책 (`crates/...` 아니고 앱 내 `core/url_policy`)
+- Related Tools 목록은 `apps/catalog.json`의 devbox 앱 목록과 분리된 Manager 내부 curated
+  metadata다. 각 항목은 공식 URL·license URL·고정 WinGet ID·실행 파일 이름만 포함하고
+  사용자 경로·버전·패키지 검색 결과는 저장하지 않는다. 감지는 PATH를 최대 128개 항목·항목당
+  4 KiB로 제한한 직접 파일 probe와 제한된 표준 설치 위치의 regular-file/reparse 검사를
+  조합해 확인하고 `path`/`known-location`/`not-found`/`unavailable`만 반환한다. OS가 소유한
+  `%LOCALAPPDATA%\Microsoft\WindowsApps`의 `wt.exe`·`winget.exe` alias만 고정 이름으로
+  예외 허용하며, 그 밖의 reparse executable은 거부한다. `where.exe`나
+  임의의 PATH 재탐색 결과를 UI에 전달하지 않으며, probe는 read-only다.
+  WinGet은 `install --id <curated-id> --exact --source winget`과 agreement 플래그만 사용하며
+  UI의 명시적 확인과 Windows 전용 direct process spawn, 120초 timeout을 통과해야 한다. PATH에서
+  확인한 WinGet 경로는 Windows Known Folder/System Directory API로 확인한 OS 소유
+  WindowsApps/System32 또는 그 하위의 bounded PATH 후보로 제한하고 즉시
+  regular-file/reparse 검사를 다시 통과해야 하며, stdout·stderr,
+  resolved path와 installer 위치는 UI·로그 DTO에 넣지 않는다. WinGet 설치·실행·감지는 하나의
+  native single-flight 경계를 공유하고, 설치 process tree는 Windows Job Object의
+  `KILL_ON_JOB_CLOSE`로 소유한다. process는 suspended 상태로 생성해 Job Object에 할당한 뒤에만
+  resume하며, 성공은 Job Object accounting의 active process가 0이 된 뒤에만 반환한다.
+  timeout·실패·앱 종료 시 root와 helper를 bounded reap/종료한다.
+  frontend API도 고정 catalog metadata와 detection/installed 정합성, action tool ID/status를
+  검증하고 native message·오류는 고정된 안전 문구로 치환한다. 늦은 install/launch 응답은
+  mount/action generation과 일치할 때만 화면 상태를 갱신한다. Related Tools 화면에는 감지·기존
+  실행은 오프라인 가능하고 WinGet 설치는 Windows/네트워크, 공식·라이선스 링크는 네트워크
+  전제라는 안내를 표시한다. non-Windows에서는 설치 control만 명시적으로 비활성화하며,
+  오프라인 또는 WinGet 부재 오류는 선택 기능의 상태로만 남고 Manager native 기능을 막지 않는다.
 
 설치 root 경계의 public 오류는 고정된 안전 메시지만 반환하고 입력 경로, locator/manifest 원문,
 OS 오류, credential을 반사하지 않는다. locator/manifest bytes와 row 수, path 길이에는 상한이 있으며

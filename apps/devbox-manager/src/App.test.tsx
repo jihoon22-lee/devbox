@@ -16,13 +16,17 @@ import {
   installPath,
   installMany,
   installed,
+  installRelatedTool,
   launchApp,
   onPendingOpen,
+  launchRelatedTool,
+  openRelatedToolUrl,
   openInstallFolder,
   previewDataQuery,
   previewRemoveApp,
   previewSupportBundle,
   previewInstallRoot,
+  relatedTools,
   removeApp,
   rollback,
   runDiagnosis,
@@ -38,6 +42,8 @@ import type {
   InstallRootPreview,
   RemovePreview,
   RemoveResult,
+  RelatedTool,
+  RelatedToolActionResult,
   ReleaseManifest,
   SupportBundlePreview,
 } from "./types";
@@ -56,13 +62,17 @@ vi.mock("./api", () => ({
   installPath: vi.fn(),
   installMany: vi.fn(),
   installed: vi.fn(),
+  installRelatedTool: vi.fn(),
   launchApp: vi.fn(),
+  launchRelatedTool: vi.fn(),
+  openRelatedToolUrl: vi.fn(),
   onPendingOpen: vi.fn(async () => () => undefined),
   openInstallFolder: vi.fn(),
   previewDataQuery: vi.fn(),
   previewRemoveApp: vi.fn(),
   previewSupportBundle: vi.fn(),
   previewInstallRoot: vi.fn(),
+  relatedTools: vi.fn(),
   removeApp: vi.fn(),
   rollback: vi.fn(),
   runDiagnosis: vi.fn(),
@@ -108,7 +118,10 @@ const currentMock = vi.mocked(current);
 const installAppMock = vi.mocked(installApp);
 const installPathMock = vi.mocked(installPath);
 const installManyMock = vi.mocked(installMany);
+const installRelatedToolMock = vi.mocked(installRelatedTool);
 const launchAppMock = vi.mocked(launchApp);
+const launchRelatedToolMock = vi.mocked(launchRelatedTool);
+const openRelatedToolUrlMock = vi.mocked(openRelatedToolUrl);
 const rollbackMock = vi.mocked(rollback);
 const openInstallFolderMock = vi.mocked(openInstallFolder);
 const previewRemoveAppMock = vi.mocked(previewRemoveApp);
@@ -122,6 +135,7 @@ const exportSupportBundleMock = vi.mocked(exportSupportBundle);
 const inspectDataDatabasesMock = vi.mocked(inspectDataDatabases);
 const previewDataQueryMock = vi.mocked(previewDataQuery);
 const previewSupportBundleMock = vi.mocked(previewSupportBundle);
+const relatedToolsMock = vi.mocked(relatedTools);
 const onPendingOpenMock = vi.mocked(onPendingOpen);
 const takePendingOpenMock = vi.mocked(takePendingOpen);
 const confirmMock = vi.fn<(message?: string) => boolean>();
@@ -131,6 +145,18 @@ const portablePath: InstallPathInfo = {
   executable: "C:\\Devbox\\apps\\port-manager\\versions\\0.2.1\\port-manager.exe",
   installRoot: "C:\\Devbox",
   sourceManifest: "C:\\Devbox\\registry.json",
+};
+const relatedTool: RelatedTool = {
+  id: "vs-code",
+  displayName: "Visual Studio Code",
+  summary: "경량 코드 편집기",
+  wingetId: "Microsoft.VisualStudioCode",
+  officialUrl: "https://code.visualstudio.com/",
+  licenseUrl: "https://code.visualstudio.com/License",
+  license: "Microsoft 배포 약관 · 소스 MIT",
+  platformSupported: true,
+  installed: false,
+  detection: "not-found",
 };
 
 const inspectorSnapshot: DataInspectorSnapshot = {
@@ -211,7 +237,18 @@ beforeEach(() => {
     ok: true,
     message: "installed",
   })));
+  installRelatedToolMock.mockReset().mockResolvedValue({
+    toolId: relatedTool.id,
+    status: "installed",
+    message: "WinGet 설치가 완료되었습니다.",
+  });
   launchAppMock.mockReset().mockResolvedValue(undefined);
+  launchRelatedToolMock.mockReset().mockResolvedValue({
+    toolId: relatedTool.id,
+    status: "launched",
+    message: "관련 도구를 실행했습니다.",
+  });
+  openRelatedToolUrlMock.mockReset().mockResolvedValue(undefined);
   rollbackMock.mockReset().mockResolvedValue("rolled back");
   openInstallFolderMock.mockReset().mockResolvedValue(undefined);
   previewRemoveAppMock.mockReset().mockResolvedValue({
@@ -275,6 +312,7 @@ beforeEach(() => {
   inspectDataDatabasesMock.mockReset().mockResolvedValue(inspectorSnapshot);
   previewDataQueryMock.mockReset().mockResolvedValue(inspectorResult);
   previewSupportBundleMock.mockReset().mockResolvedValue(supportPreviewFixture);
+  relatedToolsMock.mockReset().mockResolvedValue([relatedTool]);
   confirmMock.mockReset().mockReturnValue(false);
   Object.defineProperty(URL, "createObjectURL", {
     configurable: true,
@@ -840,5 +878,148 @@ describe("Devbox Manager batch install", () => {
     await waitFor(() => expect(installManyMock).toHaveBeenCalledWith([
       { appId: "code-pad", mode: "installer" },
     ]));
+  });
+});
+
+describe("Devbox Manager Related Tools", () => {
+  it("loads the bounded curated metadata and official links", async () => {
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+
+    expect(await screen.findByText("Visual Studio Code")).toBeTruthy();
+    expect(screen.getByText("표준 감지 위치에서 찾지 못했습니다.")).toBeTruthy();
+    expect(screen.getByText(/감지와 이미 설치된 도구 실행은 인터넷 없이 가능/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "공식 사이트" }).getAttribute("href"))
+      .toBe("https://code.visualstudio.com/");
+    expect(screen.getByRole("link", { name: "라이선스" }).getAttribute("href"))
+      .toBe("https://code.visualstudio.com/License");
+    expect(screen.getByText("Microsoft.VisualStudioCode")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "확인 후 WinGet 설치" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: "공식 사이트" }));
+    await waitFor(() => expect(openRelatedToolUrlMock).toHaveBeenCalledWith("https://code.visualstudio.com/"));
+  });
+
+  it("does not render non-HTTPS links returned outside the curated contract", async () => {
+    relatedToolsMock.mockResolvedValueOnce([{
+      ...relatedTool,
+      officialUrl: "https://evil.example/tool.exe",
+      licenseUrl: "javascript:alert(1)",
+    }]);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+    await screen.findByText("Visual Studio Code");
+
+    expect(screen.queryByRole("link", { name: "공식 사이트" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "라이선스" })).toBeNull();
+  });
+
+  it("keeps official links usable while disabling WinGet on unsupported platforms", async () => {
+    relatedToolsMock.mockResolvedValueOnce([{
+      ...relatedTool,
+      platformSupported: false,
+      detection: "unavailable",
+    }]);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+
+    const install = await screen.findByRole("button", { name: "WinGet 설치: Windows 전용" });
+    expect((install as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("link", { name: "공식 사이트" }));
+    await waitFor(() => expect(openRelatedToolUrlMock).toHaveBeenCalledWith(
+      "https://code.visualstudio.com/",
+    ));
+    expect(installRelatedToolMock).not.toHaveBeenCalled();
+  });
+
+  it("does not parse unbounded official-link values", async () => {
+    relatedToolsMock.mockResolvedValueOnce([{
+      ...relatedTool,
+      officialUrl: `https://code.visualstudio.com/${"x".repeat(2048)}`,
+    }]);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+    await screen.findByText("Visual Studio Code");
+
+    expect(screen.queryByRole("link", { name: "공식 사이트" })).toBeNull();
+  });
+
+  it("requires confirmation before invoking WinGet install", async () => {
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+    await screen.findByText("Visual Studio Code");
+
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 WinGet 설치" }));
+    expect(confirmMock).toHaveBeenCalledWith(
+      "'Visual Studio Code'을 WinGet으로 설치할까요? WinGet이 공식 패키지 설치를 진행합니다.",
+    );
+    expect(installRelatedToolMock).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 WinGet 설치" }));
+    await waitFor(() => expect(installRelatedToolMock).toHaveBeenCalledWith("vs-code", true));
+    await waitFor(() => expect(relatedToolsMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("offers launch only for a detected installed tool", async () => {
+    relatedToolsMock.mockResolvedValueOnce([{
+      ...relatedTool,
+      installed: true,
+      detection: "path",
+    }]);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+
+    expect(await screen.findByRole("button", { name: "실행" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "확인 후 WinGet 설치" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "실행" }));
+    await waitFor(() => expect(launchRelatedToolMock).toHaveBeenCalledWith("vs-code"));
+  });
+
+  it("does not render raw native errors from a related-tool action", async () => {
+    installRelatedToolMock.mockRejectedValueOnce(
+      new Error("C:\\Users\\developer\\secret-token=should-not-render"),
+    );
+    confirmMock.mockReturnValueOnce(true);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+    await screen.findByText("Visual Studio Code");
+
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 WinGet 설치" }));
+
+    await waitFor(() => expect(screen.getByText("관련 도구 작업을 완료할 수 없습니다.")).toBeTruthy());
+    expect(screen.queryByText(/secret-token/)).toBeNull();
+    expect(screen.queryByText(/C:\\Users\\developer/)).toBeNull();
+  });
+
+  it("ignores a related-tool action result after unmount", async () => {
+    let resolveInstall!: (result: RelatedToolActionResult) => void;
+    installRelatedToolMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveInstall = resolve;
+    }));
+    confirmMock.mockReturnValueOnce(true);
+    const view = render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+    await screen.findByText("Visual Studio Code");
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 WinGet 설치" }));
+    await waitFor(() => expect(installRelatedToolMock).toHaveBeenCalledWith("vs-code", true));
+
+    view.unmount();
+    resolveInstall({
+      toolId: "vs-code",
+      status: "installed",
+      message: "C:\\Users\\developer\\unexpected-output",
+    });
+    await Promise.resolve();
+
+    expect(document.body.textContent).not.toContain("unexpected-output");
+    expect(relatedToolsMock).toHaveBeenCalledTimes(1);
   });
 });

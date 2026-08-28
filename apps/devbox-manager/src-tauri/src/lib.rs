@@ -86,6 +86,9 @@ pub fn run() {
             commands::diagnostics::preview_support_bundle,
             commands::diagnostics::cancel_support_bundle,
             commands::diagnostics::export_support_bundle,
+            commands::related_tools::related_tools,
+            commands::related_tools::install_related_tool,
+            commands::related_tools::launch_related_tool,
         ])
         .on_window_event(|window, event| {
             devbox_window_state_tauri::handle_window_event(window, event);
