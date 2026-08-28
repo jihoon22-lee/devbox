@@ -459,9 +459,11 @@ pub(crate) fn save_path_limited(
         });
     }
 
-    if bounded_path_identity.is_some() && filesystem_identity(path, false).is_err() {
-        let _ = fs::remove_file(&temporary);
-        return Err(FileError::BackupIntegrity);
+    if let Some(expected_identity) = bounded_path_identity {
+        if !path_matches_identity(path, expected_identity) {
+            let _ = fs::remove_file(&temporary);
+            return Err(FileError::BackupIntegrity);
+        }
     }
 
     if let Err(source) = replace_file(&temporary, &canonical) {
@@ -673,7 +675,8 @@ pub(crate) fn restore_sibling_backup_if_current_limited(
     // The target must still be the regular path component approved by the
     // transaction. Do not canonicalize a replacement symlink/reparse point
     // into a different object before validating the snapshot.
-    filesystem_identity(target, false).map_err(|_| FileError::BackupIntegrity)?;
+    let target_identity =
+        filesystem_identity(target, false).map_err(|_| FileError::BackupIntegrity)?;
     if let Some(expected) = expected {
         validate_file_snapshot_limited(target, expected, max_bytes)?;
     }
@@ -696,7 +699,7 @@ pub(crate) fn restore_sibling_backup_if_current_limited(
             return Err(error);
         }
     }
-    if filesystem_identity(target, false).is_err() {
+    if !path_matches_identity(target, target_identity) {
         let _ = fs::remove_file(&temporary);
         return Err(FileError::BackupIntegrity);
     }
@@ -995,6 +998,10 @@ pub(crate) fn content_hash(bytes: &[u8]) -> String {
         output.push(HEX[(byte & 0x0f) as usize] as char);
     }
     output
+}
+
+fn path_matches_identity(path: &Path, expected: FilesystemIdentity) -> bool {
+    filesystem_identity(path, false).ok() == Some(expected)
 }
 
 /// Reads bytes only when the metadata snapshot is stable for the entire read.
@@ -1533,6 +1540,19 @@ mod tests {
         .unwrap_err();
         assert!(matches!(error, FileError::Conflict { .. }));
         assert_eq!(fs::read(&path).unwrap(), b"one");
+    }
+
+    #[test]
+    fn final_identity_guard_rejects_a_same_path_regular_file_replacement() {
+        let (_directory, path) = temp_file("identity-guard.txt", b"approved");
+        let expected = filesystem_identity(&path, false).unwrap();
+        let moved = path.with_file_name("identity-guard-original.txt");
+        fs::rename(&path, &moved).unwrap();
+        fs::write(&path, b"approved").unwrap();
+
+        assert!(!path_matches_identity(&path, expected));
+        assert_eq!(fs::read(&moved).unwrap(), b"approved");
+        assert_eq!(fs::read(&path).unwrap(), b"approved");
     }
 
     #[test]

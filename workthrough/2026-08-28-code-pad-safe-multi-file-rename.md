@@ -79,9 +79,12 @@ than completion/hover or ordinary editor edits.
     resolution and therefore handles drive, UNC, and W3 long-path forms
     without relying on host-sensitive `strip_prefix` behavior.
   - In bounded rename saves and rollback restores, re-check the final path
-    with no-follow filesystem identity immediately before replacement. If that
-    check fails, the rollback temporary is removed before returning the
-    integrity error.
+    with no-follow filesystem identity immediately before replacement and
+    compare it to the exact previously approved object, rather than accepting
+    any replacement regular file at the same pathname. If that check fails,
+    the temporary is removed before returning the integrity error. A regression
+    test replaces a path with the same bytes under a new identity and confirms
+    that the final guard rejects it.
 
 ### 3. Disk/LSP commit and lifecycle safety
 
@@ -236,7 +239,7 @@ cargo check -p code-pad --all-targets -j1
 Finished `dev` profile
 
 cargo test -p code-pad --lib -- --test-threads=1
-test result: ok. 184 passed; 0 failed
+test result: ok. 185 passed; 0 failed
 
 cargo test -p code-pad --test lsp_manager -- --test-threads=1
 test result: ok. 15 passed; 0 failed
@@ -298,8 +301,8 @@ failure. A prior whole-package run exposed an assertion that queried
 corrected to use the complete accessible-name prefix and the isolated App run
 then passed all 27 tests. The full package test later passed all 122 tests.
 The candidate was committed and rebased onto `origin/main` at
-`1b9921ac673526456d4ebac0f80b866608d7aed6`; push and PR creation remain
-pending final integration with the preceding Manager PR.
+`abfc12b066918653f2b2705cdf756c55bfb1b978`; push and PR creation remain
+pending final integration.
 
 ## Next Steps
 
