@@ -212,17 +212,32 @@ E: 독립 download는 15 apps/31 manifest-declared/32 verified/missing 0/undecla
 single-instance 누락을 찾았고 active life-log/WSL Desktop user process도 있어 W4는 의도적으로
 시작하지 않았다. RC1은 immutable historical checkpoint이지 stable 완료가 아니다.
 
-#### RC2 release preparation (현재)
+#### RC2 immutable checkpoint와 RC3 reset (현재)
 
 fix PR [#465](https://github.com/jihoon22-lee/devbox/pull/465)의 CI
 [33178381902](https://github.com/jihoon22-lee/devbox/actions/runs/33178381902)가 성공했고
-수정 merge commit은 `a5256fe252fb0c2115adfd02d303c277aaf7bccb`다. RC2는 이 correction
-baseline에서 release-preparation 변경을 검증·merge한 exact descendant commit에 새 immutable tag/package를
-준비한다. offline full-release verifier, 15-app packaged
-smoke/config와 static tests, catalog single-instance gate, release workflow exact-download
-verifier를 함께 준비하지만 RC2 PR/CI/tag/package와 independent assets, W1~W4는 아직
-미완료다. RC2는 independent asset verification과 exact package의 W1→W2→W3→W4 전체를
-다시 통과하기 전에는 `v0.5.0` stable tag를 만들지 않는다. 실행 순서와 증거 형식은
+수정 merge commit은 `a5256fe252fb0c2115adfd02d303c277aaf7bccb`다. 이 baseline의 descendant인
+RC2 preparation PR [#466](https://github.com/jihoon22-lee/devbox/pull/466)의 CI
+[33190371594](https://github.com/jihoon22-lee/devbox/actions/runs/33190371594)가 모두
+통과했다. annotated `v0.5.0-rc2`는 exact source
+`eb5d2253deb59ec460a9619ad64e0ff29e2d20e5`에 고정됐고 release workflow
+[33192179195](https://github.com/jihoon22-lee/devbox/actions/runs/33192179195)는 15 portable,
+15 installer, notices와 manifest인 32 assets를 게시·검증했다. E: 독립 download도
+15 apps/31 declared/32 verified/missing 0/undeclared 0인 PASS다.
+
+후속 source-equivalence 감사에서 Workbench preflight가 Windows와 WSL path namespace를
+구분하지 않고 missing target의 existing symlink/reparse parent를 먼저 검사하지 않는 누락을
+찾았다. fix PR [#467](https://github.com/jihoon22-lee/devbox/pull/467)의 CI
+[33201855818](https://github.com/jihoon22-lee/devbox/actions/runs/33201855818) 6개가 모두
+통과했고 correction은 `9dc237e23717bc294da0ff66d86df1bdce3cb595`에 병합됐다. RC2는
+immutable historical prerelease로 보존하지만 stable 승격 대상에서는 제외한다.
+
+RC3는 위 correction의 exact descendant에서 새 preparation PR·annotated tag·32-asset
+release를 만들고 E:의 fresh directory에서 size·SHA-256을 독립 검증한다. Windows
+W1→W2→W3→W4는 exact RC3 packages에서 처음부터 다시 실행하며 RC1/RC2 결과를 승계하지
+않는다. 기존 life-log/WSL Desktop 사용자 process, disposable installer/upgrade 환경,
+multi-monitor·DPI·IME·offline 환경 중 release-blocking 조건이 안전하게 확보되지 않으면
+통과로 표시하지 않는다. 실행 순서와 증거 형식은
 [v0.5.0 릴리스 계획](./superpowers/plans/2026-08-28-v0.5.0-release.md)을 기준으로 한다.
 
 #### P1 — 선행 필수
@@ -1094,7 +1109,8 @@ Stage 5    Webhook Lab, Dev Environment Doctor, Repo Manager          ✅
 v0.4.1     핫픽스 — 터미널 PTY·끊긴 앱 간 링크·Run Manager 시작 panic·identifier 이관 수정  ✅ (C1/C2 Windows 수동 acceptance는 issue #176에서 post-release 관리)
 v0.4.2     API Playground secret persistence 보안 핫픽스 — stable 27 assets·packaged H1  ✅
 v0.5.0-rc1 RC1 immutable checkpoint — 32 assets independent PASS, source audit 3/15; W4 미실행  ◐
-v0.5.0-rc2 single-instance fix 반영, 새 assets·W1~W4 재검증 준비 (stable pending)  ◐
+v0.5.0-rc2 32 assets 검증 완료, Workbench source-audit 결함으로 stable 승격 제외  ◐
+v0.5.0-rc3 Workbench 경로 경계 수정 반영, 새 assets·W1~W4 재검증 준비 (stable pending)  ◐
 ```
 
 ## 현재 상태
@@ -1109,9 +1125,13 @@ v0.5.0-rc2 single-instance fix 반영, 새 assets·W1~W4 재검증 준비 (stabl
   H1-A~D·cleanup을 통과했다.
 - v0.5.0-rc1은 32-asset publication과 independent download PASS를 남긴 immutable historical
   checkpoint다. source audit 3/15와 active user process 때문에 W4를 의도적으로 시작하지 않았다.
-- v0.5.0-rc2는 fix PR #465가 merge된 `a5256fe252fb0c2115adfd02d303c277aaf7bccb`를
-  correction baseline으로 시작한다. release-preparation PR의 exact merge commit을 대상으로 한
-  새 tag/package, independent asset verification, W1~W4, stable 재검증과 evidence
-  cleanup이 남아 있으며, 이 항목들을 직접 통과하기 전에는 완료로 표시하지 않는다.
+- v0.5.0-rc2는 exact source `eb5d2253deb59ec460a9619ad64e0ff29e2d20e5`, release
+  workflow `33192179195`, 32 assets와 독립 verification PASS를 남긴 immutable checkpoint다.
+  다만 후속 감사에서 Workbench preflight 경로 경계 누락을 찾아 stable로 승격하지 않는다.
+- v0.5.0-rc3는 fix PR #467/CI `33201855818`이 merge된
+  `9dc237e23717bc294da0ff66d86df1bdce3cb595`를 correction baseline으로 시작한다. 새
+  preparation PR/tag/package, independent asset verification, exact package W1~W4, stable
+  replay와 evidence cleanup이 남아 있으며, 이 항목들을 직접 통과하기 전에는 완료로 표시하지
+  않는다.
 - [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176) — 남은 Windows 실기·패키지·프로토콜·경로·시각
   acceptance를 post-release 수동 체크리스트로 관리한다.
