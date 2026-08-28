@@ -1,0 +1,375 @@
+name: Windows installer acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_tag:
+        description: "Candidate release tag (for example, v0.5.0-rc3)"
+        required: true
+        type: string
+      candidate_commit:
+        description: "Expected peeled commit for candidate_tag (40 hex characters)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-installer-acceptance
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    name: Windows installer acceptance
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout main acceptance code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Allocate isolated acceptance paths
+        id: paths
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          $runRoot = Join-Path $env:RUNNER_TEMP ("devbox-windows-installer-acceptance-" + [guid]::NewGuid().ToString('N'))
+          $baselineAssets = Join-Path $runRoot 'baseline-assets'
+          $candidateAssets = Join-Path $runRoot 'candidate-assets'
+          $metadataRoot = Join-Path $runRoot 'metadata'
+          $outputRoot = Join-Path $runRoot 'output'
+          $outputPath = Join-Path $outputRoot 'evidence.json'
+
+          New-Item -ItemType Directory -Path $runRoot, $baselineAssets, $candidateAssets, $metadataRoot, $outputRoot | Out-Null
+
+          $values = [ordered]@{
+            ACCEPTANCE_ROOT = $runRoot
+            BASELINE_ASSETS = $baselineAssets
+            CANDIDATE_ASSETS = $candidateAssets
+            BASELINE_METADATA = (Join-Path $metadataRoot 'baseline.json')
+            CANDIDATE_METADATA = (Join-Path $metadataRoot 'candidate.json')
+            ACCEPTANCE_OUTPUT = $outputPath
+            ACCEPTANCE_SCRATCH = $runRoot
+          }
+          foreach ($entry in $values.GetEnumerator()) {
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value ("{0}={1}" -f $entry.Key, $entry.Value) -Encoding utf8
+          }
+
+          $outputs = [ordered]@{
+            root = $runRoot
+            baselineAssets = $baselineAssets
+            candidateAssets = $candidateAssets
+            baselineMetadata = $values.BASELINE_METADATA
+            candidateMetadata = $values.CANDIDATE_METADATA
+            output = $outputPath
+            scratch = $runRoot
+          }
+          foreach ($entry in $outputs.GetEnumerator()) {
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value ("{0}={1}" -f $entry.Key, $entry.Value) -Encoding utf8
+          }
+
+      - name: Validate immutable baseline and candidate tags
+        shell: pwsh
+        env:
+          CANDIDATE_TAG_INPUT: ${{ inputs.candidate_tag }}
+          CANDIDATE_COMMIT_INPUT: ${{ inputs.candidate_commit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          function Get-GitText {
+            param([Parameter(Mandatory = $true)][string[]] $Arguments)
+            $result = & git @Arguments 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              throw ("git {0} failed: {1}" -f ($Arguments -join ' '), ($result -join ' '))
+            }
+            return (($result -join [Environment]::NewLine).Trim())
+          }
+
+          function Assert-TagShape {
+            param(
+              [Parameter(Mandatory = $true)][string] $Tag,
+              [Parameter(Mandatory = $true)][string] $Name
+            )
+            if (-not [regex]::IsMatch($Tag, '\Av[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\z', [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
+              throw "$Name is not a strict semver tag"
+            }
+          }
+
+          function Assert-CommitShape {
+            param(
+              [Parameter(Mandatory = $true)][string] $Commit,
+              [Parameter(Mandatory = $true)][string] $Name
+            )
+            if (-not [regex]::IsMatch($Commit, '\A[0-9a-fA-F]{40}\z', [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
+              throw "$Name is not a 40-character hexadecimal commit"
+            }
+          }
+
+          function Assert-RemoteAnnotatedTag {
+            param(
+              [Parameter(Mandatory = $true)][string] $Tag,
+              [Parameter(Mandatory = $true)][string] $ExpectedCommit,
+              [Parameter(Mandatory = $true)][string] $Name
+            )
+
+            $remoteRef = "refs/tags/$Tag"
+            $remoteLine = Get-GitText @('ls-remote', '--tags', '--refs', 'origin', $remoteRef)
+            if ([string]::IsNullOrWhiteSpace($remoteLine)) {
+              throw "$Name tag $Tag does not exist on origin"
+            }
+
+            $fetchRef = "+{0}:{0}" -f $remoteRef
+            $fetchResult = & git fetch --force --no-tags origin $fetchRef 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              throw ("fetching {0} failed: {1}" -f $Tag, ($fetchResult -join ' '))
+            }
+
+            $tagType = Get-GitText @('cat-file', '-t', $remoteRef)
+            if ($tagType -cne 'tag') {
+              throw "$Name tag $Tag is not annotated (object type: $tagType)"
+            }
+
+            $peeledCommit = Get-GitText @('rev-parse', "$remoteRef^{}")
+            Assert-CommitShape -Commit $peeledCommit -Name "$Name peeled commit"
+            if ((Get-GitText @('cat-file', '-t', $peeledCommit)) -cne 'commit') {
+              throw "$Name tag $Tag does not peel to a commit"
+            }
+            if (-not [string]::Equals($peeledCommit, $ExpectedCommit, [System.StringComparison]::OrdinalIgnoreCase)) {
+              throw "$Name tag $Tag peeled to $peeledCommit, expected $ExpectedCommit"
+            }
+            return $peeledCommit.ToLowerInvariant()
+          }
+
+          $candidateTag = [string]$env:CANDIDATE_TAG_INPUT
+          $candidateCommit = [string]$env:CANDIDATE_COMMIT_INPUT
+          Assert-TagShape -Tag $candidateTag -Name 'candidate_tag'
+          Assert-CommitShape -Commit $candidateCommit -Name 'candidate_commit'
+          $candidateCommit = $candidateCommit.ToLowerInvariant()
+
+          $configPath = Join-Path $env:GITHUB_WORKSPACE '.github/scripts/windows-installer-acceptance-config.json'
+          if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+            throw "acceptance config is missing"
+          }
+          $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+          if ($config.schemaVersion -ne 1 -or $null -eq $config.baseline) {
+            throw 'unsupported acceptance config schema'
+          }
+
+          $baselineTag = [string]$config.baseline.tag
+          $baselineCommit = [string]$config.baseline.commit
+          Assert-TagShape -Tag $baselineTag -Name 'configured baseline tag'
+          Assert-CommitShape -Commit $baselineCommit -Name 'configured baseline commit'
+          $baselineCommit = $baselineCommit.ToLowerInvariant()
+          if ($baselineTag -ceq $candidateTag) {
+            throw 'baseline and candidate tags must differ'
+          }
+
+          $baselinePeeled = Assert-RemoteAnnotatedTag -Tag $baselineTag -ExpectedCommit $baselineCommit -Name 'baseline'
+          $candidatePeeled = Assert-RemoteAnnotatedTag -Tag $candidateTag -ExpectedCommit $candidateCommit -Name 'candidate'
+
+          @(
+            "BASELINE_TAG=$baselineTag"
+            "BASELINE_COMMIT=$baselinePeeled"
+            "CANDIDATE_TAG=$candidateTag"
+            "CANDIDATE_COMMIT=$candidatePeeled"
+            "ACCEPTANCE_CONFIG=$configPath"
+          ) | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+
+      - name: Download public release assets and sanitize metadata
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $repo = 'jihoon22-lee/devbox'
+
+          function Get-ReleaseMetadata {
+            param(
+              [Parameter(Mandatory = $true)][string] $Tag,
+              [Parameter(Mandatory = $true)][string] $ExpectedCommit,
+              [Parameter(Mandatory = $true)][string] $Path
+            )
+
+            $viewArgs = @('release', 'view', $Tag, '--repo', $repo, '--json', 'tagName,isDraft,isPrerelease,targetCommitish,assets')
+            $raw = & gh @viewArgs 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              throw ("release metadata lookup failed for {0}: {1}" -f $Tag, ($raw -join ' '))
+            }
+            $release = ($raw -join [Environment]::NewLine) | ConvertFrom-Json
+            if ([string]$release.tagName -cne $Tag) {
+              throw "release metadata tag mismatch for $Tag"
+            }
+
+            $safeAssets = @($release.assets | ForEach-Object {
+              [ordered]@{
+                name = [string]$_.name
+                size = [int64]$_.size
+                digest = if ($null -eq $_.digest) { $null } else { [string]$_.digest }
+              }
+            })
+            $safeMetadata = [ordered]@{
+              tagName = [string]$release.tagName
+              isDraft = [bool]$release.isDraft
+              isPrerelease = [bool]$release.isPrerelease
+              targetCommit = $ExpectedCommit
+              assets = $safeAssets
+            }
+            $safeMetadata | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding utf8
+          }
+
+          foreach ($release in @(
+            [pscustomobject]@{ Tag = $env:BASELINE_TAG; Commit = $env:BASELINE_COMMIT; Assets = $env:BASELINE_ASSETS; Metadata = $env:BASELINE_METADATA }
+            [pscustomobject]@{ Tag = $env:CANDIDATE_TAG; Commit = $env:CANDIDATE_COMMIT; Assets = $env:CANDIDATE_ASSETS; Metadata = $env:CANDIDATE_METADATA }
+          )) {
+            $downloadArgs = @('release', 'download', $release.Tag, '--repo', $repo, '--dir', $release.Assets, '--clobber')
+            $downloadResult = & gh @downloadArgs 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              throw ("asset download failed for {0}: {1}" -f $release.Tag, ($downloadResult -join ' '))
+            }
+            Get-ReleaseMetadata -Tag $release.Tag -ExpectedCommit $release.Commit -Path $release.Metadata
+          }
+
+      - name: Run Windows installer acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $scriptPath = Join-Path $env:GITHUB_WORKSPACE '.github/scripts/windows-installer-acceptance.ps1'
+          & $scriptPath `
+            -Config $env:ACCEPTANCE_CONFIG `
+            -BaselineAssets $env:BASELINE_ASSETS `
+            -CandidateAssets $env:CANDIDATE_ASSETS `
+            -BaselineMetadata $env:BASELINE_METADATA `
+            -CandidateMetadata $env:CANDIDATE_METADATA `
+            -CandidateTag $env:CANDIDATE_TAG `
+            -CandidateCommit $env:CANDIDATE_COMMIT `
+            -Output $env:ACCEPTANCE_OUTPUT `
+            -ScratchRoot $env:ACCEPTANCE_SCRATCH
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows installer acceptance script failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Upload JSON evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-acceptance-json
+          path: ${{ steps.paths.outputs.output }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Require explicit PASS evidence
+        if: ${{ always() }}
+        shell: pwsh
+        env:
+          EVIDENCE_PATH: ${{ steps.paths.outputs.output }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          if (-not (Test-Path -LiteralPath $env:EVIDENCE_PATH -PathType Leaf)) {
+            throw 'acceptance evidence JSON is missing'
+          }
+          $evidence = Get-Content -LiteralPath $env:EVIDENCE_PATH -Raw | ConvertFrom-Json
+          if (
+            [int]$evidence.schemaVersion -ne 1 -or
+            [string]$evidence.status -cne 'PASS' -or
+            [string]$evidence.candidateTag -cne $env:CANDIDATE_TAG -or
+            [string]$evidence.candidateCommit -cne $env:CANDIDATE_COMMIT -or
+            [string]::IsNullOrWhiteSpace([string]$evidence.completedAt)
+          ) {
+            throw 'acceptance evidence envelope or candidate identity mismatch'
+          }
+          if (
+            [string]$evidence.releases.baseline.tag -cne $env:BASELINE_TAG -or
+            [string]$evidence.releases.baseline.commit -cne $env:BASELINE_COMMIT -or
+            [int]$evidence.releases.baseline.assets -ne 27 -or
+            [string]$evidence.releases.candidate.tag -cne $env:CANDIDATE_TAG -or
+            [string]$evidence.releases.candidate.commit -cne $env:CANDIDATE_COMMIT -or
+            [int]$evidence.releases.candidate.assets -ne 32
+          ) {
+            throw 'acceptance evidence release identity mismatch'
+          }
+
+          $apps = @($evidence.apps)
+          if ($apps.Count -ne 15 -or @($apps.id | Select-Object -Unique).Count -ne 15) {
+            throw 'acceptance evidence app identity/count mismatch'
+          }
+          $config = Get-Content -LiteralPath $env:ACCEPTANCE_CONFIG -Raw | ConvertFrom-Json
+          $configuredIds = @($config.apps | ForEach-Object { [string]$_.id })
+          if (@(Compare-Object $configuredIds @($apps.id) -CaseSensitive).Count -ne 0) {
+            throw 'acceptance evidence app identities differ from the pinned config'
+          }
+          if (@($apps | Where-Object { [string]$_.status -cne 'PASS' }).Count -ne 0) {
+            throw 'one or more installer acceptance app results did not pass'
+          }
+          $baselineApps = @($apps | Where-Object { [bool]$_.baseline })
+          $newApps = @($apps | Where-Object { -not [bool]$_.baseline })
+          if ($baselineApps.Count -ne 13 -or $newApps.Count -ne 2) {
+            throw 'acceptance evidence baseline/new app partition mismatch'
+          }
+          $configuredBaselineIds = @($config.apps | Where-Object { [bool]$_.baseline } | ForEach-Object { [string]$_.id })
+          if (@(Compare-Object $configuredBaselineIds @($baselineApps.id) -CaseSensitive).Count -ne 0) {
+            throw 'acceptance evidence baseline partition differs from the pinned config'
+          }
+          foreach ($app in $baselineApps) {
+            $phases = @($app.phases | ForEach-Object { [string]$_.phase })
+            if (($phases -join ',') -cne 'install,update,uninstall,install,update,uninstall') {
+              throw "baseline lifecycle evidence is incomplete for $($app.id)"
+            }
+          }
+          foreach ($app in $newApps) {
+            $phases = @($app.phases | ForEach-Object { [string]$_.phase })
+            if (($phases -join ',') -cne 'custom,uninstall,install,uninstall') {
+              throw "new-app lifecycle evidence is incomplete for $($app.id)"
+            }
+          }
+          foreach ($app in $apps) {
+            if ($null -ne $app.failure -or @($app.markers).Count -lt 1) {
+              throw "app failure/marker evidence is invalid for $($app.id)"
+            }
+            foreach ($marker in @($app.markers)) {
+              if ([string]$marker.identifier -notmatch '^com\.(devbox|workbench)\.[a-z0-9]+$' -or [string]$marker.sha256 -notmatch '^[0-9a-f]{64}$') {
+                throw "marker identity evidence is invalid for $($app.id)"
+              }
+            }
+            foreach ($phase in @($app.phases)) {
+              if ([string]$phase.phase -ceq 'uninstall') {
+                if (-not [bool]$phase.registryRemoved -or -not [bool]$phase.executableRemoved) {
+                  throw "uninstall evidence is incomplete for $($app.id)"
+                }
+              } elseif (
+                [string]$phase.version -notmatch '^\d+\.\d+\.\d+$' -or
+                [string]$phase.binarySha256 -notmatch '^[0-9a-f]{64}$' -or
+                [string]::IsNullOrWhiteSpace([string]$phase.fileVersion) -or
+                [int]$phase.shortcutCount -lt 1 -or
+                [string]::IsNullOrWhiteSpace([string]$phase.installRoot) -or
+                [string]::IsNullOrWhiteSpace([string]$phase.authenticode)
+              ) {
+                throw "install/update evidence is incomplete for $($app.id)"
+              }
+            }
+          }
+
+          $cleanup = $evidence.cleanup
+          if (
+            [int]$cleanup.uninstallResidue -ne 0 -or
+            [int]$cleanup.registryKeyResidue -ne 0 -or
+            [int]$cleanup.installDirectoryResidue -ne 0 -or
+            [int]$cleanup.markerResidue -ne 0 -or
+            [int]$cleanup.appDataDirectoryResidue -ne 0 -or
+            [int]$cleanup.integrationDirectoryResidue -ne 0 -or
+            @($cleanup.failures).Count -ne 0 -or
+            @($evidence.failures).Count -ne 0
+          ) {
+            throw 'acceptance evidence cleanup or failure state is not clean'
+          }
