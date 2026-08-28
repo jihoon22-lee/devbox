@@ -1177,33 +1177,51 @@ pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), File
         operation: "identify private atomic-write parent",
         source,
     })?;
-    if let Ok(metadata) = fs::symlink_metadata(path) {
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
-            return Err(FileError::BackupIntegrity);
-        }
-    }
-    let permissions = match fs::metadata(path) {
-        Ok(metadata) => Some(metadata.permissions()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                Some(PermissionsExt::from_mode(0o600))
+    // Keep the publish mode tied to the initial existence check. If the
+    // journal was absent, a concurrent creator must win or make this write
+    // fail; it must never be replaced by this transaction's stale decision.
+    let target_identity = match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                return Err(FileError::BackupIntegrity);
             }
-            #[cfg(not(unix))]
-            {
-                // A newly created Windows file inherits the app-private
-                // directory ACL. Copying directory `Permissions` onto the
-                // file is not meaningful and can propagate the directory's
-                // readonly attribute, making the journal unpublishable.
-                None
-            }
+            Some(
+                filesystem_identity(path, false).map_err(|source| FileError::Io {
+                    operation: "identify private atomic-write target",
+                    source,
+                })?,
+            )
         }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
         Err(source) => {
             return Err(FileError::Io {
-                operation: "read private atomic-write permissions",
+                operation: "inspect private atomic-write target",
                 source,
             });
+        }
+    };
+    let permissions = if target_identity.is_some() {
+        Some(
+            fs::metadata(path)
+                .map_err(|source| FileError::Io {
+                    operation: "read private atomic-write permissions",
+                    source,
+                })?
+                .permissions(),
+        )
+    } else {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            Some(PermissionsExt::from_mode(0o600))
+        }
+        #[cfg(not(unix))]
+        {
+            // A newly created Windows file inherits the app-private
+            // directory ACL. Copying directory `Permissions` onto the
+            // file is not meaningful and can propagate the directory's
+            // readonly attribute, making the journal unpublishable.
+            None
         }
     };
     let (temporary, _) = write_sibling_temp(path, bytes, permissions.as_ref())?;
@@ -1211,24 +1229,35 @@ pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), File
     // stale recovery process can create the journal path between the earlier
     // metadata check and this decision. The no-replace helper keeps that race
     // from clobbering an unrelated file.
-    let result = match fs::symlink_metadata(path) {
-        Ok(_) => replace_file(&temporary, path),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            rename_without_replace(&temporary, path)
-        }
-        Err(error) => Err(error),
+    publish_private_temp(&temporary, path, target_identity)?;
+    if filesystem_identity(parent, true).ok() != Some(parent_identity) {
+        return Err(FileError::BackupIntegrity);
+    }
+    sync_parent(path)
+}
+
+fn publish_private_temp(
+    temporary: &Path,
+    target: &Path,
+    target_identity: Option<FilesystemIdentity>,
+) -> Result<(), FileError> {
+    if target_identity.is_some_and(|expected| !path_matches_identity(target, expected)) {
+        let _ = fs::remove_file(temporary);
+        return Err(FileError::BackupIntegrity);
+    }
+    let result = if target_identity.is_some() {
+        replace_file(temporary, target)
+    } else {
+        rename_without_replace(temporary, target)
     };
     if let Err(source) = result {
-        let _ = fs::remove_file(&temporary);
+        let _ = fs::remove_file(temporary);
         return Err(FileError::Io {
             operation: "publish rename transaction journal",
             source,
         });
     }
-    if filesystem_identity(parent, true).ok() != Some(parent_identity) {
-        return Err(FileError::BackupIntegrity);
-    }
-    sync_parent(path)
+    Ok(())
 }
 
 #[cfg(not(windows))]
@@ -1288,6 +1317,37 @@ mod tests {
         let path = directory.path().join(name);
         fs::write(&path, contents).unwrap();
         (directory, path)
+    }
+
+    #[test]
+    fn private_atomic_publish_never_overwrites_a_concurrent_path_owner() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("journal.json");
+
+        // The caller approved a create, but another writer publishes first.
+        let create_temp = directory.path().join("create.tmp");
+        fs::write(&create_temp, b"stale create").unwrap();
+        fs::write(&target, b"concurrent owner").unwrap();
+        assert!(publish_private_temp(&create_temp, &target, None).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"concurrent owner");
+        assert!(!create_temp.exists());
+
+        // The caller approved an update, but that exact file is replaced
+        // before publish. Allocate the replacement while the approved object
+        // still exists so its filesystem identity is guaranteed to differ.
+        let approved_identity = filesystem_identity(&target, false).unwrap();
+        let replacement = directory.path().join("replacement.json");
+        fs::write(&replacement, b"replacement owner").unwrap();
+        fs::remove_file(&target).unwrap();
+        fs::rename(&replacement, &target).unwrap();
+        let update_temp = directory.path().join("update.tmp");
+        fs::write(&update_temp, b"stale update").unwrap();
+        assert!(matches!(
+            publish_private_temp(&update_temp, &target, Some(approved_identity)),
+            Err(FileError::BackupIntegrity)
+        ));
+        assert_eq!(fs::read(&target).unwrap(), b"replacement owner");
+        assert!(!update_temp.exists());
     }
 
     fn snapshot(opened: &OpenedFile) -> ExpectedFileSnapshot<'_> {

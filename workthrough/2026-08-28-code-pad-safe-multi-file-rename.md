@@ -74,6 +74,14 @@ than completion/hover or ordinary editor edits.
   - Bind each journal's plan id to its directory name before recovery. A
     copied or renamed journal directory is rejected instead of allowing its
     records to be interpreted under a different transaction identity.
+  - Private journal publication keeps its initial create-versus-update decision
+    through the final rename. A journal created concurrently after an absent
+    path was checked can therefore only make the create branch fail, never be
+overwritten by a stale writer.
+  - Updates also retain the initially observed journal filesystem identity and
+    reject a replacement immediately before atomic publication, so an existing
+    journal exchanged by another writer is not overwritten under the old
+    approval.
   - Use `WorkspaceRoot::relative_path` for display/result paths. It applies the
     same component-aware, Windows case-insensitive boundary rules as URI
     resolution and therefore handles drive, UNC, and W3 long-path forms
