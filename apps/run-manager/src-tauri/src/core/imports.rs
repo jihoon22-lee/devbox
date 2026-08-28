@@ -1679,6 +1679,7 @@ fn reject_link_components(path: &Path) -> Result<(), ProjectImportError> {
     Ok(())
 }
 
+#[cfg(test)]
 fn source_revision_with_root(
     snapshot: SourceSnapshot<'_>,
     root_identity: Option<devbox_filesystem::FilesystemIdentity>,

@@ -384,9 +384,24 @@ cargo test -p filesystem -j1                                pass (17 tests)
 cargo test -p run-manager --lib -j1                         pass (198 tests)
 ```
 
-Cargo check, strict Clippy, frontend gates, rebase, commit, push, and Windows
-CI remain for the PR-final validation. Windows reparse-point behavior also
-remains part of the W3 packaged acceptance boundary.
+After rebasing onto the Code Pad merge, the shared Diff View conflict retained
+its newer `cancelDisabled` contract together with the form-safe button and
+checkbox label. Dependency notices were regenerated from the merged lockfile.
+The first post-rebase check also found a test-only revision helper in the
+production dead-code surface; it is now compiled only for tests.
+
+```text
+cargo test -p run-manager -j1                               pass (198 tests)
+cargo check -p run-manager -j1                              pass
+cargo clippy -p run-manager --all-targets -j1 -- -D warnings pass
+pnpm --dir apps/run-manager test -- --maxWorkers=2           pass (6 files / 39 tests)
+pnpm --dir apps/run-manager build                            pass
+python3 .github/scripts/check-dependencies.py check          pass
+git diff --check                                             pass
+```
+
+Push, pull-request CI, and the Windows W3 packaged smoke remain. Windows
+reparse-point behavior remains part of that packaged acceptance boundary.
 
 ### Design boundary
 
