@@ -1179,19 +1179,33 @@ pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), File
             return Err(FileError::BackupIntegrity);
         }
     }
-    let permissions = fs::metadata(path)
-        .map(|metadata| metadata.permissions())
-        .unwrap_or_else(|_| {
+    let permissions = match fs::metadata(path) {
+        Ok(metadata) => metadata.permissions(),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let mut permissions = fs::metadata(parent)
+                .map_err(|source| FileError::Io {
+                    operation: "read private atomic-write parent permissions",
+                    source,
+                })?
+                .permissions();
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                PermissionsExt::from_mode(0o600)
+                permissions.set_mode(0o600);
             }
             #[cfg(not(unix))]
             {
-                std::fs::Permissions::from_readonly(false)
+                permissions.set_readonly(false);
             }
-        });
+            permissions
+        }
+        Err(source) => {
+            return Err(FileError::Io {
+                operation: "read private atomic-write permissions",
+                source,
+            });
+        }
+    };
     let (temporary, _) = write_sibling_temp(path, bytes, &permissions)?;
     // Never use overwrite-capable rename for the create branch: an attacker or
     // stale recovery process can create the journal path between the earlier

@@ -301,8 +301,14 @@ failure. A prior whole-package run exposed an assertion that queried
 corrected to use the complete accessible-name prefix and the isolated App run
 then passed all 27 tests. The full package test later passed all 122 tests.
 The candidate was committed and rebased onto `origin/main` at
-`abfc12b066918653f2b2705cdf756c55bfb1b978`; push and PR creation remain
-pending final integration.
+`abfc12b066918653f2b2705cdf756c55bfb1b978` and published as PR #457.
+
+The first Windows compile-check run exposed a platform-only construction bug:
+`std::fs::Permissions::from_readonly` does not exist. The new-journal fallback
+now derives a permissions value from the already identity-checked parent,
+forces private mode `0600` on Unix, clears the readonly bit on non-Unix, and
+continues to fail closed for metadata errors other than `NotFound`. This keeps
+the behavior portable without weakening the private journal boundary.
 
 ## Next Steps
 
