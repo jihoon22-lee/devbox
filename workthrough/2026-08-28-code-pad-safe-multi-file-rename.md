@@ -322,6 +322,10 @@ the same path allowed ext4 to recycle the just-freed inode. The replacement
 fixture is now allocated while the original still exists and then renamed into
 place, guaranteeing a distinct concurrently allocated identity and preserving
 the intended path-replacement assertion.
+Windows strict Clippy also evaluates the rollback test's readonly-file cleanup.
+That exact non-Unix cleanup call now carries a narrowly scoped allowance with
+its fixture-only rationale; production code does not clear readonly
+permissions.
 
 ## Next Steps
 

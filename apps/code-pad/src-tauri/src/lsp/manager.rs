@@ -4437,7 +4437,13 @@ mod tests {
             writable.set_mode(writable.mode() | 0o200);
         }
         #[cfg(not(unix))]
-        writable.set_readonly(false);
+        {
+            // This is test-fixture cleanup for a file that this test just made
+            // readonly. The lint's Unix world-writable warning does not apply
+            // to this non-Unix branch; Windows exposes no mode-bit alternative.
+            #[allow(clippy::permissions_set_readonly_false)]
+            writable.set_readonly(false);
+        }
         std::fs::set_permissions(&second_path, writable).unwrap();
     }
 }
