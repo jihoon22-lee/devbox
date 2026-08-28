@@ -1,5 +1,13 @@
 //! Repo Manager command — 저장소 탐색·상태·worktree.
 
+use crate::core::cleanup::{
+    classify_preview, finalize_revision, parse_branch_records, parse_merged_branch_names,
+    parse_worktree_records, parse_worktree_status, valid_ref_name, valid_revision,
+    BranchCleanupEntry, CleanupItemResult, CleanupPreview, CleanupResult, ParsedBranch,
+    ParsedWorktree, WorktreeCleanupEntry, GIT_CLEANUP_BUSY, GIT_CLEANUP_CANCELLED,
+    GIT_CLEANUP_ERROR, GIT_CLEANUP_STATE_CHANGED, MAX_CLEANUP_BRANCHES, MAX_CLEANUP_OUTPUT_BYTES,
+    MAX_CLEANUP_PATH_BYTES, MAX_CLEANUP_REF_BYTES, MAX_CLEANUP_SELECTIONS, MAX_CLEANUP_WORKTREES,
+};
 use crate::core::git::{parse_status, parse_worktrees, RepoSnapshot};
 use crate::core::git_safety::{
     classify, parse_porcelain_v2, GitSafetySnapshot, GIT_SAFETY_ERROR, MAX_SAFETY_OUTPUT_BYTES,
@@ -22,11 +30,12 @@ use devbox_filesystem::{filesystem_identity, FilesystemIdentity};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri_plugin_opener::OpenerExt;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -52,6 +61,9 @@ const MAX_REMOTE_MARKER_OUTPUT_BYTES: usize = 4 * 1024;
 const MAX_REMOTE_OUTPUT_BYTES: usize = 64 * 1024;
 const MAX_REMOTE_OPERATION_ID_BYTES: usize = 128;
 const REMOTE_TIMEOUT: Duration = Duration::from_secs(30);
+const CLEANUP_OBSERVATION_BUDGET: Duration = Duration::from_secs(30);
+const CLEANUP_REVALIDATION_BUDGET: Duration = Duration::from_secs(15);
+const CLEANUP_MUTATION_BUDGET: Duration = Duration::from_secs(120);
 const MAX_WORKTREE_OUTPUT_BYTES: usize = 512 * 1024;
 const GIT_STATUS_ERROR: &str = "Git 상태를 불러올 수 없습니다.";
 const GIT_WORKTREE_ERROR: &str = "Git worktree 작업을 실행하지 못했습니다.";
@@ -358,6 +370,513 @@ fn run_git_mutation_with_cancel(
     })
 }
 
+fn run_git_cleanup_bounded_with_timeout(
+    args: &[String],
+    cwd: &Path,
+    timeout: Duration,
+    cancellation: Option<&AtomicBool>,
+) -> Result<String, String> {
+    if !cleanup_read_argv_allowed(args) {
+        return Err(GIT_CLEANUP_ERROR.to_string());
+    }
+    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let cwd = cwd.to_string_lossy().into_owned();
+    let result = match cancellation {
+        Some(signal) => devbox_git::run_bounded_with_cancel(
+            &args,
+            &cwd,
+            timeout,
+            MAX_CLEANUP_OUTPUT_BYTES,
+            signal,
+        ),
+        None => devbox_git::run_bounded(&args, &cwd, timeout, MAX_CLEANUP_OUTPUT_BYTES),
+    };
+    result.map_err(|error| {
+        if error == "git_cancelled" {
+            GIT_CLEANUP_CANCELLED.to_string()
+        } else {
+            GIT_CLEANUP_ERROR.to_string()
+        }
+    })
+}
+
+fn run_git_cleanup_mutation_with_cancel(
+    args: &[String],
+    cwd: &Path,
+    cancellation: &AtomicBool,
+    timeout: Duration,
+) -> Result<(), String> {
+    if !cleanup_mutation_argv_allowed(args) {
+        return Err(GIT_CLEANUP_ERROR.to_string());
+    }
+    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let cwd = cwd.to_string_lossy().into_owned();
+    devbox_git::run_mutating_with_cancel(
+        &args,
+        &cwd,
+        timeout,
+        MAX_MUTATION_OUTPUT_BYTES,
+        cancellation,
+    )
+    .map(|_| ())
+    .map_err(|error| {
+        if error == "git_cancelled" {
+            GIT_CLEANUP_CANCELLED.to_string()
+        } else {
+            GIT_CLEANUP_ERROR.to_string()
+        }
+    })
+}
+
+fn git_cleanup_branch_args() -> Vec<String> {
+    vec![
+        "--no-pager".to_string(),
+        "--no-optional-locks".to_string(),
+        "for-each-ref".to_string(),
+        "--format=%(refname:strip=2)%00%(objectname)%00%(upstream:short)%00%(upstream:track)%00%(committerdate:unix)%00%(HEAD)%00".to_string(),
+        "refs/heads".to_string(),
+    ]
+}
+
+fn git_cleanup_merged_args(head: &str) -> Vec<String> {
+    vec![
+        "--no-pager".to_string(),
+        "--no-optional-locks".to_string(),
+        "for-each-ref".to_string(),
+        format!("--merged={head}"),
+        "--format=%(refname:strip=2)".to_string(),
+        "refs/heads".to_string(),
+    ]
+}
+
+fn git_cleanup_worktree_args() -> Vec<String> {
+    vec![
+        "--no-pager".to_string(),
+        "--no-optional-locks".to_string(),
+        "worktree".to_string(),
+        "list".to_string(),
+        "--porcelain".to_string(),
+        "-z".to_string(),
+    ]
+}
+
+fn git_cleanup_status_args() -> Vec<String> {
+    vec![
+        "--no-pager".to_string(),
+        "--no-optional-locks".to_string(),
+        "status".to_string(),
+        "--porcelain=v1".to_string(),
+        "--untracked-files=all".to_string(),
+        "--ignored=matching".to_string(),
+        "-z".to_string(),
+        "--".to_string(),
+    ]
+}
+
+fn git_cleanup_delete_branch_args(branch: &str) -> Vec<String> {
+    vec![
+        "--no-pager".to_string(),
+        "--no-optional-locks".to_string(),
+        "branch".to_string(),
+        "--delete".to_string(),
+        "--".to_string(),
+        branch.to_string(),
+    ]
+}
+
+fn git_cleanup_remove_worktree_args(path: &Path) -> Vec<String> {
+    vec![
+        "--no-pager".to_string(),
+        "--no-optional-locks".to_string(),
+        "worktree".to_string(),
+        "remove".to_string(),
+        "--".to_string(),
+        path.to_string_lossy().into_owned(),
+    ]
+}
+
+fn valid_cleanup_object_id(value: &str) -> bool {
+    (40..=64).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn valid_cleanup_worktree_arg(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_CLEANUP_PATH_BYTES
+        && !value.chars().any(char::is_control)
+        && !is_unsafe_cleanup_device_path(value)
+        && !value
+            .split(['/', '\\'])
+            .any(|component| matches!(component, "." | ".."))
+}
+
+/// `canonicalize` on Windows may return a verbatim long path (`\\?\\C:\\...`).
+/// Keep ordinary drive and UNC verbatim paths usable, while refusing physical
+/// device and NT object-manager namespaces before they reach `worktree remove`.
+fn is_unsafe_cleanup_device_path(value: &str) -> bool {
+    let normalized = value.replace('\\', "/").to_ascii_lowercase();
+    if normalized.starts_with("//./") || normalized.starts_with("/??/") {
+        return true;
+    }
+    let Some(rest) = normalized.strip_prefix("//?/") else {
+        return false;
+    };
+    let bytes = rest.as_bytes();
+    let drive_path =
+        bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/';
+    !(drive_path || rest.starts_with("unc/"))
+}
+
+/// Keep the cleanup read surface closed even if a future caller accidentally
+/// passes an argument vector outside the audited fixed command set. Dynamic
+/// values are admitted only in the exact slots documented by the parser.
+fn cleanup_read_argv_allowed(args: &[String]) -> bool {
+    let fixed = |expected: &[&str]| args.iter().map(String::as_str).eq(expected.iter().copied());
+    if fixed(&[
+        "--no-pager",
+        "--no-optional-locks",
+        "for-each-ref",
+        "--format=%(refname:strip=2)%00%(objectname)%00%(upstream:short)%00%(upstream:track)%00%(committerdate:unix)%00%(HEAD)%00",
+        "refs/heads",
+    ]) || fixed(&[
+        "--no-pager",
+        "--no-optional-locks",
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+    ]) || fixed(&[
+        "--no-pager",
+        "--no-optional-locks",
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignored=matching",
+        "-z",
+        "--",
+    ]) {
+        return true;
+    }
+    args.len() == 6
+        && args[0] == "--no-pager"
+        && args[1] == "--no-optional-locks"
+        && args[2] == "for-each-ref"
+        && args[3]
+            .strip_prefix("--merged=")
+            .is_some_and(valid_cleanup_object_id)
+        && args[4] == "--format=%(refname:strip=2)"
+        && args[5] == "refs/heads"
+}
+
+fn cleanup_mutation_argv_allowed(args: &[String]) -> bool {
+    if args.len() == 6
+        && args[0] == "--no-pager"
+        && args[1] == "--no-optional-locks"
+        && args[2] == "branch"
+        && args[3] == "--delete"
+        && args[4] == "--"
+    {
+        return valid_ref_name(&args[5]);
+    }
+    args.len() == 6
+        && args[0] == "--no-pager"
+        && args[1] == "--no-optional-locks"
+        && args[2] == "worktree"
+        && args[3] == "remove"
+        && args[4] == "--"
+        && valid_cleanup_worktree_arg(&args[5])
+}
+
+#[derive(Debug)]
+struct CleanupObservation {
+    preview: CleanupPreview,
+    worktree_identities: Vec<Option<FilesystemIdentity>>,
+}
+
+type CleanupRevalidationMetadata = (Vec<ParsedBranch>, Vec<ParsedWorktree>, HashSet<String>);
+
+fn cleanup_now_unix() -> Result<i64, String> {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
+    i64::try_from(duration.as_secs()).map_err(|_| GIT_CLEANUP_ERROR.to_string())
+}
+
+fn resolve_cleanup_worktree_path(
+    context: &RepositoryContext,
+    parsed: &ParsedWorktree,
+) -> Result<(PathBuf, FilesystemIdentity), String> {
+    let raw = Path::new(&parsed.path);
+    let path = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        context.worktree.join(raw)
+    };
+    let identity = filesystem_identity(&path, true).map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
+    if filesystem_identity(&canonical, true).map_err(|_| GIT_CLEANUP_ERROR.to_string())? != identity
+    {
+        return Err(GIT_CLEANUP_ERROR.to_string());
+    }
+    Ok((canonical, identity))
+}
+
+fn cleanup_identity_revision(
+    mut preview: CleanupPreview,
+    identities: &[Option<FilesystemIdentity>],
+) -> CleanupPreview {
+    let base = finalize_revision(preview.clone());
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    base.revision.hash(&mut hasher);
+    for identity in identities {
+        format!("{identity:?}").hash(&mut hasher);
+    }
+    preview.revision = format!("cleanup-{:016x}", hasher.finish());
+    preview
+}
+
+/// Collect one coherent read-only cleanup snapshot while the caller owns the
+/// repository lock.  Inaccessible worktrees remain visible but are marked
+/// blocked by `stateUnavailable`; they are never treated as clean.
+fn cleanup_remaining_timeout(
+    deadline: Instant,
+    cancellation: Option<&AtomicBool>,
+) -> Result<Duration, String> {
+    if cancellation.is_some_and(|signal| signal.load(Ordering::Acquire)) {
+        return Err(GIT_CLEANUP_CANCELLED.to_string());
+    }
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .map(|remaining| remaining.min(SAFETY_TIMEOUT))
+        .ok_or_else(|| GIT_CLEANUP_ERROR.to_string())
+}
+
+fn cleanup_remaining_mutation_timeout(
+    deadline: Instant,
+    cancellation: &AtomicBool,
+) -> Result<Duration, String> {
+    if cancellation.load(Ordering::Acquire) {
+        return Err(GIT_CLEANUP_CANCELLED.to_string());
+    }
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .map(|remaining| remaining.min(MUTATION_TIMEOUT))
+        .ok_or_else(|| GIT_CLEANUP_STATE_CHANGED.to_string())
+}
+
+fn collect_cleanup_observation(
+    context: &RepositoryContext,
+    cancellation: Option<&AtomicBool>,
+) -> Result<CleanupObservation, String> {
+    let deadline = Instant::now()
+        .checked_add(CLEANUP_OBSERVATION_BUDGET)
+        .ok_or_else(|| GIT_CLEANUP_ERROR.to_string())?;
+    let branch_text = run_git_cleanup_bounded_with_timeout(
+        &git_cleanup_branch_args(),
+        &context.worktree,
+        cleanup_remaining_timeout(deadline, cancellation)?,
+        cancellation,
+    )?;
+    let branches = parse_branch_records(&branch_text).map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
+    if branches.len() > MAX_CLEANUP_BRANCHES {
+        return Err(GIT_CLEANUP_ERROR.to_string());
+    }
+
+    let worktree_text = run_git_cleanup_bounded_with_timeout(
+        &git_cleanup_worktree_args(),
+        &context.worktree,
+        cleanup_remaining_timeout(deadline, cancellation)?,
+        cancellation,
+    )?;
+    let mut worktrees =
+        parse_worktree_records(&worktree_text).map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
+    if worktrees.is_empty() || worktrees.len() > MAX_CLEANUP_WORKTREES {
+        return Err(GIT_CLEANUP_ERROR.to_string());
+    }
+
+    let current_head = worktrees.first().and_then(|worktree| worktree.head.clone());
+    let merged = if let Some(head) = current_head.as_deref() {
+        let merged_text = run_git_cleanup_bounded_with_timeout(
+            &git_cleanup_merged_args(head),
+            &context.worktree,
+            cleanup_remaining_timeout(deadline, cancellation)?,
+            cancellation,
+        )?;
+        parse_merged_branch_names(&merged_text).map_err(|_| GIT_CLEANUP_ERROR.to_string())?
+    } else {
+        HashSet::new()
+    };
+
+    let mut statuses = Vec::with_capacity(worktrees.len());
+    let mut identities = Vec::with_capacity(worktrees.len());
+    for worktree in &mut worktrees {
+        // Filesystem identity/canonicalization is synchronous and cannot be
+        // interrupted by the Git runner. Check the shared budget on both
+        // sides so a large set of unavailable worktrees cannot continue
+        // issuing status children after cancellation or expiry.
+        cleanup_remaining_timeout(deadline, cancellation)?;
+        if worktree.bare || worktree.prunable {
+            statuses.push(None);
+            identities.push(None);
+            continue;
+        }
+        match resolve_cleanup_worktree_path(context, worktree) {
+            Ok((canonical, identity)) => {
+                worktree.path = canonical.to_string_lossy().into_owned();
+                cleanup_remaining_timeout(deadline, cancellation)?;
+                let timeout = cleanup_remaining_timeout(deadline, cancellation)?;
+                let status = match run_git_cleanup_bounded_with_timeout(
+                    &git_cleanup_status_args(),
+                    &canonical,
+                    timeout,
+                    cancellation,
+                ) {
+                    Ok(output) => parse_worktree_status(&output).ok(),
+                    Err(error) if error == GIT_CLEANUP_CANCELLED => return Err(error),
+                    Err(_) => None,
+                };
+                statuses.push(status);
+                identities.push(Some(identity));
+            }
+            Err(_) => {
+                statuses.push(None);
+                identities.push(None);
+            }
+        }
+    }
+
+    if cancellation.is_some_and(|signal| signal.load(Ordering::Acquire)) {
+        return Err(GIT_CLEANUP_CANCELLED.to_string());
+    }
+    let now = cleanup_now_unix()?;
+    let mut preview =
+        classify_preview(current_head, &branches, &worktrees, &merged, &statuses, now);
+    for (index, identity) in identities.iter().enumerate() {
+        if *identity == Some(context.worktree_identity) {
+            if let Some(worktree) = preview.worktrees.get_mut(index) {
+                worktree.blocked.push("currentWorktree".to_string());
+                worktree.eligible = false;
+            }
+        }
+    }
+    Ok(CleanupObservation {
+        preview: cleanup_identity_revision(preview, &identities),
+        worktree_identities: identities,
+    })
+}
+
+/// Read only the metadata needed to bind a cleanup mutation to the approved
+/// preview.  This is intentionally a separate bounded snapshot from the
+/// initial preview: Git refs and worktree registrations may change while the
+/// confirmation dialog is open.  Every caller holds the per-repository lock,
+/// and every read is cancellation-aware and covered by one total deadline.
+fn read_cleanup_revalidation_metadata(
+    context: &RepositoryContext,
+    cancellation: &AtomicBool,
+    parent_deadline: Instant,
+) -> Result<CleanupRevalidationMetadata, String> {
+    let local_deadline = Instant::now()
+        .checked_add(CLEANUP_REVALIDATION_BUDGET)
+        .ok_or_else(|| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+    let deadline = local_deadline.min(parent_deadline);
+    let read = |args: Vec<String>, cwd: &Path| {
+        run_git_cleanup_bounded_with_timeout(
+            &args,
+            cwd,
+            cleanup_remaining_timeout(deadline, Some(cancellation)).map_err(|error| {
+                if error == GIT_CLEANUP_CANCELLED {
+                    error
+                } else {
+                    GIT_CLEANUP_STATE_CHANGED.to_string()
+                }
+            })?,
+            Some(cancellation),
+        )
+        .map_err(|error| {
+            if error == GIT_CLEANUP_CANCELLED {
+                error
+            } else {
+                GIT_CLEANUP_STATE_CHANGED.to_string()
+            }
+        })
+    };
+
+    let branches = parse_branch_records(&read(git_cleanup_branch_args(), &context.worktree)?)
+        .map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+    let worktrees = parse_worktree_records(&read(git_cleanup_worktree_args(), &context.worktree)?)
+        .map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+    if worktrees.is_empty() || branches.len() > MAX_CLEANUP_BRANCHES {
+        return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
+    }
+    let merged = if let Some(head) = worktrees
+        .first()
+        .and_then(|worktree| worktree.head.as_deref())
+    {
+        parse_merged_branch_names(&read(git_cleanup_merged_args(head), &context.worktree)?)
+            .map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?
+    } else {
+        HashSet::new()
+    };
+    Ok((branches, worktrees, merged))
+}
+
+fn cleanup_revalidate_context(
+    context: &RepositoryContext,
+    cancellation: &AtomicBool,
+    deadline: Instant,
+) -> Result<(), String> {
+    if cancellation.load(Ordering::Acquire) {
+        return Err(GIT_CLEANUP_CANCELLED.to_string());
+    }
+    let timeout = cleanup_remaining_timeout(deadline, Some(cancellation)).map_err(|error| {
+        if error == GIT_CLEANUP_CANCELLED {
+            error
+        } else {
+            GIT_CLEANUP_STATE_CHANGED.to_string()
+        }
+    })?;
+    revalidate_repository_context_with_timeout(context, GIT_CLEANUP_STATE_CHANGED, timeout)?;
+    if cancellation.load(Ordering::Acquire) {
+        return Err(GIT_CLEANUP_CANCELLED.to_string());
+    }
+    Ok(())
+}
+
+/// Re-check every branch field that influenced eligibility immediately before
+/// `git branch --delete`.  Comparing the complete classified entry prevents a
+/// branch from being replaced, checked out, unmerged, or otherwise changed
+/// after the user approved the earlier preview.
+fn cleanup_branch_still_safe(
+    context: &RepositoryContext,
+    expected: &BranchCleanupEntry,
+    expected_current_head: Option<&str>,
+    cancellation: &AtomicBool,
+    deadline: Instant,
+) -> Result<(), String> {
+    cleanup_revalidate_context(context, cancellation, deadline)?;
+    let (branches, worktrees, merged) =
+        read_cleanup_revalidation_metadata(context, cancellation, deadline)?;
+    let current_head = worktrees.first().and_then(|worktree| worktree.head.clone());
+    if current_head.as_deref() != expected_current_head {
+        return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
+    }
+    let statuses = vec![None; worktrees.len()];
+    let now = cleanup_now_unix().map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+    let preview = classify_preview(current_head, &branches, &worktrees, &merged, &statuses, now);
+    let actual = preview
+        .branches
+        .iter()
+        .find(|branch| branch.name == expected.name)
+        .ok_or_else(|| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+    if actual != expected || !actual.eligible {
+        return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
+    }
+    cleanup_revalidate_context(context, cancellation, deadline)
+}
+
 fn git_remote_status_args() -> Vec<String> {
     vec![
         "--no-pager".to_string(),
@@ -662,20 +1181,31 @@ fn remote_marker_exists(
     marker: &str,
     cancellation: Option<&AtomicBool>,
 ) -> Result<bool, String> {
+    if !REMOTE_MARKERS.contains(&marker) {
+        return Err(GIT_REMOTE_ERROR.to_string());
+    }
+    let expected_marker = marker;
     let output = run_git_remote_bounded(
         &git_remote_marker_args(marker),
         cwd,
         MAX_REMOTE_MARKER_OUTPUT_BYTES,
         cancellation,
     )?;
-    let marker = output.trim();
-    if marker.is_empty()
-        || marker.len() > MAX_REMOTE_BRANCH_BYTES
-        || marker.chars().any(char::is_control)
+    let marker_path_text = output.trim();
+    if marker_path_text.is_empty()
+        || marker_path_text.len() > MAX_REMOTE_BRANCH_BYTES
+        || marker_path_text.chars().any(char::is_control)
     {
         return Err(GIT_REMOTE_ERROR.to_string());
     }
-    let marker_path = Path::new(marker);
+    let marker_path = Path::new(marker_path_text);
+    if marker_path.file_name().and_then(|name| name.to_str()) != Some(expected_marker)
+        || marker_path
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(GIT_REMOTE_ERROR.to_string());
+    }
     let marker_path = if marker_path.is_absolute() {
         marker_path.to_path_buf()
     } else {
@@ -868,17 +1398,20 @@ fn repository_context_for_worktree(
     worktree: PathBuf,
     error: &'static str,
 ) -> Result<RepositoryContext, String> {
+    repository_context_for_worktree_with_timeout(worktree, error, Duration::from_secs(5))
+}
+
+fn repository_context_for_worktree_with_timeout(
+    worktree: PathBuf,
+    error: &'static str,
+    timeout: Duration,
+) -> Result<RepositoryContext, String> {
     let worktree_identity = filesystem_identity(&worktree, true).map_err(|_| error.to_string())?;
     let args = git_common_dir_args();
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
     let cwd = worktree.to_string_lossy().into_owned();
-    let output = devbox_git::run_bounded(
-        &args,
-        &cwd,
-        Duration::from_secs(5),
-        MAX_REPOSITORY_PATH_BYTES + 2,
-    )
-    .map_err(|_| error.to_string())?;
+    let output = devbox_git::run_bounded(&args, &cwd, timeout, MAX_REPOSITORY_PATH_BYTES + 2)
+        .map_err(|_| error.to_string())?;
     let value = output
         .strip_suffix("\r\n")
         .or_else(|| output.strip_suffix('\n'))
@@ -927,7 +1460,16 @@ fn revalidate_repository_context(
     expected: &RepositoryContext,
     error: &'static str,
 ) -> Result<(), String> {
-    let current = repository_context_for_worktree(expected.worktree.clone(), error)?;
+    revalidate_repository_context_with_timeout(expected, error, Duration::from_secs(5))
+}
+
+fn revalidate_repository_context_with_timeout(
+    expected: &RepositoryContext,
+    error: &'static str,
+    timeout: Duration,
+) -> Result<(), String> {
+    let current =
+        repository_context_for_worktree_with_timeout(expected.worktree.clone(), error, timeout)?;
     if current.worktree_identity != expected.worktree_identity
         || current.common_git_identity != expected.common_git_identity
     {
@@ -1301,6 +1843,488 @@ pub async fn worktree_clean(path: String) -> Result<bool, String> {
         Ok(status.is_empty())
     })
     .await
+}
+
+/// Read-only cleanup preview.  The preview lists every local branch and
+/// worktree, but marks only conservative merged/stale or linked-worktree
+/// candidates as eligible.  No branch, ref, index, or worktree is changed.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CleanupPreviewRequest {
+    pub path: String,
+    /// Frontend-owned opaque ID so an unmounted panel can cancel a long
+    /// metadata/status observation before its 30-second total budget elapses.
+    pub operation_id: String,
+}
+
+/// Explicit cleanup selection.  `branch_names` and `worktree_paths` must be
+/// copied from the latest preview; the backend matches them against a fresh
+/// snapshot and rejects stale or hand-crafted targets before Git runs.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CleanupRequest {
+    pub path: String,
+    pub branch_names: Vec<String>,
+    pub worktree_paths: Vec<String>,
+    pub preview_revision: String,
+    pub operation_id: String,
+}
+
+fn cleanup_selection_path_is_bounded(value: &str) -> bool {
+    valid_cleanup_worktree_arg(value)
+}
+
+fn cleanup_selection_branch_is_bounded(value: &str) -> bool {
+    value.len() <= MAX_CLEANUP_REF_BYTES && valid_ref_name(value)
+}
+
+fn selected_worktree_index(
+    requested: &str,
+    observation: &CleanupObservation,
+) -> Result<usize, String> {
+    if !cleanup_selection_path_is_bounded(requested) {
+        return Err(GIT_CLEANUP_ERROR.to_string());
+    }
+    let exact = observation
+        .preview
+        .worktrees
+        .iter()
+        .enumerate()
+        .filter_map(|(index, worktree)| (worktree.path == requested).then_some(index))
+        .collect::<Vec<_>>();
+    if exact.len() == 1 {
+        return Ok(exact[0]);
+    }
+    // The preview returns the canonical display path.  An explicit path alias
+    // is accepted only when its final filesystem identity is exactly one of
+    // the preview objects; a symlink/reparse point fails closed.
+    let requested_identity = filesystem_identity(Path::new(requested), true)
+        .map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+    let matches = observation
+        .worktree_identities
+        .iter()
+        .enumerate()
+        .filter_map(|(index, identity)| (*identity == Some(requested_identity)).then_some(index))
+        .collect::<Vec<_>>();
+    if matches.len() == 1 {
+        Ok(matches[0])
+    } else {
+        Err(GIT_CLEANUP_STATE_CHANGED.to_string())
+    }
+}
+
+fn cleanup_result_item(
+    kind: &str,
+    target: &str,
+    outcome: &str,
+    reason: Option<&str>,
+) -> CleanupItemResult {
+    CleanupItemResult {
+        kind: kind.to_string(),
+        target: target.to_string(),
+        outcome: outcome.to_string(),
+        reason: reason.map(str::to_string),
+    }
+}
+
+fn cleanup_worktree_still_safe(
+    context: &RepositoryContext,
+    expected: &WorktreeCleanupEntry,
+    expected_identity: FilesystemIdentity,
+    expected_current_head: Option<&str>,
+    cancellation: &AtomicBool,
+    parent_deadline: Instant,
+) -> Result<(), String> {
+    let local_deadline = Instant::now()
+        .checked_add(CLEANUP_REVALIDATION_BUDGET)
+        .ok_or_else(|| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+    let deadline = local_deadline.min(parent_deadline);
+    cleanup_revalidate_context(context, cancellation, deadline)?;
+    let ensure_budget = || {
+        cleanup_remaining_timeout(deadline, Some(cancellation)).map_err(|error| {
+            if error == GIT_CLEANUP_CANCELLED {
+                error
+            } else {
+                GIT_CLEANUP_STATE_CHANGED.to_string()
+            }
+        })
+    };
+    ensure_budget()?;
+    let expected_path = Path::new(&expected.path);
+    let (canonical, identity) = resolve_cleanup_worktree_path(
+        context,
+        &ParsedWorktree {
+            path: expected_path.to_string_lossy().into_owned(),
+            head: None,
+            branch: None,
+            locked: false,
+            prunable: false,
+            bare: false,
+        },
+    )
+    .map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+    ensure_budget()?;
+    if canonical != expected_path || identity != expected_identity {
+        return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
+    }
+
+    let status_text = run_git_cleanup_bounded_with_timeout(
+        &git_cleanup_status_args(),
+        &canonical,
+        cleanup_remaining_timeout(deadline, Some(cancellation)).map_err(|error| {
+            if error == GIT_CLEANUP_CANCELLED {
+                error
+            } else {
+                GIT_CLEANUP_STATE_CHANGED.to_string()
+            }
+        })?,
+        Some(cancellation),
+    )
+    .map_err(|error| {
+        if error == GIT_CLEANUP_CANCELLED {
+            error
+        } else {
+            GIT_CLEANUP_STATE_CHANGED.to_string()
+        }
+    })?;
+    let status =
+        parse_worktree_status(&status_text).map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+    if status.dirty || status.untracked || status.ignored {
+        return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
+    }
+
+    let records_text = run_git_cleanup_bounded_with_timeout(
+        &git_cleanup_worktree_args(),
+        &context.worktree,
+        cleanup_remaining_timeout(deadline, Some(cancellation)).map_err(|error| {
+            if error == GIT_CLEANUP_CANCELLED {
+                error
+            } else {
+                GIT_CLEANUP_STATE_CHANGED.to_string()
+            }
+        })?,
+        Some(cancellation),
+    )
+    .map_err(|error| {
+        if error == GIT_CLEANUP_CANCELLED {
+            error
+        } else {
+            GIT_CLEANUP_STATE_CHANGED.to_string()
+        }
+    })?;
+    let records =
+        parse_worktree_records(&records_text).map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+    let mut matching = None;
+    for (index, record) in records.iter().enumerate() {
+        if let Ok((record_path, _)) = resolve_cleanup_worktree_path(context, record) {
+            if record_path == canonical && matching.replace((index, record)).is_some() {
+                return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
+            }
+        }
+    }
+    let Some((index, record)) = matching else {
+        return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
+    };
+    let current_head = records
+        .first()
+        .and_then(|worktree| worktree.head.as_deref());
+    if current_head != expected_current_head
+        || (index == 0) != expected.is_main
+        || record.head != expected.head
+        || record.branch != expected.branch
+        || record.bare != expected.bare
+        || record.locked != expected.locked
+        || record.prunable != expected.prunable
+        || index == 0
+        || record.bare
+        || record.locked
+        || record.prunable
+    {
+        return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
+    }
+    cleanup_revalidate_context(context, cancellation, deadline)
+}
+
+enum CleanupAction {
+    Branch {
+        expected: BranchCleanupEntry,
+        current_head: Option<String>,
+    },
+    Worktree {
+        expected: WorktreeCleanupEntry,
+        identity: FilesystemIdentity,
+        current_head: Option<String>,
+    },
+}
+
+fn run_cleanup_request(
+    request: CleanupRequest,
+    operation: GitOperationGuard,
+) -> Result<CleanupResult, String> {
+    let mut operation = operation;
+    if operation.cancellation.load(Ordering::Acquire) {
+        return Err(GIT_CLEANUP_CANCELLED.to_string());
+    }
+    let context = validated_repository_context(&request.path, GIT_CLEANUP_ERROR)?;
+    if operation.cancellation.load(Ordering::Acquire) {
+        return Err(GIT_CLEANUP_CANCELLED.to_string());
+    }
+    operation.bind_repository(
+        context.common_git_identity,
+        GIT_CLEANUP_ERROR,
+        GIT_CLEANUP_BUSY,
+    )?;
+    revalidate_repository_context(&context, GIT_CLEANUP_ERROR)?;
+    if operation.cancellation.load(Ordering::Acquire) {
+        return Err(GIT_CLEANUP_CANCELLED.to_string());
+    }
+    let observation = collect_cleanup_observation(&context, Some(operation.cancellation.as_ref()))?;
+    if observation.preview.revision != request.preview_revision {
+        return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
+    }
+
+    let mut results = Vec::new();
+    let mut actions = Vec::new();
+    let mut selected_branches = HashSet::with_capacity(request.branch_names.len());
+    for name in &request.branch_names {
+        if !cleanup_selection_branch_is_bounded(name) || !selected_branches.insert(name.clone()) {
+            return Err(GIT_CLEANUP_ERROR.to_string());
+        }
+        let Some(branch) = observation
+            .preview
+            .branches
+            .iter()
+            .find(|branch| branch.name == *name)
+        else {
+            return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
+        };
+        if !branch.eligible {
+            let reason = branch
+                .blocked
+                .first()
+                .map(String::as_str)
+                .unwrap_or("notCandidate");
+            results.push(cleanup_result_item("branch", name, "blocked", Some(reason)));
+        } else {
+            actions.push(CleanupAction::Branch {
+                expected: branch.clone(),
+                current_head: observation.preview.current_head.clone(),
+            });
+        }
+    }
+
+    let mut selected_worktrees = HashSet::with_capacity(request.worktree_paths.len());
+    for requested in &request.worktree_paths {
+        if !selected_worktrees.insert(requested.clone()) {
+            return Err(GIT_CLEANUP_ERROR.to_string());
+        }
+        let index = selected_worktree_index(requested, &observation)?;
+        let worktree = &observation.preview.worktrees[index];
+        if !worktree.eligible {
+            let reason = worktree
+                .blocked
+                .first()
+                .map(String::as_str)
+                .unwrap_or("notCandidate");
+            results.push(cleanup_result_item(
+                "worktree",
+                &worktree.path,
+                "blocked",
+                Some(reason),
+            ));
+        } else {
+            let identity = observation
+                .worktree_identities
+                .get(index)
+                .and_then(|identity| *identity)
+                .ok_or_else(|| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+            actions.push(CleanupAction::Worktree {
+                expected: worktree.clone(),
+                identity,
+                current_head: observation.preview.current_head.clone(),
+            });
+        }
+    }
+
+    // Never partially apply an explicit selection that contains a blocked
+    // target.  The result tells the UI which precondition stopped the batch.
+    if !results.is_empty() {
+        return Ok(CleanupResult {
+            preview_revision: observation.preview.revision,
+            attempted: 0,
+            removed: 0,
+            items: results,
+        });
+    }
+
+    let mutation_deadline = Instant::now()
+        .checked_add(CLEANUP_MUTATION_BUDGET)
+        .ok_or_else(|| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+    let mut attempted = 0u32;
+    let mut removed = 0u32;
+    for action in actions {
+        cleanup_remaining_mutation_timeout(mutation_deadline, operation.cancellation.as_ref())?;
+        cleanup_revalidate_context(&context, operation.cancellation.as_ref(), mutation_deadline)?;
+        match action {
+            CleanupAction::Branch {
+                expected,
+                current_head,
+            } => {
+                cleanup_branch_still_safe(
+                    &context,
+                    &expected,
+                    current_head.as_deref(),
+                    operation.cancellation.as_ref(),
+                    mutation_deadline,
+                )?;
+                let timeout = cleanup_remaining_mutation_timeout(
+                    mutation_deadline,
+                    operation.cancellation.as_ref(),
+                )?;
+                let name = expected.name;
+                attempted = attempted.saturating_add(1);
+                let result = run_git_cleanup_mutation_with_cancel(
+                    &git_cleanup_delete_branch_args(&name),
+                    &context.worktree,
+                    operation.cancellation.as_ref(),
+                    timeout,
+                );
+                match result {
+                    Ok(()) => {
+                        removed = removed.saturating_add(1);
+                        results.push(cleanup_result_item("branch", &name, "removed", None));
+                    }
+                    Err(error) if error == GIT_CLEANUP_CANCELLED => return Err(error),
+                    Err(_) => {
+                        results.push(cleanup_result_item(
+                            "branch",
+                            &name,
+                            "failed",
+                            Some("gitFailed"),
+                        ));
+                        break;
+                    }
+                }
+            }
+            CleanupAction::Worktree {
+                expected,
+                identity,
+                current_head,
+            } => {
+                cleanup_worktree_still_safe(
+                    &context,
+                    &expected,
+                    identity,
+                    current_head.as_deref(),
+                    operation.cancellation.as_ref(),
+                    mutation_deadline,
+                )?;
+                let timeout = cleanup_remaining_mutation_timeout(
+                    mutation_deadline,
+                    operation.cancellation.as_ref(),
+                )?;
+                let path = PathBuf::from(&expected.path);
+                attempted = attempted.saturating_add(1);
+                let result = run_git_cleanup_mutation_with_cancel(
+                    &git_cleanup_remove_worktree_args(&path),
+                    &context.worktree,
+                    operation.cancellation.as_ref(),
+                    timeout,
+                );
+                match result {
+                    Ok(()) => {
+                        removed = removed.saturating_add(1);
+                        let target = path.to_string_lossy().into_owned();
+                        results.push(cleanup_result_item("worktree", &target, "removed", None));
+                    }
+                    Err(error) if error == GIT_CLEANUP_CANCELLED => return Err(error),
+                    Err(_) => {
+                        let target = path.to_string_lossy().into_owned();
+                        results.push(cleanup_result_item(
+                            "worktree",
+                            &target,
+                            "failed",
+                            Some("gitFailed"),
+                        ));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    Ok(CleanupResult {
+        preview_revision: request.preview_revision,
+        attempted,
+        removed,
+        items: results,
+    })
+}
+
+#[tauri::command]
+pub async fn repo_cleanup_preview(
+    request: CleanupPreviewRequest,
+) -> Result<CleanupPreview, String> {
+    let operation =
+        begin_git_operation(&request.operation_id, GIT_CLEANUP_ERROR, GIT_CLEANUP_BUSY)?;
+    spawn_git_task(GIT_CLEANUP_ERROR, move || {
+        let mut operation = operation;
+        if operation.cancellation.load(Ordering::Acquire) {
+            return Err(GIT_CLEANUP_CANCELLED.to_string());
+        }
+        let context = validated_repository_context(&request.path, GIT_CLEANUP_ERROR)?;
+        if operation.cancellation.load(Ordering::Acquire) {
+            return Err(GIT_CLEANUP_CANCELLED.to_string());
+        }
+        operation.bind_repository(
+            context.common_git_identity,
+            GIT_CLEANUP_ERROR,
+            GIT_CLEANUP_BUSY,
+        )?;
+        revalidate_repository_context(&context, GIT_CLEANUP_ERROR)?;
+        if operation.cancellation.load(Ordering::Acquire) {
+            return Err(GIT_CLEANUP_CANCELLED.to_string());
+        }
+        Ok(collect_cleanup_observation(&context, Some(operation.cancellation.as_ref()))?.preview)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn repo_cleanup(request: CleanupRequest) -> Result<CleanupResult, String> {
+    if request.branch_names.len() > MAX_CLEANUP_SELECTIONS
+        || request.worktree_paths.len() > MAX_CLEANUP_SELECTIONS
+        || (request.branch_names.is_empty() && request.worktree_paths.is_empty())
+        || request
+            .branch_names
+            .len()
+            .saturating_add(request.worktree_paths.len())
+            > MAX_CLEANUP_SELECTIONS
+        || request
+            .branch_names
+            .iter()
+            .any(|name| !cleanup_selection_branch_is_bounded(name))
+        || request
+            .worktree_paths
+            .iter()
+            .any(|path| !cleanup_selection_path_is_bounded(path))
+        || !valid_revision(&request.preview_revision)
+    {
+        return Err(GIT_CLEANUP_ERROR.to_string());
+    }
+    let operation =
+        begin_git_operation(&request.operation_id, GIT_CLEANUP_ERROR, GIT_CLEANUP_BUSY)?;
+    spawn_git_task(GIT_CLEANUP_ERROR, move || {
+        run_cleanup_request(request, operation)
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn repo_cleanup_cancel(request: RemoteCancelRequest) -> Result<bool, String> {
+    if !valid_remote_operation_id(&request.operation_id) {
+        return Err(GIT_CLEANUP_ERROR.to_string());
+    }
+    Ok(cancel_git_operation(&request.operation_id))
 }
 
 /// Read-only history request. `limit` is intentionally part of the typed
@@ -2035,6 +3059,211 @@ mod scan_tests {
         assert!(!selected.staged && selected.unstaged);
     }
 
+    #[test]
+    fn cleanup_preview_reports_merged_candidates_and_blocks_main_locked_dirty_worktrees() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        init_real_git_dir(&repo);
+        git_fixture(&repo, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+        fs::write(repo.join("fixture.txt"), "fixture\n").unwrap();
+        git_fixture(&repo, &["add", "fixture.txt"]);
+        git_fixture(&repo, &["commit", "--quiet", "-m", "fixture"]);
+        git_fixture(&repo, &["branch", "merged-candidate"]);
+
+        let linked = tmp.path().join("linked");
+        git_fixture(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "-b",
+                "linked-candidate",
+                linked.to_str().unwrap(),
+            ],
+        );
+        git_fixture(
+            &repo,
+            &[
+                "worktree",
+                "lock",
+                "--reason",
+                "private fixture",
+                linked.to_str().unwrap(),
+            ],
+        );
+        fs::write(linked.join("untracked-secret.txt"), "fixture\n").unwrap();
+
+        let path = repo.to_string_lossy().into_owned();
+        let preview = tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+            path: path.clone(),
+            operation_id: "cleanup-preview-blocked".to_string(),
+        }))
+        .unwrap();
+        let merged = preview
+            .branches
+            .iter()
+            .find(|branch| branch.name == "merged-candidate")
+            .unwrap();
+        assert!(merged.merged);
+        assert!(merged.candidate);
+        assert!(merged.eligible);
+        assert!(preview
+            .branches
+            .iter()
+            .find(|branch| branch.name == "main")
+            .unwrap()
+            .blocked
+            .contains(&"mainBranch".to_string()));
+        let linked_path = linked.canonicalize().unwrap();
+        let linked_entry = preview
+            .worktrees
+            .iter()
+            .find(|worktree| worktree.path == linked_path.to_string_lossy().as_ref())
+            .unwrap();
+        assert!(!linked_entry.eligible);
+        assert!(linked_entry.blocked.contains(&"locked".to_string()));
+        assert!(linked_entry.blocked.contains(&"untracked".to_string()));
+        let preview_revision = preview.revision.clone();
+        let blocked_result = tauri::async_runtime::block_on(repo_cleanup(CleanupRequest {
+            path: path.clone(),
+            branch_names: vec!["merged-candidate".to_string()],
+            worktree_paths: vec![linked_entry.path.clone()],
+            preview_revision,
+            operation_id: "cleanup-blocked-selection".to_string(),
+        }))
+        .unwrap();
+        assert_eq!(blocked_result.attempted, 0);
+        assert_eq!(blocked_result.removed, 0);
+        assert!(blocked_result
+            .items
+            .iter()
+            .any(|item| item.kind == "worktree" && item.outcome == "blocked"));
+        assert!(!git_fixture(&repo, &["branch", "--list", "merged-candidate"]).is_empty());
+        assert!(linked.join("untracked-secret.txt").exists());
+        assert!(repo.join(".git").exists());
+    }
+
+    #[test]
+    fn cleanup_preview_handles_an_unborn_primary_head_without_mutation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("unborn-repo");
+        init_real_git_dir(&repo);
+        git_fixture(&repo, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+
+        let preview = tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+            path: repo.to_string_lossy().into_owned(),
+            operation_id: "cleanup-preview-unborn".to_string(),
+        }))
+        .unwrap();
+        assert!(preview.current_head.is_none());
+        assert!(preview.current_branch.is_none());
+        assert!(preview.branches.is_empty());
+        assert_eq!(preview.worktrees.len(), 1);
+        assert!(preview.worktrees[0]
+            .blocked
+            .contains(&"mainWorktree".to_string()));
+    }
+
+    #[test]
+    fn cleanup_executes_only_previewed_targets_and_rejects_stale_revision() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        init_real_git_dir(&repo);
+        git_fixture(&repo, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+        fs::write(repo.join("fixture.txt"), "fixture\n").unwrap();
+        git_fixture(&repo, &["add", "fixture.txt"]);
+        git_fixture(&repo, &["commit", "--quiet", "-m", "fixture"]);
+        git_fixture(&repo, &["branch", "merged-candidate"]);
+        let path = repo.to_string_lossy().into_owned();
+
+        let preview = tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+            path: path.clone(),
+            operation_id: "cleanup-preview-main".to_string(),
+        }))
+        .unwrap();
+        let result = tauri::async_runtime::block_on(repo_cleanup(CleanupRequest {
+            path: path.clone(),
+            branch_names: vec!["merged-candidate".to_string()],
+            worktree_paths: Vec::new(),
+            preview_revision: preview.revision.clone(),
+            operation_id: "cleanup-merged-candidate".to_string(),
+        }))
+        .unwrap();
+        assert_eq!(result.removed, 1);
+        assert_eq!(result.items[0].outcome, "removed");
+        assert!(git_fixture(&repo, &["branch", "--list", "merged-candidate"]).is_empty());
+
+        let linked = tmp.path().join("linked");
+        git_fixture(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "-b",
+                "linked-candidate",
+                linked.to_str().unwrap(),
+            ],
+        );
+        let linked_context_preview =
+            tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+                path: linked.to_string_lossy().into_owned(),
+                operation_id: "cleanup-preview-linked-context".to_string(),
+            }))
+            .unwrap();
+        let linked_context_entry = linked_context_preview
+            .worktrees
+            .iter()
+            .find(|worktree| worktree.branch.as_deref() == Some("linked-candidate"))
+            .unwrap();
+        assert!(linked_context_entry
+            .blocked
+            .contains(&"currentWorktree".to_string()));
+        let second_preview =
+            tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+                path: path.clone(),
+                operation_id: "cleanup-preview-linked-main".to_string(),
+            }))
+            .unwrap();
+        let linked_path = second_preview
+            .worktrees
+            .iter()
+            .find(|worktree| worktree.branch.as_deref() == Some("linked-candidate"))
+            .unwrap()
+            .path
+            .clone();
+        let linked_result = tauri::async_runtime::block_on(repo_cleanup(CleanupRequest {
+            path: path.clone(),
+            branch_names: Vec::new(),
+            worktree_paths: vec![linked_path],
+            preview_revision: second_preview.revision.clone(),
+            operation_id: "cleanup-linked-candidate".to_string(),
+        }))
+        .unwrap();
+        assert_eq!(linked_result.removed, 1);
+        assert!(!linked.exists());
+
+        git_fixture(&repo, &["branch", "stale-candidate"]);
+        let stale_preview =
+            tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+                path: path.clone(),
+                operation_id: "cleanup-preview-stale".to_string(),
+            }))
+            .unwrap();
+        git_fixture(&repo, &["branch", "new-after-preview"]);
+        let error = tauri::async_runtime::block_on(repo_cleanup(CleanupRequest {
+            path,
+            branch_names: vec!["stale-candidate".to_string()],
+            worktree_paths: Vec::new(),
+            preview_revision: stale_preview.revision,
+            operation_id: "cleanup-stale-preview".to_string(),
+        }))
+        .unwrap_err();
+        assert_eq!(error, GIT_CLEANUP_STATE_CHANGED);
+        assert!(!git_fixture(&repo, &["branch", "--list", "stale-candidate"]).is_empty());
+    }
+
     #[cfg(unix)]
     #[test]
     fn local_commit_can_be_cancelled_by_its_opaque_operation_id() {
@@ -2195,6 +3424,62 @@ mod scan_tests {
             assert_eq!(args.get(separator + 1), Some(&wildcard));
             assert!(!args.iter().any(|arg| arg == "reset" || arg == "clean"));
         }
+    }
+
+    #[test]
+    fn cleanup_argv_is_bounded_and_never_force_or_repair() {
+        let branch = git_cleanup_branch_args();
+        let merged = git_cleanup_merged_args("0123456789abcdef0123456789abcdef01234567");
+        let worktree = git_cleanup_worktree_args();
+        let status = git_cleanup_status_args();
+        let delete = git_cleanup_delete_branch_args("feature/cleanup");
+        let remove = git_cleanup_remove_worktree_args(Path::new("/tmp/linked worktree"));
+        let args = [
+            branch.clone(),
+            merged.clone(),
+            worktree.clone(),
+            status.clone(),
+            delete.clone(),
+            remove.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+        assert!(cleanup_read_argv_allowed(&branch));
+        assert!(cleanup_read_argv_allowed(&merged));
+        assert!(cleanup_read_argv_allowed(&worktree));
+        assert!(cleanup_read_argv_allowed(&status));
+        assert!(cleanup_mutation_argv_allowed(&delete));
+        assert!(cleanup_mutation_argv_allowed(&remove));
+        assert!(cleanup_mutation_argv_allowed(
+            &git_cleanup_remove_worktree_args(Path::new(r"\\?\C:\long\linked"),)
+        ));
+        assert!(args.iter().any(|arg| arg == "--delete"));
+        assert!(args.iter().any(|arg| arg == "remove"));
+        assert!(!args.iter().any(|arg| {
+            matches!(
+                arg.as_str(),
+                "-D" | "--force" | "-f" | "reset" | "clean" | "prune"
+            )
+        }));
+        assert!(delete
+            .windows(2)
+            .any(|pair| pair[0] == "--" && pair[1] == "feature/cleanup"));
+        assert!(remove
+            .windows(2)
+            .any(|pair| pair[0] == "--" && pair[1] == "/tmp/linked worktree"));
+
+        let mut force_delete = delete.clone();
+        force_delete[3] = "-D".to_string();
+        assert!(!cleanup_mutation_argv_allowed(&force_delete));
+        let mut injected_merged =
+            git_cleanup_merged_args("0123456789abcdef0123456789abcdef01234567");
+        injected_merged[3] = "--merged=HEAD;touch".to_string();
+        assert!(!cleanup_read_argv_allowed(&injected_merged));
+        assert!(!cleanup_mutation_argv_allowed(
+            &git_cleanup_remove_worktree_args(Path::new(r"\\?\PhysicalDrive0"),)
+        ));
     }
 
     #[test]
@@ -3094,6 +4379,18 @@ mod scan_tests {
             remote_marker_exists(repo, "MERGE_HEAD", None).unwrap_err(),
             GIT_REMOTE_ERROR
         );
+    }
+
+    #[test]
+    fn remote_marker_lookup_accepts_only_fixed_marker_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_real_git_dir(tmp.path());
+        for marker in ["../../outside", "hooks/post-checkout", "MERGE_HEAD\0secret"] {
+            assert_eq!(
+                remote_marker_exists(tmp.path(), marker, None).unwrap_err(),
+                GIT_REMOTE_ERROR
+            );
+        }
     }
 
     fn init_real_git_dir(dir: &Path) {

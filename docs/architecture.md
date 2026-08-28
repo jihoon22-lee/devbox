@@ -170,6 +170,8 @@ repo-manager:     React → commands → git crate → repository/worktree 탐�
                    ├ Git safety preflight → run_bounded → porcelain-v2/marker parser → React
                    └ remote status/preflight → bounded parser → default-remote fetch/
                       FF-only pull/exact branch push → run_mutating_with_cancel → configured Git remote
+                   └ safe cleanup preview → bounded branch/worktree/status parser → explicit
+                      branch delete/worktree remove after identity·ref·status revalidation
 devbox-launcher:  transient React → bounded catalog/optional snapshot index → revalidated AppLink
                    ├ catalog app 검색과 profile/repo/query/task target 재검증
                    ├ missing target → Devbox Manager install handoff
@@ -214,6 +216,21 @@ upstream·non-diverged 상태를 요구하고 push는 behind도 차단하며, �
 in-progress merge/rebase를 차단한다. Commit/pull/push는 UI 확인창을 거친다(검토 snapshot이
 바뀌면 무효화); fetch는 read-only working tree 경계 때문에 확인 없이 시작할 수 있다.
 
+safe cleanup(#364)는 local branch와 linked/detached worktree를 bounded read-only preview로
+분류한다. merged/current-head, gone-upstream, inactive branch 근거와 dirty/untracked/ignored,
+locked/prunable/main/current/state-unavailable worktree blocker를 stable ID로만 반환하며,
+force delete/reset/clean/prune은 command allow-list에 없다. 사용자가 승인한 branch 이름·worktree
+경로만 `git branch --delete -- <name>` 또는 `git worktree remove -- <path>`에 전달하고, mutation
+직전 branch object/upstream/current/checked-out/merged-stale 판정과 worktree HEAD/branch/
+registration/filesystem identity/status를 새로 읽어 preview와 완전히 비교한다. 각 read는
+stdout 상한·UTF-8 parser·취소 token·전체 deadline을 공유하고, 선택 batch mutation도
+120초 total budget과 항목별 child timeout을 넘기지 않는다. state/ref/path 교체·dirty
+재발견·권한/parse 실패는 fixed state-change/error로 닫힌다. 확인창은 정확한 선택 대상을
+나열하며, native 실패·취소 뒤 UI preview와 selection을 폐기해 재검사를 강제한다. 사용자가
+취소한 뒤 native 성공이 늦게 도착해도 request sequence를 무효화해 UI에 반영하지 않는다.
+여러 항목 batch는 Git transaction이나 자동 rollback을 제공하지 않으므로 앞선 항목만 적용된
+부분 결과가 가능하며, 불확실한 경우에도 복구 명령 없이 새 preview로 실제 상태를 확인한다.
+
 Local·remote operation ID는 bounded opaque `operationId`로 첫 async await 전에 등록되고,
 `repo_local_cancel({request:{operationId}})`/`repo_remote_cancel({request:{operationId}})`가
 path 재검증 없이 해당 child를 취소한다. local mutation, remote mutation, `create_worktree`는
@@ -227,9 +244,11 @@ root Git이 먼저 끝나도 process tree와 bounded stdout reader를 회수한�
 
 `crates/git` child 환경에서는 `GIT_DIR`, `GIT_COMMON_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
 `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_CEILING_DIRECTORIES`,
-`GIT_DISCOVERY_ACROSS_FILESYSTEM`, `GIT_PREFIX`, `GIT_QUARANTINE_PATH` 같은 repository-selection
-override만 제거한다. Git config 및 credential/SSH/askpass 환경은 유지해 사용자의 credential
-helper가 동작하도록 하며 devbox가 credential을 읽거나 저장하지 않는다. UI의 busy,
+`GIT_DISCOVERY_ACROSS_FILESYSTEM`, `GIT_PREFIX`, `GIT_QUARANTINE_PATH`,
+`GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`와 일반적인 `GIT_CONFIG_KEY_n`/
+`GIT_CONFIG_VALUE_n` repository/config override를 제거한다. 사용자의 일반 Git config 및
+credential/SSH/askpass 환경은 유지해 configured credential helper가 동작하도록 하며 devbox가
+credential을 읽거나 저장하지 않는다. UI의 busy,
 unmount/request-sequence와 confirmation focus trap/initial-cancel-focus/Escape/trigger-focus
 restore는 duplicate·stale·우발적 mutation을 차단한다.
 
@@ -705,8 +724,9 @@ target ID와 현재 card path를 backend가 다시 검증한다. 경로 복사�
 absolute/traversal/existing `.git` 검증을 다시 거친다. raw path는 명시적 copy 결과에서만 새로
 반환하고, opener/검증 상세 오류에는 거부된 path를 포함하지 않는다. worktree 생성 항목은 자동 Git
 명령을 실행하지 않고 선택한 카드의 기존 입력으로 focus만 이동한다. 카드 내부 text input의 기본
-context menu·IME는 가로채지 않는다. 실제 worktree/branch remove는 dirty/untracked/locked/main
-차단과 preview를 소유한 #364 safe cleanup 전까지 메뉴에 넣지 않는다.
+context menu·IME는 가로채지 않는다. 실제 worktree/branch remove는 #364 safe cleanup의
+preview·revision·filesystem identity·dirty/untracked/locked/main/current 차단을 거친 명시적 cleanup
+panel에서만 수행한다.
 
 Everything+의 검색 결과 context menu도 같은 설치 경계를 사용한다. 앱 고유의 열기·Explorer
 reveal·경로/파일명 복사와 달리 "다른 앱으로 열기" submenu만 `path` capability와 설치

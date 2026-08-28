@@ -15,7 +15,6 @@ import {
   repoStatus,
   scanRoot,
   takePendingOpen,
-  worktreeClean,
   worktrees,
   type OpenRequest,
   type RepoEntry,
@@ -28,6 +27,7 @@ import GitSafetyPanel from "./components/GitSafetyPanel";
 import HistoryDiffPanel from "./components/HistoryDiffPanel";
 import RemoteSyncPanel from "./components/RemoteSyncPanel";
 import StageCommitPanel from "./components/StageCommitPanel";
+import CleanupPanel from "./components/CleanupPanel";
 import "./App.css";
 
 function usesNativeTextContext(target: EventTarget | null): boolean {
@@ -307,20 +307,6 @@ export default function App() {
     }
   };
 
-  const onRemoveCheck = async (_repo: string, wtPath: string) => {
-    setError(null);
-    try {
-      const clean = await worktreeClean(wtPath);
-      if (clean) {
-        setError(`worktree ${wtPath}는 clean — 제거 가능 (동작 미구현: remove는 신중히).`);
-      } else {
-        setError(`worktree ${wtPath}에 uncommitted/untracked 변경이 있습니다. 제거 전 정리하세요.`);
-      }
-    } catch (e) {
-      setError(safeRepoManagerError(e, "worktree 상태를 확인하지 못했습니다"));
-    }
-  };
-
   const repositoryContextItems = useMemo<readonly ContextMenuEntry[]>(
     () => buildRepositoryContextMenu(targets, busy),
     [busy, targets],
@@ -443,7 +429,6 @@ export default function App() {
                   {wt[r.path].map((w) => (
                     <div key={w} className="wt-row">
                       <span className="mono">{w}</span>
-                      <button className="mini" onClick={() => void onRemoveCheck(r.path, w)}>remove 확인</button>
                     </div>
                   ))}
                 </div>
@@ -478,7 +463,8 @@ export default function App() {
       <StageCommitPanel repo={selectedRepo} />
       <GitSafetyPanel repo={selectedRepo} />
       <RemoteSyncPanel repo={selectedRepo} />
-      <div className="note dim">force delete·reset·clean은 기본 동작으로 제공하지 않습니다. remove 전 검사만 지원합니다.</div>
+      <CleanupPanel repo={selectedRepo} />
+      <div className="note dim">force delete·reset·clean은 제공하지 않습니다. 정리는 preview와 안전 차단을 통과한 명시적 선택만 실행합니다.</div>
       <ContextMenu
         open={repositoryContextMenu.open}
         anchor={repositoryContextMenu.anchor}

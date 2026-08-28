@@ -285,6 +285,140 @@ export function worktreeClean(path: string): Promise<boolean> {
   return invoke<boolean>("worktree_clean", { path });
 }
 
+export const GIT_CLEANUP_ERROR = "Git 정리 작업을 실행하지 못했습니다.";
+export const GIT_CLEANUP_CANCELLED = "Git 정리 작업을 취소했습니다.";
+export const GIT_CLEANUP_BUSY = "이미 다른 Git 작업이 진행 중입니다.";
+export const GIT_CLEANUP_STATE_CHANGED = "저장소 상태가 변경되어 Git 정리를 실행하지 않았습니다.";
+
+export interface BranchCleanupEntry {
+  name: string;
+  head: string;
+  upstream: string | null;
+  lastCommitUnix: number;
+  current: boolean;
+  checkedOut: boolean;
+  protected: boolean;
+  merged: boolean;
+  stale: boolean;
+  candidate: boolean;
+  eligible: boolean;
+  reasons: string[];
+  blocked: string[];
+}
+
+export interface WorktreeCleanupEntry {
+  path: string;
+  head: string | null;
+  branch: string | null;
+  isMain: boolean;
+  bare: boolean;
+  locked: boolean;
+  prunable: boolean;
+  dirty: boolean;
+  untracked: boolean;
+  ignored: boolean;
+  candidate: boolean;
+  eligible: boolean;
+  reasons: string[];
+  blocked: string[];
+}
+
+export interface CleanupPreview {
+  revision: string;
+  currentBranch: string | null;
+  currentHead: string | null;
+  branches: BranchCleanupEntry[];
+  worktrees: WorktreeCleanupEntry[];
+}
+
+export interface CleanupItemResult {
+  kind: "branch" | "worktree";
+  target: string;
+  outcome: "removed" | "blocked" | "failed";
+  reason: string | null;
+}
+
+export interface CleanupResult {
+  previewRevision: string;
+  attempted: number;
+  removed: number;
+  items: CleanupItemResult[];
+}
+
+const MOCK_CLEANUP_PREVIEW: CleanupPreview = {
+  revision: "cleanup-0123456789abcdef",
+  currentBranch: "main",
+  currentHead: "0123456789abcdef0123456789abcdef01234567",
+  branches: [
+    {
+      name: "main",
+      head: "0123456789abcdef0123456789abcdef01234567",
+      upstream: "origin/main",
+      lastCommitUnix: 0,
+      current: true,
+      checkedOut: true,
+      protected: true,
+      merged: true,
+      stale: false,
+      candidate: true,
+      eligible: false,
+      reasons: ["mergedIntoCurrent"],
+      blocked: ["currentBranch", "mainBranch", "checkedOut"],
+    },
+  ],
+  worktrees: [
+    {
+      path: "C:\\projects\\devbox",
+      head: "0123456789abcdef0123456789abcdef01234567",
+      branch: "main",
+      isMain: true,
+      bare: false,
+      locked: false,
+      prunable: false,
+      dirty: false,
+      untracked: false,
+      ignored: false,
+      candidate: false,
+      eligible: false,
+      reasons: ["primaryWorktree"],
+      blocked: ["mainWorktree", "currentWorktree"],
+    },
+  ],
+};
+
+export function repoCleanupPreview(path: string, operationId: string): Promise<CleanupPreview> {
+  if (!isTauri()) return Promise.resolve({ ...MOCK_CLEANUP_PREVIEW });
+  return invoke<CleanupPreview>("repo_cleanup_preview", { request: { path, operationId } });
+}
+
+export function repoCleanup(
+  path: string,
+  branchNames: string[],
+  worktreePaths: string[],
+  previewRevision: string,
+  operationId: string,
+): Promise<CleanupResult> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      previewRevision,
+      attempted: branchNames.length + worktreePaths.length,
+      removed: branchNames.length + worktreePaths.length,
+      items: [
+        ...branchNames.map((target) => ({ kind: "branch" as const, target, outcome: "removed" as const, reason: null })),
+        ...worktreePaths.map((target) => ({ kind: "worktree" as const, target, outcome: "removed" as const, reason: null })),
+      ],
+    });
+  }
+  return invoke<CleanupResult>("repo_cleanup", {
+    request: { path, branchNames, worktreePaths, previewRevision, operationId },
+  });
+}
+
+export function repoCleanupCancel(operationId: string): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  return invoke<boolean>("repo_cleanup_cancel", { request: { operationId } });
+}
+
 export function repoHistory(path: string, limit: number): Promise<HistoryResult> {
   if (!isTauri()) {
     return Promise.resolve({

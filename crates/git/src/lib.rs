@@ -60,11 +60,28 @@ const REPOSITORY_OVERRIDE_ENV: &[&str] = &[
     "GIT_DISCOVERY_ACROSS_FILESYSTEM",
     "GIT_PREFIX",
     "GIT_QUARANTINE_PATH",
+    // Git's environment config injection can override core.worktree,
+    // core.gitdir, hooks, and other repository-selection behavior even when
+    // `-C` points at a validated directory.
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
 ];
+
+// After Git's root exits, drain data that was already written to stdout but
+// give an escaped descendant a finite window before joining the reader.
+const READER_DRAIN_GRACE: Duration = Duration::from_millis(100);
 
 fn clear_repository_overrides(command: &mut Command) {
     for name in REPOSITORY_OVERRIDE_ENV {
         command.env_remove(name);
+    }
+    // GIT_CONFIG_COUNT controls how many GIT_CONFIG_KEY_n/VALUE_n pairs Git
+    // consumes. Removing the count is sufficient to disable the series, but
+    // clear the bounded conventional range too so a child cannot accidentally
+    // re-enable it if Git's environment parsing changes in a future release.
+    for index in 0..32 {
+        command.env_remove(format!("GIT_CONFIG_KEY_{index}"));
+        command.env_remove(format!("GIT_CONFIG_VALUE_{index}"));
     }
 }
 
@@ -273,11 +290,13 @@ fn run_bounded_inner(
         || cwd.chars().any(char::is_control)
         || args.len() > max_arg_count
         || total_arg_bytes.is_none_or(|total| total > 256 * 1024)
-        || args.iter().any(|arg| {
+        || args.iter().enumerate().any(|(index, arg)| {
             arg.len() > max_arg_bytes
                 || arg.chars().any(|character| {
                     character.is_control()
-                        && !(allow_message_controls && matches!(character, '\n' | '\r' | '\t'))
+                        && !(allow_message_controls
+                            && is_commit_message_argument(args, index)
+                            && matches!(character, '\n' | '\r' | '\t'))
                 })
         })
     {
@@ -343,7 +362,19 @@ fn run_bounded_inner(
         }
         let mut bytes = Vec::with_capacity(max_stdout_bytes.min(16 * 1024));
         let mut chunk = [0u8; 8 * 1024];
+        let mut stop_deadline = None;
         loop {
+            // The root may have exited while an owned (or, on Unix, an
+            // escaped) descendant still has the pipe open. Drain bytes that
+            // were already written, but never let a descendant defeat the
+            // supervisor's bounded join by writing forever.
+            if stop_for_reader.load(Ordering::Acquire) {
+                let deadline =
+                    stop_deadline.get_or_insert_with(|| Instant::now() + READER_DRAIN_GRACE);
+                if Instant::now() >= *deadline {
+                    break;
+                }
+            }
             match stdout.read(&mut chunk) {
                 Ok(0) => break,
                 Ok(read) => {
@@ -356,7 +387,9 @@ fn run_bounded_inner(
                 Err(error) if error.kind() == ErrorKind::Interrupted => continue,
                 #[cfg(unix)]
                 Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                    if stop_for_reader.load(Ordering::Acquire) {
+                    if stop_for_reader.load(Ordering::Acquire)
+                        && stop_deadline.is_some_and(|deadline| Instant::now() >= deadline)
+                    {
                         break;
                     }
                     std::thread::sleep(Duration::from_millis(5));
@@ -438,6 +471,20 @@ fn run_bounded_inner(
     String::from_utf8(bytes).map_err(|_| "git_output_invalid_utf8".into())
 }
 
+/// Commit messages may contain ordinary line breaks, but no other Git argv
+/// position may carry controls.  Keeping this exception tied to the
+/// `--message`/`-m` slot prevents a future caller from treating the broad
+/// mutation argument cap as permission to pass a newline-bearing path,
+/// command, remote, or hook option.
+fn is_commit_message_argument(args: &[&str], index: usize) -> bool {
+    args.get(index)
+        .is_some_and(|argument| argument.starts_with("--message="))
+        || index
+            .checked_sub(1)
+            .and_then(|previous| args.get(previous))
+            .is_some_and(|argument| matches!(*argument, "--message" | "-m"))
+}
+
 /// Run a bounded local Git mutation without giving the child an interactive
 /// terminal or collecting diagnostics. Git's normal config and credential
 /// helper resolution remain intact: devbox does not provide, inspect, or save
@@ -491,6 +538,10 @@ mod tests {
         let mut command = Command::new(resolve_git());
         command.env("GIT_DIR", "untrusted-repository-override");
         command.env("GIT_INDEX_FILE", "untrusted-index-override");
+        command.env("GIT_CONFIG_PARAMETERS", "'core.worktree=untrusted'");
+        command.env("GIT_CONFIG_COUNT", "1");
+        command.env("GIT_CONFIG_KEY_0", "core.worktree");
+        command.env("GIT_CONFIG_VALUE_0", "untrusted");
         command.env("GIT_ASKPASS", "configured-credential-helper");
         clear_repository_overrides(&mut command);
         let environment = command
@@ -505,6 +556,18 @@ mod tests {
             environment.get(std::ffi::OsStr::new("GIT_INDEX_FILE")),
             Some(&None)
         );
+        for name in [
+            "GIT_CONFIG_PARAMETERS",
+            "GIT_CONFIG_COUNT",
+            "GIT_CONFIG_KEY_0",
+            "GIT_CONFIG_VALUE_0",
+        ] {
+            assert_eq!(
+                environment.get(std::ffi::OsStr::new(name)),
+                Some(&None),
+                "repository config override {name} must be removed",
+            );
+        }
         assert_eq!(
             environment.get(std::ffi::OsStr::new("GIT_ASKPASS")),
             Some(&Some(std::ffi::OsString::from(
@@ -657,6 +720,27 @@ mod tests {
             "git_invalid_arguments"
         );
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn mutating_runner_rejects_controls_outside_the_commit_message_slot() {
+        let error = run_mutating(
+            &["status\n--porcelain"],
+            "/safe/project",
+            Duration::from_secs(1),
+            1024,
+        )
+        .unwrap_err();
+        assert_eq!(error, "git_invalid_arguments");
+
+        let error = run_mutating(
+            &["commit", "--author", "name\nemail", "--"],
+            "/safe/project",
+            Duration::from_secs(1),
+            1024,
+        )
+        .unwrap_err();
+        assert_eq!(error, "git_invalid_arguments");
     }
 
     #[test]

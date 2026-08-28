@@ -194,6 +194,49 @@ unmount 뒤 늦은 결과를 폐기한다. state matrix는 clean/upstream, dirty
 ahead/behind/diverged, rebase marker, merge marker와 조합을 pure parser·real Git fixture로
 검증한다.
 
+## 4.5 P3-16 — safe branch·worktree cleanup 경계 (#364)
+
+정리는 preview와 실행을 분리한다. `repo_cleanup_preview({ request: { path, operationId } })`는 고정된
+`for-each-ref`, `worktree list --porcelain -z`, `status --porcelain=v1 --ignored=matching -z`
+출력을 bounded parser로 읽는다. local branch는 현재 HEAD에 병합된 경우, upstream tracking ref가
+사라진 경우, 또는 마지막 commit이 90일 이상 갱신되지 않은 경우에만 각각
+`mergedIntoCurrent`, `upstreamGone`, `inactive` 판단 근거를 갖는 후보로 표시한다. 현재 branch,
+`main` branch, 어떤 worktree에서 사용 중인 branch는 후보여도 삭제 eligible이 아니다.
+
+Worktree 후보는 기본(목록 첫 항목) worktree가 아닌 linked/detached worktree로 제한한다. 기본
+worktree, 현재 명령의 worktree, bare/prunable 기록, locked worktree, dirty 또는 untracked/ignored
+파일이 있는 대상, 상태를 읽지 못한 대상은 `blocked` ID와 함께 preview에 남기되 실행할 수 없다. locked/prunable
+사유 원문과 Git stderr는 버리고 stable `reasons`/`blocked` ID만 반환한다. Worktree path는
+명시적인 preview/result DTO에서만 표시된다.
+
+`repo_cleanup({ request: { path, branchNames, worktreePaths, previewRevision, operationId } })`는
+fresh preview가 opaque revision·repository/common-directory identity·worktree identity·status와
+일치하고 모든 선택이 eligible일 때만 순서대로 `git branch --delete -- <branch>` 또는
+`git worktree remove -- <path>`를 실행한다. 명령 직전 branch는 name/object/upstream/current/
+checked-out/merged·stale 분류를, worktree는 canonical path·filesystem identity·HEAD·branch/
+main/bare/locked/prunable registration·status를 bounded read로 다시 수집해 승인된 항목과
+완전히 비교한다. blocked selection은 mutation 없이 per-item result로 반환하며, preview가
+오래됐거나 ref/path/registration이 교체되었거나 dirty/untracked/ignored가 재발견되면 고정
+state-change 오류로 child를 만들지 않는다. `repo_cleanup_cancel({ request: { operationId } })`는
+path 재검증 없이 in-flight child를 취소하고, preview/재검증 read와 mutation batch에는
+각각 cancellation token과 bounded deadline을 적용한다. mutation batch는 120초 total budget과
+항목별 child timeout을 넘기면 다음 항목을 시작하지 않는다. 이 흐름은 native single-flight lock과 bounded process-tree runner를
+local/remote mutation과 공유한다.
+
+`--force`/`-D`, `reset`, `clean`, `worktree prune`, 자동 branch 생성·복구는 request/argv/UI에
+존재하지 않는다. Parser fixture는 merged/stale 근거, malformed/oversized/unsafe metadata,
+duplicate/capped records, dirty/untracked/ignored/locked/main/current/prunable 차단과 명령
+allow-list를 고정하고, real Git fixture는 clean linked worktree와 explicit branch deletion,
+stale preview rejection, ref·HEAD·registration 변화, 실패/취소·status preservation을 검증한다.
+Frontend는 rationale/block reason과 정확한 선택 branch/path를 confirmation에 나열하고, preview
+revision confirmation, busy/cancel/stale/unmount, 실패 후 fresh-preview 강제 및 fixed-error
+redaction을 제공한다. 성공 응답의 `previewRevision`이 승인한 revision과 다르면 결과도 stale로
+폐기하고 preview·selection을 비운 뒤 다시 검사를 요구한다. 사용자가 취소한 순간 request
+sequence도 무효화하므로 native child가 직후 성공해도 UI에 성공 상태를 반영하지 않는다.
+여러 branch/worktree를 선택한 batch는 여러 Git mutation을 원자적으로 묶거나 자동 rollback할
+수 없으므로 앞선 항목만 적용될 수 있다. 부분 적용·취소·불확실한 실패는 복구 명령 없이
+preview·selection을 폐기하고 새 preview에서 실제 상태를 확인하는 것으로 닫는다.
+
 ## 5. 완료 조건
 
 - root 아래 repository를 중복 없이 나열한다 (canonical identity).
@@ -209,3 +252,6 @@ ahead/behind/diverged, rebase marker, merge marker와 조합을 pure parser·rea
 - remote status와 fetch/FF-only pull/current-branch push가 upstream/no-upstream, dirty/detached,
   diverged/in-progress preflight, bounded/redacted child execution, cancel/stale/unmount fixture와
   함께 동작하며 force/merge/rebase/reset/clean/credential storage 경계가 유지된다.
+- safe branch/worktree cleanup이 merged/stale rationale, dirty/untracked/ignored/locked/main/current/
+  prunable/state-unavailable 차단, preview revision·filesystem identity revalidation, explicit
+  result/cancel을 충족하며 `--force`/`-D`/reset/clean/prune을 실행하지 않는다.

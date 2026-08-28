@@ -26,6 +26,10 @@ const fixtures = vi.hoisted(() => ({
 }));
 
 vi.mock("./api", () => ({
+  GIT_CLEANUP_BUSY: "이미 다른 Git 작업이 진행 중입니다.",
+  GIT_CLEANUP_CANCELLED: "Git 정리 작업을 취소했습니다.",
+  GIT_CLEANUP_ERROR: "Git 정리 작업을 실행하지 못했습니다.",
+  GIT_CLEANUP_STATE_CHANGED: "저장소 상태가 변경되어 Git 정리를 실행하지 않았습니다.",
   GIT_REMOTE_BUSY: "이미 다른 Git 작업이 진행 중입니다.",
   GIT_REMOTE_CANCELLED: "Git 원격 작업을 취소했습니다.",
   GIT_REMOTE_ERROR: "Git 원격 작업을 실행하지 못했습니다.",
@@ -38,6 +42,20 @@ vi.mock("./api", () => ({
   })),
   worktrees: vi.fn(async () => []),
   createWorktree: vi.fn(async () => undefined),
+  repoCleanup: vi.fn(async () => ({
+    previewRevision: "cleanup-0123456789abcdef",
+    attempted: 0,
+    removed: 0,
+    items: [],
+  })),
+  repoCleanupCancel: vi.fn(async () => false),
+  repoCleanupPreview: vi.fn(async () => ({
+    revision: "cleanup-0123456789abcdef",
+    currentBranch: null,
+    currentHead: null,
+    branches: [],
+    worktrees: [],
+  })),
   worktreeClean: vi.fn(async () => true),
   openTargets: vi.fn(async () => []),
   openIn: vi.fn(async () => undefined),

@@ -35,6 +35,11 @@
 - [x] **dev environment doctor** — devbox-manager의 환경 진단 탭 (WSL/git/node/pnpm/rustc/cargo/devbox-data/catalog-ids)
 - [x] **repo-manager** — Git repository 탐색·브랜치/worktree/상태 목록, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기
   (파괴적 기본 동작 없음, remove 전 uncommitted/untracked 검사)
+- [ ] **repo-manager safe cleanup (#364)** — merged/gone/inactive branch와 clean linked/detached
+  worktree를 preview·근거·차단 사유와 함께 확인하고, 명시적으로 선택·승인한 대상만 bounded
+  `branch --delete`/`worktree remove`로 정리한다. mutation 직전 common/worktree filesystem
+  identity, branch object/upstream/current/checked-out 상태, worktree HEAD/registration/status를
+  재검증하며 force delete/reset/clean/prune은 제공하지 않는다.
 - [x] **log-lens 0.1.0 bootstrap** — local/WSL/journal/container read-only adapter, plain/JSONL/logfmt parser,
   deterministic merge/follow/filter/bookmark/export와 bounded in-memory ring. Run/WSL producer handoff는
   별도 integration PR에서 연결한다.
@@ -725,6 +730,15 @@ latest-main worktree에서 grouped 코드와 문서를 정적 이식했으며, W
 helper/hook descendant와 real bare-remote smoke는 native Windows W2에서 최종 확인할 잔여
 위험이다. #316–#319에는 #307 handoff, arbitrary shell, destructive recovery와 version bump가
 포함되지 않는다.
+
+**2026-08-28 #364 Repo Manager safe cleanup 구현 상태 (PR 후보).** Preview가 현재 HEAD 병합,
+upstream 소실, 90일 inactivity를 branch 후보 근거로 표시하고 linked/detached worktree의
+dirty/untracked/ignored/locked/prunable/main/current/state-unavailable 차단을 명시한다. 실행은
+opaque preview revision과 filesystem identity를 재검증한 뒤 `branch --delete` 또는
+`worktree remove`만 사용하며, blocked selection은 mutation 없이 result로 남긴다. force
+delete/`-D`, reset, clean, worktree prune과 자동 복구는 포함하지 않는다. bounded parser,
+real Git fixture, frontend preview/confirmation/cancel/redaction fixture는 전용 후보
+worktree에 추가했고, Windows packaged W3 smoke와 전체 CI gate는 아직 실행하지 않았다.
 
 **#316–#319 세부 계약 보강.** Native request는 read-only 조회와 mutation을 분리하며,
 `repo_stage`/`repo_unstage`/`repo_commit`은 `{ path, paths/message, operationId }`, remote
