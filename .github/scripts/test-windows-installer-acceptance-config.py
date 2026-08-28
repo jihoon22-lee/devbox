@@ -87,6 +87,20 @@ def main() -> None:
     assert "Remove-Item -Recurse" not in script
     assert "Stop-Process -Name" not in script
     assert "Invoke-Expression" not in script
+    assert "function Get-Optional-Property" in script
+    assert "$Object.PSObject.Properties.Match($Name)" in script
+    assert "$Object.PSObject.Properties[$Name]" not in script
+    optional_registry_values = {
+        "DisplayName",
+        "DisplayVersion",
+        "Publisher",
+        "DisplayIcon",
+        "InstallLocation",
+        "UninstallString",
+    }
+    for property_name in optional_registry_values:
+        assert f"Get-Optional-Property $value '{property_name}'" in script
+        assert f"$value.{property_name}" not in script
 
     assert workflow.startswith("name: Windows installer acceptance\n\non:\n  workflow_dispatch:\n")
     assert "\n  pull_request:" not in workflow

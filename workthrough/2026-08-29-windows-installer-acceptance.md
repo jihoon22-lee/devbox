@@ -8,10 +8,35 @@ This checkpoint adds the first disposable-Windows installer acceptance gate afte
 exact manifest/GitHub size and SHA-256 matches. This document does not transfer that package
 result to installer acceptance.
 
-The workflow and PowerShell harness are intentionally workflow-dispatch-only. The workflow has
-not yet been dispatched, so no run ID, Windows runtime result, installer result, or acceptance
-PASS is claimed here. It cannot be called PASS until a real run produces explicit `status: PASS`
-evidence and the cleanup read-back is clean.
+The workflow and PowerShell harness are intentionally workflow-dispatch-only. The first hosted
+runtime attempt was dispatched, and the exact release/tag checks and release downloads completed,
+but the harness failed closed before installing any package. No installer/product result or
+acceptance PASS is claimed here. The failure is classified as a harness bug caused by PowerShell
+`StrictMode` handling of an unrelated uninstall registry entry; it is covered by the current
+registry-property fix below. This gate cannot be called PASS until a new run after that fix
+produces explicit `status: PASS` evidence and a clean cleanup read-back.
+
+## First hosted runtime attempt
+
+The first manual dispatch used the immutable `v0.5.0-rc3` candidate and completed the candidate
+identity checks and fresh release downloads before the acceptance script reached installation:
+
+| Item | Result |
+|---|---|
+| Run | `33214345133` — [GitHub Actions run](https://github.com/jihoon22-lee/devbox/actions/runs/33214345133) |
+| Candidate | Exact `v0.5.0-rc3` release/tag identity and expected commit checks succeeded |
+| Downloads | Baseline and candidate release downloads completed and were available to the harness |
+| Installation boundary | Failure occurred before any installer was launched or any app was mutated |
+| Evidence | `status: FAIL`, `releases: null`, `apps: []`; all cleanup residue counters were zero |
+| Cleanup error | Cleanup read-back recorded the same missing-`DisplayName` property exception |
+| Evidence SHA-256 | `10a27f2ea435527c82c397e98d2213eb3995e38c9be1a0f93059f3adc4c4fd7b` |
+
+The `releases: null` and empty app list are consequences of the early abort, not evidence that
+the release identity or downloads failed. Because no installation began, the zero cleanup
+residues do not constitute an install/update/uninstall PASS. The failure is a harness failure,
+not a product or installer result: under `StrictMode`, `Get-Uninstall-Entries` directly accessed
+`DisplayName` on an unrelated uninstall registry entry that did not define that optional value.
+The failed run is immutable diagnostic evidence and must not be rerun as the validation result.
 
 ## Acceptance identity and execution boundary
 
@@ -56,6 +81,20 @@ matrix or a trustworthy real disk-full condition.
 
 The workflow uses `always()` for evidence upload and the final status gate, so a missing result or
 non-PASS result cannot be hidden by an earlier step failure. The artifact retention is 14 days.
+
+### Registry-enumeration hardening for the failed first run
+
+The current harness fix makes uninstall-registry enumeration tolerant of unrelated entries that
+omit optional values. `Get-Optional-Property` uses a `PSObject.Properties.Match($Name)` lookup
+with null-input protection and returns an empty string when a property is absent or null.
+`Get-Uninstall-Entries` now uses that helper for all optional uninstall values (`DisplayName`,
+`DisplayVersion`, `Publisher`, `DisplayIcon`, `InstallLocation`, and `UninstallString`), while
+still skipping entries with no usable `DisplayName`. This removes the direct property access that
+caused run `33214345133` to abort.
+
+The Python contract test now requires the helper and each safe access, and rejects direct
+`$value.<optional-registry-value>` access so the exact `StrictMode` regression cannot return
+silently. This fix changes the harness only; it does not change the v0.5.0-rc3 release bytes.
 
 ### Pinned app matrix
 
@@ -188,8 +227,9 @@ messages are bounded. No user data, credential, or raw secret is written by this
 
 The initial script deliberately does not close the full W4 matrix:
 
-- The workflow has not been dispatched. Static validation is PASS, but installer acceptance is
-  **PENDING**, with no runtime result or run ID to report.
+- One hosted runtime attempt has been dispatched, but it failed before installation because of the
+  harness registry-property bug described above. Installer acceptance remains **UNPROVEN**: the
+  failed run is not a product/install result, and no `status: PASS` evidence exists yet.
 - It does not launch the installed application. Cold/hot start, WebView startup, window restore,
   second-instance focus, AppLink, and UI behavior remain outside this script.
 - It does not seed or migrate real v0.4.1 user data. The configured baseline is the immutable
@@ -228,6 +268,7 @@ The following read-only local checks were performed in this worktree:
 python3 .github/scripts/test-windows-installer-acceptance-config.py  PASS
 bash .github/scripts/check-catalog.sh                            PASS
 Windows PowerShell Parser::ParseFile on windows-installer-acceptance.ps1  PASS (exit 0)
+Windows PowerShell 5.1 StrictMode helper and real uninstall-registry inventory  PASS (254 entries)
 Ruby Psych YAML parse on windows-installer-acceptance.yml         PASS
 Windows PowerShell Parser::ParseFile on all workflow pwsh blocks  PASS
 actionlint .github/workflows/windows-installer-acceptance.yml     PASS
@@ -235,15 +276,23 @@ git diff --check                                                   PASS
 ```
 
 `check-catalog.sh` also passed its packaged-smoke configuration and downloaded-release verifier
-fixtures before returning success. These are source/configuration checks only. The GitHub-hosted
-workflow itself remains undispatched and must be run with the exact candidate tag and peeled
-commit before this gate can be reported as PASS.
+fixtures before returning success. These are source/configuration checks only and do not override
+the failed hosted runtime attempt. After the registry-property fix passes CI and is merged, the
+workflow must be dispatched again with the exact candidate tag and peeled commit; the failed run
+must not be rerun or relabeled as PASS.
 
 ## Next steps
 
-1. Dispatch the workflow with the immutable `v0.5.0-rc3` tag and its exact peeled commit after the
-   candidate release identity is available.
-2. Preserve the run's sanitized metadata and JSON evidence, including any fail-closed collision
-   or cleanup result; do not invent a PASS from a skipped or unavailable run.
-3. Complete the separately required app-launch, real v0.4.1 migration, locked/ACL/disk-full, and
+1. Keep run `33214345133` and its evidence SHA-256 as immutable diagnostic evidence; it is a
+   harness failure before installation, not a product/install verdict.
+2. Complete review and CI for the registry-enumeration fix, including the Python contract that
+   forbids direct access to optional uninstall-registry properties.
+3. After the fix is merged, dispatch a **new** workflow run with the immutable `v0.5.0-rc3` tag
+   and its exact peeled commit. Do not rerun `33214345133`; preserve the new sanitized metadata
+   and JSON evidence independently.
+4. If the new run fails, classify it from its phase and evidence: a pre-install harness failure
+   requires another harness fix, while an actual installer lifecycle failure requires product
+   investigation and potentially a new release candidate. Only an explicit PASS with zero
+   residue can close this hosted lifecycle subset.
+5. Complete the separately required app-launch, real v0.4.1 migration, locked/ACL/disk-full, and
    physical W4-C/offline acceptance in suitable disposable or directly observable environments.
