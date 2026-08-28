@@ -383,6 +383,13 @@ The correction changes no process creation, Job assignment, termination, or
 drop behavior. Its acceptance gate is the rerun of the Windows compile job on
 the native MSVC runner.
 
+That rerun compiled the complete Windows workspace successfully and reached
+strict clippy. Clippy then exposed two Windows-only style diagnostics that the
+WSL target cannot see (`needless_return` in the cfg-terminal expression and a
+collapsible thread-owner check). Both were normalized without changing the
+branch conditions, handle cleanup, or sole-thread rejection behavior. The
+next native Windows run therefore remains the final compile-and-clippy gate.
+
 ## Rollback and risk notes
 
 - #359 template/profile writes are separate atomic/CAS operations. A crash

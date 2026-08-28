@@ -126,10 +126,10 @@ impl ProcessTree {
                 }
                 return Err(());
             }
-            return Ok(Self {
+            Ok(Self {
                 job,
                 terminal_empty: false,
-            });
+            })
         }
 
         #[cfg(unix)]
@@ -327,13 +327,11 @@ fn resume_primary_thread(pid: u32, job: HANDLE) -> Result<(), ()> {
         return Err(());
     }
     loop {
-        if entry.th32OwnerProcessID == pid {
-            if thread_id.replace(entry.th32ThreadID).is_some() {
-                unsafe {
-                    let _ = CloseHandle(snapshot);
-                }
-                return Err(());
+        if entry.th32OwnerProcessID == pid && thread_id.replace(entry.th32ThreadID).is_some() {
+            unsafe {
+                let _ = CloseHandle(snapshot);
             }
+            return Err(());
         }
         entry.dwSize = size_of::<THREADENTRY32>() as u32;
         if unsafe { Thread32Next(snapshot, &mut entry) }.is_err() {
