@@ -136,3 +136,79 @@ export interface Current {
   installedAt: number;
   previousVersion: string | null;
 }
+
+export type DataDatabaseState = "available" | "missing" | "unsafe-path" | "unreadable";
+export type DataIntegrity = "ok" | "failed" | "timed-out" | "unavailable";
+
+export interface DataSchemaObject {
+  name: string;
+  rowCount: number | null;
+}
+
+export interface DataDatabaseInfo {
+  appId: string;
+  displayName: string;
+  identifier: string;
+  state: DataDatabaseState;
+  revision: string | null;
+  byteLength: number | null;
+  schemaVersion: number | null;
+  tables: DataSchemaObject[];
+  views: DataSchemaObject[];
+  integrity: DataIntegrity;
+  warning: string | null;
+}
+
+export interface DataInspectorSnapshot {
+  catalogRevision: number | null;
+  databases: DataDatabaseInfo[];
+}
+
+export interface DataQueryRequest {
+  appId: string;
+  sql: string;
+  queryId: string;
+  expectedRevision: string | null;
+}
+
+export type DataCell = string | number | boolean | null;
+
+export interface DataQueryResult {
+  previewId: string;
+  queryId: string;
+  appId: string;
+  databaseRevision: string;
+  columns: string[];
+  rows: DataCell[][];
+  rowCount: number;
+  resultBytes: number;
+  truncated: boolean;
+  elapsedMs: number;
+}
+
+export interface DataExport {
+  filename: string;
+  mimeType: string;
+  format: "json" | "csv";
+  content: string;
+  byteCount: number;
+}
+
+export interface SupportBundlePreview {
+  previewId: string;
+  catalogRevision: number | null;
+  expiresAtMs: number;
+  estimatedBytes: number;
+  databaseCount: number;
+  includedSections: string[];
+  omittedSections: string[];
+  redactionVersion: string;
+}
+
+export interface SupportBundleExport {
+  filename: string;
+  mimeType: string;
+  content: string;
+  byteCount: number;
+  redactionVersion: string;
+}

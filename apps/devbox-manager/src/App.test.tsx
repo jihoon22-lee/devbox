@@ -5,8 +5,13 @@ import App from "./App";
 import {
   available,
   applyInstallRoot,
+  cancelDataDiagnostics,
+  cancelSupportBundle,
   catalog,
   current,
+  exportDataPreview,
+  exportSupportBundle,
+  inspectDataDatabases,
   installApp,
   installPath,
   installMany,
@@ -14,7 +19,9 @@ import {
   launchApp,
   onPendingOpen,
   openInstallFolder,
+  previewDataQuery,
   previewRemoveApp,
+  previewSupportBundle,
   previewInstallRoot,
   removeApp,
   rollback,
@@ -24,19 +31,27 @@ import {
 import type {
   CatalogApp,
   Current,
+  DataInspectorSnapshot,
+  DataQueryResult,
   InstalledApp,
   InstallPathInfo,
   InstallRootPreview,
   RemovePreview,
   RemoveResult,
   ReleaseManifest,
+  SupportBundlePreview,
 } from "./types";
 
 vi.mock("./api", () => ({
   available: vi.fn(),
   applyInstallRoot: vi.fn(),
+  cancelDataDiagnostics: vi.fn(),
+  cancelSupportBundle: vi.fn(),
   catalog: vi.fn(),
   current: vi.fn(),
+  exportDataPreview: vi.fn(),
+  exportSupportBundle: vi.fn(),
+  inspectDataDatabases: vi.fn(),
   installApp: vi.fn(),
   installPath: vi.fn(),
   installMany: vi.fn(),
@@ -44,7 +59,9 @@ vi.mock("./api", () => ({
   launchApp: vi.fn(),
   onPendingOpen: vi.fn(async () => () => undefined),
   openInstallFolder: vi.fn(),
+  previewDataQuery: vi.fn(),
   previewRemoveApp: vi.fn(),
+  previewSupportBundle: vi.fn(),
   previewInstallRoot: vi.fn(),
   removeApp: vi.fn(),
   rollback: vi.fn(),
@@ -98,6 +115,13 @@ const previewRemoveAppMock = vi.mocked(previewRemoveApp);
 const removeAppMock = vi.mocked(removeApp);
 const runDiagnosisMock = vi.mocked(runDiagnosis);
 const previewInstallRootMock = vi.mocked(previewInstallRoot);
+const cancelDataDiagnosticsMock = vi.mocked(cancelDataDiagnostics);
+const cancelSupportBundleMock = vi.mocked(cancelSupportBundle);
+const exportDataPreviewMock = vi.mocked(exportDataPreview);
+const exportSupportBundleMock = vi.mocked(exportSupportBundle);
+const inspectDataDatabasesMock = vi.mocked(inspectDataDatabases);
+const previewDataQueryMock = vi.mocked(previewDataQuery);
+const previewSupportBundleMock = vi.mocked(previewSupportBundle);
 const onPendingOpenMock = vi.mocked(onPendingOpen);
 const takePendingOpenMock = vi.mocked(takePendingOpen);
 const confirmMock = vi.fn<(message?: string) => boolean>();
@@ -107,6 +131,62 @@ const portablePath: InstallPathInfo = {
   executable: "C:\\Devbox\\apps\\port-manager\\versions\\0.2.1\\port-manager.exe",
   installRoot: "C:\\Devbox",
   sourceManifest: "C:\\Devbox\\registry.json",
+};
+
+const inspectorSnapshot: DataInspectorSnapshot = {
+  catalogRevision: 5,
+  databases: [
+    {
+      appId: "everything-plus",
+      displayName: "Everything+",
+      identifier: "com.devbox.everythingplus",
+      state: "available",
+      revision: "database-revision-1",
+      byteLength: 4096,
+      schemaVersion: 1,
+      tables: [{ name: "files", rowCount: 12 }],
+      views: [],
+      integrity: "ok",
+      warning: null,
+    },
+    {
+      appId: "life-log",
+      displayName: "Life Log",
+      identifier: "com.devbox.lifelog",
+      state: "missing",
+      revision: null,
+      byteLength: null,
+      schemaVersion: null,
+      tables: [],
+      views: [],
+      integrity: "unavailable",
+      warning: "데이터베이스가 없습니다.",
+    },
+  ],
+};
+
+const inspectorResult: DataQueryResult = {
+  previewId: "query-preview-1",
+  queryId: "query-1",
+  appId: "everything-plus",
+  databaseRevision: "database-revision-1",
+  columns: ["id", "name", "status"],
+  rows: [[1, "[REDACTED]", "ok"]],
+  rowCount: 1,
+  resultBytes: 48,
+  truncated: false,
+  elapsedMs: 3,
+};
+
+const supportPreviewFixture: SupportBundlePreview = {
+  previewId: "support-preview-1",
+  catalogRevision: 5,
+  expiresAtMs: Date.now() + 300_000,
+  estimatedBytes: 2048,
+  databaseCount: 1,
+  includedSections: ["app-metadata", "catalog-metadata", "schema-metadata", "log-metadata", "diagnosis"],
+  omittedSections: ["raw-database", "raw-logs", "paths", "environment-values", "credentials", "authorization"],
+  redactionVersion: "v1",
 };
 
 function appRow(name: string): HTMLTableRowElement {
@@ -176,7 +256,34 @@ beforeEach(() => {
     rootId: "custom-test-root",
     candidatePath: "C:\\Devbox-custom",
   });
+  cancelDataDiagnosticsMock.mockReset().mockResolvedValue(undefined);
+  cancelSupportBundleMock.mockReset().mockResolvedValue(undefined);
+  exportDataPreviewMock.mockReset().mockResolvedValue({
+    filename: "devbox-data-preview.json",
+    mimeType: "application/json",
+    format: "json",
+    content: "{\"redactionVersion\":\"v1\"}",
+    byteCount: 26,
+  });
+  exportSupportBundleMock.mockReset().mockResolvedValue({
+    filename: "devbox-support-bundle.json",
+    mimeType: "application/json",
+    content: "{\"redactionVersion\":\"v1\"}",
+    byteCount: 26,
+    redactionVersion: "v1",
+  });
+  inspectDataDatabasesMock.mockReset().mockResolvedValue(inspectorSnapshot);
+  previewDataQueryMock.mockReset().mockResolvedValue(inspectorResult);
+  previewSupportBundleMock.mockReset().mockResolvedValue(supportPreviewFixture);
   confirmMock.mockReset().mockReturnValue(false);
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: vi.fn(() => "blob:devbox-test"),
+  });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    configurable: true,
+    value: vi.fn(),
+  });
   Object.defineProperty(window, "confirm", {
     configurable: true,
     value: confirmMock,
@@ -588,6 +695,80 @@ describe("Devbox Manager custom install root", () => {
     expect(screen.getByText(/자동 이동하지 않습니다/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "확인 후 이 root 적용" })).toBeNull();
     expect(applyInstallRootMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("Devbox Manager diagnostics and support bundle", () => {
+  it("keeps Data Inspector read-only and requires an explicit preview before export", async () => {
+    render(<App />);
+    await screen.findByText("Code Pad");
+    fireEvent.click(screen.getByRole("button", { name: "환경 진단" }));
+    await screen.findByRole("heading", { name: "Data Inspector" });
+
+    expect(screen.queryByRole("button", { name: "JSON export" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "데이터 다시 확인" }));
+    await screen.findByText("Everything+");
+    expect(inspectDataDatabasesMock).toHaveBeenCalledWith(expect.any(String));
+    expect(screen.queryByText(/C:\\Users|AppData/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "미리 보기" }));
+    await screen.findByText("조회 결과 preview");
+    expect(previewDataQueryMock).toHaveBeenCalledWith(expect.objectContaining({
+      appId: "everything-plus",
+      sql: "SELECT name, type FROM sqlite_schema",
+      expectedRevision: "database-revision-1",
+    }));
+    expect(exportDataPreviewMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "JSON export" }));
+    await waitFor(() => expect(exportDataPreviewMock).toHaveBeenCalledWith("query-preview-1", "json"));
+    expect(screen.getByRole("status").textContent).toContain("JSON 파일을 준비했습니다.");
+  });
+
+  it("offers cancellation while a native database inspection is pending", async () => {
+    inspectDataDatabasesMock.mockImplementationOnce(() => new Promise(() => {}));
+    render(<App />);
+    await screen.findByText("Code Pad");
+    fireEvent.click(screen.getByRole("button", { name: "환경 진단" }));
+    await screen.findByRole("heading", { name: "Data Inspector" });
+    fireEvent.click(screen.getByRole("button", { name: "데이터 다시 확인" }));
+
+    await waitFor(() => expect(inspectDataDatabasesMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    expect(cancelDataDiagnosticsMock).toHaveBeenCalledWith(expect.any(String));
+  });
+
+  it("shows support bundle inclusion and omission boundaries before one-time export", async () => {
+    render(<App />);
+    await screen.findByText("Code Pad");
+    fireEvent.click(screen.getByRole("button", { name: "환경 진단" }));
+    await screen.findByRole("heading", { name: "Redacted support bundle" });
+
+    fireEvent.click(screen.getByRole("button", { name: "번들 미리 확인" }));
+    await screen.findByText(/내보내기 preview · redaction v1/);
+    expect(previewSupportBundleMock).toHaveBeenCalledWith(expect.any(String));
+    expect(exportSupportBundleMock).not.toHaveBeenCalled();
+    expect(screen.getByText("raw-database")).toBeTruthy();
+    expect(screen.getByText("credentials")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 JSON export" }));
+    await waitFor(() => expect(exportSupportBundleMock).toHaveBeenCalledWith("support-preview-1"));
+    expect(screen.getByRole("status").textContent).toContain("redacted 지원 번들을 준비했습니다.");
+  });
+
+  it("clears a consumed support preview when native export reports a stale revision", async () => {
+    exportSupportBundleMock.mockRejectedValueOnce(new Error("지원 번들이 오래되었습니다."));
+    render(<App />);
+    await screen.findByText("Code Pad");
+    fireEvent.click(screen.getByRole("button", { name: "환경 진단" }));
+    await screen.findByRole("heading", { name: "Redacted support bundle" });
+    fireEvent.click(screen.getByRole("button", { name: "번들 미리 확인" }));
+    await screen.findByText(/내보내기 preview · redaction v1/);
+
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 JSON export" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("지원 번들이 오래되었습니다."));
+    expect(screen.queryByText(/내보내기 preview · redaction v1/)).toBeNull();
+    expect(screen.getByRole("button", { name: "번들 미리 확인" })).toBeTruthy();
   });
 });
 

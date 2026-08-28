@@ -29,6 +29,27 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
   실제 위치·uninstaller, arbitrary path와 강제 삭제는 지원하지 않는다.
 - **런타임 discovery 발행** — revision 기반 runtime catalog와 versioned install-root locator를 원자 갱신
 - **환경 진단(dev environment doctor)** — WSL/git/node/pnpm/rustc/cargo/devbox-data/catalog-ids/runtime-metadata 점검
+- **Data Inspector (#354)** — Manager가 catalog에서 파생한 devbox SQLite만 read-only/query-only로
+  발견·스키마 조회·bounded `SELECT`/`WITH`/`EXPLAIN` preview한다. arbitrary path와 write/attach/
+  pragma 및 `pragma_*` table-valued function을 차단하고, 512 MiB DB·16 KiB SQL·64 columns·1,000
+  rows·64 KiB cell·1 MiB serialized result·2초 실행 상한과 취소를 적용한다. path component와
+  `-wal`/`-shm`/`-journal` sidecar의 link/reparse/non-regular 파일을 거부하며, Unix에서는 검사한
+  regular file을 열린 descriptor에 고정한 뒤 SQLite를 열어 경로 교체 TOCTOU를 줄인다. `immutable`
+  checkpoint image로 읽으므로 live WAL을 진단에 병합하지 않는다.
+- **Data Inspector privacy/export** — SQLite column-origin metadata로 직접 column의 실제 source를
+  확인한다. secret/token/password/auth/cookie/API key뿐 아니라 username/user-id/login/email source,
+  민감한 alias와 변환 expression을 `[REDACTED]`로 마스킹하며 expression label은 `column_N`으로
+  안정화한다. 자유 텍스트의 credential·Bearer/JWT·email/path·binary도 redaction하고, CSV string과
+  header의 `=`, `+`, `-`, `@` formula prefix는 apostrophe로 escape한다. 결과는 opaque one-time
+  preview token으로만 보관하고, 명시적 JSON/CSV export 때 DB revision을 다시 확인한다.
+- **Redacted support bundle (#355)** — 앱/catalog/schema/log metadata와 bounded 진단 요약만 offline
+  preview로 묶는다. raw DB·raw log·query·credentials/auth/cookie·환경변수·임의 업로드와 원본 경로는
+  포함하지 않으며, log metadata도 앱당 128 files·512 entries·4 MiB까지만 센다. 생성 결과는 512 KiB
+  이하이고 5분 TTL의 one-time preview token에 exact bytes로 보관한다. export는 catalog revision,
+  DB 상태/파일 identity revision, log metadata source revision을 재검증하므로 source가 바뀌면
+  stale 처리하고, preview에서 검토한 bytes를 그대로 내보낸다. redaction contract와 omitted
+  sections를 확인한 뒤에만 JSON export를 수행한다. export claim은 성공·stale·실패 모두
+  소비되므로 UI도 재시도 버튼을 남기지 않고 새 preview를 요구한다.
 - **실행** — 설치된 앱 실행
 
 ## 기술
@@ -86,6 +107,18 @@ OS 오류, credential을 반사하지 않는다. locator/manifest bytes와 row �
 손상된 locator는 legacy root로 조용히 우회하지 않는다(locator 자체가 없는 v0.4.x 상태만 read-only
 fallback). 브라우저 개발 모드의 API mock은 화면 흐름을 위한 모의 응답일 뿐 native filesystem
 적용 성공을 증명하지 않는다.
+
+Data Inspector와 support bundle도 같은 경계를 따른다. 브라우저 mock은 bounded/sanitized 화면
+흐름만 제공하고 native command가 실제 catalog-derived path, SQLite authorizer/query-only, SQLite
+allocation limit, timeout/cancel/stale 검사를 수행한다. native preview가 성공해도 사용자가 명시적으로
+export하기 전에는 파일을 만들지 않으며, export는 만료·revision 재검증과 고정 redaction contract를
+통과해야 한다. query와 support preview는 claim 시점에 Mutex에서 원자적으로 제거되므로 동시 export
+호출 중 하나만 성공한다.
+
+환경 진단 command도 외부 프로세스를 무제한 실행하지 않는다. WSL/git/node/pnpm/rustc/cargo/docker
+version probe는 stdin/stderr를 닫고 stdout 64 KiB·첫 줄 256자·프로세스당 2초로 제한한다. Unix
+process group과 Windows Job Object를 함께 정리해 timeout 뒤 helper process가 남지 않게 하며,
+출력은 UI/support bundle 경계에 들어오기 전에 username/email/path/credential redaction을 거친다.
 
 현재 컨텍스트 메뉴의 실행·폴더 열기·제거는 검증된 휴대용 설치에만 제공한다. 설치 패키지의
 source manifest 기록은 표시하지만 실제 설치 위치·uninstaller는 추측하지 않는다. custom root는
