@@ -209,11 +209,17 @@ cargo clippy -p applink -p launch -p catalog -p devbox-launcher -p everything-pl
   --all-targets -- -D warnings
 exit code: 0
 
+cargo check --workspace --all-targets
+exit code: 0 (latest main after #453)
+
 pnpm --dir apps/everything-plus test
 2 files / 23 tests passed
 
 pnpm --dir apps/everything-plus build
 TypeScript and Vite production build passed
+
+pnpm build
+all 19 buildable workspace projects passed (latest main after #453)
 
 python3 .github/scripts/check-dependencies.py check
 dependency policy and notices passed
@@ -225,10 +231,11 @@ git diff --check
 exit code: 0
 ```
 
-The focused suites ran with one Rust worker. The temporary frontend dependency links were
-removed immediately after the successful run, leaving the worktree clean. Latest-main full
-workspace Rust/frontend gates and GitHub Actions Windows compile remain mandatory after #453 is
-squash-merged and this stacked branch is rebased.
+The focused suites were rerun after rebasing onto the squash-merged #453 main. The full
+workspace Rust check and frontend production build also passed on that exact base. Frontend
+dependencies were restored from the local pnpm store without downloading packages and remain
+ignored build inputs; the tracked worktree is clean. GitHub Actions, including the Windows
+compile gate, remains mandatory on the pull request before merge.
 
 ## Remaining risks and follow-up
 
@@ -237,8 +244,8 @@ squash-merged and this stacked branch is rebased.
    Existing index/extractor cooperative cancellation remains the authoritative long-I/O
    boundary.
 2. Windows W3 validation (actual Tauri opener, reparse behavior, ACL/permission failure,
-   filter save/restart/Launcher replay) and the full repository CI gates still need to run on
-   the parent PR.
+   filter save/restart/Launcher replay) remains a release-smoke responsibility. The pull
+   request's Windows compile and repository policy gates must pass before merge.
 3. SQLite and snapshot writes are serialized and each snapshot replacement is atomic. A
    process crash can still occur between DB mutation and publication; startup publication
    repairs the external snapshot, while the command-level failure path restores the prior DB
