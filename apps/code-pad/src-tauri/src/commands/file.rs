@@ -1455,9 +1455,14 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), b"changed");
 
         // A path replacement must fail even if an attacker restores the old
-        // bytes in a newly-created file with the same pathname.
+        // bytes in a newly-created file with the same pathname. Allocate the
+        // replacement while the original still exists so the filesystem
+        // cannot immediately recycle the original inode/file index and make
+        // this identity regression test nondeterministic.
+        let replacement = backup_directory.path().join("replacement.bak");
+        fs::write(&replacement, &original).unwrap();
         fs::remove_file(&backup.path).unwrap();
-        fs::write(&backup.path, &original).unwrap();
+        fs::rename(&replacement, &backup.path).unwrap();
         assert!(matches!(
             restore_sibling_backup_if_current(&path, &backup, None),
             Err(FileError::BackupIntegrity)

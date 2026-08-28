@@ -316,6 +316,13 @@ The final form also scopes the mutable permission value to the Unix-only block,
 so the Windows strict build does not retain a configuration-specific
 `unused_mut` warning.
 
+The fourth CI run exposed a nondeterministic identity regression fixture rather
+than an implementation failure: deleting a backup and immediately recreating
+the same path allowed ext4 to recycle the just-freed inode. The replacement
+fixture is now allocated while the original still exists and then renamed into
+place, guaranteeing a distinct concurrently allocated identity and preserving
+the intended path-replacement assertion.
+
 ## Next Steps
 
 - Exercise real Windows Job Object/long-path and WSL path behavior manually;
