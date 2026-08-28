@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{hash_map::DefaultHasher, BTreeMap, BTreeSet};
-use std::fs::{self, File, Metadata};
+use std::fs::{self, Metadata};
 use std::hash::{Hash, Hasher};
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -1205,9 +1205,9 @@ fn inspect_target_file(
     if canonical.strip_prefix(root).is_err() {
         return Err(ProjectImportError::UnsafeSource);
     }
-    let fingerprint = source_file_fingerprint(&metadata);
     let identity = devbox_filesystem::filesystem_identity(&filesystem_path, false)
         .map_err(|_| ProjectImportError::UnsafeSource)?;
+    let fingerprint = source_file_fingerprint(&metadata, Some(identity));
     control.check()?;
     devbox_filesystem::ensure_no_links(&filesystem_path)
         .map_err(|_| ProjectImportError::StaleSource)?;
@@ -1222,7 +1222,7 @@ fn inspect_target_file(
     let current_identity = devbox_filesystem::filesystem_identity(&filesystem_path, false)
         .map_err(|_| ProjectImportError::UnsafeSource)?;
     if current_metadata.file_type().is_symlink()
-        || source_file_fingerprint(&current_metadata) != fingerprint
+        || source_file_fingerprint(&current_metadata, Some(current_identity)) != fingerprint
         || current_identity != identity
     {
         return Err(ProjectImportError::StaleSource);
@@ -1474,35 +1474,18 @@ struct SourceBytes {
 struct SourceFileFingerprint {
     byte_length: u64,
     modified: Option<std::time::SystemTime>,
-    object_identity: Option<(u64, u64)>,
+    object_identity: Option<devbox_filesystem::FilesystemIdentity>,
 }
 
-fn source_file_fingerprint(metadata: &Metadata) -> SourceFileFingerprint {
+fn source_file_fingerprint(
+    metadata: &Metadata,
+    object_identity: Option<devbox_filesystem::FilesystemIdentity>,
+) -> SourceFileFingerprint {
     SourceFileFingerprint {
         byte_length: metadata.len(),
         modified: metadata.modified().ok(),
-        object_identity: source_file_identity(metadata),
+        object_identity,
     }
-}
-
-#[cfg(unix)]
-fn source_file_identity(metadata: &Metadata) -> Option<(u64, u64)> {
-    use std::os::unix::fs::MetadataExt;
-    Some((metadata.dev(), metadata.ino()))
-}
-
-#[cfg(windows)]
-fn source_file_identity(metadata: &Metadata) -> Option<(u64, u64)> {
-    use std::os::windows::fs::MetadataExt;
-    Some((
-        u64::from(metadata.volume_serial_number()),
-        metadata.file_index(),
-    ))
-}
-
-#[cfg(not(any(unix, windows)))]
-fn source_file_identity(_metadata: &Metadata) -> Option<(u64, u64)> {
-    None
 }
 
 fn canonical_project_root(root: &Path) -> Result<PathBuf, ProjectImportError> {
@@ -1593,7 +1576,7 @@ fn read_source_file(
     if metadata.len() > MAX_SOURCE_FILE_BYTES {
         return Err(ProjectImportError::SourceTooLarge);
     }
-    let expected_fingerprint = source_file_fingerprint(&metadata);
+    let expected_fingerprint = source_file_fingerprint(&metadata, None);
     devbox_filesystem::ensure_no_links(&path).map_err(|_| ProjectImportError::UnsafeSource)?;
     let canonical = path
         .canonicalize()
@@ -1603,14 +1586,13 @@ fn read_source_file(
     {
         return Err(ProjectImportError::UnsafeSource);
     }
-    let identity = devbox_filesystem::filesystem_identity(&canonical, false)
-        .map_err(|_| ProjectImportError::UnsafeSource)?;
-    let file = File::open(&canonical).map_err(|_| ProjectImportError::SourceUnavailable)?;
+    let (file, identity) = devbox_filesystem::open_filesystem_object(&canonical, false)
+        .map_err(|_| ProjectImportError::SourceUnavailable)?;
     let opened_metadata = file
         .metadata()
         .map_err(|_| ProjectImportError::SourceUnavailable)?;
     if !opened_metadata.is_file()
-        || source_file_fingerprint(&opened_metadata) != expected_fingerprint
+        || source_file_fingerprint(&opened_metadata, None) != expected_fingerprint
     {
         return Err(ProjectImportError::StaleSource);
     }
@@ -1627,7 +1609,7 @@ fn read_source_file(
         .get_ref()
         .metadata()
         .map_err(|_| ProjectImportError::StaleSource)?;
-    if source_file_fingerprint(&handle_metadata) != expected_fingerprint {
+    if source_file_fingerprint(&handle_metadata, None) != expected_fingerprint {
         return Err(ProjectImportError::StaleSource);
     }
     let current_identity = devbox_filesystem::filesystem_identity(&canonical, false)
@@ -1638,7 +1620,7 @@ fn read_source_file(
     let current_metadata =
         fs::symlink_metadata(&canonical).map_err(|_| ProjectImportError::StaleSource)?;
     if current_metadata.file_type().is_symlink()
-        || source_file_fingerprint(&current_metadata) != expected_fingerprint
+        || source_file_fingerprint(&current_metadata, None) != expected_fingerprint
     {
         return Err(ProjectImportError::StaleSource);
     }
@@ -1771,10 +1753,11 @@ fn update_hashed_fingerprint(hasher: &mut Sha256, fingerprint: SourceFileFingerp
         None => hasher.update([0]),
     }
     match fingerprint.object_identity {
-        Some((scope, object)) => {
+        Some(identity) => {
             hasher.update([1]);
-            hasher.update(scope.to_le_bytes());
-            hasher.update(object.to_le_bytes());
+            let mut identity_hasher = DefaultHasher::new();
+            identity.hash(&mut identity_hasher);
+            hasher.update(identity_hasher.finish().to_le_bytes());
         }
         None => hasher.update([0]),
     }
@@ -2342,8 +2325,12 @@ name = true
         let second = root.path().join("second.json");
         std::fs::write(&first, b"1234").unwrap();
         std::fs::write(&second, b"5678").unwrap();
-        let first = source_file_fingerprint(&std::fs::metadata(first).unwrap());
-        let second = source_file_fingerprint(&std::fs::metadata(second).unwrap());
+        let first_identity = devbox_filesystem::filesystem_identity(&first, false).unwrap();
+        let second_identity = devbox_filesystem::filesystem_identity(&second, false).unwrap();
+        let first =
+            source_file_fingerprint(&std::fs::metadata(first).unwrap(), Some(first_identity));
+        let second =
+            source_file_fingerprint(&std::fs::metadata(second).unwrap(), Some(second_identity));
         assert_eq!(first.byte_length, second.byte_length);
         assert_ne!(first.object_identity, second.object_identity);
         assert_ne!(first, second);

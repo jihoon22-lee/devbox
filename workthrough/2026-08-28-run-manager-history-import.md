@@ -410,3 +410,43 @@ parser for callers that do not have a project root. Project preview uses the
 root-aware metadata path so automatic discovery cannot be faked from manifest
 bytes. Virtual workspaces remain unsupported because resolving members would
 require reading additional manifests or invoking Cargo.
+
+## Pull-request CI remediation
+
+The first pull-request run exposed two platform/load-sensitive defects that
+were not visible in the focused Linux gates:
+
+- The Windows compile check rejected the unstable
+  `std::os::windows::fs::MetadataExt` volume/file-index methods. The importer
+  now carries the existing cross-platform `FilesystemIdentity` value in Cargo
+  layout fingerprints instead of reaching through platform metadata. The
+  shared filesystem crate also exposes `open_filesystem_object`, which returns
+  a no-follow handle and the identity captured from that same handle. Manifest
+  reads retain that exact handle through the bounded read and compare it with
+  the current path before accepting the snapshot, avoiding a reopen gap.
+- Under the concurrent CI frontend load, the Launcher confirmation dialog was
+  observable before its passive focus effect ran. Its initial-cancel focus and
+  close-time focus restoration now run as a layout effect, so the modal focus
+  contract is established in the same committed render.
+
+The local all-frontend reproduction also timed out while starting an unrelated
+API Playground Vitest worker after all 29 of its started files and 211 tests
+passed. This was treated as resource contention rather than a product result;
+the complete Run Manager frontend suite was rerun in isolation.
+
+```text
+cargo test -p filesystem -j1                              pass (18 tests)
+cargo test -p run-manager -j1                             pass (198 tests)
+cargo check -p run-manager -j1                            pass
+cargo clippy -p run-manager --all-targets -j1 -- -D warnings pass
+pnpm --dir apps/run-manager test -- --maxWorkers=2         pass (6 files / 39 tests)
+pnpm --dir apps/run-manager build                          pass
+pnpm test                                                  inconclusive: unrelated
+                                                            API Playground worker
+                                                            startup timeout
+cargo check -p run-manager --target x86_64-pc-windows-gnu -j1
+                                                           unavailable locally:
+                                                           MinGW C compiler absent;
+                                                           GitHub Windows CI is gate
+git diff --check                                           pass
+```

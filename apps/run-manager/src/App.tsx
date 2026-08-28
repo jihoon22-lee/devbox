@@ -3,7 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   createService,
@@ -255,7 +255,7 @@ export default function App() {
 
   openRequestRef.current = (id) => { void handleLauncherTask(id); };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (launcherTask) launcherCancelRef.current?.focus();
     else document.querySelector<HTMLElement>(".job-card.selected")?.focus();
   }, [launcherTask]);
