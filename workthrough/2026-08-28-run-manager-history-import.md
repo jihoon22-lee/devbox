@@ -63,7 +63,9 @@ Files: `apps/run-manager/src-tauri/src/core/imports.rs`,
 - Converts scripts into stable `npm run -- <name>` commands and Cargo targets
   into restricted `cargo run/test/bench` command forms. Target names are checked
   against a narrow safe character set, malformed Cargo target shapes fail closed,
-  and no parser path reaches a process adapter.
+  and no parser path reaches a process adapter. A package with `autobins = false`
+  no longer receives a phantom default `cargo run`; an invalid non-boolean flag
+  fails closed while explicit `[[bin]]` targets remain importable.
 - Script bodies are not returned, persisted, or put into errors. Only bounded
   environment key names are shown; environment values and `.env` files are never
   read. Canonical cwd is displayed for confirmation and all imported jobs start
@@ -209,6 +211,9 @@ pnpm --dir apps/run-manager test -- --maxWorkers=2
                               pass (6 files / 39 tests)
 pnpm --dir apps/run-manager build                            pass (exit 0)
 python3 .github/scripts/check-dependencies.py check          pass (exit 0)
+CARGO_TARGET_DIR=/home/jihoon/.cache/targets/devbox-run-manager \
+  cargo test -p run-manager core::imports::tests::cargo_import_respects_disabled_automatic_binary_discovery
+                              pass (1 focused regression)
 ```
 
 The Rust unit/fixture tests cover parser bounds, unsafe symlinks, root/file

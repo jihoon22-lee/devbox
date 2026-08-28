@@ -460,6 +460,12 @@ pub fn parse_cargo_targets(bytes: &[u8]) -> Result<Vec<ProjectImportItem>, Proje
         .and_then(toml::Value::as_str)
         .ok_or(ProjectImportError::InvalidSourceEntry)?;
     validate_cargo_name(package_name)?;
+    let autobins = match package.get("autobins") {
+        Some(value) => value
+            .as_bool()
+            .ok_or(ProjectImportError::InvalidSourceEntry)?,
+        None => true,
+    };
 
     let mut items = Vec::new();
     let mut bin_names = BTreeSet::new();
@@ -487,7 +493,7 @@ pub fn parse_cargo_targets(bytes: &[u8]) -> Result<Vec<ProjectImportItem>, Proje
             )?);
         }
     }
-    if bin_names.is_empty() {
+    if bin_names.is_empty() && autobins {
         ensure_item_capacity(&items)?;
         items.push(cargo_item(
             "package",
@@ -1025,6 +1031,32 @@ path = "tests/smoke.rs"
             .iter()
             .any(|item| item.command == "cargo test --test smoke"));
         assert!(items.iter().all(|item| item.requires_confirmation));
+    }
+
+    #[test]
+    fn cargo_import_respects_disabled_automatic_binary_discovery() {
+        let library_only = br#"[package]
+name = "library-only"
+version = "0.1.0"
+autobins = false
+
+[lib]
+name = "library_only"
+"#;
+        let items = parse_cargo_targets(library_only).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].command, "cargo test --lib");
+        assert!(!items.iter().any(|item| item.command == "cargo run"));
+
+        let invalid = br#"[package]
+name = "demo"
+version = "0.1.0"
+autobins = "false"
+"#;
+        assert_eq!(
+            parse_cargo_targets(invalid),
+            Err(ProjectImportError::InvalidSourceEntry)
+        );
     }
 
     #[test]
