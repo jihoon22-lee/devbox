@@ -37,3 +37,4 @@ devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../c
 search = { path = "../../../crates/search" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-launch = { package = "launch", path = "../../../crates/launch" }
+devbox-integration = { package = "integration", path = "../../../crates/integration" }

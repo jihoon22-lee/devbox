@@ -61,12 +61,12 @@ pub fn prepare_open_request(
     {
         return Err("검색 결과 파일 경로가 올바르지 않습니다");
     }
-    let metadata = candidate
-        .metadata()
+    filesystem::ensure_no_links(candidate).map_err(|_| "검색 결과 파일을 찾을 수 없습니다")?;
+    // Re-check the final filesystem object without following a symlink or
+    // Windows reparse point.  Search rows are stale by definition, so a path
+    // that was safe when indexed must not become an opener escape hatch later.
+    filesystem::filesystem_identity(candidate, false)
         .map_err(|_| "검색 결과 파일을 찾을 수 없습니다")?;
-    if !metadata.is_file() {
-        return Err("검색 결과 파일을 찾을 수 없습니다");
-    }
 
     Ok((target.id.clone(), target.request(path.to_string())))
 }

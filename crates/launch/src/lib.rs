@@ -218,7 +218,7 @@ pub fn launch_with_environment(
 ///
 /// argv 없이 실행하고 싶은 호출자(요청이 없는 경우)는 그대로 [`launch`]를 쓴다.
 pub fn launch_open(app_id: &str, req: &devbox_applink::OpenRequest) -> Result<u32, String> {
-    let argv = open_argv(req);
+    let argv = open_argv(req)?;
     let args: Vec<&str> = argv.iter().map(String::as_str).collect();
     launch(app_id, &args)
 }
@@ -229,15 +229,15 @@ pub fn launch_open_with_environment(
     req: &devbox_applink::OpenRequest,
     environment: &[(&str, &str)],
 ) -> Result<u32, String> {
-    let argv = open_argv(req);
+    let argv = open_argv(req)?;
     let args: Vec<&str> = argv.iter().map(String::as_str).collect();
     launch_with_environment(app_id, &args, environment)
 }
 
 /// [`launch_open`]에서 프로세스 spawn 없이 argv 구성만 떼어낸 부분. 테스트가 실제
 /// 프로세스를 띄우지 않고도 각 호출부가 만드는 argv를 단언할 수 있도록 공개한다.
-pub fn open_argv(req: &devbox_applink::OpenRequest) -> Vec<String> {
-    devbox_applink::build_argv(req)
+pub fn open_argv(req: &devbox_applink::OpenRequest) -> Result<Vec<String>, String> {
+    devbox_applink::build_argv(req).map_err(|_| "앱 간 열기 요청이 올바르지 않습니다".to_string())
 }
 
 #[cfg(test)]
@@ -309,7 +309,7 @@ mod tests {
             from: Some("repo-manager".to_string()),
         };
         assert_eq!(
-            open_argv(&req),
+            open_argv(&req).unwrap(),
             vec!["--path", "/repos/foo", "--from", "repo-manager"]
         );
     }
@@ -325,7 +325,7 @@ mod tests {
             from: Some("workbench".to_string()),
         };
         assert_eq!(
-            open_argv(&req),
+            open_argv(&req).unwrap(),
             vec!["--profile", "prof-1", "--from", "workbench"]
         );
     }
@@ -340,9 +340,24 @@ mod tests {
             from: Some("workbench".to_string()),
         };
         assert_eq!(
-            open_argv(&req),
+            open_argv(&req).unwrap(),
             vec!["--workspace", "C:\\ws\\proj", "--from", "workbench"]
         );
+    }
+
+    #[test]
+    fn open_argv_rejects_invalid_query_filter() {
+        let req = devbox_applink::OpenRequest {
+            target: devbox_applink::OpenTarget::Query {
+                text: "cargo".to_string(),
+                filter: Some(devbox_applink::QueryFilter {
+                    min_size: Some(-1),
+                    ..devbox_applink::QueryFilter::default()
+                }),
+            },
+            from: Some("devbox-launcher".to_string()),
+        };
+        assert!(open_argv(&req).is_err());
     }
 
     #[test]

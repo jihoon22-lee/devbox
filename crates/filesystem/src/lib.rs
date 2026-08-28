@@ -9,6 +9,8 @@
 //!   공유하는 안전한 절대 프로젝트 경로 규칙
 //! - [`filesystem_identity`]: 경로 문자열이 아니라 열린 파일시스템 객체의
 //!   안정적인 identity로 mutation ownership을 비교하는 helper
+//! - [`ensure_no_links`]: 파일과 모든 ancestor의 symbolic link/reparse point를
+//!   따라가지 않는 경로 검증 helper
 //! - [`migrate_legacy_identifier_dir`]: 새 identifier 디렉터리가 아직 없을 때
 //!   구 identifier 디렉터리를 통째로 옮기는 rename-only migration
 //!
@@ -181,6 +183,48 @@ pub fn filesystem_identity(
             object: u64::try_from(modified.as_nanos()).unwrap_or(u64::MAX),
         })
     }
+}
+
+/// Verify that no component of an absolute path is a symbolic link/reparse
+/// point. This closes the parent-directory substitution gap left by checking
+/// only the final object identity before passing a stale search path to an
+/// opener.
+pub fn ensure_no_links(path: impl AsRef<Path>) -> io::Result<()> {
+    #[cfg(windows)]
+    use std::os::windows::fs::MetadataExt;
+
+    #[cfg(windows)]
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+
+    let path = path.as_ref();
+    if !path.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "path must be absolute",
+        ));
+    }
+    let mut current = Some(path);
+    while let Some(component) = current {
+        let metadata = fs::symlink_metadata(component)?;
+        let is_reparse_point = {
+            #[cfg(windows)]
+            {
+                metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+            }
+            #[cfg(not(windows))]
+            {
+                false
+            }
+        };
+        if metadata.file_type().is_symlink() || is_reparse_point {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "path contains a symbolic link or reparse point",
+            ));
+        }
+        current = component.parent();
+    }
+    Ok(())
 }
 
 /// Atomically replace one file with complete bytes from a unique sibling.

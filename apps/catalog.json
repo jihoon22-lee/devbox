@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 10,
+  "catalogRevision": 11,
   "apps": [
     {
       "id": "port-manager",
@@ -77,7 +77,7 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["query"],
-      "produces": [],
+      "produces": ["snapshot:everything-plus/saved-queries/v1"],
       "actions": []
     },
     {

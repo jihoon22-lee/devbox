@@ -53,6 +53,268 @@ pub const PROTOCOL_VERSION: u32 = 2;
 const MAX_TASK_ID_BYTES: usize = 128;
 const MAX_INSTALL_APP_ID_BYTES: usize = 64;
 
+/// Bounded, app-neutral query filter carried by the `query` applink target.
+///
+/// This is intentionally a small value object rather than an Everything+
+/// database type.  Older receivers ignore the optional `--query-filter-v1`
+/// flag and still receive the query text; receivers that understand v1 validate
+/// and apply the filter before searching their own local index.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct QueryFilter {
+    #[serde(default)]
+    pub extensions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified_after: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified_before: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_size: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_root_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_status: Option<String>,
+}
+
+/// Conservative detector for values that must never be persisted in a query
+/// or handoff. It intentionally prefers a false positive over copying a
+/// credential into an integration snapshot or argv. This is syntax-oriented,
+/// not a claim that arbitrary secrets can be identified.
+pub fn contains_sensitive_value(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    if lower.contains("-----begin private key-----")
+        || lower.contains("-----begin rsa private key-----")
+        || lower.contains("-----begin openssh private key-----")
+        || lower.starts_with("bearer ")
+        || lower.starts_with("basic ")
+        || lower.split_whitespace().any(|token| {
+            token == "bearer"
+                || token == "basic"
+                || token.starts_with("bearer ")
+                || token.starts_with("basic ")
+        })
+    {
+        return true;
+    }
+
+    for key in [
+        "authorization",
+        "password",
+        "passwd",
+        "secret",
+        "api_key",
+        "api-key",
+        "access_token",
+        "access-token",
+        "refresh_token",
+        "refresh-token",
+        "client_secret",
+        "client-secret",
+        "cookie",
+        "set-cookie",
+        "x-api-key",
+        "token",
+    ] {
+        let mut offset = 0;
+        while let Some(found) = lower[offset..].find(key) {
+            let start = offset + found;
+            let suffix = lower[start + key.len()..].trim_start();
+            let Some(rest) = suffix
+                .strip_prefix(':')
+                .or_else(|| suffix.strip_prefix('='))
+            else {
+                offset = start + key.len();
+                continue;
+            };
+            if !rest.trim_start().is_empty() {
+                return true;
+            }
+            offset = start + key.len();
+        }
+    }
+
+    // URL userinfo (`scheme://user:password@host`) is a credential even when
+    // it is not written as a named query parameter.
+    for marker in ["://", "//"] {
+        let mut offset = 0;
+        while let Some(found) = lower[offset..].find(marker) {
+            let authority_start = offset + found + marker.len();
+            let authority = lower[authority_start..]
+                .split(|character: char| character.is_whitespace() || "/?#".contains(character))
+                .next()
+                .unwrap_or_default();
+            // Treat any URL userinfo as sensitive. A username-only authority
+            // and percent-encoded `user%3Apass@` are still unsafe to copy into
+            // a snapshot, and rejecting them avoids trying to decode URL
+            // escapes in this intentionally conservative detector.
+            if authority.contains('@') {
+                return true;
+            }
+            offset = authority_start;
+        }
+    }
+
+    let token_is_jwt = |token: &str| {
+        let mut parts = token.split('.');
+        let Some(header) = parts.next() else {
+            return false;
+        };
+        let Some(payload) = parts.next() else {
+            return false;
+        };
+        let Some(signature) = parts.next() else {
+            return false;
+        };
+        parts.next().is_none()
+            && header.len() >= 8
+            && payload.len() >= 8
+            && signature.len() >= 8
+            && [header, payload, signature].iter().all(|part| {
+                part.bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            })
+    };
+    if lower
+        .split(|character: char| {
+            character.is_whitespace()
+                || matches!(
+                    character,
+                    '"' | '\''
+                        | '='
+                        | ':'
+                        | ','
+                        | ';'
+                        | '&'
+                        | '?'
+                        | '/'
+                        | '\\'
+                        | '('
+                        | '['
+                        | '{'
+                        | ')'
+                )
+        })
+        .any(|token| {
+            token_is_jwt(token)
+                || [
+                    "sk-",
+                    "ghp_",
+                    "github_pat_",
+                    "xoxb-",
+                    "xoxp-",
+                    "glpat-",
+                    "npm_",
+                    "gho_",
+                    "akia",
+                    "eyj",
+                ]
+                .iter()
+                .any(|prefix| token.starts_with(prefix) && token.len() > prefix.len())
+        })
+    {
+        return true;
+    }
+    false
+}
+
+impl QueryFilter {
+    pub const MAX_EXTENSIONS: usize = 64;
+    pub const MAX_EXTENSION_BYTES: usize = 16;
+
+    pub fn normalized(&self) -> Result<Self, ParseError> {
+        if self.extensions.len() > Self::MAX_EXTENSIONS {
+            return Err(ParseError("query filter extension bound exceeded".into()));
+        }
+        let mut extensions = Vec::with_capacity(self.extensions.len());
+        for extension in &self.extensions {
+            let normalized = extension
+                .trim()
+                .trim_start_matches('.')
+                .to_ascii_lowercase();
+            if normalized.is_empty()
+                || normalized.len() > Self::MAX_EXTENSION_BYTES
+                || !normalized.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'_' | b'-' | b'+')
+                })
+            {
+                return Err(ParseError("query filter extension is invalid".into()));
+            }
+            extensions.push(normalized);
+        }
+        extensions.sort_unstable();
+        extensions.dedup();
+
+        if self
+            .modified_after
+            .zip(self.modified_before)
+            .is_some_and(|(after, before)| after > before)
+            || self.modified_after.is_some_and(|timestamp| timestamp < 0)
+            || self.modified_before.is_some_and(|timestamp| timestamp < 0)
+            || self.min_size.is_some_and(|size| size < 0)
+            || self.max_size.is_some_and(|size| size < 0)
+            || self
+                .min_size
+                .zip(self.max_size)
+                .is_some_and(|(minimum, maximum)| minimum > maximum)
+            || self.source_root_id.is_some_and(|root_id| root_id <= 0)
+        {
+            return Err(ParseError("query filter range is invalid".into()));
+        }
+
+        let content_status = self
+            .content_status
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_ascii_lowercase);
+        if content_status.as_deref().is_some_and(|status| {
+            !matches!(
+                status,
+                "indexed"
+                    | "truncated"
+                    | "partial"
+                    | "failed"
+                    | "not_indexed"
+                    | "too_large"
+                    | "unsupported_encoding"
+                    | "read_error"
+                    | "timeout"
+                    | "changed_during_read"
+                    | "skipped_sensitive"
+                    | "no_text"
+                    | "unsupported_encrypted"
+                    | "extract_error"
+            )
+        }) {
+            return Err(ParseError("query filter status is invalid".into()));
+        }
+
+        Ok(Self {
+            extensions,
+            modified_after: self.modified_after,
+            modified_before: self.modified_before,
+            min_size: self.min_size,
+            max_size: self.max_size,
+            source_root_id: self.source_root_id,
+            content_status,
+        })
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.extensions.is_empty()
+            && self.modified_after.is_none()
+            && self.modified_before.is_none()
+            && self.min_size.is_none()
+            && self.max_size.is_none()
+            && self.source_root_id.is_none()
+            && self.content_status.is_none()
+    }
+}
+
 /// "어디를 열지"를 나타내는 타깃.
 ///
 /// 새 variant를 추가할 때는 §1.3 표를 다시 확인한다 — 구버전 수신 앱은 새
@@ -74,6 +336,8 @@ pub enum OpenTarget {
     },
     Query {
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filter: Option<QueryFilter>,
     },
     /// Run Manager의 저장된 job/service 하나를 연다. id만 전달하며 실제 job
     /// 명령·환경변수는 수신 앱이 자기 저장소에서 재검증한다.
@@ -145,6 +409,7 @@ fn parse_rest(rest: &[String]) -> Result<Option<OpenRequest>, ParseError> {
     let mut profile: Option<String> = None;
     let mut workspace: Option<String> = None;
     let mut query: Option<String> = None;
+    let mut query_filter: Option<QueryFilter> = None;
     let mut task: Option<String> = None;
     let mut install_app: Option<String> = None;
     let mut handoff_kind: Option<String> = None;
@@ -170,6 +435,13 @@ fn parse_rest(rest: &[String]) -> Result<Option<OpenRequest>, ParseError> {
             "--profile" => profile = Some(take_value(rest, &mut i, flag)?),
             "--workspace" => workspace = Some(take_value(rest, &mut i, flag)?),
             "--query" => query = Some(take_value(rest, &mut i, flag)?),
+            "--query-filter-v1" => {
+                let raw = take_value(rest, &mut i, flag)?;
+                let filter = serde_json::from_str::<QueryFilter>(&raw)
+                    .map_err(|_| ParseError("query filter is invalid".into()))?
+                    .normalized()?;
+                query_filter = Some(filter);
+            }
             "--task" => {
                 let value = take_value(rest, &mut i, flag)?;
                 if !valid_opaque_id(&value, MAX_TASK_ID_BYTES, true) {
@@ -202,12 +474,20 @@ fn parse_rest(rest: &[String]) -> Result<Option<OpenRequest>, ParseError> {
         (None, None) => None,
         _ => return Err(ParseError("handoff kind/id가 모두 필요함".into())),
     };
+    if query.is_none() && query_filter.is_some() {
+        return Err(ParseError("query filter에는 query가 필요함".into()));
+    }
 
     let target = path
         .map(|path| OpenTarget::Path { path, line, column })
         .or_else(|| profile.map(|id| OpenTarget::Profile { id }))
         .or_else(|| workspace.map(|path| OpenTarget::Workspace { path }))
-        .or_else(|| query.map(|text| OpenTarget::Query { text }))
+        .or_else(|| {
+            query.map(|text| OpenTarget::Query {
+                text,
+                filter: query_filter,
+            })
+        })
         .or_else(|| task.map(|id| OpenTarget::Task { id }))
         .or_else(|| install_app.map(|app_id| OpenTarget::Install { app_id }))
         .or(handoff);
@@ -244,13 +524,14 @@ fn take_u32(rest: &[String], i: &mut usize, flag: &str) -> Result<u32, ParseErro
         .map_err(|_| ParseError(format!("{flag} 값이 숫자가 아님: {raw}")))
 }
 
-/// `OpenRequest`를 argv로 인코딩한다.
+/// `OpenRequest`를 argv로 인코딩한다. 값이 계약의 범위/형식을 벗어나면 부분 argv를
+/// 만들거나 filter를 버리지 않고 오류를 반환한다.
 ///
 /// 반환값은 **실행 파일 경로를 포함하지 않는다** — `std::process::Command::args()`나
 /// `crates/launch::launch`의 `args: &[&str]`에 그대로 넘기는 모양이다. 항상 명시적
 /// 플래그(`--path` 등)만 만든다 — 맨 앞 위치 인자 형태는 구버전 발신자와의 하위
 /// 호환을 위해 `parse_argv`만 받아들이고, 새로 만들지는 않는다.
-pub fn build_argv(req: &OpenRequest) -> Vec<String> {
+pub fn build_argv(req: &OpenRequest) -> Result<Vec<String>, ParseError> {
     let mut out = Vec::new();
 
     match &req.target {
@@ -274,9 +555,18 @@ pub fn build_argv(req: &OpenRequest) -> Vec<String> {
             out.push("--workspace".to_string());
             out.push(path.clone());
         }
-        OpenTarget::Query { text } => {
+        OpenTarget::Query { text, filter } => {
             out.push("--query".to_string());
             out.push(text.clone());
+            if let Some(filter) = filter.as_ref() {
+                let filter = filter.normalized()?;
+                if !filter.is_empty() {
+                    let json = serde_json::to_string(&filter)
+                        .map_err(|_| ParseError("query filter encoding failed".into()))?;
+                    out.push("--query-filter-v1".to_string());
+                    out.push(json);
+                }
+            }
         }
         OpenTarget::Task { id } => {
             out.push("--task".to_string());
@@ -299,7 +589,7 @@ pub fn build_argv(req: &OpenRequest) -> Vec<String> {
         out.push(from.clone());
     }
 
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -422,9 +712,75 @@ mod tests {
         assert_eq!(
             req.target,
             OpenTarget::Query {
-                text: s("hello world")
+                text: s("hello world"),
+                filter: None,
             }
         );
+    }
+
+    #[test]
+    fn query_filter_v1_round_trips_and_is_optional_for_legacy_queries() {
+        let filter = QueryFilter {
+            extensions: vec![".RS".into()],
+            min_size: Some(10),
+            source_root_id: Some(7),
+            content_status: Some("TRUNCATED".into()),
+            ..QueryFilter::default()
+        };
+        let request = OpenRequest {
+            target: OpenTarget::Query {
+                text: s("cargo"),
+                filter: Some(filter.clone()),
+            },
+            from: Some(s("devbox-launcher")),
+        };
+        let mut full_argv = vec![s("everything-plus.exe")];
+        full_argv.extend(build_argv(&request).unwrap());
+        let parsed = parse_argv(&full_argv).unwrap().unwrap();
+        assert_eq!(
+            parsed.target,
+            OpenTarget::Query {
+                text: s("cargo"),
+                filter: Some(filter.normalized().unwrap()),
+            }
+        );
+        // A legacy text-only request remains unchanged.
+        assert_eq!(
+            parse_argv(&argv(&["exe", "--query", "cargo"]))
+                .unwrap()
+                .unwrap()
+                .target,
+            OpenTarget::Query {
+                text: s("cargo"),
+                filter: None,
+            }
+        );
+    }
+
+    #[test]
+    fn query_filter_rejects_negative_timestamps_and_sizes() {
+        for filter in [
+            QueryFilter {
+                modified_after: Some(-1),
+                ..QueryFilter::default()
+            },
+            QueryFilter {
+                modified_before: Some(-1),
+                ..QueryFilter::default()
+            },
+            QueryFilter {
+                min_size: Some(-1),
+                ..QueryFilter::default()
+            },
+        ] {
+            assert!(filter.normalized().is_err());
+        }
+        assert!(parse_argv(&argv(&[
+            "exe",
+            "--query-filter-v1",
+            "{\"extensions\":[\"rs\"]}"
+        ]))
+        .is_err());
     }
 
     // ---- --from: 모든 타깃 종류에서 캡처 ----
@@ -629,10 +985,13 @@ mod tests {
     #[test]
     fn build_argv_excludes_exe_path() {
         let req = OpenRequest {
-            target: OpenTarget::Query { text: s("q") },
+            target: OpenTarget::Query {
+                text: s("q"),
+                filter: None,
+            },
             from: None,
         };
-        assert_eq!(build_argv(&req), vec![s("--query"), s("q")]);
+        assert_eq!(build_argv(&req).unwrap(), vec![s("--query"), s("q")]);
     }
 
     #[test]
@@ -642,7 +1001,7 @@ mod tests {
             from: Some(s("workbench")),
         };
         assert_eq!(
-            build_argv(&req),
+            build_argv(&req).unwrap(),
             vec![s("--profile"), s("p1"), s("--from"), s("workbench")]
         );
     }
@@ -651,9 +1010,24 @@ mod tests {
 
     fn round_trip(req: OpenRequest) {
         let mut full = vec![s("devbox-app.exe")];
-        full.extend(build_argv(&req));
+        full.extend(build_argv(&req).unwrap());
         let parsed = parse_argv(&full).unwrap().unwrap();
         assert_eq!(parsed, req, "round-trip 실패: {full:?}");
+    }
+
+    #[test]
+    fn build_argv_rejects_invalid_query_filter_without_text_only_downgrade() {
+        let request = OpenRequest {
+            target: OpenTarget::Query {
+                text: s("cargo"),
+                filter: Some(QueryFilter {
+                    min_size: Some(-1),
+                    ..QueryFilter::default()
+                }),
+            },
+            from: Some(s("devbox-launcher")),
+        };
+        assert!(build_argv(&request).is_err());
     }
 
     #[test]
@@ -715,6 +1089,7 @@ mod tests {
         round_trip(OpenRequest {
             target: OpenTarget::Query {
                 text: s("search term"),
+                filter: None,
             },
             from: Some(s("everything-plus")),
         });
@@ -725,6 +1100,7 @@ mod tests {
         round_trip(OpenRequest {
             target: OpenTarget::Query {
                 text: s("no sender"),
+                filter: None,
             },
             from: None,
         });
@@ -851,7 +1227,10 @@ mod tests {
                 from: None,
             },
             OpenRequest {
-                target: OpenTarget::Query { text: s("t") },
+                target: OpenTarget::Query {
+                    text: s("t"),
+                    filter: None,
+                },
                 from: None,
             },
             OpenRequest {

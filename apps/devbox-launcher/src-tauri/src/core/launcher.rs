@@ -4,6 +4,7 @@
 //! build-time catalog만 읽고, 각 결과를 다시 확인한 뒤에만 명시적 실행 계층으로
 //! 넘긴다. snapshot 하나가 손상되어도 다른 producer의 결과는 유지한다.
 
+use devbox_applink::{contains_sensitive_value, QueryFilter};
 use devbox_catalog::{parse_catalog, Catalog, CatalogAction, CatalogApp};
 use devbox_filesystem::parse_safe_project_path;
 use serde::{Deserialize, Serialize};
@@ -121,6 +122,7 @@ pub enum Target {
     },
     Query {
         text: String,
+        filter: Option<QueryFilter>,
     },
     Task {
         id: String,
@@ -168,9 +170,14 @@ struct PathPayload {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+// Payload version 1 is strict: a future semantic field requires a version
+// bump. Older installed Launchers keep their own text-only behavior, while the
+// current consumer must not silently ignore a field from a corrupt snapshot.
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct QueryPayload {
     text: String,
+    #[serde(default)]
+    filter: Option<QueryFilter>,
 }
 
 #[derive(Debug, Clone)]
@@ -665,7 +672,14 @@ fn parse_entry(spec: &SourceSpec, value: Value) -> Result<ParsedEntry, &'static 
             if payload.text.trim().is_empty() {
                 return Err(ERR_BOUNDS);
             }
-            Target::Query { text: payload.text }
+            let filter = payload
+                .filter
+                .map(|filter| filter.normalized().map_err(|_| ERR_BOUNDS))
+                .transpose()?;
+            Target::Query {
+                text: payload.text,
+                filter,
+            }
         }
         _ => return Err(ERR_INDEX),
     };
@@ -732,33 +746,6 @@ fn valid_text(value: &str, max: usize) -> bool {
         && !value.chars().any(char::is_control)
 }
 
-fn contains_sensitive_value(value: &str) -> bool {
-    let lower = value.to_ascii_lowercase();
-    let contains_prefixed_token = lower
-        .split(|character: char| {
-            character.is_whitespace()
-                || matches!(
-                    character,
-                    '"' | '\'' | '=' | ':' | ',' | ';' | '&' | '?' | '/' | '\\' | '(' | '[' | '{'
-                )
-        })
-        .any(|token| {
-            ["sk-", "ghp_", "github_pat_", "xoxb-", "xoxp-"]
-                .iter()
-                .any(|prefix| token.starts_with(prefix) && token.len() > prefix.len())
-        });
-    lower.starts_with("bearer ")
-        || lower.starts_with("basic ")
-        || lower.contains("authorization:")
-        || lower.contains("password=")
-        || lower.contains("secret=")
-        || lower.contains("api_key=")
-        || lower.contains("-----begin private key-----")
-        || lower.contains("-----begin rsa private key-----")
-        || lower.contains("-----begin openssh private key-----")
-        || contains_prefixed_token
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -776,6 +763,7 @@ mod tests {
     fn catalog() -> &'static str {
         r#"{"schemaVersion":2,"catalogRevision":1,"apps":[
           {"id":"developer-toolbox","displayName":"Developer Toolbox","productName":"DeveloperToolbox","identifier":"com.devbox.developertoolbox","cargoPackage":"developer-toolbox","appDir":"apps/developer-toolbox","release":true,"managerVisible":true,"selfManaged":false,"accepts":["handoff:toolbox-text/v1"],"produces":[],"actions":[]},
+          {"id":"everything-plus","displayName":"Everything+","productName":"EverythingPlus","identifier":"com.devbox.everythingplus","cargoPackage":"everything-plus","appDir":"apps/everything-plus","release":true,"managerVisible":true,"selfManaged":false,"accepts":["query"],"produces":["snapshot:everything-plus/saved-queries/v1"],"actions":[]},
           {"id":"workbench","displayName":"Workbench","productName":"Workbench","identifier":"com.devbox.workbench","cargoPackage":"workbench","appDir":"apps/workbench","release":true,"managerVisible":true,"selfManaged":false,"accepts":["profile"],"produces":[],"actions":[]},
           {"id":"run-manager","displayName":"Run Manager","productName":"Run Manager","identifier":"com.devbox.runmanager","cargoPackage":"run-manager","appDir":"apps/run-manager","release":true,"managerVisible":true,"selfManaged":false,"accepts":["task"],"produces":[],"actions":[]},
           {"id":"launcher","displayName":"Launcher","productName":"Launcher","identifier":"com.devbox.launcher","cargoPackage":"launcher","appDir":"apps/launcher","release":true,"managerVisible":true,"selfManaged":false,"accepts":[],"produces":[],"actions":[{"actionId":"transform-text","actionVersion":1,"label":"Transform text","target":"developer-toolbox","payloadKind":"handoff:toolbox-text/v1"}]}
@@ -783,17 +771,27 @@ mod tests {
     }
 
     fn write(root: &std::path::Path, entries: Vec<Value>, freshness_ms: u64) {
+        write_view(root, "workbench", "profiles", entries, freshness_ms);
+    }
+
+    fn write_view(
+        root: &std::path::Path,
+        producer: &str,
+        view: &str,
+        entries: Vec<Value>,
+        freshness_ms: u64,
+    ) {
         let mut views = SnapshotViews::new();
         views.insert(
-            "profiles".into(),
+            view.into(),
             SnapshotView {
                 schema_version: 1,
                 freshness_ms,
                 entries,
             },
         );
-        let envelope = Envelope::with_views("workbench", "0.1.0", views);
-        write_envelope(root, "workbench", envelope);
+        let envelope = Envelope::with_views(producer, "0.1.0", views);
+        write_envelope(root, producer, envelope);
     }
 
     fn write_envelope(root: &std::path::Path, producer: &str, envelope: Envelope) {
@@ -825,6 +823,77 @@ mod tests {
             .unwrap();
         assert!(result.stale);
         assert_eq!(index.resolve(&result.id).unwrap().app_id, "workbench");
+    }
+
+    #[test]
+    fn everything_saved_query_filter_is_read_and_preserved_for_applink() {
+        let root = root("everything-filter");
+        write_view(
+            &root,
+            "everything-plus",
+            "saved-queries",
+            vec![serde_json::json!({
+                "id": "saved-query-1",
+                "label": "Rust sources",
+                "detail": "Everything+ · saved query",
+                "targetApp": "everything-plus",
+                "targetKind": "query",
+                "payloadVersion": 1,
+                "payload": {
+                    "text": "cargo",
+                    "filter": {"extensions": ["rs"], "sourceRootId": 7}
+                }
+            })],
+            0,
+        );
+        let index = Index::build(catalog(), &root).unwrap();
+        let result = index
+            .search("Rust sources")
+            .unwrap()
+            .results
+            .into_iter()
+            .find(|result| result.source == "everything-plus")
+            .unwrap();
+        assert_eq!(result.target_kind, "query");
+        assert_eq!(
+            index.resolve(&result.id).unwrap().target,
+            Target::Query {
+                text: "cargo".into(),
+                filter: Some(QueryFilter {
+                    extensions: vec!["rs".into()],
+                    source_root_id: Some(7),
+                    ..QueryFilter::default()
+                })
+            }
+        );
+    }
+
+    #[test]
+    fn everything_saved_query_rejects_unknown_payload_fields() {
+        let root = root("everything-unknown-field");
+        write_view(
+            &root,
+            "everything-plus",
+            "saved-queries",
+            vec![serde_json::json!({
+                "id": "saved-query-1",
+                "label": "Rust sources",
+                "targetApp": "everything-plus",
+                "targetKind": "query",
+                "payloadVersion": 1,
+                "payload": {"text": "cargo", "futureField": true}
+            })],
+            0,
+        );
+        let response = Index::build(catalog(), &root).unwrap().search("").unwrap();
+        assert!(response
+            .sources
+            .iter()
+            .any(|source| source.producer == "everything-plus" && source.status == "corrupt"));
+        assert!(!response
+            .results
+            .iter()
+            .any(|result| result.source == "everything-plus"));
     }
 
     #[test]

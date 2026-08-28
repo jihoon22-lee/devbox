@@ -728,6 +728,21 @@ Everything+는 catalog revision 3부터 `query`를 수신한다. Knowledge와 �
 non-regex 상태의 기존 검색 pipeline에 연결한다. invalid/unsupported request는 raw query를
 반향하지 않는 오류로 표시하며 index, root, saved-query 상태는 변경하지 않는다.
 
+catalog revision 11부터 Everything+는 `snapshot:everything-plus/saved-queries/v1`도 생산한다.
+saved query는 이름·검색어·정규화된 extension/modified/size/root-id/content-status filter 정의만
+SQLite에 저장하며 결과 행, 파일 경로·본문, credential-like 입력은 저장하지 않는다. CRUD와 앱 시작
+시점에 `everything-plus/v1/summary.json`의 `saved-queries` view 전체를 원자 교체하고, Launcher는
+versioned `payload.text/filter`를 다시 검증해 `query` AppLink로 전달한다. AppLink의 optional
+`--query-filter-v1`은 strict/deny-unknown JSON이며 잘못된 filter를 text-only 요청으로 조용히
+강등하지 않는다. filter가 없는 기존 `--query` 요청은 계속 같은 검색 경로를 사용한다.
+
+filename/content FTS projection은 filter 값을 모두 SQLite parameter로 결합한다. source는 임의
+경로가 아닌 등록 `roots.id`이며 중첩 root는 가장 깊은 root가 소유한다. root id는 삭제 뒤
+재사용하지 않고, 현재 등록 root와 path ownership이 일치하지 않는 orphan/misowned row는 root가
+0개인 경우까지 fail-closed로 검색에서 제외한다. 저장 검색은 2,048개, name 128 bytes, query
+512 bytes, filter JSON 8 KiB 상한과 유효한 생성/수정 시각을 적용한다. snapshot 발행 실패 시
+이전 bounded definition set을 transaction으로 복원하며 snapshot 장애가 일반 검색을 막지는 않는다.
+
 Everything+의 content-enabled root는 explicit source/Markdown/plain-text allowlist를 거친
 파일만 bounded extractor로 보낸다. extractor는 UTF-8과 UTF-16 LE/BE를 strict decode하고
 파일 20 MiB·text 2,000,000 Unicode scalar characters·candidate 10초 processing budget을

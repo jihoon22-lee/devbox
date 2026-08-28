@@ -64,6 +64,7 @@ mod tests {
         let latest = OpenRequest {
             target: OpenTarget::Query {
                 text: "latest".to_string(),
+                filter: None,
             },
             from: None,
         };

@@ -64,7 +64,7 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
-    assert_eq!(catalog.catalog_revision, Some(10));
+    assert_eq!(catalog.catalog_revision, Some(11));
     assert_eq!(catalog.apps.len(), 15);
     assert_eq!(
         capable_targets(&catalog, "path")
@@ -127,6 +127,13 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
             .map(|app| app.id)
             .collect::<Vec<_>>(),
         vec!["wsl-desktop"]
+    );
+    assert_eq!(
+        capable_producers(&catalog, "snapshot:everything-plus/saved-queries/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["everything-plus"]
     );
     assert_eq!(
         capable_targets(&catalog, "handoff:api-request/v1")

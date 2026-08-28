@@ -66,7 +66,8 @@ mod tests {
         assert!(!is_task_request(&task(&"x".repeat(MAX_TASK_ID_BYTES + 1))));
         assert!(!is_task_request(&OpenRequest {
             target: OpenTarget::Query {
-                text: "job-1".into()
+                text: "job-1".into(),
+                filter: None,
             },
             from: None,
         }));

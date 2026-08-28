@@ -1,13 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
 import catalogJson from "../../catalog.json";
 import { isTauri } from "./lib/isTauri";
-import type { ContentResult, FileEntry, IndexStatus, RootInfo, RootStatus } from "./types";
+import type {
+  ContentResult,
+  FileEntry,
+  IndexStatus,
+  RootInfo,
+  RootStatus,
+  SavedQuery,
+  SaveSavedQueryRequest,
+  SearchFilter,
+} from "./types";
 
 export type OpenTarget =
   | { kind: "path"; path: string; line: number | null; column: number | null }
   | { kind: "profile"; id: string }
   | { kind: "workspace"; path: string }
-  | { kind: "query"; text: string }
+  | { kind: "query"; text: string; filter?: SearchFilter | null }
   | { kind: "task"; id: string }
   | { kind: "install"; appId: string };
 
@@ -38,8 +47,20 @@ const MOCK_FILES: FileEntry[] = [
 ];
 
 const MOCK_CONTENT: ContentResult[] = [
-  { path: "C:\\notes\\meeting.md", name: "meeting.md", snippet: "quarterly [review] with the team" },
+  {
+    path: "C:\\notes\\meeting.md",
+    name: "meeting.md",
+    snippet: "quarterly [review] with the team",
+    ext: "md",
+    size: 128,
+    modified_ts: 0,
+    root_id: 1,
+    content_status: "indexed",
+    truncated: false,
+  },
 ];
+
+let mockSavedQueries: SavedQuery[] = [];
 
 const MOCK_STATUS: IndexStatus = {
   indexing: false,
@@ -65,18 +86,59 @@ export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise
   return listen<OpenRequest>("devbox://open", (event) => cb(event.payload));
 }
 
-export async function searchFiles(query: string, limit?: number): Promise<FileEntry[]> {
-  if (!isTauri()) {
-    return MOCK_FILES.filter((f) => f.name.toLowerCase().includes(query.toLowerCase()));
-  }
-  return invoke<FileEntry[]>("search_files", { query, limit: limit ?? 200 });
+function filterIsEmpty(filter?: SearchFilter): boolean {
+  return !filter || (
+    !(filter.extensions?.length) &&
+    filter.modifiedAfter == null &&
+    filter.modifiedBefore == null &&
+    filter.minSize == null &&
+    filter.maxSize == null &&
+    filter.sourceRootId == null &&
+    !filter.contentStatus
+  );
 }
 
-export async function searchContent(query: string, limit?: number): Promise<ContentResult[]> {
-  if (!isTauri()) {
-    return MOCK_CONTENT.filter((f) => f.snippet.toLowerCase().includes(query.toLowerCase()));
+function matchesFilter(file: FileEntry | ContentResult, filter?: SearchFilter): boolean {
+  if (filterIsEmpty(filter)) return true;
+  if (filter?.extensions?.length && !filter.extensions.includes(file.ext ?? "")) return false;
+  if (filter?.modifiedAfter != null && (file.modified_ts ?? 0) < filter.modifiedAfter) return false;
+  if (filter?.modifiedBefore != null && (file.modified_ts ?? 0) > filter.modifiedBefore) return false;
+  if (filter?.minSize != null && (file.size ?? 0) < filter.minSize) return false;
+  if (filter?.maxSize != null && (file.size ?? 0) > filter.maxSize) return false;
+  if (filter?.sourceRootId != null && file.root_id !== filter.sourceRootId) return false;
+  if (filter?.contentStatus) {
+    const status = file.content_status;
+    const truncated = file.truncated ?? (
+      "content_truncated" in file ? file.content_truncated : false
+    );
+    if (filter.contentStatus === "not_indexed" && status) return false;
+    if (filter.contentStatus === "failed" && (!status || status === "indexed")) return false;
+    if ((filter.contentStatus === "truncated" || filter.contentStatus === "partial") &&
+      (status !== "indexed" || !truncated)) return false;
+    if (filter.contentStatus === "indexed" && (status !== "indexed" || truncated)) return false;
+    if (!["not_indexed", "failed", "truncated", "partial", "indexed"].includes(filter.contentStatus) && status !== filter.contentStatus) return false;
   }
-  return invoke<ContentResult[]>("search_content", { query, limit: limit ?? 200 });
+  return true;
+}
+
+function invokeSearchArgs(query: string, limit: number | undefined, filter?: SearchFilter) {
+  const args: { query: string; limit: number; filter?: SearchFilter } = { query, limit: limit ?? 200 };
+  if (!filterIsEmpty(filter)) args.filter = filter;
+  return args;
+}
+
+export async function searchFiles(query: string, limit?: number, filter?: SearchFilter): Promise<FileEntry[]> {
+  if (!isTauri()) {
+    return MOCK_FILES.filter((f) => f.name.toLowerCase().includes(query.toLowerCase()) && matchesFilter(f, filter));
+  }
+  return invoke<FileEntry[]>("search_files", invokeSearchArgs(query, limit, filter));
+}
+
+export async function searchContent(query: string, limit?: number, filter?: SearchFilter): Promise<ContentResult[]> {
+  if (!isTauri()) {
+    return MOCK_CONTENT.filter((f) => f.snippet.toLowerCase().includes(query.toLowerCase()) && matchesFilter(f, filter));
+  }
+  return invoke<ContentResult[]>("search_content", invokeSearchArgs(query, limit, filter));
 }
 
 export async function addRoot(path: string, indexContent: boolean): Promise<void> {
@@ -90,7 +152,7 @@ export async function removeRoot(path: string): Promise<void> {
 }
 
 export async function listRoots(): Promise<RootInfo[]> {
-  if (!isTauri()) return [{ path: "C:\\projects\\devbox", content: true }];
+  if (!isTauri()) return [{ id: 1, path: "C:\\projects\\devbox", content: true }];
   return invoke<RootInfo[]>("list_roots");
 }
 
@@ -141,4 +203,34 @@ export async function openTargets(): Promise<EverythingOpenTarget[]> {
 export async function openIn(appId: string, path: string): Promise<void> {
   if (!isTauri()) return;
   await invoke("open_in", { appId, path });
+}
+
+export async function listSavedQueries(): Promise<SavedQuery[]> {
+  if (!isTauri()) return [...mockSavedQueries];
+  return invoke<SavedQuery[]>("list_saved_queries");
+}
+
+export async function saveSavedQuery(request: SaveSavedQueryRequest): Promise<SavedQuery> {
+  if (!isTauri()) {
+    const now = Date.now();
+    const saved: SavedQuery = {
+      id: request.id ?? (mockSavedQueries.reduce((max, item) => Math.max(max, item.id), 0) + 1),
+      name: request.name.trim(),
+      query: request.query.trim(),
+      filter: request.filter,
+      createdAt: request.id ? (mockSavedQueries.find((item) => item.id === request.id)?.createdAt ?? now) : now,
+      updatedAt: now,
+    };
+    mockSavedQueries = [saved, ...mockSavedQueries.filter((item) => item.id !== saved.id)];
+    return saved;
+  }
+  return invoke<SavedQuery>("save_saved_query", { request });
+}
+
+export async function deleteSavedQuery(id: number): Promise<void> {
+  if (!isTauri()) {
+    mockSavedQueries = mockSavedQueries.filter((item) => item.id !== id);
+    return;
+  }
+  await invoke("delete_saved_query", { id });
 }
