@@ -197,6 +197,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   const [logError, setLogError] = useState<string | null>(null);
   const [activeSnapshotError, setActiveSnapshotError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [logLensBusy, setLogLensBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState<LogSearchMode>("literal");
   const [searchSource, setSearchSource] = useState<LogStream | "">("");
@@ -216,6 +217,10 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   const logLensGeneration = useRef(0);
   const searchBusyRef = useRef(false);
   const mountedRef = useRef(true);
+  const logLensBusyRef = useRef(false);
+  const logLensOperation = useRef(0);
+  const logLensContextRef = useRef({ runId: selectedRunId, stream });
+  logLensContextRef.current = { runId: selectedRunId, stream };
   const logLineRefs = useRef(new Map<number, HTMLSpanElement>());
   const queryRef = useRef({ jobId, kind, status, startDate, endDate, minDuration, maxDuration });
   queryRef.current = { jobId, kind, status, startDate, endDate, minDuration, maxDuration };
@@ -226,10 +231,13 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
       mountedRef.current = false;
       searchGeneration.current += 1;
       logLensGeneration.current += 1;
+      logLensOperation.current += 1;
+      logLensBusyRef.current = false;
     };
   }, []);
 
   const prepareRunContext = useCallback((target: HTMLElement) => {
+    if (logLensBusyRef.current) return;
     const id = target.dataset.runId;
     const run = runs.find((candidate) => candidate.id === id);
     if (!run) return;
@@ -258,7 +266,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   }, [contextRun?.id, runContextMenu.close, runs]);
 
   const refresh = useCallback(async () => {
-    if (!mountedRef.current) return;
+    if (!mountedRef.current || logLensBusyRef.current) return;
     const existing = refreshInFlight.current;
     if (existing) {
       refreshPending.current = true;
@@ -295,10 +303,12 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
             if (!mountedRef.current || generation !== viewGeneration.current) continue;
             if (historyResult.status === "fulfilled") {
               const next = historyResult.value;
-              setRuns(next);
-              setSelectedRunId((current) =>
-                current && next.some((run) => run.id === current) ? current : next[0]?.id ?? null,
-              );
+              if (!logLensBusyRef.current) {
+                setRuns(next);
+                setSelectedRunId((current) =>
+                  current && next.some((run) => run.id === current) ? current : next[0]?.id ?? null,
+                );
+              }
               setHistoryError(null);
             } else {
               setHistoryError(historyResult.reason instanceof Error ? historyResult.reason.message : String(historyResult.reason));
@@ -428,21 +438,52 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   };
 
   const handleOpenInLogLens = async (run: Run) => {
-    if (!run.logsAvailable || actionBusy) return;
+    if (!run.logsAvailable || actionBusy || logLensBusyRef.current) return;
     const selectedStream = stream;
     if (!window.confirm(`선택한 실행의 ${selectedStream} 로그를 Log Lens에서 읽기 전용으로 열까요?\n\n로그 원문·경로·명령·환경변수는 handoff에 포함되지 않습니다.`)) return;
     const generation = ++logLensGeneration.current;
+    const operation = ++logLensOperation.current;
+    const context = { runId: run.id, stream: selectedStream };
+    logLensBusyRef.current = true;
+    setLogLensBusy(true);
+    setError(null);
     setActionBusy(true);
     try {
       await openRunLogInLogLens(run.id, selectedStream);
-      if (mountedRef.current && generation === logLensGeneration.current) setError(null);
+      if (mountedRef.current
+        && operation === logLensOperation.current
+        && generation === logLensGeneration.current
+        && logLensContextRef.current.runId === context.runId
+        && logLensContextRef.current.stream === context.stream) {
+        setError(null);
+      }
     } catch {
-      if (mountedRef.current && generation === logLensGeneration.current) {
+      if (mountedRef.current
+        && operation === logLensOperation.current
+        && generation === logLensGeneration.current
+        && logLensContextRef.current.runId === context.runId
+        && logLensContextRef.current.stream === context.stream) {
         setError("Log Lens handoff를 시작하지 못했습니다.");
       }
     } finally {
-      if (mountedRef.current && generation === logLensGeneration.current) setActionBusy(false);
+      if (operation === logLensOperation.current) {
+        logLensBusyRef.current = false;
+        if (mountedRef.current) {
+          setLogLensBusy(false);
+          setActionBusy(false);
+        }
+      }
     }
+  };
+
+  const selectRun = (id: string) => {
+    if (logLensBusyRef.current) return;
+    setSelectedRunId(id);
+  };
+
+  const selectStream = (value: LogStream) => {
+    if (logLensBusyRef.current) return;
+    setStream(value);
   };
 
   const handleSearch = async () => {
@@ -495,7 +536,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     const next = (index + matches.length) % matches.length;
     const match = matches[next];
     setSearchIndex(next);
-    if (match.stream !== stream) setStream(match.stream);
+    if (match.stream !== stream) selectStream(match.stream);
   };
 
   const runContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
@@ -527,7 +568,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   const onRunContextSelect = (id: string) => {
     const run = contextRun;
     if (!run) return;
-    if (id === "view-log") setSelectedRunId(run.id);
+    if (id === "view-log") selectRun(run.id);
     else if (id === "rerun") void handleRerun(run);
     else if (id === "save-log") void handleSaveLog(run);
     else if (id === "open-log-lens") void handleOpenInLogLens(run);
@@ -642,14 +683,14 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
         <div className="history-actions">
           <button type="button" className="button-primary" disabled={actionBusy || loading || selectedDefinition?.kind !== "job"} onClick={() => void handleRunNow()}>지금 실행</button>
           <button type="button" className="button-secondary" disabled={actionBusy || loading || !activeRun} onClick={() => void handleStop()}>활성 실행 중지</button>
-          <button type="button" className="button-secondary" disabled={loading} onClick={() => void refresh()}>새로고침</button>
+          <button type="button" className="button-secondary" disabled={loading || logLensBusy} onClick={() => void refresh()}>새로고침</button>
         </div>
       </div>
 
       <div className="history-filters">
         <label className="field">
           <span>대상 종류</span>
-          <select aria-label="기록 대상 종류" value={kind} onChange={(event) => setKind(event.target.value as RunDefinitionKind | "")}>
+          <select aria-label="기록 대상 종류" disabled={logLensBusy} value={kind} onChange={(event) => setKind(event.target.value as RunDefinitionKind | "")}>
             <option value="">작업과 서비스</option>
             <option value="job">작업만</option>
             <option value="service">서비스만</option>
@@ -657,14 +698,14 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
         </label>
         <label className="field">
           <span>작업 또는 서비스</span>
-          <select aria-label="기록 작업" value={jobId} onChange={(event) => setJobId(event.target.value)}>
+          <select aria-label="기록 작업" disabled={logLensBusy} value={jobId} onChange={(event) => setJobId(event.target.value)}>
             <option value="">모든 대상</option>
             {visibleJobs.map((job) => <option key={job.id} value={job.id}>{job.name}</option>)}
           </select>
         </label>
         <label className="field">
           <span>상태</span>
-          <select aria-label="기록 상태" value={status} onChange={(event) => setStatus(event.target.value as RunStatus | "")}>
+          <select aria-label="기록 상태" disabled={logLensBusy} value={status} onChange={(event) => setStatus(event.target.value as RunStatus | "")}>
             <option value="">모든 상태</option>
             <option value="succeeded">성공</option>
             <option value="failed">실패</option>
@@ -678,19 +719,19 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
         </label>
         <label className="field">
           <span>시작일</span>
-          <input aria-label="기록 시작일" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+          <input aria-label="기록 시작일" disabled={logLensBusy} type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
         </label>
         <label className="field">
           <span>종료일</span>
-          <input aria-label="기록 종료일" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+          <input aria-label="기록 종료일" disabled={logLensBusy} type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
         </label>
         <label className="field">
           <span>최소 실행 시간 <em>(초)</em></span>
-          <input aria-label="최소 실행 시간(초)" type="number" min="0" max="2592000" step="1" value={minDuration} onChange={(event) => setMinDuration(event.target.value)} />
+          <input aria-label="최소 실행 시간(초)" disabled={logLensBusy} type="number" min="0" max="2592000" step="1" value={minDuration} onChange={(event) => setMinDuration(event.target.value)} />
         </label>
         <label className="field">
           <span>최대 실행 시간 <em>(초)</em></span>
-          <input aria-label="최대 실행 시간(초)" type="number" min="0" max="2592000" step="1" value={maxDuration} onChange={(event) => setMaxDuration(event.target.value)} />
+          <input aria-label="최대 실행 시간(초)" disabled={logLensBusy} type="number" min="0" max="2592000" step="1" value={maxDuration} onChange={(event) => setMaxDuration(event.target.value)} />
         </label>
       </div>
 
@@ -709,7 +750,8 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
                   aria-current={selectedRunId === run.id ? "true" : undefined}
                   aria-pressed={selectedRunId === run.id}
                   data-run-id={run.id}
-                  onClick={() => setSelectedRunId(run.id)}
+                  disabled={logLensBusy}
+                  onClick={() => selectRun(run.id)}
                   {...runContextMenu.triggerProps}
                 >
                   <span className={`run-status ${run.status}`}>{STATUS_LABEL[run.status]}</span>
@@ -736,7 +778,8 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
                           type="button"
                           className={stream === value ? "active" : ""}
                           aria-pressed={stream === value}
-                          onClick={() => setStream(value)}
+                          disabled={logLensBusy}
+                          onClick={() => selectStream(value)}
                         >{value}</button>
                       ))}
                       <button

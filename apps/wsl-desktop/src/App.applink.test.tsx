@@ -1,7 +1,16 @@
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { getWindowsBuildNumber, listWorkspaceProfiles, onOpenRequest, startSession, takePendingOpen } from "./api";
+import {
+  dockerAction,
+  dockerPs,
+  getWindowsBuildNumber,
+  listWorkspaceProfiles,
+  onOpenRequest,
+  openWslJournalInLogLens,
+  startSession,
+  takePendingOpen,
+} from "./api";
 import type { OpenRequest, WorkspaceProfile } from "./types";
 
 const mocks = vi.hoisted(() => ({
@@ -76,6 +85,9 @@ const onOpenRequestMock = vi.mocked(onOpenRequest);
 const takePendingOpenMock = vi.mocked(takePendingOpen);
 const getWindowsBuildNumberMock = vi.mocked(getWindowsBuildNumber);
 const listWorkspaceProfilesMock = vi.mocked(listWorkspaceProfiles);
+const dockerActionMock = vi.mocked(dockerAction);
+const dockerPsMock = vi.mocked(dockerPs);
+const openWslJournalInLogLensMock = vi.mocked(openWslJournalInLogLens);
 
 const profile: WorkspaceProfile = {
   id: "profile-1",
@@ -103,6 +115,10 @@ beforeEach(() => {
   takePendingOpenMock.mockClear();
   getWindowsBuildNumberMock.mockClear();
   listWorkspaceProfilesMock.mockReset().mockResolvedValue([]);
+  dockerActionMock.mockReset().mockResolvedValue(undefined);
+  dockerPsMock.mockReset().mockResolvedValue([]);
+  openWslJournalInLogLensMock.mockReset().mockResolvedValue(undefined);
+  Object.defineProperty(window, "confirm", { configurable: true, value: vi.fn(() => true) });
 });
 
 afterEach(() => cleanup());
@@ -203,5 +219,54 @@ describe("App app-link delivery", () => {
       expect(props.panes).toHaveLength(1);
       expect(props.activePaneId).toBe("session-pane-1");
     });
+  });
+
+  it("isolates a pending Log Lens handoff from Docker, distro, and new terminal actions", async () => {
+    let resolveHandoff: (() => void) | undefined;
+    openWslJournalInLogLensMock.mockImplementationOnce(
+      () => new Promise<void>((resolve) => {
+        resolveHandoff = resolve;
+      }),
+    );
+    dockerPsMock.mockResolvedValue([
+      { id: "container-1", name: "worker", image: "worker:latest", status: "Exited (1)", ports: "" },
+    ]);
+
+    render(<App />);
+    const journalButton = await screen.findByRole("button", { name: "Open journal in Log Lens" });
+    const startButton = await screen.findByRole("button", { name: "Start" });
+    const addTerminalButton = await screen.findByRole("button", { name: "+ Terminal" });
+
+    fireEvent.click(journalButton);
+    await waitFor(() => expect(openWslJournalInLogLensMock).toHaveBeenCalledWith("Ubuntu", null));
+    expect(journalButton).toBeDisabled();
+    expect(startButton).toBeDisabled();
+    expect(addTerminalButton).toBeDisabled();
+    const distroSelectors = screen.getAllByRole("combobox")
+      .filter((element) => element.tagName === "SELECT" && !element.hasAttribute("aria-label"));
+    expect(distroSelectors).toHaveLength(2);
+    expect(distroSelectors.every((element) => element.disabled)).toBe(true);
+
+    fireEvent.click(startButton);
+    expect(dockerActionMock).not.toHaveBeenCalled();
+    await act(async () => resolveHandoff?.());
+    await waitFor(() => expect(journalButton).toBeEnabled());
+    expect(startButton).toBeEnabled();
+    expect(addTerminalButton).toBeEnabled();
+  });
+
+  it("clears a failed handoff error after a later successful handoff", async () => {
+    openWslJournalInLogLensMock
+      .mockRejectedValueOnce(new Error("native path /secret/run.log"))
+      .mockResolvedValueOnce(undefined);
+
+    render(<App />);
+    const journalButton = await screen.findByRole("button", { name: "Open journal in Log Lens" });
+    fireEvent.click(journalButton);
+    await screen.findByText("Log Lens journal handoff를 시작하지 못했습니다.");
+
+    fireEvent.click(journalButton);
+    await waitFor(() => expect(openWslJournalInLogLensMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText("Log Lens journal handoff를 시작하지 못했습니다.")).not.toBeInTheDocument());
   });
 });

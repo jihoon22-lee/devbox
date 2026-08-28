@@ -557,3 +557,37 @@ The Windows suspended-create/Job/thread-resume implementation follows the
 same reviewed native ownership pattern used by `crates/launch::OwnedProcess`.
 Actual packaged W3 execution still requires the Windows checkpoint already
 listed above.
+
+## Producer UI lifecycle follow-up (2026-08-28)
+
+The WSL Desktop producer now keeps Log Lens handoff busy state separate from
+Docker/dashboard work, with operation tokens and generation checks preventing
+late refresh, distro, terminal, or unmount responses from clearing or
+overwriting the handoff. Starting a handoff clears stale errors; failures use
+fixed user-safe text, while a later success clears that text. Run History locks
+run/stream selection during a handoff and verifies the captured context before
+applying a response. App-level WSL and Run History regressions cover busy
+isolation, stale-error recovery, context locking, and raw-error suppression.
+
+If target launch fails and the exact `remove_pending` cleanup itself encounters
+a storage/corruption error, the producer returns only the fixed
+`handoff-cleanup-failed` code; it does not expose a retry ID. The bounded,
+validated envelope can therefore remain until generic TTL reconciliation. It
+contains no raw log, command, environment, or credential, but a structured
+retry-ID recovery contract remains a documented follow-up rather than being
+expanded into this producer PR. The app-owned Run receiver adapter is also an
+explicitly excluded follow-up. Ancestor TOCTOU and local-adapter FIFO/UNC reader
+risks remain the documented residual scope.
+
+Focused verification (single-worker Vitest only):
+
+```text
+pnpm --filter wsl-desktop exec vitest run src/App.applink.test.tsx \
+  --maxWorkers=1 --no-file-parallelism                         1 file, 8 tests passed
+pnpm --filter run-manager exec vitest run src/components/RunHistory.test.tsx \
+  --maxWorkers=1 --no-file-parallelism                         1 file, 15 tests passed
+git diff --check                                               passed
+```
+
+No cargo, full frontend suite, build, commit, push, rebase, or cache cleanup
+was performed for this follow-up.
