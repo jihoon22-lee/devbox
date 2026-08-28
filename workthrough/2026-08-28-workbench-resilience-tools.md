@@ -356,6 +356,33 @@ frontend, or shared runtime source overlapped that merge. The parent reran the
 focused Rust tests/check, Workbench production build, formatting/diff checks,
 and dependency/catalog policies on this final base before push.
 
+### Windows CI ownership correction (2026-08-28)
+
+The first PR CI run passed the Linux Rust, frontend, dependency, and catalog
+jobs, but the Windows compile job rejected both detached workers because
+`windows::Win32::Foundation::HANDLE` is represented as `*mut c_void` and does
+not automatically make `ProcessTree` `Send`. The retained Job Object is a
+process-wide kernel handle, not a thread-affine UI handle: this type owns its
+sole handle, exposes tree operations only through `&mut self`, and closes it
+exactly once in `Drop`. A Windows-only documented `unsafe impl Send` now
+records that narrow ownership guarantee, with a compile-time assertion test so
+the detached-worker requirement remains explicit.
+
+Post-correction checks used the retained cache and bounded jobs:
+
+```text
+cargo fmt --all -- --check                                      PASS
+cargo test -p workbench process_tree --lib -j2                  PASS (2 tests)
+cargo check -p workbench -j2                                    PASS
+cargo check -p workbench --target x86_64-pc-windows-gnu -j2     BLOCKED before crate compile
+  host lacks x86_64-w64-mingw32-windres; Windows CI is authoritative
+git diff --check                                                PASS
+```
+
+The correction changes no process creation, Job assignment, termination, or
+drop behavior. Its acceptance gate is the rerun of the Windows compile job on
+the native MSVC runner.
+
 ## Rollback and risk notes
 
 - #359 template/profile writes are separate atomic/CAS operations. A crash
@@ -372,7 +399,8 @@ and dependency/catalog policies on this final base before push.
 
 ## Next Steps
 
-1. Run the GitHub Actions CI gates for the grouped PR.
+1. Rerun the GitHub Actions CI gates for the grouped PR and require the native
+   Windows compile job to pass the explicit `ProcessTree: Send` assertion.
 2. Run Windows packaged W2 acceptance for path/reparse, capability, stopped
    distro, port race, child launch, cancellation/timeout, PID reuse, process-tree,
    and ownership rollback behavior.

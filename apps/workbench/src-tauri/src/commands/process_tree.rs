@@ -49,6 +49,16 @@ pub(crate) struct ProcessTree {
     terminal_empty: bool,
 }
 
+// A Windows Job Object handle is process-wide rather than thread-affine: its
+// query, termination, and CloseHandle operations may run on a different
+// executor thread from the one that created it. ProcessTree owns the sole
+// handle value and exposes mutation only through `&mut self`, so moving that
+// ownership between Tokio worker threads cannot create concurrent access or a
+// double close. windows-rs models HANDLE as a raw pointer and therefore does
+// not derive Send automatically, so record this narrower platform guarantee.
+#[cfg(target_os = "windows")]
+unsafe impl Send for ProcessTree {}
+
 impl ProcessTree {
     /// Assign an already spawned child to the platform process-tree boundary.
     /// On Windows the child must have been created with CREATE_SUSPENDED; this
@@ -407,6 +417,13 @@ impl Drop for ProcessTree {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn process_tree_can_move_with_its_async_worker() {
+        fn assert_send<T: Send>() {}
+        assert_send::<super::ProcessTree>();
+    }
+
     #[test]
     fn cleanup_window_is_finite() {
         assert!(super::CLEANUP_TIMEOUT.as_millis() > 0);
