@@ -205,6 +205,13 @@ adds the missing P1/P2 safeguards.
   idempotent retries where the underlying immutable identity still matches.
   Missing status is never interpreted as consumed, and expiration is written
   only after the envelope TTL boundary.
+- History reconciliation preserves the authoritative sidecar timestamp. A
+  `consumed` record first observed after its TTL therefore remains a valid
+  pre-expiry consumption instead of being rewritten with the current time;
+  DB status updates independently reject non-expired timestamps at/after TTL
+  and expired timestamps before TTL. Consumer cancellation reports success
+  once the claim is restored even if the auxiliary sidecar update fails, so
+  the UI never retains a preview whose native claim has already been released.
 
 ### P1 remediation 5 — template preview TTL/revision/unmount/atomicity
 
@@ -403,7 +410,7 @@ and Windows packaged gates.
 Focused validation was run serially (`-j1`/single worker) in this worktree:
 
 - `cargo test -p applink --lib -j1`: **65 passed**.
-- `cargo test -p life-log --lib -j1`: **100 passed**.
+- `CARGO_TARGET_DIR=/home/jihoon/.cache/targets/knowledge-lifelog-351-353 cargo test -p life-log --lib`: **101 passed** after the expiry-boundary status fixture was added.
 - `CARGO_TARGET_DIR=/home/jihoon/.cache/targets/knowledge-lifelog-351-353 cargo test -p knowledge-base --lib`: **122 passed** after the one-pass substitution regression was added.
 - `cargo clippy -p applink -p knowledge-base -p life-log --all-targets -j1 -- -D warnings`: passed.
 - `pnpm --filter knowledge-base test -- src/api.template.test.ts src/components/TemplateManager.test.tsx --maxWorkers=1 --pool=forks`: **8 passed**.

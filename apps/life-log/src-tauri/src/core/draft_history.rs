@@ -191,15 +191,18 @@ pub fn set_status(
     }
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
         .map_err(|_| "draft 이력 상태를 갱신할 수 없습니다".to_string())?;
-    let (current, current_updated_at_ms) = transaction
+    let (current, current_updated_at_ms, expires_at_ms) = transaction
         .query_row(
-            "SELECT status, updated_ts FROM knowledge_draft_history WHERE handoff_id = ?1",
+            "SELECT status, updated_ts, expires_ts
+             FROM knowledge_draft_history WHERE handoff_id = ?1",
             params![handoff_id],
             |row| {
                 let status: String = row.get(0)?;
                 let updated_at_ms = u64::try_from(row.get::<_, i64>(1)?)
                     .map_err(|_| rusqlite::Error::InvalidQuery)?;
-                Ok((status, updated_at_ms))
+                let expires_at_ms = u64::try_from(row.get::<_, i64>(2)?)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                Ok((status, updated_at_ms, expires_at_ms))
             },
         )
         .optional()
@@ -209,6 +212,11 @@ pub fn set_status(
         .ok_or_else(|| "draft 이력 상태가 올바르지 않습니다".to_string())?;
     if updated_at_ms < current_updated_at_ms || !valid_status_transition(current, status) {
         return Err("draft 이력 상태 전이가 올바르지 않습니다".into());
+    }
+    if (status == DraftStatus::Expired && updated_at_ms < expires_at_ms)
+        || (status != DraftStatus::Expired && updated_at_ms >= expires_at_ms)
+    {
+        return Err("draft 이력 상태 시간이 올바르지 않습니다".into());
     }
     let updated_ts = i64::try_from(updated_at_ms)
         .map_err(|_| "draft 이력 시간이 올바르지 않습니다".to_string())?;
@@ -534,6 +542,45 @@ mod tests {
             DraftStatus::Expired,
             DraftStatus::Sent
         ));
+    }
+
+    #[test]
+    fn status_updates_preserve_the_envelope_expiry_boundary() {
+        let connection = connection();
+        let summary = summary();
+        let sources = sources();
+        let consumed_id = handoff_id(1);
+        insert(
+            &connection,
+            insert_input(
+                &consumed_id,
+                &summary,
+                &sources,
+                DraftStatus::Pending,
+                1_000,
+                601_000,
+            ),
+        )
+        .unwrap();
+        assert!(set_status(&connection, &consumed_id, DraftStatus::Consumed, 601_000).is_err());
+        set_status(&connection, &consumed_id, DraftStatus::Consumed, 600_999).unwrap();
+
+        let expired_id = handoff_id(2);
+        insert(
+            &connection,
+            insert_input(
+                &expired_id,
+                &summary,
+                &sources,
+                DraftStatus::Pending,
+                2_000,
+                602_000,
+            ),
+        )
+        .unwrap();
+        assert!(set_status(&connection, &expired_id, DraftStatus::Expired, 601_999).is_err());
+        set_status(&connection, &expired_id, DraftStatus::Expired, 602_000).unwrap();
+        assert_eq!(list(&connection).unwrap().len(), 2);
     }
 
     #[test]

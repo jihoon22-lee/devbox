@@ -273,8 +273,15 @@ pub fn discard_knowledge_draft(
     let store = handoff_store();
     let now_ms = current_epoch_ms();
     match store.restore(&claimed.claim, CONSUMER_APP, now_ms) {
-        Ok(()) => record_handoff_status(&store, &claimed.claim, HandoffStatus::Pending, now_ms)
-            .map_err(|_| "Knowledge draft 취소 상태를 기록하지 못했습니다".to_string()),
+        Ok(()) => {
+            // The claim is already restored and the in-process preview has
+            // been consumed. A sidecar failure cannot safely turn this into
+            // a UI-visible cancellation failure, because retrying that stale
+            // preview would no longer own a claim. History reconciliation
+            // keeps the prior non-terminal state until the next update/TTL.
+            let _ = record_handoff_status(&store, &claimed.claim, HandoffStatus::Pending, now_ms);
+            Ok(())
+        }
         Err(HandoffError::Expired | HandoffError::LeaseExpired | HandoffError::Missing) => {
             if now_ms >= claimed.claim.envelope.expires_at_ms {
                 let _ =

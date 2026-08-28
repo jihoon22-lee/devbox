@@ -45,13 +45,14 @@ pub fn knowledge_draft_history(
         draft_history::list(&connection)?
     };
     for entry in &entries {
-        let sidecar_status = match store.read_status(&entry.handoff_id) {
+        let sidecar = match store.read_status(&entry.handoff_id) {
             Ok(Some(record))
                 if record.kind == "knowledge-draft/v1"
                     && record.source_app == "life-log"
-                    && record.target_app.as_deref() == Some("knowledge-base") =>
+                    && record.target_app.as_deref() == Some("knowledge-base")
+                    && record.expires_at_ms == entry.expires_at_ms =>
             {
-                Some(record.status)
+                Some(record)
             }
             Ok(Some(_)) => {
                 // A sidecar with a valid JSON shape but a different identity
@@ -67,27 +68,35 @@ pub fn knowledge_draft_history(
                 return Err("Knowledge draft 상태를 확인할 수 없습니다".into());
             }
         };
-        let reconciled = match sidecar_status {
-            Some(devbox_applink::HandoffStatus::Pending | devbox_applink::HandoffStatus::Sent)
-                if now_ms >= entry.expires_at_ms =>
+        let (reconciled, reconciled_at_ms) = match sidecar.as_ref() {
+            Some(record)
+                if matches!(
+                    record.status,
+                    devbox_applink::HandoffStatus::Pending | devbox_applink::HandoffStatus::Sent
+                ) && now_ms >= entry.expires_at_ms =>
             {
-                record_expired_status(&store, entry, now_ms)?;
-                draft_history::DraftStatus::Expired
+                let expired = record_expired_status(&store, entry, now_ms)?;
+                (draft_history::DraftStatus::Expired, expired.updated_at_ms)
             }
-            Some(devbox_applink::HandoffStatus::Pending) => draft_history::DraftStatus::Pending,
-            Some(devbox_applink::HandoffStatus::Sent) => draft_history::DraftStatus::Sent,
-            Some(devbox_applink::HandoffStatus::Consumed) => draft_history::DraftStatus::Consumed,
-            Some(devbox_applink::HandoffStatus::Expired) => draft_history::DraftStatus::Expired,
+            Some(record) => (
+                match record.status {
+                    devbox_applink::HandoffStatus::Pending => draft_history::DraftStatus::Pending,
+                    devbox_applink::HandoffStatus::Sent => draft_history::DraftStatus::Sent,
+                    devbox_applink::HandoffStatus::Consumed => draft_history::DraftStatus::Consumed,
+                    devbox_applink::HandoffStatus::Expired => draft_history::DraftStatus::Expired,
+                },
+                record.updated_at_ms,
+            ),
             None if now_ms >= entry.expires_at_ms
                 && !matches!(
                     entry.status,
                     draft_history::DraftStatus::Consumed | draft_history::DraftStatus::Expired
                 ) =>
             {
-                record_expired_status(&store, entry, now_ms)?;
-                draft_history::DraftStatus::Expired
+                let expired = record_expired_status(&store, entry, now_ms)?;
+                (draft_history::DraftStatus::Expired, expired.updated_at_ms)
             }
-            None => entry.status,
+            None => (entry.status, entry.updated_at_ms),
         };
         if reconciled != entry.status {
             let connection = state
@@ -101,7 +110,7 @@ pub fn knowledge_draft_history(
                 &connection,
                 &entry.handoff_id,
                 reconciled,
-                now_ms.max(entry.updated_at_ms),
+                reconciled_at_ms.max(entry.updated_at_ms),
             ) {
                 if !error.contains("다른 작업에 의해 변경") {
                     return Err("Knowledge draft 이력을 갱신할 수 없습니다".into());
@@ -120,7 +129,7 @@ fn record_expired_status(
     store: &devbox_applink::HandoffStore,
     entry: &draft_history::DraftHistoryEntry,
     now_ms: u64,
-) -> Result<(), String> {
+) -> Result<devbox_applink::HandoffStatusRecord, String> {
     store
         .record_status(devbox_applink::RecordHandoffStatus {
             id: entry.handoff_id.clone(),
@@ -131,7 +140,6 @@ fn record_expired_status(
             updated_at_ms: now_ms.max(entry.expires_at_ms),
             expires_at_ms: entry.expires_at_ms,
         })
-        .map(|_| ())
         .map_err(|_| "Knowledge draft 만료 상태를 기록하지 못했습니다".to_string())
 }
 
