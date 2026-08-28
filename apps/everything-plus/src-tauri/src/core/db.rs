@@ -47,8 +47,6 @@ pub fn init(path: &std::path::Path) -> rusqlite::Result<(Connection, bool)> {
 /// 자체가 바뀐다.
 pub fn normalize_path(path: &str) -> String {
     let mut unified = path.replace('\\', "/");
-    #[cfg(windows)]
-    unified.make_ascii_lowercase();
     // Windows canonicalize() may return an extended-length spelling. Keep the
     // stored/event spelling stable so a watcher callback using `C:/...` still
     // matches a root that was canonicalized as `\\\\?\\C:\\...`.

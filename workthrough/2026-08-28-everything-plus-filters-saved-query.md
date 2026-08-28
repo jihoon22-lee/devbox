@@ -21,6 +21,10 @@ worktree에서 직접 제거했다. #453이 squash merge되면 해당 stacked ba
   할당해 삭제 후 재사용하지 않고, 기존 파일 행은 migration/repair 때 가장 깊은 등록
   root에 맞춰 보정한다. orphan row와 경계 밖 stale row는 일반 검색에서도 숨기며, nested
   root 삭제 시 남은 parent/child의 가장 깊은 ownership으로만 재할당한다.
+- 저장·표시에 사용하는 정규 경로는 구분자와 Windows extended-length prefix만 정리하고
+  원래 drive/component/file 대소문자를 보존한다. Windows watcher의 case-insensitive
+  membership 비교는 별도 비교 경계에서 수행한다. 경로 문자열 자체를 소문자화하면 검색
+  결과 이름과 기존 DB 계약을 훼손하므로 identity 비교와 표시 값을 섞지 않는다.
 - 검색/인덱싱의 기존 bounded I/O, cooperative cancellation, partial/truncated
   metadata, frontend stale-generation guard를 유지했다. 검색·metadata·cold/hot
   AppLink 요청은 각각 generation을 확인해 늦은 응답/요청을 폐기하며, 검색 결과를
@@ -236,6 +240,12 @@ workspace Rust check and frontend production build also passed on that exact bas
 dependencies were restored from the local pnpm store without downloading packages and remain
 ignored build inputs; the tracked worktree is clean. GitHub Actions, including the Windows
 compile gate, remains mandatory on the pull request before merge.
+
+첫 GitHub Actions Windows 실행은 `normalize_path`에 들어간 Windows 전용 전체 ASCII
+소문자화 때문에 기존 12개 경로/ownership fixture가 실패했다. 이는 compile 문제가 아니라
+표시·저장 경로와 비교 identity를 혼합한 회귀였다. 해당 변환을 제거해 파일명과 drive/component
+case를 보존했고, 같은 121개 Everything+ suite를 다시 통과시켰다. 수정 head의 Windows 재실행이
+통과해야만 PR을 merge한다.
 
 ## Remaining risks and follow-up
 
