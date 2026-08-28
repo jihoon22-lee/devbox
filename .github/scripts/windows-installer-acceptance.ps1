@@ -189,22 +189,30 @@ $registryRoots = @(
   'Registry::HKEY_LOCAL_MACHINE\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
 )
 
+function Get-Optional-Property([object]$Object, [string]$Name) {
+  if ($null -eq $Object) { return '' }
+  $properties = @($Object.PSObject.Properties.Match($Name))
+  if ($properties.Count -eq 0 -or $null -eq $properties[0].Value) { return '' }
+  return [string]$properties[0].Value
+}
+
 function Get-Uninstall-Entries {
   $entries = @()
   foreach ($root in $registryRoots) {
     if (-not (Test-Path -LiteralPath $root)) { continue }
     foreach ($key in @(Get-ChildItem -LiteralPath $root -ErrorAction Stop)) {
       $value = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction Stop
-      if ([string]::IsNullOrWhiteSpace([string]$value.DisplayName)) { continue }
+      $displayName = Get-Optional-Property $value 'DisplayName'
+      if ([string]::IsNullOrWhiteSpace($displayName)) { continue }
       $entries += [pscustomobject]@{
         ProviderPath = $key.PSPath
         RegistryName = $key.Name
-        DisplayName = [string]$value.DisplayName
-        DisplayVersion = [string]$value.DisplayVersion
-        Publisher = [string]$value.Publisher
-        DisplayIcon = [string]$value.DisplayIcon
-        InstallLocation = [string]$value.InstallLocation
-        UninstallString = [string]$value.UninstallString
+        DisplayName = $displayName
+        DisplayVersion = Get-Optional-Property $value 'DisplayVersion'
+        Publisher = Get-Optional-Property $value 'Publisher'
+        DisplayIcon = Get-Optional-Property $value 'DisplayIcon'
+        InstallLocation = Get-Optional-Property $value 'InstallLocation'
+        UninstallString = Get-Optional-Property $value 'UninstallString'
       }
     }
   }
