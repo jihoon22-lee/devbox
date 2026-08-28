@@ -7,5 +7,6 @@ pub mod handoff;
 pub mod inbound;
 pub mod rename;
 pub mod store;
+pub mod templates;
 pub mod vault;
 pub mod wikilink;

@@ -16,6 +16,7 @@ pub const MAX_DRAFT_TITLE_BYTES: usize = 256;
 pub const MAX_DRAFT_BODY_BYTES: usize = 512 * 1024;
 pub const MAX_DRAFT_PAYLOAD_BYTES: usize = 768 * 1024;
 pub const MAX_DRAFT_SOURCES: usize = 4;
+pub const MAX_PROVENANCE_FRESHNESS_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 
 const BODY_HEADER: &str = "# Life Log local digest\n\n";
 const EXPECTED_SOURCE_IDS: [&str; MAX_DRAFT_SOURCES] =
@@ -163,13 +164,14 @@ pub fn validate_knowledge_draft(payload: &KnowledgeDraftPayload) -> Result<(), S
     Ok(())
 }
 
-fn validate_summary(summary: &KnowledgeDraftSummary) -> Result<(), String> {
+pub(crate) fn validate_summary(summary: &KnowledgeDraftSummary) -> Result<(), String> {
     if !matches!(summary.period.as_str(), "day" | "week" | "month")
         || !valid_date_key(&summary.start_date)
         || !valid_date_key(&summary.end_date)
         || summary.start_date > summary.end_date
         || !bounded_text(&summary.timezone, 128, false)
         || looks_like_path(&summary.timezone)
+        || contains_secret_marker(&summary.timezone)
         || summary.filter.as_deref().is_some_and(|value| {
             !bounded_text(value, 256, false)
                 || contains_secret_marker(value)
@@ -208,7 +210,10 @@ fn validate_summary(summary: &KnowledgeDraftSummary) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_source(source: &KnowledgeDraftSource, expected_id: &str) -> Result<(), String> {
+pub(crate) fn validate_source(
+    source: &KnowledgeDraftSource,
+    expected_id: &str,
+) -> Result<(), String> {
     if source.id != expected_id
         || !bounded_text(&source.scope, 64, false)
         || source
@@ -223,6 +228,9 @@ fn validate_source(source: &KnowledgeDraftSource, expected_id: &str) -> Result<(
             .generated_at
             .as_deref()
             .is_some_and(|value| !bounded_text(value, 32, false) || !valid_generated_at(value))
+        || source
+            .freshness_ms
+            .is_some_and(|value| value > MAX_PROVENANCE_FRESHNESS_MS)
         || source.view.as_deref().is_some_and(|value| {
             !bounded_text(value, 64, false) || !matches!(value, "activity" | "legacy-data")
         })
@@ -512,6 +520,7 @@ fn safe_source_error(value: &str) -> bool {
             | "snapshot_schema_unsupported"
             | "snapshot_payload_invalid"
             | "snapshot_changed_during_read"
+            | "snapshot_stale"
             | "git_invalid_arguments"
             | "git_spawn_failed"
             | "git_stdout_unavailable"
@@ -682,6 +691,9 @@ mod tests {
         payload.body = render_body(&payload.summary, &payload.sources);
         payload.summary.timezone = "/private/path".into();
         assert!(validate_knowledge_draft(&payload).is_err());
+        payload.summary.timezone = "token=raw-secret".into();
+        payload.body = render_body(&payload.summary, &payload.sources);
+        assert!(validate_knowledge_draft(&payload).is_err());
     }
 
     #[test]
@@ -701,6 +713,27 @@ mod tests {
             sources: sources(),
         };
         payload.summary.top_app = Some("Authorization: Bearer opaque".into());
+        assert!(validate_knowledge_draft(&payload).is_err());
+    }
+
+    #[test]
+    fn accepts_snapshot_stale_and_rejects_unbounded_freshness() {
+        let mut payload = KnowledgeDraftPayload {
+            schema_version: 1,
+            title: "Life Log digest · 2026-08-10 ~ 2026-08-16".into(),
+            body: render_body(&summary(), &sources()),
+            tags: vec!["life-log".into(), "digest".into(), "week".into()],
+            summary: summary(),
+            sources: sources(),
+        };
+        let knowledge = payload.sources.last_mut().unwrap();
+        knowledge.available = false;
+        knowledge.error_code = Some("snapshot_stale".into());
+        payload.body = render_body(&payload.summary, &payload.sources);
+        validate_knowledge_draft(&payload).unwrap();
+
+        payload.sources.last_mut().unwrap().freshness_ms = Some(MAX_PROVENANCE_FRESHNESS_MS + 1);
+        payload.body = render_body(&payload.summary, &payload.sources);
         assert!(validate_knowledge_draft(&payload).is_err());
     }
 }

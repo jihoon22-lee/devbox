@@ -32,6 +32,24 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS knowledge_draft_history (
+            id INTEGER PRIMARY KEY,
+            handoff_id TEXT NOT NULL UNIQUE
+                CHECK(length(CAST(handoff_id AS BLOB)) = 32),
+            kind TEXT NOT NULL CHECK(kind = 'knowledge-draft/v1'),
+            status TEXT NOT NULL CHECK(status IN ('pending', 'sent', 'consumed', 'expired')),
+            summary_json TEXT NOT NULL
+                CHECK(length(CAST(summary_json AS BLOB)) <= 4096),
+            sources_json TEXT NOT NULL
+                CHECK(length(CAST(sources_json AS BLOB)) <= 16384),
+            created_ts INTEGER NOT NULL CHECK(created_ts > 0),
+            updated_ts INTEGER NOT NULL CHECK(updated_ts >= created_ts),
+            expires_ts INTEGER NOT NULL CHECK(expires_ts > created_ts),
+            regenerated_from TEXT
+                CHECK(regenerated_from IS NULL OR length(CAST(regenerated_from AS BLOB)) = 32)
+        );
+        CREATE INDEX IF NOT EXISTS knowledge_draft_history_updated_idx
+            ON knowledge_draft_history(updated_ts DESC, id DESC);
         ",
     )
 }

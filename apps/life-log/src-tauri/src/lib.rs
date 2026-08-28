@@ -44,6 +44,7 @@ pub fn run() {
             commands::digest::cancel_digest,
             commands::digest::save_digest,
             commands::handoff::send_digest_to_knowledge,
+            commands::handoff::knowledge_draft_history,
             commands::export::export_life_log,
             commands::export::save_life_log,
             commands::life::set_projects,

@@ -41,8 +41,8 @@ mod handoff;
 
 pub use handoff::{
     handoff_root_in, validate_handoff_text, CreateHandoff, HandoffClaim, HandoffDescriptor,
-    HandoffEnvelope, HandoffError, HandoffStore, DEFAULT_CLAIM_LEASE_MS, DEFAULT_HANDOFF_TTL_MS,
-    MAX_HANDOFF_BYTES,
+    HandoffEnvelope, HandoffError, HandoffStatus, HandoffStatusRecord, HandoffStore,
+    RecordHandoffStatus, DEFAULT_CLAIM_LEASE_MS, DEFAULT_HANDOFF_TTL_MS, MAX_HANDOFF_BYTES,
 };
 
 use serde::{Deserialize, Serialize};

@@ -37,6 +37,10 @@ pub struct SourceStatus {
     pub generated_at: Option<String>,
     /// 마지막 갱신 이후 경과 (ms). snapshot이 없으면 None.
     pub freshness_ms: Option<i64>,
+    pub freshness_state: String,
+    pub scope: String,
+    pub error_code: Option<String>,
+    pub explanation: String,
     pub error: Option<String>,
     pub knowledge_activity: Option<KnowledgeActivity>,
 }
@@ -147,7 +151,38 @@ pub struct AttributionResult {
 #[tauri::command]
 pub fn integration_sources() -> Vec<SourceStatus> {
     let root = devbox_integration::integration_root();
-    source_statuses_in(devbox_integration::discover_report_in(&root), &root)
+    let mut statuses = source_statuses_in(devbox_integration::discover_report_in(&root), &root);
+    // The Life Log producer snapshot is a project-summary view for other
+    // apps, not the source used by this screen's local digest. Replace that
+    // self-snapshot row with an explicit live-local source so the UI cannot
+    // show two ambiguous Life Log entries.
+    statuses.retain(|status| status.producer != "life-log");
+    statuses.push(SourceStatus {
+        producer: "life-log".into(),
+        available: true,
+        schema_version: Some(1),
+        producer_version: Some(env!("CARGO_PKG_VERSION").into()),
+        generated_at: None,
+        freshness_ms: Some(0),
+        freshness_state: "fresh".into(),
+        scope: "live-local".into(),
+        error_code: None,
+        explanation: crate::core::source_explanation::explanation_for_source(
+            "life-log",
+            "live-local",
+        )
+        .into(),
+        error: None,
+        knowledge_activity: None,
+    });
+    statuses.sort_by(|a, b| {
+        (&a.producer, a.schema_version, !a.available).cmp(&(
+            &b.producer,
+            b.schema_version,
+            !b.available,
+        ))
+    });
+    statuses
 }
 
 fn source_statuses_in(
@@ -163,15 +198,27 @@ fn source_statuses_in(
             .into_iter()
             .map(|snapshot| source_status_from_snapshot(snapshot, root)),
     );
-    statuses.extend(report.issues.into_iter().map(|issue| SourceStatus {
-        producer: issue.producer,
-        available: false,
-        schema_version: issue.version,
-        producer_version: None,
-        generated_at: None,
-        freshness_ms: None,
-        error: Some(issue.error),
-        knowledge_activity: None,
+    statuses.extend(report.issues.into_iter().map(|issue| {
+        let producer = issue.producer;
+        let error_code = crate::core::source_explanation::error_code(Some(&issue.error));
+        let explanation =
+            crate::core::source_explanation::explanation_for_source(&producer, "unavailable")
+                .to_owned();
+        let error = issue.error;
+        SourceStatus {
+            producer,
+            available: false,
+            schema_version: issue.version,
+            producer_version: None,
+            generated_at: None,
+            freshness_ms: None,
+            freshness_state: "error".into(),
+            scope: "unavailable".into(),
+            error_code,
+            explanation,
+            error: Some(error),
+            knowledge_activity: None,
+        }
     }));
     if let Some(error) = report.root_error {
         statuses.push(SourceStatus {
@@ -181,6 +228,14 @@ fn source_statuses_in(
             producer_version: None,
             generated_at: None,
             freshness_ms: None,
+            freshness_state: "error".into(),
+            scope: "unavailable".into(),
+            error_code: crate::core::source_explanation::error_code(Some(&error)),
+            explanation: crate::core::source_explanation::explanation_for_source(
+                "integration-root",
+                "unavailable",
+            )
+            .into(),
             error: Some(error),
             knowledge_activity: None,
         });
@@ -200,6 +255,7 @@ fn source_status_from_snapshot(
     root: &Path,
 ) -> SourceStatus {
     let freshness_ms = Some(snapshot.freshness_ms.min(i64::MAX as u64) as i64);
+    let scope = crate::core::source_explanation::scope_for_source(&snapshot.producer).to_string();
     let base = SourceStatus {
         producer: snapshot.producer.clone(),
         available: true,
@@ -207,6 +263,19 @@ fn source_status_from_snapshot(
         producer_version: Some(snapshot.producer_version.clone()),
         generated_at: Some(snapshot.generated_at.clone()),
         freshness_ms,
+        freshness_state: crate::core::source_explanation::freshness_state(
+            true,
+            Some(snapshot.freshness_ms),
+            false,
+        )
+        .into(),
+        scope: scope.clone(),
+        error_code: None,
+        explanation: crate::core::source_explanation::explanation_for_source(
+            &snapshot.producer,
+            &scope,
+        )
+        .into(),
         error: None,
         knowledge_activity: None,
     };
@@ -223,6 +292,12 @@ fn source_status_from_snapshot(
     match read_knowledge_activity(root, &snapshot) {
         Ok((activity, activity_freshness_ms)) => SourceStatus {
             freshness_ms: Some(activity_freshness_ms.min(i64::MAX as u64) as i64),
+            freshness_state: crate::core::source_explanation::freshness_state(
+                true,
+                Some(activity_freshness_ms),
+                false,
+            )
+            .into(),
             knowledge_activity: Some(activity),
             ..base
         },
@@ -233,6 +308,8 @@ fn source_status_from_snapshot(
 fn unavailable_source(mut status: SourceStatus, error: &str) -> SourceStatus {
     status.available = false;
     status.error = Some(error.to_owned());
+    status.freshness_state = "error".into();
+    status.error_code = crate::core::source_explanation::error_code(Some(error));
     status.knowledge_activity = None;
     status
 }

@@ -15,6 +15,7 @@ pub const MAX_DRAFT_TITLE_BYTES: usize = 256;
 pub const MAX_DRAFT_BODY_BYTES: usize = 512 * 1024;
 pub const MAX_DRAFT_PAYLOAD_BYTES: usize = 768 * 1024;
 pub const MAX_DRAFT_SOURCES: usize = 4;
+pub const MAX_PROVENANCE_FRESHNESS_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 
 const BODY_HEADER: &str = "# Life Log local digest\n\n";
 const EXPECTED_SOURCE_IDS: [&str; MAX_DRAFT_SOURCES] =
@@ -166,6 +167,7 @@ fn validate_summary(summary: &KnowledgeDraftSummary) -> Result<(), String> {
         || summary.start_date > summary.end_date
         || !bounded_text(&summary.timezone, 128, false)
         || looks_like_path(&summary.timezone)
+        || contains_secret_marker(&summary.timezone)
         || summary.filter.as_deref().is_some_and(|value| {
             !bounded_text(value, 256, false)
                 || contains_secret_marker(value)
@@ -219,6 +221,9 @@ fn validate_source(source: &KnowledgeDraftSource, expected_id: &str) -> Result<(
             .generated_at
             .as_deref()
             .is_some_and(|value| !bounded_text(value, 32, false) || !valid_generated_at(value))
+        || source
+            .freshness_ms
+            .is_some_and(|value| value > MAX_PROVENANCE_FRESHNESS_MS)
         || source.view.as_deref().is_some_and(|value| {
             !bounded_text(value, 64, false) || !matches!(value, "activity" | "legacy-data")
         })
@@ -508,6 +513,7 @@ fn safe_source_error(value: &str) -> bool {
             | "snapshot_schema_unsupported"
             | "snapshot_payload_invalid"
             | "snapshot_changed_during_read"
+            | "snapshot_stale"
             | "git_invalid_arguments"
             | "git_spawn_failed"
             | "git_stdout_unavailable"
@@ -674,6 +680,11 @@ mod tests {
         payload.summary.filter = Some(r"C:\Users\me\..\secret".into());
         payload.body = render_body(&payload.summary, &payload.sources);
         assert!(validate_knowledge_draft(&payload).is_err());
+
+        let mut payload = fixture();
+        payload.summary.timezone = "token=must-not-cross".into();
+        payload.body = render_body(&payload.summary, &payload.sources);
+        assert!(validate_knowledge_draft(&payload).is_err());
     }
 
     #[test]
@@ -687,5 +698,19 @@ mod tests {
     fn maps_claim_failures_to_fixed_messages() {
         assert!(map_claim_error(&HandoffError::Expired).contains("만료"));
         assert!(!map_claim_error(&HandoffError::Corrupt).contains("Corrupt"));
+    }
+
+    #[test]
+    fn accepts_snapshot_stale_and_rejects_unbounded_freshness() {
+        let mut payload = fixture();
+        let knowledge = payload.sources.last_mut().unwrap();
+        knowledge.available = false;
+        knowledge.error_code = Some("snapshot_stale".into());
+        payload.body = render_body(&payload.summary, &payload.sources);
+        validate_knowledge_draft(&payload).unwrap();
+
+        payload.sources.last_mut().unwrap().freshness_ms = Some(MAX_PROVENANCE_FRESHNESS_MS + 1);
+        payload.body = render_body(&payload.summary, &payload.sources);
+        assert!(validate_knowledge_draft(&payload).is_err());
     }
 }

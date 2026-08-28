@@ -78,6 +78,13 @@ pub fn run() {
             commands::docs::preview_quick_capture,
             commands::docs::save_quick_capture,
             commands::docs::discard_quick_capture_preview,
+            commands::templates::list_templates,
+            commands::templates::create_template,
+            commands::templates::update_template,
+            commands::templates::delete_template,
+            commands::templates::preview_template,
+            commands::templates::save_template,
+            commands::templates::discard_template_preview,
             commands::docs::search_docs,
             commands::docs::list_tags,
             commands::docs::daily_note,
@@ -114,6 +121,7 @@ pub fn run() {
                 quick_capture_previews: Mutex::new(
                     commands::docs::QuickCapturePreviewStore::default(),
                 ),
+                template_previews: Mutex::new(commands::templates::TemplatePreviewStore::default()),
                 image_cache: Mutex::new(HashMap::new()),
             });
             // watcher 생성 후 루트에 연결 (앱 재시작 시 외부 편집 계속 반영)

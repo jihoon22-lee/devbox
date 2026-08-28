@@ -9,7 +9,9 @@ use crate::commands::docs::{resolve_configured_root, AppState};
 use crate::core::db;
 use crate::core::handoff::{self, KnowledgeDraftPayload, KnowledgeDraftPreview};
 use crate::core::vault::{self, EntryIdentity, VaultError, VaultIdentity};
-use devbox_applink::{HandoffClaim, HandoffError, HandoffStore};
+use devbox_applink::{
+    HandoffClaim, HandoffError, HandoffStatus, HandoffStore, RecordHandoffStatus,
+};
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -81,6 +83,7 @@ pub struct SaveKnowledgeDraftResult {
     pub saved: bool,
     pub path: String,
     pub handoff_deleted: bool,
+    pub handoff_status_recorded: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -127,6 +130,7 @@ pub fn preview_knowledge_draft(
         Ok(payload) => payload,
         Err(_) => {
             let _ = store.restore(&claim, CONSUMER_APP, now_ms);
+            let _ = record_handoff_status(&store, &claim, HandoffStatus::Pending, now_ms);
             return Err("Knowledge draft를 처리할 수 없습니다".into());
         }
     };
@@ -135,6 +139,7 @@ pub fn preview_knowledge_draft(
     if slot.is_some() {
         drop(slot);
         let _ = store.restore(&claim, CONSUMER_APP, now_ms);
+        let _ = record_handoff_status(&store, &claim, HandoffStatus::Pending, now_ms);
         return Err("Knowledge draft가 이미 미리보기 중입니다".into());
     }
     *slot = Some(ClaimedKnowledgeDraft {
@@ -166,6 +171,7 @@ pub fn save_knowledge_draft(
         // expired claim without resurrecting it; the user can send a fresh
         // digest from Life Log instead.
         let _ = store.ack(&claimed.claim, CONSUMER_APP, now_ms);
+        let _ = record_handoff_status(&store, &claimed.claim, HandoffStatus::Expired, now_ms);
         return Err("Knowledge draft가 만료되었습니다. Life Log에서 새로 생성하세요".into());
     }
     let root = match state
@@ -226,13 +232,33 @@ pub fn save_knowledge_draft(
     if let Ok(connection) = state.db.lock() {
         let _ = crate::integration::write_snapshot(&connection);
     }
-    let handoff_deleted = store
-        .ack(&claimed.claim, CONSUMER_APP, current_epoch_ms())
-        .is_ok();
+    let handoff_deleted = match store.ack(&claimed.claim, CONSUMER_APP, current_epoch_ms()) {
+        Ok(()) => true,
+        Err(error) => {
+            // The note/index commit happened before ack.  A failed ack must
+            // not silently report success while leaving a replayable claim;
+            // compensate the note and put the exact claim back when possible.
+            let rolled_back =
+                rollback_saved_note(&state, &current_vault, &path, &path_identity, &rel);
+            restore_for_retry(&store, pending.inner(), claimed);
+            if !rolled_back {
+                return Err("Knowledge draft 저장 결과를 확정하지 못했습니다".into());
+            }
+            return Err(handoff::map_claim_error(&error).to_string());
+        }
+    };
+    let handoff_status_recorded = record_handoff_status(
+        &store,
+        &claimed.claim,
+        HandoffStatus::Consumed,
+        current_epoch_ms(),
+    )
+    .is_ok();
     Ok(SaveKnowledgeDraftResult {
         saved: true,
         path: rel,
         handoff_deleted,
+        handoff_status_recorded,
     })
 }
 
@@ -247,8 +273,13 @@ pub fn discard_knowledge_draft(
     let store = handoff_store();
     let now_ms = current_epoch_ms();
     match store.restore(&claimed.claim, CONSUMER_APP, now_ms) {
-        Ok(()) => Ok(()),
+        Ok(()) => record_handoff_status(&store, &claimed.claim, HandoffStatus::Pending, now_ms)
+            .map_err(|_| "Knowledge draft 취소 상태를 기록하지 못했습니다".to_string()),
         Err(HandoffError::Expired | HandoffError::LeaseExpired | HandoffError::Missing) => {
+            if now_ms >= claimed.claim.envelope.expires_at_ms {
+                let _ =
+                    record_handoff_status(&store, &claimed.claim, HandoffStatus::Expired, now_ms);
+            }
             Err("Knowledge draft가 만료되었습니다. Life Log에서 새로 생성하세요".into())
         }
         Err(_) => {
@@ -317,15 +348,73 @@ fn restore_for_retry(
     pending: &PendingKnowledgeDraft,
     claimed: ClaimedKnowledgeDraft,
 ) {
-    match store.restore(&claimed.claim, CONSUMER_APP, current_epoch_ms()) {
-        Ok(())
-        | Err(HandoffError::Expired | HandoffError::LeaseExpired | HandoffError::Missing) => {}
+    let now_ms = current_epoch_ms();
+    match store.restore(&claimed.claim, CONSUMER_APP, now_ms) {
+        Ok(()) => {
+            let _ = record_handoff_status(store, &claimed.claim, HandoffStatus::Pending, now_ms);
+        }
+        Err(HandoffError::Expired | HandoffError::LeaseExpired | HandoffError::Missing) => {
+            if now_ms >= claimed.claim.envelope.expires_at_ms {
+                let _ =
+                    record_handoff_status(store, &claimed.claim, HandoffStatus::Expired, now_ms);
+            }
+        }
         Err(_) => {
             // Keep the in-memory claim if the store could not restore it, but
             // never overwrite a newer preview opened while this save ran.
             let _ = pending.put_if_empty(claimed);
         }
     }
+}
+
+fn rollback_saved_note(
+    state: &AppState,
+    vault: &VaultIdentity,
+    path: &Path,
+    identity: &EntryIdentity,
+    relative: &str,
+) -> bool {
+    let indexed = state.db.lock().ok().is_some_and(|connection| {
+        let Ok(transaction) = connection.unchecked_transaction() else {
+            return false;
+        };
+        if db::remove_doc(&transaction, relative).is_err() {
+            let _ = transaction.rollback();
+            return false;
+        }
+        transaction.commit().is_ok()
+    });
+    vault::cleanup_file(vault, path, identity);
+    let snapshot_restored = indexed
+        && state
+            .db
+            .lock()
+            .ok()
+            .is_some_and(|connection| crate::integration::write_snapshot(&connection).is_ok());
+    indexed && !path.exists() && snapshot_restored
+}
+
+fn record_handoff_status(
+    store: &HandoffStore,
+    claim: &HandoffClaim,
+    status: HandoffStatus,
+    updated_at_ms: u64,
+) -> Result<(), String> {
+    if updated_at_ms == 0 {
+        return Err("handoff 상태 시간이 올바르지 않습니다".into());
+    }
+    store
+        .record_status(RecordHandoffStatus {
+            id: claim.envelope.id.clone(),
+            kind: claim.envelope.kind.clone(),
+            source_app: claim.envelope.source_app.clone(),
+            target_app: claim.envelope.target_app.clone(),
+            status,
+            updated_at_ms,
+            expires_at_ms: claim.envelope.expires_at_ms,
+        })
+        .map(|_| ())
+        .map_err(|_| "handoff 상태를 기록하지 못했습니다".to_string())
 }
 
 fn validate_note_parent(vault: &VaultIdentity) -> Result<(), String> {

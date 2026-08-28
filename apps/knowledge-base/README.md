@@ -24,6 +24,13 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
   먼저 미리 본 뒤 오프라인 `Inbox/`에 새 Markdown 노트를 저장한다. 미리보기는 native가
   발급한 일회성 opaque approval으로 저장하며, 취소·닫기·stale 응답은 실제로 폐기된다.
   단축키 충돌이어도 앱 내 동작은 유지하며, 클립보드는 사용자가 선택한 순간에만 한 번 읽는다
+- **노트 템플릿** — 설정한 vault 안의 SQLite 보조 인덱스에 최대 100개의 템플릿을 저장하고
+  `{{title}}`, `{{date}}`, `{{time}}`, `{{vault-relative-path}}` 네 변수만 치환한다. 편집기는
+  저장 전 미리보기에서 결과·대상을 확인하며, 적용은 명시적 승인 이후 검증된 vault-relative
+  `.md` 목적지에 exclusive atomic create로만 수행한다. 이름·본문·결과·제목·대상 경로에는
+  고정 byte 상한이 있고, 알 수 없는 변수·제어문자·traversal·기존 파일 overwrite·stale
+  vault identity는 고정 오류로 거부한다. 취소/닫기/만료된 preview는 one-shot 상태를 폐기하며
+  네트워크·LLM·기본 vault/폴더 초기화는 하지 않는다
 - **앱 간 열기** — catalog의 `Path`로 Knowledge root 안의 Markdown 노트를 열고, `Query`로 즉시 검색. cold start와 실행 중 재호출 모두 같은 pending-open 경로를 사용
 - **Life Log draft 받기** — `knowledge-draft/v1` handoff를 claim한 뒤 저장 전 요약/출처/태그/본문을 preview한다. 사용자가 승인한 경우에만 새 Journal note를 만들고 handoff를 소비한다
 - **활동 snapshot** — 오늘 작성·수정된 노트 수와 경로 없는 불투명 식별자를 Life Log용 `activity/v1` view로 발행
@@ -71,6 +78,11 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
   validation/file/index 실패는 claim을 restore하고, 만료·손상·잘못된 target은 고정 안내만 표시한다.
   lease는 30초 주기로 갱신하되 10분 envelope TTL은 연장하지 않는다. Life Log DB를 직접 읽거나
   네트워크/LLM을 호출하지 않으며, browser preview에서는 native handoff API를 지원하지 않는다
+- Life Log draft handoff의 상태 sidecar(`pending` → `sent` → `consumed`, 또는 `expired`)는 payload와
+  분리된 metadata-only JSON으로 보존한다. Knowledge는 claim/save/ack 경계에서 상태를 갱신하고,
+  cancel·검증·파일·index 실패에서는 pending으로 복구한다. sidecar가 없거나 손상되면 consumed로
+  추정하지 않으며, 10분 TTL과 fixed source/kind/target 검증을 다시 적용한다. 이 앱은 body·activity
+  원문·path·credential을 status에 기록하지 않는다
 - handoff preview/save는 이미 설정된 absolute vault만 읽고 `Documents/Knowledge` 기본값이나
   `Journal`을 수신 부수효과로 만들지 않는다. preview가 캡처한 `VaultIdentity`(canonical root와
   filesystem identity)는 save 직전과 publication 전후에 재검증하며, root 교체·symlink/reparse
@@ -115,9 +127,9 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
   않는다. clipboard/serde 입력도 raw body·tag list·preview ID·image base64 envelope를
   native와 UI 양쪽에서 bounded 처리해 큰 payload가 modal state나 app-managed slot에 머물지
   않게 한다
-- #303 acceptance는 quick capture와 Inbox note 흐름으로 독립 유지하며, 이 PR에서 함께 묶인 #304
-  image asset acceptance는 아래 image 항목과 별도 fixture/workthrough로 검증한다. template, cloud
-  sync, clipboard history 및 다른 앱으로의 handoff는 양쪽 범위에서 구현하지 않는다
+- #303 acceptance는 quick capture와 Inbox note 흐름으로 독립 유지하며, #304 image asset acceptance는
+  아래 image 항목과 별도 fixture/workthrough로 검증한다. 이 앱의 template과 Life Log handoff는
+  각각의 bounded native 계약을 사용하며, cloud sync와 clipboard history는 범위에 포함하지 않는다
 - 이미지 입력도 백그라운드 clipboard 수집이나 clipboard history를 만들지 않는다. Ctrl/Cmd+V의
   browser paste/drop event 또는 사용자가 편집기 context menu에서 명시적으로 고른 순간의
   `navigator.clipboard.read()`만 사용한다. 지원되지 않는 WebView의 이미지 Clipboard API는

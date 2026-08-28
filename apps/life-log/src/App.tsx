@@ -15,6 +15,7 @@ import {
   getProjects,
   getTimeline,
   integrationSources,
+  knowledgeDraftHistory,
   isTracking,
   projectAttribution,
   redactExisting,
@@ -37,6 +38,7 @@ import {
   type AutostartStatus,
   type PrivacyRules,
   type SourceStatus,
+  type KnowledgeDraftHistoryEntry,
 } from "./api";
 import { buildDateContextMenu, parseDateKey } from "./lib/contextMenu";
 import { isTauri } from "./lib/isTauri";
@@ -209,9 +211,44 @@ function digestSourceId(value: string): string {
 }
 
 function digestSourceScope(value: string): string {
-  return ["requested-range", "latest-snapshot-out-of-range", "browser-preview-only"].includes(value)
+  return ["live-local", "requested-range", "latest-snapshot-out-of-range", "browser-preview-only"].includes(value)
     ? value
     : "scope unavailable";
+}
+
+function sourceFreshnessState(
+  freshnessMs: number | null,
+  available: boolean,
+  errorCode?: string | null,
+): "fresh" | "stale" | "expired" | "unknown" | "error" {
+  if (errorCode || !available) return errorCode ? "error" : "unknown";
+  if (freshnessMs == null || freshnessMs < 0) return "unknown";
+  if (freshnessMs <= 120_000) return "fresh";
+  if (freshnessMs <= 900_000) return "stale";
+  return "expired";
+}
+
+function sourceFreshnessLabel(state: ReturnType<typeof sourceFreshnessState>): string {
+  return {
+    fresh: "fresh",
+    stale: "stale",
+    expired: "expired",
+    unknown: "freshness unknown",
+    error: "error",
+  }[state];
+}
+
+function digestSourceExplanation(
+  source: DigestResponse["document"]["sources"][number],
+): string {
+  if (source.scope === "browser-preview-only") {
+    return "브라우저 미리보기에서는 native DB와 local snapshot을 읽지 않습니다.";
+  }
+  if (source.id === "life-log") return "Life Log 로컬 DB를 선택한 날짜 범위와 필터로 집계합니다.";
+  if (source.id === "git") return "설정된 프로젝트의 read-only Git count를 요청 범위로 제한합니다.";
+  if (source.id === "run-manager") return "Run Manager 최신 snapshot은 provenance로만 표시하며 활동 통계에 합치지 않습니다.";
+  if (source.id === "knowledge-base") return "Knowledge 최신 snapshot은 provenance로만 표시하며 원문을 읽지 않습니다.";
+  return "이 source는 통계에 조용히 합치지 않도록 별도로 표시됩니다.";
 }
 
 export function buildExportInput(
@@ -259,12 +296,27 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
     source.freshnessMs != null ? `${fmtDuration(source.freshnessMs)} 전 갱신` : null,
   ].filter((value): value is string => value != null);
   const activity = source.knowledgeActivity;
+  const freshness = sourceFreshnessState(source.freshnessMs, source.available, source.errorCode ?? source.error);
 
   return (
     <div className="git-row source-row">
       <span className="mono">{source.producer}</span>
       <div className="source-details">
+        <span className={`freshness-badge freshness-${freshness}`}>{sourceFreshnessLabel(freshness)}</span>
         {diagnostics.length > 0 && <span className="dim">{diagnostics.join(" · ")}</span>}
+        <span className="dim">{source.scope ?? "scope unavailable"}</span>
+        <span className="source-explanation">{source.explanation ?? digestSourceExplanation({
+          id: source.producer,
+          available: source.available,
+          schemaVersion: source.schemaVersion,
+          snapshotVersion: null,
+          producerVersion: source.producerVersion,
+          generatedAt: source.generatedAt,
+          freshnessMs: source.freshnessMs,
+          view: null,
+          scope: source.scope ?? "unavailable",
+          errorCode: source.errorCode ?? null,
+        })}</span>
         {source.available && activity && (
           <span className="source-activity">
             오늘 작성·수정 {activity.notesModifiedToday}개
@@ -275,7 +327,7 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
         )}
         {!source.available && (
           <span role="alert" className="source-error">
-            {source.error ?? "사용할 수 없음"}
+            {source.errorCode ? `${source.errorCode} · ` : ""}{source.error ?? "사용할 수 없음"}
           </span>
         )}
       </div>
@@ -302,6 +354,7 @@ export default function App() {
   const [privacy, setPrivacy] = useState<PrivacyRules>({ excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false });
   const [autoStart, setAutoStart] = useState<AutostartStatus | null>(null);
   const [sources, setSources] = useState<SourceStatus[]>([]);
+  const [draftHistory, setDraftHistory] = useState<KnowledgeDraftHistoryEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [contextDate, setContextDate] = useState<string | null>(null);
@@ -315,6 +368,8 @@ export default function App() {
   const digestBusyRef = useRef(false);
   const digestRequestRef = useRef(0);
   const loadRequestRef = useRef(0);
+  const historyRequestRef = useRef(0);
+  const appMountedRef = useRef(true);
   const dateContextFocusRequestRef = useRef(0);
   const exportDialogRef = useRef<HTMLElement>(null);
   const exportFirstFieldRef = useRef<HTMLInputElement>(null);
@@ -341,14 +396,19 @@ export default function App() {
   // while the native command is still preparing Git data). Invalidate the
   // request token and busy ref during unmount so its completion cannot update
   // detached UI or make a later mount inherit a stale lock.
-  useEffect(() => () => {
-    exportRequestRef.current += 1;
-    exportBusyRef.current = false;
-    digestRequestRef.current += 1;
-    digestBusyRef.current = false;
-    loadRequestRef.current += 1;
-    dateContextFocusRequestRef.current += 1;
-    void cancelDigest().catch(() => undefined);
+  useEffect(() => {
+    appMountedRef.current = true;
+    return () => {
+      exportRequestRef.current += 1;
+      exportBusyRef.current = false;
+      digestRequestRef.current += 1;
+      digestBusyRef.current = false;
+      loadRequestRef.current += 1;
+      historyRequestRef.current += 1;
+      appMountedRef.current = false;
+      dateContextFocusRequestRef.current += 1;
+      void cancelDigest().catch(() => undefined);
+    };
   }, []);
 
   const prepareDateContext = useCallback((target: HTMLElement) => {
@@ -581,12 +641,33 @@ export default function App() {
     try {
       const result = await sendDigestToKnowledge(digestInputFromResponse(response));
       if (isCurrentDigestAction(action) && result.kind === "knowledge-draft/v1") {
+        await refreshDraftHistory();
         setNotice("Knowledge draft를 미리보기로 보냈습니다. 저장 전 내용을 확인하세요.");
       }
     } catch {
       if (isCurrentDigestAction(action)) {
         setError("Knowledge draft를 보내지 못했습니다. 잠시 후 다시 시도하세요.");
       }
+    } finally {
+      finishDigestAction(action);
+    }
+  };
+
+  const regenerateDraft = async (entry: KnowledgeDraftHistoryEntry) => {
+    if (!isTauri() || !digest) return;
+    const action = beginDigestAction();
+    if (!action) return;
+    try {
+      const result = await sendDigestToKnowledge(
+        digestInputFromResponse(digest),
+        entry.handoffId,
+      );
+      if (isCurrentDigestAction(action) && result.kind === "knowledge-draft/v1") {
+        await refreshDraftHistory();
+        setNotice("새 Knowledge draft를 만들었습니다. 이전 handoff와 별도의 ID로 다시 확인하세요.");
+      }
+    } catch {
+      if (isCurrentDigestAction(action)) setError("Knowledge draft를 다시 만들지 못했습니다.");
     } finally {
       finishDigestAction(action);
     }
@@ -681,20 +762,50 @@ export default function App() {
     }
   };
 
-  const loadSettings = useCallback(async () => {
+  const refreshDraftHistory = useCallback(async () => {
+    if (!isTauri()) {
+      setDraftHistory([]);
+      return;
+    }
+    const request = historyRequestRef.current + 1;
+    historyRequestRef.current = request;
     try {
-      const [pr, idle, privacyRules, ast, src] = await Promise.all([
+      const history = await knowledgeDraftHistory();
+      if (appMountedRef.current && historyRequestRef.current === request) {
+        setDraftHistory(history);
+      }
+    } catch {
+      // History is auxiliary UI state; a digest remains usable when the
+      // local reconciliation store is temporarily unavailable.
+    }
+  }, []);
+
+  const loadSettings = useCallback(async () => {
+    const historyRequest = historyRequestRef.current + 1;
+    historyRequestRef.current = historyRequest;
+    try {
+      const [pr, idle, privacyRules, ast, src, history] = await Promise.allSettled([
         getProjects(),
         getIdleThreshold(),
         getPrivacyRules(),
         autostartStatus(),
         integrationSources(),
+        knowledgeDraftHistory(),
       ]);
-      setProjectsState(pr);
-      setIdleThresholdState(idle);
-      setPrivacy(privacyRules);
-      setAutoStart(ast);
-      setSources(src);
+      if (!appMountedRef.current) return;
+      if (pr.status === "fulfilled") setProjectsState(pr.value);
+      if (idle.status === "fulfilled") setIdleThresholdState(idle.value);
+      if (privacyRules.status === "fulfilled") setPrivacy(privacyRules.value);
+      if (ast.status === "fulfilled") setAutoStart(ast.value);
+      if (src.status === "fulfilled") setSources(src.value);
+      if (history.status === "fulfilled"
+        && appMountedRef.current
+        && historyRequestRef.current === historyRequest) {
+        setDraftHistory(history.value);
+      }
+      if ([pr, idle, privacyRules, ast, src, history].some((result) => result.status === "rejected")) {
+        setError("일부 Life Log 설정을 불러오지 못했습니다.");
+      }
     } catch {
       setError("Life Log 설정을 불러오지 못했습니다.");
     }
@@ -779,6 +890,12 @@ export default function App() {
     void load();
     void loadSettings();
   }, [load, loadSettings]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    const timer = window.setInterval(() => void refreshDraftHistory(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [refreshDraftHistory]);
 
   // 타임라인은 추적 중에는 주기적으로 갱신한다 (세션 자동 반영).
   useEffect(() => {
@@ -961,6 +1078,43 @@ export default function App() {
               />
             ))}
             <div className="dim">source는 devbox 공용 루트의 read-only snapshot을 통해 읽습니다 (다른 앱의 DB를 직접 읽지 않음).</div>
+          </section>
+
+          <section className="panel" aria-label="Knowledge draft handoff history">
+            <div className="panel-heading-row">
+              <div>
+                <h2>Knowledge handoff history</h2>
+                <div className="dim">상태와 aggregate summary/source reference만 보존합니다. 활동 원문·경로·credential은 저장하지 않습니다.</div>
+              </div>
+              <button className="btn small" type="button" onClick={() => void refreshDraftHistory()} disabled={contextActionBusy}>Refresh</button>
+            </div>
+            {draftHistory.length === 0 ? (
+              <div className="dim">아직 보낸 draft가 없습니다.</div>
+            ) : draftHistory.map((entry) => (
+              <div className="handoff-history-row" key={entry.handoffId}>
+                <div className="handoff-history-main">
+                  <span className={`handoff-status handoff-status-${entry.status}`}>{entry.status}</span>
+                  <strong>{entry.summary.startDate} ~ {entry.summary.endDate}</strong>
+                  <span className="dim">{entry.summary.period} · {entry.summary.timezone}</span>
+                  <span className="dim">{entry.summary.sessionCount} sessions · {fmtDuration(entry.summary.pcUsageMs)} · {entry.summary.gitCommits} commits</span>
+                </div>
+                <div className="handoff-history-sources">
+                  {entry.sources.map((source) => (
+                    <span key={source.id} className={source.available ? "source-ok" : "source-error"}>
+                      {source.id} · {digestSourceScope(source.scope)}{source.errorCode ? ` · ${source.errorCode}` : ""}
+                    </span>
+                  ))}
+                </div>
+                <button
+                  className="btn small"
+                  type="button"
+                  onClick={() => void regenerateDraft(entry)}
+                  disabled={!isTauri() || !digest || contextActionBusy || loading}
+                >
+                  Regenerate
+                </button>
+              </div>
+            ))}
           </section>
 
           <section className="panel">
@@ -1252,6 +1406,11 @@ export default function App() {
                                   {source.available ? "available" : source.errorCode === "browser_preview_only" ? "browser preview only" : "unavailable"}
                                   {` · ${digestSourceScope(source.scope)}`}
                                 </span>
+                                <span className={`freshness-badge freshness-${sourceFreshnessState(source.freshnessMs, source.available, source.errorCode)}`}>
+                                  {sourceFreshnessLabel(sourceFreshnessState(source.freshnessMs, source.available, source.errorCode))}
+                                </span>
+                                <span className="source-explanation">{digestSourceExplanation(source)}</span>
+                                {source.errorCode && <span className="source-error">error code: {source.errorCode}</span>}
                                 {digestSourceDetails(source) && (
                                   <span className="dim">{digestSourceDetails(source)}</span>
                                 )}

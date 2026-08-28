@@ -1,7 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, { toDateStr } from "./App";
-import type { DigestInput, DigestResponse } from "./api";
+import type { DigestInput, DigestResponse, KnowledgeDraftHistoryEntry } from "./api";
 
 const mocks = vi.hoisted(() => ({
   native: false,
@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   getDay: vi.fn(),
   saveLifeLog: vi.fn(),
   sendDigestToKnowledge: vi.fn(),
+  knowledgeDraftHistory: vi.fn(),
 }));
 
 vi.mock("./lib/isTauri", () => ({ isTauri: () => mocks.native }));
@@ -47,6 +48,7 @@ vi.mock("./api", () => ({
     ],
   }),
   getTimeline: vi.fn().mockResolvedValue([]),
+  knowledgeDraftHistory: mocks.knowledgeDraftHistory,
   integrationSources: vi.fn().mockResolvedValue([]),
   isTracking: vi.fn().mockResolvedValue(false),
   projectAttribution: vi.fn().mockResolvedValue({
@@ -146,7 +148,9 @@ beforeEach(() => {
     id: "0123456789abcdef0123456789abcdef",
     kind: "knowledge-draft/v1",
     expiresAtMs: Date.now() + 600_000,
+    historyId: "0123456789abcdef0123456789abcdef",
   });
+  mocks.knowledgeDraftHistory.mockReset().mockResolvedValue([]);
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: { writeText: mocks.writeText },
@@ -160,6 +164,33 @@ beforeEach(() => {
     value: vi.fn(),
   });
 });
+
+function historyEntryFixture(startDate: string): KnowledgeDraftHistoryEntry {
+  return {
+    handoffId: "0123456789abcdef0123456789abcdef",
+    kind: "knowledge-draft/v1",
+    status: "sent",
+    summary: {
+      period: "day",
+      startDate,
+      endDate: startDate,
+      timezone: "Asia/Seoul",
+      filter: null,
+      pcUsageMs: 1_000,
+      sessionCount: 1,
+      activeDays: 1,
+      totalDays: 1,
+      averageDailyUsageMs: 1_000,
+      gitCommits: 0,
+      topApp: null,
+    },
+    sources: [],
+    createdAtMs: 1,
+    updatedAtMs: 1,
+    expiresAtMs: 2,
+    regeneratedFrom: null,
+  };
+}
 
 afterEach(() => cleanup());
 
@@ -245,6 +276,29 @@ describe("Life Log daily digest", () => {
     expect(mocks.sendDigestToKnowledge).toHaveBeenCalledWith(expect.objectContaining({
       period: "day",
     }));
+  });
+
+  it("ignores an older Knowledge history refresh after a newer request wins", async () => {
+    mocks.native = true;
+    let resolveInitial!: (history: KnowledgeDraftHistoryEntry[]) => void;
+    let resolveRefresh!: (history: KnowledgeDraftHistoryEntry[]) => void;
+    mocks.knowledgeDraftHistory
+      .mockReset()
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveInitial = resolve; }))
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve; }));
+
+    await renderLoadedApp();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const panel = await screen.findByRole("region", { name: "Knowledge draft handoff history" });
+    fireEvent.click(within(panel).getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(mocks.knowledgeDraftHistory).toHaveBeenCalledTimes(3));
+
+    resolveRefresh([historyEntryFixture("2026-08-28")]);
+    await waitFor(() => expect(panel.textContent).toContain("2026-08-28"));
+    resolveInitial([historyEntryFixture("2026-08-27")]);
+    await waitFor(() => expect(panel.textContent).not.toContain("2026-08-27"));
+    expect(panel.textContent).toContain("2026-08-28");
   });
 });
 

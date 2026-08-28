@@ -68,6 +68,13 @@ vi.mock("./api", () => ({
   })),
   saveQuickCapture: vi.fn(async () => ({ path: "Inbox/quick-capture-test.md" })),
   discardQuickCapturePreview: vi.fn(async () => undefined),
+  listTemplates: vi.fn(async () => []),
+  createTemplate: vi.fn(async () => { throw new Error("unused"); }),
+  updateTemplate: vi.fn(async () => { throw new Error("unused"); }),
+  deleteTemplate: vi.fn(async () => undefined),
+  previewTemplate: vi.fn(async () => { throw new Error("unused"); }),
+  saveTemplate: vi.fn(async () => { throw new Error("unused"); }),
+  discardTemplatePreview: vi.fn(async () => undefined),
   openInboundNote: vi.fn(async () => ({ path: "Notes/inbound.md", content: "# inbound" })),
   searchDocs: vi.fn(async (query: string) => [{ path: "Notes/result.md", title: `Result ${query}` }]),
   takePendingOpen: vi.fn().mockImplementation(async () => {
