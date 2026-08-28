@@ -114,6 +114,80 @@ pub enum RunStatus {
     Skipped,
 }
 
+/// Bounded, read-only history query.  The UI may combine any of these fields;
+/// storage applies them in one parameterized query so a history search never
+/// becomes a path, command, or SQL execution boundary.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunHistoryFilter {
+    pub job_id: Option<String>,
+    /// `job` or `service`; `None` means both kinds.
+    pub kind: Option<JobKind>,
+    pub status: Option<RunStatus>,
+    pub start_at: Option<i64>,
+    pub end_at: Option<i64>,
+    pub min_duration_ms: Option<i64>,
+    pub max_duration_ms: Option<i64>,
+    pub limit: Option<u32>,
+}
+
+impl RunHistoryFilter {
+    pub const MAX_ID_BYTES: usize = 128;
+    pub const MAX_DURATION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
+    pub const MAX_LIMIT: u32 = 500;
+
+    /// Validate untrusted query values before they reach SQLite.  Duration is
+    /// measured only for runs with a start; queued/skipped rows do not match a
+    /// duration bound.  `now` is used for a still-running row by storage.
+    pub fn validate(&self) -> Result<(), ModelError> {
+        if let Some(job_id) = &self.job_id {
+            validate_history_text("job_id", job_id, Self::MAX_ID_BYTES)?;
+        }
+        if let (Some(start_at), Some(end_at)) = (self.start_at, self.end_at) {
+            if end_at <= start_at {
+                return Err(ModelError::InvalidHistoryRange);
+            }
+        }
+        if self.start_at.is_some_and(|value| value < 0)
+            || self.end_at.is_some_and(|value| value < 0)
+        {
+            return Err(ModelError::InvalidHistoryRange);
+        }
+        if self
+            .min_duration_ms
+            .is_some_and(|value| !(0..=Self::MAX_DURATION_MS).contains(&value))
+            || self
+                .max_duration_ms
+                .is_some_and(|value| !(0..=Self::MAX_DURATION_MS).contains(&value))
+        {
+            return Err(ModelError::InvalidHistoryDuration);
+        }
+        if let (Some(minimum), Some(maximum)) = (self.min_duration_ms, self.max_duration_ms) {
+            if maximum < minimum {
+                return Err(ModelError::InvalidHistoryDuration);
+            }
+        }
+        if self
+            .limit
+            .is_some_and(|value| value == 0 || value > Self::MAX_LIMIT)
+        {
+            return Err(ModelError::InvalidHistoryRange);
+        }
+        Ok(())
+    }
+}
+
+fn validate_history_text(
+    field: &'static str,
+    value: &str,
+    max_bytes: usize,
+) -> Result<(), ModelError> {
+    if value.is_empty() || value.len() > max_bytes || value.chars().any(char::is_control) {
+        return Err(ModelError::InvalidHistoryField(field));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceInstanceState {
@@ -623,6 +697,9 @@ pub enum ModelError {
     MissingServicePort,
     InvalidServicePort,
     NonLocalServiceAddress,
+    InvalidHistoryField(&'static str),
+    InvalidHistoryRange,
+    InvalidHistoryDuration,
 }
 
 impl fmt::Display for ModelError {
@@ -651,6 +728,15 @@ impl fmt::Display for ModelError {
             }
             Self::NonLocalServiceAddress => {
                 formatter.write_str("health_tcp_address must be localhost or a loopback IP")
+            }
+            Self::InvalidHistoryField(field) => {
+                write!(formatter, "history filter field {field} is invalid")
+            }
+            Self::InvalidHistoryRange => {
+                formatter.write_str("history filter end_at must be after start_at")
+            }
+            Self::InvalidHistoryDuration => {
+                formatter.write_str("history duration filter is invalid")
             }
         }
     }
@@ -692,6 +778,60 @@ mod tests {
         let mut value = input(TargetKind::Windows, None);
         value.command.push('\0');
         assert_eq!(value.validate(), Err(ModelError::NulByte("command")));
+    }
+
+    #[test]
+    fn history_filter_rejects_unbounded_or_inverted_ranges() {
+        assert_eq!(
+            RunHistoryFilter {
+                job_id: Some(String::new()),
+                ..RunHistoryFilter::default()
+            }
+            .validate(),
+            Err(ModelError::InvalidHistoryField("job_id"))
+        );
+        assert_eq!(
+            RunHistoryFilter {
+                start_at: Some(2),
+                end_at: Some(2),
+                ..RunHistoryFilter::default()
+            }
+            .validate(),
+            Err(ModelError::InvalidHistoryRange)
+        );
+        assert_eq!(
+            RunHistoryFilter {
+                min_duration_ms: Some(10),
+                max_duration_ms: Some(9),
+                ..RunHistoryFilter::default()
+            }
+            .validate(),
+            Err(ModelError::InvalidHistoryDuration)
+        );
+        assert_eq!(
+            RunHistoryFilter {
+                min_duration_ms: Some(RunHistoryFilter::MAX_DURATION_MS + 1),
+                ..RunHistoryFilter::default()
+            }
+            .validate(),
+            Err(ModelError::InvalidHistoryDuration)
+        );
+        for filter in [
+            RunHistoryFilter {
+                start_at: Some(-1),
+                ..RunHistoryFilter::default()
+            },
+            RunHistoryFilter {
+                limit: Some(0),
+                ..RunHistoryFilter::default()
+            },
+            RunHistoryFilter {
+                limit: Some(RunHistoryFilter::MAX_LIMIT + 1),
+                ..RunHistoryFilter::default()
+            },
+        ] {
+            assert_eq!(filter.validate(), Err(ModelError::InvalidHistoryRange));
+        }
     }
 
     #[test]

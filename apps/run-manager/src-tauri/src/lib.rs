@@ -92,6 +92,9 @@ pub fn run() {
             commands::export_definitions,
             commands::import_definitions,
             commands::apply_import,
+            commands::preview_project_import,
+            commands::apply_project_import,
+            commands::cancel_project_import,
             commands::create_service,
             commands::update_service,
             commands::delete_service,
@@ -101,6 +104,7 @@ pub fn run() {
             commands::restart_service,
             commands::get_run,
             commands::list_runs,
+            commands::list_run_history,
             commands::preview_cron,
             commands::tail_log,
             commands::search_run_logs,
@@ -150,6 +154,7 @@ pub fn run() {
                 listener,
             );
             app.manage(Arc::clone(&database));
+            app.manage(Arc::new(core::imports::ImportOperationRegistry::default()));
             app.manage(protector);
             let state = Arc::new(RuntimeState::new(database_path, background, coordinator));
             app.manage(state.clone());

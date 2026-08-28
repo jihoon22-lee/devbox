@@ -97,9 +97,26 @@ describe("RunHistory", () => {
     await waitFor(() => expect(listRunsMock).toHaveBeenCalledWith(job.id, expect.objectContaining({ limit: 50 })));
     await waitFor(() => expect(tailLogMock).toHaveBeenCalledWith(run.id, "stdout", null));
     expect((await view.findByLabelText("stdout 로그")).textContent).toContain("finished");
+    expect(view.getByRole("button", { name: "stdout" }).getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(view.getByRole("button", { name: "stderr" }));
     await waitFor(() => expect(tailLogMock).toHaveBeenCalledWith(run.id, "stderr", null));
+    expect(view.getByRole("button", { name: "stderr" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("does not silently drop an invalid non-empty duration filter", async () => {
+    const view = render(<RunHistory jobs={[job]} />);
+    await waitFor(() => expect(listRunsMock).toHaveBeenCalled());
+    listRunsMock.mockClear();
+
+    fireEvent.change(view.getByLabelText("최소 실행 시간(초)"), {
+      target: { value: "-1" },
+    });
+
+    await waitFor(() => expect(listRunsMock).toHaveBeenCalledWith(
+      job.id,
+      expect.objectContaining({ minDurationMs: -1_000 }),
+    ));
   });
 
   it("shows the retained-range warning and does not expose numeric cursors", async () => {

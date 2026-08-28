@@ -7,8 +7,9 @@
 //!   함께 수행하는 빠른 열기용 API
 //! - [`parse_safe_project_path`] / [`SafeProjectPath`]: snapshot producer·consumer가
 //!   공유하는 안전한 절대 프로젝트 경로 규칙
-//! - [`filesystem_identity`]: 경로 문자열이 아니라 열린 파일시스템 객체의
-//!   안정적인 identity로 mutation ownership을 비교하는 helper
+//! - [`filesystem_identity`] / [`open_filesystem_object`]: 경로 문자열이
+//!   아니라 열린 파일시스템 객체의 안정적인 identity로 mutation ownership을
+//!   비교하고, 검사한 같은 handle로 후속 읽기를 이어 가는 helper
 //! - [`ensure_no_links`]: 파일과 모든 ancestor의 symbolic link/reparse point를
 //!   따라가지 않는 경로 검증 helper
 //! - [`migrate_legacy_identifier_dir`]: 새 identifier 디렉터리가 아직 없을 때
@@ -34,9 +35,7 @@ pub use project_path::{
 };
 pub use walk::{collect, collect_limited, IndexedFile, WalkResult};
 
-#[cfg(unix)]
-use std::fs::File;
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -65,6 +64,19 @@ pub fn filesystem_identity(
     path: impl AsRef<Path>,
     directory: bool,
 ) -> io::Result<FilesystemIdentity> {
+    open_filesystem_object(path, directory).map(|(_handle, identity)| identity)
+}
+
+/// Open the exact final filesystem object without following a final link and
+/// return the identity captured from that same handle.
+///
+/// Callers that need to read after authorizing an object should retain this
+/// handle instead of reopening the path, then compare its identity with a
+/// fresh [`filesystem_identity`] before committing any derived result.
+pub fn open_filesystem_object(
+    path: impl AsRef<Path>,
+    directory: bool,
+) -> io::Result<(File, FilesystemIdentity)> {
     let path = path.as_ref();
 
     #[cfg(unix)]
@@ -89,10 +101,11 @@ pub fn filesystem_identity(
                 "unexpected file type",
             ));
         }
-        Ok(FilesystemIdentity {
+        let identity = FilesystemIdentity {
             scope: metadata.dev(),
             object: metadata.ino(),
-        })
+        };
+        Ok((handle, identity))
     }
 
     #[cfg(windows)]
@@ -158,8 +171,7 @@ pub fn filesystem_identity(
             object: (u64::from(information.nFileIndexHigh) << 32)
                 | u64::from(information.nFileIndexLow),
         };
-        drop(handle);
-        Ok(identity)
+        Ok((handle, identity))
     }
 
     #[cfg(not(any(unix, windows)))]
@@ -178,10 +190,11 @@ pub fn filesystem_identity(
             .modified()?
             .duration_since(UNIX_EPOCH)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid time"))?;
-        Ok(FilesystemIdentity {
+        let identity = FilesystemIdentity {
             scope: metadata.len(),
             object: u64::try_from(modified.as_nanos()).unwrap_or(u64::MAX),
-        })
+        };
+        Ok((handle, identity))
     }
 }
 
@@ -354,7 +367,7 @@ fn sync_parent(_target: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod identity_tests {
-    use super::filesystem_identity;
+    use super::{filesystem_identity, open_filesystem_object};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -389,6 +402,29 @@ mod identity_tests {
             std::io::ErrorKind::NotFound
         );
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn opened_handle_keeps_the_authorized_identity_after_path_replacement() {
+        let root = fixture_root();
+        let source = root.join("source.txt");
+        let displaced = root.join("displaced.txt");
+        fs::write(&source, b"first").unwrap();
+
+        let (handle, opened_identity) = open_filesystem_object(&source, false).unwrap();
+        assert_eq!(
+            opened_identity,
+            filesystem_identity(&source, false).unwrap()
+        );
+        fs::rename(&source, &displaced).unwrap();
+        fs::write(&source, b"other").unwrap();
+
+        assert_ne!(
+            opened_identity,
+            filesystem_identity(&source, false).unwrap()
+        );
+        drop(handle);
         let _ = fs::remove_dir_all(root);
     }
 

@@ -1,10 +1,16 @@
+use crate::core::imports::{
+    definition_revision, imported_job_input, normalize_import_cwd, preview_project_with_control,
+    validate_import_cwd, verify_preview_revision_with_control, ImportOperationRegistry,
+    ProjectImportApplyResult, ProjectImportError, ProjectImportPlan, MAX_DEFINITION_JSON_BYTES,
+    MAX_ITEMS,
+};
 use crate::core::log_search::{
     search_streams, validate_request, LogSearchError, LogSearchRequest, LogSearchResponse,
     MAX_SCAN_BYTES_PER_STREAM,
 };
 use crate::core::models::{
-    EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, RunView, ServiceInput,
-    ServiceInstanceView,
+    EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, JobKind, RunHistoryFilter,
+    RunStatus, RunView, ServiceInput, ServiceInstanceView,
 };
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
 use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse, MAX_TAIL_BYTES};
@@ -14,7 +20,11 @@ use crate::scheduler::SchedulerError;
 use crate::storage::{current_epoch_millis, DatabaseState, StorageError};
 use chrono::Local;
 use serde::Deserialize;
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tauri::{AppHandle, Manager, State};
 
 #[derive(Debug, Deserialize)]
@@ -318,7 +328,8 @@ pub fn service_observability(
     }))
 }
 
-/// import 항목 하나.
+/// Definition import item.  The preview exposes only masked environment
+/// metadata; ciphertext and values are never deserialized from the document.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportItem {
@@ -328,6 +339,9 @@ pub struct ImportItem {
     /// "new" | "conflict"
     pub status: String,
     pub detail: String,
+    pub cwd: Option<String>,
+    pub environment_keys: Vec<String>,
+    pub requires_confirmation: bool,
 }
 
 /// import 계획 — 실제로 생성하지 않고 충돌 여부만 판단한다.
@@ -335,7 +349,150 @@ pub struct ImportItem {
 #[serde(rename_all = "camelCase")]
 pub struct ImportPlan {
     pub schema_version: u32,
+    pub revision: String,
     pub items: Vec<ImportItem>,
+}
+
+const MAX_IMPORT_DEFINITIONS: usize = MAX_ITEMS;
+const MAX_SELECTION_ID_BYTES: usize = 256;
+
+fn definition_import_error() -> String {
+    "definition-import-invalid".to_owned()
+}
+
+fn parse_definition_export(json: &str) -> Result<(DefinitionExport, String), String> {
+    if json.len() > MAX_DEFINITION_JSON_BYTES {
+        return Err("definition-import-too-large".to_owned());
+    }
+    let revision = definition_revision(json).map_err(|_| "definition-import-invalid".to_owned())?;
+    let mut doc: DefinitionExport =
+        serde_json::from_str(json).map_err(|_| definition_import_error())?;
+    if doc.schema_version != 1
+        || doc.jobs.len().saturating_add(doc.services.len()) > MAX_IMPORT_DEFINITIONS
+    {
+        return Err("definition-import-invalid".to_owned());
+    }
+
+    let mut ids = HashSet::new();
+    for job in &mut doc.jobs {
+        job.cwd =
+            normalize_import_cwd(job.cwd.as_deref()).map_err(|_| definition_import_error())?;
+        validate_import_definition(job, JobKind::Job)?;
+        if !ids.insert(job.id.clone()) {
+            return Err("definition-import-duplicate".to_owned());
+        }
+    }
+    for service in &mut doc.services {
+        service.cwd =
+            normalize_import_cwd(service.cwd.as_deref()).map_err(|_| definition_import_error())?;
+        validate_import_definition(service, JobKind::Service)?;
+        if !ids.insert(service.id.clone()) {
+            return Err("definition-import-duplicate".to_owned());
+        }
+    }
+    Ok((doc, revision))
+}
+
+fn validate_selection_ids(selected: &[String], error_code: &'static str) -> Result<(), String> {
+    if selected.iter().any(|id| {
+        id.is_empty() || id.len() > MAX_SELECTION_ID_BYTES || id.chars().any(char::is_control)
+    }) {
+        return Err(error_code.to_owned());
+    }
+    Ok(())
+}
+
+fn selected_definition_ids(
+    selected: &[String],
+    jobs: &[Job],
+    services: &[Job],
+    error_code: &'static str,
+) -> Result<HashSet<String>, String> {
+    validate_selection_ids(selected, error_code)?;
+    let available = jobs
+        .iter()
+        .chain(services.iter())
+        .map(|job| job.id.as_str())
+        .collect::<HashSet<_>>();
+    if selected.iter().any(|id| !available.contains(id.as_str())) {
+        return Err(error_code.to_owned());
+    }
+    Ok(selected.iter().cloned().collect())
+}
+
+fn selected_project_ids(
+    selected: &[String],
+    plan: &ProjectImportPlan,
+) -> Result<HashSet<String>, String> {
+    validate_selection_ids(selected, "project-import-invalid")?;
+    let available = plan
+        .items
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<HashSet<_>>();
+    if selected.iter().any(|id| !available.contains(id.as_str())) {
+        return Err("project-import-invalid".to_owned());
+    }
+    Ok(selected.iter().cloned().collect())
+}
+
+fn validate_import_definition(job: &Job, expected_kind: JobKind) -> Result<(), String> {
+    if job.kind != expected_kind
+        || job.id.len() > 128
+        || job.name.is_empty()
+        || job.name.len() > 512
+        || job.command.is_empty()
+        || job.command.len() > 16 * 1024
+        || job.name.chars().any(char::is_control)
+        || job.command.chars().any(char::is_control)
+        || !validate_import_cwd(job.cwd.as_deref())
+        || job.target_distro.as_deref().is_some_and(|distro| {
+            distro.is_empty() || distro.len() > 128 || distro.chars().any(char::is_control)
+        })
+        || crate::core::shell::validate_uuid("definition id", &job.id).is_err()
+    {
+        return Err("definition-import-invalid".to_owned());
+    }
+    match expected_kind {
+        JobKind::Job => {
+            let input = JobInput {
+                name: job.name.clone(),
+                command: job.command.clone(),
+                cwd: job.cwd.clone(),
+                target_kind: job.target_kind,
+                target_distro: job.target_distro.clone(),
+                environment: crate::core::models::EnvironmentUpdate::Keep,
+                cron_expr: job.cron_expr.clone().unwrap_or_default(),
+                enabled: false,
+                overlap_policy: job.overlap_policy,
+                catch_up: false,
+            };
+            input
+                .validate()
+                .map_err(|_| "definition-import-invalid".to_owned())?;
+        }
+        JobKind::Service => {
+            let input = ServiceInput {
+                name: job.name.clone(),
+                command: job.command.clone(),
+                cwd: job.cwd.clone(),
+                target_kind: job.target_kind,
+                target_distro: job.target_distro.clone(),
+                environment: crate::core::models::EnvironmentUpdate::Keep,
+                restart_policy: job.restart_policy.unwrap_or_default(),
+                auto_start: false,
+                health_tcp_address: job.health_tcp_address.clone(),
+                health_tcp_port: job.health_tcp_port,
+            };
+            input
+                .validate()
+                .map_err(|_| "definition-import-invalid".to_owned())?;
+            if job.cron_expr.is_some() {
+                return Err("definition-import-invalid".to_owned());
+            }
+        }
+    }
+    Ok(())
 }
 
 /// 정의 export JSON을 파싱하고, 기존 정의와 충돌하는지 계획을 만든다.
@@ -344,64 +501,56 @@ pub fn import_definitions(
     json: String,
     state: State<'_, Arc<DatabaseState>>,
 ) -> Result<ImportPlan, String> {
-    let doc: DefinitionExport =
-        serde_json::from_str(&json).map_err(|e| format!("정의 JSON을 읽을 수 없습니다: {e}"))?;
-    if doc.schema_version != 1 {
-        return Err(format!(
-            "지원하지 않는 정의 스키마 버전: {}",
-            doc.schema_version
-        ));
-    }
-    let existing_jobs = state.list_jobs().map_err(|e| e.to_string())?;
-    let existing_services = state.list_services().map_err(|e| e.to_string())?;
-    let job_ids: std::collections::HashSet<String> =
-        existing_jobs.iter().map(|j| j.id.clone()).collect();
-    let service_ids: std::collections::HashSet<String> =
-        existing_services.iter().map(|s| s.id.clone()).collect();
+    let (doc, revision) = parse_definition_export(&json)?;
 
     let mut items = Vec::new();
     for job in &doc.jobs {
+        let conflict = state
+            .has_import_definition_id(&job.id)
+            .map_err(|_| "definition-import-storage-failed".to_owned())?;
         items.push(ImportItem {
             id: job.id.clone(),
             name: job.name.clone(),
             kind: "job".into(),
-            status: if job_ids.contains(&job.id) {
-                "conflict"
-            } else {
-                "new"
-            }
-            .into(),
+            status: if conflict { "conflict" } else { "new" }.into(),
             detail: job_enabled_draft(job),
+            cwd: job.cwd.clone(),
+            environment_keys: Vec::new(),
+            requires_confirmation: job.enabled || job.env_configured || job.cwd.is_some(),
         });
     }
     for service in &doc.services {
+        let conflict = state
+            .has_import_definition_id(&service.id)
+            .map_err(|_| "definition-import-storage-failed".to_owned())?;
         items.push(ImportItem {
             id: service.id.clone(),
             name: service.name.clone(),
             kind: "service".into(),
-            status: if service_ids.contains(&service.id) {
-                "conflict"
-            } else {
-                "new"
-            }
-            .into(),
+            status: if conflict { "conflict" } else { "new" }.into(),
             detail: job_enabled_draft(service),
+            cwd: service.cwd.clone(),
+            environment_keys: Vec::new(),
+            requires_confirmation: service.enabled
+                || service.env_configured
+                || service.cwd.is_some(),
         });
     }
     Ok(ImportPlan {
         schema_version: doc.schema_version,
+        revision,
         items,
     })
 }
 
 /// WSL distro·cwd가 현재 PC에 없을 수 있으므로 draft(disabled)로 들여오는
-/// 안내를 위한 상세 문자열. 실제 적용 시 enabled는 보존하되, 요구 사항이
-/// 없으면 사용자가 직접 활성화한다 — [설계] "disabled draft로 들어옴".
+/// 안내를 위한 상세 문자열. 실제 적용은 항상 비활성 상태로 저장하고,
+/// 사용자가 환경과 작업 디렉터리를 검토한 뒤 직접 활성화한다.
 fn job_enabled_draft(job: &Job) -> String {
     if job.enabled {
-        "활성(사용자 확인 필요)".into()
+        "비활성 draft · 환경변수와 작업 디렉터리를 확인한 뒤 활성화하세요".into()
     } else {
-        "비활성 draft".into()
+        "비활성 draft · 환경변수와 작업 디렉터리를 확인하세요".into()
     }
 }
 
@@ -410,20 +559,25 @@ fn job_enabled_draft(job: &Job) -> String {
 pub fn apply_import(
     json: String,
     selected: Vec<String>,
+    revision: Option<String>,
     state: State<'_, Arc<DatabaseState>>,
 ) -> Result<usize, String> {
-    let doc: DefinitionExport =
-        serde_json::from_str(&json).map_err(|e| format!("정의 JSON을 읽을 수 없습니다: {e}"))?;
-    let selected_set: std::collections::HashSet<String> = selected.into_iter().collect();
-    let mut created = 0usize;
-    let now = current_epoch_millis();
-
+    let (doc, expected_revision) = parse_definition_export(&json)?;
+    if revision.as_deref() != Some(expected_revision.as_str()) {
+        return Err("import-preview-stale".to_owned());
+    }
+    if selected.len() > MAX_IMPORT_DEFINITIONS {
+        return Err("definition-import-too-many-items".to_owned());
+    }
+    let selected_set = selected_definition_ids(
+        &selected,
+        &doc.jobs,
+        &doc.services,
+        "definition-import-invalid",
+    )?;
+    let mut jobs = Vec::new();
     for job in &doc.jobs {
         if !selected_set.contains(&job.id) {
-            continue;
-        }
-        // 충돌은 건너뛴다 (apply 전 계획에서 확인됨)
-        if state.get_job(&job.id).map_err(|e| e.to_string())?.is_some() {
             continue;
         }
         let input = JobInput {
@@ -432,26 +586,20 @@ pub fn apply_import(
             cwd: job.cwd.clone(),
             target_kind: job.target_kind,
             target_distro: job.target_distro.clone(),
-            environment: crate::core::models::EnvironmentUpdate::Clear,
+            environment: crate::core::models::EnvironmentUpdate::Keep,
             cron_expr: job.cron_expr.clone().unwrap_or_default(),
-            enabled: job.enabled,
+            // An import must never create a scheduler side effect.  The user
+            // explicitly enables the draft after reviewing it.
+            enabled: false,
             overlap_policy: job.overlap_policy,
             catch_up: job.catch_up,
         };
-        state
-            .create_job_with_ciphertext_at(input, None, now)
-            .map_err(|e| e.to_string())?;
-        created += 1;
+        jobs.push((job.id.clone(), input));
     }
+
+    let mut services = Vec::new();
     for service in &doc.services {
         if !selected_set.contains(&service.id) {
-            continue;
-        }
-        if state
-            .get_service(&service.id)
-            .map_err(|e| e.to_string())?
-            .is_some()
-        {
             continue;
         }
         let input = crate::core::models::ServiceInput {
@@ -460,22 +608,132 @@ pub fn apply_import(
             cwd: service.cwd.clone(),
             target_kind: service.target_kind,
             target_distro: service.target_distro.clone(),
-            environment: crate::core::models::EnvironmentUpdate::Clear,
+            environment: crate::core::models::EnvironmentUpdate::Keep,
             restart_policy: service.restart_policy.unwrap_or_default(),
-            auto_start: service.auto_start.unwrap_or(false),
+            auto_start: false,
             health_tcp_address: service.health_tcp_address.clone(),
             health_tcp_port: service.health_tcp_port,
         };
-        state
-            .create_service_with_ciphertext_at(
-                input,
-                crate::core::models::EnvironmentCiphertextUpdate::Clear,
-                now,
-            )
-            .map_err(|e| e.to_string())?;
-        created += 1;
+        services.push((service.id.clone(), input));
     }
+
+    let (created, _skipped) = state
+        .create_definition_import_at(jobs, services, current_epoch_millis())
+        .map_err(|_| "definition-import-save-failed".to_owned())?;
     Ok(created)
+}
+
+fn project_import_error(error: ProjectImportError) -> String {
+    error.to_string()
+}
+
+fn project_plan_with_conflicts(
+    mut plan: ProjectImportPlan,
+    state: &DatabaseState,
+    control: &crate::core::imports::ImportControl,
+) -> Result<ProjectImportPlan, String> {
+    control.check().map_err(project_import_error)?;
+    for item in &mut plan.items {
+        control.check().map_err(project_import_error)?;
+        let conflict = state
+            .has_import_definition_conflict(item.kind, &item.name, Some(&item.cwd))
+            .map_err(|_| "run-storage-failed".to_owned())?;
+        if conflict {
+            item.status = "conflict".to_owned();
+            item.detail = "충돌 — 같은 작업 디렉터리의 정의가 있어 건너뜁니다".to_owned();
+            item.requires_confirmation = true;
+        }
+    }
+    control.check().map_err(project_import_error)?;
+    Ok(plan)
+}
+
+/// Preview package scripts and Cargo targets from a local project root.  The
+/// operation is read-only and offline; no package manager or Cargo process is
+/// started.
+#[tauri::command]
+pub fn preview_project_import(
+    path: String,
+    operation_id: String,
+    state: State<'_, Arc<DatabaseState>>,
+    operations: State<'_, Arc<ImportOperationRegistry>>,
+) -> Result<ProjectImportPlan, String> {
+    let operation = operations
+        .begin(&operation_id)
+        .map_err(project_import_error)?;
+    let plan = preview_project_with_control(Path::new(&path), operation.control())
+        .map_err(project_import_error)?;
+    project_plan_with_conflicts(plan, state.inner().as_ref(), operation.control())
+}
+
+/// Cancel one in-flight bounded preview/apply operation. Cancellation is
+/// cooperative and never rolls back an already committed database transaction;
+/// project apply builds one atomic batch and checks the flag before saving.
+#[tauri::command]
+pub fn cancel_project_import(
+    operation_id: String,
+    operations: State<'_, Arc<ImportOperationRegistry>>,
+) -> Result<bool, String> {
+    operations
+        .cancel(&operation_id)
+        .map_err(project_import_error)
+}
+
+/// Re-read and apply only the selected preview items.  Source revision and
+/// canonical root are checked first, and every resulting definition is
+/// disabled with a fixed manual-review schedule.
+#[tauri::command]
+pub fn apply_project_import(
+    path: String,
+    source_root: String,
+    revision: String,
+    selected: Vec<String>,
+    operation_id: String,
+    state: State<'_, Arc<DatabaseState>>,
+    operations: State<'_, Arc<ImportOperationRegistry>>,
+) -> Result<ProjectImportApplyResult, String> {
+    if selected.len() > MAX_ITEMS {
+        return Err("project-import-too-many-items".to_owned());
+    }
+    validate_selection_ids(&selected, "project-import-invalid")?;
+    let operation = operations
+        .begin(&operation_id)
+        .map_err(project_import_error)?;
+    let plan = verify_preview_revision_with_control(
+        Path::new(&path),
+        &source_root,
+        &revision,
+        operation.control(),
+    )
+    .map_err(project_import_error)?;
+    let selected = selected_project_ids(&selected, &plan)?;
+    let mut imported_inputs = Vec::new();
+    for item in plan.items.iter().filter(|item| selected.contains(&item.id)) {
+        imported_inputs.push(imported_job_input(item, &plan.source_root));
+    }
+    operation.control().check().map_err(project_import_error)?;
+    let control = operation.control();
+    let (created, skipped_in_transaction) = state
+        .create_import_jobs_at_with_cancel(imported_inputs, current_epoch_millis(), || {
+            control
+                .check()
+                .map_err(|error| StorageError::Validation(error.to_string()))
+        })
+        .map_err(|error| match error {
+            StorageError::Validation(code)
+                if matches!(
+                    code.as_str(),
+                    "project-import-cancelled" | "project-import-timeout"
+                ) =>
+            {
+                code
+            }
+            _ => "project-import-save-failed".to_owned(),
+        })?;
+    Ok(ProjectImportApplyResult {
+        created,
+        skipped_conflicts: skipped_in_transaction,
+    })
 }
 
 #[tauri::command]
@@ -606,17 +864,55 @@ pub fn get_run(
 }
 
 #[tauri::command]
+// Kept as a compatibility command for the existing positional IPC contract;
+// new callers use `list_run_history` with one structured filter object.
+#[allow(clippy::too_many_arguments)]
 pub fn list_runs(
-    job_id: String,
+    job_id: Option<String>,
     limit: Option<u32>,
     start_at: Option<i64>,
     end_at: Option<i64>,
+    status: Option<RunStatus>,
+    kind: Option<JobKind>,
+    min_duration_ms: Option<i64>,
+    max_duration_ms: Option<i64>,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<Vec<RunView>, String> {
+    let filter = RunHistoryFilter {
+        job_id,
+        kind,
+        status,
+        start_at,
+        end_at,
+        min_duration_ms,
+        max_duration_ms,
+        limit,
+    };
+    state
+        .list_run_history(&filter, current_epoch_millis())
+        .map(|runs| runs.iter().map(RunView::from_run).collect())
+        .map_err(|error| history_command_error(&filter, error))
+}
+
+fn history_command_error(filter: &RunHistoryFilter, _error: StorageError) -> String {
+    if filter.validate().is_err() {
+        "run-history-invalid-filter".to_owned()
+    } else {
+        "run-storage-failed".to_owned()
+    }
+}
+
+/// Explicit alias for callers that prefer a single filter object.  The
+/// legacy `list_runs` command above remains available for existing clients.
+#[tauri::command]
+pub fn list_run_history(
+    input: RunHistoryFilter,
     state: State<'_, Arc<DatabaseState>>,
 ) -> Result<Vec<RunView>, String> {
     state
-        .list_runs(&job_id, limit.unwrap_or(50), start_at, end_at)
+        .list_run_history(&input, current_epoch_millis())
         .map(|runs| runs.iter().map(RunView::from_run).collect())
-        .map_err(|_| "run-storage-failed".to_string())
+        .map_err(|error| history_command_error(&input, error))
 }
 
 fn scheduler_command_error(error: SchedulerError) -> String {
@@ -840,5 +1136,52 @@ mod tests {
         assert!(append.is_ok(), "writer should not wait for the full search");
         let snapshot = search.await.expect("search task").expect("search snapshot");
         assert!(!snapshot.0.is_empty());
+    }
+
+    #[test]
+    fn import_selection_ids_are_bounded_before_hashing() {
+        assert!(validate_selection_ids(&["safe-id".to_owned()], "invalid").is_ok());
+        assert_eq!(
+            validate_selection_ids(&["\n".to_owned()], "invalid"),
+            Err("invalid".to_owned())
+        );
+        assert_eq!(
+            validate_selection_ids(&["x".repeat(MAX_SELECTION_ID_BYTES + 1)], "invalid"),
+            Err("invalid".to_owned())
+        );
+    }
+
+    #[test]
+    fn import_selection_ids_must_belong_to_the_preview_plan() {
+        assert_eq!(
+            selected_definition_ids(&["unknown".to_owned()], &[], &[], "invalid"),
+            Err("invalid".to_owned())
+        );
+
+        let plan = ProjectImportPlan {
+            schema_version: 1,
+            source_root: "/work/demo".to_owned(),
+            revision: "a".repeat(64),
+            files: Vec::new(),
+            items: vec![crate::core::imports::ProjectImportItem {
+                id: "npm:script:build".to_owned(),
+                name: "npm · build".to_owned(),
+                status: "new".to_owned(),
+                command: "npm run -- build".to_owned(),
+                kind: JobKind::Job,
+                source: crate::core::imports::ProjectImportSource::PackageScript,
+                source_name: "scripts.build".to_owned(),
+                source_path: "package.json".to_owned(),
+                cwd: "/work/demo".to_owned(),
+                environment_keys: Vec::new(),
+                requires_confirmation: true,
+                detail: "fixture".to_owned(),
+            }],
+        };
+        assert!(selected_project_ids(&["npm:script:build".to_owned()], &plan).is_ok());
+        assert_eq!(
+            selected_project_ids(&["npm:script:missing".to_owned()], &plan),
+            Err("project-import-invalid".to_owned())
+        );
     }
 }

@@ -13,6 +13,7 @@ import type {
   LogSearchResponse,
   LogStream,
   Run,
+  RunDefinitionKind,
   RunStatus,
 } from "../types";
 
@@ -98,8 +99,10 @@ interface RunHistoryProps {
 
 function dateBoundary(value: string, end: boolean): number | null {
   if (!value) return null;
-  const time = new Date(`${value}T${end ? "23:59:59.999" : "00:00:00.000"}`).getTime();
-  return Number.isFinite(time) ? time : null;
+  const date = new Date(`${value}T00:00:00.000`);
+  if (!Number.isFinite(date.getTime())) return null;
+  if (end) date.setDate(date.getDate() + 1);
+  return date.getTime();
 }
 
 function formatTime(value: number | null): string {
@@ -112,6 +115,17 @@ function duration(run: Run): string {
   const elapsed = Math.max(0, end - run.startedAt);
   if (elapsed < 1_000) return `${elapsed}ms`;
   return `${(elapsed / 1_000).toFixed(elapsed < 10_000 ? 1 : 0)}초`;
+}
+
+function durationFilter(value: string): number | null {
+  if (!value.trim()) return null;
+  const seconds = Number(value);
+  const millis = Math.floor(seconds * 1_000);
+  // Preserve invalid non-empty input as an invalid native value instead of
+  // silently broadening the query to "no duration filter". The backend owns
+  // the authoritative 0..30-day validation and returns a fixed error.
+  if (!Number.isFinite(seconds) || !Number.isSafeInteger(millis)) return -1;
+  return millis;
 }
 
 function searchErrorMessage(cause: unknown): string {
@@ -164,8 +178,12 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     ? requestedJobId
     : jobs[0]?.id ?? "";
   const [jobId, setJobId] = useState(initialJobId);
+  const [kind, setKind] = useState<RunDefinitionKind | "">("");
+  const [status, setStatus] = useState<RunStatus | "">("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [minDuration, setMinDuration] = useState("");
+  const [maxDuration, setMaxDuration] = useState("");
   const [runs, setRuns] = useState<Run[]>([]);
   const [activeRuns, setActiveRuns] = useState<Run[]>([]);
   const [activeSnapshotFresh, setActiveSnapshotFresh] = useState(false);
@@ -188,6 +206,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   const [searchBusy, setSearchBusy] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [contextRun, setContextRun] = useState<Run | null>(null);
+  const visibleJobs = kind ? jobs.filter((job) => job.kind === kind) : jobs;
   const viewGeneration = useRef(0);
   const refreshInFlight = useRef<Promise<void> | null>(null);
   const refreshPending = useRef(false);
@@ -197,8 +216,8 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   const searchBusyRef = useRef(false);
   const mountedRef = useRef(true);
   const logLineRefs = useRef(new Map<number, HTMLSpanElement>());
-  const queryRef = useRef({ jobId, startDate, endDate });
-  queryRef.current = { jobId, startDate, endDate };
+  const queryRef = useRef({ jobId, kind, status, startDate, endDate, minDuration, maxDuration });
+  queryRef.current = { jobId, kind, status, startDate, endDate, minDuration, maxDuration };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -220,8 +239,10 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   });
 
   useEffect(() => {
-    if (!jobs.some((job) => job.id === jobId)) setJobId(jobs[0]?.id ?? "");
-  }, [jobId, jobs]);
+    if (!(kind ? jobs.some((job) => job.id === jobId && job.kind === kind) : jobs.some((job) => job.id === jobId))) {
+      setJobId("");
+    }
+  }, [jobId, kind, jobs]);
 
   useEffect(() => {
     const id = contextRun?.id;
@@ -235,6 +256,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   }, [contextRun?.id, runContextMenu.close, runs]);
 
   const refresh = useCallback(async () => {
+    if (!mountedRef.current) return;
     const existing = refreshInFlight.current;
     if (existing) {
       refreshPending.current = true;
@@ -243,11 +265,13 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     }
     const operation = (async () => {
       do {
+        if (!mountedRef.current) break;
         refreshPending.current = false;
         const generation = viewGeneration.current;
         const query = queryRef.current;
         setLoading(true);
-        if (!query.jobId) {
+        if (jobs.length === 0) {
+          if (!mountedRef.current || generation !== viewGeneration.current) break;
           setRuns([]);
           setActiveRuns([]);
           setActiveSnapshotFresh(true);
@@ -255,14 +279,18 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
         } else {
           try {
             const [historyResult, activeResult] = await Promise.allSettled([
-              listRuns(query.jobId, {
+              listRuns(query.jobId || null, {
                 limit: 50,
                 startAt: dateBoundary(query.startDate, false),
                 endAt: dateBoundary(query.endDate, true),
+                kind: query.kind || null,
+                status: query.status || null,
+                minDurationMs: durationFilter(query.minDuration),
+                maxDurationMs: durationFilter(query.maxDuration),
               }),
               listActiveRuns(),
             ]);
-            if (generation !== viewGeneration.current) continue;
+            if (!mountedRef.current || generation !== viewGeneration.current) continue;
             if (historyResult.status === "fulfilled") {
               const next = historyResult.value;
               setRuns(next);
@@ -283,10 +311,10 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
               setActiveSnapshotError(activeResult.reason instanceof Error ? activeResult.reason.message : String(activeResult.reason));
             }
           } finally {
-            if (generation === viewGeneration.current) setLoading(false);
+            if (mountedRef.current && generation === viewGeneration.current) setLoading(false);
           }
         }
-      } while (refreshPending.current);
+      } while (mountedRef.current && refreshPending.current);
     })();
     refreshInFlight.current = operation;
     try {
@@ -294,13 +322,13 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     } finally {
       if (refreshInFlight.current === operation) {
         refreshInFlight.current = null;
-        if (refreshPending.current) {
+        if (mountedRef.current && refreshPending.current) {
           refreshPending.current = false;
           await refreshRef.current();
         }
       }
     }
-  }, [endDate, jobId, startDate]);
+  }, [endDate, jobId, jobs, kind, maxDuration, minDuration, startDate, status]);
 
   refreshRef.current = refresh;
 
@@ -314,35 +342,38 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
     return () => window.clearInterval(timer);
   }, [refresh]);
 
-  const activeRun = activeSnapshotFresh ? activeRuns.find((run) => run.jobId === jobId) ?? null : null;
+  const selectedDefinition = jobs.find((job) => job.id === jobId) ?? null;
+  const activeRun = activeSnapshotFresh && selectedDefinition?.kind === "job"
+    ? activeRuns.find((run) => run.jobId === jobId) ?? null
+    : null;
 
   const handleRunNow = async () => {
-    if (!jobId) return;
+    if (!jobId || selectedDefinition?.kind !== "job") return;
     setActionBusy(true);
     try {
       await runJobNow(jobId);
       await refresh();
-      setError(null);
+      if (mountedRef.current) setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setActionBusy(false);
+      if (mountedRef.current) setActionBusy(false);
     }
   };
 
   const handleStop = async () => {
-    if (!jobId) return;
+    if (!jobId || selectedDefinition?.kind !== "job") return;
     const name = jobs.find((job) => job.id === jobId)?.name ?? "선택한 작업";
     if (!window.confirm(`'${name}' 작업의 활성 실행을 중지할까요?`)) return;
     setActionBusy(true);
     try {
       await stopActiveRun(jobId);
       await refresh();
-      setError(null);
+      if (mountedRef.current) setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setActionBusy(false);
+      if (mountedRef.current) setActionBusy(false);
     }
   };
 
@@ -352,15 +383,16 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   );
 
   const handleRerun = async (run: Run) => {
+    if (jobs.find((job) => job.id === run.jobId)?.kind !== "job") return;
     setActionBusy(true);
     try {
       await runJobNow(run.jobId);
       await refresh();
-      setError(null);
+      if (mountedRef.current) setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setActionBusy(false);
+      if (mountedRef.current) setActionBusy(false);
     }
   };
 
@@ -379,15 +411,17 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
       } finally {
         URL.revokeObjectURL(url);
       }
-      setError(
-        collected.truncated
-          ? "로그 보존 범위가 바뀌었거나 저장 상한을 넘어 현재 확인 가능한 부분만 저장했습니다."
-          : null,
-      );
+      if (mountedRef.current) {
+        setError(
+          collected.truncated
+            ? "로그 보존 범위가 바뀌었거나 저장 상한을 넘어 현재 확인 가능한 부분만 저장했습니다."
+            : null,
+        );
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setActionBusy(false);
+      if (mountedRef.current) setActionBusy(false);
     }
   };
 
@@ -446,6 +480,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
 
   const runContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
     if (!contextRun) return [];
+    const definition = jobs.find((job) => job.id === contextRun.jobId);
     return [
       {
         type: "item",
@@ -453,7 +488,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
         label: "로그 보기",
         disabled: !contextRun.logsAvailable,
       },
-      { type: "item", id: "rerun", label: "재실행", disabled: actionBusy },
+      { type: "item", id: "rerun", label: "재실행", disabled: actionBusy || definition?.kind !== "job" },
       {
         type: "item",
         id: "save-log",
@@ -461,7 +496,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
         disabled: actionBusy || !contextRun.logsAvailable,
       },
     ];
-  }, [actionBusy, contextRun]);
+  }, [actionBusy, contextRun, jobs]);
 
   const onRunContextSelect = (id: string) => {
     const run = contextRun;
@@ -578,7 +613,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
           <h3 id="history-title" className="visually-hidden">실행 기록</h3>
         </div>
         <div className="history-actions">
-          <button type="button" className="button-primary" disabled={actionBusy || loading} onClick={() => void handleRunNow()}>지금 실행</button>
+          <button type="button" className="button-primary" disabled={actionBusy || loading || selectedDefinition?.kind !== "job"} onClick={() => void handleRunNow()}>지금 실행</button>
           <button type="button" className="button-secondary" disabled={actionBusy || loading || !activeRun} onClick={() => void handleStop()}>활성 실행 중지</button>
           <button type="button" className="button-secondary" disabled={loading} onClick={() => void refresh()}>새로고침</button>
         </div>
@@ -586,9 +621,32 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
 
       <div className="history-filters">
         <label className="field">
-          <span>작업</span>
+          <span>대상 종류</span>
+          <select aria-label="기록 대상 종류" value={kind} onChange={(event) => setKind(event.target.value as RunDefinitionKind | "")}>
+            <option value="">작업과 서비스</option>
+            <option value="job">작업만</option>
+            <option value="service">서비스만</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>작업 또는 서비스</span>
           <select aria-label="기록 작업" value={jobId} onChange={(event) => setJobId(event.target.value)}>
-            {jobs.map((job) => <option key={job.id} value={job.id}>{job.name}</option>)}
+            <option value="">모든 대상</option>
+            {visibleJobs.map((job) => <option key={job.id} value={job.id}>{job.name}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>상태</span>
+          <select aria-label="기록 상태" value={status} onChange={(event) => setStatus(event.target.value as RunStatus | "")}>
+            <option value="">모든 상태</option>
+            <option value="succeeded">성공</option>
+            <option value="failed">실패</option>
+            <option value="cancelled">취소</option>
+            <option value="skipped">건너뜀</option>
+            <option value="queued">대기</option>
+            <option value="starting">시작 중</option>
+            <option value="running">실행 중</option>
+            <option value="stopping">종료 중</option>
           </select>
         </label>
         <label className="field">
@@ -599,11 +657,19 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
           <span>종료일</span>
           <input aria-label="기록 종료일" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
         </label>
+        <label className="field">
+          <span>최소 실행 시간 <em>(초)</em></span>
+          <input aria-label="최소 실행 시간(초)" type="number" min="0" max="2592000" step="1" value={minDuration} onChange={(event) => setMinDuration(event.target.value)} />
+        </label>
+        <label className="field">
+          <span>최대 실행 시간 <em>(초)</em></span>
+          <input aria-label="최대 실행 시간(초)" type="number" min="0" max="2592000" step="1" value={maxDuration} onChange={(event) => setMaxDuration(event.target.value)} />
+        </label>
       </div>
 
       {(error ?? historyError ?? activeSnapshotError ?? logError ?? searchError) ? <div className="error-banner" role="alert">오류: {error ?? historyError ?? activeSnapshotError ?? logError ?? searchError}</div> : null}
-      {!jobId ? <div className="empty-card compact"><p>먼저 작업을 만들어 주세요.</p></div> : null}
-      {jobId && !loading && runs.length === 0 ? <div className="empty-card compact"><p>조건에 맞는 실행 기록이 없습니다.</p></div> : null}
+      {jobs.length === 0 ? <div className="empty-card compact"><p>먼저 작업 또는 서비스를 만들어 주세요.</p></div> : null}
+      {jobs.length > 0 && !loading && runs.length === 0 ? <div className="empty-card compact"><p>조건에 맞는 실행 기록이 없습니다.</p></div> : null}
 
       {runs.length > 0 ? (
         <div className="history-layout">
@@ -638,7 +704,13 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
                   {selectedRun.logsAvailable ? (
                     <div className="stream-tabs" aria-label="로그 스트림">
                       {(["stdout", "stderr"] as const).map((value) => (
-                        <button key={value} type="button" className={stream === value ? "active" : ""} onClick={() => setStream(value)}>{value}</button>
+                        <button
+                          key={value}
+                          type="button"
+                          className={stream === value ? "active" : ""}
+                          aria-pressed={stream === value}
+                          onClick={() => setStream(value)}
+                        >{value}</button>
                       ))}
                     </div>
                   ) : null}
