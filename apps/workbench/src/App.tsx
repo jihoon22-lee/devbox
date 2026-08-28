@@ -3,24 +3,33 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   createProfile,
+  cancelDependencyHealth,
   cancelStartWorkspace,
   cancelProjectEnvironment,
   cancelProjectHealth,
+  cancelWorkspacePreflight,
   currentWorkspaceRun,
+  createProfileFromTemplate,
+  createProfileTemplate,
   deleteProfile,
+  deleteProfileTemplate,
+  dependencyHealth,
   listProfiles,
+  listProfileTemplates,
   onOpenRequest,
   openProfileIn,
   profileCopyPath,
   projectHealth,
+  retryWorkspace,
   profileOpenTargets,
   startWorkspace,
   stopWorkspace,
   takePendingOpen,
   updateProfile,
+  updateProfileTemplate,
   previewProjectEnvironment,
   workspacePreflight,
   wslRuntimeSuggestions,
@@ -29,8 +38,11 @@ import {
   type ProjectEnvironmentPreview,
   type ProjectHealth,
   type ProjectProfile,
+  type ProfileTemplate,
+  type ProfileTemplateSnapshot,
   type ResourceProvenance,
   type WorkspaceRun,
+  type WorkspaceRunOwnership,
   type WorkspacePreflight,
   type WorkbenchOpenTarget,
   type RuntimeSuggestions,
@@ -52,6 +64,13 @@ import {
   type ProfileDraft,
 } from "./lib/profileEditor";
 import { formatRuntimeFreshness, mergeSuggestedPorts } from "./lib/runtimeSuggestions";
+import {
+  emptyProfileTemplateDraft,
+  profileDraftFromTemplate,
+  templateDraftFromTemplate,
+  validateProfileTemplateDraft,
+  type ProfileTemplateDraft,
+} from "./lib/profileTemplateEditor";
 import "./App.css";
 
 const RUNTIME_STATUS_LABEL: Record<RuntimeSuggestions["status"], string> = {
@@ -88,11 +107,59 @@ const RESOURCE_STATE_LABEL: Record<ResourceProvenance["state"], string> = {
   unavailable: "확인 불가",
 };
 
+const DIALOG_FOCUSABLE_SELECTOR = [
+  "button:not([disabled])",
+  "[href]",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(", ");
+
+function trapModalFocus(
+  event: ReactKeyboardEvent<HTMLElement>,
+  close: () => void,
+  busy: boolean,
+) {
+  if (event.key === "Escape" && !event.nativeEvent.isComposing && !busy) {
+    event.preventDefault();
+    close();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusable = Array.from(
+    event.currentTarget.querySelectorAll<HTMLElement>(DIALOG_FOCUSABLE_SELECTOR),
+  );
+  if (focusable.length === 0) {
+    event.preventDefault();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 export default function App() {
   const [profiles, setProfiles] = useState<ProjectProfile[]>([]);
+  const [templates, setTemplates] = useState<ProfileTemplate[]>([]);
+  const [templateRevision, setTemplateRevision] = useState("");
   const [editing, setEditing] = useState<ProfileDraft | null>(null);
+  const [templateDialog, setTemplateDialog] = useState<"wizard" | "manage" | null>(null);
+  const [wizardDraft, setWizardDraft] = useState<ProfileDraft | null>(null);
+  const [wizardTemplateId, setWizardTemplateId] = useState<string>("");
+  const [templateEditing, setTemplateEditing] = useState<ProfileTemplateDraft | null>(null);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
   const [selectedId, setSelectedId] = useState<string>("");
   const [health, setHealth] = useState<ProjectHealth | null>(null);
+  const [dependencyStatus, setDependencyStatus] = useState<WorkspacePreflight | null>(null);
+  const [dependencyLoading, setDependencyLoading] = useState(false);
   const [run, setRun] = useState<WorkspaceRun | null>(null);
   const [preflight, setPreflight] = useState<WorkspacePreflight | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
@@ -105,6 +172,7 @@ export default function App() {
   const [environmentLoading, setEnvironmentLoading] = useState(false);
   const [startingProfileId, setStartingProfileId] = useState<string | null>(null);
   const [startCancelRequested, setStartCancelRequested] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const startCancelRequestedRef = useRef(false);
   const [contextProfile, setContextProfile] = useState<ProjectProfile | null>(null);
   const [contextTargets, setContextTargets] = useState<{
@@ -115,6 +183,9 @@ export default function App() {
   const refreshRequest = useRef(0);
   const healthRequest = useRef(0);
   const healthProfileId = useRef<string | null>(null);
+  const dependencyRequest = useRef(0);
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
   const saveInFlight = useRef(false);
   const preflightRequest = useRef(0);
   const preflightTarget = useRef<string | null>(null);
@@ -122,6 +193,9 @@ export default function App() {
   const preflightStartInFlight = useRef(false);
   const runtimeRequest = useRef(0);
   const environmentRequest = useRef(0);
+  const templateRequest = useRef(0);
+  const templateDialogRef = useRef<HTMLElement | null>(null);
+  const templateFocusReturn = useRef<HTMLElement | null>(null);
   const editingRef = useRef(editing);
   editingRef.current = editing;
   const [profilesRevision, setProfilesRevision] = useState(0);
@@ -159,12 +233,33 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     const hadPreflightOperation = preflightTarget.current !== null;
+    const previousPreflightTarget = preflightTarget.current;
+    if (previousPreflightTarget) {
+      void cancelWorkspacePreflight(previousPreflightTarget).catch(() => undefined);
+    }
     preflightRequest.current += 1;
     preflightTarget.current = null;
     preflightFocusReturn.current = null;
     setPreflight(null);
     setPreflightLoading(false);
     if (hadPreflightOperation) setBusy(false);
+    // Invalidate read-only health surfaces before the profile list request
+    // starts. Otherwise a late result from the previous snapshot can briefly
+    // overwrite the refreshed profile's empty/loading state.
+    healthRequest.current += 1;
+    const previousHealthProfileId = healthProfileId.current;
+    healthProfileId.current = null;
+    if (previousHealthProfileId) {
+      void cancelProjectHealth(previousHealthProfileId).catch(() => undefined);
+    }
+    dependencyRequest.current += 1;
+    const previousSelectedId = selectedIdRef.current;
+    if (previousSelectedId) {
+      void cancelDependencyHealth(previousSelectedId).catch(() => undefined);
+    }
+    setHealth(null);
+    setDependencyStatus(null);
+    setDependencyLoading(false);
     const request = ++refreshRequest.current;
     try {
       const [list, activeRun] = await Promise.all([listProfiles(), currentWorkspaceRun()]);
@@ -190,6 +285,221 @@ export default function App() {
       if (request === refreshRequest.current) setProfilesLoaded(true);
     }
   }, []);
+
+  const loadTemplates = useCallback(async (): Promise<ProfileTemplateSnapshot | null> => {
+    const request = ++templateRequest.current;
+    setTemplateError(null);
+    try {
+      const loaded = await listProfileTemplates();
+      if (request !== templateRequest.current) return null;
+      setTemplates(loaded.templates);
+      setTemplateRevision(loaded.revision);
+      return loaded;
+    } catch {
+      if (request === templateRequest.current) {
+        // A failed refresh must not leave an older template list actionable in
+        // a newly opened dialog. Keep only the fixed error state visible.
+        setTemplates([]);
+        setTemplateRevision("");
+        setTemplateError("프로필 템플릿을 불러올 수 없습니다.");
+      }
+      return request === templateRequest.current
+        ? { revision: "", templates: [] }
+        : null;
+    }
+  }, []);
+
+  const openProjectWizard = async () => {
+    if (busy || templateBusy) return;
+    templateFocusReturn.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setTemplateBusy(true);
+    setTemplateDialog("wizard");
+    setWizardDraft(profileDraftFromTemplate(null));
+    setWizardTemplateId("");
+    setTemplateError(null);
+    try {
+      const loadRequest = templateRequest.current + 1;
+      const loaded = await loadTemplates();
+      if (loadRequest !== templateRequest.current) return;
+      if (loaded && loaded.templates.length > 0) {
+        setWizardTemplateId(loaded.templates[0].id);
+        setWizardDraft(profileDraftFromTemplate(loaded.templates[0]));
+      }
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
+
+  const openTemplateManager = async () => {
+    if (busy || templateBusy) return;
+    templateFocusReturn.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setTemplateBusy(true);
+    setTemplateDialog("manage");
+    setTemplateError(null);
+    setTemplateEditing(null);
+    try {
+      const loadRequest = templateRequest.current + 1;
+      const loaded = await loadTemplates();
+      if (loadRequest !== templateRequest.current) return;
+      setTemplateEditing(loaded && loaded.templates[0]
+        ? templateDraftFromTemplate(loaded.templates[0])
+        : emptyProfileTemplateDraft());
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
+
+  const closeTemplateDialog = () => {
+    templateRequest.current += 1;
+    const returnTarget = templateFocusReturn.current;
+    templateFocusReturn.current = null;
+    setTemplateDialog(null);
+    setWizardDraft(null);
+    setTemplateEditing(null);
+    setTemplateError(null);
+    if (returnTarget) {
+      let attempts = 0;
+      const restore = () => {
+        if (attempts++ >= 20) return;
+        if (!returnTarget.isConnected) return;
+        if (returnTarget instanceof HTMLButtonElement && returnTarget.disabled) {
+          window.setTimeout(restore, 25);
+          return;
+        }
+        returnTarget.focus({ preventScroll: true });
+      };
+      window.setTimeout(restore, 0);
+    }
+  };
+
+  useEffect(() => {
+    if (!templateDialog || templateBusy) return;
+    const dialog = templateDialogRef.current;
+    if (!dialog) return;
+    // Do not steal focus from a field while the user edits it. Initial focus
+    // is only needed when the dialog becomes available or focus has escaped
+    // the dialog after an async template load.
+    if (dialog.contains(document.activeElement)) return;
+    const first = dialog.querySelector<HTMLElement>(DIALOG_FOCUSABLE_SELECTOR);
+    first?.focus({ preventScroll: true });
+  }, [templateBusy, templateDialog]);
+
+  useEffect(() => () => {
+    templateRequest.current += 1;
+  }, []);
+
+  const selectWizardTemplate = (templateId: string) => {
+    setWizardTemplateId(templateId);
+    const template = templates.find((candidate) => candidate.id === templateId);
+    setWizardDraft((previous) => {
+      const defaults = profileDraftFromTemplate(template ?? null);
+      // “직접 입력” is a mode switch, not a reset action. Keep values the
+      // user already entered when the empty option is selected.
+      if (!previous) return defaults;
+      if (!template) return previous;
+      return {
+        ...previous,
+        windowsPath: previous.windowsPath.trim() ? previous.windowsPath : defaults.windowsPath,
+        wslDistro: previous.wslDistro.trim() ? previous.wslDistro : defaults.wslDistro,
+        wslPath: previous.wslPath.trim() ? previous.wslPath : defaults.wslPath,
+        gitRoot: previous.gitRoot.trim() ? previous.gitRoot : defaults.gitRoot,
+        expectedPortsText: previous.expectedPortsText.trim()
+          ? previous.expectedPortsText
+          : defaults.expectedPortsText,
+        serviceRows: previous.serviceRows.length > 0 ? previous.serviceRows : defaults.serviceRows,
+      };
+    });
+  };
+
+  // Read SyntheticEvent values before scheduling a functional state update.
+  // React may clear currentTarget by the time the updater executes.
+  const patchWizardDraft = (changes: Partial<ProfileDraft>) => {
+    setWizardDraft((previous) => (previous ? { ...previous, ...changes } : previous));
+  };
+  const patchTemplateDraft = (changes: Partial<ProfileTemplateDraft>) => {
+    setTemplateEditing((previous) => (previous ? { ...previous, ...changes } : previous));
+  };
+
+  const onCreateWizardProfile = async () => {
+    if (!wizardDraft || templateBusy) return;
+    const validation = validateProfileDraft(wizardDraft);
+    if (!validation.profile) {
+      setTemplateError("프로젝트 입력값을 확인한 뒤 생성하세요.");
+      return;
+    }
+    setTemplateBusy(true);
+    setTemplateError(null);
+    try {
+      await createProfileFromTemplate(wizardTemplateId || null, validation.profile);
+      closeTemplateDialog();
+      await refresh();
+    } catch {
+      setTemplateError("프로젝트 프로필을 생성할 수 없습니다. 입력과 경로를 확인하세요.");
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
+
+  const onSaveTemplate = async () => {
+    if (!templateEditing || templateBusy) return;
+    const operationRequest = templateRequest.current;
+    const validation = validateProfileTemplateDraft(templateEditing);
+    if (!validation.template) {
+      setTemplateError("템플릿 입력값을 확인한 뒤 저장하세요.");
+      return;
+    }
+    setTemplateBusy(true);
+    setTemplateError(null);
+    try {
+      if (validation.template.id) {
+        await updateProfileTemplate(validation.template, templateRevision);
+      } else {
+        const created = await createProfileTemplate(validation.template);
+        setTemplateEditing(templateDraftFromTemplate(created));
+      }
+      const loaded = await loadTemplates();
+      if (loaded && validation.template.id) {
+        setTemplateEditing(templateDraftFromTemplate(
+          loaded.templates.find((candidate) => candidate.id === validation.template!.id)
+            ?? validation.template,
+        ));
+      }
+    } catch {
+      if (operationRequest === templateRequest.current) {
+        setTemplateError("프로필 템플릿을 저장할 수 없습니다.");
+      }
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
+
+  const onDeleteTemplate = async (templateId: string) => {
+    const template = templates.find((candidate) => candidate.id === templateId);
+    if (!template || templateBusy) return;
+    if (!window.confirm(`'${template.name}' 템플릿을 삭제할까요? 기존 프로젝트 프로필은 변경하지 않습니다.`)) return;
+    const operationRequest = templateRequest.current;
+    setTemplateBusy(true);
+    setTemplateError(null);
+    try {
+      await deleteProfileTemplate(templateId, templateRevision);
+      const loaded = await loadTemplates();
+      if (loaded) {
+        setTemplateEditing(loaded.templates[0]
+          ? templateDraftFromTemplate(loaded.templates[0])
+          : emptyProfileTemplateDraft());
+      }
+    } catch {
+      if (operationRequest === templateRequest.current) {
+        setTemplateError("프로필 템플릿을 삭제할 수 없습니다.");
+      }
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
 
   useEffect(() => {
     void refresh();
@@ -228,6 +538,7 @@ export default function App() {
       setSelectedId(target);
       return;
     }
+    if (target) void cancelWorkspacePreflight(target).catch(() => undefined);
     preflightRequest.current += 1;
     preflightTarget.current = null;
     preflightFocusReturn.current = null;
@@ -237,6 +548,8 @@ export default function App() {
   }, [busy, preflight, preflightLoading, selectedId]);
 
   useEffect(() => () => {
+    const target = preflightTarget.current;
+    if (target) void cancelWorkspacePreflight(target).catch(() => undefined);
     preflightRequest.current += 1;
     preflightTarget.current = null;
   }, []);
@@ -264,6 +577,10 @@ export default function App() {
     switch (action.kind) {
       case "selectProfile": {
         const hadPreflightOperation = preflightTarget.current !== null;
+        const previousPreflightTarget = preflightTarget.current;
+        if (previousPreflightTarget) {
+          void cancelWorkspacePreflight(previousPreflightTarget).catch(() => undefined);
+        }
         preflightRequest.current += 1;
         preflightTarget.current = null;
         setPreflight(null);
@@ -278,6 +595,10 @@ export default function App() {
         // No matching profile — surface it via the create-profile draft form
         // (this app's existing affordance) instead of silently doing nothing.
         const hadPreflightOperation = preflightTarget.current !== null;
+        const previousPreflightTarget = preflightTarget.current;
+        if (previousPreflightTarget) {
+          void cancelWorkspacePreflight(previousPreflightTarget).catch(() => undefined);
+        }
         preflightRequest.current += 1;
         preflightTarget.current = null;
         setPreflight(null);
@@ -358,6 +679,39 @@ export default function App() {
       .catch(() => {
         if (request === healthRequest.current) setError("프로젝트 상태를 확인할 수 없습니다.");
       });
+  }, [profilesRevision, selectedId]);
+
+  useEffect(() => {
+    const request = ++dependencyRequest.current;
+    if (!selectedId) {
+      setDependencyStatus(null);
+      setDependencyLoading(false);
+      return () => {
+        dependencyRequest.current += 1;
+        void cancelDependencyHealth(selectedId).catch(() => undefined);
+      };
+    }
+    setDependencyStatus(null);
+    setDependencyLoading(true);
+    void dependencyHealth(selectedId)
+      .then((result) => {
+        if (request === dependencyRequest.current && result.profileId === selectedId) {
+          setDependencyStatus(result);
+        }
+      })
+      .catch(() => {
+        if (request === dependencyRequest.current) {
+          setDependencyStatus(null);
+          setError("의존성 상태를 확인할 수 없습니다.");
+        }
+      })
+      .finally(() => {
+        if (request === dependencyRequest.current) setDependencyLoading(false);
+      });
+    return () => {
+      dependencyRequest.current += 1;
+      void cancelDependencyHealth(selectedId).catch(() => undefined);
+    };
   }, [profilesRevision, selectedId]);
 
   const loadRuntimeSuggestions = async () => {
@@ -566,11 +920,14 @@ export default function App() {
   };
 
   const onCancelPreflight = () => {
-    if (busy) return;
+    if (busy && !preflightLoading) return;
+    const target = preflightTarget.current;
+    if (target) void cancelWorkspacePreflight(target).catch(() => undefined);
     preflightRequest.current += 1;
     preflightTarget.current = null;
     setPreflight(null);
     setPreflightLoading(false);
+    if (busy) setBusy(false);
     setError(null);
     restorePreflightFocus();
   };
@@ -642,11 +999,59 @@ export default function App() {
     setError(null);
     try {
       const n = await stopWorkspace(run.runId, profile.id);
-      setRun(null);
-      if (n > 0) setError(`Workbench가 시작한 프로세스 ${n}개를 종료했습니다.`);
+      // The backend retains a run when any owned PID could not be safely
+      // terminated (for example, an identity/access race). Re-read ownership
+      // before clearing the UI so a failed Stop remains actionable instead of
+      // becoming stale and invisible until the next full refresh.
+      let remaining: WorkspaceRunOwnership | null = null;
+      try {
+        remaining = await currentWorkspaceRun();
+      } catch {
+        // A failed ownership read is not proof that the processes are gone.
+        remaining = run;
+      }
+      if (remaining && remaining.runId === run.runId && remaining.profileId === profile.id) {
+        setRun(run);
+        setError("일부 Workbench 프로세스를 안전하게 종료하지 못했습니다. Stop What I Started를 다시 시도하세요.");
+      } else if (remaining) {
+        // A mismatched backend run is an invariant violation. Keep the local
+        // run visible and fail closed rather than replacing it with unrelated
+        // ownership metadata.
+        setRun(run);
+        setError("Workspace 실행 소유권이 변경되어 중지를 완료하지 못했습니다.");
+      } else {
+        setRun(null);
+        if (n > 0) setError(`Workbench가 시작한 프로세스 ${n}개를 종료했습니다.`);
+      }
     } catch {
       setError("Workspace 실행을 중지할 수 없습니다.");
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const onRetry = async (profile: ProjectProfile) => {
+    // `canRetry` is computed by the backend's canonical bounded planner. A
+    // failed step alone is not sufficient: an unknown/migrated step must not
+    // become a renderer-side command selector.
+    const retryAllowed = run?.canRetry === true;
+    if (!run || run.profileId !== profile.id || retrying || busy || !retryAllowed) {
+      setError("다시 시도할 실패 단계를 찾을 수 없습니다.");
+      return;
+    }
+    setRetrying(true);
+    setBusy(true);
+    setError(null);
+    try {
+      const nextRun = await retryWorkspace(run.runId, profile.id);
+      setRun(nextRun);
+      if (nextRun.canRetry) {
+        setError("실패한 단계가 남아 있습니다. 같은 실행에서 다시 시도할 수 있습니다.");
+      }
+    } catch {
+      setError("Workspace 재시도를 완료하지 못했습니다. 기존 실행 소유권은 유지됩니다.");
+    } finally {
+      setRetrying(false);
       setBusy(false);
     }
   };
@@ -702,6 +1107,13 @@ export default function App() {
         disabled: busy || environmentLoading || contextRun === null,
         danger: true,
       },
+      {
+        type: "item",
+        id: "retry",
+        label: "실패 단계부터 다시 시도",
+        disabled: busy || environmentLoading || contextRun === null
+          || contextRun.canRetry !== true,
+      },
       { type: "separator", id: "lifecycle-separator" },
       { type: "item", id: "edit", label: "프로필 편집", disabled: busy || environmentLoading || contextPreflight !== null },
       {
@@ -733,6 +1145,7 @@ export default function App() {
     if (!profile) return;
     if (id === "start") void onStart(profile.id);
     else if (id === "stop") void onStop(profile);
+    else if (id === "retry") void onRetry(profile);
     else if (id === "edit") {
       onCancelPreflight();
       openEditor(draftFromProfile(profile));
@@ -782,12 +1195,16 @@ export default function App() {
     || runtimeSuggestions?.status === "stale";
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedId) ?? null;
+  const wizardValidation = wizardDraft ? validateProfileDraft(wizardDraft) : null;
+  const templateValidation = templateEditing ? validateProfileTemplateDraft(templateEditing) : null;
 
   return (
     <div className="app">
       <header className="toolbar">
         <h1 className="title">Workbench</h1>
-        <button type="button" className="btn" disabled={busy || environmentLoading} onClick={() => { onCancelPreflight(); openEditor(emptyProfileDraft()); }}>+ 프로필</button>
+        <button type="button" className="btn" disabled={busy || environmentLoading || templateBusy} onClick={() => { onCancelPreflight(); openEditor(emptyProfileDraft()); }}>+ 프로필</button>
+        <button type="button" className="btn" disabled={busy || environmentLoading || templateBusy} onClick={() => void openProjectWizard()}>새 프로젝트 wizard</button>
+        <button type="button" className="btn" disabled={busy || environmentLoading || templateBusy} onClick={() => void openTemplateManager()}>템플릿 관리</button>
         <button type="button" className="btn refresh" disabled={busy || environmentLoading} onClick={() => void refresh()}>새로고침</button>
       </header>
 
@@ -1160,11 +1577,30 @@ export default function App() {
                   </button>
                 )}
                 {run?.profileId === selectedProfile.id && (
-                  <button className="btn danger" disabled={busy} onClick={() => void onStop(selectedProfile)}>
-                  Stop What I Started
-                  </button>
+                  <>
+                    {run.canRetry === true ? (
+                      <button className="btn" disabled={busy || retrying} onClick={() => void onRetry(selectedProfile)}>
+                        {retrying ? "실패 단계 재시도 중…" : "실패 단계부터 다시 시도"}
+                      </button>
+                    ) : null}
+                    <button className="btn danger" disabled={busy} onClick={() => void onStop(selectedProfile)}>
+                      Stop What I Started
+                    </button>
+                  </>
                 )}
               </div>
+
+              {preflightLoading && preflightTarget.current === selectedProfile.id && (
+                <div className="preflight-dialog" role="status" aria-live="polite" aria-busy="true">
+                  <h3>Start Workspace 사전 점검 중…</h3>
+                  <p className="field-help">
+                    설치된 앱, WSL 경로, 예상 port와 service dependency를 읽기 전용으로 확인하고 있습니다.
+                  </p>
+                  <div className="actions">
+                    <button type="button" className="btn" onClick={onCancelPreflight}>취소</button>
+                  </div>
+                </div>
+              )}
 
               {preflight?.profileId === selectedProfile.id && (
                 <div
@@ -1215,7 +1651,8 @@ export default function App() {
                           <ul className="preflight-resources">
                             {item.resources.map((resource) => (
                               <li key={`${resource.kind}:${resource.id}`}>
-                                {resource.id} · {RESOURCE_STATE_LABEL[resource.state]}
+                                <span>{resource.id} · </span>
+                                <span className="resource-state">{RESOURCE_STATE_LABEL[resource.state]}</span>
                               </li>
                             ))}
                           </ul>
@@ -1251,13 +1688,71 @@ export default function App() {
                 </div>
               ))}
 
+              <div className="dependency-health-heading">
+                <h3 className="subtitle">Dependency health</h3>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={busy || dependencyLoading}
+                  onClick={() => {
+                    dependencyRequest.current += 1;
+                    setDependencyStatus(null);
+                    setDependencyLoading(true);
+                    const request = dependencyRequest.current;
+                    void dependencyHealth(selectedProfile.id)
+                      .then((result) => {
+                        if (request === dependencyRequest.current && result.profileId === selectedProfile.id) setDependencyStatus(result);
+                      })
+                      .catch(() => {
+                        if (request === dependencyRequest.current) setError("의존성 상태를 확인할 수 없습니다.");
+                      })
+                      .finally(() => {
+                        if (request === dependencyRequest.current) setDependencyLoading(false);
+                      });
+                  }}
+                >
+                  {dependencyLoading ? "확인 중…" : "의존성 새로고침"}
+                </button>
+              </div>
+              {dependencyLoading && !dependencyStatus ? (
+                <div className="dim" role="status">app/distro/path/port/service dependency 확인 중…</div>
+              ) : dependencyStatus ? (
+                <div className="dependency-health-list" aria-label="Dependency health 결과">
+                  {dependencyStatus.items.map((item) => (
+                    <div className={`preflight-row status-${item.status}`} key={item.key}>
+                      <div className="preflight-row-heading">
+                        <strong>{PREFLIGHT_ITEM_LABEL[item.key] ?? item.key}</strong>
+                        <span className="preflight-status">{PREFLIGHT_STATUS_LABEL[item.status]}</span>
+                      </div>
+                      <span className="preflight-detail">{item.detail}</span>
+                      {item.resources.length > 0 && (
+                        <ul className="preflight-resources">
+                          {item.resources.map((resource) => (
+                            <li key={`${resource.kind}:${resource.id}`}>
+                              <span>{resource.id} · </span>
+                              <span className="resource-state">{RESOURCE_STATE_LABEL[resource.state]}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="dim">의존성 상태를 확인할 수 없습니다.</div>
+              )}
+
               {run?.profileId === selectedProfile.id && (
                 <>
                   <h3 className="subtitle">Start Workspace 결과</h3>
                   {run.steps.map((step, i) => (
                     <div key={i} className={`health-row ${step.ok ? "ok" : "bad"}`}>
                       <span className="health-name">{step.name}</span>
-                      <span className="health-detail">{PREFLIGHT_STATUS_LABEL[step.status]} · {step.detail}</span>
+                      <span className="health-detail">
+                        <span>{PREFLIGHT_STATUS_LABEL[step.status]}</span>
+                        <span aria-hidden="true"> · </span>
+                        <span>{step.detail}</span>
+                      </span>
                     </div>
                   ))}
                   {run.resourceProvenance.length > 0 && (
@@ -1279,6 +1774,263 @@ export default function App() {
           )}
         </main>
       </div>
+      {templateDialog === "wizard" && wizardDraft && (
+        <div className="template-dialog-backdrop">
+          <section
+            className="template-dialog"
+            ref={templateDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="project-wizard-title"
+            aria-describedby="project-wizard-description"
+            aria-busy={templateBusy}
+            onKeyDown={(event) => trapModalFocus(event, closeTemplateDialog, templateBusy)}
+          >
+            <h2 id="project-wizard-title">새 프로젝트 wizard</h2>
+            <p id="project-wizard-description" className="field-help">템플릿은 안전한 기본값만 채우며, 기존 프로필이나 프로젝트 파일은 변경하지 않습니다.</p>
+            <label className="field" htmlFor="wizard-template">
+              <span>프로필 템플릿</span>
+              <select
+                id="wizard-template"
+                value={wizardTemplateId}
+                disabled={templateBusy}
+                onChange={(event) => selectWizardTemplate(event.currentTarget.value)}
+              >
+                <option value="">직접 입력</option>
+                {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+              </select>
+            </label>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void onCreateWizardProfile();
+              }}
+            >
+              <label className="field" htmlFor="wizard-name">
+                <span>프로젝트 이름</span>
+                <input
+                  id="wizard-name"
+                  autoFocus
+                  value={wizardDraft.name}
+                  disabled={templateBusy}
+                  aria-invalid={Boolean(wizardValidation?.errors.name)}
+                  aria-describedby={wizardValidation?.errors.name ? "wizard-name-error" : undefined}
+                  onChange={(event) => patchWizardDraft({ name: event.currentTarget.value })}
+                />
+              </label>
+              {wizardValidation?.errors.name && <span id="wizard-name-error" className="field-error" role="alert">{wizardValidation.errors.name}</span>}
+              <label className="field" htmlFor="wizard-windows-path">
+                <span>Windows 경로</span>
+                <input
+                  id="wizard-windows-path"
+                  value={wizardDraft.windowsPath}
+                  disabled={templateBusy}
+                  aria-invalid={Boolean(wizardValidation?.errors.projectPath)}
+                  aria-describedby={wizardValidation?.errors.projectPath ? "wizard-project-path-error" : undefined}
+                  onChange={(event) => patchWizardDraft({ windowsPath: event.currentTarget.value })}
+                />
+              </label>
+              <label className="field" htmlFor="wizard-wsl-distro">
+                <span>WSL distro</span>
+                <input
+                  id="wizard-wsl-distro"
+                  value={wizardDraft.wslDistro}
+                  disabled={templateBusy}
+                  aria-invalid={Boolean(wizardValidation?.errors.wsl)}
+                  aria-describedby={wizardValidation?.errors.wsl ? "wizard-wsl-error" : undefined}
+                  onChange={(event) => patchWizardDraft({ wslDistro: event.currentTarget.value })}
+                />
+              </label>
+              <label className="field" htmlFor="wizard-wsl-path">
+                <span>WSL 경로</span>
+                <input
+                  id="wizard-wsl-path"
+                  value={wizardDraft.wslPath}
+                  disabled={templateBusy}
+                  aria-invalid={Boolean(wizardValidation?.errors.projectPath)}
+                  aria-describedby={wizardValidation?.errors.projectPath ? "wizard-project-path-error" : undefined}
+                  onChange={(event) => patchWizardDraft({ wslPath: event.currentTarget.value })}
+                />
+              </label>
+              <label className="field" htmlFor="wizard-git-root">
+                <span>Git root</span>
+                <input
+                  id="wizard-git-root"
+                  value={wizardDraft.gitRoot}
+                  disabled={templateBusy}
+                  aria-invalid={Boolean(wizardValidation?.errors.gitRoot)}
+                  aria-describedby={wizardValidation?.errors.gitRoot ? "wizard-git-root-error" : undefined}
+                  onChange={(event) => patchWizardDraft({ gitRoot: event.currentTarget.value })}
+                />
+              </label>
+              {wizardValidation?.errors.gitRoot && <span id="wizard-git-root-error" className="field-error" role="alert">{wizardValidation.errors.gitRoot}</span>}
+              <label className="field" htmlFor="wizard-ports">
+                <span>예상 포트 (쉼표)</span>
+                <input
+                  id="wizard-ports"
+                  value={wizardDraft.expectedPortsText}
+                  disabled={templateBusy}
+                  aria-invalid={Boolean(wizardValidation?.errors.expectedPorts)}
+                  aria-describedby={wizardValidation?.errors.expectedPorts ? "wizard-ports-error" : undefined}
+                  onChange={(event) => patchWizardDraft({ expectedPortsText: event.currentTarget.value })}
+                />
+              </label>
+              {wizardValidation?.errors.expectedPorts && <span id="wizard-ports-error" className="field-error" role="alert">{wizardValidation.errors.expectedPorts}</span>}
+              <label className="field" htmlFor="wizard-services">
+                <span>Run Manager 서비스 ID (쉼표)</span>
+                <input
+                  id="wizard-services"
+                  value={wizardDraft.serviceRows.map((row) => row.value).join(", ")}
+                  disabled={templateBusy}
+                  aria-invalid={Boolean(wizardValidation?.errors.services)}
+                  aria-describedby={wizardValidation?.errors.services ? "wizard-services-error" : undefined}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    patchWizardDraft({
+                      serviceRows: value.trim()
+                        ? value.split(",").map((service, index) => ({ key: `wizard-service-${index}`, value: service.trim() }))
+                        : [],
+                    });
+                  }}
+                />
+              </label>
+              {wizardValidation?.errors.services && <span id="wizard-services-error" className="field-error" role="alert">{wizardValidation.errors.services}</span>}
+              {wizardValidation?.errors.projectPath && <div id="wizard-project-path-error" className="field-error form-error" role="alert">{wizardValidation.errors.projectPath}</div>}
+              {wizardValidation?.errors.wsl && <div id="wizard-wsl-error" className="field-error form-error" role="alert">{wizardValidation.errors.wsl}</div>}
+              {templateError && <div className="field-error form-error" role="alert">{templateError}</div>}
+              <div className="actions">
+                <button type="submit" className="btn primary" disabled={templateBusy || !wizardValidation?.profile}>{templateBusy ? "생성 중…" : "프로젝트 만들기"}</button>
+                <button type="button" className="btn" disabled={templateBusy} onClick={closeTemplateDialog}>취소</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+      {templateDialog === "manage" && templateEditing && (
+        <div className="template-dialog-backdrop">
+          <section
+            className="template-dialog template-manager"
+            ref={templateDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="template-manager-title"
+            aria-describedby="template-manager-description"
+            aria-busy={templateBusy}
+            onKeyDown={(event) => trapModalFocus(event, closeTemplateDialog, templateBusy)}
+          >
+            <h2 id="template-manager-title">프로필 템플릿 관리</h2>
+            <p id="template-manager-description" className="field-help">프로젝트와 환경 파일은 변경하지 않고 Workbench의 재사용 가능한 기본값만 관리합니다.</p>
+            <div className="template-manager-grid">
+              <div className="template-list" aria-label="프로필 템플릿 목록">
+                <button type="button" className="btn" disabled={templateBusy} onClick={() => setTemplateEditing(emptyProfileTemplateDraft())}>+ 새 템플릿</button>
+                {templates.map((template) => (
+                  <div className="template-list-row" key={template.id}>
+                    <button type="button" className="template-list-item" disabled={templateBusy} onClick={() => setTemplateEditing(templateDraftFromTemplate(template))}>{template.name}</button>
+                    <button type="button" className="mini" disabled={templateBusy} aria-label={`${template.name} 템플릿 삭제`} onClick={() => void onDeleteTemplate(template.id)}>✕</button>
+                  </div>
+                ))}
+                {templates.length === 0 && <p className="field-help">저장된 템플릿이 없습니다.</p>}
+              </div>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void onSaveTemplate();
+                }}
+              >
+                <label className="field" htmlFor="template-name">
+                  <span>템플릿 이름</span>
+                  <input
+                    id="template-name"
+                    autoFocus
+                    value={templateEditing.name}
+                    disabled={templateBusy}
+                    aria-invalid={Boolean(templateValidation?.errors.name)}
+                    aria-describedby={templateValidation?.errors.name ? "template-name-error" : undefined}
+                    onChange={(event) => patchTemplateDraft({ name: event.currentTarget.value })}
+                  />
+                </label>
+                {templateValidation?.errors.name && <span id="template-name-error" className="field-error" role="alert">{templateValidation.errors.name}</span>}
+                <label className="field" htmlFor="template-windows-path">
+                  <span>기본 Windows 경로 (선택)</span>
+                  <input
+                    id="template-windows-path"
+                    value={templateEditing.windowsPath}
+                    disabled={templateBusy}
+                    aria-invalid={Boolean(templateValidation?.errors.projectPath)}
+                    aria-describedby={templateValidation?.errors.projectPath ? "template-project-path-error" : undefined}
+                    onChange={(event) => patchTemplateDraft({ windowsPath: event.currentTarget.value })}
+                  />
+                </label>
+                <label className="field" htmlFor="template-wsl-distro">
+                  <span>기본 WSL distro (선택)</span>
+                  <input
+                    id="template-wsl-distro"
+                    value={templateEditing.wslDistro}
+                    disabled={templateBusy}
+                    aria-invalid={Boolean(templateValidation?.errors.wsl)}
+                    aria-describedby={templateValidation?.errors.wsl ? "template-wsl-error" : undefined}
+                    onChange={(event) => patchTemplateDraft({ wslDistro: event.currentTarget.value })}
+                  />
+                </label>
+                <label className="field" htmlFor="template-wsl-path">
+                  <span>기본 WSL 경로 (선택)</span>
+                  <input
+                    id="template-wsl-path"
+                    value={templateEditing.wslPath}
+                    disabled={templateBusy}
+                    aria-invalid={Boolean(templateValidation?.errors.projectPath)}
+                    aria-describedby={templateValidation?.errors.projectPath ? "template-project-path-error" : undefined}
+                    onChange={(event) => patchTemplateDraft({ wslPath: event.currentTarget.value })}
+                  />
+                </label>
+                <label className="field" htmlFor="template-git-root">
+                  <span>기본 Git root (선택)</span>
+                  <input
+                    id="template-git-root"
+                    value={templateEditing.gitRoot}
+                    disabled={templateBusy}
+                    aria-invalid={Boolean(templateValidation?.errors.gitRoot)}
+                    aria-describedby={templateValidation?.errors.gitRoot ? "template-git-root-error" : undefined}
+                    onChange={(event) => patchTemplateDraft({ gitRoot: event.currentTarget.value })}
+                  />
+                </label>
+                {templateValidation?.errors.gitRoot && <span id="template-git-root-error" className="field-error" role="alert">{templateValidation.errors.gitRoot}</span>}
+                <label className="field" htmlFor="template-ports">
+                  <span>기본 예상 포트 (쉼표)</span>
+                  <input
+                    id="template-ports"
+                    value={templateEditing.expectedPortsText}
+                    disabled={templateBusy}
+                    aria-invalid={Boolean(templateValidation?.errors.expectedPorts)}
+                    aria-describedby={templateValidation?.errors.expectedPorts ? "template-ports-error" : undefined}
+                    onChange={(event) => patchTemplateDraft({ expectedPortsText: event.currentTarget.value })}
+                  />
+                </label>
+                {templateValidation?.errors.expectedPorts && <span id="template-ports-error" className="field-error" role="alert">{templateValidation.errors.expectedPorts}</span>}
+                <label className="field" htmlFor="template-services">
+                  <span>기본 서비스 ID (쉼표)</span>
+                  <input
+                    id="template-services"
+                    value={templateEditing.serviceIdsText}
+                    disabled={templateBusy}
+                    aria-invalid={Boolean(templateValidation?.errors.services)}
+                    aria-describedby={templateValidation?.errors.services ? "template-services-error" : undefined}
+                    onChange={(event) => patchTemplateDraft({ serviceIdsText: event.currentTarget.value })}
+                  />
+                </label>
+                {templateValidation?.errors.services && <span id="template-services-error" className="field-error" role="alert">{templateValidation.errors.services}</span>}
+                {templateValidation?.errors.projectPath && <div id="template-project-path-error" className="field-error form-error" role="alert">{templateValidation.errors.projectPath}</div>}
+                {templateValidation?.errors.wsl && <div id="template-wsl-error" className="field-error form-error" role="alert">{templateValidation.errors.wsl}</div>}
+                {templateError && <div className="field-error form-error" role="alert">{templateError}</div>}
+                <div className="actions">
+                  <button type="submit" className="btn primary" disabled={templateBusy || !templateValidation?.template}>{templateBusy ? "저장 중…" : "템플릿 저장"}</button>
+                  <button type="button" className="btn" disabled={templateBusy} onClick={closeTemplateDialog}>닫기</button>
+                </div>
+              </form>
+            </div>
+          </section>
+        </div>
+      )}
       <ContextMenu
         open={profileContextMenu.open}
         anchor={profileContextMenu.anchor}

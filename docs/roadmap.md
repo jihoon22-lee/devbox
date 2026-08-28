@@ -632,6 +632,32 @@ grouped workthrough를 함께 추가했으며 Linux focused verification은 work
 dir로 제한한다. packaged Windows W2는 실제 installed capability, stopped distro, junction/reparse,
 port race, changed source, child environment와 StartedPid rollback을 최종 PR 게이트에서 확인한다.
 
+**2026-08-28 #359+#360+#361 grouped candidate.** Workbench P3-14의 profile template·새
+프로젝트 wizard, dependency health, idempotent failed-step retry를 같은
+`프로필 선택 → dependency inspection → Start Workspace → retry` 흐름으로 검토할 수
+있어 전용 `feat/workbench/resilience-tools` worktree에 하나의 PR 후보로 준비했다.
+#359는 별도 bounded `profile-templates.json`에 project-independent defaults만 저장하고
+wizard가 빈 입력에만 적용한다. #360은 기존 preflight의 required app/distro/path/port/service
+probe와 provenance를 read-only health로 재사용하며 자동 설치·시작·복구는 하지 않는다.
+#361은 `wait-port → open-wsl-desktop → open-code-pad`의 실패 suffix만 재시도하고 성공
+단계·외부 resource·Workbench-owned process를 다시 시작하지 않는다. preflight와
+dependency health는 공용 `health_operation` single-flight lane으로 직렬화한다.
+Stop What I Started는 process-tree 종료 결과가 실패한 ownership을 registry에 보존해
+재시도할 수 있게 한다. 세 acceptance의 fixture와 rollback 경계는 각각 유지한다:
+template/profile 파일 CAS, health의 무변경 관찰, retry가 새로 만든 PID의 guard rollback이다.
+초기 dirty-candidate 단계에서는 동시 작업 자원을 보호하기 위해 무거운 검증을 미뤘지만,
+보강 검토 후 `cargo fmt --all -- --check`, `git diff --check`,
+`cargo check -p workbench -p launch -j1`,
+`cargo test -p workbench -p launch -j1`(workbench 111개·launch 25개),
+`cargo clippy -p workbench -p launch --all-targets -j1 -- -D warnings`,
+`pnpm --dir apps/workbench exec tsc --noEmit`을 완료했다. preflight/health의 취소
+요청 ID·detached worker join, retry/Stop의 process creation identity와 실패 ownership
+보존, loading 상태 취소 UI, runtime catalog 1MiB 상한까지 최신 보강을 포함한다. 최신
+UI fixture를 포함한 Vitest는 `/mnt/e` 9p I/O 정체로 제한 worker 실행이 과도하게 대기해
+우리 프로세스만 중단했으며, 프론트 build는 통과했다. 따라서 parent가 최신 변경 기준으로
+Vitest를 재실행해야 한다. 전체 workspace gate, CI와 Windows packaged W2(특히 process-tree·PID 재사용·reparse/
+port race·stale UI)는 PR 직전 최종 게이트로 남긴다.
+
 **2026-08-26 #305 구현 상태.** Life Log export는 요청 날짜를 inclusive로, `endMs`를
 exclusive로 해석하고 frontend가 계산한 local civil-day `dayBoundaries`를 그대로 보존한다.
 날짜 수는 366일, session은 bounded SQL 50,000건, 결과는 4MiB로 제한하며 app/title/privacy와

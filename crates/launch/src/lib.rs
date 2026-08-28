@@ -24,6 +24,7 @@
 //! (`docs/superpowers/specs/2026-08-17-app-interop-design.md` §1.1, §7 #3).
 
 mod installed;
+mod owned;
 
 pub use installed::{
     install_root_registry_path, installed_path_details_from_paths, installed_targets,
@@ -32,9 +33,53 @@ pub use installed::{
     InstallRootLocator, InstalledPathDetails, InstalledTarget, INSTALL_ROOT_SCHEMA_VERSION,
     MAX_INSTALL_ROOT_LOCATOR_BYTES,
 };
+pub use owned::OwnedProcess;
 
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
+#[cfg(unix)]
+const RUNTIME_ENV_ALLOWLIST: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "LANG",
+    "TERM",
+    "TMPDIR",
+    "XDG_RUNTIME_DIR",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "DBUS_SESSION_BUS_ADDRESS",
+];
+
+#[cfg(windows)]
+const RUNTIME_ENV_ALLOWLIST: &[&str] = &[
+    "PATH",
+    "PATHEXT",
+    "COMSPEC",
+    "SYSTEMROOT",
+    "WINDIR",
+    "TEMP",
+    "TMP",
+    "LOCALAPPDATA",
+    "APPDATA",
+    "PROGRAMDATA",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "USERNAME",
+];
+
+#[cfg(not(any(unix, windows)))]
+const RUNTIME_ENV_ALLOWLIST: &[&str] = &[];
 
 const MANAGER_ID: &str = "com.devbox.devboxmanager";
 
@@ -179,33 +224,112 @@ fn version_sort_key(name: &str) -> Vec<u32> {
 pub fn launch(app_id: &str, args: &[&str]) -> Result<u32, String> {
     let exe = resolve_installed(app_id)
         .ok_or_else(|| "앱 설치 없음 — Devbox Manager에서 먼저 설치하세요".to_string())?;
-    std::process::Command::new(&exe)
-        .args(args)
+    let mut command = std::process::Command::new(&exe);
+    command.args(args);
+    #[cfg(unix)]
+    command.process_group(0);
+    command
         .spawn()
-        .map(|c| c.id())
+        .map(|child| {
+            let pid = child.id();
+            owned::reap_detached(child);
+            pid
+        })
         .map_err(|_| "설치된 앱 실행에 실패했습니다".to_string())
 }
 
 /// Launch an installed app with a short-lived project environment overlay.
 ///
-/// The caller owns validation and the lifetime of the values.  This function
+/// The caller owns validation and the lifetime of the values. This function
 /// only forwards already-resolved key/value pairs to the child process; it
-/// never serializes, logs, or persists them.  The caller supplies a stable
-/// ordered slice for deterministic tests while `Command::envs` preserves the
-/// host environment entries that are unrelated to the project overlay.
+/// never serializes, logs, or persists them. The child starts from an empty
+/// environment, receives only the platform runtime allowlist, and then gets
+/// the caller's already-validated project overlay.
 pub fn launch_with_environment(
     app_id: &str,
     args: &[&str],
     environment: &[(&str, &str)],
 ) -> Result<u32, String> {
+    if environment
+        .iter()
+        .any(|(name, _)| is_runtime_environment_name(name))
+    {
+        return Err("프로젝트 환경이 runtime 환경을 덮어쓸 수 없습니다".into());
+    }
     let exe = resolve_installed(app_id)
         .ok_or_else(|| "앱 설치 없음 — Devbox Manager에서 먼저 설치하세요".to_string())?;
-    std::process::Command::new(&exe)
+    let mut command = std::process::Command::new(&exe);
+    command
         .args(args)
-        .envs(environment.iter().copied())
+        // A project overlay must not inherit unrelated host variables such as
+        // API tokens, cloud credentials, or shell injection hooks. Re-add
+        // only the platform runtime values needed by a packaged GUI app, then
+        // apply the already-validated project entries.
+        .env_clear()
+        .envs(runtime_environment())
+        .envs(environment.iter().copied());
+    #[cfg(unix)]
+    command.process_group(0);
+    command
         .spawn()
-        .map(|child| child.id())
+        .map(|child| {
+            let pid = child.id();
+            owned::reap_detached(child);
+            pid
+        })
         .map_err(|_| "설치된 앱 실행에 실패했습니다".to_string())
+}
+
+/// Launch an installed app with a process-tree receipt and a short-lived
+/// project environment overlay.  Unlike [`launch_with_environment`], this
+/// function retains a backend-only tree receipt for the caller to stop later.
+pub fn launch_owned_with_environment(
+    app_id: &str,
+    args: &[&str],
+    environment: &[(&str, &str)],
+) -> Result<OwnedProcess, String> {
+    if environment
+        .iter()
+        .any(|(name, _)| is_runtime_environment_name(name))
+    {
+        return Err("프로젝트 환경이 runtime 환경을 덮어쓸 수 없습니다".into());
+    }
+    let exe = resolve_installed(app_id)
+        .ok_or_else(|| "앱 설치 없음 — Devbox Manager에서 먼저 설치하세요".to_string())?;
+    let mut command = std::process::Command::new(&exe);
+    command
+        .args(args)
+        .env_clear()
+        .envs(runtime_environment())
+        .envs(environment.iter().copied());
+    owned::spawn_owned(command)
+}
+
+fn runtime_environment() -> BTreeMap<String, String> {
+    allowlisted_environment(std::env::vars())
+}
+
+fn allowlisted_environment<I>(variables: I) -> BTreeMap<String, String>
+where
+    I: IntoIterator<Item = (String, String)>,
+{
+    variables
+        .into_iter()
+        .filter(|(name, _)| is_runtime_environment_name(name))
+        .collect()
+}
+
+fn is_runtime_environment_name(name: &str) -> bool {
+    #[cfg(windows)]
+    {
+        RUNTIME_ENV_ALLOWLIST
+            .iter()
+            .any(|allowed| name.eq_ignore_ascii_case(allowed))
+    }
+    #[cfg(not(windows))]
+    {
+        RUNTIME_ENV_ALLOWLIST.contains(&name)
+    }
 }
 
 /// `OpenRequest`를 `devbox_applink::build_argv`로 argv에 인코딩한 뒤 실행한다.
@@ -234,6 +358,21 @@ pub fn launch_open_with_environment(
     launch_with_environment(app_id, &args, environment)
 }
 
+/// [`launch_open_with_environment`] with Workbench-owned process-tree
+/// authority. The returned receipt is backend-only and must not be serialized
+/// or reduced to a PID for later cleanup. Windows retains an exact Job handle;
+/// Unix retains the launch-time private process group with its documented
+/// process-group limitations.
+pub fn launch_open_owned_with_environment(
+    app_id: &str,
+    req: &devbox_applink::OpenRequest,
+    environment: &[(&str, &str)],
+) -> Result<OwnedProcess, String> {
+    let argv = open_argv(req)?;
+    let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+    launch_owned_with_environment(app_id, &args, environment)
+}
+
 /// [`launch_open`]에서 프로세스 spawn 없이 argv 구성만 떼어낸 부분. 테스트가 실제
 /// 프로세스를 띄우지 않고도 각 호출부가 만드는 argv를 단언할 수 있도록 공개한다.
 pub fn open_argv(req: &devbox_applink::OpenRequest) -> Result<Vec<String>, String> {
@@ -243,6 +382,49 @@ pub fn open_argv(req: &devbox_applink::OpenRequest) -> Result<Vec<String>, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_environment_drops_unrelated_host_values() {
+        #[cfg_attr(not(unix), allow(unused_mut))]
+        let mut variables = vec![
+            ("PATH".to_string(), "safe-path".to_string()),
+            (
+                "AWS_SECRET_ACCESS_KEY".to_string(),
+                "must-not-cross".to_string(),
+            ),
+            (
+                "PROJECT_VALUE".to_string(),
+                "overlay-is-separate".to_string(),
+            ),
+        ];
+        #[cfg(unix)]
+        variables.push(("XDG_RUNTIME_DIR".to_string(), "/run/user/1000".to_string()));
+        let environment = allowlisted_environment(variables);
+
+        assert_eq!(
+            environment.get("PATH").map(String::as_str),
+            RUNTIME_ENV_ALLOWLIST
+                .contains(&"PATH")
+                .then_some("safe-path")
+        );
+        assert!(!environment.contains_key("AWS_SECRET_ACCESS_KEY"));
+        assert!(!environment.contains_key("PROJECT_VALUE"));
+        #[cfg(unix)]
+        assert_eq!(
+            environment.get("XDG_RUNTIME_DIR").map(String::as_str),
+            Some("/run/user/1000")
+        );
+    }
+
+    #[test]
+    fn project_overlay_cannot_replace_runtime_environment() {
+        assert!(is_runtime_environment_name("PATH"));
+        #[cfg(unix)]
+        assert!(is_runtime_environment_name("HOME"));
+        #[cfg(windows)]
+        assert!(is_runtime_environment_name("TEMP"));
+        assert!(!is_runtime_environment_name("PROJECT_VALUE"));
+    }
 
     #[test]
     fn latest_version_exe_prefers_higher_version() {

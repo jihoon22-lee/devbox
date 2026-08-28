@@ -2,49 +2,69 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
+  cancelDependencyHealth,
   cancelProjectEnvironment,
   cancelProjectHealth,
   cancelStartWorkspace,
+  cancelWorkspacePreflight,
   createProfile,
+  createProfileFromTemplate,
+  createProfileTemplate,
   currentWorkspaceRun,
   deleteProfile,
+  deleteProfileTemplate,
+  dependencyHealth,
   listProfiles,
+  listProfileTemplates,
   openProfileIn,
   previewProjectEnvironment,
   profileCopyPath,
   profileOpenTargets,
   projectHealth,
+  retryWorkspace,
   startWorkspace,
   stopWorkspace,
   updateProfile,
+  updateProfileTemplate,
   workspacePreflight,
   wslRuntimeSuggestions,
   type ProjectEnvironmentPreview,
   type ProjectHealth,
   type ProjectProfile,
+  type ProfileTemplate,
+  type ProfileTemplateSnapshot,
   type WorkspacePreflight,
   type WorkspaceRun,
   type RuntimeSuggestions,
 } from "./api";
 
 vi.mock("./api", () => ({
+  cancelDependencyHealth: vi.fn(),
   cancelProjectEnvironment: vi.fn(),
   cancelProjectHealth: vi.fn(),
   cancelStartWorkspace: vi.fn(),
+  cancelWorkspacePreflight: vi.fn(),
   createProfile: vi.fn(),
+  createProfileFromTemplate: vi.fn(),
+  createProfileTemplate: vi.fn(),
   currentWorkspaceRun: vi.fn(),
   deleteProfile: vi.fn(),
+  deleteProfileTemplate: vi.fn(),
+  dependencyHealth: vi.fn(),
   listProfiles: vi.fn(),
+  listProfileTemplates: vi.fn(),
   onOpenRequest: vi.fn(async () => () => undefined),
   openProfileIn: vi.fn(),
   previewProjectEnvironment: vi.fn(),
   profileCopyPath: vi.fn(),
   profileOpenTargets: vi.fn(),
   projectHealth: vi.fn(),
+  retryWorkspace: vi.fn(),
   startWorkspace: vi.fn(),
   stopWorkspace: vi.fn(),
   takePendingOpen: vi.fn(async () => null),
   updateProfile: vi.fn(),
+  updateProfileTemplate: vi.fn(),
   workspacePreflight: vi.fn(),
   wslRuntimeSuggestions: vi.fn(),
 }));
@@ -72,14 +92,23 @@ const secondProfile: ProjectProfile = {
 
 const listProfilesMock = vi.mocked(listProfiles);
 const createProfileMock = vi.mocked(createProfile);
+const createProfileFromTemplateMock = vi.mocked(createProfileFromTemplate);
+const createProfileTemplateMock = vi.mocked(createProfileTemplate);
 const cancelStartWorkspaceMock = vi.mocked(cancelStartWorkspace);
+const cancelDependencyHealthMock = vi.mocked(cancelDependencyHealth);
 const cancelProjectEnvironmentMock = vi.mocked(cancelProjectEnvironment);
 const cancelProjectHealthMock = vi.mocked(cancelProjectHealth);
+const cancelWorkspacePreflightMock = vi.mocked(cancelWorkspacePreflight);
 const currentWorkspaceRunMock = vi.mocked(currentWorkspaceRun);
 const updateProfileMock = vi.mocked(updateProfile);
+const updateProfileTemplateMock = vi.mocked(updateProfileTemplate);
 const deleteProfileMock = vi.mocked(deleteProfile);
+const deleteProfileTemplateMock = vi.mocked(deleteProfileTemplate);
+const listProfileTemplatesMock = vi.mocked(listProfileTemplates);
+const dependencyHealthMock = vi.mocked(dependencyHealth);
 const projectHealthMock = vi.mocked(projectHealth);
 const startWorkspaceMock = vi.mocked(startWorkspace);
+const retryWorkspaceMock = vi.mocked(retryWorkspace);
 const stopWorkspaceMock = vi.mocked(stopWorkspace);
 const workspacePreflightMock = vi.mocked(workspacePreflight);
 const profileOpenTargetsMock = vi.mocked(profileOpenTargets);
@@ -130,6 +159,21 @@ const freshEnvironmentPreview: ProjectEnvironmentPreview = {
   ],
 };
 
+const nodeTemplate: ProfileTemplate = {
+  id: "template-node",
+  name: "Node 서비스",
+  windowsPath: null,
+  wsl: { distro: "Ubuntu", path: "/mnt/e/projects/node" },
+  gitRoot: null,
+  expectedPorts: [3000],
+  runManagerServiceIds: ["node-dev"],
+};
+
+const templateSnapshot: ProfileTemplateSnapshot = {
+  revision: "a".repeat(64),
+  templates: [nodeTemplate],
+};
+
 const readyPreflight: WorkspacePreflight = {
   profileId: "p-1",
   ready: true,
@@ -178,16 +222,27 @@ beforeEach(() => {
   profiles = [{ ...firstProfile }, { ...secondProfile }];
   listProfilesMock.mockReset().mockImplementation(async () => profiles.map((profile) => ({ ...profile })));
   createProfileMock.mockReset().mockResolvedValue(firstProfile);
+  createProfileFromTemplateMock.mockReset().mockResolvedValue(firstProfile);
+  createProfileTemplateMock.mockReset().mockImplementation(async (template) => template);
   cancelStartWorkspaceMock.mockReset().mockResolvedValue(true);
+  cancelDependencyHealthMock.mockReset().mockResolvedValue(false);
   cancelProjectEnvironmentMock.mockReset().mockResolvedValue(false);
   cancelProjectHealthMock.mockReset().mockResolvedValue(false);
+  cancelWorkspacePreflightMock.mockReset().mockResolvedValue(false);
   currentWorkspaceRunMock.mockReset().mockResolvedValue(null);
   updateProfileMock.mockReset().mockImplementation(async (profile) => {
     profiles = profiles.map((candidate) => (candidate.id === profile.id ? { ...profile } : candidate));
   });
+  updateProfileTemplateMock.mockReset().mockResolvedValue(undefined);
   deleteProfileMock.mockReset().mockImplementation(async (id) => {
     profiles = profiles.filter((profile) => profile.id !== id);
   });
+  deleteProfileTemplateMock.mockReset().mockResolvedValue(undefined);
+  listProfileTemplatesMock.mockReset().mockResolvedValue(templateSnapshot);
+  dependencyHealthMock.mockReset().mockImplementation(async (profileId) => ({
+    ...readyPreflight,
+    profileId,
+  }));
   projectHealthMock.mockReset().mockImplementation(async (profileId) => ({
     profileId,
     items: [
@@ -203,6 +258,18 @@ beforeEach(() => {
       { kind: "tcp-port", id: "port-1", state: "existing" },
       { kind: "process", id: "code-pad", state: "workbenchStarted" },
     ],
+    canRetry: false,
+    retryCount: 0,
+    failedStep: null,
+  }));
+  retryWorkspaceMock.mockReset().mockImplementation(async (runId, profileId) => ({
+    runId,
+    profileId,
+    steps: [],
+    resourceProvenance: [],
+    retryCount: 1,
+    canRetry: false,
+    failedStep: null,
   }));
   workspacePreflightMock.mockReset().mockImplementation(async (profileId) => ({
     ...readyPreflight,
@@ -323,6 +390,23 @@ describe("Workbench profile context menu", () => {
     pending.resolve({ ...readyPreflight, profileId: "p-1" });
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Start Workspace 사전 점검" })).toBeNull());
+    expect(startWorkspaceMock).not.toHaveBeenCalled();
+  });
+
+  it("cancels an in-flight preflight from its loading state", async () => {
+    const pending = deferred<WorkspacePreflight>();
+    workspacePreflightMock.mockReturnValueOnce(pending.promise);
+
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+    expect(await screen.findByText("Start Workspace 사전 점검 중…")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+
+    await waitFor(() => expect(cancelWorkspacePreflightMock).toHaveBeenCalledWith("p-1"));
+    pending.reject(new Error("cancelled"));
+    await pending.promise.catch(() => undefined);
+    expect(screen.queryByText("Start Workspace 사전 점검 중…")).toBeNull();
     expect(startWorkspaceMock).not.toHaveBeenCalled();
   });
 
@@ -457,6 +541,27 @@ describe("Workbench profile context menu", () => {
     fireEvent.contextMenu(first);
     fireEvent.click(screen.getByRole("menuitem", { name: "Stop What I Started" }));
     await waitFor(() => expect(stopWorkspaceMock).toHaveBeenCalledWith("run-p-1", "p-1"));
+  });
+
+  it("keeps a run visible when Stop What I Started retains ownership after a failed termination", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
+    await screen.findByRole("button", { name: "Stop What I Started" });
+
+    currentWorkspaceRunMock.mockResolvedValueOnce({
+      runId: "run-p-1",
+      profileId: "p-1",
+    });
+    stopWorkspaceMock.mockResolvedValueOnce(0);
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(screen.getByRole("button", { name: "Stop What I Started" }));
+
+    await waitFor(() => expect(stopWorkspaceMock).toHaveBeenCalledWith("run-p-1", "p-1"));
+    expect(await screen.findByRole("button", { name: "Stop What I Started" })).toBeTruthy();
+    expect(screen.getByRole("alert")).toHaveTextContent("일부 Workbench 프로세스를 안전하게 종료하지 못했습니다");
   });
 
   it("restores backend run ownership after a frontend reload", async () => {
@@ -928,5 +1033,124 @@ describe("Workbench profile context menu", () => {
     });
     expect(screen.queryByRole("button", { name: "devbox" })).toBeNull();
     expect(screen.queryByText(/TOP_SECRET|private|profile-store/)).toBeNull();
+  });
+
+  it("shows bounded dependency health states and refreshes them independently", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    expect(await screen.findByText("필수 devbox 앱을 사용할 수 있습니다")).toBeTruthy();
+    expect(screen.getByText("이미 사용 중인 예상 port가 있습니다")).toBeTruthy();
+    expect(dependencyHealthMock).toHaveBeenCalledWith("p-1");
+
+    dependencyHealthMock.mockResolvedValueOnce({
+      profileId: "p-1",
+      ready: false,
+      items: [{
+        key: "ports",
+        status: "failure",
+        detail: "예상 TCP port 충돌이 있습니다",
+        resources: [{ kind: "tcp-port", id: "port-1", state: "conflict" }],
+      }],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "의존성 새로고침" }));
+    expect(await screen.findByText("예상 TCP port 충돌이 있습니다")).toBeTruthy();
+    expect(screen.getByText("충돌")).toBeTruthy();
+  });
+
+  it("creates a project from a selected template without importing environment data", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "새 프로젝트 wizard" }));
+    const dialog = await screen.findByRole("dialog", { name: "새 프로젝트 wizard" });
+    expect(screen.getByRole("option", { name: "Node 서비스" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("프로젝트 이름"), { target: { value: "node-app" } });
+    fireEvent.change(screen.getByLabelText("Windows 경로"), { target: { value: "E:\\projects\\node-app" } });
+    fireEvent.change(screen.getByLabelText("WSL 경로"), { target: { value: "/mnt/e/projects/node-app" } });
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 만들기" }));
+    await waitFor(() => expect(createProfileFromTemplateMock).toHaveBeenCalledWith(
+      "template-node",
+      expect.objectContaining({ name: "node-app", environment: null }),
+    ));
+    expect(dialog).toBeTruthy();
+  });
+
+  it("preserves wizard input when switching to direct entry", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "새 프로젝트 wizard" }));
+    await screen.findByRole("dialog", { name: "새 프로젝트 wizard" });
+    await screen.findByDisplayValue("/mnt/e/projects/node");
+
+    fireEvent.change(screen.getByLabelText("프로젝트 이름"), { target: { value: "node-app" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "프로필 템플릿" }), { target: { value: "" } });
+
+    expect(screen.getByLabelText("프로젝트 이름")).toHaveValue("node-app");
+    expect(screen.getByLabelText("WSL 경로")).toHaveValue("/mnt/e/projects/node");
+    expect(screen.getByLabelText("예상 포트 (쉼표)")).toHaveValue("3000");
+  });
+
+  it("supports template CRUD in the dedicated manager", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "템플릿 관리" }));
+    await screen.findByRole("dialog", { name: "프로필 템플릿 관리" });
+    fireEvent.change(screen.getByLabelText("템플릿 이름"), { target: { value: "Node updated" } });
+    fireEvent.click(screen.getByRole("button", { name: "템플릿 저장" }));
+    await waitFor(() => expect(updateProfileTemplateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "template-node", name: "Node updated" }),
+      templateSnapshot.revision,
+    ));
+  });
+
+  it("creates and deletes templates without changing existing profiles", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "템플릿 관리" }));
+    await screen.findByRole("dialog", { name: "프로필 템플릿 관리" });
+    fireEvent.click(screen.getByRole("button", { name: "+ 새 템플릿" }));
+    fireEvent.change(screen.getByLabelText("템플릿 이름"), { target: { value: "Generic" } });
+    fireEvent.click(screen.getByRole("button", { name: "템플릿 저장" }));
+    await waitFor(() => expect(createProfileTemplateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Generic", windowsPath: null, wsl: null }),
+    ));
+    await waitFor(() => expect(screen.getByRole("button", { name: "템플릿 저장" })).not.toBeDisabled());
+
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(screen.getByRole("button", { name: "Node 서비스 템플릿 삭제" }));
+    await waitFor(() => expect(deleteProfileTemplateMock).toHaveBeenCalledWith(
+      "template-node",
+      templateSnapshot.revision,
+    ));
+    expect(updateProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("retries a failed step while preserving existing resource provenance", async () => {
+    startWorkspaceMock.mockResolvedValueOnce({
+      runId: "run-p-1",
+      profileId: "p-1",
+      steps: [{ name: "open-code-pad", ok: false, detail: "code-pad를 시작할 수 없습니다", status: "failure" }],
+      resourceProvenance: [{ kind: "process", id: "wsl-desktop", state: "workbenchStarted" }],
+      retryCount: 0,
+      canRetry: true,
+      failedStep: "open-code-pad",
+    });
+    retryWorkspaceMock.mockResolvedValueOnce({
+      runId: "run-p-1",
+      profileId: "p-1",
+      steps: [{ name: "open-code-pad", ok: true, detail: "code-pad를 시작했습니다", status: "pass" }],
+      resourceProvenance: [{ kind: "process", id: "wsl-desktop", state: "workbenchStarted" }, { kind: "process", id: "code-pad", state: "workbenchStarted" }],
+      retryCount: 1,
+      canRetry: false,
+      failedStep: null,
+    });
+    render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
+    await screen.findByRole("button", { name: "실패 단계부터 다시 시도" });
+    fireEvent.click(screen.getByRole("button", { name: "실패 단계부터 다시 시도" }));
+    await waitFor(() => expect(retryWorkspaceMock).toHaveBeenCalledWith("run-p-1", "p-1"));
+    expect(await screen.findByText("code-pad를 시작했습니다")).toBeTruthy();
   });
 });
