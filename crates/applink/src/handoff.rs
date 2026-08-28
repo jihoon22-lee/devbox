@@ -642,6 +642,17 @@ fn validate_payload(payload: &Value) -> Result<(), HandoffError> {
     validate_payload_value(payload, None, 0, &mut nodes)
 }
 
+/// Apply the shared credential detector before a producer copies renderer
+/// text into a structured handoff payload. The store repeats this validation
+/// on the complete envelope before persistence.
+pub fn validate_handoff_text(value: &str) -> Result<(), HandoffError> {
+    if value.len() > MAX_PAYLOAD_STRING_BYTES || looks_like_raw_credential(value) {
+        Err(HandoffError::InvalidPayload)
+    } else {
+        Ok(())
+    }
+}
+
 fn validate_payload_value(
     value: &Value,
     field: Option<&str>,

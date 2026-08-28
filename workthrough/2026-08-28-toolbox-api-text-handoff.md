@@ -33,6 +33,9 @@ The user-visible flow is explicit at every boundary:
 - The native renderer string is zeroized after command completion, byte bounds
   are checked before scalar counting, and the browser preview rejects malformed
   surrogate input before IPC.
+- The shared AppLink credential detector is exposed as a non-persisting text
+  preflight, so obvious raw credentials are rejected before the producer clones
+  text into a structured payload; the complete envelope is validated again.
 - Added a reusable output action with preview/edit/confirm, fixed browser and
   native errors, and no clipboard fallback. The action keeps draft/status only
   in renderer memory and never writes input, output, secret, raw credential, or
@@ -112,26 +115,25 @@ Added coverage for:
   malformed Unicode/draft fixed-error behavior, and opaque-ID-free status.
 - Catalog producer/action and revision assertions.
 
-- `cargo test -p developer-toolbox -p applink -j1`: 60 AppLink and 43 Toolbox
-  tests passed, including exact pending-envelope revocation and credential rejection.
-- Focused `ApiHandoffAction`/common frontend tests passed: 2 files, 15 tests.
-- `cargo fmt --all` and `git diff --check` passed. The grouped fresh-base candidate
-  still requires combined app/workspace tests and builds after #340–#342 integration.
+- After integration on `main@656ba4b`, focused Rust tests passed: API Playground
+  100, AppLink 60, Catalog 11, and Developer Toolbox 51 tests. These include
+  exact pending-envelope revocation, credential preflight, current Collection/
+  binary regressions, and both producer routes.
+- API Playground's focused AppLink frontend file passed 9 tests. The final
+  uninterrupted Developer Toolbox run passed 29 files/232 tests, and the handoff
+  file passed 6 tests again after the TypeScript compile-only fixture correction.
+- `cargo test --workspace -j1` (including doc-tests), `cargo check --workspace -j1`,
+  strict Clippy for Developer Toolbox/API Playground/AppLink/Catalog all targets,
+  and `cargo fmt --all -- --check` pass.
+- `pnpm --workspace-concurrency=2 -r build` successfully built all 19 frontend
+  projects. `git diff --check` also passes.
 
 ## Integration notes
 
-This branch deliberately does not depend on unmerged #340–342 or #346–348.
-Likely rebase/cherry-pick touch points are:
-
-- Toolbox `src/tools/common.tsx`, `App.css`, and the per-tool `ToolOutput`
-  consumers if #340–342 introduce output metadata/pipeline surfaces.
-- Toolbox `src/api.ts`, `src/types.ts`, `src-tauri/Cargo.toml`, command/core
-  module lists, and `src-tauri/src/lib.rs` if adjacent native commands land.
-- API `src/App.tsx`, `App.applink.test.tsx`, and
-  `src-tauri/src/commands/handoff.rs` if API receiver or collection/history
-  work changes the same request editor/hand-off dialog.
-- `apps/catalog.json` and its catalog revision assertions for any grouped
-  catalog capability additions.
+This candidate is now integrated with #340–#342 and rebased after merged
+#346–#348. Shared Toolbox command/core registration, `ToolOutput`, CSS, README,
+API `App.tsx`/handoff tests, and catalog revision conflicts were resolved by
+preserving both feature contracts and then re-running focused tests.
 
 The `api-request/v1` route and one-time store remain the stable seam. No
 Launcher change is included: its current static action renderer intentionally

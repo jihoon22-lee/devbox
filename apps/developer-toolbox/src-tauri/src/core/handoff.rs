@@ -44,6 +44,7 @@ pub fn build_api_request_payload(output: &str) -> Result<ApiRequestPayload, &'st
         || output.contains('\0')
         || output.len() > MAX_OUTPUT_BYTES
         || output.chars().count() > MAX_OUTPUT_CHARS
+        || devbox_applink::validate_handoff_text(output).is_err()
     {
         return Err(HANDOFF_INPUT_ERROR);
     }
@@ -156,18 +157,9 @@ mod tests {
             Err(HandoffError::Missing)
         );
 
-        let raw_payload = build_api_request_payload("Bearer raw-secret").unwrap();
         assert_eq!(
-            store.create(
-                CreateHandoff {
-                    kind: API_REQUEST_HANDOFF_KIND.into(),
-                    source_app: PRODUCER_APP_ID.into(),
-                    target_app: Some(CONSUMER_APP_ID.into()),
-                    payload: serde_json::to_value(raw_payload).unwrap(),
-                },
-                2_000,
-            ),
-            Err(HandoffError::InvalidPayload)
+            build_api_request_payload("Bearer raw-secret"),
+            Err(HANDOFF_INPUT_ERROR)
         );
     }
 }

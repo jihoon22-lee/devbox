@@ -91,6 +91,32 @@ describe("API Playground output handoff", () => {
     expect(createApiRequestHandoffMock).not.toHaveBeenCalled();
   });
 
+  it("keeps an in-flight publish single-flight when the source output changes", async () => {
+    let resolveDispatch!: (value: Awaited<ReturnType<typeof createApiRequestHandoff>>) => void;
+    createApiRequestHandoffMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveDispatch = resolve;
+    }));
+    const view = render(<ApiHandoffAction value="first output" />);
+    fireEvent.click(screen.getByRole("button", { name: "API Playground로 보내기" }));
+    fireEvent.click(screen.getByRole("button", { name: "API Playground로 전달" }));
+
+    view.rerender(<ApiHandoffAction value="second output" />);
+    expect(screen.queryByRole("dialog", { name: "API Playground 요청 미리보기" })).toBeNull();
+    expect((screen.getByRole("button", { name: "API Playground로 보내기" }) as HTMLButtonElement).disabled).toBe(true);
+
+    resolveDispatch({
+      handoffId: "0123456789abcdef0123456789abcdef",
+      producerId: "developer-toolbox",
+      consumerId: "api-playground",
+      createdAtMs: 1_700_000_000_000,
+      expiresAtMs: 1_700_000_600_000,
+    });
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: "API Playground로 보내기" }) as HTMLButtonElement).disabled).toBe(false);
+    });
+    expect(createApiRequestHandoffMock).toHaveBeenCalledTimes(1);
+  });
+
   it("does not echo an unexpected native error or output to the clipboard", async () => {
     createApiRequestHandoffMock.mockRejectedValueOnce(new Error("/private/output/path"));
     const writeText = vi.fn().mockResolvedValue(undefined);

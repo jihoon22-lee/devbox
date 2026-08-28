@@ -95,6 +95,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool }: SmartWorkflowPa
   const saveRevision = useRef(0);
   const [metadata, setMetadata] = useState<WorkflowMetadata>(emptyMetadata);
   const [loaded, setLoaded] = useState(false);
+  const [storageWritable, setStorageWritable] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [inputType, setInputType] = useState<PipelineValueType>("text");
@@ -126,6 +127,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool }: SmartWorkflowPa
         metadataRef.current = safe;
         setMetadata(safe);
         setLoaded(true);
+        setStorageWritable(true);
         setStorageError(null);
       })
       .catch(() => {
@@ -133,6 +135,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool }: SmartWorkflowPa
         metadataRef.current = emptyMetadata();
         setMetadata(emptyMetadata());
         setLoaded(true);
+        setStorageWritable(false);
         setStorageError(WORKFLOW_STORAGE_ERROR);
       });
     return () => {
@@ -143,7 +146,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool }: SmartWorkflowPa
   }, [persistence]);
 
   useEffect(() => {
-    if (!loaded || !TOOL_BY_ID.has(activeToolId)) return;
+    if (!loaded || !storageWritable || !TOOL_BY_ID.has(activeToolId)) return;
     const next = recordRecentTool(metadataRef.current, activeToolId, Date.now(), TOOL_IDS);
     if (next === metadataRef.current) return;
     metadataRef.current = next;
@@ -152,9 +155,13 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool }: SmartWorkflowPa
     void persistence.save(next).catch(() => {
       if (mounted.current && saveRevision.current === revision) setStorageError(WORKFLOW_STORAGE_ERROR);
     });
-  }, [activeToolId, loaded, persistence]);
+  }, [activeToolId, loaded, persistence, storageWritable]);
 
   const persist = (next: WorkflowMetadata) => {
+    if (!storageWritable) {
+      setStorageError(WORKFLOW_STORAGE_ERROR);
+      return;
+    }
     const safe = sanitizeWorkflowMetadata(next, {
       toolIds: TOOL_IDS,
       transformerIds: TRANSFORMER_IDS,
@@ -409,7 +416,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool }: SmartWorkflowPa
 
         <div className="smart-workflow-run-toolbar">
           <button type="button" className="btn active" onClick={run} disabled={!input || steps.length === 0}>파이프라인 실행</button>
-          <button type="button" className="btn" onClick={savePipeline} disabled={steps.length === 0 || !loaded}>파이프라인 저장</button>
+          <button type="button" className="btn" onClick={savePipeline} disabled={steps.length === 0 || !loaded || !storageWritable}>파이프라인 저장</button>
           <span className="smart-workflow-current-type">현재 출력 형식: {INPUT_TYPE_LABELS[currentOutputType]}</span>
         </div>
         {pipelineError ? (
@@ -475,7 +482,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool }: SmartWorkflowPa
           className="btn"
           aria-pressed={metadata.favoriteTools.includes(activeToolId)}
           onClick={() => persist(toggleFavoriteTool(metadataRef.current, activeToolId, TOOL_IDS))}
-          disabled={!TOOL_BY_ID.has(activeToolId) || !loaded}
+          disabled={!TOOL_BY_ID.has(activeToolId) || !loaded || !storageWritable}
         >
           {metadata.favoriteTools.includes(activeToolId) ? "현재 도구 즐겨찾기 해제" : "현재 도구 즐겨찾기"}
         </button>

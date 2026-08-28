@@ -78,6 +78,19 @@ describe("SmartWorkflowPanel", () => {
     expect(openTool).toHaveBeenCalledWith("url-decode");
   });
 
+  it("preserves a corrupt metadata store and disables misleading save actions", async () => {
+    const corrupt = '{"schemaVersion":1,"input":"credential-value"}';
+    localStorage.setItem(WORKFLOW_STORAGE_KEY, corrupt);
+    render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("metadata"));
+    expect((screen.getByRole("button", { name: "현재 도구 즐겨찾기" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(input(), { target: { value: '{"safe":true}' } });
+    fireEvent.click(screen.getByRole("button", { name: "추천 단계로 사용" }));
+    expect((screen.getByRole("button", { name: "파이프라인 저장" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(localStorage.getItem(WORKFLOW_STORAGE_KEY)).toBe(corrupt);
+  });
+
   it("starts with a compatible next stage and describes repeated candidate actions", () => {
     render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
 

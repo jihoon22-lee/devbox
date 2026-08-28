@@ -179,7 +179,7 @@ export function ApiHandoffAction({ value, disabled = false }: ApiHandoffActionPr
   };
 
   return (
-    <span className="api-handoff-action">
+    <div className="api-handoff-action">
       <button
         type="button"
         className="copy-btn api-handoff-button"
@@ -250,6 +250,6 @@ export function ApiHandoffAction({ value, disabled = false }: ApiHandoffActionPr
           </section>
         </div>
       ) : null}
-    </span>
+    </div>
   );
 }
