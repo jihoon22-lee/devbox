@@ -1193,10 +1193,6 @@ pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), File
                 use std::os::unix::fs::PermissionsExt;
                 permissions.set_mode(0o600);
             }
-            #[cfg(not(unix))]
-            {
-                permissions.set_readonly(false);
-            }
             permissions
         }
         Err(source) => {

@@ -306,9 +306,12 @@ The candidate was committed and rebased onto `origin/main` at
 The first Windows compile-check run exposed a platform-only construction bug:
 `std::fs::Permissions::from_readonly` does not exist. The new-journal fallback
 now derives a permissions value from the already identity-checked parent,
-forces private mode `0600` on Unix, clears the readonly bit on non-Unix, and
-continues to fail closed for metadata errors other than `NotFound`. This keeps
-the behavior portable without weakening the private journal boundary.
+forces private mode `0600` on Unix, preserves the app-private parent's Windows
+attributes and inherited ACL, and continues to fail closed for metadata errors
+other than `NotFound`. This keeps the behavior portable without weakening the
+private journal boundary. A second Windows run showed that explicitly clearing
+the readonly bit is rejected by the strict permissions lint, so the Windows
+branch deliberately relies on inherited app-data ACLs instead.
 
 ## Next Steps
 
