@@ -1288,11 +1288,14 @@ dependencies = [
 name = "developer-toolbox"
 version = "0.2.2"
 dependencies = [
+ "applink",
  "base64 0.22.1",
  "dirs",
  "filesystem",
  "getrandom 0.4.3",
  "hmac",
+ "integration",
+ "launch",
  "md-5",
  "png 0.18.1",
  "qrcode",
@@ -1305,8 +1308,10 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-opener",
+ "tempfile",
  "uuid",
  "window-state-tauri",
+ "zeroize",
 ]
 
 [[package]]

@@ -309,6 +309,7 @@ export function HmacTool() {
         <ToolOutput
           className={`io-output ${error ? "io-error" : ""}`}
           value={error || output}
+          handoffValue={error ? "" : output}
           ariaLabel="HMAC output"
           downloadName="dev-toolbox-hmac-result.txt"
         />

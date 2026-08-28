@@ -18,6 +18,7 @@ use std::sync::{Mutex, MutexGuard};
 pub const API_REQUEST_HANDOFF_KIND: &str = "api-request/v1";
 pub const API_PLAYGROUND_APP_ID: &str = "api-playground";
 pub const WEBHOOK_LAB_APP_ID: &str = "webhook-lab";
+pub const DEVELOPER_TOOLBOX_APP_ID: &str = "developer-toolbox";
 pub const MAX_PENDING_HANDOFFS: usize = 8;
 pub const HANDOFF_INVALID_ERROR: &str = "handoff 요청을 사용할 수 없습니다";
 pub const HANDOFF_EXPIRED_ERROR: &str = "handoff 요청이 만료되었거나 더 이상 사용할 수 없습니다";
@@ -148,7 +149,8 @@ pub fn claim_api_request(
 }
 
 fn claim_matches_route(claim: &HandoffClaim) -> bool {
-    claim.envelope.source_app == WEBHOOK_LAB_APP_ID
+    (claim.envelope.source_app == WEBHOOK_LAB_APP_ID
+        || claim.envelope.source_app == DEVELOPER_TOOLBOX_APP_ID)
         && claim.envelope.target_app.as_deref() == Some(API_PLAYGROUND_APP_ID)
 }
 
@@ -324,6 +326,14 @@ fn request_from_payload(payload: &Value) -> Result<RequestTemplate, &'static str
     if payload.headers.len() > MAX_HEADERS {
         return Err(HANDOFF_INVALID_ERROR);
     }
+    let text_plain_body = payload.headers.iter().any(|header| {
+        header.name.eq_ignore_ascii_case("content-type")
+            && header
+                .value
+                .split(';')
+                .next()
+                .is_some_and(|media_type| media_type.trim().eq_ignore_ascii_case("text/plain"))
+    });
     let mut headers = Vec::with_capacity(payload.headers.len());
     let mut total_chars: usize = 0;
     let mut total_bytes: usize = 0;
@@ -367,6 +377,11 @@ fn request_from_payload(payload: &Value) -> Result<RequestTemplate, &'static str
     validate_body(&payload.body)?;
     let body_kind = if payload.body.is_empty() {
         "none"
+    } else if text_plain_body {
+        // A Toolbox output is text even when its characters happen to form
+        // valid JSON. Preserve the producer's explicit media type so the
+        // request editor and transport do not silently reinterpret it.
+        "raw"
     } else if serde_json::from_str::<Value>(&payload.body).is_ok() {
         "json"
     } else {
@@ -883,7 +898,7 @@ mod tests {
     }
 
     #[test]
-    fn receiver_accepts_only_the_webhook_lab_route() {
+    fn receiver_accepts_webhook_lab_and_developer_toolbox_routes() {
         let directory = tempdir().unwrap();
         let store = HandoffStore::new(directory.path().join("handoff/v1"));
         let descriptor = store
@@ -906,11 +921,75 @@ mod tests {
             )
             .unwrap();
         assert!(claim_matches_route(&claim));
-        claim.envelope.source_app = "developer-toolbox".into();
+        claim.envelope.source_app = DEVELOPER_TOOLBOX_APP_ID.into();
+        assert!(claim_matches_route(&claim));
+        claim.envelope.payload = serde_json::json!({
+            "method": "POST",
+            "url": "/",
+            "headers": [{
+                "name": "Content-Type",
+                "value": "text/plain; charset=utf-8"
+            }],
+            "body": "{\"kind\":\"Toolbox output\"}"
+        });
+        let request = request_from_payload(&claim.envelope.payload).unwrap();
+        assert_eq!(request.url, "/");
+        assert_eq!(request.body, "{\"kind\":\"Toolbox output\"}");
+        assert_eq!(request.body_kind, "raw");
+        claim.envelope.source_app = "unknown-producer".into();
         assert!(!claim_matches_route(&claim));
         claim.envelope.source_app = WEBHOOK_LAB_APP_ID.into();
         claim.envelope.target_app = Some("knowledge-base".into());
         assert!(!claim_matches_route(&claim));
+    }
+
+    #[test]
+    fn receiver_consumes_a_developer_toolbox_text_handoff_once() {
+        let directory = tempdir().unwrap();
+        let store = HandoffStore::new(directory.path().join("handoff/v1"));
+        let descriptor = store
+            .create(
+                CreateHandoff {
+                    kind: API_REQUEST_HANDOFF_KIND.into(),
+                    source_app: DEVELOPER_TOOLBOX_APP_ID.into(),
+                    target_app: Some(API_PLAYGROUND_APP_ID.into()),
+                    payload: serde_json::json!({
+                        "method": "POST",
+                        "url": "/",
+                        "headers": [{
+                            "name": "Content-Type",
+                            "value": "text/plain; charset=utf-8"
+                        }],
+                        "body": "{\"current\":\"Toolbox output\"}"
+                    }),
+                },
+                1_000,
+            )
+            .unwrap();
+        let claim = store
+            .claim(
+                &descriptor.id,
+                API_REQUEST_HANDOFF_KIND,
+                API_PLAYGROUND_APP_ID,
+                1_001,
+            )
+            .unwrap();
+        assert!(claim_matches_route(&claim));
+        let request = request_from_payload(&claim.envelope.payload).unwrap();
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.url, "/");
+        assert_eq!(request.body, "{\"current\":\"Toolbox output\"}");
+        assert_eq!(request.body_kind, "raw");
+        store.ack(&claim, API_PLAYGROUND_APP_ID, 1_002).unwrap();
+        assert_eq!(
+            store.claim(
+                &descriptor.id,
+                API_REQUEST_HANDOFF_KIND,
+                API_PLAYGROUND_APP_ID,
+                1_003,
+            ),
+            Err(HandoffError::Missing)
+        );
     }
 
     #[test]

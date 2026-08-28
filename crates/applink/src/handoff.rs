@@ -209,6 +209,30 @@ impl HandoffStore {
         Err(HandoffError::RandomUnavailable)
     }
 
+    /// Revoke an envelope that is still pending after its producer could not
+    /// deliver the corresponding open request. A claimed envelope is never
+    /// removed through this producer-only cleanup path.
+    pub fn revoke_pending(
+        &self,
+        descriptor: &HandoffDescriptor,
+        source_app: &str,
+    ) -> Result<(), HandoffError> {
+        validate_id(&descriptor.id)?;
+        validate_kind(&descriptor.kind)?;
+        validate_app_id(source_app)?;
+        let root = self.prepare_layout()?;
+        let path = pending_path(&root, &descriptor.id);
+        let envelope = read_json::<HandoffEnvelope>(&path, MAX_HANDOFF_BYTES)?;
+        validate_envelope(&envelope).map_err(|_| HandoffError::Corrupt)?;
+        if envelope.id != descriptor.id
+            || envelope.kind != descriptor.kind
+            || envelope.source_app != source_app
+        {
+            return Err(HandoffError::WrongTarget);
+        }
+        remove_envelope_if_equal(&path, &envelope)
+    }
+
     pub fn claim(
         &self,
         id: &str,
@@ -616,6 +640,17 @@ fn valid_slug(value: &str, max_bytes: usize) -> bool {
 fn validate_payload(payload: &Value) -> Result<(), HandoffError> {
     let mut nodes = 0_usize;
     validate_payload_value(payload, None, 0, &mut nodes)
+}
+
+/// Apply the shared credential detector before a producer copies renderer
+/// text into a structured handoff payload. The store repeats this validation
+/// on the complete envelope before persistence.
+pub fn validate_handoff_text(value: &str) -> Result<(), HandoffError> {
+    if value.len() > MAX_PAYLOAD_STRING_BYTES || looks_like_raw_credential(value) {
+        Err(HandoffError::InvalidPayload)
+    } else {
+        Ok(())
+    }
 }
 
 fn validate_payload_value(

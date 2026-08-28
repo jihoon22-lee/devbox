@@ -1581,9 +1581,13 @@ export default function App() {
           >
             <div className="handoff-dialog-head">
               <div>
-                <h2 id="handoff-dialog-title">Webhook 요청 미리보기</h2>
+                <h2 id="handoff-dialog-title">
+                  {handoffPreview.producerId === "developer-toolbox"
+                    ? "Toolbox 텍스트 요청 미리보기"
+                    : "Webhook 요청 미리보기"}
+                </h2>
                 <p id="handoff-dialog-description" className="handoff-subtitle">
-                  적용하기 전 요청을 확인하세요. origin-form URL은 적용 후 request editor에서 host를 입력할 수 있습니다. secret 원문은 전달되지 않고 환경 변수 참조만 보존됩니다.
+                  적용하기 전 요청을 확인하세요. origin-form URL은 적용 후 request editor에서 host를 입력할 수 있습니다. secret 원문은 전달되지 않고 환경 변수 참조만 보존됩니다. 적용은 편집기에 요청을 넣기만 하며 자동으로 전송하지 않습니다.
                 </p>
               </div>
               <span className="handoff-kind">{handoffPreview.kind}</span>

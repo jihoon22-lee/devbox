@@ -428,6 +428,21 @@ atomic write한다. 최종 write는 generation mutex로 cancellation과 선형�
 넘으면 수치 없이 `snapshot_stale`로 격리한다. #306은 Knowledge handoff/저장(#307)을 호출하지
 않는다.
 
+Developer Toolbox Smart Workflows는 renderer-memory input/output과 metadata persistence를
+분리한다. detection/pipeline은 static local transformer registry만 사용하고 URL·shell·network를
+실행하지 않는다. app-local `smart-workflows.json`에는 version, tool/transformer/type/pipeline ID와
+timestamp만 들어가며 native는 64 KiB bounded strict schema, final object identity, process-local
+writer serialization과 atomic replace를 적용한다. malformed store는 자동 복구 write로 덮지 않는다.
+브라우저 preview의 localStorage도 같은 metadata allowlist만 사용하고 원문 draft/result를 저장하지
+않는다.
+
+Toolbox→API Playground는 이 local pipeline의 stage가 아니라 별도 explicit action이다. 사용자가 현재
+output을 `POST /` text/plain draft로 preview/edit/confirm하면 Toolbox native producer가
+`api-request/v1` one-time envelope를 만들고 opaque ID만 launch argv에 넣는다. shared AppLink privacy
+validator는 raw credential을 publish 전에 거부하고 launch 실패는 exact pending envelope를 revoke한다.
+API Playground receiver는 Toolbox/Webhook source를 allowlist하고 claim/lease/restore/ack 후 editor만
+갱신하며 자동 request send나 clipboard fallback을 수행하지 않는다.
+
 ## 보안 경계
 
 각 앱이 다루는 외부 입력과 그 방어선:

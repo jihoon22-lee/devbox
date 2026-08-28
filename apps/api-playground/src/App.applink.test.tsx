@@ -7,6 +7,7 @@ import {
   onOpenRequest,
   renewApiRequest,
   restoreApiRequest,
+  sendRequest,
   takePendingOpen,
 } from "./api";
 import type { ApiRequestHandoffPreview, OpenRequest, RequestTemplate } from "./types";
@@ -48,6 +49,7 @@ const claimApiRequestMock = vi.mocked(claimApiRequest);
 const onOpenRequestMock = vi.mocked(onOpenRequest);
 const renewApiRequestMock = vi.mocked(renewApiRequest);
 const restoreApiRequestMock = vi.mocked(restoreApiRequest);
+const sendRequestMock = vi.mocked(sendRequest);
 const takePendingOpenMock = vi.mocked(takePendingOpen);
 
 const request: RequestTemplate = {
@@ -73,10 +75,10 @@ const preview: ApiRequestHandoffPreview = {
   request,
 };
 
-function handoffRequest(id = preview.handoffId): OpenRequest {
+function handoffRequest(id = preview.handoffId, from = preview.producerId): OpenRequest {
   return {
     target: { kind: "handoff", handoffKind: "api-request/v1", id },
-    from: "webhook-lab",
+    from,
   };
 }
 
@@ -97,6 +99,7 @@ beforeEach(() => {
   ackApiRequestMock.mockReset().mockResolvedValue(request);
   renewApiRequestMock.mockReset().mockResolvedValue({ leaseUntilMs: 1_700_000_120_000 });
   restoreApiRequestMock.mockReset().mockResolvedValue(undefined);
+  sendRequestMock.mockReset();
 });
 
 afterEach(() => cleanup());
@@ -130,6 +133,28 @@ describe("API Playground api-request/v1 receiver", () => {
     expect((screen.getByPlaceholderText("https://api.example.com/users") as HTMLInputElement).value)
       .toBe(request.url);
     expect(screen.queryByRole("dialog", { name: "Webhook 요청 미리보기" })).toBeNull();
+  });
+
+  it("accepts a Developer Toolbox output and never sends it automatically", async () => {
+    const toolboxPreview: ApiRequestHandoffPreview = {
+      ...preview,
+      producerId: "developer-toolbox",
+      request: { ...request, url: "/" },
+    };
+    claimApiRequestMock.mockResolvedValueOnce(toolboxPreview);
+    takePendingOpenMock.mockImplementationOnce(async () => (
+      handoffRequest(preview.handoffId, "developer-toolbox")
+    ));
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", { name: "Toolbox 텍스트 요청 미리보기" });
+    expect(dialog.textContent).toContain("producerdeveloper-toolbox");
+    expect(ackApiRequestMock).not.toHaveBeenCalled();
+    expect(sendRequestMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "적용" }));
+    await waitFor(() => expect(ackApiRequestMock).toHaveBeenCalledWith(preview.handoffId));
+    expect(sendRequestMock).not.toHaveBeenCalled();
   });
 
   it("uses the pending slot rather than a stale hot-event payload", async () => {

@@ -17,7 +17,10 @@ import {
   type QrErrorCode,
   type QrResult,
 } from "./tools/qr";
-import type { DiffHunk, RegexMatch } from "./types";
+import type { ApiHandoffDispatch, DiffHunk, RegexMatch } from "./types";
+
+export const API_HANDOFF_BROWSER_ERROR =
+  "API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
 
 /** 데이터를 해시한다. browser 미리보기에서는 Web Crypto(SHA)만 지원. */
 export async function hash(data: string, algorithm: string): Promise<string> {
@@ -102,6 +105,12 @@ export async function diff(a: string, b: string): Promise<DiffHunk[]> {
 export async function readClipboardText(): Promise<string> {
   if (!isTauri()) return navigator.clipboard.readText();
   return readText();
+}
+
+/** Publish only the explicit output currently shown by a tool. */
+export async function createApiRequestHandoff(output: string): Promise<ApiHandoffDispatch> {
+  if (!isTauri()) throw new Error(API_HANDOFF_BROWSER_ERROR);
+  return invoke<ApiHandoffDispatch>("create_api_request_handoff", { output });
 }
 
 async function browserHash(data: string, algorithm: string): Promise<string> {

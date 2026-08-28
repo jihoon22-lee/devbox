@@ -363,7 +363,7 @@ release다. 기존 13개 앱을 강화하고 Devbox Launcher·Log Lens를 더한
    확정하고, #323–#336은 그 crate를 소비하면서 같은 restore/clamp 회귀 행렬을 공유하므로
    앱 경계와 무관하게 하나의 cross-app 적용 PR로 묶는다. 신규 Log Lens의 #336은 #321과
    #322가 병합된 뒤 같은 적용 PR에 포함한다.
-4. Port auto-refresh/diff/favorite/source provenance, Toolbox detection/pipeline/recent/favorite,
+4. Port auto-refresh/diff/favorite/source provenance, Toolbox detection/pipeline/recent/favorite/API handoff,
    WSL resource/broadcast 안전, API collection import/export/history/binary, Everything filter/saved
    query, Knowledge template, Life Log source explanation/Knowledge draft 상태.
 5. Manager read-only Data Inspector·redacted support bundle, Code Pad multi-file rename,
@@ -380,6 +380,22 @@ producer를 임의로 구현하거나 등록하지 않는다. missing/stale/corr
 격리된다. 기존 Life Log→Knowledge `knowledge-draft/v1` action은 유지하고 Launcher가 이를
 plain text로 바꾸지 않으며, `toolbox-text/v1`은 실제 claim/ack receiver가 준비된 뒤 연결한다.
 Windows W3 packaged shortcut/focus/설치 handoff smoke는 release gate에서 확인한다.
+
+**2026-08-28 #340–#343 grouped PR 후보.** Developer Toolbox의 Smart Workflows는 JSON/JWT/
+HTTP(S) URL/Base64/Base64URL/Hex를 1 MiB 안에서 로컬 감지하고 ambiguous 후보를 자동 적용하지
+않는다. static typed registry는 최대 8단계와 4 MiB intermediate/final 상한 안에서 기존
+JSON/YAML/TypeScript/JWT/URL/byte/case primitive만 연결하며 shell·network stage가 없다. recent 20,
+favorite 50, pipeline 20 metadata는 tool/transformer/type/ID/timestamp만 schema v1로 저장하고,
+native unknown field·symlink/reparse·identity swap·동시 write를 fail-closed한다. corrupt store는
+원본을 보존하고 저장 UI를 잠그며 full pipeline library는 기존 entry를 암묵적으로 덮어쓰지 않는다.
+
+현재 결과를 API Playground로 넘길 때는 별도 preview/edit/confirm 후 canonical
+`api-request/v1`의 `POST /` text/plain draft를 one-time store에 만들며, 256,000 scalar·1 MiB,
+malformed Unicode·credential을 publish 전에 거부한다. target launch 실패 시 exact pending payload를
+revoke하고 clipboard/history/localStorage fallback은 없다. API Playground는 source allowlist와
+기존 claim/lease/restore/ack를 유지하고 `적용` 후에도 요청을 자동 전송하지 않는다. focused
+Toolbox/API/AppLink/catalog fixture는 통과했으며 최신 main combined workspace gate, GitHub Actions
+Windows compile과 W3 packaged detection/pipeline/restart/handoff smoke가 PR·release checkpoint다.
 
 P3-04 Port Manager grouped acceptance (#337/#338/#339):
 

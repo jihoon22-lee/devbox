@@ -61,14 +61,16 @@ dialog에서 선택한 위치에 atomic write할 수 있다. 새 요청이 시�
 bounded preview만 제공한다. binary save는 자동 다운로드·실행·clipboard fallback을 만들지 않으며,
 취소·경로·파일 오류는 원문 path나 backend 오류를 반향하지 않는 고정 오류로 표시한다.
 
-## Webhook Lab handoff (`api-request/v1`, #315)
+## Webhook Lab / Developer Toolbox handoff (`api-request/v1`, #315, #343)
 
-Webhook Lab의 masked history 또는 fixture에서 `API Playground로 변환`을 선택하면 공용
-AppLink protocol v2가 전달한 opaque handoff ID를 claim한다. payload는 argv에 들어가지 않고
-공용 handoff store에 10분 동안만 보관되며, preview에는 `producer`, `consumer`, handoff ID,
-만료 시각과 요청 method/URL/header/body가 표시된다. origin-form URL은 이 단계에서 임의의
-host로 채우지 않으므로 사용자가 preview에서 확인한 뒤 적용하고 request editor에서 host를
-입력·수정해야 한다.
+Webhook Lab의 masked history/fixture 또는 Developer Toolbox의 명시적인 현재 output에서
+`API Playground로 변환`/`API Playground로 보내기`를 선택하면 공용 AppLink protocol v2가
+전달한 opaque handoff ID를 claim한다. payload는 argv에 들어가지 않고 공용 handoff store에
+10분 동안만 보관되며, preview에는 `producer`, `consumer`, handoff ID, 만료 시각과 요청
+method/URL/header/body가 표시된다. Toolbox output은 `POST /`와 `text/plain` body draft로
+도착하고, origin-form URL은 이 단계에서 임의의 host로 채우지 않으므로 사용자가 preview에서
+확인한 뒤 적용하고 request editor에서 host를 입력·수정해야 한다. Body가 JSON처럼 보여도
+`text/plain` 계약을 유지해 자동으로 JSON 요청으로 바꾸지 않는다.
 
 preview는 적용 전까지 request editor·History·Collection·response를 변경하지 않는다. `적용`은
 backend claim을 ack/delete한 뒤 요청 editor에 넣고, `취소`는 claim을 restore한다. 만료·손상·
@@ -77,7 +79,8 @@ clipboard·임시 파일로 자동 전환하지 않는다. Webhook credential은
 환경 변수 참조만 전달되고 원문 secret은 producer, handoff store, preview DTO에 들어가지 않는다.
 열린 preview는 30초마다 60초 claim lease를 갱신하지만 envelope의 10분 TTL은 늘리지 않는다.
 renderer가 사라지거나 claim 응답이 늦게 도착하면 native restore를 시도하며, 수신자는
-`webhook-lab` producer와 `api-playground` target이 정확히 일치하는 envelope만 허용한다.
+`webhook-lab` 또는 `developer-toolbox` producer와 `api-playground` target이 정확히 일치하는
+envelope만 허용한다. 적용은 request editor를 갱신할 뿐 HTTP request를 자동으로 보내지 않는다.
 
 ## GraphQL 요청 (P2-05, #294)
 

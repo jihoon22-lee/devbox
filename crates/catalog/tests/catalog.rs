@@ -64,7 +64,7 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
-    assert_eq!(catalog.catalog_revision, Some(9));
+    assert_eq!(catalog.catalog_revision, Some(10));
     assert_eq!(catalog.apps.len(), 15);
     assert_eq!(
         capable_targets(&catalog, "path")
@@ -140,7 +140,7 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
             .into_iter()
             .map(|app| app.id)
             .collect::<Vec<_>>(),
-        vec!["webhook-lab"]
+        vec!["developer-toolbox", "webhook-lab"]
     );
     assert_eq!(
         capable_producers(&catalog, "handoff:knowledge-draft/v1")
@@ -182,6 +182,15 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
         life_log.actions[0].payload_kind,
         "handoff:knowledge-draft/v1"
     );
+    let toolbox = catalog
+        .apps
+        .iter()
+        .find(|app| app.id == "developer-toolbox")
+        .expect("Developer Toolbox must remain in the repository catalog");
+    assert_eq!(toolbox.produces, vec!["handoff:api-request/v1"]);
+    assert_eq!(toolbox.actions.len(), 1);
+    assert_eq!(toolbox.actions[0].target, "api-playground");
+    assert_eq!(toolbox.actions[0].payload_kind, "handoff:api-request/v1");
 }
 
 #[test]

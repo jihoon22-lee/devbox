@@ -5,6 +5,7 @@ import { readClipboardText } from "../api";
 import { ToolOutput, ToolTextArea, TransformerTool } from "./common";
 
 vi.mock("../api", () => ({
+  createApiRequestHandoff: vi.fn(),
   readClipboardText: vi.fn(),
 }));
 

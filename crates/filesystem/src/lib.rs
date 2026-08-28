@@ -98,7 +98,7 @@ pub fn filesystem_identity(
         use std::os::windows::ffi::OsStrExt;
         use std::os::windows::io::FromRawHandle;
         use windows::core::PCWSTR;
-        use windows::Win32::Foundation::GENERIC_READ;
+        use windows::Win32::Foundation::{GENERIC_READ, WIN32_ERROR};
         use windows::Win32::Storage::FileSystem::{
             CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
             FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
@@ -129,12 +129,20 @@ pub fn filesystem_identity(
                 None,
             )
         }
-        .map_err(io::Error::other)?;
+        .map_err(|error| {
+            WIN32_ERROR::from_error(&error)
+                .map(|code| io::Error::from_raw_os_error(code.0 as i32))
+                .unwrap_or_else(|| io::Error::other(error))
+        })?;
         // Transfer ownership immediately so every later error closes exactly
         // this handle once.
         let handle = unsafe { std::fs::File::from_raw_handle(raw.0) };
         let mut information = BY_HANDLE_FILE_INFORMATION::default();
-        unsafe { GetFileInformationByHandle(raw, &mut information) }.map_err(io::Error::other)?;
+        unsafe { GetFileInformationByHandle(raw, &mut information) }.map_err(|error| {
+            WIN32_ERROR::from_error(&error)
+                .map(|code| io::Error::from_raw_os_error(code.0 as i32))
+                .unwrap_or_else(|| io::Error::other(error))
+        })?;
         let is_directory = information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0;
         let is_reparse_point = information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0;
         if is_reparse_point || is_directory != directory {
@@ -330,6 +338,12 @@ mod identity_tests {
         assert_eq!(first, filesystem_identity(&root, true).unwrap());
         assert_ne!(first, filesystem_identity(&sibling, true).unwrap());
         assert!(filesystem_identity(&root, false).is_err());
+        assert_eq!(
+            filesystem_identity(root.join("missing"), false)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
 
         let _ = fs::remove_dir_all(root);
     }

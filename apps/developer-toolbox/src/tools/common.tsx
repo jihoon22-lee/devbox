@@ -15,6 +15,7 @@ import {
   type TextareaHTMLAttributes,
 } from "react";
 import { readClipboardText } from "../api";
+import { ApiHandoffAction } from "./ApiHandoffAction";
 
 /** async 변환 결과를 입력 변경 시 자동 계산하는 훅 */
 export function useAsyncTransform(
@@ -408,6 +409,8 @@ interface ToolOutputProps {
   busy?: boolean;
   /** Called when a context-menu output action starts or settles. */
   onBusyChange?: (busy: boolean) => void;
+  /** Value sent by the explicit API Playground handoff action. */
+  handoffValue?: string;
   asDiv?: boolean;
 }
 
@@ -423,6 +426,7 @@ export function ToolOutput({
   fixedActionError,
   busy = false,
   onBusyChange,
+  handoffValue,
   asDiv = false,
 }: ToolOutputProps) {
   const outputRef = useRef<HTMLElement>(null);
@@ -515,12 +519,16 @@ export function ToolOutput({
     "aria-label": ariaLabel,
     className,
   };
+  const handoffAction = (
+    <ApiHandoffAction value={handoffValue ?? value} disabled={busy || actionBusy} />
+  );
 
   return (
     <>
       {asDiv ? (
         <div {...trigger} ref={outputRef as RefObject<HTMLDivElement | null>}>
           {content}
+          {handoffAction}
         </div>
       ) : (
         <pre {...trigger} ref={outputRef as RefObject<HTMLPreElement | null>}>
@@ -541,6 +549,7 @@ export function ToolOutput({
           {actionError}
         </div>
       ) : null}
+      {!asDiv ? handoffAction : null}
     </>
   );
 }
@@ -598,6 +607,7 @@ export function TransformerTool({
           <ToolOutput
             className={`io-output ${error ? "io-error" : ""}`}
             value={displayedOutput}
+            handoffValue={error ? "" : output}
           />
         </div>
       </div>

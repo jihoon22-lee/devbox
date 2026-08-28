@@ -62,6 +62,7 @@ export function HashTool() {
           <ToolOutput
             className={`io-output ${error ? "io-error" : ""}`}
             value={error || output}
+            handoffValue={error ? "" : output}
             downloadName="dev-toolbox-hash-result.txt"
           />
         </div>
