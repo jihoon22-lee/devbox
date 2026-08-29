@@ -40,6 +40,7 @@ jobs:
           python3 .github/scripts/check-dependencies.py check
           python3 .github/scripts/test-check-dependencies.py
           python3 .github/scripts/test-build-manifest.py
+          python3 .github/scripts/test-validate-release-input.py
 
       - name: Check Cargo licenses, advisories, bans, and sources
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2, cargo-deny 0.20.2

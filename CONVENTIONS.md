@@ -176,6 +176,19 @@ src/
 - 앱 버전은 release tag와 독립적이다. release tag는 배포 일괄 단위일 뿐 앱 버전이 아니다.
 - `package.json`의 버전이 `Cargo.toml`과 어긋난 상태로 커밋하지 않는다.
 
+### 릴리스 트리거와 prerelease 보호
+
+- `.github/workflows/release.yml`의 안정판 경로는 정확한 `vX.Y.Z` annotated tag push 또는
+  명시적인 `workflow_dispatch`로 유지한다. `workflow_dispatch`의 `version`은 기본값 없이
+  매번 전체 tag를 입력한다.
+- `vX.Y.Z-...` prerelease/RC tag push는 허용하지 않는다. 중앙
+  `.github/scripts/validate-release-input.py`가 build 전 preflight에서 fail-closed로 거부하므로
+  Windows build가 시작되지 않고 GitHub Release도 생성되지 않는다.
+- prerelease는 향후 필요할 때만 `workflow_dispatch`에서 전체 버전을 정확히 입력하고,
+  의도적으로 이름 붙인 boolean 입력 `allow_prerelease: true`를 함께 지정해 실행한다. 이
+  입력의 기본값은 `false`이며, gate 없는 수동 version 입력은 prerelease를 열지 않는다.
+- 위 정책의 입력·상태 출력은 해당 Python 스크립트와 단위 테스트를 단일 원본으로 삼는다.
+
 ## 5. 개발 워크플로 (WSL-first)
 
 | 단계 | 명령 | 위치 |
