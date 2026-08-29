@@ -145,8 +145,9 @@ metadata는 GitHub Release가 권위 있는 source다. 브라우저 개발 모�
   오프라인 또는 WinGet 부재 오류는 선택 기능의 상태로만 남고 Manager native 기능을 막지 않는다.
 - Docker Desktop은 Related Tools의 기존 executable allowlist와 실행 직전 regular-file/reparse
   재검증을 그대로 사용한다. 추가로 검토된 `%LOCALAPPDATA%` 설치 layout을 검사하며 Windows CLI는
-  PATH 또는 Docker의 고정 resource layout에서 찾은 실행 파일을 2초 bounded `--version` probe로
-  제품 식별한다. Podman 호환 shim처럼 Docker CLI로 식별되지 않는 결과는 `unknown`이다.
+  PATH 또는 Docker의 고정 resource layout에서 찾은 실행 파일이 검토된 Docker resource 경로와
+  동일한 파일인지 확인한 뒤, 2초 bounded `--version` probe로 제품 식별한다. Podman 호환 shim이나
+  검토되지 않은 위치의 `docker.exe`는 `unknown`이다.
   WSL backend는 `wsl.exe --list --quiet`와 `--running --quiet`의 최대 128개 validated distro 이름만
   사용하고 distro를 시작하지 않는다. public DTO에는 raw path, version output, 환경변수, WSL 원문이
   없고 `desktop-executable`·`windows-cli`·`wsl-registration`·`wsl-runtime` 같은 고정 evidence code와

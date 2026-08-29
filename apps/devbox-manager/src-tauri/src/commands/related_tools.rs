@@ -642,7 +642,7 @@ fn detect_docker_cli() -> DockerCliProbe {
 
 #[cfg(windows)]
 fn is_official_docker_cli(path: &Path) -> bool {
-    if !safe_existing_executable(path) {
+    if !safe_existing_executable(path) || !trusted_docker_cli_path(path) {
         return false;
     }
     let mut command = Command::new(path);
@@ -651,6 +651,20 @@ fn is_official_docker_cli(path: &Path) -> bool {
     crate::commands::doctor::run_bounded_command(command)
         .as_deref()
         .is_some_and(docker_cli_version_is_official)
+}
+
+#[cfg(windows)]
+fn trusted_docker_cli_path(path: &Path) -> bool {
+    let Ok(candidate) = std::fs::canonicalize(path) else {
+        return false;
+    };
+    known_docker_cli_paths().into_iter().any(|known| {
+        std::fs::canonicalize(known).is_ok_and(|trusted| {
+            candidate
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&trusted.to_string_lossy())
+        })
+    })
 }
 
 #[cfg(any(windows, test))]

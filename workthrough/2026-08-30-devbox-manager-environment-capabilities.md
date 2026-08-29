@@ -48,7 +48,8 @@ paths, process output, environment values, and WSL output do not.
   - Added Docker Desktop `%LOCALAPPDATA%` layout candidates while retaining
     the existing regular-file/reparse-point checks.
   - Product-verified the Windows CLI with a bounded `docker.exe --version`
-    probe; compatible shims remain `unknown`.
+    probe and requires PATH candidates to canonicalize to a reviewed Docker
+    resource location; compatible or lookalike shims remain `unknown`.
   - Probed the OS-owned `wsl.exe` only with bounded quiet list commands,
     validating at most 128 distro names of at most 128 characters each. No
     distro is started.
