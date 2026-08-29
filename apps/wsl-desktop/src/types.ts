@@ -125,6 +125,8 @@ export interface WorkspaceProfile extends WorkspaceDefinition {
 
 export interface MultiplexerAvailability {
   kind: MultiplexerKind;
-  available: boolean;
+  status: "available" | "missing" | "error";
   version: string | null;
+  /** Safe category only. The resolved absolute executable path never crosses IPC. */
+  source: "path" | "userLocal" | "cargoBin" | "system" | null;
 }
