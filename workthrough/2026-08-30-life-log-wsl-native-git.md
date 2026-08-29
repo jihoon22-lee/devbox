@@ -75,6 +75,7 @@ match GitTarget::from_project_path(path)? {
   stale-response protection, and regressions
 - `apps/life-log/README.md` — user and security contract
 - `Cargo.lock` — local workspace dependency edges only
+- `THIRD_PARTY_NOTICES.md` — regenerated Cargo.lock provenance hash; third-party inventory unchanged
 
 ## Verification
 
@@ -94,6 +95,8 @@ cargo fmt --all -- --check
   PASS
 git diff --check
   PASS
+python3 .github/scripts/check-dependencies.py check
+  PASS (notices match both lockfiles)
 pnpm --filter life-log test
   PASS (4 files, 51 tests)
 pnpm --filter life-log build
