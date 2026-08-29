@@ -1,6 +1,6 @@
 # Log Lens
 
-Log Lens 0.1.0 is a bounded, offline log viewer for explicitly selected local
+Log Lens 0.1.1 is a bounded, offline log viewer for explicitly selected local
 files/directories and fixed WSL or local container adapters. It parses plain
 text, JSONL, and logfmt lines, merges them deterministically, and keeps only an
 in-memory ring (100,000 lines or 64 MiB).
@@ -86,5 +86,7 @@ Docker/Podman availability, native file identity semantics, and download,
 clipboard, focus, and IME behavior.
 
 The Log Lens bootstrap is included in the published v0.5.0 assets. The Run
-reader is the post-release main-branch completion tracked by #472; it does not
-rewrite or replace the immutable v0.5.0 release assets.
+reader was completed by #472/#473 after the v0.5.0 tag and is included in the
+v0.5.1 stable release; it does not rewrite or replace the historical v0.5.0
+assets. GitHub Release metadata is authoritative for the exact v0.5.1 tag,
+workflow result, and asset digests.

@@ -1,6 +1,7 @@
 # Repo Manager 설계 — Git Worktree Manager
 
-- 상태: 제안(Proposal) — Stage 5
+- 상태: 제안(Proposal) 및 설계 기록 — Stage 5 구현은 v0.5.0 stable에 반영됐고 v0.5.1에서도
+  유지한다. 이 maintenance release는 상세 proposal을 축소하지 않는다.
 - 작성일: 2026-08-14
 - 근거: `docs/product-opportunities.md` §15.6, §17.9
 

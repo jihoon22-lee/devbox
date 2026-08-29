@@ -1,11 +1,12 @@
 # wsl-desktop 터미널 — 정확성·세션·사용성 설계
 
-- 상태: v0.4.1 범위(§2) 구현 및 안정판 배포 완료; v0.5.0 §3·§4 **P1 범위 확정, 구현 전**
+- 상태: v0.4.1 범위(§2) 구현 및 안정판 배포 완료; v0.5.0 §3·§4 P1 구현은 stable에 반영됐고
+  v0.5.1에서도 유지한다. 이 문서는 구현 설계/역사 기록이다.
 - 작성일: 2026-08-17 (범위 개정: 2026-08-22)
 - 범위: `apps/wsl-desktop` 단일 앱 + `crates/wsl`
 - 관련: [UX 개선 설계](./2026-08-15-ux-improvements-design.md) §2 를 이 문서가 대체한다
 - 선행: [앱 간 연동 설계](./2026-08-17-app-interop-design.md) §1.2 (`Path` 수신은 v0.4.1,
-  `Profile` 수신과 레이아웃 선택은 v0.5.0 §4.4)
+  `Profile` 수신과 레이아웃 선택은 v0.5.0 §4.4에서 구현)
 
 > **2026-08-22 native-first 확인.** 탭·팬·profile·layout·action palette는 WSL Desktop이
 > 자체 제공하며 tmux/zellij 설치를 전제로 하지 않는다. 멀티플렉서는 앱 종료 뒤 process

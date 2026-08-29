@@ -1,6 +1,6 @@
 [package]
 name = "devbox-launcher"
-version = "0.1.0"
+version = "0.1.1"
 publish = false
 description = "Devbox Launcher"
 authors = ["jihoon22.lee"]

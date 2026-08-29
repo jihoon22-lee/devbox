@@ -1,18 +1,19 @@
 # Devbox Launcher
 
-Devbox Launcher 0.1.0은 `Ctrl+Alt+Space`로 여는 일시적 검색 창이다. 설정에서
+Devbox Launcher 0.1.1은 `Ctrl+Alt+Space`로 여는 일시적 검색 창이다. 설정에서
 `Ctrl+Alt+L` 또는 `Ctrl+Alt+J`로 바꿀 수 있으며, 변경된 단축키는 저장 후 즉시 다시
 등록된다. 기본 키를 다른 프로그램이 점유했거나 현재 플랫폼에서 등록할 수 없으면 창을
 숨기지 않고 고정 상태와 대체 키를 안내한다.
 
 Launcher는 build-time `apps/catalog.json`의 앱과, 존재할 때만 다음 versioned integration
 snapshot path를 검색한다. 이 목록은 consumer-side 계약이며, bootstrap 자체가 모든 producer를
-구현하거나 catalog에 등록한다는 의미가 아니다.
+구현하거나 catalog에 등록한다는 의미가 아니다. `jobs-services.json` sidecar와 그 fallback은
+#474를 닫은 #479를 통해 v0.5.1 stable에 포함됐으며, 공개 v0.5.0 binary에는 없다.
 
 - Workbench `profiles/v1` (후속 producer)
 - Repo Manager `repositories/v1` (후속 producer)
-- Run Manager `jobs-services/v1` (`jobs-services.json` sidecar; `summary.json` flat fallback)
-- Everything+ `saved-queries/v1` (후속 producer)
+- Run Manager `jobs-services/v1` (`jobs-services.json` sidecar; `summary.json` flat fallback; #479/#474)
+- Everything+ `saved-queries/v1`
 - WSL Desktop `profiles/v1` (후속 profile producer)
 
 `crates/integration`의 bounded reader가 versioned path를 읽고 entry의 target, payload version,

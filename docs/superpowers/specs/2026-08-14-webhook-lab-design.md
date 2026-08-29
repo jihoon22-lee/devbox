@@ -1,6 +1,8 @@
 # Webhook Lab 설계 — Local Mock/Webhook Server
 
-- 상태: MVP 구현 중 — #314 captured fixture 저장·#315 Webhook→API handoff·#362 captured replay·#363 response sequence 완료
+- 상태: MVP 구현 및 v0.5.0 stable 반영 완료 — #314 captured fixture 저장·#315 Webhook→API
+  handoff·#362 captured replay·#363 response sequence 완료. v0.5.1에서도 이 설계 기록과
+  구현을 유지한다.
 - 작성일: 2026-08-14
 - 근거: `docs/product-opportunities.md` §15.3, §17.9
 

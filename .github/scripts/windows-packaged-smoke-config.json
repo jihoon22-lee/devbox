@@ -55,7 +55,7 @@
     {
       "id": "devbox-manager",
       "additionalProcessNames": ["DevboxManager.exe"],
-      "version": "0.4.0",
+      "version": "0.4.1",
       "identifier": "com.devbox.devboxmanager",
       "legacyIdentifiers": ["com.workbench.devboxmanager"],
       "title": "Devbox Manager",
@@ -75,7 +75,7 @@
     {
       "id": "run-manager",
       "additionalProcessNames": ["Run Manager.exe"],
-      "version": "0.4.0",
+      "version": "0.4.1",
       "identifier": "com.devbox.runmanager",
       "legacyIdentifiers": ["com.workbench.runmanager"],
       "title": "Run Manager",
@@ -116,7 +116,7 @@
     {
       "id": "devbox-launcher",
       "additionalProcessNames": ["DevboxLauncher.exe"],
-      "version": "0.1.0",
+      "version": "0.1.1",
       "identifier": "com.devbox.devboxlauncher",
       "legacyIdentifiers": [],
       "title": "Devbox Launcher",
@@ -127,7 +127,7 @@
     {
       "id": "log-lens",
       "additionalProcessNames": ["LogLens.exe"],
-      "version": "0.1.0",
+      "version": "0.1.1",
       "identifier": "com.devbox.loglens",
       "legacyIdentifiers": [],
       "title": "Log Lens",

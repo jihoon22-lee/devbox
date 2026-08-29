@@ -5,6 +5,22 @@ devbox의 P1·P2 native 기능은 설치 뒤 오프라인에서 동작해야 한
 문서는 `docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md` §1.3과 P1-01을
 실행 가능한 gate로 구체화한다.
 
+## Release evidence boundary
+
+- 공개 v0.5.0 stable은 tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54`, workflow `33216176818`,
+  15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0의 evidence를 가진다.
+- v0.5.1 stable source/bundle은 #470/#473/#477/#478/#479를 포함한다. 15-app/32-public-asset/
+  31-manifest-declared/mismatch-0 contract와 정확한 tag commit·workflow·asset digest·Latest
+  metadata는 GitHub Release가 권위 있는 publication source다.
+- v0.5.0 stable `Cargo.lock` SHA-256은
+  `5b4bb7641d6b9350c30b21b19de38fc48f742ed7941dbbce1f6657746ef33551`, stable
+  `THIRD_PARTY_NOTICES.md` SHA-256은
+  `018e8191ba4a2e019516d2423fd081b224b228ec39c0ca135c2aa74c7da9f181`이다. 현재
+  v0.5.1 stable source 비교값은 각각
+  `a3398f535faeba6be0a8f7a05a8ae57f1141808310c42344c132d769740fde3a`와
+  `b2cc4ca07b0886700e04364b4fb0eb0c98da99b6dde10fb58c47ab03bb563d35`이며 v0.5.0 evidence와
+  혼용하지 않는다.
+
 ## Enforced gates
 
 | Gate | Source of truth | CI behavior |
@@ -15,11 +31,13 @@ devbox의 P1·P2 native 기능은 설치 뒤 오프라인에서 동작해야 한
 | Notices | 두 lockfile + package metadata | 666 Rust package와 157 frontend runtime package의 version/license/source/digest를 결정적으로 재생성해 checked-in 파일과 byte 비교 |
 | Distribution | `tauri.conf.json`, release manifest | 모든 release 앱 installer에 notices resource를 넣고, release에는 notices와 그 size/SHA-256을 manifest-declared asset으로 게시 |
 
-현재 `THIRD_PARTY_NOTICES.md`는 135,107 bytes다. installer에서는 동일 파일을 압축 resource로
-포함하므로 새 executable runtime이나 network dependency를 추가하지 않는다. portable 사용자는
-release의 독립 notice asset을 받을 수 있다. release manifest는 schemaVersion 1을 유지하고
-optional `notices` 필드를 추가하므로 기존 Devbox Manager parser와 호환된다. v0.5.0 release의
-기대 asset은 15개 앱 기준 30 binaries + notices + manifest다.
+v0.5.1 stable source의 `THIRD_PARTY_NOTICES.md`는 140,357 bytes이며 위 SHA-256과 함께
+기록된 비교값이다. installer에서는 동일 파일을 압축 resource로 포함하므로 새 executable
+runtime이나 network dependency를 추가하지 않는다. portable 사용자는 release의 독립 notice
+asset을 받을 수 있다. release manifest는 schemaVersion 1을 유지하고 optional `notices` 필드를
+추가하므로 기존 Devbox Manager parser와 호환된다. v0.5.0 stable evidence는 15개 앱 기준
+30 binaries + notices + manifest의 32 assets였고, v0.5.1 release workflow도 같은 contract를
+독립 검증한다.
 
 ## Current decisions
 
@@ -43,6 +61,19 @@ optional `notices` 필드를 추가하므로 기존 Devbox Manager parser와 호
 | png 0.18.1 | MIT OR Apache-2.0. QR의 필요한 grayscale PNG encoder만 사용하며 qrcode의 더 넓은 optional image feature를 켜지 않는다. 이미 lock graph에 있던 crate의 direct edge 승격이므로 새 license family를 추가하지 않는다. | image-rs repository/source, exact checksum과 license를 notices에 유지하고 raw image 4 MiB·base64 bound 및 no-path/no-auto-save 정책을 앱에서 재검증한다. |
 | qrcode-generator 2.0.4 | MIT, upstream repository의 의존성 없는 순수 JS encoder. packaged WebView 또는 browser fallback에서 runtime download 없이 native와 같은 payload/option/UTF-8 byte 계약을 제공하기 위해 선택한다. 외부 QR service나 remote URL fetch를 사용하지 않는다. | pnpm integrity와 repository/license를 notices에 고정한다. browser matrix/PNG canvas 결과는 native와 algorithm이 다를 수 있으므로 metadata·bounds·failure fixture를 공통 계약으로 유지하고 update 때 parity를 재검토한다. |
 | `libc 0.2.189`·`windows 0.61.3` | 이미 workspace lock graph와 notices에 존재하는 MIT OR Apache-2.0 platform bindings의 target-specific direct edge를 filesystem crate에 추가해, Webhook Lab fixture sidecar에 Unix `flock`/Windows `LockFileEx`를 사용한다. 새 registry package나 network/runtime dependency는 추가하지 않는다. | 기존 Cargo.lock version/checksum과 notices inventory를 유지한다. lock API는 non-blocking primitive만 제공하고 caller가 500ms bounded retry/fixed error를 적용하며, lock sidecar를 삭제·교체하지 않는다. |
+
+### Manual review record
+
+- `glib` GHSA-wrw7-89jp-8q8g는 Linux-only Tauri GTK transitive dependency다. Windows installer에
+  link되지 않는다는 engineering boundary만 기록하며, policy exception expiry `2026-11-30` 전에
+  Tauri graph를 재검토한다. 이는 vulnerability-free 또는 법적 면책 선언이 아니다.
+- MPL transitive crates는 upstream source를 수정하지 않은 engineering 상태와 exact version/source/
+  digest를 notices에 남긴다. source를 수정하면 MPL source-distribution 검토를 다시 한다.
+- `dompurify`의 `(MPL-2.0 OR Apache-2.0)` 중 Apache branch를 선택한 것은 배포 engineering
+  decision이다. notices/source/integrity를 보존하며 MPL 의무가 법적으로 사라진다고 주장하지 않는다.
+- `r-efi` 5.3.0/6.0.0의 `(MIT OR Apache-2.0 OR LGPL-2.1-or-later)`는 shipped version별 MIT
+  또는 Apache branch를 선택한 engineering record로 남긴다. legal clearance나 법률 자문을
+  주장하지 않는다.
 
 현재 graph에는 GPL, AGPL, SSPL, proprietary runtime이나 git source가 없다. devbox workspace
 crate는 배포용 공개 crate가 아니므로 각 Cargo manifest에 `publish = false`를 명시하며,

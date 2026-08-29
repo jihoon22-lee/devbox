@@ -1,6 +1,7 @@
 # Workbench 설계 — Project Workspace Orchestrator
 
-- 상태: 제안(Proposal) — Stage 4
+- 상태: 제안(Proposal) 및 설계 기록 — Stage 4 구현은 v0.5.0 stable에 반영됐고 v0.5.1에서도
+  유지한다. 이 maintenance release는 설계의 역사적 범위를 보존한다.
 - 작성일: 2026-08-14
 - 근거: `docs/product-opportunities.md` §15.2, §10.2, §10.3, §17.8
 - 선행: PR 2(identifier), PR 6(catalog), PR 14(crates/wsl), PR 28(ProjectProfile 설계), PR 26(producer snapshot), PR 31(service 상태 API)

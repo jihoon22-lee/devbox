@@ -5,11 +5,60 @@
 
 ## [Unreleased]
 
+## [v0.5.1] - 2026-08-29
+
+v0.5.1은 v0.5.0 공개 뒤 확인된 통합 누락과 배포 도구 결함을 보완하는 stable maintenance
+bundle이다. 15개 앱 구성은 유지하며, 실제 바이너리가 달라진 Log Lens, Devbox Manager,
+Run Manager, Devbox Launcher만 앱별 patch version을 올린다.
+
 ### Fixed
 
-- **Log Lens Run source** — Run Manager handoff를 preview·추가한 뒤 항상 unavailable이 되던
+- **Log Lens Run source (#473)** — Run Manager handoff를 preview·추가한 뒤 항상 unavailable이 되던
   누락을 보완했다. identity-only 계약을 유지한 채 고정 app-data root의 stdout/stderr 회전
   segment만 logical cursor로 읽고, link/reparse·범위·크기 위반은 fail-closed한다.
+- **Run Manager → Launcher task discovery (#479)** — 기존
+  `integration/run-manager/v1/summary.json`을 바꾸지 않고 같은 version directory에
+  `jobs-services.json` named sidecar를 추가해 저장된 전체 job/service를 검색할 수 있게 했다.
+  Launcher는 sidecar가 없을 때만 legacy active-service summary로 fallback하며 손상·권한·
+  symlink/reparse 오류에는 fail-closed한다.
+- **Devbox Manager browser catalog (#478)** — 브라우저 개발 모드의 고정 fallback을 공개된
+  v0.5.0 manifest와 정확히 맞추고, Manager 자신을 제외한 관리 대상 14개와 Launcher·Log Lens의
+  version·asset name·size·SHA-256을 동기화했다. 실제 Tauri 앱은 계속 Latest stable release의
+  manifest를 backend에서 검증해 사용한다.
+- **Windows acceptance inventory (#470)** — PowerShell StrictMode에서 제3자 uninstall key가
+  선택적 `DisplayName`을 갖지 않아 전체 inventory가 중단되던 harness 결함을 제거했다.
+- **Frontend CI timing** — Developer Toolbox의 비동기 handoff 성공 테스트가 native promise
+  호출과 React dialog close 사이에서 경합하지 않도록 최종 UI 상태까지 기다린다.
+
+### Changed
+
+- **변경 앱 version** — Log Lens와 Devbox Launcher는 `0.1.1`, Devbox Manager와 Run Manager는
+  `0.4.1`이다. 각 앱의 Cargo package, Tauri config, frontend package version을 같은 값으로
+  맞췄다. 나머지 11개 앱 version은 release tag와 독립적으로 유지한다.
+- **Prerelease authorization (#477)** — exact annotated `vX.Y.Z` tag push와 명시적 stable
+  manual dispatch는 유지하되, prerelease/RC tag push는 Windows build 전에 거부한다.
+  prerelease는 수동 dispatch에서 exact tag와 `allow_prerelease=true`를 함께 지정한 경우에만
+  허용한다. RC는 사용자가 명시적으로 요청하지 않는 한 생성하지 않는다.
+
+### Security
+
+- `jobs-services.json`에는 opaque definition ID, bounded label/detail과 fixed AppLink action만
+  기록하며 command, cwd, environment, path, credential, log content를 포함하지 않는다.
+- named snapshot도 기존 producer/version identity, size/depth/count bound, atomic write,
+  symlink/reparse rejection을 그대로 적용한다. 잘못된 새 sidecar 때문에 더 오래된 데이터로
+  조용히 낮춰 읽지 않는다.
+
+### Verification
+
+- v0.5.0 이후 수정 PR #470, #473, #477, #478, #479는 각각 required CI를 통과한 뒤 main에
+  병합됐다. #479는 Linux/Windows Rust와 frontend를 포함한 CI run `33227743754`를 통과했고,
+  관련 Rust 388 tests 및 workspace 전체 Clippy `-D warnings`도 태그 준비 전에 통과했다.
+- stable release workflow는 exact annotated `v0.5.1` tag와 source commit을 먼저 검증하고,
+  catalog의 15개 portable·15개 NSIS installer, notices, manifest인 정확한 32개 asset을 새로
+  빌드한다. 다운로드한 31개 manifest-declared asset의 size·SHA-256과 추가/누락 여부를 독립
+  검증한 draft만 Latest stable로 공개한다.
+- issue #176의 자동·코드·기존 packaged 근거 63개와 별개로, 실제 사용자 Windows/WSL·NTFS·
+  multi-monitor/IME·완전 offline 환경이 필요한 7개 수동 관찰은 완료했다고 주장하지 않는다.
 
 ## [v0.5.0] - 2026-08-29
 

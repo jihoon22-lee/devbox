@@ -1234,7 +1234,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-launcher"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "applink",
  "catalog",
@@ -1252,7 +1252,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-manager"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "applink",
  "catalog",
@@ -3082,7 +3082,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "log-lens"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "applink",
  "chrono",
@@ -4435,7 +4435,7 @@ dependencies = [
 
 [[package]]
 name = "run-manager"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "applink",
  "chrono",

@@ -1,6 +1,7 @@
 # Windows 11에서 devbox 앱 사용 가이드
 
-이 가이드는 **Windows 11 PC(예: 회사 PC)에서 안정판 13개 앱과 v0.5.0 Devbox Launcher·Log Lens를 포함한 15개 앱을 직접 빌드하고 실행**하는 방법을 설명한다.
+이 가이드는 **Windows 11 PC(예: 회사 PC)에서 현재 v0.5.1 stable의 15개 앱을 설치하거나
+source에서 빌드하고 실행**하는 방법을 설명한다.
 개발은 WSL에서 했지만, 앱 자체는 Windows 데스크톱 앱(Tauri)이므로 Windows PC에서 `.exe`로 빌드하면 그대로 쓸 수 있다.
 
 > 저장소: `https://github.com/jihoon22-lee/devbox` (공개 저장소)
@@ -10,8 +11,10 @@
 > `DevboxManager.exe` `CodePad.exe` `RunManager.exe`
 > `Workbench.exe` `WebhookLab.exe` `RepoManager.exe` `DevboxLauncher.exe` `LogLens.exe`
 
-> 참고: `DevboxLauncher.exe`와 `LogLens.exe`는 v0.5.0 앱이며 현재 안정판 v0.4.2의 13개 release asset에는 포함되지 않는다.
-> Windows W3에서 packaged WSL/Docker/Podman, file identity, download/clipboard, focus/IME를 별도로 확인한다.
+> 현재 v0.5.1 stable에는 `DevboxLauncher.exe`와 `LogLens.exe`를 포함한 15개 앱과
+> #470/#473/#477/#478/#479 보강이 들어 있다. 정확한 binary·workflow·asset digest·Latest
+> metadata는 GitHub Release에서 확인한다. #176은 63 checked와 7 physical Windows-only
+> pending이며 Windows W3 packaged 확인은 별도 acceptance다.
 
 ---
 
@@ -27,8 +30,9 @@
 
 > 빌드를 새로 하고 싶을 때(GitHub Actions가 대신 빌드):
 > 1. 루트 `CHANGELOG.md`에 새 버전 섹션(`## [vX.Y.Z] - 날짜`)으로 변경점 기록
-> 2. **방법 1 (안정판 태그로 배포, 권장)**: WSL/로컬에서 `git tag v0.1.1 && git push origin v0.1.1`
->    - **방법 2 (수동)**: GitHub → Actions 탭 → **Release** → **Run workflow** → 버전 입력(예: `v0.1.1`)
+> 2. **방법 1 (안정판 태그로 배포, 권장)**: WSL/로컬에서 annotated tag를 만들고 push
+>    (예: `git tag -a v0.5.2 -m "devbox v0.5.2"` 후 `git push origin refs/tags/v0.5.2`)
+>    - **방법 2 (수동)**: GitHub → Actions 탭 → **Release** → **Run workflow** → 버전 입력(예: `v0.5.2`)
 > 3. 그러면 Windows CI가 현재 catalog의 15개 앱을 빌드해 **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 새 릴리스를 만든다.
 >    버전(tag)은 **매번 새로** 써야 한다(기존 tag 재사용 불가).
 
@@ -36,6 +40,10 @@
 > tag push는 build 전에 거부되어 릴리스를 만들지 않는다. prerelease가 명시적으로 필요할
 > 때만 **수동 dispatch**에서 정확한 전체 버전을 입력하고 `allow_prerelease`를 `true`로
 > 선택한다. 이 gate의 기본값은 `false`다.
+
+> v0.5.1 stable의 exact annotated tag, workflow·32 public assets·31 manifest-declared assets,
+> hash와 Latest 상태는 GitHub Release가 권위 있는 source다. RC1~RC3 tag/release는 삭제된
+> historical evidence이며, 향후 RC는 사용자가 명시적으로 요청한 경우에만 만든다.
 
 > 참고: 개인 빌드라 코드 서명이 없어 SmartScreen 경고가 뜨면 `추가 정보 → 실행`을 누르면 된다.
 
@@ -206,7 +214,7 @@ C:\devbox\target\release\bundle\nsis\<ProductName>_<version>_x64-setup.exe      
 ```
 
 - 실행 파일 이름은 productName이 아니라 **Cargo 패키지명**(앱 디렉터리명, 예: `port-manager.exe`)이다.
-- 설치 패키지 이름은 **productName**(예: `PortManager_0.2.0_x64-setup.exe`)이다.
+- 설치 패키지 이름은 **productName**(예: `PortManager_0.3.0_x64-setup.exe`)이다.
 - 단, GitHub Releases 산출물은 휴대용 `<app-id>.exe` / 설치 `<app-id>_<version>_x64-setup.exe` 형태로 게시된다.
 
 ProductName 매핑:
@@ -227,7 +235,10 @@ ProductName 매핑:
 | webhook-lab | WebhookLab |
 | repo-manager | RepoManager |
 | devbox-launcher | DevboxLauncher |
-| log-lens | LogLens (v0.5.0 bootstrap; Windows W3 별도 검증) |
+| log-lens | LogLens |
+
+Log Lens의 v0.5.0 bootstrap과 v0.5.1 #473 Run reader는 stable에 포함됐다. Windows W3 실기만
+#176에서 별도 acceptance로 관리한다.
 
 ---
 
@@ -328,5 +339,5 @@ cd apps\port-manager
 pnpm tauri build
 
 # 4. 실행
-.\target\release\bundle\nsis\PortManager_0.2.0_x64-setup.exe
+.\target\release\bundle\nsis\PortManager_0.3.0_x64-setup.exe
 ```

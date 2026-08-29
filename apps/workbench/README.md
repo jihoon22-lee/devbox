@@ -17,7 +17,9 @@
 
 v0.4.1의 `Path`에는 distro나 profile 정보가 없다. 따라서 Start Workspace가 WSL Desktop으로
 보내는 것은 프로필의 구체적인 경로이며, WSL Desktop은 앱에서 선택된 distro를 사용하고 선택값이
-없으면 기본 distro를 사용한다. 프로필의 distro와 저장된 터미널 layout 복원은 v0.5.0으로 미룬다.
+없으면 기본 distro를 사용한다. 프로필의 distro와 저장된 터미널 layout 복원은 v0.5.0에서
+구현됐다. v0.5.1에서도 이 계약을 유지하며, historical v0.5.0 package와 v0.5.1의 정확한
+tag/workflow evidence는 각 GitHub Release에서 구분해 확인한다.
 
 ## 기술
 

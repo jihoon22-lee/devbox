@@ -1,6 +1,7 @@
 # devbox
 
-Tauri 15개 데스크톱 앱(안정판 13개 + v0.5.0 Devbox Launcher·Log Lens)을 하나의 모노레포로 관리하는 저장소. 각 앱은 **독립적으로 실행되고 독립적으로 `.exe`가 만들어집니다.**
+Tauri 15개 데스크톱 앱(기존 안정판 13개 + v0.5.0에서 추가된 Devbox Launcher·Log Lens)을 하나의
+모노레포로 관리하는 저장소. 각 앱은 **독립적으로 실행되고 독립적으로 `.exe`가 만들어집니다.**
 
 ## 앱 소개
 
@@ -30,25 +31,32 @@ Windows 11에서 실행 파일만 받아 바로 쓰려면 **Releases** 페이지
 https://github.com/jihoon22-lee/devbox/releases
 ```
 
-- **현재 최신 안정판:** [`v0.4.2`](https://github.com/jihoon22-lee/devbox/releases/tag/v0.4.2)
+- **현재 공개 최신 안정판:** [`v0.5.1`](https://github.com/jihoon22-lee/devbox/releases/tag/v0.5.1)
+- **v0.5.1 stable source/bundle:** #470 Windows acceptance inventory, #473 Run reader,
+  #477 release gate, #478 Manager 보강, #479/#474 Run Manager named sidecar 계약을 포함한다.
+  정확한 tag commit·workflow 결과·release asset 수와 digest·Latest metadata는
+  [GitHub v0.5.1 release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.5.1)가, Windows
+  수동 acceptance는 #176이 권위 있는 source다. release contract는 15개 앱·32개 public asset·
+  31개 manifest-declared asset·mismatch 0이다.
+- **v0.5.0 stable evidence (historical):** source tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54`, release
+  workflow `33216176818` 성공, 15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0,
+  `draft=false`, `prerelease=false`, GitHub Latest였다. 이 수치는 v0.5.0 공개 package의 historical
+  evidence이며 v0.5.1 publication metadata를 대신하지 않는다.
 - **v0.4.2 검증:** 공식 Windows build/publish/manifest workflow, 13개 앱의 27 release
   assets 독립 size·SHA-256 대조와 exact stable API Playground portable의 packaged
   H1-A~D·cleanup을 통과했다. [상세 release plan](./docs/superpowers/plans/2026-08-24-v0.4.2-release.md)에서
   RC1 historical failure, RC2 수정 검증과 stable evidence를 함께 확인할 수 있다.
-- **v0.5.0 상태:** 15개 앱의 P1·P2·선택 P3 구현과 목표 version은 main에 반영됐다.
-  `v0.5.0-rc1`은 PR #464/CI `33173371194`, release workflow `33175165583`와 정확한
-  32-asset 독립 다운로드 검증을 마친 immutable historical checkpoint지만, source audit에서
-  3/15 single-instance 누락을 확인해 active life-log/WSL Desktop user process와 함께 W4를
-  의도적으로 시작하지 않았다. fix PR #465/CI `33178381902`가
+- **#176 수동 경계:** 63개 항목은 확인됐고 7개 physical Windows-only 항목은 아직 미확인이다.
+  이는 공개 package의 asset count/hash 증거와 별도의 수동 acceptance 상태다.
+- **RC 역사:** `v0.5.0-rc1`은 PR #464/CI `33173371194`, release workflow `33175165583`와
+  32-asset 독립 검증을 남겼고 source audit에서 3/15 single-instance 누락으로 W4를 시작하지
+  않았다. fix PR #465/CI `33178381902`는
   `a5256fe252fb0c2115adfd02d303c277aaf7bccb`에 병합됐다. `v0.5.0-rc2`는 PR #466/CI
-  `33190371594`, release workflow `33192179195`와 새 32-asset 독립 검증까지 통과했지만,
-  후속 source-equivalence 감사에서 Workbench preflight 경로 종류·symlink/reparse parent
-  경계 누락을 발견했다. fix PR #467/CI `33201855818`은
-  `9dc237e23717bc294da0ff66d86df1bdce3cb595`에 병합됐다. RC1/RC2는 immutable historical
-  prerelease로 보존하고, RC3 새 package의 독립 asset 검증과 W1~W4 전체를 다시 실행한다.
-  RC3와 exact stable replay 전에는 v0.5.0을 검증 완료나 안정판으로 표시하지 않는다.
-  [v0.5.0 release plan](./docs/superpowers/plans/2026-08-28-v0.5.0-release.md)에서 각 RC의
-  경계, stable gate와 실제 증거를 추적한다.
+  `33190371594`, release workflow `33192179195`와 32-asset 검증을 남겼고, Workbench
+  preflight 경계 보완 후 fix PR #467/CI `33201855818`이
+  `9dc237e23717bc294da0ff66d86df1bdce3cb595`에 병합됐다. RC1~RC3 tag/release는 사용자 지시로
+  삭제됐으며 workflow/evidence만 historical record로 보존한다. 향후 RC는 사용자가 명시적으로
+  요청한 경우에만 만든다.
 
 - 각 앱의 `*-setup.exe`를 내려받아 설치하면 됩니다. WebView2 런타임(Windows 11 기본 포함)만 있으면 별도 도구 설치가 필요 없습니다.
 - 자세한 사용/설치/트러블슈팅: [docs/windows-guide.md](./docs/windows-guide.md)
@@ -60,7 +68,7 @@ https://github.com/jihoon22-lee/devbox/releases
 | [사용 가이드](./docs/windows-guide.md) | Windows 11에서 설치·사용·빌드·문제 해결 |
 | [개발자 가이드](./docs/development.md) | 구조, 시작하기, 개발 워크플로 |
 | [아키텍처](./docs/architecture.md) | 모노레포 구조, 레이어, 데이터 흐름 |
-| [로드맵](./docs/roadmap.md) | 진행 상황 / v0.5.0 확정 범위 |
+| [로드맵](./docs/roadmap.md) | 진행 상황 / v0.5.0 history / v0.5.1 stable bundle |
 | [v0.5.0 네이티브 우선 계획](./docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3, 신규 앱, 앱 간 handoff, 테스트·릴리스 gate |
 | [v0.5.0 릴리스 계획](./docs/superpowers/plans/2026-08-28-v0.5.0-release.md) | 목표 version, RC asset, Windows W1~W4, stable 승격·정리 gate |
 | [의존성·제3자 고지 정책](./docs/dependency-policy.md) | Cargo·pnpm allowlist, advisory 예외 만료, notices 생성·배포 규칙 |

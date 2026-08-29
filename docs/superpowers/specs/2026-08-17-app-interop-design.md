@@ -1,19 +1,25 @@
 # 앱 간 연동 — 인바운드 계약과 생태계 확장 설계
 
 - 상태: v0.4.1 범위(§1의 Path/Workspace 라우팅·§3·§5.1) 구현 및 안정판 배포 완료;
-  v0.5.0 catalog·Profile/Query·snapshot 정리와 protocol v2 handoff **범위 확정, 개발 착수**
+  v0.5.0 catalog·Profile/Query·snapshot 정리와 protocol v2 handoff는 stable에 반영됐다.
+  #470/#473/#477/#478/#479를 포함한 v0.5.1 stable maintenance 상태를 함께 기록한다.
 - 2026-08-27: Webhook Lab → API Playground `api-request/v1` producer/receiver draft 구현;
   preview·claim/ack/restore·privacy/no-clipboard 경계는 #315에서 검증
 - 2026-08-28: `#320` Devbox Launcher bounded catalog/snapshot consumer와 `Task`/`Install`
   routing 구현. 기존 Life Log→Knowledge 구조화 handoff 계약은 유지
 - 2026-08-28: `#366/#367` Run Manager·WSL Desktop producer와 Log Lens bounded
-  claim/preview lifecycle 보강. Run log를 실제로 읽는 Log Lens receiver adapter는 별도
-  후속 작업이며, 기존 ancestor TOCTOU와 local-adapter FIFO/UNC reader 위험은 잔여 범위다.
+  claim/preview lifecycle 보강. Run log를 실제로 읽는 Log Lens receiver adapter는 #472/#473에서
+  완성됐고 v0.5.0 tag 이후 v0.5.1 stable에 포함된다. 기존 ancestor TOCTOU와
+  local-adapter FIFO/UNC reader 위험은 잔여 범위다.
 - 작성일: 2026-08-17
 - 범위: 저장소 전체 — `crates/applink`, `crates/launch`, `crates/integration`, 신규
-  `crates/catalog`, `apps/catalog.json`, 기존 13개 앱 + 구현된 Devbox Launcher·계획된 Log Lens
+  `crates/catalog`, `apps/catalog.json`, 현재 15개 앱(Devbox Launcher·Log Lens 포함)
 - 관련: [UX 개선 설계](./2026-08-15-ux-improvements-design.md) §4.2, [wsl-desktop 터미널 설계](./2026-08-17-wsl-desktop-terminal-design.md) §4.4
 - 근거: `docs/product-opportunities.md` §10.1(versioned read-only snapshot), §12.4(앱 간 연결)
+
+> **Release boundary:** 공개 v0.5.0 stable은 15개 앱/32개 asset evidence를 보유한다. #470/#473/
+> #477/#478 및 #479로 닫힌 #474는 v0.5.0 tag 이후 반영된 v0.5.1 stable maintenance다.
+> 정확한 v0.5.1 tag/workflow/asset evidence는 GitHub Release에서 확인한다.
 
 > **2026-08-22 확장.** 이 문서의 v0.5.0 제안 범위는
 > [v0.5.0 네이티브 우선 계획](./2026-08-22-v0.5.0-native-first-plan.md)에서 확정됐다.
@@ -495,7 +501,7 @@ exit 127, 기타 non-zero를 각각 `available`/`missing`/`error`로 구분한�
 `snapshot:wsl-desktop/runtime/v1`로 선언한다. Workbench #281 consumer와 Docker/WSL action은
 이 producer 구현에 포함되지 않는다.
 
-**2026-08-29 #474 구현 상태 (v0.5.0 tag 이후 post-release source correction).** Run Manager는
+**2026-08-29 #474 구현 상태 (merged by #479; v0.5.0 tag 이후 v0.5.1 maintenance correction).** Run Manager는
 `write_atomic`으로 기존 flat `run-manager/v1/summary.json` status protocol을 유지하고,
 `write_named_view_snapshot_atomic`으로 같은 producer/version의
 `run-manager/v1/jobs-services.json` named capability를 별도 발행한다. v1 `data`는 기존
