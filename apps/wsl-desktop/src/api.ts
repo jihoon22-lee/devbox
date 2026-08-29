@@ -121,9 +121,9 @@ export async function startSession(
 
 export async function detectMultiplexers(distro: string): Promise<MultiplexerAvailability[]> {
   if (!isTauri()) return [
-    { kind: "native", available: true, version: null },
-    { kind: "tmux", available: false, version: null },
-    { kind: "zellij", available: false, version: null },
+    { kind: "native", status: "available", version: null, source: null },
+    { kind: "tmux", status: "missing", version: null, source: null },
+    { kind: "zellij", status: "missing", version: null, source: null },
   ];
   return invoke<MultiplexerAvailability[]>("detect_multiplexers", { distro });
 }

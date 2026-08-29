@@ -35,7 +35,10 @@
   단일 입력·PTY I/O는 계속 사용할 수 있다.
 - **선택적 프로세스 유지** — native workspace는 외부 도구 없이 완전하게 동작한다. 이미
   설치된 tmux/zellij만 감지해 stable `wsld-*` 세션에 opt-in attach하며, 설치·download하지
-  않고 부재/감지 실패 시 native로 폴백한다.
+  않고 부재/감지 실패 시 native로 폴백한다. 감지는 login shell이나 rc 파일을 실행하지 않고
+  선택 distro 사용자의 `HOME`·`PATH`만 제한적으로 조회해 `~/.local/bin`, `~/.cargo/bin`과
+  고정 system bin 후보를 검사한다. 결과는 사용 가능·없음·확인 오류를 구분하며 실제 절대
+  실행 경로는 renderer, 로그, 프로필에 노출하지 않는다.
 - **상태 패널** — WSL 배포판과 선택 distro의 Docker 컨테이너를 표시한다. 260px의 좁은
   패널에서도 이름·정규화 상태·축약 port mapping을 먼저 보여 주고, 컨테이너를 펼치면 Docker가
   반환한 ID·image·status·ports 원문을 확인하고 start/stop/restart할 수 있다. Docker가 없으면
@@ -73,7 +76,8 @@
   clipboard capability는 읽기 텍스트 하나만 허용한다.
 - tmux/zellij 어댑터는 shell 문자열 조립 없이 exact argv만 사용한다. tmux UI option은 해당
   session에만 적용하고 zellij는 내장 `disable-status` layout과 frame/mouse off option을
-  사용해 앱의 탭·팬 UI와 xterm selection을 유지한다.
+  사용해 앱의 탭·팬 UI와 xterm selection을 유지한다. 세션 시작 때마다 실행 파일을 다시
+  해석하고 version probe, 기존 세션 조회, 실제 PTY launch에 같은 검증된 절대 경로를 사용한다.
 - 공용 크레이트 `crates/wsl` — 프로세스를 실행하지 않는 WSL 공용 프리미티브로, `wsl.exe` 실행
   argv(`--cd` 포함)·`wslpath` argv 조립, distro 이름 검증, WSL 출력 디코딩, Windows↔WSL 경로와
   canonical project key 정규화를 제공한다.

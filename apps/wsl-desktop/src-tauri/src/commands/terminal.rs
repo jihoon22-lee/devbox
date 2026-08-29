@@ -252,7 +252,7 @@ fn decode_chunk(carry: &mut Vec<u8>, chunk: &[u8]) -> String {
 /// argv also prevents a path from becoming shell syntax (`bash -lc ...`).
 #[cfg(test)]
 fn build_session_command(distro: &str, cwd: Option<&str>) -> Result<CommandBuilder, String> {
-    build_workspace_session_command(distro, cwd, "ephemeral", MultiplexerKind::Native)
+    build_workspace_session_command(distro, cwd, "ephemeral", MultiplexerKind::Native, None)
 }
 
 fn build_workspace_session_command(
@@ -260,8 +260,9 @@ fn build_workspace_session_command(
     cwd: Option<&str>,
     pane_key: &str,
     multiplexer: MultiplexerKind,
+    resolved_executable: Option<&str>,
 ) -> Result<CommandBuilder, String> {
-    let argv = build_session_argv(distro, cwd, pane_key, multiplexer)?;
+    let argv = build_session_argv(distro, cwd, pane_key, multiplexer, resolved_executable)?;
     let mut command = CommandBuilder::new(&argv[0]);
     command.args(&argv[1..]);
     Ok(command)
@@ -281,17 +282,29 @@ pub async fn start_session(
     pane_key: String,
     multiplexer: MultiplexerKind,
 ) -> Result<StartedSession, String> {
-    let actual_multiplexer =
-        if crate::commands::multiplexer::kind_is_available(&distro, multiplexer).await {
-            multiplexer
-        } else {
-            MultiplexerKind::Native
-        };
-    let resumed = actual_multiplexer != MultiplexerKind::Native
-        && crate::commands::multiplexer::session_is_running(&distro, &pane_key, actual_multiplexer)
-            .await;
-    let cmd =
-        build_workspace_session_command(&distro, cwd.as_deref(), &pane_key, actual_multiplexer)?;
+    let resolved_multiplexer = if multiplexer == MultiplexerKind::Native {
+        None
+    } else {
+        crate::commands::multiplexer::resolve_for_launch(&distro, multiplexer).await
+    };
+    let actual_multiplexer = resolved_multiplexer
+        .as_ref()
+        .map_or(MultiplexerKind::Native, |resolved| resolved.kind());
+    let resumed = match resolved_multiplexer.as_ref() {
+        Some(resolved) => {
+            crate::commands::multiplexer::session_is_running(&distro, &pane_key, resolved).await
+        }
+        None => false,
+    };
+    let cmd = build_workspace_session_command(
+        &distro,
+        cwd.as_deref(),
+        &pane_key,
+        actual_multiplexer,
+        resolved_multiplexer
+            .as_ref()
+            .map(|resolved| resolved.executable()),
+    )?;
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {

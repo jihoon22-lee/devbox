@@ -9,6 +9,20 @@ interface WorkspacePanelProps {
   onDelete: (profile: WorkspaceProfile) => void;
 }
 
+const SOURCE_LABELS: Record<NonNullable<MultiplexerAvailability["source"]>, string> = {
+  path: "배포판 PATH",
+  userLocal: "사용자 로컬",
+  cargoBin: "Cargo bin",
+  system: "시스템",
+};
+
+function availabilityTitle(item: MultiplexerAvailability): string {
+  if (item.status === "error") return "설치 여부를 확인할 수 없습니다";
+  if (item.status === "missing") return "설치되지 않음";
+  const details = [item.version, item.source ? SOURCE_LABELS[item.source] : null].filter(Boolean);
+  return details.join(" · ") || "사용 가능";
+}
+
 export default function WorkspacePanel({
   profiles,
   muxAvailability,
@@ -49,8 +63,12 @@ export default function WorkspacePanel({
       </div>
       <div className="mux-status" aria-label="멀티플렉서 상태">
         {muxAvailability.filter((item) => item.kind !== "native").map((item) => (
-          <span key={item.kind} className={item.available ? "available" : "unavailable"} title={item.version ?? "설치되지 않음"}>
-            {item.kind}: {item.available ? "사용 가능" : "없음 · native 사용"}
+          <span key={item.kind} className={item.status} title={availabilityTitle(item)}>
+            {item.kind}: {item.status === "available"
+              ? "사용 가능"
+              : item.status === "missing"
+                ? "없음 · native 사용"
+                : "확인 오류 · native 사용"}
           </span>
         ))}
       </div>

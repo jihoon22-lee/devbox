@@ -101,9 +101,9 @@ export default function App() {
   const [startCommand, setStartCommand] = useState("");
   const [multiplexer, setMultiplexer] = useState<MultiplexerKind>("native");
   const [muxAvailability, setMuxAvailability] = useState<MultiplexerAvailability[]>([
-    { kind: "native", available: true, version: null },
-    { kind: "tmux", available: false, version: null },
-    { kind: "zellij", available: false, version: null },
+    { kind: "native", status: "available", version: null, source: null },
+    { kind: "tmux", status: "missing", version: null, source: null },
+    { kind: "zellij", status: "missing", version: null, source: null },
   ]);
   const [profiles, setProfiles] = useState<WorkspaceProfile[]>([]);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
@@ -244,15 +244,15 @@ export default function App() {
         if (disposed) return;
         setMuxAvailability(availability);
         setMultiplexer((current) =>
-          availability.some((item) => item.kind === current && item.available) ? current : "native"
+          availability.some((item) => item.kind === current && item.status === "available") ? current : "native"
         );
       })
       .catch(() => {
         if (!disposed) {
           setMuxAvailability([
-            { kind: "native", available: true, version: null },
-            { kind: "tmux", available: false, version: null },
-            { kind: "zellij", available: false, version: null },
+            { kind: "native", status: "available", version: null, source: null },
+            { kind: "tmux", status: "error", version: null, source: null },
+            { kind: "zellij", status: "error", version: null, source: null },
           ]);
           setMultiplexer("native");
         }
@@ -1359,8 +1359,14 @@ export default function App() {
           title="native는 외부 도구 없이 동작합니다. tmux/zellij는 설치된 경우에만 선택할 수 있습니다."
         >
           {muxAvailability.map((item) => (
-            <option key={item.kind} value={item.kind} disabled={!item.available}>
-              {item.kind}{item.kind === "native" ? " (기본)" : item.available ? " (설치됨)" : " (없음)"}
+            <option key={item.kind} value={item.kind} disabled={item.status !== "available"}>
+              {item.kind}{item.kind === "native"
+                ? " (기본)"
+                : item.status === "available"
+                  ? " (설치됨)"
+                  : item.status === "missing"
+                    ? " (없음)"
+                    : " (확인 오류)"}
             </option>
           ))}
         </select>

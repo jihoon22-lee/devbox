@@ -810,8 +810,12 @@ select {
   color: #3fb950;
 }
 
-.mux-status .unavailable {
+.mux-status .missing {
   color: var(--dim);
+}
+
+.mux-status .error {
+  color: var(--red);
 }
 
 /* ── app-owned action palette ─────────────────────────────────── */
