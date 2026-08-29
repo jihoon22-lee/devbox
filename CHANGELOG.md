@@ -3,6 +3,14 @@
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 
+## [Unreleased]
+
+### Fixed
+
+- **Log Lens Run source** — Run Manager handoff를 preview·추가한 뒤 항상 unavailable이 되던
+  누락을 보완했다. identity-only 계약을 유지한 채 고정 app-data root의 stdout/stderr 회전
+  segment만 logical cursor로 읽고, link/reparse·범위·크기 위반은 fail-closed한다.
+
 ## [v0.5.0] - 2026-08-29
 
 v0.5.0은 기존 13개 앱의 native/offline 기능을 강화하고 Devbox Launcher와 Log Lens를 더해

@@ -20,9 +20,11 @@ in-memory ring (100,000 lines or 64 MiB).
   source contract. Run payloads are the existing strict `{kind, sourceId,
   runId, stream}` identity; WSL payloads are an allowlisted `sourceType` plus
   validated distro and `wslPath`/unit. The AppLink argv carries only the
-  opaque one-time envelope kind/id. This grouped integration is producer-only:
-  Run Manager publishes an identity handoff, while the app-owned Run receiver
-  adapter that reads its logs is a separately tracked follow-up.
+  opaque one-time envelope kind/id. After confirmation, the Run adapter maps
+  that identity to the fixed Run Manager app-data root and reads only the
+  selected app-owned stdout/stderr rotation segments in logical-offset order.
+  A producer path, database row, command, environment value, or raw log is not
+  accepted through the handoff boundary.
 - The receiver re-checks protocol version, opaque envelope/claim identity,
   timestamps, lease bounds, target, producer, and source-family parity at the
   claim boundary. Native responses are schema-validated again in the frontend
@@ -58,7 +60,9 @@ The handoff modal is also single-flight: while a preview, accept/discard
 action, or bounded recovery is active, only the newest opaque request is
 queued. Escape/Tab focus handling, opener restoration, unmount guards, and
 generation checks prevent a stale native response from mutating the source
-UI. Run receiver reading remains outside this producer/claim-preview scope.
+UI. The Run reader uses a decimal logical cursor, reports retention rotation
+or truncation, and fails closed on linked/reparse paths, malformed or
+overlapping segment ranges, and segment/count/output limits.
 
 Parser timestamps accept RFC3339, journal-style numeric offsets, fractional ISO
 forms, and timezone-less local forms on a best-effort basis. Browser fixtures
@@ -81,6 +85,6 @@ The packaged Windows W3 smoke remains necessary for installed WSL and
 Docker/Podman availability, native file identity semantics, and download,
 clipboard, focus, and IME behavior.
 
-The catalog entry is enabled for a future catalog-driven v0.5.0 release; this
-bootstrap is not part of the already published v0.4.2 stable assets until its
-W3 evidence is accepted.
+The Log Lens bootstrap is included in the published v0.5.0 assets. The Run
+reader is the post-release main-branch completion tracked by #472; it does not
+rewrite or replace the immutable v0.5.0 release assets.

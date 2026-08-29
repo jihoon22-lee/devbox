@@ -180,7 +180,7 @@ degrade한다.** 크래시하거나 오류 대화상자를 띄우지 않는다. 
 | run-manager | `Task` (v0.5.0) | 저장된 job/service id를 재검증하고 확인 후 실행 |
 | devbox-manager | `Install` (v0.5.0, hidden) | embedded catalog app id를 재검증하고 설치 화면 표시 |
 | webhook-lab | `Handoff(webhook-fixture/v1)` | response fixture 초안 preview |
-| log-lens | `Handoff(log-source/v1)` | local/WSL source 연결과 Run identity handoff preview (Run receiver follow-up) |
+| log-lens | `Handoff(log-source/v1)` | local/WSL source 연결, Run identity preview와 fixed app-owned rotation reader |
 
 이 표는 §2의 `accepts` 선언과 1:1 대응한다. 선언하지 않은 target은 수신 앱이 명시적인
 no-op/error로 처리하며 다른 기본 동작으로 fall through하지 않는다.
@@ -265,9 +265,10 @@ cold/hot request를 자동으로 source에 추가하지 않고 claim→summary p
 유지한 채 최대 세 번의 bounded recovery 시도를 제공한다.
 native 오류는 고정 코드만 frontend로 건너가며 raw path/payload/storage detail은 노출하지 않는다.
 payload와 argv에는 secret/raw credential/로그 원문을 넣지 않으며, WSL path는 이 일회성 TTL
-envelope과 process-local adapter 설정 밖에 저장하지 않는다. Run payload는 identity-only이므로
-Run log를 읽는 app-owned receiver adapter는 별도 후속 작업이다. clipboard·shell·network
-ingest·permanent archive 경로를 제공하지 않는다.
+envelope과 process-local adapter 설정 밖에 저장하지 않는다. Run payload는 identity-only로
+유지한다. Log Lens는 그 identity를 고정 Run Manager app-data root와 exact stdout/stderr segment
+grammar에만 해석하고 logical cursor로 읽으며, producer path·DB row를 전달받지 않는다.
+clipboard·shell·network ingest·permanent archive 경로를 제공하지 않는다.
 
 producer가 envelope을 만든 뒤 Log Lens launch가 실패하면 방금 만든 descriptor와 immutable
 envelope을 다시 대조해 exact pending 파일만 제거한다. 따라서 launch 실패가 사용 불가능한
@@ -640,8 +641,8 @@ single-instance·preview/apply/cancel·fixed error/no-clipboard 경계를 포함
 | 13 | Webhook Lab → API Playground `api-request/v1` | v0.5.0 |
 | 14 | Life Log → Knowledge `knowledge-draft/v1` | v0.5.0 |
 | 15 | Devbox Launcher catalog/snapshot action consumer bootstrap | v0.5.0 |
-| 16 | Log Lens `log-source/v1` claim/preview boundary; app-owned Run receiver adapter remains a follow-up | v0.5.0 |
+| 16 | Log Lens `log-source/v1` claim/preview boundary + #472 fixed Run rotation reader | v0.5.0 + post-release main completion |
 | 17 | Developer Toolbox → API Playground `api-request/v1` (P3 integration) | v0.5.0 |
-| 18 | Run Manager·WSL Desktop → Log Lens `log-source/v1` producer integration (Run receiver reading is a separate follow-up) | v0.5.0 |
+| 18 | Run Manager·WSL Desktop → Log Lens `log-source/v1` producer integration | v0.5.0 |
 
 1과 2는 한 PR로 묶는다 — 계약과 첫 소비자를 분리하면 검증이 안 된다.
