@@ -14,7 +14,11 @@
   native 저장, 브라우저 빌드는 실제 local data가 없는 `browser-preview` 다운로드로
   구분한다.
 - **기간 통계** — 주/월 사용량 차트, 앱 순위, 커밋 트렌드
-- **git 프로젝트 연동** — git 경로 등록으로 커밋 집계
+- **git 프로젝트 연동** — Windows absolute path뿐 아니라
+  `\\wsl$\<distro>\...`, `//wsl$/<distro>/...`,
+  `\\wsl.localhost\<distro>\...` 형식의 WSL-native 저장소를 등록해 커밋을 집계한다.
+  Settings의 `연결 확인`은 저장과 분리된 명시적 probe이며, 저장 자체는 WSL 배포판을
+  시작하거나 Git subprocess를 실행하지 않는다.
 - **프로젝트 snapshot** — 등록 프로젝트와 최근 7일 활동의 숫자 요약을 Workbench용 `projects/v1` view로 발행
 - **Knowledge 활동 source** — `knowledge-base/activity/v1`의 오늘 작성·수정 수와 최근 수정 시각을 Data Sources에 freshness와 함께 표시한다. 각 source에는 `fresh`, `stale`, `expired`/`unavailable` 상태, `requested-range` 또는 `latest-snapshot-out-of-range` 범위, stable error code와 사람이 읽을 수 있는 설명을 함께 노출한다.
 - **로컬 export** — session·Git과 Run Manager·Knowledge source provenance를 같은
@@ -43,11 +47,17 @@
   contract를 유지하며, 실제 데이터가 없다는 사실은 `RenderedExport.origin`과 source
   metadata로 구분한다.
 - Git 조회는 검증된 absolute project path만 fixed argv로 `git log --format=%ct`에
-  전달한다. `--since`/`--before`는 초 단위 보조 필터이고 최종 포함 조건은 정확한
+  전달한다. Windows 경로는 native Git을 사용하고 WSL UNC 경로는 server alias와 distro를
+  정규화한 뒤 `wsl.exe -d <distro> -- /usr/bin/timeout ... /usr/bin/env ... -- git -C
+  <linux-path> ...`의 shell 없는 고정 argv로 해당 배포판의 Git을 사용한다. Linux 경로
+  부분의 대소문자는 보존하며 `wsl$`/`wsl.localhost` 및 slash 표기 차이만 같은 project
+  identity로 중복 제거한다. `--since`/`--before`는 초 단위 보조 필터이고 최종 포함 조건은 정확한
   `[startMs, endMs)` millisecond 범위다. bounded child는 stdin을 `null`로 닫아
   interactive prompt를 차단하고, stderr는 버리며 subprocess별 timeout·stdout 상한을
   적용한다. 오류는 `git_timeout`, `git_output_too_large`, `git_failed` 같은 고정 code만
-  남기고 path·remote URL·credential은 export/화면으로 반향하지 않는다.
+  남기며 WSL 실행/배포판 문제도 `git_wsl_unavailable`/`git_wsl_failed`로 축약해
+  path·remote URL·credential을 export/화면으로 반향하지 않는다. 한 프로젝트의 실패는
+  정상 session 및 다른 Git 프로젝트의 digest를 막지 않는다.
 - Windows 저장은 사용자가 native save dialog에서 경로와 overwrite를 확정한 뒤에만
   실행된다. 선택된 절대 경로의 parent/확장자를 검증하고 `crates/filesystem::atomic_write`
   로 sibling temporary file을 교체한다. 저장 직전에 byte length·format metadata와 JSON/CSV/
@@ -122,7 +132,9 @@ digest를 summary에 포함할 수 있다. snapshot 원문에 있는 note ID·pa
 boundary를 넘지 않는다. Git project path는
 절대 경로·traversal/device path가 아닌 경우에만 포함하고, invalid path는 외부 command에
 전달하지 않는다. common `filesystem::parse_safe_project_path`의 Windows drive/UNC/POSIX
-규칙을 공유하며 최대 64개 unique project만 사용한다.
+규칙을 공유하며 최대 64개 unique project만 사용한다. Settings 저장은 backend가 같은
+validation/identity 규칙으로 원자적으로 정규화한 목록을 반환한 뒤에만 화면 상태를
+확정하고, 저장 실패나 오래된 settings 응답은 마지막 확인된 목록을 덮어쓰지 않는다.
 
 브라우저 결과의 `RenderedExport.origin`은 `browser-preview`이고 native 결과는 `native`다.
 브라우저 preview의 모든 source는 `available: false`, `scope: browser-preview-only`,
@@ -151,8 +163,10 @@ checked arithmetic로 overflow를 발견하면 fail-closed하고, duration 내�
 app, `hasActivity`를 제공하고 전체에는 평균 일일 사용량과 top app을 제공한다. 저장된 duration은
 range에서 자르지 않고 시작 timestamp가 속한 boundary에 귀속한다.
 
-Git은 export producer의 safe absolute project path·identity dedupe·fixed argv·null stdin·2초
-timeout·256KiB stdout·폐기 stderr·stable error code를 그대로 공유한다. 프로젝트 설정은 raw
+Git은 export producer의 safe absolute project path·identity dedupe·target-aware fixed
+argv·null stdin·2초 timeout·256KiB stdout·폐기 stderr·stable error code를 그대로 공유한다.
+WSL UNC는 해당 distro 안의 Linux Git으로 실행하며 distro/server alias만 case-insensitive,
+Linux path tail은 case-sensitive identity로 취급한다. 프로젝트 설정은 raw
 문자열 단계에서 64개/경로 4KiB/전체 byte 상한을 먼저 검사하며, invalid/duplicate 경로는
 native Git argv에 전달하지 않는다. 한 digest operation은 DB progress hook와 Git child에 같은
 cancellation token을 전달하고 한 번에 하나만 실행한다. 앱 필터는 Git 결과에 영향을 주지

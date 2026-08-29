@@ -391,6 +391,36 @@ select:disabled {
   border-bottom: none;
 }
 
+.git-project-details,
+.git-project-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.git-project-details {
+  min-width: 0;
+  flex-direction: column;
+}
+
+.git-project-details .mono {
+  overflow-wrap: anywhere;
+}
+
+.git-project-actions {
+  flex: 0 0 auto;
+}
+
+.project-probe-ok {
+  color: var(--green);
+  font-size: 12px;
+}
+
+.project-probe-error {
+  color: var(--red);
+  font-size: 12px;
+}
+
 .source-row {
   align-items: flex-start;
 }

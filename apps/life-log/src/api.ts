@@ -353,9 +353,23 @@ export async function getProjects(): Promise<string[]> {
   return invoke<string[]>("get_projects");
 }
 
-export async function setProjects(paths: string[]): Promise<void> {
-  if (!isTauri()) return;
-  await invoke("set_projects", { paths });
+export async function setProjects(paths: string[]): Promise<string[]> {
+  if (!isTauri()) return paths;
+  return invoke<string[]>("set_projects", { paths });
+}
+
+export interface ProjectProbe {
+  path: string;
+  target: "windows" | "wsl";
+  repository: boolean;
+  errorCode: string | null;
+}
+
+export async function probeProject(path: string): Promise<ProjectProbe> {
+  if (!isTauri()) {
+    return { path, target: "windows", repository: false, errorCode: "browser_preview_only" };
+  }
+  return invoke<ProjectProbe>("probe_project", { path });
 }
 
 export async function getIdleThreshold(): Promise<number> {

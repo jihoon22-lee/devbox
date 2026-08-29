@@ -3,6 +3,7 @@ pub mod attribution;
 pub mod db;
 pub mod digest;
 pub mod draft_history;
+pub mod error_codes;
 pub mod export;
 #[allow(dead_code)]
 pub mod handoff;

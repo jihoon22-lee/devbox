@@ -49,6 +49,7 @@ pub fn run() {
             commands::export::save_life_log,
             commands::life::set_projects,
             commands::life::get_projects,
+            commands::life::probe_project,
             commands::life::get_day,
             commands::life::get_range,
             commands::tracking::start_tracking,

@@ -394,6 +394,25 @@ pub fn validate_project_settings(projects: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate and identity-deduplicate the settings form without touching a
+/// repository. This keeps save atomic: either every row is a safe native/WSL
+/// project target or the previous setting remains unchanged.
+pub fn normalize_project_settings(projects: &[String]) -> Result<Vec<String>, String> {
+    validate_project_settings(projects)?;
+    let mut seen = BTreeSet::new();
+    let mut normalized = Vec::with_capacity(projects.len());
+    for raw in projects {
+        let path = safe_project_path(raw).ok_or_else(|| "project_path_invalid".to_string())?;
+        let safe =
+            parse_safe_project_path(&path).ok_or_else(|| "project_path_invalid".to_string())?;
+        devbox_git::GitTarget::from_project_path(safe.as_str())?;
+        if seen.insert(safe.identity().to_owned()) {
+            normalized.push(safe.into_string());
+        }
+    }
+    Ok(normalized)
+}
+
 fn validate_range(input: &ExportInput) -> Result<ValidatedRange, String> {
     let start_date = DateKey::parse(&input.start_date)?;
     let end_date = DateKey::parse(&input.end_date)?;
@@ -1065,59 +1084,17 @@ fn is_valid_generated_at(value: &str) -> bool {
 
 #[cfg(any(target_os = "windows", test))]
 fn is_safe_error_code(value: &str) -> bool {
-    matches!(
-        value,
-        "no_safe_project_paths"
-            | "snapshot_unavailable"
-            | "snapshot_invalid"
-            | "snapshot_schema_unsupported"
-            | "snapshot_payload_invalid"
-            | "snapshot_changed_during_read"
-            | "snapshot_stale"
-            | "git_invalid_arguments"
-            | "git_spawn_failed"
-            | "git_stdout_unavailable"
-            | "git_wait_failed"
-            | "git_timeout"
-            | "git_reader_failed"
-            | "git_output_read_failed"
-            | "git_failed"
-            | "git_output_invalid_utf8"
-            | "git_output_too_large"
-            | "git_output_invalid"
-    )
+    crate::core::error_codes::is_source(value)
 }
 
 #[cfg(any(target_os = "windows", test))]
 fn is_git_error_code(value: &str) -> bool {
-    matches!(
-        value,
-        "no_safe_project_paths"
-            | "git_invalid_arguments"
-            | "git_spawn_failed"
-            | "git_stdout_unavailable"
-            | "git_wait_failed"
-            | "git_timeout"
-            | "git_reader_failed"
-            | "git_output_read_failed"
-            | "git_failed"
-            | "git_output_invalid_utf8"
-            | "git_output_too_large"
-            | "git_output_invalid"
-    )
+    value == "no_safe_project_paths" || crate::core::error_codes::is_git(value)
 }
 
 #[cfg(any(target_os = "windows", test))]
 fn is_snapshot_error_code(value: &str) -> bool {
-    matches!(
-        value,
-        "snapshot_unavailable"
-            | "snapshot_invalid"
-            | "snapshot_schema_unsupported"
-            | "snapshot_payload_invalid"
-            | "snapshot_changed_during_read"
-            | "snapshot_stale"
-    )
+    crate::core::error_codes::is_snapshot(value)
 }
 
 fn read_privacy_rules(conn: &Connection) -> PrivacyRules {
@@ -1319,17 +1296,20 @@ fn collect_git_export(
             "--format=%ct",
             "--",
         ];
-        let result = devbox_git::run_bounded_with_cancel(
-            &args,
-            path,
-            GIT_TIMEOUT,
-            MAX_GIT_OUTPUT_BYTES,
-            cancellation,
-        )
-        .and_then(|stdout| {
-            parse_git_timestamps(&stdout, range, &mut output.daily_commits)
-                .map_err(ToOwned::to_owned)
-        });
+        let result = devbox_git::GitTarget::from_project_path(path)
+            .and_then(|target| {
+                devbox_git::run_bounded_target_with_cancel(
+                    &args,
+                    &target,
+                    GIT_TIMEOUT,
+                    MAX_GIT_OUTPUT_BYTES,
+                    cancellation,
+                )
+            })
+            .and_then(|stdout| {
+                parse_git_timestamps(&stdout, range, &mut output.daily_commits)
+                    .map_err(ToOwned::to_owned)
+            });
         let (commits, error_code) = match result {
             Ok(commits) => (commits, None),
             Err(code) => {
@@ -2637,6 +2617,27 @@ mod tests {
     }
 
     #[test]
+    fn project_settings_normalize_wsl_aliases_atomically() {
+        let normalized = normalize_project_settings(&[
+            "//wsl$/Ubuntu/home/jihoon/projects/Devbox/".into(),
+            "\\\\wsl.localhost\\ubuntu\\home\\jihoon\\projects\\Devbox".into(),
+        ])
+        .unwrap();
+        assert_eq!(
+            normalized,
+            vec!["//wsl$/Ubuntu/home/jihoon/projects/Devbox"]
+        );
+        assert_eq!(
+            normalize_project_settings(&[
+                "//wsl$/Ubuntu/home/jihoon/projects/Devbox".into(),
+                "relative/project".into(),
+            ])
+            .unwrap_err(),
+            "project_path_invalid"
+        );
+    }
+
+    #[test]
     fn duration_addition_overflow_fails_closed() {
         let sessions = vec![
             ExportSession {
@@ -2675,6 +2676,29 @@ mod tests {
         .unwrap();
 
         assert_eq!(prepared.safe_projects, vec!["C:/Work/Devbox"]);
+    }
+
+    #[test]
+    fn wsl_unc_aliases_dedupe_without_folding_linux_path_case() {
+        let connection = database();
+        let prepared = prepare_document(
+            &connection,
+            &[
+                "//wsl$/Ubuntu/home/jihoon/projects/DevBox".into(),
+                "\\\\wsl.localhost\\ubuntu\\home\\jihoon\\projects\\DevBox".into(),
+                "//wsl$/Ubuntu/home/jihoon/projects/devbox".into(),
+            ],
+            &input(ExportFormat::Json),
+        )
+        .unwrap();
+
+        assert_eq!(
+            prepared.safe_projects,
+            vec![
+                "//wsl$/Ubuntu/home/jihoon/projects/DevBox",
+                "//wsl$/Ubuntu/home/jihoon/projects/devbox",
+            ]
+        );
     }
 
     #[test]

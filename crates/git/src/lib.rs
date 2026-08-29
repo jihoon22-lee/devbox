@@ -270,6 +270,43 @@ pub fn resolve_git() -> PathBuf {
     PathBuf::from("git")
 }
 
+/// Execution namespace for one repository. WSL UNC paths are converted to a
+/// distro-scoped POSIX cwd before a process is spawned; ordinary drive/UNC
+/// paths retain the native Git for Windows path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitTarget {
+    Native { cwd: String },
+    Wsl { distro: String, cwd: String },
+}
+
+impl GitTarget {
+    pub fn native(cwd: impl Into<String>) -> Self {
+        Self::Native { cwd: cwd.into() }
+    }
+
+    pub fn from_project_path(path: &str) -> Result<Self, String> {
+        match devbox_wsl::path::parse_wsl_unc_path(path)
+            .map_err(|_| "git_invalid_target".to_string())?
+        {
+            Some(wsl) => Ok(Self::Wsl {
+                distro: wsl.distro().to_owned(),
+                cwd: wsl.linux_path().to_owned(),
+            }),
+            None => Ok(Self::native(path)),
+        }
+    }
+
+    fn cwd(&self) -> &str {
+        match self {
+            Self::Native { cwd } | Self::Wsl { cwd, .. } => cwd,
+        }
+    }
+
+    fn is_wsl(&self) -> bool {
+        matches!(self, Self::Wsl { .. })
+    }
+}
+
 /// `git -C <cwd> <args...>`를 실행해 stdout을 반환한다. 실패 시 stderr를 에러로.
 pub fn run(args: &[&str], cwd: &str) -> Result<String, String> {
     let mut cmd = std::process::Command::new(resolve_git());
@@ -298,7 +335,18 @@ pub fn run_bounded(
     timeout: Duration,
     max_stdout_bytes: usize,
 ) -> Result<String, String> {
-    run_bounded_inner(args, cwd, timeout, max_stdout_bytes, false, None)
+    let target = GitTarget::native(cwd);
+    run_bounded_inner(args, &target, timeout, max_stdout_bytes, false, None)
+}
+
+/// Bounded Git execution in an explicitly selected native or WSL namespace.
+pub fn run_bounded_target(
+    args: &[&str],
+    target: &GitTarget,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+) -> Result<String, String> {
+    run_bounded_inner(args, target, timeout, max_stdout_bytes, false, None)
 }
 
 /// Run a bounded read-only Git command with cooperative cancellation. The
@@ -312,9 +360,28 @@ pub fn run_bounded_with_cancel(
     max_stdout_bytes: usize,
     cancellation: &AtomicBool,
 ) -> Result<String, String> {
+    let target = GitTarget::native(cwd);
     run_bounded_inner(
         args,
-        cwd,
+        &target,
+        timeout,
+        max_stdout_bytes,
+        false,
+        Some(cancellation),
+    )
+}
+
+/// Cancellable bounded Git execution in an explicitly selected namespace.
+pub fn run_bounded_target_with_cancel(
+    args: &[&str],
+    target: &GitTarget,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+    cancellation: &AtomicBool,
+) -> Result<String, String> {
+    run_bounded_inner(
+        args,
+        target,
         timeout,
         max_stdout_bytes,
         false,
@@ -324,12 +391,13 @@ pub fn run_bounded_with_cancel(
 
 fn run_bounded_inner(
     args: &[&str],
-    cwd: &str,
+    target: &GitTarget,
     timeout: Duration,
     max_stdout_bytes: usize,
     allow_message_controls: bool,
     cancellation: Option<&AtomicBool>,
 ) -> Result<String, String> {
+    let cwd = target.cwd();
     let max_arg_bytes = if allow_message_controls {
         16 * 1024
     } else {
@@ -364,10 +432,8 @@ fn run_bounded_inner(
         return Err("git_cancelled".into());
     }
 
-    let mut command = Command::new(resolve_git());
+    let mut command = command_for_target(target, args, timeout)?;
     command
-        .args(["-C", cwd])
-        .args(args)
         // A reporting command must never inherit the desktop application's
         // console/input handle and wait for an interactive prompt.
         .stdin(Stdio::null())
@@ -381,9 +447,13 @@ fn run_bounded_inner(
     #[cfg(unix)]
     command.process_group(0);
 
-    let mut child = command
-        .spawn()
-        .map_err(|_| "git_spawn_failed".to_string())?;
+    let mut child = command.spawn().map_err(|_| {
+        if target.is_wsl() {
+            "git_wsl_unavailable".to_string()
+        } else {
+            "git_spawn_failed".to_string()
+        }
+    })?;
     let mut process_tree = match ProcessTree::assign_to(&child) {
         Ok(process_tree) => process_tree,
         Err(()) => {
@@ -565,9 +635,68 @@ fn run_bounded_inner(
         return Err("git_output_read_failed".into());
     }
     if !status.success() {
-        return Err("git_failed".into());
+        if target.is_wsl() && matches!(status.code(), Some(124 | 137)) {
+            return Err("git_timeout".into());
+        }
+        return Err(if target.is_wsl() {
+            "git_wsl_failed".into()
+        } else {
+            "git_failed".into()
+        });
     }
     String::from_utf8(bytes).map_err(|_| "git_output_invalid_utf8".into())
+}
+
+fn command_for_target(
+    target: &GitTarget,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<Command, String> {
+    let mut command = match target {
+        GitTarget::Native { cwd } => {
+            let mut command = Command::new(resolve_git());
+            command.args(["-C", cwd]).args(args);
+            command
+        }
+        GitTarget::Wsl { distro, cwd } => {
+            devbox_wsl::distro::validate_distro_name(distro)
+                .map_err(|_| "git_invalid_target".to_string())?;
+            if !cwd.starts_with('/')
+                || cwd.len() > 4_096
+                || cwd.chars().any(char::is_control)
+                || cwd.split('/').any(|part| matches!(part, "." | ".."))
+            {
+                return Err("git_invalid_target".into());
+            }
+            // Keep a Linux-side deadline slightly inside the Windows
+            // supervisor deadline. If the wsl.exe client is cancelled, GNU
+            // timeout still bounds the distro-side Git process independently.
+            let inner_timeout_ms = timeout.as_millis().saturating_sub(100).max(1);
+            let inner_timeout = format!(
+                "{}.{:03}s",
+                inner_timeout_ms / 1_000,
+                inner_timeout_ms % 1_000
+            );
+            let mut command = Command::new("wsl.exe");
+            command.args([
+                "-d",
+                distro,
+                "--",
+                "/usr/bin/timeout",
+                "--signal=KILL",
+                "--kill-after=0.1s",
+                inner_timeout.as_str(),
+                "/usr/bin/env",
+            ]);
+            for name in REPOSITORY_OVERRIDE_ENV {
+                command.args(["-u", name]);
+            }
+            command.arg("--").arg("git").args(["-C", cwd]).args(args);
+            command
+        }
+    };
+    clear_repository_overrides(&mut command);
+    Ok(command)
 }
 
 /// Commit messages may contain ordinary line breaks, but no other Git argv
@@ -630,7 +759,17 @@ pub fn run_mutating(
     timeout: Duration,
     max_stdout_bytes: usize,
 ) -> Result<String, String> {
-    run_bounded_inner(args, cwd, timeout, max_stdout_bytes, true, None)
+    let target = GitTarget::native(cwd);
+    run_bounded_inner(args, &target, timeout, max_stdout_bytes, true, None)
+}
+
+pub fn run_mutating_target(
+    args: &[&str],
+    target: &GitTarget,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+) -> Result<String, String> {
+    run_bounded_inner(args, target, timeout, max_stdout_bytes, true, None)
 }
 
 /// Run a local mutation with a cooperative cancellation signal.  The signal
@@ -645,9 +784,27 @@ pub fn run_mutating_with_cancel(
     max_stdout_bytes: usize,
     cancellation: &AtomicBool,
 ) -> Result<String, String> {
+    let target = GitTarget::native(cwd);
     run_bounded_inner(
         args,
-        cwd,
+        &target,
+        timeout,
+        max_stdout_bytes,
+        true,
+        Some(cancellation),
+    )
+}
+
+pub fn run_mutating_target_with_cancel(
+    args: &[&str],
+    target: &GitTarget,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+    cancellation: &AtomicBool,
+) -> Result<String, String> {
+    run_bounded_inner(
+        args,
+        target,
         timeout,
         max_stdout_bytes,
         true,
@@ -664,6 +821,63 @@ mod tests {
         // 어느 플랫폼이든 `git`(PATH) 또는 절대 경로 중 하나를 반환한다.
         let p = resolve_git();
         assert!(!p.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn wsl_unc_target_preserves_linux_case_and_builds_fixed_argv() {
+        let target = GitTarget::from_project_path(
+            "\\\\wsl.localhost\\Ubuntu\\home\\jihoon\\Projects\\DevBox",
+        )
+        .unwrap();
+        assert_eq!(
+            target,
+            GitTarget::Wsl {
+                distro: "Ubuntu".into(),
+                cwd: "/home/jihoon/Projects/DevBox".into(),
+            }
+        );
+        let command = command_for_target(
+            &target,
+            &["--no-pager", "status", "--porcelain"],
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        assert_eq!(command.get_program(), "wsl.exe");
+        let argv = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            &argv[..8],
+            [
+                "-d",
+                "Ubuntu",
+                "--",
+                "/usr/bin/timeout",
+                "--signal=KILL",
+                "--kill-after=0.1s",
+                "1.900s",
+                "/usr/bin/env",
+            ]
+        );
+        assert!(argv
+            .windows(3)
+            .any(|values| values == ["git", "-C", "/home/jihoon/Projects/DevBox"]));
+        assert!(!argv.iter().any(|value| value.contains("wsl.localhost")));
+    }
+
+    #[test]
+    fn project_target_distinguishes_ordinary_unc_and_invalid_wsl_unc() {
+        assert_eq!(
+            GitTarget::from_project_path("\\\\server\\share\\project").unwrap(),
+            GitTarget::Native {
+                cwd: "\\\\server\\share\\project".into()
+            }
+        );
+        assert_eq!(
+            GitTarget::from_project_path("//wsl$/Ubuntu/home/../secret").unwrap_err(),
+            "git_invalid_target"
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App, { toDateStr } from "./App";
+import App, { toDateStr, weekRange } from "./App";
 import type { DigestInput, DigestResponse, KnowledgeDraftHistoryEntry } from "./api";
 
 const mocks = vi.hoisted(() => ({
@@ -9,10 +9,13 @@ const mocks = vi.hoisted(() => ({
   exportLifeLog: vi.fn(),
   cancelDigest: vi.fn().mockResolvedValue(false),
   getDigest: vi.fn(),
+  getProjects: vi.fn(),
   getDay: vi.fn(),
   saveLifeLog: vi.fn(),
   sendDigestToKnowledge: vi.fn(),
   knowledgeDraftHistory: vi.fn(),
+  setProjects: vi.fn(),
+  probeProject: vi.fn(),
 }));
 
 vi.mock("./lib/isTauri", () => ({ isTauri: () => mocks.native }));
@@ -36,7 +39,7 @@ vi.mock("./api", () => ({
     redactTitlePatterns: [],
     maskAllTitles: false,
   }),
-  getProjects: vi.fn().mockResolvedValue([]),
+  getProjects: mocks.getProjects,
   getRange: vi.fn().mockResolvedValue({
     label: "fixture range",
     pc_usage_ms: 5_400_000,
@@ -56,11 +59,12 @@ vi.mock("./api", () => ({
     unattributed: { projectId: "unattributed", sessions: 0, durationMs: 0 },
     profileCount: 0,
   }),
+  probeProject: mocks.probeProject,
   redactExisting: vi.fn().mockResolvedValue(0),
   setAutostart: vi.fn(),
   setIdleThreshold: vi.fn(),
   setPrivacyRules: vi.fn(),
-  setProjects: vi.fn(),
+  setProjects: mocks.setProjects,
   saveLifeLog: mocks.saveLifeLog,
   sendDigestToKnowledge: mocks.sendDigestToKnowledge,
   startTracking: vi.fn().mockResolvedValue(true),
@@ -151,6 +155,14 @@ beforeEach(() => {
     historyId: "0123456789abcdef0123456789abcdef",
   });
   mocks.knowledgeDraftHistory.mockReset().mockResolvedValue([]);
+  mocks.getProjects.mockReset().mockResolvedValue([]);
+  mocks.setProjects.mockReset().mockImplementation(async (paths: string[]) => paths);
+  mocks.probeProject.mockReset().mockImplementation(async (path: string) => ({
+    path,
+    target: "wsl",
+    repository: true,
+    errorCode: null,
+  }));
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: { writeText: mocks.writeText },
@@ -285,14 +297,13 @@ describe("Life Log daily digest", () => {
     mocks.knowledgeDraftHistory
       .mockReset()
       .mockImplementationOnce(() => new Promise((resolve) => { resolveInitial = resolve; }))
-      .mockResolvedValueOnce([])
       .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve; }));
 
     await renderLoadedApp();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     const panel = await screen.findByRole("region", { name: "Knowledge draft handoff history" });
     fireEvent.click(within(panel).getByRole("button", { name: "Refresh" }));
-    await waitFor(() => expect(mocks.knowledgeDraftHistory).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(mocks.knowledgeDraftHistory).toHaveBeenCalledTimes(2));
 
     resolveRefresh([historyEntryFixture("2026-08-28")]);
     await waitFor(() => expect(panel.textContent).toContain("2026-08-28"));
@@ -337,8 +348,9 @@ describe("Life Log date context menu", () => {
 
   it("키보드로 연 exact chart date를 먼저 선택하고 그 날짜를 복사한다", async () => {
     const dateInput = await renderLoadedApp();
-    const chartDate = new Date(`${dateInput.value}T00:00:00`);
-    chartDate.setDate(chartDate.getDate() + 1);
+    const selected = new Date(`${dateInput.value}T00:00:00`);
+    const chartDate = new Date(weekRange(selected).start);
+    if (toDateStr(chartDate) === dateInput.value) chartDate.setDate(chartDate.getDate() + 1);
     const chartDateKey = toDateStr(chartDate);
     fireEvent.click(screen.getByRole("button", { name: "Week" }));
     const target = await screen.findByRole("button", { name: `${chartDateKey} 날짜` });
@@ -484,5 +496,53 @@ describe("Life Log date context menu", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(document.body.textContent).not.toContain("fixture");
+  });
+
+  it("Git 프로젝트는 backend가 확정한 경로만 저장하고 명시적으로 WSL 연결을 확인한다", async () => {
+    await renderLoadedApp();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const input = screen.getByPlaceholderText(/wsl\$/u);
+    const path = "//wsl$/Ubuntu/home/jihoon/projects/devbox";
+    fireEvent.change(input, { target: { value: path } });
+    fireEvent.click(screen.getByRole("button", { name: "추가" }));
+
+    await waitFor(() => expect(mocks.setProjects).toHaveBeenCalledWith([path]));
+    expect(await screen.findByText(path)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "연결 확인" }));
+    await waitFor(() => expect(mocks.probeProject).toHaveBeenCalledWith(path));
+    expect(await screen.findByText("Git 저장소 확인됨 · WSL")).toBeTruthy();
+  });
+
+  it("Git 프로젝트 저장 실패를 optimistic 상태로 남기지 않는다", async () => {
+    mocks.setProjects.mockRejectedValueOnce("project_path_invalid");
+    await renderLoadedApp();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const input = screen.getByPlaceholderText(/wsl\$/u);
+    const path = "relative/project";
+    fireEvent.change(input, { target: { value: path } });
+    fireEvent.click(screen.getByRole("button", { name: "추가" }));
+
+    expect(await screen.findByText("Git 프로젝트 경로를 저장하지 못했습니다. (project_path_invalid)")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: `${path} 제거` })).toBeNull();
+  });
+
+  it("확정된 Git 프로젝트 저장을 늦게 도착한 초기 settings 응답이 덮어쓰지 않는다", async () => {
+    let resolveProjects!: (paths: string[]) => void;
+    mocks.getProjects.mockReset().mockImplementationOnce(() => new Promise((resolve) => {
+      resolveProjects = resolve;
+    }));
+    await renderLoadedApp();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const input = screen.getByPlaceholderText(/wsl\$/u);
+    const path = "//wsl$/Ubuntu/home/jihoon/projects/devbox";
+    fireEvent.change(input, { target: { value: path } });
+    fireEvent.click(screen.getByRole("button", { name: "추가" }));
+
+    expect(await screen.findByText(path)).toBeTruthy();
+    resolveProjects(["C:\\stale\\project"]);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(screen.getByText(path)).toBeTruthy();
+    expect(screen.queryByText("C:\\stale\\project")).toBeNull();
   });
 });

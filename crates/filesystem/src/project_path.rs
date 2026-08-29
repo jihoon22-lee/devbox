@@ -94,9 +94,11 @@ pub fn parse_safe_project_path(raw: &str) -> Option<SafeProjectPath> {
     let name = components.last()?.to_string();
     let identity = match kind {
         ProjectPathKind::Posix => value.clone(),
-        ProjectPathKind::WindowsDrive | ProjectPathKind::WindowsUnc => {
-            value.replace('/', "\\").to_lowercase()
-        }
+        ProjectPathKind::WindowsUnc => match devbox_wsl::path::parse_wsl_unc_path(&value) {
+            Ok(Some(wsl)) => wsl.identity(),
+            _ => value.replace('/', "\\").to_lowercase(),
+        },
+        ProjectPathKind::WindowsDrive => value.replace('/', "\\").to_lowercase(),
     };
     Some(SafeProjectPath {
         value,
@@ -186,6 +188,13 @@ mod tests {
         let first = parse_safe_project_path("/work/Devbox").unwrap();
         let second = parse_safe_project_path("/work/devbox").unwrap();
         assert_ne!(first.identity(), second.identity());
+
+        let first = parse_safe_project_path("\\\\wsl$\\Ubuntu\\home\\user\\Devbox").unwrap();
+        let second = parse_safe_project_path("//wsl.localhost/ubuntu/home/user/Devbox/").unwrap();
+        let different_linux_case =
+            parse_safe_project_path("//wsl$/Ubuntu/home/user/devbox").unwrap();
+        assert_eq!(first.identity(), second.identity());
+        assert_ne!(first.identity(), different_linux_case.identity());
     }
 
     #[test]
