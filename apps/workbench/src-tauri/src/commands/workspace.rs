@@ -2,7 +2,7 @@
 
 use crate::commands::environment::EnvironmentInjection;
 use crate::commands::process_tree::ProcessTree;
-use crate::core::health::{has_distro, parse_git_status};
+use crate::core::health::{distro_is_running, parse_git_status};
 use crate::core::operation::{
     poll_interval, wait_for_change, OperationBudget, OperationClaim, OperationError,
     OperationToken, SingleFlight,
@@ -11,7 +11,8 @@ use crate::core::preflight::{
     PreflightStatus, ResourceProvenance, ResourceState, WorkspacePreflight,
 };
 use crate::core::profile::{
-    validate_profile_id, validate_service_id, ProfileStore, ProjectProfile, MAX_SERVICES,
+    validate_profile_id, validate_service_id, ProfileStore, ProjectProfile, WslProfile,
+    MAX_SERVICES,
 };
 use crate::core::retry::{
     can_retry_with_process_liveness, failed_step, plan_retry_with_process_liveness,
@@ -429,19 +430,35 @@ async fn git_status_with_control(
     budget: OperationBudget,
     claim: &OperationClaim,
 ) -> Result<Vec<crate::core::health::GitStatus>, String> {
+    let targets = projects
+        .into_iter()
+        .map(|path| {
+            let target = devbox_git::GitTarget::from_project_path(&path);
+            (path, target)
+        })
+        .collect();
+    git_status_targets_with_control(targets, token, budget, claim).await
+}
+
+async fn git_status_targets_with_control(
+    projects: Vec<(String, Result<devbox_git::GitTarget, String>)>,
+    token: OperationToken,
+    budget: OperationBudget,
+    claim: &OperationClaim,
+) -> Result<Vec<crate::core::health::GitStatus>, String> {
     let mut out = Vec::with_capacity(projects.len());
-    for path in projects {
+    for (path, target) in projects {
         budget.check(&token).map_err(OperationError::message)?;
-        let path_for_worker = path.clone();
         let cancellation = token.cancellation_flag();
         let worker_cancellation = Arc::clone(&cancellation);
         let child_timeout = budget.remaining();
         let worker_guard = claim.worker_guard().map_err(str::to_string)?;
         let worker = tokio::task::spawn_blocking(move || {
             let _worker_guard = worker_guard;
-            devbox_git::run_bounded_with_cancel(
+            let target = target?;
+            devbox_git::run_bounded_target_with_cancel(
                 &["status", "--porcelain", "--branch"],
-                &path_for_worker,
+                &target,
                 child_timeout,
                 64 * 1024,
                 &worker_cancellation,
@@ -877,6 +894,61 @@ fn health_operation_key(profile_id: &str, request_id: Option<&str>) -> String {
     }
 }
 
+fn profile_git_target(
+    profile: &ProjectProfile,
+) -> Result<Option<(String, devbox_git::GitTarget)>, String> {
+    if let Some(wsl) = &profile.wsl {
+        let display_path = profile.git_root.as_deref().unwrap_or(&wsl.path);
+        let parsed = parse_safe_project_path(display_path)
+            .ok_or_else(|| "Git root 경로가 올바르지 않습니다".to_string())?;
+        let cwd = match parsed.kind() {
+            ProjectPathKind::Posix => parsed.as_str().to_owned(),
+            ProjectPathKind::WindowsDrive => devbox_wsl::path::windows_to_wsl(parsed.as_str())
+                .map_err(|_| "Git root 경로가 올바르지 않습니다".to_string())?,
+            ProjectPathKind::WindowsUnc => {
+                let unc = devbox_wsl::path::parse_wsl_unc_path(parsed.as_str())
+                    .map_err(|_| "Git root 경로가 올바르지 않습니다".to_string())?
+                    .ok_or_else(|| "Git root 경로가 올바르지 않습니다".to_string())?;
+                if !unc.distro().eq_ignore_ascii_case(&wsl.distro) {
+                    return Err("Git root의 WSL distro가 프로필과 일치하지 않습니다".into());
+                }
+                unc.linux_path().to_owned()
+            }
+        };
+        let target = devbox_git::GitTarget::wsl(&wsl.distro, cwd)
+            .map_err(|_| "Git root 경로가 올바르지 않습니다".to_string())?;
+        return Ok(Some((display_path.to_owned(), target)));
+    }
+
+    let Some(path) = profile
+        .git_root
+        .clone()
+        .or_else(|| profile.windows_path.clone())
+    else {
+        return Ok(None);
+    };
+    let target = devbox_git::GitTarget::from_project_path(&path)
+        .map_err(|_| "Git root 경로가 올바르지 않습니다".to_string())?;
+    Ok(Some((path, target)))
+}
+
+fn wsl_health_item(distro: &str, output: Option<&str>) -> (bool, HealthItem) {
+    let (ready, detail) = match output.and_then(|value| distro_is_running(distro, value)) {
+        Some(true) => (true, "WSL distro와 working directory를 사용할 수 있습니다"),
+        Some(false) => (false, "설정한 WSL distro가 중지되어 있습니다"),
+        None if output.is_some() => (false, "설정한 WSL distro를 찾을 수 없습니다"),
+        None => (false, "wsl.exe 조회 불가"),
+    };
+    (
+        ready,
+        HealthItem {
+            name: "wsl".into(),
+            ok: ready,
+            detail: detail.into(),
+        },
+    )
+}
+
 async fn project_health_with_control(
     app: AppHandle,
     profile_id: String,
@@ -897,52 +969,19 @@ async fn project_health_with_control(
 
     let mut items = Vec::new();
 
-    // git
-    if let Some(root) = profile
-        .git_root
-        .clone()
-        .or_else(|| profile.windows_path.clone())
-    {
-        let status = git_status_with_control(vec![root], token.clone(), budget, claim).await?;
-        if let Some(s) = status.first() {
-            items.push(HealthItem {
-                name: "git".into(),
-                ok: s.clean,
-                detail: if s.clean {
-                    "Git 작업 트리가 깨끗합니다".into()
-                } else {
-                    format!("Git 변경 사항 {}개", s.changes)
-                },
-            });
-        }
-    } else {
-        items.push(HealthItem {
-            name: "git".into(),
-            ok: false,
-            detail: "gitRoot 미설정".into(),
-        });
-    }
-
-    // wsl distro
-    if let Some(wsl) = profile.wsl.clone() {
+    // Observe installed/running state before any distro-scoped Git command.
+    // `wsl.exe -d` starts a stopped distro, which a read-only health check must
+    // never do as a side effect.
+    let (wsl_ready, wsl_item) = if let Some(wsl) = &profile.wsl {
         match wsl_list_output(token.clone(), budget, claim).await {
             Ok(Some(output)) => {
-                let ok = has_distro(&wsl.distro, &output);
-                items.push(HealthItem {
-                    name: "wsl".into(),
-                    ok,
-                    detail: if ok {
-                        "WSL distro와 working directory를 사용할 수 있습니다".into()
-                    } else {
-                        "설정한 WSL distro를 찾을 수 없습니다".into()
-                    },
-                });
+                let (ready, item) = wsl_health_item(&wsl.distro, Some(&output));
+                (ready, Some(item))
             }
-            Ok(None) => items.push(HealthItem {
-                name: "wsl".into(),
-                ok: false,
-                detail: "wsl.exe 조회 불가".into(),
-            }),
+            Ok(None) => {
+                let (ready, item) = wsl_health_item(&wsl.distro, None);
+                (ready, Some(item))
+            }
             Err(NativeCommandError::Cancelled) => {
                 return Err(OperationError::Cancelled.message().into())
             }
@@ -950,13 +989,59 @@ async fn project_health_with_control(
                 return Err(OperationError::TimedOut.message().into())
             }
             Err(NativeCommandError::Io | NativeCommandError::OutputTooLarge) => {
-                items.push(HealthItem {
-                    name: "wsl".into(),
-                    ok: false,
-                    detail: "wsl.exe 조회 불가".into(),
-                });
+                let (ready, item) = wsl_health_item(&wsl.distro, None);
+                (ready, Some(item))
             }
         }
+    } else {
+        (true, None)
+    };
+
+    // git
+    if !wsl_ready {
+        items.push(HealthItem {
+            name: "git".into(),
+            ok: false,
+            detail: "WSL distro가 실행 중이 아니어서 Git을 조회하지 않았습니다".into(),
+        });
+    } else {
+        match profile_git_target(&profile) {
+            Ok(Some((path, target))) => {
+                let status = git_status_targets_with_control(
+                    vec![(path, Ok(target))],
+                    token.clone(),
+                    budget,
+                    claim,
+                )
+                .await?;
+                if let Some(s) = status.first() {
+                    items.push(HealthItem {
+                        name: "git".into(),
+                        ok: s.clean,
+                        detail: if s.clean {
+                            "Git 작업 트리가 깨끗합니다".into()
+                        } else if s.branch == "n/a" {
+                            "Git 상태를 조회할 수 없습니다".into()
+                        } else {
+                            format!("Git 변경 사항 {}개", s.changes)
+                        },
+                    });
+                }
+            }
+            Ok(None) => items.push(HealthItem {
+                name: "git".into(),
+                ok: false,
+                detail: "gitRoot 미설정".into(),
+            }),
+            Err(_) => items.push(HealthItem {
+                name: "git".into(),
+                ok: false,
+                detail: "Git root 경로가 올바르지 않습니다".into(),
+            }),
+        }
+    }
+    if let Some(item) = wsl_item {
+        items.push(item);
     }
 
     // expected ports
@@ -2401,8 +2486,20 @@ fn profile_from_life_log_entry(
 ) -> Result<Option<ProjectProfile>, String> {
     let path = parse_safe_project_path(&entry.path)
         .ok_or_else(|| "Life Log projects entry에 안전하지 않은 경로가 있습니다".to_string())?;
+    let mut imported_wsl = None;
     let windows_path = match path.kind() {
-        ProjectPathKind::WindowsDrive | ProjectPathKind::WindowsUnc => path.as_str().to_string(),
+        ProjectPathKind::WindowsDrive => path.as_str().to_string(),
+        ProjectPathKind::WindowsUnc => {
+            if let Some(wsl) = devbox_wsl::path::parse_wsl_unc_path(path.as_str())
+                .map_err(|_| "Life Log projects entry의 WSL 경로가 올바르지 않습니다")?
+            {
+                imported_wsl = Some(WslProfile {
+                    distro: wsl.distro().to_owned(),
+                    path: wsl.linux_path().to_owned(),
+                });
+            }
+            path.as_str().to_string()
+        }
         ProjectPathKind::Posix => {
             if !path.as_str().starts_with("/mnt/") {
                 // distro가 없는 POSIX path에 임의 distro를 붙이지 않는다.
@@ -2414,6 +2511,7 @@ fn profile_from_life_log_entry(
     };
     let mut profile = ProjectProfile::new(path.name());
     profile.windows_path = Some(windows_path.clone());
+    profile.wsl = imported_wsl;
     profile.git_root = Some(windows_path);
     Ok(Some(profile))
 }
@@ -2421,7 +2519,6 @@ fn profile_from_life_log_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::profile::WslProfile;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -2480,6 +2577,37 @@ mod tests {
             path: path.into(),
         });
         profile
+    }
+
+    #[test]
+    fn wsl_profile_builds_a_distro_scoped_git_target_from_drive_git_root() {
+        let mut profile = profile(Some("E:\\Projects\\DevBox"), Some("/mnt/e/Projects/DevBox"));
+        profile.git_root = Some("E:\\Projects\\DevBox".into());
+
+        let (display_path, target) = profile_git_target(&profile).unwrap().unwrap();
+
+        assert_eq!(display_path, "E:\\Projects\\DevBox");
+        assert_eq!(
+            target,
+            devbox_git::GitTarget::Wsl {
+                distro: "Ubuntu".into(),
+                cwd: "/mnt/e/Projects/DevBox".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn stopped_or_missing_wsl_is_not_ready_for_git_health() {
+        let output = "  NAME      STATE           VERSION\n* Ubuntu    Stopped         2\n";
+        let (ready, stopped) = wsl_health_item("Ubuntu", Some(output));
+        assert!(!ready);
+        assert!(!stopped.ok);
+        assert!(stopped.detail.contains("중지"));
+
+        let (ready, missing) = wsl_health_item("Debian", Some(output));
+        assert!(!ready);
+        assert!(!missing.ok);
+        assert!(missing.detail.contains("찾을 수 없습니다"));
     }
 
     #[test]
@@ -2841,6 +2969,7 @@ mod tests {
                 project_entry("c:/work/devbox/"),
                 project_entry("\\\\server\\share\\api"),
                 project_entry("/mnt/e/projects/toolbox"),
+                project_entry("\\\\wsl.localhost\\Ubuntu\\home\\jihoon\\Projects\\DevBox"),
                 project_entry("/home/jihoon/distro-required"),
             ],
         );
@@ -2848,12 +2977,12 @@ mod tests {
 
         let report = absorb_life_log_projects_in(&mut store, &root).unwrap();
 
-        assert_eq!(report.added, 3);
+        assert_eq!(report.added, 4);
         assert_eq!(report.unsupported_paths, 1);
         assert!(report
             .freshness_ms
             .is_some_and(|freshness| freshness >= 250));
-        assert_eq!(store.profiles.len(), 3);
+        assert_eq!(store.profiles.len(), 4);
         assert!(store
             .profiles
             .iter()
@@ -2865,6 +2994,17 @@ mod tests {
         assert!(store.profiles.iter().any(|profile| {
             profile.windows_path.as_deref() == Some("E:\\projects\\toolbox")
                 && profile.git_root.as_deref() == Some("E:\\projects\\toolbox")
+        }));
+        assert!(store.profiles.iter().any(|profile| {
+            profile.windows_path.as_deref()
+                == Some("\\\\wsl.localhost\\Ubuntu\\home\\jihoon\\Projects\\DevBox")
+                && profile.git_root.as_deref()
+                    == Some("\\\\wsl.localhost\\Ubuntu\\home\\jihoon\\Projects\\DevBox")
+                && profile.wsl.as_ref()
+                    == Some(&WslProfile {
+                        distro: "Ubuntu".into(),
+                        path: "/home/jihoon/Projects/DevBox".into(),
+                    })
         }));
         let _ = std::fs::remove_dir_all(root);
     }

@@ -33,6 +33,7 @@ use crate::core::stage_commit::{
     GIT_MUTATION_ERROR, MAX_SELECTED_PATHS, MAX_STATUS_OUTPUT_BYTES,
 };
 use devbox_filesystem::{filesystem_identity, FilesystemIdentity};
+use devbox_git::GitTarget;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -199,13 +200,58 @@ fn walk(
     }
 }
 
+fn host_path_spelling(path: &Path, error: &'static str) -> Result<String, String> {
+    let value = path.to_str().ok_or_else(|| error.to_string())?;
+    let folded = value.to_ascii_lowercase();
+    if folded.starts_with(r"\\?\unc\") {
+        return Ok(format!(r"\\{}", &value[8..]));
+    }
+    if folded.starts_with(r"\\?\") {
+        let drive_path = &value[4..];
+        let bytes = drive_path.as_bytes();
+        if bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && matches!(bytes[2], b'\\' | b'/')
+        {
+            return Ok(drive_path.to_owned());
+        }
+        return Err(error.to_string());
+    }
+    if folded.starts_with(r"\\.\") || folded.starts_with(r"\??\") {
+        return Err(error.to_string());
+    }
+    Ok(value.to_owned())
+}
+
+fn git_target_for_path(cwd: &Path, error: &'static str) -> Result<GitTarget, String> {
+    let cwd = host_path_spelling(cwd, error)?;
+    GitTarget::from_project_path(&cwd).map_err(|_| error.to_string())
+}
+
+fn host_path_from_git(cwd: &Path, git_path: &str, error: &'static str) -> Result<PathBuf, String> {
+    let target = git_target_for_path(cwd, error)?;
+    target
+        .host_path_from_git(git_path)
+        .map(PathBuf::from)
+        .map_err(|_| error.to_string())
+}
+
+fn git_path_from_host(cwd: &Path, host_path: &Path, error: &'static str) -> Result<String, String> {
+    let target = git_target_for_path(cwd, error)?;
+    let host_path = host_path_spelling(host_path, error)?;
+    target
+        .git_path_from_host(&host_path)
+        .map_err(|_| error.to_string())
+}
+
 /// Execute a read-only Git query through the shared bounded runner. Its stderr,
 /// timeout, argument, UTF-8, and stdout-cap failures are intentionally mapped
 /// to one UI-safe error here.
 fn run_git_bounded(args: &[String], cwd: &Path, max_bytes: usize) -> Result<String, String> {
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let cwd = cwd.to_string_lossy().into_owned();
-    devbox_git::run_bounded(&args, &cwd, Duration::from_secs(5), max_bytes)
+    let target = git_target_for_path(cwd, GIT_VIEW_ERROR)?;
+    devbox_git::run_bounded_target(&args, &target, Duration::from_secs(5), max_bytes)
         .map_err(|_| GIT_VIEW_ERROR.to_string())
 }
 
@@ -214,8 +260,8 @@ fn run_git_bounded(args: &[String], cwd: &Path, max_bytes: usize) -> Result<Stri
 /// to the same UI-safe mutation error.
 fn run_git_status_bounded(args: &[String], cwd: &Path) -> Result<String, String> {
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let cwd = cwd.to_string_lossy().into_owned();
-    devbox_git::run_bounded(&args, &cwd, MUTATION_TIMEOUT, MAX_STATUS_OUTPUT_BYTES)
+    let target = git_target_for_path(cwd, GIT_MUTATION_ERROR)?;
+    devbox_git::run_bounded_target(&args, &target, MUTATION_TIMEOUT, MAX_STATUS_OUTPUT_BYTES)
         .map_err(|_| GIT_MUTATION_ERROR.to_string())
 }
 
@@ -225,10 +271,10 @@ fn run_git_status_bounded_with_cancel(
     cancellation: &AtomicBool,
 ) -> Result<String, String> {
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let cwd = cwd.to_string_lossy().into_owned();
-    devbox_git::run_bounded_with_cancel(
+    let target = git_target_for_path(cwd, GIT_MUTATION_ERROR)?;
+    devbox_git::run_bounded_target_with_cancel(
         &args,
-        &cwd,
+        &target,
         MUTATION_TIMEOUT,
         MAX_STATUS_OUTPUT_BYTES,
         cancellation,
@@ -277,8 +323,8 @@ fn git_safety_marker_args() -> Vec<String> {
 
 fn run_git_safety_bounded(args: &[String], cwd: &Path, max_bytes: usize) -> Result<String, String> {
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let cwd = cwd.to_string_lossy().into_owned();
-    devbox_git::run_bounded(&args, &cwd, SAFETY_TIMEOUT, max_bytes)
+    let target = git_target_for_path(cwd, GIT_SAFETY_ERROR)?;
+    devbox_git::run_bounded_target(&args, &target, SAFETY_TIMEOUT, max_bytes)
         .map_err(|_| GIT_SAFETY_ERROR.to_string())
 }
 
@@ -308,22 +354,12 @@ fn parse_safety_marker_paths(output: &str, cwd: &Path) -> Result<[std::path::Pat
         {
             return Err(GIT_SAFETY_ERROR.to_string());
         }
-        let raw = Path::new(line);
         let expected_name = ["rebase-merge", "rebase-apply", "MERGE_HEAD"][index];
-        if raw.file_name().and_then(|name| name.to_str()) != Some(expected_name) {
+        let resolved = host_path_from_git(cwd, line, GIT_SAFETY_ERROR)?;
+        if resolved.file_name().and_then(|name| name.to_str()) != Some(expected_name) {
             return Err(GIT_SAFETY_ERROR.to_string());
         }
-        if raw
-            .components()
-            .any(|component| matches!(component, std::path::Component::ParentDir))
-        {
-            return Err(GIT_SAFETY_ERROR.to_string());
-        }
-        paths.push(if raw.is_absolute() {
-            raw.to_path_buf()
-        } else {
-            cwd.join(raw)
-        });
+        paths.push(resolved);
     }
     paths.try_into().map_err(|_| GIT_SAFETY_ERROR.to_string())
 }
@@ -356,8 +392,8 @@ fn marker_present_with_error(path: &Path, error: &str) -> Result<bool, String> {
 /// remote, credential, or OS diagnostic.
 fn run_git_mutation(args: &[String], cwd: &Path) -> Result<(), String> {
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let cwd = cwd.to_string_lossy().into_owned();
-    devbox_git::run_mutating(&args, &cwd, MUTATION_TIMEOUT, MAX_MUTATION_OUTPUT_BYTES)
+    let target = git_target_for_path(cwd, GIT_MUTATION_ERROR)?;
+    devbox_git::run_mutating_target(&args, &target, MUTATION_TIMEOUT, MAX_MUTATION_OUTPUT_BYTES)
         .map(|_| ())
         .map_err(|_| GIT_MUTATION_ERROR.to_string())
 }
@@ -368,10 +404,10 @@ fn run_git_mutation_with_cancel(
     cancellation: &AtomicBool,
 ) -> Result<(), String> {
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let cwd = cwd.to_string_lossy().into_owned();
-    devbox_git::run_mutating_with_cancel(
+    let target = git_target_for_path(cwd, GIT_MUTATION_ERROR)?;
+    devbox_git::run_mutating_target_with_cancel(
         &args,
-        &cwd,
+        &target,
         MUTATION_TIMEOUT,
         MAX_MUTATION_OUTPUT_BYTES,
         cancellation,
@@ -396,16 +432,16 @@ fn run_git_cleanup_bounded_with_timeout(
         return Err(GIT_CLEANUP_ERROR.to_string());
     }
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let cwd = cwd.to_string_lossy().into_owned();
+    let target = git_target_for_path(cwd, GIT_CLEANUP_ERROR)?;
     let result = match cancellation {
-        Some(signal) => devbox_git::run_bounded_with_cancel(
+        Some(signal) => devbox_git::run_bounded_target_with_cancel(
             &args,
-            &cwd,
+            &target,
             timeout,
             MAX_CLEANUP_OUTPUT_BYTES,
             signal,
         ),
-        None => devbox_git::run_bounded(&args, &cwd, timeout, MAX_CLEANUP_OUTPUT_BYTES),
+        None => devbox_git::run_bounded_target(&args, &target, timeout, MAX_CLEANUP_OUTPUT_BYTES),
     };
     result.map_err(|error| {
         if error == "git_cancelled" {
@@ -426,10 +462,10 @@ fn run_git_cleanup_mutation_with_cancel(
         return Err(GIT_CLEANUP_ERROR.to_string());
     }
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let cwd = cwd.to_string_lossy().into_owned();
-    devbox_git::run_mutating_with_cancel(
+    let target = git_target_for_path(cwd, GIT_CLEANUP_ERROR)?;
+    devbox_git::run_mutating_target_with_cancel(
         &args,
-        &cwd,
+        &target,
         timeout,
         MAX_MUTATION_OUTPUT_BYTES,
         cancellation,
@@ -599,16 +635,26 @@ fn cleanup_now_unix() -> Result<i64, String> {
     i64::try_from(duration.as_secs()).map_err(|_| GIT_CLEANUP_ERROR.to_string())
 }
 
+fn parse_host_worktree_records(
+    output: &str,
+    cwd: &Path,
+    error: &'static str,
+) -> Result<Vec<ParsedWorktree>, String> {
+    let mut records = parse_worktree_records(output).map_err(|_| error.to_string())?;
+    for record in &mut records {
+        let host = host_path_from_git(cwd, &record.path, error)?;
+        record.path = host.to_str().ok_or_else(|| error.to_string())?.to_owned();
+    }
+    Ok(records)
+}
+
 fn resolve_cleanup_worktree_path(
-    context: &RepositoryContext,
     parsed: &ParsedWorktree,
 ) -> Result<(PathBuf, FilesystemIdentity), String> {
-    let raw = Path::new(&parsed.path);
-    let path = if raw.is_absolute() {
-        raw.to_path_buf()
-    } else {
-        context.worktree.join(raw)
-    };
+    let path = PathBuf::from(&parsed.path);
+    if !path.is_absolute() {
+        return Err(GIT_CLEANUP_ERROR.to_string());
+    }
     let identity = filesystem_identity(&path, true).map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
     let canonical = path
         .canonicalize()
@@ -698,7 +744,7 @@ fn collect_cleanup_observation(
         cancellation,
     )?;
     let mut worktrees =
-        parse_worktree_records(&worktree_text).map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
+        parse_host_worktree_records(&worktree_text, &context.worktree, GIT_CLEANUP_ERROR)?;
     if worktrees.is_empty() || worktrees.len() > MAX_CLEANUP_WORKTREES {
         return Err(GIT_CLEANUP_ERROR.to_string());
     }
@@ -717,9 +763,9 @@ fn collect_cleanup_observation(
             identities.push(None);
             continue;
         }
-        match resolve_cleanup_worktree_path(context, worktree) {
+        match resolve_cleanup_worktree_path(worktree) {
             Ok((canonical, identity)) => {
-                worktree.path = canonical.to_string_lossy().into_owned();
+                worktree.path = host_path_spelling(&canonical, GIT_CLEANUP_ERROR)?;
                 if identity == context.worktree_identity
                     && context_worktree_index.replace(statuses.len()).is_some()
                 {
@@ -826,8 +872,11 @@ fn read_cleanup_revalidation_metadata(
 
     let branches = parse_branch_records(&read(git_cleanup_branch_args(), &context.worktree)?)
         .map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
-    let worktrees = parse_worktree_records(&read(git_cleanup_worktree_args(), &context.worktree)?)
-        .map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+    let worktrees = parse_host_worktree_records(
+        &read(git_cleanup_worktree_args(), &context.worktree)?,
+        &context.worktree,
+        GIT_CLEANUP_STATE_CHANGED,
+    )?;
     if worktrees.is_empty() || branches.len() > MAX_CLEANUP_BRANCHES {
         return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
     }
@@ -843,7 +892,7 @@ fn read_cleanup_revalidation_metadata(
         if worktree.bare || worktree.prunable {
             continue;
         }
-        if let Ok((_, identity)) = resolve_cleanup_worktree_path(context, worktree) {
+        if let Ok((_, identity)) = resolve_cleanup_worktree_path(worktree) {
             if identity == context.worktree_identity
                 && context_worktree_index.replace(index).is_some()
             {
@@ -1211,16 +1260,16 @@ fn run_git_remote_bounded(
     cancellation: Option<&AtomicBool>,
 ) -> Result<String, String> {
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let cwd = cwd.to_string_lossy().into_owned();
+    let target = git_target_for_path(cwd, GIT_REMOTE_ERROR)?;
     let result = match cancellation {
-        Some(signal) => devbox_git::run_bounded_with_cancel(
+        Some(signal) => devbox_git::run_bounded_target_with_cancel(
             &args,
-            &cwd,
+            &target,
             Duration::from_secs(5),
             max_bytes,
             signal,
         ),
-        None => devbox_git::run_bounded(&args, &cwd, Duration::from_secs(5), max_bytes),
+        None => devbox_git::run_bounded_target(&args, &target, Duration::from_secs(5), max_bytes),
     };
     result.map_err(|error| {
         if error == "git_cancelled" {
@@ -1253,19 +1302,10 @@ fn remote_marker_exists(
     {
         return Err(GIT_REMOTE_ERROR.to_string());
     }
-    let marker_path = Path::new(marker_path_text);
-    if marker_path.file_name().and_then(|name| name.to_str()) != Some(expected_marker)
-        || marker_path
-            .components()
-            .any(|component| matches!(component, std::path::Component::ParentDir))
-    {
+    let marker_path = host_path_from_git(cwd, marker_path_text, GIT_REMOTE_ERROR)?;
+    if marker_path.file_name().and_then(|name| name.to_str()) != Some(expected_marker) {
         return Err(GIT_REMOTE_ERROR.to_string());
     }
-    let marker_path = if marker_path.is_absolute() {
-        marker_path.to_path_buf()
-    } else {
-        cwd.join(marker_path)
-    };
     marker_present_with_error(&marker_path, GIT_REMOTE_ERROR)
 }
 
@@ -1379,10 +1419,10 @@ where
             args = confirmed_args;
         }
         let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-        let cwd_string = context.worktree.to_string_lossy().into_owned();
-        devbox_git::run_mutating_with_cancel(
+        let target = git_target_for_path(&context.worktree, GIT_REMOTE_ERROR)?;
+        devbox_git::run_mutating_target_with_cancel(
             &args,
-            &cwd_string,
+            &target,
             REMOTE_TIMEOUT,
             MAX_REMOTE_OUTPUT_BYTES,
             cancellation,
@@ -1504,16 +1544,18 @@ fn repository_context_for_worktree_with_options(
     repository_context_boundary(cancellation, deadline, error)?;
     let args = git_common_dir_args();
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let cwd = worktree.to_string_lossy().into_owned();
+    let target = git_target_for_path(&worktree, error)?;
     let output = match cancellation {
-        Some(signal) => devbox_git::run_bounded_with_cancel(
+        Some(signal) => devbox_git::run_bounded_target_with_cancel(
             &args,
-            &cwd,
+            &target,
             timeout,
             MAX_REPOSITORY_PATH_BYTES + 2,
             signal,
         ),
-        None => devbox_git::run_bounded(&args, &cwd, timeout, MAX_REPOSITORY_PATH_BYTES + 2),
+        None => {
+            devbox_git::run_bounded_target(&args, &target, timeout, MAX_REPOSITORY_PATH_BYTES + 2)
+        }
     }
     .map_err(|runner_error| {
         if cancellation.is_some() && runner_error == "git_cancelled" {
@@ -1533,12 +1575,7 @@ fn repository_context_for_worktree_with_options(
     {
         return Err(error.to_string());
     }
-    let common = Path::new(value);
-    let common = if common.is_absolute() {
-        common.to_path_buf()
-    } else {
-        worktree.join(common)
-    };
+    let common = host_path_from_git(&worktree, value, error)?;
     let common = common
         .canonicalize()
         .map_err(|_| repository_context_filesystem_error(cancellation, error))?;
@@ -1785,8 +1822,14 @@ fn git_head_args() -> Vec<String> {
 fn repository_has_head(cwd: &Path, cancellation: &AtomicBool) -> Result<bool, String> {
     let args = git_head_args();
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let cwd = cwd.to_string_lossy().into_owned();
-    match devbox_git::run_bounded_with_cancel(&args, &cwd, MUTATION_TIMEOUT, 128, cancellation) {
+    let target = git_target_for_path(cwd, GIT_MUTATION_ERROR)?;
+    match devbox_git::run_bounded_target_with_cancel(
+        &args,
+        &target,
+        MUTATION_TIMEOUT,
+        128,
+        cancellation,
+    ) {
         Ok(_) => Ok(true),
         Err(error) if error == "git_failed" => Ok(false),
         Err(_) => Err(GIT_MUTATION_ERROR.to_string()),
@@ -1883,10 +1926,15 @@ pub async fn repo_status(path: String) -> Result<RepoSnapshot, String> {
             "--branch",
             "--",
         ];
-        let cwd = worktree.to_string_lossy().into_owned();
-        let status =
-            devbox_git::run_bounded(&args, &cwd, Duration::from_secs(5), MAX_STATUS_OUTPUT_BYTES)
-                .map_err(|_| GIT_STATUS_ERROR.to_string())?;
+        let cwd = host_path_spelling(&worktree, GIT_STATUS_ERROR)?;
+        let target = git_target_for_path(&worktree, GIT_STATUS_ERROR)?;
+        let status = devbox_git::run_bounded_target(
+            &args,
+            &target,
+            Duration::from_secs(5),
+            MAX_STATUS_OUTPUT_BYTES,
+        )
+        .map_err(|_| GIT_STATUS_ERROR.to_string())?;
         Ok(parse_status(&cwd, &status))
     })
     .await
@@ -1937,15 +1985,22 @@ pub async fn worktrees(path: String) -> Result<Vec<String>, String> {
             "list",
             "--porcelain",
         ];
-        let cwd = worktree.to_string_lossy().into_owned();
-        let out = devbox_git::run_bounded(
+        let target = git_target_for_path(&worktree, GIT_WORKTREE_ERROR)?;
+        let out = devbox_git::run_bounded_target(
             &args,
-            &cwd,
+            &target,
             Duration::from_secs(5),
             MAX_WORKTREE_OUTPUT_BYTES,
         )
         .map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
-        Ok(parse_worktrees(&out))
+        parse_worktrees(&out)
+            .into_iter()
+            .map(|path| {
+                target
+                    .host_path_from_git(&path)
+                    .map_err(|_| GIT_WORKTREE_ERROR.to_string())
+            })
+            .collect()
     })
     .await
 }
@@ -1989,6 +2044,8 @@ pub async fn create_worktree(
         {
             return Err(GIT_WORKTREE_ERROR.to_string());
         }
+        let target_arg = git_path_from_host(&context.worktree, &target, GIT_WORKTREE_ERROR)?;
+        let result_path = host_path_spelling(&target, GIT_WORKTREE_ERROR)?;
         let args = vec![
             "--no-pager".to_string(),
             "--no-optional-locks".to_string(),
@@ -1997,12 +2054,10 @@ pub async fn create_worktree(
             "-b".to_string(),
             branch,
             "--".to_string(),
-            target.to_string_lossy().into_owned(),
+            target_arg,
         ];
         run_git_mutation(&args, &context.worktree)?;
-        Ok(WorktreeCreate {
-            path: target.to_string_lossy().into_owned(),
-        })
+        Ok(WorktreeCreate { path: result_path })
     })
     .await
 }
@@ -2125,17 +2180,14 @@ fn cleanup_worktree_still_safe(
     };
     ensure_budget()?;
     let expected_path = Path::new(&expected.path);
-    let (canonical, identity) = resolve_cleanup_worktree_path(
-        context,
-        &ParsedWorktree {
-            path: expected_path.to_string_lossy().into_owned(),
-            head: None,
-            branch: None,
-            locked: false,
-            prunable: false,
-            bare: false,
-        },
-    )
+    let (canonical, identity) = resolve_cleanup_worktree_path(&ParsedWorktree {
+        path: expected_path.to_string_lossy().into_owned(),
+        head: None,
+        branch: None,
+        locked: false,
+        prunable: false,
+        bare: false,
+    })
     .map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
     ensure_budget()?;
     if canonical != expected_path || identity != expected_identity {
@@ -2187,13 +2239,13 @@ fn cleanup_worktree_still_safe(
         }
     })?;
     let records =
-        parse_worktree_records(&records_text).map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
+        parse_host_worktree_records(&records_text, &context.worktree, GIT_CLEANUP_STATE_CHANGED)?;
     let mut matching = None;
     let mut context_worktree_head = None;
     let mut context_worktree_count = 0usize;
     for (index, record) in records.iter().enumerate() {
         ensure_budget()?;
-        if let Ok((record_path, record_identity)) = resolve_cleanup_worktree_path(context, record) {
+        if let Ok((record_path, record_identity)) = resolve_cleanup_worktree_path(record) {
             if record_identity == context.worktree_identity {
                 context_worktree_count = context_worktree_count.saturating_add(1);
                 context_worktree_head = record.head.clone();
@@ -2228,17 +2280,14 @@ fn cleanup_worktree_still_safe(
     // and ensures a replacement cannot be carried forward from an earlier
     // status check.
     ensure_budget()?;
-    let (final_canonical, final_identity) = resolve_cleanup_worktree_path(
-        context,
-        &ParsedWorktree {
-            path: expected_path.to_string_lossy().into_owned(),
-            head: None,
-            branch: None,
-            locked: false,
-            prunable: false,
-            bare: false,
-        },
-    )
+    let (final_canonical, final_identity) = resolve_cleanup_worktree_path(&ParsedWorktree {
+        path: expected_path.to_string_lossy().into_owned(),
+        head: None,
+        branch: None,
+        locked: false,
+        prunable: false,
+        bare: false,
+    })
     .map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
     if final_canonical != expected_path || final_identity != expected_identity {
         return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
@@ -2451,9 +2500,14 @@ fn run_cleanup_request(
                     operation.cancellation.as_ref(),
                 )?;
                 let path = PathBuf::from(&expected.path);
+                let git_path = PathBuf::from(git_path_from_host(
+                    &context.worktree,
+                    &path,
+                    GIT_CLEANUP_STATE_CHANGED,
+                )?);
                 attempted = attempted.saturating_add(1);
                 let result = run_git_cleanup_mutation_with_cancel(
-                    &git_cleanup_remove_worktree_args(&path),
+                    &git_cleanup_remove_worktree_args(&git_path),
                     &context.worktree,
                     operation.cancellation.as_ref(),
                     timeout,
@@ -3122,6 +3176,31 @@ mod scan_tests {
                 Err("repository 경로가 올바르지 않습니다")
             );
         }
+    }
+
+    #[test]
+    fn trusted_canonical_windows_spelling_preserves_wsl_target_identity() {
+        let unc = Path::new(r"\\?\UNC\wsl.localhost\Ubuntu\home\jihoon\Projects\DevBox");
+        assert_eq!(
+            host_path_spelling(unc, GIT_VIEW_ERROR).unwrap(),
+            r"\\wsl.localhost\Ubuntu\home\jihoon\Projects\DevBox"
+        );
+        assert_eq!(
+            git_target_for_path(unc, GIT_VIEW_ERROR).unwrap(),
+            GitTarget::Wsl {
+                distro: "Ubuntu".into(),
+                cwd: "/home/jihoon/Projects/DevBox".into(),
+            }
+        );
+        assert_eq!(
+            host_path_spelling(Path::new(r"\\?\E:\Projects\DevBox"), GIT_VIEW_ERROR).unwrap(),
+            r"E:\Projects\DevBox"
+        );
+        assert!(host_path_spelling(
+            Path::new(r"\\?\Volume{00000000-0000-0000-0000-000000000000}\repo"),
+            GIT_VIEW_ERROR,
+        )
+        .is_err());
     }
 
     #[test]
