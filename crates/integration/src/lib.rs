@@ -1,7 +1,9 @@
 //! devbox 공용 integration snapshot 계약.
 //!
-//! producer는 `<common-root>/integration/<producer-id>/v<n>/summary.json` 하나를
-//! 원자적으로 교체하고 consumer는 이 크레이트를 통해서만 발견·검증·읽기한다.
+//! producer는 `<common-root>/integration/<producer-id>/v<n>/summary.json` 또는
+//! independently versioned named view snapshot을 원자적으로 교체하고 consumer는
+//! 이 크레이트를 통해서만 발견·검증·읽기한다. 기존 discovery는 `summary.json`만
+//! 열거하므로 named view를 추가해도 legacy consumer가 보던 목록은 바뀌지 않는다.
 //! producer별 업무 데이터는 앱에 남고, 이 크레이트는 경로·envelope·multi-view·
 //! freshness·보안 경계만 소유한다.
 
@@ -151,6 +153,32 @@ pub fn snapshot_path_in(root: &Path, producer_id: &str, version: u32) -> PathBuf
     snapshot_dir_in(root, producer_id, version).join("summary.json")
 }
 
+/// A validated named snapshot path in the producer/version directory. Named
+/// files let a producer keep an old `summary.json` payload byte-compatible
+/// while publishing a separate independently versioned named capability.
+pub fn named_view_snapshot_path(
+    producer_id: &str,
+    version: u32,
+    name: &str,
+) -> Result<PathBuf, String> {
+    named_view_snapshot_path_in(&integration_root(), producer_id, version, name)
+}
+
+pub fn named_view_snapshot_path_in(
+    root: &Path,
+    producer_id: &str,
+    version: u32,
+    name: &str,
+) -> Result<PathBuf, String> {
+    validate_producer_id(producer_id)?;
+    validate_version(version)?;
+    validate_kind(name)?;
+    if name == "summary" {
+        return Err("named snapshot kind is reserved".into());
+    }
+    Ok(snapshot_dir_in(root, producer_id, version).join(format!("{name}.json")))
+}
+
 /// 완성된 envelope 하나를 고유 임시 파일에서 `summary.json`으로 원자 교체한다.
 pub fn write_atomic(envelope: &Envelope, dir: &Path) -> Result<(), String> {
     validate_envelope(envelope)?;
@@ -159,8 +187,31 @@ pub fn write_atomic(envelope: &Envelope, dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|_| "snapshot 디렉터리를 만들 수 없습니다")?;
     reject_owned_directory_links(dir)?;
 
-    let target = dir.join("summary.json");
-    match std::fs::symlink_metadata(&target) {
+    write_snapshot_file(envelope, &dir.join("summary.json"))
+}
+
+/// Atomically write a validated named-view snapshot beside `summary.json`.
+/// `name` is a kebab-case kind and becomes `<name>.json` under the producer's
+/// version directory; it cannot escape that directory.
+pub fn write_named_view_snapshot_atomic(
+    envelope: &Envelope,
+    root: &Path,
+    name: &str,
+) -> Result<(), String> {
+    validate_envelope(envelope)?;
+    validate_kind(name)?;
+    validate_named_view_envelope(envelope, name)?;
+    let target =
+        named_view_snapshot_path_in(root, &envelope.producer, envelope.schema_version, name)?;
+    let dir = snapshot_dir_in(root, &envelope.producer, envelope.schema_version);
+    reject_owned_directory_links(&dir)?;
+    std::fs::create_dir_all(&dir).map_err(|_| "snapshot 디렉터리를 만들 수 없습니다")?;
+    reject_owned_directory_links(&dir)?;
+    write_snapshot_file(envelope, &target)
+}
+
+fn write_snapshot_file(envelope: &Envelope, target: &Path) -> Result<(), String> {
+    match std::fs::symlink_metadata(target) {
         Ok(metadata) if is_link_metadata(&metadata) => {
             return Err(
                 "snapshot 경로에 symbolic link 또는 reparse point를 사용할 수 없습니다".into(),
@@ -195,6 +246,25 @@ pub fn read_snapshot_in(
     reject_read_path_links(root, producer_id, version)?;
     let path = snapshot_path_in(root, producer_id, version);
     read_snapshot_file(&path, producer_id, version)
+}
+
+/// Read one named snapshot from a producer/version directory. Missing files
+/// are represented by `Ok(None)` just like `read_snapshot_in`.
+pub fn read_named_view_snapshot_in(
+    root: &Path,
+    producer_id: &str,
+    version: u32,
+    name: &str,
+) -> Result<Option<Envelope>, String> {
+    let path = named_view_snapshot_path_in(root, producer_id, version, name)?;
+    reject_read_path_links(root, producer_id, version)?;
+    match read_snapshot_file(&path, producer_id, version)? {
+        Some(envelope) => {
+            validate_named_view_envelope(&envelope, name)?;
+            Ok(Some(envelope))
+        }
+        None => Ok(None),
+    }
 }
 
 /// 기본 integration root에서 검증 가능한 모든 snapshot을 발견한다.
@@ -383,6 +453,14 @@ fn validate_envelope(envelope: &Envelope) -> Result<(), String> {
                 return Err("snapshot view entry 형식이 올바르지 않습니다".into());
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_named_view_envelope(envelope: &Envelope, name: &str) -> Result<(), String> {
+    let views = envelope.views()?;
+    if views.len() != 1 || !views.contains_key(name) {
+        return Err("named snapshot view가 파일 이름과 일치하지 않습니다".into());
     }
     Ok(())
 }
@@ -737,6 +815,208 @@ mod tests {
             path.ends_with("/devbox/integration/run-manager/v1/summary.json"),
             "{path}"
         );
+    }
+
+    #[test]
+    fn named_view_snapshot_round_trips_with_identity_and_is_ignored_by_discovery() {
+        let root = test_root("named");
+        let views = SnapshotViews::from([(
+            "jobs-services".to_owned(),
+            SnapshotView {
+                schema_version: 1,
+                freshness_ms: 0,
+                entries: vec![serde_json::json!({ "id": "job-1" })],
+            },
+        )]);
+        let envelope = Envelope::with_views("run-manager", "0.5.0", views);
+        write_named_view_snapshot_atomic(&envelope, &root, "jobs-services").unwrap();
+
+        let path = named_view_snapshot_path_in(&root, "run-manager", 1, "jobs-services").unwrap();
+        assert!(path.ends_with("run-manager/v1/jobs-services.json"));
+        let read = read_named_view_snapshot_in(&root, "run-manager", 1, "jobs-services")
+            .unwrap()
+            .unwrap();
+        assert_eq!(read, envelope);
+        assert!(discover_report_in(&root).snapshots.is_empty());
+
+        let legacy = Envelope::new(
+            "run-manager",
+            "0.5.0",
+            serde_json::json!({
+                "activeServices": [],
+                "runs": {"success": 0, "failed": 0},
+                "lastRunAtMs": null,
+            }),
+        );
+        write_atomic(&legacy, &snapshot_dir_in(&root, "run-manager", 1)).unwrap();
+        let summary_before = std::fs::read(snapshot_path_in(&root, "run-manager", 1)).unwrap();
+        assert!(write_named_view_snapshot_atomic(&envelope, &root, "summary").is_err());
+        assert_eq!(
+            std::fs::read(snapshot_path_in(&root, "run-manager", 1)).unwrap(),
+            summary_before
+        );
+
+        let mismatched = Envelope::with_views(
+            "run-manager",
+            "0.5.0",
+            SnapshotViews::from([(
+                "status".to_owned(),
+                SnapshotView {
+                    schema_version: 1,
+                    freshness_ms: 0,
+                    entries: vec![serde_json::json!({ "id": "status" })],
+                },
+            )]),
+        );
+        assert!(write_named_view_snapshot_atomic(&mismatched, &root, "jobs-services").is_err());
+
+        let extra = Envelope::with_views(
+            "run-manager",
+            "0.5.0",
+            SnapshotViews::from([
+                (
+                    "jobs-services".to_owned(),
+                    SnapshotView {
+                        schema_version: 1,
+                        freshness_ms: 0,
+                        entries: vec![],
+                    },
+                ),
+                (
+                    "status".to_owned(),
+                    SnapshotView {
+                        schema_version: 1,
+                        freshness_ms: 0,
+                        entries: vec![],
+                    },
+                ),
+            ]),
+        );
+        assert!(write_named_view_snapshot_atomic(&extra, &root, "jobs-services").is_err());
+
+        for name in [
+            "../escape",
+            "jobs_services",
+            "",
+            "jobs-services.json",
+            "summary",
+        ] {
+            assert!(named_view_snapshot_path_in(&root, "run-manager", 1, name).is_err());
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn named_view_snapshot_read_rejects_identity_and_shape_mismatches() {
+        let root = test_root("named-read-contract");
+        let path = named_view_snapshot_path_in(&root, "run-manager", 1, "jobs-services").unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let jobs_view = || {
+            SnapshotViews::from([(
+                "jobs-services".to_owned(),
+                SnapshotView {
+                    schema_version: 1,
+                    freshness_ms: 0,
+                    entries: vec![],
+                },
+            )])
+        };
+
+        let wrong_producer = Envelope::with_views("knowledge-base", "0.5.0", jobs_view());
+        std::fs::write(&path, serde_json::to_vec(&wrong_producer).unwrap()).unwrap();
+        assert_eq!(
+            read_named_view_snapshot_in(&root, "run-manager", 1, "jobs-services").unwrap_err(),
+            "snapshot producer가 경로와 일치하지 않습니다"
+        );
+
+        let wrong_view = Envelope::with_views(
+            "run-manager",
+            "0.5.0",
+            SnapshotViews::from([(
+                "status".to_owned(),
+                SnapshotView {
+                    schema_version: 1,
+                    freshness_ms: 0,
+                    entries: vec![],
+                },
+            )]),
+        );
+        std::fs::write(&path, serde_json::to_vec(&wrong_view).unwrap()).unwrap();
+        assert!(
+            read_named_view_snapshot_in(&root, "run-manager", 1, "jobs-services")
+                .unwrap_err()
+                .contains("파일 이름")
+        );
+
+        let extra_views = Envelope::with_views(
+            "run-manager",
+            "0.5.0",
+            SnapshotViews::from([
+                (
+                    "jobs-services".to_owned(),
+                    SnapshotView {
+                        schema_version: 1,
+                        freshness_ms: 0,
+                        entries: vec![],
+                    },
+                ),
+                (
+                    "status".to_owned(),
+                    SnapshotView {
+                        schema_version: 1,
+                        freshness_ms: 0,
+                        entries: vec![],
+                    },
+                ),
+            ]),
+        );
+        std::fs::write(&path, serde_json::to_vec(&extra_views).unwrap()).unwrap();
+        assert!(
+            read_named_view_snapshot_in(&root, "run-manager", 1, "jobs-services")
+                .unwrap_err()
+                .contains("파일 이름")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn named_view_snapshot_rejects_symlink_targets() {
+        use std::os::unix::fs::symlink;
+
+        let root = test_root("named-link");
+        let outside = test_root("named-link-outside");
+        std::fs::create_dir_all(snapshot_dir_in(&root, "run-manager", 1)).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        symlink(
+            outside.join("jobs-services.json"),
+            named_view_snapshot_path_in(&root, "run-manager", 1, "jobs-services").unwrap(),
+        )
+        .unwrap();
+        let envelope = Envelope::with_views(
+            "run-manager",
+            "0.5.0",
+            SnapshotViews::from([(
+                "jobs-services".to_owned(),
+                SnapshotView {
+                    schema_version: 1,
+                    freshness_ms: 0,
+                    entries: vec![],
+                },
+            )]),
+        );
+        assert!(
+            write_named_view_snapshot_atomic(&envelope, &root, "jobs-services")
+                .unwrap_err()
+                .contains("symbolic link")
+        );
+        assert!(
+            read_named_view_snapshot_in(&root, "run-manager", 1, "jobs-services")
+                .unwrap_err()
+                .contains("안전하지")
+        );
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
     }
 
     #[test]

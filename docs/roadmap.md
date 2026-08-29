@@ -74,6 +74,12 @@ strict bounded JSON, corrupt fallback, atomic persistence와 close/tray/explicit
   보관하고 `snapshot:everything-plus/saved-queries/v1` view를 원자 발행한다. Launcher는 같은
   strict QueryFilter를 AppLink로 전달하며 유효하지 않은 filter는 text-only로 강등하지 않는다.
   결과/path/content/credential 저장, arbitrary source path, 자동 검색 실행은 제외했다.
+- [x] **Run Manager → Launcher multi-view snapshot (#474, post-release source correction)** —
+  기존 `status/v1` flat `summary.json`은 정확히 유지하고, `jobs-services/v1` capability는
+  `jobs-services.json` named sidecar로 별도 발행한다. Workbench/Life Log의 v1 status 소비자와
+  Launcher의 sidecar→flat fallback을 보존한다. job/service action은 opaque id만 전달하며
+  command/cwd/environment/path/credential/log 원문은 snapshot에 복사하지 않는다.
+  이 source correction은 v0.5.0 tag 이후 반영됐으며 공개 v0.5.0 binary에는 포함되지 않는다.
 - [ ] **#349–#350 Windows packaged 확인** — filter 조합과 저장/재시작/삭제, Launcher에서 열기,
   snapshot 쓰기 실패 복구를 W3 smoke로 재확인한다. Linux Rust/frontend 및 CI gate 통과와 별개인
   v0.5.0 release checkpoint다.

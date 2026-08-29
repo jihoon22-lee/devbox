@@ -776,6 +776,19 @@ versioned `payload.text/filter`를 다시 검증해 `query` AppLink로 전달한
 `--query-filter-v1`은 strict/deny-unknown JSON이며 잘못된 filter를 text-only 요청으로 조용히
 강등하지 않는다. filter가 없는 기존 `--query` 요청은 계속 같은 검색 경로를 사용한다.
 
+catalog revision 12(`#474` post-release source correction)부터 Run Manager는
+`snapshot:run-manager/status/v1`과 `snapshot:run-manager/jobs-services/v1` capability를
+생산한다. v1 `run-manager/v1/summary.json`은 기존 flat `activeServices`·`runs`·`lastRunAtMs`
+data를 byte-shape 그대로 유지해 기존 Workbench/Life Log와 Launcher 소비자를 보호한다. 새
+`run-manager/v1/jobs-services.json` named sidecar는 `data.views.jobs-services` 하나만 담는
+multi-view envelope이다. jobs-services는 모든 job/service를
+`targetApp=run-manager`, `targetKind=task`, `payloadVersion=1`, opaque `{id}` payload의
+bounded action entry로 제공한다. producer는 command/cwd/environment/path/credential/log를
+복사하지 않으며, invalid/duplicate/bounded-out definitions는 sidecar atomic replace를 거부해
+last-good sidecar를 유지한다. Launcher는 sidecar를 우선 읽고, sidecar가 없는 경우에만 v1
+flat active-service fallback을 사용한다. 이 source correction은 v0.5.0 tag 이후 반영됐으며
+공개 v0.5.0 binary에는 포함되지 않는다.
+
 filename/content FTS projection은 filter 값을 모두 SQLite parameter로 결합한다. source는 임의
 경로가 아닌 등록 `roots.id`이며 중첩 root는 가장 깊은 root가 소유한다. root id는 삭제 뒤
 재사용하지 않고, 현재 등록 root와 path ownership이 일치하지 않는 orphan/misowned row는 root가
