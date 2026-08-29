@@ -27,10 +27,15 @@
 
 > 빌드를 새로 하고 싶을 때(GitHub Actions가 대신 빌드):
 > 1. 루트 `CHANGELOG.md`에 새 버전 섹션(`## [vX.Y.Z] - 날짜`)으로 변경점 기록
-> 2. **방법 1 (태그로 배포, 권장)**: WSL/로컬에서 `git tag v0.1.1 && git push origin v0.1.1`
+> 2. **방법 1 (안정판 태그로 배포, 권장)**: WSL/로컬에서 `git tag v0.1.1 && git push origin v0.1.1`
 >    - **방법 2 (수동)**: GitHub → Actions 탭 → **Release** → **Run workflow** → 버전 입력(예: `v0.1.1`)
 > 3. 그러면 Windows CI가 현재 catalog의 15개 앱을 빌드해 **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 새 릴리스를 만든다.
 >    버전(tag)은 **매번 새로** 써야 한다(기존 tag 재사용 불가).
+
+> 릴리스 보호 정책: `vX.Y.Z` 안정판은 위 두 경로를 사용한다. `vX.Y.Z-...` prerelease/RC
+> tag push는 build 전에 거부되어 릴리스를 만들지 않는다. prerelease가 명시적으로 필요할
+> 때만 **수동 dispatch**에서 정확한 전체 버전을 입력하고 `allow_prerelease`를 `true`로
+> 선택한다. 이 gate의 기본값은 `false`다.
 
 > 참고: 개인 빌드라 코드 서명이 없어 SmartScreen 경고가 뜨면 `추가 정보 → 실행`을 누르면 된다.
 

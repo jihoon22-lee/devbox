@@ -6,8 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag (e.g. v0.4.0). Use a new tag each run."
+        description: "Exact release tag (e.g. v0.4.0). Prereleases require the explicit gate below."
         required: true
+        type: string
+      allow_prerelease:
+        description: "Explicitly authorize this exact prerelease tag (default: false)."
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: release
@@ -29,18 +35,25 @@ jobs:
           fetch-depth: 0
 
       - id: contract
-        name: Require a new release for an annotated tag at this source commit
+        name: Validate release policy and require an annotated tag at this source commit
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.version }}
           EXPECTED_COMMIT: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          ALLOW_PRERELEASE: ${{ inputs.allow_prerelease || false }}
         run: |
           set -euo pipefail
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "invalid release tag"
-            exit 1
-          fi
+          # This is the first policy check in the release graph. In particular,
+          # a prerelease push fails here, before any Windows build or release API
+          # mutation can run. The script also emits the only prerelease/latest
+          # state consumed by downstream jobs.
+          python3 .github/scripts/validate-release-input.py \
+            --event "$EVENT_NAME" \
+            --tag "$TAG" \
+            --allow-prerelease "$ALLOW_PRERELEASE" \
+            --github-output "$GITHUB_OUTPUT"
           if [[ -z "$(git ls-remote --tags --refs origin "refs/tags/$TAG")" ]]; then
             echo "remote tag $TAG does not exist"
             exit 1
@@ -61,14 +74,6 @@ jobs:
           if [[ -n "$existing_release_ids" ]]; then
             echo "release $TAG already exists"
             exit 1
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          if [[ "$TAG" == *-* ]]; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "make_latest=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "make_latest=true" >> "$GITHUB_OUTPUT"
           fi
 
   build-windows:
@@ -147,7 +152,7 @@ jobs:
         id: manifest
         shell: bash
         env:
-          TAG: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.version }}
+          TAG: ${{ needs.preflight.outputs.tag }}
         run: |
           python3 .github/scripts/build-manifest.py staging "$TAG" apps/catalog.json staging/release-manifest.json
           echo "path=staging/release-manifest.json" >> "$GITHUB_OUTPUT"
@@ -242,6 +247,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.preflight.outputs.tag }}
           EXPECTED_COMMIT: ${{ github.sha }}
+          PRERELEASE: ${{ needs.preflight.outputs.prerelease }}
         run: |
           set -euo pipefail
           git fetch --force --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
@@ -250,11 +256,6 @@ jobs:
             echo "tag commit $tag_commit does not match workflow source $EXPECTED_COMMIT"
             exit 1
           fi
-          prerelease=false
-          if [[ "$TAG" == *-* ]]; then
-            prerelease=true
-          fi
-
           mkdir downloaded-release
           gh release download "$TAG" --repo jihoon22-lee/devbox --dir downloaded-release
           gh release view "$TAG" --repo jihoon22-lee/devbox \
@@ -269,7 +270,7 @@ jobs:
             --tag "$TAG" \
             --commit "$EXPECTED_COMMIT" \
             --draft true \
-            --prerelease "$prerelease"
+            --prerelease "$PRERELEASE"
 
       - name: Publish only the verified draft
         shell: bash
