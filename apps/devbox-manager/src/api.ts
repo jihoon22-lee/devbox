@@ -16,6 +16,16 @@ import type {
   DataQueryResult,
   DevSetupAudit,
   DevSetupCapability,
+  DevSetupConfigurationAction,
+  DevSetupConfigurationApplyResult,
+  DevSetupConfigurationApplyStatus,
+  DevSetupConfigurationCurrentState,
+  DevSetupConfigurationDesired,
+  DevSetupConfigurationExport,
+  DevSetupConfigurationPackageApplyResult,
+  DevSetupConfigurationPackageApplyStatus,
+  DevSetupConfigurationPackageReview,
+  DevSetupConfigurationReview,
   DevSetupPlanItem,
   DockerCapability,
   InstalledApp,
@@ -36,6 +46,20 @@ import type {
 const MOCK_CATALOG: CatalogApp[] = catalogJson.apps;
 const MOCK_OBSERVED_AT_MS = Date.now();
 const MAX_JAVASCRIPT_TIMESTAMP_MS = 8_640_000_000_000_000;
+const DEV_SETUP_CONFIGURATION_SCHEMA =
+  "https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json";
+const DEV_SETUP_CONFIGURATION_MAX_BYTES = 256 * 1024;
+const DEV_SETUP_CONFIGURATION_MAX_PACKAGES = 16;
+const DEV_SETUP_CONFIGURATION_PREVIEW_TTL_MS = 5 * 60 * 1_000;
+const DEV_SETUP_PREVIEW_ID_PATTERN = /^devsetup-[0-9a-f]{64}$/;
+const DEV_SETUP_SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const DEV_SETUP_CONFIGURATION_REVIEW_ERROR = "Dev Setup 구성 검토 응답이 올바르지 않습니다.";
+const DEV_SETUP_CONFIGURATION_EXPORT_ERROR = "Dev Setup 구성 내보내기 응답이 올바르지 않습니다.";
+const DEV_SETUP_CONFIGURATION_APPLY_ERROR = "Dev Setup 구성 적용 결과가 올바르지 않습니다.";
+const DEV_SETUP_CONFIGURATION_REQUEST_ERROR = "Dev Setup 구성 요청이 올바르지 않습니다.";
+const DEV_SETUP_CONFIGURATION_COMMAND_ERROR = "Dev Setup 구성 작업을 완료할 수 없습니다.";
+const DEV_SETUP_CONFIRMATION_ERROR = "Dev Setup 적용에는 세 가지 확인이 모두 필요합니다.";
+const MOCK_DEV_SETUP_PREVIEW_ID = `devsetup-${"b".repeat(64)}`;
 const MOCK_UNKNOWN_TOOL_STATE = {
   installState: "unknown",
   launchState: "unknown",
@@ -550,6 +574,451 @@ function mockDevSetupAudit(): DevSetupAudit {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).length === keys.length
+    && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function isSafeDevSetupTimestamp(value: unknown): value is number {
+  return typeof value === "number"
+    && Number.isSafeInteger(value)
+    && value > 0
+    && value <= MAX_JAVASCRIPT_TIMESTAMP_MS;
+}
+
+function isDevSetupPreviewId(value: unknown): value is string {
+  return typeof value === "string" && DEV_SETUP_PREVIEW_ID_PATTERN.test(value);
+}
+
+function isDevSetupSha256(value: unknown): value is string {
+  return typeof value === "string" && DEV_SETUP_SHA256_PATTERN.test(value);
+}
+
+function isDevSetupConfigurationDesired(value: unknown): value is DevSetupConfigurationDesired {
+  return typeof value === "string"
+    && (["present", "latest", "version"] as readonly string[]).includes(value);
+}
+
+function isDevSetupConfigurationCurrentState(
+  value: unknown,
+): value is DevSetupConfigurationCurrentState {
+  return typeof value === "string"
+    && (["present", "absent", "update-available", "unknown"] as readonly string[]).includes(value);
+}
+
+function isDevSetupConfigurationAction(value: unknown): value is DevSetupConfigurationAction {
+  return typeof value === "string"
+    && (["none", "install", "update", "reconcile-version", "verify"] as readonly string[]).includes(value);
+}
+
+function isDevSetupConfigurationApplyStatus(
+  value: unknown,
+): value is DevSetupConfigurationApplyStatus {
+  return typeof value === "string"
+    && (["complete", "partial", "cancelled"] as readonly string[]).includes(value);
+}
+
+function isDevSetupConfigurationPackageApplyStatus(
+  value: unknown,
+): value is DevSetupConfigurationPackageApplyStatus {
+  return typeof value === "string"
+    && (["unchanged", "applied", "failed", "timed-out", "cancelled", "skipped"] as readonly string[]).includes(value);
+}
+
+function isDevSetupPackageId(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 128) return false;
+  const segments = value.split(".");
+  return segments.length >= 2
+    && segments.length <= 8
+    && segments.every((segment) => segment.length > 0
+      && segment.length <= 32
+      && /^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$/.test(segment));
+}
+
+function isDevSetupPackageVersion(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 128
+    && /^[A-Za-z0-9._+-]+$/.test(value);
+}
+
+function expectedDevSetupAction(
+  desired: DevSetupConfigurationDesired,
+  currentState: DevSetupConfigurationCurrentState,
+): DevSetupConfigurationAction | null {
+  switch (currentState) {
+    case "unknown":
+      return "verify";
+    case "absent":
+      return "install";
+    case "update-available":
+      return desired === "latest" ? "update" : null;
+    case "present":
+      return desired === "version" ? "reconcile-version" : "none";
+  }
+}
+
+function devSetupActionChangesSystem(action: DevSetupConfigurationAction): boolean {
+  return action === "install"
+    || action === "update"
+    || action === "reconcile-version";
+}
+
+function validateDevSetupConfigurationPackage(
+  value: unknown,
+): DevSetupConfigurationPackageReview {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "packageId",
+    "desired",
+    "version",
+    "currentState",
+    "action",
+    "requestedAgreementAcceptance",
+    "declaredElevation",
+  ])) {
+    throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
+  }
+  const packageId = value.packageId;
+  const desired = value.desired;
+  const version = value.version;
+  const currentState = value.currentState;
+  const action = value.action;
+  if (
+    !isDevSetupPackageId(packageId)
+    || !isDevSetupConfigurationDesired(desired)
+    || !isDevSetupConfigurationCurrentState(currentState)
+    || !isDevSetupConfigurationAction(action)
+    || typeof value.requestedAgreementAcceptance !== "boolean"
+    || typeof value.declaredElevation !== "boolean"
+  ) {
+    throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
+  }
+  if (desired === "version") {
+    if (!isDevSetupPackageVersion(version)) {
+      throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
+    }
+  } else if (version !== null) {
+    throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
+  }
+  if (expectedDevSetupAction(desired, currentState) !== action) {
+    throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
+  }
+  return {
+    packageId,
+    desired,
+    version: version as string | null,
+    currentState,
+    action,
+    requestedAgreementAcceptance: value.requestedAgreementAcceptance,
+    declaredElevation: value.declaredElevation,
+  };
+}
+
+function validateDevSetupConfigurationReview(
+  value: unknown,
+): DevSetupConfigurationReview {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "schemaVersion",
+    "previewId",
+    "expiresAtMs",
+    "configurationDigest",
+    "sourceTrust",
+    "mode",
+    "canApply",
+    "hasChanges",
+    "requiresAgreementConfirmation",
+    "mayRequireAdmin",
+    "mayRequireReboot",
+    "packages",
+  ])) {
+    throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
+  }
+  const now = Date.now();
+  if (
+    value.schemaVersion !== "0.3"
+    || !isDevSetupPreviewId(value.previewId)
+    || !isSafeDevSetupTimestamp(value.expiresAtMs)
+    || value.expiresAtMs <= now
+    || value.expiresAtMs > now + DEV_SETUP_CONFIGURATION_PREVIEW_TTL_MS
+    || !isDevSetupSha256(value.configurationDigest)
+    || value.sourceTrust !== "external-restricted"
+    || value.mode !== "package-only"
+    || typeof value.canApply !== "boolean"
+    || typeof value.hasChanges !== "boolean"
+    || typeof value.requiresAgreementConfirmation !== "boolean"
+    || typeof value.mayRequireAdmin !== "boolean"
+    || typeof value.mayRequireReboot !== "boolean"
+    || !Array.isArray(value.packages)
+    || value.packages.length < 1
+    || value.packages.length > DEV_SETUP_CONFIGURATION_MAX_PACKAGES
+  ) {
+    throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
+  }
+  const packages = value.packages.map(validateDevSetupConfigurationPackage);
+  const seenPackageIds = new Set<string>();
+  for (const packageReview of packages) {
+    const normalizedId = packageReview.packageId.toLowerCase();
+    if (seenPackageIds.has(normalizedId)) {
+      throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
+    }
+    seenPackageIds.add(normalizedId);
+  }
+  const hasChanges = packages.some((packageReview) =>
+    devSetupActionChangesSystem(packageReview.action));
+  const hasVerify = packages.some((packageReview) => packageReview.action === "verify");
+  if (
+    value.hasChanges !== hasChanges
+    || value.canApply !== (hasChanges && !hasVerify)
+    || value.requiresAgreementConfirmation !== true
+    || value.mayRequireAdmin !== hasChanges
+    || value.mayRequireReboot !== hasChanges
+  ) {
+    throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
+  }
+  return {
+    schemaVersion: "0.3",
+    previewId: value.previewId,
+    expiresAtMs: value.expiresAtMs,
+    configurationDigest: value.configurationDigest,
+    sourceTrust: "external-restricted",
+    mode: "package-only",
+    canApply: value.canApply,
+    hasChanges: value.hasChanges,
+    requiresAgreementConfirmation: true,
+    mayRequireAdmin: value.mayRequireAdmin,
+    mayRequireReboot: value.mayRequireReboot,
+    packages,
+  };
+}
+
+function cloneDevSetupConfigurationReview(
+  review: DevSetupConfigurationReview,
+): DevSetupConfigurationReview {
+  return {
+    ...review,
+    packages: review.packages.map((packageReview) => ({ ...packageReview })),
+  };
+}
+
+let lastDevSetupConfigurationReview: DevSetupConfigurationReview | null = null;
+
+function requireLastDevSetupConfigurationReview(
+  previewId: string,
+): DevSetupConfigurationReview {
+  const review = lastDevSetupConfigurationReview;
+  if (!review || review.previewId !== previewId || review.expiresAtMs <= Date.now()) {
+    throw new Error(DEV_SETUP_CONFIGURATION_REQUEST_ERROR);
+  }
+  return review;
+}
+
+function renderDevSetupConfigurationExport(
+  packages: readonly DevSetupConfigurationPackageReview[],
+): string {
+  let content = `# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.3\n$schema: ${DEV_SETUP_CONFIGURATION_SCHEMA}\nmetadata:\n  winget:\n    processor:\n      identifier: dscv3\nresources:\n`;
+  for (const [index, packageReview] of packages.entries()) {
+    content += `  - type: Microsoft.WinGet/Package\n    name: DevboxPackage${String(index + 1).padStart(2, "0")}\n    properties:\n      id: ${JSON.stringify(packageReview.packageId)}\n      source: winget\n      matchOption: equals\n`;
+    if (packageReview.desired === "latest") {
+      content += "      useLatest: true\n";
+    } else if (packageReview.desired === "version") {
+      content += `      version: ${JSON.stringify(packageReview.version)}\n`;
+    }
+    content += "      installMode: silent\n    metadata:\n      description: Devbox reviewed package-only configuration\n";
+  }
+  return content;
+}
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+async function sha256Utf8(value: string): Promise<string | null> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return null;
+  try {
+    const digest = await subtle.digest("SHA-256", new TextEncoder().encode(value));
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return null;
+  }
+}
+
+function validateDevSetupConfigurationExportShape(
+  value: unknown,
+  review: DevSetupConfigurationReview,
+): value is {
+  filename: string;
+  mimeType: string;
+  content: string;
+  byteCount: number;
+  sha256: string;
+} {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "filename",
+    "mimeType",
+    "content",
+    "byteCount",
+    "sha256",
+  ])) {
+    throw new Error(DEV_SETUP_CONFIGURATION_EXPORT_ERROR);
+  }
+  if (
+    value.filename !== "devbox-packages.winget"
+    || value.mimeType !== "application/yaml;charset=utf-8"
+    || typeof value.content !== "string"
+    || value.content.length === 0
+    || utf8ByteLength(value.content) > DEV_SETUP_CONFIGURATION_MAX_BYTES
+    || typeof value.byteCount !== "number"
+    || !Number.isSafeInteger(value.byteCount)
+    || value.byteCount <= 0
+    || value.byteCount !== utf8ByteLength(value.content)
+    || !isDevSetupSha256(value.sha256)
+    || value.sha256 !== review.configurationDigest
+    || value.content !== renderDevSetupConfigurationExport(review.packages)
+  ) {
+    throw new Error(DEV_SETUP_CONFIGURATION_EXPORT_ERROR);
+  }
+  return true;
+}
+
+async function validateDevSetupConfigurationExport(
+  value: unknown,
+  review: DevSetupConfigurationReview,
+): Promise<DevSetupConfigurationExport> {
+  if (!validateDevSetupConfigurationExportShape(value, review)) {
+    throw new Error(DEV_SETUP_CONFIGURATION_EXPORT_ERROR);
+  }
+  const digest = await sha256Utf8(value.content);
+  if (digest !== null && digest !== value.sha256) {
+    throw new Error(DEV_SETUP_CONFIGURATION_EXPORT_ERROR);
+  }
+  return {
+    filename: "devbox-packages.winget",
+    mimeType: "application/yaml;charset=utf-8",
+    content: value.content,
+    byteCount: value.byteCount,
+    sha256: value.sha256,
+  };
+}
+
+function validateDevSetupConfigurationApply(
+  value: unknown,
+  review: DevSetupConfigurationReview,
+): DevSetupConfigurationApplyResult {
+  const expectedPackageIds = review.packages.map((packageReview) => packageReview.packageId);
+  if (!isRecord(value) || !hasExactKeys(value, ["status", "observedAtMs", "results"])) {
+    throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
+  }
+  if (
+    !isDevSetupConfigurationApplyStatus(value.status)
+    || !isSafeDevSetupTimestamp(value.observedAtMs)
+    || !Array.isArray(value.results)
+    || value.results.length !== expectedPackageIds.length
+  ) {
+    throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
+  }
+  const results = value.results.map((candidate, index): DevSetupConfigurationPackageApplyResult => {
+    if (!isRecord(candidate) || !hasExactKeys(candidate, ["packageId", "status"])) {
+      throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
+    }
+    if (
+      candidate.packageId !== expectedPackageIds[index]
+      || !isDevSetupConfigurationPackageApplyStatus(candidate.status)
+    ) {
+      throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
+    }
+    const action = review.packages[index].action;
+    const cancellationStatus = candidate.status === "cancelled" || candidate.status === "skipped";
+    if (
+      (!cancellationStatus && action === "none" && candidate.status !== "unchanged")
+      || (!cancellationStatus && action !== "none" && candidate.status === "unchanged")
+    ) {
+      throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
+    }
+    return {
+      packageId: candidate.packageId,
+      status: candidate.status,
+    };
+  });
+  const statuses = results.map((result) => result.status);
+  const complete = statuses.every((status) => status === "applied" || status === "unchanged");
+  const hasCancelled = statuses.includes("cancelled");
+  const hasSkipped = statuses.includes("skipped");
+  const cancellationSignal = hasCancelled || hasSkipped;
+  const hasTimedOut = statuses.includes("timed-out");
+  const partialFailure = statuses.some((status) => status === "failed" || status === "timed-out");
+  if (
+    (value.status === "complete" && !complete)
+    || (value.status === "cancelled" && (!cancellationSignal || complete))
+    || (value.status === "partial" && (
+      complete
+      || hasCancelled
+      || !partialFailure
+      || hasSkipped && !hasTimedOut
+    ))
+  ) {
+    throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
+  }
+  return {
+    status: value.status,
+    observedAtMs: value.observedAtMs,
+    results,
+  };
+}
+
+function mockDevSetupConfigurationReview(): DevSetupConfigurationReview {
+  return {
+    schemaVersion: "0.3",
+    previewId: MOCK_DEV_SETUP_PREVIEW_ID,
+    expiresAtMs: Date.now() + DEV_SETUP_CONFIGURATION_PREVIEW_TTL_MS,
+    configurationDigest: "aa87f279960f3b6e999bca6d55dacdfbacd71cb83a4f1772b729526e58dc2cf9",
+    sourceTrust: "external-restricted",
+    mode: "package-only",
+    canApply: true,
+    hasChanges: true,
+    requiresAgreementConfirmation: true,
+    mayRequireAdmin: true,
+    mayRequireReboot: true,
+    packages: [
+      {
+        packageId: "Git.Git",
+        desired: "latest",
+        version: null,
+        currentState: "absent",
+        action: "install",
+        requestedAgreementAcceptance: true,
+        declaredElevation: false,
+      },
+      {
+        packageId: "Microsoft.VisualStudioCode",
+        desired: "present",
+        version: null,
+        currentState: "present",
+        action: "none",
+        requestedAgreementAcceptance: false,
+        declaredElevation: false,
+      },
+    ],
+  };
+}
+
+function mockDevSetupConfigurationExport(
+  review: DevSetupConfigurationReview,
+): DevSetupConfigurationExport {
+  const content = renderDevSetupConfigurationExport(review.packages);
+  return {
+    filename: "devbox-packages.winget",
+    mimeType: "application/yaml;charset=utf-8",
+    content,
+    byteCount: utf8ByteLength(content),
+    sha256: review.configurationDigest,
+  };
+}
+
 function validateRelatedAction(
   value: unknown,
   toolId: string,
@@ -856,6 +1325,136 @@ export async function devSetupAudit(): Promise<DevSetupAudit> {
     ? await invoke<unknown>("dev_setup_audit")
     : mockDevSetupAudit();
   return validateDevSetupAudit(result);
+}
+
+export async function importDevSetupConfiguration(): Promise<DevSetupConfigurationReview | null> {
+  // A failed or cancelled import must not leave a previous preview eligible
+  // for an unrelated export/apply action.
+  lastDevSetupConfigurationReview = null;
+  let result: unknown;
+  if (!isTauri()) {
+    result = mockDevSetupConfigurationReview();
+  } else {
+    try {
+      result = await invoke<unknown>("import_dev_setup_configuration");
+    } catch {
+      throw new Error(DEV_SETUP_CONFIGURATION_COMMAND_ERROR);
+    }
+  }
+  if (result === null) return null;
+  const review = validateDevSetupConfigurationReview(result);
+  lastDevSetupConfigurationReview = cloneDevSetupConfigurationReview(review);
+  return review;
+}
+
+export async function discardDevSetupConfiguration(previewId: string): Promise<void> {
+  if (!isDevSetupPreviewId(previewId)) {
+    throw new Error(DEV_SETUP_CONFIGURATION_REQUEST_ERROR);
+  }
+  const review = lastDevSetupConfigurationReview;
+  if (review && review.previewId !== previewId) {
+    throw new Error(DEV_SETUP_CONFIGURATION_REQUEST_ERROR);
+  }
+  if (isTauri()) {
+    try {
+      await invoke("discard_dev_setup_configuration", {
+        request: { previewId },
+      });
+    } catch {
+      throw new Error(DEV_SETUP_CONFIGURATION_COMMAND_ERROR);
+    }
+  }
+  if (lastDevSetupConfigurationReview?.previewId === previewId) {
+    lastDevSetupConfigurationReview = null;
+  }
+}
+
+export async function exportDevSetupConfiguration(
+  previewId: string,
+): Promise<DevSetupConfigurationExport> {
+  if (!isDevSetupPreviewId(previewId)) {
+    throw new Error(DEV_SETUP_CONFIGURATION_REQUEST_ERROR);
+  }
+  const review = requireLastDevSetupConfigurationReview(previewId);
+  let result: unknown;
+  if (!isTauri()) {
+    result = mockDevSetupConfigurationExport(review);
+  } else {
+    try {
+      result = await invoke<unknown>("export_dev_setup_configuration", {
+        request: { previewId },
+      });
+    } catch {
+      throw new Error(DEV_SETUP_CONFIGURATION_COMMAND_ERROR);
+    }
+  }
+  return validateDevSetupConfigurationExport(result, review);
+}
+
+export async function applyDevSetupConfiguration(
+  previewId: string,
+  confirmed: boolean,
+  acceptPackageAgreements: boolean,
+  acknowledgeAdminAndReboot: boolean,
+): Promise<DevSetupConfigurationApplyResult> {
+  if (
+    !isDevSetupPreviewId(previewId)
+    || typeof confirmed !== "boolean"
+    || typeof acceptPackageAgreements !== "boolean"
+    || typeof acknowledgeAdminAndReboot !== "boolean"
+  ) {
+    throw new Error(DEV_SETUP_CONFIGURATION_REQUEST_ERROR);
+  }
+  if (!confirmed || !acceptPackageAgreements || !acknowledgeAdminAndReboot) {
+    throw new Error(DEV_SETUP_CONFIRMATION_ERROR);
+  }
+  const review = requireLastDevSetupConfigurationReview(previewId);
+  if (!review.canApply || !review.hasChanges) {
+    throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
+  }
+  const native = isTauri();
+  // Native consumes the one-time preview before starting work. Clear the
+  // renderer-side copy before invoking so a rejected/failed call cannot be
+  // retried with stale package expectations.
+  lastDevSetupConfigurationReview = null;
+  let result: unknown;
+  if (!native) {
+    result = {
+      status: "complete",
+      observedAtMs: Date.now(),
+      results: review.packages.map((packageReview) => ({
+        packageId: packageReview.packageId,
+        status: devSetupActionChangesSystem(packageReview.action) ? "applied" : "unchanged",
+      })),
+    };
+  } else {
+    try {
+      result = await invoke<unknown>("apply_dev_setup_configuration", {
+        request: {
+          previewId,
+          confirmed,
+          acceptPackageAgreements,
+          acknowledgeAdminAndReboot,
+        },
+      });
+    } catch {
+      throw new Error(DEV_SETUP_CONFIGURATION_COMMAND_ERROR);
+    }
+  }
+  const validated = validateDevSetupConfigurationApply(
+    result,
+    review,
+  );
+  return validated;
+}
+
+export async function cancelDevSetupApply(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke("cancel_dev_setup_apply");
+  } catch {
+    throw new Error(DEV_SETUP_CONFIGURATION_COMMAND_ERROR);
+  }
 }
 
 export async function installRelatedTool(

@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `5b7fecc855f80a79f8bebd91412009c03c8e2a755bc30337eb370cbfea08aa82`
+- Cargo.lock SHA-256: `a5aeeb3ba81b49cf1412a537a74f674b53a0d6265e50d1804964bc03cd5ba788`
 - pnpm-lock.yaml SHA-256: `94885f0421ed363aba0c3fc3eb84cf80aac71ff027ffc50818d20ed0960107be`
 
 ## Rust dependencies
@@ -419,6 +419,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | rustls-platform-verifier-android | 0.1.1 | MIT OR Apache-2.0 | https://github.com/rustls/rustls-platform-verifier | `sha256:f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f` |
 | rustls-webpki | 0.103.13 | ISC | https://github.com/rustls/webpki | `sha256:61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e` |
 | rustversion | 1.0.23 | MIT OR Apache-2.0 | https://github.com/dtolnay/rustversion | `sha256:cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f` |
+| ryu | 1.0.23 | Apache-2.0 OR BSL-1.0 | https://github.com/dtolnay/ryu | `sha256:9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f` |
 | same-file | 1.0.6 | Unlicense/MIT | https://github.com/BurntSushi/same-file | `sha256:93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502` |
 | schannel | 0.1.29 | MIT | https://github.com/steffengy/schannel-rs | `sha256:91c1b7e4904c873ef0710c1f407dde2e6287de2bebc1bbbf7d430bb7cbffd939` |
 | schemars | 0.8.22 | MIT | https://github.com/GREsau/schemars | `sha256:3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615` |
@@ -441,6 +442,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | serde_spanned | 1.1.1 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml | `sha256:6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26` |
 | serde_with | 3.22.0 | MIT OR Apache-2.0 | https://github.com/jonasbb/serde_with/ | `sha256:ee78f1fbe43ac4a0e47aadb3dbd357b69eb0d3793e948624cd03dd2750ab1c0a` |
 | serde_with_macros | 3.22.0 | MIT OR Apache-2.0 | https://github.com/jonasbb/serde_with/ | `sha256:8705578779c2b6bd90d84d66eb2e206b708b1a4d7b9f17641b293545bf1c7e46` |
+| serde_yaml_ng | 0.10.0 | MIT | https://github.com/acatton/serde-yaml-ng | `sha256:7b4db627b98b36d4203a7b458cf3573730f2bb591b28871d916dfa9efabfd41f` |
 | serial2 | 0.2.38 | BSD-2-Clause OR Apache-2.0 | https://github.com/de-vri-es/serial2-rs | `sha256:b16809bc35793b19ce4e0c53924bc0dce3937f15487997cfdaed936004180730` |
 | serialize-to-javascript | 0.1.2 | MIT OR Apache-2.0 | https://github.com/chippers/serialize-to-javascript | `sha256:04f3666a07a197cdb77cdf306c32be9b7f598d7060d50cfd4d5aa04bfd92f6c5` |
 | serialize-to-javascript-impl | 0.1.2 | MIT OR Apache-2.0 | https://github.com/chippers/serialize-to-javascript | `sha256:772ee033c0916d670af7860b6e1ef7d658a4629a6d0b4c8c3e67f09b3765b75d` |
@@ -557,6 +559,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | unicode-properties | 0.1.4 | MIT/Apache-2.0 | https://github.com/unicode-rs/unicode-properties | `sha256:7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d` |
 | unicode-segmentation | 1.13.3 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-segmentation | `sha256:c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8` |
 | unicode-width | 0.2.2 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-width | `sha256:b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254` |
+| unsafe-libyaml | 0.2.11 | MIT | https://github.com/dtolnay/unsafe-libyaml | `sha256:673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861` |
 | untrusted | 0.9.0 | ISC | https://github.com/briansmith/untrusted | `sha256:8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1` |
 | url | 2.5.8 | MIT OR Apache-2.0 | https://github.com/servo/rust-url | `sha256:ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed` |
 | urlpattern | 0.3.0 | MIT | https://github.com/denoland/rust-urlpattern | `sha256:70acd30e3aa1450bc2eece896ce2ad0d178e9c079493819301573dae3c37ba6d` |

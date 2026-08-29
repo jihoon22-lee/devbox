@@ -12,8 +12,13 @@ vi.mock("./lib/isTauri", () => ({ isTauri: isTauriMock }));
 
 import {
   available,
+  applyDevSetupConfiguration,
   catalog,
+  cancelDevSetupApply,
   devSetupAudit,
+  discardDevSetupConfiguration,
+  exportDevSetupConfiguration,
+  importDevSetupConfiguration,
   installRelatedTool,
   launchRelatedTool,
   openRelatedToolUrl,
@@ -214,5 +219,187 @@ describe("Dev Setup API boundary", () => {
         : capability),
     });
     await expect(devSetupAudit()).rejects.toThrow("환경 capability 응답이 올바르지 않습니다.");
+  });
+
+  it("provides a safe two-package browser review, export, and apply flow", async () => {
+    const review = await importDevSetupConfiguration();
+    expect(review).not.toBeNull();
+    expect(review?.schemaVersion).toBe("0.3");
+    expect(review?.previewId).toMatch(/^devsetup-[0-9a-f]{64}$/);
+    expect(review?.packages.map((pkg) => pkg.packageId)).toEqual([
+      "Git.Git",
+      "Microsoft.VisualStudioCode",
+    ]);
+    expect(review?.canApply).toBe(true);
+    expect(review?.hasChanges).toBe(true);
+
+    const exported = await exportDevSetupConfiguration(review!.previewId);
+    expect(exported.filename).toBe("devbox-packages.winget");
+    expect(exported.mimeType).toBe("application/yaml;charset=utf-8");
+    expect(exported.content).toContain("Microsoft.WinGet/Package");
+    expect(exported.content).toContain('id: "Git.Git"');
+    expect(exported.content).toContain('id: "Microsoft.VisualStudioCode"');
+    expect(exported.byteCount).toBe(new TextEncoder().encode(exported.content).byteLength);
+    expect(exported.sha256).toMatch(/^[0-9a-f]{64}$/);
+
+    const applied = await applyDevSetupConfiguration(
+      review!.previewId,
+      true,
+      true,
+      true,
+    );
+    expect(applied).toMatchObject({
+      status: "complete",
+      results: [
+        { packageId: "Git.Git", status: "applied" },
+        { packageId: "Microsoft.VisualStudioCode", status: "unchanged" },
+      ],
+    });
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("invokes the native configuration commands with the exact request shape", async () => {
+    const browserReview = await importDevSetupConfiguration();
+    expect(browserReview).not.toBeNull();
+    isTauriMock.mockReturnValue(true);
+    invokeMock.mockResolvedValueOnce(browserReview);
+    await expect(importDevSetupConfiguration()).resolves.toEqual(browserReview);
+    expect(invokeMock).toHaveBeenLastCalledWith("import_dev_setup_configuration");
+
+    isTauriMock.mockReturnValue(false);
+    const browserExport = await exportDevSetupConfiguration(browserReview!.previewId);
+    isTauriMock.mockReturnValue(true);
+    invokeMock.mockResolvedValueOnce(browserExport);
+    await expect(exportDevSetupConfiguration(browserReview!.previewId)).resolves.toEqual(browserExport);
+    expect(invokeMock).toHaveBeenLastCalledWith("export_dev_setup_configuration", {
+      request: { previewId: browserReview!.previewId },
+    });
+
+    const nativeApply = {
+      status: "complete",
+      observedAtMs: Date.now(),
+      results: browserReview!.packages.map((pkg) => ({
+        packageId: pkg.packageId,
+        status: pkg.action === "none" ? "unchanged" : "applied",
+      })),
+    };
+    invokeMock.mockResolvedValueOnce(nativeApply);
+    await expect(applyDevSetupConfiguration(
+      browserReview!.previewId,
+      true,
+      true,
+      true,
+    )).resolves.toEqual(nativeApply);
+    expect(invokeMock).toHaveBeenLastCalledWith("apply_dev_setup_configuration", {
+      request: {
+        previewId: browserReview!.previewId,
+        confirmed: true,
+        acceptPackageAgreements: true,
+        acknowledgeAdminAndReboot: true,
+      },
+    });
+
+    invokeMock.mockResolvedValueOnce(undefined);
+    await expect(cancelDevSetupApply()).resolves.toBeUndefined();
+    expect(invokeMock).toHaveBeenLastCalledWith("cancel_dev_setup_apply");
+
+    isTauriMock.mockReturnValue(false);
+    const nextReview = await importDevSetupConfiguration();
+    expect(nextReview).not.toBeNull();
+    isTauriMock.mockReturnValue(true);
+    invokeMock.mockResolvedValueOnce(undefined);
+    await expect(discardDevSetupConfiguration(nextReview!.previewId)).resolves.toBeUndefined();
+    expect(invokeMock).toHaveBeenLastCalledWith("discard_dev_setup_configuration", {
+      request: { previewId: nextReview!.previewId },
+    });
+    await expect(exportDevSetupConfiguration(nextReview!.previewId))
+      .rejects.toThrow("Dev Setup 구성 요청이 올바르지 않습니다.");
+  });
+
+  it("rejects review schema, package coherence, and unsafe preview fields", async () => {
+    const valid = await importDevSetupConfiguration();
+    expect(valid).not.toBeNull();
+    isTauriMock.mockReturnValue(true);
+
+    invokeMock.mockResolvedValueOnce({ ...valid, schemaVersion: "0.2" });
+    await expect(importDevSetupConfiguration()).rejects.toThrow("Dev Setup 구성 검토 응답이 올바르지 않습니다.");
+
+    invokeMock.mockResolvedValueOnce({
+      ...valid,
+      previewId: "devsetup-" + "A".repeat(64),
+    });
+    await expect(importDevSetupConfiguration()).rejects.toThrow("Dev Setup 구성 검토 응답이 올바르지 않습니다.");
+
+    invokeMock.mockResolvedValueOnce({
+      ...valid,
+      packages: valid!.packages.map((pkg, index) => index === 0
+        ? { ...pkg, currentState: "unknown", action: "install" }
+        : pkg),
+    });
+    await expect(importDevSetupConfiguration()).rejects.toThrow("Dev Setup 구성 검토 응답이 올바르지 않습니다.");
+
+    invokeMock.mockResolvedValueOnce({
+      ...valid,
+      packages: valid!.packages.map((pkg) => ({
+        ...pkg,
+        packageId: "Git.Git",
+      })),
+    });
+    await expect(importDevSetupConfiguration()).rejects.toThrow("Dev Setup 구성 검토 응답이 올바르지 않습니다.");
+
+    invokeMock.mockResolvedValueOnce({
+      ...valid,
+      packages: valid!.packages.map((pkg, index) => index === 0
+        ? { ...pkg, packageId: "--help.Package" }
+        : pkg),
+    });
+    await expect(importDevSetupConfiguration()).rejects.toThrow("Dev Setup 구성 검토 응답이 올바르지 않습니다.");
+
+    invokeMock.mockResolvedValueOnce({
+      ...valid,
+      packages: valid!.packages.map((pkg, index) => index === 1
+        ? { ...pkg, currentState: "update-available", action: "update" }
+        : pkg),
+    });
+    await expect(importDevSetupConfiguration()).rejects.toThrow("Dev Setup 구성 검토 응답이 올바르지 않습니다.");
+  });
+
+  it("requires an exact reviewed package list and coherent apply results", async () => {
+    const review = await importDevSetupConfiguration();
+    const validExport = await exportDevSetupConfiguration(review!.previewId);
+    isTauriMock.mockReturnValue(true);
+    invokeMock.mockResolvedValueOnce({
+      ...validExport,
+      filename: "C:\\Users\\developer\\secret.winget",
+    });
+    await expect(exportDevSetupConfiguration(review!.previewId)).rejects.toThrow(
+      "Dev Setup 구성 내보내기 응답이 올바르지 않습니다.",
+    );
+
+    invokeMock.mockResolvedValueOnce({
+      status: "complete",
+      observedAtMs: Date.now(),
+      results: [
+        { packageId: "Microsoft.VisualStudioCode", status: "applied" },
+        { packageId: "Git.Git", status: "unchanged" },
+      ],
+    });
+    await expect(applyDevSetupConfiguration(review!.previewId, true, true, true)).rejects.toThrow(
+      "Dev Setup 구성 적용 결과가 올바르지 않습니다.",
+    );
+  });
+
+  it("validates confirmations before native invocation and consumes failed applies", async () => {
+    const review = await importDevSetupConfiguration();
+    isTauriMock.mockReturnValue(true);
+    await expect(applyDevSetupConfiguration(review!.previewId, true, false, true))
+      .rejects.toThrow("Dev Setup 적용에는 세 가지 확인이 모두 필요합니다.");
+    expect(invokeMock).not.toHaveBeenCalled();
+
+    invokeMock.mockRejectedValueOnce(new Error("C:\\Users\\developer\\secret-token"));
+    await expect(applyDevSetupConfiguration(review!.previewId, true, true, true))
+      .rejects.toThrow("Dev Setup 구성 작업을 완료할 수 없습니다.");
+    await expect(exportDevSetupConfiguration(review!.previewId))
+      .rejects.toThrow("Dev Setup 구성 요청이 올바르지 않습니다.");
   });
 });

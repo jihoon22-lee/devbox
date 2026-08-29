@@ -289,3 +289,77 @@ export interface DevSetupAudit {
   capabilities: DevSetupCapability[];
   plan: DevSetupPlanItem[];
 }
+
+export type DevSetupConfigurationDesired = "present" | "latest" | "version";
+export type DevSetupConfigurationCurrentState =
+  | "present"
+  | "absent"
+  | "update-available"
+  | "unknown";
+export type DevSetupConfigurationAction =
+  | "none"
+  | "install"
+  | "update"
+  | "reconcile-version"
+  | "verify";
+
+export interface DevSetupConfigurationPackageReview {
+  packageId: string;
+  desired: DevSetupConfigurationDesired;
+  version: string | null;
+  currentState: DevSetupConfigurationCurrentState;
+  action: DevSetupConfigurationAction;
+  requestedAgreementAcceptance: boolean;
+  declaredElevation: boolean;
+}
+
+export interface DevSetupConfigurationReview {
+  schemaVersion: "0.3";
+  previewId: string;
+  expiresAtMs: number;
+  configurationDigest: string;
+  sourceTrust: "external-restricted";
+  mode: "package-only";
+  canApply: boolean;
+  hasChanges: boolean;
+  requiresAgreementConfirmation: boolean;
+  mayRequireAdmin: boolean;
+  mayRequireReboot: boolean;
+  packages: DevSetupConfigurationPackageReview[];
+}
+
+export interface DevSetupConfigurationExport {
+  filename: "devbox-packages.winget";
+  mimeType: "application/yaml;charset=utf-8";
+  content: string;
+  byteCount: number;
+  sha256: string;
+}
+
+export type DevSetupConfigurationApplyStatus = "complete" | "partial" | "cancelled";
+export type DevSetupConfigurationPackageApplyStatus =
+  | "unchanged"
+  | "applied"
+  | "failed"
+  | "timed-out"
+  | "cancelled"
+  | "skipped";
+
+export interface DevSetupConfigurationPackageApplyResult {
+  packageId: string;
+  status: DevSetupConfigurationPackageApplyStatus;
+}
+
+export interface DevSetupConfigurationApplyResult {
+  status: DevSetupConfigurationApplyStatus;
+  observedAtMs: number;
+  results: DevSetupConfigurationPackageApplyResult[];
+}
+
+// Native names use `*View`; these aliases keep the frontend vocabulary
+// consistent with the other Manager API DTOs while preserving that contract.
+export type DevSetupConfigurationReviewView = DevSetupConfigurationReview;
+export type DevSetupConfigurationExportView = DevSetupConfigurationExport;
+export type DevSetupConfigurationApplyView = DevSetupConfigurationApplyResult;
+export type DevSetupPackageReviewView = DevSetupConfigurationPackageReview;
+export type DevSetupPackageApplyView = DevSetupConfigurationPackageApplyResult;

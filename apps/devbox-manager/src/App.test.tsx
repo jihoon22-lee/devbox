@@ -1,18 +1,23 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import catalogJson from "../../catalog.json";
 import App from "./App";
 import {
   available,
+  applyDevSetupConfiguration,
   applyInstallRoot,
   cancelDataDiagnostics,
+  cancelDevSetupApply,
   cancelSupportBundle,
   catalog,
   current,
   devSetupAudit,
+  discardDevSetupConfiguration,
+  exportDevSetupConfiguration,
   exportDataPreview,
   exportSupportBundle,
   inspectDataDatabases,
+  importDevSetupConfiguration,
   installApp,
   installPath,
   installMany,
@@ -52,15 +57,20 @@ import type {
 
 vi.mock("./api", () => ({
   available: vi.fn(),
+  applyDevSetupConfiguration: vi.fn(),
   applyInstallRoot: vi.fn(),
   cancelDataDiagnostics: vi.fn(),
+  cancelDevSetupApply: vi.fn(),
   cancelSupportBundle: vi.fn(),
   catalog: vi.fn(),
   current: vi.fn(),
   devSetupAudit: vi.fn(),
+  discardDevSetupConfiguration: vi.fn(),
+  exportDevSetupConfiguration: vi.fn(),
   exportDataPreview: vi.fn(),
   exportSupportBundle: vi.fn(),
   inspectDataDatabases: vi.fn(),
+  importDevSetupConfiguration: vi.fn(),
   installApp: vi.fn(),
   installPath: vi.fn(),
   installMany: vi.fn(),
@@ -142,6 +152,11 @@ const portableCurrent: Current = {
 
 const catalogMock = vi.mocked(catalog);
 const availableMock = vi.mocked(available);
+const discardDevSetupConfigurationMock = vi.mocked(discardDevSetupConfiguration);
+const importDevSetupConfigurationMock = vi.mocked(importDevSetupConfiguration);
+const exportDevSetupConfigurationMock = vi.mocked(exportDevSetupConfiguration);
+const applyDevSetupConfigurationMock = vi.mocked(applyDevSetupConfiguration);
+const cancelDevSetupApplyMock = vi.mocked(cancelDevSetupApply);
 const applyInstallRootMock = vi.mocked(applyInstallRoot);
 const installedMock = vi.mocked(installed);
 const currentMock = vi.mocked(current);
@@ -241,6 +256,66 @@ const devSetupFixture: DevSetupAudit = {
   ],
 };
 
+type DevSetupConfigurationReviewFixture = NonNullable<
+  Awaited<ReturnType<typeof importDevSetupConfiguration>>
+>;
+type DevSetupConfigurationApplyFixture = Awaited<
+  ReturnType<typeof applyDevSetupConfiguration>
+>;
+
+const devSetupConfigurationReviewFixture: DevSetupConfigurationReviewFixture = {
+  schemaVersion: "0.3",
+  previewId: `devsetup-${"a".repeat(64)}`,
+  expiresAtMs: Date.now() + 5 * 60 * 1_000,
+  configurationDigest: "b".repeat(64),
+  sourceTrust: "external-restricted",
+  mode: "package-only",
+  canApply: true,
+  hasChanges: true,
+  requiresAgreementConfirmation: true,
+  mayRequireAdmin: true,
+  mayRequireReboot: true,
+  packages: [
+    {
+      packageId: "Git.Git",
+      desired: "latest",
+      version: null,
+      currentState: "absent",
+      action: "install",
+      requestedAgreementAcceptance: false,
+      declaredElevation: false,
+    },
+    {
+      packageId: "Microsoft.VisualStudioCode",
+      desired: "latest",
+      version: null,
+      currentState: "update-available",
+      action: "update",
+      requestedAgreementAcceptance: true,
+      declaredElevation: false,
+    },
+    {
+      packageId: "Microsoft.PowerShell",
+      desired: "version",
+      version: "7.4.6",
+      currentState: "present",
+      action: "reconcile-version",
+      requestedAgreementAcceptance: false,
+      declaredElevation: true,
+    },
+  ],
+};
+
+const devSetupConfigurationApplyFixture: DevSetupConfigurationApplyFixture = {
+  status: "complete",
+  observedAtMs: Date.now(),
+  results: [
+    { packageId: "Git.Git", status: "applied" },
+    { packageId: "Microsoft.VisualStudioCode", status: "applied" },
+    { packageId: "Microsoft.PowerShell", status: "applied" },
+  ],
+};
+
 const inspectorSnapshot: DataInspectorSnapshot = {
   catalogRevision: 5,
   databases: [
@@ -308,6 +383,17 @@ beforeEach(() => {
   takePendingOpenMock.mockReset().mockResolvedValue(null);
   catalogMock.mockReset().mockResolvedValue(catalogApps);
   availableMock.mockReset().mockResolvedValue(manifest);
+  discardDevSetupConfigurationMock.mockReset().mockResolvedValue(undefined);
+  importDevSetupConfigurationMock.mockReset().mockResolvedValue(null);
+  exportDevSetupConfigurationMock.mockReset().mockResolvedValue({
+    filename: "devbox-packages.winget",
+    mimeType: "application/yaml;charset=utf-8",
+    content: "$schema: normalized",
+    byteCount: 21,
+    sha256: "b".repeat(64),
+  });
+  applyDevSetupConfigurationMock.mockReset().mockResolvedValue(devSetupConfigurationApplyFixture);
+  cancelDevSetupApplyMock.mockReset().mockResolvedValue(undefined);
   installedMock.mockReset().mockResolvedValue([portable]);
   currentMock.mockReset().mockImplementation(async (appId) => (
     appId === portable.app ? portableCurrent : null
@@ -1196,5 +1282,231 @@ describe("Devbox Manager Dev Setup audit", () => {
       "Dev Setup 감사를 완료할 수 없습니다. Windows와 WSL 환경을 확인하세요.",
     )).toBeTruthy();
     expect(screen.queryByText(/secret-token/)).toBeNull();
+  });
+
+  it("renders the normalized package-only review, diff, and fixed warnings", async () => {
+    importDevSetupConfigurationMock.mockResolvedValueOnce(devSetupConfigurationReviewFixture);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
+    await screen.findByRole("heading", { name: "docker-desktop WSL backend" });
+
+    fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
+
+    expect(await screen.findByRole("heading", {
+      name: "WinGet Configuration v3 · package-only",
+    })).toBeTruthy();
+    expect(screen.getByText(/외부 YAML은 그대로 실행하지 않습니다/)).toBeTruthy();
+    expect(screen.getByText("Git.Git")).toBeTruthy();
+    expect(screen.getByText("Microsoft.VisualStudioCode")).toBeTruthy();
+    expect(screen.getAllByText("최신 버전").length).toBeGreaterThan(0);
+    expect(screen.getByText("미설치")).toBeTruthy();
+    expect(screen.getByText("업데이트 가능")).toBeTruthy();
+    expect(screen.getByText("설치")).toBeTruthy();
+    expect(screen.getByText("업데이트")).toBeTruthy();
+    expect(screen.getByText("외부 약관 수락 요청")).toBeTruthy();
+    expect(screen.getByText("외부 관리자 선언")).toBeTruthy();
+    expect(screen.getByText(/외부 파일의 선언을 실행 설정에 복사하지 않습니다/)).toBeTruthy();
+    expect(screen.getByText("schema")).toBeTruthy();
+    expect(screen.getByText("0.3")).toBeTruthy();
+    expect(screen.getByText("외부 입력 · 제한 처리(신뢰 안 함)")).toBeTruthy();
+    expect(screen.getByText(/sha256:bbbbbbbbbbbb/)).toBeTruthy();
+    expect(screen.getByText("5분 · 1회 적용")).toBeTruthy();
+    expect(screen.getByText("네트워크 연결이 필요합니다.")).toBeTruthy();
+    expect(screen.getByText(/UAC\/관리자 권한과 재부팅/)).toBeTruthy();
+    expect(screen.getByText(/자동 재부팅을 예약하거나 실행하지 않습니다/)).toBeTruthy();
+    expect(screen.getByText(/PATH·registry·파일을 변경/)).toBeTruthy();
+    expect(screen.getByText(/상태를 알 수 없는 패키지는 적용을 차단/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "정규화된 구성 export" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "검토 버리기" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("clears the prior preview as soon as a reimport starts and stays cleared when cancelled", async () => {
+    importDevSetupConfigurationMock
+      .mockResolvedValueOnce(devSetupConfigurationReviewFixture)
+      .mockResolvedValueOnce(null);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
+    await screen.findByRole("heading", { name: "docker-desktop WSL backend" });
+    fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
+    await screen.findByText("Git.Git");
+
+    fireEvent.click(screen.getByRole("button", { name: "다시 가져오기" }));
+    await waitFor(() => expect(screen.queryByText("Git.Git")).toBeNull());
+    expect(screen.queryByRole("button", { name: "정규화된 구성 export" })).toBeNull();
+    await waitFor(() => expect(screen.getByText(/WinGet Configuration 파일을 가져오면/)).toBeTruthy());
+  });
+
+  it("revokes the native preview before clearing a discarded review", async () => {
+    importDevSetupConfigurationMock.mockResolvedValueOnce(devSetupConfigurationReviewFixture);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
+    await screen.findByRole("heading", { name: "docker-desktop WSL backend" });
+    fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
+    await screen.findByText("Git.Git");
+
+    fireEvent.click(screen.getByRole("button", { name: "검토 버리기" }));
+    await waitFor(() => expect(discardDevSetupConfigurationMock).toHaveBeenCalledWith(
+      devSetupConfigurationReviewFixture.previewId,
+    ));
+    expect(screen.queryByText("Git.Git")).toBeNull();
+    expect(screen.getByText(/WinGet Configuration 파일을 가져오면/)).toBeTruthy();
+  });
+
+  it("requires all three checks and the final confirmation before applying", async () => {
+    importDevSetupConfigurationMock.mockResolvedValueOnce(devSetupConfigurationReviewFixture);
+    confirmMock.mockReturnValueOnce(false);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
+    await screen.findByRole("heading", { name: "docker-desktop WSL backend" });
+    fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
+
+    const apply = await screen.findByRole("button", { name: "확인 후 package apply" });
+    expect(apply.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "정규화된 package-only 검토를 확인했습니다" }));
+    expect(apply.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "로컬에 등록된 고정 이름 winget source·패키지 약관 수락을 확인했습니다" }));
+    expect(apply.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "관리자/UAC·재부팅 위험을 확인했습니다" }));
+    expect(apply.hasAttribute("disabled")).toBe(false);
+
+    fireEvent.click(apply);
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    expect(applyDevSetupConfigurationMock).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(apply);
+    await waitFor(() => expect(applyDevSetupConfigurationMock).toHaveBeenCalledWith(
+      devSetupConfigurationReviewFixture.previewId,
+      true,
+      true,
+      true,
+    ));
+    expect(screen.getByRole("button", { name: "정규화된 구성 export" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("blocks unknown package state and never suggests installing it", async () => {
+    importDevSetupConfigurationMock.mockResolvedValueOnce({
+      ...devSetupConfigurationReviewFixture,
+      canApply: false,
+      packages: [{
+        ...devSetupConfigurationReviewFixture.packages[0],
+        currentState: "unknown",
+        action: "verify",
+      }],
+    });
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
+    await screen.findByRole("heading", { name: "docker-desktop WSL backend" });
+    fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
+
+    expect(await screen.findByText(/확인할 수 없는 패키지 상태가 있어 적용을 차단/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "확인 후 package apply" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getAllByText(/설치를 제안하지 않습니다/).length).toBeGreaterThan(0);
+    expect(screen.queryByText("미설치")).toBeNull();
+    expect(applyDevSetupConfigurationMock).not.toHaveBeenCalled();
+  });
+
+  it("offers cancellation while package apply is in flight and renders resource results", async () => {
+    let resolveApply!: (result: DevSetupConfigurationApplyFixture) => void;
+    applyDevSetupConfigurationMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveApply = resolve;
+    }));
+    confirmMock.mockReturnValueOnce(true);
+    importDevSetupConfigurationMock.mockResolvedValueOnce(devSetupConfigurationReviewFixture);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
+    await screen.findByRole("heading", { name: "docker-desktop WSL backend" });
+    fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
+    await screen.findByText("Git.Git");
+    fireEvent.click(screen.getByRole("checkbox", { name: "정규화된 package-only 검토를 확인했습니다" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "로컬에 등록된 고정 이름 winget source·패키지 약관 수락을 확인했습니다" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "관리자/UAC·재부팅 위험을 확인했습니다" }));
+    fireEvent.click(await screen.findByRole("button", { name: "확인 후 package apply" }));
+    await waitFor(() => expect(applyDevSetupConfigurationMock).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Dev Setup package apply 취소" }));
+    await waitFor(() => expect(cancelDevSetupApplyMock).toHaveBeenCalledTimes(1));
+
+    resolveApply(devSetupConfigurationApplyFixture);
+    expect(await screen.findByText("package apply 결과")).toBeTruthy();
+    expect(screen.getByText("전체 적용 완료")).toBeTruthy();
+    expect(screen.getAllByText("적용 완료").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("적용 완료").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("redacts native errors from package configuration actions", async () => {
+    importDevSetupConfigurationMock.mockRejectedValueOnce(
+      new Error("C:\\Users\\developer\\secret-token=should-not-render"),
+    );
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
+    await screen.findByRole("heading", { name: "docker-desktop WSL backend" });
+    fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
+
+    expect(await screen.findByText(/WinGet Configuration v3 파일을 불러올 수 없습니다/)).toBeTruthy();
+    expect(screen.queryByText(/secret-token/)).toBeNull();
+    expect(screen.queryByText(/C:\\Users\\developer/)).toBeNull();
+  });
+
+  it("downloads the sanitized export before apply", async () => {
+    importDevSetupConfigurationMock.mockResolvedValueOnce(devSetupConfigurationReviewFixture);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
+    await screen.findByRole("heading", { name: "docker-desktop WSL backend" });
+    fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
+    fireEvent.click(await screen.findByRole("button", { name: "정규화된 구성 export" }));
+
+    await waitFor(() => expect(exportDevSetupConfigurationMock).toHaveBeenCalledWith(
+      devSetupConfigurationReviewFixture.previewId,
+    ));
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a package review expired when its safety window elapses", async () => {
+    vi.useFakeTimers();
+    try {
+      const now = Date.now();
+      importDevSetupConfigurationMock.mockResolvedValueOnce({
+        ...devSetupConfigurationReviewFixture,
+        expiresAtMs: now + 1_000,
+      });
+      render(<App />);
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByText("Port Manager")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByRole("heading", { name: "docker-desktop WSL backend" })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByText("Git.Git")).toBeTruthy();
+      expect(screen.getByText("적용 전 검토 가능")).toBeTruthy();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_050);
+      });
+      expect(screen.getByText("만료됨")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "확인 후 package apply" }).hasAttribute("disabled")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

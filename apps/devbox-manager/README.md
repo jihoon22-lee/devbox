@@ -61,11 +61,83 @@ metadata는 GitHub Release가 권위 있는 source다. 브라우저 개발 모�
   네트워크가 필요하고 공식·라이선스 링크는 브라우저/네트워크 상태를 따른다. WinGet이 없어도
   Manager의 native 앱 설치·업데이트·실행에는 영향을 주지 않는다.
 - **Docker capability + Dev Setup audit (#483)** — Docker Desktop 설치 근거·Manager 실행 가능 여부,
-  공식 Windows Docker CLI, `docker-desktop` WSL 등록/실행 상태를 독립적으로 표시한다. 실행 파일을
+  Windows Docker CLI, `docker-desktop` WSL 등록/실행 상태를 독립적으로 표시한다. 실행 파일을
   표준 위치에서 찾지 못했더라도 WSL backend가 있으면 `미설치`로 단정하거나 WinGet 설치를 제안하지
-  않고 `unknown`과 근거를 보여 준다. Dev Setup 탭은 이 capability와 신뢰된 WinGet 실행 가능성을
-  schema v1 read-only inventory/plan으로 정리하며 설치·distro 시작·registry/PATH 수정은 하지 않는다.
+  않고 `unknown`과 근거를 보여 준다. capability 감사와 계획은 schema v1 read-only이며 설치·distro
+  시작·registry/PATH 수정은 하지 않는다. 아래 package-only 적용은 별도의 검토·권한 경계를 사용한다.
 - **실행** — 설치된 앱 실행
+
+### WinGet Configuration v3 package-only
+
+Dev Setup의 WinGet 구성 흐름은 외부 YAML을 실행 계획으로 신뢰하지 않으며 외부 YAML 자체를 실행하지
+않는다. 파일 선택은 Rust native
+dialog(`.winget`/`.yaml`/`.yml`)로만 시작하며 renderer에는 dialog open permission을 부여하지
+않는다. Manager가 파일을 읽어 제한된 package 모델로 정규화한 뒤 검토하고, 원본 경로·YAML bytes·
+WinGet stdout/stderr는 renderer로 전달하지 않는다.
+
+#### 가져오기와 검토
+
+다음 경계만 허용한다.
+
+- 입력은 최대 256 KiB, 4,096줄, 16개 package resource다(줄·들여쓰기·제어문자에도 별도 제한이
+  있다). exact DSC document `$schema`를 요구하고, 선택적인 `metadata.winget.processor`가 있으면
+  `dscv3` marker만 허용하며, `resources`는 비어 있을 수 없다.
+- resource type은 정확히 `Microsoft.WinGet/Package`, property `source`는 정확히 `winget`이어야
+  한다. 이는 로컬에 등록된 WinGet source 이름을 고정하는 것이며, Manager가 source URL이나 공식성을
+  검증한다는 뜻은 아니다.
+- package ID는 bounded allowlist 형식이며, `matchOption`은 `equals`만, `installMode`는
+  `default`/`silent`만 허용한다. `version`과 `useLatest`가 모두 없으면 present,
+  `useLatest: true`면 latest, bounded `version`이 있으면 지정 버전 상태로 해석한다.
+  `custom resource`, `RunCommandOnSet`, Registry/uninstall, fuzzy match,
+  `interactive` install과 `_exist: false`는 거부한다.
+- YAML alias/anchor/tag/merge/directive와 multiple document도 거부한다. 알 수 없는 field와 중복
+  package/resource 이름은 fail-closed한다. 외부 파일의 `acceptAgreements`와 elevation/security
+  선언은 검토 화면에 표시할 뿐 자동 복사하지 않는다.
+
+검토 시 Manager는 고정된 direct `winget list --id ... --exact --source winget` probe로 각 package의
+`present`/`absent`를 확인한다. `latest`가 이미 설치된 경우에만 `--upgrade-available`을 추가로
+확인해 `update-available`을 구분한다. WinGet 부재·timeout·기타 오류는 `unknown`/`verify`로 남고,
+설치를 제안하거나 적용하지 않는다. process/source 수준의 probe가 한 번 실패하면 같은 실패를 package마다
+반복해 기다리지 않고 나머지도 즉시 `unknown`으로 닫는다.
+
+#### Canonical export
+
+`정규화된 구성 export`는 원본을 되돌려주지 않는다. Manager가 새 문서를 만들고 고정 schema·`dscv3`
+metadata·`DevboxPackage01`부터 시작하는 이름·정확한 package ID·`source: winget`·`matchOption:
+equals`·`installMode: silent`만 기록한다. export 문서에는 package별 원하는 상태와 고정 설명만
+남으며, 외부 약관/elevation 선언은 포함되지 않는다. 파일명은 `devbox-packages.winget`이다.
+
+검토는 5분 TTL의 opaque preview token으로 보관한다. export는 만료 전 검토 내용을 내보낼 수 있고,
+적용은 token을 시작 전에 소비하는 1회 작업이다. 새 import는 native picker를 열기 전에 기존 native
+preview들을 폐기하며, `검토 버리기`도 해당 native token과 renderer 확인 상태를 함께 폐기한다.
+
+#### Apply와 cancel
+
+적용 버튼은 다음 세 가지 확인을 모두 요구한다: 정규화된 package-only 검토, package agreements,
+관리자/UAC·재부팅 위험. 그 뒤 마지막 확인 창을 통과해야 native command가 호출된다. 앱은 자동 재부팅을
+예약하거나 실행하지 않지만, 설치 프로그램 자체가 PATH·registry·파일을 변경하거나 UAC/재부팅을
+요구할 수 있음을 표시한다.
+
+Native apply는 preview token을 먼저 소비하고, 변경이 필요한 각 package마다 canonical one-resource
+구성을 새로 렌더링한다. 각 파일은 app cache의 guarded temporary file로 만들고 `winget configure`
+를 `--accept-configuration-agreements`, `--disable-interactivity`, `--suppress-initial-details`와
+함께 호출한다. probe timeout은 30초, package apply timeout은 5분이다. WinGet root/helper process는
+Windows Job Object(`KILL_ON_JOB_CLOSE`)에 넣고, suspended 생성→Job 할당→resume 순서를 지킨다.
+timeout·cancel은 process tree를 명시적으로 종료하고 bounded reap을 수행하며, owner drop이나 crash에는
+Job handle close가 process-tree kill fallback으로 동작한다. cancel은 cooperative flag를 세우고 현재
+작업을 종료하도록 하며 이후 package는 `skipped`로 결과에 남긴다. 결과는 package ID와 고정 상태
+(`applied`, `unchanged`, `failed`, `timed-out`, `cancelled`, `skipped`)만 반환한다.
+
+#### 지원 범위와 acceptance
+
+실제 package apply는 Windows와 WinGet/App Installer 및 네트워크가 필요하다. WSL/non-Windows의
+브라우저 mock은 화면 흐름만 검증하며 native filesystem/WinGet 성공을 증명하지 않는다. 현재
+Windows 실제 import/export/apply/cancel acceptance는 CI/manual 검증 대기 중이다. 특히 `winget` source
+이름이 로컬에서 가리키는 repository의 내용·공식성은 이 기능의 검증 범위 밖이다.
+
+관련 공개 규격은 [WinGet Configuration v3 생성](https://learn.microsoft.com/en-us/windows/package-manager/configuration/create-v3),
+[`winget configure`](https://learn.microsoft.com/en-us/windows/package-manager/winget/configure),
+[Configuration 검사](https://learn.microsoft.com/en-us/windows/package-manager/configuration/check) 문서를 따른다.
 
 ## 기술
 
@@ -151,7 +223,8 @@ metadata는 GitHub Release가 권위 있는 source다. 브라우저 개발 모�
   WSL backend는 `wsl.exe --list --quiet`와 `--running --quiet`의 최대 128개 validated distro 이름만
   사용하고 distro를 시작하지 않는다. public DTO에는 raw path, version output, 환경변수, WSL 원문이
   없고 `desktop-executable`·`windows-cli`·`wsl-registration`·`wsl-runtime` 같은 고정 evidence code와
-  감사 시각만 포함한다. Dev Setup v1 plan은 확인 순서만 제공하며 apply는 별도 보안/권한 PR 경계다.
+  감사 시각만 포함한다. Dev Setup v1 capability plan은 확인 순서만 제공하며, WinGet package-only
+  apply는 별도 검토·보안·권한 경계를 사용한다.
 
 설치 root 경계의 public 오류는 고정된 안전 메시지만 반환하고 입력 경로, locator/manifest 원문,
 OS 오류, credential을 반사하지 않는다. locator/manifest bytes와 row 수, path 길이에는 상한이 있으며

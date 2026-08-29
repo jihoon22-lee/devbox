@@ -3,6 +3,7 @@ pub mod batch;
 pub mod catalog;
 pub mod custom_root;
 pub mod data_inspector;
+pub mod dev_setup_configuration;
 pub mod download;
 pub mod environment_capabilities;
 pub mod layout;

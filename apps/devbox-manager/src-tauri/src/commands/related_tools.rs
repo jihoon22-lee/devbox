@@ -15,15 +15,20 @@ use crate::core::related_tools::{
     curated_tools, find_tool, is_valid_tool_id, DetectionSource, RelatedToolSpec,
 };
 use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
 #[cfg(windows)]
 use std::process::{Command, Stdio};
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::atomic::AtomicBool;
 #[cfg(windows)]
-use std::time::{Duration, Instant};
+use std::sync::atomic::Ordering;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::time::Duration;
+#[cfg(windows)]
+use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 #[cfg(windows)]
 use std::mem::size_of;
 #[cfg(windows)]
@@ -177,6 +182,18 @@ enum LaunchOutcome {
     NotInstalled,
 }
 
+/// Coarse result from the audited WinGet process boundary. No process output,
+/// executable path, installer path, or environment value crosses this type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) enum GuardedWingetOutcome {
+    Exited(u32),
+    Unavailable,
+    FailedToStart,
+    TimedOut,
+    Cancelled,
+}
+
 /// Own the complete WinGet process tree on Windows.  WinGet can hand work to
 /// an installer or helper process; killing only the root process on timeout
 /// would leave an unbounded external mutation running after Manager reports
@@ -267,25 +284,45 @@ struct WingetProcess {
 
 #[cfg(windows)]
 impl WingetProcess {
-    fn wait(&self, timeout: Duration) -> Option<bool> {
-        let deadline = Instant::now().checked_add(timeout)?;
+    fn wait(&self, timeout: Duration, cancel: Option<&AtomicBool>) -> GuardedWingetOutcome {
+        let Some(deadline) = Instant::now().checked_add(timeout) else {
+            self.terminate_and_reap();
+            return GuardedWingetOutcome::TimedOut;
+        };
+        let mut root_exit_code = None;
         loop {
-            let wait = unsafe { WaitForSingleObject(self.process, 0) };
-            if wait == WAIT_OBJECT_0 {
-                let mut exit_code = 1_u32;
-                if unsafe { GetExitCodeProcess(self.process, &mut exit_code) }.is_err() {
-                    self.terminate_and_reap();
-                    return None;
-                }
-                if self.tree.wait_until_empty(deadline) {
-                    return Some(exit_code == 0);
-                }
+            if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
                 self.terminate_and_reap();
-                return None;
+                return GuardedWingetOutcome::Cancelled;
             }
-            if wait != WAIT_TIMEOUT || Instant::now() >= deadline {
+            if root_exit_code.is_none() {
+                let wait = unsafe { WaitForSingleObject(self.process, 0) };
+                if wait != WAIT_OBJECT_0 && wait != WAIT_TIMEOUT {
+                    self.terminate_and_reap();
+                    return GuardedWingetOutcome::FailedToStart;
+                }
+                if wait == WAIT_OBJECT_0 {
+                    let mut exit_code = 1_u32;
+                    if unsafe { GetExitCodeProcess(self.process, &mut exit_code) }.is_err() {
+                        self.terminate_and_reap();
+                        return GuardedWingetOutcome::FailedToStart;
+                    }
+                    root_exit_code = Some(exit_code);
+                }
+            }
+            if let Some(exit_code) = root_exit_code {
+                match self.tree.active_processes() {
+                    Some(0) => return GuardedWingetOutcome::Exited(exit_code),
+                    Some(_) => {}
+                    None => {
+                        self.terminate_and_reap();
+                        return GuardedWingetOutcome::FailedToStart;
+                    }
+                }
+            }
+            if Instant::now() >= deadline {
                 self.terminate_and_reap();
-                return None;
+                return GuardedWingetOutcome::TimedOut;
             }
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -310,7 +347,37 @@ impl Drop for WingetProcess {
     }
 }
 
-fn acquire_related_action() -> Result<MutexGuard<'static, ()>, String> {
+/// Run the trusted Windows WinGet executable with direct, separately quoted
+/// argv. Callers still own semantic validation of user-derived values, but no
+/// argument is interpreted by a shell. The complete inherited process tree is
+/// killed on timeout, cancellation, or owner drop.
+pub(crate) fn run_guarded_winget(
+    args: Vec<OsString>,
+    timeout: Duration,
+    cancel: Option<&AtomicBool>,
+) -> GuardedWingetOutcome {
+    #[cfg(not(windows))]
+    {
+        let _ = (args, timeout, cancel);
+        GuardedWingetOutcome::Unavailable
+    }
+
+    #[cfg(windows)]
+    {
+        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return GuardedWingetOutcome::Cancelled;
+        }
+        let Some(path) = winget_executable() else {
+            return GuardedWingetOutcome::Unavailable;
+        };
+        let Ok(process) = spawn_guarded_winget(&path, &args) else {
+            return GuardedWingetOutcome::FailedToStart;
+        };
+        process.wait(timeout, cancel)
+    }
+}
+
+pub(crate) fn acquire_related_action() -> Result<MutexGuard<'static, ()>, String> {
     RELATED_ACTION_LOCK
         .get_or_init(|| Mutex::new(()))
         .try_lock()
@@ -773,22 +840,20 @@ fn run_winget_install(spec: &RelatedToolSpec) -> InstallOutcome {
 
     #[cfg(windows)]
     {
-        let Some(winget_path) = winget_executable() else {
-            return InstallOutcome::WinGetUnavailable;
-        };
-        let Ok(process) = spawn_guarded_winget(&winget_path, spec) else {
-            return InstallOutcome::Failed;
-        };
-        classify_winget_result(
-            true,
-            true,
-            process.wait(Duration::from_millis(WINGET_TIMEOUT_MS)),
-        )
+        let args = winget_install_args(spec)
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+        classify_winget_result(run_guarded_winget(
+            args,
+            Duration::from_millis(WINGET_TIMEOUT_MS),
+            None,
+        ))
     }
 }
 
 #[cfg(windows)]
-fn spawn_guarded_winget(path: &Path, spec: &RelatedToolSpec) -> Result<WingetProcess, ()> {
+fn spawn_guarded_winget(path: &Path, args: &[OsString]) -> Result<WingetProcess, ()> {
     // The resolver already checked this path, but resolution and process
     // creation are separate operations. Re-check immediately before building
     // the native process request so a replaced executable is not silently
@@ -797,14 +862,14 @@ fn spawn_guarded_winget(path: &Path, spec: &RelatedToolSpec) -> Result<WingetPro
         return Err(());
     }
 
-    // Both application name and argv originate from the fixed catalog. The
-    // mutable command-line buffer is still quoted with the documented Windows
-    // argv rules so an installation path containing spaces cannot alter argv.
+    // The mutable command-line buffer is quoted with the documented Windows
+    // argv rules. User-derived values remain separate argv entries and never
+    // become shell syntax; callers additionally validate their semantics.
     let application_name = wide_nul(path.as_os_str())?;
     let mut command_line = Vec::<u16>::new();
     append_windows_arg(&mut command_line, path.as_os_str())?;
-    for argument in winget_install_args(spec) {
-        append_windows_arg(&mut command_line, OsStr::new(argument))?;
+    for argument in args {
+        append_windows_arg(&mut command_line, argument)?;
     }
     command_line.push(0);
     let environment = build_safe_environment_block()?;
@@ -1088,18 +1153,14 @@ fn safe_path_entry(path: &Path) -> bool {
 }
 
 #[cfg(any(windows, test))]
-fn classify_winget_result(
-    command_available: bool,
-    process_started: bool,
-    process_status: Option<bool>,
-) -> InstallOutcome {
-    if !command_available || !process_started {
-        return InstallOutcome::WinGetUnavailable;
-    }
-    match process_status {
-        Some(true) => InstallOutcome::Installed,
-        Some(false) => InstallOutcome::Failed,
-        None => InstallOutcome::TimedOut,
+fn classify_winget_result(outcome: GuardedWingetOutcome) -> InstallOutcome {
+    match outcome {
+        GuardedWingetOutcome::Exited(0) => InstallOutcome::Installed,
+        GuardedWingetOutcome::Unavailable => InstallOutcome::WinGetUnavailable,
+        GuardedWingetOutcome::TimedOut => InstallOutcome::TimedOut,
+        GuardedWingetOutcome::Exited(_)
+        | GuardedWingetOutcome::FailedToStart
+        | GuardedWingetOutcome::Cancelled => InstallOutcome::Failed,
     }
 }
 
@@ -1629,24 +1690,28 @@ mod tests {
     #[test]
     fn winget_result_mapping_is_fail_closed_for_offline_and_timeout_cases() {
         assert_eq!(
-            classify_winget_result(false, false, None),
+            classify_winget_result(GuardedWingetOutcome::Unavailable),
             InstallOutcome::WinGetUnavailable
         );
         assert_eq!(
-            classify_winget_result(true, false, None),
-            InstallOutcome::WinGetUnavailable
-        );
-        assert_eq!(
-            classify_winget_result(true, true, Some(false)),
+            classify_winget_result(GuardedWingetOutcome::FailedToStart),
             InstallOutcome::Failed
         );
         assert_eq!(
-            classify_winget_result(true, true, None),
+            classify_winget_result(GuardedWingetOutcome::Exited(1)),
+            InstallOutcome::Failed
+        );
+        assert_eq!(
+            classify_winget_result(GuardedWingetOutcome::TimedOut),
             InstallOutcome::TimedOut
         );
         assert_eq!(
-            classify_winget_result(true, true, Some(true)),
+            classify_winget_result(GuardedWingetOutcome::Exited(0)),
             InstallOutcome::Installed
+        );
+        assert_eq!(
+            classify_winget_result(GuardedWingetOutcome::Cancelled),
+            InstallOutcome::Failed
         );
     }
 
