@@ -343,7 +343,7 @@ fn build_preview_from_path(path: &Path) -> Result<StoredPreview, String> {
     // Protect the buffer before the first read so partial bytes are also wiped
     // when a read error or growth-beyond-bound error exits early.
     let mut bytes = Zeroizing::new(Vec::with_capacity(length as usize));
-    file.by_ref()
+    std::io::Read::by_ref(&mut file)
         .take((MAX_CONFIGURATION_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(|_| INVALID_CONFIGURATION.to_string())?;
