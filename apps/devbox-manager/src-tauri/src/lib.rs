@@ -87,6 +87,7 @@ pub fn run() {
             commands::diagnostics::cancel_support_bundle,
             commands::diagnostics::export_support_bundle,
             commands::related_tools::related_tools,
+            commands::related_tools::dev_setup_audit,
             commands::related_tools::install_related_tool,
             commands::related_tools::launch_related_tool,
         ])

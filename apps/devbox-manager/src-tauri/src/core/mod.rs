@@ -4,6 +4,7 @@ pub mod catalog;
 pub mod custom_root;
 pub mod data_inspector;
 pub mod download;
+pub mod environment_capabilities;
 pub mod layout;
 pub mod managed_install;
 pub mod manifest;

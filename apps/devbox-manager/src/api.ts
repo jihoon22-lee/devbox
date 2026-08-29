@@ -8,11 +8,16 @@ import type {
   BatchInstallResult,
   CatalogApp,
   Current,
+  CapabilityEvidence,
   DataDatabaseInfo,
   DataExport,
   DataInspectorSnapshot,
   DataQueryRequest,
   DataQueryResult,
+  DevSetupAudit,
+  DevSetupCapability,
+  DevSetupPlanItem,
+  DockerCapability,
   InstalledApp,
   InstallPathInfo,
   InstallRootApplyResult,
@@ -29,6 +34,13 @@ import type {
 } from "./types";
 
 const MOCK_CATALOG: CatalogApp[] = catalogJson.apps;
+const MOCK_OBSERVED_AT_MS = Date.now();
+const MAX_JAVASCRIPT_TIMESTAMP_MS = 8_640_000_000_000_000;
+const MOCK_UNKNOWN_TOOL_STATE = {
+  installState: "unknown",
+  launchState: "unknown",
+  dockerCapability: null,
+} as const;
 
 const MOCK_RELATED_TOOLS: RelatedTool[] = [
   {
@@ -42,6 +54,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     platformSupported: false,
     installed: false,
     detection: "unavailable",
+    ...MOCK_UNKNOWN_TOOL_STATE,
   },
   {
     id: "windows-terminal",
@@ -54,6 +67,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     platformSupported: false,
     installed: false,
     detection: "unavailable",
+    ...MOCK_UNKNOWN_TOOL_STATE,
   },
   {
     id: "vs-code",
@@ -66,6 +80,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     platformSupported: false,
     installed: false,
     detection: "unavailable",
+    ...MOCK_UNKNOWN_TOOL_STATE,
   },
   {
     id: "bruno",
@@ -78,6 +93,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     platformSupported: false,
     installed: false,
     detection: "unavailable",
+    ...MOCK_UNKNOWN_TOOL_STATE,
   },
   {
     id: "dbeaver",
@@ -90,6 +106,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     platformSupported: false,
     installed: false,
     detection: "unavailable",
+    ...MOCK_UNKNOWN_TOOL_STATE,
   },
   {
     id: "db-browser",
@@ -102,6 +119,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     platformSupported: false,
     installed: false,
     detection: "unavailable",
+    ...MOCK_UNKNOWN_TOOL_STATE,
   },
   {
     id: "github-desktop",
@@ -114,6 +132,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     platformSupported: false,
     installed: false,
     detection: "unavailable",
+    ...MOCK_UNKNOWN_TOOL_STATE,
   },
   {
     id: "podman-desktop",
@@ -126,6 +145,7 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     platformSupported: false,
     installed: false,
     detection: "unavailable",
+    ...MOCK_UNKNOWN_TOOL_STATE,
   },
   {
     id: "docker-desktop",
@@ -138,6 +158,21 @@ const MOCK_RELATED_TOOLS: RelatedTool[] = [
     platformSupported: false,
     installed: false,
     detection: "unavailable",
+    installState: "unknown",
+    launchState: "unknown",
+    dockerCapability: {
+      desktopInstall: "unknown",
+      desktopLaunch: "unknown",
+      windowsCli: "unknown",
+      wslBackend: "unknown",
+      evidence: [
+        { source: "desktop-executable", result: "unavailable" },
+        { source: "windows-cli", result: "unavailable" },
+        { source: "wsl-registration", result: "unavailable" },
+        { source: "wsl-runtime", result: "unavailable" },
+      ],
+      observedAtMs: MOCK_OBSERVED_AT_MS,
+    },
   },
 ];
 
@@ -162,6 +197,108 @@ function isRelatedDetection(value: unknown): value is RelatedTool["detection"] {
     || value === "unavailable";
 }
 
+function isInstallCapabilityState(value: unknown): value is RelatedTool["installState"] {
+  return value === "present" || value === "absent" || value === "unknown";
+}
+
+function isAvailabilityCapabilityState(value: unknown): value is RelatedTool["launchState"] {
+  return value === "available" || value === "unavailable" || value === "unknown";
+}
+
+const EVIDENCE_RESULTS: Record<string, ReadonlySet<string>> = {
+  "desktop-executable": new Set(["path", "known-location", "not-observed", "unavailable"]),
+  "windows-cli": new Set(["path", "known-location", "not-observed", "unavailable", "unrecognized"]),
+  "wsl-registration": new Set(["registered", "not-registered", "unavailable"]),
+  "wsl-runtime": new Set(["running", "stopped", "not-observed", "unavailable"]),
+  "winget-executable": new Set(["trusted-location", "not-observed", "unavailable"]),
+};
+const DOCKER_EVIDENCE_SOURCES = [
+  "desktop-executable",
+  "windows-cli",
+  "wsl-registration",
+  "wsl-runtime",
+] as const;
+
+function validateEvidence(
+  value: unknown,
+  expectedSources: readonly string[],
+): CapabilityEvidence[] {
+  if (!Array.isArray(value) || value.length !== expectedSources.length) {
+    throw new Error("환경 capability 응답이 올바르지 않습니다.");
+  }
+  return value.map((candidate, index) => {
+    if (!candidate || typeof candidate !== "object") {
+      throw new Error("환경 capability 응답이 올바르지 않습니다.");
+    }
+    const evidence = candidate as Partial<CapabilityEvidence>;
+    if (
+      evidence.source !== expectedSources[index]
+      || typeof evidence.result !== "string"
+      || !EVIDENCE_RESULTS[evidence.source]?.has(evidence.result)
+    ) {
+      throw new Error("환경 capability 응답이 올바르지 않습니다.");
+    }
+    return { source: evidence.source, result: evidence.result };
+  });
+}
+
+function validateDockerCapability(value: unknown): DockerCapability {
+  if (!value || typeof value !== "object") {
+    throw new Error("Docker capability 응답이 올바르지 않습니다.");
+  }
+  const capability = value as Partial<DockerCapability>;
+  if (
+    !isInstallCapabilityState(capability.desktopInstall)
+    || !isAvailabilityCapabilityState(capability.desktopLaunch)
+    || !isAvailabilityCapabilityState(capability.windowsCli)
+    || !["running", "stopped", "present", "absent", "unknown"].includes(
+      capability.wslBackend ?? "",
+    )
+    || typeof capability.observedAtMs !== "number"
+    || !Number.isSafeInteger(capability.observedAtMs)
+    || (capability.observedAtMs ?? 0) <= 0
+    || (capability.observedAtMs ?? 0) > MAX_JAVASCRIPT_TIMESTAMP_MS
+  ) {
+    throw new Error("Docker capability 응답이 올바르지 않습니다.");
+  }
+  const evidence = validateEvidence(capability.evidence, DOCKER_EVIDENCE_SOURCES);
+  const [desktopEvidence, cliEvidence, registrationEvidence, runtimeEvidence] = evidence;
+  const expectedDesktop = desktopEvidence.result === "path"
+    || desktopEvidence.result === "known-location"
+    ? ["present", "available"]
+    : desktopEvidence.result === "not-observed"
+      ? ["unknown", "unavailable"]
+      : ["unknown", "unknown"];
+  const expectedCli = cliEvidence.result === "path" || cliEvidence.result === "known-location"
+    ? "available"
+    : cliEvidence.result === "not-observed" ? "unavailable" : "unknown";
+  const backendEvidence = `${registrationEvidence.result}:${runtimeEvidence.result}`;
+  const expectedBackend = {
+    "registered:running": "running",
+    "registered:stopped": "stopped",
+    "registered:unavailable": "present",
+    "not-registered:not-observed": "absent",
+    "unavailable:unavailable": "unknown",
+  }[backendEvidence];
+  if (
+    capability.desktopInstall !== expectedDesktop[0]
+    || capability.desktopLaunch !== expectedDesktop[1]
+    || capability.windowsCli !== expectedCli
+    || expectedBackend === undefined
+    || capability.wslBackend !== expectedBackend
+  ) {
+    throw new Error("Docker capability 응답이 올바르지 않습니다.");
+  }
+  return {
+    desktopInstall: capability.desktopInstall,
+    desktopLaunch: capability.desktopLaunch,
+    windowsCli: capability.windowsCli,
+    wslBackend: capability.wslBackend,
+    evidence,
+    observedAtMs: capability.observedAtMs,
+  };
+}
+
 /**
  * Native returns a deliberately small DTO. Validate it at the API boundary
  * before React renders anything so a stale/tampered response cannot inject a
@@ -182,6 +319,15 @@ function validateRelatedTools(value: unknown): RelatedTool[] {
       ? MOCK_RELATED_TOOLS.find((item) => item.id === tool.id)
       : undefined;
     const detection = tool.detection;
+    const installState = tool.installState;
+    const launchState = tool.launchState;
+    const isDocker = expected?.id === "docker-desktop";
+    const dockerCapability = isDocker
+      ? validateDockerCapability(tool.dockerCapability)
+      : null;
+    const ordinaryStates = detection === "path" || detection === "known-location"
+      ? ["present", "available"]
+      : detection === "not-found" ? ["absent", "unavailable"] : ["unknown", "unknown"];
     if (
       !expected
       || seen.has(expected.id)
@@ -195,7 +341,19 @@ function validateRelatedTools(value: unknown): RelatedTool[] {
       || typeof tool.platformSupported !== "boolean"
       || typeof tool.installed !== "boolean"
       || (!tool.platformSupported && tool.installed)
-      || tool.installed !== (detection === "path" || detection === "known-location")
+      || !isInstallCapabilityState(installState)
+      || !isAvailabilityCapabilityState(launchState)
+      || tool.installed !== (installState === "present")
+      || (isDocker && (
+        installState !== dockerCapability?.desktopInstall
+        || launchState !== dockerCapability.desktopLaunch
+      ))
+      || (!isDocker && (
+        tool.dockerCapability !== null
+        || installState !== ordinaryStates[0]
+        || launchState !== ordinaryStates[1]
+      ))
+      || (!tool.platformSupported && (installState !== "unknown" || launchState !== "unknown"))
     ) {
       throw new Error("관련 도구 감지 응답이 올바르지 않습니다.");
     }
@@ -205,9 +363,191 @@ function validateRelatedTools(value: unknown): RelatedTool[] {
       platformSupported: tool.platformSupported,
       installed: tool.installed,
       detection,
+      installState,
+      launchState,
+      dockerCapability,
     });
   }
   return result;
+}
+
+const DEV_SETUP_CAPABILITY_IDS = [
+  "docker-desktop-install",
+  "docker-desktop-launch",
+  "docker-windows-cli",
+  "docker-wsl-backend",
+  "winget",
+] as const;
+const DEV_SETUP_SCOPES: Record<DevSetupCapability["id"], DevSetupCapability["scope"]> = {
+  "docker-desktop-install": "windows",
+  "docker-desktop-launch": "windows",
+  "docker-windows-cli": "windows",
+  "docker-wsl-backend": "wsl",
+  winget: "windows",
+};
+const DEV_SETUP_EVIDENCE: Record<DevSetupCapability["id"], readonly string[]> = {
+  "docker-desktop-install": ["desktop-executable"],
+  "docker-desktop-launch": ["desktop-executable"],
+  "docker-windows-cli": ["windows-cli"],
+  "docker-wsl-backend": ["wsl-registration", "wsl-runtime"],
+  winget: ["winget-executable"],
+};
+
+function isDevSetupCapabilityId(value: unknown): value is DevSetupCapability["id"] {
+  return typeof value === "string"
+    && DEV_SETUP_CAPABILITY_IDS.some((candidate) => candidate === value);
+}
+
+function expectedPlan(
+  capability: DevSetupCapability,
+): Pick<DevSetupPlanItem, "status" | "action"> | null {
+  switch (capability.id) {
+    case "docker-desktop-install":
+      if (capability.state === "present") return { status: "satisfied", action: "none" };
+      if (capability.state === "absent") return { status: "review", action: "review-install" };
+      if (capability.state === "unknown") return { status: "unknown", action: "verify-installation" };
+      return null;
+    case "docker-desktop-launch":
+      if (capability.state === "available") return { status: "satisfied", action: "none" };
+      if (capability.state === "unavailable") return { status: "review", action: "review-launch-path" };
+      if (capability.state === "unknown") return { status: "unknown", action: "verify-installation" };
+      return null;
+    case "docker-windows-cli":
+      if (capability.state === "available") return { status: "satisfied", action: "none" };
+      if (capability.state === "unavailable") return { status: "review", action: "review-cli" };
+      if (capability.state === "unknown") return { status: "unknown", action: "verify-installation" };
+      return null;
+    case "docker-wsl-backend":
+      if (capability.state === "running") return { status: "satisfied", action: "none" };
+      if (capability.state === "stopped" || capability.state === "present") {
+        return { status: "review", action: "start-backend" };
+      }
+      if (capability.state === "absent") return { status: "review", action: "review-backend" };
+      if (capability.state === "unknown") return { status: "unknown", action: "verify-installation" };
+      return null;
+    case "winget":
+      if (capability.state === "available") return { status: "satisfied", action: "none" };
+      if (capability.state === "unavailable") return { status: "review", action: "review-winget" };
+      if (capability.state === "unknown") return { status: "unknown", action: "verify-installation" };
+      return null;
+  }
+}
+
+function validateDevSetupAudit(value: unknown): DevSetupAudit {
+  if (!value || typeof value !== "object") {
+    throw new Error("Dev Setup 감사 응답이 올바르지 않습니다.");
+  }
+  const audit = value as Partial<DevSetupAudit>;
+  if (
+    audit.schemaVersion !== 1
+    || audit.mode !== "read-only"
+    || typeof audit.observedAtMs !== "number"
+    || !Number.isSafeInteger(audit.observedAtMs)
+    || (audit.observedAtMs ?? 0) <= 0
+    || (audit.observedAtMs ?? 0) > MAX_JAVASCRIPT_TIMESTAMP_MS
+    || !Array.isArray(audit.capabilities)
+    || audit.capabilities.length !== DEV_SETUP_CAPABILITY_IDS.length
+    || !Array.isArray(audit.plan)
+    || audit.plan.length !== DEV_SETUP_CAPABILITY_IDS.length
+  ) {
+    throw new Error("Dev Setup 감사 응답이 올바르지 않습니다.");
+  }
+  const capabilities = audit.capabilities.map((candidate, index): DevSetupCapability => {
+    if (!candidate || typeof candidate !== "object") {
+      throw new Error("Dev Setup 감사 응답이 올바르지 않습니다.");
+    }
+    const capability = candidate as Partial<DevSetupCapability>;
+    const id = capability.id;
+    if (
+      !isDevSetupCapabilityId(id)
+      || id !== DEV_SETUP_CAPABILITY_IDS[index]
+      || capability.scope !== DEV_SETUP_SCOPES[id]
+      || typeof capability.state !== "string"
+    ) {
+      throw new Error("Dev Setup 감사 응답이 올바르지 않습니다.");
+    }
+    const normalized = {
+      id,
+      scope: capability.scope,
+      state: capability.state,
+      evidence: validateEvidence(capability.evidence, DEV_SETUP_EVIDENCE[id]),
+    };
+    if (!expectedPlan(normalized)) {
+      throw new Error("Dev Setup 감사 응답이 올바르지 않습니다.");
+    }
+    return normalized;
+  });
+  const [desktopInstall, desktopLaunch, windowsCli, wslBackend, winget] = capabilities;
+  if (
+    desktopInstall.evidence[0].result !== desktopLaunch.evidence[0].result
+    || winget.state !== (
+      winget.evidence[0].result === "trusted-location"
+        ? "available"
+        : winget.evidence[0].result === "not-observed" ? "unavailable" : "unknown"
+    )
+  ) {
+    throw new Error("Dev Setup 감사 응답이 올바르지 않습니다.");
+  }
+  validateDockerCapability({
+    desktopInstall: desktopInstall.state as DockerCapability["desktopInstall"],
+    desktopLaunch: desktopLaunch.state as DockerCapability["desktopLaunch"],
+    windowsCli: windowsCli.state as DockerCapability["windowsCli"],
+    wslBackend: wslBackend.state as DockerCapability["wslBackend"],
+    evidence: [
+      desktopInstall.evidence[0],
+      windowsCli.evidence[0],
+      ...wslBackend.evidence,
+    ],
+    observedAtMs: audit.observedAtMs,
+  });
+  const plan = audit.plan.map((candidate, index): DevSetupPlanItem => {
+    if (!candidate || typeof candidate !== "object") {
+      throw new Error("Dev Setup 감사 응답이 올바르지 않습니다.");
+    }
+    const item = candidate as Partial<DevSetupPlanItem>;
+    const capability = capabilities[index];
+    const expected = expectedPlan(capability);
+    if (
+      !expected
+      || item.capabilityId !== capability.id
+      || item.status !== expected?.status
+      || item.action !== expected.action
+    ) {
+      throw new Error("Dev Setup 감사 응답이 올바르지 않습니다.");
+    }
+    return {
+      capabilityId: capability.id,
+      status: item.status,
+      action: item.action,
+    };
+  });
+  return {
+    schemaVersion: 1,
+    observedAtMs: audit.observedAtMs,
+    mode: "read-only",
+    capabilities,
+    plan,
+  };
+}
+
+function mockDevSetupAudit(): DevSetupAudit {
+  const capabilities: DevSetupCapability[] = DEV_SETUP_CAPABILITY_IDS.map((id) => ({
+    id,
+    scope: DEV_SETUP_SCOPES[id],
+    state: "unknown",
+    evidence: DEV_SETUP_EVIDENCE[id].map((source) => ({ source, result: "unavailable" })),
+  }));
+  return {
+    schemaVersion: 1,
+    observedAtMs: MOCK_OBSERVED_AT_MS,
+    mode: "read-only",
+    capabilities,
+    plan: capabilities.map((capability) => ({
+      capabilityId: capability.id,
+      status: "unknown",
+      action: "verify-installation",
+    })),
+  };
 }
 
 function validateRelatedAction(
@@ -509,6 +849,13 @@ export async function relatedTools(): Promise<RelatedTool[]> {
     ? await invoke<unknown>("related_tools")
     : MOCK_RELATED_TOOLS.map((tool) => ({ ...tool }));
   return validateRelatedTools(result);
+}
+
+export async function devSetupAudit(): Promise<DevSetupAudit> {
+  const result = isTauri()
+    ? await invoke<unknown>("dev_setup_audit")
+    : mockDevSetupAudit();
+  return validateDevSetupAudit(result);
 }
 
 export async function installRelatedTool(

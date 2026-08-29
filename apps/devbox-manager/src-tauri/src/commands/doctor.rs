@@ -65,7 +65,7 @@ fn version_of(cmd: impl AsRef<std::ffi::OsStr>, args: &[&str]) -> Option<String>
 /// interactive stdin/stderr, and process-tree cleanup. Environment diagnosis
 /// must not be able to hang the Manager or leave a helper process running after
 /// the user switches tabs.
-fn run_bounded_command(command: Command) -> Option<Vec<u8>> {
+pub(crate) fn run_bounded_command(command: Command) -> Option<Vec<u8>> {
     run_bounded_command_with_limits(command, DIAGNOSIS_TIMEOUT, MAX_DIAGNOSIS_OUTPUT_BYTES)
 }
 

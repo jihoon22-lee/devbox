@@ -5,6 +5,10 @@
 //! local paths, account names, and package-manager diagnostics cannot become
 //! Manager UI data.
 
+use crate::core::environment_capabilities::{
+    build_dev_setup_plan, model_docker_capability, AvailabilityState, CapabilityEvidence,
+    DockerCapability, DockerCliProbe, PlanItem, WslBackendProbe, DEV_SETUP_SCHEMA_VERSION,
+};
 #[cfg(any(windows, test))]
 use crate::core::related_tools::classify_detection;
 use crate::core::related_tools::{
@@ -16,6 +20,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 #[cfg(windows)]
 use std::time::{Duration, Instant};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
 use std::ffi::{OsStr, OsString};
@@ -61,6 +66,10 @@ const MAX_PATH_ENTRY_BYTES: usize = 4 * 1024;
 const MAX_PATH_COMPONENTS: usize = 128;
 #[cfg(windows)]
 const MAX_KNOWN_PATHS: usize = 32;
+#[cfg(any(windows, test))]
+const MAX_WSL_DISTROS: usize = 128;
+#[cfg(any(windows, test))]
+const MAX_WSL_DISTRO_NAME_CHARS: usize = 128;
 
 /// All Related Tools actions share one native single-flight boundary.  This
 /// prevents an install, launch, and detection refresh from observing or
@@ -80,6 +89,54 @@ pub struct RelatedToolView {
     pub platform_supported: bool,
     pub installed: bool,
     pub detection: String,
+    pub install_state: String,
+    pub launch_state: String,
+    pub docker_capability: Option<DockerCapabilityView>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityEvidenceView {
+    pub source: String,
+    pub result: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DockerCapabilityView {
+    pub desktop_install: String,
+    pub desktop_launch: String,
+    pub windows_cli: String,
+    pub wsl_backend: String,
+    pub evidence: Vec<CapabilityEvidenceView>,
+    pub observed_at_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DevSetupCapabilityView {
+    pub id: String,
+    pub scope: String,
+    pub state: String,
+    pub evidence: Vec<CapabilityEvidenceView>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DevSetupPlanItemView {
+    pub capability_id: String,
+    pub status: String,
+    pub action: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DevSetupAuditView {
+    pub schema_version: u32,
+    pub observed_at_ms: u64,
+    pub mode: String,
+    pub capabilities: Vec<DevSetupCapabilityView>,
+    pub plan: Vec<DevSetupPlanItemView>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -273,6 +330,19 @@ pub async fn related_tools() -> Result<Vec<RelatedToolView>, String> {
     .map_err(|_| "관련 도구 감지를 완료할 수 없습니다.".to_string())?
 }
 
+/// Produce the first Dev Setup contract as a read-only audit and review plan.
+/// This command never installs a package, starts a distro, edits PATH/the
+/// registry, or returns a resolved executable path.
+#[tauri::command]
+pub async fn dev_setup_audit() -> Result<DevSetupAuditView, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let _guard = acquire_related_action()?;
+        Ok::<DevSetupAuditView, String>(build_dev_setup_audit())
+    })
+    .await
+    .map_err(|_| "Dev Setup 감사를 완료할 수 없습니다.".to_string())?
+}
+
 /// Start one exact WinGet install only after an explicit user confirmation.
 /// No arbitrary package search, installer URL, or shell command is accepted.
 #[tauri::command]
@@ -356,6 +426,19 @@ fn detect_related_tools() -> Vec<RelatedToolView> {
         .iter()
         .map(|spec| {
             let source = detect_tool(spec);
+            let docker_capability = (spec.id == "docker-desktop").then(|| {
+                let capability = detect_docker_capability(source);
+                docker_capability_view(&capability, observed_at_ms())
+            });
+            let (install_state, launch_state) = docker_capability
+                .as_ref()
+                .map(|capability| {
+                    (
+                        capability.desktop_install.as_str(),
+                        capability.desktop_launch.as_str(),
+                    )
+                })
+                .unwrap_or_else(|| tool_states(source));
             RelatedToolView {
                 id: spec.id.to_string(),
                 display_name: spec.display_name.to_string(),
@@ -365,14 +448,134 @@ fn detect_related_tools() -> Vec<RelatedToolView> {
                 license_url: spec.license_url.to_string(),
                 license: spec.license_summary.to_string(),
                 platform_supported: cfg!(windows),
-                installed: matches!(
-                    source,
-                    DetectionSource::Path | DetectionSource::KnownLocation
-                ),
+                installed: matches!(install_state, "present"),
                 detection: source.as_code().to_string(),
+                install_state: install_state.to_string(),
+                launch_state: launch_state.to_string(),
+                docker_capability,
             }
         })
         .collect()
+}
+
+fn observed_at_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+        .unwrap_or(1)
+}
+
+fn tool_states(source: DetectionSource) -> (&'static str, &'static str) {
+    match source {
+        DetectionSource::Path | DetectionSource::KnownLocation => ("present", "available"),
+        DetectionSource::NotFound => ("absent", "unavailable"),
+        DetectionSource::Unavailable => ("unknown", "unknown"),
+    }
+}
+
+fn evidence_views(evidence: &[CapabilityEvidence]) -> Vec<CapabilityEvidenceView> {
+    evidence
+        .iter()
+        .map(|item| CapabilityEvidenceView {
+            source: item.source.to_string(),
+            result: item.result.to_string(),
+        })
+        .collect()
+}
+
+fn docker_capability_view(
+    capability: &DockerCapability,
+    observed_at_ms: u64,
+) -> DockerCapabilityView {
+    DockerCapabilityView {
+        desktop_install: capability.desktop_install.as_code().to_string(),
+        desktop_launch: capability.desktop_launch.as_code().to_string(),
+        windows_cli: capability.windows_cli.as_code().to_string(),
+        wsl_backend: capability.wsl_backend.as_code().to_string(),
+        evidence: evidence_views(&capability.evidence),
+        observed_at_ms,
+    }
+}
+
+fn plan_view(item: &PlanItem) -> DevSetupPlanItemView {
+    DevSetupPlanItemView {
+        capability_id: item.capability_id.to_string(),
+        status: item.status.as_code().to_string(),
+        action: item.action.as_code().to_string(),
+    }
+}
+
+fn evidence_for(capability: &DockerCapability, sources: &[&str]) -> Vec<CapabilityEvidenceView> {
+    evidence_views(
+        &capability
+            .evidence
+            .iter()
+            .copied()
+            .filter(|evidence| sources.contains(&evidence.source))
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn build_dev_setup_audit() -> DevSetupAuditView {
+    let docker_spec =
+        find_tool("docker-desktop").expect("the reviewed Docker Desktop catalog entry must exist");
+    let docker = detect_docker_capability(detect_tool(docker_spec));
+    let winget = detect_winget_availability();
+    let observed_at_ms = observed_at_ms();
+    let winget_evidence = vec![CapabilityEvidenceView {
+        source: "winget-executable".to_string(),
+        result: match winget {
+            AvailabilityState::Available => "trusted-location",
+            AvailabilityState::Unavailable => "not-observed",
+            AvailabilityState::Unknown => "unavailable",
+        }
+        .to_string(),
+    }];
+    let capabilities = vec![
+        DevSetupCapabilityView {
+            id: "docker-desktop-install".to_string(),
+            scope: "windows".to_string(),
+            state: docker.desktop_install.as_code().to_string(),
+            evidence: evidence_for(&docker, &["desktop-executable"]),
+        },
+        DevSetupCapabilityView {
+            id: "docker-desktop-launch".to_string(),
+            scope: "windows".to_string(),
+            state: docker.desktop_launch.as_code().to_string(),
+            evidence: evidence_for(&docker, &["desktop-executable"]),
+        },
+        DevSetupCapabilityView {
+            id: "docker-windows-cli".to_string(),
+            scope: "windows".to_string(),
+            state: docker.windows_cli.as_code().to_string(),
+            evidence: evidence_for(&docker, &["windows-cli"]),
+        },
+        DevSetupCapabilityView {
+            id: "docker-wsl-backend".to_string(),
+            scope: "wsl".to_string(),
+            state: docker.wsl_backend.as_code().to_string(),
+            evidence: evidence_for(&docker, &["wsl-registration", "wsl-runtime"]),
+        },
+        DevSetupCapabilityView {
+            id: "winget".to_string(),
+            scope: "windows".to_string(),
+            state: winget.as_code().to_string(),
+            evidence: winget_evidence,
+        },
+    ];
+    let plan = build_dev_setup_plan(&docker, winget)
+        .iter()
+        .map(plan_view)
+        .collect();
+
+    DevSetupAuditView {
+        schema_version: DEV_SETUP_SCHEMA_VERSION,
+        observed_at_ms,
+        mode: "read-only".to_string(),
+        capabilities,
+        plan,
+    }
 }
 
 fn detect_tool(spec: &RelatedToolSpec) -> DetectionSource {
@@ -396,6 +599,168 @@ fn detect_tool(spec: &RelatedToolSpec) -> DetectionSource {
             .iter()
             .any(|path| safe_existing_executable(path));
         classify_detection(false, known_location_found, probe_available)
+    }
+}
+
+fn detect_docker_capability(desktop: DetectionSource) -> DockerCapability {
+    model_docker_capability(desktop, detect_docker_cli(), detect_wsl_backend())
+}
+
+fn detect_docker_cli() -> DockerCliProbe {
+    #[cfg(not(windows))]
+    {
+        DockerCliProbe::Unavailable
+    }
+
+    #[cfg(windows)]
+    {
+        let mut observed_candidate = false;
+        if let Some(path) = path_executable("docker.exe") {
+            observed_candidate = true;
+            if is_official_docker_cli(&path) {
+                return DockerCliProbe::Confirmed(DetectionSource::Path);
+            }
+        }
+        for path in known_docker_cli_paths() {
+            if !safe_existing_executable(&path) {
+                continue;
+            }
+            observed_candidate = true;
+            if is_official_docker_cli(&path) {
+                return DockerCliProbe::Confirmed(DetectionSource::KnownLocation);
+            }
+        }
+        if observed_candidate {
+            DockerCliProbe::Unrecognized
+        } else if path_probe_available() {
+            DockerCliProbe::NotFound
+        } else {
+            DockerCliProbe::Unavailable
+        }
+    }
+}
+
+#[cfg(windows)]
+fn is_official_docker_cli(path: &Path) -> bool {
+    if !safe_existing_executable(path) || !trusted_docker_cli_path(path) {
+        return false;
+    }
+    let mut command = Command::new(path);
+    command.arg("--version");
+    sanitize_external_environment(&mut command);
+    crate::commands::doctor::run_bounded_command(command)
+        .as_deref()
+        .is_some_and(docker_cli_version_is_official)
+}
+
+#[cfg(windows)]
+fn trusted_docker_cli_path(path: &Path) -> bool {
+    let Ok(candidate) = std::fs::canonicalize(path) else {
+        return false;
+    };
+    known_docker_cli_paths().into_iter().any(|known| {
+        std::fs::canonicalize(known).is_ok_and(|trusted| {
+            candidate
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&trusted.to_string_lossy())
+        })
+    })
+}
+
+#[cfg(any(windows, test))]
+fn docker_cli_version_is_official(output: &[u8]) -> bool {
+    let decoded = devbox_wsl::output::decode_output(output);
+    let Some(line) = decoded.lines().next().map(str::trim) else {
+        return false;
+    };
+    let normalized = line.to_ascii_lowercase();
+    normalized.starts_with("docker version ") || normalized.starts_with("docker cli version ")
+}
+
+fn detect_wsl_backend() -> WslBackendProbe {
+    #[cfg(not(windows))]
+    {
+        WslBackendProbe::Unavailable
+    }
+
+    #[cfg(windows)]
+    {
+        let Some(registered) = probe_wsl_distro_names(&["--list", "--quiet"]) else {
+            return WslBackendProbe::Unavailable;
+        };
+        if !contains_distro(&registered, "docker-desktop") {
+            return WslBackendProbe::Absent;
+        }
+        let Some(running) = probe_wsl_distro_names(&["--list", "--running", "--quiet"]) else {
+            return WslBackendProbe::Present;
+        };
+        if contains_distro(&running, "docker-desktop") {
+            WslBackendProbe::Running
+        } else {
+            WslBackendProbe::Stopped
+        }
+    }
+}
+
+#[cfg(windows)]
+fn probe_wsl_distro_names(args: &[&str]) -> Option<Vec<String>> {
+    // Resolve the OS-owned binary once and spawn that exact path. A PATH
+    // entry named `wsl.exe` must not be able to impersonate the backend probe.
+    let executable = system_directory()?.join("wsl.exe");
+    if !safe_existing_executable(&executable) {
+        return None;
+    }
+    let mut command = Command::new(executable);
+    command.args(args);
+    sanitize_external_environment(&mut command);
+    let output = crate::commands::doctor::run_bounded_command(command)?;
+    parse_wsl_distro_names(&devbox_wsl::output::decode_output(&output))
+}
+
+#[cfg(any(windows, test))]
+fn parse_wsl_distro_names(input: &str) -> Option<Vec<String>> {
+    let mut names = Vec::new();
+    for raw_line in input.lines() {
+        let name = raw_line.trim().trim_start_matches('*').trim();
+        if name.is_empty() {
+            continue;
+        }
+        if name.chars().count() > MAX_WSL_DISTRO_NAME_CHARS
+            || devbox_wsl::distro::validate_distro_name(name).is_err()
+            || names.len() >= MAX_WSL_DISTROS
+        {
+            return None;
+        }
+        if !names
+            .iter()
+            .any(|existing: &String| existing.eq_ignore_ascii_case(name))
+        {
+            names.push(name.to_string());
+        }
+    }
+    Some(names)
+}
+
+#[cfg(any(windows, test))]
+fn contains_distro(distros: &[String], expected: &str) -> bool {
+    distros
+        .iter()
+        .any(|distro| distro.eq_ignore_ascii_case(expected))
+}
+
+fn detect_winget_availability() -> AvailabilityState {
+    #[cfg(not(windows))]
+    {
+        AvailabilityState::Unknown
+    }
+
+    #[cfg(windows)]
+    {
+        if winget_executable().is_some() {
+            AvailabilityState::Available
+        } else {
+            AvailabilityState::Unavailable
+        }
     }
 }
 
@@ -936,13 +1301,60 @@ fn known_executable_paths(spec: &RelatedToolSpec) -> Vec<PathBuf> {
             add_program_files(&mut paths, &["Podman Desktop"], "podman-desktop.exe");
         }
         "docker-desktop" => {
-            add_program_files(&mut paths, &["Docker", "Docker"], "Docker Desktop.exe")
+            add_program_files(&mut paths, &["Docker", "Docker"], "Docker Desktop.exe");
+            add(
+                &mut paths,
+                "LOCALAPPDATA",
+                &["Docker"],
+                "Docker Desktop.exe",
+            );
+            add(
+                &mut paths,
+                "LOCALAPPDATA",
+                &["Programs", "Docker", "Docker"],
+                "Docker Desktop.exe",
+            );
+            add(
+                &mut paths,
+                "LOCALAPPDATA",
+                &["Programs", "Docker Desktop"],
+                "Docker Desktop.exe",
+            );
         }
         // Windows Terminal is normally exposed as the `wt.exe` app execution
         // alias and is intentionally detected through PATH only.
         "windows-terminal" => {}
         _ => {}
     }
+    paths
+}
+
+#[cfg(windows)]
+fn known_docker_cli_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let add = |paths: &mut Vec<PathBuf>, env: &str, components: &[&str]| {
+        if paths.len() >= MAX_KNOWN_PATHS {
+            return;
+        }
+        let Some(mut root) = safe_environment_root(env) else {
+            return;
+        };
+        for component in components {
+            root.push(component);
+        }
+        root.push("docker.exe");
+        paths.push(root);
+    };
+    for env in ["ProgramFiles", "ProgramFiles(x86)"] {
+        add(&mut paths, env, &["Docker", "Docker", "resources", "bin"]);
+        add(&mut paths, env, &["Docker", "Docker", "resources"]);
+    }
+    add(&mut paths, "LOCALAPPDATA", &["Docker", "resources", "bin"]);
+    add(
+        &mut paths,
+        "LOCALAPPDATA",
+        &["Programs", "Docker", "Docker", "resources", "bin"],
+    );
     paths
 }
 
@@ -1076,6 +1488,19 @@ mod tests {
                 view.detection.as_str(),
                 "path" | "known-location" | "not-found" | "unavailable"
             ));
+            assert!(matches!(
+                view.install_state.as_str(),
+                "present" | "absent" | "unknown"
+            ));
+            assert!(matches!(
+                view.launch_state.as_str(),
+                "available" | "unavailable" | "unknown"
+            ));
+            assert_eq!(view.installed, view.install_state == "present");
+            assert_eq!(
+                view.docker_capability.is_some(),
+                view.id == "docker-desktop"
+            );
             assert!(!view.display_name.contains("C:"));
             assert!(!view.summary.contains("C:"));
             assert!(!view.winget_id.contains('\\') && !view.winget_id.contains('/'));
@@ -1083,6 +1508,65 @@ mod tests {
             assert!(!view.license_url.contains("C:"));
             assert!(!view.license.contains("C:"));
         }
+    }
+
+    #[test]
+    fn docker_version_identity_rejects_compatible_shims_and_unbounded_noise() {
+        assert!(docker_cli_version_is_official(
+            b"Docker version 27.5.1, build test\n"
+        ));
+        assert!(docker_cli_version_is_official(
+            b"Docker CLI version 28.0.0\n"
+        ));
+        assert!(!docker_cli_version_is_official(b"podman version 5.4.0\n"));
+        assert!(!docker_cli_version_is_official(b"\n"));
+    }
+
+    #[test]
+    fn wsl_quiet_list_parser_is_bounded_validated_and_case_insensitive() {
+        let names =
+            parse_wsl_distro_names("Ubuntu\ndocker-desktop\nDocker-Desktop\nUbuntu 24.04\n")
+                .unwrap();
+        assert_eq!(names, vec!["Ubuntu", "docker-desktop", "Ubuntu 24.04"]);
+        assert!(contains_distro(&names, "DOCKER-DESKTOP"));
+        assert!(parse_wsl_distro_names("Ubuntu; shutdown").is_none());
+        assert!(parse_wsl_distro_names(&"x".repeat(MAX_WSL_DISTRO_NAME_CHARS + 1)).is_none());
+        assert!(parse_wsl_distro_names(
+            &(0..=MAX_WSL_DISTROS)
+                .map(|index| format!("Distro-{index}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn dev_setup_audit_is_read_only_bounded_and_opaque() {
+        let audit = build_dev_setup_audit();
+        assert_eq!(audit.schema_version, DEV_SETUP_SCHEMA_VERSION);
+        assert_eq!(audit.mode, "read-only");
+        assert!(audit.observed_at_ms > 0);
+        assert_eq!(audit.capabilities.len(), 5);
+        assert_eq!(audit.plan.len(), 5);
+        assert_eq!(
+            audit
+                .capabilities
+                .iter()
+                .map(|capability| capability.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "docker-desktop-install",
+                "docker-desktop-launch",
+                "docker-windows-cli",
+                "docker-wsl-backend",
+                "winget",
+            ]
+        );
+        let serialized = serde_json::to_string(&audit).unwrap();
+        assert!(!serialized.contains("C:\\"));
+        assert!(!serialized.contains("/home/"));
+        assert!(!serialized.contains("PATH="));
+        assert!(!serialized.contains("docker --"));
     }
 
     #[test]

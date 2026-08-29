@@ -60,6 +60,11 @@ metadata는 GitHub Release가 권위 있는 source다. 브라우저 개발 모�
   설치된 도구 실행은 네트워크 없이도 가능하지만, WinGet 설치에는 Windows App Installer와
   네트워크가 필요하고 공식·라이선스 링크는 브라우저/네트워크 상태를 따른다. WinGet이 없어도
   Manager의 native 앱 설치·업데이트·실행에는 영향을 주지 않는다.
+- **Docker capability + Dev Setup audit (#483)** — Docker Desktop 설치 근거·Manager 실행 가능 여부,
+  공식 Windows Docker CLI, `docker-desktop` WSL 등록/실행 상태를 독립적으로 표시한다. 실행 파일을
+  표준 위치에서 찾지 못했더라도 WSL backend가 있으면 `미설치`로 단정하거나 WinGet 설치를 제안하지
+  않고 `unknown`과 근거를 보여 준다. Dev Setup 탭은 이 capability와 신뢰된 WinGet 실행 가능성을
+  schema v1 read-only inventory/plan으로 정리하며 설치·distro 시작·registry/PATH 수정은 하지 않는다.
 - **실행** — 설치된 앱 실행
 
 ## 기술
@@ -138,6 +143,15 @@ metadata는 GitHub Release가 권위 있는 source다. 브라우저 개발 모�
   실행은 오프라인 가능하고 WinGet 설치는 Windows/네트워크, 공식·라이선스 링크는 네트워크
   전제라는 안내를 표시한다. non-Windows에서는 설치 control만 명시적으로 비활성화하며,
   오프라인 또는 WinGet 부재 오류는 선택 기능의 상태로만 남고 Manager native 기능을 막지 않는다.
+- Docker Desktop은 Related Tools의 기존 executable allowlist와 실행 직전 regular-file/reparse
+  재검증을 그대로 사용한다. 추가로 검토된 `%LOCALAPPDATA%` 설치 layout을 검사하며 Windows CLI는
+  PATH 또는 Docker의 고정 resource layout에서 찾은 실행 파일이 검토된 Docker resource 경로와
+  동일한 파일인지 확인한 뒤, 2초 bounded `--version` probe로 제품 식별한다. Podman 호환 shim이나
+  검토되지 않은 위치의 `docker.exe`는 `unknown`이다.
+  WSL backend는 `wsl.exe --list --quiet`와 `--running --quiet`의 최대 128개 validated distro 이름만
+  사용하고 distro를 시작하지 않는다. public DTO에는 raw path, version output, 환경변수, WSL 원문이
+  없고 `desktop-executable`·`windows-cli`·`wsl-registration`·`wsl-runtime` 같은 고정 evidence code와
+  감사 시각만 포함한다. Dev Setup v1 plan은 확인 순서만 제공하며 apply는 별도 보안/권한 PR 경계다.
 
 설치 root 경계의 public 오류는 고정된 안전 메시지만 반환하고 입력 경로, locator/manifest 원문,
 OS 오류, credential을 반사하지 않는다. locator/manifest bytes와 row 수, path 길이에는 상한이 있으며
