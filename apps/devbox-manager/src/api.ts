@@ -237,25 +237,27 @@ export type ManagerOpenRequest = {
   from: string | null;
 };
 
+// The source catalog has 15 apps, but this Manager-facing browser fixture
+// contains only the 14 manager-visible, non-self-managed targets.
 const MOCK_MANIFEST: ReleaseManifest = {
   schemaVersion: 1,
-  releaseTag: "v0.4.0-rc3",
-  generatedAt: "2026-08-17T03:00:00Z",
+  releaseTag: "v0.5.0",
+  generatedAt: "2026-08-28T23:45:52Z",
   apps: [
-    { id: "port-manager", version: "0.2.1", portable: { name: "port-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "port-manager_0.2.1_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "developer-toolbox", version: "0.2.1", portable: { name: "developer-toolbox.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "developer-toolbox_0.2.1_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "wsl-desktop", version: "0.3.0", portable: { name: "wsl-desktop.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "wsl-desktop_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "api-playground", version: "0.3.0", portable: { name: "api-playground.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "api-playground_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "everything-plus", version: "0.3.0", portable: { name: "everything-plus.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "everything-plus_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "knowledge-base", version: "0.3.0", portable: { name: "knowledge-base.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "knowledge-base_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "life-log", version: "0.3.0", portable: { name: "life-log.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "life-log_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "devbox-manager", version: "0.3.0", portable: { name: "devbox-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "devbox-manager_0.3.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "code-pad", version: "0.3.1", portable: { name: "code-pad.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "code-pad_0.3.1_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "run-manager", version: "0.3.1", portable: { name: "run-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "run-manager_0.3.1_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "workbench", version: "0.1.0", portable: { name: "workbench.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "workbench_0.1.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "webhook-lab", version: "0.1.0", portable: { name: "webhook-lab.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "webhook-lab_0.1.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "repo-manager", version: "0.1.1", portable: { name: "repo-manager.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "repo-manager_0.1.1_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
-    { id: "devbox-launcher", version: "0.1.0", portable: { name: "devbox-launcher.exe", sha256: "a".repeat(64), size: 1 }, installer: { name: "devbox-launcher_0.1.0_x64-setup.exe", sha256: "b".repeat(64), size: 2 } },
+    { id: "port-manager", version: "0.3.0", portable: { name: "port-manager.exe", sha256: "7eabde220d9e65d47da53414f41fab7263c2f6decd26f66204854ff69f0e53f4", size: 9231872 }, installer: { name: "port-manager_0.3.0_x64-setup.exe", sha256: "d77c1e23f3790ae0f3e88f1a6680d0b47aee3ef44f6b1dd1a7ba278dc590e261", size: 2153021 } },
+    { id: "developer-toolbox", version: "0.3.0", portable: { name: "developer-toolbox.exe", sha256: "5e19f7114bce15ac7d0f5ba2fc03b97e366322ed07424ee6f4cde7507dbbb56f", size: 11363328 }, installer: { name: "developer-toolbox_0.3.0_x64-setup.exe", sha256: "360fcefc0e64c5a2df77ef635838112d164185e29ab711481652113bad8e8e10", size: 2832480 } },
+    { id: "wsl-desktop", version: "0.4.0", portable: { name: "wsl-desktop.exe", sha256: "99f546d55717d9be39a8160affa62b7aca27c29abe92b1b41ad456aaef4a67a2", size: 10682368 }, installer: { name: "wsl-desktop_0.4.0_x64-setup.exe", sha256: "d35ae9ac9d8f78f99d15cd0c8d5da84fdb431a768bec92ed50cbda07f55c3db9", size: 2624608 } },
+    { id: "api-playground", version: "0.4.0", portable: { name: "api-playground.exe", sha256: "a75b53a4fe05ad9f77cd3e214df81f36ff665a0f2dbff16836d9dcb222128eee", size: 15140864 }, installer: { name: "api-playground_0.4.0_x64-setup.exe", sha256: "7e80dedcc5d4374149f2ce86324515c6b8d56de7918d8997ffb6265726736a3a", size: 4085331 } },
+    { id: "everything-plus", version: "0.4.0", portable: { name: "everything-plus.exe", sha256: "993e9f554a6f96b2aa726ea4b4e8d04bb9f35ac1dde30c88e4113be81c2caef7", size: 13282304 }, installer: { name: "everything-plus_0.4.0_x64-setup.exe", sha256: "93e7758bb9b74f7c1fa58467f7e7e5a47b50cf1c2fa449608ac5a5054fbcba8d", size: 3710367 } },
+    { id: "knowledge-base", version: "0.4.0", portable: { name: "knowledge-base.exe", sha256: "aee2044943243799808accae468c1abb21c8867b9a42337c3ecf98cab2ef4452", size: 14493184 }, installer: { name: "knowledge-base_0.4.0_x64-setup.exe", sha256: "17ae494014abb6ae74d5cf2c78875def22c2609d4e39c82daca2f02c35cc3023", size: 4702206 } },
+    { id: "life-log", version: "0.4.0", portable: { name: "life-log.exe", sha256: "038f2de30e8ffabe31e502d5bec93ec711a4815d03a8972e15d29235fed2c98e", size: 13802496 }, installer: { name: "life-log_0.4.0_x64-setup.exe", sha256: "fa811672306fd9a86dc64dcb943b3120bb24cc065d28fb11a489e3f77b8a28d9", size: 3654124 } },
+    { id: "code-pad", version: "0.4.0", portable: { name: "code-pad.exe", sha256: "5fa0e6cd51b1bb0149400cfa0fc8f8efb048106816895a88f55852506244f442", size: 20690432 }, installer: { name: "code-pad_0.4.0_x64-setup.exe", sha256: "aa207a3ac7999306afbec6d48d7b023c1fd768aa850721ede0f13f3d83d6df20", size: 6491410 } },
+    { id: "run-manager", version: "0.4.0", portable: { name: "run-manager.exe", sha256: "19de75e10ddfa638a37e665e25f76d89ada10253239ec33a5248c6cbe376c273", size: 15579648 }, installer: { name: "run-manager_0.4.0_x64-setup.exe", sha256: "311b956e165bdb2587430879d3d7c16c6b67dc374f53791b2a3d1a036e6f36fd", size: 4080257 } },
+    { id: "workbench", version: "0.2.0", portable: { name: "workbench.exe", sha256: "6af95bdc7119906ae54c61803ab5bc78daf5b0af41b95c3259a328e9b7401f18", size: 10438144 }, installer: { name: "workbench_0.2.0_x64-setup.exe", sha256: "45e79da57745fff468a661f2186a265b54e69082ee67fe7e9943ee4c30d443c8", size: 2490490 } },
+    { id: "webhook-lab", version: "0.2.0", portable: { name: "webhook-lab.exe", sha256: "3b2b253557b46255cee4601dba686245b92793eb5f0384804dc0b656193f77ef", size: 9284096 }, installer: { name: "webhook-lab_0.2.0_x64-setup.exe", sha256: "914f67171d68b84e743f9e069af449e8a971e21ebdcb8d3a68648d422574d97e", size: 2211118 } },
+    { id: "repo-manager", version: "0.2.0", portable: { name: "repo-manager.exe", sha256: "1e6ed9642f210fe317634fbb90a7ad9066cd3a7bfb65840fb1b56166307833f5", size: 10007040 }, installer: { name: "repo-manager_0.2.0_x64-setup.exe", sha256: "6fd55bddfe360b10f9b0640de106a30541e981541b9eac73378a0f5e481223ee", size: 2325435 } },
+    { id: "devbox-launcher", version: "0.1.0", portable: { name: "devbox-launcher.exe", sha256: "547ea737cfd29c2381bc40820d94416ea8f615ffb680c0c248bfbf3bd46484c8", size: 9334784 }, installer: { name: "devbox-launcher_0.1.0_x64-setup.exe", sha256: "674be1d438d0527561058473755ce2d4c48c6f5b31cb93be72864b8fd9a9aa57", size: 2234838 } },
+    { id: "log-lens", version: "0.1.0", portable: { name: "log-lens.exe", sha256: "c93a61a5b0d8ce393b4af7e6495595f4f5871865af72926fe60587f998ebfd37", size: 10528768 }, installer: { name: "log-lens_0.1.0_x64-setup.exe", sha256: "c64a02236aad6c246e9a98ba0d56be2a3bdf104e304a0f8ee378b05f0b8f0bd7", size: 2523187 } },
   ],
 };
 

@@ -11,6 +11,8 @@ vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: openUrlMock }));
 vi.mock("./lib/isTauri", () => ({ isTauri: isTauriMock }));
 
 import {
+  available,
+  catalog,
   installRelatedTool,
   launchRelatedTool,
   openRelatedToolUrl,
@@ -21,6 +23,51 @@ beforeEach(() => {
   invokeMock.mockReset();
   openUrlMock.mockReset();
   isTauriMock.mockReset().mockReturnValue(false);
+});
+
+describe("Browser release fallback", () => {
+  it("tracks the stable v0.5.0 manifest for the 14 managed apps", async () => {
+    const catalogApps = await catalog();
+    const manifest = await available();
+    const managedIds = catalogApps
+      .filter((app) => app.managerVisible && !app.selfManaged)
+      .map((app) => app.id);
+
+    expect(catalogApps).toHaveLength(15);
+    expect(manifest.releaseTag).toBe("v0.5.0");
+    expect(manifest.generatedAt).toBe("2026-08-28T23:45:52Z");
+    expect(manifest.apps).toHaveLength(14);
+    expect(manifest.apps.map((app) => app.id)).toEqual(managedIds);
+    expect(manifest.apps.some((app) => app.id === "devbox-manager")).toBe(false);
+    expect(manifest.apps.some((app) => app.id === "devbox-launcher")).toBe(true);
+    expect(manifest.apps.some((app) => app.id === "log-lens")).toBe(true);
+
+    const expectedVersions: Record<string, string> = {
+      "port-manager": "0.3.0",
+      "developer-toolbox": "0.3.0",
+      "wsl-desktop": "0.4.0",
+      "api-playground": "0.4.0",
+      "everything-plus": "0.4.0",
+      "knowledge-base": "0.4.0",
+      "life-log": "0.4.0",
+      "code-pad": "0.4.0",
+      "run-manager": "0.4.0",
+      workbench: "0.2.0",
+      "webhook-lab": "0.2.0",
+      "repo-manager": "0.2.0",
+      "devbox-launcher": "0.1.0",
+      "log-lens": "0.1.0",
+    };
+    for (const [id, version] of Object.entries(expectedVersions)) {
+      const app = manifest.apps.find((candidate) => candidate.id === id);
+      expect(app).toMatchObject({
+        id,
+        version,
+        portable: { name: `${id}.exe` },
+        installer: { name: `${id}_${version}_x64-setup.exe` },
+      });
+    }
+  });
 });
 
 describe("Related Tools API boundary", () => {
