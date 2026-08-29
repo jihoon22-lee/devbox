@@ -1,7 +1,9 @@
 # Workthrough: WSL-native Repo Manager and Workbench Git
 
-**Date:** 2026-08-30  
-**Branch:** `feat/repo-manager/wsl-project-targets`  
+**Date:** 2026-08-30
+
+**Branch:** `feat/repo-manager/wsl-project-targets`
+
 **Issue:** [#482](https://github.com/jihoon22-lee/devbox/issues/482)
 
 ## Outcome
@@ -86,10 +88,36 @@ cargo clippy -p git -p repo-manager -p workbench \
   PASS
 cargo fmt --all -- --check
   PASS
+pnpm install --frozen-lockfile
+  PASS: lockfile unchanged
+pnpm build
+  PASS: all frontend workspace packages
+pnpm test
+  PASS: all frontend workspace packages, 1,284 tests
+pnpm audit --audit-level moderate
+  PASS: no known vulnerabilities
+python3 .github/scripts/check-dependencies.py check
+python3 .github/scripts/test-check-dependencies.py
+python3 .github/scripts/test-build-manifest.py
+python3 .github/scripts/test-validate-release-input.py
+  PASS
+cargo deny --locked check
+  PASS: advisories, bans, licenses, and sources
+bash .github/scripts/check-catalog.sh
+  PASS: release catalog and 15 app contracts align
 git diff --check
   PASS
 ```
 
-Full workspace Rust/frontend validation and Windows CI are recorded on the PR.
-The physical Windows+WSL matrix in the specification remains required release
-evidence and is not replaced by Linux unit tests.
+The full workspace checks also passed after rebasing onto `main`:
+
+```text
+cargo check --workspace -j2
+cargo test --workspace -j2
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo fmt --all -- --check
+```
+
+Windows CI is recorded on the PR. The physical Windows+WSL matrix in the
+specification remains required release evidence and is not replaced by Linux
+unit tests.

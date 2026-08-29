@@ -1,6 +1,7 @@
 # Repo Manager / Workbench WSL-native Git contract
 
-Date: 2026-08-30  
+Date: 2026-08-30
+
 Issue: [#482](https://github.com/jihoon22-lee/devbox/issues/482)
 
 ## Scope
