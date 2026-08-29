@@ -32,6 +32,7 @@ import { GraphqlEditor } from "./GraphqlEditor";
 import { HeaderTable } from "./HeaderTable";
 import { MultipartEditor } from "./MultipartEditor";
 import { OpenApiImport } from "./OpenApiImport";
+import { ProtocolLab } from "./ProtocolLab";
 import { ResponseViewer, type RawResponseCopyKind } from "./ResponseViewer";
 import { SseEventViewer } from "./SseEventViewer";
 import { WebSocketPanel } from "./WebSocketPanel";
@@ -274,6 +275,7 @@ export default function App() {
   const sseHistoryBytesRef = useRef(0);
   const [showCurl, setShowCurl] = useState(false);
   const [showOpenApiImport, setShowOpenApiImport] = useState(false);
+  const [workspace, setWorkspace] = useState<"http" | "protocol">("http");
   const [tab, setTab] = useState<"params" | "headers" | "cookies" | "body" | "auth">("params");
   const [pretty, setPretty] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -1900,6 +1902,28 @@ export default function App() {
       </aside>
 
       <main className="content">
+        <nav className="workspace-tabs" aria-label="API Playground workspace">
+          <button
+            type="button"
+            className={workspace === "http" ? "active" : ""}
+            aria-current={workspace === "http" ? "page" : undefined}
+            onClick={() => setWorkspace("http")}
+          >
+            HTTP · Streams
+          </button>
+          <button
+            type="button"
+            className={workspace === "protocol" ? "active" : ""}
+            aria-current={workspace === "protocol" ? "page" : undefined}
+            onClick={() => setWorkspace("protocol")}
+          >
+            Protocol Lab
+          </button>
+        </nav>
+        {workspace === "protocol" ? (
+          <ProtocolLab environment={currentEnv?.variables ?? []} native={isTauri()} />
+        ) : (
+          <>
         {migrationNotice && <div className="migration-notice">{migrationNotice}</div>}
         {persistenceWarning && <div className="persistence-warning">{persistenceWarning}</div>}
         <div className="request-bar">
@@ -2177,6 +2201,8 @@ export default function App() {
           onPauseChange={setSsePaused}
           onError={setError}
         />
+          </>
+        )}
       </main>
       <ContextMenu
         open={historyContextMenu.open}

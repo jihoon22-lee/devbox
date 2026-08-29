@@ -88,9 +88,11 @@ version = "0.4.0"
 dependencies = [
  "applink",
  "base64 0.22.1",
+ "bytes",
  "dirs",
  "filesystem",
  "futures-util",
+ "getrandom 0.4.3",
  "integration",
  "reqwest",
  "secrets",
