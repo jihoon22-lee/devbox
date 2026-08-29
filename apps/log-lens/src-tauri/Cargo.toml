@@ -25,6 +25,8 @@ wsl = { path = "../../../crates/wsl" }
 devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
+devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+dirs = "6.0.0"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [

@@ -480,7 +480,7 @@ fn validate_identifier(value: &str, max_bytes: usize) -> Result<(), CoreError> {
     Ok(())
 }
 
-fn validate_run_source_id(source_id: &str) -> Result<(), CoreError> {
+pub(crate) fn run_source_parts(source_id: &str) -> Result<(&str, &str), CoreError> {
     validate_identifier(source_id, 192)?;
     let Some(rest) = source_id.strip_prefix("run-manager:") else {
         return Err(CoreError::InvalidSource);
@@ -496,7 +496,11 @@ fn validate_run_source_id(source_id: &str) -> Result<(), CoreError> {
     {
         return Err(CoreError::InvalidSource);
     }
-    Ok(())
+    Ok((run_id, stream))
+}
+
+fn validate_run_source_id(source_id: &str) -> Result<(), CoreError> {
+    run_source_parts(source_id).map(|_| ())
 }
 
 fn validate_container_id(container_id: &str) -> Result<(), CoreError> {

@@ -3086,6 +3086,8 @@ version = "0.1.0"
 dependencies = [
  "applink",
  "chrono",
+ "dirs",
+ "filesystem",
  "integration",
  "libc",
  "regex",

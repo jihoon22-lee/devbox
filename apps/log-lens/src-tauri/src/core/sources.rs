@@ -1,17 +1,18 @@
 use super::buffer::RingBuffer;
 use super::lifecycle::{CancellationToken, OperationRegistry};
 use super::model::{
-    CoreError, FileCursor, FileIdentity, ReadStatus, SourceKind, SourceSnapshot, SourceSpec,
-    MAX_SOURCE_BYTES,
+    run_source_parts, CoreError, FileCursor, FileIdentity, ReadStatus, SourceKind, SourceSnapshot,
+    SourceSpec, MAX_SOURCE_BYTES,
 };
 use super::parser::parse_bytes;
+use devbox_filesystem::{ensure_no_links, filesystem_identity, open_filesystem_object};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 #[cfg(windows)]
 use std::mem::size_of;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
@@ -36,6 +37,10 @@ const MAX_DIRECTORY_FILES: usize = 256;
 const MAX_CONTAINER_LINES: &str = "100000";
 const CURSOR_ANCHOR_BYTES: u64 = 4 * 1024;
 const TERMINATION_WAIT: Duration = Duration::from_secs(1);
+const RUN_MANAGER_IDENTIFIER: &str = "com.devbox.runmanager";
+const RUN_LOG_RELATIVE_ROOT: &str = "logs/runs";
+const RUN_SEGMENT_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_RUN_SEGMENTS: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -172,7 +177,10 @@ pub fn load_source(
                 false,
             )
         }
-        SourceSpec::Run { .. } => return Err(CoreError::AdapterUnavailable),
+        SourceSpec::Run { source_id } => {
+            let read = read_run_source(source_id, cursor, context)?;
+            (read.bytes, Some(read.cursor), read.status, read.truncated)
+        }
     };
     context.check()?;
     let batch = parse_bytes(&bytes, &summary.source_id, sequence_start)?;
@@ -197,6 +205,205 @@ pub fn load_source(
         dropped_records: push.dropped_records,
         dropped_bytes: push.dropped_bytes,
     })
+}
+
+#[derive(Debug)]
+struct RunSegment {
+    generation: u64,
+    start: u64,
+    end: u64,
+    path: PathBuf,
+}
+
+fn run_manager_data_root() -> Result<PathBuf, CoreError> {
+    dirs::data_local_dir()
+        .map(|root| root.join(RUN_MANAGER_IDENTIFIER))
+        .ok_or(CoreError::AdapterUnavailable)
+}
+
+fn read_run_source(
+    source_id: &str,
+    previous: Option<&FileCursor>,
+    context: &LoadContext<'_>,
+) -> Result<ReadResult, CoreError> {
+    read_run_source_in(&run_manager_data_root()?, source_id, previous, context)
+}
+
+/// Read Run Manager's fixed app-owned rotation format without accepting a
+/// producer path. The source identity determines the exact app data root,
+/// run directory, stream prefix, and logical cursor; no arbitrary path or
+/// command can enter this adapter.
+fn read_run_source_in(
+    app_data_root: &Path,
+    source_id: &str,
+    previous: Option<&FileCursor>,
+    context: &LoadContext<'_>,
+) -> Result<ReadResult, CoreError> {
+    let (run_id, stream) = run_source_parts(source_id)?;
+    if previous.is_some_and(|cursor| cursor.identity.is_some() || cursor.anchor_hash.is_some()) {
+        return Err(CoreError::InvalidInput);
+    }
+
+    let run_directory = app_data_root.join(RUN_LOG_RELATIVE_ROOT).join(run_id);
+    ensure_no_links(&run_directory).map_err(|_| CoreError::AdapterUnavailable)?;
+    let canonical_root =
+        fs::canonicalize(app_data_root).map_err(|_| CoreError::AdapterUnavailable)?;
+    let canonical_run =
+        fs::canonicalize(&run_directory).map_err(|_| CoreError::AdapterUnavailable)?;
+    if !canonical_run.starts_with(&canonical_root)
+        || canonical_run.file_name().and_then(|name| name.to_str()) != Some(run_id)
+    {
+        return Err(CoreError::InvalidSource);
+    }
+    let directory_identity =
+        filesystem_identity(&canonical_run, true).map_err(|_| CoreError::AdapterUnavailable)?;
+
+    let mut segments = Vec::new();
+    for entry in fs::read_dir(&canonical_run).map_err(|_| CoreError::AdapterUnavailable)? {
+        context.check()?;
+        let entry = entry.map_err(|_| CoreError::Io)?;
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Some((generation, start, end)) = parse_run_segment_name(&name, stream)? else {
+            continue;
+        };
+        if segments.len() >= MAX_RUN_SEGMENTS {
+            return Err(CoreError::OutputLimit);
+        }
+        let path = entry.path();
+        ensure_no_links(&path).map_err(|_| CoreError::InvalidSource)?;
+        segments.push(RunSegment {
+            generation,
+            start,
+            end,
+            path,
+        });
+    }
+    if segments.is_empty() {
+        return Err(CoreError::AdapterUnavailable);
+    }
+    segments.sort_by_key(|segment| (segment.start, segment.generation, segment.end));
+    for (index, segment) in segments.iter().enumerate() {
+        let length = segment
+            .end
+            .checked_sub(segment.start)
+            .ok_or(CoreError::InvalidSource)?;
+        if length > RUN_SEGMENT_BYTES
+            || segments.len() > 1 && length == 0
+            || index > 0 && segments[index - 1].end != segment.start
+            || index > 0 && segments[index - 1].generation >= segment.generation
+        {
+            return Err(CoreError::InvalidSource);
+        }
+    }
+
+    let retained_start = segments.first().map(|segment| segment.start).unwrap_or(0);
+    let snapshot_end = segments.last().map(|segment| segment.end).unwrap_or(0);
+    let requested = previous
+        .map(|cursor| {
+            cursor
+                .offset
+                .parse::<u64>()
+                .map_err(|_| CoreError::InvalidInput)
+        })
+        .transpose()?
+        .unwrap_or(retained_start);
+    let (mut position, status, mut truncated) = if requested > snapshot_end {
+        (retained_start, ReadStatus::Rotated, true)
+    } else if requested < retained_start {
+        (retained_start, ReadStatus::Truncated, true)
+    } else if previous.is_some() {
+        (requested, ReadStatus::Advanced, false)
+    } else {
+        (requested, ReadStatus::Initial, false)
+    };
+
+    let mut bytes = Vec::with_capacity(
+        usize::try_from(snapshot_end.saturating_sub(position))
+            .unwrap_or(MAX_SOURCE_BYTES)
+            .min(MAX_SOURCE_BYTES),
+    );
+    for segment in &segments {
+        context.check()?;
+        if segment.end <= position || segment.start >= snapshot_end {
+            continue;
+        }
+        if bytes.len() >= MAX_SOURCE_BYTES {
+            truncated = true;
+            break;
+        }
+        let read_start = position.max(segment.start);
+        let read_end = segment.end.min(snapshot_end);
+        let available = MAX_SOURCE_BYTES - bytes.len();
+        let read_length = usize::try_from(read_end - read_start)
+            .map_err(|_| CoreError::OutputLimit)?
+            .min(available);
+        let (mut file, _) =
+            open_filesystem_object(&segment.path, false).map_err(|_| CoreError::Io)?;
+        let metadata = file.metadata().map_err(|_| CoreError::Io)?;
+        if metadata.len() != segment.end - segment.start {
+            return Err(CoreError::Io);
+        }
+        file.seek(SeekFrom::Start(read_start - segment.start))
+            .map_err(|_| CoreError::Io)?;
+        let old_length = bytes.len();
+        bytes.resize(old_length + read_length, 0);
+        if file.read_exact(&mut bytes[old_length..]).is_err() {
+            bytes.truncate(old_length);
+            return Err(CoreError::Io);
+        }
+        position = read_start + read_length as u64;
+        if position < read_end {
+            truncated = true;
+            break;
+        }
+    }
+    if filesystem_identity(&canonical_run, true).map_err(|_| CoreError::Io)? != directory_identity {
+        return Err(CoreError::Io);
+    }
+
+    Ok(ReadResult {
+        bytes,
+        cursor: FileCursor {
+            identity: None,
+            offset: position.to_string(),
+            anchor_hash: None,
+        },
+        status,
+        truncated,
+    })
+}
+
+fn parse_run_segment_name(name: &str, stream: &str) -> Result<Option<(u64, u64, u64)>, CoreError> {
+    let prefix = format!("{stream}.g");
+    let Some(rest) = name.strip_prefix(&prefix) else {
+        return Ok(None);
+    };
+    let Some((generation, range)) = rest.split_once(".o") else {
+        return Err(CoreError::InvalidSource);
+    };
+    let Some(range) = range.strip_suffix(".log") else {
+        return Err(CoreError::InvalidSource);
+    };
+    let Some((start, end)) = range.split_once('-') else {
+        return Err(CoreError::InvalidSource);
+    };
+    if [generation, start, end]
+        .iter()
+        .any(|value| value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return Err(CoreError::InvalidSource);
+    }
+    let generation = generation
+        .parse::<u64>()
+        .map_err(|_| CoreError::InvalidSource)?;
+    let start = start.parse::<u64>().map_err(|_| CoreError::InvalidSource)?;
+    let end = end.parse::<u64>().map_err(|_| CoreError::InvalidSource)?;
+    if end < start {
+        return Err(CoreError::InvalidSource);
+    }
+    Ok(Some((generation, start, end)))
 }
 
 struct ReadResult {
@@ -988,6 +1195,185 @@ mod tests {
         })
         .unwrap()
         .is_none());
+    }
+
+    #[test]
+    fn run_manager_root_identifier_matches_the_release_catalog() {
+        let catalog: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../catalog.json")).unwrap();
+        let identifier = catalog["apps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|app| app["id"] == "run-manager")
+            .and_then(|app| app["identifier"].as_str());
+        assert_eq!(identifier, Some(RUN_MANAGER_IDENTIFIER));
+    }
+
+    #[test]
+    fn run_source_reads_rotation_order_and_resumes_by_logical_offset() {
+        let root = tempfile::tempdir().unwrap();
+        let run_directory = root.path().join("logs/runs/run-1");
+        fs::create_dir_all(&run_directory).unwrap();
+        // Generation 10 sorts before 8 and 9 lexicographically. The adapter
+        // must instead follow the encoded logical offsets.
+        fs::write(run_directory.join("stdout.g8.o0-3.log"), b"old").unwrap();
+        fs::write(run_directory.join("stdout.g9.o3-6.log"), b"mid").unwrap();
+        fs::write(run_directory.join("stdout.g10.o6-9.log"), b"new").unwrap();
+        fs::write(run_directory.join("stderr.g0.o0-5.log"), b"error").unwrap();
+        fs::write(run_directory.join("stdout.manifest.json"), b"ignored").unwrap();
+
+        let registry = OperationRegistry::default();
+        let token = registry.begin("run-read", 1).unwrap();
+        let first = read_run_source_in(
+            root.path(),
+            "run-manager:run-1:stdout",
+            None,
+            &context("run-read", 1, &token, &registry),
+        )
+        .unwrap();
+        assert_eq!(first.bytes, b"oldmidnew");
+        assert_eq!(first.status, ReadStatus::Initial);
+        assert_eq!(first.cursor.offset, "9");
+        assert!(first.cursor.identity.is_none());
+        assert!(first.cursor.anchor_hash.is_none());
+
+        let stderr = read_run_source_in(
+            root.path(),
+            "run-manager:run-1:stderr",
+            None,
+            &context("run-read", 1, &token, &registry),
+        )
+        .unwrap();
+        assert_eq!(stderr.bytes, b"error");
+        assert_eq!(stderr.cursor.offset, "5");
+
+        fs::write(run_directory.join("stdout.g11.o9-13.log"), b"tail").unwrap();
+        let second = read_run_source_in(
+            root.path(),
+            "run-manager:run-1:stdout",
+            Some(&first.cursor),
+            &context("run-read", 1, &token, &registry),
+        )
+        .unwrap();
+        assert_eq!(second.bytes, b"tail");
+        assert_eq!(second.status, ReadStatus::Advanced);
+        assert_eq!(second.cursor.offset, "13");
+    }
+
+    #[test]
+    fn run_source_reports_rotation_and_rejects_malformed_segments() {
+        let root = tempfile::tempdir().unwrap();
+        let run_directory = root.path().join("logs/runs/run-1");
+        fs::create_dir_all(&run_directory).unwrap();
+        fs::write(run_directory.join("stdout.g4.o10-13.log"), b"new").unwrap();
+        let registry = OperationRegistry::default();
+        let token = registry.begin("run-rotation", 1).unwrap();
+        let stale = FileCursor {
+            identity: None,
+            offset: "4".to_string(),
+            anchor_hash: None,
+        };
+        let rotated = read_run_source_in(
+            root.path(),
+            "run-manager:run-1:stdout",
+            Some(&stale),
+            &context("run-rotation", 1, &token, &registry),
+        )
+        .unwrap();
+        assert_eq!(rotated.bytes, b"new");
+        assert_eq!(rotated.status, ReadStatus::Truncated);
+        assert!(rotated.truncated);
+        assert_eq!(rotated.cursor.offset, "13");
+
+        let malformed = run_directory.join("stdout.gbad.o13-14.log");
+        fs::write(&malformed, b"x").unwrap();
+        assert!(matches!(
+            read_run_source_in(
+                root.path(),
+                "run-manager:run-1:stdout",
+                None,
+                &context("run-rotation", 1, &token, &registry),
+            ),
+            Err(CoreError::InvalidSource)
+        ));
+        fs::remove_file(malformed).unwrap();
+        fs::write(run_directory.join("stdout.g5.o12-14.log"), b"xx").unwrap();
+        assert!(matches!(
+            read_run_source_in(
+                root.path(),
+                "run-manager:run-1:stdout",
+                None,
+                &context("run-rotation", 1, &token, &registry),
+            ),
+            Err(CoreError::InvalidSource)
+        ));
+    }
+
+    #[test]
+    fn run_source_enforces_segment_count_and_size_before_reading() {
+        let root = tempfile::tempdir().unwrap();
+        let run_directory = root.path().join("logs/runs/run-1");
+        fs::create_dir_all(&run_directory).unwrap();
+        for index in 0..=MAX_RUN_SEGMENTS {
+            fs::write(
+                run_directory.join(format!("stdout.g{index}.o{index}-{}.log", index + 1)),
+                b"x",
+            )
+            .unwrap();
+        }
+        let registry = OperationRegistry::default();
+        let token = registry.begin("run-limits", 1).unwrap();
+        assert!(matches!(
+            read_run_source_in(
+                root.path(),
+                "run-manager:run-1:stdout",
+                None,
+                &context("run-limits", 1, &token, &registry),
+            ),
+            Err(CoreError::OutputLimit)
+        ));
+
+        let oversized_root = tempfile::tempdir().unwrap();
+        let oversized_directory = oversized_root.path().join("logs/runs/run-1");
+        fs::create_dir_all(&oversized_directory).unwrap();
+        let oversized_length = RUN_SEGMENT_BYTES + 1;
+        File::create(oversized_directory.join(format!("stdout.g0.o0-{oversized_length}.log")))
+            .unwrap()
+            .set_len(oversized_length)
+            .unwrap();
+        assert!(matches!(
+            read_run_source_in(
+                oversized_root.path(),
+                "run-manager:run-1:stdout",
+                None,
+                &context("run-limits", 1, &token, &registry),
+            ),
+            Err(CoreError::InvalidSource)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_source_rejects_a_linked_run_directory() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("logs/runs")).unwrap();
+        fs::write(outside.path().join("stdout.g0.o0-3.log"), b"bad").unwrap();
+        symlink(outside.path(), root.path().join("logs/runs/run-1")).unwrap();
+        let registry = OperationRegistry::default();
+        let token = registry.begin("run-link", 1).unwrap();
+        assert!(matches!(
+            read_run_source_in(
+                root.path(),
+                "run-manager:run-1:stdout",
+                None,
+                &context("run-link", 1, &token, &registry),
+            ),
+            Err(CoreError::AdapterUnavailable)
+        ));
     }
 
     #[test]

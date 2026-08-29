@@ -1,5 +1,9 @@
 # Run Manager / WSL Desktop → Log Lens producer handoffs (#366/#367)
 
+> Follow-up completion: the producer-only boundary documented below remains
+> historical. Completion audit #472 adds the missing fixed, read-only Run
+> rotation reader without changing this PR's handoff payload or argv contract.
+
 ## Overview
 
 This work groups the Run Manager and WSL Desktop Log Lens integrations into one
