@@ -1680,6 +1680,7 @@ dependencies = [
  "libc",
  "walkdir",
  "windows 0.61.3",
+ "wsl",
 ]
 
 [[package]]
@@ -2082,6 +2083,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "windows 0.58.0",
+ "wsl",
 ]
 
 [[package]]

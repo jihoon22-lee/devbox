@@ -18,6 +18,7 @@ import {
   knowledgeDraftHistory,
   isTracking,
   projectAttribution,
+  probeProject,
   redactExisting,
   setAutostart,
   setIdleThreshold,
@@ -37,6 +38,7 @@ import {
   type AttributionResult,
   type AutostartStatus,
   type PrivacyRules,
+  type ProjectProbe,
   type SourceStatus,
   type KnowledgeDraftHistoryEntry,
 } from "./api";
@@ -54,6 +56,11 @@ function fmtDuration(ms: number): string {
 
 function shortApp(app: string): string {
   return Array.from(app.replace(/\.exe$/i, "")).slice(0, 22).join("");
+}
+
+function safeNativeErrorCode(error: unknown): string | null {
+  const value = error instanceof Error ? error.message : String(error ?? "");
+  return /^[a-z][a-z0-9_]{0,63}$/.test(value) ? value : null;
 }
 
 export function toDateStr(d: Date): string {
@@ -350,6 +357,9 @@ export default function App() {
   const [tracking, setTracking] = useState(false);
   const [projects, setProjectsState] = useState<string[]>([]);
   const [projectInput, setProjectInput] = useState("");
+  const [projectSaving, setProjectSaving] = useState(false);
+  const [projectProbePath, setProjectProbePath] = useState<string | null>(null);
+  const [projectProbes, setProjectProbes] = useState<Record<string, ProjectProbe>>({});
   const [idleThreshold, setIdleThresholdState] = useState(300000);
   const [privacy, setPrivacy] = useState<PrivacyRules>({ excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false });
   const [autoStart, setAutoStart] = useState<AutostartStatus | null>(null);
@@ -369,6 +379,7 @@ export default function App() {
   const digestRequestRef = useRef(0);
   const loadRequestRef = useRef(0);
   const historyRequestRef = useRef(0);
+  const projectSettingsRequestRef = useRef(0);
   const appMountedRef = useRef(true);
   const dateContextFocusRequestRef = useRef(0);
   const exportDialogRef = useRef<HTMLElement>(null);
@@ -781,6 +792,8 @@ export default function App() {
   }, []);
 
   const loadSettings = useCallback(async () => {
+    const projectRequest = projectSettingsRequestRef.current + 1;
+    projectSettingsRequestRef.current = projectRequest;
     const historyRequest = historyRequestRef.current + 1;
     historyRequestRef.current = historyRequest;
     try {
@@ -793,7 +806,9 @@ export default function App() {
         knowledgeDraftHistory(),
       ]);
       if (!appMountedRef.current) return;
-      if (pr.status === "fulfilled") setProjectsState(pr.value);
+      if (pr.status === "fulfilled" && projectSettingsRequestRef.current === projectRequest) {
+        setProjectsState(pr.value);
+      }
       if (idle.status === "fulfilled") setIdleThresholdState(idle.value);
       if (privacyRules.status === "fulfilled") setPrivacy(privacyRules.value);
       if (ast.status === "fulfilled") setAutoStart(ast.value);
@@ -875,11 +890,12 @@ export default function App() {
         setStats(st);
         setTracking(tr);
       }
-    } catch {
+    } catch (reason) {
       if (loadRequestRef.current === request) {
+        const code = safeNativeErrorCode(reason);
         setError(view === "week" || view === "month"
-          ? "local digest를 불러오지 못했습니다."
-          : "Life Log 데이터를 불러오지 못했습니다.");
+          ? `local digest를 불러오지 못했습니다.${code ? ` (${code})` : ""}`
+          : `Life Log 데이터를 불러오지 못했습니다.${code ? ` (${code})` : ""}`);
       }
     } finally {
       if (loadRequestRef.current === request) setLoading(false);
@@ -888,8 +904,14 @@ export default function App() {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  // Settings are app state, not date/view state. Reloading them on every
+  // navigation can race with an acknowledged save and overwrite the
+  // authoritative rows with an older request.
+  useEffect(() => {
     void loadSettings();
-  }, [load, loadSettings]);
+  }, [loadSettings]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -919,19 +941,65 @@ export default function App() {
     }
   };
 
-  const addProject = () => {
+  const addProject = async () => {
     const p = projectInput.trim();
-    if (!p) return;
+    if (!p || projectSaving) return;
     const next = projects.includes(p) ? projects : [...projects, p];
-    setProjectsState(next);
-    setProjectInput("");
-    void setProjects(next);
+    setProjectSaving(true);
+    setError(null);
+    try {
+      const saved = await setProjects(next);
+      projectSettingsRequestRef.current += 1;
+      setProjectsState(saved);
+      setProjectInput("");
+      setNotice("Git 프로젝트 경로를 저장했습니다.");
+    } catch (reason) {
+      const code = safeNativeErrorCode(reason);
+      setError(`Git 프로젝트 경로를 저장하지 못했습니다.${code ? ` (${code})` : ""}`);
+    } finally {
+      setProjectSaving(false);
+    }
   };
 
-  const removeProject = (p: string) => {
+  const removeProject = async (p: string) => {
+    if (projectSaving) return;
     const next = projects.filter((x) => x !== p);
-    setProjectsState(next);
-    void setProjects(next);
+    setProjectSaving(true);
+    setError(null);
+    try {
+      const saved = await setProjects(next);
+      projectSettingsRequestRef.current += 1;
+      setProjectsState(saved);
+      setProjectProbes((current) => {
+        const copy = { ...current };
+        delete copy[p];
+        return copy;
+      });
+      setNotice("Git 프로젝트 경로를 제거했습니다.");
+    } catch (reason) {
+      const code = safeNativeErrorCode(reason);
+      setError(`Git 프로젝트 경로를 제거하지 못했습니다.${code ? ` (${code})` : ""}`);
+    } finally {
+      setProjectSaving(false);
+    }
+  };
+
+  const checkProject = async (path: string) => {
+    if (projectProbePath) return;
+    setProjectProbePath(path);
+    setError(null);
+    try {
+      const result = await probeProject(path);
+      setProjectProbes((current) => ({ ...current, [path]: result }));
+    } catch (reason) {
+      const code = safeNativeErrorCode(reason);
+      setProjectProbes((current) => ({
+        ...current,
+        [path]: { path, target: "windows", repository: false, errorCode: code ?? "project_probe_failed" },
+      }));
+    } finally {
+      setProjectProbePath(null);
+    }
   };
 
   const shift = (delta: number) => {
@@ -1121,18 +1189,35 @@ export default function App() {
             <h2>Git project paths</h2>
             {projects.map((p) => (
               <div key={p} className="git-row">
-                <span className="mono">{p}</span>
-                <button className="mini" onClick={() => removeProject(p)}>
-                  ✕
-                </button>
+                <div className="git-project-details">
+                  <span className="mono">{p}</span>
+                  {projectProbes[p] && (
+                    <span className={projectProbes[p].repository ? "project-probe-ok" : "project-probe-error"}>
+                      {projectProbes[p].repository
+                        ? `Git 저장소 확인됨 · ${projectProbes[p].target === "wsl" ? "WSL" : "Windows"}`
+                        : `확인 실패 · ${projectProbes[p].errorCode ?? "git_failed"}`}
+                    </span>
+                  )}
+                </div>
+                <div className="git-project-actions">
+                  <button className="mini" onClick={() => void checkProject(p)} disabled={projectProbePath !== null || projectSaving}>
+                    {projectProbePath === p ? "확인 중…" : "연결 확인"}
+                  </button>
+                  <button className="mini" onClick={() => void removeProject(p)} disabled={projectSaving} aria-label={`${p} 제거`}>
+                    ✕
+                  </button>
+                </div>
               </div>
             ))}
             <div className="row">
-              <input placeholder="C:\projects\devbox" value={projectInput} onChange={(e) => setProjectInput(e.currentTarget.value)} onKeyDown={(e) => e.key === "Enter" && addProject()} />
-              <button className="btn" onClick={addProject}>
-                Add
+              <input placeholder="C:\projects\devbox 또는 \\wsl$\Ubuntu\home\user\project" value={projectInput} onChange={(e) => setProjectInput(e.currentTarget.value)} onKeyDown={(e) => {
+                if (e.key === "Enter") void addProject();
+              }} disabled={projectSaving} />
+              <button className="btn" onClick={() => void addProject()} disabled={projectSaving || !projectInput.trim()}>
+                {projectSaving ? "저장 중…" : "추가"}
               </button>
             </div>
+            <div className="dim">연결 확인은 중지된 WSL 배포판을 시작할 수 있습니다. 경로 저장만으로는 배포판을 시작하지 않습니다.</div>
             <div className="dim">활동 추적은 Life Log에 통합되어 있으며, 세션은 자동으로 기록됩니다.</div>
           </section>
 

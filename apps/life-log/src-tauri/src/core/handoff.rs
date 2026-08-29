@@ -512,27 +512,7 @@ fn contains_secret_marker(value: &str) -> bool {
 }
 
 fn safe_source_error(value: &str) -> bool {
-    matches!(
-        value,
-        "no_safe_project_paths"
-            | "snapshot_unavailable"
-            | "snapshot_invalid"
-            | "snapshot_schema_unsupported"
-            | "snapshot_payload_invalid"
-            | "snapshot_changed_during_read"
-            | "snapshot_stale"
-            | "git_invalid_arguments"
-            | "git_spawn_failed"
-            | "git_stdout_unavailable"
-            | "git_wait_failed"
-            | "git_timeout"
-            | "git_reader_failed"
-            | "git_output_read_failed"
-            | "git_failed"
-            | "git_output_invalid_utf8"
-            | "git_output_too_large"
-            | "git_output_invalid"
-    )
+    crate::core::error_codes::is_source(value)
 }
 
 fn valid_semver(value: &str) -> bool {

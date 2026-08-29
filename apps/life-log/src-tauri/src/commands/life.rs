@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 const KNOWLEDGE_PRODUCER: &str = "knowledge-base";
 const KNOWLEDGE_SNAPSHOT_VERSION: u32 = 1;
@@ -43,6 +44,15 @@ pub struct SourceStatus {
     pub explanation: String,
     pub error: Option<String>,
     pub knowledge_activity: Option<KnowledgeActivity>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectProbe {
+    pub path: String,
+    pub target: String,
+    pub repository: bool,
+    pub error_code: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -429,11 +439,55 @@ fn valid_note_id(note_id: &str) -> bool {
 pub fn set_projects(
     state: tauri::State<'_, Arc<AppState>>,
     paths: Vec<String>,
-) -> Result<(), String> {
-    crate::core::export::validate_project_settings(&paths)?;
-    db::set_setting(&state.db.lock().unwrap(), "projects", &paths.join("\n"));
+) -> Result<Vec<String>, String> {
+    let paths = crate::core::export::normalize_project_settings(&paths)?;
+    let conn = state
+        .db
+        .lock()
+        .map_err(|_| "project_settings_unavailable".to_string())?;
+    db::set_setting(&conn, "projects", &paths.join("\n"));
+    drop(conn);
     crate::integration::request_snapshot_write(state.inner().clone());
-    Ok(())
+    Ok(paths)
+}
+
+/// Explicit connection check from Settings. Merely displaying or saving a
+/// WSL target never starts its distro; this action may start it through
+/// `wsl.exe`, so the frontend labels it accordingly.
+#[tauri::command]
+pub async fn probe_project(path: String) -> Result<ProjectProbe, String> {
+    let normalized = crate::core::export::normalize_project_settings(&[path])?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "project_path_invalid".to_string())?;
+    let target = devbox_git::GitTarget::from_project_path(&normalized)?;
+    let target_label = if matches!(&target, devbox_git::GitTarget::Wsl { .. }) {
+        "wsl"
+    } else {
+        "windows"
+    }
+    .to_string();
+    let result = tokio::task::spawn_blocking(move || {
+        let output = devbox_git::run_bounded_target(
+            &["--no-pager", "rev-parse", "--is-inside-work-tree"],
+            &target,
+            Duration::from_secs(2),
+            128,
+        );
+        match output {
+            Ok(output) if output.trim() == "true" => (true, None),
+            Ok(_) => (false, Some("git_output_invalid".to_string())),
+            Err(code) => (false, Some(code)),
+        }
+    })
+    .await
+    .map_err(|_| "project_probe_failed".to_string())?;
+    Ok(ProjectProbe {
+        path: normalized,
+        target: target_label,
+        repository: result.0,
+        error_code: result.1,
+    })
 }
 
 #[tauri::command]

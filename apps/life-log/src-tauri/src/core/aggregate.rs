@@ -27,7 +27,15 @@ async fn git_commit_count(path: &str, since: i64, until: i64) -> u32 {
     let since = format!("--since=@{since}");
     let until = format!("--until=@{until}");
     let args = ["log", since.as_str(), until.as_str(), "--pretty=oneline"];
-    match devbox_git::run(&args, path) {
+    let result = devbox_git::GitTarget::from_project_path(path).and_then(|target| {
+        devbox_git::run_bounded_target(
+            &args,
+            &target,
+            std::time::Duration::from_secs(2),
+            256 * 1024,
+        )
+    });
+    match result {
         Ok(out) => out.lines().count() as u32,
         Err(_) => 0,
     }

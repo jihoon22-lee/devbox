@@ -1,5 +1,82 @@
 use crate::WslError;
 
+const MAX_WSL_PROJECT_PATH_BYTES: usize = 4_096;
+
+/// A Windows UNC path that addresses a project inside one WSL distribution.
+///
+/// The distro name is kept as supplied for `wsl.exe -d`, while the Linux path
+/// preserves its case exactly. `\\wsl$` and `\\wsl.localhost` are transport
+/// aliases only and never become part of the Linux path identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WslUncPath {
+    distro: String,
+    linux_path: String,
+}
+
+impl WslUncPath {
+    pub fn distro(&self) -> &str {
+        &self.distro
+    }
+
+    pub fn linux_path(&self) -> &str {
+        &self.linux_path
+    }
+
+    pub fn identity(&self) -> String {
+        format!(
+            "wsl:{}:{}",
+            self.distro.to_ascii_lowercase(),
+            self.linux_path.trim_start_matches('/')
+        )
+    }
+}
+
+/// Parse `\\wsl$\<distro>\...`, `//wsl$/<distro>/...`, and the
+/// `wsl.localhost` alias without touching the filesystem or starting a distro.
+/// Ordinary UNC paths return `Ok(None)` so callers can keep their native
+/// Windows handling. A path that names a WSL server but has an unsafe/missing
+/// distro or Linux tail fails closed.
+pub fn parse_wsl_unc_path(raw: &str) -> Result<Option<WslUncPath>, WslError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.len() > MAX_WSL_PROJECT_PATH_BYTES {
+        return Ok(None);
+    }
+    let normalized = trimmed.replace('\\', "/");
+    let Some(rest) = normalized.strip_prefix("//") else {
+        return Ok(None);
+    };
+    let mut parts = rest.split('/');
+    let server = parts.next().unwrap_or_default();
+    if !server.eq_ignore_ascii_case("wsl$") && !server.eq_ignore_ascii_case("wsl.localhost") {
+        return Ok(None);
+    }
+
+    let distro = parts.next().unwrap_or_default().trim();
+    crate::distro::validate_distro_name(distro)?;
+    let components = parts
+        .filter(|component| !component.is_empty())
+        .collect::<Vec<_>>();
+    if components.is_empty()
+        || components.iter().any(|component| {
+            matches!(*component, "." | "..") || component.chars().any(char::is_control)
+        })
+    {
+        return Err(WslError::InvalidPath(
+            "WSL UNC 경로에는 안전한 Linux project 경로가 필요하다".into(),
+        ));
+    }
+    let linux_path = format!("/{}", components.join("/"));
+    if linux_path.len() > MAX_WSL_PROJECT_PATH_BYTES {
+        return Err(WslError::InvalidPath(
+            "WSL project 경로가 크기 제한을 초과한다".into(),
+        ));
+    }
+    Ok(Some(WslUncPath {
+        distro: distro.to_owned(),
+        linux_path,
+    }))
+}
+
 /// Windows 드라이브 경로를 WSL 경로로 정규화한다 (프로세스 실행 없이).
 ///
 /// `E:\a\b` → `/mnt/e/a/b`, `E:/a\b/` → `/mnt/e/a/b`.
@@ -74,6 +151,18 @@ pub fn canonical_project_key(
         return normalize_windows_project_key(w);
     }
     if let Some((distro, p)) = wsl {
+        crate::distro::validate_distro_name(distro)?;
+        if !p.trim().starts_with('/')
+            || p.len() > MAX_WSL_PROJECT_PATH_BYTES
+            || p.chars().any(char::is_control)
+            || p.trim()
+                .split('/')
+                .any(|component| matches!(component, "." | ".."))
+        {
+            return Err(WslError::InvalidPath(
+                "WSL project 경로가 올바르지 않다".into(),
+            ));
+        }
         if let Some(rest) = p.trim().strip_prefix("/mnt/") {
             let drive = rest.chars().next().unwrap_or_default();
             if drive.is_ascii_alphabetic() {
@@ -85,7 +174,10 @@ pub fn canonical_project_key(
             }
         }
         let normalized = p.trim().trim_matches('/').to_owned();
-        return Ok(format!("wsl:{}:{normalized}", distro.trim()));
+        return Ok(format!(
+            "wsl:{}:{normalized}",
+            distro.trim().to_ascii_lowercase()
+        ));
     }
     Err(WslError::InvalidPath(
         "Windows 경로 또는 WSL 경로가 필요하다".into(),
@@ -110,6 +202,9 @@ fn normalize_windows_project_key(path: &str) -> Result<String, WslError> {
 }
 
 fn normalize_unc_project_key(path: &str) -> Result<String, WslError> {
+    if let Some(wsl) = parse_wsl_unc_path(path)? {
+        return Ok(wsl.identity());
+    }
     let normalized = path.replace('\\', "/");
     let parts = normalized
         .strip_prefix("//")
@@ -121,13 +216,6 @@ fn normalize_unc_project_key(path: &str) -> Result<String, WslError> {
         return Err(WslError::InvalidPath(
             "UNC 경로에는 server와 share가 필요하다".into(),
         ));
-    }
-
-    let server = parts[0];
-    if server.eq_ignore_ascii_case("wsl$") || server.eq_ignore_ascii_case("wsl.localhost") {
-        let distro = parts[1];
-        let tail = parts[2..].join("/");
-        return Ok(format!("wsl:{distro}:{tail}"));
     }
 
     Ok(format!("unc:{}", parts.join("/").to_ascii_lowercase()))
@@ -227,6 +315,38 @@ mod tests {
         .unwrap();
         let profile = canonical_project_key(None, Some(("Ubuntu", "/home/jihoon/Devbox"))).unwrap();
         assert_eq!(unc, profile);
+        assert_eq!(unc, "wsl:ubuntu:home/jihoon/Devbox");
+    }
+
+    #[test]
+    fn parses_wsl_unc_aliases_and_preserves_linux_case() {
+        let backslash = parse_wsl_unc_path("\\\\wsl$\\Ubuntu\\home\\jihoon\\DevBox\\")
+            .unwrap()
+            .unwrap();
+        let slash = parse_wsl_unc_path("//wsl.localhost/ubuntu/home/jihoon/DevBox")
+            .unwrap()
+            .unwrap();
+        assert_eq!(backslash.distro(), "Ubuntu");
+        assert_eq!(backslash.linux_path(), "/home/jihoon/DevBox");
+        assert_eq!(backslash.identity(), slash.identity());
+        assert_ne!(
+            backslash.identity(),
+            parse_wsl_unc_path("//wsl$/Ubuntu/home/jihoon/devbox")
+                .unwrap()
+                .unwrap()
+                .identity()
+        );
+    }
+
+    #[test]
+    fn distinguishes_ordinary_unc_and_rejects_unsafe_wsl_unc() {
+        assert_eq!(
+            parse_wsl_unc_path("\\\\server\\share\\project").unwrap(),
+            None
+        );
+        assert!(parse_wsl_unc_path("\\\\wsl$\\Ubuntu").is_err());
+        assert!(parse_wsl_unc_path("//wsl$/Ubuntu/home/../secret").is_err());
+        assert!(parse_wsl_unc_path("//wsl$/--help/home/project").is_err());
     }
 
     #[test]
@@ -249,7 +369,7 @@ mod tests {
     fn canonical_key_distro_scoped_for_non_mnt() {
         assert_eq!(
             canonical_project_key(None, Some(("Ubuntu", "/home/user/proj/"))).unwrap(),
-            "wsl:Ubuntu:home/user/proj"
+            "wsl:ubuntu:home/user/proj"
         );
     }
 
