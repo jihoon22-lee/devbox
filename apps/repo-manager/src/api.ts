@@ -79,6 +79,88 @@ export interface DependencyReport {
 }
 
 export const DEPENDENCY_LENS_ERROR = "Dependency Lens 분석을 완료하지 못했습니다.";
+export const DEPENDENCY_ENRICHMENT_ERROR = "Dependency Lens 원격 정보를 불러오지 못했습니다.";
+export const DEPENDENCY_ENRICHMENT_BUSY = "다른 Dependency Lens 분석 또는 원격 조회가 진행 중입니다.";
+export const DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED = "전송 내용을 다시 검토해 주세요.";
+
+export type EnrichmentService = "osv" | "depsDev";
+export type EnrichmentValueState = "fresh" | "cached" | "stale" | "failed" | "notRequested";
+
+export interface EnrichmentSelection {
+  osv: boolean;
+  depsDev: boolean;
+}
+
+export interface EnrichmentCoordinatePreview {
+  ecosystem: string;
+  name: string;
+  version: string;
+  direct: boolean;
+  localPackageCount: number;
+}
+
+export interface EnrichmentServicePreview {
+  service: EnrichmentService;
+  host: string;
+  transmitted: EnrichmentCoordinatePreview[];
+  cachedCount: number;
+  staleFallbackCount: number;
+  omittedCount: number;
+  requestCount: number;
+}
+
+export interface DependencyEnrichmentPreview {
+  token: string;
+  revision: string;
+  expiresAtMs: number;
+  services: EnrichmentServicePreview[];
+  localPackageCount: number;
+}
+
+export interface OsvEnrichmentValue {
+  state: EnrichmentValueState;
+  fetchedAtMs: number | null;
+  ageMs: number | null;
+  advisoryIds: string[];
+  truncated: boolean;
+}
+
+export interface DepsDevEnrichmentValue {
+  state: EnrichmentValueState;
+  fetchedAtMs: number | null;
+  ageMs: number | null;
+  licenses: string[];
+  defaultVersion: string | null;
+  deprecated: boolean;
+  advisoryIds: string[];
+  versionFound: boolean;
+  packageFound: boolean;
+}
+
+export interface DependencyEnrichmentEntry {
+  packageIds: string[];
+  osv: OsvEnrichmentValue;
+  depsDev: DepsDevEnrichmentValue;
+}
+
+export interface EnrichmentServiceSummary {
+  service: EnrichmentService;
+  targetCount: number;
+  transmittedCount: number;
+  cachedCount: number;
+  staleCount: number;
+  failedCount: number;
+  omittedCount: number;
+}
+
+export interface DependencyEnrichmentReport {
+  revision: string;
+  completedAtMs: number;
+  localAuthoritative: boolean;
+  cachePersisted: boolean;
+  entries: DependencyEnrichmentEntry[];
+  services: EnrichmentServiceSummary[];
+}
 
 export type GitSafetyIssue =
   | "dirty"
@@ -308,6 +390,93 @@ const MOCK_DEPENDENCY_REPORT: DependencyReport = {
   invalidCount: 0,
   truncated: false,
   summaryPublished: true,
+};
+
+const MOCK_ENRICHMENT_PREVIEW: DependencyEnrichmentPreview = {
+  token: "b".repeat(64),
+  revision: MOCK_DEPENDENCY_REPORT.revision,
+  expiresAtMs: Date.now() + 5 * 60 * 1_000,
+  localPackageCount: MOCK_DEPENDENCY_REPORT.packageCount,
+  services: [
+    {
+      service: "osv",
+      host: "api.osv.dev",
+      transmitted: [{
+        ecosystem: "crates.io",
+        name: "serde",
+        version: "1.0.0",
+        direct: true,
+        localPackageCount: 1,
+      }],
+      cachedCount: 0,
+      staleFallbackCount: 0,
+      omittedCount: 0,
+      requestCount: 1,
+    },
+    {
+      service: "depsDev",
+      host: "api.deps.dev",
+      transmitted: [{
+        ecosystem: "CARGO",
+        name: "serde",
+        version: "1.0.0",
+        direct: true,
+        localPackageCount: 1,
+      }],
+      cachedCount: 0,
+      staleFallbackCount: 0,
+      omittedCount: 0,
+      requestCount: 2,
+    },
+  ],
+};
+
+const MOCK_ENRICHMENT_REPORT: DependencyEnrichmentReport = {
+  revision: MOCK_DEPENDENCY_REPORT.revision,
+  completedAtMs: Date.now(),
+  localAuthoritative: true,
+  cachePersisted: true,
+  entries: [{
+    packageIds: ["cargo:serde@1.0.0"],
+    osv: {
+      state: "fresh",
+      fetchedAtMs: Date.now(),
+      ageMs: 0,
+      advisoryIds: [],
+      truncated: false,
+    },
+    depsDev: {
+      state: "fresh",
+      fetchedAtMs: Date.now(),
+      ageMs: 0,
+      licenses: ["MIT OR Apache-2.0"],
+      defaultVersion: "1.0.0",
+      deprecated: false,
+      advisoryIds: [],
+      versionFound: true,
+      packageFound: true,
+    },
+  }],
+  services: [
+    {
+      service: "osv",
+      targetCount: 1,
+      transmittedCount: 1,
+      cachedCount: 0,
+      staleCount: 0,
+      failedCount: 0,
+      omittedCount: 0,
+    },
+    {
+      service: "depsDev",
+      targetCount: 1,
+      transmittedCount: 1,
+      cachedCount: 0,
+      staleCount: 0,
+      failedCount: 0,
+      omittedCount: 0,
+    },
+  ],
 };
 
 const MOCK_CATALOG_APPS = catalogJson.apps as Array<{
@@ -553,6 +722,54 @@ export function dependencyInventory(path: string): Promise<DependencyReport> {
     });
   }
   return invoke<DependencyReport>("dependency_inventory", { request: { path } });
+}
+
+export function dependencyEnrichmentPreview(
+  path: string,
+  services: EnrichmentSelection,
+  forceRefresh: boolean,
+): Promise<DependencyEnrichmentPreview> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      ...MOCK_ENRICHMENT_PREVIEW,
+      expiresAtMs: Date.now() + 5 * 60 * 1_000,
+      services: MOCK_ENRICHMENT_PREVIEW.services
+        .filter((service) => service.service === "osv" ? services.osv : services.depsDev)
+        .map((service) => ({
+          ...service,
+          transmitted: service.transmitted.map((coordinate) => ({ ...coordinate })),
+          cachedCount: forceRefresh ? 0 : service.cachedCount,
+        })),
+    });
+  }
+  return invoke<DependencyEnrichmentPreview>("dependency_enrichment_preview", {
+    request: { path, services, forceRefresh },
+  });
+}
+
+export function dependencyEnrichmentExecute(
+  path: string,
+  previewToken: string,
+): Promise<DependencyEnrichmentReport> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      ...MOCK_ENRICHMENT_REPORT,
+      completedAtMs: Date.now(),
+      entries: MOCK_ENRICHMENT_REPORT.entries.map((entry) => ({
+        packageIds: [...entry.packageIds],
+        osv: { ...entry.osv, advisoryIds: [...entry.osv.advisoryIds] },
+        depsDev: {
+          ...entry.depsDev,
+          licenses: [...entry.depsDev.licenses],
+          advisoryIds: [...entry.depsDev.advisoryIds],
+        },
+      })),
+      services: MOCK_ENRICHMENT_REPORT.services.map((service) => ({ ...service })),
+    });
+  }
+  return invoke<DependencyEnrichmentReport>("dependency_enrichment_execute", {
+    request: { path, previewToken },
+  });
 }
 
 export function repoChanges(path: string): Promise<ChangeEntry[]> {

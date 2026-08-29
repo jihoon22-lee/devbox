@@ -1,4 +1,5 @@
 pub mod cleanup;
+pub mod dependency_enrichment;
 pub mod dependency_lens;
 pub mod git;
 pub mod git_safety;

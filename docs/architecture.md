@@ -819,8 +819,11 @@ Workbench의 Dependencies 화면은 기존 app/distro/path/port/service health�
 read-only aggregate를 `Packages`로 구분한다. Workbench는 profile canonical identity로 정확한
 entry만 찾고 전체 versioned view를 fail-closed 검증하며, per-entry scan 시각으로
 fresh(24시간 이하)·stale(7일 이하)·expired를 판정한다. missing과 corrupt를 구분하고 Repo Manager의
-DB나 repository를 직접 읽지 않으며 package manager도 실행하지 않는다. advisory/license/latest
-version network enrichment와 update/install mutation은 이 offline foundation의 범위 밖이다.
+DB나 repository를 직접 읽지 않으며 package manager도 실행하지 않는다. Repo Manager 상세
+패널은 offline 분석과 분리된 사용자 검토·승인 뒤에만 OSV/deps.dev advisory·license·deprecation·
+default-version metadata를 bounded 조회할 수 있다. 이 원격 결과는 Repo Manager에만 남고
+`dependency-summary/v1`에는 들어가지 않으므로 Workbench aggregate와 update/install 경계는
+계속 offline·read-only다.
 
 filename/content FTS projection은 filter 값을 모두 SQLite parameter로 결합한다. source는 임의
 경로가 아닌 등록 `roots.id`이며 중첩 root는 가장 깊은 root가 소유한다. root id는 삭제 뒤
