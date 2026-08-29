@@ -42,6 +42,8 @@ pub fn run() {
             commands::repo_commit_detail,
             commands::repo_diff,
             commands::dependency_inventory,
+            commands::dependency_enrichment::dependency_enrichment_preview,
+            commands::dependency_enrichment::dependency_enrichment_execute,
             commands::repo_changes,
             commands::repo_stage,
             commands::repo_unstage,

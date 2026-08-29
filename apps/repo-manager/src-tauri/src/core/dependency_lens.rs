@@ -1706,6 +1706,18 @@ fn checked_version_text(value: &str) -> Result<String, ParseFailure> {
     Ok(value.to_string())
 }
 
+/// Reuse the lockfile parser's package-coordinate policy at the remote
+/// enrichment boundary without exposing the parser's internal error type.
+pub(super) fn validated_package_name(value: &str) -> Option<String> {
+    checked_package_name(value).ok()
+}
+
+/// Remote metadata may suggest another version. It must satisfy the same
+/// bounded, URI-rejecting policy as a version accepted from a local lockfile.
+pub(super) fn validated_version_text(value: &str) -> Option<String> {
+    checked_version_text(value).ok()
+}
+
 fn node_id(ecosystem: DependencyEcosystem, name: &str, version: &str) -> String {
     format!("{}:{name}@{version}", ecosystem.key())
 }

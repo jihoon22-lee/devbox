@@ -8,10 +8,11 @@
 - **저장소 탐색** — root 아래 Git repository 중복 없이 나열 (canonical identity)
 - **앱 간 repository 선택** — catalog `Path`를 cold start와 실행 중 재호출에서 수신해 기존 항목을 선택하거나, 검증된 미등록 경로를 저장 전 초안으로 표시
 - **상태 목록** — branch·dirty·ahead/behind·worktree
-- **Dependency Lens (#484, offline foundation)** — 선택한 repository의 Cargo/pnpm/npm/uv
-  lockfile을 로컬에서만 해석해 직접·전이 package, graph edge, 중복 version과
-  missing/stale/invalid 상태를 상세 패널에 표시한다. Gradle은 감지만 하고 현재 형식
-  미지원으로 명확히 구분한다.
+- **Dependency Lens (#484, offline + opt-in enrichment)** — 선택한 repository의
+  Cargo/pnpm/npm/uv lockfile을 먼저 로컬에서만 해석해 직접·전이 package, graph edge,
+  중복 version과 missing/stale/invalid 상태를 표시한다. 사용자가 전송 내용을 검토하고
+  별도로 승인한 경우에만 OSV/deps.dev의 advisory·license·deprecation·default-version
+  보강 정보를 조회한다. Gradle은 감지만 하고 현재 형식 미지원으로 명확히 구분한다.
 - **worktree 생성** — 새 작업 트리 생성
 - **열기** — catalog에서 `path` capability와 실제 설치 executable이 모두 확인된 앱만 자동 노출하고, `workspace`도 받는 앱에는 더 구체적인 `Workspace` payload를 전달한다 (설계: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](../../docs/superpowers/specs/2026-08-17-app-interop-design.md))
 - **repository 컨텍스트 메뉴** — 다른 앱으로 열기, worktree 생성 입력으로 이동, backend에서
@@ -67,12 +68,13 @@
 - scan과 각 panel은 mounted 상태와 monotonically increasing request sequence를 함께 확인해
   늦은 응답이 새 root/repository 상태를 덮지 못하게 한다. backend와 UI는 raw path, Git stderr,
   remote URL, credential, commit message를 오류에 반향하지 않고 작업별 고정 오류만 표시한다.
-- Dependency Lens는 사용자가 선택한 repository에서 명시적으로 분석을 눌렀을 때만 동작한다.
-  Cargo/pnpm/npm/uv/Gradle, shell, build script를 실행하거나 registry/network를 조회하지 않는다.
-  depth 8, 방문 directory 10,000개·directory당 entry 10,000개, 입력 파일 256개,
-  파일당 4 MiB, 전체 24 MiB, package 4,096개, edge 16,384개의 상한과
-  process-wide single-flight를 적용하고 nested Git repository와
-  symlink/reparse point를 따라가지 않는다.
+- Dependency Lens의 기본 분석은 사용자가 선택한 repository에서 명시적으로 분석을 눌렀을
+  때만 동작한다. Cargo/pnpm/npm/uv/Gradle, shell, build script를 실행하거나 registry/network를
+  조회하지 않는다. 원격 보강은 별도 전송 검토와 승인 뒤에만 실행되며, path·repository ID·
+  lockfile·graph·source/integrity·credential은 전송하지 않는다. 기본 분석에는 depth 8,
+  방문 directory 10,000개·directory당 entry 10,000개, 입력 파일 256개, 파일당 4 MiB,
+  전체 24 MiB, package 4,096개, edge 16,384개의 상한과 process-wide single-flight를
+  적용하고 nested Git repository와 symlink/reparse point를 따라가지 않는다.
 
 ## Dependency Lens offline 계약 (#484)
 
@@ -89,10 +91,57 @@ lockfile 진단 및 ecosystem별 개수만 원자적으로 게시한다. 최대 
 보존 상한을 적용하며 기존 다른 view를 유지한다. 게시 실패는 상세 로컬 결과를 숨기지 않고 UI에
 별도 경고로 표시한다. Workbench는 이 versioned aggregate만 read-only로 소비한다.
 
-현재 단계는 offline foundation이다. advisory/license/latest-version 같은 registry·network
-enrichment와 자동 update/install은 별도 review/rollback 경계로 남긴다.
+offline 분석 결과는 계속 로컬 그래프와 Workbench aggregate의 기준이다. advisory/license/
+deprecation/default-version 보강은 아래의 별도 review/rollback 경계를 따르며 자동
+update/install은 제공하지 않는다.
 최종 v0.6.0 release preparation에서 Repo Manager는 사용자 기능 추가에 따른 minor version
 bump 대상이며, 기능 PR에서는 Cargo/package/Tauri 3자 버전을 기존 값으로 유지한다.
+
+## Dependency Lens remote enrichment 계약 (#484)
+
+원격 보강은 다음 두 단계의 명시적 사용자 흐름이다.
+
+1. 먼저 기존 offline 분석을 실행하고 OSV, deps.dev 또는 둘 다를 선택한 뒤 **전송 내용
+   검토**를 누른다. 이 단계에서는 network 호출 없이 서비스별 host, 정확한 전송 좌표,
+   cache hit/stale fallback, 생략 개수와 요청 수를 보여 준다.
+2. 사용자가 **검토한 정보 보내기**를 눌러야 5분짜리 일회성 preview token이 소비된다.
+   native가 repository identity와 lock revision을 다시 검사하고, 검토 당시 계획된
+   좌표와 서비스만 조회한다. repository·분석·서비스 선택이 바뀌거나 token이 만료되면
+   새 preview가 필요하다.
+
+전송 좌표와 결과 범위는 다음과 같다.
+
+| Service | Mapping and cap | Metadata |
+|---|---|---|
+| OSV | Cargo→`crates.io`, pnpm/npm→`npm`, Python/uv→`PyPI`; 최대 256개 unique resolved coordinate | bounded advisory IDs와 OSV pagination-truncated 상태 |
+| deps.dev | Cargo→`CARGO`, pnpm/npm→`NPM`, Python/uv→`PYPI`; 최대 48개 unique direct coordinate | licenses, package-manager default version, deprecation, direct advisory IDs |
+
+고정 endpoint는 OSV `https://api.osv.dev/v1/querybatch`와 deps.dev stable v3
+`https://api.deps.dev/v3/`의 version/package lookup이다. production native client는 HTTPS만
+허용하고 redirect와 proxy를 사용하지 않으며, IPC가 URL·header·service credential/auth
+token·query·body·proxy를 지정할 수 없다. 별도의 opaque preview token은 저장된 일회성 검토
+계획만 식별한다. 요청 timeout은 4초이고 deps.dev 조회는 좌표 4개 단위, 최대 8개 GET
+동시성으로 제한한다. 응답 body는 OSV 4 MiB, deps.dev version 512 KiB, package 2 MiB
+상한을 넘기기 전에 폐기한다.
+
+cache는 앱 전용 로컬 데이터의
+`%LOCALAPPDATA%/devbox/repo-manager/dependency-enrichment-v1.json`에 저장하며,
+normalized remote coordinate의 SHA-256 key만 보존한다. fresh 24시간 결과는 재사용하고,
+실패 시 최대 7일까지 stale 결과를 `stale` 상태로 명시한다. cache는 최대 2,048개 좌표와
+4 MiB를 유지하고 오래된 항목부터 정리한다. malformed/oversized/unknown-schema/
+symlink/reparse-point cache는 fail-closed하여 cache miss로 취급하고, 쓰기는 bounded
+serialization과 atomic replacement를 사용한다.
+
+network, 부분 응답, cache read/write 또는 stale fallback 문제는 local Dependency Lens
+그래프를 지우거나 무효화하지 않는다. 결과에는 좌표별 `fresh`, `cached`, `stale`, `failed`,
+`notRequested` 상태를 유지하고 renderer에는 fixed error만 전달하며 response body, URL,
+header, server text와 native error chain은 반향하지 않는다. license는 법률 자문이 아닌
+정보용이고 default version은 안전한 upgrade 보장이 아니다. 원격 결과는 Repo Manager에만
+남고 `dependency-summary/v1`에는 포함되지 않아 Workbench는 계속 offline aggregate만 읽는다.
+
+공식 계약 참고: [OSV querybatch](https://google.github.io/osv.dev/post-v1-querybatch/),
+[OSV schema](https://ossf.github.io/osv-schema/#affectedpackage-field),
+[deps.dev API v3](https://docs.deps.dev/api/v3/).
 
 ## Git 상태 사전 검사 (#319)
 

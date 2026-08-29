@@ -1,5 +1,7 @@
 //! Repo Manager command — 저장소 탐색·상태·worktree.
 
+pub(crate) mod dependency_enrichment;
+
 use crate::core::cleanup::{
     classify_preview, finalize_revision, parse_branch_records, parse_merged_branch_names,
     parse_worktree_records, parse_worktree_status, valid_cleanup_worktree_path, valid_ref_name,
