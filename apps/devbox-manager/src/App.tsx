@@ -11,6 +11,7 @@ import {
   cancelDataDiagnostics,
   cancelSupportBundle,
   current,
+  devSetupAudit,
   exportDataPreview,
   exportSupportBundle,
   inspectDataDatabases,
@@ -43,6 +44,9 @@ import type {
   DataDatabaseInfo,
   DataInspectorSnapshot,
   DataQueryResult,
+  DevSetupAudit,
+  DevSetupCapability,
+  DevSetupPlanItem,
   InstalledApp,
   InstallPathInfo,
   InstallRootPreview,
@@ -185,6 +189,85 @@ function relatedDetectionDescription(tool: RelatedTool): string {
   }
 }
 
+function installCapabilityLabel(state: RelatedTool["installState"]): string {
+  if (state === "present") return "설치됨";
+  if (state === "absent") return "미설치";
+  return "설치 상태 확인 필요";
+}
+
+function availabilityCapabilityLabel(state: RelatedTool["launchState"]): string {
+  if (state === "available") return "사용 가능";
+  if (state === "unavailable") return "사용 불가";
+  return "확인 필요";
+}
+
+function backendCapabilityLabel(state: NonNullable<RelatedTool["dockerCapability"]>["wslBackend"]): string {
+  switch (state) {
+    case "running": return "실행 중";
+    case "stopped": return "중지됨";
+    case "present": return "등록됨 · 실행 상태 확인 불가";
+    case "absent": return "등록되지 않음";
+    case "unknown": return "확인 필요";
+  }
+}
+
+const EVIDENCE_LABELS: Record<string, string> = {
+  "desktop-executable:path": "Windows PATH 실행 파일",
+  "desktop-executable:known-location": "검토된 설치 위치 실행 파일",
+  "desktop-executable:not-observed": "검토 위치에서 실행 파일 미확인",
+  "desktop-executable:unavailable": "Windows 실행 파일 검사 불가",
+  "windows-cli:path": "Windows PATH의 공식 Docker CLI",
+  "windows-cli:known-location": "Docker 설치 위치의 공식 CLI",
+  "windows-cli:not-observed": "Windows Docker CLI 미확인",
+  "windows-cli:unrecognized": "docker 호환 명령의 제품 확인 불가",
+  "windows-cli:unavailable": "Windows CLI 검사 불가",
+  "wsl-registration:registered": "docker-desktop WSL 등록 확인",
+  "wsl-registration:not-registered": "docker-desktop WSL 미등록",
+  "wsl-registration:unavailable": "WSL 등록 상태 확인 불가",
+  "wsl-runtime:running": "docker-desktop WSL 실행 중",
+  "wsl-runtime:stopped": "docker-desktop WSL 중지됨",
+  "wsl-runtime:not-observed": "docker-desktop WSL 실행 미확인",
+  "wsl-runtime:unavailable": "WSL 실행 상태 확인 불가",
+  "winget-executable:trusted-location": "검토된 Windows 위치의 WinGet",
+  "winget-executable:not-observed": "WinGet 실행 파일 미확인",
+  "winget-executable:unavailable": "WinGet 검사 불가",
+};
+
+function evidenceLabel(source: string, result: string): string {
+  return EVIDENCE_LABELS[`${source}:${result}`] ?? "검증할 수 없는 근거";
+}
+
+const DEV_SETUP_CAPABILITY_LABELS: Record<DevSetupCapability["id"], string> = {
+  "docker-desktop-install": "Docker Desktop 설치",
+  "docker-desktop-launch": "Docker Desktop 실행",
+  "docker-windows-cli": "Windows Docker CLI",
+  "docker-wsl-backend": "docker-desktop WSL backend",
+  winget: "WinGet",
+};
+
+const DEV_SETUP_ACTION_LABELS: Record<DevSetupPlanItem["action"], string> = {
+  none: "추가 조치 없음",
+  "review-install": "공식 패키지 설치 검토",
+  "verify-installation": "설치·실행 환경 직접 확인",
+  "review-launch-path": "Docker Desktop 실행 위치 확인",
+  "review-cli": "Windows Docker CLI 설치 또는 PATH 확인",
+  "start-backend": "Docker Desktop에서 backend 시작 확인",
+  "review-backend": "Docker Desktop WSL 통합 설정 확인",
+  "review-winget": "Windows App Installer 상태 확인",
+};
+
+function devSetupStateLabel(capability: DevSetupCapability): string {
+  if (capability.id === "docker-desktop-install") {
+    return installCapabilityLabel(capability.state as RelatedTool["installState"]);
+  }
+  if (capability.id === "docker-wsl-backend") {
+    return backendCapabilityLabel(
+      capability.state as NonNullable<RelatedTool["dockerCapability"]>["wslBackend"],
+    );
+  }
+  return availabilityCapabilityLabel(capability.state as RelatedTool["launchState"]);
+}
+
 const RELATED_TOOL_OFFICIAL_HOSTS = new Set([
   "learn.microsoft.com",
   "github.com",
@@ -226,7 +309,7 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<"apps" | "doctor" | "related-tools">("apps");
+  const [tab, setTab] = useState<"apps" | "doctor" | "dev-setup" | "related-tools">("apps");
   const [diagnosis, setDiagnosis] = useState<DiagnosisItem[]>([]);
   const [dataSnapshot, setDataSnapshot] = useState<DataInspectorSnapshot | null>(null);
   const [dataAppId, setDataAppId] = useState<string | null>(null);
@@ -238,6 +321,9 @@ export default function App() {
   const [relatedToolList, setRelatedToolList] = useState<RelatedTool[]>([]);
   const [relatedBusy, setRelatedBusy] = useState(false);
   const [relatedError, setRelatedError] = useState<string | null>(null);
+  const [devSetupSnapshot, setDevSetupSnapshot] = useState<DevSetupAudit | null>(null);
+  const [devSetupBusy, setDevSetupBusy] = useState(false);
+  const [devSetupError, setDevSetupError] = useState<string | null>(null);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [contextApp, setContextApp] = useState<CatalogApp | null>(null);
   const [batchSelection, setBatchSelection] = useState<Set<string>>(() => new Set());
@@ -267,6 +353,7 @@ export default function App() {
   const supportOperationIdRef = useRef<string | null>(null);
   const relatedRequestIdRef = useRef(0);
   const relatedActionIdRef = useRef(0);
+  const devSetupRequestIdRef = useRef(0);
 
   const prepareAppContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.appId;
@@ -505,6 +592,34 @@ export default function App() {
     }
   }, []);
 
+  const refreshDevSetup = useCallback(async () => {
+    if (operationBusyRef.current || readBusyRef.current) return;
+    const requestId = ++devSetupRequestIdRef.current;
+    readBusyRef.current = true;
+    setReadBusy(true);
+    setDevSetupBusy(true);
+    setDevSetupError(null);
+    try {
+      const result = await devSetupAudit();
+      if (mountedRef.current && requestId === devSetupRequestIdRef.current) {
+        setDevSetupSnapshot(result);
+      }
+    } catch {
+      if (mountedRef.current && requestId === devSetupRequestIdRef.current) {
+        setDevSetupSnapshot(null);
+        setDevSetupError("Dev Setup 감사를 완료할 수 없습니다. Windows와 WSL 환경을 확인하세요.");
+      }
+    } finally {
+      if (requestId === devSetupRequestIdRef.current) {
+        readBusyRef.current = false;
+        if (mountedRef.current) {
+          setReadBusy(false);
+          setDevSetupBusy(false);
+        }
+      }
+    }
+  }, []);
+
   const refresh = useCallback(async (internal = false) => {
     if (!internal && (operationBusyRef.current || readBusyRef.current)) return;
     readBusyRef.current = true;
@@ -560,6 +675,7 @@ export default function App() {
       if (supportOperationId) void cancelSupportBundle(supportOperationId).catch(() => undefined);
       relatedRequestIdRef.current += 1;
       relatedActionIdRef.current += 1;
+      devSetupRequestIdRef.current += 1;
     };
   }, [refresh]);
 
@@ -797,7 +913,7 @@ export default function App() {
   };
 
   const onRelatedInstall = async (tool: RelatedTool) => {
-    if (tool.installed || operationBusyRef.current || readBusyRef.current) return;
+    if (tool.installState !== "absent" || operationBusyRef.current || readBusyRef.current) return;
     if (!window.confirm(
       `'${tool.displayName}'을 WinGet으로 설치할까요? WinGet이 공식 패키지 설치를 진행합니다.`,
     )) return;
@@ -834,7 +950,7 @@ export default function App() {
   };
 
   const onRelatedLaunch = async (tool: RelatedTool) => {
-    if (!tool.installed || operationBusyRef.current || readBusyRef.current) return;
+    if (tool.launchState !== "available" || operationBusyRef.current || readBusyRef.current) return;
     const actionId = ++relatedActionIdRef.current;
     operationBusyRef.current = true;
     setBusy(`related:${tool.id}:launch`);
@@ -1100,6 +1216,18 @@ export default function App() {
         >
           관련 도구
         </button>
+        <button
+          className={`btn ${tab === "dev-setup" ? "active" : ""}`}
+          type="button"
+          aria-current={tab === "dev-setup" ? "page" : undefined}
+          disabled={batchBusy || busy !== null || installRootBusy || readBusy}
+          onClick={() => {
+            setTab("dev-setup");
+            if (!devSetupSnapshot) void refreshDevSetup();
+          }}
+        >
+          Dev Setup
+        </button>
         <span className="latest">Latest: {manifest ? manifest.releaseTag : "..."}</span>
         <span className="spacer" />
         <button
@@ -1301,6 +1429,84 @@ export default function App() {
             {!supportPreview && <div className="dim diagnostic-empty">번들 미리 확인 후 포함/제외 범위를 검토할 수 있습니다.</div>}
           </section>
         </div>
+      ) : tab === "dev-setup" ? (
+        <section
+          className="dev-setup related-tools"
+          aria-busy={devSetupBusy || readBusy}
+          aria-labelledby="dev-setup-heading"
+        >
+          <div className="related-tools-head">
+            <div>
+              <h2 id="dev-setup-heading">Dev Setup</h2>
+              <p className="dim">
+                Windows·WSL 개발 환경을 읽기 전용으로 점검하고 다음 확인 항목을 정리합니다.
+                설치·실행·registry·PATH 변경은 수행하지 않습니다.
+              </p>
+            </div>
+            <button
+              className="btn"
+              type="button"
+              disabled={batchBusy || busy !== null || installRootBusy || readBusy}
+              onClick={() => void refreshDevSetup()}
+            >
+              {devSetupBusy ? "감사 중..." : "다시 감사"}
+            </button>
+          </div>
+          <div className="diagnostic-safety-note">
+            read-only audit · 고정된 실행 파일과 WSL 목록만 조회 · 원본 경로/환경변수/프로세스 출력 비공개
+          </div>
+          {devSetupError && <div className="error related-tools-error" role="alert">{devSetupError}</div>}
+          {!devSetupSnapshot && !devSetupBusy && !devSetupError && (
+            <div className="dim related-tools-empty" role="status" aria-live="polite">
+              개발 환경 감사를 실행해 주세요.
+            </div>
+          )}
+          {devSetupSnapshot && (
+            <>
+              <div className="dev-setup-meta dim">
+                schema v{devSetupSnapshot.schemaVersion} · {devSetupSnapshot.mode} · 이번 감사 {new Date(devSetupSnapshot.observedAtMs).toLocaleTimeString("ko-KR")}
+              </div>
+              <div className="dev-setup-grid">
+                {devSetupSnapshot.capabilities.map((capability) => {
+                  const plan = devSetupSnapshot.plan.find(
+                    (candidate) => candidate.capabilityId === capability.id,
+                  );
+                  return (
+                    <article
+                      key={capability.id}
+                      className={`dev-setup-card ${plan?.status ?? "unknown"}`}
+                    >
+                      <div className="related-tool-card-head">
+                        <h3>{DEV_SETUP_CAPABILITY_LABELS[capability.id]}</h3>
+                        <span className={`related-tool-state ${plan?.status === "satisfied" ? "ok" : "warning"}`}>
+                          {devSetupStateLabel(capability)}
+                        </span>
+                      </div>
+                      <div className="dim dev-setup-scope">
+                        범위: {capability.scope === "wsl" ? "WSL" : "Windows"}
+                      </div>
+                      <ul className="dev-setup-evidence">
+                        {capability.evidence.map((evidence) => (
+                          <li key={`${evidence.source}:${evidence.result}`}>
+                            {evidenceLabel(evidence.source, evidence.result)}
+                          </li>
+                        ))}
+                      </ul>
+                      {plan && (
+                        <div className={`dev-setup-plan ${plan.status}`}>
+                          {DEV_SETUP_ACTION_LABELS[plan.action]}
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+              <p className="dim related-tools-note">
+                이 계획은 확인 순서만 제안합니다. 실제 package apply와 권한 상승은 별도 preview·확인 경계에서만 제공됩니다.
+              </p>
+            </>
+          )}
+        </section>
       ) : tab === "related-tools" ? (
         <section
           className="related-tools"
@@ -1311,7 +1517,7 @@ export default function App() {
             <div>
               <h2 id="related-tools-heading">Related Tools</h2>
               <p className="dim">
-                개발 흐름을 보완하는 작은 공식 도구 목록입니다. 설치 여부만 로컬에서 감지하며 경로와 버전은 표시하지 않습니다.
+                개발 흐름을 보완하는 작은 공식 도구 목록입니다. 로컬 실행 가능성과 설치 근거를 구분하며 경로와 버전은 표시하지 않습니다.
                 감지와 이미 설치된 도구 실행은 인터넷 없이 가능합니다. WinGet 설치는 Windows와 네트워크가 필요하고, 공식·라이선스 링크는 플랫폼과 관계없이 네트워크 연결 시 열 수 있습니다.
               </p>
             </div>
@@ -1335,21 +1541,38 @@ export default function App() {
               const officialUrl = safeExternalUrl(tool.officialUrl);
               const licenseUrl = safeExternalUrl(tool.licenseUrl);
               return (
-                <article key={tool.id} className={`related-tool-card ${tool.installed ? "installed" : ""}`}>
+                <article key={tool.id} className={`related-tool-card ${tool.installState === "present" ? "installed" : ""}`}>
                   <div className="related-tool-card-head">
                     <div>
                       <h3>{tool.displayName}</h3>
                       <p className="dim">{tool.summary}</p>
                     </div>
-                    <span className={`related-tool-state ${tool.installed ? "ok" : "dim"}`}>
-                      {tool.installed ? "설치됨" : "미설치"}
+                    <span className={`related-tool-state ${tool.installState === "present" ? "ok" : tool.installState === "unknown" ? "warning" : "dim"}`}>
+                      {installCapabilityLabel(tool.installState)}
                     </span>
                   </div>
                   <dl className="related-tool-facts">
                     <div><dt>감지</dt><dd>{relatedDetectionDescription(tool)}</dd></div>
+                    <div><dt>Manager 실행</dt><dd>{availabilityCapabilityLabel(tool.launchState)}</dd></div>
+                    {tool.dockerCapability && (
+                      <>
+                        <div><dt>Windows CLI</dt><dd>{availabilityCapabilityLabel(tool.dockerCapability.windowsCli)}</dd></div>
+                        <div><dt>WSL backend</dt><dd>{backendCapabilityLabel(tool.dockerCapability.wslBackend)}</dd></div>
+                      </>
+                    )}
                     <div><dt>WinGet ID</dt><dd><code>{tool.wingetId}</code></dd></div>
                     <div><dt>라이선스</dt><dd>{tool.license}</dd></div>
                   </dl>
+                  {tool.dockerCapability && (
+                    <div className="related-tool-evidence" aria-label="Docker capability 근거">
+                      {tool.dockerCapability.evidence.map((evidence) => (
+                        <span key={`${evidence.source}:${evidence.result}`}>
+                          {evidenceLabel(evidence.source, evidence.result)}
+                        </span>
+                      ))}
+                      <span>이번 감지 {new Date(tool.dockerCapability.observedAtMs).toLocaleTimeString("ko-KR")}</span>
+                    </div>
+                  )}
                   <div className="related-tool-links">
                     {officialUrl && (
                       <a
@@ -1379,7 +1602,7 @@ export default function App() {
                     )}
                   </div>
                   <div className="related-tool-actions">
-                    {tool.installed ? (
+                    {tool.launchState === "available" ? (
                       <button
                         className="btn"
                         type="button"
@@ -1389,7 +1612,7 @@ export default function App() {
                       >
                         {busy === `related:${tool.id}:launch` ? "실행 중..." : "실행"}
                       </button>
-                    ) : (
+                    ) : tool.installState === "absent" ? (
                       <button
                         className="btn"
                         type="button"
@@ -1401,6 +1624,17 @@ export default function App() {
                         {busy === `related:${tool.id}:install`
                           ? "설치 중..."
                           : tool.platformSupported ? "확인 후 WinGet 설치" : "WinGet 설치: Windows 전용"}
+                      </button>
+                    ) : (
+                      <button
+                        className="btn"
+                        type="button"
+                        disabled
+                        title="설치 여부를 확정할 근거가 없어 자동 설치를 제안하지 않습니다. Dev Setup에서 근거를 확인하세요."
+                      >
+                        {tool.installState === "present"
+                          ? "실행 경로 확인 필요"
+                          : "설치 상태 확인 필요"}
                       </button>
                     )}
                   </div>

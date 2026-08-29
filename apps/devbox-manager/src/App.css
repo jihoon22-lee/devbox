@@ -628,11 +628,102 @@ td {
   color: var(--green);
 }
 
+.related-tool-state.warning {
+  color: var(--yellow, #e4b04a);
+}
+
 .related-tool-facts {
   display: grid;
   gap: 6px;
   margin: 0;
   font-size: 11px;
+}
+
+.related-tool-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.related-tool-evidence span {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.dev-setup {
+  display: block;
+}
+
+.dev-setup .diagnostic-safety-note {
+  max-width: 1120px;
+  margin-bottom: 12px;
+}
+
+.dev-setup-meta {
+  max-width: 1120px;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.dev-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  max-width: 1120px;
+}
+
+.dev-setup-card {
+  display: grid;
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.dev-setup-card.satisfied {
+  border-color: color-mix(in srgb, var(--green) 60%, var(--border));
+}
+
+.dev-setup-card.review {
+  border-color: color-mix(in srgb, var(--yellow, #e4b04a) 60%, var(--border));
+}
+
+.dev-setup-card.unknown {
+  border-color: color-mix(in srgb, var(--yellow, #e4b04a) 45%, var(--border));
+  border-style: dashed;
+}
+
+.dev-setup-card h3 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.dev-setup-scope {
+  font-size: 10px;
+}
+
+.dev-setup-evidence {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-left: 17px;
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.dev-setup-plan {
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.dev-setup-plan.satisfied {
+  color: var(--green);
 }
 
 .diagnostic-tool-actions {

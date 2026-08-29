@@ -9,6 +9,7 @@ import {
   cancelSupportBundle,
   catalog,
   current,
+  devSetupAudit,
   exportDataPreview,
   exportSupportBundle,
   inspectDataDatabases,
@@ -37,6 +38,7 @@ import type {
   Current,
   DataInspectorSnapshot,
   DataQueryResult,
+  DevSetupAudit,
   InstalledApp,
   InstallPathInfo,
   InstallRootPreview,
@@ -55,6 +57,7 @@ vi.mock("./api", () => ({
   cancelSupportBundle: vi.fn(),
   catalog: vi.fn(),
   current: vi.fn(),
+  devSetupAudit: vi.fn(),
   exportDataPreview: vi.fn(),
   exportSupportBundle: vi.fn(),
   inspectDataDatabases: vi.fn(),
@@ -142,6 +145,7 @@ const availableMock = vi.mocked(available);
 const applyInstallRootMock = vi.mocked(applyInstallRoot);
 const installedMock = vi.mocked(installed);
 const currentMock = vi.mocked(current);
+const devSetupAuditMock = vi.mocked(devSetupAudit);
 const installAppMock = vi.mocked(installApp);
 const installPathMock = vi.mocked(installPath);
 const installManyMock = vi.mocked(installMany);
@@ -184,6 +188,57 @@ const relatedTool: RelatedTool = {
   platformSupported: true,
   installed: false,
   detection: "not-found",
+  installState: "absent",
+  launchState: "unavailable",
+  dockerCapability: null,
+};
+
+const devSetupFixture: DevSetupAudit = {
+  schemaVersion: 1,
+  observedAtMs: Date.now(),
+  mode: "read-only",
+  capabilities: [
+    {
+      id: "docker-desktop-install",
+      scope: "windows",
+      state: "unknown",
+      evidence: [{ source: "desktop-executable", result: "not-observed" }],
+    },
+    {
+      id: "docker-desktop-launch",
+      scope: "windows",
+      state: "unavailable",
+      evidence: [{ source: "desktop-executable", result: "not-observed" }],
+    },
+    {
+      id: "docker-windows-cli",
+      scope: "windows",
+      state: "unavailable",
+      evidence: [{ source: "windows-cli", result: "not-observed" }],
+    },
+    {
+      id: "docker-wsl-backend",
+      scope: "wsl",
+      state: "running",
+      evidence: [
+        { source: "wsl-registration", result: "registered" },
+        { source: "wsl-runtime", result: "running" },
+      ],
+    },
+    {
+      id: "winget",
+      scope: "windows",
+      state: "available",
+      evidence: [{ source: "winget-executable", result: "trusted-location" }],
+    },
+  ],
+  plan: [
+    { capabilityId: "docker-desktop-install", status: "unknown", action: "verify-installation" },
+    { capabilityId: "docker-desktop-launch", status: "review", action: "review-launch-path" },
+    { capabilityId: "docker-windows-cli", status: "review", action: "review-cli" },
+    { capabilityId: "docker-wsl-backend", status: "satisfied", action: "none" },
+    { capabilityId: "winget", status: "satisfied", action: "none" },
+  ],
 };
 
 const inspectorSnapshot: DataInspectorSnapshot = {
@@ -257,6 +312,7 @@ beforeEach(() => {
   currentMock.mockReset().mockImplementation(async (appId) => (
     appId === portable.app ? portableCurrent : null
   ));
+  devSetupAuditMock.mockReset().mockResolvedValue(devSetupFixture);
   installAppMock.mockReset().mockResolvedValue("installed");
   installPathMock.mockReset().mockResolvedValue(portablePath);
   installManyMock.mockReset().mockImplementation(async (requests) => requests.map((request) => ({
@@ -966,12 +1022,14 @@ describe("Devbox Manager Related Tools", () => {
       ...relatedTool,
       platformSupported: false,
       detection: "unavailable",
+      installState: "unknown",
+      launchState: "unknown",
     }]);
     render(<App />);
     await screen.findByText("Port Manager");
     fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
 
-    const install = await screen.findByRole("button", { name: "WinGet 설치: Windows 전용" });
+    const install = await screen.findByRole("button", { name: "설치 상태 확인 필요" });
     expect((install as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("link", { name: "공식 사이트" }));
     await waitFor(() => expect(openRelatedToolUrlMock).toHaveBeenCalledWith(
@@ -1016,6 +1074,8 @@ describe("Devbox Manager Related Tools", () => {
       ...relatedTool,
       installed: true,
       detection: "path",
+      installState: "present",
+      launchState: "available",
     }]);
     render(<App />);
     await screen.findByText("Port Manager");
@@ -1025,6 +1085,45 @@ describe("Devbox Manager Related Tools", () => {
     expect(screen.queryByRole("button", { name: "확인 후 WinGet 설치" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "실행" }));
     await waitFor(() => expect(launchRelatedToolMock).toHaveBeenCalledWith("vs-code"));
+  });
+
+  it("shows a Docker WSL backend without claiming the desktop is uninstalled", async () => {
+    relatedToolsMock.mockResolvedValueOnce([{
+      id: "docker-desktop",
+      displayName: "Docker Desktop",
+      summary: "Docker 컨테이너 개발 환경",
+      wingetId: "Docker.DockerDesktop",
+      officialUrl: "https://www.docker.com/products/docker-desktop/",
+      licenseUrl: "https://www.docker.com/legal/docker-software-license/",
+      license: "Docker Software License",
+      platformSupported: true,
+      installed: false,
+      detection: "not-found",
+      installState: "unknown",
+      launchState: "unavailable",
+      dockerCapability: {
+        desktopInstall: "unknown",
+        desktopLaunch: "unavailable",
+        windowsCli: "available",
+        wslBackend: "running",
+        evidence: [
+          { source: "desktop-executable", result: "not-observed" },
+          { source: "windows-cli", result: "known-location" },
+          { source: "wsl-registration", result: "registered" },
+          { source: "wsl-runtime", result: "running" },
+        ],
+        observedAtMs: Date.now(),
+      },
+    }]);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+
+    expect(await screen.findByRole("button", { name: "설치 상태 확인 필요" })).toBeTruthy();
+    expect(screen.getByText("실행 중")).toBeTruthy();
+    expect(screen.getByText("docker-desktop WSL 등록 확인")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "확인 후 WinGet 설치" })).toBeNull();
+    expect(installRelatedToolMock).not.toHaveBeenCalled();
   });
 
   it("does not render raw native errors from a related-tool action", async () => {
@@ -1067,5 +1166,35 @@ describe("Devbox Manager Related Tools", () => {
 
     expect(document.body.textContent).not.toContain("unexpected-output");
     expect(relatedToolsMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Devbox Manager Dev Setup audit", () => {
+  it("renders a read-only capability inventory and review plan", async () => {
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
+
+    expect(await screen.findByRole("heading", { name: "Docker Desktop 설치" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "docker-desktop WSL backend" })).toBeTruthy();
+    expect(screen.getByText("Docker Desktop 실행 위치 확인")).toBeTruthy();
+    expect(screen.getByText("docker-desktop WSL 실행 중")).toBeTruthy();
+    expect(screen.getByText(/설치·실행·registry·PATH 변경은 수행하지 않습니다/)).toBeTruthy();
+    expect(devSetupAuditMock).toHaveBeenCalledTimes(1);
+    expect(installRelatedToolMock).not.toHaveBeenCalled();
+  });
+
+  it("does not render raw native errors from the audit boundary", async () => {
+    devSetupAuditMock.mockRejectedValueOnce(
+      new Error("C:\\Users\\developer\\secret-token=should-not-render"),
+    );
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
+
+    expect(await screen.findByText(
+      "Dev Setup 감사를 완료할 수 없습니다. Windows와 WSL 환경을 확인하세요.",
+    )).toBeTruthy();
+    expect(screen.queryByText(/secret-token/)).toBeNull();
   });
 });
