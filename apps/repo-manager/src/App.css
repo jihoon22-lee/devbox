@@ -258,6 +258,200 @@ body {
   border-radius: 8px;
 }
 
+.dependency-lens-panel {
+  flex: 0 1 auto;
+  max-height: 62%;
+  overflow: auto;
+  margin: 0 14px 10px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.dependency-lens-head,
+.dependency-inventory-head,
+.dependency-package summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dependency-lens-head,
+.dependency-inventory-head {
+  justify-content: space-between;
+}
+
+.dependency-lens-head h2,
+.dependency-lens-section h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.dependency-lens-head p {
+  margin: 4px 0 0;
+  font-size: 11px;
+}
+
+.dependency-lens-status,
+.dependency-lens-empty,
+.dependency-lens-warning {
+  margin-top: 9px;
+  font-size: 11px;
+}
+
+.dependency-lens-error {
+  margin-top: 9px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+}
+
+.dependency-lens-warning {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--warn);
+}
+
+.dependency-lens-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+  margin: 10px 0 0;
+}
+
+.dependency-lens-metrics > div,
+.dependency-source,
+.dependency-package {
+  min-width: 0;
+  padding: 7px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.dependency-lens-metrics dt {
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.dependency-lens-metrics dd {
+  margin: 3px 0 0;
+  font-weight: 600;
+}
+
+.dependency-lens-section {
+  margin-top: 12px;
+}
+
+.dependency-source-list,
+.dependency-package-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.dependency-source {
+  display: grid;
+  grid-template-columns: 80px minmax(140px, 1fr) minmax(130px, auto) minmax(150px, auto);
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.dependency-source.status-ready,
+.dependency-source.status-staleLockfile {
+  border-left: 3px solid var(--ok);
+}
+
+.dependency-source.status-staleLockfile,
+.dependency-source.status-missingLockfile,
+.dependency-source.status-unsupported {
+  border-left-color: var(--warn);
+}
+
+.dependency-source.status-invalid {
+  border-left: 3px solid var(--danger);
+}
+
+.dependency-duplicates {
+  display: grid;
+  gap: 5px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dependency-duplicates li {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(160px, 2fr) 80px;
+  gap: 8px;
+  padding: 6px 7px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.dependency-inventory-head input {
+  width: min(300px, 42vw);
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.dependency-package {
+  padding: 0;
+}
+
+.dependency-package summary {
+  min-width: 0;
+  padding: 7px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.dependency-package summary strong {
+  min-width: 120px;
+}
+
+.dependency-package summary .dim {
+  margin-left: auto;
+}
+
+.dependency-package ul,
+.dependency-package p {
+  margin: 0;
+  padding: 0 10px 8px 34px;
+}
+
+.dependency-package li {
+  margin: 3px 0;
+}
+
+.dependency-scope {
+  display: inline-flex;
+  width: 28px;
+  color: var(--accent);
+  font-size: 10px;
+}
+
+@media (max-width: 850px) {
+  .dependency-lens-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dependency-source {
+    grid-template-columns: 70px minmax(0, 1fr);
+  }
+
+  .dependency-duplicates li {
+    grid-template-columns: 1fr;
+  }
+}
+
 .history-panel-head,
 .history-entry-head,
 .diff-toolbar,

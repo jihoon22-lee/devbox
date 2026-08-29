@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 12,
+  "catalogRevision": 13,
   "apps": [
     {
       "id": "port-manager",
@@ -201,7 +201,7 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["path"],
-      "produces": [],
+      "produces": ["snapshot:repo-manager/dependency-summary/v1"],
       "actions": []
     },
     {

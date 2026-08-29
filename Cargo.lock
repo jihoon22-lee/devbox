@@ -2661,6 +2661,7 @@ dependencies = [
  "filesystem",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
 ]
 
 [[package]]
@@ -4343,14 +4344,17 @@ dependencies = [
  "applink",
  "filesystem",
  "git",
+ "integration",
  "launch",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tempfile",
+ "toml 1.1.4+spec-1.1.0",
  "window-state-tauri",
  "wsl",
 ]

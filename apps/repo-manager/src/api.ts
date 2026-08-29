@@ -28,6 +28,58 @@ export interface RepoSnapshot {
   changes: number;
 }
 
+export type DependencyEcosystem = "cargo" | "pnpm" | "npm" | "python" | "gradle";
+export type DependencySourceStatus =
+  | "ready"
+  | "missingLockfile"
+  | "staleLockfile"
+  | "invalid"
+  | "unsupported";
+
+export interface DependencySource {
+  ecosystem: DependencyEcosystem;
+  path: string;
+  status: DependencySourceStatus;
+  manifestCount: number;
+  lockfileCount: number;
+  packageCount: number;
+  directCount: number;
+}
+
+export interface DependencyPackage {
+  id: string;
+  ecosystem: DependencyEcosystem;
+  name: string;
+  version: string;
+  direct: boolean;
+  dependencies: string[];
+}
+
+export interface DuplicateDependency {
+  ecosystem: DependencyEcosystem;
+  name: string;
+  versions: string[];
+}
+
+export interface DependencyReport {
+  revision: string;
+  sources: DependencySource[];
+  packages: DependencyPackage[];
+  duplicates: DuplicateDependency[];
+  packageCount: number;
+  directCount: number;
+  transitiveCount: number;
+  unresolvedDependencyCount: number;
+  missingLockfileCount: number;
+  staleLockfileCount: number;
+  unsupportedCount: number;
+  invalidCount: number;
+  truncated: boolean;
+  summaryPublished: boolean;
+}
+
+export const DEPENDENCY_LENS_ERROR = "Dependency Lens 분석을 완료하지 못했습니다.";
+
 export type GitSafetyIssue =
   | "dirty"
   | "detached"
@@ -212,6 +264,50 @@ const MOCK_REMOTE_STATE: RemoteState = {
   detached: false,
   diverged: false,
   operationInProgress: false,
+};
+
+const MOCK_DEPENDENCY_REPORT: DependencyReport = {
+  revision: `sha256:${"a".repeat(64)}`,
+  sources: [
+    {
+      ecosystem: "cargo",
+      path: "Cargo.lock",
+      status: "ready",
+      manifestCount: 1,
+      lockfileCount: 1,
+      packageCount: 2,
+      directCount: 1,
+    },
+  ],
+  packages: [
+    {
+      id: "cargo:serde@1.0.0",
+      ecosystem: "cargo",
+      name: "serde",
+      version: "1.0.0",
+      direct: true,
+      dependencies: ["cargo:serde-core@1.0.0"],
+    },
+    {
+      id: "cargo:serde-core@1.0.0",
+      ecosystem: "cargo",
+      name: "serde-core",
+      version: "1.0.0",
+      direct: false,
+      dependencies: [],
+    },
+  ],
+  duplicates: [],
+  packageCount: 2,
+  directCount: 1,
+  transitiveCount: 1,
+  unresolvedDependencyCount: 0,
+  missingLockfileCount: 0,
+  staleLockfileCount: 0,
+  unsupportedCount: 0,
+  invalidCount: 0,
+  truncated: false,
+  summaryPublished: true,
 };
 
 const MOCK_CATALOG_APPS = catalogJson.apps as Array<{
@@ -439,6 +535,24 @@ export function repoDiff(path: string, commitId: string | null): Promise<DiffRes
     return Promise.resolve({ ...MOCK_DIFF, commitId, scope: commitId ? "commit" : "workingTree" });
   }
   return invoke<DiffResult>("repo_diff", { request: { path, commitId } });
+}
+
+export function dependencyInventory(path: string): Promise<DependencyReport> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      ...MOCK_DEPENDENCY_REPORT,
+      sources: MOCK_DEPENDENCY_REPORT.sources.map((source) => ({ ...source })),
+      packages: MOCK_DEPENDENCY_REPORT.packages.map((dependency) => ({
+        ...dependency,
+        dependencies: [...dependency.dependencies],
+      })),
+      duplicates: MOCK_DEPENDENCY_REPORT.duplicates.map((duplicate) => ({
+        ...duplicate,
+        versions: [...duplicate.versions],
+      })),
+    });
+  }
+  return invoke<DependencyReport>("dependency_inventory", { request: { path } });
 }
 
 export function repoChanges(path: string): Promise<ChangeEntry[]> {

@@ -92,6 +92,7 @@ pub fn run() {
             commands::preflight::dependency_health,
             commands::preflight::cancel_workspace_preflight,
             commands::preflight::cancel_dependency_health,
+            commands::dependencies::package_dependency_summary,
             commands::workspace::cancel_start_workspace,
             commands::workspace::start_workspace,
             commands::workspace::retry_workspace,

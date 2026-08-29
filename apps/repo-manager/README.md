@@ -8,6 +8,10 @@
 - **저장소 탐색** — root 아래 Git repository 중복 없이 나열 (canonical identity)
 - **앱 간 repository 선택** — catalog `Path`를 cold start와 실행 중 재호출에서 수신해 기존 항목을 선택하거나, 검증된 미등록 경로를 저장 전 초안으로 표시
 - **상태 목록** — branch·dirty·ahead/behind·worktree
+- **Dependency Lens (#484, offline foundation)** — 선택한 repository의 Cargo/pnpm/npm/uv
+  lockfile을 로컬에서만 해석해 직접·전이 package, graph edge, 중복 version과
+  missing/stale/invalid 상태를 상세 패널에 표시한다. Gradle은 감지만 하고 현재 형식
+  미지원으로 명확히 구분한다.
 - **worktree 생성** — 새 작업 트리 생성
 - **열기** — catalog에서 `path` capability와 실제 설치 executable이 모두 확인된 앱만 자동 노출하고, `workspace`도 받는 앱에는 더 구체적인 `Workspace` payload를 전달한다 (설계: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](../../docs/superpowers/specs/2026-08-17-app-interop-design.md))
 - **repository 컨텍스트 메뉴** — 다른 앱으로 열기, worktree 생성 입력으로 이동, backend에서
@@ -63,6 +67,32 @@
 - scan과 각 panel은 mounted 상태와 monotonically increasing request sequence를 함께 확인해
   늦은 응답이 새 root/repository 상태를 덮지 못하게 한다. backend와 UI는 raw path, Git stderr,
   remote URL, credential, commit message를 오류에 반향하지 않고 작업별 고정 오류만 표시한다.
+- Dependency Lens는 사용자가 선택한 repository에서 명시적으로 분석을 눌렀을 때만 동작한다.
+  Cargo/pnpm/npm/uv/Gradle, shell, build script를 실행하거나 registry/network를 조회하지 않는다.
+  depth 8, 방문 directory 10,000개·directory당 entry 10,000개, 입력 파일 256개,
+  파일당 4 MiB, 전체 24 MiB, package 4,096개, edge 16,384개의 상한과
+  process-wide single-flight를 적용하고 nested Git repository와
+  symlink/reparse point를 따라가지 않는다.
+
+## Dependency Lens offline 계약 (#484)
+
+분석 대상은 `Cargo.toml`/`Cargo.lock`, `package.json`/`pnpm-lock.yaml`/
+`package-lock.json`, `pyproject.toml`/`uv.lock`이다. lockfile 자체에
+기록된 package와 dependency relation만 읽고, manifest는 direct dependency 표시와 lockfile
+누락·mtime 기반 stale 진단에만 사용한다. lockfile에 해소할 정보가 없는 edge는 추측하지 않고
+미해결 개수로 집계한다. source URL, integrity/hash, credential-like field와 절대 repository
+경로는 Workbench snapshot에 포함하지 않는다.
+
+분석 성공 시 `repo-manager/v1/summary.json`의 `dependency-summary/v1` view에 canonical
+project key의 SHA-256 기반 opaque ID와 revision, scan 시각, package/direct/transitive/duplicate,
+lockfile 진단 및 ecosystem별 개수만 원자적으로 게시한다. 최대 256개 project summary와 90일
+보존 상한을 적용하며 기존 다른 view를 유지한다. 게시 실패는 상세 로컬 결과를 숨기지 않고 UI에
+별도 경고로 표시한다. Workbench는 이 versioned aggregate만 read-only로 소비한다.
+
+현재 단계는 offline foundation이다. advisory/license/latest-version 같은 registry·network
+enrichment와 자동 update/install은 별도 review/rollback 경계로 남긴다.
+최종 v0.6.0 release preparation에서 Repo Manager는 사용자 기능 추가에 따른 minor version
+bump 대상이며, 기능 PR에서는 Cargo/package/Tauri 3자 버전을 기존 값으로 유지한다.
 
 ## Git 상태 사전 검사 (#319)
 

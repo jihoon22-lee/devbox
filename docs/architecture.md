@@ -806,6 +806,22 @@ flat active-service fallback을 사용한다. 이 source correction은 v0.5.0 ta
 현재 v0.5.1 stable source/bundle에 포함된다. 공개 v0.5.0 binary에는 포함되지 않으며,
 v0.5.1 publication metadata와 asset digest는 GitHub Release에서 확인한다.
 
+catalog revision 13(`#484`)부터 Repo Manager는
+`snapshot:repo-manager/dependency-summary/v1` capability를 생산한다. 사용자가 선택한 repository의
+Cargo/pnpm/npm/uv lockfile을 bounded offline parser로만 읽고 Gradle은 미지원 source로 감지한다.
+package manager, shell, build script, registry/network는 실행·조회하지 않는다. Repo Manager 상세
+DTO에는 repository-relative source와 package graph가 있지만, 공용 `repo-manager/v1/summary.json`
+view에는 canonical project key를 namespace-separated SHA-256 opaque ID로 바꾼 뒤 aggregate count,
+opaque revision과 scan 시각만 게시한다. source URL/integrity/hash, package 이름, repository 경로,
+credential-like field는 integration 경계를 넘지 않는다.
+
+Workbench의 Dependencies 화면은 기존 app/distro/path/port/service health를 `Environment`, 이 새
+read-only aggregate를 `Packages`로 구분한다. Workbench는 profile canonical identity로 정확한
+entry만 찾고 전체 versioned view를 fail-closed 검증하며, per-entry scan 시각으로
+fresh(24시간 이하)·stale(7일 이하)·expired를 판정한다. missing과 corrupt를 구분하고 Repo Manager의
+DB나 repository를 직접 읽지 않으며 package manager도 실행하지 않는다. advisory/license/latest
+version network enrichment와 update/install mutation은 이 offline foundation의 범위 밖이다.
+
 filename/content FTS projection은 filter 값을 모두 SQLite parameter로 결합한다. source는 임의
 경로가 아닌 등록 `roots.id`이며 중첩 root는 가장 깊은 root가 소유한다. root id는 삭제 뒤
 재사용하지 않고, 현재 등록 root와 path ownership이 일치하지 않는 orphan/misowned row는 root가

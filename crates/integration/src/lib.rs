@@ -8,6 +8,7 @@
 //! freshness·보안 경계만 소유한다.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,47 @@ use std::path::{Path, PathBuf};
 pub const MAX_SNAPSHOT_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_DISCOVERY_ENTRIES: usize = 4_096;
 const MAX_JSON_DEPTH: usize = 32;
+const MAX_OPAQUE_IDENTITY_SOURCE_BYTES: usize = 32_767;
+
+/// Produce a stable digest identifier for a canonical identity that must
+/// cross an integration snapshot boundary without embedding its source.
+///
+/// The namespace is included in the digest so an identifier minted for one
+/// domain cannot be confused with another domain that happens to use the same
+/// canonical source string. Callers still own canonicalization; this helper
+/// only owns the privacy-safe integration representation.
+pub fn opaque_identity(namespace: &str, canonical_source: &str) -> Result<String, String> {
+    validate_kebab_identifier(
+        namespace,
+        32,
+        "opaque identity namespace가 올바르지 않습니다",
+    )?;
+    if canonical_source.is_empty()
+        || canonical_source.len() > MAX_OPAQUE_IDENTITY_SOURCE_BYTES
+        || canonical_source.chars().any(char::is_control)
+    {
+        return Err("opaque identity source가 올바르지 않습니다".into());
+    }
+
+    let mut digest = Sha256::new();
+    digest.update(namespace.as_bytes());
+    digest.update([0]);
+    digest.update(canonical_source.as_bytes());
+    Ok(format!(
+        "{namespace}-{}",
+        encode_lower_hex(&digest.finalize())
+    ))
+}
+
+fn encode_lower_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -1336,6 +1378,20 @@ mod tests {
         assert!(validate_producer_version("1.2.3-01").is_err());
         assert!(validate_producer_version("1.2.3+").is_err());
         assert!(validate_producer_version("1").is_err());
+    }
+
+    #[test]
+    fn opaque_identity_is_stable_namespaced_and_hides_source() {
+        let source = "win:c:/users/example/projects/private-repository";
+        let first = opaque_identity("project", source).unwrap();
+        let second = opaque_identity("project", source).unwrap();
+        assert_eq!(first, second);
+        assert!(first.starts_with("project-"));
+        assert_eq!(first.len(), "project-".len() + 64);
+        assert!(!first.contains("private-repository"));
+        assert_ne!(first, opaque_identity("repository", source).unwrap());
+        assert!(opaque_identity("Project", source).is_err());
+        assert!(opaque_identity("project", "bad\nsource").is_err());
     }
 
     #[test]

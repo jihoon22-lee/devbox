@@ -8,6 +8,10 @@ use crate::core::cleanup::{
     GIT_CLEANUP_ERROR, GIT_CLEANUP_STATE_CHANGED, MAX_CLEANUP_BRANCHES, MAX_CLEANUP_OUTPUT_BYTES,
     MAX_CLEANUP_REF_BYTES, MAX_CLEANUP_SELECTIONS, MAX_CLEANUP_WORKTREES,
 };
+use crate::core::dependency_lens::{
+    analyze_repository, dependency_summary_entry, now_epoch_ms, publish_summary_in,
+    DependencyReport, DEPENDENCY_LENS_ERROR,
+};
 use crate::core::git::{parse_status, parse_worktrees, RepoSnapshot};
 use crate::core::git_safety::{
     classify, parse_porcelain_v2, GitSafetySnapshot, GIT_SAFETY_ERROR, MAX_SAFETY_OUTPUT_BYTES,
@@ -77,6 +81,16 @@ const REMOTE_MARKERS: &[&str] = &[
     "rebase-apply",
 ];
 static NEXT_INTERNAL_OPERATION: AtomicU64 = AtomicU64::new(0);
+
+fn dependency_summary_write_lock() -> &'static Mutex<()> {
+    static WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    WRITE_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn dependency_analysis_lock() -> &'static Mutex<()> {
+    static ANALYSIS_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    ANALYSIS_LOCK.get_or_init(|| Mutex::new(()))
+}
 
 struct ActiveGitOperation {
     cancellation: Arc<AtomicBool>,
@@ -2591,6 +2605,47 @@ pub struct CommitDetailRequest {
 pub struct DiffRequest {
     pub path: String,
     pub commit_id: Option<String>,
+}
+
+/// An explicit, read-only dependency inventory for one already selected
+/// repository. The command accepts no package-manager command, glob, or
+/// format override and therefore cannot widen the scanner's fixed allowlist.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DependencyInventoryRequest {
+    pub path: String,
+}
+
+#[tauri::command]
+pub async fn dependency_inventory(
+    request: DependencyInventoryRequest,
+) -> Result<DependencyReport, String> {
+    spawn_git_task(DEPENDENCY_LENS_ERROR, move || {
+        let _analysis = dependency_analysis_lock()
+            .try_lock()
+            .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
+        let context = validated_repository_context(&request.path, DEPENDENCY_LENS_ERROR)?;
+        let repository =
+            repository_entry(&context.worktree).map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
+        let mut report = analyze_repository(&context.worktree, Duration::from_secs(10))?;
+        revalidate_repository_context(&context, DEPENDENCY_LENS_ERROR)?;
+
+        // Publishing is derived-state best effort: a corrupt/unsafe snapshot
+        // must not hide the successfully parsed local inventory, and it must
+        // never be overwritten with a partial replacement.
+        let now_ms = now_epoch_ms();
+        let published = dependency_summary_entry(&repository.canonical_key, &report, now_ms)
+            .and_then(|entry| {
+                let _write = dependency_summary_write_lock()
+                    .lock()
+                    .map_err(|_| "dependency summary writer를 사용할 수 없습니다".to_string())?;
+                publish_summary_in(&devbox_integration::integration_root(), entry, now_ms)
+            })
+            .is_ok();
+        report.summary_published = published;
+        Ok(report)
+    })
+    .await
 }
 
 #[tauri::command]

@@ -28,6 +28,7 @@ import HistoryDiffPanel from "./components/HistoryDiffPanel";
 import RemoteSyncPanel from "./components/RemoteSyncPanel";
 import StageCommitPanel from "./components/StageCommitPanel";
 import CleanupPanel from "./components/CleanupPanel";
+import DependencyLensPanel from "./components/DependencyLensPanel";
 import "./App.css";
 
 function usesNativeTextContext(target: EventTarget | null): boolean {
@@ -460,6 +461,7 @@ export default function App() {
         {repos.length === 0 && <div className="dim">repository가 없습니다.</div>}
       </div>
       <HistoryDiffPanel repo={selectedRepo} />
+      <DependencyLensPanel repo={selectedRepo} />
       <StageCommitPanel repo={selectedRepo} />
       <GitSafetyPanel repo={selectedRepo} />
       <RemoteSyncPanel repo={selectedRepo} />

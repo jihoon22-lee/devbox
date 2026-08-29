@@ -64,6 +64,7 @@ import {
   type ProfileDraft,
 } from "./lib/profileEditor";
 import { formatRuntimeFreshness, mergeSuggestedPorts } from "./lib/runtimeSuggestions";
+import PackageDependencySummaryPanel from "./components/PackageDependencySummaryPanel";
 import {
   emptyProfileTemplateDraft,
   profileDraftFromTemplate,
@@ -1688,8 +1689,9 @@ export default function App() {
                 </div>
               ))}
 
+              <h3 className="subtitle dependencies-title">Dependencies</h3>
               <div className="dependency-health-heading">
-                <h3 className="subtitle">Dependency health</h3>
+                <h4 className="dependency-subtitle">Environment</h4>
                 <button
                   type="button"
                   className="btn"
@@ -1741,6 +1743,8 @@ export default function App() {
               ) : (
                 <div className="dim">의존성 상태를 확인할 수 없습니다.</div>
               )}
+
+              <PackageDependencySummaryPanel profileId={selectedProfile.id} />
 
               {run?.profileId === selectedProfile.id && (
                 <>
