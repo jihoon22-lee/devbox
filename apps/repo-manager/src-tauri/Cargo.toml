@@ -30,6 +30,9 @@ devbox-git = { package = "git", path = "../../../crates/git" }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
 devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
+devbox-integration = { package = "integration", path = "../../../crates/integration" }
+sha2 = "0.11.0"
+toml = "1.1.4"
 
 [dev-dependencies]
 tempfile = "3"

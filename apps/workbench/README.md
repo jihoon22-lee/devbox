@@ -14,6 +14,10 @@
 - **서비스·포트 프로필 입력** — 편집 화면은 저장 DTO와 분리된 안정적인 draft buffer를 사용한다. 예상 포트는 원문 입력을 유지한 채 1~65535·중복·빈 토큰을 검증하고, Run Manager 서비스 ID는 행 단위로 추가·수정·삭제한다. 유효성 검사를 통과한 경우에만 저장하며, 백엔드 IPC 경계에서도 이름·경로·포트·서비스 ID를 다시 검증한다. 이 화면은 Run Manager 서비스를 생성·수정·시작하지 않는다.
 - **WSL runtime 포트 제안** — `wsl-desktop/runtime/v1` read-only snapshot의 published TCP host port를 distro/container/target provenance와 함께 표시한다. 기존 예상 포트를 보존하면서 사용자가 고른 항목만 편집 draft에 추가하고, 저장 버튼 전에는 profile store를 변경하지 않는다. 2분 이하는 fresh, 2분 초과 15분 이하는 stale로 구분해 stale 반영을 다시 확인하고, 15분 초과 expired·missing·corrupt source는 반영하지 않는다. 반영 직전에 snapshot을 다시 읽어 사라진 후보와 만료 전환도 차단한다.
 - **프로젝트 환경 (.env)** — 사용자가 고른 프로젝트 상대 `.env`/`.env.<name>`을 native에서 bounded UTF-8 dotenv로 확인하고, 이름·source·충돌·opaque revision·`crates/secrets` reference와 masked value만 표시·저장한다. 원문은 profile/IPC/log/clipboard에 들어가지 않으며, Start Workspace가 시작하는 child process에만 실행 직전 revision/metadata 재검증 후 ephemeral overlay로 전달한다. disabled 설정은 파일을 읽지 않고, 변수 없는 파일은 주입 없는 성공으로 처리한다. 중복·예약 이름, stale/changed file, unsafe path·symlink/reparse, malformed/oversized input과 secret backend 불가 상태는 fail-closed한다.
+- **Dependencies / Packages (#484)** — 기존 app/distro/path/port/service 점검은
+  `Environment`로 유지하고, `Packages`는 Repo Manager의
+  `dependency-summary/v1` aggregate를 read-only로 표시한다. package name이나 경로를 받지 않고
+  전체·직접·전이·중복·lockfile 진단과 ecosystem별 개수만 보여 준다.
 
 v0.4.1의 `Path`에는 distro나 profile 정보가 없다. 따라서 Start Workspace가 WSL Desktop으로
 보내는 것은 프로필의 구체적인 경로이며, WSL Desktop은 앱에서 선택된 distro를 사용하고 선택값이
@@ -47,6 +51,17 @@ tag/workflow evidence는 각 GitHub Release에서 구분해 확인한다.
   정렬·중복 제거하고 `ProjectProfile.expectedPorts`가 표현할 수 없는 UDP/SCTP mapping은 제안에서
   제외한다. snapshot 절대 경로, container ID, raw Docker output/image/command/environment는
   frontend DTO에 포함하지 않는다.
+- Repo Manager 입력: `%LOCALAPPDATA%\devbox\integration\repo-manager\v1\summary.json`의
+  `dependency-summary/v1` view. 선택 profile의 canonical project identity를 동일한
+  namespace-separated SHA-256 opaque ID로 변환해 최대 256개 entry 중 하나만 찾는다. 전체 view를
+  strict/deny-unknown 계약과 package 4,096개·edge 16,384개·입력 진단 256개 상한으로 검증하고,
+  per-project `scannedAtMs` 기준 24시간 이하는 fresh, 7일 이하는 stale, 이후 expired로 구분한다.
+  missing/corrupt는 서로 다른 상태이며 package manager, build script, repository 파일이나 다른 앱
+  DB를 직접 열지 않는다. IPC에는 aggregate와 opaque revision만 반환한다.
+
+Dependency Packages 패널은 사용자 기능 추가이므로 Workbench도 최종 v0.6.0 release
+preparation의 minor version bump 대상이다. 기능 PR에서는 Cargo/package/Tauri 3자 버전을
+기존 값으로 유지한다.
 
 ### 프로젝트 환경 안전 계약 (#312, P2-14)
 

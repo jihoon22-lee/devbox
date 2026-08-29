@@ -163,6 +163,36 @@ export interface RuntimeSuggestions {
   ports: RuntimePortSuggestion[];
 }
 
+export type PackageDependencyStatus = "fresh" | "stale" | "expired" | "missing" | "corrupt";
+
+export interface PackageDependencyEcosystem {
+  ecosystem: "cargo" | "pnpm" | "npm" | "python" | "gradle";
+  packageCount: number;
+  directCount: number;
+  duplicateCount: number;
+}
+
+/** Privacy-safe aggregate published by Repo Manager dependency-summary/v1. */
+export interface PackageDependencySummary {
+  profileId: string;
+  source: string;
+  status: PackageDependencyStatus;
+  producerVersion: string | null;
+  freshnessMs: number | null;
+  revision: string | null;
+  packageCount: number;
+  directCount: number;
+  transitiveCount: number;
+  duplicateCount: number;
+  unresolvedDependencyCount: number;
+  missingLockfileCount: number;
+  staleLockfileCount: number;
+  unsupportedCount: number;
+  invalidCount: number;
+  truncated: boolean;
+  ecosystems: PackageDependencyEcosystem[];
+}
+
 const MOCK_PROFILES: ProjectProfile[] = [
   { id: "p-1", name: "devbox", windowsPath: "C:\\projects\\devbox", wsl: { distro: "Ubuntu", path: "/mnt/e/projects/devbox" }, gitRoot: "C:\\projects\\devbox", expectedPorts: [1420], runManagerServiceIds: ["devbox-dev"], environment: null },
 ];
@@ -320,6 +350,32 @@ export function dependencyHealth(profileId: string): Promise<WorkspacePreflight>
       activeDependencyHealthRequest = null;
     }
   });
+}
+
+/** Reads Repo Manager's aggregate snapshot without scanning the project. */
+export function packageDependencySummary(profileId: string): Promise<PackageDependencySummary> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      profileId,
+      source: "Repo Manager dependency-summary/v1",
+      status: "missing",
+      producerVersion: null,
+      freshnessMs: null,
+      revision: null,
+      packageCount: 0,
+      directCount: 0,
+      transitiveCount: 0,
+      duplicateCount: 0,
+      unresolvedDependencyCount: 0,
+      missingLockfileCount: 0,
+      staleLockfileCount: 0,
+      unsupportedCount: 0,
+      invalidCount: 0,
+      truncated: false,
+      ecosystems: [],
+    });
+  }
+  return invoke<PackageDependencySummary>("package_dependency_summary", { profileId });
 }
 
 /** Cancels the exact preflight request currently owned by this renderer. */

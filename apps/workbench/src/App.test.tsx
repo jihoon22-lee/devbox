@@ -17,6 +17,7 @@ import {
   listProfiles,
   listProfileTemplates,
   openProfileIn,
+  packageDependencySummary,
   previewProjectEnvironment,
   profileCopyPath,
   profileOpenTargets,
@@ -36,6 +37,7 @@ import {
   type WorkspacePreflight,
   type WorkspaceRun,
   type RuntimeSuggestions,
+  type PackageDependencySummary,
 } from "./api";
 
 vi.mock("./api", () => ({
@@ -55,6 +57,7 @@ vi.mock("./api", () => ({
   listProfileTemplates: vi.fn(),
   onOpenRequest: vi.fn(async () => () => undefined),
   openProfileIn: vi.fn(),
+  packageDependencySummary: vi.fn(),
   previewProjectEnvironment: vi.fn(),
   profileCopyPath: vi.fn(),
   profileOpenTargets: vi.fn(),
@@ -114,10 +117,31 @@ const workspacePreflightMock = vi.mocked(workspacePreflight);
 const profileOpenTargetsMock = vi.mocked(profileOpenTargets);
 const profileCopyPathMock = vi.mocked(profileCopyPath);
 const openProfileInMock = vi.mocked(openProfileIn);
+const packageDependencySummaryMock = vi.mocked(packageDependencySummary);
 const previewProjectEnvironmentMock = vi.mocked(previewProjectEnvironment);
 const wslRuntimeSuggestionsMock = vi.mocked(wslRuntimeSuggestions);
 const confirmMock = vi.fn<(message?: string) => boolean>();
 const writeTextMock = vi.fn<(value: string) => Promise<void>>();
+
+const missingPackageSummary: PackageDependencySummary = {
+  profileId: "p-1",
+  source: "Repo Manager dependency-summary/v1",
+  status: "missing",
+  producerVersion: null,
+  freshnessMs: null,
+  revision: null,
+  packageCount: 0,
+  directCount: 0,
+  transitiveCount: 0,
+  duplicateCount: 0,
+  unresolvedDependencyCount: 0,
+  missingLockfileCount: 0,
+  staleLockfileCount: 0,
+  unsupportedCount: 0,
+  invalidCount: 0,
+  truncated: false,
+  ecosystems: [],
+};
 let profiles: ProjectProfile[];
 
 const freshRuntimeSuggestions: RuntimeSuggestions = {
@@ -241,6 +265,10 @@ beforeEach(() => {
   listProfileTemplatesMock.mockReset().mockResolvedValue(templateSnapshot);
   dependencyHealthMock.mockReset().mockImplementation(async (profileId) => ({
     ...readyPreflight,
+    profileId,
+  }));
+  packageDependencySummaryMock.mockReset().mockImplementation(async (profileId) => ({
+    ...missingPackageSummary,
     profileId,
   }));
   projectHealthMock.mockReset().mockImplementation(async (profileId) => ({

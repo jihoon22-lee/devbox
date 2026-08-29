@@ -21,7 +21,7 @@ mod tests {
     fn parses_the_repository_v2_catalog_through_the_shared_contract() {
         let catalog = parse_catalog(BUILD_CATALOG).unwrap();
         assert_eq!(catalog.schema_version, 2);
-        assert_eq!(catalog.catalog_revision, Some(12));
+        assert_eq!(catalog.catalog_revision, Some(13));
         assert_eq!(catalog.apps.len(), 15);
         let knowledge = catalog
             .apps
@@ -60,6 +60,10 @@ mod tests {
             .find(|app| app.id == "repo-manager")
             .expect("Repo Manager must remain in the repository catalog");
         assert_eq!(repo_manager.accepts, vec!["path"]);
+        assert_eq!(
+            repo_manager.produces,
+            vec!["snapshot:repo-manager/dependency-summary/v1"]
+        );
         let life_log = catalog
             .apps
             .iter()

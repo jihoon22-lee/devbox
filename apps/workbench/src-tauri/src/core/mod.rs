@@ -1,3 +1,4 @@
+pub mod dependency_summary;
 pub mod environment;
 pub mod health;
 pub mod open_targets;

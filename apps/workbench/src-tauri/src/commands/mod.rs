@@ -1,3 +1,4 @@
+pub mod dependencies;
 pub mod environment;
 pub mod preflight;
 mod process_tree;

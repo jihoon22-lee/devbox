@@ -468,9 +468,120 @@ body {
   margin-bottom: 8px;
 }
 
+.dependencies-title {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.dependency-subtitle {
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--text);
+}
+
 .dependency-health-list {
   display: grid;
   gap: 6px;
+}
+
+.package-dependency-panel {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.package-dependency-panel .field-help {
+  margin: 0 0 10px;
+}
+
+.package-summary-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin: 8px 0;
+}
+
+.package-summary-status span {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.package-summary-status.status-fresh strong {
+  color: var(--ok);
+}
+
+.package-summary-status.status-stale strong,
+.package-summary-status.status-expired strong {
+  color: #d29922;
+}
+
+.package-summary-status.status-corrupt strong {
+  color: var(--danger);
+}
+
+.package-summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.package-summary-metrics span,
+.package-summary-signals span {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.package-summary-metrics strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.package-summary-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.package-ecosystem-list {
+  display: grid;
+  gap: 5px;
+}
+
+.package-ecosystem-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.package-ecosystem-list span {
+  color: var(--dim);
+  text-align: right;
+}
+
+@media (max-width: 760px) {
+  .package-summary-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .package-ecosystem-list > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .package-ecosystem-list span {
+    text-align: left;
+  }
 }
 
 .template-dialog-backdrop {
