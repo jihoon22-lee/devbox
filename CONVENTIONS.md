@@ -25,7 +25,7 @@ devbox/
 |---|---|
 | 타깃 OS | Windows 10/11 (WebView2 내장) |
 | 개발 OS | WSL2 Ubuntu + Windows (편집은 WSL, 빌드는 Windows) |
-| 소스 위치 | `/mnt/e/projects/devbox/apps/<AppName>` (Windows: `E:\projects\devbox\apps\<AppName>`) |
+| 소스 위치 | `/home/jihoon/projects/devbox/apps/<AppName>` (Windows: `\\wsl.localhost\Ubuntu\home\jihoon\projects\devbox\apps\<AppName>`) |
 | 에디터 | 자유 (Rust-analyzer + ESLint + Prettier 권장) |
 | 프론트 패키지 매니저 | **pnpm** (workspace) |
 | Rust 빌드 | **Cargo workspace** (루트 `Cargo.toml`) |
@@ -33,6 +33,8 @@ devbox/
 ### 빌드 원칙
 - **개발(핫리로드)**: Windows PowerShell에서 `pnpm tauri dev` (각 앱 디렉터리에서)
 - **배포 빌드**: Windows PowerShell에서 `pnpm tauri build`
+- Windows toolchain은 `\\wsl.localhost\Ubuntu\home\jihoon\projects\devbox` UNC source를 사용한다.
+  VHD의 물리적 E: 저장 위치를 `E:\projects` source path로 오인하지 않는다.
 - WSL은 편집·git·React dev server 용도로만 사용
 - Rust 툴체인은 **Windows에 설치** (`winget install Rustlang.Rustup` → MSVC 기본 툴체인)
 - 크로스 컴파일(`cargo-xwin`)은 공식 지원하나 비권장 → 일상 빌드는 Windows 툴체인 고정
