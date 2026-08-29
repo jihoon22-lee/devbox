@@ -495,6 +495,19 @@ exit 127, 기타 non-zero를 각각 `available`/`missing`/`error`로 구분한�
 `snapshot:wsl-desktop/runtime/v1`로 선언한다. Workbench #281 consumer와 Docker/WSL action은
 이 producer 구현에 포함되지 않는다.
 
+**2026-08-29 #474 구현 상태 (v0.5.0 tag 이후 post-release source correction).** Run Manager는
+`write_atomic`으로 기존 flat `run-manager/v1/summary.json` status protocol을 유지하고,
+`write_named_view_snapshot_atomic`으로 같은 producer/version의
+`run-manager/v1/jobs-services.json` named capability를 별도 발행한다. v1 `data`는 기존
+`activeServices`·`runs`·`lastRunAtMs` byte-shape를 그대로 유지해 독립 배포된 Workbench/Life
+Log와 구버전 Launcher를 보호한다. sidecar의 `data.views`에는 `jobs-services` view 하나만
+담고 저장된 모든 job/service를 bounded action entry로 제공한다. action payload는 검증된
+opaque id만 포함하며 `targetApp=run-manager`, `targetKind=task`, `payloadVersion=1`,
+`payload={id}`를 고정한다. 명령·cwd·환경변수·경로·credential·로그 원문은 producer boundary를
+넘지 않는다. 새 Launcher는 sidecar를 읽고 sidecar가 없는 경우에만 v1 flat active-service
+fallback을 사용한다. malformed/duplicate/oversized definitions는 sidecar last-good snapshot을
+보존하며 v1 status write는 계속 성공할 수 있다.
+
 ### 4.2 자동 발견
 
 지금은 consumer가 producer id를 하드코딩한다. 새 producer가 생겨도 아무도 모른다.
@@ -525,13 +538,16 @@ Launcher는 해당 source를 `missing`으로 격리하고 나머지 검색을 �
 |---|---|---|
 | `workbench/profiles/v1` | Workbench (후속 producer) | recent profile/workspace id와 표시 metadata |
 | `repo-manager/repositories/v1` | Repo Manager (후속 producer) | repository/worktree id와 path label |
-| `run-manager/jobs-services/v1` (`status/v1` 호환) | Run Manager | job/service id, 상태와 실행 action metadata |
+| `run-manager/jobs-services/v1` (`jobs-services.json` sidecar; `status/v1` flat fallback) | Run Manager | job/service id, 상태와 실행 action metadata |
 | `everything-plus/saved-queries/v1` | Everything+ (후속 producer) | query/filter만, 결과 목록은 제외 |
 | `wsl-desktop/profiles/v1` | WSL Desktop (후속 profile producer) | profile/layout/distro/cwd metadata |
 
-각 envelope은 `schemaVersion`, `producer`, `producerVersion`, `generatedAt`과 `data.views`를
-포함하고 `%LOCALAPPDATA%\devbox\integration\<app-id>\v1\summary.json`에 atomic replace로
-쓴다. 각 view는 자체 `schemaVersion`, `freshnessMs`, `entries`를 가지며 entry에는 versioned
+각 multi-view envelope은 `schemaVersion`, `producer`, `producerVersion`, `generatedAt`과 `data.views`를
+포함하고 `%LOCALAPPDATA%\devbox\integration\<app-id>\v<n>\summary.json`에 atomic replace로
+쓴다. Run Manager는 기존 status를 flat v1 `summary.json`에 유지하고, jobs/services는 같은
+producer/version 디렉터리의 independently versioned named `jobs-services.json` sidecar에 발행한다.
+named sidecar의 `data.views`에는 해당 `jobs-services` view 하나만 둔다. 각 view는 자체
+`schemaVersion`, `freshnessMs`, `entries`를 가지며 entry에는 versioned
 action payload와 안정적인 id만 둔다. secret, environment value, raw log, full query result는
 금지한다. stale·손상 source 하나가 다른 source 검색을 막지 않는다. 기존 Life Log→Knowledge
 `knowledge-draft/v1`은 구조화 catalog action으로 유지하지만 Launcher가 clipboard text로

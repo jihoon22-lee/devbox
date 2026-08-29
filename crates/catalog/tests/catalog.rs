@@ -64,7 +64,7 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
-    assert_eq!(catalog.catalog_revision, Some(11));
+    assert_eq!(catalog.catalog_revision, Some(12));
     assert_eq!(catalog.apps.len(), 15);
     assert_eq!(
         capable_targets(&catalog, "path")
@@ -95,6 +95,20 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     );
     assert_eq!(
         capable_targets(&catalog, "task")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["run-manager"]
+    );
+    assert_eq!(
+        capable_producers(&catalog, "snapshot:run-manager/status/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["run-manager"]
+    );
+    assert_eq!(
+        capable_producers(&catalog, "snapshot:run-manager/jobs-services/v1")
             .into_iter()
             .map(|app| app.id)
             .collect::<Vec<_>>(),

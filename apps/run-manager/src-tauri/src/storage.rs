@@ -127,6 +127,17 @@ pub struct DatabaseState {
     connection: Mutex<Connection>,
 }
 
+/// Minimal definition projection for integration consumers. Keeping this DTO
+/// separate from `Job` makes it impossible for a snapshot producer to
+/// accidentally materialize command, cwd, environment, or other execution
+/// metadata just to render an action label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LauncherDefinition {
+    pub id: String,
+    pub kind: JobKind,
+    pub name: String,
+}
+
 #[derive(Debug)]
 pub enum StorageError {
     Sqlite(rusqlite::Error),
@@ -563,6 +574,28 @@ impl DatabaseState {
             "SELECT {JOB_COLUMNS} FROM jobs WHERE kind = 'job' ORDER BY name COLLATE NOCASE, id"
         ))?;
         let rows = statement.query_map([], row_to_job)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(StorageError::from)
+    }
+
+    /// Read only the metadata needed by Run Manager's Launcher snapshot. The
+    /// caller deliberately asks for one item beyond the published bound so a
+    /// complete view can fail closed instead of silently truncating entries.
+    pub(crate) fn list_launcher_definitions(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<LauncherDefinition>, StorageError> {
+        let limit = i64::try_from(limit).map_err(|_| {
+            StorageError::Validation("launcher definition limit is too large".into())
+        })?;
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT id, kind, name FROM jobs
+             WHERE kind IN ('job', 'service')
+             ORDER BY id
+             LIMIT ?1",
+        )?;
+        let rows = statement.query_map([limit], row_to_launcher_definition)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(StorageError::from)
     }
@@ -2412,6 +2445,14 @@ fn row_to_job(row: &Row<'_>) -> rusqlite::Result<Job> {
         health_start_grace_ms: row.get("health_start_grace_ms")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
+    })
+}
+
+fn row_to_launcher_definition(row: &Row<'_>) -> rusqlite::Result<LauncherDefinition> {
+    Ok(LauncherDefinition {
+        id: row.get("id")?,
+        kind: parse_job_kind(&row.get::<_, String>("kind")?)?,
+        name: row.get("name")?,
     })
 }
 

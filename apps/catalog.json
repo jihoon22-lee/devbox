@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 11,
+  "catalogRevision": 12,
   "apps": [
     {
       "id": "port-manager",
@@ -155,7 +155,11 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["task"],
-      "produces": ["snapshot:run-manager/status/v1", "handoff:log-source/v1"],
+      "produces": [
+        "snapshot:run-manager/status/v1",
+        "snapshot:run-manager/jobs-services/v1",
+        "handoff:log-source/v1"
+      ],
       "actions": []
     },
     {

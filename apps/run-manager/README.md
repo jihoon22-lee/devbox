@@ -20,6 +20,33 @@
 - **제한된 로그 저장** — backend가 run ID로 해석한 app-owned 회전 로그만 decimal cursor로 읽고, 현재 스트림을 최대 50MiB까지 저장. 파일명에는 bounded opaque run ID만 사용하며 명령·경로·환경변수를 넣지 않음
 - **실행 어댑터** — Windows(Job Object)·WSL(session/group), DPAPI 환경변수 보호
 
+## Integration snapshot 계약 (#474)
+
+이 계약 보강은 v0.5.0 tag 이후의 post-release source correction이며 공개 v0.5.0 binary에는
+포함되지 않는다.
+
+Run Manager는 `crates/integration`의 versioned atomic snapshot을 주기적으로 발행한다.
+`run-manager/v1/summary.json`은 기존 flat status payload를 정확히 유지한다. 즉
+`activeServices`·`runs`·`lastRunAtMs`만 가진 `data`를 기록하므로 기존 Workbench/Life Log와
+구버전 Launcher가 새 producer를 계속 읽을 수 있다. 새 named capability는 같은 producer와
+version directory 안의 `run-manager/v1/jobs-services.json` sidecar에 발행한다. sidecar
+envelope schema와 `jobs-services` view schema는 각각 1이며, named view에는 그 view 하나만
+담는다. entry는 `id` 기준으로 정렬되고 전체 항목은 2,048개 이하로 제한한다.
+
+`jobs-services` entry는 `id`, 안전한 표시용 `label`/`detail`,
+`targetApp: "run-manager"`, `targetKind: "task"`, `payloadVersion: 1`,
+`payload: { "id": "..." }`만 가진다. payload에는 command, cwd, environment 값이나
+설정 여부, path, credential, log 원문을 복사하지 않는다. 저장 데이터에 제어문자·과도한
+길이·credential 형태가 있는 label은 고정된 fallback label로 대체하고, 잘못된/중복 ID나
+범위 초과 데이터는 snapshot 전체를 갱신하지 않아 마지막 정상 파일을 보존한다.
+
+Workbench와 Life Log는 v1 flat status를 계속 읽는다. 새 Launcher는 named
+`jobs-services.json` sidecar를 우선 사용하고, sidecar가 없는 구버전 producer에서는 v1 flat
+`activeServices` fallback을 사용한다. 따라서 새 Launcher+구버전 Run Manager도 기존
+active-service 결과를 유지하고, 새 producer+새 Launcher에서는 전체 job/service action을
+검색할 수 있다. sidecar가 overflow 또는 projection 오류로 갱신되지 않으면 v1 status는 먼저
+성공하고 sidecar의 last-good 파일은 atomic 경계에서 보존된다.
+
 ## 실행 이력·task import 계약 (#357/#358)
 
 이력 조회는 하나의 parameterized SQLite query로 작업과 서비스 run을 함께 필터링한다. 날짜는

@@ -11,7 +11,7 @@ snapshot path를 검색한다. 이 목록은 consumer-side 계약이며, bootstr
 
 - Workbench `profiles/v1` (후속 producer)
 - Repo Manager `repositories/v1` (후속 producer)
-- Run Manager `jobs-services/v1` (`status/v1` 읽기 전용 호환)
+- Run Manager `jobs-services/v1` (`jobs-services.json` sidecar; `summary.json` flat fallback)
 - Everything+ `saved-queries/v1` (후속 producer)
 - WSL Desktop `profiles/v1` (후속 profile producer)
 

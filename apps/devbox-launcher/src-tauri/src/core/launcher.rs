@@ -37,6 +37,13 @@ pub struct SourceSpec {
     pub aliases: &'static [&'static str],
     pub target_app: &'static str,
     pub target_kind: &'static str,
+    pub snapshot_version: u32,
+    /// Optional named sidecar in the producer/version directory. When absent,
+    /// Launcher reads the conventional `summary.json`.
+    pub snapshot_name: Option<&'static str>,
+    /// Run Manager keeps an exact flat summary for old consumers; use it only
+    /// when the named primary sidecar is missing.
+    pub legacy_flat_summary: bool,
 }
 
 pub const SOURCES: &[SourceSpec] = &[
@@ -46,6 +53,9 @@ pub const SOURCES: &[SourceSpec] = &[
         aliases: &[],
         target_app: "workbench",
         target_kind: "profile",
+        snapshot_version: SNAPSHOT_SCHEMA_VERSION,
+        snapshot_name: None,
+        legacy_flat_summary: false,
     },
     SourceSpec {
         producer: "repo-manager",
@@ -53,13 +63,19 @@ pub const SOURCES: &[SourceSpec] = &[
         aliases: &[],
         target_app: "repo-manager",
         target_kind: "path",
+        snapshot_version: SNAPSHOT_SCHEMA_VERSION,
+        snapshot_name: None,
+        legacy_flat_summary: false,
     },
     SourceSpec {
         producer: "run-manager",
         view: "jobs-services",
-        aliases: &["status"],
+        aliases: &[],
         target_app: "run-manager",
         target_kind: "task",
+        snapshot_version: SNAPSHOT_SCHEMA_VERSION,
+        snapshot_name: Some("jobs-services"),
+        legacy_flat_summary: true,
     },
     SourceSpec {
         producer: "everything-plus",
@@ -67,6 +83,9 @@ pub const SOURCES: &[SourceSpec] = &[
         aliases: &[],
         target_app: "everything-plus",
         target_kind: "query",
+        snapshot_version: SNAPSHOT_SCHEMA_VERSION,
+        snapshot_name: None,
+        legacy_flat_summary: false,
     },
     SourceSpec {
         producer: "wsl-desktop",
@@ -74,6 +93,9 @@ pub const SOURCES: &[SourceSpec] = &[
         aliases: &[],
         target_app: "wsl-desktop",
         target_kind: "profile",
+        snapshot_version: SNAPSHOT_SCHEMA_VERSION,
+        snapshot_name: None,
+        legacy_flat_summary: false,
     },
 ];
 
@@ -475,7 +497,36 @@ fn target_accepts(app: &CatalogApp, kind: &str) -> bool {
 }
 
 fn read_source(spec: &SourceSpec, root: &Path) -> (String, Vec<ParsedEntry>, bool) {
-    let path = devbox_integration::snapshot_path_in(root, spec.producer, SNAPSHOT_SCHEMA_VERSION);
+    let primary = read_source_at(spec, root, spec.snapshot_version, spec.snapshot_name, false);
+    if primary.0 != "missing" {
+        return primary;
+    }
+    if spec.legacy_flat_summary {
+        read_source_at(spec, root, spec.snapshot_version, None, true)
+    } else {
+        primary
+    }
+}
+
+fn read_source_at(
+    spec: &SourceSpec,
+    root: &Path,
+    snapshot_version: u32,
+    snapshot_name: Option<&str>,
+    allow_legacy_flat: bool,
+) -> (String, Vec<ParsedEntry>, bool) {
+    let path = match snapshot_name {
+        Some(name) => match devbox_integration::named_view_snapshot_path_in(
+            root,
+            spec.producer,
+            snapshot_version,
+            name,
+        ) {
+            Ok(path) => path,
+            Err(_) => return ("corrupt".into(), Vec::new(), false),
+        },
+        None => devbox_integration::snapshot_path_in(root, spec.producer, snapshot_version),
+    };
     match std::fs::symlink_metadata(&path) {
         Ok(metadata) if metadata.file_type().is_symlink() || !metadata.file_type().is_file() => {
             return ("corrupt".into(), Vec::new(), false)
@@ -502,12 +553,20 @@ fn read_source(spec: &SourceSpec, root: &Path) -> (String, Vec<ParsedEntry>, boo
         }
         Err(_) => return ("corrupt".into(), Vec::new(), false),
     }
-    let envelope =
-        match devbox_integration::read_snapshot_in(root, spec.producer, SNAPSHOT_SCHEMA_VERSION) {
-            Ok(Some(value)) => value,
-            Ok(None) => return ("missing".into(), Vec::new(), false),
-            Err(_) => return ("corrupt".into(), Vec::new(), false),
-        };
+    let envelope_result = match snapshot_name {
+        Some(name) => devbox_integration::read_named_view_snapshot_in(
+            root,
+            spec.producer,
+            snapshot_version,
+            name,
+        ),
+        None => devbox_integration::read_snapshot_in(root, spec.producer, snapshot_version),
+    };
+    let envelope = match envelope_result {
+        Ok(Some(value)) => value,
+        Ok(None) => return ("missing".into(), Vec::new(), false),
+        Err(_) => return ("corrupt".into(), Vec::new(), false),
+    };
     let age = std::fs::symlink_metadata(&path)
         .and_then(|metadata| metadata.modified())
         .ok()
@@ -526,11 +585,7 @@ fn read_source(spec: &SourceSpec, root: &Path) -> (String, Vec<ParsedEntry>, boo
     // Run Manager shipped its first status producer as a flat envelope before
     // the multi-view contract was adopted. Keep this narrow compatibility
     // reader so an installed producer remains useful without opening its DB.
-    if selected_view.is_none()
-        && spec.producer == "run-manager"
-        && spec.aliases.contains(&"status")
-        && envelope.data.get("views").is_none()
-    {
+    if selected_view.is_none() && allow_legacy_flat {
         let parsed = parse_legacy_run_snapshot(&envelope.data);
         return match parsed {
             Ok(entries) => (
@@ -795,9 +850,10 @@ mod tests {
     }
 
     fn write_envelope(root: &std::path::Path, producer: &str, envelope: Envelope) {
+        let version = envelope.schema_version;
         devbox_integration::write_atomic(
             &envelope,
-            &devbox_integration::snapshot_dir_in(root, producer, 1),
+            &devbox_integration::snapshot_dir_in(root, producer, version),
         )
         .unwrap();
     }
@@ -1080,6 +1136,181 @@ mod tests {
             Target::Task {
                 id: "service-1".into()
             }
+        );
+    }
+
+    #[test]
+    fn run_manager_jobs_services_sidecar_is_primary() {
+        let root = root("run-sidecar");
+        let views = SnapshotViews::from([(
+            "jobs-services".into(),
+            SnapshotView {
+                schema_version: SNAPSHOT_VIEW_SCHEMA_VERSION,
+                freshness_ms: 0,
+                entries: vec![serde_json::json!({
+                    "id": "job-build",
+                    "label": "Build task",
+                    "detail": "Run Manager · job",
+                    "targetApp": "run-manager",
+                    "targetKind": "task",
+                    "payloadVersion": 1,
+                    "payload": {"id": "job-build"},
+                })],
+            },
+        )]);
+        let envelope = Envelope::with_views("run-manager", "0.5.0", views);
+        devbox_integration::write_named_view_snapshot_atomic(&envelope, &root, "jobs-services")
+            .unwrap();
+
+        let index = Index::build(catalog(), &root).unwrap();
+        let result = index
+            .search("Build task")
+            .unwrap()
+            .results
+            .into_iter()
+            .find(|result| result.source == "run-manager")
+            .unwrap();
+        assert_eq!(result.target_kind, "task");
+        assert_eq!(
+            index.resolve(&result.id).unwrap().target,
+            Target::Task {
+                id: "job-build".into()
+            }
+        );
+        assert_eq!(
+            index
+                .search("")
+                .unwrap()
+                .sources
+                .into_iter()
+                .find(|source| source.producer == "run-manager")
+                .unwrap()
+                .status,
+            "fresh"
+        );
+    }
+
+    #[test]
+    fn run_manager_sidecar_missing_falls_back_to_flat_status() {
+        let root = root("run-sidecar-fallback");
+        write_envelope(
+            &root,
+            "run-manager",
+            Envelope::new(
+                "run-manager",
+                "0.4.0",
+                serde_json::json!({
+                    "activeServices": [{"id": "service-legacy", "uptimeMs": 12}],
+                    "runs": {"success": 2, "failed": 0},
+                    "lastRunAtMs": null,
+                }),
+            ),
+        );
+
+        let index = Index::build(catalog(), &root).unwrap();
+        let result = index
+            .search("service-legacy")
+            .unwrap()
+            .results
+            .into_iter()
+            .find(|result| result.source == "run-manager")
+            .unwrap();
+        assert_eq!(
+            index.resolve(&result.id).unwrap().target,
+            Target::Task {
+                id: "service-legacy".into()
+            }
+        );
+    }
+
+    #[test]
+    fn run_manager_sidecar_corrupt_does_not_fall_back_to_flat_status() {
+        let root = root("run-sidecar-corrupt");
+        write_envelope(
+            &root,
+            "run-manager",
+            Envelope::new(
+                "run-manager",
+                "0.4.0",
+                serde_json::json!({
+                    "activeServices": [{"id": "service-legacy", "uptimeMs": 12}],
+                    "runs": {"success": 2, "failed": 0},
+                    "lastRunAtMs": null,
+                }),
+            ),
+        );
+        let sidecar = devbox_integration::named_view_snapshot_path_in(
+            &root,
+            "run-manager",
+            1,
+            "jobs-services",
+        )
+        .unwrap();
+        std::fs::create_dir_all(sidecar.parent().unwrap()).unwrap();
+        std::fs::write(sidecar, b"not-json").unwrap();
+
+        let index = Index::build(catalog(), &root).unwrap();
+        let response = index.search("service-legacy").unwrap();
+        assert!(!response
+            .results
+            .iter()
+            .any(|result| result.source == "run-manager"));
+        assert_eq!(
+            response
+                .sources
+                .into_iter()
+                .find(|source| source.producer == "run-manager")
+                .unwrap()
+                .status,
+            "corrupt"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_manager_sidecar_symlink_does_not_fall_back_to_flat_status() {
+        use std::os::unix::fs::symlink;
+
+        let root = root("run-sidecar-symlink");
+        write_envelope(
+            &root,
+            "run-manager",
+            Envelope::new(
+                "run-manager",
+                "0.4.0",
+                serde_json::json!({
+                    "activeServices": [{"id": "service-legacy", "uptimeMs": 12}],
+                    "runs": {"success": 2, "failed": 0},
+                    "lastRunAtMs": null,
+                }),
+            ),
+        );
+        let sidecar = devbox_integration::named_view_snapshot_path_in(
+            &root,
+            "run-manager",
+            SNAPSHOT_SCHEMA_VERSION,
+            "jobs-services",
+        )
+        .unwrap();
+        std::fs::create_dir_all(sidecar.parent().unwrap()).unwrap();
+        let outside = root.join("outside.json");
+        std::fs::write(&outside, b"not-json").unwrap();
+        symlink(outside, sidecar).unwrap();
+
+        let index = Index::build(catalog(), &root).unwrap();
+        let response = index.search("service-legacy").unwrap();
+        assert!(!response
+            .results
+            .iter()
+            .any(|result| result.source == "run-manager"));
+        assert_eq!(
+            response
+                .sources
+                .into_iter()
+                .find(|source| source.producer == "run-manager")
+                .unwrap()
+                .status,
+            "corrupt"
         );
     }
 

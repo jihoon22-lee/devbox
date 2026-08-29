@@ -21,7 +21,7 @@ mod tests {
     fn parses_the_repository_v2_catalog_through_the_shared_contract() {
         let catalog = parse_catalog(BUILD_CATALOG).unwrap();
         assert_eq!(catalog.schema_version, 2);
-        assert_eq!(catalog.catalog_revision, Some(11));
+        assert_eq!(catalog.catalog_revision, Some(12));
         assert_eq!(catalog.apps.len(), 15);
         let knowledge = catalog
             .apps
