@@ -291,9 +291,11 @@ advisory exception and all four enforced policy categories passed.
 ### Remaining packaged verification
 
 Windows compile CI and packaged interaction acceptance cannot be substituted by the WSL checks above.
-They remain pending: Windows compile/test/Clippy runs on this PR's required GitHub Actions, while final
-installer/bundle interaction and asset-size evidence belongs to #493 v0.6.0 release preparation. This
-workthrough does not claim packaged-release verification.
+The first Windows job passed `cargo check` and then exposed a Windows-only `needless_return` lint in the
+reparse-point branch that Linux does not compile. The branch now uses its final expression directly;
+format, focused Repo Manager Clippy and all 23 Dependency Lens tests pass locally, and the required
+GitHub Actions rerun remains the merge gate. Final installer/bundle interaction and asset-size evidence
+belongs to #493 v0.6.0 release preparation. This workthrough does not claim packaged-release verification.
 
 ## Next Steps
 
