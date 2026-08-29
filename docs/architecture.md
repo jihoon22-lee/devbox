@@ -169,7 +169,9 @@ code-pad:         React(CodeMirror + tab/editor context-menu, bounded workspace 
 run-manager:      React(context-menu + bounded log export/search) → commands → scheduler
                    → platform 실행 어댑터(Windows Job Object/WSL) → SQLite + app-owned 회전 로그
 devbox-manager:   React → commands → catalog/manifest/install-root preview → GitHub release asset
-                   └ custom root apply: canonical empty directory → app-owned registry → versioned locator
+                   ├ custom root apply: canonical empty directory → app-owned registry → versioned locator
+                   └ native picker → strict WinGet v3 package-only model → canonical review/export
+                      → one-time confirmed per-package apply → guarded WinGet Job Object
 workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument,
                    v0.4.0에서는 argv 수신 부재로 미동작했으나, v0.4.1에서 crates/applink와
                    single-instance pending-open 수신을 Code Pad/WSL Desktop/Workbench에 구현.
@@ -614,6 +616,21 @@ CAS로 다시 확인한 뒤 정확히 수집된 파일·디렉터리만 깊은 �
 manifest bytes를 복원한다. 이미 삭제된 exact final executable은 recovery parser에서만 missing으로
 허용한다. installer lifecycle은 wizard 실행 사실만 기록하고 실제 설치 위치나 uninstaller를 추측하지
 않으므로 제거를 지원하지 않는다.
+
+Dev Setup의 WinGet Configuration 흐름은 capability 감사와 분리된 명시적 mutation 경계다. Rust native
+picker가 선택한 최대 256 KiB YAML byte buffer를 처음부터 zeroizing guard 안에서 읽고, lexical graph
+feature 차단과 `deny_unknown_fields` typed parser를 통과한 정확한 `Microsoft.WinGet/Package` 최대 16개만
+package model로 만든다. 외부 파일 path/bytes, resource name·description·security metadata, WinGet 출력은
+renderer나 실행 파일로 전달하지 않는다. `source: winget`은 로컬 등록 이름만 고정하며 repository URL이나
+공식성을 증명하지 않으므로 UI가 이 residual trust를 별도 확인시킨다.
+
+검토는 native에 최대 4개·5분 TTL의 CSPRNG token으로만 보관한다. 새 import는 picker 전에 이전 native
+preview를 모두 폐기하고, discard는 해당 token 제거 성공 뒤 renderer 상태를 비운다. Apply는 token을
+실행 전에 한 번 소비하고 세 가지 boolean 확인과 최종 UI 확인을 모두 요구한다. 변경 package마다 imported
+YAML이 아닌 fresh one-resource document를 app cache에 exclusive create하며, preparation failure와 guard
+drop에서 handle을 먼저 닫고 파일을 best-effort 정리한다. WinGet은 shell 없이 suspended 생성→Job Object
+할당→resume 순서로 실행한다. timeout/cancel은 process tree를 종료하고 bounded reap하며 owner drop/crash는
+`KILL_ON_JOB_CLOSE` fallback을 사용한다. Unknown probe는 install로 승격하지 않고 전체 apply를 막는다.
 
 Devbox Manager의 custom install root는 `preview_install_root`와 `apply_install_root` 두 단계로
 분리된다. preview는 사용자 문자열을 native에서 trim/bounds/canonicalize하고, 기존 root·home·workspace·

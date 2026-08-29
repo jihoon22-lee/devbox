@@ -43,11 +43,13 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             devbox_window_state_tauri::restore_main_window(app.handle());
             app.manage(applink::PendingOpen::new());
             app.manage(commands::diagnostics::DiagnosticsState::default());
+            app.manage(commands::dev_setup::DevSetupConfigurationState::default());
             if let Ok(Some(request)) =
                 devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>())
             {
@@ -90,6 +92,11 @@ pub fn run() {
             commands::related_tools::dev_setup_audit,
             commands::related_tools::install_related_tool,
             commands::related_tools::launch_related_tool,
+            commands::dev_setup::import_dev_setup_configuration,
+            commands::dev_setup::discard_dev_setup_configuration,
+            commands::dev_setup::export_dev_setup_configuration,
+            commands::dev_setup::apply_dev_setup_configuration,
+            commands::dev_setup::cancel_dev_setup_apply,
         ])
         .on_window_event(|window, event| {
             devbox_window_state_tauri::handle_window_event(window, event);

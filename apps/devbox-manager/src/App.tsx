@@ -6,15 +6,20 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   available,
+  applyDevSetupConfiguration,
   applyInstallRoot,
   catalog,
   cancelDataDiagnostics,
+  cancelDevSetupApply,
   cancelSupportBundle,
   current,
   devSetupAudit,
+  discardDevSetupConfiguration,
+  exportDevSetupConfiguration,
   exportDataPreview,
   exportSupportBundle,
   inspectDataDatabases,
+  importDevSetupConfiguration,
   installApp,
   installPath,
   installMany,
@@ -256,6 +261,80 @@ const DEV_SETUP_ACTION_LABELS: Record<DevSetupPlanItem["action"], string> = {
   "review-winget": "Windows App Installer 상태 확인",
 };
 
+type DevSetupConfigurationReview = NonNullable<
+  Awaited<ReturnType<typeof importDevSetupConfiguration>>
+>;
+type DevSetupConfigurationPackage = DevSetupConfigurationReview["packages"][number];
+type DevSetupConfigurationApplyResult = Awaited<
+  ReturnType<typeof applyDevSetupConfiguration>
+>;
+
+const DEV_SETUP_CONFIGURATION_IMPORT_ERROR =
+  "WinGet Configuration v3 파일을 불러올 수 없습니다. Microsoft.WinGet/Package와 고정된 winget source 이름만 지원합니다.";
+const DEV_SETUP_CONFIGURATION_EXPORT_ERROR =
+  "정규화된 WinGet Configuration을 내보낼 수 없습니다.";
+const DEV_SETUP_CONFIGURATION_APPLY_ERROR =
+  "Dev Setup 구성을 적용할 수 없습니다. 만료되었거나 최신 검토가 필요합니다.";
+const DEV_SETUP_CONFIGURATION_CANCEL_ERROR =
+  "Dev Setup 적용 취소를 완료할 수 없습니다.";
+const DEV_SETUP_CONFIGURATION_DISCARD_ERROR =
+  "Dev Setup 구성 검토를 폐기할 수 없습니다.";
+const DEV_SETUP_CONFIGURATION_EXPIRED =
+  "Dev Setup 적용 미리 보기가 만료되었습니다. 구성을 다시 가져오세요.";
+const DEV_SETUP_CONFIGURATION_CANCELLED = "Dev Setup 적용을 취소했습니다.";
+
+const DEV_SETUP_CONFIGURATION_DESIRED_LABELS: Record<string, string> = {
+  present: "설치됨",
+  latest: "최신 버전",
+  version: "지정 버전",
+};
+
+const DEV_SETUP_CONFIGURATION_STATE_LABELS: Record<string, string> = {
+  present: "설치됨",
+  absent: "미설치",
+  "update-available": "업데이트 가능",
+  unknown: "확인 불가",
+};
+
+const DEV_SETUP_CONFIGURATION_ACTION_LABELS: Record<string, string> = {
+  none: "변경 없음",
+  install: "설치",
+  update: "업데이트",
+  "reconcile-version": "지정 버전으로 맞춤",
+  verify: "상태 확인 필요",
+};
+
+const DEV_SETUP_APPLY_STATUS_LABELS: Record<string, string> = {
+  complete: "전체 적용 완료",
+  partial: "일부 적용",
+  cancelled: "취소됨",
+  unchanged: "변경 없음",
+  applied: "적용 완료",
+  failed: "실패",
+  "timed-out": "시간 초과",
+  skipped: "건너뜀",
+};
+
+function devSetupConfigurationDesiredLabel(packageReview: DevSetupConfigurationPackage): string {
+  const label = DEV_SETUP_CONFIGURATION_DESIRED_LABELS[packageReview.desired]
+    ?? packageReview.desired;
+  return packageReview.desired === "version" && packageReview.version
+    ? `${label} ${packageReview.version}`
+    : label;
+}
+
+function devSetupConfigurationStateLabel(state: string): string {
+  return DEV_SETUP_CONFIGURATION_STATE_LABELS[state] ?? "확인 불가";
+}
+
+function devSetupConfigurationActionLabel(action: string): string {
+  return DEV_SETUP_CONFIGURATION_ACTION_LABELS[action] ?? "확인 필요";
+}
+
+function devSetupApplyStatusLabel(status: string): string {
+  return DEV_SETUP_APPLY_STATUS_LABELS[status] ?? "확인 필요";
+}
+
 function devSetupStateLabel(capability: DevSetupCapability): string {
   if (capability.id === "docker-desktop-install") {
     return installCapabilityLabel(capability.state as RelatedTool["installState"]);
@@ -324,6 +403,19 @@ export default function App() {
   const [devSetupSnapshot, setDevSetupSnapshot] = useState<DevSetupAudit | null>(null);
   const [devSetupBusy, setDevSetupBusy] = useState(false);
   const [devSetupError, setDevSetupError] = useState<string | null>(null);
+  const [devSetupConfigurationReview, setDevSetupConfigurationReview] =
+    useState<DevSetupConfigurationReview | null>(null);
+  const [devSetupConfigurationBusy, setDevSetupConfigurationBusy] = useState(false);
+  const [devSetupConfigurationError, setDevSetupConfigurationError] = useState<string | null>(null);
+  const [devSetupConfigurationNotice, setDevSetupConfigurationNotice] = useState<string | null>(null);
+  const [devSetupConfigurationResult, setDevSetupConfigurationResult] =
+    useState<DevSetupConfigurationApplyResult | null>(null);
+  const [devSetupConfigurationConsumed, setDevSetupConfigurationConsumed] = useState(false);
+  const [devSetupApplyInFlight, setDevSetupApplyInFlight] = useState(false);
+  const [devSetupConfigurationClockMs, setDevSetupConfigurationClockMs] = useState(() => Date.now());
+  const [devSetupReviewAcknowledged, setDevSetupReviewAcknowledged] = useState(false);
+  const [devSetupAgreementsAccepted, setDevSetupAgreementsAccepted] = useState(false);
+  const [devSetupAdminRiskAcknowledged, setDevSetupAdminRiskAcknowledged] = useState(false);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [contextApp, setContextApp] = useState<CatalogApp | null>(null);
   const [batchSelection, setBatchSelection] = useState<Set<string>>(() => new Set());
@@ -354,6 +446,30 @@ export default function App() {
   const relatedRequestIdRef = useRef(0);
   const relatedActionIdRef = useRef(0);
   const devSetupRequestIdRef = useRef(0);
+  const devSetupConfigurationRequestIdRef = useRef(0);
+  const devSetupConfigurationApplyRequestIdRef = useRef(0);
+  const devSetupConfigurationApplyBusyRef = useRef(false);
+
+  useEffect(() => {
+    const expiresAtMs = devSetupConfigurationReview?.expiresAtMs;
+    if (expiresAtMs == null) return undefined;
+    let timeout: number | undefined;
+    const refreshExpiry = () => {
+      const remainingMs = expiresAtMs - Date.now();
+      if (remainingMs <= 0) {
+        setDevSetupConfigurationClockMs(Date.now());
+        return;
+      }
+      // Timers can fire a little early on a busy event loop or under fake
+      // timers. Re-check the deadline and leave a small safety margin so an
+      // unexpired preview never gets stuck in the non-expired state.
+      timeout = window.setTimeout(refreshExpiry, Math.max(50, remainingMs + 50));
+    };
+    refreshExpiry();
+    return () => {
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [devSetupConfigurationReview?.expiresAtMs]);
 
   const prepareAppContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.appId;
@@ -620,6 +736,224 @@ export default function App() {
     }
   }, []);
 
+  const onImportDevSetupConfiguration = useCallback(async () => {
+    if (
+      operationBusyRef.current
+      || readBusyRef.current
+      || devSetupConfigurationBusy
+      || devSetupConfigurationApplyBusyRef.current
+    ) return;
+    const requestId = ++devSetupConfigurationRequestIdRef.current;
+    readBusyRef.current = true;
+    setReadBusy(true);
+    setDevSetupConfigurationBusy(true);
+    setDevSetupConfigurationError(null);
+    setDevSetupConfigurationNotice(null);
+    // The API invalidates the previous native preview as soon as a new
+    // import starts, including when the picker is cancelled or parsing fails.
+    // Clear local review state before awaiting that result so an old token
+    // cannot remain actionable in the renderer.
+    setDevSetupConfigurationReview(null);
+    setDevSetupConfigurationResult(null);
+    setDevSetupConfigurationConsumed(false);
+    setDevSetupReviewAcknowledged(false);
+    setDevSetupAgreementsAccepted(false);
+    setDevSetupAdminRiskAcknowledged(false);
+    try {
+      const review = await importDevSetupConfiguration();
+      if (mountedRef.current && requestId === devSetupConfigurationRequestIdRef.current && review) {
+        setDevSetupConfigurationClockMs(Date.now());
+        setDevSetupConfigurationReview(review);
+        setDevSetupConfigurationNotice("구성을 정규화했습니다. 적용 전에 패키지와 안전 확인을 검토하세요.");
+      }
+    } catch {
+      if (mountedRef.current && requestId === devSetupConfigurationRequestIdRef.current) {
+        setDevSetupConfigurationError(DEV_SETUP_CONFIGURATION_IMPORT_ERROR);
+      }
+    } finally {
+      if (requestId === devSetupConfigurationRequestIdRef.current) {
+        readBusyRef.current = false;
+        if (mountedRef.current) {
+          setDevSetupConfigurationBusy(false);
+          setReadBusy(false);
+        }
+      }
+    }
+  }, [devSetupConfigurationBusy]);
+
+  const onExportDevSetupConfiguration = useCallback(async () => {
+    const review = devSetupConfigurationReview;
+    if (
+      !review
+      || devSetupConfigurationConsumed
+      || devSetupConfigurationBusy
+      || operationBusyRef.current
+      || readBusyRef.current
+    ) return;
+    if (Date.now() >= review.expiresAtMs) {
+      setDevSetupConfigurationReview(null);
+      setDevSetupReviewAcknowledged(false);
+      setDevSetupAgreementsAccepted(false);
+      setDevSetupAdminRiskAcknowledged(false);
+      setDevSetupConfigurationError(DEV_SETUP_CONFIGURATION_EXPIRED);
+      return;
+    }
+    const requestId = ++devSetupConfigurationRequestIdRef.current;
+    readBusyRef.current = true;
+    setReadBusy(true);
+    setDevSetupConfigurationBusy(true);
+    setDevSetupConfigurationError(null);
+    setDevSetupConfigurationNotice(null);
+    try {
+      const exportResult = await exportDevSetupConfiguration(review.previewId);
+      if (mountedRef.current && requestId === devSetupConfigurationRequestIdRef.current) {
+        downloadTextFile(exportResult.filename, exportResult.mimeType, exportResult.content);
+        setDevSetupConfigurationNotice("정규화된 package-only 구성을 저장했습니다.");
+      }
+    } catch {
+      if (mountedRef.current && requestId === devSetupConfigurationRequestIdRef.current) {
+        setDevSetupConfigurationError(DEV_SETUP_CONFIGURATION_EXPORT_ERROR);
+      }
+    } finally {
+      if (requestId === devSetupConfigurationRequestIdRef.current) {
+        readBusyRef.current = false;
+        if (mountedRef.current) {
+          setDevSetupConfigurationBusy(false);
+          setReadBusy(false);
+        }
+      }
+    }
+  }, [devSetupConfigurationBusy, devSetupConfigurationConsumed, devSetupConfigurationReview]);
+
+  const onCancelDevSetupApply = useCallback(() => {
+    if (!devSetupConfigurationApplyBusyRef.current) return;
+    void cancelDevSetupApply().catch(() => {
+      if (mountedRef.current) setDevSetupConfigurationError(DEV_SETUP_CONFIGURATION_CANCEL_ERROR);
+    });
+  }, []);
+
+  const onDiscardDevSetupConfiguration = useCallback(async () => {
+    const review = devSetupConfigurationReview;
+    if (
+      !review
+      || devSetupConfigurationBusy
+      || devSetupConfigurationApplyBusyRef.current
+      || operationBusyRef.current
+      || readBusyRef.current
+    ) return;
+    const requestId = ++devSetupConfigurationRequestIdRef.current;
+    readBusyRef.current = true;
+    setReadBusy(true);
+    setDevSetupConfigurationBusy(true);
+    setDevSetupConfigurationError(null);
+    setDevSetupConfigurationNotice(null);
+    try {
+      await discardDevSetupConfiguration(review.previewId);
+      if (mountedRef.current && requestId === devSetupConfigurationRequestIdRef.current) {
+        devSetupConfigurationApplyRequestIdRef.current += 1;
+        setDevSetupConfigurationReview(null);
+        setDevSetupConfigurationResult(null);
+        setDevSetupConfigurationConsumed(false);
+        setDevSetupReviewAcknowledged(false);
+        setDevSetupAgreementsAccepted(false);
+        setDevSetupAdminRiskAcknowledged(false);
+      }
+    } catch {
+      if (mountedRef.current && requestId === devSetupConfigurationRequestIdRef.current) {
+        setDevSetupConfigurationError(DEV_SETUP_CONFIGURATION_DISCARD_ERROR);
+      }
+    } finally {
+      if (requestId === devSetupConfigurationRequestIdRef.current) {
+        readBusyRef.current = false;
+        if (mountedRef.current) {
+          setReadBusy(false);
+          setDevSetupConfigurationBusy(false);
+        }
+      }
+    }
+  }, [devSetupConfigurationBusy, devSetupConfigurationReview]);
+
+  const onApplyDevSetupConfiguration = useCallback(async () => {
+    const review = devSetupConfigurationReview;
+    const hasUnknownPackage = review?.packages.some((packageReview) => (
+      packageReview.currentState === "unknown" || packageReview.action === "verify"
+    )) ?? false;
+    if (
+      !review
+      || devSetupConfigurationConsumed
+      || devSetupConfigurationBusy
+      || devSetupConfigurationApplyBusyRef.current
+      || operationBusyRef.current
+      || readBusyRef.current
+    ) return;
+    if (Date.now() >= review.expiresAtMs) {
+      setDevSetupConfigurationError(DEV_SETUP_CONFIGURATION_EXPIRED);
+      return;
+    }
+    if (hasUnknownPackage) {
+      setDevSetupConfigurationError("확인할 수 없는 패키지 상태가 있어 적용할 수 없습니다. 설치를 제안하지 않습니다.");
+      return;
+    }
+    if (
+      !review.canApply
+      || !review.hasChanges
+      || !devSetupReviewAcknowledged
+      || !devSetupAgreementsAccepted
+      || !devSetupAdminRiskAcknowledged
+    ) return;
+    if (!window.confirm(
+      "정규화된 package-only 구성의 패키지 변경을 적용할까요? 네트워크와 UAC/관리자 권한이 필요할 수 있으며 자동 재부팅은 실행하지 않습니다.",
+    )) return;
+
+    const requestId = ++devSetupConfigurationApplyRequestIdRef.current;
+    devSetupConfigurationApplyBusyRef.current = true;
+    operationBusyRef.current = true;
+    // The native command consumes this preview before starting the first
+    // package. Keep the token unavailable even if the process later fails.
+    setDevSetupConfigurationConsumed(true);
+    setDevSetupApplyInFlight(true);
+    setDevSetupConfigurationBusy(true);
+    setDevSetupConfigurationError(null);
+    setDevSetupConfigurationNotice(null);
+    setDevSetupConfigurationResult(null);
+    setBusy("dev-setup:apply");
+    try {
+      const result = await applyDevSetupConfiguration(
+        review.previewId,
+        true,
+        true,
+        true,
+      );
+      if (mountedRef.current && requestId === devSetupConfigurationApplyRequestIdRef.current) {
+        setDevSetupConfigurationResult(result);
+        setDevSetupConfigurationNotice(result.status === "complete"
+          ? "Dev Setup package apply가 완료되었습니다."
+          : result.status === "cancelled"
+            ? DEV_SETUP_CONFIGURATION_CANCELLED
+            : "Dev Setup package apply가 일부 완료되었습니다. 결과를 확인하세요.");
+      }
+    } catch {
+      if (mountedRef.current && requestId === devSetupConfigurationApplyRequestIdRef.current) {
+        setDevSetupConfigurationError(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
+      }
+    } finally {
+      devSetupConfigurationApplyBusyRef.current = false;
+      operationBusyRef.current = false;
+      if (mountedRef.current && requestId === devSetupConfigurationApplyRequestIdRef.current) {
+        setDevSetupApplyInFlight(false);
+        setDevSetupConfigurationBusy(false);
+        setBusy(null);
+      }
+    }
+  }, [
+    devSetupAgreementsAccepted,
+    devSetupConfigurationBusy,
+    devSetupConfigurationConsumed,
+    devSetupConfigurationReview,
+    devSetupAdminRiskAcknowledged,
+    devSetupReviewAcknowledged,
+  ]);
+
   const refresh = useCallback(async (internal = false) => {
     if (!internal && (operationBusyRef.current || readBusyRef.current)) return;
     readBusyRef.current = true;
@@ -676,6 +1010,11 @@ export default function App() {
       relatedRequestIdRef.current += 1;
       relatedActionIdRef.current += 1;
       devSetupRequestIdRef.current += 1;
+      devSetupConfigurationRequestIdRef.current += 1;
+      devSetupConfigurationApplyRequestIdRef.current += 1;
+      if (devSetupConfigurationApplyBusyRef.current) {
+        void cancelDevSetupApply().catch(() => undefined);
+      }
     };
   }, [refresh]);
 
@@ -1181,6 +1520,27 @@ export default function App() {
   const selectedDataDatabase = dataSnapshot?.databases.find(
     (database) => database.appId === dataAppId,
   ) ?? null;
+  const devSetupConfigurationExpired = devSetupConfigurationReview != null
+    && devSetupConfigurationClockMs >= devSetupConfigurationReview.expiresAtMs;
+  const devSetupConfigurationHasUnknown = devSetupConfigurationReview?.packages.some((packageReview) => (
+    packageReview.currentState === "unknown" || packageReview.action === "verify"
+  )) ?? false;
+  const devSetupConfigurationApplyDisabled = (
+    !devSetupConfigurationReview
+    || devSetupConfigurationConsumed
+    || devSetupConfigurationExpired
+    || devSetupConfigurationBusy
+    || devSetupApplyInFlight
+    || busy !== null
+    || operationBusyRef.current
+    || readBusyRef.current
+    || devSetupConfigurationHasUnknown
+    || !devSetupConfigurationReview.canApply
+    || !devSetupConfigurationReview.hasChanges
+    || !devSetupReviewAcknowledged
+    || !devSetupAgreementsAccepted
+    || !devSetupAdminRiskAcknowledged
+  );
 
   return (
     <div className="app">
@@ -1432,15 +1792,15 @@ export default function App() {
       ) : tab === "dev-setup" ? (
         <section
           className="dev-setup related-tools"
-          aria-busy={devSetupBusy || readBusy}
+          aria-busy={devSetupBusy || readBusy || devSetupConfigurationBusy || devSetupApplyInFlight}
           aria-labelledby="dev-setup-heading"
         >
           <div className="related-tools-head">
             <div>
               <h2 id="dev-setup-heading">Dev Setup</h2>
               <p className="dim">
-                Windows·WSL 개발 환경을 읽기 전용으로 점검하고 다음 확인 항목을 정리합니다.
-                설치·실행·registry·PATH 변경은 수행하지 않습니다.
+                위 capability 감사는 계속 읽기 전용이며 설치·실행·registry·PATH 변경은 수행하지 않습니다.
+                아래 package-only 경로는 별도의 명시적 검토·확인 뒤에만 WinGet 패키지 적용을 수행합니다.
               </p>
             </div>
             <button
@@ -1453,7 +1813,7 @@ export default function App() {
             </button>
           </div>
           <div className="diagnostic-safety-note">
-            read-only audit · 고정된 실행 파일과 WSL 목록만 조회 · 원본 경로/환경변수/프로세스 출력 비공개
+            read-only audit · 고정된 실행 파일과 WSL 목록만 조회 · 원본 경로/환경변수/프로세스 출력 비공개 · 아래 package apply와 분리됨
           </div>
           {devSetupError && <div className="error related-tools-error" role="alert">{devSetupError}</div>}
           {!devSetupSnapshot && !devSetupBusy && !devSetupError && (
@@ -1501,8 +1861,257 @@ export default function App() {
                   );
                 })}
               </div>
+              <section
+                className="dev-setup-config"
+                aria-labelledby="dev-setup-config-heading"
+                aria-busy={devSetupConfigurationBusy || devSetupApplyInFlight}
+              >
+                <div className="dev-setup-config-head">
+                  <div>
+                    <h3 id="dev-setup-config-heading">WinGet Configuration v3 · package-only</h3>
+                    <p className="dim">
+                      외부 YAML은 그대로 실행하지 않습니다. Microsoft.WinGet/Package 리소스와 고정된
+                      <code>winget</code> source 이름만 정규화해 검토합니다.
+                    </p>
+                  </div>
+                  <div className="dev-setup-config-actions">
+                    {devSetupApplyInFlight && (
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={onCancelDevSetupApply}
+                        aria-label="Dev Setup package apply 취소"
+                      >
+                        적용 취소
+                      </button>
+                    )}
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={
+                        batchBusy
+                        || busy !== null
+                        || installRootBusy
+                        || readBusy
+                        || devSetupConfigurationBusy
+                        || devSetupApplyInFlight
+                      }
+                      onClick={() => void onImportDevSetupConfiguration()}
+                    >
+                      {devSetupConfigurationBusy && !devSetupApplyInFlight
+                        ? "가져오는 중..."
+                        : devSetupConfigurationReview ? "다시 가져오기" : "구성 가져오기"}
+                    </button>
+                    {devSetupConfigurationReview && (
+                      <>
+                        <button
+                          className="btn"
+                          type="button"
+                          disabled={
+                            devSetupConfigurationBusy
+                            || devSetupApplyInFlight
+                            || devSetupConfigurationConsumed
+                            || devSetupConfigurationExpired
+                            || busy !== null
+                            || readBusy
+                          }
+                          onClick={() => void onExportDevSetupConfiguration()}
+                        >
+                          정규화된 구성 export
+                        </button>
+                        <button
+                          className="btn"
+                          type="button"
+                          disabled={devSetupConfigurationBusy || devSetupApplyInFlight}
+                          onClick={() => void onDiscardDevSetupConfiguration()}
+                        >
+                          검토 버리기
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className="dev-setup-config-safety" role="note">
+                  <strong>안전 경계</strong>
+                  <ul>
+                    <li>네트워크 연결이 필요합니다.</li>
+                    <li>설치 프로그램은 UAC/관리자 권한과 재부팅을 요구할 수 있지만 앱이 자동 재부팅을 예약하거나 실행하지 않습니다.</li>
+                    <li>패키지 설치 프로그램이 자체 PATH·registry·파일을 변경할 수 있습니다.</li>
+                    <li>상태를 알 수 없는 패키지는 적용을 차단하며 설치를 제안하지 않습니다.</li>
+                  </ul>
+                </div>
+                {devSetupConfigurationError && (
+                  <div className="error dev-setup-config-error" role="alert">
+                    {devSetupConfigurationError}
+                  </div>
+                )}
+                {devSetupConfigurationNotice && (
+                  <div className="notice dev-setup-config-notice" role="status" aria-live="polite">
+                    {devSetupConfigurationNotice}
+                  </div>
+                )}
+                {!devSetupConfigurationReview && !devSetupConfigurationBusy && !devSetupConfigurationError && (
+                  <div className="dim dev-setup-config-empty" role="status" aria-live="polite">
+                    WinGet Configuration 파일을 가져오면 정규화된 package-only 검토가 여기에 표시됩니다.
+                  </div>
+                )}
+                {devSetupConfigurationReview && (
+                  <>
+                    <div
+                      className={`dev-setup-config-review ${devSetupConfigurationExpired ? "expired" : ""} ${devSetupConfigurationConsumed ? "consumed" : ""}`}
+                      role="region"
+                      aria-label="WinGet Configuration package-only 검토"
+                      aria-live="polite"
+                    >
+                      <div className="dev-setup-config-review-head">
+                        <strong>정규화된 검토</strong>
+                        <span className="dim">
+                          {devSetupConfigurationExpired
+                            ? "만료됨"
+                            : devSetupConfigurationConsumed ? "적용 토큰 사용됨" : "적용 전 검토 가능"}
+                        </span>
+                      </div>
+                      <dl className="dev-setup-config-facts">
+                        <div><dt>schema</dt><dd><code>{devSetupConfigurationReview.schemaVersion}</code></dd></div>
+                        <div>
+                          <dt>외부 신뢰</dt>
+                          <dd>
+                            <span>{devSetupConfigurationReview.sourceTrust === "external-restricted" ? "외부 입력 · 제한 처리(신뢰 안 함)" : "제한된 외부 입력"}</span>{" "}
+                            <code>{devSetupConfigurationReview.sourceTrust}</code>
+                          </dd>
+                        </div>
+                        <div><dt>digest prefix</dt><dd><code>sha256:{devSetupConfigurationReview.configurationDigest.slice(0, 12)}…</code></dd></div>
+                        <div><dt>적용 수명</dt><dd>5분 · 1회 적용</dd></div>
+                      </dl>
+                      <div className="dev-setup-config-scope dim">
+                        mode: <code>{devSetupConfigurationReview.mode}</code> · 패키지 {devSetupConfigurationReview.packages.length}개
+                      </div>
+                      {devSetupConfigurationHasUnknown && (
+                        <div className="dev-setup-config-block" role="alert">
+                          확인할 수 없는 패키지 상태가 있어 적용을 차단합니다. 이 상태에서 설치를 제안하지 않습니다.
+                        </div>
+                      )}
+                      {!devSetupConfigurationReview.hasChanges && (
+                        <div className="dev-setup-config-block" role="status">
+                          적용할 패키지 변경이 없습니다.
+                        </div>
+                      )}
+                      {devSetupConfigurationReview.hasChanges
+                        && !devSetupConfigurationReview.canApply
+                        && !devSetupConfigurationHasUnknown && (
+                        <div className="dev-setup-config-block" role="alert">
+                          현재 검토는 적용할 수 없습니다. 패키지 상태를 다시 확인하세요.
+                        </div>
+                      )}
+                      <div className="dev-setup-config-table-wrap">
+                        <table className="dev-setup-config-table">
+                          <thead>
+                            <tr>
+                              <th>패키지 ID</th>
+                              <th>원하는 상태</th>
+                              <th>관찰된 상태</th>
+                              <th>조치</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {devSetupConfigurationReview.packages.map((packageReview) => (
+                              <tr
+                                key={packageReview.packageId}
+                                className={packageReview.currentState === "unknown" || packageReview.action === "verify" ? "unknown" : undefined}
+                              >
+                                <td>
+                                  <code>{packageReview.packageId}</code>
+                                  <div className="dev-setup-config-package-flags">
+                                    <span className={packageReview.requestedAgreementAcceptance ? "requested" : "dim"}>
+                                      {packageReview.requestedAgreementAcceptance ? "외부 약관 수락 요청" : "외부 약관 수락 없음"}
+                                    </span>
+                                    <span className={packageReview.declaredElevation ? "requested" : "dim"}>
+                                      {packageReview.declaredElevation ? "외부 관리자 선언" : "외부 권한 선언 없음"}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td>{devSetupConfigurationDesiredLabel(packageReview)}</td>
+                                <td>{devSetupConfigurationStateLabel(packageReview.currentState)}</td>
+                                <td>{devSetupConfigurationActionLabel(packageReview.action)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="dev-setup-config-decision-note">
+                        외부 파일의 선언을 실행 설정에 복사하지 않습니다. 약관 수락은 별도 확인하고,
+                        외부 권한 선언과 무관하게 관리자/UAC·재부팅 가능성을 다시 고지합니다.
+                      </div>
+                      <div className="dev-setup-config-checks" aria-label="Dev Setup 적용 확인">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={devSetupReviewAcknowledged}
+                            disabled={devSetupConfigurationBusy || devSetupConfigurationConsumed || devSetupConfigurationExpired || devSetupApplyInFlight}
+                            onChange={(event) => setDevSetupReviewAcknowledged(event.target.checked)}
+                          />
+                          정규화된 package-only 검토를 확인했습니다
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={devSetupAgreementsAccepted}
+                            disabled={devSetupConfigurationBusy || devSetupConfigurationConsumed || devSetupConfigurationExpired || devSetupApplyInFlight}
+                            onChange={(event) => setDevSetupAgreementsAccepted(event.target.checked)}
+                          />
+                          로컬에 등록된 고정 이름 winget source·패키지 약관 수락을 확인했습니다
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={devSetupAdminRiskAcknowledged}
+                            disabled={devSetupConfigurationBusy || devSetupConfigurationConsumed || devSetupConfigurationExpired || devSetupApplyInFlight}
+                            onChange={(event) => setDevSetupAdminRiskAcknowledged(event.target.checked)}
+                          />
+                          관리자/UAC·재부팅 위험을 확인했습니다
+                        </label>
+                      </div>
+                      <div className="dev-setup-config-apply-actions">
+                        <button
+                          className="btn primary"
+                          type="button"
+                          disabled={devSetupConfigurationApplyDisabled}
+                          aria-busy={devSetupApplyInFlight}
+                          onClick={() => void onApplyDevSetupConfiguration()}
+                        >
+                          {devSetupApplyInFlight ? "적용 중..." : "확인 후 package apply"}
+                        </button>
+                        <span className="dim">
+                          {!devSetupConfigurationReview.canApply || devSetupConfigurationHasUnknown
+                            ? "확인할 수 없는 상태는 적용할 수 없습니다."
+                            : "세 가지 확인을 모두 선택하면 마지막 확인 창이 열립니다."}
+                        </span>
+                      </div>
+                    </div>
+                    {devSetupConfigurationResult && (
+                      <div className="dev-setup-config-result" role="status" aria-live="polite">
+                        <div className="dev-setup-config-review-head">
+                          <strong>package apply 결과</strong>
+                          <span>{devSetupApplyStatusLabel(devSetupConfigurationResult.status)}</span>
+                        </div>
+                        <div className="dev-setup-config-result-list">
+                          {devSetupConfigurationResult.results.map((result) => (
+                            <div
+                              key={result.packageId}
+                              className={`dev-setup-config-result-row ${result.status === "failed" || result.status === "timed-out" ? "bad" : result.status === "applied" ? "ok" : ""}`}
+                            >
+                              <code>{result.packageId}</code>
+                              <span>{devSetupApplyStatusLabel(result.status)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
               <p className="dim related-tools-note">
-                이 계획은 확인 순서만 제안합니다. 실제 package apply와 권한 상승은 별도 preview·확인 경계에서만 제공됩니다.
+                이 capability 계획은 읽기 전용 확인 순서입니다. 아래 package-only apply는 별도 검토·약관·권한 위험 확인 경계를 사용합니다.
               </p>
             </>
           )}
