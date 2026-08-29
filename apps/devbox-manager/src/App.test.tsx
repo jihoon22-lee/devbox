@@ -99,6 +99,33 @@ const manifest: ReleaseManifest = {
     },
   ],
 };
+const stableTargetVersions = [
+  ["port-manager", "0.3.0"],
+  ["developer-toolbox", "0.3.0"],
+  ["wsl-desktop", "0.4.0"],
+  ["api-playground", "0.4.0"],
+  ["everything-plus", "0.4.0"],
+  ["knowledge-base", "0.4.0"],
+  ["life-log", "0.4.0"],
+  ["code-pad", "0.4.0"],
+  ["run-manager", "0.4.0"],
+  ["workbench", "0.2.0"],
+  ["webhook-lab", "0.2.0"],
+  ["repo-manager", "0.2.0"],
+  ["devbox-launcher", "0.1.0"],
+  ["log-lens", "0.1.0"],
+] as const;
+const stableManifest: ReleaseManifest = {
+  schemaVersion: 1,
+  releaseTag: "v0.5.0",
+  generatedAt: "2026-08-28T23:45:52Z",
+  apps: stableTargetVersions.map(([id, version]) => ({
+    id,
+    version,
+    portable: { name: `${id}.exe`, sha256: "0".repeat(64), size: 1 },
+    installer: { name: `${id}_${version}_x64-setup.exe`, sha256: "1".repeat(64), size: 2 },
+  })),
+};
 const portable: InstalledApp = {
   app: "port-manager",
   version: "0.2.1",
@@ -331,6 +358,25 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Devbox Manager app row context menu", () => {
+  it("renders the 14 current stable managed apps without itself", async () => {
+    availableMock.mockResolvedValueOnce(stableManifest);
+    installedMock.mockResolvedValueOnce([]);
+    render(<App />);
+    await screen.findByText("Log Lens");
+
+    expect(screen.getAllByRole("row")).toHaveLength(15);
+    expect(screen.queryByRole("row", { name: /Devbox Manager/ })).toBeNull();
+    expect(screen.getByText("Latest: v0.5.0")).toBeTruthy();
+    for (const [displayName, version] of [
+      ["Port Manager", "0.3.0"],
+      ["Code Pad", "0.4.0"],
+      ["Devbox Launcher", "0.1.0"],
+      ["Log Lens", "0.1.0"],
+    ]) {
+      expect(appRow(displayName).textContent).toContain(version);
+    }
+  });
+
   it("renders only catalog-managed targets and selects the right-clicked row", async () => {
     render(<App />);
     await screen.findByText("Code Pad");

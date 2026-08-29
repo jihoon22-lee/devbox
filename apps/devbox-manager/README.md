@@ -61,6 +61,9 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
 ## 기술
 
 - `apps/catalog.json`(앱 단일 원본) + 릴리스 `release-manifest.json`만 신뢰
+- 브라우저 개발 모드 fallback도 현재 stable `v0.5.0` release manifest의 정확한 앱 버전·portable/
+  installer asset metadata를 사용한다. 15개 catalog 중 Manager 자신은 관리 대상에서 제외한
+  14개만 표시하며, Devbox Launcher와 Log Lens를 포함한다.
 - 공용 catalog: `%LOCALAPPDATA%\devbox\catalog.json`
 - install-root locator: `%LOCALAPPDATA%\devbox\install-roots\v1\registry.json`
 - 설치 manifest는 active Manager root의 `registry.json`이 소유하며, locator에는 canonical root와
