@@ -228,3 +228,47 @@ export interface WebSocketUpdate {
   dropped: number;
   message?: string;
 }
+
+export type McpEraPreference = "auto" | "modern" | "legacy";
+export type McpEra = Exclude<McpEraPreference, "auto">;
+
+export interface McpHttpProfile {
+  endpoint: string;
+  era: McpEraPreference;
+  headers: RequestHeader[];
+  timeoutMs: number;
+}
+
+export interface McpServerProjection {
+  era: McpEra;
+  protocolVersion: string;
+  serverName: string;
+  serverVersion: string;
+  capabilities: Record<string, unknown>;
+  supportedVersions: string[];
+}
+
+export interface McpTimelineEntry {
+  sequence: number;
+  offsetMs: number;
+  direction: "outgoing" | "incoming";
+  kind: "request" | "notification" | "response" | "error";
+  method: string | null;
+  requestId: string | null;
+  payload: unknown | null;
+}
+
+export interface McpConnectResult {
+  connectionId: string;
+  server: McpServerProjection;
+  sessionManaged: boolean;
+  timeline: McpTimelineEntry[];
+}
+
+export interface McpInvokeResult {
+  result: unknown | null;
+  errorCode: string | null;
+  rpcErrorCode: number | null;
+  nextCursor: string | null;
+  timeline: McpTimelineEntry[];
+}

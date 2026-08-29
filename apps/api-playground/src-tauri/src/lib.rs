@@ -48,6 +48,7 @@ pub fn run() {
         }))
         .manage(commands::request::ResponseHeaderVault::default())
         .manage(commands::request::RequestCancellation::default())
+        .manage(std::sync::Arc::new(commands::mcp::McpHttpState::default()))
         .manage(std::sync::Arc::new(commands::sse::SseState::default()))
         .manage(std::sync::Arc::new(
             commands::websocket::WebSocketState::default(),
@@ -86,6 +87,10 @@ pub fn run() {
             commands::handoff::renew_api_request,
             commands::handoff::ack_api_request,
             commands::handoff::restore_api_request,
+            commands::mcp::connect_mcp_http,
+            commands::mcp::invoke_mcp_http,
+            commands::mcp::cancel_mcp_http,
+            commands::mcp::disconnect_mcp_http,
             commands::sse::start_sse_stream,
             commands::sse::stop_sse_stream,
             commands::websocket::start_websocket,

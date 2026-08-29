@@ -27,6 +27,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.13.4", features = ["brotli", "deflate", "gzip", "multipart", "stream", "zstd"] }
 futures-util = { version = "0.3.31", default-features = false, features = ["sink", "std"] }
+bytes = "1"
+getrandom = "0.4.3"
 devbox-secrets = { package = "secrets", path = "../../../crates/secrets" }
 base64 = "0.22"
 zeroize = "1"

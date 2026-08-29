@@ -145,6 +145,41 @@ body {
   overflow: hidden;
 }
 
+.workspace-tabs {
+  display: flex;
+  flex: none;
+  min-width: 0;
+  gap: 2px;
+  padding: 6px 12px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.workspace-tabs button {
+  min-width: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--dim);
+  padding: 7px 10px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.workspace-tabs button:hover {
+  color: var(--text);
+}
+
+.workspace-tabs button.active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.workspace-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .migration-notice,
 .persistence-warning {
   padding: 8px 14px;
@@ -1647,5 +1682,607 @@ body {
 @media (max-width: 900px) {
   .websocket-controls {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Protocol Lab */
+.protocol-lab {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: var(--db-space-4, 16px);
+}
+
+.protocol-lab-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--db-space-4, 16px);
+  min-width: 0;
+  padding-bottom: var(--db-space-3, 12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.protocol-lab-head > div {
+  min-width: 0;
+}
+
+.protocol-lab-head h2 {
+  margin: 0;
+  font-size: var(--db-text-lg, 15px);
+  line-height: 1.3;
+}
+
+.protocol-lab-head p {
+  max-width: 760px;
+  margin: 6px 0 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.mcp-memory-badge {
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+  font-size: var(--db-text-sm, 11px);
+  white-space: nowrap;
+}
+
+.mcp-notice,
+.mcp-error {
+  margin-top: var(--db-space-3, 12px);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.mcp-notice {
+  padding: 8px 10px;
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.mcp-profile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px 150px auto;
+  align-items: end;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+  padding: var(--db-space-3, 12px) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mcp-profile > label,
+.mcp-explorer-section > label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--db-space-1, 4px);
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.mcp-profile input,
+.mcp-profile select,
+.mcp-explorer-section > input,
+.mcp-explorer-section > select,
+.mcp-explorer-section > label > input,
+.mcp-explorer-section > label > select,
+.mcp-schema-field input:not([type="checkbox"]),
+.mcp-schema-field select {
+  min-width: 0;
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  color: var(--text);
+  padding: 5px 8px;
+  font: inherit;
+  outline: none;
+}
+
+.mcp-profile input[type="number"],
+.mcp-profile select {
+  width: 100%;
+}
+
+.mcp-profile-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+}
+
+.mcp-profile-actions .btn {
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.protocol-lab :is(button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.protocol-lab :is(input, select, textarea):focus-visible,
+.protocol-lab .mcp-profile :is(input, select):focus-visible,
+.protocol-lab .mcp-schema-field :is(input, select, textarea):focus-visible {
+  border-color: var(--accent);
+}
+
+.protocol-lab :disabled {
+  cursor: not-allowed;
+}
+
+.protocol-lab :is(input, select, textarea):disabled {
+  border-color: color-mix(in srgb, var(--border) 75%, var(--bg));
+  background: color-mix(in srgb, var(--panel) 78%, var(--bg));
+  color: var(--dim);
+}
+
+.mcp-custom-headers {
+  min-width: 0;
+  margin-top: var(--db-space-2, 8px);
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--panel) 82%, var(--bg));
+}
+
+.mcp-custom-headers summary {
+  padding: 8px 10px;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: var(--db-text-sm, 11px);
+  overflow-wrap: anywhere;
+}
+
+.mcp-custom-headers summary:hover {
+  color: var(--text);
+}
+
+.mcp-custom-headers fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0 10px 10px;
+  border: 0;
+}
+
+.mcp-custom-headers fieldset:disabled {
+  opacity: 0.65;
+}
+
+.mcp-server-card {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-width: 0;
+  margin-top: var(--db-space-3, 12px);
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--green) 35%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--green) 6%, var(--panel));
+  font-size: var(--db-text-sm, 11px);
+}
+
+.mcp-server-card > strong,
+.mcp-server-card > span,
+.mcp-server-card > code {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mcp-server-card > strong {
+  color: var(--text);
+}
+
+.mcp-server-card > span,
+.mcp-server-card > code {
+  color: var(--dim);
+}
+
+.mcp-explorer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--db-space-3, 12px);
+  min-width: 0;
+  margin-top: var(--db-space-3, 12px);
+}
+
+.mcp-explorer-section {
+  display: flex;
+  min-width: 0;
+  min-height: 210px;
+  flex-direction: column;
+  gap: var(--db-space-2, 8px);
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-lg, 8px);
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+}
+
+.mcp-explorer-section h3 {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.mcp-explorer-section.disabled {
+  border-color: color-mix(in srgb, var(--border) 75%, var(--bg));
+  background: color-mix(in srgb, var(--panel) 65%, var(--bg));
+  opacity: 0.68;
+}
+
+.mcp-explorer-section.disabled h3 {
+  color: var(--dim);
+}
+
+.mcp-explorer-section > p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.mcp-explorer-section > select,
+.mcp-explorer-section > input,
+.mcp-explorer-section > label > input {
+  flex: none;
+}
+
+.mcp-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+}
+
+.mcp-inline-actions .btn {
+  min-width: 0;
+}
+
+.mcp-untrusted-text {
+  max-height: 132px;
+  margin: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-sm, 4px);
+  background: var(--bg);
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.mcp-schema-editor {
+  min-width: 0;
+  max-height: min(42vh, 480px);
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  overscroll-behavior: contain;
+}
+
+.mcp-schema-fields {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--db-space-2, 8px);
+}
+
+.mcp-schema-field {
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, var(--accent));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--panel) 72%, var(--bg));
+}
+
+.mcp-schema-field:disabled {
+  opacity: 0.62;
+}
+
+.mcp-schema-field legend {
+  max-width: 100%;
+  padding: 0 4px;
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.mcp-schema-field legend code {
+  display: inline-block;
+  max-width: 100%;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mcp-required {
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--amber);
+  font-size: 10px;
+}
+
+.mcp-optional-toggle,
+.mcp-boolean-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: var(--db-text-sm, 11px);
+}
+
+.mcp-optional-toggle {
+  margin-left: 6px;
+}
+
+.mcp-schema-description {
+  max-height: 88px;
+  margin: 0 0 7px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.mcp-schema-field > .mcp-schema-fields {
+  margin-top: 2px;
+}
+
+.mcp-array-field {
+  min-width: 0;
+}
+
+.mcp-array-field textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 82px;
+  max-height: 280px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  color: var(--text);
+  padding: 7px 8px;
+  font: 12px/1.45 var(--db-font-mono, "Cascadia Code", Consolas, monospace);
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+
+.mcp-inline-error {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.mcp-schema-fallback {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--db-space-2, 8px);
+}
+
+.mcp-schema-fallback p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.mcp-schema-fallback pre,
+.mcp-result pre,
+.mcp-timeline pre {
+  min-width: 0;
+  max-width: 100%;
+  max-height: min(44vh, 420px);
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  color: var(--text);
+  font: 12px/1.45 var(--db-font-mono, "Cascadia Code", Consolas, monospace);
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overscroll-behavior: contain;
+}
+
+.mcp-validation-list {
+  max-height: 110px;
+  margin: 0;
+  padding: 0 0 0 18px;
+  color: var(--red);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.mcp-identity-list {
+  max-height: 150px;
+  margin: 0;
+  padding: 0 0 0 18px;
+  overflow: auto;
+}
+
+.mcp-identity-list li {
+  min-width: 0;
+  margin: 4px 0;
+}
+
+.mcp-identity-list code {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mcp-active-request {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+  margin-top: var(--db-space-3, 12px);
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  color: var(--amber);
+}
+
+.mcp-active-request > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mcp-error {
+  padding: 8px 10px;
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 9%, transparent);
+}
+
+.mcp-error code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mcp-result,
+.mcp-timeline {
+  min-width: 0;
+  margin-top: var(--db-space-3, 12px);
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-lg, 8px);
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+}
+
+.mcp-result h3,
+.mcp-timeline h3 {
+  margin: 0 0 var(--db-space-2, 8px);
+  font-size: 12px;
+}
+
+.mcp-timeline ol {
+  display: flex;
+  max-height: min(48vh, 500px);
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0 0 0 22px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.mcp-timeline li {
+  min-width: 0;
+  padding: 6px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+.mcp-timeline li:last-child {
+  border-bottom: 0;
+}
+
+.mcp-timeline li > div {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  min-width: 0;
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.mcp-timeline li strong {
+  color: var(--text);
+}
+
+.mcp-timeline li code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  .mcp-profile {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mcp-profile-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  .mcp-explorer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-explorer-section {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .protocol-lab {
+    padding: var(--db-space-3, 12px);
+  }
+
+  .protocol-lab-head {
+    flex-direction: column;
+    gap: var(--db-space-2, 8px);
+  }
+
+  .mcp-memory-badge {
+    align-self: flex-start;
+  }
+
+  .mcp-profile {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-profile-actions {
+    grid-column: auto;
+    justify-content: stretch;
+  }
+
+  .mcp-profile-actions .btn {
+    flex: 1;
+  }
+
+  .mcp-inline-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mcp-inline-actions .btn {
+    width: 100%;
+  }
+
+  .mcp-active-request {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

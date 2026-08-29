@@ -45,6 +45,43 @@
   `{{NAME}}` 참조를 지원하고, DPAPI로 보호된 secret은 backend가 요청 직전에 메모리에서만
   해제한다 (`crates/secrets`). Header table의 picker에는 현재 환경의 봉인된 secret 이름만
   표시하고 `${NAME}`을 삽입하며 frontend로 DPAPI secret을 unseal하지 않는다.
+- **Protocol Lab · MCP** — 데스크톱에서 MCP Streamable HTTP의 modern `2026-07-28`
+  `server/discover`와 legacy `2025-11-25` initialize/session 흐름을 선택하거나 안전한 auto
+  fallback으로 검사한다. capability가 확인된 tool/resource/prompt만 한 page씩 명시적으로
+  조회·호출하고, 지원하는 JSON Schema 부분집합만 form으로 실행한다. 연결 profile, result,
+  cursor와 timeline은 저장하지 않으며 브라우저 preview는 MCP network 요청을 보내지 않는다.
+
+## Protocol Lab · MCP (`#485`)
+
+Protocol Lab은 기존 Environment header reference를 재사용하되, 해제된 secret과 legacy session
+ID는 Rust process 밖으로 보내지 않는다. endpoint는 HTTP(S) absolute URL만 허용하고 userinfo,
+fragment, credential-shaped query를 거부한다. redirect는 따르지 않으며 custom header는 100행·
+128 KiB, request/response는 1 MiB/4 MiB, timeline은 1,000건·4 MiB로 제한한다. connection과
+active request reservation은 RAII guard로 성공·실패·취소·timeout·drop 경로에서 정리한다.
+
+목록은 사용자 동작마다 한 page만 가져오고 종류별 100 page·10,000 item·retained 16 MiB에서
+중단한다. 직전 응답의 exact cursor만 허용하고 native connection state에서 atomically revalidate해
+concurrent pagination race를 막으며, 중복 identity·재사용·cycle cursor는 고정 오류다.
+`$ref`, composition, conditional 또는 알 수 없는 JSON Schema keyword는 read-only JSON으로만
+보여 주며 호출을 비활성화한다. root `$schema` metadata는 지원하지만 nested `$schema`는
+view-only로 남긴다. known-secret redaction은 callable tool schema의 legitimate `password`/`token`
+property name을 보존하고 reflected credential string/key는 거부한다. Tool arguments와 prompt
+arguments는 timeline에서 전체 masking하고 pagination cursor는 값 대신 `[PRESENT]`만 표시한다.
+modern cancel은 owned response stream을 중단하며 legacy는 같은 request ID의 cancelled notification을
+최대 2초 동안 best-effort로 전송한다. modern cache metadata와 call/read/get 필수 content shape도
+native IPC 전에 검증한다.
+
+Modern JSON-RPC protocol error는 official schema에 따라 id가 없을 수 있지만, recognized error code만
+idless로 허용하며 UI에는 stable error code로 매핑한다. modern response의 `MCP-Session-Id`는
+거부하고, legacy initialize 이후에는 처음 할당된 session이 바뀌거나 새로 나타나는 response를
+거부한다. legacy handshake가 실패하면 할당된 session을 best-effort `DELETE`하고, session-bound
+404는 local connection을 무효화하며 side-effecting request를 자동 replay하지 않는다. backward-
+compatible legacy SSE resumption/GET listener는 PR1에 포함하지 않는다.
+
+PR1의 source 검증은 focused MCP Rust tests 33 passed, API Playground Rust tests 133 passed,
+frontend 33 files/231 tests passed, `cargo check`, strict Clippy와 production build passed이다.
+이는 app/source evidence이며 full workspace CI나 Windows packaged acceptance 결과를 주장하지
+않는다.
 
 ## Binary response preview (`#348`)
 

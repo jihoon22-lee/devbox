@@ -70,6 +70,15 @@ import type {
   WebSocketMessageInput,
   WebSocketUpdate,
 } from "./types";
+
+export {
+  cancelMcpHttp,
+  connectMcpHttp,
+  disconnectMcpHttp,
+  invokeMcpHttp,
+  nextMcpRequestId,
+  safeMcpErrorCode,
+} from "./mcpApi";
 import type {
   ApiRequestHandoffPreview,
   ApiResponse,
