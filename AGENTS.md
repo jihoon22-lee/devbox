@@ -1,6 +1,8 @@
 # AGENTS.md
 
-devbox — Tauri 15개 데스크톱 앱 모노레포. v0.4.1 안정판을 기준으로 v0.5.0 개발에 착수한 상태다. 모든 규약의 기준은 루트 `CONVENTIONS.md` (반드시 먼저 읽을 것). 앱별 상세는 각 `apps/<app>/README.md` 또는 `docs/superpowers/specs/` 설계 문서.
+devbox — Tauri 15개 데스크톱 앱 모노레포. 현재 v0.5.1 안정판 source/bundle을 유지한다.
+모든 규약의 기준은 루트 `CONVENTIONS.md` (반드시 먼저 읽을 것). 앱별 상세는 각 `apps/<app>/README.md` 또는
+`docs/superpowers/specs/` 설계 문서.
 
 ## 저장소 사실
 - 원격: `https://github.com/jihoon22-lee/devbox` (로컬 디렉터리명 `devbox`와 동일)
@@ -9,12 +11,15 @@ devbox — Tauri 15개 데스크톱 앱 모노레포. v0.4.1 안정판을 기준
 - git identity: `jihoon22.lee <zkemzld1004@gmail.com>` (전역·로컬 설정됨)
 
 ## 현재 상태
-- 15개 앱 구현 완료 (v0.4.1 안정판 13개 + v0.5.0 Devbox Launcher·Log Lens): port-manager, developer-toolbox, wsl-desktop, api-playground,
+- 15개 앱 구현 완료 (v0.5.0에서 추가된 Devbox Launcher·Log Lens를 포함한 v0.5.1 stable source/bundle): port-manager, developer-toolbox, wsl-desktop, api-playground,
   everything-plus, knowledge-base, life-log, devbox-manager, code-pad, run-manager, workbench, webhook-lab, repo-manager, devbox-launcher, log-lens
-- 공용 크레이트: `crates/wsl`·`search`·`integration`·`secrets`·`filesystem`·`markdown`·`process`·`git`·`launch`·`applink`·`catalog`·`window-state`
+- 공용 크레이트: `crates/wsl`·`search`·`integration`·`secrets`·`filesystem`·`markdown`·`process`·`git`·`launch`·`applink`·`catalog`·`window-state`·`window-state-tauri`
 - 공용 패키지: `packages/tokens`·`editor`·`diff-view`·`context-menu`
 - 루트 `Cargo.toml`의 `[workspace] members`에 앱/크레이트가 생길 때마다 추가해야 함
 - 프론트 워크스페이스는 `pnpm-workspace.yaml` + 루트 `package.json` (packageManager: pnpm@9)
+- v0.5.0 stable evidence는 tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54`와 workflow `33216176818` 기준 15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0이다.
+- v0.5.1 stable source/bundle은 #470/#473/#477/#478/#479(및 닫힌 #474 계약)를 포함한다. 정확한 tag commit·workflow·asset publication metadata는 GitHub Release가, Windows 수동 acceptance는 #176이 권위 있는 source다. release contract는 15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0이다.
+- #176은 63 checked와 7 physical Windows-only pending으로 유지하며 package evidence와 혼동하지 않는다. RC1~RC3 tag/release는 삭제된 historical record이고, 미래 RC는 사용자의 명시 요청 전에는 만들지 않는다.
 
 ## 명령
 - 프론트: `pnpm install` / `pnpm build` / `pnpm dev` — **pnpm이지 npm이 아님**

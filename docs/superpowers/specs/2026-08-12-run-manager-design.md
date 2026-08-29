@@ -2,7 +2,9 @@
 
 - 날짜: 2026-08-12
 - 브랜치: `docs/run-manager/design-spec`
-- 범위: 신규 앱 `apps/run-manager`의 설계. **이 문서 자체가 산출물이며 구현은 하지 않는다.**
+- 범위: 신규 앱 `apps/run-manager`의 설계. **이 문서는 구현 설계/역사 기록이며 구현 자체는
+  v0.5.0 stable에 반영됐다.** #474 named sidecar는 #479를 통해 v0.5.1 stable에 반영된
+  maintenance correction이다.
 - 저장소 현재 사실: `crates/process` 추출은 이미 `origin/main`의
   `75b8af2 refactor(crates): extract process utilities`로 머지되었다. 이 문서는
   그 crate를 두 번째 소비자인 run-manager에서 사용하는 설계이며, process 추출 작업을
@@ -908,8 +910,8 @@ scan은 blocking worker로 옮겨 async command executor를 점유하지 않는�
 경계를 재사용하는 Run Manager producer handoff만 포함한다. 발행 전 `log_dir`는 canonical
 app-owned `logs/runs/<run-id>` directory resolve/ownership check를 통과해야 하고, Log Lens
 launch 실패 시 방금 만든 exact pending envelope을 제거한다. Run log를 실제로 읽는 Log Lens
-receiver adapter는 별도 후속 작업이며, remote/permanent log archive와 함께 이 producer 범위에
-포함하지 않는다.
+receiver adapter는 #472/#473에서 완성되어 v0.5.1 stable에 포함되지만, v0.5.0 binary에는
+없고 remote/permanent log archive와 함께 이 producer 범위에 포함하지 않는다.
 
 ### 스키마 버전
 

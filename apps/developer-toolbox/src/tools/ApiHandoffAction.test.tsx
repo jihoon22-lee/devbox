@@ -38,7 +38,9 @@ describe("API Playground output handoff", () => {
     fireEvent.click(screen.getByRole("button", { name: "API Playground로 전달" }));
 
     await waitFor(() => expect(createApiRequestHandoffMock).toHaveBeenCalledWith("edited output"));
-    expect(screen.queryByRole("dialog", { name: "API Playground 요청 미리보기" })).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "API Playground 요청 미리보기" })).toBeNull();
+    });
     expect(screen.getByRole("status").textContent).toContain(
       "developer-toolbox → api-playground",
     );

@@ -59,7 +59,8 @@
   journal의 선택적 `unit`이 없는 경우도 포함해 동일한 receiver contract로 변환한다. launch
   실패 시에는 방금 만든 exact pending envelope을 안전하게 제거하며, raw payload·경로·로그
   원문은 오류에 노출하지 않는다. 이 범위는 WSL Desktop producer와 Log Lens claim/preview
-  lifecycle에 한정되고, Run log를 읽는 Log Lens receiver adapter는 별도 후속 작업이다.
+  lifecycle에 한정된다. Run log를 읽는 Log Lens receiver adapter는 #473에서 완성되어
+  v0.5.1 stable에 포함됐지만 v0.5.0 binary에는 없는 maintenance correction이다.
 - **open path 핀·최근 경로** — 자주 쓰는 작업 경로 저장
 
 ## 기술

@@ -3,6 +3,10 @@
 devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. GitHub Releases의 manifest를 단일 원본으로 신뢰한다.
 산출물: `DevboxManager.exe` (`apps/devbox-manager`).
 
+공개 Latest manifest는 v0.5.1 stable을 가리킨다. 정확한 tag commit·workflow·manifest·asset
+metadata는 GitHub Release가 권위 있는 source다. 브라우저 개발 모드의 immutable fallback은
+아래 설명처럼 v0.5.0 manifest fixture를 의도적으로 유지한다.
+
 ## 주요 기능
 
 - **카탈로그 조회** — 설치 가능한 devbox 앱 목록 (휴대용/설치 패키지)
@@ -61,7 +65,7 @@ devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. Gi
 ## 기술
 
 - `apps/catalog.json`(앱 단일 원본) + 릴리스 `release-manifest.json`만 신뢰
-- 브라우저 개발 모드 fallback도 현재 stable `v0.5.0` release manifest의 정확한 앱 버전·portable/
+- 브라우저 개발 모드 fallback은 immutable `v0.5.0` release manifest의 정확한 앱 버전·portable/
   installer asset metadata를 사용한다. 15개 catalog 중 Manager 자신은 관리 대상에서 제외한
   14개만 표시하며, Devbox Launcher와 Log Lens를 포함한다.
 - 공용 catalog: `%LOCALAPPDATA%\devbox\catalog.json`

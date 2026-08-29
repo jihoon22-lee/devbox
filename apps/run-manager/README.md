@@ -22,8 +22,9 @@
 
 ## Integration snapshot 계약 (#474)
 
-이 계약 보강은 v0.5.0 tag 이후의 post-release source correction이며 공개 v0.5.0 binary에는
-포함되지 않는다.
+이 계약 보강은 #474를 닫은 #479에서 반영된 v0.5.0 tag 이후의 maintenance correction이다.
+v0.5.1 stable에는 포함되지만 공개 v0.5.0 binary에는 포함되지 않으며, 정확한 v0.5.1
+tag commit·workflow·asset evidence는 GitHub Release에서 확인한다.
 
 Run Manager는 `crates/integration`의 versioned atomic snapshot을 주기적으로 발행한다.
 `run-manager/v1/summary.json`은 기존 flat status payload를 정확히 유지한다. 즉

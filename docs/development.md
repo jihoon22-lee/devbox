@@ -1,6 +1,8 @@
 # 개발자 가이드
 
-devbox는 안정판 13개와 v0.5.0 Devbox Launcher·Log Lens를 포함한 Tauri 15개 데스크톱 앱을 하나의 모노레포로 관리하는 저장소다.
+devbox는 현재 v0.5.1 안정판의 15개 Tauri 데스크톱 앱을 하나의 모노레포로 관리한다.
+v0.5.1은 #470/#473/#477/#478/#479를 포함하며, 정확한 tag commit·workflow·asset publication
+metadata는 GitHub Release에서 확인한다.
 
 - **pnpm workspace** — `apps/*`, `packages/*`
 - **Cargo workspace** — 앱(src-tauri) + 공용 crates
@@ -24,9 +26,9 @@ apps/        독립 Tauri 앱 (각각 독립 .exe)
   webhook-lab         로컬 웹훅/콜백 서버
   repo-manager        Git worktree/저장소 관리
   devbox-launcher     catalog app·integration snapshot launcher와 explicit clipboard preview
-  log-lens            bounded local/WSL/container log viewer (v0.5.0 bootstrap)
+  log-lens            bounded local/WSL/container log viewer (v0.5.0 bootstrap; #473 Run reader in v0.5.1)
 packages/    공용 React 패키지 (tokens·editor·diff-view·context-menu)
-crates/      공용 Rust 크레이트 (applink·catalog·filesystem·git·integration·launch·markdown·process·search·secrets·window-state·wsl)
+crates/      공용 Rust 크레이트 (applink·catalog·filesystem·git·integration·launch·markdown·process·search·secrets·window-state·window-state-tauri·wsl)
 docs/        architecture / roadmap / projects
 ```
 
@@ -40,8 +42,11 @@ docs/        architecture / roadmap / projects
 - 대형 전문 도구 설치·실행은 native 기능을 대체하지 않는 optional integration으로만 둔다.
 - devbox 앱 간 전달은 clipboard/file export보다 versioned applink·handoff·snapshot을 우선한다.
 
-상세 정책은 `CONVENTIONS.md` §9, 확정된 v0.5.0 기능·신규 앱·제외 범위는
+상세 정책은 `CONVENTIONS.md` §9, v0.5.0 history와 v0.5.1 maintenance 범위는
 [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을 따른다.
+stable은 exact annotated `vX.Y.Z` tag 또는 명시적 manual dispatch 뒤 release workflow가
+성공하고, 15-app/32-asset/31-declared/mismatch-0 및 Windows evidence를 독립 확인한 뒤에만
+주장한다. prerelease/RC는 사용자의 명시 요청 없이는 만들지 않는다.
 
 ## 시작하기
 

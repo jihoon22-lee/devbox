@@ -1,6 +1,8 @@
 # Projects
 
-15개 구현 앱의 요약. 상세 소개는 각 `apps/<AppName>/README.md`, 설계는 `docs/superpowers/specs/`를 참조한다.
+15개 구현 앱의 요약. 현재 v0.5.1 stable은 #470/#473/#477/#478/#479를 포함한 15개 앱
+bundle이다. 상세 소개는 각
+`apps/<AppName>/README.md`, 설계는 `docs/superpowers/specs/`를 참조한다.
 
 | # | 앱 | 디렉터리 | 핵심 목적 | Phase | 연계 |
 |---|---|---|---|---|---|
@@ -18,7 +20,7 @@
 | 12 | webhook-lab | `apps/webhook-lab` | 로컬 웹훅/콜백 서버 | Stage 5 | api-playground, port-manager |
 | 13 | repo-manager | `apps/repo-manager` | git 저장소·worktree 관리 | Stage 5 | wsl crate, code-pad/workbench |
 | 14 | devbox-launcher | `apps/devbox-launcher` | catalog app과 제공될 때 검증된 integration snapshot 검색·AppLink 실행, explicit clipboard preview | P3-01 | catalog, integration, applink, launch |
-| 15 | log-lens | `apps/log-lens` | local/WSL/container log tail·merge·filter, Run stdout/stderr identity handoff·reader | P3-02 | `log-source/v1`, bounded in-memory ring |
+| 15 | log-lens | `apps/log-lens` | local/WSL/container log tail·merge·filter, Run stdout/stderr identity handoff·reader (#473 in v0.5.1) | P3-02 | `log-source/v1`, bounded in-memory ring |
 
 ## 공유 후보 매트릭스
 
@@ -38,19 +40,23 @@
 | webhook-lab | http, rules, masking |
 | repo-manager | wsl, git |
 | devbox-launcher | catalog, integration, applink, launch |
-| log-lens | WSL/container fixed adapters, app-local parser, `log-source/v1` claim/preview, fixed Run rotation reader |
+| log-lens | WSL/container fixed adapters, app-local parser, `log-source/v1` claim/preview, fixed Run rotation reader (#473; v0.5.0 binary 제외) |
 
 ## 산출물 (각각 독립 .exe)
 `PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`
 `EverythingPlus.exe` `Knowledge.exe` `LifeLog.exe` `DevboxManager.exe` `CodePad.exe` `RunManager.exe`
 `Workbench.exe` `WebhookLab.exe` `RepoManager.exe` `DevboxLauncher.exe` `LogLens.exe`
 
-## v0.5.0 신규 앱 구현 상태
+## v0.5.0 신규 앱 구현 및 v0.5.1 stable 보강
 
-Devbox Launcher와 Log Lens bootstrap은 구현됐다. #366/#367의 현재 integration 범위는
-Run Manager·WSL Desktop producer와 Log Lens의 bounded claim/preview lifecycle이다.
-완료 감사에서 발견한 Run source read 누락은 #472에서 고정 app-data root·logical offset 기반
-read-only adapter로 보완한다. producer path나 Run Manager DB를 전달·직접 읽지 않으며, 기존
-ancestor TOCTOU와 local-adapter FIFO/UNC reader 위험은 이 보완 범위에 포함하지 않는다.
+Devbox Launcher와 Log Lens bootstrap은 공개 v0.5.0 stable에 포함됐다. #366/#367의
+Run Manager·WSL Desktop producer와 Log Lens bounded claim/preview lifecycle도 유지한다.
+완료 감사에서 발견한 Run source read 누락은 #472/#473에서 고정 app-data root·logical offset
+기반 read-only adapter로 보완됐고, 이 보완은 v0.5.1 stable에 포함된다.
+#479 merge로 닫힌 #474 계약도 v0.5.1에 포함된다. 기존 flat
+`run-manager/v1/summary.json`은 유지하고, named `run-manager/v1/jobs-services.json` sidecar가
+Launcher의 전체 job/service action을 제공한다. 정확한 v0.5.1 package evidence는 GitHub Release에서
+확인한다. producer path나 Run Manager DB를 전달·직접 읽지 않으며,
+기존 ancestor TOCTOU와 local-adapter FIFO/UNC reader 위험은 이 보완 범위에 포함하지 않는다.
 기존 앱의 P1·P2·선택 P3 강화, 앱별 목표 version, 신규 앱의 안전 경계와 acceptance는
 [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을 따른다.

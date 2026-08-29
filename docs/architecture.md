@@ -2,6 +2,17 @@
 
 devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 
+## Release status boundary
+
+- 공개 v0.5.0 stable은 15개 앱과 32개 public asset(31개 manifest-declared, mismatch 0)을
+  tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54` 및 workflow `33216176818`에서 검증했다.
+- v0.5.1 stable source/bundle은 #470 Windows acceptance inventory, #473 Run reader,
+  #477 prerelease gate, #478 Manager 보강, #479로 닫힌 #474 named sidecar 계약을 포함한다.
+  15-app/32-public-asset/31-declared/mismatch-0은 release contract이며, 정확한 tag·workflow·asset digest·Latest metadata는
+  GitHub Release가, Windows 수동 acceptance는 #176이 권위 있는 source다.
+- #176은 63 checked와 7 physical Windows-only pending으로 유지한다. RC1~RC3 tag/release는
+  삭제된 historical evidence이며, 미래 RC는 사용자의 명시 요청 전에는 만들지 않는다.
+
 ## 핵심 원칙
 
 1. **하나의 저장소, 여러 독립 앱** — 각 앱은 독립적으로 실행되고 독립적으로 `.exe`를 만든다.
@@ -30,14 +41,17 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 └──────────────────────────────┘
 ```
 
-위 그림은 v0.5.0 개발 중인 현재 구조다. 기존 동작을 유지하면서 계획 요소를
-순차적으로 추가한다. 구현 전인 항목은 현재 앱/크레이트 수에 포함하지 않는다.
+위 그림은 v0.5.0 historical stable과 현재 v0.5.1 stable에 공통인 구조다.
+구현 전인 항목은 현재 앱/크레이트 수에 포함하지 않는다. v0.5.1의 maintenance correction은
+v0.5.0 binary와 별도다.
 
 - 신규 독립 앱 `devbox-launcher`·`log-lens` bootstrap 구현 — 현재 15개 앱. Log Lens의
-  Run/WSL producer handoff는 후속 integration PR이다.
+  Run reader #473과 Run Manager named sidecar #479/#474는 v0.5.0 tag 이후 source correction으로
+  v0.5.1 stable source/bundle에 포함되며, 공개 v0.5.0 binary에는 없다.
 - 구현된 순수 `crates/catalog` — catalog v1/v2 type·revision freshness·runtime/build-time
   fallback·capability filter. runtime file I/O는 후속 Manager 기능이 담당한다.
-- 신규 `crates/logs` — Log Lens가 두 번째 소비자가 되는 시점의 순수 log parsing
+- 계획된 `crates/logs` 추출 — Log Lens가 두 번째 소비자가 되는 시점의 순수 log parsing(현재 planned;
+  parser는 계속 app-local)
 - 구현된 `packages/context-menu` — 위치·keyboard navigation·focus restore·submenu·separator·
   disabled/danger 표현만 소유한다. Port Manager, Developer Toolbox, Everything+, Knowledge, Code Pad,
   Run Manager, Devbox Manager, Workbench, Webhook Lab, Repo Manager, API Playground, WSL Desktop, Life Log의
@@ -417,8 +431,9 @@ adapter만 읽는다. Source path, command, environment, credential은 source id
 identity와 size cursor로 재시작한다. operation ID/generation guard와 cancellation은 stale
 callback·unmount·single-flight 결과를 폐기한다. saved view는 source 설정과 filter만 memory에
 보관하며 raw log는 저장하지 않는다. export/copy는 사용자가 누른 현재 selection에 한해서만
-수행한다. Run Manager의 `log-source/v1` receiver는 이 bootstrap에서 identity만 검증하며,
-producer claim/ack와 WSL/Run 실연결은 후속 integration PR의 책임이다.
+수행한다. Run Manager의 `log-source/v1` receiver와 실제 rotation reader는 #473에서 완성됐고
+v0.5.1 stable에 포함된다. 이는 v0.5.0 tag 이후의 correction이므로 공개 v0.5.0 binary에는
+없으며, `crates/logs` 추출은 두 번째 소비자가 생길 때까지 planned로 둔다.
 
 Workbench는 Life Log의 app-local DB와 settings schema를 알지 않는다. 시작 시
 `life-log/projects/v1`을 producer/schema/freshness 기준으로 검증하고 안전한 절대 경로만
@@ -510,7 +525,8 @@ Run Manager의 #311 검색도 이 경계를 확장하지 않는다. `search_run_
 검증하는 local contract로만 존재한다. request/source는 unknown field를 거부하고 timestamp는
 JavaScript safe integer로 제한하며, 동기 filesystem metadata 복원과 bounded scan은 async
 command executor 밖의 blocking worker에서 수행한다. Log Lens handoff/remote ingest/permanent
-archive는 Log Lens bootstrap 뒤 별도 integration 범위다.
+archive는 Log Lens bootstrap 뒤 별도 integration 범위다. #473 Run reader와 #479/#474 named
+sidecar는 v0.5.1 maintenance correction이며 v0.5.0 binary에 소급하지 않는다.
 
 Webhook Lab의 history/rule context menu도 열기 전에 대상의 opaque ID를 선택한다. 일반 history
 DTO, 마스킹 복사, 헤더 복사는 Authorization·Cookie·API key·token/secret/password/auth 계열
@@ -776,7 +792,7 @@ versioned `payload.text/filter`를 다시 검증해 `query` AppLink로 전달한
 `--query-filter-v1`은 strict/deny-unknown JSON이며 잘못된 filter를 text-only 요청으로 조용히
 강등하지 않는다. filter가 없는 기존 `--query` 요청은 계속 같은 검색 경로를 사용한다.
 
-catalog revision 12(`#474` post-release source correction)부터 Run Manager는
+catalog revision 12(`#474`, merged by #479, v0.5.1 maintenance correction)부터 Run Manager는
 `snapshot:run-manager/status/v1`과 `snapshot:run-manager/jobs-services/v1` capability를
 생산한다. v1 `run-manager/v1/summary.json`은 기존 flat `activeServices`·`runs`·`lastRunAtMs`
 data를 byte-shape 그대로 유지해 기존 Workbench/Life Log와 Launcher 소비자를 보호한다. 새
@@ -786,8 +802,9 @@ multi-view envelope이다. jobs-services는 모든 job/service를
 bounded action entry로 제공한다. producer는 command/cwd/environment/path/credential/log를
 복사하지 않으며, invalid/duplicate/bounded-out definitions는 sidecar atomic replace를 거부해
 last-good sidecar를 유지한다. Launcher는 sidecar를 우선 읽고, sidecar가 없는 경우에만 v1
-flat active-service fallback을 사용한다. 이 source correction은 v0.5.0 tag 이후 반영됐으며
-공개 v0.5.0 binary에는 포함되지 않는다.
+flat active-service fallback을 사용한다. 이 source correction은 v0.5.0 tag 이후 반영됐고
+현재 v0.5.1 stable source/bundle에 포함된다. 공개 v0.5.0 binary에는 포함되지 않으며,
+v0.5.1 publication metadata와 asset digest는 GitHub Release에서 확인한다.
 
 filename/content FTS projection은 filter 값을 모두 SQLite parameter로 결합한다. source는 임의
 경로가 아닌 등록 `roots.id`이며 중첩 root는 가장 깊은 root가 소유한다. root id는 삭제 뒤
