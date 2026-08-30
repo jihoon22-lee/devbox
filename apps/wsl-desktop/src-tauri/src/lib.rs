@@ -1,6 +1,7 @@
 mod applink;
 mod commands;
 mod core;
+mod integration;
 mod log_lens;
 mod runtime_snapshot;
 

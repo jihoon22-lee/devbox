@@ -16,12 +16,13 @@ fn profile_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(directory.join(PROFILE_FILE))
 }
 
-fn load_store(app: &AppHandle) -> ProfileStore {
-    profile_path(app)
-        .ok()
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .map(|input| ProfileStore::load(&input))
-        .unwrap_or_default()
+fn load_store(app: &AppHandle) -> Result<ProfileStore, String> {
+    let path = profile_path(app)?;
+    match std::fs::read_to_string(path) {
+        Ok(input) => ProfileStore::load(&input),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(ProfileStore::default()),
+        Err(_) => Err("터미널 프로필을 읽을 수 없습니다".into()),
+    }
 }
 
 fn save_store(app: &AppHandle, store: &ProfileStore) -> Result<(), String> {
@@ -32,7 +33,14 @@ fn save_store(app: &AppHandle, store: &ProfileStore) -> Result<(), String> {
 
 #[tauri::command]
 pub fn list_workspace_profiles(app: AppHandle) -> Vec<WorkspaceProfile> {
-    load_store(&app).profiles
+    let Ok(store) = load_store(&app) else {
+        // Preserve the prior read-only UI contract while refusing to publish
+        // or mutate an invalid local store.
+        return Vec::new();
+    };
+    let profiles = store.profiles.clone();
+    let _ = crate::integration::publish_profile_snapshot(&store);
+    profiles
 }
 
 #[tauri::command]
@@ -43,17 +51,20 @@ pub fn save_workspace_profile(
     if profile.id.is_empty() {
         profile.id = uuid::Uuid::new_v4().to_string();
     }
-    let mut store = load_store(&app);
+    let mut store = load_store(&app)?;
     store.upsert(profile.clone())?;
     save_store(&app, &store)?;
+    let _ = crate::integration::publish_profile_snapshot(&store);
     Ok(profile)
 }
 
 #[tauri::command]
 pub fn delete_workspace_profile(app: AppHandle, id: String) -> Result<(), String> {
-    let mut store = load_store(&app);
+    let mut store = load_store(&app)?;
     if !store.remove(&id) {
         return Err("터미널 프로필을 찾을 수 없습니다".into());
     }
-    save_store(&app, &store)
+    save_store(&app, &store)?;
+    let _ = crate::integration::publish_profile_snapshot(&store);
+    Ok(())
 }

@@ -154,6 +154,7 @@ pub fn scan_root(root: String) -> Result<ScanResult, String> {
     }
     let mut out: Vec<RepoEntry> = seen.into_values().collect();
     out.sort_by(|a, b| a.path.cmp(&b.path));
+    crate::integration::replace_repositories(out.clone());
     Ok(ScanResult {
         repos: out,
         truncated,
@@ -1992,14 +1993,20 @@ pub async fn worktrees(path: String) -> Result<Vec<String>, String> {
             MAX_WORKTREE_OUTPUT_BYTES,
         )
         .map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
-        parse_worktrees(&out)
+        let paths = parse_worktrees(&out)
             .into_iter()
             .map(|path| {
                 target
                     .host_path_from_git(&path)
                     .map_err(|_| GIT_WORKTREE_ERROR.to_string())
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        let entries = paths
+            .iter()
+            .filter_map(|path| repository_entry(Path::new(path)).ok())
+            .collect::<Vec<_>>();
+        crate::integration::add_worktree_repositories(entries);
+        Ok(paths)
     })
     .await
 }

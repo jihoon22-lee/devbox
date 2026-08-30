@@ -426,14 +426,30 @@ fn read_snapshot_file(
         return Err("snapshot 크기 제한을 초과했습니다".into());
     }
 
-    let file = std::fs::File::open(path).map_err(|_| "snapshot 파일을 읽을 수 없습니다")?;
-    let mut bytes = Vec::with_capacity(metadata.len().min(MAX_SNAPSHOT_BYTES) as usize);
-    file.take(MAX_SNAPSHOT_BYTES + 1)
+    // Read from the exact no-follow handle that was authorized, then ensure
+    // the path still names that same object before accepting its contents.
+    // This closes the final-component replacement gap between metadata and
+    // `File::open`; ancestor link changes are rejected again after the read.
+    let (mut file, identity) = match devbox_filesystem::open_filesystem_object(path, false) {
+        Ok(opened) => opened,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err("snapshot 파일을 읽을 수 없습니다".into()),
+    };
+    let handle_metadata = file
+        .metadata()
+        .map_err(|_| "snapshot 파일을 읽을 수 없습니다")?;
+    if handle_metadata.len() > MAX_SNAPSHOT_BYTES {
+        return Err("snapshot 크기 제한을 초과했습니다".into());
+    }
+    let mut bytes = Vec::with_capacity(handle_metadata.len().min(MAX_SNAPSHOT_BYTES) as usize);
+    file.by_ref()
+        .take(MAX_SNAPSHOT_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| "snapshot 파일을 읽을 수 없습니다")?;
     if bytes.len() as u64 > MAX_SNAPSHOT_BYTES {
         return Err("snapshot 크기 제한을 초과했습니다".into());
     }
+    revalidate_snapshot_path(path, identity)?;
     let envelope: Envelope =
         serde_json::from_slice(&bytes).map_err(|_| "snapshot JSON 형식이 올바르지 않습니다")?;
     validate_envelope(&envelope)?;
@@ -444,6 +460,20 @@ fn read_snapshot_file(
         return Err("snapshot schema version이 경로와 일치하지 않습니다".into());
     }
     Ok(Some(envelope))
+}
+
+fn revalidate_snapshot_path(
+    path: &Path,
+    expected_identity: devbox_filesystem::FilesystemIdentity,
+) -> Result<(), String> {
+    devbox_filesystem::ensure_no_links(path)
+        .map_err(|_| "snapshot 파일 형식이 안전하지 않습니다")?;
+    let current_identity = devbox_filesystem::filesystem_identity(path, false)
+        .map_err(|_| "snapshot 파일을 읽을 수 없습니다")?;
+    if current_identity != expected_identity {
+        return Err("snapshot 파일이 읽는 동안 변경되었습니다".into());
+    }
+    Ok(())
 }
 
 fn snapshot_reference(path: &Path, envelope: Envelope) -> Result<SnapshotRef, String> {
@@ -1017,6 +1047,29 @@ mod tests {
             read_named_view_snapshot_in(&root, "run-manager", 1, "jobs-services")
                 .unwrap_err()
                 .contains("파일 이름")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn snapshot_read_identity_revalidation_rejects_atomic_replacement() {
+        let root = test_root("read-replacement");
+        let path = snapshot_path_in(&root, "run-manager", 1);
+        let displaced = path.with_file_name("displaced.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        devbox_filesystem::atomic_write(&path, b"first").unwrap();
+        let (_opened, identity) = devbox_filesystem::open_filesystem_object(&path, false).unwrap();
+
+        // Windows does not replace an open destination in-place consistently,
+        // even when the reader shares delete access. Move the authorized
+        // object aside first, then create a different object at the same path;
+        // this is the cross-platform replacement race the reader must reject.
+        std::fs::rename(&path, &displaced).unwrap();
+        devbox_filesystem::atomic_write(&path, b"replacement").unwrap();
+
+        assert_eq!(
+            revalidate_snapshot_path(&path, identity).unwrap_err(),
+            "snapshot 파일이 읽는 동안 변경되었습니다"
         );
         let _ = std::fs::remove_dir_all(root);
     }

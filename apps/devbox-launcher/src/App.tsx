@@ -1,13 +1,37 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { CLIPBOARD_PREVIEW_ID, getShortcut, launchResult, performTextAction, previewTextAction, readCurrentText, search, setShortcut } from "./api";
+import { CLIPBOARD_PREVIEW_ID, clearRecents, getShortcut, launchResult, performTextAction, previewTextAction, readCurrentText, search, setFavorite, setShortcut } from "./api";
 import { isTauri } from "./lib/isTauri";
-import type { SearchResponse, SearchResult, ShortcutConfig, ShortcutStatus } from "./types";
+import type { SearchResponse, SearchResult, ShortcutConfig, ShortcutStatus, SourceDiagnostic } from "./types";
 import "./App.css";
 
 const DEFAULT_RESPONSE: SearchResponse = { results: [], sources: [] };
 const MAX_HANDOFF_TEXT_BYTES = 64 * 1024;
+
+const SOURCE_STATUS_COPY: Record<SourceDiagnostic["status"], { label: string; description: string }> = {
+  fresh: { label: "최신", description: "정상적으로 읽었습니다." },
+  stale: { label: "오래됨", description: "마지막 갱신 이후 시간이 지났습니다." },
+  missing: { label: "없음", description: "아직 사용할 수 있는 snapshot이 없습니다." },
+  corrupt: { label: "손상됨", description: "안전하지 않아 검색에서 제외했습니다." },
+  permission: { label: "권한 없음", description: "읽을 권한이 없어 확인하지 못했습니다." },
+  linked: { label: "안전하지 않은 링크", description: "symbolic link 또는 reparse point 경로라 제외했습니다." },
+};
+
+const SOURCE_NAMES: Record<string, string> = {
+  "workbench": "Workbench",
+  "repo-manager": "Repo Manager",
+  "run-manager": "Run Manager",
+  "everything-plus": "Everything+",
+  "wsl-desktop": "WSL Desktop",
+};
+
+const SOURCE_VIEW_NAMES: Record<string, string> = {
+  "profiles": "프로필",
+  "repositories": "저장소",
+  "jobs-services": "작업·서비스",
+  "saved-queries": "저장된 검색",
+};
 
 function utf8ByteLength(value: string): number {
   let bytes = 0;
@@ -41,6 +65,8 @@ export default function App() {
   const [staleResult, setStaleResult] = useState<SearchResult | null>(null);
   const [shortcut, setShortcutState] = useState<ShortcutStatus | null>(null);
   const [shortcutBusy, setShortcutBusy] = useState(false);
+  const [favoriteBusyId, setFavoriteBusyId] = useState<string | null>(null);
+  const [recentsBusy, setRecentsBusy] = useState(false);
   const requestId = useRef(0);
   const mounted = useRef(true);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -103,7 +129,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [preview, staleResult]);
 
-  const executeResult = async (result: SearchResult) => {
+  const executeResult = async (result: SearchResult, allowStale = false) => {
     setError(null);
     if (result.explicitPreview) {
       setBusy(true);
@@ -111,7 +137,7 @@ export default function App() {
         // Authorize the action before touching selection/clipboard data. The
         // renderer may request a preview only for a result revalidated by the
         // Rust command boundary.
-        const meta = await previewTextAction(result.id);
+        const meta = await previewTextAction(result);
         const text = await readCurrentText();
         const isClipboardPreview = result.id === CLIPBOARD_PREVIEW_ID;
         if (isClipboardPreview !== (meta.kind === "clipboard-preview/v1")) throw new Error("preview kind mismatch");
@@ -125,9 +151,12 @@ export default function App() {
     }
     setBusy(true);
     try {
-      const outcome = await launchResult(result.id);
+      const outcome = await launchResult(result, allowStale);
       if (outcome.status === "installRequired" && mounted.current) setError("대상 앱이 없어 Devbox Manager 설치 화면을 열었습니다.");
-      else await hideWindow();
+      else {
+        void refresh(query);
+        await hideWindow();
+      }
     } catch { if (mounted.current) setError(safeError()); }
     finally { if (mounted.current) setBusy(false); }
   };
@@ -146,7 +175,43 @@ export default function App() {
     if (!staleResult || busy) return;
     const result = staleResult;
     setStaleResult(null);
-    await executeResult(result);
+    await executeResult(result, true);
+  };
+
+  const toggleFavorite = async (result: SearchResult) => {
+    if (busy || favoriteBusyId) return;
+    setFavoriteBusyId(result.id);
+    setBusy(true);
+    setError(null);
+    try {
+      await setFavorite(result, !result.favorite);
+      await refresh(query);
+    } catch {
+      if (mounted.current) setError(safeError());
+    } finally {
+      if (mounted.current) {
+        setFavoriteBusyId(null);
+        setBusy(false);
+      }
+    }
+  };
+
+  const clearRecentHistory = async () => {
+    if (busy || recentsBusy) return;
+    setRecentsBusy(true);
+    setBusy(true);
+    setError(null);
+    try {
+      await clearRecents();
+      await refresh(query);
+    } catch {
+      if (mounted.current) setError(safeError());
+    } finally {
+      if (mounted.current) {
+        setRecentsBusy(false);
+        setBusy(false);
+      }
+    }
   };
 
   const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
@@ -180,10 +245,13 @@ export default function App() {
     }
     setBusy(true);
     try {
-      const outcome = await performTextAction(preview.result.id, preview.text);
+      const outcome = await performTextAction(preview.result, preview.text);
       setPreview(null);
       if (outcome.status === "installRequired") setError("대상 앱이 없어 Devbox Manager 설치 화면을 열었습니다.");
-      else await hideWindow();
+      else {
+        void refresh(query);
+        await hideWindow();
+      }
     } catch { if (mounted.current) setError(safeError()); }
     finally { if (mounted.current) setBusy(false); }
   };
@@ -235,7 +303,13 @@ export default function App() {
           {response.results.map((result, index) => (
             <li key={result.id} role="presentation">
               <button id={`result-${index}`} type="button" role="option" aria-selected={selected === index} className={`result ${selected === index ? "selected" : ""}`} onMouseEnter={() => setSelected(index)} onClick={() => { setSelected(index); void runSelected(index); }}>
-                <span className="result-label">{result.label}</span>
+                <span className="result-heading">
+                  <span className="result-label">{result.label}</span>
+                  <span className="result-badges" aria-label="결과 상태">
+                    {result.favorite && <span className="result-badge favorite-badge">즐겨찾기</span>}
+                    {result.recent && <span className="result-badge recent-badge">최근</span>}
+                  </span>
+                </span>
                 <span className="result-detail">{result.detail ?? result.source}{result.stale ? " · 오래됨" : ""}{result.explicitPreview ? " · 미리보기 필요" : ""}</span>
               </button>
             </li>
@@ -244,10 +318,21 @@ export default function App() {
         </ul>
         <footer className="launcher-footer">
           <span>↑↓ 선택 · Enter 열기 · Esc 닫기</span>
-          <label>단축키 <select aria-label="Launcher 단축키" value={shortcut?.accelerator ?? "Ctrl+Alt+Space"} disabled={shortcutBusy} onChange={(event) => void saveShortcut(event.target.value as ShortcutConfig["accelerator"])}><option>Ctrl+Alt+Space</option><option>Ctrl+Alt+L</option><option>Ctrl+Alt+J</option></select><small>즉시 적용</small></label>
+          <div className="footer-actions">
+            <button
+              type="button"
+              className="favorite-action"
+              aria-label={response.results[selected] ? (response.results[selected].favorite ? `${response.results[selected].label} 즐겨찾기 해제` : `${response.results[selected].label} 즐겨찾기 추가`) : "선택 결과 즐겨찾기"}
+              aria-pressed={response.results[selected]?.favorite ?? false}
+              onClick={() => { const result = response.results[selected]; if (result) void toggleFavorite(result); }}
+              disabled={busy || favoriteBusyId !== null || !response.results[selected]}
+            >{response.results[selected]?.favorite ? "★ 즐겨찾기 해제" : "☆ 즐겨찾기"}</button>
+            <button type="button" className="clear-recents" onClick={() => void clearRecentHistory()} disabled={busy || recentsBusy}>최근 기록 초기화</button>
+            <label>단축키 <select aria-label="Launcher 단축키" value={shortcut?.accelerator ?? "Ctrl+Alt+Space"} disabled={shortcutBusy} onChange={(event) => void saveShortcut(event.target.value as ShortcutConfig["accelerator"])}><option>Ctrl+Alt+Space</option><option>Ctrl+Alt+L</option><option>Ctrl+Alt+J</option></select><small>즉시 적용</small></label>
+          </div>
         </footer>
         {shortcut && shortcut.registration !== "registered" && <p className="shortcut-status" role="status">{shortcut.registration === "unavailable" ? `전역 단축키를 등록하지 못했습니다. ${shortcut.alternatives.join(" 또는 ")} 중 하나를 선택해 다시 시도하세요.` : shortcut.registration === "unsupported" ? "이 환경에서는 전역 단축키를 사용할 수 없습니다. 앱 메뉴나 다시 실행으로 Launcher를 여세요." : shortcut.registration === "pending" ? "전역 단축키를 확인하는 중입니다…" : "전역 단축키가 꺼져 있습니다. 위 선택에서 다시 켤 수 있습니다."}</p>}
-        <details className="sources"><summary>snapshot source 상태</summary>{response.sources.map((source) => <span key={source.producer}>{source.producer}: {source.status}</span>)}</details>
+        <details className="sources"><summary>snapshot source 상태</summary><ul className="source-list">{response.sources.map((source) => { const status = SOURCE_STATUS_COPY[source.status]; return <li key={`${source.producer}:${source.view}`}><span className="source-name">{SOURCE_NAMES[source.producer] ?? source.producer} · {SOURCE_VIEW_NAMES[source.view] ?? source.view}</span><span className={`source-status source-${source.status}`}>{status.label}</span><small>{status.description}</small></li>; })}</ul></details>
       </section>
       {staleResult && <div className="modal-backdrop" role="presentation"><section className="preview-modal confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="stale-title" aria-describedby="stale-description" tabIndex={-1} onKeyDown={handleDialogKeyDown}>
         <h2 id="stale-title">오래된 snapshot입니다</h2>

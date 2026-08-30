@@ -461,11 +461,35 @@ RC1~RC3 tag/release는 사용자 지시로 삭제됐고, 이 문단의 workflow/
 2026-08-28 `#320` Launcher bootstrap은 독립 앱, bounded catalog·snapshot path consumer,
 실행 직전 target 재검증, Manager 설치 handoff, 즉시 변경 가능한 transient shortcut과 명시적
 clipboard preview를 구현했다. Workbench profile, Repo Manager repository, Everything+ saved
-query, WSL Desktop profile source는 consumer-side versioned path 계약이며, 이 bootstrap이
-producer를 임의로 구현하거나 등록하지 않는다. missing/stale/corrupt/permission source는 서로
-격리된다. 기존 Life Log→Knowledge `knowledge-draft/v1` action은 유지하고 Launcher가 이를
-plain text로 바꾸지 않으며, `toolbox-text/v1`은 실제 claim/ack receiver가 준비된 뒤 연결한다.
-Windows W3 packaged shortcut/focus/설치 handoff smoke는 release gate에서 확인한다.
+query, WSL Desktop profile source는 consumer-side versioned path 계약으로 소비하며, 이 bootstrap
+자체가 producer를 임의로 구현하거나 등록하지 않는다. producer 연결은 아래 #487에서 별도로
+구현했다. missing/stale/corrupt/permission source는 서로 격리된다. 기존 Life Log→Knowledge
+`knowledge-draft/v1` action은 유지하고 Launcher가 이를 plain text로 바꾸지 않으며,
+`toolbox-text/v1`은 실제 claim/ack receiver가 준비된 뒤 연결한다. Windows W3 packaged
+shortcut/focus/설치 handoff smoke는 release gate에서 확인한다.
+
+**2026-08-30 #487 source producer 구현 상태.** catalog revision 14에 맞춰 Workbench는
+`%LOCALAPPDATA%\devbox\integration\workbench\v1\profiles.json`, WSL Desktop은
+`%LOCALAPPDATA%\devbox\integration\wsl-desktop\v1\profiles.json`, Repo Manager는
+repository scan과 성공한 worktree 조회를 합친 `repo-manager/v1/repositories.json` named
+sidecar(`%LOCALAPPDATA%\devbox\integration\repo-manager\v1\repositories.json`)를 발행한다.
+Workbench/WSL profile entry는 기존 opaque ID·안전한 label·고정 detail과
+`targetKind=profile`, `payloadVersion=1`, `{id}` payload만 포함하고, Repo Manager entry는
+canonical identity의 namespace-separated SHA-256 opaque ID와 안전한 basename label·고정
+repository/worktree detail, `targetKind=path`, `payloadVersion=1`, 실행 직전 재검증할
+검증된 absolute `path` payload만 포함한다. profile 경로·distro·cwd·시작 명령·pane·환경/
+서비스 메타데이터·secret, repository canonical key·branch/status·Git 원문·remote/credential은
+공용 snapshot에 복사하지 않는다. producer는 primary list/scan/save/delete 성공 뒤에만
+best-effort로 발행하고, invalid/bounded-out/atomic write 오류가 primary 기능을 실패시키거나
+last-good sidecar를 덮어쓰지 않도록 한다.
+
+Launcher는 named sidecar의 bounded entry를 다시 읽어 exact SHA-256 entry revision을 만들고,
+실행·favorite 변경 직전에 expected revision, target capability와 payload를 재검증한다. stale
+source는 명시적 확인 없이는 실행하지 않으며, Workbench/WSL Desktop profile ID와 Repo Manager
+path는 각 수신 앱에서도 현재 상태를 다시 확인한다. favorites/recency에는 result ID만 저장해
+path·payload·label·source detail·secret을 보존하지 않는다. missing/corrupt/permission/linked
+source는 각각의 진단으로 격리되어 다른 source 검색을 막지 않는다. 이 구현 기록은 Windows
+실기 acceptance나 v0.6.0 release 완료를 의미하지 않으며 해당 검증은 release gate로 남는다.
 
 **2026-08-28 #340–#343 grouped PR 후보.** Developer Toolbox의 Smart Workflows는 JSON/JWT/
 HTTP(S) URL/Base64/Base64URL/Hex를 1 MiB 안에서 로컬 감지하고 ambiguous 후보를 자동 적용하지

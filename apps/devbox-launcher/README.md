@@ -5,22 +5,31 @@ Devbox Launcher 0.1.1은 `Ctrl+Alt+Space`로 여는 일시적 검색 창이다. 
 등록된다. 기본 키를 다른 프로그램이 점유했거나 현재 플랫폼에서 등록할 수 없으면 창을
 숨기지 않고 고정 상태와 대체 키를 안내한다.
 
-Launcher는 build-time `apps/catalog.json`의 앱과, 존재할 때만 다음 versioned integration
-snapshot path를 검색한다. 이 목록은 consumer-side 계약이며, bootstrap 자체가 모든 producer를
-구현하거나 catalog에 등록한다는 의미가 아니다. `jobs-services.json` sidecar와 그 fallback은
+Launcher는 build-time `apps/catalog.json`의 앱과, 존재할 때만 다음 5개 versioned integration
+snapshot source를 검색한다. producer의 source DB를 직접 열지 않고, 공용 bounded reader로
+named sidecar 또는 기존 summary snapshot만 읽는다. `jobs-services.json` sidecar와 그 fallback은
 #474를 닫은 #479를 통해 v0.5.1 stable에 포함됐으며, 공개 v0.5.0 binary에는 없다.
 
-- Workbench `profiles/v1` (후속 producer)
-- Repo Manager `repositories/v1` (후속 producer)
-- Run Manager `jobs-services/v1` (`jobs-services.json` sidecar; `summary.json` flat fallback; #479/#474)
-- Everything+ `saved-queries/v1`
-- WSL Desktop `profiles/v1` (후속 profile producer)
+- Workbench `workbench/v1/profiles.json` — `profiles/v1` named view
+- Repo Manager `repo-manager/v1/repositories.json` — `repositories/v1` named view
+- Run Manager `run-manager/v1/jobs-services.json` — `jobs-services/v1` named view;
+  named sidecar가 없을 때만 `summary.json` flat fallback (#479/#474)
+- Everything+ `everything-plus/v1/summary.json` — `saved-queries/v1` view
+- WSL Desktop `wsl-desktop/v1/profiles.json` — `profiles/v1` named view
 
 `crates/integration`의 bounded reader가 versioned path를 읽고 entry의 target, payload version,
-path/query/id를 검증한다. path가 없으면 `missing`, 오래되거나 손상됐거나 읽을 권한이 없으면
-각각 독립 상태로 격리해 다른 source 검색을 계속한다. 사용자가 결과를 실행하는 순간 같은
-검증을 다시 수행하며 대상 앱이 설치되지 않았으면 `--install-app <id>` AppLink로 Devbox
-Manager의 설치 화면만 연다.
+path/query/id를 검증한다. 각 catalog/snapshot entry에는 정확한 entry 직렬화 값에서 계산한
+SHA-256 `revision`이 붙으며, preview와 launch는 그 exact revision을 다시 전달한다. entry가
+rename/change되거나 제거되면 ID·revision 재검증에서 거부된다. stale snapshot은 사용자가 명시적으로
+계속하기로 확인한 경우에만 현재 source를 다시 검증해 전달한다. source 상태는 `missing`,
+`corrupt`, `permission`, `linked`를 구분해 다른 source 검색을 계속하며, 대상 앱이 설치되지
+않았으면 `--install-app <id>` AppLink로 Devbox Manager의 설치 화면만 연다.
+
+Workbench·WSL Desktop profile와 Repo Manager repository named producer는 primary CRUD/scan/
+worktree 결과가 성공한 뒤 snapshot publication을 best-effort로 시도한다. Launcher는 이
+publication 결과를 source DB 대신 named snapshot contract로만 소비한다. 즐겨찾기와 최근 실행은
+bounded opaque result ID만 앱 전용 `launcher-preferences.json`에 저장하며 raw path, query,
+payload, secret은 저장하지 않는다.
 
 Workbench의 `Path`/`Profile`, WSL Desktop의 `Path`/`Profile`, Run Manager의 `Task`, Devbox
 Manager의 `Install`은 모두 수신 앱이 현재 저장 상태나 embedded catalog를 다시 확인한다. Run

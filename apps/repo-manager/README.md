@@ -6,6 +6,13 @@
 ## 주요 기능
 
 - **저장소 탐색** — root 아래 Git repository 중복 없이 나열 (canonical identity)
+- **Launcher repository snapshot producer (#487)** — scan이 끝난 repository 집합은
+  `repo-manager/v1/repositories.json` named view로 교체 발행하고, 성공한 worktree 조회 결과는
+  process-local bounded projection에 보강한다. 최대 2,048개를 deterministic하게 유지하며
+  entry에는 canonical key를 namespace-separated SHA-256으로 만든 opaque ID, 안전한 basename
+  label(불가하면 고정 fallback), 고정 repository/worktree detail과 검증된 `path` payload만
+  들어간다. branch·status·Git 원문·canonical key는 복제하지 않고 publication은 scan/worktree
+  primary 결과 뒤 best-effort다.
 - **앱 간 repository 선택** — catalog `Path`를 cold start와 실행 중 재호출에서 수신해 기존 항목을 선택하거나, 검증된 미등록 경로를 저장 전 초안으로 표시
 - **상태 목록** — branch·dirty·ahead/behind·worktree
 - **WSL-native Git** — `\\wsl$\\<distro>\\...`, `//wsl$/<distro>/...`,
@@ -30,6 +37,20 @@
 - **원격 Git 흐름 (#318)** — Git 기본 remote를 fetch하고, clean·attached·upstream 상태에서
   fast-forward-only/no-rebase pull과 configured upstream destination으로 제한한 현재 branch
   push를 실행한다. Pull/push는 별도 확인 후에만 실행된다.
+
+## Launcher repositories snapshot (#487)
+
+Launcher는 Repo Manager의 DB나 Git 결과를 직접 열지 않고 `%LOCALAPPDATA%\\devbox\\integration\\repo-manager\\v1\\repositories.json`
+named view만 read-only로 소비한다. scan은 process-local repository map을 새 집합으로 교체하고,
+성공한 worktree 결과는 canonical identity 기준으로 추가한 뒤 같은 bounded snapshot을 원자적으로
+발행한다. 기존 repository record가 있으면 scan record를 우선하고, 나머지는 안전한 path와
+opaque ID 기준으로 deterministic하게 정렬·중복 제거한다.
+
+snapshot entry는 `targetKind=path`, `payloadVersion=1`, 검증된 절대 `path`만 payload로 가지며,
+표시용 label에는 안전한 basename만 허용하고 detail에는 full path·branch·status를 담지 않는다. Launcher가 결과를 preview/launch할 때
+entry의 exact SHA-256 revision을 함께 확인하므로 snapshot entry가 rename/change되거나 제거된
+이후의 이전 선택은 거부된다. 오래된 snapshot은 Launcher에서 명시적 확인 뒤에만 재검증할 수
+있다.
 
 ## 안전 경계
 

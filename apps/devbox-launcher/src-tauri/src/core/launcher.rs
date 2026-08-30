@@ -9,8 +9,11 @@ use devbox_catalog::{parse_catalog, Catalog, CatalogAction, CatalogApp};
 use devbox_filesystem::parse_safe_project_path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::path::Path;
+
+use super::preferences::{validate_result_id, Preferences};
 
 pub const CATALOG_SCHEMA_VERSION: u32 = 2;
 pub const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
@@ -54,7 +57,7 @@ pub const SOURCES: &[SourceSpec] = &[
         target_app: "workbench",
         target_kind: "profile",
         snapshot_version: SNAPSHOT_SCHEMA_VERSION,
-        snapshot_name: None,
+        snapshot_name: Some("profiles"),
         legacy_flat_summary: false,
     },
     SourceSpec {
@@ -64,7 +67,7 @@ pub const SOURCES: &[SourceSpec] = &[
         target_app: "repo-manager",
         target_kind: "path",
         snapshot_version: SNAPSHOT_SCHEMA_VERSION,
-        snapshot_name: None,
+        snapshot_name: Some("repositories"),
         legacy_flat_summary: false,
     },
     SourceSpec {
@@ -94,7 +97,7 @@ pub const SOURCES: &[SourceSpec] = &[
         target_app: "wsl-desktop",
         target_kind: "profile",
         snapshot_version: SNAPSHOT_SCHEMA_VERSION,
-        snapshot_name: None,
+        snapshot_name: Some("profiles"),
         legacy_flat_summary: false,
     },
 ];
@@ -103,6 +106,10 @@ pub const SOURCES: &[SourceSpec] = &[
 #[serde(rename_all = "camelCase")]
 pub struct SearchResult {
     pub id: String,
+    /// Digest of the exact catalog or snapshot entry shown to the renderer.
+    /// Commands require it again so an old selection cannot resolve to a
+    /// renamed or otherwise changed producer payload.
+    pub revision: String,
     pub label: String,
     pub detail: Option<String>,
     pub source: String,
@@ -110,6 +117,8 @@ pub struct SearchResult {
     pub target_kind: String,
     pub stale: bool,
     pub explicit_preview: bool,
+    pub favorite: bool,
+    pub recent: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -222,6 +231,7 @@ impl Index {
             return Err(ERR_INDEX.into());
         }
 
+        let catalog_revision = revision(&[b"catalog/v1", catalog_json.as_bytes()]);
         let mut entries = Vec::new();
         for app in &catalog.apps {
             // The Launcher mirrors the user-facing catalog, not Manager's
@@ -234,6 +244,7 @@ impl Index {
             entries.push(IndexedEntry {
                 result: SearchResult {
                     id: format!("catalog/app/{}", app.id),
+                    revision: catalog_revision.clone(),
                     label: app.display_name.clone(),
                     detail: Some("Devbox 앱".into()),
                     source: "catalog".into(),
@@ -241,6 +252,8 @@ impl Index {
                     target_kind: "app".into(),
                     stale: false,
                     explicit_preview: false,
+                    favorite: false,
+                    recent: false,
                 },
                 target: Target::Task { id: app.id.clone() },
             });
@@ -257,7 +270,7 @@ impl Index {
                             .any(|capability| capability == &action.payload_kind)
                 }) && supports_plain_text_action(&action.payload_kind)
                 {
-                    entries.push(catalog_action(app, action));
+                    entries.push(catalog_action(app, action, &catalog_revision));
                 }
             }
         }
@@ -265,6 +278,7 @@ impl Index {
         entries.push(IndexedEntry {
             result: SearchResult {
                 id: CLIPBOARD_PREVIEW_ID.into(),
+                revision: revision(&[b"builtin/v1", CLIPBOARD_PREVIEW_ID.as_bytes()]),
                 label: "Clipboard 미리보기".into(),
                 detail: Some("현재 선택 영역, 없으면 clipboard · 전달하지 않음".into()),
                 source: "launcher".into(),
@@ -272,6 +286,8 @@ impl Index {
                 target_kind: "clipboard-preview".into(),
                 stale: false,
                 explicit_preview: true,
+                favorite: false,
+                recent: false,
             },
             target: Target::ClipboardPreview,
         });
@@ -289,6 +305,7 @@ impl Index {
                 entries.push(IndexedEntry {
                     result: SearchResult {
                         id,
+                        revision: entry.revision,
                         label: entry.label,
                         detail: entry.detail,
                         source: spec.producer.into(),
@@ -296,6 +313,8 @@ impl Index {
                         target_kind: spec.target_kind.into(),
                         stale,
                         explicit_preview: false,
+                        favorite: false,
+                        recent: false,
                     },
                     target: entry.target,
                 });
@@ -317,8 +336,18 @@ impl Index {
         })
     }
 
+    #[cfg(test)]
     pub fn search(&self, query: &str) -> Result<SearchResponse, String> {
+        self.search_with_preferences(query, &Preferences::default())
+    }
+
+    pub fn search_with_preferences(
+        &self,
+        query: &str,
+        preferences: &Preferences,
+    ) -> Result<SearchResponse, String> {
         validate_query(query)?;
+        preferences.validate()?;
         let needle = query.trim().to_lowercase();
         // Rank matches before applying the result cap. A plain alphabetic
         // sort can hide an exact match behind the first 256 catalog entries,
@@ -332,6 +361,10 @@ impl Index {
             left_score
                 .cmp(right_score)
                 .then_with(|| {
+                    preference_rank(preferences, &left.result.id)
+                        .cmp(&preference_rank(preferences, &right.result.id))
+                })
+                .then_with(|| {
                     left.result
                         .label
                         .to_lowercase()
@@ -343,7 +376,12 @@ impl Index {
         let results = matches
             .into_iter()
             .take(MAX_RESULTS)
-            .map(|(_, entry)| entry.result.clone())
+            .map(|(_, entry)| {
+                let mut result = entry.result.clone();
+                result.favorite = preferences.is_favorite(&result.id);
+                result.recent = preferences.recent_rank(&result.id).is_some();
+                result
+            })
             .collect();
         Ok(SearchResponse {
             results,
@@ -351,15 +389,13 @@ impl Index {
         })
     }
 
-    pub fn resolve(&self, result_id: &str) -> Result<ResolvedAction, String> {
-        if result_id.len() > MAX_ENTRY_ID_BYTES || result_id.chars().any(char::is_control) {
-            return Err(ERR_ACTION.into());
-        }
-        let entry = self
-            .entries
-            .iter()
-            .find(|entry| entry.result.id == result_id)
-            .ok_or(ERR_ACTION)?;
+    pub fn resolve_checked(
+        &self,
+        result_id: &str,
+        expected_revision: &str,
+        allow_stale: bool,
+    ) -> Result<ResolvedAction, String> {
+        let entry = self.checked_entry(result_id, expected_revision, allow_stale)?;
         // Static text actions have a separate preview/confirm boundary. They
         // must never be launchable through the generic result command, even
         // if a forged renderer request supplies their opaque id.
@@ -387,11 +423,23 @@ impl Index {
         })
     }
 
-    /// Resolve a catalog-owned explicit text action. The action's payload kind
-    /// is the only handoff kind accepted; renderer-supplied target apps are
-    /// never trusted.
-    pub fn resolve_text_action(&self, result_id: &str) -> Result<(String, String), String> {
-        if result_id.len() > MAX_ENTRY_ID_BYTES || result_id.chars().any(char::is_control) {
+    pub fn validate_selection(
+        &self,
+        result_id: &str,
+        expected_revision: &str,
+    ) -> Result<(), String> {
+        self.checked_entry(result_id, expected_revision, true)
+            .map(|_| ())
+    }
+
+    fn checked_entry(
+        &self,
+        result_id: &str,
+        expected_revision: &str,
+        allow_stale: bool,
+    ) -> Result<&IndexedEntry, String> {
+        validate_result_id(result_id).map_err(|_| ERR_ACTION.to_string())?;
+        if !valid_revision(expected_revision) {
             return Err(ERR_ACTION.into());
         }
         let entry = self
@@ -399,6 +447,32 @@ impl Index {
             .iter()
             .find(|entry| entry.result.id == result_id)
             .ok_or(ERR_ACTION)?;
+        if entry.result.revision != expected_revision || (entry.result.stale && !allow_stale) {
+            return Err(ERR_ACTION.into());
+        }
+        Ok(entry)
+    }
+
+    #[cfg(test)]
+    pub fn resolve(&self, result_id: &str) -> Result<ResolvedAction, String> {
+        let revision = self
+            .entries
+            .iter()
+            .find(|entry| entry.result.id == result_id)
+            .map(|entry| entry.result.revision.clone())
+            .ok_or(ERR_ACTION)?;
+        self.resolve_checked(result_id, &revision, true)
+    }
+
+    /// Resolve a catalog-owned explicit text action. The action's payload kind
+    /// is the only handoff kind accepted; renderer-supplied target apps are
+    /// never trusted.
+    pub fn resolve_text_action(
+        &self,
+        result_id: &str,
+        expected_revision: &str,
+    ) -> Result<(String, String), String> {
+        let entry = self.checked_entry(result_id, expected_revision, false)?;
         if result_id == CLIPBOARD_PREVIEW_ID
             && entry.result.target_kind == "clipboard-preview"
             && matches!(&entry.target, Target::ClipboardPreview)
@@ -437,6 +511,16 @@ impl Index {
     }
 }
 
+fn preference_rank(preferences: &Preferences, id: &str) -> (u8, usize) {
+    if let Some(rank) = preferences.favorite_rank(id) {
+        (0, rank)
+    } else if let Some(rank) = preferences.recent_rank(id) {
+        (1, rank)
+    } else {
+        (2, usize::MAX)
+    }
+}
+
 fn match_score(result: &SearchResult, needle: &str) -> Option<u8> {
     if needle.is_empty() {
         return Some(20);
@@ -465,10 +549,11 @@ fn field_match_score(value: &str, needle: &str, base: u8) -> Option<u8> {
     }
 }
 
-fn catalog_action(app: &CatalogApp, action: &CatalogAction) -> IndexedEntry {
+fn catalog_action(app: &CatalogApp, action: &CatalogAction, revision: &str) -> IndexedEntry {
     IndexedEntry {
         result: SearchResult {
             id: format!("catalog/action/{}/{}", app.id, action.action_id),
+            revision: revision.into(),
             label: action.label.clone(),
             detail: Some(format!("{} · 명시적 텍스트 미리보기", app.display_name)),
             source: "catalog".into(),
@@ -476,6 +561,8 @@ fn catalog_action(app: &CatalogApp, action: &CatalogAction) -> IndexedEntry {
             target_kind: "handoff".into(),
             stale: false,
             explicit_preview: true,
+            favorite: false,
+            recent: false,
         },
         target: Target::Task {
             id: action.payload_kind.clone(),
@@ -527,6 +614,19 @@ fn read_source_at(
         },
         None => devbox_integration::snapshot_path_in(root, spec.producer, snapshot_version),
     };
+    match devbox_filesystem::ensure_no_links(&path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return ("missing".into(), Vec::new(), false)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            return ("permission".into(), Vec::new(), false)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {
+            return ("linked".into(), Vec::new(), false)
+        }
+        Err(_) => return ("corrupt".into(), Vec::new(), false),
+    }
     match std::fs::symlink_metadata(&path) {
         Ok(metadata) if metadata.file_type().is_symlink() || !metadata.file_type().is_file() => {
             return ("corrupt".into(), Vec::new(), false)
@@ -543,16 +643,17 @@ fn read_source_at(
     // `symlink_metadata` can succeed while the ACL denies opening the file.
     // Preserve that distinction in the source diagnostics without exposing the
     // OS error or path to the renderer.
-    match std::fs::File::open(&path) {
-        Ok(_) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return ("missing".into(), Vec::new(), false)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-            return ("permission".into(), Vec::new(), false)
-        }
-        Err(_) => return ("corrupt".into(), Vec::new(), false),
-    }
+    let (source_file, source_identity) =
+        match devbox_filesystem::open_filesystem_object(&path, false) {
+            Ok(opened) => opened,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return ("missing".into(), Vec::new(), false)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                return ("permission".into(), Vec::new(), false)
+            }
+            Err(_) => return ("corrupt".into(), Vec::new(), false),
+        };
     let envelope_result = match snapshot_name {
         Some(name) => devbox_integration::read_named_view_snapshot_in(
             root,
@@ -567,7 +668,13 @@ fn read_source_at(
         Ok(None) => return ("missing".into(), Vec::new(), false),
         Err(_) => return ("corrupt".into(), Vec::new(), false),
     };
-    let age = std::fs::symlink_metadata(&path)
+    if devbox_filesystem::ensure_no_links(&path).is_err()
+        || devbox_filesystem::filesystem_identity(&path, false).ok() != Some(source_identity)
+    {
+        return ("corrupt".into(), Vec::new(), false);
+    }
+    let age = source_file
+        .metadata()
         .and_then(|metadata| metadata.modified())
         .ok()
         .map(|modified| modified.elapsed().unwrap_or_default().as_millis() as u64)
@@ -620,6 +727,7 @@ fn read_source_at(
 #[derive(Debug, Clone)]
 struct ParsedEntry {
     id: String,
+    revision: String,
     label: String,
     detail: Option<String>,
     target: Target,
@@ -673,6 +781,7 @@ fn parse_legacy_run_snapshot(value: &Value) -> Result<Vec<ParsedEntry>, &'static
             }
             Ok(ParsedEntry {
                 id: service.id.clone(),
+                revision: revision(&[b"snapshot/run-manager/legacy/v1", service.id.as_bytes()]),
                 label: format!("Run Manager · {}", service.id),
                 detail: Some("service · 실행 중".into()),
                 target: Target::Task { id: service.id },
@@ -682,6 +791,13 @@ fn parse_legacy_run_snapshot(value: &Value) -> Result<Vec<ParsedEntry>, &'static
 }
 
 fn parse_entry(spec: &SourceSpec, value: Value) -> Result<ParsedEntry, &'static str> {
+    let encoded = serde_json::to_vec(&value).map_err(|_| ERR_INDEX)?;
+    let entry_revision = revision(&[
+        b"snapshot/v1",
+        spec.producer.as_bytes(),
+        spec.view.as_bytes(),
+        &encoded,
+    ]);
     let raw: RawEntry = serde_json::from_value(value).map_err(|_| ERR_INDEX)?;
     if raw.payload_version != 1
         || raw.target_app != spec.target_app
@@ -740,10 +856,34 @@ fn parse_entry(spec: &SourceSpec, value: Value) -> Result<ParsedEntry, &'static 
     };
     Ok(ParsedEntry {
         id: raw.id,
+        revision: entry_revision,
         label: raw.label,
         detail: raw.detail,
         target,
     })
+}
+
+fn revision(parts: &[&[u8]]) -> String {
+    let mut digest = Sha256::new();
+    for part in parts {
+        digest.update((part.len() as u64).to_be_bytes());
+        digest.update(part);
+    }
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let bytes = digest.finalize();
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+fn valid_revision(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 pub fn validate_query(value: &str) -> Result<(), String> {
@@ -846,7 +986,15 @@ mod tests {
             },
         );
         let envelope = Envelope::with_views(producer, "0.1.0", views);
-        write_envelope(root, producer, envelope);
+        let named = SOURCES
+            .iter()
+            .find(|source| source.producer == producer && source.view == view)
+            .and_then(|source| source.snapshot_name);
+        if let Some(name) = named {
+            devbox_integration::write_named_view_snapshot_atomic(&envelope, root, name).unwrap();
+        } else {
+            write_envelope(root, producer, envelope);
+        }
     }
 
     fn write_envelope(root: &std::path::Path, producer: &str, envelope: Envelope) {
@@ -976,6 +1124,7 @@ mod tests {
     fn exact_label_match_is_ranked_before_prefix_and_contains_matches() {
         let exact = SearchResult {
             id: "exact".into(),
+            revision: "a".repeat(64),
             label: "Workbench".into(),
             detail: None,
             source: "catalog".into(),
@@ -983,6 +1132,8 @@ mod tests {
             target_kind: "app".into(),
             stale: false,
             explicit_preview: false,
+            favorite: false,
+            recent: false,
         };
         let prefix = SearchResult {
             label: "Workbench Helper".into(),
@@ -1015,6 +1166,130 @@ mod tests {
         let response = Index::build(catalog(), &root).unwrap().search("").unwrap();
         assert_eq!(response.results.len(), MAX_RESULTS);
         assert!(response.results.iter().all(|result| !result.id.is_empty()));
+    }
+
+    #[test]
+    fn favorites_and_recents_rank_without_persisting_result_metadata() {
+        let index = Index::build(catalog(), &root("preference-ranking")).unwrap();
+        let mut preferences = Preferences::default();
+        preferences
+            .record_recent("catalog/app/everything-plus")
+            .unwrap();
+        preferences
+            .set_favorite("catalog/app/workbench", true)
+            .unwrap();
+
+        let response = index.search_with_preferences("", &preferences).unwrap();
+        assert_eq!(response.results[0].id, "catalog/app/workbench");
+        assert!(response.results[0].favorite);
+        assert_eq!(response.results[1].id, "catalog/app/everything-plus");
+        assert!(response.results[1].recent);
+        assert!(response
+            .results
+            .iter()
+            .skip(2)
+            .all(|result| { !result.favorite || result.id == "catalog/app/workbench" }));
+    }
+
+    #[test]
+    fn renamed_or_removed_snapshot_selection_fails_revision_revalidation() {
+        let root = root("renamed-selection");
+        write(&root, vec![entry(serde_json::json!({"id": "p-1"}))], 0);
+        let first = Index::build(catalog(), &root)
+            .unwrap()
+            .search("Devbox")
+            .unwrap()
+            .results
+            .into_iter()
+            .find(|result| result.source == "workbench")
+            .unwrap();
+
+        write(
+            &root,
+            vec![serde_json::json!({
+                "id": "profile-1",
+                "label": "Renamed",
+                "targetApp": "workbench",
+                "targetKind": "profile",
+                "payloadVersion": 1,
+                "payload": {"id": "p-1"}
+            })],
+            0,
+        );
+        let renamed = Index::build(catalog(), &root).unwrap();
+        assert!(renamed
+            .resolve_checked(&first.id, &first.revision, false)
+            .is_err());
+
+        write(&root, Vec::new(), 0);
+        let removed = Index::build(catalog(), &root).unwrap();
+        assert!(removed
+            .resolve_checked(&first.id, &first.revision, false)
+            .is_err());
+    }
+
+    #[test]
+    fn stale_selection_requires_confirmation_after_current_revalidation() {
+        let root = root("stale-selection");
+        write(
+            &root,
+            vec![entry(serde_json::json!({"id": "p-1"}))],
+            STALE_AFTER_MS,
+        );
+        let index = Index::build(catalog(), &root).unwrap();
+        let result = index
+            .search("Devbox")
+            .unwrap()
+            .results
+            .into_iter()
+            .find(|result| result.source == "workbench")
+            .unwrap();
+        assert!(result.stale);
+        assert!(index
+            .resolve_checked(&result.id, &result.revision, false)
+            .is_err());
+        assert_eq!(
+            index
+                .resolve_checked(&result.id, &result.revision, true)
+                .unwrap()
+                .app_id,
+            "workbench"
+        );
+    }
+
+    #[test]
+    fn prefixed_max_length_entry_id_remains_actionable() {
+        let root = root("prefixed-id-bound");
+        let entry_id = "a".repeat(MAX_ENTRY_ID_BYTES);
+        write(
+            &root,
+            vec![serde_json::json!({
+                "id": entry_id,
+                "label": "Long ID",
+                "targetApp": "workbench",
+                "targetKind": "profile",
+                "payloadVersion": 1,
+                "payload": {"id": "profile-1"}
+            })],
+            0,
+        );
+        let index = Index::build(catalog(), &root).unwrap();
+        let result = index
+            .search("Long ID")
+            .unwrap()
+            .results
+            .into_iter()
+            .find(|result| result.source == "workbench")
+            .unwrap();
+        assert!(result.id.len() > MAX_ENTRY_ID_BYTES);
+        assert_eq!(result.revision.len(), 64);
+        assert!(result
+            .revision
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+        assert!(index
+            .resolve_checked(&result.id, &result.revision, false)
+            .is_ok());
     }
 
     #[test]
@@ -1310,7 +1585,7 @@ mod tests {
                 .find(|source| source.producer == "run-manager")
                 .unwrap()
                 .status,
-            "corrupt"
+            "linked"
         );
     }
 
@@ -1321,7 +1596,9 @@ mod tests {
         assert!(result.explicit_preview);
         assert!(index.resolve(&result.id).is_err());
         assert_eq!(
-            index.resolve_text_action(&result.id).unwrap(),
+            index
+                .resolve_text_action(&result.id, &result.revision)
+                .unwrap(),
             ("developer-toolbox".into(), "handoff:toolbox-text/v1".into())
         );
     }
@@ -1354,7 +1631,9 @@ mod tests {
         assert!(result.explicit_preview);
         assert!(index.resolve(&result.id).is_err());
         assert_eq!(
-            index.resolve_text_action(&result.id).unwrap(),
+            index
+                .resolve_text_action(&result.id, &result.revision)
+                .unwrap(),
             ("devbox-launcher".into(), "clipboard-preview/v1".into())
         );
     }

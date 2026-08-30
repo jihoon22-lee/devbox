@@ -2,6 +2,7 @@
 mod applink;
 mod commands;
 mod core;
+mod integration;
 
 use tauri::{Emitter, Manager};
 
