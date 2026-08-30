@@ -35,6 +35,7 @@ pub const REFLECTION_UNAVAILABLE: &str = "grpc_reflection_unavailable";
 pub const CONNECTION_LIMIT: &str = "grpc_connection_limit";
 pub const CONNECT_TIMEOUT: &str = "grpc_connect_timeout";
 pub const TLS_FAILED: &str = "grpc_tls_failed";
+#[cfg(not(windows))]
 pub const CREDENTIAL_STORAGE_UNAVAILABLE: &str = "grpc_credential_storage_unavailable";
 pub const CREDENTIAL_STORAGE_FAILED: &str = "grpc_credential_storage_failed";
 pub const CREDENTIAL_INVALID: &str = "grpc_credential_invalid";
