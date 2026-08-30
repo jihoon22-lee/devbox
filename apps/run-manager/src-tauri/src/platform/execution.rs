@@ -263,7 +263,6 @@ impl PlatformExecutionAdapter {
         let exact_job_projection = job.kind == crate::core::models::JobKind::Job
             && execution.job_id == job.id
             && execution.label == job.name
-            && execution.task_kind == WorkspaceTaskKind::Process
             && execution.command == job.command
             && Some(execution.cwd.as_str()) == job.cwd.as_deref()
             && execution.target_kind == job.target_kind
@@ -349,19 +348,30 @@ impl PlatformExecutionAdapter {
         stderr_redactor: SecretRedactor,
     ) -> Result<Arc<dyn ExecutionHandle>, AdapterError> {
         let mut child = match workspace_task {
-            Some(task) => windows::spawn_process(
+            Some(task) if task.task_kind == WorkspaceTaskKind::Process => windows::spawn_process(
                 &task.command,
                 &task.args,
                 Some(Path::new(&task.cwd)),
                 environment,
-            ),
+            )
+            .map_err(|_| failure(FailureCode::Spawn)),
+            Some(task) => {
+                let command = crate::core::shell::build_workspace_shell_source(
+                    true,
+                    &task.command,
+                    &task.args,
+                )
+                .map_err(|_| failure(FailureCode::WorkspaceTaskConfiguration))?;
+                windows::spawn(&command, Some(Path::new(&task.cwd)), environment)
+                    .map_err(|_| failure(FailureCode::Spawn))
+            }
             None => windows::spawn(
                 &request.job.command,
                 request.job.cwd.as_deref().map(Path::new),
                 environment,
-            ),
-        }
-        .map_err(|_| failure(FailureCode::Spawn))?;
+            )
+            .map_err(|_| failure(FailureCode::Spawn)),
+        }?;
         let metadata = RunExecutionMetadata {
             log_dir: Some(relative_log_dir(&request.run.id)),
             target_pid: Some(i64::from(child.identity().pid)),
@@ -413,23 +423,40 @@ impl PlatformExecutionAdapter {
             },
         };
         let mut child = match workspace_task {
-            Some(task) => wsl::spawn_process(
+            Some(task) if task.task_kind == WorkspaceTaskKind::Process => wsl::spawn_process(
                 distro,
                 cwd.as_deref(),
                 &task.command,
                 &task.args,
                 &request.run.id,
                 environment,
-            ),
+            )
+            .map_err(|_| failure(FailureCode::Spawn)),
+            Some(task) => {
+                let command = crate::core::shell::build_workspace_shell_source(
+                    false,
+                    &task.command,
+                    &task.args,
+                )
+                .map_err(|_| failure(FailureCode::WorkspaceTaskConfiguration))?;
+                wsl::spawn(
+                    distro,
+                    cwd.as_deref(),
+                    &command,
+                    &request.run.id,
+                    environment,
+                )
+                .map_err(|_| failure(FailureCode::Spawn))
+            }
             None => wsl::spawn(
                 distro,
                 cwd.as_deref(),
                 &request.job.command,
                 &request.run.id,
                 environment,
-            ),
-        }
-        .map_err(|_| failure(FailureCode::Spawn))?;
+            )
+            .map_err(|_| failure(FailureCode::Spawn)),
+        }?;
         let handshake = match child.read_handshake(&request.run.id).await {
             Ok(value) => value,
             Err(_) => {
@@ -1365,12 +1392,16 @@ mod tests {
             args: vec!["build.js".to_owned()],
             cwd: "/work/project".to_owned(),
             environment_keys,
+            depends_on: Vec::new(),
+            depends_order: crate::core::workspace_tasks::WorkspaceTaskDependsOrder::Parallel,
+            problem_matcher: None,
             source_root: "/work/project".to_owned(),
             project_identity: "a".repeat(64),
             revision: "b".repeat(64),
             target_kind: TargetKind::Wsl,
             target_distro: Some("Ubuntu".to_owned()),
             trusted: true,
+            shell_trusted: false,
             available: true,
         }
     }

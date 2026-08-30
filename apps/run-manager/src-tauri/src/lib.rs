@@ -101,6 +101,7 @@ pub fn run() {
             commands::cancel_workspace_task_import,
             commands::list_workspace_tasks,
             commands::trust_workspace_task_source,
+            commands::trust_workspace_task_shell_source,
             commands::create_service,
             commands::update_service,
             commands::delete_service,

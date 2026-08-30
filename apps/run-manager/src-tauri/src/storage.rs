@@ -8,21 +8,23 @@ use crate::core::policies::{
     decide_overlap, OverlapAction, OverlapPolicyInput, RunPolicySnapshot, StopAction,
 };
 use crate::core::workspace_tasks::{
-    WorkspaceTaskApplyResult, WorkspaceTaskExecution, WorkspaceTaskItem, WorkspaceTaskKind,
-    WorkspaceTaskPlan, WorkspaceTaskState, MAX_ENVIRONMENT_KEYS, MAX_TASKS, MAX_TASK_ARGUMENTS,
-    MAX_TASK_ARGV_BYTES, MAX_TASK_LABEL_BYTES, MAX_TASK_STRING_BYTES, TASKS_JSON_RELATIVE_PATH,
+    WorkspaceProblemMatcher, WorkspaceTaskApplyResult, WorkspaceTaskDependsOrder,
+    WorkspaceTaskExecution, WorkspaceTaskItem, WorkspaceTaskKind, WorkspaceTaskPlan,
+    WorkspaceTaskState, MAX_DEPENDENCY_EDGES, MAX_ENVIRONMENT_KEYS, MAX_MATCHER_CAPTURE_GROUP,
+    MAX_MATCHER_REGEXP_BYTES, MAX_TASKS, MAX_TASK_ARGUMENTS, MAX_TASK_ARGV_BYTES,
+    MAX_TASK_LABEL_BYTES, MAX_TASK_STRING_BYTES, TASKS_JSON_RELATIVE_PATH,
     WORKSPACE_TASK_SCHEMA_VERSION,
 };
 use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, TransactionBehavior};
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 pub const BUSY_TIMEOUT_MS: u64 = 5_000;
 
 const DISABLED_IMPORT_CRON: &str = "0 0 1 1 *";
@@ -143,6 +145,7 @@ CREATE TABLE IF NOT EXISTS workspace_task_sources (
         CHECK (target_kind IN ('windows', 'wsl')),
     target_distro TEXT,
     trusted INTEGER NOT NULL DEFAULT 0 CHECK (trusted IN (0, 1)),
+    shell_trusted INTEGER NOT NULL DEFAULT 0 CHECK (shell_trusted IN (0, 1)),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     CHECK (target_kind = 'windows' OR (target_distro IS NOT NULL AND length(target_distro) > 0)),
@@ -160,6 +163,10 @@ CREATE TABLE IF NOT EXISTS workspace_tasks (
     kind TEXT NOT NULL CHECK (kind IN ('process', 'shell')),
     args_json TEXT NOT NULL CHECK (json_valid(args_json)),
     environment_keys_json TEXT NOT NULL CHECK (json_valid(environment_keys_json)),
+    depends_on_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(depends_on_json)),
+    depends_order TEXT NOT NULL DEFAULT 'parallel'
+        CHECK (depends_order IN ('parallel', 'sequence')),
+    problem_matcher_json TEXT CHECK (problem_matcher_json IS NULL OR json_valid(problem_matcher_json)),
     applied_override TEXT,
     available INTEGER NOT NULL DEFAULT 1 CHECK (available IN (0, 1)),
     created_at INTEGER NOT NULL,
@@ -621,13 +628,21 @@ impl DatabaseState {
             .iter()
             .map(|item| serialize_workspace_environment_keys(item))
             .collect::<Result<Vec<_>, _>>()?;
+        let dependencies_json = selected
+            .iter()
+            .map(|item| serialize_workspace_task_dependencies(item))
+            .collect::<Result<Vec<_>, _>>()?;
+        let matcher_json = selected
+            .iter()
+            .map(|item| serialize_workspace_problem_matcher(item.problem_matcher.as_ref()))
+            .collect::<Result<Vec<_>, _>>()?;
 
         let mut connection = self.lock_mut()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let existing_source: Option<WorkspaceTaskSourceRecord> = transaction
             .query_row(
                 "SELECT id, project_identity, source_root, source_path, revision,
-                        target_kind, target_distro, trusted
+                        target_kind, target_distro, trusted, shell_trusted
                  FROM workspace_task_sources
                  WHERE project_identity = ? AND target_kind = ?
                    AND target_distro IS ?",
@@ -646,6 +661,7 @@ impl DatabaseState {
                         target_kind: row.get(5)?,
                         target_distro: row.get(6)?,
                         trusted: row.get(7)?,
+                        shell_trusted: row.get(8)?,
                     })
                 },
             )
@@ -662,6 +678,7 @@ impl DatabaseState {
                 target_kind,
                 target_distro,
                 trusted,
+                shell_trusted,
             } = existing_source;
             validate_workspace_source_id(&id)?;
             if project_identity != plan.project_identity
@@ -671,6 +688,7 @@ impl DatabaseState {
                 || !is_lower_hex_digest(&project_identity)
                 || !is_lower_hex_digest(&revision)
                 || !matches!(trusted, 0 | 1)
+                || !matches!(shell_trusted, 0 | 1)
             {
                 return Err(StorageError::Validation(
                     "workspace task source is corrupt".to_owned(),
@@ -699,8 +717,8 @@ impl DatabaseState {
             transaction.execute(
                 "INSERT INTO workspace_task_sources (
                     id, project_identity, source_root, source_path, revision,
-                    target_kind, target_distro, trusted, created_at, updated_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+                    target_kind, target_distro, trusted, shell_trusted, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)",
                 params![
                     id,
                     plan.project_identity,
@@ -732,6 +750,7 @@ impl DatabaseState {
             transaction.execute(
                 "UPDATE workspace_task_sources
                  SET source_root = ?, source_path = ?, revision = ?, trusted = 0,
+                     shell_trusted = 0,
                      updated_at = ? WHERE id = ?",
                 params![
                     plan.source_root,
@@ -766,12 +785,12 @@ impl DatabaseState {
         let mut created = 0u32;
         let mut updated = 0u32;
         let mut skipped_conflicts = 0u32;
-        for (item, args_json, environment_json) in selected
-            .iter()
-            .zip(args_json.iter())
-            .zip(environment_json.iter())
-            .map(|((item, args), environment)| (*item, args, environment))
-        {
+        for index in 0..selected.len() {
+            let item = selected[index];
+            let args_json = &args_json[index];
+            let environment_json = &environment_json[index];
+            let dependencies_json = &dependencies_json[index];
+            let matcher_json = &matcher_json[index];
             let existing_task: Option<(String, String)> = transaction
                 .query_row(
                     "SELECT id, job_id FROM workspace_tasks
@@ -811,7 +830,8 @@ impl DatabaseState {
                 }
                 transaction.execute(
                     "UPDATE workspace_tasks SET source_index = ?, label = ?, kind = ?,
-                            args_json = ?, environment_keys_json = ?, applied_override = ?,
+                            args_json = ?, environment_keys_json = ?, depends_on_json = ?,
+                            depends_order = ?, problem_matcher_json = ?, applied_override = ?,
                             available = 1, updated_at = ? WHERE id = ? AND source_id = ?",
                     params![
                         item.source_index,
@@ -819,6 +839,9 @@ impl DatabaseState {
                         workspace_task_kind_as_str(item.task_kind)?,
                         args_json,
                         environment_json,
+                        dependencies_json,
+                        workspace_task_depends_order_as_str(item.depends_order),
+                        matcher_json,
                         item.applied_override,
                         now,
                         task_id,
@@ -867,8 +890,9 @@ impl DatabaseState {
             transaction.execute(
                 "INSERT INTO workspace_tasks (
                     id, job_id, source_id, source_index, label, kind, args_json,
-                    environment_keys_json, applied_override, available, created_at, updated_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+                    environment_keys_json, depends_on_json, depends_order,
+                    problem_matcher_json, applied_override, available, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
                 params![
                     task_id,
                     job_id,
@@ -878,6 +902,9 @@ impl DatabaseState {
                     workspace_task_kind_as_str(item.task_kind)?,
                     args_json,
                     environment_json,
+                    dependencies_json,
+                    workspace_task_depends_order_as_str(item.depends_order),
+                    matcher_json,
                     item.applied_override,
                     now,
                     now,
@@ -904,7 +931,9 @@ impl DatabaseState {
             "SELECT task.job_id, task.source_id, task.label, task.kind,
                     source.source_root, source.revision, source.target_kind,
                     source.target_distro, task.environment_keys_json,
-                    task.applied_override, source.trusted, task.available
+                    task.applied_override, task.depends_on_json, task.depends_order,
+                    task.problem_matcher_json, source.trusted, source.shell_trusted,
+                    task.available
              FROM workspace_tasks AS task
              JOIN workspace_task_sources AS source ON source.id = task.source_id
              JOIN jobs ON jobs.id = task.job_id
@@ -927,7 +956,9 @@ impl DatabaseState {
                 "SELECT task.job_id, task.source_id, task.label, task.kind,
                         source.source_root, source.revision, source.target_kind,
                         source.target_distro, task.environment_keys_json,
-                        task.applied_override, source.trusted, task.available
+                        task.applied_override, task.depends_on_json, task.depends_order,
+                        task.problem_matcher_json, source.trusted, source.shell_trusted,
+                        task.available
                  FROM workspace_tasks AS task
                  JOIN workspace_task_sources AS source ON source.id = task.source_id
                  JOIN jobs ON jobs.id = task.job_id
@@ -956,7 +987,9 @@ impl DatabaseState {
                         task.kind, jobs.command, jobs.cwd, source.source_root,
                         source.project_identity, source.revision, source.target_kind,
                         source.target_distro, task.args_json,
-                        task.environment_keys_json, source.trusted, task.available
+                        task.environment_keys_json, task.depends_on_json,
+                        task.depends_order, task.problem_matcher_json,
+                        source.trusted, source.shell_trusted, task.available
                  FROM workspace_tasks AS task
                  JOIN workspace_task_sources AS source ON source.id = task.source_id
                  JOIN jobs ON jobs.id = task.job_id
@@ -978,8 +1011,12 @@ impl DatabaseState {
                         target_distro: row.get(11)?,
                         args_json: row.get(12)?,
                         environment_keys_json: row.get(13)?,
-                        trusted: row.get(14)?,
-                        available: row.get(15)?,
+                        depends_on_json: row.get(14)?,
+                        depends_order: row.get(15)?,
+                        problem_matcher_json: row.get(16)?,
+                        trusted: row.get(17)?,
+                        shell_trusted: row.get(18)?,
+                        available: row.get(19)?,
                     })
                 },
             )
@@ -1028,6 +1065,55 @@ impl DatabaseState {
         Ok(true)
     }
 
+    /// Shell approval is intentionally a second exact-revision CAS. It can
+    /// only be granted after ordinary source trust and never grants process
+    /// trust by itself.
+    pub(crate) fn trust_workspace_task_shell_source_at(
+        &self,
+        source_id: &str,
+        expected_revision: &str,
+        now: i64,
+    ) -> Result<bool, StorageError> {
+        validate_workspace_source_id(source_id)?;
+        validate_workspace_digest("revision", expected_revision)?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = transaction.execute(
+            "UPDATE workspace_task_sources
+             SET shell_trusted = 1, updated_at = ?
+             WHERE id = ? AND revision = ? AND trusted = 1",
+            params![now, source_id, expected_revision],
+        )?;
+        if changed != 1 {
+            let state: Option<(String, i64)> = transaction
+                .query_row(
+                    "SELECT revision, trusted FROM workspace_task_sources WHERE id = ?",
+                    [source_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            match state {
+                None => {
+                    return Err(StorageError::NotFound(format!(
+                        "workspace task source {source_id}"
+                    )))
+                }
+                Some((revision, _)) if revision != expected_revision => {
+                    return Err(StorageError::ConcurrentChange(
+                        "workspace task source revision".to_owned(),
+                    ))
+                }
+                Some((_, _)) => {
+                    return Err(StorageError::Validation(
+                        "workspace-task-source-untrusted".to_owned(),
+                    ))
+                }
+            }
+        }
+        transaction.commit()?;
+        Ok(true)
+    }
+
     pub(crate) fn invalidate_workspace_task_source_at(
         &self,
         source_id: &str,
@@ -1055,7 +1141,8 @@ impl DatabaseState {
             |row| row.get(0),
         )?;
         transaction.execute(
-            "UPDATE workspace_task_sources SET trusted = 0, updated_at = ? WHERE id = ?",
+            "UPDATE workspace_task_sources
+             SET trusted = 0, shell_trusted = 0, updated_at = ? WHERE id = ?",
             params![now, source_id],
         )?;
         transaction.execute(
@@ -1765,6 +1852,7 @@ impl DatabaseState {
                         JOIN workspace_task_sources AS source ON source.id = task.source_id
                         WHERE task.job_id = jobs.id
                           AND task.available = 1 AND source.trusted = 1
+                          AND (task.kind = 'process' OR source.shell_trusted = 1)
                     ))
              ORDER BY id"
         ))?;
@@ -2671,12 +2759,51 @@ fn migrate_connection(connection: &mut Connection) -> rusqlite::Result<()> {
             std::io::Error::other("database schema is newer than this application"),
         )));
     }
+    if !table_has_column(&transaction, "workspace_task_sources", "shell_trusted")? {
+        transaction.execute_batch(
+            "ALTER TABLE workspace_task_sources
+                 ADD COLUMN shell_trusted INTEGER NOT NULL DEFAULT 0
+                 CHECK (shell_trusted IN (0, 1));",
+        )?;
+    }
+    for (column, declaration) in [
+        (
+            "depends_on_json",
+            "TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(depends_on_json))",
+        ),
+        (
+            "depends_order",
+            "TEXT NOT NULL DEFAULT 'parallel' CHECK (depends_order IN ('parallel', 'sequence'))",
+        ),
+        (
+            "problem_matcher_json",
+            "TEXT CHECK (problem_matcher_json IS NULL OR json_valid(problem_matcher_json))",
+        ),
+    ] {
+        if !table_has_column(&transaction, "workspace_tasks", column)? {
+            transaction.execute_batch(&format!(
+                "ALTER TABLE workspace_tasks ADD COLUMN {column} {declaration};"
+            ))?;
+        }
+    }
     transaction.execute(
         "INSERT INTO meta (key, value) VALUES ('schema_version', ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         [SCHEMA_VERSION.to_string()],
     )?;
     transaction.commit()
+}
+
+fn table_has_column(connection: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info('{table}')"))?;
+    let mut rows = statement.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn validate_workspace_task_plan(plan: &WorkspaceTaskPlan) -> Result<(), StorageError> {
@@ -2720,6 +2847,71 @@ fn validate_workspace_task_plan(plan: &WorkspaceTaskPlan) -> Result<(), StorageE
     }
     for item in &plan.items {
         validate_workspace_task_item(item)?;
+    }
+    validate_workspace_plan_graph(&plan.items)?;
+    Ok(())
+}
+
+fn validate_workspace_plan_graph(items: &[WorkspaceTaskItem]) -> Result<(), StorageError> {
+    let mut labels = HashMap::with_capacity(items.len());
+    let mut ids = HashSet::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        if !ids.insert(item.id.as_str()) || labels.insert(item.label.as_str(), index).is_some() {
+            return Err(StorageError::Validation(
+                "workspace task plan contains duplicate identity".to_owned(),
+            ));
+        }
+    }
+    let edge_count = items
+        .iter()
+        .map(|item| item.depends_on.len())
+        .sum::<usize>();
+    if edge_count > MAX_DEPENDENCY_EDGES {
+        return Err(StorageError::Validation(
+            "workspace task dependency graph exceeds the limit".to_owned(),
+        ));
+    }
+    let mut indegree = vec![0usize; items.len()];
+    let mut dependents = vec![Vec::<usize>::new(); items.len()];
+    for (index, item) in items.iter().enumerate() {
+        if item.status != "ready" {
+            continue;
+        }
+        for dependency in &item.depends_on {
+            let dependency_index = labels.get(dependency.as_str()).copied().ok_or_else(|| {
+                StorageError::Validation("workspace task dependency is missing".to_owned())
+            })?;
+            if dependency_index == index || items[dependency_index].status != "ready" {
+                return Err(StorageError::Validation(
+                    "workspace task dependency is unavailable".to_owned(),
+                ));
+            }
+            indegree[index] = indegree[index].saturating_add(1);
+            dependents[dependency_index].push(index);
+        }
+    }
+    let mut queue = indegree
+        .iter()
+        .enumerate()
+        .filter_map(|(index, degree)| {
+            (items[index].status == "ready" && *degree == 0).then_some(index)
+        })
+        .collect::<Vec<_>>();
+    let ready_count = items.iter().filter(|item| item.status == "ready").count();
+    let mut visited = 0usize;
+    while let Some(index) = queue.pop() {
+        visited = visited.saturating_add(1);
+        for dependent in &dependents[index] {
+            indegree[*dependent] = indegree[*dependent].saturating_sub(1);
+            if indegree[*dependent] == 0 {
+                queue.push(*dependent);
+            }
+        }
+    }
+    if visited != ready_count {
+        return Err(StorageError::Validation(
+            "workspace task dependency graph contains a cycle".to_owned(),
+        ));
     }
     Ok(())
 }
@@ -2792,9 +2984,16 @@ fn validate_workspace_task_item(item: &WorkspaceTaskItem) -> Result<(), StorageE
             ));
         }
     }
-    if item.status == "ready" && !item.is_ready_process() {
+    validate_workspace_dependencies(&item.depends_on)?;
+    validate_workspace_problem_matcher(item.problem_matcher.as_ref())?;
+    if item.has_problem_matcher != item.problem_matcher.is_some() {
         return Err(StorageError::Validation(
-            "workspace task selection is not a ready process".to_owned(),
+            "workspace task problem matcher state is inconsistent".to_owned(),
+        ));
+    }
+    if item.status == "ready" && !item.is_ready_importable() {
+        return Err(StorageError::Validation(
+            "workspace task selection is not ready".to_owned(),
         ));
     }
     Ok(())
@@ -2839,12 +3038,25 @@ fn selected_workspace_task_items<'a>(
                 "workspace task selection contains a duplicate".to_owned(),
             ));
         }
-        if !item.is_ready_process() {
+        if !item.is_ready_importable() {
             return Err(StorageError::Validation(
-                "workspace task selection must contain ready process tasks".to_owned(),
+                "workspace task selection must contain ready tasks".to_owned(),
             ));
         }
         selected.push(item);
+    }
+    let selected_labels = selected
+        .iter()
+        .map(|item| item.label.as_str())
+        .collect::<HashSet<_>>();
+    if selected.iter().any(|item| {
+        item.depends_on
+            .iter()
+            .any(|dependency| !selected_labels.contains(dependency.as_str()))
+    }) {
+        return Err(StorageError::Validation(
+            "workspace-task-dependency-selection-incomplete".to_owned(),
+        ));
     }
     Ok(selected)
 }
@@ -2872,6 +3084,96 @@ fn serialize_workspace_environment_keys(item: &WorkspaceTaskItem) -> Result<Stri
         ));
     }
     Ok(json)
+}
+
+fn serialize_workspace_task_dependencies(item: &WorkspaceTaskItem) -> Result<String, StorageError> {
+    validate_workspace_dependencies(&item.depends_on)?;
+    let json = serde_json::to_string(&item.depends_on).map_err(|_| {
+        StorageError::Validation("workspace task dependencies cannot be serialized".to_owned())
+    })?;
+    if json.len() > MAX_TASK_ARGV_BYTES {
+        return Err(StorageError::Validation(
+            "workspace task dependencies exceed the limit".to_owned(),
+        ));
+    }
+    Ok(json)
+}
+
+fn serialize_workspace_problem_matcher(
+    matcher: Option<&WorkspaceProblemMatcher>,
+) -> Result<Option<String>, StorageError> {
+    validate_workspace_problem_matcher(matcher)?;
+    matcher
+        .map(|matcher| {
+            serde_json::to_string(matcher).map_err(|_| {
+                StorageError::Validation(
+                    "workspace task problem matcher cannot be serialized".to_owned(),
+                )
+            })
+        })
+        .transpose()
+}
+
+fn validate_workspace_dependencies(dependencies: &[String]) -> Result<(), StorageError> {
+    if dependencies.len() > MAX_TASKS {
+        return Err(StorageError::Validation(
+            "workspace task dependency count exceeds the limit".to_owned(),
+        ));
+    }
+    let mut unique = HashSet::with_capacity(dependencies.len());
+    for dependency in dependencies {
+        validate_workspace_text(
+            "workspace task dependency",
+            dependency,
+            MAX_TASK_LABEL_BYTES,
+            false,
+        )?;
+        if !unique.insert(dependency) {
+            return Err(StorageError::Validation(
+                "workspace task dependencies contain a duplicate".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_workspace_problem_matcher(
+    matcher: Option<&WorkspaceProblemMatcher>,
+) -> Result<(), StorageError> {
+    let Some(matcher) = matcher else {
+        return Ok(());
+    };
+    validate_workspace_text(
+        "workspace task problem matcher regexp",
+        &matcher.regexp,
+        MAX_MATCHER_REGEXP_BYTES,
+        false,
+    )?;
+    let regex = regex::Regex::new(&matcher.regexp).map_err(|_| {
+        StorageError::Validation("workspace task problem matcher regexp is invalid".to_owned())
+    })?;
+    for capture in [
+        Some(matcher.file),
+        Some(matcher.line),
+        matcher.column,
+        Some(matcher.message),
+        matcher.severity,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if capture == 0
+            || capture > MAX_MATCHER_CAPTURE_GROUP
+            || usize::try_from(capture)
+                .ok()
+                .is_none_or(|index| index >= regex.captures_len())
+        {
+            return Err(StorageError::Validation(
+                "workspace task problem matcher capture is invalid".to_owned(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_workspace_environment_keys(keys: &[String]) -> Result<(), StorageError> {
@@ -2975,6 +3277,23 @@ fn parse_workspace_task_kind(value: &str) -> Result<WorkspaceTaskKind, StorageEr
     }
 }
 
+fn workspace_task_depends_order_as_str(order: WorkspaceTaskDependsOrder) -> &'static str {
+    match order {
+        WorkspaceTaskDependsOrder::Parallel => "parallel",
+        WorkspaceTaskDependsOrder::Sequence => "sequence",
+    }
+}
+
+fn parse_workspace_depends_order(value: &str) -> Result<WorkspaceTaskDependsOrder, StorageError> {
+    match value {
+        "parallel" => Ok(WorkspaceTaskDependsOrder::Parallel),
+        "sequence" => Ok(WorkspaceTaskDependsOrder::Sequence),
+        _ => Err(StorageError::Validation(
+            "workspace task dependency order is invalid".to_owned(),
+        )),
+    }
+}
+
 fn parse_workspace_target_kind(value: &str) -> Result<TargetKind, StorageError> {
     match value {
         "windows" => Ok(TargetKind::Windows),
@@ -3038,24 +3357,50 @@ fn decode_workspace_environment_keys(json: &str) -> Result<Vec<String>, StorageE
     Ok(keys)
 }
 
+fn decode_workspace_dependencies(json: &str) -> Result<Vec<String>, StorageError> {
+    let dependencies =
+        decode_workspace_string_array(json, "dependencies", MAX_TASKS, MAX_TASK_ARGV_BYTES)?;
+    validate_workspace_dependencies(&dependencies)?;
+    Ok(dependencies)
+}
+
+fn decode_workspace_problem_matcher(
+    json: Option<&str>,
+) -> Result<Option<WorkspaceProblemMatcher>, StorageError> {
+    let Some(json) = json else {
+        return Ok(None);
+    };
+    if json.len() > MAX_MATCHER_REGEXP_BYTES.saturating_add(1_024) {
+        return Err(StorageError::Validation(
+            "workspace task problem matcher exceeds the limit".to_owned(),
+        ));
+    }
+    let matcher: WorkspaceProblemMatcher = serde_json::from_str(json).map_err(|_| {
+        StorageError::Validation("workspace task problem matcher is corrupt".to_owned())
+    })?;
+    validate_workspace_problem_matcher(Some(&matcher))?;
+    Ok(Some(matcher))
+}
+
 fn ensure_workspace_task_can_enable_connection(
     connection: &Connection,
     job_id: &str,
 ) -> Result<(), StorageError> {
-    let state: Option<(i64, i64)> = connection
+    let state: Option<(String, i64, i64, i64)> = connection
         .query_row(
-            "SELECT source.trusted, task.available
+            "SELECT task.kind, source.trusted, source.shell_trusted, task.available
              FROM workspace_tasks AS task
              JOIN workspace_task_sources AS source ON source.id = task.source_id
              JOIN jobs ON jobs.id = task.job_id
              WHERE task.job_id = ? AND jobs.kind = 'job'",
             [job_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    let Some((trusted, available)) = state else {
+    let Some((kind, trusted, shell_trusted, available)) = state else {
         return Ok(());
     };
+    let kind = parse_workspace_task_kind(&kind)?;
     if trusted != 1 {
         return Err(StorageError::Validation(
             "workspace-task-source-untrusted".to_owned(),
@@ -3064,6 +3409,11 @@ fn ensure_workspace_task_can_enable_connection(
     if available != 1 {
         return Err(StorageError::Validation(
             "workspace-task-unavailable".to_owned(),
+        ));
+    }
+    if kind == WorkspaceTaskKind::Shell && shell_trusted != 1 {
+        return Err(StorageError::Validation(
+            "workspace-task-shell-untrusted".to_owned(),
         ));
     }
     Ok(())
@@ -3104,6 +3454,7 @@ struct WorkspaceTaskSourceRecord {
     target_kind: String,
     target_distro: Option<String>,
     trusted: i64,
+    shell_trusted: i64,
 }
 
 #[derive(Debug)]
@@ -3122,7 +3473,11 @@ struct RawWorkspaceTaskExecution {
     target_distro: Option<String>,
     args_json: String,
     environment_keys_json: String,
+    depends_on_json: String,
+    depends_order: String,
+    problem_matcher_json: Option<String>,
     trusted: i64,
+    shell_trusted: i64,
     available: i64,
 }
 
@@ -3143,11 +3498,6 @@ fn raw_workspace_task_execution(
         false,
     )?;
     let kind = parse_workspace_task_kind(&raw.kind)?;
-    if kind != WorkspaceTaskKind::Process {
-        return Err(StorageError::Validation(
-            "workspace shell task cannot execute in process mode".to_owned(),
-        ));
-    }
     validate_workspace_text(
         "workspace task command",
         &raw.command,
@@ -3185,7 +3535,11 @@ fn raw_workspace_task_execution(
         MAX_TASK_ARGV_BYTES,
     )?;
     let environment_keys = decode_workspace_environment_keys(&raw.environment_keys_json)?;
+    let depends_on = decode_workspace_dependencies(&raw.depends_on_json)?;
+    let depends_order = parse_workspace_depends_order(&raw.depends_order)?;
+    let problem_matcher = decode_workspace_problem_matcher(raw.problem_matcher_json.as_deref())?;
     let trusted = parse_workspace_bool(raw.trusted, "trusted")?;
+    let shell_trusted = parse_workspace_bool(raw.shell_trusted, "shell trusted")?;
     let available = parse_workspace_bool(raw.available, "available")?;
     let source_index = u32::try_from(raw.source_index).map_err(|_| {
         StorageError::Validation("workspace task source index is invalid".to_owned())
@@ -3200,12 +3554,16 @@ fn raw_workspace_task_execution(
         args,
         cwd,
         environment_keys,
+        depends_on,
+        depends_order,
+        problem_matcher,
         source_root: raw.source_root,
         project_identity: raw.project_identity,
         revision: raw.revision,
         target_kind,
         target_distro: raw.target_distro,
         trusted,
+        shell_trusted,
         available,
     })
 }
@@ -3221,8 +3579,12 @@ fn row_to_workspace_task_state(row: &Row<'_>) -> rusqlite::Result<WorkspaceTaskS
     let target_distro: Option<String> = row.get(7)?;
     let environment_keys_json: String = row.get(8)?;
     let applied_override: Option<String> = row.get(9)?;
-    let trusted: i64 = row.get(10)?;
-    let available: i64 = row.get(11)?;
+    let depends_on_json: String = row.get(10)?;
+    let depends_order: String = row.get(11)?;
+    let problem_matcher_json: Option<String> = row.get(12)?;
+    let trusted: i64 = row.get(13)?;
+    let shell_trusted: i64 = row.get(14)?;
+    let available: i64 = row.get(15)?;
     if validate_workspace_source_id(&source_id).is_err()
         || validate_workspace_text(
             "workspace task source root",
@@ -3269,8 +3631,16 @@ fn row_to_workspace_task_state(row: &Row<'_>) -> rusqlite::Result<WorkspaceTaskS
     }
     let environment_keys = decode_workspace_environment_keys(&environment_keys_json)
         .map_err(|error| conversion_error("workspace task environment keys", error))?;
+    let depends_on = decode_workspace_dependencies(&depends_on_json)
+        .map_err(|error| conversion_error("workspace task dependencies", error))?;
+    let depends_order = parse_workspace_depends_order(&depends_order)
+        .map_err(|error| conversion_error("workspace task dependency order", error))?;
+    let problem_matcher = decode_workspace_problem_matcher(problem_matcher_json.as_deref())
+        .map_err(|error| conversion_error("workspace task problem matcher", error))?;
     let trusted = parse_workspace_bool(trusted, "trusted")
         .map_err(|error| conversion_error("workspace task trusted", error))?;
+    let shell_trusted = parse_workspace_bool(shell_trusted, "shell trusted")
+        .map_err(|error| conversion_error("workspace task shell trusted", error))?;
     let available = parse_workspace_bool(available, "available")
         .map_err(|error| conversion_error("workspace task available", error))?;
     Ok(WorkspaceTaskState {
@@ -3284,7 +3654,11 @@ fn row_to_workspace_task_state(row: &Row<'_>) -> rusqlite::Result<WorkspaceTaskS
         target_distro,
         environment_keys,
         applied_override,
+        depends_on,
+        depends_order,
+        has_problem_matcher: problem_matcher.is_some(),
         trusted,
+        shell_trusted,
         available,
     })
 }
@@ -3811,7 +4185,10 @@ mod tests {
             cwd: Some("C:\\Work\\Project".to_owned()),
             environment_keys: vec!["CI".to_owned()],
             applied_override: Some("windows".to_owned()),
+            depends_on: Vec::new(),
+            depends_order: WorkspaceTaskDependsOrder::Parallel,
             has_problem_matcher: false,
+            problem_matcher: None,
             blocked_reason: None,
         }
     }
@@ -4878,7 +5255,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_task_schema_migrates_from_v2_and_is_idempotent() {
+    fn workspace_task_schema_migrates_from_v2_to_v4_and_is_idempotent() {
         let database = DatabaseState::open_in_memory().unwrap();
         {
             let connection = database.connection.lock().unwrap();
@@ -4891,7 +5268,7 @@ mod tests {
                 .unwrap();
         }
         database.migrate().unwrap();
-        assert_eq!(database.schema_version().unwrap(), 3);
+        assert_eq!(database.schema_version().unwrap(), SCHEMA_VERSION);
         database.migrate().unwrap();
         let connection = database.connection.lock().unwrap();
         for table in ["workspace_task_sources", "workspace_tasks"] {
@@ -4916,6 +5293,25 @@ mod tests {
                 .unwrap(),
             2
         );
+        for (table, column) in [
+            ("workspace_task_sources", "shell_trusted"),
+            ("workspace_tasks", "depends_on_json"),
+            ("workspace_tasks", "depends_order"),
+            ("workspace_tasks", "problem_matcher_json"),
+        ] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        &format!(
+                            "SELECT count(*) FROM pragma_table_info('{table}') WHERE name = ?"
+                        ),
+                        [column],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .unwrap(),
+                1
+            );
+        }
     }
 
     #[test]

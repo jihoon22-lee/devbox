@@ -15,7 +15,7 @@ use crate::core::models::{
 use crate::core::workspace_tasks::{
     preview_workspace_tasks, revalidate_workspace_task_execution, verify_workspace_task_execution,
     verify_workspace_task_plan, WorkspaceTaskApplyResult, WorkspaceTaskExecution,
-    WorkspaceTaskPlan, WorkspaceTaskState, MAX_TASKS,
+    WorkspaceTaskKind, WorkspaceTaskPlan, WorkspaceTaskState, MAX_TASKS,
 };
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
 use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse, MAX_TAIL_BYTES};
@@ -900,6 +900,52 @@ pub fn trust_workspace_task_source(
         .get_workspace_task_execution(&candidate.job_id)
         .map_err(workspace_task_storage_error)?
         .ok_or_else(|| "workspace-task-not-found".to_owned())?;
+    if !refreshed.trusted || verify_workspace_task_execution(&refreshed).is_err() {
+        invalidate_workspace_task(state.inner().as_ref(), &refreshed)?;
+        return Err("workspace-task-source-changed".to_owned());
+    }
+    Ok(true)
+}
+
+const SHELL_RISK_ACKNOWLEDGEMENT: &str = "execute-shell-tasks";
+
+/// Grant the separate shell boundary for an already trusted exact revision.
+/// A distinct fixed acknowledgement prevents an ordinary source-trust action
+/// from being accidentally reused as shell authorization.
+#[tauri::command]
+pub fn trust_workspace_task_shell_source(
+    source_id: String,
+    revision: String,
+    acknowledgement: String,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<bool, String> {
+    if acknowledgement != SHELL_RISK_ACKNOWLEDGEMENT {
+        return Err("workspace-task-shell-confirmation-required".to_owned());
+    }
+    let candidate = state
+        .list_workspace_task_states()
+        .map_err(workspace_task_storage_error)?
+        .into_iter()
+        .find(|item| item.source_id == source_id && item.task_kind == WorkspaceTaskKind::Shell)
+        .ok_or_else(|| "workspace-task-shell-not-found".to_owned())?;
+    if candidate.revision != revision || !candidate.trusted {
+        return Err("workspace-task-source-changed".to_owned());
+    }
+    let execution = state
+        .get_workspace_task_execution(&candidate.job_id)
+        .map_err(workspace_task_storage_error)?
+        .ok_or_else(|| "workspace-task-shell-not-found".to_owned())?;
+    if verify_workspace_task_execution(&execution).is_err() {
+        invalidate_workspace_task(state.inner().as_ref(), &execution)?;
+        return Err("workspace-task-source-changed".to_owned());
+    }
+    state
+        .trust_workspace_task_shell_source_at(&source_id, &revision, current_epoch_millis())
+        .map_err(workspace_task_storage_error)?;
+    let refreshed = state
+        .get_workspace_task_execution(&candidate.job_id)
+        .map_err(workspace_task_storage_error)?
+        .ok_or_else(|| "workspace-task-shell-not-found".to_owned())?;
     if revalidate_workspace_task_execution(&refreshed).is_err() {
         invalidate_workspace_task(state.inner().as_ref(), &refreshed)?;
         return Err("workspace-task-source-changed".to_owned());
