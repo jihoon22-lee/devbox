@@ -4,6 +4,22 @@
 bundle이다. 상세 소개는 각
 `apps/<AppName>/README.md`, 설계는 `docs/superpowers/specs/`를 참조한다.
 
+## W08 PR2 (#489) 문서 계약
+
+W08 PR2는 v0.5.1 stable release와 별개의 integration 작업이다. Log Lens 0.2.0은
+source 설정과 filter만 담는 strict app-local saved view(schema v1, 최대 20개)를 제공한다.
+저장소는 revision CAS, atomic/no-link write를 사용하고 corrupt/oversized/unknown-field
+내용을 보존한 채 fail-closed한다. WSL file source와 ephemeral Webhook capture는 저장하지
+않으며, saved view를 불러오면 읽기를 끊고 사용자가 명시적으로 `source 재연결`해야 한다.
+
+Webhook Lab 0.3.0은 catalog revision 17의 `webhook-log/v1` one-time producer다. Log Lens에는
+method, redacted origin-form target, timestamp, header names, 최대 4 KiB redacted body
+preview와 flags만 전달한다. Header values, raw body, filesystem path, command, environment,
+credential, archive는 handoff와 argv에 포함하지 않으며 launch 실패 시 정확한 pending entry만
+정리한다. Canonical wire `displayName`은 영어(`Webhook capture`)로 유지하고 UI는 한국어로
+제공한다. Windows packaged acceptance는 아직 pending이며 이 문서는 release 완료를 주장하지
+않는다.
+
 | # | 앱 | 디렉터리 | 핵심 목적 | Phase | 연계 |
 |---|---|---|---|---|---|
 | 1 | port-manager | `apps/port-manager` | 포트·프로세스 조회/종료/실행 | 1 | process crate, run-manager |
@@ -17,10 +33,10 @@ bundle이다. 상세 소개는 각
 | 9 | code-pad | `apps/code-pad` | CodeMirror 6 경량 코드 에디터 (LSP) | 추가 | filesystem/markdown crate |
 | 10 | run-manager | `apps/run-manager` | 예약 실행·서비스 관리 (cron + service) | 추가 | process crate, workbench |
 | 11 | workbench | `apps/workbench` | 프로젝트 기반 orchestration 셸 | Stage 4 | wsl·integration crate, 전 앱 |
-| 12 | webhook-lab | `apps/webhook-lab` | 로컬 웹훅/콜백 서버 | Stage 5 | api-playground, port-manager |
+| 12 | webhook-lab | `apps/webhook-lab` | 로컬 웹훅/콜백 서버 (0.3.0, `webhook-log/v1` producer) | Stage 5 | api-playground, port-manager, log-lens |
 | 13 | repo-manager | `apps/repo-manager` | git 저장소·worktree 관리 | Stage 5 | wsl crate, code-pad/workbench |
 | 14 | devbox-launcher | `apps/devbox-launcher` | catalog app과 제공될 때 검증된 integration snapshot 검색·AppLink 실행, explicit clipboard preview | P3-01 | catalog, integration, applink, launch |
-| 15 | log-lens | `apps/log-lens` | local/WSL/container log tail·merge·filter, Run stdout/stderr identity handoff·reader (#473 in v0.5.1) | P3-02 | `log-source/v1`, bounded in-memory ring |
+| 15 | log-lens | `apps/log-lens` | local/WSL/container/Webhook log tail·merge·filter, Run/Webhook handoff·reader, saved views (0.2.0) | P3-02 | `log-source/v1`, `webhook-log/v1`, bounded in-memory ring |
 
 ## 공유 후보 매트릭스
 
@@ -37,10 +53,10 @@ bundle이다. 상세 소개는 각
 | code-pad | filesystem, markdown, editor, (lsp — 두 번째 소비자 시 `crates/lsp`) |
 | run-manager | process, database, wsl |
 | workbench | wsl, integration, catalog |
-| webhook-lab | http, rules, masking |
+| webhook-lab | http, rules, masking, `webhook-log/v1` producer |
 | repo-manager | wsl, git |
 | devbox-launcher | catalog, integration, applink, launch |
-| log-lens | WSL/container fixed adapters, app-local parser, `log-source/v1` claim/preview, fixed Run rotation reader (#473; v0.5.0 binary 제외) |
+| log-lens | WSL/container fixed adapters, app-local parser, `log-source/v1`/`webhook-log/v1` claim/preview, fixed Run rotation reader, app-local saved views (#473; v0.5.0 binary 제외) |
 
 ## 산출물 (각각 독립 .exe)
 `PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`

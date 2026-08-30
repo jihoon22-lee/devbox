@@ -1,8 +1,8 @@
 use super::buffer::RingBuffer;
 use super::lifecycle::{CancellationToken, OperationRegistry};
 use super::model::{
-    run_source_parts, CoreError, FileCursor, FileIdentity, ReadStatus, SourceKind, SourceSnapshot,
-    SourceSpec, MAX_SOURCE_BYTES,
+    run_source_parts, CoreError, FileCursor, FileIdentity, LogFormat, LogRecord, ReadStatus,
+    SourceKind, SourceSnapshot, SourceSpec, MAX_SOURCE_BYTES,
 };
 use super::parser::parse_bytes;
 use devbox_filesystem::{ensure_no_links, filesystem_identity, open_filesystem_object};
@@ -144,7 +144,7 @@ pub fn adapter_argv(source: &SourceSpec) -> Result<Option<AdapterPlan>, CoreErro
             source_kind: SourceKind::Container,
             read_only: true,
         },
-        SourceSpec::Run { .. } => return Ok(None),
+        SourceSpec::Run { .. } | SourceSpec::WebhookCapture { .. } => return Ok(None),
     };
     Ok(Some(plan))
 }
@@ -157,6 +157,9 @@ pub fn load_source(
 ) -> Result<SourceSnapshot, CoreError> {
     context.check()?;
     let summary = source.summary()?;
+    if let SourceSpec::WebhookCapture { capture } = source {
+        return load_webhook_capture(capture, summary, sequence_start, context);
+    }
     let (bytes, next_cursor, status, initial_truncated) = match source {
         SourceSpec::LocalFile { path } => {
             let read = read_file(Path::new(path), cursor, context)?;
@@ -181,6 +184,7 @@ pub fn load_source(
             let read = read_run_source(source_id, cursor, context)?;
             (read.bytes, Some(read.cursor), read.status, read.truncated)
         }
+        SourceSpec::WebhookCapture { .. } => unreachable!("handled before byte readers"),
     };
     context.check()?;
     let batch = parse_bytes(&bytes, &summary.source_id, sequence_start)?;
@@ -204,6 +208,49 @@ pub fn load_source(
         truncated: batch.truncated || initial_truncated,
         dropped_records: push.dropped_records,
         dropped_bytes: push.dropped_bytes,
+    })
+}
+
+fn load_webhook_capture(
+    capture: &devbox_applink::WebhookLogPayload,
+    summary: super::model::SourceSummary,
+    sequence_start: u64,
+    context: &LoadContext<'_>,
+) -> Result<SourceSnapshot, CoreError> {
+    devbox_applink::validate_webhook_log_payload(capture).map_err(|_| CoreError::InvalidSource)?;
+    context.check()?;
+    let mut fields = BTreeMap::new();
+    fields.insert("method".to_string(), capture.method.clone());
+    fields.insert("target".to_string(), capture.target.clone());
+    if !capture.header_names.is_empty() {
+        fields.insert("headerNames".to_string(), capture.header_names.join(", "));
+    }
+    if !capture.body_preview.is_empty() {
+        fields.insert("bodyPreview".to_string(), capture.body_preview.clone());
+    }
+    fields.insert("redacted".to_string(), capture.redacted.to_string());
+    fields.insert("truncated".to_string(), capture.truncated.to_string());
+    let record = LogRecord {
+        source_id: summary.source_id.clone(),
+        sequence: sequence_start,
+        timestamp_millis: Some(capture.received_at_ms),
+        level: None,
+        message: format!("{} {}", capture.method, capture.target),
+        fields,
+        format: LogFormat::Plain,
+        truncated: capture.truncated,
+    };
+    record.validate()?;
+    Ok(SourceSnapshot {
+        operation_id: context.operation_id.to_string(),
+        generation: context.generation,
+        source: summary,
+        records: vec![record],
+        next_cursor: None,
+        status: ReadStatus::Initial,
+        truncated: capture.truncated,
+        dropped_records: 0,
+        dropped_bytes: 0,
     })
 }
 
@@ -1208,6 +1255,64 @@ mod tests {
             .find(|app| app["id"] == "run-manager")
             .and_then(|app| app["identifier"].as_str());
         assert_eq!(identifier, Some(RUN_MANAGER_IDENTIFIER));
+    }
+
+    #[test]
+    fn webhook_capture_loads_one_sanitized_ephemeral_record() {
+        let capture = devbox_applink::webhook_log_payload(
+            "POST",
+            "/hooks?access_token=raw-query-secret",
+            42,
+            &[
+                ("Authorization".into(), "Bearer raw-header-secret".into()),
+                ("Content-Type".into(), "application/json".into()),
+            ],
+            r#"{"password":"raw-body-secret"}"#,
+        )
+        .unwrap();
+        let source = SourceSpec::WebhookCapture { capture };
+        let registry = OperationRegistry::default();
+        let token = registry.begin("webhook-read", 3).unwrap();
+
+        let snapshot = load_source(
+            &source,
+            None,
+            9,
+            &context("webhook-read", 3, &token, &registry),
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.operation_id, "webhook-read");
+        assert_eq!(snapshot.generation, 3);
+        assert_eq!(snapshot.source.kind, SourceKind::WebhookCapture);
+        assert_eq!(snapshot.records.len(), 1);
+        assert_eq!(snapshot.next_cursor, None);
+        assert_eq!(snapshot.status, ReadStatus::Initial);
+        let record = &snapshot.records[0];
+        assert_eq!(record.sequence, 9);
+        assert_eq!(record.timestamp_millis, Some(42));
+        assert_eq!(
+            record.fields.get("method").map(String::as_str),
+            Some("POST")
+        );
+        assert_eq!(
+            record.fields.get("headerNames").map(String::as_str),
+            Some("Authorization, Content-Type")
+        );
+        assert_eq!(
+            record.fields.get("redacted").map(String::as_str),
+            Some("true")
+        );
+        let encoded = serde_json::to_string(&snapshot).unwrap();
+        assert!(encoded.contains("[REDACTED]"));
+        for secret in [
+            "raw-query-secret",
+            "raw-header-secret",
+            "application/json",
+            "raw-body-secret",
+        ] {
+            assert!(!encoded.contains(secret));
+        }
     }
 
     #[test]

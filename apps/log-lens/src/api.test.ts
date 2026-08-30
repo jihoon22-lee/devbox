@@ -7,9 +7,12 @@ import {
   discardLogSource,
   HandoffApiError,
   handoffErrorCode,
+  listSavedViews,
   onOpenRequest,
   previewLogSource,
+  removeSavedView,
   renewLogSource,
+  saveSavedView,
   sendSelectionToToolbox,
   takePendingOpen,
 } from "./api";
@@ -28,7 +31,7 @@ afterEach(() => {
 describe("Log Lens handoff API", () => {
   it("keeps browser fixtures from publishing, claiming, or listening for handoffs", async () => {
     expect(await takePendingOpen()).toBeNull();
-    await expect(previewLogSource("a".repeat(32))).rejects.toThrow("desktop-only");
+    await expect(previewLogSource("log-source/v1", "a".repeat(32))).rejects.toThrow("desktop-only");
     await expect(acceptLogSource("a".repeat(32))).rejects.toThrow("desktop-only");
     await expect(discardLogSource("a".repeat(32))).rejects.toThrow("desktop-only");
     await expect(renewLogSource("a".repeat(32))).rejects.toThrow("desktop-only");
@@ -99,7 +102,7 @@ describe("Log Lens handoff API", () => {
       .mockResolvedValueOnce({ leaseUntilMs: "not-a-number" });
 
     await expect(takePendingOpen()).resolves.toBeNull();
-    await expect(previewLogSource("a".repeat(32))).resolves.toMatchObject({
+    await expect(previewLogSource("log-source/v1", "a".repeat(32))).resolves.toMatchObject({
       sourceApp: "run-manager",
     });
     await expect(acceptLogSource("a".repeat(32))).resolves.toEqual({
@@ -136,7 +139,7 @@ describe("Log Lens handoff API", () => {
       .mockResolvedValueOnce({ kind: "wslFile", distro: "--help", path: "/var/log/app.log" })
       .mockResolvedValueOnce({ kind: "wslFile", distro: "Ubuntu", path: "/" });
 
-    await expect(previewLogSource("a".repeat(32))).rejects.toMatchObject({
+    await expect(previewLogSource("log-source/v1", "a".repeat(32))).rejects.toMatchObject({
       code: "handoff-response-invalid",
     });
     await expect(acceptLogSource("a".repeat(32))).rejects.toMatchObject({
@@ -179,13 +182,142 @@ describe("Log Lens handoff API", () => {
         },
       });
 
-    await expect(previewLogSource("a".repeat(32))).resolves.toMatchObject({
+    await expect(previewLogSource("log-source/v1", "a".repeat(32))).resolves.toMatchObject({
       sourceApp: "port-manager",
       source: { kind: "run" },
     });
-    await expect(previewLogSource("a".repeat(32))).rejects.toMatchObject({
+    await expect(previewLogSource("log-source/v1", "a".repeat(32))).rejects.toMatchObject({
       code: "handoff-response-invalid",
     });
+  });
+
+  it("accepts the strict Webhook Lab projection without previewing request content", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    const id = "c".repeat(32);
+    invokeMock
+      .mockResolvedValueOnce({
+        target: { kind: "handoff", handoffKind: "webhook-log/v1", id },
+        from: "webhook-lab",
+      })
+      .mockResolvedValueOnce({
+        id,
+        kind: "webhook-log/v1",
+        sourceApp: "webhook-lab",
+        expiresAtMs: 10_000,
+        leaseUntilMs: 5_000,
+        source: {
+          sourceId: "log-source:0123456789abcdef",
+          kind: "webhookCapture",
+          displayName: "Webhook capture",
+          readOnly: true,
+          handoff: true,
+        },
+      })
+      .mockResolvedValueOnce({
+        kind: "webhookCapture",
+        capture: {
+          schemaVersion: 1,
+          method: "POST",
+          target: "/hook?token=[REDACTED]",
+          receivedAtMs: 1,
+          headerNames: ["content-type", "authorization"],
+          bodyPreview: "{\"token\":\"[REDACTED]\"}",
+          redacted: true,
+          truncated: false,
+        },
+      })
+      .mockResolvedValueOnce({
+        kind: "webhookCapture",
+        capture: {
+          schemaVersion: 1,
+          method: "POST",
+          target: "/hook",
+          receivedAtMs: 1,
+          headerNames: [],
+          bodyPreview: "safe",
+          body: "raw-not-allowed",
+          redacted: false,
+          truncated: false,
+        },
+      })
+      .mockResolvedValueOnce({
+        kind: "webhookCapture",
+        capture: {
+          schemaVersion: 1,
+          method: "GET",
+          target: "/hooks/%2e%2e/private",
+          receivedAtMs: 1,
+          headerNames: [],
+          bodyPreview: "safe",
+          redacted: false,
+          truncated: false,
+        },
+      })
+      .mockResolvedValueOnce({
+        kind: "webhookCapture",
+        capture: {
+          schemaVersion: 1,
+          method: "GET",
+          target: "/hooks",
+          receivedAtMs: 1,
+          headerNames: ["Authorization"],
+          bodyPreview: "safe",
+          redacted: false,
+          truncated: false,
+        },
+      });
+
+    await expect(takePendingOpen()).resolves.toMatchObject({ target: { handoffKind: "webhook-log/v1", id } });
+    await expect(previewLogSource("webhook-log/v1", id)).resolves.toEqual(expect.objectContaining({
+      sourceApp: "webhook-lab",
+      source: expect.objectContaining({ kind: "webhookCapture" }),
+    }));
+    expect(invokeMock).toHaveBeenCalledWith("preview_log_source", { handoffKind: "webhook-log/v1", id });
+    await expect(acceptLogSource(id)).resolves.toMatchObject({
+      kind: "webhookCapture",
+      capture: { redacted: true },
+    });
+    await expect(acceptLogSource(id)).rejects.toMatchObject({ code: "handoff-response-invalid" });
+    await expect(acceptLogSource(id)).rejects.toMatchObject({ code: "handoff-response-invalid" });
+    await expect(acceptLogSource(id)).rejects.toMatchObject({ code: "handoff-response-invalid" });
+  });
+
+  it("validates app-local saved-view documents and preserves revision arguments", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    const view = {
+      name: "errors",
+      sources: [{ kind: "localFile" as const, path: "C:\\logs\\app.log" }],
+      filter: { text: "error", regex: false },
+    };
+    const nativeView = {
+      ...view,
+      filter: {
+        text: "error",
+        regex: false,
+        sourceId: null,
+        level: null,
+        startAt: null,
+        endAt: null,
+        field: null,
+        fieldValue: null,
+      },
+    };
+    invokeMock
+      .mockResolvedValueOnce({ schemaVersion: 1, revision: 3, views: [nativeView] })
+      .mockResolvedValueOnce({ schemaVersion: 1, revision: 4, views: [nativeView] })
+      .mockResolvedValueOnce({ schemaVersion: 1, revision: 5, views: [] })
+      .mockResolvedValueOnce({
+        schemaVersion: 1,
+        revision: 6,
+        views: [{ name: "unsafe", sources: [{ kind: "wslFile", distro: "Ubuntu", path: "/secret" }], filter: { text: "", regex: false } }],
+      });
+
+    await expect(listSavedViews()).resolves.toMatchObject({ revision: 3, views: [view] });
+    await expect(saveSavedView(3, view)).resolves.toMatchObject({ revision: 4 });
+    expect(invokeMock).toHaveBeenCalledWith("save_saved_view", { expectedRevision: 3, view });
+    await expect(removeSavedView(4, "errors")).resolves.toEqual({ schemaVersion: 1, revision: 5, views: [] });
+    expect(invokeMock).toHaveBeenCalledWith("delete_saved_view", { expectedRevision: 4, name: "errors" });
+    await expect(listSavedViews()).rejects.toThrow("저장된 뷰 응답이 유효하지 않습니다");
   });
 
   it("classifies only fixed terminal and retryable codes", () => {

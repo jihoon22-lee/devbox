@@ -11,6 +11,7 @@ pub mod handoff;
 mod lifecycle;
 mod model;
 mod parser;
+pub mod saved_views;
 mod sources;
 
 pub use buffer::{BufferPush, RingBuffer};

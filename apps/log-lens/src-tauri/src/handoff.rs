@@ -1,4 +1,4 @@
-//! Tauri command layer for Log Lens `log-source/v1` previews.
+//! Tauri command layer for Log Lens source previews.
 //!
 //! A handoff is claimed only when an explicit inbound AppLink request is
 //! consumed.  Preview keeps the claim in process memory; cancel restores it,
@@ -102,8 +102,9 @@ fn preview_restore_error(
 pub fn preview_log_source(
     pending: tauri::State<'_, PendingLogSource>,
     id: String,
+    handoff_kind: String,
 ) -> Result<LogSourcePreview, String> {
-    if !valid_handoff_id(&id) {
+    if !valid_handoff_id(&id) || !handoff::supported_kind(&handoff_kind) {
         return Err(handoff::ERROR_INVALID.to_string());
     }
     let now = now_ms();
@@ -119,7 +120,7 @@ pub fn preview_log_source(
     }
     let store = handoff_store();
     let claim = store
-        .claim(&id, handoff::HANDOFF_KIND, handoff::CONSUMER_APP, now)
+        .claim(&id, &handoff_kind, handoff::CONSUMER_APP, now)
         .map_err(|error| handoff::map_claim_error(&error).to_string())?;
     *slot = Some(ClaimedLogSource {
         claim,

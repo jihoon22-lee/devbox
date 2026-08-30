@@ -34,6 +34,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             applink::take_pending_open,
             commands::summarize_source,
+            commands::list_saved_views,
+            commands::save_saved_view,
+            commands::delete_saved_view,
             commands::receive_log_source,
             commands::fixed_adapter,
             commands::read_source,

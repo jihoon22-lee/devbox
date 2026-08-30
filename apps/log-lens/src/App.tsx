@@ -11,10 +11,13 @@ import {
   discardLogSource,
   exportRecords,
   handoffErrorCode,
+  listSavedViews,
   onOpenRequest,
   previewLogSource,
   readSources,
+  removeSavedView,
   renewLogSource,
+  saveSavedView,
   sendSelectionToToolbox,
   takePendingOpen,
 } from "./api";
@@ -32,6 +35,7 @@ import type {
   ContainerEngine,
   FileCursor,
   FilterSpec,
+  HandoffOpenTarget,
   LogLevel,
   LogRecord,
   LogSourcePreview,
@@ -51,20 +55,36 @@ const MAX_HANDOFF_RECOVERY_ATTEMPTS = 3;
 const MAX_TOOLBOX_TEXT_BYTES = 512 * 1024;
 const MAX_TOOLBOX_TEXT_CHARS = 256_000;
 
-const EXPORT_TRUNCATED_ERROR = "Export reached the safety limit and was truncated.";
-const STALE_SELECTION_ERROR = "Selected logs are stale. Refresh and select them again.";
-const SELECTION_LIMIT_ERROR = "A maximum of 2,000 log records can be selected.";
-const TOOLBOX_EXPORT_ERROR = "Selected log export exceeded the Developer Toolbox safety limit.";
-const TOOLBOX_SEND_ERROR = "Selected logs could not be sent to Developer Toolbox. Clipboard fallback was not used.";
-const TOOLBOX_SEND_SUCCESS = "Selected logs sent to Developer Toolbox.";
-const TOOLBOX_SEND_REDACTED = "Selected logs sent to Developer Toolbox; sensitive values were redacted.";
+const EXPORT_TRUNCATED_ERROR = "내보내기 안전 제한에 도달해 일부 내용만 처리했습니다.";
+const STALE_SELECTION_ERROR = "선택한 로그가 최신 상태가 아닙니다. 새로고침한 뒤 다시 선택하세요.";
+const SELECTION_LIMIT_ERROR = "로그는 최대 2,000개까지 선택할 수 있습니다.";
+const TOOLBOX_EXPORT_ERROR = "선택한 로그가 Developer Toolbox 전송 안전 제한을 초과했습니다.";
+const TOOLBOX_SEND_ERROR = "선택한 로그를 Developer Toolbox로 보내지 못했습니다. 클립보드로 자동 전환하지 않았습니다.";
+const TOOLBOX_SEND_SUCCESS = "선택한 로그를 Developer Toolbox로 보냈습니다.";
+const TOOLBOX_SEND_REDACTED = "민감정보를 마스킹한 뒤 선택한 로그를 Developer Toolbox로 보냈습니다.";
 
 type HandoffRecoveryAction = "preview" | "accept" | "discard" | "renew";
 
 interface HandoffRecovery {
   id: string;
+  kind: HandoffOpenTarget["handoffKind"];
   action: HandoffRecoveryAction;
   attempts: number;
+}
+
+const SAVED_VIEW_ERRORS = new Set([
+  "저장된 뷰 저장소를 읽을 수 없습니다",
+  "저장된 뷰 저장소를 저장할 수 없습니다",
+  "저장된 뷰 설정이 유효하지 않습니다",
+  "저장된 뷰가 다른 작업에서 변경되었습니다. 다시 불러온 뒤 시도해 주세요",
+  "저장된 뷰가 최대 개수에 도달했습니다. 기존 뷰를 삭제한 뒤 다시 시도해 주세요",
+  "저장된 뷰를 찾을 수 없습니다",
+  "저장된 뷰 응답이 유효하지 않습니다",
+]);
+
+function savedViewFailureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return SAVED_VIEW_ERRORS.has(message) ? message : "저장된 뷰 작업을 완료하지 못했습니다";
 }
 
 function handoffFailureMessage(error: unknown, fallback: string): string {
@@ -112,12 +132,24 @@ function toIsoTimestamp(timestamp: number | null): string | undefined {
 
 function labelForKind(kind: SourceKind): string {
   switch (kind) {
-    case "localFile": return "Local file";
-    case "directory": return "Local directory";
-    case "wslFile": return "WSL file";
-    case "wslJournal": return "WSL journal";
-    case "run": return "Run Manager handoff";
-    case "container": return "Container logs";
+    case "localFile": return "로컬 파일";
+    case "directory": return "로컬 디렉터리";
+    case "wslFile": return "WSL 파일";
+    case "wslJournal": return "WSL 저널";
+    case "run": return "Run Manager 연결";
+    case "webhookCapture": return "Webhook 캡처";
+    case "container": return "컨테이너 로그";
+  }
+}
+
+function labelForStatus(status: string): string {
+  switch (status) {
+    case "initial": return "최초 읽기";
+    case "advanced": return "추가 읽기";
+    case "rotated": return "순환 감지";
+    case "truncated": return "제한 도달";
+    case "unavailable": return "사용 불가";
+    default: return "대기";
   }
 }
 
@@ -191,6 +223,8 @@ function App() {
   const [selectedGeneration, setSelectedGeneration] = useState<number | null>(null);
   const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [savedViewsRevision, setSavedViewsRevision] = useState(0);
+  const [savedViewsBusy, setSavedViewsBusy] = useState(false);
   const [viewName, setViewName] = useState("");
   const [selectedViewName, setSelectedViewName] = useState("");
   const [kind, setKind] = useState<SourceKind>("localFile");
@@ -202,6 +236,7 @@ function App() {
   const [engine, setEngine] = useState<ContainerEngine>("docker");
   const [containerId, setContainerId] = useState("");
   const [follow, setFollow] = useState(false);
+  const [connected, setConnected] = useState(true);
   const [paused, setPaused] = useState(false);
   const [wrapLines, setWrapLines] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -215,6 +250,7 @@ function App() {
   const generation = useRef(0);
   const operation = useRef<string | null>(null);
   const mounted = useRef(true);
+  const connectedRef = useRef(true);
   const refreshInFlight = useRef(false);
   const refreshPending = useRef<{
     sources: SourceSpec[];
@@ -239,7 +275,7 @@ function App() {
   // Native single-instance delivery is at-least-once from the UI's point of
   // view. Keep one bounded latest-id slot while the current preview/action is
   // busy so a second producer handoff is not silently dropped.
-  const queuedHandoffRef = useRef<string | null>(null);
+  const queuedHandoffRef = useRef<HandoffOpenTarget | null>(null);
   const handoffOpenerRef = useRef<HTMLElement | null>(null);
   const handoffCancelRef = useRef<HTMLButtonElement | null>(null);
   const handoffAcceptRef = useRef<HTMLButtonElement | null>(null);
@@ -248,6 +284,7 @@ function App() {
   selectedRef.current = selected;
   selectedGenerationRef.current = selectedGeneration;
   snapshotGenerationRef.current = snapshot?.generation ?? null;
+  connectedRef.current = connected;
 
   const prepareLogContext = useCallback((_reason: "pointer" | "keyboard", target: HTMLElement) => {
     const element = target as HTMLElement | null;
@@ -281,7 +318,7 @@ function App() {
     nextSources = sources,
     nextCursors = cursors,
   ) => {
-    if (!mounted.current || nextSources.length === 0) {
+    if (!mounted.current || !connectedRef.current || nextSources.length === 0) {
       refreshPending.current = null;
       return;
     }
@@ -326,7 +363,7 @@ function App() {
       setCursors(next.cursors);
     } catch {
       if (mounted.current && generation.current === currentGeneration) {
-        setError("The log source could not be read. Check the source and try again.");
+        setError("로그 source를 읽지 못했습니다. source를 확인한 뒤 다시 시도하세요.");
       }
     } finally {
       const pending = refreshPending.current;
@@ -363,7 +400,11 @@ function App() {
     updateHandoffRecovery(null);
   }, [clearHandoffPreview, updateHandoffRecovery]);
 
-  const startLogSourcePreview = useCallback(async (id: string, attempts = 0) => {
+  const startLogSourcePreview = useCallback(async (
+    handoffKind: HandoffOpenTarget["handoffKind"],
+    id: string,
+    attempts = 0,
+  ) => {
     const actionGeneration = ++handoffGeneration.current;
     const activeElement = document.activeElement;
     handoffOpenerRef.current = activeElement instanceof HTMLElement ? activeElement : null;
@@ -372,7 +413,7 @@ function App() {
     setError(null);
     setNotice(null);
     try {
-      const preview = await previewLogSource(id);
+      const preview = await previewLogSource(handoffKind, id);
       if (!mounted.current || handoffGeneration.current !== actionGeneration) {
         void discardLogSource(preview.id).catch(() => undefined);
         return;
@@ -398,7 +439,7 @@ function App() {
           ? "discard"
           : "preview";
         const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
-        updateHandoffRecovery({ id, action, attempts: nextAttempts });
+        updateHandoffRecovery({ id, kind: handoffKind, action, attempts: nextAttempts });
         setError(null);
       } else {
         clearHandoffState();
@@ -415,17 +456,22 @@ function App() {
     }
   }, [clearHandoffState, updateHandoffRecovery]);
 
-  const openLogSourcePreview = useCallback((id: string) => {
-    if (!/^[0-9a-f]{32}$/.test(id)) return;
+  const openLogSourcePreview = useCallback((target: HandoffOpenTarget) => {
+    if (!/^[0-9a-f]{32}$/.test(target.id)
+      || !["log-source/v1", "webhook-log/v1"].includes(target.handoffKind)) return;
     if (handoffBusyRef.current || handoffPreviewRef.current || handoffRecoveryRef.current) {
-      queuedHandoffRef.current = id;
+      queuedHandoffRef.current = target;
       if (mounted.current) setNotice("다른 Log Lens handoff를 처리한 뒤 최신 요청을 미리봅니다.");
       return;
     }
-    void startLogSourcePreview(id);
+    void startLogSourcePreview(target.handoffKind, target.id);
   }, [startLogSourcePreview]);
 
-  const restoreHandoffClaim = useCallback(async (id: string, attempts = 0) => {
+  const restoreHandoffClaim = useCallback(async (
+    kind: HandoffOpenTarget["handoffKind"],
+    id: string,
+    attempts = 0,
+  ) => {
     const actionGeneration = ++handoffGeneration.current;
     handoffBusyRef.current = true;
     setHandoffBusy(true);
@@ -440,7 +486,7 @@ function App() {
       if (!mounted.current || handoffGeneration.current !== actionGeneration) return;
       if (classifyHandoffError(error) === "retryable") {
         const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
-        updateHandoffRecovery({ id, action: "discard", attempts: nextAttempts });
+        updateHandoffRecovery({ id, kind, action: "discard", attempts: nextAttempts });
         setError(null);
       } else {
         clearHandoffState();
@@ -460,12 +506,16 @@ function App() {
     const recovery = handoffRecoveryRef.current;
     if (recovery && recovery.attempts >= MAX_HANDOFF_RECOVERY_ATTEMPTS) return;
     const attempts = recovery?.attempts ?? 0;
-    void restoreHandoffClaim(preview.id, attempts);
+    void restoreHandoffClaim(preview.kind, preview.id, attempts);
   }, [restoreHandoffClaim]);
 
-  const applyAcceptedSource = useCallback(async (id: string, attempts = 0) => {
+  const applyAcceptedSource = useCallback(async (
+    kind: HandoffOpenTarget["handoffKind"],
+    id: string,
+    attempts = 0,
+  ) => {
     if (sources.length >= MAX_SOURCES) {
-      setError(`A maximum of ${MAX_SOURCES} sources can be loaded at once.`);
+      setError(`source는 한 번에 최대 ${MAX_SOURCES}개까지 불러올 수 있습니다.`);
       return;
     }
     const actionGeneration = ++handoffGeneration.current;
@@ -483,6 +533,8 @@ function App() {
       }
       const nextSources = [...sources, source];
       const nextCursors = nextSources.map(() => null);
+      connectedRef.current = true;
+      setConnected(true);
       setSources(nextSources);
       setCursors(nextCursors);
       setNotice("Log Lens source를 추가했습니다. 읽기 전용 adapter로 불러옵니다.");
@@ -495,7 +547,7 @@ function App() {
       if (classifyHandoffError(error) === "retryable"
         && handoffErrorCode(error) !== "handoff-response-invalid") {
         const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
-        updateHandoffRecovery({ id, action: "accept", attempts: nextAttempts });
+        updateHandoffRecovery({ id, kind, action: "accept", attempts: nextAttempts });
         setError(null);
       } else {
         clearHandoffState();
@@ -518,10 +570,14 @@ function App() {
     const attempts = handoffRecoveryRef.current?.action === "accept"
       ? handoffRecoveryRef.current.attempts
       : 0;
-    void applyAcceptedSource(preview.id, attempts);
+    void applyAcceptedSource(preview.kind, preview.id, attempts);
   }, [applyAcceptedSource]);
 
-  const renewPreviewLease = useCallback(async (id: string, attempts = 0) => {
+  const renewPreviewLease = useCallback(async (
+    kind: HandoffOpenTarget["handoffKind"],
+    id: string,
+    attempts = 0,
+  ) => {
     const actionGeneration = ++handoffGeneration.current;
     handoffBusyRef.current = true;
     setHandoffBusy(true);
@@ -539,11 +595,11 @@ function App() {
         // the claim is still held. Restore that exact id instead of clearing
         // a UI state whose native slot remains live.
         const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
-        updateHandoffRecovery({ id, action: "discard", attempts: nextAttempts });
+        updateHandoffRecovery({ id, kind, action: "discard", attempts: nextAttempts });
         setError(null);
       } else if (classifyHandoffError(error) === "retryable") {
         const nextAttempts = Math.min(attempts + 1, MAX_HANDOFF_RECOVERY_ATTEMPTS);
-        updateHandoffRecovery({ id, action: "renew", attempts: nextAttempts });
+        updateHandoffRecovery({ id, kind, action: "renew", attempts: nextAttempts });
         setError(null);
       } else {
         clearHandoffState();
@@ -565,16 +621,16 @@ function App() {
     if (!recovery || handoffBusyRef.current || recovery.attempts >= MAX_HANDOFF_RECOVERY_ATTEMPTS) return;
     switch (recovery.action) {
       case "preview":
-        void startLogSourcePreview(recovery.id, recovery.attempts);
+        void startLogSourcePreview(recovery.kind, recovery.id, recovery.attempts);
         break;
       case "discard":
-        void restoreHandoffClaim(recovery.id, recovery.attempts);
+        void restoreHandoffClaim(recovery.kind, recovery.id, recovery.attempts);
         break;
       case "accept":
-        void applyAcceptedSource(recovery.id, recovery.attempts);
+        void applyAcceptedSource(recovery.kind, recovery.id, recovery.attempts);
         break;
       case "renew":
-        void renewPreviewLease(recovery.id, recovery.attempts);
+        void renewPreviewLease(recovery.kind, recovery.id, recovery.attempts);
         break;
     }
   }, [applyAcceptedSource, renewPreviewLease, restoreHandoffClaim, startLogSourcePreview]);
@@ -603,6 +659,26 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let disposed = false;
+    setSavedViewsBusy(true);
+    void listSavedViews()
+      .then((document) => {
+        if (disposed || !mounted.current) return;
+        setSavedViews(document.views);
+        setSavedViewsRevision(document.revision);
+      })
+      .catch((loadError: unknown) => {
+        if (!disposed && mounted.current) setError(savedViewFailureMessage(loadError));
+      })
+      .finally(() => {
+        if (!disposed && mounted.current) setSavedViewsBusy(false);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
   // Cold-start pull and single-instance forwarding converge on the same
   // preview path. Merely receiving argv never reads a source or auto-adds it.
   useEffect(() => {
@@ -612,11 +688,11 @@ function App() {
       void takePendingOpen()
         .then((request) => {
           if (disposed || !request || request.target.kind !== "handoff") return;
-          if (request.target.handoffKind !== "log-source/v1") {
+          if (!["log-source/v1", "webhook-log/v1"].includes(request.target.handoffKind)) {
             setError("지원하지 않는 Log Lens handoff입니다.");
             return;
           }
-          void openLogSourcePreview(request.target.id);
+          void openLogSourcePreview(request.target);
         })
         .catch(() => {
           if (!disposed) setError("Log Lens source handoff를 확인하지 못했습니다.");
@@ -641,7 +717,8 @@ function App() {
     const id = handoffPreview.id;
     const timer = window.setInterval(() => {
       if (handoffBusyRef.current || handoffRecoveryRef.current) return;
-      void renewPreviewLease(id);
+      const kind = handoffPreviewRef.current?.kind;
+      if (kind) void renewPreviewLease(kind, id);
     }, 30_000);
     return () => window.clearInterval(timer);
   }, [handoffPreview, renewPreviewLease]);
@@ -700,10 +777,10 @@ function App() {
   }, [cancelLogSourcePreview, handoffPreview?.id, handoffRecovery?.id, handoffRecovery !== null]);
 
   useEffect(() => {
-    if (!follow || paused || sources.length === 0) return undefined;
+    if (!connected || !follow || paused || sources.length === 0) return undefined;
     const timer = window.setInterval(() => void refresh(), 1_500);
     return () => window.clearInterval(timer);
-  }, [follow, paused, refresh, sources.length]);
+  }, [connected, follow, paused, refresh, sources.length]);
 
   const visibleRecords = useMemo(
     () => filterRecords(records, filter).slice(-MAX_RENDERED_ROWS),
@@ -802,6 +879,7 @@ function App() {
       case "wslFile": return distro && path ? { kind, distro, path } : null;
       case "wslJournal": return distro ? (unit ? { kind, distro, unit } : { kind, distro }) : null;
       case "run": return sourceId ? { kind, sourceId } : null;
+      case "webhookCapture": return null;
       case "container": return containerId ? { kind, engine, containerId } : null;
     }
   };
@@ -812,21 +890,23 @@ function App() {
     if (compositionRef.current || nativeEvent.isComposing) return;
     const source = buildSource();
     if (!source) {
-      setError("Enter a valid source value.");
+      setError("올바른 source 값을 입력하세요.");
       return;
     }
     if (sources.some((candidate) => JSON.stringify(candidate) === JSON.stringify(source))) {
-      setError("This source is already selected.");
+      setError("이미 선택한 source입니다.");
       setNotice(null);
       return;
     }
     if (sources.length >= MAX_SOURCES) {
-      setError(`A maximum of ${MAX_SOURCES} sources can be loaded at once.`);
+      setError(`source는 한 번에 최대 ${MAX_SOURCES}개까지 불러올 수 있습니다.`);
       setNotice(null);
       return;
     }
     const nextSources = [...sources, source];
     const nextCursors = nextSources.map(() => null);
+    connectedRef.current = true;
+    setConnected(true);
     setSources(nextSources);
     setCursors(nextCursors);
     setError(null);
@@ -841,7 +921,7 @@ function App() {
     setCursors(nextCursors);
     setError(null);
     setNotice(null);
-    if (nextSources.length) void refresh(nextSources, nextCursors);
+    if (nextSources.length && connectedRef.current) void refresh(nextSources, nextCursors);
     else {
       invalidateSelection();
       generation.current += 1;
@@ -855,28 +935,39 @@ function App() {
     }
   };
 
-  const saveView = () => {
+  const saveView = async () => {
     const name = viewName.trim();
     if (!name || name.length > 128 || !sources.length) {
-      setError("A view name and at least one source are required.");
+      setError("뷰 이름과 하나 이상의 source가 필요합니다.");
+      setNotice(null);
+      return;
+    }
+    if (sources.some((source) => source.kind === "wslFile" || source.kind === "webhookCapture")) {
+      setError("WSL 파일 및 일회성 Webhook capture source는 저장된 뷰에 보관할 수 없습니다.");
       setNotice(null);
       return;
     }
     const replacing = savedViews.some((view) => view.name === name);
-    const evictsOldest = !replacing && savedViews.length >= MAX_SAVED_VIEWS;
-    setSavedViews((current) => [...current.filter((view) => view.name !== name), {
-      name,
-      sources: sources.map((source) => ({ ...source })),
-      filter: { ...filter },
-    }].slice(-MAX_SAVED_VIEWS));
-    setSelectedViewName(name);
-    setViewName("");
     setError(null);
-    setNotice(evictsOldest
-      ? `Saved view limit reached; the oldest view was removed.`
-      : replacing
-        ? `Saved view “${name}” updated.`
-        : `Saved view “${name}” saved.`);
+    setNotice(null);
+    setSavedViewsBusy(true);
+    try {
+      const document = await saveSavedView(savedViewsRevision, {
+        name,
+        sources: structuredClone(sources),
+        filter: { ...filter },
+      });
+      if (!mounted.current) return;
+      setSavedViews(document.views);
+      setSavedViewsRevision(document.revision);
+      setSelectedViewName(name);
+      setViewName("");
+      setNotice(replacing ? `저장된 뷰 “${name}”을 업데이트했습니다.` : `뷰 “${name}”을 저장했습니다.`);
+    } catch (saveError: unknown) {
+      if (mounted.current) setError(savedViewFailureMessage(saveError));
+    } finally {
+      if (mounted.current) setSavedViewsBusy(false);
+    }
   };
 
   const loadView = (name: string) => {
@@ -885,21 +976,61 @@ function App() {
     if (!view) return;
     const nextSources = view.sources.map((source) => ({ ...source })) as SourceSpec[];
     const nextCursors = nextSources.map(() => null);
+    connectedRef.current = false;
+    setConnected(false);
+    setFollow(false);
+    setPaused(false);
+    generation.current += 1;
+    refreshPending.current = null;
+    const active = operation.current;
+    operation.current = null;
+    if (active) void cancelRead(active);
     setSources(nextSources);
     setCursors(nextCursors);
     setFilter({ ...view.filter });
+    setRecords([]);
+    setSnapshot(null);
+    selectedRef.current = new Set();
+    selectedGenerationRef.current = null;
+    setSelected(new Set());
+    setSelectedGeneration(null);
+    setBookmarks(new Set());
+    setBusy(false);
     setError(null);
-    void refresh(nextSources, nextCursors);
-    setNotice(`Loaded saved view “${name}”.`);
+    setNotice(`저장된 뷰 “${name}” 설정을 불러왔습니다. source를 읽으려면 재연결하세요.`);
   };
 
-  const deleteSavedView = () => {
+  const deleteView = async () => {
     if (!selectedViewName) return;
     const deletedName = selectedViewName;
-    setSavedViews((current) => current.filter((view) => view.name !== deletedName));
-    setSelectedViewName("");
     setError(null);
-    setNotice(`Saved view “${deletedName}” removed.`);
+    setNotice(null);
+    setSavedViewsBusy(true);
+    try {
+      const document = await removeSavedView(savedViewsRevision, deletedName);
+      if (!mounted.current) return;
+      setSavedViews(document.views);
+      setSavedViewsRevision(document.revision);
+      setSelectedViewName("");
+      setNotice(`저장된 뷰 “${deletedName}”을 삭제했습니다.`);
+    } catch (deleteError: unknown) {
+      if (mounted.current) setError(savedViewFailureMessage(deleteError));
+    } finally {
+      if (mounted.current) setSavedViewsBusy(false);
+    }
+  };
+
+  const reconnectSources = async () => {
+    if (!sources.length || busy) return;
+    const nextCursors = sources.map(() => null);
+    connectedRef.current = true;
+    setConnected(true);
+    setCursors(nextCursors);
+    setRecords([]);
+    setSnapshot(null);
+    setError(null);
+    setNotice("source에 다시 연결하는 중입니다.");
+    await refresh(sources, nextCursors);
   };
 
   const toggleSelection = useCallback((record: LogRecord) => {
@@ -935,16 +1066,16 @@ function App() {
     if (!contextRecord) return [];
     const key = recordKey(contextRecord);
     return [
-      { type: "item", id: "copy-line", label: "Copy log line", shortcut: "Ctrl+C" },
+      { type: "item", id: "copy-line", label: "로그 줄 복사", shortcut: "Ctrl+C" },
       {
         type: "item",
         id: "toggle-bookmark",
-        label: bookmarks.has(key) ? "Remove bookmark" : "Add bookmark",
+        label: bookmarks.has(key) ? "북마크 제거" : "북마크 추가",
       },
       {
         type: "item",
         id: "toggle-selection",
-        label: selected.has(key) ? "Deselect line" : "Select line",
+        label: selected.has(key) ? "로그 선택 해제" : "로그 선택",
       },
     ];
   }, [bookmarks, contextRecord, selected]);
@@ -964,13 +1095,13 @@ function App() {
               setNotice(null);
             } else {
               setError(null);
-              setNotice("Log line copied.");
+              setNotice("로그 줄을 복사했습니다.");
             }
           }
         })
         .catch(() => {
           if (mounted.current) {
-            setError("Clipboard copy failed.");
+            setError("클립보드에 복사하지 못했습니다.");
             setNotice(null);
           }
         });
@@ -982,9 +1113,9 @@ function App() {
         if (next.has(key)) next.delete(key); else next.add(key);
         return next;
       });
-      setNotice("Bookmark updated.");
+      setNotice("북마크를 업데이트했습니다.");
     } else if (id === "toggle-selection") {
-      if (toggleSelection(record)) setNotice("Selection updated.");
+      if (toggleSelection(record)) setNotice("로그 선택을 업데이트했습니다.");
       return;
     }
     setError(null);
@@ -1024,7 +1155,7 @@ function App() {
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       if (exported.truncated) setError(EXPORT_TRUNCATED_ERROR);
     } catch {
-      setError(copy ? "Clipboard copy failed." : "Export failed.");
+      setError(copy ? "클립보드에 복사하지 못했습니다." : "로그를 내보내지 못했습니다.");
     }
   };
 
@@ -1049,9 +1180,9 @@ function App() {
                 : "handoff claim은 유지되고 있습니다. 저장소 복구를 다시 시도해 주세요. 원문이나 경로는 표시하지 않습니다."}
           </p>
           {handoffPreview && <dl className="handoff-details">
-            <div><dt>Producer</dt><dd>{handoffPreview.sourceApp}</dd></div>
-            <div><dt>Adapter</dt><dd>{handoffPreview.source.displayName}</dd></div>
-            <div><dt>Opaque source</dt><dd><code>{handoffPreview.source.sourceId}</code></dd></div>
+            <div><dt>보낸 앱</dt><dd>{handoffPreview.sourceApp}</dd></div>
+            <div><dt>어댑터</dt><dd>{labelForKind(handoffPreview.source.kind)}</dd></div>
+            <div><dt>비공개 source ID</dt><dd><code>{handoffPreview.source.sourceId}</code></dd></div>
           </dl>}
           {handoffRecovery && <p className="notice" role="status">
             {handoffRetryMessage(handoffRecovery.action, handoffRecovery.attempts)}
@@ -1079,51 +1210,52 @@ function App() {
       </div>}
       <header className="topbar">
         <div>
-          <p className="eyebrow">DEVBOX · OFFLINE</p>
+          <p className="eyebrow">DEVBOX · 오프라인</p>
           <h1>Log Lens</h1>
-          <p className="subtitle">Bounded local log tail, merge, and inspection</p>
+          <p className="subtitle">안전 제한을 적용한 로컬 로그 추적·병합·검사</p>
         </div>
         <div className="top-actions">
-          <label className="toggle"><input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} /> Follow</label>
-          <label className="toggle"><input type="checkbox" checked={paused} onChange={(event) => setPaused(event.target.checked)} /> Pause rendering</label>
-          <label className="toggle"><input type="checkbox" checked={wrapLines} onChange={(event) => setWrapLines(event.target.checked)} /> Wrap lines</label>
-          <button className="button" type="button" onClick={() => void refresh()} disabled={busy || !sources.length}>Refresh</button>
-          <button className="button danger" type="button" onClick={() => { const active = operation.current; if (active) void cancelRead(active); }} disabled={!busy}>Cancel</button>
+          <label className="toggle"><input type="checkbox" checked={follow} disabled={!connected} onChange={(event) => setFollow(event.target.checked)} /> 자동 새로고침</label>
+          <label className="toggle"><input type="checkbox" checked={paused} onChange={(event) => setPaused(event.target.checked)} /> 화면 갱신 일시정지</label>
+          <label className="toggle"><input type="checkbox" checked={wrapLines} onChange={(event) => setWrapLines(event.target.checked)} /> 줄 바꿈</label>
+          <button className="button" type="button" onClick={() => void refresh()} disabled={busy || !connected || !sources.length}>새로고침</button>
+          {!connected && <button className="button primary" type="button" onClick={() => void reconnectSources()} disabled={busy || !sources.length}>source 재연결</button>}
+          <button className="button danger" type="button" onClick={() => { const active = operation.current; if (active) void cancelRead(active); }} disabled={!busy}>읽기 취소</button>
         </div>
       </header>
 
       <section className="source-panel" aria-labelledby="sources-heading">
-        <div className="section-heading"><h2 id="sources-heading">Sources</h2><span className="muted">{sources.length}/{MAX_SOURCES} selected · Read-only · no network ingest · no archive</span></div>
+        <div className="section-heading"><h2 id="sources-heading">로그 source</h2><span className="muted">{sources.length}/{MAX_SOURCES}개 선택 · 읽기 전용 · 네트워크 수집 없음 · 아카이브 없음</span></div>
         <form className="source-form" onSubmit={addSource} onCompositionStart={() => { compositionRef.current = true; }} onCompositionEnd={() => { compositionRef.current = false; }}>
-          <label>Type<select value={kind} onChange={(event) => setKind(event.target.value as SourceKind)}>{(["localFile", "directory", "wslFile", "wslJournal", "run", "container"] as SourceKind[]).map((value) => <option key={value} value={value}>{labelForKind(value)}</option>)}</select></label>
-          {(kind === "localFile" || kind === "directory" || kind === "wslFile") && <label>Path<input value={path} onChange={(event) => setPath(truncateUtf8(event.target.value, 4 * 1024))} placeholder={kind === "wslFile" ? "/var/log/app.log" : "C:\\logs\\app.log"} /></label>}
-          {kind === "directory" && <label>Pattern<input value={pattern} onChange={(event) => setPattern(truncateUtf8(event.target.value, 128))} placeholder="*.log" /></label>}
-          {(kind === "wslFile" || kind === "wslJournal") && <label>Distro<input value={distro} onChange={(event) => setDistro(truncateUtf8(event.target.value, 128))} placeholder="Ubuntu" /></label>}
-          {kind === "wslJournal" && <label>Unit (optional)<input value={unit} onChange={(event) => setUnit(truncateUtf8(event.target.value, 128))} placeholder="sshd.service" /></label>}
-          {kind === "run" && <label>Opaque source ID<input value={sourceId} onChange={(event) => setSourceId(truncateUtf8(event.target.value, 192))} placeholder="run-manager:run-1:stdout" /></label>}
-          {kind === "container" && <><label>Engine<select value={engine} onChange={(event) => setEngine(event.target.value as ContainerEngine)}><option value="docker">Docker</option><option value="podman">Podman</option></select></label><label>Container ID/name<input value={containerId} onChange={(event) => setContainerId(truncateUtf8(event.target.value, 128))} /></label></>}
-          <button className="button primary" type="submit" disabled={busy}>Add source</button>
+          <label>종류<select value={kind} onChange={(event) => setKind(event.target.value as SourceKind)}>{(["localFile", "directory", "wslFile", "wslJournal", "run", "container"] as SourceKind[]).map((value) => <option key={value} value={value}>{labelForKind(value)}</option>)}</select></label>
+          {(kind === "localFile" || kind === "directory" || kind === "wslFile") && <label>경로<input value={path} onChange={(event) => setPath(truncateUtf8(event.target.value, 4 * 1024))} placeholder={kind === "wslFile" ? "/var/log/app.log" : "C:\\logs\\app.log"} /></label>}
+          {kind === "directory" && <label>파일 패턴<input value={pattern} onChange={(event) => setPattern(truncateUtf8(event.target.value, 128))} placeholder="*.log" /></label>}
+          {(kind === "wslFile" || kind === "wslJournal") && <label>배포판<input value={distro} onChange={(event) => setDistro(truncateUtf8(event.target.value, 128))} placeholder="Ubuntu" /></label>}
+          {kind === "wslJournal" && <label>Unit (선택)<input value={unit} onChange={(event) => setUnit(truncateUtf8(event.target.value, 128))} placeholder="sshd.service" /></label>}
+          {kind === "run" && <label>비공개 source ID<input value={sourceId} onChange={(event) => setSourceId(truncateUtf8(event.target.value, 192))} placeholder="run-manager:run-1:stdout" /></label>}
+          {kind === "container" && <><label>엔진<select value={engine} onChange={(event) => setEngine(event.target.value as ContainerEngine)}><option value="docker">Docker</option><option value="podman">Podman</option></select></label><label>컨테이너 ID/이름<input value={containerId} onChange={(event) => setContainerId(truncateUtf8(event.target.value, 128))} /></label></>}
+          <button className="button primary" type="submit" disabled={busy}>source 추가</button>
         </form>
         <div className="source-list" aria-live="polite">{sources.length ? sources.map((source, index) => {
           const status = snapshot?.statuses[index];
-          return <div className="source-chip" key={`${source.kind}-${index}`}><span>{labelForKind(source.kind)}</span><span className={`source-status source-status-${status ?? "pending"}`} aria-label={`Status: ${status ?? "pending"}`}>{status ?? "pending"}</span><button type="button" disabled={busy} aria-label={`Remove ${labelForKind(source.kind)}`} onClick={() => removeSource(index)}>×</button></div>;
-        }) : <span className="muted">No source selected. Browser mode shows a bounded fixture.</span>}</div>
+          return <div className="source-chip" key={`${source.kind}-${index}`}><span>{labelForKind(source.kind)}</span><span className={`source-status source-status-${status ?? "pending"}`} aria-label={`상태: ${labelForStatus(status ?? "pending")}`}>{labelForStatus(status ?? "pending")}</span><button type="button" disabled={busy} aria-label={`${labelForKind(source.kind)} 제거`} onClick={() => removeSource(index)}>×</button></div>;
+        }) : <span className="muted">선택한 source가 없습니다. 브라우저 모드에서는 제한된 예시를 표시합니다.</span>}</div>
       </section>
 
       <section className="filter-panel" aria-labelledby="filter-heading">
-        <div className="section-heading"><h2 id="filter-heading">Filter</h2><span className="muted">{visibleRecords.length} shown · {records.length} retained</span></div>
-        <div className="filter-row"><label className="filter-grow">Text<input value={filter.text} onChange={(event) => setFilter((current) => ({ ...current, text: truncateUtf8(event.target.value, 512) }))} placeholder="message or field value" /></label><label className="toggle"><input type="checkbox" checked={filter.regex} onChange={(event) => setFilter((current) => ({ ...current, regex: event.target.checked }))} /> Regex</label><label>Level<select value={filter.level ?? ""} onChange={(event) => setFilter((current) => ({ ...current, level: (event.target.value || undefined) as LogLevel | undefined }))}><option value="">All levels</option>{(["trace", "debug", "info", "warn", "error", "fatal"] as LogLevel[]).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label>Source<select value={filter.sourceId ?? ""} onChange={(event) => setFilter((current) => ({ ...current, sourceId: event.target.value || undefined }))}><option value="">All sources</option>{(snapshot?.sources ?? []).map((source) => <option key={source.sourceId} value={source.sourceId}>{source.displayName}</option>)}</select></label><button className="button" type="button" onClick={() => void exportVisible(false)} disabled={!visibleRecords.length}>Export</button><button className="button" type="button" onClick={() => void exportVisible(true)} disabled={!visibleRecords.length}>Copy</button><button className="button primary" type="button" onClick={() => void sendSelectedLogs()} disabled={busy || toolboxBusy || !selectedRecords.length}>Send selected logs to Developer Toolbox</button></div>
-        <div className="filter-row"><label>Field<input value={filter.field ?? ""} onChange={(event) => setFilter((current) => ({ ...current, field: event.target.value ? truncateUtf8(event.target.value, 4 * 1024) : undefined }))} placeholder="field name" /></label><label>Field value<input value={filter.fieldValue ?? ""} onChange={(event) => setFilter((current) => ({ ...current, fieldValue: event.target.value ? truncateUtf8(event.target.value, 4 * 1024) : undefined }))} placeholder="value" /></label><label>Start epoch ms<input type="number" value={filter.startAt ?? ""} onChange={(event) => setFilter((current) => ({ ...current, startAt: event.target.value ? Number(event.target.value) : undefined }))} /></label><label>End epoch ms<input type="number" value={filter.endAt ?? ""} onChange={(event) => setFilter((current) => ({ ...current, endAt: event.target.value ? Number(event.target.value) : undefined }))} /></label><label>Save view<input value={viewName} onChange={(event) => setViewName(truncateUtf8(event.target.value, 128))} placeholder="view name" /></label><button className="button" type="button" onClick={saveView} disabled={!sources.length}>Save</button><select aria-label="Load saved view" value={selectedViewName} onChange={(event) => loadView(event.target.value)}><option value="">Load view…</option>{savedViews.map((view) => <option key={view.name} value={view.name}>{view.name}</option>)}</select><button className="button" type="button" onClick={deleteSavedView} disabled={!selectedViewName}>Remove view</button></div>
+        <div className="section-heading"><h2 id="filter-heading">필터</h2><span className="muted">{visibleRecords.length}개 표시 · {records.length}개 보관</span></div>
+        <div className="filter-row"><label className="filter-grow">텍스트<input value={filter.text} onChange={(event) => setFilter((current) => ({ ...current, text: truncateUtf8(event.target.value, 512) }))} placeholder="메시지 또는 필드 값" /></label><label className="toggle"><input type="checkbox" checked={filter.regex} onChange={(event) => setFilter((current) => ({ ...current, regex: event.target.checked }))} /> 정규식</label><label>레벨<select value={filter.level ?? ""} onChange={(event) => setFilter((current) => ({ ...current, level: (event.target.value || undefined) as LogLevel | undefined }))}><option value="">모든 레벨</option>{(["trace", "debug", "info", "warn", "error", "fatal"] as LogLevel[]).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label>Source 필터<select value={filter.sourceId ?? ""} onChange={(event) => setFilter((current) => ({ ...current, sourceId: event.target.value || undefined }))}><option value="">모든 source</option>{(snapshot?.sources ?? []).map((source) => <option key={source.sourceId} value={source.sourceId}>{labelForKind(source.kind)}</option>)}</select></label><button className="button" type="button" onClick={() => void exportVisible(false)} disabled={!visibleRecords.length}>내보내기</button><button className="button" type="button" onClick={() => void exportVisible(true)} disabled={!visibleRecords.length}>복사</button><button className="button primary" type="button" onClick={() => void sendSelectedLogs()} disabled={busy || toolboxBusy || !selectedRecords.length}>선택 로그를 Developer Toolbox로 보내기</button></div>
+        <div className="filter-row"><label>필드<input value={filter.field ?? ""} onChange={(event) => setFilter((current) => ({ ...current, field: event.target.value ? truncateUtf8(event.target.value, 4 * 1024) : undefined }))} placeholder="필드 이름" /></label><label>필드 값<input value={filter.fieldValue ?? ""} onChange={(event) => setFilter((current) => ({ ...current, fieldValue: event.target.value ? truncateUtf8(event.target.value, 4 * 1024) : undefined }))} placeholder="값" /></label><label>시작 epoch ms<input type="number" value={filter.startAt ?? ""} onChange={(event) => setFilter((current) => ({ ...current, startAt: event.target.value ? Number(event.target.value) : undefined }))} /></label><label>종료 epoch ms<input type="number" value={filter.endAt ?? ""} onChange={(event) => setFilter((current) => ({ ...current, endAt: event.target.value ? Number(event.target.value) : undefined }))} /></label><label>뷰 이름<input value={viewName} onChange={(event) => setViewName(truncateUtf8(event.target.value, 128))} placeholder="뷰 이름" /></label><button className="button" type="button" onClick={() => void saveView()} disabled={savedViewsBusy || !sources.length || sources.some((source) => source.kind === "wslFile" || source.kind === "webhookCapture")}>저장</button><select aria-label="저장된 뷰 불러오기" value={selectedViewName} disabled={savedViewsBusy} onChange={(event) => loadView(event.target.value)}><option value="">뷰 불러오기…</option>{savedViews.map((view) => <option key={view.name} value={view.name}>{view.name}</option>)}</select><button className="button" type="button" onClick={() => void deleteView()} disabled={savedViewsBusy || !selectedViewName}>뷰 삭제</button></div>
       </section>
 
       {error && <p className="error" role="alert">{error}</p>}
       {notice && <p className="notice" role="status" aria-live="polite">{notice}</p>}
       <section className="log-panel" aria-labelledby="log-heading">
-        <div className="section-heading"><h2 id="log-heading">Merged output</h2><span className="muted" aria-live="polite">{busy ? "Reading…" : snapshot?.truncated ? "Safety limit reached" : "Ready"}</span></div>
-        <div className="log-table" role="table" aria-label="Merged log records" aria-busy={busy}>
-          <div className="log-row log-head" role="row"><span role="columnheader" aria-label="Selection" /><span role="columnheader">Time</span><span role="columnheader">Level</span><span role="columnheader">Source</span><span role="columnheader">Message</span><span role="columnheader">Bookmark</span></div>
-          {visibleRecords.map((record) => { const key = recordKey(record); return <div className="log-row" role="row" tabIndex={0} key={key} data-log-key={key} aria-selected={selected.has(key)} aria-label={`Log line ${record.sequence}: ${record.message}`} {...logContextMenu.triggerProps} onContextMenu={(event) => { contextRecordRef.current = record; setContextRecord(record); logContextMenu.triggerProps.onContextMenu?.(event); }} onKeyDown={(event) => { contextRecordRef.current = record; setContextRecord(record); logContextMenu.triggerProps.onKeyDown?.(event); }}><span role="cell" className="row-select"><input type="checkbox" aria-label={`Select log line ${record.sequence}`} checked={selected.has(key)} onChange={() => toggleSelection(record)} /></span><time role="cell" dateTime={toIsoTimestamp(record.timestampMillis)}>{formatTimestamp(record.timestampMillis)}</time><span role="cell" className={`level level-${record.level ?? "unknown"}`}>{record.level ?? "—"}</span><code role="cell" title={record.sourceId}>{record.sourceId.slice(-12)}</code><span role="cell" className={`message ${wrapLines ? "" : "nowrap"}`}>{highlightMessage(record.message, filter)}</span><span role="cell" className="bookmark-cell"><button className={`bookmark ${bookmarks.has(key) ? "active" : ""}`} type="button" aria-label={`${bookmarks.has(key) ? "Remove" : "Add"} bookmark`} aria-pressed={bookmarks.has(key)} onClick={() => toggleBookmark(record)}>★</button></span></div>; })}
-          {!visibleRecords.length && <p className="empty">No records match the current filter.</p>}
+        <div className="section-heading"><h2 id="log-heading">병합 결과</h2><span className="muted" aria-live="polite">{busy ? "읽는 중…" : snapshot?.truncated ? "안전 제한 도달" : "준비됨"}</span></div>
+        <div className="log-table" role="table" aria-label="병합된 로그 레코드" aria-busy={busy}>
+          <div className="log-row log-head" role="row"><span role="columnheader" aria-label="선택" /><span role="columnheader">시간</span><span role="columnheader">레벨</span><span role="columnheader">Source</span><span role="columnheader">메시지</span><span role="columnheader">북마크</span></div>
+          {visibleRecords.map((record) => { const key = recordKey(record); return <div className="log-row" role="row" tabIndex={0} key={key} data-log-key={key} aria-selected={selected.has(key)} aria-label={`로그 줄 ${record.sequence}: ${record.message}`} {...logContextMenu.triggerProps} onContextMenu={(event) => { contextRecordRef.current = record; setContextRecord(record); logContextMenu.triggerProps.onContextMenu?.(event); }} onKeyDown={(event) => { contextRecordRef.current = record; setContextRecord(record); logContextMenu.triggerProps.onKeyDown?.(event); }}><span role="cell" className="row-select"><input type="checkbox" aria-label={`로그 줄 ${record.sequence} 선택`} checked={selected.has(key)} onChange={() => toggleSelection(record)} /></span><time role="cell" dateTime={toIsoTimestamp(record.timestampMillis)}>{formatTimestamp(record.timestampMillis)}</time><span role="cell" className={`level level-${record.level ?? "unknown"}`}>{record.level ?? "—"}</span><code role="cell" title={record.sourceId}>{record.sourceId.slice(-12)}</code><span role="cell" className={`message ${wrapLines ? "" : "nowrap"}`}>{highlightMessage(record.message, filter)}</span><span role="cell" className="bookmark-cell"><button className={`bookmark ${bookmarks.has(key) ? "active" : ""}`} type="button" aria-label={`${bookmarks.has(key) ? "북마크 제거" : "북마크 추가"}`} aria-pressed={bookmarks.has(key)} onClick={() => toggleBookmark(record)}>★</button></span></div>; })}
+          {!visibleRecords.length && <p className="empty">현재 필터와 일치하는 레코드가 없습니다.</p>}
         </div>
       </section>
       <ContextMenu
@@ -1133,9 +1265,9 @@ function App() {
         items={logContextItems}
         onSelect={onLogContextSelect}
         onClose={closeLogContextMenu}
-        ariaLabel="Log line actions"
+        ariaLabel="로그 줄 작업"
       />
-      <footer className="statusbar" aria-live="polite"><span>{snapshot?.sources.length ?? 0} source(s)</span><span>{snapshot?.droppedRecords ?? 0} evicted by ring buffer</span><span>Bookmarks: {bookmarks.size}</span><span>Saved views: {savedViews.length}/{MAX_SAVED_VIEWS}</span></footer>
+      <footer className="statusbar" aria-live="polite"><span>{connected ? "연결됨" : "재연결 필요"}</span><span>source {snapshot?.sources.length ?? 0}개</span><span>링 버퍼 제외 {snapshot?.droppedRecords ?? 0}개</span><span>북마크 {bookmarks.size}개</span><span>저장된 뷰 {savedViews.length}/{MAX_SAVED_VIEWS}</span></footer>
     </main>
   );
 }

@@ -15,7 +15,10 @@ use crate::core::rules::{
     compare_rule_precedence, plan_upsert, select_matching_rule, upsert, ResponseRule,
     ResponseSequenceState, RuleConflictPreview, INVALID_RULE_ERROR,
 };
-use devbox_applink::{handoff_root_in, CreateHandoff, HandoffError, HandoffStore, OpenRequest};
+use devbox_applink::{
+    handoff_root_in, webhook_log_payload, CreateHandoff, HandoffError, HandoffStore, OpenRequest,
+    WEBHOOK_LOG_HANDOFF_KIND, WEBHOOK_LOG_TARGET_APP,
+};
 use serde::Serialize;
 use serde_json::to_value;
 use std::collections::HashMap;
@@ -51,9 +54,17 @@ pub const RUN_DEFINITION_EXPORT_ERROR: &str =
 pub const API_TARGET_UNAVAILABLE_ERROR: &str =
     "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다";
 pub const API_LAUNCH_ERROR: &str =
-    "API Playground를 실행하지 못했습니다. handoff는 잠시 보관되며 다시 시도할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
+    "API Playground를 실행하지 못했습니다. handoff를 안전하게 정리했으며 클립보드로 자동 전환하지 않습니다";
 pub const HANDOFF_CREATE_ERROR: &str =
     "API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다";
+pub const LOG_LENS_TARGET_UNAVAILABLE_ERROR: &str =
+    "Log Lens를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다";
+pub const LOG_LENS_LAUNCH_ERROR: &str =
+    "Log Lens를 실행하지 못했습니다. handoff를 안전하게 정리했으며 클립보드로 자동 전환하지 않습니다";
+pub const LOG_LENS_HANDOFF_CREATE_ERROR: &str =
+    "Log Lens handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다";
+pub const HANDOFF_CLEANUP_ERROR: &str =
+    "대상 앱 실행 실패 후 handoff를 정리하지 못했습니다. 잠시 후 다시 시도하세요";
 
 pub struct ServerState {
     /// Serializes listener lifecycle transitions. Without this guard two IPC
@@ -119,7 +130,7 @@ pub struct ServerStatus {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ApiHandoffDispatch {
+pub struct HandoffDispatch {
     pub handoff_id: String,
     pub producer_id: String,
     pub consumer_id: String,
@@ -884,7 +895,7 @@ pub fn fixture_to_rule(
 pub fn send_history_to_api(
     state: tauri::State<'_, Arc<ServerState>>,
     history_id: u64,
-) -> Result<ApiHandoffDispatch, String> {
+) -> Result<HandoffDispatch, String> {
     let request = state
         .history
         .lock()
@@ -903,7 +914,7 @@ pub fn send_fixture_to_api(
     app: AppHandle,
     state: tauri::State<'_, Arc<ServerState>>,
     id: String,
-) -> Result<ApiHandoffDispatch, String> {
+) -> Result<HandoffDispatch, String> {
     let _guard = state
         .fixture_lock
         .lock()
@@ -920,7 +931,7 @@ pub fn send_fixture_to_api(
     publish_api_handoff(fixture)
 }
 
-fn publish_api_handoff(fixture: CapturedFixture) -> Result<ApiHandoffDispatch, String> {
+fn publish_api_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch, String> {
     let target_available =
         devbox_launch::installed_targets(&format!("handoff:{API_REQUEST_HANDOFF_KIND}"))
             .into_iter()
@@ -936,8 +947,8 @@ fn publish_api_handoff(fixture: CapturedFixture) -> Result<ApiHandoffDispatch, S
         .checked_add(devbox_applink::DEFAULT_HANDOFF_TTL_MS)
         .ok_or_else(|| HANDOFF_CREATE_ERROR.to_string())?;
     let store = HandoffStore::new(handoff_root_in(&devbox_integration::common_root()));
-    let descriptor = store
-        .create(
+    let publication = store
+        .create_with_publication(
             CreateHandoff {
                 kind: API_REQUEST_HANDOFF_KIND.to_string(),
                 source_app: PRODUCER_APP_ID.to_string(),
@@ -948,19 +959,113 @@ fn publish_api_handoff(fixture: CapturedFixture) -> Result<ApiHandoffDispatch, S
         )
         .map_err(map_handoff_create_error)?;
     let request = OpenRequest {
-        target: descriptor.clone().into(),
+        target: publication.descriptor.clone().into(),
         from: Some(PRODUCER_APP_ID.to_string()),
     };
     if devbox_launch::launch_open(CONSUMER_APP_ID, &request).is_err() {
-        // The pending envelope is deliberately retained until TTL.  A later
-        // explicit retry can consume it, and no alternate data channel is
-        // opened when process launch fails.
+        store
+            .remove_pending(&publication)
+            .map_err(|_| HANDOFF_CLEANUP_ERROR.to_string())?;
         return Err(API_LAUNCH_ERROR.to_string());
     }
-    Ok(ApiHandoffDispatch {
-        handoff_id: descriptor.id,
+    Ok(HandoffDispatch {
+        handoff_id: publication.descriptor.id,
         producer_id: PRODUCER_APP_ID.to_string(),
         consumer_id: CONSUMER_APP_ID.to_string(),
+        created_at_ms,
+        expires_at_ms,
+    })
+}
+
+/// Publish a bounded, credential-redacted display projection to Log Lens.
+/// Header values and the raw request body have no field in this handoff.
+#[tauri::command]
+pub fn send_history_to_log_lens(
+    state: tauri::State<'_, Arc<ServerState>>,
+    history_id: u64,
+) -> Result<HandoffDispatch, String> {
+    let request = state
+        .history
+        .lock()
+        .map_err(|_| HANDOFF_INPUT_ERROR.to_string())?
+        .masked_record(history_id)
+        .ok_or_else(|| "요청 기록을 찾을 수 없습니다".to_string())?;
+    let fixture = fixture_from_request(format!("fixture-{history_id}"), &request)
+        .map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
+    publish_log_lens_handoff(fixture)
+}
+
+/// Publish one backend-owned masked fixture to Log Lens by opaque ID.
+#[tauri::command]
+pub fn send_fixture_to_log_lens(
+    app: AppHandle,
+    state: tauri::State<'_, Arc<ServerState>>,
+    id: String,
+) -> Result<HandoffDispatch, String> {
+    let guard = state
+        .fixture_lock
+        .lock()
+        .map_err(|_| crate::core::fixtures::FIXTURE_READ_ERROR.to_string())?;
+    let document = load_document_with_raw(&fixture_path(&app)?).map_err(fixture_error)?;
+    let fixture = document
+        .document
+        .fixtures
+        .iter()
+        .find(|fixture| fixture.id == id)
+        .cloned()
+        .ok_or_else(|| FixtureError::NotFound.message().to_string())?;
+    drop(guard);
+    publish_log_lens_handoff(fixture)
+}
+
+fn publish_log_lens_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch, String> {
+    let target_available =
+        devbox_launch::installed_targets(&format!("handoff:{WEBHOOK_LOG_HANDOFF_KIND}"))
+            .into_iter()
+            .any(|target| target.id == WEBHOOK_LOG_TARGET_APP);
+    if !target_available {
+        return Err(LOG_LENS_TARGET_UNAVAILABLE_ERROR.to_string());
+    }
+    let payload = webhook_log_payload(
+        &fixture.method,
+        &fixture.url,
+        fixture.received_at_ms,
+        &fixture.headers,
+        &fixture.body,
+    )
+    .map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
+    let created_at_ms =
+        handoff_now_ms().ok_or_else(|| LOG_LENS_HANDOFF_CREATE_ERROR.to_string())?;
+    let expires_at_ms = created_at_ms
+        .checked_add(devbox_applink::DEFAULT_HANDOFF_TTL_MS)
+        .ok_or_else(|| LOG_LENS_HANDOFF_CREATE_ERROR.to_string())?;
+    let store = HandoffStore::new(handoff_root_in(&devbox_integration::common_root()));
+    let publication = store
+        .create_with_publication(
+            CreateHandoff {
+                kind: WEBHOOK_LOG_HANDOFF_KIND.to_string(),
+                source_app: PRODUCER_APP_ID.to_string(),
+                target_app: Some(WEBHOOK_LOG_TARGET_APP.to_string()),
+                payload: to_value(payload)
+                    .map_err(|_| LOG_LENS_HANDOFF_CREATE_ERROR.to_string())?,
+            },
+            created_at_ms,
+        )
+        .map_err(map_log_lens_handoff_create_error)?;
+    let request = OpenRequest {
+        target: publication.descriptor.clone().into(),
+        from: Some(PRODUCER_APP_ID.to_string()),
+    };
+    if devbox_launch::launch_open(WEBHOOK_LOG_TARGET_APP, &request).is_err() {
+        store
+            .remove_pending(&publication)
+            .map_err(|_| HANDOFF_CLEANUP_ERROR.to_string())?;
+        return Err(LOG_LENS_LAUNCH_ERROR.to_string());
+    }
+    Ok(HandoffDispatch {
+        handoff_id: publication.descriptor.id,
+        producer_id: PRODUCER_APP_ID.to_string(),
+        consumer_id: WEBHOOK_LOG_TARGET_APP.to_string(),
         created_at_ms,
         expires_at_ms,
     })
@@ -982,6 +1087,15 @@ fn map_handoff_create_error(error: HandoffError) -> String {
         | HandoffError::LeaseExpired
         | HandoffError::TokenMismatch
         | HandoffError::Corrupt => HANDOFF_CREATE_ERROR.to_string(),
+    }
+}
+
+fn map_log_lens_handoff_create_error(error: HandoffError) -> String {
+    match error {
+        HandoffError::InvalidPayload | HandoffError::InvalidRequest | HandoffError::TooLarge => {
+            HANDOFF_INPUT_ERROR.to_string()
+        }
+        _ => LOG_LENS_HANDOFF_CREATE_ERROR.to_string(),
     }
 }
 

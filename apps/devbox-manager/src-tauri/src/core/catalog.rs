@@ -21,7 +21,7 @@ mod tests {
     fn parses_the_repository_v2_catalog_through_the_shared_contract() {
         let catalog = parse_catalog(BUILD_CATALOG).unwrap();
         assert_eq!(catalog.schema_version, 2);
-        assert_eq!(catalog.catalog_revision, Some(16));
+        assert_eq!(catalog.catalog_revision, Some(17));
         assert_eq!(catalog.apps.len(), 15);
         let knowledge = catalog
             .apps
@@ -107,7 +107,10 @@ mod tests {
             .iter()
             .find(|app| app.id == "log-lens")
             .expect("Log Lens must remain in the repository catalog");
-        assert_eq!(log_lens.accepts, vec!["handoff:log-source/v1"]);
+        assert_eq!(
+            log_lens.accepts,
+            vec!["handoff:log-source/v1", "handoff:webhook-log/v1"]
+        );
     }
 
     #[test]

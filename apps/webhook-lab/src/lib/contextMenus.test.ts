@@ -15,10 +15,12 @@ describe("Webhook Lab context menu contracts", () => {
       "masked fixture 저장",
       "masked 요청 replay",
       "API Playground로 변환",
+      "Log Lens에서 보기",
       "삭제",
     ]);
     expect(items.find((item) => item.id === "delete")?.danger).toBe(true);
     expect(items.find((item) => item.id === "convert-api-playground")?.disabled).toBe(false);
+    expect(items.find((item) => item.id === "inspect-log-lens")?.disabled).toBe(false);
     expect(items.find((item) => item.id === "replay")?.disabled).toBe(true);
   });
 

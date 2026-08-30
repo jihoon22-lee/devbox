@@ -1,6 +1,6 @@
 [package]
 name = "webhook-lab"
-version = "0.2.0"
+version = "0.3.0"
 publish = false
 description = "Local Mock/Webhook Server"
 authors = ["jihoon22.lee"]

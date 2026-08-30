@@ -1,9 +1,11 @@
 # Log Lens
 
-Log Lens 0.1.1 is a bounded, offline log viewer for explicitly selected local
-files/directories and fixed WSL or local container adapters. It parses plain
-text, JSONL, and logfmt lines, merges them deterministically, and keeps only an
-in-memory ring (100,000 lines or 64 MiB).
+Log Lens 0.2.0 is a bounded, offline log viewer for explicitly selected local
+files/directories and fixed WSL, local-container, Run Manager, or one-time
+Webhook Lab capture adapters. It parses plain text, JSONL, and logfmt lines,
+merges them deterministically, and keeps only an in-memory ring (100,000 lines
+or 64 MiB). The W08 PR2 surface also provides strict app-local saved views and
+Korean controls without turning source data into a log archive.
 
 ## Source boundary
 
@@ -31,6 +33,13 @@ in-memory ring (100,000 lines or 64 MiB).
   current producer view before publishing it; Log Lens receives no listener
   path, command, environment, or log bytes and resolves the app-owned source
   from `{kind, sourceId, runId, stream}` only.
+- Webhook Lab's `webhook-log/v1` handoff is a separate, one-time sanitized
+  capture source. Its bounded payload contains only the HTTP method, a safe
+  origin-form target, capture timestamp, header names (never values), and a
+  redacted body preview up to 4 KiB with `redacted`/`truncated` flags. It has no
+  filesystem path, command, environment, raw body, header value, or archive
+  field. The source is read-only and ephemeral; it cannot be written to a saved
+  view. The preview dialog never renders the body preview.
 - The receiver re-checks protocol version, opaque envelope/claim identity,
   timestamps, lease bounds, target, producer, and source-family parity at the
   claim boundary. Native responses are schema-validated again in the frontend
@@ -50,7 +59,23 @@ attempts. Native errors are reduced to fixed public codes and never
 show raw paths, payloads, or storage details. The viewer does not write a
 permanent log archive. An explicit Export or Copy action operates on the
 currently visible selection only; saved views contain source settings and
-filters, never log text.
+filters, never log text. The canonical wire `displayName` remains English
+(`Run Manager handoff`, `Webhook capture`, and the other source names), even
+though the W08 UI, reconnect notices, and saved-view controls are Korean.
+
+- Saved views are stored only in the Log Lens app-local
+  `saved-views.json`. Schema v1 contains `schemaVersion`, a monotonic
+  `revision`, and at most 20 unique `{ name, sources, filter }` entries. The
+  native boundary applies revision compare-and-swap, validates the complete
+  document, writes atomically, and rejects links/reparse points. A corrupt,
+  oversized, unknown-field, or unsafe store is preserved and reported with a
+  fixed error; it is never replaced automatically. WSL file descriptors and
+  ephemeral Webhook captures are not persistable sources.
+- Loading a saved view changes only source configuration and filter state. It
+  clears the in-memory records/cursors/bookmarks, marks the source as
+  disconnected, and requires the user to press `source 재연결` before any read
+  or follow refresh. Reconnect starts a fresh bounded read; there is no silent
+  source access while a view is being loaded.
 - `Send selected logs to Developer Toolbox` operates only on records explicitly
   selected in the current source generation. It builds a bounded deterministic
   export and publishes a one-time masked `toolbox-text/v1` handoff; stale
@@ -100,6 +125,13 @@ clipboard, focus, and IME behavior.
 The Port Manager correlation and owner/Log Lens handoff path still has pending
 packaged-Windows real acceptance; local tests and builds do not imply that
 installed cross-app validation is complete.
+
+W08 PR2 (#489) adds the `webhook-log/v1` Webhook Lab source, strict saved-view
+persistence, disconnected saved-view loading, and Korean UI. The catalog
+capability is revision 17 and the app target is Log Lens 0.2.0. Windows
+packaged acceptance for the saved-view/reconnect and Webhook Lab→Log Lens
+paths is still pending; this document does not claim a release or installed
+acceptance.
 
 The Log Lens bootstrap is included in the published v0.5.0 assets. The Run
 reader was completed by #472/#473 after the v0.5.0 tag and is included in the

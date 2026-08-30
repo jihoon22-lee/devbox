@@ -4,8 +4,9 @@ use crate::core::{
     SourceSnapshot, SourceSpec, SourceSummary,
 };
 use serde::Serialize;
+use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use zeroize::Zeroizing;
 
 #[derive(Default)]
@@ -105,6 +106,45 @@ pub fn send_selection_to_toolbox(text: String) -> Result<ToolboxDispatch, String
 #[tauri::command]
 pub fn summarize_source(source: SourceSpec) -> Result<SourceSummary, String> {
     source.summary().map_err(|error| error.to_string())
+}
+
+fn saved_views_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_local_data_dir()
+        .map_err(|_| crate::core::saved_views::SAVED_VIEWS_READ_ERROR.to_string())
+}
+
+#[tauri::command]
+pub fn list_saved_views(
+    app: AppHandle,
+) -> Result<crate::core::saved_views::SavedViewsDocument, String> {
+    crate::core::saved_views::list_from_dir(&saved_views_directory(&app)?).map_err(str::to_string)
+}
+
+#[tauri::command]
+pub fn save_saved_view(
+    app: AppHandle,
+    expected_revision: u64,
+    view: crate::core::SavedView,
+) -> Result<crate::core::saved_views::SavedViewsDocument, String> {
+    if expected_revision > crate::core::saved_views::MAX_SAFE_INTEGER {
+        return Err(crate::core::saved_views::SAVED_VIEWS_INPUT_ERROR.to_string());
+    }
+    crate::core::saved_views::upsert_in_dir(&saved_views_directory(&app)?, expected_revision, view)
+        .map_err(str::to_string)
+}
+
+#[tauri::command]
+pub fn delete_saved_view(
+    app: AppHandle,
+    expected_revision: u64,
+    name: String,
+) -> Result<crate::core::saved_views::SavedViewsDocument, String> {
+    if expected_revision > crate::core::saved_views::MAX_SAFE_INTEGER {
+        return Err(crate::core::saved_views::SAVED_VIEWS_INPUT_ERROR.to_string());
+    }
+    crate::core::saved_views::delete_in_dir(&saved_views_directory(&app)?, expected_revision, &name)
+        .map_err(str::to_string)
 }
 
 #[tauri::command]

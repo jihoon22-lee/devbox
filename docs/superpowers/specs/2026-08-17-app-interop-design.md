@@ -14,6 +14,10 @@
 - 2026-08-30: `snapshot:port-bindings/v1`의 Run Manager·Workbench 독립 producer와
   Port Manager correlation/owner 및 Run Log Lens identity handoff를 반영한다. source freshness,
   confidence, session timeline과 Windows packaged acceptance pending 경계를 아래 계약에 기록한다.
+- 2026-08-30: W08 PR2 (`#489`)의 Log Lens 0.2.0 strict app-local saved views와
+  Webhook Lab 0.3.0 → Log Lens `webhook-log/v1` sanitized one-time capture handoff를
+  반영한다. catalog revision 17, Korean UI, disconnected reconnect, and Windows packaged
+  acceptance pending 경계를 아래 계약에 기록한다.
 - 작성일: 2026-08-17
 - 범위: 저장소 전체 — `crates/applink`, `crates/launch`, `crates/integration`, 신규
   `crates/catalog`, `apps/catalog.json`, 현재 15개 앱(Devbox Launcher·Log Lens 포함)
@@ -188,8 +192,8 @@ degrade한다.** 크래시하거나 오류 대화상자를 띄우지 않는다. 
 | developer-toolbox | 없음 | receiver integration 이후 text와 추천 transformer를 입력 초안으로 적용 |
 | run-manager | `Task` (v0.5.0), `Handoff(task-control/v1)` (#486) | 저장된 job/service id를 재검증하고 확인 후 실행 / Workbench의 typed task start·stop handoff를 확인 후 수행 |
 | devbox-manager | `Install` (v0.5.0, hidden) | embedded catalog app id를 재검증하고 설치 화면 표시 |
-| webhook-lab | `Handoff(webhook-fixture/v1)` | response fixture 초안 preview |
-| log-lens | `Handoff(log-source/v1)` | local/WSL source 연결, Run identity preview와 fixed app-owned rotation reader |
+| webhook-lab | `Handoff(webhook-fixture/v1)`, `Handoff(webhook-log/v1)` | response fixture 초안 preview / Log Lens sanitized capture preview |
+| log-lens | `Handoff(log-source/v1)`, `Handoff(webhook-log/v1)` | local/WSL source 연결, Run identity와 Webhook capture preview, fixed app-owned rotation reader |
 
 이 표는 §2의 `accepts` 선언과 1:1 대응한다. 선언하지 않은 target은 수신 앱이 명시적인
 no-op/error로 처리하며 다른 기본 동작으로 fall through하지 않는다.
@@ -250,7 +254,7 @@ pending --atomic claim(consumer+lease)--> claimed --ack--> consumed/deleted
   허용하고 만료 token의 ack/restore는 거부한다.
 
 표준 kind는 `api-request/v1`, `webhook-fixture/v1`, `knowledge-draft/v1`, `log-source/v1`,
-`toolbox-text/v1`, `task-control/v1`이다. 새 kind는 source/target/payload schema와 redaction
+`toolbox-text/v1`, `task-control/v1`, `webhook-log/v1`이다. 새 kind는 source/target/payload schema와 redaction
 규칙을 설계 문서에 먼저 추가한다.
 
 **2026-08-30 `task-control/v1` (#486).** Workbench는 Run Manager의 privacy-safe named
@@ -315,6 +319,54 @@ focus trap과 opener 복원을 제공한다.
 Adapter cancellation은 Windows Job Object kill-on-close 또는 Unix process-group 종료와 bounded
 reap을 사용하며, helper 종료 실패 시 direct child fallback을 유지한다. shell/network/clipboard
 fallback이나 raw log/path/credential 전달은 없다.
+
+**2026-08-30 W08 PR2 `webhook-log/v1`와 Log Lens saved view 계약 (#489).** Webhook Lab 0.3.0은
+현재 history 또는 masked fixture에서 표시용 projection을 만들고, catalog revision 17에 선언된
+Log Lens 0.2.0으로만 전달한다. 이 kind의 producer/consumer/source family는 고정되며, 기존
+Run/WSL `log-source/v1` payload에 Webhook 필드를 섞지 않는다. AppLink argv에는 kind와 128-bit
+opaque handoff ID만 들어가고, payload는 다음 schema v1 필드로 한정한다:
+
+```json
+{
+  "schemaVersion": 1,
+  "method": "POST",
+  "target": "/hooks?[REDACTED]",
+  "receivedAtMs": 0,
+  "headerNames": ["Authorization", "Content-Type"],
+  "bodyPreview": "[REDACTED]",
+  "redacted": true,
+  "truncated": false
+}
+```
+
+`target`는 filesystem path가 아닌 안전한 origin-form request target이다. 위험한 path/query와
+credential은 redacted marker로 바꾸며, header value는 어떠한 경우에도 payload에 포함하지 않는다.
+Producer는 raw body 전체를 bounded sanitizer로 확인한 뒤 최대 4 KiB의 redacted `bodyPreview`만
+만든다. `headerNames`는 이름만 bounded·deduplicate하며, payload와 handoff에는 raw body,
+filesystem path, command, environment, credential, raw log, archive를 넣을 필드가 없다.
+Log Lens의 source preview modal은 body preview도 표시하지 않는다.
+
+Producer는 consumer capability를 확인한 뒤 공용 one-time store에 10분 TTL envelope을 만들고
+실패한 launch가 있으면 방금 생성한 immutable descriptor와 envelope을 다시 대조하여 정확한
+pending entry만 제거한다. launch/cleanup 오류는 fixed public code만 반환하며 clipboard·임시
+파일·network·archive fallback은 없다. Log Lens는 cold/hot request를 claim한 뒤 `Webhook capture`
+source summary만 먼저 표시하고, 사용자가 명시적으로 읽기 전용 source 추가를 누른 경우에만
+ack한다. 취소·검증 실패는 restore하고, 이 capture source는 ephemeral이므로 saved view에
+저장하지 않는다.
+
+Log Lens saved view는 `app_local_data_dir()/saved-views.json`의 app-local schema v1 문서다.
+문서는 `schemaVersion`, monotonic `revision`, 최대 20개의 unique `{ name, sources, filter }`
+entry만 보존하며 records, cursors, bookmarks, handoff body, raw log bytes는 갖지 않는다.
+Native command와 frontend 모두 전체 문서를 재검증하고 revision compare-and-swap을 적용한다.
+저장은 atomic write와 no-link/reparse-point 검사를 거치며, corrupt·oversized·unknown-field·
+unsafe store는 원본을 자동으로 덮어쓰지 않고 보존한 채 fixed error로 끝난다. WSL file source와
+ephemeral Webhook capture source는 저장 시 거부한다.
+
+Saved view를 불러오는 동작은 source 설정과 filter만 교체한다. 현재 records/cursors/bookmarks를
+비우고 source를 disconnected 상태로 만들며, 자동 새로고침과 즉시 read를 중지한다. 사용자가
+한국어 `source 재연결` 동작을 명시적으로 눌러야 fresh bounded read가 시작된다. Wire
+`displayName`은 호환성을 위해 계속 영어(`Run Manager handoff`, `Webhook capture`)로 유지하고,
+한국어는 UI label·notice·modal에만 사용한다.
 
 `knowledge-draft/v1`의 Life Log→Knowledge 구현은 이 generic lifecycle 위에 aggregate-only
 앱 계약을 둔다. Life Log는 검증된 native digest에서 period/range/timezone, bounded summary,
@@ -680,6 +732,18 @@ single-instance·preview/apply/cancel·fixed error/no-clipboard 경계를 포함
 - workbench가 life-log의 SQLite를 직접 열지 않고 스냅샷 계약을 사용하는지 확인한다
   (`grep -rn "lifelog" apps/workbench`).
 
+### 5.3 W08 PR2 (#489) — Log Lens persistence와 Webhook capture handoff
+
+W08 PR2는 v0.5.1 stable release에 소급해 포함시키지 않는 별도 integration 작업이다. 구현
+계약의 대상 버전은 Log Lens 0.2.0과 Webhook Lab 0.3.0이며, catalog revision은 17이다.
+포함 범위는 strict app-local saved view, disconnected load 후 explicit reconnect, Korean UI,
+그리고 `webhook-log/v1`의 sanitized one-time capture preview/ack/restore와 launch-failure
+exact cleanup이다. Saved view에는 reusable source configuration/filter만 남기고 WSL file 및
+ephemeral Webhook capture는 제외한다. Windows packaged cold/hot launch, installed catalog
+discovery, saved-view persistence/reconnect, and Webhook Lab→Log Lens acceptance는 아직
+pending이며 local tests/build evidence만으로 release 또는 installed acceptance를 주장하지
+않는다.
+
 ---
 
 ## 6. 테스트 계획
@@ -694,6 +758,8 @@ single-instance·preview/apply/cancel·fixed error/no-clipboard 경계를 포함
 | single-instance | 콜드 스타트와 두 번째 인스턴스가 **같은 `PendingOpen` 경로**를 쓰는지 |
 | handoff | create/claim/ack/restore, 10분 expiry, wrong target, 10MiB 상한, 손상 JSON, 중복·동시 consume, consumer crash lease recovery |
 | secret 경계 | handoff/snapshot에 secret 원문이 없고 API payload에는 이름 참조만 있는지 |
+| W08 saved view | schema/unknown-field·duplicate/name/source/filter bounds, 최대 20개, revision CAS 충돌, atomic/no-link 저장, corrupt store 원본 보존, WSL file/Webhook capture 비영속화, load 후 explicit reconnect |
+| `webhook-log/v1` | method/target/timestamp/header-name/body-preview schema, 최대 4 KiB redacted preview, header value/raw body/path/command/environment/archive 비노출, strict source-family, preview body 비표시, launch 실패 exact pending cleanup |
 
 **실기 검증** (Windows):
 - repo-manager에서 "CodePad" → Code Pad가 **그 저장소를 열고** 뜬다
@@ -726,5 +792,6 @@ single-instance·preview/apply/cancel·fixed error/no-clipboard 경계를 포함
 | 17 | Developer Toolbox → API Playground `api-request/v1` (P3 integration) | v0.5.0 |
 | 18 | Run Manager·WSL Desktop → Log Lens `log-source/v1` producer integration | v0.5.0 |
 | 19 | Run Manager·Workbench → Port Manager `snapshot:port-bindings/v1` correlation + Port → Log Lens routing | v0.6.0 |
+| 20 | W08 PR2 (#489): Log Lens 0.2.0 saved views/reconnect + Webhook Lab 0.3.0 `webhook-log/v1` sanitized handoff, catalog revision 17 | post-v0.5.1; Windows packaged acceptance pending |
 
 1과 2는 한 PR로 묶는다 — 계약과 첫 소비자를 분리하면 검증이 안 된다.

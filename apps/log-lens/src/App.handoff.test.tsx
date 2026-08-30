@@ -4,10 +4,13 @@ import App from "./App";
 import {
   acceptLogSource,
   discardLogSource,
+  listSavedViews,
   onOpenRequest,
   previewLogSource,
   readSources,
+  removeSavedView,
   renewLogSource,
+  saveSavedView,
   takePendingOpen,
 } from "./api";
 import type { LogSourcePreview } from "./types";
@@ -21,10 +24,13 @@ vi.mock("./api", () => ({
   cancelRead: vi.fn(async () => undefined),
   discardLogSource: vi.fn(),
   exportRecords: vi.fn(),
+  listSavedViews: vi.fn(),
   onOpenRequest: vi.fn(),
   previewLogSource: vi.fn(),
   readSources: vi.fn(),
+  removeSavedView: vi.fn(),
   renewLogSource: vi.fn(),
+  saveSavedView: vi.fn(),
   sendSelectionToToolbox: vi.fn(),
   takePendingOpen: vi.fn(),
   classifyHandoffError: (error: unknown) => {
@@ -39,10 +45,13 @@ vi.mock("./api", () => ({
 
 const acceptLogSourceMock = vi.mocked(acceptLogSource);
 const discardLogSourceMock = vi.mocked(discardLogSource);
+const listSavedViewsMock = vi.mocked(listSavedViews);
 const onOpenRequestMock = vi.mocked(onOpenRequest);
 const previewLogSourceMock = vi.mocked(previewLogSource);
 const readSourcesMock = vi.mocked(readSources);
+const removeSavedViewMock = vi.mocked(removeSavedView);
 const renewLogSourceMock = vi.mocked(renewLogSource);
+const saveSavedViewMock = vi.mocked(saveSavedView);
 const takePendingOpenMock = vi.mocked(takePendingOpen);
 
 const firstId = "0123456789abcdef0123456789abcdef";
@@ -65,6 +74,12 @@ function previewFor(id: string): LogSourcePreview {
   };
 }
 
+const emptySavedViewsDocument = {
+  schemaVersion: 1 as const,
+  revision: 0,
+  views: [],
+};
+
 function request(id: string) {
   return {
     target: { kind: "handoff" as const, handoffKind: "log-source/v1", id },
@@ -86,7 +101,10 @@ beforeEach(() => {
     return () => undefined;
   });
   takePendingOpenMock.mockReset().mockResolvedValue(null);
-  previewLogSourceMock.mockReset().mockImplementation(async (id) => previewFor(id));
+  listSavedViewsMock.mockReset().mockResolvedValue(emptySavedViewsDocument);
+  removeSavedViewMock.mockReset().mockResolvedValue(emptySavedViewsDocument);
+  saveSavedViewMock.mockReset().mockResolvedValue(emptySavedViewsDocument);
+  previewLogSourceMock.mockReset().mockImplementation(async (_handoffKind, id) => previewFor(id));
   readSourcesMock.mockReset().mockResolvedValue({
     operationId: "test-operation",
     generation: 1,
@@ -122,7 +140,7 @@ describe("Log Lens handoff lifecycle", () => {
     await act(async () => mocks.openHandler?.());
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
 
-    await waitFor(() => expect(previewLogSourceMock).toHaveBeenCalledWith(secondId));
+    await waitFor(() => expect(previewLogSourceMock).toHaveBeenCalledWith("log-source/v1", secondId));
     expect(screen.getByRole("dialog", { name: "Log Lens source 미리보기" })).toBeTruthy();
     expect(discardLogSourceMock).toHaveBeenCalledWith(firstId);
   });
@@ -137,7 +155,7 @@ describe("Log Lens handoff lifecycle", () => {
     await act(async () => mocks.openHandler?.());
     fireEvent.click(screen.getByRole("button", { name: "읽기 전용 source 추가" }));
 
-    await waitFor(() => expect(previewLogSourceMock).toHaveBeenCalledWith(secondId));
+    await waitFor(() => expect(previewLogSourceMock).toHaveBeenCalledWith("log-source/v1", secondId));
     expect(screen.getByRole("dialog", { name: "Log Lens source 미리보기" })).toBeTruthy();
     expect(document.body.textContent).not.toContain("handoff-lease-expired");
     expect(acceptLogSourceMock).toHaveBeenCalledWith(firstId);
