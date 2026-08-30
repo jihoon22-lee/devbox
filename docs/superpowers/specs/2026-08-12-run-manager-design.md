@@ -9,6 +9,10 @@
   `75b8af2 refactor(crates): extract process utilities`로 머지되었다. 이 문서는
   그 crate를 두 번째 소비자인 run-manager에서 사용하는 설계이며, process 추출 작업을
   다시 전제로 두지 않는다.
+- 2026-08-30: 이 문서의 초기 generic DAG/task workflow 제외 문구는
+  [`2026-08-30-run-manager-workspace-task.md`](./2026-08-30-run-manager-workspace-task.md)의
+  #486 workspace task 범위로 대체되었다. 기존 cron/service 모델과 결과 기반 trigger의
+  제외는 유지한다.
 
 ## 배경
 
@@ -53,9 +57,10 @@ Windows Job Object와 WSL 내부 PID·PGID·SID session/group 실행 어댑터�
 재사용하며, service 전용 재시작·헬스체크 정책만 Phase 2에서 얹는다. 서비스는
 Phase 1이 독립적으로 검증된 뒤에 착수한다.
 
-**제외**: 의존성 그래프(A가 끝난 뒤 B 실행), 원격 호스트, 컨테이너 오케스트레이션,
-Slack 등의 외부 알림 채널, 한 잡의 결과를 조건으로 다른 잡을 트리거하는 기능은
-이 설계의 범위가 아니다.
+**이 초기 설계에서 제외**: generic cron job의 의존성 그래프(A가 끝난 뒤 B 실행), 원격
+호스트, 컨테이너 오케스트레이션, Slack 등의 외부 알림 채널, 한 잡의 결과를 조건으로 다른
+잡을 트리거하는 기능은 이 문서의 범위가 아니다. `.vscode/tasks.json`에서 import한 bounded
+workspace task의 dependency operation은 #486의 별도 구현 설계에서 다룬다.
 
 ## 결정과 근거
 
@@ -1059,8 +1064,9 @@ PR의 독립 단계로 실행한다.
 
 ## 범위 밖
 
-- **의존성 그래프**: A가 끝난 뒤 B를 실행하는 조건부 DAG는 cron job의 중복·실패
-  정책과 다른 기능이다.
+- **generic cron 의존성 그래프**: A가 끝난 뒤 B를 실행하는 조건부 DAG는 cron job의
+  중복·실패 정책과 다른 기능이다. `.vscode/tasks.json`에서 가져온 workspace task의
+  bounded dependency operation은 #486 별도 설계 범위다.
 - **원격 호스트**: Windows와 로컬 WSL 배포판만 실행 대상으로 한다.
 - **컨테이너 오케스트레이션**: `docker run`을 하나의 로컬 service 명령으로
   관리할 수는 있지만 여러 컨테이너의 배포·네트워크·스케일링은 다루지 않는다.
@@ -1373,8 +1379,10 @@ PR은 package `process`를 `devbox_process`로 import하고, `PortInfo`,
   binary 모두 `cargo run --bin <name>`을 사용해 bare `cargo run`을 만들지 않는다.
   non-bin example과 `required-features` target은 실행 task로 만들지 않는다. 명시적인
   `[[bin]]`의 `name`이 생략된 경우에만 안전한 상대 `path`의 파일명에서 target 이름을
-  추론한다. preview에 없는 selection ID는 apply에서 거부한다. VS Code `tasks.json`
-  parsing은 이 #358 후보에 포함하지 않고, §13.2 정의 import 후속 범위로 보류한다.
+  추론한다. preview에 없는 selection ID는 apply에서 거부한다. 당시 #358 후보에서는 VS Code
+  `tasks.json` parsing을 후속 범위로 보류했지만, 현재는 #486의 별도
+  [`workspace task 설계`](./2026-08-30-run-manager-workspace-task.md)에서 bounded import와
+  실행 계약을 정의한다.
 - 선택 루트는 absolute/non-symlink/no-follow filesystem identity로 canonicalize하고
   source file의 metadata·canonical parent/name을 확인한다. source path와 실제 열린 file
   handle fingerprint를 read 전후 비교하고 현재 path identity/fingerprint도 다시 확인한다.
@@ -1403,8 +1411,9 @@ PR은 package `process`를 `devbox_process`로 import하고, `PortInfo`,
 Vitest 6 files/39 tests와 production build, `git diff --check`/format 검사를 통과했다.
 Windows W3 packaged smoke는 CI/Windows acceptance에서 수행한다. directory handle 기반
 relative open이 없는 OS의 final root identity-check 직후 교체 race와 committed
-transaction의 사후 취소는 알려진 잔여 경계다. 원격 host, Kubernetes, DAG orchestration,
-범용 tasks workflow는 이 구현 부록의 범위가 아니다.
+transaction의 사후 취소는 알려진 잔여 경계다. 원격 host, Kubernetes와 범용 cron tasks
+workflow는 이 구현 부록의 범위가 아니다. workspace task의 bounded DAG, diagnostics와
+Workbench task-control은 #486 별도 설계와 구현에서 다룬다.
 
 후속 P1 보강에서 Cargo target auto-discovery는 위의 동일한 no-execution 경계를 유지한 채
 고정된 표준 layout에 대한 bounded metadata-only 탐색으로 구현한다. `Cargo.toml` 외 source

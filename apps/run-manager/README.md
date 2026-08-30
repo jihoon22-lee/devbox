@@ -19,6 +19,9 @@
 - **재시도 제어** — `retry_waiting` 서비스의 명시적 정지는 예약된 backoff를 취소하고, 재시작은 대기 시간을 건너뛰어 새 generation을 시작
 - **제한된 로그 저장** — backend가 run ID로 해석한 app-owned 회전 로그만 decimal cursor로 읽고, 현재 스트림을 최대 50MiB까지 저장. 파일명에는 bounded opaque run ID만 사용하며 명령·경로·환경변수를 넣지 않음
 - **실행 어댑터** — Windows(Job Object)·WSL(session/group), DPAPI 환경변수 보호
+- **workspace task orchestration** — trusted VS Code task의 `dependsOn`을 parallel/sequence DAG로 실행하고, operation·child run 상태와 exact ownership을 저장. 중지·재시작 복구는 해당 operation이 만든 process tree만 대상으로 함
+- **problem matcher diagnostics** — 명시된 bounded matcher로 terminal child의 보존 로그를 검사하고, 안전한 project-relative file/line/column만 Code Pad로 열기
+- **Workbench task control** — Workbench의 start/stop은 typed one-time handoff와 Run Manager 확인 화면을 거치며, 처리 결과는 고정된 receipt로 남김
 
 ## Integration snapshot 계약 (#474)
 
@@ -154,13 +157,80 @@ non-cancellable operation으로 처리 중에는 취소를 가장하지 않는�
   catch-up과 선언된 환경변수의 값은 기존 편집 흐름에서 설정할 수 있지만, enable/run에는 현재
   source trust와 재검증이 계속 필요하다.
 
-### PR2 / pending
+## Workspace task orchestration·diagnostics·typed control (#486 PR2)
 
-shell task의 별도 위험 확인·실행, problem matcher 파싱과 diagnostics/Code Pad 연계, dependency
-DAG의 sequence/parallel orchestration, Workbench의 typed start/stop 요청과 receipt 연계는 PR2
-범위로 남긴다. PR1은 이 기능들을 자동으로 제공하지 않는다. extension host/extension task,
-dynamic variable 해석, background/runOptions 실행 의미도 현재 blocked이며 별도 범위가 정해지기
-전까지는 실행 후보가 아니다.
+PR2는 PR1에서 저장한 workspace task projection을 실제 실행 단위로 확장한다. 기존 cron/service
+스케줄러와 실행 adapter를 재사용하지만, workspace task가 가진 source·revision·dependency
+경계를 별도의 durable operation으로 보존한다.
+
+### 의존성 operation
+
+- `dependsOn`은 같은 source의 exact label만 참조한다. 실행 대상은 선택한 root와 그 dependency
+  closure로 제한되며, missing/duplicate/self-edge/cycle과 128 task·512 edge 상한을 검증한다.
+- 기본 dependency는 parallel layer로 실행하고, `dependsOrder: sequence`는 의존성 목록에
+  순서 barrier를 추가한다. 각 layer의 child는 기존 Run Manager의 normal run claim·로그·실행
+  adapter를 사용한다.
+- `run_workspace_task_operation`이 queued operation과 pending child 목록을 먼저 저장한 뒤
+  실행한다. operation은 `queued`/`running`/`stopping`/`succeeded`/`failed`/`cancelled`,
+  child는 `pending`/`launching`/`running`/`succeeded`/`failed`/`cancelled`/`skipped` 상태를
+  제공한다. 화면은 operation 진행률, child별 상태와 고정 failure code를 표시한다.
+- fail-fast가 켜져 있으면 실패한 child의 독립적인 실행 중 sibling만 해당 operation의 exact
+  run id로 중지하고 downstream은 skipped로 남긴다. 다른 operation이나 외부 PID를 추측해
+  종료하지 않는다. 명시적 Stop도 job별 lifecycle lock 안에서 저장된 exact run id를 다시
+  대조하므로, 오래된 operation이 그 사이 교체된 run을 종료하지 않는다. terminal operation은
+  변경하지 않는다.
+- operation 생성 전 source 전체를 한 번 bounded revalidate하고, child spawn 직전에 저장된
+  projection·source revision을 다시 확인한다. source가 바뀌면 trust/availability를 무효화하고
+  새 command를 읽어 fallback 실행하지 않는다. dependency가 있는 managed task는 일반
+  `run_job_now`가 아니라 operation 경로만 사용하며, 예약 활성화는 지원하지 않는 수동
+  orchestration 전용이다.
+- 앱이 재시작되면 기존 active operation은 `stopping`과 interrupted failure code로 표시한다.
+  scheduler가 stale run을 먼저 exact identity로 정리한 뒤에야 launching/running child를
+  terminal 상태로 reconcile하고, pending child는 skipped로 마무리한다. 아직 child가 남아
+  있거나 cleanup을 입증할 수 없으면 parent를 terminal로 앞당기지 않고 다음 scheduler tick에서
+  다시 시도한다. 정지 settle에는 30초 제한이 있으며 미확인 cleanup은 `stopping`을 유지한다.
+- queued/running/stopping operation에 포함된 task 삭제는 native storage에서 거부한다. 완료된
+  operation의 member task를 삭제하면 operation·child·receipt history를 한 단위로 정리해 일부만
+  남은 잘못된 provenance를 만들지 않는다.
+
+### 셸과 problem matcher
+
+- `shell` task는 일반 source trust와 별도로 현재 revision에 대한 `execute-shell-tasks` 위험
+  확인을 요구한다. 확인되지 않은 shell task는 수동·예약·operation 실행 모두 차단하며, source
+  revision이 바뀌면 일반 trust와 shell trust가 함께 다시 검토된다. process task는 기존 direct
+  executable/argv 경계를 유지하고, shell task만 기존 shell adapter를 사용한다.
+- 명시적 matcher object 중 file/line/column/message/severity capture group이 검증된 bounded
+  regexp만 실행한다. `$matcher` 이름, extension host, dynamic variable와 background/runOptions
+  의미를 추측하지 않는다. terminal child의 stdout/stderr 보존 범위만 stream별 최대 4MiB·
+  50,000줄·500 diagnostic으로 분석하고, 상한 도달 여부를 `truncated`로 표시한다.
+- diagnostic DTO에는 project-relative file, 1-based line/column, 정규화된 severity, bounded
+  message와 stdout/stderr만 포함한다. absolute path·command·environment·credential·raw log는
+  snapshot, handoff, 오류에 넣지 않는다. file은 Code Pad로 넘기기 직전에 canonical regular
+  file이 project root 안에 있는지 재검증한다. 실행 중 child에는 diagnostics를 요청할 수 없다.
+
+### Workbench typed task control
+
+Workbench가 Run Manager task snapshot에서 읽는 값은 opaque task id, 표시 label, revision,
+task kind, trust/availability, dependency 존재 여부와 active-operation boolean뿐이다. Start/Stop 요청은
+`task-control/v1` one-time handoff로 전달하며 payload에는 request id, task id, action과 expected
+revision만 둔다. Run Manager가 handoff를 claim한 뒤 현재 DB revision을 확인하고 자체 창에서
+사용자 확인을 받은 경우에만 수행한다. Start는 source를 다시 검증한 뒤 operation을 만들고,
+Stop은 새 명령을 실행하지 않은 채 exact active operation만 중지한다. request는
+기본 60초 claim lease를 사용하며 확인 화면이 열린 동안 제한된 횟수로 갱신한다.
+
+Workbench의 confirmation/취소/ESC는 focus를 복원하고, Run Manager는 accepted → started/stopped
+또는 rejected/failed의 단일 receipt를 저장한다. receipt와 `task-control-receipts` snapshot에는
+request/task/action/status, owned operation id, timestamp와 고정 failure code만 포함하며
+expected revision, 명령, 경로, environment 값은 포함하지 않는다. Workbench는 request/task/action
+correlator가 일치하는 receipt만 표시하고, snapshot 누락·손상·stale request는 fail-closed한다.
+구버전 Run Manager는 알 수 없는 typed handoff를 자동 실행하지 않고 앱을 여는 수준으로
+degrade한다.
+
+operation 생성·종료·명시적 정지 직후에는 redacted workspace task snapshot을 즉시 다시 발행해
+Workbench의 수동 새로고침이 최대 60초 주기 발행을 기다리지 않고 최신 `operationActive`를 읽는다.
+
+extension host/extension task, dynamic variable 해석, background/runOptions 실행 의미는 여전히
+blocked이며 이 PR2가 범위를 넓히지 않는다.
 
 ## 기술
 
