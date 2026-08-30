@@ -321,14 +321,13 @@ impl GitTarget {
         }
         match self {
             Self::Native { cwd } => {
-                let raw = Path::new(path);
-                let resolved = if raw.is_absolute() {
-                    raw.to_path_buf()
+                let resolved = if valid_host_absolute_path(path) {
+                    PathBuf::from(path)
                 } else {
                     if !valid_relative_path(path, std::path::MAIN_SEPARATOR) {
                         return Err("git_invalid_target_path".into());
                     }
-                    Path::new(cwd).join(raw)
+                    Path::new(cwd).join(path)
                 };
                 let value = resolved.to_string_lossy().into_owned();
                 if !valid_host_absolute_path(&value) {
@@ -387,6 +386,15 @@ impl GitTarget {
                 }
             }
         }
+    }
+
+    /// Validate an absolute desktop-host path without consulting the
+    /// filesystem. Consumers use this before canonicalizing a Git-emitted
+    /// worktree spelling, including POSIX fixtures compiled on Windows.
+    pub fn validate_host_absolute_path(path: &str) -> Result<(), String> {
+        valid_host_absolute_path(path)
+            .then_some(())
+            .ok_or_else(|| "git_invalid_target_path".to_string())
     }
 
     fn cwd(&self) -> &str {
@@ -1028,6 +1036,23 @@ mod tests {
             target.host_path_from_git("/mnt/e/Projects/DevBox").unwrap(),
             "E:\\Projects\\DevBox"
         );
+    }
+
+    #[test]
+    fn native_target_maps_host_absolute_and_relative_git_paths_lexically() {
+        let target = GitTarget::native("/safe/repository");
+        assert_eq!(
+            target.host_path_from_git("/safe/repository/.git/MERGE_HEAD"),
+            Ok("/safe/repository/.git/MERGE_HEAD".into())
+        );
+        assert_eq!(
+            target.host_path_from_git(".git/MERGE_HEAD"),
+            Ok(Path::new("/safe/repository")
+                .join(".git/MERGE_HEAD")
+                .to_string_lossy()
+                .into_owned())
+        );
+        assert!(target.host_path_from_git("../escape").is_err());
     }
 
     #[test]

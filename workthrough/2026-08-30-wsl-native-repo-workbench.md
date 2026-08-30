@@ -121,3 +121,18 @@ cargo fmt --all -- --check
 Windows CI is recorded on the PR. The physical Windows+WSL matrix in the
 specification remains required release evidence and is not replaced by Linux
 unit tests.
+
+The first PR Windows run exposed two portability assumptions in existing real
+Git and loopback fixtures. Windows canonicalization returned extended `\\?\`
+paths while the approved preview intentionally retained ordinary host spelling,
+and accepted sockets inherited a fixture listener's non-blocking mode. The
+repair compares only validated ordinary host spellings, keeps filesystem
+identity as the authority, and explicitly restores blocking mode on accepted
+fixture streams. Targeted regression validation after the repair passed:
+
+```text
+cargo test -p git -p repo-manager --lib -j2
+  PASS: git 19, repo-manager 122
+cargo fmt --all -- --check
+  PASS
+```

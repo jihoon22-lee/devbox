@@ -652,9 +652,8 @@ fn resolve_cleanup_worktree_path(
     parsed: &ParsedWorktree,
 ) -> Result<(PathBuf, FilesystemIdentity), String> {
     let path = PathBuf::from(&parsed.path);
-    if !path.is_absolute() {
-        return Err(GIT_CLEANUP_ERROR.to_string());
-    }
+    GitTarget::validate_host_absolute_path(&parsed.path)
+        .map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
     let identity = filesystem_identity(&path, true).map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
     let canonical = path
         .canonicalize()
@@ -2190,7 +2189,9 @@ fn cleanup_worktree_still_safe(
     })
     .map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
     ensure_budget()?;
-    if canonical != expected_path || identity != expected_identity {
+    if host_path_spelling(&canonical, GIT_CLEANUP_STATE_CHANGED)? != expected.path
+        || identity != expected_identity
+    {
         return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
     }
 
@@ -2289,7 +2290,9 @@ fn cleanup_worktree_still_safe(
         bare: false,
     })
     .map_err(|_| GIT_CLEANUP_STATE_CHANGED.to_string())?;
-    if final_canonical != expected_path || final_identity != expected_identity {
+    if host_path_spelling(&final_canonical, GIT_CLEANUP_STATE_CHANGED)? != expected.path
+        || final_identity != expected_identity
+    {
         return Err(GIT_CLEANUP_STATE_CHANGED.to_string());
     }
     Ok(())
@@ -3488,11 +3491,12 @@ mod scan_tests {
             .unwrap()
             .blocked
             .contains(&"mainBranch".to_string()));
-        let linked_path = linked.canonicalize().unwrap();
+        let linked_path =
+            host_path_spelling(&linked.canonicalize().unwrap(), GIT_CLEANUP_ERROR).unwrap();
         let linked_entry = preview
             .worktrees
             .iter()
-            .find(|worktree| worktree.path == linked_path.to_string_lossy().as_ref())
+            .find(|worktree| worktree.path == linked_path)
             .unwrap();
         assert!(!linked_entry.eligible);
         assert!(linked_entry.blocked.contains(&"locked".to_string()));
