@@ -7,6 +7,13 @@ use crate::core::models::{
 use crate::core::policies::{
     decide_overlap, OverlapAction, OverlapPolicyInput, RunPolicySnapshot, StopAction,
 };
+use crate::core::workspace_orchestration::{
+    WorkspaceTaskOperationPlan, WorkspaceTaskOperationRunStatus, WorkspaceTaskOperationRunView,
+    WorkspaceTaskOperationStatus, WorkspaceTaskOperationView,
+};
+use crate::core::workspace_task_control::{
+    WorkspaceTaskControlReceipt, WorkspaceTaskControlReceiptStatus,
+};
 use crate::core::workspace_tasks::{
     WorkspaceProblemMatcher, WorkspaceTaskApplyResult, WorkspaceTaskDependsOrder,
     WorkspaceTaskExecution, WorkspaceTaskItem, WorkspaceTaskKind, WorkspaceTaskPlan,
@@ -15,6 +22,7 @@ use crate::core::workspace_tasks::{
     MAX_TASK_LABEL_BYTES, MAX_TASK_STRING_BYTES, TASKS_JSON_RELATIVE_PATH,
     WORKSPACE_TASK_SCHEMA_VERSION,
 };
+use devbox_applink::{TaskControlAction, TaskControlRequest, TASK_CONTROL_SCHEMA_VERSION};
 use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, TransactionBehavior};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -174,6 +182,46 @@ CREATE TABLE IF NOT EXISTS workspace_tasks (
     UNIQUE (source_id, label)
 );
 
+CREATE TABLE IF NOT EXISTS workspace_task_operations (
+    id TEXT PRIMARY KEY NOT NULL,
+    root_job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    source_id TEXT NOT NULL REFERENCES workspace_task_sources(id) ON DELETE CASCADE,
+    revision TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued'
+        CHECK (status IN ('queued', 'running', 'stopping', 'succeeded', 'failed', 'cancelled')),
+    fail_fast INTEGER NOT NULL DEFAULT 1 CHECK (fail_fast IN (0, 1)),
+    failure_code TEXT,
+    created_at INTEGER NOT NULL,
+    started_at INTEGER,
+    ended_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS workspace_task_operation_runs (
+    operation_id TEXT NOT NULL REFERENCES workspace_task_operations(id) ON DELETE CASCADE,
+    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+    layer_index INTEGER NOT NULL CHECK (layer_index >= 0),
+    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'launching', 'running', 'succeeded', 'failed', 'cancelled', 'skipped')),
+    failure_code TEXT,
+    PRIMARY KEY (operation_id, job_id),
+    UNIQUE (operation_id, sequence)
+);
+
+CREATE TABLE IF NOT EXISTS workspace_task_control_receipts (
+    request_id TEXT PRIMARY KEY NOT NULL,
+    task_id TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (action IN ('start', 'stop')),
+    expected_revision TEXT NOT NULL,
+    status TEXT NOT NULL
+        CHECK (status IN ('accepted', 'rejected', 'started', 'stopped', 'failed')),
+    operation_id TEXT REFERENCES workspace_task_operations(id) ON DELETE SET NULL,
+    failure_code TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_workspace_task_sources_trusted
     ON workspace_task_sources (trusted, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_workspace_tasks_source_available
@@ -186,6 +234,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_task_sources_identity_target
         target_kind,
         ifnull(target_distro, '')
     );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_task_operations_active_root
+    ON workspace_task_operations (root_job_id)
+    WHERE status IN ('queued', 'running', 'stopping');
+CREATE INDEX IF NOT EXISTS idx_workspace_task_operations_created
+    ON workspace_task_operations (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workspace_task_operation_runs_run
+    ON workspace_task_operation_runs (run_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_task_control_receipts_updated
+    ON workspace_task_control_receipts (updated_at DESC);
+CREATE TRIGGER IF NOT EXISTS delete_workspace_task_operation_receipts
+    BEFORE DELETE ON workspace_task_operations
+    BEGIN
+        DELETE FROM workspace_task_control_receipts WHERE operation_id = OLD.id;
+    END;
+CREATE TRIGGER IF NOT EXISTS delete_workspace_task_member_operations
+    BEFORE DELETE ON jobs
+    BEGIN
+        DELETE FROM workspace_task_operations
+        WHERE id IN (
+            SELECT operation_id
+            FROM workspace_task_operation_runs
+            WHERE job_id = OLD.id
+        );
+    END;
 "#;
 
 /// A process-wide SQLite connection. Every connection is configured with the
@@ -294,6 +366,147 @@ impl DatabaseState {
                 .query_row("SELECT 1", [], |row| row.get::<_, i64>(0))
                 .ok()
         }) == Some(1)
+    }
+
+    /// Close the launch gate for operations whose in-memory executor belonged
+    /// to an earlier process. Scheduler stale-run recovery will prove child
+    /// cleanup before `recover_interrupted_workspace_task_operations_at`
+    /// terminalizes these receipts.
+    pub(crate) fn interrupt_workspace_task_operations_at(
+        &self,
+        now: i64,
+    ) -> Result<usize, StorageError> {
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let operations = transaction.execute(
+            "UPDATE workspace_task_operations
+             SET status = 'stopping', failure_code = 'workspace-task-operation-interrupted'
+             WHERE status IN ('queued', 'running', 'stopping')",
+            [],
+        )?;
+        transaction.execute(
+            "UPDATE workspace_task_control_receipts
+             SET status = 'failed', failure_code = 'task-control-interrupted', updated_at = ?
+             WHERE status = 'accepted'",
+            [now],
+        )?;
+        transaction.commit()?;
+        Ok(operations)
+    }
+
+    /// Finalize only interrupted operations for which no child can still be
+    /// active. This is called after each scheduler stale-recovery pass.
+    pub(crate) fn recover_interrupted_workspace_task_operations_at(
+        &self,
+        now: i64,
+    ) -> Result<usize, StorageError> {
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let operation_ids = {
+            let mut statement = transaction.prepare(
+                "SELECT id FROM workspace_task_operations
+                 WHERE status = 'stopping'
+                   AND failure_code = 'workspace-task-operation-interrupted'",
+            )?;
+            let rows = statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            rows
+        };
+        let mut recovered = 0usize;
+        for operation_id in operation_ids {
+            let children = {
+                let mut statement = transaction.prepare(
+                    "SELECT job_id, run_id, status
+                     FROM workspace_task_operation_runs
+                     WHERE operation_id = ? AND status IN ('launching', 'running')",
+                )?;
+                let rows = statement
+                    .query_map([&operation_id], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                rows
+            };
+            for (job_id, run_id, status) in children {
+                if let Some(run_id) = run_id {
+                    let run_status = transaction
+                        .query_row(
+                            "SELECT status FROM runs WHERE id = ? AND job_id = ?",
+                            params![run_id, job_id],
+                            |row| row.get::<_, String>(0),
+                        )
+                        .optional()?;
+                    let terminal = match run_status.as_deref() {
+                        Some("succeeded") => Some(("succeeded", None)),
+                        Some("failed") => Some(("failed", Some("workspace-task-run-failed"))),
+                        Some("cancelled") => {
+                            Some(("cancelled", Some("workspace-task-run-cancelled")))
+                        }
+                        Some("skipped") => Some(("skipped", Some("workspace-task-run-skipped"))),
+                        None => Some(("failed", Some("workspace-task-run-missing"))),
+                        _ => None,
+                    };
+                    if let Some((child_status, code)) = terminal {
+                        transaction.execute(
+                            "UPDATE workspace_task_operation_runs
+                             SET status = ?, failure_code = ?
+                             WHERE operation_id = ? AND job_id = ?
+                               AND status IN ('launching', 'running')",
+                            params![child_status, code, operation_id, job_id],
+                        )?;
+                    }
+                } else if status == "launching" {
+                    let has_active: bool = transaction.query_row(
+                        "SELECT EXISTS(
+                            SELECT 1 FROM runs WHERE job_id = ?
+                              AND status IN ('starting', 'running', 'stopping')
+                        )",
+                        [&job_id],
+                        |row| row.get(0),
+                    )?;
+                    if !has_active {
+                        transaction.execute(
+                            "UPDATE workspace_task_operation_runs
+                             SET status = 'failed',
+                                 failure_code = 'workspace-task-operation-interrupted'
+                             WHERE operation_id = ? AND job_id = ? AND status = 'launching'",
+                            params![operation_id, job_id],
+                        )?;
+                    }
+                }
+            }
+            let unsettled: bool = transaction.query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM workspace_task_operation_runs
+                    WHERE operation_id = ? AND status IN ('launching', 'running')
+                )",
+                [&operation_id],
+                |row| row.get(0),
+            )?;
+            if !unsettled {
+                transaction.execute(
+                    "UPDATE workspace_task_operation_runs
+                     SET status = 'skipped',
+                         failure_code = 'workspace-task-operation-interrupted'
+                     WHERE operation_id = ? AND status = 'pending'",
+                    [&operation_id],
+                )?;
+                recovered = recovered.saturating_add(transaction.execute(
+                    "UPDATE workspace_task_operations
+                     SET status = 'failed', ended_at = ?
+                     WHERE id = ? AND status = 'stopping'
+                       AND failure_code = 'workspace-task-operation-interrupted'",
+                    params![now, operation_id],
+                )?);
+            }
+        }
+        transaction.commit()?;
+        Ok(recovered)
     }
 
     pub fn schema_version(&self) -> Result<i64, StorageError> {
@@ -934,7 +1147,7 @@ impl DatabaseState {
                     task.applied_override, task.depends_on_json, task.depends_order,
                     task.problem_matcher_json, source.trusted, source.shell_trusted,
                     task.available
-             FROM workspace_tasks AS task
+                FROM workspace_tasks AS task
              JOIN workspace_task_sources AS source ON source.id = task.source_id
              JOIN jobs ON jobs.id = task.job_id
              WHERE jobs.kind = 'job'
@@ -995,36 +1208,588 @@ impl DatabaseState {
                  JOIN jobs ON jobs.id = task.job_id
                  WHERE task.job_id = ? AND jobs.kind = 'job'",
                 [job_id],
-                |row| {
-                    Ok(RawWorkspaceTaskExecution {
-                        job_id: row.get(0)?,
-                        source_id: row.get(1)?,
-                        source_index: row.get(2)?,
-                        label: row.get(3)?,
-                        kind: row.get(4)?,
-                        command: row.get(5)?,
-                        cwd: row.get(6)?,
-                        source_root: row.get(7)?,
-                        project_identity: row.get(8)?,
-                        revision: row.get(9)?,
-                        target_kind: row.get(10)?,
-                        target_distro: row.get(11)?,
-                        args_json: row.get(12)?,
-                        environment_keys_json: row.get(13)?,
-                        depends_on_json: row.get(14)?,
-                        depends_order: row.get(15)?,
-                        problem_matcher_json: row.get(16)?,
-                        trusted: row.get(17)?,
-                        shell_trusted: row.get(18)?,
-                        available: row.get(19)?,
-                    })
-                },
+                row_to_raw_workspace_task_execution,
             )
             .optional()?;
         let Some(raw) = raw else {
             return Ok(None);
         };
         raw_workspace_task_execution(raw).map(Some)
+    }
+
+    pub(crate) fn list_workspace_task_executions_for_source(
+        &self,
+        source_id: &str,
+    ) -> Result<Vec<WorkspaceTaskExecution>, StorageError> {
+        validate_workspace_source_id(source_id)?;
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT task.job_id, task.source_id, task.source_index, task.label,
+                    task.kind, jobs.command, jobs.cwd, source.source_root,
+                    source.project_identity, source.revision, source.target_kind,
+                    source.target_distro, task.args_json,
+                    task.environment_keys_json, task.depends_on_json,
+                    task.depends_order, task.problem_matcher_json,
+                    source.trusted, source.shell_trusted, task.available
+             FROM workspace_tasks AS task
+             JOIN workspace_task_sources AS source ON source.id = task.source_id
+             JOIN jobs ON jobs.id = task.job_id
+             WHERE task.source_id = ? AND jobs.kind = 'job' AND task.available = 1
+             ORDER BY task.source_index, task.id",
+        )?;
+        let rows = statement.query_map([source_id], row_to_raw_workspace_task_execution)?;
+        let raw = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        if raw.len() > MAX_TASKS {
+            return Err(StorageError::Validation(
+                "workspace task source exceeds the task limit".to_owned(),
+            ));
+        }
+        raw.into_iter().map(raw_workspace_task_execution).collect()
+    }
+
+    /// Resolve diagnostic provenance through the durable operation receipt.
+    /// Runs created outside workspace orchestration deliberately return None.
+    pub(crate) fn get_workspace_task_execution_for_operation_run(
+        &self,
+        run_id: &str,
+    ) -> Result<Option<WorkspaceTaskExecution>, StorageError> {
+        validate_token("run id", run_id)?;
+        let claim = {
+            let connection = self.lock()?;
+            connection
+                .query_row(
+                    "SELECT child.job_id, operation.revision, source.revision
+                     FROM workspace_task_operation_runs AS child
+                     JOIN workspace_task_operations AS operation
+                       ON operation.id = child.operation_id
+                     JOIN workspace_task_sources AS source
+                       ON source.id = operation.source_id
+                     WHERE child.run_id = ?",
+                    [run_id],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
+                    },
+                )
+                .optional()?
+        };
+        let Some((job_id, operation_revision, source_revision)) = claim else {
+            return Ok(None);
+        };
+        if operation_revision != source_revision {
+            return Err(StorageError::ConcurrentChange(
+                "workspace task diagnostic source".to_owned(),
+            ));
+        }
+        self.get_workspace_task_execution(&job_id)
+    }
+
+    pub(crate) fn create_workspace_task_operation_at(
+        &self,
+        plan: &WorkspaceTaskOperationPlan,
+        fail_fast: bool,
+        now: i64,
+    ) -> Result<WorkspaceTaskOperationView, StorageError> {
+        validate_workspace_operation_plan(plan)?;
+        let operation_id = Uuid::new_v4().to_string();
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let root: Option<(String, String)> = transaction
+            .query_row(
+                "SELECT task.source_id, source.revision
+                 FROM workspace_tasks AS task
+                 JOIN workspace_task_sources AS source ON source.id = task.source_id
+                 WHERE task.job_id = ? AND task.available = 1 AND source.trusted = 1
+                   AND (task.kind = 'process' OR source.shell_trusted = 1)",
+                [&plan.root_job_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        if root.as_ref() != Some(&(plan.source_id.clone(), plan.revision.clone())) {
+            return Err(StorageError::ConcurrentChange(
+                "workspace task operation source".to_owned(),
+            ));
+        }
+        transaction
+            .execute(
+                "INSERT INTO workspace_task_operations (
+                    id, root_job_id, source_id, revision, status, fail_fast,
+                    failure_code, created_at, started_at, ended_at
+                 ) VALUES (?, ?, ?, ?, 'queued', ?, NULL, ?, NULL, NULL)",
+                params![
+                    operation_id,
+                    plan.root_job_id,
+                    plan.source_id,
+                    plan.revision,
+                    bool_to_sql(fail_fast),
+                    now,
+                ],
+            )
+            .map_err(|error| match error {
+                rusqlite::Error::SqliteFailure(ref failure, _)
+                    if failure.code == rusqlite::ErrorCode::ConstraintViolation =>
+                {
+                    StorageError::ConcurrentChange("workspace-task-operation-active".to_owned())
+                }
+                other => StorageError::Sqlite(other),
+            })?;
+        let mut sequence = 0u32;
+        for (layer_index, layer) in plan.layers.iter().enumerate() {
+            for job_id in layer {
+                let belongs: bool = transaction.query_row(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM workspace_tasks
+                        WHERE job_id = ? AND source_id = ? AND available = 1
+                    )",
+                    params![job_id, plan.source_id],
+                    |row| row.get(0),
+                )?;
+                if !belongs {
+                    return Err(StorageError::ConcurrentChange(
+                        "workspace task operation member".to_owned(),
+                    ));
+                }
+                transaction.execute(
+                    "INSERT INTO workspace_task_operation_runs (
+                        operation_id, job_id, run_id, layer_index, sequence,
+                        status, failure_code
+                     ) VALUES (?, ?, NULL, ?, ?, 'pending', NULL)",
+                    params![
+                        operation_id,
+                        job_id,
+                        i64::try_from(layer_index).map_err(|_| {
+                            StorageError::Validation(
+                                "workspace task operation layer is invalid".to_owned(),
+                            )
+                        })?,
+                        sequence,
+                    ],
+                )?;
+                sequence = sequence.saturating_add(1);
+            }
+        }
+        transaction.commit()?;
+        drop(connection);
+        self.get_workspace_task_operation(&operation_id)?
+            .ok_or_else(|| StorageError::NotFound(format!("operation {operation_id}")))
+    }
+
+    pub(crate) fn get_workspace_task_operation(
+        &self,
+        operation_id: &str,
+    ) -> Result<Option<WorkspaceTaskOperationView>, StorageError> {
+        validate_workspace_operation_id(operation_id)?;
+        let connection = self.lock()?;
+        read_workspace_task_operation(&connection, operation_id)
+    }
+
+    pub(crate) fn list_workspace_task_operations(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<WorkspaceTaskOperationView>, StorageError> {
+        let limit = limit.clamp(1, 100);
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT id FROM workspace_task_operations
+             ORDER BY CASE WHEN status IN ('queued', 'running', 'stopping') THEN 0 ELSE 1 END,
+                      created_at DESC, id DESC
+             LIMIT ?",
+        )?;
+        let ids = statement
+            .query_map([i64::try_from(limit).unwrap_or(100)], |row| {
+                row.get::<_, String>(0)
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        ids.into_iter()
+            .map(|id| {
+                read_workspace_task_operation(&connection, &id)?
+                    .ok_or_else(|| StorageError::NotFound(format!("workspace task operation {id}")))
+            })
+            .collect()
+    }
+
+    pub(crate) fn mark_workspace_task_operation_running_at(
+        &self,
+        operation_id: &str,
+        now: i64,
+    ) -> Result<bool, StorageError> {
+        validate_workspace_operation_id(operation_id)?;
+        let connection = self.lock()?;
+        Ok(connection.execute(
+            "UPDATE workspace_task_operations
+             SET status = 'running', started_at = ?, failure_code = NULL
+             WHERE id = ? AND status = 'queued'",
+            params![now, operation_id],
+        )? == 1)
+    }
+
+    pub(crate) fn attach_workspace_task_operation_run(
+        &self,
+        operation_id: &str,
+        job_id: &str,
+        run_id: &str,
+    ) -> Result<bool, StorageError> {
+        validate_workspace_operation_id(operation_id)?;
+        validate_token("job id", job_id)?;
+        validate_token("run id", run_id)?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let belongs: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM runs WHERE id = ? AND job_id = ?)",
+            params![run_id, job_id],
+            |row| row.get(0),
+        )?;
+        if !belongs {
+            return Err(StorageError::ConcurrentChange(
+                "workspace task operation run ownership".to_owned(),
+            ));
+        }
+        let changed = transaction.execute(
+            "UPDATE workspace_task_operation_runs
+             SET run_id = ?, status = 'running', failure_code = NULL
+             WHERE operation_id = ? AND job_id = ? AND status = 'launching'
+               AND EXISTS(
+                   SELECT 1 FROM workspace_task_operations
+                   WHERE id = ? AND status IN ('running', 'stopping')
+               )",
+            params![run_id, operation_id, job_id, operation_id],
+        )?;
+        transaction.commit()?;
+        Ok(changed == 1)
+    }
+
+    /// Reserve a pending child before crossing the asynchronous scheduler
+    /// boundary. A concurrent stop can then wait for the exact run ID to be
+    /// attached instead of reporting completion while a spawn is in flight.
+    pub(crate) fn claim_workspace_task_operation_run(
+        &self,
+        operation_id: &str,
+        job_id: &str,
+    ) -> Result<bool, StorageError> {
+        validate_workspace_operation_id(operation_id)?;
+        validate_token("job id", job_id)?;
+        let connection = self.lock()?;
+        Ok(connection.execute(
+            "UPDATE workspace_task_operation_runs SET status = 'launching'
+             WHERE operation_id = ? AND job_id = ? AND status = 'pending'
+               AND EXISTS(
+                   SELECT 1 FROM workspace_task_operations
+                   WHERE id = ? AND status = 'running'
+               )",
+            params![operation_id, job_id, operation_id],
+        )? == 1)
+    }
+
+    pub(crate) fn complete_workspace_task_operation_run(
+        &self,
+        operation_id: &str,
+        job_id: &str,
+        status: WorkspaceTaskOperationRunStatus,
+        failure_code: Option<&str>,
+    ) -> Result<bool, StorageError> {
+        validate_workspace_operation_id(operation_id)?;
+        validate_token("job id", job_id)?;
+        if !matches!(
+            status,
+            WorkspaceTaskOperationRunStatus::Succeeded
+                | WorkspaceTaskOperationRunStatus::Failed
+                | WorkspaceTaskOperationRunStatus::Cancelled
+                | WorkspaceTaskOperationRunStatus::Skipped
+        ) {
+            return Err(StorageError::Validation(
+                "workspace task operation run status is not terminal".to_owned(),
+            ));
+        }
+        validate_workspace_failure_code(failure_code)?;
+        let connection = self.lock()?;
+        Ok(connection.execute(
+            "UPDATE workspace_task_operation_runs SET status = ?, failure_code = ?
+             WHERE operation_id = ? AND job_id = ?
+               AND status IN ('pending', 'launching', 'running')",
+            params![status.as_str(), failure_code, operation_id, job_id],
+        )? == 1)
+    }
+
+    pub(crate) fn request_workspace_task_operation_stop(
+        &self,
+        operation_id: &str,
+    ) -> Result<bool, StorageError> {
+        validate_workspace_operation_id(operation_id)?;
+        let connection = self.lock()?;
+        Ok(connection.execute(
+            "UPDATE workspace_task_operations SET status = 'stopping'
+             WHERE id = ? AND status IN ('queued', 'running')",
+            [operation_id],
+        )? == 1)
+    }
+
+    pub(crate) fn finish_workspace_task_operation_at(
+        &self,
+        operation_id: &str,
+        status: WorkspaceTaskOperationStatus,
+        failure_code: Option<&str>,
+        now: i64,
+    ) -> Result<bool, StorageError> {
+        validate_workspace_operation_id(operation_id)?;
+        if !status.is_terminal() {
+            return Err(StorageError::Validation(
+                "workspace task operation status is not terminal".to_owned(),
+            ));
+        }
+        validate_workspace_failure_code(failure_code)?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = transaction.execute(
+            "UPDATE workspace_task_operations
+             SET status = ?, failure_code = ?, ended_at = ?
+             WHERE id = ? AND status IN ('queued', 'running', 'stopping')",
+            params![status.as_str(), failure_code, now, operation_id],
+        )?;
+        if changed == 1 {
+            let pending_status = if status == WorkspaceTaskOperationStatus::Cancelled {
+                "cancelled"
+            } else {
+                "skipped"
+            };
+            transaction.execute(
+                "UPDATE workspace_task_operation_runs
+                 SET status = ?, failure_code = coalesce(failure_code, ?)
+                 WHERE operation_id = ? AND status = 'pending'",
+                params![pending_status, failure_code, operation_id],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(changed == 1)
+    }
+
+    pub(crate) fn workspace_task_operation_active_runs(
+        &self,
+        operation_id: &str,
+    ) -> Result<Vec<(String, String)>, StorageError> {
+        validate_workspace_operation_id(operation_id)?;
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT job_id, run_id FROM workspace_task_operation_runs
+             WHERE operation_id = ? AND status = 'running' AND run_id IS NOT NULL
+             ORDER BY sequence",
+        )?;
+        let runs = statement
+            .query_map([operation_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(StorageError::from)?;
+        Ok(runs)
+    }
+
+    pub(crate) fn workspace_task_operation_has_unsettled_runs(
+        &self,
+        operation_id: &str,
+    ) -> Result<bool, StorageError> {
+        validate_workspace_operation_id(operation_id)?;
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM workspace_task_operation_runs
+                    WHERE operation_id = ? AND status IN ('launching', 'running')
+                )",
+                [operation_id],
+                |row| row.get(0),
+            )
+            .map_err(StorageError::from)
+    }
+
+    pub(crate) fn get_active_workspace_task_operation_for_root(
+        &self,
+        root_job_id: &str,
+    ) -> Result<Option<WorkspaceTaskOperationView>, StorageError> {
+        validate_token("job id", root_job_id)?;
+        let operation_id = {
+            let connection = self.lock()?;
+            connection
+                .query_row(
+                    "SELECT id FROM workspace_task_operations
+                     WHERE root_job_id = ? AND status IN ('queued', 'running', 'stopping')
+                     ORDER BY created_at DESC LIMIT 1",
+                    [root_job_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+        };
+        operation_id
+            .map(|id| {
+                self.get_workspace_task_operation(&id)?
+                    .ok_or_else(|| StorageError::NotFound(format!("workspace task operation {id}")))
+            })
+            .transpose()
+    }
+
+    pub(crate) fn list_active_workspace_task_operation_roots(
+        &self,
+    ) -> Result<HashSet<String>, StorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT root_job_id FROM workspace_task_operations
+             WHERE status IN ('queued', 'running', 'stopping')",
+        )?;
+        let roots = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<HashSet<_>>>()
+            .map_err(StorageError::from)?;
+        Ok(roots)
+    }
+
+    pub(crate) fn create_workspace_task_control_receipt_at(
+        &self,
+        request: &TaskControlRequest,
+        status: WorkspaceTaskControlReceiptStatus,
+        failure_code: Option<&str>,
+        now: i64,
+    ) -> Result<WorkspaceTaskControlReceipt, StorageError> {
+        request
+            .validate()
+            .map_err(|code| StorageError::Validation(code.to_owned()))?;
+        if !matches!(
+            status,
+            WorkspaceTaskControlReceiptStatus::Accepted
+                | WorkspaceTaskControlReceiptStatus::Rejected
+                | WorkspaceTaskControlReceiptStatus::Failed
+        ) {
+            return Err(StorageError::Validation(
+                "task-control-receipt-status-invalid".to_owned(),
+            ));
+        }
+        validate_workspace_failure_code(failure_code)?;
+        validate_workspace_task_control_receipt_shape(status, None, failure_code, now, now)?;
+        let connection = self.lock()?;
+        connection
+            .execute(
+                "INSERT INTO workspace_task_control_receipts (
+                    request_id, task_id, action, expected_revision, status,
+                    operation_id, failure_code, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+                params![
+                    request.request_id,
+                    request.task_id,
+                    task_control_action_str(request.action),
+                    request.expected_revision,
+                    status.as_str(),
+                    failure_code,
+                    now,
+                    now,
+                ],
+            )
+            .map_err(|error| match error {
+                rusqlite::Error::SqliteFailure(ref failure, _)
+                    if failure.code == rusqlite::ErrorCode::ConstraintViolation =>
+                {
+                    StorageError::ConcurrentChange("task-control-request-replayed".to_owned())
+                }
+                other => StorageError::Sqlite(other),
+            })?;
+        drop(connection);
+        self.get_workspace_task_control_receipt(&request.request_id)?
+            .ok_or_else(|| StorageError::NotFound(format!("task control {}", request.request_id)))
+    }
+
+    pub(crate) fn finish_workspace_task_control_receipt_at(
+        &self,
+        request_id: &str,
+        status: WorkspaceTaskControlReceiptStatus,
+        operation_id: Option<&str>,
+        failure_code: Option<&str>,
+        now: i64,
+    ) -> Result<WorkspaceTaskControlReceipt, StorageError> {
+        validate_workspace_request_id(request_id)?;
+        if !matches!(
+            status,
+            WorkspaceTaskControlReceiptStatus::Started
+                | WorkspaceTaskControlReceiptStatus::Stopped
+                | WorkspaceTaskControlReceiptStatus::Rejected
+                | WorkspaceTaskControlReceiptStatus::Failed
+        ) {
+            return Err(StorageError::Validation(
+                "task-control-receipt-status-invalid".to_owned(),
+            ));
+        }
+        if let Some(operation_id) = operation_id {
+            validate_workspace_operation_id(operation_id)?;
+        }
+        validate_workspace_failure_code(failure_code)?;
+        validate_workspace_task_control_receipt_shape(
+            status,
+            operation_id,
+            failure_code,
+            now,
+            now,
+        )?;
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            "UPDATE workspace_task_control_receipts
+             SET status = ?, operation_id = ?, failure_code = ?, updated_at = ?
+             WHERE request_id = ? AND status = 'accepted' AND created_at <= ?",
+            params![
+                status.as_str(),
+                operation_id,
+                failure_code,
+                now,
+                request_id,
+                now
+            ],
+        )?;
+        if changed != 1 {
+            return Err(StorageError::ConcurrentChange(
+                "task-control-receipt-state".to_owned(),
+            ));
+        }
+        drop(connection);
+        self.get_workspace_task_control_receipt(request_id)?
+            .ok_or_else(|| StorageError::NotFound(format!("task control {request_id}")))
+    }
+
+    pub(crate) fn get_workspace_task_control_receipt(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<WorkspaceTaskControlReceipt>, StorageError> {
+        validate_workspace_request_id(request_id)?;
+        let connection = self.lock()?;
+        let raw = connection
+            .query_row(
+                "SELECT request_id, task_id, action, expected_revision, status,
+                        operation_id, failure_code, created_at, updated_at
+                 FROM workspace_task_control_receipts WHERE request_id = ?",
+                [request_id],
+                raw_workspace_task_control_receipt,
+            )
+            .optional()
+            .map_err(StorageError::from)?;
+        raw.map(decode_workspace_task_control_receipt).transpose()
+    }
+
+    pub(crate) fn list_workspace_task_control_receipts(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<WorkspaceTaskControlReceipt>, StorageError> {
+        let limit = limit.clamp(1, 100);
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT request_id, task_id, action, expected_revision, status,
+                    operation_id, failure_code, created_at, updated_at
+             FROM workspace_task_control_receipts
+             ORDER BY updated_at DESC, request_id DESC LIMIT ?",
+        )?;
+        let raw = statement
+            .query_map(
+                [i64::try_from(limit).unwrap_or(100)],
+                raw_workspace_task_control_receipt,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(StorageError::from)?;
+        raw.into_iter()
+            .map(decode_workspace_task_control_receipt)
+            .collect()
     }
 
     /// CAS trust to the exact preview revision.  A stale preview is reported
@@ -1785,6 +2550,7 @@ impl DatabaseState {
         let mut connection = self.lock_mut()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         ensure_no_active_runs(&transaction, id)?;
+        ensure_no_active_workspace_task_operations(&transaction, id)?;
         let deleted =
             transaction.execute("DELETE FROM jobs WHERE id = ? AND kind = 'job'", [id])?;
         transaction.commit()?;
@@ -3235,6 +4001,116 @@ fn validate_workspace_source_id(value: &str) -> Result<(), StorageError> {
     validate_token("workspace task source id", value)
 }
 
+fn validate_workspace_request_id(value: &str) -> Result<(), StorageError> {
+    if value.len() != 32
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(StorageError::Validation(
+            "task-control-request-id-invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn task_control_action_str(action: TaskControlAction) -> &'static str {
+    match action {
+        TaskControlAction::Start => "start",
+        TaskControlAction::Stop => "stop",
+    }
+}
+
+type RawWorkspaceTaskControlReceipt = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    i64,
+    i64,
+);
+
+fn raw_workspace_task_control_receipt(
+    row: &Row<'_>,
+) -> rusqlite::Result<RawWorkspaceTaskControlReceipt> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+        row.get(6)?,
+        row.get(7)?,
+        row.get(8)?,
+    ))
+}
+
+fn decode_workspace_task_control_receipt(
+    raw: RawWorkspaceTaskControlReceipt,
+) -> Result<WorkspaceTaskControlReceipt, StorageError> {
+    let (
+        request_id,
+        task_id,
+        action,
+        expected_revision,
+        status,
+        operation_id,
+        failure_code,
+        created_at,
+        updated_at,
+    ) = raw;
+    validate_workspace_request_id(&request_id)?;
+    validate_token("task control task id", &task_id)?;
+    validate_workspace_digest("task control revision", &expected_revision)?;
+    if let Some(operation_id) = operation_id.as_deref() {
+        validate_workspace_operation_id(operation_id)?;
+    }
+    validate_workspace_failure_code(failure_code.as_deref())?;
+    let action = match action.as_str() {
+        "start" => TaskControlAction::Start,
+        "stop" => TaskControlAction::Stop,
+        _ => {
+            return Err(StorageError::Validation(
+                "task-control-action-corrupt".to_owned(),
+            ))
+        }
+    };
+    let status = match status.as_str() {
+        "accepted" => WorkspaceTaskControlReceiptStatus::Accepted,
+        "rejected" => WorkspaceTaskControlReceiptStatus::Rejected,
+        "started" => WorkspaceTaskControlReceiptStatus::Started,
+        "stopped" => WorkspaceTaskControlReceiptStatus::Stopped,
+        "failed" => WorkspaceTaskControlReceiptStatus::Failed,
+        _ => {
+            return Err(StorageError::Validation(
+                "task-control-receipt-status-corrupt".to_owned(),
+            ))
+        }
+    };
+    validate_workspace_task_control_receipt_shape(
+        status,
+        operation_id.as_deref(),
+        failure_code.as_deref(),
+        created_at,
+        updated_at,
+    )?;
+    Ok(WorkspaceTaskControlReceipt {
+        schema_version: TASK_CONTROL_SCHEMA_VERSION,
+        request_id,
+        task_id,
+        action,
+        status,
+        operation_id,
+        failure_code,
+        created_at,
+        updated_at,
+    })
+}
+
 fn validate_workspace_task_id(value: &str) -> Result<(), StorageError> {
     if value.len() > MAX_WORKSPACE_SOURCE_ID_BYTES {
         return Err(StorageError::Validation(
@@ -3382,25 +4258,285 @@ fn decode_workspace_problem_matcher(
     Ok(Some(matcher))
 }
 
+fn validate_workspace_operation_plan(
+    plan: &WorkspaceTaskOperationPlan,
+) -> Result<(), StorageError> {
+    validate_token("workspace task operation root job id", &plan.root_job_id)?;
+    validate_workspace_source_id(&plan.source_id)?;
+    validate_workspace_digest("workspace task operation revision", &plan.revision)?;
+    if plan.layers.is_empty()
+        || plan.layers.len() > MAX_TASKS
+        || plan.task_job_ids.is_empty()
+        || plan.task_job_ids.len() > MAX_TASKS
+    {
+        return Err(StorageError::Validation(
+            "workspace task operation plan exceeds the limit".to_owned(),
+        ));
+    }
+    let flattened = plan.layers.iter().flatten().collect::<Vec<_>>();
+    if flattened.len() != plan.task_job_ids.len()
+        || flattened
+            .iter()
+            .zip(&plan.task_job_ids)
+            .any(|(left, right)| *left != right)
+    {
+        return Err(StorageError::Validation(
+            "workspace task operation plan is inconsistent".to_owned(),
+        ));
+    }
+    let mut unique = HashSet::with_capacity(flattened.len());
+    for job_id in flattened {
+        validate_token("workspace task operation job id", job_id)?;
+        if !unique.insert(job_id) {
+            return Err(StorageError::Validation(
+                "workspace task operation plan contains a duplicate".to_owned(),
+            ));
+        }
+    }
+    if !unique.contains(&plan.root_job_id) {
+        return Err(StorageError::Validation(
+            "workspace task operation root is missing".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_workspace_operation_id(value: &str) -> Result<(), StorageError> {
+    if Uuid::parse_str(value).is_err() {
+        return Err(StorageError::Validation(
+            "workspace task operation id is invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_workspace_failure_code(value: Option<&str>) -> Result<(), StorageError> {
+    if value.is_some_and(|value| {
+        value.is_empty()
+            || value.len() > 64
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    }) {
+        return Err(StorageError::Validation(
+            "workspace task operation failure code is invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_workspace_task_control_receipt_shape(
+    status: WorkspaceTaskControlReceiptStatus,
+    operation_id: Option<&str>,
+    failure_code: Option<&str>,
+    created_at: i64,
+    updated_at: i64,
+) -> Result<(), StorageError> {
+    let fields_valid = match status {
+        WorkspaceTaskControlReceiptStatus::Accepted => {
+            operation_id.is_none() && failure_code.is_none()
+        }
+        WorkspaceTaskControlReceiptStatus::Rejected | WorkspaceTaskControlReceiptStatus::Failed => {
+            operation_id.is_none() && failure_code.is_some()
+        }
+        WorkspaceTaskControlReceiptStatus::Started | WorkspaceTaskControlReceiptStatus::Stopped => {
+            operation_id.is_some() && failure_code.is_none()
+        }
+    };
+    if !fields_valid || created_at <= 0 || updated_at < created_at {
+        return Err(StorageError::Validation(
+            "task-control-receipt-shape-invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn parse_workspace_operation_status(
+    value: &str,
+) -> Result<WorkspaceTaskOperationStatus, StorageError> {
+    match value {
+        "queued" => Ok(WorkspaceTaskOperationStatus::Queued),
+        "running" => Ok(WorkspaceTaskOperationStatus::Running),
+        "stopping" => Ok(WorkspaceTaskOperationStatus::Stopping),
+        "succeeded" => Ok(WorkspaceTaskOperationStatus::Succeeded),
+        "failed" => Ok(WorkspaceTaskOperationStatus::Failed),
+        "cancelled" => Ok(WorkspaceTaskOperationStatus::Cancelled),
+        _ => Err(StorageError::Validation(
+            "workspace task operation status is corrupt".to_owned(),
+        )),
+    }
+}
+
+fn parse_workspace_operation_run_status(
+    value: &str,
+) -> Result<WorkspaceTaskOperationRunStatus, StorageError> {
+    match value {
+        "pending" => Ok(WorkspaceTaskOperationRunStatus::Pending),
+        "launching" => Ok(WorkspaceTaskOperationRunStatus::Launching),
+        "running" => Ok(WorkspaceTaskOperationRunStatus::Running),
+        "succeeded" => Ok(WorkspaceTaskOperationRunStatus::Succeeded),
+        "failed" => Ok(WorkspaceTaskOperationRunStatus::Failed),
+        "cancelled" => Ok(WorkspaceTaskOperationRunStatus::Cancelled),
+        "skipped" => Ok(WorkspaceTaskOperationRunStatus::Skipped),
+        _ => Err(StorageError::Validation(
+            "workspace task operation run status is corrupt".to_owned(),
+        )),
+    }
+}
+
+type RawWorkspaceTaskOperation = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    i64,
+    Option<String>,
+    i64,
+    Option<i64>,
+    Option<i64>,
+);
+
+fn read_workspace_task_operation(
+    connection: &Connection,
+    operation_id: &str,
+) -> Result<Option<WorkspaceTaskOperationView>, StorageError> {
+    let raw: Option<RawWorkspaceTaskOperation> = connection
+        .query_row(
+            "SELECT id, root_job_id, source_id, revision, status, fail_fast,
+                    failure_code, created_at, started_at, ended_at
+             FROM workspace_task_operations WHERE id = ?",
+            [operation_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get(8)?,
+                    row.get(9)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((
+        id,
+        root_job_id,
+        source_id,
+        revision,
+        status,
+        fail_fast,
+        failure_code,
+        created_at,
+        started_at,
+        ended_at,
+    )) = raw
+    else {
+        return Ok(None);
+    };
+    validate_workspace_operation_id(&id)?;
+    validate_token("workspace task operation root job id", &root_job_id)?;
+    validate_workspace_source_id(&source_id)?;
+    validate_workspace_digest("workspace task operation revision", &revision)?;
+    validate_workspace_failure_code(failure_code.as_deref())?;
+    let status = parse_workspace_operation_status(&status)?;
+    let fail_fast = parse_workspace_bool(fail_fast, "operation fail fast")?;
+    let mut statement = connection.prepare(
+        "SELECT job_id, run_id, layer_index, sequence, status, failure_code
+         FROM workspace_task_operation_runs
+         WHERE operation_id = ? ORDER BY sequence",
+    )?;
+    let raw_runs = statement
+        .query_map([operation_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if raw_runs.is_empty() || raw_runs.len() > MAX_TASKS {
+        return Err(StorageError::Validation(
+            "workspace task operation run set is corrupt".to_owned(),
+        ));
+    }
+    let mut runs = Vec::with_capacity(raw_runs.len());
+    for (job_id, run_id, layer_index, sequence, status, failure_code) in raw_runs {
+        validate_token("workspace task operation job id", &job_id)?;
+        if let Some(run_id) = run_id.as_deref() {
+            validate_token("workspace task operation run id", run_id)?;
+        }
+        validate_workspace_failure_code(failure_code.as_deref())?;
+        runs.push(WorkspaceTaskOperationRunView {
+            job_id,
+            run_id,
+            layer_index: u32::try_from(layer_index).map_err(|_| {
+                StorageError::Validation(
+                    "workspace task operation layer index is corrupt".to_owned(),
+                )
+            })?,
+            sequence: u32::try_from(sequence).map_err(|_| {
+                StorageError::Validation("workspace task operation sequence is corrupt".to_owned())
+            })?,
+            status: parse_workspace_operation_run_status(&status)?,
+            failure_code,
+        });
+    }
+    Ok(Some(WorkspaceTaskOperationView {
+        id,
+        root_job_id,
+        source_id,
+        revision,
+        status,
+        fail_fast,
+        failure_code,
+        created_at,
+        started_at,
+        ended_at,
+        runs,
+    }))
+}
+
 fn ensure_workspace_task_can_enable_connection(
     connection: &Connection,
     job_id: &str,
 ) -> Result<(), StorageError> {
-    let state: Option<(String, i64, i64, i64)> = connection
+    let state: Option<(String, String, i64, i64, i64)> = connection
         .query_row(
-            "SELECT task.kind, source.trusted, source.shell_trusted, task.available
+            "SELECT task.kind, task.depends_on_json, source.trusted,
+                    source.shell_trusted, task.available
              FROM workspace_tasks AS task
              JOIN workspace_task_sources AS source ON source.id = task.source_id
              JOIN jobs ON jobs.id = task.job_id
              WHERE task.job_id = ? AND jobs.kind = 'job'",
             [job_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .optional()?;
-    let Some((kind, trusted, shell_trusted, available)) = state else {
+    let Some((kind, depends_on_json, trusted, shell_trusted, available)) = state else {
         return Ok(());
     };
     let kind = parse_workspace_task_kind(&kind)?;
+    if !decode_workspace_dependencies(&depends_on_json)?.is_empty() {
+        return Err(StorageError::Validation(
+            "workspace-task-orchestration-manual-only".to_owned(),
+        ));
+    }
     if trusted != 1 {
         return Err(StorageError::Validation(
             "workspace-task-source-untrusted".to_owned(),
@@ -3479,6 +4615,33 @@ struct RawWorkspaceTaskExecution {
     trusted: i64,
     shell_trusted: i64,
     available: i64,
+}
+
+fn row_to_raw_workspace_task_execution(
+    row: &Row<'_>,
+) -> rusqlite::Result<RawWorkspaceTaskExecution> {
+    Ok(RawWorkspaceTaskExecution {
+        job_id: row.get(0)?,
+        source_id: row.get(1)?,
+        source_index: row.get(2)?,
+        label: row.get(3)?,
+        kind: row.get(4)?,
+        command: row.get(5)?,
+        cwd: row.get(6)?,
+        source_root: row.get(7)?,
+        project_identity: row.get(8)?,
+        revision: row.get(9)?,
+        target_kind: row.get(10)?,
+        target_distro: row.get(11)?,
+        args_json: row.get(12)?,
+        environment_keys_json: row.get(13)?,
+        depends_on_json: row.get(14)?,
+        depends_order: row.get(15)?,
+        problem_matcher_json: row.get(16)?,
+        trusted: row.get(17)?,
+        shell_trusted: row.get(18)?,
+        available: row.get(19)?,
+    })
 }
 
 fn raw_workspace_task_execution(
@@ -3781,6 +4944,30 @@ fn ensure_no_active_runs(transaction: &Transaction<'_>, job_id: &str) -> Result<
     )?;
     if active > 0 {
         return Err(StorageError::Validation("active-run-must-stop".to_string()));
+    }
+    Ok(())
+}
+
+fn ensure_no_active_workspace_task_operations(
+    transaction: &Transaction<'_>,
+    job_id: &str,
+) -> Result<(), StorageError> {
+    let active: bool = transaction.query_row(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM workspace_task_operation_runs AS child
+            JOIN workspace_task_operations AS operation
+              ON operation.id = child.operation_id
+            WHERE child.job_id = ?
+              AND operation.status IN ('queued', 'running', 'stopping')
+        )",
+        [job_id],
+        |row| row.get(0),
+    )?;
+    if active {
+        return Err(StorageError::Validation(
+            "workspace-task-operation-active".to_owned(),
+        ));
     }
     Ok(())
 }
@@ -4135,6 +5322,7 @@ mod tests {
         EnvironmentUpdate, JobInput, NewNotification, RestartPolicy, ServiceInput,
         ServiceInstanceState, TargetKind,
     };
+    use crate::core::workspace_orchestration::build_workspace_task_operation_plan;
     use crate::core::workspace_tasks::{
         WorkspaceTaskItem, WorkspaceTaskKind, WorkspaceTaskPlan, TASKS_JSON_RELATIVE_PATH,
         WORKSPACE_TASK_SCHEMA_VERSION,
@@ -4205,6 +5393,53 @@ mod tests {
             target_distro: None,
             selected_platform: "windows".to_owned(),
             items,
+        }
+    }
+
+    fn trusted_workspace_operation_fixture(
+        database: &DatabaseState,
+        now: i64,
+    ) -> (WorkspaceTaskOperationPlan, String, String) {
+        let revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let dependency = workspace_item("task-build", "build", "cargo build");
+        let mut root = workspace_item("task-test", "test", "cargo test");
+        root.source_index = 1;
+        root.depends_on = vec![dependency.label.clone()];
+        let plan = workspace_plan(revision, vec![dependency.clone(), root.clone()]);
+        let applied = database
+            .apply_workspace_task_import_at(&plan, &[dependency.id.clone(), root.id.clone()], now)
+            .unwrap();
+        database
+            .trust_workspace_task_source_at(&applied.source_id, revision, now + 1)
+            .unwrap();
+        let states = database.list_workspace_task_states().unwrap();
+        let dependency_job_id = states
+            .iter()
+            .find(|state| state.label == dependency.label)
+            .unwrap()
+            .job_id
+            .clone();
+        let root_job_id = states
+            .iter()
+            .find(|state| state.label == root.label)
+            .unwrap()
+            .job_id
+            .clone();
+        let executions = database
+            .list_workspace_task_executions_for_source(&applied.source_id)
+            .unwrap();
+        let operation_plan =
+            build_workspace_task_operation_plan(&root_job_id, &executions).unwrap();
+        (operation_plan, dependency_job_id, root_job_id)
+    }
+
+    fn task_control_request(request_id: &str, action: TaskControlAction) -> TaskControlRequest {
+        TaskControlRequest {
+            schema_version: TASK_CONTROL_SCHEMA_VERSION,
+            request_id: request_id.to_owned(),
+            task_id: "task-control-test".to_owned(),
+            action,
+            expected_revision: "d".repeat(64),
         }
     }
 
@@ -5573,5 +6808,572 @@ mod tests {
             .invalidate_workspace_task_source_at(&applied.source_id, 103)
             .unwrap();
         assert!(database.list_enabled_jobs().unwrap().is_empty());
+    }
+
+    #[test]
+    fn workspace_shell_trust_is_separate_and_resets_on_revision_refresh() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let mut shell = workspace_item("shell-v1", "serve", "npm run serve");
+        shell.task_kind = Some(WorkspaceTaskKind::Shell);
+        let plan = workspace_plan(revision, vec![shell.clone()]);
+        let applied = database
+            .apply_workspace_task_import_at(&plan, &[shell.id.clone()], 100)
+            .unwrap();
+        let state = database.list_workspace_task_states().unwrap().remove(0);
+        assert!(!state.trusted);
+        assert!(!state.shell_trusted);
+        assert!(matches!(
+            database.trust_workspace_task_shell_source_at(&applied.source_id, revision, 101),
+            Err(StorageError::Validation(code)) if code == "workspace-task-source-untrusted"
+        ));
+
+        database
+            .trust_workspace_task_source_at(&applied.source_id, revision, 102)
+            .unwrap();
+        assert!(matches!(
+            database.set_job_enabled_at(&state.job_id, true, 103),
+            Err(StorageError::Validation(code)) if code == "workspace-task-shell-untrusted"
+        ));
+        database
+            .trust_workspace_task_shell_source_at(&applied.source_id, revision, 104)
+            .unwrap();
+        database
+            .set_job_enabled_at(&state.job_id, true, 105)
+            .unwrap();
+        let trusted = database
+            .get_workspace_task_state(&state.job_id)
+            .unwrap()
+            .unwrap();
+        assert!(trusted.trusted);
+        assert!(trusted.shell_trusted);
+        assert!(database.get_job(&state.job_id).unwrap().unwrap().enabled);
+
+        let mut refreshed_shell = shell;
+        refreshed_shell.id = "shell-v2".to_owned();
+        let refreshed = workspace_plan(
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            vec![refreshed_shell.clone()],
+        );
+        database
+            .apply_workspace_task_import_at(&refreshed, &[refreshed_shell.id], 200)
+            .unwrap();
+        let reset = database
+            .get_workspace_task_state(&state.job_id)
+            .unwrap()
+            .unwrap();
+        assert!(!reset.trusted);
+        assert!(!reset.shell_trusted);
+        assert!(!database.get_job(&state.job_id).unwrap().unwrap().enabled);
+        assert!(matches!(
+            database.set_job_enabled_at(&state.job_id, true, 201),
+            Err(StorageError::Validation(code)) if code == "workspace-task-source-untrusted"
+        ));
+    }
+
+    #[test]
+    fn workspace_task_apply_rejects_selection_without_dependency_closure() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let dependency = workspace_item("task-build", "build", "cargo build");
+        let mut root = workspace_item("task-test", "test", "cargo test");
+        root.source_index = 1;
+        root.depends_on = vec![dependency.label.clone()];
+        let plan = workspace_plan(revision, vec![dependency.clone(), root.clone()]);
+
+        assert!(matches!(
+            database.apply_workspace_task_import_at(&plan, &[root.id], 100),
+            Err(StorageError::Validation(code))
+                if code == "workspace-task-dependency-selection-incomplete"
+        ));
+        assert!(database.list_workspace_task_states().unwrap().is_empty());
+    }
+
+    #[test]
+    fn workspace_task_operation_storage_has_durable_claim_and_stop_barriers() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let dependency = workspace_item("task-build", "build", "cargo build");
+        let mut root = workspace_item("task-test", "test", "cargo test");
+        root.source_index = 1;
+        root.depends_on = vec![dependency.label.clone()];
+        let plan = workspace_plan(revision, vec![dependency.clone(), root.clone()]);
+        let applied = database
+            .apply_workspace_task_import_at(&plan, &[dependency.id.clone(), root.id.clone()], 100)
+            .unwrap();
+        database
+            .trust_workspace_task_source_at(&applied.source_id, revision, 101)
+            .unwrap();
+        let states = database.list_workspace_task_states().unwrap();
+        let build_id = states
+            .iter()
+            .find(|state| state.label == dependency.label)
+            .unwrap()
+            .job_id
+            .clone();
+        let root_id = states
+            .iter()
+            .find(|state| state.label == root.label)
+            .unwrap()
+            .job_id
+            .clone();
+        let executions = database
+            .list_workspace_task_executions_for_source(&applied.source_id)
+            .unwrap();
+        let operation_plan = build_workspace_task_operation_plan(&root_id, &executions).unwrap();
+        assert_eq!(
+            operation_plan.task_job_ids,
+            vec![build_id.clone(), root_id.clone()]
+        );
+
+        let queued = database
+            .create_workspace_task_operation_at(&operation_plan, true, 110)
+            .unwrap();
+        assert_eq!(queued.status, WorkspaceTaskOperationStatus::Queued);
+        assert_eq!(
+            database
+                .list_active_workspace_task_operation_roots()
+                .unwrap(),
+            HashSet::from([root_id.clone()])
+        );
+        assert_eq!(
+            queued.runs.iter().map(|run| run.status).collect::<Vec<_>>(),
+            vec![
+                WorkspaceTaskOperationRunStatus::Pending,
+                WorkspaceTaskOperationRunStatus::Pending
+            ]
+        );
+        assert!(matches!(
+            database.create_workspace_task_operation_at(&operation_plan, true, 111),
+            Err(StorageError::ConcurrentChange(code)) if code == "workspace-task-operation-active"
+        ));
+        for member_id in [&build_id, &root_id] {
+            assert!(matches!(
+                database.delete_job(member_id),
+                Err(StorageError::Validation(code)) if code == "workspace-task-operation-active"
+            ));
+            assert!(database.get_job(member_id).unwrap().is_some());
+        }
+        assert!(database
+            .mark_workspace_task_operation_running_at(&queued.id, 112)
+            .unwrap());
+        assert!(database
+            .claim_workspace_task_operation_run(&queued.id, &build_id)
+            .unwrap());
+        assert!(database
+            .workspace_task_operation_has_unsettled_runs(&queued.id)
+            .unwrap());
+
+        let run = database.create_manual_run_at(&build_id, 113).unwrap();
+        assert!(database
+            .claim_run_starting(&run.id, "operation-owner", "operation-attempt")
+            .unwrap());
+        assert!(database
+            .mark_run_running(&run.id, "operation-owner", "operation-attempt", 114)
+            .unwrap());
+        assert!(database
+            .attach_workspace_task_operation_run(&queued.id, &build_id, &run.id)
+            .unwrap());
+        assert_eq!(
+            database
+                .get_workspace_task_operation(&queued.id)
+                .unwrap()
+                .unwrap()
+                .runs[0]
+                .status,
+            WorkspaceTaskOperationRunStatus::Running
+        );
+        assert!(database
+            .workspace_task_operation_has_unsettled_runs(&queued.id)
+            .unwrap());
+
+        assert!(database
+            .request_workspace_task_operation_stop(&queued.id)
+            .unwrap());
+        assert!(!database
+            .claim_workspace_task_operation_run(&queued.id, &root_id)
+            .unwrap());
+        assert!(database
+            .request_run_stop(&run.id, "operation-owner", "operation-attempt")
+            .unwrap());
+        assert!(database
+            .finish_run(
+                &run.id,
+                "operation-owner",
+                "operation-attempt",
+                RunStatus::Cancelled,
+                None,
+                Some("operation-stop"),
+                115,
+            )
+            .unwrap());
+        assert!(database
+            .complete_workspace_task_operation_run(
+                &queued.id,
+                &build_id,
+                WorkspaceTaskOperationRunStatus::Cancelled,
+                Some("operation-stop"),
+            )
+            .unwrap());
+        assert!(!database
+            .workspace_task_operation_has_unsettled_runs(&queued.id)
+            .unwrap());
+        assert!(database
+            .finish_workspace_task_operation_at(
+                &queued.id,
+                WorkspaceTaskOperationStatus::Cancelled,
+                Some("operation-stop"),
+                116,
+            )
+            .unwrap());
+        let cancelled = database
+            .get_workspace_task_operation(&queued.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(cancelled.status, WorkspaceTaskOperationStatus::Cancelled);
+        assert_eq!(cancelled.ended_at, Some(116));
+        assert!(database
+            .list_active_workspace_task_operation_roots()
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            cancelled.runs[1].status,
+            WorkspaceTaskOperationRunStatus::Cancelled
+        );
+
+        let second = database
+            .create_workspace_task_operation_at(&operation_plan, true, 120)
+            .unwrap();
+        assert!(database
+            .mark_workspace_task_operation_running_at(&second.id, 121)
+            .unwrap());
+        assert!(database
+            .claim_workspace_task_operation_run(&second.id, &build_id)
+            .unwrap());
+        let second_run = database.create_manual_run_at(&build_id, 122).unwrap();
+        assert!(database
+            .attach_workspace_task_operation_run(&second.id, &build_id, &second_run.id)
+            .unwrap());
+        assert!(database
+            .complete_workspace_task_operation_run(
+                &second.id,
+                &build_id,
+                WorkspaceTaskOperationRunStatus::Succeeded,
+                None,
+            )
+            .unwrap());
+        assert!(database
+            .finish_workspace_task_operation_at(
+                &second.id,
+                WorkspaceTaskOperationStatus::Succeeded,
+                None,
+                123,
+            )
+            .unwrap());
+        let succeeded = database
+            .get_workspace_task_operation(&second.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(succeeded.status, WorkspaceTaskOperationStatus::Succeeded);
+        assert_eq!(succeeded.ended_at, Some(123));
+
+        assert!(database.delete_job(&build_id).unwrap());
+        assert!(database
+            .get_workspace_task_operation(&queued.id)
+            .unwrap()
+            .is_none());
+        assert!(database
+            .get_workspace_task_operation(&second.id)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn interrupted_workspace_operations_wait_for_terminal_children_before_recovery() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let (operation_plan, dependency_job_id, root_job_id) =
+            trusted_workspace_operation_fixture(&database, 100);
+
+        let queued = database
+            .create_workspace_task_operation_at(&operation_plan, true, 110)
+            .unwrap();
+        assert_eq!(
+            database
+                .interrupt_workspace_task_operations_at(111)
+                .unwrap(),
+            1
+        );
+        let interrupted = database
+            .get_workspace_task_operation(&queued.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(interrupted.status, WorkspaceTaskOperationStatus::Stopping);
+        assert_eq!(
+            interrupted.failure_code.as_deref(),
+            Some("workspace-task-operation-interrupted")
+        );
+        assert!(!database
+            .claim_workspace_task_operation_run(&queued.id, &dependency_job_id)
+            .unwrap());
+        assert_eq!(
+            database
+                .recover_interrupted_workspace_task_operations_at(112)
+                .unwrap(),
+            1
+        );
+        let recovered = database
+            .get_workspace_task_operation(&queued.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(recovered.status, WorkspaceTaskOperationStatus::Failed);
+        assert_eq!(recovered.ended_at, Some(112));
+        assert!(recovered
+            .runs
+            .iter()
+            .all(|run| run.status == WorkspaceTaskOperationRunStatus::Skipped));
+
+        let running = database
+            .create_workspace_task_operation_at(&operation_plan, true, 120)
+            .unwrap();
+        assert!(database
+            .mark_workspace_task_operation_running_at(&running.id, 121)
+            .unwrap());
+        assert!(database
+            .claim_workspace_task_operation_run(&running.id, &dependency_job_id)
+            .unwrap());
+        let child_run = database
+            .create_manual_run_at(&dependency_job_id, 122)
+            .unwrap();
+        assert!(database
+            .claim_run_starting(&child_run.id, "recovery-owner", "recovery-attempt")
+            .unwrap());
+        assert!(database
+            .mark_run_running(&child_run.id, "recovery-owner", "recovery-attempt", 123)
+            .unwrap());
+        assert!(database
+            .attach_workspace_task_operation_run(&running.id, &dependency_job_id, &child_run.id)
+            .unwrap());
+        assert_eq!(
+            database
+                .interrupt_workspace_task_operations_at(124)
+                .unwrap(),
+            1
+        );
+        assert!(!database
+            .claim_workspace_task_operation_run(&running.id, &root_job_id)
+            .unwrap());
+        assert_eq!(
+            database
+                .recover_interrupted_workspace_task_operations_at(125)
+                .unwrap(),
+            0
+        );
+        let unsettled = database
+            .get_workspace_task_operation(&running.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(unsettled.status, WorkspaceTaskOperationStatus::Stopping);
+        assert_eq!(
+            unsettled.runs[0].status,
+            WorkspaceTaskOperationRunStatus::Running
+        );
+        assert_eq!(
+            unsettled.runs[1].status,
+            WorkspaceTaskOperationRunStatus::Pending
+        );
+
+        assert!(database
+            .request_run_stop(&child_run.id, "recovery-owner", "recovery-attempt")
+            .unwrap());
+        assert!(database
+            .finish_run(
+                &child_run.id,
+                "recovery-owner",
+                "recovery-attempt",
+                RunStatus::Cancelled,
+                None,
+                Some("recovery-stop"),
+                126,
+            )
+            .unwrap());
+        assert_eq!(
+            database
+                .recover_interrupted_workspace_task_operations_at(127)
+                .unwrap(),
+            1
+        );
+        let recovered_running = database
+            .get_workspace_task_operation(&running.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            recovered_running.status,
+            WorkspaceTaskOperationStatus::Failed
+        );
+        assert_eq!(
+            recovered_running.runs[0].status,
+            WorkspaceTaskOperationRunStatus::Cancelled
+        );
+        assert_eq!(
+            recovered_running.runs[0].failure_code.as_deref(),
+            Some("workspace-task-run-cancelled")
+        );
+        assert_eq!(
+            recovered_running.runs[1].status,
+            WorkspaceTaskOperationRunStatus::Skipped
+        );
+    }
+
+    #[test]
+    fn task_control_receipts_use_single_transition_cas_and_redacted_wire_shape() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let (operation_plan, _, _) = trusted_workspace_operation_fixture(&database, 90);
+        let operation = database
+            .create_workspace_task_operation_at(&operation_plan, true, 91)
+            .unwrap();
+        let started_request = task_control_request(&"a".repeat(32), TaskControlAction::Start);
+        let accepted = database
+            .create_workspace_task_control_receipt_at(
+                &started_request,
+                WorkspaceTaskControlReceiptStatus::Accepted,
+                None,
+                100,
+            )
+            .unwrap();
+        assert_eq!(accepted.status, WorkspaceTaskControlReceiptStatus::Accepted);
+        let operation_id = operation.id.as_str();
+        let started = database
+            .finish_workspace_task_control_receipt_at(
+                &started_request.request_id,
+                WorkspaceTaskControlReceiptStatus::Started,
+                Some(operation_id),
+                None,
+                101,
+            )
+            .unwrap();
+        assert_eq!(started.status, WorkspaceTaskControlReceiptStatus::Started);
+        assert_eq!(started.operation_id.as_deref(), Some(operation_id));
+        assert!(matches!(
+            database.create_workspace_task_control_receipt_at(
+                &started_request,
+                WorkspaceTaskControlReceiptStatus::Accepted,
+                None,
+                102,
+            ),
+            Err(StorageError::ConcurrentChange(code)) if code == "task-control-request-replayed"
+        ));
+        assert!(matches!(
+            database.finish_workspace_task_control_receipt_at(
+                &started_request.request_id,
+                WorkspaceTaskControlReceiptStatus::Failed,
+                None,
+                Some("task-control-late-transition"),
+                103,
+            ),
+            Err(StorageError::ConcurrentChange(code)) if code == "task-control-receipt-state"
+        ));
+
+        let stopped_request = task_control_request(&"b".repeat(32), TaskControlAction::Stop);
+        database
+            .create_workspace_task_control_receipt_at(
+                &stopped_request,
+                WorkspaceTaskControlReceiptStatus::Accepted,
+                None,
+                110,
+            )
+            .unwrap();
+        let stopped = database
+            .finish_workspace_task_control_receipt_at(
+                &stopped_request.request_id,
+                WorkspaceTaskControlReceiptStatus::Stopped,
+                Some(operation_id),
+                None,
+                111,
+            )
+            .unwrap();
+        assert_eq!(stopped.status, WorkspaceTaskControlReceiptStatus::Stopped);
+
+        let failed_request = task_control_request(&"c".repeat(32), TaskControlAction::Start);
+        database
+            .create_workspace_task_control_receipt_at(
+                &failed_request,
+                WorkspaceTaskControlReceiptStatus::Accepted,
+                None,
+                120,
+            )
+            .unwrap();
+        let failed = database
+            .finish_workspace_task_control_receipt_at(
+                &failed_request.request_id,
+                WorkspaceTaskControlReceiptStatus::Failed,
+                None,
+                Some("task-control-source-changed"),
+                121,
+            )
+            .unwrap();
+        assert_eq!(failed.status, WorkspaceTaskControlReceiptStatus::Failed);
+        assert_eq!(
+            failed.failure_code.as_deref(),
+            Some("task-control-source-changed")
+        );
+
+        let rejected_request = task_control_request(&"d".repeat(32), TaskControlAction::Stop);
+        database
+            .create_workspace_task_control_receipt_at(
+                &rejected_request,
+                WorkspaceTaskControlReceiptStatus::Accepted,
+                None,
+                130,
+            )
+            .unwrap();
+        let rejected = database
+            .finish_workspace_task_control_receipt_at(
+                &rejected_request.request_id,
+                WorkspaceTaskControlReceiptStatus::Rejected,
+                None,
+                Some("task-control-user-rejected"),
+                131,
+            )
+            .unwrap();
+        assert_eq!(rejected.status, WorkspaceTaskControlReceiptStatus::Rejected);
+        assert!(matches!(
+            database.create_workspace_task_control_receipt_at(
+                &task_control_request(&"e".repeat(32), TaskControlAction::Start),
+                WorkspaceTaskControlReceiptStatus::Accepted,
+                Some("task-control-invalid-shape"),
+                140,
+            ),
+            Err(StorageError::Validation(code)) if code == "task-control-receipt-shape-invalid"
+        ));
+
+        for receipt in [&accepted, &started, &stopped, &failed, &rejected] {
+            let serialized = serde_json::to_value(receipt).unwrap();
+            assert!(serialized.get("expectedRevision").is_none());
+            assert!(serialized.get("path").is_none());
+            assert!(serialized.get("command").is_none());
+        }
+        assert_eq!(
+            database
+                .list_workspace_task_control_receipts(10)
+                .unwrap()
+                .len(),
+            4
+        );
+
+        assert!(database
+            .finish_workspace_task_operation_at(
+                operation_id,
+                WorkspaceTaskOperationStatus::Failed,
+                Some("workspace-task-operation-cancelled"),
+                150,
+            )
+            .unwrap());
+        assert!(database.delete_job(&operation_plan.root_job_id).unwrap());
+        let remaining = database.list_workspace_task_control_receipts(10).unwrap();
+        assert_eq!(remaining.len(), 2);
+        assert!(remaining.iter().all(|receipt| matches!(
+            receipt.status,
+            WorkspaceTaskControlReceiptStatus::Failed | WorkspaceTaskControlReceiptStatus::Rejected
+        )));
     }
 }

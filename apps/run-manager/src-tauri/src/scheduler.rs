@@ -602,6 +602,10 @@ impl SchedulerCoordinator {
         // the row blocked and must not terminate the daemon (or turn the
         // shutdown path into an infinite retry that never invokes recovery).
         let _ = self.recover_stale_at(current_epoch_millis()).await;
+        let _ = self
+            .inner
+            .database
+            .recover_interrupted_workspace_task_operations_at(current_epoch_millis());
         // Bring up auto-start services once recovery has settled the durable
         // state. A failing service must not prevent the scheduler from running.
         let _ = self.auto_start_services(current_epoch_millis()).await;
@@ -618,6 +622,10 @@ impl SchedulerCoordinator {
                     }
                     let now = current_epoch_millis();
                     let _ = self.recover_stale_at(now).await;
+                    let _ = self
+                        .inner
+                        .database
+                        .recover_interrupted_workspace_task_operations_at(now);
                     let _ = self.supervise_services(now).await;
                     if now - last_health_check >= SERVICE_HEALTH_INTERVAL.as_millis() as i64 {
                         last_health_check = now;
@@ -698,6 +706,29 @@ impl SchedulerCoordinator {
         job_id: &str,
         now: i64,
     ) -> Result<Option<Run>, SchedulerError> {
+        self.stop_active_matching_at(job_id, None, now).await
+    }
+
+    /// Stop the active process only when its durable run identity still
+    /// matches `expected_run_id`. The comparison happens while holding the
+    /// same per-job mutex used by start/stop orchestration, so a completed run
+    /// can never cause a later replacement to be stopped by mistake.
+    pub async fn stop_exact_active_at(
+        &self,
+        job_id: &str,
+        expected_run_id: &str,
+        now: i64,
+    ) -> Result<Option<Run>, SchedulerError> {
+        self.stop_active_matching_at(job_id, Some(expected_run_id), now)
+            .await
+    }
+
+    async fn stop_active_matching_at(
+        &self,
+        job_id: &str,
+        expected_run_id: Option<&str>,
+        now: i64,
+    ) -> Result<Option<Run>, SchedulerError> {
         let lock = self.job_mutex(job_id).await;
         let (run_id, mut result_rx, start_operation) = {
             let _guard = lock.lock().await;
@@ -725,6 +756,9 @@ impl SchedulerCoordinator {
                         .ok_or_else(|| SchedulerError::Storage(StorageError::NotFound(pending)))?
                 }
             };
+            if expected_run_id.is_some_and(|expected| expected != active_run.id) {
+                return Ok(None);
+            }
             let existing_stop = self
                 .inner
                 .stops
@@ -3172,6 +3206,43 @@ mod tests {
         assert_eq!(events[0].run_id, run.id);
         assert_eq!(events[0].status, RunStatus::Cancelled);
         assert_eq!(events[0].failure_code, None);
+    }
+
+    #[tokio::test]
+    async fn exact_stop_never_terminates_a_replacement_run() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("exact-stop", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+
+        let first = scheduler.trigger_manual_at(&job.id, 1_001).await.unwrap();
+        adapter.finish_next(0).await;
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if database.get_run(&first.id).unwrap().unwrap().status == RunStatus::Succeeded {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let replacement = scheduler.trigger_manual_at(&job.id, 1_002).await.unwrap();
+        assert_eq!(replacement.status, RunStatus::Running);
+        assert!(scheduler
+            .stop_exact_active_at(&job.id, &first.id, 1_003)
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            database.get_run(&replacement.id).unwrap().unwrap().status,
+            RunStatus::Running
+        );
+
+        scheduler.shutdown().await.unwrap();
     }
 
     #[tokio::test]

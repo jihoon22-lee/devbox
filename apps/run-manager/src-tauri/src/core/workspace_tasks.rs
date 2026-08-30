@@ -71,17 +71,12 @@ pub enum WorkspaceTaskKind {
     Shell,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorkspaceTaskDependsOrder {
+    #[default]
     Parallel,
     Sequence,
-}
-
-impl Default for WorkspaceTaskDependsOrder {
-    fn default() -> Self {
-        Self::Parallel
-    }
 }
 
 /// A deliberately small subset of VS Code's problem matcher. Named matchers,
@@ -368,30 +363,58 @@ pub fn revalidate_workspace_task_execution(
 pub fn verify_workspace_task_execution(
     execution: &WorkspaceTaskExecution,
 ) -> Result<WorkspaceTaskPlan, WorkspaceTaskError> {
-    let plan = verify_workspace_task_plan(
-        Path::new(&execution.source_root),
-        execution.target_kind,
-        execution.target_distro.as_deref(),
-        &execution.source_root,
-        &execution.project_identity,
-        &execution.revision,
-    )?;
-    let item = plan
-        .items
-        .iter()
-        .find(|item| item.source_index == execution.source_index && item.label == execution.label)
+    verify_workspace_task_executions(std::slice::from_ref(execution))
+}
+
+/// Verify a whole source projection with one bounded source read. This is used
+/// before dependency planning so a 128-node graph does not reopen and reparse
+/// the same file 128 times.
+pub fn verify_workspace_task_executions(
+    executions: &[WorkspaceTaskExecution],
+) -> Result<WorkspaceTaskPlan, WorkspaceTaskError> {
+    let first = executions
+        .first()
         .ok_or(WorkspaceTaskError::SourceChanged)?;
-    if !item.is_ready_importable()
-        || item.task_kind != Some(execution.task_kind)
-        || item.command.as_deref() != Some(execution.command.as_str())
-        || item.args != execution.args
-        || item.cwd.as_deref() != Some(execution.cwd.as_str())
-        || item.environment_keys != execution.environment_keys
-        || item.depends_on != execution.depends_on
-        || item.depends_order != execution.depends_order
-        || item.problem_matcher != execution.problem_matcher
+    if executions.len() > MAX_TASKS
+        || executions.iter().any(|execution| {
+            execution.source_id != first.source_id
+                || execution.source_root != first.source_root
+                || execution.project_identity != first.project_identity
+                || execution.revision != first.revision
+                || execution.target_kind != first.target_kind
+                || execution.target_distro != first.target_distro
+        })
     {
         return Err(WorkspaceTaskError::SourceChanged);
+    }
+    let plan = verify_workspace_task_plan(
+        Path::new(&first.source_root),
+        first.target_kind,
+        first.target_distro.as_deref(),
+        &first.source_root,
+        &first.project_identity,
+        &first.revision,
+    )?;
+    for execution in executions {
+        let item = plan
+            .items
+            .iter()
+            .find(|item| {
+                item.source_index == execution.source_index && item.label == execution.label
+            })
+            .ok_or(WorkspaceTaskError::SourceChanged)?;
+        if !item.is_ready_importable()
+            || item.task_kind != Some(execution.task_kind)
+            || item.command.as_deref() != Some(execution.command.as_str())
+            || item.args != execution.args
+            || item.cwd.as_deref() != Some(execution.cwd.as_str())
+            || item.environment_keys != execution.environment_keys
+            || item.depends_on != execution.depends_on
+            || item.depends_order != execution.depends_order
+            || item.problem_matcher != execution.problem_matcher
+        {
+            return Err(WorkspaceTaskError::SourceChanged);
+        }
     }
     Ok(plan)
 }
@@ -883,17 +906,17 @@ fn validate_dependency_graph(items: &mut [WorkspaceTaskItem]) {
         .enumerate()
         .map(|(index, item)| (item.label.clone(), index))
         .collect::<BTreeMap<_, _>>();
-    for index in 0..items.len() {
-        if items[index].status != "ready" {
+    for (index, item) in items.iter_mut().enumerate() {
+        if item.status != "ready" {
             continue;
         }
-        let invalid = items[index].depends_on.iter().any(|dependency| {
+        let invalid = item.depends_on.iter().any(|dependency| {
             labels
                 .get(dependency)
                 .is_none_or(|dependency_index| *dependency_index == index)
         });
         if invalid {
-            block_projected_item(&mut items[index], "invalid-dependency");
+            block_projected_item(item, "invalid-dependency");
         }
     }
 

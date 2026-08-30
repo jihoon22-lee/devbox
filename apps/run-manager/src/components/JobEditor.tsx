@@ -46,6 +46,12 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
     () => new Set(allowedEnvironmentKeys.map((key) => key.toUpperCase())),
     [allowedEnvironmentKeys],
   );
+  const workspaceTaskReady = !managed || (
+    workspaceTask?.trusted === true
+    && workspaceTask.available
+    && workspaceTask.dependsOn.length === 0
+    && (workspaceTask.taskKind !== "shell" || workspaceTask.shellTrusted)
+  );
 
   useEffect(() => {
     setDraft(job ? draftFromJob(job) : { ...EMPTY_JOB_DRAFT, environment: [] });
@@ -135,8 +141,14 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const validation = validateJobDraft(draft);
-    if (managed && draft.enabled && (!workspaceTask?.trusted || !workspaceTask?.available)) {
-      setWorkspaceFieldError("소스 승인과 사용 가능 상태를 확인한 뒤 workspace task를 활성화하세요.");
+    if (managed && draft.enabled && !workspaceTaskReady) {
+      setWorkspaceFieldError(
+        workspaceTask?.dependsOn.length
+          ? "dependency가 있는 task는 일정 실행을 지원하지 않습니다. Jobs 화면의 지금 실행에서 orchestration으로 실행하세요."
+          : workspaceTask?.taskKind === "shell" && workspaceTask.trusted && !workspaceTask.shellTrusted
+          ? "셸 실행 승인을 완료한 뒤 workspace task를 활성화하세요."
+          : "소스 승인과 사용 가능 상태를 확인한 뒤 workspace task를 활성화하세요.",
+      );
       return;
     }
     if (
@@ -174,6 +186,7 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
             {managed ? (
               <p className="workspace-editor-notice" role="note">
                 VS Code {workspaceTask?.taskKind ?? "process"} task · 이름·명령·cwd·실행 대상은 source revision이 관리합니다. 일정·중복 정책과 환경 값만 수정할 수 있습니다.
+                {workspaceTask?.taskKind === "shell" && workspaceTask.trusted && !workspaceTask.shellTrusted ? " 셸 실행 승인은 별도 확인이 필요합니다." : ""}
               </p>
             ) : null}
           </div>
@@ -387,10 +400,16 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
                 <input
                   type="checkbox"
                   checked={draft.enabled}
-                  disabled={managed && (!workspaceTask?.trusted || !workspaceTask.available)}
+                  disabled={managed && !workspaceTaskReady}
                   onChange={(event) => update("enabled", event.target.checked)}
                 />
-                <span><strong>활성화</strong><small>{managed && (!workspaceTask?.trusted || !workspaceTask.available) ? "source 승인과 사용 가능 상태가 필요합니다." : "스케줄러가 이 작업을 평가합니다."}</small></span>
+                <span><strong>활성화</strong><small>{managed && !workspaceTaskReady
+                  ? workspaceTask?.dependsOn.length
+                    ? "dependency task는 수동 orchestration 전용입니다."
+                    : workspaceTask?.taskKind === "shell" && workspaceTask.trusted && !workspaceTask.shellTrusted
+                    ? "셸 실행 별도 승인이 필요합니다."
+                    : "source 승인과 사용 가능 상태가 필요합니다."
+                  : "스케줄러가 이 작업을 평가합니다."}</small></span>
               </label>
               <label className="toggle-field">
                 <input type="checkbox" checked={draft.catchUp} onChange={(event) => update("catchUp", event.target.checked)} />

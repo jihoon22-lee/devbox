@@ -641,6 +641,130 @@ h2 {
   color: #fca5a5;
 }
 
+.workspace-operation-badge {
+  border: 1px solid #334155;
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #cbd5e1;
+  font-size: 10px;
+}
+
+.workspace-operation-running,
+.workspace-operation-queued,
+.workspace-operation-stopping {
+  border-color: #31548a;
+  color: #bfdbfe;
+  background: #12213a;
+}
+
+.workspace-operation-succeeded {
+  border-color: #166534;
+  color: #86efac;
+}
+
+.workspace-operation-failed,
+.workspace-operation-cancelled {
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+
+.workspace-diagnostics {
+  display: grid;
+  gap: 7px;
+  margin-top: 13px;
+  border-top: 1px solid #253246;
+  padding-top: 11px;
+  color: #cbd5e1;
+  font-size: 11px;
+}
+
+.workspace-diagnostic-run {
+  display: grid;
+  gap: 6px;
+  color: #94a3b8;
+}
+
+.workspace-diagnostic-run-label {
+  color: #bfdbfe;
+  font-weight: 700;
+}
+
+.workspace-diagnostic-items {
+  display: grid;
+  gap: 5px;
+}
+
+.workspace-diagnostic-item {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.5fr) minmax(180px, 1fr) auto;
+  gap: 8px;
+  border: 1px solid #334155;
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: #cbd5e1;
+  background: #101a29;
+  text-align: left;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.workspace-diagnostic-item:hover {
+  border-color: #4a78b9;
+  background: #12213a;
+}
+
+.workspace-diagnostic-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-diagnostic-item span:first-child {
+  color: #93c5fd;
+  font-family: var(--db-font-mono);
+}
+
+.workspace-diagnostic-item span:last-child,
+.workspace-diagnostics-truncated {
+  color: #8290a5;
+}
+
+.task-control-receipts {
+  margin-top: 16px;
+  border: 1px solid #253246;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #cbd5e1;
+  background: rgb(15 23 35 / 76%);
+  font-size: 11px;
+}
+
+.task-control-receipts h3 {
+  color: #bfdbfe;
+  font-size: 12px;
+}
+
+.task-control-receipts ul {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-control-receipts li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+
+.task-control-receipts li > span:first-child {
+  color: #dbeafe;
+  font-weight: 700;
+}
+
 .job-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1142,6 +1266,19 @@ dd {
   color: var(--text, #e8eef8);
   background: var(--bg, #0b0f16);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.42);
+}
+
+.shell-trust-dialog {
+  width: min(560px, 92vw);
+}
+
+.shell-trust-dialog code {
+  color: #bfdbfe;
+  font-family: var(--db-font-mono);
+}
+
+.task-control-dialog {
+  width: min(520px, 92vw);
 }
 
 .launcher-task-dialog h2,

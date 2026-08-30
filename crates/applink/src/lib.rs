@@ -38,12 +38,17 @@
 //!   그 형태로 보낸다.
 
 mod handoff;
+mod task_control;
 
 pub use handoff::{
     handoff_root_in, validate_handoff_text, CreateHandoff, HandoffClaim, HandoffDescriptor,
     HandoffEnvelope, HandoffError, HandoffPublication, HandoffStatus, HandoffStatusRecord,
     HandoffStore, RecordHandoffStatus, DEFAULT_CLAIM_LEASE_MS, DEFAULT_HANDOFF_TTL_MS,
     MAX_HANDOFF_BYTES,
+};
+pub use task_control::{
+    TaskControlAction, TaskControlRequest, TASK_CONTROL_HANDOFF_KIND, TASK_CONTROL_SCHEMA_VERSION,
+    TASK_CONTROL_SOURCE_APP, TASK_CONTROL_TARGET_APP,
 };
 
 use serde::{Deserialize, Serialize};

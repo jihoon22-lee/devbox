@@ -147,7 +147,11 @@ describe("JobEditor", () => {
       targetDistro: null,
       environmentKeys: ["BUILD_TOKEN"],
       appliedOverride: "windows",
+      dependsOn: [],
+      dependsOrder: "parallel",
+      hasProblemMatcher: false,
       trusted: false,
+      shellTrusted: false,
       available: true,
     };
     const onSave = vi.fn<(input: JobInput) => Promise<void>>().mockResolvedValue(undefined);

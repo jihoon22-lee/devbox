@@ -16,12 +16,18 @@ import type {
   StartupShortcutStatus,
   TailResponse,
   WorkspaceTaskApplyResult,
+  WorkspaceTaskControlPreview,
+  WorkspaceTaskControlReceipt,
+  WorkspaceTaskDiagnostics,
+  WorkspaceTaskOperation,
   WorkspaceTaskPlan,
   WorkspaceTaskState,
 } from "./types";
 
 export interface OpenRequest {
-  target: { kind: "task"; id: string };
+  target:
+    | { kind: "task"; id: string }
+    | { kind: "handoff"; handoffKind: string; id: string };
   from: string | null;
 }
 
@@ -39,6 +45,8 @@ let mockJobs: Job[] = [];
 let mockServices: Job[] = [];
 let mockRuns: Record<string, Run[]> = {};
 let mockSequence = 0;
+let mockWorkspaceTaskOperationSequence = 0;
+let mockWorkspaceTaskOperations: WorkspaceTaskOperation[] = [];
 
 export function loadRuntimeStatus(): Promise<RuntimeStatus> {
   if (!isTauri()) {
@@ -495,6 +503,120 @@ export function trustWorkspaceTaskSource(sourceId: string, revision: string): Pr
   return invoke<boolean>("trust_workspace_task_source", { sourceId, revision });
 }
 
+/**
+ * Grant the separate shell-execution boundary for an exact, already trusted
+ * workspace revision. Keep the acknowledgement literal here so callers
+ * cannot accidentally reuse the ordinary source-trust action for shell code.
+ */
+export function trustWorkspaceTaskShellSource(sourceId: string, revision: string): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(true);
+  return invoke<boolean>("trust_workspace_task_shell_source", {
+    sourceId,
+    revision,
+    acknowledgement: "execute-shell-tasks",
+  });
+}
+
+export function runWorkspaceTaskOperation(id: string, failFast: boolean): Promise<WorkspaceTaskOperation> {
+  if (!isTauri()) {
+    const now = Date.now();
+    const operation: WorkspaceTaskOperation = {
+      id: `mock-workspace-operation-${++mockWorkspaceTaskOperationSequence}`,
+      rootJobId: id,
+      sourceId: "mock-workspace-source",
+      revision: "",
+      status: "succeeded",
+      failFast,
+      failureCode: null,
+      createdAt: now,
+      startedAt: now,
+      endedAt: now,
+      runs: [{
+        jobId: id,
+        runId: `mock-operation-run-${mockWorkspaceTaskOperationSequence}`,
+        layerIndex: 0,
+        sequence: 0,
+        status: "succeeded",
+        failureCode: null,
+      }],
+    };
+    mockWorkspaceTaskOperations = [operation, ...mockWorkspaceTaskOperations].slice(0, 50);
+    return Promise.resolve(operation);
+  }
+  return invoke<WorkspaceTaskOperation>("run_workspace_task_operation", { id, failFast });
+}
+
+export function getWorkspaceTaskOperation(operationId: string): Promise<WorkspaceTaskOperation | null> {
+  if (!isTauri()) {
+    return Promise.resolve(mockWorkspaceTaskOperations.find((operation) => operation.id === operationId) ?? null);
+  }
+  return invoke<WorkspaceTaskOperation | null>("get_workspace_task_operation", { operationId });
+}
+
+export function listWorkspaceTaskOperations(limit = 20): Promise<WorkspaceTaskOperation[]> {
+  if (!isTauri()) return Promise.resolve(mockWorkspaceTaskOperations.slice(0, Math.max(1, Math.min(limit, 100))));
+  return invoke<WorkspaceTaskOperation[]>("list_workspace_task_operations", { limit });
+}
+
+export function stopWorkspaceTaskOperation(operationId: string): Promise<WorkspaceTaskOperation> {
+  if (!isTauri()) {
+    const operation = mockWorkspaceTaskOperations.find((candidate) => candidate.id === operationId);
+    if (!operation) return Promise.reject(new Error("workspace-task-operation-not-found"));
+    const stopped: WorkspaceTaskOperation = {
+      ...operation,
+      status: operation.status === "succeeded" || operation.status === "failed" || operation.status === "cancelled"
+        ? operation.status
+        : "cancelled",
+      endedAt: Date.now(),
+      runs: operation.runs.map((run) => (
+        run.status === "pending" || run.status === "launching" || run.status === "running"
+          ? { ...run, status: "cancelled", failureCode: "workspace-task-operation-cancelled" }
+          : run
+      )),
+    };
+    mockWorkspaceTaskOperations = mockWorkspaceTaskOperations.map((candidate) => candidate.id === operationId ? stopped : candidate);
+    return Promise.resolve(stopped);
+  }
+  return invoke<WorkspaceTaskOperation>("stop_workspace_task_operation", { operationId });
+}
+
+export function listWorkspaceTaskDiagnostics(runId: string): Promise<WorkspaceTaskDiagnostics> {
+  if (!isTauri()) {
+    return Promise.resolve({ runId, items: [], truncated: false });
+  }
+  return invoke<WorkspaceTaskDiagnostics>("list_workspace_task_diagnostics", { runId });
+}
+
+export function openWorkspaceTaskDiagnostic(runId: string, diagnosticIndex: number): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  return invoke<boolean>("open_workspace_task_diagnostic", { runId, diagnosticIndex });
+}
+
+export function previewWorkspaceTaskControl(handoffId: string): Promise<WorkspaceTaskControlPreview> {
+  if (!isTauri()) return Promise.reject(new Error("task-control-unavailable"));
+  return invoke<WorkspaceTaskControlPreview>("preview_workspace_task_control", { handoffId });
+}
+
+export function acceptWorkspaceTaskControl(requestId: string): Promise<WorkspaceTaskControlReceipt> {
+  if (!isTauri()) return Promise.reject(new Error("task-control-unavailable"));
+  return invoke<WorkspaceTaskControlReceipt>("accept_workspace_task_control", { requestId });
+}
+
+export function rejectWorkspaceTaskControl(requestId: string): Promise<WorkspaceTaskControlReceipt> {
+  if (!isTauri()) return Promise.reject(new Error("task-control-unavailable"));
+  return invoke<WorkspaceTaskControlReceipt>("reject_workspace_task_control", { requestId });
+}
+
+export function renewWorkspaceTaskControl(requestId: string): Promise<number> {
+  if (!isTauri()) return Promise.reject(new Error("task-control-unavailable"));
+  return invoke<number>("renew_workspace_task_control", { requestId });
+}
+
+export function listWorkspaceTaskControlReceipts(limit = 20): Promise<WorkspaceTaskControlReceipt[]> {
+  if (!isTauri()) return Promise.resolve([]);
+  return invoke<WorkspaceTaskControlReceipt[]>("list_workspace_task_control_receipts", { limit });
+}
+
 const FRIENDLY_BACKEND_ERRORS: Record<string, string> = {
   "workspace-task-source-untrusted": "이 workspace task의 소스가 아직 승인되지 않았습니다. 현재 revision을 명시적으로 승인한 뒤 활성화하세요.",
   "workspace-task-unavailable": "이 workspace task는 현재 사용할 수 없습니다. 원본을 다시 미리보고 가져오세요.",
@@ -504,6 +626,69 @@ const FRIENDLY_BACKEND_ERRORS: Record<string, string> = {
   "workspace-task-environment-key-not-declared": "원본에 선언된 환경변수 키만 입력할 수 있습니다.",
   "workspace-task-configuration-invalid": "workspace task 설정이 올바르지 않아 실행할 수 없습니다.",
   "workspace-task-definition-invalid": "workspace task 설정이 올바르지 않아 실행할 수 없습니다.",
+  "workspace-task-shell-untrusted": "이 workspace task의 셸 실행이 아직 승인되지 않았습니다. 위험 내용을 확인한 뒤 셸 실행을 별도로 승인하세요.",
+  "workspace-task-shell-confirmation-required": "셸 실행 승인을 완료하지 못했습니다. 안내된 확인 문구로 다시 시도하세요.",
+  "workspace-task-shell-not-found": "승인할 셸 workspace task를 찾지 못했습니다. 작업 목록을 다시 불러오세요.",
+  "workspace-task-dependency-selection-incomplete": "선택한 task의 선행 dependency가 빠졌습니다. dependency를 함께 선택한 뒤 다시 가져오세요.",
+  "workspace-task-dependency-unavailable": "선행 dependency를 사용할 수 없어 이 task를 실행할 수 없습니다.",
+  "workspace-task-dependency-cycle": "task dependency에 순환 참조가 있어 실행할 수 없습니다.",
+  "workspace-task-dependency-graph-too-large": "task dependency 그래프가 허용된 크기를 초과했습니다.",
+  "workspace-task-invalid-dependency": "task dependency 선언이 올바르지 않습니다.",
+  "workspace-task-invalid-dependency-order": "task dependency 실행 순서가 parallel 또는 sequence가 아닙니다.",
+  "workspace-task-dependency-order-without-dependency": "dependency 없이 실행 순서를 지정할 수 없습니다.",
+  "workspace-task-named-problem-matcher-unsupported": "이름으로 지정한 problem matcher는 지원하지 않습니다.",
+  "workspace-task-background-problem-matcher-unsupported": "background problem matcher는 지원하지 않습니다.",
+  "workspace-task-unsupported-problem-matcher-field": "지원하지 않는 problem matcher 필드가 있습니다.",
+  "workspace-task-unsupported-problem-matcher-location": "problem matcher의 파일 위치 설정을 지원하지 않습니다.",
+  "workspace-task-invalid-problem-matcher": "problem matcher 형식이 올바르지 않습니다.",
+  "workspace-task-orchestration-required": "이 workspace task는 dependency가 있어 orchestration 실행이 필요합니다.",
+  "workspace-task-orchestration-manual-only": "dependency가 있는 workspace task는 일정 실행을 지원하지 않습니다. 지금 실행에서 orchestration으로 실행하세요.",
+  "workspace-task-not-found": "workspace task를 찾지 못했습니다. 목록을 다시 불러오세요.",
+  "workspace-task-operation-active": "이 workspace task에는 이미 실행 중인 orchestration operation이 있습니다.",
+  "workspace-task-operation-not-found": "workspace task operation을 찾지 못했습니다. 목록을 다시 불러오세요.",
+  "workspace-task-operation-state-changed": "workspace task operation 상태가 바뀌어 요청을 완료하지 못했습니다.",
+  "workspace-task-operation-cancelled": "workspace task operation이 취소되었습니다.",
+  "workspace-task-operation-interrupted": "앱이 종료되어 workspace task operation이 중단되었습니다.",
+  "workspace-task-operation-stop-failed": "workspace task operation을 안전하게 중지하지 못했습니다.",
+  "workspace-task-operation-stop-timeout": "workspace task operation 중지가 제한 시간 안에 끝나지 않았습니다.",
+  "workspace-task-operation-ownership-changed": "workspace task operation의 실행 소유권이 바뀌어 중지할 수 없습니다.",
+  "workspace-task-operation-storage": "workspace task operation 상태를 저장소에서 읽지 못했습니다.",
+  "workspace-task-start-failed": "선행 workspace task를 시작하지 못했습니다.",
+  "workspace-task-run-failed": "workspace task 실행이 실패했습니다.",
+  "workspace-task-run-cancelled": "workspace task 실행이 취소되었습니다.",
+  "workspace-task-run-skipped": "workspace task 실행을 건너뛰었습니다.",
+  "workspace-task-run-missing": "workspace task 실행 기록을 찾지 못했습니다.",
+  "workspace-task-dependency-failed": "선행 dependency가 실패해 operation을 진행하지 못했습니다.",
+  "workspace-task-diagnostic-run-active": "실행 중인 child의 diagnostics는 아직 확인할 수 없습니다.",
+  "workspace-task-diagnostic-run-not-found": "diagnostics를 확인할 실행 기록을 찾지 못했습니다.",
+  "workspace-task-diagnostic-unavailable": "이 실행의 workspace task diagnostics를 사용할 수 없습니다.",
+  "workspace-task-diagnostic-matcher-unavailable": "이 workspace task에는 지원되는 problem matcher가 없습니다.",
+  "workspace-task-diagnostic-logs-unavailable": "실행 로그를 읽지 못해 diagnostics를 만들 수 없습니다.",
+  "workspace-task-diagnostic-selection-invalid": "선택한 diagnostic 항목을 찾지 못했습니다.",
+  "workspace-task-diagnostic-path-invalid": "diagnostic 파일 위치가 올바르지 않습니다.",
+  "workspace-task-diagnostic-path-unsafe": "안전하지 않은 diagnostic 파일 위치라 열 수 없습니다.",
+  "workspace-task-diagnostic-path-unavailable": "diagnostic 파일을 찾을 수 없습니다.",
+  "workspace-task-diagnostic-launch-failed": "Code Pad에서 diagnostic 파일을 열지 못했습니다.",
+  "workspace-task-diagnostic-storage": "workspace task diagnostics를 읽지 못했습니다.",
+  "task-control-invalid": "task-control handoff 형식이 올바르지 않습니다.",
+  "task-control-busy": "이미 확인 중인 task-control 요청이 있습니다.",
+  "task-control-unavailable": "task-control handoff를 확인할 수 없습니다.",
+  "task-control-not-open": "task-control 확인 요청이 만료되었거나 이미 처리되었습니다.",
+  "task-control-task-not-found": "task-control 대상 workspace task를 찾지 못했습니다.",
+  "task-control-source-changed": "workspace task 원본이 변경되어 요청을 처리할 수 없습니다.",
+  "task-control-request-replayed": "이미 처리된 task-control 요청입니다.",
+  "task-control-claim-failed": "task-control 요청 소유권을 확인하지 못했습니다.",
+  "task-control-operation-not-active": "중지할 활성 workspace task operation이 없습니다.",
+  "task-control-user-rejected": "task-control 요청을 거절했습니다.",
+  "task-control-request-id-invalid": "task-control 요청 식별자가 올바르지 않습니다.",
+  "task-control-action-corrupt": "task-control 요청의 작업 종류를 확인하지 못했습니다.",
+  "task-control-receipt-status-corrupt": "task-control 처리 상태를 확인하지 못했습니다.",
+  "task-control-receipt-state": "task-control 처리 상태가 올바르지 않습니다.",
+  "task-control-receipt-shape-invalid": "task-control 처리 내역 형식이 올바르지 않습니다.",
+  "task-control-receipt-storage": "task-control 처리 내역을 저장하지 못했습니다.",
+  "task-control-storage": "task-control 상태를 읽지 못했습니다.",
+  "task-control-lease-expired": "확인 시간이 너무 길어 task-control 요청이 만료되었습니다.",
+  "task-control-interrupted": "앱이 종료되어 처리 중이던 task-control 요청이 중단되었습니다.",
 };
 
 /** Convert fixed native workspace-task codes to actionable UI text without

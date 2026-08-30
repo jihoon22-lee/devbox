@@ -11,4 +11,7 @@ pub mod retention;
 // being integrated with the command layer.
 pub use crate::logs;
 pub mod shell;
+pub mod workspace_diagnostics;
+pub mod workspace_orchestration;
+pub mod workspace_task_control;
 pub mod workspace_tasks;

@@ -10,8 +10,10 @@ import {
   createJob,
   deleteService,
   deleteJob,
+  acceptWorkspaceTaskControl,
   getServiceInstance,
   getServiceObservability,
+  getWorkspaceTaskOperation,
   exportDefinitions,
   type ServiceObservability,
   friendlyErrorMessage,
@@ -20,21 +22,32 @@ import {
   listServices,
   listJobs,
   listActiveRuns,
+  listWorkspaceTaskControlReceipts,
+  listWorkspaceTaskDiagnostics,
+  listWorkspaceTaskOperations,
   loadStartupShortcutStatus,
   loadRuntimeStatus,
   quitApp,
   restartService,
   runJobNow,
+  runWorkspaceTaskOperation,
   setJobEnabled,
   setStartupShortcutEnabled,
   startService,
   stopActiveRun,
   stopService,
+  stopWorkspaceTaskOperation,
+  openWorkspaceTaskDiagnostic,
   onOpenRequest,
+  previewWorkspaceTaskControl,
+  rejectWorkspaceTaskControl,
+  renewWorkspaceTaskControl,
   takePendingOpen,
   updateService,
   updateJob,
   trustWorkspaceTaskSource,
+  trustWorkspaceTaskShellSource,
+  type OpenRequest,
 } from "./api";
 import JobEditor from "./components/JobEditor";
 import ImportDialog from "./components/ImportDialog";
@@ -49,6 +62,12 @@ import type {
   ServiceInstance,
   StartupShortcutStatus,
   WorkspaceTaskApplyResult,
+  WorkspaceTaskControlPreview,
+  WorkspaceTaskControlReceipt,
+  WorkspaceTaskDiagnostics,
+  WorkspaceTaskOperation,
+  WorkspaceTaskOperationRunStatus,
+  WorkspaceTaskOperationStatus,
   WorkspaceTaskState,
 } from "./types";
 import "./App.css";
@@ -95,7 +114,100 @@ function canUseWorkspaceTask(
   task: WorkspaceTaskState | undefined,
   snapshotFresh: boolean,
 ): boolean {
-  return snapshotFresh && (!task || (task.trusted && task.available));
+  return snapshotFresh && (!task || workspaceTaskGateCode(task) === null);
+}
+
+/** Return the stable native gate code for the first failed workspace guard. */
+function workspaceTaskGateCode(task: WorkspaceTaskState | undefined): string | null {
+  if (!task) return null;
+  if (!task.trusted) return "source-untrusted";
+  if (!task.available) return "unavailable";
+  if (task.taskKind === "shell" && !task.shellTrusted) return "shell-untrusted";
+  return null;
+}
+
+function workspaceTaskGateHint(task: WorkspaceTaskState | undefined): string {
+  switch (workspaceTaskGateCode(task)) {
+    case "source-untrusted":
+      return "workspace task source 승인이 필요합니다.";
+    case "unavailable":
+      return "workspace task 원본이 변경되어 다시 가져와야 합니다.";
+    case "shell-untrusted":
+      return "셸 실행 별도 승인이 필요합니다.";
+    default:
+      return "workspace task 상태를 다시 확인해야 합니다.";
+  }
+}
+
+const WORKSPACE_OPERATION_POLL_INTERVAL_MS = 500;
+const WORKSPACE_OPERATION_POLL_MAX_MS = 10 * 60 * 1000;
+const TASK_CONTROL_HANDOFF_KIND = "task-control/v1";
+const TASK_CONTROL_RENEW_AFTER_MS = 30 * 1000;
+const TASK_CONTROL_RENEW_INTERVAL_MS = 20 * 1000;
+const TASK_CONTROL_MAX_RENEWALS = 24;
+
+function isWorkspaceOperationTerminal(status: WorkspaceTaskOperationStatus): boolean {
+  return status === "succeeded" || status === "failed" || status === "cancelled";
+}
+
+function workspaceOperationStatusLabel(status: WorkspaceTaskOperationStatus): string {
+  switch (status) {
+    case "queued": return "대기 중";
+    case "running": return "실행 중";
+    case "stopping": return "중지 중";
+    case "succeeded": return "완료";
+    case "failed": return "실패";
+    case "cancelled": return "취소됨";
+  }
+}
+
+function workspaceOperationRunStatusLabel(status: WorkspaceTaskOperationRunStatus): string {
+  switch (status) {
+    case "pending": return "대기 중";
+    case "launching": return "시작 중";
+    case "running": return "실행 중";
+    case "succeeded": return "완료";
+    case "failed": return "실패";
+    case "cancelled": return "취소됨";
+    case "skipped": return "건너뜀";
+  }
+}
+
+function workspaceOperationProgressLabel(operation: WorkspaceTaskOperation): string {
+  const completed = operation.runs.filter((run) =>
+    run.status === "succeeded"
+    || run.status === "failed"
+    || run.status === "cancelled"
+    || run.status === "skipped",
+  ).length;
+  return `child ${completed}/${operation.runs.length}`;
+}
+
+function isWorkspaceOperationRunTerminal(status: WorkspaceTaskOperationRunStatus): boolean {
+  return status === "succeeded"
+    || status === "failed"
+    || status === "cancelled"
+    || status === "skipped";
+}
+
+function taskControlActionLabel(action: WorkspaceTaskControlPreview["action"]): string {
+  return action === "start" ? "시작" : "중지";
+}
+
+function taskControlReceiptStatusLabel(status: WorkspaceTaskControlReceipt["status"]): string {
+  switch (status) {
+    case "accepted": return "승인됨";
+    case "rejected": return "거절됨";
+    case "started": return "시작됨";
+    case "stopped": return "중지됨";
+    case "failed": return "실패";
+  }
+}
+
+interface WorkspaceDiagnosticState {
+  status: "loading" | "ready" | "error";
+  diagnostics?: WorkspaceTaskDiagnostics;
+  error?: string;
 }
 
 interface ServiceSnapshot {
@@ -132,6 +244,12 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false);
   const importTriggerRef = useRef<HTMLButtonElement>(null);
   const [activeRuns, setActiveRuns] = useState<Record<string, Run | null>>({});
+  const [workspaceOperations, setWorkspaceOperations] = useState<Record<string, WorkspaceTaskOperation>>({});
+  const [workspaceDiagnostics, setWorkspaceDiagnostics] = useState<Record<string, WorkspaceDiagnosticState>>({});
+  const [taskControlPreview, setTaskControlPreview] = useState<WorkspaceTaskControlPreview | null>(null);
+  const [taskControlReceipt, setTaskControlReceipt] = useState<WorkspaceTaskControlReceipt | null>(null);
+  const [taskControlReceipts, setTaskControlReceipts] = useState<WorkspaceTaskControlReceipt[]>([]);
+  const [taskControlLeaseUntil, setTaskControlLeaseUntil] = useState<number | null>(null);
   const [screen, setScreen] = useState<Screen>("jobs");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
@@ -148,11 +266,28 @@ export default function App() {
   const [activeSnapshotFresh, setActiveSnapshotFresh] = useState(false);
   const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
   const [launcherTask, setLauncherTask] = useState<{ id: string; kind: "job" | "service" } | null>(null);
+  const [shellTrustTask, setShellTrustTask] = useState<WorkspaceTaskState | null>(null);
   const historyDefinitions = useMemo(() => [...jobs, ...services], [jobs, services]);
   const workspaceTaskByJobId = useMemo(
     () => new Map(workspaceTasks.map((task) => [task.jobId, task])),
     [workspaceTasks],
   );
+  const workspaceOperationByRootJobId = useMemo(() => {
+    const latest = new Map<string, WorkspaceTaskOperation>();
+    for (const operation of Object.values(workspaceOperations)) {
+      const current = latest.get(operation.rootJobId);
+      const operationActive = !isWorkspaceOperationTerminal(operation.status);
+      const currentActive = current ? !isWorkspaceOperationTerminal(current.status) : false;
+      if (!current
+        || (operationActive && !currentActive)
+        || (operationActive === currentActive
+          && (operation.createdAt > current.createdAt
+            || (operation.createdAt === current.createdAt && operation.id > current.id)))) {
+        latest.set(operation.rootJobId, operation);
+      }
+    }
+    return latest;
+  }, [workspaceOperations]);
 
   const closeImport = useCallback(() => {
     setImportOpen(false);
@@ -163,8 +298,19 @@ export default function App() {
     pending: false,
     generation: 0,
   });
-  const openRequestRef = useRef<(id: string) => void>(() => undefined);
+  const openRequestRef = useRef<(request: OpenRequest) => void>(() => undefined);
   const launcherCancelRef = useRef<HTMLButtonElement>(null);
+  const shellTrustCancelRef = useRef<HTMLButtonElement>(null);
+  const shellTrustRestoreRef = useRef<HTMLElement | null>(null);
+  const taskControlCancelRef = useRef<HTMLButtonElement>(null);
+  const taskControlRestoreRef = useRef<HTMLElement | null>(null);
+  const taskControlRenewTimerRef = useRef<number | null>(null);
+  const taskControlRenewIntervalRef = useRef<number | null>(null);
+  const taskControlRenewCountRef = useRef(0);
+  const workspaceDiagnosticsRequestedRef = useRef(new Set<string>());
+  const workspaceOperationTimersRef = useRef(new Map<string, number>());
+  const workspaceOperationPollHealthyAtRef = useRef(new Map<string, number>());
+  const mountedRef = useRef(false);
 
   const prepareJobContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.jobId;
@@ -251,6 +397,258 @@ export default function App() {
     setServiceInstances(snapshot.instances);
   }, []);
 
+  const stopWorkspaceOperationPolling = useCallback((operationId: string) => {
+    const timer = workspaceOperationTimersRef.current.get(operationId);
+    if (timer !== undefined) window.clearTimeout(timer);
+    workspaceOperationTimersRef.current.delete(operationId);
+    workspaceOperationPollHealthyAtRef.current.delete(operationId);
+  }, []);
+
+  const pollWorkspaceTaskOperation = useCallback(async (operationId: string): Promise<void> => {
+    if (!mountedRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
+    workspaceOperationTimersRef.current.delete(operationId);
+    const lastHealthyAt = workspaceOperationPollHealthyAtRef.current.get(operationId) ?? Date.now();
+
+    try {
+      const operation = await getWorkspaceTaskOperation(operationId);
+      if (!mountedRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
+      if (!operation) {
+        stopWorkspaceOperationPolling(operationId);
+        setError(friendlyErrorMessage("workspace-task-operation-not-found"));
+        return;
+      }
+      setWorkspaceOperations((previous) => ({ ...previous, [operation.id]: operation }));
+      if (isWorkspaceOperationTerminal(operation.status)) {
+        stopWorkspaceOperationPolling(operationId);
+        return;
+      }
+      // A workspace task may legitimately run longer than ten minutes. Keep
+      // following it while the native DB remains readable; the bound below is
+      // for a continuously broken polling channel, not operation duration.
+      workspaceOperationPollHealthyAtRef.current.set(operationId, Date.now());
+    } catch (cause) {
+      if (!mountedRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
+      if (Date.now() - lastHealthyAt >= WORKSPACE_OPERATION_POLL_MAX_MS) {
+        stopWorkspaceOperationPolling(operationId);
+        setError(friendlyErrorMessage(cause));
+        return;
+      }
+    }
+
+    if (!mountedRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
+    const timer = window.setTimeout(() => {
+      workspaceOperationTimersRef.current.delete(operationId);
+      void pollWorkspaceTaskOperation(operationId);
+    }, WORKSPACE_OPERATION_POLL_INTERVAL_MS);
+    workspaceOperationTimersRef.current.set(operationId, timer);
+  }, [stopWorkspaceOperationPolling]);
+
+  const trackWorkspaceTaskOperation = useCallback((operation: WorkspaceTaskOperation) => {
+    if (!mountedRef.current) return;
+    setWorkspaceOperations((previous) => ({ ...previous, [operation.id]: operation }));
+    if (isWorkspaceOperationTerminal(operation.status)) {
+      stopWorkspaceOperationPolling(operation.id);
+      return;
+    }
+    if (!workspaceOperationPollHealthyAtRef.current.has(operation.id)) {
+      workspaceOperationPollHealthyAtRef.current.set(operation.id, Date.now());
+    }
+    if (!workspaceOperationTimersRef.current.has(operation.id)) {
+      void pollWorkspaceTaskOperation(operation.id);
+    }
+  }, [pollWorkspaceTaskOperation, stopWorkspaceOperationPolling]);
+
+  const refreshWorkspaceOperations = useCallback(async () => {
+    const operations = await listWorkspaceTaskOperations(100);
+    if (!mountedRef.current) return;
+    for (const operation of operations) trackWorkspaceTaskOperation(operation);
+  }, [trackWorkspaceTaskOperation]);
+
+  const loadWorkspaceTaskDiagnostics = useCallback(async (runId: string) => {
+    if (!mountedRef.current) return;
+    setWorkspaceDiagnostics((previous) => ({
+      ...previous,
+      [runId]: { status: "loading" },
+    }));
+    try {
+      const diagnostics = await listWorkspaceTaskDiagnostics(runId);
+      if (!mountedRef.current) return;
+      setWorkspaceDiagnostics((previous) => ({
+        ...previous,
+        [runId]: { status: "ready", diagnostics },
+      }));
+    } catch (cause) {
+      if (!mountedRef.current) return;
+      setWorkspaceDiagnostics((previous) => ({
+        ...previous,
+        [runId]: { status: "error", error: friendlyErrorMessage(cause) },
+      }));
+    }
+  }, []);
+
+  const retryWorkspaceTaskDiagnostics = useCallback((runId: string) => {
+    workspaceDiagnosticsRequestedRef.current.delete(runId);
+    workspaceDiagnosticsRequestedRef.current.add(runId);
+    void loadWorkspaceTaskDiagnostics(runId);
+  }, [loadWorkspaceTaskDiagnostics]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      for (const timer of workspaceOperationTimersRef.current.values()) window.clearTimeout(timer);
+      workspaceOperationTimersRef.current.clear();
+      workspaceOperationPollHealthyAtRef.current.clear();
+      workspaceDiagnosticsRequestedRef.current.clear();
+      if (taskControlRenewTimerRef.current !== null) {
+        window.clearTimeout(taskControlRenewTimerRef.current);
+        taskControlRenewTimerRef.current = null;
+      }
+      if (taskControlRenewIntervalRef.current !== null) {
+        window.clearInterval(taskControlRenewIntervalRef.current);
+        taskControlRenewIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    for (const operation of Object.values(workspaceOperations)) {
+      for (const run of operation.runs) {
+        if (!run.runId || !isWorkspaceOperationRunTerminal(run.status)) continue;
+        const task = workspaceTaskByJobId.get(run.jobId);
+        if (!task?.hasProblemMatcher || workspaceDiagnosticsRequestedRef.current.has(run.runId)) continue;
+        workspaceDiagnosticsRequestedRef.current.add(run.runId);
+        void loadWorkspaceTaskDiagnostics(run.runId);
+      }
+    }
+  }, [loadWorkspaceTaskDiagnostics, workspaceOperations, workspaceTaskByJobId]);
+
+  const refreshTaskControlReceipts = useCallback(async () => {
+    const receipts = await listWorkspaceTaskControlReceipts(20);
+    if (mountedRef.current) setTaskControlReceipts(receipts);
+  }, []);
+
+  const handleTaskControlHandoff = useCallback(async (handoffId: string) => {
+    if (!mountedRef.current || taskControlPreview) return;
+    taskControlRestoreRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setTaskControlReceipt(null);
+    setTaskControlLeaseUntil(null);
+    try {
+      const preview = await previewWorkspaceTaskControl(handoffId);
+      if (!mountedRef.current) return;
+      setTaskControlPreview(preview);
+      void refreshTaskControlReceipts().catch((cause) => {
+        if (mountedRef.current) setError(friendlyErrorMessage(cause));
+      });
+    } catch (cause) {
+      if (mountedRef.current) setError(friendlyErrorMessage(cause));
+    }
+  }, [refreshTaskControlReceipts, taskControlPreview]);
+
+  const closeTaskControlPreview = useCallback(() => {
+    setTaskControlPreview(null);
+    setTaskControlLeaseUntil(null);
+  }, []);
+
+  const handleAcceptTaskControl = useCallback(async () => {
+    const preview = taskControlPreview;
+    if (!preview || busy) return;
+    setBusy(true);
+    try {
+      const receipt = await acceptWorkspaceTaskControl(preview.requestId);
+      if (mountedRef.current) {
+        setTaskControlReceipt(receipt);
+        setError(null);
+      }
+      closeTaskControlPreview();
+      await refreshTaskControlReceipts();
+      if (receipt.operationId) void refreshWorkspaceOperations().catch((cause) => setError(friendlyErrorMessage(cause)));
+      if (receipt.status === "started") void refreshActiveRuns();
+    } catch (cause) {
+      if (mountedRef.current) setError(friendlyErrorMessage(cause));
+      closeTaskControlPreview();
+      void refreshTaskControlReceipts().catch((refreshCause) => setError(friendlyErrorMessage(refreshCause)));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, closeTaskControlPreview, refreshActiveRuns, refreshTaskControlReceipts, refreshWorkspaceOperations, taskControlPreview]);
+
+  const handleRejectTaskControl = useCallback(async () => {
+    const preview = taskControlPreview;
+    if (!preview || busy) return;
+    setBusy(true);
+    try {
+      const receipt = await rejectWorkspaceTaskControl(preview.requestId);
+      if (mountedRef.current) {
+        setTaskControlReceipt(receipt);
+        setError(null);
+      }
+      closeTaskControlPreview();
+      await refreshTaskControlReceipts();
+    } catch (cause) {
+      if (mountedRef.current) setError(friendlyErrorMessage(cause));
+      closeTaskControlPreview();
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, closeTaskControlPreview, refreshTaskControlReceipts, taskControlPreview]);
+
+  useEffect(() => {
+    const preview = taskControlPreview;
+    if (!preview) return;
+    let renewCount = 0;
+    let renewing = false;
+    const renew = async () => {
+      if (!mountedRef.current || !taskControlPreview || renewing) return;
+      if (renewCount >= TASK_CONTROL_MAX_RENEWALS) {
+        if (taskControlRenewIntervalRef.current !== null) {
+          window.clearInterval(taskControlRenewIntervalRef.current);
+          taskControlRenewIntervalRef.current = null;
+        }
+        setError(friendlyErrorMessage("task-control-lease-expired"));
+        return;
+      }
+      renewing = true;
+      try {
+        const leaseUntil = await renewWorkspaceTaskControl(preview.requestId);
+        if (mountedRef.current && taskControlPreview?.requestId === preview.requestId) {
+          renewCount += 1;
+          taskControlRenewCountRef.current = renewCount;
+          setTaskControlLeaseUntil(leaseUntil);
+        }
+      } catch (cause) {
+        if (mountedRef.current && taskControlPreview?.requestId === preview.requestId) {
+          setError(friendlyErrorMessage(cause));
+        }
+        if (taskControlRenewIntervalRef.current !== null) {
+          window.clearInterval(taskControlRenewIntervalRef.current);
+          taskControlRenewIntervalRef.current = null;
+        }
+      } finally {
+        renewing = false;
+      }
+    };
+    taskControlRenewCountRef.current = 0;
+    taskControlRenewTimerRef.current = window.setTimeout(() => {
+      taskControlRenewTimerRef.current = null;
+      void renew();
+      taskControlRenewIntervalRef.current = window.setInterval(() => void renew(), TASK_CONTROL_RENEW_INTERVAL_MS);
+    }, TASK_CONTROL_RENEW_AFTER_MS);
+    return () => {
+      if (taskControlRenewTimerRef.current !== null) {
+        window.clearTimeout(taskControlRenewTimerRef.current);
+        taskControlRenewTimerRef.current = null;
+      }
+      if (taskControlRenewIntervalRef.current !== null) {
+        window.clearInterval(taskControlRenewIntervalRef.current);
+        taskControlRenewIntervalRef.current = null;
+      }
+      taskControlRenewCountRef.current = 0;
+    };
+  }, [taskControlPreview]);
+
   const handleLauncherTask = useCallback((id: string) => {
     const job = jobs.find((candidate) => candidate.id === id);
     const service = services.find((candidate) => candidate.id === id);
@@ -277,11 +675,19 @@ export default function App() {
       return;
     }
     const workspaceTask = task.kind === "job" ? workspaceTaskByJobId.get(task.id) : undefined;
+    const workspaceOperation = task.kind === "job"
+      ? workspaceOperationByRootJobId.get(task.id)
+      : undefined;
+    if (workspaceOperation && !isWorkspaceOperationTerminal(workspaceOperation.status)) {
+      setLauncherTask(null);
+      setError(friendlyErrorMessage("workspace-task-operation-active"));
+      return;
+    }
     if (!canUseWorkspaceTask(workspaceTask, workspaceSnapshotFresh)) {
       setLauncherTask(null);
       setError(
         workspaceSnapshotFresh
-          ? friendlyErrorMessage(workspaceTask?.trusted ? "unavailable" : "source-untrusted")
+          ? friendlyErrorMessage(workspaceTaskGateCode(workspaceTask) ?? "unavailable")
           : "workspace task 상태를 확인하지 못해 실행을 차단했습니다. 다시 불러온 뒤 시도하세요.",
       );
       return;
@@ -289,7 +695,12 @@ export default function App() {
     setBusy(true);
     try {
       if (task.kind === "job") {
-        await runJobNow(task.id);
+        if (workspaceTask) {
+          const operation = await runWorkspaceTaskOperation(task.id, true);
+          trackWorkspaceTaskOperation(operation);
+        } else {
+          await runJobNow(task.id);
+        }
         await refreshActiveRuns();
       } else {
         await startService(task.id);
@@ -303,17 +714,81 @@ export default function App() {
     }
   };
 
-  openRequestRef.current = (id) => { void handleLauncherTask(id); };
+  openRequestRef.current = (request) => {
+    if (request.target.kind === "task") {
+      void handleLauncherTask(request.target.id);
+    } else if (request.target.kind === "handoff" && request.target.handoffKind === TASK_CONTROL_HANDOFF_KIND) {
+      void handleTaskControlHandoff(request.target.id);
+    }
+  };
 
   useLayoutEffect(() => {
     if (launcherTask) launcherCancelRef.current?.focus();
     else document.querySelector<HTMLElement>(".job-card.selected")?.focus();
   }, [launcherTask]);
 
+  useLayoutEffect(() => {
+    if (shellTrustTask) {
+      shellTrustCancelRef.current?.focus();
+    } else {
+      shellTrustRestoreRef.current?.focus();
+      shellTrustRestoreRef.current = null;
+    }
+  }, [shellTrustTask]);
+
+  useLayoutEffect(() => {
+    if (taskControlPreview) {
+      taskControlCancelRef.current?.focus();
+    } else {
+      taskControlRestoreRef.current?.focus();
+      taskControlRestoreRef.current = null;
+    }
+  }, [taskControlPreview]);
+
   const onLauncherDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
       if (!busy) setLauncherTask(null);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not([disabled])"));
+    if (controls.length === 0) return;
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  const onShellTrustDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (!busy) setShellTrustTask(null);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not([disabled])"));
+    if (controls.length === 0) return;
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  const onTaskControlDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (!busy) void handleRejectTaskControl();
       return;
     }
     if (event.key !== "Tab") return;
@@ -377,6 +852,12 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
+    void refreshTaskControlReceipts().catch((cause: unknown) => {
+      if (active) setError(friendlyErrorMessage(cause));
+    });
+    void refreshWorkspaceOperations().catch((cause: unknown) => {
+      if (active) setError(friendlyErrorMessage(cause));
+    });
     void Promise.all([
       loadRuntimeStatus(),
       listJobs(),
@@ -408,17 +889,17 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [refreshActiveRuns]);
+  }, [refreshActiveRuns, refreshTaskControlReceipts, refreshWorkspaceOperations]);
 
   // AppLink events are only a wake-up signal. The authoritative request is
   // pulled from the native one-shot slot, then the current job/service list is
-  // checked before any run or service action is invoked.
+  // checked before any run, service action, or task-control handoff is used.
   useEffect(() => {
     if (loading) return;
     const consumePendingOpen = () => {
       void takePendingOpen()
         .then((request) => {
-          if (request?.target.kind === "task") openRequestRef.current(request.target.id);
+          if (request) openRequestRef.current(request);
         })
         .catch((cause) => setError(friendlyErrorMessage(cause)));
     };
@@ -486,17 +967,27 @@ export default function App() {
 
   const handleRunNow = async (job: Job) => {
     const workspaceTask = workspaceTaskByJobId.get(job.id);
+    const workspaceOperation = workspaceOperationByRootJobId.get(job.id);
+    if (workspaceOperation && !isWorkspaceOperationTerminal(workspaceOperation.status)) {
+      setError(friendlyErrorMessage("workspace-task-operation-active"));
+      return;
+    }
     if (!canUseWorkspaceTask(workspaceTask, workspaceSnapshotFresh)) {
       setError(
         workspaceSnapshotFresh
-          ? friendlyErrorMessage(workspaceTask?.trusted ? "unavailable" : "source-untrusted")
+          ? friendlyErrorMessage(workspaceTaskGateCode(workspaceTask) ?? "unavailable")
           : "workspace task 상태를 확인하지 못해 실행을 차단했습니다. 다시 불러온 뒤 시도하세요.",
       );
       return;
     }
     setBusy(true);
     try {
-      await runJobNow(job.id);
+      if (workspaceTask) {
+        const operation = await runWorkspaceTaskOperation(job.id, true);
+        trackWorkspaceTaskOperation(operation);
+      } else {
+        await runJobNow(job.id);
+      }
       // The overlap policy may return a queued/skipped row. Refresh the
       // process-only snapshot so the card is never marked running by guess.
       await refreshActiveRuns();
@@ -509,10 +1000,21 @@ export default function App() {
   };
 
   const handleStopRun = async (job: Job) => {
-    if (!window.confirm(`'${job.name}' 작업의 활성 실행을 중지할까요?`)) return;
+    const workspaceOperation = workspaceOperationByRootJobId.get(job.id);
+    const operationActive = workspaceOperation && !isWorkspaceOperationTerminal(workspaceOperation.status);
+    if (!window.confirm(
+      operationActive
+        ? `'${job.name}' workspace task orchestration을 중지할까요?`
+        : `'${job.name}' 작업의 활성 실행을 중지할까요?`,
+    )) return;
     setBusy(true);
     try {
-      await stopActiveRun(job.id);
+      if (operationActive && workspaceOperation) {
+        const operation = await stopWorkspaceTaskOperation(workspaceOperation.id);
+        trackWorkspaceTaskOperation(operation);
+      } else {
+        await stopActiveRun(job.id);
+      }
       await refreshActiveRuns();
       setError(null);
     } catch (cause) {
@@ -559,6 +1061,16 @@ export default function App() {
       setError(friendlyErrorMessage(cause));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleOpenWorkspaceTaskDiagnostic = async (runId: string, diagnosticIndex: number) => {
+    try {
+      const opened = await openWorkspaceTaskDiagnostic(runId, diagnosticIndex);
+      if (!opened) throw new Error("workspace-task-diagnostic-launch-failed");
+      setError(null);
+    } catch (cause) {
+      setError(friendlyErrorMessage(cause));
     }
   };
 
@@ -650,10 +1162,14 @@ export default function App() {
 
   const handleToggleJob = async (job: Job) => {
     const workspaceTask = workspaceTaskByJobId.get(job.id);
+    if (!job.enabled && workspaceTask && workspaceTask.dependsOn.length > 0) {
+      setError(friendlyErrorMessage("workspace-task-orchestration-manual-only"));
+      return;
+    }
     if (!job.enabled && !canUseWorkspaceTask(workspaceTask, workspaceSnapshotFresh)) {
       setError(
         workspaceSnapshotFresh
-          ? friendlyErrorMessage(workspaceTask?.trusted ? "unavailable" : "source-untrusted")
+          ? friendlyErrorMessage(workspaceTaskGateCode(workspaceTask) ?? "unavailable")
           : "workspace task 상태를 확인하지 못해 활성화를 차단했습니다. 다시 불러온 뒤 시도하세요.",
       );
       return;
@@ -733,17 +1249,56 @@ export default function App() {
     }
   };
 
+  const openShellTrustConfirmation = (task: WorkspaceTaskState) => {
+    if (busy || task.taskKind !== "shell" || !task.trusted || task.shellTrusted || !task.available) {
+      if (task.taskKind === "shell" && task.trusted && !task.available) {
+        setError(friendlyErrorMessage("unavailable"));
+      }
+      return;
+    }
+    setError(null);
+    shellTrustRestoreRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setShellTrustTask(task);
+  };
+
+  const handleTrustWorkspaceTaskShell = async () => {
+    const task = shellTrustTask;
+    if (!task || busy) return;
+    setBusy(true);
+    setWorkspaceNotice(null);
+    try {
+      await trustWorkspaceTaskShellSource(task.sourceId, task.revision);
+      await refreshJobs();
+      setShellTrustTask(null);
+      setWorkspaceNotice(`source revision ${shortRevision(task.revision)}의 셸 실행을 승인했습니다. 작업은 자동 실행되지 않았습니다.`);
+      setError(null);
+    } catch (cause) {
+      setError(friendlyErrorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const jobContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
     if (!contextJob) return [];
     const workspaceTask = workspaceTaskByJobId.get(contextJob.id);
+    const workspaceOperation = workspaceOperationByRootJobId.get(contextJob.id);
+    const operationActive = workspaceOperation !== undefined
+      && !isWorkspaceOperationTerminal(workspaceOperation.status);
     const workspaceRunnable = canUseWorkspaceTask(workspaceTask, workspaceSnapshotFresh);
     return [
-      { type: "item", id: "run-now", label: "지금 실행", disabled: busy || !workspaceRunnable },
+      {
+        type: "item",
+        id: "run-now",
+        label: "지금 실행",
+        disabled: busy || !workspaceRunnable || operationActive,
+      },
       {
         type: "item",
         id: "toggle-enabled",
         label: contextJob.enabled ? "비활성화" : "활성화",
-        disabled: busy || (!contextJob.enabled && !workspaceRunnable),
+        disabled: busy || (!contextJob.enabled
+          && (!workspaceRunnable || Boolean(workspaceTask?.dependsOn.length))),
       },
       { type: "item", id: "edit", label: "편집", disabled: busy },
       { type: "item", id: "open-logs", label: "로그 열기" },
@@ -752,11 +1307,19 @@ export default function App() {
         type: "item",
         id: "delete",
         label: "삭제",
-        disabled: busy || !activeSnapshotFresh || Boolean(activeRuns[contextJob.id]),
+        disabled: busy || !activeSnapshotFresh || Boolean(activeRuns[contextJob.id]) || operationActive,
         danger: true,
       },
     ];
-  }, [activeRuns, activeSnapshotFresh, busy, contextJob, workspaceSnapshotFresh, workspaceTaskByJobId]);
+  }, [
+    activeRuns,
+    activeSnapshotFresh,
+    busy,
+    contextJob,
+    workspaceOperationByRootJobId,
+    workspaceSnapshotFresh,
+    workspaceTaskByJobId,
+  ]);
 
   const onJobContextSelect = (id: string) => {
     const job = contextJob;
@@ -814,6 +1377,19 @@ export default function App() {
     else if (id === "edit") openServiceEdit(service);
     else if (id === "delete") void handleServiceDelete(service);
   };
+
+  const launcherWorkspaceTask = launcherTask?.kind === "job"
+    ? workspaceTaskByJobId.get(launcherTask.id)
+    : undefined;
+  const launcherWorkspaceOperation = launcherTask?.kind === "job"
+    ? workspaceOperationByRootJobId.get(launcherTask.id)
+    : undefined;
+  const launcherOperationActive = launcherWorkspaceOperation !== undefined
+    && !isWorkspaceOperationTerminal(launcherWorkspaceOperation.status);
+  const visibleTaskControlReceipts = taskControlReceipt
+    && !taskControlReceipts.some((receipt) => receipt.requestId === taskControlReceipt.requestId)
+    ? [taskControlReceipt, ...taskControlReceipts]
+    : taskControlReceipts;
 
   return (
     <main className="app-shell">
@@ -877,6 +1453,24 @@ export default function App() {
 
         {(error ?? statusError ?? activeSnapshotError) ? <div className="error-banner" role="alert">오류: {error ?? statusError ?? activeSnapshotError}</div> : null}
         {workspaceNotice ? <div className="success-banner" role="status">{workspaceNotice}</div> : null}
+        {visibleTaskControlReceipts.length > 0 ? (
+          <section className="task-control-receipts" aria-labelledby="task-control-receipts-title">
+            <h3 id="task-control-receipts-title">최근 task-control 내역</h3>
+            <ul>
+              {visibleTaskControlReceipts.slice(0, 5).map((receipt) => {
+                const task = workspaceTaskByJobId.get(receipt.taskId);
+                const definition = jobs.find((candidate) => candidate.id === receipt.taskId);
+                return (
+                  <li key={receipt.requestId}>
+                    <span>{task?.label ?? definition?.name ?? receipt.taskId}</span>
+                    <span>{taskControlActionLabel(receipt.action)} · {taskControlReceiptStatusLabel(receipt.status)}</span>
+                    {receipt.failureCode ? <span className="workspace-task-unavailable">{friendlyErrorMessage(receipt.failureCode)}</span> : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
 
         {screen === "editor" ? (
           <JobEditor job={editingJob} workspaceTask={editingWorkspaceTask} onSave={handleSave} onCancel={closeEditor} />
@@ -1034,7 +1628,22 @@ export default function App() {
               <div className="job-list" role="list" aria-label="작업 목록">
                 {jobs.map((job) => {
                   const workspaceTask = workspaceTaskByJobId.get(job.id);
+                  const workspaceOperation = workspaceOperationByRootJobId.get(job.id);
+                  const workspaceOperationActive = workspaceOperation !== undefined
+                    && !isWorkspaceOperationTerminal(workspaceOperation.status);
                   const workspaceRunnable = canUseWorkspaceTask(workspaceTask, workspaceSnapshotFresh);
+                  const operationChildProgress = workspaceOperation?.runs
+                    .map((run) => {
+                      const childJob = jobs.find((candidate) => candidate.id === run.jobId);
+                      return `${childJob?.name ?? run.jobId}: ${workspaceOperationRunStatusLabel(run.status)}`;
+                    })
+                    .join(" · ");
+                  const diagnosticRuns = workspaceOperation?.runs.filter((run) => {
+                    const task = workspaceTaskByJobId.get(run.jobId);
+                    return Boolean(run.runId)
+                      && isWorkspaceOperationRunTerminal(run.status)
+                      && task?.hasProblemMatcher === true;
+                  }) ?? [];
                   return (
                   <article
                     className={`job-card ${selectedJobId === job.id ? "selected" : ""}`}
@@ -1049,8 +1658,10 @@ export default function App() {
                     <div className="job-card-main">
                       <div className="job-title-row">
                         <h3>{job.name}</h3>
-                        <span className={`job-state ${activeRuns[job.id] ? "running" : job.enabled ? "enabled" : "disabled"}`}>
-                          {activeRuns[job.id] ? "실행 중" : job.enabled ? "활성" : "비활성"}
+                        <span className={`job-state ${workspaceOperationActive || activeRuns[job.id] ? "running" : job.enabled ? "enabled" : "disabled"}`}>
+                          {workspaceOperationActive
+                            ? `오케스트레이션 ${workspaceOperationStatusLabel(workspaceOperation!.status)}`
+                            : activeRuns[job.id] ? "실행 중" : job.enabled ? "활성" : "비활성"}
                         </span>
                       </div>
                       <code title={job.command}>{job.command}</code>
@@ -1066,27 +1677,114 @@ export default function App() {
                             <span className={workspaceTask.trusted ? "workspace-task-trusted" : "workspace-task-untrusted"}>
                               {workspaceTask.trusted ? "소스 승인됨" : "소스 승인 필요"}
                             </span>
+                            {workspaceTask.taskKind === "shell" ? (
+                              <span className={workspaceTask.shellTrusted ? "workspace-task-trusted" : "workspace-task-untrusted"}>
+                                {workspaceTask.shellTrusted ? "셸 실행 승인됨" : "셸 실행 승인 필요"}
+                              </span>
+                            ) : null}
                             <span className={workspaceTask.available ? "workspace-task-trusted" : "workspace-task-unavailable"}>
                               {workspaceTask.available ? "원본 사용 가능" : "원본 변경됨 · 사용 불가"}
                             </span>
+                            {workspaceTask.dependsOn.length > 0 ? (
+                              <span>선행 task: {workspaceTask.dependsOn.join(", ")} · {workspaceTask.dependsOrder === "sequence" ? "순차" : "병렬"}</span>
+                            ) : null}
+                            {workspaceTask.hasProblemMatcher ? <span>problem matcher 지원됨</span> : null}
                             {workspaceTask.environmentKeys.length > 0 ? <span>환경 키: {workspaceTask.environmentKeys.join(", ")}</span> : null}
                           </>
                         ) : null}
+                        {workspaceOperation ? (
+                          <>
+                            <span
+                              className={`workspace-operation-badge workspace-operation-${workspaceOperation.status}`}
+                              aria-live="polite"
+                              aria-label={`workspace task operation 상태: ${workspaceOperationStatusLabel(workspaceOperation.status)}`}
+                            >
+                              오케스트레이션 {workspaceOperationStatusLabel(workspaceOperation.status)} · {workspaceOperationProgressLabel(workspaceOperation)}
+                            </span>
+                            {operationChildProgress ? (
+                              <span title={operationChildProgress}>child 진행: {operationChildProgress}</span>
+                            ) : null}
+                            {workspaceOperation.failureCode ? (
+                              <span className="workspace-task-unavailable">{friendlyErrorMessage(workspaceOperation.failureCode)}</span>
+                            ) : null}
+                          </>
+                        ) : null}
                       </div>
+                      {diagnosticRuns.length > 0 ? (
+                        <div className="workspace-diagnostics" aria-label={`${job.name} diagnostics`}>
+                          <strong>problem matcher diagnostics</strong>
+                          {diagnosticRuns.map((run) => {
+                            const runId = run.runId!;
+                            const state = workspaceDiagnostics[runId];
+                            const childJob = jobs.find((candidate) => candidate.id === run.jobId);
+                            return (
+                              <div className="workspace-diagnostic-run" key={runId}>
+                                <span className="workspace-diagnostic-run-label">{childJob?.name ?? run.jobId}</span>
+                                {state?.status === "loading" || !state ? <span>diagnostics 불러오는 중…</span> : null}
+                                {state?.status === "error" ? (
+                                  <>
+                                    <span className="workspace-task-unavailable">{state.error}</span>
+                                    <button
+                                      type="button"
+                                      className="button-secondary small"
+                                      onClick={() => retryWorkspaceTaskDiagnostics(runId)}
+                                    >다시 시도</button>
+                                  </>
+                                ) : null}
+                                {state?.status === "ready" ? (
+                                  <>
+                                    {state.diagnostics?.items.length ? (
+                                      <div className="workspace-diagnostic-items">
+                                        {state.diagnostics.items.map((item) => {
+                                          const location = `${item.file}:${item.line}${item.column ? `:${item.column}` : ""}`;
+                                          return (
+                                            <button
+                                              type="button"
+                                              className="workspace-diagnostic-item"
+                                              key={`${runId}:${item.index}`}
+                                              aria-label={`${location} ${item.message}`}
+                                              title={`${location} · ${item.message}`}
+                                              onClick={() => void handleOpenWorkspaceTaskDiagnostic(runId, item.index)}
+                                            >
+                                              <span>{location}</span>
+                                              <span>{item.message}</span>
+                                              <span>{item.severity ?? "진단"} · {item.stream}</span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : <span>진단 없음</span>}
+                                    {state.diagnostics?.truncated ? <span className="workspace-diagnostics-truncated">일부 diagnostics만 표시됨</span> : null}
+                                  </>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="job-actions">
                       <button
                         type="button"
                         className="button-primary"
-                        disabled={busy || !workspaceRunnable}
-                        title={!workspaceRunnable
+                        disabled={busy || !workspaceRunnable || workspaceOperationActive}
+                        title={workspaceOperationActive
+                          ? "이미 workspace task orchestration이 실행 중입니다."
+                          : !workspaceRunnable
                           ? workspaceSnapshotFresh
-                            ? "workspace task source 승인과 사용 가능 상태가 필요합니다."
+                            ? workspaceTaskGateHint(workspaceTask)
                             : "workspace task 상태를 다시 불러와야 합니다."
                           : undefined}
                         onClick={() => void handleRunNow(job)}
-                      >지금 실행</button>
-                      <button type="button" className="button-danger" disabled={busy || !activeSnapshotFresh || !activeRuns[job.id]} onClick={() => void handleStopRun(job)}>중지</button>
+                      >{workspaceOperationActive ? "실행 중…" : "지금 실행"}</button>
+                      <button
+                        type="button"
+                        className="button-danger"
+                        disabled={busy || (workspaceOperationActive
+                          ? workspaceOperation?.status === "stopping"
+                          : !activeSnapshotFresh || !activeRuns[job.id])}
+                        onClick={() => void handleStopRun(job)}
+                      >{workspaceOperationActive && workspaceOperation?.status === "stopping" ? "중지 중…" : workspaceOperationActive ? "오케스트레이션 중지" : "중지"}</button>
                       {workspaceTask && !workspaceTask.trusted ? (
                         <button
                           type="button"
@@ -1095,8 +1793,16 @@ export default function App() {
                           onClick={() => void handleTrustWorkspaceTask(workspaceTask)}
                         >소스 승인</button>
                       ) : null}
+                      {workspaceTask && workspaceTask.taskKind === "shell" && workspaceTask.trusted && !workspaceTask.shellTrusted ? (
+                        <button
+                          type="button"
+                          className="button-danger"
+                          disabled={busy || !workspaceTask.available}
+                          onClick={() => openShellTrustConfirmation(workspaceTask)}
+                        >셸 실행 승인</button>
+                      ) : null}
                       <button type="button" className="button-secondary" onClick={() => openEdit(job)}>편집</button>
-                      <button type="button" className="button-danger" disabled={busy || !activeSnapshotFresh || Boolean(activeRuns[job.id])} onClick={() => void handleDelete(job)}>삭제</button>
+                      <button type="button" className="button-danger" disabled={busy || !activeSnapshotFresh || Boolean(activeRuns[job.id]) || workspaceOperationActive} onClick={() => void handleDelete(job)}>삭제</button>
                     </div>
                   </article>
                   );
@@ -1134,9 +1840,16 @@ export default function App() {
             <h2 id="launcher-task-title">Launcher 요청 확인</h2>
             <p id="launcher-task-description">
               {launcherTask.kind === "job"
-                ? "현재 저장된 작업을 한 번 실행합니다."
+                ? launcherWorkspaceTask
+                  ? "선행 dependency를 포함한 workspace task orchestration을 한 번 실행합니다."
+                  : "현재 저장된 작업을 한 번 실행합니다."
                 : "현재 저장된 서비스를 시작합니다."}
             </p>
+            {launcherOperationActive ? (
+              <div className="workspace-task-notice" role="note">
+                이 workspace task는 이미 {workspaceOperationStatusLabel(launcherWorkspaceOperation!.status)} 상태입니다.
+              </div>
+            ) : null}
             <div className="launcher-task-actions">
               <button
                 ref={launcherCancelRef}
@@ -1150,10 +1863,104 @@ export default function App() {
               <button
                 type="button"
                 className="button-primary"
-                disabled={busy}
+                disabled={busy || launcherOperationActive}
                 onClick={() => void confirmLauncherTask()}
               >
-                {launcherTask.kind === "job" ? "실행" : "시작"}
+                {launcherOperationActive ? "이미 실행 중" : launcherTask.kind === "job" ? "실행" : "시작"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {shellTrustTask && (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="launcher-task-dialog shell-trust-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shell-trust-title"
+            aria-describedby="shell-trust-description"
+            onKeyDown={onShellTrustDialogKeyDown}
+          >
+            <h2 id="shell-trust-title">셸 실행 승인</h2>
+            <p id="shell-trust-description">
+              <strong>{shellTrustTask.label}</strong> task가 source의 셸 명령을 실행하도록 별도로 승인합니다.
+              셸 명령은 source revision에 따라 바뀔 수 있으며, 승인 후 스케줄 실행·수동 실행에서 실제 셸을 호출할 수 있습니다.
+              현재 revision <code>{shortRevision(shellTrustTask.revision)}</code>만 승인되며, source가 변경되면 승인이 무효화됩니다.
+            </p>
+            <dl className="workspace-task-details shell-trust-details">
+              <div><dt>source</dt><dd><code>{shellTrustTask.sourceRoot}</code></dd></div>
+              <div><dt>명령</dt><dd><code>{jobs.find((job) => job.id === shellTrustTask.jobId)?.command ?? "source revision에서 읽음"}</code></dd></div>
+            </dl>
+            <div className="workspace-task-notice" role="note">
+              이 확인은 일반 source 승인과 별개입니다. 셸 실행 위험을 이해했고 이 source의 셸 task를 실행하겠다면 아래 버튼을 선택하세요.
+            </div>
+            <div className="launcher-task-actions">
+              <button
+                ref={shellTrustCancelRef}
+                type="button"
+                className="button-secondary"
+                disabled={busy}
+                onClick={() => setShellTrustTask(null)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="button-danger"
+                disabled={busy}
+                onClick={() => void handleTrustWorkspaceTaskShell()}
+              >
+                셸 실행 승인
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {taskControlPreview && (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="launcher-task-dialog task-control-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="task-control-title"
+            aria-describedby="task-control-description"
+            onKeyDown={onTaskControlDialogKeyDown}
+          >
+            <h2 id="task-control-title">Workbench 요청 확인</h2>
+            <p id="task-control-description">
+              Workbench가 요청한 workspace task <strong>{taskControlActionLabel(taskControlPreview.action)}</strong> 작업을 확인합니다.
+              {taskControlPreview.action === "start"
+                ? " 승인하면 현재 저장된 source revision을 다시 검증한 뒤 요청된 작업을 수행합니다."
+                : " 승인하면 이 task가 root인 Run Manager 소유의 활성 operation만 중지합니다."}
+            </p>
+            <dl className="workspace-task-details task-control-details">
+              <div><dt>task</dt><dd>{taskControlPreview.label}</dd></div>
+              <div><dt>종류</dt><dd>{taskControlPreview.taskKind}</dd></div>
+              <div><dt>source revision</dt><dd><code>{shortRevision(taskControlPreview.expectedRevision)}</code></dd></div>
+              <div><dt>요청</dt><dd>{taskControlActionLabel(taskControlPreview.action)}</dd></div>
+            </dl>
+            <div className="workspace-task-notice" role="note">
+              명령·경로·환경변수는 이 handoff에 포함되지 않으며, 실행 여부는 Run Manager가 다시 검증합니다.
+              {taskControlLeaseUntil ? ` 확인 lease 만료 예정: ${new Date(taskControlLeaseUntil).toLocaleTimeString()}` : " 확인 요청은 제한 시간 동안만 유효합니다."}
+            </div>
+            <div className="launcher-task-actions">
+              <button
+                ref={taskControlCancelRef}
+                type="button"
+                className="button-secondary"
+                disabled={busy}
+                onClick={() => void handleRejectTaskControl()}
+              >
+                거절
+              </button>
+              <button
+                type="button"
+                className="button-primary"
+                disabled={busy}
+                onClick={() => void handleAcceptTaskControl()}
+              >
+                승인하고 {taskControlActionLabel(taskControlPreview.action)}
               </button>
             </div>
           </section>
