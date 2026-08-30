@@ -238,7 +238,7 @@ pub fn perform_text_action(
     let (target_app, kind) =
         index.resolve_text_action(&request.action_id, &request.expected_revision)?;
     if kind == "clipboard-preview/v1" {
-        return Err("Clipboard 미리보기는 전달할 수 없습니다".into());
+        return Err("클립보드 미리보기는 전달할 수 없습니다".into());
     }
     let text = launcher::validate_text_handoff(&kind, &request.text)?;
     if devbox_launch::resolve_installed(&target_app).is_none() {

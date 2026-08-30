@@ -337,10 +337,10 @@ export default function RemoteSyncPanel({ repo }: Props) {
   const pushBlocked = state ? blockedReason(state, "push") !== null : true;
 
   return (
-    <section className="remote-sync-panel" aria-label="Git remote sync" aria-busy={busy}>
+    <section className="remote-sync-panel" aria-label="Git 원격 동기화" aria-busy={busy}>
       <div className="remote-sync-head">
         <div>
-          <h2>Remote sync</h2>
+          <h2>원격 동기화</h2>
           <div className="history-repository mono">{repo.path}</div>
         </div>
         <div className="remote-sync-actions">
@@ -368,7 +368,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
         <div><dt>operation</dt><dd>{state?.operationInProgress ? "진행 중" : "없음"}</dd></div>
       </dl>
 
-      <div className="remote-sync-buttons" aria-label="Git remote actions">
+      <div className="remote-sync-buttons" aria-label="Git 원격 작업">
         <button
           type="button"
           className="btn primary"
@@ -381,7 +381,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
           type="button"
           className="btn primary"
           disabled={busy || pullBlocked}
-          title={state ? blockedReason(state, "pull") ?? "fast-forward-only pull" : undefined}
+          title={state ? blockedReason(state, "pull") ?? "fast-forward 전용 pull" : undefined}
           onClick={() => requestAction("pull")}
         >
           Pull (FF only)
@@ -390,7 +390,7 @@ export default function RemoteSyncPanel({ repo }: Props) {
           type="button"
           className="btn primary"
           disabled={busy || pushBlocked}
-          title={state ? blockedReason(state, "push") ?? "current branch push" : undefined}
+          title={state ? blockedReason(state, "push") ?? "현재 브랜치 push" : undefined}
           onClick={() => requestAction("push")}
         >
           Push
@@ -404,9 +404,9 @@ export default function RemoteSyncPanel({ repo }: Props) {
           title={`${ACTION_LABELS[remoteConfirmation.action]}을 실행할까요?`}
           summary={[
             remoteConfirmation.action === "pull"
-              ? "현재 repository의 configured upstream에서 fast-forward만 pull합니다."
-              : "현재 branch의 configured upstream destination으로 push합니다.",
-            "remote URL, credential과 repository 경로는 이 확인창에 표시하지 않습니다.",
+              ? "현재 저장소의 설정된 upstream에서 fast-forward만 pull합니다."
+              : "현재 브랜치의 설정된 upstream 대상으로 push합니다.",
+            "remote URL, credential과 저장소 경로는 이 확인창에 표시하지 않습니다.",
           ]}
           confirmLabel={`${ACTION_LABELS[remoteConfirmation.action]} 실행`}
           onCancel={() => setRemoteConfirmation(null)}

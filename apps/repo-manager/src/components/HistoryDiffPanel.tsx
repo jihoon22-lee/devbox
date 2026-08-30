@@ -162,16 +162,16 @@ export default function HistoryDiffPanel({ repo }: Props) {
   };
 
   return (
-    <section className="history-panel" aria-label="Git history and diff" aria-busy={busy}>
+    <section className="history-panel" aria-label="Git 히스토리 및 diff" aria-busy={busy}>
       <div className="history-panel-head">
         <div>
-          <h2>Git history · diff</h2>
+          <h2>Git 히스토리 · diff</h2>
           <div className="history-repository mono">{repo.path}</div>
         </div>
         <label className="history-limit-field">
-          History limit
+          히스토리 표시 개수
           <input
-            aria-label="History limit"
+            aria-label="히스토리 표시 개수"
             inputMode="numeric"
             value={historyLimit}
             maxLength={3}
@@ -187,7 +187,7 @@ export default function HistoryDiffPanel({ repo }: Props) {
           <span className="history-limit-help">1–{MAX_HISTORY_LIMIT}</span>
         </label>
         <button className="btn primary" disabled={busy} onClick={() => void runHistory()}>
-          {busy ? "불러오는 중…" : "History 불러오기"}
+          {busy ? "불러오는 중…" : "히스토리 불러오기"}
         </button>
       </div>
 
@@ -197,12 +197,12 @@ export default function HistoryDiffPanel({ repo }: Props) {
           ? "Git 정보를 읽는 중입니다."
           : history
             ? `${history.entries.length}개 commit${history.hasMore ? " 이상" : ""}`
-            : "History를 불러오면 commit과 diff를 확인할 수 있습니다."}
+            : "히스토리를 불러오면 커밋과 diff를 확인할 수 있습니다."}
       </div>
 
       {history ? (
         <div className="history-layout">
-          <div className="history-list" aria-label="Commit history" role="list">
+          <div className="history-list" aria-label="커밋 히스토리" role="list">
             {history.entries.map((entry) => (
               <div className="history-entry-row" key={entry.id} role="listitem">
                 <span className="history-graph" aria-hidden="true">
@@ -223,8 +223,8 @@ export default function HistoryDiffPanel({ repo }: Props) {
                   <span className="history-entry-author">{entry.author} · {entry.authorEmail}</span>
                   <span className="history-entry-parents">
                     {entry.parents.length > 0
-                      ? `parent ${entry.parents.map((parent) => parent.slice(0, 12)).join(" · ")}`
-                      : "root commit"}
+                      ? `상위 커밋 ${entry.parents.map((parent) => parent.slice(0, 12)).join(" · ")}`
+                      : "루트 커밋"}
                   </span>
                 </button>
               </div>
@@ -234,7 +234,7 @@ export default function HistoryDiffPanel({ repo }: Props) {
 
           <div className="history-detail-column">
             {detail ? (
-              <article className="commit-detail" aria-label="Commit detail">
+              <article className="commit-detail" aria-label="커밋 상세">
                 <h3>{detail.subject}</h3>
                 <div className="commit-meta mono">
                   {detail.id.slice(0, 12)} · {detail.authoredAt} · {detail.author} · {detail.authorEmail}
@@ -245,14 +245,14 @@ export default function HistoryDiffPanel({ repo }: Props) {
               <div className="history-empty dim">commit을 선택하면 detail을 표시합니다.</div>
             )}
 
-            <div className="diff-toolbar" aria-label="Diff controls">
+              <div className="diff-toolbar" aria-label="diff 작업">
               <button
                 type="button"
                 className={`btn ${diffSelection === "workingTree" ? "primary" : ""}`}
                 disabled={busy}
                 onClick={() => void loadDiff("workingTree")}
               >
-                Working tree diff
+                작업 트리 diff
               </button>
               <button
                 type="button"
@@ -260,7 +260,7 @@ export default function HistoryDiffPanel({ repo }: Props) {
                 disabled={busy || !selectedCommitId}
                 onClick={() => void loadDiff("commit")}
               >
-                Selected commit diff
+                선택한 커밋 diff
               </button>
             </div>
 
@@ -288,7 +288,7 @@ function DiffView({ result }: { result: DiffResult }) {
             {file.oldPath ? <span className="mono">← {file.oldPath}</span> : null}
           </div>
           {file.binary ? (
-            <div className="note diff-binary" role="note">Binary file — 내용은 표시하지 않습니다.</div>
+            <div className="note diff-binary" role="note">바이너리 파일 — 내용은 표시하지 않습니다.</div>
           ) : (
             <pre className="diff-patch">{file.patch || "(변경 내용 없음)"}</pre>
           )}

@@ -3,6 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
+import { isImeComposing } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   closeSession,
@@ -1229,6 +1230,7 @@ export default function App() {
   // (단일 window 리스너 add/remove라 비용은 무시할 만하다).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isImeComposing(e)) return;
       const action = matchShortcut(e);
       if (!action) return;
       // 터미널에 포커스가 있으면 TermPane의 attachCustomKeyEventHandler가 이미
@@ -1294,13 +1296,13 @@ export default function App() {
     {
       id: "split-vertical",
       label: "팬: 세로 분할",
-      description: "활성 팬과 같은 distro/cwd로 오른쪽에 추가",
+      description: "활성 팬과 같은 배포판/cwd로 오른쪽에 추가",
       run: () => splitActivePane("cols"),
     },
     {
       id: "split-horizontal",
       label: "팬: 가로 분할",
-      description: "활성 팬과 같은 distro/cwd로 아래에 추가",
+      description: "활성 팬과 같은 배포판/cwd로 아래에 추가",
       run: () => splitActivePane("rows"),
     },
     {
@@ -1340,15 +1342,20 @@ export default function App() {
         <h1 className="title">WSL Desktop</h1>
         <button
           className={`btn panel-toggle ${panelOpen ? "active" : ""}`}
-          title="사이드 패널 토글 (distro/Docker/프로젝트)"
+          title="사이드 패널 토글 (배포판/Docker/프로젝트)"
           onClick={() => setPanelOpen((prev) => !prev)}
         >
           ☰
         </button>
-        <select disabled={logLensBusy !== null} value={selected} onChange={(e) => selectDistro(e.currentTarget.value)}>
+        <select
+          aria-label="현재 WSL 배포판"
+          disabled={logLensBusy !== null}
+          value={selected}
+          onChange={(e) => selectDistro(e.currentTarget.value)}
+        >
           {distros.map((d) => (
             <option key={d.name} value={d.name}>
-              {d.name} {d.default ? "(default)" : ""}
+              {d.name} {d.default ? "(기본)" : ""}
             </option>
           ))}
         </select>
@@ -1373,10 +1380,12 @@ export default function App() {
         <input
           className="cwd"
           list="cwd-recent"
-          placeholder="Open path (optional, e.g. /mnt/c/projects)"
+          placeholder="경로 열기 (선택, 예: /mnt/c/projects)"
           value={cwd}
           onChange={(e) => setCwd(e.currentTarget.value)}
-          onKeyDown={(e) => e.key === "Enter" && void addPane()}
+          onKeyDown={(event) => {
+            if (!isImeComposing(event) && event.key === "Enter") void addPane();
+          }}
         />
         <input
           className="start-command"
@@ -1384,7 +1393,9 @@ export default function App() {
           value={startCommand}
           maxLength={4096}
           onChange={(event) => setStartCommand(event.currentTarget.value)}
-          onKeyDown={(event) => event.key === "Enter" && void addPane()}
+          onKeyDown={(event) => {
+            if (!isImeComposing(event) && event.key === "Enter") void addPane();
+          }}
         />
         <datalist id="cwd-recent">
           {recentPaths.map((p) => (
@@ -1399,7 +1410,7 @@ export default function App() {
           📌
         </button>
         <button className="btn" disabled={contextActionBusy || workspaceLoading || logLensBusy !== null || !workspaceReady} onClick={() => void addPane()}>
-          + Terminal
+          + 터미널
         </button>
         <button className="btn" title="명령 팔레트 (Ctrl+Shift+P)" onClick={() => setPaletteOpen(true)}>
           명령…
@@ -1418,7 +1429,7 @@ export default function App() {
             disabled={selectedBroadcastIds.length < 2 || !broadcastReady}
             onChange={(event) => setBroadcastOn(event.currentTarget.checked)}
           />
-          동시 입력 {broadcastOn ? "ON" : "OFF"}
+          동시 입력 {broadcastOn ? "켜짐" : "꺼짐"}
         </label>
         <button
           type="button"
@@ -1470,7 +1481,7 @@ export default function App() {
       {broadcastPickerOpen && (
         <div id="broadcast-target-picker" className="broadcast-picker" role="group" aria-label="동시 입력 대상 팬 선택">
           <strong>동시 입력 대상</strong>
-          <span className="dim">기본 OFF · 최소 2개, 최대 {MAX_BROADCAST_TARGETS}개를 직접 선택해야 켤 수 있습니다.</span>
+          <span className="dim">기본 꺼짐 · 최소 2개, 최대 {MAX_BROADCAST_TARGETS}개를 직접 선택해야 켤 수 있습니다.</span>
           {activePaneIds.map((id, index) => {
             const pane = panes.find((item) => item.sessionId === id);
             const checked = broadcastTargetIds.has(id);

@@ -39,8 +39,17 @@ function fixtureApp(root, appName, { indexHtml, files = {}, manifest = undefined
   return dist;
 }
 
-function writeConfig(directory, apps) {
-  const config = path.join(directory, "budgets.json");
+function writeConfig(root, apps, catalogApps = Object.keys(apps)) {
+  const appDirectory = path.join(root, "apps");
+  mkdirSync(appDirectory, { recursive: true });
+  writeFileSync(path.join(appDirectory, "catalog.json"), `${JSON.stringify({
+    apps: catalogApps.map((appName) => ({
+      id: appName,
+      appDir: `apps/${appName}`,
+      release: true,
+    })),
+  }, null, 2)}\n`, "utf8");
+  const config = path.join(root, "budgets.json");
   writeFileSync(config, `${JSON.stringify({ schemaVersion: 1, apps }, null, 2)}\n`, "utf8");
   return config;
 }
@@ -82,7 +91,7 @@ try {
       indexHtml: '<script type="module" crossorigin src="/assets/main.js"></script>\n',
       files: { "assets/main.js": "console.log('main');\n" },
     });
-    const config = writeConfig(path.dirname(root), {
+    const config = writeConfig(root, {
       "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
     });
     const result = runChecker(root, config, "all");
@@ -98,21 +107,63 @@ try {
       indexHtml: '<script type="module" src="/assets/main.js"></script>\n',
       files: { "assets/main.js": "this initial bundle is too large\n" },
     });
-    const config = writeConfig(path.dirname(root), {
+    const config = writeConfig(root, {
       "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1, gzipBytes: 1000000 },
     });
     assertFailed(runChecker(root, config, "all"), "initial raw budget exceeded", "over-budget fixture");
 
-    const gzipConfig = writeConfig(path.dirname(root), {
+    const gzipConfig = writeConfig(root, {
       "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1 },
     });
     assertFailed(runChecker(root, gzipConfig, "all"), "initial gzip budget exceeded", "gzip over-budget fixture");
   }
 
   {
+    const root = path.join(tempRoot, "catalog-coverage");
+    const config = writeConfig(root, {
+      "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
+    }, ["code-pad", "knowledge-base"]);
+    assertFailed(runChecker(root, config, "all"), "cover the release catalog exactly", "catalog coverage fixture");
+  }
+
+  {
+    const root = path.join(tempRoot, "wrong-dist");
+    const config = writeConfig(root, {
+      "code-pad": { dist: "apps/knowledge-base/dist", rawBytes: 1000, gzipBytes: 1000 },
+    });
+    assertFailed(runChecker(root, config, "all"), "must use apps/code-pad/dist", "canonical dist fixture");
+  }
+
+  {
+    const root = path.join(tempRoot, "missing-catalog");
+    mkdirSync(root, { recursive: true });
+    const config = path.join(root, "budgets.json");
+    writeFileSync(config, JSON.stringify({
+      schemaVersion: 1,
+      apps: {
+        "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
+      },
+    }), "utf8");
+    assertFailed(runChecker(root, config, "all"), "app catalog is missing", "missing catalog fixture");
+  }
+
+  {
+    const root = path.join(tempRoot, "selected-app-coverage");
+    mkdirSync(root, { recursive: true });
+    const config = writeConfig(root, {
+      "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
+    });
+    assertFailed(
+      runChecker(root, config, "apps", "code-pad,knowledge-base"),
+      "missing selected apps",
+      "selected app coverage fixture",
+    );
+  }
+
+  {
     const root = path.join(tempRoot, "missing-output");
     mkdirSync(root, { recursive: true });
-    const config = writeConfig(path.dirname(root), {
+    const config = writeConfig(root, {
       "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
     });
     assertFailed(runChecker(root, config, "all"), "frontend output is missing", "missing output fixture");
@@ -122,7 +173,7 @@ try {
     const root = path.join(tempRoot, "missing-index");
     mkdirSync(root, { recursive: true });
     fixtureApp(root, "code-pad", { files: { "assets/main.js": "main\n" } });
-    const config = writeConfig(path.dirname(root), {
+    const config = writeConfig(root, {
       "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
     });
     assertFailed(runChecker(root, config, "all"), "index\.html is missing", "missing index fixture");
@@ -134,7 +185,7 @@ try {
     fixtureApp(root, "code-pad", {
       indexHtml: '<script type="module" src="/assets/not-built.js"></script>\n',
     });
-    const config = writeConfig(path.dirname(root), {
+    const config = writeConfig(root, {
       "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
     });
     assertFailed(runChecker(root, config, "all"), "initial module .* is missing", "missing script fixture");
@@ -148,7 +199,7 @@ try {
       files: { "assets/main.js": "main\n" },
       manifest: null,
     });
-    const config = writeConfig(path.dirname(root), {
+    const config = writeConfig(root, {
       "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
     });
     assertFailed(runChecker(root, config, "all"), "Vite manifest is missing", "missing manifest fixture");
@@ -163,7 +214,7 @@ try {
         '<script src="/assets/main.js" type="module"></script>\n',
       files: { "assets/main.js": "main\n" },
     });
-    const config = writeConfig(path.dirname(root), {
+    const config = writeConfig(root, {
       "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
     });
     assertFailed(runChecker(root, config, "all"), "duplicate initial module entry", "duplicate fixture");
@@ -177,7 +228,7 @@ try {
       files: { "outside.js": "outside\n" },
       manifest: { "index.html": { file: "assets/../outside.js", isEntry: true } },
     });
-    const config = writeConfig(path.dirname(root), {
+    const config = writeConfig(root, {
       "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
     });
     assertFailed(runChecker(root, config, "all"), "path traversal|escapes", "path escape fixture");
@@ -193,7 +244,7 @@ try {
         "assets/very-large-lazy-chunk.js": Buffer.alloc(128 * 1024, "x"),
       },
     });
-    const config = writeConfig(path.dirname(root), {
+    const config = writeConfig(root, {
       "code-pad": { dist: "apps/code-pad/dist", rawBytes: 100, gzipBytes: 100 },
     });
     const result = runChecker(root, config, "all");
@@ -223,7 +274,7 @@ try {
         "_lazy.js": { file: "assets/lazy.js", isDynamicEntry: true },
       },
     });
-    const config = writeConfig(path.dirname(root), {
+    const config = writeConfig(root, {
       "code-pad": { dist: "apps/code-pad/dist", rawBytes: 20, gzipBytes: 1000 },
     });
     const result = runChecker(root, config, "all");
@@ -242,12 +293,12 @@ try {
       indexHtml: '<script type="module" src="/assets/knowledge-base.js"></script>\n',
       files: { "assets/knowledge-base.js": "knowledge-base\n" },
     });
-    const config = writeConfig(path.dirname(root), {
+    const config = writeConfig(root, {
       "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
       "knowledge-base": { dist: "apps/knowledge-base/dist", rawBytes: 1000, gzipBytes: 1000 },
     });
 
-    const selected = runChecker(root, config, "apps", "knowledge-base unknown");
+    const selected = runChecker(root, config, "apps", "knowledge-base");
     assertPassed(selected, "app scope fixture");
     assert.match(selected.output, /knowledge-base: initial raw=/);
     assert.doesNotMatch(selected.output, /code-pad: initial raw=/);

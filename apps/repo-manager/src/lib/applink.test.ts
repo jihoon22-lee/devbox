@@ -20,7 +20,7 @@ describe("Repo Manager applink routing", () => {
       });
       expect(action).toEqual({
         kind: "error",
-        message: "요청한 repository 경로를 사용할 수 없습니다",
+        message: "요청한 저장소 경로를 사용할 수 없습니다",
       });
       if (path.length > 0) expect(JSON.stringify(action)).not.toContain(path);
     }

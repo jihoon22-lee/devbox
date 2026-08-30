@@ -29,21 +29,21 @@ import type {
 } from "./types";
 
 export const API_HANDOFF_BROWSER_ERROR =
-  "API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
+  "API Playground 전달은 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
 
 export const TOOLBOX_TEXT_HANDOFF_KIND = "toolbox-text/v1";
 export const TOOLBOX_TEXT_BROWSER_ERROR =
-  "Developer Toolbox handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
-export const TOOLBOX_TEXT_INVALID_ERROR = "텍스트 handoff 응답을 사용할 수 없습니다";
+  "Developer Toolbox 전달은 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
+export const TOOLBOX_TEXT_INVALID_ERROR = "텍스트 전달 응답을 사용할 수 없습니다";
 
 export const KNOWLEDGE_DRAFT_BROWSER_ERROR =
-  "Knowledge draft handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
-export const KNOWLEDGE_DRAFT_INPUT_ERROR = "Knowledge draft로 전달할 텍스트가 유효하지 않습니다";
+  "Knowledge 초안 전달은 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
+export const KNOWLEDGE_DRAFT_INPUT_ERROR = "Knowledge 초안으로 전달할 텍스트가 유효하지 않습니다";
 export const KNOWLEDGE_DRAFT_CREATE_ERROR =
-  "Knowledge draft를 만들거나 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다";
+  "Knowledge 초안을 만들거나 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다";
 export const KNOWLEDGE_DRAFT_TARGET_UNAVAILABLE_ERROR =
   "Knowledge를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다";
-export const KNOWLEDGE_DRAFT_INVALID_ERROR = "Knowledge draft 응답을 사용할 수 없습니다";
+export const KNOWLEDGE_DRAFT_INVALID_ERROR = "Knowledge 초안 응답을 사용할 수 없습니다";
 
 const HANDOFF_ID_PATTERN = /^[0-9a-f]{32}$/u;
 const TOOLBOX_TEXT_MAX_BYTES = 512 * 1024;
@@ -145,19 +145,21 @@ export async function createApiRequestHandoff(output: string): Promise<ApiHandof
   return invoke<ApiHandoffDispatch>("create_api_request_handoff", { output });
 }
 
-const KNOWLEDGE_DRAFT_FIXED_ERRORS = new Set([
-  KNOWLEDGE_DRAFT_INPUT_ERROR,
-  KNOWLEDGE_DRAFT_CREATE_ERROR,
-  KNOWLEDGE_DRAFT_TARGET_UNAVAILABLE_ERROR,
-  KNOWLEDGE_DRAFT_BROWSER_ERROR,
+const KNOWLEDGE_DRAFT_ERROR_DISPLAY = new Map<string, string>([
+  [KNOWLEDGE_DRAFT_INPUT_ERROR, KNOWLEDGE_DRAFT_INPUT_ERROR],
+  [KNOWLEDGE_DRAFT_CREATE_ERROR, KNOWLEDGE_DRAFT_CREATE_ERROR],
+  [KNOWLEDGE_DRAFT_TARGET_UNAVAILABLE_ERROR, KNOWLEDGE_DRAFT_TARGET_UNAVAILABLE_ERROR],
+  [KNOWLEDGE_DRAFT_BROWSER_ERROR, KNOWLEDGE_DRAFT_BROWSER_ERROR],
+  [
+    "Knowledge draft를 만들거나 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다",
+    KNOWLEDGE_DRAFT_CREATE_ERROR,
+  ],
 ]);
 
 function safeKnowledgeDraftError(cause: unknown): Error {
   const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
   const message = raw.replace(/^Error:\s*/u, "");
-  return new Error(KNOWLEDGE_DRAFT_FIXED_ERRORS.has(message)
-    ? message
-    : KNOWLEDGE_DRAFT_CREATE_ERROR);
+  return new Error(KNOWLEDGE_DRAFT_ERROR_DISPLAY.get(message) ?? KNOWLEDGE_DRAFT_CREATE_ERROR);
 }
 
 function parseKnowledgeDraftDispatch(value: unknown): KnowledgeDraftHandoffDispatch {

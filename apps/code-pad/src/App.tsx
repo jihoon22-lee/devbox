@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { focusFirst, isImeComposing, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { CompletionSource } from "@codemirror/autocomplete";
 import type { HoverTooltipSource } from "@codemirror/view";
@@ -132,6 +133,49 @@ function renameFileStatusLabel(status: LspRenameApplyResult["files"][number]["st
   }
 }
 
+const SAFE_CODE_PAD_ERRORS = new Set([
+  "파일 이름을 변경할 수 없습니다.",
+  "파일 이름 변경 작업이 중단되었습니다.",
+  "파일을 삭제할 수 없습니다.",
+  "파일 삭제 작업이 중단되었습니다.",
+  "파일 위치를 열 수 없습니다.",
+  "클립보드 처리 중 선택 영역이 변경되어 잘라내기를 취소했습니다.",
+  "클립보드 처리 중 편집 위치가 변경되어 붙여넣기를 취소했습니다.",
+]);
+
+function safeCodePadError(cause: unknown, fallback: string): string {
+  const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
+  const message = raw.replace(/^Error:\s*/u, "").trim();
+  if (SAFE_CODE_PAD_ERRORS.has(message)) return message;
+
+  const normalized = message.toLowerCase();
+  if (normalized.includes("read-only") || normalized.includes("read only")) {
+    return "읽기 전용 파일이라 저장할 수 없습니다.";
+  }
+  if (normalized.includes("file changed on disk") || normalized.includes("changed during read")) {
+    return "디스크의 파일이 변경되었습니다. 다시 불러온 뒤 시도하세요.";
+  }
+  if (normalized.includes("destination already exists")) {
+    return "같은 이름의 파일이 이미 있습니다.";
+  }
+  if (normalized.includes("not a regular file") || normalized.includes("invalid sibling file name")) {
+    return "일반 파일과 올바른 파일 이름만 사용할 수 있습니다.";
+  }
+  if (normalized.includes("larger than") || normalized.includes("size limit")) {
+    return "파일이 안전 처리 크기 제한을 초과했습니다.";
+  }
+  if (normalized.includes("lossy fallback")) {
+    return "손실 디코딩된 내용은 저장할 수 없습니다. 원본 인코딩으로 다시 여세요.";
+  }
+  if (normalized.includes("decode") || normalized.includes("invalid utf") || normalized.includes("invalid encoding")) {
+    return "선택한 인코딩으로 파일을 읽지 못했습니다.";
+  }
+  if (normalized.includes("encode") || normalized.includes("unrepresentable")) {
+    return "선택한 인코딩으로 저장할 수 없는 문자가 있습니다.";
+  }
+  return fallback;
+}
+
 function snapshotMatches(
   doc: Doc | undefined,
   snapshot: Pick<
@@ -249,6 +293,7 @@ export default function App() {
   const lspFeatureRequestRef = useRef(0);
   const lspBusyRef = useRef(false);
   const quickOpenRef = useRef<() => void>(() => undefined);
+  const appDialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => lspSync.subscribe(setLspSyncState), [lspSync]);
 
@@ -333,7 +378,28 @@ export default function App() {
   const pendingCloseDoc = pendingCloseDocId
     ? state.docs.find((doc) => doc.id === pendingCloseDocId) ?? null
     : null;
+  const appDialogKind = pendingCloseDoc
+    ? "close"
+    : pendingEncodingReopen
+      ? "encoding"
+      : renamePreview
+        ? "rename-preview"
+        : renameResult
+          ? "rename-result"
+          : null;
   const canPreview = Boolean(activeDoc && state.workspaceFolder && isPreviewable(activeDoc.path));
+
+  useEffect(() => {
+    if (!appDialogKind) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = requestAnimationFrame(() => {
+      if (appDialogRef.current) focusFirst(appDialogRef.current);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      restoreFocus(opener);
+    };
+  }, [appDialogKind]);
 
   async function runFileOperation<T>(operation: () => Promise<T>): Promise<T | undefined> {
     if (busyRef.current) return undefined;
@@ -344,7 +410,7 @@ export default function App() {
     try {
       return await operation();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(safeCodePadError(cause, "파일 작업을 완료하지 못했습니다."));
       return undefined;
     } finally {
       if (operationTokenRef.current === token) {
@@ -598,7 +664,7 @@ export default function App() {
     try {
       return await operation();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(safeCodePadError(cause, "언어 서버 작업을 완료하지 못했습니다."));
       return undefined;
     } finally {
       lspBusyRef.current = false;
@@ -1205,7 +1271,7 @@ export default function App() {
     setQuickOpen(true);
     if (state.workspaceFolder && workspaceListingRoot !== state.workspaceFolder) {
       void loadWorkspaceSnapshot(state.workspaceFolder).catch((cause) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(safeCodePadError(cause, "작업 폴더 파일 목록을 불러오지 못했습니다."));
       });
     }
   };
@@ -1308,7 +1374,7 @@ export default function App() {
       })
       .catch((cause) => {
         if (cancelled) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(safeCodePadError(cause, "이전 편집 세션을 불러오지 못했습니다."));
         // A failed read may be a permission or filesystem error rather than
         // an empty session. Preserve the on-disk evidence until the user
         // performs a meaningful action, just as for corrupt JSON.
@@ -1475,7 +1541,7 @@ export default function App() {
       .catch((cause) => {
         const latest = stateRef.current.docs.find((doc) => doc.id === expected.id);
         if (cancelled || !latest || !snapshotMatches(latest, expected)) return;
-        setPreviewError(cause instanceof Error ? cause.message : String(cause));
+        setPreviewError(safeCodePadError(cause, "미리보기를 생성하지 못했습니다."));
       });
     return () => {
       cancelled = true;
@@ -1497,7 +1563,7 @@ export default function App() {
           try {
             await saveSession(next);
           } catch (cause) {
-            setError(cause instanceof Error ? cause.message : String(cause));
+            setError(safeCodePadError(cause, "편집 세션을 저장하지 못했습니다."));
           }
         }
       };
@@ -1529,6 +1595,7 @@ export default function App() {
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
+      if (isImeComposing(event)) return;
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
       if (key === "s") {
@@ -1587,7 +1654,7 @@ export default function App() {
             disabled={!hydrated}
             onChange={(event) => setPathInput(event.currentTarget.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") handleOpen();
+              if (!isImeComposing(event) && event.key === "Enter") handleOpen();
             }}
           />
           <button type="button" className="toolbar-button" onClick={handleOpen} disabled={busy || !hydrated}>
@@ -1608,7 +1675,7 @@ export default function App() {
       {!hydrated && <p className="hydration-banner" role="status">세션을 복원하는 중...</p>}
       {lspSyncState.lastError && (
         <p className="lsp-sync-status" role="status" aria-live="polite">
-          LSP 동기화가 일시적으로 비활성화되었습니다: {lspSyncState.lastError}
+          LSP 동기화가 일시적으로 비활성화되었습니다. 언어 서버 상태를 확인한 뒤 다시 시도하세요.
         </p>
       )}
       {lspSyncState.staleDiagnostics && (
@@ -1681,7 +1748,7 @@ export default function App() {
           onClick={() => setProblemsOpen((prev) => !prev)}
           disabled={!hydrated}
         >
-          Problems
+          문제
         </button>
         <button type="button" className="toolbar-button" onClick={() => goNav("back")} disabled={navBack.length === 0} title="뒤로">
           ←
@@ -1775,7 +1842,9 @@ export default function App() {
             canNavigate={(docId, kind) => hydrated && lspCapabilityFor(docId, kind)}
             navigationBusy={lspBusy}
             onNavigate={(docId, kind, cursor) => handleLspNavigation(kind, docId, cursor)}
-            onError={setError}
+            onError={(message) => setError(message === null
+              ? null
+              : safeCodePadError(message, "편집기 작업을 완료하지 못했습니다."))}
           />
         </section>
         {previewOpen && activeDoc && (
@@ -1822,14 +1891,14 @@ export default function App() {
       {pendingCloseDoc && (
         <div className="modal-backdrop" role="presentation">
           <div
+            ref={appDialogRef}
             className="confirm-dialog"
             role="dialog"
             aria-modal="true"
             aria-label="저장되지 않은 변경 사항"
             onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                setPendingCloseDocIds([]);
+              if (appDialogRef.current) {
+                trapDialogKeyDown(event, appDialogRef.current, () => setPendingCloseDocIds([]));
               }
             }}
           >
@@ -1839,7 +1908,7 @@ export default function App() {
               {pendingCloseDocIds.length > 1 && ` (이후 ${pendingCloseDocIds.length - 1}개 대기)`}
             </p>
             <div className="confirm-dialog-actions">
-              <button type="button" className="toolbar-button" autoFocus onClick={() => setPendingCloseDocIds([])}>취소</button>
+              <button type="button" className="toolbar-button" onClick={() => setPendingCloseDocIds([])}>취소</button>
               <button type="button" className="toolbar-button" onClick={handleDiscardClose}>변경 내용 버리고 닫기</button>
               <button type="button" className="toolbar-button selected" onClick={handleSaveAndClose} disabled={busy}>저장 후 닫기</button>
             </div>
@@ -1850,21 +1919,21 @@ export default function App() {
       {pendingEncodingReopen && (
         <div className="modal-backdrop" role="presentation">
           <div
+            ref={appDialogRef}
             className="confirm-dialog"
             role="dialog"
             aria-modal="true"
             aria-label="인코딩 다시 열기"
             onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                setPendingEncodingReopen(null);
+              if (appDialogRef.current) {
+                trapDialogKeyDown(event, appDialogRef.current, () => setPendingEncodingReopen(null));
               }
             }}
           >
             <h2>인코딩을 바꿔 다시 열까요?</h2>
             <p>저장되지 않은 변경 사항이 버려집니다. 선택한 인코딩으로 디스크 파일을 엄격하게 다시 읽습니다.</p>
             <div className="confirm-dialog-actions">
-              <button type="button" className="toolbar-button" autoFocus onClick={() => setPendingEncodingReopen(null)}>
+              <button type="button" className="toolbar-button" onClick={() => setPendingEncodingReopen(null)}>
                 취소
               </button>
               <button type="button" className="toolbar-button selected" onClick={confirmEncodingReopen} disabled={busy}>
@@ -1878,15 +1947,17 @@ export default function App() {
       {(renamePreview || renameResult) && (
         <div className="modal-backdrop" role="presentation">
           <div
+            ref={appDialogRef}
             className="rename-dialog"
             role="dialog"
             aria-modal="true"
             aria-label="여러 파일 이름 변경 미리보기"
             onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                cancelPendingRename();
-                if (!renameApplyBusy) setRenameResult(null);
+              if (appDialogRef.current) {
+                trapDialogKeyDown(event, appDialogRef.current, () => {
+                  cancelPendingRename();
+                  if (!renameApplyBusy) setRenameResult(null);
+                });
               }
             }}
           >
@@ -1930,7 +2001,7 @@ export default function App() {
                   ))}
                 </ul>
                 <div className="confirm-dialog-actions">
-                  <button type="button" className="toolbar-button selected" autoFocus onClick={() => setRenameResult(null)}>
+                  <button type="button" className="toolbar-button selected" onClick={() => setRenameResult(null)}>
                     닫기
                   </button>
                 </div>

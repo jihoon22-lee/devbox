@@ -16,22 +16,22 @@ import {
   validateJwtTimes,
 } from "./jwt";
 
-const FIXED_CLIPBOARD_ERROR = "JWT 입력을 clipboard에서 읽지 못했습니다.";
+const FIXED_CLIPBOARD_ERROR = "JWT 입력을 클립보드에서 읽지 못했습니다.";
 const FIXED_OUTPUT_ERROR = "JWT 결과 작업을 완료하지 못했습니다.";
 
 const KEY_ENCODINGS: ReadonlyArray<{ value: JwtKeyEncoding; label: string }> = [
-  { value: "utf8", label: "UTF-8 text" },
+  { value: "utf8", label: "UTF-8 텍스트" },
   { value: "hex", label: "Hex" },
-  { value: "base64", label: "Base64 (padded)" },
-  { value: "base64url", label: "Base64URL (unpadded)" },
+  { value: "base64", label: "Base64 (패딩 포함)" },
+  { value: "base64url", label: "Base64URL (패딩 없음)" },
 ];
 
 const STATUS_LABELS: Readonly<Record<JwtVerificationStatus, string>> = {
-  unverified: "Unverified — signature has not been checked",
-  verified: "Verified — signature and time claims passed",
-  invalid_signature: "Invalid — signature did not match",
-  invalid_claims: "Invalid — time claims are outside the allowed clock skew",
-  error: "Unable to verify",
+  unverified: "검증되지 않음 — 서명을 확인하지 않았습니다",
+  verified: "검증됨 — 서명과 시간 클레임을 통과했습니다",
+  invalid_signature: "유효하지 않음 — 서명이 일치하지 않습니다",
+  invalid_claims: "유효하지 않음 — 시간 클레임이 허용된 시계 오차 범위를 벗어났습니다",
+  error: "검증할 수 없음",
 };
 
 /**
@@ -165,26 +165,26 @@ export function JwtDecoder() {
   return (
     <div className="tool jwt-tool" aria-busy={running}>
       <p id="jwt-help" className="jwt-help">
-        Decode displays the header and payload as <strong>unverified</strong>. Verify is explicit and
-        supports only HS256, HS384, and HS512 with a raw UTF-8, hex, padded Base64, or unpadded
-        Base64URL key. PEM/JWK, RSA, EC, alg=none, token storage, and automatic clipboard actions
-        are not supported. Time claims use the current UTC clock with a fixed ±{JWT_LIMITS.clockSkewSeconds}s skew.
+        디코드는 헤더와 페이로드를 <strong>검증되지 않은 상태</strong>로 표시합니다. 서명 검증은
+        명시적으로 실행하며 raw UTF-8, Hex, 패딩 포함 Base64 또는 패딩 없는 Base64URL 키를
+        사용하는 HS256, HS384, HS512만 지원합니다. PEM/JWK, RSA, EC, alg=none, 토큰 저장 및
+        클립보드 자동 작업은 지원하지 않습니다. 시간 클레임은 현재 UTC 시각과 고정된 ±{JWT_LIMITS.clockSkewSeconds}초 시계 오차를 사용합니다.
       </p>
 
       <div className="jwt-toolbar">
         <button type="button" className="btn" onClick={decode} disabled={running || !token}>
-          Decode
+          디코드
         </button>
         <button type="button" className="btn" onClick={() => void verify()} disabled={running || !token || !key}>
-          {running ? "Verifying..." : "Verify signature"}
+          {running ? "검증 중..." : "서명 검증"}
         </button>
       </div>
 
       <div className="jwt-key-row">
         <label className="jwt-field">
-          Verification key
+          검증 키
           <ToolTextField
-            aria-label="JWT verification key"
+            aria-label="JWT 검증 키"
             aria-describedby="jwt-help"
             autoComplete="off"
             inputType="password"
@@ -198,9 +198,9 @@ export function JwtDecoder() {
           />
         </label>
         <label className="jwt-field">
-          Key encoding
+          키 인코딩
           <select
-            aria-label="JWT key encoding"
+            aria-label="JWT 키 인코딩"
             aria-describedby="jwt-help"
             value={keyEncoding}
             onChange={(event) => changeKeyEncoding(event.currentTarget.value as JwtKeyEncoding)}
@@ -216,19 +216,19 @@ export function JwtDecoder() {
       </div>
 
       <div className="jwt-status" role="status" aria-live="polite">
-        {running ? "Verifying JWT..." : STATUS_LABELS[status]}
+        {running ? "JWT를 검증하는 중..." : STATUS_LABELS[status]}
       </div>
       {error ? <div className="jwt-error" role="alert">{error}</div> : null}
 
       <div className="io-grid jwt-grid">
         <div className="io-col">
-          <div className="io-label">JWT compact token</div>
+          <div className="io-label">JWT 컴팩트 토큰</div>
           <ToolTextArea
-            aria-label="JWT compact token"
+            aria-label="JWT 컴팩트 토큰"
             aria-describedby="jwt-help"
             aria-busy={running}
             className="io-input jwt-input"
-            placeholder="Paste header.payload.signature..."
+            placeholder="header.payload.signature 형식의 토큰을 붙여넣으세요..."
             rows={7}
             value={token}
             onValueChange={changeToken}
@@ -240,9 +240,9 @@ export function JwtDecoder() {
           />
         </div>
         <div className="io-col">
-          <div className="io-label">Decoded claims and verification</div>
+          <div className="io-label">디코드된 클레임 및 검증 결과</div>
           <ToolOutput
-            ariaLabel="JWT decoded output"
+            ariaLabel="JWT 디코드 결과"
             className={`io-output jwt-output ${error ? "io-error" : ""}`}
             value={output}
             downloadName="dev-toolbox-jwt-result.json"

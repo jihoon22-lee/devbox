@@ -3,6 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
+import { isKeyboardActivation } from "@devbox/a11y";
 import { OPENAPI_DOCUMENT_LIMITS, type OpenApiDocumentFormat } from "@devbox/openapi";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
@@ -68,7 +69,7 @@ const STALE_RULE_MESSAGE = "선택한 규칙이 더 이상 존재하지 않습�
 const OPENAPI_FILE_FORMAT_ERROR = "OpenAPI 파일 형식을 확인하세요. .json, .yaml, .yml만 선택할 수 있습니다.";
 const OPENAPI_FILE_TOO_LARGE_ERROR = `OpenAPI 파일이 너무 큽니다. ${OPENAPI_DOCUMENT_LIMITS.maxBytes}바이트 이하 파일을 선택하세요.`;
 const OPENAPI_FILE_READ_ERROR = "OpenAPI 파일을 읽지 못했습니다. JSON 또는 YAML 파일을 확인하세요.";
-const RUN_DEFINITION_EXPORT_ERROR = "Run Manager definition을 다운로드하지 못했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.";
+const RUN_DEFINITION_EXPORT_ERROR = "Run Manager 정의를 다운로드하지 못했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.";
 const SAFE_ERROR_MESSAGES = new Set([
   "요청 기록을 찾을 수 없습니다",
   "규칙을 찾을 수 없습니다",
@@ -106,6 +107,18 @@ const SAFE_ERROR_MESSAGES = new Set([
   "Webhook service profile 개수 제한에 도달했습니다",
 ]);
 
+const SAFE_ERROR_DISPLAY: Record<string, string> = {
+  "replay 입력이 유효하지 않습니다": "재전송 입력이 유효하지 않습니다",
+  "replay 요청이 너무 많습니다. 잠시 후 다시 시도하세요": "재전송 요청이 너무 많습니다. 잠시 후 다시 시도하세요",
+  "replay 요청을 보내지 못했습니다": "재전송 요청을 보내지 못했습니다",
+  "replay 응답을 읽지 못했습니다": "재전송 응답을 읽지 못했습니다",
+  "replay는 데스크톱 앱에서만 사용할 수 있습니다": "재전송은 데스크톱 앱에서만 사용할 수 있습니다",
+  "response sequence를 초기화하지 못했습니다": "응답 시퀀스를 초기화하지 못했습니다",
+  "Webhook service profile을 만들 수 없습니다": "Webhook 서비스 프로필을 만들 수 없습니다",
+  "credential 형태의 응답이 포함된 규칙은 service profile로 내보낼 수 없습니다": "인증 정보 형태의 응답이 포함된 규칙은 서비스 프로필로 내보낼 수 없습니다",
+  "Webhook service profile 개수 제한에 도달했습니다": "Webhook 서비스 프로필 개수 제한에 도달했습니다",
+};
+
 function emptyRule(): ResponseRule {
   return {
     id: "",
@@ -140,7 +153,7 @@ function safeMessage(error: unknown): string {
   const message = error instanceof Error
     ? error.message
     : typeof error === "string" ? error : "";
-  return SAFE_ERROR_MESSAGES.has(message) ? message : GENERIC_ERROR_MESSAGE;
+  return SAFE_ERROR_MESSAGES.has(message) ? SAFE_ERROR_DISPLAY[message] ?? message : GENERIC_ERROR_MESSAGE;
 }
 
 function safeExportMessage(error: unknown): string {
@@ -284,6 +297,7 @@ export default function App() {
     disabled: busy,
     onBeforeOpen: (_reason, target) => prepareHistoryContext(target),
   });
+  const historyContextTrigger = historyContextMenu.triggerProps;
 
   const prepareRuleContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.ruleId;
@@ -301,6 +315,7 @@ export default function App() {
     disabled: busy,
     onBeforeOpen: (_reason, target) => prepareRuleContext(target),
   });
+  const ruleContextTrigger = ruleContextMenu.triggerProps;
 
   const refresh = useCallback(async () => {
     const request = refreshRequest.current + 1;
@@ -442,7 +457,7 @@ export default function App() {
     if (!operation || !operation.applyable) return;
     const draft = openApiOperationToRule(operation);
     if (!draft) return;
-    if (!window.confirm(`${operation.method} ${operation.path} → ${operation.status} operation을 rule 초안으로 편집기에 채울까요?`)) return;
+    if (!window.confirm(`${operation.method} ${operation.path} → ${operation.status} operation을 규칙 초안으로 편집기에 채울까요?`)) return;
     setRuleDraft(draft);
     setOpenApiError(null);
   };
@@ -637,7 +652,8 @@ export default function App() {
 
   const showReplaySuccess = (source: string, statusCode: number) => {
     if (mountedRef.current) {
-      setHandoffNotice("masked " + source + " 요청을 localhost에 replay했습니다 (현재 로컬 listener). 응답 status: " + statusCode + ".");
+      const sourceLabel = source === "history" ? "기록" : "fixture";
+      setHandoffNotice("마스킹된 " + sourceLabel + " 요청을 localhost에 재전송했습니다 (현재 로컬 listener). 응답 status: " + statusCode + ".");
     }
   };
 
@@ -752,7 +768,7 @@ export default function App() {
     try {
       await resetRuleSequence(currentRule.id);
       if (!mountedRef.current) return;
-      setHandoffNotice("response sequence의 현재 위치를 첫 응답으로 초기화했습니다.");
+      setHandoffNotice("응답 시퀀스의 현재 위치를 첫 응답으로 초기화했습니다.");
     } catch (e) {
       if (mountedRef.current) setError(safeMessage(e));
     } finally {
@@ -775,7 +791,7 @@ export default function App() {
   };
 
   const onDeleteFixture = async (fixture: CapturedFixture) => {
-    if (!window.confirm("선택한 masked fixture를 삭제할까요?")) return;
+    if (!window.confirm("선택한 마스킹된 fixture를 삭제할까요?")) return;
     if (!beginBusy()) return;
     setError(null);
     try {
@@ -790,7 +806,7 @@ export default function App() {
   };
 
   const onClearFixtures = async () => {
-    if (!window.confirm("저장된 masked fixture를 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
+    if (!window.confirm("저장된 마스킹된 fixture를 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
     if (!beginBusy()) return;
     setError(null);
     try {
@@ -1021,7 +1037,7 @@ export default function App() {
           onClick={() => void onExportRunDefinition()}
           title="실행 중인 loopback 서버에서만 사용할 수 있습니다"
         >
-          Run Manager definition JSON 다운로드
+          Run Manager 정의 JSON 다운로드
         </button>
       </header>
 
@@ -1031,9 +1047,9 @@ export default function App() {
 
       <div className="main">
         <section className="panel">
-          <h2>Rules</h2>
+          <h2>규칙</h2>
           <p className="field-help precedence-help">
-            priority가 높을수록 먼저 적용됩니다. 같으면 정확한 path, method 지정, 긴 wildcard 순서이며 마지막에는 rule ID로 결정합니다.
+            우선순위가 높을수록 먼저 적용됩니다. 같으면 정확한 path, method 지정, 긴 와일드카드 순서이며 마지막에는 규칙 ID로 결정합니다.
           </p>
           <div className="rule-editor">
             <div className="rule-field">
@@ -1156,7 +1172,7 @@ export default function App() {
             >
               <div className="sequence-heading">
                 <div>
-                  <h3>Response sequence</h3>
+                  <h3>응답 시퀀스</h3>
                   <p id="rule-sequence-help" className="field-help">
                     위 응답을 첫 단계로 사용한 뒤 아래 단계를 순서대로 적용합니다. 마지막 단계는 유지되며 자동 반복하지 않습니다 (최대 {MAX_RESPONSE_SEQUENCE}단계).
                   </p>
@@ -1230,7 +1246,7 @@ export default function App() {
           <section className="openapi-section" aria-labelledby="openapi-heading">
             <div className="openapi-heading">
               <div>
-                <h3 id="openapi-heading">OpenAPI → rule draft</h3>
+                <h3 id="openapi-heading">OpenAPI → 규칙 초안</h3>
                 <p className="field-help">
                   JSON/YAML 파일을 선택하면 안전한 operation만 미리봅니다. 선택하고 확인해야 편집기에 채워지며 자동 저장하지 않습니다.
                 </p>
@@ -1293,7 +1309,7 @@ export default function App() {
                   disabled={busy || !selectedOpenApiOperationId}
                   onClick={onApplyOpenApiDraft}
                 >
-                  선택한 operation을 rule 초안에 적용
+                  선택한 operation을 규칙 초안에 적용
                 </button>
               </div>
             )}
@@ -1307,25 +1323,35 @@ export default function App() {
               aria-label={`${targetRule.method ?? "*"} ${targetRule.path} 규칙`}
               data-rule-id={targetRule.id}
               onClick={() => setSelectedRuleId(targetRule.id)}
-              {...ruleContextMenu.triggerProps}
+              onContextMenu={ruleContextTrigger.onContextMenu}
+              onKeyDown={(event) => {
+                ruleContextTrigger.onKeyDown?.(event);
+                if (
+                  event.defaultPrevented
+                  || event.target !== event.currentTarget
+                  || !isKeyboardActivation(event)
+                ) return;
+                event.preventDefault();
+                setSelectedRuleId(targetRule.id);
+              }}
             >
               {(targetRule.sequence?.length ?? 0) > 0 && (
-                <span className="sequence-badge">{(targetRule.sequence?.length ?? 0) + 1} responses</span>
+                <span className="sequence-badge">{(targetRule.sequence?.length ?? 0) + 1}개 응답</span>
               )}
               <button
                 type="button"
                 className="mini"
-                aria-label={(targetRule.method ?? "*") + " " + targetRule.path + " response sequence 초기화"}
+                aria-label={(targetRule.method ?? "*") + " " + targetRule.path + " 응답 시퀀스 초기화"}
                 disabled={busy}
                 onClick={(event) => {
                   event.stopPropagation();
                   void onResetSequence(targetRule);
                 }}
               >
-                sequence 초기화
+                시퀀스 초기화
               </button>
               <span className="mono">{targetRule.method ?? "*"} {targetRule.path} → {targetRule.status}{targetRule.delayMs ? ` (+${targetRule.delayMs}ms)` : ""}</span>
-              <span className="priority-badge">priority {targetRule.priority ?? 0}</span>
+              <span className="priority-badge">우선순위 {targetRule.priority ?? 0}</span>
               <button
                 type="button"
                 className="mini"
@@ -1341,7 +1367,7 @@ export default function App() {
         </section>
 
         <section className="panel">
-          <h2>History ({history.length})</h2>
+          <h2>요청 기록 ({history.length})</h2>
           <div className="history-head">
             <button className="mini" disabled={busy || history.length === 0} onClick={() => void onClearHistory()}>비우기</button>
           </div>
@@ -1354,7 +1380,17 @@ export default function App() {
               aria-label={`${request.method} ${request.url} 요청`}
               data-history-id={request.id}
               onClick={() => setSelectedHistoryId(request.id)}
-              {...historyContextMenu.triggerProps}
+              onContextMenu={historyContextTrigger.onContextMenu}
+              onKeyDown={(event) => {
+                historyContextTrigger.onKeyDown?.(event);
+                if (
+                  event.defaultPrevented
+                  || event.target !== event.currentTarget
+                  || !isKeyboardActivation(event)
+                ) return;
+                event.preventDefault();
+                setSelectedHistoryId(request.id);
+              }}
             >
               <span className={`method ${request.method.toLowerCase()}`}>{request.method}</span>
               <span className="url">{request.url}</span>
@@ -1366,19 +1402,19 @@ export default function App() {
               <button
                 type="button"
                 className="mini"
-                aria-label={request.method + " " + request.url + " masked replay"}
+                aria-label={request.method + " " + request.url + " 마스킹된 재전송"}
                 disabled={busy || !status.running || !status.address}
                 onClick={(event) => {
                   event.stopPropagation();
                   void onReplayHistory(request);
                 }}
               >
-                masked replay
+                마스킹된 재전송
               </button>
               <button
                 type="button"
                 className="mini fixture-save"
-                aria-label={`${request.method} ${request.url} masked fixture 저장`}
+                aria-label={`${request.method} ${request.url} 마스킹된 fixture 저장`}
                 disabled={busy}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -1392,7 +1428,7 @@ export default function App() {
           {history.length === 0 && <div className="dim">수신 요청이 없습니다.</div>}
           <div className="fixture-section" aria-labelledby="fixtures-heading">
             <div className="fixture-heading">
-              <h3 id="fixtures-heading">Fixtures ({fixtures.length})</h3>
+              <h3 id="fixtures-heading">저장된 fixture ({fixtures.length})</h3>
               <button
                 type="button"
                 className="mini"
@@ -1404,7 +1440,7 @@ export default function App() {
               </button>
             </div>
             <p className="field-help fixture-help">
-              저장된 요청은 앱 전용 파일에 masked 상태로만 보관합니다. 원본 header·credential·안전하지 않은 path는 저장하지 않습니다.
+              저장된 요청은 앱 전용 파일에 마스킹된 상태로만 보관합니다. 원본 헤더·인증 정보·안전하지 않은 path는 저장하지 않습니다.
             </p>
             {fixtures.map((fixture) => (
               <div
@@ -1415,7 +1451,7 @@ export default function App() {
                 <div className="fixture-summary">
                   <span className="mono">{fixture.method} {fixture.url}</span>
                   <span className="dim">{formatFixtureTime(fixture.receivedAtMs)}</span>
-                  <span className="masked">masked</span>
+                  <span className="masked">마스킹됨</span>
                 </div>
                 {fixture.body && <pre className="body">{fixture.body.slice(0, 200)}</pre>}
                 <div className="fixture-actions">
@@ -1423,10 +1459,10 @@ export default function App() {
                     type="button"
                     className="mini"
                     disabled={busy || !status.running || !status.address}
-                    aria-label={fixture.method + " " + fixture.url + " masked replay"}
+                    aria-label={fixture.method + " " + fixture.url + " 마스킹된 재전송"}
                     onClick={() => void onReplayFixture(fixture)}
                   >
-                    masked replay
+                    마스킹된 재전송
                   </button>
                   <button
                     type="button"
@@ -1450,10 +1486,10 @@ export default function App() {
                     type="button"
                     className="mini"
                     disabled={busy}
-                    aria-label={`${fixture.method} ${fixture.url} 응답 rule 초안`}
+                    aria-label={`${fixture.method} ${fixture.url} 응답 규칙 초안`}
                     onClick={() => void onDraftFixture(fixture)}
                   >
-                    응답 rule 초안
+                    응답 규칙 초안
                   </button>
                   <button
                     type="button"

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { focusFirst, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import {
   languageServerLogs,
   languageServerStatuses,
@@ -150,6 +151,7 @@ export default function LspControlPanel({
   const cancelledStartsRef = useRef(new Set<string>());
   const runtimeRefreshGenerationRef = useRef(0);
   const runtimeRefreshActiveRef = useRef(false);
+  const dialogRef = useRef<HTMLElement>(null);
   const lspAvailable = Boolean(workspaceRoot)
     && (workspaceCapabilities?.lspSupported ?? true);
 
@@ -193,6 +195,17 @@ export default function LspControlPanel({
       }
     }
   };
+
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = requestAnimationFrame(() => {
+      if (dialogRef.current) focusFirst(dialogRef.current);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      restoreFocus(opener);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -371,7 +384,18 @@ export default function LspControlPanel({
 
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="lsp-panel" role="dialog" aria-modal="true" aria-label="언어 서버 설정">
+      <section
+        ref={dialogRef}
+        className="lsp-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="언어 서버 설정"
+        onKeyDown={(event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          if (target?.closest("[role='dialog']") !== dialogRef.current) return;
+          if (dialogRef.current) trapDialogKeyDown(event, dialogRef.current, onClose);
+        }}
+      >
         <header className="lsp-panel-header">
           <div>
             <p className="eyebrow">LSP 3.17 · LOCAL STDIO</p>

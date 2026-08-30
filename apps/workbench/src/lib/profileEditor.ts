@@ -302,22 +302,22 @@ export function validateProfileDraft(draft: ProfileDraft): ProfileDraftValidatio
   if (!windowsPath && !wslPath) {
     errors.projectPath = "Windows 경로 또는 WSL 경로를 하나 이상 입력하세요.";
   }
-  if (wslPath && !wslDistro) errors.wsl = "WSL 경로를 사용하려면 distro를 입력하세요.";
-  if (!wslPath && wslDistro) errors.wsl = "WSL distro를 사용하려면 WSL 경로를 입력하세요.";
+  if (wslPath && !wslDistro) errors.wsl = "WSL 경로를 사용하려면 배포판을 입력하세요.";
+  if (!wslPath && wslDistro) errors.wsl = "WSL 배포판을 사용하려면 WSL 경로를 입력하세요.";
   if (windowsPath && hasControlCharacter(windowsPath)) {
-    errors.projectPath = "경로와 distro에는 제어 문자를 넣을 수 없습니다.";
+    errors.projectPath = "경로와 배포판에는 제어 문자를 넣을 수 없습니다.";
   }
   if (wslPath && hasControlCharacter(wslPath)) {
-    errors.projectPath = "경로와 distro에는 제어 문자를 넣을 수 없습니다.";
+    errors.projectPath = "경로와 배포판에는 제어 문자를 넣을 수 없습니다.";
   }
   if (wslDistro && hasControlCharacter(wslDistro)) {
-    errors.wsl = "경로와 distro에는 제어 문자를 넣을 수 없습니다.";
+    errors.wsl = "경로와 배포판에는 제어 문자를 넣을 수 없습니다.";
   }
   if (wslDistro && hasUnsafeDistroCharacter(wslDistro)) {
-    errors.wsl = "WSL distro 이름에 허용되지 않는 문자가 있습니다.";
+    errors.wsl = "WSL 배포판 이름에 허용되지 않는 문자가 있습니다.";
   }
   if (gitRoot && hasControlCharacter(gitRoot)) {
-    errors.gitRoot = "Git root에 제어 문자를 넣을 수 없습니다.";
+    errors.gitRoot = "Git 루트에 제어 문자를 넣을 수 없습니다.";
   }
   if (windowsPath && utf8ByteLength(windowsPath) > MAX_PROFILE_PATH_BYTES) {
     errors.projectPath = "Windows 경로가 너무 깁니다.";
@@ -326,10 +326,10 @@ export function validateProfileDraft(draft: ProfileDraft): ProfileDraftValidatio
     errors.projectPath = "WSL 경로가 너무 깁니다.";
   }
   if (gitRoot && utf8ByteLength(gitRoot) > MAX_PROFILE_PATH_BYTES) {
-    errors.gitRoot = "Git root 경로가 너무 깁니다.";
+    errors.gitRoot = "Git 루트 경로가 너무 깁니다.";
   }
   if (wslDistro && Array.from(wslDistro).length > MAX_WSL_DISTRO_CHARS) {
-    errors.wsl = "WSL distro 이름이 너무 깁니다.";
+    errors.wsl = "WSL 배포판 이름이 너무 깁니다.";
   }
 
   const ports = parseExpectedPorts(draft.expectedPortsText);

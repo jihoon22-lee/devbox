@@ -45,7 +45,7 @@ export function RadixTool() {
   const copy = (value: string) => {
     void navigator.clipboard.writeText(value)
       .then(() => setActionError(null))
-      .catch(() => setActionError("변환 결과를 clipboard에 복사하지 못했습니다."));
+      .catch(() => setActionError("변환 결과를 클립보드에 복사하지 못했습니다."));
   };
 
   const saveAll = () => {
@@ -89,7 +89,7 @@ export function RadixTool() {
       <div className="conversion-notice" role="note">
         <strong>정수 안내</strong>
         부호는 prefix 앞에 쓰고 자동 모드는 0b, 0o, 0x를 감지하며 나머지는 10진수로 읽습니다.
-        결과는 signed magnitude이고 two&apos;s complement 해석은 하지 않습니다. 절댓값은 256bit로
+        결과는 signed magnitude이며 two&apos;s complement 해석은 하지 않습니다. 절댓값은 256비트로
         제한하며 내부 공백과 digit separator는 허용하지 않습니다. 입력과 결과는 자동으로
         저장하거나 전송하지 않습니다.
       </div>
@@ -107,7 +107,7 @@ export function RadixTool() {
       {result.metadata && result.outputs ? (
         <>
           <div className="radix-meta">
-            입력 {result.metadata.inputBase}진수 · {result.metadata.digitCount} digits · {result.metadata.bitLength} bits
+            입력 {result.metadata.inputBase}진수 · {result.metadata.digitCount}자리 · {result.metadata.bitLength}비트
             <button type="button" className="copy-btn" onClick={() => copy(combinedOutput(result.outputs!))}>
               전체 복사
             </button>

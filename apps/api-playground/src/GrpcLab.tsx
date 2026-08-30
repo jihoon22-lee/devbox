@@ -450,7 +450,7 @@ export function GrpcLab({ native }: GrpcLabProps) {
       const cleared = clearGrpcHistory();
       historyRef.current = cleared;
       setHistory(cleared);
-      setNotice("gRPC summary history를 비웠습니다.");
+      setNotice("gRPC 요약 기록을 비웠습니다.");
       setErrorCode(null);
     } catch {
       setErrorCode("grpc_history_failed");
@@ -474,15 +474,15 @@ export function GrpcLab({ native }: GrpcLabProps) {
         <div>
           <h2 id="grpc-lab-heading">Protocol Lab · gRPC</h2>
           <p className="dim">
-            local proto 또는 server reflection으로 descriptor를 확인하고 네 가지 RPC kind를 명시적으로 호출합니다.
+            로컬 proto 또는 서버 reflection으로 descriptor를 확인하고 네 가지 RPC kind를 명시적으로 호출합니다.
           </p>
         </div>
-        <span className="mcp-memory-badge">Response body · 메모리 전용</span>
+        <span className="mcp-memory-badge">응답 본문 · 메모리 전용</span>
       </div>
 
       <p className="dim mcp-storage-disclosure">
-        History/export에는 method, count, status, 시간, TLS mode만 저장합니다. ProtoJSON body, endpoint,
-        metadata, descriptor, native path, credential ID와 PEM은 저장하지 않습니다.
+        기록/내보내기에는 method, count, status, 시간, TLS mode만 저장합니다. ProtoJSON 본문, 엔드포인트,
+        metadata, descriptor, 네이티브 경로, 자격 증명 ID와 PEM은 저장하지 않습니다.
       </p>
 
       {!native && (
@@ -492,24 +492,24 @@ export function GrpcLab({ native }: GrpcLabProps) {
       )}
 
       <section className="grpc-panel" aria-labelledby="grpc-profile-heading">
-        <h3 id="grpc-profile-heading">Connection profile</h3>
+        <h3 id="grpc-profile-heading">연결 프로필</h3>
         <div className="grpc-profile-grid">
           <label>
-            Schema source
+            스키마 소스
             <select
-              aria-label="gRPC schema source"
+              aria-label="gRPC 스키마 소스"
               value={sourceMode}
               disabled={connected || busy}
               onChange={(event) => setSourceMode(event.currentTarget.value as SourceMode)}
             >
-              <option value="local-proto">Local proto</option>
-              <option value="reflection">Server reflection · v1 first</option>
+              <option value="local-proto">로컬 proto</option>
+              <option value="reflection">서버 reflection · v1 우선</option>
             </select>
           </label>
           <label>
-            Endpoint
+            엔드포인트
             <input
-              aria-label="gRPC endpoint"
+              aria-label="gRPC 엔드포인트"
               type="url"
               value={endpoint}
               maxLength={8 * 1024}
@@ -519,9 +519,9 @@ export function GrpcLab({ native }: GrpcLabProps) {
             />
           </label>
           <label>
-            Connect timeout (ms)
+            연결 제한 시간(ms)
             <input
-              aria-label="gRPC connect timeout"
+              aria-label="gRPC 연결 제한 시간"
               type="number"
               min={100}
               max={30_000}
@@ -531,9 +531,9 @@ export function GrpcLab({ native }: GrpcLabProps) {
             />
           </label>
           <label>
-            RPC deadline (ms)
+            RPC 기한(ms)
             <input
-              aria-label="gRPC RPC deadline"
+              aria-label="gRPC RPC 기한"
               type="number"
               min={100}
               max={300_000}
@@ -547,16 +547,16 @@ export function GrpcLab({ native }: GrpcLabProps) {
         {sourceMode === "local-proto" ? (
           <div className="grpc-selection-grid">
             <NativeSelectionRow
-              title="Root proto"
-              action="Choose proto"
+              title="루트 proto"
+              action="proto 선택"
               selection={protoSelection}
               disabled={!native || connected || busy}
               onPick={() => void pickSource("proto")}
               onClear={() => setProtoSelection(null)}
             />
             <NativeSelectionRow
-              title="Import root · optional"
-              action="Choose import root"
+              title="가져오기 루트 · 선택"
+              action="가져오기 루트 선택"
               selection={importRootSelection}
               disabled={!native || connected || busy}
               onPick={() => void pickSource("import-root")}
@@ -574,21 +574,21 @@ export function GrpcLab({ native }: GrpcLabProps) {
           <fieldset disabled={connected || busy || !https}>
             <div className="grpc-profile-grid">
               <label>
-                Root mode
+                루트 방식
                 <select
-                  aria-label="gRPC TLS root mode"
+                  aria-label="gRPC TLS 루트 방식"
                   value={rootMode}
                   onChange={(event) => setRootMode(event.currentTarget.value as GrpcRootMode)}
                 >
-                  <option value="native">Native roots</option>
-                  <option value="custom">Custom CA only</option>
-                  <option value="native+custom">Native + custom CA</option>
+                  <option value="native">네이티브 루트</option>
+                  <option value="custom">사용자 지정 CA만</option>
+                  <option value="native+custom">네이티브 + 사용자 지정 CA</option>
                 </select>
               </label>
               <label>
-                Server name override · optional
+                서버 이름 재정의 · 선택
                 <input
-                  aria-label="gRPC server name override"
+                  aria-label="gRPC 서버 이름 재정의"
                   value={serverName}
                   maxLength={253}
                   spellCheck={false}
@@ -596,13 +596,13 @@ export function GrpcLab({ native }: GrpcLabProps) {
                 />
               </label>
               <label>
-                Stored TLS credential
+                저장된 TLS 자격 증명
                 <select
-                  aria-label="gRPC TLS credential"
+                  aria-label="gRPC TLS 자격 증명"
                   value={credentialId}
                   onChange={(event) => setCredentialId(event.currentTarget.value)}
                 >
-                  <option value="">No credential</option>
+                  <option value="">자격 증명 없음</option>
                   {credentials.map((credential) => (
                     <option key={credential.credentialId} value={credential.credentialId}>
                       {credential.label} · {credential.hasCustomCa ? "CA" : "no CA"}
@@ -629,23 +629,23 @@ export function GrpcLab({ native }: GrpcLabProps) {
               disabled={!native || busy || Boolean(profileIssue)}
               onClick={() => void onConnect()}
             >
-              {phase === "connecting" ? "연결 중..." : "Connect gRPC"}
+              {phase === "connecting" ? "연결 중..." : "gRPC 연결"}
             </button>
           )}
         </div>
       </section>
 
       <details className="grpc-panel grpc-credential-panel">
-        <summary>TLS credential manager · Windows DPAPI</summary>
+        <summary>TLS 자격 증명 관리자 · Windows DPAPI</summary>
         <p className="dim">
           CA는 선택 사항입니다. client certificate와 암호화되지 않은 private key는 반드시 한 쌍으로 가져옵니다.
           PEM 내용과 native 경로는 화면에 표시되지 않습니다.
         </p>
         <div className="grpc-credential-import">
           <label>
-            Credential label
+            자격 증명 이름
             <input
-              aria-label="gRPC credential label"
+              aria-label="gRPC 자격 증명 이름"
               value={credentialLabel}
               maxLength={256}
               disabled={!native || credentialBusy}
@@ -653,16 +653,16 @@ export function GrpcLab({ native }: GrpcLabProps) {
             />
           </label>
           <NativeSelectionRow
-            title="CA bundle · optional"
-            action="Choose CA"
+            title="CA 번들 · 선택"
+            action="CA 선택"
             selection={caSelection}
             disabled={!native || credentialBusy}
             onPick={() => void pickCredentialFile("ca")}
             onClear={() => setCaSelection(null)}
           />
           <NativeSelectionRow
-            title="Client certificate"
-            action="Choose client certificate"
+            title="클라이언트 인증서"
+            action="클라이언트 인증서 선택"
             selection={certificateSelection}
             disabled={!native || credentialBusy}
             onPick={() => void pickCredentialFile("certificate")}
@@ -670,7 +670,7 @@ export function GrpcLab({ native }: GrpcLabProps) {
           />
           <NativeSelectionRow
             title="Private key"
-            action="Choose private key"
+            action="private key 선택"
             selection={keySelection}
             disabled={!native || credentialBusy}
             onPick={() => void pickCredentialFile("key")}
@@ -683,10 +683,10 @@ export function GrpcLab({ native }: GrpcLabProps) {
               disabled={!native || credentialBusy || !importReady}
               onClick={() => void importCredential()}
             >
-              Import encrypted credential
+              암호화된 자격 증명 가져오기
             </button>
             <button className="btn" type="button" disabled={!native || credentialBusy} onClick={() => void refreshCredentials()}>
-              Refresh credentials
+              자격 증명 새로 고침
             </button>
           </div>
         </div>
@@ -694,8 +694,8 @@ export function GrpcLab({ native }: GrpcLabProps) {
           {credentials.map((credential) => (
             <li key={credential.credentialId}>
               <strong>{credential.label}</strong>
-              <span>{credential.hasCustomCa ? "custom CA" : "native root only"}</span>
-              <span>{credential.hasClientIdentity ? "client identity" : "no client identity"}</span>
+              <span>{credential.hasCustomCa ? "사용자 지정 CA" : "네이티브 루트만"}</span>
+              <span>{credential.hasClientIdentity ? "클라이언트 ID 포함" : "클라이언트 ID 없음"}</span>
               <time dateTime={new Date(credential.createdAtMs).toISOString()}>
                 {new Date(credential.createdAtMs).toLocaleString()}
               </time>
@@ -710,7 +710,7 @@ export function GrpcLab({ native }: GrpcLabProps) {
               </button>
             </li>
           ))}
-          {credentials.length === 0 && <li className="dim">저장된 TLS credential이 없습니다.</li>}
+          {credentials.length === 0 && <li className="dim">저장된 TLS 자격 증명이 없습니다.</li>}
         </ul>
       </details>
 
@@ -719,23 +719,23 @@ export function GrpcLab({ native }: GrpcLabProps) {
           <div className="grpc-connection-card" role="status">
             <strong>{connection.authority}</strong>
             <span>{connection.source.kind}{connection.source.label ? ` · ${connection.source.label}` : ""}</span>
-            <span>{connection.source.serviceCount} services · {connection.methods.length} methods</span>
-            <span>{connection.source.descriptorFileCount} descriptor files</span>
-            <span>{connection.tls.mode}{connection.tls.credentialUsed ? " · credential used" : ""}</span>
+            <span>서비스 {connection.source.serviceCount}개 · 메서드 {connection.methods.length}개</span>
+            <span>descriptor 파일 {connection.source.descriptorFileCount}개</span>
+            <span>{connection.tls.mode}{connection.tls.credentialUsed ? " · 자격 증명 사용" : ""}</span>
           </div>
-          <h3 id="grpc-method-heading">Method explorer</h3>
+          <h3 id="grpc-method-heading">메서드 탐색기</h3>
           <div className="grpc-method-controls">
             <label>
-              Filter methods
+              메서드 필터
               <input
-                aria-label="Filter gRPC methods"
+                aria-label="gRPC 메서드 필터"
                 value={methodQuery}
                 maxLength={1024}
                 onChange={(event) => setMethodQuery(event.currentTarget.value)}
               />
             </label>
             <label>
-              Method
+              메서드
               <select
                 aria-label="gRPC method"
                 value={methodName}
@@ -759,8 +759,8 @@ export function GrpcLab({ native }: GrpcLabProps) {
           <label className="grpc-editor-label">
             {selectedMethod && (selectedMethod.rpcKind === "client-streaming"
               || selectedMethod.rpcKind === "bidirectional-streaming")
-              ? "ProtoJSON message array"
-              : "ProtoJSON message"}
+              ? "ProtoJSON 메시지 배열"
+              : "ProtoJSON 메시지"}
             <textarea
               aria-label="gRPC ProtoJSON request"
               className="grpc-editor"
@@ -778,7 +778,7 @@ export function GrpcLab({ native }: GrpcLabProps) {
               disabled={!selectedMethod || Boolean(inputIssue) || Boolean(activeRequest)}
               onClick={() => void onInvoke()}
             >
-              {activeRequest ? "RPC 실행 중..." : "Invoke RPC"}
+              {activeRequest ? "RPC 실행 중..." : "RPC 호출"}
             </button>
             {activeRequest && (
               <button className="btn" type="button" onClick={() => void onCancel()}>
@@ -789,9 +789,9 @@ export function GrpcLab({ native }: GrpcLabProps) {
           {result && (
             <section className="grpc-result" aria-labelledby="grpc-result-heading">
               <div>
-                <h3 id="grpc-result-heading">Result</h3>
+                <h3 id="grpc-result-heading">결과</h3>
                 <span className={result.ok ? "grpc-status-ok" : "grpc-status-error"}>{result.status}</span>
-                <span>{result.responseMessageCount} messages · {result.elapsedMs}ms</span>
+                <span>메시지 {result.responseMessageCount}개 · {result.elapsedMs}ms</span>
               </div>
               <pre>{boundedJson(result.responses, 1024 * 1024)}</pre>
             </section>
@@ -802,11 +802,11 @@ export function GrpcLab({ native }: GrpcLabProps) {
       <section className="grpc-panel" aria-labelledby="grpc-history-heading">
         <div className="grpc-history-head">
           <div>
-            <h3 id="grpc-history-heading">Summary history</h3>
-            <p className="dim">최대 50개 · body/endpoint/path/credential ID 미저장</p>
+            <h3 id="grpc-history-heading">요약 기록</h3>
+            <p className="dim">최대 50개 · 본문/엔드포인트/경로/자격 증명 ID 미저장</p>
           </div>
           <button className="btn" type="button" disabled={history.entries.length === 0} onClick={onClearHistory}>
-            Clear history
+            기록 지우기
           </button>
         </div>
         <ol className="grpc-history-list">
@@ -815,8 +815,8 @@ export function GrpcLab({ native }: GrpcLabProps) {
               <div>
                 <strong>{entry.service}/{entry.method}</strong>
                 <code>{entry.rpcKind} · {entry.status}</code>
-                <span>{entry.requestMessageCount} → {entry.responseMessageCount} messages · {entry.elapsedMs}ms</span>
-                <span>{entry.sourceKind} · {entry.tlsMode}{entry.credentialUsed ? " · credential used" : ""}</span>
+                <span>{entry.requestMessageCount} → {entry.responseMessageCount}개 메시지 · {entry.elapsedMs}ms</span>
+                <span>{entry.sourceKind} · {entry.tlsMode}{entry.credentialUsed ? " · 자격 증명 사용" : ""}</span>
                 <time dateTime={new Date(entry.startedAtMs).toISOString()}>
                   {new Date(entry.startedAtMs).toLocaleString()}
                 </time>
@@ -827,11 +827,11 @@ export function GrpcLab({ native }: GrpcLabProps) {
                 disabled={!native}
                 onClick={() => void onExport(entry)}
               >
-                Export summary
+                요약 내보내기
               </button>
             </li>
           ))}
-          {history.entries.length === 0 && <li className="dim">아직 저장된 gRPC summary가 없습니다.</li>}
+          {history.entries.length === 0 && <li className="dim">아직 저장된 gRPC 요약이 없습니다.</li>}
         </ol>
       </section>
 
@@ -865,7 +865,7 @@ function NativeSelectionRow({
       <span>{title}</span>
       <button className="btn" type="button" disabled={disabled} onClick={onPick}>{action}</button>
       <span role="status">{selection?.label ?? "선택하지 않음"}</span>
-      {selection && <button className="btn" type="button" disabled={disabled} onClick={onClear}>Clear</button>}
+      {selection && <button className="btn" type="button" disabled={disabled} onClick={onClear}>지우기</button>}
     </div>
   );
 }

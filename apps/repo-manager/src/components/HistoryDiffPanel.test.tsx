@@ -73,18 +73,18 @@ describe("HistoryDiffPanel", () => {
   it("loads an explicit bounded history request and exposes accessible status", async () => {
     render(<HistoryDiffPanel repo={repo} />);
 
-    expect(screen.getByRole("region", { name: "Git history and diff" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "History 불러오기" }));
+    expect(screen.getByRole("region", { name: "Git 히스토리 및 diff" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "히스토리 불러오기" }));
 
     await screen.findByRole("button", { name: /Add fixture/ });
     expect(repoHistoryMock).toHaveBeenCalledWith(repo.path, 50);
-    expect(screen.getByText("root commit")).toBeTruthy();
+    expect(screen.getByText("루트 커밋")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain("1개 commit");
   });
 
   it("loads selected commit detail and commit diff without mutation actions", async () => {
     render(<HistoryDiffPanel repo={repo} />);
-    fireEvent.click(screen.getByRole("button", { name: "History 불러오기" }));
+    fireEvent.click(screen.getByRole("button", { name: "히스토리 불러오기" }));
     const commit = await screen.findByRole("button", { name: /Add fixture/ });
 
     fireEvent.click(commit);
@@ -97,12 +97,12 @@ describe("HistoryDiffPanel", () => {
 
   it("handles working-tree binary and bounded diff display", async () => {
     render(<HistoryDiffPanel repo={repo} />);
-    fireEvent.click(screen.getByRole("button", { name: "History 불러오기" }));
+    fireEvent.click(screen.getByRole("button", { name: "히스토리 불러오기" }));
     await screen.findByRole("button", { name: /Add fixture/ });
 
-    fireEvent.click(screen.getByRole("button", { name: "Working tree diff" }));
+    fireEvent.click(screen.getByRole("button", { name: "작업 트리 diff" }));
 
-    await screen.findByText("Binary file — 내용은 표시하지 않습니다.");
+    await screen.findByText("바이너리 파일 — 내용은 표시하지 않습니다.");
     expect(repoDiffMock).toHaveBeenCalledWith(repo.path, null);
   });
 
@@ -111,13 +111,13 @@ describe("HistoryDiffPanel", () => {
     repoHistoryMock.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
     render(<HistoryDiffPanel repo={repo} />);
 
-    const button = screen.getByRole("button", { name: "History 불러오기" });
+    const button = screen.getByRole("button", { name: "히스토리 불러오기" });
     fireEvent.click(button);
     fireEvent.click(button);
 
     expect(repoHistoryMock).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "불러오는 중…" })).toBeTruthy();
-    expect(screen.getByRole("region", { name: "Git history and diff" }).getAttribute("aria-busy"))
+    expect(screen.getByRole("region", { name: "Git 히스토리 및 diff" }).getAttribute("aria-busy"))
       .toBe("true");
 
     resolve(history);
@@ -126,7 +126,7 @@ describe("HistoryDiffPanel", () => {
 
   it("does not submit a history request during IME composition", async () => {
     render(<HistoryDiffPanel repo={repo} />);
-    const limit = screen.getByLabelText("History limit");
+    const limit = screen.getByLabelText("히스토리 표시 개수");
     fireEvent.compositionStart(limit);
     fireEvent.keyDown(limit, { key: "Enter" });
     expect(repoHistoryMock).not.toHaveBeenCalled();
@@ -140,7 +140,7 @@ describe("HistoryDiffPanel", () => {
     let resolve: (value: HistoryResult) => void = () => undefined;
     repoHistoryMock.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
     const rendered = render(<HistoryDiffPanel repo={repo} />);
-    fireEvent.click(screen.getByRole("button", { name: "History 불러오기" }));
+    fireEvent.click(screen.getByRole("button", { name: "히스토리 불러오기" }));
     rendered.unmount();
     render(<HistoryDiffPanel repo={otherRepo} />);
 
@@ -149,7 +149,7 @@ describe("HistoryDiffPanel", () => {
     expect(screen.queryByText("Add fixture")).toBeNull();
 
     repoHistoryMock.mockRejectedValueOnce(new Error("C:\\secret\\credential.git"));
-    fireEvent.click(screen.getByRole("button", { name: "History 불러오기" }));
+    fireEvent.click(screen.getByRole("button", { name: "히스토리 불러오기" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe(GIT_VIEW_ERROR);
     expect(alert.textContent).not.toContain("credential.git");
@@ -157,8 +157,8 @@ describe("HistoryDiffPanel", () => {
 
   it("rejects an invalid history limit with the fixed error before IPC", async () => {
     render(<HistoryDiffPanel repo={repo} />);
-    fireEvent.change(screen.getByLabelText("History limit"), { target: { value: "0" } });
-    fireEvent.click(screen.getByRole("button", { name: "History 불러오기" }));
+    fireEvent.change(screen.getByLabelText("히스토리 표시 개수"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "히스토리 불러오기" }));
 
     expect((await screen.findByRole("alert")).textContent).toBe(GIT_VIEW_ERROR);
     expect(repoHistoryMock).not.toHaveBeenCalled();

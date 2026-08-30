@@ -95,11 +95,11 @@ afterEach(() => {
 describe("ResponseViewer", () => {
   it("uses dedicated Body, Headers, and Cookies tabs and copies masked headers by default", async () => {
     renderViewer();
-    const bodyTab = screen.getByRole("tab", { name: "Body" });
+    const bodyTab = screen.getByRole("tab", { name: "본문" });
     expect(bodyTab.getAttribute("aria-selected")).toBe("true");
     bodyTab.focus();
     fireEvent.keyDown(bodyTab, { key: "ArrowRight" });
-    const headersTab = screen.getByRole("tab", { name: "Headers (2)" });
+    const headersTab = screen.getByRole("tab", { name: "헤더 (2)" });
     expect(headersTab.getAttribute("aria-selected")).toBe("true");
     expect(document.activeElement).toBe(headersTab);
 
@@ -107,7 +107,7 @@ describe("ResponseViewer", () => {
     expect(screen.getByText("[REDACTED]")).toBeTruthy();
     expect(document.body.textContent).not.toContain("raw-secret");
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy masked headers" }));
+    fireEvent.click(screen.getByRole("button", { name: "마스킹된 헤더 복사" }));
     await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith(
       "content-type: application/json\nset-cookie: [REDACTED]",
     ));
@@ -117,8 +117,8 @@ describe("ResponseViewer", () => {
 
   it("does not request raw cookies until confirmation and copies only after approval", async () => {
     renderViewer();
-    fireEvent.click(screen.getByRole("tab", { name: "Cookies (1)" }));
-    const rawButton = screen.getByRole("button", { name: "Copy original cookies" });
+    fireEvent.click(screen.getByRole("tab", { name: "쿠키 (1)" }));
+    const rawButton = screen.getByRole("button", { name: "원본 쿠키 복사" });
 
     fireEvent.click(rawButton);
     expect(confirmMock).toHaveBeenCalledTimes(1);
@@ -138,13 +138,13 @@ describe("ResponseViewer", () => {
       raw_headers_available: false,
       headers_truncated: true,
     }));
-    fireEvent.click(screen.getByRole("tab", { name: "Headers (2)" }));
-    const rawHeaders = screen.getByRole("button", { name: "Copy original headers" }) as HTMLButtonElement;
+    fireEvent.click(screen.getByRole("tab", { name: "헤더 (2)" }));
+    const rawHeaders = screen.getByRole("button", { name: "원본 헤더 복사" }) as HTMLButtonElement;
     expect(rawHeaders.disabled).toBe(true);
-    expect(screen.getByText(/100 rows \/ 64 KiB/u)).toBeTruthy();
+    expect(screen.getByText(/100행\/64KiB/u)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Cookies (1)" }));
-    const rawCookies = screen.getByRole("button", { name: "Copy original cookies" }) as HTMLButtonElement;
+    fireEvent.click(screen.getByRole("tab", { name: "쿠키 (1)" }));
+    const rawCookies = screen.getByRole("button", { name: "원본 쿠키 복사" }) as HTMLButtonElement;
     expect(rawCookies.disabled).toBe(true);
   });
 
@@ -152,8 +152,8 @@ describe("ResponseViewer", () => {
     rawCopyMock.mockRejectedValueOnce(new Error("set-cookie: session=backend-secret"));
     confirmMock.mockReturnValueOnce(true);
     renderViewer();
-    fireEvent.click(screen.getByRole("tab", { name: "Cookies (1)" }));
-    fireEvent.click(screen.getByRole("button", { name: "Copy original cookies" }));
+    fireEvent.click(screen.getByRole("tab", { name: "쿠키 (1)" }));
+    fireEvent.click(screen.getByRole("button", { name: "원본 쿠키 복사" }));
 
     await waitFor(() => expect(errorMock).toHaveBeenCalledWith(
       "원문 응답 Set-Cookie를 안전하게 복사하지 못했습니다.",
@@ -173,10 +173,10 @@ describe("ResponseViewer", () => {
         errors_truncated: false,
       },
     }));
-    expect(screen.getByText("HTTP error (400)")).toBeTruthy();
+    expect(screen.getByText("HTTP 오류 (400)")).toBeTruthy();
     expect(screen.getByText("GraphQL envelope: valid")).toBeTruthy();
-    expect(screen.getByRole("alert", { name: "GraphQL errors" }).textContent).toContain("field failed");
-    expect(screen.getByText("GraphQL data")).toBeTruthy();
+    expect(screen.getByRole("alert", { name: "GraphQL 오류" }).textContent).toContain("field failed");
+    expect(screen.getByText("GraphQL 데이터")).toBeTruthy();
   });
 
   it("shows bounded binary type/size/hex previews and saves only after an explicit action", async () => {
@@ -195,11 +195,11 @@ describe("ResponseViewer", () => {
     }));
 
     expect(screen.getByText("application/octet-stream")).toBeTruthy();
-    expect(screen.getByText(/4 bytes/u)).toBeTruthy();
+    expect(screen.getByText(/4바이트/u)).toBeTruthy();
     expect(screen.getByText("89504e47")).toBeTruthy();
     expect(binarySaveMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save binary" }));
+    fireEvent.click(screen.getByRole("button", { name: "Binary 저장" }));
     await waitFor(() => expect(binarySaveMock).toHaveBeenCalledWith("response-7"));
   });
 
@@ -215,9 +215,9 @@ describe("ResponseViewer", () => {
         save_available: false,
       },
     }));
-    const save = screen.getByRole("button", { name: "Save binary" }) as HTMLButtonElement;
+    const save = screen.getByRole("button", { name: "Binary 저장" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
-    const send = screen.getByRole("button", { name: "Send selection to Developer Toolbox" }) as HTMLButtonElement;
+    const send = screen.getByRole("button", { name: "선택 영역을 Developer Toolbox로 보내기" }) as HTMLButtonElement;
     expect(send.disabled).toBe(true);
     expect(document.body.textContent).not.toContain("raw-secret");
   });
@@ -228,7 +228,7 @@ describe("ResponseViewer", () => {
     });
     selectBody(0, 4);
 
-    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 영역을 Developer Toolbox로 보내기" }));
 
     await waitFor(() => {
       expect(sendSelectionMock).toHaveBeenCalledWith("safe");
@@ -241,7 +241,7 @@ describe("ResponseViewer", () => {
   it("rejects an empty selection without invoking the native handoff", async () => {
     renderViewer(response(), { responseText: "safe body" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 영역을 Developer Toolbox로 보내기" }));
 
     expect(sendSelectionMock).not.toHaveBeenCalled();
     expect((await screen.findByRole("status")).textContent).toContain(TOOLBOX_SELECTION_MESSAGES.empty);
@@ -265,7 +265,7 @@ describe("ResponseViewer", () => {
     selection.addRange(range);
     document.dispatchEvent(new Event("selectionchange"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 영역을 Developer Toolbox로 보내기" }));
 
     expect(sendSelectionMock).not.toHaveBeenCalled();
     expect((await screen.findByRole("status")).textContent).toContain(TOOLBOX_SELECTION_MESSAGES.outside);
@@ -289,7 +289,7 @@ describe("ResponseViewer", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 영역을 Developer Toolbox로 보내기" }));
 
     expect(sendSelectionMock).not.toHaveBeenCalled();
     expect((await screen.findByRole("status")).textContent).toContain(TOOLBOX_SELECTION_MESSAGES.stale);
@@ -298,14 +298,14 @@ describe("ResponseViewer", () => {
   it("shows fixed native success and redaction feedback", async () => {
     renderViewer(response(), { responseText: "safe body" });
     selectBody(0, 4);
-    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 영역을 Developer Toolbox로 보내기" }));
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain(TOOLBOX_SELECTION_MESSAGES.success));
 
     cleanup();
     sendSelectionMock.mockResolvedValueOnce({ handoffId: "handoff-2", redacted: true });
     renderViewer(response(), { responseText: "safe body" });
     selectBody(0, 4);
-    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 영역을 Developer Toolbox로 보내기" }));
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain(TOOLBOX_SELECTION_MESSAGES.redacted));
   });
 
@@ -313,7 +313,7 @@ describe("ResponseViewer", () => {
     sendSelectionMock.mockRejectedValueOnce(new Error("C:\\Users\\private\\response-vault"));
     renderViewer(response(), { responseText: "safe body" });
     selectBody(0, 4);
-    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 영역을 Developer Toolbox로 보내기" }));
 
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain(TOOLBOX_SELECTION_MESSAGES.error));
     expect(document.body.textContent).not.toContain("response-vault");
@@ -323,7 +323,7 @@ describe("ResponseViewer", () => {
   it("reports native-only availability in browser preview without clipboard fallback", async () => {
     renderViewer(response(), { native: false, responseText: "safe body" });
     selectBody(0, 4);
-    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 영역을 Developer Toolbox로 보내기" }));
 
     expect(sendSelectionMock).not.toHaveBeenCalled();
     expect(writeTextMock).not.toHaveBeenCalled();

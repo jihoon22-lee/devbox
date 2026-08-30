@@ -373,10 +373,10 @@ export default function CleanupPanel({ repo }: Props) {
   const selectedCount = selectedBranches.size + selectedWorktrees.size;
 
   return (
-    <section className="cleanup-panel" aria-label="Git branch·worktree 안전 정리" aria-busy={busy}>
+    <section className="cleanup-panel" aria-label="Git 브랜치·worktree 안전 정리" aria-busy={busy}>
       <div className="cleanup-panel-head">
         <div>
-          <h2>Branch · worktree 안전 정리</h2>
+          <h2>브랜치 · worktree 안전 정리</h2>
           <div className="history-repository mono">{repo.path}</div>
         </div>
         <button type="button" className="btn" disabled={busy} onClick={() => void loadPreview()}>
@@ -401,13 +401,13 @@ export default function CleanupPanel({ repo }: Props) {
       {preview ? (
         <>
           <div className="cleanup-summary">
-            <span>branch 후보 {eligibleBranchEntries.length}개</span>
+            <span>브랜치 후보 {eligibleBranchEntries.length}개</span>
             <span>worktree 후보 {eligibleWorktreeEntries.length}개</span>
             <span>선택 {selectedCount}개</span>
           </div>
           <div className="cleanup-groups">
-            <fieldset className="cleanup-group" aria-label="Branch cleanup candidates">
-              <legend>Branch 후보</legend>
+            <fieldset className="cleanup-group" aria-label="브랜치 정리 후보">
+              <legend>브랜치 후보</legend>
               {preview.branches.map((branch) => (
                 <label className={`cleanup-row ${branch.eligible ? "" : "blocked"}`} key={branch.name}>
                   <input
@@ -424,11 +424,11 @@ export default function CleanupPanel({ repo }: Props) {
                   </span>
                 </label>
               ))}
-              {preview.branches.length === 0 ? <div className="cleanup-empty dim">local branch가 없습니다.</div> : null}
+              {preview.branches.length === 0 ? <div className="cleanup-empty dim">local 브랜치가 없습니다.</div> : null}
             </fieldset>
 
-            <fieldset className="cleanup-group" aria-label="Worktree cleanup candidates">
-              <legend>Worktree 후보</legend>
+            <fieldset className="cleanup-group" aria-label="worktree 정리 후보">
+              <legend>worktree 후보</legend>
               {preview.worktrees.map((worktree) => (
                 <label className={`cleanup-row ${worktree.eligible ? "" : "blocked"}`} key={worktree.path}>
                   <input

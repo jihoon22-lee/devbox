@@ -68,8 +68,8 @@ describe("CookieEditor", () => {
 
   it("cookie jar가 아니라 request header 편집임을 항상 알린다", () => {
     const onChange = setup([]);
-    expect(screen.getByRole("note").textContent).toContain("현재 요청의 Cookie header");
-    fireEvent.click(screen.getByRole("button", { name: "+ Cookie 추가" }));
+    expect(screen.getByRole("note").textContent).toMatch(/현재 요청의 Cookie\s+header/u);
+    fireEvent.click(screen.getByRole("button", { name: "+ 쿠키 추가" }));
     expect(onChange).toHaveBeenCalledWith([{ name: "", value: "", enabled: true }]);
   });
 });

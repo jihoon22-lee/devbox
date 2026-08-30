@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { isImeComposing } from "@devbox/a11y";
 import {
   GIT_MUTATION_ERROR,
   repoChanges,
@@ -306,7 +307,7 @@ export default function StageCommitPanel({ repo }: Props) {
   };
 
   const onMessageKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    if (!isImeComposing(event) && (event.ctrlKey || event.metaKey) && event.key === "Enter") {
       event.preventDefault();
       requestCommit();
     }
@@ -328,7 +329,7 @@ export default function StageCommitPanel({ repo }: Props) {
   const staged = pathsFor(changes, "unstage");
 
   return (
-    <section className="stage-commit-panel" aria-label="Git stage and commit" aria-busy={busy}>
+    <section className="stage-commit-panel" aria-label="Git stage 및 commit" aria-busy={busy}>
       <div className="stage-commit-head">
         <div>
           <h2>Stage · commit</h2>
@@ -362,8 +363,8 @@ export default function StageCommitPanel({ repo }: Props) {
 
       {changes !== null ? (
         <div className="change-columns">
-          <fieldset className="change-group" aria-label="Unstaged changes">
-            <legend>Unstaged changes</legend>
+          <fieldset className="change-group" aria-label="스테이징되지 않은 변경">
+            <legend>스테이징되지 않은 변경</legend>
             {unstaged.map((change) => (
               <label className="change-row" key={`unstaged:${change.path}`}>
                 <input
@@ -389,8 +390,8 @@ export default function StageCommitPanel({ repo }: Props) {
             </button>
           </fieldset>
 
-          <fieldset className="change-group" aria-label="Staged changes">
-            <legend>Staged changes</legend>
+          <fieldset className="change-group" aria-label="스테이징된 변경">
+            <legend>스테이징된 변경</legend>
             {staged.map((change) => (
               <label className="change-row" key={`staged:${change.path}`}>
                 <input
@@ -419,10 +420,10 @@ export default function StageCommitPanel({ repo }: Props) {
       ) : null}
 
       <div className="commit-form">
-        <label htmlFor="repo-commit-message">Commit message</label>
+        <label htmlFor="repo-commit-message">커밋 메시지</label>
         <textarea
           id="repo-commit-message"
-          aria-label="Commit message"
+          aria-label="커밋 메시지"
           value={message}
           maxLength={MAX_COMMIT_MESSAGE_BYTES}
           disabled={busy}
@@ -435,7 +436,7 @@ export default function StageCommitPanel({ repo }: Props) {
           onKeyDown={onMessageKeyDown}
         />
         <div className="commit-form-foot">
-          <span className="dim">현재 staged 파일만 commit합니다. Ctrl+Enter로 실행</span>
+          <span className="dim">현재 스테이징된 파일만 commit합니다. Ctrl+Enter로 실행</span>
           <button
             type="button"
             className="btn primary"
@@ -450,9 +451,9 @@ export default function StageCommitPanel({ repo }: Props) {
         <ConfirmDialog
           title="Commit을 실행할까요?"
           summary={[
-            `현재 staged 변경 ${commitConfirmation.stagedPaths.length}개를 commit합니다.`,
-            "unstaged 변경은 자동으로 포함하지 않습니다.",
-            "입력한 commit message와 경로는 이 확인창에 표시하지 않습니다.",
+            `현재 스테이징된 변경 ${commitConfirmation.stagedPaths.length}개를 commit합니다.`,
+            "스테이징되지 않은 변경은 자동으로 포함하지 않습니다.",
+            "입력한 커밋 메시지와 경로는 이 확인창에 표시하지 않습니다.",
           ]}
           confirmLabel="Commit 실행"
           onCancel={() => setCommitConfirmation(null)}

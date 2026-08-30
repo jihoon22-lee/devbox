@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { sanitizePersistedJson } from "./api";
@@ -81,9 +82,9 @@ function seedStores() {
 
 async function renderReady() {
   render(<App />);
-  const historyRow = await screen.findByLabelText(/^History 항목: .*api\.example\.com/u) as HTMLButtonElement;
-  const collectionRow = await screen.findByLabelText("Collection 항목: 저장 요청") as HTMLDivElement;
-  const inlineDelete = screen.getByRole("button", { name: "저장 요청 Collection 삭제" }) as HTMLButtonElement;
+  const historyRow = await screen.findByLabelText(/^기록 항목: .*api\.example\.com/u) as HTMLButtonElement;
+  const collectionRow = await screen.findByLabelText("컬렉션 항목: 저장 요청") as HTMLDivElement;
+  const inlineDelete = screen.getByRole("button", { name: "저장 요청 컬렉션 삭제" }) as HTMLButtonElement;
   await waitFor(() => expect(inlineDelete.disabled).toBe(false));
   return { historyRow, collectionRow };
 }
@@ -105,7 +106,22 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+it("초기 앱 셸에 구조적 접근성 위반이 없다", async () => {
+  const { container } = render(<App />);
+  await waitFor(() => expect(screen.getByText("API Playground")).toBeTruthy());
+  await assertNoA11yViolations(container);
+});
+
 describe("API Playground History and Collection context menus", () => {
+  it("Enter와 Space로 Collection을 선택하되 IME 조합 키는 무시한다", async () => {
+    const { collectionRow } = await renderReady();
+
+    fireEvent.keyDown(collectionRow, { key: "Enter", isComposing: true });
+    expect(collectionRow.getAttribute("aria-current")).toBeNull();
+    fireEvent.keyDown(collectionRow, { key: " " });
+    expect(collectionRow.getAttribute("aria-current")).toBe("true");
+  });
+
   it("우클릭한 History를 먼저 선택하고 정확한 네 항목을 표시한다", async () => {
     const { historyRow } = await renderReady();
 
@@ -158,7 +174,7 @@ describe("API Playground History and Collection context menus", () => {
     promptMock.mockReturnValueOnce("내 Collection");
     fireEvent.contextMenu(collectionRow);
     fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
-    await screen.findByLabelText("Collection 항목: 내 Collection");
+    await screen.findByLabelText("컬렉션 항목: 내 Collection");
 
     expect(localStorage.getItem(HISTORY_V2_LS_KEY)).toContain("내 History");
     expect(localStorage.getItem(COLLECTION_V2_LS_KEY)).toContain("내 Collection");
@@ -184,7 +200,7 @@ describe("API Playground History and Collection context menus", () => {
     await waitFor(() => {
       expect(JSON.parse(localStorage.getItem(COLLECTION_V2_LS_KEY) ?? "null").collections).toHaveLength(0);
     });
-    expect(screen.queryByLabelText("Collection 항목: 저장 요청")).toBeNull();
+    expect(screen.queryByLabelText("컬렉션 항목: 저장 요청")).toBeNull();
   });
 
   it("sanitizer·clipboard 실패는 raw 오류를 화면에 반향하지 않는다", async () => {

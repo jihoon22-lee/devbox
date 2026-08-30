@@ -52,13 +52,13 @@ export interface SmartDetectionResult {
 const FIXED_NO_MATCH_REASON = "지원되는 안전한 구조를 찾지 못했습니다.";
 const FIXED_SENSITIVE_REASON = "민감할 수 있는 입력입니다. 원문은 저장하거나 전송하지 않습니다.";
 
-const JSON_REASON = "JSON 구조를 확인했습니다. 로컬 formatter에서만 처리합니다.";
-const JWT_REASON = "JWT compact 구조를 확인했습니다. 서명은 검증하지 않습니다.";
-const URL_REASON = "HTTP(S) URL 문자열입니다. 열거나 요청하지 않고 component 도구로만 처리합니다.";
-const BASE64_REASON = "검증된 Base64 byte 표현입니다. 결과는 메모리에서만 처리합니다.";
-const BASE64URL_REASON = "검증된 Base64URL byte 표현입니다. 결과는 메모리에서만 처리합니다.";
-const HEX_REASON = "검증된 Hex byte 표현입니다. 결과는 메모리에서만 처리합니다.";
-const BINARY_REASON = "byte 표현을 확인했지만 UTF-8 text로 가정하지 않습니다.";
+const JSON_REASON = "JSON 구조를 확인했습니다. 로컬 포매터에서만 처리합니다.";
+const JWT_REASON = "JWT 컴팩트 구조를 확인했습니다. 서명은 검증하지 않습니다.";
+const URL_REASON = "HTTP(S) URL 문자열입니다. 열거나 요청하지 않고 컴포넌트 도구로만 처리합니다.";
+const BASE64_REASON = "검증된 Base64 바이트 표현입니다. 결과는 메모리에서만 처리합니다.";
+const BASE64URL_REASON = "검증된 Base64URL 바이트 표현입니다. 결과는 메모리에서만 처리합니다.";
+const HEX_REASON = "검증된 Hex 바이트 표현입니다. 결과는 메모리에서만 처리합니다.";
+const BINARY_REASON = "바이트 표현을 확인했지만 UTF-8 텍스트로 가정하지 않습니다.";
 
 const SECRET_ASSIGNMENT = /(?:^|[\n\r;,\{])\s*["']?(?:authorization|auth|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret|password|passwd|private[_-]?key|token)["']?\s*[:=]\s*["']?\S+/iu;
 const AUTHORIZATION_VALUE = /^(?:basic|bearer)\s+\S+/iu;
@@ -249,7 +249,7 @@ function detectCandidates(trimmed: string, sensitive: boolean): SmartCandidate[]
       inputType: "json",
       transformerId: "json-format",
       toolId: "json-format",
-      label: "JSON Formatter",
+      label: "JSON 포매터",
       reason: JSON_REASON,
       confidence: 0.98,
     }, sensitive));
@@ -262,7 +262,7 @@ function detectCandidates(trimmed: string, sensitive: boolean): SmartCandidate[]
       inputType: "jwt",
       transformerId: "jwt-decode",
       toolId: "jwt",
-      label: "JWT Decoder",
+      label: "JWT 디코더",
       reason: JWT_REASON,
       confidence: 0.99,
     }, true));
@@ -279,7 +279,7 @@ function detectCandidates(trimmed: string, sensitive: boolean): SmartCandidate[]
       inputType: "url",
       transformerId: "url-decode",
       toolId: "url-decode",
-      label: "URL Component Decoder",
+      label: "URL 컴포넌트 디코더",
       reason: URL_REASON,
       confidence: hasEscape ? 0.91 : 0.72,
     }, sensitive));
@@ -299,7 +299,7 @@ function detectCandidates(trimmed: string, sensitive: boolean): SmartCandidate[]
       inputType: "base64",
       transformerId: textOutput ? "base64-decode" : "base64-to-hex",
       toolId: "byte-codec",
-      label: textOutput ? "Base64 Decoder" : "Base64 → Hex",
+      label: textOutput ? "Base64 디코더" : "Base64 → Hex",
       reason: textOutput ? BASE64_REASON : `${BASE64_REASON} ${BINARY_REASON}`,
       confidence: /[+/=]/u.test(trimmed) ? 0.84 : 0.61,
     }, sensitive));
@@ -311,7 +311,7 @@ function detectCandidates(trimmed: string, sensitive: boolean): SmartCandidate[]
       inputType: "base64url",
       transformerId: textOutput ? "base64url-decode" : "base64url-to-hex",
       toolId: "byte-codec",
-      label: textOutput ? "Base64URL Decoder" : "Base64URL → Hex",
+      label: textOutput ? "Base64URL 디코더" : "Base64URL → Hex",
       reason: textOutput ? BASE64URL_REASON : `${BASE64URL_REASON} ${BINARY_REASON}`,
       confidence: hasUrlAlphabet ? 0.86 : 0.60,
     }, sensitive));
@@ -324,7 +324,7 @@ function detectCandidates(trimmed: string, sensitive: boolean): SmartCandidate[]
       inputType: "hex",
       transformerId: textOutput ? "hex-decode" : "hex-to-base64",
       toolId: "byte-codec",
-      label: textOutput ? "Hex Decoder" : "Hex → Base64",
+      label: textOutput ? "Hex 디코더" : "Hex → Base64",
       reason: textOutput ? HEX_REASON : `${HEX_REASON} ${BINARY_REASON}`,
       confidence: 0.86,
     }, sensitive));

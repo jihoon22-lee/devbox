@@ -701,7 +701,7 @@ export function friendlyErrorMessage(cause: unknown): string {
     : `workspace-task-${normalized}`;
   return FRIENDLY_BACKEND_ERRORS[normalized]
     ?? FRIENDLY_BACKEND_ERRORS[code]
-    ?? (normalized || "요청을 완료하지 못했습니다.");
+    ?? "요청을 완료하지 못했습니다.";
 }
 
 export function startService(id: string): Promise<ServiceInstance> {

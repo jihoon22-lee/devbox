@@ -148,11 +148,11 @@ export function validateJobDraft(draft: JobDraft): JobFieldErrors {
 
 export function fieldErrorFromBackend(message: string): JobFieldErrors {
   const normalized = message.toLowerCase();
-  if (normalized.includes("cron_expr")) return { cronExpr: message };
-  if (normalized.includes("target_distro")) return { targetDistro: message };
-  if (normalized.includes("command")) return { command: message };
-  if (normalized.includes("name")) return { name: message };
-  if (normalized.includes("environment") || normalized.includes("dpapi")) return { env: message };
+  if (normalized.includes("cron_expr")) return { cronExpr: "cron 표현식이 올바르지 않습니다." };
+  if (normalized.includes("target_distro")) return { targetDistro: "WSL 대상 배포판이 올바르지 않습니다." };
+  if (normalized.includes("command")) return { command: "실행 명령이 올바르지 않습니다." };
+  if (normalized.includes("name")) return { name: "작업 이름이 올바르지 않습니다." };
+  if (normalized.includes("environment") || normalized.includes("dpapi")) return { env: "환경변수를 안전하게 저장하지 못했습니다." };
   return {};
 }
 

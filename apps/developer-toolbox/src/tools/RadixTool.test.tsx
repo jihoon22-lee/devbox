@@ -45,7 +45,7 @@ describe("RadixTool", () => {
     expect(screen.getByLabelText("OCT · 8진수 출력").textContent).toBe("0o52");
     expect(screen.getByLabelText("DEC · 10진수 출력").textContent).toBe("42");
     expect(screen.getByLabelText("HEX · 16진수 출력").textContent).toBe("0x2a");
-    expect(screen.getByText("입력 16진수 · 2 digits · 6 bits")).toBeTruthy();
+    expect(screen.getByText("입력 16진수 · 2자리 · 6비트")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "HEX · 16진수 복사" }));
     await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("0x2a"));
@@ -101,7 +101,7 @@ describe("RadixTool", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "DEC · 10진수 복사" }));
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("변환 결과를 clipboard에 복사하지 못했습니다.");
+    expect(alert.textContent).toBe("변환 결과를 클립보드에 복사하지 못했습니다.");
     expect(alert.textContent).not.toContain("DO_NOT_REFLECT_CLIPBOARD_SECRET");
     expect(screen.getByLabelText("DEC · 10진수 출력").textContent).toBe("42");
   });

@@ -15,14 +15,14 @@ export interface DockerDisplayState {
 }
 
 const STATES: Record<DockerStateKey, DockerDisplayState> = {
-  running: { key: "running", label: "Running", running: true },
-  paused: { key: "paused", label: "Paused", running: false },
-  restarting: { key: "restarting", label: "Restarting", running: false },
-  removing: { key: "removing", label: "Removing", running: false },
-  exited: { key: "exited", label: "Exited", running: false },
-  created: { key: "created", label: "Created", running: false },
-  dead: { key: "dead", label: "Dead", running: false },
-  unknown: { key: "unknown", label: "Unknown", running: false },
+  running: { key: "running", label: "실행 중", running: true },
+  paused: { key: "paused", label: "일시 중지", running: false },
+  restarting: { key: "restarting", label: "재시작 중", running: false },
+  removing: { key: "removing", label: "제거 중", running: false },
+  exited: { key: "exited", label: "종료됨", running: false },
+  created: { key: "created", label: "생성됨", running: false },
+  dead: { key: "dead", label: "중단됨", running: false },
+  unknown: { key: "unknown", label: "알 수 없음", running: false },
 };
 
 /** Docker의 사람이 읽는 STATUS 원문은 보존하고, 좁은 summary용 상태만 분류한다. */
@@ -67,7 +67,7 @@ export function compactDockerPorts(ports: string): string {
     ),
   );
 
-  if (unique.length === 0) return "No ports";
+  if (unique.length === 0) return "포트 없음";
   const visible = unique.slice(0, 2).join(", ");
   return unique.length > 2 ? `${visible} +${unique.length - 2}` : visible;
 }

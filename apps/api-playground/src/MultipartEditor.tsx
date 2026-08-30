@@ -74,12 +74,12 @@ export function MultipartEditor({
               value={row.kind}
               onChange={(event) => onChange(updateMultipartPart(rows, index, { kind: event.currentTarget.value as MultipartPart["kind"] }))}
             >
-              <option value="text">Text</option>
-              <option value="file">File</option>
+              <option value="text">텍스트</option>
+              <option value="file">파일</option>
             </select>
             <input
               aria-label={`${index + 1}번 part 이름`}
-              placeholder="Part name"
+              placeholder="파트 이름"
               value={row.name}
               onChange={(event) => onChange(updateMultipartPart(rows, index, { name: event.currentTarget.value }))}
               spellCheck={false}
@@ -152,8 +152,8 @@ export function MultipartEditor({
       </div>
       {pickError && <div className="multipart-row-error" role="alert">{pickError}</div>}
       <div className="multipart-add-actions">
-        <button type="button" className="btn" disabled={rows.length >= MAX_MULTIPART_PARTS} onClick={() => onChange(addMultipartPart(rows, "text"))}>+ Text</button>
-        <button type="button" className="btn" disabled={rows.length >= MAX_MULTIPART_PARTS} onClick={() => onChange(addMultipartPart(rows, "file"))}>+ File</button>
+        <button type="button" className="btn" disabled={rows.length >= MAX_MULTIPART_PARTS} onClick={() => onChange(addMultipartPart(rows, "text"))}>+ 텍스트</button>
+        <button type="button" className="btn" disabled={rows.length >= MAX_MULTIPART_PARTS} onClick={() => onChange(addMultipartPart(rows, "file"))}>+ 파일</button>
       </div>
       <div className="header-notice" role="note">
         선택한 파일은 앱에 복사하거나 History·Collection에 저장하지 않고 전송할 때만 읽습니다.

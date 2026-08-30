@@ -1,15 +1,80 @@
 {
   "schemaVersion": 1,
   "apps": {
+    "api-playground": {
+      "dist": "apps/api-playground/dist",
+      "rawBytes": 685000,
+      "gzipBytes": 205000
+    },
     "code-pad": {
       "dist": "apps/code-pad/dist",
       "rawBytes": 1225000,
       "gzipBytes": 415000
     },
+    "devbox-launcher": {
+      "dist": "apps/devbox-launcher/dist",
+      "rawBytes": 265000,
+      "gzipBytes": 85000
+    },
+    "devbox-manager": {
+      "dist": "apps/devbox-manager/dist",
+      "rawBytes": 345000,
+      "gzipBytes": 105000
+    },
+    "developer-toolbox": {
+      "dist": "apps/developer-toolbox/dist",
+      "rawBytes": 610000,
+      "gzipBytes": 205000
+    },
+    "everything-plus": {
+      "dist": "apps/everything-plus/dist",
+      "rawBytes": 270000,
+      "gzipBytes": 85000
+    },
     "knowledge-base": {
       "dist": "apps/knowledge-base/dist",
-      "rawBytes": 965000,
+      "rawBytes": 970000,
       "gzipBytes": 325000
+    },
+    "life-log": {
+      "dist": "apps/life-log/dist",
+      "rawBytes": 300000,
+      "gzipBytes": 95000
+    },
+    "log-lens": {
+      "dist": "apps/log-lens/dist",
+      "rawBytes": 285000,
+      "gzipBytes": 90000
+    },
+    "port-manager": {
+      "dist": "apps/port-manager/dist",
+      "rawBytes": 265000,
+      "gzipBytes": 85000
+    },
+    "repo-manager": {
+      "dist": "apps/repo-manager/dist",
+      "rawBytes": 320000,
+      "gzipBytes": 100000
+    },
+    "run-manager": {
+      "dist": "apps/run-manager/dist",
+      "rawBytes": 385000,
+      "gzipBytes": 115000
+    },
+    "webhook-lab": {
+      "dist": "apps/webhook-lab/dist",
+      "rawBytes": 415000,
+      "gzipBytes": 130000
+    },
+    "workbench": {
+      "dist": "apps/workbench/dist",
+      "rawBytes": 325000,
+      "gzipBytes": 100000
+    },
+    "wsl-desktop": {
+      "dist": "apps/wsl-desktop/dist",
+      "rawBytes": 755000,
+      "gzipBytes": 220000
     }
   }
 }

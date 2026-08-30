@@ -28,7 +28,8 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 ┌──────────────────────────────┐
 │ apps/*   독립 Tauri 앱 (.exe) │  15개
 ├──────────────────────────────┤
-│ packages/*  React 공용       │  tokens, editor, diff-view, context-menu
+│ packages/*  frontend 공용    │  tokens, a11y, editor, diff-view, context-menu,
+│                              │  openapi, mermaid-renderer
 ├──────────────────────────────┤
 │ crates/*    Rust 공용        │  filesystem, markdown, process, wsl,
 │                              │  search, integration, secrets, git, launch,
@@ -56,6 +57,10 @@ v0.5.0 binary와 별도다.
   disabled/danger 표현만 소유한다. Port Manager, Developer Toolbox, Everything+, Knowledge, Code Pad,
   Run Manager, Devbox Manager, Workbench, Webhook Lab, Repo Manager, API Playground, WSL Desktop, Life Log의
   기존 13개 앱에 기능 단위로 적용됐다. 신규 앱은 처음부터 적용한다.
+- 구현된 `packages/a11y` — 15개 앱이 공유하는 IME composition 판정, keyboard activation,
+  dialog focus traversal/restore, focus-visible·forced-colors·reduced-motion 스타일과 jsdom axe
+  구조 검사를 소유한다. 앱별 shortcut·문구·layout은 계속 각 앱이 소유하고 공용 스타일은
+  배경을 설정하지 않아 Launcher의 투명 창 계약을 보존한다.
 - 구현된 순수 `crates/window-state` — bounds/maximized/monitor identity/scale을 bounded
   JSON으로 보존하고 monitor·DPI 변화 시 visible titlebar가 남도록 복원 geometry를 계산한다.
   파일 I/O와 Tauri/Windows monitor adapter는 소비 앱이 소유하며 transient window는 제외한다.
@@ -64,6 +69,9 @@ v0.5.0 binary와 별도다.
   한 번만 소비한다. producer/consumer UI는 각 integration PR이 소유한다.
 - W07은 catalog revision 15에서 선택 텍스트 handoff와 일별 activity sidecar를 연결한다.
   Windows 실기 acceptance는 아직 주장하지 않으며 release gate로 남긴다.
+- W10은 release catalog의 15개 frontend 전체에 `ko-KR`, semantic token/a11y stylesheet,
+  Vite manifest, 실제 shell axe smoke와 초기 static-import bundle budget을 fail-closed CI 계약으로
+  적용한다. 색 대비와 Windows 고대비·screen reader 관찰은 #493의 packaged acceptance다.
 
 상세: [`v0.5.0 네이티브 우선 계획`](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)
 

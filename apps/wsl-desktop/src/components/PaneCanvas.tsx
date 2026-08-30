@@ -136,7 +136,7 @@ export default function PaneCanvas({
       })}
       {activePaneIds.length === 0 && (
         <div className="empty">
-          No terminals. Select a distro and click "+ Terminal".
+          터미널이 없습니다. 배포판을 선택하고 "+ 터미널"을 클릭하세요.
           <div className="dim">(터미널은 Windows에서 실행해야 동작합니다)</div>
         </div>
       )}

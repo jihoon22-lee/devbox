@@ -117,6 +117,9 @@ function readConfig(configPath) {
       fail(`frontend bundle budget config for ${appName} has an invalid dist path`);
     }
     assertSafeRelativePath(dist, `frontend bundle budget dist path for ${appName}`);
+    if (normalizePortablePath(dist) !== `apps/${appName}/dist`) {
+      fail(`frontend bundle budget config for ${appName} must use apps/${appName}/dist`);
+    }
     for (const [name, value] of [["rawBytes", rawBytes], ["gzipBytes", gzipBytes]]) {
       if (!Number.isSafeInteger(value) || value < 0) {
         fail(`frontend bundle budget config for ${appName} has an invalid ${name} budget`);
@@ -127,6 +130,58 @@ function readConfig(configPath) {
   }
 
   return apps;
+}
+
+function readReleaseCatalogApps(rootPath) {
+  const catalogPath = path.join(rootPath, "apps", "catalog.json");
+  let source;
+  try {
+    source = readFileSync(catalogPath, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      fail("app catalog is missing while validating frontend bundle coverage");
+    }
+    fail("app catalog is unreadable while validating frontend bundle coverage");
+  }
+
+  let catalog;
+  try {
+    catalog = JSON.parse(source.replace(/^\uFEFF/, ""));
+  } catch {
+    fail("app catalog is not valid JSON while validating frontend bundle coverage");
+  }
+  if (!isRecord(catalog) || !Array.isArray(catalog.apps)) {
+    fail("app catalog has an unsupported shape while validating frontend bundle coverage");
+  }
+
+  const releaseApps = [];
+  for (const entry of catalog.apps) {
+    if (!isRecord(entry) || entry.release !== true) continue;
+    if (!APP_NAME_PATTERN.test(entry.id) || entry.appDir !== `apps/${entry.id}`) {
+      fail("app catalog has an invalid release app while validating frontend bundle coverage");
+    }
+    releaseApps.push(entry.id);
+  }
+  releaseApps.sort();
+  if (releaseApps.length === 0 || new Set(releaseApps).size !== releaseApps.length) {
+    fail("app catalog must declare unique release apps for frontend bundle coverage");
+  }
+  return releaseApps;
+}
+
+function assertCatalogCoverage(rootPath, appConfigs) {
+  const releaseApps = readReleaseCatalogApps(rootPath);
+  const configured = Object.keys(appConfigs).sort();
+  if (JSON.stringify(configured) !== JSON.stringify(releaseApps)) {
+    const configuredSet = new Set(configured);
+    const releaseSet = new Set(releaseApps);
+    const missing = releaseApps.filter((app) => !configuredSet.has(app));
+    const extra = configured.filter((app) => !releaseSet.has(app));
+    fail(
+      `frontend bundle budgets must cover the release catalog exactly `
+      + `(missing: ${missing.join(", ") || "none"}; extra: ${extra.join(", ") || "none"})`,
+    );
+  }
 }
 
 function parseAttributeValue(source, start, attributeName) {
@@ -603,6 +658,10 @@ function selectedApps(scope, appConfigs, value) {
   if (scope === "none") return [];
 
   const requested = new Set(value.replaceAll(",", " ").split(/\s+/u).filter(Boolean));
+  const missing = [...requested].filter((appName) => !Object.hasOwn(appConfigs, appName)).sort();
+  if (missing.length > 0) {
+    fail(`frontend bundle budgets are missing selected apps: ${missing.join(", ")}`);
+  }
   return configured.filter((appName) => requested.has(appName));
 }
 
@@ -629,6 +688,7 @@ export function runCheck({ scope, frontendApps = "", root = DEFAULT_ROOT, config
 
   const configPath = path.resolve(config);
   const appConfigs = readConfig(configPath);
+  assertCatalogCoverage(rootPath, appConfigs);
   const apps = selectedApps(parsedScope, appConfigs, frontendApps);
   if (apps.length === 0) {
     console.log("No configured frontend apps selected; nothing to check.");

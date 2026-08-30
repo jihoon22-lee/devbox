@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { isImeComposing } from "@devbox/a11y";
 import { CLIPBOARD_PREVIEW_ID, clearRecents, getShortcut, launchResult, performTextAction, previewTextAction, readCurrentText, search, setFavorite, setShortcut } from "./api";
 import { isTauri } from "./lib/isTauri";
 import type { SearchResponse, SearchResult, ShortcutConfig, ShortcutStatus, SourceDiagnostic } from "./types";
@@ -145,7 +146,7 @@ export default function App() {
         if (utf8ByteLength(text) > Math.min(meta.maxBytes, MAX_HANDOFF_TEXT_BYTES)) throw new Error("too large");
         if (mounted.current) setPreview({ result, text, kind: meta.kind });
       } catch {
-        if (mounted.current) setError("선택한 텍스트 또는 clipboard를 읽지 못했습니다.");
+        if (mounted.current) setError("선택한 텍스트 또는 클립보드를 읽지 못했습니다.");
       } finally { if (mounted.current) setBusy(false); }
       return;
     }
@@ -215,6 +216,7 @@ export default function App() {
   };
 
   const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (composition.current || isImeComposing(event)) return;
     if (event.key === "Escape") {
       event.preventDefault();
       if (preview) setPreview(null);
@@ -269,7 +271,7 @@ export default function App() {
         <header className="launcher-header">
           <div>
             <h1 id="launcher-title">Devbox Launcher</h1>
-            <p>앱과 검증된 snapshot을 빠르게 엽니다. clipboard는 명시적 미리보기에서만 읽습니다.</p>
+            <p>앱과 검증된 snapshot을 빠르게 엽니다. 클립보드는 명시적 미리보기에서만 읽습니다.</p>
           </div>
           <button type="button" className="icon-button" aria-label="Launcher 닫기" onClick={() => void hideWindow()}>×</button>
         </header>
@@ -343,7 +345,7 @@ export default function App() {
         </div>
       </section></div>}
       {preview && <div className="modal-backdrop" role="presentation"><section className="preview-modal" role="dialog" aria-modal="true" aria-labelledby="preview-title" aria-describedby="preview-description" tabIndex={-1} onKeyDown={handleDialogKeyDown}>
-        <h2 id="preview-title">{preview.kind === "clipboard-preview/v1" ? "Clipboard 미리보기" : "텍스트 handoff 미리보기"}</h2>
+        <h2 id="preview-title">{preview.kind === "clipboard-preview/v1" ? "클립보드 미리보기" : "텍스트 handoff 미리보기"}</h2>
         <p id="preview-description">{preview.kind === "clipboard-preview/v1" ? "명시적으로 요청한 현재 텍스트만 표시하며 전달하거나 저장하지 않습니다." : "이 내용은 확인 후 한 번만 전달되며 Launcher에 저장하지 않습니다."}</p>
         <pre>{preview.text}</pre>
         <div className="modal-actions">

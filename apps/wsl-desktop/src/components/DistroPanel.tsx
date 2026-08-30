@@ -20,6 +20,17 @@ interface Props {
   snapshotState?: DashboardFreshness;
 }
 
+const DISTRO_STATE_LABELS: Readonly<Record<string, string>> = {
+  Running: "실행 중",
+  Stopped: "중지됨",
+  Installing: "설치 중",
+  Uninstalling: "제거 중",
+};
+
+function distroStateLabel(state: string): string {
+  return DISTRO_STATE_LABELS[state] ?? "상태 알 수 없음";
+}
+
 export default function DistroPanel({
   distros,
   selectedDistro,
@@ -64,19 +75,19 @@ export default function DistroPanel({
           disabled={snapshotState === "loading" || snapshotState === "refreshing" || anyBusy}
           onClick={onRefresh}
         >
-          Refresh
+          새로고침
         </button>
       </div>
 
       <select
-        aria-label="WSL distro 선택"
+        aria-label="WSL 배포판 선택"
         disabled={logLensBusy !== null}
         value={selectedDistro}
         onChange={(e) => onSelectDistro(e.currentTarget.value)}
       >
         {distros.map((d) => (
           <option key={d.name} value={d.name}>
-            {d.name} {d.default ? "(default)" : ""}
+            {d.name} {d.default ? "(기본)" : ""}
           </option>
         ))}
       </select>
@@ -87,8 +98,8 @@ export default function DistroPanel({
           Desktop을 설치하세요.
         </div>
       )}
-      {dockerError && <div className="banner">선택한 WSL distro의 Docker 상태를 읽지 못했습니다. 다음 snapshot에서 다시 시도하세요.</div>}
-      {dockerNotQueried && <div className="banner">중지된 WSL distro에서는 Docker를 조회하지 않습니다.</div>}
+      {dockerError && <div className="banner">선택한 WSL 배포판의 Docker 상태를 읽지 못했습니다. 다음 snapshot에서 다시 시도하세요.</div>}
+      {dockerNotQueried && <div className="banner">중지된 WSL 배포판에서는 Docker를 조회하지 않습니다.</div>}
 
       <div className="cards">
         {distros.map((d) => {
@@ -97,17 +108,17 @@ export default function DistroPanel({
             <div key={d.name} className={`card ${d.default ? "card-default" : ""}`}>
               <div className="card-title">{d.name}</div>
               <div className="card-row">
-                <span>Version</span>
+                <span>버전</span>
                 <span>{d.version}</span>
               </div>
               <div className="card-row">
-                <span>Status</span>
+                <span>상태</span>
                 <span className={d.state.toLowerCase() === "running" ? "status-on" : "status-off"}>
-                  ● {d.state}
+                  ● {distroStateLabel(d.state)}
                 </span>
               </div>
               <div className="card-row">
-                <span>Active terminals</span>
+                <span>활성 터미널</span>
                 <span>{snapshot ? snapshot.terminalCount : "—"}</span>
               </div>
               <div
@@ -124,7 +135,7 @@ export default function DistroPanel({
                 disabled={logLensBusy !== null}
                 onClick={() => onOpenTerminal(d.name)}
               >
-                Open Terminal
+                터미널 열기
               </button>
               {onOpenJournalInLogLens && (
                 <button
@@ -134,7 +145,7 @@ export default function DistroPanel({
                   aria-busy={logLensBusy === `log-lens-journal:${d.name}`}
                   onClick={() => onOpenJournalInLogLens(d.name)}
                 >
-                  Open journal in Log Lens
+                  Log Lens에서 저널 열기
                 </button>
               )}
               {onOpenFileInLogLens && (
@@ -145,7 +156,7 @@ export default function DistroPanel({
                   aria-busy={logLensBusy === `log-lens-file:${d.name}`}
                   onClick={() => onOpenFileInLogLens(d.name)}
                 >
-                  Open file in Log Lens
+                  Log Lens에서 파일 열기
                 </button>
               )}
             </div>
@@ -153,9 +164,9 @@ export default function DistroPanel({
         })}
       </div>
 
-      <h3 className="dash-subtitle">Docker ({running}/{containers.length} running)</h3>
+      <h2 className="dash-subtitle">Docker ({running}/{containers.length}개 실행 중)</h2>
       {!dockerMissing && !dockerError && !dockerNotQueried && (
-        <div className="docker-list" aria-label="Docker containers">
+        <div className="docker-list" aria-label="Docker 컨테이너">
           {containers.map((c) => {
             const state = dockerDisplayState(c.status);
             const canStart = state.key === "exited" || state.key === "created";
@@ -166,7 +177,7 @@ export default function DistroPanel({
                     {c.name}
                   </span>
                   <span className={`docker-state docker-state-${state.key}`}>{state.label}</span>
-                  <span className="docker-port-summary mono" title={c.ports || "No ports"}>
+                  <span className="docker-port-summary mono" title={c.ports || "포트 없음"}>
                     {compactDockerPorts(c.ports)}
                   </span>
                   <span className="docker-detail-chevron" aria-hidden="true">
@@ -177,20 +188,20 @@ export default function DistroPanel({
                 <div className="docker-container-detail">
                   <dl>
                     <div>
-                      <dt>Container ID</dt>
+                      <dt>컨테이너 ID</dt>
                       <dd className="mono">{c.id}</dd>
                     </div>
                     <div>
-                      <dt>Image</dt>
-                      <dd className="mono">{c.image || "(empty)"}</dd>
+                      <dt>이미지</dt>
+                      <dd className="mono">{c.image || "(비어 있음)"}</dd>
                     </div>
                     <div>
-                      <dt>Original status</dt>
-                      <dd>{c.status || "(empty)"}</dd>
+                      <dt>원본 상태</dt>
+                      <dd>{c.status || "(비어 있음)"}</dd>
                     </div>
                     <div>
-                      <dt>Original ports</dt>
-                      <dd className="mono">{c.ports || "(empty)"}</dd>
+                      <dt>원본 포트</dt>
+                      <dd className="mono">{c.ports || "(비어 있음)"}</dd>
                     </div>
                   </dl>
 
@@ -202,7 +213,7 @@ export default function DistroPanel({
                         disabled={anyBusy || !snapshotFresh}
                         onClick={() => onAction(c.id, "start")}
                       >
-                        Start
+                        시작
                       </button>
                     ) : (
                       <>
@@ -212,7 +223,7 @@ export default function DistroPanel({
                           disabled={anyBusy || !snapshotFresh}
                           onClick={() => onAction(c.id, "stop")}
                         >
-                          Stop
+                          중지
                         </button>
                         <button
                           className="btn"
@@ -220,7 +231,7 @@ export default function DistroPanel({
                           disabled={anyBusy || !snapshotFresh}
                           onClick={() => onAction(c.id, "restart")}
                         >
-                          Restart
+                          재시작
                         </button>
                       </>
                     )}
@@ -229,7 +240,7 @@ export default function DistroPanel({
               </details>
             );
           })}
-          {containers.length === 0 && <div className="docker-empty">No containers</div>}
+          {containers.length === 0 && <div className="docker-empty">컨테이너 없음</div>}
         </div>
       )}
     </div>

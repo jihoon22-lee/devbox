@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OPENAPI_DOCUMENT_LIMITS } from "@devbox/openapi";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
 import {
   clearFixtures,
@@ -286,20 +287,39 @@ function makeOpenApiFile(name: string, document: unknown): File {
 }
 
 describe("Webhook Lab history and rule context menus", () => {
+  it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
+    const { container } = render(<App />);
+    await screen.findByText("요청 기록 (2)");
+    await assertNoA11yViolations(container);
+  });
+
   it("마스킹된 history와 rule을 렌더링한다", async () => {
     render(<App />);
 
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
     expect(screen.getByText("/hook")).toBeTruthy();
     expect(screen.getByText("민감 헤더 마스킹됨")).toBeTruthy();
     expect(screen.getByText(/GET \/health → 204/)).toBeTruthy();
-    expect(screen.getByText("priority 0")).toBeTruthy();
+    expect(screen.getByText("우선순위 0")).toBeTruthy();
+  });
+
+  it("Enter와 Space로 규칙·기록을 선택하되 IME 조합 키는 무시한다", async () => {
+    render(<App />);
+    const historyRow = await screen.findByLabelText("GET /health 요청") as HTMLDivElement;
+    const ruleRow = screen.getByLabelText("GET /health 규칙") as HTMLDivElement;
+
+    fireEvent.keyDown(historyRow, { key: "Enter", isComposing: true });
+    expect(historyRow.getAttribute("aria-current")).toBeNull();
+    fireEvent.keyDown(historyRow, { key: "Enter" });
+    expect(historyRow.getAttribute("aria-current")).toBe("true");
+    fireEvent.keyDown(ruleRow, { key: " " });
+    expect(ruleRow.getAttribute("aria-current")).toBe("true");
   });
 
   it("rule 매칭 필드의 의미를 값이 채워져도 항상 표시한다", async () => {
     render(<App />);
 
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
 
     expect(screen.getByLabelText("method").getAttribute("aria-describedby")).toBe("rule-method-help");
     expect(screen.getByLabelText("path").getAttribute("aria-describedby")).toBe("rule-path-help");
@@ -309,7 +329,7 @@ describe("Webhook Lab history and rule context menus", () => {
     expect(screen.getByLabelText("응답 body").getAttribute("aria-describedby")).toBe("rule-body-help rule-headers-help");
     expect(screen.getByText("대소문자를 구분하지 않고 요청 method와 일치합니다. 비워두면 모든 method(*)에 적용됩니다. ASCII HTTP token, 최대 16자/16바이트입니다.")).toBeTruthy();
     expect(screen.getByText("경로 전체가 정확히 일치합니다. 마지막 문자가 *일 때만 그 앞부분으로 시작하는 경로와 일치합니다 (예: /events/* → /events/123). /로 시작하고 최대 4,096자/16,384바이트입니다.")).toBeTruthy();
-    expect(screen.getByText("priority가 높을수록 먼저 적용됩니다. 같으면 정확한 path, method 지정, 긴 wildcard 순서이며 마지막에는 rule ID로 결정합니다.")).toBeTruthy();
+    expect(screen.getByText("우선순위가 높을수록 먼저 적용됩니다. 같으면 정확한 path, method 지정, 긴 와일드카드 순서이며 마지막에는 규칙 ID로 결정합니다.")).toBeTruthy();
     expect(screen.getByText("매칭된 요청에 돌려줄 HTTP 응답 status 코드입니다 (허용 범위: 100~599, 예: 200, 404, 500).")).toBeTruthy();
     expect(screen.getByText("응답 전에 기다릴 시간(밀리초)입니다. 0이면 지연 없이 바로 응답합니다 (허용 범위: 0~60000ms).")).toBeTruthy();
     expect(screen.getByText("매칭된 요청에 돌려줄 response body입니다. 저장된 headers와 함께 응답 규칙의 출력으로 사용됩니다. body는 최대 256,000자/1,024,000바이트입니다.")).toBeTruthy();
@@ -318,7 +338,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("응답 status 범위를 벗어난 rule은 저장하지 않고 입력 오류를 연결한다", async () => {
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
 
     const status = screen.getByLabelText("status");
     fireEvent.change(status, { target: { value: "99" } });
@@ -334,7 +354,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("priority 범위를 벗어난 rule은 저장하지 않고 입력 오류를 연결한다", async () => {
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
 
     const priority = screen.getByLabelText("priority");
     fireEvent.change(priority, { target: { value: "1001" } });
@@ -351,7 +371,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("method/path/body의 잘못된 raw draft를 보존하고 저장을 차단한다", async () => {
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
 
     const method = screen.getByLabelText("method") as HTMLInputElement;
     fireEvent.change(method, { target: { value: "POST JSON" } });
@@ -396,7 +416,7 @@ describe("Webhook Lab history and rule context menus", () => {
     const pending = new Promise<string>((resolve) => { release = resolve; });
     setRuleMock.mockReturnValueOnce(pending);
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
 
     const save = screen.getByRole("button", { name: "규칙 추가" });
     fireEvent.click(save);
@@ -432,14 +452,14 @@ describe("Webhook Lab history and rule context menus", () => {
 
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "시작" }));
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
     expect(screen.getByText(/듣는 중 127\.0\.0\.1:9000/u)).toBeTruthy();
 
     releaseStatus({ running: false, address: null });
     releaseHistory([]);
     releaseRules([]);
     await waitFor(() => {
-      expect(screen.getByText("History (2)")).toBeTruthy();
+      expect(screen.getByText("요청 기록 (2)")).toBeTruthy();
       expect(screen.getByText(/GET \/health → 204/u)).toBeTruthy();
       expect(screen.getByText(/듣는 중 127\.0\.0\.1:9000/u)).toBeTruthy();
     });
@@ -447,7 +467,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("빈 method를 모든 method를 뜻하는 null로 저장한다", async () => {
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
 
     fireEvent.change(screen.getByLabelText("method"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "규칙 추가" }));
@@ -471,7 +491,7 @@ describe("Webhook Lab history and rule context menus", () => {
     });
     confirmMock.mockReturnValueOnce(false);
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
 
     fireEvent.change(screen.getByLabelText("method"), { target: { value: "GET" } });
     fireEvent.change(screen.getByLabelText("path"), { target: { value: "/health" } });
@@ -500,7 +520,7 @@ describe("Webhook Lab history and rule context menus", () => {
     });
     confirmMock.mockReturnValueOnce(true);
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
 
     fireEvent.change(screen.getByLabelText("method"), { target: { value: "GET" } });
     fireEvent.change(screen.getByLabelText("path"), { target: { value: "/health" } });
@@ -518,7 +538,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("OpenAPI 파일 취소와 재선택은 저장 없이 preview만 갱신한다", async () => {
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
 
     const input = screen.getByLabelText("OpenAPI JSON/YAML 파일 선택") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [] } });
@@ -543,7 +563,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("OpenAPI 크기와 확장자를 preview 전에 차단한다", async () => {
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
     const input = screen.getByLabelText("OpenAPI JSON/YAML 파일 선택") as HTMLInputElement;
 
     const oversized = makeOpenApiFile("large.json", { openapi: "3.0.3", paths: {} });
@@ -572,7 +592,7 @@ describe("Webhook Lab history and rule context menus", () => {
     });
 
     const view = render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
     fireEvent.change(screen.getByLabelText("OpenAPI JSON/YAML 파일 선택"), { target: { files: [file] } });
     await waitFor(() => expect(view.container.querySelector(".app")?.getAttribute("aria-busy")).toBe("true"));
 
@@ -584,14 +604,14 @@ describe("Webhook Lab history and rule context menus", () => {
     await Promise.resolve();
 
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
     expect(screen.queryByText(/late\.json · OpenAPI/u)).toBeNull();
     expect(setRuleMock).not.toHaveBeenCalled();
   });
 
   it("OpenAPI 부분 오류는 비적용 operation을 이유와 함께 비활성 표시하고 민감 필드를 노출하지 않는다", async () => {
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
     const input = screen.getByLabelText("OpenAPI JSON/YAML 파일 선택");
     fireEvent.change(input, {
       target: {
@@ -631,7 +651,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("잘못된 OpenAPI 문서는 고정 오류로 끝나고 draft를 만들지 않는다", async () => {
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
     fireEvent.change(screen.getByLabelText("OpenAPI JSON/YAML 파일 선택"), {
       target: { files: [makeOpenApiFile("legacy.json", { openapi: "2.0", paths: {} })] },
     });
@@ -643,7 +663,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("선택하고 확인한 OpenAPI operation만 editor draft로 적용하며 자동 저장하지 않는다", async () => {
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
     fireEvent.change(screen.getByLabelText("OpenAPI JSON/YAML 파일 선택"), {
       target: {
         files: [makeOpenApiFile("draft.yaml", "openapi: 3.1.0\npaths:\n  /payments:\n    post:\n      responses:\n        '202':\n          description: accepted\n")],
@@ -651,7 +671,7 @@ describe("Webhook Lab history and rule context menus", () => {
     });
 
     await screen.findByText(/draft\.yaml · OpenAPI 3\.1 · 1개 operation/u);
-    const apply = screen.getByRole("button", { name: "선택한 operation을 rule 초안에 적용" });
+    const apply = screen.getByRole("button", { name: "선택한 operation을 규칙 초안에 적용" });
     expect(apply.hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("radio", { name: "POST /payments (202)" }));
     expect(apply.hasAttribute("disabled")).toBe(false);
@@ -673,8 +693,8 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("Run Manager definition 다운로드는 실행 중 loopback에서만 활성화한다", async () => {
     render(<App />);
-    await screen.findByText("History (2)");
-    const stopped = screen.getByRole("button", { name: "Run Manager definition JSON 다운로드" });
+    await screen.findByText("요청 기록 (2)");
+    const stopped = screen.getByRole("button", { name: "Run Manager 정의 JSON 다운로드" });
     expect(stopped.hasAttribute("disabled")).toBe(true);
     expect(exportRunServiceDefinitionMock).not.toHaveBeenCalled();
 
@@ -682,7 +702,7 @@ describe("Webhook Lab history and rule context menus", () => {
     serverStatusMock.mockResolvedValue({ running: true, address: "0.0.0.0:9000" });
     render(<App />);
     await screen.findByText(/듣는 중 0\.0\.0\.0:9000/u);
-    const lan = screen.getByRole("button", { name: "Run Manager definition JSON 다운로드" });
+    const lan = screen.getByRole("button", { name: "Run Manager 정의 JSON 다운로드" });
     expect(lan.hasAttribute("disabled")).toBe(true);
     fireEvent.click(lan);
     expect(exportRunServiceDefinitionMock).not.toHaveBeenCalled();
@@ -703,7 +723,7 @@ describe("Webhook Lab history and rule context menus", () => {
     const clickMock = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     try {
       render(<App />);
-      const button = await screen.findByRole("button", { name: "Run Manager definition JSON 다운로드" });
+      const button = await screen.findByRole("button", { name: "Run Manager 정의 JSON 다운로드" });
       expect(button.hasAttribute("disabled")).toBe(false);
       fireEvent.click(button);
 
@@ -732,10 +752,10 @@ describe("Webhook Lab history and rule context menus", () => {
     serverStatusMock.mockResolvedValue({ running: true, address: "[::1]:9000" });
     exportRunServiceDefinitionMock.mockRejectedValueOnce(new Error("native profile path /private/raw-token"));
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "Run Manager definition JSON 다운로드" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Run Manager 정의 JSON 다운로드" }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("Run Manager definition을 다운로드하지 못했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.");
+    expect(alert.textContent).toBe("Run Manager 정의를 다운로드하지 못했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.");
     expect(document.body.textContent).not.toContain("raw-token");
   });
 
@@ -745,17 +765,17 @@ describe("Webhook Lab history and rule context menus", () => {
       new Error("Webhook service profile 개수 제한에 도달했습니다"),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "Run Manager definition JSON 다운로드" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Run Manager 정의 JSON 다운로드" }));
 
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "Webhook service profile 개수 제한에 도달했습니다",
+      "Webhook 서비스 프로필 개수 제한에 도달했습니다",
     );
   });
 
   it("backend 원문 오류를 고정된 안전 메시지로 대체한다", async () => {
     setRuleMock.mockRejectedValueOnce(new Error("secret/path=/tmp/private-token"));
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
 
     fireEvent.click(screen.getByRole("button", { name: "규칙 추가" }));
 
@@ -859,14 +879,14 @@ describe("Webhook Lab history and rule context menus", () => {
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "삭제" }));
     await waitFor(() => expect(deleteHistoryMock).toHaveBeenCalledWith(2));
-    await screen.findByText("History (1)");
+    await screen.findByText("요청 기록 (1)");
 
     fireEvent.click(screen.getByRole("button", { name: "비우기" }));
     expect(clearHistoryMock).not.toHaveBeenCalled();
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(screen.getByRole("button", { name: "비우기" }));
     await waitFor(() => expect(clearHistoryMock).toHaveBeenCalledTimes(1));
-    await screen.findByText("History (0)");
+    await screen.findByText("요청 기록 (0)");
   });
 
   it("rule 메뉴에서 정확한 규칙을 편집하고 새 ID로 복제한다", async () => {
@@ -941,12 +961,12 @@ describe("Webhook Lab history and rule context menus", () => {
     const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
 
     fireEvent.contextMenu(target);
-    const replay = screen.getByRole("menuitem", { name: "masked 요청 replay" });
+    const replay = screen.getByRole("menuitem", { name: "마스킹된 요청 재전송" });
     expect(replay.getAttribute("aria-disabled")).toBeNull();
     fireEvent.click(replay);
 
     await waitFor(() => expect(replayHistoryMock).toHaveBeenCalledWith(1));
-    expect(screen.getByRole("status").textContent).toContain("localhost에 replay했습니다");
+    expect(screen.getByRole("status").textContent).toContain("localhost에 재전송했습니다");
     expect(screen.getByRole("status").textContent).toContain("status: 200");
     expect(writeTextMock).not.toHaveBeenCalled();
   });
@@ -958,7 +978,7 @@ describe("Webhook Lab history and rule context menus", () => {
     const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
 
     fireEvent.click(target);
-    fireEvent.click(screen.getByRole("button", { name: "POST /hook masked replay" }));
+    fireEvent.click(screen.getByRole("button", { name: "POST /hook 마스킹된 재전송" }));
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe("요청을 처리하지 못했습니다. 입력과 서버 상태를 확인하세요.");
@@ -968,7 +988,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("edits a bounded response sequence and sends it with the rule", async () => {
     render(<App />);
-    await screen.findByText("History (2)");
+    await screen.findByText("요청 기록 (2)");
 
     fireEvent.click(screen.getByRole("button", { name: /응답 단계 추가/ }));
     fireEvent.change(screen.getByRole("spinbutton", { name: "응답 단계 1 status" }), {
@@ -999,9 +1019,9 @@ describe("Webhook Lab history and rule context menus", () => {
     }];
     render(<App />);
     await screen.findByLabelText("GET /health 규칙");
-    expect(screen.getByText("2 responses")).toBeTruthy();
+    expect(screen.getByText("2개 응답")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "GET /health response sequence 초기화" }));
+    fireEvent.click(screen.getByRole("button", { name: "GET /health 응답 시퀀스 초기화" }));
     await waitFor(() => expect(resetRuleSequenceMock).toHaveBeenCalledWith("rule-1"));
     expect(setRuleMock).not.toHaveBeenCalled();
     expect(screen.getByRole("status").textContent).toContain("첫 응답으로 초기화했습니다");
@@ -1017,7 +1037,7 @@ describe("Webhook Lab history and rule context menus", () => {
     target.focus();
     fireEvent.keyDown(target, { key: "F10", shiftKey: true });
 
-    fireEvent.click(screen.getByRole("menuitem", { name: "response sequence 초기화" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "응답 시퀀스 초기화" }));
     await waitFor(() => expect(resetRuleSequenceMock).toHaveBeenCalledWith("rule-1"));
     await waitFor(() => expect(document.activeElement).toBe(target));
   });
@@ -1130,14 +1150,14 @@ describe("Webhook Lab history and rule context menus", () => {
     const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
 
     fireEvent.contextMenu(target);
-    const save = screen.getByRole("menuitem", { name: "masked fixture 저장" });
+    const save = screen.getByRole("menuitem", { name: "마스킹된 fixture 저장" });
     expect(save.getAttribute("aria-disabled")).toBeNull();
     fireEvent.click(save);
 
     await waitFor(() => expect(saveFixtureMock).toHaveBeenCalledWith(1));
-    await screen.findByText("Fixtures (1)");
+    await screen.findByText("저장된 fixture (1)");
     expect(screen.getByLabelText("POST /hook fixture")).toBeTruthy();
-    expect(screen.getByText(/원본 header·credential·안전하지 않은 path는 저장하지 않습니다/)).toBeTruthy();
+    expect(screen.getByText(/원본 헤더·인증 정보·안전하지 않은 path는 저장하지 않습니다/)).toBeTruthy();
   });
 
   it("history handoff uses the backend producer and never falls back to clipboard", async () => {
@@ -1171,13 +1191,13 @@ describe("Webhook Lab history and rule context menus", () => {
     saveFixtureMock.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
     render(<App />);
     await screen.findByLabelText("GET /health 요청");
-    const visibleSave = screen.getByRole("button", { name: "GET /health masked fixture 저장" });
+    const visibleSave = screen.getByRole("button", { name: "GET /health 마스킹된 fixture 저장" });
 
     fireEvent.click(visibleSave);
     fireEvent.click(visibleSave);
     await waitFor(() => expect(saveFixtureMock).toHaveBeenCalledTimes(1));
     expect(visibleSave.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("button", { name: "GET /health masked fixture 저장" }).closest(".app")?.getAttribute("aria-busy"))
+    expect(screen.getByRole("button", { name: "GET /health 마스킹된 fixture 저장" }).closest(".app")?.getAttribute("aria-busy"))
       .toBe("true");
 
     release({
@@ -1212,7 +1232,7 @@ describe("Webhook Lab history and rule context menus", () => {
     });
     render(<App />);
     await screen.findByLabelText("POST /hooks/push?token=[REDACTED] fixture");
-    const draft = screen.getByRole("button", { name: "POST /hooks/push?token=[REDACTED] 응답 rule 초안" });
+    const draft = screen.getByRole("button", { name: "POST /hooks/push?token=[REDACTED] 응답 규칙 초안" });
     fireEvent.click(draft);
 
     await waitFor(() => expect(fixtureToRuleMock).toHaveBeenCalledWith("fixture-1"));
@@ -1265,7 +1285,7 @@ describe("Webhook Lab history and rule context menus", () => {
       { id: "fixture-2", method: "GET", url: "/health", headers: [], body: "", receivedAtMs: 1_700_000_001_000 },
     ];
     render(<App />);
-    await screen.findByText("Fixtures (2)");
+    await screen.findByText("저장된 fixture (2)");
 
     fireEvent.click(screen.getByRole("button", { name: "POST /hook fixture 삭제" }));
     expect(deleteFixtureMock).not.toHaveBeenCalled();
@@ -1273,7 +1293,7 @@ describe("Webhook Lab history and rule context menus", () => {
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(screen.getByRole("button", { name: "POST /hook fixture 삭제" }));
     await waitFor(() => expect(deleteFixtureMock).toHaveBeenCalledWith("fixture-1"));
-    await screen.findByText("Fixtures (1)");
+    await screen.findByText("저장된 fixture (1)");
 
     const clear = screen.getByRole("button", { name: "저장된 fixture 모두 삭제" });
     fireEvent.click(clear);
@@ -1281,7 +1301,7 @@ describe("Webhook Lab history and rule context menus", () => {
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(clear);
     await waitFor(() => expect(clearFixturesMock).toHaveBeenCalledTimes(1));
-    await screen.findByText("Fixtures (0)");
+    await screen.findByText("저장된 fixture (0)");
   });
 
   it("fixture storage failures stay fixed and do not reflect filesystem or secret details", async () => {

@@ -198,7 +198,7 @@ describe("DataSourceRow", () => {
     render(createElement(DataSourceRow, { source }));
 
     expect(screen.getByText("knowledge-base")).toBeTruthy();
-    expect(screen.getByText(/v1 · 0.5.0 · 2m 전 갱신/)).toBeTruthy();
+    expect(screen.getByText(/v1 · 0.5.0 · 2분 전 갱신/)).toBeTruthy();
     expect(screen.getByText(/오늘 작성·수정 3개/)).toBeTruthy();
     expect(screen.getByText(/마지막 수정/)).toBeTruthy();
   });
@@ -217,7 +217,7 @@ describe("DataSourceRow", () => {
 
     render(createElement(DataSourceRow, { source }));
 
-    expect(screen.getByText(/v1 · 0.5.0 · 1m 전 갱신/)).toBeTruthy();
+    expect(screen.getByText(/v1 · 0.5.0 · 1분 전 갱신/)).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toBe(
       "Knowledge activity view schema를 지원하지 않습니다",
     );
@@ -255,17 +255,17 @@ describe("schema v2 activity display", () => {
   it("keeps unavailable summary and daily activity distinct from zero", () => {
     expect(formatRunSummary(null)).toBe("—");
     expect(formatKnowledgeSummary(null)).toBe("—");
-    expect(formatDailyActivity(emptyActivity)).toBe("Run — · Knowledge —");
+    expect(formatDailyActivity(emptyActivity)).toBe("Run Manager — · Knowledge —");
   });
 
   it("renders native zeroes and non-zero values when the source is complete", () => {
-    expect(formatRunSummary({ succeeded: 0, failed: 2, lastRunAtMs: null })).toBe("0 succeeded · 2 failed");
-    expect(formatKnowledgeSummary({ notesModified: 3, lastModifiedAtMs: null })).toBe("3 modified");
+    expect(formatRunSummary({ succeeded: 0, failed: 2, lastRunAtMs: null })).toBe("0건 성공 · 2건 실패");
+    expect(formatKnowledgeSummary({ notesModified: 3, lastModifiedAtMs: null })).toBe("3건 수정");
     expect(formatDailyActivity({
       runSucceeded: 2,
       runFailed: 1,
       knowledgeNotesModified: 3,
-    })).toBe("Run 2/1 · Knowledge 3");
+    })).toBe("Run Manager 2/1 · Knowledge 3건");
   });
 
   it.each([

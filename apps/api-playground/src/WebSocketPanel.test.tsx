@@ -25,10 +25,10 @@ describe("WebSocketPanel", () => {
     render(<WebSocketPanel {...baseProps} state="idle" />);
 
     expect(screen.getByRole("heading", { name: "WebSocket" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Connect WebSocket" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Disconnect WebSocket" }).getAttribute("disabled")).not.toBeNull();
-    expect(screen.getByRole("log", { name: "WebSocket messages" }).getAttribute("aria-live")).toBe("polite");
-    expect(screen.getByRole("status", { name: "WebSocket Idle" }).textContent).toBe("Idle");
+    expect(screen.getByRole("button", { name: "WebSocket 연결" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "WebSocket 연결 해제" }).getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByRole("log", { name: "WebSocket 메시지" }).getAttribute("aria-live")).toBe("polite");
+    expect(screen.getByRole("status", { name: "WebSocket 대기" }).textContent).toBe("대기");
   });
 
   it("renders masked message text as text and offers an explicit binary save action", () => {
@@ -47,17 +47,17 @@ describe("WebSocketPanel", () => {
 
     expect(screen.getByText("<script>alert(1)</script>")).toBeTruthy();
     expect(screen.getByRole("log").innerHTML).toContain("&lt;script&gt;");
-    expect(screen.getByText(/2 retained · 3 evicted/u)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Save binary message 2" }));
+    expect(screen.getByText(/2개 유지 · 3개 제외됨/u)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Binary 메시지 2 저장" }));
     expect(onSaveBinary).toHaveBeenCalledWith(2);
   });
 
   it("keeps send and close controls disabled until the socket is open", () => {
     render(<WebSocketPanel {...baseProps} state="connecting" />);
 
-    expect(screen.getByRole("button", { name: "Connect WebSocket" }).getAttribute("disabled")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Disconnect WebSocket" }).getAttribute("disabled")).toBeNull();
-    expect(screen.getByRole("button", { name: "Send WebSocket message" }).getAttribute("disabled")).not.toBeNull();
-    expect(screen.getByRole("button", { name: /^Close$/u }).getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "WebSocket 연결" }).getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "WebSocket 연결 해제" }).getAttribute("disabled")).toBeNull();
+    expect(screen.getByRole("button", { name: "WebSocket 메시지 보내기" }).getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "닫기" }).getAttribute("disabled")).not.toBeNull();
   });
 });

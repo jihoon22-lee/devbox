@@ -3,6 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
+import { isImeComposing } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   autostartStatus,
@@ -54,7 +55,7 @@ function fmtDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
 }
 
 function shortApp(app: string): string {
@@ -90,26 +91,34 @@ export function formatNullableTimestamp(value: number | null): string {
 export function formatRunSummary(run: RunDigest | null): string {
   return run == null
     ? "—"
-    : `${formatNullableCount(run.succeeded)} succeeded · ${formatNullableCount(run.failed)} failed`;
+    : `${formatNullableCount(run.succeeded)}건 성공 · ${formatNullableCount(run.failed)}건 실패`;
 }
 
 export function formatKnowledgeSummary(knowledge: KnowledgeDigest | null): string {
   return knowledge == null
     ? "—"
-    : `${formatNullableCount(knowledge.notesModified)} modified`;
+    : `${formatNullableCount(knowledge.notesModified)}건 수정`;
 }
 
 export function formatDailyActivity(day: Pick<DigestDay, "runSucceeded" | "runFailed" | "knowledgeNotesModified">): string {
   const runs = day.runSucceeded == null || day.runFailed == null
-    ? "Run —"
-    : `Run ${formatNullableCount(day.runSucceeded)}/${formatNullableCount(day.runFailed)}`;
+    ? "Run Manager —"
+    : `Run Manager ${formatNullableCount(day.runSucceeded)}/${formatNullableCount(day.runFailed)}`;
   const notes = day.knowledgeNotesModified == null
     ? "Knowledge —"
-    : `Knowledge ${formatNullableCount(day.knowledgeNotesModified)}`;
+    : `Knowledge ${formatNullableCount(day.knowledgeNotesModified)}건`;
   return `${runs} · ${notes}`;
 }
 
 type ViewTab = "day" | "week" | "month" | "timeline" | "settings";
+
+const VIEW_LABELS: Record<ViewTab, string> = {
+  day: "일",
+  week: "주",
+  month: "월",
+  timeline: "타임라인",
+  settings: "설정",
+};
 
 export function weekRange(date: Date): { start: number; end: number } {
   const d = new Date(date);
@@ -238,7 +247,7 @@ function digestSourceDetails(
     details.push(source.generatedAt);
   }
   if (Number.isSafeInteger(source.freshnessMs) && source.freshnessMs != null && source.freshnessMs >= 0) {
-    details.push(`${fmtDuration(source.freshnessMs)} old`);
+    details.push(`${fmtDuration(source.freshnessMs)} 전`);
   }
   if (source.view === "activity" || source.view === "legacy-data" || source.view === "daily-activity") details.push(source.view);
   return details.length > 0 ? details.join(" · ") : null;
@@ -247,7 +256,7 @@ function digestSourceDetails(
 function digestSourceId(value: string): string {
   return ["life-log", "git", "run-manager", "knowledge-base"].includes(value)
     ? value
-    : "unknown source";
+    : "알 수 없는 소스";
 }
 
 function digestSourceScope(value: string): string {
@@ -260,7 +269,7 @@ function digestSourceScope(value: string): string {
     "unavailable",
   ].includes(value)
     ? value
-    : "scope unavailable";
+    : "범위 없음";
 }
 
 function sourceFreshnessState(
@@ -278,11 +287,11 @@ function sourceFreshnessState(
 
 function sourceFreshnessLabel(state: ReturnType<typeof sourceFreshnessState>): string {
   return {
-    fresh: "fresh",
-    stale: "stale",
-    expired: "expired",
-    unknown: "freshness unknown",
-    error: "error",
+    fresh: "최신",
+    stale: "오래됨",
+    expired: "만료됨",
+    unknown: "최신 여부 알 수 없음",
+    error: "오류",
   }[state];
 }
 
@@ -406,7 +415,7 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
       <div className="source-details">
         <span className={`freshness-badge freshness-${freshness}`}>{sourceFreshnessLabel(freshness)}</span>
         {diagnostics.length > 0 && <span className="dim">{diagnostics.join(" · ")}</span>}
-        <span className="dim">{source.scope ?? "scope unavailable"}</span>
+        <span className="dim">{source.scope ?? "범위 없음"}</span>
         <span className="source-explanation">{fixedExplanation ?? source.explanation ?? digestSourceExplanation(sourceMetadata)}</span>
         {source.available && activity && (
           <span className="source-activity">
@@ -603,12 +612,12 @@ export default function App() {
   };
 
   const exportNotice = (format: ExportFormat, preview: boolean): string =>
-    `${format.toUpperCase()} export를 ${preview ? "브라우저 미리보기로 다운로드" : isTauri() ? "저장" : "다운로드"}했습니다.`;
+    `${format.toUpperCase()} 내보내기를 ${preview ? "브라우저 미리보기로 다운로드" : isTauri() ? "저장" : "다운로드"}했습니다.`;
 
   const exportFailure = (format: ExportFormat): string =>
     isTauri()
-      ? `${format.toUpperCase()} export를 저장하지 못했습니다.`
-      : `${format.toUpperCase()} export 미리보기를 다운로드하지 못했습니다.`;
+      ? `${format.toUpperCase()} 내보내기를 저장하지 못했습니다.`
+      : `${format.toUpperCase()} 내보내기 미리보기를 다운로드하지 못했습니다.`;
 
   const exportDate = async (format: ExportFormat) => {
     const value = contextDate;
@@ -638,7 +647,7 @@ export default function App() {
   const submitRangeExport = async () => {
     const input = buildExportInput(exportStartDate, exportEndDate, exportFormat);
     if (!input) {
-      setError("export 날짜 범위가 올바르지 않습니다. 최대 366일까지 선택할 수 있습니다.");
+      setError("내보내기 날짜 범위가 올바르지 않습니다. 최대 366일까지 선택할 수 있습니다.");
       return;
     }
     const request = beginExport();
@@ -683,9 +692,9 @@ export default function App() {
     try {
       if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
       await navigator.clipboard.writeText(response.markdown);
-      if (isCurrentDigestAction(action)) setNotice("현재 digest를 클립보드에 복사했습니다.");
+      if (isCurrentDigestAction(action)) setNotice("현재 요약을 클립보드에 복사했습니다.");
     } catch {
-      if (isCurrentDigestAction(action)) setError("digest를 클립보드에 복사하지 못했습니다.");
+      if (isCurrentDigestAction(action)) setError("요약을 클립보드에 복사하지 못했습니다.");
     } finally {
       finishDigestAction(action);
     }
@@ -697,13 +706,13 @@ export default function App() {
     if (!response || action === null) return;
     try {
       if (isTauri()) {
-        if (!response.handle) throw new Error("digest handle unavailable");
+        if (!response.handle) throw new Error("요약 핸들을 사용할 수 없습니다");
         const result = await saveDigest(response.handle);
         if (isCurrentDigestAction(action) && result.saved) {
-          setNotice("현재 digest를 저장했습니다.");
+          setNotice("현재 요약을 저장했습니다.");
         }
       } else {
-        if (typeof URL.createObjectURL !== "function") throw new Error("download unavailable");
+        if (typeof URL.createObjectURL !== "function") throw new Error("다운로드를 사용할 수 없습니다");
         const blob = new Blob([response.markdown], { type: "text/markdown;charset=utf-8" });
         const anchor = document.createElement("a");
         let objectUrl: string | null = null;
@@ -717,11 +726,11 @@ export default function App() {
             setTimeout(() => URL.revokeObjectURL(objectUrl!), 0);
           }
         }
-        if (isCurrentDigestAction(action)) setNotice("현재 digest를 브라우저 미리보기로 다운로드했습니다.");
+        if (isCurrentDigestAction(action)) setNotice("현재 요약을 브라우저 미리보기로 다운로드했습니다.");
       }
     } catch {
       if (isCurrentDigestAction(action)) {
-        setError(isTauri() ? "digest를 저장하지 못했습니다." : "digest 미리보기를 다운로드하지 못했습니다.");
+        setError(isTauri() ? "요약을 저장하지 못했습니다." : "요약 미리보기를 다운로드하지 못했습니다.");
       }
     } finally {
       finishDigestAction(action);
@@ -737,11 +746,11 @@ export default function App() {
       const result = await sendDigestToKnowledge(digestInputFromResponse(response));
       if (isCurrentDigestAction(action) && result.kind === "knowledge-draft/v1") {
         await refreshDraftHistory();
-        setNotice("Knowledge draft를 미리보기로 보냈습니다. 저장 전 내용을 확인하세요.");
+        setNotice("Knowledge 초안을 미리보기로 보냈습니다. 저장 전 내용을 확인하세요.");
       }
     } catch {
       if (isCurrentDigestAction(action)) {
-        setError("Knowledge draft를 보내지 못했습니다. 잠시 후 다시 시도하세요.");
+        setError("Knowledge 초안을 보내지 못했습니다. 잠시 후 다시 시도하세요.");
       }
     } finally {
       finishDigestAction(action);
@@ -759,10 +768,10 @@ export default function App() {
       );
       if (isCurrentDigestAction(action) && result.kind === "knowledge-draft/v1") {
         await refreshDraftHistory();
-        setNotice("새 Knowledge draft를 만들었습니다. 이전 handoff와 별도의 ID로 다시 확인하세요.");
+        setNotice("새 Knowledge 초안을 만들었습니다. 이전 handoff와 별도의 ID로 다시 확인하세요.");
       }
     } catch {
-      if (isCurrentDigestAction(action)) setError("Knowledge draft를 다시 만들지 못했습니다.");
+      if (isCurrentDigestAction(action)) setError("Knowledge 초안을 다시 만들지 못했습니다.");
     } finally {
       finishDigestAction(action);
     }
@@ -779,6 +788,7 @@ export default function App() {
     const dialog = exportDialogRef.current;
     const focusTask = window.setTimeout(() => exportFirstFieldRef.current?.focus(), 0);
     const onKeyDown = (event: KeyboardEvent) => {
+      if (isImeComposing(event)) return;
       if (event.key === "Escape") {
         if (!exportBusyRef.current) setExportDialogOpen(false);
         event.preventDefault();
@@ -1178,20 +1188,21 @@ export default function App() {
             const parsed = parseDateKey(e.currentTarget.value);
             if (parsed) selectDate(parsed);
           }}
-          {...dateContextMenu.triggerProps}
+          onContextMenu={dateContextMenu.triggerProps.onContextMenu}
+          onKeyDown={dateContextMenu.triggerProps.onKeyDown}
         />
         <button type="button" className="btn" aria-label="다음 날짜" onClick={() => shift(1)} disabled={contextActionBusy}>
           ▶
         </button>
         <button type="button" className="btn" onClick={() => selectDate(new Date())} disabled={contextActionBusy}>
-          Today
+          오늘
         </button>
         <span className="spacer" />
         {loading && (
           <>
-            <span className="loading" role="status" aria-live="polite">Loading...</span>
+            <span className="loading" role="status" aria-live="polite">불러오는 중…</span>
             <button type="button" className="btn" onClick={() => void cancelCurrentLoad()} aria-label="데이터 불러오기 취소">
-              Cancel
+              취소
             </button>
           </>
         )}
@@ -1204,14 +1215,14 @@ export default function App() {
             onClick={() => selectView(t)}
             disabled={contextActionBusy}
           >
-            {t[0].toUpperCase() + t.slice(1)}
+            {VIEW_LABELS[t]}
           </button>
         ))}
         <button type="button" className="btn refresh" onClick={() => void load()} disabled={contextActionBusy}>
-          Refresh
+          새로 고침
         </button>
         <button type="button" className="btn" onClick={openExportDialog} disabled={contextActionBusy || loading}>
-          {isTauri() ? "Export range" : "Export preview"}
+          {isTauri() ? "기간 내보내기" : "내보내기 미리보기"}
         </button>
       </header>
 
@@ -1221,34 +1232,34 @@ export default function App() {
       {view === "settings" ? (
         <div className="settings">
           <section className="panel">
-            <h2>Data sources</h2>
-            {sources.length === 0 && <div className="dim">등록된 source가 없습니다.</div>}
+            <h2>데이터 소스</h2>
+            {sources.length === 0 && <div className="dim">등록된 소스가 없습니다.</div>}
             {sources.map((s) => (
               <DataSourceRow
                 key={`${s.producer}:v${s.schemaVersion ?? "unknown"}:${s.available ? "ok" : "error"}`}
                 source={s}
               />
             ))}
-            <div className="dim">source는 devbox 공용 루트의 read-only snapshot을 통해 읽습니다 (다른 앱의 DB를 직접 읽지 않음).</div>
+            <div className="dim">소스는 devbox 공용 루트의 읽기 전용 snapshot을 통해 읽습니다(다른 앱의 DB를 직접 읽지 않음).</div>
           </section>
 
-          <section className="panel" aria-label="Knowledge draft handoff history">
+          <section className="panel" aria-label="Knowledge 초안 handoff 기록">
             <div className="panel-heading-row">
               <div>
-                <h2>Knowledge handoff history</h2>
-                <div className="dim">상태와 aggregate summary/source reference만 보존합니다. 활동 원문·경로·credential은 저장하지 않습니다.</div>
+                <h2>Knowledge handoff 기록</h2>
+                <div className="dim">상태와 집계 요약/소스 참조만 보존합니다. 활동 원문·경로·자격 증명은 저장하지 않습니다.</div>
               </div>
-              <button className="btn small" type="button" onClick={() => void refreshDraftHistory()} disabled={contextActionBusy}>Refresh</button>
+              <button className="btn small" type="button" onClick={() => void refreshDraftHistory()} disabled={contextActionBusy}>새로 고침</button>
             </div>
             {draftHistory.length === 0 ? (
-              <div className="dim">아직 보낸 draft가 없습니다.</div>
+              <div className="dim">아직 보낸 초안이 없습니다.</div>
             ) : draftHistory.map((entry) => (
               <div className="handoff-history-row" key={entry.handoffId}>
                 <div className="handoff-history-main">
                   <span className={`handoff-status handoff-status-${entry.status}`}>{entry.status}</span>
                   <strong>{entry.summary.startDate} ~ {entry.summary.endDate}</strong>
                   <span className="dim">{entry.summary.period} · {entry.summary.timezone}</span>
-                  <span className="dim">{entry.summary.sessionCount} sessions · {fmtDuration(entry.summary.pcUsageMs)} · {entry.summary.gitCommits} commits</span>
+                  <span className="dim">세션 {entry.summary.sessionCount}개 · {fmtDuration(entry.summary.pcUsageMs)} · 커밋 {entry.summary.gitCommits}개</span>
                 </div>
                 <div className="handoff-history-sources">
                   {entry.sources.map((source) => (
@@ -1263,14 +1274,14 @@ export default function App() {
                   onClick={() => void regenerateDraft(entry)}
                   disabled={!isTauri() || !digest || contextActionBusy || loading}
                 >
-                  Regenerate
+                  다시 생성
                 </button>
               </div>
             ))}
           </section>
 
           <section className="panel">
-            <h2>Git project paths</h2>
+            <h2>Git 프로젝트 경로</h2>
             {projects.map((p) => (
               <div key={p} className="git-row">
                 <div className="git-project-details">
@@ -1295,7 +1306,7 @@ export default function App() {
             ))}
             <div className="row">
               <input placeholder="C:\projects\devbox 또는 \\wsl$\Ubuntu\home\user\project" value={projectInput} onChange={(e) => setProjectInput(e.currentTarget.value)} onKeyDown={(e) => {
-                if (e.key === "Enter") void addProject();
+                if (!isImeComposing(e) && e.key === "Enter") void addProject();
               }} disabled={projectSaving} />
               <button className="btn" onClick={() => void addProject()} disabled={projectSaving || !projectInput.trim()}>
                 {projectSaving ? "저장 중…" : "추가"}
@@ -1306,7 +1317,7 @@ export default function App() {
           </section>
 
           <section className="panel">
-            <h2>Idle detection</h2>
+            <h2>유휴 감지</h2>
             <div className="row">
               <span className="dim">자리를 비운 지 (분):</span>
               <input
@@ -1326,7 +1337,7 @@ export default function App() {
           </section>
 
           <section className="panel">
-            <h2>Auto start</h2>
+            <h2>자동 시작</h2>
             {autoStart?.supported ? (
               <label className="row">
                 <input
@@ -1353,7 +1364,7 @@ export default function App() {
           </section>
 
           <section className="panel">
-            <h2>Privacy rules</h2>
+            <h2>개인정보 보호 규칙</h2>
             <div className="privacy-row">
               <span className="dim">제외할 프로세스 (쉼표 구분, 정확 일치):</span>
               <input
@@ -1414,11 +1425,11 @@ export default function App() {
       ) : view === "timeline" ? (
         <div className="timeline">
           <div className="timeline-head">
-            <span className={tracking ? "status-on" : "status-off"}>● {tracking ? "Tracking" : "Stopped"}</span>
+            <span className={tracking ? "status-on" : "status-off"}>● {tracking ? "추적 중" : "중지됨"}</span>
             <button className={`btn ${tracking ? "danger" : ""}`} onClick={() => void toggleTracking()}>
-              {tracking ? "Stop" : "Start"} tracking
+              {tracking ? "추적 중지" : "추적 시작"}
             </button>
-            <span className="dim">Total: {fmtDuration(sessions.reduce((acc, s) => acc + s.duration_ms, 0))}</span>
+            <span className="dim">합계: {fmtDuration(sessions.reduce((acc, s) => acc + s.duration_ms, 0))}</span>
           </div>
           {sessions.map((s) => (
             <div key={s.id} className="session">
@@ -1428,11 +1439,11 @@ export default function App() {
               <span className="dur dim">{fmtDuration(s.duration_ms)}</span>
             </div>
           ))}
-          {sessions.length === 0 && <div className="empty">No activity recorded this day</div>}
+          {sessions.length === 0 && <div className="empty">오늘 기록된 활동이 없습니다</div>}
 
           {stats.length > 0 && (
             <section className="panel">
-              <h2>App usage</h2>
+              <h2>앱 사용량</h2>
               {stats.map((a) => (
                 <div key={a.app} className="stat-row">
                   <span className="stat-app">{shortApp(a.app)}</span>
@@ -1440,7 +1451,7 @@ export default function App() {
                     <div className="stat-fill" style={{ width: `${Math.min(100, (a.duration_ms / maxStatDuration) * 100)}%` }} />
                   </div>
                   <span className="stat-dur">{fmtDuration(a.duration_ms)}</span>
-                  <span className="dim">{a.sessions} sessions</span>
+                  <span className="dim">세션 {a.sessions}개</span>
                 </div>
               ))}
             </section>
@@ -1456,11 +1467,11 @@ export default function App() {
                   <div className="card-value">{fmtDuration(summary.pc_usage_ms)}</div>
                 </div>
                 <div className="card">
-                  <div className="card-label">Git commits · 기간 전체</div>
+                  <div className="card-label">Git 커밋 · 기간 전체</div>
                   <div className="card-value">{summary.git.total_commits}</div>
                 </div>
                 <div className="card">
-                  <div className="card-label">Most active</div>
+                  <div className="card-label">가장 활발한 앱</div>
                   <div className="card-value">{topApp ? shortApp(topApp.app) : summary.app_totals[0] ? shortApp(summary.app_totals[0].app) : "-"}</div>
                 </div>
               </div>
@@ -1469,7 +1480,7 @@ export default function App() {
                 <section className="panel digest-panel" aria-busy={loading || contextActionBusy}>
                   <div className="digest-heading">
                     <div>
-                      <h2>{view === "day" ? "Daily local digest" : view === "month" ? "Monthly local digest" : "Weekly local digest"}</h2>
+                      <h2>{view === "day" ? "일간 로컬 요약" : view === "month" ? "월간 로컬 요약" : "주간 로컬 요약"}</h2>
                       <p className="dim">결정론적 규칙으로만 계산하며 네트워크·AI·외부 전송을 사용하지 않습니다.</p>
                     </div>
                     <div className="digest-actions">
@@ -1480,7 +1491,7 @@ export default function App() {
                           onClick={() => void cancelCurrentLoad()}
                           aria-label="digest 불러오기 취소"
                         >
-                          Cancel
+                          취소
                         </button>
                       )}
                       <button
@@ -1489,7 +1500,7 @@ export default function App() {
                         onClick={() => void copyDigest()}
                         disabled={!digest || contextActionBusy || loading}
                       >
-                        Copy digest
+                        요약 복사
                       </button>
                       <button
                         type="button"
@@ -1497,7 +1508,7 @@ export default function App() {
                         onClick={() => void downloadDigest()}
                         disabled={!digest || contextActionBusy || loading}
                       >
-                        {isTauri() ? "Save digest" : "Download preview"}
+                        {isTauri() ? "요약 저장" : "미리보기 다운로드"}
                       </button>
                       <button
                         type="button"
@@ -1506,7 +1517,7 @@ export default function App() {
                         disabled={!isTauri() || !digest || contextActionBusy || loading}
                         title={isTauri() ? undefined : "Knowledge handoff는 native 데스크톱에서만 사용할 수 있습니다"}
                       >
-                        Send to Knowledge
+                        Knowledge로 보내기
                       </button>
                     </div>
                   </div>
@@ -1514,22 +1525,22 @@ export default function App() {
                     <>
                       <div className="digest-toolbar">
                         <label htmlFor="life-log-digest-app-filter">
-                          Application filter
+                          애플리케이션 필터
                           <select
                             id="life-log-digest-app-filter"
                             value={digestAppFilter ?? ""}
                             onChange={(event) => selectDigestFilter(event.currentTarget.value || null)}
                             disabled={contextActionBusy || loading}
                           >
-                            <option value="">All applications</option>
+                            <option value="">모든 애플리케이션</option>
                             {digestAppOptions.map((app) => <option key={app} value={app}>{shortApp(app)}</option>)}
                           </select>
                         </label>
                         <span className="dim scope-note" role="status" aria-live="polite">
                           {digest.origin === "browser-preview"
-                            ? "Browser preview only · native local data unavailable · "
-                            : "Native local digest · "}
-                          {digest.document.range.startDate} ~ {digest.document.range.endDate} · {digest.document.range.timezone} · Git commits use the full requested period and ignore this app filter.
+                            ? "브라우저 미리보기만 사용 · 네이티브 로컬 데이터 사용 불가 · "
+                            : "네이티브 로컬 요약 · "}
+                          {digest.document.range.startDate} ~ {digest.document.range.endDate} · {digest.document.range.timezone} · Git 커밋은 요청한 전체 기간을 사용하며 이 앱 필터를 무시합니다.
                         </span>
                       </div>
                       {digestActivitySourceNotice(digest.document) && (
@@ -1547,22 +1558,22 @@ export default function App() {
                           <div className="card-value">{digest.document.summary.activeDays}/{digest.document.summary.totalDays}</div>
                         </div>
                         <div className="card">
-                          <div className="card-label">Sessions</div>
+                          <div className="card-label">세션</div>
                           <div className="card-value">{digest.document.summary.sessionCount}</div>
                         </div>
                         <div className="card">
-                          <div className="card-label">Git commits · 기간 전체</div>
+                          <div className="card-label">Git 커밋 · 기간 전체</div>
                           <div className="card-value">{digest.document.summary.gitCommits}</div>
                         </div>
                         <div className="card activity-card" data-testid="run-summary">
                           <div className="card-label">Run Manager · 기간 전체</div>
                           <div className="card-value">{formatRunSummary(digest.document.summary.run)}</div>
-                          <div className="dim">last run {formatNullableTimestamp(digest.document.summary.run?.lastRunAtMs ?? null)}</div>
+                          <div className="dim">마지막 실행 {formatNullableTimestamp(digest.document.summary.run?.lastRunAtMs ?? null)}</div>
                         </div>
                         <div className="card activity-card" data-testid="knowledge-summary">
-                          <div className="card-label">Knowledge notes · 기간 전체</div>
+                          <div className="card-label">Knowledge 노트 · 기간 전체</div>
                           <div className="card-value">{formatKnowledgeSummary(digest.document.summary.knowledge)}</div>
-                          <div className="dim">last modified {formatNullableTimestamp(digest.document.summary.knowledge?.lastModifiedAtMs ?? null)}</div>
+                          <div className="dim">마지막 수정 {formatNullableTimestamp(digest.document.summary.knowledge?.lastModifiedAtMs ?? null)}</div>
                         </div>
                       </div>
                       <p className="digest-headline">{digest.document.headline}</p>
@@ -1574,28 +1585,28 @@ export default function App() {
                           <div key={day.date} className={`digest-day ${day.hasActivity ? "" : "empty-day"}`}>
                             <span className="mono">{day.date}</span>
                             <span>{fmtDuration(day.pcUsageMs)}</span>
-                            <span className="dim">{day.sessionCount} sessions · {day.gitCommits} commits</span>
+                            <span className="dim">세션 {day.sessionCount}개 · 커밋 {day.gitCommits}개</span>
                             <span className="dim">{day.topApp ? shortApp(day.topApp) : "-"}</span>
                             <span className="dim daily-activity">{formatDailyActivity(day)}</span>
                           </div>
                         ))}
                       </div>
                       <details className="digest-details">
-                        <summary>Sources and aggregation rules</summary>
+                        <summary>소스와 집계 규칙</summary>
                         <div className="digest-source-list">
                           {digest.document.sources.map((source) => (
                             <div key={`${digestSourceId(source.id)}:${digestSourceScope(source.scope)}`} className="git-row">
                               <span className="mono">{digestSourceId(source.id)}</span>
                               <span className="source-details">
                                 <span className={source.available ? "source-ok" : "source-error"}>
-                                  {source.available ? "available" : source.errorCode === "browser_preview_only" ? "browser preview only" : "unavailable"}
+                                  {source.available ? "사용 가능" : source.errorCode === "browser_preview_only" ? "브라우저 미리보기만" : "사용 불가"}
                                   {` · ${digestSourceScope(source.scope)}`}
                                 </span>
                                 <span className={`freshness-badge freshness-${sourceFreshnessState(source.freshnessMs, source.available, source.errorCode)}`}>
                                   {sourceFreshnessLabel(sourceFreshnessState(source.freshnessMs, source.available, source.errorCode))}
                                 </span>
                                 <span className="source-explanation">{digestSourceExplanation(source)}</span>
-                                {source.errorCode && <span className="source-error">error code: {source.errorCode}</span>}
+                                {source.errorCode && <span className="source-error">오류 코드: {source.errorCode}</span>}
                                 {digestSourceDetails(source) && (
                                   <span className="dim">{digestSourceDetails(source)}</span>
                                 )}
@@ -1618,7 +1629,7 @@ export default function App() {
 
               {view !== "day" && range && (
                 <section className="panel">
-                  <h2>{range.label} — daily usage</h2>
+                  <h2>{range.label} — 일별 사용량</h2>
                   <div className="daily-chart">
                     {range.daily.map((p, index) => {
                       const pointDate = new Date(p.day_ms);
@@ -1644,14 +1655,14 @@ export default function App() {
                         </button>
                       );
                     })}
-                    {range.daily.length === 0 && <div className="empty">No activity in this period</div>}
+                    {range.daily.length === 0 && <div className="empty">이 기간에 활동이 없습니다</div>}
                   </div>
                 </section>
               )}
 
               {summary.app_totals.length > 0 && (
                 <section className="panel">
-                  <h2>App usage</h2>
+                  <h2>앱 사용량</h2>
                   {summary.app_totals.map((a) => (
                     <div key={a.app} className="stat-row">
                       <span className="stat-app">{shortApp(a.app)}</span>
@@ -1666,20 +1677,20 @@ export default function App() {
 
               {attribution && attribution.profileCount > 0 && (
                 <section className="panel">
-                  <h2>Project attribution · all applications</h2>
+                  <h2>프로젝트 귀속 · 모든 애플리케이션</h2>
                   {attribution.attributed.map((a) => (
                     <div key={a.projectId} className="git-row">
                       <span className="mono dim">{a.projectId}</span>
-                      <span className="git-count">{a.sessions} sessions · {fmtDuration(a.durationMs)}</span>
+                      <span className="git-count">세션 {a.sessions}개 · {fmtDuration(a.durationMs)}</span>
                     </div>
                   ))}
                   {attribution.unattributed.sessions > 0 && (
                     <div className="git-row">
                       <span className="dim">미귀속</span>
-                      <span className="git-count">{attribution.unattributed.sessions} sessions · {fmtDuration(attribution.unattributed.durationMs)}</span>
+                      <span className="git-count">세션 {attribution.unattributed.sessions}개 · {fmtDuration(attribution.unattributed.durationMs)}</span>
                     </div>
                   )}
-                  <div className="dim">귀속은 창 제목의 프로젝트 이름 매치 기준이며 application filter와 독립적입니다 (가장 긴 이름 우선, 중복 집계 없음).</div>
+                  <div className="dim">귀속은 창 제목의 프로젝트 이름 매치 기준이며 애플리케이션 필터와 독립적입니다(가장 긴 이름 우선, 중복 집계 없음).</div>
                 </section>
               )}
 
@@ -1689,7 +1700,7 @@ export default function App() {
                   {summary.git.projects.map((p) => (
                     <div key={p.path} className="git-row">
                       <span className="mono dim">{p.path}</span>
-                      <span className="git-count">{p.commits} commits</span>
+                      <span className="git-count">커밋 {p.commits}개</span>
                     </div>
                   ))}
                 </section>
@@ -1710,10 +1721,10 @@ export default function App() {
             aria-busy={contextActionBusy}
             tabIndex={-1}
           >
-            <h2 id="life-log-export-title">Life Log export</h2>
+            <h2 id="life-log-export-title">Life Log 내보내기</h2>
             <p id="life-log-export-description" className="dim">
               {isTauri()
-                ? "선택한 기간의 활동·Git·검증된 local source 요약을 파일로 저장합니다."
+                ? "선택한 기간의 활동·Git·검증된 로컬 소스 요약을 파일로 저장합니다."
                 : "브라우저 미리보기는 로컬 DB·Git·snapshot을 포함하지 않습니다."}
             </p>
             <div className="export-fields">
@@ -1737,7 +1748,7 @@ export default function App() {
             <div className="export-actions">
               <button type="button" className="btn" onClick={() => setExportDialogOpen(false)} disabled={contextActionBusy}>취소</button>
               <button type="button" className="btn active" onClick={() => void submitRangeExport()} disabled={contextActionBusy}>
-                {contextActionBusy ? "Exporting..." : isTauri() ? "저장" : "미리보기 다운로드"}
+                {contextActionBusy ? "내보내는 중…" : isTauri() ? "저장" : "미리보기 다운로드"}
               </button>
             </div>
           </section>

@@ -193,7 +193,7 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
           <div>
             <h2 id="openapi-import-title">OpenAPI 가져오기</h2>
             <p id="openapi-import-description">
-              OpenAPI 3.0/3.1 JSON 또는 YAML을 미리 확인한 뒤 request draft로 적용합니다.
+              OpenAPI 3.0/3.1 JSON 또는 YAML을 미리 확인한 뒤 요청 초안으로 적용합니다.
             </p>
           </div>
           <button className="btn" type="button" onClick={onClose} disabled={busy || applying} aria-label="OpenAPI 가져오기 닫기">
@@ -246,7 +246,7 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
             </div>
             {displayedPreview.servers.length > 0 && (
               <label className="openapi-server-row">
-                <span>Server</span>
+                <span>서버</span>
                 <select
                   value={serverIndex ?? displayedPreview.servers[0].index}
                   onChange={(event) => setServerIndex(Number(event.currentTarget.value))}
@@ -279,9 +279,9 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
                     <span className="openapi-operation-main">
                       <span className="openapi-operation-label">{operation.label}</span>
                       <span className="openapi-operation-meta">
-                        {operation.parameters.length > 0 ? `parameters ${operation.parameters.length}` : "parameters 없음"}
-                        {operation.requestBody ? ` · body ${operation.requestBody.mediaType}` : ""}
-                        {operation.security ? ` · auth ${operation.security.kind}` : ""}
+                        {operation.parameters.length > 0 ? `매개변수 ${operation.parameters.length}` : "매개변수 없음"}
+                        {operation.requestBody ? ` · 본문 ${operation.requestBody.mediaType}` : ""}
+                        {operation.security ? ` · 인증 ${operation.security.kind}` : ""}
                       </span>
                       {operation.parameters.length > 0 && (
                         <span className="openapi-operation-detail">
@@ -290,12 +290,12 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
                       )}
                       {operation.requestBody && (
                         <span className="openapi-operation-detail">
-                          body example {operation.requestBody.exampleIncluded ? "포함" : "없음"}{operation.requestBody.redacted ? " · 민감 property 비공개" : ""}
+                          본문 예시 {operation.requestBody.exampleIncluded ? "포함" : "없음"}{operation.requestBody.redacted ? " · 민감 property 비공개" : ""}
                         </span>
                       )}
                       {operation.security && (
                         <span className="openapi-operation-detail">
-                          auth {operation.security.location ?? "metadata"}:{operation.security.name} · 값 비공개
+                          인증 {operation.security.location ?? "metadata"}:{operation.security.name} · 값 비공개
                         </span>
                       )}
                       {issueText(operation) && <span className="openapi-operation-issue">{issueText(operation)}</span>}
@@ -309,13 +309,13 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
         )}
 
         <div className="openapi-dialog-actions">
-          <span className="dim">체크한 operation은 새 항목으로만 추가되며 기존 Collection을 덮어쓰지 않습니다.</span>
+          <span className="dim">체크한 operation은 새 항목으로만 추가되며 기존 컬렉션을 덮어쓰지 않습니다.</span>
           <div className="openapi-action-buttons">
             <button className="btn" type="button" onClick={applyCurrent} disabled={!selectedApplyable || busy || applying}>
-              현재 draft에 적용
+              현재 초안에 적용
             </button>
             <button className="btn send" type="button" onClick={() => void addCollection()} disabled={selectedOperations.length === 0 || busy || applying}>
-              {applying ? "저장 중…" : `새 Collection에 추가 (${selectedOperations.length})`}
+              {applying ? "저장 중…" : `새 컬렉션에 추가 (${selectedOperations.length})`}
             </button>
           </div>
         </div>

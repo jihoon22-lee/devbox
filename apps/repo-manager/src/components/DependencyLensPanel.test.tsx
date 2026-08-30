@@ -239,7 +239,7 @@ describe("DependencyLensPanel", () => {
     expect(screen.getByText("현재 형식 미지원")).toBeTruthy();
     expect(screen.getAllByText("serde").length).toBeGreaterThan(0);
     expect(screen.getByText("1.0.0 · 2.0.0")).toBeTruthy();
-    const inventory = screen.getByLabelText("Dependency package inventory");
+    const inventory = screen.getByLabelText("의존성 패키지 목록");
     const directVersion = within(inventory).getAllByText("1.0.0", { selector: "span.mono" })[0];
     fireEvent.click(directVersion.closest("summary")!);
     expect(screen.getByText("cargo:serde-core@1.0.0")).toBeTruthy();
@@ -252,7 +252,7 @@ describe("DependencyLensPanel", () => {
     fireEvent.change(screen.getByPlaceholderText("이름·버전·ecosystem 필터"), {
       target: { value: "serde-core" },
     });
-    const inventory = screen.getByLabelText("Dependency package inventory");
+    const inventory = screen.getByLabelText("의존성 패키지 목록");
     expect(within(inventory).getByText("serde-core", { selector: "strong" })).toBeTruthy();
     expect(within(inventory).queryAllByText("serde", { selector: "strong" })).toHaveLength(0);
     expect(dependencyInventoryMock).toHaveBeenCalledTimes(1);
@@ -286,7 +286,7 @@ describe("DependencyLensPanel", () => {
     expect(within(disclosure).getByText("serde")).toBeTruthy();
     expect(within(disclosure).getByText("1.0.0")).toBeTruthy();
     expect(disclosure.textContent).toContain("캐시 2");
-    expect(disclosure.textContent).toContain("stale fallback 1");
+    expect(disclosure.textContent).toContain("오래된 캐시 대체 1");
     expect(disclosure.textContent).toContain("상한 생략 3");
     expect(disclosure.textContent).toContain("서비스별 전송 좌표 합계 1개");
     expect(disclosure.textContent).toContain("환경·사용자 식별 정보는 보내지 않습니다");
@@ -312,7 +312,7 @@ describe("DependencyLensPanel", () => {
     expect(summaries?.textContent).toContain("deps.dev 대상 2 · 전송 1 · 캐시 1 · stale 1 · 실패 0 · 생략 0");
     expect(screen.getByText("이번 결과의 로컬 캐시를 저장하지 못했습니다.")).toBeTruthy();
 
-    const inventory = screen.getByLabelText("Dependency package inventory");
+    const inventory = screen.getByLabelText("의존성 패키지 목록");
     const serdeDetails = Array.from(inventory.querySelectorAll("details")).find((details) =>
       details.querySelector("summary")?.textContent?.includes("serde")
       && details.querySelector("summary")?.textContent?.includes("1.0.0")
@@ -322,7 +322,7 @@ describe("DependencyLensPanel", () => {
     fireEvent.click(serdeDetails!.querySelector("summary")!);
     const serdeMetadata = within(serdeDetails!).getByLabelText("원격 보강 정보");
     expect(serdeMetadata.querySelectorAll(".dependency-remote-state.state-stale")).toHaveLength(2);
-    expect(serdeMetadata.textContent).toContain("Advisory: GHSA-serde-example");
+    expect(serdeMetadata.textContent).toContain("권고: GHSA-serde-example");
     expect(serdeMetadata.textContent).toContain("라이선스(참고용): MIT · Apache-2.0");
     expect(within(serdeMetadata).getByText(/서비스 기본 버전:/)).toBeTruthy();
     expect(within(serdeMetadata).getByText("deps.dev에서 deprecated로 표시했습니다.")).toBeTruthy();
@@ -342,7 +342,7 @@ describe("DependencyLensPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "전송 내용 검토" }));
     await screen.findByLabelText("원격 전송 검토");
 
-    fireEvent.click(screen.getByLabelText("OSV vulnerability"));
+    fireEvent.click(screen.getByLabelText("OSV 취약점"));
     expect(screen.queryByLabelText("원격 전송 검토")).toBeNull();
     expect(screen.queryByRole("button", { name: "검토한 정보 보내기" })).toBeNull();
     expect(dependencyEnrichmentExecuteMock).not.toHaveBeenCalled();
@@ -413,7 +413,7 @@ describe("DependencyLensPanel", () => {
     expect(alert.textContent).toBe(DEPENDENCY_ENRICHMENT_ERROR);
     expect(alert.textContent).not.toContain(secret);
     expect(screen.getByText("Cargo.lock")).toBeTruthy();
-    expect(within(screen.getByLabelText("Dependency package inventory")).getAllByText("serde", { selector: "strong" }).length)
+    expect(within(screen.getByLabelText("의존성 패키지 목록")).getAllByText("serde", { selector: "strong" }).length)
       .toBeGreaterThan(0);
   });
 
@@ -431,7 +431,7 @@ describe("DependencyLensPanel", () => {
     expect(alert.textContent).toBe(DEPENDENCY_ENRICHMENT_ERROR);
     expect(alert.textContent).not.toContain(secret);
     expect(screen.getByText("Cargo.lock")).toBeTruthy();
-    expect(within(screen.getByLabelText("Dependency package inventory")).getAllByText("serde", { selector: "strong" }).length)
+    expect(within(screen.getByLabelText("의존성 패키지 목록")).getAllByText("serde", { selector: "strong" }).length)
       .toBeGreaterThan(0);
   });
 

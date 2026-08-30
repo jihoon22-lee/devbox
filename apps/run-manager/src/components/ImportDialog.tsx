@@ -57,13 +57,13 @@ function errorMessage(cause: unknown): string {
     return "원본이 미리보기 이후 변경되었습니다. 다시 미리보기 해주세요.";
   }
   if (value === "project-import-timeout") {
-    return "프로젝트 import가 제한 시간 안에 끝나지 않았습니다. 파일을 확인한 뒤 다시 시도하세요.";
+    return "프로젝트 가져오기가 제한 시간 안에 끝나지 않았습니다. 파일을 확인한 뒤 다시 시도하세요.";
   }
   if (value === "project-import-cancelled") {
-    return "프로젝트 import를 취소했습니다.";
+    return "프로젝트 가져오기를 취소했습니다.";
   }
   if (value.startsWith("project-import-")) {
-    return "프로젝트 import를 읽지 못했습니다. 로컬 디렉터리와 파일 크기를 확인하세요.";
+    return "프로젝트 가져오기를 읽지 못했습니다. 로컬 디렉터리와 파일 크기를 확인하세요.";
   }
   if (value === "workspace-task-import-timeout") {
     return "VS Code task 미리보기가 제한 시간 안에 끝나지 않았습니다. 파일을 확인한 뒤 다시 시도하세요.";
@@ -74,7 +74,7 @@ function errorMessage(cause: unknown): string {
   if (value.startsWith("workspace-task-")) {
     return friendlyErrorMessage(value);
   }
-  return value || "가져오기를 완료하지 못했습니다.";
+  return "가져오기를 완료하지 못했습니다.";
 }
 
 function isSelectableWorkspaceItem(item: WorkspaceTaskItem): boolean {
@@ -223,12 +223,12 @@ function WorkspaceTaskPreview({
   onCancel,
 }: WorkspaceTaskPreviewProps) {
   return (
-    <section className="workspace-task-preview" aria-label="VS Code workspace task import 계획">
+    <section className="workspace-task-preview" aria-label="VS Code workspace task 가져오기 계획">
       <div className="import-source-summary">
         <strong>읽은 workspace task source</strong>
         <code>{workspaceSourcePath(plan)}</code>
         <span>대상: {plan.targetKind === "wsl" ? `WSL · ${plan.targetDistro ?? "배포판 없음"}` : "Windows"} · 적용 플랫폼: {plan.selectedPlatform}</span>
-        <p>revision {plan.revision.slice(0, 12)} · preview는 읽기 전용·오프라인이며 원본 변경 시 적용이 거부됩니다.</p>
+        <p>revision {plan.revision.slice(0, 12)} · 미리보기는 읽기 전용·오프라인이며 원본 변경 시 적용이 거부됩니다.</p>
       </div>
       <div className="workspace-task-notice" role="note">
         ready process·shell task를 가져올 수 있습니다. 선택한 task의 dependency는 자동으로 함께 선택되며, 선행 task를 해제하면 그에 의존하는 선택 항목도 함께 해제됩니다. shell task는 가져온 뒤에도 source 승인과 별도의 셸 실행 승인이 필요합니다. 지원하지 않는 변수·잘못된 cwd는 차단되며, 환경변수 값은 읽거나 표시하지 않고 키 이름만 보여 줍니다.
@@ -281,7 +281,7 @@ function WorkspaceTaskPreview({
       </div>
       {result ? (
         <div className="workspace-task-result" role="status">
-          <strong>workspace task import 완료</strong>
+          <strong>workspace task 가져오기 완료</strong>
           <span>생성 {result.created} · 갱신 {result.updated} · 사용 불가 전환 {result.madeUnavailable} · 충돌 건너뜀 {result.skippedConflicts}</span>
           <p>가져온 작업은 비활성·미신뢰 상태입니다. 이 source revision을 별도로 승인한 뒤 Jobs 화면에서 활성화해야 하며, 승인은 실행 자체를 시작하지 않습니다. shell task는 source 승인 뒤에도 셸 실행을 별도로 승인해야 합니다.</p>
         </div>
@@ -292,7 +292,7 @@ function WorkspaceTaskPreview({
         </button>
         <button type="button" className="btn" disabled={busy} onClick={onDiscard}>다시 선택</button>
         {busy ? (
-          <button type="button" className="btn" disabled={cancelRequested} onClick={onCancel}>{cancelRequested ? "취소 중…" : "import 취소"}</button>
+          <button type="button" className="btn" disabled={cancelRequested} onClick={onCancel}>{cancelRequested ? "취소 중…" : "가져오기 취소"}</button>
         ) : null}
       </div>
     </section>
@@ -626,7 +626,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
                 <>
                 <textarea
                   className="import-textarea"
-                  placeholder='export한 JSON을 붙여넣으세요 ({"schemaVersion":1,"jobs":[...],"services":[...]})'
+                  placeholder='내보낸 JSON을 붙여넣으세요 ({"schemaVersion":1,"jobs":[...],"services":[...]})'
                   value={json}
                   onChange={(event) => setJson(event.currentTarget.value)}
                   spellCheck={false}
@@ -653,7 +653,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
                   />
                   <small className="field-help">package.json과 Cargo.toml만 읽습니다. npm/Cargo 실행·네트워크·.env 읽기는 없습니다.</small>
                 </label>
-                <div className="import-notice">가져온 task는 비활성 draft로 저장되며, cwd와 환경 키를 확인하기 전에는 실행되지 않습니다.</div>
+                <div className="import-notice">가져온 task는 비활성 초안으로 저장되며, cwd와 환경 키를 확인하기 전에는 실행되지 않습니다.</div>
                 <div className="import-actions">
                   <button type="button" className="button-primary" disabled={busy || !projectPath.trim()} onClick={() => void previewProject()}>로컬 파일 미리보기</button>
                   <button type="button" className="button-secondary" disabled={cancelRequested || (busy && !canCancel)} onClick={() => {
@@ -696,7 +696,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
                         checked={workspaceTargetKind === "wsl"}
                         onChange={() => setWorkspaceTargetKind("wsl")}
                       />
-                      <span><strong>WSL</strong><small>linux override + 배포판</small></span>
+                      <span><strong>WSL</strong><small>Linux override + 배포판</small></span>
                     </label>
                   </div>
                   {workspaceTargetKind === "wsl" ? (
@@ -711,7 +711,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
                     </label>
                   ) : null}
                 </fieldset>
-                <div className="import-notice">환경변수 값은 읽거나 가져오지 않습니다. preview에는 선언된 키 이름만 표시되며, 가져온 작업은 비활성·미신뢰 초안으로 저장됩니다.</div>
+                <div className="import-notice">환경변수 값은 읽거나 가져오지 않습니다. 미리보기에는 선언된 키 이름만 표시되며, 가져온 작업은 비활성·미신뢰 초안으로 저장됩니다.</div>
                 <div className="import-actions">
                   <button type="button" className="button-primary" disabled={busy || !workspacePath.trim() || (workspaceTargetKind === "wsl" && !workspaceTargetDistro.trim())} onClick={() => void previewWorkspace()}>tasks.json 미리보기</button>
                   <button type="button" className="button-secondary" disabled={cancelRequested || (busy && !canCancel)} onClick={() => {
@@ -729,8 +729,8 @@ export default function ImportDialog({ onDone, onClose }: Props) {
               <div className="import-source-summary">
                 <strong>읽은 프로젝트</strong>
                 <code>{preview.plan.sourceRoot}</code>
-                <span>{preview.plan.files.map((file) => file.path + " (" + file.bytes + " bytes)").join(" · ")}</span>
-                <p>preview revision {preview.plan.revision} · 원본 변경 시 적용이 거부됩니다.</p>
+                <span>{preview.plan.files.map((file) => file.path + " (" + file.bytes + "바이트)").join(" · ")}</span>
+                <p>미리보기 revision {preview.plan.revision} · 원본 변경 시 적용이 거부됩니다.</p>
               </div>
             ) : null}
             {preview.kind === "workspace" ? (
@@ -751,7 +751,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
               <>
                 <ChangeSetPreview
                   items={items}
-                  title="import 계획"
+                  title="가져오기 계획"
                   approveLabel="선택 항목 저장"
                   disabled={busy}
                   onApprove={(paths) => void apply(paths)}
@@ -761,7 +761,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
                 {busy && preview.kind === "project" ? (
                   <div className="import-actions">
                     <button type="button" className="button-secondary" disabled={cancelRequested} onClick={() => void cancelPending()}>
-                      {cancelRequested ? "취소 중…" : "import 취소"}
+                      {cancelRequested ? "취소 중…" : "가져오기 취소"}
                     </button>
                   </div>
                 ) : null}

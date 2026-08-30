@@ -42,7 +42,7 @@ catalog revision 15의 static `transform-text` action은 사용자가 확인한 
 Developer Toolbox로 `toolbox-text/v1` one-time masked handoff로 전달한다. selection은 launch
 직전에 다시 검증하며, 이 W07 경로는 clipboard fallback을 사용하지 않는다. credential 형태의
 줄은 공용 경계에서 먼저 마스킹하고 argv·설정·이력에 원문을 남기지 않는다. 별도
-`Clipboard 미리보기`는 명시적으로 고른 때에만 현재 selection, 그 다음 clipboard를 읽어 modal에
+`클립보드 미리보기`는 명시적으로 고른 때에만 현재 selection, 그 다음 clipboard를 읽어 modal에
 표시하며 handoff나 저장으로 연결하지 않는다.
 
 범용 file/web/Windows settings 검색, arbitrary shell, clipboard history, PowerToys plugin host는

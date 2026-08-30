@@ -94,7 +94,7 @@ describe("MarkdownTableTool", () => {
     writeTextMock.mockRejectedValueOnce(new Error("C:\\secret\\token"));
     fireEvent.click(screen.getByRole("button", { name: "복사" }));
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "변환 결과를 clipboard에 복사하지 못했습니다.",
+      "변환 결과를 클립보드에 복사하지 못했습니다.",
     );
 
     createObjectUrlMock.mockImplementationOnce(() => {
@@ -109,7 +109,7 @@ describe("MarkdownTableTool", () => {
 
     writeTextMock.mockRejectedValueOnce(new Error("credential=secret"));
     fireEvent.contextMenu(output, { clientX: 14, clientY: 20 });
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "복사" }));
     await waitFor(() => {
       expect(screen.getAllByRole("alert").some((entry) =>
         entry.textContent === "변환 결과 작업을 완료하지 못했습니다.",
@@ -118,7 +118,7 @@ describe("MarkdownTableTool", () => {
 
     readClipboardTextMock.mockRejectedValueOnce(new Error("C:\\private\\credential"));
     fireEvent.contextMenu(input(), { clientX: 14, clientY: 20 });
-    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
     await waitFor(() => {
       expect(screen.getAllByRole("alert").some((entry) =>
         entry.textContent === "표 입력을 붙여넣지 못했습니다.",
@@ -152,7 +152,7 @@ describe("MarkdownTableTool", () => {
     render(<MarkdownTableTool />);
     const tableInput = input();
     fireEvent.contextMenu(tableInput, { clientX: 14, clientY: 20 });
-    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
 
     await waitFor(() => expect(tableInput.value.length).toBe(1_000_000));
     expect(new TextEncoder().encode(tableInput.value).byteLength).toBeLessThanOrEqual(

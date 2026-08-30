@@ -3,6 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
+import { isKeyboardActivation } from "@devbox/a11y";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
@@ -322,6 +323,7 @@ export default function App() {
   const jobContextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareJobContext(target),
   });
+  const jobContextTrigger = jobContextMenu.triggerProps;
 
   const prepareServiceContext = useCallback((target: HTMLElement) => {
     const id = target.dataset.serviceId;
@@ -333,6 +335,7 @@ export default function App() {
   const serviceContextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareServiceContext(target),
   });
+  const serviceContextTrigger = serviceContextMenu.triggerProps;
 
   const refreshActiveRuns = useCallback(async () => {
     const existing = activeRefresh.current.promise;
@@ -355,7 +358,7 @@ export default function App() {
           if (generation === activeRefresh.current.generation) {
             setActiveRuns({});
             setActiveSnapshotFresh(false);
-            setActiveSnapshotError(cause instanceof Error ? cause.message : String(cause));
+            setActiveSnapshotError(friendlyErrorMessage(cause));
           }
         }
       } while (activeRefresh.current.pending);
@@ -1429,7 +1432,7 @@ export default function App() {
       <section className="content">
         <header>
           <div>
-            <span className="eyebrow">LOCAL SCHEDULER</span>
+            <span className="eyebrow">로컬 스케줄러</span>
             <h2>
               {screen === "editor"
                 ? editingJob
@@ -1499,7 +1502,7 @@ export default function App() {
               </section>
             ) : null}
             {!loading && services.length > 0 ? (
-              <div className="job-list service-list" role="list" aria-label="서비스 목록">
+              <div className="job-list service-list">
                 {services.map((service) => {
                   const instance = serviceInstances[service.id];
                   const state = instance?.state ?? null;
@@ -1509,16 +1512,25 @@ export default function App() {
                   const ready = state === "running" || state === "starting";
                   const obs = obsMap[service.id];
                   return (
-                  <article
-                    className={`job-card service-card ${selectedServiceId === service.id ? "selected" : ""}`}
-                    key={service.id}
-                    role="listitem"
-                    tabIndex={0}
-                    aria-current={selectedServiceId === service.id ? "true" : undefined}
-                    data-service-id={service.id}
-                    onClick={() => setSelectedServiceId(service.id)}
-                    {...serviceContextMenu.triggerProps}
-                  >
+                    <article
+                      className={`job-card service-card ${selectedServiceId === service.id ? "selected" : ""}`}
+                      key={service.id}
+                      tabIndex={0}
+                      aria-current={selectedServiceId === service.id ? "true" : undefined}
+                      data-service-id={service.id}
+                      onClick={() => setSelectedServiceId(service.id)}
+                      onContextMenu={serviceContextTrigger.onContextMenu}
+                      onKeyDown={(event) => {
+                        serviceContextTrigger.onKeyDown?.(event);
+                        if (
+                          event.defaultPrevented
+                          || event.target !== event.currentTarget
+                          || !isKeyboardActivation(event)
+                        ) return;
+                        event.preventDefault();
+                        setSelectedServiceId(service.id);
+                      }}
+                    >
                     <div className="job-card-main">
                       <div className="job-title-row">
                         <h3>{service.name}</h3>
@@ -1625,7 +1637,7 @@ export default function App() {
               </section>
             ) : null}
             {!loading && jobs.length > 0 ? (
-              <div className="job-list" role="list" aria-label="작업 목록">
+              <div className="job-list">
                 {jobs.map((job) => {
                   const workspaceTask = workspaceTaskByJobId.get(job.id);
                   const workspaceOperation = workspaceOperationByRootJobId.get(job.id);
@@ -1645,16 +1657,25 @@ export default function App() {
                       && task?.hasProblemMatcher === true;
                   }) ?? [];
                   return (
-                  <article
-                    className={`job-card ${selectedJobId === job.id ? "selected" : ""}`}
-                    key={job.id}
-                    role="listitem"
-                    tabIndex={0}
-                    aria-current={selectedJobId === job.id ? "true" : undefined}
-                    data-job-id={job.id}
-                    onClick={() => setSelectedJobId(job.id)}
-                    {...jobContextMenu.triggerProps}
-                  >
+                    <article
+                      className={`job-card ${selectedJobId === job.id ? "selected" : ""}`}
+                      key={job.id}
+                      tabIndex={0}
+                      aria-current={selectedJobId === job.id ? "true" : undefined}
+                      data-job-id={job.id}
+                      onClick={() => setSelectedJobId(job.id)}
+                      onContextMenu={jobContextTrigger.onContextMenu}
+                      onKeyDown={(event) => {
+                        jobContextTrigger.onKeyDown?.(event);
+                        if (
+                          event.defaultPrevented
+                          || event.target !== event.currentTarget
+                          || !isKeyboardActivation(event)
+                        ) return;
+                        event.preventDefault();
+                        setSelectedJobId(job.id);
+                      }}
+                    >
                     <div className="job-card-main">
                       <div className="job-title-row">
                         <h3>{job.name}</h3>
@@ -1702,7 +1723,7 @@ export default function App() {
                               오케스트레이션 {workspaceOperationStatusLabel(workspaceOperation.status)} · {workspaceOperationProgressLabel(workspaceOperation)}
                             </span>
                             {operationChildProgress ? (
-                              <span title={operationChildProgress}>child 진행: {operationChildProgress}</span>
+                          <span title={operationChildProgress}>하위 작업 진행: {operationChildProgress}</span>
                             ) : null}
                             {workspaceOperation.failureCode ? (
                               <span className="workspace-task-unavailable">{friendlyErrorMessage(workspaceOperation.failureCode)}</span>
@@ -1711,8 +1732,8 @@ export default function App() {
                         ) : null}
                       </div>
                       {diagnosticRuns.length > 0 ? (
-                        <div className="workspace-diagnostics" aria-label={`${job.name} diagnostics`}>
-                          <strong>problem matcher diagnostics</strong>
+                        <div className="workspace-diagnostics" aria-label={`${job.name} 진단`}>
+                          <strong>problem matcher 진단</strong>
                           {diagnosticRuns.map((run) => {
                             const runId = run.runId!;
                             const state = workspaceDiagnostics[runId];
@@ -1720,7 +1741,7 @@ export default function App() {
                             return (
                               <div className="workspace-diagnostic-run" key={runId}>
                                 <span className="workspace-diagnostic-run-label">{childJob?.name ?? run.jobId}</span>
-                                {state?.status === "loading" || !state ? <span>diagnostics 불러오는 중…</span> : null}
+                                {state?.status === "loading" || !state ? <span>진단을 불러오는 중…</span> : null}
                                 {state?.status === "error" ? (
                                   <>
                                     <span className="workspace-task-unavailable">{state.error}</span>
@@ -1754,7 +1775,7 @@ export default function App() {
                                         })}
                                       </div>
                                     ) : <span>진단 없음</span>}
-                                    {state.diagnostics?.truncated ? <span className="workspace-diagnostics-truncated">일부 diagnostics만 표시됨</span> : null}
+                                    {state.diagnostics?.truncated ? <span className="workspace-diagnostics-truncated">일부 진단만 표시됨</span> : null}
                                   </>
                                 ) : null}
                               </div>
@@ -1817,7 +1838,7 @@ export default function App() {
           onDone={(_created, result: WorkspaceTaskApplyResult | undefined) => {
             if (result) {
               setWorkspaceNotice(
-                `workspace task import 완료: 생성 ${result.created} · 갱신 ${result.updated} · 사용 불가 전환 ${result.madeUnavailable} · 충돌 건너뜀 ${result.skippedConflicts}. source revision 승인 후에만 활성화할 수 있습니다.`,
+                `workspace task 가져오기 완료: 생성 ${result.created} · 갱신 ${result.updated} · 사용 불가 전환 ${result.madeUnavailable} · 충돌 건너뜀 ${result.skippedConflicts}. source revision 승인 후에만 활성화할 수 있습니다.`,
               );
             }
             closeImport();

@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 function input(): HTMLTextAreaElement {
-  return screen.getByRole("textbox", { name: "Smart workflow input" }) as HTMLTextAreaElement;
+  return screen.getByRole("textbox", { name: "스마트 워크플로 입력" }) as HTMLTextAreaElement;
 }
 
 describe("SmartWorkflowPanel", () => {
@@ -28,12 +28,12 @@ describe("SmartWorkflowPanel", () => {
     render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
     fireEvent.change(input(), { target: { value: '{"name":"Ada"}' } });
 
-    expect(screen.getByText("JSON Formatter")).toBeTruthy();
+    expect(screen.getByText("JSON 포매터")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "추천 단계로 사용" }));
     expect(screen.getByText("현재 출력 형식: JSON")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "파이프라인 실행" }));
 
-    expect(screen.getByLabelText("Pipeline output").textContent).toContain('"name": "Ada"');
+    expect(screen.getByLabelText("파이프라인 결과").textContent).toContain('"name": "Ada"');
     expect(screen.getByText(/입력·출력은 저장하지 않으며/)).toBeTruthy();
   });
 
@@ -42,8 +42,8 @@ describe("SmartWorkflowPanel", () => {
     fireEvent.change(input(), { target: { value: "Zm9v" } });
 
     expect(screen.getByText("여러 형식이 가능하므로 추천을 자동 선택하지 않았습니다.")).toBeTruthy();
-    expect(screen.getByText("Base64 Decoder")).toBeTruthy();
-    expect(screen.getByText("Base64URL Decoder")).toBeTruthy();
+    expect(screen.getByText("Base64 디코더")).toBeTruthy();
+    expect(screen.getByText("Base64URL 디코더")).toBeTruthy();
     expect((screen.getByRole("button", { name: "파이프라인 실행" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -66,7 +66,7 @@ describe("SmartWorkflowPanel", () => {
 
     view.unmount();
     render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
-    await waitFor(() => expect(screen.getByText(/pipeline-1: JSON Formatter/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/pipeline-1: JSON 포매터/)).toBeTruthy());
     expect(screen.getByRole("button", { name: "현재 도구 즐겨찾기 해제" })).toBeTruthy();
   });
 
@@ -83,7 +83,7 @@ describe("SmartWorkflowPanel", () => {
     localStorage.setItem(WORKFLOW_STORAGE_KEY, corrupt);
     render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
 
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("metadata"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("메타데이터"));
     expect((screen.getByRole("button", { name: "현재 도구 즐겨찾기" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(input(), { target: { value: '{"safe":true}' } });
     fireEvent.click(screen.getByRole("button", { name: "추천 단계로 사용" }));

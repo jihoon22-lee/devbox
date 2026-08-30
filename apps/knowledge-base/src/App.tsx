@@ -4,6 +4,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
+import { focusFirst, isImeComposing, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import ChangeSetPreview from "@devbox/diff-view";
 import {
   applyRename,
@@ -115,12 +116,12 @@ function remapPath(path: string | null, from: string, to: string): string | null
 
 function watcherStatusLabel(status: KnowledgeWatcherStatus): string {
   const source = status.sourceKind === "wsl"
-    ? "WSL vault · 5초 폴링"
-    : "Windows vault · 실시간 감시";
+    ? "WSL 저장소 · 5초 폴링"
+    : "Windows 저장소 · 실시간 감시";
   const error = status.error === "vault_unconfigured"
-    ? "vault 미설정"
+    ? "저장소 미설정"
     : status.error === "vault_unavailable"
-      ? "vault 연결 끊김 · 마지막 색인 유지"
+      ? "저장소 연결 끊김 · 마지막 색인 유지"
       : status.error === "vault_scan_limit"
         ? "안전 색인 한도 초과 · 마지막 색인 유지"
         : status.error === "vault_scan_incomplete"
@@ -161,6 +162,7 @@ export default function App() {
   const [draftBusy, setDraftBusy] = useState(false);
   const [watcherStatus, setWatcherStatus] = useState<KnowledgeWatcherStatus | null>(null);
   const renameBusyRef = useRef(false);
+  const renameDialogRef = useRef<HTMLElement | null>(null);
   const draftBusyRef = useRef(false);
   const draftPreviewRef = useRef<KnowledgeDraftPreview | null>(null);
   const draftDialogRef = useRef<HTMLElement | null>(null);
@@ -462,15 +464,15 @@ export default function App() {
       if (!draftMountedRef.current) return;
       draftPreviewRef.current = null;
       setDraftPreview(null);
-      setNotice("Knowledge draft 미리보기를 취소했습니다. 다시 열 수 있습니다.");
+      setNotice("Knowledge 초안 미리보기를 취소했습니다. 다시 열 수 있습니다.");
     } catch (cause) {
       if (!draftMountedRef.current) return;
       if (draftNeedsRegeneration(cause)) {
         draftPreviewRef.current = null;
         setDraftPreview(null);
-        setError("Knowledge draft가 만료되었거나 저장 위치가 변경되었습니다. 보낸 앱에서 새로 생성하세요.");
+        setError("Knowledge 초안이 만료되었거나 저장 위치가 변경되었습니다. 보낸 앱에서 새로 생성하세요.");
       } else {
-        setError("Knowledge draft를 취소하지 못했습니다. 잠시 후 다시 시도하세요.");
+        setError("Knowledge 초안을 취소하지 못했습니다. 잠시 후 다시 시도하세요.");
       }
     } finally {
       draftBusyRef.current = false;
@@ -508,16 +510,16 @@ export default function App() {
       await loadMeta();
       if (!draftMountedRef.current) return;
       setNotice(result.handoffDeleted && result.handoffStatusRecorded !== false
-        ? "Knowledge draft를 저장했습니다. handoff는 소비되어 삭제되었습니다."
-        : "Knowledge draft는 저장했지만 소비 상태 기록을 완료하지 못했습니다. 보낸 앱의 상태가 sent 또는 expired로 남을 수 있습니다.");
+        ? "Knowledge 초안을 저장했습니다. handoff는 소비되어 삭제되었습니다."
+        : "Knowledge 초안은 저장했지만 소비 상태 기록을 완료하지 못했습니다. 보낸 앱의 상태가 sent 또는 expired로 남을 수 있습니다.");
     } catch (cause) {
       if (!draftMountedRef.current) return;
       if (draftNeedsRegeneration(cause)) {
         draftPreviewRef.current = null;
         setDraftPreview(null);
-        setError("Knowledge 저장 위치가 변경되었거나 draft가 만료되었습니다. 보낸 앱에서 새로 생성하세요.");
+        setError("Knowledge 저장 위치가 변경되었거나 초안이 만료되었습니다. 보낸 앱에서 새로 생성하세요.");
       } else {
-        setError("Knowledge draft를 저장하지 못했습니다. 미리보기는 유지됩니다.");
+        setError("Knowledge 초안을 저장하지 못했습니다. 미리보기는 유지됩니다.");
       }
     } finally {
       draftBusyRef.current = false;
@@ -550,7 +552,7 @@ export default function App() {
       setDraftPreview(preview);
     } catch {
       if (!draftMountedRef.current || draftRequestRef.current !== request) return;
-      setError("Knowledge draft를 미리볼 수 없습니다. 보낸 앱에서 새로 생성하세요.");
+      setError("Knowledge 초안을 미리볼 수 없습니다. 보낸 앱에서 새로 생성하세요.");
     } finally {
       draftBusyRef.current = false;
       if (draftMountedRef.current && draftRequestRef.current === request) setDraftBusy(false);
@@ -580,6 +582,7 @@ export default function App() {
         ?.focus();
     }, 0);
     const onKeyDown = (event: KeyboardEvent) => {
+      if (isImeComposing(event)) return;
       if (event.key === "Escape") {
         if (!draftBusyRef.current) void cancelDraftPreview();
         event.preventDefault();
@@ -631,9 +634,9 @@ export default function App() {
           if (draftNeedsRegeneration(cause)) {
             draftPreviewRef.current = null;
             setDraftPreview(null);
-            setError("Knowledge draft가 만료되었거나 더 이상 유효하지 않습니다. 보낸 앱에서 새로 생성하세요.");
+            setError("Knowledge 초안이 만료되었거나 더 이상 유효하지 않습니다. 보낸 앱에서 새로 생성하세요.");
           } else {
-            setError("Knowledge draft 미리보기 시간이 만료될 수 있습니다. 저장하거나 취소하세요.");
+            setError("Knowledge 초안 미리보기 시간이 만료될 수 있습니다. 저장하거나 취소하세요.");
           }
         });
     };
@@ -781,16 +784,15 @@ export default function App() {
     if (planId) void discardRenamePreview(planId);
   }, [renamePreview]);
 
+  const renamePlanId = renamePreview?.planId ?? null;
   useLayoutEffect(() => {
-    if (!renamePreview) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || renameBusyRef.current) return;
-      event.preventDefault();
-      cancelRename();
+    if (!renamePlanId) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (renameDialogRef.current) focusFirst(renameDialogRef.current);
+    return () => {
+      restoreFocus(opener);
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cancelRename, renamePreview]);
+  }, [renamePlanId]);
 
   const commitRename = async () => {
     if (!renamePreview || renameBusyRef.current) return;
@@ -976,32 +978,32 @@ export default function App() {
           >
             <h2 id="knowledge-draft-title">
               {draftPreview.kind === "knowledge-draft/v1"
-                ? "Life Log draft 미리보기"
-                : "Developer Toolbox draft 미리보기"}
+                ? "Life Log 초안 미리보기"
+                : "Developer Toolbox 초안 미리보기"}
             </h2>
             <p className="rename-note" id="knowledge-draft-description">
               저장하기 전 본문과 태그를 확인하세요. 취소하면 파일을 만들지 않고
               handoff를 다시 대기 상태로 돌립니다.
             </p>
             <div className="handoff-meta">
-              <div><span className="dim">Title</span><strong>{draftPreview.title}</strong></div>
-              <div><span className="dim">Tags</span><span>{draftPreview.tags.join(", ")}</span></div>
+              <div><span className="dim">제목</span><strong>{draftPreview.title}</strong></div>
+              <div><span className="dim">태그</span><span>{draftPreview.tags.join(", ")}</span></div>
               {draftPreview.summary ? (
-                <div><span className="dim">Range</span><span>{draftPreview.summary.startDate} ~ {draftPreview.summary.endDate} · {draftPreview.summary.timezone}</span></div>
+                <div><span className="dim">기간</span><span>{draftPreview.summary.startDate} ~ {draftPreview.summary.endDate} · {draftPreview.summary.timezone}</span></div>
               ) : (
-                <div><span className="dim">Source</span><span>Developer Toolbox · explicit transform result</span></div>
+                <div><span className="dim">소스</span><span>Developer Toolbox · 명시적 변환 결과</span></div>
               )}
             </div>
-            <pre className="handoff-body" aria-label="Knowledge draft body">{draftPreview.body}</pre>
-            <div className="handoff-size" aria-label="Knowledge draft size">
-              Title {utf8Bytes(draftPreview.title).toLocaleString()} / {MAX_DRAFT_TITLE_BYTES.toLocaleString()} bytes · Body {utf8Bytes(draftPreview.body).toLocaleString()} / {MAX_DRAFT_BODY_BYTES.toLocaleString()} bytes
+            <pre className="handoff-body" aria-label="Knowledge 초안 본문">{draftPreview.body}</pre>
+            <div className="handoff-size" aria-label="Knowledge 초안 크기">
+              제목 {utf8Bytes(draftPreview.title).toLocaleString()} / {MAX_DRAFT_TITLE_BYTES.toLocaleString()}바이트 · 본문 {utf8Bytes(draftPreview.body).toLocaleString()} / {MAX_DRAFT_BODY_BYTES.toLocaleString()}바이트
             </div>
             <div className="handoff-actions">
               <button type="button" className="btn" onClick={() => void cancelDraftPreview()} disabled={draftBusy}>
                 취소
               </button>
               <button type="button" className="btn active" onClick={() => void commitDraftPreview()} disabled={draftBusy}>
-                {draftBusy ? "처리 중…" : "Save draft"}
+                {draftBusy ? "처리 중…" : "초안 저장"}
               </button>
             </div>
           </section>
@@ -1011,10 +1013,17 @@ export default function App() {
         <div className="modal-backdrop" role="presentation">
           <section
             className="rename-dialog"
+            ref={renameDialogRef}
             role="dialog"
             aria-modal="true"
             aria-busy={renameBusy}
             aria-labelledby="rename-dialog-title"
+            onKeyDown={(event) => {
+              if (!renameDialogRef.current) return;
+              trapDialogKeyDown(event, renameDialogRef.current, () => {
+                if (!renameBusyRef.current) cancelRename();
+              });
+            }}
           >
             <h2 id="rename-dialog-title">이름 변경 미리보기</h2>
             <p className="rename-note">
@@ -1066,22 +1075,22 @@ export default function App() {
             빠른 캡처 <span className="dim">Ctrl+Alt+K</span>
           </button>
           <button className="btn small" onClick={() => void openDaily()}>
-            Daily note
+            일일 노트
           </button>
           <button className="btn small" onClick={() => setTemplateManagerOpen(true)}>
-            Templates
+            템플릿
           </button>
           <button className="btn small" onClick={() => void newFile()}>
-            + File
+            + 파일
           </button>
         </div>
         <input
           className="search"
-          placeholder="Search docs..."
+          placeholder="문서 검색..."
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") void runSearch();
+            if (!isImeComposing(e) && e.key === "Enter") void runSearch();
           }}
         />
         <div className="tree">
@@ -1099,7 +1108,7 @@ export default function App() {
                     style={{ paddingLeft: `${8 + indent(t.path) * 14}px` }}
                     data-tree-path={t.path}
                     data-tree-dir={String(t.is_dir)}
-                    aria-selected={selectedTreePath === t.path}
+                    aria-pressed={selectedTreePath === t.path}
                     onClick={() => {
                       setSelectedTreePath(t.path);
                       if (!t.is_dir) void openFile(t.path);
@@ -1113,10 +1122,10 @@ export default function App() {
                   </button>
                   {!t.is_dir && (
                     <span className="tree-actions">
-                      <button className="mini" title="Rename" onClick={() => void rename(t.path)}>
+                      <button className="mini" title="이름 변경" onClick={() => void rename(t.path)}>
                         ✎
                       </button>
-                      <button className="mini" title="Delete" onClick={() => void remove(t.path)}>
+                      <button className="mini" title="삭제" onClick={() => void remove(t.path)}>
                         ✕
                       </button>
                     </span>
@@ -1134,7 +1143,7 @@ export default function App() {
           ariaLabel="Knowledge 트리 작업"
         />
         <div className="tags">
-          <div className="dim">Tags</div>
+          <div className="dim">태그</div>
           {tags.map((t) => (
             <span key={t} className="tag">
               {t}
@@ -1176,20 +1185,20 @@ export default function App() {
               {isMarkdown(selected) && (
                 <>
                   <span className={`link-health ${wikilinks.some((link) => link.status !== "resolved") ? "has-unresolved" : ""}`}>
-                    {wikilinks.filter((link) => link.status !== "resolved").length} unresolved
+                    미해결 {wikilinks.filter((link) => link.status !== "resolved").length}개
                   </span>
                   <button
                     className={`btn small ${showBacklinks ? "active" : ""}`}
                     aria-pressed={showBacklinks}
                     onClick={() => setShowBacklinks((visible) => !visible)}
                   >
-                    Backlinks ({backlinks.length})
+                    백링크 ({backlinks.length})
                   </button>
                 </>
               )}
-              {dirty && <span className="dirty">● unsaved</span>}
+              {dirty && <span className="dirty">● 저장되지 않음</span>}
               <button className="btn" onClick={() => void save()}>
-                Save
+                저장
               </button>
             </div>
             <div className="note-workspace">
@@ -1221,8 +1230,8 @@ export default function App() {
                 )}
               </div>
               {showBacklinks && isMarkdown(selected) && (
-                <aside className="backlink-panel" aria-label="Backlinks">
-                  <div className="backlink-head">Backlinks</div>
+                <aside className="backlink-panel" aria-label="백링크">
+                  <div className="backlink-head">백링크</div>
                   {backlinks.length > 0 ? backlinks.map((link, index) => (
                     <button
                       key={`${link.source_path}-${link.line}-${link.column}-${index}`}
@@ -1234,17 +1243,17 @@ export default function App() {
                       )}
                     >
                       <span>{link.source_path}</span>
-                      <span className="dim">line {link.line}:{link.column}</span>
+                      <span className="dim">줄 {link.line}:{link.column}</span>
                     </button>
                   )) : (
-                    <div className="backlink-empty">No backlinks.</div>
+                    <div className="backlink-empty">백링크가 없습니다.</div>
                   )}
                 </aside>
               )}
             </div>
           </>
         ) : (
-          <div className="empty">Select a note or create a daily note</div>
+          <div className="empty">노트를 선택하거나 일일 노트를 만드세요</div>
         )}
       </main>
     </div>

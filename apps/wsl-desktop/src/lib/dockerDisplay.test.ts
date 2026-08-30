@@ -33,6 +33,6 @@ describe("compactDockerPorts", () => {
 
   it("keeps exposed-only ports and represents an empty source", () => {
     expect(compactDockerPorts("6379/tcp")).toBe("6379/tcp");
-    expect(compactDockerPorts("  ")).toBe("No ports");
+    expect(compactDockerPorts("  ")).toBe("포트 없음");
   });
 });

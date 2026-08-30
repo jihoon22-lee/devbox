@@ -39,19 +39,19 @@ const TOOL_IDS = new Set(TOOLS.map((tool) => tool.id));
 const TRANSFORMER_IDS = new Set(TRANSFORMERS.map((transformer) => transformer.id));
 
 const INPUT_TYPE_LABELS: Readonly<Record<PipelineValueType, string>> = {
-  text: "Text",
+  text: "텍스트",
   json: "JSON",
   jwt: "JWT",
   url: "HTTP(S) URL",
   base64: "Base64",
   base64url: "Base64URL",
   hex: "Hex",
-  "url-component": "URL component",
+  "url-component": "URL 컴포넌트",
   yaml: "YAML",
   typescript: "TypeScript",
 };
 
-const FIXED_CLIPBOARD_ERROR = "워크플로 입력을 clipboard에서 읽지 못했습니다.";
+const FIXED_CLIPBOARD_ERROR = "워크플로 입력을 클립보드에서 읽지 못했습니다.";
 
 function firstCompatibleTransformerId(inputType: PipelineValueType): string {
   return TRANSFORMERS.find((transformer) => transformer.inputTypes.includes(inputType))?.id
@@ -305,28 +305,28 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
         ? "여러 형식이 가능하므로 추천을 자동 선택하지 않았습니다."
         : detection.status === "unsupported"
           ? "지원되는 안전한 구조를 찾지 못했습니다. 경로와 외부 요청은 실행하지 않습니다."
-          : `${detection.inputBytes.toLocaleString("en-US")} bytes · ${detection.candidates.length}개 후보`;
+      : `${detection.inputBytes.toLocaleString("en-US")}바이트 · ${detection.candidates.length}개 후보`;
 
   return (
     <section className="smart-workflow" aria-labelledby="smart-workflow-title">
       <div className="smart-workflow-heading">
         <div>
-          <h2 id="smart-workflow-title">Smart Workflows</h2>
+          <h2 id="smart-workflow-title">스마트 워크플로</h2>
           <p id="smart-workflow-help" className="smart-workflow-help">
-            bounded 입력을 로컬에서 감지하고, 명시적으로 실행한 typed 변환만 연결합니다. 입력·출력은
-            저장하지 않으며 URL을 열거나 shell/API handoff를 실행하지 않습니다.
+            제한된 입력을 로컬에서 감지하고, 명시적으로 실행한 타입 지정 변환만 연결합니다. 입력·출력은
+            저장하지 않으며 URL을 열거나 셸/API 전달을 실행하지 않습니다.
           </p>
         </div>
-        <span className="smart-workflow-mode" role="status">offline</span>
+        <span className="smart-workflow-mode" role="status">오프라인</span>
       </div>
 
       <div className="smart-workflow-input-section">
         <div className="io-label">
-          Smart input
-          <span className="smart-workflow-byte-limit">최대 {SMART_DETECTION_LIMITS.maxInputBytes.toLocaleString("en-US")} bytes</span>
+          스마트 입력
+          <span className="smart-workflow-byte-limit">최대 {SMART_DETECTION_LIMITS.maxInputBytes.toLocaleString("en-US")}바이트</span>
         </div>
         <ToolTextArea
-          aria-label="Smart workflow input"
+          aria-label="스마트 워크플로 입력"
           aria-describedby="smart-workflow-help"
           className="io-input smart-workflow-input"
           placeholder="JSON, JWT, URL, Base64 또는 Hex를 입력하세요..."
@@ -343,7 +343,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
       </div>
 
       <section className="smart-workflow-detection" aria-labelledby="smart-workflow-detection-title">
-        <div id="smart-workflow-detection-title" className="smart-workflow-section-title">Detection</div>
+        <div id="smart-workflow-detection-title" className="smart-workflow-section-title">감지</div>
         <div className="smart-workflow-detection-status" role="status" aria-live="polite">{displayedDetection}</div>
         {detection.candidates.length > 0 ? (
           <div className="smart-workflow-candidates" role="list">
@@ -352,7 +352,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
                 <div className="smart-workflow-candidate-copy">
                   <strong id={`smart-workflow-candidate-${candidate.kind}`}>{candidate.label}</strong>
                   <span id={`smart-workflow-candidate-${candidate.kind}-description`}>{candidate.reason}</span>
-                  <small>{Math.round(candidate.confidence * 100)}% confidence</small>
+                  <small>신뢰도 {Math.round(candidate.confidence * 100)}%</small>
                 </div>
                 <div className="smart-workflow-candidate-actions">
                   <button
@@ -379,7 +379,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
       </section>
 
       <section className="smart-workflow-pipeline" aria-labelledby="smart-workflow-pipeline-title">
-        <div id="smart-workflow-pipeline-title" className="smart-workflow-section-title">Typed pipeline</div>
+        <div id="smart-workflow-pipeline-title" className="smart-workflow-section-title">타입 지정 파이프라인</div>
         <div className="smart-workflow-pipeline-toolbar">
           <label>
             입력 형식
@@ -445,10 +445,10 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
             {pipelineErrorMessage(pipelineError) ?? PIPELINE_ERROR_MESSAGES.transform_failed}
           </div>
         ) : null}
-        <div className="smart-workflow-output-label io-label">Pipeline output</div>
+        <div className="smart-workflow-output-label io-label">파이프라인 결과</div>
         <div aria-live="polite">
           <ToolOutput
-            ariaLabel="Pipeline output"
+            ariaLabel="파이프라인 결과"
             className="io-output smart-workflow-output"
             value={output}
             actionErrorMessage="파이프라인 결과 작업을 완료하지 못했습니다."
@@ -459,7 +459,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
 
       <div className="smart-workflow-library">
         <div className="smart-workflow-library-column">
-          <div className="smart-workflow-section-title">Recent tools</div>
+          <div className="smart-workflow-section-title">최근 도구</div>
           <div className="smart-workflow-chip-list">
             {metadata.recentTools.length === 0 ? <span className="smart-workflow-empty-library">아직 사용한 도구가 없습니다.</span> : null}
             {metadata.recentTools.map((recent) => {
@@ -470,7 +470,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
           </div>
         </div>
         <div className="smart-workflow-library-column">
-          <div className="smart-workflow-section-title">Favorites</div>
+          <div className="smart-workflow-section-title">즐겨찾기</div>
           <div className="smart-workflow-chip-list">
             {metadata.favoriteTools.length === 0 ? <span className="smart-workflow-empty-library">즐겨찾기가 없습니다.</span> : null}
             {metadata.favoriteTools.map((toolId) => {
@@ -485,7 +485,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
           </div>
         </div>
         <div className="smart-workflow-library-column smart-workflow-library-pipelines">
-          <div className="smart-workflow-section-title">Saved pipelines</div>
+          <div className="smart-workflow-section-title">저장된 파이프라인</div>
           <div className="smart-workflow-chip-list">
             {metadata.pipelines.length === 0 ? <span className="smart-workflow-empty-library">저장된 파이프라인이 없습니다.</span> : null}
             {metadata.pipelines.map((pipeline) => (

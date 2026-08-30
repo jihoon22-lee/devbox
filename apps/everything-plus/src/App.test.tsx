@@ -1,7 +1,9 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
+  addRoot,
   cancelIndex,
   copyPath,
   deleteSavedQuery,
@@ -77,6 +79,7 @@ vi.mock("./api", () => ({
 }));
 
 const takePendingOpenMock = vi.mocked(takePendingOpen);
+const addRootMock = vi.mocked(addRoot);
 const onOpenRequestMock = vi.mocked(onOpenRequest);
 const searchFilesMock = vi.mocked(searchFiles);
 const searchContentMock = vi.mocked(searchContent);
@@ -133,6 +136,7 @@ beforeEach(() => {
     last_error: null,
   });
   listRootsMock.mockReset().mockResolvedValue([]);
+  addRootMock.mockReset().mockResolvedValue(undefined);
   cancelIndexMock.mockReset().mockResolvedValue(undefined);
   openFileMock.mockReset().mockResolvedValue(undefined);
   revealFileMock.mockReset().mockResolvedValue(undefined);
@@ -152,6 +156,12 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+it("초기 앱 셸에 구조적 접근성 위반이 없다", async () => {
+  const { container } = render(<App />);
+  await waitFor(() => expect(indexStatusMock).toHaveBeenCalled());
+  await assertNoA11yViolations(container);
+});
+
 describe("Everything+ Query app-link delivery", () => {
   it("listens before cold take and immediately searches the trimmed Query", async () => {
     takePendingOpenMock.mockImplementationOnce(async () => {
@@ -163,7 +173,7 @@ describe("Everything+ Query app-link delivery", () => {
 
     await waitFor(() => expect(searchFilesMock).toHaveBeenCalledWith("Cargo.toml"));
     expect(mocks.order.slice(0, 2)).toEqual(["listen", "take"]);
-    expect((screen.getByPlaceholderText("Search file names...") as HTMLInputElement).value).toBe("Cargo.toml");
+    expect((screen.getByPlaceholderText("파일 이름 검색...") as HTMLInputElement).value).toBe("Cargo.toml");
     expect(await screen.findByText("Cargo.toml")).toBeTruthy();
   });
 
@@ -199,7 +209,7 @@ describe("Everything+ Query app-link delivery", () => {
       undefined,
       { extensions: ["rs"], sourceRootId: 3, contentStatus: "truncated" },
     ));
-    expect(screen.getByText("Filters (3)")).toBeTruthy();
+    expect(screen.getByText("필터 (3)")).toBeTruthy();
   });
 
   it("does not let an older search response replace the inbound Query results", async () => {
@@ -211,7 +221,7 @@ describe("Everything+ Query app-link delivery", () => {
     );
 
     render(<App />);
-    const input = screen.getByPlaceholderText("Search file names...");
+    const input = screen.getByPlaceholderText("파일 이름 검색...");
     fireEvent.change(input, { target: { value: "old" } });
     await waitFor(() => expect(searchFilesMock).toHaveBeenCalledWith("old"));
 
@@ -251,7 +261,7 @@ describe("Everything+ Query app-link delivery", () => {
 
   it("enforces the UTF-8 search bound before invoking the backend", async () => {
     render(<App />);
-    const input = screen.getByPlaceholderText("Search file names...");
+    const input = screen.getByPlaceholderText("파일 이름 검색...");
     fireEvent.change(input, {
       target: { value: "가".repeat(2_000) },
     });
@@ -280,14 +290,25 @@ describe("Everything+ Query app-link delivery", () => {
 
     render(<App />);
 
-    const cancel = await screen.findByRole("button", { name: "Cancel" });
+    const cancel = await screen.findByRole("button", { name: "취소" });
     fireEvent.click(cancel);
     await waitFor(() => expect(cancelIndexMock).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("Indexing... 4 files")).toBeTruthy();
+    expect(screen.getByText("색인 중… 4개 파일")).toBeTruthy();
   });
 });
 
 describe("Everything+ root watcher status", () => {
+  it("does not add a root while IME composition is committing Enter", async () => {
+    render(<App />);
+    const input = screen.getByPlaceholderText(/검색 루트/u);
+    fireEvent.change(input, { target: { value: "C:\\projects" } });
+
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(addRootMock).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(addRootMock).toHaveBeenCalledWith("C:\\projects", false));
+  });
+
   it("marks a WSL UNC root as polling and exposes its source and watcher explanation", async () => {
     const root = "\\\\wsl$\\Ubuntu\\home\\jihoon\\projects\\devbox";
     listRootsMock.mockResolvedValueOnce([{ id: 7, path: root, content: true }]);
@@ -305,7 +326,7 @@ describe("Everything+ root watcher status", () => {
     expect(await screen.findByText("WSL 주기 확인")).toBeTruthy();
     expect(screen.getByText("WSL")).toBeTruthy();
     expect(screen.getByTitle(
-      "WSL UNC 루트는 Linux 경로 대소문자를 보존하며 bounded metadata polling으로 반영합니다.",
+      "WSL UNC 루트는 Linux 경로 대소문자를 보존하며 제한된 메타데이터 폴링으로 반영합니다.",
     )).toBeTruthy();
   });
 
@@ -337,7 +358,7 @@ async function renderNamedResults() {
     { id: 2, path: "C:\\files\\beta.md", name: "beta.md", ext: "md", size: 20, modified_ts: 0 },
   ]);
   render(<App />);
-  fireEvent.change(screen.getByPlaceholderText("Search file names..."), {
+    fireEvent.change(screen.getByPlaceholderText("파일 이름 검색..."), {
     target: { value: "fixture" },
   });
   await screen.findByText("beta.md");
@@ -350,6 +371,26 @@ function resultRow(name: string): HTMLTableRowElement {
 }
 
 describe("Everything+ result context menu", () => {
+  it("opens the focused row with Enter or Space, ignores IME, and leaves nested controls independent", async () => {
+    await renderNamedResults();
+    const alpha = resultRow("alpha.txt");
+    const beta = resultRow("beta.md");
+    alpha.focus();
+
+    fireEvent.keyDown(alpha, { key: "Enter", isComposing: true });
+    expect(openFileMock).not.toHaveBeenCalled();
+    fireEvent.keyDown(alpha, { key: " " });
+    await waitFor(() => expect(openFileMock).toHaveBeenCalledWith("C:\\files\\alpha.txt"));
+
+    openFileMock.mockClear();
+    const reveal = within(beta).getByRole("button", { name: "폴더" });
+    reveal.focus();
+    fireEvent.keyDown(reveal, { key: "Enter" });
+    expect(openFileMock).not.toHaveBeenCalled();
+    fireEvent.click(reveal);
+    await waitFor(() => expect(revealFileMock).toHaveBeenCalledWith("C:\\files\\beta.md"));
+  });
+
   it("selects the right-clicked row and exposes every app-owned action", async () => {
     await renderNamedResults();
     const beta = resultRow("beta.md");
@@ -357,18 +398,18 @@ describe("Everything+ result context menu", () => {
     fireEvent.contextMenu(beta, { clientX: 20, clientY: 30 });
 
     expect(beta.getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("menu", { name: "Search result actions" })).toBeTruthy();
+    expect(screen.getByRole("menu", { name: "검색 결과 작업" })).toBeTruthy();
     for (const label of [
-      "Open",
-      "Show in folder",
-      "Copy path",
-      "Copy file name",
-      "Open in another app",
+      "열기",
+      "폴더에서 보기",
+      "경로 복사",
+      "파일 이름 복사",
+      "다른 앱으로 열기",
     ]) {
       expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
     }
     await waitFor(() => expect(
-      screen.getByRole("menuitem", { name: "Open in another app" }).getAttribute("aria-disabled"),
+      screen.getByRole("menuitem", { name: "다른 앱으로 열기" }).getAttribute("aria-disabled"),
     ).toBeNull());
   });
 
@@ -377,19 +418,19 @@ describe("Everything+ result context menu", () => {
     const beta = resultRow("beta.md");
 
     fireEvent.contextMenu(beta);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Open" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "열기" }));
     await waitFor(() => expect(openFileMock).toHaveBeenCalledWith("C:\\files\\beta.md"));
 
     fireEvent.contextMenu(beta);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Show in folder" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "폴더에서 보기" }));
     await waitFor(() => expect(revealFileMock).toHaveBeenCalledWith("C:\\files\\beta.md"));
 
     fireEvent.contextMenu(beta);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "경로 복사" }));
     await waitFor(() => expect(copyPathMock).toHaveBeenCalledWith("C:\\files\\beta.md"));
 
     fireEvent.contextMenu(beta);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy file name" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "파일 이름 복사" }));
     await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("beta.md"));
   });
 
@@ -397,7 +438,7 @@ describe("Everything+ result context menu", () => {
     await renderNamedResults();
     const beta = resultRow("beta.md");
     fireEvent.contextMenu(beta);
-    const submenu = screen.getByRole("menuitem", { name: "Open in another app" });
+    const submenu = screen.getByRole("menuitem", { name: "다른 앱으로 열기" });
     await waitFor(() => expect(submenu.getAttribute("aria-disabled")).toBeNull());
     fireEvent.mouseEnter(submenu);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Code Pad" }));
@@ -414,7 +455,7 @@ describe("Everything+ result context menu", () => {
     alpha.focus();
 
     fireEvent.keyDown(alpha, { key: "F10", code: "F10", shiftKey: true });
-    const copyName = screen.getByRole("menuitem", { name: "Copy file name" });
+    const copyName = screen.getByRole("menuitem", { name: "파일 이름 복사" });
     fireEvent.click(copyName);
 
     await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("alpha.txt"));
@@ -427,7 +468,7 @@ describe("Everything+ result context menu", () => {
     const beta = resultRow("beta.md");
     fireEvent.contextMenu(beta);
 
-    const submenu = screen.getByRole("menuitem", { name: "Open in another app" });
+    const submenu = screen.getByRole("menuitem", { name: "다른 앱으로 열기" });
     await waitFor(() => expect(submenu.getAttribute("aria-disabled")).toBe("true"));
     fireEvent.click(submenu);
     expect(screen.queryByRole("menuitem", { name: "Code Pad" })).toBeNull();
@@ -440,15 +481,15 @@ describe("Everything+ result context menu", () => {
     ]);
     openInMock.mockRejectedValueOnce(new Error("대상 앱을 실행하지 못했습니다"));
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: "Content" }));
-    fireEvent.change(screen.getByPlaceholderText("Search file contents..."), {
+    fireEvent.click(screen.getByRole("button", { name: "내용" }));
+    fireEvent.change(screen.getByPlaceholderText("파일 내용 검색..."), {
       target: { value: "fixture" },
     });
     const contentRow = (await screen.findByText("meeting.md")).closest("tr");
     if (!(contentRow instanceof HTMLTableRowElement)) throw new Error("content row was not rendered");
 
     fireEvent.contextMenu(contentRow);
-    const submenu = screen.getByRole("menuitem", { name: "Open in another app" });
+    const submenu = screen.getByRole("menuitem", { name: "다른 앱으로 열기" });
     await waitFor(() => expect(submenu.getAttribute("aria-disabled")).toBeNull());
     fireEvent.mouseEnter(submenu);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Workbench" }));
@@ -463,9 +504,9 @@ describe("Everything+ filters and saved queries", () => {
       { id: 1, path: "C:\\files\\main.rs", name: "main.rs", ext: "rs", size: 20, modified_ts: 100 },
     ]);
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    fireEvent.change(screen.getByLabelText("File extensions"), { target: { value: " .RS, md " } });
-    fireEvent.change(screen.getByPlaceholderText("Search file names..."), { target: { value: "main" } });
+    fireEvent.click(screen.getByRole("button", { name: "필터" }));
+    fireEvent.change(screen.getByLabelText("파일 확장자"), { target: { value: " .RS, md " } });
+    fireEvent.change(screen.getByPlaceholderText("파일 이름 검색..."), { target: { value: "main" } });
 
     await waitFor(() => expect(searchFilesMock).toHaveBeenCalledWith(
       "main",
@@ -473,7 +514,7 @@ describe("Everything+ filters and saved queries", () => {
       { extensions: ["md", "rs"] },
     ));
     expect(screen.getByText("main.rs")).toBeTruthy();
-    expect(screen.getByText("Filters (1)")).toBeTruthy();
+    expect(screen.getByText("필터 (1)")).toBeTruthy();
   });
 
   it("saves a query definition and loads it without persisting result rows", async () => {
@@ -486,9 +527,9 @@ describe("Everything+ filters and saved queries", () => {
       updatedAt: 2,
     });
     render(<App />);
-    fireEvent.change(screen.getByPlaceholderText("Search file names..."), { target: { value: "cargo" } });
-    fireEvent.change(screen.getByLabelText("Saved query name"), { target: { value: "Rust sources" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save query" }));
+    fireEvent.change(screen.getByPlaceholderText("파일 이름 검색..."), { target: { value: "cargo" } });
+    fireEvent.change(screen.getByLabelText("저장된 검색어 이름"), { target: { value: "Rust sources" } });
+    fireEvent.click(screen.getByRole("button", { name: "검색어 저장" }));
 
     await waitFor(() => expect(saveSavedQueryMock).toHaveBeenCalledWith({
       name: "Rust sources",
@@ -497,10 +538,10 @@ describe("Everything+ filters and saved queries", () => {
     }));
     expect(await screen.findByRole("button", { name: "Rust sources" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Rust sources" }));
-    expect((screen.getByPlaceholderText("Search file names...") as HTMLInputElement).value).toBe("cargo");
-    expect(screen.getByLabelText("File extensions")).toBeTruthy();
+    expect((screen.getByPlaceholderText("파일 이름 검색...") as HTMLInputElement).value).toBe("cargo");
+    expect(screen.getByLabelText("파일 확장자")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete saved query Rust sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "저장된 검색어 Rust sources 삭제" }));
     await waitFor(() => expect(deleteSavedQueryMock).toHaveBeenCalledWith(7));
     expect(screen.queryByRole("button", { name: "Rust sources" })).toBeNull();
   });
@@ -522,9 +563,9 @@ describe("Everything+ filters and saved queries", () => {
     });
 
     render(<App />);
-    fireEvent.change(screen.getByPlaceholderText("Search file names..."), { target: { value: "cargo" } });
-    fireEvent.change(screen.getByLabelText("Saved query name"), { target: { value: "Saved during load" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save query" }));
+    fireEvent.change(screen.getByPlaceholderText("파일 이름 검색..."), { target: { value: "cargo" } });
+    fireEvent.change(screen.getByLabelText("저장된 검색어 이름"), { target: { value: "Saved during load" } });
+    fireEvent.click(screen.getByRole("button", { name: "검색어 저장" }));
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Saved during load" })).toBeTruthy());
     await act(async () => {

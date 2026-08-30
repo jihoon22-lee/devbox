@@ -101,13 +101,13 @@ describe("LoremTool", () => {
     count.focus();
     count.setSelectionRange(0, count.value.length);
     fireEvent.contextMenu(count, { clientX: 14, clientY: 20 });
-    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
     await waitFor(() => expect(count.value).toBe("123"));
 
     fireEvent.change(count, { target: { value: "3" } });
     readClipboardTextMock.mockRejectedValueOnce(new Error("C:\\private\\credential"));
     fireEvent.contextMenu(count, { clientX: 14, clientY: 20 });
-    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
     await waitFor(() => {
       expect(screen.getAllByRole("alert").some((entry) =>
         entry.textContent === "Lorem 입력을 붙여넣지 못했습니다.",
@@ -134,7 +134,7 @@ describe("LoremTool", () => {
     writeTextMock.mockRejectedValueOnce(new Error("DO_NOT_REFLECT_PLATFORM_DETAIL"));
     fireEvent.click(copy);
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("Lorem 결과를 clipboard에 복사하지 못했습니다.");
+    expect(alert.textContent).toBe("Lorem 결과를 클립보드에 복사하지 못했습니다.");
     expect(alert.textContent).not.toContain("DO_NOT_REFLECT_PLATFORM_DETAIL");
     expect(screen.getByLabelText("Lorem 출력").textContent).toContain("Lorem ipsum");
   });
@@ -146,7 +146,7 @@ describe("LoremTool", () => {
     const output = screen.getByLabelText("Lorem 출력");
 
     fireEvent.contextMenu(output, { clientX: 14, clientY: 20 });
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "복사" }));
     await waitFor(() => {
       expect(screen.getAllByRole("alert").some((entry) =>
         entry.textContent === "Lorem 결과 작업을 완료하지 못했습니다.",

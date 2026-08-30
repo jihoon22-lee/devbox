@@ -216,6 +216,35 @@ describe("LspControlPanel", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("traps focus in the LSP dialog, closes with Escape, and restores its opener", async () => {
+    const opener = document.createElement("button");
+    opener.textContent = "LSP 열기";
+    document.body.append(opener);
+    opener.focus();
+    const onClose = vi.fn();
+    const rendered = render(<LspControlPanel workspaceRoot={"/work/project"} onClose={onClose} />);
+    const dialog = rendered.getByRole("dialog", { name: "언어 서버 설정" });
+    await rendered.findByText("등록된 언어 서버가 없습니다.");
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+      "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+    ));
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    expect(first).toBeTruthy();
+    expect(last).toBeTruthy();
+    last?.focus();
+    fireEvent.keyDown(last as HTMLElement, { key: "Tab" });
+    expect(document.activeElement).toBe(first);
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    rendered.unmount();
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+  });
+
   it("requires an explicit recovery save for a corrupt config", async () => {
     loadMock.mockResolvedValue(loadedConfig({ persist_allowed: false, error: "invalid JSON" }));
     const rendered = render(<LspControlPanel workspaceRoot={"/work/project"} onClose={() => undefined} />);
@@ -378,6 +407,19 @@ describe("LspControlPanel", () => {
     expect(rendered.getByText("17,430,385 bytes")).toBeTruthy();
     const install = rendered.getByRole("button", { name: "설치" });
     expect((install as HTMLButtonElement).disabled).toBe(false);
+    install.focus();
+    fireEvent.click(install);
+    const confirmation = await rendered.findByRole("dialog", { name: "관리형 서버 작업 확인" });
+    const cancel = rendered.getByRole("button", { name: "취소" });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    const confirm = rendered.getByRole("button", { name: "설치 확인" });
+    confirm.focus();
+    fireEvent.keyDown(confirm, { key: "Tab" });
+    expect(document.activeElement).toBe(cancel);
+    fireEvent.keyDown(confirmation, { key: "Escape" });
+    await waitFor(() => expect(rendered.queryByRole("dialog", { name: "관리형 서버 작업 확인" })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(install));
+
     fireEvent.click(install);
     expect(await rendered.findByRole("dialog", { name: "관리형 서버 작업 확인" })).toBeTruthy();
     expect(rendered.getAllByText(manifest.artifact.url).length).toBeGreaterThanOrEqual(2);

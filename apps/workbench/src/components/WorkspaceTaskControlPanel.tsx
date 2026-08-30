@@ -220,9 +220,9 @@ export default function WorkspaceTaskControlPanel({ disabled = false }: Props) {
     >
       <div className="workspace-task-heading">
         <div>
-          <h2 id="workspace-task-control-title">Run Manager tasks</h2>
+          <h2 id="workspace-task-control-title">Run Manager 작업</h2>
           <p className="field-help">
-            Run Manager의 승인된 task snapshot만 읽습니다. Start/Stop 요청은 Run Manager 창에서 확인한 뒤 실행됩니다.
+            Run Manager의 승인된 task snapshot만 읽습니다. 시작/중지 요청은 Run Manager 창에서 확인한 뒤 실행됩니다.
           </p>
         </div>
         <button
@@ -239,7 +239,7 @@ export default function WorkspaceTaskControlPanel({ disabled = false }: Props) {
       {error && <div className="field-error form-error" role="alert">{error}</div>}
       {dispatchingRequest && (
         <div className="workspace-task-pending" role="status" aria-live="polite">
-          Run Manager task 요청을 전달하는 중입니다. 다른 Start/Stop 요청은 잠시 막혀 있습니다.
+          Run Manager task 요청을 전달하는 중입니다. 다른 시작/중지 요청은 잠시 막혀 있습니다.
         </div>
       )}
       {loading && tasks.length === 0 && <div className="dim" role="status">Run Manager task snapshot을 읽는 중…</div>}
@@ -304,7 +304,7 @@ export default function WorkspaceTaskControlPanel({ disabled = false }: Props) {
                         : "소스·셸 승인과 사용 가능 상태를 확인하세요"
                       : undefined}
                   >
-                    Start
+                    시작
                   </button>
                   <button
                     type="button"
@@ -315,7 +315,7 @@ export default function WorkspaceTaskControlPanel({ disabled = false }: Props) {
                     aria-describedby={statusId}
                     title={!stopAllowed ? "현재 실행 중인 operation이 없습니다" : undefined}
                   >
-                    Stop
+                    중지
                   </button>
                 </div>
               </li>

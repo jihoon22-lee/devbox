@@ -41,7 +41,7 @@ afterEach(() => {
 describe("QrTool", () => {
   it("generates only on explicit action and exposes accessible SVG/PNG actions", async () => {
     render(<QrTool />);
-    const input = screen.getByRole("textbox", { name: "텍스트 payload" });
+    const input = screen.getByRole("textbox", { name: "텍스트 페이로드" });
     expect(generateQrMock).not.toHaveBeenCalled();
     fireEvent.change(input, { target: { value: "가".repeat(Math.floor(MAX_PAYLOAD_BYTES / 3) + 1) } });
     expect((input as HTMLTextAreaElement).value).toBe("");
@@ -58,13 +58,13 @@ describe("QrTool", () => {
   it("shows a safe file-save fallback when image clipboard is unavailable", async () => {
     vi.stubGlobal("ClipboardItem", undefined);
     render(<QrTool />);
-    fireEvent.change(screen.getByRole("textbox", { name: "텍스트 payload" }), { target: { value: "hello" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "텍스트 페이로드" }), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "QR 생성" }));
     await screen.findByRole("img", { name: "생성된 QR 코드 미리보기" });
 
     fireEvent.click(screen.getByRole("button", { name: "PNG 복사" }));
     expect((await screen.findByRole("alert")).textContent).toContain(
-      "이 환경에서는 PNG clipboard를 사용할 수 없습니다. PNG 저장을 사용하세요.",
+      "이 환경에서는 PNG를 클립보드에 복사할 수 없습니다. PNG 저장을 사용하세요.",
     );
   });
 
@@ -72,13 +72,13 @@ describe("QrTool", () => {
     let resolve: (value: QrResult) => void = () => undefined;
     generateQrMock.mockReturnValueOnce(new Promise<QrResult>((next) => { resolve = next; }));
     const rendered = render(<QrTool />);
-    fireEvent.change(screen.getByRole("textbox", { name: "텍스트 payload" }), { target: { value: "hello" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "텍스트 페이로드" }), { target: { value: "hello" } });
     const button = screen.getByRole("button", { name: "QR 생성" });
     fireEvent.click(button);
     fireEvent.click(button);
     expect(generateQrMock).toHaveBeenCalledTimes(1);
-    expect((screen.getByRole("textbox", { name: "텍스트 payload" }) as HTMLTextAreaElement).disabled).toBe(true);
-    fireEvent.change(screen.getByRole("textbox", { name: "텍스트 payload" }), { target: { value: "late edit" } });
+    expect((screen.getByRole("textbox", { name: "텍스트 페이로드" }) as HTMLTextAreaElement).disabled).toBe(true);
+    fireEvent.change(screen.getByRole("textbox", { name: "텍스트 페이로드" }), { target: { value: "late edit" } });
     expect(generateQrMock).toHaveBeenCalledTimes(1);
     rendered.unmount();
     resolve(RESULT);

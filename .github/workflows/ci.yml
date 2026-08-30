@@ -42,6 +42,7 @@ jobs:
           python3 .github/scripts/test-build-manifest.py
           python3 .github/scripts/test-validate-release-input.py
           node .github/scripts/test-check-frontend-bundles.mjs
+          node .github/scripts/test-check-frontend-accessibility.mjs
 
       - name: Check Cargo licenses, advisories, bans, and sources
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2, cargo-deny 0.20.2
@@ -56,6 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash .github/scripts/check-catalog.sh
+      - run: node .github/scripts/check-frontend-accessibility.mjs
 
   scope:
     name: Detect changed scope

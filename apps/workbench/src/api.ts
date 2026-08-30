@@ -348,13 +348,13 @@ export function workspacePreflight(profileId: string): Promise<WorkspacePrefligh
         {
           key: "wsl-distro",
           status: "pass",
-          detail: "설정한 WSL distro를 사용할 수 있습니다",
+          detail: "설정한 WSL 배포판을 사용할 수 있습니다",
           resources: [{ kind: "distro", id: "wsl-distro", state: "available" }],
         },
         {
           key: "working-directory",
           status: "pass",
-          detail: "Workspace working directory를 사용할 수 있습니다",
+          detail: "Workspace 작업 디렉터리를 사용할 수 있습니다",
           resources: [{ kind: "directory", id: "workspace-1", state: "available" }],
         },
         {

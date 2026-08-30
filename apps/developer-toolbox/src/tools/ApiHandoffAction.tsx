@@ -5,13 +5,17 @@ export const API_HANDOFF_MAX_CHARS = 256_000;
 export const API_HANDOFF_MAX_BYTES = 1_024_000;
 const API_HANDOFF_INPUT_ERROR = "API Playground로 전달할 텍스트가 유효하지 않습니다";
 const API_HANDOFF_CREATE_ERROR =
-  "API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다";
-const API_HANDOFF_FIXED_ERRORS = new Set([
-  API_HANDOFF_INPUT_ERROR,
-  API_HANDOFF_CREATE_ERROR,
-  "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다",
-  "API Playground를 실행하지 못했습니다. 전달 데이터는 폐기했습니다. 클립보드로 자동 전환하지 않습니다",
-  "API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다",
+  "API Playground 전달을 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다";
+const API_HANDOFF_BROWSER_ERROR =
+  "API Playground 전달은 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
+const API_HANDOFF_ERROR_DISPLAY = new Map<string, string>([
+  [API_HANDOFF_INPUT_ERROR, API_HANDOFF_INPUT_ERROR],
+  ["API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다", API_HANDOFF_CREATE_ERROR],
+  [API_HANDOFF_CREATE_ERROR, API_HANDOFF_CREATE_ERROR],
+  ["API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다", "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다"],
+  ["API Playground를 실행하지 못했습니다. 전달 데이터는 폐기했습니다. 클립보드로 자동 전환하지 않습니다", "API Playground를 실행하지 못했습니다. 전달 데이터는 폐기했습니다. 클립보드로 자동 전환하지 않습니다"],
+  ["API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다", API_HANDOFF_BROWSER_ERROR],
+  [API_HANDOFF_BROWSER_ERROR, API_HANDOFF_BROWSER_ERROR],
 ]);
 
 interface ApiHandoffActionProps {
@@ -62,8 +66,9 @@ function withinHandoffBounds(value: string): boolean {
 }
 
 function safeHandoffError(cause: unknown): string {
-  const message = cause instanceof Error ? cause.message : String(cause);
-  return API_HANDOFF_FIXED_ERRORS.has(message) ? message : API_HANDOFF_CREATE_ERROR;
+  const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
+  const message = raw.replace(/^Error:\s*/u, "");
+  return API_HANDOFF_ERROR_DISPLAY.get(message) ?? API_HANDOFF_CREATE_ERROR;
 }
 
 /** Preview/edit/manual handoff action for the currently visible result. */
@@ -215,9 +220,9 @@ export function ApiHandoffAction({ value, disabled = false }: ApiHandoffActionPr
               <div><dt>content-type</dt><dd><code>text/plain; charset=utf-8</code></dd></div>
             </dl>
             <label className="api-handoff-editor">
-              요청 body
+              요청 본문
               <textarea
-                aria-label="API Playground request body"
+                aria-label="API Playground 요청 본문"
                 value={draft}
                 onChange={(event) => {
                   setDraft(event.currentTarget.value);
@@ -230,7 +235,7 @@ export function ApiHandoffAction({ value, disabled = false }: ApiHandoffActionPr
               />
             </label>
             <p className="api-handoff-bounds">
-              {Array.from(draft).length.toLocaleString()} / {API_HANDOFF_MAX_CHARS.toLocaleString()} chars · {utf8ByteLength(draft).toLocaleString()} / {API_HANDOFF_MAX_BYTES.toLocaleString()} bytes
+              {Array.from(draft).length.toLocaleString()} / {API_HANDOFF_MAX_CHARS.toLocaleString()}자 · {utf8ByteLength(draft).toLocaleString()} / {API_HANDOFF_MAX_BYTES.toLocaleString()}바이트
             </p>
             {error ? <div className="context-action-error" role="alert">{error}</div> : null}
             <div className="api-handoff-dialog-actions">

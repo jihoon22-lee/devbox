@@ -57,7 +57,7 @@ export default function ProblemsPanel({ docs, diagnosticsFor, serverStatus, onNa
   return (
     <div className="problems-panel">
       <div className="problems-head">
-        <span className="problems-title">Problems</span>
+        <span className="problems-title">문제</span>
         <span className="problems-counts">
           {counts.errors > 0 && <span className="problems-errors">{counts.errors}</span>}
           {counts.warnings > 0 && <span className="problems-warnings">{counts.warnings}</span>}

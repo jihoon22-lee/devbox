@@ -77,10 +77,10 @@ function invokeResult(result: unknown, nextCursor: string | null = null) {
 }
 
 async function connect(): Promise<void> {
-  fireEvent.change(screen.getByLabelText("MCP endpoint"), {
+  fireEvent.change(screen.getByLabelText("MCP 엔드포인트"), {
     target: { value: "https://example.test/mcp" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  fireEvent.click(screen.getByRole("button", { name: "연결" }));
   await screen.findByText("fixture");
 }
 
@@ -109,12 +109,12 @@ const oauthGrant = {
 };
 
 async function connectStdio(): Promise<void> {
-  fireEvent.change(screen.getByLabelText("MCP transport"), {
+  fireEvent.change(screen.getByLabelText("MCP 전송 방식"), {
     target: { value: "stdio" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Choose executable" }));
+  fireEvent.click(screen.getByRole("button", { name: "실행 파일 선택" }));
   await screen.findByText(executableSelection.label);
-  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  fireEvent.click(screen.getByRole("button", { name: "연결" }));
   await screen.findByText("fixture");
 }
 
@@ -146,7 +146,7 @@ describe("Protocol Lab", () => {
     render(<ProtocolLab environment={[]} native={false} />);
     expect(screen.getByText(/브라우저 미리보기에서는 MCP 네트워크 요청을 보내지 않습니다/))
       .not.toBeNull();
-    expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled)
+    expect((screen.getByRole("button", { name: "연결" }) as HTMLButtonElement).disabled)
       .toBe(true);
     expect(mocks.connect).not.toHaveBeenCalled();
   });
@@ -232,7 +232,7 @@ describe("Protocol Lab", () => {
     render(<ProtocolLab environment={[]} native />);
     await connect();
     fireEvent.click(screen.getByRole("button", { name: "목록 조회" }));
-    await screen.findByText("이 tool은 arguments가 없습니다.");
+    await screen.findByText("이 tool에는 인자가 없습니다.");
     const call = screen.getByRole("button", { name: "선택 tool 호출" }) as HTMLButtonElement;
     expect(call.disabled).toBe(false);
     fireEvent.click(call);
@@ -250,7 +250,7 @@ describe("Protocol Lab", () => {
     await connect();
     fireEvent.click(screen.getByRole("button", { name: "목록 조회" }));
     await screen.findByText(/연결이 닫혔거나 오래되었습니다/);
-    expect(screen.getByRole("button", { name: "Connect" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "연결" })).not.toBeNull();
     expect(screen.queryByText("fixture")).toBeNull();
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
   });
@@ -318,24 +318,24 @@ describe("Protocol Lab", () => {
 
   it("shows only safe native stdio selection labels and handles picker cancellation", async () => {
     render(<ProtocolLab environment={[]} native />);
-    fireEvent.change(screen.getByLabelText("MCP transport"), {
+    fireEvent.change(screen.getByLabelText("MCP 전송 방식"), {
       target: { value: "stdio" },
     });
     expect(screen.getByText(/WSL stdio와 shell command string은 지원하지 않습니다/)).not.toBeNull();
-    expect(screen.queryByLabelText("MCP endpoint")).toBeNull();
+    expect(screen.queryByLabelText("MCP 엔드포인트")).toBeNull();
     expect(screen.queryByLabelText(/path/i)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Choose executable" }));
-    fireEvent.click(screen.getByRole("button", { name: "Choose cwd" }));
+    fireEvent.click(screen.getByRole("button", { name: "실행 파일 선택" }));
+    fireEvent.click(screen.getByRole("button", { name: "작업 폴더 선택" }));
     await waitFor(() => {
       expect(mocks.pickExecutable).toHaveBeenCalledTimes(1);
       expect(mocks.pickCwd).toHaveBeenCalledTimes(1);
     });
     expect(screen.getAllByText("선택하지 않음")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Choose executable" }).getAttribute("aria-label"))
-      .toBe("Choose executable");
-    expect(screen.getByRole("button", { name: "Choose cwd" }).getAttribute("aria-label"))
-      .toBe("Choose cwd");
+    expect(screen.getByRole("button", { name: "실행 파일 선택" }).getAttribute("aria-label"))
+      .toBe("실행 파일 선택");
+    expect(screen.getByRole("button", { name: "작업 폴더 선택" }).getAttribute("aria-label"))
+      .toBe("작업 폴더 선택");
   });
 
   it("builds a structured stdio profile without accepting raw paths", async () => {
@@ -344,26 +344,26 @@ describe("Protocol Lab", () => {
     mocks.pickCwd.mockResolvedValueOnce(cwdSelection);
     render(<ProtocolLab environment={environment} native />);
 
-    fireEvent.change(screen.getByLabelText("MCP transport"), {
+    fireEvent.change(screen.getByLabelText("MCP 전송 방식"), {
       target: { value: "stdio" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Choose executable" }));
+    fireEvent.click(screen.getByRole("button", { name: "실행 파일 선택" }));
     await screen.findByText(executableSelection.label);
-    fireEvent.click(screen.getByRole("button", { name: "Choose cwd" }));
+    fireEvent.click(screen.getByRole("button", { name: "작업 폴더 선택" }));
     await screen.findByText(cwdSelection.label);
 
-    fireEvent.click(screen.getByRole("button", { name: "Add argument" }));
-    fireEvent.change(screen.getByLabelText("stdio argument 1"), {
+    fireEvent.click(screen.getByRole("button", { name: "인자 추가" }));
+    fireEvent.change(screen.getByLabelText("stdio 인자 1"), {
       target: { value: "--verbose" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add environment binding" }));
-    fireEvent.change(screen.getByLabelText("stdio child name 1"), {
+    fireEvent.click(screen.getByRole("button", { name: "환경 변수 연결 추가" }));
+    fireEvent.change(screen.getByLabelText("stdio 하위 이름 1"), {
       target: { value: "MCP_TOKEN" },
     });
-    fireEvent.change(screen.getByLabelText("stdio source name 1"), {
+    fireEvent.change(screen.getByLabelText("stdio 소스 이름 1"), {
       target: { value: "API_TOKEN" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    fireEvent.click(screen.getByRole("button", { name: "연결" }));
     await screen.findByText("fixture");
 
     expect(mocks.connectStdio).toHaveBeenCalledWith(
@@ -410,7 +410,7 @@ describe("Protocol Lab", () => {
     rejectSecond?.(new Error("mcp_stdio_request_cancelled"));
     await waitFor(() => expect(screen.queryByText("fixture")).toBeNull());
     mocks.connectStdio.mockResolvedValueOnce(connection);
-    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    fireEvent.click(screen.getByRole("button", { name: "연결" }));
     await screen.findByText("fixture");
     fireEvent.click(screen.getByRole("button", { name: "연결 해제" }));
     await waitFor(() => expect(mocks.disconnectStdio).toHaveBeenCalledWith(connection.connectionId));
@@ -420,12 +420,12 @@ describe("Protocol Lab", () => {
     render(<ProtocolLab environment={[]} native />);
     await connect();
     expect(screen.getByText("fixture")).not.toBeNull();
-    fireEvent.change(screen.getByLabelText("MCP transport"), {
+    fireEvent.change(screen.getByLabelText("MCP 전송 방식"), {
       target: { value: "stdio" },
     });
     await waitFor(() => expect(mocks.disconnect).toHaveBeenCalledWith(connection.connectionId));
     expect(screen.queryByText("fixture")).toBeNull();
-    expect((screen.getByRole("button", { name: "Choose executable" }) as HTMLButtonElement).disabled)
+    expect((screen.getByRole("button", { name: "실행 파일 선택" }) as HTMLButtonElement).disabled)
       .toBe(false);
   });
 
@@ -438,29 +438,29 @@ describe("Protocol Lab", () => {
     fireEvent.click(screen.getByRole("button", { name: "목록 조회" }));
     await screen.findByText(/tools\/list 실행 중/);
 
-    fireEvent.change(screen.getByLabelText("MCP transport"), {
+    fireEvent.change(screen.getByLabelText("MCP 전송 방식"), {
       target: { value: "http" },
     });
-    await screen.findByLabelText("MCP endpoint");
+    await screen.findByLabelText("MCP 엔드포인트");
     expect(mocks.cancelStdio).toHaveBeenCalledWith(connection.connectionId, "mcp-1");
     expect(screen.queryByText(/native stdio 연결이 닫혔거나 오래되었습니다/)).toBeNull();
   });
 
   it("authorizes HTTP in the system browser and blocks an Authorization header conflict", async () => {
     render(<ProtocolLab environment={[]} native />);
-    fireEvent.change(screen.getByLabelText("MCP endpoint"), {
+    fireEvent.change(screen.getByLabelText("MCP 엔드포인트"), {
       target: { value: "https://example.test/mcp" },
     });
-    fireEvent.change(screen.getByLabelText("OAuth public client ID"), {
+    fireEvent.change(screen.getByLabelText("OAuth 공개 클라이언트 ID"), {
       target: { value: "public-client" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add OAuth scope" }));
-    fireEvent.change(screen.getByLabelText("OAuth scope 1"), {
+    fireEvent.click(screen.getByRole("button", { name: "OAuth 범위 추가" }));
+    fireEvent.change(screen.getByLabelText("OAuth 범위 1"), {
       target: { value: "tools" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Authorize in system browser" }));
+    fireEvent.click(screen.getByRole("button", { name: "시스템 브라우저에서 OAuth 인증" }));
 
-    await screen.findByText("Selected OAuth grant");
+    await screen.findByText("선택한 OAuth grant");
     expect(mocks.authorize).toHaveBeenCalledWith(
       "mcp-1",
       "https://example.test/mcp",
@@ -471,12 +471,12 @@ describe("Protocol Lab", () => {
     expect(screen.getByText(/Windows DPAPI/)).not.toBeNull();
     expect(screen.queryByText(/accessToken|callbackCode|must-not-survive/)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "+ Header 추가" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ 헤더 추가" }));
     fireEvent.change(screen.getByLabelText("1번 header 이름"), {
       target: { value: "Authorization" },
     });
     expect(screen.getByRole("alert").textContent).toContain("함께 사용할 수 없습니다");
-    expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled)
+    expect((screen.getByRole("button", { name: "연결" }) as HTMLButtonElement).disabled)
       .toBe(true);
   });
 
@@ -486,14 +486,14 @@ describe("Protocol Lab", () => {
       rejectAuthorization = reject;
     }));
     render(<ProtocolLab environment={[]} native />);
-    fireEvent.change(screen.getByLabelText("MCP endpoint"), {
+    fireEvent.change(screen.getByLabelText("MCP 엔드포인트"), {
       target: { value: "https://example.test/mcp" },
     });
-    fireEvent.change(screen.getByLabelText("OAuth public client ID"), {
+    fireEvent.change(screen.getByLabelText("OAuth 공개 클라이언트 ID"), {
       target: { value: "public-client" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Authorize in system browser" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Cancel OAuth authorization" }));
+    fireEvent.click(screen.getByRole("button", { name: "시스템 브라우저에서 OAuth 인증" }));
+    fireEvent.click(await screen.findByRole("button", { name: "OAuth 인증 취소" }));
     await waitFor(() => expect(mocks.cancelOAuth).toHaveBeenCalledWith("mcp-1"));
     rejectAuthorization?.(new Error("mcp_oauth_cancelled"));
     await screen.findByText(/OAuth authorization을 취소했습니다/);
@@ -505,11 +505,11 @@ describe("Protocol Lab", () => {
       .mockRejectedValueOnce(new Error("mcp_oauth_revoke_failed"))
       .mockResolvedValueOnce({ remoteRevoked: false, removedLocal: true });
     render(<ProtocolLab environment={[]} native />);
-    fireEvent.click(screen.getByRole("button", { name: "Refresh OAuth grants" }));
-    await screen.findByText("Selected OAuth grant");
+    fireEvent.click(screen.getByRole("button", { name: "OAuth grant 새로 고침" }));
+    await screen.findByText("선택한 OAuth grant");
 
-    fireEvent.click(screen.getByRole("button", { name: "Revoke OAuth grant" }));
-    const fallback = await screen.findByRole("button", { name: "Remove OAuth grant locally" });
+    fireEvent.click(screen.getByRole("button", { name: "OAuth grant 취소" }));
+    const fallback = await screen.findByRole("button", { name: "OAuth grant 로컬에서 제거" });
     expect(mocks.revokeGrant).toHaveBeenLastCalledWith(oauthGrant.grantId, false);
     expect(screen.getByText(/원격에서 revoke하지 못했습니다/)).not.toBeNull();
 
@@ -519,6 +519,6 @@ describe("Protocol Lab", () => {
       true,
     ));
     expect(await screen.findByText(/로컬에서 제거했습니다/)).not.toBeNull();
-    expect(screen.queryByText("Selected OAuth grant")).toBeNull();
+    expect(screen.queryByText("선택한 OAuth grant")).toBeNull();
   });
 });

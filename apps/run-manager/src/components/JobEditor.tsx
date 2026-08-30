@@ -79,7 +79,7 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
         .catch((cause: unknown) => {
           if (requestId !== previewRequest.current) return;
           setPreviewItems([]);
-          setPreviewError(cause instanceof Error ? cause.message : String(cause));
+          setPreviewError(friendlyErrorMessage(cause));
         })
         .finally(() => {
           if (requestId === previewRequest.current) setPreviewLoading(false);
@@ -144,7 +144,7 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
     if (managed && draft.enabled && !workspaceTaskReady) {
       setWorkspaceFieldError(
         workspaceTask?.dependsOn.length
-          ? "dependency가 있는 task는 일정 실행을 지원하지 않습니다. Jobs 화면의 지금 실행에서 orchestration으로 실행하세요."
+          ? "의존성이 있는 task는 일정 실행을 지원하지 않습니다. Jobs 화면의 지금 실행에서 orchestration으로 실행하세요."
           : workspaceTask?.taskKind === "shell" && workspaceTask.trusted && !workspaceTask.shellTrusted
           ? "셸 실행 승인을 완료한 뒤 workspace task를 활성화하세요."
           : "소스 승인과 사용 가능 상태를 확인한 뒤 workspace task를 활성화하세요.",
@@ -167,9 +167,11 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
     try {
       await onSave(toJobInput(draft));
     } catch (cause) {
-      const message = friendlyErrorMessage(cause);
-      const backendErrors = fieldErrorFromBackend(message);
-      setErrors(Object.keys(backendErrors).length > 0 ? backendErrors : { name: message });
+      const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
+      const backendErrors = fieldErrorFromBackend(raw);
+      setErrors(Object.keys(backendErrors).length > 0
+        ? backendErrors
+        : { name: friendlyErrorMessage(cause) });
     } finally {
       setSaving(false);
     }
@@ -180,7 +182,7 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
       <div className="editor-main">
         <header className="editor-header">
           <div>
-            <span className="eyebrow">JOB EDITOR</span>
+          <span className="eyebrow">작업 편집기</span>
             <h2>{title}</h2>
             <p className="subtitle">예약 실행에 필요한 정의를 저장합니다.</p>
             {managed ? (

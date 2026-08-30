@@ -3,6 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
+import { isKeyboardActivation } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createWorktree,
@@ -38,8 +39,8 @@ function usesNativeTextContext(target: EventTarget | null): boolean {
 
 const SAFE_APP_ERRORS = new Set([
   "지원하지 않는 열기 요청입니다",
-  "요청한 repository 경로를 사용할 수 없습니다",
-  "repository 경로를 확인할 수 없습니다",
+  "요청한 저장소 경로를 사용할 수 없습니다",
+  "저장소 경로를 확인할 수 없습니다",
 ]);
 
 /** Keep legacy/native details out of the top-level App error banner. */
@@ -141,7 +142,7 @@ export default function App() {
     } catch (e) {
       if (!isCurrentScan()) return;
       pendingSelectionKeyRef.current = null;
-      setError(safeRepoManagerError(e, "repository 목록을 불러오지 못했습니다."));
+      setError(safeRepoManagerError(e, "저장소 목록을 불러오지 못했습니다."));
     } finally {
       if (isCurrentScan()) setReposLoaded(true);
     }
@@ -165,7 +166,7 @@ export default function App() {
     pendingSelectionKeyRef.current = null;
     const action = routeOpenRequest(request);
     if (action.kind === "error") {
-      setError(safeRepoManagerError(action.message, "repository 열기 요청을 처리하지 못했습니다"));
+      setError(safeRepoManagerError(action.message, "저장소 열기 요청을 처리하지 못했습니다"));
       return;
     }
 
@@ -185,7 +186,7 @@ export default function App() {
       }
     } catch (cause) {
       if (sequence === openSequenceRef.current) {
-        setError(safeRepoManagerError(cause, "repository 경로를 확인할 수 없습니다"));
+        setError(safeRepoManagerError(cause, "저장소 경로를 확인할 수 없습니다"));
       }
     }
   };
@@ -205,7 +206,7 @@ export default function App() {
           if (!disposed && request) void handleOpenRequestRef.current(request);
         })
         .catch(() => {
-          if (!disposed) setError("repository 열기 요청을 처리하지 못했습니다");
+          if (!disposed) setError("저장소 열기 요청을 처리하지 못했습니다");
         });
     };
     let coldStartConsumed = false;
@@ -262,7 +263,7 @@ export default function App() {
     try {
       await openIn(target.id, path);
     } catch (e) {
-      setError(safeRepoManagerError(e, "다른 앱으로 repository를 열 수 없습니다"));
+      setError(safeRepoManagerError(e, "다른 앱으로 저장소를 열 수 없습니다"));
     }
   };
 
@@ -272,7 +273,7 @@ export default function App() {
       const path = await repositoryCopyPath(repo.path);
       await navigator.clipboard.writeText(path);
     } catch {
-      setError("repository 경로를 확인하거나 복사하지 못했습니다");
+      setError("저장소 경로를 확인하거나 복사하지 못했습니다");
     }
   };
 
@@ -281,7 +282,7 @@ export default function App() {
     try {
       await openRepositoryFolder(repo.path);
     } catch {
-      setError("repository 폴더를 열 수 없습니다");
+      setError("저장소 폴더를 열 수 없습니다");
     }
   };
 
@@ -333,27 +334,27 @@ export default function App() {
     <div className="app">
       <header className="toolbar">
         <h1 className="title">Repo Manager</h1>
-        <label className="sr-only" htmlFor="repo-scan-root">탐색 root</label>
+        <label className="sr-only" htmlFor="repo-scan-root">탐색 루트</label>
         <input
           id="repo-scan-root"
           className="root-input"
           value={root}
           onChange={(e) => setRoot(e.currentTarget.value)}
-          placeholder="탐색 root"
+          placeholder="탐색 루트"
         />
         <button className="btn primary" onClick={() => void scan()}>탐색</button>
       </header>
       {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
       {truncated && (
         <div className="note dim">
-          탐색 범위가 커서 일부 디렉터리를 건너뛰었습니다 (깊이·개수 상한). root를 더 좁혀서 다시 탐색하세요.
+          탐색 범위가 커서 일부 디렉터리를 건너뛰었습니다 (깊이·개수 상한). 루트를 더 좁혀서 다시 탐색하세요.
         </div>
       )}
 
       {registrationDraft && (
-        <section className="registration-draft" aria-label="Repository 등록 초안">
+        <section className="registration-draft" aria-label="저장소 등록 초안">
           <div>
-            <strong>Repository 등록 초안</strong>
+            <strong>저장소 등록 초안</strong>
             <span className="draft-path">{registrationDraft.path}</span>
           </div>
           <span className="draft-help">현재 목록에는 없습니다. 아직 저장하거나 Git 명령을 실행하지 않았습니다.</span>
@@ -376,7 +377,7 @@ export default function App() {
               role="group"
               tabIndex={0}
               aria-current={isSelected ? "true" : undefined}
-              aria-label={`${r.path} repository`}
+              aria-label={`${r.path} 저장소`}
               data-repo-key={r.canonicalKey}
               onClick={(event) => {
                 if (!usesNativeTextContext(event.target)) {
@@ -384,22 +385,22 @@ export default function App() {
                   setRegistrationDraft(null);
                 }
               }}
-              {...repositoryContextMenu.triggerProps}
               onContextMenu={(event) => {
                 if (!usesNativeTextContext(event.target)) {
                   repositoryContextMenu.triggerProps.onContextMenu?.(event);
                 }
               }}
               onKeyDown={(event) => {
-                if (!usesNativeTextContext(event.target)) {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedRepoKey(r.canonicalKey);
-                    setRegistrationDraft(null);
-                    return;
-                  }
-                  repositoryContextMenu.triggerProps.onKeyDown?.(event);
-                }
+                if (usesNativeTextContext(event.target)) return;
+                repositoryContextMenu.triggerProps.onKeyDown?.(event);
+                if (
+                  event.defaultPrevented
+                  || event.target !== event.currentTarget
+                  || !isKeyboardActivation(event)
+                ) return;
+                event.preventDefault();
+                setSelectedRepoKey(r.canonicalKey);
+                setRegistrationDraft(null);
               }}
             >
               <div className="repo-head">
@@ -415,7 +416,7 @@ export default function App() {
                     <button
                       key={target.id}
                       className="mini"
-                      title={`${target.displayName}에서 ${target.payloadKind === "workspace" ? "workspace" : "path"}로 열기`}
+                      title={`${target.displayName}에서 ${target.payloadKind === "workspace" ? "workspace" : "경로"}로 열기`}
                       onClick={() => void onOpen(target, r.path)}
                     >
                       {target.displayName}
@@ -458,7 +459,7 @@ export default function App() {
             </div>
           );
         })}
-        {repos.length === 0 && <div className="dim">repository가 없습니다.</div>}
+        {repos.length === 0 && <div className="dim">저장소가 없습니다.</div>}
       </div>
       <HistoryDiffPanel repo={selectedRepo} />
       <DependencyLensPanel repo={selectedRepo} />
@@ -474,7 +475,7 @@ export default function App() {
         items={repositoryContextItems}
         onSelect={onRepositoryContextSelect}
         onClose={repositoryContextMenu.close}
-        ariaLabel="Repository 메뉴"
+        ariaLabel="저장소 메뉴"
       />
     </div>
   );

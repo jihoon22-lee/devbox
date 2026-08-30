@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
 import {
   changeLspDocument,
@@ -431,6 +432,12 @@ function fileName(path: string): string {
 }
 
 describe("App editor shell operations", () => {
+  it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
+    const { container, getByRole } = render(<App />);
+    await waitFor(() => expect((getByRole("textbox", { name: "열 파일 경로" }) as HTMLInputElement).disabled).toBe(false));
+    await assertNoA11yViolations(container);
+  });
+
   it("exposes separate editor and preview regions while keeping preview state explicit", async () => {
     loadSessionMock.mockResolvedValue({
       session: {
@@ -551,6 +558,19 @@ describe("App editor shell operations", () => {
     await waitFor(() => expect(rendered.getByRole("tab", { name: /one\.ts/ })).toBeTruthy());
   });
 
+  it("does not open a path while an IME composition is committing Enter", async () => {
+    openFileMock.mockResolvedValue(openedFile());
+    const rendered = render(<App />);
+    const input = rendered.getByRole("textbox", { name: "열 파일 경로" });
+    await waitFor(() => expect((input as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(input, { target: { value: "/tmp/one.ts" } });
+
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(openFileMock).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(openFileMock).toHaveBeenCalledTimes(1));
+  });
+
   it("keeps a newer edit dirty after the save response refreshes disk metadata", async () => {
     const rendered = await openOne();
     const edit = rendered.getByRole("button", { name: "edit /tmp/one.ts" });
@@ -617,6 +637,9 @@ describe("App editor shell operations", () => {
 
     const rendered = await openOne();
     fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true, isComposing: true });
+    expect(saveFileMock).not.toHaveBeenCalled();
+    expect(saveLspDocumentMock).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "s", ctrlKey: true });
     await waitFor(() => expect(saveLspDocumentMock).toHaveBeenCalledTimes(1));
     expect(events).toEqual(["file-save", "did-save"]);
@@ -716,7 +739,8 @@ describe("App editor shell operations", () => {
     const rendered = await openOne();
     fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
     fireEvent.keyDown(window, { key: "s", ctrlKey: true });
-    await waitFor(() => expect(rendered.getByRole("alert").textContent).toContain("disk is read-only"));
+    await waitFor(() => expect(rendered.getByRole("alert").textContent).toContain("읽기 전용 파일이라 저장할 수 없습니다."));
+    expect(rendered.getByRole("alert").textContent).not.toContain("disk is read-only");
     expect(saveLspDocumentMock).not.toHaveBeenCalled();
   });
 
@@ -767,15 +791,23 @@ describe("App editor shell operations", () => {
   it("uses an accessible app dialog before closing a dirty tab", async () => {
     const rendered = await openOne();
     fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
-    fireEvent.click(rendered.getByRole("button", { name: "/tmp/one.ts 닫기" }));
+    const closeButton = rendered.getByRole("button", { name: "/tmp/one.ts 닫기" });
+    closeButton.focus();
+    fireEvent.click(closeButton);
 
     const dialog = rendered.getByRole("dialog", { name: "저장되지 않은 변경 사항" });
     expect(dialog).toBeTruthy();
-    expect(rendered.queryByRole("button", { name: "취소" })).toBeTruthy();
-    fireEvent.click(rendered.getByRole("button", { name: "취소" }));
-    expect(rendered.queryByRole("dialog")).toBeNull();
+    const cancelButton = rendered.getByRole("button", { name: "취소" });
+    await waitFor(() => expect(document.activeElement).toBe(cancelButton));
+    const saveButton = rendered.getByRole("button", { name: "저장 후 닫기" });
+    saveButton.focus();
+    fireEvent.keyDown(saveButton, { key: "Tab" });
+    expect(document.activeElement).toBe(cancelButton);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(rendered.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(closeButton));
 
-    fireEvent.click(rendered.getByRole("button", { name: "/tmp/one.ts 닫기" }));
+    fireEvent.click(closeButton);
     fireEvent.click(rendered.getByRole("button", { name: "변경 내용 버리고 닫기" }));
     await waitFor(() => expect(rendered.queryByRole("tab", { name: /one\.ts/ })).toBeNull());
   });

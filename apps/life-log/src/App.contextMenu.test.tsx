@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, { toDateStr, weekRange } from "./App";
 import type { DigestInput, DigestResponse, KnowledgeDraftHistoryEntry } from "./api";
@@ -211,10 +212,16 @@ function historyEntryFixture(startDate: string): KnowledgeDraftHistoryEntry {
 
 afterEach(() => cleanup());
 
+it("초기 앱 셸에 구조적 접근성 위반이 없다", async () => {
+  const { container } = render(<App />);
+  await screen.findByRole("heading", { name: "일간 로컬 요약" });
+  await assertNoA11yViolations(container);
+});
+
 async function renderLoadedApp() {
   render(<App />);
-  await screen.findByRole("heading", { name: "Daily local digest" });
-  await waitFor(() => expect(screen.queryByText("Loading...")).toBeNull());
+  await screen.findByRole("heading", { name: "일간 로컬 요약" });
+  await waitFor(() => expect(screen.queryByText("불러오는 중…")).toBeNull());
   return screen.getByLabelText(/\d{4}-\d{2}-\d{2} 선택된 날짜/u) as HTMLInputElement;
 }
 
@@ -222,21 +229,21 @@ describe("Life Log daily digest", () => {
   it("exposes day source/rule provenance and explicit copy/download actions", async () => {
     await renderLoadedApp();
 
-    expect(await screen.findByRole("heading", { name: "Daily local digest" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "일간 로컬 요약" })).toBeTruthy();
     expect(mocks.getDay).not.toHaveBeenCalled();
-    expect(screen.getByText(/Browser preview only · native local data unavailable/u)).toBeTruthy();
+    expect(screen.getByText(/브라우저 미리보기만 사용 · 네이티브 로컬 데이터 사용 불가/u)).toBeTruthy();
     expect(screen.getByTestId("run-summary").textContent).toContain("—");
     expect(screen.getByTestId("knowledge-summary").textContent).toContain("—");
-    expect(screen.getByLabelText("Application filter")).toBeTruthy();
+    expect(screen.getByLabelText("애플리케이션 필터")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy digest" }));
+    fireEvent.click(screen.getByRole("button", { name: "요약 복사" }));
     await waitFor(() => expect(mocks.writeText).toHaveBeenCalledWith("# Life Log local digest\n"));
 
-    fireEvent.click(screen.getByText("Sources and aggregation rules"));
+    fireEvent.click(screen.getByText("소스와 집계 규칙"));
     expect(screen.getByText("life-log")).toBeTruthy();
     expect(screen.getByText("sessionWindow")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Download preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "미리보기 다운로드" }));
     await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
   });
 
@@ -254,9 +261,9 @@ describe("Life Log daily digest", () => {
 
     await renderLoadedApp();
 
-    expect(screen.getByTestId("run-summary").textContent).toContain("2 succeeded · 1 failed");
-    expect(screen.getByTestId("knowledge-summary").textContent).toContain("3 modified");
-    expect(screen.getByText("Run 2/1 · Knowledge 3")).toBeTruthy();
+    expect(screen.getByTestId("run-summary").textContent).toContain("2건 성공 · 1건 실패");
+    expect(screen.getByTestId("knowledge-summary").textContent).toContain("3건 수정");
+    expect(screen.getByText("Run Manager 2/1 · Knowledge 3건")).toBeTruthy();
   });
 
   it("clears stale digest state before a newer navigation request completes", async () => {
@@ -280,21 +287,21 @@ describe("Life Log daily digest", () => {
     fireEvent.click(screen.getByRole("button", { name: "다음 날짜" }));
     await waitFor(() => expect(mocks.getDigest).toHaveBeenCalledTimes(2));
     expect(dateInput.value).not.toBe(initialDate);
-    expect(screen.queryByRole("heading", { name: "Daily local digest" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "일간 로컬 요약" })).toBeNull();
 
     resolveFirst(digestFixture(firstInput!));
     await Promise.resolve();
     expect(screen.queryByText("day fixture")).toBeNull();
 
     resolveSecond();
-    await screen.findByRole("heading", { name: "Daily local digest" });
+    await screen.findByRole("heading", { name: "일간 로컬 요약" });
     expect(dateInput.value).not.toBe(initialDate);
   });
 
   it("keeps Knowledge handoff disabled in browser preview without creating an IPC side effect", async () => {
     await renderLoadedApp();
 
-    const handoff = screen.getByRole("button", { name: "Send to Knowledge" });
+    const handoff = screen.getByRole("button", { name: "Knowledge로 보내기" });
     expect((handoff as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(handoff);
     expect(mocks.sendDigestToKnowledge).not.toHaveBeenCalled();
@@ -304,13 +311,13 @@ describe("Life Log daily digest", () => {
     mocks.native = true;
     await renderLoadedApp();
 
-    const handoff = screen.getByRole("button", { name: "Send to Knowledge" });
+    const handoff = screen.getByRole("button", { name: "Knowledge로 보내기" });
     expect((handoff as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(handoff);
     fireEvent.click(handoff);
 
     await waitFor(() => expect(mocks.sendDigestToKnowledge).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText("Knowledge draft를 미리보기로 보냈습니다. 저장 전 내용을 확인하세요.")).toBeTruthy();
+    expect(await screen.findByText("Knowledge 초안을 미리보기로 보냈습니다. 저장 전 내용을 확인하세요.")).toBeTruthy();
     expect(mocks.sendDigestToKnowledge).toHaveBeenCalledWith(expect.objectContaining({
       period: "day",
     }));
@@ -326,9 +333,9 @@ describe("Life Log daily digest", () => {
       .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve; }));
 
     await renderLoadedApp();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    const panel = await screen.findByRole("region", { name: "Knowledge draft handoff history" });
-    fireEvent.click(within(panel).getByRole("button", { name: "Refresh" }));
+    fireEvent.click(screen.getByRole("button", { name: "설정" }));
+    const panel = await screen.findByRole("region", { name: "Knowledge 초안 handoff 기록" });
+    fireEvent.click(within(panel).getByRole("button", { name: "새로 고침" }));
     await waitFor(() => expect(mocks.knowledgeDraftHistory).toHaveBeenCalledTimes(2));
 
     resolveRefresh([historyEntryFixture("2026-08-28")]);
@@ -369,7 +376,7 @@ describe("Life Log date context menu", () => {
       endDate: dateInput.value,
       format: "markdown",
     })));
-    expect(await screen.findByText(/MARKDOWN export를 브라우저 미리보기로 다운로드했습니다/u)).toBeTruthy();
+    expect(await screen.findByText(/MARKDOWN 내보내기를 브라우저 미리보기로 다운로드했습니다/u)).toBeTruthy();
   });
 
   it("키보드로 연 exact chart date를 먼저 선택하고 그 날짜를 복사한다", async () => {
@@ -378,14 +385,14 @@ describe("Life Log date context menu", () => {
     const chartDate = new Date(weekRange(selected).start);
     if (toDateStr(chartDate) === dateInput.value) chartDate.setDate(chartDate.getDate() + 1);
     const chartDateKey = toDateStr(chartDate);
-    fireEvent.click(screen.getByRole("button", { name: "Week" }));
+    fireEvent.click(screen.getByRole("button", { name: "주" }));
     const target = await screen.findByRole("button", { name: `${chartDateKey} 날짜` });
     target.focus();
 
     fireEvent.keyDown(target, { key: "F10", code: "F10", shiftKey: true });
 
     await waitFor(() => expect(dateInput.value).toBe(chartDateKey));
-    await waitFor(() => expect(screen.queryByText("Loading...")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("불러오는 중…")).toBeNull());
     const currentTarget = await screen.findByRole("button", { name: `${chartDateKey} 날짜` });
     expect(currentTarget.getAttribute("aria-current")).toBe("date");
     fireEvent.click(screen.getByRole("menuitem", { name: "날짜 복사" }));
@@ -427,32 +434,32 @@ describe("Life Log date context menu", () => {
     fireEvent.contextMenu(dateInput);
     fireEvent.click(screen.getByRole("menuitem", { name: "Markdown 내보내기" }));
 
-    expect(await screen.findByText("MARKDOWN export 미리보기를 다운로드하지 못했습니다.")).toBeTruthy();
+    expect(await screen.findByText("MARKDOWN 내보내기 미리보기를 다운로드하지 못했습니다.")).toBeTruthy();
     expect(document.body.textContent).not.toContain(raw);
   });
 
   it("range preview modal은 initial focus, Escape close, accessible labelling을 제공한다", async () => {
     await renderLoadedApp();
-    const open = screen.getByRole("button", { name: "Export preview" });
+    const open = screen.getByRole("button", { name: "내보내기 미리보기" });
     open.focus();
     fireEvent.click(open);
 
-    const dialog = await screen.findByRole("dialog", { name: "Life Log export" });
+    const dialog = await screen.findByRole("dialog", { name: "Life Log 내보내기" });
     expect(dialog.getAttribute("aria-describedby")).toBe("life-log-export-description");
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("시작 날짜")));
 
     fireEvent.keyDown(document, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Life Log export" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Life Log 내보내기" })).toBeNull());
     expect(document.activeElement).toBe(open);
   });
 
   it("range preview modal은 Tab을 양 끝에서 순환시킨다", async () => {
     await renderLoadedApp();
-    fireEvent.click(screen.getByRole("button", { name: "Export preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "내보내기 미리보기" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Life Log export" });
+    const dialog = await screen.findByRole("dialog", { name: "Life Log 내보내기" });
     const first = screen.getByLabelText("시작 날짜");
-    const last = screen.getByRole("button", { name: "미리보기 다운로드" });
+    const last = within(dialog).getByRole("button", { name: "미리보기 다운로드" });
     await waitFor(() => expect(document.activeElement).toBe(first));
 
     last.focus();
@@ -471,11 +478,11 @@ describe("Life Log date context menu", () => {
     });
     mocks.exportLifeLog.mockReturnValueOnce(pending);
     await renderLoadedApp();
-    fireEvent.click(screen.getByRole("button", { name: "Export preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "내보내기 미리보기" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Life Log export" });
+    const dialog = await screen.findByRole("dialog", { name: "Life Log 내보내기" });
     const cancel = screen.getByRole("button", { name: "취소" });
-    const submit = screen.getByRole("button", { name: "미리보기 다운로드" });
+    const submit = within(dialog).getByRole("button", { name: "미리보기 다운로드" });
     fireEvent.click(submit);
     await waitFor(() => expect(dialog.getAttribute("aria-busy")).toBe("true"));
     expect(cancel.hasAttribute("disabled")).toBe(true);
@@ -494,7 +501,7 @@ describe("Life Log date context menu", () => {
       byteLength: 10,
       content: "# fixture\n",
     });
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Life Log export" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Life Log 내보내기" })).toBeNull());
   });
 
   it("unmount가 pending export의 stale completion을 무효화한다", async () => {
@@ -504,11 +511,12 @@ describe("Life Log date context menu", () => {
     });
     mocks.exportLifeLog.mockReturnValueOnce(pending);
     const { unmount } = render(<App />);
-    await screen.findByRole("heading", { name: "Daily local digest" });
-    await waitFor(() => expect(screen.queryByText("Loading...")).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: "Export preview" }));
-    fireEvent.click(await screen.findByRole("button", { name: "미리보기 다운로드" }));
-    await waitFor(() => expect(screen.getByRole("dialog", { name: "Life Log export" }).getAttribute("aria-busy")).toBe("true"));
+    await screen.findByRole("heading", { name: "일간 로컬 요약" });
+    await waitFor(() => expect(screen.queryByText("불러오는 중…")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "내보내기 미리보기" }));
+    const dialog = await screen.findByRole("dialog", { name: "Life Log 내보내기" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "미리보기 다운로드" }));
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Life Log 내보내기" }).getAttribute("aria-busy")).toBe("true"));
 
     unmount();
     resolveExport({
@@ -526,11 +534,13 @@ describe("Life Log date context menu", () => {
 
   it("Git 프로젝트는 backend가 확정한 경로만 저장하고 명시적으로 WSL 연결을 확인한다", async () => {
     await renderLoadedApp();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "설정" }));
     const input = screen.getByPlaceholderText(/wsl\$/u);
     const path = "//wsl$/Ubuntu/home/jihoon/projects/devbox";
     fireEvent.change(input, { target: { value: path } });
-    fireEvent.click(screen.getByRole("button", { name: "추가" }));
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(mocks.setProjects).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => expect(mocks.setProjects).toHaveBeenCalledWith([path]));
     expect(await screen.findByText(path)).toBeTruthy();
@@ -542,7 +552,7 @@ describe("Life Log date context menu", () => {
   it("Git 프로젝트 저장 실패를 optimistic 상태로 남기지 않는다", async () => {
     mocks.setProjects.mockRejectedValueOnce("project_path_invalid");
     await renderLoadedApp();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "설정" }));
     const input = screen.getByPlaceholderText(/wsl\$/u);
     const path = "relative/project";
     fireEvent.change(input, { target: { value: path } });
@@ -558,7 +568,7 @@ describe("Life Log date context menu", () => {
       resolveProjects = resolve;
     }));
     await renderLoadedApp();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "설정" }));
     const input = screen.getByPlaceholderText(/wsl\$/u);
     const path = "//wsl$/Ubuntu/home/jihoon/projects/devbox";
     fireEvent.change(input, { target: { value: path } });

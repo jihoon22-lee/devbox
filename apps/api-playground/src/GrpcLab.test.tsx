@@ -135,15 +135,15 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 async function connectLocalProto(): Promise<void> {
-  fireEvent.click(screen.getByRole("button", { name: "Choose proto" }));
+  fireEvent.click(screen.getByRole("button", { name: "proto 선택" }));
   await screen.findByText(protoSelection.label);
-  fireEvent.click(screen.getByRole("button", { name: "Choose import root" }));
+  fireEvent.click(screen.getByRole("button", { name: "가져오기 루트 선택" }));
   await screen.findByText(importRootSelection.label);
   await waitFor(() => expect(
-    (screen.getByRole("button", { name: "Connect gRPC" }) as HTMLButtonElement).disabled,
+    (screen.getByRole("button", { name: "gRPC 연결" }) as HTMLButtonElement).disabled,
   ).toBe(false));
-  fireEvent.click(screen.getByRole("button", { name: "Connect gRPC" }));
-  await screen.findByRole("heading", { name: "Method explorer" });
+  fireEvent.click(screen.getByRole("button", { name: "gRPC 연결" }));
+  await screen.findByRole("heading", { name: "메서드 탐색기" });
 }
 
 describe("gRPC Protocol Lab", () => {
@@ -152,14 +152,14 @@ describe("gRPC Protocol Lab", () => {
 
     expect(screen.getByText(/브라우저 미리보기에서는 gRPC 연결이나 native 파일 선택/)).toBeTruthy();
     for (const name of [
-      "Connect gRPC",
-      "Choose proto",
-      "Choose import root",
-      "Choose CA",
-      "Choose client certificate",
-      "Choose private key",
-      "Import encrypted credential",
-      "Refresh credentials",
+      "gRPC 연결",
+      "proto 선택",
+      "가져오기 루트 선택",
+      "CA 선택",
+      "클라이언트 인증서 선택",
+      "private key 선택",
+      "암호화된 자격 증명 가져오기",
+      "자격 증명 새로 고침",
     ]) {
       expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
     }
@@ -189,7 +189,7 @@ describe("gRPC Protocol Lab", () => {
       rpcTimeoutMs: 30_000,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Invoke RPC" }));
+    fireEvent.click(screen.getByRole("button", { name: "RPC 호출" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith(
       connection.connectionId,
       "grpc-1",
@@ -222,12 +222,12 @@ describe("gRPC Protocol Lab", () => {
     expect(JSON.stringify(persisted)).not.toContain(protoSelection.selectionId);
     expect(JSON.stringify(persisted)).not.toContain(credential.credentialId);
 
-    fireEvent.click(screen.getByRole("button", { name: "Export summary" }));
+    fireEvent.click(screen.getByRole("button", { name: "요약 내보내기" }));
     await waitFor(() => expect(mocks.exportSummary).toHaveBeenCalledWith(persisted.entries[0]));
     await screen.findByText(/summary를 저장했습니다/);
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
-    await screen.findByText("아직 저장된 gRPC summary가 없습니다.");
+    fireEvent.click(screen.getByRole("button", { name: "기록 지우기" }));
+    await screen.findByText("아직 저장된 gRPC 요약이 없습니다.");
     expect(JSON.parse(localStorage.getItem(GRPC_HISTORY_KEY) ?? "null")).toEqual({
       schema: GRPC_HISTORY_SCHEMA,
       entries: [],
@@ -241,15 +241,15 @@ describe("gRPC Protocol Lab", () => {
     render(<GrpcLab native />);
     await screen.findByText(credential.label);
 
-    const endpoint = screen.getByRole("textbox", { name: "gRPC endpoint" });
+    const endpoint = screen.getByRole("textbox", { name: "gRPC 엔드포인트" });
     fireEvent.change(endpoint, { target: { value: "https://api.example.test" } });
-    fireEvent.change(screen.getByRole("combobox", { name: "gRPC TLS root mode" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "gRPC TLS 루트 방식" }), {
       target: { value: "custom" },
     });
-    fireEvent.change(screen.getByRole("combobox", { name: "gRPC TLS credential" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "gRPC TLS 자격 증명" }), {
       target: { value: credential.credentialId },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "gRPC server name override" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "gRPC 서버 이름 재정의" }), {
       target: { value: "mtls.example.test" },
     });
     fireEvent.change(endpoint, { target: { value: "http://127.0.0.1:50051" } });
@@ -280,7 +280,7 @@ describe("gRPC Protocol Lab", () => {
     render(<GrpcLab native />);
     await connectLocalProto();
 
-    const filter = screen.getByRole("textbox", { name: "Filter gRPC methods" });
+    const filter = screen.getByRole("textbox", { name: "gRPC 메서드 필터" });
     const method = screen.getByRole("combobox", { name: "gRPC method" }) as HTMLSelectElement;
     fireEvent.change(filter, { target: { value: "WatchHello" } });
     await waitFor(() => expect(method.value).toBe("Greeter.WatchHello"));
@@ -288,7 +288,7 @@ describe("gRPC Protocol Lab", () => {
 
     fireEvent.change(filter, { target: { value: "no-match" } });
     await waitFor(() => expect(method.value).toBe(""));
-    expect((screen.getByRole("button", { name: "Invoke RPC" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "RPC 호출" }) as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.change(filter, { target: { value: "" } });
     await waitFor(() => expect(method.value).toBe("Greeter.SayHello"));
@@ -302,7 +302,7 @@ describe("gRPC Protocol Lab", () => {
     render(<GrpcLab native />);
     await connectLocalProto();
 
-    fireEvent.click(screen.getByRole("button", { name: "Invoke RPC" }));
+    fireEvent.click(screen.getByRole("button", { name: "RPC 호출" }));
     await screen.findByRole("button", { name: "취소" });
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
     await waitFor(() => expect(mocks.cancel).toHaveBeenCalledWith(

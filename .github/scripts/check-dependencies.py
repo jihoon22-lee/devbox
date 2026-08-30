@@ -147,8 +147,33 @@ def flatten_pnpm_licenses(
     inventory: dict[str, list[dict[str, Any]]],
     policy: dict[str, Any],
     integrities: dict[tuple[str, str], str],
+    *,
+    require_all_policy_entries: bool = True,
 ) -> list[dict[str, str]]:
     allowed = set(policy.get("allowedPnpmLicenses", []))
+    approvals: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for entry in policy.get("packageLicenseApprovals", []):
+        required = (
+            "package",
+            "version",
+            "reportedLicense",
+            "source",
+            "integrity",
+            "scope",
+            "reason",
+        )
+        if any(not entry.get(field) for field in required):
+            fail(f"incomplete package license approval: {entry!r}")
+        if entry["reportedLicense"] in allowed or entry["reportedLicense"] == "Unknown":
+            fail(
+                "package license approval must target a non-allowlisted known license: "
+                f"{entry['package']}@{entry['version']} -> {entry['reportedLicense']}"
+            )
+        key = (entry["package"], entry["version"], entry["reportedLicense"])
+        if key in approvals:
+            fail(f"duplicate package license approval: {key!r}")
+        approvals[key] = entry
+
     clarifications: dict[tuple[str, str, str], dict[str, Any]] = {}
     for entry in policy.get("licenseClarifications", []):
         required = (
@@ -172,11 +197,10 @@ def flatten_pnpm_licenses(
             fail(f"duplicate license clarification: {key!r}")
         clarifications[key] = entry
     used_clarifications: set[tuple[str, str, str]] = set()
+    used_approvals: set[tuple[str, str, str]] = set()
     rows: list[dict[str, str]] = []
 
     for reported_license, packages in inventory.items():
-        if reported_license not in allowed and reported_license != "Unknown":
-            fail(f"unapproved pnpm license expression: {reported_license}")
         for package in packages:
             name = package.get("name")
             versions = package.get("versions") or []
@@ -197,6 +221,17 @@ def flatten_pnpm_licenses(
                     used_clarifications.add((name, version, reported_license))
                     accepted_license = clarification["acceptedLicense"]
                     source = clarification["source"]
+                elif reported_license not in allowed:
+                    approval = approvals.get((name, version, reported_license))
+                    if approval is None:
+                        fail(
+                            "unapproved pnpm license expression: "
+                            f"{reported_license} ({name}@{version})"
+                        )
+                    if approval["integrity"] != integrity:
+                        fail(f"package license approval integrity mismatch: {name}@{version}")
+                    used_approvals.add((name, version, reported_license))
+                    source = approval["source"]
                 rows.append(
                     {
                         "name": name,
@@ -207,9 +242,13 @@ def flatten_pnpm_licenses(
                     }
                 )
 
-    stale_clarifications = sorted(set(clarifications) - used_clarifications)
-    if stale_clarifications:
-        fail(f"unused license clarifications: {stale_clarifications!r}")
+    if require_all_policy_entries:
+        stale_clarifications = sorted(set(clarifications) - used_clarifications)
+        if stale_clarifications:
+            fail(f"unused license clarifications: {stale_clarifications!r}")
+        stale_approvals = sorted(set(approvals) - used_approvals)
+        if stale_approvals:
+            fail(f"unused package license approvals: {stale_approvals!r}")
 
     rows.sort(key=lambda row: (row["name"].lower(), row["version"]))
     return rows
@@ -316,6 +355,7 @@ def main() -> None:
         run_json(["pnpm", "licenses", "list", "--prod", "--json"]),
         policy,
         integrities,
+        require_all_policy_entries=False,
     )
     notices = render_notices(rust_rows(cargo_packages), runtime_rows)
 

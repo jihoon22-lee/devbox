@@ -158,7 +158,7 @@ export function QrTool() {
   const copyPng = () => {
     const currentAction = ++actionId.current;
     if (!result || typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
-      setActionError("이 환경에서는 PNG clipboard를 사용할 수 없습니다. PNG 저장을 사용하세요.");
+      setActionError("이 환경에서는 PNG를 클립보드에 복사할 수 없습니다. PNG 저장을 사용하세요.");
       return;
     }
     try {
@@ -170,7 +170,7 @@ export function QrTool() {
         })
         .catch(() => {
           if (mounted.current && actionId.current === currentAction) {
-            setActionError("PNG clipboard를 사용할 수 없습니다. PNG 저장을 사용하세요.");
+            setActionError("PNG를 클립보드에 복사할 수 없습니다. PNG 저장을 사용하세요.");
           }
         });
     } catch {
@@ -259,9 +259,9 @@ export function QrTool() {
           />
         </label>
         <label>
-          Quiet zone (modules)
+          여백 (모듈)
           <input
-            aria-label="QR quiet zone"
+            aria-label="QR 여백"
             type="text"
             inputMode="numeric"
             value={quietZoneText}
@@ -285,10 +285,10 @@ export function QrTool() {
 
       {preset === "text" ? (
         <div className="qr-input-panel">
-          <label htmlFor="qr-text-input">텍스트 payload</label>
+          <label htmlFor="qr-text-input">텍스트 페이로드</label>
           <ToolTextArea
             id="qr-text-input"
-            aria-label="텍스트 payload"
+            aria-label="텍스트 페이로드"
             className="io-input qr-payload-input"
             placeholder="QR로 만들 텍스트를 입력하세요..."
             rows={8}
@@ -308,10 +308,10 @@ export function QrTool() {
 
       {preset === "url" ? (
         <div className="qr-input-panel">
-          <label htmlFor="qr-url-input">HTTP(S) URL payload</label>
+          <label htmlFor="qr-url-input">HTTP(S) URL 페이로드</label>
           <ToolTextField
             id="qr-url-input"
-            aria-label="HTTP(S) URL payload"
+            aria-label="HTTP(S) URL 페이로드"
             className="qr-single-input"
             placeholder="https://example.com/..."
             value={url}
@@ -379,7 +379,7 @@ export function QrTool() {
             />
             숨겨진 네트워크
           </label>
-          <div className="qr-field-help">SSID는 UTF-8 32바이트, 비밀번호는 63바이트까지입니다. 예약 문자는 QR 형식에 맞게 escape됩니다.</div>
+          <div className="qr-field-help">SSID는 UTF-8 32바이트, 비밀번호는 63바이트까지입니다. 예약 문자는 QR 형식에 맞게 이스케이프 처리됩니다.</div>
         </div>
       ) : null}
 

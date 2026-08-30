@@ -301,8 +301,8 @@ let nextMockTemplateId = 2;
 let mockTemplates: NoteTemplate[] = [
   {
     id: 1,
-    name: "Daily note",
-    content: "---\ntitle: {{title}}\ndate: {{date}}\n---\n\n# {{title}}\n\nCreated at {{time}} in {{vault-relative-path}}.\n",
+    name: "일일 노트",
+    content: "---\ntitle: {{title}}\ndate: {{date}}\n---\n\n# {{title}}\n\n{{time}}에 {{vault-relative-path}}에서 작성되었습니다.\n",
     createdAtMs: Date.now(),
     updatedAtMs: Date.now(),
   },
@@ -424,25 +424,25 @@ export async function previewKnowledgeDraft(
   id: string,
   kind: KnowledgeDraftPreview["kind"] = "knowledge-draft/v1",
 ): Promise<KnowledgeDraftPreview> {
-  if (!isTauri()) throw new Error("Knowledge draft preview는 데스크톱 앱에서 사용할 수 없습니다");
+  if (!isTauri()) throw new Error("Knowledge 초안 미리보기는 데스크톱 앱에서 사용할 수 없습니다");
   return invoke<KnowledgeDraftPreview>("preview_knowledge_draft", { id, kind });
 }
 
 /** Save a confirmed preview and acknowledge/delete the one-time handoff. */
 export async function saveKnowledgeDraft(id: string): Promise<SaveKnowledgeDraftResult> {
-  if (!isTauri()) throw new Error("Knowledge draft 저장은 데스크톱 앱에서 사용할 수 없습니다");
+  if (!isTauri()) throw new Error("Knowledge 초안 저장은 데스크톱 앱에서 사용할 수 없습니다");
   return invoke<SaveKnowledgeDraftResult>("save_knowledge_draft", { id });
 }
 
 /** Restore a claimed draft without creating a note. */
 export async function discardKnowledgeDraft(id: string): Promise<void> {
-  if (!isTauri()) throw new Error("Knowledge draft 취소는 데스크톱 앱에서 사용할 수 없습니다");
+  if (!isTauri()) throw new Error("Knowledge 초안 취소는 데스크톱 앱에서 사용할 수 없습니다");
   await invoke("discard_knowledge_draft", { id });
 }
 
 /** Keep a long-running preview within the bounded claim lease. */
 export async function renewKnowledgeDraft(id: string): Promise<RenewKnowledgeDraftResult> {
-  if (!isTauri()) throw new Error("Knowledge draft 갱신은 데스크톱 앱에서 사용할 수 없습니다");
+  if (!isTauri()) throw new Error("Knowledge 초안 갱신은 데스크톱 앱에서 사용할 수 없습니다");
   return invoke<RenewKnowledgeDraftResult>("renew_knowledge_draft", { id });
 }
 

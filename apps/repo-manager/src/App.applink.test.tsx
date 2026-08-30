@@ -170,7 +170,7 @@ describe("Repo Manager Path app-link delivery", () => {
 
     await act(async () => resolveOlder?.(fixtures.draft));
 
-    expect(screen.queryByRole("region", { name: "Repository 등록 초안" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "저장소 등록 초안" })).toBeNull();
     expect(knownPath.closest(".repo-card")?.classList.contains("selected")).toBe(true);
   });
 
@@ -179,7 +179,7 @@ describe("Repo Manager Path app-link delivery", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("region", { name: "Repository 등록 초안" })).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "저장소 등록 초안" })).toBeTruthy();
     expect(screen.getByText(fixtures.draft.path)).toBeTruthy();
     expect(screen.getByText(/아직 저장하거나 Git 명령을 실행하지 않았습니다/)).toBeTruthy();
     expect(scanRootMock).toHaveBeenCalledTimes(1);
@@ -208,7 +208,7 @@ describe("Repo Manager Path app-link delivery", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("repository 경로를 확인할 수 없습니다")).toBeTruthy();
+    expect(await screen.findByText("저장소 경로를 확인할 수 없습니다")).toBeTruthy();
     expect(screen.getByText("Repo Manager")).toBeTruthy();
     expect(document.body.textContent).not.toContain(secretPath);
     expect(createWorktreeMock).not.toHaveBeenCalled();

@@ -78,11 +78,11 @@ describe("ToolTextArea context menu", () => {
 
     openMenu(input);
 
-    expect(screen.getByRole("menu", { name: "Input actions" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Paste" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Select all" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Clear" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    expect(screen.getByRole("menu", { name: "입력 작업" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "붙여넣기" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "모두 선택" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "지우기" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
 
     await waitFor(() => expect(input.value).toBe("alpha pasted"));
     expect(readClipboardTextMock).toHaveBeenCalledTimes(1);
@@ -95,12 +95,12 @@ describe("ToolTextArea context menu", () => {
     const input = screen.getByRole("textbox", { name: "Tool input" }) as HTMLTextAreaElement;
 
     openMenu(input);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Select all" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "모두 선택" }));
     expect(input.selectionStart).toBe(0);
     expect(input.selectionEnd).toBe(input.value.length);
 
     openMenu(input);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Clear" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "지우기" }));
     await waitFor(() => expect(input.value).toBe(""));
     await waitFor(() => expect(document.activeElement).toBe(input));
   });
@@ -129,7 +129,7 @@ describe("ToolTextArea context menu", () => {
     });
     input.dispatchEvent(compositionEvent);
     expect(compositionEvent.defaultPrevented).toBe(false);
-    expect(screen.queryByRole("menu", { name: "Input actions" })).toBeNull();
+    expect(screen.queryByRole("menu", { name: "입력 작업" })).toBeNull();
   });
 
   it("shows a recoverable error without changing input when clipboard read fails", async () => {
@@ -138,10 +138,10 @@ describe("ToolTextArea context menu", () => {
     const input = screen.getByRole("textbox", { name: "Tool input" }) as HTMLTextAreaElement;
 
     openMenu(input);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
 
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "Clipboard read failed: permission denied",
+      "클립보드를 읽지 못했습니다: permission denied",
     );
     expect(input.value).toBe("alpha beta");
   });
@@ -154,7 +154,7 @@ describe("ToolTextArea context menu", () => {
     input.setSelectionRange(1, 1);
 
     openMenu(input);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
 
     await waitFor(() => expect(input.value).toBe("a😀가"));
     expect(new TextEncoder().encode(input.value).byteLength).toBe(8);
@@ -165,7 +165,7 @@ describe("ToolTextArea context menu", () => {
     const view = render(<InputHarness initial="" maxPasteBytes={10} />);
     const input = screen.getByRole("textbox", { name: "Tool input" }) as HTMLTextAreaElement;
     openMenu(input);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
     await waitFor(() => expect(input.value).toBe("a"));
 
     let resolvePaste: (value: string) => void = () => undefined;
@@ -173,7 +173,7 @@ describe("ToolTextArea context menu", () => {
       resolvePaste = resolve;
     }));
     openMenu(input);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
     fireEvent.change(input, { target: { value: "new" } });
     await act(async () => {
       resolvePaste("stale");
@@ -186,7 +186,7 @@ describe("ToolTextArea context menu", () => {
       resolveUnmountedPaste = resolve;
     }));
     openMenu(input);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
     view.unmount();
     await act(async () => {
       resolveUnmountedPaste("after-unmount");
@@ -204,21 +204,21 @@ describe("ToolOutput context menu", () => {
         downloadName="toolbox-result.txt"
       />,
     );
-    const output = screen.getByLabelText("Output");
+    const output = screen.getByLabelText("출력");
 
     openMenu(output);
-    expect(screen.getByRole("menuitem", { name: "Copy" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Select all" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Save result file" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
+    expect(screen.getByRole("menuitem", { name: "복사" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "모두 선택" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "결과 파일 저장" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "복사" }));
     await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("result text"));
 
     openMenu(output);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Select all" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "모두 선택" }));
     expect(window.getSelection()?.toString()).toBe("result text");
 
     openMenu(output);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Save result file" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "결과 파일 저장" }));
     await waitFor(() => expect(createObjectUrlMock).toHaveBeenCalledTimes(1));
     expect(clickedDownload).toBe("toolbox-result.txt");
     expect(clickedHref).toBe("blob:toolbox-result");
@@ -227,9 +227,9 @@ describe("ToolOutput context menu", () => {
 
   it("disables all output actions for an empty result", () => {
     render(<ToolOutput className="io-output" value="" />);
-    openMenu(screen.getByLabelText("Output"));
+    openMenu(screen.getByLabelText("출력"));
 
-    for (const label of ["Copy", "Select all", "Save result file"]) {
+    for (const label of ["복사", "모두 선택", "결과 파일 저장"]) {
       expect(screen.getByRole("menuitem", { name: label }).getAttribute("aria-disabled")).toBe(
         "true",
       );
@@ -239,13 +239,13 @@ describe("ToolOutput context menu", () => {
   it("reports clipboard write failures without leaking or replacing the result", async () => {
     writeTextMock.mockRejectedValueOnce(new Error("clipboard busy"));
     render(<ToolOutput className="io-output" value="safe result" />);
-    const output = screen.getByLabelText("Output");
+    const output = screen.getByLabelText("출력");
 
     openMenu(output);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "복사" }));
 
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "Output action failed: clipboard busy",
+      "출력 작업을 완료하지 못했습니다: clipboard busy",
     );
     expect(output.textContent).toBe("safe result");
   });
@@ -265,7 +265,7 @@ describe("useAsyncTransform cancellation", () => {
         clearOutputOnInput
       />,
     );
-    const input = screen.getByRole("textbox", { name: "Input" });
+    const input = screen.getByRole("textbox", { name: "입력" });
 
     fireEvent.change(input, { target: { value: "first" } });
     expect(signals[signals.length - 1]?.aborted).toBe(false);

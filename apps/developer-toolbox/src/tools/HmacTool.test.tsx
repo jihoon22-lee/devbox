@@ -24,16 +24,16 @@ describe("HmacTool", () => {
   });
 
   function fillGenerateInputs() {
-    fireEvent.change(screen.getByLabelText("HMAC key"), { target: { value: "secret" } });
-    fireEvent.change(screen.getByLabelText("HMAC message"), { target: { value: "payload" } });
+    fireEvent.change(screen.getByLabelText("HMAC 키"), { target: { value: "secret" } });
+    fireEvent.change(screen.getByLabelText("HMAC 메시지"), { target: { value: "payload" } });
   }
 
   it("sends the explicit algorithm and encoding wire contract and exposes a copyable result", async () => {
     render(<HmacTool />);
     fillGenerateInputs();
 
-    fireEvent.click(screen.getByRole("button", { name: "Generate HMAC" }));
-    await waitFor(() => expect(screen.getByLabelText("HMAC output").textContent).toContain("generated-tag"));
+    fireEvent.click(screen.getByRole("button", { name: "HMAC 생성" }));
+    await waitFor(() => expect(screen.getByLabelText("HMAC 출력").textContent).toContain("generated-tag"));
     expect(mocks.hmacGenerate).toHaveBeenCalledWith({
       algorithm: "sha256",
       key: "secret",
@@ -42,7 +42,7 @@ describe("HmacTool", () => {
       messageEncoding: "utf8",
       outputEncoding: "hex",
     });
-    expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "복사" })).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain("생성했습니다");
   });
 
@@ -54,31 +54,31 @@ describe("HmacTool", () => {
     render(<HmacTool />);
     fillGenerateInputs();
 
-    const button = screen.getByRole("button", { name: "Generate HMAC" });
+    const button = screen.getByRole("button", { name: "HMAC 생성" });
     fireEvent.click(button);
     fireEvent.click(button);
 
     expect(mocks.hmacGenerate).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "Generating..." })).toBeTruthy();
-    expect((screen.getByLabelText("HMAC key") as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText("HMAC message") as HTMLTextAreaElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "생성 중..." })).toBeTruthy();
+    expect((screen.getByLabelText("HMAC 키") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("HMAC 메시지") as HTMLTextAreaElement).disabled).toBe(true);
     expect(screen.getByRole("status").textContent).toContain("생성하는 중");
 
     resolve("pending-tag");
-    await waitFor(() => expect(screen.getByLabelText("HMAC output").textContent).toContain("pending-tag"));
+    await waitFor(() => expect(screen.getByLabelText("HMAC 출력").textContent).toContain("pending-tag"));
   });
 
   it("does not submit while a key is being composed with an IME", async () => {
     render(<HmacTool />);
-    const key = screen.getByLabelText("HMAC key");
+    const key = screen.getByLabelText("HMAC 키");
     fireEvent.change(key, { target: { value: "secret" } });
-    fireEvent.change(screen.getByLabelText("HMAC message"), { target: { value: "payload" } });
+    fireEvent.change(screen.getByLabelText("HMAC 메시지"), { target: { value: "payload" } });
     fireEvent.compositionStart(key);
-    fireEvent.click(screen.getByRole("button", { name: "Generate HMAC" }));
+    fireEvent.click(screen.getByRole("button", { name: "HMAC 생성" }));
     expect(mocks.hmacGenerate).not.toHaveBeenCalled();
 
     fireEvent.compositionEnd(key);
-    fireEvent.click(screen.getByRole("button", { name: "Generate HMAC" }));
+    fireEvent.click(screen.getByRole("button", { name: "HMAC 생성" }));
     await waitFor(() => expect(mocks.hmacGenerate).toHaveBeenCalledTimes(1));
   });
 
@@ -89,22 +89,22 @@ describe("HmacTool", () => {
     }));
     const rendered = render(<HmacTool />);
     fillGenerateInputs();
-    fireEvent.click(screen.getByRole("button", { name: "Generate HMAC" }));
+    fireEvent.click(screen.getByRole("button", { name: "HMAC 생성" }));
     rendered.unmount();
     render(<HmacTool />);
 
     resolve("late-secret-tag");
     await Promise.resolve();
     await Promise.resolve();
-    expect(screen.getByLabelText("HMAC output").textContent).not.toContain("late-secret-tag");
+    expect(screen.getByLabelText("HMAC 출력").textContent).not.toContain("late-secret-tag");
   });
 
   it("returns only a validity message in verify mode", async () => {
     render(<HmacTool />);
-    fireEvent.change(screen.getByLabelText("HMAC operation"), { target: { value: "verify" } });
+    fireEvent.change(screen.getByLabelText("HMAC 작업"), { target: { value: "verify" } });
     fillGenerateInputs();
-    fireEvent.change(screen.getByLabelText("Expected HMAC tag"), { target: { value: "tag" } });
-    fireEvent.click(screen.getByRole("button", { name: "Verify HMAC" }));
+    fireEvent.change(screen.getByLabelText("예상 HMAC 태그"), { target: { value: "tag" } });
+    fireEvent.click(screen.getByRole("button", { name: "HMAC 검증" }));
 
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("일치합니다"));
     expect(mocks.hmacVerify).toHaveBeenCalledWith({
@@ -116,14 +116,14 @@ describe("HmacTool", () => {
       outputEncoding: "hex",
       expectedTag: "tag",
     });
-    expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "복사" })).toBeNull();
   });
 
   it("uses one fixed error for malformed input and native failures", async () => {
     mocks.hmacGenerate.mockRejectedValueOnce(new Error("RAW_PLATFORM_SECRET"));
     render(<HmacTool />);
     fillGenerateInputs();
-    fireEvent.click(screen.getByRole("button", { name: "Generate HMAC" }));
+    fireEvent.click(screen.getByRole("button", { name: "HMAC 생성" }));
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe(HMAC_ERROR);

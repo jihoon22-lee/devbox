@@ -1,0 +1,58 @@
+/* Shared keyboard and operating-system accessibility defaults.
+ * This stylesheet intentionally sets no page background so transparent
+ * windows such as Devbox Launcher keep their native composition contract.
+ */
+
+:where(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  summary,
+  [role="button"],
+  [role="option"],
+  [role="tab"],
+  [tabindex]:not([tabindex="-1"])
+):not(:disabled):focus-visible {
+  outline: 2px solid var(--db-color-accent, #4f8cff);
+  outline-offset: 2px;
+  box-shadow: var(--db-focus-ring, 0 0 0 2px rgb(79 140 255 / 45%));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :where(
+    button,
+    a[href],
+    input,
+    select,
+    textarea,
+    summary,
+    [role="button"],
+    [role="option"],
+    [role="tab"],
+    [tabindex]:not([tabindex="-1"])
+  ):not(:disabled):focus-visible {
+    outline: 2px solid Highlight;
+    box-shadow: none;
+  }
+
+  :where(button, input, select, textarea, [role="button"], [role="option"], [role="tab"]) {
+    forced-color-adjust: auto;
+  }
+}

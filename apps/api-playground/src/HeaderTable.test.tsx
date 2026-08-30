@@ -66,7 +66,7 @@ describe("HeaderTable", () => {
   it("secret이 없어도 enabled 기본 행을 추가할 수 있다", () => {
     const onChange = setup([]);
     expect((screen.getByLabelText("요청 Header 편집").querySelector("select") as HTMLSelectElement | null)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "+ Header 추가" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ 헤더 추가" }));
     expect(onChange).toHaveBeenCalledWith([{ key: "", value: "", enabled: true }]);
   });
 });

@@ -102,6 +102,6 @@ describe("Developer Toolbox handoff API", () => {
       text: "safe text",
       redacted: false,
     });
-    await expect(previewToolboxText(handoffId)).rejects.toThrow("텍스트 handoff 응답을 사용할 수 없습니다");
+    await expect(previewToolboxText(handoffId)).rejects.toThrow("텍스트 전달 응답을 사용할 수 없습니다");
   });
 });

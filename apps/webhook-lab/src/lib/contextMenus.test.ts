@@ -12,8 +12,8 @@ describe("Webhook Lab context menu contracts", () => {
       "마스킹 복사",
       "원본 복사",
       "헤더 복사",
-      "masked fixture 저장",
-      "masked 요청 replay",
+      "마스킹된 fixture 저장",
+      "마스킹된 요청 재전송",
       "API Playground로 변환",
       "Log Lens에서 보기",
       "삭제",
@@ -31,7 +31,7 @@ describe("Webhook Lab context menu contracts", () => {
       "복제",
       "PowerShell curl.exe 복사",
       "POSIX sh curl 복사",
-      "response sequence 초기화",
+      "응답 시퀀스 초기화",
       "삭제",
     ]);
     expect(items.find((item) => item.id === "delete")?.danger).toBe(true);
