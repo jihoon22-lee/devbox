@@ -502,6 +502,18 @@ path·payload·label·source detail·secret을 보존하지 않는다. missing/c
 source는 각각의 진단으로 격리되어 다른 source 검색을 막지 않는다. 이 구현 기록은 Windows
 실기 acceptance나 v0.6.0 release 완료를 의미하지 않으며 해당 검증은 release gate로 남는다.
 
+**2026-08-31 #491 W10 PR B 구현 상태.** Devbox Manager의 `로컬 품질` 탭은 명시적 새로고침
+시에만 catalog·validated registry·`discover_report`를 읽고, 경로·generatedAt·payload content·
+raw error를 제거한 `schemaVersion: 1` / `mode: local-only` DTO를 메모리에 표시한다. registry
+unavailable은 모든 앱을 `unknown`으로 유지하며, 64/64/64/16 collection cap·256 KiB serialized
+cap·고정 issue enum과 frontend exact-key/relationship validation을 적용한다. `aria-busy`,
+last-good 보존, late/unmounted response guard를 포함하고 브라우저 mock은 UI-only다. local
+evidence는 Manager frontend 71/71, 전체 frontend 1488/1488, local-quality Rust 8/8,
+production JS 312992 raw / 93326 gzip (budgets 345000/105000), 15-app build/bundle/accessibility,
+Rust workspace check/clippy/fmt/test, catalog/dependency/audit gate PASS다. GitHub Actions CI는
+이 PR의 merge gate로 남아 있고, Windows screen reader·high contrast·packaged acceptance는
+#493에 남긴다. 이 PR은 RC/tag/release/version bump를 만들지 않는다.
+
 **2026-08-30 W07 선택 텍스트·일별 activity 계약 구현 상태.** catalog revision 15는
 `developer-toolbox`의 `handoff:toolbox-text/v1` 수신과 기존 `handoff:api-request/v1` 및
 별도 `handoff:knowledge-draft/v2` 출력을 선언한다. API Playground의 현재 response selection,

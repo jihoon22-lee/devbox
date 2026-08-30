@@ -33,6 +33,14 @@ import type {
   InstallRootApplyResult,
   InstallRootPreview,
   InstallMode,
+  LocalQualityInstallState,
+  LocalQualityIntegrationHealth,
+  LocalQualityIntegrationIssue,
+  LocalQualityIntegrationSnapshot,
+  LocalQualityIntegrationView,
+  LocalQualityIssueKind,
+  LocalQualitySnapshot,
+  LocalQualitySourceState,
   RemoveAppRequest,
   RemovePreview,
   RemoveResult,
@@ -46,6 +54,11 @@ import type {
 const MOCK_CATALOG: CatalogApp[] = catalogJson.apps;
 const MOCK_OBSERVED_AT_MS = Date.now();
 const MAX_JAVASCRIPT_TIMESTAMP_MS = 8_640_000_000_000_000;
+const MAX_LOCAL_QUALITY_INSTALL_APPS = 64;
+const MAX_LOCAL_QUALITY_SNAPSHOTS = 64;
+const MAX_LOCAL_QUALITY_ISSUES = 64;
+const MAX_LOCAL_QUALITY_VIEWS = 16;
+const LOCAL_QUALITY_RESPONSE_ERROR = "로컬 품질 응답이 올바르지 않습니다.";
 const DEV_SETUP_CONFIGURATION_SCHEMA =
   "https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json";
 const DEV_SETUP_CONFIGURATION_MAX_BYTES = 256 * 1024;
@@ -574,6 +587,54 @@ function mockDevSetupAudit(): DevSetupAudit {
   };
 }
 
+function mockLocalQualitySnapshot(): LocalQualitySnapshot {
+  const managedApps = MOCK_CATALOG.filter((app) => app.managerVisible && !app.selfManaged);
+  return {
+    schemaVersion: 1,
+    observedAtMs: Date.now(),
+    mode: "local-only",
+    status: "healthy",
+    installation: {
+      catalogState: "ready",
+      registryState: "ready",
+      catalogRevision: Number(catalogJson.catalogRevision),
+      registryRevision: 1,
+      managedAppCount: managedApps.length,
+      installedAppCount: 1,
+      apps: managedApps.map((app) => app.id === "port-manager"
+        ? { appId: app.id, state: "installed", version: "0.3.0", mode: "portable" }
+        : { appId: app.id, state: "not-installed", version: null, mode: null }),
+      truncated: false,
+    },
+    integration: {
+      rootState: "ready",
+      rootIssue: null,
+      snapshotCount: 1,
+      issueCount: 0,
+      snapshots: [
+        {
+          producer: "life-log",
+          schemaVersion: 1,
+          producerVersion: "0.4.0",
+          freshnessMs: 1_200,
+          views: [
+            {
+              kind: "projects",
+              schemaVersion: 1,
+              freshnessMs: 1_200,
+              entryCount: 3,
+            },
+          ],
+          viewsTruncated: false,
+        },
+      ],
+      issues: [],
+      snapshotsTruncated: false,
+      issuesTruncated: false,
+    },
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -588,6 +649,348 @@ function isSafeDevSetupTimestamp(value: unknown): value is number {
     && Number.isSafeInteger(value)
     && value > 0
     && value <= MAX_JAVASCRIPT_TIMESTAMP_MS;
+}
+
+function isSafeNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number"
+    && Number.isSafeInteger(value)
+    && value >= 0;
+}
+
+function isPositiveU32(value: unknown): value is number {
+  return isSafeNonNegativeInteger(value) && value > 0 && value <= 0xffff_ffff;
+}
+
+function isSafePositiveInteger(value: unknown): value is number {
+  return isSafeNonNegativeInteger(value) && value > 0;
+}
+
+function isBoundedKebabId(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 64
+    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
+}
+
+function isBoundedSemanticVersion(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 64) return false;
+  const match = value.match(
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
+  );
+  if (!match) return false;
+  const prerelease = match[4];
+  return prerelease === undefined || prerelease.split(".").every((identifier) => (
+    !/^\d+$/.test(identifier) || identifier === "0" || !identifier.startsWith("0")
+  ));
+}
+
+function isLocalQualitySourceState(value: unknown): value is LocalQualitySourceState {
+  return value === "ready" || value === "unavailable";
+}
+
+function isLocalQualityInstallState(value: unknown): value is LocalQualityInstallState {
+  return value === "installed" || value === "not-installed" || value === "unknown";
+}
+
+function isLocalQualityIssueKind(value: unknown): value is LocalQualityIssueKind {
+  return value === "invalid"
+    || value === "unreadable"
+    || value === "unsafe"
+    || value === "limit-exceeded";
+}
+
+function hasBoundedCollectionShape(
+  total: number,
+  visible: number,
+  truncated: boolean,
+  maximum: number,
+): boolean {
+  return visible <= maximum
+    && (truncated
+      ? visible === maximum && total > visible
+      : total === visible);
+}
+
+function validateLocalQualityInstallation(value: unknown): LocalQualitySnapshot["installation"] {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "catalogState",
+    "registryState",
+    "catalogRevision",
+    "registryRevision",
+    "managedAppCount",
+    "installedAppCount",
+    "apps",
+    "truncated",
+  ])) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  if (
+    !isLocalQualitySourceState(value.catalogState)
+    || !isLocalQualitySourceState(value.registryState)
+    || !isSafeNonNegativeInteger(value.managedAppCount)
+    || typeof value.truncated !== "boolean"
+    || !Array.isArray(value.apps)
+    || !hasBoundedCollectionShape(
+      value.managedAppCount,
+      value.apps.length,
+      value.truncated,
+      MAX_LOCAL_QUALITY_INSTALL_APPS,
+    )
+  ) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  const seen = new Set<string>();
+  const apps = value.apps.map((candidate) => {
+    if (!isRecord(candidate) || !hasExactKeys(candidate, ["appId", "state", "version", "mode"])) {
+      throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+    }
+    const appId = candidate.appId;
+    const state = candidate.state;
+    if (!isBoundedKebabId(appId) || seen.has(appId) || !isLocalQualityInstallState(state)) {
+      throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+    }
+    seen.add(appId);
+    if (state === "installed") {
+      if (
+        !isBoundedSemanticVersion(candidate.version)
+        || (candidate.mode !== "portable" && candidate.mode !== "installer")
+      ) {
+        throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+      }
+    } else if (candidate.version !== null || candidate.mode !== null) {
+      throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+    }
+    return {
+      appId,
+      state,
+      version: candidate.version as string | null,
+      mode: candidate.mode as "portable" | "installer" | null,
+    };
+  });
+  const installedCount = apps.filter((app) => app.state === "installed").length;
+  if (value.catalogState === "unavailable") {
+    if (
+      value.catalogRevision !== null
+      || value.managedAppCount !== 0
+      || apps.length !== 0
+      || value.truncated
+      || value.registryState !== "unavailable"
+      || value.registryRevision !== null
+      || value.installedAppCount !== null
+    ) {
+      throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+    }
+  } else if (
+    !isSafePositiveInteger(value.catalogRevision)
+    || value.managedAppCount === 0
+  ) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  if (value.registryState === "ready") {
+    if (
+      value.catalogState !== "ready"
+      || !isSafePositiveInteger(value.registryRevision)
+      || !isSafeNonNegativeInteger(value.installedAppCount)
+      || value.installedAppCount !== installedCount
+      || apps.some((app) => app.state === "unknown")
+    ) {
+      throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+    }
+  } else if (
+    value.registryRevision !== null
+    || value.installedAppCount !== null
+    || apps.some((app) => app.state !== "unknown")
+  ) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  return {
+    catalogState: value.catalogState,
+    registryState: value.registryState,
+    catalogRevision: value.catalogRevision as number | null,
+    registryRevision: value.registryRevision as number | null,
+    managedAppCount: value.managedAppCount,
+    installedAppCount: value.installedAppCount as number | null,
+    apps,
+    truncated: value.truncated,
+  };
+}
+
+function validateLocalQualityView(value: unknown): LocalQualityIntegrationView {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "kind",
+    "schemaVersion",
+    "freshnessMs",
+    "entryCount",
+  ]) || !isBoundedKebabId(value.kind)
+    || !isPositiveU32(value.schemaVersion)
+    || !isSafeNonNegativeInteger(value.freshnessMs)
+    || !isSafeNonNegativeInteger(value.entryCount)
+  ) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  return {
+    kind: value.kind,
+    schemaVersion: value.schemaVersion,
+    freshnessMs: value.freshnessMs,
+    entryCount: value.entryCount,
+  };
+}
+
+function validateLocalQualityIntegrationSnapshot(
+  value: unknown,
+): LocalQualityIntegrationSnapshot {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "producer",
+    "schemaVersion",
+    "producerVersion",
+    "freshnessMs",
+    "views",
+    "viewsTruncated",
+  ]) || !isBoundedKebabId(value.producer)
+    || !isPositiveU32(value.schemaVersion)
+    || !isBoundedSemanticVersion(value.producerVersion)
+    || !isSafeNonNegativeInteger(value.freshnessMs)
+    || !Array.isArray(value.views)
+    || typeof value.viewsTruncated !== "boolean"
+  ) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  if (
+    value.views.length > MAX_LOCAL_QUALITY_VIEWS
+    || (value.viewsTruncated && value.views.length !== MAX_LOCAL_QUALITY_VIEWS)
+  ) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  const views = value.views.map(validateLocalQualityView);
+  if (new Set(views.map((view) => view.kind)).size !== views.length) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  return {
+    producer: value.producer,
+    schemaVersion: value.schemaVersion,
+    producerVersion: value.producerVersion,
+    freshnessMs: value.freshnessMs,
+    views,
+    viewsTruncated: value.viewsTruncated,
+  };
+}
+
+function validateLocalQualityIntegrationIssue(value: unknown): LocalQualityIntegrationIssue {
+  if (!isRecord(value) || !hasExactKeys(value, ["producer", "schemaVersion", "kind"])) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  if (
+    !isBoundedKebabId(value.producer)
+    || (value.schemaVersion !== null && !isPositiveU32(value.schemaVersion))
+    || !isLocalQualityIssueKind(value.kind)
+  ) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  return {
+    producer: value.producer,
+    schemaVersion: value.schemaVersion as number | null,
+    kind: value.kind,
+  };
+}
+
+function validateLocalQualityIntegration(value: unknown): LocalQualityIntegrationHealth {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "rootState",
+    "rootIssue",
+    "snapshotCount",
+    "issueCount",
+    "snapshots",
+    "issues",
+    "snapshotsTruncated",
+    "issuesTruncated",
+  ]) || !isLocalQualitySourceState(value.rootState)
+    || (value.rootIssue !== null && !isLocalQualityIssueKind(value.rootIssue))
+    || !isSafeNonNegativeInteger(value.snapshotCount)
+    || !isSafeNonNegativeInteger(value.issueCount)
+    || !Array.isArray(value.snapshots)
+    || !Array.isArray(value.issues)
+    || typeof value.snapshotsTruncated !== "boolean"
+    || typeof value.issuesTruncated !== "boolean"
+    || !hasBoundedCollectionShape(
+      value.snapshotCount,
+      value.snapshots.length,
+      value.snapshotsTruncated,
+      MAX_LOCAL_QUALITY_SNAPSHOTS,
+    )
+    || !hasBoundedCollectionShape(
+      value.issueCount,
+      value.issues.length,
+      value.issuesTruncated,
+      MAX_LOCAL_QUALITY_ISSUES,
+    )
+    || (value.rootState === "ready") !== (value.rootIssue === null)
+  ) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  const snapshots = value.snapshots.map(validateLocalQualityIntegrationSnapshot);
+  const snapshotKeys = snapshots.map((snapshot) => `${snapshot.producer}:v${snapshot.schemaVersion}`);
+  if (new Set(snapshotKeys).size !== snapshotKeys.length) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  const issues = value.issues.map(validateLocalQualityIntegrationIssue);
+  if (value.rootState === "unavailable" && (
+    value.snapshotCount !== 0
+    || value.issueCount !== 0
+    || snapshots.length !== 0
+    || issues.length !== 0
+    || value.snapshotsTruncated
+    || value.issuesTruncated
+  )) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  return {
+    rootState: value.rootState,
+    rootIssue: value.rootIssue as LocalQualityIssueKind | null,
+    snapshotCount: value.snapshotCount,
+    issueCount: value.issueCount,
+    snapshots,
+    issues,
+    snapshotsTruncated: value.snapshotsTruncated,
+    issuesTruncated: value.issuesTruncated,
+  };
+}
+
+function validateLocalQualitySnapshot(value: unknown): LocalQualitySnapshot {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "schemaVersion",
+    "observedAtMs",
+    "mode",
+    "status",
+    "installation",
+    "integration",
+  ]) || value.schemaVersion !== 1
+    || !isSafeDevSetupTimestamp(value.observedAtMs)
+    || value.mode !== "local-only"
+    || (value.status !== "healthy" && value.status !== "attention")
+  ) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  const installation = validateLocalQualityInstallation(value.installation);
+  const integration = validateLocalQualityIntegration(value.integration);
+  const needsAttention = installation.catalogState !== "ready"
+    || installation.registryState !== "ready"
+    || installation.truncated
+    || integration.rootState !== "ready"
+    || integration.issueCount > 0
+    || integration.snapshotsTruncated
+    || integration.issuesTruncated
+    || integration.snapshots.some((snapshot) => snapshot.viewsTruncated);
+  if (value.status !== (needsAttention ? "attention" : "healthy")) {
+    throw new Error(LOCAL_QUALITY_RESPONSE_ERROR);
+  }
+  return {
+    schemaVersion: 1,
+    observedAtMs: value.observedAtMs,
+    mode: "local-only",
+    status: value.status,
+    installation,
+    integration,
+  };
 }
 
 function isDevSetupPreviewId(value: unknown): value is string {
@@ -1202,6 +1605,13 @@ export async function runDiagnosis(): Promise<DiagnosisItem[]> {
     ];
   }
   return invoke<DiagnosisItem[]>("run_diagnosis");
+}
+
+export async function inspectLocalQuality(): Promise<LocalQualitySnapshot> {
+  const result = isTauri()
+    ? await invoke<unknown>("inspect_local_quality")
+    : mockLocalQualitySnapshot();
+  return validateLocalQualitySnapshot(result);
 }
 
 export async function inspectDataDatabases(operationId: string): Promise<DataInspectorSnapshot> {

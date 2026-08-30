@@ -33,6 +33,15 @@ metadata는 GitHub Release가 권위 있는 source다. 브라우저 개발 모�
   실제 위치·uninstaller, arbitrary path와 강제 삭제는 지원하지 않는다.
 - **런타임 discovery 발행** — revision 기반 runtime catalog와 versioned install-root locator를 원자 갱신
 - **환경 진단(dev environment doctor)** — WSL/git/node/pnpm/rustc/cargo/devbox-data/catalog-ids/runtime-metadata 점검
+- **로컬 품질 검사 (#491)** — `상태 새로고침`을 눌렀을 때만 현재 catalog와 검증된 registry,
+  integration discovery를 읽기 전용으로 확인한다. 결과는 경로·generatedAt·원문 오류 없이
+  `schemaVersion: 1`·`mode: local-only`인 bounded 메모리 DTO로만 표시하며 telemetry·network·
+  local-quality persistence는 없다. registry를 확인할 수 없으면 설치 상태를 `unknown`으로
+  유지하고 `not-installed`로 추측하지 않는다. 설치 64개, snapshot 64개, issue 64개, snapshot당
+  view 16개, 직렬화 결과 256 KiB 상한과 `invalid`/`unreadable`/`unsafe`/`limit-exceeded` enum을
+  적용한다. frontend exact-key/관계 검증, `aria-busy`, last-good 보존, late/unmount 응답 폐기를
+  포함한다. 브라우저 mock은 UI 전용이며, Windows screen reader/high contrast/packaged acceptance는
+  #493에 남긴다.
 - **Data Inspector (#354)** — Manager가 catalog에서 파생한 devbox SQLite만 read-only/query-only로
   발견·스키마 조회·bounded `SELECT`/`WITH`/`EXPLAIN` preview한다. arbitrary path와 write/attach/
   pragma 및 `pragma_*` table-valued function을 차단하고, 512 MiB DB·16 KiB SQL·64 columns·1,000

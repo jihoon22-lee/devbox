@@ -19,6 +19,7 @@ import {
   exportSupportBundle,
   inspectDataDatabases,
   importDevSetupConfiguration,
+  inspectLocalQuality,
   installApp,
   installPath,
   installMany,
@@ -48,6 +49,7 @@ import type {
   InstalledApp,
   InstallPathInfo,
   InstallRootPreview,
+  LocalQualitySnapshot,
   RemovePreview,
   RemoveResult,
   RelatedTool,
@@ -72,6 +74,7 @@ vi.mock("./api", () => ({
   exportSupportBundle: vi.fn(),
   inspectDataDatabases: vi.fn(),
   importDevSetupConfiguration: vi.fn(),
+  inspectLocalQuality: vi.fn(),
   installApp: vi.fn(),
   installPath: vi.fn(),
   installMany: vi.fn(),
@@ -162,6 +165,7 @@ const applyInstallRootMock = vi.mocked(applyInstallRoot);
 const installedMock = vi.mocked(installed);
 const currentMock = vi.mocked(current);
 const devSetupAuditMock = vi.mocked(devSetupAudit);
+const inspectLocalQualityMock = vi.mocked(inspectLocalQuality);
 const installAppMock = vi.mocked(installApp);
 const installPathMock = vi.mocked(installPath);
 const installManyMock = vi.mocked(installMany);
@@ -373,6 +377,47 @@ const supportPreviewFixture: SupportBundlePreview = {
   redactionVersion: "v1",
 };
 
+const localQualityFixture: LocalQualitySnapshot = {
+  schemaVersion: 1,
+  observedAtMs: Date.UTC(2026, 7, 31, 12, 0, 0),
+  mode: "local-only",
+  status: "healthy",
+  installation: {
+    catalogState: "ready",
+    registryState: "ready",
+    catalogRevision: 5,
+    registryRevision: 8,
+    managedAppCount: 2,
+    installedAppCount: 1,
+    apps: [
+      { appId: "code-pad", state: "installed", version: "0.5.0", mode: "portable" },
+      { appId: "life-log", state: "not-installed", version: null, mode: null },
+    ],
+    truncated: false,
+  },
+  integration: {
+    rootState: "ready",
+    rootIssue: null,
+    snapshotCount: 1,
+    issueCount: 0,
+    snapshots: [
+      {
+        producer: "life-log",
+        schemaVersion: 1,
+        producerVersion: "0.5.0",
+        freshnessMs: 1_200,
+        views: [
+          { kind: "daily-activity", schemaVersion: 1, freshnessMs: 1_200, entryCount: 7 },
+        ],
+        viewsTruncated: false,
+      },
+    ],
+    issues: [],
+    snapshotsTruncated: false,
+    issuesTruncated: false,
+  },
+};
+
 function appRow(name: string): HTMLTableRowElement {
   const row = screen.getByText(name).closest("tr");
   if (!(row instanceof HTMLTableRowElement)) throw new Error(`${name} row was not rendered`);
@@ -400,6 +445,7 @@ beforeEach(() => {
     appId === portable.app ? portableCurrent : null
   ));
   devSetupAuditMock.mockReset().mockResolvedValue(devSetupFixture);
+  inspectLocalQualityMock.mockReset().mockResolvedValue(localQualityFixture);
   installAppMock.mockReset().mockResolvedValue("installed");
   installPathMock.mockReset().mockResolvedValue(portablePath);
   installManyMock.mockReset().mockImplementation(async (requests) => requests.map((request) => ({
@@ -1287,6 +1333,70 @@ describe("Devbox Manager Related Tools", () => {
 
     expect(document.body.textContent).not.toContain("unexpected-output");
     expect(relatedToolsMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Devbox Manager local quality", () => {
+  it("collects only after an explicit refresh and renders a path-free accessible result", async () => {
+    let resolveInspection!: (snapshot: LocalQualitySnapshot) => void;
+    inspectLocalQualityMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveInspection = resolve;
+    }));
+    const { container } = render(<App />);
+    await screen.findByText("Port Manager");
+
+    expect(inspectLocalQualityMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "로컬 품질" }));
+    expect(inspectLocalQualityMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/상태 새로고침을 눌러/)).toBeTruthy();
+
+    const region = screen.getByRole("region", { name: "로컬 품질" });
+    fireEvent.click(screen.getByRole("button", { name: "상태 새로고침" }));
+    expect(inspectLocalQualityMock).toHaveBeenCalledTimes(1);
+    expect(region.getAttribute("aria-busy")).toBe("true");
+
+    await act(async () => resolveInspection(localQualityFixture));
+    expect(await screen.findByText("registry 정상")).toBeTruthy();
+    expect(region.getAttribute("aria-busy")).toBe("false");
+    expect(screen.getByText("daily-activity")).toBeTruthy();
+    expect(container.textContent).not.toContain("C:\\");
+    expect(container.textContent).not.toContain("/home/");
+    await assertNoA11yViolations(container);
+  });
+
+  it("keeps the last good snapshot and hides a later native error", async () => {
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "로컬 품질" }));
+    fireEvent.click(screen.getByRole("button", { name: "상태 새로고침" }));
+    expect(await screen.findByText("registry 정상")).toBeTruthy();
+
+    inspectLocalQualityMock.mockRejectedValueOnce(
+      new Error("C:\\Users\\developer\\secret-token=should-not-render"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "상태 새로고침" }));
+
+    expect(await screen.findByText(
+      "최신 로컬 품질 상태를 확인하지 못했습니다. 이전 결과를 유지합니다.",
+    )).toBeTruthy();
+    expect(screen.getByText("0.5.0 · 휴대용")).toBeTruthy();
+    expect(screen.queryByText(/secret-token/)).toBeNull();
+  });
+
+  it("ignores an inspection response after unmount", async () => {
+    let resolveInspection!: (snapshot: LocalQualitySnapshot) => void;
+    inspectLocalQualityMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveInspection = resolve;
+    }));
+    const view = render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "로컬 품질" }));
+    fireEvent.click(screen.getByRole("button", { name: "상태 새로고침" }));
+    expect(inspectLocalQualityMock).toHaveBeenCalledTimes(1);
+
+    view.unmount();
+    await act(async () => resolveInspection(localQualityFixture));
+    expect(document.body.textContent).not.toContain("daily-activity");
   });
 });
 

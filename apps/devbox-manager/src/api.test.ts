@@ -19,6 +19,7 @@ import {
   discardDevSetupConfiguration,
   exportDevSetupConfiguration,
   importDevSetupConfiguration,
+  inspectLocalQuality,
   installRelatedTool,
   launchRelatedTool,
   openRelatedToolUrl,
@@ -73,6 +74,130 @@ describe("Browser release fallback", () => {
         installer: { name: `${id}_${version}_x64-setup.exe` },
       });
     }
+  });
+});
+
+describe("Local quality API boundary", () => {
+  it("returns a bounded path-free local-only browser snapshot", async () => {
+    const snapshot = await inspectLocalQuality();
+
+    expect(snapshot).toMatchObject({
+      schemaVersion: 1,
+      mode: "local-only",
+      status: "healthy",
+      installation: { catalogState: "ready", registryState: "ready" },
+      integration: { rootState: "ready", issueCount: 0 },
+    });
+    expect(snapshot.installation.apps).toHaveLength(14);
+    expect(snapshot.integration.snapshots).toHaveLength(1);
+    expect(JSON.stringify(snapshot)).not.toMatch(/[A-Z]:\\|\/home\/|\\Users\\/);
+  });
+
+  it("rejects path-bearing fields and contradictory registry counts", async () => {
+    const valid = await inspectLocalQuality();
+    isTauriMock.mockReturnValue(true);
+    invokeMock.mockResolvedValueOnce({
+      ...valid,
+      integration: {
+        ...valid.integration,
+        snapshots: valid.integration.snapshots.map((snapshot) => ({
+          ...snapshot,
+          path: "C:\\Users\\private\\summary.json",
+        })),
+      },
+    });
+    await expect(inspectLocalQuality()).rejects.toThrow("로컬 품질 응답이 올바르지 않습니다.");
+
+    invokeMock.mockResolvedValueOnce({
+      ...valid,
+      installation: {
+        ...valid.installation,
+        installedAppCount: 2,
+      },
+    });
+    await expect(inspectLocalQuality()).rejects.toThrow("로컬 품질 응답이 올바르지 않습니다.");
+
+    invokeMock.mockResolvedValueOnce({
+      ...valid,
+      installation: {
+        ...valid.installation,
+        managedAppCount: 0,
+        installedAppCount: 0,
+        apps: [],
+      },
+    });
+    await expect(inspectLocalQuality()).rejects.toThrow("로컬 품질 응답이 올바르지 않습니다.");
+
+    invokeMock.mockResolvedValueOnce({
+      ...valid,
+      installation: {
+        ...valid.installation,
+        apps: valid.installation.apps.map((app) => app.state === "installed"
+          ? { ...app, version: "1.2.3-01" }
+          : app),
+      },
+    });
+    await expect(inspectLocalQuality()).rejects.toThrow("로컬 품질 응답이 올바르지 않습니다.");
+  });
+
+  it("keeps an unavailable registry unknown instead of claiming apps are absent", async () => {
+    const valid = await inspectLocalQuality();
+    isTauriMock.mockReturnValue(true);
+    invokeMock.mockResolvedValueOnce({
+      ...valid,
+      status: "attention",
+      installation: {
+        ...valid.installation,
+        registryState: "unavailable",
+        registryRevision: null,
+        installedAppCount: null,
+        apps: valid.installation.apps.map((app) => ({
+          ...app,
+          state: "unknown",
+          version: null,
+          mode: null,
+        })),
+      },
+    });
+
+    const snapshot = await inspectLocalQuality();
+    expect(snapshot.installation.apps.every((app) => app.state === "unknown")).toBe(true);
+    expect(snapshot.installation.apps.some((app) => app.state === "not-installed")).toBe(false);
+  });
+
+  it("rejects partial results when the integration root itself is unavailable", async () => {
+    const valid = await inspectLocalQuality();
+    isTauriMock.mockReturnValue(true);
+    invokeMock.mockResolvedValueOnce({
+      ...valid,
+      status: "attention",
+      integration: {
+        ...valid.integration,
+        rootState: "unavailable",
+        rootIssue: "unreadable",
+      },
+    });
+
+    await expect(inspectLocalQuality()).rejects.toThrow("로컬 품질 응답이 올바르지 않습니다.");
+
+    invokeMock.mockResolvedValueOnce({
+      ...valid,
+      status: "attention",
+      integration: {
+        rootState: "unavailable",
+        rootIssue: "unsafe",
+        snapshotCount: 0,
+        issueCount: 0,
+        snapshots: [],
+        issues: [],
+        snapshotsTruncated: false,
+        issuesTruncated: false,
+      },
+    });
+    await expect(inspectLocalQuality()).resolves.toMatchObject({
+      status: "attention",
+      integration: { rootState: "unavailable", rootIssue: "unsafe" },
+    });
   });
 });
 

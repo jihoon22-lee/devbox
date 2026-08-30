@@ -745,6 +745,53 @@ pub fn catalog() -> Result<Vec<CatalogApp>, String> {
     Ok(selected.catalog.apps)
 }
 
+/// Return only catalog identity needed by the local-quality view. Runtime
+/// source paths and selector diagnostics remain inside the native layer.
+pub(crate) fn local_quality_catalog_observation(
+) -> Result<crate::core::local_quality::CatalogObservation, String> {
+    let runtime =
+        devbox_launch::runtime_catalog_path().and_then(|path| std::fs::read_to_string(path).ok());
+    let selected = devbox_catalog::select_catalog(CATALOG_JSON, runtime.as_deref())
+        .map_err(|_| "앱 카탈로그를 확인할 수 없습니다.".to_string())?;
+    let revision = selected
+        .catalog
+        .catalog_revision
+        .filter(|revision| *revision > 0)
+        .ok_or_else(|| "앱 카탈로그 revision을 확인할 수 없습니다.".to_string())?;
+    Ok(crate::core::local_quality::CatalogObservation {
+        revision,
+        managed_app_ids: selected
+            .catalog
+            .apps
+            .into_iter()
+            .filter(|entry| entry.manager_visible && !entry.self_managed)
+            .map(|entry| entry.id)
+            .collect(),
+    })
+}
+
+/// Return a validated registry projection without copying executable, root,
+/// manifest, or locator paths into the local-quality DTO.
+pub(crate) fn local_quality_registry_observation(
+    app: &tauri::AppHandle,
+) -> Result<crate::core::local_quality::RegistryObservation, String> {
+    let snapshot = read_registry_snapshot(app)?;
+    Ok(crate::core::local_quality::RegistryObservation {
+        revision: snapshot.location.registry_revision,
+        records: snapshot
+            .records
+            .into_iter()
+            .map(
+                |record| crate::core::local_quality::RegistryRecordObservation {
+                    app_id: record.app,
+                    version: record.version,
+                    mode: record.mode,
+                },
+            )
+            .collect(),
+    })
+}
+
 fn ensure_catalog_target(app_id: &str) -> Result<CatalogApp, String> {
     catalog()
         .map_err(|_| "앱 카탈로그를 확인할 수 없습니다.".to_string())?

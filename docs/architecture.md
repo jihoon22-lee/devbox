@@ -180,6 +180,8 @@ run-manager:      React(context-menu + bounded log export/search) → commands �
                    → platform 실행 어댑터(Windows Job Object/WSL) → SQLite + app-owned 회전 로그
 devbox-manager:   React → commands → catalog/manifest/install-root preview → GitHub release asset
                    ├ custom root apply: canonical empty directory → app-owned registry → versioned locator
+                   ├ explicit local-quality refresh → catalog + validated registry + `discover_report`
+                   │  → path-free, bounded `schemaVersion: 1` / `mode: local-only` memory DTO
                    └ native picker → strict WinGet v3 package-only model → canonical review/export
                       → one-time confirmed per-package apply → guarded WinGet Job Object
 workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument,
@@ -205,6 +207,22 @@ devbox-launcher:  transient React → bounded catalog/optional snapshot index �
                    └ selected/clipboard text는 명시적 preview 동안에만 표시
 log-lens:         React → bounded commands → app-local parser/ring → local file or fixed WSL/container adapter
 ```
+
+### Devbox Manager local-quality inspection (#491)
+
+`로컬 품질`은 탭 진입이 아니라 사용자의 명시적 새로고침으로만 시작하는 read-only flow다.
+Manager는 catalog의 관리 대상과 validated install registry의 app/version/mode만 projection하고,
+`crates/integration::discover_report()`의 bounded summary를 읽어 snapshot/view/issue 상태를
+계산한다. public DTO에는 executable/root/manifest/locator path, snapshot `generatedAt`, payload
+content, raw error가 없으며 `schemaVersion: 1`, `mode: local-only`로 현재 메모리에만 표시한다.
+registry가 unavailable이면 모든 설치 row는 `unknown`이며 `not-installed`로 추측하지 않는다.
+설치 64개, snapshot 64개, issue 64개, snapshot당 view 16개, serialized DTO 256 KiB를 cap하고
+issue는 `invalid`/`unreadable`/`unsafe`/`limit-exceeded`로만 공개한다.
+
+Frontend는 exact-key와 count/truncation, registry/catalog/root/status 관계를 검증한 뒤 렌더링한다.
+검사 region의 `aria-busy`, last-good snapshot 보존, request-generation 및 mounted guard로 늦은
+응답을 격리한다. 브라우저 mock은 UI-only fixture이며, screen reader/high contrast와 packaged
+Windows acceptance는 #493에서 수행한다. 이 기능 PR은 RC/tag/release/version bump를 만들지 않는다.
 
 Repo Manager의 Git history·diff(#316)는 선택된 canonical repository에서만 실행되는 native
 read-only 흐름이다. repo_history, repo_commit_detail, repo_diff는 hexadecimal object ID와
