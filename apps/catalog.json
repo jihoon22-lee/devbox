@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 16,
+  "catalogRevision": 17,
   "apps": [
     {
       "id": "port-manager",
@@ -238,8 +238,16 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": [],
-      "produces": ["handoff:api-request/v1"],
-      "actions": []
+      "produces": ["handoff:api-request/v1", "handoff:webhook-log/v1"],
+      "actions": [
+        {
+          "actionId": "inspect-capture-logs",
+          "actionVersion": 1,
+          "label": "Inspect capture logs",
+          "target": "log-lens",
+          "payloadKind": "handoff:webhook-log/v1"
+        }
+      ]
     },
     {
       "id": "repo-manager",
@@ -290,7 +298,7 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["handoff:log-source/v1"],
+      "accepts": ["handoff:log-source/v1", "handoff:webhook-log/v1"],
       "produces": ["handoff:toolbox-text/v1"],
       "actions": [
         {

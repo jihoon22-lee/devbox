@@ -188,6 +188,9 @@ pub enum SourceSpec {
     Run {
         source_id: String,
     },
+    WebhookCapture {
+        capture: devbox_applink::WebhookLogPayload,
+    },
     Container {
         engine: ContainerEngine,
         container_id: String,
@@ -249,11 +252,12 @@ pub enum SourceKind {
     WslFile,
     WslJournal,
     Run,
+    WebhookCapture,
     Container,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SavedView {
     pub name: String,
     pub sources: Vec<SourceSpec>,
@@ -545,6 +549,10 @@ impl SourceSpec {
                 Ok(())
             }
             Self::Run { source_id } => validate_run_source_id(source_id),
+            Self::WebhookCapture { capture } => {
+                devbox_applink::validate_webhook_log_payload(capture)
+                    .map_err(|_| CoreError::InvalidSource)
+            }
             Self::Container {
                 engine: _,
                 container_id,
@@ -559,6 +567,7 @@ impl SourceSpec {
             Self::WslFile { .. } => SourceKind::WslFile,
             Self::WslJournal { .. } => SourceKind::WslJournal,
             Self::Run { .. } => SourceKind::Run,
+            Self::WebhookCapture { .. } => SourceKind::WebhookCapture,
             Self::Container { .. } => SourceKind::Container,
         }
     }
@@ -583,6 +592,7 @@ impl SourceSpec {
             Self::WslFile { .. } => "WSL file",
             Self::WslJournal { .. } => "WSL journal",
             Self::Run { .. } => "Run Manager handoff",
+            Self::WebhookCapture { .. } => "Webhook capture",
             Self::Container { .. } => "Container logs",
         };
         Ok(SourceSummary {
@@ -595,7 +605,10 @@ impl SourceSpec {
             // contract instead of marking only the original Run variant.
             handoff: matches!(
                 self,
-                Self::Run { .. } | Self::WslFile { .. } | Self::WslJournal { .. }
+                Self::Run { .. }
+                    | Self::WslFile { .. }
+                    | Self::WslJournal { .. }
+                    | Self::WebhookCapture { .. }
             ),
         })
     }

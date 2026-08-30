@@ -22,7 +22,9 @@ import {
   resetRuleSequence,
   saveFixture,
   sendFixtureToApi,
+  sendFixtureToLogLens,
   sendHistoryToApi,
+  sendHistoryToLogLens,
   serverStatus,
   setRule,
   startServer,
@@ -54,7 +56,9 @@ vi.mock("./api", () => ({
   resetRuleSequence: vi.fn(),
   saveFixture: vi.fn(),
   sendFixtureToApi: vi.fn(),
+  sendFixtureToLogLens: vi.fn(),
   sendHistoryToApi: vi.fn(),
+  sendHistoryToLogLens: vi.fn(),
   serverStatus: vi.fn(),
   setRule: vi.fn(),
   startServer: vi.fn(),
@@ -139,7 +143,9 @@ const replayHistoryMock = vi.mocked(replayHistory);
 const resetRuleSequenceMock = vi.mocked(resetRuleSequence);
 const saveFixtureMock = vi.mocked(saveFixture);
 const sendFixtureToApiMock = vi.mocked(sendFixtureToApi);
+const sendFixtureToLogLensMock = vi.mocked(sendFixtureToLogLens);
 const sendHistoryToApiMock = vi.mocked(sendHistoryToApi);
+const sendHistoryToLogLensMock = vi.mocked(sendHistoryToLogLens);
 const serverStatusMock = vi.mocked(serverStatus);
 const setRuleMock = vi.mocked(setRule);
 const startServerMock = vi.mocked(startServer);
@@ -208,6 +214,20 @@ beforeEach(() => {
     handoffId: "fedcba9876543210fedcba9876543210",
     producerId: "webhook-lab",
     consumerId: "api-playground",
+    createdAtMs: 1_700_000_000_000,
+    expiresAtMs: 1_700_000_600_000,
+  });
+  sendHistoryToLogLensMock.mockReset().mockResolvedValue({
+    handoffId: "abcdef0123456789abcdef0123456789",
+    producerId: "webhook-lab",
+    consumerId: "log-lens",
+    createdAtMs: 1_700_000_000_000,
+    expiresAtMs: 1_700_000_600_000,
+  });
+  sendFixtureToLogLensMock.mockReset().mockResolvedValue({
+    handoffId: "9876543210fedcba9876543210fedcba",
+    producerId: "webhook-lab",
+    consumerId: "log-lens",
     createdAtMs: 1_700_000_000_000,
     expiresAtMs: 1_700_000_600_000,
   });
@@ -751,7 +771,7 @@ describe("Webhook Lab history and rule context menus", () => {
     fireEvent.contextMenu(target, { clientX: 20, clientY: 20 });
 
     expect(target.getAttribute("aria-current")).toBe("true");
-    for (const label of ["마스킹 복사", "원본 복사", "헤더 복사", "API Playground로 변환", "삭제"]) {
+    for (const label of ["마스킹 복사", "원본 복사", "헤더 복사", "API Playground로 변환", "Log Lens에서 보기", "삭제"]) {
       expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
     }
     expect(screen.getByRole("menuitem", { name: "API Playground로 변환" }).getAttribute("aria-disabled"))
@@ -1133,6 +1153,19 @@ describe("Webhook Lab history and rule context menus", () => {
     expect(writeTextMock).not.toHaveBeenCalled();
   });
 
+  it("history Log Lens action sends only the opaque history ID", async () => {
+    render(<App />);
+    const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
+
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Log Lens에서 보기" }));
+
+    await waitFor(() => expect(sendHistoryToLogLensMock).toHaveBeenCalledWith(1));
+    expect(sendHistoryToLogLensMock.mock.calls[0]).toEqual([1]);
+    expect((await screen.findByRole("status")).textContent).toContain("consumer: log-lens");
+    expect(writeTextMock).not.toHaveBeenCalled();
+  });
+
   it("fixture save uses the shared busy guard for double action", async () => {
     let release!: (fixture: CapturedFixture) => void;
     saveFixtureMock.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
@@ -1204,6 +1237,25 @@ describe("Webhook Lab history and rule context menus", () => {
 
     await waitFor(() => expect(sendFixtureToApiMock).toHaveBeenCalledWith("fixture-1"));
     expect(screen.getByRole("status").textContent).toContain("handoff: fedcba9876543210fedcba9876543210");
+    expect(writeTextMock).not.toHaveBeenCalled();
+  });
+
+  it("stored fixture Log Lens action sends only the opaque fixture ID", async () => {
+    fixtures = [{
+      id: "fixture-1",
+      method: "POST",
+      url: "/hooks/push?access_token=[REDACTED]",
+      headers: [],
+      body: '{"event":"push"}',
+      receivedAtMs: 1_700_000_000_000,
+    }];
+    render(<App />);
+    const action = await screen.findByRole("button", { name: "POST /hooks/push?access_token=[REDACTED] Log Lens에서 보기" });
+    fireEvent.click(action);
+
+    await waitFor(() => expect(sendFixtureToLogLensMock).toHaveBeenCalledWith("fixture-1"));
+    expect(sendFixtureToLogLensMock.mock.calls[0]).toEqual(["fixture-1"]);
+    expect((await screen.findByRole("status")).textContent).toContain("consumer: log-lens");
     expect(writeTextMock).not.toHaveBeenCalled();
   });
 

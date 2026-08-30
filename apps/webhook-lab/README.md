@@ -1,4 +1,4 @@
-# webhook-lab — Webhook Lab v0.2.0 (로컬 웹훅/콜백 서버)
+# webhook-lab — Webhook Lab v0.3.0 (로컬 웹훅/콜백 서버)
 
 API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound HTTP 요청을 받고 검사·재현**하는 로컬 서버.
 산출물: `WebhookLab.exe` (`apps/webhook-lab`).
@@ -30,6 +30,11 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
   status만 bounded preview로 읽고, 선택한 항목을 저장되지 않은 rule editor draft로 적용한다.
 - **Run Manager service export** — 실행 중인 loopback listener의 현재 backend rule을 앱 전용
   profile로 저장하고, 사용자가 명시적으로 내려받을 수 있는 비활성 service definition을 만든다.
+- **Log Lens sanitized capture handoff (#489, W08 PR2)** — history 또는 masked fixture에서
+  `webhook-log/v1` one-time preview를 만들어 Log Lens로 명시적으로 보낸다. Webhook Lab은
+  header 이름만, redacted origin-form target, timestamp, 최대 4 KiB redacted body preview와
+  `redacted`/`truncated` flag만 전달하며 header 값·raw body·filesystem path·command·environment·
+  archive는 전달하지 않는다.
 
 ### Rule 매칭·응답 의미
 
@@ -181,6 +186,46 @@ preview가 열린 동안 30초마다 claim lease를 갱신하되 원 envelope TT
 credential marker는 `${WEBHOOK_SECRET}` 같은 이름 참조로만 남으며 secret 원문은 handoff에
 포함되지 않는다.
 
+### Webhook Lab → Log Lens sanitized capture handoff (#489, W08 PR2)
+
+Webhook Lab 0.3.0은 history 또는 이미 저장된 masked fixture에서 현재 capture의 표시용
+projection만 만들어 `webhook-log/v1` one-time handoff로 Log Lens 0.2.0에 보낸다. catalog
+revision 17에서 `webhook-lab` producer와 `log-lens` consumer/action이 선언되어 있어야 하며,
+대상 앱이 설치되지 않았으면 handoff를 만들지 않는다.
+
+payload schema v1은 다음 필드만 갖는다.
+
+```json
+{
+  "schemaVersion": 1,
+  "method": "POST",
+  "target": "/hooks?[REDACTED]",
+  "receivedAtMs": 0,
+  "headerNames": ["Authorization", "Content-Type"],
+  "bodyPreview": "[REDACTED]",
+  "redacted": true,
+  "truncated": false
+}
+```
+
+`target`는 filesystem path가 아닌 안전한 origin-form request target이며 위험한 path/query와
+credential은 redacted marker로 바꾼다. Header value는 어떤 경우에도 전달하지 않고,
+request body 전체를 bounded sanitizer로 검사한 뒤 최대 4 KiB의 redacted preview만 만든다.
+Payload와 AppLink argv에는 raw body, header value, filesystem path, command, environment,
+credential, raw log, archive가 들어갈 자리가 없다. Log Lens의 preview modal도 body preview를
+표시하지 않는다.
+
+발행은 공용 `crates/applink` one-time store의 10분 TTL envelope을 사용하고, 실행 인자에는
+`webhook-log/v1`와 128-bit opaque handoff ID만 넣는다. Log Lens는 cold/hot request 모두 claim
+후 source summary를 먼저 보여 주며, 사용자가 명시적으로 읽기 전용 source 추가를 누른 뒤에만
+ack한다. 취소·검증 실패는 restore하고, launch가 실패하면 producer가 방금 만든 immutable
+descriptor와 envelope을 다시 대조해 정확히 그 pending entry만 제거한다. Clipboard·임시
+파일·raw archive fallback은 없다. 이 capture source는 ephemeral이므로 Log Lens saved view에
+저장할 수 없다.
+
+Log Lens의 canonical wire `displayName`은 `Webhook capture`로 유지한다. UI의 handoff,
+reconnect, saved-view 안내는 한국어로 표시하지만 wire 이름을 번역하지 않는다.
+
 ### Captured request replay 계약 (#362)
 
 history 또는 저장된 masked fixture의 opaque ID로 현재 실행 중인 Webhook Lab listener에 한
@@ -293,3 +338,8 @@ ephemeral cursor일 뿐 fixture·설정 파일·handoff에 저장하지 않는�
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
 
 설계 문서: `docs/superpowers/specs/2026-08-14-webhook-lab-design.md`
+
+W08 PR2 (#489)의 Webhook Lab 0.3.0 → Log Lens 0.2.0 sanitized handoff와 catalog revision 17은
+현재 구현/문서 계약이다. Windows packaged cold/hot launch, installed capability discovery,
+exact pending cleanup, and saved-view exclusion의 실기 acceptance는 아직 pending이며,
+이 README는 release 또는 installed validation을 주장하지 않는다.

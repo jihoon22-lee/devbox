@@ -6,8 +6,8 @@ const fixtureRecords: LogRecord[] = [
     sequence: 0,
     timestampMillis: Date.parse("2026-08-27T09:00:00Z"),
     level: "info",
-    message: "Log Lens browser fixture",
-    fields: { mode: "offline" },
+    message: "Log Lens 브라우저 미리보기 로그",
+    fields: { mode: "오프라인" },
     format: "plain",
     truncated: false,
   },
@@ -16,7 +16,7 @@ const fixtureRecords: LogRecord[] = [
     sequence: 1,
     timestampMillis: Date.parse("2026-08-27T09:00:01Z"),
     level: "warn",
-    message: "Add a local or adapter source to inspect logs",
+    message: "로그를 살펴보려면 로컬 또는 어댑터 source를 추가하세요",
     fields: {},
     format: "plain",
     truncated: false,
@@ -39,7 +39,7 @@ export function browserSnapshot(
     kind: source.kind,
     displayName: "Browser fixture",
     readOnly: true,
-    handoff: source.kind === "run",
+    handoff: ["run", "wslFile", "wslJournal", "webhookCapture"].includes(source.kind),
   }));
   return {
     operationId,

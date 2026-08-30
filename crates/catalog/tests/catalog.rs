@@ -64,7 +64,7 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
-    assert_eq!(catalog.catalog_revision, Some(16));
+    assert_eq!(catalog.catalog_revision, Some(17));
     assert_eq!(catalog.apps.len(), 15);
     assert_eq!(
         capable_targets(&catalog, "path")
@@ -213,6 +213,20 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
         vec!["developer-toolbox", "webhook-lab"]
     );
     assert_eq!(
+        capable_targets(&catalog, "handoff:webhook-log/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["log-lens"]
+    );
+    assert_eq!(
+        capable_producers(&catalog, "handoff:webhook-log/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["webhook-lab"]
+    );
+    assert_eq!(
         capable_targets(&catalog, "handoff:toolbox-text/v1")
             .into_iter()
             .map(|app| app.id)
@@ -259,7 +273,10 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
         .iter()
         .find(|app| app.id == "log-lens")
         .expect("Log Lens must remain in the repository catalog");
-    assert_eq!(log_lens.accepts, vec!["handoff:log-source/v1"]);
+    assert_eq!(
+        log_lens.accepts,
+        vec!["handoff:log-source/v1", "handoff:webhook-log/v1"]
+    );
     assert_eq!(log_lens.produces, vec!["handoff:toolbox-text/v1"]);
     assert_eq!(log_lens.actions.len(), 1);
     assert_eq!(log_lens.actions[0].action_id, "transform-selected-logs");
@@ -276,6 +293,22 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     assert_eq!(
         port_manager.actions[0].payload_kind,
         "handoff:log-source/v1"
+    );
+    let webhook_lab = catalog
+        .apps
+        .iter()
+        .find(|app| app.id == "webhook-lab")
+        .expect("Webhook Lab must remain in the repository catalog");
+    assert_eq!(
+        webhook_lab.produces,
+        vec!["handoff:api-request/v1", "handoff:webhook-log/v1"]
+    );
+    assert_eq!(webhook_lab.actions.len(), 1);
+    assert_eq!(webhook_lab.actions[0].action_id, "inspect-capture-logs");
+    assert_eq!(webhook_lab.actions[0].target, "log-lens");
+    assert_eq!(
+        webhook_lab.actions[0].payload_kind,
+        "handoff:webhook-log/v1"
     );
     let life_log = catalog
         .apps

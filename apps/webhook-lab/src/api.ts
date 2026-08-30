@@ -83,7 +83,7 @@ export interface CapturedFixture {
   receivedAtMs: number;
 }
 
-export interface ApiHandoffDispatch {
+export interface HandoffDispatch {
   handoffId: string;
   producerId: string;
   consumerId: string;
@@ -129,7 +129,7 @@ export interface RunDefinitionExport {
 }
 
 const HANDOFF_BROWSER_ERROR =
-  "API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
+  "앱 간 handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
 const REPLAY_BROWSER_ERROR =
   "replay는 데스크톱 앱에서만 사용할 수 있습니다";
 
@@ -319,15 +319,27 @@ export function replayFixture(id: string): Promise<ReplayResult> {
 }
 
 /** Send only a backend-owned masked history projection to API Playground. */
-export function sendHistoryToApi(historyId: number): Promise<ApiHandoffDispatch> {
+export function sendHistoryToApi(historyId: number): Promise<HandoffDispatch> {
   if (!isTauri()) return Promise.reject(new Error(HANDOFF_BROWSER_ERROR));
-  return invoke<ApiHandoffDispatch>("send_history_to_api", { historyId });
+  return invoke<HandoffDispatch>("send_history_to_api", { historyId });
 }
 
 /** Send only a backend-owned masked fixture to API Playground. */
-export function sendFixtureToApi(id: string): Promise<ApiHandoffDispatch> {
+export function sendFixtureToApi(id: string): Promise<HandoffDispatch> {
   if (!isTauri()) return Promise.reject(new Error(HANDOFF_BROWSER_ERROR));
-  return invoke<ApiHandoffDispatch>("send_fixture_to_api", { id });
+  return invoke<HandoffDispatch>("send_fixture_to_api", { id });
+}
+
+/** Send only a bounded, credential-redacted history projection to Log Lens. */
+export function sendHistoryToLogLens(historyId: number): Promise<HandoffDispatch> {
+  if (!isTauri()) return Promise.reject(new Error(HANDOFF_BROWSER_ERROR));
+  return invoke<HandoffDispatch>("send_history_to_log_lens", { historyId });
+}
+
+/** Send only a bounded, credential-redacted fixture projection to Log Lens. */
+export function sendFixtureToLogLens(id: string): Promise<HandoffDispatch> {
+  if (!isTauri()) return Promise.reject(new Error(HANDOFF_BROWSER_ERROR));
+  return invoke<HandoffDispatch>("send_fixture_to_log_lens", { id });
 }
 
 export function listRules(): Promise<ResponseRule[]> {

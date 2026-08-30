@@ -85,6 +85,8 @@ pub fn run() {
             commands::replay_fixture,
             commands::send_history_to_api,
             commands::send_fixture_to_api,
+            commands::send_history_to_log_lens,
+            commands::send_fixture_to_log_lens,
             commands::list_rules,
             commands::preview_rule_conflicts,
             commands::set_rule,

@@ -6,6 +6,7 @@ export type SourceKind =
   | "wslFile"
   | "wslJournal"
   | "run"
+  | "webhookCapture"
   | "container";
 export type ContainerEngine = "docker" | "podman";
 export type ReadStatus = "initial" | "advanced" | "rotated" | "truncated" | "unavailable";
@@ -16,7 +17,19 @@ export type SourceSpec =
   | { kind: "wslFile"; distro: string; path: string }
   | { kind: "wslJournal"; distro: string; unit?: string }
   | { kind: "run"; sourceId: string }
+  | { kind: "webhookCapture"; capture: WebhookLogPayload }
   | { kind: "container"; engine: ContainerEngine; containerId: string };
+
+export interface WebhookLogPayload {
+  schemaVersion: 1;
+  method: string;
+  target: string;
+  receivedAtMs: number;
+  headerNames: string[];
+  bodyPreview: string;
+  redacted: boolean;
+  truncated: boolean;
+}
 
 export interface SourceSummary {
   sourceId: string;
@@ -92,12 +105,18 @@ export interface SavedView {
   filter: FilterSpec;
 }
 
+export interface SavedViewsDocument {
+  schemaVersion: 1;
+  revision: number;
+  views: SavedView[];
+}
+
 export type HandoffOpenTarget = { kind: "handoff"; handoffKind: string; id: string };
 
 export interface LogSourcePreview {
   id: string;
-  kind: "log-source/v1";
-  sourceApp: "run-manager" | "port-manager" | "wsl-desktop";
+  kind: "log-source/v1" | "webhook-log/v1";
+  sourceApp: "run-manager" | "port-manager" | "wsl-desktop" | "webhook-lab";
   expiresAtMs: number;
   leaseUntilMs: number;
   source: SourceSummary;

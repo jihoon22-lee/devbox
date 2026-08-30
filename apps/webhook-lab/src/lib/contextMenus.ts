@@ -18,6 +18,13 @@ export function buildHistoryContextMenu(
       // API Playground; no request data travels through the browser clipboard.
       disabled: busy,
     },
+    {
+      type: "item",
+      id: "inspect-log-lens",
+      label: "Log Lens에서 보기",
+      // The backend publishes only a bounded webhook-log/v1 projection.
+      disabled: busy,
+    },
     { type: "separator", id: "history-danger-separator" },
     { type: "item", id: "delete", label: "삭제", disabled: busy, danger: true },
   ];

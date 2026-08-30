@@ -25,7 +25,9 @@ import {
   resetRuleSequence,
   saveFixture,
   sendFixtureToApi,
+  sendFixtureToLogLens,
   sendHistoryToApi,
+  sendHistoryToLogLens,
   serverStatus,
   setRule,
   startServer,
@@ -34,7 +36,7 @@ import {
   type ResponseRule,
   type ServerStatus,
   type CapturedFixture,
-  type ApiHandoffDispatch,
+  type HandoffDispatch,
   type ResponseSequenceStep,
 } from "./api";
 import { buildHistoryContextMenu, buildRuleContextMenu } from "./lib/contextMenus";
@@ -83,8 +85,12 @@ const SAFE_ERROR_MESSAGES = new Set([
   "포트는 1~65535 범위여야 합니다",
   "서버 bind에 실패했습니다",
   "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다",
-  "API Playground를 실행하지 못했습니다. handoff는 잠시 보관되며 다시 시도할 수 있습니다. 클립보드로 자동 전환하지 않습니다",
+  "API Playground를 실행하지 못했습니다. handoff를 안전하게 정리했으며 클립보드로 자동 전환하지 않습니다",
   "API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다",
+  "Log Lens를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다",
+  "Log Lens를 실행하지 못했습니다. handoff를 안전하게 정리했으며 클립보드로 자동 전환하지 않습니다",
+  "Log Lens handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다",
+  "대상 앱 실행 실패 후 handoff를 정리하지 못했습니다. 잠시 후 다시 시도하세요",
   "handoff 요청에 사용할 fixture가 유효하지 않습니다",
   "localhost 서버가 실행 중이 아니거나 주소가 유효하지 않습니다",
   "replay 입력이 유효하지 않습니다",
@@ -667,10 +673,10 @@ export default function App() {
     }
   };
 
-  const showHandoffSuccess = (dispatch: ApiHandoffDispatch) => {
+  const showHandoffSuccess = (dispatch: HandoffDispatch, targetName: string) => {
     if (!mountedRef.current) return;
     setHandoffNotice(
-      `API Playground 미리보기로 전달했습니다. producer: ${dispatch.producerId} · consumer: ${dispatch.consumerId} · handoff: ${dispatch.handoffId}. 적용 전 내용을 확인하세요.`,
+      `${targetName} 미리보기로 전달했습니다. producer: ${dispatch.producerId} · consumer: ${dispatch.consumerId} · handoff: ${dispatch.handoffId}. 적용 전 내용을 확인하세요.`,
     );
   };
 
@@ -681,7 +687,7 @@ export default function App() {
     try {
       const dispatch = await sendHistoryToApi(request.id);
       if (!mountedRef.current) return;
-      showHandoffSuccess(dispatch);
+      showHandoffSuccess(dispatch, "API Playground");
     } catch (e) {
       if (mountedRef.current) setError(safeMessage(e));
     } finally {
@@ -696,7 +702,37 @@ export default function App() {
     try {
       const dispatch = await sendFixtureToApi(fixture.id);
       if (!mountedRef.current) return;
-      showHandoffSuccess(dispatch);
+      showHandoffSuccess(dispatch, "API Playground");
+    } catch (e) {
+      if (mountedRef.current) setError(safeMessage(e));
+    } finally {
+      endBusy();
+    }
+  };
+
+  const onSendHistoryToLogLens = async (request: RequestRecord) => {
+    if (!beginBusy()) return;
+    setError(null);
+    setHandoffNotice(null);
+    try {
+      const dispatch = await sendHistoryToLogLens(request.id);
+      if (!mountedRef.current) return;
+      showHandoffSuccess(dispatch, "Log Lens");
+    } catch (e) {
+      if (mountedRef.current) setError(safeMessage(e));
+    } finally {
+      endBusy();
+    }
+  };
+
+  const onSendFixtureToLogLens = async (fixture: CapturedFixture) => {
+    if (!beginBusy()) return;
+    setError(null);
+    setHandoffNotice(null);
+    try {
+      const dispatch = await sendFixtureToLogLens(fixture.id);
+      if (!mountedRef.current) return;
+      showHandoffSuccess(dispatch, "Log Lens");
     } catch (e) {
       if (mountedRef.current) setError(safeMessage(e));
     } finally {
@@ -914,6 +950,8 @@ export default function App() {
       void onReplayHistory(request);
     } else if (id === "convert-api-playground") {
       void onSendHistoryToApi(request);
+    } else if (id === "inspect-log-lens") {
+      void onSendHistoryToLogLens(request);
     } else if (id === "delete") {
       void onDeleteHistory(request);
     }
@@ -1398,6 +1436,15 @@ export default function App() {
                     onClick={() => void onSendFixtureToApi(fixture)}
                   >
                     API Playground로 변환
+                  </button>
+                  <button
+                    type="button"
+                    className="mini"
+                    disabled={busy}
+                    aria-label={`${fixture.method} ${fixture.url} Log Lens에서 보기`}
+                    onClick={() => void onSendFixtureToLogLens(fixture)}
+                  >
+                    Log Lens에서 보기
                   </button>
                   <button
                     type="button"

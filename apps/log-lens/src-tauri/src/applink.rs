@@ -3,7 +3,8 @@
 use devbox_applink::{OpenRequest, OpenTarget};
 use std::sync::Mutex;
 
-const EXPECTED_KIND: &str = "log-source/v1";
+const LOG_SOURCE_KIND: &str = "log-source/v1";
+const WEBHOOK_LOG_KIND: &str = "webhook-log/v1";
 
 #[derive(Default)]
 pub struct PendingOpen(Mutex<Option<OpenRequest>>);
@@ -34,7 +35,7 @@ pub fn is_log_source_request(request: &OpenRequest) -> bool {
     let OpenTarget::Handoff { kind, id } = &request.target else {
         return false;
     };
-    kind == EXPECTED_KIND
+    (kind == LOG_SOURCE_KIND || kind == WEBHOOK_LOG_KIND)
         && id.len() == 32
         && id
             .bytes()
@@ -58,20 +59,27 @@ mod tests {
     #[test]
     fn only_expected_kind_and_opaque_id_are_routed() {
         assert!(is_log_source_request(&request(
-            EXPECTED_KIND,
+            LOG_SOURCE_KIND,
             &"a".repeat(32)
+        )));
+        assert!(is_log_source_request(&request(
+            WEBHOOK_LOG_KIND,
+            &"b".repeat(32)
         )));
         assert!(!is_log_source_request(&request(
             "api-request/v1",
             &"a".repeat(32)
         )));
-        assert!(!is_log_source_request(&request(EXPECTED_KIND, "../source")));
+        assert!(!is_log_source_request(&request(
+            LOG_SOURCE_KIND,
+            "../source"
+        )));
     }
 
     #[test]
     fn pending_request_is_one_shot() {
         let pending = PendingOpen::new();
-        let value = request(EXPECTED_KIND, &"a".repeat(32));
+        let value = request(LOG_SOURCE_KIND, &"a".repeat(32));
         pending.set(value.clone());
         assert_eq!(pending.take(), Some(value));
         assert_eq!(pending.take(), None);

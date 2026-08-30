@@ -1,5 +1,4 @@
-//! Log Lens claim/preview boundary for the Run Manager/Port Manager/WSL Desktop
-//! `log-source/v1` handoff.
+//! Log Lens claim/preview boundary for allow-listed source handoffs.
 //!
 //! The generic applink store validates protocol, target, size, and one-time
 //! claim state.  This module validates the producer-specific allowlist and
@@ -11,10 +10,12 @@ use devbox_applink::{HandoffClaim, HandoffError};
 use serde::{Deserialize, Serialize};
 
 pub const HANDOFF_KIND: &str = "log-source/v1";
+pub const WEBHOOK_HANDOFF_KIND: &str = devbox_applink::WEBHOOK_LOG_HANDOFF_KIND;
 pub const CONSUMER_APP: &str = "log-lens";
 pub const RUN_SOURCE_APP: &str = "run-manager";
 pub const PORT_SOURCE_APP: &str = "port-manager";
 pub const WSL_SOURCE_APP: &str = "wsl-desktop";
+pub const WEBHOOK_SOURCE_APP: &str = devbox_applink::WEBHOOK_LOG_SOURCE_APP;
 pub const WSL_FILE_SOURCE_TYPE: &str = "wslFile";
 pub const WSL_JOURNAL_SOURCE_TYPE: &str = "wslJournal";
 pub const MAX_PAYLOAD_BYTES: usize = 16 * 1024;
@@ -80,12 +81,8 @@ pub fn parse_claim(claim: &HandoffClaim) -> Result<SourceSpec, String> {
             > devbox_applink::DEFAULT_HANDOFF_TTL_MS
         || claim.lease_until_ms <= envelope.created_at_ms
         || claim.lease_until_ms > envelope.expires_at_ms
-        || envelope.kind != HANDOFF_KIND
         || envelope.target_app.as_deref() != Some(CONSUMER_APP)
-        || !matches!(
-            envelope.source_app.as_str(),
-            RUN_SOURCE_APP | PORT_SOURCE_APP | WSL_SOURCE_APP
-        )
+        || !supported_kind(envelope.kind.as_str())
     {
         return Err("log source handoff source or target is invalid".to_string());
     }
@@ -94,21 +91,36 @@ pub fn parse_claim(claim: &HandoffClaim) -> Result<SourceSpec, String> {
     if bytes.len() > MAX_PAYLOAD_BYTES {
         return Err("log source handoff payload is too large".to_string());
     }
-    let source = match envelope.source_app.as_str() {
-        RUN_SOURCE_APP | PORT_SOURCE_APP => {
-            let reference = devbox_applink::validate_run_log_source_payload(&envelope.payload)
-                .map_err(|_| "log source handoff payload is invalid".to_string())?;
-            SourceSpec::Run {
-                source_id: reference.source_id,
+    let source = match envelope.kind.as_str() {
+        HANDOFF_KIND => match envelope.source_app.as_str() {
+            RUN_SOURCE_APP | PORT_SOURCE_APP => {
+                let reference = devbox_applink::validate_run_log_source_payload(&envelope.payload)
+                    .map_err(|_| "log source handoff payload is invalid".to_string())?;
+                SourceSpec::Run {
+                    source_id: reference.source_id,
+                }
             }
+            WSL_SOURCE_APP => parse_wsl_payload(&envelope.payload)?,
+            _ => return Err("log source handoff source is invalid".to_string()),
+        },
+        WEBHOOK_HANDOFF_KIND if envelope.source_app == WEBHOOK_SOURCE_APP => {
+            let capture: devbox_applink::WebhookLogPayload =
+                serde_json::from_value(envelope.payload.clone())
+                    .map_err(|_| "log source handoff payload is invalid".to_string())?;
+            devbox_applink::validate_webhook_log_payload(&capture)
+                .map_err(|_| "log source handoff payload is invalid".to_string())?;
+            SourceSpec::WebhookCapture { capture }
         }
-        WSL_SOURCE_APP => parse_wsl_payload(&envelope.payload)?,
         _ => return Err("log source handoff source is invalid".to_string()),
     };
     source
         .validate()
         .map_err(|_| "log source handoff source is invalid".to_string())?;
     Ok(source)
+}
+
+pub fn supported_kind(value: &str) -> bool {
+    value == HANDOFF_KIND || value == WEBHOOK_HANDOFF_KIND
 }
 
 fn valid_opaque_id(value: &str) -> bool {
@@ -309,6 +321,45 @@ mod tests {
                 unit: None
             }
         );
+    }
+
+    #[test]
+    fn webhook_payload_becomes_an_ephemeral_capture_without_previewing_content() {
+        let payload = devbox_applink::webhook_log_payload(
+            "POST",
+            "/hook",
+            42,
+            &[("Content-Type".into(), "application/json".into())],
+            r#"{"event":"push"}"#,
+        )
+        .unwrap();
+        let mut webhook = claim(WEBHOOK_SOURCE_APP, serde_json::to_value(&payload).unwrap());
+        webhook.envelope.kind = WEBHOOK_HANDOFF_KIND.into();
+
+        let source = parse_claim(&webhook).expect("webhook source");
+        assert_eq!(
+            source,
+            SourceSpec::WebhookCapture {
+                capture: payload.clone()
+            }
+        );
+        let preview = LogSourcePreview::from_claim(&webhook, &source).unwrap();
+        let encoded = serde_json::to_string(&preview).unwrap();
+        assert_eq!(preview.kind, WEBHOOK_HANDOFF_KIND);
+        assert_eq!(
+            preview.source.kind,
+            super::super::model::SourceKind::WebhookCapture
+        );
+        assert!(!encoded.contains("event"));
+        assert!(!encoded.contains("bodyPreview"));
+
+        let mut wrong_source = webhook.clone();
+        wrong_source.envelope.source_app = RUN_SOURCE_APP.into();
+        assert!(parse_claim(&wrong_source).is_err());
+
+        let mut raw = webhook;
+        raw.envelope.payload["path"] = json!("/private/capture.log");
+        assert!(parse_claim(&raw).is_err());
     }
 
     #[test]

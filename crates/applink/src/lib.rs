@@ -41,6 +41,7 @@ mod handoff;
 mod log_source;
 mod task_control;
 mod toolbox_text;
+mod webhook_log;
 
 pub use handoff::{
     handoff_root_in, redact_handoff_text, validate_handoff_text, CreateHandoff, HandoffClaim,
@@ -59,6 +60,12 @@ pub use task_control::{
 pub use toolbox_text::{
     ToolboxTextPayload, TOOLBOX_TEXT_HANDOFF_KIND, TOOLBOX_TEXT_MAX_BYTES, TOOLBOX_TEXT_MAX_CHARS,
     TOOLBOX_TEXT_TARGET_APP,
+};
+pub use webhook_log::{
+    validate_webhook_log_payload, webhook_log_payload, WebhookLogPayload, WEBHOOK_LOG_HANDOFF_KIND,
+    WEBHOOK_LOG_MAX_BODY_PREVIEW_BYTES, WEBHOOK_LOG_MAX_HEADER_NAMES,
+    WEBHOOK_LOG_MAX_PAYLOAD_BYTES, WEBHOOK_LOG_SCHEMA_VERSION, WEBHOOK_LOG_SOURCE_APP,
+    WEBHOOK_LOG_TARGET_APP,
 };
 
 use serde::{Deserialize, Serialize};
