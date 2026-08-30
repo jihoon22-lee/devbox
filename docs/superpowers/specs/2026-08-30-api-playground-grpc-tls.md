@@ -158,8 +158,9 @@ commands/grpc.rs
   └─ tonic dynamic calls
 commands/grpc_credentials.rs
   ├─ native bounded PEM selections
-  ├─ DPAPI-sealed atomic store
-  └─ summary-only export
+  └─ domain-separated DPAPI-sealed atomic store
+commands/grpc.rs
+  └─ summary-only native export
             ↓
 core/grpc.rs
   ├─ endpoint/profile/ProtoJSON validation
@@ -245,8 +246,9 @@ TLS, PEM, hostname, HTTP/2, and OS failures map to stable codes without endpoint
 ## 8. Request ownership, bounds, and cancellation
 
 The backend owns at most eight pending/connected gRPC records. Pending connects reserve capacity before
-I/O. A record contains the normalized endpoint, `Channel`, descriptor pool, exact method map, source
-projection, and up to four active request reservations.
+I/O. A record contains the `Channel`, descriptor pool, exact method map, RPC timeout, and up to four
+active request reservations. Normalized authority and safe source/TLS projections are returned once at
+connect time but are not persisted in the native record.
 
 Each request has a frontend-generated bounded ID, connection generation, watch cancellation sender,
 monotonic deadline, and RAII reservation. Cancel requires the exact connection/request owner. Disconnect
@@ -313,6 +315,7 @@ The store is Windows-only, app-local, and bounded:
 - maximum 16 credentials and 4 MiB encoded document;
 - unique random credential ID and unique user label;
 - independent versioned DPAPI envelopes for CA, client certificate, and private key;
+- a gRPC-specific DPAPI optional-entropy domain distinct from request-environment secrets;
 - atomic write, no-link parent/file validation, identity recheck, strict duplicate/unknown JSON rejection;
 - list returns projections only; delete is explicit and serialized with import/list mutation.
 
@@ -322,21 +325,25 @@ connections cannot resolve the deleted reference. There is no plaintext migratio
 
 ## 11. Verification
 
-Pure/native tests cover:
+Automated source tests cover the pure boundaries that do not require a packaged Windows process:
 
 - endpoint/root-mode/server-name validation and stable error mapping;
 - strict duplicate-free ProtoJSON, canonical scalar/well-known mappings, unknown field rejection;
-- unary and all streaming dispatch branches, message/total/count limits, deadline and cancellation;
-- local resolver containment, traversal/link/reparse/replacement, import cycles, file/count/byte budgets;
-- reflection v1 success, explicit `UNIMPLEMENTED` v1alpha fallback, mismatched response, conflicting
-  descriptor, malformed/oversized pool;
+- all four RPC-kind descriptor projections, strict ProtoJSON mappings, message/total/count limits, and
+  owned cancellation/reservation state;
+- local resolver containment, traversal/link rejection, import cycles, and representative byte budgets;
+- explicit `UNIMPLEMENTED` fallback classification, reflection service/descriptor validation,
+  conflicting duplicates, and malformed/oversized payloads;
+- live loopback HTTP/2 reflection v1 discovery, an actual v1 `UNIMPLEMENTED` to v1alpha fallback,
+  and descriptor-driven unary/server-streaming/client-streaming/bidirectional-streaming dispatch;
 - PEM pairing/shape, store schema/duplicates/bounds, mock sealer round trip, path/link replacement;
 - connection/request reservation release on success/error/cancel/timeout/drop;
 - summary-only history migration/bounds and export allowlist;
 - defensive renderer projection validation and native-required browser preview.
 
 The final PR must pass API Playground Rust tests/check/strict Clippy/fmt, frontend tests/build, dependency
-policy/notices, and the repository's Linux and Windows CI. Packaged Windows acceptance for native
-pickers, DPAPI restart/delete, system/native roots, custom CA, mTLS, reflection, four RPC kinds,
-timeout/cancel, and saved summary remains an explicit release gate; source tests do not claim it.
-
+policy/notices, and the repository's Linux and Windows CI. The loopback source fixture proves plaintext
+HTTP/2 reflection success/fallback and the four dispatch shapes, but not deadline/cancel propagation,
+native picker replacement races, DPAPI restart/delete, or TLS/mTLS handshakes. System/native roots,
+custom CA, packaged summary save, and privacy inspection remain explicit Windows release gates; source
+tests do not claim them.

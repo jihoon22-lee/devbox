@@ -1,3 +1,6 @@
+pub mod grpc;
+pub mod grpc_credentials;
+pub mod grpc_selection;
 pub mod handoff;
 pub mod mcp;
 pub mod mcp_oauth;

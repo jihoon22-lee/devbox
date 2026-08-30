@@ -20,6 +20,7 @@ import {
   revokeMcpOAuthGrant,
 } from "./mcpApi";
 import { HeaderTable } from "./HeaderTable";
+import { GrpcLab } from "./GrpcLab";
 import { McpSchemaEditor } from "./McpSchemaEditor";
 import type { EnvVariable } from "./lib/environments";
 import {
@@ -156,7 +157,7 @@ function isExpectedPostCancelStale(
     && code === "mcp_stdio_connection_stale";
 }
 
-export function ProtocolLab({ environment, native }: ProtocolLabProps) {
+function McpLab({ environment, native }: ProtocolLabProps) {
   const [transport, setTransport] = useState<McpTransport>("http");
   const [endpoint, setEndpoint] = useState("");
   const [era, setEra] = useState<McpEraPreference>("auto");
@@ -658,7 +659,12 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
   const oauthScopesHaveDuplicates = new Set(normalizedOAuthScopes).size !== normalizedOAuthScopes.length;
 
   return (
-    <section className="protocol-lab" aria-labelledby="protocol-lab-heading">
+    <section
+      id="protocol-panel-mcp"
+      className="protocol-lab"
+      role="tabpanel"
+      aria-labelledby="protocol-tab-mcp protocol-lab-heading"
+    >
       <div className="protocol-lab-head">
         <div>
           <h2 id="protocol-lab-heading">Protocol Lab · MCP</h2>
@@ -1311,6 +1317,39 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
         </section>
       )}
     </section>
+  );
+}
+
+export function ProtocolLab(props: ProtocolLabProps) {
+  const [protocol, setProtocol] = useState<"mcp" | "grpc">("mcp");
+  return (
+    <div className="protocol-workspace">
+      <div className="protocol-kind-tabs" role="tablist" aria-label="Protocol Lab 종류">
+        <button
+          id="protocol-tab-mcp"
+          className={`btn ${protocol === "mcp" ? "active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={protocol === "mcp"}
+          aria-controls="protocol-panel-mcp"
+          onClick={() => setProtocol("mcp")}
+        >
+          MCP
+        </button>
+        <button
+          id="protocol-tab-grpc"
+          className={`btn ${protocol === "grpc" ? "active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={protocol === "grpc"}
+          aria-controls="protocol-panel-grpc"
+          onClick={() => setProtocol("grpc")}
+        >
+          gRPC
+        </button>
+      </div>
+      {protocol === "mcp" ? <McpLab {...props} /> : <GrpcLab native={props.native} />}
+    </div>
   );
 }
 
