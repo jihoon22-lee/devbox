@@ -49,6 +49,27 @@ body {
   margin: 12px 14px 8px;
 }
 
+.vault-watch-status {
+  margin: -2px 14px 9px;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.vault-watch-status::before {
+  content: "●";
+  margin-right: 6px;
+  color: var(--accent);
+}
+
+.vault-watch-status.warning {
+  color: var(--red);
+}
+
+.vault-watch-status.warning::before {
+  color: var(--red);
+}
+
 .sidebar-row {
   display: flex;
   flex-wrap: wrap;

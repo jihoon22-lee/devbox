@@ -22,6 +22,7 @@ import type {
   WikilinkCandidate,
   WikilinkOccurrence,
   ImageAsset,
+  KnowledgeWatcherStatus,
 } from "./types";
 import {
   isSafeQuickCapturePath,
@@ -328,6 +329,26 @@ export async function onDocsChanged(cb: () => void): Promise<() => void> {
   if (!isTauri()) return () => undefined;
   const { listen } = await import("@tauri-apps/api/event");
   return listen("docs-changed", () => cb());
+}
+
+export async function knowledgeWatcherStatus(): Promise<KnowledgeWatcherStatus> {
+  if (!isTauri()) {
+    return {
+      sourceKind: "native",
+      watchMode: "native",
+      lastSyncedAt: Date.now(),
+      error: null,
+    };
+  }
+  return invoke<KnowledgeWatcherStatus>("knowledge_watcher_status");
+}
+
+export async function onKnowledgeWatcherStatus(
+  cb: (status: KnowledgeWatcherStatus) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => undefined;
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<KnowledgeWatcherStatus>("knowledge-watcher-status", (event) => cb(event.payload));
 }
 
 export async function readFile(rel: string): Promise<string> {

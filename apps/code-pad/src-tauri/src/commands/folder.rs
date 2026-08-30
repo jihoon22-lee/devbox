@@ -23,6 +23,18 @@ pub struct WorkspaceFile {
 pub struct WorkspaceFiles {
     pub files: Vec<WorkspaceFile>,
     pub truncated: bool,
+    pub incomplete: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceCapabilities {
+    pub path: String,
+    pub source_kind: String,
+    pub watch_mode: String,
+    pub edit_supported: bool,
+    pub lsp_supported: bool,
+    pub lsp_reason: Option<String>,
 }
 
 /// Canonicalizes a workspace and verifies that it is a directory.
@@ -42,6 +54,11 @@ pub fn canonical_workspace(path: &Path) -> Result<PathBuf, String> {
 /// Component-aware boundary check.  `Path::starts_with` does not mistake
 /// `/workspace/project-2` for `/workspace/project`, unlike a string prefix.
 pub fn is_within_workspace(root: &Path, path: &Path) -> bool {
+    match devbox_wsl::path::wsl_unc_contains(&root.to_string_lossy(), &path.to_string_lossy()) {
+        Ok(Some(contains)) => return contains,
+        Ok(None) => {}
+        Err(_) => return false,
+    }
     #[cfg(windows)]
     {
         let mut root_components = root.components();
@@ -102,7 +119,24 @@ fn list_workspace_files_blocking(path: &str) -> Result<WorkspaceFiles, String> {
     Ok(WorkspaceFiles {
         files,
         truncated: result.truncated,
+        incomplete: result.incomplete,
     })
+}
+
+fn capabilities_for_path(path: &Path) -> WorkspaceCapabilities {
+    let path = path.to_string_lossy().into_owned();
+    let is_wsl = devbox_wsl::path::parse_wsl_unc_path(&path)
+        .ok()
+        .flatten()
+        .is_some();
+    WorkspaceCapabilities {
+        path,
+        source_kind: if is_wsl { "wsl" } else { "native" }.to_string(),
+        watch_mode: if is_wsl { "polling" } else { "native" }.to_string(),
+        edit_supported: true,
+        lsp_supported: !is_wsl,
+        lsp_reason: is_wsl.then(|| "host_lsp_wsl_unsupported".to_string()),
+    }
 }
 
 /// Returns the canonical root so the frontend can keep the same path identity
@@ -112,6 +146,17 @@ fn list_workspace_files_blocking(path: &str) -> Result<WorkspaceFiles, String> {
 pub async fn canonicalize_workspace(path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         canonical_workspace(Path::new(&path)).map(|path| path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|error| format!("작업 폴더 확인 작업이 중단되었습니다: {error}"))?
+}
+
+/// Returns the canonical workspace path and the independently supported edit,
+/// watcher, and host-LSP capabilities for that path.
+#[tauri::command]
+pub async fn workspace_capabilities(path: String) -> Result<WorkspaceCapabilities, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        canonical_workspace(Path::new(&path)).map(|path| capabilities_for_path(&path))
     })
     .await
     .map_err(|error| format!("작업 폴더 확인 작업이 중단되었습니다: {error}"))?
@@ -149,5 +194,29 @@ mod tests {
         assert_eq!(result.files.len(), 1);
         assert_eq!(result.files[0].relative_path, "src/main.rs");
         assert!(!result.truncated);
+        assert!(!result.incomplete);
+    }
+
+    #[test]
+    fn wsl_capabilities_are_explicit_and_linux_containment_is_case_sensitive() {
+        let capabilities = capabilities_for_path(Path::new(
+            "//?/UNC/wsl.localhost/Ubuntu/home/jihoon/프로젝트",
+        ));
+        assert_eq!(capabilities.source_kind, "wsl");
+        assert_eq!(capabilities.watch_mode, "polling");
+        assert!(capabilities.edit_supported);
+        assert!(!capabilities.lsp_supported);
+        assert_eq!(
+            capabilities.lsp_reason.as_deref(),
+            Some("host_lsp_wsl_unsupported")
+        );
+        assert!(is_within_workspace(
+            Path::new("//wsl$/Ubuntu/home/jihoon/프로젝트"),
+            Path::new("//wsl.localhost/ubuntu/home/jihoon/프로젝트/노트.md"),
+        ));
+        assert!(!is_within_workspace(
+            Path::new("//wsl$/Ubuntu/home/jihoon/Project"),
+            Path::new("//wsl$/ubuntu/home/jihoon/project/note.md"),
+        ));
     }
 }

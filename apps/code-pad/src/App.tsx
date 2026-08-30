@@ -3,7 +3,6 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { CompletionSource } from "@codemirror/autocomplete";
 import type { HoverTooltipSource } from "@codemirror/view";
 import {
-  canonicalizeWorkspace,
   deleteFileAction,
   listWorkspaceFiles,
   loadSession,
@@ -18,6 +17,7 @@ import {
   validateEncoding,
   unwatchFile,
   watchFile,
+  workspaceCapabilities as loadWorkspaceCapabilities,
 } from "./api";
 import DocHost from "./components/DocHost";
 import ChangeSetPreview, { type ChangeSetItem } from "./components/ChangeSetPreview";
@@ -55,6 +55,7 @@ import type {
   SavedFile,
   SessionState,
   WorkspaceFile,
+  WorkspaceCapabilities,
   EditedLspDocument,
   LspRenameApplyResult,
   LspRenamePreview,
@@ -174,6 +175,8 @@ export default function App() {
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
   const [workspaceListingRoot, setWorkspaceListingRoot] = useState<string | null>(null);
   const [workspaceTruncated, setWorkspaceTruncated] = useState(false);
+  const [workspaceIncomplete, setWorkspaceIncomplete] = useState(false);
+  const [workspaceCapabilities, setWorkspaceCapabilities] = useState<WorkspaceCapabilities | null>(null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [sessionPersistenceAllowed, setSessionPersistenceAllowed] = useState(true);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -300,7 +303,8 @@ export default function App() {
       }
     }).catch(() => undefined);
     return () => {
-      disposed = true;      stopDiagnostics?.();
+      disposed = true;
+      stopDiagnostics?.();
       stopStatus?.();
     };
   }, [lspSync]);
@@ -387,8 +391,10 @@ export default function App() {
       try {
         await watchFile(path);
       } catch {
-        // File saves still use the native snapshot conflict check if watching
-        // is unavailable for this one path.
+        // File saves still use the native snapshot conflict check. Keep the
+        // document open, but never leave the missing external-change signal
+        // invisible to the user.
+        setError("파일을 열었지만 외부 변경 감시를 시작하지 못했습니다. 저장 시 충돌 검사는 계속 적용됩니다.");
       }
     });
   };
@@ -1032,8 +1038,10 @@ export default function App() {
     setWorkspaceLoading(true);
     try {
       const listing = await listWorkspaceFiles(root);
+      if (stateRef.current.workspaceFolder !== root) return;
       setWorkspaceFiles(listing.files);
       setWorkspaceTruncated(listing.truncated);
+      setWorkspaceIncomplete(listing.incomplete);
       setWorkspaceListingRoot(root);
     } finally {
       setWorkspaceLoading(false);
@@ -1148,15 +1156,18 @@ export default function App() {
     const workspaceChangeToken = ++workspaceChangeTokenRef.current;
     discardRenamePreview();
     setRenameResult(null);
-    const root = await canonicalizeWorkspace(path);
+    const capabilities = await loadWorkspaceCapabilities(path);
+    const root = capabilities.path;
     const listing = await listWorkspaceFiles(root);
     if (renameApplyGuard() || workspaceChangeToken !== workspaceChangeTokenRef.current) {
       throw new Error("이름 변경 적용이 끝난 뒤 작업 폴더를 변경할 수 있습니다.");
     }
     dispatchAction({ type: "setWorkspace", workspaceFolder: root });
-    void lspSync.setWorkspace(root);
+    setWorkspaceCapabilities(capabilities);
+    void lspSync.setWorkspace(capabilities.lspSupported ? root : null);
     setWorkspaceFiles(listing.files);
     setWorkspaceTruncated(listing.truncated);
+    setWorkspaceIncomplete(listing.incomplete);
     setWorkspaceListingRoot(root);
   };
 
@@ -1273,7 +1284,25 @@ export default function App() {
           docs: restoredDocs,
         });
         for (const doc of restoredDocs) void lspSync.open(doc);
-        void lspSync.setWorkspace(loaded.session.workspace_folder);
+        const restoredRoot = loaded.session.workspace_folder;
+        if (restoredRoot) {
+          try {
+            const capabilities = await loadWorkspaceCapabilities(restoredRoot);
+            if (cancelled) return;
+            if (capabilities.path !== stateRef.current.workspaceFolder) {
+              dispatchAction({ type: "setWorkspace", workspaceFolder: capabilities.path });
+            }
+            setWorkspaceCapabilities(capabilities);
+            void lspSync.setWorkspace(capabilities.lspSupported ? capabilities.path : null);
+          } catch {
+            if (cancelled) return;
+            setWorkspaceCapabilities(null);
+            void lspSync.setWorkspace(null);
+          }
+        } else {
+          setWorkspaceCapabilities(null);
+          void lspSync.setWorkspace(null);
+        }
         hydratedRef.current = true;
         setHydrated(true);
       })
@@ -1785,6 +1814,9 @@ export default function App() {
       <p className="scope-note">
         작업 폴더: {state.workspaceFolder ?? "지정되지 않음"} · {workspaceFiles.length}개 파일
         {workspaceTruncated && " · 일부 목록만 표시"}
+        {workspaceIncomplete && " · 일부 항목 읽기 실패"}
+        {workspaceCapabilities?.sourceKind === "wsl" && " · WSL · 5초 폴링 · 편집 가능 · 호스트 LSP 미지원"}
+        {workspaceCapabilities?.sourceKind === "native" && " · 네이티브 파일 감시"}
       </p>
 
       {pendingCloseDoc && (
@@ -1912,6 +1944,7 @@ export default function App() {
         <QuickOpen
           files={workspaceFiles}
           truncated={workspaceTruncated}
+          incomplete={workspaceIncomplete}
           loading={workspaceLoading}
           workspaceFolder={state.workspaceFolder}
           onOpen={handleOpenFromQuickOpen}
@@ -1921,6 +1954,7 @@ export default function App() {
       {lspPanelOpen && (
         <LspControlPanel
           workspaceRoot={state.workspaceFolder}
+          workspaceCapabilities={workspaceCapabilities}
           onClose={() => setLspPanelOpen(false)}
           onConfigChanged={(config) => void lspSync.setConfig(config)}
         />

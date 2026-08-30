@@ -184,6 +184,28 @@ afterEach(() => {
 });
 
 describe("LspControlPanel", () => {
+  it("keeps WSL editing available while explicitly disabling host LSP", async () => {
+    const rendered = render(
+      <LspControlPanel
+        workspaceRoot="\\\\wsl.localhost\\Ubuntu\\home\\jihoon\\project"
+        workspaceCapabilities={{
+          path: "\\\\wsl.localhost\\Ubuntu\\home\\jihoon\\project",
+          sourceKind: "wsl",
+          watchMode: "polling",
+          editSupported: true,
+          lspSupported: false,
+          lspReason: "host_lsp_wsl_unsupported",
+        }}
+        onClose={() => undefined}
+      />,
+    );
+
+    expect(await rendered.findByText(/WSL 작업 폴더의 편집과 파일 감시는 지원/u)).toBeTruthy();
+    expect((rendered.getByRole("checkbox", {
+      name: "이 작업 폴더에서 언어 서버 사용",
+    }) as HTMLInputElement).disabled).toBe(true);
+  });
+
   it("keeps one close action in the footer instead of a duplicate header button", async () => {
     const onClose = vi.fn();
     const rendered = render(<LspControlPanel workspaceRoot={"/work/project"} onClose={onClose} />);

@@ -33,6 +33,13 @@ vi.mock("./api", () => ({
   dailyNote: vi.fn(async () => ["Journal/today.md", "# Today"] as [string, string]),
   renderMarkdown: vi.fn(async () => ({ title: null, tags: [], html: "<p>rendered</p>", mermaid: [] })),
   onDocsChanged: vi.fn(async () => () => undefined),
+  knowledgeWatcherStatus: vi.fn(async () => ({
+    sourceKind: "native",
+    watchMode: "native",
+    lastSyncedAt: null,
+    error: null,
+  })),
+  onKnowledgeWatcherStatus: vi.fn(async () => () => undefined),
   takePendingOpen: vi.fn(async () => null),
   onOpenRequest: vi.fn(async () => () => undefined),
   onQuickCaptureRequested: vi.fn(async () => () => undefined),

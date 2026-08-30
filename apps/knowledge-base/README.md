@@ -35,6 +35,11 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 - **Life Log draft 받기** — 기존 `knowledge-draft/v1` handoff를 claim한 뒤 저장 전 요약/출처/태그/본문을 preview한다. 사용자가 승인한 경우에만 새 Journal note를 만들고 handoff를 소비한다(기존 호환 유지)
 - **Developer Toolbox draft 받기** — 별도 `knowledge-draft/v2` handoff를 claim한 뒤 preview하고, 사용자가 Save를 확정한 경우에만 Journal note를 만들고 handoff를 소비한다
 - **활동 snapshot** — 오늘 작성·수정된 노트 수와 경로 없는 불투명 식별자를 Life Log용 `activity/v1` view로 발행하고, system-local exact civil-day 기준 최대 366일의 `daily-activity.json` sidecar(`snapshot:daily-activity/v1`)도 발행한다. sidecar에는 path/body/command/environment/log/ID를 넣지 않는다
+- **WSL vault** — `\\wsl$`, `\\wsl.localhost`, canonical `\\?\UNC\wsl.localhost` 아래의
+  검증된 vault를 지원한다. 편집 저장은 같은 폴더의 고유 temporary file을 flush/sync한 뒤 원자
+  교체하고, 외부 변경은 5초 bounded polling으로 재색인한다. offline·scan limit·일부 읽기 실패
+  상태를 sidebar에 표시하며, 완전한 scan이 아니면 기존 SQLite row를 삭제하지 않는다. 저장된
+  WSL vault가 앱 시작 시 offline이어도 경로와 마지막 색인을 유지하고 5초마다 재연결을 시도한다.
 
 ## 기술
 
@@ -46,8 +51,10 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 - wikilink schema 최초 실행에는 root의 안전한 Markdown 원문을 한 번 읽어 source position을
   복구한다. root 밖 symlink·비 Markdown·10 MiB 초과·읽기 실패 항목은 인덱스에 넣지 않고,
   일반 링크 DTO에는 절대 경로와 본문을 포함하지 않는다
-- `crates/markdown` `sanitize()`로 HTML 살균, mermaid `securityLevel: "strict"`
-- `core/store.rs`의 자체 `safe_join`으로 루트 밖 경로 차단
+- `crates/markdown` `sanitize()`로 HTML 살균. Mermaid는 공용 `packages/mermaid-renderer`에서
+  `securityLevel: "strict"`로 다이어그램이 있는 첫 프리뷰에만 동적 로드한다
+- 모든 노트 read/write/create는 canonical root와 filesystem identity를 보존하는
+  `VaultIdentity`의 existing/new-entry 경계로 루트 밖 경로와 symlink/reparse 교체를 차단한다
 - 트리 메뉴의 filesystem·launch 명령은 실행 직전에 항목과 기존 조상을 canonicalize하고 symlink 경유 루트 탈출을 거부한다. absolute path는 사용자가 경로 복사를 선택한 경우에만 frontend에 반환하며, 다른 앱으로 열기는 catalog capability와 실제 설치 상태를 다시 검증한다
 - 이름 변경 미리보기는 canonical root 안에서 파일·폴더 목적지를 다시 검증하고 root 경로 목록,
   모든 Markdown 원문, 이동 대상 내부 파일의 SHA-256 스냅샷을 만든다. root 10,000항목·스냅샷
@@ -94,8 +101,10 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
   component·Journal 종류 변경은 새 digest를 요구하는 고정 오류로 중단한다. 완전히 flush한 임시
   파일은 no-replace publication으로만 Journal에 연결하고, SQLite index transaction이 실패하면
   같은 entry identity일 때만 파일을 정리한 뒤 claim을 restore한다.
-- 외부 편집 watcher는 bounded event queue와 이벤트당 128개·4KiB path, 4,096개 경로 debounce
-  상한을 사용하고, 현재 identity 안의 regular UTF-8 문서만 최대 10 MiB까지 읽는다. modal은 title/body UTF-8 byte
+- 외부 편집 watcher는 bounded event queue와 이벤트당 256개·32KiB path, 4,096개 경로 debounce
+  상한을 사용하고, 현재 identity 안의 regular UTF-8 문서만 최대 10 MiB까지 안정된 metadata
+  snapshot 전후로 읽는다. scan은 최대 4,096개 파일·폴더와 Markdown 64 MiB로 제한하며 불완전한
+  scan의 누락은 삭제 증거로 쓰지 않는다. modal은 title/body UTF-8 byte
   사용량, initial focus·Escape·Tab trap·focus restore를 제공하며, stale/expiry/unmount 응답과
   중복 Save/Cancel은 화면 또는 native 상태를 다시 오염시키지 않는다
 - clipboard IPC는 `allow-read-text`만 허용하며 편집기에서 사용자가 붙여넣기를 고른 순간의 plain text만 읽는다. clipboard history나 background 수집은 하지 않는다

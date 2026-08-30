@@ -94,6 +94,13 @@ vi.mock("./api", () => {
     wikilinkCandidates: vi.fn(async () => []),
     backlinks: vi.fn(async () => []),
     onDocsChanged: vi.fn(async () => () => undefined),
+    knowledgeWatcherStatus: vi.fn(async () => ({
+      sourceKind: "wsl",
+      watchMode: "polling",
+      lastSyncedAt: 1_788_105_600_000,
+      error: null,
+    })),
+    onKnowledgeWatcherStatus: vi.fn(async () => () => undefined),
   };
 });
 
@@ -123,6 +130,11 @@ afterEach(() => {
   openTargetsMock.mockClear();
   openInMock.mockClear();
   readFileMock.mockClear();
+});
+
+it("shows the active WSL vault polling mode without treating it as an error", async () => {
+  render(<App />);
+  expect(await screen.findByText("WSL vault · 5초 폴링")).toBeTruthy();
 });
 
 describe("knowledge-base App — 모드 토글 & 프리뷰 비활성화", () => {

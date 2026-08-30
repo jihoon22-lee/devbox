@@ -88,6 +88,7 @@ pub enum LspManagerError {
     ConfigRecoveryRequired,
     Disabled,
     MissingWorkspace,
+    UnsupportedWslWorkspace,
     MissingServer(String),
     AlreadyRunning(String),
     StartInProgress(String),
@@ -105,6 +106,9 @@ impl fmt::Display for LspManagerError {
             ),
             Self::Disabled => formatter.write_str("LSP가 비활성화되어 있습니다"),
             Self::MissingWorkspace => formatter.write_str("LSP 작업 폴더가 설정되지 않았습니다"),
+            Self::UnsupportedWslWorkspace => formatter.write_str(
+                "WSL 작업 폴더는 Windows host LSP를 지원하지 않습니다. 파일 편집과 5초 폴링 감시는 계속 사용할 수 있습니다",
+            ),
             Self::MissingServer(language_id) => {
                 write!(formatter, "{language_id} 언어 서버가 설정되지 않았습니다")
             }
@@ -130,6 +134,18 @@ impl fmt::Display for LspManagerError {
 }
 
 impl std::error::Error for LspManagerError {}
+
+fn ensure_host_workspace_supported(path: &str) -> Result<(), LspManagerError> {
+    if devbox_wsl::path::parse_wsl_unc_path(path)
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        Err(LspManagerError::UnsupportedWslWorkspace)
+    } else {
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -759,6 +775,7 @@ impl LspManager {
         if config.workspace_root.is_empty() {
             return Err(LspManagerError::MissingWorkspace);
         }
+        ensure_host_workspace_supported(&config.workspace_root)?;
 
         let workspace = WorkspaceRoot::new(&config.workspace_root)
             .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
@@ -3005,6 +3022,9 @@ fn restore_or_remove_recovered_journal(directory: &Path, journal: &RenameJournal
     if journal.state == RenameJournalState::Committed {
         return fs::remove_dir_all(directory).is_ok();
     }
+    if ensure_host_workspace_supported(&journal.workspace_root).is_err() {
+        return false;
+    }
     let Ok(workspace_root) = WorkspaceRoot::new(&journal.workspace_root) else {
         return false;
     };
@@ -4143,6 +4163,22 @@ mod status_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_host_lsp_rejects_wsl_workspace_aliases_with_one_stable_reason() {
+        for path in [
+            "//wsl$/Ubuntu/home/jihoon/projects/devbox",
+            "//?/UNC/wsl.localhost/ubuntu/home/jihoon/projects/devbox",
+        ] {
+            let error = ensure_host_workspace_supported(path).unwrap_err();
+            assert!(matches!(error, LspManagerError::UnsupportedWslWorkspace));
+            assert_eq!(
+                error.to_string(),
+                "WSL 작업 폴더는 Windows host LSP를 지원하지 않습니다. 파일 편집과 5초 폴링 감시는 계속 사용할 수 있습니다"
+            );
+        }
+        ensure_host_workspace_supported("C:/projects/devbox").unwrap();
+    }
 
     #[test]
     fn runtime_language_id_uses_the_same_safe_identifier_boundary_as_config() {

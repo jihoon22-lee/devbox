@@ -52,6 +52,13 @@ vi.mock("./api", () => ({
   wikilinkCandidates: vi.fn(async () => []),
   backlinks: vi.fn(async () => []),
   onDocsChanged: vi.fn(async () => () => undefined),
+  knowledgeWatcherStatus: vi.fn(async () => ({
+    sourceKind: "native",
+    watchMode: "native",
+    lastSyncedAt: null,
+    error: null,
+  })),
+  onKnowledgeWatcherStatus: vi.fn(async () => () => undefined),
   onQuickCaptureRequested: vi.fn().mockImplementation(async (handler: () => void) => {
     mocks.quickCaptureHandler = handler;
     return () => undefined;

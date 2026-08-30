@@ -9,12 +9,13 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
 - **탭 파일 작업** — 닫기·다른/오른쪽 탭 닫기, canonical 경로 복사·탐색기 표시, 파일 이름 변경·삭제. 여러 dirty 탭은 순차 확인하고 이름 변경·삭제는 디스크 스냅샷을 다시 검증
 - **인코딩/줄바꿈** — 인코딩 감지·변환, CRLF/LF 감지·변환, 큰 파일 가드
 - **찾기/바꾸기** — 단일 파일 내 정규식 지원
-- **빠른 열기** — 작업 폴더를 한 번만 제한 색인한 뒤 파일명·상대 경로를 fuzzy 검색하고, 디렉터리 트리로 묶어 긴 경로도 이름과 부모 경로로 나누어 표시. 마우스 없이 `Ctrl/⌘+P` → 입력 → `↑/↓`·`Home/End` → `Enter`로 파일을 연다
+- **빠른 열기** — 작업 폴더를 한 번만 제한 색인한 뒤 파일명·상대 경로를 fuzzy 검색하고, 디렉터리 트리로 묶어 긴 경로도 이름과 부모 경로로 나누어 표시. 읽기 실패가 있으면 불완전 목록임을 숨기지 않는다. 마우스 없이 `Ctrl/⌘+P` → 입력 → `↑/↓`·`Home/End` → `Enter`로 파일을 연다
 - **프리뷰** — `.md`/`.mmd`(mermaid) 프리뷰 패널. 편집기와 프리뷰는 서로 다른 배경과
   경계로 구분되며, 편집기 본문에는 활성 경계가, 탭에는 키보드 포커스 링이 표시된다.
   긴 경로와 본문은 줄바꿈하고, 코드 블록은 패널 안에서 가로 스크롤하며, 미디어와
-  다이어그램은 패널 너비를 넘지 않는다. 프리뷰 본문만 세로 스크롤을 소유한다. 이 시각
-  구분 작업에서는 프리뷰 renderer·상태·IPC·원문/path 전달 동작을 변경하지 않는다.
+  다이어그램은 패널 너비를 넘지 않는다. 프리뷰 본문만 세로 스크롤을 소유한다. Mermaid
+  runtime은 다이어그램이 실제로 나타나는 첫 프리뷰에서만 공용 renderer를 동적 로드하며,
+  일반 Markdown의 초기 editor bundle에는 포함하지 않는다.
 - **LSP** — Windows 로컬 stdio 서버 관리(진단·자동완성·hover·정의·참조·이름 변경·포맷, 재시작 백오프).
   상태와 retry/circuit, 검증된 관리형 runtime cache를 한 화면에서 확인하고 `다시 시도`로 명시적 복구한다.
   최근 로그는 앱 실행 중 memory에 최대 64개 언어·언어별 200개만 보존하며, 제3자 서버 stderr는 native 경계에서
@@ -40,12 +41,18 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
   drive/UNC 및 W3 long path는 canonical component 기준으로 상대 경로를 만들고, 적용·rollback
   경계에서 final reparse point/symlink를 fail-closed로 거부한다. 적용 중 Ctrl/⌘+Escape와
   `취소`가 먼저 도착해도 mirror flush가 끝난 뒤 native apply를 호출하지 않는다.
+- **WSL 작업 폴더** — `\\wsl$`, `\\wsl.localhost`, canonical `\\?\UNC\wsl.localhost`
+  경로의 Linux 부분은 대소문자를 보존한다. 파일 읽기·편집·원자 저장은 지원하고 열린 파일의
+  외부 변경은 5초 bounded polling으로 감지한다. Windows host LSP는 지원하지 않으며, 편집 실패로
+  오인되지 않도록 workspace 상태와 LSP 설정 화면에 같은 고정 사유를 표시한다. live file watcher는
+  512개로 제한해 모든 등록 파일을 한 poll cycle에서 확인하며, 초과 등록은 조용히 누락하지 않고
+  명시적으로 거부한다.
 
 ## 기술
 
 - CodeMirror 6 (공용 `packages/editor`), `packages/diff-view`
-- 공용 크레이트 `crates/filesystem`·`crates/markdown`
-- mermaid `securityLevel: "strict"`
+- 공용 크레이트 `crates/filesystem`·`crates/markdown`·`crates/wsl`
+- 공용 `packages/mermaid-renderer`의 lazy Mermaid, `securityLevel: "strict"`
 - LSP 관리 dialog는 header/footer를 고정하고 본문 하나만 scroll한다. 상태와 설치 목록에 별도 nested
   scroll을 만들지 않으며 viewport 안에서 최대 900px 높이를 사용한다
 - 파일 이름 변경(탭 컨텍스트 메뉴)은 같은 폴더의 단일 이름만 허용하고 기존 대상을 덮어쓰지 않는다. 삭제는 복구 불가·미저장 버퍼 손실을 명시적으로 확인하며, 두 작업 모두 mtime·크기·SHA-256이 열린 탭의 스냅샷과 일치할 때만 실행한다. LSP의 여러 파일 내용 변경은 위의 별도 preview/rollback 경로를 사용한다.

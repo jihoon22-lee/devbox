@@ -32,6 +32,7 @@ import {
   unwatchFile,
   validateEncoding,
   watchFile,
+  workspaceCapabilities,
 } from "./api";
 import type {
   LanguageServerStatus,
@@ -135,6 +136,7 @@ vi.mock("./api", () => ({
   saveSession: vi.fn().mockResolvedValue(undefined),
   loadRecovery: vi.fn().mockResolvedValue([]),
   canonicalizeWorkspace: vi.fn(),
+  workspaceCapabilities: vi.fn(),
   listWorkspaceFiles: vi.fn(),
   renderPreview: vi.fn(),
   loadLspConfig: vi.fn().mockResolvedValue({
@@ -184,6 +186,7 @@ const unwatchFileMock = vi.mocked(unwatchFile);
 const loadLspConfigMock = vi.mocked(loadLspConfig);
 const languageServerStatusesMock = vi.mocked(languageServerStatuses);
 const listWorkspaceFilesMock = vi.mocked(listWorkspaceFiles);
+const workspaceCapabilitiesMock = vi.mocked(workspaceCapabilities);
 const startLanguageServerMock = vi.mocked(startLanguageServer);
 const stopLanguageServerMock = vi.mocked(stopLanguageServer);
 const openLspDocumentMock = vi.mocked(openLspDocument);
@@ -354,7 +357,15 @@ beforeEach(() => {
     error: null,
   });
   languageServerStatusesMock.mockReset().mockResolvedValue([]);
-  listWorkspaceFilesMock.mockReset().mockResolvedValue({ files: [], truncated: false });
+  workspaceCapabilitiesMock.mockReset().mockImplementation(async (path) => ({
+    path,
+    sourceKind: "native",
+    watchMode: "native",
+    editSupported: true,
+    lspSupported: true,
+    lspReason: null,
+  }));
+  listWorkspaceFilesMock.mockReset().mockResolvedValue({ files: [], truncated: false, incomplete: false });
   startLanguageServerMock.mockReset().mockResolvedValue(undefined);
   stopLanguageServerMock.mockReset().mockResolvedValue(undefined);
   openLspDocumentMock.mockReset();
@@ -481,6 +492,7 @@ describe("App editor shell operations", () => {
     listWorkspaceFilesMock.mockResolvedValue({
       files: [{ path: "/tmp/workspace/src/main.ts", relativePath: "src/main.ts", size: 12 }],
       truncated: false,
+      incomplete: false,
     });
 
     const rendered = render(<App />);
@@ -716,6 +728,15 @@ describe("App editor shell operations", () => {
     fireEvent.click(rendered.getByRole("button", { name: "파일 열기" }));
     await waitFor(() => expect(rendered.getAllByRole("tab", { name: /one\.ts/ })).toHaveLength(1));
     expect(watchFileMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the document open but discloses an unavailable file watcher", async () => {
+    watchFileMock.mockRejectedValueOnce(new Error("watch capacity"));
+    const rendered = await openOne();
+    expect(rendered.getByRole("tab", { name: /one\.ts/ })).toBeTruthy();
+    await waitFor(() => expect(rendered.getByRole("alert").textContent).toContain(
+      "외부 변경 감시를 시작하지 못했습니다",
+    ));
   });
 
   it("rolls back hydration watches across StrictMode effect lifetimes", async () => {

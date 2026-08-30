@@ -41,6 +41,7 @@ jobs:
           python3 .github/scripts/test-check-dependencies.py
           python3 .github/scripts/test-build-manifest.py
           python3 .github/scripts/test-validate-release-input.py
+          node .github/scripts/test-check-frontend-bundles.mjs
 
       - name: Check Cargo licenses, advisories, bans, and sources
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2, cargo-deny 0.20.2
@@ -111,6 +112,12 @@ jobs:
 
       - name: Build frontends
         run: bash .github/scripts/run-frontend-scope.sh build "$FRONTEND_SCOPE" "$FRONTEND_APPS"
+        env:
+          FRONTEND_SCOPE: ${{ needs.scope.outputs.frontend_scope }}
+          FRONTEND_APPS: ${{ needs.scope.outputs.frontend_apps }}
+
+      - name: Check frontend bundle budgets
+        run: node .github/scripts/check-frontend-bundles.mjs "$FRONTEND_SCOPE" "$FRONTEND_APPS"
         env:
           FRONTEND_SCOPE: ${{ needs.scope.outputs.frontend_scope }}
           FRONTEND_APPS: ${{ needs.scope.outputs.frontend_apps }}

@@ -97,6 +97,7 @@ pub fn run() {
             commands::wikilinks::analyze_wikilinks,
             commands::wikilinks::wikilink_candidates,
             commands::wikilinks::backlinks,
+            commands::watcher::knowledge_watcher_status,
         ])
         .setup(|app| {
             devbox_window_state_tauri::restore_main_window(app.handle());
@@ -127,7 +128,7 @@ pub fn run() {
             // watcher 생성 후 루트에 연결 (앱 재시작 시 외부 편집 계속 반영)
             let watcher = KnowledgeWatcher::new(app.handle().clone(), state.clone());
             if let Ok(root) = commands::docs::resolve_root(&state.db.lock().unwrap()) {
-                let _ = watcher.set_root(&root);
+                watcher.restore_root(&root);
             }
             // integration snapshot producer (두 번째, §10.1)
             let _ = integration::write_snapshot(&state.db.lock().unwrap());

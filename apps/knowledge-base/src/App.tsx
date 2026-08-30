@@ -18,7 +18,9 @@ import {
   entryPath,
   listTags,
   listTree,
+  knowledgeWatcherStatus,
   onDocsChanged,
+  onKnowledgeWatcherStatus,
   onOpenRequest,
   onQuickCaptureRequested,
   onQuickCaptureShortcutStatusChanged,
@@ -55,6 +57,7 @@ import type {
   TreeEntry,
   WikilinkOccurrence,
   QuickCaptureShortcutStatus,
+  KnowledgeWatcherStatus,
 } from "./types";
 import { routeOpenRequest } from "./lib/applink";
 import { IMAGE_STALE_ERROR, readImageBytes } from "./lib/imageAssets";
@@ -110,6 +113,24 @@ function remapPath(path: string | null, from: string, to: string): string | null
   return path;
 }
 
+function watcherStatusLabel(status: KnowledgeWatcherStatus): string {
+  const source = status.sourceKind === "wsl"
+    ? "WSL vault · 5초 폴링"
+    : "Windows vault · 실시간 감시";
+  const error = status.error === "vault_unconfigured"
+    ? "vault 미설정"
+    : status.error === "vault_unavailable"
+      ? "vault 연결 끊김 · 마지막 색인 유지"
+      : status.error === "vault_scan_limit"
+        ? "안전 색인 한도 초과 · 마지막 색인 유지"
+        : status.error === "vault_scan_incomplete"
+          ? "일부 파일 읽기 실패 · 마지막 색인 유지"
+          : status.error === "vault_index_failed"
+            ? "색인 갱신 실패 · 마지막 색인 유지"
+            : null;
+  return error ? `${source} · ${error}` : source;
+}
+
 export default function App() {
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [tags, setTags] = useState<string[]>([]);
@@ -138,6 +159,7 @@ export default function App() {
   const [quickCaptureShortcut, setQuickCaptureShortcut] = useState<QuickCaptureShortcutStatus | null>(null);
   const [draftPreview, setDraftPreview] = useState<KnowledgeDraftPreview | null>(null);
   const [draftBusy, setDraftBusy] = useState(false);
+  const [watcherStatus, setWatcherStatus] = useState<KnowledgeWatcherStatus | null>(null);
   const renameBusyRef = useRef(false);
   const draftBusyRef = useRef(false);
   const draftPreviewRef = useRef<KnowledgeDraftPreview | null>(null);
@@ -289,9 +311,42 @@ export default function App() {
     let unlisten: (() => void) | null = null;
     void onDocsChanged(() => void loadMeta()).then((u) => {
       unlisten = u;
-    });
+    }).catch(() => undefined);
     return () => unlisten?.();
   }, [loadMeta]);
+
+  useEffect(() => {
+    let disposed = false;
+    let eventSeen = false;
+    let unlisten: (() => void) | undefined;
+    void knowledgeWatcherStatus()
+      .then((status) => {
+        if (!disposed && !eventSeen) setWatcherStatus(status);
+      })
+      .catch(() => {
+        if (!disposed && !eventSeen) {
+          setWatcherStatus({
+            sourceKind: "native",
+            watchMode: "unavailable",
+            lastSyncedAt: null,
+            error: "vault_unavailable",
+          });
+        }
+      });
+    void onKnowledgeWatcherStatus((status) => {
+      if (!disposed) {
+        eventSeen = true;
+        setWatcherStatus(status);
+      }
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   // Native owns the global registration.  The frontend only receives a
   // bounded event and opens the same modal as the in-app button; it never
@@ -989,6 +1044,17 @@ export default function App() {
       {notice && <div className="notice" role="status">{notice}</div>}
       <aside className="sidebar">
         <h1 className="app-title">Knowledge</h1>
+        {watcherStatus && (
+          <p
+            className={`vault-watch-status ${watcherStatus.error ? "warning" : ""}`}
+            role="status"
+            title={watcherStatus.lastSyncedAt
+              ? `마지막 동기화 ${new Date(watcherStatus.lastSyncedAt).toLocaleString()}`
+              : undefined}
+          >
+            {watcherStatusLabel(watcherStatus)}
+          </p>
+        )}
         <div className="sidebar-row">
           <button
             ref={quickCaptureButtonRef}

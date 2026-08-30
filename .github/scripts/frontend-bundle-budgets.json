@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "apps": {
+    "code-pad": {
+      "dist": "apps/code-pad/dist",
+      "rawBytes": 1225000,
+      "gzipBytes": 415000
+    },
+    "knowledge-base": {
+      "dist": "apps/knowledge-base/dist",
+      "rawBytes": 965000,
+      "gzipBytes": 325000
+    }
+  }
+}
