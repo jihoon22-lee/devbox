@@ -351,6 +351,8 @@ mcp_stdio_request_timeout
 mcp_stdio_request_cancelled
 mcp_stdio_connection_stale
 mcp_stdio_cleanup_failed
+mcp_stdio_connection_limit
+mcp_stdio_request_limit
 ```
 
 OAuth:

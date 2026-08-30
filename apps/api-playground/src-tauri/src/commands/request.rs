@@ -1289,7 +1289,7 @@ fn append_graphql_params(base: &str, params: &[KeyValue]) -> Result<String, Stri
     Ok(value)
 }
 
-fn unseal_environment_value(
+pub(crate) fn unseal_environment_value(
     variable: &EnvironmentVariable,
     sealer: &dyn devbox_secrets::Sealer,
 ) -> Result<Zeroizing<String>, ()> {
@@ -1423,6 +1423,16 @@ pub(crate) struct Redactor {
 }
 
 impl Redactor {
+    pub(crate) fn from_secrets(mut secrets: Vec<Zeroizing<String>>) -> Self {
+        secrets.retain(|secret| !secret.is_empty());
+        secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
+        secrets.dedup_by(|left, right| left.as_str() == right.as_str());
+        Self {
+            secrets,
+            mask_graphql_query: false,
+        }
+    }
+
     pub(crate) fn for_request(
         req: &ResolvedRequest,
         mut environment_secrets: Vec<Zeroizing<String>>,

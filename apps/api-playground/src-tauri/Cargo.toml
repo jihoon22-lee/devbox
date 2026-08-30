@@ -37,7 +37,7 @@ devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem
 devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
-tokio = { version = "1.53.1", features = ["macros", "sync", "time"] }
+tokio = { version = "1.53.1", features = ["io-util", "macros", "process", "sync", "time"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = [
     "connect",
     "rustls-tls-native-roots",
@@ -50,4 +50,10 @@ tempfile = "3"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security_Cryptography",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
 ] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -64,32 +64,32 @@ pub struct McpHttpProfile {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpTimelineEntry {
-    sequence: u32,
-    offset_ms: u64,
-    direction: String,
-    kind: String,
-    method: Option<String>,
-    request_id: Option<String>,
-    payload: Option<Value>,
+    pub(crate) sequence: u32,
+    pub(crate) offset_ms: u64,
+    pub(crate) direction: String,
+    pub(crate) kind: String,
+    pub(crate) method: Option<String>,
+    pub(crate) request_id: Option<String>,
+    pub(crate) payload: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpConnectResult {
-    connection_id: String,
-    server: ServerProjection,
-    session_managed: bool,
-    timeline: Vec<McpTimelineEntry>,
+    pub(crate) connection_id: String,
+    pub(crate) server: ServerProjection,
+    pub(crate) session_managed: bool,
+    pub(crate) timeline: Vec<McpTimelineEntry>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpInvokeResult {
-    result: Option<Value>,
-    error_code: Option<String>,
-    rpc_error_code: Option<i64>,
-    next_cursor: Option<String>,
-    timeline: Vec<McpTimelineEntry>,
+    pub(crate) result: Option<Value>,
+    pub(crate) error_code: Option<String>,
+    pub(crate) rpc_error_code: Option<i64>,
+    pub(crate) next_cursor: Option<String>,
+    pub(crate) timeline: Vec<McpTimelineEntry>,
 }
 
 #[derive(Clone)]
@@ -431,9 +431,9 @@ struct TransportExchange {
     session_id: Option<Zeroizing<String>>,
 }
 
-struct InterpretedExchange {
-    final_result: Result<Value, RpcError>,
-    timeline: Vec<McpTimelineEntry>,
+pub(crate) struct InterpretedExchange {
+    pub(crate) final_result: Result<Value, RpcError>,
+    pub(crate) timeline: Vec<McpTimelineEntry>,
 }
 
 #[tauri::command]
@@ -1275,7 +1275,7 @@ fn push_sse_message(messages: &mut Vec<Value>, data: &str) -> Result<(), String>
     Ok(())
 }
 
-fn interpret_exchange(
+pub(crate) fn interpret_exchange(
     messages: Vec<Value>,
     expected_id: &str,
     era: Era,
@@ -1409,7 +1409,7 @@ fn redact_reflected_value(redactor: &Redactor, value: &Value) -> Value {
     }
 }
 
-fn project_result_for_ipc(
+pub(crate) fn project_result_for_ipc(
     redactor: &Redactor,
     result: &Value,
     method: &str,
@@ -1446,7 +1446,7 @@ fn project_result_for_ipc(
     Ok(projected)
 }
 
-fn filter_reflected_list_definitions(
+pub(crate) fn filter_reflected_list_definitions(
     result: &Value,
     method: &str,
     redactor: &Redactor,
@@ -1492,7 +1492,7 @@ fn filter_reflected_list_definitions(
     Ok((projected, rejected))
 }
 
-fn sanitize_server_projection(
+pub(crate) fn sanitize_server_projection(
     redactor: &Redactor,
     mut server: ServerProjection,
 ) -> Result<ServerProjection, String> {
