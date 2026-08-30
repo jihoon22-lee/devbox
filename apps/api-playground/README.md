@@ -45,11 +45,14 @@
   `{{NAME}}` 참조를 지원하고, DPAPI로 보호된 secret은 backend가 요청 직전에 메모리에서만
   해제한다 (`crates/secrets`). Header table의 picker에는 현재 환경의 봉인된 secret 이름만
   표시하고 `${NAME}`을 삽입하며 frontend로 DPAPI secret을 unseal하지 않는다.
-- **Protocol Lab · MCP** — 데스크톱에서 MCP Streamable HTTP의 modern `2026-07-28`
-  `server/discover`와 legacy `2025-11-25` initialize/session 흐름을 선택하거나 안전한 auto
-  fallback으로 검사한다. capability가 확인된 tool/resource/prompt만 한 page씩 명시적으로
-  조회·호출하고, 지원하는 JSON Schema 부분집합만 form으로 실행한다. 연결 profile, result,
-  cursor와 timeline은 저장하지 않으며 브라우저 preview는 MCP network 요청을 보내지 않는다.
+- **Protocol Lab · MCP** — 데스크톱에서 MCP Streamable HTTP와 native stdio를 검사한다. HTTP는
+  modern `2026-07-28` `server/discover`와 legacy `2025-11-25` initialize/session 흐름을
+  선택하거나 안전한 auto fallback으로 협상하며, stdio는 검토한 executable을 shell 없이 실행한다.
+  capability가 확인된 tool/resource/prompt만 한 page씩 명시적으로 조회·호출하고, 지원하는 JSON
+  Schema 부분집합만 form으로 실행한다. HTTP OAuth 2.1은 system browser·PKCE로 authorize하며
+  Windows DPAPI로 봉인한 token만 저장한다. Protocol profile/result/cursor/timeline은 저장하지
+  않으며 OAuth grant metadata와 token 저장은 별도 native 보안 경계다. 브라우저 preview는 MCP,
+  stdio, OAuth network 요청을 보내지 않는다.
 
 ## Protocol Lab · MCP (`#485`)
 
@@ -82,6 +85,124 @@ PR1의 source 검증은 focused MCP Rust tests 33 passed, API Playground Rust te
 frontend 33 files/231 tests passed, `cargo check`, strict Clippy와 production build passed이다.
 이는 app/source evidence이며 full workspace CI나 Windows packaged acceptance 결과를 주장하지
 않는다.
+
+## MCP stdio + HTTP OAuth (`#485`, PR2)
+
+Protocol Lab의 PR2는 MCP Streamable HTTP에 OAuth 2.1을 붙이고, HTTP와 분리된 native stdio
+transport를 추가한다. OAuth는 HTTP profile에만 적용되며 stdio에는 적용하지 않는다. stdio의
+credential은 사용자가 기존 Environment에서 명시적으로 연결한 값만 spawn 경계에서 해석한다.
+브라우저 preview는 두 transport 모두 `native_required`이며 native network/process 동작을
+시작하지 않는다.
+
+### Native MCP stdio
+
+- **선택·profile** — executable과 선택적 cwd는 native picker로만 고르고, renderer에는 128-bit
+  lowercase hex selection ID와 control-free basename label(최대 256 bytes), 만료 시각만 보낸다.
+  selection은 최대 32개를 10분 동안만 보관하며, executable/directory 종류를 혼용하지 않는다.
+  spawn 직전에 regular file/directory, canonical path와 filesystem identity를 재검증하고
+  symlink/reparse alias나 만료·변경된 selection은 `mcp_stdio_selection_invalid`로 거부한다.
+- **실행 경계** — shell이나 command string을 사용하지 않고 executable과 argv를 native process
+  argument로 전달한다. child environment는 `env_clear()` 후 Windows의 `PATH`, `PATHEXT`,
+  `SYSTEMROOT`, `WINDIR`, `COMSPEC`, `TEMP`, `TMP` 또는 Unix의 `PATH`, `HOME`, `TMPDIR`,
+  `LANG`, `LC_ALL`, `LC_CTYPE`만 복원한다. WSL stdio는 지원하지 않는다. argv는 64개·값당
+  8 KiB·전체 64 KiB, environment binding은 64개·이름당 256 bytes·resolved 전체 256 KiB,
+  timeout은 100 ms–120 s로 제한한다. reserved runtime 이름, 중복 child/source 이름, 누락된
+  source, control/NUL과 argv 내 secret 사용은 `mcp_stdio_profile_invalid` 또는
+  `mcp_stdio_environment_invalid`로 fail-closed한다.
+- **소유권·framing** — Windows에서는 suspended/no-window child를 kill-on-close Job Object에
+  넣고, Unix test/runtime 경계에서는 private process group을 사용한다. connection 하나가
+  process tree 하나를 소유하며 disconnect, cancel, timeout, EOF, framing/protocol 오류에서
+  stdin을 닫고 tree를 terminate/reap한다. stdout은 LF/CRLF 한 줄당 UTF-8 JSON-RPC 하나만
+  허용하고 embedded newline, 빈 줄, 비 UTF-8/비 JSON, 중복·예상 밖 response ID를 거부한다.
+  outbound request는 shared 1 MiB bound를 따르고, line/parsed JSON은 4 MiB, 한 exchange는
+  4 MiB·1,000 messages로 제한한다. stderr는 protocol로
+  해석하지 않고 control 제거·known secret redaction 후 64 KiB·256-line zeroizing ring에만
+  drain하며 raw text는 IPC로 보내지 않는다.
+- **협상·운영** — `modern`은 `server/discover`, `legacy`는 `initialize`와
+  `notifications/initialized`, `auto`는 호환성에 해당하는 unrecognized-method/modern discovery
+  timeout에서만 process를 종료·reap한 뒤 새 legacy process로 fallback한다. spawn/network/
+  framing/malformed/credential 오류는 fallback하지 않는다. 최대 8개 connection, connection당
+  active request 하나를 허용하며 기존 explorer의 page·identity·cursor·schema 검증과 bounded
+  timeline을 재사용한다. cancel은 legacy `notifications/cancelled`를 best-effort로 보낸 뒤
+  전체 connection을 무효화하므로 늦은 응답을 다음 request에 재사용하지 않는다.
+
+### HTTP OAuth 2.1
+
+- **Discovery와 binding** — endpoint는 exact resource로 사용하며 HTTPS만 허용한다(loopback
+  fixture는 HTTP 허용). initial resource request, bounded `WWW-Authenticate` challenge와 RFC
+  9728 protected-resource metadata를 path-specific well-known → origin-root 순서로 확인한 뒤,
+  RFC 8414/OIDC authorization-server metadata를 조회한다. metadata의 resource와 issuer는
+  exact normalized match여야 하고, 여러 issuer가 있으면 사용자가 고른 값만 허용한다. 모든
+  OAuth 요청은 redirect를 따르지 않으며 userinfo, fragment, control, credential-shaped query와
+  cross-origin substitution을 거부한다.
+- **Client와 callback** — public client ID(최대 8 KiB)만 받으며 client secret, DCR/CIMD와 device/
+  client-credentials/password grant는 제공하지 않는다. authorization server는 code flow,
+  public-client `none`, PKCE `S256`을 광고해야 한다. system browser를 열기 전에 ephemeral
+  `127.0.0.1` listener를 bind하고 random state/verifier와 S256 challenge를 만든다. callback은
+  loopback peer의 단일 HTTP/1.1 GET `/oauth/callback`만 받고, exact state·advertised `iss`·중복
+  parameter를 검증하며 authorization code는 token 교환 직후 zeroize한다. 성공·실패 페이지는
+  고정 문구만 반환한다.
+- **Token lifecycle** — token exchange는 authorization code, redirect URI, client ID, PKCE
+  verifier와 같은 `resource`를 exact form POST로 보내고 Bearer token type만 수락한다. token은
+  query에 넣지 않으며 access/refresh token은 backend `Zeroizing` memory에만 평문으로 존재한다.
+  connect 또는 request 경계에서만 exact issuer/resource/client binding을 확인해 Bearer header를
+  주입하고, 만료 시 한 번만 refresh한다. refresh rotation은 old token을 버리기 전에 atomic
+  store update를 완료하며 background refresh나 다른 grant fallback은 없다. profile에 OAuth
+  grant가 있으면 enabled custom `Authorization` header와 함께 사용할 수 없다.
+- **Windows-only persistence** — 최대 32 grant, versioned JSON file(최대 1 MiB)을 app-local data
+  directory의 `oauth/mcp-grants.json`에 보관한다. access/refresh token은 각각 기존
+  `crates/secrets`의 versioned DPAPI envelope로 봉인하고, file/parent의 symlink/reparse
+  redirection을 재검증한 뒤 `atomic_write`한다. renderer projection에는 grant ID, issuer,
+  resource, public client ID, scopes, expiry와 `active`/`expired` status만 있고 token, callback
+  code, state, verifier, DPAPI blob, discovery body와 storage path는 없다. non-Windows/WSL은
+  stable `mcp_oauth_storage_failed`를 반환하며 pure logic test만 수행한다.
+- **Revoke와 UI** — discovered revocation endpoint가 있으면 선택된 token을 POST하고, remote
+  success와 local removal을 구분한다. remote failure 시에는 사용자가 명시적으로 local removal을
+  선택한 경우에만 local grant를 지운다. UI는 HTTP에서만 Authorize/Refresh grants/Revoke를
+  제공하고 stdio에서는 OAuth control을 비활성화한다. authorize flow는 한 번에 하나이며 최대
+  5분, metadata/token network operation은 15초 bounded timeout이다.
+
+### Bounds and stable errors
+
+OAuth 입력은 endpoint/issuer/client ID 8 KiB, scope 32개·scope당 256 bytes로 제한하고,
+metadata/token response는 각각 128 KiB, callback request는 16 KiB로 bounded parse한다. OAuth
+grant storage는 32건·1 MiB이며, token expiry는 monotonic live margin과 persistence용 wall-clock
+timestamp를 분리한다. stdio와 OAuth에서 raw OS/network/process/server error text, URL/path,
+header, token, authorization code와 callback parameters는 IPC에 반향하지 않고 아래 stable
+codes만 renderer에 전달한다.
+
+```text
+mcp_stdio_selection_invalid       mcp_stdio_profile_invalid
+mcp_stdio_environment_invalid     mcp_stdio_spawn_failed
+mcp_stdio_transport_failed        mcp_stdio_protocol_invalid
+mcp_stdio_message_too_large       mcp_stdio_request_timeout
+mcp_stdio_request_cancelled       mcp_stdio_connection_stale
+mcp_stdio_cleanup_failed          mcp_stdio_connection_limit
+mcp_stdio_request_limit
+
+mcp_oauth_required                mcp_oauth_request_invalid
+mcp_oauth_discovery_failed        mcp_oauth_resource_mismatch
+mcp_oauth_issuer_mismatch         mcp_oauth_pkce_required
+mcp_oauth_client_unsupported      mcp_oauth_callback_failed
+mcp_oauth_token_failed            mcp_oauth_storage_failed
+mcp_oauth_reauthorization_required mcp_oauth_cancelled
+mcp_oauth_revoke_failed
+```
+
+### Validation boundary and acceptance status
+
+The native command layer enforces profile, transport, storage, and process bounds, while `mcpApi.ts`
+revalidates opaque IDs, projections, timeline ordering, stable error codes, and returned bounds. The
+shared explorer keeps result/timeline state in process memory;
+only the Windows DPAPI-backed OAuth grant file persists across restarts. This worktree's source
+evidence is **160 Rust tests passed**, strict Clippy with warnings denied passed, and **244 frontend
+tests across 33 files passed**; the API Playground production frontend build also passed.
+
+WSL cannot exercise Windows DPAPI sealing, native picker/process-tree Job Object behavior, system
+browser callback flow, or a packaged `.exe`. Therefore packaged Windows acceptance is still pending:
+no Windows stdio fixture, OAuth browser/discovery/restart/revoke run, child-process cleanup result,
+or MCP Inspector comparison is claimed here. Those checks must run on Windows before this feature
+is considered packaged-acceptance complete.
 
 ## Binary response preview (`#348`)
 
