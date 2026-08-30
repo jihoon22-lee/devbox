@@ -17,6 +17,11 @@ pub struct WalkResult {
     pub files: Vec<IndexedFile>,
     /// 상한 밖에 반환 가능한 파일이 하나 이상 있었는지 여부.
     pub truncated: bool,
+    /// At least one directory entry or metadata record could not be read.
+    /// Consumers that reconcile deletions must retain their previous state
+    /// when this is true because absence from the snapshot is not evidence of
+    /// deletion.
+    pub incomplete: bool,
 }
 
 /// 루트 디렉터리를 순회하며 인덱스 대상 파일을 수집한다 (제외 규칙 적용).
@@ -36,16 +41,26 @@ pub fn collect_limited(root: &Path, max_entries: usize) -> WalkResult {
 
 fn collect_inner(root: &Path, max_entries: Option<usize>) -> WalkResult {
     let mut out = Vec::new();
+    let mut incomplete = false;
     for entry in WalkDir::new(root).into_iter().filter_entry(|e| {
         !(e.file_type().is_dir() && is_ignored_dir(&e.file_name().to_string_lossy()))
     }) {
-        let Ok(entry) = entry else { continue };
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => {
+                incomplete = true;
+                continue;
+            }
+        };
         if !entry.file_type().is_file() {
             continue;
         }
         let meta = match entry.metadata() {
             Ok(m) => m,
-            Err(_) => continue,
+            Err(_) => {
+                incomplete = true;
+                continue;
+            }
         };
 
         if let Some(limit) = max_entries {
@@ -53,6 +68,7 @@ fn collect_inner(root: &Path, max_entries: Option<usize>) -> WalkResult {
                 return WalkResult {
                     files: out,
                     truncated: true,
+                    incomplete,
                 };
             }
         }
@@ -72,6 +88,7 @@ fn collect_inner(root: &Path, max_entries: Option<usize>) -> WalkResult {
     WalkResult {
         files: out,
         truncated: false,
+        incomplete,
     }
 }
 
@@ -127,6 +144,7 @@ mod tests {
 
         assert_eq!(result.files.len(), 2);
         assert!(result.truncated);
+        assert!(!result.incomplete);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -137,6 +155,7 @@ mod tests {
 
         assert_eq!(result.files.len(), 3);
         assert!(!result.truncated);
+        assert!(!result.incomplete);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -147,6 +166,7 @@ mod tests {
 
         assert!(result.files.is_empty());
         assert!(result.truncated);
+        assert!(!result.incomplete);
         let _ = fs::remove_dir_all(&dir);
 
         let empty_dir = setup_empty();
@@ -154,6 +174,16 @@ mod tests {
 
         assert!(result.files.is_empty());
         assert!(!result.truncated);
+        assert!(!result.incomplete);
         let _ = fs::remove_dir_all(&empty_dir);
+    }
+
+    #[test]
+    fn missing_root_is_incomplete_instead_of_an_empty_authoritative_snapshot() {
+        let missing = new_test_dir().join("missing");
+        let result = collect_limited(&missing, 10);
+        assert!(result.files.is_empty());
+        assert!(!result.truncated);
+        assert!(result.incomplete);
     }
 }

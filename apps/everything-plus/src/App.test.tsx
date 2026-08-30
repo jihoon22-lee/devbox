@@ -6,6 +6,7 @@ import {
   copyPath,
   deleteSavedQuery,
   indexStatus,
+  listRoots,
   listSavedQueries,
   onOpenRequest,
   openFile,
@@ -17,6 +18,7 @@ import {
   searchFiles,
   takePendingOpen,
   type OpenRequest,
+  watcherStatuses,
 } from "./api";
 
 const mocks = vi.hoisted(() => ({
@@ -79,6 +81,7 @@ const onOpenRequestMock = vi.mocked(onOpenRequest);
 const searchFilesMock = vi.mocked(searchFiles);
 const searchContentMock = vi.mocked(searchContent);
 const indexStatusMock = vi.mocked(indexStatus);
+const listRootsMock = vi.mocked(listRoots);
 const listSavedQueriesMock = vi.mocked(listSavedQueries);
 const saveSavedQueryMock = vi.mocked(saveSavedQuery);
 const deleteSavedQueryMock = vi.mocked(deleteSavedQuery);
@@ -88,6 +91,7 @@ const revealFileMock = vi.mocked(revealFile);
 const copyPathMock = vi.mocked(copyPath);
 const openTargetsMock = vi.mocked(openTargets);
 const openInMock = vi.mocked(openIn);
+const watcherStatusesMock = vi.mocked(watcherStatuses);
 const writeTextMock = vi.fn<(text: string) => Promise<void>>();
 
 beforeEach(() => {
@@ -128,6 +132,7 @@ beforeEach(() => {
     last_indexed_at: null,
     last_error: null,
   });
+  listRootsMock.mockReset().mockResolvedValue([]);
   cancelIndexMock.mockReset().mockResolvedValue(undefined);
   openFileMock.mockReset().mockResolvedValue(undefined);
   revealFileMock.mockReset().mockResolvedValue(undefined);
@@ -137,6 +142,7 @@ beforeEach(() => {
     { id: "workbench", displayName: "Workbench" },
   ]);
   openInMock.mockReset().mockResolvedValue(undefined);
+  watcherStatusesMock.mockReset().mockResolvedValue([]);
   writeTextMock.mockReset().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -278,6 +284,50 @@ describe("Everything+ Query app-link delivery", () => {
     fireEvent.click(cancel);
     await waitFor(() => expect(cancelIndexMock).toHaveBeenCalledTimes(1));
     expect(screen.getByText("Indexing... 4 files")).toBeTruthy();
+  });
+});
+
+describe("Everything+ root watcher status", () => {
+  it("marks a WSL UNC root as polling and exposes its source and watcher explanation", async () => {
+    const root = "\\\\wsl$\\Ubuntu\\home\\jihoon\\projects\\devbox";
+    listRootsMock.mockResolvedValueOnce([{ id: 7, path: root, content: true }]);
+    watcherStatusesMock.mockResolvedValueOnce([{
+      root,
+      sourceKind: "wsl",
+      watchMode: "polling",
+      lastSyncedAt: 1_725_000_000_000,
+      pending: 0,
+      error: null,
+    }]);
+
+    render(<App />);
+
+    expect(await screen.findByText("WSL 주기 확인")).toBeTruthy();
+    expect(screen.getByText("WSL")).toBeTruthy();
+    expect(screen.getByTitle(
+      "WSL UNC 루트는 Linux 경로 대소문자를 보존하며 bounded metadata polling으로 반영합니다.",
+    )).toBeTruthy();
+  });
+
+  it("shows a stable unavailable error while retaining the configured WSL root", async () => {
+    const root = "\\\\wsl.localhost\\Ubuntu\\home\\jihoon\\projects\\missing";
+    listRootsMock.mockResolvedValueOnce([{ id: 8, path: root, content: false }]);
+    watcherStatusesMock.mockResolvedValueOnce([{
+      root,
+      sourceKind: "wsl",
+      watchMode: "polling",
+      lastSyncedAt: null,
+      pending: 0,
+      error: "root_unavailable",
+    }]);
+
+    render(<App />);
+
+    const unavailable = await screen.findByText("연결 끊김");
+    expect(unavailable).toBeTruthy();
+    expect(unavailable.getAttribute("title")).toBe(
+      "WSL 배포판 또는 검색 루트에 연결할 수 없어 기존 인덱스를 보존했습니다. 연결되면 자동으로 다시 확인합니다.",
+    );
   });
 });
 

@@ -6,6 +6,9 @@ use std::time::{Duration, Instant};
 
 /// 정적 구간 동안 quiet이 유지된 경로만 배출하는 디바운스 창.
 pub const DEBOUNCE_WINDOW: Duration = Duration::from_millis(800);
+pub const MAX_PENDING_WATCH_PATHS: usize = 4_096;
+pub const MAX_READY_WATCH_PATHS: usize = 512;
+pub const MAX_WATCH_PATH_BYTES: usize = 32 * 1024;
 
 /// 파일시스템 이벤트 분류.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +44,22 @@ pub fn classify_event(kind: &notify::EventKind) -> EventClass {
 /// 이벤트 경로가 감시 루트 아래인지 문자열 prefix로 판단한다.
 /// (canonicalize는 command 레이어에서 수행 — 여기서는 IO 없음)
 pub fn is_within_root(root: &str, path: &str) -> bool {
+    match devbox_wsl::path::wsl_unc_contains(root, path) {
+        Ok(Some(within)) => return within,
+        Err(_) => return false,
+        Ok(None) => {
+            // A WSL candidate cannot belong to an ordinary native root. This
+            // also prevents the Windows-wide case fold below from erasing the
+            // Linux tail's case-sensitive identity.
+            if devbox_wsl::path::parse_wsl_unc_path(path)
+                .ok()
+                .flatten()
+                .is_some()
+            {
+                return false;
+            }
+        }
+    }
     let root = root.replace('\\', "/");
     let path = path.replace('\\', "/");
     // Windows drive and NTFS paths are case-insensitive. Canonical paths
@@ -82,8 +101,17 @@ impl Debouncer {
     }
 
     /// 이벤트를 기록한다. 같은 경로의 새 이벤트는 quiet 시계를 다시 시작한다.
-    pub fn record(&mut self, path: &Path, now: Instant) {
+    /// Record one candidate without allowing callback bursts to grow the
+    /// application-lifetime map without bound. `false` asks the command layer
+    /// to reconcile the owning root instead of dropping the mutation.
+    pub fn record(&mut self, path: &Path, now: Instant) -> bool {
+        if path_byte_len(path) > MAX_WATCH_PATH_BYTES
+            || (!self.pending.contains_key(path) && self.pending.len() >= MAX_PENDING_WATCH_PATHS)
+        {
+            return false;
+        }
         self.pending.insert(path.to_path_buf(), now);
+        true
     }
 
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
@@ -96,12 +124,30 @@ impl Debouncer {
             .pending
             .iter()
             .filter(|(_, seen)| now.saturating_duration_since(**seen) >= self.window)
+            .take(MAX_READY_WATCH_PATHS)
             .map(|(path, _)| path.clone())
             .collect();
         for path in &ready {
             self.pending.remove(path);
         }
         ready
+    }
+}
+
+fn path_byte_len(path: &Path) -> usize {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        path.as_os_str().as_bytes().len()
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        path.as_os_str().encode_wide().count().saturating_mul(2)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        path.to_string_lossy().len()
     }
 }
 
@@ -153,6 +199,23 @@ mod tests {
     }
 
     #[test]
+    fn wsl_root_keeps_linux_tail_case_sensitive() {
+        let root = "//wsl$/Ubuntu/home/jihoon/한글 project/DevBox";
+        assert!(is_within_root(
+            root,
+            "\\\\wsl.localhost\\ubuntu\\home\\jihoon\\한글 project\\DevBox\\src\\main.rs"
+        ));
+        assert!(!is_within_root(
+            root,
+            "//wsl$/Ubuntu/home/jihoon/한글 project/devbox/src/main.rs"
+        ));
+        assert!(!is_within_root(
+            root,
+            "//wsl$/Debian/home/jihoon/한글 project/DevBox/src/main.rs"
+        ));
+    }
+
+    #[test]
     fn content_target_respects_root_flag_and_size() {
         assert!(should_index_content(true, "C:/a.md", 10));
         assert!(should_index_content(true, "C:/report.PDF", 10));
@@ -173,13 +236,29 @@ mod tests {
     fn debounce_coalesces_bursts() {
         let mut d = Debouncer::new(Duration::from_millis(100));
         let start = Instant::now();
-        d.record(Path::new("/root/a.rs"), start);
+        assert!(d.record(Path::new("/root/a.rs"), start));
         assert!(d.take_ready(start + Duration::from_millis(99)).is_empty());
-        d.record(Path::new("/root/a.rs"), start + Duration::from_millis(99));
+        assert!(d.record(Path::new("/root/a.rs"), start + Duration::from_millis(99)));
         assert!(d.take_ready(start + Duration::from_millis(150)).is_empty());
         assert_eq!(
             d.take_ready(start + Duration::from_millis(199)),
             vec![PathBuf::from("/root/a.rs")]
         );
+    }
+
+    #[test]
+    fn debounce_bounds_pending_and_drains_ready_in_batches() {
+        let mut debouncer = Debouncer::new(Duration::ZERO);
+        let now = Instant::now();
+        for index in 0..MAX_PENDING_WATCH_PATHS {
+            assert!(debouncer.record(Path::new(&format!("/root/{index}.rs")), now));
+        }
+        assert!(!debouncer.record(Path::new("/root/overflow.rs"), now));
+        assert_eq!(debouncer.take_ready(now).len(), MAX_READY_WATCH_PATHS);
+        assert_eq!(
+            debouncer.pending.len(),
+            MAX_PENDING_WATCH_PATHS - MAX_READY_WATCH_PATHS
+        );
+        assert!(!debouncer.record(Path::new(&"x".repeat(MAX_WATCH_PATH_BYTES + 1)), now));
     }
 }

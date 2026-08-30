@@ -17,6 +17,28 @@
 - **저장된 검색** — 이름·query·filter 정의를 local SQLite에 CRUD로 보관하고, 현재 결과를 저장하지
   않는다. 명시적으로 저장한 정의만 Launcher가 읽는 versioned snapshot으로 원자 발행한다.
 
+## WSL 검색 루트와 watcher 상태
+
+검색 루트에는 Windows 경로뿐 아니라 WSL 배포판의 UNC 경로도 등록할 수 있다. 예를 들어
+`\\wsl$\Ubuntu\home\jihoon\projects\devbox` 또는
+`\\wsl.localhost\Ubuntu\home\jihoon\projects\devbox`를 사용할 수 있으며, Settings에서
+입력하는 `/` 구분자 표기도 동일하게 인식한다. `wsl$`와 `wsl.localhost`는 같은 transport alias로
+취급하고 배포판 이름은 대소문자를 구분하지 않지만, Linux 경로의 각 component는 대소문자를
+그대로 보존·비교한다. 따라서 Linux 파일 시스템의 `src`와 `Src`를 임의로 합치지 않는다.
+
+네이티브 Windows 루트는 파일 시스템 watcher로 실시간 반영하고, WSL UNC 루트는 Windows의
+재귀 notify 이벤트가 안정적이지 않아 bounded metadata polling으로 반영한다. 각 루트 chip의
+상태는 `실시간`, `WSL 주기 확인`, `연결 끊김`, `범위 상한`, `부분 스캔`으로 표시되며, 상태의
+tooltip에서 동작 모드와 원인을 확인할 수 있다. polling과 watcher 큐에는 경로·이벤트·파일 수
+상한이 적용되어 대량 변경이나 이벤트 폭주가 UI와 인덱서의 메모리를 무제한으로 늘리지 않는다.
+
+루트가 일시적으로 연결되지 않거나(`root_unavailable`), 스캔 상한에 도달하거나
+(`root_scan_limit`), 하위 경로 일부를 읽지 못한 경우(`root_scan_incomplete`)에는 해당 루트의
+마지막으로 완전히 확인된 인덱스를 유지한다. 불완전한 snapshot으로 파일 삭제를 추정하지 않으므로
+기존 검색 결과가 갑자기 사라지지 않으며, 루트가 다시 접근 가능해지거나 사용자가 재인덱싱하면
+완전한 snapshot 기준으로 다시 수렴한다. 이 상태는 오류 원문이나 경로를 노출하지 않고 고정된
+상태 코드와 짧은 UI 안내로만 전달한다.
+
 ## 고급 필터 계약
 
 검색 필터는 다음 선택 항목을 조합할 수 있다.

@@ -1,6 +1,6 @@
 [package]
 name = "everything-plus"
-version = "0.4.0"
+version = "0.5.0"
 publish = false
 description = "Everything+ Local Search"
 authors = ["jihoon22.lee"]
@@ -38,3 +38,4 @@ search = { path = "../../../crates/search" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-launch = { package = "launch", path = "../../../crates/launch" }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
+devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }

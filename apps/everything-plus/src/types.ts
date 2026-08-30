@@ -77,6 +77,8 @@ export interface IndexStatus {
 
 export interface RootStatus {
   root: string;
+  sourceKind: "native" | "wsl";
+  watchMode: "native" | "polling" | "unavailable";
   lastSyncedAt: number | null;
   pending: number;
   error: string | null;

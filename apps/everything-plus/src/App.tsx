@@ -147,6 +147,33 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function watcherLabel(status: RootStatus): string {
+  if (status.error === "root_unavailable") return "연결 끊김";
+  if (status.error === "root_scan_limit") return "범위 상한";
+  if (status.error === "root_scan_incomplete") return "부분 스캔";
+  if (status.error) return "확인 필요";
+  if (status.pending > 0) return `${status.pending}개 반영 대기`;
+  return status.watchMode === "polling" ? "WSL 주기 확인" : "실시간";
+}
+
+function watcherTitle(status: RootStatus): string {
+  if (status.error === "root_unavailable") {
+    return status.sourceKind === "wsl"
+      ? "WSL 배포판 또는 검색 루트에 연결할 수 없어 기존 인덱스를 보존했습니다. 연결되면 자동으로 다시 확인합니다."
+      : "검색 루트에 연결할 수 없어 기존 인덱스를 보존했습니다.";
+  }
+  if (status.error === "root_scan_limit") {
+    return "파일 수 상한을 넘어 기존 인덱스를 보존했습니다. 검색 루트를 더 작게 나누세요.";
+  }
+  if (status.error === "root_scan_incomplete") {
+    return "읽을 수 없는 하위 경로가 있어 삭제를 추정하지 않고 기존 인덱스를 보존했습니다.";
+  }
+  if (status.error) return "증분 인덱스를 확인해야 합니다.";
+  return status.watchMode === "polling"
+    ? "WSL UNC 루트는 Linux 경로 대소문자를 보존하며 bounded metadata polling으로 반영합니다."
+    : "네이티브 파일 시스템 watcher";
+}
+
 interface ResultContext {
   path: string;
   name: string;
@@ -927,10 +954,11 @@ export default function App() {
           return (
             <span key={r.path} className="root-chip" title={r.content ? "content index on" : "name only"}>
               {r.path}
+              {ws?.sourceKind === "wsl" && <span className="root-tag">WSL</span>}
               {r.content && <span className="root-tag">content</span>}
               {ws && (
-                <span className={`watch-state ${ws.error ? "watch-error" : ""}`} title={ws.error ?? "watcher"}>
-                  {ws.error ? "!" : ws.pending > 0 ? `${ws.pending} pending` : "live"}
+                <span className={`watch-state ${ws.error ? "watch-error" : ""}`} title={watcherTitle(ws)}>
+                  {watcherLabel(ws)}
                 </span>
               )}
               <button className="root-del" title="Remove root" onClick={() => void removeRoot(r.path).then(loadMeta)}>
@@ -941,7 +969,7 @@ export default function App() {
         })}
         <input
           className="root-input"
-          placeholder="Add root path (e.g. C:\projects)"
+          placeholder="검색 루트 (C:\projects 또는 \\wsl$\Ubuntu\home\...)"
           value={newRoot}
           maxLength={MAX_ROOT_BYTES}
           onChange={(e) => setNewRoot(e.currentTarget.value)}

@@ -46,14 +46,27 @@ pub fn init(path: &std::path::Path) -> rusqlite::Result<(Connection, bool)> {
 /// `C:/`(그 드라이브의 루트)와 다르다 — 구분자를 지우면 걷는 대상 디렉터리
 /// 자체가 바뀐다.
 pub fn normalize_path(path: &str) -> String {
+    if let Ok(Some(wsl)) = devbox_wsl::path::parse_wsl_unc_path(path) {
+        return format!(
+            "//wsl$/{}/{}",
+            wsl.distro().to_ascii_lowercase(),
+            wsl.linux_path().trim_start_matches('/')
+        );
+    }
     let mut unified = path.replace('\\', "/");
     // Windows canonicalize() may return an extended-length spelling. Keep the
     // stored/event spelling stable so a watcher callback using `C:/...` still
     // matches a root that was canonicalized as `\\\\?\\C:\\...`.
-    if let Some(rest) = unified.strip_prefix("//?/UNC/") {
-        unified = format!("//{rest}");
-    } else if let Some(rest) = unified.strip_prefix("//?/") {
-        unified = rest.to_string();
+    if unified
+        .get(..8)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("//?/UNC/"))
+    {
+        unified = format!("//{}", &unified[8..]);
+    } else if unified
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("//?/"))
+    {
+        unified = unified[4..].to_string();
     }
     let trimmed = unified.trim_end_matches('/');
     if trimmed.is_empty() {
@@ -2000,6 +2013,57 @@ mod tests {
             normalize_path("\\\\?\\UNC\\server\\share\\project"),
             "//server/share/project"
         );
+        assert_eq!(
+            normalize_path("\\\\?\\unc\\server\\share\\project"),
+            "//server/share/project"
+        );
+    }
+
+    #[test]
+    fn normalize_path_unifies_wsl_transport_and_distro_but_preserves_linux_case() {
+        let expected = "//wsl$/ubuntu/home/jihoon/한글 project/DevBox";
+        assert_eq!(
+            normalize_path("\\\\wsl$\\Ubuntu\\home\\jihoon\\한글 project\\DevBox\\"),
+            expected
+        );
+        assert_eq!(
+            normalize_path("\\\\?\\UNC\\WSL.LOCALHOST\\ubuntu\\home\\jihoon\\한글 project\\DevBox"),
+            expected
+        );
+        assert_ne!(
+            normalize_path("//wsl$/Ubuntu/home/jihoon/한글 project/devbox"),
+            expected
+        );
+    }
+
+    #[test]
+    fn wsl_aliases_share_root_ownership_without_folding_linux_tail_case() {
+        let conn = mem();
+        let stored = add_root(
+            &conn,
+            "\\\\wsl$\\Ubuntu\\home\\jihoon\\한글 project\\DevBox",
+            true,
+        )
+        .unwrap();
+        assert_eq!(stored, "//wsl$/ubuntu/home/jihoon/한글 project/DevBox");
+
+        let alias = "\\\\wsl.localhost\\UBUNTU\\home\\jihoon\\한글 project\\DevBox\\src\\main.rs";
+        let file_id = upsert_file(&conn, alias, 1, 0, 999).unwrap();
+        let owner: i64 = conn
+            .query_row(
+                "SELECT root_id FROM files WHERE id = ?1",
+                [file_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(owner, 1);
+        assert!(root_row_for(&conn, alias).unwrap().is_some());
+        assert!(root_row_for(
+            &conn,
+            "//wsl$/Ubuntu/home/jihoon/한글 project/devbox/src/main.rs"
+        )
+        .unwrap()
+        .is_none());
     }
 
     #[test]
