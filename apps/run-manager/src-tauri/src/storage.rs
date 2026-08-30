@@ -7,7 +7,14 @@ use crate::core::models::{
 use crate::core::policies::{
     decide_overlap, OverlapAction, OverlapPolicyInput, RunPolicySnapshot, StopAction,
 };
+use crate::core::workspace_tasks::{
+    WorkspaceTaskApplyResult, WorkspaceTaskExecution, WorkspaceTaskItem, WorkspaceTaskKind,
+    WorkspaceTaskPlan, WorkspaceTaskState, MAX_ENVIRONMENT_KEYS, MAX_TASKS, MAX_TASK_ARGUMENTS,
+    MAX_TASK_ARGV_BYTES, MAX_TASK_LABEL_BYTES, MAX_TASK_STRING_BYTES, TASKS_JSON_RELATIVE_PATH,
+    WORKSPACE_TASK_SCHEMA_VERSION,
+};
 use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, TransactionBehavior};
+use serde_json::Value;
 use std::collections::HashSet;
 use std::fmt;
 use std::path::Path;
@@ -15,8 +22,14 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 pub const BUSY_TIMEOUT_MS: u64 = 5_000;
+
+const DISABLED_IMPORT_CRON: &str = "0 0 1 1 *";
+const MAX_WORKSPACE_SOURCE_ROOT_BYTES: usize = 4_096;
+const MAX_WORKSPACE_SOURCE_ID_BYTES: usize = 128;
+const MAX_WORKSPACE_LABEL_BYTES: usize = MAX_TASK_LABEL_BYTES;
+const MAX_WORKSPACE_OVERRIDE_BYTES: usize = 32;
 
 const MIGRATION_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
@@ -119,6 +132,53 @@ CREATE INDEX IF NOT EXISTS idx_notification_outbox_job_created
     ON notification_outbox (job_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_service_instances_state_retry
     ON service_instances (state, next_retry_at);
+
+CREATE TABLE IF NOT EXISTS workspace_task_sources (
+    id TEXT PRIMARY KEY NOT NULL,
+    project_identity TEXT NOT NULL,
+    source_root TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    target_kind TEXT NOT NULL
+        CHECK (target_kind IN ('windows', 'wsl')),
+    target_distro TEXT,
+    trusted INTEGER NOT NULL DEFAULT 0 CHECK (trusted IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    CHECK (target_kind = 'windows' OR (target_distro IS NOT NULL AND length(target_distro) > 0)),
+    CHECK (target_kind = 'wsl' OR target_distro IS NULL),
+    CHECK (source_path = '.vscode/tasks.json'),
+    UNIQUE (project_identity, target_kind, target_distro)
+);
+
+CREATE TABLE IF NOT EXISTS workspace_tasks (
+    id TEXT PRIMARY KEY NOT NULL,
+    job_id TEXT NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE,
+    source_id TEXT NOT NULL REFERENCES workspace_task_sources(id) ON DELETE CASCADE,
+    source_index INTEGER NOT NULL CHECK (source_index >= 0),
+    label TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('process', 'shell')),
+    args_json TEXT NOT NULL CHECK (json_valid(args_json)),
+    environment_keys_json TEXT NOT NULL CHECK (json_valid(environment_keys_json)),
+    applied_override TEXT,
+    available INTEGER NOT NULL DEFAULT 1 CHECK (available IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE (source_id, label)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_task_sources_trusted
+    ON workspace_task_sources (trusted, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workspace_tasks_source_available
+    ON workspace_tasks (source_id, available, label);
+CREATE INDEX IF NOT EXISTS idx_workspace_tasks_job
+    ON workspace_tasks (job_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_task_sources_identity_target
+    ON workspace_task_sources (
+        project_identity,
+        target_kind,
+        ifnull(target_distro, '')
+    );
 "#;
 
 /// A process-wide SQLite connection. Every connection is configured with the
@@ -537,6 +597,493 @@ impl DatabaseState {
 
         transaction.commit()?;
         Ok((created, skipped))
+    }
+
+    /// Atomically project a bounded `.vscode/tasks.json` plan into disabled
+    /// Run Manager drafts.  The source key is the filesystem project identity
+    /// plus target, so moving a project path does not create a second source.
+    /// A revision change invalidates every prior task in that source before
+    /// selected rows are refreshed; job and run IDs are intentionally kept so
+    /// history remains attached to the same user-visible definition.
+    pub(crate) fn apply_workspace_task_import_at(
+        &self,
+        plan: &WorkspaceTaskPlan,
+        selected_items: &[String],
+        now: i64,
+    ) -> Result<WorkspaceTaskApplyResult, StorageError> {
+        validate_workspace_task_plan(plan)?;
+        let selected = selected_workspace_task_items(plan, selected_items)?;
+        let args_json = selected
+            .iter()
+            .map(|item| serialize_workspace_task_args(item))
+            .collect::<Result<Vec<_>, _>>()?;
+        let environment_json = selected
+            .iter()
+            .map(|item| serialize_workspace_environment_keys(item))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let existing_source: Option<WorkspaceTaskSourceRecord> = transaction
+            .query_row(
+                "SELECT id, project_identity, source_root, source_path, revision,
+                        target_kind, target_distro, trusted
+                 FROM workspace_task_sources
+                 WHERE project_identity = ? AND target_kind = ?
+                   AND target_distro IS ?",
+                params![
+                    plan.project_identity,
+                    plan.target_kind.as_str(),
+                    plan.target_distro,
+                ],
+                |row| {
+                    Ok(WorkspaceTaskSourceRecord {
+                        id: row.get(0)?,
+                        project_identity: row.get(1)?,
+                        source_root: row.get(2)?,
+                        source_path: row.get(3)?,
+                        revision: row.get(4)?,
+                        target_kind: row.get(5)?,
+                        target_distro: row.get(6)?,
+                        trusted: row.get(7)?,
+                    })
+                },
+            )
+            .optional()?;
+
+        let (source_id, refreshed, _trusted_before) = if let Some(existing_source) = existing_source
+        {
+            let WorkspaceTaskSourceRecord {
+                id,
+                project_identity,
+                source_root,
+                source_path,
+                revision,
+                target_kind,
+                target_distro,
+                trusted,
+            } = existing_source;
+            validate_workspace_source_id(&id)?;
+            if project_identity != plan.project_identity
+                || source_path != plan.source_path
+                || target_kind != plan.target_kind.as_str()
+                || target_distro != plan.target_distro
+                || !is_lower_hex_digest(&project_identity)
+                || !is_lower_hex_digest(&revision)
+                || !matches!(trusted, 0 | 1)
+            {
+                return Err(StorageError::Validation(
+                    "workspace task source is corrupt".to_owned(),
+                ));
+            }
+            validate_workspace_text(
+                "workspace task source root",
+                &source_root,
+                MAX_WORKSPACE_SOURCE_ROOT_BYTES,
+                false,
+            )?;
+            if devbox_filesystem::parse_safe_project_path(&source_root).is_none() {
+                return Err(StorageError::Validation(
+                    "workspace task source root is corrupt".to_owned(),
+                ));
+            }
+            if source_path != TASKS_JSON_RELATIVE_PATH {
+                return Err(StorageError::Validation(
+                    "workspace task source path is corrupt".to_owned(),
+                ));
+            }
+            validate_workspace_target(plan.target_kind, plan.target_distro.as_deref())?;
+            (id, revision != plan.revision, trusted == 1)
+        } else {
+            let id = Uuid::new_v4().to_string();
+            transaction.execute(
+                "INSERT INTO workspace_task_sources (
+                    id, project_identity, source_root, source_path, revision,
+                    target_kind, target_distro, trusted, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+                params![
+                    id,
+                    plan.project_identity,
+                    plan.source_root,
+                    plan.source_path,
+                    plan.revision,
+                    plan.target_kind.as_str(),
+                    plan.target_distro,
+                    now,
+                    now,
+                ],
+            )?;
+            (id, false, false)
+        };
+
+        let mut made_unavailable = 0u32;
+        if refreshed {
+            let count: i64 = transaction.query_row(
+                "SELECT count(*) FROM workspace_tasks AS task
+                 JOIN jobs ON jobs.id = task.job_id
+                 WHERE task.source_id = ?
+                   AND (task.available = 1 OR jobs.enabled = 1)",
+                [&source_id],
+                |row| row.get(0),
+            )?;
+            made_unavailable = u32::try_from(count).map_err(|_| {
+                StorageError::Validation("workspace task invalidation count overflow".to_owned())
+            })?;
+            transaction.execute(
+                "UPDATE workspace_task_sources
+                 SET source_root = ?, source_path = ?, revision = ?, trusted = 0,
+                     updated_at = ? WHERE id = ?",
+                params![
+                    plan.source_root,
+                    plan.source_path,
+                    plan.revision,
+                    now,
+                    source_id,
+                ],
+            )?;
+            transaction.execute(
+                "UPDATE workspace_tasks SET available = 0, updated_at = ?
+                 WHERE source_id = ?",
+                params![now, source_id],
+            )?;
+            transaction.execute(
+                "UPDATE jobs SET enabled = 0, updated_at = ?
+                 WHERE id IN (SELECT job_id FROM workspace_tasks WHERE source_id = ?)
+                   AND kind = 'job'",
+                params![now, source_id],
+            )?;
+        } else {
+            // Keep trust on an idempotent re-apply, but refresh the display
+            // root/path in case the project was reached through a new safe
+            // spelling without changing the filesystem identity.
+            transaction.execute(
+                "UPDATE workspace_task_sources
+                 SET source_root = ?, source_path = ?, updated_at = ? WHERE id = ?",
+                params![plan.source_root, plan.source_path, now, source_id],
+            )?;
+        }
+
+        let mut created = 0u32;
+        let mut updated = 0u32;
+        let mut skipped_conflicts = 0u32;
+        for (item, args_json, environment_json) in selected
+            .iter()
+            .zip(args_json.iter())
+            .zip(environment_json.iter())
+            .map(|((item, args), environment)| (*item, args, environment))
+        {
+            let existing_task: Option<(String, String)> = transaction
+                .query_row(
+                    "SELECT id, job_id FROM workspace_tasks
+                     WHERE source_id = ? AND label = ?",
+                    params![source_id, item.label],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+
+            if let Some((task_id, job_id)) = existing_task {
+                validate_workspace_task_id(&task_id)?;
+                validate_token("job id", &job_id)?;
+                let changed = transaction.execute(
+                    "UPDATE jobs SET name = ?, command = ?, cwd = ?, target_kind = ?,
+                            target_distro = ?, enabled = CASE WHEN ? = 1 THEN 0 ELSE enabled END,
+                            updated_at = ?
+                     WHERE id = ? AND kind = 'job'",
+                    params![
+                        item.label,
+                        item.command.as_deref().ok_or_else(|| {
+                            StorageError::Validation("workspace task command missing".to_owned())
+                        })?,
+                        item.cwd.as_deref().ok_or_else(|| {
+                            StorageError::Validation("workspace task cwd missing".to_owned())
+                        })?,
+                        plan.target_kind.as_str(),
+                        plan.target_distro,
+                        bool_to_sql(refreshed),
+                        now,
+                        job_id,
+                    ],
+                )?;
+                if changed != 1 {
+                    return Err(StorageError::Validation(
+                        "workspace task job is missing or not a job".to_owned(),
+                    ));
+                }
+                transaction.execute(
+                    "UPDATE workspace_tasks SET source_index = ?, label = ?, kind = ?,
+                            args_json = ?, environment_keys_json = ?, applied_override = ?,
+                            available = 1, updated_at = ? WHERE id = ? AND source_id = ?",
+                    params![
+                        item.source_index,
+                        item.label,
+                        workspace_task_kind_as_str(item.task_kind)?,
+                        args_json,
+                        environment_json,
+                        item.applied_override,
+                        now,
+                        task_id,
+                        source_id,
+                    ],
+                )?;
+                updated = updated.saturating_add(1);
+                continue;
+            }
+
+            if import_definition_conflict(
+                &transaction,
+                JobKind::Job,
+                &item.label,
+                item.cwd.as_deref(),
+            )? {
+                skipped_conflicts = skipped_conflicts.saturating_add(1);
+                continue;
+            }
+
+            let job_id = Uuid::new_v4().to_string();
+            let task_id = Uuid::new_v4().to_string();
+            transaction.execute(
+                "INSERT INTO jobs (
+                    id, kind, name, command, cwd, target_kind, target_distro,
+                    env_ciphertext, cron_expr, enabled, overlap_policy, catch_up,
+                    last_evaluated_at, next_queue_sequence, created_at, updated_at
+                 ) VALUES (?, 'job', ?, ?, ?, ?, ?, NULL, ?, 0, 'skip', 0,
+                           NULL, 0, ?, ?)",
+                params![
+                    job_id,
+                    item.label,
+                    item.command.as_deref().ok_or_else(|| {
+                        StorageError::Validation("workspace task command missing".to_owned())
+                    })?,
+                    item.cwd.as_deref().ok_or_else(|| {
+                        StorageError::Validation("workspace task cwd missing".to_owned())
+                    })?,
+                    plan.target_kind.as_str(),
+                    plan.target_distro,
+                    DISABLED_IMPORT_CRON,
+                    now,
+                    now,
+                ],
+            )?;
+            transaction.execute(
+                "INSERT INTO workspace_tasks (
+                    id, job_id, source_id, source_index, label, kind, args_json,
+                    environment_keys_json, applied_override, available, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+                params![
+                    task_id,
+                    job_id,
+                    source_id,
+                    item.source_index,
+                    item.label,
+                    workspace_task_kind_as_str(item.task_kind)?,
+                    args_json,
+                    environment_json,
+                    item.applied_override,
+                    now,
+                    now,
+                ],
+            )?;
+            created = created.saturating_add(1);
+        }
+
+        transaction.commit()?;
+        Ok(WorkspaceTaskApplyResult {
+            source_id,
+            created,
+            updated,
+            made_unavailable,
+            skipped_conflicts,
+        })
+    }
+
+    pub(crate) fn list_workspace_task_states(
+        &self,
+    ) -> Result<Vec<WorkspaceTaskState>, StorageError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT task.job_id, task.source_id, task.label, task.kind,
+                    source.source_root, source.revision, source.target_kind,
+                    source.target_distro, task.environment_keys_json,
+                    task.applied_override, source.trusted, task.available
+             FROM workspace_tasks AS task
+             JOIN workspace_task_sources AS source ON source.id = task.source_id
+             JOIN jobs ON jobs.id = task.job_id
+             WHERE jobs.kind = 'job'
+             ORDER BY source.source_root COLLATE NOCASE, task.label COLLATE NOCASE, task.id",
+        )?;
+        let rows = statement.query_map([], row_to_workspace_task_state)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(StorageError::from)
+    }
+
+    pub(crate) fn get_workspace_task_state(
+        &self,
+        job_id: &str,
+    ) -> Result<Option<WorkspaceTaskState>, StorageError> {
+        validate_token("job id", job_id)?;
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT task.job_id, task.source_id, task.label, task.kind,
+                        source.source_root, source.revision, source.target_kind,
+                        source.target_distro, task.environment_keys_json,
+                        task.applied_override, source.trusted, task.available
+                 FROM workspace_tasks AS task
+                 JOIN workspace_task_sources AS source ON source.id = task.source_id
+                 JOIN jobs ON jobs.id = task.job_id
+                 WHERE task.job_id = ? AND jobs.kind = 'job'",
+                [job_id],
+                row_to_workspace_task_state,
+            )
+            .optional()
+            .map_err(StorageError::from)
+    }
+
+    /// Return the exact structured process projection used by the execution
+    /// adapter.  A managed row is always returned, including while it is
+    /// untrusted or unavailable, so callers cannot mistake it for a legacy
+    /// shell job and bypass the source-state guard.  The state flags remain in
+    /// the projection for the final fail-closed check.
+    pub(crate) fn get_workspace_task_execution(
+        &self,
+        job_id: &str,
+    ) -> Result<Option<WorkspaceTaskExecution>, StorageError> {
+        validate_token("job id", job_id)?;
+        let connection = self.lock()?;
+        let raw = connection
+            .query_row(
+                "SELECT task.job_id, task.source_id, task.source_index, task.label,
+                        task.kind, jobs.command, jobs.cwd, source.source_root,
+                        source.project_identity, source.revision, source.target_kind,
+                        source.target_distro, task.args_json,
+                        task.environment_keys_json, source.trusted, task.available
+                 FROM workspace_tasks AS task
+                 JOIN workspace_task_sources AS source ON source.id = task.source_id
+                 JOIN jobs ON jobs.id = task.job_id
+                 WHERE task.job_id = ? AND jobs.kind = 'job'",
+                [job_id],
+                |row| {
+                    Ok(RawWorkspaceTaskExecution {
+                        job_id: row.get(0)?,
+                        source_id: row.get(1)?,
+                        source_index: row.get(2)?,
+                        label: row.get(3)?,
+                        kind: row.get(4)?,
+                        command: row.get(5)?,
+                        cwd: row.get(6)?,
+                        source_root: row.get(7)?,
+                        project_identity: row.get(8)?,
+                        revision: row.get(9)?,
+                        target_kind: row.get(10)?,
+                        target_distro: row.get(11)?,
+                        args_json: row.get(12)?,
+                        environment_keys_json: row.get(13)?,
+                        trusted: row.get(14)?,
+                        available: row.get(15)?,
+                    })
+                },
+            )
+            .optional()?;
+        let Some(raw) = raw else {
+            return Ok(None);
+        };
+        raw_workspace_task_execution(raw).map(Some)
+    }
+
+    /// CAS trust to the exact preview revision.  A stale preview is reported
+    /// as a concurrent change and cannot accidentally authorize a new task.
+    pub(crate) fn trust_workspace_task_source_at(
+        &self,
+        source_id: &str,
+        expected_revision: &str,
+        now: i64,
+    ) -> Result<bool, StorageError> {
+        validate_workspace_source_id(source_id)?;
+        validate_workspace_digest("revision", expected_revision)?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = transaction.execute(
+            "UPDATE workspace_task_sources SET trusted = 1, updated_at = ?
+             WHERE id = ? AND revision = ?",
+            params![now, source_id, expected_revision],
+        )?;
+        if changed != 1 {
+            let exists: Option<String> = transaction
+                .query_row(
+                    "SELECT revision FROM workspace_task_sources WHERE id = ?",
+                    [source_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if exists.is_none() {
+                return Err(StorageError::NotFound(format!(
+                    "workspace task source {source_id}"
+                )));
+            }
+            return Err(StorageError::ConcurrentChange(
+                "workspace task source revision".to_owned(),
+            ));
+        }
+        transaction.commit()?;
+        Ok(true)
+    }
+
+    pub(crate) fn invalidate_workspace_task_source_at(
+        &self,
+        source_id: &str,
+        now: i64,
+    ) -> Result<u32, StorageError> {
+        validate_workspace_source_id(source_id)?;
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let source_exists: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM workspace_task_sources WHERE id = ?)",
+            [source_id],
+            |row| row.get(0),
+        )?;
+        if !source_exists {
+            return Err(StorageError::NotFound(format!(
+                "workspace task source {source_id}"
+            )));
+        }
+        let count: i64 = transaction.query_row(
+            "SELECT count(*) FROM workspace_tasks AS task
+             JOIN jobs ON jobs.id = task.job_id
+             WHERE task.source_id = ?
+               AND (task.available = 1 OR jobs.enabled = 1)",
+            [source_id],
+            |row| row.get(0),
+        )?;
+        transaction.execute(
+            "UPDATE workspace_task_sources SET trusted = 0, updated_at = ? WHERE id = ?",
+            params![now, source_id],
+        )?;
+        transaction.execute(
+            "UPDATE workspace_tasks SET available = 0, updated_at = ? WHERE source_id = ?",
+            params![now, source_id],
+        )?;
+        transaction.execute(
+            "UPDATE jobs SET enabled = 0, updated_at = ?
+             WHERE id IN (SELECT job_id FROM workspace_tasks WHERE source_id = ?)
+               AND kind = 'job'",
+            params![now, source_id],
+        )?;
+        transaction.commit()?;
+        u32::try_from(count).map_err(|_| {
+            StorageError::Validation("workspace task invalidation count overflow".to_owned())
+        })
+    }
+
+    /// Guard used by both ordinary job update and toggle paths.  Non-task
+    /// jobs are unaffected; managed tasks require both exact source trust and
+    /// current availability before they can become scheduler-visible.
+    pub(crate) fn ensure_workspace_task_can_enable(
+        &self,
+        job_id: &str,
+    ) -> Result<(), StorageError> {
+        validate_token("job id", job_id)?;
+        let connection = self.lock()?;
+        ensure_workspace_task_can_enable_connection(&connection, job_id)
     }
 
     pub fn get_job(&self, id: &str) -> Result<Option<Job>, StorageError> {
@@ -1061,6 +1608,10 @@ impl DatabaseState {
         let mut connection = self.lock_mut()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current = ensure_job(&transaction, id)?;
+        ensure_workspace_task_managed_fields_unchanged(&transaction, id, &current, &input)?;
+        if input.enabled {
+            ensure_workspace_task_can_enable_connection(&transaction, id)?;
+        }
         let checkpoint_reset = current.cron_expr.as_deref() != Some(input.cron_expr.as_str())
             || current.catch_up != input.catch_up
             || current.enabled != input.enabled;
@@ -1124,6 +1675,9 @@ impl DatabaseState {
         let mut connection = self.lock_mut()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current = ensure_job(&transaction, id)?;
+        if enabled {
+            ensure_workspace_task_can_enable_connection(&transaction, id)?;
+        }
         let checkpoint = if current.enabled == enabled {
             current.last_evaluated_at
         } else {
@@ -1203,6 +1757,15 @@ impl DatabaseState {
         let mut statement = connection.prepare(&format!(
             "SELECT {JOB_COLUMNS} FROM jobs
              WHERE kind = 'job' AND enabled = 1
+               AND (NOT EXISTS (
+                        SELECT 1 FROM workspace_tasks AS task
+                        WHERE task.job_id = jobs.id
+                    ) OR EXISTS (
+                        SELECT 1 FROM workspace_tasks AS task
+                        JOIN workspace_task_sources AS source ON source.id = task.source_id
+                        WHERE task.job_id = jobs.id
+                          AND task.available = 1 AND source.trusted = 1
+                    ))
              ORDER BY id"
         ))?;
         let rows = statement.query_map([], row_to_job)?;
@@ -2116,6 +2679,616 @@ fn migrate_connection(connection: &mut Connection) -> rusqlite::Result<()> {
     transaction.commit()
 }
 
+fn validate_workspace_task_plan(plan: &WorkspaceTaskPlan) -> Result<(), StorageError> {
+    if plan.schema_version != WORKSPACE_TASK_SCHEMA_VERSION {
+        return Err(StorageError::Validation(
+            "workspace task schema version is unsupported".to_owned(),
+        ));
+    }
+    validate_workspace_text(
+        "workspace task source root",
+        &plan.source_root,
+        MAX_WORKSPACE_SOURCE_ROOT_BYTES,
+        false,
+    )?;
+    if devbox_filesystem::parse_safe_project_path(&plan.source_root).is_none() {
+        return Err(StorageError::Validation(
+            "workspace task source root is invalid".to_owned(),
+        ));
+    }
+    if plan.source_path != TASKS_JSON_RELATIVE_PATH {
+        return Err(StorageError::Validation(
+            "workspace task source path is invalid".to_owned(),
+        ));
+    }
+    validate_workspace_digest("project identity", &plan.project_identity)?;
+    validate_workspace_digest("revision", &plan.revision)?;
+    validate_workspace_target(plan.target_kind, plan.target_distro.as_deref())?;
+    let expected_platform = match plan.target_kind {
+        TargetKind::Windows => "windows",
+        TargetKind::Wsl => "linux",
+    };
+    if plan.selected_platform != expected_platform {
+        return Err(StorageError::Validation(
+            "workspace task platform is invalid".to_owned(),
+        ));
+    }
+    if plan.items.len() > MAX_TASKS {
+        return Err(StorageError::Validation(
+            "workspace task item count exceeds the limit".to_owned(),
+        ));
+    }
+    for item in &plan.items {
+        validate_workspace_task_item(item)?;
+    }
+    Ok(())
+}
+
+fn validate_workspace_task_item(item: &WorkspaceTaskItem) -> Result<(), StorageError> {
+    validate_workspace_task_id(&item.id)?;
+    if item.source_index as usize >= MAX_TASKS {
+        return Err(StorageError::Validation(
+            "workspace task source index is out of bounds".to_owned(),
+        ));
+    }
+    validate_workspace_text(
+        "workspace task label",
+        &item.label,
+        MAX_WORKSPACE_LABEL_BYTES,
+        false,
+    )?;
+    if !matches!(item.status.as_str(), "ready" | "blocked") {
+        return Err(StorageError::Validation(
+            "workspace task status is invalid".to_owned(),
+        ));
+    }
+    if let Some(command) = item.command.as_deref() {
+        validate_workspace_text(
+            "workspace task command",
+            command,
+            MAX_TASK_STRING_BYTES,
+            false,
+        )?;
+    }
+    if let Some(cwd) = item.cwd.as_deref() {
+        validate_workspace_text("workspace task cwd", cwd, MAX_TASK_STRING_BYTES, false)?;
+        if devbox_filesystem::parse_safe_project_path(cwd).is_none() {
+            return Err(StorageError::Validation(
+                "workspace task cwd is invalid".to_owned(),
+            ));
+        }
+    }
+    if item.args.len() > MAX_TASK_ARGUMENTS {
+        return Err(StorageError::Validation(
+            "workspace task argument count exceeds the limit".to_owned(),
+        ));
+    }
+    let mut argument_bytes = 0usize;
+    for argument in &item.args {
+        validate_workspace_text(
+            "workspace task argument",
+            argument,
+            MAX_TASK_STRING_BYTES,
+            false,
+        )?;
+        argument_bytes = argument_bytes.saturating_add(argument.len());
+    }
+    if argument_bytes > MAX_TASK_ARGV_BYTES {
+        return Err(StorageError::Validation(
+            "workspace task arguments exceed the limit".to_owned(),
+        ));
+    }
+    validate_workspace_environment_keys(&item.environment_keys)?;
+    if let Some(applied_override) = item.applied_override.as_deref() {
+        validate_workspace_text(
+            "workspace task platform override",
+            applied_override,
+            MAX_WORKSPACE_OVERRIDE_BYTES,
+            false,
+        )?;
+        if !matches!(applied_override, "windows" | "linux" | "osx") {
+            return Err(StorageError::Validation(
+                "workspace task platform override is invalid".to_owned(),
+            ));
+        }
+    }
+    if item.status == "ready" && !item.is_ready_process() {
+        return Err(StorageError::Validation(
+            "workspace task selection is not a ready process".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn selected_workspace_task_items<'a>(
+    plan: &'a WorkspaceTaskPlan,
+    selected_items: &[String],
+) -> Result<Vec<&'a WorkspaceTaskItem>, StorageError> {
+    if selected_items.is_empty() || selected_items.len() > MAX_TASKS {
+        return Err(StorageError::Validation(
+            "workspace task selection is empty or exceeds the limit".to_owned(),
+        ));
+    }
+    let mut selected_ids = HashSet::with_capacity(selected_items.len());
+    let mut selected = Vec::with_capacity(selected_items.len());
+    for selector in selected_items {
+        validate_workspace_text(
+            "workspace task selection",
+            selector,
+            MAX_TASK_LABEL_BYTES,
+            false,
+        )?;
+        let item = if let Some(item) = plan.items.iter().find(|item| item.id == *selector) {
+            item
+        } else {
+            let mut matching = plan.items.iter().filter(|item| item.label == *selector);
+            let Some(item) = matching.next() else {
+                return Err(StorageError::Validation(
+                    "workspace task selection contains an unknown item".to_owned(),
+                ));
+            };
+            if matching.next().is_some() {
+                return Err(StorageError::Validation(
+                    "workspace task selection is ambiguous".to_owned(),
+                ));
+            }
+            item
+        };
+        if !selected_ids.insert(item.id.clone()) {
+            return Err(StorageError::Validation(
+                "workspace task selection contains a duplicate".to_owned(),
+            ));
+        }
+        if !item.is_ready_process() {
+            return Err(StorageError::Validation(
+                "workspace task selection must contain ready process tasks".to_owned(),
+            ));
+        }
+        selected.push(item);
+    }
+    Ok(selected)
+}
+
+fn serialize_workspace_task_args(item: &WorkspaceTaskItem) -> Result<String, StorageError> {
+    let json = serde_json::to_string(&item.args).map_err(|_| {
+        StorageError::Validation("workspace task arguments cannot be serialized".to_owned())
+    })?;
+    if json.len() > MAX_TASK_ARGV_BYTES {
+        return Err(StorageError::Validation(
+            "workspace task arguments exceed the limit".to_owned(),
+        ));
+    }
+    Ok(json)
+}
+
+fn serialize_workspace_environment_keys(item: &WorkspaceTaskItem) -> Result<String, StorageError> {
+    validate_workspace_environment_keys(&item.environment_keys)?;
+    let json = serde_json::to_string(&item.environment_keys).map_err(|_| {
+        StorageError::Validation("workspace task environment keys cannot be serialized".to_owned())
+    })?;
+    if json.len() > MAX_TASK_ARGV_BYTES {
+        return Err(StorageError::Validation(
+            "workspace task environment keys exceed the limit".to_owned(),
+        ));
+    }
+    Ok(json)
+}
+
+fn validate_workspace_environment_keys(keys: &[String]) -> Result<(), StorageError> {
+    if keys.len() > MAX_ENVIRONMENT_KEYS {
+        return Err(StorageError::Validation(
+            "workspace task environment key count exceeds the limit".to_owned(),
+        ));
+    }
+    let mut folded = HashSet::with_capacity(keys.len());
+    for key in keys {
+        validate_workspace_text("workspace task environment key", key, 256, false)?;
+        crate::core::shell::validate_environment_key(key).map_err(|_| {
+            StorageError::Validation("workspace task environment key is invalid".to_owned())
+        })?;
+        if !folded.insert(key.to_ascii_uppercase()) {
+            return Err(StorageError::Validation(
+                "workspace task environment keys contain a duplicate".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_workspace_text(
+    field: &str,
+    value: &str,
+    max_bytes: usize,
+    allow_empty: bool,
+) -> Result<(), StorageError> {
+    if (!allow_empty && value.is_empty())
+        || value.len() > max_bytes
+        || value.chars().any(char::is_control)
+    {
+        return Err(StorageError::Validation(format!("{field} is invalid")));
+    }
+    Ok(())
+}
+
+fn validate_workspace_digest(field: &str, value: &str) -> Result<(), StorageError> {
+    if !is_lower_hex_digest(value) {
+        return Err(StorageError::Validation(format!("{field} is invalid")));
+    }
+    Ok(())
+}
+
+fn is_lower_hex_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn validate_workspace_source_id(value: &str) -> Result<(), StorageError> {
+    if value.len() > MAX_WORKSPACE_SOURCE_ID_BYTES {
+        return Err(StorageError::Validation(
+            "workspace task source id is too long".to_owned(),
+        ));
+    }
+    validate_token("workspace task source id", value)
+}
+
+fn validate_workspace_task_id(value: &str) -> Result<(), StorageError> {
+    if value.len() > MAX_WORKSPACE_SOURCE_ID_BYTES {
+        return Err(StorageError::Validation(
+            "workspace task id is too long".to_owned(),
+        ));
+    }
+    validate_token("workspace task id", value)
+}
+
+fn validate_workspace_target(
+    target_kind: TargetKind,
+    target_distro: Option<&str>,
+) -> Result<(), StorageError> {
+    match (target_kind, target_distro) {
+        (TargetKind::Windows, None) => Ok(()),
+        (TargetKind::Wsl, Some(distro)) => devbox_wsl::distro::validate_distro_name(distro)
+            .map_err(|_| {
+                StorageError::Validation("workspace task target distro is invalid".to_owned())
+            }),
+        _ => Err(StorageError::Validation(
+            "workspace task target is invalid".to_owned(),
+        )),
+    }
+}
+
+fn workspace_task_kind_as_str(
+    kind: Option<WorkspaceTaskKind>,
+) -> Result<&'static str, StorageError> {
+    kind.map(WorkspaceTaskKind::as_str)
+        .ok_or_else(|| StorageError::Validation("workspace task kind is missing".to_owned()))
+}
+
+fn parse_workspace_task_kind(value: &str) -> Result<WorkspaceTaskKind, StorageError> {
+    match value {
+        "process" => Ok(WorkspaceTaskKind::Process),
+        "shell" => Ok(WorkspaceTaskKind::Shell),
+        _ => Err(StorageError::Validation(
+            "workspace task kind is invalid".to_owned(),
+        )),
+    }
+}
+
+fn parse_workspace_target_kind(value: &str) -> Result<TargetKind, StorageError> {
+    match value {
+        "windows" => Ok(TargetKind::Windows),
+        "wsl" => Ok(TargetKind::Wsl),
+        _ => Err(StorageError::Validation(
+            "workspace task target is invalid".to_owned(),
+        )),
+    }
+}
+
+fn parse_workspace_bool(value: i64, field: &str) -> Result<bool, StorageError> {
+    match value {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(StorageError::Validation(format!(
+            "workspace task {field} is invalid"
+        ))),
+    }
+}
+
+fn decode_workspace_string_array(
+    json: &str,
+    field: &str,
+    max_items: usize,
+    max_bytes: usize,
+) -> Result<Vec<String>, StorageError> {
+    if json.len() > max_bytes {
+        return Err(StorageError::Validation(format!(
+            "workspace task {field} exceeds the limit"
+        )));
+    }
+    let value: Value = serde_json::from_str(json)
+        .map_err(|_| StorageError::Validation(format!("workspace task {field} is corrupt")))?;
+    let array = value.as_array().ok_or_else(|| {
+        StorageError::Validation(format!("workspace task {field} is not an array"))
+    })?;
+    if array.len() > max_items {
+        return Err(StorageError::Validation(format!(
+            "workspace task {field} exceeds the limit"
+        )));
+    }
+    let mut output = Vec::with_capacity(array.len());
+    for item in array {
+        let value = item.as_str().ok_or_else(|| {
+            StorageError::Validation(format!("workspace task {field} contains a non-string"))
+        })?;
+        validate_workspace_text(field, value, MAX_TASK_STRING_BYTES, true)?;
+        output.push(value.to_owned());
+    }
+    Ok(output)
+}
+
+fn decode_workspace_environment_keys(json: &str) -> Result<Vec<String>, StorageError> {
+    let keys = decode_workspace_string_array(
+        json,
+        "environment keys",
+        MAX_ENVIRONMENT_KEYS,
+        MAX_TASK_ARGV_BYTES,
+    )?;
+    validate_workspace_environment_keys(&keys)?;
+    Ok(keys)
+}
+
+fn ensure_workspace_task_can_enable_connection(
+    connection: &Connection,
+    job_id: &str,
+) -> Result<(), StorageError> {
+    let state: Option<(i64, i64)> = connection
+        .query_row(
+            "SELECT source.trusted, task.available
+             FROM workspace_tasks AS task
+             JOIN workspace_task_sources AS source ON source.id = task.source_id
+             JOIN jobs ON jobs.id = task.job_id
+             WHERE task.job_id = ? AND jobs.kind = 'job'",
+            [job_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((trusted, available)) = state else {
+        return Ok(());
+    };
+    if trusted != 1 {
+        return Err(StorageError::Validation(
+            "workspace-task-source-untrusted".to_owned(),
+        ));
+    }
+    if available != 1 {
+        return Err(StorageError::Validation(
+            "workspace-task-unavailable".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_workspace_task_managed_fields_unchanged(
+    connection: &Connection,
+    job_id: &str,
+    current: &Job,
+    input: &JobInput,
+) -> Result<(), StorageError> {
+    let managed: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM workspace_tasks WHERE job_id = ?)",
+        [job_id],
+        |row| row.get(0),
+    )?;
+    if managed
+        && (input.name != current.name
+            || input.command != current.command
+            || input.cwd != current.cwd
+            || input.target_kind != current.target_kind
+            || input.target_distro != current.target_distro)
+    {
+        return Err(StorageError::Validation(
+            "workspace-task-managed-fields-locked".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+struct WorkspaceTaskSourceRecord {
+    id: String,
+    project_identity: String,
+    source_root: String,
+    source_path: String,
+    revision: String,
+    target_kind: String,
+    target_distro: Option<String>,
+    trusted: i64,
+}
+
+#[derive(Debug)]
+struct RawWorkspaceTaskExecution {
+    job_id: String,
+    source_id: String,
+    source_index: i64,
+    label: String,
+    kind: String,
+    command: String,
+    cwd: Option<String>,
+    source_root: String,
+    project_identity: String,
+    revision: String,
+    target_kind: String,
+    target_distro: Option<String>,
+    args_json: String,
+    environment_keys_json: String,
+    trusted: i64,
+    available: i64,
+}
+
+fn raw_workspace_task_execution(
+    raw: RawWorkspaceTaskExecution,
+) -> Result<WorkspaceTaskExecution, StorageError> {
+    validate_token("job id", &raw.job_id)?;
+    validate_workspace_source_id(&raw.source_id)?;
+    if raw.source_index < 0 {
+        return Err(StorageError::Validation(
+            "workspace task source index is invalid".to_owned(),
+        ));
+    }
+    validate_workspace_text(
+        "workspace task label",
+        &raw.label,
+        MAX_WORKSPACE_LABEL_BYTES,
+        false,
+    )?;
+    let kind = parse_workspace_task_kind(&raw.kind)?;
+    if kind != WorkspaceTaskKind::Process {
+        return Err(StorageError::Validation(
+            "workspace shell task cannot execute in process mode".to_owned(),
+        ));
+    }
+    validate_workspace_text(
+        "workspace task command",
+        &raw.command,
+        MAX_TASK_STRING_BYTES,
+        false,
+    )?;
+    let cwd = raw
+        .cwd
+        .ok_or_else(|| StorageError::Validation("workspace task cwd is missing".to_owned()))?;
+    validate_workspace_text("workspace task cwd", &cwd, MAX_TASK_STRING_BYTES, false)?;
+    if devbox_filesystem::parse_safe_project_path(&cwd).is_none() {
+        return Err(StorageError::Validation(
+            "workspace task cwd is invalid".to_owned(),
+        ));
+    }
+    validate_workspace_text(
+        "workspace task source root",
+        &raw.source_root,
+        MAX_WORKSPACE_SOURCE_ROOT_BYTES,
+        false,
+    )?;
+    if devbox_filesystem::parse_safe_project_path(&raw.source_root).is_none() {
+        return Err(StorageError::Validation(
+            "workspace task source root is invalid".to_owned(),
+        ));
+    }
+    validate_workspace_digest("project identity", &raw.project_identity)?;
+    validate_workspace_digest("revision", &raw.revision)?;
+    let target_kind = parse_workspace_target_kind(&raw.target_kind)?;
+    validate_workspace_target(target_kind, raw.target_distro.as_deref())?;
+    let args = decode_workspace_string_array(
+        &raw.args_json,
+        "arguments",
+        MAX_TASK_ARGUMENTS,
+        MAX_TASK_ARGV_BYTES,
+    )?;
+    let environment_keys = decode_workspace_environment_keys(&raw.environment_keys_json)?;
+    let trusted = parse_workspace_bool(raw.trusted, "trusted")?;
+    let available = parse_workspace_bool(raw.available, "available")?;
+    let source_index = u32::try_from(raw.source_index).map_err(|_| {
+        StorageError::Validation("workspace task source index is invalid".to_owned())
+    })?;
+    Ok(WorkspaceTaskExecution {
+        job_id: raw.job_id,
+        source_id: raw.source_id,
+        source_index,
+        label: raw.label,
+        task_kind: kind,
+        command: raw.command,
+        args,
+        cwd,
+        environment_keys,
+        source_root: raw.source_root,
+        project_identity: raw.project_identity,
+        revision: raw.revision,
+        target_kind,
+        target_distro: raw.target_distro,
+        trusted,
+        available,
+    })
+}
+
+fn row_to_workspace_task_state(row: &Row<'_>) -> rusqlite::Result<WorkspaceTaskState> {
+    let job_id: String = row.get(0)?;
+    let source_id: String = row.get(1)?;
+    let label: String = row.get(2)?;
+    let kind: String = row.get(3)?;
+    let source_root: String = row.get(4)?;
+    let revision: String = row.get(5)?;
+    let target_kind: String = row.get(6)?;
+    let target_distro: Option<String> = row.get(7)?;
+    let environment_keys_json: String = row.get(8)?;
+    let applied_override: Option<String> = row.get(9)?;
+    let trusted: i64 = row.get(10)?;
+    let available: i64 = row.get(11)?;
+    if validate_workspace_source_id(&source_id).is_err()
+        || validate_workspace_text(
+            "workspace task source root",
+            &source_root,
+            MAX_WORKSPACE_SOURCE_ROOT_BYTES,
+            false,
+        )
+        .is_err()
+        || devbox_filesystem::parse_safe_project_path(&source_root).is_none()
+        || !is_lower_hex_digest(&revision)
+    {
+        return Err(conversion_error(
+            "workspace task source",
+            "corrupt source metadata",
+        ));
+    }
+    let kind = parse_workspace_task_kind(&kind)
+        .map_err(|error| conversion_error("workspace task kind", error))?;
+    let target_kind = parse_workspace_target_kind(&target_kind)
+        .map_err(|error| conversion_error("workspace task target", error))?;
+    validate_workspace_target(target_kind, target_distro.as_deref())
+        .map_err(|error| conversion_error("workspace task target", error))?;
+    validate_workspace_text(
+        "workspace task label",
+        &label,
+        MAX_WORKSPACE_LABEL_BYTES,
+        false,
+    )
+    .map_err(|error| conversion_error("workspace task label", error))?;
+    if let Some(applied_override) = applied_override.as_deref() {
+        validate_workspace_text(
+            "workspace task platform override",
+            applied_override,
+            MAX_WORKSPACE_OVERRIDE_BYTES,
+            false,
+        )
+        .map_err(|error| conversion_error("workspace task platform override", error))?;
+        if !matches!(applied_override, "windows" | "linux" | "osx") {
+            return Err(conversion_error(
+                "workspace task platform override",
+                "unsupported platform override",
+            ));
+        }
+    }
+    let environment_keys = decode_workspace_environment_keys(&environment_keys_json)
+        .map_err(|error| conversion_error("workspace task environment keys", error))?;
+    let trusted = parse_workspace_bool(trusted, "trusted")
+        .map_err(|error| conversion_error("workspace task trusted", error))?;
+    let available = parse_workspace_bool(available, "available")
+        .map_err(|error| conversion_error("workspace task available", error))?;
+    Ok(WorkspaceTaskState {
+        job_id,
+        source_id,
+        label,
+        task_kind: kind,
+        source_root,
+        revision,
+        target_kind,
+        target_distro,
+        environment_keys,
+        applied_override,
+        trusted,
+        available,
+    })
+}
+
 fn bool_to_sql(value: bool) -> i64 {
     i64::from(value)
 }
@@ -2588,6 +3761,10 @@ mod tests {
         EnvironmentUpdate, JobInput, NewNotification, RestartPolicy, ServiceInput,
         ServiceInstanceState, TargetKind,
     };
+    use crate::core::workspace_tasks::{
+        WorkspaceTaskItem, WorkspaceTaskKind, WorkspaceTaskPlan, TASKS_JSON_RELATIVE_PATH,
+        WORKSPACE_TASK_SCHEMA_VERSION,
+    };
     use rusqlite::OptionalExtension;
     use std::sync::{Arc, Barrier};
     use tempfile::NamedTempFile;
@@ -2619,6 +3796,38 @@ mod tests {
             auto_start: true,
             health_tcp_address: Some("localhost".to_string()),
             health_tcp_port: Some(3000),
+        }
+    }
+
+    fn workspace_item(id: &str, label: &str, command: &str) -> WorkspaceTaskItem {
+        WorkspaceTaskItem {
+            id: id.to_owned(),
+            source_index: 0,
+            label: label.to_owned(),
+            status: "ready".to_owned(),
+            task_kind: Some(WorkspaceTaskKind::Process),
+            command: Some(command.to_owned()),
+            args: vec!["--ci".to_owned()],
+            cwd: Some("C:\\Work\\Project".to_owned()),
+            environment_keys: vec!["CI".to_owned()],
+            applied_override: Some("windows".to_owned()),
+            has_problem_matcher: false,
+            blocked_reason: None,
+        }
+    }
+
+    fn workspace_plan(revision: &str, items: Vec<WorkspaceTaskItem>) -> WorkspaceTaskPlan {
+        WorkspaceTaskPlan {
+            schema_version: WORKSPACE_TASK_SCHEMA_VERSION,
+            source_root: "C:\\Work\\Project".to_owned(),
+            source_path: TASKS_JSON_RELATIVE_PATH.to_owned(),
+            project_identity: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .to_owned(),
+            revision: revision.to_owned(),
+            target_kind: TargetKind::Windows,
+            target_distro: None,
+            selected_platform: "windows".to_owned(),
+            items,
         }
     }
 
@@ -3666,5 +4875,307 @@ mod tests {
             [&job.id],
         );
         assert!(matches!(result, Err(rusqlite::Error::SqliteFailure(_, _))));
+    }
+
+    #[test]
+    fn workspace_task_schema_migrates_from_v2_and_is_idempotent() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        {
+            let connection = database.connection.lock().unwrap();
+            connection
+                .execute_batch(
+                    "DROP TABLE workspace_tasks;
+                     DROP TABLE workspace_task_sources;
+                     UPDATE meta SET value = '2' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        database.migrate().unwrap();
+        assert_eq!(database.schema_version().unwrap(), 3);
+        database.migrate().unwrap();
+        let connection = database.connection.lock().unwrap();
+        for table in ["workspace_task_sources", "workspace_tasks"] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+                        [table],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .unwrap(),
+                1
+            );
+        }
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM pragma_foreign_key_list('workspace_tasks')",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            2
+        );
+    }
+
+    #[test]
+    fn workspace_task_initial_apply_is_disabled_and_untrusted() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let plan = workspace_plan(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            vec![workspace_item("task-a", "build", "node")],
+        );
+        let result = database
+            .apply_workspace_task_import_at(&plan, &["task-a".to_owned()], 100)
+            .unwrap();
+        assert_eq!(result.created, 1);
+        assert_eq!(result.updated, 0);
+        assert_eq!(result.made_unavailable, 0);
+        assert_eq!(result.skipped_conflicts, 0);
+        let state = database.list_workspace_task_states().unwrap();
+        assert_eq!(state.len(), 1);
+        assert!(!state[0].trusted);
+        assert!(state[0].available);
+        let job = database.get_job(&state[0].job_id).unwrap().unwrap();
+        assert!(!job.enabled);
+        assert_eq!(job.cron_expr.as_deref(), Some(DISABLED_IMPORT_CRON));
+        assert_eq!(job.command, "node");
+        assert_eq!(job.cwd.as_deref(), Some("C:\\Work\\Project"));
+        assert!(database
+            .get_workspace_task_execution(&job.id)
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn workspace_task_refresh_preserves_job_and_history_and_invalidates_omitted_items() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let mut first = workspace_item("task-a-v1", "build", "node-one");
+        let mut second = workspace_item("task-b-v1", "test", "node-test");
+        second.source_index = 1;
+        let initial = workspace_plan(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            vec![first.clone(), second],
+        );
+        let applied = database
+            .apply_workspace_task_import_at(
+                &initial,
+                &["task-a-v1".to_owned(), "task-b-v1".to_owned()],
+                100,
+            )
+            .unwrap();
+        let states = database.list_workspace_task_states().unwrap();
+        let build_id = states
+            .iter()
+            .find(|state| state.label == "build")
+            .unwrap()
+            .job_id
+            .clone();
+        let test_id = states
+            .iter()
+            .find(|state| state.label == "test")
+            .unwrap()
+            .job_id
+            .clone();
+        let run = database.create_manual_run_at(&build_id, 110).unwrap();
+        assert_eq!(applied.created, 2);
+
+        first.id = "task-a-v2".to_owned();
+        first.command = Some("node-two".to_owned());
+        let refreshed = workspace_plan(
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            vec![first],
+        );
+        let result = database
+            .apply_workspace_task_import_at(&refreshed, &["task-a-v2".to_owned()], 200)
+            .unwrap();
+        assert_eq!(result.created, 0);
+        assert_eq!(result.updated, 1);
+        assert_eq!(result.made_unavailable, 2);
+        assert_eq!(result.skipped_conflicts, 0);
+        let build = database.get_job(&build_id).unwrap().unwrap();
+        assert_eq!(build.command, "node-two");
+        assert!(!build.enabled);
+        assert!(database.get_run(&run.id).unwrap().is_some());
+        let states = database.list_workspace_task_states().unwrap();
+        let build_state = states.iter().find(|state| state.label == "build").unwrap();
+        let test_state = states.iter().find(|state| state.label == "test").unwrap();
+        assert_eq!(build_state.job_id, build_id);
+        assert!(build_state.available);
+        assert!(!build_state.trusted);
+        assert_eq!(test_state.job_id, test_id);
+        assert!(!test_state.available);
+        assert!(!test_state.trusted);
+    }
+
+    #[test]
+    fn workspace_task_trust_requires_exact_revision_and_enables_guarded_job() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let plan = workspace_plan(revision, vec![workspace_item("task-a", "build", "node")]);
+        let applied = database
+            .apply_workspace_task_import_at(&plan, &["task-a".to_owned()], 100)
+            .unwrap();
+        assert!(matches!(
+            database.trust_workspace_task_source_at(
+                &applied.source_id,
+                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                101,
+            ),
+            Err(StorageError::ConcurrentChange(_))
+        ));
+        assert!(database
+            .trust_workspace_task_source_at(&applied.source_id, revision, 102)
+            .unwrap());
+        let state = database.list_workspace_task_states().unwrap();
+        assert!(state[0].trusted);
+        assert!(database
+            .ensure_workspace_task_can_enable(&state[0].job_id)
+            .is_ok());
+        assert!(database
+            .set_job_enabled_at(&state[0].job_id, true, 103)
+            .is_ok());
+        let execution = database
+            .get_workspace_task_execution(&state[0].job_id)
+            .unwrap()
+            .unwrap();
+        assert!(execution.trusted);
+        assert!(execution.available);
+        assert_eq!(execution.environment_keys, vec!["CI".to_owned()]);
+    }
+
+    #[test]
+    fn workspace_task_corrupt_args_fail_closed() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let plan = workspace_plan(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            vec![workspace_item("task-a", "build", "node")],
+        );
+        database
+            .apply_workspace_task_import_at(&plan, &["task-a".to_owned()], 100)
+            .unwrap();
+        let state = database.list_workspace_task_states().unwrap();
+        {
+            let connection = database.connection.lock().unwrap();
+            connection
+                .execute(
+                    "UPDATE workspace_tasks SET args_json = '[1]' WHERE job_id = ?",
+                    [&state[0].job_id],
+                )
+                .unwrap();
+        }
+        assert!(matches!(
+            database.get_workspace_task_execution(&state[0].job_id),
+            Err(StorageError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn workspace_task_invalidation_is_atomic_and_disables_execution() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let plan = workspace_plan(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            vec![workspace_item("task-a", "build", "node")],
+        );
+        let applied = database
+            .apply_workspace_task_import_at(&plan, &["task-a".to_owned()], 100)
+            .unwrap();
+        database
+            .trust_workspace_task_source_at(&applied.source_id, &plan.revision, 101)
+            .unwrap();
+        let job_id = database.list_workspace_task_states().unwrap()[0]
+            .job_id
+            .clone();
+        database.set_job_enabled_at(&job_id, true, 102).unwrap();
+        assert_eq!(
+            database
+                .invalidate_workspace_task_source_at(&applied.source_id, 103)
+                .unwrap(),
+            1
+        );
+        let state = database.get_workspace_task_state(&job_id).unwrap().unwrap();
+        assert!(!state.trusted);
+        assert!(!state.available);
+        assert!(!database.get_job(&job_id).unwrap().unwrap().enabled);
+        assert!(database
+            .get_workspace_task_execution(&job_id)
+            .unwrap()
+            .is_some());
+        assert!(matches!(
+            database.set_job_enabled_at(&job_id, true, 104),
+            Err(StorageError::Validation(code)) if code == "workspace-task-source-untrusted"
+        ));
+    }
+
+    #[test]
+    fn workspace_task_apply_rejects_empty_selection_without_creating_a_source() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let plan = workspace_plan(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            vec![workspace_item("task-a", "build", "node")],
+        );
+        assert!(matches!(
+            database.apply_workspace_task_import_at(&plan, &[], 100),
+            Err(StorageError::Validation(_))
+        ));
+        assert!(database.list_workspace_task_states().unwrap().is_empty());
+    }
+
+    #[test]
+    fn workspace_task_managed_execution_fields_are_locked_in_storage() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let plan = workspace_plan(revision, vec![workspace_item("task-a", "build", "node")]);
+        let applied = database
+            .apply_workspace_task_import_at(&plan, &["task-a".to_owned()], 100)
+            .unwrap();
+        database
+            .trust_workspace_task_source_at(&applied.source_id, revision, 101)
+            .unwrap();
+        let state = database.list_workspace_task_states().unwrap().remove(0);
+        let job = database.get_job(&state.job_id).unwrap().unwrap();
+        let changed = JobInput {
+            name: job.name,
+            command: "cmd.exe /C unreviewed".to_owned(),
+            cwd: job.cwd,
+            target_kind: job.target_kind,
+            target_distro: job.target_distro,
+            environment: EnvironmentUpdate::Keep,
+            cron_expr: job.cron_expr.unwrap(),
+            enabled: false,
+            overlap_policy: job.overlap_policy,
+            catch_up: job.catch_up,
+        };
+        assert!(matches!(
+            database.update_job_at(&state.job_id, changed, 102),
+            Err(StorageError::Validation(code))
+                if code == "workspace-task-managed-fields-locked"
+        ));
+        assert_eq!(
+            database.get_job(&state.job_id).unwrap().unwrap().command,
+            "node"
+        );
+    }
+
+    #[test]
+    fn enabled_workspace_task_listing_requires_trust_and_availability() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let plan = workspace_plan(revision, vec![workspace_item("task-a", "build", "node")]);
+        let applied = database
+            .apply_workspace_task_import_at(&plan, &["task-a".to_owned()], 100)
+            .unwrap();
+        let state = database.list_workspace_task_states().unwrap().remove(0);
+        database
+            .trust_workspace_task_source_at(&applied.source_id, revision, 101)
+            .unwrap();
+        database
+            .set_job_enabled_at(&state.job_id, true, 102)
+            .unwrap();
+        assert_eq!(database.list_enabled_jobs().unwrap().len(), 1);
+        database
+            .invalidate_workspace_task_source_at(&applied.source_id, 103)
+            .unwrap();
+        assert!(database.list_enabled_jobs().unwrap().is_empty());
     }
 }

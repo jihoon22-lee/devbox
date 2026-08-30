@@ -19,6 +19,8 @@ pub enum FailureCode {
     EnvironmentUnavailable,
     TerminationTimeout,
     WslUnavailable,
+    WorkspaceTaskSourceChanged,
+    WorkspaceTaskConfiguration,
     ProcessCrashed,
     StorageFailed,
 }
@@ -32,6 +34,8 @@ impl FailureCode {
             Self::EnvironmentUnavailable => "environment_unavailable",
             Self::TerminationTimeout => "termination_timeout",
             Self::WslUnavailable => "wsl_unavailable",
+            Self::WorkspaceTaskSourceChanged => "workspace_task_source_changed",
+            Self::WorkspaceTaskConfiguration => "workspace_task_configuration_invalid",
             Self::ProcessCrashed => "process_crashed",
             Self::StorageFailed => "storage_failed",
         }
@@ -45,6 +49,12 @@ impl FailureCode {
             Self::EnvironmentUnavailable => "보호된 환경변수를 불러오지 못했습니다",
             Self::TerminationTimeout => "프로세스 종료 제한 시간을 초과했습니다",
             Self::WslUnavailable => "WSL 실행 환경을 사용할 수 없습니다",
+            Self::WorkspaceTaskSourceChanged => {
+                "Workspace task 원본이 변경되어 승인이 해제되었습니다"
+            }
+            Self::WorkspaceTaskConfiguration => {
+                "Workspace task 환경변수 구성이 원본 선언과 일치하지 않습니다"
+            }
             Self::ProcessCrashed => "프로세스가 예기치 않게 종료되었습니다",
             Self::StorageFailed => "실행 상태를 저장하지 못했습니다",
         }
@@ -62,6 +72,8 @@ impl TryFrom<&str> for FailureCode {
             "environment_unavailable" => Ok(Self::EnvironmentUnavailable),
             "termination_timeout" => Ok(Self::TerminationTimeout),
             "wsl_unavailable" => Ok(Self::WslUnavailable),
+            "workspace_task_source_changed" => Ok(Self::WorkspaceTaskSourceChanged),
+            "workspace_task_configuration_invalid" => Ok(Self::WorkspaceTaskConfiguration),
             "process_crashed" => Ok(Self::ProcessCrashed),
             "storage_failed" => Ok(Self::StorageFailed),
             _ => Err(UnknownFailureCode),
@@ -112,6 +124,12 @@ impl TerminalRunListener for SchedulerNotificationListener {
             TerminalFailureCode::EnvironmentUnavailable => FailureCode::EnvironmentUnavailable,
             TerminalFailureCode::TerminationTimeout => FailureCode::TerminationTimeout,
             TerminalFailureCode::WslUnavailable => FailureCode::WslUnavailable,
+            TerminalFailureCode::WorkspaceTaskSourceChanged => {
+                FailureCode::WorkspaceTaskSourceChanged
+            }
+            TerminalFailureCode::WorkspaceTaskConfiguration => {
+                FailureCode::WorkspaceTaskConfiguration
+            }
             TerminalFailureCode::ProcessCrashed => FailureCode::ProcessCrashed,
             TerminalFailureCode::StorageFailed => FailureCode::StorageFailed,
         };
@@ -389,5 +407,17 @@ mod tests {
             FailureCode::StorageFailed
         );
         assert!(!FailureCode::StorageFailed.user_label().contains("secret"));
+    }
+
+    #[test]
+    fn workspace_task_failure_codes_round_trip_without_source_details() {
+        for code in [
+            FailureCode::WorkspaceTaskSourceChanged,
+            FailureCode::WorkspaceTaskConfiguration,
+        ] {
+            assert_eq!(FailureCode::try_from(code.as_str()).unwrap(), code);
+            assert!(!code.user_label().contains("\\"));
+            assert!(!code.user_label().contains('/'));
+        }
     }
 }

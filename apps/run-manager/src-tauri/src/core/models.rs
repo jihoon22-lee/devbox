@@ -581,6 +581,8 @@ fn public_failure_code(value: Option<&str>) -> Option<String> {
         | "environment-unavailable"
         | "termination-timeout"
         | "wsl-unavailable"
+        | "workspace-task-source-changed"
+        | "workspace-task-configuration-invalid"
         | "process-crashed"
         | "storage-failed" => value?,
         _ => return None,

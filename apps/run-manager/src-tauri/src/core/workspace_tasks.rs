@@ -157,6 +157,7 @@ pub struct WorkspaceTaskExecution {
     pub command: String,
     pub args: Vec<String>,
     pub cwd: String,
+    pub environment_keys: Vec<String>,
     pub source_root: String,
     pub project_identity: String,
     pub revision: String,
@@ -302,6 +303,15 @@ pub fn revalidate_workspace_task_execution(
     if !execution.available || !execution.trusted {
         return Err(WorkspaceTaskError::SourceChanged);
     }
+    verify_workspace_task_execution(execution)
+}
+
+/// Verify the persisted projection against the current source without making
+/// a trust decision. The explicit trust command uses this path before it flips
+/// the durable source bit; execution uses the stricter wrapper above.
+pub fn verify_workspace_task_execution(
+    execution: &WorkspaceTaskExecution,
+) -> Result<WorkspaceTaskPlan, WorkspaceTaskError> {
     let plan = verify_workspace_task_plan(
         Path::new(&execution.source_root),
         execution.target_kind,
@@ -320,6 +330,7 @@ pub fn revalidate_workspace_task_execution(
         || item.command.as_deref() != Some(execution.command.as_str())
         || item.args != execution.args
         || item.cwd.as_deref() != Some(execution.cwd.as_str())
+        || item.environment_keys != execution.environment_keys
     {
         return Err(WorkspaceTaskError::SourceChanged);
     }
@@ -602,6 +613,15 @@ fn project_task(
     };
     if task.get("dependsOn").is_some() {
         return blocked("dependencies-require-orchestration", Some(kind));
+    }
+    if task.get("dependsOrder").is_some() {
+        return blocked("dependencies-require-orchestration", Some(kind));
+    }
+    if task.get("isBackground").is_some() {
+        return blocked("background-task-unsupported", Some(kind));
+    }
+    if task.get("runOptions").is_some() {
+        return blocked("run-options-unsupported", Some(kind));
     }
     let Some(command) = task.get("command").and_then(Value::as_str) else {
         return blocked("invalid-command", Some(kind));
@@ -1025,6 +1045,34 @@ mod tests {
                 "unsupported-variable",
                 "unsupported-task-type",
                 "shell-requires-separate-confirmation",
+                "dependencies-require-orchestration"
+            ]
+        );
+    }
+
+    #[test]
+    fn background_run_options_and_orphan_dependency_order_are_blocked() {
+        let root = tempfile::tempdir().unwrap();
+        write_tasks(
+            root.path(),
+            r#"{
+              "version": "2.0.0",
+              "tasks": [
+                {"label":"background", "type":"process", "command":"x", "isBackground":true},
+                {"label":"run-options", "type":"process", "command":"x", "runOptions":{"instanceLimit":1}},
+                {"label":"order", "type":"process", "command":"x", "dependsOrder":"sequence"}
+              ]
+            }"#,
+        );
+        let plan = preview_workspace_tasks(root.path(), TargetKind::Wsl, Some("Ubuntu")).unwrap();
+        assert_eq!(
+            plan.items
+                .iter()
+                .map(|item| item.blocked_reason.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            [
+                "background-task-unsupported",
+                "run-options-unsupported",
                 "dependencies-require-orchestration"
             ]
         );
