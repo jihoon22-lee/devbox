@@ -15,6 +15,17 @@
     "MIT-0",
     "Unlicense"
   ],
+  "packageLicenseApprovals": [
+    {
+      "package": "axe-core",
+      "version": "4.13.0",
+      "reportedLicense": "MPL-2.0",
+      "source": "https://github.com/dequelabs/axe-core/tree/v4.13.0",
+      "integrity": "sha512-UzGt8zg7Ny8djbYMhxl2zuEevVa7r2gJjYY5Lwr1xM7+XU2nd6CkIWFTVcCIbAP63vSz71NaVyyuSk9lHKcy0A==",
+      "scope": "test-only jsdom accessibility regression helper; excluded from production app imports and runtime notices",
+      "reason": "The exact unmodified package is reviewed under MPL-2.0 without granting a repository-wide MPL allowlist entry."
+    }
+  ],
   "licenseClarifications": [
     {
       "package": "khroma",

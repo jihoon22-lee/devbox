@@ -92,16 +92,16 @@ export function formatGraphqlData(data: unknown): string {
 function GraphqlResponseSummary({ response, graphql }: { response: ApiResponse; graphql: GraphqlResponse }) {
   const httpError = response.status >= 400;
   return (
-    <section className="graphql-response-summary" aria-label="GraphQL response summary">
+    <section className="graphql-response-summary" aria-label="GraphQL 응답 요약">
       <div className="graphql-response-state">
         <span className={httpError ? "graphql-http-error" : "graphql-http-ok"}>
-          HTTP {httpError ? "error" : "success"} ({response.status})
+          HTTP {httpError ? "오류" : "성공"} ({response.status})
         </span>
         <span className="dim">GraphQL envelope: {graphql.envelope}</span>
       </div>
       {graphql.errors.length > 0 && (
-        <div className="graphql-errors" role="alert" aria-label="GraphQL errors">
-          <div className="graphql-section-label">GraphQL errors ({graphql.errors.length})</div>
+        <div className="graphql-errors" role="alert" aria-label="GraphQL 오류">
+          <div className="graphql-section-label">GraphQL 오류 ({graphql.errors.length})</div>
           {graphql.errors.map((error, index) => (
             <div className="graphql-error-item" key={`${index}-${error.message}`}>
               <div>{error.message}</div>
@@ -114,17 +114,17 @@ function GraphqlResponseSummary({ response, graphql }: { response: ApiResponse; 
               )}
             </div>
           ))}
-          {graphql.errors_truncated && <div className="dim">Additional GraphQL errors were omitted at the display limit.</div>}
+          {graphql.errors_truncated && <div className="dim">표시 한도로 인해 일부 GraphQL 오류를 생략했습니다.</div>}
         </div>
       )}
       {graphql.data !== null && graphql.data !== undefined && (
         <div className="graphql-data">
-          <div className="graphql-section-label">GraphQL data</div>
+          <div className="graphql-section-label">GraphQL 데이터</div>
           <pre className="resp-body graphql-data-body">{formatGraphqlData(graphql.data) || " "}</pre>
         </div>
       )}
       {graphql.envelope !== "valid" && (
-        <div className="dim">The response is retained in the Body tab, but its GraphQL envelope could not be safely projected.</div>
+        <div className="dim">응답은 본문 탭에 보관되지만 GraphQL envelope를 안전하게 표시할 수 없습니다.</div>
       )}
     </section>
   );
@@ -143,34 +143,34 @@ function BinaryResponseSummary({
 }) {
   const canSave = binary.save_available && Boolean(response.response_id);
   return (
-    <section className="binary-response-summary" aria-label="Binary response preview">
+    <section className="binary-response-summary" aria-label="Binary 응답 미리보기">
       <div className="binary-response-meta">
-        <span><strong>Type</strong> {binary.media_type}</span>
-        <span><strong>Size</strong> {binary.size_bytes.toLocaleString()} bytes</span>
+        <span><strong>형식</strong> {binary.media_type}</span>
+        <span><strong>크기</strong> {binary.size_bytes.toLocaleString()}바이트</span>
         <span className="spacer" />
         <button
           type="button"
           className="btn"
           disabled={!canSave || saving}
-          title={canSave ? "현재 응답 binary를 native dialog에서 한 번 저장" : "현재 응답을 native 앱에서만 저장할 수 있습니다"}
+          title={canSave ? "현재 응답 Binary를 네이티브 대화상자에서 한 번 저장" : "현재 응답은 네이티브 앱에서만 저장할 수 있습니다"}
           onClick={onSave}
         >
-          {saving ? "Saving..." : "Save binary"}
+          {saving ? "저장 중…" : "Binary 저장"}
         </button>
       </div>
       <div className="binary-response-field">
-        <span className="binary-response-label">Hex preview</span>
-        <code>{binary.hex_preview || "(empty)"}</code>
-        {binary.hex_truncated && <span className="dim">preview truncated</span>}
+        <span className="binary-response-label">Hex 미리보기</span>
+        <code>{binary.hex_preview || "(비어 있음)"}</code>
+        {binary.hex_truncated && <span className="dim">미리보기 일부 생략</span>}
       </div>
       {binary.text_preview !== null && binary.text_preview !== undefined && (
         <div className="binary-response-field">
-          <span className="binary-response-label">UTF-8 preview</span>
-          <code>{binary.text_preview || "(empty)"}</code>
-          {binary.text_truncated && <span className="dim">preview truncated</span>}
+          <span className="binary-response-label">UTF-8 미리보기</span>
+          <code>{binary.text_preview || "(비어 있음)"}</code>
+          {binary.text_truncated && <span className="dim">미리보기 일부 생략</span>}
         </div>
       )}
-      {!canSave && <div className="dim">Binary 원문은 bounded memory에만 있으며 데스크톱 native save에서만 내보낼 수 있습니다.</div>}
+      {!canSave && <div className="dim">Binary 원문은 제한된 메모리에만 있으며 데스크톱 네이티브 저장으로만 내보낼 수 있습니다.</div>}
     </section>
   );
 }
@@ -367,7 +367,7 @@ export function ResponseViewer({
     return (
       <div className="response">
         <div className="response-head">
-          <span className="dim">Send a request to see the response</span>
+          <span className="dim">응답을 보려면 요청을 보내세요</span>
         </div>
         <pre className="resp-body"> </pre>
       </div>
@@ -393,13 +393,13 @@ export function ResponseViewer({
         <span className="dim">{response.duration_ms}ms</span>
         <span className="dim">{(response.size_bytes / 1024).toFixed(2)} KB</span>
       </div>
-      <div className="response-tabs" role="tablist" aria-label="Response view">
+      <div className="response-tabs" role="tablist" aria-label="응답 보기">
         {RESPONSE_TABS.map((candidate, index) => {
           const label = candidate === "body"
-            ? "Body"
+            ? "본문"
             : candidate === "headers"
-              ? `Headers (${response.headers.length})`
-              : `Cookies (${response.cookies.length})`;
+              ? `헤더 (${response.headers.length})`
+              : `쿠키 (${response.cookies.length})`;
           return (
             <button
               key={candidate}
@@ -434,7 +434,7 @@ export function ResponseViewer({
                   checked={pretty}
                   onChange={(event) => onPrettyChange(event.currentTarget.checked)}
                 />
-                pretty
+                보기 좋게
               </label>
             )}
             <span className="spacer" />
@@ -448,16 +448,16 @@ export function ResponseViewer({
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => void sendSelection()}
             >
-              {sendingSelection ? "Sending..." : "Send selection to Developer Toolbox"}
+              {sendingSelection ? "보내는 중…" : "선택 영역을 Developer Toolbox로 보내기"}
             </button>
             <button
               type="button"
               className="btn"
               disabled={Boolean(response.binary)}
-              title={response.binary ? "Binary 응답은 bounded preview와 명시적 저장만 지원합니다" : "마스킹된 응답 본문 복사"}
+              title={response.binary ? "Binary 응답은 제한된 미리보기와 명시적 저장만 지원합니다" : "마스킹된 응답 본문 복사"}
               onClick={() => void copyMasked(responseText, "마스킹된 응답 본문을 복사하지 못했습니다.")}
             >
-              Copy body
+              본문 복사
             </button>
           </div>
           {toolboxFeedback && (
@@ -525,7 +525,7 @@ export function ResponseViewer({
           className="response-panel"
         >
           <div className="response-actions">
-            <span className="dim">Sensitive values are masked by default.</span>
+            <span className="dim">민감한 값은 기본적으로 마스킹됩니다.</span>
             <span className="spacer" />
             <button
               type="button"
@@ -536,7 +536,7 @@ export function ResponseViewer({
                 "마스킹된 응답 header를 복사하지 못했습니다.",
               )}
             >
-              Copy masked headers
+              마스킹된 헤더 복사
             </button>
             <button
               type="button"
@@ -545,18 +545,18 @@ export function ResponseViewer({
               title={canCopyRawHeaders ? "확인 후 현재 응답 원문을 한 번 복사" : rawUnavailableTitle}
               onClick={() => void copyRaw("headers")}
             >
-              {copyingRaw === "headers" ? "Copying..." : "Copy original headers"}
+              {copyingRaw === "headers" ? "복사 중…" : "원본 헤더 복사"}
             </button>
           </div>
           {response.headers_truncated && (
             <div className="response-warning">
-              Header display was bounded to 100 rows / 64 KiB. Original copy is disabled.
+              헤더 표시는 100행/64KiB로 제한됩니다. 원본 복사는 사용할 수 없습니다.
             </div>
           )}
           {response.headers.length > 0 ? (
             <div className="response-table-wrap">
               <table className="response-table">
-                <thead><tr><th>NAME</th><th>VALUE</th></tr></thead>
+                <thead><tr><th>이름</th><th>값</th></tr></thead>
                 <tbody>
                   {response.headers.map((header, index) => (
                     <tr key={`${header.key}-${index}`}>
@@ -568,7 +568,7 @@ export function ResponseViewer({
               </table>
             </div>
           ) : (
-            <div className="response-empty">No response headers.</div>
+            <div className="response-empty">응답 헤더가 없습니다.</div>
           )}
         </section>
       )}
@@ -581,7 +581,7 @@ export function ResponseViewer({
           className="response-panel"
         >
           <div className="response-actions">
-            <span className="dim">Set-Cookie values are always masked in the viewer.</span>
+            <span className="dim">Set-Cookie 값은 보기 화면에서 항상 마스킹됩니다.</span>
             <span className="spacer" />
             <button
               type="button"
@@ -592,7 +592,7 @@ export function ResponseViewer({
                 "마스킹된 응답 Cookie를 복사하지 못했습니다.",
               )}
             >
-              Copy masked cookies
+              마스킹된 쿠키 복사
             </button>
             <button
               type="button"
@@ -601,13 +601,13 @@ export function ResponseViewer({
               title={canCopyRawCookies ? "확인 후 현재 Set-Cookie 원문을 한 번 복사" : rawUnavailableTitle}
               onClick={() => void copyRaw("cookies")}
             >
-              {copyingRaw === "cookies" ? "Copying..." : "Copy original cookies"}
+              {copyingRaw === "cookies" ? "복사 중…" : "원본 쿠키 복사"}
             </button>
           </div>
           {response.cookies.length > 0 ? (
             <div className="response-table-wrap">
               <table className="response-table">
-                <thead><tr><th>NAME</th><th>VALUE</th><th>ATTRIBUTES</th></tr></thead>
+                <thead><tr><th>이름</th><th>값</th><th>속성</th></tr></thead>
                 <tbody>
                   {response.cookies.map((cookie, index) => (
                     <tr key={`${cookie.name}-${index}`}>
@@ -627,7 +627,7 @@ export function ResponseViewer({
             </div>
           ) : (
             <div className="response-empty">
-              No visible Set-Cookie headers. Browser preview cannot expose Set-Cookie values.
+              표시할 Set-Cookie 헤더가 없습니다. 브라우저 미리보기에서는 Set-Cookie 값을 노출할 수 없습니다.
             </div>
           )}
         </section>

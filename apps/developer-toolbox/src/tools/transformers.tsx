@@ -70,7 +70,7 @@ const runHtmlEntityDecode = (input: string) => runTextTransform(htmlEntityDecode
 export function UrlEncoder() {
   return (
     <TransformerTool
-      placeholder="Text to URL component-encode..."
+      placeholder="URL 컴포넌트로 인코딩할 텍스트를 입력하세요..."
       run={runUrlEncode}
       clearOutputOnInput
     />
@@ -79,7 +79,7 @@ export function UrlEncoder() {
 export function UrlDecoder() {
   return (
     <TransformerTool
-      placeholder="URL component-encoded text..."
+      placeholder="URL 컴포넌트로 인코딩된 텍스트를 입력하세요..."
       run={runUrlDecode}
       clearOutputOnInput
     />
@@ -89,7 +89,7 @@ export function UrlDecoder() {
 export function HtmlEntityEncoder() {
   return (
     <TransformerTool
-      placeholder="Text to HTML-entity encode..."
+      placeholder="HTML 엔터티로 인코딩할 텍스트를 입력하세요..."
       run={runHtmlEntityEncode}
       clearOutputOnInput
     />
@@ -99,7 +99,7 @@ export function HtmlEntityEncoder() {
 export function HtmlEntityDecoder() {
   return (
     <TransformerTool
-      placeholder="HTML-entity encoded text..."
+      placeholder="HTML 엔터티로 인코딩된 텍스트를 입력하세요..."
       run={runHtmlEntityDecode}
       clearOutputOnInput
     />
@@ -123,7 +123,7 @@ export function convertTimestamp(input: string) {
 }
 
 export function TimestampConverter() {
-  return <TransformerTool placeholder="Unix timestamp (seconds) or ISO date..." run={convertTimestamp} />;
+  return <TransformerTool placeholder="Unix 타임스탬프(초) 또는 ISO 날짜를 입력하세요..." run={convertTimestamp} />;
 }
 
 /** UPPER/lower/Pascal/camel/kebab/snake 6종 표기를 한 번에 계산해 여러 줄 문자열로 합친다. */
@@ -147,5 +147,5 @@ export function convertCase(input: string): string {
 }
 
 export function CaseConverter() {
-  return <TransformerTool placeholder="Text to convert..." run={(i) => ok(convertCase(i))} />;
+  return <TransformerTool placeholder="변환할 텍스트를 입력하세요..." run={(i) => ok(convertCase(i))} />;
 }

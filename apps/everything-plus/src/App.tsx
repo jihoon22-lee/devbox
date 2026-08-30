@@ -3,6 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
+import { isImeComposing } from "@devbox/a11y";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   addRoot,
@@ -51,20 +52,20 @@ const FILTER_ERROR = "검색 필터를 사용할 수 없습니다.";
 
 const EMPTY_FILTER: SearchFilter = {};
 const CONTENT_STATUS_OPTIONS = [
-  ["", "Any content status"],
-  ["indexed", "Indexed"],
-  ["truncated", "Truncated / partial"],
-  ["failed", "Failed extraction"],
-  ["not_indexed", "Not indexed"],
-  ["too_large", "Too large"],
-  ["unsupported_encoding", "Unsupported encoding"],
-  ["read_error", "Read error"],
-  ["timeout", "Timed out"],
-  ["changed_during_read", "Changed during read"],
-  ["skipped_sensitive", "Skipped sensitive"],
-  ["no_text", "No text"],
-  ["unsupported_encrypted", "Unsupported encrypted"],
-  ["extract_error", "Extraction error"],
+  ["", "모든 내용 상태"],
+  ["indexed", "색인됨"],
+  ["truncated", "일부/잘림"],
+  ["failed", "추출 실패"],
+  ["not_indexed", "색인되지 않음"],
+  ["too_large", "너무 큼"],
+  ["unsupported_encoding", "지원하지 않는 인코딩"],
+  ["read_error", "읽기 오류"],
+  ["timeout", "시간 초과"],
+  ["changed_during_read", "읽는 중 변경됨"],
+  ["skipped_sensitive", "민감정보 건너뜀"],
+  ["no_text", "텍스트 없음"],
+  ["unsupported_encrypted", "지원하지 않는 암호화"],
+  ["extract_error", "추출 오류"],
 ] as const;
 
 function utf8ByteLength(value: string): number {
@@ -136,9 +137,9 @@ function dateInputValue(timestamp: number | undefined): string {
 }
 
 function contentStatusLabel(status: string | null | undefined, truncated = false): string {
-  if (truncated || status === "truncated" || status === "partial") return "Truncated / partial";
-  if (!status) return "Not indexed";
-  return status === "indexed" ? "Indexed" : status.replace(/_/g, " ");
+  if (truncated || status === "truncated" || status === "partial") return "일부/잘림";
+  if (!status) return "색인되지 않음";
+  return status === "indexed" ? "색인됨" : status.replace(/_/g, " ");
 }
 
 function fmtSize(bytes: number): string {
@@ -170,8 +171,8 @@ function watcherTitle(status: RootStatus): string {
   }
   if (status.error) return "증분 인덱스를 확인해야 합니다.";
   return status.watchMode === "polling"
-    ? "WSL UNC 루트는 Linux 경로 대소문자를 보존하며 bounded metadata polling으로 반영합니다."
-    : "네이티브 파일 시스템 watcher";
+    ? "WSL UNC 루트는 Linux 경로 대소문자를 보존하며 제한된 메타데이터 폴링으로 반영합니다."
+    : "네이티브 파일 시스템 감시";
 }
 
 interface ResultContext {
@@ -551,8 +552,8 @@ export default function App() {
     });
   };
 
-  const onOpenActive = async () => {
-    const path = activeIdx >= 0 ? activePath(activeIdx) : null;
+  const onOpenActive = async (index = activeIdx) => {
+    const path = index >= 0 ? activePath(index) : null;
     if (!path) return;
     setError(null);
     try {
@@ -563,15 +564,21 @@ export default function App() {
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (isImeComposing(e)) return;
+    const target = e.target instanceof HTMLElement ? e.target : null;
+    if (target?.closest("button, a, input, select, textarea, [contenteditable='true']")) return;
+    const row = target?.closest<HTMLElement>("[data-result-index]");
+    const focusedIndex = row ? Number.parseInt(row.dataset.resultIndex ?? "", 10) : activeIdx;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       moveActive(1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       moveActive(-1);
-    } else if (e.key === "Enter") {
+    } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      void onOpenActive();
+      if (Number.isInteger(focusedIndex)) setActiveIdx(focusedIndex);
+      void onOpenActive(focusedIndex);
     } else if (e.key === "Escape") {
       setQuery("");
       setActiveIdx(-1);
@@ -597,16 +604,16 @@ export default function App() {
       label: target.displayName,
     }));
     return [
-      { type: "item", id: "open", label: "Open" },
-      { type: "item", id: "reveal", label: "Show in folder" },
+      { type: "item", id: "open", label: "열기" },
+      { type: "item", id: "reveal", label: "폴더에서 보기" },
       { type: "separator", id: "copy-separator" },
-      { type: "item", id: "copy-path", label: "Copy path" },
-      { type: "item", id: "copy-name", label: "Copy file name" },
+      { type: "item", id: "copy-path", label: "경로 복사" },
+      { type: "item", id: "copy-name", label: "파일 이름 복사" },
       { type: "separator", id: "open-in-separator" },
       {
         type: "submenu",
         id: "open-in",
-        label: "Open in another app",
+        label: "다른 앱으로 열기",
         disabled: availableTargets === null || targetItems.length === 0,
         items: targetItems,
       },
@@ -652,20 +659,20 @@ export default function App() {
             aria-pressed={mode === "name"}
             onClick={() => setMode("name")}
           >
-            Name
+            이름
           </button>
           <button
             className={`mode-tab ${mode === "content" ? "active" : ""}`}
             aria-pressed={mode === "content"}
             onClick={() => setMode("content")}
           >
-            Content
+            내용
           </button>
         </div>
         <input
           className="search"
-          aria-label={mode === "content" ? "Search file contents" : "Search file names"}
-          placeholder={mode === "content" ? "Search file contents..." : "Search file names..."}
+          aria-label={mode === "content" ? "파일 내용 검색" : "파일 이름 검색"}
+          placeholder={mode === "content" ? "파일 내용 검색..." : "파일 이름 검색..."}
           value={query}
           maxLength={MAX_SEARCH_QUERY_BYTES}
           onChange={(e) => {
@@ -687,12 +694,12 @@ export default function App() {
         )}
         <span className="status" aria-live="polite">
           {status.indexing
-            ? `${status.cancel_requested ? "Cancelling..." : "Indexing..."} ${status.indexed_files.toLocaleString()} files`
-            : `${status.total_files.toLocaleString()} files`}
+            ? `${status.cancel_requested ? "취소 중…" : "색인 중…"} ${status.indexed_files.toLocaleString()}개 파일`
+            : `${status.total_files.toLocaleString()}개 파일`}
         </span>
         <span className="content-status" aria-live="polite">
-          Content {status.content_indexed_files.toLocaleString()} indexed · {status.content_failed_files.toLocaleString()} skipped
-          {status.content_truncated_files > 0 && ` · ${status.content_truncated_files.toLocaleString()} truncated`}
+          내용 {status.content_indexed_files.toLocaleString()}개 색인됨 · {status.content_failed_files.toLocaleString()}개 건너뜀
+          {status.content_truncated_files > 0 && ` · ${status.content_truncated_files.toLocaleString()}개 일부/잘림`}
         </span>
         <button
           className="btn"
@@ -700,7 +707,7 @@ export default function App() {
           disabled={status.cancel_requested || indexActionBusy}
           aria-busy={indexActionBusy}
         >
-          {status.indexing ? "Cancel" : "Re-index"}
+          {status.indexing ? "취소" : "다시 색인"}
         </button>
       </header>
 
@@ -714,7 +721,7 @@ export default function App() {
       {error && <div className="error">{error}</div>}
       {regexError && <div className="error">{regexError}</div>}
 
-      <div className="query-tools" aria-label="Saved searches and filters">
+      <div className="query-tools" aria-label="저장된 검색과 필터">
         <button
           className="btn"
           type="button"
@@ -722,14 +729,14 @@ export default function App() {
           aria-controls="search-filters"
           onClick={() => setFilterOpen((open) => !open)}
         >
-          Filters{filterCount(filter) > 0 ? ` (${filterCount(filter)})` : ""}
+          필터{filterCount(filter) > 0 ? ` (${filterCount(filter)})` : ""}
         </button>
         <label className="saved-name-label">
-          Save current query as
+          현재 검색어 저장 이름
           <input
             className="saved-name"
-            aria-label="Saved query name"
-            placeholder="Saved query name"
+            aria-label="저장된 검색어 이름"
+            placeholder="저장된 검색어 이름"
             value={savedName}
             maxLength={MAX_SAVED_NAME_BYTES}
             onChange={(event) => setSavedName(event.currentTarget.value)}
@@ -747,15 +754,15 @@ export default function App() {
           }
           aria-busy={savedQueryBusy}
         >
-          Save query
+          검색어 저장
         </button>
         <select
           className="saved-select"
-          aria-label="Load saved query"
+          aria-label="저장된 검색어 불러오기"
           value={savedSelection}
           onChange={(event) => onLoadSavedQuery(event.currentTarget.value)}
         >
-          <option value="">Load saved query…</option>
+          <option value="">저장된 검색어 불러오기…</option>
           {savedQueries.map((saved) => (
             <option key={saved.id} value={saved.id}>
               {saved.name}
@@ -763,7 +770,7 @@ export default function App() {
           ))}
         </select>
         {savedQueries.length > 0 && (
-          <div className="saved-list" aria-label="Saved query actions">
+          <div className="saved-list" aria-label="저장된 검색어 작업">
             {savedQueries.map((saved) => (
               <span className="saved-chip" key={saved.id}>
                 <button type="button" className="saved-load" onClick={() => onLoadSavedQuery(String(saved.id))}>
@@ -772,8 +779,8 @@ export default function App() {
                 <button
                   type="button"
                   className="saved-delete"
-                  aria-label={`Delete saved query ${saved.name}`}
-                  title={`Delete ${saved.name}`}
+                  aria-label={`저장된 검색어 ${saved.name} 삭제`}
+                  title={`${saved.name} 삭제`}
                   onClick={() => void onDeleteSavedQuery(saved)}
                   disabled={savedQueryBusy}
                 >
@@ -786,11 +793,11 @@ export default function App() {
       </div>
 
       {filterOpen && (
-        <section id="search-filters" className="filter-panel" aria-label="Search filters">
+        <section id="search-filters" className="filter-panel" aria-label="검색 필터">
           <label>
-            Extensions
+            확장자
             <input
-              aria-label="File extensions"
+              aria-label="파일 확장자"
               placeholder="rs, md, pdf"
               value={extensionInput}
               onChange={(event) => {
@@ -807,9 +814,9 @@ export default function App() {
             />
           </label>
           <label>
-            Minimum size (bytes)
+            최소 크기(바이트)
             <input
-              aria-label="Minimum size in bytes"
+              aria-label="바이트 단위 최소 크기"
               type="number"
               min={0}
               value={filter.minSize ?? ""}
@@ -830,9 +837,9 @@ export default function App() {
             />
           </label>
           <label>
-            Maximum size (bytes)
+            최대 크기(바이트)
             <input
-              aria-label="Maximum size in bytes"
+              aria-label="바이트 단위 최대 크기"
               type="number"
               min={0}
               value={filter.maxSize ?? ""}
@@ -853,9 +860,9 @@ export default function App() {
             />
           </label>
           <label>
-            Modified after
+            다음 시간 이후 수정
             <input
-              aria-label="Modified after"
+              aria-label="다음 시간 이후 수정"
               type="datetime-local"
               value={dateInputValue(filter.modifiedAfter)}
               onChange={(event) => {
@@ -876,9 +883,9 @@ export default function App() {
             />
           </label>
           <label>
-            Modified before
+            다음 시간 이전 수정
             <input
-              aria-label="Modified before"
+              aria-label="다음 시간 이전 수정"
               type="datetime-local"
               value={dateInputValue(filter.modifiedBefore)}
               onChange={(event) => {
@@ -899,9 +906,9 @@ export default function App() {
             />
           </label>
           <label>
-            Source root
+            검색 루트
             <select
-              aria-label="Source root"
+              aria-label="검색 루트"
               value={filter.sourceRootId ?? ""}
               onChange={(event) => {
                 const value = event.currentTarget.value;
@@ -917,14 +924,14 @@ export default function App() {
                 setFilter(next);
               }}
             >
-              <option value="">All roots</option>
+              <option value="">모든 루트</option>
               {roots.map((root) => <option key={root.id} value={root.id}>{root.path}</option>)}
             </select>
           </label>
           <label>
-            Content status
+            내용 상태
             <select
-              aria-label="Content status filter"
+              aria-label="내용 상태 필터"
               value={filter.contentStatus ?? ""}
               onChange={(event) => {
                 const value = event.currentTarget.value;
@@ -941,27 +948,27 @@ export default function App() {
             </select>
           </label>
           <button className="btn" type="button" onClick={clearFilters} disabled={isFilterEmpty(filter)}>
-            Clear filters
+            필터 지우기
           </button>
-          <p className="filter-note">Filters are applied in the native bounded query; saved searches store only query and filter definitions.</p>
+          <p className="filter-note">필터는 네이티브 제한 쿼리에 적용되며, 저장된 검색에는 검색어와 필터 정의만 보관됩니다.</p>
         </section>
       )}
 
       <div className="roots">
-        <span className="dim">Roots:</span>
+        <span className="dim">루트:</span>
         {roots.map((r) => {
           const ws = watchStatus.find((w) => w.root === r.path);
           return (
-            <span key={r.path} className="root-chip" title={r.content ? "content index on" : "name only"}>
+            <span key={r.path} className="root-chip" title={r.content ? "내용 색인 사용" : "이름만"}>
               {r.path}
               {ws?.sourceKind === "wsl" && <span className="root-tag">WSL</span>}
-              {r.content && <span className="root-tag">content</span>}
+              {r.content && <span className="root-tag">내용</span>}
               {ws && (
                 <span className={`watch-state ${ws.error ? "watch-error" : ""}`} title={watcherTitle(ws)}>
                   {watcherLabel(ws)}
                 </span>
               )}
-              <button className="root-del" title="Remove root" onClick={() => void removeRoot(r.path).then(loadMeta)}>
+              <button className="root-del" title="루트 제거" onClick={() => void removeRoot(r.path).then(loadMeta)}>
                 ✕
               </button>
             </span>
@@ -974,15 +981,15 @@ export default function App() {
           maxLength={MAX_ROOT_BYTES}
           onChange={(e) => setNewRoot(e.currentTarget.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") void onAddRoot();
+            if (!isImeComposing(e) && e.key === "Enter") void onAddRoot();
           }}
         />
         <label className="regex-toggle">
           <input type="checkbox" checked={newRootContent} onChange={(e) => setNewRootContent(e.currentTarget.checked)} />
-          index content
+          내용 색인
         </label>
         <button className="btn" onClick={() => void onAddRoot()}>
-          Add
+          추가
         </button>
       </div>
 
@@ -991,11 +998,11 @@ export default function App() {
           <table>
             <thead>
               <tr>
-                <th>NAME</th>
-                <th>SNIPPET</th>
-                <th>PATH</th>
-                <th>CONTENT</th>
-                <th />
+                <th>이름</th>
+                <th>요약</th>
+                <th>경로</th>
+                <th>내용</th>
+                <th>작업</th>
               </tr>
             </thead>
             <tbody>
@@ -1007,6 +1014,7 @@ export default function App() {
                   tabIndex={0}
                   aria-selected={i === activeIdx}
                   onMouseEnter={() => setActiveIdx(i)}
+                  onFocus={() => setActiveIdx(i)}
                   onClick={() => {
                     setActiveIdx(i);
                     void onRowAction(f.path, "open");
@@ -1020,23 +1028,23 @@ export default function App() {
                   <td className="mono dim">{f.path}</td>
                   <td className="status-cell">{contentStatusLabel(f.content_status, f.truncated)}</td>
                   <td className="row-actions">
-                    <button className="mini" title="Open" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "open"); }}>Open</button>
-                    <button className="mini" title="Show in folder" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "folder"); }}>Folder</button>
-                    <button className="mini" title="Copy path" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "copy"); }}>Copy</button>
+                    <button className="mini" title="열기" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "open"); }}>열기</button>
+                    <button className="mini" title="폴더에서 보기" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "folder"); }}>폴더</button>
+                    <button className="mini" title="경로 복사" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "copy"); }}>복사</button>
                   </td>
                 </tr>
               ))}
               {query.trim() && contentResults.length === 0 && (
                 <tr>
                   <td colSpan={5} className="empty">
-                    No content matches
+                    일치하는 내용이 없습니다
                   </td>
                 </tr>
               )}
               {!query.trim() && (
                 <tr>
                   <td colSpan={5} className="empty">
-                    Type to search file contents
+                    내용을 검색하려면 입력하세요
                   </td>
                 </tr>
               )}
@@ -1046,11 +1054,11 @@ export default function App() {
           <table>
             <thead>
               <tr>
-                <th>NAME</th>
-                <th>PATH</th>
-                <th>SIZE</th>
-                <th>CONTENT</th>
-                <th />
+                <th>이름</th>
+                <th>경로</th>
+                <th>크기</th>
+                <th>내용</th>
+                <th>작업</th>
               </tr>
             </thead>
             <tbody>
@@ -1062,6 +1070,7 @@ export default function App() {
                   tabIndex={0}
                   aria-selected={i === activeIdx}
                   onMouseEnter={() => setActiveIdx(i)}
+                  onFocus={() => setActiveIdx(i)}
                   onClick={() => {
                     setActiveIdx(i);
                     void onRowAction(f.path, "open");
@@ -1075,23 +1084,23 @@ export default function App() {
                   <td className="mono">{fmtSize(f.size)}</td>
                   <td className="status-cell">{contentStatusLabel(f.content_status, f.content_truncated)}</td>
                   <td className="row-actions">
-                    <button className="mini" title="Open" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "open"); }}>Open</button>
-                    <button className="mini" title="Show in folder" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "folder"); }}>Folder</button>
-                    <button className="mini" title="Copy path" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "copy"); }}>Copy</button>
+                    <button className="mini" title="열기" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "open"); }}>열기</button>
+                    <button className="mini" title="폴더에서 보기" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "folder"); }}>폴더</button>
+                    <button className="mini" title="경로 복사" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "copy"); }}>복사</button>
                   </td>
                 </tr>
               ))}
               {query.trim() && results.length === 0 && (
                 <tr>
                   <td colSpan={5} className="empty">
-                    No results
+                    결과가 없습니다
                   </td>
                 </tr>
               )}
               {!query.trim() && (
                 <tr>
                   <td colSpan={5} className="empty">
-                    Type to search
+                    검색어를 입력하세요
                   </td>
                 </tr>
               )}
@@ -1106,7 +1115,7 @@ export default function App() {
         items={contextMenuItems}
         onSelect={onContextMenuSelect}
         onClose={contextMenu.close}
-        ariaLabel="Search result actions"
+        ariaLabel="검색 결과 작업"
       />
     </div>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { friendlyErrorMessage } from "../api";
 import {
   draftFromService,
   EMPTY_SERVICE_DRAFT,
@@ -88,9 +89,11 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
     try {
       await onSave(toServiceInput(draft));
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      const backendErrors = serviceFieldErrorFromBackend(message);
-      setErrors(Object.keys(backendErrors).length > 0 ? backendErrors : { name: message });
+      const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
+      const backendErrors = serviceFieldErrorFromBackend(raw);
+      setErrors(Object.keys(backendErrors).length > 0
+        ? backendErrors
+        : { name: friendlyErrorMessage(cause) });
     } finally {
       setSaving(false);
     }
@@ -103,7 +106,7 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
       <div className="editor-main">
         <header className="editor-header">
           <div>
-            <span className="eyebrow">SERVICE EDITOR</span>
+            <span className="eyebrow">서비스 편집기</span>
             <h2>{title}</h2>
             <p className="subtitle">서비스 정의와 재시작·헬스체크 정책을 저장합니다.</p>
           </div>

@@ -13,7 +13,7 @@ export function routeOpenRequest(request: OpenRequest): RepoOpenAction {
 
   const path = request.target.path;
   if (path.length === 0 || path.length > MAX_PATH_CHARS || path.includes("\0")) {
-    return { kind: "error", message: "요청한 repository 경로를 사용할 수 없습니다" };
+    return { kind: "error", message: "요청한 저장소 경로를 사용할 수 없습니다" };
   }
   return { kind: "prepareRepository", path };
 }

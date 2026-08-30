@@ -58,4 +58,56 @@ except SystemExit as error:
 else:
     raise AssertionError("clarifications must not bypass the license allowlist")
 
+axe_integrity = integrities[("axe-core", "4.13.0")]
+approved = module.flatten_pnpm_licenses(
+    {"MPL-2.0": [{"name": "axe-core", "versions": ["4.13.0"]}]},
+    {
+        "allowedPnpmLicenses": [],
+        "licenseClarifications": [],
+        "packageLicenseApprovals": [dict(policy["packageLicenseApprovals"][0])],
+    },
+    {("axe-core", "4.13.0"): axe_integrity},
+)
+assert approved == [
+    {
+        "name": "axe-core",
+        "version": "4.13.0",
+        "license": "MPL-2.0",
+        "source": "https://github.com/dequelabs/axe-core/tree/v4.13.0",
+        "integrity": axe_integrity,
+    }
+]
+
+try:
+    module.flatten_pnpm_licenses(
+        {"MPL-2.0": [{"name": "other-package", "versions": ["1.0.0"]}]},
+        {
+            "allowedPnpmLicenses": [],
+            "licenseClarifications": [],
+            "packageLicenseApprovals": [dict(policy["packageLicenseApprovals"][0])],
+        },
+        {("other-package", "1.0.0"): "sha512-other"},
+    )
+except SystemExit as error:
+    assert "unapproved pnpm license expression" in str(error)
+else:
+    raise AssertionError("an exact package approval must not allow another MPL package")
+
+bad_approval_policy = {
+    "allowedPnpmLicenses": [],
+    "licenseClarifications": [],
+    "packageLicenseApprovals": [dict(policy["packageLicenseApprovals"][0])],
+}
+bad_approval_policy["packageLicenseApprovals"][0]["integrity"] = "sha512-wrong"
+try:
+    module.flatten_pnpm_licenses(
+        {"MPL-2.0": [{"name": "axe-core", "versions": ["4.13.0"]}]},
+        bad_approval_policy,
+        {("axe-core", "4.13.0"): axe_integrity},
+    )
+except SystemExit as error:
+    assert "approval integrity mismatch" in str(error)
+else:
+    raise AssertionError("a package approval must stay bound to its locked integrity")
+
 print("dependency policy regression tests passed")

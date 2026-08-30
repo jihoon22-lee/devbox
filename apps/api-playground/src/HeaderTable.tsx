@@ -49,7 +49,7 @@ export function HeaderTable({
             </label>
             <input
               aria-label={`${index + 1}번 header 이름`}
-              placeholder="Header name"
+              placeholder="헤더 이름"
               value={row.key}
               onChange={(event) => onChange(updateHeader(rows, index, { key: event.currentTarget.value }))}
               spellCheck={false}
@@ -103,7 +103,7 @@ export function HeaderTable({
         disabled={rows.length >= MAX_REQUEST_HEADER_ROWS}
         onClick={() => onChange(addHeader(rows))}
       >
-        + Header 추가
+        + 헤더 추가
       </button>
 
       <div className="header-notice" role="note">

@@ -88,7 +88,7 @@ export function CookieEditor({
               </label>
               <input
                 aria-label={`${index + 1}번 cookie 이름`}
-                placeholder="Cookie name"
+                placeholder="쿠키 이름"
                 value={row.name}
                 onChange={(event) =>
                   onChange(updateCookie(rows, index, { name: event.currentTarget.value }))
@@ -170,7 +170,7 @@ export function CookieEditor({
           onChange(addCookie(rows));
         }}
       >
-        + Cookie 추가
+        + 쿠키 추가
       </button>
 
       <div className="header-notice" role="note">

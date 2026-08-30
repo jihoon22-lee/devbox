@@ -23,7 +23,7 @@ export function JsonYamlTool() {
     if (!result.output) return;
     void navigator.clipboard.writeText(result.output)
       .then(() => setActionError(null))
-      .catch(() => setActionError("변환 결과를 clipboard에 복사하지 못했습니다."));
+      .catch(() => setActionError("변환 결과를 클립보드에 복사하지 못했습니다."));
   };
 
   const save = () => {

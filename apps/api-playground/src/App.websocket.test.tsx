@@ -48,7 +48,7 @@ async function renderReady() {
   fireEvent.change(screen.getByPlaceholderText("https://api.example.com/users"), {
     target: { value: "ws://localhost:9000/socket" },
   });
-  const connect = screen.getByRole("button", { name: "Connect WebSocket" }) as HTMLButtonElement;
+  const connect = screen.getByRole("button", { name: "WebSocket 연결" }) as HTMLButtonElement;
   await waitFor(() => expect(connect.disabled).toBe(false));
   return { ...view, connect };
 }
@@ -84,8 +84,8 @@ describe("API Playground WebSocket lifecycle", () => {
     fireEvent.click(connect);
 
     await waitFor(() => expect(stopMock).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("Closed", { selector: "span.websocket-state" })).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Disconnect WebSocket" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("닫힘", { selector: "span.websocket-state" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "WebSocket 연결 해제" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("releases an installed handle on terminal state", async () => {
@@ -121,8 +121,8 @@ describe("API Playground WebSocket lifecycle", () => {
     }));
 
     await waitFor(() => expect(stopMock).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("Error", { selector: "span.websocket-state" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Save binary message 1" }));
+    expect(screen.getByText("오류", { selector: "span.websocket-state" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Binary 메시지 1 저장" }));
     await waitFor(() => expect(saveBinaryMock).toHaveBeenCalledWith(1));
   });
 });

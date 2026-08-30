@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
 import {
   acceptWorkspaceTaskControl,
@@ -52,7 +53,7 @@ vi.mock("./api", () => ({
   deleteJob: vi.fn(),
   deleteService: vi.fn(),
   exportDefinitions: vi.fn(async () => null),
-  friendlyErrorMessage: vi.fn((cause: unknown) => cause instanceof Error ? cause.message : String(cause)),
+  friendlyErrorMessage: vi.fn(() => "요청을 완료하지 못했습니다."),
   getServiceInstance: vi.fn(),
   getServiceObservability: vi.fn(async () => null),
   getWorkspaceTaskOperation: vi.fn(async () => null),
@@ -372,6 +373,12 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Run Manager context menus", () => {
+  it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
+    const { container } = render(<App />);
+    await screen.findByRole("heading", { name: "백업" });
+    await assertNoA11yViolations(container);
+  });
+
   it("gates managed workspace task run and requires explicit source trust", async () => {
     listWorkspaceTasksMock.mockResolvedValue([managedWorkspaceTask]);
     render(<App />);
@@ -436,7 +443,7 @@ describe("Run Manager context menus", () => {
     await waitFor(() => expect(runWorkspaceTaskOperationMock).toHaveBeenCalledWith(job.id, true));
     expect(runJobNowMock).not.toHaveBeenCalled();
     expect(await within(targetCard).findByLabelText("workspace task operation 상태: 실행 중")).toBeTruthy();
-    expect(within(targetCard).getByText(/child 진행: 보고서: 완료 · 백업: 실행 중/)).toBeTruthy();
+    expect(within(targetCard).getByText(/하위 작업 진행: 보고서: 완료 · 백업: 실행 중/)).toBeTruthy();
 
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(within(targetCard).getByRole("button", { name: "오케스트레이션 중지" }));
@@ -489,7 +496,7 @@ describe("Run Manager context menus", () => {
     expect(diagnostic).toBeTruthy();
     fireEvent.click(diagnostic);
     await waitFor(() => expect(openWorkspaceTaskDiagnosticMock).toHaveBeenCalledWith("child-run-1", 0));
-    expect(within(targetCard).getAllByText("일부 diagnostics만 표시됨")).toHaveLength(2);
+    expect(within(targetCard).getAllByText("일부 진단만 표시됨")).toHaveLength(2);
   });
 
   it("previews task-control handoffs in a trapped dialog and records the accepted receipt", async () => {
@@ -542,6 +549,18 @@ describe("Run Manager context menus", () => {
     }
   });
 
+  it("selects job cards from the keyboard while ignoring IME composition", async () => {
+    listJobsMock.mockResolvedValue([job, secondJob]);
+    render(<App />);
+    await screen.findByRole("heading", { name: "보고서" });
+    const target = card("보고서");
+
+    fireEvent.keyDown(target, { key: "Enter", isComposing: true });
+    expect(target.getAttribute("aria-current")).toBeNull();
+    fireEvent.keyDown(target, { key: " " });
+    expect(target.getAttribute("aria-current")).toBe("true");
+  });
+
   it("toggles the exact keyboard-selected job and restores row focus", async () => {
     render(<App />);
     await screen.findByRole("heading", { name: "백업" });
@@ -567,7 +586,9 @@ describe("Run Manager context menus", () => {
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "비활성화" }));
 
-    await screen.findByText(/workspace-state-failed/);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("요청을 완료하지 못했습니다.");
+    expect(screen.queryByText(/workspace-state-failed/)).toBeNull();
     expect(target.querySelector("button.button-primary")).toBeDisabled();
   });
 

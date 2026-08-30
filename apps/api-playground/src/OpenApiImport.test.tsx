@@ -45,7 +45,7 @@ describe("OpenApiImport", () => {
 
     await screen.findByText("GET /users");
     expect(onApply).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "현재 draft에 적용" }));
+    fireEvent.click(screen.getByRole("button", { name: "현재 초안에 적용" }));
     expect(onApply).toHaveBeenCalledTimes(1);
     expect(onApply.mock.calls[0][0].request.url).toBe("https://api.example.test/users");
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -61,7 +61,7 @@ describe("OpenApiImport", () => {
 
     await screen.findByText("GET /a");
     await screen.findByText("POST /b");
-    fireEvent.click(screen.getByRole("button", { name: "새 Collection에 추가 (2)" }));
+    fireEvent.click(screen.getByRole("button", { name: "새 컬렉션에 추가 (2)" }));
     await waitFor(() => expect(onAddToCollection).toHaveBeenCalledTimes(1));
     expect(onAddToCollection.mock.calls[0][0]).toHaveLength(2);
   });

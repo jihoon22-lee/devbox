@@ -24,6 +24,10 @@
   Port Manager correlation/action/timeline, Webhook deterministic rule/conflict preview, bounded
   OpenAPI draft와 disabled Run service export를 묶는다. source 검증과 Windows packaged 실기는
   분리하며 실제 앱 간 실행 증거는 #493 release gate에 남긴다.
+- W09는 Everything+ WSL root와 Code Pad·Knowledge Base WSL file workflow, lazy Mermaid 및
+  초기 bundle 측정 기반을 완료했다. W10은 이 기반을 15개 앱 전부로 확장해 공통 semantic
+  token·한국어 UI·keyboard/focus/IME·axe smoke·manifest/budget gate를 한 품질 계약으로 묶는다.
+  jsdom이 측정할 수 없는 색 대비와 packaged Windows 고대비·screen reader 확인은 #493에 남긴다.
 
 ## Phase 1 — Tauri 기본기 ✅
 - [x] **port-manager** — IPC, Rust 기초, netstat 파싱, 포트/프로세스 관리

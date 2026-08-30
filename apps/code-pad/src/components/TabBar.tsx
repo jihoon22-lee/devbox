@@ -102,9 +102,9 @@ export default function TabBar({
     <>
       <div
         className="tab-bar"
-        role="tablist"
-        aria-label={`${view + 1}번 뷰 문서 탭`}
-        aria-orientation="horizontal"
+        role={visibleDocIds.length > 0 ? "tablist" : undefined}
+        aria-label={visibleDocIds.length > 0 ? `${view + 1}번 뷰 문서 탭` : undefined}
+        aria-orientation={visibleDocIds.length > 0 ? "horizontal" : undefined}
       >
         {visibleDocIds.map((docId, index) => {
         const doc = docsById.get(docId);

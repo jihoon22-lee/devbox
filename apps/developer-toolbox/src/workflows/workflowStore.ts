@@ -40,7 +40,7 @@ export interface WorkflowMetadata {
   readonly pipelines: readonly SavedPipelineMetadata[];
 }
 
-export const WORKFLOW_STORAGE_ERROR = "Toolbox workflow metadata를 저장하거나 읽지 못했습니다.";
+export const WORKFLOW_STORAGE_ERROR = "Toolbox 워크플로 메타데이터를 저장하거나 읽지 못했습니다.";
 
 const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 

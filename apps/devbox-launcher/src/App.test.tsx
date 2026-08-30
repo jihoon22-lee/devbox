@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
 import * as api from "./api";
 
@@ -14,7 +15,7 @@ vi.mock("./api", () => ({
   search: vi.fn(async () => ({
     results: [
       { id: "catalog/app/workbench", revision: "a".repeat(64), label: "Workbench", detail: "Devbox 앱", source: "catalog", targetApp: "workbench", targetKind: "app", stale: false, explicitPreview: false, favorite: false, recent: false },
-      { id: "builtin/clipboard-preview", revision: "b".repeat(64), label: "Clipboard 미리보기", detail: "현재 선택 영역, 없으면 clipboard · 전달하지 않음", source: "launcher", targetApp: "devbox-launcher", targetKind: "clipboard-preview", stale: false, explicitPreview: true, favorite: false, recent: false },
+      { id: "builtin/clipboard-preview", revision: "b".repeat(64), label: "클립보드 미리보기", detail: "현재 선택 영역, 없으면 클립보드 · 전달하지 않음", source: "launcher", targetApp: "devbox-launcher", targetKind: "clipboard-preview", stale: false, explicitPreview: true, favorite: false, recent: false },
     ],
     sources: [],
   })),
@@ -25,7 +26,7 @@ vi.mock("./api", () => ({
 const DEFAULT_SEARCH_RESPONSE = {
   results: [
     { id: "catalog/app/workbench", revision: "a".repeat(64), label: "Workbench", detail: "Devbox 앱", source: "catalog", targetApp: "workbench", targetKind: "app", stale: false, explicitPreview: false, favorite: false, recent: false },
-    { id: "builtin/clipboard-preview", revision: "b".repeat(64), label: "Clipboard 미리보기", detail: "현재 선택 영역, 없으면 clipboard · 전달하지 않음", source: "launcher", targetApp: "devbox-launcher", targetKind: "clipboard-preview", stale: false, explicitPreview: true, favorite: false, recent: false },
+    { id: "builtin/clipboard-preview", revision: "b".repeat(64), label: "클립보드 미리보기", detail: "현재 선택 영역, 없으면 클립보드 · 전달하지 않음", source: "launcher", targetApp: "devbox-launcher", targetKind: "clipboard-preview", stale: false, explicitPreview: true, favorite: false, recent: false },
   ],
   sources: [],
 };
@@ -36,6 +37,12 @@ describe("Devbox Launcher", () => {
     vi.mocked(api.search).mockResolvedValue(DEFAULT_SEARCH_RESPONSE);
   });
   afterEach(() => cleanup());
+
+  it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
+    const { container } = render(<App />);
+    await screen.findByRole("option", { name: /Workbench/ });
+    await assertNoA11yViolations(container);
+  });
 
   it("loads catalog results without reading clipboard", async () => {
     render(<App />);
@@ -55,8 +62,8 @@ describe("Devbox Launcher", () => {
 
   it("only samples selected text for the explicit clipboard preview fallback", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("option", { name: /Clipboard 미리보기/ })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("option", { name: /^Clipboard 미리보기/ }));
+    await waitFor(() => expect(screen.getByRole("option", { name: /클립보드 미리보기/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("option", { name: /^클립보드 미리보기/ }));
     await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
     await waitFor(() => expect(screen.getByRole("button", { name: "닫기" })).toHaveFocus());
     expect(api.readCurrentText).toHaveBeenCalledTimes(1);
@@ -139,6 +146,8 @@ describe("Devbox Launcher", () => {
     expect(cancel).toHaveFocus();
     fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
     expect(continueButton).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: "Escape", keyCode: 229, isComposing: true });
+    expect(screen.getByRole("dialog", { name: "오래된 snapshot입니다" })).toBeInTheDocument();
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(api.launchResult).not.toHaveBeenCalled();

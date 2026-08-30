@@ -5,7 +5,7 @@ import type { Job, LogSearchResponse, Run } from "../types";
 import RunHistory, { collectRunLog } from "./RunHistory";
 
 vi.mock("../api", () => ({
-  friendlyErrorMessage: vi.fn((cause: unknown) => cause instanceof Error ? cause.message : String(cause)),
+  friendlyErrorMessage: vi.fn(() => "요청을 완료하지 못했습니다."),
   listRuns: vi.fn(),
   listActiveRuns: vi.fn(),
   openRunLogInLogLens: vi.fn(),

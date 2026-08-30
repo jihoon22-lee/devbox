@@ -111,7 +111,7 @@ type OAuthNotice = "authorized" | "remote-revoked" | "local-only";
 
 const emptyList = (): ListState => ({ items: [], nextCursor: null, loaded: false });
 const OAUTH_NOTICE_LABELS: Record<OAuthNotice, string> = {
-  authorized: "OAuth authorization이 완료되었습니다.",
+  authorized: "OAuth 인증이 완료되었습니다.",
   "remote-revoked": "OAuth grant를 원격과 로컬에서 제거했습니다.",
   "local-only": "원격 revoke를 확인하지 못했지만 OAuth grant를 로컬에서 제거했습니다.",
 };
@@ -675,12 +675,12 @@ function McpLab({ environment, native }: ProtocolLabProps) {
             연결과 목록 조회만으로 tool·resource·prompt를 실행하지 않습니다.
           </p>
         </div>
-        <span className="mcp-memory-badge">Protocol timeline/result · 메모리 전용</span>
+        <span className="mcp-memory-badge">프로토콜 타임라인/결과 · 메모리 전용</span>
       </div>
 
       <p className="dim mcp-storage-disclosure">
-        Protocol timeline/result는 메모리에만 유지됩니다. OAuth token은 Windows DPAPI로 암호화되어
-        revoke 또는 local removal 전까지 app-local grant store에 보관됩니다.
+        프로토콜 타임라인/결과는 메모리에만 유지됩니다. OAuth token은 Windows DPAPI로 암호화되어
+        revoke 또는 로컬 제거 전까지 앱 전용 grant 저장소에 보관됩니다.
       </p>
 
       {!native && (
@@ -691,22 +691,22 @@ function McpLab({ environment, native }: ProtocolLabProps) {
 
       <div className="mcp-profile">
         <label>
-          Transport
+          전송 방식
           <select
-            aria-label="MCP transport"
+            aria-label="MCP 전송 방식"
             value={transport}
             disabled={phase === "connecting" || phase === "disconnecting" || oauthBusy}
             onChange={(event) => void onTransportChange(event.currentTarget.value as McpTransport)}
           >
             <option value="http">HTTP</option>
-            <option value="stdio">stdio · native executable</option>
+            <option value="stdio">stdio · 네이티브 실행 파일</option>
           </select>
         </label>
         {transport === "http" ? (
           <label>
-            Endpoint
+            엔드포인트
             <input
-              aria-label="MCP endpoint"
+              aria-label="MCP 엔드포인트"
               type="url"
               value={endpoint}
               maxLength={8 * 1024}
@@ -722,50 +722,50 @@ function McpLab({ environment, native }: ProtocolLabProps) {
               stdio는 native executable만 실행합니다. WSL stdio와 shell command string은 지원하지 않습니다.
             </div>
             <div className="mcp-stdio-selection-row">
-              <span>Executable</span>
+              <span>실행 파일</span>
               <button
                 className="btn"
                 type="button"
-                aria-label="Choose executable"
+                aria-label="실행 파일 선택"
                 disabled={!native || connected || busy}
                 onClick={() => void onPickExecutable()}
               >
-                Choose executable
+                실행 파일 선택
               </button>
               <span role="status">{stdioExecutable ? stdioExecutable.label : "선택하지 않음"}</span>
             </div>
             <div className="mcp-stdio-selection-row">
-              <span>Working directory</span>
+              <span>작업 폴더</span>
               <button
                 className="btn"
                 type="button"
-                aria-label="Choose cwd"
+                aria-label="작업 폴더 선택"
                 disabled={!native || connected || busy}
                 onClick={() => void onPickCwd()}
               >
-                Choose cwd
+                작업 폴더 선택
               </button>
               <span role="status">{stdioCwd ? stdioCwd.label : "선택하지 않음"}</span>
               {stdioCwd && (
                 <button
                   className="btn"
                   type="button"
-                  aria-label="Clear cwd"
+                  aria-label="작업 폴더 지우기"
                   disabled={connected || busy}
                   onClick={() => setStdioCwd(null)}
                 >
-                  Clear
+                  지우기
                 </button>
               )}
             </div>
             <fieldset disabled={connected || busy}>
-              <legend>Arguments</legend>
+              <legend>인자</legend>
               {stdioArgs.map((value, index) => (
                 <div className="mcp-stdio-row" key={`arg-${index}`}>
                   <label>
-                    Argument {index + 1}
+                    인자 {index + 1}
                     <input
-                      aria-label={`stdio argument ${index + 1}`}
+                      aria-label={`stdio 인자 ${index + 1}`}
                       value={value}
                       maxLength={8 * 1024}
                       onChange={(event) => {
@@ -779,30 +779,30 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                   <button
                     className="btn"
                     type="button"
-                    aria-label={`Remove argument ${index + 1}`}
+                    aria-label={`인자 ${index + 1} 삭제`}
                     onClick={() => setStdioArgs(stdioArgs.filter((_, itemIndex) => itemIndex !== index))}
                   >
-                    Remove
+                    삭제
                   </button>
                 </div>
               ))}
               <button
                 className="btn"
                 type="button"
-                aria-label="Add argument"
+                aria-label="인자 추가"
                 onClick={() => setStdioArgs((current) => [...current, ""])}
               >
-                Add argument
+                인자 추가
               </button>
             </fieldset>
             <fieldset disabled={connected || busy}>
-              <legend>Environment bindings</legend>
+              <legend>환경 변수 연결</legend>
               {stdioEnvironment.map((binding, index) => (
                 <div className="mcp-stdio-row" key={`environment-${index}`}>
                   <label>
-                    Child name {index + 1}
+                    하위 이름 {index + 1}
                     <input
-                      aria-label={`stdio child name ${index + 1}`}
+                      aria-label={`stdio 하위 이름 ${index + 1}`}
                       value={binding.childName}
                       maxLength={256}
                       onChange={(event) => {
@@ -814,9 +814,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                     />
                   </label>
                   <label>
-                    Source name {index + 1}
+                    소스 이름 {index + 1}
                     <input
-                      aria-label={`stdio source name ${index + 1}`}
+                      aria-label={`stdio 소스 이름 ${index + 1}`}
                       list="mcp-stdio-environment-names"
                       value={binding.sourceName}
                       maxLength={256}
@@ -831,37 +831,37 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                   <button
                     className="btn"
                     type="button"
-                    aria-label={`Remove environment binding ${index + 1}`}
+                    aria-label={`환경 변수 연결 ${index + 1} 삭제`}
                     onClick={() => setStdioEnvironment(
                       stdioEnvironment.filter((_, itemIndex) => itemIndex !== index),
                     )}
                   >
-                    Remove
+                    삭제
                   </button>
                 </div>
               ))}
               <button
                 className="btn"
                 type="button"
-                aria-label="Add environment binding"
+                aria-label="환경 변수 연결 추가"
                 onClick={() => setStdioEnvironment((current) => [
                   ...current,
                   { childName: "", sourceName: "" },
                 ])}
               >
-                Add environment binding
+                환경 변수 연결 추가
               </button>
               <datalist id="mcp-stdio-environment-names">
                 {environment.map((variable) => <option key={variable.key} value={variable.key} />)}
               </datalist>
-              <p className="dim">Environment 값은 native process 시작 시에만 해석되며 화면이나 timeline에 표시되지 않습니다.</p>
+              <p className="dim">환경 변수 값은 네이티브 프로세스 시작 시에만 해석되며 화면이나 타임라인에 표시되지 않습니다.</p>
             </fieldset>
           </div>
         )}
         <label>
-          Era
-            <select
-            aria-label="MCP era"
+          프로토콜 세대
+          <select
+            aria-label="MCP 프로토콜 세대"
             value={era}
             disabled={connected || busy || oauthBusy}
             onChange={(event) => setEra(event.currentTarget.value as McpEraPreference)}
@@ -872,9 +872,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
           </select>
         </label>
         <label>
-          Timeout (ms)
+          시간 제한(ms)
           <input
-            aria-label="MCP timeout"
+            aria-label="MCP 시간 제한"
             type="number"
             min={100}
             max={120_000}
@@ -898,7 +898,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                   : !stdioExecutable)}
               onClick={() => void onConnect()}
             >
-              {phase === "connecting" ? "연결 중..." : "Connect"}
+              {phase === "connecting" ? "연결 중..." : "연결"}
             </button>
           )}
         </div>
@@ -906,7 +906,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
 
       {transport === "http" && (
         <details className="mcp-custom-headers" open={headers.length > 0}>
-          <summary>Custom headers · Environment secret 참조 가능</summary>
+          <summary>사용자 지정 헤더 · 환경 secret 참조 가능</summary>
           <fieldset disabled={connected || busy || oauthBusy}>
             <HeaderTable rows={headers} secretNames={secretNames} onChange={setHeaders} />
           </fieldset>
@@ -922,9 +922,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
           </p>
           <div className="mcp-oauth-inputs">
             <label>
-              Public client ID
+              공개 클라이언트 ID
               <input
-                aria-label="OAuth public client ID"
+                aria-label="OAuth 공개 클라이언트 ID"
                 value={oauthClientId}
                 maxLength={8 * 1024}
                 disabled={oauthBusy || busy}
@@ -933,9 +933,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
               />
             </label>
             <label>
-              Issuer (optional)
+              발급자(선택)
               <input
-                aria-label="OAuth issuer (optional)"
+                aria-label="OAuth 발급자(선택)"
                 value={oauthIssuer}
                 maxLength={8 * 1024}
                 disabled={oauthBusy || busy}
@@ -945,13 +945,13 @@ function McpLab({ environment, native }: ProtocolLabProps) {
             </label>
           </div>
           <fieldset disabled={oauthBusy || busy}>
-            <legend>OAuth scopes</legend>
+            <legend>OAuth 범위</legend>
             {oauthScopes.map((scope, index) => (
               <div className="mcp-oauth-scope-row" key={`oauth-scope-${index}`}>
                 <label>
-                  Scope {index + 1}
+                  범위 {index + 1}
                   <input
-                    aria-label={`OAuth scope ${index + 1}`}
+                    aria-label={`OAuth 범위 ${index + 1}`}
                     value={scope}
                     maxLength={256}
                     onChange={(event) => {
@@ -965,26 +965,26 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 <button
                   className="btn"
                   type="button"
-                  aria-label={`Remove OAuth scope ${index + 1}`}
+                  aria-label={`OAuth 범위 ${index + 1} 삭제`}
                   onClick={() => setOAuthScopes(
                     oauthScopes.filter((_, itemIndex) => itemIndex !== index),
                   )}
                 >
-                  Remove
+                  삭제
                 </button>
               </div>
             ))}
             <button
               className="btn"
               type="button"
-              aria-label="Add OAuth scope"
+              aria-label="OAuth 범위 추가"
               disabled={oauthScopes.length >= 32}
               onClick={() => setOAuthScopes((current) => [...current, ""])}
             >
-              Add scope
+              범위 추가
             </button>
             {oauthScopesHaveDuplicates && (
-              <p className="dim" role="alert">OAuth scopes must be unique.</p>
+              <p className="dim" role="alert">OAuth 범위는 중복될 수 없습니다.</p>
             )}
           </fieldset>
           <div className="mcp-inline-actions">
@@ -992,36 +992,36 @@ function McpLab({ environment, native }: ProtocolLabProps) {
               <button
                 className="btn"
                 type="button"
-                aria-label="Cancel OAuth authorization"
+                aria-label="OAuth 인증 취소"
                 disabled={!native}
                 onClick={() => void onCancelOAuth()}
               >
-                Cancel authorization
+                인증 취소
               </button>
             ) : (
               <button
                 className="btn send"
                 type="button"
-                aria-label="Authorize in system browser"
+                aria-label="시스템 브라우저에서 OAuth 인증"
                 disabled={!native || oauthBusy || busy || !endpoint.trim() || !oauthClientId.trim()
                   || oauthScopesHaveDuplicates}
                 onClick={() => void onAuthorize()}
               >
-                Authorize in system browser
+                시스템 브라우저에서 인증
               </button>
             )}
             <button
               className="btn"
               type="button"
-              aria-label="Refresh OAuth grants"
+              aria-label="OAuth grant 새로 고침"
               disabled={!native || oauthBusy || busy}
               onClick={() => void onRefreshOAuthGrants()}
             >
-              Refresh grants
+              grant 새로 고침
             </button>
           </div>
           <label>
-            Stored OAuth grant
+            저장된 OAuth grant
             <select
               aria-label="OAuth grant"
               value={selectedOAuthGrantId}
@@ -1032,7 +1032,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 setOAuthNotice(null);
               }}
             >
-              <option value="">No grant selected</option>
+              <option value="">선택된 grant 없음</option>
               {oauthGrants.map((grant) => (
                 <option key={grant.grantId} value={grant.grantId}>
                   {boundedText(grant.clientId, 160)} · {grant.status}
@@ -1042,34 +1042,34 @@ function McpLab({ environment, native }: ProtocolLabProps) {
           </label>
           {selectedOAuthGrant && (
             <div className="mcp-oauth-grant" role="status">
-              <strong>Selected OAuth grant</strong>
-              <span>Issuer: {boundedText(selectedOAuthGrant.issuer, 300)}</span>
-              <span>Resource: {boundedText(selectedOAuthGrant.resource, 300)}</span>
-              <span>Client ID: {boundedText(selectedOAuthGrant.clientId, 300)}</span>
-              <span>Status: {selectedOAuthGrant.status}</span>
+              <strong>선택한 OAuth grant</strong>
+              <span>발급자: {boundedText(selectedOAuthGrant.issuer, 300)}</span>
+              <span>리소스: {boundedText(selectedOAuthGrant.resource, 300)}</span>
+              <span>클라이언트 ID: {boundedText(selectedOAuthGrant.clientId, 300)}</span>
+              <span>상태: {selectedOAuthGrant.status}</span>
               <span>
-                Scopes: {selectedOAuthGrant.scopes.map((scope) => boundedText(scope, 256)).join(", ") || "none"}
+                범위: {selectedOAuthGrant.scopes.map((scope) => boundedText(scope, 256)).join(", ") || "없음"}
               </span>
-              <span>Expires: {formatOAuthExpiry(selectedOAuthGrant.expiresAtMs)}</span>
+              <span>만료: {formatOAuthExpiry(selectedOAuthGrant.expiresAtMs)}</span>
               <div className="mcp-inline-actions">
                 <button
                   className="btn"
                   type="button"
-                  aria-label="Revoke OAuth grant"
+                  aria-label="OAuth grant 취소"
                   disabled={!native || oauthBusy || busy}
                   onClick={() => void onRevokeOAuthGrant(false)}
                 >
-                  Revoke grant
+                  grant 취소
                 </button>
                 {oauthFallbackGrantId === selectedOAuthGrant.grantId && (
                   <button
                     className="btn"
                     type="button"
-                    aria-label="Remove OAuth grant locally"
+                    aria-label="OAuth grant 로컬에서 제거"
                     disabled={!native || oauthBusy || busy}
                     onClick={() => void onRevokeOAuthGrant(true)}
                   >
-                    Remove locally
+                    로컬에서 제거
                   </button>
                 )}
               </div>
@@ -1089,10 +1089,10 @@ function McpLab({ environment, native }: ProtocolLabProps) {
 
       {connection && (
         <div className="mcp-server-card" role="status">
-          <strong>{boundedText(connection.server.serverName, 200) || "이름 없는 MCP server"}</strong>
-          <span>{boundedText(connection.server.serverVersion, 100) || "version 미제공"}</span>
+          <strong>{boundedText(connection.server.serverName, 200) || "이름 없는 MCP 서버"}</strong>
+          <span>{boundedText(connection.server.serverVersion, 100) || "버전 미제공"}</span>
           <code>{connection.server.era} · {connection.server.protocolVersion}</code>
-          <span>legacy session: {connection.sessionManaged ? "사용" : "미사용"}</span>
+          <span>legacy 세션: {connection.sessionManaged ? "사용" : "미사용"}</span>
           <span>tools {hasMcpCapability(capabilities, "tools") ? "✓" : "—"}</span>
           <span>resources {hasMcpCapability(capabilities, "resources") ? "✓" : "—"}</span>
           <span>prompts {hasMcpCapability(capabilities, "prompts") ? "✓" : "—"}</span>
@@ -1197,7 +1197,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
               value={selectedResourceUri}
               maxLength={8 * 1024}
               disabled={busy}
-              placeholder="Resource URI"
+              placeholder="리소스 URI"
               onChange={(event) => setSelectedResourceUri(event.currentTarget.value)}
               spellCheck={false}
             />
@@ -1215,7 +1215,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
             </button>
             {resourceTemplates.items.length > 0 && (
               <details>
-                <summary>Resource templates {resourceTemplates.items.length}개</summary>
+                <summary>리소스 템플릿 {resourceTemplates.items.length}개</summary>
                 <ul className="mcp-identity-list">
                   {resourceTemplates.items.map((item) => (
                     <li key={String(item.uriTemplate)}><code>{boundedText(String(item.uriTemplate), 300)}</code></li>
@@ -1300,7 +1300,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
 
       {timeline.length > 0 && (
         <section className="mcp-timeline" aria-labelledby="mcp-timeline-heading">
-          <h3 id="mcp-timeline-heading">최근 작업 timeline</h3>
+          <h3 id="mcp-timeline-heading">최근 작업 타임라인</h3>
           <ol>
             {timeline.map((entry) => (
               <li key={entry.sequence}>
@@ -1402,9 +1402,9 @@ function boundedText(value: string, max: number): string {
 }
 
 function formatOAuthExpiry(value: number | null): string {
-  if (value === null) return "not provided";
+  if (value === null) return "제공되지 않음";
   const formatted = new Date(value).toLocaleString();
-  return formatted === "Invalid Date" ? "not provided" : formatted;
+  return formatted === "Invalid Date" ? "제공되지 않음" : formatted;
 }
 
 function boundedJson(value: unknown, max: number): string {

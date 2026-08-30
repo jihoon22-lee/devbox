@@ -20,16 +20,16 @@ const ALGORITHMS: ReadonlyArray<{ value: HmacAlgorithm; label: string }> = [
 ];
 
 const INPUT_ENCODINGS: ReadonlyArray<{ value: HmacInputEncoding; label: string }> = [
-  { value: "utf8", label: "UTF-8 text" },
+  { value: "utf8", label: "UTF-8 텍스트" },
   { value: "hex", label: "Hex" },
   { value: "base64", label: "Base64" },
-  { value: "base64url", label: "Base64URL (unpadded)" },
+  { value: "base64url", label: "Base64URL (패딩 없음)" },
 ];
 
 const OUTPUT_ENCODINGS: ReadonlyArray<{ value: HmacOutputEncoding; label: string }> = [
-  { value: "hex", label: "Hex (lowercase)" },
-  { value: "base64", label: "Base64 (padded)" },
-  { value: "base64url", label: "Base64URL (unpadded)" },
+  { value: "hex", label: "Hex (소문자)" },
+  { value: "base64", label: "Base64 (패딩 포함)" },
+  { value: "base64url", label: "Base64URL (패딩 없음)" },
 ];
 
 /** HMAC generation and constant-time verification with an in-memory-only UI. */
@@ -131,9 +131,9 @@ export function HmacTool() {
     <div className="tool hmac-tool" aria-busy={running}>
       <div className="hmac-toolbar">
         <label className="hmac-field">
-          Operation
+          작업
           <select
-            aria-label="HMAC operation"
+            aria-label="HMAC 작업"
             aria-describedby={helpId}
             value={mode}
             disabled={selectDisabled}
@@ -142,14 +142,14 @@ export function HmacTool() {
               setMode(event.currentTarget.value as HmacMode);
             }}
           >
-            <option value="generate">Generate</option>
-            <option value="verify">Verify</option>
+            <option value="generate">생성</option>
+            <option value="verify">검증</option>
           </select>
         </label>
         <label className="hmac-field">
-          Algorithm
+          알고리즘
           <select
-            aria-label="HMAC algorithm"
+            aria-label="HMAC 알고리즘"
             aria-describedby={helpId}
             value={algorithm}
             disabled={selectDisabled}
@@ -166,9 +166,9 @@ export function HmacTool() {
           </select>
         </label>
         <label className="hmac-field">
-          Output encoding
+          출력 인코딩
           <select
-            aria-label="HMAC output encoding"
+            aria-label="HMAC 출력 인코딩"
             aria-describedby={helpId}
             value={outputEncoding}
             disabled={selectDisabled}
@@ -190,15 +190,15 @@ export function HmacTool() {
           onClick={() => void run()}
           disabled={running}
         >
-          {running ? (mode === "generate" ? "Generating..." : "Verifying...") : mode === "generate" ? "Generate HMAC" : "Verify HMAC"}
+          {running ? (mode === "generate" ? "생성 중..." : "검증 중...") : mode === "generate" ? "HMAC 생성" : "HMAC 검증"}
         </button>
       </div>
 
       <div className="hmac-input-grid">
         <label className="hmac-input-field">
-          Key
+          키
           <ToolTextField
-            aria-label="HMAC key"
+            aria-label="HMAC 키"
             aria-describedby={helpId}
             value={key}
             onValueChange={(value) => {
@@ -213,9 +213,9 @@ export function HmacTool() {
           />
         </label>
         <label className="hmac-input-field">
-          Key encoding
+          키 인코딩
           <select
-            aria-label="HMAC key encoding"
+            aria-label="HMAC 키 인코딩"
             aria-describedby={helpId}
             value={keyEncoding}
             disabled={selectDisabled}
@@ -232,9 +232,9 @@ export function HmacTool() {
           </select>
         </label>
         <label className="hmac-input-field hmac-message-field">
-          Message
+          메시지
           <ToolTextArea
-            aria-label="HMAC message"
+            aria-label="HMAC 메시지"
             aria-describedby={helpId}
             className="io-input"
             rows={5}
@@ -251,9 +251,9 @@ export function HmacTool() {
           />
         </label>
         <label className="hmac-input-field">
-          Message encoding
+          메시지 인코딩
           <select
-            aria-label="HMAC message encoding"
+            aria-label="HMAC 메시지 인코딩"
             aria-describedby={helpId}
             value={messageEncoding}
             disabled={selectDisabled}
@@ -271,9 +271,9 @@ export function HmacTool() {
         </label>
         {mode === "verify" ? (
           <label className="hmac-input-field hmac-expected-field">
-            Expected tag ({outputEncoding})
+            예상 태그 ({outputEncoding})
             <ToolTextField
-              aria-label="Expected HMAC tag"
+              aria-label="예상 HMAC 태그"
               aria-describedby={helpId}
               value={expectedTag}
               onValueChange={(value) => {
@@ -291,10 +291,10 @@ export function HmacTool() {
       </div>
 
       <div id={helpId} className="hmac-help" role="note">
-        키와 message는 UTF-8 text, hex, 표준 padded Base64 또는 unpadded Base64URL로 해석합니다.
-        결과 encoding도 명시적으로 선택하며 지원 알고리즘은 SHA-256·SHA-384·SHA-512입니다.
-        한 필드의 encoded text는 {MAX_HMAC_TEXT_BYTES.toLocaleString()}바이트, decoded key/message는
-        1,000,000바이트까지입니다. 검증은 Web Crypto/RustCrypto의 constant-time primitive를
+        키와 메시지는 UTF-8 텍스트, Hex, 표준 패딩 Base64 또는 패딩 없는 Base64URL로 해석합니다.
+        결과 인코딩도 명시적으로 선택하며 지원 알고리즘은 SHA-256·SHA-384·SHA-512입니다.
+        한 필드의 인코딩된 텍스트는 {MAX_HMAC_TEXT_BYTES.toLocaleString()}바이트, 디코딩된 키/메시지는
+        1,000,000바이트까지입니다. 검증은 Web Crypto/RustCrypto의 상수 시간 프리미티브를
         사용합니다. 키·입력·결과는 현재 화면과 한 번의 작업 메모리에만 존재하며 자동 저장·로그·전송하지 않습니다.
       </div>
       {error ? <div className="hmac-error" role="alert">{error}</div> : null}
@@ -304,13 +304,13 @@ export function HmacTool() {
 
       <div className="io-col hmac-output-col">
         <div className="io-label">
-          Result {mode === "generate" && output ? <CopyBtn value={output} /> : null}
+          결과 {mode === "generate" && output ? <CopyBtn value={output} /> : null}
         </div>
         <ToolOutput
           className={`io-output ${error ? "io-error" : ""}`}
           value={error || output}
           handoffValue={error ? "" : output}
-          ariaLabel="HMAC output"
+          ariaLabel="HMAC 출력"
           downloadName="dev-toolbox-hmac-result.txt"
         />
       </div>

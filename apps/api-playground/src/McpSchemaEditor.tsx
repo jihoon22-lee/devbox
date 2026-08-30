@@ -15,7 +15,7 @@ interface McpSchemaEditorProps {
 
 export function McpSchemaEditor({ schema, value, disabled, onChange }: McpSchemaEditorProps) {
   return (
-    <div className="mcp-schema-editor" aria-label="MCP tool arguments">
+    <div className="mcp-schema-editor" aria-label="MCP tool 인자">
       <ObjectFields
         schema={schema}
         root={value}
@@ -43,7 +43,7 @@ function ObjectFields({
   const properties = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
   const required = new Set(schema.required as string[] | undefined);
   if (Object.keys(properties).length === 0) {
-    return <div className="dim">이 tool은 arguments가 없습니다.</div>;
+    return <div className="dim">이 tool에는 인자가 없습니다.</div>;
   }
   return (
     <div className="mcp-schema-fields">

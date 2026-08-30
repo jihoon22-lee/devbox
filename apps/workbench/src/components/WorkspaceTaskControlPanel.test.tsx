@@ -120,7 +120,7 @@ describe("WorkspaceTaskControlPanel", () => {
   it("refreshes the snapshot and gates Start/Stop by the read-only trust state", async () => {
     render(<WorkspaceTaskControlPanel />);
 
-    expect(await screen.findByRole("heading", { name: "Run Manager tasks" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Run Manager 작업" })).toBeTruthy();
     expect(listWorkspaceTaskControlsMock).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Build 시작" })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: "Build 중지" })).toBeDisabled();
@@ -208,7 +208,7 @@ describe("WorkspaceTaskControlPanel", () => {
     expect(dispatchWorkspaceTaskControlMock).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Run Manager task snapshot 새로고침" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Idle task 시작" })).toBeDisabled();
-    expect(screen.getByText(/다른 Start\/Stop 요청은 잠시 막혀 있습니다/)).toBeTruthy();
+    expect(screen.getByText(/다른 시작\/중지 요청은 잠시 막혀 있습니다/)).toBeTruthy();
 
     // This second click is intentionally attempted before the first dispatch
     // resolves. The synchronous ref gate must keep it from reaching invoke.

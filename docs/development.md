@@ -27,7 +27,7 @@ apps/        독립 Tauri 앱 (각각 독립 .exe)
   repo-manager        Git worktree/저장소 관리
   devbox-launcher     catalog app·integration snapshot launcher와 explicit clipboard preview
   log-lens            bounded local/WSL/container log viewer (v0.5.0 bootstrap; #473 Run reader in v0.5.1)
-packages/    공용 React 패키지 (tokens·editor·diff-view·context-menu)
+packages/    공용 frontend 패키지 (tokens·a11y·editor·diff-view·context-menu·openapi·mermaid-renderer)
 crates/      공용 Rust 크레이트 (applink·catalog·filesystem·git·integration·launch·markdown·process·search·secrets·window-state·window-state-tauri·wsl)
 docs/        architecture / roadmap / projects
 ```
@@ -64,6 +64,12 @@ pnpm tauri build            # Windows에서 (배포)
 ```
 
 WSL에서는 `cargo test`(core 로직) / `pnpm build`(프론트 검증)로 개발한다.
+
+모든 release frontend는 `@devbox/tokens`와 `@devbox/a11y`를 사용하고 `lang="ko-KR"`,
+Vite manifest, 초기 shell axe smoke를 유지한다. CI의 frontend gate는 generated manifest의
+static import graph를 앱별 raw/gzip 예산과 대조하며 새 release app이 두 계약 중 하나에서
+누락되면 fail-closed한다. jsdom이 계산할 수 없는 색 대비·Windows 고대비는 packaged
+acceptance에서 확인한다.
 
 ## 참고 문서
 

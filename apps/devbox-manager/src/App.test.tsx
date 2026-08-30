@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import catalogJson from "../../catalog.json";
 import App from "./App";
@@ -499,6 +500,12 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
+  const { container } = render(<App />);
+  await screen.findByText("Log Lens");
+  await assertNoA11yViolations(container);
+});
+
 describe("Devbox Manager app row context menu", () => {
   it("renders the 14 current stable managed apps without itself", async () => {
     availableMock.mockResolvedValueOnce(stableManifest);
@@ -508,7 +515,7 @@ describe("Devbox Manager app row context menu", () => {
 
     expect(screen.getAllByRole("row")).toHaveLength(15);
     expect(screen.queryByRole("row", { name: /Devbox Manager/ })).toBeNull();
-    expect(screen.getByText("Latest: v0.5.0")).toBeTruthy();
+    expect(screen.getByText("최신 버전: v0.5.0")).toBeTruthy();
     for (const [displayName, version] of [
       ["Port Manager", "0.3.0"],
       ["Code Pad", "0.4.0"],
@@ -565,6 +572,17 @@ describe("Devbox Manager app row context menu", () => {
     expect(screen.getByRole("menuitem", { name: "실행" }).getAttribute("aria-disabled")).toBeNull();
     expect(screen.getByRole("menuitem", { name: "이전 버전 롤백" }).getAttribute("aria-disabled")).toBeNull();
     expect(screen.getByRole("menuitem", { name: "제거" }).className).toContain("danger");
+  });
+
+  it("selects an app row with Enter or Space while ignoring IME composition", async () => {
+    render(<App />);
+    await screen.findByText("Code Pad");
+    const target = appRow("Code Pad");
+
+    fireEvent.keyDown(target, { key: "Enter", isComposing: true });
+    expect(target.getAttribute("aria-current")).toBeNull();
+    fireEvent.keyDown(target, { key: " " });
+    expect(target.getAttribute("aria-current")).toBe("true");
   });
 
   it("opens the install submenu from Shift+F10 and restores row focus", async () => {
@@ -664,7 +682,7 @@ describe("Devbox Manager app row context menu", () => {
     fireEvent.contextMenu(appRow("Port Manager"));
     fireEvent.click(screen.getByRole("menuitem", { name: "제거" }));
     await waitFor(() => expect(previewRemoveAppMock).toHaveBeenCalledTimes(1));
-    expect((screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled)
+    expect((screen.getByRole("button", { name: "새로고침" }) as HTMLButtonElement).disabled)
       .toBe(true);
     expect(removeAppMock).not.toHaveBeenCalled();
     fireEvent.contextMenu(appRow("Port Manager"));
@@ -769,7 +787,7 @@ describe("Devbox Manager custom install root", () => {
     render(<App />);
     await screen.findByText("Port Manager");
 
-    const input = screen.getByLabelText("설치 root 경로");
+    const input = screen.getByLabelText("설치 루트 경로");
     fireEvent.change(input, { target: { value: "C:\\Devbox-custom" } });
     fireEvent.click(screen.getByRole("button", { name: "미리 확인" }));
 
@@ -778,10 +796,10 @@ describe("Devbox Manager custom install root", () => {
     expect(applyInstallRootMock).not.toHaveBeenCalled();
 
     confirmMock.mockReturnValueOnce(true);
-    fireEvent.click(screen.getByRole("button", { name: "확인 후 이 root 적용" }));
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 이 루트 적용" }));
     await waitFor(() => expect(applyInstallRootMock).toHaveBeenCalledWith("C:\\Devbox-custom", 1));
     expect(confirmMock).toHaveBeenCalledWith(
-      "검증된 빈 디렉터리를 새 설치 root로 적용할까요? 기존 설치는 자동으로 이동하거나 삭제하지 않습니다.",
+      "검증된 빈 디렉터리를 새 설치 루트로 적용할까요? 기존 설치는 자동으로 이동하거나 삭제하지 않습니다.",
     );
   });
 
@@ -789,14 +807,14 @@ describe("Devbox Manager custom install root", () => {
     render(<App />);
     await screen.findByText("Port Manager");
 
-    const input = screen.getByLabelText("설치 root 경로");
+    const input = screen.getByLabelText("설치 루트 경로");
     fireEvent.change(input, { target: { value: "C:\\Devbox-custom" } });
     fireEvent.click(screen.getByRole("button", { name: "미리 확인" }));
     await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
 
     fireEvent.change(input, { target: { value: "C:\\Devbox-other" } });
     expect(screen.queryByRole("status")).toBeNull();
-    expect(screen.queryByRole("button", { name: "확인 후 이 root 적용" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "확인 후 이 루트 적용" })).toBeNull();
   });
 
   it("disables other Manager operations while a root preflight is pending", async () => {
@@ -804,13 +822,13 @@ describe("Devbox Manager custom install root", () => {
     render(<App />);
     await screen.findByText("Port Manager");
 
-    fireEvent.change(screen.getByLabelText("설치 root 경로"), {
+    fireEvent.change(screen.getByLabelText("설치 루트 경로"), {
       target: { value: "C:\\Devbox-pending" },
     });
     fireEvent.click(screen.getByRole("button", { name: "미리 확인" }));
 
     await waitFor(() => expect(previewInstallRootMock).toHaveBeenCalledTimes(1));
-    expect((screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled)
+    expect((screen.getByRole("button", { name: "새로고침" }) as HTMLButtonElement).disabled)
       .toBe(true);
     expect((screen.getByRole("button", { name: "환경 진단" }) as HTMLButtonElement).disabled)
       .toBe(true);
@@ -824,15 +842,15 @@ describe("Devbox Manager custom install root", () => {
     await screen.findByText("Port Manager");
     availableMock.mockImplementationOnce(() => new Promise(() => {}));
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    fireEvent.click(screen.getByRole("button", { name: "새로고침" }));
 
     await waitFor(() => expect(availableMock).toHaveBeenCalledTimes(2));
-    expect((screen.getByLabelText("설치 root 경로") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("설치 루트 경로") as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "미리 확인" }) as HTMLButtonElement).disabled)
       .toBe(true);
     expect((screen.getByRole("button", { name: "환경 진단" }) as HTMLButtonElement).disabled)
       .toBe(true);
-    expect((screen.getByRole("button", { name: "Launch" }) as HTMLButtonElement).disabled)
+    expect((screen.getByRole("button", { name: "실행" }) as HTMLButtonElement).disabled)
       .toBe(true);
   });
 
@@ -844,7 +862,7 @@ describe("Devbox Manager custom install root", () => {
     render(<App />);
     await screen.findByText("Port Manager");
 
-    const input = screen.getByLabelText("설치 root 경로");
+    const input = screen.getByLabelText("설치 루트 경로");
     fireEvent.change(input, { target: { value: "C:\\Devbox-old" } });
     fireEvent.click(screen.getByRole("button", { name: "미리 확인" }));
     fireEvent.change(input, { target: { value: "C:\\Devbox-new" } });
@@ -874,7 +892,7 @@ describe("Devbox Manager custom install root", () => {
     const view = render(<App />);
     await screen.findByText("Port Manager");
 
-    const input = screen.getByLabelText("설치 root 경로");
+    const input = screen.getByLabelText("설치 루트 경로");
     fireEvent.change(input, { target: { value: "C:\\Devbox-unmounted" } });
     fireEvent.click(screen.getByRole("button", { name: "미리 확인" }));
     view.unmount();
@@ -912,14 +930,14 @@ describe("Devbox Manager custom install root", () => {
     });
     render(<App />);
     await screen.findByText("Port Manager");
-    fireEvent.change(screen.getByLabelText("설치 root 경로"), {
+    fireEvent.change(screen.getByLabelText("설치 루트 경로"), {
       target: { value: "C:\\Devbox-custom" },
     });
     fireEvent.click(screen.getByRole("button", { name: "미리 확인" }));
 
     expect(await screen.findByText("기존 설치로 이동 차단")).toBeTruthy();
     expect(screen.getByText(/자동 이동하지 않습니다/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "확인 후 이 root 적용" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "확인 후 이 루트 적용" })).toBeNull();
     expect(applyInstallRootMock).not.toHaveBeenCalled();
   });
 });
@@ -929,16 +947,16 @@ describe("Devbox Manager diagnostics and support bundle", () => {
     render(<App />);
     await screen.findByText("Code Pad");
     fireEvent.click(screen.getByRole("button", { name: "환경 진단" }));
-    await screen.findByRole("heading", { name: "Data Inspector" });
+    await screen.findByRole("heading", { name: "데이터 검사기" });
 
-    expect(screen.queryByRole("button", { name: "JSON export" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "JSON 내보내기" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "데이터 다시 확인" }));
     await screen.findByText("Everything+");
     expect(inspectDataDatabasesMock).toHaveBeenCalledWith(expect.any(String));
     expect(screen.queryByText(/C:\\Users|AppData/)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "미리 보기" }));
-    await screen.findByText("조회 결과 preview");
+    await screen.findByText("조회 결과 미리 보기");
     expect(previewDataQueryMock).toHaveBeenCalledWith(expect.objectContaining({
       appId: "everything-plus",
       sql: "SELECT name, type FROM sqlite_schema",
@@ -946,7 +964,7 @@ describe("Devbox Manager diagnostics and support bundle", () => {
     }));
     expect(exportDataPreviewMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "JSON export" }));
+    fireEvent.click(screen.getByRole("button", { name: "JSON 내보내기" }));
     await waitFor(() => expect(exportDataPreviewMock).toHaveBeenCalledWith("query-preview-1", "json"));
     expect(screen.getByRole("status").textContent).toContain("JSON 파일을 준비했습니다.");
   });
@@ -956,7 +974,7 @@ describe("Devbox Manager diagnostics and support bundle", () => {
     render(<App />);
     await screen.findByText("Code Pad");
     fireEvent.click(screen.getByRole("button", { name: "환경 진단" }));
-    await screen.findByRole("heading", { name: "Data Inspector" });
+    await screen.findByRole("heading", { name: "데이터 검사기" });
     fireEvent.click(screen.getByRole("button", { name: "데이터 다시 확인" }));
 
     await waitFor(() => expect(inspectDataDatabasesMock).toHaveBeenCalledTimes(1));
@@ -968,16 +986,16 @@ describe("Devbox Manager diagnostics and support bundle", () => {
     render(<App />);
     await screen.findByText("Code Pad");
     fireEvent.click(screen.getByRole("button", { name: "환경 진단" }));
-    await screen.findByRole("heading", { name: "Redacted support bundle" });
+    await screen.findByRole("heading", { name: "비식별화된 지원 번들" });
 
     fireEvent.click(screen.getByRole("button", { name: "번들 미리 확인" }));
-    await screen.findByText(/내보내기 preview · redaction v1/);
+    await screen.findByText(/내보내기 미리 보기 · 비식별화 v1/);
     expect(previewSupportBundleMock).toHaveBeenCalledWith(expect.any(String));
     expect(exportSupportBundleMock).not.toHaveBeenCalled();
     expect(screen.getByText("raw-database")).toBeTruthy();
     expect(screen.getByText("credentials")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "확인 후 JSON export" }));
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 JSON 내보내기" }));
     await waitFor(() => expect(exportSupportBundleMock).toHaveBeenCalledWith("support-preview-1"));
     expect(screen.getByRole("status").textContent).toContain("redacted 지원 번들을 준비했습니다.");
   });
@@ -987,13 +1005,13 @@ describe("Devbox Manager diagnostics and support bundle", () => {
     render(<App />);
     await screen.findByText("Code Pad");
     fireEvent.click(screen.getByRole("button", { name: "환경 진단" }));
-    await screen.findByRole("heading", { name: "Redacted support bundle" });
+    await screen.findByRole("heading", { name: "비식별화된 지원 번들" });
     fireEvent.click(screen.getByRole("button", { name: "번들 미리 확인" }));
-    await screen.findByText(/내보내기 preview · redaction v1/);
+    await screen.findByText(/내보내기 미리 보기 · 비식별화 v1/);
 
-    fireEvent.click(screen.getByRole("button", { name: "확인 후 JSON export" }));
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 JSON 내보내기" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("지원 번들이 오래되었습니다."));
-    expect(screen.queryByText(/내보내기 preview · redaction v1/)).toBeNull();
+    expect(screen.queryByText(/내보내기 미리 보기 · 비식별화 v1/)).toBeNull();
     expect(screen.getByRole("button", { name: "번들 미리 확인" })).toBeTruthy();
   });
 });
@@ -1229,6 +1247,23 @@ describe("Devbox Manager Related Tools", () => {
     expect(screen.queryByText(/C:\\Users\\developer/)).toBeNull();
   });
 
+  it("localizes an allowlisted native related-tool error without changing its contract", async () => {
+    installRelatedToolMock.mockRejectedValueOnce(
+      new Error("Related Tools는 Windows에서만 사용할 수 있습니다."),
+    );
+    confirmMock.mockReturnValueOnce(true);
+    render(<App />);
+    await screen.findByText("Port Manager");
+    fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+    await screen.findByText("Visual Studio Code");
+
+    fireEvent.click(screen.getByRole("button", { name: "확인 후 WinGet 설치" }));
+
+    await waitFor(() => expect(
+      screen.getByText("관련 도구는 Windows에서만 사용할 수 있습니다."),
+    ).toBeTruthy());
+  });
+
   it("ignores a related-tool action result after unmount", async () => {
     let resolveInstall!: (result: RelatedToolActionResult) => void;
     installRelatedToolMock.mockImplementationOnce(() => new Promise((resolve) => {
@@ -1294,7 +1329,7 @@ describe("Devbox Manager Dev Setup audit", () => {
     fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
 
     expect(await screen.findByRole("heading", {
-      name: "WinGet Configuration v3 · package-only",
+      name: "WinGet 구성 v3 · package-only",
     })).toBeTruthy();
     expect(screen.getByText(/외부 YAML은 그대로 실행하지 않습니다/)).toBeTruthy();
     expect(screen.getByText("Git.Git")).toBeTruthy();
@@ -1317,7 +1352,7 @@ describe("Devbox Manager Dev Setup audit", () => {
     expect(screen.getByText(/자동 재부팅을 예약하거나 실행하지 않습니다/)).toBeTruthy();
     expect(screen.getByText(/PATH·registry·파일을 변경/)).toBeTruthy();
     expect(screen.getByText(/상태를 알 수 없는 패키지는 적용을 차단/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "정규화된 구성 export" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "정규화된 구성 내보내기" }).hasAttribute("disabled")).toBe(false);
     expect(screen.getByRole("button", { name: "검토 버리기" }).hasAttribute("disabled")).toBe(false);
   });
 
@@ -1334,7 +1369,7 @@ describe("Devbox Manager Dev Setup audit", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "다시 가져오기" }));
     await waitFor(() => expect(screen.queryByText("Git.Git")).toBeNull());
-    expect(screen.queryByRole("button", { name: "정규화된 구성 export" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "정규화된 구성 내보내기" })).toBeNull();
     await waitFor(() => expect(screen.getByText(/WinGet Configuration 파일을 가져오면/)).toBeTruthy());
   });
 
@@ -1364,7 +1399,7 @@ describe("Devbox Manager Dev Setup audit", () => {
     await screen.findByRole("heading", { name: "docker-desktop WSL backend" });
     fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
 
-    const apply = await screen.findByRole("button", { name: "확인 후 package apply" });
+    const apply = await screen.findByRole("button", { name: "확인 후 패키지 적용" });
     expect(apply.hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("checkbox", { name: "정규화된 package-only 검토를 확인했습니다" }));
     expect(apply.hasAttribute("disabled")).toBe(true);
@@ -1385,7 +1420,7 @@ describe("Devbox Manager Dev Setup audit", () => {
       true,
       true,
     ));
-    expect(screen.getByRole("button", { name: "정규화된 구성 export" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "정규화된 구성 내보내기" }).hasAttribute("disabled")).toBe(true);
   });
 
   it("blocks unknown package state and never suggests installing it", async () => {
@@ -1405,7 +1440,7 @@ describe("Devbox Manager Dev Setup audit", () => {
     fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
 
     expect(await screen.findByText(/확인할 수 없는 패키지 상태가 있어 적용을 차단/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "확인 후 package apply" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "확인 후 패키지 적용" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getAllByText(/설치를 제안하지 않습니다/).length).toBeGreaterThan(0);
     expect(screen.queryByText("미설치")).toBeNull();
     expect(applyDevSetupConfigurationMock).not.toHaveBeenCalled();
@@ -1427,13 +1462,13 @@ describe("Devbox Manager Dev Setup audit", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "정규화된 package-only 검토를 확인했습니다" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "로컬에 등록된 고정 이름 winget source·패키지 약관 수락을 확인했습니다" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "관리자/UAC·재부팅 위험을 확인했습니다" }));
-    fireEvent.click(await screen.findByRole("button", { name: "확인 후 package apply" }));
+    fireEvent.click(await screen.findByRole("button", { name: "확인 후 패키지 적용" }));
     await waitFor(() => expect(applyDevSetupConfigurationMock).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "Dev Setup package apply 취소" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dev Setup 패키지 적용 취소" }));
     await waitFor(() => expect(cancelDevSetupApplyMock).toHaveBeenCalledTimes(1));
 
     resolveApply(devSetupConfigurationApplyFixture);
-    expect(await screen.findByText("package apply 결과")).toBeTruthy();
+    expect(await screen.findByText("패키지 적용 결과")).toBeTruthy();
     expect(screen.getByText("전체 적용 완료")).toBeTruthy();
     expect(screen.getAllByText("적용 완료").length).toBeGreaterThan(0);
     expect(screen.getAllByText("적용 완료").length).toBeGreaterThanOrEqual(1);
@@ -1462,7 +1497,7 @@ describe("Devbox Manager Dev Setup audit", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
     await screen.findByRole("heading", { name: "docker-desktop WSL backend" });
     fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
-    fireEvent.click(await screen.findByRole("button", { name: "정규화된 구성 export" }));
+    fireEvent.click(await screen.findByRole("button", { name: "정규화된 구성 내보내기" }));
 
     await waitFor(() => expect(exportDevSetupConfigurationMock).toHaveBeenCalledWith(
       devSetupConfigurationReviewFixture.previewId,
@@ -1504,7 +1539,7 @@ describe("Devbox Manager Dev Setup audit", () => {
         vi.advanceTimersByTime(1_050);
       });
       expect(screen.getByText("만료됨")).toBeTruthy();
-      expect(screen.getByRole("button", { name: "확인 후 package apply" }).hasAttribute("disabled")).toBe(true);
+      expect(screen.getByRole("button", { name: "확인 후 패키지 적용" }).hasAttribute("disabled")).toBe(true);
     } finally {
       vi.useRealTimers();
     }

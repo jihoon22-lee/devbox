@@ -123,11 +123,11 @@ describe("Knowledge wikilink and backlink integration", () => {
     );
     await waitFor(() => expect(backlinksMock).toHaveBeenCalledWith("Current.md"));
     expect(
-      await screen.findByText("1 unresolved", undefined, { timeout: 5_000 }),
+      await screen.findByText("미해결 1개", undefined, { timeout: 5_000 }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Backlinks (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "백링크 (1)" })).toBeInTheDocument();
 
-    fireEvent.click(within(screen.getByLabelText("Backlinks")).getByRole(
+    fireEvent.click(within(screen.getByLabelText("백링크")).getByRole(
       "button",
       { name: /Source\.md/u },
     ));
@@ -139,6 +139,6 @@ describe("Knowledge wikilink and backlink integration", () => {
     const view = EditorView.findFromDOM(content);
     if (!view) throw new Error("CodeMirror view missing");
     await waitFor(() => expect(view.state.selection.main.head).toBe(8));
-    expect(screen.queryByText("● unsaved")).toBeNull();
+    expect(screen.queryByText("● 저장되지 않음")).toBeNull();
   }, 15_000);
 });

@@ -1,0 +1,23 @@
+{
+  "name": "@devbox/a11y",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./styles.css",
+    "./testing": "./src/testing.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "axe-core": "4.13.0",
+    "jsdom": "^30.0.1",
+    "typescript": "~5.8.3",
+    "vitest": "^4.1.10"
+  }
+}

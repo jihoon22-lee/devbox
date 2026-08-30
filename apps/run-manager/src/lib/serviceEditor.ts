@@ -151,11 +151,11 @@ export function validateServiceDraft(draft: ServiceDraft): ServiceFieldErrors {
 
 export function serviceFieldErrorFromBackend(message: string): ServiceFieldErrors {
   const normalized = message.toLowerCase();
-  if (normalized.includes("health_tcp_address")) return { healthTcpAddress: message };
-  if (normalized.includes("health_tcp_port")) return { healthTcpPort: message };
-  if (normalized.includes("environment") || normalized.includes("dpapi")) return { env: message };
-  if (normalized.includes("target_distro")) return { targetDistro: message };
-  if (normalized.includes("command")) return { command: message };
-  if (normalized.includes("name")) return { name: message };
+  if (normalized.includes("health_tcp_address")) return { healthTcpAddress: "TCP 헬스체크 주소가 올바르지 않습니다." };
+  if (normalized.includes("health_tcp_port")) return { healthTcpPort: "TCP 헬스체크 포트가 올바르지 않습니다." };
+  if (normalized.includes("environment") || normalized.includes("dpapi")) return { env: "환경변수를 안전하게 저장하지 못했습니다." };
+  if (normalized.includes("target_distro")) return { targetDistro: "WSL 대상 배포판이 올바르지 않습니다." };
+  if (normalized.includes("command")) return { command: "실행 명령이 올바르지 않습니다." };
+  if (normalized.includes("name")) return { name: "서비스 이름이 올바르지 않습니다." };
   return {};
 }

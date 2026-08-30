@@ -72,7 +72,7 @@ export default function PackageDependencySummaryPanel({ profileId }: Props) {
       aria-busy={loading}
     >
       <div className="dependency-health-heading">
-        <h4 id="package-dependency-title" className="dependency-subtitle">Packages</h4>
+        <h4 id="package-dependency-title" className="dependency-subtitle">패키지</h4>
         <button type="button" className="btn" disabled={loading} onClick={refresh}>
           {loading ? "불러오는 중…" : "패키지 요약 새로고침"}
         </button>
@@ -97,7 +97,7 @@ export default function PackageDependencySummaryPanel({ profileId }: Props) {
           )}
           {available && (
             <>
-              <div className="package-summary-metrics" aria-label="Package dependency 집계">
+              <div className="package-summary-metrics" aria-label="패키지 의존성 집계">
                 <span><strong>{summary.packageCount}</strong> 전체</span>
                 <span><strong>{summary.directCount}</strong> 직접</span>
                 <span><strong>{summary.transitiveCount}</strong> 전이</span>
@@ -111,7 +111,7 @@ export default function PackageDependencySummaryPanel({ profileId }: Props) {
                 <span>해석 오류 {summary.invalidCount}</span>
               </div>
               {summary.ecosystems.length > 0 && (
-                <div className="package-ecosystem-list" aria-label="Ecosystem별 package 집계">
+                <div className="package-ecosystem-list" aria-label="생태계별 패키지 집계">
                   {summary.ecosystems.map((ecosystem) => (
                     <div key={ecosystem.ecosystem}>
                       <strong>{ECOSYSTEM_LABEL[ecosystem.ecosystem] ?? ecosystem.ecosystem}</strong>

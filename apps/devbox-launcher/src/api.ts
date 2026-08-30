@@ -25,8 +25,8 @@ const MOCK_RESULTS: SearchResult[] = catalogJson.apps.filter((app) => app.manage
 MOCK_RESULTS.push({
   id: CLIPBOARD_PREVIEW_ID,
   revision: MOCK_REVISION,
-  label: "Clipboard 미리보기",
-  detail: "현재 선택 영역, 없으면 clipboard · 전달하지 않음",
+  label: "클립보드 미리보기",
+  detail: "현재 선택 영역, 없으면 클립보드 · 전달하지 않음",
   source: "launcher",
   targetApp: "devbox-launcher",
   targetKind: "clipboard-preview",
@@ -40,7 +40,13 @@ export function search(query: string): Promise<SearchResponse> {
   if (!isTauri()) {
     const needle = query.trim().toLocaleLowerCase();
     return Promise.resolve({
-      results: MOCK_RESULTS.filter((result) => !needle || `${result.label} ${result.detail ?? ""}`.toLocaleLowerCase().includes(needle)).slice(0, 256),
+      results: MOCK_RESULTS.filter((result) => !needle || [
+        result.label,
+        result.detail ?? "",
+        result.targetApp,
+        result.id,
+        result.source,
+      ].join(" ").toLocaleLowerCase().includes(needle)).slice(0, 256),
       sources: [
         { producer: "workbench", view: "profiles", status: "missing" },
         { producer: "repo-manager", view: "repositories", status: "missing" },

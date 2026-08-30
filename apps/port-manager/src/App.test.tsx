@@ -7,6 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, {
   listenerKillRequest,
@@ -200,6 +201,12 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
+  const { container } = render(<App />);
+  await screen.findByText("node.exe");
+  await assertNoA11yViolations(container);
+});
+
 describe("matches", () => {
   it("빈 쿼리(또는 공백만)는 항상 true", () => {
     expect(matches(row(), "")).toBe(true);
@@ -257,7 +264,7 @@ describe("port row helpers", () => {
           container_id: "aabbccdd",
         }),
       ),
-    ).toBe("Container · docker · docker-desktop · aabbccdd");
+    ).toBe("컨테이너 · docker · docker-desktop · aabbccdd");
   });
 
   it("keeps container engine identities distinct in row keys", () => {
@@ -452,20 +459,20 @@ describe("port context menu", () => {
     const target = openRowMenu("browser.exe");
 
     expect(target.getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("menu", { name: "Port actions" })).toBeTruthy();
+    expect(screen.getByRole("menu", { name: "포트 작업" })).toBeTruthy();
     for (const label of [
-      "Copy port",
-      "Copy PID",
-      "Copy localhost URL",
-      "Open localhost",
-      "Copy process path",
-      "Show in Explorer",
-      "Kill listener",
+      "포트 복사",
+      "PID 복사",
+      "localhost URL 복사",
+      "localhost 열기",
+      "프로세스 경로 복사",
+      "탐색기에서 보기",
+      "리스너 종료",
     ]) {
       expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
     }
     expect(
-      screen.getByRole("menuitem", { name: "Open localhost" }).getAttribute("aria-disabled"),
+      screen.getByRole("menuitem", { name: "localhost 열기" }).getAttribute("aria-disabled"),
     ).toBe("true");
     await waitFor(() => expect(getProcessInfoMock).toHaveBeenCalledWith(4321));
   });
@@ -477,7 +484,7 @@ describe("port context menu", () => {
     target.focus();
 
     fireEvent.keyDown(target, { key: "F10", code: "F10", shiftKey: true });
-    const copyPort = screen.getByRole("menuitem", { name: "Copy port" });
+    const copyPort = screen.getByRole("menuitem", { name: "포트 복사" });
     await waitFor(() => expect(document.activeElement).toBe(copyPort));
     fireEvent.click(copyPort);
 
@@ -490,7 +497,7 @@ describe("port context menu", () => {
     await screen.findByText("node.exe");
     openRowMenu("node.exe");
 
-    const copyPath = screen.getByRole("menuitem", { name: "Copy process path" });
+    const copyPath = screen.getByRole("menuitem", { name: "프로세스 경로 복사" });
     await waitFor(() => expect(copyPath.getAttribute("aria-disabled")).toBeNull());
     fireEvent.click(copyPath);
     await waitFor(() =>
@@ -498,7 +505,7 @@ describe("port context menu", () => {
     );
 
     openRowMenu("node.exe");
-    const reveal = screen.getByRole("menuitem", { name: "Show in Explorer" });
+    const reveal = screen.getByRole("menuitem", { name: "탐색기에서 보기" });
     await waitFor(() => expect(reveal.getAttribute("aria-disabled")).toBeNull());
     fireEvent.click(reveal);
     await waitFor(() => expect(revealProcessMock).toHaveBeenCalledWith(1234));
@@ -512,10 +519,10 @@ describe("port context menu", () => {
 
     await waitFor(() => expect(getProcessInfoMock).toHaveBeenCalledWith(1234));
     expect(
-      screen.getByRole("menuitem", { name: "Copy process path" }).getAttribute("aria-disabled"),
+      screen.getByRole("menuitem", { name: "프로세스 경로 복사" }).getAttribute("aria-disabled"),
     ).toBe("true");
     expect(
-      screen.getByRole("menuitem", { name: "Show in Explorer" }).getAttribute("aria-disabled"),
+      screen.getByRole("menuitem", { name: "탐색기에서 보기" }).getAttribute("aria-disabled"),
     ).toBe("true");
   });
 
@@ -523,14 +530,14 @@ describe("port context menu", () => {
     render(<App />);
     await screen.findByText("node.exe");
     openRowMenu("node.exe");
-    fireEvent.click(screen.getByRole("menuitem", { name: "Kill listener" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "리스너 종료" }));
 
-    expect(confirmMock).toHaveBeenCalledWith("127.0.0.1:3000 (node.exe) listener 종료할까요?");
+    expect(confirmMock).toHaveBeenCalledWith("127.0.0.1:3000 (node.exe) 리스너 종료할까요?");
     expect(killListenerMock).not.toHaveBeenCalled();
 
     confirmMock.mockReturnValueOnce(true);
     openRowMenu("node.exe");
-    fireEvent.click(screen.getByRole("menuitem", { name: "Kill listener" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "리스너 종료" }));
 
     await waitFor(() =>
       expect(killListenerMock).toHaveBeenCalledWith(listenerKillRequest(LISTENING_ROW)),
@@ -544,11 +551,11 @@ describe("port context menu", () => {
     await screen.findByText("node.exe");
 
     openRowMenu("browser.exe");
-    fireEvent.click(screen.getByRole("menuitem", { name: "Open localhost" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "localhost 열기" }));
     expect(openBrowserMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Open" }));
-    expect(await screen.findByText("Action failed. Refresh the list and try again.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "열기" }));
+    expect(await screen.findByText("작업을 완료하지 못했습니다. 목록을 새로 고친 후 다시 시도하세요.")).toBeTruthy();
   });
 });
 
@@ -559,7 +566,7 @@ describe("observations and correlation actions", () => {
       correlations_truncated: true,
     });
     render(<App />);
-    expect(await screen.findByText(/Correlation results reached the safe display limit/u)).toBeTruthy();
+    expect(await screen.findByText(/연결 결과가 안전한 표시 한도에 도달했습니다/u)).toBeTruthy();
   });
 
   it("keeps listener actions available when one correlation producer is unhealthy", async () => {
@@ -572,10 +579,10 @@ describe("observations and correlation actions", () => {
     render(<App />);
     await screen.findByText("node.exe");
 
-    expect(screen.getByText("Snapshot stable")).toBeTruthy();
-    expect(screen.getByRole("region", { name: "Correlation source status" })).toBeTruthy();
+    expect(screen.getByText("스냅샷 안정")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "연결 출처 상태" })).toBeTruthy();
     expect(screen.getByText("invalid")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Kill listener" }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("button", { name: "리스너 종료" }) as HTMLButtonElement).disabled).toBe(
       false,
     );
   });
@@ -598,32 +605,32 @@ describe("observations and correlation actions", () => {
     await screen.findByText("node.exe");
     fireEvent.click(renderedRow("node.exe"));
 
-    const details = screen.getByRole("complementary", { name: "Listener details" });
+    const details = screen.getByRole("complementary", { name: "리스너 세부 정보" });
     expect(within(details).getByText("API task")).toBeTruthy();
     expect(within(details).getByText("verified")).toBeTruthy();
-    expect(within(details).getByRole("button", { name: /Open owner for API task/ })).toBeTruthy();
-    expect(within(details).getByRole("button", { name: /Open stdout in Log Lens for API task/ })).toBeTruthy();
-    expect(within(details).getByRole("button", { name: /Open stderr in Log Lens for API task/ })).toBeTruthy();
+    expect(within(details).getByRole("button", { name: /API task 소유자 열기/ })).toBeTruthy();
+    expect(within(details).getByRole("button", { name: /Log Lens에서 API task stdout 열기/ })).toBeTruthy();
+    expect(within(details).getByRole("button", { name: /Log Lens에서 API task stderr 열기/ })).toBeTruthy();
 
-    fireEvent.click(within(details).getByRole("button", { name: /Open owner for API task/ }));
+    fireEvent.click(within(details).getByRole("button", { name: /API task 소유자 열기/ }));
     await waitFor(() => expect(openPortOwnerMock).toHaveBeenCalledWith(RUN_CORRELATION.action_key));
-    fireEvent.click(within(details).getByRole("button", { name: /Open stdout in Log Lens for API task/ }));
+    fireEvent.click(within(details).getByRole("button", { name: /Log Lens에서 API task stdout 열기/ }));
     await waitFor(() =>
       expect(openPortLogMock).toHaveBeenCalledWith(RUN_CORRELATION.action_key, "stdout"),
     );
-    fireEvent.click(within(details).getByRole("button", { name: /Open stderr in Log Lens for API task/ }));
+    fireEvent.click(within(details).getByRole("button", { name: /Log Lens에서 API task stderr 열기/ }));
     await waitFor(() =>
       expect(openPortLogMock).toHaveBeenCalledWith(RUN_CORRELATION.action_key, "stderr"),
     );
 
     fireEvent.click(renderedRow("vite.exe"));
-    const workbenchDetails = screen.getByRole("complementary", { name: "Listener details" });
+    const workbenchDetails = screen.getByRole("complementary", { name: "리스너 세부 정보" });
     expect(within(workbenchDetails).getByText("Web profile")).toBeTruthy();
     expect(
-      within(workbenchDetails).queryByRole("button", { name: /Open stdout in Log Lens for Web profile/ }),
+      within(workbenchDetails).queryByRole("button", { name: /Log Lens에서 Web profile stdout 열기/ }),
     ).toBeNull();
     expect(
-      within(workbenchDetails).queryByRole("button", { name: /Open stderr in Log Lens for Web profile/ }),
+      within(workbenchDetails).queryByRole("button", { name: /Log Lens에서 Web profile stderr 열기/ }),
     ).toBeNull();
   });
 
@@ -632,8 +639,8 @@ describe("observations and correlation actions", () => {
     render(<App />);
     await screen.findByText("node.exe");
     fireEvent.click(renderedRow("node.exe"));
-    fireEvent.click(screen.getByRole("button", { name: /Open owner for API service|Open owner for API task/ }));
-    expect(await screen.findByText("Action failed. Refresh the list and try again.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /API task 소유자 열기/ }));
+    expect(await screen.findByText("작업을 완료하지 못했습니다. 목록을 새로 고친 후 다시 시도하세요.")).toBeTruthy();
   });
 });
 
@@ -672,16 +679,16 @@ describe("identity-safe listener UI boundaries", () => {
     render(<App />);
     const target = await screen.findByText("node.exe");
     fireEvent.click(target.closest("tr") as HTMLTableRowElement);
-    expect(screen.getByRole("complementary", { name: "Listener details" })).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: "리스너 세부 정보" })).toBeTruthy();
     expect(screen.getByText("node server.js --port 3000")).toBeTruthy();
-    expect(screen.getByRole("table", { name: "Listener list" })).toBeTruthy();
+    expect(screen.getByRole("table", { name: "리스너 목록" })).toBeTruthy();
   });
 
   it("does not prevent keyboard activation of action buttons nested in a row", async () => {
     render(<App />);
     await screen.findByText("node.exe");
     const target = renderedRow("node.exe");
-    const favorite = within(target).getByRole("button", { name: "Favorite port" });
+    const favorite = within(target).getByRole("button", { name: "포트 즐겨찾기" });
     const event = createEvent.keyDown(favorite, { key: "Enter", code: "Enter" });
     fireEvent(favorite, event);
     expect(event.defaultPrevented).toBe(false);
@@ -710,7 +717,7 @@ describe("identity-safe listener UI boundaries", () => {
     confirmMock.mockReturnValue(true);
     render(<App />);
     await screen.findByText("api");
-    fireEvent.click(screen.getByRole("button", { name: "Stop in WSL Desktop" }));
+    fireEvent.click(screen.getByRole("button", { name: "WSL Desktop에서 중지" }));
     await waitFor(() => expect(handoffContainerStopMock).toHaveBeenCalled());
     expect(killListenerMock).not.toHaveBeenCalled();
     expect((await screen.findByRole("status")).textContent).toContain("aabbccdd");
@@ -728,7 +735,7 @@ describe("identity-safe listener UI boundaries", () => {
     render(<App />);
     await screen.findByText("node.exe");
 
-    const button = screen.getByRole("button", { name: "Kill listener" });
+    const button = screen.getByRole("button", { name: "리스너 종료" });
     fireEvent.click(button);
     fireEvent.click(button);
 
@@ -756,12 +763,12 @@ describe("identity-safe listener UI boundaries", () => {
 
     // Recreate the interval after fake timers are active; an interval created
     // by the real clock before `useFakeTimers` cannot be advanced by Vitest.
-    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    fireEvent.click(screen.getByRole("button", { name: "일시 중지" }));
     vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    fireEvent.click(screen.getByRole("button", { name: "재개" }));
     await vi.advanceTimersByTimeAsync(DEFAULT_PREFERENCES.refresh_interval_ms);
     expect(listPortObservationsMock).toHaveBeenCalledTimes(2);
-    fireEvent.click(screen.getByRole("button", { name: "Kill listener" }));
+    fireEvent.click(screen.getByRole("button", { name: "리스너 종료" }));
     await Promise.resolve();
     expect(killListenerMock).toHaveBeenCalledTimes(1);
     expect(listPortObservationsMock).toHaveBeenCalledTimes(2);
@@ -783,13 +790,13 @@ describe("identity-safe listener UI boundaries", () => {
     );
     render(<App />);
     await screen.findByText("node.exe");
-    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    fireEvent.click(screen.getByRole("button", { name: "일시 중지" }));
     vi.useFakeTimers();
     vi.advanceTimersByTime(60_000);
     await Promise.resolve();
     expect(listPortObservationsMock).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    fireEvent.click(screen.getByRole("button", { name: "재개" }));
     vi.advanceTimersByTime(5_000);
     await Promise.resolve();
     expect(listPortObservationsMock).toHaveBeenCalledTimes(2);
@@ -807,11 +814,11 @@ describe("identity-safe listener UI boundaries", () => {
       .mockRejectedValueOnce(new Error("source unavailable"));
     render(<App />);
     await screen.findByText("node.exe");
-    const refreshButton = screen.getByRole("button", { name: "Refresh" });
+    const refreshButton = screen.getByRole("button", { name: "새로 고침" });
     fireEvent.click(refreshButton);
-    await screen.findByText("Action failed. Refresh the list and try again.");
+    await screen.findByText("작업을 완료하지 못했습니다. 목록을 새로 고친 후 다시 시도하세요.");
     expect(screen.getByText("node.exe")).toBeTruthy();
-    const kill = screen.getByRole("button", { name: "Kill listener" });
+    const kill = screen.getByRole("button", { name: "리스너 종료" });
     expect((kill as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(kill);
     expect(killListenerMock).not.toHaveBeenCalled();
@@ -827,22 +834,22 @@ describe("identity-safe listener UI boundaries", () => {
     render(<App />);
     await screen.findByText("node.exe");
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    await waitFor(() => expect(screen.getByRole("region", { name: "Refresh timeline" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "새로 고침" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "새로 고침 타임라인" })).toBeTruthy());
     expect(screen.getByText("changed")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    await screen.findByText("Action failed. Refresh the list and try again.");
-    const timeline = screen.getByRole("region", { name: "Refresh timeline" });
+    fireEvent.click(screen.getByRole("button", { name: "새로 고침" }));
+    await screen.findByText("작업을 완료하지 못했습니다. 목록을 새로 고친 후 다시 시도하세요.");
+    const timeline = screen.getByRole("region", { name: "새로 고침 타임라인" });
     expect(within(timeline).getByText("changed")).toBeTruthy();
-    expect(within(timeline).getByText("1 events")).toBeTruthy();
+    expect(within(timeline).getByText("1개 이벤트")).toBeTruthy();
   });
 
   it("persists bounded interval, pinned filter, and independent port/process favorites", async () => {
     render(<App />);
     await screen.findByText("node.exe");
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Auto-refresh interval" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "자동 새로 고침 간격" }), {
       target: { value: "10000" },
     });
     await waitFor(() =>
@@ -852,7 +859,7 @@ describe("identity-safe listener UI boundaries", () => {
     );
 
     const listeningRow = renderedRow("node.exe");
-    fireEvent.click(within(listeningRow).getByRole("button", { name: "Favorite port" }));
+    fireEvent.click(within(listeningRow).getByRole("button", { name: "포트 즐겨찾기" }));
     await waitFor(() =>
       expect(savePreferencesMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -862,7 +869,7 @@ describe("identity-safe listener UI boundaries", () => {
         }),
       ),
     );
-    fireEvent.click(within(listeningRow).getByRole("button", { name: "Favorite process" }));
+    fireEvent.click(within(listeningRow).getByRole("button", { name: "프로세스 즐겨찾기" }));
     await waitFor(() =>
       expect(savePreferencesMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -875,7 +882,7 @@ describe("identity-safe listener UI boundaries", () => {
       ),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Pinned" }));
+    fireEvent.click(screen.getByRole("button", { name: "고정" }));
     await waitFor(() =>
       expect(savePreferencesMock).toHaveBeenCalledWith(expect.objectContaining({ pinned_only: true })),
     );
@@ -899,9 +906,9 @@ describe("identity-safe listener UI boundaries", () => {
     const process = await screen.findByText("node.exe");
     fireEvent.click(process.closest("tr") as HTMLTableRowElement);
     expect(screen.getAllByText("WSL · Ubuntu").length).toBeGreaterThanOrEqual(1);
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    await waitFor(() => expect(screen.queryByRole("complementary", { name: "Listener details" })).toBeNull());
-    expect(screen.getByRole("region", { name: "Refresh timeline" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "새로 고침" }));
+    await waitFor(() => expect(screen.queryByRole("complementary", { name: "리스너 세부 정보" })).toBeNull());
+    expect(screen.getByRole("region", { name: "새로 고침 타임라인" })).toBeTruthy();
   });
 
   it("does not change the visible favorite when atomic preference persistence fails", async () => {
@@ -909,8 +916,8 @@ describe("identity-safe listener UI boundaries", () => {
     render(<App />);
     await screen.findByText("node.exe");
     const listeningRow = renderedRow("node.exe");
-    fireEvent.click(within(listeningRow).getByRole("button", { name: "Favorite port" }));
-    await screen.findByText("Action failed. Refresh the list and try again.");
-    expect(within(listeningRow).getByRole("button", { name: "Favorite port" })).toBeTruthy();
+    fireEvent.click(within(listeningRow).getByRole("button", { name: "포트 즐겨찾기" }));
+    await screen.findByText("작업을 완료하지 못했습니다. 목록을 새로 고친 후 다시 시도하세요.");
+    expect(within(listeningRow).getByRole("button", { name: "포트 즐겨찾기" })).toBeTruthy();
   });
 });

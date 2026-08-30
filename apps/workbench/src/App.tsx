@@ -3,6 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
+import { isKeyboardActivation } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   createProfile,
@@ -85,10 +86,10 @@ const RUNTIME_STATUS_LABEL: Record<RuntimeSuggestions["status"], string> = {
 
 const PREFLIGHT_ITEM_LABEL: Record<string, string> = {
   "required-apps": "필수 앱",
-  "wsl-distro": "WSL distro",
-  "working-directory": "working directory",
-  ports: "예상 port",
-  "service-dependencies": "service dependency",
+  "wsl-distro": "WSL 배포판",
+  "working-directory": "작업 디렉터리",
+  ports: "예상 포트",
+  "service-dependencies": "서비스 dependency",
 };
 
 const PREFLIGHT_STATUS_LABEL: Record<PreflightItem["status"], string> = {
@@ -232,6 +233,10 @@ export default function App() {
     disabled: busy && !preflightLoading,
     onBeforeOpen: (_reason, target) => prepareProfileContext(target),
   });
+  // The profile row contains several nested buttons, so keep the context-menu
+  // event handlers on the row without applying menu ARIA state to a generic
+  // container. The nested buttons remain independently accessible controls.
+  const profileContextTrigger = profileContextMenu.triggerProps;
 
   const refresh = useCallback(async () => {
     const hadPreflightOperation = preflightTarget.current !== null;
@@ -1014,7 +1019,7 @@ export default function App() {
       }
       if (remaining && remaining.runId === run.runId && remaining.profileId === profile.id) {
         setRun(run);
-        setError("일부 Workbench 프로세스를 안전하게 종료하지 못했습니다. Stop What I Started를 다시 시도하세요.");
+        setError("일부 Workbench 프로세스를 안전하게 종료하지 못했습니다. 내가 시작한 작업 중지를 다시 시도하세요.");
       } else if (remaining) {
         // A mismatched backend run is an invariant violation. Keep the local
         // run visible and fail closed rather than replacing it with unrelated
@@ -1099,13 +1104,13 @@ export default function App() {
       {
         type: "item",
         id: "start",
-        label: "Start Workspace",
+        label: "Workspace 시작",
         disabled: busy || environmentLoading || run !== null || contextPreflight !== null,
       },
       {
         type: "item",
         id: "stop",
-        label: "Stop What I Started",
+        label: "내가 시작한 작업 중지",
         disabled: busy || environmentLoading || contextRun === null,
         danger: true,
       },
@@ -1205,7 +1210,7 @@ export default function App() {
       <header className="toolbar">
         <h1 className="title">Workbench</h1>
         <button type="button" className="btn" disabled={busy || environmentLoading || templateBusy} onClick={() => { onCancelPreflight(); openEditor(emptyProfileDraft()); }}>+ 프로필</button>
-        <button type="button" className="btn" disabled={busy || environmentLoading || templateBusy} onClick={() => void openProjectWizard()}>새 프로젝트 wizard</button>
+        <button type="button" className="btn" disabled={busy || environmentLoading || templateBusy} onClick={() => void openProjectWizard()}>새 프로젝트 마법사</button>
         <button type="button" className="btn" disabled={busy || environmentLoading || templateBusy} onClick={() => void openTemplateManager()}>템플릿 관리</button>
         <button type="button" className="btn refresh" disabled={busy || environmentLoading} onClick={() => void refresh()}>새로고침</button>
       </header>
@@ -1223,7 +1228,17 @@ export default function App() {
               aria-current={p.id === selectedId ? "true" : undefined}
               data-profile-id={p.id}
               onClick={() => { if (!busy || preflightLoading) setSelectedId(p.id); }}
-              {...profileContextMenu.triggerProps}
+              onContextMenu={profileContextTrigger.onContextMenu}
+              onKeyDown={(event) => {
+                profileContextTrigger.onKeyDown?.(event);
+                if (
+                  event.defaultPrevented
+                  || event.target !== event.currentTarget
+                  || !isKeyboardActivation(event)
+                ) return;
+                event.preventDefault();
+                if (!busy || preflightLoading) setSelectedId(p.id);
+              }}
             >
               <button type="button" className="profile-name" disabled={busy || environmentLoading} onClick={() => { if (!busy || preflightLoading) setSelectedId(p.id); }}>
                 {p.name}
@@ -1300,7 +1315,7 @@ export default function App() {
                   />
                 </label>
                 <label className="field" htmlFor="profile-wsl-distro">
-                  <span>WSL distro</span>
+                  <span>WSL 배포판</span>
                   <input
                     id="profile-wsl-distro"
                     value={editing.wslDistro}
@@ -1325,7 +1340,7 @@ export default function App() {
                   {draftValidation?.errors.wsl && <span id="profile-wsl-error" className="field-error" role="alert">{draftValidation.errors.wsl}</span>}
                 </label>
                 <label className="field" htmlFor="profile-git-root">
-                  <span>Git root</span>
+                  <span>Git 루트</span>
                   <input
                     id="profile-git-root"
                     value={editing.gitRoot}
@@ -1355,7 +1370,7 @@ export default function App() {
                       disabled={environmentLoading}
                       onChange={(event) => patch({ environmentEnabled: event.currentTarget.checked })}
                     />
-                    <span>Start Workspace에서 환경 주입 사용</span>
+                    <span>Workspace 시작 시 환경 주입 사용</span>
                   </label>
                   <label className="field" htmlFor="profile-environment-source">
                     <span>환경 파일 이름 (프로젝트 상대)</span>
@@ -1395,7 +1410,7 @@ export default function App() {
                           {editing.environmentPreview.variables.map((variable) => (
                             <div className="environment-variable-row" key={`${variable.name}-${variable.source}`}>
                               <span className="environment-variable-name">{variable.name}</span>
-                              <span className="environment-variable-value" aria-label="마스킹된 환경 변수 값">{variable.maskedValue || "(empty)"}</span>
+                              <span className="environment-variable-value" aria-label="마스킹된 환경 변수 값">{variable.maskedValue || "(비어 있음)"}</span>
                               <span className="environment-variable-source">{variable.source}</span>
                               {variable.secretReference ? <span className="environment-variable-secret">secret reference</span> : null}
                               {variable.conflict !== "none" ? <span className="environment-variable-conflict">충돌: {variable.conflict}</span> : null}
@@ -1427,11 +1442,11 @@ export default function App() {
                     aria-describedby={draftValidation?.errors.expectedPorts ? "profile-ports-error" : "profile-ports-help"}
                     onChange={(e) => patch({ expectedPortsText: e.currentTarget.value })}
                   />
-                  <span id="profile-ports-help" className="field-help">프로필 health 점검과 Start Workspace에서 확인할 로컬 TCP 포트입니다.</span>
+                  <span id="profile-ports-help" className="field-help">프로필 상태 점검과 Workspace 시작 시 확인할 로컬 TCP 포트입니다.</span>
                   {draftValidation?.errors.expectedPorts && <span id="profile-ports-error" className="field-error" role="alert">{draftValidation.errors.expectedPorts}</span>}
                 </label>
                 <fieldset className="editor-section runtime-suggestions" disabled={busy}>
-                  <legend>WSL runtime 포트 제안</legend>
+                  <legend>WSL 런타임 포트 제안</legend>
                   <p className="field-help">
                     WSL Desktop이 마지막으로 발행한 read-only snapshot만 읽습니다. WSL·Docker를
                     실행하거나 컨테이너를 변경하지 않으며, 반영한 포트도 저장 전 편집 초안에만 남습니다.
@@ -1476,7 +1491,7 @@ export default function App() {
                                       return next;
                                     });
                                   }}
-                                  aria-label={`published port ${port.published} 선택`}
+                                  aria-label={`게시된 포트 ${port.published} 선택`}
                                 />
                                 <span className="runtime-port-number">host {port.published}</span>
                                 {alreadyRegistered ? <span className="runtime-port-existing">이미 등록됨</span> : null}
@@ -1568,7 +1583,7 @@ export default function App() {
                   disabled={busy || run !== null || preflight?.profileId === selectedProfile.id}
                   onClick={() => void onStart(selectedProfile.id)}
                 >
-                  {startingProfileId === selectedProfile.id ? "Workspace 시작 중…" : "Start Workspace"}
+                  {startingProfileId === selectedProfile.id ? "Workspace 시작 중…" : "Workspace 시작"}
                 </button>
                 {startingProfileId === selectedProfile.id && (
                   <button
@@ -1587,7 +1602,7 @@ export default function App() {
                       </button>
                     ) : null}
                     <button className="btn danger" disabled={busy} onClick={() => void onStop(selectedProfile)}>
-                      Stop What I Started
+                      내가 시작한 작업 중지
                     </button>
                   </>
                 )}
@@ -1595,9 +1610,9 @@ export default function App() {
 
               {preflightLoading && preflightTarget.current === selectedProfile.id && (
                 <div className="preflight-dialog" role="status" aria-live="polite" aria-busy="true">
-                  <h3>Start Workspace 사전 점검 중…</h3>
+                  <h3>Workspace 시작 사전 점검 중…</h3>
                   <p className="field-help">
-                    설치된 앱, WSL 경로, 예상 port와 service dependency를 읽기 전용으로 확인하고 있습니다.
+                    설치된 앱, WSL 경로, 예상 포트와 서비스 dependency를 읽기 전용으로 확인하고 있습니다.
                   </p>
                   <div className="actions">
                     <button type="button" className="btn" onClick={onCancelPreflight}>취소</button>
@@ -1637,7 +1652,7 @@ export default function App() {
                     }
                   }}
                 >
-                  <h3 id="workspace-preflight-title">Start Workspace 사전 점검</h3>
+                  <h3 id="workspace-preflight-title">Workspace 시작 사전 점검</h3>
                   <p id="workspace-preflight-description" className="field-help">
                     실행 전에 읽기 전용으로 확인한 결과입니다. 경고는 기존 resource를 유지한 채 계속할 수 있고,
                     차단·확인 불가 항목이 있으면 어떤 앱도 시작하지 않습니다.
@@ -1683,7 +1698,7 @@ export default function App() {
                 </div>
               )}
 
-              <h3 className="subtitle">Health</h3>
+              <h3 className="subtitle">상태 점검</h3>
               {health?.items.map((item) => (
                 <div key={item.name} className={`health-row ${item.ok ? "ok" : "bad"}`}>
                   <span className="health-name">{item.name}</span>
@@ -1691,9 +1706,9 @@ export default function App() {
                 </div>
               ))}
 
-              <h3 className="subtitle dependencies-title">Dependencies</h3>
+              <h3 className="subtitle dependencies-title">의존성</h3>
               <div className="dependency-health-heading">
-                <h4 className="dependency-subtitle">Environment</h4>
+                <h4 className="dependency-subtitle">환경</h4>
                 <button
                   type="button"
                   className="btn"
@@ -1719,7 +1734,7 @@ export default function App() {
                 </button>
               </div>
               {dependencyLoading && !dependencyStatus ? (
-                <div className="dim" role="status">app/distro/path/port/service dependency 확인 중…</div>
+                <div className="dim" role="status">앱/배포판/path/port/service dependency 확인 중…</div>
               ) : dependencyStatus ? (
                 <div className="dependency-health-list" aria-label="Dependency health 결과">
                   {dependencyStatus.items.map((item) => (
@@ -1750,7 +1765,7 @@ export default function App() {
 
               {run?.profileId === selectedProfile.id && (
                 <>
-                  <h3 className="subtitle">Start Workspace 결과</h3>
+                  <h3 className="subtitle">Workspace 시작 결과</h3>
                   {run.steps.map((step, i) => (
                     <div key={i} className={`health-row ${step.ok ? "ok" : "bad"}`}>
                       <span className="health-name">{step.name}</span>
@@ -1763,7 +1778,7 @@ export default function App() {
                   ))}
                   {run.resourceProvenance.length > 0 && (
                     <>
-                      <h3 className="subtitle">Resource ownership</h3>
+                      <h3 className="subtitle">리소스 소유권</h3>
                       {run.resourceProvenance.map((resource) => (
                         <div key={`${resource.kind}:${resource.id}`} className="health-row">
                           <span className="health-name">{resource.id}</span>
@@ -1792,7 +1807,7 @@ export default function App() {
             aria-busy={templateBusy}
             onKeyDown={(event) => trapModalFocus(event, closeTemplateDialog, templateBusy)}
           >
-            <h2 id="project-wizard-title">새 프로젝트 wizard</h2>
+            <h2 id="project-wizard-title">새 프로젝트 마법사</h2>
             <p id="project-wizard-description" className="field-help">템플릿은 안전한 기본값만 채우며, 기존 프로필이나 프로젝트 파일은 변경하지 않습니다.</p>
             <label className="field" htmlFor="wizard-template">
               <span>프로필 템플릿</span>
@@ -1837,7 +1852,7 @@ export default function App() {
                 />
               </label>
               <label className="field" htmlFor="wizard-wsl-distro">
-                <span>WSL distro</span>
+                <span>WSL 배포판</span>
                 <input
                   id="wizard-wsl-distro"
                   value={wizardDraft.wslDistro}
@@ -1859,7 +1874,7 @@ export default function App() {
                 />
               </label>
               <label className="field" htmlFor="wizard-git-root">
-                <span>Git root</span>
+                <span>Git 루트</span>
                 <input
                   id="wizard-git-root"
                   value={wizardDraft.gitRoot}
@@ -1968,7 +1983,7 @@ export default function App() {
                   />
                 </label>
                 <label className="field" htmlFor="template-wsl-distro">
-                  <span>기본 WSL distro (선택)</span>
+                  <span>기본 WSL 배포판 (선택)</span>
                   <input
                     id="template-wsl-distro"
                     value={templateEditing.wslDistro}
@@ -1990,7 +2005,7 @@ export default function App() {
                   />
                 </label>
                 <label className="field" htmlFor="template-git-root">
-                  <span>기본 Git root (선택)</span>
+                  <span>기본 Git 루트 (선택)</span>
                   <input
                     id="template-git-root"
                     value={templateEditing.gitRoot}

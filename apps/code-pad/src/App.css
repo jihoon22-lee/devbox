@@ -1,4 +1,5 @@
 @import "@devbox/tokens/tokens.css";
+@import "@devbox/a11y/styles.css";
 
 :root {
   color: #dbe4f0;

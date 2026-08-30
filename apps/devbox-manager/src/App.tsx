@@ -3,6 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
+import { isKeyboardActivation } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   available,
@@ -78,17 +79,17 @@ const ROOT_STATUS_LABEL: Record<InstallRootPreview["status"], string> = {
 function rootStatusDescription(preview: InstallRootPreview): string {
   switch (preview.status) {
     case "ready":
-      return "검증된 빈 디렉터리입니다. 적용을 누르면 다음 설치부터 이 root를 사용합니다.";
+      return "검증된 빈 디렉터리입니다. 적용을 누르면 다음 설치부터 이 루트를 사용합니다.";
     case "already-active":
-      return "현재 설치 root와 같습니다. 파일은 변경되지 않습니다.";
+      return "현재 설치 루트와 같습니다. 파일은 변경되지 않습니다.";
     case "existing-install":
-      return "현재 root에 설치 기록 또는 관리 파일이 있어 자동 이동하지 않습니다.";
+      return "현재 루트에 설치 기록 또는 관리 파일이 있어 자동 이동하지 않습니다.";
     case "candidate-conflict":
       return "기존 파일이 있는 디렉터리는 덮어쓰지 않습니다.";
     case "permission-denied":
-      return "설치 root에 쓸 권한이 없어 적용하지 않습니다.";
+      return "설치 루트에 쓸 권한이 없어 적용하지 않습니다.";
     case "insufficient-free-space":
-      return "필수 여유 공간을 확보한 뒤 다시 preview하세요.";
+      return "필수 여유 공간을 확보한 뒤 다시 미리 확인하세요.";
     case "free-space-unavailable":
       return "여유 공간을 확인할 수 없으므로 적용하지 않습니다.";
   }
@@ -115,11 +116,17 @@ const RELATED_TOOL_SAFE_ERRORS = new Set([
   "WinGet 설치가 제한 시간 안에 끝나지 않았습니다. 설치 창과 앱 상태를 확인하세요.",
 ]);
 
+const RELATED_TOOL_ERROR_DISPLAY: Readonly<Record<string, string>> = {
+  "Related Tools는 Windows에서만 사용할 수 있습니다.": "관련 도구는 Windows에서만 사용할 수 있습니다.",
+};
+
 function safeRelatedToolError(error: unknown): string {
   const message = error instanceof Error
     ? error.message
     : typeof error === "string" ? error : "";
-  return RELATED_TOOL_SAFE_ERRORS.has(message) ? message : RELATED_TOOL_GENERIC_ERROR;
+  return RELATED_TOOL_SAFE_ERRORS.has(message)
+    ? RELATED_TOOL_ERROR_DISPLAY[message] ?? message
+    : RELATED_TOOL_GENERIC_ERROR;
 }
 
 function removalStateDescription(preview: RemovePreview): string {
@@ -927,10 +934,10 @@ export default function App() {
       if (mountedRef.current && requestId === devSetupConfigurationApplyRequestIdRef.current) {
         setDevSetupConfigurationResult(result);
         setDevSetupConfigurationNotice(result.status === "complete"
-          ? "Dev Setup package apply가 완료되었습니다."
+          ? "Dev Setup 패키지 적용이 완료되었습니다."
           : result.status === "cancelled"
             ? DEV_SETUP_CONFIGURATION_CANCELLED
-            : "Dev Setup package apply가 일부 완료되었습니다. 결과를 확인하세요.");
+            : "Dev Setup 패키지 적용이 일부 완료되었습니다. 결과를 확인하세요.");
       }
     } catch {
       if (mountedRef.current && requestId === devSetupConfigurationApplyRequestIdRef.current) {
@@ -1065,7 +1072,7 @@ export default function App() {
     } catch {
       if (mountedRef.current && requestId === rootRequestIdRef.current) {
         setInstallRootPreview(null);
-        setInstallRootError("설치 root를 확인할 수 없습니다. 경로와 권한을 확인하세요.");
+        setInstallRootError("설치 루트를 확인할 수 없습니다. 경로와 권한을 확인하세요.");
       }
     } finally {
       rootBusyRef.current = false;
@@ -1085,7 +1092,7 @@ export default function App() {
       || readBusyRef.current
     ) return;
     if (!window.confirm(
-      "검증된 빈 디렉터리를 새 설치 root로 적용할까요? 기존 설치는 자동으로 이동하거나 삭제하지 않습니다.",
+      "검증된 빈 디렉터리를 새 설치 루트로 적용할까요? 기존 설치는 자동으로 이동하거나 삭제하지 않습니다.",
     )) return;
     const requestId = ++rootRequestIdRef.current;
     rootBusyRef.current = true;
@@ -1096,13 +1103,13 @@ export default function App() {
       const result = await applyInstallRoot(installRootInput, preview.registryRevision);
       if (mountedRef.current && requestId === rootRequestIdRef.current) {
         setInstallRootPreview(null);
-        setNotice(`설치 root를 적용했습니다. revision ${result.registryRevision}`);
+        setNotice(`설치 루트를 적용했습니다. revision ${result.registryRevision}`);
       }
       await refresh(true);
     } catch {
       if (mountedRef.current && requestId === rootRequestIdRef.current) {
         setInstallRootPreview(null);
-        setInstallRootError("설치 root를 적용할 수 없습니다. 최신 preview를 다시 확인하세요.");
+        setInstallRootError("설치 루트를 적용할 수 없습니다. 최신 미리 보기를 다시 확인하세요.");
       }
     } finally {
       rootBusyRef.current = false;
@@ -1588,14 +1595,14 @@ export default function App() {
         >
           Dev Setup
         </button>
-        <span className="latest">Latest: {manifest ? manifest.releaseTag : "..."}</span>
+        <span className="latest">최신 버전: {manifest ? manifest.releaseTag : "..."}</span>
         <span className="spacer" />
         <button
           className="btn refresh"
           disabled={batchBusy || busy !== null || installRootBusy || readBusy}
           onClick={() => void refresh()}
         >
-          Refresh
+          새로고침
         </button>
       </header>
 
@@ -1605,7 +1612,7 @@ export default function App() {
       {tab === "doctor" ? (
         <div className="doctor">
           <div className="doctor-head">
-            <span className="dim">read-only 진단 · 자동 설치·수정 없음</span>
+            <span className="dim">읽기 전용 진단 · 자동 설치·수정 없음</span>
             <button
               className="btn"
               disabled={installRootBusy || readBusy}
@@ -1621,12 +1628,12 @@ export default function App() {
             </div>
           ))}
           {diagnosis.length === 0 && <div className="dim">진단을 실행해 주세요.</div>}
-          <div className="dim doctor-note">지원 번들·path·환경변수는 redaction되어야 합니다 (§15.4 경계).</div>
+          <div className="dim doctor-note">지원 번들·경로·환경변수는 비식별화되어야 합니다 (§15.4 경계).</div>
 
           <section className="diagnostic-tool" aria-labelledby="data-inspector-heading">
             <div className="diagnostic-tool-head">
               <div>
-                <h2 id="data-inspector-heading">Data Inspector</h2>
+                <h2 id="data-inspector-heading">데이터 검사기</h2>
                 <p className="dim">
                   catalog가 아는 devbox 앱의 data.db만 자동 발견합니다. 경로 입력·쓰기·migration·network는 없습니다.
                 </p>
@@ -1646,7 +1653,7 @@ export default function App() {
               </div>
             </div>
             <div className="diagnostic-safety-note">
-              read-only open · PRAGMA query_only=ON · SQLite authorizer · 2초 · 최대 1,000행 / 1 MiB ·
+              읽기 전용 열기 · PRAGMA query_only=ON · SQLite authorizer · 2초 · 최대 1,000행 / 1 MiB ·
               secret/username/path masking
             </div>
             {dataSnapshot && (
@@ -1667,7 +1674,7 @@ export default function App() {
                       <span className="database-card-state">{dataStateLabel(database.state)}</span>
                       {database.state === "available" && (
                         <span className="database-card-meta">
-                          table {database.tables.length} · view {database.views.length} · integrity {dataIntegrityLabel(database.integrity)}
+                          table {database.tables.length} · view {database.views.length} · 무결성 {dataIntegrityLabel(database.integrity)}
                         </span>
                       )}
                       {database.warning && <span className="database-card-warning">{database.warning}</span>}
@@ -1676,11 +1683,11 @@ export default function App() {
                 </div>
                 {selectedDataDatabase && selectedDataDatabase.state === "available" && (
                   <div className="database-schema" aria-label="SQLite schema 요약">
-                    <strong>{selectedDataDatabase.displayName} schema</strong>
+                    <strong>{selectedDataDatabase.displayName} 스키마</strong>
                     <div className="schema-items">
                       {selectedDataDatabase.tables.map((table) => (
                         <span key={`table:${table.name}`} className="schema-item">
-                          table {table.name} ({table.rowCount == null ? "?" : table.rowCount} rows)
+                          table {table.name} ({table.rowCount == null ? "?" : table.rowCount}행)
                         </span>
                       ))}
                       {selectedDataDatabase.views.map((view) => (
@@ -1690,11 +1697,11 @@ export default function App() {
                         <span className="dim">표시할 table/view가 없습니다.</span>
                       )}
                     </div>
-                    <div className="dim schema-note">schema version {selectedDataDatabase.schemaVersion ?? "?"} · database path는 표시하지 않습니다.</div>
+                    <div className="dim schema-note">스키마 버전 {selectedDataDatabase.schemaVersion ?? "?"} · database path는 표시하지 않습니다.</div>
                   </div>
                 )}
                 <div className="query-panel">
-                  <label htmlFor="data-query">읽기 전용 SQL preview</label>
+                  <label htmlFor="data-query">읽기 전용 SQL 미리 보기</label>
                   <textarea
                     id="data-query"
                     value={dataSql}
@@ -1721,8 +1728,8 @@ export default function App() {
                   {dataResult && (
                     <div className="query-result" aria-live="polite">
                       <div className="query-result-head">
-                        <strong>조회 결과 preview</strong>
-                        <span className="dim">{dataResult.rowCount} rows · {formatBytes(dataResult.resultBytes)} · {dataResult.elapsedMs} ms{dataResult.truncated ? " · 일부 결과만 표시" : ""}</span>
+                        <strong>조회 결과 미리 보기</strong>
+                        <span className="dim">{dataResult.rowCount}행 · {formatBytes(dataResult.resultBytes)} · {dataResult.elapsedMs}밀리초{dataResult.truncated ? " · 일부 결과만 표시" : ""}</span>
                       </div>
                       <div className="query-result-table-wrap">
                         <table className="query-result-table">
@@ -1737,9 +1744,9 @@ export default function App() {
                         </table>
                       </div>
                       <div className="query-export-actions">
-                        <span className="dim">내보내기 전 preview를 검토하세요. credential·path·raw body는 backend에서 masking됩니다.</span>
-                        <button className="btn" type="button" disabled={dataBusy || supportBusy} onClick={() => void onExportData("json")}>JSON export</button>
-                        <button className="btn" type="button" disabled={dataBusy || supportBusy} onClick={() => void onExportData("csv")}>CSV export</button>
+                        <span className="dim">내보내기 전 미리 보기를 검토하세요. credential·경로·raw body는 backend에서 마스킹됩니다.</span>
+                        <button className="btn" type="button" disabled={dataBusy || supportBusy} onClick={() => void onExportData("json")}>JSON 내보내기</button>
+                        <button className="btn" type="button" disabled={dataBusy || supportBusy} onClick={() => void onExportData("csv")}>CSV 내보내기</button>
                       </div>
                     </div>
                   )}
@@ -1752,8 +1759,8 @@ export default function App() {
           <section className="diagnostic-tool support-tool" aria-labelledby="support-bundle-heading">
             <div className="diagnostic-tool-head">
               <div>
-                <h2 id="support-bundle-heading">Redacted support bundle</h2>
-                <p className="dim">app/catalog/schema/log metadata와 진단 상태만 포함하며 raw DB·raw log·path·user·secret·Authorization/Cookie는 포함하지 않습니다.</p>
+                <h2 id="support-bundle-heading">비식별화된 지원 번들</h2>
+                <p className="dim">app/catalog/schema/log 메타데이터와 진단 상태만 포함하며 raw DB·raw log·경로·user·secret·Authorization/Cookie는 포함하지 않습니다.</p>
               </div>
               <div className="diagnostic-tool-actions">
                 {supportBusy && supportOperationIdRef.current && (
@@ -1772,16 +1779,16 @@ export default function App() {
             {supportPreview && (
               <div className="support-preview" role="status" aria-live="polite">
                 <div className="query-result-head">
-                  <strong>내보내기 preview · redaction {supportPreview.redactionVersion}</strong>
-                  <span className="dim">{formatBytes(supportPreview.estimatedBytes)} · DB {supportPreview.databaseCount}개 · 5분 이내 1회 export</span>
+                  <strong>내보내기 미리 보기 · 비식별화 {supportPreview.redactionVersion}</strong>
+                  <span className="dim">{formatBytes(supportPreview.estimatedBytes)} · DB {supportPreview.databaseCount}개 · 5분 이내 1회 내보내기</span>
                 </div>
                 <div className="support-sections">
                   <div><strong>포함</strong>{supportPreview.includedSections.map((section) => <span key={section}>{section}</span>)}</div>
                   <div><strong>제외</strong>{supportPreview.omittedSections.map((section) => <span key={section}>{section}</span>)}</div>
                 </div>
                 <div className="query-export-actions">
-                  <span className="dim">진단 상태가 바뀌면 stale로 중단되며 새 preview가 필요합니다.</span>
-                  <button className="btn primary" type="button" disabled={supportBusy} onClick={() => void onExportSupport()}>확인 후 JSON export</button>
+                  <span className="dim">진단 상태가 바뀌면 stale로 중단되며 새 미리 보기가 필요합니다.</span>
+                  <button className="btn primary" type="button" disabled={supportBusy} onClick={() => void onExportSupport()}>확인 후 JSON 내보내기</button>
                   <button className="btn" type="button" disabled={supportBusy} onClick={() => setSupportPreview(null)}>취소</button>
                 </div>
               </div>
@@ -1813,7 +1820,7 @@ export default function App() {
             </button>
           </div>
           <div className="diagnostic-safety-note">
-            read-only audit · 고정된 실행 파일과 WSL 목록만 조회 · 원본 경로/환경변수/프로세스 출력 비공개 · 아래 package apply와 분리됨
+            읽기 전용 감사 · 고정된 실행 파일과 WSL 목록만 조회 · 원본 경로/환경변수/프로세스 출력 비공개 · 아래 패키지 적용과 분리됨
           </div>
           {devSetupError && <div className="error related-tools-error" role="alert">{devSetupError}</div>}
           {!devSetupSnapshot && !devSetupBusy && !devSetupError && (
@@ -1868,7 +1875,7 @@ export default function App() {
               >
                 <div className="dev-setup-config-head">
                   <div>
-                    <h3 id="dev-setup-config-heading">WinGet Configuration v3 · package-only</h3>
+                <h3 id="dev-setup-config-heading">WinGet 구성 v3 · package-only</h3>
                     <p className="dim">
                       외부 YAML은 그대로 실행하지 않습니다. Microsoft.WinGet/Package 리소스와 고정된
                       <code>winget</code> source 이름만 정규화해 검토합니다.
@@ -1880,7 +1887,7 @@ export default function App() {
                         className="btn"
                         type="button"
                         onClick={onCancelDevSetupApply}
-                        aria-label="Dev Setup package apply 취소"
+                        aria-label="Dev Setup 패키지 적용 취소"
                       >
                         적용 취소
                       </button>
@@ -1917,7 +1924,7 @@ export default function App() {
                           }
                           onClick={() => void onExportDevSetupConfiguration()}
                         >
-                          정규화된 구성 export
+                          정규화된 구성 내보내기
                         </button>
                         <button
                           className="btn"
@@ -2079,7 +2086,7 @@ export default function App() {
                           aria-busy={devSetupApplyInFlight}
                           onClick={() => void onApplyDevSetupConfiguration()}
                         >
-                          {devSetupApplyInFlight ? "적용 중..." : "확인 후 package apply"}
+                          {devSetupApplyInFlight ? "적용 중..." : "확인 후 패키지 적용"}
                         </button>
                         <span className="dim">
                           {!devSetupConfigurationReview.canApply || devSetupConfigurationHasUnknown
@@ -2091,7 +2098,7 @@ export default function App() {
                     {devSetupConfigurationResult && (
                       <div className="dev-setup-config-result" role="status" aria-live="polite">
                         <div className="dev-setup-config-review-head">
-                          <strong>package apply 결과</strong>
+                          <strong>패키지 적용 결과</strong>
                           <span>{devSetupApplyStatusLabel(devSetupConfigurationResult.status)}</span>
                         </div>
                         <div className="dev-setup-config-result-list">
@@ -2124,7 +2131,7 @@ export default function App() {
         >
           <div className="related-tools-head">
             <div>
-              <h2 id="related-tools-heading">Related Tools</h2>
+              <h2 id="related-tools-heading">관련 도구</h2>
               <p className="dim">
                 개발 흐름을 보완하는 작은 공식 도구 목록입니다. 로컬 실행 가능성과 설치 근거를 구분하며 경로와 버전은 표시하지 않습니다.
                 감지와 이미 설치된 도구 실행은 인터넷 없이 가능합니다. WinGet 설치는 Windows와 네트워크가 필요하고, 공식·라이선스 링크는 플랫폼과 관계없이 네트워크 연결 시 열 수 있습니다.
@@ -2264,15 +2271,15 @@ export default function App() {
         >
           <div className="install-root-head">
             <div>
-              <h2 id="install-root-heading">설치 root 지정</h2>
+              <h2 id="install-root-heading">설치 루트 지정</h2>
               <p className="dim">
                 기존 설치는 이동하지 않으며, 비어 있고 검증된 디렉터리만 다음 설치에 적용합니다.
               </p>
             </div>
-            <span className="read-only-tag">preview 후 확인</span>
+            <span className="read-only-tag">미리 보기 후 확인</span>
           </div>
           <div className="install-root-form">
-            <label htmlFor="install-root-path">설치 root 경로</label>
+            <label htmlFor="install-root-path">설치 루트 경로</label>
             <input
               id="install-root-path"
               value={installRootInput}
@@ -2337,7 +2344,7 @@ export default function App() {
                   disabled={batchBusy || busy !== null || installRootBusy || readBusy}
                   onClick={() => void applyRoot()}
                 >
-                  확인 후 이 root 적용
+                  확인 후 이 루트 적용
                 </button>
               )}
             </div>
@@ -2362,11 +2369,11 @@ export default function App() {
               </button>
             </div>
             <dl className="install-path-grid">
-              <dt>Executable</dt>
+              <dt>실행 파일</dt>
               <dd><code>{installPathDetails.executable ?? "Manager가 실제 설치 위치를 추적하지 않습니다."}</code></dd>
-              <dt>Install root</dt>
+              <dt>설치 루트</dt>
               <dd><code>{installPathDetails.installRoot ?? "Manager가 실제 설치 위치를 추적하지 않습니다."}</code></dd>
-              <dt>Source manifest</dt>
+              <dt>원본 매니페스트</dt>
               <dd><code>{installPathDetails.sourceManifest}</code></dd>
             </dl>
             <div className="dim install-path-note">
@@ -2521,10 +2528,10 @@ export default function App() {
                   onChange={toggleAllBatchApps}
                 />
               </th>
-              <th>APP</th>
-              <th>INSTALLED</th>
-              <th>LATEST</th>
-              <th>ACTION</th>
+              <th>앱</th>
+              <th>설치됨</th>
+              <th>최신 버전</th>
+              <th>작업</th>
             </tr>
           </thead>
           <tbody>
@@ -2542,7 +2549,17 @@ export default function App() {
                   aria-current={selectedAppId === a.id ? "true" : undefined}
                   data-app-id={a.id}
                   onClick={() => setSelectedAppId(a.id)}
-                  {...appContextMenu.triggerProps}
+                  onContextMenu={appContextMenu.triggerProps.onContextMenu}
+                  onKeyDown={(event) => {
+                    appContextMenu.triggerProps.onKeyDown?.(event);
+                    if (
+                      event.defaultPrevented
+                      || event.target !== event.currentTarget
+                      || !isKeyboardActivation(event)
+                    ) return;
+                    event.preventDefault();
+                    setSelectedAppId(a.id);
+                  }}
                 >
                   <td className="batch-select-cell">
                     <input
@@ -2562,7 +2579,7 @@ export default function App() {
                       <span>
                         {inst.version} ({inst.mode})
                         {canRollback && (
-                          <span className="dim"> ← prev {cur?.previousVersion}</span>
+                          <span className="dim"> ← 이전 버전 {cur?.previousVersion}</span>
                         )}
                       </span>
                     ) : (
@@ -2578,30 +2595,30 @@ export default function App() {
                         disabled={isAppBusy(a.id)}
                         onClick={() => void onShowInstallPath(a.id)}
                       >
-                        {busy === `${a.id}:path` ? "..." : "Paths"}
+                        {busy === `${a.id}:path` ? "..." : "경로 정보"}
                       </button>
                     )}
                     {inst?.mode === "portable" && (
                       <button className="btn" disabled={isAppBusy(a.id)} onClick={() => void onLaunch(a.id)}>
-                        Launch
+                        실행
                       </button>
                     )}
                     {canRollback && (
                       <button className="btn" disabled={isAppBusy(a.id)} onClick={() => void onRollback(a.id)}>
-                        {busy === `${a.id}:rollback` ? "..." : "Rollback"}
+                        {busy === `${a.id}:rollback` ? "..." : "롤백"}
                       </button>
                     )}
                     {!upToDate && app && (
                       <>
                         <button className="btn" disabled={isAppBusy(a.id)} onClick={() => void onInstall(a.id, "portable")}>
-                          {busy === `${a.id}:portable` ? "..." : inst ? "Update (portable)" : "Install (portable)"}
+                          {busy === `${a.id}:portable` ? "..." : inst ? "업데이트 (portable)" : "설치 (portable)"}
                         </button>
                         <button className="btn" disabled={isAppBusy(a.id)} onClick={() => void onInstall(a.id, "installer")}>
-                          {busy === `${a.id}:installer` ? "..." : inst ? "Update (setup)" : "Install (setup)"}
+                          {busy === `${a.id}:installer` ? "..." : inst ? "업데이트 (setup)" : "설치 (setup)"}
                         </button>
                       </>
                     )}
-                    {upToDate && <span className="dim tag">up to date</span>}
+                    {upToDate && <span className="dim tag">최신 상태</span>}
                   </td>
                 </tr>
               );

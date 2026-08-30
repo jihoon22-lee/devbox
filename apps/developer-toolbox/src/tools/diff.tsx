@@ -68,9 +68,9 @@ export function DiffTool() {
     <div className="tool">
       <div className="io-grid">
         <div className="io-col">
-          <div className="io-label">Old</div>
+          <div className="io-label">이전 버전</div>
           <ToolTextArea
-            aria-label="Old input"
+            aria-label="이전 버전 입력"
             className="io-input"
             rows={10}
             value={a}
@@ -79,9 +79,9 @@ export function DiffTool() {
           />
         </div>
         <div className="io-col">
-          <div className="io-label">New</div>
+          <div className="io-label">새 버전</div>
           <ToolTextArea
-            aria-label="New input"
+            aria-label="새 버전 입력"
             className="io-input"
             rows={10}
             value={b}
@@ -95,7 +95,7 @@ export function DiffTool() {
           asDiv
           className="io-col"
           value={a}
-          ariaLabel="Old diff output"
+          ariaLabel="이전 버전 차이 결과"
           downloadName="dev-toolbox-diff-old.txt"
         >
           {renderColumn(aLines, "old")}
@@ -104,7 +104,7 @@ export function DiffTool() {
           asDiv
           className="io-col"
           value={b}
-          ariaLabel="New diff output"
+          ariaLabel="새 버전 차이 결과"
           downloadName="dev-toolbox-diff-new.txt"
         >
           {renderColumn(bLines, "new")}

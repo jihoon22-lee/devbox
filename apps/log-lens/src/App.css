@@ -1,16 +1,19 @@
+@import "@devbox/tokens/tokens.css";
+@import "@devbox/a11y/styles.css";
+
 :root {
   color-scheme: dark;
-  font-family: "Segoe UI", system-ui, sans-serif;
-  color: #e7edf5;
-  background: #10151c;
-  --bg: #10151c;
-  --panel: #18212c;
-  --panel-2: #202d3a;
-  --border: #314254;
-  --muted: #98aabd;
-  --accent: #70b8ff;
-  --danger: #ff8b91;
-  --ok: #81d7ac;
+  font-family: var(--db-font-sans);
+  color: var(--db-color-text);
+  background: var(--db-color-bg);
+  --bg: var(--db-color-bg);
+  --panel: var(--db-color-surface);
+  --panel-2: var(--db-color-border);
+  --border: var(--db-color-border);
+  --muted: var(--db-color-text-muted);
+  --accent: var(--db-color-accent);
+  --danger: var(--db-color-danger);
+  --ok: var(--db-color-ok);
 }
 
 * { box-sizing: border-box; }

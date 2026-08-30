@@ -3,6 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
+import { isImeComposing, isKeyboardActivation } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import * as api from "./api";
 import {
@@ -140,6 +141,17 @@ const AUTH_KINDS = ["none", "basic", "bearer", "apikey"];
 const MAX_SSE_UI_ROWS = 1_000;
 const API_REQUEST_HANDOFF_KIND = "api-request/v1";
 
+function sseStateLabel(state: "idle" | "connecting" | "connected" | "stopped" | "closed" | "error"): string {
+  return {
+    idle: "대기",
+    connecting: "연결 중",
+    connected: "연결됨",
+    stopped: "중지됨",
+    closed: "닫힘",
+    error: "오류",
+  }[state];
+}
+
 function downloadJson(content: string, fileName: string): void {
   const blob = new Blob([content], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -240,7 +252,7 @@ function KeyValueEditor({
             spellCheck={false}
           />
           <input
-            placeholder="Value"
+            placeholder="값"
             value={r.value}
             onChange={(e) => update(i, { value: e.currentTarget.value })}
             spellCheck={false}
@@ -251,7 +263,7 @@ function KeyValueEditor({
         </div>
       ))}
       <button className="btn kv-add" onClick={() => onChange([...rows, { key: "", value: "" }])}>
-        + Add
+        + 추가
       </button>
     </div>
   );
@@ -668,9 +680,9 @@ export default function App() {
   ) => {
     if (kind === "collection") {
       const imported = parseCollectionExport(raw);
-      if (!imported) throw new Error("Collection JSON 형식이 올바르지 않습니다");
+      if (!imported) throw new Error("컬렉션 JSON 형식이 올바르지 않습니다");
       if (expectedCollectionRevision !== collectionRevisionRef.current) {
-        throw new Error("Collection import가 오래된 상태를 덮어쓰지 않았습니다");
+        throw new Error("오래된 컬렉션 가져오기로 현재 상태를 덮어쓰지 않았습니다");
       }
       let sequence = 0;
       const merged = mergeImportedCollections(
@@ -678,20 +690,20 @@ export default function App() {
         imported,
         () => `c-import-${Date.now()}-${sequence++}`,
       );
-      if (!merged) throw new Error("Collection import를 한 번에 적용할 수 없습니다");
+      if (!merged) throw new Error("컬렉션 가져오기를 한 번에 적용할 수 없습니다");
       const previousCount = collectionStoreRef.current.collections.length;
       const safe = await persistCollections(merged, expectedCollectionRevision);
       if (!mountedRef.current) return;
       const added = Math.max(0, safe.collections.length - previousCount);
       setSelectedCollectionId(safe.collections[0]?.id ?? null);
-      setMigrationNotice(`Collection ${added}건을 추가했습니다. 기존 항목은 덮어쓰지 않았습니다.`);
+      setMigrationNotice(`컬렉션 ${added}건을 추가했습니다. 기존 항목은 덮어쓰지 않았습니다.`);
       return;
     }
 
     const imported = parseEnvironmentExport(raw);
-    if (!imported) throw new Error("Environment JSON 형식이 올바르지 않습니다");
+    if (!imported) throw new Error("환경 JSON 형식이 올바르지 않습니다");
     if (expectedEnvironmentRevision !== environmentRevisionRef.current) {
-      throw new Error("Environment import가 오래된 상태를 덮어쓰지 않았습니다");
+      throw new Error("오래된 환경 가져오기로 현재 상태를 덮어쓰지 않았습니다");
     }
     let sequence = 0;
     const next = mergeImportedEnvironments(
@@ -699,13 +711,13 @@ export default function App() {
       imported,
       () => `e-import-${Date.now()}-${sequence++}`,
     );
-    if (!next) throw new Error("Environment import를 한 번에 적용할 수 없습니다");
+    if (!next) throw new Error("환경 가져오기를 한 번에 적용할 수 없습니다");
     const previousCount = envStoreRef.current.environments.length;
     const saved = persistEnvs(next, expectedEnvironmentRevision);
     if (!mountedRef.current) return;
     const added = Math.max(0, saved.environments.length - previousCount);
     if (!currentEnvId) setCurrentEnvId(saved.environments[0]?.id ?? "");
-    setMigrationNotice(`Environment ${added}건을 추가했습니다. secret 값은 보안상 다시 입력해야 합니다.`);
+    setMigrationNotice(`환경 ${added}건을 추가했습니다. secret 값은 보안상 다시 입력해야 합니다.`);
   };
 
   const onImportTransfer = (kind: "collection" | "environment") => {
@@ -760,7 +772,7 @@ export default function App() {
         await applyImportedTransfer(kind, raw, expectedCollectionRevision, expectedEnvironmentRevision);
       } catch {
         if (mountedRef.current) {
-          setPersistenceWarning(`${kind === "collection" ? "Collection" : "Environment"} JSON을 가져오지 않았습니다. schema, 크기와 secret 정책을 확인하세요.`);
+          setPersistenceWarning(`${kind === "collection" ? "컬렉션" : "환경"} JSON을 가져오지 않았습니다. schema, 크기와 secret 정책을 확인하세요.`);
         }
       }
     }).catch(() => {
@@ -789,7 +801,7 @@ export default function App() {
       if (isTauri()) {
         void saveJsonFile(content, fileName).then((saved) => {
           if (saved && mountedRef.current) {
-            setMigrationNotice(`${kind === "collection" ? "Collection" : "Environment"} JSON 내보내기를 완료했습니다.`);
+            setMigrationNotice(`${kind === "collection" ? "컬렉션" : "환경"} JSON 내보내기를 완료했습니다.`);
           }
         }).catch(() => {
           if (mountedRef.current) setPersistenceWarning("JSON 파일을 저장하지 않았습니다. native 저장 위치를 확인하세요.");
@@ -799,12 +811,12 @@ export default function App() {
         });
       } else {
         downloadJson(content, fileName);
-        setMigrationNotice(`${kind === "collection" ? "Collection" : "Environment"} JSON 다운로드를 시작했습니다.`);
+        setMigrationNotice(`${kind === "collection" ? "컬렉션" : "환경"} JSON 다운로드를 시작했습니다.`);
         transferBusyRef.current = false;
         setTransferBusy(false);
       }
     } catch {
-      setPersistenceWarning("JSON export를 생성하지 못했습니다. 항목 수와 크기를 확인하세요.");
+      setPersistenceWarning("JSON 내보내기를 생성하지 못했습니다. 항목 수와 크기를 확인하세요.");
       transferBusyRef.current = false;
       setTransferBusy(false);
     }
@@ -825,7 +837,7 @@ export default function App() {
       setCollName("");
       setCollFolder("");
     } catch {
-      setPersistenceWarning("민감정보 안전 검증에 실패해 Collection을 저장하지 않았습니다.");
+      setPersistenceWarning("민감정보 안전 검증에 실패해 컬렉션을 저장하지 않았습니다.");
     } finally {
       setCollSaving(false);
     }
@@ -841,7 +853,7 @@ export default function App() {
   };
 
   const onOpenApiAddToCollection = async (operations: OpenApiOperationPreview[]) => {
-    if (openApiCollectionSavingRef.current) throw new Error("OpenAPI Collection 저장이 이미 진행 중입니다");
+    if (openApiCollectionSavingRef.current) throw new Error("OpenAPI 컬렉션 저장이 이미 진행 중입니다");
     openApiCollectionSavingRef.current = true;
     setCollSaving(true);
     const timestamp = Date.now();
@@ -890,7 +902,7 @@ export default function App() {
     const initialVariables = envStore.environments.flatMap((environment) => environment.variables);
     let historyTask: Promise<void>;
     if (historyMigration.failed) {
-      setPersistenceWarning("이전 History 삭제를 완료하지 못했습니다. 원본은 격리되며 다음 실행에서 재시도합니다.");
+      setPersistenceWarning("이전 기록 삭제를 완료하지 못했습니다. 원본은 격리되며 다음 실행에서 재시도합니다.");
       historyTask = Promise.resolve();
     } else {
       historyTask = saveHistoryStore(
@@ -899,11 +911,11 @@ export default function App() {
       ).then((safe) => {
         setHistory(safe.history);
         if (historyMigration.migrated) {
-          setMigrationNotice(`안전을 확인할 수 없는 이전 History ${historyMigration.removedLegacyEntries}건을 제거했습니다.`);
+          setMigrationNotice(`안전을 확인할 수 없는 이전 기록 ${historyMigration.removedLegacyEntries}건을 제거했습니다.`);
         }
       }).catch(() => {
         setHistory([]);
-        setPersistenceWarning("History v2 안전 검증을 완료하지 못해 내용을 격리했습니다. 다음 실행에서 재시도합니다.");
+        setPersistenceWarning("기록 v2 안전 검증을 완료하지 못해 내용을 격리했습니다. 다음 실행에서 재시도합니다.");
       });
     }
 
@@ -912,10 +924,10 @@ export default function App() {
       collectionRevisionRef.current += 1;
       setCollections(migration.store);
       if (migration.failed) {
-        setPersistenceWarning("이전 Collection 안전 변환을 완료하지 못했습니다. 원본은 격리되며 다음 실행에서 재시도합니다.");
+        setPersistenceWarning("이전 컬렉션 안전 변환을 완료하지 못했습니다. 원본은 격리되며 다음 실행에서 재시도합니다.");
       } else if (migration.migrated) {
         setMigrationNotice((current) =>
-          [current, `이전 Collection을 v2로 안전 변환했습니다(검토 필요 ${migration.removedLegacyEntries}건).`]
+          [current, `이전 컬렉션을 v2로 안전 변환했습니다(검토 필요 ${migration.removedLegacyEntries}건).`]
             .filter(Boolean)
             .join(" "),
         );
@@ -997,7 +1009,7 @@ export default function App() {
         );
       } catch {
         if (mountedRef.current && requestSequenceRef.current === sequence) {
-          setPersistenceWarning("요청은 완료됐지만 민감정보 안전 검증에 실패해 History를 저장하지 않았습니다.");
+          setPersistenceWarning("요청은 완료됐지만 민감정보 안전 검증에 실패해 기록을 저장하지 않았습니다.");
         }
       }
     } catch (cause) {
@@ -1012,7 +1024,7 @@ export default function App() {
         );
       } catch {
         if (mountedRef.current && requestSequenceRef.current === sequence) {
-          setPersistenceWarning("실패한 요청은 민감정보 안전 검증을 통과하지 못해 History에 저장하지 않았습니다.");
+          setPersistenceWarning("실패한 요청은 민감정보 안전 검증을 통과하지 못해 기록에 저장하지 않았습니다.");
         }
       }
     } finally {
@@ -1076,7 +1088,7 @@ export default function App() {
       if (handle) void handle.stop().catch(() => undefined);
     } else if (update.kind === "error") {
       setSseState("error");
-      setError(update.message ?? "SSE stream에 실패했습니다.");
+      setError(update.message ?? "SSE 스트림에 실패했습니다.");
       sseTerminalGenerationRef.current = generation;
       const handle = sseHandleRef.current;
       sseHandleRef.current = null;
@@ -1100,7 +1112,7 @@ export default function App() {
   const onStartSse = async () => {
     if (sseActive || sending || contextActionBusy || requestConfigurationError || !req.url) return;
     if (req.method !== "GET" && req.method !== "POST") {
-      setError("SSE stream은 GET 또는 POST만 지원합니다.");
+      setError("SSE 스트림은 GET 또는 POST만 지원합니다.");
       return;
     }
     const generation = sseGenerationRef.current + 1;
@@ -1140,7 +1152,7 @@ export default function App() {
       try {
         await handle.stop();
       } catch {
-        setError("SSE stream을 중지하지 못했습니다.");
+        setError("SSE 스트림을 중지하지 못했습니다.");
       }
     }
   };
@@ -1385,6 +1397,7 @@ export default function App() {
     handoffCancelButtonRef.current?.focus();
 
     const onDialogKeyDown = (event: KeyboardEvent) => {
+      if (isImeComposing(event)) return;
       if (event.key === "Escape") {
         event.preventDefault();
         if (!handoffBusyRef.current) void cancelHandoffRef.current();
@@ -1486,14 +1499,14 @@ export default function App() {
       );
       const safe = await persistHistory(next);
       setSelectedHistoryId(safe.history[0]?.id ?? null);
-    }, "History 복제 상태를 안전하게 저장하지 못했습니다.");
+    }, "기록 복제 상태를 안전하게 저장하지 못했습니다.");
   };
 
   const renameHistory = (item: HistoryItem) => {
-    const name = window.prompt("History 이름 변경", item.name ?? item.request.url);
+    const name = window.prompt("기록 이름 변경", item.name ?? item.request.url);
     if (name === null) return;
     if (!name.trim()) {
-      setPersistenceWarning("History 이름은 비워둘 수 없습니다.");
+      setPersistenceWarning("기록 이름은 비워둘 수 없습니다.");
       return;
     }
     void runContextAction(async () => {
@@ -1502,15 +1515,15 @@ export default function App() {
         item.id,
         name,
       ));
-    }, "History 이름을 안전하게 저장하지 못했습니다.");
+    }, "기록 이름을 안전하게 저장하지 못했습니다.");
   };
 
   const deleteHistory = (item: HistoryItem) => {
     const label = (item.name ?? item.request.url) || "(no url)";
-    if (!window.confirm(`'${label}' History를 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+    if (!window.confirm(`'${label}' 기록을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
     void runContextAction(async () => {
       await persistHistory(removeHistoryItem({ ...emptyHistoryStore(), history }, item.id));
-    }, "History 삭제 상태를 안전하게 저장하지 못했습니다.");
+    }, "기록 삭제 상태를 안전하게 저장하지 못했습니다.");
   };
 
   const duplicateCollection = (item: CollectionEntry) => {
@@ -1522,26 +1535,26 @@ export default function App() {
         () => `c-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
       ));
       setSelectedCollectionId(safe.collections[0]?.id ?? null);
-    }, "Collection 복제 상태를 안전하게 저장하지 못했습니다.");
+    }, "컬렉션 복제 상태를 안전하게 저장하지 못했습니다.");
   };
 
   const renameCollection = (item: CollectionEntry) => {
-    const name = window.prompt("Collection 이름 변경", item.name);
+    const name = window.prompt("컬렉션 이름 변경", item.name);
     if (name === null) return;
     if (!name.trim()) {
-      setPersistenceWarning("Collection 이름은 비워둘 수 없습니다.");
+      setPersistenceWarning("컬렉션 이름은 비워둘 수 없습니다.");
       return;
     }
     void runContextAction(async () => {
       await persistCollections(renameEntry(collectionStoreRef.current, item.id, name));
-    }, "Collection 이름을 안전하게 저장하지 못했습니다.");
+    }, "컬렉션 이름을 안전하게 저장하지 못했습니다.");
   };
 
   const deleteCollection = (item: CollectionEntry) => {
-    if (!window.confirm(`'${item.name}' Collection을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+    if (!window.confirm(`'${item.name}' 컬렉션을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
     void runContextAction(async () => {
       await persistCollections(removeEntry(collectionStoreRef.current, item.id));
-    }, "Collection 삭제 상태를 안전하게 저장하지 못했습니다.");
+    }, "컬렉션 삭제 상태를 안전하게 저장하지 못했습니다.");
   };
 
   const onHistoryContextSelect = (id: string) => {
@@ -1644,11 +1657,11 @@ export default function App() {
       )}
       <aside className="sidebar">
         <h1 className="app-title">API Playground</h1>
-        <div className="group-name">History</div>
-        <div className="history-toolbar" aria-label="History 검색 및 필터">
+        <div className="group-name">기록</div>
+        <div className="history-toolbar" aria-label="기록 검색 및 필터">
           <input
             className="coll-input history-search"
-            aria-label="History 검색"
+            aria-label="기록 검색"
             placeholder="이름, URL, method 검색"
             value={historyQuery}
             maxLength={MAX_HISTORY_QUERY_CHARS}
@@ -1658,7 +1671,7 @@ export default function App() {
           <div className="history-filter-row">
             <select
               className="coll-filter"
-              aria-label="History method 필터"
+              aria-label="기록 method 필터"
               value={historyMethod}
               onChange={(event) => setHistoryMethod(event.currentTarget.value)}
             >
@@ -1667,7 +1680,7 @@ export default function App() {
             </select>
             <select
               className="coll-filter"
-              aria-label="History 상태 필터"
+              aria-label="기록 상태 필터"
               value={historyStatus}
               onChange={(event) => setHistoryStatus(event.currentTarget.value as HistoryStatusFilter)}
             >
@@ -1682,14 +1695,14 @@ export default function App() {
             key={h.id}
             className={`history-item ${selectedHistoryId === h.id ? "selected" : ""}`}
             aria-current={selectedHistoryId === h.id ? "true" : undefined}
-            aria-label={`History 항목: ${historyDisplayLabel(h)}`}
+            aria-label={`기록 항목: ${historyDisplayLabel(h)}`}
             data-history-id={h.id}
             onClick={() => {
               setSelectedHistoryId(h.id);
               setReq(toRequestTemplate(h.request));
               setRequestEditorRevision((revision) => revision + 1);
               if (h.request.requiresSecretReview) {
-                setPersistenceWarning("마스킹된 History입니다. 민감한 값을 환경 변수 참조로 다시 설정하세요.");
+                setPersistenceWarning("마스킹된 기록입니다. 민감한 값을 환경 변수 참조로 다시 설정하세요.");
               }
               setResp(null);
             }}
@@ -1701,11 +1714,11 @@ export default function App() {
             </span>
           </button>
         ))}
-        {history.length === 0 && <div className="dim">No requests yet</div>}
+        {history.length === 0 && <div className="dim">아직 요청이 없습니다</div>}
         {history.length > 0 && visibleHistory.length === 0 && <div className="dim" role="status" aria-live="polite">검색 결과 없음</div>}
 
-        <div className="group-name">Collections</div>
-        <div className="transfer-actions" aria-label="Collection JSON transfer">
+        <div className="group-name">컬렉션</div>
+        <div className="transfer-actions" aria-label="컬렉션 JSON 전송">
           <button
             type="button"
             className="btn mini"
@@ -1737,12 +1750,13 @@ export default function App() {
             onChange={(e) => setCollFolder(e.currentTarget.value)}
           />
           <button className="btn" disabled={!persistenceReady || transferBusy || environmentBusy || collSaving || contextActionBusy || !req.url.trim()} onClick={() => void onSaveCollection()}>
-            Save
+            저장
           </button>
         </div>
         {foldersOf(collections).length > 0 && (
           <select
             className="coll-filter"
+            aria-label="컬렉션 폴더 필터"
             value={collFilter}
             onChange={(e) => setCollFilter(e.currentTarget.value)}
           >
@@ -1763,10 +1777,20 @@ export default function App() {
               title={`${c.folder ? `[${c.folder}] ` : ""}${c.name}`}
               tabIndex={0}
               aria-current={selectedCollectionId === c.id ? "true" : undefined}
-              aria-label={`Collection 항목: ${c.name}`}
+              aria-label={`컬렉션 항목: ${c.name}`}
               data-collection-id={c.id}
               onClick={() => setSelectedCollectionId(c.id)}
-              {...collectionContextMenu.triggerProps}
+              onContextMenu={collectionContextMenu.triggerProps.onContextMenu}
+              onKeyDown={(event) => {
+                collectionContextMenu.triggerProps.onKeyDown?.(event);
+                if (
+                  event.defaultPrevented
+                  || event.target !== event.currentTarget
+                  || !isKeyboardActivation(event)
+                ) return;
+                event.preventDefault();
+                setSelectedCollectionId(c.id);
+              }}
             >
               <button
                 className="coll-open"
@@ -1775,7 +1799,7 @@ export default function App() {
                   setReq(toRequestTemplate(c.request));
                   setRequestEditorRevision((revision) => revision + 1);
                   if (c.requiresSecretReview) {
-                    setPersistenceWarning("안전 변환된 Collection입니다. 마스킹된 값을 환경 변수 참조로 다시 설정하세요.");
+                    setPersistenceWarning("안전 변환된 컬렉션입니다. 마스킹된 값을 환경 변수 참조로 다시 설정하세요.");
                   }
                   setResp(null);
                 }}
@@ -1785,7 +1809,7 @@ export default function App() {
               </button>
               <button
                 className="coll-del"
-                aria-label={`${c.name} Collection 삭제`}
+                aria-label={`${c.name} 컬렉션 삭제`}
                 disabled={contextActionBusy || transferBusy || environmentBusy || collSaving || sending || !persistenceReady}
                 onClick={() => deleteCollection(c)}
               >
@@ -1793,10 +1817,10 @@ export default function App() {
               </button>
             </div>
           ))}
-        {collections.collections.length === 0 && <div className="dim">저장된 collection 없음</div>}
+        {collections.collections.length === 0 && <div className="dim">저장된 컬렉션이 없습니다</div>}
 
-        <div className="group-name">Environments</div>
-        <div className="transfer-actions" aria-label="Environment JSON transfer">
+        <div className="group-name">환경</div>
+        <div className="transfer-actions" aria-label="환경 JSON 전송">
           <button
             type="button"
             className="btn mini"
@@ -1846,7 +1870,7 @@ export default function App() {
                 <span className="env-var-key">{v.key}</span>
                 {v.secret ? (
                   <>
-                    <span className={`env-var-secret ${v.value ? "" : "unconfigured"}`} title={v.value ? "봉인됨 — 평문 미보관" : "export에서 secret 원문을 제외해 다시 입력해야 합니다"}>
+                    <span className={`env-var-secret ${v.value ? "" : "unconfigured"}`} title={v.value ? "봉인됨 — 평문 미보관" : "내보내기에서 secret 원문을 제외해 다시 입력해야 합니다"}>
                       {v.value ? "••••••••" : "미설정"}
                     </span>
                     <button className="btn mini" disabled={environmentBusy || transferBusy} onClick={() => {
@@ -1903,7 +1927,7 @@ export default function App() {
       </aside>
 
       <main className="content">
-        <nav className="workspace-tabs" aria-label="API Playground workspace">
+        <nav className="workspace-tabs" aria-label="API Playground 작업 공간">
           <button
             type="button"
             className={workspace === "http" ? "active" : ""}
@@ -1928,7 +1952,7 @@ export default function App() {
         {migrationNotice && <div className="migration-notice">{migrationNotice}</div>}
         {persistenceWarning && <div className="persistence-warning">{persistenceWarning}</div>}
         <div className="request-bar">
-          <select className="method-select" value={req.method} onChange={(e) => setReq({ ...req, method: e.currentTarget.value })}>
+          <select aria-label="HTTP method" className="method-select" value={req.method} onChange={(e) => setReq({ ...req, method: e.currentTarget.value })}>
             {(req.body_kind === "graphql" ? ["GET", "POST"] : METHODS).map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -1943,7 +1967,7 @@ export default function App() {
             spellCheck={false}
           />
           <button className="btn send" onClick={() => sending ? onCancel() : void onSend()} disabled={!persistenceReady || transferBusy || contextActionBusy || (!sending && (sseActive || !req.url || Boolean(requestConfigurationError)))}>
-            {!persistenceReady ? "Checking..." : sending ? "Cancel" : "Send"}
+            {!persistenceReady ? "확인 중…" : sending ? "취소" : "보내기"}
           </button>
           <button className={`btn ${showCurl ? "active" : ""}`} onClick={() => setShowCurl((v) => !v)} disabled={!req.url || Boolean(requestConfigurationError)}>
             cURL
@@ -1953,7 +1977,7 @@ export default function App() {
           </button>
         </div>
 
-        <div className="sse-controls" aria-label="SSE stream controls">
+        <div className="sse-controls" aria-label="SSE 스트림 제어">
           <div className="sse-control-actions">
             <button
               type="button"
@@ -1961,7 +1985,7 @@ export default function App() {
               onClick={() => void onStartSse()}
               disabled={!persistenceReady || sending || sseActive || contextActionBusy || !req.url || Boolean(requestConfigurationError) || (req.method !== "GET" && req.method !== "POST")}
             >
-              {sseState === "connecting" ? "Connecting SSE..." : "Start SSE"}
+              {sseState === "connecting" ? "SSE 연결 중…" : "SSE 시작"}
             </button>
             <button
               type="button"
@@ -1969,10 +1993,10 @@ export default function App() {
               onClick={() => void onStopSse()}
               disabled={!sseActive && !sseHandleRef.current}
             >
-              Stop SSE
+              SSE 중지
             </button>
             <span className={`sse-status sse-status-${sseState}`} role="status" aria-live="polite">
-              {sseState === "idle" ? "SSE idle" : `SSE ${sseState}`}
+              SSE {sseStateLabel(sseState)}
             </span>
           </div>
           <div className="sse-control-options">
@@ -1983,10 +2007,10 @@ export default function App() {
                 disabled={sseActive}
                 onChange={(event) => setSseOptions({ ...sseOptions, reconnect: event.currentTarget.checked })}
               />
-              reconnect (max 5, off by default)
+              재연결 (최대 5회, 기본 꺼짐)
             </label>
             <label className="sse-number-field">
-              connect ms
+              연결 시간(ms)
               <input
                 type="number"
                 min={100}
@@ -1995,11 +2019,11 @@ export default function App() {
                 value={sseOptions.connectTimeoutMs}
                 disabled={sseActive}
                 onChange={(event) => setSseOptions({ ...sseOptions, connectTimeoutMs: Number(event.currentTarget.value) })}
-                aria-label="SSE connect timeout in milliseconds"
+                aria-label="SSE 연결 제한 시간(밀리초)"
               />
             </label>
             <label className="sse-number-field">
-              idle ms
+              유휴 시간(ms)
               <input
                 type="number"
                 min={100}
@@ -2008,11 +2032,11 @@ export default function App() {
                 value={sseOptions.idleTimeoutMs}
                 disabled={sseActive}
                 onChange={(event) => setSseOptions({ ...sseOptions, idleTimeoutMs: Number(event.currentTarget.value) })}
-                aria-label="SSE idle timeout in milliseconds"
+                aria-label="SSE 유휴 제한 시간(밀리초)"
               />
             </label>
             <label className="sse-number-field">
-              total ms
+              전체 시간(ms)
               <input
                 type="number"
                 min={1_000}
@@ -2021,13 +2045,13 @@ export default function App() {
                 value={sseOptions.totalTimeoutMs}
                 disabled={sseActive}
                 onChange={(event) => setSseOptions({ ...sseOptions, totalTimeoutMs: Number(event.currentTarget.value) })}
-                aria-label="SSE total timeout in milliseconds"
+                aria-label="SSE 전체 제한 시간(밀리초)"
               />
             </label>
           </div>
           <div className="sse-policy-note">
-            Native SSE does not forward Last-Event-ID during reconnect. Events stay in bounded memory only;
-            browser preview follows CORS and uses redirect blocking.
+            네이티브 SSE는 재연결 중 Last-Event-ID를 전달하지 않습니다. 이벤트는 제한된 메모리에만 보관되며,
+            브라우저 미리보기는 CORS를 따르고 리디렉션을 차단합니다.
           </div>
         </div>
 
@@ -2065,7 +2089,7 @@ export default function App() {
 
         <div className="tab-body">
           {tab === "params" && (
-            <KeyValueEditor rows={req.params} onChange={(params) => setReq({ ...req, params })} namePlaceholder="Key" />
+            <KeyValueEditor rows={req.params} onChange={(params) => setReq({ ...req, params })} namePlaceholder="키" />
           )}
           {tab === "headers" && (
             <HeaderTable
@@ -2149,19 +2173,19 @@ export default function App() {
               </select>
               {req.auth?.kind === "basic" && (
                 <div className="kv-row">
-                  <input placeholder="Username" value={req.auth.username} onChange={(e) => setAuth({ username: e.currentTarget.value })} />
-                  <input placeholder="Password" type="password" value={req.auth.password} onChange={(e) => setAuth({ password: e.currentTarget.value })} />
+                  <input placeholder="사용자 이름" value={req.auth.username} onChange={(e) => setAuth({ username: e.currentTarget.value })} />
+                  <input placeholder="비밀번호" type="password" value={req.auth.password} onChange={(e) => setAuth({ password: e.currentTarget.value })} />
                 </div>
               )}
               {req.auth?.kind === "bearer" && (
                 <div className="kv-row">
-                  <input placeholder="Token" value={req.auth.token} onChange={(e) => setAuth({ token: e.currentTarget.value })} />
+                  <input placeholder="토큰" value={req.auth.token} onChange={(e) => setAuth({ token: e.currentTarget.value })} />
                 </div>
               )}
               {req.auth?.kind === "apikey" && (
                 <div className="kv-row">
-                  <input placeholder="Header name (e.g. X-API-Key)" value={req.auth.api_key} onChange={(e) => setAuth({ api_key: e.currentTarget.value })} />
-                  <input placeholder="Value" value={req.auth.api_value} onChange={(e) => setAuth({ api_value: e.currentTarget.value })} />
+                  <input placeholder="헤더 이름 (예: X-API-Key)" value={req.auth.api_key} onChange={(e) => setAuth({ api_key: e.currentTarget.value })} />
+                  <input placeholder="값" value={req.auth.api_value} onChange={(e) => setAuth({ api_value: e.currentTarget.value })} />
                 </div>
               )}
             </div>
@@ -2214,7 +2238,7 @@ export default function App() {
         items={contextItems}
         onSelect={onHistoryContextSelect}
         onClose={historyContextMenu.close}
-        ariaLabel="History 메뉴"
+        ariaLabel="기록 메뉴"
       />
       <ContextMenu
         open={collectionContextMenu.open}
@@ -2223,7 +2247,7 @@ export default function App() {
         items={contextItems}
         onSelect={onCollectionContextSelect}
         onClose={collectionContextMenu.close}
-        ariaLabel="Collection 메뉴"
+        ariaLabel="컬렉션 메뉴"
       />
       {showOpenApiImport && (
         <OpenApiImport

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
 import {
   cancelDependencyHealth,
@@ -329,6 +330,12 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Workbench profile context menu", () => {
+  it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
+    const { container } = render(<App />);
+    await screen.findByRole("button", { name: "devbox" });
+    await assertNoA11yViolations(container);
+  });
+
   it("renders profiles, auto-selects the first one, and loads its health", async () => {
     render(<App />);
 
@@ -336,6 +343,17 @@ describe("Workbench profile context menu", () => {
     expect(profileRow("devbox").getAttribute("aria-current")).toBe("true");
     expect(await screen.findByText("clean")).toBeTruthy();
     expect(projectHealthMock).toHaveBeenCalledWith("p-1");
+  });
+
+  it("selects a profile with Enter or Space while ignoring IME composition", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "toolbox" });
+    const target = profileRow("toolbox");
+
+    fireEvent.keyDown(target, { key: "Enter", isComposing: true });
+    expect(target.getAttribute("aria-current")).toBeNull();
+    fireEvent.keyDown(target, { key: " " });
+    expect(target.getAttribute("aria-current")).toBe("true");
   });
 
   it("selects the right-clicked profile and shows the exact app-owned actions", async () => {
@@ -347,8 +365,8 @@ describe("Workbench profile context menu", () => {
 
     expect(target.getAttribute("aria-current")).toBe("true");
     for (const label of [
-      "Start Workspace",
-      "Stop What I Started",
+      "Workspace 시작",
+      "내가 시작한 작업 중지",
       "프로필 편집",
       "삭제",
       "경로 복사",
@@ -356,9 +374,9 @@ describe("Workbench profile context menu", () => {
     ]) {
       expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
     }
-    expect(screen.getByRole("menuitem", { name: "Stop What I Started" }).getAttribute("aria-disabled"))
+    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).getAttribute("aria-disabled"))
       .toBe("true");
-    expect(screen.getByRole("menuitem", { name: "Stop What I Started" }).className)
+    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).className)
       .toContain("danger");
     expect(screen.getByRole("menuitem", { name: "삭제" }).className).toContain("danger");
     await waitFor(() => {
@@ -374,14 +392,14 @@ describe("Workbench profile context menu", () => {
     target.focus();
 
     fireEvent.keyDown(target, { key: "F10", code: "F10", shiftKey: true });
-    fireEvent.click(screen.getByRole("menuitem", { name: "Start Workspace" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Workspace 시작" }));
 
-    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    await screen.findByRole("dialog", { name: "Workspace 시작 사전 점검" });
     fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
     await waitFor(() => expect(startWorkspaceMock).toHaveBeenCalledWith("p-2"));
     await waitFor(() => expect(document.activeElement).toBe(target));
-    expect(await screen.findByRole("button", { name: "Stop What I Started" })).toBeTruthy();
-    expect(screen.getByText("Resource ownership")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "내가 시작한 작업 중지" })).toBeTruthy();
+    expect(screen.getByText("리소스 소유권")).toBeTruthy();
     expect(screen.getByText("port-1")).toBeTruthy();
     expect(screen.getByText("Workbench가 시작")).toBeTruthy();
   });
@@ -400,9 +418,9 @@ describe("Workbench profile context menu", () => {
 
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
-    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+    fireEvent.click(screen.getByRole("button", { name: "Workspace 시작" }));
 
-    expect(await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" })).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Workspace 시작 사전 점검" })).toBeTruthy();
     expect(screen.getByText("필수 devbox 앱이 없습니다. Devbox Manager에서 설치하세요")).toBeTruthy();
     expect(screen.getByRole("button", { name: "계속 시작" })).toBeDisabled();
     expect(startWorkspaceMock).not.toHaveBeenCalled();
@@ -414,13 +432,13 @@ describe("Workbench profile context menu", () => {
 
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
-    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+    fireEvent.click(screen.getByRole("button", { name: "Workspace 시작" }));
     await waitFor(() => expect(workspacePreflightMock).toHaveBeenCalledWith("p-1"));
 
     fireEvent.click(profileRow("toolbox"));
     pending.resolve({ ...readyPreflight, profileId: "p-1" });
 
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Start Workspace 사전 점검" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Workspace 시작 사전 점검" })).toBeNull());
     expect(startWorkspaceMock).not.toHaveBeenCalled();
   });
 
@@ -430,34 +448,34 @@ describe("Workbench profile context menu", () => {
 
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
-    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
-    expect(await screen.findByText("Start Workspace 사전 점검 중…")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Workspace 시작" }));
+    expect(await screen.findByText("Workspace 시작 사전 점검 중…")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
 
     await waitFor(() => expect(cancelWorkspacePreflightMock).toHaveBeenCalledWith("p-1"));
     pending.reject(new Error("cancelled"));
     await pending.promise.catch(() => undefined);
-    expect(screen.queryByText("Start Workspace 사전 점검 중…")).toBeNull();
+    expect(screen.queryByText("Workspace 시작 사전 점검 중…")).toBeNull();
     expect(startWorkspaceMock).not.toHaveBeenCalled();
   });
 
   it("cancels the review with Escape without launching anything", async () => {
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
-    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+    fireEvent.click(screen.getByRole("button", { name: "Workspace 시작" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    const dialog = await screen.findByRole("dialog", { name: "Workspace 시작 사전 점검" });
     expect(screen.getByRole("button", { name: "계속 시작" })).toHaveFocus();
     fireEvent.keyDown(dialog, { key: "Escape" });
 
-    expect(screen.queryByRole("dialog", { name: "Start Workspace 사전 점검" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Workspace 시작 사전 점검" })).toBeNull();
     expect(startWorkspaceMock).not.toHaveBeenCalled();
   });
 
   it("keeps keyboard focus inside the preflight review", async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "Start Workspace" }));
-    const dialog = await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(await screen.findByRole("button", { name: "Workspace 시작" }));
+    const dialog = await screen.findByRole("dialog", { name: "Workspace 시작 사전 점검" });
     const continueButton = screen.getByRole("button", { name: "계속 시작" });
     const cancelButton = screen.getByRole("button", { name: "취소" });
 
@@ -474,11 +492,11 @@ describe("Workbench profile context menu", () => {
     startWorkspaceMock.mockRejectedValueOnce(new Error("C:\\private\\TOP_SECRET"));
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
-    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
-    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("button", { name: "Workspace 시작" }));
+    await screen.findByRole("dialog", { name: "Workspace 시작 사전 점검" });
     fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
 
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Start Workspace 사전 점검" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Workspace 시작 사전 점검" })).toBeNull());
     expect(screen.getByRole("alert")).toHaveTextContent("사전 점검을 다시 실행하세요");
     expect(screen.queryByText(/TOP_SECRET|private/)).toBeNull();
   });
@@ -489,8 +507,8 @@ describe("Workbench profile context menu", () => {
 
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
-    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
-    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("button", { name: "Workspace 시작" }));
+    await screen.findByRole("dialog", { name: "Workspace 시작 사전 점검" });
     fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
     await waitFor(() => expect(startWorkspaceMock).toHaveBeenCalledWith("p-1"));
 
@@ -504,7 +522,7 @@ describe("Workbench profile context menu", () => {
       steps: [],
       resourceProvenance: [],
     });
-    await screen.findByRole("button", { name: "Stop What I Started" });
+    await screen.findByRole("button", { name: "내가 시작한 작업 중지" });
   });
 
   it("ignores a late preflight result after the component unmounts", async () => {
@@ -513,7 +531,7 @@ describe("Workbench profile context menu", () => {
     const rendered = render(<App />);
 
     await screen.findByRole("button", { name: "devbox" });
-    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
+    fireEvent.click(screen.getByRole("button", { name: "Workspace 시작" }));
     await waitFor(() => expect(workspacePreflightMock).toHaveBeenCalledWith("p-1"));
     rendered.unmount();
 
@@ -528,8 +546,8 @@ describe("Workbench profile context menu", () => {
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
-    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("button", { name: "Workspace 시작" }));
+    await screen.findByRole("dialog", { name: "Workspace 시작 사전 점검" });
     fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
     const cancel = await screen.findByRole("button", { name: "시작 취소" });
     fireEvent.click(cancel);
@@ -546,23 +564,23 @@ describe("Workbench profile context menu", () => {
     const second = profileRow("toolbox");
 
     fireEvent.contextMenu(first);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Start Workspace" }));
-    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Workspace 시작" }));
+    await screen.findByRole("dialog", { name: "Workspace 시작 사전 점검" });
     fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
     await waitFor(() => expect(startWorkspaceMock).toHaveBeenCalledWith("p-1"));
 
     fireEvent.contextMenu(second);
-    expect(screen.getByRole("menuitem", { name: "Start Workspace" }).getAttribute("aria-disabled"))
+    expect(screen.getByRole("menuitem", { name: "Workspace 시작" }).getAttribute("aria-disabled"))
       .toBe("true");
-    expect(screen.getByRole("menuitem", { name: "Stop What I Started" }).getAttribute("aria-disabled"))
+    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).getAttribute("aria-disabled"))
       .toBe("true");
 
     fireEvent.contextMenu(first);
-    expect(screen.getByRole("menuitem", { name: "Stop What I Started" }).getAttribute("aria-disabled"))
+    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).getAttribute("aria-disabled"))
       .toBeNull();
     expect(screen.getByRole("menuitem", { name: "삭제" }).getAttribute("aria-disabled"))
       .toBe("true");
-    fireEvent.click(screen.getByRole("menuitem", { name: "Stop What I Started" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }));
     expect(confirmMock).toHaveBeenCalledWith(
       "'devbox'에서 Workbench가 시작한 리소스만 중지할까요? 시작 전부터 실행 중이던 리소스는 유지됩니다.",
     );
@@ -570,17 +588,17 @@ describe("Workbench profile context menu", () => {
 
     confirmMock.mockReturnValueOnce(true);
     fireEvent.contextMenu(first);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Stop What I Started" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }));
     await waitFor(() => expect(stopWorkspaceMock).toHaveBeenCalledWith("run-p-1", "p-1"));
   });
 
   it("keeps a run visible when Stop What I Started retains ownership after a failed termination", async () => {
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
-    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
-    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("button", { name: "Workspace 시작" }));
+    await screen.findByRole("dialog", { name: "Workspace 시작 사전 점검" });
     fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
-    await screen.findByRole("button", { name: "Stop What I Started" });
+    await screen.findByRole("button", { name: "내가 시작한 작업 중지" });
 
     currentWorkspaceRunMock.mockResolvedValueOnce({
       runId: "run-p-1",
@@ -588,10 +606,10 @@ describe("Workbench profile context menu", () => {
     });
     stopWorkspaceMock.mockResolvedValueOnce(0);
     confirmMock.mockReturnValueOnce(true);
-    fireEvent.click(screen.getByRole("button", { name: "Stop What I Started" }));
+    fireEvent.click(screen.getByRole("button", { name: "내가 시작한 작업 중지" }));
 
     await waitFor(() => expect(stopWorkspaceMock).toHaveBeenCalledWith("run-p-1", "p-1"));
-    expect(await screen.findByRole("button", { name: "Stop What I Started" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "내가 시작한 작업 중지" })).toBeTruthy();
     expect(screen.getByRole("alert")).toHaveTextContent("일부 Workbench 프로세스를 안전하게 종료하지 못했습니다");
   });
 
@@ -605,9 +623,9 @@ describe("Workbench profile context menu", () => {
 
     fireEvent.contextMenu(profileRow("devbox"));
 
-    expect(screen.getByRole("menuitem", { name: "Start Workspace" }).getAttribute("aria-disabled"))
+    expect(screen.getByRole("menuitem", { name: "Workspace 시작" }).getAttribute("aria-disabled"))
       .toBe("true");
-    expect(screen.getByRole("menuitem", { name: "Stop What I Started" }).getAttribute("aria-disabled"))
+    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).getAttribute("aria-disabled"))
       .toBeNull();
     expect(screen.getByRole("menuitem", { name: "삭제" }).getAttribute("aria-disabled"))
       .toBe("true");
@@ -787,7 +805,7 @@ describe("Workbench profile context menu", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "환경 파일 확인" }));
     await screen.findByText("마스킹된 미리보기");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Start Workspace에서 환경 주입 사용" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Workspace 시작 시 환경 주입 사용" }));
 
     expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
     expect(screen.getByText(/충돌을 해결한 뒤 저장/)).toBeTruthy();
@@ -882,7 +900,7 @@ describe("Workbench profile context menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
 
     fireEvent.click(screen.getByRole("button", { name: "제안 불러오기" }));
-    const candidate = await screen.findByRole("checkbox", { name: "published port 8080 선택" });
+    const candidate = await screen.findByRole("checkbox", { name: "게시된 포트 8080 선택" });
     expect(screen.getByText(/WSL Desktop runtime\/v1 · producer 0.2.1/)).toBeTruthy();
     fireEvent.click(candidate);
     fireEvent.click(screen.getByRole("button", { name: "선택 포트를 초안에 반영" }));
@@ -908,7 +926,7 @@ describe("Workbench profile context menu", () => {
     await screen.findByRole("button", { name: "devbox" });
     fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
     fireEvent.click(screen.getByRole("button", { name: "제안 불러오기" }));
-    fireEvent.click(await screen.findByRole("checkbox", { name: "published port 8080 선택" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "게시된 포트 8080 선택" }));
     fireEvent.click(screen.getByRole("button", { name: "선택 포트를 초안에 반영" }));
 
     await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
@@ -931,7 +949,7 @@ describe("Workbench profile context menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
     fireEvent.click(screen.getByRole("button", { name: "제안 불러오기" }));
     expect(await screen.findByText("만료된 snapshot — 반영 불가")).toBeTruthy();
-    expect(screen.getByRole("checkbox", { name: "published port 8080 선택" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "게시된 포트 8080 선택" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "선택 포트를 초안에 반영" })).toBeDisabled();
 
     rendered.unmount();
@@ -979,7 +997,7 @@ describe("Workbench profile context menu", () => {
     await screen.findByRole("button", { name: "devbox" });
     fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
     fireEvent.click(screen.getByRole("button", { name: "제안 불러오기" }));
-    fireEvent.click(await screen.findByRole("checkbox", { name: "published port 8080 선택" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "게시된 포트 8080 선택" }));
     fireEvent.click(screen.getByRole("button", { name: "선택 포트를 초안에 반영" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("runtime 상태가 변경되었습니다");
@@ -1091,8 +1109,8 @@ describe("Workbench profile context menu", () => {
   it("creates a project from a selected template without importing environment data", async () => {
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
-    fireEvent.click(screen.getByRole("button", { name: "새 프로젝트 wizard" }));
-    const dialog = await screen.findByRole("dialog", { name: "새 프로젝트 wizard" });
+    fireEvent.click(screen.getByRole("button", { name: "새 프로젝트 마법사" }));
+    const dialog = await screen.findByRole("dialog", { name: "새 프로젝트 마법사" });
     expect(screen.getByRole("option", { name: "Node 서비스" })).toBeTruthy();
     fireEvent.change(screen.getByLabelText("프로젝트 이름"), { target: { value: "node-app" } });
     fireEvent.change(screen.getByLabelText("Windows 경로"), { target: { value: "E:\\projects\\node-app" } });
@@ -1108,8 +1126,8 @@ describe("Workbench profile context menu", () => {
   it("preserves wizard input when switching to direct entry", async () => {
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
-    fireEvent.click(screen.getByRole("button", { name: "새 프로젝트 wizard" }));
-    await screen.findByRole("dialog", { name: "새 프로젝트 wizard" });
+    fireEvent.click(screen.getByRole("button", { name: "새 프로젝트 마법사" }));
+    await screen.findByRole("dialog", { name: "새 프로젝트 마법사" });
     await screen.findByDisplayValue("/mnt/e/projects/node");
 
     fireEvent.change(screen.getByLabelText("프로젝트 이름"), { target: { value: "node-app" } });
@@ -1176,8 +1194,8 @@ describe("Workbench profile context menu", () => {
     });
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
-    fireEvent.click(screen.getByRole("button", { name: "Start Workspace" }));
-    await screen.findByRole("dialog", { name: "Start Workspace 사전 점검" });
+    fireEvent.click(screen.getByRole("button", { name: "Workspace 시작" }));
+    await screen.findByRole("dialog", { name: "Workspace 시작 사전 점검" });
     fireEvent.click(screen.getByRole("button", { name: "계속 시작" }));
     await screen.findByRole("button", { name: "실패 단계부터 다시 시도" });
     fireEvent.click(screen.getByRole("button", { name: "실패 단계부터 다시 시도" }));

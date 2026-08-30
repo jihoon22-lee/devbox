@@ -18,7 +18,7 @@
       "identifier": "com.devbox.developertoolbox",
       "legacyIdentifiers": ["com.workbench.developertoolbox"],
       "title": "Developer Toolbox",
-      "markers": ["Dev Toolbox", "Smart Workflows"],
+      "markers": ["Dev Toolbox", "스마트 워크플로"],
       "probes": [{"name": "native UUID generation", "command": "generate_uuid", "expectedType": "string", "minimumLength": 36}]
     },
     {
@@ -28,7 +28,7 @@
       "identifier": "com.devbox.apiplayground",
       "legacyIdentifiers": ["com.workbench.apiplayground"],
       "title": "API Playground",
-      "markers": ["API Playground", "History"],
+      "markers": ["API Playground", "기록"],
       "probes": [{"name": "pending AppLink slot", "command": "take_pending_open", "expectedType": "null"}]
     },
     {
@@ -103,7 +103,7 @@
       "identifier": "com.devbox.webhooklab",
       "legacyIdentifiers": [],
       "title": "Webhook Lab",
-      "markers": ["Webhook Lab", "Rules"],
+      "markers": ["Webhook Lab", "규칙"],
       "probes": [{"name": "loopback server status", "command": "server_status", "expectedType": "object", "requiredKeys": ["address", "running"]}]
     },
     {
@@ -144,7 +144,7 @@
       "identifier": "com.devbox.lifelog",
       "legacyIdentifiers": ["com.workbench.lifelog"],
       "title": "Life Log",
-      "markers": ["Today"],
+      "markers": ["오늘"],
       "probes": [{"name": "tracked projects", "command": "get_projects", "expectedType": "array"}]
     },
     {

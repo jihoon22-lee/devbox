@@ -45,7 +45,7 @@ describe("ByteCodecTool", () => {
 
     const output = screen.getByLabelText("Base64 출력");
     expect(output.textContent).toBe("7JWI64WV");
-    expect(screen.getByText(/6 bytes/u)).toBeTruthy();
+    expect(screen.getByText(/6바이트/u)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "복사" }));
     await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("7JWI64WV"));
@@ -67,7 +67,7 @@ describe("ByteCodecTool", () => {
     expect((screen.getByLabelText("입력 형식") as HTMLSelectElement).value).toBe("base64url");
     expect((screen.getByLabelText("출력 형식") as HTMLSelectElement).value).toBe("hex");
     expect(input().value).toBe("-_8");
-    expect(screen.getByLabelText("Hex raw bytes 출력").textContent).toBe("fbff");
+    expect(screen.getByLabelText("Hex 원시 바이트 출력").textContent).toBe("fbff");
   });
 
   it("invalid encoded character의 원문 위치를 표시하고 action을 막는다", () => {
@@ -91,7 +91,7 @@ describe("ByteCodecTool", () => {
     fireEvent.change(screen.getByLabelText("출력 형식"), { target: { value: "utf8" } });
     fireEvent.change(input(), { target: { value: "e228a1" } });
 
-    expect(screen.getByRole("alert").textContent).toContain("2번째 byte");
+    expect(screen.getByRole("alert").textContent).toContain("2번째 바이트");
     expect(screen.getByRole("alert").textContent).toContain("INVALID_UTF8_BYTES");
   });
 });

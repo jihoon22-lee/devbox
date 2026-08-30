@@ -37,7 +37,7 @@ afterEach(() => {
 describe("JsonTypescriptTool", () => {
   it("root type 이름과 JSON 표본으로 optional TypeScript 결과를 만든다", () => {
     render(<JsonTypescriptTool />);
-    fireEvent.change(screen.getByRole("textbox", { name: "Root type 이름" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "루트 타입 이름" }), {
       target: { value: "ApiResponse" },
     });
     fireEvent.change(screen.getByRole("textbox", { name: "JSON → TypeScript 입력" }), {
@@ -53,7 +53,7 @@ describe("JsonTypescriptTool", () => {
 
   it("결과를 clipboard와 root 이름 기반 .ts 파일로 내보낸다", async () => {
     render(<JsonTypescriptTool />);
-    fireEvent.change(screen.getByRole("textbox", { name: "Root type 이름" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "루트 타입 이름" }), {
       target: { value: "Project" },
     });
     fireEvent.change(screen.getByRole("textbox", { name: "JSON → TypeScript 입력" }), {
@@ -79,7 +79,7 @@ describe("JsonTypescriptTool", () => {
     expect((screen.getByRole("button", { name: "결과 복사" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: ".ts 저장" }) as HTMLButtonElement).disabled).toBe(true);
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Root type 이름" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "루트 타입 이름" }), {
       target: { value: "invalid name" },
     });
     expect(screen.getByRole("alert").textContent).toContain("INVALID_ROOT_TYPE_NAME");
@@ -94,7 +94,7 @@ describe("JsonTypescriptTool", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "결과 복사" }));
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("TypeScript 결과를 clipboard에 복사하지 못했습니다.");
+    expect(alert.textContent).toBe("TypeScript 결과를 클립보드에 복사하지 못했습니다.");
     expect(alert.textContent).not.toContain("DO_NOT_REFLECT_CLIPBOARD_SECRET");
     expect(screen.getByLabelText("JSON → TypeScript 출력").textContent).toContain("name: string;");
   });

@@ -19,7 +19,7 @@ export function JsonTypescriptTool() {
     if (!result.output) return;
     void navigator.clipboard.writeText(result.output)
       .then(() => setActionError(null))
-      .catch(() => setActionError("TypeScript 결과를 clipboard에 복사하지 못했습니다."));
+      .catch(() => setActionError("TypeScript 결과를 클립보드에 복사하지 못했습니다."));
   };
 
   const save = () => {
@@ -36,9 +36,9 @@ export function JsonTypescriptTool() {
     <div className="tool json-typescript-tool">
       <div className="json-typescript-toolbar">
         <label>
-          Root type 이름
+          루트 타입 이름
           <ToolTextField
-            aria-label="Root type 이름"
+            aria-label="루트 타입 이름"
             className="json-typescript-name"
             value={rootTypeName}
             onValueChange={setRootTypeName}

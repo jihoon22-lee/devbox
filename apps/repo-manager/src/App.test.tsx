@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
@@ -135,6 +136,12 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
+  const { container } = render(<App />);
+  await screen.findByText("C:\\projects\\devbox", { selector: ".repo-path" });
+  await assertNoA11yViolations(container);
+});
+
 describe("Repo Manager repository context menu", () => {
   it("keeps the newest root scan when an older response resolves later", async () => {
     let resolveOlder: ((value: { repos: RepoEntry[]; truncated: boolean }) => void) | undefined;
@@ -145,18 +152,18 @@ describe("Repo Manager repository context menu", () => {
     render(<App />);
     await waitFor(() => expect(scanRootMock).toHaveBeenCalledWith("C:\\projects"));
 
-    fireEvent.change(screen.getByLabelText("탐색 root"), {
+    fireEvent.change(screen.getByLabelText("탐색 루트"), {
       target: { value: "D:\\projects" },
     });
     await waitFor(() => expect(scanRootMock).toHaveBeenCalledWith("D:\\projects"));
     resolveNewest?.({ repos: [repositories[1]], truncated: true });
-    await screen.findByLabelText("E:\\projects\\sample repository");
+    await screen.findByLabelText("E:\\projects\\sample 저장소");
     expect(screen.getByText(/일부 디렉터리를 건너뛰었습니다/)).toBeTruthy();
 
     resolveOlder?.({ repos: [repositories[0]], truncated: false });
     await Promise.resolve();
-    expect(screen.queryByLabelText("C:\\projects\\devbox repository")).toBeNull();
-    expect(screen.getByLabelText("E:\\projects\\sample repository")).toBeTruthy();
+    expect(screen.queryByLabelText("C:\\projects\\devbox 저장소")).toBeNull();
+    expect(screen.getByLabelText("E:\\projects\\sample 저장소")).toBeTruthy();
   });
 
   it("maps legacy native failures to an alert without echoing sensitive details", async () => {
@@ -165,20 +172,22 @@ describe("Repo Manager repository context menu", () => {
     render(<App />);
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("repository 목록을 불러오지 못했습니다.");
+    expect(alert.textContent).toBe("저장소 목록을 불러오지 못했습니다.");
     expect(alert.textContent).not.toContain(secret);
     expect(document.body.textContent).not.toContain(secret);
   });
 
-  it("selects a repository with Enter and Space and exposes labelled inputs", async () => {
+  it("selects a repository with Enter and Space, ignores IME, and exposes labelled inputs", async () => {
     render(<App />);
-    const first = await screen.findByLabelText("C:\\projects\\devbox repository");
-    const second = await screen.findByLabelText("E:\\projects\\sample repository");
-    expect(screen.getByLabelText("탐색 root")).toBeTruthy();
+    const first = await screen.findByLabelText("C:\\projects\\devbox 저장소");
+    const second = await screen.findByLabelText("E:\\projects\\sample 저장소");
+    expect(screen.getByLabelText("탐색 루트")).toBeTruthy();
     expect(screen.getAllByLabelText("새 브랜치")).toHaveLength(2);
     expect(screen.getAllByLabelText("대상 디렉터리")).toHaveLength(2);
 
     first.focus();
+    fireEvent.keyDown(first, { key: "Enter", isComposing: true });
+    expect(first.getAttribute("aria-current")).toBeNull();
     fireEvent.keyDown(first, { key: "Enter" });
     expect(first.getAttribute("aria-current")).toBe("true");
     second.focus();
@@ -191,7 +200,7 @@ describe("Repo Manager repository context menu", () => {
 
     await screen.findByText("C:\\projects\\devbox", { selector: ".repo-path" });
     expect(screen.getByText("C:\\projects\\devbox-wt")).toBeTruthy();
-    fireEvent.click(screen.getByLabelText("C:\\projects\\devbox repository"));
+    fireEvent.click(screen.getByLabelText("C:\\projects\\devbox 저장소"));
     fireEvent.click(screen.getByRole("button", { name: "정리 후보 검사" }));
     expect(await screen.findByText(/기본 worktree라서 차단됨/)).toBeTruthy();
     expect(repoCleanupPreviewMock).toHaveBeenCalledWith(
@@ -202,7 +211,7 @@ describe("Repo Manager repository context menu", () => {
 
   it("우클릭한 exact repository를 선택하고 설계의 네 항목만 표시한다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("E:\\projects\\sample repository") as HTMLDivElement;
+    const target = await screen.findByLabelText("E:\\projects\\sample 저장소") as HTMLDivElement;
 
     fireEvent.contextMenu(target, { clientX: 16, clientY: 24 });
 
@@ -215,7 +224,7 @@ describe("Repo Manager repository context menu", () => {
 
   it("catalog submenu action은 exact repository와 target ID를 backend에 전달한다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("E:\\projects\\sample repository") as HTMLDivElement;
+    const target = await screen.findByLabelText("E:\\projects\\sample 저장소") as HTMLDivElement;
     await screen.findAllByRole("button", { name: "Code Pad" });
 
     fireEvent.contextMenu(target);
@@ -228,7 +237,7 @@ describe("Repo Manager repository context menu", () => {
 
   it("Shift+F10 경로 복사는 backend 재검증 결과만 쓰고 focus를 복원한다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("E:\\projects\\sample repository") as HTMLDivElement;
+    const target = await screen.findByLabelText("E:\\projects\\sample 저장소") as HTMLDivElement;
     target.focus();
 
     fireEvent.keyDown(target, { key: "F10", code: "F10", shiftKey: true });
@@ -241,7 +250,7 @@ describe("Repo Manager repository context menu", () => {
 
   it("Menu key로 exact repository 폴더를 연다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("C:\\projects\\devbox repository") as HTMLDivElement;
+    const target = await screen.findByLabelText("C:\\projects\\devbox 저장소") as HTMLDivElement;
     target.focus();
 
     fireEvent.keyDown(target, { key: "ContextMenu", code: "ContextMenu" });
@@ -253,7 +262,7 @@ describe("Repo Manager repository context menu", () => {
 
   it("worktree 생성 action은 exact repository의 기존 입력으로 이동하고 자동 생성하지 않는다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("E:\\projects\\sample repository") as HTMLDivElement;
+    const target = await screen.findByLabelText("E:\\projects\\sample 저장소") as HTMLDivElement;
     const branchInput = within(target).getByPlaceholderText("새 브랜치");
 
     fireEvent.contextMenu(target);
@@ -265,7 +274,7 @@ describe("Repo Manager repository context menu", () => {
 
   it("worktree 텍스트 입력의 기본 context menu와 Shift+F10을 가로채지 않는다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("E:\\projects\\sample repository") as HTMLDivElement;
+    const target = await screen.findByLabelText("E:\\projects\\sample 저장소") as HTMLDivElement;
     const branchInput = within(target).getByPlaceholderText("새 브랜치");
 
     branchInput.focus();
@@ -273,14 +282,14 @@ describe("Repo Manager repository context menu", () => {
     fireEvent.contextMenu(branchInput);
     fireEvent.keyDown(branchInput, { key: "F10", code: "F10", shiftKey: true });
 
-    expect(screen.queryByRole("menu", { name: "Repository 메뉴" })).toBeNull();
+    expect(screen.queryByRole("menu", { name: "저장소 메뉴" })).toBeNull();
     expect(document.activeElement).toBe(branchInput);
   });
 
   it("target discovery 실패는 raw 오류를 숨기고 submenu를 fail-closed로 둔다", async () => {
     openTargetsMock.mockRejectedValueOnce(new Error("credential-raw-error"));
     render(<App />);
-    const target = await screen.findByLabelText("C:\\projects\\devbox repository") as HTMLDivElement;
+    const target = await screen.findByLabelText("C:\\projects\\devbox 저장소") as HTMLDivElement;
     await screen.findByText("다른 앱으로 열기 대상을 확인하지 못했습니다");
 
     fireEvent.contextMenu(target);
@@ -293,12 +302,12 @@ describe("Repo Manager repository context menu", () => {
   it("copy 실패는 backend 경로나 상세 오류를 화면에 반향하지 않는다", async () => {
     repositoryCopyPathMock.mockRejectedValueOnce(new Error("C:\\secret\\repo"));
     render(<App />);
-    const target = await screen.findByLabelText("C:\\projects\\devbox repository") as HTMLDivElement;
+    const target = await screen.findByLabelText("C:\\projects\\devbox 저장소") as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "경로 복사" }));
 
-    expect(await screen.findByText("repository 경로를 확인하거나 복사하지 못했습니다")).toBeTruthy();
+    expect(await screen.findByText("저장소 경로를 확인하거나 복사하지 못했습니다")).toBeTruthy();
     expect(document.body.textContent?.includes("C:\\secret\\repo")).toBe(false);
     expect(writeTextMock).not.toHaveBeenCalled();
   });

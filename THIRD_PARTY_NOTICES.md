@@ -5,7 +5,7 @@ license for devbox itself; workspace packages are private and excluded from this
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
 - Cargo.lock SHA-256: `298e923406bee91166615650290ede5a4b89094371066fe5c0c75f8be2cb5d22`
-- pnpm-lock.yaml SHA-256: `2b2ce85ba4bce856d7ac3572fe481b4e0021bac9a7cbda5f9881e27bfd99dc30`
+- pnpm-lock.yaml SHA-256: `1cc237c8a7d0064588c8d8934ba73e1cb79eb7c1257250a28f83219c82475c0a`
 
 ## Rust dependencies
 

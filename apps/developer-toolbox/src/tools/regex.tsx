@@ -45,27 +45,27 @@ export function RegexTool() {
   return (
     <div className="tool">
       <ToolTextField
-        aria-label="Regular expression pattern"
+        aria-label="정규식 패턴"
         className="io-input row-input"
-        placeholder="Regular expression pattern..."
+        placeholder="정규식 패턴을 입력하세요..."
         value={pattern}
         onValueChange={setPattern}
         spellCheck={false}
       />
       <ToolTextArea
-        aria-label="Regex test input"
+        aria-label="정규식 테스트 입력"
         className="io-input"
         rows={6}
-        placeholder="Test text..."
+        placeholder="테스트할 텍스트를 입력하세요..."
         value={text}
         onValueChange={setText}
         spellCheck={false}
       />
-      <div className="io-label">{matches.length} match(es)</div>
+      <div className="io-label">{matches.length}개 일치</div>
       <ToolOutput
         className="regex-view"
         value={text}
-        ariaLabel="Regex output"
+        ariaLabel="정규식 결과"
         downloadName="dev-toolbox-regex-result.txt"
       >
         {segments.length === 0

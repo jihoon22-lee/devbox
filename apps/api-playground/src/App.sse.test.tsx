@@ -36,7 +36,7 @@ async function renderReady() {
   fireEvent.change(screen.getByPlaceholderText("https://api.example.com/users"), {
     target: { value: "https://example.test/stream" },
   });
-  const start = screen.getByRole("button", { name: "Start SSE" }) as HTMLButtonElement;
+  const start = screen.getByRole("button", { name: "SSE 시작" }) as HTMLButtonElement;
   await waitFor(() => expect(start.disabled).toBe(false));
   return { ...view, start };
 }
@@ -67,7 +67,7 @@ describe("API Playground SSE lifecycle", () => {
       sequence: 0,
       dropped: 0,
     }));
-    expect(screen.getByText("SSE connected", { selector: "span.sse-status" })).toBeTruthy();
+    expect(screen.getByText("SSE 연결됨", { selector: "span.sse-status" })).toBeTruthy();
 
     act(() => emitUpdate?.({
       sessionId: "browser-sse-1",
@@ -76,8 +76,8 @@ describe("API Playground SSE lifecycle", () => {
       dropped: 0,
     }));
     await waitFor(() => expect(stopMock).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("SSE closed", { selector: "span.sse-status" })).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Stop SSE" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("SSE 닫힘", { selector: "span.sse-status" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "SSE 중지" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("stops an active stream when the app unmounts", async () => {

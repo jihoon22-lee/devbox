@@ -6,8 +6,8 @@ import {
 } from "./byteCodec";
 
 const ENCODING_LABELS: Readonly<Record<ByteEncoding, string>> = {
-  utf8: "UTF-8 text",
-  hex: "Hex raw bytes",
+  utf8: "UTF-8 텍스트",
+  hex: "Hex 원시 바이트",
   base64: "Base64",
   base64url: "Base64URL",
 };
@@ -32,7 +32,7 @@ export function ByteCodecTool() {
     if (!result.output) return;
     void navigator.clipboard.writeText(result.output)
       .then(() => setActionError(null))
-      .catch(() => setActionError("변환 결과를 clipboard에 복사하지 못했습니다."));
+      .catch(() => setActionError("변환 결과를 클립보드에 복사하지 못했습니다."));
   };
 
   const save = () => {
@@ -54,7 +54,7 @@ export function ByteCodecTool() {
 
   return (
     <div className="tool byte-codec-tool">
-      <div className="codec-selectors" aria-label="byte 변환 형식">
+      <div className="codec-selectors" aria-label="바이트 변환 형식">
         <label>
           입력 형식
           <select
@@ -87,9 +87,9 @@ export function ByteCodecTool() {
 
       <div className="conversion-notice" role="note">
         <strong>표현 안내</strong>
-        UTF-8은 text를 byte로 인코딩합니다. 임의의 raw byte는 Hex/Base64 계열로 보존합니다.
-        Hex/Base64 입력의 ASCII 공백은 무시하고 Base64 계열은 올바른 끝 padding 생략을
-        허용합니다. 유효하지 않은 UTF-8은 대체 문자로 바꾸지 않고 byte 위치를 표시합니다.
+        UTF-8은 텍스트를 바이트로 인코딩합니다. 임의의 원시 바이트는 Hex/Base64 계열로 보존합니다.
+        Hex/Base64 입력의 ASCII 공백은 무시하고 Base64 계열은 올바른 끝 패딩 생략을
+        허용합니다. 유효하지 않은 UTF-8은 대체 문자로 바꾸지 않고 바이트 위치를 표시합니다.
         Base64는 암호화가 아니며 입력과 결과를 자동으로 저장하거나 전송하지 않습니다.
       </div>
 
@@ -108,7 +108,7 @@ export function ByteCodecTool() {
         </div>
         <div className="io-col">
           <div className="io-label conversion-output-label">
-            출력 · {ENCODING_LABELS[target]} · {result.byteLength.toLocaleString()} bytes
+            출력 · {ENCODING_LABELS[target]} · {result.byteLength.toLocaleString()}바이트
             <span className="conversion-actions">
               <button type="button" className="copy-btn" disabled={!result.output} onClick={copy}>복사</button>
               <button type="button" className="copy-btn" disabled={!result.output} onClick={save}>저장</button>
@@ -119,7 +119,7 @@ export function ByteCodecTool() {
               <strong>{result.error.message}</strong>
               <span>
                 {result.error.position !== null && result.error.unit !== null
-                  ? `${result.error.position}번째 ${result.error.unit === "byte" ? "byte" : "문자"} · `
+                  ? `${result.error.position}번째 ${result.error.unit === "byte" ? "바이트" : "문자"} · `
                   : ""}
                 {result.error.code}
               </span>

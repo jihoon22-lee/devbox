@@ -47,8 +47,8 @@ describe("PackageDependencySummaryPanel", () => {
 
     await waitFor(() => expect(packageDependencySummaryMock).toHaveBeenCalledWith("profile-1"));
     expect(await screen.findByText("최신 요약")).toBeTruthy();
-    expect(screen.getByLabelText("Package dependency 집계")).toHaveTextContent("12");
-    expect(screen.getByLabelText("Ecosystem별 package 집계")).toHaveTextContent("Cargo");
+    expect(screen.getByLabelText("패키지 의존성 집계")).toHaveTextContent("12");
+    expect(screen.getByLabelText("생태계별 패키지 집계")).toHaveTextContent("Cargo");
     expect(screen.getByText("미해결 edge 1")).toBeTruthy();
     expect(screen.queryByText(/serde|node_modules|projects\\/i)).toBeNull();
 

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
 
 const writeText = vi.fn<(value: string) => Promise<void>>();
@@ -15,6 +16,12 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Log Lens bounded UI", () => {
+  it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
+    const { container } = render(<App />);
+    await screen.findAllByRole("row");
+    await assertNoA11yViolations(container);
+  });
+
   it("offers an accessible log-line context menu and restores row focus", async () => {
     render(<App />);
     const row = screen.getAllByRole("row")[1] as HTMLDivElement;

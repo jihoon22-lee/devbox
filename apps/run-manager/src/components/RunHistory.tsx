@@ -431,7 +431,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
         );
       }
     } catch (cause) {
-      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (mountedRef.current) setError(friendlyErrorMessage(cause));
     } finally {
       if (mountedRef.current) setActionBusy(false);
     }
@@ -617,7 +617,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
         });
         if (response.truncated) setLogTrimmed(true);
       } catch (cause) {
-        if (active) setLogError(cause instanceof Error ? cause.message : String(cause));
+        if (active) setLogError(friendlyErrorMessage(cause));
       }
       if (
         active &&

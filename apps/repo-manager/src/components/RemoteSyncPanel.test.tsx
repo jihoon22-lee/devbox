@@ -141,9 +141,9 @@ describe("RemoteSyncPanel", () => {
     await waitFor(() => expect(repoPullMock).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("완료"));
     expect(screen.queryByRole("button", { name: "취소" })).toBeNull();
-    expect(screen.getByRole("region", { name: "Git remote sync" }).getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("region", { name: "Git 원격 동기화" }).getAttribute("aria-busy")).toBe("true");
     resolveRefresh?.({ ...cleanState });
-    await waitFor(() => expect(screen.getByRole("region", { name: "Git remote sync" }).getAttribute("aria-busy")).toBe("false"));
+    await waitFor(() => expect(screen.getByRole("region", { name: "Git 원격 동기화" }).getAttribute("aria-busy")).toBe("false"));
   });
 
   it("loads state and sends exact repository-only actions", async () => {
@@ -168,7 +168,7 @@ describe("RemoteSyncPanel", () => {
     expect(repoPullMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Pull (FF only) 실행" }));
     await waitFor(() => expect(repoPullMock).toHaveBeenCalledWith(repo.path, expect.any(String)));
-    await waitFor(() => expect(screen.getByRole("region", { name: "Git remote sync" }).getAttribute("aria-busy")).toBe("false"));
+    await waitFor(() => expect(screen.getByRole("region", { name: "Git 원격 동기화" }).getAttribute("aria-busy")).toBe("false"));
     fireEvent.click(screen.getByRole("button", { name: "Push" }));
     fireEvent.click(screen.getByRole("button", { name: "Push 실행" }));
     await waitFor(() => expect(repoPushMock).toHaveBeenCalledWith(repo.path, expect.any(String)));
@@ -225,13 +225,13 @@ describe("RemoteSyncPanel", () => {
     fireEvent.click(fetchButton);
     fireEvent.click(fetchButton);
     expect(repoFetchMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("region", { name: "Git remote sync" }).getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("region", { name: "Git 원격 동기화" }).getAttribute("aria-busy")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
     await waitFor(() => expect(repoRemoteCancelMock).toHaveBeenCalledWith(repoFetchMock.mock.calls[0][1]));
     resolveFetch?.();
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("취소했습니다"));
-    await waitFor(() => expect(screen.getByRole("region", { name: "Git remote sync" }).getAttribute("aria-busy")).toBe("false"));
+    await waitFor(() => expect(screen.getByRole("region", { name: "Git 원격 동기화" }).getAttribute("aria-busy")).toBe("false"));
     expect(screen.getByRole("alert").textContent).toBe("Git 원격 작업을 취소했습니다.");
 
     repoFetchMock.mockRejectedValueOnce(new Error("https://user:credential@secret.example/repo"));

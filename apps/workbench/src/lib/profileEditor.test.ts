@@ -122,7 +122,7 @@ describe("profile editor draft", () => {
       wslDistro: "Ubuntu;unexpected",
     });
     expect(validation.profile).toBeNull();
-    expect(validation.errors.wsl).toBe("WSL distro 이름에 허용되지 않는 문자가 있습니다.");
+    expect(validation.errors.wsl).toBe("WSL 배포판 이름에 허용되지 않는 문자가 있습니다.");
   });
 
   it("round-trips environment metadata without adding values to the storage DTO", () => {

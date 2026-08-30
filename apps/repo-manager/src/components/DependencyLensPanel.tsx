@@ -92,7 +92,7 @@ function RemotePackageMetadata({ entry }: { entry: DependencyEnrichmentEntry }) 
           </div>
           {entry.osv.state !== "failed" && (
             entry.osv.advisoryIds.length > 0
-              ? <p>Advisory: <span className="mono">{entry.osv.advisoryIds.join(" · ")}</span></p>
+              ? <p>권고: <span className="mono">{entry.osv.advisoryIds.join(" · ")}</span></p>
               : <p className="dim">조회 시점에 반환된 advisory가 없습니다.</p>
           )}
           {entry.osv.truncated && <p className="dependency-lens-warning">OSV 결과에 다음 페이지가 있어 일부만 표시합니다.</p>}
@@ -111,7 +111,7 @@ function RemotePackageMetadata({ entry }: { entry: DependencyEnrichmentEntry }) 
               <p>라이선스(참고용): {entry.depsDev.licenses.length ? entry.depsDev.licenses.join(" · ") : "확인되지 않음"}</p>
               <p>서비스 기본 버전: <span className="mono">{entry.depsDev.defaultVersion ?? "확인되지 않음"}</span> <span className="dim">(안전한 업데이트 보장 아님)</span></p>
               {entry.depsDev.deprecated && <p className="dependency-remote-deprecated">deps.dev에서 deprecated로 표시했습니다.</p>}
-              {entry.depsDev.advisoryIds.length > 0 && <p>Advisory: <span className="mono">{entry.depsDev.advisoryIds.join(" · ")}</span></p>}
+              {entry.depsDev.advisoryIds.length > 0 && <p>권고: <span className="mono">{entry.depsDev.advisoryIds.join(" · ")}</span></p>}
               {(!entry.depsDev.versionFound || !entry.depsDev.packageFound) && (
                 <p className="dim">서비스에 {!entry.depsDev.versionFound ? "해당 버전" : "패키지 기본 버전 정보"}가 없습니다.</p>
               )}
@@ -265,10 +265,10 @@ export default function DependencyLensPanel({ repo }: { repo: RepoEntry | null }
           {loading ? "분석 중…" : report ? "다시 분석" : "의존성 분석"}
         </button>
       </div>
-      {loading && <div className="dependency-lens-status" role="status">bounded lock graph를 분석하고 있습니다…</div>}
+      {loading && <div className="dependency-lens-status" role="status">제한된 lock graph를 분석하고 있습니다…</div>}
       {error && <div className="error dependency-lens-error" role="alert">{error}</div>}
       {!loading && !report && !error && (
-        <div className="dependency-lens-empty dim">선택한 repository의 Cargo, pnpm, npm, uv lockfile을 분석할 수 있습니다.</div>
+        <div className="dependency-lens-empty dim">선택한 저장소의 Cargo, pnpm, npm, uv lockfile을 분석할 수 있습니다.</div>
       )}
       {report && (
         <>
@@ -313,7 +313,7 @@ export default function DependencyLensPanel({ repo }: { repo: RepoEntry | null }
                     resetRemote();
                   }}
                 />
-                OSV vulnerability
+                OSV 취약점
               </label>
               <label>
                 <input
@@ -347,14 +347,14 @@ export default function DependencyLensPanel({ repo }: { repo: RepoEntry | null }
                 <div className="dependency-enrichment-disclosure">
                   <strong>실제 전송 예정</strong>
                   <span>서비스별 전송 좌표 합계 {serviceTransmissionCount}개 · 로컬 package {preview.localPackageCount}개 분석 기준</span>
-                  <span className="dim">repository 경로, lockfile 내용·경로, graph edge, registry·Git URL, checksum, credential, 환경·사용자 식별 정보는 보내지 않습니다.</span>
+                  <span className="dim">저장소 경로, lockfile 내용·경로, graph edge, registry·Git URL, checksum, credential, 환경·사용자 식별 정보는 보내지 않습니다.</span>
                 </div>
                 {preview.services.map((service) => (
                   <div className="dependency-enrichment-service" key={service.service}>
                     <div className="dependency-enrichment-service-head">
                       <strong>{SERVICE_LABEL[service.service]}</strong>
                       <span className="mono">https://{service.host}</span>
-                      <span className="dim">요청 {service.requestCount} · 캐시 {service.cachedCount} · stale fallback {service.staleFallbackCount} · 상한 생략 {service.omittedCount}</span>
+                      <span className="dim">요청 {service.requestCount} · 캐시 {service.cachedCount} · 오래된 캐시 대체 {service.staleFallbackCount} · 상한 생략 {service.omittedCount}</span>
                     </div>
                     {service.transmitted.length > 0 ? (
                       <ul className="dependency-enrichment-coordinates">
@@ -372,7 +372,7 @@ export default function DependencyLensPanel({ repo }: { repo: RepoEntry | null }
                   </div>
                 ))}
                 <div className="dependency-enrichment-confirm">
-                  <span className="dim">이 검토는 5분 동안 한 번만 사용할 수 있으며 repository가 바뀌면 무효입니다.</span>
+                  <span className="dim">이 검토는 5분 동안 한 번만 사용할 수 있으며 저장소가 바뀌면 무효입니다.</span>
                   <button type="button" className="btn primary" disabled={busy} onClick={() => void executeEnrichment()}>
                     {serviceTransmissionCount > 0 ? "검토한 정보 보내기" : "캐시 결과 적용"}
                   </button>
@@ -445,7 +445,7 @@ export default function DependencyLensPanel({ repo }: { repo: RepoEntry | null }
                 />
               </label>
             </div>
-            <div className="dependency-package-list" aria-label="Dependency package inventory">
+            <div className="dependency-package-list" aria-label="의존성 패키지 목록">
               {filteredPackages.visible.map((dependency) => {
                 const remote = enrichmentByPackage.get(dependency.id);
                 return (

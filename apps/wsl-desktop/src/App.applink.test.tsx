@@ -253,19 +253,17 @@ describe("App app-link delivery", () => {
     });
 
     render(<App />);
-    const journalButton = await screen.findByRole("button", { name: "Open journal in Log Lens" });
-    const startButton = await screen.findByRole("button", { name: "Start" });
-    const addTerminalButton = await screen.findByRole("button", { name: "+ Terminal" });
+    const journalButton = await screen.findByRole("button", { name: "Log Lens에서 저널 열기" });
+    const startButton = await screen.findByRole("button", { name: "시작" });
+    const addTerminalButton = await screen.findByRole("button", { name: "+ 터미널" });
 
     fireEvent.click(journalButton);
     await waitFor(() => expect(openWslJournalInLogLensMock).toHaveBeenCalledWith("Ubuntu", null));
     expect(journalButton).toBeDisabled();
     expect(startButton).toBeDisabled();
     expect(addTerminalButton).toBeDisabled();
-    const toolbarDistroSelector = screen.getAllByRole("combobox")
-      .find((element) => element.tagName === "SELECT" && !element.hasAttribute("aria-label"));
-    const panelDistroSelector = screen.getByRole("combobox", { name: "WSL distro 선택" });
-    expect(toolbarDistroSelector).toBeDefined();
+    const toolbarDistroSelector = screen.getByRole("combobox", { name: "현재 WSL 배포판" });
+    const panelDistroSelector = screen.getByRole("combobox", { name: "WSL 배포판 선택" });
     expect(toolbarDistroSelector).toBeDisabled();
     expect(panelDistroSelector).toBeDisabled();
 
@@ -283,7 +281,7 @@ describe("App app-link delivery", () => {
       .mockResolvedValueOnce(undefined);
 
     render(<App />);
-    const journalButton = await screen.findByRole("button", { name: "Open journal in Log Lens" });
+    const journalButton = await screen.findByRole("button", { name: "Log Lens에서 저널 열기" });
     fireEvent.click(journalButton);
     await screen.findByText("Log Lens journal handoff를 시작하지 못했습니다.");
 

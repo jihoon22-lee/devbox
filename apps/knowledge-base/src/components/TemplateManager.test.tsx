@@ -74,17 +74,17 @@ function renderManager(onClose = vi.fn(), onSaved = vi.fn()) {
 describe("Knowledge template manager", () => {
   it("exposes labelled nested dialogs and consumes a confirmed preview", async () => {
     const { onSaved } = renderManager();
-    const dialog = await screen.findByRole("dialog", { name: "Note templates" });
+    const dialog = await screen.findByRole("dialog", { name: "노트 템플릿" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(dialog).toHaveAttribute("aria-describedby", "template-manager-description");
-    expect(within(dialog).getByLabelText("Name")).toHaveValue("Daily");
+    expect(within(dialog).getByLabelText("이름")).toHaveValue("Daily");
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Preview before apply" }));
-    const previewDialog = await screen.findByRole("dialog", { name: /Preview · Notes\/today\.md/u });
+    fireEvent.click(within(dialog).getByRole("button", { name: "적용 전 미리보기" }));
+    const previewDialog = await screen.findByRole("dialog", { name: /미리보기 · Notes\/today\.md/u });
     expect(previewDialog).toHaveAttribute("aria-describedby", "template-preview-description");
     expect(saveMock).not.toHaveBeenCalled();
 
-    fireEvent.click(within(previewDialog).getByRole("button", { name: "Create note" }));
+    fireEvent.click(within(previewDialog).getByRole("button", { name: "노트 만들기" }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledWith("tpl-1"));
     expect(onSaved).toHaveBeenCalledWith({ saved: true, path: "Notes/today.md" });
   });
@@ -95,8 +95,8 @@ describe("Knowledge template manager", () => {
       resolvePreview = resolve;
     }));
     const { unmount } = renderManager();
-    const dialog = await screen.findByRole("dialog", { name: "Note templates" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Preview before apply" }));
+    const dialog = await screen.findByRole("dialog", { name: "노트 템플릿" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "적용 전 미리보기" }));
     await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(1));
     unmount();
 
@@ -107,13 +107,13 @@ describe("Knowledge template manager", () => {
   it("keeps the approval visible when cancellation fails", async () => {
     discardMock.mockRejectedValueOnce(new Error("temporary discard failure"));
     renderManager();
-    const dialog = await screen.findByRole("dialog", { name: "Note templates" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Preview before apply" }));
-    const previewDialog = await screen.findByRole("dialog", { name: /Preview · Notes\/today\.md/u });
+    const dialog = await screen.findByRole("dialog", { name: "노트 템플릿" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "적용 전 미리보기" }));
+    const previewDialog = await screen.findByRole("dialog", { name: /미리보기 · Notes\/today\.md/u });
 
-    fireEvent.click(within(previewDialog).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(within(previewDialog).getByRole("button", { name: "취소" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("temporary discard failure");
-    expect(screen.getByRole("dialog", { name: /Preview · Notes\/today\.md/u })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /미리보기 · Notes\/today\.md/u })).toBeInTheDocument();
     expect(saveMock).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, type CSSProperties, type HTMLAttributes } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
 import { closeSession, startSession } from "./api";
 import type { OpenRequest } from "./types";
@@ -136,8 +137,8 @@ const promptMock = vi.fn<(message?: string, defaultValue?: string) => string | n
 async function renderWithPane(cwd = "") {
   render(<App />);
   await screen.findAllByRole("option", { name: /Ubuntu/u });
-  if (cwd) fireEvent.change(screen.getByPlaceholderText(/Open path/u), { target: { value: cwd } });
-  const addButton = screen.getByRole("button", { name: "+ Terminal" });
+  if (cwd) fireEvent.change(screen.getByPlaceholderText(/경로 열기/u), { target: { value: cwd } });
+  const addButton = screen.getByRole("button", { name: "+ 터미널" });
   await waitFor(() => expect(addButton).toBeEnabled());
   fireEvent.click(addButton);
   const pane = await screen.findByLabelText("Ubuntu 터미널 팬") as HTMLDivElement;
@@ -168,6 +169,13 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("WSL Desktop pane and tab context menus", () => {
+  it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
+    const { container } = render(<App />);
+    await screen.findAllByRole("option", { name: /Ubuntu/u });
+    await waitFor(() => expect(screen.getByRole("button", { name: "+ 터미널" })).toBeEnabled());
+    await assertNoA11yViolations(container);
+  });
+
   it("우클릭한 exact pane의 현재 capability로 정확한 메뉴를 표시하고 action을 전달한다", async () => {
     const { pane } = await renderWithPane();
 
@@ -188,10 +196,10 @@ describe("WSL Desktop pane and tab context menus", () => {
   it("활성 pane과 다른 exact pane의 distro·cwd로 세로 분할하고 layout을 전환한다", async () => {
     const firstCwd = "/mnt/c/projects/first";
     const { pane } = await renderWithPane(firstCwd);
-    fireEvent.change(screen.getByPlaceholderText(/Open path/u), {
+    fireEvent.change(screen.getByPlaceholderText(/경로 열기/u), {
       target: { value: "/mnt/c/projects/second" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "+ Terminal" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ 터미널" }));
     await screen.findByTitle("Close terminal session-2");
 
     fireEvent.contextMenu(pane);
@@ -271,7 +279,7 @@ describe("WSL Desktop pane and tab context menus", () => {
 
   it("다른 탭 닫기는 target tab을 먼저 활성화하고 승인된 다른 session만 닫는다", async () => {
     const { tab } = await renderWithPane();
-    fireEvent.click(screen.getByTitle("New tab (Ctrl+Shift+T)"));
+    fireEvent.click(screen.getByTitle("새 탭 (Ctrl+Shift+T)"));
     await screen.findByLabelText("Ubuntu 2 터미널 탭");
 
     fireEvent.contextMenu(tab);
@@ -290,7 +298,7 @@ describe("WSL Desktop pane and tab context menus", () => {
   it("단일 탭 닫기는 기존 button과 context menu 모두 같은 confirmation을 거친다", async () => {
     const { tab } = await renderWithPane();
 
-    fireEvent.click(screen.getByTitle("Close tab"));
+    fireEvent.click(screen.getByTitle("탭 닫기"));
     expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(closeSessionMock).not.toHaveBeenCalled();
     expect(tab).toBeInTheDocument();
@@ -305,9 +313,9 @@ describe("WSL Desktop pane and tab context menus", () => {
   it("다른 탭 닫기의 부분 실패는 성공한 session만 제거하고 실패한 팬을 유지한다", async () => {
     const raw = "C:\\secret\\partial-close credential-raw";
     const { tab } = await renderWithPane();
-    fireEvent.click(screen.getByTitle("New tab (Ctrl+Shift+T)"));
+    fireEvent.click(screen.getByTitle("새 탭 (Ctrl+Shift+T)"));
     await screen.findByLabelText("Ubuntu 2 터미널 탭");
-    fireEvent.click(screen.getByRole("button", { name: "+ Terminal" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ 터미널" }));
     await screen.findByTitle("Close terminal session-3");
     closeSessionMock.mockImplementation(async (id) => {
       if (id === "session-3") throw new Error(raw);
@@ -348,7 +356,7 @@ describe("WSL Desktop pane and tab context menus", () => {
     const raw = "C:\\secret\\start credential-raw";
     render(<App />);
     await screen.findAllByRole("option", { name: /Ubuntu/u });
-    const addButton = screen.getByRole("button", { name: "+ Terminal" });
+    const addButton = screen.getByRole("button", { name: "+ 터미널" });
     await waitFor(() => expect(addButton).toBeEnabled());
     startSessionMock.mockRejectedValueOnce(new Error(raw));
 

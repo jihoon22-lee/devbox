@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { isImeComposing } from "@devbox/a11y";
 import {
   createTemplate,
   deleteTemplate,
@@ -28,9 +29,9 @@ export default function TemplateManager({ onClose, onSaved }: TemplateManagerPro
   const [templates, setTemplates] = useState<NoteTemplate[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [name, setName] = useState("");
-  const [body, setBody] = useState("# {{title}}\n\nCreated on {{date}} at {{time}}.\n");
+  const [body, setBody] = useState("# {{title}}\n\n{{date}} {{time}}에 작성되었습니다.\n");
   const [target, setTarget] = useState("Notes/new-note.md");
-  const [title, setTitle] = useState("New note");
+  const [title, setTitle] = useState("새 노트");
   const [date, setDate] = useState(defaultDate);
   const [time, setTime] = useState(defaultTime);
   const [preview, setPreview] = useState<TemplatePreview | null>(null);
@@ -104,7 +105,7 @@ export default function TemplateManager({ onClose, onSaved }: TemplateManagerPro
     requestRef.current += 1;
     setSelectedId(null);
     setName("");
-    setBody("# {{title}}\n\nCreated on {{date}} at {{time}}.\n");
+    setBody("# {{title}}\n\n{{date}} {{time}}에 작성되었습니다.\n");
     setError(null);
   };
 
@@ -159,7 +160,7 @@ export default function TemplateManager({ onClose, onSaved }: TemplateManagerPro
       } else {
         setSelectedId(null);
         setName("");
-        setBody("# {{title}}\n\nCreated on {{date}} at {{time}}.\n");
+        setBody("# {{title}}\n\n{{date}} {{time}}에 작성되었습니다.\n");
       }
     } catch (cause) {
       if (mountedRef.current) {
@@ -287,6 +288,7 @@ export default function TemplateManager({ onClose, onSaved }: TemplateManagerPro
     ));
     const focusTask = window.setTimeout(() => focusable()[0]?.focus(), 0);
     const onKeyDown = (event: KeyboardEvent) => {
+      if (isImeComposing(event)) return;
       if (event.key === "Escape") {
         if (!busyRef.current) {
           event.preventDefault();
@@ -332,13 +334,13 @@ export default function TemplateManager({ onClose, onSaved }: TemplateManagerPro
       <div className="template-dialog">
         <div className="template-dialog-head">
           <div>
-            <h2 id="template-manager-title">Note templates</h2>
-            <p className="dim" id="template-manager-description">Local only · preview is required before a new file is created.</p>
+            <h2 id="template-manager-title">노트 템플릿</h2>
+            <p className="dim" id="template-manager-description">로컬 전용 · 새 파일을 만들기 전에 미리보기가 필요합니다.</p>
           </div>
-          <button className="btn small" type="button" onClick={() => void closeManager()} disabled={busy || Boolean(preview)}>Close</button>
+          <button className="btn small" type="button" onClick={() => void closeManager()} disabled={busy || Boolean(preview)}>닫기</button>
         </div>
         <div className="template-layout">
-          <aside className="template-list" aria-label="Saved note templates">
+          <aside className="template-list" aria-label="저장된 노트 템플릿">
             {templates.map((template) => (
               <button
                 type="button"
@@ -351,33 +353,33 @@ export default function TemplateManager({ onClose, onSaved }: TemplateManagerPro
                 <span className="dim">#{template.id}</span>
               </button>
             ))}
-            {templates.length === 0 && <div className="dim">No templates yet.</div>}
-            <button className="btn small" type="button" onClick={clearEditor} disabled={busy || Boolean(preview)}>New template</button>
+            {templates.length === 0 && <div className="dim">아직 템플릿이 없습니다.</div>}
+            <button className="btn small" type="button" onClick={clearEditor} disabled={busy || Boolean(preview)}>새 템플릿</button>
           </aside>
           <section className="template-editor">
             <label>
-              Name
+              이름
               <input value={name} onChange={(event) => setName(event.currentTarget.value)} maxLength={128} disabled={busy || Boolean(preview)} />
             </label>
             <label>
               Markdown
               <textarea value={body} onChange={(event) => setBody(event.currentTarget.value)} rows={9} disabled={busy || Boolean(preview)} />
             </label>
-            <div className="dim template-help">Supported variables: <code>{"{{title}}"}</code> <code>{"{{date}}"}</code> <code>{"{{time}}"}</code> <code>{"{{vault-relative-path}}"}</code></div>
+            <div className="dim template-help">지원 변수: <code>{"{{title}}"}</code> <code>{"{{date}}"}</code> <code>{"{{time}}"}</code> <code>{"{{vault-relative-path}}"}</code></div>
             <div className="template-actions">
-              <button className="btn" type="button" onClick={() => void saveDefinition()} disabled={busy || !name.trim()}>Save template</button>
-              <button className="btn" type="button" onClick={() => void removeDefinition()} disabled={busy || selectedId == null}>Delete</button>
+              <button className="btn" type="button" onClick={() => void saveDefinition()} disabled={busy || !name.trim()}>템플릿 저장</button>
+              <button className="btn" type="button" onClick={() => void removeDefinition()} disabled={busy || selectedId == null}>삭제</button>
             </div>
             <hr />
-            <h3>Apply to a new note</h3>
+            <h3>새 노트에 적용</h3>
             <div className="template-grid">
-              <label>Target path<input value={target} onChange={(event) => setTarget(event.currentTarget.value)} placeholder="Notes/idea.md" disabled={busy || Boolean(preview)} /></label>
-              <label>Title<input value={title} onChange={(event) => setTitle(event.currentTarget.value)} disabled={busy || Boolean(preview)} /></label>
-              <label>Date<input type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} disabled={busy || Boolean(preview)} /></label>
-              <label>Time<input type="time" value={time} onChange={(event) => setTime(event.currentTarget.value)} disabled={busy || Boolean(preview)} /></label>
+              <label>대상 경로<input value={target} onChange={(event) => setTarget(event.currentTarget.value)} placeholder="Notes/idea.md" disabled={busy || Boolean(preview)} /></label>
+              <label>제목<input value={title} onChange={(event) => setTitle(event.currentTarget.value)} disabled={busy || Boolean(preview)} /></label>
+              <label>날짜<input type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} disabled={busy || Boolean(preview)} /></label>
+              <label>시간<input type="time" value={time} onChange={(event) => setTime(event.currentTarget.value)} disabled={busy || Boolean(preview)} /></label>
             </div>
-            {definitionDirty && <div className="dim">Save the template definition before previewing it.</div>}
-            <button className="btn active" type="button" onClick={() => void openPreview()} disabled={busy || selectedId == null || definitionDirty}>Preview before apply</button>
+            {definitionDirty && <div className="dim">미리보기 전에 템플릿 정의를 저장하세요.</div>}
+            <button className="btn active" type="button" onClick={() => void openPreview()} disabled={busy || selectedId == null || definitionDirty}>적용 전 미리보기</button>
             {error && <div className="source-error" role="alert">{error}</div>}
           </section>
         </div>
@@ -393,12 +395,12 @@ export default function TemplateManager({ onClose, onSaved }: TemplateManagerPro
             aria-describedby="template-preview-description"
             tabIndex={-1}
           >
-            <h3 id="template-preview-title">Preview · {preview.target}</h3>
+            <h3 id="template-preview-title">미리보기 · {preview.target}</h3>
             <pre>{preview.content}</pre>
-            <div className="dim" id="template-preview-description">{preview.byteLength.toLocaleString()} bytes · existing files are never overwritten</div>
+            <div className="dim" id="template-preview-description">{preview.byteLength.toLocaleString()}바이트 · 기존 파일은 덮어쓰지 않습니다</div>
             <div className="template-actions">
-              <button className="btn" type="button" onClick={() => void cancelPreview()} disabled={busy}>Cancel</button>
-              <button className="btn active" type="button" onClick={() => void confirmPreview()} disabled={busy}>Create note</button>
+              <button className="btn" type="button" onClick={() => void cancelPreview()} disabled={busy}>취소</button>
+              <button className="btn active" type="button" onClick={() => void confirmPreview()} disabled={busy}>노트 만들기</button>
             </div>
           </section>
         </div>

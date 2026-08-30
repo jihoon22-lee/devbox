@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { focusFirst, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import {
   importLspArchives,
   installLsp,
@@ -231,6 +232,7 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const mountedRef = useRef(true);
   const refreshGenerationRef = useRef(0);
+  const confirmationRef = useRef<HTMLElement>(null);
   // State updates do not synchronously change event-handler closures. Keep a
   // ref gate as the authority so picker, recovery, and confirmed mutations
   // cannot be started twice by rapid clicks.
@@ -370,6 +372,19 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
   };
 
   const pendingMetadata = pending ? metadataFor(pending.manifest, pending.status, pending.kind) : null;
+  const confirmationOpen = pending !== null;
+
+  useEffect(() => {
+    if (!confirmationOpen) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = requestAnimationFrame(() => {
+      if (confirmationRef.current) focusFirst(confirmationRef.current);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      restoreFocus(opener);
+    };
+  }, [confirmationOpen]);
 
   return (
     <section className="lsp-installer-section" aria-label="관리형 언어 서버 설치">
@@ -452,7 +467,19 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
 
       {pending && pendingMetadata && (
         <div className="lsp-confirmation-backdrop" role="presentation">
-          <section className="lsp-confirmation" role="dialog" aria-modal="true" aria-label="관리형 서버 작업 확인">
+          <section
+            ref={confirmationRef}
+            className="lsp-confirmation"
+            role="dialog"
+            aria-modal="true"
+            aria-label="관리형 서버 작업 확인"
+            onKeyDown={(event) => {
+              if (!confirmationRef.current) return;
+              trapDialogKeyDown(event, confirmationRef.current, () => {
+                if (!busyKey && !operationInFlightRef.current) setPending(null);
+              });
+            }}
+          >
             <h4>{pending.kind === "uninstall" ? "관리형 서버 제거 확인" : pending.kind === "import" ? "local archive 가져오기 확인" : "관리형 서버 설치 확인"}</h4>
             <p>{pending.kind === "import"
               ? pending.manifest?.runtime.kind === "node"

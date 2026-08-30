@@ -213,7 +213,7 @@ describe("Knowledge Path/Query app-link delivery", () => {
 
     await waitFor(() => expect(takePendingOpenMock).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(searchDocsMock).toHaveBeenCalledWith("ownership"));
-    expect(screen.getByPlaceholderText("Search docs...")).toHaveValue("ownership");
+    expect(screen.getByPlaceholderText("문서 검색...")).toHaveValue("ownership");
     expect(await screen.findByText("Result ownership")).toBeTruthy();
     expect(openInboundNoteMock).not.toHaveBeenCalled();
     expect(screen.queryByText(/stale-secret-path/)).toBeNull();
@@ -260,20 +260,20 @@ describe("Knowledge Path/Query app-link delivery", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Life Log draft 미리보기" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Life Log 초안 미리보기" })).toBeTruthy();
     expect(screen.getByText("Life Log digest · 2026-08-27 ~ 2026-08-27")).toBeTruthy();
     expect(screen.getByText("life-log, digest, day")).toBeTruthy();
-    expect(screen.getByLabelText("Knowledge draft body")).toHaveTextContent("## Summary");
-    expect(screen.getByLabelText("Knowledge draft size")).toHaveTextContent(/Title .* bytes · Body .* bytes/u);
+    expect(screen.getByLabelText("Knowledge 초안 본문")).toHaveTextContent("## Summary");
+    expect(screen.getByLabelText("Knowledge 초안 크기")).toHaveTextContent(/제목 .*바이트 · 본문 .*바이트/u);
     expect(screen.getByRole("dialog").getAttribute("aria-describedby")).toBe("knowledge-draft-description");
     expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
 
     await act(async () => {
-      screen.getByRole("button", { name: "Save draft" }).click();
+      screen.getByRole("button", { name: "초안 저장" }).click();
     });
     await waitFor(() => expect(saveKnowledgeDraftMock).toHaveBeenCalledWith("0123456789abcdef0123456789abcdef"));
     expect(discardKnowledgeDraftMock).not.toHaveBeenCalled();
-    expect(await screen.findByText("Knowledge draft를 저장했습니다. handoff는 소비되어 삭제되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("Knowledge 초안을 저장했습니다. handoff는 소비되어 삭제되었습니다.")).toBeTruthy();
   });
 
   it("cancels a handoff preview by restoring the one-time claim without saving", async () => {
@@ -287,12 +287,12 @@ describe("Knowledge Path/Query app-link delivery", () => {
     });
 
     render(<App />);
-    await screen.findByRole("heading", { name: "Life Log draft 미리보기" });
+    await screen.findByRole("heading", { name: "Life Log 초안 미리보기" });
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
 
     await waitFor(() => expect(discardKnowledgeDraftMock).toHaveBeenCalledWith("0123456789abcdef0123456789abcdef"));
     expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
-    expect(await screen.findByText("Knowledge draft 미리보기를 취소했습니다. 다시 열 수 있습니다.")).toBeTruthy();
+    expect(await screen.findByText("Knowledge 초안 미리보기를 취소했습니다. 다시 열 수 있습니다.")).toBeTruthy();
   });
 
   it("maps Escape to cancel and restores focus to the invoking control", async () => {
@@ -323,7 +323,7 @@ describe("Knowledge Path/Query app-link delivery", () => {
         from: "life-log",
       });
     });
-    await screen.findByRole("heading", { name: "Life Log draft 미리보기" });
+    await screen.findByRole("heading", { name: "Life Log 초안 미리보기" });
 
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => expect(discardKnowledgeDraftMock).toHaveBeenCalledWith("0123456789abcdef0123456789abcdef"));
@@ -346,9 +346,9 @@ describe("Knowledge Path/Query app-link delivery", () => {
     );
 
     render(<App />);
-    await screen.findByRole("heading", { name: "Life Log draft 미리보기" });
+    await screen.findByRole("heading", { name: "Life Log 초안 미리보기" });
     const cancel = screen.getByRole("button", { name: "취소" });
-    const save = screen.getByRole("button", { name: "Save draft" });
+    const save = screen.getByRole("button", { name: "초안 저장" });
     await waitFor(() => expect(document.activeElement).toBe(cancel));
     save.focus();
     fireEvent.keyDown(window, { key: "Tab" });
@@ -356,7 +356,7 @@ describe("Knowledge Path/Query app-link delivery", () => {
 
     fireEvent.click(save);
     await waitFor(() => expect(saveKnowledgeDraftMock).toHaveBeenCalled());
-    expect(await screen.findByText(/저장 위치가 변경되었거나 draft가 만료되었습니다/u)).toBeTruthy();
+    expect(await screen.findByText(/저장 위치가 변경되었거나 초안이 만료되었습니다/u)).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.body.textContent).not.toContain("/raw/path");
   });
@@ -401,8 +401,8 @@ describe("Knowledge Path/Query app-link delivery", () => {
     });
 
     render(<App />);
-    await screen.findByRole("heading", { name: "Life Log draft 미리보기" });
-    const save = screen.getByRole("button", { name: "Save draft" });
+    await screen.findByRole("heading", { name: "Life Log 초안 미리보기" });
+    const save = screen.getByRole("button", { name: "초안 저장" });
     fireEvent.click(save);
     fireEvent.click(save);
     expect(saveKnowledgeDraftMock).toHaveBeenCalledTimes(1);

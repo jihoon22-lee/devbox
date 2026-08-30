@@ -18,11 +18,11 @@ const TOKEN = `${SIGNING_INPUT}.${SIGNATURE}`;
 const KEY = "01234567890123456789012345678901";
 
 function fillForm(): { token: HTMLElement; key: HTMLElement; verify: HTMLElement } {
-  const token = screen.getByLabelText("JWT compact token");
-  const key = screen.getByLabelText("JWT verification key");
+  const token = screen.getByLabelText("JWT 컴팩트 토큰");
+  const key = screen.getByLabelText("JWT 검증 키");
   fireEvent.change(token, { target: { value: TOKEN } });
   fireEvent.change(key, { target: { value: KEY } });
-  return { token, key, verify: screen.getByRole("button", { name: "Verify signature" }) };
+  return { token, key, verify: screen.getByRole("button", { name: "서명 검증" }) };
 }
 
 afterEach(() => {
@@ -33,18 +33,18 @@ afterEach(() => {
 describe("JwtDecoder", () => {
   it("exposes accessible inputs and keeps decode visibly unverified", async () => {
     render(<JwtDecoder />);
-    const token = screen.getByLabelText("JWT compact token");
-    const key = screen.getByLabelText("JWT verification key");
+    const token = screen.getByLabelText("JWT 컴팩트 토큰");
+    const key = screen.getByLabelText("JWT 검증 키");
     expect(token.getAttribute("aria-describedby")).toBe("jwt-help");
     expect(key.getAttribute("type")).toBe("password");
 
     fireEvent.change(token, { target: { value: TOKEN } });
-    fireEvent.click(screen.getByRole("button", { name: "Decode" }));
+    fireEvent.click(screen.getByRole("button", { name: "디코드" }));
 
-    await waitFor(() => expect(screen.getByLabelText("JWT decoded output").textContent).toContain("unverified"));
-    expect(screen.getByRole("status").textContent).toContain("Unverified");
+    await waitFor(() => expect(screen.getByLabelText("JWT 디코드 결과").textContent).toContain("unverified"));
+    expect(screen.getByRole("status").textContent).toContain("검증되지 않음");
     expect(mocks.verifyJwt).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("JWT decoded output").textContent).not.toContain(SIGNATURE);
+    expect(screen.getByLabelText("JWT 디코드 결과").textContent).not.toContain(SIGNATURE);
   });
 
   it("can verify explicitly after a completed decode", async () => {
@@ -52,17 +52,17 @@ describe("JwtDecoder", () => {
     render(<JwtDecoder />);
     const { token, key } = fillForm();
 
-    fireEvent.click(screen.getByRole("button", { name: "Decode" }));
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Unverified"));
-    fireEvent.click(screen.getByRole("button", { name: "Verify signature" }));
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Verified"));
+    fireEvent.click(screen.getByRole("button", { name: "디코드" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("검증되지 않음"));
+    fireEvent.click(screen.getByRole("button", { name: "서명 검증" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("검증됨"));
     expect(token.isConnected).toBe(true);
     expect(key.isConnected).toBe(true);
   });
 
   it("keeps programmatic paste within the token bound", () => {
     render(<JwtDecoder />);
-    const token = screen.getByLabelText("JWT compact token") as HTMLTextAreaElement;
+    const token = screen.getByLabelText("JWT 컴팩트 토큰") as HTMLTextAreaElement;
     fireEvent.change(token, { target: { value: "x".repeat(JWT_LIMITS.maxTokenBytes + 1) } });
     expect(token.value).toBe("");
 
@@ -78,7 +78,7 @@ describe("JwtDecoder", () => {
     const { verify } = fillForm();
 
     fireEvent.click(verify);
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Verified"));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("검증됨"));
     expect(mocks.verifyJwt).toHaveBeenCalledWith({
       algorithm: "HS256",
       signingInput: SIGNING_INPUT,
@@ -86,7 +86,7 @@ describe("JwtDecoder", () => {
       key: KEY,
       keyEncoding: "utf8",
     });
-    expect(screen.getByLabelText("JWT decoded output").textContent).toContain('"verification": "verified"');
+    expect(screen.getByLabelText("JWT 디코드 결과").textContent).toContain('"verification": "verified"');
   });
 
   it("blocks duplicate verification while an operation is pending", async () => {
@@ -98,12 +98,12 @@ describe("JwtDecoder", () => {
     const { verify } = fillForm();
 
     fireEvent.click(verify);
-    fireEvent.click(screen.getByRole("button", { name: "Verifying..." }));
+    fireEvent.click(screen.getByRole("button", { name: "검증 중..." }));
     expect(mocks.verifyJwt).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("status").textContent).toContain("Verifying");
+    expect(screen.getByRole("status").textContent).toContain("검증하는 중");
 
     resolve(true);
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Verified"));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("검증됨"));
   });
 
   it("ignores a late native result after unmount and remount", async () => {
@@ -120,7 +120,7 @@ describe("JwtDecoder", () => {
     resolve(true);
     await Promise.resolve();
     await Promise.resolve();
-    expect(screen.getByLabelText("JWT decoded output").textContent).not.toContain("verified");
+    expect(screen.getByLabelText("JWT 디코드 결과").textContent).not.toContain("verified");
   });
 
   it("maps native failures to a fixed message and does not run during IME key events", async () => {
@@ -145,19 +145,19 @@ describe("JwtDecoder", () => {
     });
     render(<JwtDecoder />);
 
-    const token = screen.getByLabelText("JWT compact token");
+    const token = screen.getByLabelText("JWT 컴팩트 토큰");
     fireEvent.contextMenu(token, { clientX: 10, clientY: 10 });
-    fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "JWT 입력을 clipboard에서 읽지 못했습니다.",
+      "JWT 입력을 클립보드에서 읽지 못했습니다.",
     );
 
     fireEvent.change(token, { target: { value: TOKEN } });
-    fireEvent.click(screen.getByRole("button", { name: "Decode" }));
-    const output = screen.getByLabelText("JWT decoded output");
+    fireEvent.click(screen.getByRole("button", { name: "디코드" }));
+    const output = screen.getByLabelText("JWT 디코드 결과");
     await waitFor(() => expect(output.textContent).toContain("unverified"));
     fireEvent.contextMenu(output, { clientX: 10, clientY: 10 });
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "복사" }));
     await waitFor(() => {
       expect(screen.getAllByRole("alert").some((entry) =>
         entry.textContent === "JWT 결과 작업을 완료하지 못했습니다.",

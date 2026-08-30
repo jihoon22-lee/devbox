@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ContextMenuTriggerProps } from "@devbox/context-menu";
+import { isKeyboardActivation } from "@devbox/a11y";
 import type { Tab } from "../types";
 
 interface TabBarProps {
@@ -32,6 +33,16 @@ export default function TabBar({ tabs, activeTabId, onActivate, onClose, onReord
           draggable
           onClick={() => onActivate(tab.id)}
           {...contextMenuTriggerProps}
+          onKeyDown={(event) => {
+            contextMenuTriggerProps.onKeyDown?.(event);
+            if (
+              event.defaultPrevented
+              || event.target !== event.currentTarget
+              || !isKeyboardActivation(event)
+            ) return;
+            event.preventDefault();
+            onActivate(tab.id);
+          }}
           onDragStart={(e) => {
             e.dataTransfer.setData("application/x-wsld-tab", tab.id);
             e.dataTransfer.effectAllowed = "move";
@@ -62,7 +73,7 @@ export default function TabBar({ tabs, activeTabId, onActivate, onClose, onReord
           <span className="tab-title">{tab.title}</span>
           <button
             className="tab-close"
-            title="Close tab"
+            title="탭 닫기"
             disabled={actionsDisabled}
             onClick={(e) => {
               e.stopPropagation();
@@ -73,7 +84,7 @@ export default function TabBar({ tabs, activeTabId, onActivate, onClose, onReord
           </button>
         </div>
       ))}
-      <button className="tab-add" title="New tab (Ctrl+Shift+T)" disabled={actionsDisabled} onClick={onNewTab}>
+      <button className="tab-add" title="새 탭 (Ctrl+Shift+T)" disabled={actionsDisabled} onClick={onNewTab}>
         +
       </button>
     </div>

@@ -5,7 +5,7 @@ import JobEditor from "./JobEditor";
 import type { CronPreviewItem, Job, JobInput, WorkspaceTaskState } from "../types";
 
 vi.mock("../api", () => ({
-  friendlyErrorMessage: vi.fn((cause: unknown) => cause instanceof Error ? cause.message : String(cause)),
+  friendlyErrorMessage: vi.fn(() => "요청을 완료하지 못했습니다."),
   previewCron: vi.fn(),
 }));
 

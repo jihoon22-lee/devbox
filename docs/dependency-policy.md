@@ -50,6 +50,7 @@ asset을 받을 수 있다. release manifest는 schemaVersion 1을 유지하고 
 |---|---|---|
 | `cssparser`, `selectors`, `dtoa-short`, `option-ext` 등 MPL-2.0 Rust crates | 허용. devbox가 upstream source를 수정하지 않고 파일 단위 copyleft 경계를 유지한다. | exact crate source와 digest를 notices에 남기고, 수정 시 MPL source 제공 의무를 다시 검토 |
 | `dompurify` `(MPL-2.0 OR Apache-2.0)` | Apache-2.0 선택지로 허용 | notices에 expression/source/integrity 유지 |
+| [`axe-core 4.13.0`](https://github.com/dequelabs/axe-core/tree/v4.13.0) MPL-2.0 | 15개 frontend의 jsdom 구조 접근성 회귀 검사에만 쓰는 test-only package로 허용. 전역 MPL allowlist가 아닌 package/version/integrity 고정 승인을 사용하고, upstream source를 수정하지 않으며 앱 runtime import와 production 초기 bundle에서 제외한다. 설치된 package는 3,113,323 logical bytes/3,174,400 allocated bytes이며 test가 외부 network·executable을 사용하지 않는다. | CI/source checkout의 exact package license·source·integrity를 유지하고, runtime notices·installer에는 포함하지 않는다. package 수정 또는 runtime 편입 시 MPL source 제공 의무와 배포 경계를 다시 검토 |
 | `lru-cache` BlueOak-1.0.0 | permissive license로 수동 허용 | license/source/integrity 유지 |
 | `caniuse-lite` CC-BY-4.0 | browser support data attribution 조건으로 허용 | notices attribution과 source 유지 |
 | `khroma 2.1.0` | package metadata의 `Unknown`을 exact upstream tag의 MIT 파일과 lock integrity로만 명확화 | version 또는 integrity가 바뀌면 clarification이 자동 실패하고 재검토 필요 |

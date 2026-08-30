@@ -62,4 +62,15 @@ describe("Developer Toolbox Knowledge draft publisher API", () => {
       expect(error instanceof Error ? error.message : String(error)).not.toContain("/private/output/path");
     });
   });
+
+  it("localizes the stable native draft error without changing its handoff contract", async () => {
+    mocks.isTauri.mockReturnValue(true);
+    mocks.invoke.mockRejectedValueOnce(new Error(
+      "Knowledge draft를 만들거나 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다",
+    ));
+
+    await expect(createKnowledgeDraftHandoff("safe output")).rejects.toThrow(
+      KNOWLEDGE_DRAFT_CREATE_ERROR,
+    );
+  });
 });

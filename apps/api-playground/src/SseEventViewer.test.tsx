@@ -36,8 +36,8 @@ describe("SseEventViewer", () => {
 
     expect(screen.getByRole("log").textContent).toContain("<masked> & safe");
     expect(container.querySelector("script")).toBeNull();
-    expect(screen.getByText(/3 evicted/u)).toBeTruthy();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Pause SSE event rendering" }));
+    expect(screen.getByText(/3개 제외됨/u)).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: "SSE 이벤트 렌더링 일시 중지" }));
     expect(onPauseChange).toHaveBeenCalledWith(true);
   });
 
@@ -52,7 +52,7 @@ describe("SseEventViewer", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy masked events" }));
+    fireEvent.click(screen.getByRole("button", { name: "마스킹된 이벤트 복사" }));
     await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith(formatSseEvents(events)));
     expect(errorMock).not.toHaveBeenCalled();
   });
@@ -69,7 +69,7 @@ describe("SseEventViewer", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy masked events" }));
+    fireEvent.click(screen.getByRole("button", { name: "마스킹된 이벤트 복사" }));
     await waitFor(() => expect(errorMock).toHaveBeenCalledWith("SSE event를 클립보드에 복사하지 못했습니다."));
     expect(document.body.textContent).not.toContain("clipboard secret path");
   });

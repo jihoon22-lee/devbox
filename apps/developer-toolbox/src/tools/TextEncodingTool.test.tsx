@@ -8,12 +8,12 @@ afterEach(() => cleanup());
 describe("HTML entity and URL component tool surfaces", () => {
   it("renders the HTML entity encoder result with accessible input/output names", async () => {
     render(<HtmlEntityEncoder />);
-    const input = screen.getByRole("textbox", { name: "Input" });
-    expect(screen.getByLabelText("Output")).toBeTruthy();
+    const input = screen.getByRole("textbox", { name: "입력" });
+    expect(screen.getByLabelText("출력")).toBeTruthy();
 
     fireEvent.change(input, { target: { value: `<hello & "세계">` } });
     await waitFor(() =>
-      expect(screen.getByLabelText("Output").textContent).toBe(
+      expect(screen.getByLabelText("출력").textContent).toBe(
         "&lt;hello &amp; &quot;세계&quot;&gt;",
       ),
     );
@@ -21,30 +21,30 @@ describe("HTML entity and URL component tool surfaces", () => {
 
   it("shows a fixed decoder error without echoing malformed input", async () => {
     render(<HtmlEntityDecoder />);
-    fireEvent.change(screen.getByRole("textbox", { name: "Input" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "입력" }), {
       target: { value: "&credential=super-secret;" },
     });
 
     await waitFor(() =>
-      expect(screen.getByLabelText("Output").textContent).toBe(
+      expect(screen.getByLabelText("출력").textContent).toBe(
         "HTML entity contains malformed or unsupported syntax.",
       ),
     );
-    expect(screen.getByLabelText("Output").textContent).not.toContain("super-secret");
+    expect(screen.getByLabelText("출력").textContent).not.toContain("super-secret");
   });
 
   it("keeps invalid URL input in a fixed, offline error state", async () => {
     render(<UrlDecoder />);
-    fireEvent.change(screen.getByRole("textbox", { name: "Input" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "입력" }), {
       target: { value: "%zz?token=super-secret" },
     });
 
     await waitFor(() =>
-      expect(screen.getByLabelText("Output").textContent).toBe(
+      expect(screen.getByLabelText("출력").textContent).toBe(
         "URL component contains malformed percent-encoding.",
       ),
     );
-    expect(screen.getByLabelText("Output").textContent).not.toContain("super-secret");
+    expect(screen.getByLabelText("출력").textContent).not.toContain("super-secret");
   });
 });
 
@@ -71,8 +71,8 @@ describe("bounded transform stale/busy state", () => {
         clearOutputOnInput
       />,
     );
-    const input = screen.getByRole("textbox", { name: "Input" });
-    const output = screen.getByLabelText("Output");
+    const input = screen.getByRole("textbox", { name: "입력" });
+    const output = screen.getByLabelText("출력");
 
     fireEvent.change(input, { target: { value: "seed" } });
     const seed = pending.find((entry) => entry.input === "seed");
@@ -84,7 +84,7 @@ describe("bounded transform stale/busy state", () => {
     expect(output.textContent).toBe(" ");
     fireEvent.change(input, { target: { value: "second" } });
     expect(input.getAttribute("aria-busy")).toBe("true");
-    expect(screen.getByRole("status").textContent).toBe("(running...)");
+    expect(screen.getByRole("status").textContent).toBe("(실행 중...)");
 
     const second = pending.find((entry) => entry.input === "second");
     const first = pending.find((entry) => entry.input === "first");
@@ -106,7 +106,7 @@ describe("bounded transform stale/busy state", () => {
         clearOutputOnInput
       />,
     );
-    fireEvent.change(screen.getByRole("textbox", { name: "Input" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "입력" }), {
       target: { value: "pending" },
     });
     const request = pending.find((entry) => entry.input === "pending");

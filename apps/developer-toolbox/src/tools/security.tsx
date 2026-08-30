@@ -40,14 +40,14 @@ export function HashTool() {
           ))}
         </select>
         <button className="btn" onClick={() => void run()} disabled={running || !input}>
-          Hash
+          해시 계산
         </button>
       </div>
       <div className="io-grid">
         <div className="io-col">
-          <div className="io-label">Input</div>
+          <div className="io-label">입력</div>
           <ToolTextArea
-            aria-label="Hash input"
+            aria-label="해시 입력"
             className="io-input"
             rows={5}
             value={input}
@@ -57,7 +57,7 @@ export function HashTool() {
         </div>
         <div className="io-col">
           <div className="io-label">
-            Output {output && <CopyBtn value={output} />}
+            출력 {output && <CopyBtn value={output} />}
           </div>
           <ToolOutput
             className={`io-output ${error ? "io-error" : ""}`}

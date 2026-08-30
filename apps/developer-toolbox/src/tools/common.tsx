@@ -70,10 +70,10 @@ type TextControl = HTMLInputElement | HTMLTextAreaElement;
 type Selection = { start: number; end: number };
 
 const INPUT_MENU_ITEMS: readonly ContextMenuEntry[] = [
-  { type: "item", id: "paste", label: "Paste" },
-  { type: "item", id: "select-all", label: "Select all" },
+  { type: "item", id: "paste", label: "붙여넣기" },
+  { type: "item", id: "select-all", label: "모두 선택" },
   { type: "separator", id: "input-separator" },
-  { type: "item", id: "clear", label: "Clear" },
+  { type: "item", id: "clear", label: "지우기" },
 ];
 
 function message(error: unknown): string {
@@ -195,7 +195,7 @@ function useEditableTextContextMenu(
         })
         .catch((error) => {
           if (!mounted.current || actionRevision.current !== revision) return;
-          setActionError(options.clipboardErrorMessage ?? `Clipboard read failed: ${message(error)}`);
+          setActionError(options.clipboardErrorMessage ?? `클립보드를 읽지 못했습니다: ${message(error)}`);
         });
     },
     [focusAt, onValueChange, options.clipboardErrorMessage, options.maxPasteBytes],
@@ -269,7 +269,7 @@ interface ToolTextAreaProps
 export function ToolTextArea({
   value,
   onValueChange,
-  menuLabel = "Input actions",
+  menuLabel = "입력 작업",
   clipboardErrorMessage,
   actionErrorMessage,
   fixedActionError,
@@ -284,7 +284,8 @@ export function ToolTextArea({
     <>
       <textarea
         {...props}
-        {...context.menu.triggerProps}
+        onContextMenu={context.menu.triggerProps.onContextMenu}
+        onKeyDown={context.menu.triggerProps.onKeyDown}
         ref={context.controlRef as RefObject<HTMLTextAreaElement | null>}
         value={value}
         onChange={(event) => onValueChange(event.currentTarget.value)}
@@ -327,7 +328,7 @@ interface ToolTextFieldProps
 export function ToolTextField({
   value,
   onValueChange,
-  menuLabel = "Input actions",
+  menuLabel = "입력 작업",
   clipboardErrorMessage,
   actionErrorMessage,
   fixedActionError,
@@ -344,7 +345,8 @@ export function ToolTextField({
     <>
       <input
         {...props}
-        {...context.menu.triggerProps}
+        onContextMenu={context.menu.triggerProps.onContextMenu}
+        onKeyDown={context.menu.triggerProps.onKeyDown}
         ref={context.controlRef as RefObject<HTMLInputElement | null>}
         type={type ?? inputType ?? "text"}
         value={value}
@@ -420,8 +422,8 @@ export function ToolOutput({
   value,
   children,
   className,
-  ariaLabel = "Output",
-  menuLabel = "Output actions",
+  ariaLabel = "출력",
+  menuLabel = "출력 작업",
   downloadName = "dev-toolbox-result.txt",
   actionErrorMessage,
   fixedActionError,
@@ -458,9 +460,9 @@ export function ToolOutput({
   const menu = useContextMenu({ onBeforeOpen: () => setActionError(null) });
   const items = useMemo<readonly ContextMenuEntry[]>(
     () => [
-      { type: "item", id: "copy", label: "Copy", disabled: value.length === 0 || actionBusy || busy },
-      { type: "item", id: "select-all", label: "Select all", disabled: value.length === 0 || actionBusy || busy },
-      { type: "item", id: "save", label: "Save result file", disabled: value.length === 0 || actionBusy || busy },
+      { type: "item", id: "copy", label: "복사", disabled: value.length === 0 || actionBusy || busy },
+      { type: "item", id: "select-all", label: "모두 선택", disabled: value.length === 0 || actionBusy || busy },
+      { type: "item", id: "save", label: "결과 파일 저장", disabled: value.length === 0 || actionBusy || busy },
     ],
     [actionBusy, busy, value.length],
   );
@@ -502,7 +504,7 @@ export function ToolOutput({
           || actionRevision.current !== revision
           || valueRef.current !== snapshot
         ) return;
-        setActionError(actionErrorMessage ?? fixedActionError ?? `Output action failed: ${message(error)}`);
+        setActionError(actionErrorMessage ?? fixedActionError ?? `출력 작업을 완료하지 못했습니다: ${message(error)}`);
       })
       .finally(() => {
         if (mounted.current && actionRevision.current === revision) {
@@ -515,7 +517,8 @@ export function ToolOutput({
 
   const content = (children ?? value) || " ";
   const trigger = {
-    ...menu.triggerProps,
+    onContextMenu: menu.triggerProps.onContextMenu,
+    onKeyDown: menu.triggerProps.onKeyDown,
     tabIndex: 0,
     "aria-label": ariaLabel,
     className,
@@ -536,7 +539,7 @@ export function ToolOutput({
           {handoffActions}
         </div>
       ) : (
-        <pre {...trigger} ref={outputRef as RefObject<HTMLPreElement | null>}>
+        <pre {...trigger} role="region" ref={outputRef as RefObject<HTMLPreElement | null>}>
           {content}
         </pre>
       )}
@@ -585,9 +588,9 @@ export function TransformerTool({
       {extra}
       <div className="io-grid">
         <div className="io-col">
-          <div className="io-label">Input</div>
+          <div className="io-label">입력</div>
           <ToolTextArea
-            aria-label="Input"
+            aria-label="입력"
             aria-busy={running}
             className="io-input"
             placeholder={placeholder}
@@ -599,13 +602,13 @@ export function TransformerTool({
         </div>
         <div className="io-col">
           <div className="io-label">
-            Output {running && <span className="dim" role="status" aria-live="polite">(running...)</span>}
+            출력 {running && <span className="dim" role="status" aria-live="polite">(실행 중...)</span>}
             {output && !error && (
               <button
                 className="copy-btn"
                 onClick={() => navigator.clipboard.writeText(output)}
               >
-                Copy
+                복사
               </button>
             )}
           </div>
@@ -624,7 +627,7 @@ export function CopyBtn({ value }: { value: string }) {
   if (!value) return null;
   return (
     <button className="copy-btn" onClick={() => navigator.clipboard.writeText(value)}>
-      Copy
+      복사
     </button>
   );
 }

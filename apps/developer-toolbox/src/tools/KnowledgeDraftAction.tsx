@@ -5,13 +5,13 @@ export const KNOWLEDGE_DRAFT_MAX_CHARS = 256_000;
 export const KNOWLEDGE_DRAFT_MAX_BYTES = 512 * 1024;
 
 const KNOWLEDGE_DRAFT_BROWSER_ERROR =
-  "Knowledge draft handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
-const KNOWLEDGE_DRAFT_INPUT_ERROR = "Knowledge draft로 전달할 텍스트가 유효하지 않습니다";
+  "Knowledge 초안 전달은 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
+const KNOWLEDGE_DRAFT_INPUT_ERROR = "Knowledge 초안으로 전달할 텍스트가 유효하지 않습니다";
 const KNOWLEDGE_DRAFT_CREATE_ERROR =
-  "Knowledge draft를 만들거나 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다";
+  "Knowledge 초안을 만들거나 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다";
 const KNOWLEDGE_DRAFT_TARGET_UNAVAILABLE_ERROR =
   "Knowledge를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다";
-const KNOWLEDGE_DRAFT_INVALID_ERROR = "Knowledge draft 응답을 사용할 수 없습니다";
+const KNOWLEDGE_DRAFT_INVALID_ERROR = "Knowledge 초안 응답을 사용할 수 없습니다";
 
 const KNOWLEDGE_DRAFT_FIXED_ERRORS = new Set([
   KNOWLEDGE_DRAFT_INPUT_ERROR,
@@ -185,8 +185,8 @@ export function KnowledgeDraftAction({ value, disabled = false }: KnowledgeDraft
       if (!mountedRef.current || revisionRef.current !== revision) return;
       setOpen(false);
       setStatus(dispatch.redacted
-        ? "Knowledge draft 미리보기로 전달했습니다. 민감한 값은 마스킹되었습니다."
-        : "Knowledge draft 미리보기로 전달했습니다. 저장은 Knowledge에서 확인하세요.");
+        ? "Knowledge 초안 미리보기로 전달했습니다. 민감한 값은 마스킹되었습니다."
+        : "Knowledge 초안 미리보기로 전달했습니다. 저장은 Knowledge에서 확인하세요.");
     } catch (cause) {
       if (!mountedRef.current || revisionRef.current !== revision) return;
       setError(safeKnowledgeDraftError(cause));
@@ -201,11 +201,11 @@ export function KnowledgeDraftAction({ value, disabled = false }: KnowledgeDraft
       <button
         type="button"
         className="copy-btn knowledge-draft-button"
-        aria-label="Save draft to Knowledge"
+        aria-label="Knowledge에 초안 저장"
         onClick={openPreview}
         disabled={disabled || busy}
       >
-        Save draft to Knowledge
+        Knowledge에 초안 저장
       </button>
       {status ? (
         <span className="knowledge-draft-status" role="status" aria-live="polite">
@@ -223,19 +223,19 @@ export function KnowledgeDraftAction({ value, disabled = false }: KnowledgeDraft
             aria-labelledby="knowledge-draft-dialog-title"
             aria-describedby="knowledge-draft-dialog-description"
           >
-            <h2 id="knowledge-draft-dialog-title">Knowledge draft 미리보기</h2>
+            <h2 id="knowledge-draft-dialog-title">Knowledge 초안 미리보기</h2>
             <p id="knowledge-draft-dialog-description">
-              현재 결과를 확인한 뒤 명시적으로 Knowledge draft 미리보기로 전달하세요. 저장은 Knowledge에서
+              현재 결과를 확인한 뒤 명시적으로 Knowledge 초안 미리보기로 전달하세요. 저장은 Knowledge에서
               별도로 확인하며, 클립보드로 자동 전환하지 않습니다.
             </p>
             <dl className="knowledge-draft-meta">
-              <div><dt>source</dt><dd>Developer Toolbox</dd></div>
-              <div><dt>target</dt><dd>Knowledge</dd></div>
-              <div><dt>format</dt><dd><code>knowledge-draft/v2</code></dd></div>
+              <div><dt>원본</dt><dd>Developer Toolbox</dd></div>
+              <div><dt>대상</dt><dd>Knowledge</dd></div>
+              <div><dt>형식</dt><dd><code>knowledge-draft/v2</code></dd></div>
             </dl>
-            <pre className="knowledge-draft-preview" aria-label="Knowledge draft output">{preview}</pre>
-            <p className="knowledge-draft-bounds" aria-label="Knowledge draft size">
-              {Array.from(preview).length.toLocaleString()} / {KNOWLEDGE_DRAFT_MAX_CHARS.toLocaleString()} chars · {utf8ByteLength(preview).toLocaleString()} / {KNOWLEDGE_DRAFT_MAX_BYTES.toLocaleString()} bytes
+            <pre className="knowledge-draft-preview" aria-label="Knowledge 초안 결과">{preview}</pre>
+            <p className="knowledge-draft-bounds" aria-label="Knowledge 초안 크기">
+              {Array.from(preview).length.toLocaleString()} / {KNOWLEDGE_DRAFT_MAX_CHARS.toLocaleString()}자 · {utf8ByteLength(preview).toLocaleString()} / {KNOWLEDGE_DRAFT_MAX_BYTES.toLocaleString()}바이트
             </p>
             {error ? <div className="context-action-error" role="alert">{error}</div> : null}
             <div className="knowledge-draft-dialog-actions">
@@ -249,7 +249,7 @@ export function KnowledgeDraftAction({ value, disabled = false }: KnowledgeDraft
                 취소
               </button>
               <button type="button" className="btn active" onClick={() => void submit()} disabled={busy}>
-                {busy ? "전달 중..." : "Save draft"}
+                {busy ? "전달 중..." : "초안 저장"}
               </button>
             </div>
           </section>

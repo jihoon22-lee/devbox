@@ -74,7 +74,7 @@ describe("StageCommitPanel", () => {
     render(<StageCommitPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
     await screen.findByRole("checkbox", { name: "unstage src/main.ts" });
-    const message = screen.getByRole("textbox", { name: "Commit message" });
+    const message = screen.getByRole("textbox", { name: "커밋 메시지" });
     const secret = "credential-message-secret";
     fireEvent.change(message, { target: { value: secret } });
     const trigger = screen.getByRole("button", { name: "Commit (1)" });
@@ -88,12 +88,26 @@ describe("StageCommitPanel", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "취소" }));
   });
 
+  it("does not open commit confirmation for Ctrl+Enter during IME composition", async () => {
+    repoChangesMock.mockResolvedValueOnce([staged]);
+    render(<StageCommitPanel repo={repo} />);
+    fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
+    await screen.findByRole("checkbox", { name: "unstage src/main.ts" });
+    const message = screen.getByRole("textbox", { name: "커밋 메시지" });
+    fireEvent.change(message, { target: { value: "커밋 메시지" } });
+
+    fireEvent.keyDown(message, { key: "Enter", ctrlKey: true, isComposing: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.keyDown(message, { key: "Enter", ctrlKey: true });
+    expect(screen.getByRole("dialog", { name: "Commit을 실행할까요?" })).toBeTruthy();
+  });
+
   it("cancels a commit with Escape and returns focus to the trigger", async () => {
     repoChangesMock.mockResolvedValueOnce([staged]);
     render(<StageCommitPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
     await screen.findByRole("checkbox", { name: "unstage src/main.ts" });
-    fireEvent.change(screen.getByRole("textbox", { name: "Commit message" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "커밋 메시지" }), {
       target: { value: "cancel this commit" },
     });
     const trigger = screen.getByRole("button", { name: "Commit (1)" });
@@ -112,7 +126,7 @@ describe("StageCommitPanel", () => {
     render(<StageCommitPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
     await screen.findByRole("checkbox", { name: "unstage src/main.ts" });
-    const message = screen.getByRole("textbox", { name: "Commit message" });
+    const message = screen.getByRole("textbox", { name: "커밋 메시지" });
     fireEvent.change(message, { target: { value: "first message" } });
     fireEvent.click(screen.getByRole("button", { name: "Commit (1)" }));
     expect(screen.getByRole("dialog")).toBeTruthy();
@@ -178,7 +192,7 @@ describe("StageCommitPanel", () => {
 
     // A refresh returning no staged entry disables commit; no implicit `git add`
     // or commit call is made from the message field alone.
-    fireEvent.change(screen.getByRole("textbox", { name: "Commit message" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "커밋 메시지" }), {
       target: { value: "should not commit unstaged changes" },
     });
     expect(screen.getByRole("button", { name: /Commit \(0\)/ })).toHaveProperty("disabled", true);
@@ -190,7 +204,7 @@ describe("StageCommitPanel", () => {
     render(<StageCommitPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
     await screen.findByRole("checkbox", { name: "unstage src/main.ts" });
-    const message = screen.getByRole("textbox", { name: "Commit message" });
+    const message = screen.getByRole("textbox", { name: "커밋 메시지" });
     fireEvent.change(message, { target: { value: "Commit selected fixture" } });
     fireEvent.click(screen.getByRole("button", { name: "Commit (1)" }));
     fireEvent.click(screen.getByRole("button", { name: "Commit 실행" }));
@@ -224,7 +238,7 @@ describe("StageCommitPanel", () => {
     render(<StageCommitPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
     await screen.findByRole("checkbox", { name: "unstage src/main.ts" });
-    const message = screen.getByRole("textbox", { name: "Commit message" });
+    const message = screen.getByRole("textbox", { name: "커밋 메시지" });
     fireEvent.change(message, { target: { value: "Retry this commit" } });
     fireEvent.click(screen.getByRole("button", { name: "Commit (1)" }));
     fireEvent.click(screen.getByRole("button", { name: "Commit 실행" }));
@@ -260,7 +274,7 @@ describe("StageCommitPanel", () => {
     fireEvent.click(stageButton);
     fireEvent.click(stageButton);
     expect(repoStageMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("region", { name: "Git stage and commit" }).getAttribute("aria-busy"))
+    expect(screen.getByRole("region", { name: "Git stage 및 commit" }).getAttribute("aria-busy"))
       .toBe("true");
 
     cleanup();

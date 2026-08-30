@@ -95,12 +95,12 @@ export function validateProfileTemplateDraft(
   else if (hasControlCharacter(name)) errors.name = "템플릿 이름에 제어 문자를 넣을 수 없습니다.";
 
   if (windowsPath && !isSafePath(windowsPath)) errors.projectPath = "프로젝트 경로가 올바르지 않습니다.";
-  if (gitRoot && !isSafePath(gitRoot)) errors.gitRoot = "Git root 경로가 올바르지 않습니다.";
-  if (wslPath && !wslDistro) errors.wsl = "WSL 경로를 사용하려면 distro를 입력하세요.";
-  if (!wslPath && wslDistro) errors.wsl = "WSL distro를 사용하려면 WSL 경로를 입력하세요.";
+  if (gitRoot && !isSafePath(gitRoot)) errors.gitRoot = "Git 루트 경로가 올바르지 않습니다.";
+  if (wslPath && !wslDistro) errors.wsl = "WSL 경로를 사용하려면 배포판을 입력하세요.";
+  if (!wslPath && wslDistro) errors.wsl = "WSL 배포판을 사용하려면 WSL 경로를 입력하세요.";
   if (wslPath && !isSafePath(wslPath)) errors.projectPath = "WSL 경로가 올바르지 않습니다.";
-  if (wslDistro && Array.from(wslDistro).length > MAX_WSL_DISTRO_CHARS) errors.wsl = "WSL distro 이름이 너무 깁니다.";
-  if (wslDistro && hasControlCharacter(wslDistro)) errors.wsl = "WSL distro에 제어 문자를 넣을 수 없습니다.";
+  if (wslDistro && Array.from(wslDistro).length > MAX_WSL_DISTRO_CHARS) errors.wsl = "WSL 배포판 이름이 너무 깁니다.";
+  if (wslDistro && hasControlCharacter(wslDistro)) errors.wsl = "WSL 배포판에 제어 문자를 넣을 수 없습니다.";
 
   const ports = parseExpectedPorts(draft.expectedPortsText);
   if (draft.expectedPortsText.length > MAX_EXPECTED_PORTS_INPUT_CHARS) errors.expectedPorts = "예상 포트 입력이 너무 깁니다.";

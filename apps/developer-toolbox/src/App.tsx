@@ -23,35 +23,41 @@ export const TOOLBOX_TEXT_SOURCE_LABELS: Readonly<Record<string, string>> = {
 };
 
 const HANDOFF_ID_PATTERN = /^[0-9a-f]{32}$/u;
-const TOOLBOX_TEXT_INVALID_ERROR = "텍스트 handoff를 사용할 수 없습니다";
-const TOOLBOX_TEXT_BUSY_ERROR = "다른 텍스트 handoff를 먼저 처리하세요";
-const TOOLBOX_TEXT_EXPIRED_ERROR = "텍스트 handoff 미리보기가 만료되었습니다. 다시 전달하세요";
-const TOOLBOX_TEXT_STORAGE_ERROR = "텍스트 handoff 저장소를 사용할 수 없습니다";
-const TOOLBOX_TEXT_REJECTED_ERROR = "텍스트 handoff를 처리하지 못했습니다";
-const TOOLBOX_TEXT_BUSY_UI_ERROR = "기존 텍스트 handoff 미리보기를 먼저 적용하거나 취소하세요";
+const TOOLBOX_TEXT_INVALID_ERROR = "텍스트 전달을 사용할 수 없습니다";
+const TOOLBOX_TEXT_BUSY_ERROR = "다른 텍스트 전달을 먼저 처리하세요";
+const TOOLBOX_TEXT_EXPIRED_ERROR = "텍스트 전달 미리보기가 만료되었습니다. 다시 전달하세요";
+const TOOLBOX_TEXT_STORAGE_ERROR = "텍스트 전달 저장소를 사용할 수 없습니다";
+const TOOLBOX_TEXT_REJECTED_ERROR = "텍스트 전달을 처리하지 못했습니다";
+const TOOLBOX_TEXT_BUSY_UI_ERROR = "기존 텍스트 전달 미리보기를 먼저 적용하거나 취소하세요";
+const TOOLBOX_TEXT_NATIVE_ERROR_DISPLAY = new Map<string, string>([
+  ["텍스트 handoff를 사용할 수 없습니다", TOOLBOX_TEXT_INVALID_ERROR],
+  ["다른 텍스트 handoff를 먼저 처리하세요", TOOLBOX_TEXT_BUSY_ERROR],
+  ["텍스트 handoff 미리보기가 만료되었습니다. 다시 전달하세요", TOOLBOX_TEXT_EXPIRED_ERROR],
+  ["텍스트 handoff 저장소를 사용할 수 없습니다", TOOLBOX_TEXT_STORAGE_ERROR],
+]);
+const TOOLBOX_TEXT_LOCAL_ERRORS = new Set([
+  TOOLBOX_TEXT_INVALID_ERROR,
+  TOOLBOX_TEXT_BUSY_ERROR,
+  TOOLBOX_TEXT_EXPIRED_ERROR,
+  TOOLBOX_TEXT_STORAGE_ERROR,
+  TOOLBOX_TEXT_REJECTED_ERROR,
+  "Developer Toolbox 전달은 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다",
+  "텍스트 전달 응답을 사용할 수 없습니다",
+  TOOLBOX_TEXT_BUSY_UI_ERROR,
+]);
 
 function safeToolboxTextError(cause: unknown): string {
   const message = cause instanceof Error
     ? cause.message.replace(/^Error:\s*/u, "")
     : typeof cause === "string" ? cause : "";
-  return new Set([
-    TOOLBOX_TEXT_INVALID_ERROR,
-    TOOLBOX_TEXT_BUSY_ERROR,
-    TOOLBOX_TEXT_EXPIRED_ERROR,
-    TOOLBOX_TEXT_STORAGE_ERROR,
-    TOOLBOX_TEXT_REJECTED_ERROR,
-    "Developer Toolbox handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다",
-    "텍스트 handoff 응답을 사용할 수 없습니다",
-    TOOLBOX_TEXT_BUSY_UI_ERROR,
-  ]).has(message)
-    ? message
-    : TOOLBOX_TEXT_REJECTED_ERROR;
+  return TOOLBOX_TEXT_NATIVE_ERROR_DISPLAY.get(message)
+    ?? (TOOLBOX_TEXT_LOCAL_ERRORS.has(message) ? message : TOOLBOX_TEXT_REJECTED_ERROR);
 }
 
 function isTerminalToolboxTextError(message: string): boolean {
   return message === TOOLBOX_TEXT_INVALID_ERROR
     || message === TOOLBOX_TEXT_EXPIRED_ERROR
-    || message === "텍스트 handoff 응답을 사용할 수 없습니다";
+    || message === "텍스트 전달 응답을 사용할 수 없습니다";
 }
 
 function formatHandoffExpiry(expiresAtMs: number): string {
@@ -387,14 +393,14 @@ export default function App() {
               <span className="toolbox-handoff-kind">{TOOLBOX_TEXT_HANDOFF_KIND}</span>
             </div>
             <dl className="toolbox-handoff-meta">
-              <div><dt>source</dt><dd>{TOOLBOX_TEXT_SOURCE_LABELS[handoffPreview.producerId]}</dd></div>
-              <div><dt>handoff</dt><dd><code>{handoffPreview.handoffId}</code></dd></div>
-              <div><dt>expires</dt><dd>{formatHandoffExpiry(handoffPreview.expiresAtMs)}</dd></div>
+              <div><dt>원본</dt><dd>{TOOLBOX_TEXT_SOURCE_LABELS[handoffPreview.producerId]}</dd></div>
+              <div><dt>전달</dt><dd><code>{handoffPreview.handoffId}</code></dd></div>
+              <div><dt>만료</dt><dd>{formatHandoffExpiry(handoffPreview.expiresAtMs)}</dd></div>
             </dl>
             {handoffPreview.redacted ? (
               <p className="toolbox-handoff-redacted" role="note">민감한 값은 송신 앱에서 마스킹되었습니다.</p>
             ) : null}
-            <pre className="toolbox-handoff-text" aria-label="Toolbox handoff text">{handoffPreview.text}</pre>
+            <pre className="toolbox-handoff-text" aria-label="Toolbox 전달 텍스트">{handoffPreview.text}</pre>
             <div className="toolbox-handoff-actions">
               <button
                 ref={handoffCancelButtonRef}

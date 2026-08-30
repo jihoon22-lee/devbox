@@ -12,7 +12,7 @@ export default function NextRunsPreview({ items, loading = false, error = null }
     <section className="preview-card" aria-labelledby="next-runs-title">
       <div className="section-heading">
         <div>
-          <span className="eyebrow">LOCAL TIME</span>
+          <span className="eyebrow">로컬 시간</span>
           <h3 id="next-runs-title">다음 실행</h3>
         </div>
         <span className="preview-count">{items.length}/5</span>

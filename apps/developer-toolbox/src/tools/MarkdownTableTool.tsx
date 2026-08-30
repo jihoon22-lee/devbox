@@ -19,7 +19,7 @@ const INITIAL_STATE: TransformState = {
   running: false,
 };
 
-const FIXED_COPY_ERROR = "변환 결과를 clipboard에 복사하지 못했습니다.";
+const FIXED_COPY_ERROR = "변환 결과를 클립보드에 복사하지 못했습니다.";
 const FIXED_SAVE_ERROR = "변환 결과 파일을 저장하지 못했습니다.";
 const FIXED_CONTEXT_ERROR = "변환 결과 작업을 완료하지 못했습니다.";
 const FIXED_INPUT_ERROR = "표 입력을 붙여넣지 못했습니다.";

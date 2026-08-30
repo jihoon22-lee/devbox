@@ -14,7 +14,7 @@ vi.mock("../api", () => ({
   applyWorkspaceTaskImport: vi.fn(),
   cancelProjectImport: vi.fn(async () => false),
   cancelWorkspaceTaskImport: vi.fn(async () => true),
-  friendlyErrorMessage: vi.fn((cause: unknown) => cause instanceof Error ? cause.message : String(cause)),
+  friendlyErrorMessage: vi.fn(() => "요청을 완료하지 못했습니다."),
   importDefinitions: vi.fn(),
   previewProjectImport: vi.fn(),
   previewWorkspaceTaskImport: vi.fn(),

@@ -48,13 +48,13 @@ import {
 import "./App.css";
 
 const PROTO_FILTERS: { value: ProtoFilter; label: string }[] = [
-  { value: "all", label: "All" },
+  { value: "all", label: "전체" },
   { value: "tcp", label: "TCP" },
   { value: "udp", label: "UDP" },
 ];
 
 const STATE_FILTERS: { value: StateFilter; label: string }[] = [
-  { value: "all", label: "All states" },
+  { value: "all", label: "모든 상태" },
   { value: "listening", label: "LISTENING" },
   { value: "established", label: "ESTABLISHED" },
 ];
@@ -165,7 +165,7 @@ export function sourceLabel(row: PortRow): string {
     case "wsl":
       return "WSL";
     case "container":
-      return "Container";
+      return "컨테이너";
     default:
       return "Windows";
   }
@@ -184,7 +184,7 @@ export function provenanceLabel(row: PortRow): string {
 }
 
 export function safeActionError(_error: unknown): string {
-  return "Action failed. Refresh the list and try again.";
+  return "작업을 완료하지 못했습니다. 목록을 새로 고친 후 다시 시도하세요.";
 }
 
 export function shouldIgnoreComposingShortcut(isComposing: boolean, key: string): boolean {
@@ -205,20 +205,20 @@ export function correlationSummary(correlation: PortCorrelation): string {
 
 export function sourceStatusLabel(source: SnapshotSourceStatus): string {
   const freshness =
-    source.freshness_ms == null ? "freshness unknown" : `${source.freshness_ms}ms old`;
+    source.freshness_ms == null ? "최신 상태 알 수 없음" : `${source.freshness_ms}ms 전`;
   return `${source.producer} · ${source.state} · ${freshness}`;
 }
 
 function ownerLabels(row: RefreshTimelineRow | undefined): string {
   const labels = row?.owner_labels ?? [];
-  return labels.length > 0 ? labels.join(", ") : "No owner";
+  return labels.length > 0 ? labels.join(", ") : "소유자 없음";
 }
 
 function timelineTime(observedAtMs: number): string {
   const date = new Date(observedAtMs);
   return Number.isFinite(date.getTime())
     ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-    : "time unknown";
+    : "시간 알 수 없음";
 }
 
 async function readObservationSnapshot(): Promise<PortObservationSnapshot> {
@@ -393,7 +393,7 @@ export default function App() {
       next.favorite_ports.length > MAX_FAVORITES_PER_KIND ||
       next.favorite_processes.length > MAX_FAVORITES_PER_KIND
     ) {
-      setError("Too many favorites. Remove one before adding another.");
+      setError("즐겨찾기는 종류별로 제한됩니다. 새 항목을 추가하려면 하나를 먼저 제거하세요.");
       return;
     }
     const safe = clonePreferences(next);
@@ -468,7 +468,7 @@ export default function App() {
       if (!mounted.current || initializeRequest.current !== request) return;
       preferencesRef.current = clonePreferences(DEFAULT_PREFERENCES);
       setPreferences(clonePreferences(DEFAULT_PREFERENCES));
-      setSettingsWarning("Saved view settings were unavailable; using safe defaults.");
+      setSettingsWarning("저장된 보기 설정을 사용할 수 없어 안전한 기본값을 적용했습니다.");
     } finally {
       if (mounted.current && initializeRequest.current === request) setPreferencesReady(true);
     }
@@ -544,16 +544,16 @@ export default function App() {
   const onKill = async (row: PortRow) => {
     if (!mounted.current || busyActionRef.current !== null) return;
     if (!snapshotHealthyRef.current) {
-      setError("The listener snapshot is unavailable. Refresh before trying again.");
+      setError("리스너 스냅샷을 사용할 수 없습니다. 목록을 새로 고친 후 시도하세요.");
       return;
     }
     const request = listenerKillRequest(row);
     if (!request || !isListener(row)) {
-      setError("Identity unavailable. Refresh the list before trying again.");
+      setError("식별 정보를 사용할 수 없습니다. 목록을 새로 고친 후 시도하세요.");
       return;
     }
     const processLabel = row.process_name ? " (" + row.process_name + ")" : "";
-    const actionLabel = row.source === "container" ? "WSL Desktop에서 중지" : "listener 종료";
+    const actionLabel = row.source === "container" ? "WSL Desktop에서 중지" : "리스너 종료";
     if (!window.confirm(row.local_addr + processLabel + " " + actionLabel + "할까요?")) return;
 
     const rowKey = portRowKey(row);
@@ -658,39 +658,39 @@ export default function App() {
     const portFavorite = isPortFavorite(contextRow, preferences.favorite_ports);
     const processFavorite = isProcessFavorite(contextRow, preferences.favorite_processes);
     return [
-      { type: "item", id: "copy-port", label: "Copy port", disabled: contextRow.port <= 0 },
-      { type: "item", id: "copy-pid", label: "Copy PID", disabled: !hasPid },
-      { type: "item", id: "copy-localhost-url", label: "Copy localhost URL", disabled: !url },
+      { type: "item", id: "copy-port", label: "포트 복사", disabled: contextRow.port <= 0 },
+      { type: "item", id: "copy-pid", label: "PID 복사", disabled: !hasPid },
+      { type: "item", id: "copy-localhost-url", label: "localhost URL 복사", disabled: !url },
       {
         type: "item",
         id: "open-localhost",
-        label: "Open localhost",
+        label: "localhost 열기",
         disabled: !url || !isListening(contextRow),
       },
       { type: "separator", id: "process-separator" },
       {
         type: "item",
         id: "copy-process-path",
-        label: "Copy process path",
+        label: "프로세스 경로 복사",
         disabled: !contextPath,
       },
       {
         type: "item",
         id: "reveal-process",
-        label: "Show in Explorer",
+        label: "탐색기에서 보기",
         disabled: !hasPid || !contextPath || contextRow.source !== "windows",
       },
       { type: "separator", id: "favorite-separator" },
       {
         type: "item",
         id: "toggle-port-favorite",
-        label: portFavorite ? "Unfavorite port" : "Favorite port",
+        label: portFavorite ? "포트 즐겨찾기 해제" : "포트 즐겨찾기",
         disabled: preferencesSaving || contextRow.port <= 0,
       },
       {
         type: "item",
         id: "toggle-process-favorite",
-        label: processFavorite ? "Unfavorite process" : "Favorite process",
+        label: processFavorite ? "프로세스 즐겨찾기 해제" : "프로세스 즐겨찾기",
         disabled: !contextRow.identity || preferencesSaving,
       },
       { type: "separator", id: "danger-separator" },
@@ -699,11 +699,11 @@ export default function App() {
         id: isContainer ? "handoff-container-stop" : "kill-listener",
         label: isContainer
           ? isBusy
-            ? "Preparing handoff…"
-            : "Stop in WSL Desktop"
+            ? "전달 준비 중…"
+            : "WSL Desktop에서 중지"
             : isBusy
-            ? "Killing…"
-            : "Kill listener",
+            ? "종료 중…"
+            : "리스너 종료",
         disabled: !snapshotHealthy || !request || !isListener(contextRow) || isBusy,
         danger: true,
       },
@@ -768,8 +768,8 @@ export default function App() {
         <h1 className="title">Port Manager</h1>
         <input
           className="search"
-          aria-label="Search listeners"
-          placeholder="Search (port / proto / pid / process)..."
+          aria-label="리스너 검색"
+          placeholder="검색 (포트 / 프로토콜 / PID / 프로세스)..."
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
           onCompositionStart={() => setIsComposing(true)}
@@ -780,7 +780,7 @@ export default function App() {
             }
           }}
         />
-        <div className="filters" aria-label="Listener filters">
+        <div className="filters" aria-label="리스너 필터">
           {PROTO_FILTERS.map((filter) => (
             <button
               key={filter.value}
@@ -816,13 +816,13 @@ export default function App() {
               })
             }
           >
-            Pinned
+            고정
           </button>
         </div>
         <label className="refresh-settings">
-          <span>Auto-refresh</span>
+          <span>자동 새로 고침</span>
           <select
-            aria-label="Auto-refresh interval"
+            aria-label="자동 새로 고침 간격"
             value={preferences.refresh_interval_ms}
             disabled={!preferencesReady || preferencesSaving}
             onChange={(event) => {
@@ -855,7 +855,7 @@ export default function App() {
           disabled={!preferencesReady}
           onClick={() => setAutoRefreshPaused((paused) => !paused)}
         >
-          {autoRefreshPaused ? "Resume" : "Pause"}
+          {autoRefreshPaused ? "재개" : "일시 중지"}
         </button>
         <button
           type="button"
@@ -863,7 +863,7 @@ export default function App() {
           onClick={() => void refresh()}
           disabled={loading || !preferencesReady}
         >
-          {loading ? "Refreshing..." : "Refresh"}
+          {loading ? "새로 고치는 중..." : "새로 고침"}
         </button>
       </header>
 
@@ -884,13 +884,13 @@ export default function App() {
       )}
 
       {sources.length > 0 && (
-        <section className="source-diagnostics" aria-label="Correlation source status">
+        <section className="source-diagnostics" aria-label="연결 출처 상태">
           <div className="source-heading">
-            <strong>Correlation sources</strong>
+            <strong>연결 출처</strong>
             <span>
               {unhealthySources.length === 0
-                ? "All available"
-                : `${unhealthySources.length} unavailable`}
+                ? "모두 사용 가능"
+                : `${unhealthySources.length}개 사용 불가`}
             </span>
           </div>
           <ul>
@@ -899,7 +899,7 @@ export default function App() {
                 <span className="mono">{source.producer}</span>
                 <span className={`source-state source-${source.state}`}>{source.state}</span>
                 <span className="dim">
-                  {source.freshness_ms == null ? "freshness unknown" : `${source.freshness_ms}ms old`}
+                  {source.freshness_ms == null ? "최신 상태 알 수 없음" : `${source.freshness_ms}ms 전`}
                 </span>
               </li>
             ))}
@@ -909,26 +909,26 @@ export default function App() {
 
       {correlationsTruncated && (
         <div className="warn" role="status">
-          Correlation results reached the safe display limit. Review duplicate expected-port or service declarations.
+          연결 결과가 안전한 표시 한도에 도달했습니다. 중복된 예상 포트 또는 서비스 선언을 확인하세요.
         </div>
       )}
 
       <div className="statusbar" aria-live="polite">
         <span>
-          {visible.length} / {counts.total} rows
+          {visible.length} / {counts.total}행
         </span>
-        <span className="dot-green" /> {counts.listening} listeners
+        <span className="dot-green" /> 리스너 {counts.listening}개
         <span className={snapshotHealthy ? "snapshot-ok" : "snapshot-stale"}>
-          {snapshotHealthy ? "Snapshot stable" : "Snapshot unavailable · actions locked"}
+          {snapshotHealthy ? "스냅샷 안정" : "스냅샷 사용 불가 · 작업 잠김"}
         </span>
-        <span>{autoRefreshPaused ? "Auto-refresh paused" : "Auto-refresh on"}</span>
+        <span>{autoRefreshPaused ? "자동 새로 고침 일시 중지됨" : "자동 새로 고침 켜짐"}</span>
       </div>
 
       {hasComparedSnapshot && (
-        <section className="diff-panel" aria-label="Refresh timeline">
+        <section className="diff-panel" aria-label="새로 고침 타임라인">
           <div className="diff-heading">
-            <strong>Refresh timeline</strong>
-            <span>{timeline.length === 0 ? "No changes" : `${timeline.length} events`}</span>
+            <strong>새로 고침 타임라인</strong>
+            <span>{timeline.length === 0 ? "변경 없음" : `${timeline.length}개 이벤트`}</span>
           </div>
           {timeline.length > 0 && (
             <ol>
@@ -948,7 +948,7 @@ export default function App() {
                     {ownerChange ? (
                       <span>{ownerChange}</span>
                     ) : (
-                      <span>{row?.process_name ?? "unknown process"}</span>
+                      <span>{row?.process_name ?? "알 수 없는 프로세스"}</span>
                     )}
                   </li>
                 );
@@ -959,18 +959,18 @@ export default function App() {
       )}
 
       <div className="table-wrap">
-        <table aria-label="Listener list">
+        <table aria-label="리스너 목록">
           <thead>
             <tr>
-              <th>SOURCE</th>
-              <th>PROTO</th>
-              <th>PORT</th>
-              <th>LOCAL ADDRESS</th>
-              <th>STATE</th>
+              <th>출처</th>
+              <th>프로토콜</th>
+              <th>포트</th>
+              <th>로컬 주소</th>
+              <th>상태</th>
               <th>PID</th>
-              <th>PROCESS</th>
-              <th>OWNER</th>
-              <th>ACTION</th>
+              <th>프로세스</th>
+              <th>소유자</th>
+              <th>작업</th>
             </tr>
           </thead>
           <tbody>
@@ -986,7 +986,7 @@ export default function App() {
                   aria-selected={selected}
                   aria-label={provenanceLabel(row) + " " + row.local_addr}
                   className={selected ? "selected" : undefined}
-                  {...contextMenu.triggerProps}
+                  onContextMenu={contextMenu.triggerProps.onContextMenu}
                   onClick={() => setSelectedRowKey(rowKey)}
                   onKeyDown={(event) => {
                     contextMenu.triggerProps.onKeyDown?.(event);
@@ -1011,7 +1011,7 @@ export default function App() {
                   <td>{row.process_name ?? "-"}</td>
                   <td>
                     {row.correlations && row.correlations.length > 0 ? (
-                      <div className="correlation-cell" aria-label="Listener correlations">
+                      <div className="correlation-cell" aria-label="리스너 연결">
                         {row.correlations.map((correlation) => (
                           <span
                             key={correlation.action_key}
@@ -1032,8 +1032,8 @@ export default function App() {
                       className="btn favorite"
                       aria-label={
                         isPortFavorite(row, preferences.favorite_ports)
-                          ? "Unfavorite port"
-                          : "Favorite port"
+                          ? "포트 즐겨찾기 해제"
+                          : "포트 즐겨찾기"
                       }
                       aria-pressed={isPortFavorite(row, preferences.favorite_ports)}
                       disabled={preferencesSaving || row.port <= 0}
@@ -1047,8 +1047,8 @@ export default function App() {
                         className="btn favorite"
                         aria-label={
                           isProcessFavorite(row, preferences.favorite_processes)
-                            ? "Unfavorite process"
-                            : "Favorite process"
+                            ? "프로세스 즐겨찾기 해제"
+                            : "프로세스 즐겨찾기"
                         }
                         aria-pressed={isProcessFavorite(row, preferences.favorite_processes)}
                         disabled={preferencesSaving}
@@ -1062,23 +1062,23 @@ export default function App() {
                         type="button"
                         className="btn danger"
                         aria-label={
-                          row.source === "container" ? "Stop in WSL Desktop" : "Kill listener"
+                          row.source === "container" ? "WSL Desktop에서 중지" : "리스너 종료"
                         }
                         disabled={busy || !snapshotHealthy}
                         onClick={() => void onKill(row)}
                       >
                         {busy
                           ? row.source === "container"
-                            ? "Preparing..."
-                            : "Killing..."
+                            ? "준비 중..."
+                            : "종료 중..."
                           : row.source === "container"
-                            ? "Stop"
-                            : "Kill"}
+                            ? "중지"
+                            : "종료"}
                       </button>
                     )}
                     {row.port > 0 && isListening(row) && (
                       <button type="button" className="btn" onClick={() => void onOpen(row)}>
-                        Open
+                        열기
                       </button>
                     )}
                   </td>
@@ -1088,7 +1088,7 @@ export default function App() {
             {visible.length === 0 && (
               <tr>
                 <td colSpan={9} className="empty">
-                  No results
+                  결과 없음
                 </td>
               </tr>
             )}
@@ -1097,18 +1097,18 @@ export default function App() {
       </div>
 
       {selectedRow && (
-        <aside className="details" aria-label="Listener details">
+        <aside className="details" aria-label="리스너 세부 정보">
           <div className="details-heading">
-            <h2>Listener details</h2>
+            <h2>리스너 세부 정보</h2>
             <span>{provenanceLabel(selectedRow)}</span>
           </div>
           <dl>
             <div>
-              <dt>Provenance</dt>
+              <dt>출처</dt>
               <dd>{provenanceLabel(selectedRow)}</dd>
             </div>
             <div>
-              <dt>Endpoint</dt>
+              <dt>엔드포인트</dt>
               <dd className="mono">
                 {selectedRow.proto} {selectedRow.local_addr}
               </dd>
@@ -1118,51 +1118,51 @@ export default function App() {
               <dd className="mono">{displayValue(selectedRow.pid)}</dd>
             </div>
             <div>
-              <dt>Process</dt>
+              <dt>프로세스</dt>
               <dd>{displayValue(selectedRow.process_name)}</dd>
             </div>
             <div>
-              <dt>Command line</dt>
+              <dt>명령줄</dt>
               <dd className="mono details-value">
                 {displayValue(selectedRow.command_line)}
               </dd>
             </div>
             <div>
-              <dt>Executable path</dt>
+              <dt>실행 파일 경로</dt>
               <dd className="mono details-value">
                 {displayValue(selectedRow.executable_path)}
               </dd>
             </div>
             <div>
-              <dt>Process start time</dt>
+              <dt>프로세스 시작 시간</dt>
               <dd className="mono">
                 {displayValue(selectedRow.process_start_time)}
               </dd>
             </div>
             {selectedRow.wsl_distro && (
               <div>
-                <dt>WSL distro</dt>
+                <dt>WSL 배포판</dt>
                 <dd>{selectedRow.wsl_distro}</dd>
               </div>
             )}
             {selectedRow.wsl_start_tick != null && (
               <div>
-                <dt>WSL start tick</dt>
+                <dt>WSL 시작 틱</dt>
                 <dd className="mono">{selectedRow.wsl_start_tick}</dd>
               </div>
             )}
             {selectedRow.container_id && (
               <div>
-                <dt>Container</dt>
+                <dt>컨테이너</dt>
                 <dd className="mono">
                   {displayValue(selectedRow.container_engine)} / {selectedRow.container_id}
                 </dd>
               </div>
             )}
           </dl>
-          <section className="correlation-details" aria-label="Listener correlations">
+          <section className="correlation-details" aria-label="리스너 연결">
             <div className="correlation-details-heading">
-              <h3>Correlations</h3>
+              <h3>연결</h3>
               <span>{selectedRow.correlations?.length ?? 0}</span>
             </div>
             {(selectedRow.correlations?.length ?? 0) > 0 ? (
@@ -1188,35 +1188,35 @@ export default function App() {
                         <button
                           type="button"
                           className="btn"
-                          aria-label={`Open owner for ${correlation.label}`}
+                          aria-label={`${correlation.label} 소유자 열기`}
                           disabled={busyCorrelationAction !== null || !correlation.action_key}
                           onClick={() => void onOpenCorrelation(correlation)}
                         >
-                          {busyCorrelationAction === ownerBusyKey ? "Opening…" : "Open owner"}
+                          {busyCorrelationAction === ownerBusyKey ? "여는 중…" : "소유자 열기"}
                         </button>
                         {correlation.logs_available && (
                           <>
                             <button
                               type="button"
                               className="btn"
-                              aria-label={`Open stdout in Log Lens for ${correlation.label}`}
+                              aria-label={`Log Lens에서 ${correlation.label} stdout 열기`}
                               disabled={busyCorrelationAction !== null || !correlation.action_key}
                               onClick={() => void onOpenCorrelation(correlation, "stdout")}
                             >
                               {busyCorrelationAction === stdoutBusyKey
-                                ? "Opening…"
-                                : "Open stdout in Log Lens"}
+                                ? "여는 중…"
+                                : "Log Lens에서 stdout 열기"}
                             </button>
                             <button
                               type="button"
                               className="btn"
-                              aria-label={`Open stderr in Log Lens for ${correlation.label}`}
+                              aria-label={`Log Lens에서 ${correlation.label} stderr 열기`}
                               disabled={busyCorrelationAction !== null || !correlation.action_key}
                               onClick={() => void onOpenCorrelation(correlation, "stderr")}
                             >
                               {busyCorrelationAction === stderrBusyKey
-                                ? "Opening…"
-                                : "Open stderr in Log Lens"}
+                                ? "여는 중…"
+                                : "Log Lens에서 stderr 열기"}
                             </button>
                           </>
                         )}
@@ -1226,7 +1226,7 @@ export default function App() {
                 })}
               </ul>
             ) : (
-              <p className="dim">No correlations</p>
+              <p className="dim">연결 없음</p>
             )}
           </section>
           <div className="details-actions">
@@ -1235,16 +1235,16 @@ export default function App() {
               className="btn favorite"
               aria-label={
                 isPortFavorite(selectedRow, preferences.favorite_ports)
-                  ? "Unfavorite port"
-                  : "Favorite port"
+                  ? "포트 즐겨찾기 해제"
+                  : "포트 즐겨찾기"
               }
               aria-pressed={isPortFavorite(selectedRow, preferences.favorite_ports)}
               disabled={preferencesSaving || selectedRow.port <= 0}
               onClick={() => togglePortFavorite(selectedRow)}
             >
               {isPortFavorite(selectedRow, preferences.favorite_ports)
-                ? "Unfavorite port"
-                : "Favorite port"}
+                ? "포트 즐겨찾기 해제"
+                : "포트 즐겨찾기"}
             </button>
             {selectedRow.identity && (
               <button
@@ -1252,16 +1252,16 @@ export default function App() {
                 className="btn favorite"
                 aria-label={
                   isProcessFavorite(selectedRow, preferences.favorite_processes)
-                    ? "Unfavorite process"
-                    : "Favorite process"
+                  ? "프로세스 즐겨찾기 해제"
+                  : "프로세스 즐겨찾기"
                 }
                 aria-pressed={isProcessFavorite(selectedRow, preferences.favorite_processes)}
                 disabled={preferencesSaving}
                 onClick={() => toggleProcessFavorite(selectedRow)}
               >
                 {isProcessFavorite(selectedRow, preferences.favorite_processes)
-                  ? "Unfavorite process"
-                  : "Favorite process"}
+                  ? "프로세스 즐겨찾기 해제"
+                  : "프로세스 즐겨찾기"}
               </button>
             )}
           </div>
@@ -1272,7 +1272,7 @@ export default function App() {
               disabled={busyRowKey === portRowKey(selectedRow) || !snapshotHealthy}
               onClick={() => void onKill(selectedRow)}
             >
-              Stop in WSL Desktop
+              WSL Desktop에서 중지
             </button>
           )}
         </aside>
@@ -1285,7 +1285,7 @@ export default function App() {
         items={contextMenuItems}
         onSelect={onContextMenuSelect}
         onClose={contextMenu.close}
-        ariaLabel="Port actions"
+        ariaLabel="포트 작업"
       />
     </div>
   );

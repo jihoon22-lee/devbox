@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
@@ -134,7 +135,13 @@ afterEach(() => {
 
 it("shows the active WSL vault polling mode without treating it as an error", async () => {
   render(<App />);
-  expect(await screen.findByText("WSL vault · 5초 폴링")).toBeTruthy();
+  expect(await screen.findByText("WSL 저장소 · 5초 폴링")).toBeTruthy();
+});
+
+it("초기 앱 셸에 구조적 접근성 위반이 없다", async () => {
+  const { container } = render(<App />);
+  await waitFor(() => expect(screen.getByText("Knowledge")).toBeTruthy());
+  await assertNoA11yViolations(container);
 });
 
 describe("knowledge-base App — 모드 토글 & 프리뷰 비활성화", () => {
@@ -211,7 +218,7 @@ describe("knowledge-base App — tree context menu", () => {
 
     fireEvent.contextMenu(notes, { clientX: 20, clientY: 30 });
 
-    expect(notes).toHaveAttribute("aria-selected", "true");
+    expect(notes).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("menu", { name: "Knowledge 트리 작업" })).toBeInTheDocument();
     for (const label of [
       "새 파일",
@@ -283,14 +290,24 @@ describe("knowledge-base App — tree context menu", () => {
     vi.spyOn(window, "prompt").mockReturnValueOnce("Notes/renamed.md");
     render(<App />);
     const nested = treeButton(await screen.findByText("nested.md"));
+    nested.focus();
 
     fireEvent.contextMenu(nested);
     fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
     const dialog = await screen.findByRole("dialog", { name: "이름 변경 미리보기" });
-    expect(within(dialog).getByRole("button", { name: "취소" })).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "Escape" });
+    const approve = within(dialog).getByRole("button", { name: "전체 적용 (2)" });
+    const cancel = within(dialog).getByRole("button", { name: "취소" });
+    await waitFor(() => expect(document.activeElement).toBe(approve));
+    cancel.focus();
+    fireEvent.keyDown(cancel, { key: "Tab" });
+    expect(document.activeElement).toBe(approve);
+    fireEvent.keyDown(dialog, { key: "Escape", isComposing: true });
+    expect(dialog).toBeInTheDocument();
+    fireEvent.keyDown(dialog, { key: "Escape" });
 
     await waitFor(() => expect(discardRenamePreviewMock).toHaveBeenCalledWith("rename-plan-1"));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "이름 변경 미리보기" })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(nested));
     expect(applyRenameMock).not.toHaveBeenCalled();
   });
 

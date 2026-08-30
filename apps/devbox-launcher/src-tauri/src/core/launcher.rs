@@ -279,8 +279,8 @@ impl Index {
             result: SearchResult {
                 id: CLIPBOARD_PREVIEW_ID.into(),
                 revision: revision(&[b"builtin/v1", CLIPBOARD_PREVIEW_ID.as_bytes()]),
-                label: "Clipboard 미리보기".into(),
-                detail: Some("현재 선택 영역, 없으면 clipboard · 전달하지 않음".into()),
+                label: "클립보드 미리보기".into(),
+                detail: Some("현재 선택 영역, 없으면 클립보드 · 전달하지 않음".into()),
                 source: "launcher".into(),
                 target_app: "devbox-launcher".into(),
                 target_kind: "clipboard-preview".into(),
@@ -533,7 +533,11 @@ fn match_score(result: &SearchResult, needle: &str) -> Option<u8> {
                 .and_then(|detail| field_match_score(detail, needle, 3))
         })
         .or_else(|| field_match_score(&result.target_app, needle, 6))
-        .or_else(|| field_match_score(&result.source, needle, 9))
+        // Result IDs are bounded, validated non-secret identifiers. Including
+        // them preserves stable technical aliases such as `clipboard-preview`
+        // when the visible label is localized.
+        .or_else(|| field_match_score(&result.id, needle, 9))
+        .or_else(|| field_match_score(&result.source, needle, 12))
 }
 
 fn field_match_score(value: &str, needle: &str, base: u8) -> Option<u8> {
@@ -1622,8 +1626,14 @@ mod tests {
     fn clipboard_preview_is_local_explicit_and_not_a_handoff() {
         let index =
             Index::build(crate::commands::CATALOG_JSON, &root("clipboard-preview")).unwrap();
-        let result = index
+        assert!(index
             .search("clipboard")
+            .unwrap()
+            .results
+            .iter()
+            .any(|result| result.id == CLIPBOARD_PREVIEW_ID));
+        let result = index
+            .search("클립보드")
             .unwrap()
             .results
             .into_iter()

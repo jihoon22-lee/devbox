@@ -11,7 +11,9 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@devbox/a11y": "workspace:*",
     "@devbox/context-menu": "workspace:*",
+    "@devbox/tokens": "workspace:*",
     "@tauri-apps/api": "^2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

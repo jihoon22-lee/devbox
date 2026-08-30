@@ -32,7 +32,7 @@ describe("API Playground output handoff", () => {
     expect(dialog.textContent).toContain("text/plain; charset=utf-8");
     expect(createApiRequestHandoffMock).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByRole("textbox", { name: "API Playground request body" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "API Playground 요청 본문" }), {
       target: { value: "edited output" },
     });
     fireEvent.click(screen.getByRole("button", { name: "API Playground로 전달" }));
@@ -68,7 +68,7 @@ describe("API Playground output handoff", () => {
   it("rejects malformed edited output with a fixed error", () => {
     render(<ApiHandoffAction value="safe output" />);
     fireEvent.click(screen.getByRole("button", { name: "API Playground로 보내기" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "API Playground request body" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "API Playground 요청 본문" }), {
       target: { value: "unsafe\0output" },
     });
     fireEvent.click(screen.getByRole("button", { name: "API Playground로 전달" }));
@@ -82,7 +82,7 @@ describe("API Playground output handoff", () => {
   it("rejects an unpaired surrogate without invoking the native producer", () => {
     render(<ApiHandoffAction value="safe output" />);
     fireEvent.click(screen.getByRole("button", { name: "API Playground로 보내기" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "API Playground request body" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "API Playground 요청 본문" }), {
       target: { value: "unsafe\ud800output" },
     });
     fireEvent.click(screen.getByRole("button", { name: "API Playground로 전달" }));
@@ -132,9 +132,23 @@ describe("API Playground output handoff", () => {
     fireEvent.click(screen.getByRole("button", { name: "API Playground로 전달" }));
 
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다",
+      "API Playground 전달을 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다",
     );
     expect(screen.queryByText("/private/output/path")).toBeNull();
     expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it("localizes the stable native handoff failure contract", async () => {
+    createApiRequestHandoffMock.mockRejectedValueOnce(
+      new Error("API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다"),
+    );
+    render(<ApiHandoffAction value="safe output" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "API Playground로 보내기" }));
+    fireEvent.click(screen.getByRole("button", { name: "API Playground로 전달" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "API Playground 전달을 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다",
+    );
   });
 });
