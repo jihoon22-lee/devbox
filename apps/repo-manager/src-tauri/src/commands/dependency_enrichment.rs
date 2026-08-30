@@ -621,6 +621,12 @@ mod tests {
             while handled < expected_requests && Instant::now() < deadline {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        // A socket accepted from a non-blocking listener can
+                        // inherit non-blocking mode on Windows. The fixture
+                        // reader is deliberately synchronous and bounded by a
+                        // read timeout, so normalize the accepted stream on
+                        // every platform before reading the request.
+                        stream.set_nonblocking(false).unwrap();
                         let request = read_fixture_request(&mut stream);
                         let response = responder(&request);
                         let _ = sender.send(request);

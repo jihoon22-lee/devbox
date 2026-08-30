@@ -8,7 +8,7 @@
 //! 제약: 순수 실행 로직만 담는다. git 출력 파싱은 각 앱이 소유한다.
 
 use std::io::{ErrorKind, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -284,16 +284,117 @@ impl GitTarget {
         Self::Native { cwd: cwd.into() }
     }
 
+    /// Build an explicit distro-scoped target for consumers that already own
+    /// a structured WSL profile instead of a host UNC spelling.
+    pub fn wsl(distro: impl Into<String>, cwd: impl Into<String>) -> Result<Self, String> {
+        let distro = distro.into();
+        let cwd = cwd.into();
+        if distro != distro.trim()
+            || distro.len() > 128
+            || devbox_wsl::distro::validate_distro_name(&distro).is_err()
+            || !valid_wsl_absolute_path(&cwd)
+        {
+            return Err("git_invalid_target".into());
+        }
+        Ok(Self::Wsl { distro, cwd })
+    }
+
     pub fn from_project_path(path: &str) -> Result<Self, String> {
         match devbox_wsl::path::parse_wsl_unc_path(path)
             .map_err(|_| "git_invalid_target".to_string())?
         {
-            Some(wsl) => Ok(Self::Wsl {
-                distro: wsl.distro().to_owned(),
-                cwd: wsl.linux_path().to_owned(),
-            }),
+            Some(wsl) => Self::wsl(wsl.distro(), wsl.linux_path()),
             None => Ok(Self::native(path)),
         }
+    }
+
+    /// Convert a path emitted by Git in this execution namespace into the
+    /// host filesystem spelling used by the desktop app.
+    ///
+    /// Git commonly emits relative `.git/...` paths for the primary worktree
+    /// and absolute POSIX paths for a linked WSL worktree. Relative values are
+    /// resolved against this target's reviewed cwd. WSL output is converted
+    /// without touching the filesystem or changing Linux path case.
+    pub fn host_path_from_git(&self, path: &str) -> Result<String, String> {
+        if !valid_path_text(path) {
+            return Err("git_invalid_target_path".into());
+        }
+        match self {
+            Self::Native { cwd } => {
+                let resolved = if valid_host_absolute_path(path) {
+                    PathBuf::from(path)
+                } else {
+                    if !valid_relative_path(path, std::path::MAIN_SEPARATOR) {
+                        return Err("git_invalid_target_path".into());
+                    }
+                    Path::new(cwd).join(path)
+                };
+                let value = resolved.to_string_lossy().into_owned();
+                if !valid_host_absolute_path(&value) {
+                    return Err("git_invalid_target_path".into());
+                }
+                Ok(value)
+            }
+            Self::Wsl { distro, cwd } => {
+                let absolute = if path.starts_with('/') {
+                    path.to_owned()
+                } else {
+                    if !valid_relative_path(path, '/') {
+                        return Err("git_invalid_target_path".into());
+                    }
+                    format!("{}/{}", cwd.trim_end_matches('/'), path)
+                };
+                if !valid_wsl_absolute_path(&absolute) {
+                    return Err("git_invalid_target_path".into());
+                }
+                devbox_wsl::path::wsl_to_windows(distro, &absolute)
+                    .map_err(|_| "git_invalid_target_path".to_string())
+            }
+        }
+    }
+
+    /// Convert one already validated absolute host path into the namespace in
+    /// which this Git process runs. Native targets keep their host spelling;
+    /// WSL targets accept only a drive path or a WSL UNC path for the same
+    /// distro. Ordinary UNC paths and cross-distro paths fail closed.
+    pub fn git_path_from_host(&self, path: &str) -> Result<String, String> {
+        if !valid_host_absolute_path(path) {
+            return Err("git_invalid_target_path".into());
+        }
+        match self {
+            Self::Native { .. } => Ok(path.to_owned()),
+            Self::Wsl { distro, .. } => {
+                match devbox_wsl::path::parse_wsl_unc_path(path)
+                    .map_err(|_| "git_invalid_target_path".to_string())?
+                {
+                    Some(wsl) => {
+                        if !wsl.distro().eq_ignore_ascii_case(distro)
+                            || !valid_wsl_absolute_path(wsl.linux_path())
+                        {
+                            return Err("git_invalid_target_path".into());
+                        }
+                        Ok(wsl.linux_path().to_owned())
+                    }
+                    None => {
+                        let mapped = devbox_wsl::path::windows_to_wsl(path)
+                            .map_err(|_| "git_invalid_target_path".to_string())?;
+                        if !valid_wsl_absolute_path(&mapped) {
+                            return Err("git_invalid_target_path".into());
+                        }
+                        Ok(mapped)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Validate an absolute desktop-host path without consulting the
+    /// filesystem. Consumers use this before canonicalizing a Git-emitted
+    /// worktree spelling, including POSIX fixtures compiled on Windows.
+    pub fn validate_host_absolute_path(path: &str) -> Result<(), String> {
+        valid_host_absolute_path(path)
+            .then_some(())
+            .ok_or_else(|| "git_invalid_target_path".to_string())
     }
 
     fn cwd(&self) -> &str {
@@ -305,6 +406,54 @@ impl GitTarget {
     fn is_wsl(&self) -> bool {
         matches!(self, Self::Wsl { .. })
     }
+}
+
+fn valid_path_text(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 4_096
+        && !value.chars().any(char::is_control)
+        && !value.contains('\0')
+}
+
+fn valid_relative_path(value: &str, separator: char) -> bool {
+    valid_path_text(value)
+        && !value.starts_with(['/', '\\'])
+        && !value
+            .split([separator, if separator == '/' { '\\' } else { '/' }])
+            .any(|component| matches!(component, "." | ".."))
+}
+
+fn valid_wsl_absolute_path(value: &str) -> bool {
+    valid_path_text(value)
+        && value.starts_with('/')
+        && !value.contains('\\')
+        && !value
+            .split('/')
+            .any(|component| matches!(component, "." | ".."))
+        // These Linux characters cannot be represented unambiguously through
+        // the Windows WSL UNC provider used for host filesystem revalidation.
+        && !value.chars().any(|character| matches!(character, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
+}
+
+fn valid_host_absolute_path(value: &str) -> bool {
+    if !valid_path_text(value) {
+        return false;
+    }
+    let normalized = value.replace('\\', "/");
+    if normalized.starts_with("//?/")
+        || normalized.starts_with("//./")
+        || normalized.starts_with("/??/")
+        || normalized
+            .split('/')
+            .any(|component| matches!(component, "." | ".."))
+    {
+        return false;
+    }
+    normalized.starts_with('/')
+        || (normalized.len() >= 3
+            && normalized.as_bytes()[0].is_ascii_alphabetic()
+            && normalized.as_bytes()[1] == b':'
+            && normalized.as_bytes()[2] == b'/')
 }
 
 /// `git -C <cwd> <args...>`를 실행해 stdout을 반환한다. 실패 시 stderr를 에러로.
@@ -867,6 +1016,74 @@ mod tests {
     }
 
     #[test]
+    fn wsl_target_maps_git_paths_back_to_safe_host_paths() {
+        let target = GitTarget::from_project_path(
+            "\\\\wsl.localhost\\Ubuntu\\home\\jihoon\\Projects\\한 글",
+        )
+        .unwrap();
+
+        assert_eq!(
+            target.host_path_from_git(".git/MERGE_HEAD").unwrap(),
+            "\\\\wsl$\\Ubuntu\\home\\jihoon\\Projects\\한 글\\.git\\MERGE_HEAD"
+        );
+        assert_eq!(
+            target
+                .host_path_from_git("/home/jihoon/Projects/Linked")
+                .unwrap(),
+            "\\\\wsl$\\Ubuntu\\home\\jihoon\\Projects\\Linked"
+        );
+        assert_eq!(
+            target.host_path_from_git("/mnt/e/Projects/DevBox").unwrap(),
+            "E:\\Projects\\DevBox"
+        );
+    }
+
+    #[test]
+    fn native_target_maps_host_absolute_and_relative_git_paths_lexically() {
+        let target = GitTarget::native("/safe/repository");
+        assert_eq!(
+            target.host_path_from_git("/safe/repository/.git/MERGE_HEAD"),
+            Ok("/safe/repository/.git/MERGE_HEAD".into())
+        );
+        assert_eq!(
+            target.host_path_from_git(".git/MERGE_HEAD"),
+            Ok(Path::new("/safe/repository")
+                .join(".git/MERGE_HEAD")
+                .to_string_lossy()
+                .into_owned())
+        );
+        assert!(target.host_path_from_git("../escape").is_err());
+    }
+
+    #[test]
+    fn wsl_target_maps_only_same_distro_unc_or_drive_host_paths() {
+        let target =
+            GitTarget::from_project_path("\\\\wsl$\\Ubuntu\\home\\jihoon\\Projects\\DevBox")
+                .unwrap();
+
+        assert_eq!(
+            target
+                .git_path_from_host("\\\\wsl.localhost\\ubuntu\\home\\jihoon\\Projects\\Linked",)
+                .unwrap(),
+            "/home/jihoon/Projects/Linked"
+        );
+        assert_eq!(
+            target.git_path_from_host("E:\\Projects\\Linked").unwrap(),
+            "/mnt/e/Projects/Linked"
+        );
+        assert!(target
+            .git_path_from_host("\\\\wsl$\\Debian\\home\\jihoon\\Projects\\Linked")
+            .is_err());
+        assert!(target
+            .git_path_from_host("\\\\server\\share\\Linked")
+            .is_err());
+        assert!(target.host_path_from_git("../escape").is_err());
+        assert!(target
+            .host_path_from_git("/home/jihoon/bad\\component")
+            .is_err());
+    }
+
+    #[test]
     fn project_target_distinguishes_ordinary_unc_and_invalid_wsl_unc() {
         assert_eq!(
             GitTarget::from_project_path("\\\\server\\share\\project").unwrap(),
@@ -878,6 +1095,16 @@ mod tests {
             GitTarget::from_project_path("//wsl$/Ubuntu/home/../secret").unwrap_err(),
             "git_invalid_target"
         );
+        assert_eq!(
+            GitTarget::wsl("Ubuntu", "/home/jihoon/Projects/한 글").unwrap(),
+            GitTarget::Wsl {
+                distro: "Ubuntu".into(),
+                cwd: "/home/jihoon/Projects/한 글".into(),
+            }
+        );
+        assert!(GitTarget::wsl("Ubuntu", "../escape").is_err());
+        assert!(GitTarget::wsl("--help", "/home/jihoon/project").is_err());
+        assert!(GitTarget::wsl(" Ubuntu", "/home/jihoon/project").is_err());
     }
 
     #[test]

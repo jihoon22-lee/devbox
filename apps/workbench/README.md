@@ -6,7 +6,10 @@
 ## 주요 기능
 
 - **ProjectProfile CRUD** — wsl-desktop 프로젝트와 Life Log `projects/v1` snapshot을 흡수 (canonical identity 단일 규칙)
-- **사전 점검(read-only health)** — Git/WSL distro/예상 포트/Run Manager 서비스 상태
+- **사전 점검(read-only health)** — Git/WSL distro/예상 포트/Run Manager 서비스 상태.
+  WSL profile은 `wsl.exe -l -v`에서 해당 distro가 이미 Running인지 먼저 확인하고,
+  stopped/missing/unavailable이면 distro-scoped Git을 실행하거나 distro를 시작하지 않는다.
+  Running일 때만 profile의 distro와 POSIX cwd를 구조화한 target으로 Git을 조회한다.
 - **Start Workspace** — read-only preflight review → 예상 포트 확인 → WSL Desktop에 구체적인 경로 전달·Code Pad workspace 열기 (Run Manager 서비스 자체는 시작·변경하지 않으며, 단계별 실패·rollback 표시; 저장된 WSL Desktop layout을 보내는 기능은 아님 — 설계: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](../../docs/superpowers/specs/2026-08-17-app-interop-design.md))
 - **Stop What I Started** — Workbench가 시작한 자원만 정리 (기존 실행 자원은 건드리지 않음)
 - **프로필 컨텍스트 메뉴** — 우클릭/Shift+F10/Menu key로 Start Workspace, Stop What I Started, 프로필 편집, 확인 후 삭제, 검증된 경로 복사, catalog 기반 다른 앱으로 열기. 메뉴를 연 행을 먼저 선택하고 닫히면 focus 복구
@@ -41,6 +44,8 @@ tag/workflow evidence는 각 GitHub Release에서 구분해 확인한다.
 - Life Log 입력: `%LOCALAPPDATA%\devbox\integration\life-log\v1\summary.json`의
   `projects/v1` read-only view. 누락은 no-op이고 손상·schema mismatch·unsafe path는 기존
   프로필을 유지한다. producer가 꺼져 있어도 마지막 정상 snapshot은 freshness와 함께 읽는다.
+  WSL UNC entry는 host path뿐 아니라 원래 distro와 case-sensitive POSIX path도 함께
+  `WslProfile`로 복원하므로 health Git이 Windows native runner로 되돌아가지 않는다.
 - Run Manager 입력: `%LOCALAPPDATA%\devbox\integration\run-manager\v1\summary.json`의
   flat `activeServices`를 read-only로 읽는다. snapshot 자체가 없으면 지정 서비스는 미실행으로
   보이지만, 손상·잘못된 schema·음수 uptime·중복/잘못된 ID·128개 초과는 빈 정상 상태로 축소하지
