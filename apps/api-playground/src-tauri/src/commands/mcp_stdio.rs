@@ -796,19 +796,23 @@ fn finalize_invoke(
             mcp::validate_operation_result(method, &result, era)
                 .map_err(|_| PROTOCOL_INVALID.to_string())?;
             let (result, rejected) =
-                filter_reflected_list_definitions(&result, method, connection.redactor.as_ref())?;
+                filter_reflected_list_definitions(&result, method, connection.redactor.as_ref())
+                    .map_err(|code| map_stdio_result_error(&code))?;
             if rejected > 0 {
                 eprintln!("mcp stdio: excluded {rejected} reflected definitions");
             }
             connection
                 .explorer
-                .update_list_result(method, &result, requested_cursor)?;
+                .update_list_result(method, &result, requested_cursor)
+                .map_err(|code| map_stdio_result_error(&code))?;
             let next_cursor = list_method(method)
                 .then(|| result.get("nextCursor").and_then(Value::as_str))
                 .flatten()
                 .map(ToOwned::to_owned);
-            let projected = project_result_for_ipc(connection.redactor.as_ref(), &result, method)?;
-            mcp::validate_json(&projected, mcp::MAX_RESPONSE_BYTES).map_err(ToOwned::to_owned)?;
+            let projected = project_result_for_ipc(connection.redactor.as_ref(), &result, method)
+                .map_err(|code| map_stdio_result_error(&code))?;
+            mcp::validate_json(&projected, mcp::MAX_RESPONSE_BYTES)
+                .map_err(map_stdio_result_error)?;
             McpInvokeResult {
                 result: Some(projected),
                 error_code: None,
@@ -828,9 +832,17 @@ fn finalize_invoke(
     let timeline = std::mem::take(&mut invoke.timeline);
     let timeline_value =
         serde_json::to_value(&timeline).map_err(|_| PROTOCOL_INVALID.to_string())?;
-    mcp::validate_json(&timeline_value, MAX_EXCHANGE_BYTES).map_err(ToOwned::to_owned)?;
+    mcp::validate_json(&timeline_value, MAX_EXCHANGE_BYTES).map_err(map_stdio_result_error)?;
     invoke.timeline = timeline;
     Ok(invoke)
+}
+
+fn map_stdio_result_error(code: &str) -> String {
+    if matches!(code, mcp::RESPONSE_TOO_LARGE | mcp::REQUEST_TOO_LARGE) {
+        MESSAGE_TOO_LARGE.into()
+    } else {
+        PROTOCOL_INVALID.into()
+    }
 }
 
 #[tauri::command]
