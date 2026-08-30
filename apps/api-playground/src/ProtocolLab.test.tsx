@@ -180,8 +180,10 @@ describe("Protocol Lab", () => {
     const call = screen.getByRole("button", { name: "선택 tool 호출" }) as HTMLButtonElement;
     expect(call.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("message string"), { target: { value: "hello" } });
-    expect(call.disabled).toBe(false);
-    fireEvent.click(call);
+    await waitFor(() => expect(
+      (screen.getByRole("button", { name: "선택 tool 호출" }) as HTMLButtonElement).disabled,
+    ).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "선택 tool 호출" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenLastCalledWith(
       connection.connectionId,
       "mcp-2",

@@ -32,6 +32,9 @@ pub fn is_snapshot(value: &str) -> bool {
             | "snapshot_payload_invalid"
             | "snapshot_changed_during_read"
             | "snapshot_stale"
+            | "snapshot_range_partial"
+            | "snapshot_range_unavailable"
+            | "snapshot_boundary_mismatch"
     )
 }
 
@@ -56,5 +59,13 @@ mod tests {
             assert!(!is_snapshot(code));
         }
         assert!(!is_source("raw OS error with /private/path"));
+        for code in [
+            "snapshot_range_partial",
+            "snapshot_range_unavailable",
+            "snapshot_boundary_mismatch",
+        ] {
+            assert!(is_snapshot(code));
+            assert!(is_source(code));
+        }
     }
 }

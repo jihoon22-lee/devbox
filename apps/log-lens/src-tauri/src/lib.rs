@@ -45,6 +45,7 @@ pub fn run() {
             handoff::accept_log_source,
             handoff::discard_log_source,
             handoff::renew_log_source,
+            commands::send_selection_to_toolbox,
         ])
         .setup(|app| {
             if let Ok(Some(request)) =

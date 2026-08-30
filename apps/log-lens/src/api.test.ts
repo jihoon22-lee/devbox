@@ -10,6 +10,7 @@ import {
   onOpenRequest,
   previewLogSource,
   renewLogSource,
+  sendSelectionToToolbox,
   takePendingOpen,
 } from "./api";
 
@@ -31,11 +32,37 @@ describe("Log Lens handoff API", () => {
     await expect(acceptLogSource("a".repeat(32))).rejects.toThrow("desktop-only");
     await expect(discardLogSource("a".repeat(32))).rejects.toThrow("desktop-only");
     await expect(renewLogSource("a".repeat(32))).rejects.toThrow("desktop-only");
+    await expect(sendSelectionToToolbox("safe selected logs")).rejects.toThrow("desktop-only");
 
     const unlisten = await onOpenRequest(vi.fn());
     expect(unlisten()).toBeUndefined();
     expect(invokeMock).not.toHaveBeenCalled();
     expect(listenMock).not.toHaveBeenCalled();
+  });
+
+  it("publishes only text through the typed Developer Toolbox command", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    invokeMock.mockResolvedValueOnce({
+      handoffId: "0123456789abcdef0123456789abcdef",
+      redacted: true,
+    });
+
+    await expect(sendSelectionToToolbox("selected export\n")).resolves.toEqual({
+      handoffId: "0123456789abcdef0123456789abcdef",
+      redacted: true,
+    });
+    expect(invokeMock).toHaveBeenCalledWith("send_selection_to_toolbox", {
+      text: "selected export\n",
+    });
+  });
+
+  it("rejects malformed Toolbox dispatch responses", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    invokeMock.mockResolvedValueOnce({ handoffId: "handoff-1", redacted: "yes" });
+
+    await expect(sendSelectionToToolbox("selected export")).rejects.toThrow(
+      "Developer Toolbox handoff response was invalid.",
+    );
   });
 
   it("rejects malformed native responses before they reach the source UI", async () => {

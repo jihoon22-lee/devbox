@@ -100,6 +100,7 @@ pub fn run() {
             commands::handoff::renew_api_request,
             commands::handoff::ack_api_request,
             commands::handoff::restore_api_request,
+            commands::toolbox::send_selection_to_toolbox,
             commands::mcp::connect_mcp_http,
             commands::mcp::invoke_mcp_http,
             commands::mcp::cancel_mcp_http,

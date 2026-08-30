@@ -37,6 +37,7 @@ vi.mock("./api", () => ({
   saveResponseBinary: vi.fn(),
   sanitizePersistedJson: vi.fn(async (serialized: string) => serialized),
   sealSecret: vi.fn(),
+  sendSelectionToToolbox: vi.fn(),
   sendRequest: vi.fn(),
   takePendingOpen: vi.fn().mockImplementation(async () => {
     mocks.order.push("take");

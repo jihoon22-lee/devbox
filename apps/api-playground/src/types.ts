@@ -125,6 +125,12 @@ export interface ApiResponse {
   graphql?: GraphqlResponse | null;
 }
 
+/** Safe result returned after the native response selection handoff is queued. */
+export interface ToolboxDispatch {
+  handoffId: string;
+  redacted: boolean;
+}
+
 /** Safe projection of a binary HTTP response. Raw bytes stay in native memory until explicit save. */
 export interface BinaryResponse {
   media_type: string;

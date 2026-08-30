@@ -107,3 +107,9 @@ export interface ExportedText {
   text: string;
   truncated: boolean;
 }
+
+/** Result of publishing an explicit log selection to Developer Toolbox. */
+export interface ToolboxDispatch {
+  handoffId: string;
+  redacted: boolean;
+}

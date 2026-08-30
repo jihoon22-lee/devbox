@@ -33,8 +33,11 @@ import {
   type ExportInput,
   type ExportFormat,
   type DigestInput,
+  type DigestDay,
   type DigestPeriod,
   type DigestResponse,
+  type KnowledgeDigest,
+  type RunDigest,
   type AttributionResult,
   type AutostartStatus,
   type PrivacyRules,
@@ -74,6 +77,36 @@ function fmtDay(dayMs: number): string {
 
 function fmtTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export function formatNullableCount(value: number | null): string {
+  return value == null ? "—" : value.toLocaleString();
+}
+
+export function formatNullableTimestamp(value: number | null): string {
+  return value == null ? "—" : new Date(value).toLocaleString();
+}
+
+export function formatRunSummary(run: RunDigest | null): string {
+  return run == null
+    ? "—"
+    : `${formatNullableCount(run.succeeded)} succeeded · ${formatNullableCount(run.failed)} failed`;
+}
+
+export function formatKnowledgeSummary(knowledge: KnowledgeDigest | null): string {
+  return knowledge == null
+    ? "—"
+    : `${formatNullableCount(knowledge.notesModified)} modified`;
+}
+
+export function formatDailyActivity(day: Pick<DigestDay, "runSucceeded" | "runFailed" | "knowledgeNotesModified">): string {
+  const runs = day.runSucceeded == null || day.runFailed == null
+    ? "Run —"
+    : `Run ${formatNullableCount(day.runSucceeded)}/${formatNullableCount(day.runFailed)}`;
+  const notes = day.knowledgeNotesModified == null
+    ? "Knowledge —"
+    : `Knowledge ${formatNullableCount(day.knowledgeNotesModified)}`;
+  return `${runs} · ${notes}`;
 }
 
 type ViewTab = "day" | "week" | "month" | "timeline" | "settings";
@@ -207,7 +240,7 @@ function digestSourceDetails(
   if (Number.isSafeInteger(source.freshnessMs) && source.freshnessMs != null && source.freshnessMs >= 0) {
     details.push(`${fmtDuration(source.freshnessMs)} old`);
   }
-  if (source.view === "activity" || source.view === "legacy-data") details.push(source.view);
+  if (source.view === "activity" || source.view === "legacy-data" || source.view === "daily-activity") details.push(source.view);
   return details.length > 0 ? details.join(" · ") : null;
 }
 
@@ -218,7 +251,14 @@ function digestSourceId(value: string): string {
 }
 
 function digestSourceScope(value: string): string {
-  return ["live-local", "requested-range", "latest-snapshot-out-of-range", "browser-preview-only"].includes(value)
+  return [
+    "live-local",
+    "requested-range",
+    "requested-range-partial",
+    "latest-snapshot-out-of-range",
+    "browser-preview-only",
+    "unavailable",
+  ].includes(value)
     ? value
     : "scope unavailable";
 }
@@ -228,6 +268,7 @@ function sourceFreshnessState(
   available: boolean,
   errorCode?: string | null,
 ): "fresh" | "stale" | "expired" | "unknown" | "error" {
+  if (errorCode === "snapshot_stale") return "stale";
   if (errorCode || !available) return errorCode ? "error" : "unknown";
   if (freshnessMs == null || freshnessMs < 0) return "unknown";
   if (freshnessMs <= 120_000) return "fresh";
@@ -245,9 +286,38 @@ function sourceFreshnessLabel(state: ReturnType<typeof sourceFreshnessState>): s
   }[state];
 }
 
-function digestSourceExplanation(
+export const FIXED_SOURCE_EXPLANATIONS = {
+  snapshot_range_partial: "선택한 기간의 일부 daily snapshot만 일치해 나머지 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
+  snapshot_range_unavailable: "선택한 기간에 일치하는 daily snapshot이 없어 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
+  snapshot_boundary_mismatch: "daily snapshot의 날짜·시간대 경계가 요청 범위와 일치하지 않아 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
+  snapshot_stale: "daily snapshot이 오래되어 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
+} as const;
+
+type DigestSource = DigestResponse["document"]["sources"][number];
+
+type SourceFreshness = ReturnType<typeof sourceFreshnessState>;
+
+function fixedSourceExplanation(
+  source: Pick<DigestSource, "scope" | "errorCode" | "available" | "freshnessMs"> & { freshnessState?: SourceFreshness },
+): string | null {
+  if (source.errorCode && source.errorCode in FIXED_SOURCE_EXPLANATIONS) {
+    return FIXED_SOURCE_EXPLANATIONS[source.errorCode as keyof typeof FIXED_SOURCE_EXPLANATIONS];
+  }
+  if (source.scope === "requested-range-partial") {
+    return FIXED_SOURCE_EXPLANATIONS.snapshot_range_partial;
+  }
+  const freshness = source.freshnessState ?? sourceFreshnessState(source.freshnessMs, source.available, source.errorCode);
+  if (freshness === "stale" || freshness === "expired") {
+    return FIXED_SOURCE_EXPLANATIONS.snapshot_stale;
+  }
+  return null;
+}
+
+export function digestSourceExplanation(
   source: DigestResponse["document"]["sources"][number],
 ): string {
+  const fixed = fixedSourceExplanation(source);
+  if (fixed) return fixed;
   if (source.scope === "browser-preview-only") {
     return "브라우저 미리보기에서는 native DB와 local snapshot을 읽지 않습니다.";
   }
@@ -256,6 +326,18 @@ function digestSourceExplanation(
   if (source.id === "run-manager") return "Run Manager 최신 snapshot은 provenance로만 표시하며 활동 통계에 합치지 않습니다.";
   if (source.id === "knowledge-base") return "Knowledge 최신 snapshot은 provenance로만 표시하며 원문을 읽지 않습니다.";
   return "이 source는 통계에 조용히 합치지 않도록 별도로 표시됩니다.";
+}
+
+function digestActivitySourceNotice(document: DigestResponse["document"]): string | null {
+  const notices: string[] = [];
+  for (const source of document.sources) {
+    if (source.id !== "run-manager" && source.id !== "knowledge-base") continue;
+    const explanation = fixedSourceExplanation(source);
+    if (explanation) {
+      notices.push(`${source.id === "run-manager" ? "Run Manager" : "Knowledge"}: ${explanation}`);
+    }
+  }
+  return notices.length > 0 ? notices.join(" ") : null;
 }
 
 export function buildExportInput(
@@ -304,6 +386,19 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
   ].filter((value): value is string => value != null);
   const activity = source.knowledgeActivity;
   const freshness = sourceFreshnessState(source.freshnessMs, source.available, source.errorCode ?? source.error);
+  const sourceMetadata: DigestSource = {
+    id: source.producer,
+    available: source.available,
+    schemaVersion: source.schemaVersion,
+    snapshotVersion: null,
+    producerVersion: source.producerVersion,
+    generatedAt: source.generatedAt,
+    freshnessMs: source.freshnessMs,
+    view: null,
+    scope: source.scope ?? "unavailable",
+    errorCode: source.errorCode ?? null,
+  };
+  const fixedExplanation = fixedSourceExplanation({ ...sourceMetadata, freshnessState: source.freshnessState });
 
   return (
     <div className="git-row source-row">
@@ -312,18 +407,7 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
         <span className={`freshness-badge freshness-${freshness}`}>{sourceFreshnessLabel(freshness)}</span>
         {diagnostics.length > 0 && <span className="dim">{diagnostics.join(" · ")}</span>}
         <span className="dim">{source.scope ?? "scope unavailable"}</span>
-        <span className="source-explanation">{source.explanation ?? digestSourceExplanation({
-          id: source.producer,
-          available: source.available,
-          schemaVersion: source.schemaVersion,
-          snapshotVersion: null,
-          producerVersion: source.producerVersion,
-          generatedAt: source.generatedAt,
-          freshnessMs: source.freshnessMs,
-          view: null,
-          scope: source.scope ?? "unavailable",
-          errorCode: source.errorCode ?? null,
-        })}</span>
+        <span className="source-explanation">{fixedExplanation ?? source.explanation ?? digestSourceExplanation(sourceMetadata)}</span>
         {source.available && activity && (
           <span className="source-activity">
             오늘 작성·수정 {activity.notesModifiedToday}개
@@ -334,7 +418,7 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
         )}
         {!source.available && (
           <span role="alert" className="source-error">
-            {source.errorCode ? `${source.errorCode} · ` : ""}{source.error ?? "사용할 수 없음"}
+            {source.errorCode ? `${source.errorCode} · ` : ""}{fixedExplanation ? "사용할 수 없음" : source.error ?? "사용할 수 없음"}
           </span>
         )}
       </div>
@@ -1448,6 +1532,11 @@ export default function App() {
                           {digest.document.range.startDate} ~ {digest.document.range.endDate} · {digest.document.range.timezone} · Git commits use the full requested period and ignore this app filter.
                         </span>
                       </div>
+                      {digestActivitySourceNotice(digest.document) && (
+                        <p className="activity-source-notice" role="note">
+                          {digestActivitySourceNotice(digest.document)}
+                        </p>
+                      )}
                       <div className="digest-cards">
                         <div className="card">
                           <div className="card-label">PC 사용</div>
@@ -1465,6 +1554,16 @@ export default function App() {
                           <div className="card-label">Git commits · 기간 전체</div>
                           <div className="card-value">{digest.document.summary.gitCommits}</div>
                         </div>
+                        <div className="card activity-card" data-testid="run-summary">
+                          <div className="card-label">Run Manager · 기간 전체</div>
+                          <div className="card-value">{formatRunSummary(digest.document.summary.run)}</div>
+                          <div className="dim">last run {formatNullableTimestamp(digest.document.summary.run?.lastRunAtMs ?? null)}</div>
+                        </div>
+                        <div className="card activity-card" data-testid="knowledge-summary">
+                          <div className="card-label">Knowledge notes · 기간 전체</div>
+                          <div className="card-value">{formatKnowledgeSummary(digest.document.summary.knowledge)}</div>
+                          <div className="dim">last modified {formatNullableTimestamp(digest.document.summary.knowledge?.lastModifiedAtMs ?? null)}</div>
+                        </div>
                       </div>
                       <p className="digest-headline">{digest.document.headline}</p>
                       {digest.document.summary.activeDays === 0 && digest.document.summary.gitCommits === 0 && (
@@ -1477,6 +1576,7 @@ export default function App() {
                             <span>{fmtDuration(day.pcUsageMs)}</span>
                             <span className="dim">{day.sessionCount} sessions · {day.gitCommits} commits</span>
                             <span className="dim">{day.topApp ? shortApp(day.topApp) : "-"}</span>
+                            <span className="dim daily-activity">{formatDailyActivity(day)}</span>
                           </div>
                         ))}
                       </div>

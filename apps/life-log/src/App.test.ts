@@ -1,7 +1,19 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildDigestInput, buildExportInput, DataSourceRow, monthRange, toDateStr, weekRange } from "./App";
+import {
+  buildDigestInput,
+  buildExportInput,
+  DataSourceRow,
+  digestSourceExplanation,
+  formatDailyActivity,
+  formatKnowledgeSummary,
+  formatRunSummary,
+  monthRange,
+  toDateStr,
+  weekRange,
+} from "./App";
+import type { DigestDay } from "./api";
 import type { SourceStatus } from "./api";
 
 afterEach(cleanup);
@@ -209,5 +221,69 @@ describe("DataSourceRow", () => {
     expect(screen.getByRole("alert").textContent).toBe(
       "Knowledge activity view schema를 지원하지 않습니다",
     );
+  });
+
+  it("partial source 오류는 backend 문구 대신 고정된 nullable 안내를 표시한다", () => {
+    const source: SourceStatus = {
+      producer: "run-manager",
+      available: false,
+      schemaVersion: 1,
+      producerVersion: "0.5.0",
+      generatedAt: "2026-08-25T12:00:00Z",
+      freshnessMs: null,
+      scope: "requested-range-partial",
+      errorCode: "snapshot_range_partial",
+      explanation: "raw path should not replace the fixed explanation",
+      error: "raw path should not replace the fixed explanation",
+      knowledgeActivity: null,
+    };
+
+    render(createElement(DataSourceRow, { source }));
+
+    expect(screen.getByText(/일부 daily snapshot만 일치/u)).toBeTruthy();
+    expect(screen.queryByText(/raw path/u)).toBeNull();
+  });
+});
+
+describe("schema v2 activity display", () => {
+  const emptyActivity: Pick<DigestDay, "runSucceeded" | "runFailed" | "knowledgeNotesModified"> = {
+    runSucceeded: null,
+    runFailed: null,
+    knowledgeNotesModified: null,
+  };
+
+  it("keeps unavailable summary and daily activity distinct from zero", () => {
+    expect(formatRunSummary(null)).toBe("—");
+    expect(formatKnowledgeSummary(null)).toBe("—");
+    expect(formatDailyActivity(emptyActivity)).toBe("Run — · Knowledge —");
+  });
+
+  it("renders native zeroes and non-zero values when the source is complete", () => {
+    expect(formatRunSummary({ succeeded: 0, failed: 2, lastRunAtMs: null })).toBe("0 succeeded · 2 failed");
+    expect(formatKnowledgeSummary({ notesModified: 3, lastModifiedAtMs: null })).toBe("3 modified");
+    expect(formatDailyActivity({
+      runSucceeded: 2,
+      runFailed: 1,
+      knowledgeNotesModified: 3,
+    })).toBe("Run 2/1 · Knowledge 3");
+  });
+
+  it.each([
+    ["snapshot_range_partial", "일부 daily snapshot"],
+    ["snapshot_stale", "오래되어"],
+    ["snapshot_boundary_mismatch", "날짜·시간대 경계"],
+  ] as const)("uses fixed %s source explanation", (errorCode, phrase) => {
+    expect(digestSourceExplanation({
+      id: "run-manager",
+      available: false,
+      schemaVersion: null,
+      snapshotVersion: null,
+      producerVersion: null,
+      generatedAt: null,
+      freshnessMs: null,
+      view: "daily-activity",
+      scope: errorCode === "snapshot_range_partial" ? "requested-range-partial" : "requested-range",
+      errorCode,
+    })).toContain(phrase);
   });
 });

@@ -10,5 +10,6 @@ mod process_tree;
 pub mod request;
 pub mod secrets;
 pub mod sse;
+pub mod toolbox;
 pub mod transfer;
 pub mod websocket;

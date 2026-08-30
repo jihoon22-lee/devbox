@@ -255,6 +255,12 @@ select:disabled {
   line-height: 1.4;
 }
 
+.activity-source-notice {
+  margin: 8px 0 0;
+  color: var(--dim);
+  line-height: 1.4;
+}
+
 .digest-toolbar label {
   display: grid;
   gap: 5px;
@@ -273,7 +279,7 @@ select:disabled {
 
 .digest-cards {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   gap: 8px;
   margin: 12px 0;
 }
@@ -284,6 +290,13 @@ select:disabled {
 
 .digest-cards .card-value {
   font-size: 16px;
+}
+
+.activity-card .dim {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .digest-headline {
@@ -298,11 +311,15 @@ select:disabled {
 
 .digest-day {
   display: grid;
-  grid-template-columns: 100px minmax(80px, 1fr) minmax(170px, 1.5fr) minmax(120px, 1fr);
+  grid-template-columns: 100px minmax(80px, 1fr) minmax(170px, 1.5fr) minmax(120px, 1fr) minmax(175px, 1.25fr);
   align-items: center;
   gap: 10px;
   padding: 7px 8px;
   border-bottom: 1px solid var(--border);
+}
+
+.daily-activity {
+  white-space: nowrap;
 }
 
 .digest-day.empty-day {

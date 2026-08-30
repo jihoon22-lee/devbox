@@ -13,6 +13,126 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+pub const MAX_DAILY_ACTIVITY_DAYS: usize = 366;
+const CIVIL_DAY_HOUR_MS: i64 = 60 * 60 * 1_000;
+
+/// Exact system-local calendar boundary used by daily activity producers and
+/// Life Log.  Epoch values, not fixed 24-hour arithmetic, are authoritative.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LocalCivilDay {
+    pub date: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub timezone: String,
+}
+
+/// Build an ascending rolling window ending with the system-local day that
+/// contains `now_ms`. Midnight gaps/ambiguity and unsupported boundary widths
+/// fail closed so a producer preserves its previous last-good sidecar.
+pub fn recent_local_civil_days(now_ms: u64, count: usize) -> Result<Vec<LocalCivilDay>, String> {
+    use chrono::{Days, Local, LocalResult, TimeZone};
+
+    if count == 0 || count > MAX_DAILY_ACTIVITY_DAYS || now_ms > i64::MAX as u64 {
+        return Err("local civil-day 요청 범위가 올바르지 않습니다".into());
+    }
+    let now = match Local.timestamp_millis_opt(now_ms as i64) {
+        LocalResult::Single(value) => value,
+        _ => return Err("system local timezone을 확인할 수 없습니다".into()),
+    };
+    let timezone = iana_time_zone::get_timezone()
+        .map_err(|_| "system local timezone을 확인할 수 없습니다".to_string())?;
+    validate_timezone(&timezone)?;
+    let first = now
+        .date_naive()
+        .checked_sub_days(Days::new((count - 1) as u64))
+        .ok_or_else(|| "local civil-day 요청 범위가 올바르지 않습니다".to_string())?;
+    let mut days = Vec::with_capacity(count);
+    for offset in 0..count {
+        let date = first
+            .checked_add_days(Days::new(offset as u64))
+            .ok_or_else(|| "local civil-day 요청 범위가 올바르지 않습니다".to_string())?;
+        let next = date
+            .checked_add_days(Days::new(1))
+            .ok_or_else(|| "local civil-day 요청 범위가 올바르지 않습니다".to_string())?;
+        let start = match Local.from_local_datetime(
+            &date
+                .and_hms_opt(0, 0, 0)
+                .ok_or_else(|| "local civil-day 경계가 올바르지 않습니다".to_string())?,
+        ) {
+            LocalResult::Single(value) => value.timestamp_millis(),
+            _ => return Err("local civil-day 경계를 확인할 수 없습니다".into()),
+        };
+        let end = match Local.from_local_datetime(
+            &next
+                .and_hms_opt(0, 0, 0)
+                .ok_or_else(|| "local civil-day 경계가 올바르지 않습니다".to_string())?,
+        ) {
+            LocalResult::Single(value) => value.timestamp_millis(),
+            _ => return Err("local civil-day 경계를 확인할 수 없습니다".into()),
+        };
+        days.push(LocalCivilDay {
+            date: date.format("%Y-%m-%d").to_string(),
+            start_ms: start,
+            end_ms: end,
+            timezone: timezone.clone(),
+        });
+    }
+    validate_local_civil_days(&days)?;
+    Ok(days)
+}
+
+/// Validate an already materialized civil-day sequence before a producer
+/// publishes it or a consumer associates it with a requested period.
+pub fn validate_local_civil_days(days: &[LocalCivilDay]) -> Result<(), String> {
+    use chrono::{Days, NaiveDate};
+
+    if days.is_empty() || days.len() > MAX_DAILY_ACTIVITY_DAYS {
+        return Err("local civil-day 범위가 올바르지 않습니다".into());
+    }
+    let timezone = &days[0].timezone;
+    validate_timezone(timezone)?;
+    let mut previous_date = None;
+    let mut previous_end = None;
+    for day in days {
+        validate_timezone(&day.timezone)?;
+        let date = NaiveDate::parse_from_str(&day.date, "%Y-%m-%d")
+            .map_err(|_| "local civil-day 날짜가 올바르지 않습니다".to_string())?;
+        let width = day
+            .end_ms
+            .checked_sub(day.start_ms)
+            .ok_or_else(|| "local civil-day 경계가 올바르지 않습니다".to_string())?;
+        if day.timezone != *timezone
+            || day.start_ms < 0
+            || !matches!(width, w if w == 23 * CIVIL_DAY_HOUR_MS
+                || w == 24 * CIVIL_DAY_HOUR_MS
+                || w == 25 * CIVIL_DAY_HOUR_MS)
+            || previous_end.is_some_and(|end| end != day.start_ms)
+            || previous_date.is_some_and(|previous: chrono::NaiveDate| {
+                previous.checked_add_days(Days::new(1)) != Some(date)
+            })
+        {
+            return Err("local civil-day 범위가 올바르지 않습니다".into());
+        }
+        previous_date = Some(date);
+        previous_end = Some(day.end_ms);
+    }
+    Ok(())
+}
+
+fn validate_timezone(value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value.len() > 128
+        || value.chars().any(char::is_control)
+        || !value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'_' | b'-' | b'+' | b'.')
+        })
+    {
+        return Err("system local timezone이 올바르지 않습니다".into());
+    }
+    Ok(())
+}
+
 /// 하나의 snapshot 파일이 차지할 수 있는 최대 크기.
 pub const MAX_SNAPSHOT_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_DISCOVERY_ENTRIES: usize = 4_096;
@@ -1445,6 +1565,52 @@ mod tests {
         assert_ne!(first, opaque_identity("repository", source).unwrap());
         assert!(opaque_identity("Project", source).is_err());
         assert!(opaque_identity("project", "bad\nsource").is_err());
+    }
+
+    #[test]
+    fn civil_day_validator_accepts_contiguous_23_24_25_hour_boundaries() {
+        let start = 1_772_841_600_000_i64;
+        let day = CIVIL_DAY_HOUR_MS;
+        let days = vec![
+            LocalCivilDay {
+                date: "2026-03-07".into(),
+                start_ms: start,
+                end_ms: start + 24 * day,
+                timezone: "America/New_York".into(),
+            },
+            LocalCivilDay {
+                date: "2026-03-08".into(),
+                start_ms: start + 24 * day,
+                end_ms: start + 47 * day,
+                timezone: "America/New_York".into(),
+            },
+            LocalCivilDay {
+                date: "2026-03-09".into(),
+                start_ms: start + 47 * day,
+                end_ms: start + 72 * day,
+                timezone: "America/New_York".into(),
+            },
+        ];
+        assert!(validate_local_civil_days(&days).is_ok());
+
+        let mut gap = days.clone();
+        gap[1].start_ms += 1;
+        assert!(validate_local_civil_days(&gap).is_err());
+        let mut timezone = days;
+        timezone[2].timezone = "UTC".into();
+        assert!(validate_local_civil_days(&timezone).is_err());
+    }
+
+    #[test]
+    fn recent_civil_days_are_bounded_ascending_and_end_on_the_current_local_day() {
+        let days = recent_local_civil_days(1_788_042_600_000, 3).unwrap();
+        assert_eq!(days.len(), 3);
+        assert!(validate_local_civil_days(&days).is_ok());
+        assert!(days
+            .windows(2)
+            .all(|pair| pair[0].end_ms == pair[1].start_ms));
+        assert!(recent_local_civil_days(1_788_042_600_000, 0).is_err());
+        assert!(recent_local_civil_days(1_788_042_600_000, MAX_DAILY_ACTIVITY_DAYS + 1).is_err());
     }
 
     #[test]

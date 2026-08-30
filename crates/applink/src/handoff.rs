@@ -869,6 +869,75 @@ pub fn validate_handoff_text(value: &str) -> Result<(), HandoffError> {
     }
 }
 
+/// Result of conservatively removing credential-shaped lines before a piece
+/// of user-selected text crosses an app boundary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RedactedHandoffText {
+    pub text: String,
+    pub redacted: bool,
+}
+
+/// Redact credential-shaped content from explicit user-selected text.
+///
+/// This is intentionally line-oriented.  Keeping a partially parsed secret
+/// assignment is more dangerous than losing the surrounding presentation, so
+/// a line containing a raw credential is replaced in full.  Private-key
+/// material causes the complete selection to be replaced because its body is
+/// not independently recognisable.  The returned value is run through the
+/// same validator used by the handoff store before it can be persisted.
+pub fn redact_handoff_text(value: &str) -> Result<RedactedHandoffText, HandoffError> {
+    if value.trim().is_empty()
+        || value.len() > MAX_PAYLOAD_STRING_BYTES
+        || value
+            .chars()
+            .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
+    {
+        return Err(HandoffError::InvalidPayload);
+    }
+
+    let lower = value.to_ascii_lowercase();
+    if lower.contains("-----begin private key-----")
+        || lower.contains("-----begin rsa private key-----")
+        || lower.contains("-----begin openssh private key-----")
+    {
+        return Ok(RedactedHandoffText {
+            text: "[REDACTED]".to_string(),
+            redacted: true,
+        });
+    }
+
+    let mut text = String::with_capacity(value.len());
+    let mut redacted = false;
+    for chunk in value.split_inclusive('\n') {
+        let (line, newline) = chunk
+            .strip_suffix('\n')
+            .map_or((chunk, ""), |line| (line, "\n"));
+        let line_without_cr = line.strip_suffix('\r').unwrap_or(line);
+        let carriage_return = if line.ends_with('\r') { "\r" } else { "" };
+        if looks_like_raw_credential(line_without_cr)
+            || has_unsafe_sensitive_assignment(line_without_cr)
+            || crate::contains_sensitive_value(line_without_cr)
+        {
+            text.push_str("[REDACTED]");
+            redacted = true;
+        } else {
+            text.push_str(line_without_cr);
+        }
+        text.push_str(carriage_return);
+        text.push_str(newline);
+    }
+
+    // A credential can span formatting boundaries that the line scanner does
+    // not understand.  Fail closed to a single marker rather than returning a
+    // value the shared envelope validator would later reject.
+    if text.len() > MAX_PAYLOAD_STRING_BYTES || validate_handoff_text(&text).is_err() {
+        text = "[REDACTED]".to_string();
+        redacted = true;
+    }
+
+    Ok(RedactedHandoffText { text, redacted })
+}
+
 fn validate_payload_value(
     value: &Value,
     field: Option<&str>,
@@ -1090,9 +1159,17 @@ fn has_unsafe_sensitive_assignment(value: &str) -> bool {
                 if !matches!(character, '=' | ':') {
                     return false;
                 }
-                let before = &segment[..operator];
-                let key_end = before.trim_end().len();
-                let key_start = before[..key_end]
+                let before = segment[..operator].trim_end();
+                // JSON and many log formats quote field names.  Strip only a
+                // single closing quote before extracting the bounded key;
+                // the opening quote remains a delimiter for `key_start`.
+                let before = before
+                    .strip_suffix('"')
+                    .or_else(|| before.strip_suffix('\''))
+                    .unwrap_or(before)
+                    .trim_end();
+                let key_end = before.len();
+                let key_start = before
                     .char_indices()
                     .rev()
                     .find(|(_, character)| {
@@ -2095,6 +2172,49 @@ mod tests {
         );
         assert_eq!(store.create(oversized, 1_000), Err(HandoffError::TooLarge));
         assert_eq!(fs::read_dir(root.path.join("pending")).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn selected_text_redaction_preserves_safe_lines_and_line_endings() {
+        let redacted = redact_handoff_text(
+            "status=ok\r\nAuthorization: Bearer raw-value\r\npassword = raw-value\nend",
+        )
+        .unwrap();
+
+        assert!(redacted.redacted);
+        assert_eq!(redacted.text, "status=ok\r\n[REDACTED]\r\n[REDACTED]\nend");
+        assert!(validate_handoff_text(&redacted.text).is_ok());
+    }
+
+    #[test]
+    fn selected_text_redaction_handles_json_tokens_and_private_keys() {
+        let json =
+            redact_handoff_text("{\n  \"name\": \"safe\",\n  \"password\": \"raw-value\"\n}")
+                .unwrap();
+        assert_eq!(json.text, "{\n  \"name\": \"safe\",\n[REDACTED]\n}");
+
+        let key = redact_handoff_text(
+            "prefix\n-----BEGIN PRIVATE KEY-----\nopaque-body\n-----END PRIVATE KEY-----\nsuffix",
+        )
+        .unwrap();
+        assert_eq!(key.text, "[REDACTED]");
+        assert!(key.redacted);
+    }
+
+    #[test]
+    fn selected_text_redaction_rejects_empty_controls_and_oversized_input() {
+        assert_eq!(
+            redact_handoff_text("  \n\t"),
+            Err(HandoffError::InvalidPayload)
+        );
+        assert_eq!(
+            redact_handoff_text("safe\0unsafe"),
+            Err(HandoffError::InvalidPayload)
+        );
+        assert_eq!(
+            redact_handoff_text(&"x".repeat(MAX_PAYLOAD_STRING_BYTES + 1)),
+            Err(HandoffError::InvalidPayload)
+        );
     }
 
     #[test]

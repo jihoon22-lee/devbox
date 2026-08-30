@@ -25,6 +25,7 @@ vi.mock("./api", () => ({
   previewLogSource: vi.fn(),
   readSources: vi.fn(),
   renewLogSource: vi.fn(),
+  sendSelectionToToolbox: vi.fn(),
   takePendingOpen: vi.fn(),
   classifyHandoffError: (error: unknown) => {
     const code = error instanceof Error ? error.message : "";

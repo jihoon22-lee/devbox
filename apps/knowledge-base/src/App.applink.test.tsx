@@ -117,6 +117,7 @@ beforeEach(() => {
   previewKnowledgeDraftMock.mockReset().mockResolvedValue({
     id: "0123456789abcdef0123456789abcdef",
     kind: "knowledge-draft/v1",
+    producerId: "life-log",
     expiresAtMs: Date.now() + 600_000,
     leaseUntilMs: Date.now() + 60_000,
     title: "Life Log digest · 2026-08-27 ~ 2026-08-27",
@@ -341,6 +342,7 @@ describe("Knowledge Path/Query app-link delivery", () => {
     await screen.findByRole("heading", { name: "Life Log draft 미리보기" });
     const cancel = screen.getByRole("button", { name: "취소" });
     const save = screen.getByRole("button", { name: "Save draft" });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
     save.focus();
     fireEvent.keyDown(window, { key: "Tab" });
     expect(document.activeElement).toBe(cancel);

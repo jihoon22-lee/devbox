@@ -1,4 +1,4 @@
-//! Tauri commands for the Life Log -> Knowledge draft handoff.
+//! Tauri commands for versioned Life Log and Developer Toolbox draft handoffs.
 //!
 //! Claiming is intentionally separate from saving. Preview keeps the
 //! one-time claim in process memory; cancel or any pre-commit failure restores
@@ -7,7 +7,7 @@
 
 use crate::commands::docs::{resolve_configured_root, AppState};
 use crate::core::db;
-use crate::core::handoff::{self, KnowledgeDraftPayload, KnowledgeDraftPreview};
+use crate::core::handoff::{self, IncomingKnowledgeDraft, KnowledgeDraftPreview};
 use crate::core::vault::{self, EntryIdentity, VaultError, VaultIdentity};
 use devbox_applink::{
     HandoffClaim, HandoffError, HandoffStatus, HandoffStore, RecordHandoffStatus,
@@ -20,13 +20,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 const CONSUMER_APP: &str = "knowledge-base";
-const EXPECTED_KIND: &str = handoff::KNOWLEDGE_DRAFT_KIND;
 const MAX_NOTE_COLLISIONS: usize = 100;
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 
 struct ClaimedKnowledgeDraft {
     claim: HandoffClaim,
-    payload: KnowledgeDraftPayload,
+    payload: IncomingKnowledgeDraft,
     vault: VaultIdentity,
 }
 
@@ -92,15 +91,21 @@ pub struct RenewKnowledgeDraftResult {
     pub lease_until_ms: u64,
 }
 
-/// Claim and validate one pending Life Log draft. The returned preview has no
+/// Claim and validate one pending Knowledge draft. The returned preview has no
 /// filesystem path, token, or raw activity record.
 #[tauri::command]
 pub fn preview_knowledge_draft(
     state: tauri::State<'_, Arc<AppState>>,
     pending: tauri::State<'_, PendingKnowledgeDraft>,
     id: String,
+    kind: String,
 ) -> Result<KnowledgeDraftPreview, String> {
-    if !valid_handoff_id(&id) {
+    if !valid_handoff_id(&id)
+        || !matches!(
+            kind.as_str(),
+            handoff::KNOWLEDGE_DRAFT_KIND | handoff::TOOLBOX_DRAFT_KIND
+        )
+    {
         return Err("Knowledge draft를 사용할 수 없습니다".into());
     }
     let now_ms = current_epoch_ms();
@@ -124,7 +129,7 @@ pub fn preview_knowledge_draft(
     };
     let store = handoff_store();
     let claim = store
-        .claim(&id, EXPECTED_KIND, CONSUMER_APP, now_ms)
+        .claim(&id, &kind, CONSUMER_APP, now_ms)
         .map_err(|error| handoff::map_claim_error(&error).to_string())?;
     let payload = match handoff::parse_claim(&claim) {
         Ok(payload) => payload,
@@ -169,10 +174,10 @@ pub fn save_knowledge_draft(
     if now_ms >= claimed.claim.envelope.expires_at_ms {
         // An expired preview must never turn into a note. ack() removes the
         // expired claim without resurrecting it; the user can send a fresh
-        // digest from Life Log instead.
+        // draft from its producer instead.
         let _ = store.ack(&claimed.claim, CONSUMER_APP, now_ms);
         let _ = record_handoff_status(&store, &claimed.claim, HandoffStatus::Expired, now_ms);
-        return Err("Knowledge draft가 만료되었습니다. Life Log에서 새로 생성하세요".into());
+        return Err("Knowledge draft가 만료되었습니다. 보낸 앱에서 새로 생성하세요".into());
     }
     let root = match state
         .db
@@ -287,7 +292,7 @@ pub fn discard_knowledge_draft(
                 let _ =
                     record_handoff_status(&store, &claimed.claim, HandoffStatus::Expired, now_ms);
             }
-            Err("Knowledge draft가 만료되었습니다. Life Log에서 새로 생성하세요".into())
+            Err("Knowledge draft가 만료되었습니다. 보낸 앱에서 새로 생성하세요".into())
         }
         Err(_) => {
             let _ = pending.inner().put_if_empty(claimed);
@@ -441,29 +446,22 @@ fn stale_vault_message() -> String {
     "Knowledge 저장 위치가 변경되어 다시 확인해야 합니다".to_string()
 }
 
-fn note_content(payload: &KnowledgeDraftPayload) -> String {
+fn note_content(payload: &IncomingKnowledgeDraft) -> String {
     format!(
         "---\ntitle: {}\ntags: [{}]\n---\n\n{}",
-        payload.title,
-        payload.tags.join(", "),
-        payload.body
-    )
-}
-
-fn draft_note_stem(payload: &KnowledgeDraftPayload) -> String {
-    format!(
-        "Journal/{}-life-log-{}",
-        payload.summary.start_date, payload.summary.period
+        payload.title(),
+        payload.tags().join(", "),
+        payload.body()
     )
 }
 
 fn write_new_note_with_suffix(
     vault: &VaultIdentity,
-    payload: &KnowledgeDraftPayload,
+    payload: &IncomingKnowledgeDraft,
     contents: &[u8],
 ) -> Result<(String, PathBuf, EntryIdentity), NewNoteError> {
     for index in 0..=MAX_NOTE_COLLISIONS {
-        let stem = draft_note_stem(payload);
+        let stem = payload.note_stem();
         let rel = if index == 0 {
             format!("{stem}.md")
         } else {
@@ -618,7 +616,9 @@ fn current_epoch_ms() -> u64 {
 mod tests {
     use super::*;
     use crate::core::handoff;
-    use crate::core::handoff::{KnowledgeDraftSource, KnowledgeDraftSummary};
+    use crate::core::handoff::{
+        KnowledgeDraftPayload, KnowledgeDraftSource, KnowledgeDraftSummary,
+    };
     use devbox_applink::{CreateHandoff, HandoffError};
     use serde_json::Value;
 
@@ -671,12 +671,32 @@ mod tests {
         fs::create_dir(root.path().join("Journal")).unwrap();
         let vault = VaultIdentity::inspect(root.path()).unwrap();
         let payload = fixture();
+        let payload = IncomingKnowledgeDraft::LifeLog(payload);
         let content = note_content(&payload);
         let first = write_new_note_with_suffix(&vault, &payload, content.as_bytes()).unwrap();
         let second = write_new_note_with_suffix(&vault, &payload, content.as_bytes()).unwrap();
         assert_eq!(first.0, "Journal/2026-08-27-life-log-day.md");
         assert_eq!(second.0, "Journal/2026-08-27-life-log-day-1.md");
         assert_eq!(fs::read(first.1).unwrap(), fs::read(second.1).unwrap());
+    }
+
+    #[test]
+    fn toolbox_draft_uses_its_own_bounded_non_overwriting_stem() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("Journal")).unwrap();
+        let vault = VaultIdentity::inspect(root.path()).unwrap();
+        let payload = IncomingKnowledgeDraft::Toolbox(handoff::ToolboxDraftPayload {
+            schema_version: handoff::TOOLBOX_DRAFT_SCHEMA_VERSION,
+            title: "Developer Toolbox result · 2026-08-30".into(),
+            body: "transformed output".into(),
+            tags: vec!["developer-toolbox".into(), "draft".into()],
+            created_date: "2026-08-30".into(),
+        });
+        let content = note_content(&payload);
+        let first = write_new_note_with_suffix(&vault, &payload, content.as_bytes()).unwrap();
+        let second = write_new_note_with_suffix(&vault, &payload, content.as_bytes()).unwrap();
+        assert_eq!(first.0, "Journal/2026-08-30-developer-toolbox-result.md");
+        assert_eq!(second.0, "Journal/2026-08-30-developer-toolbox-result-1.md");
     }
 
     #[test]
@@ -725,7 +745,7 @@ mod tests {
             serde_json::from_str(include_str!("../../tests/fixtures/knowledge-draft-v1.json"))
                 .unwrap();
         let request = || CreateHandoff {
-            kind: EXPECTED_KIND.into(),
+            kind: handoff::KNOWLEDGE_DRAFT_KIND.into(),
             source_app: "life-log".into(),
             target_app: Some(CONSUMER_APP.into()),
             payload: payload.clone(),
@@ -733,30 +753,55 @@ mod tests {
 
         let descriptor = store.create(request(), 1_000).unwrap();
         let claim = store
-            .claim(&descriptor.id, EXPECTED_KIND, CONSUMER_APP, 2_000)
+            .claim(
+                &descriptor.id,
+                handoff::KNOWLEDGE_DRAFT_KIND,
+                CONSUMER_APP,
+                2_000,
+            )
             .unwrap();
         let parsed = handoff::parse_claim(&claim).unwrap();
-        assert_eq!(parsed.schema_version, 1);
+        assert!(matches!(parsed, IncomingKnowledgeDraft::LifeLog(_)));
         store.restore(&claim, CONSUMER_APP, 3_000).unwrap();
 
         let retried = store
-            .claim(&descriptor.id, EXPECTED_KIND, CONSUMER_APP, 4_000)
+            .claim(
+                &descriptor.id,
+                handoff::KNOWLEDGE_DRAFT_KIND,
+                CONSUMER_APP,
+                4_000,
+            )
             .unwrap();
         store.ack(&retried, CONSUMER_APP, 5_000).unwrap();
         assert_eq!(
-            store.claim(&descriptor.id, EXPECTED_KIND, CONSUMER_APP, 6_000),
+            store.claim(
+                &descriptor.id,
+                handoff::KNOWLEDGE_DRAFT_KIND,
+                CONSUMER_APP,
+                6_000
+            ),
             Err(HandoffError::Missing)
         );
 
         let expired = store.create_with_ttl(request(), 10_000, 100).unwrap();
         assert_eq!(
-            store.claim(&expired.id, EXPECTED_KIND, CONSUMER_APP, 10_100),
+            store.claim(
+                &expired.id,
+                handoff::KNOWLEDGE_DRAFT_KIND,
+                CONSUMER_APP,
+                10_100
+            ),
             Err(HandoffError::Expired)
         );
         let fresh = store.create(request(), 11_000).unwrap();
         assert_ne!(fresh.id, expired.id);
         let fresh_claim = store
-            .claim(&fresh.id, EXPECTED_KIND, CONSUMER_APP, 11_001)
+            .claim(
+                &fresh.id,
+                handoff::KNOWLEDGE_DRAFT_KIND,
+                CONSUMER_APP,
+                11_001,
+            )
             .unwrap();
         store.ack(&fresh_claim, CONSUMER_APP, 11_002).unwrap();
     }

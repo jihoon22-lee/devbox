@@ -372,9 +372,14 @@ fn validate_entry(entry: &DraftHistoryEntry) -> Result<(), String> {
         return Err("draft 이력 형식이 올바르지 않습니다".into());
     }
     validate_summary(&entry.summary).map_err(|_| "draft 이력 요약이 올바르지 않습니다")?;
+    let source_contract = entry.sources[0].schema_version.unwrap_or_default();
+    if !matches!(source_contract, 1 | 2) {
+        return Err("draft 이력 source가 올바르지 않습니다".into());
+    }
     let expected = ["life-log", "git", "run-manager", "knowledge-base"];
     for (source, id) in entry.sources.iter().zip(expected) {
-        validate_source(source, id).map_err(|_| "draft 이력 source가 올바르지 않습니다")?;
+        validate_source(source, id, source_contract)
+            .map_err(|_| "draft 이력 source가 올바르지 않습니다")?;
     }
     Ok(())
 }
@@ -595,7 +600,7 @@ mod tests {
                 .zip(["life-log", "git", "run-manager", "knowledge-base"])
         {
             assert!(
-                validate_source(source, expected).is_ok(),
+                validate_source(source, expected, 1).is_ok(),
                 "invalid fixture source {expected}: {source:?}"
             );
         }

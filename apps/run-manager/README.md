@@ -51,6 +51,12 @@ active-service 결과를 유지하고, 새 producer+새 Launcher에서는 전체
 검색할 수 있다. sidecar가 overflow 또는 projection 오류로 갱신되지 않으면 v1 status는 먼저
 성공하고 sidecar의 last-good 파일은 atomic 경계에서 보존된다.
 
+Run Manager는 W07에서 system-local exact civil-day 기준 최대 366일의 bounded activity
+aggregate를 `daily-activity.json` named sidecar로도 발행한다. 이 view의 capability는
+`snapshot:daily-activity/v1`이며, 날짜별 실행 성공/실패 수와 마지막 시각만 담고 path/body/
+command/environment/log/ID는 담지 않는다. Life Log는 이 sidecar를 requested range와
+정확히 일치할 때만 사용하며, Windows 실기 acceptance 완료를 이 계약이 의미하지는 않는다.
+
 ## 실행 이력·package/Cargo task import 계약 (#357/#358)
 
 이력 조회는 하나의 parameterized SQLite query로 작업과 서비스 run을 함께 필터링한다. 날짜는

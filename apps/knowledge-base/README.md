@@ -32,8 +32,9 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
   vault identity는 고정 오류로 거부한다. 취소/닫기/만료된 preview는 one-shot 상태를 폐기하며
   네트워크·LLM·기본 vault/폴더 초기화는 하지 않는다
 - **앱 간 열기** — catalog의 `Path`로 Knowledge root 안의 Markdown 노트를 열고, `Query`로 즉시 검색. cold start와 실행 중 재호출 모두 같은 pending-open 경로를 사용
-- **Life Log draft 받기** — `knowledge-draft/v1` handoff를 claim한 뒤 저장 전 요약/출처/태그/본문을 preview한다. 사용자가 승인한 경우에만 새 Journal note를 만들고 handoff를 소비한다
-- **활동 snapshot** — 오늘 작성·수정된 노트 수와 경로 없는 불투명 식별자를 Life Log용 `activity/v1` view로 발행
+- **Life Log draft 받기** — 기존 `knowledge-draft/v1` handoff를 claim한 뒤 저장 전 요약/출처/태그/본문을 preview한다. 사용자가 승인한 경우에만 새 Journal note를 만들고 handoff를 소비한다(기존 호환 유지)
+- **Developer Toolbox draft 받기** — 별도 `knowledge-draft/v2` handoff를 claim한 뒤 preview하고, 사용자가 Save를 확정한 경우에만 Journal note를 만들고 handoff를 소비한다
+- **활동 snapshot** — 오늘 작성·수정된 노트 수와 경로 없는 불투명 식별자를 Life Log용 `activity/v1` view로 발행하고, system-local exact civil-day 기준 최대 366일의 `daily-activity.json` sidecar(`snapshot:daily-activity/v1`)도 발행한다. sidecar에는 path/body/command/environment/log/ID를 넣지 않는다
 
 ## 기술
 
@@ -68,6 +69,7 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 - inbound Path는 canonical Knowledge root 내부의 실제 `.md` 파일만 허용하고 10 MiB로 제한한다. 실패 시 raw path·OS 오류를 UI에 반향하지 않는다
 - `crates/integration`의 multi-view envelope을 사용해 `%LOCALAPPDATA%\devbox\integration\knowledge-base\v1\summary.json`을 원자 교체한다
 - `activity/v1` entry는 `notesModifiedToday`, `lastModifiedAtMs`, `noteIds`, `identifiersTruncated`만 포함한다. `noteIds`는 DB row에서 만든 `note-<양의 정수>` 형식이며 최대 512개다
+- 별도 `daily-activity.json` sidecar는 system-local exact civil-day별 bounded aggregate만 최대 366일 보관하며 path/body/command/environment/log/ID를 포함하지 않는다. 이는 기존 `activity/v1`의 note ID view와 별도 계약이다
 - 노트 경로·제목·본문·tag·credential은 snapshot에 포함하지 않는다. 앱 저장·생성·이름변경·삭제·데일리 노트 생성과 watcher가 감지한 외부 편집 뒤에 같은 snapshot을 best-effort로 갱신한다
 - Life Log `knowledge-draft/v1` 수신은 `sourceApp=life-log`, `targetApp=knowledge-base`, exact kind/schema,
   fixed source order, aggregate-only summary, bounded body/tags/title와 deterministic Markdown body를
@@ -78,6 +80,9 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
   validation/file/index 실패는 claim을 restore하고, 만료·손상·잘못된 target은 고정 안내만 표시한다.
   lease는 30초 주기로 갱신하되 10분 envelope TTL은 연장하지 않는다. Life Log DB를 직접 읽거나
   네트워크/LLM을 호출하지 않으며, browser preview에서는 native handoff API를 지원하지 않는다
+- Developer Toolbox `knowledge-draft/v2` 수신도 같은 one-time claim·preview·명시적 Save 경계를
+  사용한다. v2 payload는 v1 Life Log handoff와 섞거나 자동 변환하지 않으며, preview/save가
+  성공한 뒤에만 handoff를 ack/delete한다
 - Life Log draft handoff의 상태 sidecar(`pending` → `sent` → `consumed`, 또는 `expired`)는 payload와
   분리된 metadata-only JSON으로 보존한다. Knowledge는 claim/save/ack 경계에서 상태를 갱신하고,
   cancel·검증·파일·index 실패에서는 pending으로 복구한다. sidecar가 없거나 손상되면 consumed로

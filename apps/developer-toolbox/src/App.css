@@ -1358,11 +1358,147 @@ select {
   outline-offset: 2px;
 }
 
+.toolbox-handoff-error {
+  margin: 0 0 10px;
+  color: var(--red);
+  font-size: 11px;
+}
+
+.toolbox-handoff-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.toolbox-handoff-dialog {
+  width: min(720px, 100%);
+  max-height: min(760px, 100%);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+}
+
+.toolbox-handoff-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.toolbox-handoff-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.toolbox-handoff-dialog p {
+  margin: 0 0 12px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+.toolbox-handoff-kind {
+  flex-shrink: 0;
+  color: var(--dim);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+}
+
+.toolbox-handoff-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.toolbox-handoff-meta div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.toolbox-handoff-meta dt {
+  color: var(--dim);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.toolbox-handoff-meta dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.toolbox-handoff-redacted {
+  margin: 0 0 8px !important;
+  color: var(--amber) !important;
+  font-size: 11px;
+}
+
+.toolbox-handoff-text {
+  max-height: 360px;
+  min-height: 90px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.toolbox-handoff-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+@media (max-width: 600px) {
+  .toolbox-handoff-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbox-handoff-heading {
+    flex-direction: column;
+  }
+}
+
 .api-handoff-action {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+
+.tool-output-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.tool-output-actions .api-handoff-action,
+.tool-output-actions .knowledge-draft-action {
+  margin-left: 0;
+}
+
+.io-output > .tool-output-actions {
+  width: 100%;
+  margin-top: 8px;
 }
 
 .api-handoff-button {
@@ -1375,6 +1511,117 @@ select {
   font-weight: 400;
   text-transform: none;
   letter-spacing: normal;
+}
+
+.knowledge-draft-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.knowledge-draft-button {
+  margin-left: 0;
+}
+
+.knowledge-draft-status {
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.knowledge-draft-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.knowledge-draft-dialog {
+  width: min(680px, 100%);
+  max-height: min(760px, 100%);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+}
+
+.knowledge-draft-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.knowledge-draft-dialog p {
+  margin: 0 0 12px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+.knowledge-draft-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.knowledge-draft-meta div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.knowledge-draft-meta dt {
+  color: var(--dim);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.knowledge-draft-meta dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-draft-preview {
+  max-height: 360px;
+  min-height: 90px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-draft-bounds {
+  margin: 5px 0 8px !important;
+  font-size: 11px;
+  text-align: right;
+}
+
+.knowledge-draft-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+@media (max-width: 600px) {
+  .knowledge-draft-meta {
+    grid-template-columns: 1fr;
+  }
 }
 
 .api-handoff-backdrop {

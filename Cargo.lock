@@ -94,6 +94,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "integration",
+ "launch",
  "libc",
  "prost",
  "prost-reflect",
@@ -1308,6 +1309,7 @@ version = "0.3.0"
 dependencies = [
  "applink",
  "base64 0.22.1",
+ "chrono",
  "dirs",
  "filesystem",
  "getrandom 0.4.3",
@@ -2707,7 +2709,9 @@ dependencies = [
 name = "integration"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "filesystem",
+ "iana-time-zone",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -3152,6 +3156,7 @@ dependencies = [
  "dirs",
  "filesystem",
  "integration",
+ "launch",
  "libc",
  "regex",
  "serde",
@@ -3164,6 +3169,7 @@ dependencies = [
  "window-state-tauri",
  "windows 0.61.3",
  "wsl",
+ "zeroize",
 ]
 
 [[package]]

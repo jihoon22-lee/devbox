@@ -1,12 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ResponseViewer } from "./ResponseViewer";
-import type { ApiResponse } from "./types";
+import { ResponseViewer, TOOLBOX_SELECTION_MESSAGES } from "./ResponseViewer";
+import type { ApiResponse, ToolboxDispatch } from "./types";
 
 const writeTextMock = vi.fn<(text: string) => Promise<void>>();
 const confirmMock = vi.fn<(message?: string) => boolean>();
 const rawCopyMock = vi.fn<(kind: "headers" | "cookies", responseId: string) => Promise<string>>();
 const binarySaveMock = vi.fn<(responseId: string) => Promise<boolean>>();
+const sendSelectionMock = vi.fn<(text: string) => Promise<ToolboxDispatch>>();
 const errorMock = vi.fn<(message: string) => void>();
 
 function response(overrides: Partial<ApiResponse> = {}): ApiResponse {
@@ -38,18 +39,38 @@ function response(overrides: Partial<ApiResponse> = {}): ApiResponse {
   };
 }
 
-function renderViewer(value = response()) {
+function renderViewer(
+  value = response(),
+  options: { native?: boolean; responseText?: string } = {},
+) {
   return render(
     <ResponseViewer
       response={value}
-      responseText={'{\n  "ok": true\n}'}
+      responseText={options.responseText ?? '{\n  "ok": true\n}'}
       pretty
       onPrettyChange={vi.fn()}
       onRawCopy={rawCopyMock}
       onBinarySave={binarySaveMock}
+      onSendSelection={sendSelectionMock}
+      native={options.native ?? true}
       onError={errorMock}
     />,
   );
+}
+
+function selectBody(start: number, end: number): void {
+  const body = screen.getByTestId("response-body");
+  const text = body.firstChild;
+  if (!(text instanceof Text)) throw new Error("response body text node missing");
+  const range = document.createRange();
+  range.setStart(text, start);
+  range.setEnd(text, end);
+  const selection = window.getSelection();
+  if (!selection) throw new Error("selection unavailable");
+  selection.removeAllRanges();
+  selection.addRange(range);
+  document.dispatchEvent(new Event("selectionchange"));
+  fireEvent.mouseUp(body);
 }
 
 beforeEach(() => {
@@ -57,6 +78,7 @@ beforeEach(() => {
   confirmMock.mockReset().mockReturnValue(false);
   rawCopyMock.mockReset().mockResolvedValue("set-cookie: session=raw-secret");
   binarySaveMock.mockReset().mockResolvedValue(true);
+  sendSelectionMock.mockReset().mockResolvedValue({ handoffId: "handoff-1", redacted: false });
   errorMock.mockReset();
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -65,7 +87,10 @@ beforeEach(() => {
   Object.defineProperty(window, "confirm", { configurable: true, value: confirmMock });
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  window.getSelection()?.removeAllRanges();
+  cleanup();
+});
 
 describe("ResponseViewer", () => {
   it("uses dedicated Body, Headers, and Cookies tabs and copies masked headers by default", async () => {
@@ -192,6 +217,114 @@ describe("ResponseViewer", () => {
     }));
     const save = screen.getByRole("button", { name: "Save binary" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
+    const send = screen.getByRole("button", { name: "Send selection to Developer Toolbox" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
     expect(document.body.textContent).not.toContain("raw-secret");
+  });
+
+  it("sends only a non-empty selection from the rendered response body", async () => {
+    renderViewer(response({ headers: [{ key: "x-secret-path", value: "C:\\raw\\header" }] }), {
+      responseText: "safe response body",
+    });
+    selectBody(0, 4);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+
+    await waitFor(() => expect(sendSelectionMock).toHaveBeenCalledWith("safe"));
+    expect(sendSelectionMock).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).not.toContain("C:\\raw\\header");
+    expect(screen.getByRole("status").textContent).toBe(TOOLBOX_SELECTION_MESSAGES.success);
+  });
+
+  it("rejects an empty selection without invoking the native handoff", async () => {
+    renderViewer(response(), { responseText: "safe body" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+
+    expect(sendSelectionMock).not.toHaveBeenCalled();
+    expect((await screen.findByRole("status")).textContent).toContain(TOOLBOX_SELECTION_MESSAGES.empty);
+  });
+
+  it("rejects a range that crosses outside the rendered response body", async () => {
+    renderViewer(response(), { responseText: "safe body" });
+    const body = screen.getByTestId("response-body");
+    const outside = document.createElement("span");
+    outside.textContent = "outside secret path";
+    document.body.append(outside);
+    const bodyText = body.firstChild;
+    const outsideText = outside.firstChild;
+    if (!(bodyText instanceof Text) || !(outsideText instanceof Text)) throw new Error("selection text missing");
+    const range = document.createRange();
+    range.setStart(bodyText, 0);
+    range.setEnd(outsideText, outsideText.length);
+    const selection = window.getSelection();
+    if (!selection) throw new Error("selection unavailable");
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+
+    expect(sendSelectionMock).not.toHaveBeenCalled();
+    expect((await screen.findByRole("status")).textContent).toContain(TOOLBOX_SELECTION_MESSAGES.outside);
+    outside.remove();
+  });
+
+  it("rejects a selection retained across a response/render revision", async () => {
+    const view = renderViewer(response(), { responseText: "old body" });
+    selectBody(0, 3);
+    view.rerender(
+      <ResponseViewer
+        response={response({ status: 201, status_text: "Created" })}
+        responseText="new body"
+        pretty
+        onPrettyChange={vi.fn()}
+        onRawCopy={rawCopyMock}
+        onBinarySave={binarySaveMock}
+        onSendSelection={sendSelectionMock}
+        native
+        onError={errorMock}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+
+    expect(sendSelectionMock).not.toHaveBeenCalled();
+    expect((await screen.findByRole("status")).textContent).toContain(TOOLBOX_SELECTION_MESSAGES.stale);
+  });
+
+  it("shows fixed native success and redaction feedback", async () => {
+    renderViewer(response(), { responseText: "safe body" });
+    selectBody(0, 4);
+    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain(TOOLBOX_SELECTION_MESSAGES.success));
+
+    cleanup();
+    sendSelectionMock.mockResolvedValueOnce({ handoffId: "handoff-2", redacted: true });
+    renderViewer(response(), { responseText: "safe body" });
+    selectBody(0, 4);
+    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain(TOOLBOX_SELECTION_MESSAGES.redacted));
+  });
+
+  it("maps native failures to fixed feedback and never renders the raw error", async () => {
+    sendSelectionMock.mockRejectedValueOnce(new Error("C:\\Users\\private\\response-vault"));
+    renderViewer(response(), { responseText: "safe body" });
+    selectBody(0, 4);
+    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain(TOOLBOX_SELECTION_MESSAGES.error));
+    expect(document.body.textContent).not.toContain("response-vault");
+    expect(document.body.textContent).not.toContain("C:\\Users\\private");
+  });
+
+  it("reports native-only availability in browser preview without clipboard fallback", async () => {
+    renderViewer(response(), { native: false, responseText: "safe body" });
+    selectBody(0, 4);
+    fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
+
+    expect(sendSelectionMock).not.toHaveBeenCalled();
+    expect(writeTextMock).not.toHaveBeenCalled();
+    expect((await screen.findByRole("status")).textContent).toContain(TOOLBOX_SELECTION_MESSAGES.nativeOnly);
   });
 });

@@ -38,12 +38,16 @@ Manager는 task를 자동 실행하지 않고 확인 대화상자를 먼저 표�
 
 기존 Life Log→Knowledge `knowledge-draft/v1` capability/action은 구조화 handoff 계약으로
 그대로 유지한다. Launcher는 이를 clipboard text action으로 변환하거나 노출하지 않는다.
-Developer Toolbox의 `toolbox-text/v1` action은 실제 claim/ack receiver가 준비될 때까지
-노출하지 않는다. 대신 사용자가 `Clipboard 미리보기`를 명시적으로 고른 때에만 현재 selection,
-그 다음 clipboard를 읽어 modal에 표시하며 전달·저장하지 않는다.
+catalog revision 15의 static `transform-text` action은 사용자가 확인한 현재 selection만
+Developer Toolbox로 `toolbox-text/v1` one-time masked handoff로 전달한다. selection은 launch
+직전에 다시 검증하며, 이 W07 경로는 clipboard fallback을 사용하지 않는다. credential 형태의
+줄은 공용 경계에서 먼저 마스킹하고 argv·설정·이력에 원문을 남기지 않는다. 별도
+`Clipboard 미리보기`는 명시적으로 고른 때에만 현재 selection, 그 다음 clipboard를 읽어 modal에
+표시하며 handoff나 저장으로 연결하지 않는다.
 
 범용 file/web/Windows settings 검색, arbitrary shell, clipboard history, PowerToys plugin host는
 제공하지 않는다. `src-tauri/src/core/launcher.rs`가 mutation 없는 bounded index를 소유하고,
 `src-tauri/src/commands.rs`가 매 요청의 재검증과 launch 경계를 소유한다. 실제 Windows
 `RegisterHotKey`, focus-loss hide, cold/hot AppLink와 packaged installer 동작은 v0.5.0 W3/W4
-Windows checkpoint에서 검증한다.
+Windows checkpoint에서 검증한다. W07 Windows 실기/packaged acceptance 완료를 이 문서는
+주장하지 않는다.

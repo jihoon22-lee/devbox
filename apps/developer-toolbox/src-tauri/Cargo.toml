@@ -42,6 +42,7 @@ devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
 devbox-launch = { package = "launch", path = "../../../crates/launch" }
 zeroize = "1"
+chrono = { version = "0.4", features = ["clock"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -64,7 +64,7 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
-    assert_eq!(catalog.catalog_revision, Some(14));
+    assert_eq!(catalog.catalog_revision, Some(15));
     assert_eq!(catalog.apps.len(), 15);
     assert_eq!(
         capable_targets(&catalog, "path")
@@ -116,6 +116,13 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     );
     assert_eq!(
         capable_targets(&catalog, "handoff:knowledge-draft/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["knowledge-base"]
+    );
+    assert_eq!(
+        capable_targets(&catalog, "handoff:knowledge-draft/v2")
             .into_iter()
             .map(|app| app.id)
             .collect::<Vec<_>>(),
@@ -199,6 +206,34 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
         vec!["developer-toolbox", "webhook-lab"]
     );
     assert_eq!(
+        capable_targets(&catalog, "handoff:toolbox-text/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["developer-toolbox"]
+    );
+    assert_eq!(
+        capable_producers(&catalog, "handoff:toolbox-text/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["api-playground", "devbox-launcher", "log-lens"]
+    );
+    assert_eq!(
+        capable_producers(&catalog, "handoff:knowledge-draft/v2")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["developer-toolbox"]
+    );
+    assert_eq!(
+        capable_producers(&catalog, "snapshot:daily-activity/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["knowledge-base", "run-manager"]
+    );
+    assert_eq!(
         capable_producers(&catalog, "handoff:knowledge-draft/v1")
             .into_iter()
             .map(|app| app.id)
@@ -218,8 +253,10 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
         .find(|app| app.id == "log-lens")
         .expect("Log Lens must remain in the repository catalog");
     assert_eq!(log_lens.accepts, vec!["handoff:log-source/v1"]);
-    assert!(log_lens.produces.is_empty());
-    assert!(log_lens.actions.is_empty());
+    assert_eq!(log_lens.produces, vec!["handoff:toolbox-text/v1"]);
+    assert_eq!(log_lens.actions.len(), 1);
+    assert_eq!(log_lens.actions[0].action_id, "transform-selected-logs");
+    assert_eq!(log_lens.actions[0].target, "developer-toolbox");
     let life_log = catalog
         .apps
         .iter()
@@ -243,10 +280,71 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
         .iter()
         .find(|app| app.id == "developer-toolbox")
         .expect("Developer Toolbox must remain in the repository catalog");
-    assert_eq!(toolbox.produces, vec!["handoff:api-request/v1"]);
-    assert_eq!(toolbox.actions.len(), 1);
+    assert_eq!(toolbox.accepts, vec!["handoff:toolbox-text/v1"]);
+    assert_eq!(
+        toolbox.produces,
+        vec!["handoff:api-request/v1", "handoff:knowledge-draft/v2"]
+    );
+    assert_eq!(toolbox.actions.len(), 2);
     assert_eq!(toolbox.actions[0].target, "api-playground");
     assert_eq!(toolbox.actions[0].payload_kind, "handoff:api-request/v1");
+    assert_eq!(toolbox.actions[1].action_id, "save-output-to-knowledge");
+    assert_eq!(toolbox.actions[1].target, "knowledge-base");
+    assert_eq!(
+        toolbox.actions[1].payload_kind,
+        "handoff:knowledge-draft/v2"
+    );
+    let api_playground = catalog
+        .apps
+        .iter()
+        .find(|app| app.id == "api-playground")
+        .expect("API Playground must remain in the repository catalog");
+    assert_eq!(api_playground.produces, vec!["handoff:toolbox-text/v1"]);
+    assert_eq!(api_playground.actions.len(), 1);
+    assert_eq!(
+        api_playground.actions[0].action_id,
+        "transform-response-text"
+    );
+    assert_eq!(api_playground.actions[0].target, "developer-toolbox");
+    let knowledge_base = catalog
+        .apps
+        .iter()
+        .find(|app| app.id == "knowledge-base")
+        .expect("Knowledge Base must remain in the repository catalog");
+    assert_eq!(
+        knowledge_base.accepts,
+        vec![
+            "path",
+            "query",
+            "handoff:knowledge-draft/v1",
+            "handoff:knowledge-draft/v2"
+        ]
+    );
+    assert_eq!(
+        knowledge_base.produces,
+        vec![
+            "snapshot:knowledge-base/activity/v1",
+            "snapshot:daily-activity/v1"
+        ]
+    );
+    let run_manager = catalog
+        .apps
+        .iter()
+        .find(|app| app.id == "run-manager")
+        .expect("Run Manager must remain in the repository catalog");
+    assert!(run_manager
+        .produces
+        .contains(&"snapshot:daily-activity/v1".to_string()));
+    let launcher = catalog
+        .apps
+        .iter()
+        .find(|app| app.id == "devbox-launcher")
+        .expect("Devbox Launcher must remain in the repository catalog");
+    assert_eq!(launcher.produces, vec!["handoff:toolbox-text/v1"]);
+    assert_eq!(launcher.actions.len(), 1);
+    assert_eq!(launcher.actions[0].action_id, "transform-text");
+    assert_eq!(launcher.actions[0].target, "developer-toolbox");
+    assert_eq!(launcher.actions[0].payload_kind, "handoff:toolbox-text/v1");
 }
 
 #[test]
@@ -415,6 +513,17 @@ fn identity_and_snapshot_producer_contracts_are_rejected_fail_closed() {
         parse_catalog(&spoofed_snapshot.to_string()),
         Err(CatalogError::InvalidCapability {
             app_index: 5,
+            field: "produces"
+        })
+    ));
+
+    let mut spoofed_shared_snapshot: Value =
+        serde_json::from_str(V2_BUILD).expect("v2 fixture JSON");
+    spoofed_shared_snapshot["apps"][0]["produces"] = json!(["snapshot:daily-activity/v1"]);
+    assert!(matches!(
+        parse_catalog(&spoofed_shared_snapshot.to_string()),
+        Err(CatalogError::InvalidCapability {
+            app_index: 0,
             field: "produces"
         })
     ));

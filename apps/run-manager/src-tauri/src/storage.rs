@@ -136,6 +136,8 @@ CREATE INDEX IF NOT EXISTS idx_runs_job_created_at
     ON runs (job_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_status
     ON runs (status);
+CREATE INDEX IF NOT EXISTS idx_runs_activity_at
+    ON runs (COALESCE(started_at, created_at));
 CREATE INDEX IF NOT EXISTS idx_notification_outbox_pending
     ON notification_outbox (delivered_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_notification_outbox_job_created
@@ -3300,6 +3302,35 @@ impl DatabaseState {
                 "SELECT MAX(COALESCE(started_at, created_at)) FROM runs",
                 [],
                 |r| r.get(0),
+            )
+            .map_err(StorageError::from)
+    }
+
+    /// Exact half-open aggregate used by the privacy-safe daily activity
+    /// sidecar. No job id, command, path, environment, or log bytes leave the
+    /// database through this query.
+    pub fn run_activity_between(
+        &self,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<(i64, i64, Option<i64>), StorageError> {
+        if start_ms < 0 || end_ms <= start_ms {
+            return Err(StorageError::Validation(
+                "run activity range is invalid".to_string(),
+            ));
+        }
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT
+                    COALESCE(SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0),
+                    MAX(COALESCE(started_at, created_at))
+                 FROM runs
+                 WHERE COALESCE(started_at, created_at) >= ?1
+                   AND COALESCE(started_at, created_at) < ?2",
+                params![start_ms, end_ms],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .map_err(StorageError::from)
     }

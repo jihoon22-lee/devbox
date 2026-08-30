@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::time::Duration;
 
-pub const EXPORT_SCHEMA_VERSION: u32 = 1;
+pub const EXPORT_SCHEMA_VERSION: u32 = 2;
 pub const MAX_EXPORT_DAYS: usize = 366;
 pub const MAX_EXPORT_SESSIONS: usize = 50_000;
 pub const MAX_EXPORT_BYTES: usize = 4 * 1024 * 1024;
@@ -38,14 +38,26 @@ pub const MAX_PROVENANCE_FRESHNESS_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 const MAX_PRIVACY_JSON_BYTES: usize = 64 * 1024;
 const MAX_PRIVACY_RULES: usize = 128;
 const MAX_REGEX_BYTES: usize = 512;
+#[cfg(test)]
 const MAX_RUN_SERVICES: usize = 256;
+#[cfg(test)]
 const MAX_SERVICE_ID_BYTES: usize = 256;
 const MAX_RUN_COUNT: i64 = 1_000_000_000;
+#[cfg(test)]
 const MAX_SERVICE_UPTIME_MS: i64 = DAY_MS * 366 * 100;
+#[cfg(test)]
 const MAX_NOTE_IDS: usize = 512;
+#[cfg(test)]
 const MAX_NOTE_ID_BYTES: usize = 128;
 const MAX_NOTES_MODIFIED: u64 = 1_000_000_000;
+#[cfg(test)]
 const LATEST_SNAPSHOT_OUT_OF_RANGE_SCOPE: &str = "latest-snapshot-out-of-range";
+#[cfg(test)]
+const LEGACY_LATEST_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
+const DAILY_ACTIVITY_VIEW: &str = "daily-activity";
+const REQUESTED_RANGE_SCOPE: &str = "requested-range";
+const REQUESTED_RANGE_PARTIAL_SCOPE: &str = "requested-range-partial";
+pub const MAX_DAILY_SNAPSHOT_FRESHNESS_MS: u64 = 10 * 60 * 1_000;
 
 /// Frontend가 전달하는 범위. `end_date`는 inclusive 날짜이고 `day_end`는
 /// exclusive epoch millisecond 경계다. `day_boundaries`는 system-local 날짜의
@@ -153,24 +165,24 @@ pub struct DailyDigest {
     pub pc_usage_ms: i64,
     pub session_count: usize,
     pub git_commits: u32,
+    pub run_succeeded: Option<u64>,
+    pub run_failed: Option<u64>,
+    pub knowledge_notes_modified: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RunDigest {
-    pub success: i64,
-    pub failed: i64,
-    pub active_service_count: usize,
-    pub active_service_uptime_ms: i64,
+    pub succeeded: u64,
+    pub failed: u64,
     pub last_run_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeDigest {
-    pub notes_modified_today: u64,
+    pub notes_modified: u64,
     pub last_modified_at_ms: Option<i64>,
-    pub identifiers_truncated: bool,
 }
 
 /// Export에 포함되는 source 상태. 현재 시각으로 freshness를 다시 계산하지 않고
@@ -603,9 +615,9 @@ fn prepare_document_inner(
         .map(|path| path.into_string())
         .collect::<Vec<_>>();
     check_cancelled(cancellation.as_deref())?;
-    let run_source = read_run_source();
+    let run_source = read_run_daily_source(&range);
     check_cancelled(cancellation.as_deref())?;
-    let knowledge_source = read_knowledge_source();
+    let knowledge_source = read_knowledge_daily_source(&range);
     check_cancelled(cancellation.as_deref())?;
     Ok(PreparedExport {
         range,
@@ -628,8 +640,8 @@ pub struct PreparedExport {
     range: ValidatedRange,
     sessions: Vec<ExportSession>,
     safe_projects: Vec<String>,
-    run_source: SourceResult<RunDigest>,
-    knowledge_source: SourceResult<KnowledgeDigest>,
+    run_source: DailySourceResult<RunDailyValue>,
+    knowledge_source: DailySourceResult<KnowledgeDailyValue>,
 }
 
 /// 준비된 DB/snapshot 자료만 받아 export document를 만든다. 이 함수가
@@ -682,11 +694,22 @@ pub async fn build_document_with_cancel(
             pc_usage_ms: sum_durations(day_sessions.iter().map(|session| session.duration_ms))?,
             session_count: day_sessions.len(),
             git_commits: git.daily_commits.get(day_index).copied().unwrap_or(0),
+            run_succeeded: run_source.values[day_index]
+                .as_ref()
+                .map(|value| value.succeeded),
+            run_failed: run_source.values[day_index]
+                .as_ref()
+                .map(|value| value.failed),
+            knowledge_notes_modified: knowledge_source.values[day_index]
+                .as_ref()
+                .map(|value| value.notes_modified),
         });
     }
 
     let app_totals = build_app_totals(&sessions)?;
     let pc_usage_ms = sum_durations(sessions.iter().map(|session| session.duration_ms))?;
+    let run_summary = complete_run_digest(&run_source)?;
+    let knowledge_summary = complete_knowledge_digest(&knowledge_source)?;
     let sources = vec![
         SourceMetadata {
             id: "life-log".into(),
@@ -744,13 +767,8 @@ pub async fn build_document_with_cancel(
             session_count: sessions.len(),
             app_totals,
             git: export_git(git),
-            // Current Run Manager and Knowledge snapshots are “today/latest”
-            // summaries, not range-keyed history. Keep their validated
-            // provenance in `sources`, but never put those unrelated values
-            // into a requested-date summary. A future range-scoped producer
-            // can opt in by defining a matching snapshot contract.
-            run: None,
-            knowledge: None,
+            run: run_summary,
+            knowledge: knowledge_summary,
         },
         daily,
         sessions,
@@ -770,7 +788,7 @@ fn export_rules() -> ExportRules {
             .into(),
         git_commits: "read-only git log with fixed argv per safe configured absolute project path; output is filtered to [range.startMs, range.endMs) and bounded by timeout/output limits".into(),
         snapshot_scope:
-            "Run Manager and Knowledge currently expose only latest local snapshots; validated provenance is reported as latest-snapshot-out-of-range and their values are omitted from requested-range summary until a matching range-scoped snapshot exists".into(),
+            "Run Manager and Knowledge daily-activity sidecars are joined only when date, timezone, and exact local civil-day boundaries match; partial, stale, missing, or mismatched days stay nullable and never fall back to latest/today values".into(),
     }
 }
 
@@ -806,8 +824,6 @@ pub fn render(document: &ExportDocument, format: ExportFormat) -> Result<Rendere
 pub fn validate_document(document: &ExportDocument) -> bool {
     if document.schema_version != EXPORT_SCHEMA_VERSION
         || document.sources.len() != 4
-        || document.summary.run.is_some()
-        || document.summary.knowledge.is_some()
         || document.rules != export_rules()
     {
         return false;
@@ -871,6 +887,16 @@ pub fn validate_document(document: &ExportDocument) -> bool {
                 != sum_durations(expected_sessions.iter().map(|session| session.duration_ms))
                     .ok()
                     .unwrap_or(i64::MIN)
+            || day
+                .run_succeeded
+                .is_some_and(|value| value > MAX_RUN_COUNT as u64)
+            || day
+                .run_failed
+                .is_some_and(|value| value > MAX_RUN_COUNT as u64)
+            || day
+                .knowledge_notes_modified
+                .is_some_and(|value| value > MAX_NOTES_MODIFIED)
+            || day.run_succeeded.is_some() != day.run_failed.is_some()
         {
             return false;
         }
@@ -935,8 +961,10 @@ pub fn validate_document(document: &ExportDocument) -> bool {
     };
     valid_life_log_source(life_log)
         && valid_git_source(git, &document.summary.git)
-        && valid_snapshot_source(run_manager, "run-manager", false)
-        && valid_snapshot_source(knowledge_base, "knowledge-base", true)
+        && valid_daily_snapshot_source(run_manager, "run-manager")
+        && valid_daily_snapshot_source(knowledge_base, "knowledge-base")
+        && valid_run_activity(document, run_manager)
+        && valid_knowledge_activity(document, knowledge_base)
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -974,7 +1002,7 @@ fn valid_git_source(source: &SourceMetadata, git: &ExportGit) -> bool {
 }
 
 #[cfg(any(target_os = "windows", test))]
-fn valid_snapshot_source(source: &SourceMetadata, expected_id: &str, knowledge: bool) -> bool {
+fn valid_daily_snapshot_source(source: &SourceMetadata, expected_id: &str) -> bool {
     let provenance_complete = source.producer_version.is_some()
         && source.generated_at.is_some()
         && source.freshness_ms.is_some();
@@ -983,7 +1011,13 @@ fn valid_snapshot_source(source: &SourceMetadata, expected_id: &str, knowledge: 
         && source.freshness_ms.is_none();
     source.id == expected_id
         && source.available == source.error_code.is_none()
-        && source.scope == LATEST_SNAPSHOT_OUT_OF_RANGE_SCOPE
+        && matches!(
+            source.scope.as_str(),
+            REQUESTED_RANGE_SCOPE | REQUESTED_RANGE_PARTIAL_SCOPE
+        )
+        && (source.available || source.scope == REQUESTED_RANGE_SCOPE || provenance_complete)
+        && (!source.available || (source.scope == REQUESTED_RANGE_SCOPE && provenance_complete))
+        && (source.scope != REQUESTED_RANGE_PARTIAL_SCOPE || !source.available)
         && source.schema_version.is_none_or(|version| version > 0)
         && source.snapshot_version.is_none_or(|version| version > 0)
         && source
@@ -992,7 +1026,7 @@ fn valid_snapshot_source(source: &SourceMetadata, expected_id: &str, knowledge: 
         && (provenance_complete || provenance_empty)
         && (!provenance_complete
             || (source.schema_version.is_some() && source.snapshot_version.is_some()))
-        && (!provenance_empty || (source.schema_version.is_none() && source.view.is_none()))
+        && (!provenance_empty || source.schema_version.is_none())
         && source
             .producer_version
             .as_deref()
@@ -1004,19 +1038,94 @@ fn valid_snapshot_source(source: &SourceMetadata, expected_id: &str, knowledge: 
         && source
             .freshness_ms
             .is_none_or(|value| value <= MAX_PROVENANCE_FRESHNESS_MS)
-        && source
-            .view
-            .as_deref()
-            .is_none_or(|value| knowledge && matches!(value, "activity" | "legacy-data"))
+        && source.view.as_deref() == Some(DAILY_ACTIVITY_VIEW)
         && source
             .error_code
             .as_deref()
             .is_none_or(is_snapshot_error_code)
         && (!source.available
-            || (source.schema_version == Some(EXPORT_SCHEMA_VERSION)
-                && source.snapshot_version == Some(EXPORT_SCHEMA_VERSION)
+            || (source.schema_version == Some(1)
+                && source.snapshot_version == Some(1)
                 && provenance_complete
-                && (!knowledge || source.view.is_some())))
+                && source
+                    .freshness_ms
+                    .is_some_and(|value| value <= MAX_PROVENANCE_FRESHNESS_MS)))
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn valid_run_activity(document: &ExportDocument, source: &SourceMetadata) -> bool {
+    let values = document
+        .daily
+        .iter()
+        .map(|day| day.run_succeeded.zip(day.run_failed))
+        .collect::<Vec<_>>();
+    let complete = values.iter().all(Option::is_some);
+    if source.available != complete
+        || (!source.available
+            && source.scope == REQUESTED_RANGE_SCOPE
+            && values.iter().any(Option::is_some))
+    {
+        return false;
+    }
+    if !complete {
+        return document.summary.run.is_none();
+    }
+    let Some(summary) = &document.summary.run else {
+        return false;
+    };
+    let Some(succeeded) = values
+        .iter()
+        .flatten()
+        .try_fold(0_u64, |total, value| total.checked_add(value.0))
+    else {
+        return false;
+    };
+    let Some(failed) = values
+        .iter()
+        .flatten()
+        .try_fold(0_u64, |total, value| total.checked_add(value.1))
+    else {
+        return false;
+    };
+    summary.succeeded == succeeded
+        && summary.failed == failed
+        && summary.last_run_at_ms.is_none_or(|timestamp| {
+            timestamp >= document.range.start_ms && timestamp < document.range.end_ms
+        })
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn valid_knowledge_activity(document: &ExportDocument, source: &SourceMetadata) -> bool {
+    let values = document
+        .daily
+        .iter()
+        .map(|day| day.knowledge_notes_modified)
+        .collect::<Vec<_>>();
+    let complete = values.iter().all(Option::is_some);
+    if source.available != complete
+        || (!source.available
+            && source.scope == REQUESTED_RANGE_SCOPE
+            && values.iter().any(Option::is_some))
+    {
+        return false;
+    }
+    if !complete {
+        return document.summary.knowledge.is_none();
+    }
+    let Some(summary) = &document.summary.knowledge else {
+        return false;
+    };
+    let Some(notes_modified) = values
+        .iter()
+        .flatten()
+        .try_fold(0_u64, |total, value| total.checked_add(*value))
+    else {
+        return false;
+    };
+    summary.notes_modified == notes_modified
+        && summary.last_modified_at_ms.is_none_or(|timestamp| {
+            timestamp >= document.range.start_ms && timestamp < document.range.end_ms
+        })
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -1497,19 +1606,9 @@ fn render_markdown(document: &ExportDocument) -> String {
         push_md_row(
             &mut out,
             "Run Manager successful runs",
-            &run.success.to_string(),
+            &run.succeeded.to_string(),
         );
         push_md_row(&mut out, "Run Manager failed runs", &run.failed.to_string());
-        push_md_row(
-            &mut out,
-            "Run Manager active services",
-            &run.active_service_count.to_string(),
-        );
-        push_md_row(
-            &mut out,
-            "Run Manager active uptime (ms)",
-            &run.active_service_uptime_ms.to_string(),
-        );
         push_md_row(
             &mut out,
             "Run Manager last run (ms)",
@@ -1521,8 +1620,8 @@ fn render_markdown(document: &ExportDocument) -> String {
     if let Some(knowledge) = &document.summary.knowledge {
         push_md_row(
             &mut out,
-            "Knowledge notes modified today",
-            &knowledge.notes_modified_today.to_string(),
+            "Knowledge notes modified",
+            &knowledge.notes_modified.to_string(),
         );
         push_md_row(
             &mut out,
@@ -1532,19 +1631,10 @@ fn render_markdown(document: &ExportDocument) -> String {
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "-".into()),
         );
-        push_md_row(
-            &mut out,
-            "Knowledge identifiers truncated",
-            if knowledge.identifiers_truncated {
-                "true"
-            } else {
-                "false"
-            },
-        );
     }
     out.push('\n');
 
-    out.push_str("## Daily digest\n\n| Date | Start (ms) | End (ms) | PC usage (ms) | Sessions | Git commits |\n| --- | ---: | ---: | ---: | ---: | ---: |\n");
+    out.push_str("## Daily digest\n\n| Date | Start (ms) | End (ms) | PC usage (ms) | Sessions | Git commits | Runs succeeded | Runs failed | Knowledge notes modified |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
     for day in &document.daily {
         out.push('|');
         for value in [
@@ -1554,6 +1644,15 @@ fn render_markdown(document: &ExportDocument) -> String {
             day.pc_usage_ms.to_string(),
             day.session_count.to_string(),
             day.git_commits.to_string(),
+            day.run_succeeded
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".into()),
+            day.run_failed
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".into()),
+            day.knowledge_notes_modified
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".into()),
         ] {
             out.push(' ');
             out.push_str(&markdown_cell(&value));
@@ -1716,16 +1815,8 @@ fn render_csv(document: &ExportDocument) -> String {
     ];
     if let Some(run) = &document.summary.run {
         summary_rows.extend([
-            ("run_success".to_string(), run.success.to_string()),
+            ("run_succeeded".to_string(), run.succeeded.to_string()),
             ("run_failed".to_string(), run.failed.to_string()),
-            (
-                "run_active_service_count".to_string(),
-                run.active_service_count.to_string(),
-            ),
-            (
-                "run_active_service_uptime_ms".to_string(),
-                run.active_service_uptime_ms.to_string(),
-            ),
             (
                 "run_last_run_at_ms".to_string(),
                 run.last_run_at_ms
@@ -1737,8 +1828,8 @@ fn render_csv(document: &ExportDocument) -> String {
     if let Some(knowledge) = &document.summary.knowledge {
         summary_rows.extend([
             (
-                "knowledge_notes_modified_today".to_string(),
-                knowledge.notes_modified_today.to_string(),
+                "knowledge_notes_modified".to_string(),
+                knowledge.notes_modified.to_string(),
             ),
             (
                 "knowledge_last_modified_at_ms".to_string(),
@@ -1746,10 +1837,6 @@ fn render_csv(document: &ExportDocument) -> String {
                     .last_modified_at_ms
                     .map(|value| value.to_string())
                     .unwrap_or_default(),
-            ),
-            (
-                "knowledge_identifiers_truncated".to_string(),
-                knowledge.identifiers_truncated.to_string(),
             ),
         ]);
     }
@@ -1808,6 +1895,45 @@ fn render_csv(document: &ExportDocument) -> String {
             "".into(),
             "".into(),
         ]);
+        for (source, metric, value) in [
+            ("run-manager", "run_succeeded", day.run_succeeded),
+            ("run-manager", "run_failed", day.run_failed),
+            (
+                "knowledge-base",
+                "knowledge_notes_modified",
+                day.knowledge_notes_modified,
+            ),
+        ] {
+            let Some(value) = value else {
+                continue;
+            };
+            row(vec![
+                "daily_activity".into(),
+                day.date.clone(),
+                range_start.into(),
+                range_end.into(),
+                "".into(),
+                "".into(),
+                "".into(),
+                day.start_ms.to_string(),
+                day.end_ms.to_string(),
+                "".into(),
+                "".into(),
+                "".into(),
+                metric.into(),
+                value.to_string(),
+                source.into(),
+                "true".into(),
+                "1".into(),
+                "1".into(),
+                "".into(),
+                "".into(),
+                "".into(),
+                DAILY_ACTIVITY_VIEW.into(),
+                REQUESTED_RANGE_SCOPE.into(),
+                "".into(),
+            ]);
+        }
     }
     for app in &document.summary.app_totals {
         row(vec![
@@ -1941,19 +2067,359 @@ fn render_csv(document: &ExportDocument) -> String {
     out
 }
 
+#[cfg(test)]
 #[derive(Debug)]
 struct SourceResult<T> {
     metadata: SourceMetadata,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "latest-only payload is validated but intentionally omitted from a range export"
-        )
-    )]
     digest: Option<T>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DailySourceResult<T> {
+    metadata: SourceMetadata,
+    /// Values are aligned one-to-one with the requested authoritative civil
+    /// days. Missing or mismatched days remain `None`.
+    values: Vec<Option<T>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RunDailyValue {
+    succeeded: u64,
+    failed: u64,
+    last_run_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct KnowledgeDailyValue {
+    notes_modified: u64,
+    last_modified_at_ms: Option<i64>,
+}
+
+fn complete_run_digest(
+    source: &DailySourceResult<RunDailyValue>,
+) -> Result<Option<RunDigest>, String> {
+    if !source.metadata.available || source.values.iter().any(Option::is_none) {
+        return Ok(None);
+    }
+    let mut succeeded = 0_u64;
+    let mut failed = 0_u64;
+    let mut last_run_at_ms = None;
+    for value in source.values.iter().flatten() {
+        succeeded = succeeded
+            .checked_add(value.succeeded)
+            .ok_or_else(|| "Run Manager activity count overflow".to_string())?;
+        failed = failed
+            .checked_add(value.failed)
+            .ok_or_else(|| "Run Manager activity count overflow".to_string())?;
+        last_run_at_ms = last_run_at_ms.max(value.last_run_at_ms);
+    }
+    Ok(Some(RunDigest {
+        succeeded,
+        failed,
+        last_run_at_ms,
+    }))
+}
+
+fn complete_knowledge_digest(
+    source: &DailySourceResult<KnowledgeDailyValue>,
+) -> Result<Option<KnowledgeDigest>, String> {
+    if !source.metadata.available || source.values.iter().any(Option::is_none) {
+        return Ok(None);
+    }
+    let mut notes_modified = 0_u64;
+    let mut last_modified_at_ms = None;
+    for value in source.values.iter().flatten() {
+        notes_modified = notes_modified
+            .checked_add(value.notes_modified)
+            .ok_or_else(|| "Knowledge activity count overflow".to_string())?;
+        last_modified_at_ms = last_modified_at_ms.max(value.last_modified_at_ms);
+    }
+    Ok(Some(KnowledgeDigest {
+        notes_modified,
+        last_modified_at_ms,
+    }))
+}
+
+#[derive(Debug)]
+struct ParsedDailyValue<T> {
+    day: devbox_integration::LocalCivilDay,
+    value: T,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RunDailySnapshot {
+    date: String,
+    start_ms: i64,
+    end_ms: i64,
+    timezone: String,
+    succeeded: u64,
+    failed: u64,
+    last_run_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct KnowledgeDailySnapshot {
+    date: String,
+    start_ms: i64,
+    end_ms: i64,
+    timezone: String,
+    notes_modified: u64,
+    last_modified_at_ms: Option<i64>,
+}
+
+fn read_run_daily_source(range: &ValidatedRange) -> DailySourceResult<RunDailyValue> {
+    read_run_daily_source_in(&devbox_integration::integration_root(), range)
+}
+
+fn read_run_daily_source_in(
+    root: &Path,
+    range: &ValidatedRange,
+) -> DailySourceResult<RunDailyValue> {
+    read_daily_source_in(root, "run-manager", range, |entry| {
+        let entry: RunDailySnapshot =
+            serde_json::from_value(entry.clone()).map_err(|_| "snapshot_payload_invalid")?;
+        if entry.succeeded > MAX_RUN_COUNT as u64
+            || entry.failed > MAX_RUN_COUNT as u64
+            || entry
+                .last_run_at_ms
+                .is_some_and(|timestamp| timestamp < entry.start_ms || timestamp >= entry.end_ms)
+        {
+            return Err("snapshot_payload_invalid");
+        }
+        Ok(ParsedDailyValue {
+            day: devbox_integration::LocalCivilDay {
+                date: entry.date,
+                start_ms: entry.start_ms,
+                end_ms: entry.end_ms,
+                timezone: entry.timezone,
+            },
+            value: RunDailyValue {
+                succeeded: entry.succeeded,
+                failed: entry.failed,
+                last_run_at_ms: entry.last_run_at_ms,
+            },
+        })
+    })
+}
+
+fn read_knowledge_daily_source(range: &ValidatedRange) -> DailySourceResult<KnowledgeDailyValue> {
+    read_knowledge_daily_source_in(&devbox_integration::integration_root(), range)
+}
+
+fn read_knowledge_daily_source_in(
+    root: &Path,
+    range: &ValidatedRange,
+) -> DailySourceResult<KnowledgeDailyValue> {
+    read_daily_source_in(root, "knowledge-base", range, |entry| {
+        let entry: KnowledgeDailySnapshot =
+            serde_json::from_value(entry.clone()).map_err(|_| "snapshot_payload_invalid")?;
+        if entry.notes_modified > MAX_NOTES_MODIFIED
+            || entry
+                .last_modified_at_ms
+                .is_some_and(|timestamp| timestamp < entry.start_ms || timestamp >= entry.end_ms)
+        {
+            return Err("snapshot_payload_invalid");
+        }
+        Ok(ParsedDailyValue {
+            day: devbox_integration::LocalCivilDay {
+                date: entry.date,
+                start_ms: entry.start_ms,
+                end_ms: entry.end_ms,
+                timezone: entry.timezone,
+            },
+            value: KnowledgeDailyValue {
+                notes_modified: entry.notes_modified,
+                last_modified_at_ms: entry.last_modified_at_ms,
+            },
+        })
+    })
+}
+
+fn read_daily_source_in<T: Clone>(
+    root: &Path,
+    producer: &str,
+    range: &ValidatedRange,
+    parse: impl Fn(&serde_json::Value) -> Result<ParsedDailyValue<T>, &'static str>,
+) -> DailySourceResult<T> {
+    let empty_values = || vec![None; range.days.len()];
+    let mut metadata = daily_source_metadata(producer);
+    let path = match devbox_integration::named_view_snapshot_path_in(
+        root,
+        producer,
+        1,
+        DAILY_ACTIVITY_VIEW,
+    ) {
+        Ok(path) => path,
+        Err(_) => {
+            return daily_invalid(metadata, empty_values(), "snapshot_invalid");
+        }
+    };
+    let file_metadata = match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return daily_invalid(metadata, empty_values(), "snapshot_unavailable");
+        }
+        Err(_) => return daily_invalid(metadata, empty_values(), "snapshot_invalid"),
+    };
+    if !file_metadata.file_type().is_file() || file_metadata.file_type().is_symlink() {
+        return daily_invalid(metadata, empty_values(), "snapshot_invalid");
+    }
+    let modified = match file_metadata.modified() {
+        Ok(modified) => modified,
+        Err(_) => return daily_invalid(metadata, empty_values(), "snapshot_invalid"),
+    };
+    let envelope = match devbox_integration::read_named_view_snapshot_in(
+        root,
+        producer,
+        1,
+        DAILY_ACTIVITY_VIEW,
+    ) {
+        Ok(Some(envelope)) => envelope,
+        Ok(None) => return daily_invalid(metadata, empty_values(), "snapshot_unavailable"),
+        Err(_) => return daily_invalid(metadata, empty_values(), "snapshot_invalid"),
+    };
+    let stable =
+        devbox_integration::read_named_view_snapshot_in(root, producer, 1, DAILY_ACTIVITY_VIEW);
+    if !matches!(stable, Ok(Some(ref current)) if current == &envelope) {
+        return daily_invalid(metadata, empty_values(), "snapshot_changed_during_read");
+    }
+
+    let views = match envelope.views() {
+        Ok(views) => views,
+        Err(_) => return daily_invalid(metadata, empty_values(), "snapshot_invalid"),
+    };
+    let Some(view) = views.get(DAILY_ACTIVITY_VIEW) else {
+        return daily_invalid(metadata, empty_values(), "snapshot_schema_unsupported");
+    };
+    metadata.schema_version = Some(envelope.schema_version);
+    metadata.snapshot_version = Some(envelope.schema_version);
+    metadata.producer_version = Some(envelope.producer_version.clone());
+    metadata.generated_at = Some(envelope.generated_at.clone());
+    let now = std::time::SystemTime::now();
+    let file_freshness = now
+        .duration_since(modified)
+        .unwrap_or_default()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64;
+    let freshness = file_freshness.saturating_add(view.freshness_ms);
+    metadata.freshness_ms = Some(freshness.min(MAX_PROVENANCE_FRESHNESS_MS));
+    if envelope.schema_version != 1 || view.schema_version != 1 {
+        return daily_invalid(metadata, empty_values(), "snapshot_schema_unsupported");
+    }
+    if freshness > MAX_PROVENANCE_FRESHNESS_MS {
+        return daily_invalid(metadata, empty_values(), "snapshot_stale");
+    }
+    if view.entries.is_empty() || view.entries.len() > devbox_integration::MAX_DAILY_ACTIVITY_DAYS {
+        return daily_invalid(metadata, empty_values(), "snapshot_payload_invalid");
+    }
+
+    let mut parsed = Vec::with_capacity(view.entries.len());
+    for entry in &view.entries {
+        match parse(entry) {
+            Ok(entry) => parsed.push(entry),
+            Err(code) => return daily_invalid(metadata, empty_values(), code),
+        }
+    }
+    let civil_days = parsed
+        .iter()
+        .map(|entry| entry.day.clone())
+        .collect::<Vec<_>>();
+    if devbox_integration::validate_local_civil_days(&civil_days).is_err() {
+        return daily_invalid(metadata, empty_values(), "snapshot_payload_invalid");
+    }
+    let by_date = parsed
+        .into_iter()
+        .map(|entry| (entry.day.date.clone(), entry))
+        .collect::<BTreeMap<_, _>>();
+    if by_date.len() != civil_days.len() {
+        return daily_invalid(metadata, empty_values(), "snapshot_payload_invalid");
+    }
+
+    let now_ms = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(i64::MAX as u128) as i64;
+    let effective_cutoff_ms = now_ms.saturating_sub(i64::try_from(freshness).unwrap_or(i64::MAX));
+    let mut mismatch = false;
+    let mut stale_overlap = false;
+    let mut exact = 0usize;
+    let values = range
+        .days
+        .iter()
+        .map(|requested| {
+            // A stale sidecar remains authoritative for civil days that had
+            // already closed when its data was generated. Only an open or
+            // newer day becomes unavailable; historical values are not
+            // discarded merely because neither producer is currently open.
+            if freshness > MAX_DAILY_SNAPSHOT_FRESHNESS_MS && requested.end_ms > effective_cutoff_ms
+            {
+                stale_overlap = true;
+                return None;
+            }
+            let entry = by_date.get(&requested.date.as_string())?;
+            if entry.day.start_ms != requested.start_ms
+                || entry.day.end_ms != requested.end_ms
+                || entry.day.timezone != range.timezone
+            {
+                mismatch = true;
+                return None;
+            }
+            exact += 1;
+            Some(entry.value.clone())
+        })
+        .collect::<Vec<_>>();
+    if exact == range.days.len() {
+        metadata.available = true;
+        metadata.scope = REQUESTED_RANGE_SCOPE.to_string();
+        metadata.error_code = None;
+    } else {
+        metadata.available = false;
+        metadata.scope = REQUESTED_RANGE_PARTIAL_SCOPE.to_string();
+        metadata.error_code = Some(
+            if stale_overlap {
+                "snapshot_stale"
+            } else if mismatch {
+                "snapshot_boundary_mismatch"
+            } else if exact == 0 {
+                "snapshot_range_unavailable"
+            } else {
+                "snapshot_range_partial"
+            }
+            .to_string(),
+        );
+    }
+    DailySourceResult { metadata, values }
+}
+
+fn daily_source_metadata(producer: &str) -> SourceMetadata {
+    SourceMetadata {
+        id: producer.to_string(),
+        available: false,
+        schema_version: None,
+        snapshot_version: None,
+        producer_version: None,
+        generated_at: None,
+        freshness_ms: None,
+        view: Some(DAILY_ACTIVITY_VIEW.to_string()),
+        scope: REQUESTED_RANGE_SCOPE.to_string(),
+        error_code: Some("snapshot_unavailable".to_string()),
+    }
+}
+
+fn daily_invalid<T>(
+    mut metadata: SourceMetadata,
+    values: Vec<Option<T>>,
+    error_code: &str,
+) -> DailySourceResult<T> {
+    metadata.available = false;
+    metadata.error_code = Some(error_code.to_string());
+    DailySourceResult { metadata, values }
+}
+
+#[cfg(test)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RunSnapshot {
@@ -1963,6 +2429,7 @@ struct RunSnapshot {
     last_run_at_ms: Option<i64>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RunService {
@@ -1970,6 +2437,7 @@ struct RunService {
     uptime_ms: i64,
 }
 
+#[cfg(test)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RunCounts {
@@ -1977,11 +2445,18 @@ struct RunCounts {
     failed: i64,
 }
 
-fn read_run_source() -> SourceResult<RunDigest> {
-    read_run_source_in(&devbox_integration::integration_root())
+#[cfg(test)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct LegacyRunDigest {
+    success: i64,
+    failed: i64,
+    active_service_count: usize,
+    active_service_uptime_ms: i64,
+    last_run_at_ms: Option<i64>,
 }
 
-fn read_run_source_in(root: &Path) -> SourceResult<RunDigest> {
+#[cfg(test)]
+fn read_run_source_in(root: &Path) -> SourceResult<LegacyRunDigest> {
     read_snapshot_source_in(
         root,
         "run-manager",
@@ -2007,7 +2482,7 @@ fn read_run_source_in(root: &Path) -> SourceResult<RunDigest> {
             {
                 return Err("snapshot_payload_invalid".into());
             }
-            Ok(RunDigest {
+            Ok(LegacyRunDigest {
                 success: payload.runs.success,
                 failed: payload.runs.failed,
                 active_service_count: payload.active_services.len(),
@@ -2023,6 +2498,7 @@ fn read_run_source_in(root: &Path) -> SourceResult<RunDigest> {
     )
 }
 
+#[cfg(test)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct KnowledgeSnapshot {
@@ -2032,6 +2508,7 @@ struct KnowledgeSnapshot {
     identifiers_truncated: bool,
 }
 
+#[cfg(test)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct LegacyKnowledgeSnapshot {
@@ -2039,11 +2516,16 @@ struct LegacyKnowledgeSnapshot {
     last_modified_at_ms: Option<i64>,
 }
 
-fn read_knowledge_source() -> SourceResult<KnowledgeDigest> {
-    read_knowledge_source_in(&devbox_integration::integration_root())
+#[cfg(test)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct LegacyKnowledgeDigest {
+    notes_modified_today: u64,
+    last_modified_at_ms: Option<i64>,
+    identifiers_truncated: bool,
 }
 
-fn read_knowledge_source_in(root: &Path) -> SourceResult<KnowledgeDigest> {
+#[cfg(test)]
+fn read_knowledge_source_in(root: &Path) -> SourceResult<LegacyKnowledgeDigest> {
     let producer = "knowledge-base";
     let reference = match latest_snapshot_reference(root, producer) {
         Ok(Some(reference)) => reference,
@@ -2076,7 +2558,7 @@ fn read_knowledge_source_in(root: &Path) -> SourceResult<KnowledgeDigest> {
     if reference.freshness_ms > MAX_PROVENANCE_FRESHNESS_MS {
         return invalid_source(metadata, "snapshot_stale");
     }
-    if reference.version != EXPORT_SCHEMA_VERSION {
+    if reference.version != LEGACY_LATEST_SNAPSHOT_SCHEMA_VERSION {
         return invalid_source(metadata, "snapshot_schema_unsupported");
     }
     let envelope = match devbox_integration::read_snapshot_in(root, producer, reference.version) {
@@ -2171,7 +2653,7 @@ fn read_knowledge_source_in(root: &Path) -> SourceResult<KnowledgeDigest> {
     }
     SourceResult {
         metadata,
-        digest: Some(KnowledgeDigest {
+        digest: Some(LegacyKnowledgeDigest {
             notes_modified_today,
             last_modified_at_ms,
             identifiers_truncated,
@@ -2179,6 +2661,7 @@ fn read_knowledge_source_in(root: &Path) -> SourceResult<KnowledgeDigest> {
     }
 }
 
+#[cfg(test)]
 fn valid_note_id(value: &str) -> bool {
     let Some(number) = value.strip_prefix("note-") else {
         return false;
@@ -2197,6 +2680,7 @@ fn sum_durations(mut values: impl Iterator<Item = i64>) -> Result<i64, String> {
     })
 }
 
+#[cfg(test)]
 fn read_snapshot_source_in<T>(
     root: &Path,
     producer: &str,
@@ -2219,7 +2703,7 @@ fn read_snapshot_source_in<T>(
     if reference.freshness_ms > MAX_PROVENANCE_FRESHNESS_MS {
         return invalid_source(metadata, "snapshot_stale");
     }
-    if reference.version != EXPORT_SCHEMA_VERSION {
+    if reference.version != LEGACY_LATEST_SNAPSHOT_SCHEMA_VERSION {
         return invalid_source(metadata, "snapshot_schema_unsupported");
     }
     let envelope = match devbox_integration::read_snapshot_in(root, producer, reference.version) {
@@ -2248,6 +2732,7 @@ fn read_snapshot_source_in<T>(
 /// Pick one exact snapshot before reading its payload. Invalid newer versions
 /// are not silently replaced by an older valid version: the result is either
 /// that selected version or a stable unavailable/invalid status.
+#[cfg(test)]
 fn latest_snapshot_reference(
     root: &Path,
     producer: &str,
@@ -2289,12 +2774,14 @@ fn latest_snapshot_reference(
     })
 }
 
+#[cfg(test)]
 #[derive(Debug)]
 struct SnapshotSelectionError {
     version: Option<u32>,
     code: &'static str,
 }
 
+#[cfg(test)]
 fn same_snapshot_identity(
     reference: &devbox_integration::SnapshotRef,
     envelope: &devbox_integration::Envelope,
@@ -2305,6 +2792,7 @@ fn same_snapshot_identity(
         && reference.generated_at == envelope.generated_at
 }
 
+#[cfg(test)]
 fn snapshot_is_still_selected(
     root: &Path,
     producer: &str,
@@ -2322,6 +2810,7 @@ fn snapshot_is_still_selected(
         })
 }
 
+#[cfg(test)]
 fn snapshot_payload_is_stable(
     root: &Path,
     producer: &str,
@@ -2340,6 +2829,7 @@ fn snapshot_payload_is_stable(
     }
 }
 
+#[cfg(test)]
 fn source_metadata_from_reference(
     reference: &devbox_integration::SnapshotRef,
     scope: &str,
@@ -2359,10 +2849,12 @@ fn source_metadata_from_reference(
     }
 }
 
+#[cfg(test)]
 fn unavailable_source<T>(producer: &str, scope: &str, error_code: &str) -> SourceResult<T> {
     unavailable_source_with_version(producer, scope, None, error_code)
 }
 
+#[cfg(test)]
 fn unavailable_source_with_version<T>(
     producer: &str,
     scope: &str,
@@ -2386,6 +2878,7 @@ fn unavailable_source_with_version<T>(
     }
 }
 
+#[cfg(test)]
 fn invalid_source<T>(mut metadata: SourceMetadata, error_code: &str) -> SourceResult<T> {
     metadata.available = false;
     metadata.error_code = Some(error_code.into());
@@ -2471,6 +2964,190 @@ mod tests {
         }
     }
 
+    fn write_daily_sidecar(root: &Path, producer: &str, entries: Vec<serde_json::Value>) {
+        write_daily_sidecar_with_freshness(root, producer, entries, 0);
+    }
+
+    fn write_daily_sidecar_with_freshness(
+        root: &Path,
+        producer: &str,
+        entries: Vec<serde_json::Value>,
+        freshness_ms: u64,
+    ) {
+        let envelope = devbox_integration::Envelope::with_views(
+            producer,
+            "0.6.0",
+            devbox_integration::SnapshotViews::from([(
+                DAILY_ACTIVITY_VIEW.to_string(),
+                devbox_integration::SnapshotView {
+                    schema_version: 1,
+                    freshness_ms,
+                    entries,
+                },
+            )]),
+        );
+        devbox_integration::write_named_view_snapshot_atomic(&envelope, root, DAILY_ACTIVITY_VIEW)
+            .unwrap();
+    }
+
+    fn run_day(date: &str, start_ms: i64, end_ms: i64, succeeded: u64) -> serde_json::Value {
+        serde_json::json!({
+            "date": date,
+            "startMs": start_ms,
+            "endMs": end_ms,
+            "timezone": "UTC",
+            "succeeded": succeeded,
+            "failed": 1,
+            "lastRunAtMs": start_ms + 1,
+        })
+    }
+
+    #[test]
+    fn daily_sidecar_requires_exact_range_boundaries_without_latest_fallback() {
+        let fixture = SourceFixture::new();
+        let range = validate_range(&input(ExportFormat::Json)).unwrap();
+        write_daily_sidecar(
+            fixture.path(),
+            "run-manager",
+            vec![
+                run_day("2024-01-01", 0, DAY_MS, 2),
+                run_day("2024-01-02", DAY_MS, DAY_MS * 2, 3),
+            ],
+        );
+        let complete = read_run_daily_source_in(fixture.path(), &range);
+        assert!(complete.metadata.available);
+        assert_eq!(complete.metadata.scope, REQUESTED_RANGE_SCOPE);
+        assert_eq!(
+            complete.values[0].as_ref().map(|value| value.succeeded),
+            Some(2)
+        );
+        assert_eq!(
+            complete.values[1].as_ref().map(|value| value.succeeded),
+            Some(3)
+        );
+        assert_eq!(
+            complete_run_digest(&complete).unwrap().unwrap().succeeded,
+            5
+        );
+
+        write_daily_sidecar(
+            fixture.path(),
+            "run-manager",
+            vec![run_day("2024-01-02", DAY_MS, DAY_MS * 2, 9)],
+        );
+        let partial = read_run_daily_source_in(fixture.path(), &range);
+        assert!(!partial.metadata.available);
+        assert_eq!(partial.metadata.scope, REQUESTED_RANGE_PARTIAL_SCOPE);
+        assert_eq!(
+            partial.metadata.error_code.as_deref(),
+            Some("snapshot_range_partial")
+        );
+        assert!(partial.values[0].is_none());
+        assert_eq!(
+            partial.values[1].as_ref().map(|value| value.succeeded),
+            Some(9)
+        );
+        assert!(complete_run_digest(&partial).unwrap().is_none());
+
+        let mut first = run_day("2024-01-01", 0, DAY_MS, 2);
+        let mut second = run_day("2024-01-02", DAY_MS, DAY_MS * 2, 3);
+        first["timezone"] = serde_json::json!("Europe/Paris");
+        second["timezone"] = serde_json::json!("Europe/Paris");
+        write_daily_sidecar(fixture.path(), "run-manager", vec![first, second]);
+        let mismatched = read_run_daily_source_in(fixture.path(), &range);
+        assert!(!mismatched.metadata.available);
+        assert_eq!(
+            mismatched.metadata.error_code.as_deref(),
+            Some("snapshot_boundary_mismatch")
+        );
+        assert!(mismatched.values[1].is_none());
+    }
+
+    #[test]
+    fn daily_sidecar_rejects_unknown_or_out_of_day_activity_fields() {
+        let fixture = SourceFixture::new();
+        let range = validate_range(&input(ExportFormat::Json)).unwrap();
+        let mut bad = run_day("2024-01-01", 0, DAY_MS, 2);
+        bad.as_object_mut()
+            .unwrap()
+            .insert("secretPath".into(), serde_json::json!("/private"));
+        write_daily_sidecar(fixture.path(), "run-manager", vec![bad]);
+        let rejected = read_run_daily_source_in(fixture.path(), &range);
+        assert_eq!(
+            rejected.metadata.error_code.as_deref(),
+            Some("snapshot_payload_invalid")
+        );
+        assert!(rejected.values.iter().all(Option::is_none));
+
+        write_daily_sidecar(
+            fixture.path(),
+            "knowledge-base",
+            vec![serde_json::json!({
+                "date": "2024-01-01",
+                "startMs": 0,
+                "endMs": DAY_MS,
+                "timezone": "UTC",
+                "notesModified": 1,
+                "lastModifiedAtMs": DAY_MS,
+            })],
+        );
+        let rejected = read_knowledge_daily_source_in(fixture.path(), &range);
+        assert_eq!(
+            rejected.metadata.error_code.as_deref(),
+            Some("snapshot_payload_invalid")
+        );
+        assert!(rejected.values.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn stale_daily_sidecar_keeps_closed_days_but_not_a_newer_open_day() {
+        let fixture = SourceFixture::new();
+        let historical = validate_range(&input(ExportFormat::Json)).unwrap();
+        write_daily_sidecar_with_freshness(
+            fixture.path(),
+            "run-manager",
+            vec![
+                run_day("2024-01-01", 0, DAY_MS, 2),
+                run_day("2024-01-02", DAY_MS, DAY_MS * 2, 3),
+            ],
+            MAX_DAILY_SNAPSHOT_FRESHNESS_MS + 1,
+        );
+        let closed = read_run_daily_source_in(fixture.path(), &historical);
+        assert!(closed.metadata.available);
+        assert!(closed.values.iter().all(Option::is_some));
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        let start_ms = now_ms.saturating_sub(60 * 60 * 1_000);
+        let open_input = ExportInput {
+            start_date: "2026-08-30".into(),
+            end_date: "2026-08-30".into(),
+            timezone: "UTC".into(),
+            day_start: start_ms,
+            day_end: start_ms + DAY_MS,
+            day_boundaries: vec![ExportDayBoundary {
+                date: "2026-08-30".into(),
+                start_ms,
+                end_ms: start_ms + DAY_MS,
+            }],
+            format: ExportFormat::Json,
+        };
+        let open_range = validate_range(&open_input).unwrap();
+        write_daily_sidecar_with_freshness(
+            fixture.path(),
+            "run-manager",
+            vec![run_day("2026-08-30", start_ms, start_ms + DAY_MS, 7)],
+            MAX_DAILY_SNAPSHOT_FRESHNESS_MS + 1,
+        );
+        let open = read_run_daily_source_in(fixture.path(), &open_range);
+        assert!(!open.metadata.available);
+        assert_eq!(open.metadata.scope, REQUESTED_RANGE_PARTIAL_SCOPE);
+        assert_eq!(open.metadata.error_code.as_deref(), Some("snapshot_stale"));
+        assert!(open.values[0].is_none());
+    }
+
     fn valid_empty_sources() -> Vec<SourceMetadata> {
         vec![
             SourceMetadata {
@@ -2505,8 +3182,8 @@ mod tests {
                 producer_version: None,
                 generated_at: None,
                 freshness_ms: None,
-                view: None,
-                scope: LATEST_SNAPSHOT_OUT_OF_RANGE_SCOPE.into(),
+                view: Some(DAILY_ACTIVITY_VIEW.into()),
+                scope: REQUESTED_RANGE_SCOPE.into(),
                 error_code: Some("snapshot_unavailable".into()),
             },
             SourceMetadata {
@@ -2517,8 +3194,8 @@ mod tests {
                 producer_version: None,
                 generated_at: None,
                 freshness_ms: None,
-                view: None,
-                scope: LATEST_SNAPSHOT_OUT_OF_RANGE_SCOPE.into(),
+                view: Some(DAILY_ACTIVITY_VIEW.into()),
+                scope: REQUESTED_RANGE_SCOPE.into(),
                 error_code: Some("snapshot_unavailable".into()),
             },
         ]
@@ -2896,6 +3573,9 @@ mod tests {
                     .unwrap(),
                     session_count: day_sessions.len(),
                     git_commits: 0,
+                    run_succeeded: None,
+                    run_failed: None,
+                    knowledge_notes_modified: None,
                 }
             })
             .collect();
@@ -2944,6 +3624,10 @@ mod tests {
         tampered.sources[2].error_code = Some("git_timeout".into());
         assert!(!validate_document(&tampered));
 
+        let mut tampered = document.clone();
+        tampered.daily[0].run_succeeded = Some(1);
+        assert!(!validate_document(&tampered));
+
         let mut tampered = document;
         tampered.sessions[0].duration_ms = tampered.sessions[0]
             .end_ts_ms
@@ -2979,16 +3663,13 @@ mod tests {
                 }],
                 git: ExportGit::default(),
                 run: Some(RunDigest {
-                    success: 2,
+                    succeeded: 2,
                     failed: 1,
-                    active_service_count: 1,
-                    active_service_uptime_ms: 42,
                     last_run_at_ms: Some(9),
                 }),
                 knowledge: Some(KnowledgeDigest {
-                    notes_modified_today: 3,
+                    notes_modified: 3,
                     last_modified_at_ms: Some(8),
-                    identifiers_truncated: true,
                 }),
             },
             daily: vec![],
@@ -3008,8 +3689,8 @@ mod tests {
         let csv = render(&document, ExportFormat::Csv).unwrap().content;
         assert!(csv.starts_with("record_type,date,range_start_date"));
         assert!(csv.contains("\"line\nvalue\""));
-        assert!(csv.contains("run_active_service_uptime_ms,42"));
-        assert!(csv.contains("knowledge_identifiers_truncated,true"));
+        assert!(csv.contains("run_succeeded,2"));
+        assert!(csv.contains("knowledge_notes_modified,3"));
         assert!(csv.lines().next().unwrap().split(',').count() == 24);
         assert_eq!(
             render(&document, ExportFormat::Json).unwrap().origin,
@@ -3066,7 +3747,7 @@ mod tests {
             SourceMetadata {
                 id: "life-log".into(),
                 available: true,
-                schema_version: Some(1),
+                schema_version: Some(EXPORT_SCHEMA_VERSION),
                 snapshot_version: None,
                 producer_version: Some("0.5.0".into()),
                 generated_at: None,
@@ -3095,8 +3776,8 @@ mod tests {
                 producer_version: Some("0.5.0".into()),
                 generated_at: Some("2024-01-01T00:00:00Z".into()),
                 freshness_ms: Some(10),
-                view: None,
-                scope: LATEST_SNAPSHOT_OUT_OF_RANGE_SCOPE.into(),
+                view: Some(DAILY_ACTIVITY_VIEW.into()),
+                scope: REQUESTED_RANGE_SCOPE.into(),
                 error_code: None,
             },
             SourceMetadata {
@@ -3107,8 +3788,8 @@ mod tests {
                 producer_version: None,
                 generated_at: None,
                 freshness_ms: None,
-                view: None,
-                scope: LATEST_SNAPSHOT_OUT_OF_RANGE_SCOPE.into(),
+                view: Some(DAILY_ACTIVITY_VIEW.into()),
+                scope: REQUESTED_RANGE_SCOPE.into(),
                 error_code: Some("snapshot_unavailable".into()),
             },
         ];
@@ -3149,7 +3830,7 @@ mod tests {
         assert!(result.metadata.freshness_ms.is_some());
         assert_eq!(
             result.digest,
-            Some(RunDigest {
+            Some(LegacyRunDigest {
                 success: 3,
                 failed: 1,
                 active_service_count: 1,
@@ -3229,11 +3910,11 @@ mod tests {
             producer_version: Some("0.5.0".into()),
             generated_at: Some("2024-01-01T00:00:00Z".into()),
             freshness_ms: Some(MAX_PROVENANCE_FRESHNESS_MS + 1),
-            view: None,
-            scope: LATEST_SNAPSHOT_OUT_OF_RANGE_SCOPE.into(),
+            view: Some(DAILY_ACTIVITY_VIEW.into()),
+            scope: REQUESTED_RANGE_SCOPE.into(),
             error_code: None,
         };
-        assert!(!valid_snapshot_source(&source, "run-manager", false));
+        assert!(!valid_daily_snapshot_source(&source, "run-manager"));
     }
 
     #[test]
@@ -3289,7 +3970,7 @@ mod tests {
         let result = read_knowledge_source_in(fixture.path());
         assert_eq!(
             result.digest,
-            Some(KnowledgeDigest {
+            Some(LegacyKnowledgeDigest {
                 notes_modified_today: 2,
                 last_modified_at_ms: Some(1_700_000_000_000),
                 identifiers_truncated: false,

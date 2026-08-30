@@ -268,7 +268,10 @@ pub fn perform_text_action(
                 kind: text.kind,
                 source_app: "devbox-launcher".into(),
                 target_app: Some(target_app.clone()),
-                payload: serde_json::json!({ "text": text.text }),
+                payload: serde_json::to_value(devbox_applink::ToolboxTextPayload {
+                    text: text.text,
+                })
+                .map_err(|_| "텍스트 handoff를 안전하게 만들 수 없습니다")?,
             },
             now_ms,
         )

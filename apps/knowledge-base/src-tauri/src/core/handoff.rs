@@ -1,4 +1,4 @@
-//! Knowledge receiver for Life Log's `knowledge-draft/v1` handoff.
+//! Knowledge receiver for versioned Life Log and Developer Toolbox drafts.
 //!
 //! This is a deliberately strict, app-local copy of the wire contract.  The
 //! generic applink envelope checks protocol, target, size, and storage safety;
@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 pub const KNOWLEDGE_DRAFT_KIND: &str = "knowledge-draft/v1";
 pub const KNOWLEDGE_DRAFT_SCHEMA_VERSION: u32 = 1;
+pub const TOOLBOX_DRAFT_KIND: &str = "knowledge-draft/v2";
+pub const TOOLBOX_DRAFT_SCHEMA_VERSION: u32 = 2;
 pub const MAX_DRAFT_TITLE_BYTES: usize = 256;
 pub const MAX_DRAFT_BODY_BYTES: usize = 512 * 1024;
 pub const MAX_DRAFT_PAYLOAD_BYTES: usize = 768 * 1024;
@@ -64,59 +66,147 @@ pub struct KnowledgeDraftSource {
     pub error_code: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ToolboxDraftPayload {
+    pub schema_version: u32,
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+    pub created_date: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IncomingKnowledgeDraft {
+    LifeLog(KnowledgeDraftPayload),
+    Toolbox(ToolboxDraftPayload),
+}
+
+impl IncomingKnowledgeDraft {
+    pub fn title(&self) -> &str {
+        match self {
+            Self::LifeLog(payload) => &payload.title,
+            Self::Toolbox(payload) => &payload.title,
+        }
+    }
+
+    pub fn body(&self) -> &str {
+        match self {
+            Self::LifeLog(payload) => &payload.body,
+            Self::Toolbox(payload) => &payload.body,
+        }
+    }
+
+    pub fn tags(&self) -> &[String] {
+        match self {
+            Self::LifeLog(payload) => &payload.tags,
+            Self::Toolbox(payload) => &payload.tags,
+        }
+    }
+
+    pub fn note_stem(&self) -> String {
+        match self {
+            Self::LifeLog(payload) => format!(
+                "Journal/{}-life-log-{}",
+                payload.summary.start_date, payload.summary.period
+            ),
+            Self::Toolbox(payload) => {
+                format!("Journal/{}-developer-toolbox-result", payload.created_date)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeDraftPreview {
     pub id: String,
     pub kind: String,
+    pub producer_id: String,
     pub expires_at_ms: u64,
     pub lease_until_ms: u64,
     pub title: String,
     pub body: String,
     pub tags: Vec<String>,
-    pub summary: KnowledgeDraftSummary,
+    pub summary: Option<KnowledgeDraftSummary>,
     pub sources: Vec<KnowledgeDraftSource>,
 }
 
 impl KnowledgeDraftPreview {
-    pub fn from_claim(claim: &HandoffClaim, payload: &KnowledgeDraftPayload) -> Self {
+    pub fn from_claim(claim: &HandoffClaim, payload: &IncomingKnowledgeDraft) -> Self {
+        let (summary, sources) = match payload {
+            IncomingKnowledgeDraft::LifeLog(payload) => {
+                (Some(payload.summary.clone()), payload.sources.clone())
+            }
+            IncomingKnowledgeDraft::Toolbox(_) => (None, Vec::new()),
+        };
         Self {
             id: claim.envelope.id.clone(),
             kind: claim.envelope.kind.clone(),
+            producer_id: claim.envelope.source_app.clone(),
             expires_at_ms: claim.envelope.expires_at_ms,
             lease_until_ms: claim.lease_until_ms,
-            title: payload.title.clone(),
-            body: payload.body.clone(),
-            tags: payload.tags.clone(),
-            summary: payload.summary.clone(),
-            sources: payload.sources.clone(),
+            title: payload.title().to_string(),
+            body: payload.body().to_string(),
+            tags: payload.tags().to_vec(),
+            summary,
+            sources,
         }
     }
 }
 
 /// Convert a generic claimed envelope into a validated business payload.
-pub fn parse_claim(claim: &HandoffClaim) -> Result<KnowledgeDraftPayload, String> {
-    if claim.envelope.kind != KNOWLEDGE_DRAFT_KIND
-        || claim.envelope.source_app != "life-log"
-        || claim.envelope.target_app.as_deref() != Some("knowledge-base")
-    {
+pub fn parse_claim(claim: &HandoffClaim) -> Result<IncomingKnowledgeDraft, String> {
+    if claim.envelope.target_app.as_deref() != Some("knowledge-base") {
         return Err("handoff draft 출처 또는 대상이 올바르지 않습니다".into());
     }
-    let payload: KnowledgeDraftPayload = serde_json::from_value(claim.envelope.payload.clone())
-        .map_err(|_| "handoff draft 형식이 올바르지 않습니다".to_string())?;
-    validate_knowledge_draft(&payload)?;
-    let serialized =
-        serde_json::to_vec(&payload).map_err(|_| "handoff draft를 읽을 수 없습니다".to_string())?;
+    let payload = match (
+        claim.envelope.kind.as_str(),
+        claim.envelope.source_app.as_str(),
+    ) {
+        (KNOWLEDGE_DRAFT_KIND, "life-log") => {
+            let payload: KnowledgeDraftPayload =
+                serde_json::from_value(claim.envelope.payload.clone())
+                    .map_err(|_| "handoff draft 형식이 올바르지 않습니다".to_string())?;
+            validate_knowledge_draft(&payload)?;
+            IncomingKnowledgeDraft::LifeLog(payload)
+        }
+        (TOOLBOX_DRAFT_KIND, "developer-toolbox") => {
+            let payload: ToolboxDraftPayload =
+                serde_json::from_value(claim.envelope.payload.clone())
+                    .map_err(|_| "handoff draft 형식이 올바르지 않습니다".to_string())?;
+            validate_toolbox_draft(&payload)?;
+            IncomingKnowledgeDraft::Toolbox(payload)
+        }
+        _ => return Err("handoff draft 출처 또는 대상이 올바르지 않습니다".into()),
+    };
+    let serialized = serde_json::to_vec(&claim.envelope.payload)
+        .map_err(|_| "handoff draft를 읽을 수 없습니다".to_string())?;
     if serialized.len() > MAX_DRAFT_PAYLOAD_BYTES {
         return Err("handoff draft가 크기 제한을 초과했습니다".into());
     }
     Ok(payload)
 }
 
+pub fn validate_toolbox_draft(payload: &ToolboxDraftPayload) -> Result<(), String> {
+    if payload.schema_version != TOOLBOX_DRAFT_SCHEMA_VERSION
+        || payload.title != format!("Developer Toolbox result · {}", payload.created_date)
+        || payload.tags != ["developer-toolbox".to_string(), "draft".to_string()]
+        || !valid_date_key(&payload.created_date)
+        || !bounded_text(&payload.title, MAX_DRAFT_TITLE_BYTES, false)
+        || payload.body.trim().is_empty()
+        || !bounded_text(&payload.body, MAX_DRAFT_BODY_BYTES, true)
+        || devbox_applink::validate_handoff_text(&payload.body).is_err()
+    {
+        return Err("handoff draft 형식이 올바르지 않습니다".into());
+    }
+    Ok(())
+}
+
 pub fn map_claim_error(error: &HandoffError) -> &'static str {
     match error {
         HandoffError::Missing | HandoffError::Expired | HandoffError::LeaseExpired => {
-            "Knowledge draft를 사용할 수 없거나 만료되었습니다. Life Log에서 새로 생성하세요."
+            "Knowledge draft를 사용할 수 없거나 만료되었습니다. 보낸 앱에서 새로 생성하세요."
         }
         HandoffError::AlreadyClaimed => "Knowledge draft가 이미 미리보기 중입니다.",
         HandoffError::WrongTarget | HandoffError::WrongKind => {
@@ -148,8 +238,12 @@ pub fn validate_knowledge_draft(payload: &KnowledgeDraftPayload) -> Result<(), S
         return Err("handoff draft 제목이 올바르지 않습니다".into());
     }
     validate_summary(&payload.summary)?;
+    let source_contract = payload.sources[0].schema_version.unwrap_or_default();
+    if !matches!(source_contract, 1 | 2) {
+        return Err("handoff draft 출처가 올바르지 않습니다".into());
+    }
     for (source, expected_id) in payload.sources.iter().zip(EXPECTED_SOURCE_IDS) {
-        validate_source(source, expected_id)?;
+        validate_source(source, expected_id, source_contract)?;
     }
     if payload.body.len() > MAX_DRAFT_BODY_BYTES
         || !payload.body.starts_with(BODY_HEADER)
@@ -206,7 +300,11 @@ fn validate_summary(summary: &KnowledgeDraftSummary) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_source(source: &KnowledgeDraftSource, expected_id: &str) -> Result<(), String> {
+fn validate_source(
+    source: &KnowledgeDraftSource,
+    expected_id: &str,
+    source_contract: u32,
+) -> Result<(), String> {
     if source.id != expected_id
         || !bounded_text(&source.scope, 64, false)
         || source
@@ -225,24 +323,32 @@ fn validate_source(source: &KnowledgeDraftSource, expected_id: &str) -> Result<(
             .freshness_ms
             .is_some_and(|value| value > MAX_PROVENANCE_FRESHNESS_MS)
         || source.view.as_deref().is_some_and(|value| {
-            !bounded_text(value, 64, false) || !matches!(value, "activity" | "legacy-data")
+            !bounded_text(value, 64, false)
+                || !matches!(value, "activity" | "legacy-data" | "daily-activity")
         })
     {
         return Err("handoff draft 출처가 올바르지 않습니다".into());
     }
-    let expected_scope = if matches!(expected_id, "run-manager" | "knowledge-base") {
-        "latest-snapshot-out-of-range"
+    let valid_scope = if matches!(expected_id, "run-manager" | "knowledge-base") {
+        if source_contract == 1 {
+            source.scope == "latest-snapshot-out-of-range"
+        } else {
+            matches!(
+                source.scope.as_str(),
+                "requested-range" | "requested-range-partial"
+            )
+        }
     } else {
-        "requested-range"
+        source.scope == "requested-range"
     };
-    if source.scope != expected_scope {
+    if !valid_scope {
         return Err("handoff draft 출처 범위가 올바르지 않습니다".into());
     }
     match expected_id {
         "life-log" => {
             if !source.available
                 || source.error_code.is_some()
-                || source.schema_version != Some(1)
+                || source.schema_version != Some(source_contract)
                 || source.snapshot_version.is_some()
                 || source.producer_version.is_none()
                 || source.generated_at.is_some()
@@ -275,6 +381,15 @@ fn validate_source(source: &KnowledgeDraftSource, expected_id: &str) -> Result<(
                         || source.producer_version.is_none()
                         || source.generated_at.is_none()
                         || source.freshness_ms.is_none())
+                || (source_contract == 2
+                    && (source.view.as_deref() != Some("daily-activity")
+                        || (source.available && source.scope != "requested-range")
+                        || (source.scope == "requested-range-partial" && source.available)))
+                || (source_contract == 1
+                    && source.view.as_deref().is_some_and(|view| {
+                        expected_id != "knowledge-base"
+                            || !matches!(view, "activity" | "legacy-data")
+                    }))
             {
                 return Err("handoff draft 출처가 올바르지 않습니다".into());
             }
@@ -352,7 +467,7 @@ fn bounded_text(value: &str, max_bytes: usize, allow_newlines: bool) -> bool {
     !value.is_empty()
         && value.len() <= max_bytes
         && !value.chars().any(|character| {
-            character.is_control() && (!allow_newlines || !matches!(character, '\n' | '\r'))
+            character.is_control() && (!allow_newlines || !matches!(character, '\n' | '\r' | '\t'))
         })
 }
 
@@ -514,6 +629,9 @@ fn safe_source_error(value: &str) -> bool {
             | "snapshot_payload_invalid"
             | "snapshot_changed_during_read"
             | "snapshot_stale"
+            | "snapshot_range_partial"
+            | "snapshot_range_unavailable"
+            | "snapshot_boundary_mismatch"
             | "git_invalid_arguments"
             | "git_spawn_failed"
             | "git_stdout_unavailable"
@@ -576,6 +694,7 @@ fn valid_generated_at(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use devbox_applink::{HandoffEnvelope, PROTOCOL_VERSION};
 
     fn fixture() -> KnowledgeDraftPayload {
         let summary = KnowledgeDraftSummary {
@@ -712,5 +831,69 @@ mod tests {
         payload.sources.last_mut().unwrap().freshness_ms = Some(MAX_PROVENANCE_FRESHNESS_MS + 1);
         payload.body = render_body(&payload.summary, &payload.sources);
         assert!(validate_knowledge_draft(&payload).is_err());
+    }
+
+    #[test]
+    fn toolbox_v2_claim_is_separate_from_the_life_log_contract() {
+        let payload = ToolboxDraftPayload {
+            schema_version: TOOLBOX_DRAFT_SCHEMA_VERSION,
+            title: "Developer Toolbox result · 2026-08-30".into(),
+            body: "safe\ntransformed output".into(),
+            tags: vec!["developer-toolbox".into(), "draft".into()],
+            created_date: "2026-08-30".into(),
+        };
+        let claim = HandoffClaim {
+            envelope: HandoffEnvelope {
+                protocol_version: PROTOCOL_VERSION,
+                id: "a".repeat(32),
+                kind: TOOLBOX_DRAFT_KIND.into(),
+                source_app: "developer-toolbox".into(),
+                target_app: Some("knowledge-base".into()),
+                created_at_ms: 1,
+                expires_at_ms: 10,
+                payload: serde_json::to_value(&payload).unwrap(),
+            },
+            claim_token: "b".repeat(32),
+            lease_until_ms: 9,
+        };
+
+        assert_eq!(
+            parse_claim(&claim),
+            Ok(IncomingKnowledgeDraft::Toolbox(payload.clone()))
+        );
+        let preview =
+            KnowledgeDraftPreview::from_claim(&claim, &IncomingKnowledgeDraft::Toolbox(payload));
+        assert_eq!(preview.kind, TOOLBOX_DRAFT_KIND);
+        assert_eq!(preview.producer_id, "developer-toolbox");
+        assert!(preview.summary.is_none());
+        assert!(preview.sources.is_empty());
+
+        let mut wrong_source = claim.clone();
+        wrong_source.envelope.source_app = "life-log".into();
+        assert!(parse_claim(&wrong_source).is_err());
+        let mut wrong_shape = claim;
+        wrong_shape.envelope.payload["summary"] = serde_json::json!({});
+        assert!(parse_claim(&wrong_shape).is_err());
+    }
+
+    #[test]
+    fn toolbox_v2_rejects_raw_credentials_and_unbounded_or_forged_metadata() {
+        let fixture = || ToolboxDraftPayload {
+            schema_version: TOOLBOX_DRAFT_SCHEMA_VERSION,
+            title: "Developer Toolbox result · 2026-08-30".into(),
+            body: "safe output".into(),
+            tags: vec!["developer-toolbox".into(), "draft".into()],
+            created_date: "2026-08-30".into(),
+        };
+        assert!(validate_toolbox_draft(&fixture()).is_ok());
+        let mut raw = fixture();
+        raw.body = "Bearer raw-value".into();
+        assert!(validate_toolbox_draft(&raw).is_err());
+        let mut forged = fixture();
+        forged.tags.push("untrusted".into());
+        assert!(validate_toolbox_draft(&forged).is_err());
+        let mut invalid_date = fixture();
+        invalid_date.created_date = "2026-02-29".into();
+        assert!(validate_toolbox_draft(&invalid_date).is_err());
     }
 }

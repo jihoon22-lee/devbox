@@ -12,10 +12,16 @@ import type {
   SourceSummary,
   SourcesSnapshot,
   LogSourcePreview,
+  ToolboxDispatch,
 } from "./types";
+
+export type { ToolboxDispatch } from "./types";
 
 const MAX_RECORDS = 100_000;
 const MAX_EXPORT_BYTES = 8 * 1024 * 1024;
+export const TOOLBOX_TEXT_BROWSER_ERROR =
+  "Developer Toolbox handoff is desktop-only; clipboard fallback is disabled.";
+export const TOOLBOX_TEXT_INVALID_ERROR = "Developer Toolbox handoff response was invalid.";
 
 const HANDOFF_FAILURE_CODES = [
   "handoff-invalid",
@@ -314,6 +320,29 @@ export async function readSources(
 
 export async function cancelRead(operationId: string): Promise<void> {
   if (isTauri()) await invoke("cancel_read", { operationId });
+}
+
+function parseToolboxDispatch(value: unknown): ToolboxDispatch | null {
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, ["handoffId", "redacted"])
+    || typeof value.handoffId !== "string"
+    || value.handoffId.length === 0
+    || value.handoffId.length > 128
+    || /[\u0000-\u001f\u007f-\u009f]/.test(value.handoffId)
+    || typeof value.redacted !== "boolean") return null;
+  return {
+    handoffId: value.handoffId,
+    redacted: value.redacted,
+  };
+}
+
+/** Publish only the current explicit log selection to Developer Toolbox. */
+export async function sendSelectionToToolbox(text: string): Promise<ToolboxDispatch> {
+  if (!isTauri()) throw new Error(TOOLBOX_TEXT_BROWSER_ERROR);
+  const response = await invoke<unknown>("send_selection_to_toolbox", { text });
+  const dispatch = parseToolboxDispatch(response);
+  if (!dispatch) throw new Error(TOOLBOX_TEXT_INVALID_ERROR);
+  return dispatch;
 }
 
 export async function filterRecords(records: LogRecord[], filter: FilterSpec): Promise<LogRecord[]> {
