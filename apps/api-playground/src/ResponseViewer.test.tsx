@@ -230,10 +230,12 @@ describe("ResponseViewer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Send selection to Developer Toolbox" }));
 
-    await waitFor(() => expect(sendSelectionMock).toHaveBeenCalledWith("safe"));
+    await waitFor(() => {
+      expect(sendSelectionMock).toHaveBeenCalledWith("safe");
+      expect(screen.getByRole("status").textContent).toBe(TOOLBOX_SELECTION_MESSAGES.success);
+    });
     expect(sendSelectionMock).toHaveBeenCalledTimes(1);
     expect(document.body.textContent).not.toContain("C:\\raw\\header");
-    expect(screen.getByRole("status").textContent).toBe(TOOLBOX_SELECTION_MESSAGES.success);
   });
 
   it("rejects an empty selection without invoking the native handoff", async () => {

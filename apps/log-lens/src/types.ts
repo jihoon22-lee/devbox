@@ -97,7 +97,7 @@ export type HandoffOpenTarget = { kind: "handoff"; handoffKind: string; id: stri
 export interface LogSourcePreview {
   id: string;
   kind: "log-source/v1";
-  sourceApp: "run-manager" | "wsl-desktop";
+  sourceApp: "run-manager" | "port-manager" | "wsl-desktop";
   expiresAtMs: number;
   leaseUntilMs: number;
   source: SourceSummary;

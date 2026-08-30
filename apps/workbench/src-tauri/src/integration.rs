@@ -6,12 +6,15 @@
 //! Project paths, environment metadata, service ids, and other profile
 //! details never cross the integration boundary.
 
+use crate::commands::workspace::{load_store_document, ProfileStoreState};
 use crate::core::profile::{validate_profile_id, ProfileStore, ProjectProfile, MAX_PROFILES};
 use devbox_applink::contains_sensitive_value;
 use devbox_integration::{Envelope, SnapshotView, SnapshotViews};
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::path::Path;
+use std::sync::Arc;
+use tauri::AppHandle;
 
 const PRODUCER_ID: &str = "workbench";
 pub const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
@@ -21,6 +24,7 @@ const MAX_PROFILE_LABEL_BYTES: usize = 256;
 const PROFILE_LABEL_FALLBACK: &str = "Workbench 프로필";
 const PROFILE_DETAIL: &str = "Workbench · profile";
 const SNAPSHOT_ERROR: &str = "Workbench profile snapshot을 만들 수 없습니다";
+const SNAPSHOT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,9 +56,83 @@ pub(crate) fn write_profiles(store: &ProfileStore) -> Result<(), String> {
     write_profiles_in(&devbox_integration::integration_root(), store)
 }
 
+/// Refresh the durable profile projections while Workbench is running. The
+/// producer stops naturally with the process; Port Manager then marks the
+/// last sidecar stale after its own bounded freshness window.
+pub(crate) fn spawn_profile_snapshot_writer(app: AppHandle, store_state: Arc<ProfileStoreState>) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let result = match store_state.lock.lock() {
+                Ok(_store_lock) => {
+                    load_store_document(&app).and_then(|document| write_profiles(&document.store))
+                }
+                Err(_) => Err(SNAPSHOT_ERROR.to_owned()),
+            };
+            if let Err(error) = result {
+                eprintln!("workbench integration snapshot 실패: {error}");
+            }
+            tokio::time::sleep(SNAPSHOT_INTERVAL).await;
+        }
+    });
+}
+
 fn write_profiles_in(root: &Path, store: &ProfileStore) -> Result<(), String> {
     let envelope = build_profiles_envelope(store)?;
-    devbox_integration::write_named_view_snapshot_atomic(&envelope, root, PROFILES_VIEW_KIND)
+    devbox_integration::write_named_view_snapshot_atomic(&envelope, root, PROFILES_VIEW_KIND)?;
+    write_port_bindings_in(root, store)
+}
+
+fn write_port_bindings_in(root: &Path, store: &ProfileStore) -> Result<(), String> {
+    let entries = build_port_binding_entries(store)?;
+    let envelope =
+        devbox_integration::port_bindings_envelope(PRODUCER_ID, env!("CARGO_PKG_VERSION"), entries)
+            .map_err(|_| SNAPSHOT_ERROR.to_owned())?;
+    devbox_integration::write_named_view_snapshot_atomic(
+        &envelope,
+        root,
+        devbox_integration::PORT_BINDINGS_VIEW_KIND,
+    )
+}
+
+fn build_port_binding_entries(
+    store: &ProfileStore,
+) -> Result<Vec<devbox_integration::PortBindingEntry>, String> {
+    store.validate().map_err(|_| SNAPSHOT_ERROR.to_owned())?;
+    if store.profiles.len() > MAX_PROFILES {
+        return Err(SNAPSHOT_ERROR.to_owned());
+    }
+    let mut entries = Vec::new();
+    for profile in &store.profiles {
+        if !valid_opaque_id(&profile.id) {
+            return Err(SNAPSHOT_ERROR.to_owned());
+        }
+        let label = public_label(profile);
+        for port in &profile.expected_ports {
+            entries.push(devbox_integration::PortBindingEntry::WorkbenchProfile {
+                id: profile.id.clone(),
+                label: label.clone(),
+                port: *port,
+            });
+        }
+    }
+    entries.sort_by(|left, right| match (left, right) {
+        (
+            devbox_integration::PortBindingEntry::WorkbenchProfile {
+                id: left_id,
+                port: left_port,
+                ..
+            },
+            devbox_integration::PortBindingEntry::WorkbenchProfile {
+                id: right_id,
+                port: right_port,
+                ..
+            },
+        ) => (left_id, left_port).cmp(&(right_id, right_port)),
+        _ => std::cmp::Ordering::Equal,
+    });
+    devbox_integration::validate_port_binding_entries(&entries)
+        .map_err(|_| SNAPSHOT_ERROR.to_owned())?;
+    Ok(entries)
 }
 
 fn build_profiles_envelope(store: &ProfileStore) -> Result<Envelope, String> {
@@ -277,6 +355,33 @@ mod tests {
     }
 
     #[test]
+    fn expected_ports_publish_only_profile_navigation_metadata() {
+        let mut first = profile("profile-z", "Frontend", "C:/private/project");
+        first.git_root = Some("C:/private/project/.git".into());
+        first.expected_ports = vec![5173, 3000];
+        let entries = build_port_binding_entries(&store(vec![first])).unwrap();
+        assert_eq!(
+            entries,
+            vec![
+                devbox_integration::PortBindingEntry::WorkbenchProfile {
+                    id: "profile-z".into(),
+                    label: "Frontend".into(),
+                    port: 3000,
+                },
+                devbox_integration::PortBindingEntry::WorkbenchProfile {
+                    id: "profile-z".into(),
+                    label: "Frontend".into(),
+                    port: 5173,
+                },
+            ]
+        );
+        let serialized = serde_json::to_string(&entries).unwrap();
+        for private in ["C:/private/project", ".git", "windowsPath", "gitRoot"] {
+            assert!(!serialized.contains(private));
+        }
+    }
+
+    #[test]
     fn projection_is_bounded_by_profile_store_limit() {
         let bounded = store(
             (0..MAX_PROFILES)
@@ -337,6 +442,19 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(read, build_profiles_envelope(&store).unwrap());
+        let port_bindings = read_named_view_snapshot_in(
+            &root,
+            PRODUCER_ID,
+            1,
+            devbox_integration::PORT_BINDINGS_VIEW_KIND,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(
+            devbox_integration::port_bindings_from_envelope(&port_bindings)
+                .unwrap()
+                .is_empty()
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

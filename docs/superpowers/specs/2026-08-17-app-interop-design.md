@@ -11,6 +11,9 @@
   claim/preview lifecycle 보강. Run log를 실제로 읽는 Log Lens receiver adapter는 #472/#473에서
   완성됐고 v0.5.0 tag 이후 v0.5.1 stable에 포함된다. 기존 ancestor TOCTOU와
   local-adapter FIFO/UNC reader 위험은 잔여 범위다.
+- 2026-08-30: `snapshot:port-bindings/v1`의 Run Manager·Workbench 독립 producer와
+  Port Manager correlation/owner 및 Run Log Lens identity handoff를 반영한다. source freshness,
+  confidence, session timeline과 Windows packaged acceptance pending 경계를 아래 계약에 기록한다.
 - 작성일: 2026-08-17
 - 범위: 저장소 전체 — `crates/applink`, `crates/launch`, `crates/integration`, 신규
   `crates/catalog`, `apps/catalog.json`, 현재 15개 앱(Devbox Launcher·Log Lens 포함)
@@ -528,6 +531,44 @@ opaque id만 포함하며 `targetApp=run-manager`, `targetKind=task`, `payloadVe
 fallback을 사용한다. malformed/duplicate/oversized definitions는 sidecar last-good snapshot을
 보존하며 v1 status write는 계속 성공할 수 있다.
 
+**2026-08-30 `snapshot:port-bindings/v1` Port Manager correlation 계약.** Run Manager와 Workbench는
+공용 strict `port-bindings` named view(schema 1)를 각각 독립적으로 발행한다. Run Manager의
+`RunService` projection은 bounded opaque service/run identity, 안전한 label, loopback
+address/port, Windows/WSL target metadata, `logs_available`와 가능한 Windows
+`{ pid, created_at_ms }`만 담는다. Workbench의 `WorkbenchProfile` projection은 opaque profile
+identity, 안전한 label, expected port만 담는다. 두 producer의 snapshot·DB·lifecycle은 서로
+의존하지 않는다.
+
+Port Manager는 각 `generatedAt`이 현재 시각으로부터 180초 이내인 source만 `available`로 사용하고,
+파일 없음·strict schema/entry 오류·freshness 초과를 각각 `missing`·`invalid`·`stale` source
+diagnostic으로 격리한다. 하나의 bad producer가 다른 producer나 native listener snapshot을
+실패시키지 않는다. Port Manager 응답 correlation은 `source_app`, `target_kind`, `target_id`,
+`label`, `confidence`, `action_key`, `logs_available`를 사용한다. `verified`는 Windows listener의
+PID와 process creation FILETIME을 native에서 정확한 epoch milliseconds로 바꾼 값이 Run
+identity와 exact match인 경우뿐이다. `declared`는 Run의 loopback address/port/target(source·distro)이 맞지만
+그 identity를 확인하지 못한 경우이고, `expected`는 Workbench expected port와의 예측이다.
+WSL에는 verified ownership을 부여하지 않는다.
+confidence/source/id 순으로 정렬한 correlation은 listener당 64개·snapshot 총 4,096개로 제한하고,
+잘림은 `correlations_truncated`로 반환해 UI가 명시적으로 진단한다.
+
+`action_key`는 opaque 값이며 owner navigation은 Run Manager task 또는 Workbench profile만
+native launch로 연다. `logs_available`가 true인 Run correlation에 한해 stdout/stderr Log Lens
+action을 제공하며, `log-source/v1` handoff는 `{ kind, sourceId, runId, stream }` identity만
+운반한다. owner/log action은 native listener를 다시 수집하고 producer view를 다시 읽어 current
+action을 재검증하며, 기존 listener kill도 endpoint와 process identity를 native에서 재수집·재검증한
+뒤 명시적으로 실행한다. correlation은 자동 kill/restart를 제공하지 않는다. raw path, command,
+environment와 log bytes는 snapshot·correlation·handoff·argv 경계를 넘지 않는다.
+동일 선언의 주기적 heartbeat는 action key를 회전시키지 않지만 listener identity 또는 target/run
+identity가 바뀌면 key가 달라지며 이전 action은 stale로 거부된다.
+
+Port Manager refresh timeline은 persistence 없는 session-only ring이다. 최초 성공 snapshot은
+baseline으로만 삼아 event를 만들지 않고, 성공한 이후 snapshot에서 관측 시각과 함께 `opened`,
+`closed`, `changed`, `owner-changed`를 기록한다. failed poll은 baseline/timeline을 변경하지 않으며, timeline은 최신
+256 event로 제한한다. 각 event에는 address, process name, owner label만 남기며 command line,
+executable path, action key는 보관하지 않는다. 이 cross-app correlation/owner/Log Lens 경로의 Windows packaged 실기
+acceptance는 아직 pending이며, local source/test/build 결과를 installed validation 완료로 해석하지
+않는다.
+
 ### 4.2 자동 발견
 
 지금은 consumer가 producer id를 하드코딩한다. 새 producer가 생겨도 아무도 모른다.
@@ -684,5 +725,6 @@ single-instance·preview/apply/cancel·fixed error/no-clipboard 경계를 포함
 | 16 | Log Lens `log-source/v1` claim/preview boundary + #472 fixed Run rotation reader | v0.5.0 + post-release main completion |
 | 17 | Developer Toolbox → API Playground `api-request/v1` (P3 integration) | v0.5.0 |
 | 18 | Run Manager·WSL Desktop → Log Lens `log-source/v1` producer integration | v0.5.0 |
+| 19 | Run Manager·Workbench → Port Manager `snapshot:port-bindings/v1` correlation + Port → Log Lens routing | v0.6.0 |
 
 1과 2는 한 PR로 묶는다 — 계약과 첫 소비자를 분리하면 검증이 안 된다.

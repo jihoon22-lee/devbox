@@ -25,6 +25,12 @@ in-memory ring (100,000 lines or 64 MiB).
   selected app-owned stdout/stderr rotation segments in logical-offset order.
   A producer path, database row, command, environment value, or raw log is not
   accepted through the handoff boundary.
+- When Port Manager exposes a Run correlation with `logs_available`, its
+  stdout/stderr Log Lens actions still use the same identity-only Run handoff.
+  Port Manager's native action re-collects the listener and re-reads the
+  current producer view before publishing it; Log Lens receives no listener
+  path, command, environment, or log bytes and resolves the app-owned source
+  from `{kind, sourceId, runId, stream}` only.
 - The receiver re-checks protocol version, opaque envelope/claim identity,
   timestamps, lease bounds, target, producer, and source-family parity at the
   claim boundary. Native responses are schema-validated again in the frontend
@@ -90,6 +96,10 @@ CARGO_TARGET_DIR=/tmp/devbox-log-lens-target CARGO_INCREMENTAL=0 cargo test -p l
 The packaged Windows W3 smoke remains necessary for installed WSL and
 Docker/Podman availability, native file identity semantics, and download,
 clipboard, focus, and IME behavior.
+
+The Port Manager correlation and owner/Log Lens handoff path still has pending
+packaged-Windows real acceptance; local tests and builds do not imply that
+installed cross-app validation is complete.
 
 The Log Lens bootstrap is included in the published v0.5.0 assets. The Run
 reader was completed by #472/#473 after the v0.5.0 tag and is included in the

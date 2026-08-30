@@ -12,7 +12,8 @@ use crate::core::history::History;
 use crate::core::http::{self, ParseError, ParsedRequest, MAX_ACTIVE_CONNECTIONS};
 use crate::core::replay::{self, ReplayError, ReplayRateLimiter};
 use crate::core::rules::{
-    matches, upsert, ResponseRule, ResponseSequenceState, INVALID_RULE_ERROR,
+    compare_rule_precedence, plan_upsert, select_matching_rule, upsert, ResponseRule,
+    ResponseSequenceState, RuleConflictPreview, INVALID_RULE_ERROR,
 };
 use devbox_applink::{handoff_root_in, CreateHandoff, HandoffError, HandoffStore, OpenRequest};
 use serde::Serialize;
@@ -43,6 +44,10 @@ pub const REPLAY_RATE_LIMIT_ERROR: &str = "replay 요청이 너무 많습니다.
 pub const REPLAY_NETWORK_ERROR: &str = "replay 요청을 보내지 못했습니다";
 pub const REPLAY_RESPONSE_ERROR: &str = "replay 응답을 읽지 못했습니다";
 pub const SEQUENCE_RESET_ERROR: &str = "response sequence를 초기화하지 못했습니다";
+pub const RULE_CONFLICT_CONFIRMATION_ERROR: &str =
+    "겹치는 규칙을 저장하려면 충돌 확인이 필요합니다";
+pub const RUN_DEFINITION_EXPORT_ERROR: &str =
+    "실행 중인 loopback 서버만 Run Manager 서비스로 내보낼 수 있습니다";
 pub const API_TARGET_UNAVAILABLE_ERROR: &str =
     "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다";
 pub const API_LAUNCH_ERROR: &str =
@@ -156,6 +161,15 @@ pub fn start_server(
     port: u16,
     allow_lan: Option<bool>,
 ) -> Result<ServerStatus, String> {
+    start_server_inner(state.inner(), bind, port, allow_lan)
+}
+
+pub(crate) fn start_server_inner(
+    state: &Arc<ServerState>,
+    bind: Option<String>,
+    port: u16,
+    allow_lan: Option<bool>,
+) -> Result<ServerStatus, String> {
     let _lifecycle = state
         .lifecycle_lock
         .lock()
@@ -165,7 +179,7 @@ pub fn start_server(
         let mut running = state.running.lock().map_err(|_| BIND_ERROR.to_string())?;
         match running.as_ref() {
             Some(flag) if flag.load(Ordering::Acquire) => {
-                return Ok(current_server_status(state.inner()));
+                return Ok(current_server_status(state));
             }
             Some(_) => running.take(),
             None => None,
@@ -176,7 +190,7 @@ pub fn start_server(
     // response write must not keep a replacement listener from binding.
     // Also cover an old worker set left by an accept-loop failure where the
     // running flag was already cleared before the command observed it.
-    shutdown_active_connections(state.inner());
+    shutdown_active_connections(state);
     if let Some(thread) = state
         .server_thread
         .lock()
@@ -223,7 +237,7 @@ pub fn start_server(
         .set_nonblocking(true)
         .map_err(|_| BIND_ERROR.to_string())?;
     let running = Arc::new(AtomicBool::new(true));
-    let state_arc = Arc::clone(&state);
+    let state_arc = Arc::clone(state);
     let listener_running = Arc::clone(&running);
     let thread = thread::Builder::new()
         .name("webhook-lab-listener".to_string())
@@ -236,8 +250,8 @@ pub fn start_server(
         .lock()
         .map_err(|_| BIND_ERROR.to_string())? = Some(thread);
     *state.address.lock().map_err(|_| BIND_ERROR.to_string())? = Some(address);
-    advance_listener_generation(state.inner());
-    Ok(current_server_status(state.inner()))
+    advance_listener_generation(state);
+    Ok(current_server_status(state))
 }
 
 #[tauri::command]
@@ -379,14 +393,12 @@ fn handle_request(
         return;
     }
 
-    // rule 매치 → 응답
-    // HashMap iteration order is unspecified. Matching order is not a
-    // priority or determinism contract for response rules.
+    // The pure selector owns the same stable precedence used by preview/list.
     let response = match (state.rules.lock(), state.sequence_cursors.lock()) {
-        (Ok(rules), Ok(mut cursors)) => rules
-            .values()
-            .find(|rule| matches(rule, &request.method, &request.target))
-            .map(|rule| cursors.next_response(rule)),
+        (Ok(rules), Ok(mut cursors)) => {
+            select_matching_rule(rules.values(), &request.method, &request.target)
+                .map(|rule| cursors.next_response(rule))
+        }
         _ => {
             let _ = http::write_response_for_method(
                 stream,
@@ -976,14 +988,29 @@ fn map_handoff_create_error(error: HandoffError) -> String {
 #[tauri::command]
 pub fn list_rules(state: tauri::State<'_, Arc<ServerState>>) -> Vec<ResponseRule> {
     let mut rules: Vec<ResponseRule> = state.rules.lock().unwrap().values().cloned().collect();
-    rules.sort_by(|a, b| a.id.cmp(&b.id));
+    rules.sort_by(compare_rule_precedence);
     rules
+}
+
+#[tauri::command]
+pub fn preview_rule_conflicts(
+    state: tauri::State<'_, Arc<ServerState>>,
+    rule: ResponseRule,
+) -> Result<RuleConflictPreview, String> {
+    let rules = state
+        .rules
+        .lock()
+        .map_err(|_| INVALID_RULE_ERROR.to_string())?;
+    plan_upsert(&rules, rule)
+        .map(|plan| plan.preview)
+        .map_err(|_| INVALID_RULE_ERROR.to_string())
 }
 
 #[tauri::command]
 pub fn set_rule(
     state: tauri::State<'_, Arc<ServerState>>,
     rule: ResponseRule,
+    confirm_conflicts: bool,
 ) -> Result<String, String> {
     let mut rules = state
         .rules
@@ -996,7 +1023,11 @@ pub fn set_rule(
         .sequence_cursors
         .lock()
         .map_err(|_| INVALID_RULE_ERROR.to_string())?;
-    let result = upsert(&mut rules, rule);
+    let plan = plan_upsert(&rules, rule).map_err(|_| INVALID_RULE_ERROR.to_string())?;
+    if plan.preview.requires_confirmation && !confirm_conflicts {
+        return Err(RULE_CONFLICT_CONFIRMATION_ERROR.to_string());
+    }
+    let result = upsert(&mut rules, plan.candidate);
     if let Ok(id) = &result {
         // Editing a rule starts a fresh deterministic scenario.  The cursor
         // is never persisted and is removed only after the rule mutation has
@@ -1044,6 +1075,57 @@ pub fn reset_rule_sequence(
         .map_err(|_| SEQUENCE_RESET_ERROR.to_string())?
         .reset(&id);
     Ok(())
+}
+
+/// Persist the current backend-owned rule set as an app-local service profile
+/// and return one disabled Run Manager definition. The renderer supplies no
+/// rule JSON, executable path, bind address, or command string.
+#[tauri::command]
+pub fn export_run_service_definition(
+    app: AppHandle,
+    state: tauri::State<'_, Arc<ServerState>>,
+) -> Result<crate::core::service_profile::RunDefinitionExport, String> {
+    // Keep the observed listener generation stable through profile creation
+    // and serialize the bounded profile-count check with other exports.
+    let _lifecycle = state
+        .lifecycle_lock
+        .lock()
+        .map_err(|_| RUN_DEFINITION_EXPORT_ERROR.to_string())?;
+    let address = current_server_status(state.inner())
+        .address
+        .ok_or_else(|| RUN_DEFINITION_EXPORT_ERROR.to_string())?;
+    let socket = address
+        .parse::<std::net::SocketAddr>()
+        .map_err(|_| RUN_DEFINITION_EXPORT_ERROR.to_string())?;
+    let bind = match socket.ip() {
+        std::net::IpAddr::V4(address) if address == std::net::Ipv4Addr::LOCALHOST => "127.0.0.1",
+        std::net::IpAddr::V6(address) if address == std::net::Ipv6Addr::LOCALHOST => "::1",
+        _ => return Err(RUN_DEFINITION_EXPORT_ERROR.to_string()),
+    };
+    let mut rules = state
+        .rules
+        .lock()
+        .map_err(|_| RUN_DEFINITION_EXPORT_ERROR.to_string())?
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    rules.sort_by(compare_rule_precedence);
+    let data_root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| crate::core::service_profile::SERVICE_PROFILE_ERROR.to_string())?;
+    let executable = std::env::current_exe()
+        .map_err(|_| crate::core::service_profile::SERVICE_PROFILE_ERROR.to_string())?;
+    let now = handoff_now_ms()
+        .ok_or_else(|| crate::core::service_profile::SERVICE_PROFILE_ERROR.to_string())?;
+    crate::core::service_profile::export_run_definition_in(
+        &data_root,
+        &executable,
+        bind,
+        socket.port(),
+        rules,
+        now,
+    )
 }
 
 fn history_not_found() -> String {
@@ -1108,6 +1190,7 @@ mod tests {
         let (state, running, address, thread) = spawn_test_listener();
         let rule = ResponseRule {
             id: "rule-1".into(),
+            priority: 0,
             method: Some("POST".into()),
             path: "/hook".into(),
             status: 201,
@@ -1142,6 +1225,7 @@ mod tests {
         let (state, running, address, thread) = spawn_test_listener();
         let rule = ResponseRule {
             id: "rule-head".into(),
+            priority: 0,
             method: Some("HEAD".into()),
             path: "/hook".into(),
             status: 200,

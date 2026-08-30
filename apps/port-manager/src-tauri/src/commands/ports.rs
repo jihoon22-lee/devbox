@@ -65,7 +65,7 @@ pub struct PortRow {
 }
 
 impl PortRow {
-    fn endpoint(&self) -> ListenerEndpoint {
+    pub(crate) fn endpoint(&self) -> ListenerEndpoint {
         ListenerEndpoint::from_port(&self.port)
     }
 
@@ -270,7 +270,7 @@ fn is_safe_browser_url(url: &str) -> bool {
 }
 
 #[cfg(target_os = "windows")]
-fn collect_ports() -> Result<Vec<PortRow>, ListenerError> {
+pub(crate) fn collect_ports() -> Result<Vec<PortRow>, ListenerError> {
     let deadline = command_deadline();
     let native = collect_windows_ports(deadline)?;
     let mut rows = native;
@@ -286,7 +286,7 @@ fn collect_ports() -> Result<Vec<PortRow>, ListenerError> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn collect_ports() -> Result<Vec<PortRow>, ListenerError> {
+pub(crate) fn collect_ports() -> Result<Vec<PortRow>, ListenerError> {
     Ok(Vec::new())
 }
 

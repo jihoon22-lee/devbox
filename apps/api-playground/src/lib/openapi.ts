@@ -1,5 +1,7 @@
-import { visit as visitJson, type ParseError } from "jsonc-parser";
-import { parseDocument } from "yaml";
+import {
+  OPENAPI_DOCUMENT_LIMITS,
+  parseBoundedOpenApiDocument,
+} from "@devbox/openapi";
 import type {
   AuthConfig,
   KeyValue,
@@ -18,10 +20,7 @@ import { MAX_MULTIPART_PARTS } from "./multipart";
  * source enforces the same parser contract.
  */
 export const OPENAPI_LIMITS = Object.freeze({
-  maxBytes: 4 * 1024 * 1024,
-  maxDepth: 40,
-  maxNodes: 50_000,
-  maxStringLength: 16_384,
+  ...OPENAPI_DOCUMENT_LIMITS,
   maxPaths: 250,
   maxOperations: 1_000,
   maxServers: 20,
@@ -29,7 +28,6 @@ export const OPENAPI_LIMITS = Object.freeze({
   maxSecuritySchemes: 100,
   maxMediaTypes: 50,
   maxBodyBytes: 512 * 1024,
-  maxAliases: 50,
   maxRequestRows: 100,
   maxParameterNameLength: 256,
   maxFileNameLength: 120,
@@ -149,7 +147,6 @@ const METHOD_ORDER = ["get", "post", "put", "patch", "delete"] as const;
 const METHOD_SET = new Set<string>(METHOD_ORDER);
 const PATH_ITEM_METADATA = new Set(["parameters", "$ref", "summary", "description", "servers"]);
 const HTTP_TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const SENSITIVE_NAME = /(authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|access[-_]?(?:key|token)|client[-_]?key|refresh[-_]?token|token|secret|password|passwd|credential|private[-_]?key|user[-_]?name|(?:^|[-_.])key(?:$|[-_.]))/i;
 const KNOWN_CREDENTIAL = /(?:sk-|ghp_|github_pat_|glpat-|xox[baprs]-)[A-Za-z0-9_.-]{12,}|AKIA[A-Z0-9]{16}|(?:[A-Za-z0-9_-]{10,}\.){2}[A-Za-z0-9_-]{10,}/;
 const SECRET_REFERENCE = /\{\{\s*[A-Za-z0-9_.-]+\s*\}\}|\$\{\s*[A-Za-z0-9_.-]+\s*\}/;
@@ -239,135 +236,10 @@ export function detectOpenApiFormat(fileName: string): OpenApiFormat {
   return fileName.trim().toLowerCase().endsWith(".json") ? "json" : "yaml";
 }
 
-interface GraphState {
-  nodes: number;
-}
-
-/** Clone into null-prototype records while checking aliases, cycles and all bounds. */
-function normalizeGraph(value: unknown): unknown {
-  const active = new WeakSet<object>();
-  const state: GraphState = { nodes: 0 };
-
-  const visit = (current: unknown, depth: number): unknown => {
-    if (depth > OPENAPI_LIMITS.maxDepth) throw issue("DEPTH_LIMIT", "document");
-    state.nodes += 1;
-    if (state.nodes > OPENAPI_LIMITS.maxNodes) throw issue("NODE_LIMIT", "document");
-    if (typeof current === "string") {
-      if (current.length > OPENAPI_LIMITS.maxStringLength) throw issue("STRING_LIMIT", "document");
-      return current;
-    }
-    if (typeof current === "number") {
-      if (!Number.isFinite(current) || !Number.isSafeInteger(current) && Number.isInteger(current)) {
-        throw issue("UNSUPPORTED_GRAPH", "document");
-      }
-      return current;
-    }
-    if (typeof current === "bigint") {
-      if (current > BigInt(Number.MAX_SAFE_INTEGER) || current < BigInt(Number.MIN_SAFE_INTEGER)) {
-        throw issue("UNSUPPORTED_GRAPH", "document");
-      }
-      return Number(current);
-    }
-    if (current === null || typeof current === "boolean") return current;
-    if (typeof current !== "object") throw issue("UNSUPPORTED_GRAPH", "document");
-    if (active.has(current)) throw issue("UNSUPPORTED_GRAPH", "document");
-    active.add(current);
-    try {
-      if (Array.isArray(current)) {
-        return current.map((entry) => visit(entry, depth + 1));
-      }
-      if (!isRecord(current)) throw issue("UNSUPPORTED_GRAPH", "document");
-      const result = Object.create(null) as Record<string, unknown>;
-      for (const key of Object.keys(current)) {
-        state.nodes += 1;
-        if (state.nodes > OPENAPI_LIMITS.maxNodes) throw issue("NODE_LIMIT", "document");
-        if (key.length > OPENAPI_LIMITS.maxStringLength) throw issue("STRING_LIMIT", "document");
-        if (DANGEROUS_KEYS.has(key)) throw issue("DANGEROUS_KEY", "document");
-        result[key] = visit(current[key], depth + 1);
-      }
-      return result;
-    } finally {
-      active.delete(current);
-    }
-  };
-
-  return visit(value, 0);
-}
-
 function parseSource(text: string, format: OpenApiFormat): unknown {
-  if (!text.trim()) throw issue("EMPTY_SOURCE", "document");
-  if (byteLength(text) > OPENAPI_LIMITS.maxBytes) throw issue("SOURCE_TOO_LARGE", "document");
-
-  if (format === "json") {
-    const errors: ParseError[] = [];
-    let unsafeNumber = false;
-    let parseDepth = 0;
-    let parseNodes = 0;
-    const countNode = () => {
-      parseNodes += 1;
-      if (parseNodes > OPENAPI_LIMITS.maxNodes) throw issue("NODE_LIMIT", "document");
-    };
-    const beginContainer = () => {
-      countNode();
-      parseDepth += 1;
-      if (parseDepth > OPENAPI_LIMITS.maxDepth) throw issue("DEPTH_LIMIT", "document");
-    };
-    try {
-      visitJson(text, {
-        onObjectBegin: beginContainer,
-        // Keep the streaming JSON preflight aligned with normalizeGraph: an
-        // object property contributes both its key and its value to the node
-        // budget. Rejecting at the property token avoids building a large YAML
-        // document only to discover the same bound during normalization.
-        onObjectProperty: countNode,
-        onObjectEnd: () => { parseDepth -= 1; },
-        onArrayBegin: beginContainer,
-        onArrayEnd: () => { parseDepth -= 1; },
-        onLiteralValue: (value) => {
-          countNode();
-          if (typeof value === "number" && (!Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value)))) {
-            unsafeNumber = true;
-          }
-        },
-        onError: (error, offset, length) => errors.push({ error, offset, length }),
-      }, {
-        allowEmptyContent: false,
-        allowTrailingComma: false,
-        disallowComments: true,
-      });
-    } catch (cause) {
-      if (isOpenApiIssue(cause)) throw cause;
-      throw issue("PARSER_ERROR", "document");
-    }
-    if (errors.length > 0 || unsafeNumber) throw issue("PARSER_ERROR", "document");
-  }
-
-  let document: ReturnType<typeof parseDocument>;
-  try {
-    document = parseDocument(text, {
-      intAsBigInt: true,
-      merge: false,
-      prettyErrors: false,
-      resolveKnownTags: false,
-      schema: format === "json" ? "json" : "core",
-      strict: true,
-      stringKeys: true,
-      uniqueKeys: true,
-      version: "1.2",
-    });
-  } catch {
-    throw issue("PARSER_ERROR", "document");
-  }
-
-  if (document.errors.length > 0 || document.warnings.length > 0) {
-    throw issue("PARSER_ERROR", "document");
-  }
-  try {
-    return normalizeGraph(document.toJS({ maxAliasCount: OPENAPI_LIMITS.maxAliases }));
-  } catch (cause) {
-    if (isOpenApiIssue(cause)) throw cause;
-    throw issue("UNSUPPORTED_GRAPH", "document");
-  }
+  const parsed = parseBoundedOpenApiDocument(text, format);
+  if (parsed.ok) return parsed.value;
+  throw issue(parsed.error.code, "document");
 }
 
 function isOpenApiIssue(value: unknown): value is OpenApiIssue {

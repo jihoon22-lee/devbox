@@ -21,7 +21,7 @@ mod tests {
     fn parses_the_repository_v2_catalog_through_the_shared_contract() {
         let catalog = parse_catalog(BUILD_CATALOG).unwrap();
         assert_eq!(catalog.schema_version, 2);
-        assert_eq!(catalog.catalog_revision, Some(15));
+        assert_eq!(catalog.catalog_revision, Some(16));
         assert_eq!(catalog.apps.len(), 15);
         let knowledge = catalog
             .apps
@@ -69,7 +69,11 @@ mod tests {
         assert_eq!(workbench.accepts, vec!["path", "profile"]);
         assert_eq!(
             workbench.produces,
-            vec!["snapshot:workbench/profiles/v1", "handoff:task-control/v1"]
+            vec![
+                "snapshot:workbench/profiles/v1",
+                "handoff:task-control/v1",
+                "snapshot:port-bindings/v1"
+            ]
         );
         let repo_manager = catalog
             .apps

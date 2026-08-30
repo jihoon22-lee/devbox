@@ -26,12 +26,15 @@ export const MAX_RULE_COLLECTION_BYTES = 8_000_000;
 export const MIN_RESPONSE_STATUS = 100;
 export const MAX_RESPONSE_STATUS = 599;
 export const MAX_RESPONSE_DELAY_MS = 60_000;
+export const MIN_RULE_PRIORITY = -1_000;
+export const MAX_RULE_PRIORITY = 1_000;
 export const MAX_RESPONSE_SEQUENCE = 16;
 
 export type RuleValidationField =
   | "id"
   | "method"
   | "path"
+  | "priority"
   | "status"
   | "headers"
   | "body"
@@ -46,7 +49,7 @@ export interface RuleValidationIssue {
 
 export type RuleValidationInput =
   & Pick<ResponseRule, "path" | "status" | "delayMs">
-  & Partial<Pick<ResponseRule, "id" | "method" | "headers" | "body" | "sequence">>;
+  & Partial<Pick<ResponseRule, "id" | "method" | "priority" | "headers" | "body" | "sequence">>;
 
 interface StringMetrics {
   chars: number;
@@ -263,6 +266,16 @@ export function validateRule(
     || rule.status > MAX_RESPONSE_STATUS
   ) {
     addIssue(issues, "status", `status는 ${MIN_RESPONSE_STATUS}~${MAX_RESPONSE_STATUS} 범위의 정수여야 합니다.`);
+  }
+
+  const priority = rule.priority ?? 0;
+  if (
+    typeof priority !== "number"
+    || !Number.isInteger(priority)
+    || priority < MIN_RULE_PRIORITY
+    || priority > MAX_RULE_PRIORITY
+  ) {
+    addIssue(issues, "priority", `priority는 ${MIN_RULE_PRIORITY}~${MAX_RULE_PRIORITY} 범위의 정수여야 합니다.`);
   }
 
   if (

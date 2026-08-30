@@ -895,6 +895,7 @@ pub fn response_rule_draft(fixture: &CapturedFixture) -> Result<ResponseRule, Fi
     validate_fixture(fixture)?;
     Ok(ResponseRule {
         id: String::new(),
+        priority: 0,
         method: Some(fixture.method.clone()),
         path: fixture.url.clone(),
         status: 200,

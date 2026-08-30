@@ -11,7 +11,8 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
   secret/password/auth 계열 header, query 값, JSON/text body credential과 known token은 history
   목록·마스킹 복사·fixture/replay 입력에 평문으로 남지 않는다. 원본 header vault는 bounded
   process memory에서 사용자가 별도 확인한 일회성 raw copy에만 접근한다.
-- **응답 rule** — 고정 status/header/body, delay와 대표 오류 응답(500/404 등)
+- **응답 rule** — 고정 status/header/body, delay와 대표 오류 응답(500/404 등). `priority`와
+  specificity tie-break로 겹치는 규칙의 선택도 결정적이며 저장 전에 conflict preview를 표시한다.
 - **response sequence** — 첫 응답 뒤 bounded 단계별 status/body/delay를 순서대로 반환하고 현재 위치를 초기화
 - **rule 설명** — method 대소문자 무시·빈 값 전체 적용, path 정확 일치·후행 `*` wildcard,
   status 응답 코드, delay 밀리초 의미를 편집 중 항상 표시
@@ -25,6 +26,10 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
   `[REDACTED]`로 마스킹한다. wildcard path는 backend trailing-`*` matcher와 일치하는
   concrete sample로 바꾸고, shell별 독립 quoting과 `--globoff`·`--path-as-is`로 command/URL
   확장과 curl의 path dot-segment 정규화를 막는다.
+- **OpenAPI rule draft** — 로컬 OpenAPI 3.0/3.1 JSON/YAML에서 method/path와 가장 낮은 2xx
+  status만 bounded preview로 읽고, 선택한 항목을 저장되지 않은 rule editor draft로 적용한다.
+- **Run Manager service export** — 실행 중인 loopback listener의 현재 backend rule을 앱 전용
+  profile로 저장하고, 사용자가 명시적으로 내려받을 수 있는 비활성 service definition을 만든다.
 
 ### Rule 매칭·응답 의미
 
@@ -39,10 +44,12 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
   지연 없이 반환한다.
 - native response framing은 `1xx`, `204`, `205`, `304`, `HEAD` 응답에 body와 `Content-Length`를
   쓰지 않으며, `Connection`과 `Content-Length` 등 transport header는 rule이 덮어쓸 수 없다.
-- 여러 rule이 동시에 매치되는 경우 `HashMap` 순회 순서는 우선순위나 결정성 계약이 아니다.
-  겹치는 rule 중 어느 것이 선택되는지에 의존하지 말고, method/path 조합이 겹치지 않게
-  작성한다.
-- 편집기는 status를 `100~599` 정수, delay를 `0~60000ms` 정수로 제한한다. Rust wire type의
+- 여러 rule이 동시에 매치되면 하나의 Rust comparator가 다음 순서로 winner를 고른다:
+  높은 `priority` → exact path → method 지정 rule → 더 긴 후행-`*` prefix → bytewise 오름차순
+  rule ID. live listener, 목록, conflict preview가 모두 같은 comparator를 사용하며 `HashMap`
+  순회 순서에는 의존하지 않는다.
+- 편집기는 priority를 `-1000~1000`, status를 `100~599` 정수, delay를 `0~60000ms` 정수로
+  제한한다. Rust wire type의
   표현 범위보다 좁은 UI 경계로 실수로 비정상 status를 보내거나 서버를 장시간 sleep시키는
   것을 막는다.
 - 필드 설명은 값이 채워져 있어도 항상 보이고, label/help/error가 각 입력에 연결된다.
@@ -59,6 +66,10 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
 - rule은 최대 `200`개다. 기존 `id`는 최대 128자/128 UTF-8 바이트이며 제어 문자를 허용하지
   않는다. 새 rule의 빈 id는 저장 직전에 UUID를 받으며 collection 크기 계산에도 UUID의
   36자/36바이트 footprint를 예약한다.
+- v0.5.x rule JSON처럼 `priority`가 없는 입력은 `0`으로 읽는다. 저장 preview는 신규 rule의
+  실제 UUID를 먼저 배정한 projected collection으로 겹침과 winner/loser를 계산한다. 겹침이
+  있으면 사용자의 명시적 확인 뒤에도 backend가 같은 rules lock 안에서 다시 계산하며, 취소나
+  확인 없는 저장은 map과 sequence cursor를 변경하지 않는다.
 - method는 `null`(전체 method) 또는 ASCII HTTP token이며 최대 16자/16바이트다. 편집기의
   빈 값은 `null`로 변환하고, `Some("")`이나 공백/제어 문자는 저장하지 않는다.
 - path는 ASCII 기준 최대 4,096자/16,384 바이트이며 `/`로 시작하고 모든 Unicode control
@@ -84,8 +95,37 @@ API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound 
 고정 메시지로 저장을 중단한다. 작업 중에는 `aria-busy`와 disabled 상태로 double action을 막고,
 각 method/path/status/delay/body 설명·오류는 `aria-describedby`/`aria-invalid`로 연결한다.
 현재 headers 편집 UI는 별도 기능이지만, 로드·복제된 response headers도 같은 프론트 경계를
-검사한다. 이 PR은 기존 rule id·저장 순서·HashMap 순회와 trailing-star matcher를 바꾸거나
-priority를 도입하지 않는다.
+검사한다. trailing-star matcher는 그대로 유지하고, 선택 순서만 위의 공개 comparator로
+결정한다.
+
+### OpenAPI draft와 Run definition export 계약
+
+Webhook Lab의 OpenAPI 가져오기는 로컬 파일을 renderer에서만 읽는다. 공용 `@devbox/openapi`
+parser는 입력 4 MiB, depth 40, node 50,000, string 16,384자, alias 50개를 넘거나 duplicate/
+dangerous key, cycle, unsafe integer, custom graph를 포함한 문서를 거부한다. Webhook adapter는
+OpenAPI 3.0/3.1의 최대 250 paths·1,000 operations를 정렬해 preview하고 method/path와 가장
+낮은 명시적 2xx status(없으면 200)만 rule draft로 만든다. server URL, auth/security,
+request body, example, credential은 읽어 rule에 넣지 않는다. `{parameter}` path, `$ref`,
+unsafe path와 잘못된 operation은 이유와 함께 개별 비활성화하며 `*`로 자동 확대하지 않는다.
+preview나 draft 적용은 기존 rule을 저장·전송하지 않으며 최종 저장은 평소 rule 검증과 conflict
+확인을 다시 거친다.
+
+`Run Manager definition 내보내기`는 현재 서버가 `127.0.0.1` 또는 `::1`에서 실제 실행 중일
+때만 backend가 허용한다. renderer는 bind, port, rule, executable path나 command를 IPC로
+보내지 않는다. backend가 현재 상태를 다시 읽어 priority 순으로 정렬한 rule을
+`app_local_data_dir()/service-profiles/<uuid>.json`에 보관하고, export JSON에는 opaque profile
+ID를 인자로 받는 고정 명령과 loopback health check만 넣는다. 파일은 schema v1, 최대 64개,
+파일당 8 MiB이며 app-owned absolute path, no-link read/revalidation, atomic write, strict unknown
+field 거부를 적용한다. credential 형태의 id/method/path/header/body/sequence가 있는 rule은 전체
+export를 거부한다. listener lifecycle lock은 상태 확인부터 profile count 검사·write까지 export를
+직렬화한다.
+
+내려받은 Run Manager schema v1 문서는 job 없이 service 하나만 포함하며 `enabled=false`,
+`autoStart=false`, `restartPolicy=never`, environment/cwd 없음으로 시작한다. response body와 rule,
+runtime PID/log path는 export JSON에 포함되지 않는다. 사용자가 Run Manager에서 별도로 import하고
+활성화해야 하며, `--service-profile <uuid>`는 정확한 두 인자 startup mode에서만 app-local profile을
+읽어 숨긴 listener process를 시작한다. 실제 Windows packaged startup/stop 동작은 v0.6.0 통합
+acceptance에서 검증한다.
 
 ### Captured fixture 저장 계약 (#314)
 

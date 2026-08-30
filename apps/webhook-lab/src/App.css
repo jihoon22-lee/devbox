@@ -148,11 +148,86 @@ body {
   margin: 0 0 10px;
 }
 
+.precedence-help {
+  margin: -4px 0 10px;
+}
+
 .rule-editor {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin-bottom: 10px;
+}
+
+.openapi-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.openapi-heading,
+.openapi-file-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.openapi-heading h3 {
+  margin: 0 0 3px;
+  font-size: 12px;
+}
+
+.openapi-operations {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.openapi-operation {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 0;
+  min-width: 0;
+}
+
+.openapi-operation .mono {
+  overflow-wrap: anywhere;
+}
+
+.openapi-operation.unavailable {
+  opacity: 0.7;
+}
+
+.openapi-operation .field-error {
+  margin-left: auto;
+  text-align: right;
+}
+
+.openapi-preview > .mini {
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 7px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .rule-field {
@@ -212,6 +287,13 @@ body {
 
 .sequence-badge {
   color: var(--accent);
+  font-size: 11px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.priority-badge {
+  color: var(--warn);
   font-size: 11px;
   margin-left: 8px;
   white-space: nowrap;

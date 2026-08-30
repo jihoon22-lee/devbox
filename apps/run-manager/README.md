@@ -57,6 +57,22 @@ aggregate를 `daily-activity.json` named sidecar로도 발행한다. 이 view의
 command/environment/log/ID는 담지 않는다. Life Log는 이 sidecar를 requested range와
 정확히 일치할 때만 사용하며, Windows 실기 acceptance 완료를 이 계약이 의미하지는 않는다.
 
+### Port Manager 관찰 binding view
+
+Run Manager는 Workbench와 독립적으로 공용 strict `snapshot:port-bindings/v1`의 `port-bindings`
+named view를 발행한다. TCP health address/port가 있는 service만 `RunService` entry로 projection하며,
+entry에는 opaque service id, 안전한 label, address/port, Windows/WSL target과 필요한 distro,
+현재 run id, `logs_available`, 그리고 가능한 경우 Windows PID와 exact process creation epoch만
+담는다. command, cwd/path, argv, environment, credential과 log bytes는 producer 경계를 넘지 않는다.
+
+Port Manager는 이 view의 age가 180초를 넘으면 `stale`로 격리하고, 파일 누락·schema/entry 오류는
+`missing` 또는 `invalid`로 표시한다. 이 source 상태는 Workbench의 독립 view나 native listener
+snapshot을 무효화하지 않는다. Port Manager의 owner action은 현재 service/task를 native에서
+다시 확인한 뒤에만 열리며, Run entry의 `logs_available`가 true일 때만 stdout/stderr를 선택할 수
+있다. 그 Log Lens handoff도 run identity만 전달하고 raw log/path/command/environment를 복사하지
+않는다. 이 view는 관찰 hint이며 Port Manager가 Run Manager의 kill/restart 또는 자동 lifecycle을
+실행하는 계약이 아니다.
+
 ## 실행 이력·package/Cargo task import 계약 (#357/#358)
 
 이력 조회는 하나의 parameterized SQLite query로 작업과 서비스 run을 함께 필터링한다. 날짜는

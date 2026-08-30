@@ -22,23 +22,27 @@ import {
   handoffContainerStop,
   loadPortManagerPreferences,
   killListener,
-  listPorts,
+  listPortObservations,
+  openPortLog,
+  openPortOwner,
   openBrowser,
   revealProcess,
   savePortManagerPreferences,
 } from "./api";
-import type { PortRow } from "./types";
+import type { PortObservationSnapshot, PortRow, SnapshotSourceStatus } from "./types";
 import {
   DEFAULT_PREFERENCES,
+  appendRefreshTimeline,
   diffPortRows,
   isPinnedRow,
   isPortFavorite,
   isProcessFavorite,
+  MAX_REFRESH_TIMELINE_EVENTS,
   sameProcessFavorite,
 } from "./refresh";
 
 vi.mock("./api", () => ({
-  listPorts: vi.fn(),
+  listPortObservations: vi.fn(),
   loadPortManagerPreferences: vi.fn(),
   savePortManagerPreferences: vi.fn(),
   killListener: vi.fn(),
@@ -46,7 +50,29 @@ vi.mock("./api", () => ({
   openBrowser: vi.fn(),
   getProcessInfo: vi.fn(),
   revealProcess: vi.fn(),
+  openPortLog: vi.fn(),
+  openPortOwner: vi.fn(),
 }));
+
+const RUN_CORRELATION = {
+  source_app: "run-manager",
+  target_kind: "task",
+  target_id: "run-api",
+  label: "API task",
+  confidence: "verified" as const,
+  action_key: "port-action-" + "a".repeat(64),
+  logs_available: true,
+};
+
+const WORKBENCH_CORRELATION = {
+  source_app: "workbench",
+  target_kind: "profile",
+  target_id: "workbench-web",
+  label: "Web profile",
+  confidence: "expected" as const,
+  action_key: "port-action-" + "b".repeat(64),
+  logs_available: false,
+};
 
 const LISTENING_ROW: PortRow = {
   proto: "TCP",
@@ -60,6 +86,7 @@ const LISTENING_ROW: PortRow = {
   command_line: "node server.js --port 3000",
   executable_path: "C:\\Program Files\\nodejs\\node.exe",
   identity: { kind: "windows", pid: 1234, start_time: "100" },
+  correlations: [RUN_CORRELATION],
 };
 
 const ESTABLISHED_ROW: PortRow = {
@@ -72,14 +99,26 @@ const ESTABLISHED_ROW: PortRow = {
   source: "windows",
   process_start_time: "200",
   identity: { kind: "windows", pid: 4321, start_time: "200" },
+  correlations: [],
 };
 
-const listPortsMock = vi.mocked(listPorts);
+const SOURCE_STATUSES: SnapshotSourceStatus[] = [
+  { producer: "run-manager", state: "available", freshness_ms: 20 },
+  { producer: "workbench", state: "available", freshness_ms: 30 },
+];
+
+function observation(rows: PortRow[], sources = SOURCE_STATUSES): PortObservationSnapshot {
+  return { rows, sources, correlations_truncated: false };
+}
+
+const listPortObservationsMock = vi.mocked(listPortObservations);
 const loadPreferencesMock = vi.mocked(loadPortManagerPreferences);
 const savePreferencesMock = vi.mocked(savePortManagerPreferences);
 const killListenerMock = vi.mocked(killListener);
 const handoffContainerStopMock = vi.mocked(handoffContainerStop);
 const openBrowserMock = vi.mocked(openBrowser);
+const openPortLogMock = vi.mocked(openPortLog);
+const openPortOwnerMock = vi.mocked(openPortOwner);
 const getProcessInfoMock = vi.mocked(getProcessInfo);
 const revealProcessMock = vi.mocked(revealProcess);
 const writeTextMock = vi.fn<(text: string) => Promise<void>>();
@@ -116,7 +155,9 @@ function openRowMenu(processName: string): HTMLTableRowElement {
 }
 
 beforeEach(() => {
-  listPortsMock.mockReset().mockResolvedValue([LISTENING_ROW, ESTABLISHED_ROW]);
+  listPortObservationsMock
+    .mockReset()
+    .mockResolvedValue(observation([LISTENING_ROW, ESTABLISHED_ROW]));
   loadPreferencesMock.mockReset().mockResolvedValue({
     ...DEFAULT_PREFERENCES,
     favorite_ports: [],
@@ -132,6 +173,8 @@ beforeEach(() => {
     distro: "docker-desktop",
   });
   openBrowserMock.mockReset().mockResolvedValue(undefined);
+  openPortOwnerMock.mockReset().mockResolvedValue(undefined);
+  openPortLogMock.mockReset().mockResolvedValue({ handoff_id: "handoff-1" });
   getProcessInfoMock.mockReset().mockImplementation(async (pid) => ({
     pid,
     name: pid === 1234 ? "node.exe" : "browser.exe",
@@ -245,7 +288,7 @@ describe("port row helpers", () => {
 });
 
 describe("refresh diff and favorite boundaries", () => {
-  it("does not manufacture initial changes and reports new, closed, and changed rows by identity", () => {
+  it("does not manufacture initial changes and reports opened, closed, and changed rows by identity", () => {
     const changed = { ...LISTENING_ROW, state: "BOUND", process_name: "node-worker.exe" };
     const added = {
       ...LISTENING_ROW,
@@ -259,16 +302,72 @@ describe("refresh diff and favorite boundaries", () => {
     expect(diffPortRows(null, [LISTENING_ROW])).toEqual([]);
     expect(
       diffPortRows([LISTENING_ROW, ESTABLISHED_ROW], [changed, added]).map((item) => item.kind),
-    ).toEqual(["new", "closed", "changed"]);
+    ).toEqual(["opened", "closed", "changed"]);
     const changedDiff = diffPortRows([LISTENING_ROW], [changed]);
     expect(changedDiff[0]?.before?.identity).toEqual(LISTENING_ROW.identity);
     expect(changedDiff[0]?.after?.state).toBe("BOUND");
   });
 
+  it("distinguishes an ownership change and ignores rotated opaque action keys", () => {
+    const rotatedActionKey = {
+      ...LISTENING_ROW,
+      correlations: [{ ...RUN_CORRELATION, action_key: "port-action-" + "c".repeat(64) }],
+    };
+    expect(diffPortRows([LISTENING_ROW], [rotatedActionKey])).toEqual([]);
+
+    const ownerChanged = {
+      ...LISTENING_ROW,
+      correlations: [
+        {
+          ...RUN_CORRELATION,
+          target_id: "run-worker",
+          label: "Worker task",
+        },
+      ],
+    };
+    const [change] = diffPortRows([LISTENING_ROW], [ownerChanged]);
+    expect(change?.kind).toBe("owner-changed");
+    expect(change?.before?.correlations?.[0]?.target_id).toBe("run-api");
+    expect(change?.after?.correlations?.[0]?.target_id).toBe("run-worker");
+  });
+
+  it("keeps the session refresh timeline bounded to 256 events", () => {
+    const changes = Array.from({ length: MAX_REFRESH_TIMELINE_EVENTS + 17 }, (_, index) => ({
+      kind: "opened" as const,
+      key: `event-${index}`,
+    }));
+    const timeline = appendRefreshTimeline([], changes, 1_725_000_000_000);
+    expect(timeline).toHaveLength(MAX_REFRESH_TIMELINE_EVENTS);
+    expect(timeline[0]?.key).toBe("event-17");
+    expect(timeline[timeline.length - 1]?.key).toBe(`event-${MAX_REFRESH_TIMELINE_EVENTS + 16}`);
+    expect(timeline.every((event) => event.observed_at_ms === 1_725_000_000_000)).toBe(true);
+  });
+
+  it("stores only rendered metadata in the session refresh timeline", () => {
+    const sensitive = {
+      ...LISTENING_ROW,
+      command_line: "node server.js --token private",
+      executable_path: "C:\\private\\node.exe",
+    };
+    const [event] = appendRefreshTimeline([], [{
+      kind: "opened",
+      key: "listener",
+      after: sensitive,
+    }], 1_725_000_000_000);
+
+    expect(event?.after).toEqual({
+      local_addr: LISTENING_ROW.local_addr,
+      process_name: LISTENING_ROW.process_name,
+      owner_labels: [RUN_CORRELATION.label],
+    });
+    expect(JSON.stringify(event)).not.toContain("private");
+    expect(JSON.stringify(event)).not.toContain("action_key");
+  });
+
   it("uses endpoint fallback for identity-less rows without borrowing another process", () => {
     const first = row({ identity: null, pid: null, local_addr: "127.0.0.1:3000" });
     const moved = { ...first, local_addr: "127.0.0.1:4000", port: 4000 };
-    expect(diffPortRows([first], [moved]).map((item) => item.kind)).toEqual(["new", "closed"]);
+    expect(diffPortRows([first], [moved]).map((item) => item.kind)).toEqual(["opened", "closed"]);
   });
 
   it("reports an endpoint move and display metadata update for the same identity as changed", () => {
@@ -436,7 +535,7 @@ describe("port context menu", () => {
     await waitFor(() =>
       expect(killListenerMock).toHaveBeenCalledWith(listenerKillRequest(LISTENING_ROW)),
     );
-    await waitFor(() => expect(listPortsMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(listPortObservationsMock).toHaveBeenCalledTimes(2));
   });
 
   it("does not open a non-listening endpoint and reports action failures", async () => {
@@ -449,6 +548,91 @@ describe("port context menu", () => {
     expect(openBrowserMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(await screen.findByText("Action failed. Refresh the list and try again.")).toBeTruthy();
+  });
+});
+
+describe("observations and correlation actions", () => {
+  it("shows an explicit diagnostic when bounded correlation output is truncated", async () => {
+    listPortObservationsMock.mockResolvedValueOnce({
+      ...observation([LISTENING_ROW]),
+      correlations_truncated: true,
+    });
+    render(<App />);
+    expect(await screen.findByText(/Correlation results reached the safe display limit/u)).toBeTruthy();
+  });
+
+  it("keeps listener actions available when one correlation producer is unhealthy", async () => {
+    listPortObservationsMock.mockReset().mockResolvedValue(
+      observation([LISTENING_ROW], [
+        { producer: "run-manager", state: "available", freshness_ms: 12 },
+        { producer: "workbench", state: "invalid", freshness_ms: null },
+      ]),
+    );
+    render(<App />);
+    await screen.findByText("node.exe");
+
+    expect(screen.getByText("Snapshot stable")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Correlation source status" })).toBeTruthy();
+    expect(screen.getByText("invalid")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Kill listener" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it("renders owner confidence and gates Log Lens buttons on logs_available", async () => {
+    const workbenchRow: PortRow = {
+      ...LISTENING_ROW,
+      local_addr: "127.0.0.1:5173",
+      port: 5173,
+      pid: 5678,
+      process_name: "vite.exe",
+      process_start_time: "300",
+      identity: { kind: "windows", pid: 5678, start_time: "300" },
+      correlations: [WORKBENCH_CORRELATION],
+    };
+    listPortObservationsMock.mockReset().mockResolvedValue(
+      observation([LISTENING_ROW, workbenchRow]),
+    );
+    render(<App />);
+    await screen.findByText("node.exe");
+    fireEvent.click(renderedRow("node.exe"));
+
+    const details = screen.getByRole("complementary", { name: "Listener details" });
+    expect(within(details).getByText("API task")).toBeTruthy();
+    expect(within(details).getByText("verified")).toBeTruthy();
+    expect(within(details).getByRole("button", { name: /Open owner for API task/ })).toBeTruthy();
+    expect(within(details).getByRole("button", { name: /Open stdout in Log Lens for API task/ })).toBeTruthy();
+    expect(within(details).getByRole("button", { name: /Open stderr in Log Lens for API task/ })).toBeTruthy();
+
+    fireEvent.click(within(details).getByRole("button", { name: /Open owner for API task/ }));
+    await waitFor(() => expect(openPortOwnerMock).toHaveBeenCalledWith(RUN_CORRELATION.action_key));
+    fireEvent.click(within(details).getByRole("button", { name: /Open stdout in Log Lens for API task/ }));
+    await waitFor(() =>
+      expect(openPortLogMock).toHaveBeenCalledWith(RUN_CORRELATION.action_key, "stdout"),
+    );
+    fireEvent.click(within(details).getByRole("button", { name: /Open stderr in Log Lens for API task/ }));
+    await waitFor(() =>
+      expect(openPortLogMock).toHaveBeenCalledWith(RUN_CORRELATION.action_key, "stderr"),
+    );
+
+    fireEvent.click(renderedRow("vite.exe"));
+    const workbenchDetails = screen.getByRole("complementary", { name: "Listener details" });
+    expect(within(workbenchDetails).getByText("Web profile")).toBeTruthy();
+    expect(
+      within(workbenchDetails).queryByRole("button", { name: /Open stdout in Log Lens for Web profile/ }),
+    ).toBeNull();
+    expect(
+      within(workbenchDetails).queryByRole("button", { name: /Open stderr in Log Lens for Web profile/ }),
+    ).toBeNull();
+  });
+
+  it("uses the fixed error message when a correlation action fails", async () => {
+    openPortOwnerMock.mockRejectedValueOnce(new Error("native details must not leak"));
+    render(<App />);
+    await screen.findByText("node.exe");
+    fireEvent.click(renderedRow("node.exe"));
+    fireEvent.click(screen.getByRole("button", { name: /Open owner for API service|Open owner for API task/ }));
     expect(await screen.findByText("Action failed. Refresh the list and try again.")).toBeTruthy();
   });
 });
@@ -470,21 +654,21 @@ describe("identity-safe listener UI boundaries", () => {
   });
 
   it("does not update state when an in-flight refresh resolves after unmount", async () => {
-    let resolveRefresh: ((rows: PortRow[]) => void) | undefined;
-    listPortsMock.mockReset().mockImplementation(
+    let resolveRefresh: ((snapshot: PortObservationSnapshot) => void) | undefined;
+    listPortObservationsMock.mockReset().mockImplementation(
       () =>
-        new Promise<PortRow[]>((resolve) => {
+        new Promise<PortObservationSnapshot>((resolve) => {
           resolveRefresh = resolve;
         }),
     );
     const { unmount } = render(<App />);
     unmount();
-    resolveRefresh?.([LISTENING_ROW]);
+    resolveRefresh?.(observation([LISTENING_ROW]));
     await Promise.resolve();
   });
 
   it("exposes details and alert semantics for keyboard users", async () => {
-    listPortsMock.mockResolvedValueOnce([LISTENING_ROW]);
+    listPortObservationsMock.mockResolvedValueOnce(observation([LISTENING_ROW]));
     render(<App />);
     const target = await screen.findByText("node.exe");
     fireEvent.click(target.closest("tr") as HTMLTableRowElement);
@@ -522,7 +706,7 @@ describe("identity-safe listener UI boundaries", () => {
         distro: "docker-desktop",
       },
     };
-    listPortsMock.mockReset().mockResolvedValue([container]);
+    listPortObservationsMock.mockReset().mockResolvedValue(observation([container]));
     confirmMock.mockReturnValue(true);
     render(<App />);
     await screen.findByText("api");
@@ -551,21 +735,21 @@ describe("identity-safe listener UI boundaries", () => {
     expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(killListenerMock).toHaveBeenCalledTimes(1);
     resolveKill?.();
-    await waitFor(() => expect(listPortsMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(listPortObservationsMock).toHaveBeenCalledTimes(2));
   });
 
   it("queues a fresh snapshot after Kill when a pre-kill timer poll is already in flight", async () => {
-    let resolvePoll: ((rows: PortRow[]) => void) | undefined;
-    listPortsMock
+    let resolvePoll: ((snapshot: PortObservationSnapshot) => void) | undefined;
+    listPortObservationsMock
       .mockReset()
-      .mockResolvedValueOnce([LISTENING_ROW])
+      .mockResolvedValueOnce(observation([LISTENING_ROW]))
       .mockImplementationOnce(
         () =>
-          new Promise<PortRow[]>((resolve) => {
+          new Promise<PortObservationSnapshot>((resolve) => {
             resolvePoll = resolve;
           }),
       )
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce(observation([]));
     confirmMock.mockReturnValue(true);
     render(<App />);
     await screen.findByText("node.exe");
@@ -576,24 +760,24 @@ describe("identity-safe listener UI boundaries", () => {
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Resume" }));
     await vi.advanceTimersByTimeAsync(DEFAULT_PREFERENCES.refresh_interval_ms);
-    expect(listPortsMock).toHaveBeenCalledTimes(2);
+    expect(listPortObservationsMock).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole("button", { name: "Kill listener" }));
     await Promise.resolve();
     expect(killListenerMock).toHaveBeenCalledTimes(1);
-    expect(listPortsMock).toHaveBeenCalledTimes(2);
+    expect(listPortObservationsMock).toHaveBeenCalledTimes(2);
 
-    resolvePoll?.([LISTENING_ROW]);
-    await vi.waitFor(() => expect(listPortsMock).toHaveBeenCalledTimes(3));
+    resolvePoll?.(observation([LISTENING_ROW]));
+    await vi.waitFor(() => expect(listPortObservationsMock).toHaveBeenCalledTimes(3));
   });
 
   it("pauses timer polls and keeps a slow native refresh single-flight", async () => {
-    let resolvePoll: ((rows: PortRow[]) => void) | undefined;
-    listPortsMock
+    let resolvePoll: ((snapshot: PortObservationSnapshot) => void) | undefined;
+    listPortObservationsMock
       .mockReset()
-      .mockResolvedValueOnce([LISTENING_ROW])
+      .mockResolvedValueOnce(observation([LISTENING_ROW]))
       .mockImplementation(
         () =>
-          new Promise<PortRow[]>((resolve) => {
+          new Promise<PortObservationSnapshot>((resolve) => {
             resolvePoll = resolve;
           }),
     );
@@ -603,23 +787,23 @@ describe("identity-safe listener UI boundaries", () => {
     vi.useFakeTimers();
     vi.advanceTimersByTime(60_000);
     await Promise.resolve();
-    expect(listPortsMock).toHaveBeenCalledTimes(1);
+    expect(listPortObservationsMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Resume" }));
     vi.advanceTimersByTime(5_000);
     await Promise.resolve();
-    expect(listPortsMock).toHaveBeenCalledTimes(2);
+    expect(listPortObservationsMock).toHaveBeenCalledTimes(2);
     vi.advanceTimersByTime(20_000);
     await Promise.resolve();
-    expect(listPortsMock).toHaveBeenCalledTimes(2);
-    resolvePoll?.([LISTENING_ROW]);
+    expect(listPortObservationsMock).toHaveBeenCalledTimes(2);
+    resolvePoll?.(observation([LISTENING_ROW]));
     await Promise.resolve();
   });
 
   it("preserves the last stable rows but locks listener actions after a poll failure", async () => {
-    listPortsMock
+    listPortObservationsMock
       .mockReset()
-      .mockResolvedValueOnce([LISTENING_ROW])
+      .mockResolvedValueOnce(observation([LISTENING_ROW]))
       .mockRejectedValueOnce(new Error("source unavailable"));
     render(<App />);
     await screen.findByText("node.exe");
@@ -631,6 +815,27 @@ describe("identity-safe listener UI boundaries", () => {
     expect((kill as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(kill);
     expect(killListenerMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the successful timeline unchanged when a later poll fails", async () => {
+    const changed = { ...LISTENING_ROW, state: "BOUND" };
+    listPortObservationsMock
+      .mockReset()
+      .mockResolvedValueOnce(observation([LISTENING_ROW]))
+      .mockResolvedValueOnce(observation([changed]))
+      .mockRejectedValueOnce(new Error("source unavailable"));
+    render(<App />);
+    await screen.findByText("node.exe");
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "Refresh timeline" })).toBeTruthy());
+    expect(screen.getByText("changed")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await screen.findByText("Action failed. Refresh the list and try again.");
+    const timeline = screen.getByRole("region", { name: "Refresh timeline" });
+    expect(within(timeline).getByText("changed")).toBeTruthy();
+    expect(within(timeline).getByText("1 events")).toBeTruthy();
   });
 
   it("persists bounded interval, pinned filter, and independent port/process favorites", async () => {
@@ -686,17 +891,17 @@ describe("identity-safe listener UI boundaries", () => {
       wsl_start_tick: 77,
       identity: { kind: "wsl", distro: "Ubuntu", pid: 1234, start_tick: 77 },
     };
-    listPortsMock
+    listPortObservationsMock
       .mockReset()
-      .mockResolvedValueOnce([wslRow])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce(observation([wslRow]))
+      .mockResolvedValueOnce(observation([]));
     render(<App />);
     const process = await screen.findByText("node.exe");
     fireEvent.click(process.closest("tr") as HTMLTableRowElement);
     expect(screen.getAllByText("WSL · Ubuntu").length).toBeGreaterThanOrEqual(1);
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(screen.queryByRole("complementary", { name: "Listener details" })).toBeNull());
-    expect(screen.getByRole("region", { name: "Refresh changes" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Refresh timeline" })).toBeTruthy();
   });
 
   it("does not change the visible favorite when atomic preference persistence fails", async () => {

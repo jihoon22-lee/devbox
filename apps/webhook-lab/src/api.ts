@@ -17,6 +17,7 @@ export interface RequestRecord {
 
 export interface ResponseRule {
   id: string;
+  priority: number;
   method: string | null;
   path: string;
   status: number;
@@ -25,6 +26,45 @@ export interface ResponseRule {
   delayMs: number;
   /** Additional responses after the base response; absent means no sequence. */
   sequence?: ResponseSequenceStep[];
+}
+
+/** Wire-compatible shape for rules written before priority was introduced. */
+export type ResponseRulePayload = Omit<ResponseRule, "priority"> & {
+  priority?: number | null;
+};
+
+export type RuleConflictKind =
+  | "candidateShadowsExisting"
+  | "existingShadowsCandidate"
+  | "partialOverlap";
+
+export type RuleConflictReason =
+  | "priority"
+  | "exactPath"
+  | "methodSpecific"
+  | "longerWildcardPrefix"
+  | "idTieBreak";
+
+export interface RuleConflict {
+  existingRuleId: string;
+  winnerRuleId: string;
+  loserRuleId: string;
+  kind: RuleConflictKind;
+  reason: RuleConflictReason;
+}
+
+export interface RuleConflictPreview {
+  candidateId: string;
+  conflicts: RuleConflict[];
+  requiresConfirmation: boolean;
+}
+
+/** Normalize a legacy rule payload without masking any non-legacy fields. */
+export function normalizeResponseRule(rule: ResponseRulePayload): ResponseRule {
+  return {
+    ...rule,
+    priority: rule.priority ?? 0,
+  };
 }
 
 export interface ResponseSequenceStep {
@@ -56,10 +96,73 @@ export interface ReplayResult {
   status: number;
 }
 
+/** The disabled Run Manager service definition returned by the native export. */
+export interface RunServiceDefinition {
+  id: string;
+  kind: string;
+  name: string;
+  command: string;
+  cwd: string | null;
+  targetKind: string;
+  targetDistro: string | null;
+  envConfigured: boolean;
+  cronExpr: string | null;
+  enabled: boolean;
+  overlapPolicy: string;
+  catchUp: boolean;
+  lastEvaluatedAt: number | null;
+  nextQueueSequence: number;
+  restartPolicy: string | null;
+  autoStart: boolean | null;
+  healthTcpAddress: string | null;
+  healthTcpPort: number | null;
+  healthStartGraceMs: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RunDefinitionExport {
+  schemaVersion: number;
+  exportedAt: string;
+  jobs: RunServiceDefinition[];
+  services: RunServiceDefinition[];
+}
+
 const HANDOFF_BROWSER_ERROR =
   "API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
 const REPLAY_BROWSER_ERROR =
   "replay는 데스크톱 앱에서만 사용할 수 있습니다";
+
+// Keep browser previews harmless: this definition has a fixed harmless command,
+// a disabled service, and is never persisted by the mock API.
+const MOCK_RUN_DEFINITION: RunDefinitionExport = {
+  schemaVersion: 1,
+  exportedAt: "1",
+  jobs: [],
+  services: [{
+    id: "00000000-0000-4000-8000-000000000001",
+    kind: "service",
+    name: "Webhook Lab (browser preview)",
+    command: "exit /b 1",
+    cwd: null,
+    targetKind: "windows",
+    targetDistro: null,
+    envConfigured: false,
+    cronExpr: null,
+    enabled: false,
+    overlapPolicy: "skip",
+    catchUp: false,
+    lastEvaluatedAt: null,
+    nextQueueSequence: 0,
+    restartPolicy: "never",
+    autoStart: false,
+    healthTcpAddress: "127.0.0.1",
+    healthTcpPort: 9000,
+    healthStartGraceMs: 10_000,
+    createdAt: 1,
+    updatedAt: 1,
+  }],
+};
 
 const MOCK_HISTORY: RequestRecord[] = [
   { id: 1, method: "POST", url: "/hook", headers: [["content-type", "application/json"]], body: '{"event":"push"}', receivedAtMs: Date.now() - 30000 },
@@ -80,6 +183,18 @@ function fixtureOrder(left: CapturedFixture, right: CapturedFixture): number {
 export function serverStatus(): Promise<ServerStatus> {
   if (!isTauri()) return Promise.resolve({ running: false, address: null });
   return invoke<ServerStatus>("server_status");
+}
+
+/** Export only the backend-owned, disabled Run Manager definition. */
+export function exportRunServiceDefinition(): Promise<RunDefinitionExport> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      ...MOCK_RUN_DEFINITION,
+      jobs: [],
+      services: MOCK_RUN_DEFINITION.services.map((service) => ({ ...service })),
+    });
+  }
+  return invoke<RunDefinitionExport>("export_run_service_definition");
 }
 
 export function startServer(bind: string | null, port: number, allowLan = false): Promise<ServerStatus> {
@@ -185,6 +300,7 @@ export function fixtureToRule(id: string): Promise<ResponseRule> {
     if (!fixture) return Promise.reject(new Error("fixture를 찾을 수 없습니다"));
     return Promise.resolve({
       id: "",
+      priority: 0,
       method: fixture.method,
       path: fixture.url,
       status: 200,
@@ -193,7 +309,7 @@ export function fixtureToRule(id: string): Promise<ResponseRule> {
       delayMs: 0,
     });
   }
-  return invoke<ResponseRule>("fixture_to_rule", { id });
+  return invoke<ResponseRulePayload>("fixture_to_rule", { id }).then(normalizeResponseRule);
 }
 
 /** Replay only a backend-owned masked fixture to the local server. */
@@ -216,12 +332,25 @@ export function sendFixtureToApi(id: string): Promise<ApiHandoffDispatch> {
 
 export function listRules(): Promise<ResponseRule[]> {
   if (!isTauri()) return Promise.resolve([]);
-  return invoke<ResponseRule[]>("list_rules");
+  return invoke<ResponseRulePayload[]>("list_rules").then((rules) => rules.map(normalizeResponseRule));
 }
 
-export function setRule(rule: ResponseRule): Promise<string> {
-  if (!isTauri()) return Promise.resolve(rule.id || "mock-rule");
-  return invoke<string>("set_rule", { rule });
+export function previewRuleConflicts(rule: ResponseRulePayload): Promise<RuleConflictPreview> {
+  const normalizedRule = normalizeResponseRule(rule);
+  if (!isTauri()) {
+    return Promise.resolve({
+      candidateId: normalizedRule.id || "mock-rule",
+      conflicts: [],
+      requiresConfirmation: false,
+    });
+  }
+  return invoke<RuleConflictPreview>("preview_rule_conflicts", { rule: normalizedRule });
+}
+
+export function setRule(rule: ResponseRulePayload, confirmConflicts: boolean): Promise<string> {
+  const normalizedRule = normalizeResponseRule(rule);
+  if (!isTauri()) return Promise.resolve(normalizedRule.id || "mock-rule");
+  return invoke<string>("set_rule", { rule: normalizedRule, confirmConflicts });
 }
 
 export function deleteRule(id: string): Promise<void> {

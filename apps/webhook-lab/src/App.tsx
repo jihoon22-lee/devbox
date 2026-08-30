@@ -3,7 +3,8 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { OPENAPI_DOCUMENT_LIMITS, type OpenApiDocumentFormat } from "@devbox/openapi";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   clearFixtures,
   clearHistory,
@@ -13,10 +14,12 @@ import {
   copyRawHistory,
   deleteHistory,
   deleteRule,
+  exportRunServiceDefinition,
   fixtureToRule,
   listFixtures,
   listHistory,
   listRules,
+  previewRuleConflicts,
   replayFixture,
   replayHistory,
   resetRuleSequence,
@@ -37,11 +40,19 @@ import {
 import { buildHistoryContextMenu, buildRuleContextMenu } from "./lib/contextMenus";
 import { buildExampleCurl, type CurlShell } from "./lib/exampleCurl";
 import {
+  openApiOperationToRule,
+  previewOpenApiRules,
+  type OpenApiRuleOperation,
+  type OpenApiRulePreview,
+} from "./lib/openapiRules";
+import {
   MAX_METHOD_CHARS,
+  MAX_RULE_PRIORITY,
   MAX_RESPONSE_DELAY_MS,
   MAX_RESPONSE_SEQUENCE,
   MAX_RESPONSE_STATUS,
   MIN_RESPONSE_STATUS,
+  MIN_RULE_PRIORITY,
   validateRule,
   validateRuleCollection,
   type RuleValidationField,
@@ -52,6 +63,10 @@ const DEFAULT_PORT = 9000;
 const GENERIC_ERROR_MESSAGE = "요청을 처리하지 못했습니다. 입력과 서버 상태를 확인하세요.";
 const STALE_HISTORY_MESSAGE = "선택한 요청 기록이 더 이상 존재하지 않습니다. 목록을 새로 고친 뒤 다시 시도하세요.";
 const STALE_RULE_MESSAGE = "선택한 규칙이 더 이상 존재하지 않습니다. 목록을 새로 고친 뒤 다시 시도하세요.";
+const OPENAPI_FILE_FORMAT_ERROR = "OpenAPI 파일 형식을 확인하세요. .json, .yaml, .yml만 선택할 수 있습니다.";
+const OPENAPI_FILE_TOO_LARGE_ERROR = `OpenAPI 파일이 너무 큽니다. ${OPENAPI_DOCUMENT_LIMITS.maxBytes}바이트 이하 파일을 선택하세요.`;
+const OPENAPI_FILE_READ_ERROR = "OpenAPI 파일을 읽지 못했습니다. JSON 또는 YAML 파일을 확인하세요.";
+const RUN_DEFINITION_EXPORT_ERROR = "Run Manager definition을 다운로드하지 못했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.";
 const SAFE_ERROR_MESSAGES = new Set([
   "요청 기록을 찾을 수 없습니다",
   "규칙을 찾을 수 없습니다",
@@ -78,11 +93,17 @@ const SAFE_ERROR_MESSAGES = new Set([
   "replay 응답을 읽지 못했습니다",
   "replay는 데스크톱 앱에서만 사용할 수 있습니다",
   "response sequence를 초기화하지 못했습니다",
+  "겹치는 규칙을 저장하려면 충돌 확인이 필요합니다",
+  "실행 중인 loopback 서버만 Run Manager 서비스로 내보낼 수 있습니다",
+  "Webhook service profile을 만들 수 없습니다",
+  "credential 형태의 응답이 포함된 규칙은 service profile로 내보낼 수 없습니다",
+  "Webhook service profile 개수 제한에 도달했습니다",
 ]);
 
 function emptyRule(): ResponseRule {
   return {
     id: "",
+    priority: 0,
     method: "POST",
     path: "/hook",
     status: 200,
@@ -90,6 +111,13 @@ function emptyRule(): ResponseRule {
     body: "",
     delayMs: 0,
     sequence: [],
+  };
+}
+
+function normalizeRule(rule: ResponseRule): ResponseRule {
+  return {
+    ...rule,
+    priority: rule.priority ?? 0,
   };
 }
 
@@ -109,9 +137,94 @@ function safeMessage(error: unknown): string {
   return SAFE_ERROR_MESSAGES.has(message) ? message : GENERIC_ERROR_MESSAGE;
 }
 
+function safeExportMessage(error: unknown): string {
+  const message = safeMessage(error);
+  return message === GENERIC_ERROR_MESSAGE ? RUN_DEFINITION_EXPORT_ERROR : message;
+}
+
 function formatFixtureTime(receivedAtMs: number): string {
   const date = new Date(receivedAtMs);
   return Number.isFinite(date.getTime()) ? date.toISOString() : "시간 미상";
+}
+
+function compactRulePart(value: string, maxChars = 120): string {
+  return value.length <= maxChars ? value : `${value.slice(0, maxChars - 1)}…`;
+}
+
+function formatRuleLabel(rule: ResponseRule | undefined, fallbackId: string): string {
+  const method = compactRulePart(rule?.method ?? "*");
+  const path = compactRulePart(rule?.path ?? "(경로 미상)");
+  const id = compactRulePart(rule?.id || fallbackId);
+  return `${method} ${path} [${id}]`;
+}
+
+function buildRuleConflictSummary(
+  candidate: ResponseRule,
+  conflicts: readonly {
+    existingRuleId: string;
+    winnerRuleId: string;
+  }[],
+  knownRules: readonly ResponseRule[],
+): string {
+  const candidateLabel = formatRuleLabel(candidate, candidate.id);
+  const lines = conflicts.slice(0, 5).map((conflict) => {
+    const existing = knownRules.find((knownRule) => knownRule.id === conflict.existingRuleId);
+    const winner = conflict.winnerRuleId === candidate.id
+      ? candidate
+      : knownRules.find((knownRule) => knownRule.id === conflict.winnerRuleId);
+    return `${candidateLabel} ↔ ${formatRuleLabel(existing, conflict.existingRuleId)} · 적용: ${formatRuleLabel(winner, conflict.winnerRuleId)}`;
+  });
+  if (conflicts.length > lines.length) lines.push(`외 ${conflicts.length - lines.length}개 충돌`);
+  return [
+    `겹치는 응답 규칙 ${conflicts.length}개가 있습니다.`,
+    ...lines,
+    "우선순위를 확인하고 저장할까요?",
+  ].join("\n");
+}
+
+function openApiFormatForFileName(fileName: string): OpenApiDocumentFormat | null {
+  const lowerName = fileName.toLowerCase();
+  if (lowerName.endsWith(".json")) return "json";
+  if (lowerName.endsWith(".yaml") || lowerName.endsWith(".yml")) return "yaml";
+  return null;
+}
+
+function openApiSkipReason(reason: OpenApiRuleOperation["reason"]): string {
+  switch (reason) {
+    case "pathParametersUnsupported":
+      return "경로 파라미터({param})가 있어 적용할 수 없습니다.";
+    case "pathUnsupported":
+      return "안전하지 않은 경로라 적용할 수 없습니다.";
+    case "operationInvalid":
+      return "operation 구조가 올바르지 않아 적용할 수 없습니다.";
+    case "referenceUnsupported":
+      return "참조($ref) operation은 적용할 수 없습니다.";
+    default:
+      return "이 operation은 적용할 수 없습니다.";
+  }
+}
+
+function isLoopbackAddress(address: string | null): boolean {
+  if (!address) return false;
+  const value = address.trim();
+  if (value === "localhost" || value.startsWith("localhost:")) return true;
+  if (value.startsWith("[")) {
+    const closingBracket = value.indexOf("]");
+    return closingBracket > 1 && value.slice(1, closingBracket) === "::1";
+  }
+  const separator = value.lastIndexOf(":");
+  const host = separator >= 0 ? value.slice(0, separator) : value;
+  return host === "127.0.0.1" || host === "::1";
+}
+
+async function readOpenApiFile(file: File): Promise<string> {
+  if (typeof file.text === "function") return file.text();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("file read failed"));
+    reader.readAsText(file);
+  });
 }
 
 export default function App() {
@@ -129,9 +242,13 @@ export default function App() {
   const [contextHistory, setContextHistory] = useState<RequestRecord | null>(null);
   const [contextRule, setContextRule] = useState<ResponseRule | null>(null);
   const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
+  const [openApiPreview, setOpenApiPreview] = useState<OpenApiRulePreview | null>(null);
+  const [openApiError, setOpenApiError] = useState<string | null>(null);
+  const [selectedOpenApiOperationId, setSelectedOpenApiOperationId] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const operationInFlight = useRef(false);
   const refreshRequest = useRef(0);
+  const openApiInputRef = useRef<HTMLInputElement>(null);
 
   const beginBusy = useCallback(() => {
     if (!mountedRef.current || operationInFlight.current) return false;
@@ -191,7 +308,9 @@ export default function App() {
     if (!mountedRef.current || refreshRequest.current !== request) return;
     if (statusResult.status === "fulfilled") setStatus(statusResult.value);
     if (historyResult.status === "fulfilled") setHistory(historyResult.value);
-    if (rulesResult.status === "fulfilled") setRules(rulesResult.value);
+    if (rulesResult.status === "fulfilled") {
+      setRules(rulesResult.value.map(normalizeRule));
+    }
     if (fixtureResult.status === "fulfilled") setFixtures(fixtureResult.value);
     else setFixtures([]);
     const failure = [statusResult, historyResult, rulesResult, fixtureResult]
@@ -269,21 +388,109 @@ export default function App() {
     }
   };
 
+  const onOpenApiFile = async (file: File, format: OpenApiDocumentFormat) => {
+    // Reject oversized input before touching File.text() so the renderer never
+    // loads an unbounded local document into memory.
+    if (file.size > OPENAPI_DOCUMENT_LIMITS.maxBytes) {
+      setOpenApiPreview(null);
+      setSelectedOpenApiOperationId(null);
+      setOpenApiError(OPENAPI_FILE_TOO_LARGE_ERROR);
+      return;
+    }
+    if (!beginBusy()) return;
+    setOpenApiPreview(null);
+    setSelectedOpenApiOperationId(null);
+    setOpenApiError(null);
+    try {
+      const text = await readOpenApiFile(file);
+      const result = previewOpenApiRules(text, format, file.name);
+      if (!mountedRef.current) return;
+      if (result.ok) setOpenApiPreview(result.preview);
+      else setOpenApiError(result.message);
+    } catch {
+      if (mountedRef.current) setOpenApiError(OPENAPI_FILE_READ_ERROR);
+    } finally {
+      endBusy();
+    }
+  };
+
+  const onOpenApiFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    // Reset immediately so selecting the same file again still emits change.
+    input.value = "";
+    if (!file) return;
+    const format = openApiFormatForFileName(file.name);
+    if (!format) {
+      setOpenApiPreview(null);
+      setSelectedOpenApiOperationId(null);
+      setOpenApiError(OPENAPI_FILE_FORMAT_ERROR);
+      return;
+    }
+    void onOpenApiFile(file, format);
+  };
+
+  const onApplyOpenApiDraft = () => {
+    if (!openApiPreview || !selectedOpenApiOperationId) return;
+    const operation = openApiPreview.operations.find(({ id }) => id === selectedOpenApiOperationId);
+    if (!operation || !operation.applyable) return;
+    const draft = openApiOperationToRule(operation);
+    if (!draft) return;
+    if (!window.confirm(`${operation.method} ${operation.path} → ${operation.status} operation을 rule 초안으로 편집기에 채울까요?`)) return;
+    setRuleDraft(draft);
+    setOpenApiError(null);
+  };
+
+  const canExportRunDefinition = status.running && isLoopbackAddress(status.address);
+
+  const onExportRunDefinition = async () => {
+    if (!canExportRunDefinition || !beginBusy()) return;
+    setError(null);
+    let objectUrl: string | null = null;
+    try {
+      const definition = await exportRunServiceDefinition();
+      if (!mountedRef.current) return;
+      const blob = new Blob([JSON.stringify(definition, null, 2)], { type: "application/json" });
+      objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = "webhook-lab-run-manager-definition.json";
+      document.body.appendChild(link);
+      try {
+        link.click();
+      } finally {
+        link.remove();
+      }
+    } catch (caught) {
+      if (mountedRef.current) setError(safeExportMessage(caught));
+    } finally {
+      if (objectUrl) {
+        try {
+          URL.revokeObjectURL(objectUrl);
+        } catch {
+          // Cleanup failure must not replace the fixed user-facing result.
+        }
+      }
+      endBusy();
+    }
+  };
+
   const onSaveRule = async () => {
-    const [validationIssue] = validateRule(rule);
+    const draft = normalizeRule(rule);
+    const [validationIssue] = validateRule(draft);
     if (validationIssue) {
       setError(validationIssue.message);
       return;
     }
 
-    if (rule.id && !rules.some((candidate) => candidate.id === rule.id)) {
+    if (draft.id && !rules.some((candidate) => candidate.id === draft.id)) {
       setError(STALE_RULE_MESSAGE);
       return;
     }
 
-    const projectedRules = rule.id
-      ? [...rules.filter((candidate) => candidate.id !== rule.id), rule]
-      : [...rules, rule];
+    const projectedRules = draft.id
+      ? [...rules.filter((candidate) => candidate.id !== draft.id), draft]
+      : [...rules, draft];
     const [collectionIssue] = validateRuleCollection(projectedRules);
     if (collectionIssue) {
       setError(collectionIssue.message);
@@ -293,7 +500,17 @@ export default function App() {
     if (!beginBusy()) return;
     setError(null);
     try {
-      await setRule(rule);
+      const preview = await previewRuleConflicts(draft);
+      if (!mountedRef.current) return;
+      const candidate = { ...draft, id: preview.candidateId };
+      const requiresConfirmation = preview.requiresConfirmation || preview.conflicts.length > 0;
+      if (
+        requiresConfirmation
+        && !window.confirm(buildRuleConflictSummary(candidate, preview.conflicts, rules))
+      ) {
+        return;
+      }
+      await setRule(candidate, requiresConfirmation);
       if (!mountedRef.current) return;
       setRuleDraft(emptyRule());
       await refresh();
@@ -334,7 +551,7 @@ export default function App() {
       const [freshStatus, freshRules] = await Promise.all([serverStatus(), listRules()]);
       if (!mountedRef.current || refreshRequest.current !== request) return;
       setStatus(freshStatus);
-      setRules(freshRules);
+      setRules(freshRules.map(normalizeRule));
 
       if (!freshStatus.running || !freshStatus.address) {
         setError("현재 서버가 실행 중이 아니거나 주소가 유효하지 않아 예시 curl을 만들지 못했습니다.");
@@ -513,7 +730,7 @@ export default function App() {
     try {
       const draft = await fixtureToRule(fixture.id);
       if (!mountedRef.current) return;
-      setRuleDraft(draft);
+      setRuleDraft(normalizeRule(draft));
     } catch (e) {
       if (mountedRef.current) setError(safeMessage(e));
     } finally {
@@ -580,7 +797,7 @@ export default function App() {
       return;
     }
 
-    const duplicate = {
+    const duplicate = normalizeRule({
       ...currentRule,
       id: "",
       headers: [...currentRule.headers],
@@ -588,7 +805,7 @@ export default function App() {
         ...step,
         headers: [...step.headers],
       })),
-    };
+    });
     const [validationIssue] = validateRule(duplicate);
     if (validationIssue) {
       setError(validationIssue.message);
@@ -604,7 +821,17 @@ export default function App() {
     if (!beginBusy()) return;
     setError(null);
     try {
-      await setRule(duplicate);
+      const preview = await previewRuleConflicts(duplicate);
+      if (!mountedRef.current) return;
+      const candidate = { ...duplicate, id: preview.candidateId };
+      const requiresConfirmation = preview.requiresConfirmation || preview.conflicts.length > 0;
+      if (
+        requiresConfirmation
+        && !window.confirm(buildRuleConflictSummary(candidate, preview.conflicts, rules))
+      ) {
+        return;
+      }
+      await setRule(candidate, requiresConfirmation);
       if (!mountedRef.current) return;
       await refresh();
     } catch (e) {
@@ -629,6 +856,7 @@ export default function App() {
     ruleIssues.find((issue) => issue.field === field);
   const methodIssue = ruleIssueFor("method");
   const pathIssue = ruleIssueFor("path");
+  const priorityIssue = ruleIssueFor("priority");
   const statusIssue = ruleIssueFor("status");
   const headersIssue = ruleIssueFor("headers");
   const bodyIssue = ruleIssueFor("body");
@@ -748,6 +976,15 @@ export default function App() {
         ) : (
           <button className="btn danger" disabled={busy} onClick={() => void onStop()}>중지</button>
         )}
+        <button
+          type="button"
+          className="btn"
+          disabled={busy || !canExportRunDefinition}
+          onClick={() => void onExportRunDefinition()}
+          title="실행 중인 loopback 서버에서만 사용할 수 있습니다"
+        >
+          Run Manager definition JSON 다운로드
+        </button>
       </header>
 
       {lanBind && <div className="warn">LAN 공개는 명시적 설정입니다. 외부에서 접근 가능합니다.</div>}
@@ -757,6 +994,9 @@ export default function App() {
       <div className="main">
         <section className="panel">
           <h2>Rules</h2>
+          <p className="field-help precedence-help">
+            priority가 높을수록 먼저 적용됩니다. 같으면 정확한 path, method 지정, 긴 wildcard 순서이며 마지막에는 rule ID로 결정합니다.
+          </p>
           <div className="rule-editor">
             <div className="rule-field">
               <label htmlFor="rule-method">method</label>
@@ -790,6 +1030,26 @@ export default function App() {
                 경로 전체가 정확히 일치합니다. 마지막 문자가 *일 때만 그 앞부분으로 시작하는 경로와 일치합니다 (예: /events/* → /events/123). /로 시작하고 최대 4,096자/16,384바이트입니다.
               </p>
               {pathIssue && <p id="rule-path-error" className="field-error">{pathIssue.message}</p>}
+            </div>
+            <div className="rule-field">
+              <label htmlFor="rule-priority">priority</label>
+              <input
+                id="rule-priority"
+                type="number"
+                placeholder="priority"
+                value={rule.priority ?? 0}
+                min={MIN_RULE_PRIORITY}
+                max={MAX_RULE_PRIORITY}
+                step={1}
+                disabled={busy}
+                aria-describedby={`rule-priority-help${priorityIssue ? " rule-priority-error" : ""}`}
+                aria-invalid={priorityIssue ? "true" : undefined}
+                onChange={(e) => setRuleDraft({ ...rule, priority: Number(e.currentTarget.value) })}
+              />
+              <p id="rule-priority-help" className="field-help">
+                우선순위가 높을수록 먼저 적용됩니다 (허용 범위: {MIN_RULE_PRIORITY}~{MAX_RULE_PRIORITY}). 같은 값이면 정확한 path와 method 지정 규칙이 우선합니다.
+              </p>
+              {priorityIssue && <p id="rule-priority-error" className="field-error">{priorityIssue.message}</p>}
             </div>
             <div className="rule-field">
               <label htmlFor="rule-status">status</label>
@@ -929,6 +1189,77 @@ export default function App() {
             </div>
             <button className="btn primary" disabled={busy} onClick={() => void onSaveRule()}>{rule.id ? "규칙 저장" : "규칙 추가"}</button>
           </div>
+          <section className="openapi-section" aria-labelledby="openapi-heading">
+            <div className="openapi-heading">
+              <div>
+                <h3 id="openapi-heading">OpenAPI → rule draft</h3>
+                <p className="field-help">
+                  JSON/YAML 파일을 선택하면 안전한 operation만 미리봅니다. 선택하고 확인해야 편집기에 채워지며 자동 저장하지 않습니다.
+                </p>
+              </div>
+              <div className="openapi-file-actions">
+                <input
+                  ref={openApiInputRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept=".json,.yaml,.yml,application/json,application/yaml,text/yaml"
+                  aria-label="OpenAPI JSON/YAML 파일 선택"
+                  disabled={busy}
+                  onChange={onOpenApiFileChange}
+                />
+                <button
+                  type="button"
+                  className="mini"
+                  disabled={busy}
+                  onClick={() => openApiInputRef.current?.click()}
+                >
+                  OpenAPI 파일 선택
+                </button>
+              </div>
+            </div>
+            {openApiError && <p className="field-error" role="alert">{openApiError}</p>}
+            {openApiPreview && (
+              <div className="openapi-preview" aria-label="OpenAPI operation 미리보기">
+                <p className="field-help">
+                  {openApiPreview.sourceName} · OpenAPI {openApiPreview.version} · {openApiPreview.operations.length}개 operation
+                </p>
+                {openApiPreview.operations.length === 0 && (
+                  <p className="dim">미리볼 operation이 없습니다.</p>
+                )}
+                <div className="openapi-operations" role="list">
+                  {openApiPreview.operations.map((operation) => (
+                    <label
+                      className={`openapi-operation ${operation.applyable ? "" : "unavailable"}`}
+                      key={operation.id}
+                      role="listitem"
+                    >
+                      <input
+                        type="radio"
+                        name="openapi-operation"
+                        value={operation.id}
+                        checked={selectedOpenApiOperationId === operation.id}
+                        disabled={busy || !operation.applyable}
+                        aria-label={`${operation.method} ${operation.path} (${operation.status})`}
+                        onChange={() => setSelectedOpenApiOperationId(operation.id)}
+                      />
+                      <span className="mono">{operation.method} {operation.path} → {operation.status}</span>
+                      {!operation.applyable && (
+                        <span className="field-error">{openApiSkipReason(operation.reason)}</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="mini"
+                  disabled={busy || !selectedOpenApiOperationId}
+                  onClick={onApplyOpenApiDraft}
+                >
+                  선택한 operation을 rule 초안에 적용
+                </button>
+              </div>
+            )}
+          </section>
           {rules.map((targetRule) => (
             <div
               key={targetRule.id}
@@ -956,6 +1287,7 @@ export default function App() {
                 sequence 초기화
               </button>
               <span className="mono">{targetRule.method ?? "*"} {targetRule.path} → {targetRule.status}{targetRule.delayMs ? ` (+${targetRule.delayMs}ms)` : ""}</span>
+              <span className="priority-badge">priority {targetRule.priority ?? 0}</span>
               <button
                 type="button"
                 className="mini"

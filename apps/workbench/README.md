@@ -7,6 +7,9 @@
 
 - **ProjectProfile CRUD** — wsl-desktop 프로젝트와 Life Log `projects/v1` snapshot을 흡수 (canonical identity 단일 규칙)
 - **Launcher profile snapshot producer (#487)** — 검증된 profile의 opaque ID·안전한 label·고정 detail·target metadata만 `workbench/v1/profiles.json` named view로 발행한다. project path·환경·서비스 ID는 snapshot에 넣지 않으며, list/create/update/delete의 primary 결과 뒤 publication은 best-effort다.
+- **Port binding snapshot producer** — profile의 expected port만 공용 strict `snapshot:port-bindings/v1`의
+  `port-bindings` named view로 발행한다. 이 view는 Run Manager와 독립적이며 process identity나
+  ownership을 선언하지 않는다.
 - **사전 점검(read-only health)** — Git/WSL distro/예상 포트/Run Manager 서비스 상태.
   WSL profile은 `wsl.exe -l -v`에서 해당 distro가 이미 Running인지 먼저 확인하고,
   stopped/missing/unavailable이면 distro-scoped Git을 실행하거나 distro를 시작하지 않는다.
@@ -44,6 +47,13 @@ tag/workflow evidence는 각 GitHub Release에서 구분해 확인한다.
 
 - `%LOCALAPPDATA%\com.devbox.workbench\project-profiles.json` (원자 교체)
 - Launcher projection은 `%LOCALAPPDATA%\devbox\integration\workbench\v1\profiles.json` named view로 별도 소유한다. 각 entry는 profile ID와 안전한 표시 정보 및 `{id}` payload만 가지며 project path·환경·서비스 ID를 복제하지 않는다. 유효한 store를 읽거나 CRUD가 성공한 뒤 발행하며, snapshot 파일 오류가 Workbench primary 결과를 실패시키지는 않는다.
+- Port Manager 관찰용 projection은 같은 producer/version 아래의 strict `port-bindings` view로
+  별도 발행한다. entry는 profile opaque id, bounded label, expected port만 가지므로 `expected`
+  correlation으로만 표시된다. process PID/creation identity, project path, command, environment,
+  service ID와 raw log bytes는 이 view에 넣지 않는다. Run Manager view가 missing·invalid·stale여도
+  Workbench view의 publication/소비와 native listener row는 독립적으로 유지된다. Workbench가
+  실행 중이면 검증된 profile store를 60초 간격으로 다시 읽어 profiles/port-bindings sidecar를
+  갱신하고, 프로세스가 종료된 뒤에는 Port Manager가 180초 freshness 경계에 따라 stale로 격리한다.
 - 저장소는 version·프로필 ID·canonical project identity·항목 수·문자열·서비스/포트 개수·직렬화 파일 크기를 읽기와 쓰기 양쪽에서 제한한다. 파일이 없을 때만 빈 저장소를 시작하며, JSON 손상·지원하지 않는 version·알 수 없는 필드·unsafe path·중복 identity·크기 초과는 기존 파일을 보존한 채 실패한다.
 - CRUD writer는 앱 수명 동안 하나의 lock으로 load → validate → replace → CAS 재검증 → atomic write를 직렬화한다. 저장 직전에 관찰한 원본 바이트가 바뀌면 충돌로 중단하므로 두 요청이 서로의 프로필을 덮어쓰지 않는다. update는 새 프로필을 별도 후보 store에서 검증한 뒤 교체하므로 canonical collision에서 기존 항목이 먼저 삭제되지 않는다.
 - Life Log 입력: `%LOCALAPPDATA%\devbox\integration\life-log\v1\summary.json`의
@@ -55,6 +65,13 @@ tag/workflow evidence는 각 GitHub Release에서 구분해 확인한다.
   flat `activeServices`를 read-only로 읽는다. snapshot 자체가 없으면 지정 서비스는 미실행으로
   보이지만, 손상·잘못된 schema·음수 uptime·중복/잘못된 ID·128개 초과는 빈 정상 상태로 축소하지
   않고 “서비스 상태를 확인할 수 없습니다”로 표시한다.
+
+Port Manager가 profile correlation의 owner를 열 때는 opaque profile id만 native launch로
+전달하며, 실행 직전에 현재 listener와 producer view를 다시 읽어 action을 재검증한다. Workbench의
+expected port projection은 listener ownership이나 kill/restart 권한을 만들지 않으며, 자동 lifecycle
+변경은 없다. `snapshot:port-bindings/v1`의 180초 freshness를 지난 view와 missing·invalid·stale
+source는 해당 correlation만 격리한다. WSL listener에도 이 Workbench projection으로 `verified`
+ownership을 부여하지 않는다.
 - WSL Desktop 입력: `%LOCALAPPDATA%\devbox\integration\wsl-desktop\v1\summary.json`의
   `runtime/v1` view. 공용 integration reader로 envelope·link·size·freshness를 확인한 뒤 distro
   64개, container 512개, mapping 1,024개와 문자열/identity를 다시 검증한다. host port별 source를
@@ -227,6 +244,8 @@ acceptance를 PR 직전에 최신 소스로 다시 수행해야 한다.
 WSL의 Windows GNU source check는 Tauri build script 단계에서 호스트에
 `x86_64-w64-mingw32-windres`가 없어 중단되었으므로, 이는 소스 오류가 아닌 toolchain
 환경 제약이며 Windows packaged acceptance를 별도로 통과해야 한다.
+Port Manager의 `snapshot:port-bindings/v1` correlation과 owner navigation에 대한 Windows
+packaged 실기 acceptance도 아직 pending이며, 이 문서의 source/test 결과만으로 완료를 뜻하지 않는다.
 
 ## 개발
 

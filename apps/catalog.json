@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 15,
+  "catalogRevision": 16,
   "apps": [
     {
       "id": "port-manager",
@@ -13,8 +13,16 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": [],
-      "produces": [],
-      "actions": []
+      "produces": ["handoff:log-source/v1"],
+      "actions": [
+        {
+          "actionId": "open-listener-log",
+          "actionVersion": 1,
+          "label": "Open listener log",
+          "target": "log-lens",
+          "payloadKind": "handoff:log-source/v1"
+        }
+      ]
     },
     {
       "id": "developer-toolbox",
@@ -188,7 +196,8 @@
         "snapshot:run-manager/workspace-tasks/v1",
         "snapshot:run-manager/task-control-receipts/v1",
         "handoff:log-source/v1",
-        "snapshot:daily-activity/v1"
+        "snapshot:daily-activity/v1",
+        "snapshot:port-bindings/v1"
       ],
       "actions": []
     },
@@ -205,7 +214,8 @@
       "accepts": ["path", "profile"],
       "produces": [
         "snapshot:workbench/profiles/v1",
-        "handoff:task-control/v1"
+        "handoff:task-control/v1",
+        "snapshot:port-bindings/v1"
       ],
       "actions": [
         {

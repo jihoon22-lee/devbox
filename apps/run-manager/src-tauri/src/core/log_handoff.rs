@@ -21,6 +21,8 @@ pub const MAX_PAYLOAD_BYTES: usize = 16 * 1024;
 pub fn payload_for_run(run_id: &str, stream: LogStream) -> Result<Value, LogSearchError> {
     let reference = source_ref(run_id, stream)?;
     let payload = serde_json::to_value(reference).map_err(|_| LogSearchError::InvalidSource)?;
+    devbox_applink::validate_run_log_source_payload(&payload)
+        .map_err(|_| LogSearchError::InvalidSource)?;
     validate_payload(&payload)?;
     Ok(payload)
 }
@@ -33,6 +35,8 @@ pub fn validate_payload(payload: &Value) -> Result<LogSourceRef, LogSearchError>
     if bytes.len() > MAX_PAYLOAD_BYTES {
         return Err(LogSearchError::InvalidSource);
     }
+    devbox_applink::validate_run_log_source_payload(payload)
+        .map_err(|_| LogSearchError::InvalidSource)?;
     let reference: LogSourceRef =
         serde_json::from_value(payload.clone()).map_err(|_| LogSearchError::InvalidSource)?;
     if reference.kind != HANDOFF_KIND {

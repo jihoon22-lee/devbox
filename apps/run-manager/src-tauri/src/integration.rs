@@ -9,7 +9,7 @@
 //! - secret·환경변수 값은 포함하지 않는다
 //! - 기록 실패가 앱 동작을 막지 않는다 (오류만 로그)
 
-use crate::core::models::JobKind;
+use crate::core::models::{Job, JobKind, TargetKind};
 use crate::core::workspace_task_control::WorkspaceTaskControlReceipt;
 use crate::core::workspace_tasks::WorkspaceTaskState;
 use crate::storage::{DatabaseState, LauncherDefinition};
@@ -150,9 +150,126 @@ fn write_snapshot_in(root: &Path, database: &DatabaseState) -> Result<(), String
         root,
         JOBS_SERVICES_VIEW_KIND,
     )?;
+    write_port_bindings_in(root, database)?;
     write_workspace_tasks_in(root, database)?;
     write_task_control_receipts_in(root, database)?;
     write_daily_activity_in(root, database, current_epoch_ms())
+}
+
+pub fn write_port_bindings(database: &DatabaseState) -> Result<(), String> {
+    write_port_bindings_in(&devbox_integration::integration_root(), database)
+}
+
+fn write_port_bindings_in(root: &Path, database: &DatabaseState) -> Result<(), String> {
+    let services = database
+        .list_services()
+        .map_err(|_| SNAPSHOT_ERROR.to_owned())?;
+    if services.len() > MAX_JOBS_SERVICES {
+        return Err(SNAPSHOT_ERROR.to_owned());
+    }
+    let entries = build_port_binding_entries(database, services)?;
+    let envelope =
+        devbox_integration::port_bindings_envelope(PRODUCER_ID, env!("CARGO_PKG_VERSION"), entries)
+            .map_err(|_| SNAPSHOT_ERROR.to_owned())?;
+    devbox_integration::write_named_view_snapshot_atomic(
+        &envelope,
+        root,
+        devbox_integration::PORT_BINDINGS_VIEW_KIND,
+    )
+}
+
+fn build_port_binding_entries(
+    database: &DatabaseState,
+    services: Vec<Job>,
+) -> Result<Vec<devbox_integration::PortBindingEntry>, String> {
+    if services.len() > MAX_JOBS_SERVICES {
+        return Err(SNAPSHOT_ERROR.to_owned());
+    }
+    let mut entries = Vec::new();
+    for service in services {
+        let (Some(address), Some(port)) = (
+            service.health_tcp_address.as_deref(),
+            service.health_tcp_port,
+        ) else {
+            continue;
+        };
+        if !valid_entry_id(&service.id) {
+            return Err(SNAPSHOT_ERROR.to_owned());
+        }
+
+        let run = database
+            .active_run(&service.id)
+            .map_err(|_| SNAPSHOT_ERROR.to_owned())?;
+        let run_id = run
+            .as_ref()
+            .map(|run| run.id.clone())
+            .filter(|id| valid_entry_id(id));
+        if run.is_some() && run_id.is_none() {
+            return Err(SNAPSHOT_ERROR.to_owned());
+        }
+        let logs_available = run
+            .as_ref()
+            .is_some_and(|run| run.log_dir.is_some() && run.logs_deleted_at.is_none());
+        let process = match (service.target_kind, run.as_ref()) {
+            (TargetKind::Windows, Some(run)) => match (
+                run.target_pid.and_then(|value| u32::try_from(value).ok()),
+                run.target_process_created_at
+                    .and_then(|value| u64::try_from(value).ok()),
+            ) {
+                (Some(pid), Some(created_at_ms)) if pid > 0 && created_at_ms > 0 => {
+                    Some(devbox_integration::PortBindingProcess { pid, created_at_ms })
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        let target_kind = match service.target_kind {
+            TargetKind::Windows => devbox_integration::PortBindingTargetKind::Windows,
+            TargetKind::Wsl => devbox_integration::PortBindingTargetKind::Wsl,
+        };
+        entries.push(devbox_integration::PortBindingEntry::RunService {
+            id: service.id,
+            label: public_service_label(&service.name),
+            address: address.to_owned(),
+            port,
+            target_kind,
+            target_distro: service.target_distro,
+            run_id,
+            logs_available,
+            process,
+        });
+    }
+    entries.sort_by(|left, right| match (left, right) {
+        (
+            devbox_integration::PortBindingEntry::RunService {
+                id: left_id,
+                port: left_port,
+                ..
+            },
+            devbox_integration::PortBindingEntry::RunService {
+                id: right_id,
+                port: right_port,
+                ..
+            },
+        ) => (left_id, left_port).cmp(&(right_id, right_port)),
+        _ => std::cmp::Ordering::Equal,
+    });
+    devbox_integration::validate_port_binding_entries(&entries)
+        .map_err(|_| SNAPSHOT_ERROR.to_owned())?;
+    Ok(entries)
+}
+
+fn public_service_label(name: &str) -> String {
+    let candidate = name.trim();
+    if valid_public_text(candidate, MAX_ENTRY_LABEL_BYTES)
+        && !contains_sensitive_value(candidate)
+        && !looks_like_path(candidate)
+        && !looks_like_environment(candidate)
+    {
+        candidate.to_owned()
+    } else {
+        "Run Manager 서비스".to_owned()
+    }
 }
 
 fn write_daily_activity_in(
@@ -304,6 +421,7 @@ fn build_workspace_task_envelope(
         let label = if valid_public_text(state.label.trim(), MAX_ENTRY_LABEL_BYTES)
             && !contains_sensitive_value(state.label.trim())
             && !looks_like_path(state.label.trim())
+            && !looks_like_environment(state.label.trim())
         {
             state.label.trim().to_owned()
         } else {
@@ -448,6 +566,7 @@ fn public_label(definition: &LauncherDefinition) -> String {
     if valid_public_text(candidate, MAX_ENTRY_LABEL_BYTES)
         && !contains_sensitive_value(candidate)
         && !looks_like_path(candidate)
+        && !looks_like_environment(candidate)
     {
         return candidate.to_owned();
     }
@@ -478,6 +597,23 @@ fn looks_like_path(value: &str) -> bool {
             && bytes[0].is_ascii_alphabetic()
             && bytes[1] == b':'
             && matches!(bytes[2], b'/' | b'\\'))
+}
+
+/// Labels must not become a side channel for copied environment assignments
+/// or expansion syntax, even when the variable name itself is not sensitive.
+fn looks_like_environment(value: &str) -> bool {
+    if value.starts_with('$') || value.contains("${") {
+        return true;
+    }
+    let Some((name, assigned)) = value.split_once('=') else {
+        return false;
+    };
+    !name.is_empty()
+        && !assigned.is_empty()
+        && name.len() <= 128
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
 fn valid_entry_id(value: &str) -> bool {
@@ -514,7 +650,7 @@ mod tests {
     use super::*;
     use crate::core::models::{
         EnvironmentCiphertextUpdate, EnvironmentUpdate, JobInput, OverlapPolicy, RestartPolicy,
-        RunStatus, ServiceInput, TargetKind,
+        RunExecutionMetadata, RunStatus, ServiceInput, TargetKind,
     };
     use crate::core::workspace_task_control::WorkspaceTaskControlReceiptStatus;
     use crate::core::workspace_tasks::{WorkspaceTaskDependsOrder, WorkspaceTaskKind};
@@ -719,6 +855,7 @@ mod tests {
             WORKSPACE_TASKS_VIEW_KIND,
             TASK_CONTROL_RECEIPTS_VIEW_KIND,
             DAILY_ACTIVITY_VIEW_KIND,
+            devbox_integration::PORT_BINDINGS_VIEW_KIND,
         ] {
             let sidecar = devbox_integration::read_named_view_snapshot_in(
                 root.path(),
@@ -744,6 +881,121 @@ mod tests {
                 .len(),
             devbox_integration::MAX_DAILY_ACTIVITY_DAYS
         );
+    }
+
+    #[test]
+    fn port_binding_projection_correlates_only_configured_loopback_services() {
+        let database = database();
+        let mut configured = service_input("API service");
+        configured.health_tcp_address = Some("127.0.0.1".into());
+        configured.health_tcp_port = Some(8080);
+        database
+            .create_service_with_id_and_ciphertext_at(
+                "service-api".into(),
+                configured,
+                EnvironmentCiphertextUpdate::Clear,
+                1_000,
+            )
+            .unwrap();
+        database
+            .create_service_with_id_and_ciphertext_at(
+                "service-no-health".into(),
+                service_input("No health"),
+                EnvironmentCiphertextUpdate::Clear,
+                1_000,
+            )
+            .unwrap();
+
+        let run = database
+            .create_service_run_at("service-api", 2_000)
+            .unwrap();
+        assert!(database
+            .claim_run_starting(&run.id, "owner", "attempt")
+            .unwrap());
+        assert!(database
+            .mark_run_running_with_metadata(
+                &run.id,
+                "owner",
+                "attempt",
+                2_001,
+                &RunExecutionMetadata {
+                    log_dir: Some("private/log/path".into()),
+                    target_pid: Some(42),
+                    target_process_created_at: Some(1_725_000_000_000),
+                    ..RunExecutionMetadata::default()
+                },
+            )
+            .unwrap());
+
+        let entries =
+            build_port_binding_entries(&database, database.list_services().unwrap()).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0],
+            devbox_integration::PortBindingEntry::RunService {
+                id: "service-api".into(),
+                label: "API service".into(),
+                address: "127.0.0.1".into(),
+                port: 8080,
+                target_kind: devbox_integration::PortBindingTargetKind::Windows,
+                target_distro: None,
+                run_id: Some(run.id),
+                logs_available: true,
+                process: Some(devbox_integration::PortBindingProcess {
+                    pid: 42,
+                    created_at_ms: 1_725_000_000_000,
+                }),
+            }
+        );
+        let serialized = serde_json::to_string(&entries).unwrap();
+        for private in ["private/log/path", "command", "cwd", "environment"] {
+            assert!(!serialized.contains(private));
+        }
+    }
+
+    #[test]
+    fn port_binding_projection_never_claims_wsl_process_ownership() {
+        let database = database();
+        let mut input = service_input("WSL API");
+        input.target_kind = TargetKind::Wsl;
+        input.target_distro = Some("Ubuntu".into());
+        input.health_tcp_address = Some("localhost".into());
+        input.health_tcp_port = Some(3000);
+        database
+            .create_service_with_id_and_ciphertext_at(
+                "service-wsl".into(),
+                input,
+                EnvironmentCiphertextUpdate::Clear,
+                1_000,
+            )
+            .unwrap();
+        let entries =
+            build_port_binding_entries(&database, database.list_services().unwrap()).unwrap();
+        let devbox_integration::PortBindingEntry::RunService {
+            target_kind,
+            target_distro,
+            process,
+            ..
+        } = &entries[0]
+        else {
+            panic!("run service entry");
+        };
+        assert_eq!(*target_kind, devbox_integration::PortBindingTargetKind::Wsl);
+        assert_eq!(target_distro.as_deref(), Some("Ubuntu"));
+        assert_eq!(*process, None);
+    }
+
+    #[test]
+    fn port_binding_labels_reject_environment_shaped_values() {
+        assert_eq!(
+            public_service_label(r"PATH=C:\private\bin"),
+            "Run Manager 서비스"
+        );
+        assert_eq!(
+            public_service_label("${PRIVATE_ROOT}/server"),
+            "Run Manager 서비스"
+        );
+        assert_eq!(public_service_label("Local API"), "Local API");
     }
 
     #[test]

@@ -160,13 +160,17 @@ function parseSourceSummary(value: unknown): SourceSummary | null {
   };
 }
 
+function isLogSourceApp(value: unknown): value is LogSourcePreview["sourceApp"] {
+  return value === "run-manager" || value === "port-manager" || value === "wsl-desktop";
+}
+
 function parseLogSourcePreview(value: unknown): LogSourcePreview | null {
   if (!isRecord(value)
     || !hasOnlyKeys(value, ["id", "kind", "sourceApp", "expiresAtMs", "leaseUntilMs", "source"])
     || typeof value.id !== "string"
     || !HANDOFF_ID_PATTERN.test(value.id)
     || value.kind !== "log-source/v1"
-    || (value.sourceApp !== "run-manager" && value.sourceApp !== "wsl-desktop")
+    || !isLogSourceApp(value.sourceApp)
     || !Number.isSafeInteger(value.expiresAtMs)
     || !Number.isSafeInteger(value.leaseUntilMs)) return null;
   const expiresAtMs = value.expiresAtMs as number;
@@ -174,7 +178,7 @@ function parseLogSourcePreview(value: unknown): LogSourcePreview | null {
   if (expiresAtMs <= 0 || leaseUntilMs <= 0 || leaseUntilMs > expiresAtMs) return null;
   const source = parseSourceSummary(value.source);
   if (!source) return null;
-  if (value.sourceApp === "run-manager" && source.kind !== "run") return null;
+  if ((value.sourceApp === "run-manager" || value.sourceApp === "port-manager") && source.kind !== "run") return null;
   if (value.sourceApp === "wsl-desktop" && !["wslFile", "wslJournal"].includes(source.kind)) return null;
   return {
     id: value.id,

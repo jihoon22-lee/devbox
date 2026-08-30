@@ -43,6 +43,9 @@ pub fn run() {
             devbox_window_state_tauri::handle_window_event(window, event);
         })
         .invoke_handler(tauri::generate_handler![
+            commands::correlation::list_port_observations,
+            commands::correlation::open_port_owner,
+            commands::correlation::open_port_log,
             commands::ports::list_ports,
             commands::ports::kill_listener,
             commands::ports::handoff_container_stop,

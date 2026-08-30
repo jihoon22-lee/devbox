@@ -87,8 +87,9 @@ JS `Array.from`/`TextEncoder`와 Rust 구현이 같은 단위를 사용한다. �
 
 검증 실패는 raw input·secret·경로를 포함하지 않는 `규칙 입력이 유효하지 않습니다`로만
 응답하고 map을 변경하지 않는다. editor는 같은 validator로 add/edit/duplicate를 검사하며
-invalid raw draft를 유지하고 stale id, double action, 접근성 오류를 처리한다. 이 PR은 기존
-HashMap 저장/순회·id·순서·matcher semantics를 변경하지 않고 priority를 만들지 않는다.
+invalid raw draft를 유지하고 stale id, double action, 접근성 오류를 처리한다. #282 당시에는
+기존 HashMap 순회 semantics와 priority를 범위에 넣지 않았고, v0.6.0의 아래 §12가 그 선택
+계약을 명시적으로 대체한다.
 예시 curl은 별도 완료 범위이고, captured fixture 저장은 아래 #314 계약으로 구현했다. captured
 request replay/sequence는 아래 #362/#363 계약으로 구현했다. API Playground handoff는 아래 #315
 계약으로 구현하며, #282 완료 상태는 rule 설명·검증까지로 기록한다.
@@ -178,3 +179,28 @@ cursor를 전진시키며 rule 수정·삭제와 명시적인 response sequence 
 header와 비 ASCII header value는 거부한다. native writer는 `1xx`, `204`, `205`, `304`, `HEAD`
 응답에 body와 `Content-Length`를 쓰지 않는다. arbitrary scripting과 distributed state는
 범위 밖이다.
+
+## 12. v0.6.0 deterministic rule·OpenAPI·Run service 계약
+
+`ResponseRule.priority`는 `-1000..=1000`, missing/default는 0이다. live matcher, 목록 정렬,
+conflict preview는 높은 priority, exact path, method-specific, 긴 trailing-star prefix,
+bytewise ascending ID 순서의 단일 Rust comparator를 공유한다. 신규 rule은 preview 전에 UUID를
+받고, exact/prefix 및 any/specific method overlap을 모두 분류한다. 저장 command는 rules→cursor
+lock을 잡은 상태에서 preview를 다시 계산하고 conflict 확인이 없으면 map/cursor를 변경하지
+않는다. 따라서 HashMap insertion order, frontend 정렬, request timing은 winner를 바꾸지 않는다.
+
+공용 `packages/openapi`는 API Playground에서 검증해 온 JSON/YAML parser를 두 번째 consumer와
+공유한다. Webhook adapter는 로컬 OpenAPI 3.0/3.1 문서에서 최대 250 paths·1,000 operations의
+method/path/lowest-2xx만 preview한다. server/auth/security/request body/example은 projection에
+없으며 parameter path와 `$ref`는 비활성 사유를 표시하고 wildcard로 변환하지 않는다. 적용은
+빈 headers/body, delay 0, priority 0의 local editor draft일 뿐 저장이나 listener mutation이 아니다.
+
+실행 중인 exact loopback listener만 `export_run_service_definition`을 허용한다. command는
+backend-owned current executable과 새 UUID로 고정하며 renderer 입력을 사용하지 않는다. rules는
+strict app-local `service-profiles/<uuid>.json`에만 저장되고 credential-shaped rule metadata 또는
+response를 포함하면 거부한다. listener lifecycle lock은 상태 확인부터 profile count 검사·write까지
+export를 직렬화한다. 다운로드 JSON은 Run Manager schema v1의 disabled/autoStart-false/restart-never service
+한 건, loopback health check, opaque profile ID만 포함하며 response/rule/env/cwd/runtime identity를
+포함하지 않는다. service process는 정확한 `--service-profile <uuid>` argv에서만 profile을 읽고
+숨은 listener를 시작한다. profile은 64개·8 MiB, strict schema, no-link handle read/revalidation과
+atomic write 경계를 사용한다. Windows packaged 실행·종료는 release acceptance 전까지 pending이다.

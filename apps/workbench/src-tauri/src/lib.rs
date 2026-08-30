@@ -73,6 +73,10 @@ pub fn run() {
                     eprintln!("life-log snapshot: 프로필 저장소를 사용할 수 없습니다");
                 }
             }
+            integration::spawn_profile_snapshot_writer(
+                app.handle().clone(),
+                Arc::clone(store_state.inner()),
+            );
             Ok(())
         })
         .on_window_event(|window, event| {
