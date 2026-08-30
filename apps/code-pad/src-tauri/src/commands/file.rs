@@ -1269,6 +1269,9 @@ fn replace_file(temporary: &Path, target: &Path) -> io::Result<()> {
 fn replace_file(temporary: &Path, target: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{
+        ERROR_ACCESS_DENIED, ERROR_LOCK_VIOLATION, ERROR_SHARING_VIOLATION, WIN32_ERROR,
+    };
     use windows::Win32::Storage::FileSystem::{
         MoveFileExW, ReplaceFileW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
         REPLACEFILE_WRITE_THROUGH,
