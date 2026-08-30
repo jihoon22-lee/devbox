@@ -1178,6 +1178,14 @@ fn scheduler_command_error(error: SchedulerError) -> String {
     match error {
         SchedulerError::Storage(_) => "run-storage-failed".to_string(),
         SchedulerError::Cron(_) => "job-schedule-invalid".to_string(),
+        SchedulerError::Adapter { source, .. }
+            if matches!(
+                source.message.as_str(),
+                "workspace-task-source-changed" | "workspace-task-configuration-invalid"
+            ) =>
+        {
+            source.message
+        }
         SchedulerError::Adapter { .. } => "run-execution-failed".to_string(),
         SchedulerError::Join(_) => "scheduler-unavailable".to_string(),
     }
@@ -1455,6 +1463,17 @@ mod tests {
         assert_eq!(
             workspace_task_operation_error(ProjectImportError::TimedOut),
             "workspace-task-import-timeout"
+        );
+    }
+
+    #[test]
+    fn workspace_adapter_codes_remain_actionable_at_the_command_boundary() {
+        assert_eq!(
+            scheduler_command_error(SchedulerError::Adapter {
+                run_id: "opaque-run".to_owned(),
+                source: crate::scheduler::AdapterError::new("workspace-task-source-changed",),
+            }),
+            "workspace-task-source-changed"
         );
     }
 }

@@ -620,9 +620,10 @@ mod tests {
         .unwrap();
         assert_eq!(spec.argv[0], "wsl.exe");
         assert_eq!(spec.argv[3], "--cd");
-        assert_eq!(spec.argv[5], "--");
+        assert_eq!(spec.argv[5], "--exec");
         assert_eq!(spec.argv[6], "setsid");
-        assert_eq!(spec.argv[7], "bash");
+        assert_eq!(spec.argv[7], "--wait");
+        assert_eq!(spec.argv[8], "bash");
         assert!(!spec.wrapper.contains("secret"));
         assert_eq!(spec.environment["TOKEN"], "secret");
     }

@@ -1441,6 +1441,79 @@ mod tests {
         assert!(!database.get_job(&job_id).unwrap().unwrap().enabled);
     }
 
+    /// Manual acceptance fixture for WSL interop. It is ignored in portable
+    /// CI because it requires Windows `wsl.exe` and the named distribution.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[ignore = "requires WSL interoperability and an installed distribution"]
+    async fn actual_wsl_workspace_process_keeps_metacharacters_in_one_argument() {
+        let root = tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join(".vscode")).unwrap();
+        std::fs::write(
+            root.path().join(".vscode/tasks.json"),
+            r#"{
+              "version":"2.0.0",
+              "tasks":[{
+                "label":"argv-boundary",
+                "type":"process",
+                "command":"/usr/bin/printf",
+                "args":["%s", "literal; touch ${workspaceFolder}/should-not-exist"]
+              }]
+            }"#,
+        )
+        .unwrap();
+        let distro = std::env::var("WSL_DISTRO_NAME").unwrap_or_else(|_| "Ubuntu".to_owned());
+        let plan = crate::core::workspace_tasks::preview_workspace_tasks(
+            root.path(),
+            TargetKind::Wsl,
+            Some(&distro),
+        )
+        .unwrap();
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let applied = database
+            .apply_workspace_task_import_at(&plan, &[plan.items[0].id.clone()], 100)
+            .unwrap();
+        database
+            .trust_workspace_task_source_at(&applied.source_id, &plan.revision, 101)
+            .unwrap();
+        let job_id = database.list_workspace_task_states().unwrap()[0]
+            .job_id
+            .clone();
+        database.set_job_enabled_at(&job_id, true, 102).unwrap();
+        let run = database.create_manual_run_at(&job_id, 103).unwrap();
+        let run_id = run.id.clone();
+        let owner = "test-owner";
+        let attempt = uuid::Uuid::new_v4().to_string();
+        assert!(database
+            .claim_run_starting(&run.id, owner, &attempt)
+            .unwrap());
+        let data = root.path().join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        let adapter = PlatformExecutionAdapter::new(
+            Arc::clone(&database),
+            EnvironmentProtectorState::new(),
+            &data,
+        );
+        let handle = adapter
+            .spawn_request(ExecutionRequest {
+                job: database.get_job(&job_id).unwrap().unwrap(),
+                run,
+                owner_instance_id: owner.to_owned(),
+                attempt_token: attempt,
+            })
+            .await
+            .unwrap();
+        assert_eq!(handle.wait().await.unwrap().exit_code, Some(0));
+        let logs = LogStreams::open_default(&data, &run_id).unwrap();
+        let output = logs
+            .tail_log(LogStream::Stdout, Some("0"), 64 * 1024)
+            .await
+            .unwrap()
+            .data;
+        assert!(String::from_utf8_lossy(&output).contains("literal; touch"));
+        assert!(!root.path().join("should-not-exist").exists());
+    }
+
     #[tokio::test]
     async fn async_reader_drains_every_byte_until_eof() {
         let root = tempdir().unwrap();

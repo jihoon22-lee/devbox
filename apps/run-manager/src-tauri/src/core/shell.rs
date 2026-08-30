@@ -280,7 +280,7 @@ fn build_wsl_supervisor(
 ) -> Result<String, ShellError> {
     validate_uuid("run ID", run_id)?;
     const SUPERVISOR: &str = r#"
-printf '%s\n' '__DEVBOX_RUN_HANDSHAKE_V1__' "$DEVBOX_RUN_MARKER" "$$" "$(ps -o pgid= -p \"$$\")" "$(ps -o sid= -p \"$$\")" '__DEVBOX_RUN_HANDSHAKE_END__';
+printf '%s\n' '__DEVBOX_RUN_HANDSHAKE_V1__' "$DEVBOX_RUN_MARKER" "$$" "$(ps -o pgid= -p $$)" "$(ps -o sid= -p $$)" '__DEVBOX_RUN_HANDSHAKE_END__';
 set +e;
 __DEVBOX_RUN_INVOCATION__
 __devbox_status=$?;
@@ -336,12 +336,13 @@ pub fn build_wsl_command(
     let wrapper = build_wsl_wrapper(run_id, command)?;
     let child_environment = prepare_wsl_environment(environment, existing_wslenv, run_id)?;
 
-    // 순수 argv 조립(wsl.exe -d <distro> [--cd <cwd>] --)은 devbox-wsl 프리미티브를 쓴다.
+    // 순수 argv 조립(wsl.exe -d <distro> [--cd <cwd>] --exec)은 devbox-wsl 프리미티브를 쓴다.
     // 빈 command 베이스에 실행 정책(setsid·bash 플래그·wrapper)을 덧붙인다.
-    let mut argv = devbox_wsl::argv::build_exec_argv(distro, cwd, "")
+    let mut argv = devbox_wsl::argv::build_direct_exec_argv(distro, cwd, "")
         .map_err(|_| ShellError::InvalidDistro)?;
     argv.extend([
         "setsid".to_owned(),
+        "--wait".to_owned(),
         "bash".to_owned(),
         "--noprofile".to_owned(),
         "--norc".to_owned(),
@@ -377,10 +378,11 @@ pub fn build_wsl_process_command(
     validate_environment(environment)?;
     let wrapper = build_wsl_process_wrapper(run_id)?;
     let child_environment = prepare_wsl_environment(environment, existing_wslenv, run_id)?;
-    let mut argv = devbox_wsl::argv::build_exec_argv(distro, cwd, "")
+    let mut argv = devbox_wsl::argv::build_direct_exec_argv(distro, cwd, "")
         .map_err(|_| ShellError::InvalidDistro)?;
     argv.extend([
         "setsid".to_owned(),
+        "--wait".to_owned(),
         "bash".to_owned(),
         "--noprofile".to_owned(),
         "--norc".to_owned(),
@@ -425,8 +427,12 @@ pub fn merge_wslenv(
             entries.push(entry.to_owned());
         }
     }
-    entries.extend(managed.into_iter().map(|key| format!("{key}/w")));
-    entries.push(format!("{DEVBOX_RUN_MARKER}/w"));
+    // No direction flag: these values must cross both Windows -> WSL in the
+    // packaged app and WSL -> Windows -> WSL in local interop acceptance.
+    // `/w` would allow only the first WSL-to-Win32 hop and strip the marker
+    // before `wsl.exe` starts the target distribution.
+    entries.extend(managed);
+    entries.push(DEVBOX_RUN_MARKER.to_owned());
     Ok(entries.join(":"))
 }
 
@@ -879,7 +885,7 @@ mod tests {
             ["SECRET", "TOKEN"],
         )
         .unwrap();
-        assert_eq!(merged, "PATH/l:OTHER:SECRET/w:TOKEN/w:DEVBOX_RUN_MARKER/w");
+        assert_eq!(merged, "PATH/l:OTHER:SECRET:TOKEN:DEVBOX_RUN_MARKER");
     }
 
     #[test]
@@ -896,15 +902,16 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            &spec.argv[..11],
+            &spec.argv[..12],
             [
                 "wsl.exe",
                 "-d",
                 "Ubuntu 24.04",
                 "--cd",
                 "/tmp/work tree",
-                "--",
+                "--exec",
                 "setsid",
+                "--wait",
                 "bash",
                 "--noprofile",
                 "--norc",
@@ -929,7 +936,7 @@ mod tests {
         );
         assert_eq!(
             spec.environment.get("WSLENV"),
-            Some(&String::from("PATH/l:SECRET/w:DEVBOX_RUN_MARKER/w"))
+            Some(&String::from("PATH/l:SECRET:DEVBOX_RUN_MARKER"))
         );
         assert!(!spec.wrapper.contains("value with spaces"));
     }
