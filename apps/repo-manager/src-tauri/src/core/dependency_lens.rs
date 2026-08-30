@@ -2369,8 +2369,9 @@ dependencies = [{ name = "typing_extensions" }]
     #[test]
     fn repository_scan_reports_missing_stale_unsupported_and_duplicate_versions() {
         let root = tempdir().unwrap();
+        let lock_path = root.path().join("Cargo.lock");
         fs::write(
-            root.path().join("Cargo.lock"),
+            &lock_path,
             r#"version = 4
 [[package]]
 name = "shared"
@@ -2381,12 +2382,24 @@ version = "2.0.0"
 "#,
         )
         .unwrap();
-        std::thread::sleep(Duration::from_millis(5));
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&lock_path)
+            .unwrap()
+            .set_modified(UNIX_EPOCH + Duration::from_secs(60))
+            .unwrap();
+        let manifest_path = root.path().join("Cargo.toml");
         fs::write(
-            root.path().join("Cargo.toml"),
+            &manifest_path,
             "[package]\nname='demo'\nversion='0.1.0'\n[dependencies]\nshared='1'\n",
         )
         .unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&manifest_path)
+            .unwrap()
+            .set_modified(UNIX_EPOCH + Duration::from_secs(120))
+            .unwrap();
         fs::create_dir(root.path().join("python")).unwrap();
         fs::write(
             root.path().join("python/pyproject.toml"),
