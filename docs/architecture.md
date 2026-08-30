@@ -842,6 +842,34 @@ default-version metadata를 bounded 조회할 수 있다. 이 원격 결과는 R
 `dependency-summary/v1`에는 들어가지 않으므로 Workbench aggregate와 update/install 경계는
 계속 offline·read-only다.
 
+catalog revision 14(`#487`)부터 Launcher의 profile/repository source producer도 구현됐다.
+Workbench는 검증한 `ProfileStore`를 `%LOCALAPPDATA%\devbox\integration\workbench\v1\profiles.json`
+named sidecar의 `data.views.profiles`로, WSL Desktop은 검증한 terminal `ProfileStore`를
+`%LOCALAPPDATA%\devbox\integration\wsl-desktop\v1\profiles.json` named sidecar로 발행한다. 두
+profile view는 각각 기존의
+opaque profile ID, 안전한 표시 label, 고정 detail, `targetApp`/`targetKind`/
+`payloadVersion=1`, `{id}` payload만 포함하며(Workbench 512개, WSL Desktop 100개), 프로젝트
+경로·distro·cwd·시작 명령·pane 구성·서비스/환경 메타데이터·secret은 포함하지 않는다. Repo
+Manager는 bounded repository scan 집합을 교체하고 성공한 worktree 조회를 보강해
+`%LOCALAPPDATA%\devbox\integration\repo-manager\v1\repositories.json` named sidecar에 최대
+2,048개를 발행한다. repository와
+worktree entry의 ID는 canonical identity의 namespace-separated SHA-256 opaque 값이고,
+payload에는 실행 직전 재검증할 검증된 absolute `path`만 둔다. label은 안전한 basename,
+detail은 고정 repository/worktree 설명이며 canonical key·branch·status·Git 원문·remote/
+credential은 경계를 넘지 않는다. 각 producer의 primary list/scan/save/delete가 성공한 뒤
+publication은 best-effort로 수행하고, projection·bounds·atomic write 오류는 primary 동작을
+실패시키지 않으며 이전 last-good sidecar를 대체하지 않는다.
+
+Launcher는 named sidecar를 read-only로 읽고, 각 bounded serialized entry에서 exact SHA-256
+revision을 계산한다. 사용자가 실행하거나 즐겨찾기를 바꿀 때 expected revision으로 현재
+snapshot을 다시 읽어 entry·target capability·payload를 재검증하며, stale source는 명시적인
+확인 없이는 실행하지 않는다. Workbench/WSL Desktop은 profile ID를, Repo Manager는 path를
+각 수신 경계에서 다시 확인한다. Launcher의 favorites/recency 파일에는 result ID만 저장하고
+label·path·query·payload·source detail·secret은 저장하지 않는다. sidecar가 없거나 읽을 수
+없거나 손상된 경우 missing·corrupt·permission·linked를 source별로 구분해 격리하며, 한 source
+오류가 다른 source 검색을 막지 않는다. 이 문단은 source 구현 계약만 기록하며 Windows 실기
+acceptance와 v0.6.0 release 완료를 의미하지 않는다.
+
 filename/content FTS projection은 filter 값을 모두 SQLite parameter로 결합한다. source는 임의
 경로가 아닌 등록 `roots.id`이며 중첩 root는 가장 깊은 root가 소유한다. root id는 삭제 뒤
 재사용하지 않고, 현재 등록 root와 path ownership이 일치하지 않는 orphan/misowned row는 root가

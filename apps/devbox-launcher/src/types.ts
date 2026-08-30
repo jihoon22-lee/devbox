@@ -1,5 +1,6 @@
 export interface SearchResult {
   id: string;
+  revision: string;
   label: string;
   detail: string | null;
   source: string;
@@ -7,12 +8,14 @@ export interface SearchResult {
   targetKind: string;
   stale: boolean;
   explicitPreview: boolean;
+  favorite: boolean;
+  recent: boolean;
 }
 
 export interface SourceDiagnostic {
   producer: string;
   view: string;
-  status: "fresh" | "stale" | "missing" | "corrupt" | "permission";
+  status: "fresh" | "stale" | "missing" | "corrupt" | "permission" | "linked";
 }
 
 export interface SearchResponse {

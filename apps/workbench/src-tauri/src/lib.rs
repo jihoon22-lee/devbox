@@ -1,6 +1,7 @@
 mod applink;
 mod commands;
 mod core;
+mod integration;
 mod platform;
 
 use commands::workspace::{profile_store_state, run_registry, ProfileStoreState};

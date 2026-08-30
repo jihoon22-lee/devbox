@@ -324,7 +324,9 @@ pub fn profile_store_state() -> Arc<ProfileStoreState> {
 
 #[tauri::command]
 pub fn list_profiles(app: AppHandle) -> Result<Vec<ProjectProfile>, String> {
-    Ok(load_store(&app)?.profiles)
+    let store = load_store(&app)?;
+    crate::integration::publish_profiles_best_effort(&store);
+    Ok(store.profiles)
 }
 
 #[tauri::command]
@@ -344,6 +346,7 @@ pub fn create_profile(
     }
     let dup = store.upsert(profile)?;
     if let Some(existing) = dup {
+        crate::integration::publish_profiles_best_effort(&store);
         return Ok(existing);
     }
     let created = store
@@ -352,6 +355,7 @@ pub fn create_profile(
         .cloned()
         .ok_or_else(|| PROFILE_WRITE_ERROR.to_string())?;
     save_store_document(&app, &document, &store)?;
+    crate::integration::publish_profiles_best_effort(&store);
     Ok(created)
 }
 
@@ -368,7 +372,9 @@ pub fn update_profile(
     let document = load_store_document(&app)?;
     let mut store = document.store.clone();
     store.replace(profile)?;
-    save_store_document(&app, &document, &store)
+    save_store_document(&app, &document, &store)?;
+    crate::integration::publish_profiles_best_effort(&store);
+    Ok(())
 }
 
 #[tauri::command]
@@ -399,7 +405,9 @@ pub fn delete_profile(
     if !store.remove(&id) {
         return Err("프로필을 찾을 수 없습니다".to_string());
     }
-    save_store_document(&app, &document, &store)
+    save_store_document(&app, &document, &store)?;
+    crate::integration::publish_profiles_best_effort(&store);
+    Ok(())
 }
 
 /// wsl-desktop의 gitStatus 이관 (§3.1, §15.2). 프로젝트 경로들의 git 상태.

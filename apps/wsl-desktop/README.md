@@ -25,6 +25,12 @@
   복원하고, 현재 구성을 이름 있는 터미널 프로필로 저장한다. `OpenTarget::Profile` cold/hot
   요청은 같은 전환 경로를 사용한다. 시작 명령은 실행 전에 최종 문자열을 확인하고 새 세션에
   한 번만 보낸다.
+- **Launcher profile snapshot producer (#487)** — 검증된 터미널 프로필의 opaque ID·안전한
+  label·고정 detail·`{id}` target payload만 `wsl-desktop/v1/profiles.json` named view로
+  발행한다. distro·cwd·시작 명령·pane 구성·경로·secret은 snapshot에 넣지 않으며, primary
+  profile store의 유효한 읽기 또는 저장/삭제 성공 뒤 publication은 best-effort다. 손상된 profile store는 빈 값으로
+  덮어쓰지 않고 mutation을 거부한다(읽기 명령은 빈 목록을 반환할 수 있지만 기존 바이트와
+  last-good named snapshot은 보존한다).
 - **명령 팔레트** — `Ctrl+Shift+P`에서 활성 팬 분할·닫기·출력 검색·cwd 복사와 프로필
   전환을 키보드로 실행한다.
 - **동시 입력(broadcast)** — 기본 OFF. 활성 탭의 팬을 최소 2개, 최대 32개까지 직접 선택하고 대상 수를
@@ -108,8 +114,10 @@
 - Docker 컨테이너 목록과 detail 원문은 runtime memory에만 두며 localStorage나 profile에 저장하지
   않는다.
 - 공용 integration snapshot은 `%LOCALAPPDATA%\\devbox\\integration\\wsl-desktop\\v1\\summary.json`
-  하나만 소유한다. envelope의 `data.views.runtime`에는 다음처럼 공개에 필요한 최소 필드만
-  들어간다.
+  runtime view와 `%LOCALAPPDATA%\\devbox\\integration\\wsl-desktop\\v1\\profiles.json`
+  named profile view를 소유한다. profile view에는 opaque profile ID·안전한 label·고정 detail과
+  `{id}` payload만 들어가며 distro·cwd·시작 명령·pane 구성·경로·secret은 포함하지 않는다.
+  envelope의 `data.views.runtime`에는 다음처럼 공개에 필요한 최소 필드만 들어간다.
 
   ```json
   {
@@ -198,6 +206,9 @@
 - `app_local_data_dir/terminal-profiles.json`: version 1 이름 있는 터미널 프로필. atomic replace,
   탭 16개·팬 32개·한 줄 시작 명령 4,096자 제한, 참조 무결성·안전한 절대 cwd·명백한 평문
   credential 검증을 적용한다.
+- profile store가 corrupt/invalid이면 기존 바이트를 보존하고 profile mutation을 실패시킨다.
+  missing일 때만 빈 store를 시작하며, 유효한 저장/삭제 뒤 named profile snapshot을 best-effort로
+  다시 발행한다.
 
 ## 개발
 

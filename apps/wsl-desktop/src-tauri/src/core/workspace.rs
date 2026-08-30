@@ -92,12 +92,14 @@ impl ProfileStore {
         }
     }
 
-    /// Corrupt, unsupported, or unsafe stores fail closed to an empty collection.
-    pub fn load(input: &str) -> Self {
-        serde_json::from_str::<Self>(input)
-            .ok()
-            .filter(|store| store.validate().is_ok())
-            .unwrap_or_else(Self::empty)
+    /// Parse a complete store without turning corrupt input into a writable
+    /// empty value. Callers may show an empty read view, but mutations must
+    /// preserve invalid source bytes until the user explicitly repairs them.
+    pub fn load(input: &str) -> Result<Self, String> {
+        let store = serde_json::from_str::<Self>(input)
+            .map_err(|_| "터미널 프로필 저장소 형식이 올바르지 않습니다".to_string())?;
+        store.validate()?;
+        Ok(store)
     }
 
     pub fn to_json(&self) -> Result<String, String> {
@@ -382,16 +384,13 @@ mod tests {
         let mut store = ProfileStore::empty();
         store.upsert(profile()).unwrap();
         let json = store.to_json().unwrap();
-        assert_eq!(ProfileStore::load(&json), store);
+        assert_eq!(ProfileStore::load(&json).unwrap(), store);
     }
 
     #[test]
     fn corrupt_or_unsupported_store_fails_closed() {
-        assert_eq!(ProfileStore::load("not json"), ProfileStore::empty());
-        assert_eq!(
-            ProfileStore::load(r#"{"version":99,"profiles":[]}"#),
-            ProfileStore::empty()
-        );
+        assert!(ProfileStore::load("not json").is_err());
+        assert!(ProfileStore::load(r#"{"version":99,"profiles":[]}"#).is_err());
     }
 
     #[test]

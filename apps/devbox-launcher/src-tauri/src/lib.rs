@@ -99,6 +99,8 @@ pub fn run() {
             commands::launch_result,
             commands::preview_text_action,
             commands::perform_text_action,
+            commands::set_favorite,
+            commands::clear_recents,
             shortcut_config,
             set_shortcut,
         ])

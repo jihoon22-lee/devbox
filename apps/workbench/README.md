@@ -6,6 +6,7 @@
 ## 주요 기능
 
 - **ProjectProfile CRUD** — wsl-desktop 프로젝트와 Life Log `projects/v1` snapshot을 흡수 (canonical identity 단일 규칙)
+- **Launcher profile snapshot producer (#487)** — 검증된 profile의 opaque ID·안전한 label·고정 detail·target metadata만 `workbench/v1/profiles.json` named view로 발행한다. project path·환경·서비스 ID는 snapshot에 넣지 않으며, list/create/update/delete의 primary 결과 뒤 publication은 best-effort다.
 - **사전 점검(read-only health)** — Git/WSL distro/예상 포트/Run Manager 서비스 상태.
   WSL profile은 `wsl.exe -l -v`에서 해당 distro가 이미 Running인지 먼저 확인하고,
   stopped/missing/unavailable이면 distro-scoped Git을 실행하거나 distro를 시작하지 않는다.
@@ -42,6 +43,7 @@ tag/workflow evidence는 각 GitHub Release에서 구분해 확인한다.
 ## 데이터
 
 - `%LOCALAPPDATA%\com.devbox.workbench\project-profiles.json` (원자 교체)
+- Launcher projection은 `%LOCALAPPDATA%\devbox\integration\workbench\v1\profiles.json` named view로 별도 소유한다. 각 entry는 profile ID와 안전한 표시 정보 및 `{id}` payload만 가지며 project path·환경·서비스 ID를 복제하지 않는다. 유효한 store를 읽거나 CRUD가 성공한 뒤 발행하며, snapshot 파일 오류가 Workbench primary 결과를 실패시키지는 않는다.
 - 저장소는 version·프로필 ID·canonical project identity·항목 수·문자열·서비스/포트 개수·직렬화 파일 크기를 읽기와 쓰기 양쪽에서 제한한다. 파일이 없을 때만 빈 저장소를 시작하며, JSON 손상·지원하지 않는 version·알 수 없는 필드·unsafe path·중복 identity·크기 초과는 기존 파일을 보존한 채 실패한다.
 - CRUD writer는 앱 수명 동안 하나의 lock으로 load → validate → replace → CAS 재검증 → atomic write를 직렬화한다. 저장 직전에 관찰한 원본 바이트가 바뀌면 충돌로 중단하므로 두 요청이 서로의 프로필을 덮어쓰지 않는다. update는 새 프로필을 별도 후보 store에서 검증한 뒤 교체하므로 canonical collision에서 기존 항목이 먼저 삭제되지 않는다.
 - Life Log 입력: `%LOCALAPPDATA%\devbox\integration\life-log\v1\summary.json`의

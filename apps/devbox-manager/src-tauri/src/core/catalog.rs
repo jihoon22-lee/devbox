@@ -21,7 +21,7 @@ mod tests {
     fn parses_the_repository_v2_catalog_through_the_shared_contract() {
         let catalog = parse_catalog(BUILD_CATALOG).unwrap();
         assert_eq!(catalog.schema_version, 2);
-        assert_eq!(catalog.catalog_revision, Some(13));
+        assert_eq!(catalog.catalog_revision, Some(14));
         assert_eq!(catalog.apps.len(), 15);
         let knowledge = catalog
             .apps
@@ -48,12 +48,24 @@ mod tests {
             .find(|app| app.id == "wsl-desktop")
             .expect("WSL Desktop must remain in the repository catalog");
         assert_eq!(wsl_desktop.accepts, vec!["path", "profile"]);
+        assert_eq!(
+            wsl_desktop.produces,
+            vec![
+                "snapshot:wsl-desktop/runtime/v1",
+                "snapshot:wsl-desktop/profiles/v1",
+                "handoff:log-source/v1"
+            ]
+        );
         let workbench = catalog
             .apps
             .iter()
             .find(|app| app.id == "workbench")
             .expect("Workbench must remain in the repository catalog");
         assert_eq!(workbench.accepts, vec!["path", "profile"]);
+        assert_eq!(
+            workbench.produces,
+            vec!["snapshot:workbench/profiles/v1", "handoff:task-control/v1"]
+        );
         let repo_manager = catalog
             .apps
             .iter()
@@ -62,7 +74,10 @@ mod tests {
         assert_eq!(repo_manager.accepts, vec!["path"]);
         assert_eq!(
             repo_manager.produces,
-            vec!["snapshot:repo-manager/dependency-summary/v1"]
+            vec![
+                "snapshot:repo-manager/dependency-summary/v1",
+                "snapshot:repo-manager/repositories/v1"
+            ]
         );
         let life_log = catalog
             .apps

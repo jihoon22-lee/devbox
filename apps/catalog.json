@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 13,
+  "catalogRevision": 14,
   "apps": [
     {
       "id": "port-manager",
@@ -49,7 +49,11 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["path", "profile"],
-      "produces": ["snapshot:wsl-desktop/runtime/v1", "handoff:log-source/v1"],
+      "produces": [
+        "snapshot:wsl-desktop/runtime/v1",
+        "snapshot:wsl-desktop/profiles/v1",
+        "handoff:log-source/v1"
+      ],
       "actions": []
     },
     {
@@ -175,7 +179,10 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["path", "profile"],
-      "produces": ["handoff:task-control/v1"],
+      "produces": [
+        "snapshot:workbench/profiles/v1",
+        "handoff:task-control/v1"
+      ],
       "actions": [
         {
           "actionId": "control-workspace-task",
@@ -211,7 +218,10 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["path"],
-      "produces": ["snapshot:repo-manager/dependency-summary/v1"],
+      "produces": [
+        "snapshot:repo-manager/dependency-summary/v1",
+        "snapshot:repo-manager/repositories/v1"
+      ],
       "actions": []
     },
     {

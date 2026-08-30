@@ -5,10 +5,12 @@ import { isTauri } from "./lib/isTauri";
 import type { LaunchResponse, SearchResponse, SearchResult, ShortcutConfig, ShortcutStatus } from "./types";
 
 export const CLIPBOARD_PREVIEW_ID = "builtin/clipboard-preview";
+const MOCK_REVISION = "0".repeat(64);
 
 const MOCK_RESULTS: SearchResult[] = catalogJson.apps.filter((app) => app.managerVisible && app.id !== "devbox-launcher").flatMap((app) => [
   {
     id: `catalog/app/${app.id}`,
+    revision: MOCK_REVISION,
     label: app.displayName,
     detail: "Devbox 앱",
     source: "catalog",
@@ -16,10 +18,13 @@ const MOCK_RESULTS: SearchResult[] = catalogJson.apps.filter((app) => app.manage
     targetKind: "app",
     stale: false,
     explicitPreview: false,
+    favorite: false,
+    recent: false,
   },
 ]);
 MOCK_RESULTS.push({
   id: CLIPBOARD_PREVIEW_ID,
+  revision: MOCK_REVISION,
   label: "Clipboard 미리보기",
   detail: "현재 선택 영역, 없으면 clipboard · 전달하지 않음",
   source: "launcher",
@@ -27,6 +32,8 @@ MOCK_RESULTS.push({
   targetKind: "clipboard-preview",
   stale: false,
   explicitPreview: true,
+  favorite: false,
+  recent: false,
 });
 
 export function search(query: string): Promise<SearchResponse> {
@@ -46,22 +53,55 @@ export function search(query: string): Promise<SearchResponse> {
   return invoke<SearchResponse>("search", { request: { query } });
 }
 
-export function launchResult(resultId: string): Promise<LaunchResponse> {
-  if (!isTauri()) return Promise.resolve({ status: "launched", appId: resultId.split("/").pop() ?? "" });
-  return invoke<LaunchResponse>("launch_result", { resultId });
+export function launchResult(result: SearchResult, allowStale = false): Promise<LaunchResponse> {
+  if (!isTauri()) return Promise.resolve({ status: "launched", appId: result.targetApp });
+  return invoke<LaunchResponse>("launch_result", {
+    request: {
+      resultId: result.id,
+      expectedRevision: result.revision,
+      allowStale,
+    },
+  });
 }
 
-export function previewTextAction(actionId: string): Promise<{ actionId: string; kind: string; maxBytes: number }> {
+export function previewTextAction(result: SearchResult): Promise<{ actionId: string; kind: string; maxBytes: number }> {
   if (!isTauri()) {
-    if (actionId !== CLIPBOARD_PREVIEW_ID) return Promise.reject(new Error("unsupported preview"));
-    return Promise.resolve({ actionId, kind: "clipboard-preview/v1", maxBytes: 64 * 1024 });
+    if (result.id !== CLIPBOARD_PREVIEW_ID) return Promise.reject(new Error("unsupported preview"));
+    return Promise.resolve({ actionId: result.id, kind: "clipboard-preview/v1", maxBytes: 64 * 1024 });
   }
-  return invoke("preview_text_action", { actionId });
+  return invoke("preview_text_action", {
+    request: {
+      actionId: result.id,
+      expectedRevision: result.revision,
+    },
+  });
 }
 
-export function performTextAction(actionId: string, text: string): Promise<LaunchResponse> {
+export function performTextAction(result: SearchResult, text: string): Promise<LaunchResponse> {
   if (!isTauri()) return Promise.reject(new Error("text handoff receiver unavailable"));
-  return invoke<LaunchResponse>("perform_text_action", { request: { actionId, text } });
+  return invoke<LaunchResponse>("perform_text_action", {
+    request: {
+      actionId: result.id,
+      expectedRevision: result.revision,
+      text,
+    },
+  });
+}
+
+export function setFavorite(result: SearchResult, favorite: boolean): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("set_favorite", {
+    request: {
+      resultId: result.id,
+      expectedRevision: result.revision,
+      favorite,
+    },
+  });
+}
+
+export function clearRecents(): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("clear_recents");
 }
 
 export async function readCurrentText(): Promise<string> {
