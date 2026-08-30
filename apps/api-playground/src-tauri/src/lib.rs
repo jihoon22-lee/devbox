@@ -49,6 +49,12 @@ pub fn run() {
         .manage(commands::request::ResponseHeaderVault::default())
         .manage(commands::request::RequestCancellation::default())
         .manage(std::sync::Arc::new(commands::mcp::McpHttpState::default()))
+        .manage(std::sync::Arc::new(
+            commands::mcp_oauth::McpOAuthState::default(),
+        ))
+        .manage(std::sync::Arc::new(
+            commands::mcp_stdio::McpStdioState::default(),
+        ))
         .manage(std::sync::Arc::new(commands::sse::SseState::default()))
         .manage(std::sync::Arc::new(
             commands::websocket::WebSocketState::default(),
@@ -91,6 +97,16 @@ pub fn run() {
             commands::mcp::invoke_mcp_http,
             commands::mcp::cancel_mcp_http,
             commands::mcp::disconnect_mcp_http,
+            commands::mcp_oauth::authorize_mcp_http,
+            commands::mcp_oauth::cancel_mcp_oauth,
+            commands::mcp_oauth::list_mcp_oauth_grants,
+            commands::mcp_oauth::revoke_mcp_oauth_grant,
+            commands::mcp_stdio::pick_mcp_stdio_executable,
+            commands::mcp_stdio::pick_mcp_stdio_cwd,
+            commands::mcp_stdio::connect_mcp_stdio,
+            commands::mcp_stdio::invoke_mcp_stdio,
+            commands::mcp_stdio::cancel_mcp_stdio,
+            commands::mcp_stdio::disconnect_mcp_stdio,
             commands::sse::start_sse_stream,
             commands::sse::stop_sse_stream,
             commands::websocket::start_websocket,

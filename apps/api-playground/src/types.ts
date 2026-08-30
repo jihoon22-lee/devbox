@@ -232,11 +232,52 @@ export interface WebSocketUpdate {
 export type McpEraPreference = "auto" | "modern" | "legacy";
 export type McpEra = Exclude<McpEraPreference, "auto">;
 
+export type McpTransport = "http" | "stdio";
+
+export interface McpNativeSelection {
+  selectionId: string;
+  kind: "executable" | "directory";
+  label: string;
+  expiresAtMs: number;
+}
+
+export interface McpStdioEnvironmentBinding {
+  childName: string;
+  sourceName: string;
+}
+
+export interface McpStdioProfile {
+  executableSelectionId: string;
+  cwdSelectionId?: string;
+  era: McpEraPreference;
+  args: string[];
+  environment: McpStdioEnvironmentBinding[];
+  timeoutMs: number;
+}
+
 export interface McpHttpProfile {
   endpoint: string;
   era: McpEraPreference;
   headers: RequestHeader[];
   timeoutMs: number;
+  oauthGrantId?: string;
+}
+
+export type McpOAuthGrantStatus = "active" | "expired";
+
+export interface McpOAuthGrantProjection {
+  grantId: string;
+  issuer: string;
+  resource: string;
+  clientId: string;
+  scopes: string[];
+  expiresAtMs: number | null;
+  status: McpOAuthGrantStatus;
+}
+
+export interface McpOAuthRevokeResult {
+  remoteRevoked: boolean;
+  removedLocal: boolean;
 }
 
 export interface McpServerProjection {

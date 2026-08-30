@@ -4,6 +4,7 @@
 //! remain in this process-owned state. IPC returns only stable error codes and
 //! redacted, bounded protocol projections.
 
+use crate::commands::mcp_oauth::{McpOAuthState, OAuthBearer};
 use crate::commands::request::{
     is_sensitive_name, resolve_template, EnvironmentVariable, Redactor, RequestHeader,
     RequestTemplate,
@@ -14,7 +15,7 @@ use crate::core::mcp::{
 use crate::core::sse::SseParser;
 use crate::platform::platform_sealer;
 use futures_util::StreamExt;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT, CONTENT_TYPE};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -59,37 +60,39 @@ pub struct McpHttpProfile {
     #[serde(default)]
     headers: Vec<RequestHeader>,
     timeout_ms: u64,
+    #[serde(default)]
+    oauth_grant_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpTimelineEntry {
-    sequence: u32,
-    offset_ms: u64,
-    direction: String,
-    kind: String,
-    method: Option<String>,
-    request_id: Option<String>,
-    payload: Option<Value>,
+    pub(crate) sequence: u32,
+    pub(crate) offset_ms: u64,
+    pub(crate) direction: String,
+    pub(crate) kind: String,
+    pub(crate) method: Option<String>,
+    pub(crate) request_id: Option<String>,
+    pub(crate) payload: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpConnectResult {
-    connection_id: String,
-    server: ServerProjection,
-    session_managed: bool,
-    timeline: Vec<McpTimelineEntry>,
+    pub(crate) connection_id: String,
+    pub(crate) server: ServerProjection,
+    pub(crate) session_managed: bool,
+    pub(crate) timeline: Vec<McpTimelineEntry>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpInvokeResult {
-    result: Option<Value>,
-    error_code: Option<String>,
-    rpc_error_code: Option<i64>,
-    next_cursor: Option<String>,
-    timeline: Vec<McpTimelineEntry>,
+    pub(crate) result: Option<Value>,
+    pub(crate) error_code: Option<String>,
+    pub(crate) rpc_error_code: Option<i64>,
+    pub(crate) next_cursor: Option<String>,
+    pub(crate) timeline: Vec<McpTimelineEntry>,
 }
 
 #[derive(Clone)]
@@ -99,6 +102,16 @@ struct PreparedProfile {
     client: reqwest::Client,
     timeout: Duration,
     redactor: Arc<Redactor>,
+    oauth_grant_id: Option<String>,
+    oauth_token: Option<Arc<Zeroizing<String>>>,
+}
+
+impl PreparedProfile {
+    fn apply_oauth_bearer(&mut self, bearer: OAuthBearer) {
+        let redaction_copy = Zeroizing::new(bearer.token.to_string());
+        self.redactor = Arc::new(self.redactor.with_secret(redaction_copy));
+        self.oauth_token = Some(Arc::new(bearer.token));
+    }
 }
 
 #[derive(Clone)]
@@ -431,30 +444,49 @@ struct TransportExchange {
     session_id: Option<Zeroizing<String>>,
 }
 
-struct InterpretedExchange {
-    final_result: Result<Value, RpcError>,
-    timeline: Vec<McpTimelineEntry>,
+pub(crate) struct InterpretedExchange {
+    pub(crate) final_result: Result<Value, RpcError>,
+    pub(crate) timeline: Vec<McpTimelineEntry>,
 }
 
 #[tauri::command]
 pub async fn connect_mcp_http(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Arc<McpHttpState>>,
+    oauth: tauri::State<'_, Arc<McpOAuthState>>,
     profile: McpHttpProfile,
     environment: Vec<EnvironmentVariable>,
 ) -> Result<McpConnectResult, String> {
     let _attempt = state
         .begin_connection_attempt()
         .map_err(ToOwned::to_owned)?;
-    connect_mcp_http_inner(state.inner().as_ref(), profile, environment).await
+    connect_mcp_http_inner(
+        &app,
+        state.inner().as_ref(),
+        oauth.inner().as_ref(),
+        profile,
+        environment,
+    )
+    .await
 }
 
 async fn connect_mcp_http_inner(
+    app: &tauri::AppHandle,
     state: &McpHttpState,
+    oauth: &McpOAuthState,
     profile: McpHttpProfile,
     environment: Vec<EnvironmentVariable>,
 ) -> Result<McpConnectResult, String> {
     let preference = profile.era;
-    let prepared = prepare_profile(profile, environment)?;
+    let mut prepared = prepare_profile(profile, environment)?;
+    if let Some(grant_id) = prepared.oauth_grant_id.clone() {
+        let (_sender, mut cancellation) = watch::channel(false);
+        let endpoint = prepared.endpoint.to_string();
+        let bearer = oauth
+            .bearer_for(app, &grant_id, &endpoint, &mut cancellation)
+            .await?;
+        prepared.apply_oauth_bearer(bearer);
+    }
     let (server, session_id, timeline) = match preference {
         EraPreference::Modern => connect_modern(&prepared, false).await?,
         EraPreference::Legacy => connect_legacy(&prepared, Vec::new()).await?,
@@ -498,7 +530,9 @@ async fn connect_mcp_http_inner(
 
 #[tauri::command]
 pub async fn invoke_mcp_http(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Arc<McpHttpState>>,
+    oauth: tauri::State<'_, Arc<McpOAuthState>>,
     connection_id: String,
     request_id: String,
     method: String,
@@ -512,7 +546,7 @@ pub async fn invoke_mcp_http(
         .get("cursor")
         .and_then(Value::as_str)
         .map(ToOwned::to_owned);
-    let (connection, mut cancellation) = state
+    let (mut connection, mut cancellation) = state
         .begin_request(&connection_id, &request_id)
         .map_err(ToOwned::to_owned)?;
     let _request = ActiveRequestGuard {
@@ -520,6 +554,13 @@ pub async fn invoke_mcp_http(
         connection_id: connection_id.clone(),
         request_id: request_id.clone(),
     };
+    if let Some(grant_id) = connection.profile.oauth_grant_id.clone() {
+        let endpoint = connection.profile.endpoint.to_string();
+        let bearer = oauth
+            .bearer_for(&app, &grant_id, &endpoint, &mut cancellation)
+            .await?;
+        connection.profile.apply_oauth_bearer(bearer);
+    }
     let outcome = invoke_inner(&connection, &request_id, &method, params, &mut cancellation).await;
     if matches!(&outcome, Err(code) if code == CONNECTION_STALE) {
         let _ = state.take_connection(&connection_id);
@@ -959,6 +1000,10 @@ fn prepare_profile(
             return Err(mcp::INVALID_PROFILE.into());
         }
     }
+    if let Some(grant_id) = profile.oauth_grant_id.as_deref() {
+        crate::commands::mcp_oauth::validate_grant_id(grant_id)?;
+    }
+    let oauth_grant_id = profile.oauth_grant_id;
     let template = RequestTemplate {
         method: "POST".into(),
         url: profile.endpoint,
@@ -976,6 +1021,14 @@ fn prepare_profile(
     let (resolved, environment_secrets) =
         resolve_template(&template, &environment, sealer.as_ref())
             .map_err(|_| SECRET_UNAVAILABLE.to_string())?;
+    if oauth_grant_id.is_some()
+        && resolved
+            .headers
+            .iter()
+            .any(|header| header.enabled && header.key.eq_ignore_ascii_case("authorization"))
+    {
+        return Err(mcp::INVALID_PROFILE.into());
+    }
     if resolved.url.len() > MAX_ENDPOINT_BYTES
         || resolved.url.bytes().any(|byte| byte.is_ascii_control())
     {
@@ -999,6 +1052,8 @@ fn prepare_profile(
         client,
         timeout,
         redactor,
+        oauth_grant_id,
+        oauth_token: None,
     })
 }
 
@@ -1085,6 +1140,13 @@ async fn execute_message(
         return Err(mcp::REQUEST_TOO_LARGE.into());
     }
     let mut headers = profile.custom_headers.clone();
+    if let Some(token) = &profile.oauth_token {
+        let value = Zeroizing::new(format!("Bearer {}", token.as_str()));
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&value).map_err(|_| mcp::INVALID_PROFILE.to_string())?,
+        );
+    }
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(
         ACCEPT,
@@ -1275,7 +1337,7 @@ fn push_sse_message(messages: &mut Vec<Value>, data: &str) -> Result<(), String>
     Ok(())
 }
 
-fn interpret_exchange(
+pub(crate) fn interpret_exchange(
     messages: Vec<Value>,
     expected_id: &str,
     era: Era,
@@ -1409,7 +1471,7 @@ fn redact_reflected_value(redactor: &Redactor, value: &Value) -> Value {
     }
 }
 
-fn project_result_for_ipc(
+pub(crate) fn project_result_for_ipc(
     redactor: &Redactor,
     result: &Value,
     method: &str,
@@ -1446,7 +1508,7 @@ fn project_result_for_ipc(
     Ok(projected)
 }
 
-fn filter_reflected_list_definitions(
+pub(crate) fn filter_reflected_list_definitions(
     result: &Value,
     method: &str,
     redactor: &Redactor,
@@ -1492,7 +1554,7 @@ fn filter_reflected_list_definitions(
     Ok((projected, rejected))
 }
 
-fn sanitize_server_projection(
+pub(crate) fn sanitize_server_projection(
     redactor: &Redactor,
     mut server: ServerProjection,
 ) -> Result<ServerProjection, String> {
@@ -1624,6 +1686,7 @@ mod tests {
             era: EraPreference::Auto,
             headers: Vec::new(),
             timeout_ms: 2_000,
+            oauth_grant_id: None,
         }
     }
 
@@ -1748,6 +1811,20 @@ mod tests {
             prepare_profile(input, Vec::new())
                 .err()
                 .expect("derived header overrides must be rejected"),
+            mcp::INVALID_PROFILE
+        );
+
+        let mut oauth_with_authorization = profile("https://example.test/mcp");
+        oauth_with_authorization.oauth_grant_id = Some("a".repeat(32));
+        oauth_with_authorization.headers.push(RequestHeader {
+            key: "Authorization".into(),
+            value: "Bearer user-value".into(),
+            enabled: true,
+        });
+        assert_eq!(
+            prepare_profile(oauth_with_authorization, Vec::new())
+                .err()
+                .expect("OAuth must never override a user Authorization header"),
             mcp::INVALID_PROFILE
         );
 
@@ -2022,6 +2099,40 @@ mod tests {
         assert!(normalized.contains("mcp-protocol-version: 2026-07-28"));
         assert!(normalized.contains("mcp-method: server/discover"));
         assert!(request.contains("io.modelcontextprotocol/protocolVersion"));
+        handle.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn oauth_bearer_is_injected_and_added_to_protocol_redaction() {
+        let discover = json!({
+            "jsonrpc":"2.0",
+            "id":"discover-1",
+            "result":{
+                "resultType":"complete",
+                "supportedVersions":[mcp::MODERN_VERSION],
+                "capabilities":{},
+                "ttlMs":60_000,
+                "cacheScope":"public",
+                "_meta":{"io.modelcontextprotocol/serverInfo":{
+                    "name":"server leaked oauth-secret", "version":"1"
+                }}
+            }
+        });
+        let (endpoint, requests, handle) =
+            spawn_http_fixture(vec![json_response("200 OK", &discover, "")]);
+        let mut input = profile(&endpoint);
+        input.oauth_grant_id = Some("a".repeat(32));
+        let mut prepared = prepare_profile(input, Vec::new()).unwrap();
+        prepared.apply_oauth_bearer(OAuthBearer {
+            token: Zeroizing::new("oauth-secret".into()),
+        });
+
+        let (server, _, _) = connect_modern(&prepared, false).await.unwrap();
+        assert_eq!(server.server_name, "server leaked [REDACTED]");
+        let request = requests.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer oauth-secret"));
         handle.join().unwrap();
     }
 

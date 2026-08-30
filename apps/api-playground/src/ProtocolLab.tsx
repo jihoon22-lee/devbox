@@ -7,6 +7,18 @@ import {
   nextMcpRequestId,
   safeMcpErrorCode,
 } from "./api";
+import {
+  authorizeMcpHttp,
+  cancelMcpStdio,
+  cancelMcpOAuth,
+  connectMcpStdio,
+  disconnectMcpStdio,
+  invokeMcpStdio,
+  listMcpOAuthGrants,
+  pickMcpStdioCwd,
+  pickMcpStdioExecutable,
+  revokeMcpOAuthGrant,
+} from "./mcpApi";
 import { HeaderTable } from "./HeaderTable";
 import { McpSchemaEditor } from "./McpSchemaEditor";
 import type { EnvVariable } from "./lib/environments";
@@ -24,6 +36,11 @@ import type {
   McpEraPreference,
   McpHttpProfile,
   McpInvokeResult,
+  McpNativeSelection,
+  McpOAuthGrantProjection,
+  McpStdioEnvironmentBinding,
+  McpStdioProfile,
+  McpTransport,
   McpTimelineEntry,
   RequestHeader,
 } from "./types";
@@ -49,6 +66,32 @@ const ERROR_LABELS: Record<string, string> = {
   mcp_schema_unsupported: "이 tool schema는 안전한 호출 형식으로 해석할 수 없습니다.",
   mcp_connection_stale: "연결이 닫혔거나 오래되었습니다. 다시 연결하세요.",
   mcp_server_error: "MCP 서버가 JSON-RPC 오류를 반환했습니다.",
+  mcp_stdio_selection_invalid: "선택한 native executable 또는 cwd를 다시 선택하세요.",
+  mcp_stdio_profile_invalid: "stdio profile의 executable, 인자, environment 또는 timeout을 확인하세요.",
+  mcp_stdio_environment_invalid: "stdio environment binding을 확인하세요.",
+  mcp_stdio_spawn_failed: "native executable을 시작하지 못했습니다.",
+  mcp_stdio_transport_failed: "native stdio transport 요청에 실패했습니다.",
+  mcp_stdio_protocol_invalid: "native stdio MCP message가 올바르지 않습니다.",
+  mcp_stdio_message_too_large: "native stdio MCP message가 허용된 크기를 초과했습니다.",
+  mcp_stdio_request_timeout: "native stdio MCP 요청 시간이 초과되었습니다.",
+  mcp_stdio_request_cancelled: "native stdio MCP 요청을 취소했습니다.",
+  mcp_stdio_connection_stale: "native stdio 연결이 닫혔거나 오래되었습니다. 다시 연결하세요.",
+  mcp_stdio_cleanup_failed: "native stdio process 정리를 완료하지 못했습니다.",
+  mcp_stdio_connection_limit: "열 수 있는 native stdio 연결 수를 초과했습니다.",
+  mcp_stdio_request_limit: "동시에 실행할 수 있는 native stdio 요청 수를 초과했습니다.",
+  mcp_oauth_required: "선택한 OAuth grant를 다시 인증하세요.",
+  mcp_oauth_request_invalid: "OAuth 요청 구성을 확인하세요.",
+  mcp_oauth_discovery_failed: "OAuth 보호 resource 또는 authorization server를 확인하지 못했습니다.",
+  mcp_oauth_resource_mismatch: "OAuth resource binding이 MCP endpoint와 일치하지 않습니다.",
+  mcp_oauth_issuer_mismatch: "OAuth issuer binding이 선택한 issuer와 일치하지 않습니다.",
+  mcp_oauth_pkce_required: "OAuth server가 필요한 PKCE S256을 지원하지 않습니다.",
+  mcp_oauth_client_unsupported: "OAuth public client 구성을 지원하지 않습니다.",
+  mcp_oauth_callback_failed: "OAuth browser callback을 확인하지 못했습니다.",
+  mcp_oauth_token_failed: "OAuth token 교환에 실패했습니다.",
+  mcp_oauth_storage_failed: "OAuth grant를 안전하게 저장하거나 읽지 못했습니다.",
+  mcp_oauth_reauthorization_required: "OAuth grant가 만료되어 다시 인증해야 합니다.",
+  mcp_oauth_cancelled: "OAuth authorization을 취소했습니다.",
+  mcp_oauth_revoke_failed: "OAuth grant를 원격에서 revoke하지 못했습니다. 원하면 로컬에서 제거할 수 있습니다.",
 };
 
 interface ListState {
@@ -62,13 +105,75 @@ interface ProtocolLabProps {
   native: boolean;
 }
 
+type OAuthPhase = "idle" | "authorizing" | "loading" | "revoking";
+type OAuthNotice = "authorized" | "remote-revoked" | "local-only";
+
 const emptyList = (): ListState => ({ items: [], nextCursor: null, loaded: false });
+const OAUTH_NOTICE_LABELS: Record<OAuthNotice, string> = {
+  authorized: "OAuth authorization이 완료되었습니다.",
+  "remote-revoked": "OAuth grant를 원격과 로컬에서 제거했습니다.",
+  "local-only": "원격 revoke를 확인하지 못했지만 OAuth grant를 로컬에서 제거했습니다.",
+};
+
+function cancelMcpRequest(
+  transport: McpTransport,
+  connectionId: string,
+  requestId: string,
+): Promise<boolean> {
+  return transport === "stdio"
+    ? cancelMcpStdio(connectionId, requestId)
+    : cancelMcpHttp(connectionId, requestId);
+}
+
+function disconnectMcpConnection(
+  transport: McpTransport,
+  connectionId: string,
+): Promise<void> {
+  return transport === "stdio"
+    ? disconnectMcpStdio(connectionId)
+    : disconnectMcpHttp(connectionId);
+}
+
+function invokeMcpRequest(
+  transport: McpTransport,
+  connectionId: string,
+  requestId: string,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<McpInvokeResult> {
+  return transport === "stdio"
+    ? invokeMcpStdio(connectionId, requestId, method, params)
+    : invokeMcpHttp(connectionId, requestId, method, params);
+}
+
+function isExpectedPostCancelStale(
+  transport: McpTransport,
+  hadActiveRequest: boolean,
+  code: string,
+): boolean {
+  return transport === "stdio"
+    && hadActiveRequest
+    && code === "mcp_stdio_connection_stale";
+}
 
 export function ProtocolLab({ environment, native }: ProtocolLabProps) {
+  const [transport, setTransport] = useState<McpTransport>("http");
   const [endpoint, setEndpoint] = useState("");
   const [era, setEra] = useState<McpEraPreference>("auto");
   const [timeoutMs, setTimeoutMs] = useState(10_000);
   const [headers, setHeaders] = useState<RequestHeader[]>([]);
+  const [stdioExecutable, setStdioExecutable] = useState<McpNativeSelection | null>(null);
+  const [stdioCwd, setStdioCwd] = useState<McpNativeSelection | null>(null);
+  const [stdioArgs, setStdioArgs] = useState<string[]>([]);
+  const [stdioEnvironment, setStdioEnvironment] = useState<McpStdioEnvironmentBinding[]>([]);
+  const [oauthClientId, setOAuthClientId] = useState("");
+  const [oauthIssuer, setOAuthIssuer] = useState("");
+  const [oauthScopes, setOAuthScopes] = useState<string[]>([]);
+  const [oauthGrants, setOAuthGrants] = useState<McpOAuthGrantProjection[]>([]);
+  const [selectedOAuthGrantId, setSelectedOAuthGrantId] = useState("");
+  const [oauthPhase, setOAuthPhase] = useState<OAuthPhase>("idle");
+  const [oauthNotice, setOAuthNotice] = useState<OAuthNotice | null>(null);
+  const [oauthFallbackGrantId, setOAuthFallbackGrantId] = useState<string | null>(null);
   const [connection, setConnection] = useState<McpConnectResult | null>(null);
   const [phase, setPhase] = useState<"idle" | "connecting" | "connected" | "disconnecting">("idle");
   const [activeRequest, setActiveRequest] = useState<{ id: string; label: string } | null>(null);
@@ -86,18 +191,40 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
   const [promptArguments, setPromptArguments] = useState<Record<string, string>>({});
   const generationRef = useRef(0);
   const connectionRef = useRef<McpConnectResult | null>(null);
+  const connectionTransportRef = useRef<McpTransport | null>(null);
   const activeRequestRef = useRef<{ connectionId: string; requestId: string } | null>(null);
+  const oauthRequestRef = useRef<string | null>(null);
 
   connectionRef.current = connection;
+
+  const selectedOAuthGrant = useMemo(
+    () => oauthGrants.find((grant) => grant.grantId === selectedOAuthGrantId) ?? null,
+    [oauthGrants, selectedOAuthGrantId],
+  );
+  const oauthBusy = oauthPhase !== "idle";
+  const authorizationHeaderConflict = Boolean(selectedOAuthGrantId)
+    && headers.some((header) => header.enabled !== false
+      && header.key.trim().toLowerCase() === "authorization");
 
   useEffect(() => () => {
     generationRef.current += 1;
     const active = activeRequestRef.current;
     const current = connectionRef.current;
+    const currentTransport = connectionTransportRef.current;
+    const oauthRequestId = oauthRequestRef.current;
     activeRequestRef.current = null;
+    oauthRequestRef.current = null;
     connectionRef.current = null;
-    if (active) void cancelMcpHttp(active.connectionId, active.requestId).catch(() => undefined);
-    if (current) void disconnectMcpHttp(current.connectionId).catch(() => undefined);
+    connectionTransportRef.current = null;
+    if (active && currentTransport) {
+      void cancelMcpRequest(currentTransport, active.connectionId, active.requestId).catch(() => undefined);
+    }
+    if (current && currentTransport) {
+      void disconnectMcpConnection(currentTransport, current.connectionId).catch(() => undefined);
+    }
+    if (oauthRequestId && native) {
+      void cancelMcpOAuth(oauthRequestId).catch(() => undefined);
+    }
   }, []);
 
   const selectedTool = useMemo(() => tools.items.find(
@@ -149,19 +276,52 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
     setTimeline([]);
   };
 
+  const resetConnection = () => {
+    connectionTransportRef.current = null;
+    connectionRef.current = null;
+    setActiveRequest(null);
+    setConnection(null);
+    resetExplorer();
+    setPhase("idle");
+  };
+
   const onConnect = async () => {
-    if (!native || phase !== "idle") return;
+    if (
+      !native
+      || phase !== "idle"
+      || oauthBusy
+      || (transport === "http" && selectedOAuthGrantId && authorizationHeaderConflict)
+    ) return;
     const generation = ++generationRef.current;
+    const requestedTransport = transport;
     setPhase("connecting");
     setErrorCode(null);
     resetExplorer();
-    const profile: McpHttpProfile = { endpoint, era, headers, timeoutMs };
+    const profile: McpHttpProfile | McpStdioProfile = requestedTransport === "stdio"
+      ? {
+        executableSelectionId: stdioExecutable?.selectionId ?? "",
+        cwdSelectionId: stdioCwd?.selectionId,
+        era,
+        args: stdioArgs,
+        environment: stdioEnvironment,
+        timeoutMs,
+      }
+      : {
+        endpoint,
+        era,
+        headers,
+        timeoutMs,
+        ...(selectedOAuthGrantId ? { oauthGrantId: selectedOAuthGrantId } : {}),
+      };
     try {
-      const connected = await connectMcpHttp(profile, environment);
+      const connected = requestedTransport === "stdio"
+        ? await connectMcpStdio(profile as McpStdioProfile, environment)
+        : await connectMcpHttp(profile as McpHttpProfile, environment);
       if (generation !== generationRef.current) {
-        await disconnectMcpHttp(connected.connectionId).catch(() => undefined);
+        await disconnectMcpConnection(requestedTransport, connected.connectionId).catch(() => undefined);
         return;
       }
+      connectionTransportRef.current = requestedTransport;
       connectionRef.current = connected;
       setConnection(connected);
       setTimeline(connected.timeline);
@@ -174,21 +334,75 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
     }
   };
 
-  const onDisconnect = async () => {
+  const onTransportChange = async (next: McpTransport) => {
+    if (
+      next === transport
+      || phase === "connecting"
+      || phase === "disconnecting"
+      || oauthBusy
+    ) return;
     const current = connectionRef.current;
-    if (!current || phase === "disconnecting") return;
+    if (!current) {
+      setTransport(next);
+      setErrorCode(native ? null : "native_required");
+      return;
+    }
+
+    const currentTransport = connectionTransportRef.current ?? transport;
     const generation = ++generationRef.current;
     setPhase("disconnecting");
     const active = activeRequestRef.current;
     activeRequestRef.current = null;
     setActiveRequest(null);
-    if (active) await cancelMcpHttp(active.connectionId, active.requestId).catch(() => undefined);
+    if (active) {
+      await cancelMcpRequest(currentTransport, active.connectionId, active.requestId).catch(() => undefined);
+    }
+    let disconnectError: string | null = null;
     try {
-      await disconnectMcpHttp(current.connectionId);
+      await disconnectMcpConnection(currentTransport, current.connectionId);
     } catch (cause) {
-      if (generation === generationRef.current) setErrorCode(safeMcpErrorCode(cause));
+      const code = safeMcpErrorCode(cause);
+      if (!isExpectedPostCancelStale(currentTransport, Boolean(active), code)) {
+        disconnectError = code;
+      }
     } finally {
       if (generation === generationRef.current) {
+        connectionTransportRef.current = null;
+        connectionRef.current = null;
+        setConnection(null);
+        resetExplorer();
+        setTransport(next);
+        setPhase("idle");
+        setErrorCode(disconnectError ?? (native ? null : "native_required"));
+      }
+    }
+  };
+
+  const onDisconnect = async () => {
+    const current = connectionRef.current;
+    if (!current || phase === "disconnecting") return;
+    const currentTransport = connectionTransportRef.current ?? transport;
+    const generation = ++generationRef.current;
+    setPhase("disconnecting");
+    const active = activeRequestRef.current;
+    activeRequestRef.current = null;
+    setActiveRequest(null);
+    if (active) {
+      await cancelMcpRequest(currentTransport, active.connectionId, active.requestId).catch(() => undefined);
+    }
+    try {
+      await disconnectMcpConnection(currentTransport, current.connectionId);
+    } catch (cause) {
+      const code = safeMcpErrorCode(cause);
+      if (
+        generation === generationRef.current
+        && !isExpectedPostCancelStale(currentTransport, Boolean(active), code)
+      ) {
+        setErrorCode(code);
+      }
+    } finally {
+      if (generation === generationRef.current) {
+        connectionTransportRef.current = null;
         connectionRef.current = null;
         setConnection(null);
         resetExplorer();
@@ -204,6 +418,7 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
   ): Promise<McpInvokeResult | null> => {
     const current = connectionRef.current;
     if (!current || activeRequestRef.current) return null;
+    const currentTransport = connectionTransportRef.current ?? transport;
     const generation = generationRef.current;
     const requestId = nextMcpRequestId();
     const ownership = { connectionId: current.connectionId, requestId };
@@ -211,7 +426,13 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
     setActiveRequest({ id: requestId, label });
     setErrorCode(null);
     try {
-      const response = await invokeMcpHttp(current.connectionId, requestId, method, params);
+      const response = await invokeMcpRequest(
+        currentTransport,
+        current.connectionId,
+        requestId,
+        method,
+        params,
+      );
       if (generation !== generationRef.current || connectionRef.current?.connectionId !== current.connectionId) {
         return null;
       }
@@ -222,14 +443,21 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
     } catch (cause) {
       if (generation === generationRef.current) {
         const code = safeMcpErrorCode(cause);
-        if (code === "mcp_connection_stale") {
+        if (
+          code === "mcp_connection_stale"
+          || code === "mcp_stdio_connection_stale"
+          || (currentTransport === "stdio" && [
+            "mcp_stdio_transport_failed",
+            "mcp_stdio_protocol_invalid",
+            "mcp_stdio_message_too_large",
+            "mcp_stdio_request_timeout",
+            "mcp_stdio_request_cancelled",
+            "mcp_stdio_cleanup_failed",
+          ].includes(code))
+        ) {
           generationRef.current += 1;
           activeRequestRef.current = null;
-          connectionRef.current = null;
-          setActiveRequest(null);
-          setConnection(null);
-          resetExplorer();
-          setPhase("idle");
+          resetConnection();
         }
         setErrorCode(code);
       }
@@ -245,8 +473,151 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
   const onCancel = async () => {
     const active = activeRequestRef.current;
     if (!active) return;
+    const currentTransport = connectionTransportRef.current ?? transport;
     try {
-      await cancelMcpHttp(active.connectionId, active.requestId);
+      await cancelMcpRequest(currentTransport, active.connectionId, active.requestId);
+    } catch (cause) {
+      setErrorCode(safeMcpErrorCode(cause));
+    }
+  };
+
+  const onAuthorize = async () => {
+    if (
+      !native
+      || transport !== "http"
+      || phase === "connecting"
+      || phase === "disconnecting"
+      || oauthBusy
+      || !endpoint.trim()
+      || !oauthClientId.trim()
+    ) return;
+    const scopes = oauthScopes.map((scope) => scope.trim()).filter(Boolean);
+    if (scopes.length > 32 || new Set(scopes).size !== scopes.length) {
+      setErrorCode("mcp_oauth_request_invalid");
+      return;
+    }
+    const requestId = nextMcpRequestId();
+    oauthRequestRef.current = requestId;
+    setOAuthPhase("authorizing");
+    setOAuthNotice(null);
+    setErrorCode(null);
+    try {
+      const grant = await authorizeMcpHttp(
+        requestId,
+        endpoint.trim(),
+        oauthIssuer.trim() || null,
+        oauthClientId.trim(),
+        scopes,
+      );
+      if (oauthRequestRef.current !== requestId) return;
+      setOAuthGrants((current) => {
+        const existing = current.findIndex((item) => item.grantId === grant.grantId);
+        if (existing < 0) return [...current, grant];
+        const next = [...current];
+        next[existing] = grant;
+        return next;
+      });
+      setSelectedOAuthGrantId(grant.grantId);
+      setOAuthFallbackGrantId(null);
+      setOAuthNotice("authorized");
+    } catch (cause) {
+      if (oauthRequestRef.current === requestId) setErrorCode(safeMcpErrorCode(cause));
+    } finally {
+      if (oauthRequestRef.current === requestId) {
+        oauthRequestRef.current = null;
+        setOAuthPhase("idle");
+      }
+    }
+  };
+
+  const onCancelOAuth = async () => {
+    const requestId = oauthRequestRef.current;
+    if (!requestId || oauthPhase !== "authorizing") return;
+    try {
+      await cancelMcpOAuth(requestId);
+    } catch (cause) {
+      setErrorCode(safeMcpErrorCode(cause));
+    }
+  };
+
+  const onRefreshOAuthGrants = async () => {
+    if (
+      !native
+      || transport !== "http"
+      || oauthBusy
+      || phase === "connecting"
+      || phase === "disconnecting"
+      || busy
+    ) return;
+    setOAuthPhase("loading");
+    setOAuthNotice(null);
+    setErrorCode(null);
+    try {
+      const grants = await listMcpOAuthGrants();
+      setOAuthGrants(grants);
+      setSelectedOAuthGrantId((current) => (
+        grants.some((grant) => grant.grantId === current)
+          ? current
+          : grants[0]?.grantId ?? ""
+      ));
+      setOAuthFallbackGrantId((current) => (
+        current && grants.some((grant) => grant.grantId === current) ? current : null
+      ));
+    } catch (cause) {
+      setErrorCode(safeMcpErrorCode(cause));
+    } finally {
+      setOAuthPhase("idle");
+    }
+  };
+
+  const onRevokeOAuthGrant = async (removeLocalOnRemoteFailure: boolean) => {
+    const grant = selectedOAuthGrant;
+    if (
+      !native
+      || !grant
+      || oauthBusy
+      || phase === "connecting"
+      || phase === "disconnecting"
+      || busy
+    ) return;
+    const grantId = grant.grantId;
+    setOAuthPhase("revoking");
+    setOAuthNotice(null);
+    setErrorCode(null);
+    try {
+      const revoked = await revokeMcpOAuthGrant(grantId, removeLocalOnRemoteFailure);
+      if (revoked.removedLocal) {
+        setOAuthGrants((current) => current.filter((item) => item.grantId !== grantId));
+        setSelectedOAuthGrantId((current) => (current === grantId ? "" : current));
+        setOAuthFallbackGrantId(null);
+        setOAuthNotice(revoked.remoteRevoked ? "remote-revoked" : "local-only");
+      }
+    } catch (cause) {
+      const code = safeMcpErrorCode(cause);
+      setErrorCode(code);
+      if (!removeLocalOnRemoteFailure && code === "mcp_oauth_revoke_failed") {
+        setOAuthFallbackGrantId(grantId);
+      }
+    } finally {
+      setOAuthPhase("idle");
+    }
+  };
+
+  const onPickExecutable = async () => {
+    if (!native || phase !== "idle") return;
+    try {
+      const selection = await pickMcpStdioExecutable();
+      if (selection) setStdioExecutable(selection);
+    } catch (cause) {
+      setErrorCode(safeMcpErrorCode(cause));
+    }
+  };
+
+  const onPickCwd = async () => {
+    if (!native || phase !== "idle") return;
+    try {
+      const selection = await pickMcpStdioCwd();
+      if (selection) setStdioCwd(selection);
     } catch (cause) {
       setErrorCode(safeMcpErrorCode(cause));
     }
@@ -283,6 +654,8 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
   const busy = activeRequest !== null || phase === "connecting" || phase === "disconnecting";
   const capabilities = connection?.server.capabilities ?? {};
   const secretNames = environment.filter((item) => item.secret).map((item) => item.key);
+  const normalizedOAuthScopes = oauthScopes.map((scope) => scope.trim()).filter(Boolean);
+  const oauthScopesHaveDuplicates = new Set(normalizedOAuthScopes).size !== normalizedOAuthScopes.length;
 
   return (
     <section className="protocol-lab" aria-labelledby="protocol-lab-heading">
@@ -290,12 +663,19 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
         <div>
           <h2 id="protocol-lab-heading">Protocol Lab · MCP</h2>
           <p className="dim">
-            Streamable HTTP를 modern 2026-07-28 또는 legacy 2025-11-25로 검사합니다.
+            {transport === "http"
+              ? "Streamable HTTP를 modern 2026-07-28 또는 legacy 2025-11-25로 검사합니다."
+              : "native executable의 stdio를 modern 2026-07-28 또는 legacy 2025-11-25로 검사합니다."}
             연결과 목록 조회만으로 tool·resource·prompt를 실행하지 않습니다.
           </p>
         </div>
-        <span className="mcp-memory-badge">메모리 전용 · 저장 안 함</span>
+        <span className="mcp-memory-badge">Protocol timeline/result · 메모리 전용</span>
       </div>
+
+      <p className="dim mcp-storage-disclosure">
+        Protocol timeline/result는 메모리에만 유지됩니다. OAuth token은 Windows DPAPI로 암호화되어
+        revoke 또는 local removal 전까지 app-local grant store에 보관됩니다.
+      </p>
 
       {!native && (
         <div className="mcp-notice" role="note">
@@ -305,24 +685,179 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
 
       <div className="mcp-profile">
         <label>
-          Endpoint
-          <input
-            aria-label="MCP endpoint"
-            type="url"
-            value={endpoint}
-            maxLength={8 * 1024}
-            disabled={connected || busy}
-            placeholder="https://server.example/mcp"
-            onChange={(event) => setEndpoint(event.currentTarget.value)}
-            spellCheck={false}
-          />
+          Transport
+          <select
+            aria-label="MCP transport"
+            value={transport}
+            disabled={phase === "connecting" || phase === "disconnecting" || oauthBusy}
+            onChange={(event) => void onTransportChange(event.currentTarget.value as McpTransport)}
+          >
+            <option value="http">HTTP</option>
+            <option value="stdio">stdio · native executable</option>
+          </select>
         </label>
+        {transport === "http" ? (
+          <label>
+            Endpoint
+            <input
+              aria-label="MCP endpoint"
+              type="url"
+              value={endpoint}
+              maxLength={8 * 1024}
+              disabled={connected || busy || oauthBusy}
+              placeholder="https://server.example/mcp"
+              onChange={(event) => setEndpoint(event.currentTarget.value)}
+              spellCheck={false}
+            />
+          </label>
+        ) : (
+          <div className="mcp-stdio-profile">
+            <div className="mcp-stdio-warning mcp-notice" role="note">
+              stdio는 native executable만 실행합니다. WSL stdio와 shell command string은 지원하지 않습니다.
+            </div>
+            <div className="mcp-stdio-selection-row">
+              <span>Executable</span>
+              <button
+                className="btn"
+                type="button"
+                aria-label="Choose executable"
+                disabled={!native || connected || busy}
+                onClick={() => void onPickExecutable()}
+              >
+                Choose executable
+              </button>
+              <span role="status">{stdioExecutable ? stdioExecutable.label : "선택하지 않음"}</span>
+            </div>
+            <div className="mcp-stdio-selection-row">
+              <span>Working directory</span>
+              <button
+                className="btn"
+                type="button"
+                aria-label="Choose cwd"
+                disabled={!native || connected || busy}
+                onClick={() => void onPickCwd()}
+              >
+                Choose cwd
+              </button>
+              <span role="status">{stdioCwd ? stdioCwd.label : "선택하지 않음"}</span>
+              {stdioCwd && (
+                <button
+                  className="btn"
+                  type="button"
+                  aria-label="Clear cwd"
+                  disabled={connected || busy}
+                  onClick={() => setStdioCwd(null)}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <fieldset disabled={connected || busy}>
+              <legend>Arguments</legend>
+              {stdioArgs.map((value, index) => (
+                <div className="mcp-stdio-row" key={`arg-${index}`}>
+                  <label>
+                    Argument {index + 1}
+                    <input
+                      aria-label={`stdio argument ${index + 1}`}
+                      value={value}
+                      maxLength={8 * 1024}
+                      onChange={(event) => {
+                        const next = [...stdioArgs];
+                        next[index] = event.currentTarget.value;
+                        setStdioArgs(next);
+                      }}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <button
+                    className="btn"
+                    type="button"
+                    aria-label={`Remove argument ${index + 1}`}
+                    onClick={() => setStdioArgs(stdioArgs.filter((_, itemIndex) => itemIndex !== index))}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button
+                className="btn"
+                type="button"
+                aria-label="Add argument"
+                onClick={() => setStdioArgs((current) => [...current, ""])}
+              >
+                Add argument
+              </button>
+            </fieldset>
+            <fieldset disabled={connected || busy}>
+              <legend>Environment bindings</legend>
+              {stdioEnvironment.map((binding, index) => (
+                <div className="mcp-stdio-row" key={`environment-${index}`}>
+                  <label>
+                    Child name {index + 1}
+                    <input
+                      aria-label={`stdio child name ${index + 1}`}
+                      value={binding.childName}
+                      maxLength={256}
+                      onChange={(event) => {
+                        const next = [...stdioEnvironment];
+                        next[index] = { ...binding, childName: event.currentTarget.value };
+                        setStdioEnvironment(next);
+                      }}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    Source name {index + 1}
+                    <input
+                      aria-label={`stdio source name ${index + 1}`}
+                      list="mcp-stdio-environment-names"
+                      value={binding.sourceName}
+                      maxLength={256}
+                      onChange={(event) => {
+                        const next = [...stdioEnvironment];
+                        next[index] = { ...binding, sourceName: event.currentTarget.value };
+                        setStdioEnvironment(next);
+                      }}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <button
+                    className="btn"
+                    type="button"
+                    aria-label={`Remove environment binding ${index + 1}`}
+                    onClick={() => setStdioEnvironment(
+                      stdioEnvironment.filter((_, itemIndex) => itemIndex !== index),
+                    )}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button
+                className="btn"
+                type="button"
+                aria-label="Add environment binding"
+                onClick={() => setStdioEnvironment((current) => [
+                  ...current,
+                  { childName: "", sourceName: "" },
+                ])}
+              >
+                Add environment binding
+              </button>
+              <datalist id="mcp-stdio-environment-names">
+                {environment.map((variable) => <option key={variable.key} value={variable.key} />)}
+              </datalist>
+              <p className="dim">Environment 값은 native process 시작 시에만 해석되며 화면이나 timeline에 표시되지 않습니다.</p>
+            </fieldset>
+          </div>
+        )}
         <label>
           Era
-          <select
+            <select
             aria-label="MCP era"
             value={era}
-            disabled={connected || busy}
+            disabled={connected || busy || oauthBusy}
             onChange={(event) => setEra(event.currentTarget.value as McpEraPreference)}
           >
             <option value="auto">auto · modern 우선</option>
@@ -338,20 +873,23 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
             min={100}
             max={120_000}
             value={timeoutMs}
-            disabled={connected || busy}
+            disabled={connected || busy || oauthBusy}
             onChange={(event) => setTimeoutMs(Number(event.currentTarget.value))}
           />
         </label>
         <div className="mcp-profile-actions">
           {connected ? (
-            <button className="btn" type="button" disabled={busy} onClick={() => void onDisconnect()}>
+            <button className="btn" type="button" disabled={busy || oauthBusy} onClick={() => void onDisconnect()}>
               연결 해제
             </button>
           ) : (
             <button
               className="btn send"
               type="button"
-              disabled={!native || busy || !endpoint.trim() || timeoutMs < 100 || timeoutMs > 120_000}
+              disabled={!native || busy || oauthBusy || timeoutMs < 100 || timeoutMs > 120_000
+                || (transport === "http"
+                  ? !endpoint.trim() || Boolean(selectedOAuthGrantId && authorizationHeaderConflict)
+                  : !stdioExecutable)}
               onClick={() => void onConnect()}
             >
               {phase === "connecting" ? "연결 중..." : "Connect"}
@@ -360,12 +898,188 @@ export function ProtocolLab({ environment, native }: ProtocolLabProps) {
         </div>
       </div>
 
-      <details className="mcp-custom-headers" open={headers.length > 0}>
-        <summary>Custom headers · Environment secret 참조 가능</summary>
-        <fieldset disabled={connected || busy}>
-          <HeaderTable rows={headers} secretNames={secretNames} onChange={setHeaders} />
-        </fieldset>
-      </details>
+      {transport === "http" && (
+        <details className="mcp-custom-headers" open={headers.length > 0}>
+          <summary>Custom headers · Environment secret 참조 가능</summary>
+          <fieldset disabled={connected || busy || oauthBusy}>
+            <HeaderTable rows={headers} secretNames={secretNames} onChange={setHeaders} />
+          </fieldset>
+        </details>
+      )}
+
+      {transport === "http" && (
+        <section className="mcp-oauth-panel" aria-labelledby="mcp-oauth-heading">
+          <h3 id="mcp-oauth-heading">HTTP OAuth 2.1</h3>
+          <p className="dim">
+            HTTP MCP server의 public client authorization만 지원합니다. 토큰과 callback 값은
+            Protocol Lab 화면이나 timeline에 표시하지 않습니다.
+          </p>
+          <div className="mcp-oauth-inputs">
+            <label>
+              Public client ID
+              <input
+                aria-label="OAuth public client ID"
+                value={oauthClientId}
+                maxLength={8 * 1024}
+                disabled={oauthBusy || busy}
+                onChange={(event) => setOAuthClientId(event.currentTarget.value)}
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              Issuer (optional)
+              <input
+                aria-label="OAuth issuer (optional)"
+                value={oauthIssuer}
+                maxLength={8 * 1024}
+                disabled={oauthBusy || busy}
+                onChange={(event) => setOAuthIssuer(event.currentTarget.value)}
+                spellCheck={false}
+              />
+            </label>
+          </div>
+          <fieldset disabled={oauthBusy || busy}>
+            <legend>OAuth scopes</legend>
+            {oauthScopes.map((scope, index) => (
+              <div className="mcp-oauth-scope-row" key={`oauth-scope-${index}`}>
+                <label>
+                  Scope {index + 1}
+                  <input
+                    aria-label={`OAuth scope ${index + 1}`}
+                    value={scope}
+                    maxLength={256}
+                    onChange={(event) => {
+                      const next = [...oauthScopes];
+                      next[index] = event.currentTarget.value;
+                      setOAuthScopes(next);
+                    }}
+                    spellCheck={false}
+                  />
+                </label>
+                <button
+                  className="btn"
+                  type="button"
+                  aria-label={`Remove OAuth scope ${index + 1}`}
+                  onClick={() => setOAuthScopes(
+                    oauthScopes.filter((_, itemIndex) => itemIndex !== index),
+                  )}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              className="btn"
+              type="button"
+              aria-label="Add OAuth scope"
+              disabled={oauthScopes.length >= 32}
+              onClick={() => setOAuthScopes((current) => [...current, ""])}
+            >
+              Add scope
+            </button>
+            {oauthScopesHaveDuplicates && (
+              <p className="dim" role="alert">OAuth scopes must be unique.</p>
+            )}
+          </fieldset>
+          <div className="mcp-inline-actions">
+            {oauthPhase === "authorizing" ? (
+              <button
+                className="btn"
+                type="button"
+                aria-label="Cancel OAuth authorization"
+                disabled={!native}
+                onClick={() => void onCancelOAuth()}
+              >
+                Cancel authorization
+              </button>
+            ) : (
+              <button
+                className="btn send"
+                type="button"
+                aria-label="Authorize in system browser"
+                disabled={!native || oauthBusy || busy || !endpoint.trim() || !oauthClientId.trim()
+                  || oauthScopesHaveDuplicates}
+                onClick={() => void onAuthorize()}
+              >
+                Authorize in system browser
+              </button>
+            )}
+            <button
+              className="btn"
+              type="button"
+              aria-label="Refresh OAuth grants"
+              disabled={!native || oauthBusy || busy}
+              onClick={() => void onRefreshOAuthGrants()}
+            >
+              Refresh grants
+            </button>
+          </div>
+          <label>
+            Stored OAuth grant
+            <select
+              aria-label="OAuth grant"
+              value={selectedOAuthGrantId}
+              disabled={oauthBusy || busy}
+              onChange={(event) => {
+                setSelectedOAuthGrantId(event.currentTarget.value);
+                setOAuthFallbackGrantId(null);
+                setOAuthNotice(null);
+              }}
+            >
+              <option value="">No grant selected</option>
+              {oauthGrants.map((grant) => (
+                <option key={grant.grantId} value={grant.grantId}>
+                  {boundedText(grant.clientId, 160)} · {grant.status}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedOAuthGrant && (
+            <div className="mcp-oauth-grant" role="status">
+              <strong>Selected OAuth grant</strong>
+              <span>Issuer: {boundedText(selectedOAuthGrant.issuer, 300)}</span>
+              <span>Resource: {boundedText(selectedOAuthGrant.resource, 300)}</span>
+              <span>Client ID: {boundedText(selectedOAuthGrant.clientId, 300)}</span>
+              <span>Status: {selectedOAuthGrant.status}</span>
+              <span>
+                Scopes: {selectedOAuthGrant.scopes.map((scope) => boundedText(scope, 256)).join(", ") || "none"}
+              </span>
+              <span>Expires: {formatOAuthExpiry(selectedOAuthGrant.expiresAtMs)}</span>
+              <div className="mcp-inline-actions">
+                <button
+                  className="btn"
+                  type="button"
+                  aria-label="Revoke OAuth grant"
+                  disabled={!native || oauthBusy || busy}
+                  onClick={() => void onRevokeOAuthGrant(false)}
+                >
+                  Revoke grant
+                </button>
+                {oauthFallbackGrantId === selectedOAuthGrant.grantId && (
+                  <button
+                    className="btn"
+                    type="button"
+                    aria-label="Remove OAuth grant locally"
+                    disabled={!native || oauthBusy || busy}
+                    onClick={() => void onRevokeOAuthGrant(true)}
+                  >
+                    Remove locally
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {selectedOAuthGrantId && authorizationHeaderConflict && (
+            <div className="mcp-notice" role="alert">
+              OAuth grant와 활성화된 Authorization custom header를 함께 사용할 수 없습니다. Header를
+              끄거나 OAuth grant 선택을 해제하세요.
+            </div>
+          )}
+          {oauthNotice && (
+            <p className="dim" role="status">{OAUTH_NOTICE_LABELS[oauthNotice]}</p>
+          )}
+        </section>
+      )}
 
       {connection && (
         <div className="mcp-server-card" role="status">
@@ -646,6 +1360,12 @@ function isPromptArgument(value: unknown): value is { name: string; required?: b
 
 function boundedText(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max)}…`;
+}
+
+function formatOAuthExpiry(value: number | null): string {
+  if (value === null) return "not provided";
+  const formatted = new Date(value).toLocaleString();
+  return formatted === "Invalid Date" ? "not provided" : formatted;
 }
 
 function boundedJson(value: unknown, max: number): string {

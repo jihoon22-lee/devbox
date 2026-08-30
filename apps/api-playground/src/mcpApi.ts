@@ -5,6 +5,11 @@ import type {
   McpConnectResult,
   McpHttpProfile,
   McpInvokeResult,
+  McpNativeSelection,
+  McpOAuthGrantProjection,
+  McpOAuthGrantStatus,
+  McpOAuthRevokeResult,
+  McpStdioProfile,
   McpServerProjection,
   McpTimelineEntry,
 } from "./types";
@@ -15,6 +20,8 @@ const MAX_TIMELINE_BYTES = 4 * 1024 * 1024;
 const MAX_RESULT_BYTES = 4 * 1024 * 1024;
 const CONNECTION_ID = /^[a-f0-9]{32}$/u;
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,128}$/u;
+const OAUTH_REQUEST_ID = /^[A-Za-z0-9_.-]{1,128}$/u;
+const GRANT_ID = /^[a-f0-9]{32}$/u;
 const PROTOCOL_VERSION = /^\d{4}-\d{2}-\d{2}$/u;
 const SAFE_ERROR_CODES = new Set([
   "mcp_invalid_profile",
@@ -36,6 +43,32 @@ const SAFE_ERROR_CODES = new Set([
   "mcp_schema_unsupported",
   "mcp_connection_stale",
   "mcp_server_error",
+  "mcp_stdio_selection_invalid",
+  "mcp_stdio_profile_invalid",
+  "mcp_stdio_environment_invalid",
+  "mcp_stdio_spawn_failed",
+  "mcp_stdio_transport_failed",
+  "mcp_stdio_protocol_invalid",
+  "mcp_stdio_message_too_large",
+  "mcp_stdio_request_timeout",
+  "mcp_stdio_request_cancelled",
+  "mcp_stdio_connection_stale",
+  "mcp_stdio_cleanup_failed",
+  "mcp_stdio_connection_limit",
+  "mcp_stdio_request_limit",
+  "mcp_oauth_required",
+  "mcp_oauth_request_invalid",
+  "mcp_oauth_discovery_failed",
+  "mcp_oauth_resource_mismatch",
+  "mcp_oauth_issuer_mismatch",
+  "mcp_oauth_pkce_required",
+  "mcp_oauth_client_unsupported",
+  "mcp_oauth_callback_failed",
+  "mcp_oauth_token_failed",
+  "mcp_oauth_storage_failed",
+  "mcp_oauth_reauthorization_required",
+  "mcp_oauth_cancelled",
+  "mcp_oauth_revoke_failed",
 ]);
 
 let requestSequence = 0;
@@ -118,8 +151,250 @@ export async function disconnectMcpHttp(connectionId: string): Promise<void> {
   await invoke<void>("disconnect_mcp_http", { connectionId });
 }
 
+export async function pickMcpStdioExecutable(): Promise<McpNativeSelection | null> {
+  return pickMcpStdioSelection("pick_mcp_stdio_executable", "executable");
+}
+
+export async function pickMcpStdioCwd(): Promise<McpNativeSelection | null> {
+  return pickMcpStdioSelection("pick_mcp_stdio_cwd", "directory");
+}
+
+async function pickMcpStdioSelection(
+  command: "pick_mcp_stdio_executable" | "pick_mcp_stdio_cwd",
+  kind: McpNativeSelection["kind"],
+): Promise<McpNativeSelection | null> {
+  requireNative();
+  const value = await invoke<unknown>(command);
+  if (value === null) return null;
+  const record = asRecord(value, "mcp_stdio_selection_invalid");
+  const selectionId = record.selectionId;
+  const label = record.label;
+  const expiresAtMs = record.expiresAtMs;
+  if (
+    typeof selectionId !== "string"
+    || !CONNECTION_ID.test(selectionId)
+    || record.kind !== kind
+    || typeof label !== "string"
+    || utf8Bytes(label) > 256
+    || hasControl(label)
+    || label.includes("/")
+    || label.includes("\\")
+    || label === "."
+    || label === ".."
+    || typeof expiresAtMs !== "number"
+    || !Number.isSafeInteger(expiresAtMs)
+    || expiresAtMs < 0
+  ) {
+    throw new Error("mcp_stdio_selection_invalid");
+  }
+  // Only this safe projection crosses into renderer state. In particular, a
+  // native dialog path (even if a malformed native payload includes one) is
+  // never returned to the caller.
+  return {
+    selectionId,
+    kind,
+    label,
+    expiresAtMs,
+  };
+}
+
+export async function connectMcpStdio(
+  profile: McpStdioProfile,
+  environment: readonly EnvVariable[],
+): Promise<McpConnectResult> {
+  requireNative();
+  const safeProfile: McpStdioProfile = {
+    executableSelectionId: profile.executableSelectionId,
+    ...(profile.cwdSelectionId === undefined ? {} : { cwdSelectionId: profile.cwdSelectionId }),
+    era: profile.era,
+    args: [...profile.args],
+    environment: profile.environment.map(({ childName, sourceName }) => ({ childName, sourceName })),
+    timeoutMs: profile.timeoutMs,
+  };
+  const value = await invoke<unknown>("connect_mcp_stdio", { profile: safeProfile, environment });
+  try {
+    return validateConnectResult(value);
+  } catch (cause) {
+    const connectionId = isRecord(value) && typeof value.connectionId === "string"
+      && CONNECTION_ID.test(value.connectionId)
+      ? value.connectionId
+      : null;
+    if (connectionId) {
+      try {
+        await invoke<void>("disconnect_mcp_stdio", { connectionId });
+      } catch {
+        // Preserve the validation error even if best-effort native cleanup fails.
+      }
+    }
+    throw cause;
+  }
+}
+
+export async function invokeMcpStdio(
+  connectionId: string,
+  requestId: string,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<McpInvokeResult> {
+  requireNative();
+  if (!CONNECTION_ID.test(connectionId) || !REQUEST_ID.test(requestId)) {
+    throw new Error("mcp_stdio_connection_stale");
+  }
+  const value = await invoke<unknown>("invoke_mcp_stdio", {
+    connectionId,
+    requestId,
+    method,
+    params,
+  });
+  return validateInvokeResult(value, method, requestId);
+}
+
+export async function cancelMcpStdio(
+  connectionId: string,
+  requestId: string,
+): Promise<boolean> {
+  requireNative();
+  if (!CONNECTION_ID.test(connectionId) || !REQUEST_ID.test(requestId)) {
+    throw new Error("mcp_stdio_connection_stale");
+  }
+  const value = await invoke<unknown>("cancel_mcp_stdio", { connectionId, requestId });
+  if (typeof value !== "boolean") throw new Error("mcp_stdio_protocol_invalid");
+  return value;
+}
+
+export async function disconnectMcpStdio(connectionId: string): Promise<void> {
+  requireNative();
+  if (!CONNECTION_ID.test(connectionId)) throw new Error("mcp_stdio_connection_stale");
+  await invoke<void>("disconnect_mcp_stdio", { connectionId });
+}
+
+export async function authorizeMcpHttp(
+  requestId: string,
+  endpoint: string,
+  issuer: string | null | undefined,
+  clientId: string,
+  scopes: string[],
+): Promise<McpOAuthGrantProjection> {
+  requireNative();
+  if (
+    !OAUTH_REQUEST_ID.test(requestId)
+    || !safeOAuthText(endpoint, 8 * 1024)
+    || (issuer !== null && issuer !== undefined && !safeOAuthText(issuer, 8 * 1024))
+    || !safeOAuthText(clientId, 8 * 1024)
+    || scopes.length > 32
+    || !scopes.every((scope) => isSafeOAuthScope(scope))
+    || new Set(scopes).size !== scopes.length
+  ) {
+    throw new Error("mcp_oauth_request_invalid");
+  }
+  const payload = {
+    requestId,
+    endpoint,
+    ...(issuer === undefined ? {} : { issuer }),
+    clientId,
+    scopes: [...scopes],
+  };
+  const value = await invoke<unknown>("authorize_mcp_http", payload);
+  return validateOAuthGrantProjection(value);
+}
+
+export async function cancelMcpOAuth(requestId: string): Promise<boolean> {
+  requireNative();
+  if (!OAUTH_REQUEST_ID.test(requestId)) throw new Error("mcp_oauth_request_invalid");
+  const value = await invoke<unknown>("cancel_mcp_oauth", { requestId });
+  if (typeof value !== "boolean") throw new Error("mcp_oauth_request_invalid");
+  return value;
+}
+
+export async function listMcpOAuthGrants(): Promise<McpOAuthGrantProjection[]> {
+  requireNative();
+  const value = await invoke<unknown>("list_mcp_oauth_grants");
+  if (!Array.isArray(value) || value.length > 32) throw new Error("mcp_oauth_storage_failed");
+  const grants = value.map(validateOAuthGrantProjection);
+  if (new Set(grants.map((grant) => grant.grantId)).size !== grants.length) {
+    throw new Error("mcp_oauth_storage_failed");
+  }
+  return grants;
+}
+
+export async function revokeMcpOAuthGrant(
+  grantId: string,
+  removeLocalOnRemoteFailure: boolean,
+): Promise<McpOAuthRevokeResult> {
+  requireNative();
+  if (!GRANT_ID.test(grantId)) throw new Error("mcp_oauth_required");
+  const value = await invoke<unknown>("revoke_mcp_oauth_grant", {
+    grantId,
+    removeLocalOnRemoteFailure,
+  });
+  const record = asRecord(value, "mcp_oauth_revoke_failed");
+  if (typeof record.remoteRevoked !== "boolean" || typeof record.removedLocal !== "boolean") {
+    throw new Error("mcp_oauth_revoke_failed");
+  }
+  return {
+    remoteRevoked: record.remoteRevoked,
+    removedLocal: record.removedLocal,
+  };
+}
+
 function requireNative(): void {
   if (!isTauri()) throw new Error(NATIVE_REQUIRED);
+}
+
+function validateOAuthGrantProjection(value: unknown): McpOAuthGrantProjection {
+  const record = asRecord(value, "mcp_oauth_request_invalid");
+  const grantId = record.grantId;
+  const issuer = record.issuer;
+  const resource = record.resource;
+  const clientId = record.clientId;
+  const scopes = record.scopes;
+  const expiresAtMs = record.expiresAtMs;
+  const status = record.status;
+  if (
+    typeof grantId !== "string"
+    || !GRANT_ID.test(grantId)
+    || !safeOAuthText(issuer, 8 * 1024)
+    || !safeOAuthText(resource, 8 * 1024)
+    || !safeOAuthText(clientId, 8 * 1024)
+    || !Array.isArray(scopes)
+    || scopes.length > 32
+    || !scopes.every((scope) => isSafeOAuthScope(scope))
+    || new Set(scopes).size !== scopes.length
+    || (expiresAtMs !== null && (
+      typeof expiresAtMs !== "number"
+      || !Number.isSafeInteger(expiresAtMs)
+      || expiresAtMs < 0
+    ))
+    || (status !== "active" && status !== "expired")
+  ) {
+    throw new Error("mcp_oauth_request_invalid");
+  }
+  return {
+    grantId,
+    issuer: issuer as string,
+    resource: resource as string,
+    clientId: clientId as string,
+    scopes: [...(scopes as string[])],
+    expiresAtMs: expiresAtMs as number | null,
+    status: status as McpOAuthGrantStatus,
+  };
+}
+
+function safeOAuthText(value: unknown, maxBytes: number): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && utf8Bytes(value) <= maxBytes
+    && !hasControl(value);
+}
+
+function isSafeOAuthScope(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 256
+    && [...value].every((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code >= 0x21 && code <= 0x7e;
+    });
 }
 
 function validateConnectResult(value: unknown): McpConnectResult {

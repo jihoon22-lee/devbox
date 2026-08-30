@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `a5aeeb3ba81b49cf1412a537a74f674b53a0d6265e50d1804964bc03cd5ba788`
+- Cargo.lock SHA-256: `c593780dc5786b2bee65270f693a1c5e3bda0a035161eaa03d5de34a83d87b8f`
 - pnpm-lock.yaml SHA-256: `94885f0421ed363aba0c3fc3eb84cf80aac71ff027ffc50818d20ed0960107be`
 
 ## Rust dependencies
@@ -440,6 +440,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | serde_repr | 0.1.21 | MIT OR Apache-2.0 | https://github.com/dtolnay/serde-repr | `sha256:8d3b1629de253c70a0508c3899572da79ca359fdab27c7920ff00406df418906` |
 | serde_spanned | 0.6.9 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml | `sha256:bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3` |
 | serde_spanned | 1.1.1 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml | `sha256:6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26` |
+| serde_urlencoded | 0.7.1 | MIT/Apache-2.0 | https://github.com/nox/serde_urlencoded | `sha256:d3491c14715ca2294c4d6a88f15e84739788c1d030eed8c110436aafdaa2f3fd` |
 | serde_with | 3.22.0 | MIT OR Apache-2.0 | https://github.com/jonasbb/serde_with/ | `sha256:ee78f1fbe43ac4a0e47aadb3dbd357b69eb0d3793e948624cd03dd2750ab1c0a` |
 | serde_with_macros | 3.22.0 | MIT OR Apache-2.0 | https://github.com/jonasbb/serde_with/ | `sha256:8705578779c2b6bd90d84d66eb2e206b708b1a4d7b9f17641b293545bf1c7e46` |
 | serde_yaml_ng | 0.10.0 | MIT | https://github.com/acatton/serde-yaml-ng | `sha256:7b4db627b98b36d4203a7b458cf3573730f2bb591b28871d916dfa9efabfd41f` |

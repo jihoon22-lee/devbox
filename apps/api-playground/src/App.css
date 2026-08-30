@@ -1808,6 +1808,197 @@ body {
   white-space: nowrap;
 }
 
+.mcp-stdio-profile {
+  grid-column: 1 / -1;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--db-space-3, 12px);
+  padding-top: var(--db-space-1, 4px);
+}
+
+.mcp-stdio-warning {
+  margin-top: 0;
+  border-color: color-mix(in srgb, var(--amber) 35%, var(--border));
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+}
+
+.mcp-stdio-selection-row {
+  display: grid;
+  grid-template-areas: "label choose status clear";
+  grid-template-columns: max-content auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+  padding: var(--db-space-2, 8px) 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--panel) 82%, var(--bg));
+}
+
+.mcp-stdio-selection-row > span:first-child {
+  grid-area: label;
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+  white-space: nowrap;
+}
+
+.mcp-stdio-selection-row > span[role="status"] {
+  grid-area: status;
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mcp-stdio-selection-row > button[aria-label^="Choose"] {
+  grid-area: choose;
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.mcp-stdio-selection-row > button[aria-label="Clear cwd"] {
+  grid-area: clear;
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.mcp-stdio-profile fieldset,
+.mcp-oauth-panel fieldset {
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  padding: var(--db-space-3, 12px);
+  flex-direction: column;
+  gap: var(--db-space-2, 8px);
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+}
+
+.mcp-stdio-profile fieldset:disabled,
+.mcp-oauth-panel fieldset:disabled {
+  opacity: 0.68;
+}
+
+.mcp-stdio-profile fieldset legend,
+.mcp-oauth-panel fieldset legend {
+  max-width: 100%;
+  padding: 0 6px;
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.mcp-stdio-row,
+.mcp-oauth-scope-row {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+}
+
+.mcp-stdio-row > label,
+.mcp-oauth-scope-row > label,
+.mcp-oauth-inputs > label,
+.mcp-oauth-panel > label {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: var(--db-space-1, 4px);
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.mcp-stdio-row > .btn,
+.mcp-oauth-scope-row > .btn,
+.mcp-stdio-profile fieldset > .btn,
+.mcp-oauth-panel fieldset > .btn {
+  min-height: 30px;
+  flex: none;
+  align-self: flex-end;
+  white-space: nowrap;
+}
+
+.mcp-stdio-row input,
+.mcp-oauth-panel :is(input, select) {
+  min-width: 0;
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  color: var(--text);
+  padding: 5px 8px;
+  font: inherit;
+  outline: none;
+}
+
+.mcp-oauth-panel {
+  display: flex;
+  min-width: 0;
+  margin-top: var(--db-space-3, 12px);
+  padding: var(--db-space-3, 12px);
+  flex-direction: column;
+  gap: var(--db-space-3, 12px);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--db-radius-lg, 8px);
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+}
+
+.mcp-oauth-panel h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.mcp-oauth-panel > p {
+  max-width: 760px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.mcp-oauth-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+}
+
+.mcp-oauth-grant {
+  display: flex;
+  min-width: 0;
+  padding: 10px;
+  flex-direction: column;
+  gap: var(--db-space-1, 4px);
+  border: 1px solid color-mix(in srgb, var(--green) 35%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--green) 6%, var(--panel));
+  font-size: var(--db-text-sm, 11px);
+}
+
+.mcp-oauth-grant > strong,
+.mcp-oauth-grant > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mcp-oauth-grant > strong {
+  color: var(--text);
+}
+
+.mcp-oauth-grant > span {
+  color: var(--dim);
+}
+
+.mcp-oauth-grant .mcp-inline-actions {
+  margin-top: var(--db-space-1, 4px);
+}
+
 .protocol-lab :is(button, input, select, textarea, summary):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -2279,6 +2470,30 @@ body {
 
   .mcp-inline-actions .btn {
     width: 100%;
+  }
+
+  .mcp-stdio-selection-row {
+    grid-template-areas:
+      "label label"
+      "status status"
+      "choose clear";
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .mcp-stdio-row > label,
+  .mcp-oauth-scope-row > label {
+    flex-basis: 100%;
+  }
+
+  .mcp-stdio-row > .btn,
+  .mcp-oauth-scope-row > .btn,
+  .mcp-stdio-profile fieldset > .btn,
+  .mcp-oauth-panel fieldset > .btn {
+    align-self: flex-start;
+  }
+
+  .mcp-oauth-inputs {
+    grid-template-columns: 1fr;
   }
 
   .mcp-active-request {
