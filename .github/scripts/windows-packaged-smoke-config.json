@@ -75,7 +75,7 @@
     {
       "id": "run-manager",
       "additionalProcessNames": ["Run Manager.exe"],
-      "version": "0.4.1",
+      "version": "0.5.0",
       "identifier": "com.devbox.runmanager",
       "legacyIdentifiers": ["com.workbench.runmanager"],
       "title": "Run Manager",
@@ -86,7 +86,7 @@
     {
       "id": "workbench",
       "additionalProcessNames": ["Workbench.exe"],
-      "version": "0.2.0",
+      "version": "0.3.0",
       "identifier": "com.devbox.workbench",
       "legacyIdentifiers": [],
       "title": "Workbench",
