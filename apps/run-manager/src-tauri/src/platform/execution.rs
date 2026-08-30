@@ -11,6 +11,9 @@ use super::environment::EnvironmentProtectorState;
 use super::windows;
 use super::wsl;
 use crate::core::models::{RunExecutionMetadata, TargetKind};
+use crate::core::workspace_tasks::{
+    revalidate_workspace_task_execution, WorkspaceTaskExecution, WorkspaceTaskKind,
+};
 use crate::logs::{LogStream, LogStreamHandle, LogStreams, LOG_RELATIVE_ROOT};
 use crate::scheduler::{
     AdapterError, AdapterFuture, ExecutionAdapter, ExecutionExit, ExecutionHandle, ExecutionRequest,
@@ -45,6 +48,8 @@ enum FailureCode {
     LogOpen,
     LogWrite,
     TargetUnavailable,
+    WorkspaceTaskSourceChanged,
+    WorkspaceTaskConfiguration,
     Spawn,
     Handshake,
     MetadataCas,
@@ -60,6 +65,8 @@ impl FailureCode {
             Self::LogOpen => "log-open-failed",
             Self::LogWrite => "log-write-failed",
             Self::TargetUnavailable => "target-unavailable",
+            Self::WorkspaceTaskSourceChanged => "workspace-task-source-changed",
+            Self::WorkspaceTaskConfiguration => "workspace-task-configuration-invalid",
             Self::Spawn => "spawn-failed",
             Self::Handshake => "handshake-failed",
             Self::MetadataCas => "metadata-cas-failed",
@@ -71,6 +78,17 @@ impl FailureCode {
 
 fn failure(code: FailureCode) -> AdapterError {
     AdapterError::new(code.as_str())
+}
+
+fn workspace_environment_is_allowed(
+    task: &WorkspaceTaskExecution,
+    environment: &std::collections::BTreeMap<String, String>,
+) -> bool {
+    environment.keys().all(|key| {
+        task.environment_keys
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(key))
+    })
 }
 
 /// Byte-oriented per-run secret redaction. At most `max_len - 1` bytes are
@@ -185,6 +203,7 @@ impl PlatformExecutionAdapter {
         &self,
         request: ExecutionRequest,
     ) -> Result<Arc<dyn ExecutionHandle>, AdapterError> {
+        let workspace_task = self.resolve_workspace_task(&request.job).await?;
         let ciphertext = self
             .database
             .get_job_environment_ciphertext(&request.job.id)
@@ -193,6 +212,12 @@ impl PlatformExecutionAdapter {
             .protector
             .decrypt_optional_for_execution(ciphertext.as_deref())
             .map_err(|_| failure(FailureCode::EnvironmentUnavailable))?;
+        if workspace_task
+            .as_ref()
+            .is_some_and(|task| !workspace_environment_is_allowed(task, plaintext.as_map()))
+        {
+            return Err(failure(FailureCode::WorkspaceTaskConfiguration));
+        }
 
         let streams = LogStreams::open_default(self.app_data_root.as_path(), &request.run.id)
             .map_err(|_| failure(FailureCode::LogOpen))?;
@@ -211,7 +236,12 @@ impl PlatformExecutionAdapter {
         }
 
         let result = self
-            .spawn_with_plaintext(&request, plaintext.as_map(), streams)
+            .spawn_with_plaintext(
+                &request,
+                workspace_task.as_ref(),
+                plaintext.as_map(),
+                streams,
+            )
             .await;
         // This is deliberately immediately after the platform spawn/handshake
         // boundary. The returned handle owns no environment bytes.
@@ -219,9 +249,51 @@ impl PlatformExecutionAdapter {
         result
     }
 
+    async fn resolve_workspace_task(
+        &self,
+        job: &crate::core::models::Job,
+    ) -> Result<Option<WorkspaceTaskExecution>, AdapterError> {
+        let Some(execution) = self
+            .database
+            .get_workspace_task_execution(&job.id)
+            .map_err(|_| failure(FailureCode::Storage))?
+        else {
+            return Ok(None);
+        };
+        let exact_job_projection = job.kind == crate::core::models::JobKind::Job
+            && execution.job_id == job.id
+            && execution.label == job.name
+            && execution.task_kind == WorkspaceTaskKind::Process
+            && execution.command == job.command
+            && Some(execution.cwd.as_str()) == job.cwd.as_deref()
+            && execution.target_kind == job.target_kind
+            && execution.target_distro == job.target_distro;
+        let revalidation = if exact_job_projection {
+            let verification = execution.clone();
+            tokio::task::spawn_blocking(move || {
+                revalidate_workspace_task_execution(&verification).map(|_| ())
+            })
+            .await
+            .map_err(|_| failure(FailureCode::WorkspaceTaskSourceChanged))?
+        } else {
+            Err(crate::core::workspace_tasks::WorkspaceTaskError::SourceChanged)
+        };
+        if revalidation.is_err() {
+            self.database
+                .invalidate_workspace_task_source_at(
+                    &execution.source_id,
+                    crate::storage::current_epoch_millis(),
+                )
+                .map_err(|_| failure(FailureCode::Storage))?;
+            return Err(failure(FailureCode::WorkspaceTaskSourceChanged));
+        }
+        Ok(Some(execution))
+    }
+
     async fn spawn_with_plaintext(
         &self,
         request: &ExecutionRequest,
+        workspace_task: Option<&WorkspaceTaskExecution>,
         environment: &std::collections::BTreeMap<String, String>,
         streams: LogStreams,
     ) -> Result<Arc<dyn ExecutionHandle>, AdapterError> {
@@ -231,6 +303,7 @@ impl PlatformExecutionAdapter {
             TargetKind::Windows => {
                 self.spawn_windows(
                     request,
+                    workspace_task,
                     environment,
                     streams,
                     stdout_redactor,
@@ -241,6 +314,7 @@ impl PlatformExecutionAdapter {
             TargetKind::Wsl => {
                 self.spawn_wsl(
                     request,
+                    workspace_task,
                     environment,
                     streams,
                     stdout_redactor,
@@ -255,6 +329,7 @@ impl PlatformExecutionAdapter {
     async fn spawn_windows(
         &self,
         _request: &ExecutionRequest,
+        _workspace_task: Option<&WorkspaceTaskExecution>,
         _environment: &std::collections::BTreeMap<String, String>,
         _streams: LogStreams,
         _stdout_redactor: SecretRedactor,
@@ -267,16 +342,25 @@ impl PlatformExecutionAdapter {
     async fn spawn_windows(
         &self,
         request: &ExecutionRequest,
+        workspace_task: Option<&WorkspaceTaskExecution>,
         environment: &std::collections::BTreeMap<String, String>,
         streams: LogStreams,
         stdout_redactor: SecretRedactor,
         stderr_redactor: SecretRedactor,
     ) -> Result<Arc<dyn ExecutionHandle>, AdapterError> {
-        let mut child = windows::spawn(
-            &request.job.command,
-            request.job.cwd.as_deref().map(Path::new),
-            environment,
-        )
+        let mut child = match workspace_task {
+            Some(task) => windows::spawn_process(
+                &task.command,
+                &task.args,
+                Some(Path::new(&task.cwd)),
+                environment,
+            ),
+            None => windows::spawn(
+                &request.job.command,
+                request.job.cwd.as_deref().map(Path::new),
+                environment,
+            ),
+        }
         .map_err(|_| failure(FailureCode::Spawn))?;
         let metadata = RunExecutionMetadata {
             log_dir: Some(relative_log_dir(&request.run.id)),
@@ -306,6 +390,7 @@ impl PlatformExecutionAdapter {
     async fn spawn_wsl(
         &self,
         request: &ExecutionRequest,
+        workspace_task: Option<&WorkspaceTaskExecution>,
         environment: &std::collections::BTreeMap<String, String>,
         streams: LogStreams,
         mut stdout_redactor: SecretRedactor,
@@ -316,21 +401,34 @@ impl PlatformExecutionAdapter {
             .target_distro
             .as_deref()
             .ok_or_else(|| failure(FailureCode::Spawn))?;
-        let cwd = match request.job.cwd.as_deref() {
-            None => None,
-            Some(path) if path.starts_with('/') => Some(path.to_owned()),
-            Some(path) => wsl::convert_windows_path(distro, path)
-                .await
-                .map(Some)
-                .map_err(|_| failure(FailureCode::Spawn))?,
+        let cwd = match workspace_task {
+            Some(task) => Some(task.cwd.clone()),
+            None => match request.job.cwd.as_deref() {
+                None => None,
+                Some(path) if path.starts_with('/') => Some(path.to_owned()),
+                Some(path) => wsl::convert_windows_path(distro, path)
+                    .await
+                    .map(Some)
+                    .map_err(|_| failure(FailureCode::Spawn))?,
+            },
         };
-        let mut child = wsl::spawn(
-            distro,
-            cwd.as_deref(),
-            &request.job.command,
-            &request.run.id,
-            environment,
-        )
+        let mut child = match workspace_task {
+            Some(task) => wsl::spawn_process(
+                distro,
+                cwd.as_deref(),
+                &task.command,
+                &task.args,
+                &request.run.id,
+                environment,
+            ),
+            None => wsl::spawn(
+                distro,
+                cwd.as_deref(),
+                &request.job.command,
+                &request.run.id,
+                environment,
+            ),
+        }
         .map_err(|_| failure(FailureCode::Spawn))?;
         let handshake = match child.read_handshake(&request.run.id).await {
             Ok(value) => value,
@@ -1250,10 +1348,171 @@ impl ExecutionHandle for WslExecutionHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::workspace_tasks::WorkspaceTaskExecution;
     #[cfg(unix)]
     use std::process::Stdio;
     use tempfile::tempdir;
     use tokio::io::{duplex, AsyncWriteExt};
+
+    fn workspace_execution(environment_keys: Vec<String>) -> WorkspaceTaskExecution {
+        WorkspaceTaskExecution {
+            job_id: "job-id".to_owned(),
+            source_id: "source-id".to_owned(),
+            source_index: 0,
+            label: "build".to_owned(),
+            task_kind: WorkspaceTaskKind::Process,
+            command: "node".to_owned(),
+            args: vec!["build.js".to_owned()],
+            cwd: "/work/project".to_owned(),
+            environment_keys,
+            source_root: "/work/project".to_owned(),
+            project_identity: "a".repeat(64),
+            revision: "b".repeat(64),
+            target_kind: TargetKind::Wsl,
+            target_distro: Some("Ubuntu".to_owned()),
+            trusted: true,
+            available: true,
+        }
+    }
+
+    #[test]
+    fn workspace_environment_accepts_only_declared_key_names() {
+        let task = workspace_execution(vec!["TOKEN".to_owned(), "CI".to_owned()]);
+        assert!(workspace_environment_is_allowed(
+            &task,
+            &std::collections::BTreeMap::from([("token".to_owned(), "secret".to_owned())])
+        ));
+        assert!(!workspace_environment_is_allowed(
+            &task,
+            &std::collections::BTreeMap::from([("UNDECLARED".to_owned(), "secret".to_owned())])
+        ));
+    }
+
+    #[tokio::test]
+    async fn workspace_source_change_invalidates_trust_before_platform_spawn() {
+        let root = tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join(".vscode")).unwrap();
+        let source = root.path().join(".vscode/tasks.json");
+        std::fs::write(
+            &source,
+            r#"{"version":"2.0.0","tasks":[{"label":"build","type":"process","command":"node","args":["build.js"]}]}"#,
+        )
+        .unwrap();
+        let plan = crate::core::workspace_tasks::preview_workspace_tasks(
+            root.path(),
+            TargetKind::Wsl,
+            Some("Ubuntu"),
+        )
+        .unwrap();
+        let item_id = plan.items[0].id.clone();
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let applied = database
+            .apply_workspace_task_import_at(&plan, &[item_id], 100)
+            .unwrap();
+        database
+            .trust_workspace_task_source_at(&applied.source_id, &plan.revision, 101)
+            .unwrap();
+        let job_id = database.list_workspace_task_states().unwrap()[0]
+            .job_id
+            .clone();
+        database.set_job_enabled_at(&job_id, true, 102).unwrap();
+        let job = database.get_job(&job_id).unwrap().unwrap();
+        let adapter = PlatformExecutionAdapter::new(
+            Arc::clone(&database),
+            EnvironmentProtectorState::new(),
+            root.path().join("data"),
+        );
+        assert!(adapter
+            .resolve_workspace_task(&job)
+            .await
+            .unwrap()
+            .is_some());
+
+        std::fs::write(
+            &source,
+            r#"{"version":"2.0.0","tasks":[{"label":"build","type":"process","command":"other"}]}"#,
+        )
+        .unwrap();
+        let error = adapter.resolve_workspace_task(&job).await.unwrap_err();
+        assert_eq!(error.message, "workspace-task-source-changed");
+        let state = database.get_workspace_task_state(&job_id).unwrap().unwrap();
+        assert!(!state.trusted);
+        assert!(!state.available);
+        assert!(!database.get_job(&job_id).unwrap().unwrap().enabled);
+    }
+
+    /// Manual acceptance fixture for WSL interop. It is ignored in portable
+    /// CI because it requires Windows `wsl.exe` and the named distribution.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[ignore = "requires WSL interoperability and an installed distribution"]
+    async fn actual_wsl_workspace_process_keeps_metacharacters_in_one_argument() {
+        let root = tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join(".vscode")).unwrap();
+        std::fs::write(
+            root.path().join(".vscode/tasks.json"),
+            r#"{
+              "version":"2.0.0",
+              "tasks":[{
+                "label":"argv-boundary",
+                "type":"process",
+                "command":"/usr/bin/printf",
+                "args":["%s", "literal; touch ${workspaceFolder}/should-not-exist"]
+              }]
+            }"#,
+        )
+        .unwrap();
+        let distro = std::env::var("WSL_DISTRO_NAME").unwrap_or_else(|_| "Ubuntu".to_owned());
+        let plan = crate::core::workspace_tasks::preview_workspace_tasks(
+            root.path(),
+            TargetKind::Wsl,
+            Some(&distro),
+        )
+        .unwrap();
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let applied = database
+            .apply_workspace_task_import_at(&plan, &[plan.items[0].id.clone()], 100)
+            .unwrap();
+        database
+            .trust_workspace_task_source_at(&applied.source_id, &plan.revision, 101)
+            .unwrap();
+        let job_id = database.list_workspace_task_states().unwrap()[0]
+            .job_id
+            .clone();
+        database.set_job_enabled_at(&job_id, true, 102).unwrap();
+        let run = database.create_manual_run_at(&job_id, 103).unwrap();
+        let run_id = run.id.clone();
+        let owner = "test-owner";
+        let attempt = uuid::Uuid::new_v4().to_string();
+        assert!(database
+            .claim_run_starting(&run.id, owner, &attempt)
+            .unwrap());
+        let data = root.path().join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        let adapter = PlatformExecutionAdapter::new(
+            Arc::clone(&database),
+            EnvironmentProtectorState::new(),
+            &data,
+        );
+        let handle = adapter
+            .spawn_request(ExecutionRequest {
+                job: database.get_job(&job_id).unwrap().unwrap(),
+                run,
+                owner_instance_id: owner.to_owned(),
+                attempt_token: attempt,
+            })
+            .await
+            .unwrap();
+        assert_eq!(handle.wait().await.unwrap().exit_code, Some(0));
+        let logs = LogStreams::open_default(&data, &run_id).unwrap();
+        let output = logs
+            .tail_log(LogStream::Stdout, Some("0"), 64 * 1024)
+            .await
+            .unwrap()
+            .data;
+        assert!(String::from_utf8_lossy(&output).contains("literal; touch"));
+        assert!(!root.path().join("should-not-exist").exists());
+    }
 
     #[tokio::test]
     async fn async_reader_drains_every_byte_until_eof() {

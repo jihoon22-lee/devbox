@@ -631,6 +631,38 @@ pub fn spawn(
     environment: &BTreeMap<String, String>,
 ) -> Result<WindowsChild, WindowsExecutionError> {
     let shell_command = shell::build_windows_shell_command(command)?;
+    spawn_command_line(
+        Some(&shell_command.application_name),
+        &shell_command.command_line,
+        cwd,
+        environment,
+    )
+}
+
+/// Spawn a process-mode workspace task without `cmd.exe`. The executable and
+/// argv are encoded once with the Win32 quoting rules, then enter the same
+/// suspended Job Object ownership path as legacy shell jobs.
+pub fn spawn_process(
+    program: &str,
+    arguments: &[String],
+    cwd: Option<&Path>,
+    environment: &BTreeMap<String, String>,
+) -> Result<WindowsChild, WindowsExecutionError> {
+    let process = shell::build_windows_process_command(program, arguments)?;
+    spawn_command_line(
+        process.application_name.as_deref(),
+        &process.command_line,
+        cwd,
+        environment,
+    )
+}
+
+fn spawn_command_line(
+    application_name: Option<&str>,
+    command_line: &str,
+    cwd: Option<&Path>,
+    environment: &BTreeMap<String, String>,
+) -> Result<WindowsChild, WindowsExecutionError> {
     shell::validate_environment(environment)?;
     if cwd.is_some_and(|path| path.as_os_str().encode_wide().any(|unit| unit == 0)) {
         return Err(WindowsExecutionError::Shell(ShellError::NulByte("cwd")));
@@ -656,7 +688,8 @@ pub fn spawn(
 
     let job = create_kill_on_close_job()?;
     let child = create_suspended_process(
-        &shell_command,
+        application_name,
+        command_line,
         cwd,
         environment,
         stdin_read.raw(),
@@ -827,15 +860,16 @@ fn create_kill_on_close_job() -> Result<OwnedWindowsHandle, WindowsExecutionErro
 }
 
 fn create_suspended_process(
-    shell_command: &shell::WindowsShellCommand,
+    application_name: Option<&str>,
+    command_text: &str,
     cwd: Option<&Path>,
     environment: &BTreeMap<String, String>,
     stdin_read: HANDLE,
     stdout_write: HANDLE,
     stderr_write: HANDLE,
 ) -> Result<PROCESS_INFORMATION, WindowsExecutionError> {
-    let mut command_line = wide_nul(&shell_command.command_line);
-    let application_name = wide_nul(&shell_command.application_name);
+    let mut command_line = wide_nul(command_text);
+    let application_name = application_name.map(wide_nul);
     let current_directory = cwd.map(|path| wide_os_nul(path.as_os_str()));
     let mut environment_block = build_environment_block(environment)?;
     let mut startup = STARTUPINFOEXW::default();
@@ -857,7 +891,9 @@ fn create_suspended_process(
         .map_or(PCWSTR::null(), |value| PCWSTR(value.as_ptr()));
     let created = unsafe {
         CreateProcessW(
-            PCWSTR(application_name.as_ptr()),
+            application_name
+                .as_ref()
+                .map_or(PCWSTR::null(), |value| PCWSTR(value.as_ptr())),
             Some(PWSTR(command_line.as_mut_ptr())),
             None,
             None,

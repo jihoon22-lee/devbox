@@ -154,6 +154,8 @@ pub enum TerminalFailureCode {
     EnvironmentUnavailable,
     TerminationTimeout,
     WslUnavailable,
+    WorkspaceTaskSourceChanged,
+    WorkspaceTaskConfiguration,
     ProcessCrashed,
     StorageFailed,
 }
@@ -167,6 +169,8 @@ impl TerminalFailureCode {
             Self::EnvironmentUnavailable => "environment-unavailable",
             Self::TerminationTimeout => "termination-timeout",
             Self::WslUnavailable => "wsl-unavailable",
+            Self::WorkspaceTaskSourceChanged => "workspace-task-source-changed",
+            Self::WorkspaceTaskConfiguration => "workspace-task-configuration-invalid",
             Self::ProcessCrashed => "process-crashed",
             Self::StorageFailed => "storage-failed",
         }
@@ -2534,6 +2538,8 @@ fn failure_code_from_adapter(error: &AdapterError) -> TerminalFailureCode {
         "environment-unavailable" => TerminalFailureCode::EnvironmentUnavailable,
         "log-open-failed" | "log-write-failed" => TerminalFailureCode::LogWriteFailed,
         "handshake-failed" | "target-unavailable" => TerminalFailureCode::WslUnavailable,
+        "workspace-task-source-changed" => TerminalFailureCode::WorkspaceTaskSourceChanged,
+        "workspace-task-configuration-invalid" => TerminalFailureCode::WorkspaceTaskConfiguration,
         "termination-timeout" => TerminalFailureCode::TerminationTimeout,
         "wait-failed" => TerminalFailureCode::ProcessCrashed,
         "storage-failed" | "metadata-cas-failed" | "execution-metadata-cas" => {
@@ -2971,6 +2977,18 @@ mod tests {
         assert_eq!(
             failure_code_from_adapter(&AdapterError::new("metadata-cas-failed")),
             TerminalFailureCode::StorageFailed
+        );
+    }
+
+    #[test]
+    fn workspace_task_adapter_failures_keep_distinct_public_categories() {
+        assert_eq!(
+            failure_code_from_adapter(&AdapterError::new("workspace-task-source-changed")),
+            TerminalFailureCode::WorkspaceTaskSourceChanged
+        );
+        assert_eq!(
+            failure_code_from_adapter(&AdapterError::new("workspace-task-configuration-invalid")),
+            TerminalFailureCode::WorkspaceTaskConfiguration
         );
     }
 

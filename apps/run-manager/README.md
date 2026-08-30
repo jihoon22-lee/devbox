@@ -48,7 +48,7 @@ active-service 결과를 유지하고, 새 producer+새 Launcher에서는 전체
 검색할 수 있다. sidecar가 overflow 또는 projection 오류로 갱신되지 않으면 v1 status는 먼저
 성공하고 sidecar의 last-good 파일은 atomic 경계에서 보존된다.
 
-## 실행 이력·task import 계약 (#357/#358)
+## 실행 이력·package/Cargo task import 계약 (#357/#358)
 
 이력 조회는 하나의 parameterized SQLite query로 작업과 서비스 run을 함께 필터링한다. 날짜는
 epoch milliseconds 반열린 범위이며, 아직 끝나지 않은 run의 duration은 조회 시각을 기준으로
@@ -71,8 +71,9 @@ fail-closed 한다. 자동 발견 binary도 항상 `cargo run --bin <name>`을 �
 만들지 않는다. non-bin example과 `required-features` target은 실행 task로 만들지 않는다.
 
 layout metadata snapshot도 opaque revision에 포함해 preview와 apply 사이의 target 추가·삭제·교체를
-stale로 거부한다. VS Code `tasks.json` parsing과 virtual workspace member 탐색은 이 후보의
-범위가 아니며, 정의 export/import의 별도 후속 요구로 남긴다.
+stale로 거부한다. 이 기존 package/Cargo 후보의 범위와 VS Code workspace task import의 범위는
+분리된다. VS Code `tasks.json`은 아래 #486 PR1 계약으로 추가되며, virtual workspace member 탐색과
+정의 export/import는 계속 별도 후속 요구다.
 
 preview에는 root filesystem identity를 포함한 SHA-256 opaque source revision이 붙는다. 적용 시
 파일·root를 다시 읽어 revision을 비교하고 변경되었거나 안전하지 않으면 고정된 stale 오류로
@@ -87,6 +88,79 @@ non-cancellable operation으로 처리 중에는 취소를 가장하지 않는�
 기존 Run Manager SQLite schema v2의 `jobs`/`meta` 구조를 그대로 사용하므로 별도 column migration
 없이 기존 DB에서 새 필터와 disabled draft를 읽고 쓸 수 있다. import preview schema는 DB schema와
 독립적인 version 1이며, migration은 시작 시 기존 idempotent migration으로 계속 수행된다.
+
+## Workspace task import 계약 (#486 PR1)
+
+이 절은 README에 있던 “VS Code `tasks.json` parsing은 후보가 아님” 문구를 대체한다. PR1은
+프로젝트 루트 바로 아래 `.vscode/tasks.json` 하나만 native/offline으로 bounded read하고, 사용자가
+검토한 process task만 Run Manager의 작업으로 저장한다. import·preview·trust는 실행이 아니다.
+
+### Source와 preview
+
+- 프로젝트 루트는 absolute·표시 가능한 UTF-8 경로인 directory여야 하며, root·`.vscode`·`tasks.json`의
+  symlink/reparse point와 parent traversal은 거부한다. root 표시는 4 KiB, source 파일은 512 KiB,
+  task는 128개, task당 argv는 128개, 문자열은 16 KiB, 전체 argv는 64 KiB로 제한한다.
+- JSONC scanner가 문자열의 escape를 보존한 채 line/block comment와 trailing comma만 제거하고
+  strict JSON으로 파싱한다. root `version`은 정확히 `2.0.0`, `tasks`는 array여야 하며 malformed
+  JSONC·중복 label·범위 초과는 전체 preview 오류 또는 고정된 blocked 항목이 된다.
+- 사용자가 Windows 또는 WSL과 distro를 명시한다. 선택 target의 `windows`/`linux` override를
+  base task에 적용하고, preview에는 적용 override·task type·command/argv·resolved cwd·환경 키와
+  차단 사유를 표시한다. 다른 OS override는 실행 의미를 만들지 않는다.
+- preview 중에는 VS Code/extension host, package manager, Cargo, shell, network 또는 task를
+  시작하지 않는다. source identity와 파일 metadata를 read 전후 비교해 preview/apply 경계를
+  보호한다.
+
+### PR1 projection과 안전 경계
+
+- `process` task만 가져올 수 있다. executable(command)과 string argv를 별도 필드로 보존하고
+  shell parser나 `cmd.exe`를 거치지 않는다. quote object, `$`/extension task type은 blocked다.
+- `${workspaceFolder}`, `${workspaceFolderBasename}`, `${pathSeparator}`, `${/}`만 target에 맞는
+  separator로 한 번 치환한다. `${env:...}`, `${config:...}`, `${command:...}`, `${input:...}`,
+  active editor/file/selection, workspace-name selector와 알 수 없는 dynamic variable은 blocked다.
+  치환된 cwd는 canonical project root 내부여야 한다.
+- `options.env`는 선언된 key 이름만 preview·저장한다. 값은 읽거나 가져오지 않으며, 필요한 값은
+  기존 Run Manager의 DPAPI 환경변수 편집 흐름에서 사용자가 다시 입력한다. 선언되지 않은 key는
+  거부한다.
+- shell task는 PR1에서 가져오지 않고 `shell-requires-separate-confirmation`으로 blocked다.
+  `dependsOn`/`dependsOrder` DAG, `isBackground`, `runOptions`와 그에 따른 background·overlap
+  제어는 PR1 실행 권한에 포함하지 않는다. problem matcher는 존재 여부만 preview에 표시하며
+  matcher 실행·진단 추출·Code Pad 이동은 수행하지 않는다.
+
+### Persistence, trust와 재검증
+
+- import는 source와 선택 task/job을 SQLite schema v3 side table에 한 transaction으로 저장한다.
+  모든 imported job은 `enabled=false`인 disabled draft이며 source는 untrusted다. source의
+  project filesystem identity·`.vscode/tasks.json` object identity·원문 byte digest·target
+  kind/distro로 만든 lower-case SHA-256 opaque revision이 trust의 기준이다.
+- 현재 revision을 별도로 승인해야 하며 trust는 실행을 시작하지 않는다. source revision이 바뀌거나
+  identity/read 검증에 실패하면 해당 source의 trust를 지우고 task를 unavailable로 만들며 job을
+  disabled로 만드는 작업을 한 transaction으로 처리한다. 실행 중인 process tree는 자동 종료하지
+  않고, 다음 run/enable을 막아 재-preview와 재승인을 요구한다.
+- Run/enable 진입점과 adapter의 final pre-spawn 단계가 각각 source identity·revision과 저장된
+  process projection을 다시 검증한다. 검증 직후 source가 바뀌어도 새 파일의 command를 읽어 실행하지
+  않으며, DB에 저장된 승인 argv만 사용한다. side table이 손상되거나 projection이 불일치하면 shell
+  fallback 없이 고정 `workspace-task-*` 오류로 fail-closed한다.
+
+### 실행 및 편집 경계
+
+- Windows process task는 Win32 argv quoting을 사용한 direct `CreateProcessW`로 생성하고 `cmd.exe`를
+  사용하지 않는다. 기존 suspended creation → Job Object assign → resume 소유권과 bounded logs를
+  그대로 사용한다.
+- WSL process task는 `wsl.exe --exec`와 fixed supervisor에 executable/argv를 별도 인자로 전달하고
+  `setsid --wait` process-group cleanup을 사용한다. 사용자 command/argv를 `bash -lc` script에
+  interpolate하지 않으며 WSLENV의 managed key는 양방향 전달 가능한 항목으로 정규화한다.
+- source가 관리하는 task name, command, argv, cwd, target/distro는 일반 Job Editor에서 편집할 수
+  없다. 재-import 또는 별도 명시적 일반 작업 분리 흐름이 필요하다. schedule/cron, overlap policy,
+  catch-up과 선언된 환경변수의 값은 기존 편집 흐름에서 설정할 수 있지만, enable/run에는 현재
+  source trust와 재검증이 계속 필요하다.
+
+### PR2 / pending
+
+shell task의 별도 위험 확인·실행, problem matcher 파싱과 diagnostics/Code Pad 연계, dependency
+DAG의 sequence/parallel orchestration, Workbench의 typed start/stop 요청과 receipt 연계는 PR2
+범위로 남긴다. PR1은 이 기능들을 자동으로 제공하지 않는다. extension host/extension task,
+dynamic variable 해석, background/runOptions 실행 의미도 현재 blocked이며 별도 범위가 정해지기
+전까지는 실행 후보가 아니다.
 
 ## 기술
 

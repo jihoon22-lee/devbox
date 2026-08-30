@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { previewCron } from "../api";
+import { friendlyErrorMessage, previewCron } from "../api";
 import {
   draftFromJob,
   EMPTY_JOB_DRAFT,
@@ -8,12 +8,21 @@ import {
   validateJobDraft,
   type JobDraft,
 } from "../lib/jobEditor";
-import type { CronPreviewItem, EnvironmentDraft, Job, JobFieldErrors, JobInput, TargetKind } from "../types";
+import type {
+  CronPreviewItem,
+  EnvironmentDraft,
+  Job,
+  JobFieldErrors,
+  JobInput,
+  TargetKind,
+  WorkspaceTaskState,
+} from "../types";
 import CronBuilder from "./CronBuilder";
 import NextRunsPreview from "./NextRunsPreview";
 
 interface JobEditorProps {
   job: Job | null;
+  workspaceTask?: WorkspaceTaskState | null;
   onSave: (input: JobInput) => Promise<void>;
   onCancel: () => void;
 }
@@ -22,19 +31,27 @@ function newEnvironmentRow(): EnvironmentDraft {
   return { id: `env-${Math.random().toString(36).slice(2)}`, key: "", value: "", persisted: false };
 }
 
-export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
+export default function JobEditor({ job, workspaceTask = null, onSave, onCancel }: JobEditorProps) {
   const [draft, setDraft] = useState<JobDraft>(() => (job ? draftFromJob(job) : { ...EMPTY_JOB_DRAFT }));
   const [errors, setErrors] = useState<JobFieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [previewItems, setPreviewItems] = useState<CronPreviewItem[]>([]);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [workspaceFieldError, setWorkspaceFieldError] = useState<string | null>(null);
   const previewRequest = useRef(0);
+  const managed = workspaceTask !== null;
+  const allowedEnvironmentKeys = workspaceTask?.environmentKeys ?? [];
+  const allowedEnvironmentKeySet = useMemo(
+    () => new Set(allowedEnvironmentKeys.map((key) => key.toUpperCase())),
+    [allowedEnvironmentKeys],
+  );
 
   useEffect(() => {
     setDraft(job ? draftFromJob(job) : { ...EMPTY_JOB_DRAFT, environment: [] });
     setErrors({});
-  }, [job]);
+    setWorkspaceFieldError(null);
+  }, [job, workspaceTask]);
 
   useEffect(() => {
     const requestId = ++previewRequest.current;
@@ -83,6 +100,7 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
       environment: current.environment.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry)),
     }));
     setErrors((current) => ({ ...current, env: undefined }));
+    setWorkspaceFieldError(null);
   };
 
   const addEnvironment = () => {
@@ -95,6 +113,7 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
       environment: [...current.environment.filter((entry) => !entry.persisted), newEnvironmentRow()],
     }));
     setErrors((current) => ({ ...current, env: undefined }));
+    setWorkspaceFieldError(null);
   };
 
   const replacePersistedEnvironment = () => {
@@ -104,16 +123,30 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
       environment: [newEnvironmentRow()],
     }));
     setErrors((current) => ({ ...current, env: undefined }));
+    setWorkspaceFieldError(null);
   };
 
   const clearPersistedEnvironment = () => {
     setDraft((current) => ({ ...current, environmentAction: "clear", environment: [] }));
     setErrors((current) => ({ ...current, env: undefined }));
+    setWorkspaceFieldError(null);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const validation = validateJobDraft(draft);
+    if (managed && draft.enabled && (!workspaceTask?.trusted || !workspaceTask?.available)) {
+      setWorkspaceFieldError("소스 승인과 사용 가능 상태를 확인한 뒤 workspace task를 활성화하세요.");
+      return;
+    }
+    if (
+      managed
+      && draft.environmentAction === "replace"
+      && draft.environment.some((entry) => !entry.persisted && entry.key.trim() && !allowedEnvironmentKeySet.has(entry.key.trim().toUpperCase()))
+    ) {
+      setWorkspaceFieldError("원본에 선언된 환경변수 키만 입력할 수 있습니다.");
+      return;
+    }
     if (Object.keys(validation).length > 0) {
       setErrors(validation);
       return;
@@ -122,7 +155,7 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
     try {
       await onSave(toJobInput(draft));
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = friendlyErrorMessage(cause);
       const backendErrors = fieldErrorFromBackend(message);
       setErrors(Object.keys(backendErrors).length > 0 ? backendErrors : { name: message });
     } finally {
@@ -138,6 +171,11 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
             <span className="eyebrow">JOB EDITOR</span>
             <h2>{title}</h2>
             <p className="subtitle">예약 실행에 필요한 정의를 저장합니다.</p>
+            {managed ? (
+              <p className="workspace-editor-notice" role="note">
+                VS Code {workspaceTask?.taskKind ?? "process"} task · 이름·명령·cwd·실행 대상은 source revision이 관리합니다. 일정·중복 정책과 환경 값만 수정할 수 있습니다.
+              </p>
+            ) : null}
           </div>
           <div className="editor-actions">
             <button type="button" className="button-secondary" onClick={onCancel} disabled={saving}>
@@ -156,6 +194,8 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
               <input
                 aria-label="작업 이름"
                 value={draft.name}
+                disabled={managed}
+                readOnly={managed}
                 onChange={(event) => update("name", event.target.value)}
                 aria-invalid={Boolean(errors.name)}
                 aria-describedby={errors.name ? "name-error" : undefined}
@@ -168,6 +208,8 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
               <textarea
                 aria-label="실행 명령"
                 value={draft.command}
+                disabled={managed}
+                readOnly={managed}
                 onChange={(event) => update("command", event.target.value)}
                 rows={3}
                 spellCheck={false}
@@ -182,6 +224,8 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
               <input
                 aria-label="작업 디렉터리"
                 value={draft.cwd}
+                disabled={managed}
+                readOnly={managed}
                 onChange={(event) => update("cwd", event.target.value)}
                 placeholder="C:\\projects\\demo 또는 /home/me/demo"
               />
@@ -197,6 +241,7 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
                   name="target-kind"
                   value="windows"
                   checked={draft.targetKind === "windows"}
+                  disabled={managed}
                   onChange={() => updateTarget("windows")}
                 />
                 <span><strong>Windows</strong><small>호스트에서 실행</small></span>
@@ -207,6 +252,7 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
                   name="target-kind"
                   value="wsl"
                   checked={draft.targetKind === "wsl"}
+                  disabled={managed}
                   onChange={() => updateTarget("wsl")}
                 />
                 <span><strong>WSL</strong><small>지정한 배포판에서 실행</small></span>
@@ -218,6 +264,8 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
                 <input
                   aria-label="WSL 배포판"
                   value={draft.targetDistro}
+                  disabled={managed}
+                  readOnly={managed}
                   onChange={(event) => update("targetDistro", event.target.value)}
                   placeholder="Ubuntu"
                   aria-invalid={Boolean(errors.targetDistro)}
@@ -234,11 +282,16 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
             <div className="section-heading">
               <div>
                 <h3 id="environment-title">환경변수</h3>
-                <p className="section-description">값은 명령줄·로그에 포함하지 않고 보호된 저장소에만 보관합니다.</p>
+                <p className="section-description">
+                  {managed
+                    ? `원본에 선언된 키만 입력할 수 있습니다: ${allowedEnvironmentKeys.length > 0 ? allowedEnvironmentKeys.join(", ") : "선언된 키 없음"}. 값은 표시하지 않습니다.`
+                    : "값은 명령줄·로그에 포함하지 않고 보호된 저장소에만 보관합니다."}
+                </p>
               </div>
               <button
                 type="button"
                 className="button-secondary small"
+                disabled={managed && allowedEnvironmentKeys.length === 0}
                 onClick={addEnvironment}
               >
                 변수 추가
@@ -282,12 +335,23 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
                   </div>
                 ) : (
                   <div className="environment-row" key={entry.id}>
-                    <input
-                      aria-label="환경변수 이름"
-                      value={entry.key}
-                      onChange={(event) => updateEnvironment(entry.id, "key", event.target.value)}
-                      placeholder="NAME"
-                    />
+                    {managed ? (
+                      <select
+                        aria-label="환경변수 이름"
+                        value={entry.key}
+                        onChange={(event) => updateEnvironment(entry.id, "key", event.target.value)}
+                      >
+                        <option value="">키 선택</option>
+                        {allowedEnvironmentKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        aria-label="환경변수 이름"
+                        value={entry.key}
+                        onChange={(event) => updateEnvironment(entry.id, "key", event.target.value)}
+                        placeholder="NAME"
+                      />
+                    )}
                     <input
                       aria-label="환경변수 값"
                       type="password"
@@ -311,6 +375,7 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
               )}
             </div>
             {errors.env ? <small className="field-error" role="alert">{errors.env}</small> : null}
+            {workspaceFieldError ? <small className="field-error" role="alert">{workspaceFieldError}</small> : null}
           </section>
 
           <CronBuilder value={draft.cronExpr} onChange={(value) => update("cronExpr", value)} error={errors.cronExpr} />
@@ -319,8 +384,13 @@ export default function JobEditor({ job, onSave, onCancel }: JobEditorProps) {
             <legend id="policy-title">실행 정책</legend>
             <div className="policy-grid">
               <label className="toggle-field">
-                <input type="checkbox" checked={draft.enabled} onChange={(event) => update("enabled", event.target.checked)} />
-                <span><strong>활성화</strong><small>스케줄러가 이 작업을 평가합니다.</small></span>
+                <input
+                  type="checkbox"
+                  checked={draft.enabled}
+                  disabled={managed && (!workspaceTask?.trusted || !workspaceTask.available)}
+                  onChange={(event) => update("enabled", event.target.checked)}
+                />
+                <span><strong>활성화</strong><small>{managed && (!workspaceTask?.trusted || !workspaceTask.available) ? "source 승인과 사용 가능 상태가 필요합니다." : "스케줄러가 이 작업을 평가합니다."}</small></span>
               </label>
               <label className="toggle-field">
                 <input type="checkbox" checked={draft.catchUp} onChange={(event) => update("catchUp", event.target.checked)} />

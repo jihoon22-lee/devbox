@@ -4,7 +4,7 @@ import {
   type ContextMenuEntry,
 } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listActiveRuns, listRuns, openRunLogInLogLens, runJobNow, searchRunLogs, stopActiveRun, tailLog } from "../api";
+import { friendlyErrorMessage, listActiveRuns, listRuns, openRunLogInLogLens, runJobNow, searchRunLogs, stopActiveRun, tailLog } from "../api";
 import type {
   Job,
   LogLevel,
@@ -367,7 +367,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
       await refresh();
       if (mountedRef.current) setError(null);
     } catch (cause) {
-      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (mountedRef.current) setError(friendlyErrorMessage(cause));
     } finally {
       if (mountedRef.current) setActionBusy(false);
     }
@@ -383,7 +383,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
       await refresh();
       if (mountedRef.current) setError(null);
     } catch (cause) {
-      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (mountedRef.current) setError(friendlyErrorMessage(cause));
     } finally {
       if (mountedRef.current) setActionBusy(false);
     }
@@ -402,7 +402,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
       await refresh();
       if (mountedRef.current) setError(null);
     } catch (cause) {
-      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (mountedRef.current) setError(friendlyErrorMessage(cause));
     } finally {
       if (mountedRef.current) setActionBusy(false);
     }

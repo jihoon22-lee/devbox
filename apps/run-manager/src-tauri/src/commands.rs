@@ -12,6 +12,11 @@ use crate::core::models::{
     EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, JobKind, RunHistoryFilter,
     RunStatus, RunView, ServiceInput, ServiceInstanceView,
 };
+use crate::core::workspace_tasks::{
+    preview_workspace_tasks, revalidate_workspace_task_execution, verify_workspace_task_execution,
+    verify_workspace_task_plan, WorkspaceTaskApplyResult, WorkspaceTaskExecution,
+    WorkspaceTaskPlan, WorkspaceTaskState, MAX_TASKS,
+};
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
 use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse, MAX_TAIL_BYTES};
 use crate::platform::environment::{EnvironmentProtectorState, SecretEnvironment};
@@ -204,6 +209,10 @@ pub fn update_job(
     state: State<'_, Arc<DatabaseState>>,
 ) -> Result<Job, String> {
     let mut input = input;
+    validate_workspace_task_update(&id, &input, state.inner().as_ref())?;
+    if input.enabled {
+        revalidate_workspace_task_action(&id, state.inner().as_ref())?;
+    }
     let environment = consume_environment(&mut input.environment, protector.inner())?;
     state
         .update_job_with_ciphertext_at(&id, input, environment, current_epoch_millis())
@@ -238,9 +247,105 @@ pub fn set_job_enabled(
     enabled: bool,
     state: State<'_, Arc<DatabaseState>>,
 ) -> Result<Job, String> {
+    if enabled {
+        revalidate_workspace_task_action(&id, state.inner().as_ref())?;
+    }
     state
         .set_job_enabled(&id, enabled)
         .map_err(|error| error.to_string())
+}
+
+fn workspace_task_storage_error(error: StorageError) -> String {
+    match error {
+        StorageError::Validation(code)
+            if matches!(
+                code.as_str(),
+                "workspace-task-source-untrusted" | "workspace-task-unavailable"
+            ) =>
+        {
+            code
+        }
+        StorageError::NotFound(_) => "workspace-task-not-found".to_owned(),
+        StorageError::ConcurrentChange(_) => "workspace-task-source-changed".to_owned(),
+        _ => "run-storage-failed".to_owned(),
+    }
+}
+
+fn workspace_task_operation_error(error: ProjectImportError) -> String {
+    let value = error.to_string();
+    let suffix = value
+        .strip_prefix("project-import-")
+        .unwrap_or("operation-failed");
+    format!("workspace-task-import-{suffix}")
+}
+
+fn workspace_task_apply_error(error: StorageError) -> String {
+    match error {
+        StorageError::Validation(_) => "workspace-task-import-invalid".to_owned(),
+        other => workspace_task_storage_error(other),
+    }
+}
+
+fn invalidate_workspace_task(
+    state: &DatabaseState,
+    execution: &WorkspaceTaskExecution,
+) -> Result<(), String> {
+    state
+        .invalidate_workspace_task_source_at(&execution.source_id, current_epoch_millis())
+        .map(|_| ())
+        .map_err(workspace_task_storage_error)
+}
+
+fn revalidate_workspace_task_action(
+    job_id: &str,
+    state: &DatabaseState,
+) -> Result<Option<WorkspaceTaskExecution>, String> {
+    state
+        .ensure_workspace_task_can_enable(job_id)
+        .map_err(workspace_task_storage_error)?;
+    let Some(execution) = state
+        .get_workspace_task_execution(job_id)
+        .map_err(workspace_task_storage_error)?
+    else {
+        return Ok(None);
+    };
+    if revalidate_workspace_task_execution(&execution).is_err() {
+        invalidate_workspace_task(state, &execution)?;
+        return Err("workspace-task-source-changed".to_owned());
+    }
+    Ok(Some(execution))
+}
+
+fn validate_workspace_task_update(
+    job_id: &str,
+    input: &JobInput,
+    state: &DatabaseState,
+) -> Result<(), String> {
+    let Some(execution) = state
+        .get_workspace_task_execution(job_id)
+        .map_err(workspace_task_storage_error)?
+    else {
+        return Ok(());
+    };
+    if input.name != execution.label
+        || input.command != execution.command
+        || input.cwd.as_deref() != Some(execution.cwd.as_str())
+        || input.target_kind != execution.target_kind
+        || input.target_distro != execution.target_distro
+    {
+        return Err("workspace-task-managed-fields-locked".to_owned());
+    }
+    if let EnvironmentUpdate::Replace { values } = &input.environment {
+        if values.keys().any(|key| {
+            !execution
+                .environment_keys
+                .iter()
+                .any(|allowed| allowed.eq_ignore_ascii_case(key))
+        }) {
+            return Err("workspace-task-environment-key-not-declared".to_owned());
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -648,6 +753,160 @@ fn project_plan_with_conflicts(
     Ok(plan)
 }
 
+fn workspace_plan_with_conflicts(
+    mut plan: WorkspaceTaskPlan,
+    state: &DatabaseState,
+    control: &crate::core::imports::ImportControl,
+) -> Result<WorkspaceTaskPlan, String> {
+    control.check().map_err(workspace_task_operation_error)?;
+    for item in &mut plan.items {
+        control.check().map_err(workspace_task_operation_error)?;
+        if !item.is_ready_process() {
+            continue;
+        }
+        let conflict = state
+            .has_import_definition_conflict(JobKind::Job, &item.label, item.cwd.as_deref())
+            .map_err(|_| "run-storage-failed".to_owned())?;
+        if conflict {
+            item.status = "conflict".to_owned();
+            item.blocked_reason = Some("definition-conflict".to_owned());
+        }
+    }
+    control.check().map_err(workspace_task_operation_error)?;
+    Ok(plan)
+}
+
+/// Read one bounded `.vscode/tasks.json` source. Preview is offline and never
+/// executes a task, extension, command variable, shell, or package manager.
+#[tauri::command]
+pub fn preview_workspace_task_import(
+    path: String,
+    target_kind: crate::core::models::TargetKind,
+    target_distro: Option<String>,
+    operation_id: String,
+    state: State<'_, Arc<DatabaseState>>,
+    operations: State<'_, Arc<ImportOperationRegistry>>,
+) -> Result<WorkspaceTaskPlan, String> {
+    let operation = operations
+        .begin(&operation_id)
+        .map_err(workspace_task_operation_error)?;
+    operation
+        .control()
+        .check()
+        .map_err(workspace_task_operation_error)?;
+    let plan = preview_workspace_tasks(Path::new(&path), target_kind, target_distro.as_deref())
+        .map_err(|error| error.to_string())?;
+    workspace_plan_with_conflicts(plan, state.inner().as_ref(), operation.control())
+}
+
+#[tauri::command]
+pub fn cancel_workspace_task_import(
+    operation_id: String,
+    operations: State<'_, Arc<ImportOperationRegistry>>,
+) -> Result<bool, String> {
+    operations
+        .cancel(&operation_id)
+        .map_err(workspace_task_operation_error)
+}
+
+/// Re-read the exact source revision and atomically materialize only selected
+/// process tasks as disabled, untrusted drafts.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub fn apply_workspace_task_import(
+    path: String,
+    source_root: String,
+    project_identity: String,
+    revision: String,
+    target_kind: crate::core::models::TargetKind,
+    target_distro: Option<String>,
+    selected: Vec<String>,
+    operation_id: String,
+    state: State<'_, Arc<DatabaseState>>,
+    operations: State<'_, Arc<ImportOperationRegistry>>,
+) -> Result<WorkspaceTaskApplyResult, String> {
+    if selected.is_empty() || selected.len() > MAX_TASKS {
+        return Err("workspace-task-selection-invalid".to_owned());
+    }
+    validate_selection_ids(&selected, "workspace-task-selection-invalid")?;
+    let operation = operations
+        .begin(&operation_id)
+        .map_err(workspace_task_operation_error)?;
+    operation
+        .control()
+        .check()
+        .map_err(workspace_task_operation_error)?;
+    let plan = verify_workspace_task_plan(
+        Path::new(&path),
+        target_kind,
+        target_distro.as_deref(),
+        &source_root,
+        &project_identity,
+        &revision,
+    )
+    .map_err(|error| error.to_string())?;
+    operation
+        .control()
+        .check()
+        .map_err(workspace_task_operation_error)?;
+    state
+        .apply_workspace_task_import_at(&plan, &selected, current_epoch_millis())
+        .map_err(workspace_task_apply_error)
+}
+
+#[tauri::command]
+pub fn list_workspace_tasks(
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<Vec<WorkspaceTaskState>, String> {
+    state
+        .list_workspace_task_states()
+        .map_err(workspace_task_storage_error)
+}
+
+/// Authorize one exact source revision. The filesystem claim is verified both
+/// before and after the durable CAS; a racing change clears trust and disables
+/// every task in the source before this command can report success.
+#[tauri::command]
+pub fn trust_workspace_task_source(
+    source_id: String,
+    revision: String,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<bool, String> {
+    let candidate = state
+        .list_workspace_task_states()
+        .map_err(workspace_task_storage_error)?
+        .into_iter()
+        .find(|item| item.source_id == source_id)
+        .ok_or_else(|| "workspace-task-not-found".to_owned())?;
+    let candidate = state
+        .get_workspace_task_state(&candidate.job_id)
+        .map_err(workspace_task_storage_error)?
+        .ok_or_else(|| "workspace-task-not-found".to_owned())?;
+    if candidate.revision != revision {
+        return Err("workspace-task-source-changed".to_owned());
+    }
+    let execution = state
+        .get_workspace_task_execution(&candidate.job_id)
+        .map_err(workspace_task_storage_error)?
+        .ok_or_else(|| "workspace-task-not-found".to_owned())?;
+    if verify_workspace_task_execution(&execution).is_err() {
+        invalidate_workspace_task(state.inner().as_ref(), &execution)?;
+        return Err("workspace-task-source-changed".to_owned());
+    }
+    state
+        .trust_workspace_task_source_at(&source_id, &revision, current_epoch_millis())
+        .map_err(workspace_task_storage_error)?;
+    let refreshed = state
+        .get_workspace_task_execution(&candidate.job_id)
+        .map_err(workspace_task_storage_error)?
+        .ok_or_else(|| "workspace-task-not-found".to_owned())?;
+    if revalidate_workspace_task_execution(&refreshed).is_err() {
+        invalidate_workspace_task(state.inner().as_ref(), &refreshed)?;
+        return Err("workspace-task-source-changed".to_owned());
+    }
+    Ok(true)
+}
+
 /// Preview package scripts and Cargo targets from a local project root.  The
 /// operation is read-only and offline; no package manager or Cargo process is
 /// started.
@@ -919,6 +1178,14 @@ fn scheduler_command_error(error: SchedulerError) -> String {
     match error {
         SchedulerError::Storage(_) => "run-storage-failed".to_string(),
         SchedulerError::Cron(_) => "job-schedule-invalid".to_string(),
+        SchedulerError::Adapter { source, .. }
+            if matches!(
+                source.message.as_str(),
+                "workspace-task-source-changed" | "workspace-task-configuration-invalid"
+            ) =>
+        {
+            source.message
+        }
         SchedulerError::Adapter { .. } => "run-execution-failed".to_string(),
         SchedulerError::Join(_) => "scheduler-unavailable".to_string(),
     }
@@ -929,9 +1196,11 @@ fn scheduler_command_error(error: SchedulerError) -> String {
 #[tauri::command]
 pub async fn run_job_now(
     id: String,
-    state: State<'_, Arc<RuntimeState>>,
+    runtime: State<'_, Arc<RuntimeState>>,
+    database: State<'_, Arc<DatabaseState>>,
 ) -> Result<RunView, String> {
-    state
+    revalidate_workspace_task_action(&id, database.inner().as_ref())?;
+    runtime
         .coordinator()
         .trigger_manual_at(&id, current_epoch_millis())
         .await
@@ -1182,6 +1451,29 @@ mod tests {
         assert_eq!(
             selected_project_ids(&["npm:script:missing".to_owned()], &plan),
             Err("project-import-invalid".to_owned())
+        );
+    }
+
+    #[test]
+    fn workspace_import_operation_codes_do_not_reuse_project_prefix() {
+        assert_eq!(
+            workspace_task_operation_error(ProjectImportError::Cancelled),
+            "workspace-task-import-cancelled"
+        );
+        assert_eq!(
+            workspace_task_operation_error(ProjectImportError::TimedOut),
+            "workspace-task-import-timeout"
+        );
+    }
+
+    #[test]
+    fn workspace_adapter_codes_remain_actionable_at_the_command_boundary() {
+        assert_eq!(
+            scheduler_command_error(SchedulerError::Adapter {
+                run_id: "opaque-run".to_owned(),
+                source: crate::scheduler::AdapterError::new("workspace-task-source-changed",),
+            }),
+            "workspace-task-source-changed"
         );
     }
 }

@@ -7,21 +7,32 @@ import ChangeSetPreview, { type ChangeSetItem } from "@devbox/diff-view";
 import {
   applyImport,
   applyProjectImport,
+  applyWorkspaceTaskImport,
   cancelProjectImport,
+  cancelWorkspaceTaskImport,
+  friendlyErrorMessage,
   importDefinitions,
   previewProjectImport,
+  previewWorkspaceTaskImport,
   type ImportPlan,
   type ProjectImportPlan,
 } from "../api";
+import type {
+  TargetKind,
+  WorkspaceTaskApplyResult,
+  WorkspaceTaskItem,
+  WorkspaceTaskPlan,
+} from "../types";
 
 interface Props {
-  onDone: (created: number) => void;
+  onDone: (created: number, workspaceResult?: WorkspaceTaskApplyResult) => void;
   onClose: () => void;
 }
 
 type Preview =
   | { kind: "definitions"; plan: ImportPlan; json: string }
-  | { kind: "project"; plan: ProjectImportPlan; path: string };
+  | { kind: "project"; plan: ProjectImportPlan; path: string }
+  | { kind: "workspace"; plan: WorkspaceTaskPlan; path: string };
 
 const PREVIEW_TIMEOUT_MS = 6_000;
 
@@ -54,14 +65,176 @@ function errorMessage(cause: unknown): string {
   if (value.startsWith("project-import-")) {
     return "프로젝트 import를 읽지 못했습니다. 로컬 디렉터리와 파일 크기를 확인하세요.";
   }
+  if (value === "workspace-task-import-timeout") {
+    return "VS Code task 미리보기가 제한 시간 안에 끝나지 않았습니다. 파일을 확인한 뒤 다시 시도하세요.";
+  }
+  if (value === "workspace-task-import-cancelled") {
+    return "VS Code task 미리보기를 취소했습니다.";
+  }
+  if (value.startsWith("workspace-task-")) {
+    return friendlyErrorMessage(value);
+  }
   return value || "가져오기를 완료하지 못했습니다.";
 }
 
+function isSelectableWorkspaceItem(item: WorkspaceTaskItem): boolean {
+  return item.status === "ready"
+    && item.taskKind === "process"
+    && item.blockedReason == null
+    && item.command != null
+    && item.cwd != null;
+}
+
+function workspaceStatusLabel(item: WorkspaceTaskItem): string {
+  if (item.status === "conflict") return "충돌";
+  if (item.status === "blocked") return "차단됨";
+  return isSelectableWorkspaceItem(item) ? "가져올 수 있음" : "검토 필요";
+}
+
+function workspaceReasonLabel(reason: string | null | undefined): string {
+  if (!reason) return "";
+  const labels: Record<string, string> = {
+    "invalid-task": "task 항목이 객체 형식이 아닙니다.",
+    "invalid-label": "task label이 없거나 올바르지 않습니다.",
+    "duplicate-label": "같은 source에 중복된 task label이 있습니다.",
+    "shell-requires-separate-confirmation": "shell task는 별도 위험 확인이 필요해 현재 가져올 수 없습니다.",
+    "unsupported-task-type": "현재 process task만 가져올 수 있습니다.",
+    "missing-task-type": "task type이 없어 실행 방식을 결정할 수 없습니다.",
+    "dependencies-require-orchestration": "task 의존 관계는 orchestration 지원 후 가져올 수 있습니다.",
+    "background-task-unsupported": "background task는 종료 판정 지원 후 가져올 수 있습니다.",
+    "run-options-unsupported": "runOptions가 있는 task는 현재 가져올 수 없습니다.",
+    "invalid-command": "실행 command가 없거나 올바르지 않습니다.",
+    "invalid-arguments": "args가 문자열 배열 형식이 아닙니다.",
+    "arguments-too-large": "argv가 허용된 크기 제한을 넘었습니다.",
+    "quoted-argument-unsupported": "VS Code의 quoted argument 객체 형식은 현재 지원하지 않습니다.",
+    "invalid-os-override": "선택된 OS override 형식이 올바르지 않습니다.",
+    "invalid-options": "task options 형식이 올바르지 않습니다.",
+    "custom-shell-unsupported": "사용자 지정 shell options는 현재 지원하지 않습니다.",
+    "unsupported-options-field": "지원하지 않는 task options 필드가 있습니다.",
+    "unsupported-os-override-field": "지원하지 않는 OS override 필드가 있습니다.",
+    "invalid-cwd": "작업 디렉터리가 올바르지 않거나 프로젝트 밖을 가리킵니다.",
+    "cwd-outside-project": "작업 디렉터리가 프로젝트 경계 밖을 가리킵니다.",
+    "invalid-environment": "환경변수 선언 형식이 올바르지 않습니다.",
+    "environment-too-large": "환경변수 키 목록이 허용된 제한을 넘었습니다.",
+    "invalid-variable-value": "변수 치환 대상이 문자열 형식이 아닙니다.",
+    "invalid-workspace-folder": "workspace 경로를 안전하게 해석할 수 없습니다.",
+    "unsupported-variable": "지원하지 않는 변수 참조가 있어 차단되었습니다.",
+    "variable-result-too-large": "변수 치환 결과가 허용된 크기 제한을 넘었습니다.",
+  };
+  return labels[reason] ?? reason;
+}
+
+function workspaceSourcePath(plan: WorkspaceTaskPlan): string {
+  const separator = plan.sourceRoot.includes("\\") ? "\\" : "/";
+  return `${plan.sourceRoot.replace(/[\\/]+$/, "")}${separator}${plan.sourcePath.replace(/^[\\/]+/, "")}`;
+}
+
+interface WorkspaceTaskPreviewProps {
+  plan: WorkspaceTaskPlan;
+  selectedIds: Set<string>;
+  busy: boolean;
+  cancelRequested: boolean;
+  result: WorkspaceTaskApplyResult | null;
+  onToggle: (id: string) => void;
+  onApprove: () => void;
+  onDiscard: () => void;
+  onCancel: () => void;
+}
+
+function WorkspaceTaskPreview({
+  plan,
+  selectedIds,
+  busy,
+  cancelRequested,
+  result,
+  onToggle,
+  onApprove,
+  onDiscard,
+  onCancel,
+}: WorkspaceTaskPreviewProps) {
+  return (
+    <section className="workspace-task-preview" aria-label="VS Code workspace task import 계획">
+      <div className="import-source-summary">
+        <strong>읽은 workspace task source</strong>
+        <code>{workspaceSourcePath(plan)}</code>
+        <span>대상: {plan.targetKind === "wsl" ? `WSL · ${plan.targetDistro ?? "배포판 없음"}` : "Windows"} · 적용 플랫폼: {plan.selectedPlatform}</span>
+        <p>revision {plan.revision.slice(0, 12)} · preview는 읽기 전용·오프라인이며 원본 변경 시 적용이 거부됩니다.</p>
+      </div>
+      <div className="workspace-task-notice" role="note">
+        가져올 수 있는 항목은 ready process task뿐입니다. shell·지원하지 않는 변수·잘못된 cwd는 차단되며, 환경변수 값은 읽거나 표시하지 않고 키 이름만 보여 줍니다.
+      </div>
+      <div className="workspace-task-list" role="list" aria-label="workspace task 목록">
+        {plan.items.map((item) => {
+          const selectable = isSelectableWorkspaceItem(item);
+          const checked = selectedIds.has(item.id);
+          const reason = workspaceReasonLabel(item.blockedReason)
+            || (item.status === "conflict"
+              ? "같은 이름·작업 디렉터리의 정의가 이미 있어 충돌했습니다."
+              : !selectable && item.taskKind === "shell"
+                ? "shell task는 별도 위험 확인이 필요해 현재 가져올 수 없습니다."
+                : "현재 가져올 수 없는 task입니다.");
+          return (
+            <article className={`workspace-task-item ${selectable ? "ready" : "blocked"}`} key={item.id} role="listitem">
+              <div className="workspace-task-item-head">
+                <label className="workspace-task-select">
+                  <input
+                    type="checkbox"
+                    aria-label={`${item.label} 선택`}
+                    checked={checked}
+                    disabled={!selectable || busy}
+                    onChange={() => onToggle(item.id)}
+                  />
+                  <strong>{item.label}</strong>
+                </label>
+                <span className={`workspace-task-status ${selectable ? "ready" : "blocked"}`}>{workspaceStatusLabel(item)}</span>
+              </div>
+              <div className="workspace-task-meta">
+                <span>유형: {item.taskKind ?? "알 수 없음"}</span>
+                <span>OS override: {item.appliedOverride ?? "없음"}</span>
+                <span>problem matcher: {item.hasProblemMatcher ? "있음" : "없음"}</span>
+                <span>환경 키: {item.environmentKeys.length > 0 ? item.environmentKeys.join(", ") : "없음"}</span>
+              </div>
+              <dl className="workspace-task-details">
+                <div><dt>command</dt><dd><code>{item.command ?? "—"}</code></dd></div>
+                <div><dt>argv</dt><dd><code>{JSON.stringify(item.args)}</code></dd></div>
+                <div><dt>cwd</dt><dd><code>{item.cwd ?? "—"}</code></dd></div>
+              </dl>
+              {!selectable ? <p className="workspace-task-reason" role="note">차단 사유: {reason}</p> : null}
+            </article>
+          );
+        })}
+        {plan.items.length === 0 ? <div className="empty">가져올 task가 없습니다.</div> : null}
+      </div>
+      {result ? (
+        <div className="workspace-task-result" role="status">
+          <strong>workspace task import 완료</strong>
+          <span>생성 {result.created} · 갱신 {result.updated} · 사용 불가 전환 {result.madeUnavailable} · 충돌 건너뜀 {result.skippedConflicts}</span>
+          <p>가져온 작업은 비활성·미신뢰 상태입니다. 이 source revision을 별도로 승인한 뒤 Jobs 화면에서 활성화해야 하며, 승인은 실행 자체를 시작하지 않습니다.</p>
+        </div>
+      ) : null}
+      <div className="changeset-actions workspace-task-actions">
+        <button type="button" className="btn" disabled={busy || selectedIds.size === 0 || Boolean(result)} onClick={onApprove}>
+          선택 process task 가져오기 ({selectedIds.size})
+        </button>
+        <button type="button" className="btn" disabled={busy} onClick={onDiscard}>다시 선택</button>
+        {busy ? (
+          <button type="button" className="btn" disabled={cancelRequested} onClick={onCancel}>{cancelRequested ? "취소 중…" : "import 취소"}</button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 export default function ImportDialog({ onDone, onClose }: Props) {
-  const [mode, setMode] = useState<"definitions" | "project">("definitions");
+  const [mode, setMode] = useState<"definitions" | "project" | "workspace">("definitions");
   const [json, setJson] = useState("");
   const [projectPath, setProjectPath] = useState("");
+  const [workspacePath, setWorkspacePath] = useState("");
+  const [workspaceTargetKind, setWorkspaceTargetKind] = useState<TargetKind>("windows");
+  const [workspaceTargetDistro, setWorkspaceTargetDistro] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [workspaceSelectedIds, setWorkspaceSelectedIds] = useState<Set<string>>(new Set());
+  const [workspaceResult, setWorkspaceResult] = useState<WorkspaceTaskApplyResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +244,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
   const busyRef = useRef(false);
   const mountedRef = useRef(true);
   const cancelPendingRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const cancelOperationRef = useRef<(operationId: string) => Promise<boolean>>(cancelProjectImport);
   const onCloseRef = useRef(onClose);
   busyRef.current = busy;
   onCloseRef.current = onClose;
@@ -121,6 +295,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
     setBusy(true);
     setCancelRequested(false);
     setError(null);
+    setWorkspaceResult(null);
     try {
       const plan = await importDefinitions(json);
       if (mountedRef.current && generation === previewGeneration.current) {
@@ -146,6 +321,8 @@ export default function ImportDialog({ onDone, onClose }: Props) {
     setBusy(true);
     setCancelRequested(false);
     setError(null);
+    setWorkspaceResult(null);
+    cancelOperationRef.current = cancelProjectImport;
     try {
       const plan = await withTimeout(
         previewProjectImport(projectPath, currentOperationId),
@@ -172,6 +349,46 @@ export default function ImportDialog({ onDone, onClose }: Props) {
     }
   };
 
+  const previewWorkspace = async () => {
+    if (!mountedRef.current) return;
+    const generation = ++previewGeneration.current;
+    const currentOperationId = operationId("preview");
+    activeOperationId.current = currentOperationId;
+    cancelOperationRef.current = cancelWorkspaceTaskImport;
+    setBusy(true);
+    setCancelRequested(false);
+    setError(null);
+    setWorkspaceResult(null);
+    try {
+      const plan = await withTimeout(
+        previewWorkspaceTaskImport(
+          workspacePath,
+          workspaceTargetKind,
+          workspaceTargetKind === "wsl" ? workspaceTargetDistro.trim() || null : null,
+          currentOperationId,
+        ),
+        "workspace-task-import-timeout",
+      );
+      if (mountedRef.current && generation === previewGeneration.current) {
+        setPreview({ kind: "workspace", plan, path: workspacePath });
+        setWorkspaceSelectedIds(new Set(plan.items.filter(isSelectableWorkspaceItem).map((item) => item.id)));
+      }
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "workspace-task-import-timeout") {
+        await cancelWorkspaceTaskImport(currentOperationId).catch(() => false);
+      }
+      if (mountedRef.current && generation === previewGeneration.current) {
+        setError(errorMessage(cause));
+      }
+    } finally {
+      if (activeOperationId.current === currentOperationId) activeOperationId.current = null;
+      if (mountedRef.current) {
+        setBusy(false);
+        setCancelRequested(false);
+      }
+    }
+  };
+
   const cancelPending = async () => {
     const currentOperationId = activeOperationId.current;
     if (!mountedRef.current || !busy || cancelRequested || !currentOperationId) return;
@@ -179,13 +396,15 @@ export default function ImportDialog({ onDone, onClose }: Props) {
     setCancelRequested(true);
     setPreview(null);
     setError(null);
-    await cancelProjectImport(currentOperationId).catch(() => undefined);
+    await cancelOperationRef.current(currentOperationId).catch(() => false);
   };
 
   const discardPreview = () => {
     if (!mountedRef.current) return;
     previewGeneration.current += 1;
     setPreview(null);
+    setWorkspaceSelectedIds(new Set());
+    setWorkspaceResult(null);
     setError(null);
   };
 
@@ -221,9 +440,10 @@ export default function ImportDialog({ onDone, onClose }: Props) {
         const created = await applyImport(preview.json, selectedIds, preview.plan.revision);
         if (!mountedRef.current || generation !== previewGeneration.current) return;
         onDone(created);
-      } else {
+      } else if (preview.kind === "project") {
         currentOperationId = operationId("apply");
         activeOperationId.current = currentOperationId;
+        cancelOperationRef.current = cancelProjectImport;
         const result = await withTimeout(applyProjectImport(
           preview.path,
           preview.plan.sourceRoot,
@@ -233,14 +453,36 @@ export default function ImportDialog({ onDone, onClose }: Props) {
         ), "project-import-timeout");
         if (!mountedRef.current || generation !== previewGeneration.current) return;
         onDone(result.created);
+      } else {
+        const workspaceIds = [...workspaceSelectedIds].filter((id) => selectedIds.includes(id));
+        if (workspaceIds.length === 0) {
+          setError("가져올 수 있는 process task를 하나 이상 선택하세요.");
+          return;
+        }
+        currentOperationId = operationId("apply");
+        activeOperationId.current = currentOperationId;
+        cancelOperationRef.current = cancelWorkspaceTaskImport;
+        const result = await withTimeout(applyWorkspaceTaskImport(
+          preview.path,
+          preview.plan.sourceRoot,
+          preview.plan.projectIdentity,
+          preview.plan.revision,
+          preview.plan.targetKind,
+          preview.plan.targetDistro,
+          workspaceIds,
+          currentOperationId,
+        ), "workspace-task-import-timeout");
+        if (!mountedRef.current || generation !== previewGeneration.current) return;
+        setWorkspaceResult(result);
+        onDone(result.created + result.updated, result);
       }
     } catch (cause) {
       if (
         currentOperationId &&
         cause instanceof Error &&
-        cause.message === "project-import-timeout"
+        (cause.message === "project-import-timeout" || cause.message === "workspace-task-import-timeout")
       ) {
-        await cancelProjectImport(currentOperationId).catch(() => undefined);
+        await cancelOperationRef.current(currentOperationId).catch(() => false);
       }
       if (mountedRef.current && generation === previewGeneration.current) {
         setError(errorMessage(cause));
@@ -257,7 +499,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
   };
 
   cancelPendingRef.current = cancelPending;
-  const canCancel = busy && mode === "project";
+  const canCancel = busy && (mode === "project" || mode === "workspace");
 
   useEffect(() => {
     mountedRef.current = true;
@@ -266,7 +508,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
       previewGeneration.current += 1;
       const currentOperationId = activeOperationId.current;
       if (currentOperationId) {
-        void cancelProjectImport(currentOperationId).catch(() => undefined);
+        void cancelOperationRef.current(currentOperationId).catch(() => false);
       }
     };
   }, []);
@@ -292,12 +534,15 @@ export default function ImportDialog({ onDone, onClose }: Props) {
               <button id="import-tab-project" type="button" role="tab" aria-controls="import-content" aria-selected={mode === "project"} disabled={busy} onClick={() => setMode("project")}>
                 package/Cargo task
               </button>
+              <button id="import-tab-workspace" type="button" role="tab" aria-controls="import-content" aria-selected={mode === "workspace"} disabled={busy} onClick={() => setMode("workspace")}>
+                VS Code tasks
+              </button>
             </div>
             <div
               id="import-content"
               role="tabpanel"
               tabIndex={0}
-              aria-labelledby={mode === "definitions" ? "import-tab-definitions" : "import-tab-project"}
+              aria-labelledby={mode === "definitions" ? "import-tab-definitions" : mode === "project" ? "import-tab-project" : "import-tab-workspace"}
             >
               {mode === "definitions" ? (
                 <>
@@ -317,7 +562,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
                   }}>{busy ? (canCancel ? "취소 중…" : "처리 중…") : "취소"}</button>
                 </div>
                 </>
-              ) : (
+              ) : mode === "project" ? (
                 <>
                 <label className="field">
                   <span>프로젝트 디렉터리</span>
@@ -339,6 +584,64 @@ export default function ImportDialog({ onDone, onClose }: Props) {
                   }}>{busy ? (canCancel ? "취소 중…" : "처리 중…") : "취소"}</button>
                 </div>
                 </>
+              ) : (
+                <>
+                <label className="field">
+                  <span>workspace task 디렉터리</span>
+                  <input
+                    aria-label="workspace task 디렉터리"
+                    type="text"
+                    value={workspacePath}
+                    onChange={(event) => setWorkspacePath(event.currentTarget.value)}
+                    placeholder="C:\\work\\project 또는 /mnt/e/work/project"
+                  />
+                  <small className="field-help">프로젝트 바로 아래 .vscode/tasks.json 하나만 읽습니다. 미리보기는 읽기 전용이며 task·셸·네트워크를 실행하지 않습니다.</small>
+                </label>
+                <fieldset className="import-target-controls">
+                  <legend>실행 대상</legend>
+                  <div className="target-options">
+                    <label className={`target-option ${workspaceTargetKind === "windows" ? "selected" : ""}`}>
+                      <input
+                        type="radio"
+                        name="workspace-target-kind"
+                        value="windows"
+                        checked={workspaceTargetKind === "windows"}
+                        onChange={() => setWorkspaceTargetKind("windows")}
+                      />
+                      <span><strong>Windows</strong><small>호스트 기준 override</small></span>
+                    </label>
+                    <label className={`target-option ${workspaceTargetKind === "wsl" ? "selected" : ""}`}>
+                      <input
+                        type="radio"
+                        name="workspace-target-kind"
+                        value="wsl"
+                        checked={workspaceTargetKind === "wsl"}
+                        onChange={() => setWorkspaceTargetKind("wsl")}
+                      />
+                      <span><strong>WSL</strong><small>linux override + 배포판</small></span>
+                    </label>
+                  </div>
+                  {workspaceTargetKind === "wsl" ? (
+                    <label className="field target-distro-field">
+                      <span>WSL 배포판</span>
+                      <input
+                        aria-label="workspace task WSL 배포판"
+                        value={workspaceTargetDistro}
+                        onChange={(event) => setWorkspaceTargetDistro(event.currentTarget.value)}
+                        placeholder="Ubuntu"
+                      />
+                    </label>
+                  ) : null}
+                </fieldset>
+                <div className="import-notice">환경변수 값은 읽거나 가져오지 않습니다. preview에는 선언된 키 이름만 표시되며, 가져온 작업은 비활성·미신뢰 초안으로 저장됩니다.</div>
+                <div className="import-actions">
+                  <button type="button" className="button-primary" disabled={busy || !workspacePath.trim() || (workspaceTargetKind === "wsl" && !workspaceTargetDistro.trim())} onClick={() => void previewWorkspace()}>tasks.json 미리보기</button>
+                  <button type="button" className="button-secondary" disabled={cancelRequested || (busy && !canCancel)} onClick={() => {
+                    if (canCancel) void cancelPending();
+                    else onClose();
+                  }}>{busy ? (canCancel ? "취소 중…" : "처리 중…") : "취소"}</button>
+                </div>
+                </>
               )}
             </div>
           </>
@@ -352,22 +655,43 @@ export default function ImportDialog({ onDone, onClose }: Props) {
                 <p>preview revision {preview.plan.revision} · 원본 변경 시 적용이 거부됩니다.</p>
               </div>
             ) : null}
-            <ChangeSetPreview
-              items={items}
-              title="import 계획"
-              approveLabel="선택 항목 저장"
-              disabled={busy}
-              onApprove={(paths) => void apply(paths)}
-              onReject={discardPreview}
-              onCancel={discardPreview}
-            />
-            {busy && preview.kind === "project" ? (
-              <div className="import-actions">
-                <button type="button" className="button-secondary" disabled={cancelRequested} onClick={() => void cancelPending()}>
-                  {cancelRequested ? "취소 중…" : "import 취소"}
-                </button>
-              </div>
-            ) : null}
+            {preview.kind === "workspace" ? (
+              <WorkspaceTaskPreview
+                plan={preview.plan}
+                selectedIds={workspaceSelectedIds}
+                busy={busy}
+                cancelRequested={cancelRequested}
+                result={workspaceResult}
+                onToggle={(id) => setWorkspaceSelectedIds((current) => {
+                  const next = new Set(current);
+                  if (next.has(id)) next.delete(id);
+                  else if (preview.plan.items.some((item) => item.id === id && isSelectableWorkspaceItem(item))) next.add(id);
+                  return next;
+                })}
+                onApprove={() => void apply([...workspaceSelectedIds].map((id) => `workspace:${id} (${id})`))}
+                onDiscard={discardPreview}
+                onCancel={() => void cancelPending()}
+              />
+            ) : (
+              <>
+                <ChangeSetPreview
+                  items={items}
+                  title="import 계획"
+                  approveLabel="선택 항목 저장"
+                  disabled={busy}
+                  onApprove={(paths) => void apply(paths)}
+                  onReject={discardPreview}
+                  onCancel={discardPreview}
+                />
+                {busy && preview.kind === "project" ? (
+                  <div className="import-actions">
+                    <button type="button" className="button-secondary" disabled={cancelRequested} onClick={() => void cancelPending()}>
+                      {cancelRequested ? "취소 중…" : "import 취소"}
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            )}
           </>
         )}
       </div>

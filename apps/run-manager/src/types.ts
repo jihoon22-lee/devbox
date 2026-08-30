@@ -12,6 +12,7 @@ export interface StartupShortcutStatus {
 }
 
 export type TargetKind = "windows" | "wsl";
+export type WorkspaceTaskKind = "process" | "shell";
 export type OverlapPolicy = "skip" | "queue" | "kill-previous";
 export type RestartPolicy = "never" | "on-failure" | "always";
 export type RunStatus =
@@ -56,6 +57,59 @@ export interface Job {
   healthStartGraceMs: number | null;
   createdAt: number;
   updatedAt: number;
+}
+
+/** Read-only projection of one bounded VS Code workspace task preview. */
+export interface WorkspaceTaskItem {
+  id: string;
+  sourceIndex: number;
+  label: string;
+  status: "ready" | "blocked" | "conflict";
+  taskKind?: WorkspaceTaskKind | null;
+  command?: string | null;
+  args: string[];
+  cwd?: string | null;
+  environmentKeys: string[];
+  appliedOverride?: string | null;
+  hasProblemMatcher: boolean;
+  blockedReason?: string | null;
+}
+
+export interface WorkspaceTaskPlan {
+  schemaVersion: number;
+  sourceRoot: string;
+  sourcePath: string;
+  projectIdentity: string;
+  revision: string;
+  targetKind: TargetKind;
+  targetDistro?: string | null;
+  selectedPlatform: string;
+  items: WorkspaceTaskItem[];
+}
+
+/** Persisted workspace-task state. It deliberately contains environment key
+ * names only; values remain in the protected environment store. */
+export interface WorkspaceTaskState {
+  jobId: string;
+  sourceId: string;
+  label: string;
+  taskKind: WorkspaceTaskKind;
+  sourceRoot: string;
+  revision: string;
+  targetKind: TargetKind;
+  targetDistro?: string | null;
+  environmentKeys: string[];
+  appliedOverride?: string | null;
+  trusted: boolean;
+  available: boolean;
+}
+
+export interface WorkspaceTaskApplyResult {
+  sourceId: string;
+  created: number;
+  updated: number;
+  madeUnavailable: number;
+  skippedConflicts: number;
 }
 
 export interface JobInput {
