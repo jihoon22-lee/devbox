@@ -1,8 +1,8 @@
 # Run Manager workspace task 설계
 
-날짜: 2026-08-30  
-상태: 구현 기준  
-이슈: #486  
+날짜: 2026-08-30
+상태: 구현 기준
+이슈: #486
 대상: Run Manager, Workbench, Code Pad, AppLink/integration
 
 ## 1. 목적과 이전 문서와의 관계
@@ -31,8 +31,8 @@ bounded log 계약은 그대로 유지한다. VS Code extension host 자체를 �
 3. preview는 적용된 OS override, task type, command/argv, cwd, 환경 키, dependency와 차단 사유를
    보여 준다. 환경 값은 보여 주거나 가져오지 않는다.
 4. 사용자가 지원되는 항목을 골라 import한다. 저장된 항목은 항상 disabled + untrusted다.
-5. 사용자가 현재 revision을 별도로 승인한다. shell task는 process task 승인과 분리된 위험 확인을
-   한 번 더 요구한다.
+5. 사용자가 현재 revision을 별도로 승인한다. PR1의 shell task는 blocked이고, PR2에서 허용할 때만
+   process task 승인과 분리된 위험 확인을 한 번 더 요구한다.
 6. Run/enable 직전과 실제 spawn 직전에 source를 다시 읽는다. identity/revision이 달라졌으면 같은
    source의 승인을 지우고 아직 시작하지 않은 task를 disabled로 만든다.
 
@@ -70,9 +70,9 @@ source key에는 다음을 포함한다.
 경로 자체는 revision에 직렬화하지 않는다. revision은 lower-case SHA-256 hex이고 command, argv,
 환경 값 또는 source text를 포함한 오류를 만들지 않는다.
 
-승인 상태는 `trusted_revision == source_revision`일 때만 유효하다. shell 승인은 별도
-`shell_trusted_revision`으로 관리한다. source 재검증 실패는 해당 source의 두 승인과 enable을
-한 transaction에서 무효화한다.
+PR1의 승인 상태는 저장된 current revision에 대한 `trusted` bit이며, trust 명령의 revision CAS와
+revision 갱신 시 trust 초기화로 exact-revision 불변식을 유지한다. PR2의 shell 승인은 별도 상태로
+추가해야 한다. source 재검증 실패는 해당 source의 승인과 enable을 한 transaction에서 무효화한다.
 
 ### 3.3 TOCTOU 규칙
 
@@ -136,25 +136,27 @@ SQLite schema v3는 기존 `jobs`를 변경하지 않고 side table을 추가한
 ### 5.1 `workspace_task_sources`
 
 - source id와 project identity
-- canonical display root와 task file 상대 경로
-- target kind/distro, parser schema
-- current revision, trusted revision, shell-trusted revision
-- created/updated/trusted timestamps
+- canonical display root와 고정 task file 상대 경로
+- target kind/distro
+- current revision과 exact-revision `trusted` bit
+- created/updated timestamps
 
 ### 5.2 `workspace_tasks`
 
-- `job_id` primary/foreign key와 source id
+- 내부 task id, unique `job_id` foreign key와 source id
 - source index, label, task kind
-- executable, argv JSON, resolved cwd
-- dependency label/ordering과 problem matcher의 bounded normalized JSON
+- argv JSON, 환경 key 이름 JSON, 적용 OS override, availability
 
-기존 `jobs.command`에는 안전한 표시와 하위 호환을 위해 executable만 저장한다. 실제 process
-실행은 side table argv를 권위로 사용한다. side table이 손상됐거나 JSON bound를 벗어나면 shell로
-fallback하지 않는다.
+기존 `jobs.command`와 `jobs.cwd`에는 source가 관리하는 executable과 resolved cwd를 저장하고,
+source target/distro는 source table이 권위다. 실제 process 실행은 이 필드와 side table argv를
+하나의 managed projection으로 검증한다. side table이 손상됐거나 JSON bound를 벗어나면 shell로
+fallback하지 않는다. dependency와 problem matcher의 실행용 normalized payload는 PR2 전에는
+저장하지 않는다.
 
 import batch는 source와 선택 task/job을 한 immediate transaction으로 넣는다. 모든 job은
-`enabled=0`, fixed manual-review cron, env ciphertext 없음이다. 동일 source revision + label 충돌은
-skip하고, 다른 revision의 같은 source는 재-preview를 요구한다.
+`enabled=0`, fixed manual-review cron, env ciphertext 없음이다. 같은 source의 기존 label을 다시
+가져오면 job identity와 history를 보존한 채 managed projection을 갱신하고, 새 preview에서 빠진
+기존 항목은 unavailable+disabled로 바꾼다. 다른 일반 job과 정규화된 name/cwd가 충돌하면 skip한다.
 
 ## 6. platform 실행
 
@@ -166,18 +168,20 @@ stdout/stderr는 기존 bounded rotating log에 연결한다.
 
 ### 6.2 WSL process
 
-`wsl.exe` 인자는 모두 argv로 전달한다. fixed supervisor는 handshake와 process-group cleanup만
-담고 `"$@"`로 executable/argv를 실행한다. 사용자 command/argv를 `bash -lc` script에
+`wsl.exe --exec` 인자는 모두 argv로 전달한다. fixed supervisor는 handshake와 process-group
+cleanup만 담고 `"$@"`로 executable/argv를 실행한다. `setsid --wait`가 새 session을 만들면서
+Windows-side wrapper의 output/exit 수명도 유지한다. 사용자 command/argv를 `bash -lc` script에
 interpolate하지 않는다. distro/cwd와 PID/PGID/SID/marker 검증은 기존 규칙을 유지한다.
 
 ### 6.3 실패 코드
 
 renderer와 history에는 다음 고정 코드만 노출한다.
 
-- `workspace-task-untrusted`
+- `workspace-task-source-untrusted`
+- `workspace-task-unavailable`
 - `workspace-task-source-changed`
 - `workspace-task-source-unavailable`
-- `workspace-task-definition-invalid`
+- `workspace-task-configuration-invalid`
 - 기존 `spawn-failed`, `wsl-unavailable`, `termination-timeout`
 
 경로, command, argv, source text, 환경 값은 오류에 반향하지 않는다.
@@ -231,7 +235,7 @@ Run Manager-owned tree 외에는 적용하지 않는다.
 
 ## 9. 검증
 
-### 9.1 pure/core
+### 9.1 PR1 pure/core
 
 - JSONC comments/trailing comma/string escape/unterminated cases
 - Windows/Linux override와 base merge
@@ -239,27 +243,30 @@ Run Manager-owned tree 외에는 적용하지 않는다.
 - root/file identity 교체, symlink/reparse, same-size rewrite, stale preview/trust
 - duplicate label, task/argv/size/time bounds
 - process argv가 shell string으로 합쳐지지 않는 round-trip
-- DAG cycle/missing/sequence/parallel projection
-- matcher bounds와 root containment
+- dependency/background/runOptions 차단과 problem matcher 존재 표시
 
-### 9.2 storage/scheduler/platform
+### 9.2 PR1 storage/scheduler/platform
 
 - v2 → v3 idempotent migration과 rollback
 - atomic disabled/untrusted import, corrupt side table fail-closed
 - source change가 trust+enable을 함께 무효화
-- manual/scheduled/Workbench 진입점의 동일 재검증
+- manual/scheduled 진입점의 동일 재검증
 - Windows direct process Job Object와 WSL direct argv group cleanup
 - timeout/cancel/stop 후 owned tree residue 없음
 - stop이 외부 PID나 다른 operation run에 적용되지 않음
 
-### 9.3 frontend/integration
+### 9.3 PR1 frontend/integration
 
 - preview/select/apply/trust/error/focus/keyboard
 - blocked reason과 OS override 표시
 - stale source 후 action disable과 재-preview
-- diagnostic → Code Pad path/line/column
-- Workbench start/stop confirm, stale request, producer rename/missing, receipt provenance
 - snapshot/AppLink/handoff에 raw path/command/env/log/secret 없음
+
+### 9.4 PR2 추가 검증
+
+- DAG cycle/missing/sequence/parallel projection과 dependency closure
+- matcher bounds·root containment·diagnostic → Code Pad path/line/column
+- Workbench start/stop confirm, stale request, producer rename/missing, receipt provenance
 
 실제 Windows acceptance에서는 로컬 drive와 `\\wsl$`/`\\wsl.localhost` 프로젝트, 공백·한글·
 case-sensitive path, stopped/missing distro, portable/installer를 모두 확인한다.
