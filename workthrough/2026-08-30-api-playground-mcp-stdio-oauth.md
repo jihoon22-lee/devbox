@@ -214,6 +214,8 @@ boundary even if one side receives malformed data.
 
 - `apps/api-playground/src-tauri/Cargo.toml` adds `sha2` and `url`, enables `reqwest`
   form and Tokio networking features, and `Cargo.lock` records the resulting graph.
+- `THIRD_PARTY_NOTICES.md` records the new locked `serde_urlencoded` transitive
+  dependency and updated Cargo graph digest.
 - `apps/api-playground/README.md` documents the two transport boundaries, security
   limits, stable errors, Windows-only storage, source evidence, and pending packaged
   acceptance.
@@ -312,6 +314,9 @@ Test Files: 33 passed (33)   Tests: 244 passed (244)
 
 $ pnpm --filter api-playground build
 tsc and the Vite production build completed successfully
+
+$ python3 .github/scripts/check-dependencies.py check
+dependency policy OK; notices match Cargo.lock and pnpm-lock.yaml
 ```
 
 The Rust test suite therefore records **160 passed**, strict Rust Clippy with
@@ -336,6 +341,7 @@ issuer/resource/PKCE cases, and MCP Inspector comparison remain pending.
 ## Changed-file inventory
 
 - `Cargo.lock`
+- `THIRD_PARTY_NOTICES.md`
 - `apps/api-playground/src-tauri/Cargo.toml`
 - `apps/api-playground/src-tauri/src/commands/mcp.rs`
 - `apps/api-playground/src-tauri/src/commands/mcp_oauth.rs`
