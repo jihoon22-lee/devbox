@@ -147,6 +147,47 @@ describe("Log Lens handoff API", () => {
     });
   });
 
+  it("accepts only the Run source family when Port Manager routes a verified log handoff", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    invokeMock
+      .mockResolvedValueOnce({
+        id: "a".repeat(32),
+        kind: "log-source/v1",
+        sourceApp: "port-manager",
+        expiresAtMs: 10_000,
+        leaseUntilMs: 5_000,
+        source: {
+          sourceId: "log-source:0123456789abcdef",
+          kind: "run",
+          displayName: "Run Manager handoff",
+          readOnly: true,
+          handoff: true,
+        },
+      })
+      .mockResolvedValueOnce({
+        id: "a".repeat(32),
+        kind: "log-source/v1",
+        sourceApp: "port-manager",
+        expiresAtMs: 10_000,
+        leaseUntilMs: 5_000,
+        source: {
+          sourceId: "log-source:0123456789abcdef",
+          kind: "wslFile",
+          displayName: "WSL file",
+          readOnly: true,
+          handoff: true,
+        },
+      });
+
+    await expect(previewLogSource("a".repeat(32))).resolves.toMatchObject({
+      sourceApp: "port-manager",
+      source: { kind: "run" },
+    });
+    await expect(previewLogSource("a".repeat(32))).rejects.toMatchObject({
+      code: "handoff-response-invalid",
+    });
+  });
+
   it("classifies only fixed terminal and retryable codes", () => {
     expect(classifyHandoffError(new HandoffApiError("handoff-missing"))).toBe("terminal");
     expect(classifyHandoffError(new HandoffApiError("handoff-expired"))).toBe("terminal");
