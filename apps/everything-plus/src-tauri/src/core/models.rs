@@ -139,7 +139,7 @@ impl SearchFilter {
 
 #[cfg(test)]
 mod tests {
-    use super::SearchFilter;
+    use super::{RootSourceKind, RootStatus, SearchFilter, WatchMode};
 
     #[test]
     fn normalizes_extensions_and_status_aliases() {
@@ -185,6 +185,23 @@ mod tests {
         }
         .normalized()
         .is_err());
+    }
+
+    #[test]
+    fn root_status_uses_frontend_camel_case_and_stable_capabilities() {
+        let value = serde_json::to_value(RootStatus {
+            root: "//wsl$/Ubuntu/home/user/DevBox".into(),
+            source_kind: RootSourceKind::Wsl,
+            watch_mode: WatchMode::Polling,
+            last_synced_at: Some(7),
+            pending: 0,
+            error: None,
+        })
+        .unwrap();
+        assert_eq!(value["sourceKind"], "wsl");
+        assert_eq!(value["watchMode"], "polling");
+        assert_eq!(value["lastSyncedAt"], 7);
+        assert!(value.get("last_synced_at").is_none());
     }
 }
 
@@ -258,9 +275,31 @@ pub struct IndexStatus {
 }
 
 /// watcher 루트별 상태
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RootSourceKind {
+    Native,
+    Wsl,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchMode {
+    Native,
+    Polling,
+    Unavailable,
+}
+
+/// Root health is intentionally separate from the global indexing status so
+/// one offline WSL distribution cannot make every registered source appear
+/// broken. Error values are stable codes and never contain a submitted path or
+/// an OS error string.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RootStatus {
     pub root: String,
+    pub source_kind: RootSourceKind,
+    pub watch_mode: WatchMode,
     /// 마지막으로 증분 반영한 시각 (epoch ms)
     pub last_synced_at: Option<i64>,
     /// 아직 반영 대기 중인 이벤트 수

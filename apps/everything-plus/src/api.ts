@@ -173,7 +173,14 @@ export async function cancelIndex(): Promise<void> {
 
 export async function watcherStatuses(): Promise<RootStatus[]> {
   if (!isTauri()) {
-    return [{ root: "C:\\projects\\devbox", lastSyncedAt: Date.now(), pending: 0, error: null }];
+    return [{
+      root: "C:\\projects\\devbox",
+      sourceKind: "native",
+      watchMode: "native",
+      lastSyncedAt: Date.now(),
+      pending: 0,
+      error: null,
+    }];
   }
   return invoke<RootStatus[]>("watcher_statuses");
 }

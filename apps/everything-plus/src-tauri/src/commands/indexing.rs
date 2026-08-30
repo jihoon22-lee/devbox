@@ -3,14 +3,13 @@ use crate::core::content::{
     is_xlsx_path,
 };
 use crate::core::db::{
-    add_root as db_add_root, clear_all, clear_content_for_file, clear_docx, clear_ods, clear_pdf,
-    clear_root, clear_xls, clear_xlsx, content_status_summary, delete_file_by_id,
-    list_roots as db_list_roots, record_docx_extractor_version, record_ods_extractor_version,
-    record_pdf_extractor_version, record_xls_extractor_version, record_xlsx_extractor_version,
-    remove_root as db_remove_root, root_row_for, total_files, upsert_content_record, upsert_file,
+    add_root as db_add_root, clear_content_for_file, clear_docx, clear_ods, clear_pdf, clear_root,
+    clear_xls, clear_xlsx, content_status_summary, delete_file_by_id, list_roots as db_list_roots,
+    record_docx_extractor_version, record_ods_extractor_version, record_pdf_extractor_version,
+    record_xls_extractor_version, record_xlsx_extractor_version, remove_root as db_remove_root,
+    root_row_for, total_files, upsert_content_record, upsert_file,
 };
 use crate::core::models::IndexStatus;
-use filesystem::collect;
 use rusqlite::{Connection, OptionalExtension};
 use std::path::{Component, Path};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
@@ -21,6 +20,9 @@ use tauri::Manager;
 /// 한 트랜잭션에 담아 커밋할 파일 개수. 이 단위로 락을 반납해 `index_status`가
 /// 인덱싱 도중에도 응답할 수 있게 한다.
 const BATCH_SIZE: usize = 250;
+/// One root scan retains a finite metadata snapshot. A larger or partially
+/// unreadable root is reported without deleting the last known-good index.
+pub(crate) const MAX_ROOT_SCAN_FILES: usize = 250_000;
 const MAX_ROOT_BYTES: usize = 4 * 1024;
 const ROOT_ERROR: &str = "검색 루트를 사용할 수 없습니다.";
 const INDEX_ERROR: &str = "인덱스를 처리할 수 없습니다.";
@@ -346,39 +348,74 @@ fn run_index_with_filter(
     filter: IndexFilter,
 ) -> rusqlite::Result<()> {
     let full_reindex = only_roots.is_empty();
-    let targets: Vec<_> = {
+    let (all_roots, targets): (Vec<_>, Vec<_>) = {
         let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
         let roots = db_list_roots(&conn)?;
-        if full_reindex {
-            match filter {
-                IndexFilter::All => clear_all(&conn)?,
-                IndexFilter::Formats(formats) => {
-                    for root in &roots {
-                        clear_format_rows(&conn, &root.path, formats)?;
-                    }
-                }
-            }
-            roots
+        let targets = if full_reindex {
+            roots.clone()
         } else {
-            let targets: Vec<_> = roots
-                .into_iter()
+            roots
+                .iter()
                 .filter(|root| only_roots.contains(&root.path))
-                .collect();
-            for root in &targets {
-                match filter {
-                    IndexFilter::All => clear_root(&conn, &root.path)?,
-                    IndexFilter::Formats(formats) => clear_format_rows(&conn, &root.path, formats)?,
-                }
-            }
-            targets
-        }
+                .cloned()
+                .collect()
+        };
+        (roots, targets)
     };
 
+    let mut all_scans_complete = true;
     for root in &targets {
         if state.cancel_requested.load(Ordering::SeqCst) {
             return Ok(());
         }
-        let files: Vec<_> = collect(Path::new(&root.path))
+        // Authorize the root before walking it. In particular, do not follow
+        // a path whose parent was replaced by a symlink/reparse point and only
+        // reject it after the potentially expensive traversal has happened.
+        let walked = match collect_root_files(Path::new(&root.path)) {
+            Ok(walked) => walked,
+            Err(code) => {
+                all_scans_complete = false;
+                if let Ok(mut error) = state.last_error.lock() {
+                    *error = Some(code.to_string());
+                }
+                continue;
+            }
+        };
+        let scan_error = if walked.truncated {
+            Some("root_scan_limit")
+        } else if walked.incomplete {
+            Some("root_scan_incomplete")
+        } else {
+            None
+        };
+        if let Some(code) = scan_error {
+            all_scans_complete = false;
+            if let Ok(mut error) = state.last_error.lock() {
+                *error = Some(code.to_string());
+            }
+        } else {
+            // Clear derived rows only after obtaining a complete authoritative
+            // snapshot. An offline distro or unreadable subtree must never be
+            // misread as an empty root.
+            let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
+            let current_content: Option<bool> = conn
+                .query_row(
+                    "SELECT content != 0 FROM roots WHERE path = ?1",
+                    [root.path.as_str()],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if current_content != Some(root.content) {
+                continue;
+            }
+            match filter {
+                IndexFilter::All => clear_root(&conn, &root.path)?,
+                IndexFilter::Formats(formats) => clear_format_rows(&conn, &root.path, formats)?,
+            }
+        }
+
+        let files: Vec<_> = walked
+            .files
             .into_iter()
             .filter(|file| filter.matches(&file.path))
             .collect();
@@ -395,7 +432,7 @@ fn run_index_with_filter(
                     return Ok(());
                 }
                 let path = file.path.to_string_lossy().into_owned();
-                let effective_content = targets
+                let effective_content = all_roots
                     .iter()
                     .filter(|candidate| {
                         crate::core::watcher::is_within_root(
@@ -484,7 +521,7 @@ fn run_index_with_filter(
     if state.cancel_requested.load(Ordering::SeqCst) {
         return Ok(());
     }
-    if full_reindex {
+    if full_reindex && all_scans_complete {
         let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
         let formats = match filter {
             IndexFilter::All => FormatSet::ALL,
@@ -496,6 +533,20 @@ fn run_index_with_filter(
         .last_indexed_at
         .store(now_ms().max(1), Ordering::SeqCst);
     Ok(())
+}
+
+/// Preflight one root before collecting its bounded snapshot. Kept shared
+/// with the WSL polling worker so full scans and reconnect scans enforce the
+/// same directory/link authority boundary.
+pub(crate) fn collect_root_files(root: &Path) -> Result<filesystem::WalkResult, &'static str> {
+    let metadata = std::fs::symlink_metadata(root).map_err(|_| "root_unavailable")?;
+    if !metadata.is_dir()
+        || metadata.file_type().is_symlink()
+        || filesystem::ensure_no_links(root).is_err()
+    {
+        return Err("root_unavailable");
+    }
+    Ok(filesystem::collect_limited(root, MAX_ROOT_SCAN_FILES))
 }
 
 fn clear_format_rows(
@@ -863,6 +914,100 @@ mod tests {
         let validated = validate_root(path.to_str().unwrap()).unwrap();
         assert!(Path::new(&validated).is_absolute());
         let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn offline_root_preserves_index_until_a_complete_reconnect_snapshot() {
+        let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "everything-plus-offline-root-{id}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("survivor.md"), "last known good").unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        let stored_root = db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
+        let app_state = state(conn);
+        run_index_with_filter(&app_state, &[], IndexFilter::All).unwrap();
+        assert_eq!(
+            search(&app_state.db.lock().unwrap(), "survivor", 10)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        fs::remove_dir_all(&root).unwrap();
+        run_index_with_filter(
+            &app_state,
+            std::slice::from_ref(&stored_root),
+            IndexFilter::All,
+        )
+        .unwrap();
+        assert_eq!(
+            search(&app_state.db.lock().unwrap(), "survivor", 10)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            app_state.last_error.lock().unwrap().as_deref(),
+            Some("root_unavailable")
+        );
+
+        fs::create_dir_all(&root).unwrap();
+        run_index_with_filter(
+            &app_state,
+            std::slice::from_ref(&stored_root),
+            IndexFilter::All,
+        )
+        .unwrap();
+        assert!(search(&app_state.db.lock().unwrap(), "survivor", 10)
+            .unwrap()
+            .is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn parent_reconcile_uses_nested_roots_content_policy() {
+        let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let parent = std::env::temp_dir().join(format!(
+            "everything-plus-nested-reconcile-{id}-{}",
+            std::process::id()
+        ));
+        let child = parent.join("content-enabled");
+        let note = child.join("note.md");
+        let _ = fs::remove_dir_all(&parent);
+        fs::create_dir_all(&child).unwrap();
+        fs::write(&note, "before reconcile").unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        let parent_root = db_add_root(&conn, parent.to_str().unwrap(), false).unwrap();
+        db_add_root(&conn, child.to_str().unwrap(), true).unwrap();
+        let app_state = state(conn);
+        run_index_with_filter(&app_state, &[], IndexFilter::All).unwrap();
+        assert_eq!(
+            search_content(&app_state.db.lock().unwrap(), "before", 10)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        fs::write(&note, "after reconcile").unwrap();
+        run_index_with_filter(
+            &app_state,
+            std::slice::from_ref(&parent_root),
+            IndexFilter::All,
+        )
+        .unwrap();
+        let conn = app_state.db.lock().unwrap();
+        assert!(search_content(&conn, "before", 10).unwrap().is_empty());
+        assert_eq!(search_content(&conn, "after", 10).unwrap().len(), 1);
+        drop(conn);
+        fs::remove_dir_all(parent).unwrap();
     }
 
     #[test]

@@ -41,7 +41,16 @@ pub fn parse_wsl_unc_path(raw: &str) -> Result<Option<WslUncPath>, WslError> {
     if trimmed.is_empty() || trimmed.len() > MAX_WSL_PROJECT_PATH_BYTES {
         return Ok(None);
     }
-    let normalized = trimmed.replace('\\', "/");
+    let mut normalized = trimmed.replace('\\', "/");
+    // `std::fs::canonicalize` on Windows returns an extended UNC spelling.
+    // Treat that internal spelling as the same transport alias while keeping
+    // ordinary device paths outside the WSL parser.
+    if normalized
+        .get(..8)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("//?/UNC/"))
+    {
+        normalized = format!("//{}", &normalized[8..]);
+    }
     let Some(rest) = normalized.strip_prefix("//") else {
         return Ok(None);
     };
@@ -75,6 +84,33 @@ pub fn parse_wsl_unc_path(raw: &str) -> Result<Option<WslUncPath>, WslError> {
         distro: distro.to_owned(),
         linux_path,
     }))
+}
+
+/// Return whether `candidate` is the same WSL path as `root` or a descendant.
+///
+/// `Ok(None)` means `root` is not a WSL UNC path and lets callers apply their
+/// native path rules. Once `root` is WSL, an ordinary/native candidate is a
+/// definite non-match. Distribution names and transport aliases are
+/// case-insensitive, but every Linux path component remains case-sensitive.
+pub fn wsl_unc_contains(root: &str, candidate: &str) -> Result<Option<bool>, WslError> {
+    let Some(root) = parse_wsl_unc_path(root)? else {
+        return Ok(None);
+    };
+    let Some(candidate) = parse_wsl_unc_path(candidate)? else {
+        return Ok(Some(false));
+    };
+    if !root.distro.eq_ignore_ascii_case(&candidate.distro) {
+        return Ok(Some(false));
+    }
+    if root.linux_path == candidate.linux_path {
+        return Ok(Some(true));
+    }
+    Ok(Some(
+        candidate
+            .linux_path
+            .strip_prefix(&root.linux_path)
+            .is_some_and(|tail| tail.starts_with('/')),
+    ))
 }
 
 /// Windows 드라이브 경로를 WSL 경로로 정규화한다 (프로세스 실행 없이).
@@ -335,6 +371,46 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .identity()
+        );
+    }
+
+    #[test]
+    fn parses_extended_unc_from_windows_canonicalize() {
+        let parsed = parse_wsl_unc_path(
+            "\\\\?\\UNC\\wsl.localhost\\Ubuntu\\home\\jihoon\\한글 project\\DevBox",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(parsed.distro(), "Ubuntu");
+        assert_eq!(parsed.linux_path(), "/home/jihoon/한글 project/DevBox");
+        assert_eq!(
+            parsed.identity(),
+            "wsl:ubuntu:home/jihoon/한글 project/DevBox"
+        );
+    }
+
+    #[test]
+    fn wsl_containment_folds_transport_and_distro_but_not_linux_case() {
+        let root = "\\\\wsl$\\Ubuntu\\home\\jihoon\\한글 project\\DevBox";
+        assert_eq!(
+            wsl_unc_contains(
+                root,
+                "//wsl.localhost/ubuntu/home/jihoon/한글 project/DevBox/src/main.rs"
+            )
+            .unwrap(),
+            Some(true)
+        );
+        assert_eq!(
+            wsl_unc_contains(root, "//wsl$/Ubuntu/home/jihoon/한글 project/devbox/a.rs").unwrap(),
+            Some(false)
+        );
+        assert_eq!(
+            wsl_unc_contains(root, "//wsl$/Debian/home/jihoon/한글 project/DevBox/a.rs").unwrap(),
+            Some(false)
+        );
+        assert_eq!(
+            wsl_unc_contains("C:/projects/devbox", "C:/projects/devbox/a.rs").unwrap(),
+            None
         );
     }
 
