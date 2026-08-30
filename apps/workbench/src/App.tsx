@@ -65,6 +65,7 @@ import {
 } from "./lib/profileEditor";
 import { formatRuntimeFreshness, mergeSuggestedPorts } from "./lib/runtimeSuggestions";
 import PackageDependencySummaryPanel from "./components/PackageDependencySummaryPanel";
+import WorkspaceTaskControlPanel from "./components/WorkspaceTaskControlPanel";
 import {
   emptyProfileTemplateDraft,
   profileDraftFromTemplate,
@@ -1251,6 +1252,7 @@ export default function App() {
         </aside>
 
         <main className="content">
+          <WorkspaceTaskControlPanel disabled={busy || environmentLoading || templateBusy} />
           {editing ? (
             <section
               className="panel editor-panel"

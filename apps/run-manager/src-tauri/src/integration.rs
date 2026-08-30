@@ -10,6 +10,8 @@
 //! - 기록 실패가 앱 동작을 막지 않는다 (오류만 로그)
 
 use crate::core::models::JobKind;
+use crate::core::workspace_task_control::WorkspaceTaskControlReceipt;
+use crate::core::workspace_tasks::WorkspaceTaskState;
 use crate::storage::{DatabaseState, LauncherDefinition};
 use devbox_applink::contains_sensitive_value;
 use devbox_integration::{Envelope, SnapshotView, SnapshotViews};
@@ -25,6 +27,10 @@ pub const LEGACY_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 pub const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 pub const JOBS_SERVICES_VIEW_KIND: &str = "jobs-services";
 pub const JOBS_SERVICES_VIEW_SCHEMA_VERSION: u32 = 1;
+pub const WORKSPACE_TASKS_VIEW_KIND: &str = "workspace-tasks";
+pub const WORKSPACE_TASKS_VIEW_SCHEMA_VERSION: u32 = 1;
+pub const TASK_CONTROL_RECEIPTS_VIEW_KIND: &str = "task-control-receipts";
+pub const TASK_CONTROL_RECEIPTS_VIEW_SCHEMA_VERSION: u32 = 1;
 const SNAPSHOT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 /// Keep the producer and Launcher source bound in lockstep. A complete view is
 /// rejected instead of silently hiding definitions when the local database is
@@ -75,6 +81,20 @@ struct LauncherTaskPayload {
     id: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceTaskSnapshotEntry {
+    id: String,
+    label: String,
+    revision: String,
+    task_kind: String,
+    trusted: bool,
+    shell_trusted: bool,
+    available: bool,
+    has_dependencies: bool,
+    operation_active: bool,
+}
+
 /// 주기적으로 snapshot을 쓴다 (상태 변화 추적보다 주기적 기록이 단순·충분 — [설계]).
 pub fn spawn_snapshot_writer(database: std::sync::Arc<DatabaseState>) {
     tauri::async_runtime::spawn(async move {
@@ -112,7 +132,48 @@ fn write_snapshot_in(root: &Path, database: &DatabaseState) -> Result<(), String
         .map_err(|_| SNAPSHOT_ERROR.to_string())?;
     let entries = build_launcher_entries(definitions)?;
     let multi_view = build_launcher_envelope(entries)?;
-    devbox_integration::write_named_view_snapshot_atomic(&multi_view, root, JOBS_SERVICES_VIEW_KIND)
+    devbox_integration::write_named_view_snapshot_atomic(
+        &multi_view,
+        root,
+        JOBS_SERVICES_VIEW_KIND,
+    )?;
+    write_workspace_tasks_in(root, database)?;
+    write_task_control_receipts_in(root, database)
+}
+
+pub fn write_workspace_tasks(database: &DatabaseState) -> Result<(), String> {
+    write_workspace_tasks_in(&devbox_integration::integration_root(), database)
+}
+
+fn write_workspace_tasks_in(root: &Path, database: &DatabaseState) -> Result<(), String> {
+    let workspace_tasks = database
+        .list_workspace_task_states()
+        .map_err(|_| SNAPSHOT_ERROR.to_owned())?;
+    let active_roots = database
+        .list_active_workspace_task_operation_roots()
+        .map_err(|_| SNAPSHOT_ERROR.to_owned())?;
+    let workspace_view = build_workspace_task_envelope(workspace_tasks, &active_roots)?;
+    devbox_integration::write_named_view_snapshot_atomic(
+        &workspace_view,
+        root,
+        WORKSPACE_TASKS_VIEW_KIND,
+    )
+}
+
+pub fn write_task_control_receipts(database: &DatabaseState) -> Result<(), String> {
+    write_task_control_receipts_in(&devbox_integration::integration_root(), database)
+}
+
+fn write_task_control_receipts_in(root: &Path, database: &DatabaseState) -> Result<(), String> {
+    let receipts = database
+        .list_workspace_task_control_receipts(100)
+        .map_err(|_| SNAPSHOT_ERROR.to_owned())?;
+    let envelope = build_task_control_receipts_envelope(receipts)?;
+    devbox_integration::write_named_view_snapshot_atomic(
+        &envelope,
+        root,
+        TASK_CONTROL_RECEIPTS_VIEW_KIND,
+    )
 }
 
 #[cfg(test)]
@@ -130,6 +191,97 @@ fn build_launcher_envelope(entries: Vec<serde_json::Value>) -> Result<Envelope, 
         JOBS_SERVICES_VIEW_KIND.to_owned(),
         SnapshotView {
             schema_version: JOBS_SERVICES_VIEW_SCHEMA_VERSION,
+            freshness_ms: 0,
+            entries,
+        },
+    );
+    Ok(Envelope::with_views(
+        PRODUCER_ID,
+        env!("CARGO_PKG_VERSION"),
+        views,
+    ))
+}
+
+fn build_workspace_task_envelope(
+    states: Vec<WorkspaceTaskState>,
+    active_roots: &std::collections::HashSet<String>,
+) -> Result<Envelope, String> {
+    if states.len() > crate::core::workspace_tasks::MAX_TASKS {
+        return Err(SNAPSHOT_ERROR.to_owned());
+    }
+    let mut ids = BTreeSet::new();
+    let mut entries = Vec::with_capacity(states.len());
+    for state in states {
+        if !valid_entry_id(&state.job_id)
+            || !ids.insert(state.job_id.clone())
+            || state.revision.len() != 64
+            || !state
+                .revision
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(SNAPSHOT_ERROR.to_owned());
+        }
+        let label = if valid_public_text(state.label.trim(), MAX_ENTRY_LABEL_BYTES)
+            && !contains_sensitive_value(state.label.trim())
+            && !looks_like_path(state.label.trim())
+        {
+            state.label.trim().to_owned()
+        } else {
+            "Workspace task".to_owned()
+        };
+        let operation_active = active_roots.contains(&state.job_id);
+        entries.push(
+            serde_json::to_value(WorkspaceTaskSnapshotEntry {
+                id: state.job_id,
+                label,
+                revision: state.revision,
+                task_kind: state.task_kind.as_str().to_owned(),
+                trusted: state.trusted,
+                shell_trusted: state.shell_trusted,
+                available: state.available,
+                has_dependencies: !state.depends_on.is_empty(),
+                operation_active,
+            })
+            .map_err(|_| SNAPSHOT_ERROR.to_owned())?,
+        );
+    }
+    entries.sort_by(|left, right| {
+        left.get("id")
+            .and_then(serde_json::Value::as_str)
+            .cmp(&right.get("id").and_then(serde_json::Value::as_str))
+    });
+    let mut views = SnapshotViews::new();
+    views.insert(
+        WORKSPACE_TASKS_VIEW_KIND.to_owned(),
+        SnapshotView {
+            schema_version: WORKSPACE_TASKS_VIEW_SCHEMA_VERSION,
+            freshness_ms: 0,
+            entries,
+        },
+    );
+    Ok(Envelope::with_views(
+        PRODUCER_ID,
+        env!("CARGO_PKG_VERSION"),
+        views,
+    ))
+}
+
+fn build_task_control_receipts_envelope(
+    receipts: Vec<WorkspaceTaskControlReceipt>,
+) -> Result<Envelope, String> {
+    if receipts.len() > 100 {
+        return Err(SNAPSHOT_ERROR.to_owned());
+    }
+    let entries = receipts
+        .into_iter()
+        .map(|receipt| serde_json::to_value(receipt).map_err(|_| SNAPSHOT_ERROR.to_owned()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut views = SnapshotViews::new();
+    views.insert(
+        TASK_CONTROL_RECEIPTS_VIEW_KIND.to_owned(),
+        SnapshotView {
+            schema_version: TASK_CONTROL_RECEIPTS_VIEW_SCHEMA_VERSION,
             freshness_ms: 0,
             entries,
         },
@@ -285,7 +437,10 @@ mod tests {
         EnvironmentCiphertextUpdate, EnvironmentUpdate, JobInput, OverlapPolicy, RestartPolicy,
         ServiceInput, TargetKind,
     };
+    use crate::core::workspace_task_control::WorkspaceTaskControlReceiptStatus;
+    use crate::core::workspace_tasks::{WorkspaceTaskDependsOrder, WorkspaceTaskKind};
     use crate::storage::DatabaseState;
+    use devbox_applink::{TaskControlAction, TASK_CONTROL_SCHEMA_VERSION};
     use serde::Deserialize;
 
     #[derive(Debug, Deserialize)]
@@ -355,6 +510,27 @@ mod tests {
             id: id.into(),
             kind,
             name: name.into(),
+        }
+    }
+
+    fn workspace_task_state() -> WorkspaceTaskState {
+        WorkspaceTaskState {
+            job_id: "workspace-task-1".to_owned(),
+            source_id: "source-private".to_owned(),
+            label: "Build workspace".to_owned(),
+            task_kind: WorkspaceTaskKind::Process,
+            source_root: "/home/private/project".to_owned(),
+            revision: "a".repeat(64),
+            target_kind: TargetKind::Windows,
+            target_distro: None,
+            environment_keys: vec!["PRIVATE_TOKEN".to_owned()],
+            applied_override: Some("private override".to_owned()),
+            depends_on: vec!["Prepare".to_owned()],
+            depends_order: WorkspaceTaskDependsOrder::Parallel,
+            has_problem_matcher: true,
+            trusted: true,
+            shell_trusted: false,
+            available: true,
         }
     }
 
@@ -459,6 +635,109 @@ mod tests {
             .views()
             .unwrap()
             .contains_key(JOBS_SERVICES_VIEW_KIND));
+
+        for view_kind in [WORKSPACE_TASKS_VIEW_KIND, TASK_CONTROL_RECEIPTS_VIEW_KIND] {
+            let sidecar = devbox_integration::read_named_view_snapshot_in(
+                root.path(),
+                PRODUCER_ID,
+                SNAPSHOT_SCHEMA_VERSION,
+                view_kind,
+            )
+            .unwrap()
+            .unwrap();
+            assert!(sidecar.views().unwrap().contains_key(view_kind));
+        }
+    }
+
+    #[test]
+    fn workspace_task_projection_exposes_only_safe_control_metadata() {
+        let active_roots = std::collections::HashSet::from(["workspace-task-1".to_owned()]);
+        let envelope =
+            build_workspace_task_envelope(vec![workspace_task_state()], &active_roots).unwrap();
+        let entries = &envelope.views().unwrap()[WORKSPACE_TASKS_VIEW_KIND].entries;
+        assert_eq!(entries.len(), 1);
+        let entry = &entries[0];
+        assert_eq!(entry["id"], "workspace-task-1");
+        assert_eq!(entry["hasDependencies"], true);
+        assert_eq!(entry["operationActive"], true);
+        assert_eq!(
+            entry
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec![
+                "available",
+                "hasDependencies",
+                "id",
+                "label",
+                "operationActive",
+                "revision",
+                "shellTrusted",
+                "taskKind",
+                "trusted"
+            ]
+        );
+        let serialized = serde_json::to_string(entry).unwrap();
+        for private in [
+            "/home/private/project",
+            "PRIVATE_TOKEN",
+            "private override",
+            "source-private",
+            "Prepare",
+            "problemMatcher",
+        ] {
+            assert!(!serialized.contains(private), "leaked {private}");
+        }
+    }
+
+    #[test]
+    fn task_control_receipt_projection_omits_revision_and_execution_inputs() {
+        let receipt = WorkspaceTaskControlReceipt {
+            schema_version: TASK_CONTROL_SCHEMA_VERSION,
+            request_id: "b".repeat(32),
+            task_id: "workspace-task-1".to_owned(),
+            action: TaskControlAction::Start,
+            status: WorkspaceTaskControlReceiptStatus::Started,
+            operation_id: Some("550e8400-e29b-41d4-a716-446655440000".to_owned()),
+            failure_code: None,
+            created_at: 1,
+            updated_at: 2,
+        };
+        let envelope = build_task_control_receipts_envelope(vec![receipt]).unwrap();
+        let entries = &envelope.views().unwrap()[TASK_CONTROL_RECEIPTS_VIEW_KIND].entries;
+        assert_eq!(entries.len(), 1);
+        let entry = &entries[0];
+        assert_eq!(
+            entry
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec![
+                "action",
+                "createdAt",
+                "failureCode",
+                "operationId",
+                "requestId",
+                "schemaVersion",
+                "status",
+                "taskId",
+                "updatedAt"
+            ]
+        );
+        let serialized = serde_json::to_string(entry).unwrap();
+        for private_key in [
+            "expectedRevision",
+            "sourceRoot",
+            "command",
+            "environment",
+            "cwd",
+        ] {
+            assert!(!serialized.contains(private_key));
+        }
     }
 
     #[test]

@@ -12,10 +12,14 @@ use crate::core::models::{
     EnvironmentCiphertextUpdate, EnvironmentUpdate, Job, JobInput, JobKind, RunHistoryFilter,
     RunStatus, RunView, ServiceInput, ServiceInstanceView,
 };
+use crate::core::workspace_diagnostics::{
+    match_workspace_diagnostics, resolve_workspace_diagnostic_path, WorkspaceTaskDiagnostics,
+};
+use crate::core::workspace_orchestration::WorkspaceTaskOperationView;
 use crate::core::workspace_tasks::{
     preview_workspace_tasks, revalidate_workspace_task_execution, verify_workspace_task_execution,
     verify_workspace_task_plan, WorkspaceTaskApplyResult, WorkspaceTaskExecution,
-    WorkspaceTaskPlan, WorkspaceTaskState, MAX_TASKS,
+    WorkspaceTaskKind, WorkspaceTaskPlan, WorkspaceTaskState, MAX_TASKS,
 };
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
 use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse, MAX_TAIL_BYTES};
@@ -260,7 +264,11 @@ fn workspace_task_storage_error(error: StorageError) -> String {
         StorageError::Validation(code)
             if matches!(
                 code.as_str(),
-                "workspace-task-source-untrusted" | "workspace-task-unavailable"
+                "workspace-task-source-untrusted"
+                    | "workspace-task-shell-untrusted"
+                    | "workspace-task-unavailable"
+                    | "workspace-task-dependency-selection-incomplete"
+                    | "workspace-task-orchestration-manual-only"
             ) =>
         {
             code
@@ -268,6 +276,15 @@ fn workspace_task_storage_error(error: StorageError) -> String {
         StorageError::NotFound(_) => "workspace-task-not-found".to_owned(),
         StorageError::ConcurrentChange(_) => "workspace-task-source-changed".to_owned(),
         _ => "run-storage-failed".to_owned(),
+    }
+}
+
+fn workspace_task_orchestration_storage_error(error: StorageError) -> String {
+    match error {
+        StorageError::ConcurrentChange(entity) if entity == "workspace-task-operation-active" => {
+            "workspace-task-operation-active".to_owned()
+        }
+        other => workspace_task_storage_error(other),
     }
 }
 
@@ -355,7 +372,14 @@ pub fn delete_job(id: String, state: State<'_, Arc<DatabaseState>>) -> Result<bo
 
 fn storage_command_error(error: StorageError) -> String {
     match error {
-        StorageError::Validation(code) if code == "active-run-must-stop" => code,
+        StorageError::Validation(code)
+            if matches!(
+                code.as_str(),
+                "active-run-must-stop" | "workspace-task-operation-active"
+            ) =>
+        {
+            code
+        }
         StorageError::NotFound(_) => "job-not-found".to_string(),
         _ => "run-storage-failed".to_string(),
     }
@@ -900,11 +924,209 @@ pub fn trust_workspace_task_source(
         .get_workspace_task_execution(&candidate.job_id)
         .map_err(workspace_task_storage_error)?
         .ok_or_else(|| "workspace-task-not-found".to_owned())?;
+    if !refreshed.trusted || verify_workspace_task_execution(&refreshed).is_err() {
+        invalidate_workspace_task(state.inner().as_ref(), &refreshed)?;
+        return Err("workspace-task-source-changed".to_owned());
+    }
+    Ok(true)
+}
+
+const SHELL_RISK_ACKNOWLEDGEMENT: &str = "execute-shell-tasks";
+
+/// Grant the separate shell boundary for an already trusted exact revision.
+/// A distinct fixed acknowledgement prevents an ordinary source-trust action
+/// from being accidentally reused as shell authorization.
+#[tauri::command]
+pub fn trust_workspace_task_shell_source(
+    source_id: String,
+    revision: String,
+    acknowledgement: String,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<bool, String> {
+    if acknowledgement != SHELL_RISK_ACKNOWLEDGEMENT {
+        return Err("workspace-task-shell-confirmation-required".to_owned());
+    }
+    let candidate = state
+        .list_workspace_task_states()
+        .map_err(workspace_task_storage_error)?
+        .into_iter()
+        .find(|item| item.source_id == source_id && item.task_kind == WorkspaceTaskKind::Shell)
+        .ok_or_else(|| "workspace-task-shell-not-found".to_owned())?;
+    if candidate.revision != revision || !candidate.trusted {
+        return Err("workspace-task-source-changed".to_owned());
+    }
+    let execution = state
+        .get_workspace_task_execution(&candidate.job_id)
+        .map_err(workspace_task_storage_error)?
+        .ok_or_else(|| "workspace-task-shell-not-found".to_owned())?;
+    if verify_workspace_task_execution(&execution).is_err() {
+        invalidate_workspace_task(state.inner().as_ref(), &execution)?;
+        return Err("workspace-task-source-changed".to_owned());
+    }
+    state
+        .trust_workspace_task_shell_source_at(&source_id, &revision, current_epoch_millis())
+        .map_err(workspace_task_storage_error)?;
+    let refreshed = state
+        .get_workspace_task_execution(&candidate.job_id)
+        .map_err(workspace_task_storage_error)?
+        .ok_or_else(|| "workspace-task-shell-not-found".to_owned())?;
     if revalidate_workspace_task_execution(&refreshed).is_err() {
         invalidate_workspace_task(state.inner().as_ref(), &refreshed)?;
         return Err("workspace-task-source-changed".to_owned());
     }
     Ok(true)
+}
+
+/// Build and persist one exact-revision dependency operation, then hand it to
+/// the ordinary scheduler. Raw command/cwd values never cross this boundary.
+#[tauri::command]
+pub fn run_workspace_task_operation(
+    id: String,
+    fail_fast: bool,
+    runtime: State<'_, Arc<RuntimeState>>,
+    database: State<'_, Arc<DatabaseState>>,
+) -> Result<WorkspaceTaskOperationView, String> {
+    crate::workspace_orchestration::start_workspace_task_operation(
+        Arc::clone(database.inner()),
+        runtime.coordinator(),
+        &id,
+        fail_fast,
+    )
+}
+
+#[tauri::command]
+pub fn get_workspace_task_operation(
+    operation_id: String,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<Option<WorkspaceTaskOperationView>, String> {
+    state
+        .get_workspace_task_operation(&operation_id)
+        .map_err(workspace_task_orchestration_storage_error)
+}
+
+#[tauri::command]
+pub fn list_workspace_task_operations(
+    limit: Option<usize>,
+    state: State<'_, Arc<DatabaseState>>,
+) -> Result<Vec<WorkspaceTaskOperationView>, String> {
+    state
+        .list_workspace_task_operations(limit.unwrap_or(20))
+        .map_err(workspace_task_orchestration_storage_error)
+}
+
+#[tauri::command]
+pub async fn stop_workspace_task_operation(
+    operation_id: String,
+    runtime: State<'_, Arc<RuntimeState>>,
+    database: State<'_, Arc<DatabaseState>>,
+) -> Result<WorkspaceTaskOperationView, String> {
+    crate::workspace_orchestration::stop_workspace_task_operation_owned(
+        database.inner().as_ref(),
+        &runtime.coordinator(),
+        &operation_id,
+    )
+    .await
+}
+
+async fn workspace_task_diagnostics_for_run(
+    app: &AppHandle,
+    database: &DatabaseState,
+    run_id: &str,
+) -> Result<(WorkspaceTaskExecution, WorkspaceTaskDiagnostics), String> {
+    let run = database
+        .get_run(run_id)
+        .map_err(|_| "workspace-task-diagnostic-storage".to_owned())?
+        .ok_or_else(|| "workspace-task-diagnostic-run-not-found".to_owned())?;
+    if !matches!(
+        run.status,
+        RunStatus::Succeeded | RunStatus::Failed | RunStatus::Cancelled | RunStatus::Skipped
+    ) {
+        return Err("workspace-task-diagnostic-run-active".to_owned());
+    }
+    let execution = database
+        .get_workspace_task_execution_for_operation_run(run_id)
+        .map_err(|error| match error {
+            StorageError::ConcurrentChange(_) => "workspace-task-source-changed".to_owned(),
+            _ => "workspace-task-diagnostic-storage".to_owned(),
+        })?
+        .ok_or_else(|| "workspace-task-diagnostic-unavailable".to_owned())?;
+    verify_workspace_task_execution(&execution)
+        .map_err(|_| "workspace-task-source-changed".to_owned())?;
+    let matcher = execution
+        .problem_matcher
+        .as_ref()
+        .ok_or_else(|| "workspace-task-diagnostic-matcher-unavailable".to_owned())?;
+    let log_dir = run
+        .log_dir
+        .ok_or_else(|| "workspace-task-diagnostic-logs-unavailable".to_owned())?;
+    let data_root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "workspace-task-diagnostic-logs-unavailable".to_owned())?;
+    let streams = open_search_streams(data_root, log_dir, run_id.to_owned()).await?;
+    let (stdout, stderr) = tokio::join!(
+        read_search_snapshot(&streams, LogStream::Stdout),
+        read_search_snapshot(&streams, LogStream::Stderr)
+    );
+    let (stdout, stdout_truncated) =
+        stdout.map_err(|_| "workspace-task-diagnostic-logs-unavailable".to_owned())?;
+    let (stderr, stderr_truncated) =
+        stderr.map_err(|_| "workspace-task-diagnostic-logs-unavailable".to_owned())?;
+    let diagnostics = match_workspace_diagnostics(
+        run_id,
+        matcher,
+        &[
+            ("stdout", stdout.as_slice(), stdout_truncated),
+            ("stderr", stderr.as_slice(), stderr_truncated),
+        ],
+    );
+    Ok((execution, diagnostics))
+}
+
+#[tauri::command]
+pub async fn list_workspace_task_diagnostics(
+    run_id: String,
+    app: AppHandle,
+    database: State<'_, Arc<DatabaseState>>,
+) -> Result<WorkspaceTaskDiagnostics, String> {
+    workspace_task_diagnostics_for_run(&app, database.inner().as_ref(), &run_id)
+        .await
+        .map(|(_, diagnostics)| diagnostics)
+}
+
+#[tauri::command]
+pub async fn open_workspace_task_diagnostic(
+    run_id: String,
+    diagnostic_index: u32,
+    app: AppHandle,
+    database: State<'_, Arc<DatabaseState>>,
+) -> Result<bool, String> {
+    let (execution, diagnostics) =
+        workspace_task_diagnostics_for_run(&app, database.inner().as_ref(), &run_id).await?;
+    let diagnostic = diagnostics
+        .items
+        .get(
+            usize::try_from(diagnostic_index)
+                .map_err(|_| "workspace-task-diagnostic-selection-invalid".to_owned())?,
+        )
+        .filter(|item| item.index == diagnostic_index)
+        .ok_or_else(|| "workspace-task-diagnostic-selection-invalid".to_owned())?;
+    let path = resolve_workspace_diagnostic_path(&execution.source_root, &diagnostic.file)
+        .map_err(str::to_owned)?;
+    let path = path
+        .to_str()
+        .ok_or_else(|| "workspace-task-diagnostic-path-invalid".to_owned())?;
+    let request = devbox_applink::OpenRequest {
+        target: devbox_applink::OpenTarget::Path {
+            path: path.to_owned(),
+            line: Some(diagnostic.line),
+            column: diagnostic.column,
+        },
+        from: Some("run-manager".to_owned()),
+    };
+    devbox_launch::launch_open("code-pad", &request)
+        .map(|_| true)
+        .map_err(|_| "workspace-task-diagnostic-launch-failed".to_owned())
 }
 
 /// Preview package scripts and Cargo targets from a local project root.  The
@@ -1199,7 +1421,9 @@ pub async fn run_job_now(
     runtime: State<'_, Arc<RuntimeState>>,
     database: State<'_, Arc<DatabaseState>>,
 ) -> Result<RunView, String> {
-    revalidate_workspace_task_action(&id, database.inner().as_ref())?;
+    if revalidate_workspace_task_action(&id, database.inner().as_ref())?.is_some() {
+        return Err("workspace-task-orchestration-required".to_owned());
+    }
     runtime
         .coordinator()
         .trigger_manual_at(&id, current_epoch_millis())

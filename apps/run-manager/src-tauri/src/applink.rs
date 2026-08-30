@@ -37,15 +37,25 @@ pub fn take_pending_open(state: tauri::State<'_, PendingOpen>) -> Option<OpenReq
     state.take()
 }
 
-pub fn is_task_request(request: &OpenRequest) -> bool {
-    let OpenTarget::Task { id } = &request.target else {
-        return false;
-    };
-    !id.is_empty()
-        && id.len() <= MAX_TASK_ID_BYTES
-        && id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
+pub fn is_supported_request(request: &OpenRequest) -> bool {
+    match &request.target {
+        OpenTarget::Task { id } => {
+            !id.is_empty()
+                && id.len() <= MAX_TASK_ID_BYTES
+                && id.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':')
+                })
+        }
+        OpenTarget::Handoff { kind, id } => {
+            kind == devbox_applink::TASK_CONTROL_HANDOFF_KIND
+                && request.from.as_deref() == Some(devbox_applink::TASK_CONTROL_SOURCE_APP)
+                && id.len() == 32
+                && id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -61,10 +71,12 @@ mod tests {
 
     #[test]
     fn only_bounded_task_ids_are_accepted() {
-        assert!(is_task_request(&task("job-1")));
-        assert!(!is_task_request(&task("../secret")));
-        assert!(!is_task_request(&task(&"x".repeat(MAX_TASK_ID_BYTES + 1))));
-        assert!(!is_task_request(&OpenRequest {
+        assert!(is_supported_request(&task("job-1")));
+        assert!(!is_supported_request(&task("../secret")));
+        assert!(!is_supported_request(&task(
+            &"x".repeat(MAX_TASK_ID_BYTES + 1)
+        )));
+        assert!(!is_supported_request(&OpenRequest {
             target: OpenTarget::Query {
                 text: "job-1".into(),
                 filter: None,

@@ -79,10 +79,69 @@ function errorMessage(cause: unknown): string {
 
 function isSelectableWorkspaceItem(item: WorkspaceTaskItem): boolean {
   return item.status === "ready"
-    && item.taskKind === "process"
+    && (item.taskKind === "process" || item.taskKind === "shell")
     && item.blockedReason == null
     && item.command != null
     && item.cwd != null;
+}
+
+/**
+ * VS Code dependencies are expressed by label while the native apply
+ * contract receives stable item ids. Keep the conversion in the UI so the
+ * preview can make the closure visible and never submit a stranded child.
+ */
+function withWorkspaceDependencyClosure(
+  plan: WorkspaceTaskPlan,
+  selectedIds: Iterable<string>,
+): Set<string> {
+  const byId = new Map(plan.items.map((item) => [item.id, item]));
+  const byLabel = new Map(plan.items.map((item) => [item.label, item]));
+  const next = new Set<string>();
+  const visiting = new Set<string>();
+  const include = (id: string) => {
+    if (next.has(id) || visiting.has(id)) return;
+    const item = byId.get(id);
+    if (!item || !isSelectableWorkspaceItem(item)) return;
+    visiting.add(id);
+    next.add(id);
+    for (const dependency of item.dependsOn) {
+      const dependencyItem = byLabel.get(dependency);
+      if (dependencyItem) include(dependencyItem.id);
+    }
+    visiting.delete(id);
+  };
+  for (const id of selectedIds) include(id);
+  return next;
+}
+
+/** Remove selected descendants when their predecessor is deselected. */
+function toggleWorkspaceTaskSelection(
+  plan: WorkspaceTaskPlan,
+  selectedIds: Set<string>,
+  id: string,
+): Set<string> {
+  const item = plan.items.find((candidate) => candidate.id === id);
+  if (!item || !isSelectableWorkspaceItem(item)) return new Set(selectedIds);
+  if (!selectedIds.has(id)) {
+    return withWorkspaceDependencyClosure(plan, [...selectedIds, id]);
+  }
+
+  const byId = new Map(plan.items.map((candidate) => [candidate.id, candidate]));
+  const next = new Set(selectedIds);
+  const removedLabels = new Set<string>([item.label]);
+  next.delete(id);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const selectedId of [...next]) {
+      const selected = byId.get(selectedId);
+      if (!selected || !selected.dependsOn.some((dependency) => removedLabels.has(dependency))) continue;
+      next.delete(selectedId);
+      removedLabels.add(selected.label);
+      changed = true;
+    }
+  }
+  return next;
 }
 
 function workspaceStatusLabel(item: WorkspaceTaskItem): string {
@@ -98,8 +157,14 @@ function workspaceReasonLabel(reason: string | null | undefined): string {
     "invalid-label": "task label이 없거나 올바르지 않습니다.",
     "duplicate-label": "같은 source에 중복된 task label이 있습니다.",
     "shell-requires-separate-confirmation": "shell task는 별도 위험 확인이 필요해 현재 가져올 수 없습니다.",
-    "unsupported-task-type": "현재 process task만 가져올 수 있습니다.",
+    "unsupported-task-type": "현재 process·shell task만 가져올 수 있습니다.",
     "missing-task-type": "task type이 없어 실행 방식을 결정할 수 없습니다.",
+    "dependency-graph-too-large": "task dependency 그래프가 허용된 크기를 초과했습니다.",
+    "invalid-dependency": "task dependency 선언이 올바르지 않습니다.",
+    "invalid-dependency-order": "task dependency 실행 순서가 parallel 또는 sequence가 아닙니다.",
+    "dependency-order-without-dependency": "dependency 없이 실행 순서를 지정할 수 없습니다.",
+    "dependency-cycle": "task dependency에 순환 참조가 있어 가져올 수 없습니다.",
+    "dependency-unavailable": "선행 dependency를 사용할 수 없어 가져올 수 없습니다.",
     "dependencies-require-orchestration": "task 의존 관계는 orchestration 지원 후 가져올 수 있습니다.",
     "background-task-unsupported": "background task는 종료 판정 지원 후 가져올 수 있습니다.",
     "run-options-unsupported": "runOptions가 있는 task는 현재 가져올 수 없습니다.",
@@ -120,6 +185,11 @@ function workspaceReasonLabel(reason: string | null | undefined): string {
     "invalid-workspace-folder": "workspace 경로를 안전하게 해석할 수 없습니다.",
     "unsupported-variable": "지원하지 않는 변수 참조가 있어 차단되었습니다.",
     "variable-result-too-large": "변수 치환 결과가 허용된 크기 제한을 넘었습니다.",
+    "named-problem-matcher-unsupported": "이름으로 지정한 problem matcher는 지원하지 않습니다.",
+    "background-problem-matcher-unsupported": "background problem matcher는 지원하지 않습니다.",
+    "unsupported-problem-matcher-field": "지원하지 않는 problem matcher 필드가 있습니다.",
+    "unsupported-problem-matcher-location": "problem matcher의 파일 위치 설정을 지원하지 않습니다.",
+    "invalid-problem-matcher": "problem matcher 형식이 올바르지 않습니다.",
   };
   return labels[reason] ?? reason;
 }
@@ -161,7 +231,7 @@ function WorkspaceTaskPreview({
         <p>revision {plan.revision.slice(0, 12)} · preview는 읽기 전용·오프라인이며 원본 변경 시 적용이 거부됩니다.</p>
       </div>
       <div className="workspace-task-notice" role="note">
-        가져올 수 있는 항목은 ready process task뿐입니다. shell·지원하지 않는 변수·잘못된 cwd는 차단되며, 환경변수 값은 읽거나 표시하지 않고 키 이름만 보여 줍니다.
+        ready process·shell task를 가져올 수 있습니다. 선택한 task의 dependency는 자동으로 함께 선택되며, 선행 task를 해제하면 그에 의존하는 선택 항목도 함께 해제됩니다. shell task는 가져온 뒤에도 source 승인과 별도의 셸 실행 승인이 필요합니다. 지원하지 않는 변수·잘못된 cwd는 차단되며, 환경변수 값은 읽거나 표시하지 않고 키 이름만 보여 줍니다.
       </div>
       <div className="workspace-task-list" role="list" aria-label="workspace task 목록">
         {plan.items.map((item) => {
@@ -191,13 +261,17 @@ function WorkspaceTaskPreview({
               <div className="workspace-task-meta">
                 <span>유형: {item.taskKind ?? "알 수 없음"}</span>
                 <span>OS override: {item.appliedOverride ?? "없음"}</span>
-                <span>problem matcher: {item.hasProblemMatcher ? "있음" : "없음"}</span>
+                <span>dependency: {item.dependsOn.length > 0 ? `${item.dependsOn.join(", ")} · ${item.dependsOrder === "sequence" ? "순차" : "병렬"}` : "없음"}</span>
+                <span>problem matcher: {item.problemMatcher ? "지원됨" : item.hasProblemMatcher ? "지원되지 않음" : "없음"}</span>
                 <span>환경 키: {item.environmentKeys.length > 0 ? item.environmentKeys.join(", ") : "없음"}</span>
               </div>
               <dl className="workspace-task-details">
                 <div><dt>command</dt><dd><code>{item.command ?? "—"}</code></dd></div>
                 <div><dt>argv</dt><dd><code>{JSON.stringify(item.args)}</code></dd></div>
                 <div><dt>cwd</dt><dd><code>{item.cwd ?? "—"}</code></dd></div>
+                {item.problemMatcher ? (
+                  <div><dt>matcher</dt><dd><code>{item.problemMatcher.regexp}</code> · file #{item.problemMatcher.file}, line #{item.problemMatcher.line}, message #{item.problemMatcher.message}</dd></div>
+                ) : null}
               </dl>
               {!selectable ? <p className="workspace-task-reason" role="note">차단 사유: {reason}</p> : null}
             </article>
@@ -209,12 +283,12 @@ function WorkspaceTaskPreview({
         <div className="workspace-task-result" role="status">
           <strong>workspace task import 완료</strong>
           <span>생성 {result.created} · 갱신 {result.updated} · 사용 불가 전환 {result.madeUnavailable} · 충돌 건너뜀 {result.skippedConflicts}</span>
-          <p>가져온 작업은 비활성·미신뢰 상태입니다. 이 source revision을 별도로 승인한 뒤 Jobs 화면에서 활성화해야 하며, 승인은 실행 자체를 시작하지 않습니다.</p>
+          <p>가져온 작업은 비활성·미신뢰 상태입니다. 이 source revision을 별도로 승인한 뒤 Jobs 화면에서 활성화해야 하며, 승인은 실행 자체를 시작하지 않습니다. shell task는 source 승인 뒤에도 셸 실행을 별도로 승인해야 합니다.</p>
         </div>
       ) : null}
       <div className="changeset-actions workspace-task-actions">
         <button type="button" className="btn" disabled={busy || selectedIds.size === 0 || Boolean(result)} onClick={onApprove}>
-          선택 process task 가져오기 ({selectedIds.size})
+          선택 task 가져오기 ({selectedIds.size})
         </button>
         <button type="button" className="btn" disabled={busy} onClick={onDiscard}>다시 선택</button>
         {busy ? (
@@ -371,7 +445,10 @@ export default function ImportDialog({ onDone, onClose }: Props) {
       );
       if (mountedRef.current && generation === previewGeneration.current) {
         setPreview({ kind: "workspace", plan, path: workspacePath });
-        setWorkspaceSelectedIds(new Set(plan.items.filter(isSelectableWorkspaceItem).map((item) => item.id)));
+        setWorkspaceSelectedIds(withWorkspaceDependencyClosure(
+          plan,
+          plan.items.filter(isSelectableWorkspaceItem).map((item) => item.id),
+        ));
       }
     } catch (cause) {
       if (cause instanceof Error && cause.message === "workspace-task-import-timeout") {
@@ -454,9 +531,10 @@ export default function ImportDialog({ onDone, onClose }: Props) {
         if (!mountedRef.current || generation !== previewGeneration.current) return;
         onDone(result.created);
       } else {
-        const workspaceIds = [...workspaceSelectedIds].filter((id) => selectedIds.includes(id));
+        const workspaceIds = [...withWorkspaceDependencyClosure(preview.plan, workspaceSelectedIds)]
+          .filter((id) => selectedIds.includes(id));
         if (workspaceIds.length === 0) {
-          setError("가져올 수 있는 process task를 하나 이상 선택하세요.");
+          setError("가져올 수 있는 task를 하나 이상 선택하세요.");
           return;
         }
         currentOperationId = operationId("apply");
@@ -663,10 +741,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
                 cancelRequested={cancelRequested}
                 result={workspaceResult}
                 onToggle={(id) => setWorkspaceSelectedIds((current) => {
-                  const next = new Set(current);
-                  if (next.has(id)) next.delete(id);
-                  else if (preview.plan.items.some((item) => item.id === id && isSelectableWorkspaceItem(item))) next.add(id);
-                  return next;
+                  return toggleWorkspaceTaskSelection(preview.plan, current, id);
                 })}
                 onApprove={() => void apply([...workspaceSelectedIds].map((id) => `workspace:${id} (${id})`))}
                 onDiscard={discardPreview}

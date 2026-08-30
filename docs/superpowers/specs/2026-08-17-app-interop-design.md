@@ -183,7 +183,7 @@ degrade한다.** 크래시하거나 오류 대화상자를 띄우지 않는다. 
 | repo-manager | `Path` | 해당 저장소 선택 |
 | api-playground | `Handoff(api-request/v1)` | 전달된 templated request를 저장 전 preview |
 | developer-toolbox | 없음 | receiver integration 이후 text와 추천 transformer를 입력 초안으로 적용 |
-| run-manager | `Task` (v0.5.0) | 저장된 job/service id를 재검증하고 확인 후 실행 |
+| run-manager | `Task` (v0.5.0), `Handoff(task-control/v1)` (#486) | 저장된 job/service id를 재검증하고 확인 후 실행 / Workbench의 typed task start·stop handoff를 확인 후 수행 |
 | devbox-manager | `Install` (v0.5.0, hidden) | embedded catalog app id를 재검증하고 설치 화면 표시 |
 | webhook-lab | `Handoff(webhook-fixture/v1)` | response fixture 초안 preview |
 | log-lens | `Handoff(log-source/v1)` | local/WSL source 연결, Run identity preview와 fixed app-owned rotation reader |
@@ -247,8 +247,22 @@ pending --atomic claim(consumer+lease)--> claimed --ack--> consumed/deleted
   허용하고 만료 token의 ack/restore는 거부한다.
 
 표준 kind는 `api-request/v1`, `webhook-fixture/v1`, `knowledge-draft/v1`, `log-source/v1`,
-`toolbox-text/v1`이다. 새 kind는 source/target/payload schema와 redaction 규칙을 설계 문서에
-먼저 추가한다.
+`toolbox-text/v1`, `task-control/v1`이다. 새 kind는 source/target/payload schema와 redaction
+규칙을 설계 문서에 먼저 추가한다.
+
+**2026-08-30 `task-control/v1` (#486).** Workbench는 Run Manager의 privacy-safe named
+snapshot에서 읽은 task id와 exact source revision만 사용해 one-time handoff를 만든다. payload는
+`schemaVersion`, random `requestId`, opaque `taskId`, `start|stop` action과
+`expectedRevision`으로 제한하고 command, cwd, argv, environment, PID를 넣지 않는다. target은
+정확히 `run-manager`, producer는 `workbench`여야 한다. Run Manager는 claim/lease를 재검증한
+뒤 자체 확인 modal에서 명시적 승인 또는 거절을 받는다. Start는 source를 다시 검증한 경우에만
+operation을 만들고, Stop은 새 실행 입력을 읽지 않은 채 그 task root의 owned operation만 중지한다.
+
+처리 결과는 `accepted`, `rejected`, `started`, `stopped`, `failed` receipt로 기록하고
+`task-control-receipts` named snapshot으로 발행한다. receipt에는 request/task/action/status,
+owned operation id, timestamp와 고정 failure code만 포함하며 expected revision과 실행 원문을
+노출하지 않는다. Workbench는 request/task/action이 일치하는 receipt만 사용한다. claim 만료,
+stale revision, 확인 거절과 수신 앱 부재는 자동 실행으로 우회하지 않고 고정 오류로 끝난다.
 
 **2026-08-28 `log-source/v1` producer/claim-preview contract (#366/#367).** Run Manager는 기존
 `{ kind, sourceId, runId, stream }` reference를 그대로 payload로 사용한다. `sourceId`는
@@ -545,6 +559,8 @@ Launcher는 해당 source를 `missing`으로 격리하고 나머지 검색을 �
 | `workbench/profiles/v1` | Workbench (후속 producer) | recent profile/workspace id와 표시 metadata |
 | `repo-manager/repositories/v1` | Repo Manager (후속 producer) | repository/worktree id와 path label |
 | `run-manager/jobs-services/v1` (`jobs-services.json` sidecar; `status/v1` flat fallback) | Run Manager | job/service id, 상태와 실행 action metadata |
+| `run-manager/workspace-tasks/v1` (`workspace-tasks.json` named view) | Run Manager | workspace task id, label, revision, kind, trust/availability, dependency와 active-operation metadata |
+| `run-manager/task-control-receipts/v1` (`task-control-receipts.json` named view) | Run Manager | typed Workbench task-control request의 redacted receipt metadata |
 | `everything-plus/saved-queries/v1` | Everything+ (후속 producer) | query/filter만, 결과 목록은 제외 |
 | `wsl-desktop/profiles/v1` | WSL Desktop (후속 profile producer) | profile/layout/distro/cwd metadata |
 
@@ -552,18 +568,20 @@ Launcher는 해당 source를 `missing`으로 격리하고 나머지 검색을 �
 포함하고 `%LOCALAPPDATA%\devbox\integration\<app-id>\v<n>\summary.json`에 atomic replace로
 쓴다. Run Manager는 기존 status를 flat v1 `summary.json`에 유지하고, jobs/services는 같은
 producer/version 디렉터리의 independently versioned named `jobs-services.json` sidecar에 발행한다.
-named sidecar의 `data.views`에는 해당 `jobs-services` view 하나만 둔다. 각 view는 자체
-`schemaVersion`, `freshnessMs`, `entries`를 가지며 entry에는 versioned
-action payload와 안정적인 id만 둔다. secret, environment value, raw log, full query result는
-금지한다. stale·손상 source 하나가 다른 source 검색을 막지 않는다. 기존 Life Log→Knowledge
+named sidecar의 `data.views`에는 해당 named view 하나만 둔다. 각 view는 자체 `schemaVersion`,
+`freshnessMs`, `entries`를 가지며 entry에는 versioned action payload와 안정적인 id만 둔다.
+workspace task view는 task-control에 필요한 안전한 상태와 revision만, receipt view는 request/task/action/
+status/owned operation/timestamp/fixed failure code만 제공한다. secret, command, cwd, argv,
+environment value, PID, raw log, full query result는 금지한다. stale·손상 source 하나가 다른 source
+검색을 막지 않는다. 기존 Life Log→Knowledge
 `knowledge-draft/v1`은 구조화 catalog action으로 유지하지만 Launcher가 clipboard text로
 변환하지 않는다. Developer Toolbox `toolbox-text/v1` static action은 실제 claim/ack receiver가
 준비된 뒤 선언한다.
 
 기존 snapshot path에는 producer/version별 파일이 하나뿐이다. 여러 kind를 발행하는 WSL
-Desktop과 Run Manager는 `data.views` 아래 `runtime`/`profiles`, `status`/`jobs-services` view를
-한 envelope에 모아 한 번만 atomic replace한다. kind별 writer가 같은 `summary.json`을 서로
-덮어쓰지 않으며 catalog capability가 지원 view와 version을 선택한다.
+Desktop과 Run Manager는 `data.views` 아래 `runtime`/`profiles`, `status`/`jobs-services` 및
+task-control named view를 각각의 sidecar에 모아 atomic replace한다. kind별 writer가 같은
+`summary.json`을 서로 덮어쓰지 않으며 catalog capability가 지원 view와 version을 선택한다.
 
 `read_snapshot`은 이미 파일 없음을 `Ok(None)`으로, producer/schema 불일치를 `Err`로
 처리한다(`crates/integration/src/lib.rs:76-97`). 발견 기반으로 바뀌어도 이 계약은 그대로다.

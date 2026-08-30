@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-pub const WORKSPACE_TASK_SCHEMA_VERSION: u32 = 1;
+pub const WORKSPACE_TASK_SCHEMA_VERSION: u32 = 2;
 pub const TASKS_JSON_RELATIVE_PATH: &str = ".vscode/tasks.json";
 pub const MAX_TASK_SOURCE_BYTES: u64 = 512 * 1024;
 pub const MAX_TASKS: usize = 128;
@@ -26,6 +26,9 @@ pub const MAX_TASK_STRING_BYTES: usize = 16 * 1024;
 pub const MAX_TASK_ARGUMENTS: usize = 128;
 pub const MAX_TASK_ARGV_BYTES: usize = 64 * 1024;
 pub const MAX_ENVIRONMENT_KEYS: usize = 64;
+pub const MAX_DEPENDENCY_EDGES: usize = 512;
+pub const MAX_MATCHER_REGEXP_BYTES: usize = 16 * 1024;
+pub const MAX_MATCHER_CAPTURE_GROUP: u32 = 32;
 const MAX_REVISION_BYTES: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +71,28 @@ pub enum WorkspaceTaskKind {
     Shell,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorkspaceTaskDependsOrder {
+    #[default]
+    Parallel,
+    Sequence,
+}
+
+/// A deliberately small subset of VS Code's problem matcher. Named matchers,
+/// multi-line patterns and background state machines require an extension host
+/// and are therefore never projected into executable state.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceProblemMatcher {
+    pub regexp: String,
+    pub file: u32,
+    pub line: u32,
+    pub column: Option<u32>,
+    pub message: u32,
+    pub severity: Option<u32>,
+}
+
 impl WorkspaceTaskKind {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -90,7 +115,10 @@ pub struct WorkspaceTaskItem {
     pub cwd: Option<String>,
     pub environment_keys: Vec<String>,
     pub applied_override: Option<String>,
+    pub depends_on: Vec<String>,
+    pub depends_order: WorkspaceTaskDependsOrder,
     pub has_problem_matcher: bool,
+    pub problem_matcher: Option<WorkspaceProblemMatcher>,
     pub blocked_reason: Option<String>,
 }
 
@@ -98,6 +126,17 @@ impl WorkspaceTaskItem {
     pub fn is_ready_process(&self) -> bool {
         self.status == "ready"
             && self.task_kind == Some(WorkspaceTaskKind::Process)
+            && self.blocked_reason.is_none()
+            && self.command.is_some()
+            && self.cwd.is_some()
+    }
+
+    pub fn is_ready_importable(&self) -> bool {
+        self.status == "ready"
+            && matches!(
+                self.task_kind,
+                Some(WorkspaceTaskKind::Process | WorkspaceTaskKind::Shell)
+            )
             && self.blocked_reason.is_none()
             && self.command.is_some()
             && self.cwd.is_some()
@@ -131,7 +170,11 @@ pub struct WorkspaceTaskState {
     pub target_distro: Option<String>,
     pub environment_keys: Vec<String>,
     pub applied_override: Option<String>,
+    pub depends_on: Vec<String>,
+    pub depends_order: WorkspaceTaskDependsOrder,
+    pub has_problem_matcher: bool,
     pub trusted: bool,
+    pub shell_trusted: bool,
     pub available: bool,
 }
 
@@ -158,12 +201,16 @@ pub struct WorkspaceTaskExecution {
     pub args: Vec<String>,
     pub cwd: String,
     pub environment_keys: Vec<String>,
+    pub depends_on: Vec<String>,
+    pub depends_order: WorkspaceTaskDependsOrder,
+    pub problem_matcher: Option<WorkspaceProblemMatcher>,
     pub source_root: String,
     pub project_identity: String,
     pub revision: String,
     pub target_kind: TargetKind,
     pub target_distro: Option<String>,
     pub trusted: bool,
+    pub shell_trusted: bool,
     pub available: bool,
 }
 
@@ -256,6 +303,7 @@ pub fn preview_workspace_tasks(
             duplicate,
         ));
     }
+    validate_dependency_graph(&mut items);
     ensure_root_identity(&source.root, source.root_identity)
         .map_err(|_| WorkspaceTaskError::SourceChanged)?;
     if filesystem_identity(source.root.join(TASKS_JSON_RELATIVE_PATH), false)
@@ -300,7 +348,10 @@ pub fn verify_workspace_task_plan(
 pub fn revalidate_workspace_task_execution(
     execution: &WorkspaceTaskExecution,
 ) -> Result<WorkspaceTaskPlan, WorkspaceTaskError> {
-    if !execution.available || !execution.trusted {
+    if !execution.available
+        || !execution.trusted
+        || (execution.task_kind == WorkspaceTaskKind::Shell && !execution.shell_trusted)
+    {
         return Err(WorkspaceTaskError::SourceChanged);
     }
     verify_workspace_task_execution(execution)
@@ -312,27 +363,58 @@ pub fn revalidate_workspace_task_execution(
 pub fn verify_workspace_task_execution(
     execution: &WorkspaceTaskExecution,
 ) -> Result<WorkspaceTaskPlan, WorkspaceTaskError> {
-    let plan = verify_workspace_task_plan(
-        Path::new(&execution.source_root),
-        execution.target_kind,
-        execution.target_distro.as_deref(),
-        &execution.source_root,
-        &execution.project_identity,
-        &execution.revision,
-    )?;
-    let item = plan
-        .items
-        .iter()
-        .find(|item| item.source_index == execution.source_index && item.label == execution.label)
+    verify_workspace_task_executions(std::slice::from_ref(execution))
+}
+
+/// Verify a whole source projection with one bounded source read. This is used
+/// before dependency planning so a 128-node graph does not reopen and reparse
+/// the same file 128 times.
+pub fn verify_workspace_task_executions(
+    executions: &[WorkspaceTaskExecution],
+) -> Result<WorkspaceTaskPlan, WorkspaceTaskError> {
+    let first = executions
+        .first()
         .ok_or(WorkspaceTaskError::SourceChanged)?;
-    if !item.is_ready_process()
-        || item.task_kind != Some(execution.task_kind)
-        || item.command.as_deref() != Some(execution.command.as_str())
-        || item.args != execution.args
-        || item.cwd.as_deref() != Some(execution.cwd.as_str())
-        || item.environment_keys != execution.environment_keys
+    if executions.len() > MAX_TASKS
+        || executions.iter().any(|execution| {
+            execution.source_id != first.source_id
+                || execution.source_root != first.source_root
+                || execution.project_identity != first.project_identity
+                || execution.revision != first.revision
+                || execution.target_kind != first.target_kind
+                || execution.target_distro != first.target_distro
+        })
     {
         return Err(WorkspaceTaskError::SourceChanged);
+    }
+    let plan = verify_workspace_task_plan(
+        Path::new(&first.source_root),
+        first.target_kind,
+        first.target_distro.as_deref(),
+        &first.source_root,
+        &first.project_identity,
+        &first.revision,
+    )?;
+    for execution in executions {
+        let item = plan
+            .items
+            .iter()
+            .find(|item| {
+                item.source_index == execution.source_index && item.label == execution.label
+            })
+            .ok_or(WorkspaceTaskError::SourceChanged)?;
+        if !item.is_ready_importable()
+            || item.task_kind != Some(execution.task_kind)
+            || item.command.as_deref() != Some(execution.command.as_str())
+            || item.args != execution.args
+            || item.cwd.as_deref() != Some(execution.cwd.as_str())
+            || item.environment_keys != execution.environment_keys
+            || item.depends_on != execution.depends_on
+            || item.depends_order != execution.depends_order
+            || item.problem_matcher != execution.problem_matcher
+        {
+            return Err(WorkspaceTaskError::SourceChanged);
+        }
     }
     Ok(plan)
 }
@@ -581,6 +663,9 @@ fn project_task(
         environment_keys: Vec::new(),
         applied_override: None,
         has_problem_matcher: false,
+        depends_on: Vec::new(),
+        depends_order: WorkspaceTaskDependsOrder::Parallel,
+        problem_matcher: None,
         blocked_reason: Some(reason.to_owned()),
     };
     let Some(base) = raw.as_object() else {
@@ -602,21 +687,14 @@ fn project_task(
     };
     let kind = match task.get("type").and_then(Value::as_str) {
         Some("process") => WorkspaceTaskKind::Process,
-        Some("shell") => {
-            return blocked(
-                "shell-requires-separate-confirmation",
-                Some(WorkspaceTaskKind::Shell),
-            )
-        }
+        Some("shell") => WorkspaceTaskKind::Shell,
         Some(_) => return blocked("unsupported-task-type", None),
         None => return blocked("missing-task-type", None),
     };
-    if task.get("dependsOn").is_some() {
-        return blocked("dependencies-require-orchestration", Some(kind));
-    }
-    if task.get("dependsOrder").is_some() {
-        return blocked("dependencies-require-orchestration", Some(kind));
-    }
+    let (depends_on, depends_order) = match project_dependencies(&task) {
+        Ok(value) => value,
+        Err(reason) => return blocked(reason, Some(kind)),
+    };
     if task.get("isBackground").is_some() {
         return blocked("background-task-unsupported", Some(kind));
     }
@@ -666,6 +744,10 @@ fn project_task(
         Ok(value) => value,
         Err(reason) => return blocked(reason, Some(kind)),
     };
+    let problem_matcher = match project_problem_matcher(task.get("problemMatcher")) {
+        Ok(value) => value,
+        Err(reason) => return blocked(reason, Some(kind)),
+    };
     WorkspaceTaskItem {
         id,
         source_index,
@@ -677,9 +759,247 @@ fn project_task(
         cwd: Some(cwd),
         environment_keys,
         applied_override,
-        has_problem_matcher: task.get("problemMatcher").is_some(),
+        depends_on,
+        depends_order,
+        has_problem_matcher: problem_matcher.is_some(),
+        problem_matcher,
         blocked_reason: None,
     }
+}
+
+fn project_dependencies(
+    task: &Map<String, Value>,
+) -> Result<(Vec<String>, WorkspaceTaskDependsOrder), &'static str> {
+    let mut dependencies = Vec::new();
+    if let Some(value) = task.get("dependsOn") {
+        match value {
+            Value::String(label) => dependencies.push(label.clone()),
+            Value::Array(labels) => {
+                if labels.len() > MAX_TASKS {
+                    return Err("dependency-graph-too-large");
+                }
+                for label in labels {
+                    let Some(label) = label.as_str() else {
+                        return Err("invalid-dependency");
+                    };
+                    dependencies.push(label.to_owned());
+                }
+            }
+            _ => return Err("invalid-dependency"),
+        }
+    }
+    let mut unique = BTreeSet::new();
+    for dependency in &dependencies {
+        if dependency.is_empty()
+            || dependency.len() > MAX_TASK_LABEL_BYTES
+            || dependency.chars().any(char::is_control)
+            || !unique.insert(dependency.clone())
+        {
+            return Err("invalid-dependency");
+        }
+    }
+    let order = match task.get("dependsOrder") {
+        None => WorkspaceTaskDependsOrder::Parallel,
+        Some(Value::String(value)) if value == "parallel" => WorkspaceTaskDependsOrder::Parallel,
+        Some(Value::String(value)) if value == "sequence" => WorkspaceTaskDependsOrder::Sequence,
+        Some(_) => return Err("invalid-dependency-order"),
+    };
+    if dependencies.is_empty() && task.get("dependsOrder").is_some() {
+        return Err("dependency-order-without-dependency");
+    }
+    Ok((dependencies, order))
+}
+
+fn project_problem_matcher(
+    value: Option<&Value>,
+) -> Result<Option<WorkspaceProblemMatcher>, &'static str> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if value.is_string() || value.as_array().is_some() {
+        return Err("named-problem-matcher-unsupported");
+    }
+    let matcher = value.as_object().ok_or("invalid-problem-matcher")?;
+    if matcher.get("background").is_some() || matcher.get("watching").is_some() {
+        return Err("background-problem-matcher-unsupported");
+    }
+    if matcher.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "owner" | "source" | "applyTo" | "fileLocation" | "pattern" | "severity"
+        )
+    }) {
+        return Err("unsupported-problem-matcher-field");
+    }
+    if matcher
+        .get("fileLocation")
+        .is_some_and(|location| !matches!(location, Value::String(value) if value == "relative"))
+    {
+        return Err("unsupported-problem-matcher-location");
+    }
+    let pattern = matcher
+        .get("pattern")
+        .and_then(Value::as_object)
+        .ok_or("invalid-problem-matcher")?;
+    if pattern.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "regexp" | "file" | "line" | "column" | "message" | "severity"
+        )
+    }) {
+        return Err("unsupported-problem-matcher-field");
+    }
+    let regexp = pattern
+        .get("regexp")
+        .and_then(Value::as_str)
+        .ok_or("invalid-problem-matcher")?;
+    if regexp.is_empty()
+        || regexp.len() > MAX_MATCHER_REGEXP_BYTES
+        || regexp.chars().any(char::is_control)
+    {
+        return Err("invalid-problem-matcher");
+    }
+    let compiled = regex::Regex::new(regexp).map_err(|_| "invalid-problem-matcher")?;
+    let capture = |name: &str, required: bool| -> Result<Option<u32>, &'static str> {
+        let value = pattern.get(name).and_then(Value::as_u64);
+        if required && value.is_none() {
+            return Err("invalid-problem-matcher");
+        }
+        let value = value
+            .map(|value| u32::try_from(value).map_err(|_| "invalid-problem-matcher"))
+            .transpose()?;
+        if value.is_some_and(|value| {
+            value == 0
+                || value > MAX_MATCHER_CAPTURE_GROUP
+                || usize::try_from(value)
+                    .ok()
+                    .is_none_or(|index| index >= compiled.captures_len())
+        }) {
+            return Err("invalid-problem-matcher");
+        }
+        Ok(value)
+    };
+    Ok(Some(WorkspaceProblemMatcher {
+        regexp: regexp.to_owned(),
+        file: capture("file", true)?.expect("required capture"),
+        line: capture("line", true)?.expect("required capture"),
+        column: capture("column", false)?,
+        message: capture("message", true)?.expect("required capture"),
+        severity: capture("severity", false)?,
+    }))
+}
+
+fn validate_dependency_graph(items: &mut [WorkspaceTaskItem]) {
+    let edge_count = items
+        .iter()
+        .map(|item| item.depends_on.len())
+        .sum::<usize>();
+    if edge_count > MAX_DEPENDENCY_EDGES {
+        for item in items.iter_mut().filter(|item| !item.depends_on.is_empty()) {
+            block_projected_item(item, "dependency-graph-too-large");
+        }
+        return;
+    }
+
+    let labels = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| (item.label.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    for (index, item) in items.iter_mut().enumerate() {
+        if item.status != "ready" {
+            continue;
+        }
+        let invalid = item.depends_on.iter().any(|dependency| {
+            labels
+                .get(dependency)
+                .is_none_or(|dependency_index| *dependency_index == index)
+        });
+        if invalid {
+            block_projected_item(item, "invalid-dependency");
+        }
+    }
+
+    // Kahn's algorithm leaves cycle members and nodes which depend on a cycle
+    // unvisited. Blocking the whole remainder gives a deterministic, fail-
+    // closed preview without guessing which edge the user intended.
+    let mut indegree = vec![0usize; items.len()];
+    let mut dependents = vec![Vec::<usize>::new(); items.len()];
+    for (index, item) in items.iter().enumerate() {
+        if item.status != "ready" {
+            continue;
+        }
+        for dependency in &item.depends_on {
+            if let Some(dependency_index) = labels.get(dependency).copied() {
+                if items[dependency_index].status == "ready" {
+                    indegree[index] = indegree[index].saturating_add(1);
+                    dependents[dependency_index].push(index);
+                }
+            }
+        }
+    }
+    let mut ready = indegree
+        .iter()
+        .enumerate()
+        .filter_map(|(index, degree)| {
+            (items[index].status == "ready" && *degree == 0).then_some(index)
+        })
+        .collect::<Vec<_>>();
+    let mut visited = vec![false; items.len()];
+    while let Some(index) = ready.pop() {
+        visited[index] = true;
+        for dependent in &dependents[index] {
+            indegree[*dependent] = indegree[*dependent].saturating_sub(1);
+            if indegree[*dependent] == 0 {
+                ready.push(*dependent);
+            }
+        }
+    }
+    for index in 0..items.len() {
+        if items[index].status == "ready" && !visited[index] {
+            block_projected_item(&mut items[index], "dependency-cycle");
+        }
+    }
+
+    // A task cannot be imported when any required predecessor is blocked.
+    // Iterate to a fixed point so an unavailable leaf propagates through a
+    // longer dependency chain.
+    loop {
+        let blocked_labels = items
+            .iter()
+            .filter(|item| item.status != "ready")
+            .map(|item| item.label.clone())
+            .collect::<BTreeSet<_>>();
+        let affected = items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| {
+                (item.status == "ready"
+                    && item
+                        .depends_on
+                        .iter()
+                        .any(|dependency| blocked_labels.contains(dependency)))
+                .then_some(index)
+            })
+            .collect::<Vec<_>>();
+        if affected.is_empty() {
+            break;
+        }
+        for index in affected {
+            block_projected_item(&mut items[index], "dependency-unavailable");
+        }
+    }
+}
+
+fn block_projected_item(item: &mut WorkspaceTaskItem, reason: &str) {
+    item.status = "blocked".to_owned();
+    item.command = None;
+    item.args.clear();
+    item.cwd = None;
+    item.environment_keys.clear();
+    item.problem_matcher = None;
+    item.has_problem_matcher = false;
+    item.blocked_reason = Some(reason.to_owned());
 }
 
 fn merge_platform_override(
@@ -915,7 +1235,8 @@ fn source_revision(
     target_distro: Option<&str>,
 ) -> String {
     let mut digest = Sha256::new();
-    digest.update(b"run-manager-workspace-task-source-v1");
+    digest.update(b"run-manager-workspace-task-source-v2");
+    digest.update(WORKSPACE_TASK_SCHEMA_VERSION.to_le_bytes());
     digest.update(identity_digest(root_identity, b"root"));
     digest.update(identity_digest(file_identity, b"file"));
     digest.update((bytes.len() as u64).to_le_bytes());
@@ -1017,7 +1338,7 @@ mod tests {
     }
 
     #[test]
-    fn dangerous_variables_extension_shell_and_dependencies_are_blocked() {
+    fn dangerous_variables_and_extension_tasks_are_blocked_while_shell_is_reviewable() {
         let root = tempfile::tempdir().unwrap();
         write_tasks(
             root.path(),
@@ -1036,18 +1357,20 @@ mod tests {
         let reasons = plan
             .items
             .iter()
-            .map(|item| item.blocked_reason.as_deref().unwrap())
+            .map(|item| item.blocked_reason.as_deref())
             .collect::<Vec<_>>();
         assert_eq!(
             reasons,
             [
-                "unsupported-variable",
-                "unsupported-variable",
-                "unsupported-task-type",
-                "shell-requires-separate-confirmation",
-                "dependencies-require-orchestration"
+                Some("unsupported-variable"),
+                Some("unsupported-variable"),
+                Some("unsupported-task-type"),
+                None,
+                Some("dependency-unavailable")
             ]
         );
+        assert!(plan.items[3].is_ready_importable());
+        assert_eq!(plan.items[3].task_kind, Some(WorkspaceTaskKind::Shell));
     }
 
     #[test]
@@ -1073,8 +1396,74 @@ mod tests {
             [
                 "background-task-unsupported",
                 "run-options-unsupported",
-                "dependencies-require-orchestration"
+                "dependency-order-without-dependency"
             ]
+        );
+    }
+
+    #[test]
+    fn dependency_dag_and_explicit_problem_matcher_are_normalized() {
+        let root = tempfile::tempdir().unwrap();
+        write_tasks(
+            root.path(),
+            r#"{
+              "version": "2.0.0",
+              "tasks": [
+                {"label":"compile", "type":"process", "command":"cargo", "args":["check"],
+                 "problemMatcher":{"fileLocation":"relative","pattern":{
+                   "regexp":"^([^:]+):(\\d+):(\\d+): (error|warning): (.+)$",
+                   "file":1,"line":2,"column":3,"severity":4,"message":5}}},
+                {"label":"verify", "type":"process", "command":"cargo", "args":["test"],
+                 "dependsOn":["compile"], "dependsOrder":"sequence"}
+              ]
+            }"#,
+        );
+        let plan = preview_workspace_tasks(root.path(), TargetKind::Wsl, Some("Ubuntu")).unwrap();
+        assert!(plan
+            .items
+            .iter()
+            .all(WorkspaceTaskItem::is_ready_importable));
+        assert_eq!(plan.items[1].depends_on, ["compile"]);
+        assert_eq!(
+            plan.items[1].depends_order,
+            WorkspaceTaskDependsOrder::Sequence
+        );
+        let matcher = plan.items[0].problem_matcher.as_ref().unwrap();
+        assert_eq!(
+            (matcher.file, matcher.line, matcher.column),
+            (1, 2, Some(3))
+        );
+        assert_eq!((matcher.severity, matcher.message), (Some(4), 5));
+    }
+
+    #[test]
+    fn missing_self_and_cyclic_dependencies_fail_closed() {
+        let root = tempfile::tempdir().unwrap();
+        write_tasks(
+            root.path(),
+            r#"{"version":"2.0.0","tasks":[
+              {"label":"missing","type":"process","command":"x","dependsOn":"absent"},
+              {"label":"self","type":"process","command":"x","dependsOn":"self"},
+              {"label":"a","type":"process","command":"x","dependsOn":"b"},
+              {"label":"b","type":"process","command":"x","dependsOn":"a"}
+            ]}"#,
+        );
+        let plan = preview_workspace_tasks(root.path(), TargetKind::Wsl, Some("Ubuntu")).unwrap();
+        assert_eq!(
+            plan.items[0].blocked_reason.as_deref(),
+            Some("invalid-dependency")
+        );
+        assert_eq!(
+            plan.items[1].blocked_reason.as_deref(),
+            Some("invalid-dependency")
+        );
+        assert_eq!(
+            plan.items[2].blocked_reason.as_deref(),
+            Some("dependency-cycle")
+        );
+        assert_eq!(
+            plan.items[3].blocked_reason.as_deref(),
+            Some("dependency-cycle")
         );
     }
 

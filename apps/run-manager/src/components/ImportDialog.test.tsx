@@ -45,22 +45,35 @@ const plan: WorkspaceTaskPlan = {
       cwd: "C:\\work\\demo",
       environmentKeys: ["BUILD_TOKEN"],
       appliedOverride: "windows",
+      dependsOn: [],
+      dependsOrder: "parallel",
       hasProblemMatcher: true,
+      problemMatcher: {
+        regexp: "^(.+):(\\d+): (.+)$",
+        file: 1,
+        line: 2,
+        column: null,
+        message: 3,
+        severity: null,
+      },
       blockedReason: null,
     },
     {
       id: "task-shell",
       sourceIndex: 1,
       label: "Publish shell",
-      status: "blocked",
+      status: "ready",
       taskKind: "shell",
       command: "npm publish",
       args: [],
       cwd: "C:\\work\\demo",
       environmentKeys: ["PUBLISH_TOKEN"],
       appliedOverride: null,
+      dependsOn: ["Build"],
+      dependsOrder: "sequence",
       hasProblemMatcher: false,
-      blockedReason: "shell-requires-separate-confirmation",
+      problemMatcher: null,
+      blockedReason: null,
     },
   ],
 };
@@ -69,7 +82,7 @@ beforeEach(() => {
   previewWorkspaceTaskImportMock.mockReset().mockResolvedValue(plan);
   applyWorkspaceTaskImportMock.mockReset().mockResolvedValue({
     sourceId: "source-1",
-    created: 1,
+    created: 2,
     updated: 0,
     madeUnavailable: 0,
     skippedConflicts: 1,
@@ -80,7 +93,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("ImportDialog workspace task mode", () => {
-  it("shows a read-only preview and only selects ready process tasks", async () => {
+  it("shows a read-only preview, imports ready process and shell tasks, and exposes dependencies", async () => {
     render(<ImportDialog onDone={vi.fn()} onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("tab", { name: "VS Code tasks" }));
@@ -89,17 +102,42 @@ describe("ImportDialog workspace task mode", () => {
 
     await screen.findByText("Build");
     const ready = screen.getByRole("checkbox", { name: "Build 선택" });
-    const blocked = screen.getByRole("checkbox", { name: "Publish shell 선택" });
+    const shell = screen.getByRole("checkbox", { name: "Publish shell 선택" });
     expect(ready).not.toBeDisabled();
     expect(ready).toBeChecked();
-    expect(blocked).toBeDisabled();
-    expect(screen.getByText("차단 사유: shell task는 별도 위험 확인이 필요해 현재 가져올 수 없습니다.")).toBeTruthy();
+    expect(shell).not.toBeDisabled();
+    expect(shell).toBeChecked();
     expect(screen.getByText("OS override: windows")).toBeTruthy();
+    expect(screen.getByText("dependency: Build · 순차")).toBeTruthy();
+    expect(screen.getByText("problem matcher: 지원됨")).toBeTruthy();
+    expect(screen.getByText("^(.+):(\\d+): (.+)$")).toBeTruthy();
     expect(screen.getByText("환경 키: BUILD_TOKEN")).toBeTruthy();
     expect(screen.getByText("node")).toBeTruthy();
     expect(screen.getByText("[\"build.js\",\"--safe\"]")).toBeTruthy();
     expect(screen.queryByText("PUBLISH_SECRET_VALUE")).toBeNull();
-    expect(screen.getByRole("button", { name: "선택 process task 가져오기 (1)" })).not.toBeDisabled();
+    expect(screen.getByText(/shell task는 가져온 뒤에도 source 승인과 별도의 셸 실행 승인이 필요합니다/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "선택 task 가져오기 (2)" })).not.toBeDisabled();
+  });
+
+  it("keeps selection dependency-safe when a dependency is removed or re-added", async () => {
+    render(<ImportDialog onDone={vi.fn()} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "VS Code tasks" }));
+    fireEvent.change(screen.getByLabelText("workspace task 디렉터리"), { target: { value: "C:\\work\\demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "tasks.json 미리보기" }));
+    await screen.findByText("Build");
+
+    const ready = screen.getByRole("checkbox", { name: "Build 선택" });
+    const shell = screen.getByRole("checkbox", { name: "Publish shell 선택" });
+    fireEvent.click(ready);
+    expect(ready).not.toBeChecked();
+    expect(shell).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "선택 task 가져오기 (0)" })).toBeDisabled();
+
+    fireEvent.click(shell);
+    expect(shell).toBeChecked();
+    expect(ready).toBeChecked();
+    expect(screen.getByRole("button", { name: "선택 task 가져오기 (2)" })).not.toBeDisabled();
   });
 
   it("applies selected process tasks and explains the explicit trust gate", async () => {
@@ -111,7 +149,7 @@ describe("ImportDialog workspace task mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "tasks.json 미리보기" }));
     await screen.findByText("Build");
 
-    fireEvent.click(screen.getByRole("button", { name: "선택 process task 가져오기 (1)" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 task 가져오기 (2)" }));
     await waitFor(() => expect(applyWorkspaceTaskImportMock).toHaveBeenCalledWith(
       "C:\\work\\demo",
       plan.sourceRoot,
@@ -119,11 +157,11 @@ describe("ImportDialog workspace task mode", () => {
       plan.revision,
       "windows",
       null,
-      ["task-ready"],
+      ["task-ready", "task-shell"],
       expect.any(String),
     ));
-    expect(onDone).toHaveBeenCalledWith(1, expect.objectContaining({ created: 1, skippedConflicts: 1 }));
-    expect(screen.getByText(/생성 1 · 갱신 0 · 사용 불가 전환 0 · 충돌 건너뜀 1/)).toBeTruthy();
+    expect(onDone).toHaveBeenCalledWith(2, expect.objectContaining({ created: 2, skippedConflicts: 1 }));
+    expect(screen.getByText(/생성 2 · 갱신 0 · 사용 불가 전환 0 · 충돌 건너뜀 1/)).toBeTruthy();
     expect(screen.getByText(/비활성·미신뢰 상태/)).toBeTruthy();
   });
 });

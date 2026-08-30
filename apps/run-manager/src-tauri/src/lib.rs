@@ -10,6 +10,8 @@ pub mod notifications;
 pub mod platform;
 pub mod scheduler;
 pub mod storage;
+mod task_control;
+mod workspace_orchestration;
 
 use lifecycle::{is_background_launch, request_orderly_exit, RuntimeState};
 use serde::Serialize;
@@ -51,7 +53,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             if let Ok(Some(request)) = devbox_applink::parse_argv(&args) {
-                if applink::is_task_request(&request) {
+                if applink::is_supported_request(&request) {
                     app.state::<applink::PendingOpen>().set(request.clone());
                     let _ = app.emit("devbox://open", request);
                 }
@@ -101,6 +103,18 @@ pub fn run() {
             commands::cancel_workspace_task_import,
             commands::list_workspace_tasks,
             commands::trust_workspace_task_source,
+            commands::trust_workspace_task_shell_source,
+            commands::run_workspace_task_operation,
+            commands::get_workspace_task_operation,
+            commands::list_workspace_task_operations,
+            commands::stop_workspace_task_operation,
+            commands::list_workspace_task_diagnostics,
+            commands::open_workspace_task_diagnostic,
+            task_control::preview_workspace_task_control,
+            task_control::renew_workspace_task_control,
+            task_control::reject_workspace_task_control,
+            task_control::accept_workspace_task_control,
+            task_control::list_workspace_task_control_receipts,
             commands::create_service,
             commands::update_service,
             commands::delete_service,
@@ -119,10 +133,11 @@ pub fn run() {
         .setup(|app| {
             devbox_window_state_tauri::restore_main_window(app.handle());
             app.manage(applink::PendingOpen::new());
+            app.manage(task_control::PendingTaskControl::new());
             if let Ok(Some(request)) =
                 devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>())
             {
-                if applink::is_task_request(&request) {
+                if applink::is_supported_request(&request) {
                     app.state::<applink::PendingOpen>().set(request);
                 }
             }
@@ -135,6 +150,7 @@ pub fn run() {
             if !database.is_ready() {
                 return Err(std::io::Error::other("database connection is not ready").into());
             }
+            database.interrupt_workspace_task_operations_at(storage::current_epoch_millis())?;
             if let Err(error) = cleanup::RetentionCleaner::new(&data_dir)
                 .run(&database, storage::current_epoch_millis())
             {

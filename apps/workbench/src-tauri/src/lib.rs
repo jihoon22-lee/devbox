@@ -107,6 +107,9 @@ pub fn run() {
             commands::profile_actions::profile_open_targets,
             commands::profile_actions::profile_copy_path,
             commands::profile_actions::open_profile_in,
+            commands::task_control::dispatch_workspace_task_control,
+            commands::task_control::list_workspace_task_controls,
+            commands::task_control::get_workspace_task_control_receipt,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

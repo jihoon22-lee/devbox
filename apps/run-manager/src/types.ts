@@ -13,6 +13,7 @@ export interface StartupShortcutStatus {
 
 export type TargetKind = "windows" | "wsl";
 export type WorkspaceTaskKind = "process" | "shell";
+export type WorkspaceTaskDependsOrder = "parallel" | "sequence";
 export type OverlapPolicy = "skip" | "queue" | "kill-previous";
 export type RestartPolicy = "never" | "on-failure" | "always";
 export type RunStatus =
@@ -71,8 +72,21 @@ export interface WorkspaceTaskItem {
   cwd?: string | null;
   environmentKeys: string[];
   appliedOverride?: string | null;
+  dependsOn: string[];
+  dependsOrder: WorkspaceTaskDependsOrder;
   hasProblemMatcher: boolean;
+  problemMatcher: WorkspaceProblemMatcher | null;
   blockedReason?: string | null;
+}
+
+/** The bounded problem-matcher projection supported by Run Manager. */
+export interface WorkspaceProblemMatcher {
+  regexp: string;
+  file: number;
+  line: number;
+  column: number | null;
+  message: number;
+  severity: number | null;
 }
 
 export interface WorkspaceTaskPlan {
@@ -100,7 +114,11 @@ export interface WorkspaceTaskState {
   targetDistro?: string | null;
   environmentKeys: string[];
   appliedOverride?: string | null;
+  dependsOn: string[];
+  dependsOrder: WorkspaceTaskDependsOrder;
+  hasProblemMatcher: boolean;
   trusted: boolean;
+  shellTrusted: boolean;
   available: boolean;
 }
 
@@ -110,6 +128,85 @@ export interface WorkspaceTaskApplyResult {
   updated: number;
   madeUnavailable: number;
   skippedConflicts: number;
+}
+
+export type WorkspaceTaskOperationStatus =
+  | "queued"
+  | "running"
+  | "stopping"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+export type WorkspaceTaskOperationRunStatus =
+  | "pending"
+  | "launching"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "skipped";
+
+export interface WorkspaceTaskOperationRun {
+  jobId: string;
+  runId?: string | null;
+  layerIndex: number;
+  sequence: number;
+  status: WorkspaceTaskOperationRunStatus;
+  failureCode?: string | null;
+}
+
+export interface WorkspaceTaskOperation {
+  id: string;
+  rootJobId: string;
+  sourceId: string;
+  revision: string;
+  status: WorkspaceTaskOperationStatus;
+  failFast: boolean;
+  failureCode?: string | null;
+  createdAt: number;
+  startedAt?: number | null;
+  endedAt?: number | null;
+  runs: WorkspaceTaskOperationRun[];
+}
+
+export interface WorkspaceTaskDiagnostic {
+  index: number;
+  file: string;
+  line: number;
+  column?: number | null;
+  message: string;
+  severity?: string | null;
+  stream: string;
+}
+
+export interface WorkspaceTaskDiagnostics {
+  runId: string;
+  items: WorkspaceTaskDiagnostic[];
+  truncated: boolean;
+}
+
+export type WorkspaceTaskControlAction = "start" | "stop";
+export type WorkspaceTaskControlReceiptStatus = "accepted" | "rejected" | "started" | "stopped" | "failed";
+
+export interface WorkspaceTaskControlPreview {
+  requestId: string;
+  taskId: string;
+  action: WorkspaceTaskControlAction;
+  expectedRevision: string;
+  label: string;
+  taskKind: string;
+}
+
+export interface WorkspaceTaskControlReceipt {
+  schemaVersion: number;
+  requestId: string;
+  taskId: string;
+  action: WorkspaceTaskControlAction;
+  status: WorkspaceTaskControlReceiptStatus;
+  operationId?: string | null;
+  failureCode?: string | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface JobInput {

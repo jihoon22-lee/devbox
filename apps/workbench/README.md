@@ -21,6 +21,9 @@
   `Environment`로 유지하고, `Packages`는 Repo Manager의
   `dependency-summary/v1` aggregate를 read-only로 표시한다. package name이나 경로를 받지 않고
   전체·직접·전이·중복·lockfile 진단과 ecosystem별 개수만 보여 준다.
+- **Run Manager workspace task control (#486)** — 동기화된 task의 안전한 상태만 표시하고,
+  Start/Stop은 opaque revision을 포함한 typed one-time handoff로 Run Manager에 전달한다.
+  실제 실행 전 Run Manager 확인 화면을 거치며, 요청 결과는 receipt로 확인한다.
 
 v0.4.1의 `Path`에는 distro나 profile 정보가 없다. 따라서 Start Workspace가 WSL Desktop으로
 보내는 것은 프로필의 구체적인 경로이며, WSL Desktop은 앱에서 선택된 distro를 사용하고 선택값이
@@ -64,9 +67,33 @@ tag/workflow evidence는 각 GitHub Release에서 구분해 확인한다.
   missing/corrupt는 서로 다른 상태이며 package manager, build script, repository 파일이나 다른 앱
   DB를 직접 열지 않는다. IPC에는 aggregate와 opaque revision만 반환한다.
 
-Dependency Packages 패널은 사용자 기능 추가이므로 Workbench도 최종 v0.6.0 release
-preparation의 minor version bump 대상이다. 기능 PR에서는 Cargo/package/Tauri 3자 버전을
-기존 값으로 유지한다.
+- Run Manager workspace task 입력: `%LOCALAPPDATA%\devbox\integration\run-manager\v1\workspace-tasks.json`
+  named view. Workbench에는 task id, 표시 label, source revision, `process`/`shell` 종류,
+  source/shell trust, availability, dependency 존재 여부와 active-operation boolean만 들어온다. command, cwd, argv,
+  environment 값·경로·process ID는 snapshot에 포함하지 않는다. snapshot이 없거나 envelope/view
+  schema가 맞지 않으면 task panel을 정상 실행 목록으로 축소하지 않고 읽기 오류로 표시한다.
+  Start/Stop 버튼은 현재 snapshot의 exact task id와 revision을 사용해 Run Manager의
+  `task-control/v1` one-time handoff를 만들며, Workbench가 Run Manager DB나 process tree를
+  직접 읽거나 변경하지 않는다.
+
+### Run Manager task 확인과 receipt
+
+Workbench의 task panel은 요청을 전송한 뒤 실행을 완료했다고 가정하지 않는다. Run Manager가
+handoff를 claim하고 현재 task revision을 확인한 다음 자체 창에서 사용자의
+명시적 확인을 받는다. 확인 화면에서는 task label/kind, action과 revision preview만 보여 주며
+명령·경로·환경변수는 전달하지 않는다. 확인 중에는 one-time claim lease를 제한적으로 갱신하고,
+거절·취소·만료·stale revision은 실행 없이 고정 오류로 끝낸다. Start는 Run Manager가
+source를 다시 검증한 뒤 새 workspace-task operation을 만들고, Stop은 그 task가 root인
+active operation의 exact owned child만 대상으로 한다.
+
+Run Manager가 기록하는 receipt는 request/task/action, `accepted`/`rejected`/`started`/
+`stopped`/`failed` 상태, owned operation id, timestamp와 고정 failure code만 가진다.
+Workbench는 request id·task id·action이 일치하는 receipt만 표시하고, receipt snapshot에
+명령·경로·environment·expected revision을 다시 노출하지 않는다. Run Manager 창이 없거나
+구버전이면 자동 실행하지 않고 요청을 확인할 수 없는 상태로 남긴다.
+
+Dependency Packages와 Run Manager task-control 패널은 사용자 기능 추가이므로 Workbench의
+Cargo/package/Tauri 버전은 v0.3.0으로 함께 올린다.
 
 ### 프로젝트 환경 안전 계약 (#312, P2-14)
 

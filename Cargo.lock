@@ -4694,7 +4694,7 @@ dependencies = [
 
 [[package]]
 name = "run-manager"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "applink",
  "chrono",
@@ -7763,7 +7763,7 @@ dependencies = [
 
 [[package]]
 name = "workbench"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "applink",
  "filesystem",

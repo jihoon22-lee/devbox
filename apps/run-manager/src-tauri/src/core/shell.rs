@@ -161,6 +161,58 @@ pub fn build_windows_shell_command(command: &str) -> Result<WindowsShellCommand,
     build_windows_shell_command_with_application("cmd.exe", command)
 }
 
+/// Compose the command string for a reviewed VS Code shell task. Unlike a
+/// process task, the command itself remains shell source; each separately
+/// declared `args` value is quoted for the selected shell so ordinary spaces
+/// do not silently change its token boundary. The entire resulting source is
+/// covered by the exact-revision shell approval before this helper is used.
+pub fn build_workspace_shell_source(
+    windows: bool,
+    command: &str,
+    arguments: &[String],
+) -> Result<String, ShellError> {
+    validate_nonempty("workspace shell command", command)?;
+    let mut source = command.to_owned();
+    for argument in arguments {
+        validate_nul_free("workspace shell argument", argument)?;
+        source.push(' ');
+        let quoted = if windows {
+            quote_cmd_shell_argument(argument)
+        } else {
+            quote_posix_shell_argument(argument)
+        };
+        source.push_str(&quoted);
+        if source.len() > 64 * 1024 {
+            return Err(ShellError::InvalidNumericField(
+                "workspace shell command size",
+            ));
+        }
+    }
+    Ok(source)
+}
+
+fn quote_posix_shell_argument(argument: &str) -> String {
+    if !argument.is_empty()
+        && argument
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_@%+=:,./-".contains(&byte))
+    {
+        return argument.to_owned();
+    }
+    format!("'{}'", argument.replace('\'', "'\"'\"'"))
+}
+
+fn quote_cmd_shell_argument(argument: &str) -> String {
+    if !argument.is_empty()
+        && argument
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_@+=:,./\\-".contains(&byte))
+    {
+        return argument.to_owned();
+    }
+    format!("\"{}\"", argument.replace('"', "\"\""))
+}
+
 pub fn build_windows_shell_command_with_application(
     application_name: &str,
     command: &str,
