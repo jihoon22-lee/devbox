@@ -81,6 +81,7 @@ pub fn run() {
             commands::manager::preview_remove_app,
             commands::manager::remove_portable_app,
             commands::doctor::run_diagnosis,
+            commands::local_quality::inspect_local_quality,
             commands::diagnostics::inspect_data_databases,
             commands::diagnostics::preview_data_query,
             commands::diagnostics::cancel_data_diagnostics,

@@ -7,6 +7,7 @@ pub mod dev_setup_configuration;
 pub mod download;
 pub mod environment_capabilities;
 pub mod layout;
+pub mod local_quality;
 pub mod managed_install;
 pub mod manifest;
 pub mod related_tools;

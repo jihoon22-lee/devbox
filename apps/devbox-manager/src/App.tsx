@@ -25,6 +25,7 @@ import {
   installPath,
   installMany,
   installed,
+  inspectLocalQuality,
   installRelatedTool,
   launchApp,
   launchRelatedTool,
@@ -57,6 +58,8 @@ import type {
   InstallPathInfo,
   InstallRootPreview,
   InstallMode,
+  LocalQualityIssueKind,
+  LocalQualitySnapshot,
   RemoveAppRequest,
   RemovePreview,
   RemoveResult,
@@ -148,6 +151,24 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.floor(bytes / 1024)} KiB`;
   return `${Math.floor(bytes / 1024 / 1024)} MiB`;
+}
+
+function formatFreshness(milliseconds: number): string {
+  if (milliseconds < 60_000) return "1분 미만";
+  const minutes = Math.floor(milliseconds / 60_000);
+  if (minutes < 60) return `${minutes}분`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}시간`;
+  return `${Math.floor(hours / 24)}일`;
+}
+
+function localQualityIssueLabel(kind: LocalQualityIssueKind): string {
+  switch (kind) {
+    case "invalid": return "형식 검증 실패";
+    case "unreadable": return "읽기 실패";
+    case "unsafe": return "안전하지 않은 파일 형식";
+    case "limit-exceeded": return "검사 상한 초과";
+  }
 }
 
 function operationId(prefix: string): string {
@@ -395,8 +416,11 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<"apps" | "doctor" | "dev-setup" | "related-tools">("apps");
+  const [tab, setTab] = useState<"apps" | "local-quality" | "doctor" | "dev-setup" | "related-tools">("apps");
   const [diagnosis, setDiagnosis] = useState<DiagnosisItem[]>([]);
+  const [localQualitySnapshot, setLocalQualitySnapshot] = useState<LocalQualitySnapshot | null>(null);
+  const [localQualityBusy, setLocalQualityBusy] = useState(false);
+  const [localQualityError, setLocalQualityError] = useState<string | null>(null);
   const [dataSnapshot, setDataSnapshot] = useState<DataInspectorSnapshot | null>(null);
   const [dataAppId, setDataAppId] = useState<string | null>(null);
   const [dataSql, setDataSql] = useState("SELECT name, type FROM sqlite_schema");
@@ -445,6 +469,7 @@ export default function App() {
   const rootRequestIdRef = useRef(0);
   const mountedRef = useRef(true);
   const refreshRequestIdRef = useRef(0);
+  const localQualityRequestIdRef = useRef(0);
   const removeRequestIdRef = useRef(0);
   const dataRequestIdRef = useRef(0);
   const dataOperationIdRef = useRef<string | null>(null);
@@ -509,6 +534,37 @@ export default function App() {
       }
     }
   }, []);
+
+  const onInspectLocalQuality = useCallback(async () => {
+    if (operationBusyRef.current || readBusyRef.current) return;
+    const requestId = ++localQualityRequestIdRef.current;
+    readBusyRef.current = true;
+    setReadBusy(true);
+    setLocalQualityBusy(true);
+    setLocalQualityError(null);
+    try {
+      const snapshot = await inspectLocalQuality();
+      if (mountedRef.current && requestId === localQualityRequestIdRef.current) {
+        setLocalQualitySnapshot(snapshot);
+      }
+    } catch {
+      if (mountedRef.current && requestId === localQualityRequestIdRef.current) {
+        setLocalQualityError(
+          localQualitySnapshot
+            ? "최신 로컬 품질 상태를 확인하지 못했습니다. 이전 결과를 유지합니다."
+            : "로컬 품질 상태를 확인하지 못했습니다. 잠시 후 다시 시도하세요.",
+        );
+      }
+    } finally {
+      if (requestId === localQualityRequestIdRef.current) {
+        readBusyRef.current = false;
+        if (mountedRef.current) {
+          setReadBusy(false);
+          setLocalQualityBusy(false);
+        }
+      }
+    }
+  }, [localQualitySnapshot]);
 
   const onInspectData = useCallback(async () => {
     if (operationBusyRef.current || readBusyRef.current || dataBusy || supportBusy) return;
@@ -1006,6 +1062,7 @@ export default function App() {
     return () => {
       mountedRef.current = false;
       refreshRequestIdRef.current += 1;
+      localQualityRequestIdRef.current += 1;
       rootRequestIdRef.current += 1;
       removeRequestIdRef.current += 1;
       dataRequestIdRef.current += 1;
@@ -1563,6 +1620,15 @@ export default function App() {
           앱
         </button>
         <button
+          className={`btn ${tab === "local-quality" ? "active" : ""}`}
+          type="button"
+          aria-current={tab === "local-quality" ? "page" : undefined}
+          disabled={batchBusy || busy !== null || installRootBusy || readBusy}
+          onClick={() => setTab("local-quality")}
+        >
+          로컬 품질
+        </button>
+        <button
           className={`btn ${tab === "doctor" ? "active" : ""}`}
           type="button"
           aria-current={tab === "doctor" ? "page" : undefined}
@@ -1609,7 +1675,188 @@ export default function App() {
       {error && <div className="error" role="alert">{error}</div>}
       {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
 
-      {tab === "doctor" ? (
+      {tab === "local-quality" ? (
+        <section
+          className="local-quality"
+          aria-busy={localQualityBusy}
+          aria-labelledby="local-quality-heading"
+        >
+          <div className="local-quality-head">
+            <div>
+              <h2 id="local-quality-heading">로컬 품질</h2>
+              <p className="dim">
+                검증된 설치 registry와 integration summary의 상태만 현재 메모리에 표시합니다.
+              </p>
+            </div>
+            <button
+              className="btn"
+              type="button"
+              disabled={batchBusy || busy !== null || installRootBusy || readBusy}
+              onClick={() => void onInspectLocalQuality()}
+            >
+              {localQualityBusy ? "확인 중..." : "상태 새로고침"}
+            </button>
+          </div>
+          <div className="diagnostic-safety-note">
+            명시적 새로고침 · 읽기 전용 · 로컬 메모리 전용 · 원격 전송 없음 · 경로/원문 오류/환경변수 비공개
+            <br />정상은 진단 원본의 정합성을 뜻하며 모든 앱이 설치되었다는 의미는 아닙니다.
+          </div>
+          {localQualityError && (
+            <div className="error local-quality-error" role="alert">{localQualityError}</div>
+          )}
+          {!localQualitySnapshot && !localQualityBusy && (
+            <div className="dim local-quality-empty" role="status" aria-live="polite">
+              상태 새로고침을 눌러 현재 설치와 integration snapshot 상태를 확인하세요.
+            </div>
+          )}
+          {localQualitySnapshot && (
+            <>
+              <div className="local-quality-meta" role="status" aria-live="polite">
+                <span className={`quality-status ${localQualitySnapshot.status}`}>
+                  {localQualitySnapshot.status === "healthy" ? "정상" : "확인 필요"}
+                </span>
+                <span className="dim">
+                  schema v{localQualitySnapshot.schemaVersion} · 로컬 전용 · {new Date(localQualitySnapshot.observedAtMs).toLocaleString("ko-KR")}
+                </span>
+              </div>
+
+              <section className="quality-card" aria-labelledby="installation-quality-heading">
+                <div className="quality-card-head">
+                  <div>
+                    <h3 id="installation-quality-heading">설치 catalog / registry</h3>
+                    <p className="dim">실행 파일과 설치 root 경로를 노출하지 않는 검증 결과입니다.</p>
+                  </div>
+                  <span className={`quality-source ${localQualitySnapshot.installation.registryState}`}>
+                    {localQualitySnapshot.installation.registryState === "ready" ? "registry 정상" : "registry 확인 불가"}
+                  </span>
+                </div>
+                <dl className="quality-summary">
+                  <div>
+                    <dt>catalog</dt>
+                    <dd>{localQualitySnapshot.installation.catalogState === "ready"
+                      ? `revision ${localQualitySnapshot.installation.catalogRevision}`
+                      : "확인 불가"}</dd>
+                  </div>
+                  <div>
+                    <dt>registry</dt>
+                    <dd>{localQualitySnapshot.installation.registryState === "ready"
+                      ? `revision ${localQualitySnapshot.installation.registryRevision}`
+                      : "확인 불가"}</dd>
+                  </div>
+                  <div>
+                    <dt>관리 대상</dt>
+                    <dd>{localQualitySnapshot.installation.managedAppCount}개</dd>
+                  </div>
+                  <div>
+                    <dt>설치 기록</dt>
+                    <dd>{localQualitySnapshot.installation.installedAppCount == null
+                      ? "확인 불가"
+                      : `${localQualitySnapshot.installation.installedAppCount}개`}</dd>
+                  </div>
+                </dl>
+                {localQualitySnapshot.installation.apps.length > 0 ? (
+                  <div className="quality-table-wrap">
+                    <table className="quality-table">
+                      <caption className="visually-hidden">Manager 설치 상태</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">앱</th>
+                          <th scope="col">상태</th>
+                          <th scope="col">버전 / 방식</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {localQualitySnapshot.installation.apps.map((appHealth) => (
+                          <tr key={appHealth.appId}>
+                            <td>{apps.find((app) => app.id === appHealth.appId)?.displayName ?? appHealth.appId}</td>
+                            <td>{appHealth.state === "installed"
+                              ? "설치됨"
+                              : appHealth.state === "not-installed" ? "설치 기록 없음" : "확인 불가"}</td>
+                            <td>{appHealth.version
+                              ? `${appHealth.version} · ${appHealth.mode === "portable" ? "휴대용" : "설치 패키지"}`
+                              : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="dim local-quality-empty">표시할 검증된 catalog 앱이 없습니다.</div>
+                )}
+                {localQualitySnapshot.installation.truncated && (
+                  <p className="quality-warning">설치 항목 상한에 도달해 일부 항목만 표시합니다.</p>
+                )}
+              </section>
+
+              <section className="quality-card" aria-labelledby="integration-quality-heading">
+                <div className="quality-card-head">
+                  <div>
+                    <h3 id="integration-quality-heading">Integration snapshot</h3>
+                    <p className="dim">payload 내용은 표시하지 않고 검증된 summary의 producer·schema·freshness·개수만 표시합니다.</p>
+                  </div>
+                  <span className={`quality-source ${localQualitySnapshot.integration.rootState}`}>
+                    {localQualitySnapshot.integration.rootState === "ready" ? "root 정상" : "root 확인 불가"}
+                  </span>
+                </div>
+                <dl className="quality-summary">
+                  <div><dt>검증된 snapshot</dt><dd>{localQualitySnapshot.integration.snapshotCount}개</dd></div>
+                  <div><dt>격리된 문제</dt><dd>{localQualitySnapshot.integration.issueCount}개</dd></div>
+                </dl>
+                {localQualitySnapshot.integration.rootIssue && (
+                  <p className="quality-warning">
+                    Integration root: {localQualityIssueLabel(localQualitySnapshot.integration.rootIssue)}
+                  </p>
+                )}
+                <div className="snapshot-health-list">
+                  {localQualitySnapshot.integration.snapshots.map((snapshot) => (
+                    <article key={`${snapshot.producer}:v${snapshot.schemaVersion}`} className="snapshot-health-card">
+                      <div className="snapshot-health-title">
+                        <h4>{snapshot.producer}</h4>
+                        <span className="dim">schema v{snapshot.schemaVersion} · app {snapshot.producerVersion}</span>
+                      </div>
+                      <span className="snapshot-freshness">{formatFreshness(snapshot.freshnessMs)} 경과</span>
+                      {snapshot.views.length > 0 ? (
+                        <ul className="snapshot-view-list">
+                          {snapshot.views.map((view) => (
+                            <li key={view.kind}>
+                              <code>{view.kind}</code>
+                              <span>v{view.schemaVersion} · {view.entryCount}개 · {formatFreshness(view.freshnessMs)} 경과</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span className="dim">legacy summary · 별도 view 없음</span>
+                      )}
+                      {snapshot.viewsTruncated && (
+                        <span className="quality-warning">view 상한에 도달해 일부만 표시합니다.</span>
+                      )}
+                    </article>
+                  ))}
+                </div>
+                {localQualitySnapshot.integration.snapshots.length === 0 && (
+                  <div className="dim local-quality-empty">
+                    발견된 summary가 없습니다. producer 앱의 설치·실행 여부에 따라 정상일 수 있습니다.
+                  </div>
+                )}
+                {localQualitySnapshot.integration.issues.length > 0 && (
+                  <ul className="quality-issue-list" aria-label="격리된 integration snapshot 문제">
+                    {localQualitySnapshot.integration.issues.map((issue, index) => (
+                      <li key={`${issue.producer}:${issue.schemaVersion ?? "root"}:${index}`}>
+                        <code>{issue.producer}{issue.schemaVersion == null ? "" : `/v${issue.schemaVersion}`}</code>
+                        <span>{localQualityIssueLabel(issue.kind)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {(localQualitySnapshot.integration.snapshotsTruncated
+                  || localQualitySnapshot.integration.issuesTruncated) && (
+                  <p className="quality-warning">Integration 검사 표시 상한에 도달해 일부 결과만 표시합니다.</p>
+                )}
+              </section>
+            </>
+          )}
+        </section>
+      ) : tab === "doctor" ? (
         <div className="doctor">
           <div className="doctor-head">
             <span className="dim">읽기 전용 진단 · 자동 설치·수정 없음</span>

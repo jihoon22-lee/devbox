@@ -1284,6 +1284,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "git",
+ "integration",
  "launch",
  "libc",
  "reqwest",

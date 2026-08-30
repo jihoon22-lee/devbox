@@ -479,6 +479,228 @@ td {
   font-size: 11px;
 }
 
+.local-quality {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.local-quality-head,
+.quality-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.local-quality-head {
+  max-width: 1120px;
+}
+
+.local-quality-head h2,
+.quality-card-head h3,
+.snapshot-health-title h4 {
+  margin: 0;
+}
+
+.local-quality-head h2 {
+  font-size: 15px;
+}
+
+.local-quality-head p,
+.quality-card-head p {
+  margin: 5px 0 0;
+  font-size: 11px;
+}
+
+.local-quality > .diagnostic-safety-note {
+  max-width: 1120px;
+  margin: 12px 0;
+}
+
+.local-quality-error {
+  max-width: 1120px;
+  margin-bottom: 12px;
+  border: 1px solid var(--red);
+  border-radius: 5px;
+}
+
+.local-quality-empty {
+  padding: 18px 0;
+}
+
+.local-quality-meta {
+  display: flex;
+  max-width: 1120px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.quality-status,
+.quality-source {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.quality-status.healthy,
+.quality-source.ready {
+  border-color: var(--green);
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+}
+
+.quality-status.attention,
+.quality-source.unavailable {
+  border-color: var(--amber);
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+}
+
+.quality-card {
+  max-width: 1120px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--panel) 96%, var(--accent) 4%);
+}
+
+.quality-card-head h3 {
+  font-size: 13px;
+}
+
+.quality-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 7px;
+  margin: 12px 0;
+}
+
+.quality-summary > div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+}
+
+.quality-summary dt {
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.quality-summary dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.quality-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.quality-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg);
+}
+
+.quality-table th,
+.quality-table td {
+  padding: 7px 9px;
+  text-align: left;
+}
+
+.quality-table th {
+  color: var(--dim);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.quality-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.snapshot-health-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px;
+}
+
+.snapshot-health-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+}
+
+.snapshot-health-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.snapshot-health-title h4 {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.snapshot-freshness {
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.snapshot-view-list,
+.quality-issue-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.snapshot-view-list li,
+.quality-issue-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.snapshot-view-list code,
+.quality-issue-list code {
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.quality-issue-list {
+  margin-top: 10px;
+}
+
+.quality-warning {
+  margin: 9px 0 0;
+  color: var(--amber);
+  font-size: 11px;
+}
+
 .doctor {
   padding: 16px;
   max-width: 720px;
@@ -1240,6 +1462,16 @@ td {
 }
 
 @media (max-width: 820px) {
+  .local-quality-head,
+  .quality-card-head,
+  .snapshot-health-title {
+    flex-direction: column;
+  }
+
+  .snapshot-health-list {
+    grid-template-columns: 1fr;
+  }
+
   .install-root-form {
     align-items: stretch;
     flex-wrap: wrap;

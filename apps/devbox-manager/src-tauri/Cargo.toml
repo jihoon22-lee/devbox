@@ -41,6 +41,7 @@ devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../c
 devbox-catalog = { package = "catalog", path = "../../../crates/catalog" }
 devbox-launch = { package = "launch", path = "../../../crates/launch" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
+devbox-integration = { package = "integration", path = "../../../crates/integration" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

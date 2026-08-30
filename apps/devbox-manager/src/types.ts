@@ -47,6 +47,71 @@ export interface InstalledApp {
   mode: InstallMode;
 }
 
+export type LocalQualityStatus = "healthy" | "attention";
+export type LocalQualitySourceState = "ready" | "unavailable";
+export type LocalQualityInstallState = "installed" | "not-installed" | "unknown";
+export type LocalQualityIssueKind = "invalid" | "unreadable" | "unsafe" | "limit-exceeded";
+
+export interface LocalQualityInstallationApp {
+  appId: string;
+  state: LocalQualityInstallState;
+  version: string | null;
+  mode: InstallMode | null;
+}
+
+export interface LocalQualityInstallationHealth {
+  catalogState: LocalQualitySourceState;
+  registryState: LocalQualitySourceState;
+  catalogRevision: number | null;
+  registryRevision: number | null;
+  managedAppCount: number;
+  installedAppCount: number | null;
+  apps: LocalQualityInstallationApp[];
+  truncated: boolean;
+}
+
+export interface LocalQualityIntegrationView {
+  kind: string;
+  schemaVersion: number;
+  freshnessMs: number;
+  entryCount: number;
+}
+
+export interface LocalQualityIntegrationSnapshot {
+  producer: string;
+  schemaVersion: number;
+  producerVersion: string;
+  freshnessMs: number;
+  views: LocalQualityIntegrationView[];
+  viewsTruncated: boolean;
+}
+
+export interface LocalQualityIntegrationIssue {
+  producer: string;
+  schemaVersion: number | null;
+  kind: LocalQualityIssueKind;
+}
+
+export interface LocalQualityIntegrationHealth {
+  rootState: LocalQualitySourceState;
+  rootIssue: LocalQualityIssueKind | null;
+  snapshotCount: number;
+  issueCount: number;
+  snapshots: LocalQualityIntegrationSnapshot[];
+  issues: LocalQualityIntegrationIssue[];
+  snapshotsTruncated: boolean;
+  issuesTruncated: boolean;
+}
+
+export interface LocalQualitySnapshot {
+  schemaVersion: 1;
+  observedAtMs: number;
+  mode: "local-only";
+  status: LocalQualityStatus;
+  installation: LocalQualityInstallationHealth;
+  integration: LocalQualityIntegrationHealth;
+}
+
 export interface InstallPathInfo {
   appId: string;
   mode: InstallMode;
