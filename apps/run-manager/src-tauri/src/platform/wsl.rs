@@ -16,9 +16,9 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::core::shell::{
     build_wsl_command, build_wsl_proc_dir_probe_argv, build_wsl_proc_environ_argv,
-    build_wsl_proc_stat_argv, build_wsl_termination_plan, parse_proc_stat_identity,
-    parse_wsl_handshake, validate_wsl_handshake_identity, validate_wsl_identity, ShellError,
-    WslCommandSpec, WslProcessIdentity, WslTerminationPlan,
+    build_wsl_proc_stat_argv, build_wsl_process_command, build_wsl_termination_plan,
+    parse_proc_stat_identity, parse_wsl_handshake, validate_wsl_handshake_identity,
+    validate_wsl_identity, ShellError, WslCommandSpec, WslProcessIdentity, WslTerminationPlan,
 };
 
 const HANDSHAKE_BUFFER_LIMIT: usize = 64 * 1024;
@@ -278,6 +278,27 @@ pub fn spawn(
         distro,
         cwd,
         command,
+        run_id,
+        environment,
+        inherited_wslenv.as_deref(),
+    )?;
+    spawn_spec_for_distro(distro, spec)
+}
+
+pub fn spawn_process(
+    distro: &str,
+    cwd: Option<&str>,
+    program: &str,
+    arguments: &[String],
+    run_id: &str,
+    environment: &BTreeMap<String, String>,
+) -> Result<WslChild, WslExecutionError> {
+    let inherited_wslenv = std::env::var("WSLENV").ok();
+    let spec = build_wsl_process_command(
+        distro,
+        cwd,
+        program,
+        arguments,
         run_id,
         environment,
         inherited_wslenv.as_deref(),

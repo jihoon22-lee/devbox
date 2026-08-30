@@ -1488,7 +1488,7 @@ fn source_file_fingerprint(
     }
 }
 
-fn canonical_project_root(root: &Path) -> Result<PathBuf, ProjectImportError> {
+pub(crate) fn canonical_project_root(root: &Path) -> Result<PathBuf, ProjectImportError> {
     let raw = root.to_str().ok_or(ProjectImportError::InvalidRoot)?;
     if raw.is_empty()
         || raw.len() > MAX_PROJECT_ROOT_BYTES
@@ -1530,7 +1530,10 @@ fn canonical_project_root(root: &Path) -> Result<PathBuf, ProjectImportError> {
 /// filesystem path extended internally, but expose only its equivalent safe
 /// drive/UNC spelling as the persisted cwd. The requested spelling is a
 /// fallback for platforms whose canonicalizer returns a non-displayable alias.
-fn safe_display_root(canonical: &Path, requested: &Path) -> Result<String, ProjectImportError> {
+pub(crate) fn safe_display_root(
+    canonical: &Path,
+    requested: &Path,
+) -> Result<String, ProjectImportError> {
     for candidate in [canonical, requested] {
         let text = candidate.to_str().ok_or(ProjectImportError::UnsafeSource)?;
         let display = text
@@ -1545,7 +1548,7 @@ fn safe_display_root(canonical: &Path, requested: &Path) -> Result<String, Proje
     Err(ProjectImportError::UnsafeSource)
 }
 
-fn ensure_root_identity(
+pub(crate) fn ensure_root_identity(
     root: &Path,
     expected: devbox_filesystem::FilesystemIdentity,
 ) -> Result<(), ProjectImportError> {

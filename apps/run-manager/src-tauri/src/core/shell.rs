@@ -147,6 +147,16 @@ pub struct WindowsShellCommand {
     pub command_line: String,
 }
 
+/// A direct Win32 process launch. `application_name` is intentionally `None`
+/// so CreateProcessW applies its executable search rules to the first quoted
+/// argv element. Unlike [`WindowsShellCommand`], no `cmd.exe` syntax is
+/// involved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowsProcessCommand {
+    pub application_name: Option<String>,
+    pub command_line: String,
+}
+
 pub fn build_windows_shell_command(command: &str) -> Result<WindowsShellCommand, ShellError> {
     build_windows_shell_command_with_application("cmd.exe", command)
 }
@@ -181,6 +191,27 @@ pub fn quote_windows_argv(arguments: &[&str]) -> Result<String, ShellError> {
         encoded.push_str(&quote_windows_argv_argument(argument));
     }
     Ok(encoded)
+}
+
+pub fn build_windows_process_command(
+    program: &str,
+    arguments: &[String],
+) -> Result<WindowsProcessCommand, ShellError> {
+    validate_nonempty("process program", program)?;
+    let mut argv = Vec::with_capacity(arguments.len().saturating_add(1));
+    argv.push(program);
+    for argument in arguments {
+        validate_nul_free("process argv", argument)?;
+        argv.push(argument);
+    }
+    let command_line = quote_windows_argv(&argv)?;
+    if command_line.encode_utf16().count().saturating_add(1) > 32_767 {
+        return Err(ShellError::InvalidNumericField("process argv size"));
+    }
+    Ok(WindowsProcessCommand {
+        application_name: None,
+        command_line,
+    })
 }
 
 fn quote_windows_argv_argument(argument: &str) -> String {
@@ -232,10 +263,26 @@ pub fn build_wsl_wrapper(run_id: &str, command: &str) -> Result<String, ShellErr
     // TERM is sent to every observed member except the supervisor; stubborn
     // descendants are escalated to KILL before the supervisor exits with the
     // user's original status.
+    let wrapper = build_wsl_supervisor(run_id, r#"bash --noprofile --norc -lc "$1";"#)?;
+    Ok(wrapper)
+}
+
+/// A process-mode supervisor invokes the supplied argv with `"$@"`. The
+/// executable and arguments are separate `wsl.exe` argv values and are never
+/// parsed as shell source.
+pub fn build_wsl_process_wrapper(run_id: &str) -> Result<String, ShellError> {
+    build_wsl_supervisor(run_id, r#""$@";"#)
+}
+
+fn build_wsl_supervisor(
+    run_id: &str,
+    fixed_invocation: &'static str,
+) -> Result<String, ShellError> {
+    validate_uuid("run ID", run_id)?;
     const SUPERVISOR: &str = r#"
 printf '%s\n' '__DEVBOX_RUN_HANDSHAKE_V1__' "$DEVBOX_RUN_MARKER" "$$" "$(ps -o pgid= -p \"$$\")" "$(ps -o sid= -p \"$$\")" '__DEVBOX_RUN_HANDSHAKE_END__';
 set +e;
-bash --noprofile --norc -lc "$1";
+__DEVBOX_RUN_INVOCATION__
 __devbox_status=$?;
 trap '' TERM;
 __devbox_group_pids() {
@@ -259,7 +306,8 @@ exit "$__devbox_status"
     // user-controlled interpolation into the shell source.
     let wrapper = SUPERVISOR
         .replace("__DEVBOX_RUN_HANDSHAKE_V1__", HANDSHAKE_START)
-        .replace("__DEVBOX_RUN_HANDSHAKE_END__", HANDSHAKE_END);
+        .replace("__DEVBOX_RUN_HANDSHAKE_END__", HANDSHAKE_END)
+        .replace("__DEVBOX_RUN_INVOCATION__", fixed_invocation);
     Ok(wrapper)
 }
 
@@ -303,6 +351,45 @@ pub fn build_wsl_command(
         command.to_owned(),
     ]);
 
+    Ok(WslCommandSpec {
+        argv,
+        environment: child_environment,
+        wrapper,
+    })
+}
+
+pub fn build_wsl_process_command(
+    distro: &str,
+    cwd: Option<&str>,
+    program: &str,
+    arguments: &[String],
+    run_id: &str,
+    environment: &BTreeMap<String, String>,
+    existing_wslenv: Option<&str>,
+) -> Result<WslCommandSpec, ShellError> {
+    if let Some(cwd) = cwd {
+        validate_nonempty("WSL cwd", cwd)?;
+    }
+    validate_nonempty("process program", program)?;
+    for argument in arguments {
+        validate_nul_free("process argv", argument)?;
+    }
+    validate_environment(environment)?;
+    let wrapper = build_wsl_process_wrapper(run_id)?;
+    let child_environment = prepare_wsl_environment(environment, existing_wslenv, run_id)?;
+    let mut argv = devbox_wsl::argv::build_exec_argv(distro, cwd, "")
+        .map_err(|_| ShellError::InvalidDistro)?;
+    argv.extend([
+        "setsid".to_owned(),
+        "bash".to_owned(),
+        "--noprofile".to_owned(),
+        "--norc".to_owned(),
+        "-c".to_owned(),
+        wrapper.clone(),
+        DEVBOX_WRAPPER_ARG0.to_owned(),
+        program.to_owned(),
+    ]);
+    argv.extend(arguments.iter().cloned());
     Ok(WslCommandSpec {
         argv,
         environment: child_environment,
@@ -747,6 +834,42 @@ mod tests {
     fn windows_argv_quote_keeps_single_argument_boundaries() {
         let encoded = quote_windows_argv(&["wsl.exe", "--", "hello world", r#"a\"b"#]).unwrap();
         assert_eq!(encoded, r#"wsl.exe -- "hello world" "a\\\"b""#);
+    }
+
+    #[test]
+    fn windows_process_command_never_adds_cmd_shell() {
+        let command = build_windows_process_command(
+            "tool.exe",
+            &["hello world".into(), "a&b".into(), "$(literal)".into()],
+        )
+        .unwrap();
+        assert_eq!(command.application_name, None);
+        assert_eq!(
+            command.command_line,
+            r#"tool.exe "hello world" a&b $(literal)"#
+        );
+        assert!(!command.command_line.contains("cmd.exe"));
+    }
+
+    #[test]
+    fn wsl_process_command_keeps_metacharacters_in_separate_argv() {
+        let spec = build_wsl_process_command(
+            "Ubuntu",
+            Some("/home/user/project"),
+            "printf",
+            &["%s".into(), "$(not-executed); rm -rf nope".into()],
+            run_id(),
+            &BTreeMap::new(),
+            None,
+        )
+        .unwrap();
+        assert!(spec.wrapper.contains(r#""$@";"#));
+        assert!(!spec.wrapper.contains("not-executed"));
+        assert_eq!(
+            &spec.argv[spec.argv.len() - 3..],
+            ["printf", "%s", "$(not-executed); rm -rf nope"]
+        );
+        assert!(!spec.argv.iter().any(|value| value == "-lc"));
     }
 
     #[test]
