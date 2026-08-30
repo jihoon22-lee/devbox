@@ -18,14 +18,25 @@ jobs:
     name: Dependency policy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: pnpm
+
+      - name: Enable repository-pinned pnpm
+        run: corepack enable pnpm
+
+      - id: pnpm-store
+        name: Resolve pnpm store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -40,7 +51,11 @@ jobs:
           python3 .github/scripts/check-dependencies.py check
           python3 .github/scripts/test-check-dependencies.py
           python3 .github/scripts/test-build-manifest.py
+          python3 .github/scripts/test-build-candidate-metadata.py
           python3 .github/scripts/test-validate-release-input.py
+          python3 .github/scripts/test-windows-package-candidate-config.py
+          python3 .github/scripts/test-github-actions-runtime.py
+          node .github/scripts/windows-packaged-smoke.mjs --self-test
           node .github/scripts/test-check-frontend-bundles.mjs
           node .github/scripts/test-check-frontend-accessibility.mjs
 
@@ -55,7 +70,7 @@ jobs:
     name: Catalog consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: bash .github/scripts/check-catalog.sh
       - run: node .github/scripts/check-frontend-accessibility.mjs
 
@@ -68,7 +83,7 @@ jobs:
       rust_scope: ${{ steps.scope.outputs.rust_scope }}
       rust_packages: ${{ steps.scope.outputs.rust_packages }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -96,17 +111,29 @@ jobs:
         if: ${{ needs.scope.result != 'success' }}
         run: exit 1
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
-        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
-        # 버전은 package.json의 "packageManager" 필드를 따름 (여기서 중복 지정 금지)
-
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
         with:
           node-version: 22
-          cache: pnpm
+
+      - name: Enable repository-pinned pnpm
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
+        run: corepack enable pnpm
+
+      - id: pnpm-store
+        name: Resolve pnpm store
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
 
       - name: Install dependencies
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
@@ -148,7 +175,7 @@ jobs:
         if: ${{ needs.scope.result != 'success' }}
         run: exit 1
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         if: ${{ needs.scope.outputs.rust_scope != 'none' }}
@@ -215,7 +242,7 @@ jobs:
         if: ${{ needs.scope.result != 'success' }}
         run: exit 1
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # devbox는 Windows 타깃 Tauri 앱 모노레포지만 위 rust 잡은 ubuntu에서만
       # 돈다. #[cfg(target_os = "windows")] 코드는 여기서만 실제로 컴파일된다.

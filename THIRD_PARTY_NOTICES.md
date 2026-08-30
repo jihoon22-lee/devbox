@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `46a4e1c123473e74bcc084513d8eb375b70b268d29b043ef50e19b9d83683cad`
+- Cargo.lock SHA-256: `ebe22c7df176d95685cc9ff9c0eb3760ac08b95829498d7c5884f89dd10977c7`
 - pnpm-lock.yaml SHA-256: `1cc237c8a7d0064588c8d8934ba73e1cb79eb7c1257250a28f83219c82475c0a`
 
 ## Rust dependencies
@@ -75,7 +75,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | cfg-if | 1.0.4 | MIT OR Apache-2.0 | https://github.com/rust-lang/cfg-if | `sha256:9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801` |
 | cfg_aliases | 0.1.1 | MIT | https://github.com/katharostech/cfg_aliases | `sha256:fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e` |
 | cfg_aliases | 0.2.2 | MIT | https://github.com/katharostech/cfg_aliases | `sha256:f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527` |
-| chacha20 | 0.10.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/stream-ciphers | `sha256:d524456ba66e72eb8b115ff89e01e497f8e6d11d78b70b1aa13c0fbd97540a81` |
+| chacha20 | 0.10.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/stream-ciphers | `sha256:65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06` |
 | chardetng | 1.0.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/chardetng | `sha256:13de944a44b5064ee5d3a5ceccc49a41bfec50f2580e66f82e87703acdb88b53` |
 | chrono | 0.4.45 | MIT OR Apache-2.0 | https://github.com/chronotope/chrono | `sha256:1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327` |
 | chrono-tz | 0.10.4 | MIT OR Apache-2.0 | https://github.com/chronotope/chrono-tz | `sha256:a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3` |

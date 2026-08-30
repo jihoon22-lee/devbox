@@ -84,7 +84,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "api-playground"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "applink",
  "base64 0.22.1",
@@ -698,9 +698,9 @@ checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
 name = "chacha20"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d524456ba66e72eb8b115ff89e01e497f8e6d11d78b70b1aa13c0fbd97540a81"
+checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
@@ -1256,7 +1256,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-launcher"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "applink",
  "catalog",
@@ -1275,7 +1275,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-manager"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "applink",
  "catalog",
@@ -1307,7 +1307,7 @@ dependencies = [
 
 [[package]]
 name = "developer-toolbox"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "applink",
  "base64 0.22.1",
@@ -3101,7 +3101,7 @@ dependencies = [
 
 [[package]]
 name = "life-log"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "applink",
  "dirs",
@@ -4107,7 +4107,7 @@ dependencies = [
 
 [[package]]
 name = "port-manager"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "applink",
  "dirs",
@@ -4602,7 +4602,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "repo-manager"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "applink",
  "filesystem",
@@ -7858,7 +7858,7 @@ version = "0.1.0"
 
 [[package]]
 name = "wsl-desktop"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "applink",
  "dirs",

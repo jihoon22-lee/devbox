@@ -1,0 +1,258 @@
+name: Windows package candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_tag:
+        description: "Intended stable tag (for example, v0.6.0); the tag must not exist"
+        required: true
+        type: string
+      candidate_commit:
+        description: "Exact current main commit to package (40 lowercase hex characters)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-package-candidate
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build unpublished Windows packages
+    runs-on: windows-2025
+    timeout-minutes: 180
+    outputs:
+      artifact_name: ${{ steps.identity.outputs.artifact_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: identity
+        name: Require the exact unpublished current main source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/validate-release-input.py \
+            --event workflow_dispatch \
+            --tag "$CANDIDATE_TAG" \
+            --allow-prerelease false
+          if [[ ! "$CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "candidate_commit must be 40 lowercase hexadecimal characters"
+            exit 1
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$CANDIDATE_COMMIT" ]]; then
+            echo "checkout does not match candidate_commit"
+            exit 1
+          fi
+          remote_main=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [[ "$remote_main" != "$CANDIDATE_COMMIT" ]]; then
+            echo "candidate_commit is not the exact current origin/main"
+            exit 1
+          fi
+          if [[ -n "$(git ls-remote --tags --refs origin "refs/tags/$CANDIDATE_TAG")" ]]; then
+            echo "candidate tag already exists"
+            exit 1
+          fi
+          if gh release view "$CANDIDATE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "candidate release already exists"
+            exit 1
+          fi
+          echo "artifact_name=windows-package-candidate-$CANDIDATE_COMMIT" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Enable repository-pinned pnpm
+        run: corepack enable pnpm
+
+      - id: pnpm-store
+        name: Resolve pnpm store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: devbox-windows-package
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and stage all 15 app packages
+        shell: pwsh
+        run: '& ./.github/scripts/build-windows-packages.ps1 -StagingRoot ''candidate/staging'''
+
+      - name: Build manifest and flat candidate set
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+        run: |
+          python3 .github/scripts/build-manifest.py candidate/staging $env:CANDIDATE_TAG apps/catalog.json candidate/staging/release-manifest.json
+          if ($LASTEXITCODE -ne 0) { throw 'candidate manifest generation failed' }
+          & ./.github/scripts/flatten-windows-packages.ps1 -StagingRoot 'candidate/staging' -OutputRoot 'candidate/assets'
+
+      - name: Generate and independently verify candidate metadata
+        shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/build-candidate-metadata.py \
+            --assets candidate/assets \
+            --tag "$CANDIDATE_TAG" \
+            --commit "$CANDIDATE_COMMIT" \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow-run "$GITHUB_RUN_ID" \
+            --output candidate/evidence/candidate-metadata.json
+          python3 .github/scripts/verify-downloaded-release.py \
+            --artifact-kind candidate \
+            --assets candidate/assets \
+            --release candidate/evidence/candidate-metadata.json \
+            --config .github/scripts/windows-packaged-smoke-config.json \
+            --tag "$CANDIDATE_TAG" \
+            --commit "$CANDIDATE_COMMIT" \
+            > candidate/evidence/verification.json
+
+      - name: Upload unpublished package candidate
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.identity.outputs.artifact_name }}
+          path: |
+            candidate/assets
+            candidate/evidence
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Record candidate artifact digest
+        shell: bash
+        run: |
+          {
+            echo "### Unpublished Windows package candidate"
+            echo "- commit: \`${{ inputs.candidate_commit }}\`"
+            echo "- intended tag: \`${{ inputs.candidate_tag }}\`"
+            echo "- artifact: \`${{ steps.identity.outputs.artifact_name }}\`"
+            echo "- artifact digest: \`${{ steps.upload.outputs.artifact-digest }}\`"
+            echo "- contract: 15 apps / 32 files / 31 manifest-declared / mismatch 0"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  installer-acceptance:
+    name: Installer upgrade and rollback acceptance
+    needs: build
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+          persist-credentials: false
+
+      - id: paths
+        name: Allocate isolated acceptance paths
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $root = Join-Path $env:RUNNER_TEMP ("devbox-package-candidate-" + [guid]::NewGuid().ToString('N'))
+          $candidate = Join-Path $root 'candidate'
+          $baseline = Join-Path $root 'baseline-assets'
+          $evidence = Join-Path $root 'installer-evidence.json'
+          New-Item -ItemType Directory -Path $root, $candidate, $baseline | Out-Null
+          @(
+            "ACCEPTANCE_ROOT=$root"
+            "CANDIDATE_ROOT=$candidate"
+            "BASELINE_ASSETS=$baseline"
+            "BASELINE_METADATA=$(Join-Path $root 'baseline-metadata.json')"
+            "INSTALLER_EVIDENCE=$evidence"
+          ) | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+          @(
+            "candidate=$candidate"
+            "evidence=$evidence"
+          ) | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+
+      - name: Download exact unpublished candidate
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: ${{ steps.paths.outputs.candidate }}
+
+      - name: Download and describe the pinned stable baseline
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $config = Get-Content -LiteralPath '.github/scripts/windows-installer-acceptance-config.json' -Raw | ConvertFrom-Json
+          $tag = [string]$config.baseline.tag
+          $commit = [string]$config.baseline.commit
+          $tagRef = "refs/tags/$tag"
+          & git fetch --force --no-tags origin "+${tagRef}:${tagRef}"
+          if ($LASTEXITCODE -ne 0) { throw 'stable baseline tag fetch failed' }
+          $tagType = (& git cat-file -t $tagRef).Trim()
+          $peeled = (& git rev-parse ($tagRef + '^{}')).Trim()
+          if ($tagType -cne 'tag' -or $peeled -cne $commit) {
+            throw 'stable baseline annotated tag identity mismatch'
+          }
+          & gh release download $tag --repo $env:GITHUB_REPOSITORY --dir $env:BASELINE_ASSETS --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'stable baseline asset download failed' }
+          $release = (& gh release view $tag --repo $env:GITHUB_REPOSITORY --json 'tagName,isDraft,isPrerelease,assets') | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'stable baseline metadata lookup failed' }
+          $metadata = [ordered]@{
+            tagName = [string]$release.tagName
+            isDraft = [bool]$release.isDraft
+            isPrerelease = [bool]$release.isPrerelease
+            targetCommit = $commit
+            assets = @($release.assets | ForEach-Object {
+              [ordered]@{ name = [string]$_.name; size = [int64]$_.size; digest = [string]$_.digest }
+            })
+          }
+          $metadata | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $env:BASELINE_METADATA -Encoding utf8
+
+      - name: Run disposable installer lifecycle matrix
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          & ./.github/scripts/windows-installer-acceptance.ps1 `
+            -Config '.github/scripts/windows-installer-acceptance-config.json' `
+            -BaselineAssets $env:BASELINE_ASSETS `
+            -BaselineMetadata $env:BASELINE_METADATA `
+            -CandidateAssets (Join-Path $env:CANDIDATE_ROOT 'assets') `
+            -CandidateMetadata (Join-Path $env:CANDIDATE_ROOT 'evidence/candidate-metadata.json') `
+            -CandidateTag $env:CANDIDATE_TAG `
+            -CandidateCommit $env:CANDIDATE_COMMIT `
+            -Output $env:INSTALLER_EVIDENCE `
+            -ScratchRoot $env:ACCEPTANCE_ROOT
+          if ($LASTEXITCODE -ne 0) { throw 'installer lifecycle acceptance failed' }
+
+      - name: Upload installer acceptance evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-package-candidate-installer-evidence-${{ inputs.candidate_commit }}
+          path: ${{ steps.paths.outputs.evidence }}
+          if-no-files-found: warn
+          retention-days: 14

@@ -12,6 +12,11 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   GitHub Release가, Windows 수동 acceptance는 #176이 권위 있는 source다.
 - #176은 63 checked와 7 physical Windows-only pending으로 유지한다. RC1~RC3 tag/release는
   삭제된 historical evidence이며, 미래 RC는 사용자의 명시 요청 전에는 만들지 않는다.
+- v0.6.0 W01~W10 source는 main에 통합됐고 W11의 version/dependency/package/physical acceptance가
+  진행 중이다. `Windows package candidate`는 exact current main의 15 portable·15 NSIS·notices·
+  manifest를 private Actions artifact로만 만들고 disposable installer lifecycle을 실행한다.
+  이 artifact는 catalog/runtime source가 아니며 public release, RC 또는 Latest 상태를 만들지
+  않는다. 실제 publication identity와 digest는 #493 및 향후 GitHub v0.6.0 Release만 소유한다.
 
 ## 핵심 원칙
 

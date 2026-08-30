@@ -30,3 +30,5 @@ build/
 
 # Tooling
 .claude/worktrees/
+__pycache__/
+*.py[cod]

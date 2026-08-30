@@ -221,19 +221,29 @@ PY
 python3 .github/scripts/test-windows-packaged-smoke-config.py
 python3 .github/scripts/test-verify-downloaded-release.py
 python3 .github/scripts/test-windows-installer-acceptance-config.py
+python3 .github/scripts/test-build-candidate-metadata.py
+python3 .github/scripts/test-windows-package-candidate-config.py
+python3 .github/scripts/test-github-actions-runtime.py
 node --check .github/scripts/windows-packaged-smoke.mjs
 if command -v pwsh >/dev/null 2>&1; then
   pwsh -NoLogo -NoProfile -NonInteractive -Command '
-    $tokens = $null
-    $errors = $null
-    [System.Management.Automation.Language.Parser]::ParseFile(
-      ".github/scripts/windows-installer-acceptance.ps1",
-      [ref]$tokens,
-      [ref]$errors
-    ) | Out-Null
-    if ($errors.Count -ne 0) {
-      $errors | ForEach-Object { Write-Error $_.Message }
-      exit 1
+    $scripts = @(
+      ".github/scripts/build-windows-packages.ps1",
+      ".github/scripts/flatten-windows-packages.ps1",
+      ".github/scripts/windows-installer-acceptance.ps1"
+    )
+    foreach ($script in $scripts) {
+      $tokens = $null
+      $errors = $null
+      [System.Management.Automation.Language.Parser]::ParseFile(
+        $script,
+        [ref]$tokens,
+        [ref]$errors
+      ) | Out-Null
+      if ($errors.Count -ne 0) {
+        $errors | ForEach-Object { Write-Error "$script`: $($_.Message)" }
+        exit 1
+      }
     }
   '
 fi

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       candidate_tag:
-        description: "Candidate stable release tag (for example, v0.5.0)"
+        description: "Candidate stable release tag (for example, v0.6.0)"
         required: true
         type: string
       candidate_commit:
@@ -28,7 +28,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout main acceptance code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
@@ -261,7 +261,7 @@ jobs:
 
       - name: Upload JSON evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installer-acceptance-json
           path: ${{ steps.paths.outputs.output }}
@@ -292,7 +292,7 @@ jobs:
           if (
             [string]$evidence.releases.baseline.tag -cne $env:BASELINE_TAG -or
             [string]$evidence.releases.baseline.commit -cne $env:BASELINE_COMMIT -or
-            [int]$evidence.releases.baseline.assets -ne 27 -or
+            [int]$evidence.releases.baseline.assets -ne 32 -or
             [string]$evidence.releases.candidate.tag -cne $env:CANDIDATE_TAG -or
             [string]$evidence.releases.candidate.commit -cne $env:CANDIDATE_COMMIT -or
             [int]$evidence.releases.candidate.assets -ne 32
@@ -314,7 +314,7 @@ jobs:
           }
           $baselineApps = @($apps | Where-Object { [bool]$_.baseline })
           $newApps = @($apps | Where-Object { -not [bool]$_.baseline })
-          if ($baselineApps.Count -ne 13 -or $newApps.Count -ne 2) {
+          if ($baselineApps.Count -ne 15 -or $newApps.Count -ne 0) {
             throw 'acceptance evidence baseline/new app partition mismatch'
           }
           $configuredBaselineIds = @($config.apps | Where-Object { [bool]$_.baseline } | ForEach-Object { [string]$_.id })

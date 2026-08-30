@@ -45,7 +45,7 @@
       "detector": "dependabot",
       "scope": "Linux-only Tauri GTK runtime",
       "expires": "2026-11-30",
-      "reason": "Tauri 2.11.5 still resolves the GTK3 0.18 line; Windows releases do not link this package. Re-evaluate on every Tauri update."
+      "reason": "Re-evaluated 2026-08-31: Tauri 2.11.5 still resolves the GTK3 0.18 line, while the patched glib 0.20 line is outside that compatible graph. Windows releases do not link this package; re-evaluate on every Tauri update."
     },
     {
       "id": "RUSTSEC-2024-0370",

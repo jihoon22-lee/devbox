@@ -758,6 +758,113 @@ function assertSafeConfig(config) {
   }
 }
 
+function assertArtifactVerification(verification, expectedTag, expectedCommit, configSha256) {
+  const expectedKeys = [
+    "artifactKind",
+    "commit",
+    "configSha256",
+    "downloadedAssets",
+    "draft",
+    "failures",
+    "manifestApps",
+    "manifestDeclaredAssets",
+    "metadataAssets",
+    "missing",
+    "prerelease",
+    "releaseAssets",
+    "schemaVersion",
+    "status",
+    "tag",
+    "undeclared",
+    "verifiedAssets",
+  ];
+  if (Object.keys(verification).sort().join(",") !== expectedKeys.sort().join(",")) {
+    fail("independent artifact verification has an unexpected shape");
+  }
+  if (
+    verification.schemaVersion !== 1 ||
+    verification.status !== "PASS" ||
+    verification.tag !== expectedTag ||
+    verification.commit !== expectedCommit ||
+    verification.metadataAssets !== 32 ||
+    verification.downloadedAssets !== 32 ||
+    verification.manifestApps !== 15 ||
+    verification.manifestDeclaredAssets !== 31 ||
+    verification.verifiedAssets !== 32 ||
+    verification.configSha256 !== configSha256 ||
+    verification.missing !== 0 ||
+    verification.undeclared !== 0 ||
+    !Array.isArray(verification.failures) ||
+    verification.failures.length !== 0
+  ) {
+    fail("independent artifact verification is missing or does not match this run");
+  }
+  if (verification.artifactKind === "release") {
+    if (
+      verification.draft !== false ||
+      verification.prerelease !== expectedTag.includes("-") ||
+      verification.releaseAssets !== 32
+    ) {
+      fail("published release verification state is invalid");
+    }
+    return;
+  }
+  if (verification.artifactKind === "candidate") {
+    if (
+      !/^v\d+\.\d+\.\d+$/.test(expectedTag) ||
+      verification.draft !== null ||
+      verification.prerelease !== false ||
+      verification.releaseAssets !== 0
+    ) {
+      fail("unpublished candidate verification state is invalid");
+    }
+    return;
+  }
+  fail("unsupported artifact verification kind");
+}
+
+function runVerificationContractSelfTest() {
+  const configSha256 = "c".repeat(64);
+  const common = {
+    schemaVersion: 1,
+    tag: "v0.6.0",
+    commit: "a".repeat(40),
+    metadataAssets: 32,
+    downloadedAssets: 32,
+    manifestApps: 15,
+    manifestDeclaredAssets: 31,
+    verifiedAssets: 32,
+    configSha256,
+    missing: 0,
+    undeclared: 0,
+    failures: [],
+    status: "PASS",
+  };
+  const release = {
+    ...common,
+    artifactKind: "release",
+    draft: false,
+    prerelease: false,
+    releaseAssets: 32,
+  };
+  const candidate = {
+    ...common,
+    artifactKind: "candidate",
+    draft: null,
+    prerelease: false,
+    releaseAssets: 0,
+  };
+  assertArtifactVerification(release, common.tag, common.commit, configSha256);
+  assertArtifactVerification(candidate, common.tag, common.commit, configSha256);
+  let rejected = false;
+  try {
+    assertArtifactVerification({ ...candidate, releaseAssets: 32 }, common.tag, common.commit, configSha256);
+  } catch (error) {
+    rejected = error instanceof Error && error.name === "AcceptanceError";
+  }
+  if (!rejected) fail("candidate verification tamper self-test did not fail closed");
+}
+
 function assertSafeScratchLayout(
   configFile,
   verificationFile,
@@ -1377,25 +1484,7 @@ async function main() {
     runtimeRoot,
     actualLocalAppData,
   );
-  if (
-    verification.status !== "PASS" ||
-    verification.draft !== false ||
-    verification.prerelease !== expectedTag.includes("-") ||
-    verification.tag !== expectedTag ||
-    verification.commit !== expectedCommit ||
-    verification.releaseAssets !== 32 ||
-    verification.downloadedAssets !== 32 ||
-    verification.manifestApps !== 15 ||
-    verification.manifestDeclaredAssets !== 31 ||
-    verification.verifiedAssets !== 32 ||
-    verification.configSha256 !== sha256File(configFile) ||
-    verification.missing !== 0 ||
-    verification.undeclared !== 0 ||
-    !Array.isArray(verification.failures) ||
-    verification.failures.length !== 0
-  ) {
-    fail("independent release-asset verification is missing or does not match this run");
-  }
+  assertArtifactVerification(verification, expectedTag, expectedCommit, sha256File(configFile));
   const protectedProcessNames = [
     ...new Set(
       config.apps.flatMap((app) => [
@@ -1477,8 +1566,13 @@ async function main() {
   }
 }
 
-try {
-  await main();
-} finally {
-  releaseAcceptanceLock();
+if (process.argv.length === 3 && process.argv[2] === "--self-test") {
+  runVerificationContractSelfTest();
+  console.log("packaged smoke artifact verification self-test: PASS");
+} else {
+  try {
+    await main();
+  } finally {
+    releaseAcceptanceLock();
+  }
 }

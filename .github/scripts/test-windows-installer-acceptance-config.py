@@ -12,7 +12,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT / ".github/scripts/windows-installer-acceptance-config.json"
 SMOKE_CONFIG_PATH = ROOT / ".github/scripts/windows-packaged-smoke-config.json"
 CATALOG_PATH = ROOT / "apps/catalog.json"
-EXPECTED_NEW_APPS = {"devbox-launcher", "log-lens"}
+EXPECTED_NEW_APPS: set[str] = set()
 SCRIPT_PATH = ROOT / ".github/scripts/windows-installer-acceptance.ps1"
 WORKFLOW_PATH = ROOT / ".github/workflows/windows-installer-acceptance.yml"
 
@@ -29,8 +29,8 @@ def main() -> None:
     assert set(config) == {"schemaVersion", "baseline", "apps"}
     assert config["schemaVersion"] == 1
     assert set(config["baseline"]) == {"tag", "commit"}
-    assert config["baseline"]["tag"] == "v0.4.2"
-    assert re.fullmatch(r"[0-9a-f]{40}", config["baseline"]["commit"])
+    assert config["baseline"]["tag"] == "v0.5.1"
+    assert config["baseline"]["commit"] == "300cb158d1f0c23973857549a1aeddd9997c3f16"
 
     released = [app for app in catalog["apps"] if app["release"]]
     configured = config["apps"]
@@ -65,7 +65,7 @@ def main() -> None:
 
     assert set(smoke_by_id) == {app["id"] for app in configured}
     assert {app["id"] for app in configured if not app["baseline"]} == EXPECTED_NEW_APPS
-    assert len(baseline_ids) == 13
+    assert len(baseline_ids) == 15
 
     script = SCRIPT_PATH.read_text(encoding="utf-8")
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
@@ -84,6 +84,8 @@ def main() -> None:
         assert f"-{parameter} " in workflow
     assert "$env:GITHUB_ACTIONS -ne 'true'" in script
     assert "Assert-Descendant $Output $ScratchRoot" in script
+    assert "$baselineApps.Count -ne 15" in script
+    assert "v0.4.2" not in script
     assert "Remove-Item -Recurse" not in script
     assert "Stop-Process -Name" not in script
     assert "Invoke-Expression" not in script
@@ -113,6 +115,8 @@ def main() -> None:
     assert "status -cne 'PASS'" in workflow
     assert "schemaVersion -ne 1" in workflow
     assert "baseline lifecycle evidence is incomplete" in workflow
+    assert "[int]$evidence.releases.baseline.assets -ne 32" in workflow
+    assert "$baselineApps.Count -ne 15 -or $newApps.Count -ne 0" in workflow
     assert "registryKeyResidue" in workflow
     assert "cleanup or failure state is not clean" in workflow
 

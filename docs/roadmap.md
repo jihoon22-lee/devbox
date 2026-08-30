@@ -28,6 +28,10 @@
   초기 bundle 측정 기반을 완료했다. W10은 이 기반을 15개 앱 전부로 확장해 공통 semantic
   token·한국어 UI·keyboard/focus/IME·axe smoke·manifest/budget gate를 한 품질 계약으로 묶는다.
   jsdom이 측정할 수 없는 색 대비와 packaged Windows 고대비·screen reader 확인은 #493에 남긴다.
+- W01~W10 source package는 main에 병합됐다. W11은 #492/#493에서 전체 회귀, 앱별 version,
+  dependency/action runtime, exact unpublished Windows package와 stable publication을 묶어
+  진행한다. 공개 Latest는 모든 gate가 끝날 때까지 v0.5.1이며 v0.6.0 tag/release는 아직 없다.
+  상세 순서는 [v0.6.0 통합 릴리스 계획](./superpowers/plans/2026-08-31-v0.6.0-release.md)이 기준이다.
 
 ## Phase 1 — Tauri 기본기 ✅
 - [x] **port-manager** — IPC, Rust 기초, netstat 파싱, 포트/프로세스 관리
@@ -115,6 +119,7 @@ strict bounded JSON, corrupt fallback, atomic persistence와 close/tray/explicit
 | 문서 | 범위 |
 |---|---|
 | [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3 전체 범위, 외부 도구 원칙, 신규 앱, PR·테스트·릴리스 gate의 단일 기준 |
+| [v0.6.0 통합 릴리스 계획](./superpowers/plans/2026-08-31-v0.6.0-release.md) | W01~W11, 앱별 version, unpublished package, Windows/WSL와 stable publication gate |
 | [wsl-desktop 터미널 설계](./superpowers/specs/2026-08-17-wsl-desktop-terminal-design.md) | PTY 전송 결함, 클립보드·단축키, 레이아웃 복원, 멀티플렉서 opt-in |
 | [앱 간 연동 설계](./superpowers/specs/2026-08-17-app-interop-design.md) | argv 계약, 카탈로그 capability, 스냅샷 버스 정리 |
 | [UX 개선 설계](./superpowers/specs/2026-08-15-ux-improvements-design.md) | 컨텍스트 메뉴 13개 앱, toolbox 도구, 앱별 항목, 실사용 피드백 |
@@ -510,9 +515,18 @@ cap·고정 issue enum과 frontend exact-key/relationship validation을 적용�
 last-good 보존, late/unmounted response guard를 포함하고 브라우저 mock은 UI-only다. local
 evidence는 Manager frontend 71/71, 전체 frontend 1488/1488, local-quality Rust 8/8,
 production JS 312992 raw / 93326 gzip (budgets 345000/105000), 15-app build/bundle/accessibility,
-Rust workspace check/clippy/fmt/test, catalog/dependency/audit gate PASS다. GitHub Actions CI는
-이 PR의 merge gate로 남아 있고, Windows screen reader·high contrast·packaged acceptance는
-#493에 남긴다. 이 PR은 RC/tag/release/version bump를 만들지 않는다.
+Rust workspace check/clippy/fmt/test, catalog/dependency/audit gate PASS다. PR #513은 GitHub Actions
+run `33336847562`의 six required jobs 통과 뒤 main에 병합됐다. Windows screen reader·high
+contrast·packaged acceptance는 #493에 남긴다. 이 기능 PR 자체는 RC/tag/release/version bump를
+만들지 않았다.
+
+**2026-08-31 W11 release preparation 상태.** 15개 target app version을 Cargo/Tauri/frontend와
+packaged-smoke config에 동기화하고, yanked `chacha20 0.10.1`을 `0.10.2`로 갱신했다.
+GitHub Actions의 official JavaScript actions는 Node 24-capable major로 옮기고 pnpm 9는 Corepack
+pin을 유지한다. exact current main만 받는 unpublished Windows candidate workflow는 32-file/
+31-declared digest 검증과 disposable v0.5.1 update/rollback lifecycle을 수행하며 public
+tag/release를 만들 권한이나 명령을 갖지 않는다. source/PR CI, candidate run, physical
+Windows/WSL, annotated stable publication의 실제 결과는 #492/#493에서 순서대로 기록한다.
 
 **2026-08-30 W07 선택 텍스트·일별 activity 계약 구현 상태.** catalog revision 15는
 `developer-toolbox`의 `handoff:toolbox-text/v1` 수신과 기존 `handoff:api-request/v1` 및

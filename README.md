@@ -7,21 +7,21 @@ Tauri 15개 데스크톱 앱(기존 안정판 13개 + v0.5.0에서 추가된 Dev
 
 | 앱 | 설명 |
 |---|---|
-| 🔥 **Port Manager** | 포트·프로세스 조회/검색/필터, 프로세스 종료, localhost 열기 |
-| 🧰 **Developer Toolbox** | 개발용 소형 도구 13종 — JSON/Base64/URL/타임스탬프/Case, Hash/UUID/Regex/Diff( Rust), JWT 디코더 |
-| 🐧 **WSL Desktop** | 앱 안의 임베디드 WSL 터미널 — 경로 지정 실행, 분할 레이아웃, 동시 명령, distro·Docker 상태 패널 |
-| 🧪 **API Playground** | REST 요청 빌더. CORS 제약 없음, 응답 확인, 요청 history, curl 생성 |
-| 🔍 **Everything+** | 파일명/내용 초고속 검색(FTS5), 정규식 모드, re-index 진행률 |
-| 🗂 **Knowledge** | 마크다운 기반 지식 저장소 — 태그, 본문 검색, 데일리 노트 |
-| 🕐 **Life Log** | 활동·git 데이터로 하루/주/월 요약 (활동 자동 추적 흡수), 캘린더 이동 |
-| 📦 **Devbox Manager** | devbox 앱 버전 체크·설치·업데이트·실행 (휴대용/설치 패키지) |
-| ✍️ **Code Pad** | CodeMirror 6 경량 코드 에디터 — 문법 하이라이팅, 탭·분할 2뷰, LSP(진단·자동완성·hover·정의·참조·이름 변경·포맷), 프리뷰 |
-| ⏱ **Run Manager** | 예약 실행(크론 잡)과 상시 실행(서비스) 관리 — 실행 이력, 회전 로그 tail, 서비스 재시작·헬스체크 |
-| 🛠 **Workbench** | 프로젝트 기반 orchestration 셸 — Git/WSL/포트/서비스 사전 점검, Run Manager·WSL Desktop·Code Pad 시작, Stop What I Started |
-| 🔁 **Webhook Lab** | 로컬 웹훅/콜백 서버 — 수신 요청 history, 응답 rule·delay·오류 재현, 민감 헤더 masking |
-| 🗂 **Repo Manager** | Git repository 탐색·브랜치/worktree/상태 목록, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기 |
-| 🚀 **Devbox Launcher** | Devbox 앱과 제공될 때 검증된 profile·repo·job·saved query snapshot 검색, 안전한 AppLink 실행 및 명시적 clipboard preview |
-| 🔎 **Log Lens** | local/WSL/journal/container read-only 로그 tail·merge·filter·export, bounded in-memory ring |
+| 🔥 **Port Manager** | 포트·프로세스 조회/종료, Run·Workbench binding correlation, session timeline과 Log Lens 이동 |
+| 🧰 **Developer Toolbox** | 개발용 소형 도구 13종, 탐지·pipeline·recent/favorite, API/Knowledge typed handoff |
+| 🐧 **WSL Desktop** | 임베디드 WSL 터미널, 분할·broadcast, distro-user tool 탐지, profile/runtime snapshot |
+| 🧪 **API Playground** | REST·GraphQL·SSE·WebSocket와 MCP HTTP/stdio/OAuth, dynamic gRPC/TLS/mTLS Protocol Lab |
+| 🔍 **Everything+** | FTS5 파일명/본문·문서 검색, 고급 filter/saved query, Windows와 WSL root reconcile |
+| 🗂 **Knowledge** | 마크다운 vault, 검색·template·quick capture·image·wikilink, WSL-native edit/watch |
+| 🕐 **Life Log** | Windows/WSL Git·activity를 provenance와 함께 일/주/월 집계하고 Markdown/JSON/CSV export |
+| 📦 **Devbox Manager** | 설치·업데이트·제거, 환경 capability, guarded Dev Setup, Data Inspector와 local quality |
+| ✍️ **Code Pad** | CodeMirror 6 multi-file editor, offline managed LSP, Windows/WSL read-write-watch와 preview |
+| ⏱ **Run Manager** | cron/service와 trusted workspace Task Runner, process-tree ownership, history/log/receipt |
+| 🛠 **Workbench** | 프로젝트 orchestration, WSL/Git/dependency health, typed task control과 port correlation |
+| 🔁 **Webhook Lab** | bounded local webhook, deterministic rule/conflict preview, OpenAPI draft와 sanitized handoff |
+| 🗂 **Repo Manager** | repository/worktree 일상 흐름, safe cleanup과 WSL-native Git, offline/opt-in Dependency Lens |
+| 🚀 **Devbox Launcher** | 앱·profile·repo/worktree·job·saved query typed source 검색과 stale-safe AppLink 실행 |
+| 🔎 **Log Lens** | local/WSL/journal/container 로그 tail·merge·saved view·reconnect·filter·handoff·export |
 
 ## 다운로드 / 설치
 
@@ -32,6 +32,10 @@ https://github.com/jihoon22-lee/devbox/releases
 ```
 
 - **현재 공개 최신 안정판:** [`v0.5.1`](https://github.com/jihoon22-lee/devbox/releases/tag/v0.5.1)
+- **v0.6.0 준비 상태:** milestone W01~W10 source는 main에 반영됐고 W11 통합 회귀·package
+  checkpoint·Windows/WSL acceptance를 진행한다. v0.6.0 tag/release는 아직 만들지 않았으며
+  [통합 릴리스 계획](./docs/superpowers/plans/2026-08-31-v0.6.0-release.md)과
+  [release issue #493](https://github.com/jihoon22-lee/devbox/issues/493)이 현재 gate의 기준이다.
 - **v0.5.1 stable source/bundle:** #470 Windows acceptance inventory, #473 Run reader,
   #477 release gate, #478 Manager 보강, #479/#474 Run Manager named sidecar 계약을 포함한다.
   정확한 tag commit·workflow 결과·release asset 수와 digest·Latest metadata는
@@ -71,6 +75,7 @@ https://github.com/jihoon22-lee/devbox/releases
 | [로드맵](./docs/roadmap.md) | 진행 상황 / v0.5.0 history / v0.5.1 stable bundle |
 | [v0.5.0 네이티브 우선 계획](./docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3, 신규 앱, 앱 간 handoff, 테스트·릴리스 gate |
 | [v0.5.0 릴리스 계획](./docs/superpowers/plans/2026-08-28-v0.5.0-release.md) | 목표 version, RC asset, Windows W1~W4, stable 승격·정리 gate |
+| [v0.6.0 통합 릴리스 계획](./docs/superpowers/plans/2026-08-31-v0.6.0-release.md) | W01~W11, 앱별 version, 비공개 package checkpoint, Windows/WSL acceptance와 stable publication |
 | [의존성·제3자 고지 정책](./docs/dependency-policy.md) | Cargo·pnpm allowlist, advisory 예외 만료, notices 생성·배포 규칙 |
 | [프로젝트 요약](./docs/projects.md) | 앱별 상세 요약 |
 | [UX 개선 설계](./docs/superpowers/specs/2026-08-15-ux-improvements-design.md) | v0.5.0 컨텍스트 메뉴·클립보드·도구 확장 |

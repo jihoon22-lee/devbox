@@ -44,6 +44,10 @@ asset을 받을 수 있다. release manifest는 schemaVersion 1을 유지하고 
 `h2 0.4.15`의 empty DATA frame memory-growth advisory(RUSTSEC-2026-0258)는 호환되는
 0.4.16으로 즉시 갱신했다. 이 취약점에는 예외를 만들지 않는다.
 
+2026-08-31 v0.6.0 준비에서는 yanked `chacha20 0.10.1`을 동일한 `rand 0.10.2` 전이
+경계 안의 non-yanked `0.10.2`로 갱신했다. `lopdf 0.44.0`과 `tungstenite 0.30.0`의 상위
+version이나 feature는 바꾸지 않았고, lockfile·notices·전체 Rust 회귀를 함께 재생성한다.
+
 다음 license는 자동 허용 후보 외의 수동 검토 결과다.
 
 | Dependency | Decision | Distribution obligation |
@@ -104,9 +108,12 @@ code, a downloaded compiler, or a certificate-verification bypass.
 
 ### Manual review record
 
-- `glib` GHSA-wrw7-89jp-8q8g는 Linux-only Tauri GTK transitive dependency다. Windows installer에
-  link되지 않는다는 engineering boundary만 기록하며, policy exception expiry `2026-11-30` 전에
-  Tauri graph를 재검토한다. 이는 vulnerability-free 또는 법적 면책 선언이 아니다.
+- `glib` GHSA-wrw7-89jp-8q8g는 Linux-only Tauri GTK transitive dependency다. 2026-08-31
+  v0.6.0 release-preparation review에서 현재 Tauri `2.11.5`가 계속 GTK3/glib `0.18.5`를
+  resolve하며, patched glib `0.20`은 해당 compatible graph 밖임을 다시 확인했다. Windows installer에
+  link되지 않는다는 engineering boundary만 기록하며 alert는 dismiss하지 않는다. policy
+  exception expiry `2026-11-30` 전 또는 Tauri update 때 graph를 다시 검토한다. 이는
+  vulnerability-free 또는 법적 면책 선언이 아니다.
 - MPL transitive crates는 upstream source를 수정하지 않은 engineering 상태와 exact version/source/
   digest를 notices에 남긴다. source를 수정하면 MPL source-distribution 검토를 다시 한다.
 - `dompurify`의 `(MPL-2.0 OR Apache-2.0)` 중 Apache branch를 선택한 것은 배포 engineering
