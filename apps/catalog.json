@@ -154,10 +154,12 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["task"],
+      "accepts": ["task", "handoff:task-control/v1"],
       "produces": [
         "snapshot:run-manager/status/v1",
         "snapshot:run-manager/jobs-services/v1",
+        "snapshot:run-manager/workspace-tasks/v1",
+        "snapshot:run-manager/task-control-receipts/v1",
         "handoff:log-source/v1"
       ],
       "actions": []
@@ -173,8 +175,16 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["path", "profile"],
-      "produces": [],
-      "actions": []
+      "produces": ["handoff:task-control/v1"],
+      "actions": [
+        {
+          "actionId": "control-workspace-task",
+          "actionVersion": 1,
+          "label": "Control workspace task",
+          "target": "run-manager",
+          "payloadKind": "handoff:task-control/v1"
+        }
+      ]
     },
     {
       "id": "webhook-lab",

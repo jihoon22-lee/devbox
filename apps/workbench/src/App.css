@@ -169,6 +169,87 @@ body {
   font-size: 15px;
 }
 
+.workspace-task-panel {
+  margin-bottom: 14px;
+}
+
+.workspace-task-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspace-task-heading h2 {
+  margin-bottom: 4px;
+}
+
+.workspace-task-heading .field-help {
+  margin: 0;
+}
+
+.workspace-task-list {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workspace-task-row {
+  display: grid;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.workspace-task-row-heading,
+.workspace-task-row-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workspace-task-kind,
+.workspace-task-dependency {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.workspace-task-state {
+  color: var(--ok);
+  font-size: 11px;
+}
+
+.workspace-task-state.bad {
+  color: var(--danger);
+}
+
+.workspace-task-pending {
+  color: #d29922;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.workspace-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+@media (max-width: 560px) {
+  .workspace-task-heading {
+    flex-direction: column;
+  }
+
+  .workspace-task-heading .btn {
+    align-self: flex-start;
+  }
+}
+
 .field {
   display: block;
   margin-bottom: 10px;

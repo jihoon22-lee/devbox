@@ -193,6 +193,47 @@ export interface PackageDependencySummary {
   ecosystems: PackageDependencyEcosystem[];
 }
 
+export type WorkspaceTaskKind = "process" | "shell";
+
+/** Read-only Run Manager snapshot used by Workbench's task-control panel. */
+export interface WorkspaceTaskControl {
+  id: string;
+  label: string;
+  revision: string;
+  taskKind: WorkspaceTaskKind;
+  trusted: boolean;
+  shellTrusted: boolean;
+  available: boolean;
+  hasDependencies: boolean;
+  operationActive: boolean;
+}
+
+export type WorkspaceTaskControlAction = "start" | "stop";
+
+export interface WorkspaceTaskControlDispatch {
+  requestId: string;
+  handoffId: string;
+}
+
+export type WorkspaceTaskControlReceiptStatus =
+  | "accepted"
+  | "rejected"
+  | "started"
+  | "stopped"
+  | "failed";
+
+export interface WorkspaceTaskControlReceipt {
+  schemaVersion: number;
+  requestId: string;
+  taskId: string;
+  action: WorkspaceTaskControlAction;
+  status: WorkspaceTaskControlReceiptStatus;
+  operationId?: string | null;
+  failureCode?: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 const MOCK_PROFILES: ProjectProfile[] = [
   { id: "p-1", name: "devbox", windowsPath: "C:\\projects\\devbox", wsl: { distro: "Ubuntu", path: "/mnt/e/projects/devbox" }, gitRoot: "C:\\projects\\devbox", expectedPorts: [1420], runManagerServiceIds: ["devbox-dev"], environment: null },
 ];
@@ -513,6 +554,55 @@ export function profileCopyPath(profileId: string): Promise<string> {
 export function openProfileIn(profileId: string, appId: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   return invoke<void>("open_profile_in", { profileId, appId });
+}
+
+// ── Run Manager task control ───────────────────────────────────────
+// Workbench receives only the privacy-safe task snapshot and opaque handoff
+// correlators. Commands, paths, environment values, and process identifiers
+// remain owned by Run Manager.
+
+const MOCK_WORKSPACE_TASK_CONTROLS: WorkspaceTaskControl[] = [
+  {
+    id: "mock-build",
+    label: "Build",
+    revision: "b".repeat(64),
+    taskKind: "process",
+    trusted: true,
+    shellTrusted: false,
+    available: true,
+    hasDependencies: false,
+    operationActive: false,
+  },
+];
+
+export function listWorkspaceTaskControls(): Promise<WorkspaceTaskControl[]> {
+  if (!isTauri()) return Promise.resolve(MOCK_WORKSPACE_TASK_CONTROLS.map((task) => ({ ...task })));
+  return invoke<WorkspaceTaskControl[]>("list_workspace_task_controls");
+}
+
+export interface DispatchWorkspaceTaskControlRequest {
+  taskId: string;
+  action: WorkspaceTaskControlAction;
+  expectedRevision: string;
+}
+
+export function dispatchWorkspaceTaskControl(
+  request: DispatchWorkspaceTaskControlRequest,
+): Promise<WorkspaceTaskControlDispatch> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      requestId: `mock-task-control-${Date.now().toString(36)}`,
+      handoffId: "mock-handoff",
+    });
+  }
+  return invoke<WorkspaceTaskControlDispatch>("dispatch_workspace_task_control", { ...request });
+}
+
+export function getWorkspaceTaskControlReceipt(
+  requestId: string,
+): Promise<WorkspaceTaskControlReceipt | null> {
+  if (!isTauri()) return Promise.resolve(null);
+  return invoke<WorkspaceTaskControlReceipt | null>("get_workspace_task_control_receipt", { requestId });
 }
 
 // ── applink — inbound cross-app open requests ───────────────────────
