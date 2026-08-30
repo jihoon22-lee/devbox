@@ -16,6 +16,7 @@ import {
 } from "react";
 import { readClipboardText } from "../api";
 import { ApiHandoffAction } from "./ApiHandoffAction";
+import { KnowledgeDraftAction } from "./KnowledgeDraftAction";
 
 /** async 변환 결과를 입력 변경 시 자동 계산하는 훅 */
 export function useAsyncTransform(
@@ -519,8 +520,12 @@ export function ToolOutput({
     "aria-label": ariaLabel,
     className,
   };
-  const handoffAction = (
-    <ApiHandoffAction value={handoffValue ?? value} disabled={busy || actionBusy} />
+  const actionValue = handoffValue ?? value;
+  const handoffActions = (
+    <div className="tool-output-actions">
+      <ApiHandoffAction value={actionValue} disabled={busy || actionBusy} />
+      <KnowledgeDraftAction value={actionValue} disabled={busy || actionBusy} />
+    </div>
   );
 
   return (
@@ -528,7 +533,7 @@ export function ToolOutput({
       {asDiv ? (
         <div {...trigger} ref={outputRef as RefObject<HTMLDivElement | null>}>
           {content}
-          {handoffAction}
+          {handoffActions}
         </div>
       ) : (
         <pre {...trigger} ref={outputRef as RefObject<HTMLPreElement | null>}>
@@ -549,7 +554,7 @@ export function ToolOutput({
           {actionError}
         </div>
       ) : null}
-      {!asDiv ? handoffAction : null}
+      {!asDiv ? handoffActions : null}
     </>
   );
 }

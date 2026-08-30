@@ -225,6 +225,12 @@ enum CapabilityShape {
     Snapshot,
 }
 
+// Daily activity is a shared snapshot assembled by both Knowledge and Run
+// Manager. Other snapshots remain app-owned and are checked against the
+// declaring app's id below.
+const DAILY_ACTIVITY_SNAPSHOT: &str = "snapshot:daily-activity/v1";
+const DAILY_ACTIVITY_PRODUCERS: &[&str] = &["knowledge-base", "run-manager"];
+
 pub fn parse_catalog(input: &str) -> Result<Catalog, CatalogError> {
     let raw: RawCatalog = serde_json::from_str(input).map_err(|_| CatalogError::InvalidJson)?;
     if raw.apps.is_empty() {
@@ -434,6 +440,8 @@ fn validate_capabilities(
         if !accepts
             && shape == CapabilityShape::Snapshot
             && !capability.starts_with(&format!("snapshot:{app_id}/"))
+            && !(capability == DAILY_ACTIVITY_SNAPSHOT
+                && DAILY_ACTIVITY_PRODUCERS.contains(&app_id))
         {
             return Err(CatalogError::InvalidCapability { app_index, field });
         }
@@ -489,6 +497,9 @@ fn validate_action_links(apps: &[CatalogApp]) -> Result<(), CatalogError> {
 fn capability_shape(value: &str) -> Option<CapabilityShape> {
     if matches!(value, "path" | "workspace" | "query" | "profile" | "task") {
         return Some(CapabilityShape::Basic);
+    }
+    if value == DAILY_ACTIVITY_SNAPSHOT {
+        return Some(CapabilityShape::Snapshot);
     }
     if let Some(kind) = value.strip_prefix("handoff:") {
         return valid_versioned_kind(kind).then_some(CapabilityShape::Handoff);

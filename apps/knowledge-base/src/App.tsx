@@ -413,7 +413,7 @@ export default function App() {
       if (draftNeedsRegeneration(cause)) {
         draftPreviewRef.current = null;
         setDraftPreview(null);
-        setError("Knowledge draft가 만료되었거나 저장 위치가 변경되었습니다. Life Log에서 새로 생성하세요.");
+        setError("Knowledge draft가 만료되었거나 저장 위치가 변경되었습니다. 보낸 앱에서 새로 생성하세요.");
       } else {
         setError("Knowledge draft를 취소하지 못했습니다. 잠시 후 다시 시도하세요.");
       }
@@ -454,13 +454,13 @@ export default function App() {
       if (!draftMountedRef.current) return;
       setNotice(result.handoffDeleted && result.handoffStatusRecorded !== false
         ? "Knowledge draft를 저장했습니다. handoff는 소비되어 삭제되었습니다."
-        : "Knowledge draft는 저장했지만 소비 상태 기록을 완료하지 못했습니다. Life Log 상태가 sent 또는 expired로 남을 수 있습니다.");
+        : "Knowledge draft는 저장했지만 소비 상태 기록을 완료하지 못했습니다. 보낸 앱의 상태가 sent 또는 expired로 남을 수 있습니다.");
     } catch (cause) {
       if (!draftMountedRef.current) return;
       if (draftNeedsRegeneration(cause)) {
         draftPreviewRef.current = null;
         setDraftPreview(null);
-        setError("Knowledge 저장 위치가 변경되었거나 draft가 만료되었습니다. Life Log에서 새로 생성하세요.");
+        setError("Knowledge 저장 위치가 변경되었거나 draft가 만료되었습니다. 보낸 앱에서 새로 생성하세요.");
       } else {
         setError("Knowledge draft를 저장하지 못했습니다. 미리보기는 유지됩니다.");
       }
@@ -470,7 +470,10 @@ export default function App() {
     }
   }, [draftPreview, loadMeta]);
 
-  const openDraftPreview = useCallback(async (id: string) => {
+  const openDraftPreview = useCallback(async (
+    id: string,
+    kind: KnowledgeDraftPreview["kind"],
+  ) => {
     if (dirty && !confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?")) return;
     if (draftBusyRef.current) return;
     const request = draftRequestRef.current + 1;
@@ -483,7 +486,7 @@ export default function App() {
     setError(null);
     setNotice(null);
     try {
-      const preview = await previewKnowledgeDraft(id);
+      const preview = await previewKnowledgeDraft(id, kind);
       if (!draftMountedRef.current || draftRequestRef.current !== request) {
         void discardKnowledgeDraft(preview.id).catch(() => undefined);
         return;
@@ -492,7 +495,7 @@ export default function App() {
       setDraftPreview(preview);
     } catch {
       if (!draftMountedRef.current || draftRequestRef.current !== request) return;
-      setError("Knowledge draft를 미리볼 수 없습니다. Life Log에서 새로 생성하세요.");
+      setError("Knowledge draft를 미리볼 수 없습니다. 보낸 앱에서 새로 생성하세요.");
     } finally {
       draftBusyRef.current = false;
       if (draftMountedRef.current && draftRequestRef.current === request) setDraftBusy(false);
@@ -573,7 +576,7 @@ export default function App() {
           if (draftNeedsRegeneration(cause)) {
             draftPreviewRef.current = null;
             setDraftPreview(null);
-            setError("Knowledge draft가 만료되었거나 더 이상 유효하지 않습니다. Life Log에서 새로 생성하세요.");
+            setError("Knowledge draft가 만료되었거나 더 이상 유효하지 않습니다. 보낸 앱에서 새로 생성하세요.");
           } else {
             setError("Knowledge draft 미리보기 시간이 만료될 수 있습니다. 저장하거나 취소하세요.");
           }
@@ -619,7 +622,7 @@ export default function App() {
         await runSearch(action.query);
         break;
       case "draft":
-        await openDraftPreview(action.id);
+        await openDraftPreview(action.id, action.handoffKind);
         break;
       case "error":
         setError(action.message);
@@ -916,15 +919,23 @@ export default function App() {
             aria-labelledby="knowledge-draft-title"
             aria-describedby="knowledge-draft-description"
           >
-            <h2 id="knowledge-draft-title">Life Log draft 미리보기</h2>
+            <h2 id="knowledge-draft-title">
+              {draftPreview.kind === "knowledge-draft/v1"
+                ? "Life Log draft 미리보기"
+                : "Developer Toolbox draft 미리보기"}
+            </h2>
             <p className="rename-note" id="knowledge-draft-description">
-              저장하기 전 요약·출처·태그를 확인하세요. 취소하면 파일을 만들지 않고
+              저장하기 전 본문과 태그를 확인하세요. 취소하면 파일을 만들지 않고
               handoff를 다시 대기 상태로 돌립니다.
             </p>
             <div className="handoff-meta">
               <div><span className="dim">Title</span><strong>{draftPreview.title}</strong></div>
               <div><span className="dim">Tags</span><span>{draftPreview.tags.join(", ")}</span></div>
-              <div><span className="dim">Range</span><span>{draftPreview.summary.startDate} ~ {draftPreview.summary.endDate} · {draftPreview.summary.timezone}</span></div>
+              {draftPreview.summary ? (
+                <div><span className="dim">Range</span><span>{draftPreview.summary.startDate} ~ {draftPreview.summary.endDate} · {draftPreview.summary.timezone}</span></div>
+              ) : (
+                <div><span className="dim">Source</span><span>Developer Toolbox · explicit transform result</span></div>
+              )}
             </div>
             <pre className="handoff-body" aria-label="Knowledge draft body">{draftPreview.body}</pre>
             <div className="handoff-size" aria-label="Knowledge draft size">

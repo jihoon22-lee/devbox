@@ -15,6 +15,7 @@ import {
   previewLogSource,
   readSources,
   renewLogSource,
+  sendSelectionToToolbox,
   takePendingOpen,
 } from "./api";
 import { browserSnapshot } from "./browserFixture";
@@ -24,6 +25,7 @@ import {
   filterRecords,
   recordKey,
   truncateUtf8,
+  utf8ByteLength,
 } from "./filter";
 import { isTauri } from "./lib/isTauri";
 import type {
@@ -41,10 +43,21 @@ import type {
 import "./App.css";
 
 const MAX_RENDERED_ROWS = 2_000;
+const MAX_SELECTED_RECORDS = MAX_RENDERED_ROWS;
 const MAX_SOURCES = 16;
 const MAX_SAVED_VIEWS = 20;
 const MAX_HIGHLIGHTS = 256;
 const MAX_HANDOFF_RECOVERY_ATTEMPTS = 3;
+const MAX_TOOLBOX_TEXT_BYTES = 512 * 1024;
+const MAX_TOOLBOX_TEXT_CHARS = 256_000;
+
+const EXPORT_TRUNCATED_ERROR = "Export reached the safety limit and was truncated.";
+const STALE_SELECTION_ERROR = "Selected logs are stale. Refresh and select them again.";
+const SELECTION_LIMIT_ERROR = "A maximum of 2,000 log records can be selected.";
+const TOOLBOX_EXPORT_ERROR = "Selected log export exceeded the Developer Toolbox safety limit.";
+const TOOLBOX_SEND_ERROR = "Selected logs could not be sent to Developer Toolbox. Clipboard fallback was not used.";
+const TOOLBOX_SEND_SUCCESS = "Selected logs sent to Developer Toolbox.";
+const TOOLBOX_SEND_REDACTED = "Selected logs sent to Developer Toolbox; sensitive values were redacted.";
 
 type HandoffRecoveryAction = "preview" | "accept" | "discard" | "renew";
 
@@ -175,6 +188,7 @@ function App() {
   const [snapshot, setSnapshot] = useState<SourcesSnapshot | null>(() => isTauri() ? null : browserSnapshot());
   const [filter, setFilter] = useState<FilterSpec>({ text: "", regex: false });
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedGeneration, setSelectedGeneration] = useState<number | null>(null);
   const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [viewName, setViewName] = useState("");
@@ -191,6 +205,7 @@ function App() {
   const [paused, setPaused] = useState(false);
   const [wrapLines, setWrapLines] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [toolboxBusy, setToolboxBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [handoffPreview, setHandoffPreview] = useState<LogSourcePreview | null>(null);
@@ -211,6 +226,11 @@ function App() {
   ) => Promise<void>>(async () => undefined);
   const pausedRef = useRef(paused);
   const compositionRef = useRef(false);
+  const selectedRef = useRef(selected);
+  const selectedGenerationRef = useRef<number | null>(selectedGeneration);
+  const selectionRevisionRef = useRef(0);
+  const snapshotGenerationRef = useRef<number | null>(snapshot?.generation ?? null);
+  const toolboxBusyRef = useRef(false);
   const contextRecordRef = useRef<LogRecord | null>(null);
   const handoffPreviewRef = useRef<LogSourcePreview | null>(null);
   const handoffBusyRef = useRef(false);
@@ -225,6 +245,9 @@ function App() {
   const handoffAcceptRef = useRef<HTMLButtonElement | null>(null);
   const handoffRetryRef = useRef<HTMLButtonElement | null>(null);
   pausedRef.current = paused;
+  selectedRef.current = selected;
+  selectedGenerationRef.current = selectedGeneration;
+  snapshotGenerationRef.current = snapshot?.generation ?? null;
 
   const prepareLogContext = useCallback((_reason: "pointer" | "keyboard", target: HTMLElement) => {
     const element = target as HTMLElement | null;
@@ -242,6 +265,17 @@ function App() {
     setContextRecord(null);
     logContextMenu.close();
   }, [logContextMenu.close]);
+
+  const invalidateSelection = useCallback(() => {
+    if (selectedRef.current.size === 0 && selectedGenerationRef.current === null) return;
+    selectionRevisionRef.current += 1;
+    selectedRef.current = new Set();
+    selectedGenerationRef.current = null;
+    setSelected(new Set());
+    setSelectedGeneration(null);
+    setError(STALE_SELECTION_ERROR);
+    setNotice(null);
+  }, []);
 
   const refresh = useCallback(async (
     nextSources = sources,
@@ -274,6 +308,7 @@ function App() {
     setBusy(true);
     setError(null);
     setNotice(null);
+    invalidateSelection();
     try {
       const sequenceStarts = nextSources.map((_, index) => {
         if (!nextCursors[index]) return 0;
@@ -310,7 +345,7 @@ function App() {
         operation.current = null;
       }
     }
-  }, [cursors, paused, records, snapshot, sources]);
+  }, [cursors, invalidateSelection, paused, records, snapshot, sources]);
   refreshRef.current = refresh;
 
   const updateHandoffRecovery = useCallback((next: HandoffRecovery | null) => {
@@ -675,6 +710,91 @@ function App() {
     [filter, records],
   );
 
+  const selectedRecords = useMemo(() => {
+    const currentGeneration = snapshot?.generation ?? null;
+    if (selected.size === 0
+      || selected.size > MAX_SELECTED_RECORDS
+      || selectedGeneration === null
+      || currentGeneration === null
+      || selectedGeneration !== currentGeneration
+      || currentGeneration !== generation.current) return [];
+    const resolved = records
+      .filter((record) => selected.has(recordKey(record)))
+      .sort((left, right) => compareSafeNumbers(left.timestampMillis, right.timestampMillis)
+        || compareOpaqueIds(left.sourceId, right.sourceId)
+        || left.sequence - right.sequence);
+    return resolved.length === selected.size ? resolved : [];
+  }, [busy, records, selected, selectedGeneration, snapshot?.generation]);
+
+  const sendSelectedLogs = useCallback(async () => {
+    if (toolboxBusyRef.current) return;
+    const keys = new Set(selectedRef.current);
+    const actionRevision = selectionRevisionRef.current;
+    const actionGeneration = generation.current;
+    const actionSnapshotGeneration = snapshotGenerationRef.current;
+    const targets = records
+      .filter((record) => keys.has(recordKey(record)))
+      .sort((left, right) => compareSafeNumbers(left.timestampMillis, right.timestampMillis)
+        || compareOpaqueIds(left.sourceId, right.sourceId)
+        || left.sequence - right.sequence);
+    const isCurrentSelection = () => mounted.current
+      && selectionRevisionRef.current === actionRevision
+      && generation.current === actionGeneration
+      && snapshotGenerationRef.current === actionSnapshotGeneration
+      && selectedGenerationRef.current === actionSnapshotGeneration
+      && selectedRef.current.size === keys.size
+      && [...keys].every((key) => selectedRef.current.has(key));
+
+    if (keys.size === 0
+      || keys.size > MAX_SELECTED_RECORDS
+      || actionSnapshotGeneration === null
+      || actionSnapshotGeneration !== actionGeneration
+      || selectedGenerationRef.current !== actionSnapshotGeneration
+      || targets.length !== keys.size) {
+      invalidateSelection();
+      setError(STALE_SELECTION_ERROR);
+      return;
+    }
+
+    toolboxBusyRef.current = true;
+    setToolboxBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const exported = await exportRecords(targets);
+      if (!mounted.current) return;
+      if (!isCurrentSelection()) {
+        setError(STALE_SELECTION_ERROR);
+        setNotice(null);
+        return;
+      }
+      if (exported.truncated
+        || exported.text.trim().length === 0
+        || utf8ByteLength(exported.text) > MAX_TOOLBOX_TEXT_BYTES
+        || Array.from(exported.text).length > MAX_TOOLBOX_TEXT_CHARS) {
+        setError(TOOLBOX_EXPORT_ERROR);
+        setNotice(null);
+        return;
+      }
+      const dispatch = await sendSelectionToToolbox(exported.text);
+      if (!mounted.current) return;
+      if (!isCurrentSelection()) {
+        setError(STALE_SELECTION_ERROR);
+        setNotice(null);
+        return;
+      }
+      setError(null);
+      setNotice(dispatch.redacted ? TOOLBOX_SEND_REDACTED : TOOLBOX_SEND_SUCCESS);
+    } catch {
+      if (!mounted.current) return;
+      setError(isCurrentSelection() ? TOOLBOX_SEND_ERROR : STALE_SELECTION_ERROR);
+      setNotice(null);
+    } finally {
+      toolboxBusyRef.current = false;
+      if (mounted.current) setToolboxBusy(false);
+    }
+  }, [invalidateSelection, records]);
+
   const buildSource = (): SourceSpec | null => {
     switch (kind) {
       case "localFile": return path ? { kind, path } : null;
@@ -723,6 +843,7 @@ function App() {
     setNotice(null);
     if (nextSources.length) void refresh(nextSources, nextCursors);
     else {
+      invalidateSelection();
       generation.current += 1;
       refreshPending.current = null;
       const active = operation.current;
@@ -781,6 +902,35 @@ function App() {
     setNotice(`Saved view “${deletedName}” removed.`);
   };
 
+  const toggleSelection = useCallback((record: LogRecord) => {
+    const currentGeneration = snapshotGenerationRef.current;
+    if (currentGeneration === null || currentGeneration !== generation.current) {
+      invalidateSelection();
+      setError(STALE_SELECTION_ERROR);
+      return false;
+    }
+    const key = recordKey(record);
+    const current = selectedRef.current;
+    const next = new Set(current);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      if (next.size >= MAX_SELECTED_RECORDS) {
+        setError(SELECTION_LIMIT_ERROR);
+        setNotice(null);
+        return false;
+      }
+      next.add(key);
+    }
+    selectedRef.current = next;
+    selectedGenerationRef.current = next.size ? currentGeneration : null;
+    selectionRevisionRef.current += 1;
+    setSelected(next);
+    setSelectedGeneration(next.size ? currentGeneration : null);
+    setError(null);
+    return true;
+  }, [invalidateSelection]);
+
   const logContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
     if (!contextRecord) return [];
     const key = recordKey(contextRecord);
@@ -809,8 +959,13 @@ function App() {
           if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
           await navigator.clipboard.writeText(exported.text.trimEnd());
           if (mounted.current) {
-            setError(null);
-            setNotice("Log line copied.");
+            if (exported.truncated) {
+              setError(EXPORT_TRUNCATED_ERROR);
+              setNotice(null);
+            } else {
+              setError(null);
+              setNotice("Log line copied.");
+            }
           }
         })
         .catch(() => {
@@ -829,24 +984,11 @@ function App() {
       });
       setNotice("Bookmark updated.");
     } else if (id === "toggle-selection") {
-      setSelected((current) => {
-        const next = new Set(current);
-        if (next.has(key)) next.delete(key); else next.add(key);
-        return next;
-      });
-      setNotice("Selection updated.");
+      if (toggleSelection(record)) setNotice("Selection updated.");
+      return;
     }
     setError(null);
-  }, []);
-
-  const toggleSelection = (record: LogRecord) => {
-    const key = recordKey(record);
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  };
+  }, [toggleSelection]);
 
   const toggleBookmark = (record: LogRecord) => {
     const key = recordKey(record);
@@ -865,6 +1007,10 @@ function App() {
       const exported = await exportRecords(exportTargets);
       if (copy) {
         await navigator.clipboard.writeText(exported.text);
+        if (exported.truncated) {
+          setError(EXPORT_TRUNCATED_ERROR);
+          setNotice(null);
+        }
         return;
       }
       const url = URL.createObjectURL(new Blob([exported.text], { type: "text/plain;charset=utf-8" }));
@@ -876,7 +1022,7 @@ function App() {
       anchor.click();
       anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      if (exported.truncated) setError("Export reached the safety limit and was truncated.");
+      if (exported.truncated) setError(EXPORT_TRUNCATED_ERROR);
     } catch {
       setError(copy ? "Clipboard copy failed." : "Export failed.");
     }
@@ -966,7 +1112,7 @@ function App() {
 
       <section className="filter-panel" aria-labelledby="filter-heading">
         <div className="section-heading"><h2 id="filter-heading">Filter</h2><span className="muted">{visibleRecords.length} shown · {records.length} retained</span></div>
-        <div className="filter-row"><label className="filter-grow">Text<input value={filter.text} onChange={(event) => setFilter((current) => ({ ...current, text: truncateUtf8(event.target.value, 512) }))} placeholder="message or field value" /></label><label className="toggle"><input type="checkbox" checked={filter.regex} onChange={(event) => setFilter((current) => ({ ...current, regex: event.target.checked }))} /> Regex</label><label>Level<select value={filter.level ?? ""} onChange={(event) => setFilter((current) => ({ ...current, level: (event.target.value || undefined) as LogLevel | undefined }))}><option value="">All levels</option>{(["trace", "debug", "info", "warn", "error", "fatal"] as LogLevel[]).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label>Source<select value={filter.sourceId ?? ""} onChange={(event) => setFilter((current) => ({ ...current, sourceId: event.target.value || undefined }))}><option value="">All sources</option>{(snapshot?.sources ?? []).map((source) => <option key={source.sourceId} value={source.sourceId}>{source.displayName}</option>)}</select></label><button className="button" type="button" onClick={() => void exportVisible(false)} disabled={!visibleRecords.length}>Export</button><button className="button" type="button" onClick={() => void exportVisible(true)} disabled={!visibleRecords.length}>Copy</button></div>
+        <div className="filter-row"><label className="filter-grow">Text<input value={filter.text} onChange={(event) => setFilter((current) => ({ ...current, text: truncateUtf8(event.target.value, 512) }))} placeholder="message or field value" /></label><label className="toggle"><input type="checkbox" checked={filter.regex} onChange={(event) => setFilter((current) => ({ ...current, regex: event.target.checked }))} /> Regex</label><label>Level<select value={filter.level ?? ""} onChange={(event) => setFilter((current) => ({ ...current, level: (event.target.value || undefined) as LogLevel | undefined }))}><option value="">All levels</option>{(["trace", "debug", "info", "warn", "error", "fatal"] as LogLevel[]).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label>Source<select value={filter.sourceId ?? ""} onChange={(event) => setFilter((current) => ({ ...current, sourceId: event.target.value || undefined }))}><option value="">All sources</option>{(snapshot?.sources ?? []).map((source) => <option key={source.sourceId} value={source.sourceId}>{source.displayName}</option>)}</select></label><button className="button" type="button" onClick={() => void exportVisible(false)} disabled={!visibleRecords.length}>Export</button><button className="button" type="button" onClick={() => void exportVisible(true)} disabled={!visibleRecords.length}>Copy</button><button className="button primary" type="button" onClick={() => void sendSelectedLogs()} disabled={busy || toolboxBusy || !selectedRecords.length}>Send selected logs to Developer Toolbox</button></div>
         <div className="filter-row"><label>Field<input value={filter.field ?? ""} onChange={(event) => setFilter((current) => ({ ...current, field: event.target.value ? truncateUtf8(event.target.value, 4 * 1024) : undefined }))} placeholder="field name" /></label><label>Field value<input value={filter.fieldValue ?? ""} onChange={(event) => setFilter((current) => ({ ...current, fieldValue: event.target.value ? truncateUtf8(event.target.value, 4 * 1024) : undefined }))} placeholder="value" /></label><label>Start epoch ms<input type="number" value={filter.startAt ?? ""} onChange={(event) => setFilter((current) => ({ ...current, startAt: event.target.value ? Number(event.target.value) : undefined }))} /></label><label>End epoch ms<input type="number" value={filter.endAt ?? ""} onChange={(event) => setFilter((current) => ({ ...current, endAt: event.target.value ? Number(event.target.value) : undefined }))} /></label><label>Save view<input value={viewName} onChange={(event) => setViewName(truncateUtf8(event.target.value, 128))} placeholder="view name" /></label><button className="button" type="button" onClick={saveView} disabled={!sources.length}>Save</button><select aria-label="Load saved view" value={selectedViewName} onChange={(event) => loadView(event.target.value)}><option value="">Load view…</option>{savedViews.map((view) => <option key={view.name} value={view.name}>{view.name}</option>)}</select><button className="button" type="button" onClick={deleteSavedView} disabled={!selectedViewName}>Remove view</button></div>
       </section>
 

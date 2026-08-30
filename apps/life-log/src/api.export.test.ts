@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { buildExportInput } from "./App";
-import { exportLifeLog, getDigest, validateDigestInput, type DigestInput } from "./api";
+import {
+  exportLifeLog,
+  getDigest,
+  integrationSources,
+  validateDigestInput,
+  validateDigestResponse,
+  type DigestInput,
+  type DigestResponse,
+} from "./api";
 
 function fixture(format: "markdown" | "json" | "csv") {
   const input = buildExportInput("2024-01-01", "2024-01-02", format);
@@ -38,10 +46,28 @@ describe("Life Log browser export preview", () => {
     expect(first.byteLength).toBe(new TextEncoder().encode(first.content).byteLength);
 
     const document = JSON.parse(first.content) as {
-      summary: { sessionCount: number };
+      schemaVersion: number;
+      summary: {
+        sessionCount: number;
+        run: unknown;
+        knowledge: unknown;
+      };
+      daily: Array<{
+        runSucceeded: number | null;
+        runFailed: number | null;
+        knowledgeNotesModified: number | null;
+      }>;
       sources: Array<{ id: string; available: boolean; errorCode: string; scope: string }>;
     };
+    expect(document.schemaVersion).toBe(2);
     expect(document.summary.sessionCount).toBe(0);
+    expect(document.summary.run).toBeNull();
+    expect(document.summary.knowledge).toBeNull();
+    expect(document.daily.every((day) =>
+      day.runSucceeded === null
+      && day.runFailed === null
+      && day.knowledgeNotesModified === null,
+    )).toBe(true);
     expect(document.sources).toHaveLength(4);
     expect(document.sources.map((source) => source.id)).toEqual([
       "life-log",
@@ -103,6 +129,7 @@ describe("Life Log browser local digest preview", () => {
     const result = await getDigest(input);
 
     expect(result.origin).toBe("browser-preview");
+    expect(result.document.schemaVersion).toBe(2);
     expect(result.document.period).toBe("day");
     expect(result.document.range.dayBoundaries).toEqual(input.dayBoundaries);
     expect(result.document.daily).toHaveLength(1);
@@ -124,7 +151,18 @@ describe("Life Log browser local digest preview", () => {
     expect(result.origin).toBe("browser-preview");
     expect(result.document.period).toBe("week");
     expect(result.document.daily).toHaveLength(7);
-    expect(result.document.summary).toMatchObject({ sessionCount: 0, activeDays: 0, gitCommits: 0 });
+    expect(result.document.summary).toMatchObject({
+      sessionCount: 0,
+      activeDays: 0,
+      gitCommits: 0,
+      run: null,
+      knowledge: null,
+    });
+    expect(result.document.daily.every((day) =>
+      day.runSucceeded === null
+      && day.runFailed === null
+      && day.knowledgeNotesModified === null,
+    )).toBe(true);
     expect(result.document.sources.map((source) => source.id)).toEqual([
       "life-log", "git", "run-manager", "knowledge-base",
     ]);
@@ -208,5 +246,42 @@ describe("Life Log browser local digest preview", () => {
     expect(() => validateDigestInput({
       ...digestInput(dayRange, "day"),
     })).toThrow("digest 입력이 올바르지 않습니다");
+  });
+});
+
+describe("Life Log schema v2 response boundary", () => {
+  it("marks every browser source unavailable without latest snapshot substitution", async () => {
+    const sources = await integrationSources();
+    expect(sources).toHaveLength(4);
+    expect(sources.every((source) =>
+      !source.available
+      && source.schemaVersion === null
+      && source.producerVersion === null
+      && source.generatedAt === null
+      && source.freshnessMs === null
+      && source.scope === "browser-preview-only"
+      && source.errorCode === "browser_preview_only"
+      && source.knowledgeActivity === null,
+    )).toBe(true);
+  });
+
+  it("accepts v2 nullable activity fields and rejects an older or incomplete response", async () => {
+    const dayExport = buildExportInput("2024-01-03", "2024-01-03", "json");
+    if (!dayExport) throw new Error("fixture day range could not be built");
+    const input = digestInput(dayExport, "day");
+    const response = await getDigest(input);
+    expect(validateDigestResponse(response)).toEqual(response);
+
+    const old = structuredClone(response) as DigestResponse;
+    old.document.schemaVersion = 1 as DigestResponse["document"]["schemaVersion"];
+    expect(() => validateDigestResponse(old)).toThrow("digest 응답을 읽을 수 없습니다");
+
+    const incomplete = structuredClone(response) as DigestResponse & {
+      document: DigestResponse["document"] & { daily: Array<Record<string, unknown>> };
+    };
+    const firstDay = incomplete.document.daily[0];
+    if (!firstDay) throw new Error("fixture daily row missing");
+    delete (firstDay as Partial<Record<string, unknown>>).runSucceeded;
+    expect(() => validateDigestResponse(incomplete)).toThrow("digest 응답을 읽을 수 없습니다");
   });
 });

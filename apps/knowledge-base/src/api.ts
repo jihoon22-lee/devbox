@@ -108,13 +108,14 @@ export interface KnowledgeDraftSource {
 
 export interface KnowledgeDraftPreview {
   id: string;
-  kind: "knowledge-draft/v1";
+  kind: "knowledge-draft/v1" | "knowledge-draft/v2";
+  producerId: "life-log" | "developer-toolbox";
   expiresAtMs: number;
   leaseUntilMs: number;
   title: string;
   body: string;
   tags: string[];
-  summary: KnowledgeDraftSummary;
+  summary: KnowledgeDraftSummary | null;
   sources: KnowledgeDraftSource[];
 }
 
@@ -398,9 +399,12 @@ export async function discardRenamePreview(planId: string): Promise<void> {
 }
 
 /** Claim a native handoff for preview; no file is written at this stage. */
-export async function previewKnowledgeDraft(id: string): Promise<KnowledgeDraftPreview> {
+export async function previewKnowledgeDraft(
+  id: string,
+  kind: KnowledgeDraftPreview["kind"] = "knowledge-draft/v1",
+): Promise<KnowledgeDraftPreview> {
   if (!isTauri()) throw new Error("Knowledge draft preview는 데스크톱 앱에서 사용할 수 없습니다");
-  return invoke<KnowledgeDraftPreview>("preview_knowledge_draft", { id });
+  return invoke<KnowledgeDraftPreview>("preview_knowledge_draft", { id, kind });
 }
 
 /** Save a confirmed preview and acknowledge/delete the one-time handoff. */

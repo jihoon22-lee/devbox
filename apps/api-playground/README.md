@@ -326,6 +326,14 @@ renderer가 사라지거나 claim 응답이 늦게 도착하면 native restore�
 `webhook-lab` 또는 `developer-toolbox` producer와 `api-playground` target이 정확히 일치하는
 envelope만 허용한다. 적용은 request editor를 갱신할 뿐 HTTP request를 자동으로 보내지 않는다.
 
+## Response selection → Developer Toolbox (`toolbox-text/v1`)
+
+현재 렌더링된 response body에서 사용자가 명시적으로 선택한 text만 bounded deterministic
+`toolbox-text/v1` one-time masked handoff로 Developer Toolbox에 보낼 수 있다. 선택은 현재
+response에 묶여야 하며 response가 바뀌거나 selection이 stale이면 고정 오류로 거부한다. 전체
+response로 암묵적으로 확장하거나 clipboard fallback으로 전환하지 않으며, Developer Toolbox에서
+명시적으로 preview한 뒤 apply할 때만 소비된다.
+
 ## GraphQL 요청 (P2-05, #294)
 
 Body 종류에서 GraphQL을 선택하면 REST 본문과 분리된 `query`, `variables` JSON object,

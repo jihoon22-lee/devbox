@@ -623,6 +623,22 @@ body {
   font-size: 11px;
 }
 
+.response-feedback {
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.response-feedback.success {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 9%, transparent);
+}
+
+.response-feedback.error {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 9%, transparent);
+}
+
 .response-table-wrap {
   flex: 1;
   overflow: auto;

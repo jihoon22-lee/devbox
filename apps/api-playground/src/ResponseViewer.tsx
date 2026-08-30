@@ -1,10 +1,60 @@
-import { useEffect, useState, type KeyboardEvent } from "react";
-import type { ApiResponse, BinaryResponse, GraphqlResponse, ResponseCookie } from "./types";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { isTauri } from "./lib/isTauri";
+import type {
+  ApiResponse,
+  BinaryResponse,
+  GraphqlResponse,
+  ResponseCookie,
+  ToolboxDispatch,
+} from "./types";
 
 export type RawResponseCopyKind = "headers" | "cookies";
 type ResponseTab = "body" | "headers" | "cookies";
 
 const RESPONSE_TABS: readonly ResponseTab[] = ["body", "headers", "cookies"];
+
+export const TOOLBOX_SELECTION_MESSAGES = {
+  empty: "선택 영역이 비어 있습니다. 현재 응답 본문에서 텍스트를 선택하세요.",
+  outside: "선택 영역은 현재 응답 본문 안에 있어야 합니다.",
+  stale: "응답이 변경되어 선택 영역을 보낼 수 없습니다. 현재 응답에서 다시 선택하세요.",
+  nativeOnly: "Developer Toolbox로 보내기는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다",
+  success: "선택 영역을 Developer Toolbox로 보냈습니다.",
+  redacted: "민감한 값이 마스킹된 선택 영역을 Developer Toolbox로 보냈습니다.",
+  error: "Developer Toolbox로 선택 영역을 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다",
+} as const;
+
+export type ResponseSelectionCheck =
+  | { kind: "valid"; text: string }
+  | { kind: "empty" }
+  | { kind: "outside" };
+
+/**
+ * Inspect only the Selection whose boundary points are inside the rendered
+ * response body. The caller supplies the body element so controls, headers,
+ * cookies, and any other page text can never become handoff input.
+ */
+export function inspectResponseSelection(
+  body: HTMLElement | null,
+  selection: Selection | null,
+): ResponseSelectionCheck {
+  if (!body || !selection || selection.rangeCount !== 1) return { kind: "empty" };
+
+  const range = selection.getRangeAt(0);
+  const nodes = [
+    range.startContainer,
+    range.endContainer,
+    range.commonAncestorContainer,
+    selection.anchorNode,
+    selection.focusNode,
+  ];
+  if (nodes.some((node) => node !== null && !body.contains(node))) {
+    return { kind: "outside" };
+  }
+  if (range.collapsed) return { kind: "empty" };
+
+  const text = selection.toString();
+  return text.trim() ? { kind: "valid", text } : { kind: "empty" };
+}
 
 interface ResponseViewerProps {
   response: ApiResponse | null;
@@ -13,6 +63,8 @@ interface ResponseViewerProps {
   onPrettyChange: (pretty: boolean) => void;
   onRawCopy: (kind: RawResponseCopyKind, responseId: string) => Promise<string>;
   onBinarySave: (responseId: string) => Promise<boolean>;
+  onSendSelection?: (text: string) => Promise<ToolboxDispatch>;
+  native?: boolean;
   onError: (message: string) => void;
 }
 
@@ -130,17 +182,64 @@ export function ResponseViewer({
   onPrettyChange,
   onRawCopy,
   onBinarySave,
+  onSendSelection,
+  native = isTauri(),
   onError,
 }: ResponseViewerProps) {
   const [tab, setTab] = useState<ResponseTab>("body");
   const [copyingRaw, setCopyingRaw] = useState<RawResponseCopyKind | null>(null);
   const [savingBinary, setSavingBinary] = useState(false);
+  const [sendingSelection, setSendingSelection] = useState(false);
+  const [toolboxFeedback, setToolboxFeedback] = useState<{
+    kind: "success" | "error";
+    message: string;
+  } | null>(null);
+  const responseBodyRef = useRef<HTMLPreElement | null>(null);
+  const renderRevisionRef = useRef(0);
+  const selectionRef = useRef<{
+    body: HTMLElement;
+    text: string;
+    revision: number;
+  } | null>(null);
+  const lastSelectionRevisionRef = useRef<number | null>(null);
 
   useEffect(() => {
     setTab("body");
     setCopyingRaw(null);
     setSavingBinary(false);
   }, [response]);
+
+  // A response or its rendered form (for example pretty JSON) starts a new
+  // revision. A previously captured DOM Range must not cross that boundary.
+  useLayoutEffect(() => {
+    renderRevisionRef.current += 1;
+    if (selectionRef.current) {
+      lastSelectionRevisionRef.current = selectionRef.current.revision;
+    }
+    selectionRef.current = null;
+    setSendingSelection(false);
+    setToolboxFeedback(null);
+  }, [response, responseText]);
+
+  // Keep the latest browser Selection in renderer memory only. No clipboard
+  // read/write or native call occurs from this listener.
+  useEffect(() => {
+    const onSelectionChange = () => {
+      const check = inspectResponseSelection(responseBodyRef.current, window.getSelection());
+      if (check.kind !== "valid" || !responseBodyRef.current) {
+        selectionRef.current = null;
+        return;
+      }
+      selectionRef.current = {
+        body: responseBodyRef.current,
+        text: check.text,
+        revision: renderRevisionRef.current,
+      };
+      lastSelectionRevisionRef.current = renderRevisionRef.current;
+    };
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => document.removeEventListener("selectionchange", onSelectionChange);
+  }, []);
 
   const copyMasked = async (text: string, failureMessage: string) => {
     try {
@@ -177,6 +276,77 @@ export function ResponseViewer({
       onError("binary 응답을 안전하게 저장하지 못했습니다.");
     } finally {
       setSavingBinary(false);
+    }
+  };
+
+  const sendSelection = async () => {
+    if (!response || response.binary || sendingSelection) return;
+
+    const body = responseBodyRef.current;
+    const check = inspectResponseSelection(body, window.getSelection());
+    const revision = renderRevisionRef.current;
+    const previous = selectionRef.current;
+    const staleRevision = lastSelectionRevisionRef.current !== null
+      && lastSelectionRevisionRef.current !== revision;
+
+    if (staleRevision) {
+      setToolboxFeedback({ kind: "error", message: TOOLBOX_SELECTION_MESSAGES.stale });
+      return;
+    }
+    if (check.kind === "empty") {
+      setToolboxFeedback({ kind: "error", message: TOOLBOX_SELECTION_MESSAGES.empty });
+      return;
+    }
+    if (check.kind === "outside") {
+      setToolboxFeedback({ kind: "error", message: TOOLBOX_SELECTION_MESSAGES.outside });
+      return;
+    }
+    if (!body) {
+      setToolboxFeedback({ kind: "error", message: TOOLBOX_SELECTION_MESSAGES.empty });
+      return;
+    }
+
+    // A selection event normally populates this snapshot. The fallback makes
+    // programmatic/native test selections safe on the first revision while a
+    // prior revision is still rejected by the guard above.
+    if (!previous) {
+      selectionRef.current = { body, text: check.text, revision };
+      lastSelectionRevisionRef.current = revision;
+    } else if (
+      previous.body !== body
+      || previous.revision !== revision
+      || previous.text !== check.text
+    ) {
+      setToolboxFeedback({ kind: "error", message: TOOLBOX_SELECTION_MESSAGES.stale });
+      return;
+    }
+
+    if (!native) {
+      setToolboxFeedback({ kind: "error", message: TOOLBOX_SELECTION_MESSAGES.nativeOnly });
+      return;
+    }
+    if (!onSendSelection) {
+      setToolboxFeedback({ kind: "error", message: TOOLBOX_SELECTION_MESSAGES.error });
+      return;
+    }
+
+    const actionRevision = revision;
+    setSendingSelection(true);
+    try {
+      const result = await onSendSelection(check.text);
+      if (renderRevisionRef.current !== actionRevision) return;
+      setToolboxFeedback({
+        kind: "success",
+        message: result.redacted
+          ? TOOLBOX_SELECTION_MESSAGES.redacted
+          : TOOLBOX_SELECTION_MESSAGES.success,
+      });
+    } catch {
+      if (renderRevisionRef.current === actionRevision) {
+        setToolboxFeedback({ kind: "error", message: TOOLBOX_SELECTION_MESSAGES.error });
+      }
+    } finally {
+      if (renderRevisionRef.current === actionRevision) setSendingSelection(false);
     }
   };
 
@@ -271,6 +441,18 @@ export function ResponseViewer({
             <button
               type="button"
               className="btn"
+              disabled={Boolean(response.binary) || sendingSelection}
+              title={response.binary
+                ? "Binary 응답은 선택 영역을 Developer Toolbox로 보낼 수 없습니다"
+                : "현재 마스킹된 응답 본문에서 선택한 텍스트를 Developer Toolbox로 보내기"}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => void sendSelection()}
+            >
+              {sendingSelection ? "Sending..." : "Send selection to Developer Toolbox"}
+            </button>
+            <button
+              type="button"
+              className="btn"
               disabled={Boolean(response.binary)}
               title={response.binary ? "Binary 응답은 bounded preview와 명시적 저장만 지원합니다" : "마스킹된 응답 본문 복사"}
               onClick={() => void copyMasked(responseText, "마스킹된 응답 본문을 복사하지 못했습니다.")}
@@ -278,6 +460,16 @@ export function ResponseViewer({
               Copy body
             </button>
           </div>
+          {toolboxFeedback && (
+            <div
+              className={`response-feedback ${toolboxFeedback.kind}`}
+              role="status"
+              aria-live={toolboxFeedback.kind === "error" ? "assertive" : "polite"}
+              aria-atomic="true"
+            >
+              {toolboxFeedback.message}
+            </div>
+          )}
           {response.binary && (
             <BinaryResponseSummary
               response={response}
@@ -287,7 +479,41 @@ export function ResponseViewer({
             />
           )}
           {response.graphql && !response.binary && <GraphqlResponseSummary response={response} graphql={response.graphql} />}
-          {!response.binary && <pre className="resp-body">{responseText || " "}</pre>}
+          {!response.binary && (
+            <pre
+              ref={responseBodyRef}
+              className="resp-body"
+              data-testid="response-body"
+              onMouseUp={() => {
+                const check = inspectResponseSelection(responseBodyRef.current, window.getSelection());
+                if (check.kind === "valid" && responseBodyRef.current) {
+                  selectionRef.current = {
+                    body: responseBodyRef.current,
+                    text: check.text,
+                    revision: renderRevisionRef.current,
+                  };
+                  lastSelectionRevisionRef.current = renderRevisionRef.current;
+                } else {
+                  selectionRef.current = null;
+                }
+              }}
+              onKeyUp={() => {
+                const check = inspectResponseSelection(responseBodyRef.current, window.getSelection());
+                if (check.kind === "valid" && responseBodyRef.current) {
+                  selectionRef.current = {
+                    body: responseBodyRef.current,
+                    text: check.text,
+                    revision: renderRevisionRef.current,
+                  };
+                  lastSelectionRevisionRef.current = renderRevisionRef.current;
+                } else {
+                  selectionRef.current = null;
+                }
+              }}
+            >
+              {responseText || " "}
+            </pre>
+          )}
         </section>
       )}
 

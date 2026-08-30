@@ -44,6 +44,7 @@ devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem
 devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
+devbox-launch = { package = "launch", path = "../../../crates/launch" }
 tokio = { version = "1.53.1", features = ["io-util", "macros", "net", "process", "sync", "time"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = [

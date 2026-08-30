@@ -4,6 +4,7 @@ import {
   type ContextMenuEntry,
 } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import * as api from "./api";
 import {
   ackApiRequest,
   buildRevealedCurl,
@@ -2192,6 +2193,8 @@ export default function App() {
           onPrettyChange={setPretty}
           onRawCopy={copyRawResponse}
           onBinarySave={saveBinaryResponse}
+          onSendSelection={api.sendSelectionToToolbox}
+          native={isTauri()}
           onError={setError}
         />
         <SseEventViewer

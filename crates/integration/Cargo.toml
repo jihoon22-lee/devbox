@@ -14,3 +14,5 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11.0"
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
+chrono = { version = "0.4", features = ["clock"] }
+iana-time-zone = "0.1"

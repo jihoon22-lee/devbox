@@ -21,7 +21,7 @@ mod tests {
     fn parses_the_repository_v2_catalog_through_the_shared_contract() {
         let catalog = parse_catalog(BUILD_CATALOG).unwrap();
         assert_eq!(catalog.schema_version, 2);
-        assert_eq!(catalog.catalog_revision, Some(14));
+        assert_eq!(catalog.catalog_revision, Some(15));
         assert_eq!(catalog.apps.len(), 15);
         let knowledge = catalog
             .apps
@@ -30,7 +30,12 @@ mod tests {
             .expect("Knowledge must remain in the repository catalog");
         assert_eq!(
             knowledge.accepts,
-            vec!["path", "query", "handoff:knowledge-draft/v1"]
+            vec![
+                "path",
+                "query",
+                "handoff:knowledge-draft/v1",
+                "handoff:knowledge-draft/v2"
+            ]
         );
         let everything = catalog
             .apps

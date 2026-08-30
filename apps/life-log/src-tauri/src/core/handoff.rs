@@ -158,8 +158,12 @@ pub fn validate_knowledge_draft(payload: &KnowledgeDraftPayload) -> Result<(), S
         return Err("handoff draft 본문이 올바르지 않습니다".into());
     }
     validate_summary(&payload.summary)?;
+    let source_contract = payload.sources[0].schema_version.unwrap_or_default();
+    if !matches!(source_contract, 1 | 2) {
+        return Err("handoff draft 출처가 올바르지 않습니다".into());
+    }
     for (source, expected_id) in payload.sources.iter().zip(EXPECTED_SOURCE_IDS) {
-        validate_source(source, expected_id)?;
+        validate_source(source, expected_id, source_contract)?;
     }
     Ok(())
 }
@@ -213,6 +217,7 @@ pub(crate) fn validate_summary(summary: &KnowledgeDraftSummary) -> Result<(), St
 pub(crate) fn validate_source(
     source: &KnowledgeDraftSource,
     expected_id: &str,
+    source_contract: u32,
 ) -> Result<(), String> {
     if source.id != expected_id
         || !bounded_text(&source.scope, 64, false)
@@ -232,24 +237,32 @@ pub(crate) fn validate_source(
             .freshness_ms
             .is_some_and(|value| value > MAX_PROVENANCE_FRESHNESS_MS)
         || source.view.as_deref().is_some_and(|value| {
-            !bounded_text(value, 64, false) || !matches!(value, "activity" | "legacy-data")
+            !bounded_text(value, 64, false)
+                || !matches!(value, "activity" | "legacy-data" | "daily-activity")
         })
     {
         return Err("handoff draft 출처가 올바르지 않습니다".into());
     }
-    let expected_scope = if matches!(expected_id, "run-manager" | "knowledge-base") {
-        "latest-snapshot-out-of-range"
+    let valid_scope = if matches!(expected_id, "run-manager" | "knowledge-base") {
+        if source_contract == 1 {
+            source.scope == "latest-snapshot-out-of-range"
+        } else {
+            matches!(
+                source.scope.as_str(),
+                "requested-range" | "requested-range-partial"
+            )
+        }
     } else {
-        "requested-range"
+        source.scope == "requested-range"
     };
-    if source.scope != expected_scope {
+    if !valid_scope {
         return Err("handoff draft 출처 범위가 올바르지 않습니다".into());
     }
     match expected_id {
         "life-log" => {
             if !source.available
                 || source.error_code.is_some()
-                || source.schema_version != Some(1)
+                || source.schema_version != Some(source_contract)
                 || source.snapshot_version.is_some()
                 || source.producer_version.is_none()
                 || source.generated_at.is_some()
@@ -282,6 +295,15 @@ pub(crate) fn validate_source(
                         || source.producer_version.is_none()
                         || source.generated_at.is_none()
                         || source.freshness_ms.is_none())
+                || (source_contract == 2
+                    && (source.view.as_deref() != Some("daily-activity")
+                        || (source.available && source.scope != "requested-range")
+                        || (source.scope == "requested-range-partial" && source.available)))
+                || (source_contract == 1
+                    && source.view.as_deref().is_some_and(|view| {
+                        expected_id != "knowledge-base"
+                            || !matches!(view, "activity" | "legacy-data")
+                    }))
             {
                 return Err("handoff draft 출처가 올바르지 않습니다".into());
             }

@@ -19,6 +19,7 @@ vi.mock("./api", () => ({
   saveResponseBinary: vi.fn(),
   sanitizePersistedJson: vi.fn(),
   sealSecret: vi.fn(),
+  sendSelectionToToolbox: vi.fn(),
   sendRequest: vi.fn(),
   startSseStream: vi.fn(),
   startWebSocket: vi.fn(),

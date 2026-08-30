@@ -39,16 +39,21 @@
 
 mod handoff;
 mod task_control;
+mod toolbox_text;
 
 pub use handoff::{
-    handoff_root_in, validate_handoff_text, CreateHandoff, HandoffClaim, HandoffDescriptor,
-    HandoffEnvelope, HandoffError, HandoffPublication, HandoffStatus, HandoffStatusRecord,
-    HandoffStore, RecordHandoffStatus, DEFAULT_CLAIM_LEASE_MS, DEFAULT_HANDOFF_TTL_MS,
-    MAX_HANDOFF_BYTES,
+    handoff_root_in, redact_handoff_text, validate_handoff_text, CreateHandoff, HandoffClaim,
+    HandoffDescriptor, HandoffEnvelope, HandoffError, HandoffPublication, HandoffStatus,
+    HandoffStatusRecord, HandoffStore, RecordHandoffStatus, RedactedHandoffText,
+    DEFAULT_CLAIM_LEASE_MS, DEFAULT_HANDOFF_TTL_MS, MAX_HANDOFF_BYTES,
 };
 pub use task_control::{
     TaskControlAction, TaskControlRequest, TASK_CONTROL_HANDOFF_KIND, TASK_CONTROL_SCHEMA_VERSION,
     TASK_CONTROL_SOURCE_APP, TASK_CONTROL_TARGET_APP,
+};
+pub use toolbox_text::{
+    ToolboxTextPayload, TOOLBOX_TEXT_HANDOFF_KIND, TOOLBOX_TEXT_MAX_BYTES, TOOLBOX_TEXT_MAX_CHARS,
+    TOOLBOX_TEXT_TARGET_APP,
 };
 
 use serde::{Deserialize, Serialize};

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 14,
+  "catalogRevision": 15,
   "apps": [
     {
       "id": "port-manager",
@@ -26,8 +26,8 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": [],
-      "produces": ["handoff:api-request/v1"],
+      "accepts": ["handoff:toolbox-text/v1"],
+      "produces": ["handoff:api-request/v1", "handoff:knowledge-draft/v2"],
       "actions": [
         {
           "actionId": "send-output-to-api",
@@ -35,6 +35,13 @@
           "label": "Send output to API Playground",
           "target": "api-playground",
           "payloadKind": "handoff:api-request/v1"
+        },
+        {
+          "actionId": "save-output-to-knowledge",
+          "actionVersion": 1,
+          "label": "Save output as Knowledge draft",
+          "target": "knowledge-base",
+          "payloadKind": "handoff:knowledge-draft/v2"
         }
       ]
     },
@@ -67,8 +74,16 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["handoff:api-request/v1"],
-      "produces": [],
-      "actions": []
+      "produces": ["handoff:toolbox-text/v1"],
+      "actions": [
+        {
+          "actionId": "transform-response-text",
+          "actionVersion": 1,
+          "label": "Transform response text",
+          "target": "developer-toolbox",
+          "payloadKind": "handoff:toolbox-text/v1"
+        }
+      ]
     },
     {
       "id": "everything-plus",
@@ -94,8 +109,16 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["path", "query", "handoff:knowledge-draft/v1"],
-      "produces": ["snapshot:knowledge-base/activity/v1"],
+      "accepts": [
+        "path",
+        "query",
+        "handoff:knowledge-draft/v1",
+        "handoff:knowledge-draft/v2"
+      ],
+      "produces": [
+        "snapshot:knowledge-base/activity/v1",
+        "snapshot:daily-activity/v1"
+      ],
       "actions": []
     },
     {
@@ -164,7 +187,8 @@
         "snapshot:run-manager/jobs-services/v1",
         "snapshot:run-manager/workspace-tasks/v1",
         "snapshot:run-manager/task-control-receipts/v1",
-        "handoff:log-source/v1"
+        "handoff:log-source/v1",
+        "snapshot:daily-activity/v1"
       ],
       "actions": []
     },
@@ -235,8 +259,16 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": [],
-      "produces": [],
-      "actions": []
+      "produces": ["handoff:toolbox-text/v1"],
+      "actions": [
+        {
+          "actionId": "transform-text",
+          "actionVersion": 1,
+          "label": "Transform text",
+          "target": "developer-toolbox",
+          "payloadKind": "handoff:toolbox-text/v1"
+        }
+      ]
     },
     {
       "id": "log-lens",
@@ -249,8 +281,16 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": ["handoff:log-source/v1"],
-      "produces": [],
-      "actions": []
+      "produces": ["handoff:toolbox-text/v1"],
+      "actions": [
+        {
+          "actionId": "transform-selected-logs",
+          "actionVersion": 1,
+          "label": "Transform selected logs",
+          "target": "developer-toolbox",
+          "payloadKind": "handoff:toolbox-text/v1"
+        }
+      ]
     }
   ]
 }

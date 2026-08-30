@@ -45,6 +45,12 @@ show raw paths, payloads, or storage details. The viewer does not write a
 permanent log archive. An explicit Export or Copy action operates on the
 currently visible selection only; saved views contain source settings and
 filters, never log text.
+- `Send selected logs to Developer Toolbox` operates only on records explicitly
+  selected in the current source generation. It builds a bounded deterministic
+  export and publishes a one-time masked `toolbox-text/v1` handoff; stale
+  selection or generation is rejected. It never expands to all visible records
+  and never uses a clipboard fallback. Developer Toolbox must preview and apply
+  the handoff explicitly.
 
 ## Safety and lifecycle
 

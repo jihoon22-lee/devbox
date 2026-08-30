@@ -86,6 +86,7 @@ import type {
   RequestTemplate,
   SseOptions,
   SseUpdate,
+  ToolboxDispatch,
 } from "./types";
 
 const SSE_EVENT = "api-playground/sse";
@@ -112,6 +113,8 @@ let nativeRequestSequence = 0;
 
 const HANDOFF_BROWSER_ERROR =
   "API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
+export const TOOLBOX_SELECTION_BROWSER_ERROR =
+  "Developer Toolbox로 보내기는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
 
 function nextNativeRequestId(): string {
   nativeRequestSequence = (nativeRequestSequence + 1) % Number.MAX_SAFE_INTEGER;
@@ -213,6 +216,12 @@ export async function copyRawResponseHeaders(responseId: string): Promise<string
 export async function copyRawResponseCookies(responseId: string): Promise<string> {
   if (!isTauri()) throw new Error("원문 응답 Cookie 복사는 데스크톱 앱에서만 사용할 수 있습니다");
   return invoke<string>("copy_raw_response_cookies", { responseId });
+}
+
+/** Send only the explicitly selected, rendered response text to Developer Toolbox. */
+export async function sendSelectionToToolbox(text: string): Promise<ToolboxDispatch> {
+  if (!isTauri()) throw new Error(TOOLBOX_SELECTION_BROWSER_ERROR);
+  return invoke<ToolboxDispatch>("send_selection_to_toolbox", { text });
 }
 
 /** Save the current bounded binary response through the native dialog only. */

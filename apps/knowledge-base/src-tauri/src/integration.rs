@@ -12,8 +12,11 @@ const PRODUCER_ID: &str = "knowledge-base";
 const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 const ACTIVITY_KIND: &str = "activity";
 const ACTIVITY_SCHEMA_VERSION: u32 = 1;
+const DAILY_ACTIVITY_KIND: &str = "daily-activity";
+const DAILY_ACTIVITY_SCHEMA_VERSION: u32 = 1;
 const DAY_MS: i64 = 86_400_000;
 const MAX_NOTE_IDS: usize = 512;
+const MAX_DAILY_NOTE_COUNT: u64 = 10_000_000;
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +25,15 @@ struct KnowledgeActivityEntry {
     last_modified_at_ms: Option<i64>,
     note_ids: Vec<String>,
     identifiers_truncated: bool,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeDailyActivityEntry {
+    #[serde(flatten)]
+    day: devbox_integration::LocalCivilDay,
+    notes_modified: u64,
+    last_modified_at_ms: Option<i64>,
 }
 
 /// Knowledge activity snapshot을 쓴다. 실패해도 앱 동작을 막지 않는다.
@@ -47,7 +59,79 @@ fn write_snapshot_in(db: &Connection, root: &Path, now_ms: i64) -> Result<(), St
     )]);
     let envelope = Envelope::with_views(PRODUCER_ID, env!("CARGO_PKG_VERSION"), views);
     let dir = devbox_integration::snapshot_dir_in(root, PRODUCER_ID, SNAPSHOT_SCHEMA_VERSION);
-    devbox_integration::write_atomic(&envelope, &dir)
+    devbox_integration::write_atomic(&envelope, &dir)?;
+    write_daily_activity_snapshot_in(db, root, now_ms)
+}
+
+fn write_daily_activity_snapshot_in(
+    db: &Connection,
+    root: &Path,
+    now_ms: i64,
+) -> Result<(), String> {
+    let now = u64::try_from(now_ms).map_err(|_| "Knowledge activity 시각이 올바르지 않습니다")?;
+    let days = devbox_integration::recent_local_civil_days(
+        now,
+        devbox_integration::MAX_DAILY_ACTIVITY_DAYS,
+    )?;
+    let entries = daily_activity_entries(db, &days, now_ms)?
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "Knowledge daily activity를 직렬화할 수 없습니다")?;
+    let views = SnapshotViews::from([(
+        DAILY_ACTIVITY_KIND.to_owned(),
+        SnapshotView {
+            schema_version: DAILY_ACTIVITY_SCHEMA_VERSION,
+            freshness_ms: 0,
+            entries,
+        },
+    )]);
+    let envelope = Envelope::with_views(PRODUCER_ID, env!("CARGO_PKG_VERSION"), views);
+    devbox_integration::write_named_view_snapshot_atomic(&envelope, root, DAILY_ACTIVITY_KIND)
+}
+
+fn daily_activity_entries(
+    db: &Connection,
+    days: &[devbox_integration::LocalCivilDay],
+    now_ms: i64,
+) -> Result<Vec<KnowledgeDailyActivityEntry>, String> {
+    devbox_integration::validate_local_civil_days(days)?;
+    if now_ms <= 0 {
+        return Err("Knowledge activity 시각이 올바르지 않습니다".into());
+    }
+    let mut statement = db
+        .prepare(
+            "SELECT COUNT(*), MAX(modified_ts)
+             FROM docs
+             WHERE modified_ts >= ?1 AND modified_ts < ?2",
+        )
+        .map_err(|_| "Knowledge daily activity를 준비할 수 없습니다")?;
+    days.iter()
+        .map(|day| {
+            let effective_end = day.end_ms.min(now_ms.saturating_add(1));
+            let (notes_modified, last_modified_at_ms): (u64, Option<i64>) =
+                if effective_end <= day.start_ms {
+                    (0, None)
+                } else {
+                    statement
+                        .query_row(rusqlite::params![day.start_ms, effective_end], |row| {
+                            Ok((row.get(0)?, row.get(1)?))
+                        })
+                        .map_err(|_| "Knowledge daily activity를 계산할 수 없습니다")?
+                };
+            if notes_modified > MAX_DAILY_NOTE_COUNT
+                || last_modified_at_ms
+                    .is_some_and(|timestamp| timestamp < day.start_ms || timestamp >= effective_end)
+            {
+                return Err("Knowledge daily activity 범위를 초과했습니다".into());
+            }
+            Ok(KnowledgeDailyActivityEntry {
+                day: day.clone(),
+                notes_modified,
+                last_modified_at_ms,
+            })
+        })
+        .collect()
 }
 
 fn activity_entry(db: &Connection, now_ms: i64) -> Result<KnowledgeActivityEntry, String> {
@@ -196,7 +280,7 @@ mod tests {
     #[test]
     fn writes_discoverable_activity_view_without_note_content() {
         let connection = database();
-        let now_ms = DAY_MS * 30 + 10_000;
+        let now_ms = 1_788_042_600_000_i64;
         insert_doc(
             &connection,
             "notes/private.md",
@@ -226,5 +310,62 @@ mod tests {
         .unwrap();
         assert!(!bytes.contains("private.md"));
         assert!(!bytes.contains("raw credential"));
+
+        let daily = devbox_integration::read_named_view_snapshot_in(
+            temp.path(),
+            PRODUCER_ID,
+            SNAPSHOT_SCHEMA_VERSION,
+            DAILY_ACTIVITY_KIND,
+        )
+        .unwrap()
+        .unwrap();
+        let views = daily.views().unwrap();
+        let view = views.get(DAILY_ACTIVITY_KIND).unwrap();
+        assert_eq!(view.schema_version, DAILY_ACTIVITY_SCHEMA_VERSION);
+        assert_eq!(
+            view.entries.len(),
+            devbox_integration::MAX_DAILY_ACTIVITY_DAYS
+        );
+        let encoded = serde_json::to_string(&daily).unwrap();
+        assert!(!encoded.contains("private.md"));
+        assert!(!encoded.contains("raw credential"));
+        assert!(!encoded.contains("noteIds"));
+    }
+
+    #[test]
+    fn daily_activity_uses_exact_half_open_civil_boundaries() {
+        let connection = database();
+        let start = 1_700_000_000_000_i64;
+        let days = vec![
+            devbox_integration::LocalCivilDay {
+                date: "2026-08-29".into(),
+                start_ms: start,
+                end_ms: start + DAY_MS,
+                timezone: "Asia/Seoul".into(),
+            },
+            devbox_integration::LocalCivilDay {
+                date: "2026-08-30".into(),
+                start_ms: start + DAY_MS,
+                end_ms: start + 2 * DAY_MS,
+                timezone: "Asia/Seoul".into(),
+            },
+        ];
+        insert_doc(&connection, "first.md", "body", start);
+        insert_doc(&connection, "last-first.md", "body", start + DAY_MS - 1);
+        insert_doc(&connection, "first-second.md", "body", start + DAY_MS);
+        insert_doc(
+            &connection,
+            "future-second.md",
+            "body",
+            start + DAY_MS + 20_000,
+        );
+
+        let entries = daily_activity_entries(&connection, &days, start + DAY_MS + 10_000).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].notes_modified, 2);
+        assert_eq!(entries[0].last_modified_at_ms, Some(start + DAY_MS - 1));
+        assert_eq!(entries[1].notes_modified, 1);
+        assert_eq!(entries[1].last_modified_at_ms, Some(start + DAY_MS));
+        assert_eq!(entries[0].day.end_ms, entries[1].day.start_ms);
     }
 }

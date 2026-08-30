@@ -8,7 +8,7 @@
 
 use crate::core::export::{
     self, ExportAppTotal, ExportDayBoundary, ExportFormat, ExportGit, ExportInput, ExportRange,
-    ExportSession, SourceMetadata,
+    ExportSession, KnowledgeDigest, RunDigest, SourceMetadata,
 };
 use devbox_filesystem::parse_safe_project_path;
 use rusqlite::Connection;
@@ -20,11 +20,12 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-pub const DIGEST_SCHEMA_VERSION: u32 = 1;
+pub const DIGEST_SCHEMA_VERSION: u32 = 2;
 pub const MAX_DIGEST_DAYS: usize = export::MAX_EXPORT_DAYS;
 pub const MAX_DIGEST_APPS: usize = 2_048;
 pub const MAX_DIGEST_BYTES: usize = export::MAX_EXPORT_BYTES;
 const MAX_HEADLINE_BYTES: usize = 512;
+const MAX_NATIVE_ACTIVITY_COUNT: u64 = 1_000_000_000;
 
 const DIGEST_MARKDOWN_HEADER: &str = "# Life Log local digest\n\n";
 
@@ -100,6 +101,9 @@ pub struct DigestDay {
     pub pc_usage_ms: i64,
     pub session_count: usize,
     pub git_commits: u32,
+    pub run_succeeded: Option<u64>,
+    pub run_failed: Option<u64>,
+    pub knowledge_notes_modified: Option<u64>,
     pub top_app: Option<String>,
     pub has_activity: bool,
 }
@@ -114,6 +118,8 @@ pub struct DigestSummary {
     pub average_daily_usage_ms: i64,
     pub top_app: Option<String>,
     pub git_commits: u32,
+    pub run: Option<RunDigest>,
+    pub knowledge: Option<KnowledgeDigest>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -477,8 +483,18 @@ pub async fn build_response_with_cancel(
             // project filter must add per-project daily provenance before
             // it is allowed to change this value.
             git_commits: exported_day.git_commits,
+            run_succeeded: exported_day.run_succeeded,
+            run_failed: exported_day.run_failed,
+            knowledge_notes_modified: exported_day.knowledge_notes_modified,
             top_app: top_app(&day_sessions),
-            has_activity: pc_usage_ms > 0 || session_count > 0 || exported_day.git_commits > 0,
+            has_activity: pc_usage_ms > 0
+                || session_count > 0
+                || exported_day.git_commits > 0
+                || exported_day.run_succeeded.is_some_and(|value| value > 0)
+                || exported_day.run_failed.is_some_and(|value| value > 0)
+                || exported_day
+                    .knowledge_notes_modified
+                    .is_some_and(|value| value > 0),
         });
     }
 
@@ -498,6 +514,8 @@ pub async fn build_response_with_cancel(
         },
         top_app: app_totals.first().map(|app| app.app.clone()),
         git_commits: export_document.summary.git.total_commits,
+        run: export_document.summary.run.clone(),
+        knowledge: export_document.summary.knowledge.clone(),
     };
     let filter_description = input
         .filter
@@ -573,7 +591,7 @@ fn digest_rules(app_filter: String) -> DigestRules {
         app_filter,
         app_totals: "sanitized sessions are grouped by app; duration descending then app byte order".into(),
         git_commits: "read-only bounded git counts come from the requested range and remain independent of the app filter".into(),
-        snapshot_scope: "Run Manager and Knowledge latest snapshots are provenance only because they are not range-keyed history".into(),
+        snapshot_scope: "Run Manager and Knowledge daily-activity sidecars are joined only when date, timezone, and exact local civil-day boundaries match; missing or mismatched values remain unavailable".into(),
         privacy: "Life Log privacy rules and obvious credential markers are reapplied before aggregation".into(),
         external_processing: "rule-based local aggregation only; no cloud/local LLM, network, telemetry, or external activity transfer".into(),
     }
@@ -737,12 +755,23 @@ fn render_markdown(document: &DigestDocument) -> String {
         "Top app",
         document.summary.top_app.as_deref().unwrap_or("-"),
     );
+    if let Some(run) = &document.summary.run {
+        markdown_row(&mut output, "Runs succeeded", &run.succeeded.to_string());
+        markdown_row(&mut output, "Runs failed", &run.failed.to_string());
+    }
+    if let Some(knowledge) = &document.summary.knowledge {
+        markdown_row(
+            &mut output,
+            "Knowledge notes modified",
+            &knowledge.notes_modified.to_string(),
+        );
+    }
     if document.summary.session_count == 0 && document.summary.git_commits == 0 {
         output.push_str("\nNo activity was recorded in the selected period or filter.\n");
     }
     output.push('\n');
 
-    output.push_str("## Daily digest\n\n| Date | PC usage (ms) | Sessions | Git commits | Top app |\n| --- | ---: | ---: | ---: | --- |\n");
+    output.push_str("## Daily digest\n\n| Date | PC usage (ms) | Sessions | Git commits | Runs succeeded | Runs failed | Knowledge notes modified | Top app |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
     for day in &document.daily {
         output.push_str("| ");
         output.push_str(&markdown_cell(&day.date));
@@ -752,6 +781,24 @@ fn render_markdown(document: &DigestDocument) -> String {
         output.push_str(&day.session_count.to_string());
         output.push_str(" | ");
         output.push_str(&day.git_commits.to_string());
+        output.push_str(" | ");
+        output.push_str(
+            &day.run_succeeded
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".into()),
+        );
+        output.push_str(" | ");
+        output.push_str(
+            &day.run_failed
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".into()),
+        );
+        output.push_str(" | ");
+        output.push_str(
+            &day.knowledge_notes_modified
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".into()),
+        );
         output.push_str(" | ");
         output.push_str(&markdown_cell(day.top_app.as_deref().unwrap_or("-")));
         output.push_str(" |\n");
@@ -911,9 +958,24 @@ pub fn validate_response(response: &DigestResponse) -> bool {
                     || day.start_ms != boundary.start_ms
                     || day.end_ms != boundary.end_ms
                     || day.has_activity
-                        != (day.pc_usage_ms > 0 || day.session_count > 0 || day.git_commits > 0)
+                        != (day.pc_usage_ms > 0
+                            || day.session_count > 0
+                            || day.git_commits > 0
+                            || day.run_succeeded.is_some_and(|value| value > 0)
+                            || day.run_failed.is_some_and(|value| value > 0)
+                            || day.knowledge_notes_modified.is_some_and(|value| value > 0))
                     || day.pc_usage_ms < 0
                     || day.session_count > export::MAX_EXPORT_SESSIONS
+                    || day.run_succeeded.is_some() != day.run_failed.is_some()
+                    || day
+                        .run_succeeded
+                        .is_some_and(|value| value > MAX_NATIVE_ACTIVITY_COUNT)
+                    || day
+                        .run_failed
+                        .is_some_and(|value| value > MAX_NATIVE_ACTIVITY_COUNT)
+                    || day
+                        .knowledge_notes_modified
+                        .is_some_and(|value| value > MAX_NATIVE_ACTIVITY_COUNT)
                     || day.top_app.as_deref().is_some_and(|app| {
                         !bounded_metadata(app, 256)
                             || contains_secret_marker(app)
@@ -1071,17 +1133,103 @@ pub fn validate_response(response: &DigestResponse) -> bool {
             .all(|(index, source)| {
                 valid_source(source, expected_ids[index], &response.document.git)
             })
+        && valid_native_activity(&response.document)
         && response.markdown == render_markdown(&response.document)
 }
 
+fn valid_native_activity(document: &DigestDocument) -> bool {
+    let Some(run_source) = document.sources.get(2) else {
+        return false;
+    };
+    let Some(knowledge_source) = document.sources.get(3) else {
+        return false;
+    };
+    let run_complete = document
+        .daily
+        .iter()
+        .all(|day| day.run_succeeded.is_some() && day.run_failed.is_some());
+    let knowledge_complete = document
+        .daily
+        .iter()
+        .all(|day| day.knowledge_notes_modified.is_some());
+    if run_source.available != run_complete || knowledge_source.available != knowledge_complete {
+        return false;
+    }
+    if !run_complete {
+        if document.summary.run.is_some()
+            || (run_source.scope == "requested-range"
+                && document.daily.iter().any(|day| day.run_succeeded.is_some()))
+        {
+            return false;
+        }
+    } else {
+        let Some(summary) = &document.summary.run else {
+            return false;
+        };
+        let Some(succeeded) = document
+            .daily
+            .iter()
+            .try_fold(0_u64, |total, day| total.checked_add(day.run_succeeded?))
+        else {
+            return false;
+        };
+        let Some(failed) = document
+            .daily
+            .iter()
+            .try_fold(0_u64, |total, day| total.checked_add(day.run_failed?))
+        else {
+            return false;
+        };
+        if summary.succeeded != succeeded
+            || summary.failed != failed
+            || summary.last_run_at_ms.is_some_and(|timestamp| {
+                timestamp < document.range.start_ms || timestamp >= document.range.end_ms
+            })
+        {
+            return false;
+        }
+    }
+    if !knowledge_complete {
+        if document.summary.knowledge.is_some()
+            || (knowledge_source.scope == "requested-range"
+                && document
+                    .daily
+                    .iter()
+                    .any(|day| day.knowledge_notes_modified.is_some()))
+        {
+            return false;
+        }
+    } else {
+        let Some(summary) = &document.summary.knowledge else {
+            return false;
+        };
+        let Some(notes_modified) = document.daily.iter().try_fold(0_u64, |total, day| {
+            total.checked_add(day.knowledge_notes_modified?)
+        }) else {
+            return false;
+        };
+        if summary.notes_modified != notes_modified
+            || summary.last_modified_at_ms.is_some_and(|timestamp| {
+                timestamp < document.range.start_ms || timestamp >= document.range.end_ms
+            })
+        {
+            return false;
+        }
+    }
+    true
+}
+
 fn valid_source(source: &SourceMetadata, expected_id: &str, git: &ExportGit) -> bool {
+    let is_activity_source = expected_id == "run-manager" || expected_id == "knowledge-base";
     if source.id != expected_id
-        || source.scope
-            != if expected_id == "run-manager" || expected_id == "knowledge-base" {
-                "latest-snapshot-out-of-range"
-            } else {
-                "requested-range"
-            }
+        || if is_activity_source {
+            !matches!(
+                source.scope.as_str(),
+                "requested-range" | "requested-range-partial"
+            )
+        } else {
+            source.scope != "requested-range"
+        }
         || !bounded_metadata(&source.scope, 64)
         || source.error_code.as_deref().is_some_and(|code| {
             if expected_id == "run-manager" || expected_id == "knowledge-base" {
@@ -1151,24 +1299,23 @@ fn valid_source(source: &SourceMetadata, expected_id: &str, git: &ExportGit) -> 
                 && source.generated_at.is_none()
                 && source.freshness_ms.is_none();
             source.available == source.error_code.is_none()
+                && source.view.as_deref() == Some("daily-activity")
+                && (!source.available || source.scope == "requested-range")
+                && (source.scope != "requested-range-partial"
+                    || (!source.available && provenance_complete))
                 && source.schema_version.is_none_or(|version| version > 0)
                 && source.snapshot_version.is_none_or(|version| version > 0)
                 && source
                     .schema_version
                     .is_none_or(|version| source.snapshot_version == Some(version))
                 && (provenance_complete || provenance_empty)
-                && source.view.as_deref().is_none_or(|view| {
-                    expected_id == "knowledge-base" && matches!(view, "activity" | "legacy-data")
-                })
                 && (!source.available
                     || (provenance_complete
-                        && source.schema_version == Some(export::EXPORT_SCHEMA_VERSION)
-                        && source.snapshot_version == Some(export::EXPORT_SCHEMA_VERSION)
-                        && (expected_id != "knowledge-base"
-                            || source
-                                .view
-                                .as_deref()
-                                .is_some_and(|view| matches!(view, "activity" | "legacy-data")))))
+                        && source.schema_version == Some(1)
+                        && source.snapshot_version == Some(1)
+                        && source
+                            .freshness_ms
+                            .is_some_and(|value| value <= export::MAX_PROVENANCE_FRESHNESS_MS)))
         }
         _ => false,
     }
@@ -1183,6 +1330,9 @@ fn safe_snapshot_error(value: &str) -> bool {
             | "snapshot_payload_invalid"
             | "snapshot_changed_during_read"
             | "snapshot_stale"
+            | "snapshot_range_partial"
+            | "snapshot_range_unavailable"
+            | "snapshot_boundary_mismatch"
     )
 }
 

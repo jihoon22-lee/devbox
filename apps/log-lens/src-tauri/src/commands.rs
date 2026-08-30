@@ -6,6 +6,7 @@ use crate::core::{
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::State;
+use zeroize::Zeroizing;
 
 #[derive(Default)]
 pub struct AppState {
@@ -30,6 +31,75 @@ pub struct SourcesSnapshot {
     pub truncated: bool,
     pub dropped_records: usize,
     pub dropped_bytes: usize,
+}
+
+const SOURCE_APP: &str = "log-lens";
+const INVALID_TOOLBOX_SELECTION: &str = "Developer Toolbox로 보낼 선택 로그가 유효하지 않습니다";
+const TOOLBOX_UNAVAILABLE: &str =
+    "Developer Toolbox를 사용할 수 없습니다. 클립보드로 자동 전환하지 않습니다";
+const TOOLBOX_DELIVERY_FAILED: &str =
+    "Developer Toolbox로 선택 로그를 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolboxDispatch {
+    pub handoff_id: String,
+    pub redacted: bool,
+}
+
+/// Publish the explicit selected-record export through the one-time text
+/// handoff. Source descriptors, paths, commands, and the clipboard are not
+/// read by this boundary.
+#[tauri::command]
+pub fn send_selection_to_toolbox(text: String) -> Result<ToolboxDispatch, String> {
+    let text = Zeroizing::new(text);
+    let (payload, redacted) =
+        devbox_applink::ToolboxTextPayload::from_selected_text(SOURCE_APP, text.as_str())
+            .map_err(|_| INVALID_TOOLBOX_SELECTION.to_string())?;
+    if !devbox_launch::installed_targets(&format!(
+        "handoff:{}",
+        devbox_applink::TOOLBOX_TEXT_HANDOFF_KIND
+    ))
+    .into_iter()
+    .any(|target| target.id == devbox_applink::TOOLBOX_TEXT_TARGET_APP)
+    {
+        return Err(TOOLBOX_UNAVAILABLE.to_string());
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| TOOLBOX_DELIVERY_FAILED.to_string())?;
+    let store = devbox_applink::HandoffStore::new(devbox_applink::handoff_root_in(
+        &devbox_integration::common_root(),
+    ));
+    let descriptor = store
+        .create(
+            devbox_applink::CreateHandoff {
+                kind: devbox_applink::TOOLBOX_TEXT_HANDOFF_KIND.to_string(),
+                source_app: SOURCE_APP.to_string(),
+                target_app: Some(devbox_applink::TOOLBOX_TEXT_TARGET_APP.to_string()),
+                payload: serde_json::to_value(payload)
+                    .map_err(|_| TOOLBOX_DELIVERY_FAILED.to_string())?,
+            },
+            now,
+        )
+        .map_err(|_| TOOLBOX_DELIVERY_FAILED.to_string())?;
+    let request = devbox_applink::OpenRequest {
+        target: descriptor.clone().into(),
+        from: Some(SOURCE_APP.to_string()),
+    };
+    if devbox_launch::launch_open(devbox_applink::TOOLBOX_TEXT_TARGET_APP, &request).is_err() {
+        let _ = store.revoke_pending(&descriptor, SOURCE_APP);
+        return Err(TOOLBOX_DELIVERY_FAILED.to_string());
+    }
+
+    Ok(ToolboxDispatch {
+        handoff_id: descriptor.id,
+        redacted,
+    })
 }
 
 #[tauri::command]

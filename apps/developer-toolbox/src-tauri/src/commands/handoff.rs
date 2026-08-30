@@ -4,6 +4,7 @@ use crate::core::handoff::{
 };
 use devbox_applink::{handoff_root_in, CreateHandoff, HandoffError, HandoffStore, OpenRequest};
 use serde::Serialize;
+use zeroize::Zeroizing;
 
 pub const API_TARGET_UNAVAILABLE_ERROR: &str =
     "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다";
@@ -11,6 +12,10 @@ pub const HANDOFF_CREATE_ERROR: &str =
     "API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다";
 pub const API_LAUNCH_ERROR: &str =
     "API Playground를 실행하지 못했습니다. 전달 데이터는 폐기했습니다. 클립보드로 자동 전환하지 않습니다";
+pub const KNOWLEDGE_TARGET_UNAVAILABLE_ERROR: &str =
+    "Knowledge를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다";
+pub const KNOWLEDGE_HANDOFF_ERROR: &str =
+    "Knowledge draft를 만들거나 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +25,13 @@ pub struct ApiHandoffDispatch {
     pub consumer_id: String,
     pub created_at_ms: u64,
     pub expires_at_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeDraftDispatch {
+    pub handoff_id: String,
+    pub redacted: bool,
 }
 
 /// Publish the current visible output as a one-time API Playground request.
@@ -72,6 +84,52 @@ pub fn create_api_request_handoff(output: String) -> Result<ApiHandoffDispatch, 
         consumer_id: CONSUMER_APP_ID.to_string(),
         created_at_ms,
         expires_at_ms,
+    })
+}
+
+/// Publish the current visible transform result as a strict Knowledge draft.
+/// The consumer still previews and explicitly saves it; this command never
+/// writes a note or falls back to clipboard transport.
+#[tauri::command]
+pub fn create_knowledge_draft_handoff(output: String) -> Result<KnowledgeDraftDispatch, String> {
+    let output = Zeroizing::new(output);
+    let created_date = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let (payload, redacted) =
+        crate::core::knowledge_draft::build_payload(output.as_str(), &created_date)
+            .map_err(|_| KNOWLEDGE_HANDOFF_ERROR.to_string())?;
+    let kind = crate::core::knowledge_draft::HANDOFF_KIND;
+    let target = crate::core::knowledge_draft::TARGET_APP;
+    if !devbox_launch::installed_targets(&format!("handoff:{kind}"))
+        .into_iter()
+        .any(|candidate| candidate.id == target)
+    {
+        return Err(KNOWLEDGE_TARGET_UNAVAILABLE_ERROR.to_string());
+    }
+    let now = handoff_now_ms().ok_or_else(|| KNOWLEDGE_HANDOFF_ERROR.to_string())?;
+    let store = HandoffStore::new(handoff_root_in(&devbox_integration::common_root()));
+    let descriptor = store
+        .create(
+            CreateHandoff {
+                kind: kind.to_string(),
+                source_app: crate::core::knowledge_draft::SOURCE_APP.to_string(),
+                target_app: Some(target.to_string()),
+                payload: serde_json::to_value(payload)
+                    .map_err(|_| KNOWLEDGE_HANDOFF_ERROR.to_string())?,
+            },
+            now,
+        )
+        .map_err(|_| KNOWLEDGE_HANDOFF_ERROR.to_string())?;
+    let request = OpenRequest {
+        target: descriptor.clone().into(),
+        from: Some(crate::core::knowledge_draft::SOURCE_APP.to_string()),
+    };
+    if devbox_launch::launch_open(target, &request).is_err() {
+        let _ = store.revoke_pending(&descriptor, crate::core::knowledge_draft::SOURCE_APP);
+        return Err(KNOWLEDGE_HANDOFF_ERROR.to_string());
+    }
+    Ok(KnowledgeDraftDispatch {
+        handoff_id: descriptor.id,
+        redacted,
     })
 }
 

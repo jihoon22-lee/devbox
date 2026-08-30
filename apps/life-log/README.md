@@ -21,11 +21,16 @@
   시작하거나 Git subprocess를 실행하지 않는다.
 - **프로젝트 snapshot** — 등록 프로젝트와 최근 7일 활동의 숫자 요약을 Workbench용 `projects/v1` view로 발행
 - **Knowledge 활동 source** — `knowledge-base/activity/v1`의 오늘 작성·수정 수와 최근 수정 시각을 Data Sources에 freshness와 함께 표시한다. 각 source에는 `fresh`, `stale`, `expired`/`unavailable` 상태, `requested-range` 또는 `latest-snapshot-out-of-range` 범위, stable error code와 사람이 읽을 수 있는 설명을 함께 노출한다.
+- **일별 activity sidecar source** — Knowledge와 Run Manager가 발행한 system-local exact civil-day 기준 최대 366일의 `daily-activity.json`을 읽는다. sidecar에는 path/body/command/environment/log/ID가 없으며, 요청과 정확히 일치하는 날짜만 사용한다.
 - **로컬 export** — session·Git과 Run Manager·Knowledge source provenance를 같은
   `life-log/export/v1` 문서로 정렬해 Markdown/JSON/CSV로 만든다. export 시 현재 privacy
   규칙을 다시 적용하고, source의 producer/schema/snapshot version/generatedAt/freshness/
   named view/error code를 함께 기록한다. 현재 Run Manager/Knowledge snapshot은 요청 날짜와
-  연결된 history가 아니므로 summary 수치에 섞지 않고 provenance만 기록한다.
+  연결된 history가 아니므로 기존 flat/latest 값은 summary 수치에 섞지 않고 provenance만 기록한다.
+  W07의 schema v2는 daily-activity sidecar를 requested date/timezone/start/end가 exact match하면
+  summary에 반영한다. 진행 중인 local civil-day는 snapshot이 fresh한 동안만 사용하고,
+  partial/mismatch/open stale day는 nullable로 남긴다. latest/today fallback은 없고, 생성 시점 전에
+  이미 닫힌 exact historical day의 stale sidecar는 provenance와 함께 사용할 수 있다.
   명백한 credential marker가 있는 session 제목도 `[redacted]`로 줄이며, snapshot 원문
   ID·credential·raw environment 값은 결과에 포함하지 않는다.
 
@@ -93,17 +98,21 @@
   범위는 `start_ts >= start_ms && start_ts < end_ms`이고, 날짜별 행은 요청의
   `dayBoundaries`에 따라 session 시작 시각을 local civil-day에 배치한다. timezone/DST
   계산은 frontend가 만든 각 날짜의 epoch 경계를 authoritative input으로 전달하며 native가
-  고정 24시간으로 재계산하지 않는다. 현재 Run Manager/Knowledge snapshot은 이력 DB를
+  고정 24시간으로 재계산하지 않는다. 기존 Run Manager/Knowledge flat/latest snapshot은 이력 DB를
   직접 읽지 않고 `latest-snapshot-out-of-range` source로 표시하며, 선택된 snapshot
   version·named view·generatedAt·capture freshness를 그대로 기록한다. 해당 latest 수치는
-  요청 날짜 범위의 수치가 아니므로 `summary.run`/`summary.knowledge`에 넣지 않는다.
+  요청 날짜 범위의 수치가 아니므로 `summary.run`/`summary.knowledge`에 넣지 않는다. W07
+  daily-activity sidecar만 requested date/timezone/start/end가 exact match할 때 join한다. 진행 중인
+  날짜는 snapshot이 fresh한 동안만 사용하며, partial/mismatch/open stale day는 nullable로 남기고
+  latest/today fallback은 사용하지 않는다. 이미 닫힌 exact historical day의 stale sidecar는
+  provenance와 함께 사용할 수 있다.
 
 ## 개발
 
 - 순수 로직: `src-tauri/src/core/` → `cargo test`
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
 
-## Export wire contract (`life-log/export/v1`)
+## Export wire contract (`life-log/export/v1`, document schema v2)
 
 JSON의 최상위 순서는 `schemaVersion`, `range`, `rules`, `summary`, `daily`, `sessions`,
 `sources`다. `rules`는 session window/session duration/daily bucket/privacy/app totals/Git/
@@ -124,12 +133,15 @@ Git bounded runner code 같은 고정 error code만 기록한다. source metadat
 snapshot consumer가 요청한 named view는 `view`에 기록한다. `freshnessMs`는 export 당시
 현재 시각으로 새로 산출한 값이 아니라 해당 snapshot/view reference가 보고한 capture age다.
 
-Run Manager와 Knowledge의 현재 snapshot payload는 요청 범위에 해당하는 history가 아니므로
-export summary에 포함하지 않는다. 대신 validated Run Manager flat/Knowledge `activity`
-snapshot의 producer·schema/snapshot version, generatedAt, capture freshness, named view, out-of-range scope를
-source row에 보존한다. 향후 range-scoped snapshot 계약이 생길 때만 해당 범위와 일치하는
-digest를 summary에 포함할 수 있다. snapshot 원문에 있는 note ID·path·title·body는 export
-boundary를 넘지 않는다. Git project path는
+기존 Run Manager flat/Knowledge `activity` latest snapshot payload는 요청 범위에 해당하는
+history가 아니므로 export summary에 포함하지 않고 producer·schema/snapshot version, generatedAt,
+capture freshness, named view, out-of-range scope를 source row에 보존한다. W07 schema v2에서는
+별도 `daily-activity.json` sidecar가 requested date/timezone/start/end 및 local civil-day
+boundary와 exact match할 때 daily row에 join한다. 진행 중인 날짜는 snapshot이 fresh한 동안만
+사용하며, partial/mismatch/open stale day는 nullable이고 latest/today fallback은 없다. 생성 시점
+전에 이미 닫힌 exact historical day의 stale sidecar는 provenance와 함께 사용할 수 있다.
+sidecar와 snapshot 원문에 있는 note ID·path·title·body는
+export boundary를 넘지 않는다. Git project path는
 절대 경로·traversal/device path가 아닌 경우에만 포함하고, invalid path는 외부 command에
 전달하지 않는다. common `filesystem::parse_safe_project_path`의 Windows drive/UNC/POSIX
 규칙을 공유하며 최대 64개 unique project만 사용한다. Settings 저장은 backend가 같은
@@ -142,7 +154,7 @@ validation/identity 규칙으로 원자적으로 정규화한 목록을 반환�
 가짜로 표시하지 않는다. 브라우저 download는 편의상 제공되는 범위/경계 preview일 뿐 native
 DB export의 대체가 아니다.
 
-## Local daily/weekly (+ existing monthly) digest (`life-log/digest/v1`)
+## Local daily/weekly (+ existing monthly) digest (`life-log/digest/v1`, document schema v2)
 
 일간·주간·월간 화면의 `Local digest`는 `get_digest` native command가 만드는 작은 요약 문서다.
 입력은 `startDate`, `endDate`(civil date inclusive), `timezone`, `dayStart`, `dayEnd`(epoch
@@ -170,14 +182,18 @@ Linux path tail은 case-sensitive identity로 취급한다. 프로젝트 설정�
 문자열 단계에서 64개/경로 4KiB/전체 byte 상한을 먼저 검사하며, invalid/duplicate 경로는
 native Git argv에 전달하지 않는다. 한 digest operation은 DB progress hook와 Git child에 같은
 cancellation token을 전달하고 한 번에 하나만 실행한다. 앱 필터는 Git 결과에 영향을 주지
-않으며, Git 오류 project row에는 count 0과 고정 code를 남긴다. Run Manager와
-Knowledge는 현재 range-keyed history가 아닌 latest local snapshot이므로 digest 수치에 섞지
-않고 `sources`에 producer/schema/snapshot version, generatedAt, freshness, named view와
-`latest-snapshot-out-of-range` scope만 보존한다. source 순서는 `life-log`, `git`,
-`run-manager`, `knowledge-base`로 고정하며, snapshot 원문의 note ID/path/title/body와 raw
-환경 값은 경계를 넘지 않는다.
+않으며, Git 오류 project row에는 count 0과 고정 code를 남긴다. 기존 Run Manager와
+Knowledge latest local snapshot은 현재 range-keyed history가 아니므로 digest 수치에 섞지 않고
+`sources`에 producer/schema/snapshot version, generatedAt, freshness, named view와
+`latest-snapshot-out-of-range` scope만 보존한다. W07 schema v2는 `daily-activity.json` sidecar를
+requested date/timezone/start/end 및 local civil-day boundary가 exact match할 때 join한다. 진행
+중인 날짜는 snapshot이 fresh한 동안만 사용하며, partial/mismatch/open stale day는 nullable이고
+latest/today fallback은 없다. 이미 닫힌 exact historical day의 stale sidecar는 provenance와 함께
+사용할 수 있다. source 순서는
+`life-log`, `git`, `run-manager`, `knowledge-base`로 고정하며, snapshot 원문의 note ID/path/title/body와
+raw 환경 값은 경계를 넘지 않는다.
 
-응답은 `schemaVersion: 1`, `period`, `range`, `filter`, `rules`, 고정 문장 `headline`,
+응답은 `schemaVersion: 2`, `period`, `range`, `filter`, `rules`, 고정 문장 `headline`,
 `summary`, `daily`, `appTotals`, `git`, `sources`, 그리고 동일 입력에서 재현 가능한 Markdown
 `markdown`을 포함한다. Markdown에는 Summary/Daily digest/Applications/Git projects/
 Sources/Rules를 항상 포함하고 데이터가 없으면 명시적 empty 문장을 쓴다. 규칙 문장은 session
@@ -202,6 +218,10 @@ code point 단위로 잘라 표시한다. 자동 일기 문장 생성, cloud/loc
 개인 활동 원문 외부 전송은 이 기능에 포함하지 않는다.
 
 ## Knowledge draft handoff (`knowledge-draft/v1`)
+
+이 경로는 Life Log가 계속 제공하는 기존 `knowledge-draft/v1` 호환 계약이다. Developer
+Toolbox output의 Knowledge 전달은 별도의 `knowledge-draft/v2` handoff이며 Life Log v1로
+자동 변환하지 않는다.
 
 Native digest 화면의 `Send to Knowledge`는 사용자가 명시적으로 누른 경우에만 현재 native
 `DigestResponse`를 다시 검증해 실행한다. `knowledge-draft/v1` payload에는 period/range/timezone,

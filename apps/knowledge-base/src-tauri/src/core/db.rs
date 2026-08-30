@@ -69,6 +69,8 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             tags TEXT,
             modified_ts INTEGER NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS docs_modified_ts_idx
+            ON docs(modified_ts);
         CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(title, body, content='docs', content_rowid='id');
         CREATE TRIGGER IF NOT EXISTS docs_ai AFTER INSERT ON docs BEGIN
             INSERT INTO docs_fts(rowid, title, body) VALUES (new.id, coalesce(new.title,''), coalesce(new.body,''));

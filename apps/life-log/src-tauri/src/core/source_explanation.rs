@@ -49,11 +49,17 @@ pub fn explanation_for_source(producer: &str, scope: &str) -> &'static str {
         }
         return "이 source는 현재 사용할 수 없으며 통계에 조용히 합치지 않습니다.";
     }
+    if matches!(producer, "run-manager" | "knowledge-base") {
+        return match scope {
+            "requested-range" => "선택한 날짜와 timezone, local day 경계가 정확히 일치하는 일별 snapshot만 집계합니다.",
+            "requested-range-partial" => "일부 날짜의 일별 snapshot만 정확히 일치해, 없는 값은 0이 아닌 사용 불가로 표시합니다.",
+            _ if producer == "run-manager" => "Run Manager의 최신 local snapshot을 provenance로만 표시하며 PC 통계에는 합치지 않습니다.",
+            _ => "Knowledge의 최신 local snapshot을 provenance로만 표시하며 활동 원문은 읽지 않습니다.",
+        };
+    }
     match producer {
         "life-log" => "Life Log의 로컬 DB를 선택한 날짜 범위와 필터로 집계합니다.",
         "git" => "설정된 프로젝트의 read-only Git count를 요청 범위로 제한합니다.",
-        "run-manager" => "Run Manager의 최신 local snapshot을 provenance로만 표시하며 PC 통계에는 합치지 않습니다.",
-        "knowledge-base" => "Knowledge의 최신 local snapshot을 provenance로만 표시하며 활동 원문은 읽지 않습니다.",
         "integration-root" => "공용 integration root를 읽지 못해 해당 source를 확인할 수 없습니다.",
         _ => "이 source는 현재 사용할 수 없으며 통계에 조용히 합치지 않습니다.",
     }
@@ -101,6 +107,10 @@ mod tests {
         assert_eq!(
             explanation_for_source("integration-root", "unavailable"),
             "공용 integration root를 읽지 못해 source를 확인할 수 없습니다."
+        );
+        assert!(
+            explanation_for_source("run-manager", "requested-range-partial")
+                .contains("0이 아닌 사용 불가")
         );
     }
 

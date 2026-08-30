@@ -31,6 +31,8 @@ pub const WORKSPACE_TASKS_VIEW_KIND: &str = "workspace-tasks";
 pub const WORKSPACE_TASKS_VIEW_SCHEMA_VERSION: u32 = 1;
 pub const TASK_CONTROL_RECEIPTS_VIEW_KIND: &str = "task-control-receipts";
 pub const TASK_CONTROL_RECEIPTS_VIEW_SCHEMA_VERSION: u32 = 1;
+pub const DAILY_ACTIVITY_VIEW_KIND: &str = "daily-activity";
+pub const DAILY_ACTIVITY_VIEW_SCHEMA_VERSION: u32 = 1;
 const SNAPSHOT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 /// Keep the producer and Launcher source bound in lockstep. A complete view is
 /// rejected instead of silently hiding definitions when the local database is
@@ -39,6 +41,7 @@ pub const MAX_JOBS_SERVICES: usize = 2_048;
 pub const MAX_ENTRY_ID_BYTES: usize = 128;
 pub const MAX_ENTRY_LABEL_BYTES: usize = 256;
 pub const MAX_ENTRY_DETAIL_BYTES: usize = 512;
+const MAX_DAILY_RUN_COUNT: u64 = 10_000_000;
 
 const SNAPSHOT_ERROR: &str = "Run Manager snapshot을 만들 수 없습니다";
 
@@ -62,6 +65,16 @@ struct ServiceUptime {
 struct RunCounts {
     success: i64,
     failed: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct RunDailyActivityEntry {
+    #[serde(flatten)]
+    day: devbox_integration::LocalCivilDay,
+    succeeded: u64,
+    failed: u64,
+    last_run_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -138,7 +151,73 @@ fn write_snapshot_in(root: &Path, database: &DatabaseState) -> Result<(), String
         JOBS_SERVICES_VIEW_KIND,
     )?;
     write_workspace_tasks_in(root, database)?;
-    write_task_control_receipts_in(root, database)
+    write_task_control_receipts_in(root, database)?;
+    write_daily_activity_in(root, database, current_epoch_ms())
+}
+
+fn write_daily_activity_in(
+    root: &Path,
+    database: &DatabaseState,
+    now_ms: i64,
+) -> Result<(), String> {
+    let now = u64::try_from(now_ms).map_err(|_| SNAPSHOT_ERROR.to_string())?;
+    let days = devbox_integration::recent_local_civil_days(
+        now,
+        devbox_integration::MAX_DAILY_ACTIVITY_DAYS,
+    )?;
+    let entries = build_daily_activity_entries(database, &days, now_ms)?
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| SNAPSHOT_ERROR.to_string())?;
+    let views = SnapshotViews::from([(
+        DAILY_ACTIVITY_VIEW_KIND.to_string(),
+        SnapshotView {
+            schema_version: DAILY_ACTIVITY_VIEW_SCHEMA_VERSION,
+            freshness_ms: 0,
+            entries,
+        },
+    )]);
+    let envelope = Envelope::with_views(PRODUCER_ID, env!("CARGO_PKG_VERSION"), views);
+    devbox_integration::write_named_view_snapshot_atomic(&envelope, root, DAILY_ACTIVITY_VIEW_KIND)
+}
+
+fn build_daily_activity_entries(
+    database: &DatabaseState,
+    days: &[devbox_integration::LocalCivilDay],
+    now_ms: i64,
+) -> Result<Vec<RunDailyActivityEntry>, String> {
+    devbox_integration::validate_local_civil_days(days)?;
+    if now_ms <= 0 {
+        return Err(SNAPSHOT_ERROR.to_string());
+    }
+    days.iter()
+        .map(|day| {
+            let effective_end = day.end_ms.min(now_ms.saturating_add(1));
+            let (succeeded, failed, last_run_at_ms) = if effective_end <= day.start_ms {
+                (0, 0, None)
+            } else {
+                database
+                    .run_activity_between(day.start_ms, effective_end)
+                    .map_err(|_| SNAPSHOT_ERROR.to_string())?
+            };
+            let succeeded = u64::try_from(succeeded).map_err(|_| SNAPSHOT_ERROR.to_string())?;
+            let failed = u64::try_from(failed).map_err(|_| SNAPSHOT_ERROR.to_string())?;
+            if succeeded > MAX_DAILY_RUN_COUNT
+                || failed > MAX_DAILY_RUN_COUNT
+                || last_run_at_ms
+                    .is_some_and(|timestamp| timestamp < day.start_ms || timestamp >= effective_end)
+            {
+                return Err(SNAPSHOT_ERROR.to_string());
+            }
+            Ok(RunDailyActivityEntry {
+                day: day.clone(),
+                succeeded,
+                failed,
+                last_run_at_ms,
+            })
+        })
+        .collect()
 }
 
 pub fn write_workspace_tasks(database: &DatabaseState) -> Result<(), String> {
@@ -435,7 +514,7 @@ mod tests {
     use super::*;
     use crate::core::models::{
         EnvironmentCiphertextUpdate, EnvironmentUpdate, JobInput, OverlapPolicy, RestartPolicy,
-        ServiceInput, TargetKind,
+        RunStatus, ServiceInput, TargetKind,
     };
     use crate::core::workspace_task_control::WorkspaceTaskControlReceiptStatus;
     use crate::core::workspace_tasks::{WorkspaceTaskDependsOrder, WorkspaceTaskKind};
@@ -636,7 +715,11 @@ mod tests {
             .unwrap()
             .contains_key(JOBS_SERVICES_VIEW_KIND));
 
-        for view_kind in [WORKSPACE_TASKS_VIEW_KIND, TASK_CONTROL_RECEIPTS_VIEW_KIND] {
+        for view_kind in [
+            WORKSPACE_TASKS_VIEW_KIND,
+            TASK_CONTROL_RECEIPTS_VIEW_KIND,
+            DAILY_ACTIVITY_VIEW_KIND,
+        ] {
             let sidecar = devbox_integration::read_named_view_snapshot_in(
                 root.path(),
                 PRODUCER_ID,
@@ -647,6 +730,76 @@ mod tests {
             .unwrap();
             assert!(sidecar.views().unwrap().contains_key(view_kind));
         }
+        let daily = devbox_integration::read_named_view_snapshot_in(
+            root.path(),
+            PRODUCER_ID,
+            SNAPSHOT_SCHEMA_VERSION,
+            DAILY_ACTIVITY_VIEW_KIND,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            daily.views().unwrap()[DAILY_ACTIVITY_VIEW_KIND]
+                .entries
+                .len(),
+            devbox_integration::MAX_DAILY_ACTIVITY_DAYS
+        );
+    }
+
+    #[test]
+    fn daily_activity_uses_exact_half_open_boundaries_and_excludes_future_rows() {
+        let database = database();
+        database
+            .create_job_with_id_and_ciphertext_at(
+                "daily-job".into(),
+                job_input("Daily job"),
+                None,
+                1_000,
+            )
+            .unwrap();
+        let start = 1_700_000_000_000_i64;
+        let day_ms = 86_400_000_i64;
+        let days = vec![
+            devbox_integration::LocalCivilDay {
+                date: "2026-08-29".into(),
+                start_ms: start,
+                end_ms: start + day_ms,
+                timezone: "Asia/Seoul".into(),
+            },
+            devbox_integration::LocalCivilDay {
+                date: "2026-08-30".into(),
+                start_ms: start + day_ms,
+                end_ms: start + 2 * day_ms,
+                timezone: "Asia/Seoul".into(),
+            },
+        ];
+        let finish = |at: i64, status: RunStatus, suffix: &str| {
+            let run = database.create_manual_run_at("daily-job", at).unwrap();
+            let owner = format!("owner-{suffix}");
+            let attempt = format!("attempt-{suffix}");
+            assert!(database
+                .claim_run_starting(&run.id, &owner, &attempt)
+                .unwrap());
+            assert!(database
+                .mark_run_running(&run.id, &owner, &attempt, at)
+                .unwrap());
+            assert!(database
+                .finish_run(&run.id, &owner, &attempt, status, Some(0), None, at + 1)
+                .unwrap());
+        };
+        finish(start, RunStatus::Succeeded, "first");
+        finish(start + day_ms - 1, RunStatus::Failed, "edge");
+        finish(start + day_ms, RunStatus::Succeeded, "second");
+        finish(start + day_ms + 20_000, RunStatus::Failed, "future");
+
+        let entries =
+            build_daily_activity_entries(&database, &days, start + day_ms + 10_000).unwrap();
+        assert_eq!(entries[0].succeeded, 1);
+        assert_eq!(entries[0].failed, 1);
+        assert_eq!(entries[0].last_run_at_ms, Some(start + day_ms - 1));
+        assert_eq!(entries[1].succeeded, 1);
+        assert_eq!(entries[1].failed, 0);
+        assert_eq!(entries[1].last_run_at_ms, Some(start + day_ms));
     }
 
     #[test]

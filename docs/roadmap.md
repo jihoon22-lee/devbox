@@ -17,6 +17,9 @@
 - #176은 63 checked와 7 physical Windows-only pending이며 release asset evidence와 별도다.
   RC1~RC3 tag/release는 사용자 지시로 삭제됐고 workflow/evidence만 역사로 보존한다. 향후 RC는
   사용자가 명시적으로 요청한 경우에만 만든다.
+- W07은 catalog revision 15에서 선택 텍스트 handoff와 daily activity sidecar 계약을 추가했다.
+  이 문서와 source 변경은 Windows 실기 acceptance 완료를 주장하지 않으며, 해당 검증은 #493
+  release gate에 남긴다.
 
 ## Phase 1 — Tauri 기본기 ✅
 - [x] **port-manager** — IPC, Rust 기초, netstat 파싱, 포트/프로세스 관리
@@ -439,12 +442,12 @@ RC1~RC3 tag/release는 사용자 지시로 삭제됐고, 이 문단의 workflow/
 #### P3 — 선택 확정
 
 1. 신규 **Devbox Launcher 0.1.0** — devbox 앱·profile·repo·job·saved query 전용 launcher와
-   사용자가 고른 current clipboard explicit preview fallback. 기존 Life Log→Knowledge의
-   구조화 `knowledge-draft/v1` capability/action은 유지하되 Launcher가 clipboard text로
-   위조하거나 노출하지 않는다. Developer Toolbox의 `toolbox-text/v1` text action은 receiver의
-   claim/ack integration 전까지 Launcher에 노출하지 않는다.
-2. 신규 **Log Lens 0.1.0** — local/Run/WSL/container log tail·merge·filter·export
-   (bootstrap #321 구현, Run/WSL producer handoff와 packaged W3는 후속 gate).
+   확인된 selection을 Developer Toolbox로 보내는 static `transform-text` action. 기존
+   Life Log→Knowledge의 구조화 `knowledge-draft/v1` capability/action은 유지하되 Launcher가
+   clipboard text로 위조하거나 노출하지 않으며, W07 경로에는 clipboard fallback이 없다.
+2. 신규 **Log Lens 0.1.0** — local/Run/WSL/container log tail·merge·filter·export와
+   명시적으로 선택한 records의 `toolbox-text/v1` handoff (bootstrap #321 구현, Run/WSL
+   producer handoff와 packaged W3는 후속 gate).
 3. 전 앱 monitor/DPI-safe window state. 공용 계약·순수 계산 기반인 #322는 선행 독립 PR로
    확정하고, #323–#336은 그 crate를 소비하면서 같은 restore/clamp 회귀 행렬을 공유하므로
    앱 경계와 무관하게 하나의 cross-app 적용 PR로 묶는다. 신규 Log Lens의 #336은 #321과
@@ -490,6 +493,24 @@ path는 각 수신 앱에서도 현재 상태를 다시 확인한다. favorites/
 path·payload·label·source detail·secret을 보존하지 않는다. missing/corrupt/permission/linked
 source는 각각의 진단으로 격리되어 다른 source 검색을 막지 않는다. 이 구현 기록은 Windows
 실기 acceptance나 v0.6.0 release 완료를 의미하지 않으며 해당 검증은 release gate로 남는다.
+
+**2026-08-30 W07 선택 텍스트·일별 activity 계약 구현 상태.** catalog revision 15는
+`developer-toolbox`의 `handoff:toolbox-text/v1` 수신과 기존 `handoff:api-request/v1` 및
+별도 `handoff:knowledge-draft/v2` 출력을 선언한다. API Playground의 현재 response selection,
+Log Lens의 현재 source generation 안에서 고른 records, Devbox Launcher의 확인된 selection만
+bounded deterministic text로 만들어 one-time masked handoff를 발행하고, Developer Toolbox는
+명시적 preview/apply 뒤에만 소비한다. stale selection/source generation은 거부하며 visible
+records 전체나 clipboard로 fallback하지 않는다. Toolbox output은 별도 `knowledge-draft/v2`로
+Knowledge preview/save에 보내고, 기존 Life Log→Knowledge `knowledge-draft/v1` 호환은 유지한다.
+
+Knowledge Base는 기존 `snapshot:knowledge-base/activity/v1`와 함께, Run Manager와 동일하게
+system-local exact civil-day를 기준으로 최대 366일을 담은 `daily-activity.json` sidecar
+(`snapshot:daily-activity/v1`)를 발행한다. path/body/command/
+environment/log/ID 없이 bounded aggregate만 공개한다. Life Log export/digest schema v2는
+requested date/timezone/start/end가 exact match인 날짜만 join하고 partial/mismatch/open stale day는
+nullable로 둔다. latest/today fallback은 없으며 생성 시점 전에 이미 닫힌 exact historical day의
+stale sidecar는 provenance와 함께 사용할 수 있다. Windows 실기/packaged acceptance는 아직
+수행하지 않았다.
 
 **2026-08-28 #340–#343 grouped PR 후보.** Developer Toolbox의 Smart Workflows는 JSON/JWT/
 HTTP(S) URL/Base64/Base64URL/Hex를 1 MiB 안에서 로컬 감지하고 ambiguous 후보를 자동 적용하지
@@ -781,10 +802,15 @@ app·366 daily row·4MiB document/Markdown/serialized response 상한과 checked
 digest summary는 filtered PC usage/session count/active day/average daily usage/top app과
 Git total을 제공하고, 날짜별로 boundary/date/usage/session/Git/top app/empty 상태를 제공한다.
 app 정렬은 duration 내림차순 후 UTF-8 byte 순이며, Git은 app filter와 독립적으로 기존
-project/error row를 유지한다. Run Manager·Knowledge의 latest snapshot은 range history가
+project/error row를 유지한다. 기존 Run Manager·Knowledge flat/latest snapshot은 range history가
 아니므로 수치에 혼합하지 않고 producer/schema/snapshot version, generatedAt, freshness, named
-view, `latest-snapshot-out-of-range` scope를 source metadata에만 보존한다. source 순서·오류
-코드는 #305와 동일하고 snapshot 원문·raw path/credential/stderr를 노출하지 않는다.
+view, `latest-snapshot-out-of-range` scope를 source metadata에만 보존한다. W07 schema v2는
+별도 `daily-activity.json` sidecar를 requested date/timezone/start/end와 exact match할 때
+join한다. 진행 중인 local civil-day는 snapshot이 fresh한 동안만 사용하고,
+partial/mismatch/open stale day는 nullable로 남긴다. latest/today fallback은 없고, 이미 닫힌 exact
+historical day의 stale sidecar는 provenance가 있으면 사용할 수 있다. source 순서·오류 코드는
+#305와 동일하고 snapshot 원문·raw
+path/credential/stderr를 노출하지 않는다.
 
 native command `get_digest`는 document와 deterministic Markdown 및 120초 TTL의 server-owned
 immutable 32-hex save handle을 반환하고, `save_digest`는 input을 다시 계산하지 않고 handle로

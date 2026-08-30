@@ -58,9 +58,14 @@ def valid_slug(value):
 def valid_version(value):
     return bool(re.fullmatch(r"v[1-9][0-9]*", value))
 
+DAILY_ACTIVITY_SNAPSHOT = "snapshot:daily-activity/v1"
+DAILY_ACTIVITY_PRODUCERS = {"knowledge-base", "run-manager"}
+
 def capability_shape(value):
     if value in {"path", "workspace", "query", "profile", "task"}:
         return "basic"
+    if value == DAILY_ACTIVITY_SNAPSHOT:
+        return "snapshot"
     if isinstance(value, str) and value.startswith("handoff:"):
         parts = value.removeprefix("handoff:").split("/")
         if len(parts) == 2 and valid_slug(parts[0]) and valid_version(parts[1]):
@@ -177,7 +182,12 @@ for a in apps:
         report(f"{app_id}: accepts capability가 중복되거나 유효하지 않다")
     if any(not isinstance(item, str) for item in produces) or len(produces) != len(set(produces)) or any(capability_shape(item) not in {"handoff", "snapshot"} for item in produces):
         report(f"{app_id}: produces capability가 중복되거나 유효하지 않다")
-    if any(capability_shape(item) == "snapshot" and not item.startswith(f"snapshot:{app_id}/") for item in produces):
+    if any(
+        capability_shape(item) == "snapshot"
+        and not item.startswith(f"snapshot:{app_id}/")
+        and not (item == DAILY_ACTIVITY_SNAPSHOT and app_id in DAILY_ACTIVITY_PRODUCERS)
+        for item in produces
+    ):
         report(f"{app_id}: snapshot producer가 app id와 맞지 않는다")
     action_ids = set()
     for action in actions:

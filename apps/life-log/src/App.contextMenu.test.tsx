@@ -75,7 +75,7 @@ function digestFixture(input: DigestInput): DigestResponse {
   return {
     origin: "browser-preview",
     document: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       period: input.period,
       range: {
         startDate: input.startDate,
@@ -106,6 +106,8 @@ function digestFixture(input: DigestInput): DigestResponse {
         averageDailyUsageMs: 0,
         topApp: null,
         gitCommits: 0,
+        run: null,
+        knowledge: null,
       },
       daily: input.dayBoundaries.map((boundary) => ({
         date: boundary.date,
@@ -114,6 +116,9 @@ function digestFixture(input: DigestInput): DigestResponse {
         pcUsageMs: 0,
         sessionCount: 0,
         gitCommits: 0,
+        runSucceeded: null,
+        runFailed: null,
+        knowledgeNotesModified: null,
         topApp: null,
         hasActivity: false,
       })),
@@ -220,6 +225,8 @@ describe("Life Log daily digest", () => {
     expect(await screen.findByRole("heading", { name: "Daily local digest" })).toBeTruthy();
     expect(mocks.getDay).not.toHaveBeenCalled();
     expect(screen.getByText(/Browser preview only · native local data unavailable/u)).toBeTruthy();
+    expect(screen.getByTestId("run-summary").textContent).toContain("—");
+    expect(screen.getByTestId("knowledge-summary").textContent).toContain("—");
     expect(screen.getByLabelText("Application filter")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Copy digest" }));
@@ -231,6 +238,25 @@ describe("Life Log daily digest", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Download preview" }));
     await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
+  });
+
+  it("renders native activity counts while keeping nullable values visibly unavailable", async () => {
+    mocks.native = true;
+    mocks.getDigest.mockImplementation((input: DigestInput) => {
+      const response = digestFixture(input);
+      response.document.summary.run = { succeeded: 2, failed: 1, lastRunAtMs: 1_800_000_000_000 };
+      response.document.summary.knowledge = { notesModified: 3, lastModifiedAtMs: 1_800_000_100_000 };
+      response.document.daily = response.document.daily.map((day, index) => index === 0
+        ? { ...day, runSucceeded: 2, runFailed: 1, knowledgeNotesModified: 3, hasActivity: true }
+        : day);
+      return Promise.resolve(response);
+    });
+
+    await renderLoadedApp();
+
+    expect(screen.getByTestId("run-summary").textContent).toContain("2 succeeded · 1 failed");
+    expect(screen.getByTestId("knowledge-summary").textContent).toContain("3 modified");
+    expect(screen.getByText("Run 2/1 · Knowledge 3")).toBeTruthy();
   });
 
   it("clears stale digest state before a newer navigation request completes", async () => {

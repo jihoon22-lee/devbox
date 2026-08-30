@@ -908,13 +908,15 @@ pub fn validate_text_handoff(kind: &str, text: &str) -> Result<TextAction, Strin
         || text
             .chars()
             .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
-        || contains_sensitive_value(text)
     {
         return Err(ERR_PRIVACY.into());
     }
+    let (payload, _) =
+        devbox_applink::ToolboxTextPayload::from_selected_text("devbox-launcher", text)
+            .map_err(|_| ERR_PRIVACY.to_string())?;
     Ok(TextAction {
         kind: handoff_kind.into(),
-        text: text.into(),
+        text: payload.text,
     })
 }
 
@@ -1372,7 +1374,12 @@ mod tests {
     fn query_and_handoff_bounds_reject_secrets() {
         assert!(validate_query("Bearer top-secret").is_err());
         assert!(validate_query("find sk-live-value in logs").is_err());
-        assert!(validate_text_handoff("handoff:toolbox-text/v1", "sk-live").is_err());
+        assert_eq!(
+            validate_text_handoff("handoff:toolbox-text/v1", "token=sk-live")
+                .unwrap()
+                .text,
+            "[REDACTED]"
+        );
         assert_eq!(
             validate_text_handoff("handoff:toolbox-text/v1", "safe text")
                 .unwrap()
@@ -1615,12 +1622,6 @@ mod tests {
     fn clipboard_preview_is_local_explicit_and_not_a_handoff() {
         let index =
             Index::build(crate::commands::CATALOG_JSON, &root("clipboard-preview")).unwrap();
-        assert!(!index
-            .search("")
-            .unwrap()
-            .results
-            .iter()
-            .any(|result| result.target_kind == "handoff"));
         let result = index
             .search("clipboard")
             .unwrap()
@@ -1629,6 +1630,7 @@ mod tests {
             .find(|result| result.id == CLIPBOARD_PREVIEW_ID)
             .unwrap();
         assert!(result.explicit_preview);
+        assert_eq!(result.target_kind, "clipboard-preview");
         assert!(index.resolve(&result.id).is_err());
         assert_eq!(
             index

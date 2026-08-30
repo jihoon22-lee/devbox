@@ -62,6 +62,8 @@ v0.5.0 binary와 별도다.
 - 구현된 `crates/applink` protocol v2 one-time handoff — argv에는 kind와 opaque 128-bit id만
   전달하고, bounded payload는 공용 data root 아래에서 atomic claim/ack/restore와 60초 lease로
   한 번만 소비한다. producer/consumer UI는 각 integration PR이 소유한다.
+- W07은 catalog revision 15에서 선택 텍스트 handoff와 일별 activity sidecar를 연결한다.
+  Windows 실기 acceptance는 아직 주장하지 않으며 release gate로 남긴다.
 
 상세: [`v0.5.0 네이티브 우선 계획`](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)
 
@@ -394,6 +396,7 @@ v0.5.0에서는 지속 상태는 snapshot, 일회성 작업 전달은 applink pr
 구분한다. API request, Knowledge draft, log source처럼 argv에 안전하게 넣을 수 없는 payload는
 128-bit opaque id만 argv에 전달하고 공용 root의 TTL·크기 제한 payload를 한 번 소비한다.
 devbox가 양쪽 앱을 제어하면 clipboard·임시 export 파일 전달은 명시적 fallback으로만 둔다.
+W07의 `toolbox-text/v1` 경로는 이 fallback을 사용하지 않는다.
 
 2026-08-27 #307+#315 그룹 작업은 이 경계를 두 개의 명시적 앱 간 흐름에 적용한다.
 Webhook Lab은
@@ -478,6 +481,23 @@ output을 `POST /` text/plain draft로 preview/edit/confirm하면 Toolbox native
 validator는 raw credential을 publish 전에 거부하고 launch 실패는 exact pending envelope를 revoke한다.
 API Playground receiver는 Toolbox/Webhook source를 allowlist하고 claim/lease/restore/ack 후 editor만
 갱신하며 자동 request send나 clipboard fallback을 수행하지 않는다.
+
+W07(catalog revision 15)의 `toolbox-text/v1`은 API Playground의 현재 렌더링 response body에서
+명시적으로 선택한 text, Log Lens의 현재 source generation에서 명시적으로 선택한 records,
+Devbox Launcher의 확인된 selection만 bounded deterministic text로 만든다. 세 producer는
+selection/source generation이 stale이면 거부하고, Log Lens는 visible records 전체로 암묵적으로
+확장하지 않는다. 각 payload는 one-time masked handoff로 Developer Toolbox에 전달되며, Toolbox는
+명시적인 preview/apply 뒤에만 소비한다. Toolbox output에서 Knowledge로 보내는 경로는 별도의
+`knowledge-draft/v2` handoff와 Knowledge preview/save로 유지하고, 기존 Life Log→Knowledge
+`knowledge-draft/v1` 호환 경로는 그대로 둔다.
+
+Knowledge Base와 Run Manager는 system-local exact civil-day를 담은 최대 366일
+`daily-activity.json` sidecar(`snapshot:daily-activity/v1`)를 발행한다. 이 sidecar에는 bounded
+activity aggregate만 들어가며 path/body/command/environment/log/ID를 포함하지 않는다. Life Log
+export/digest schema v2는 requested date/timezone/start/end가 sidecar의 exact civil-day와 일치할
+때만 join한다. partial/mismatch/open stale day는 nullable이고 latest/today fallback은 없으며,
+생성 시점 전에 이미 닫힌 exact historical day의 stale sidecar는 provenance가 함께 있으면 사용할
+수 있다.
 
 ## 보안 경계
 
@@ -869,6 +889,16 @@ label·path·query·payload·source detail·secret은 저장하지 않는다. si
 없거나 손상된 경우 missing·corrupt·permission·linked를 source별로 구분해 격리하며, 한 source
 오류가 다른 source 검색을 막지 않는다. 이 문단은 source 구현 계약만 기록하며 Windows 실기
 acceptance와 v0.6.0 release 완료를 의미하지 않는다.
+
+catalog revision 15(W07)에서는 `developer-toolbox`가 `handoff:toolbox-text/v1`을 accept하고
+기존 `handoff:api-request/v1`와 `handoff:knowledge-draft/v2`를 produce한다. API Playground와
+Log Lens는 각각 선택 response text와 선택 records를 `handoff:toolbox-text/v1`로 produce하고,
+Knowledge Base는 `snapshot:knowledge-base/activity/v1`와 함께 `handoff:knowledge-draft/v1`·`v2`를
+accept하며 `snapshot:daily-activity/v1`을 produce한다. Run Manager도 같은 daily snapshot을
+produce한다.
+Devbox Launcher는 확인된 selection을 `handoff:toolbox-text/v1`로 produce하고 Developer Toolbox로
+가는 static `transform-text` action을 제공한다. 이 W07 catalog 계약에 대한 Windows 실기
+acceptance는 아직 주장하지 않는다.
 
 filename/content FTS projection은 filter 값을 모두 SQLite parameter로 결합한다. source는 임의
 경로가 아닌 등록 `roots.id`이며 중첩 root는 가장 깊은 root가 소유한다. root id는 삭제 뒤

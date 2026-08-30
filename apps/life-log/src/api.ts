@@ -2,6 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./lib/isTauri";
 import type { AppTotal, DaySummary, RangeSummary, Session } from "./types";
 
+/** Export and digest documents share the same versioned activity contract. */
+export const LIFE_LOG_SCHEMA_VERSION = 2 as const;
+export const EXPORT_SCHEMA_VERSION = LIFE_LOG_SCHEMA_VERSION;
+export const DIGEST_SCHEMA_VERSION = LIFE_LOG_SCHEMA_VERSION;
+export const BROWSER_PREVIEW_SCOPE = "browser-preview-only" as const;
+export const BROWSER_PREVIEW_ERROR_CODE = "browser_preview_only" as const;
+export const NATIVE_SOURCE_IDS = ["life-log", "git", "run-manager", "knowledge-base"] as const;
+
 export type ExportFormat = "markdown" | "json" | "csv";
 export type ExportOrigin = "native" | "browser-preview";
 
@@ -19,6 +27,95 @@ export interface ExportInput {
   dayEnd: number;
   dayBoundaries: ExportDayBoundary[];
   format: ExportFormat;
+}
+
+export interface RunDigest {
+  succeeded: number;
+  failed: number;
+  lastRunAtMs: number | null;
+}
+
+export interface KnowledgeDigest {
+  notesModified: number;
+  lastModifiedAtMs: number | null;
+}
+
+export interface ExportDailyDigest {
+  date: string;
+  startMs: number;
+  endMs: number;
+  pcUsageMs: number;
+  sessionCount: number;
+  gitCommits: number;
+  runSucceeded: number | null;
+  runFailed: number | null;
+  knowledgeNotesModified: number | null;
+}
+
+export interface ExportSummary {
+  pcUsageMs: number;
+  sessionCount: number;
+  appTotals: Array<{
+    app: string;
+    durationMs: number;
+    sessions: number;
+  }>;
+  git: {
+    projects: Array<{
+      path: string;
+      commits: number;
+      errorCode: string | null;
+    }>;
+    totalCommits: number;
+    errorCodes: string[];
+  };
+  run: RunDigest | null;
+  knowledge: KnowledgeDigest | null;
+}
+
+export interface ExportSourceMetadata {
+  id: string;
+  available: boolean;
+  schemaVersion: number | null;
+  snapshotVersion: number | null;
+  producerVersion: string | null;
+  generatedAt: string | null;
+  freshnessMs: number | null;
+  view: string | null;
+  scope: string;
+  errorCode: string | null;
+}
+
+export interface ExportDocument {
+  schemaVersion: typeof EXPORT_SCHEMA_VERSION;
+  range: {
+    startDate: string;
+    endDate: string;
+    timezone: string;
+    startMs: number;
+    endMs: number;
+    dayBoundaries: ExportDayBoundary[];
+  };
+  rules: {
+    sessionWindow: string;
+    sessionDuration: string;
+    dailyBuckets: string;
+    privacy: string;
+    appTotals: string;
+    gitCommits: string;
+    snapshotScope: string;
+  };
+  summary: ExportSummary;
+  daily: ExportDailyDigest[];
+  sessions: Array<{
+    id: number;
+    app: string;
+    title: string;
+    startTsMs: number;
+    endTsMs: number;
+    durationMs: number;
+  }>;
+  sources: ExportSourceMetadata[];
 }
 
 export interface RenderedExport {
@@ -72,6 +169,9 @@ export interface DigestDay {
   pcUsageMs: number;
   sessionCount: number;
   gitCommits: number;
+  runSucceeded: number | null;
+  runFailed: number | null;
+  knowledgeNotesModified: number | null;
   topApp: string | null;
   hasActivity: boolean;
 }
@@ -84,10 +184,12 @@ export interface DigestSummary {
   averageDailyUsageMs: number;
   topApp: string | null;
   gitCommits: number;
+  run: RunDigest | null;
+  knowledge: KnowledgeDigest | null;
 }
 
 export interface DigestDocument {
-  schemaVersion: number;
+  schemaVersion: typeof DIGEST_SCHEMA_VERSION;
   period: DigestPeriod;
   range: {
     startDate: string;
@@ -116,18 +218,7 @@ export interface DigestDocument {
     totalCommits: number;
     errorCodes: string[];
   };
-  sources: Array<{
-    id: string;
-    available: boolean;
-    schemaVersion: number | null;
-    snapshotVersion: number | null;
-    producerVersion: string | null;
-    generatedAt: string | null;
-    freshnessMs: number | null;
-    view: string | null;
-    scope: string;
-    errorCode: string | null;
-  }>;
+  sources: ExportSourceMetadata[];
 }
 
 export interface DigestResponse {
@@ -443,44 +534,41 @@ export interface KnowledgeActivity {
   legacySnapshot: boolean;
 }
 
+function browserPreviewSourceMetadata(id: (typeof NATIVE_SOURCE_IDS)[number]): ExportSourceMetadata {
+  return {
+    id,
+    available: false,
+    schemaVersion: null,
+    snapshotVersion: null,
+    producerVersion: null,
+    generatedAt: null,
+    freshnessMs: null,
+    view: null,
+    scope: BROWSER_PREVIEW_SCOPE,
+    errorCode: BROWSER_PREVIEW_ERROR_CODE,
+  };
+}
+
+function browserPreviewSourceStatuses(): SourceStatus[] {
+  return NATIVE_SOURCE_IDS.map((producer) => ({
+    producer,
+    available: false,
+    schemaVersion: null,
+    producerVersion: null,
+    generatedAt: null,
+    freshnessMs: null,
+    freshnessState: "unknown",
+    scope: BROWSER_PREVIEW_SCOPE,
+    errorCode: BROWSER_PREVIEW_ERROR_CODE,
+    explanation: "브라우저 미리보기에서는 native DB와 local snapshot을 읽지 않습니다.",
+    error: null,
+    knowledgeActivity: null,
+  }));
+}
+
 export async function integrationSources(): Promise<SourceStatus[]> {
   if (!isTauri()) {
-    return [
-      {
-        producer: "knowledge-base",
-        available: true,
-        schemaVersion: 1,
-        producerVersion: "0.5.0",
-        generatedAt: new Date().toISOString(),
-        freshnessMs: 30_000,
-        freshnessState: "fresh",
-        scope: "latest-snapshot-out-of-range",
-        errorCode: null,
-        explanation: "Knowledge의 최신 local snapshot을 provenance로만 표시하며 활동 원문은 읽지 않습니다.",
-        error: null,
-        knowledgeActivity: {
-          notesModifiedToday: 4,
-          lastModifiedAtMs: Date.now() - 90_000,
-          identifiedNotes: 4,
-          identifiersComplete: true,
-          legacySnapshot: false,
-        },
-      },
-      {
-        producer: "run-manager",
-        available: true,
-        schemaVersion: 1,
-        producerVersion: "0.3.0",
-        generatedAt: new Date().toISOString(),
-        freshnessMs: 30_000,
-        freshnessState: "fresh",
-        scope: "latest-snapshot-out-of-range",
-        errorCode: null,
-        explanation: "Run Manager의 최신 local snapshot을 provenance로만 표시하며 PC 통계에는 합치지 않습니다.",
-        error: null,
-        knowledgeActivity: null,
-      },
-    ];
+    return browserPreviewSourceStatuses();
   }
   return invoke<SourceStatus[]>("integration_sources");
 }
@@ -577,7 +665,7 @@ export async function exportLifeLog(input: ExportInput): Promise<RenderedExport>
       input.format === "json"
         ? JSON.stringify(
             {
-              schemaVersion: 1,
+              schemaVersion: EXPORT_SCHEMA_VERSION,
               origin: "browser-preview",
               range: {
                 startDate: input.startDate,
@@ -611,58 +699,12 @@ export async function exportLifeLog(input: ExportInput): Promise<RenderedExport>
                 pcUsageMs: 0,
                 sessionCount: 0,
                 gitCommits: 0,
+                runSucceeded: null,
+                runFailed: null,
+                knowledgeNotesModified: null,
               })),
               sessions: [],
-              sources: [
-                {
-                  id: "life-log",
-                  available: false,
-                  schemaVersion: null,
-                  snapshotVersion: null,
-                  producerVersion: null,
-                  generatedAt: null,
-                  freshnessMs: null,
-                  view: null,
-                  scope: "browser-preview-only",
-                  errorCode: "browser_preview_only",
-                },
-                {
-                  id: "git",
-                  available: false,
-                  schemaVersion: null,
-                  snapshotVersion: null,
-                  producerVersion: null,
-                  generatedAt: null,
-                  freshnessMs: null,
-                  view: null,
-                  scope: "browser-preview-only",
-                  errorCode: "browser_preview_only",
-                },
-                {
-                  id: "run-manager",
-                  available: false,
-                  schemaVersion: null,
-                  snapshotVersion: null,
-                  producerVersion: null,
-                  generatedAt: null,
-                  freshnessMs: null,
-                  view: null,
-                  scope: "browser-preview-only",
-                  errorCode: "browser_preview_only",
-                },
-                {
-                  id: "knowledge-base",
-                  available: false,
-                  schemaVersion: null,
-                  snapshotVersion: null,
-                  producerVersion: null,
-                  generatedAt: null,
-                  freshnessMs: null,
-                  view: null,
-                  scope: "browser-preview-only",
-                  errorCode: "browser_preview_only",
-                },
-              ],
+              sources: NATIVE_SOURCE_IDS.map(browserPreviewSourceMetadata),
             },
             null,
             2,
@@ -674,7 +716,7 @@ export async function exportLifeLog(input: ExportInput): Promise<RenderedExport>
               "source", "", input.startDate, input.endDate, "", "", "", "", "", "", "", "", "", "",
               source, "false", "", "", "", "", "", "", "browser-preview-only", "browser_preview_only",
             ].map(csvPreviewCell).join(",")).join("\r\n")}\r\n`
-          : `# Life Log digest preview\n\n- Browser preview only: native DB, Git, and local snapshots are not included.\n- Range: ${input.startDate} to ${input.endDate}\n- Timezone: ${markdownPreviewCell(input.timezone)}\n- Day boundaries: ${boundarySummary}\n`;
+          : `# Life Log digest preview\n\n- Export schema: ${EXPORT_SCHEMA_VERSION}\n- Browser preview only: native DB, Git, and local snapshots are not included.\n- Range: ${input.startDate} to ${input.endDate}\n- Timezone: ${markdownPreviewCell(input.timezone)}\n- Day boundaries: ${boundarySummary}\n- Run/Knowledge daily metrics: unavailable (native values are not substituted).\n`;
     const byteLength = new TextEncoder().encode(content).byteLength;
     if (byteLength > MAX_EXPORT_BYTES) throw new Error("브라우저 미리보기 결과가 너무 큽니다");
     return {
@@ -758,7 +800,7 @@ function browserDigestRules(appFilter: string | null): DigestRules {
     appFilter: appFilter ? `exact sanitized app \`${appFilter}\` only` : "all sanitized applications",
     appTotals: "sanitized sessions are grouped by app; duration descending then app byte order",
     gitCommits: "native-only read-only bounded Git counts; unavailable in browser preview",
-    snapshotScope: "Run Manager and Knowledge latest snapshots are provenance only and unavailable in browser preview",
+    snapshotScope: "Run Manager and Knowledge daily snapshots are native-only and unavailable in browser preview",
     privacy: "Life Log privacy rules and obvious credential markers are reapplied before aggregation",
     externalProcessing: "rule-based local aggregation only; no cloud/local LLM, network, telemetry, or external activity transfer",
   };
@@ -771,7 +813,7 @@ function markdownPreview(value: string): string {
 function browserDigestMarkdown(input: DigestInput, document: DigestDocument): string {
   const filter = input.filter.app ?? "all apps";
   const daily = document.daily.map((day) =>
-    `| ${day.date} | 0 | 0 | 0 | - |`,
+    `| ${day.date} | 0 | 0 | 0 | - | - | - | - |`,
   ).join("\n");
   const sources = document.sources.map((source) =>
     `| ${source.id} | false | ${source.scope} | ${source.errorCode ?? "-"} |`,
@@ -786,6 +828,7 @@ function browserDigestMarkdown(input: DigestInput, document: DigestDocument): st
     `- Range: \`${input.startDate}\` to \`${input.endDate}\` (date keys inclusive; end timestamp exclusive)`,
     `- Timezone: \`${markdownPreview(input.timezone)}\``,
     `- Filter: ${markdownPreview(filter)}`,
+    `- Digest schema: \`${document.schemaVersion}\``,
     "- Browser preview only: native DB, Git, and local snapshots are not included.",
     "",
     "## Summary",
@@ -798,13 +841,15 @@ function browserDigestMarkdown(input: DigestInput, document: DigestDocument): st
     "| Average daily usage (ms) | 0 |",
     "| Git commits | 0 |",
     "| Top app | - |",
+    "| Runs | — |",
+    "| Knowledge notes modified | — |",
     "",
     "No activity was recorded in the browser preview.",
     "",
     "## Daily digest",
     "",
-    "| Date | PC usage (ms) | Sessions | Git commits | Top app |",
-    "| --- | ---: | ---: | ---: | --- |",
+    "| Date | PC usage (ms) | Sessions | Git commits | Runs succeeded | Runs failed | Knowledge notes modified | Top app |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     daily,
     "",
     "## Applications",
@@ -836,20 +881,9 @@ function browserDigestMarkdown(input: DigestInput, document: DigestDocument): st
 
 function browserDigest(input: DigestInput): DigestResponse {
   validateDigestInput(input);
-  const sources = ["life-log", "git", "run-manager", "knowledge-base"].map((id) => ({
-    id,
-    available: false,
-    schemaVersion: null,
-    snapshotVersion: null,
-    producerVersion: null,
-    generatedAt: null,
-    freshnessMs: null,
-    view: null,
-    scope: "browser-preview-only",
-    errorCode: "browser_preview_only",
-  }));
+  const sources = NATIVE_SOURCE_IDS.map(browserPreviewSourceMetadata);
   const document: DigestDocument = {
-    schemaVersion: 1,
+    schemaVersion: DIGEST_SCHEMA_VERSION,
     period: input.period,
     range: {
       startDate: input.startDate,
@@ -870,6 +904,8 @@ function browserDigest(input: DigestInput): DigestResponse {
       averageDailyUsageMs: 0,
       topApp: null,
       gitCommits: 0,
+      run: null,
+      knowledge: null,
     },
     daily: input.dayBoundaries.map((boundary) => ({
       date: boundary.date,
@@ -878,6 +914,9 @@ function browserDigest(input: DigestInput): DigestResponse {
       pcUsageMs: 0,
       sessionCount: 0,
       gitCommits: 0,
+      runSucceeded: null,
+      runFailed: null,
+      knowledgeNotesModified: null,
       topApp: null,
       hasActivity: false,
     })),
@@ -891,10 +930,72 @@ function browserDigest(input: DigestInput): DigestResponse {
   return { origin: "browser-preview", document, markdown, handle: null };
 }
 
+function isNullableSafeInteger(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isSafeInteger(value));
+}
+
+function isNullableSafeCount(value: unknown): value is number | null {
+  return isNullableSafeInteger(value) && (value === null || value >= 0);
+}
+
+function isRunDigest(value: unknown): value is RunDigest {
+  if (!value || typeof value !== "object") return false;
+  const run = value as Partial<RunDigest>;
+  return isNullableSafeCount(run.succeeded)
+    && run.succeeded !== null
+    && isNullableSafeCount(run.failed)
+    && run.failed !== null
+    && isNullableSafeInteger(run.lastRunAtMs);
+}
+
+function isKnowledgeDigest(value: unknown): value is KnowledgeDigest {
+  if (!value || typeof value !== "object") return false;
+  const knowledge = value as Partial<KnowledgeDigest>;
+  return isNullableSafeCount(knowledge.notesModified)
+    && knowledge.notesModified !== null
+    && isNullableSafeInteger(knowledge.lastModifiedAtMs);
+}
+
+/** Keep native responses on the versioned nullable activity contract. */
+export function validateDigestResponse(value: unknown): DigestResponse {
+  if (!value || typeof value !== "object") {
+    throw new Error("digest 응답을 읽을 수 없습니다");
+  }
+  const response = value as Partial<DigestResponse>;
+  const document = response.document;
+  if (!document || typeof document !== "object") {
+    throw new Error("digest 응답을 읽을 수 없습니다");
+  }
+  const typedDocument = document as Partial<DigestDocument>;
+  const summary = typedDocument.summary;
+  const daily = typedDocument.daily;
+  if (typedDocument.schemaVersion !== DIGEST_SCHEMA_VERSION
+      || !summary
+      || typeof summary !== "object"
+      || !Object.prototype.hasOwnProperty.call(summary, "run")
+      || !Object.prototype.hasOwnProperty.call(summary, "knowledge")
+      || !Array.isArray(daily)
+      || !daily.every((candidate) => {
+        if (!candidate || typeof candidate !== "object") return false;
+        const day = candidate as Partial<DigestDay>;
+        return Object.prototype.hasOwnProperty.call(day, "runSucceeded")
+          && Object.prototype.hasOwnProperty.call(day, "runFailed")
+          && Object.prototype.hasOwnProperty.call(day, "knowledgeNotesModified")
+          && isNullableSafeCount(day.runSucceeded)
+          && isNullableSafeCount(day.runFailed)
+          && isNullableSafeCount(day.knowledgeNotesModified);
+      })
+      || (summary.run !== null && !isRunDigest(summary.run))
+      || (summary.knowledge !== null && !isKnowledgeDigest(summary.knowledge))) {
+    throw new Error("digest 응답을 읽을 수 없습니다");
+  }
+  return value as DigestResponse;
+}
+
 export async function getDigest(input: DigestInput): Promise<DigestResponse> {
   if (!isTauri()) return browserDigest(input);
   validateDigestInput(input);
-  return invoke<DigestResponse>("get_digest", { input });
+  return validateDigestResponse(await invoke<unknown>("get_digest", { input }));
 }
 
 export async function cancelDigest(): Promise<boolean> {

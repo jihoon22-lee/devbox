@@ -81,6 +81,17 @@ function useWorkflowPersistence(): WorkflowPersistence {
 export interface SmartWorkflowPanelProps {
   readonly activeToolId: string;
   readonly onOpenTool: (toolId: string) => void;
+  /**
+   * One-shot text accepted by the native handoff receiver.  The revision is
+   * intentionally required so the same text can be applied again without
+   * coupling this panel to the receiver's state machine.
+   */
+  readonly incomingText?: SmartWorkflowIncomingText | null;
+}
+
+export interface SmartWorkflowIncomingText {
+  readonly revision: number;
+  readonly text: string;
 }
 
 /**
@@ -88,7 +99,7 @@ export interface SmartWorkflowPanelProps {
  * run them on demand, and persist only IDs/timestamps.  No input/output is
  * passed to the metadata store, clipboard, shell, network, or API handoff.
  */
-export function SmartWorkflowPanel({ activeToolId, onOpenTool }: SmartWorkflowPanelProps) {
+export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: SmartWorkflowPanelProps) {
   const persistence = useWorkflowPersistence();
   const mounted = useRef(true);
   const metadataRef = useRef<WorkflowMetadata>(emptyMetadata());
@@ -104,6 +115,16 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool }: SmartWorkflowPa
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
   const [output, setOutput] = useState("");
   const [pipelineError, setPipelineError] = useState<PipelineError | null>(null);
+
+  const incomingTextRevision = incomingText?.revision;
+  useEffect(() => {
+    if (incomingTextRevision === undefined || incomingText === null || incomingText === undefined) return;
+    // Accepted handoff text is a new draft.  Keep the user's selected input
+    // type and stages, but never carry a result/error across that boundary.
+    setInput(incomingText.text);
+    setOutput("");
+    setPipelineError(null);
+  }, [incomingTextRevision]);
 
   const detection = useMemo(() => detectSmartInput(input), [input]);
   const currentOutputType = useMemo(
