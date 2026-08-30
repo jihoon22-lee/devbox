@@ -548,8 +548,10 @@ try {
     Fail 'installer acceptance config is invalid'
   }
   $baselineApps = @($configuration.apps | Where-Object { [bool]$_.baseline })
-  if ($baselineApps.Count -ne 13) { Fail 'baseline app count mismatch' }
-  if ($configuration.baseline.tag -ne 'v0.4.2' -or $configuration.baseline.commit -notmatch '^[0-9a-f]{40}$') {
+  if ($baselineApps.Count -ne 15 -or $baselineApps.Count -ne @($configuration.apps).Count) {
+    Fail 'baseline app count mismatch'
+  }
+  if ($configuration.baseline.tag -notmatch '^v\d+\.\d+\.\d+$' -or $configuration.baseline.commit -notmatch '^[0-9a-f]{40}$') {
     Fail 'baseline release identity is invalid'
   }
 
@@ -573,7 +575,7 @@ try {
     }
   }
 
-  $baselineRelease = Verify-Release $BaselineAssets $BaselineMetadata $configuration.baseline.tag $configuration.baseline.commit 13 $false $baselineApps
+  $baselineRelease = Verify-Release $BaselineAssets $BaselineMetadata $configuration.baseline.tag $configuration.baseline.commit $baselineApps.Count $false $baselineApps
   $candidateIsPrerelease = $CandidateTag.Contains('-')
   $candidateRelease = Verify-Release $CandidateAssets $CandidateMetadata $CandidateTag $CandidateCommit 15 $candidateIsPrerelease @($configuration.apps)
   $report.releases = [ordered]@{

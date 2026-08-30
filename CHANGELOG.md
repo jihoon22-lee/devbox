@@ -5,6 +5,96 @@
 
 ## [Unreleased]
 
+## [v0.6.0] - 2026-08-31
+
+v0.6.0은 15개 앱의 WSL-native 개발 흐름, dependency/protocol/task 도구, 앱 간 handoff와
+공통 UX 품질을 한 번에 배포할 예정인 통합 기능 릴리스다. 별도 신규 앱을 늘리지 않고 Dependency
+Lens는 Repo Manager·Workbench, Dev Setup과 로컬 품질은 Devbox Manager, Protocol/MCP Lab은
+API Playground, Task Runner는 Run Manager·Workbench 안에서 검증한다.
+
+### Added
+
+- **WSL-native 프로젝트 흐름 (#482)** — Life Log Git 집계, Repo Manager와 Workbench repository/
+  worktree 흐름이 `\\wsl$`·`\\wsl.localhost` 경로를 distro/POSIX identity로 정규화하고 distro
+  내부 Git을 bounded하게 실행한다. WSL Desktop은 login/non-login PATH를 함께 확인해 사용자
+  설치 multiplexer를 찾고 profile/runtime snapshot을 발행한다.
+- **Dev Setup과 로컬 품질 (#483, #491)** — Devbox Manager에 환경 capability 진단, package-only
+  WinGet Configuration v3 preview/apply, local-only 설치·snapshot 품질 dashboard를 추가했다.
+  mutation은 native picker, strict schema, 재검증, 명시적 확인과 rollback 경계 뒤에서만 실행한다.
+- **Dependency Lens (#484)** — Repo Manager가 lockfile을 오프라인 분석하고 사용자가 승인한
+  경우에만 OSV/deps.dev metadata를 bounded 조회한다. Workbench는 privacy-safe summary만 읽어
+  프로젝트 health에 연결하며 경로·package 전체 목록을 snapshot으로 복사하지 않는다.
+- **Protocol/MCP Lab (#485)** — API Playground에 MCP Streamable HTTP와 native stdio,
+  OAuth authorization-code/PKCE, dynamic gRPC reflection/local proto 및 unary·streaming RPC,
+  TLS roots와 DPAPI-backed mTLS credential 흐름을 추가했다.
+- **Task Runner (#486)** — Run Manager가 package scripts·Justfile·Taskfile의 trusted workspace
+  task를 argv 기반으로 import·실행하고, Workbench가 preview/confirm handoff와 receipt를 통해
+  시작·중지·재시도를 조정한다. arbitrary shell 문자열과 secret snapshot은 만들지 않는다.
+- **Typed launcher와 activity workflow (#487, #488)** — Launcher가 Workbench profile, Repo
+  repository/worktree, WSL profile source를 typed snapshot으로 검색한다. API/Log/Launcher 선택
+  텍스트를 Toolbox에서 preview 변환하고 Knowledge draft로 저장하며, Knowledge와 Run의 일별
+  activity를 Life Log에서 provenance와 함께 집계한다.
+- **관찰 가능성 연계 (#489)** — Port Manager에 Run/Workbench binding correlation, owner 이동,
+  Log Lens handoff와 bounded session timeline을 추가했다. Webhook Lab은 deterministic rule
+  conflict preview, bounded OpenAPI draft, disabled Run service export와 sanitized Log Lens handoff를
+  제공하고, Log Lens는 saved view·reconnect·source-aware persistence를 제공한다.
+- **WSL 파일 UX (#490)** — Everything+는 WSL root polling/reconcile을, Code Pad와 Knowledge는
+  WSL-native read/write/watch와 disconnect/reconnect 상태를 지원한다. Mermaid는 필요할 때만
+  로드하고 앱별 초기 bundle budget을 CI에서 검사한다.
+- **15-app UX 계약 (#491)** — 모든 frontend에 `ko-KR`, semantic token, keyboard/focus/IME,
+  forced-colors/reduced-motion, 실제 shell axe smoke와 Vite manifest/bundle gate를 적용했다.
+
+### Changed
+
+- **앱별 version** — Port Manager·Developer Toolbox `0.4.0`, WSL Desktop·API Playground·
+  Everything+·Knowledge·Life Log·Devbox Manager·Code Pad·Run Manager `0.5.0`, Workbench·
+  Webhook Lab·Repo Manager `0.3.0`, Devbox Launcher·Log Lens `0.2.0`이다. 각 앱의 Cargo,
+  Tauri, frontend package version과 packaged-smoke config가 일치한다.
+- **비공개 package checkpoint** — stable tag 전에 exact current `origin/main`에서만 15 portable와
+  15 NSIS installer, notices, manifest를 만드는 수동 candidate workflow를 추가했다. tag/release가
+  이미 있으면 fail-closed하며, 32-file/31-declared digest 검증과 disposable Windows runner의
+  v0.5.1→v0.6.0 update/rollback lifecycle을 공개 release와 분리해 수행한다.
+- **GitHub Actions runtime** — checkout/setup-node/cache/upload/download를 Node 24-capable 공식
+  major로 갱신했다. pnpm 9는 repository `packageManager` pin을 Corepack으로 활성화해 Node 20
+  runtime의 `pnpm/action-setup` 의존을 제거하고 Rust action도 audited composite/Node 24/Docker
+  ref만 허용한다.
+- **Cargo graph** — yanked `chacha20 0.10.1`을 compatible non-yanked `0.10.2`로 갱신하고
+  lockfile 기반 third-party notices를 재생성했다.
+
+### Fixed
+
+- **Life Log migrated WSL paths** — `/home/jihoon/projects`를 가리키는 `\\wsl$` 또는
+  `\\wsl.localhost` project path가 Today/Day/Week/Month 전체 조회를 실패시키던 문제와,
+  늦게 도착한 Settings 응답이 방금 저장한 project 목록을 덮는 경합을 수정했다.
+- **WSL Desktop zellij discovery** — distro 사용자의 `~/.local/bin/zellij`가 설치돼도 Windows
+  process PATH만 보고 “없음”으로 표시하던 오탐을 수정했다.
+- **Devbox Manager Docker Desktop discovery** — WSL Desktop에서는 `docker-desktop`과 version을
+  확인할 수 있는데 Manager가 Windows app 등록만 보고 미설치로 표시하던 오탐을 수정했다.
+- **Dependency Lens fixture** — filesystem mtime 경계 때문에 stale lockfile 회귀가 간헐적으로
+  실패하던 fixture를 결정적인 시각 경계로 고정했다.
+
+### Security
+
+- WSL/Git/process/network 작업은 namespace, canonical identity, timeout, byte/count limit와
+  process-tree ownership을 native 경계에서 다시 확인한다. path·command·credential·response/
+  log body는 공용 snapshot 또는 품질 dashboard에 넣지 않는다.
+- OAuth state/PKCE, TLS/mTLS, imported YAML, dependency metadata와 one-time handoff는 각각
+  strict schema, fixed endpoint/host, no-redirect 또는 explicit confirmation, DPAPI/zeroizing,
+  stale identity 재검증과 fail-closed 오류를 적용한다.
+- Dependabot `glib 0.18.5` GHSA는 2026-08-31 다시 평가했다. 현재 Tauri 2.11.5의 Linux-only
+  GTK3 graph에서 compatible patched line이 없어 2026-11-30 만료 예외를 유지하되 alert를
+  dismiss하지 않고, Windows package에 link되지 않는 범위만 인정한다.
+
+### Verification
+
+- W01~W10 구현 PR은 frontend, Linux Rust, Windows Rust, catalog, dependency와 scope gate를
+  통과한 뒤 main에 병합했다. W11은 전체 source gate와 exact version/notices/action-runtime
+  계약을 다시 실행한다.
+- stable tag는 비공개 15-app candidate의 asset/digest 및 installer lifecycle, 실제 Windows/WSL
+  packaged 회귀를 #492/#493에 기록한 뒤에만 만든다. 공개 workflow는 exact annotated tag에서
+  새 32개 asset을 build하고, 15 apps/31 manifest-declared/32 public/mismatch 0을 검증한 draft만
+  Latest stable로 전환한다.
+
 ## [v0.5.1] - 2026-08-29
 
 v0.5.1은 v0.5.0 공개 뒤 확인된 통합 누락과 배포 도구 결함을 보완하는 stable maintenance

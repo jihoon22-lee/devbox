@@ -4,7 +4,7 @@
     {
       "id": "port-manager",
       "additionalProcessNames": ["PortManager.exe"],
-      "version": "0.3.0",
+      "version": "0.4.0",
       "identifier": "com.devbox.portmanager",
       "legacyIdentifiers": ["com.workbench.portmanager"],
       "title": "Port Manager",
@@ -14,7 +14,7 @@
     {
       "id": "developer-toolbox",
       "additionalProcessNames": ["DevToolbox.exe"],
-      "version": "0.3.0",
+      "version": "0.4.0",
       "identifier": "com.devbox.developertoolbox",
       "legacyIdentifiers": ["com.workbench.developertoolbox"],
       "title": "Developer Toolbox",
@@ -24,7 +24,7 @@
     {
       "id": "api-playground",
       "additionalProcessNames": ["ApiPlayground.exe"],
-      "version": "0.4.0",
+      "version": "0.5.0",
       "identifier": "com.devbox.apiplayground",
       "legacyIdentifiers": ["com.workbench.apiplayground"],
       "title": "API Playground",
@@ -58,7 +58,7 @@
     {
       "id": "devbox-manager",
       "additionalProcessNames": ["DevboxManager.exe"],
-      "version": "0.4.1",
+      "version": "0.5.0",
       "identifier": "com.devbox.devboxmanager",
       "legacyIdentifiers": ["com.workbench.devboxmanager"],
       "title": "Devbox Manager",
@@ -109,7 +109,7 @@
     {
       "id": "repo-manager",
       "additionalProcessNames": ["RepoManager.exe"],
-      "version": "0.2.0",
+      "version": "0.3.0",
       "identifier": "com.devbox.repomanager",
       "legacyIdentifiers": [],
       "title": "Repo Manager",
@@ -119,7 +119,7 @@
     {
       "id": "devbox-launcher",
       "additionalProcessNames": ["DevboxLauncher.exe"],
-      "version": "0.1.1",
+      "version": "0.2.0",
       "identifier": "com.devbox.devboxlauncher",
       "legacyIdentifiers": [],
       "title": "Devbox Launcher",
@@ -140,7 +140,7 @@
     {
       "id": "life-log",
       "additionalProcessNames": ["LifeLog.exe"],
-      "version": "0.4.0",
+      "version": "0.5.0",
       "identifier": "com.devbox.lifelog",
       "legacyIdentifiers": ["com.workbench.lifelog"],
       "title": "Life Log",
@@ -150,7 +150,7 @@
     {
       "id": "wsl-desktop",
       "additionalProcessNames": ["WSLDesktop.exe"],
-      "version": "0.4.0",
+      "version": "0.5.0",
       "identifier": "com.devbox.wsldesktop",
       "legacyIdentifiers": ["com.workbench.wsldesktop"],
       "title": "WSL Desktop",
