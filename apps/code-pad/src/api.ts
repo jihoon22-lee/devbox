@@ -9,6 +9,7 @@ import type {
   SavedFile,
   LoadedSession,
   SessionState,
+  WorkspaceCapabilities,
   WorkspaceFiles,
   LanguageServerStatus,
   LoadedLspConfig,
@@ -115,6 +116,10 @@ export function listWorkspaceFiles(path: string): Promise<WorkspaceFiles> {
 
 export function canonicalizeWorkspace(path: string): Promise<string> {
   return invoke<string>("canonicalize_workspace", { path });
+}
+
+export function workspaceCapabilities(path: string): Promise<WorkspaceCapabilities> {
+  return invoke<WorkspaceCapabilities>("workspace_capabilities", { path });
 }
 
 export function watchFile(path: string): Promise<void> {

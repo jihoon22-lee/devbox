@@ -14,6 +14,7 @@ export const QUICK_OPEN_VISIBLE_LIMIT = 200;
 interface QuickOpenProps {
   files: WorkspaceFile[];
   truncated: boolean;
+  incomplete?: boolean;
   loading: boolean;
   workspaceFolder: string | null;
   onOpen: (path: string) => void;
@@ -23,6 +24,7 @@ interface QuickOpenProps {
 export default function QuickOpen({
   files,
   truncated,
+  incomplete = false,
   loading,
   workspaceFolder,
   onOpen,
@@ -142,6 +144,11 @@ export default function QuickOpen({
         {truncated && (
           <p className="quick-open-banner" role="status">
             폴더가 커서 일부만 색인했습니다
+          </p>
+        )}
+        {incomplete && (
+          <p className="quick-open-banner" role="status">
+            일부 항목을 읽지 못해 현재 목록은 불완전합니다
           </p>
         )}
         {!workspaceFolder && !loading && (

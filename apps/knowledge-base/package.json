@@ -1,7 +1,7 @@
 {
   "name": "knowledge-base",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,10 +13,10 @@
   "dependencies": {
     "@devbox/context-menu": "workspace:*",
     "@devbox/diff-view": "workspace:*",
+    "@devbox/mermaid-renderer": "workspace:*",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2",
     "@tauri-apps/plugin-opener": "^2",
-    "mermaid": "^11.16.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "@devbox/tokens": "workspace:*",

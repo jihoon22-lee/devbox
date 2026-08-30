@@ -1,11 +1,7 @@
-import mermaid from "mermaid";
+import { getMermaidRenderer } from "@devbox/mermaid-renderer";
 import { useEffect, useRef } from "react";
 import { applySvgResult } from "../lib/previewState";
 import type { PreviewResponse } from "../types";
-
-// Mermaid receives only the standalone source returned by the native command.
-// Keep strict mode: lowering it would allow diagram text to create active DOM.
-mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "strict" });
 
 interface PreviewPaneProps {
   docPath: string;
@@ -31,27 +27,49 @@ export default function PreviewPane({ docPath, response, error }: PreviewPanePro
     const container = containerRef.current;
     if (!container || !response) return;
     let cancelled = false;
+
+    const canApply = (element: HTMLElement): boolean =>
+      !cancelled && containerRef.current === container && element.isConnected;
+
+    const applyError = (element: HTMLElement, key: string) => {
+      if (!canApply(element)) return;
+      const applied = applySvgResult(lastGoodSvg.current, key, { ok: false });
+      element.innerHTML = `${applied.svg}<span class="mermaid-error-badge" title="mermaid 구문 오류">⚠ 구문 오류</span>`;
+    };
+
     const renderBlocks = async () => {
       if (response.kind === "mermaid") {
         const source = response.source;
         const key = "standalone";
         try {
-          const { svg } = await mermaid.render(
+          const renderer = await getMermaidRenderer();
+          const { svg } = await renderer.render(
             `code-pad-mermaid-${renderSequence.current++}`,
             source,
           );
+          if (!canApply(container)) return;
           const applied = applySvgResult(lastGoodSvg.current, key, { ok: true, svg });
-          if (!cancelled && containerRef.current === container) container.innerHTML = applied.svg;
+          container.innerHTML = applied.svg;
         } catch {
-          const applied = applySvgResult(lastGoodSvg.current, key, { ok: false });
-          if (!cancelled) {
-            container.innerHTML = `${applied.svg}<span class="mermaid-error-badge" title="mermaid 구문 오류">⚠ 구문 오류</span>`;
-          }
+          applyError(container, key);
         }
         return;
       }
 
       const blocks = container.querySelectorAll<HTMLDivElement>(".mermaid-block[data-idx]");
+      if (blocks.length === 0) return;
+
+      let renderer;
+      try {
+        renderer = await getMermaidRenderer();
+      } catch {
+        blocks.forEach((element) => {
+          const index = Number(element.dataset.idx);
+          if (response.mermaid[index] !== undefined) applyError(element, String(index));
+        });
+        return;
+      }
+
       await Promise.all(
         Array.from(blocks).map(async (element) => {
           const index = Number(element.dataset.idx);
@@ -59,17 +77,15 @@ export default function PreviewPane({ docPath, response, error }: PreviewPanePro
           if (source === undefined) return;
           const key = String(index);
           try {
-            const { svg } = await mermaid.render(
+            const { svg } = await renderer.render(
               `code-pad-mermaid-${index}-${renderSequence.current++}`,
               source,
             );
+            if (!canApply(element)) return;
             const applied = applySvgResult(lastGoodSvg.current, key, { ok: true, svg });
-            if (!cancelled) element.innerHTML = applied.svg;
+            element.innerHTML = applied.svg;
           } catch {
-            const applied = applySvgResult(lastGoodSvg.current, key, { ok: false });
-            if (!cancelled) {
-              element.innerHTML = `${applied.svg}<span class="mermaid-error-badge" title="mermaid 구문 오류">⚠ 구문 오류</span>`;
-            }
+            applyError(element, key);
           }
         }),
       );

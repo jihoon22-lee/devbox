@@ -3,6 +3,19 @@ export interface TreeEntry {
   is_dir: boolean;
 }
 
+export interface KnowledgeWatcherStatus {
+  sourceKind: "native" | "wsl";
+  watchMode: "native" | "polling" | "unavailable";
+  lastSyncedAt: number | null;
+  error:
+    | "vault_unconfigured"
+    | "vault_unavailable"
+    | "vault_scan_limit"
+    | "vault_scan_incomplete"
+    | "vault_index_failed"
+    | null;
+}
+
 export interface SearchResult {
   path: string;
   title: string;

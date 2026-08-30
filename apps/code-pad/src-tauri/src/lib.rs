@@ -104,6 +104,7 @@ pub fn run() {
             commands::file::validate_encoding,
             commands::folder::list_workspace_files,
             commands::folder::canonicalize_workspace,
+            commands::folder::workspace_capabilities,
             commands::installer::lsp_catalog,
             commands::installer::lsp_installed,
             commands::installer::lsp_recover_installed,

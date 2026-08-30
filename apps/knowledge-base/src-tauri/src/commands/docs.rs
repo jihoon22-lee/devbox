@@ -186,14 +186,15 @@ pub fn set_root(
     crate::core::vault::validate_root_for_creation(root)
         .map_err(|_| "Knowledge 저장 위치를 확인할 수 없습니다".to_string())?;
     store::ensure_layout(root)?;
-    VaultIdentity::inspect(root)
+    let vault = VaultIdentity::inspect(root)
         .map_err(|_| "Knowledge 저장 위치를 확인할 수 없습니다".to_string())?;
-    db::set_setting(&conn, "root", &path).map_err(|e| e.to_string())?;
+    let canonical = vault.canonical_path().to_path_buf();
+    db::set_setting(&conn, "root", &canonical.to_string_lossy()).map_err(|e| e.to_string())?;
     drop(conn);
     state.rename_plans.lock().unwrap().clear();
     // watcher를 새 루트로 재시작
     let watcher = app.state::<Arc<crate::commands::watcher::KnowledgeWatcher>>();
-    watcher.set_root(Path::new(&path))
+    watcher.set_root(&canonical)
 }
 
 #[tauri::command]
@@ -211,7 +212,7 @@ pub fn list_tree(state: tauri::State<'_, Arc<AppState>>) -> Result<Vec<TreeEntry
 pub fn read_file(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Result<String, String> {
     let conn = state.db.lock().unwrap();
     let root = resolve_root(&conn)?;
-    let path = store::safe_join(&root, &rel)?;
+    let path = canonical_existing_entry(&root, &rel).map_err(str::to_string)?;
     store::read_file(&path)
 }
 
@@ -239,7 +240,10 @@ pub fn write_file(
 ) -> Result<(), String> {
     let conn = state.db.lock().unwrap();
     let root = resolve_root(&conn)?;
-    let path = store::safe_join(&root, &rel)?;
+    let vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
+    let path = vault
+        .existing_entry(&rel)
+        .map_err(|error| error.to_string())?;
     store::write_file(&path, &content)?;
     db::index_doc(&conn, &rel, &content).map_err(|e| e.to_string())?;
     drop(conn);
@@ -256,7 +260,8 @@ pub fn create_file(
 ) -> Result<(), String> {
     let conn = state.db.lock().unwrap();
     let root = resolve_root(&conn)?;
-    let path = validated_new_entry(&root, &rel).map_err(str::to_string)?;
+    let vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
+    let path = vault.new_entry(&rel).map_err(|error| error.to_string())?;
     if path.exists() {
         return Err("파일이 이미 존재합니다".into());
     }
@@ -819,7 +824,8 @@ pub fn daily_note(state: tauri::State<'_, Arc<AppState>>) -> Result<(String, Str
     let conn = state.db.lock().unwrap();
     let root = resolve_root(&conn)?;
     let rel = format!("Journal/{}.md", today_str());
-    let path = store::safe_join(&root, &rel)?;
+    let vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
+    let path = vault.new_entry(&rel).map_err(|error| error.to_string())?;
     if !path.exists() {
         let content = format!("---\ntags: [daily]\n---\n\n# {}\n\n", today_str());
         store::write_file(&path, &content)?;
@@ -828,6 +834,9 @@ pub fn daily_note(state: tauri::State<'_, Arc<AppState>>) -> Result<(String, Str
         let _ = crate::integration::write_snapshot(&state.db.lock().unwrap());
         return Ok((rel, content));
     }
+    let path = vault
+        .existing_entry(&rel)
+        .map_err(|error| error.to_string())?;
     let content = store::read_file(&path)?;
     Ok((rel, content))
 }

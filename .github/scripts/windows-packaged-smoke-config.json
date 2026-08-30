@@ -44,13 +44,16 @@
     {
       "id": "knowledge-base",
       "additionalProcessNames": ["Knowledge.exe"],
-      "version": "0.4.0",
+      "version": "0.5.0",
       "identifier": "com.devbox.knowledgebase",
       "legacyIdentifiers": ["com.workbench.knowledgebase"],
       "isolatedKnowledgeRoot": true,
       "title": "Knowledge Base",
       "markers": ["Knowledge"],
-      "probes": [{"name": "note templates", "command": "list_templates", "expectedType": "array"}]
+      "probes": [
+        {"name": "note templates", "command": "list_templates", "expectedType": "array"},
+        {"name": "vault watcher status", "command": "knowledge_watcher_status", "expectedType": "object", "requiredKeys": ["sourceKind", "watchMode", "lastSyncedAt", "error"]}
+      ]
     },
     {
       "id": "devbox-manager",
@@ -65,7 +68,7 @@
     {
       "id": "code-pad",
       "additionalProcessNames": ["Code Pad.exe"],
-      "version": "0.4.0",
+      "version": "0.5.0",
       "identifier": "com.devbox.codepad",
       "legacyIdentifiers": ["com.workbench.codepad"],
       "title": "Code Pad",

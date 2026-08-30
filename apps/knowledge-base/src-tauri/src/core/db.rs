@@ -338,6 +338,14 @@ pub fn remove_doc(conn: &Connection, path: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
+pub fn list_doc_paths(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+    let mut statement = conn.prepare("SELECT path FROM docs ORDER BY path")?;
+    let paths = statement
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect();
+    paths
+}
+
 /// 파일 하나 또는 폴더 아래의 모든 문서를 검색 인덱스에서 제거한다.
 /// `LIKE`를 쓰지 않아 `%`와 `_`가 들어간 실제 폴더명도 wildcard로 해석되지 않는다.
 pub fn remove_docs_under(conn: &Connection, path: &str) -> rusqlite::Result<()> {

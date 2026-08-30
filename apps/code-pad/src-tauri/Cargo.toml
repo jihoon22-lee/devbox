@@ -1,6 +1,6 @@
 [package]
 name = "code-pad"
-version = "0.4.0"
+version = "0.5.0"
 publish = false
 description = "Code Pad"
 authors = ["jihoon22.lee"]
@@ -38,6 +38,7 @@ flate2 = "1.1.9"
 tar = { version = "0.4.46", default-features = false }
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 devbox-markdown = { package = "markdown", path = "../../../crates/markdown" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }

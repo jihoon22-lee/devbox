@@ -43,6 +43,18 @@ export interface WorkspaceFile {
 export interface WorkspaceFiles {
   files: WorkspaceFile[];
   truncated: boolean;
+  /** True when a bounded walk could not read every entry. */
+  incomplete: boolean;
+}
+
+export interface WorkspaceCapabilities {
+  /** Canonical path used by every subsequent workspace operation. */
+  path: string;
+  sourceKind: "native" | "wsl";
+  watchMode: "native" | "polling";
+  editSupported: boolean;
+  lspSupported: boolean;
+  lspReason: "host_lsp_wsl_unsupported" | null;
 }
 
 export interface FileChangedEvent {

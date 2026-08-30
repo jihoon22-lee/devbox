@@ -8,6 +8,9 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(() => ({
   plugins: [react()],
   clearScreen: false,
+  build: {
+    manifest: true,
+  },
   server: {
     port: 1420,
     strictPort: true,

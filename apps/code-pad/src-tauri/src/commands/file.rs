@@ -1269,10 +1269,53 @@ fn replace_file(temporary: &Path, target: &Path) -> io::Result<()> {
 fn replace_file(temporary: &Path, target: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
-    use windows::Win32::Storage::FileSystem::{ReplaceFileW, REPLACEFILE_WRITE_THROUGH};
+    use windows::Win32::Foundation::{
+        ERROR_ACCESS_DENIED, ERROR_LOCK_VIOLATION, ERROR_SHARING_VIOLATION, WIN32_ERROR,
+    };
+    use windows::Win32::Storage::FileSystem::{
+        MoveFileExW, ReplaceFileW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+        REPLACEFILE_WRITE_THROUGH,
+    };
 
+    let wsl_target = devbox_wsl::path::parse_wsl_unc_path(&target.to_string_lossy())
+        .ok()
+        .flatten()
+        .is_some();
     let temporary: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
     let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+    if wsl_target {
+        // The WSL UNC provider does not guarantee ReplaceFileW support.
+        // MoveFileExW keeps the same-directory atomic replacement boundary
+        // used by the shared filesystem writer while flushing the namespace.
+        const MAX_REPLACE_ATTEMPTS: usize = 16;
+        for attempt in 0..MAX_REPLACE_ATTEMPTS {
+            let result = unsafe {
+                MoveFileExW(
+                    PCWSTR(temporary.as_ptr()),
+                    PCWSTR(target.as_ptr()),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+                )
+            };
+            match result {
+                Ok(()) => return Ok(()),
+                Err(error)
+                    if attempt + 1 < MAX_REPLACE_ATTEMPTS
+                        && WIN32_ERROR::from_error(&error).is_some_and(|code| {
+                            matches!(
+                                code,
+                                ERROR_ACCESS_DENIED
+                                    | ERROR_LOCK_VIOLATION
+                                    | ERROR_SHARING_VIOLATION
+                            )
+                        }) =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(1_u64 << attempt.min(4)));
+                }
+                Err(error) => return Err(io::Error::other(error)),
+            }
+        }
+        unreachable!("the final WSL replace attempt always returns")
+    }
     unsafe {
         // ReplaceFile preserves the replaced file's ACLs and attributes while
         // atomically installing the prepared contents.

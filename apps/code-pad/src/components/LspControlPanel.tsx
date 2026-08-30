@@ -18,6 +18,7 @@ import type {
   LspServerRef,
   ManagedInstallStatus,
   ManagedServerManifest,
+  WorkspaceCapabilities,
 } from "../types";
 import ManagedInstallerPanel from "./ManagedInstallerPanel";
 
@@ -117,11 +118,17 @@ function managedCacheLabel(
 
 interface Props {
   workspaceRoot: string | null;
+  workspaceCapabilities?: WorkspaceCapabilities | null;
   onClose: () => void;
   onConfigChanged?: (config: LspConfig) => void;
 }
 
-export default function LspControlPanel({ workspaceRoot, onClose, onConfigChanged }: Props) {
+export default function LspControlPanel({
+  workspaceRoot,
+  workspaceCapabilities = null,
+  onClose,
+  onConfigChanged,
+}: Props) {
   const [loaded, setLoaded] = useState<LoadedLspConfig | null>(null);
   const [config, setConfig] = useState<LspConfig>(() => emptyConfig(workspaceRoot));
   const [statuses, setStatuses] = useState<LanguageServerStatus[]>([]);
@@ -143,6 +150,8 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
   const cancelledStartsRef = useRef(new Set<string>());
   const runtimeRefreshGenerationRef = useRef(0);
   const runtimeRefreshActiveRef = useRef(false);
+  const lspAvailable = Boolean(workspaceRoot)
+    && (workspaceCapabilities?.lspSupported ?? true);
 
   const configuredLanguageIds = [...new Set([
     ...Object.keys(config.server_by_language),
@@ -194,6 +203,10 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
         const nextConfig = { ...nextLoaded.config };
         if (workspaceRoot && nextConfig.workspace_root !== workspaceRoot) {
           nextConfig.workspace_root = workspaceRoot;
+          setHasUnsavedChanges(true);
+        }
+        if (!lspAvailable && nextConfig.enabled) {
+          nextConfig.enabled = false;
           setHasUnsavedChanges(true);
         }
         setLoaded(nextLoaded);
@@ -313,7 +326,7 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
   const handleSave = () => void run(async () => {
     const next = {
       ...config,
-      enabled: config.enabled && Boolean(config.workspace_root),
+      enabled: config.enabled && Boolean(config.workspace_root) && lspAvailable,
       workspace_root: workspaceRoot ?? config.workspace_root,
     };
     await saveLspConfig(next, loaded?.persist_allowed === false);
@@ -376,12 +389,17 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
         {!workspaceRoot && (
           <p className="lsp-warning">먼저 작업 폴더를 지정해야 LSP를 활성화할 수 있습니다.</p>
         )}
+        {workspaceCapabilities?.lspReason === "host_lsp_wsl_unsupported" && (
+          <p className="lsp-warning" role="status">
+            WSL 작업 폴더의 편집과 파일 감시는 지원하지만, Windows 호스트에서 실행하는 LSP는 아직 지원하지 않습니다.
+          </p>
+        )}
 
         <label className="lsp-toggle">
           <input
             type="checkbox"
             checked={config.enabled}
-            disabled={!workspaceRoot || !loaded}
+            disabled={!lspAvailable || !loaded}
             onChange={(event) => {
               const enabled = event.currentTarget.checked;
               setConfig((current) => ({ ...current, enabled }));
@@ -530,10 +548,10 @@ export default function LspControlPanel({ workspaceRoot, onClose, onConfigChange
                         </button>
                       </>
                     : !status || status.status === "stopped"
-                    ? <button type="button" className="toolbar-button" disabled={busy || !config.enabled || hasUnsavedChanges} onClick={() => handleStart(languageId)}>시작</button>
+                    ? <button type="button" className="toolbar-button" disabled={busy || !lspAvailable || !config.enabled || hasUnsavedChanges} onClick={() => handleStart(languageId)}>시작</button>
                     : status.status === "crashed" || status.status === "degraded" || status.autoRestartDisabled
                       ? <>
-                          <button type="button" className="toolbar-button" disabled={busy || !config.enabled || hasUnsavedChanges} onClick={() => handleRestart(languageId)}>다시 시도</button>
+                          <button type="button" className="toolbar-button" disabled={busy || !lspAvailable || !config.enabled || hasUnsavedChanges} onClick={() => handleRestart(languageId)}>다시 시도</button>
                           <button type="button" className="toolbar-button" disabled={busy} onClick={() => handleStop(languageId)}>중지</button>
                         </>
                       : <button type="button" className="toolbar-button" disabled={busy} onClick={() => handleStop(languageId)}>중지</button>}
