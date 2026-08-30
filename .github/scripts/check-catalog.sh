@@ -60,11 +60,13 @@ def valid_version(value):
 
 DAILY_ACTIVITY_SNAPSHOT = "snapshot:daily-activity/v1"
 DAILY_ACTIVITY_PRODUCERS = {"knowledge-base", "run-manager"}
+PORT_BINDINGS_SNAPSHOT = "snapshot:port-bindings/v1"
+PORT_BINDINGS_PRODUCERS = {"run-manager", "workbench"}
 
 def capability_shape(value):
     if value in {"path", "workspace", "query", "profile", "task"}:
         return "basic"
-    if value == DAILY_ACTIVITY_SNAPSHOT:
+    if value in {DAILY_ACTIVITY_SNAPSHOT, PORT_BINDINGS_SNAPSHOT}:
         return "snapshot"
     if isinstance(value, str) and value.startswith("handoff:"):
         parts = value.removeprefix("handoff:").split("/")
@@ -186,6 +188,7 @@ for a in apps:
         capability_shape(item) == "snapshot"
         and not item.startswith(f"snapshot:{app_id}/")
         and not (item == DAILY_ACTIVITY_SNAPSHOT and app_id in DAILY_ACTIVITY_PRODUCERS)
+        and not (item == PORT_BINDINGS_SNAPSHOT and app_id in PORT_BINDINGS_PRODUCERS)
         for item in produces
     ):
         report(f"{app_id}: snapshot producer가 app id와 맞지 않는다")

@@ -571,9 +571,13 @@ query key와 제어 문자는 fail-closed로 거부한다.
 
 - Rust(`reqwest` multipart stream, `tokio-tungstenite`)와 Tauri dialog plugin이 직접 요청·파일
   선택 → 브라우저 CORS 없음. WebSocket raw frame은 backend bounded memory buffer에만 둔다.
-- OpenAPI parser는 `yaml@2.9.0` 및 `jsonc-parser@3.3.1`을 사용하며 앱 내부 순수 변환 계층에
-  격리한다. URL source만 기존 native `reqwest`로 bounded fetch하며, gzip/deflate/brotli/zstd 응답도
-  해제 후 4 MiB에서 자른다. 공용 integration/applink 변경은 없다.
+- 공용 package `@devbox/openapi`는 bounded JSON/YAML graph parse와 null-prototype normalization만
+  담당한다(4 MiB/depth 40/nodes 50,000/string 16,384자/alias 50, duplicate·dangerous key·custom
+  graph·unsafe number 거부). API Playground의 OpenAPI 3.0/3.1 semantic validation과
+  operation-to-request transformation은 `src/lib/openapi.ts`가 소유하며, Webhook Lab의 rule
+  projection은 Webhook Lab에 남는다. URL source는 API Playground가 native `reqwest`로만 bounded
+  fetch하고, gzip/deflate/brotli/zstd 응답도 해제 후 4 MiB에서 자른다. 이 parser 추출 자체는
+  integration/applink 계약을 사용하지 않는다.
 - 공용 패키지 `packages/tokens`, `packages/context-menu` 사용
 
 ## 개발

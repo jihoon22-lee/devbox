@@ -225,11 +225,12 @@ enum CapabilityShape {
     Snapshot,
 }
 
-// Daily activity is a shared snapshot assembled by both Knowledge and Run
-// Manager. Other snapshots remain app-owned and are checked against the
-// declaring app's id below.
+// These snapshots intentionally have multiple producers. Other snapshots
+// remain app-owned and are checked against the declaring app's id below.
 const DAILY_ACTIVITY_SNAPSHOT: &str = "snapshot:daily-activity/v1";
 const DAILY_ACTIVITY_PRODUCERS: &[&str] = &["knowledge-base", "run-manager"];
+const PORT_BINDINGS_SNAPSHOT: &str = "snapshot:port-bindings/v1";
+const PORT_BINDINGS_PRODUCERS: &[&str] = &["run-manager", "workbench"];
 
 pub fn parse_catalog(input: &str) -> Result<Catalog, CatalogError> {
     let raw: RawCatalog = serde_json::from_str(input).map_err(|_| CatalogError::InvalidJson)?;
@@ -442,6 +443,7 @@ fn validate_capabilities(
             && !capability.starts_with(&format!("snapshot:{app_id}/"))
             && !(capability == DAILY_ACTIVITY_SNAPSHOT
                 && DAILY_ACTIVITY_PRODUCERS.contains(&app_id))
+            && !(capability == PORT_BINDINGS_SNAPSHOT && PORT_BINDINGS_PRODUCERS.contains(&app_id))
         {
             return Err(CatalogError::InvalidCapability { app_index, field });
         }
@@ -498,7 +500,7 @@ fn capability_shape(value: &str) -> Option<CapabilityShape> {
     if matches!(value, "path" | "workspace" | "query" | "profile" | "task") {
         return Some(CapabilityShape::Basic);
     }
-    if value == DAILY_ACTIVITY_SNAPSHOT {
+    if matches!(value, DAILY_ACTIVITY_SNAPSHOT | PORT_BINDINGS_SNAPSHOT) {
         return Some(CapabilityShape::Snapshot);
     }
     if let Some(kind) = value.strip_prefix("handoff:") {

@@ -10,6 +10,9 @@ import {
   loadPortManagerPreferences,
   killListener,
   listPorts,
+  listPortObservations,
+  openPortLog,
+  openPortOwner,
   openBrowser,
   revealProcess,
   savePortManagerPreferences,
@@ -17,14 +20,19 @@ import {
 import type {
   ListenerActionResult,
   ListenerKillRequest,
+  LogStream,
   PortManagerPreferences,
+  PortCorrelation,
+  PortObservationSnapshot,
   PortRow,
   ProtoFilter,
+  SnapshotSourceStatus,
   StateFilter,
 } from "./types";
 import {
   DEFAULT_PREFERENCES,
   MAX_FAVORITES_PER_KIND,
+  appendRefreshTimeline,
   MAX_REFRESH_INTERVAL_MS,
   MIN_REFRESH_INTERVAL_MS,
   diffPortRows,
@@ -34,7 +42,8 @@ import {
   portFavoriteFor,
   processFavoriteFor,
   sameProcessFavorite,
-  type RefreshDiff,
+  type RefreshTimelineEvent,
+  type RefreshTimelineRow,
 } from "./refresh";
 import "./App.css";
 
@@ -66,7 +75,16 @@ export function matches(row: PortRow, query: string): boolean {
     (row.executable_path?.toLowerCase().includes(q) ?? false) ||
     (row.wsl_distro?.toLowerCase().includes(q) ?? false) ||
     (row.container_id?.toLowerCase().includes(q) ?? false) ||
-    (row.container_name?.toLowerCase().includes(q) ?? false)
+    (row.container_name?.toLowerCase().includes(q) ?? false) ||
+    (row.correlations?.some((correlation) =>
+      [
+        correlation.source_app,
+        correlation.target_kind,
+        correlation.target_id,
+        correlation.label,
+        correlation.confidence,
+      ].some((value) => value.toLowerCase().includes(q)),
+    ) ?? false)
   );
 }
 
@@ -177,6 +195,40 @@ export function isCurrentRequest(request: number, current: number): boolean {
   return request === current;
 }
 
+export function correlationSummary(correlation: PortCorrelation): string {
+  return [
+    correlation.source_app,
+    correlation.target_kind,
+    correlation.target_id,
+  ].join(" · ");
+}
+
+export function sourceStatusLabel(source: SnapshotSourceStatus): string {
+  const freshness =
+    source.freshness_ms == null ? "freshness unknown" : `${source.freshness_ms}ms old`;
+  return `${source.producer} · ${source.state} · ${freshness}`;
+}
+
+function ownerLabels(row: RefreshTimelineRow | undefined): string {
+  const labels = row?.owner_labels ?? [];
+  return labels.length > 0 ? labels.join(", ") : "No owner";
+}
+
+function timelineTime(observedAtMs: number): string {
+  const date = new Date(observedAtMs);
+  return Number.isFinite(date.getTime())
+    ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "time unknown";
+}
+
+async function readObservationSnapshot(): Promise<PortObservationSnapshot> {
+  // The native build always exposes list_port_observations. Keeping this
+  // narrow adapter makes older browser/test harnesses that only provide the
+  // listener list continue to render without inventing source diagnostics.
+  if (typeof listPortObservations === "function") return listPortObservations();
+  return { rows: await listPorts(), sources: [], correlations_truncated: false };
+}
+
 function isListening(row: PortRow): boolean {
   return row.state.toLowerCase() === "listening";
 }
@@ -241,13 +293,18 @@ export default function App() {
   const [settingsWarning, setSettingsWarning] = useState<string | null>(null);
   const [autoRefreshPaused, setAutoRefreshPaused] = useState(false);
   const [snapshotHealthy, setSnapshotHealthy] = useState(false);
-  const [diffs, setDiffs] = useState<RefreshDiff[]>([]);
+  const [sources, setSources] = useState<SnapshotSourceStatus[]>([]);
+  const [correlationsTruncated, setCorrelationsTruncated] = useState(false);
+  const [timeline, setTimeline] = useState<RefreshTimelineEvent[]>([]);
   const [hasComparedSnapshot, setHasComparedSnapshot] = useState(false);
+  const [busyCorrelationAction, setBusyCorrelationAction] = useState<string | null>(null);
   const processPathRequest = useRef(0);
   const refreshRequest = useRef(0);
   const refreshInFlight = useRef<Promise<void> | null>(null);
   const previousSnapshot = useRef<PortRow[] | null>(null);
+  const timelineRef = useRef<RefreshTimelineEvent[]>([]);
   const busyActionRef = useRef<string | null>(null);
+  const busyCorrelationActionRef = useRef<string | null>(null);
   const snapshotHealthyRef = useRef(false);
   const preferencesRef = useRef<PortManagerPreferences>(DEFAULT_PREFERENCES);
   const preferenceSaveInFlight = useRef(false);
@@ -269,12 +326,20 @@ export default function App() {
 
     const operation = (async () => {
       try {
-        const next = await listPorts();
+        const observation = await readObservationSnapshot();
+        const next = observation.rows;
         if (mounted.current && refreshRequest.current === request) {
           const prior = previousSnapshot.current;
           previousSnapshot.current = next;
           setPorts(next);
-          setDiffs(diffPortRows(prior, next));
+          const changes = diffPortRows(prior, next);
+          if (prior !== null) {
+            const nextTimeline = appendRefreshTimeline(timelineRef.current, changes);
+            timelineRef.current = nextTimeline;
+            setTimeline(nextTimeline);
+          }
+          setSources(observation.sources);
+          setCorrelationsTruncated(observation.correlations_truncated);
           setHasComparedSnapshot(prior !== null);
           markSnapshotHealthy(true);
 
@@ -294,8 +359,6 @@ export default function App() {
           // Keep the last stable rows and favorites, but fail closed for
           // process actions until a complete snapshot succeeds again.
           markSnapshotHealthy(false);
-          setDiffs([]);
-          setHasComparedSnapshot(false);
           setError(safeActionError(caught));
         }
       } finally {
@@ -416,8 +479,11 @@ export default function App() {
   useEffect(() => {
     mounted.current = true;
     previousSnapshot.current = null;
+    timelineRef.current = [];
     setPreferencesReady(false);
-    setDiffs([]);
+    setSources([]);
+    setCorrelationsTruncated(false);
+    setTimeline([]);
     setHasComparedSnapshot(false);
     markSnapshotHealthy(false);
     void initialize();
@@ -427,8 +493,10 @@ export default function App() {
       refreshRequest.current += 1;
       refreshInFlight.current = null;
       previousSnapshot.current = null;
+      timelineRef.current = [];
       processPathRequest.current += 1;
       busyActionRef.current = null;
+      busyCorrelationActionRef.current = null;
       preferenceSaveRequest.current += 1;
       preferenceSaveInFlight.current = false;
       snapshotHealthyRef.current = false;
@@ -457,6 +525,11 @@ export default function App() {
     const listening = ports.filter((p) => isListener(p)).length;
     return { total: ports.length, listening };
   }, [ports]);
+
+  const unhealthySources = useMemo(
+    () => sources.filter((source) => source.state !== "available"),
+    [sources],
+  );
 
   const runAction = useCallback(async (action: () => Promise<void>) => {
     if (!mounted.current) return;
@@ -515,6 +588,32 @@ export default function App() {
     if (!url || !isListening(row)) return;
     await runAction(() => openBrowser(url));
   };
+
+  const onOpenCorrelation = useCallback(
+    async (correlation: PortCorrelation, stream?: LogStream) => {
+      if (!mounted.current || !correlation.action_key) return;
+      const busyKey = `${correlation.action_key}:${stream ?? "owner"}`;
+      if (busyCorrelationActionRef.current !== null) return;
+      busyCorrelationActionRef.current = busyKey;
+      setBusyCorrelationAction(busyKey);
+      setError(null);
+      try {
+        if (stream) {
+          await openPortLog(correlation.action_key, stream);
+        } else {
+          await openPortOwner(correlation.action_key);
+        }
+      } catch (caught) {
+        if (mounted.current) setError(safeActionError(caught));
+      } finally {
+        if (busyCorrelationActionRef.current === busyKey) {
+          busyCorrelationActionRef.current = null;
+          if (mounted.current) setBusyCorrelationAction(null);
+        }
+      }
+    },
+    [],
+  );
 
   const prepareContextRow = useCallback(
     (target: HTMLElement) => {
@@ -784,6 +883,36 @@ export default function App() {
         </div>
       )}
 
+      {sources.length > 0 && (
+        <section className="source-diagnostics" aria-label="Correlation source status">
+          <div className="source-heading">
+            <strong>Correlation sources</strong>
+            <span>
+              {unhealthySources.length === 0
+                ? "All available"
+                : `${unhealthySources.length} unavailable`}
+            </span>
+          </div>
+          <ul>
+            {sources.map((source) => (
+              <li key={source.producer} aria-label={sourceStatusLabel(source)}>
+                <span className="mono">{source.producer}</span>
+                <span className={`source-state source-${source.state}`}>{source.state}</span>
+                <span className="dim">
+                  {source.freshness_ms == null ? "freshness unknown" : `${source.freshness_ms}ms old`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {correlationsTruncated && (
+        <div className="warn" role="status">
+          Correlation results reached the safe display limit. Review duplicate expected-port or service declarations.
+        </div>
+      )}
+
       <div className="statusbar" aria-live="polite">
         <span>
           {visible.length} / {counts.total} rows
@@ -796,24 +925,35 @@ export default function App() {
       </div>
 
       {hasComparedSnapshot && (
-        <section className="diff-panel" aria-label="Refresh changes">
+        <section className="diff-panel" aria-label="Refresh timeline">
           <div className="diff-heading">
-            <strong>Refresh changes</strong>
-            <span>{diffs.length === 0 ? "No changes" : `${diffs.length} changes`}</span>
+            <strong>Refresh timeline</strong>
+            <span>{timeline.length === 0 ? "No changes" : `${timeline.length} events`}</span>
           </div>
-          {diffs.length > 0 && (
-            <ul>
-              {diffs.map((change, index) => {
+          {timeline.length > 0 && (
+            <ol>
+              {[...timeline].reverse().map((change, index) => {
                 const row = change.after ?? change.before;
+                const ownerChange =
+                  change.kind === "owner-changed"
+                    ? `${ownerLabels(change.before)} → ${ownerLabels(change.after)}`
+                    : null;
                 return (
                   <li key={change.key + ":" + index}>
+                    <time dateTime={new Date(change.observed_at_ms).toISOString()}>
+                      {timelineTime(change.observed_at_ms)}
+                    </time>
                     <span className={"diff-kind diff-" + change.kind}>{change.kind}</span>
                     <span className="mono">{row?.local_addr ?? "-"}</span>
-                    <span>{row?.process_name ?? "unknown process"}</span>
+                    {ownerChange ? (
+                      <span>{ownerChange}</span>
+                    ) : (
+                      <span>{row?.process_name ?? "unknown process"}</span>
+                    )}
                   </li>
                 );
               })}
-            </ul>
+            </ol>
           )}
         </section>
       )}
@@ -829,6 +969,7 @@ export default function App() {
               <th>STATE</th>
               <th>PID</th>
               <th>PROCESS</th>
+              <th>OWNER</th>
               <th>ACTION</th>
             </tr>
           </thead>
@@ -868,6 +1009,23 @@ export default function App() {
                   <td>{row.state || "-"}</td>
                   <td className="mono">{row.pid ?? "-"}</td>
                   <td>{row.process_name ?? "-"}</td>
+                  <td>
+                    {row.correlations && row.correlations.length > 0 ? (
+                      <div className="correlation-cell" aria-label="Listener correlations">
+                        {row.correlations.map((correlation) => (
+                          <span
+                            key={correlation.action_key}
+                            className={`correlation-badge confidence-${correlation.confidence}`}
+                            title={correlationSummary(correlation)}
+                          >
+                            {correlation.label} · {correlation.confidence}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="dim">-</span>
+                    )}
+                  </td>
                   <td className="actions">
                     <button
                       type="button"
@@ -929,7 +1087,7 @@ export default function App() {
             })}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={8} className="empty">
+                <td colSpan={9} className="empty">
                   No results
                 </td>
               </tr>
@@ -1002,6 +1160,75 @@ export default function App() {
               </div>
             )}
           </dl>
+          <section className="correlation-details" aria-label="Listener correlations">
+            <div className="correlation-details-heading">
+              <h3>Correlations</h3>
+              <span>{selectedRow.correlations?.length ?? 0}</span>
+            </div>
+            {(selectedRow.correlations?.length ?? 0) > 0 ? (
+              <ul>
+                {selectedRow.correlations?.map((correlation) => {
+                  const ownerBusyKey = `${correlation.action_key}:owner`;
+                  const stdoutBusyKey = `${correlation.action_key}:stdout`;
+                  const stderrBusyKey = `${correlation.action_key}:stderr`;
+                  return (
+                    <li key={correlation.action_key} className="correlation-detail">
+                      <div className="correlation-detail-heading">
+                        <span
+                          className={`correlation-badge confidence-${correlation.confidence}`}
+                        >
+                          {correlation.confidence}
+                        </span>
+                        <strong>{correlation.label}</strong>
+                      </div>
+                      <div className="correlation-meta">
+                        {correlationSummary(correlation)}
+                      </div>
+                      <div className="correlation-actions">
+                        <button
+                          type="button"
+                          className="btn"
+                          aria-label={`Open owner for ${correlation.label}`}
+                          disabled={busyCorrelationAction !== null || !correlation.action_key}
+                          onClick={() => void onOpenCorrelation(correlation)}
+                        >
+                          {busyCorrelationAction === ownerBusyKey ? "Opening…" : "Open owner"}
+                        </button>
+                        {correlation.logs_available && (
+                          <>
+                            <button
+                              type="button"
+                              className="btn"
+                              aria-label={`Open stdout in Log Lens for ${correlation.label}`}
+                              disabled={busyCorrelationAction !== null || !correlation.action_key}
+                              onClick={() => void onOpenCorrelation(correlation, "stdout")}
+                            >
+                              {busyCorrelationAction === stdoutBusyKey
+                                ? "Opening…"
+                                : "Open stdout in Log Lens"}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn"
+                              aria-label={`Open stderr in Log Lens for ${correlation.label}`}
+                              disabled={busyCorrelationAction !== null || !correlation.action_key}
+                              onClick={() => void onOpenCorrelation(correlation, "stderr")}
+                            >
+                              {busyCorrelationAction === stderrBusyKey
+                                ? "Opening…"
+                                : "Open stderr in Log Lens"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="dim">No correlations</p>
+            )}
+          </section>
           <div className="details-actions">
             <button
               type="button"

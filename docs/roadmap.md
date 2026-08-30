@@ -20,6 +20,10 @@
 - W07은 catalog revision 15에서 선택 텍스트 handoff와 daily activity sidecar 계약을 추가했다.
   이 문서와 source 변경은 Windows 실기 acceptance 완료를 주장하지 않으며, 해당 검증은 #493
   release gate에 남긴다.
+- W08 PR1은 catalog revision 16에서 Run Manager·Workbench의 privacy-safe port binding sidecar,
+  Port Manager correlation/action/timeline, Webhook deterministic rule/conflict preview, bounded
+  OpenAPI draft와 disabled Run service export를 묶는다. source 검증과 Windows packaged 실기는
+  분리하며 실제 앱 간 실행 증거는 #493 release gate에 남긴다.
 
 ## Phase 1 — Tauri 기본기 ✅
 - [x] **port-manager** — IPC, Rust 기초, netstat 파싱, 포트/프로세스 관리

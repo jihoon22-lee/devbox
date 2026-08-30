@@ -2686,6 +2686,16 @@ mod tests {
             .expect("mock adapter did not receive expected starts");
         }
 
+        async fn wait_for_max_active(&self, expected: usize) {
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while self.max_active.load(Ordering::SeqCst) < expected {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("mock adapter did not reach expected concurrency");
+        }
+
         async fn finish_next(&self, exit_code: i32) {
             loop {
                 if let Some(sender) = self.waits.lock().await.pop() {
@@ -3501,6 +3511,11 @@ mod tests {
         });
 
         adapter.wait_for_starts(4).await;
+        // `starts` is incremented immediately before `active`; under a busy
+        // parallel test runner the fourth spawn can be preempted between the
+        // two atomics. Wait for the actual property under test instead of
+        // sampling it through that unrelated counter.
+        adapter.wait_for_max_active(4).await;
         assert_eq!(adapter.starts.load(Ordering::SeqCst), 4);
         assert_eq!(adapter.max_active.load(Ordering::SeqCst), 4);
         scheduler.request_shutdown();

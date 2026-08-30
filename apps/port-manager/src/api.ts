@@ -4,13 +4,19 @@ import type {
   ContainerStopHandoff,
   ListenerActionResult,
   ListenerKillRequest,
+  LogStream,
   PortManagerPreferences,
+  PortLogDispatch,
+  PortObservationSnapshot,
   PortRow,
   ProcessInfo,
 } from "./types";
 import { DEFAULT_PREFERENCES } from "./refresh";
 
 /** Tauri 없이 브라우저에서 UI를 미리 볼 수 있게 하는 샘플 데이터 */
+const MOCK_RUN_ACTION_KEY = "port-action-" + "a".repeat(64);
+const MOCK_WORKBENCH_ACTION_KEY = "port-action-" + "b".repeat(64);
+
 const MOCK_PORTS: PortRow[] = [
   {
     proto: "TCP",
@@ -24,6 +30,17 @@ const MOCK_PORTS: PortRow[] = [
     executable_path: "C:\\Program Files\\nodejs\\node.exe",
     command_line: "node server.js --port 3000",
     identity: { kind: "windows", pid: 18231, start_time: "638000000000000000" },
+    correlations: [
+      {
+        source_app: "run-manager",
+        target_kind: "task",
+        target_id: "api-service",
+        label: "API service",
+        confidence: "verified",
+        action_key: MOCK_RUN_ACTION_KEY,
+        logs_available: true,
+      },
+    ],
   },
   {
     proto: "TCP",
@@ -37,6 +54,17 @@ const MOCK_PORTS: PortRow[] = [
     executable_path: "C:\\Program Files\\nodejs\\node.exe",
     command_line: "node dev-server.js --port 5173",
     identity: { kind: "windows", pid: 21324, start_time: "638000000100000000" },
+    correlations: [
+      {
+        source_app: "workbench",
+        target_kind: "profile",
+        target_id: "frontend-profile",
+        label: "Frontend profile",
+        confidence: "expected",
+        action_key: MOCK_WORKBENCH_ACTION_KEY,
+        logs_available: false,
+      },
+    ],
   },
   {
     proto: "TCP",
@@ -84,6 +112,17 @@ const MOCK_PORTS: PortRow[] = [
   },
 ];
 
+const MOCK_SOURCES = [
+  { producer: "run-manager", state: "available" as const, freshness_ms: 48 },
+  { producer: "workbench", state: "available" as const, freshness_ms: 96 },
+];
+
+const MOCK_OBSERVATIONS: PortObservationSnapshot = {
+  rows: MOCK_PORTS,
+  sources: MOCK_SOURCES,
+  correlations_truncated: false,
+};
+
 let mockPreferences: PortManagerPreferences = {
   ...DEFAULT_PREFERENCES,
   favorite_ports: [],
@@ -95,6 +134,17 @@ export async function listPorts(): Promise<PortRow[]> {
     return MOCK_PORTS;
   }
   return invoke<PortRow[]>("list_ports");
+}
+
+export async function listPortObservations(): Promise<PortObservationSnapshot> {
+  if (!isTauri()) {
+    return {
+      rows: MOCK_OBSERVATIONS.rows,
+      sources: [...MOCK_OBSERVATIONS.sources],
+      correlations_truncated: MOCK_OBSERVATIONS.correlations_truncated,
+    };
+  }
+  return invoke<PortObservationSnapshot>("list_port_observations");
 }
 
 export async function loadPortManagerPreferences(): Promise<PortManagerPreferences> {
@@ -179,4 +229,19 @@ export async function getProcessInfo(pid: number): Promise<ProcessInfo> {
 export async function revealProcess(pid: number): Promise<void> {
   if (!isTauri()) return;
   await invoke("reveal_process", { pid });
+}
+
+export async function openPortOwner(actionKey: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("open_port_owner", { actionKey });
+}
+
+export async function openPortLog(
+  actionKey: string,
+  stream: LogStream,
+): Promise<PortLogDispatch> {
+  if (!isTauri()) {
+    return { handoff_id: `mock-log-${stream}` };
+  }
+  return invoke<PortLogDispatch>("open_port_log", { actionKey, stream });
 }

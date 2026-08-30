@@ -10,6 +10,7 @@ import {
   MAX_HEADER_VALUE_CHARS,
   MAX_METHOD_BYTES,
   MAX_METHOD_CHARS,
+  MAX_RULE_PRIORITY,
   MAX_PATH_BYTES,
   MAX_PATH_CHARS,
   MAX_RESPONSE_DELAY_MS,
@@ -18,6 +19,7 @@ import {
   MAX_RULES,
   MAX_RULE_HEADERS,
   MIN_RESPONSE_STATUS,
+  MIN_RULE_PRIORITY,
   validateRuleCollection,
   type RuleValidationIssue,
   validateRule,
@@ -25,6 +27,7 @@ import {
 
 const validRule = {
   id: "rule-1",
+  priority: 0,
   method: "POST",
   path: "/hook",
   status: 200,
@@ -58,6 +61,22 @@ describe("validateRule", () => {
     });
     expect(validateRule({ ...validRule, delayMs: -1 })[0]).toMatchObject({
       field: "delayMs",
+    });
+  });
+
+  it("accepts legacy missing priority as zero and enforces inclusive bounds", () => {
+    const legacyRule = { ...validRule, priority: undefined };
+    expect(validateRule(legacyRule)).toEqual([]);
+    expect(validateRule({ ...validRule, priority: MIN_RULE_PRIORITY })).toEqual([]);
+    expect(validateRule({ ...validRule, priority: MAX_RULE_PRIORITY })).toEqual([]);
+    expect(validateRule({ ...validRule, priority: MIN_RULE_PRIORITY - 1 })[0]).toMatchObject({
+      field: "priority",
+    });
+    expect(validateRule({ ...validRule, priority: MAX_RULE_PRIORITY + 1 })[0]).toMatchObject({
+      field: "priority",
+    });
+    expect(validateRule({ ...validRule, priority: 1.5 })[0]).toMatchObject({
+      field: "priority",
     });
   });
 

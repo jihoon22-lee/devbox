@@ -64,7 +64,7 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
-    assert_eq!(catalog.catalog_revision, Some(15));
+    assert_eq!(catalog.catalog_revision, Some(16));
     assert_eq!(catalog.apps.len(), 15);
     assert_eq!(
         capable_targets(&catalog, "path")
@@ -140,7 +140,14 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
             .into_iter()
             .map(|app| app.id)
             .collect::<Vec<_>>(),
-        vec!["wsl-desktop", "run-manager"]
+        vec!["port-manager", "wsl-desktop", "run-manager"]
+    );
+    assert_eq!(
+        capable_producers(&catalog, "snapshot:port-bindings/v1")
+            .into_iter()
+            .map(|app| app.id)
+            .collect::<Vec<_>>(),
+        vec!["run-manager", "workbench"]
     );
     assert_eq!(
         capable_producers(&catalog, "snapshot:life-log/projects/v1")
@@ -257,6 +264,19 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     assert_eq!(log_lens.actions.len(), 1);
     assert_eq!(log_lens.actions[0].action_id, "transform-selected-logs");
     assert_eq!(log_lens.actions[0].target, "developer-toolbox");
+    let port_manager = catalog
+        .apps
+        .iter()
+        .find(|app| app.id == "port-manager")
+        .expect("Port Manager must remain in the repository catalog");
+    assert_eq!(port_manager.produces, vec!["handoff:log-source/v1"]);
+    assert_eq!(port_manager.actions.len(), 1);
+    assert_eq!(port_manager.actions[0].action_id, "open-listener-log");
+    assert_eq!(port_manager.actions[0].target, "log-lens");
+    assert_eq!(
+        port_manager.actions[0].payload_kind,
+        "handoff:log-source/v1"
+    );
     let life_log = catalog
         .apps
         .iter()
@@ -522,6 +542,16 @@ fn identity_and_snapshot_producer_contracts_are_rejected_fail_closed() {
     spoofed_shared_snapshot["apps"][0]["produces"] = json!(["snapshot:daily-activity/v1"]);
     assert!(matches!(
         parse_catalog(&spoofed_shared_snapshot.to_string()),
+        Err(CatalogError::InvalidCapability {
+            app_index: 0,
+            field: "produces"
+        })
+    ));
+
+    let mut spoofed_port_bindings: Value = serde_json::from_str(V2_BUILD).expect("v2 fixture JSON");
+    spoofed_port_bindings["apps"][0]["produces"] = json!(["snapshot:port-bindings/v1"]);
+    assert!(matches!(
+        parse_catalog(&spoofed_port_bindings.to_string()),
         Err(CatalogError::InvalidCapability {
             app_index: 0,
             field: "produces"

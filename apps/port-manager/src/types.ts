@@ -16,7 +16,44 @@ export interface PortRow {
   container_id?: string | null;
   container_name?: string | null;
   identity?: ListenerIdentity | null;
+  /** Read-only app ownership hints attached to an observation snapshot. */
+  correlations?: PortCorrelation[];
 }
+
+export type CorrelationConfidence = "verified" | "declared" | "expected";
+
+export interface PortCorrelation {
+  source_app: string;
+  target_kind: string;
+  target_id: string;
+  label: string;
+  confidence: CorrelationConfidence;
+  /** Opaque key revalidated by the native action command. */
+  action_key: string;
+  logs_available: boolean;
+}
+
+export type SnapshotSourceState = "available" | "missing" | "invalid" | "stale";
+
+export interface SnapshotSourceStatus {
+  producer: string;
+  state: SnapshotSourceState;
+  freshness_ms: number | null;
+}
+
+export interface PortObservationSnapshot {
+  rows: PortRow[];
+  sources: SnapshotSourceStatus[];
+  correlations_truncated: boolean;
+}
+
+export type LogStream = "stdout" | "stderr";
+
+export interface LogLensDispatch {
+  handoff_id: string;
+}
+
+export type PortLogDispatch = LogLensDispatch;
 
 export interface ProcessInfo {
   pid: number;

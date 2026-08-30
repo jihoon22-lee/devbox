@@ -22,6 +22,7 @@ import {
 function rule(overrides: Partial<ResponseRule> = {}): ResponseRule {
   return {
     id: "rule-1",
+    priority: 0,
     method: "POST",
     path: "/events/*",
     status: 201,

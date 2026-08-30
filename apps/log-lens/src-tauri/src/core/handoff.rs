@@ -1,4 +1,4 @@
-//! Log Lens claim/preview boundary for the Run Manager/WSL Desktop
+//! Log Lens claim/preview boundary for the Run Manager/Port Manager/WSL Desktop
 //! `log-source/v1` handoff.
 //!
 //! The generic applink store validates protocol, target, size, and one-time
@@ -6,13 +6,14 @@
 //! converts it to one of Log Lens's fixed read-only `SourceSpec` adapters.
 //! No command, environment, credential, or log bytes are accepted.
 
-use super::model::{LogSourceRef, SourceSpec, SourceSummary};
+use super::model::{SourceSpec, SourceSummary};
 use devbox_applink::{HandoffClaim, HandoffError};
 use serde::{Deserialize, Serialize};
 
 pub const HANDOFF_KIND: &str = "log-source/v1";
 pub const CONSUMER_APP: &str = "log-lens";
 pub const RUN_SOURCE_APP: &str = "run-manager";
+pub const PORT_SOURCE_APP: &str = "port-manager";
 pub const WSL_SOURCE_APP: &str = "wsl-desktop";
 pub const WSL_FILE_SOURCE_TYPE: &str = "wslFile";
 pub const WSL_JOURNAL_SOURCE_TYPE: &str = "wslJournal";
@@ -81,7 +82,10 @@ pub fn parse_claim(claim: &HandoffClaim) -> Result<SourceSpec, String> {
         || claim.lease_until_ms > envelope.expires_at_ms
         || envelope.kind != HANDOFF_KIND
         || envelope.target_app.as_deref() != Some(CONSUMER_APP)
-        || (envelope.source_app != RUN_SOURCE_APP && envelope.source_app != WSL_SOURCE_APP)
+        || !matches!(
+            envelope.source_app.as_str(),
+            RUN_SOURCE_APP | PORT_SOURCE_APP | WSL_SOURCE_APP
+        )
     {
         return Err("log source handoff source or target is invalid".to_string());
     }
@@ -91,12 +95,12 @@ pub fn parse_claim(claim: &HandoffClaim) -> Result<SourceSpec, String> {
         return Err("log source handoff payload is too large".to_string());
     }
     let source = match envelope.source_app.as_str() {
-        RUN_SOURCE_APP => {
-            let reference: LogSourceRef = serde_json::from_value(envelope.payload.clone())
+        RUN_SOURCE_APP | PORT_SOURCE_APP => {
+            let reference = devbox_applink::validate_run_log_source_payload(&envelope.payload)
                 .map_err(|_| "log source handoff payload is invalid".to_string())?;
-            reference
-                .into_source()
-                .map_err(|_| "log source handoff source is invalid".to_string())?
+            SourceSpec::Run {
+                source_id: reference.source_id,
+            }
         }
         WSL_SOURCE_APP => parse_wsl_payload(&envelope.payload)?,
         _ => return Err("log source handoff source is invalid".to_string()),
@@ -236,6 +240,38 @@ mod tests {
                 source_id: "run-manager:run-1:stdout".into()
             }
         );
+    }
+
+    #[test]
+    fn port_manager_may_route_only_the_same_run_identity_contract() {
+        let source = parse_claim(&claim(
+            PORT_SOURCE_APP,
+            json!({
+                "kind": "log-source/v1",
+                "sourceId": "run-manager:run-1:stderr",
+                "runId": "run-1",
+                "stream": "stderr"
+            }),
+        ))
+        .expect("port-routed run source");
+        assert_eq!(
+            source,
+            SourceSpec::Run {
+                source_id: "run-manager:run-1:stderr".into()
+            }
+        );
+
+        let mut raw = claim(
+            PORT_SOURCE_APP,
+            json!({
+                "kind": "log-source/v1",
+                "sourceId": "run-manager:run-1:stderr",
+                "runId": "run-1",
+                "stream": "stderr"
+            }),
+        );
+        raw.envelope.payload["path"] = json!("/private/run.log");
+        assert!(parse_claim(&raw).is_err());
     }
 
     #[test]

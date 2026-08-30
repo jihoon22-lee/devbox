@@ -4105,8 +4105,11 @@ dependencies = [
 name = "port-manager"
 version = "0.3.0"
 dependencies = [
+ "applink",
  "dirs",
  "filesystem",
+ "integration",
+ "launch",
  "process",
  "serde",
  "serde_json",
@@ -4115,6 +4118,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tempfile",
  "window-state-tauri",
  "windows 0.61.3",
  "wsl",

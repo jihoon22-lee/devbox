@@ -38,6 +38,7 @@
 //!   그 형태로 보낸다.
 
 mod handoff;
+mod log_source;
 mod task_control;
 mod toolbox_text;
 
@@ -46,6 +47,10 @@ pub use handoff::{
     HandoffDescriptor, HandoffEnvelope, HandoffError, HandoffPublication, HandoffStatus,
     HandoffStatusRecord, HandoffStore, RecordHandoffStatus, RedactedHandoffText,
     DEFAULT_CLAIM_LEASE_MS, DEFAULT_HANDOFF_TTL_MS, MAX_HANDOFF_BYTES,
+};
+pub use log_source::{
+    run_log_source_payload, validate_run_log_source_payload, LogSourceStream, RunLogSourceRef,
+    LOG_SOURCE_HANDOFF_KIND, LOG_SOURCE_MAX_PAYLOAD_BYTES, LOG_SOURCE_TARGET_APP,
 };
 pub use task_control::{
     TaskControlAction, TaskControlRequest, TASK_CONTROL_HANDOFF_KIND, TASK_CONTROL_SCHEMA_VERSION,

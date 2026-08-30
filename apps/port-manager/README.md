@@ -23,13 +23,61 @@
   pause/resume 중에는 timer가 새 native poll을 시작하지 않는다. 이미 진행 중인
   poll은 single-flight로 한 번만 완료된다.
 - **refresh diff** — 첫 성공 snapshot은 baseline으로만 삼고, 다음 성공 snapshot부터
-  process/container identity를 기준으로 `new`·`closed`·`changed`를 표시한다. 실패한
-  poll은 baseline과 diff를 덮어쓰지 않는다.
+  process/container identity를 기준으로 `opened`·`closed`·`changed`·`owner-changed`를 표시한다.
+  실패한 poll은 baseline과 diff를 덮어쓰지 않으며, session timeline은 최대 256개 event만
+  메모리에 둔다.
 - **favorite와 pinned filter** — endpoint(port) favorite와 validated process identity
   favorite를 별도로 저장하고 pinned filter에서 합집합으로 표시한다. 저장 문서에는
   command line, executable path, secret, raw process input이 없다.
 - **provenance** — 행과 상세 패널에 Windows, WSL distro, container engine/distro/ID를
   표시해 동일한 port 숫자의 출처를 구분한다.
+
+## Run Manager·Workbench 관찰 correlation 계약
+
+Port Manager는 공용 strict named view인 `snapshot:port-bindings/v1`의 `port-bindings` view를
+읽기 전용으로 소비한다. Run Manager와 Workbench는 서로의 상태에 의존하지 않는 독립 producer로
+각자의 view를 발행하며, native `list_port_observations` 응답은 `rows`와 producer별
+`sources`를 함께 반환한다. correlation은 `source_app`, `target_kind`, `target_id`, `label`,
+`confidence`, `action_key`, `logs_available`의 snake_case 필드이고, source 상태는
+`producer`, `state`(`available`/`missing`/`invalid`/`stale`), `freshness_ms`로 진단한다.
+
+각 producer view는 `generatedAt` 기준 180초 이내일 때만 `available`로 사용한다. missing·invalid·
+stale source는 그 producer의 correlation만 격리하며, native listener row와 다른 producer의
+correlation을 실패로 만들지 않는다.
+
+응답 correlation은 confidence/source/id 기준으로 결정적으로 정렬한 뒤 listener 행당 64개,
+snapshot 전체 4,096개로 제한한다. 제한에 닿으면 `correlations_truncated=true`와 UI 진단을 표시해
+잘린 결과를 완전한 목록처럼 보이지 않게 한다.
+
+- `verified` — Windows listener의 PID와 process creation FILETIME을 native에서 정확한 epoch
+  milliseconds로 변환한 값이 Run Manager의 process identity와 정확히 일치한다.
+- `declared` — Run Manager의 loopback address·TCP port와 Windows/WSL target(source·distro)이
+  일치하지만 exact Windows process identity를 확인하지 못한 선언이다. `localhost`만 양쪽
+  loopback stack을 허용하고, 구체적인 IPv4/IPv6 선언은 listener bind와 정확히 맞아야 한다.
+  WSL에는 verified ownership을 부여하지 않는다.
+- `expected` — Workbench profile이 저장한 expected port와의 연결 예측일 뿐, process ownership을
+  주장하지 않는다.
+
+correlation의 `action_key`는 opaque 값이다. owner action은 Run Manager task 또는 Workbench
+profile을 native launch로 열고, Run correlation에서 `logs_available`가 true인 경우에만 stdout/
+stderr Log Lens action을 제공한다. Log Lens handoff는 Run identity-only `{ kind, sourceId,
+runId, stream }`만 전달하며 raw path·command·environment·log bytes는 snapshot, action payload,
+argv 또는 handoff로 공유하지 않는다.
+
+browser가 보관한 action key를 신뢰하지 않는다. owner/log action은 실행 직전에 native listener를
+다시 수집하고 producer view를 다시 읽어 현재 correlation을 재검증한다. 기존 listener kill도
+endpoint와 process identity를 native에서 다시 수집·비교한 뒤에만 수행한다. 이 관찰 경계는 자동
+kill/restart를 실행하지 않는다. 동일한 선언을 다시 발행하는 주기적 producer heartbeat만으로는
+action key를 회전시키지 않지만, listener identity나 target/run identity가 달라지면 즉시 달라진다.
+
+refresh timeline은 session-only 메모리 상태다. 첫 성공 snapshot은 baseline으로만 사용해 event를
+만들지 않고, 성공한 후속 snapshot의 endpoint/identity와 owner 설명 변화를 `opened`, `closed`,
+`changed`, `owner-changed`로 관측 시각과 함께 기록한다. failed poll은 timeline·baseline을 변경하지
+않으며, event는 최신 256개로 제한하고 저장하지 않는다. event에는 화면에 필요한 address,
+process name, owner label만 축약하고 command line·executable path·action key는 보관하지 않는다.
+
+이 cross-app correlation, owner navigation, Log Lens handoff의 Windows packaged 실기
+acceptance는 아직 pending이다. local test/build 결과가 installed Windows 검증 완료를 뜻하지 않는다.
 
 ## Identity-safe 종료 계약
 

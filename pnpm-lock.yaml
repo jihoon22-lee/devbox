@@ -26,6 +26,9 @@ importers:
       '@devbox/context-menu':
         specifier: workspace:*
         version: link:../../packages/context-menu
+      '@devbox/openapi':
+        specifier: workspace:*
+        version: link:../../packages/openapi
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
@@ -47,9 +50,6 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.2.8(react@19.2.8)
-      yaml:
-        specifier: 2.9.0
-        version: 2.9.0
     devDependencies:
       '@tauri-apps/cli':
         specifier: ^2
@@ -623,6 +623,9 @@ importers:
       '@devbox/context-menu':
         specifier: workspace:*
         version: link:../../packages/context-menu
+      '@devbox/openapi':
+        specifier: workspace:*
+        version: link:../../packages/openapi
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -823,6 +826,19 @@ importers:
       '@codemirror/view':
         specifier: ^6.0.0
         version: 6.43.8
+    devDependencies:
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
+
+  packages/openapi:
+    dependencies:
+      jsonc-parser:
+        specifier: 3.3.1
+        version: 3.3.1
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
     devDependencies:
       typescript:
         specifier: ~5.8.3

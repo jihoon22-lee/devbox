@@ -9,12 +9,229 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub const MAX_DAILY_ACTIVITY_DAYS: usize = 366;
+pub const PORT_BINDINGS_VIEW_KIND: &str = "port-bindings";
+pub const PORT_BINDINGS_VIEW_SCHEMA_VERSION: u32 = 1;
+pub const MAX_PORT_BINDING_ENTRIES: usize = 2_048;
+const MAX_PORT_BINDING_ID_BYTES: usize = 128;
+const MAX_PORT_BINDING_LABEL_BYTES: usize = 256;
+const MAX_PORT_BINDING_DISTRO_BYTES: usize = 128;
 const CIVIL_DAY_HOUR_MS: i64 = 60 * 60 * 1_000;
+
+/// Minimal, privacy-safe declarations used by Port Manager to correlate a
+/// currently observed listener with an app-owned definition. These entries
+/// are navigation hints: only a matching native process identity may be
+/// presented as verified ownership.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "sourceType", rename_all = "camelCase", deny_unknown_fields)]
+pub enum PortBindingEntry {
+    RunService {
+        id: String,
+        label: String,
+        address: String,
+        port: u16,
+        target_kind: PortBindingTargetKind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_distro: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
+        #[serde(default)]
+        logs_available: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        process: Option<PortBindingProcess>,
+    },
+    WorkbenchProfile {
+        id: String,
+        label: String,
+        port: u16,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PortBindingTargetKind {
+    Windows,
+    Wsl,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PortBindingProcess {
+    pub pid: u32,
+    /// Exact Windows process creation time expressed as Unix epoch
+    /// milliseconds. Port Manager converts the listener's FILETIME identity
+    /// before comparing it, so JavaScript never participates in the match.
+    pub created_at_ms: u64,
+}
+
+/// Build a strict named-view envelope for one producer. The complete entry
+/// set is validated before serialization so a bad projection cannot replace a
+/// previous last-good snapshot.
+pub fn port_bindings_envelope(
+    producer: impl Into<String>,
+    producer_version: impl Into<String>,
+    entries: Vec<PortBindingEntry>,
+) -> Result<Envelope, String> {
+    validate_port_binding_entries(&entries)?;
+    let entries = entries
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "port binding snapshot을 직렬화할 수 없습니다".to_string())?;
+    Ok(Envelope::with_views(
+        producer,
+        producer_version,
+        SnapshotViews::from([(
+            PORT_BINDINGS_VIEW_KIND.to_owned(),
+            SnapshotView {
+                schema_version: PORT_BINDINGS_VIEW_SCHEMA_VERSION,
+                freshness_ms: 0,
+                entries,
+            },
+        )]),
+    ))
+}
+
+/// Decode and validate a previously authenticated port-binding envelope.
+pub fn port_bindings_from_envelope(envelope: &Envelope) -> Result<Vec<PortBindingEntry>, String> {
+    let views = envelope.views()?;
+    if views.len() != 1 {
+        return Err("port binding snapshot 형식이 올바르지 않습니다".into());
+    }
+    let view = views
+        .get(PORT_BINDINGS_VIEW_KIND)
+        .ok_or_else(|| "port binding snapshot 형식이 올바르지 않습니다".to_string())?;
+    if view.schema_version != PORT_BINDINGS_VIEW_SCHEMA_VERSION
+        || view.freshness_ms != 0
+        || view.entries.len() > MAX_PORT_BINDING_ENTRIES
+    {
+        return Err("port binding snapshot 형식이 올바르지 않습니다".into());
+    }
+    let entries = view
+        .entries
+        .iter()
+        .cloned()
+        .map(serde_json::from_value)
+        .collect::<Result<Vec<PortBindingEntry>, _>>()
+        .map_err(|_| "port binding snapshot 형식이 올바르지 않습니다".to_string())?;
+    validate_port_binding_entries(&entries)?;
+    Ok(entries)
+}
+
+pub fn validate_port_binding_entries(entries: &[PortBindingEntry]) -> Result<(), String> {
+    if entries.len() > MAX_PORT_BINDING_ENTRIES {
+        return Err("port binding snapshot 항목 제한을 초과했습니다".into());
+    }
+    let mut identities = BTreeSet::new();
+    for entry in entries {
+        let identity = match entry {
+            PortBindingEntry::RunService {
+                id,
+                label,
+                address,
+                port,
+                target_kind,
+                target_distro,
+                run_id,
+                logs_available,
+                process,
+            } => {
+                validate_port_binding_id(id)?;
+                validate_port_binding_label(label)?;
+                validate_loopback_address(address)?;
+                validate_port(*port)?;
+                match (target_kind, target_distro.as_deref(), process) {
+                    (PortBindingTargetKind::Windows, None, _) => {}
+                    (PortBindingTargetKind::Wsl, Some(distro), None) => {
+                        validate_port_binding_distro(distro)?;
+                    }
+                    _ => return Err("port binding target 형식이 올바르지 않습니다".into()),
+                }
+                if let Some(run_id) = run_id {
+                    validate_port_binding_id(run_id)?;
+                }
+                if *logs_available && run_id.is_none() {
+                    return Err("port binding log 참조가 올바르지 않습니다".into());
+                }
+                if let Some(process) = process {
+                    if process.pid == 0 || process.created_at_ms == 0 || run_id.is_none() {
+                        return Err("port binding process identity가 올바르지 않습니다".into());
+                    }
+                }
+                format!("run:{id}:{address}:{port}")
+            }
+            PortBindingEntry::WorkbenchProfile { id, label, port } => {
+                validate_port_binding_id(id)?;
+                validate_port_binding_label(label)?;
+                validate_port(*port)?;
+                format!("workbench:{id}:{port}")
+            }
+        };
+        if !identities.insert(identity) {
+            return Err("port binding snapshot 항목이 중복되었습니다".into());
+        }
+    }
+    Ok(())
+}
+
+fn validate_port_binding_id(value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value.len() > MAX_PORT_BINDING_ID_BYTES
+        || value.chars().any(char::is_control)
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
+    {
+        return Err("port binding id가 올바르지 않습니다".into());
+    }
+    Ok(())
+}
+
+fn validate_port_binding_label(value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value.len() > MAX_PORT_BINDING_LABEL_BYTES
+        || value.trim() != value
+        || value.chars().any(char::is_control)
+    {
+        return Err("port binding label이 올바르지 않습니다".into());
+    }
+    Ok(())
+}
+
+fn validate_port_binding_distro(value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value.len() > MAX_PORT_BINDING_DISTRO_BYTES
+        || value.chars().any(char::is_control)
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'+' | b'-'))
+    {
+        return Err("port binding distro가 올바르지 않습니다".into());
+    }
+    Ok(())
+}
+
+fn validate_loopback_address(value: &str) -> Result<(), String> {
+    if value.eq_ignore_ascii_case("localhost")
+        || value
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+    {
+        return Ok(());
+    }
+    Err("port binding address가 올바르지 않습니다".into())
+}
+
+fn validate_port(value: u16) -> Result<(), String> {
+    if value == 0 {
+        return Err("port binding port가 올바르지 않습니다".into());
+    }
+    Ok(())
+}
 
 /// Exact system-local calendar boundary used by daily activity producers and
 /// Life Log.  Epoch values, not fixed 24-hour arithmetic, are authoritative.
@@ -786,6 +1003,17 @@ fn validate_generated_at(value: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Convert a validated snapshot timestamp to Unix epoch milliseconds. This is
+/// used by named-view consumers to apply their own capability freshness bound
+/// without reparsing producer payload fields.
+pub fn generated_at_epoch_ms(value: &str) -> Result<u64, String> {
+    validate_generated_at(value)?;
+    let parsed = chrono::DateTime::parse_from_rfc3339(value)
+        .map_err(|_| "snapshot generatedAt이 올바르지 않습니다".to_string())?;
+    u64::try_from(parsed.timestamp_millis())
+        .map_err(|_| "snapshot generatedAt이 올바르지 않습니다".to_string())
+}
+
 fn validate_json_value(value: &serde_json::Value, depth: usize) -> Result<(), String> {
     if depth > MAX_JSON_DEPTH {
         return Err("snapshot data 중첩 제한을 초과했습니다".into());
@@ -996,6 +1224,97 @@ mod tests {
     fn write_to_root(root: &Path, envelope: &Envelope) {
         let dir = snapshot_dir_in(root, &envelope.producer, envelope.schema_version);
         write_atomic(envelope, &dir).unwrap();
+    }
+
+    fn run_port_binding() -> PortBindingEntry {
+        PortBindingEntry::RunService {
+            id: "service-1".into(),
+            label: "Local API".into(),
+            address: "127.0.0.1".into(),
+            port: 8080,
+            target_kind: PortBindingTargetKind::Windows,
+            target_distro: None,
+            run_id: Some("run-1".into()),
+            logs_available: true,
+            process: Some(PortBindingProcess {
+                pid: 42,
+                created_at_ms: 1_725_000_000_000,
+            }),
+        }
+    }
+
+    #[test]
+    fn port_binding_named_view_round_trips_strict_safe_entries() {
+        let root = test_root("port-bindings");
+        let entries = vec![
+            run_port_binding(),
+            PortBindingEntry::WorkbenchProfile {
+                id: "profile-1".into(),
+                label: "Frontend".into(),
+                port: 5173,
+            },
+        ];
+        let envelope = port_bindings_envelope("run-manager", "0.5.1", entries.clone()).unwrap();
+        write_named_view_snapshot_atomic(&envelope, &root, PORT_BINDINGS_VIEW_KIND).unwrap();
+        let read = read_named_view_snapshot_in(&root, "run-manager", 1, PORT_BINDINGS_VIEW_KIND)
+            .unwrap()
+            .unwrap();
+        assert_eq!(port_bindings_from_envelope(&read).unwrap(), entries);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn port_binding_contract_rejects_unsafe_shape_and_ambiguous_identity() {
+        let mut invalid_wsl = run_port_binding();
+        if let PortBindingEntry::RunService {
+            target_kind,
+            target_distro,
+            process,
+            ..
+        } = &mut invalid_wsl
+        {
+            *target_kind = PortBindingTargetKind::Wsl;
+            *target_distro = Some("Ubuntu".into());
+            // WSL process start ticks are intentionally not part of this v1
+            // contract, so a Windows epoch identity must fail closed.
+            assert!(process.is_some());
+        }
+        assert!(validate_port_binding_entries(&[invalid_wsl]).is_err());
+
+        let missing_run = PortBindingEntry::RunService {
+            id: "service-1".into(),
+            label: "Local API".into(),
+            address: "localhost".into(),
+            port: 8080,
+            target_kind: PortBindingTargetKind::Windows,
+            target_distro: None,
+            run_id: None,
+            logs_available: true,
+            process: None,
+        };
+        assert!(validate_port_binding_entries(&[missing_run]).is_err());
+
+        let duplicate = run_port_binding();
+        assert!(validate_port_binding_entries(&[duplicate.clone(), duplicate]).is_err());
+
+        let mut value = serde_json::to_value(run_port_binding()).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("command".into(), serde_json::json!("raw"));
+        let envelope = Envelope::with_views(
+            "run-manager",
+            "0.5.1",
+            SnapshotViews::from([(
+                PORT_BINDINGS_VIEW_KIND.into(),
+                SnapshotView {
+                    schema_version: PORT_BINDINGS_VIEW_SCHEMA_VERSION,
+                    freshness_ms: 0,
+                    entries: vec![value],
+                },
+            )]),
+        );
+        assert!(port_bindings_from_envelope(&envelope).is_err());
     }
 
     #[test]

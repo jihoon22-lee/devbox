@@ -1029,6 +1029,43 @@ missing, corrupt는 차단한다. accept 직전 snapshot을 다시 읽으며 결
 Manager service를 변경하지 않고 snapshot path·raw Docker detail·container ID를 frontend로 보내지
 않는다.
 
+Catalog revision 16의 `snapshot:port-bindings/v1`은 Run Manager와 Workbench가 각각 독립
+named sidecar로 생산하는 의도적인 shared snapshot이다. Run Manager는 loopback health가 설정된
+service의 opaque ID·safe label·target·port와 선택적인 active run/log availability만 내보내며,
+Windows process는 PID와 creation epoch milliseconds가 함께 있을 때만 포함한다. Workbench는
+profile ID·safe label·expected port만 내보낸다. command, cwd, environment, project/log path,
+response/log bytes는 어느 producer에도 없다. catalog와 Rust/CI allowlist는 이 capability를 두
+producer 외 앱이 선언하지 못하게 한다.
+
+Workbench는 실행 중 검증된 profile store를 60초 간격으로 다시 읽어 profiles와 port-bindings
+sidecar를 함께 갱신한다. 프로세스 종료 뒤에는 heartbeat가 멈추고 Port Manager의 180초 freshness
+경계가 남은 view를 stale로 격리한다.
+
+Port Manager는 두 sidecar를 각각 strict decode하며 한쪽의 missing/corrupt/stale이 다른 쪽이나
+listener 수집을 막지 않게 한다. 180초를 넘으면 stale이고 30초보다 먼 future timestamp는
+invalid다. Windows listener의 PID와 fresh FILETIME-derived creation epoch가 Run identity와 정확히
+같을 때만 `verified`, 같은 loopback address/target/port 선언은 `declared`, Workbench expected port는
+`expected`다. WSL listener에는 v1에서 verified ownership을 만들지 않는다. 결과는 관측 시각이
+포함된 session-only 256-event endpoint/owner timeline으로 표시하며 자동 kill/restart를 하지 않는다.
+한 listener의 correlation은 64개, 한 snapshot은 총 4,096개로 제한하며 잘린 결과는
+`correlations_truncated` 진단으로 명시한다.
+
+owner/log action은 snapshot과 listener를 native에서 다시 읽고 endpoint·process identity·snapshot
+generation이 묶인 opaque action key를 재계산한 뒤에만 실행한다. Port Manager가 Log Lens로 보내는
+`log-source/v1`은 Run Manager가 소유한 run ID와 stdout/stderr identity만 전달하며 path·command·
+log bytes를 포함하지 않는다. Log Lens receiver는 Port Manager producer를 같은 strict identity
+payload family에 한해 허용한다.
+
+Webhook Lab의 v0.6 rule selector는 priority→exact path→method-specific→longer wildcard prefix→
+bytewise rule ID의 단일 comparator를 live listener/list/preview에서 공유한다. conflict save는 같은
+backend lock에서 재계산·명시 확인하며 취소 시 map/cursor를 바꾸지 않는다. `packages/openapi`의
+bounded JSON/YAML parser를 API Playground와 공유하되 Webhook projection은 method/path/2xx draft만
+허용하고 server/auth/body/example과 parameter wildcard 변환을 제외한다. 실행 중인 exact loopback
+listener는 backend-owned current executable과 app-local strict service profile로 disabled Run
+Manager schema v1 service를 명시적으로 export할 수 있다. export JSON은 backend가 검증한 현재
+Webhook Lab executable path를 고정 command에 포함하지만 rule/response/env/cwd/project·log path/
+runtime identity는 포함하지 않는다. Windows packaged service startup은 #493 acceptance까지 pending이다.
+
 `apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
 
 ## 통합 앱 (Workbench)

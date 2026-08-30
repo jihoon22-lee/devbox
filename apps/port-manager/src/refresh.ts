@@ -10,6 +10,7 @@ export const DEFAULT_REFRESH_INTERVAL_MS = 5_000;
 export const MIN_REFRESH_INTERVAL_MS = 1_000;
 export const MAX_REFRESH_INTERVAL_MS = 60_000;
 export const MAX_FAVORITES_PER_KIND = 256;
+export const MAX_REFRESH_TIMELINE_EVENTS = 256;
 
 export const DEFAULT_PREFERENCES: PortManagerPreferences = {
   schema_version: 1,
@@ -73,6 +74,25 @@ function rowFingerprint(row: PortRow): string {
   ]);
 }
 
+function correlationFingerprint(row: PortRow): string {
+  // Native action keys intentionally include the producer snapshot identity,
+  // so they may rotate even when ownership is unchanged. Timeline ownership
+  // changes are based on the public owner description, never on that opaque
+  // action key.
+  return JSON.stringify(
+    (row.correlations ?? [])
+      .map((correlation) => [
+        correlation.source_app,
+        correlation.target_kind,
+        correlation.target_id,
+        correlation.label,
+        correlation.confidence,
+        correlation.logs_available,
+      ])
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+  );
+}
+
 function sameEndpoint(left: PortRow, right: PortRow): boolean {
   return (
     (left.source ?? "windows") === (right.source ?? "windows") &&
@@ -102,7 +122,7 @@ export function sameProcessFavorite(left: ProcessFavorite, right: ProcessFavorit
   return processFavoriteKey(left) === processFavoriteKey(right);
 }
 
-export type RefreshDiffKind = "new" | "closed" | "changed";
+export type RefreshDiffKind = "opened" | "closed" | "changed" | "owner-changed";
 
 export interface RefreshDiff {
   kind: RefreshDiffKind;
@@ -111,9 +131,35 @@ export interface RefreshDiff {
   after?: PortRow;
 }
 
+export interface RefreshTimelineRow {
+  local_addr: string;
+  process_name: string | null;
+  owner_labels: string[];
+}
+
+export interface RefreshTimelineEvent {
+  kind: RefreshDiffKind;
+  key: string;
+  before?: RefreshTimelineRow;
+  after?: RefreshTimelineRow;
+  observed_at_ms: number;
+}
+
+function timelineRow(row: PortRow | undefined): RefreshTimelineRow | undefined {
+  if (!row) return undefined;
+  return {
+    local_addr: row.local_addr,
+    process_name: row.process_name,
+    // Keep only the labels rendered by the session timeline. Native action
+    // keys, target ids, process identities, commands, and executable paths
+    // remain in the live observation snapshot and are never archived here.
+    owner_labels: (row.correlations ?? []).map(({ label }) => label),
+  };
+}
+
 /**
  * Compare only two successful snapshots. A null previous snapshot means the
- * initial load and intentionally produces no synthetic "new" flood. Strong
+ * initial load and intentionally produces no synthetic "opened" flood. Strong
  * process identities are matched without endpoint fields, so a listener that
  * moves endpoint is reported as changed. Identity-less rows fall back to an
  * endpoint key and never borrow another process identity.
@@ -166,11 +212,13 @@ export function diffPortRows(previous: PortRow[] | null, next: PortRow[]): Refre
     const identity = identityOnlyKey(after);
     const matchIndex = matches[index];
     if (matchIndex === null) {
-      changes.push({ kind: "new", key: identity, after });
+      changes.push({ kind: "opened", key: identity, after });
       return;
     }
     const before = unmatched[matchIndex].row;
-    if (rowFingerprint(before) !== rowFingerprint(after)) {
+    if (correlationFingerprint(before) !== correlationFingerprint(after)) {
+      changes.push({ kind: "owner-changed", key: identity, before, after });
+    } else if (rowFingerprint(before) !== rowFingerprint(after)) {
       changes.push({ kind: "changed", key: identity, before, after });
     }
   });
@@ -180,7 +228,12 @@ export function diffPortRows(previous: PortRow[] | null, next: PortRow[]): Refre
     }
   }
 
-  const order: Record<RefreshDiffKind, number> = { new: 0, closed: 1, changed: 2 };
+  const order: Record<RefreshDiffKind, number> = {
+    opened: 0,
+    closed: 1,
+    changed: 2,
+    "owner-changed": 3,
+  };
   return changes.sort(
     (left, right) => {
       const byKind = order[left.kind] - order[right.kind];
@@ -191,6 +244,31 @@ export function diffPortRows(previous: PortRow[] | null, next: PortRow[]): Refre
       );
     },
   );
+}
+
+/**
+ * Append successful refresh changes to the in-memory session timeline. The
+ * caller deliberately owns the timeline ref/state; this helper has no I/O or
+ * persistence and returns a fresh bounded array for React state updates.
+ */
+export function appendRefreshTimeline(
+  timeline: RefreshTimelineEvent[],
+  changes: RefreshDiff[],
+  observedAtMs = Date.now(),
+): RefreshTimelineEvent[] {
+  const safeObservedAt = Number.isSafeInteger(observedAtMs)
+    && observedAtMs >= 0
+    && Number.isFinite(new Date(observedAtMs).getTime())
+    ? observedAtMs
+    : 0;
+  const events = changes.map((change) => ({
+    kind: change.kind,
+    key: change.key,
+    before: timelineRow(change.before),
+    after: timelineRow(change.after),
+    observed_at_ms: safeObservedAt,
+  }));
+  return [...timeline, ...events].slice(-MAX_REFRESH_TIMELINE_EVENTS);
 }
 
 export function portFavoriteFor(row: PortRow): PortFavorite {

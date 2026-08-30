@@ -1,6 +1,7 @@
 //! response rule (순수). method+path 매치 → 고정 status/header/body 응답.
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 /// Rule validation is deliberately stricter than the serde wire types. These
@@ -26,6 +27,8 @@ pub const MAX_RULE_COLLECTION_BYTES: usize = 8_000_000;
 pub const MIN_RESPONSE_STATUS: u16 = 100;
 pub const MAX_RESPONSE_STATUS: u16 = 599;
 pub const MAX_RESPONSE_DELAY_MS: u64 = 60_000;
+pub const MIN_RULE_PRIORITY: i32 = -1_000;
+pub const MAX_RULE_PRIORITY: i32 = 1_000;
 /// A sequence is intentionally short and data-only.  It is a local testing
 /// aid, not an arbitrary scripting or workflow engine.
 pub const MAX_RESPONSE_SEQUENCE: usize = 16;
@@ -63,7 +66,7 @@ impl StringMetrics {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResponseSequenceStep {
     pub status: u16,
     pub headers: Vec<(String, String)>,
@@ -72,9 +75,13 @@ pub struct ResponseSequenceStep {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResponseRule {
     pub id: String,
+    /// Higher values win before path/method specificity. Missing values in
+    /// v0.5.x documents deserialize as zero for backward compatibility.
+    #[serde(default)]
+    pub priority: i32,
     /// None이면 모든 method
     pub method: Option<String>,
     pub path: String,
@@ -91,6 +98,48 @@ pub struct ResponseRule {
     /// the final step is reached it remains active until an explicit reset.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sequence: Vec<ResponseSequenceStep>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RuleConflictKind {
+    CandidateShadowsExisting,
+    ExistingShadowsCandidate,
+    PartialOverlap,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RulePrecedenceReason {
+    Priority,
+    ExactPath,
+    MethodSpecific,
+    LongerWildcardPrefix,
+    IdTieBreak,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleConflict {
+    pub existing_rule_id: String,
+    pub winner_rule_id: String,
+    pub loser_rule_id: String,
+    pub kind: RuleConflictKind,
+    pub reason: RulePrecedenceReason,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleConflictPreview {
+    pub candidate_id: String,
+    pub conflicts: Vec<RuleConflict>,
+    pub requires_confirmation: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleUpsertPlan {
+    pub candidate: ResponseRule,
+    pub preview: RuleConflictPreview,
 }
 
 impl ResponseRule {
@@ -271,6 +320,7 @@ pub fn validate_rule(rule: &ResponseRule) -> Result<(), RuleValidationError> {
         || !rule.path.is_ascii()
         || has_control(&rule.path)
         || !within(&rule.body, MAX_BODY_CHARS, MAX_BODY_BYTES)
+        || !(MIN_RULE_PRIORITY..=MAX_RULE_PRIORITY).contains(&rule.priority)
     {
         return Err(RuleValidationError);
     }
@@ -319,7 +369,6 @@ where
 
 /// Validate the complete in-memory rule collection without exposing input in
 /// the error type.
-#[cfg(test)]
 pub fn validate_rule_collection<'a, I>(rules: I) -> Result<(), RuleValidationError>
 where
     I: IntoIterator<Item = &'a ResponseRule>,
@@ -329,8 +378,7 @@ where
 
 /// rule이 요청과 매치하는지. method는 대소문자 무시하고, None은 모든 method다.
 /// path는 전체 문자열이 같거나, rule path의 마지막 문자가 `*`일 때 그 앞부분으로
-/// 시작해야 한다. `HashMap`에서 여러 rule이 매치되는 경우의 우선순위는 이 함수의
-/// 계약이 아니다.
+/// 시작해야 한다. 여러 rule의 우선순위는 [`select_matching_rule`]이 소유한다.
 pub fn matches(rule: &ResponseRule, method: &str, path: &str) -> bool {
     // The native request parser and replay client emit/accept ASCII targets
     // only.  Keep direct matcher callers fail-closed even if an invalid rule
@@ -345,6 +393,145 @@ pub fn matches(rule: &ResponseRule, method: &str, path: &str) -> bool {
     }
     rule.path == path
         || (rule.path.ends_with('*') && path.starts_with(&rule.path[..rule.path.len() - 1]))
+}
+
+/// Stable precedence shared by the live listener, list UI, and conflict
+/// preview. `Ordering::Less` means `left` is evaluated before `right`.
+pub fn compare_rule_precedence(left: &ResponseRule, right: &ResponseRule) -> Ordering {
+    right
+        .priority
+        .cmp(&left.priority)
+        .then_with(|| path_is_exact(right).cmp(&path_is_exact(left)))
+        .then_with(|| right.method.is_some().cmp(&left.method.is_some()))
+        .then_with(|| wildcard_prefix_len(right).cmp(&wildcard_prefix_len(left)))
+        .then_with(|| left.id.as_bytes().cmp(right.id.as_bytes()))
+}
+
+pub fn select_matching_rule<'a, I>(rules: I, method: &str, path: &str) -> Option<&'a ResponseRule>
+where
+    I: IntoIterator<Item = &'a ResponseRule>,
+{
+    rules
+        .into_iter()
+        .filter(|rule| matches(rule, method, path))
+        .min_by(|left, right| compare_rule_precedence(left, right))
+}
+
+/// Assign a stable id to a new candidate, validate its projected collection,
+/// and report every overlapping existing rule. Callers must hold the rule-map
+/// lock from this function through the confirmed upsert.
+pub fn plan_upsert(
+    rules: &HashMap<String, ResponseRule>,
+    mut candidate: ResponseRule,
+) -> Result<RuleUpsertPlan, RuleValidationError> {
+    if candidate.id.is_empty() {
+        candidate.id = uuid::Uuid::new_v4().to_string();
+    }
+    let mut projected = rules.clone();
+    upsert(&mut projected, candidate.clone())?;
+
+    let mut conflicts = rules
+        .values()
+        .filter(|existing| existing.id != candidate.id && rules_overlap(&candidate, existing))
+        .map(|existing| conflict(&candidate, existing))
+        .collect::<Vec<_>>();
+    conflicts.sort_by(|left, right| left.existing_rule_id.cmp(&right.existing_rule_id));
+    let preview = RuleConflictPreview {
+        candidate_id: candidate.id.clone(),
+        requires_confirmation: !conflicts.is_empty(),
+        conflicts,
+    };
+    Ok(RuleUpsertPlan { candidate, preview })
+}
+
+pub fn rules_overlap(left: &ResponseRule, right: &ResponseRule) -> bool {
+    methods_overlap(left.method.as_deref(), right.method.as_deref())
+        && paths_overlap(&left.path, &right.path)
+}
+
+fn methods_overlap(left: Option<&str>, right: Option<&str>) -> bool {
+    left.is_none()
+        || right.is_none()
+        || left.is_some_and(|left| right.is_some_and(|right| left.eq_ignore_ascii_case(right)))
+}
+
+fn paths_overlap(left: &str, right: &str) -> bool {
+    match (path_pattern(left), path_pattern(right)) {
+        ((left, false), (right, false)) => left == right,
+        ((exact, false), (prefix, true)) | ((prefix, true), (exact, false)) => {
+            exact.starts_with(prefix)
+        }
+        ((left, true), (right, true)) => left.starts_with(right) || right.starts_with(left),
+    }
+}
+
+fn rule_covers(covering: &ResponseRule, covered: &ResponseRule) -> bool {
+    let method_covers = covering.method.is_none()
+        || covering.method.as_deref().is_some_and(|left| {
+            covered
+                .method
+                .as_deref()
+                .is_some_and(|right| left.eq_ignore_ascii_case(right))
+        });
+    if !method_covers {
+        return false;
+    }
+    match (path_pattern(&covering.path), path_pattern(&covered.path)) {
+        ((left, false), (right, false)) => left == right,
+        ((_, false), (_, true)) => false,
+        ((prefix, true), (exact, false)) => exact.starts_with(prefix),
+        ((left, true), (right, true)) => right.starts_with(left),
+    }
+}
+
+fn conflict(candidate: &ResponseRule, existing: &ResponseRule) -> RuleConflict {
+    let candidate_wins = compare_rule_precedence(candidate, existing) == Ordering::Less;
+    let (winner, loser) = if candidate_wins {
+        (candidate, existing)
+    } else {
+        (existing, candidate)
+    };
+    let kind = if candidate_wins && rule_covers(candidate, existing) {
+        RuleConflictKind::CandidateShadowsExisting
+    } else if !candidate_wins && rule_covers(existing, candidate) {
+        RuleConflictKind::ExistingShadowsCandidate
+    } else {
+        RuleConflictKind::PartialOverlap
+    };
+    RuleConflict {
+        existing_rule_id: existing.id.clone(),
+        winner_rule_id: winner.id.clone(),
+        loser_rule_id: loser.id.clone(),
+        kind,
+        reason: precedence_reason(winner, loser),
+    }
+}
+
+fn precedence_reason(winner: &ResponseRule, loser: &ResponseRule) -> RulePrecedenceReason {
+    if winner.priority != loser.priority {
+        RulePrecedenceReason::Priority
+    } else if path_is_exact(winner) != path_is_exact(loser) {
+        RulePrecedenceReason::ExactPath
+    } else if winner.method.is_some() != loser.method.is_some() {
+        RulePrecedenceReason::MethodSpecific
+    } else if wildcard_prefix_len(winner) != wildcard_prefix_len(loser) {
+        RulePrecedenceReason::LongerWildcardPrefix
+    } else {
+        RulePrecedenceReason::IdTieBreak
+    }
+}
+
+fn path_pattern(path: &str) -> (&str, bool) {
+    path.strip_suffix('*')
+        .map_or((path, false), |prefix| (prefix, true))
+}
+
+fn path_is_exact(rule: &ResponseRule) -> bool {
+    !rule.path.ends_with('*')
+}
+
+fn wildcard_prefix_len(rule: &ResponseRule) -> usize {
+    rule.path.strip_suffix('*').map_or(0, str::len)
 }
 
 /// 새 규칙에는 실제 ID를 부여하고 기존 규칙은 같은 ID로 교체한다.
@@ -386,6 +573,7 @@ mod tests {
     fn rule(id: &str, method: Option<&str>, path: &str) -> ResponseRule {
         ResponseRule {
             id: id.into(),
+            priority: 0,
             method: method.map(|s| s.into()),
             path: path.into(),
             status: 200,
@@ -471,6 +659,138 @@ mod tests {
         invalid.status = MAX_RESPONSE_STATUS;
         invalid.delay_ms = MAX_RESPONSE_DELAY_MS;
         assert!(validate_rule(&invalid).is_ok());
+    }
+
+    #[test]
+    fn priority_is_bounded_and_old_json_defaults_to_zero() {
+        let old: ResponseRule = serde_json::from_value(serde_json::json!({
+            "id": "old",
+            "method": null,
+            "path": "/hook",
+            "status": 200,
+            "headers": [],
+            "body": "",
+            "delayMs": 0
+        }))
+        .unwrap();
+        assert_eq!(old.priority, 0);
+
+        let mut candidate = rule("priority", None, "/hook");
+        candidate.priority = MIN_RULE_PRIORITY;
+        assert!(validate_rule(&candidate).is_ok());
+        candidate.priority = MAX_RULE_PRIORITY;
+        assert!(validate_rule(&candidate).is_ok());
+        candidate.priority = MAX_RULE_PRIORITY + 1;
+        assert!(validate_rule(&candidate).is_err());
+        candidate.priority = MIN_RULE_PRIORITY - 1;
+        assert!(validate_rule(&candidate).is_err());
+    }
+
+    #[test]
+    fn selector_is_insertion_order_independent_and_uses_documented_precedence() {
+        let mut any_prefix = rule("z-any-prefix", None, "/events/*");
+        any_prefix.priority = 5;
+        let mut method_prefix = rule("y-method-prefix", Some("POST"), "/events/special/*");
+        method_prefix.priority = 5;
+        let mut exact = rule("x-exact", None, "/events/special/42");
+        exact.priority = 5;
+        let mut priority = rule("priority", None, "/events/*");
+        priority.priority = 6;
+        let rules = [any_prefix, method_prefix, exact, priority];
+
+        for order in [vec![0, 1, 2, 3], vec![3, 2, 1, 0], vec![1, 3, 0, 2]] {
+            let selected = select_matching_rule(
+                order.iter().map(|index| &rules[*index]),
+                "POST",
+                "/events/special/42",
+            )
+            .unwrap();
+            assert_eq!(selected.id, "priority");
+        }
+
+        let tied = &rules[..3];
+        assert_eq!(
+            select_matching_rule(tied.iter(), "POST", "/events/special/42")
+                .unwrap()
+                .id,
+            "x-exact"
+        );
+        assert_eq!(
+            select_matching_rule(tied.iter(), "POST", "/events/special/other")
+                .unwrap()
+                .id,
+            "y-method-prefix"
+        );
+    }
+
+    #[test]
+    fn final_tie_break_is_bytewise_ascending_id() {
+        let left = rule("alpha", Some("POST"), "/hook");
+        let right = rule("beta", Some("POST"), "/hook");
+        assert_eq!(
+            select_matching_rule([&right, &left], "POST", "/hook")
+                .unwrap()
+                .id,
+            "alpha"
+        );
+        assert_eq!(
+            precedence_reason(&left, &right),
+            RulePrecedenceReason::IdTieBreak
+        );
+    }
+
+    #[test]
+    fn conflict_preview_reports_full_and_partial_overlap_without_mutation() {
+        let existing = rule("existing", None, "/events/*");
+        let mut rules = HashMap::from([(existing.id.clone(), existing)]);
+        let before = rules.clone();
+
+        let mut exact = rule("candidate", Some("POST"), "/events/42");
+        exact.priority = 1;
+        let plan = plan_upsert(&rules, exact).unwrap();
+        assert!(plan.preview.requires_confirmation);
+        assert_eq!(plan.preview.conflicts.len(), 1);
+        assert_eq!(
+            plan.preview.conflicts[0].kind,
+            RuleConflictKind::PartialOverlap
+        );
+        assert_eq!(
+            plan.preview.conflicts[0].reason,
+            RulePrecedenceReason::Priority
+        );
+        assert_eq!(rules, before);
+
+        let mut covering = rule("covering", None, "/events/*");
+        covering.priority = 2;
+        let plan = plan_upsert(&rules, covering).unwrap();
+        assert_eq!(
+            plan.preview.conflicts[0].kind,
+            RuleConflictKind::CandidateShadowsExisting
+        );
+
+        let unrelated = rule("other", Some("GET"), "/unrelated");
+        let plan = plan_upsert(&rules, unrelated).unwrap();
+        assert!(!plan.preview.requires_confirmation);
+        assert!(plan.preview.conflicts.is_empty());
+
+        // Keep the map mutable in this test so Clippy/rustc also exercise the
+        // projected collection without relying on an immutable-only fixture.
+        rules.clear();
+        assert!(rules.is_empty());
+    }
+
+    #[test]
+    fn overlap_matrix_handles_methods_exact_paths_and_nested_prefixes() {
+        let get = rule("get", Some("GET"), "/events/42");
+        let post = rule("post", Some("POST"), "/events/42");
+        let any = rule("any", None, "/events/*");
+        let nested = rule("nested", Some("GET"), "/events/private/*");
+        let elsewhere = rule("elsewhere", None, "/other/*");
+        assert!(!rules_overlap(&get, &post));
+        assert!(rules_overlap(&get, &any));
+        assert!(rules_overlap(&any, &nested));
+        assert!(!rules_overlap(&get, &nested));
+        assert!(!rules_overlap(&any, &elsewhere));
     }
 
     #[test]
