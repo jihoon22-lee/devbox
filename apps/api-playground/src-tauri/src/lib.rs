@@ -55,6 +55,13 @@ pub fn run() {
         .manage(std::sync::Arc::new(
             commands::mcp_stdio::McpStdioState::default(),
         ))
+        .manage(std::sync::Arc::new(commands::grpc::GrpcState::default()))
+        .manage(std::sync::Arc::new(
+            commands::grpc_selection::GrpcSelectionState::default(),
+        ))
+        .manage(std::sync::Arc::new(
+            commands::grpc_credentials::GrpcCredentialState::default(),
+        ))
         .manage(std::sync::Arc::new(commands::sse::SseState::default()))
         .manage(std::sync::Arc::new(
             commands::websocket::WebSocketState::default(),
@@ -107,6 +114,19 @@ pub fn run() {
             commands::mcp_stdio::invoke_mcp_stdio,
             commands::mcp_stdio::cancel_mcp_stdio,
             commands::mcp_stdio::disconnect_mcp_stdio,
+            commands::grpc::pick_grpc_proto,
+            commands::grpc::pick_grpc_import_root,
+            commands::grpc::connect_grpc,
+            commands::grpc::invoke_grpc,
+            commands::grpc::cancel_grpc,
+            commands::grpc::disconnect_grpc,
+            commands::grpc::export_grpc_summary,
+            commands::grpc_credentials::pick_grpc_ca,
+            commands::grpc_credentials::pick_grpc_client_certificate,
+            commands::grpc_credentials::pick_grpc_client_key,
+            commands::grpc_credentials::import_grpc_tls_credential,
+            commands::grpc_credentials::list_grpc_tls_credentials,
+            commands::grpc_credentials::delete_grpc_tls_credential,
             commands::sse::start_sse_stream,
             commands::sse::stop_sse_stream,
             commands::websocket::start_websocket,

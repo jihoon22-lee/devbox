@@ -204,6 +204,92 @@ no Windows stdio fixture, OAuth browser/discovery/restart/revoke run, child-proc
 or MCP Inspector comparison is claimed here. Those checks must run on Windows before this feature
 is considered packaged-acceptance complete.
 
+## Protocol Lab · gRPC (`#485`, v0.6.0)
+
+gRPC는 Protocol Lab 안의 native 전용 패널이다. 브라우저 미리보기는 `grpc_native_required`를
+표시하며 파일 선택·reflection·TLS·RPC 네트워크를 시작하지 않는다. 연결 전에 사용자가 schema
+source와 TLS profile을 확인하고, 연결 후 descriptor가 제공한 method만 명시적으로 호출한다.
+
+### Schema source와 method flow
+
+- **Local proto** — native picker로 root `.proto`와 선택적인 import-root를 고른다. backend가
+  `protox`로 프로세스 안에서 컴파일하며 `protoc`, shell, 다운로드 compiler, 생성된 사용자 코드는
+  사용하지 않는다. import는 선택한 root 아래의 UTF-8 `.proto`만 허용하고 symlink/reparse,
+  traversal, root 밖 파일은 거부한다.
+- **Server reflection** — endpoint에 연결한 뒤 gRPC reflection v1을 먼저 시도한다. v1 reflection
+  경계에서 명시적으로 `UNIMPLEMENTED`를 받은 경우에만 v1alpha로 한 번 전환하며, TLS·권한·timeout·
+  malformed descriptor·일반 network 오류는 downgrade나 retry를 일으키지 않는다.
+- **Method explorer** — descriptor에서 service/method/input/output type과 RPC kind를 투영한다.
+  unary, server-streaming, client-streaming, bidirectional-streaming 네 종류를 지원하며, client- /
+  bidirectional-streaming 입력은 ProtoJSON message array로 받는다. method path는 backend descriptor에서
+  재구성되고 source import/reflection, method 선택, reconnect는 RPC를 자동 실행하지 않는다.
+
+ProtoJSON은 canonical mapping을 사용하고 duplicate object key와 unknown field를 거부한다.
+현 result 화면의 response body는 사용자가 명시적으로 Invoke한 동안에만 bounded memory에 보관되며,
+서버 status는 고정된 gRPC status name으로만 표시된다. server status message/details/metadata와
+raw transport error는 renderer로 전달하지 않는다.
+
+### TLS / mTLS와 native credential
+
+endpoint는 path가 `/`인 absolute `http://` 또는 `https://` authority여야 하며 userinfo, query,
+fragment, credential-shaped component는 허용하지 않는다. HTTPS는 인증서 검증을 항상 수행하고
+`native`, `custom`, `native+custom` root mode와 선택적인 server-name override를 제공한다.
+trust-all verifier, hostname bypass, key log, silent plaintext fallback은 없다. 의도적인 local/intranet
+test를 위해 HTTP는 허용하지만 TLS credential은 HTTP 요청에 연결하지 않는다.
+
+CA bundle 또는 client certificate/private-key pair는 native picker로만 고른다. private key는
+암호화되지 않은 PEM 하나만 허용하며, PEM 원문·native path는 IPC나 UI에 보내지 않는다. credential은
+Windows 패키지에서만 일반 request environment secret과 분리된 DPAPI entropy domain으로 독립
+봉인해 app-local versioned store에 atomic write하고, renderer에는
+opaque credential ID와 label, CA/client-identity 존재 여부, 생성 시각만 투영한다. WSL/non-Windows는
+이 저장 경계를 수행하지 않는다. gRPC v0.6.0에는 arbitrary metadata/header 또는 별도 bearer auth가
+없으며 mTLS가 유일한 credential-bearing request mechanism이다.
+
+### Bounds, ownership, and persistence
+
+| Boundary | Limit |
+|---|---:|
+| Local source / reflected descriptor files | 256 files, 1 MiB/file, 8 MiB total |
+| Projected services / methods / types | 256 / 2,000 / 5,000 |
+| Method template | 256 KiB |
+| Connections / active requests per connection | 8 / 4 |
+| Connect timeout / combined connect+reflection ceiling | 100 ms–30 s / 120 s |
+| RPC deadline | 100 ms–300 s |
+| One encoded/decoded message | 1 MiB |
+| Request / response message total | 4 MiB / 8 MiB |
+| Stream input / output messages | 1–100 / up to 100 |
+| Local summary history / stored credentials | 50 entries / 16 credentials |
+
+Each request has an opaque request ID, exact connection generation, deadline, and cancellation owner.
+Cancel, timeout, disconnect, connection replacement, and drop release the corresponding reservation;
+there is no automatic reconnect, retry, replay, or hedging. TLS credential storage is bounded to a 4 MiB
+encoded document. History and export use summary-only data: source kind, service/method, RPC kind,
+message counts, time, elapsed time, fixed status name, TLS mode, and a boolean credential-used flag.
+They exclude endpoint, request/response body, metadata, descriptor bytes, source path, credential ID/label,
+certificates, keys, and raw errors. `Export summary` creates a versioned document through the backend's
+native save dialog and atomic write; it never exports the live message bodies or connection profile.
+
+Stable native errors are code-only (`grpc_invalid_profile`, `grpc_source_selection_invalid`,
+`grpc_reflection_unavailable`, `grpc_tls_failed`, `grpc_credential_invalid`,
+`grpc_request_timeout`, `grpc_request_cancelled`, `grpc_response_too_large`, and related `grpc_*`
+codes). Packaged Windows acceptance is still required for DPAPI persistence/restart/delete, native and
+custom roots, mTLS, native pickers, reflection, all four RPC kinds, timeout/cancel cleanup, and summary
+export.
+
+### Source verification
+
+The latest source evidence includes **189 API Playground Rust tests**, **29 focused gRPC Rust tests**,
+and **36 frontend files / 264 tests** with `--maxWorkers=2`; the focused gRPC frontend suite adds
+**3 files / 20 tests**. A local tonic integration fixture covers reflection v1, explicit v1
+`UNIMPLEMENTED` → v1alpha fallback, and unary, server-streaming, client-streaming, and
+bidirectional-streaming RPCs. `cargo check`, strict Clippy, scoped TypeScript checking, production
+`pnpm build`, dependency
+check/build-manifest/catalog, `pnpm audit`, and `cargo deny` passed; cargo-deny emitted only existing
+duplicate/yanked warnings, and its advisory/license/source gates passed under the existing time-bounded
+policy. Windows DPAPI,
+TLS/mTLS, native picker, and packaged acceptance are still pending and are not represented by these
+source checks.
+
 ## Binary response preview (`#348`)
 
 응답 `Content-Type`과 strict UTF-8/제어문자 판별을 조합해 binary 응답을 별도 projection으로

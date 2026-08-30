@@ -337,6 +337,7 @@ no full workspace CI or Windows packaged acceptance result is claimed here.
 
 ### PR 3 — gRPC and TLS/mTLS
 
+- detailed contract: `2026-08-30-api-playground-grpc-tls.md`
 - local `.proto` import and reflection with explicit source provenance
 - unary, server/client/bidirectional streaming with bounded messages and cancel
 - TLS server-name/CA profile and DPAPI-backed client credential references
