@@ -15,6 +15,9 @@ import type {
   RuntimeStatus,
   StartupShortcutStatus,
   TailResponse,
+  WorkspaceTaskApplyResult,
+  WorkspaceTaskPlan,
+  WorkspaceTaskState,
 } from "./types";
 
 export interface OpenRequest {
@@ -412,6 +415,108 @@ export function applyProjectImport(
 export function cancelProjectImport(operationId: string): Promise<boolean> {
   if (!isTauri()) return Promise.resolve(false);
   return invoke<boolean>("cancel_project_import", { operationId });
+}
+
+function createWorkspaceTaskOperationId(prefix: "preview" | "apply"): string {
+  const random = globalThis.crypto?.randomUUID?.();
+  return `${prefix}-${random ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`}`;
+}
+
+export function previewWorkspaceTaskImport(
+  path: string,
+  targetKind: WorkspaceTaskPlan["targetKind"],
+  targetDistro: string | null = null,
+  operationId = createWorkspaceTaskOperationId("preview"),
+): Promise<WorkspaceTaskPlan> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      schemaVersion: 1,
+      sourceRoot: path,
+      sourcePath: ".vscode/tasks.json",
+      projectIdentity: "",
+      revision: "",
+      targetKind,
+      targetDistro,
+      selectedPlatform: targetKind === "wsl" ? "linux" : "windows",
+      items: [],
+    });
+  }
+  return invoke<WorkspaceTaskPlan>("preview_workspace_task_import", {
+    path,
+    targetKind,
+    targetDistro,
+    operationId,
+  });
+}
+
+export function cancelWorkspaceTaskImport(operationId: string): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  return invoke<boolean>("cancel_workspace_task_import", { operationId });
+}
+
+export function applyWorkspaceTaskImport(
+  path: string,
+  sourceRoot: string,
+  projectIdentity: string,
+  revision: string,
+  targetKind: WorkspaceTaskPlan["targetKind"],
+  targetDistro: string | null | undefined,
+  selected: string[],
+  operationId = createWorkspaceTaskOperationId("apply"),
+): Promise<WorkspaceTaskApplyResult> {
+  if (!isTauri()) {
+    return Promise.resolve({
+      sourceId: "mock-workspace-source",
+      created: selected.length,
+      updated: 0,
+      madeUnavailable: 0,
+      skippedConflicts: 0,
+    });
+  }
+  return invoke<WorkspaceTaskApplyResult>("apply_workspace_task_import", {
+    path,
+    sourceRoot,
+    projectIdentity,
+    revision,
+    targetKind,
+    targetDistro: targetDistro ?? null,
+    selected,
+    operationId,
+  });
+}
+
+export function listWorkspaceTasks(): Promise<WorkspaceTaskState[]> {
+  if (!isTauri()) return Promise.resolve([]);
+  return invoke<WorkspaceTaskState[]>("list_workspace_tasks");
+}
+
+export function trustWorkspaceTaskSource(sourceId: string, revision: string): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(true);
+  return invoke<boolean>("trust_workspace_task_source", { sourceId, revision });
+}
+
+const FRIENDLY_BACKEND_ERRORS: Record<string, string> = {
+  "workspace-task-source-untrusted": "이 workspace task의 소스가 아직 승인되지 않았습니다. 현재 revision을 명시적으로 승인한 뒤 활성화하세요.",
+  "workspace-task-unavailable": "이 workspace task는 현재 사용할 수 없습니다. 원본을 다시 미리보고 가져오세요.",
+  "workspace-task-source-unavailable": "workspace task 원본을 읽을 수 없습니다. 프로젝트 경로와 .vscode/tasks.json을 확인하세요.",
+  "workspace-task-source-changed": "원본 tasks.json이 변경되어 승인이 무효화되었습니다. 다시 미리보고 승인하세요.",
+  "workspace-task-managed-fields-locked": "workspace task의 이름·명령·작업 디렉터리·대상은 원본이 관리합니다.",
+  "workspace-task-environment-key-not-declared": "원본에 선언된 환경변수 키만 입력할 수 있습니다.",
+  "workspace-task-configuration-invalid": "workspace task 설정이 올바르지 않아 실행할 수 없습니다.",
+  "workspace-task-definition-invalid": "workspace task 설정이 올바르지 않아 실행할 수 없습니다.",
+};
+
+/** Convert fixed native workspace-task codes to actionable UI text without
+ * echoing paths, commands, argv, source text, or environment values. */
+export function friendlyErrorMessage(cause: unknown): string {
+  const value = cause instanceof Error ? cause.message : String(cause);
+  const normalized = value.trim();
+  const code = normalized.startsWith("workspace-task-")
+    ? normalized
+    : `workspace-task-${normalized}`;
+  return FRIENDLY_BACKEND_ERRORS[normalized]
+    ?? FRIENDLY_BACKEND_ERRORS[code]
+    ?? (normalized || "요청을 완료하지 못했습니다.");
 }
 
 export function startService(id: string): Promise<ServiceInstance> {

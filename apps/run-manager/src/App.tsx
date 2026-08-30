@@ -14,7 +14,9 @@ import {
   getServiceObservability,
   exportDefinitions,
   type ServiceObservability,
+  friendlyErrorMessage,
   hideMainWindow,
+  listWorkspaceTasks,
   listServices,
   listJobs,
   listActiveRuns,
@@ -32,6 +34,7 @@ import {
   takePendingOpen,
   updateService,
   updateJob,
+  trustWorkspaceTaskSource,
 } from "./api";
 import JobEditor from "./components/JobEditor";
 import ImportDialog from "./components/ImportDialog";
@@ -45,6 +48,8 @@ import type {
   ServiceInput,
   ServiceInstance,
   StartupShortcutStatus,
+  WorkspaceTaskApplyResult,
+  WorkspaceTaskState,
 } from "./types";
 import "./App.css";
 
@@ -76,6 +81,23 @@ function serviceStateLabel(state: ServiceInstance["state"]): string {
   }
 }
 
+function shortRevision(revision: string): string {
+  return revision ? revision.slice(0, 8) : "--------";
+}
+
+function workspaceSourceLabel(sourceRoot: string): string {
+  const normalized = sourceRoot.replace(/[\\/]+$/, "");
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? sourceRoot;
+}
+
+function canUseWorkspaceTask(
+  task: WorkspaceTaskState | undefined,
+  snapshotFresh: boolean,
+): boolean {
+  return snapshotFresh && (!task || (task.trusted && task.available));
+}
+
 interface ServiceSnapshot {
   services: Job[];
   instances: Record<string, ServiceInstance>;
@@ -101,6 +123,8 @@ export default function App() {
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
   const [startupStatus, setStartupStatus] = useState<StartupShortcutStatus | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [workspaceTasks, setWorkspaceTasks] = useState<WorkspaceTaskState[]>([]);
+  const [workspaceSnapshotFresh, setWorkspaceSnapshotFresh] = useState(false);
   const [services, setServices] = useState<Job[]>([]);
   const [serviceInstances, setServiceInstances] = useState<Record<string, ServiceInstance>>({});
   const [obsMap, setObsMap] = useState<Record<string, ServiceObservability | null>>({});
@@ -122,8 +146,13 @@ export default function App() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [activeSnapshotError, setActiveSnapshotError] = useState<string | null>(null);
   const [activeSnapshotFresh, setActiveSnapshotFresh] = useState(false);
+  const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
   const [launcherTask, setLauncherTask] = useState<{ id: string; kind: "job" | "service" } | null>(null);
   const historyDefinitions = useMemo(() => [...jobs, ...services], [jobs, services]);
+  const workspaceTaskByJobId = useMemo(
+    () => new Map(workspaceTasks.map((task) => [task.jobId, task])),
+    [workspaceTasks],
+  );
 
   const closeImport = useCallback(() => {
     setImportOpen(false);
@@ -200,9 +229,20 @@ export default function App() {
   }, []);
 
   const refreshJobs = useCallback(async () => {
-    const nextJobs = await listJobs();
-    setJobs(nextJobs);
-    await refreshActiveRuns();
+    setWorkspaceSnapshotFresh(false);
+    try {
+      const [nextJobs, nextWorkspaceTasks] = await Promise.all([
+        listJobs(),
+        listWorkspaceTasks(),
+      ]);
+      setJobs(nextJobs);
+      setWorkspaceTasks(nextWorkspaceTasks);
+      setWorkspaceSnapshotFresh(true);
+      await refreshActiveRuns();
+    } catch (cause) {
+      setWorkspaceSnapshotFresh(false);
+      throw cause;
+    }
   }, [refreshActiveRuns]);
 
   const refreshServices = useCallback(async () => {
@@ -236,6 +276,16 @@ export default function App() {
       setError("Launcher가 요청한 작업을 찾지 못했습니다.");
       return;
     }
+    const workspaceTask = task.kind === "job" ? workspaceTaskByJobId.get(task.id) : undefined;
+    if (!canUseWorkspaceTask(workspaceTask, workspaceSnapshotFresh)) {
+      setLauncherTask(null);
+      setError(
+        workspaceSnapshotFresh
+          ? friendlyErrorMessage(workspaceTask?.trusted ? "unavailable" : "source-untrusted")
+          : "workspace task 상태를 확인하지 못해 실행을 차단했습니다. 다시 불러온 뒤 시도하세요.",
+      );
+      return;
+    }
     setBusy(true);
     try {
       if (task.kind === "job") {
@@ -245,8 +295,8 @@ export default function App() {
         await startService(task.id);
         await refreshServices();
       }
-    } catch {
-      setError("Launcher가 요청한 작업을 실행하지 못했습니다.");
+    } catch (cause) {
+      setError(friendlyErrorMessage(cause));
     } finally {
       setLauncherTask(null);
       setBusy(false);
@@ -312,7 +362,7 @@ export default function App() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (cause) {
-      setStatusError(cause instanceof Error ? cause.message : String(cause));
+      setStatusError(friendlyErrorMessage(cause));
     }
   };
 
@@ -321,17 +371,25 @@ export default function App() {
       setStatus(await loadRuntimeStatus());
       setStatusError(null);
     } catch (cause) {
-      setStatusError(cause instanceof Error ? cause.message : String(cause));
+      setStatusError(friendlyErrorMessage(cause));
     }
   }, []);
 
   useEffect(() => {
     let active = true;
-    void Promise.all([loadRuntimeStatus(), listJobs(), loadServiceSnapshot(), loadStartupShortcutStatus()])
-      .then(([nextStatus, nextJobs, serviceSnapshot, nextStartupStatus]) => {
+    void Promise.all([
+      loadRuntimeStatus(),
+      listJobs(),
+      loadServiceSnapshot(),
+      loadStartupShortcutStatus(),
+      listWorkspaceTasks(),
+    ])
+      .then(([nextStatus, nextJobs, serviceSnapshot, nextStartupStatus, nextWorkspaceTasks]) => {
         if (!active) return;
         setStatus(nextStatus);
         setJobs(nextJobs);
+        setWorkspaceTasks(nextWorkspaceTasks);
+        setWorkspaceSnapshotFresh(true);
         setServices(serviceSnapshot.services);
         setServiceInstances(serviceSnapshot.instances);
         setStartupStatus(nextStartupStatus);
@@ -339,7 +397,10 @@ export default function App() {
         setStatusError(null);
       })
       .catch((cause: unknown) => {
-        if (active) setError(cause instanceof Error ? cause.message : String(cause));
+        if (active) {
+          setWorkspaceSnapshotFresh(false);
+          setError(friendlyErrorMessage(cause));
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -359,7 +420,7 @@ export default function App() {
         .then((request) => {
           if (request?.target.kind === "task") openRequestRef.current(request.target.id);
         })
-        .catch(() => setError("Launcher 요청을 처리하지 못했습니다."));
+        .catch((cause) => setError(friendlyErrorMessage(cause)));
     };
     let disposed = false;
     let unlisten: (() => void) | undefined;
@@ -424,6 +485,15 @@ export default function App() {
   }, [refreshActiveRuns, refreshStatus]);
 
   const handleRunNow = async (job: Job) => {
+    const workspaceTask = workspaceTaskByJobId.get(job.id);
+    if (!canUseWorkspaceTask(workspaceTask, workspaceSnapshotFresh)) {
+      setError(
+        workspaceSnapshotFresh
+          ? friendlyErrorMessage(workspaceTask?.trusted ? "unavailable" : "source-untrusted")
+          : "workspace task 상태를 확인하지 못해 실행을 차단했습니다. 다시 불러온 뒤 시도하세요.",
+      );
+      return;
+    }
     setBusy(true);
     try {
       await runJobNow(job.id);
@@ -432,7 +502,7 @@ export default function App() {
       await refreshActiveRuns();
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(friendlyErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -446,7 +516,7 @@ export default function App() {
       await refreshActiveRuns();
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(friendlyErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -459,7 +529,7 @@ export default function App() {
       await refreshServices();
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(friendlyErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -473,7 +543,7 @@ export default function App() {
       await refreshServices();
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(friendlyErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -486,7 +556,7 @@ export default function App() {
       await refreshServices();
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(friendlyErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -500,6 +570,11 @@ export default function App() {
   const editingService = useMemo(
     () => (editingServiceId ? services.find((service) => service.id === editingServiceId) ?? null : null),
     [editingServiceId, services],
+  );
+
+  const editingWorkspaceTask = useMemo(
+    () => (editingJobId ? workspaceTaskByJobId.get(editingJobId) ?? null : null),
+    [editingJobId, workspaceTaskByJobId],
   );
 
   const openCreate = () => {
@@ -567,20 +642,29 @@ export default function App() {
       await refreshJobs();
       if (editingJobId === job.id) closeEditor();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(friendlyErrorMessage(cause));
     } finally {
       setBusy(false);
     }
   };
 
   const handleToggleJob = async (job: Job) => {
+    const workspaceTask = workspaceTaskByJobId.get(job.id);
+    if (!job.enabled && !canUseWorkspaceTask(workspaceTask, workspaceSnapshotFresh)) {
+      setError(
+        workspaceSnapshotFresh
+          ? friendlyErrorMessage(workspaceTask?.trusted ? "unavailable" : "source-untrusted")
+          : "workspace task 상태를 확인하지 못해 활성화를 차단했습니다. 다시 불러온 뒤 시도하세요.",
+      );
+      return;
+    }
     setBusy(true);
     try {
       await setJobEnabled(job.id, !job.enabled);
       await refreshJobs();
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(friendlyErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -593,7 +677,7 @@ export default function App() {
       setStartupStatus(await setStartupShortcutEnabled(!startupStatus.enabled));
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(friendlyErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -622,7 +706,28 @@ export default function App() {
       await refreshServices();
       if (editingServiceId === service.id) closeServiceEditor();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(friendlyErrorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleTrustWorkspaceTask = async (task: WorkspaceTaskState) => {
+    if (busy || task.trusted) return;
+    const approved = window.confirm(
+      `현재 source revision ${shortRevision(task.revision)}을 신뢰할까요?\n` +
+      "이 승인은 이 revision을 실행 대상으로 사용할 수 있도록 권한을 부여하지만, task를 실행하거나 프로세스를 시작하지 않습니다.",
+    );
+    if (!approved) return;
+    setBusy(true);
+    setWorkspaceNotice(null);
+    try {
+      await trustWorkspaceTaskSource(task.sourceId, task.revision);
+      await refreshJobs();
+      setWorkspaceNotice(`source revision ${shortRevision(task.revision)}을 승인했습니다. 작업은 자동 실행되지 않았습니다.`);
+      setError(null);
+    } catch (cause) {
+      setError(friendlyErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -630,13 +735,15 @@ export default function App() {
 
   const jobContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
     if (!contextJob) return [];
+    const workspaceTask = workspaceTaskByJobId.get(contextJob.id);
+    const workspaceRunnable = canUseWorkspaceTask(workspaceTask, workspaceSnapshotFresh);
     return [
-      { type: "item", id: "run-now", label: "지금 실행", disabled: busy },
+      { type: "item", id: "run-now", label: "지금 실행", disabled: busy || !workspaceRunnable },
       {
         type: "item",
         id: "toggle-enabled",
         label: contextJob.enabled ? "비활성화" : "활성화",
-        disabled: busy,
+        disabled: busy || (!contextJob.enabled && !workspaceRunnable),
       },
       { type: "item", id: "edit", label: "편집", disabled: busy },
       { type: "item", id: "open-logs", label: "로그 열기" },
@@ -649,7 +756,7 @@ export default function App() {
         danger: true,
       },
     ];
-  }, [activeRuns, activeSnapshotFresh, busy, contextJob]);
+  }, [activeRuns, activeSnapshotFresh, busy, contextJob, workspaceSnapshotFresh, workspaceTaskByJobId]);
 
   const onJobContextSelect = (id: string) => {
     const job = contextJob;
@@ -769,9 +876,10 @@ export default function App() {
         </header>
 
         {(error ?? statusError ?? activeSnapshotError) ? <div className="error-banner" role="alert">오류: {error ?? statusError ?? activeSnapshotError}</div> : null}
+        {workspaceNotice ? <div className="success-banner" role="status">{workspaceNotice}</div> : null}
 
         {screen === "editor" ? (
-          <JobEditor job={editingJob} onSave={handleSave} onCancel={closeEditor} />
+          <JobEditor job={editingJob} workspaceTask={editingWorkspaceTask} onSave={handleSave} onCancel={closeEditor} />
         ) : screen === "service-editor" ? (
           <ServiceEditor service={editingService} onSave={handleServiceSave} onCancel={closeServiceEditor} />
         ) : screen === "history" ? (
@@ -907,6 +1015,7 @@ export default function App() {
                 <h3 id="jobs-title" className="visually-hidden">작업 목록</h3>
               </div>
               <button type="button" className="button-primary" onClick={openCreate}>+ 새 작업</button>
+              <button ref={importTriggerRef} type="button" className="button-secondary" onClick={() => setImportOpen(true)}>정의와 task 가져오기</button>
             </div>
             {loading ? <div className="empty-card compact"><div className="pulse" /><p>작업을 불러오는 중…</p></div> : null}
             {!loading && jobs.length === 0 ? (
@@ -923,7 +1032,10 @@ export default function App() {
             ) : null}
             {!loading && jobs.length > 0 ? (
               <div className="job-list" role="list" aria-label="작업 목록">
-                {jobs.map((job) => (
+                {jobs.map((job) => {
+                  const workspaceTask = workspaceTaskByJobId.get(job.id);
+                  const workspaceRunnable = canUseWorkspaceTask(workspaceTask, workspaceSnapshotFresh);
+                  return (
                   <article
                     className={`job-card ${selectedJobId === job.id ? "selected" : ""}`}
                     key={job.id}
@@ -947,16 +1059,48 @@ export default function App() {
                         <span>{scheduleLabel(job)}</span>
                         <span>{job.overlapPolicy === "skip" ? "중복 건너뛰기" : job.overlapPolicy === "queue" ? "대기열" : "이전 종료"}</span>
                         {job.envConfigured ? <span className="secret-badge">환경변수 보호됨</span> : null}
+                        {workspaceTask ? (
+                          <>
+                            <span className="workspace-task-badge">VS Code {workspaceTask.taskKind}</span>
+                            <span title={workspaceTask.sourceRoot}>소스 {workspaceSourceLabel(workspaceTask.sourceRoot)} · rev {shortRevision(workspaceTask.revision)}</span>
+                            <span className={workspaceTask.trusted ? "workspace-task-trusted" : "workspace-task-untrusted"}>
+                              {workspaceTask.trusted ? "소스 승인됨" : "소스 승인 필요"}
+                            </span>
+                            <span className={workspaceTask.available ? "workspace-task-trusted" : "workspace-task-unavailable"}>
+                              {workspaceTask.available ? "원본 사용 가능" : "원본 변경됨 · 사용 불가"}
+                            </span>
+                            {workspaceTask.environmentKeys.length > 0 ? <span>환경 키: {workspaceTask.environmentKeys.join(", ")}</span> : null}
+                          </>
+                        ) : null}
                       </div>
                     </div>
                     <div className="job-actions">
-                      <button type="button" className="button-primary" disabled={busy} onClick={() => void handleRunNow(job)}>지금 실행</button>
+                      <button
+                        type="button"
+                        className="button-primary"
+                        disabled={busy || !workspaceRunnable}
+                        title={!workspaceRunnable
+                          ? workspaceSnapshotFresh
+                            ? "workspace task source 승인과 사용 가능 상태가 필요합니다."
+                            : "workspace task 상태를 다시 불러와야 합니다."
+                          : undefined}
+                        onClick={() => void handleRunNow(job)}
+                      >지금 실행</button>
                       <button type="button" className="button-danger" disabled={busy || !activeSnapshotFresh || !activeRuns[job.id]} onClick={() => void handleStopRun(job)}>중지</button>
+                      {workspaceTask && !workspaceTask.trusted ? (
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          disabled={busy || !workspaceTask.available}
+                          onClick={() => void handleTrustWorkspaceTask(workspaceTask)}
+                        >소스 승인</button>
+                      ) : null}
                       <button type="button" className="button-secondary" onClick={() => openEdit(job)}>편집</button>
                       <button type="button" className="button-danger" disabled={busy || !activeSnapshotFresh || Boolean(activeRuns[job.id])} onClick={() => void handleDelete(job)}>삭제</button>
                     </div>
                   </article>
-                ))}
+                  );
+                })}
               </div>
             ) : null}
           </section>
@@ -964,10 +1108,15 @@ export default function App() {
       </section>
       {importOpen && (
         <ImportDialog
-          onDone={(_created) => {
+          onDone={(_created, result: WorkspaceTaskApplyResult | undefined) => {
+            if (result) {
+              setWorkspaceNotice(
+                `workspace task import 완료: 생성 ${result.created} · 갱신 ${result.updated} · 사용 불가 전환 ${result.madeUnavailable} · 충돌 건너뜀 ${result.skippedConflicts}. source revision 승인 후에만 활성화할 수 있습니다.`,
+              );
+            }
             closeImport();
-            void refreshServices();
-            void refreshJobs();
+            void refreshServices().catch((cause) => setError(friendlyErrorMessage(cause)));
+            void refreshJobs().catch((cause) => setError(friendlyErrorMessage(cause)));
           }}
           onClose={closeImport}
         />

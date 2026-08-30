@@ -2,9 +2,10 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { previewCron } from "../api";
 import JobEditor from "./JobEditor";
-import type { CronPreviewItem, Job, JobInput } from "../types";
+import type { CronPreviewItem, Job, JobInput, WorkspaceTaskState } from "../types";
 
 vi.mock("../api", () => ({
+  friendlyErrorMessage: vi.fn((cause: unknown) => cause instanceof Error ? cause.message : String(cause)),
   previewCron: vi.fn(),
 }));
 
@@ -109,6 +110,60 @@ describe("JobEditor", () => {
     fireEvent.click(getByRoleAfterClear("button", { name: "작업 저장" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     expect(onSave.mock.calls[0][0].environment).toEqual({ action: "clear" });
+  });
+
+  it("locks source-managed fields and limits environment values to declared keys", async () => {
+    const job: Job = {
+      id: "job-managed",
+      kind: "job",
+      name: "Build",
+      command: "node",
+      cwd: "C:\\work\\demo",
+      targetKind: "windows",
+      targetDistro: null,
+      envConfigured: false,
+      cronExpr: "0 * * * *",
+      enabled: false,
+      overlapPolicy: "skip",
+      catchUp: false,
+      lastEvaluatedAt: null,
+      nextQueueSequence: 0,
+      restartPolicy: null,
+      autoStart: null,
+      healthTcpAddress: null,
+      healthTcpPort: null,
+      healthStartGraceMs: null,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const workspaceTask: WorkspaceTaskState = {
+      jobId: job.id,
+      sourceId: "source-1",
+      label: "Build",
+      taskKind: "process",
+      sourceRoot: "C:\\work\\demo",
+      revision: "revision-1",
+      targetKind: "windows",
+      targetDistro: null,
+      environmentKeys: ["BUILD_TOKEN"],
+      appliedOverride: "windows",
+      trusted: false,
+      available: true,
+    };
+    const onSave = vi.fn<(input: JobInput) => Promise<void>>().mockResolvedValue(undefined);
+    const { getByRole, getByLabelText } = render(
+      <JobEditor job={job} workspaceTask={workspaceTask} onSave={onSave} onCancel={vi.fn()} />,
+    );
+
+    expect(getByLabelText("작업 이름")).toBeDisabled();
+    expect(getByLabelText("실행 명령")).toBeDisabled();
+    expect(getByLabelText("작업 디렉터리")).toBeDisabled();
+    expect(getByRole("checkbox", { name: /활성화/ })).toBeDisabled();
+
+    fireEvent.click(getByRole("button", { name: "변수 추가" }));
+    const envKey = getByLabelText("환경변수 이름");
+    expect(envKey.tagName).toBe("SELECT");
+    expect(Array.from((envKey as HTMLSelectElement).options).map((option) => option.value)).toEqual(["", "BUILD_TOKEN"]);
   });
 });
 

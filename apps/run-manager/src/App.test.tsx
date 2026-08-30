@@ -9,6 +9,7 @@ import {
   listJobs,
   listRuns,
   listServices,
+  listWorkspaceTasks,
   onOpenRequest,
   restartService,
   runJobNow,
@@ -18,8 +19,9 @@ import {
   stopService,
   tailLog,
   takePendingOpen,
+  trustWorkspaceTaskSource,
 } from "./api";
-import type { Job, Run, ServiceInstance } from "./types";
+import type { Job, Run, ServiceInstance, WorkspaceTaskState } from "./types";
 
 vi.mock("./api", () => ({
   applyImport: vi.fn(async () => 0),
@@ -28,6 +30,7 @@ vi.mock("./api", () => ({
   deleteJob: vi.fn(),
   deleteService: vi.fn(),
   exportDefinitions: vi.fn(async () => null),
+  friendlyErrorMessage: vi.fn((cause: unknown) => cause instanceof Error ? cause.message : String(cause)),
   getServiceInstance: vi.fn(),
   getServiceObservability: vi.fn(async () => null),
   hideMainWindow: vi.fn(async () => undefined),
@@ -36,6 +39,7 @@ vi.mock("./api", () => ({
   listJobs: vi.fn(),
   listRuns: vi.fn(),
   listServices: vi.fn(),
+  listWorkspaceTasks: vi.fn(async () => []),
   loadRuntimeStatus: vi.fn(async () => ({
     backgroundLaunch: false,
     schedulerRunning: true,
@@ -63,6 +67,7 @@ vi.mock("./api", () => ({
   takePendingOpen: vi.fn(async () => null),
   updateJob: vi.fn(),
   updateService: vi.fn(),
+  trustWorkspaceTaskSource: vi.fn(async () => true),
 }));
 
 const job: Job = {
@@ -123,8 +128,24 @@ const stoppedInstance: ServiceInstance = {
   nextRetryAt: null,
 };
 
+const managedWorkspaceTask: WorkspaceTaskState = {
+  jobId: job.id,
+  sourceId: "source-1",
+  label: job.name,
+  taskKind: "process",
+  sourceRoot: "C:\\work\\demo",
+  revision: "revision-1234567890",
+  targetKind: "windows",
+  targetDistro: null,
+  environmentKeys: ["BUILD_TOKEN"],
+  appliedOverride: "windows",
+  trusted: false,
+  available: true,
+};
+
 const listJobsMock = vi.mocked(listJobs);
 const listServicesMock = vi.mocked(listServices);
+const listWorkspaceTasksMock = vi.mocked(listWorkspaceTasks);
 const getServiceInstanceMock = vi.mocked(getServiceInstance);
 const listActiveRunsMock = vi.mocked(listActiveRuns);
 const listRunsMock = vi.mocked(listRuns);
@@ -139,6 +160,7 @@ const deleteServiceMock = vi.mocked(deleteService);
 const tailLogMock = vi.mocked(tailLog);
 const onOpenRequestMock = vi.mocked(onOpenRequest);
 const takePendingOpenMock = vi.mocked(takePendingOpen);
+const trustWorkspaceTaskSourceMock = vi.mocked(trustWorkspaceTaskSource);
 const confirmMock = vi.fn<(message?: string) => boolean>();
 
 function card(name: string): HTMLElement {
@@ -150,6 +172,7 @@ function card(name: string): HTMLElement {
 beforeEach(() => {
   listJobsMock.mockReset().mockResolvedValue([job]);
   listServicesMock.mockReset().mockResolvedValue([service]);
+  listWorkspaceTasksMock.mockReset().mockResolvedValue([]);
   getServiceInstanceMock.mockReset().mockResolvedValue(stoppedInstance);
   listActiveRunsMock.mockReset().mockResolvedValue([]);
   listRunsMock.mockReset().mockResolvedValue([]);
@@ -169,6 +192,7 @@ beforeEach(() => {
   });
   onOpenRequestMock.mockReset().mockResolvedValue(() => undefined);
   takePendingOpenMock.mockReset().mockResolvedValue(null);
+  trustWorkspaceTaskSourceMock.mockReset().mockResolvedValue(true);
   confirmMock.mockReset().mockReturnValue(false);
   Object.defineProperty(window, "confirm", {
     configurable: true,
@@ -179,6 +203,29 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Run Manager context menus", () => {
+  it("gates managed workspace task run and requires explicit source trust", async () => {
+    listWorkspaceTasksMock.mockResolvedValue([managedWorkspaceTask]);
+    render(<App />);
+
+    const target = await screen.findByRole("heading", { name: "백업" });
+    expect(screen.getByText("소스 승인 필요")).toBeTruthy();
+    expect(screen.getByText("환경 키: BUILD_TOKEN")).toBeTruthy();
+    const cardElement = target.closest("article");
+    if (!(cardElement instanceof HTMLElement)) throw new Error("managed task card was not rendered");
+    expect(cardElement.querySelector("button.button-primary")).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "소스 승인" }));
+    expect(trustWorkspaceTaskSourceMock).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValueOnce(true);
+    fireEvent.click(screen.getByRole("button", { name: "소스 승인" }));
+    await waitFor(() => expect(trustWorkspaceTaskSourceMock).toHaveBeenCalledWith(
+      managedWorkspaceTask.sourceId,
+      managedWorkspaceTask.revision,
+    ));
+    expect(confirmMock.mock.calls[1][0]).toContain("task를 실행하거나 프로세스를 시작하지 않습니다");
+  });
+
   it("requires explicit confirmation before a Launcher task mutates runtime state", async () => {
     takePendingOpenMock.mockResolvedValueOnce({
       target: { kind: "task", id: job.id },
@@ -220,6 +267,22 @@ describe("Run Manager context menus", () => {
 
     await waitFor(() => expect(setJobEnabledMock).toHaveBeenCalledWith(job.id, false));
     await waitFor(() => expect(document.activeElement).toBe(target));
+  });
+
+  it("fails closed after the workspace task snapshot becomes unavailable", async () => {
+    listWorkspaceTasksMock
+      .mockReset()
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error("workspace-state-failed"));
+    render(<App />);
+    await screen.findByRole("heading", { name: "백업" });
+    const target = card("백업");
+
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem", { name: "비활성화" }));
+
+    await screen.findByText(/workspace-state-failed/);
+    expect(target.querySelector("button.button-primary")).toBeDisabled();
   });
 
   it("opens history for the right-clicked job instead of the previous row", async () => {
