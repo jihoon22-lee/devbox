@@ -30,8 +30,6 @@ use tokio::sync::{watch, Mutex as AsyncMutex};
 use zeroize::Zeroizing;
 
 #[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-#[cfg(target_os = "windows")]
 use windows::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
 
 const MAX_CONNECTIONS: usize = 8;
