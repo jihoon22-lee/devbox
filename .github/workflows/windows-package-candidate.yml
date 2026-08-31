@@ -155,6 +155,85 @@ jobs:
             echo "- contract: 15 apps / 32 files / 31 manifest-declared / mismatch 0"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  packaged-smoke:
+    name: Packaged app runtime acceptance
+    needs: build
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - id: paths
+        name: Allocate isolated packaged-smoke paths
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $root = Join-Path $env:RUNNER_TEMP ("devbox-packaged-smoke-" + [guid]::NewGuid().ToString('N'))
+          $download = Join-Path $root 'download'
+          $evidenceDirectory = Join-Path $root 'evidence'
+          $runtimeParent = Join-Path $root 'runtime'
+          $config = Join-Path $root 'windows-packaged-smoke-config.json'
+          $output = Join-Path $evidenceDirectory 'packaged-smoke.json'
+          $runtime = Join-Path $runtimeParent 'packaged'
+          New-Item -ItemType Directory -Path $root, $download, $evidenceDirectory, $runtimeParent | Out-Null
+          Copy-Item -LiteralPath '.github/scripts/windows-packaged-smoke-config.json' -Destination $config
+          @(
+            "config=$config"
+            "download=$download"
+            "output=$output"
+            "runtime=$runtime"
+          ) | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+
+      - name: Download exact unpublished candidate
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: ${{ steps.paths.outputs.download }}
+
+      - name: Run all packaged app contracts
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          & node '.github/scripts/windows-packaged-smoke.mjs' `
+            --config '${{ steps.paths.outputs.config }}' `
+            --verification (Join-Path '${{ steps.paths.outputs.download }}' 'evidence/verification.json') `
+            --assets (Join-Path '${{ steps.paths.outputs.download }}' 'assets') `
+            --output '${{ steps.paths.outputs.output }}' `
+            --runtime '${{ steps.paths.outputs.runtime }}' `
+            --tag $env:CANDIDATE_TAG `
+            --commit $env:CANDIDATE_COMMIT
+          if ($LASTEXITCODE -ne 0) { throw 'packaged app runtime acceptance failed' }
+          $report = Get-Content -LiteralPath '${{ steps.paths.outputs.output }}' -Raw | ConvertFrom-Json
+          @(
+            '### Packaged app runtime acceptance'
+            "- passed: $($report.summary.passed) / 15"
+            "- failed: $($report.summary.failed)"
+            "- skipped: $($report.summary.skipped)"
+            "- unattempted: $($report.summary.unattempted)"
+            "- runtime root removed: $($report.runtimeRootRemoved)"
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+
+      - name: Upload packaged app acceptance evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-package-candidate-packaged-smoke-evidence-${{ inputs.candidate_commit }}
+          path: ${{ steps.paths.outputs.output }}
+          if-no-files-found: warn
+          retention-days: 14
+
   installer-acceptance:
     name: Installer upgrade and rollback acceptance
     needs: build

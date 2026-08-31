@@ -103,6 +103,20 @@ def main() -> None:
     for property_name in optional_registry_values:
         assert f"Get-Optional-Property $value '{property_name}'" in script
         assert f"$value.{property_name}" not in script
+    assert "function Resolve-Owned-Install-State" in script
+    ownership_registration = "$script:ownedInstalls[$App.id] = $ownedState"
+    installed_validation = (
+        "$state = Resolve-Install-State $App $Release $ownedState $ExpectedBinarySha256"
+    )
+    assert ownership_registration in script
+    assert installed_validation in script
+    assert script.index(ownership_registration) < script.index(installed_validation)
+    assert "installed executable digest mismatch" not in script
+    assert "$binarySha -ne $manifestApp.portable.sha256" not in script
+    assert "installed executable digest is not reproducible for this installer release" in script
+    assert "candidate update did not replace the baseline executable" in script
+    assert "Invoke-Owned-Process $State.Uninstaller '/S'" in script
+    assert "_?=" not in script
 
     assert workflow.startswith("name: Windows installer acceptance\n\non:\n  workflow_dispatch:\n")
     assert "\n  pull_request:" not in workflow

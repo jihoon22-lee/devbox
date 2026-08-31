@@ -25,6 +25,13 @@ assert "build-manifest.py" in WORKFLOW
 assert "flatten-windows-packages.ps1" in WORKFLOW
 assert "build-candidate-metadata.py" in WORKFLOW
 assert "--artifact-kind candidate" in WORKFLOW
+assert "packaged-smoke:" in WORKFLOW
+assert "name: Packaged app runtime acceptance" in WORKFLOW
+assert "windows-packaged-smoke.mjs" in WORKFLOW
+assert "Copy-Item -LiteralPath '.github/scripts/windows-packaged-smoke-config.json'" in WORKFLOW
+assert "--verification (Join-Path '${{ steps.paths.outputs.download }}' 'evidence/verification.json')" in WORKFLOW
+assert "windows-package-candidate-packaged-smoke-evidence-${{ inputs.candidate_commit }}" in WORKFLOW
+assert '"- passed: $($report.summary.passed) / 15"' in WORKFLOW
 assert "windows-installer-acceptance.ps1" in WORKFLOW
 assert "stable baseline annotated tag identity mismatch" in WORKFLOW
 assert "retention-days: 7" in WORKFLOW
