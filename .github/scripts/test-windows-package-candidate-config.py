@@ -65,5 +65,11 @@ assert 'environment.RUNNER_ENVIRONMENT === "github-hosted"' in PACKAGED_SMOKE
 assert 'environment.RUNNER_OS === "Windows"' in PACKAGED_SMOKE
 assert 'mode: "github-hosted-process-contract"' in PACKAGED_SMOKE
 assert 'windowContract: result.focusDisplacement.directRestorationRequired' in PACKAGED_SMOKE
+assert "MainWindowHandle" not in PACKAGED_SMOKE
+assert "EnumWindowsProc" in PACKAGED_SMOKE
+assert "GetWindowTextW" in PACKAGED_SMOKE
+assert "function firstInstanceContract" in PACKAGED_SMOKE
+assert "nativeWindowState(child.pid, app.title)" in PACKAGED_SMOKE
+assert "hiddenWithoutVisibleMainWindow" in PACKAGED_SMOKE
 
 print("Windows package candidate workflow contract: PASS")
